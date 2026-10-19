@@ -787,19 +787,34 @@ output!(TasksListOutput {
 input!(TaskGetInput { task_id: TaskId });
 output!(TaskGetOutput { task: Task });
 
-// cap_set: the global cap, a project's share, or both.
-input!(CapSetShare { project_ref: ProjectRef, share: Int<0, 1000> });
+// cap_set: the fleet cap, a project's max agents, or both. Lowering stops nothing; raising starts queued agents at once.
+input!(CapSetProject {
+    project_ref: ProjectRef,
+    /// 1 up to the fleet cap.
+    max_agents: Int<1, 1000>,
+    /// Lowering: tell the agents above the new max to push their work in progress and wait; they resume when a slot
+    /// frees. Without it they finish their current work.
+    pause_extras: Option<bool>,
+});
 input!(
     #[serde(remote = "Self")]
-    CapSetInput { cap: Option<Int<1, 1000>>, share: Option<CapSetShare> }
+    CapSetInput {
+        /// The fleet cap on running turns, leads' included. Needs an admin key.
+        cap: Option<Int<1, 1000>>,
+        project: Option<CapSetProject>,
+    }
 );
 checked!(CapSetInput, |input| {
-    if input.cap.is_none() && input.share.is_none() {
-        return Err("expected cap, share or both".into());
+    if input.cap.is_none() && input.project.is_none() {
+        return Err("expected cap, project or both".into());
     }
     Ok(())
 });
-output!(CapSetOutput { slots: SlotState });
+output!(CapSetOutput {
+    slots: SlotState,
+    /// The agents `pauseExtras` paused.
+    paused: Option<List<TaskId, 0, 1000>>,
+});
 
 // claims_list
 input!(ClaimsListInput {
@@ -1350,7 +1365,7 @@ tools! {
     digest_get => DigestGet, Read, DigestGetInput, DigestGetOutput;
     tasks_list => TasksList, Read, TasksListInput, TasksListOutput;
     task_get => TaskGet, Read, TaskGetInput, TaskGetOutput;
-    cap_set => CapSet, Admin, CapSetInput, CapSetOutput;
+    cap_set => CapSet, Operate, CapSetInput, CapSetOutput;
     usage_status => UsageStatus, Read, UsageStatusInput, UsageStatusOutput;
     usage_resume => UsageResume, Operate, UsageResumeInput, UsageResumeOutput;
     claims_list => ClaimsList, Read, ClaimsListInput, ClaimsListOutput;
@@ -1538,7 +1553,7 @@ mod tests {
             assert_eq!(McpToolName::parse(tool.as_str()), Some(*tool));
             assert_eq!(serde_json::to_value(tool).unwrap(), tool.as_str());
         }
-        assert_eq!(McpToolName::CapSet.scope(), Role::Admin);
+        assert_eq!(McpToolName::CapSet.scope(), Role::Operate);
         assert_eq!(McpToolName::RetroRun.scope(), Role::Admin);
         assert_eq!(McpToolName::DoctorFix.scope(), Role::Operate);
         assert_eq!(McpToolName::FleetdStatus.scope(), Role::Read);

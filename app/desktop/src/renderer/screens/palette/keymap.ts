@@ -5,8 +5,8 @@
 import { shortcutFor, type KeyInput, type Platform, type ShortcutId } from "../../../shared/shortcuts";
 import { commandFor } from "./registry";
 
-/** Held down, these step through orders; every other shortcut fires once per press. */
-const REPEATS: ReadonlySet<ShortcutId> = new Set(["order.previous", "order.next"]);
+/** Held down, these step through projects; every other shortcut fires once per press. */
+const REPEATS: ReadonlySet<ShortcutId> = new Set(["project.previous", "project.next"]);
 
 /** Ctrl+N/P step the palette's selection. Off macOS Ctrl is Mod, so while it is open they are its keys, not ⌘N. */
 const paletteKey = (event: KeyInput, platform: Platform): boolean =>
@@ -39,23 +39,4 @@ export const installKeymap = (platform: Platform, paletteOpen: () => boolean, be
   };
   window.addEventListener("keydown", onKeyDown, { capture: true });
   return () => window.removeEventListener("keydown", onKeyDown, { capture: true });
-};
-
-/**
- * For a focused picker (a question card, an option list): plain 1–9 pick, Enter takes the recommendation, N says
- * No. Undefined while typing in a field or with a modifier held, so the field keeps its keys.
- */
-export type PickerKey = { readonly kind: "pick"; readonly n: number } | { readonly kind: "accept" } | { readonly kind: "no" };
-
-export const pickerKey = (event: KeyInput & { readonly target?: EventTarget | null }): PickerKey | undefined => {
-  if (event.metaKey || event.ctrlKey || event.altKey) return undefined;
-  const target = event.target;
-  if (typeof HTMLElement !== "undefined" && target instanceof HTMLElement && (target.isContentEditable || target.closest("input, textarea, select") !== null)) {
-    return undefined;
-  }
-  const digit = /^(?:Digit|Numpad)([1-9])$/u.exec(event.code)?.[1];
-  if (digit !== undefined && !event.shiftKey) return { kind: "pick", n: Number(digit) };
-  if (event.key === "Enter" && !event.shiftKey) return { kind: "accept" };
-  if (event.key.toLowerCase() === "n" && !event.shiftKey) return { kind: "no" };
-  return undefined;
 };

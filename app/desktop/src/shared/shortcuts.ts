@@ -5,7 +5,7 @@
 
 export type Platform = "darwin" | "linux" | "win32" | "other";
 
-export type ShortcutSection = "General" | "Go to" | "Orders" | "Board";
+export type ShortcutSection = "General" | "Projects" | "Go to" | "Composer";
 
 export interface Shortcut {
   readonly keys: string;
@@ -15,47 +15,30 @@ export interface Shortcut {
 }
 
 const jump = Object.fromEntries(
-  [1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => [`order.open.${n}`, { keys: `Mod+${n}`, title: `Open order ${n} in the sidebar`, section: "Orders" }]),
-) as Record<`order.open.${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9}`, Shortcut>;
+  [1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => [`project.open.${n}`, { keys: `Mod+${n}`, title: `Open Project ${n} in the Sidebar`, section: "Projects" }]),
+) as Record<`project.open.${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9}`, Shortcut>;
 
 export const SHORTCUTS = {
   "palette.toggle": { keys: "Mod+K", title: "Command Palette", section: "General" },
   "shortcuts.show": { keys: "Mod+/", title: "Keyboard Shortcuts", section: "General" },
-  "order.new": { keys: "Mod+N", title: "New Order", section: "General" },
   "composer.focus": { keys: "Mod+L", title: "Focus Composer", section: "General" },
   "sidebar.toggle": { keys: "Mod+B", title: "Toggle Sidebar", section: "General" },
-  "board.open": { keys: "Mod+0", title: "Board", section: "Go to" },
-  "inbox.toggle": { keys: "Mod+I", title: "Inbox", section: "Go to" },
+  ...jump,
+  "project.previous": { keys: "Mod+[", title: "Previous Project", section: "Projects" },
+  "project.next": { keys: "Mod+]", title: "Next Project", section: "Projects" },
   "status.toggle": { keys: "Mod+.", title: "Status", section: "Go to" },
   "settings.open": { keys: "Mod+,", title: "Settings…", section: "Go to" },
-  "order.previous": { keys: "Mod+[", title: "Previous Order", section: "Orders" },
-  "order.next": { keys: "Mod+]", title: "Next Order", section: "Orders" },
-  "order.stop": { keys: "Mod+Shift+.", title: "Stop Order…", section: "Orders" },
-  ...jump,
-  "board.toggleGrouping": { keys: "Mod+Shift+G", title: "Group by Project or Status", section: "Board" },
-  "composer.pickProject": { keys: "Mod+Shift+P", title: "Pick the Order's Project", section: "Board" },
-  "composer.pickType": { keys: "Mod+Shift+T", title: "Pick the Order's Type", section: "Board" },
-  "composer.attach": { keys: "Mod+Shift+A", title: "Attach a File to the Order", section: "Board" },
+  "composer.attach": { keys: "Mod+Shift+A", title: "Attach a File", section: "Composer" },
 } as const satisfies Record<string, Shortcut>;
 
 export type ShortcutId = keyof typeof SHORTCUTS;
 
 export const isShortcutId = (id: string): id is ShortcutId => Object.hasOwn(SHORTCUTS, id);
 
-/**
- * Keys a focused component handles itself (a question card, the palette list). They are listed so the sheet shows
- * them; nothing dispatches them globally.
- */
+/** Keys a focused component handles itself. They are listed so the sheet shows them; nothing dispatches them globally. */
 export const LOCAL_KEYS: readonly { readonly where: string; readonly keys: readonly string[]; readonly title: string }[] = [
-  { where: "A question that needs you", keys: ["1–9"], title: "Pick that option" },
-  { where: "A question that needs you", keys: ["Enter"], title: "Take the recommendation" },
-  { where: "A question that needs you", keys: ["N"], title: "Answer No" },
   { where: "Command palette", keys: ["↑", "↓"], title: "Move the selection" },
   { where: "Command palette", keys: ["Enter"], title: "Run it" },
-  { where: "Command palette", keys: ["1 go 2 nvm"], title: "Reply to the inbox by number" },
-  { where: "The board", keys: ["↑", "↓"], title: "Move between orders" },
-  { where: "The board", keys: ["J", "K"], title: "Move between orders" },
-  { where: "The board", keys: ["Enter"], title: "Open the selected order" },
   { where: "Anywhere", keys: ["Esc"], title: "Close the menu, panel or sheet" },
 ];
 

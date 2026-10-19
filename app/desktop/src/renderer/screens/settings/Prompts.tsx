@@ -372,7 +372,14 @@ function PromptList(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedGroup, selected]);
   useEffect(() => {
-    listRef.current?.querySelector('[aria-current="true"]')?.scrollIntoView({ block: "nearest" });
+    // Scrolls the list only: scrollIntoView would also scroll the window when anything below overflows it.
+    const list = listRef.current;
+    const row = list?.querySelector('[aria-current="true"]');
+    if (!list || !row) return;
+    const r = row.getBoundingClientRect();
+    const l = list.getBoundingClientRect();
+    if (r.top < l.top) list.scrollTop -= l.top - r.top;
+    else if (r.bottom > l.bottom) list.scrollTop += Math.min(r.bottom - l.bottom, r.top - l.top);
   }, [selected, selectedGroup]);
 
   return (

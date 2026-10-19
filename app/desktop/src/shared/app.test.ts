@@ -33,7 +33,7 @@ describe("parseDeepLink", () => {
 describe("NotifyRequest", () => {
   it("never carries a pairing target", () => {
     const base = { tag: "needs-you", title: "fleetd needs you", body: "A1" };
-    expect(NotifyRequest.safeParse({ ...base, target: { kind: "ask", askId: "A1" } }).success).toBe(true);
+    expect(NotifyRequest.safeParse({ ...base, target: { kind: "chat", machineId: "devbox", projectId: "storefront", messageId: "m-1" } }).success).toBe(true);
     expect(NotifyRequest.safeParse({ ...base, target: { kind: "pair", hub: "http://h", code: "ABCD-2345" } }).success).toBe(false);
   });
 });

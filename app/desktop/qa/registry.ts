@@ -2,7 +2,7 @@
 // suite then covers them at every size and theme on Linux and macOS, and any finding fails the PR.
 //
 // To register a screen (routes and ids: F1's route table, src/renderer/screens/shell/routes.ts):
-//   1. The screen's root carries data-screen="<id>", or "<id>.<state>" for a sub-state such as "board.empty"; the
+//   1. The screen's root carries data-screen="<id>", or "<id>.<state>" for a sub-state such as "chat.loading"; the
 //      harness waits for either.
 //   2. Add an entry below: the id, the hash route that shows it, and the fixtures it must survive: the stress
 //      fixtures that touch its data (long-text, many-*), plus empty and the error states it renders.
@@ -10,14 +10,12 @@
 //      the entry says `expect: "error"`; register error fixtures as a separate entry with that field.
 //   3. A screen with no route of its own gets `open`, using keys, roles and labels rather than CSS classes:
 //        { id: "palette", route: "#/", fixtures: ["typical"], open: (page) => page.keyboard.press("ControlOrMeta+K") }
+//      Two entries for one screen on the same fixture (a strip folded and opened) need a `variant` apiece.
 // Fixtures are E3b's, built by `pnpm fixtures` into app/desktop/fixtures/<name>.json.
 // Run it locally: `pnpm fixtures && pnpm qa:build && pnpm qa` (QA_SCREENS=<id>,<id> to limit), then open
 // qa-results/index.html.
 
-import { readFileSync } from "node:fs";
-import path from "node:path";
-import { expect, type Page } from "@playwright/test";
-import { STEER_SENDS } from "../fixtures/order/steerSends.ts";
+import type { Page } from "@playwright/test";
 
 export const fixtures = [
   "empty",
@@ -25,14 +23,18 @@ export const fixtures = [
   "long-text",
   "many-prompts",
   "many-agents",
+  "needs-you",
   "conversation",
   "hub-unreachable",
   "pairing-failed",
   "node-too-old",
   // F9: the whole real prompt registry, with edits, a project's own texts and a default changed under an edit.
   "settings-prompts",
-  "board-stage",
-  "board-finish",
+  "settings-agents",
+  // F2: the lead chat's live strip with 0, 3 and 20 agents at work (fixtures/live).
+  "live-0",
+  "live-3",
+  "live-20",
   // Group fixtures (fixtures/<group>/index.ts), named <group>-<what>.
   "projects-cloning",
   // F10: the connect screen's states (fixtures/onboarding).
@@ -53,14 +55,19 @@ export const fixtures = [
   // F6: the Status view's own states (fixtures/status).
   "status-stale",
   "status-planning",
-  "status-legacy",
   "status-skeleton",
   // E3b's shared stress fixture; the time inspector fills it with a ~15k-span order (fixtures/time).
   "time-heavy",
   "conversation-20k",
-  "order-told-overrides",
-  // F4: every steering state (fixtures/order).
-  "order-steering",
+  // The lead chat (fixtures/chat, E3b): a long conversation with migrated order history, a reply streaming in,
+  // attachments, the two inline items (secret entry, gated command), the lead waiting on you, a first message.
+  "chat-long",
+  "chat-streaming",
+  "chat-attachments",
+  "chat-secret",
+  "chat-gated",
+  "chat-waiting",
+  "chat-empty",
 ] as const;
 export type FixtureName = (typeof fixtures)[number];
 
@@ -85,6 +92,9 @@ export interface Screen {
   open?: (page: Page) => Promise<void>;
   // Registered ahead of its PR: skipped, with this reason, until the owner deletes the field.
   pending?: string;
+  // Tells apart two entries for one screen on the same fixture (say, a strip folded and opened): it joins the id in
+  // the test title and the file names.
+  variant?: string;
   // The route is meant to land on an error or not-found state ("<id>.error"). Without this, such a state fails the
   // test: a route to a missing entity would otherwise check an empty error page and pass.
   expect?: "error";
@@ -107,13 +117,74 @@ const gallerySections = [
   "layout",
 ] as const;
 
+// The fixtures' storefront project, a real hub project from the sanitized recording, so its id is a UUID; it shows
+// only in the route, never as text.
+const CHAT = "#/project/devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22";
+
+/** An entry's name in test titles, shot files and the contact sheet. */
+export const label = (s: Pick<Screen, "id" | "variant">) => (s.variant === undefined ? s.id : `${s.id}~${s.variant}`);
+
 export const screens: readonly Screen[] = [
-  // E0/F1: the frame (top bar, sidebar) around the default route, and the connection states it shows.
+  // F2 (A4): the live strip under the lead's latest message, in the project's chat. live-0 draws no strip.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["live-0", "live-3", "live-20"],
+    variant: "strip",
+    pending: "the chat screen (F3) mounts LiveStrip and A1 adds #/project/<machineId>/<projectId>",
+  },
+  // ...and opened to its lanes.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["live-20", "long-text"],
+    open: (page) => page.getByRole("button", { name: /agents? working/u }).first().click(),
+    variant: "strip-open",
+    pending: "A4 live strip (F2): confirm the expand control's name",
+  },
+  // The lead chat (lead-chat-spec.md), registered ahead of its slices, each pending until its writer lands it and
+  // deletes `pending` (check the id, route and open step then).
+  // A1 (F1): the sidebar's needs-you dot and running indicator, around the remembered project's chat.
+  {
+    id: "shell",
+    route: "#/",
+    fixtures: ["chat-waiting", "live-20", "chat-empty"],
+    variant: "chat",
+    pending: "A1 frame (F1) and fixtures/chat (E3b)",
+  },
+  // A2/A3 (F3, F4): the conversation and its composer: Markdown, paging through a long history with the migrated
+  // orders, a reply streaming in, attachments, the lead waiting on you, a first message, and the link down.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["chat-long", "chat-streaming", "chat-attachments", "chat-waiting", "chat-empty", "typical", "long-text", "empty", "hub-unreachable"],
+    pending: "A2 messages (F3), A3 composer (F4) and fixtures/chat (E3b)",
+  },
+  // A5 (F5): the two inline items: the masked secret field, and the exact gated command with Approve / Deny.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["chat-secret", "chat-gated", "long-text"],
+    variant: "inline",
+    pending: "A5 inline secret and gated command (F5) and fixtures/chat (E3b)",
+  },
+  // A9 (F9): Max agents in the chat header, at the cap with work queued (Settings has it under settings.agents).
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["settings-agents", "long-text"],
+    open: (page) => page.getByRole("button", { name: /Max agents/u }).first().click(),
+    variant: "max-agents",
+    pending: "A9 Max agents slider (F9): confirm the header control's name",
+  },
+  // F1: the frame (top bar, sidebar of projects) around #/, which opens the last project's chat (the first one on a
+  // fresh install), and the connection states it shows. With no projects, #/ offers to add one (home.empty).
   {
     id: "shell",
     route: "#/",
     fixtures: ["empty", "typical", "many-agents", "long-text", "hub-unreachable", "pairing-failed", "node-too-old"],
   },
+  { id: "home.empty", route: "#/", fixtures: ["empty"] },
   // F10: connecting to a hub, one fixture per state (fixtures/onboarding). The form: no hub here, a hub found, a
   // refused key, app-pair.json used up / expired / untrusted, a rate limit, an unreadable saved key and a key that
   // would be kept in a file. #/onboarding?key opens on the key path; a fleetd://pair link lands with ?hub=&code=.
@@ -144,14 +215,6 @@ export const screens: readonly Screen[] = [
   { id: "onboarding.connecting", route: "#/onboarding", fixtures: ["hub-unreachable", "onboarding-not-found"] },
   // A hub on another protocol, either way round.
   { id: "onboarding.mismatch", route: "#/onboarding", fixtures: ["onboarding-app-too-old", "onboarding-hub-too-old"] },
-  // F2: the board (#/ and #/board). board.empty, board.list, board.stage and board.finish are its states: the stage
-  // and finish fixtures put one order on it mid-run and after every PR merged.
-  {
-    id: "board",
-    route: "#/board",
-    // hub-unreachable: the composer shows main's reason and fix for a lost hub, so their wording is seen and checked.
-    fixtures: ["empty", "typical", "long-text", "many-agents", "board-stage", "board-finish", "hub-unreachable"],
-  },
   // E2: every design-system primitive with short, long and empty content, one section per entry, so the primitives
   // pass before any screen uses them. Needs a build with the gallery in it: `pnpm qa:build`.
   ...gallerySections.map((s) => ({ id: `gallery.${s}`, route: `#/gallery?section=${s}`, fixtures: ["long-text"] as const })),
@@ -202,7 +265,7 @@ export const screens: readonly Screen[] = [
     },
   },
   { id: "machines", route: "#/machines", fixtures: ["typical", "empty", "long-text", "many-agents", "hub-unreachable", "projects-machines"] },
-  // F11: the command palette, its reply mode (typed text switches it) and the shortcuts sheet.
+  // F11: the command palette (projects first, then go-tos), a typed search, and the shortcuts sheet.
   {
     id: "palette",
     route: "#/",
@@ -210,17 +273,19 @@ export const screens: readonly Screen[] = [
     open: (page) => page.keyboard.press("ControlOrMeta+K"),
   },
   {
-    id: "palette.reply",
+    id: "palette.search",
     route: "#/",
-    fixtures: ["long-text", "empty"],
+    fixtures: ["typical", "long-text", "empty"],
     open: async (page) => {
       await page.keyboard.press("ControlOrMeta+K");
-      await page.getByRole("combobox", { name: "Search or reply" }).fill("1 go 2 nvm 3 b");
+      await page.getByRole("combobox", { name: "Search" }).fill("st");
     },
   },
   { id: "shortcuts", route: "#/", fixtures: ["typical"], open: (page) => page.keyboard.press("ControlOrMeta+Slash") },
   // F9: Settings. Prompts opens on the lead's first message, the longest text; many-prompts lists 72 with long
   // keys and titles; settings-prompts is the real registry with edits. Compare and Update are deep links.
+  // Max agents: the fleet cap and each project's slider.
+  { id: "settings.agents", route: "#/settings/agents", fixtures: ["settings-agents", "long-text", "empty", "hub-unreachable"] },
   { id: "settings.general", route: "#/settings/general", fixtures: ["typical", "empty", "hub-unreachable"] },
   {
     id: "settings.prompts",
@@ -234,19 +299,13 @@ export const screens: readonly Screen[] = [
   },
   { id: "settings.prompts.update", route: "#/settings/prompts?prompt=lead.start&view=update", fixtures: ["settings-prompts"] },
   { id: "settings.instructions", route: "#/settings/instructions?for=devbox/storefront", fixtures: ["settings-prompts", "typical", "empty"] },
-  // F6: Status for the fleet, a project and an order: live, stale sources, planning, long text and unknown wire
-  // values, a hub without the progress model, the skeleton before the first answer, and the link down.
-  ...(
-    [
-      ["status.fleet", "#/status"],
-      ["status.project", "#/status/project/devbox/storefront"],
-      ["status.order", "#/status/order/W1"],
-    ] as const
-  ).map(([id, route]) => ({
-    id,
-    route,
-    fixtures: ["typical", "long-text", "empty", "hub-unreachable", "status-stale", "status-planning", "status-legacy", "status-skeleton"] as const,
-  })),
+  // F6: Status, one row per project: every state word, long titles, no projects, quiet sources, every lead
+  // planning, the skeleton before the first answer, and the link down.
+  {
+    id: "status.fleet",
+    route: "#/status",
+    fixtures: ["typical", "long-text", "empty", "many-agents", "hub-unreachable", "status-stale", "status-planning", "status-skeleton"],
+  },
   // F7: the time inspector (fixtures/time): an order's timeline, ~15k spans in time-heavy; the fleet's breakdown;
   // its insights. Each tab's root carries its own id, so the three are shot apart.
   {
@@ -268,80 +327,6 @@ export const screens: readonly Screen[] = [
     fixtures: ["typical", "long-text", "empty"],
     open: (page) => page.getByRole("tab", { name: "Insights" }).click(),
   },
-  // F3: the order view on the fixtures' one order, W1: fleet, PRs, done-when and the lead's conversation (a wake,
-  // markdown, steers and receipts, 20k streamed lines). The empty hub has no W1: its not-found state is expected.
-  { id: "order", route: "#/order/W1", fixtures: ["typical", "long-text", "many-agents", "conversation", "conversation-20k"] },
-  { id: "order", route: "#/order/W1", fixtures: ["empty"], expect: "error" },
-  // Report B5: the idle lead's last message ends as the thread's last message does, never mid-sentence.
-  {
-    id: "order.lead",
-    route: "#/order/W1",
-    fixtures: ["long-text", "conversation"],
-    open: async (page) => {
-      // The route is up once any screen is; the order and its log load after.
-      await page.locator('[data-screen="order.lead"]').waitFor({ timeout: 30_000 });
-      const lastRow = page.locator('[data-entry="say"], [data-entry="more"]').last();
-      const fixture = await page.evaluate(() => (window as unknown as { fleetd: { fixture: string | null } }).fleetd.fixture);
-      await expect(lastRow).toContainText(leadMessageEnding(fixture ?? ""), { timeout: 30_000 });
-    },
-  },
-  {
-    id: "order.told",
-    route: "#/order/W1",
-    fixtures: ["conversation", "long-text", "order-told-overrides"],
-    open: (page) => page.getByRole("button", { name: "What the lead was told" }).click(),
-  },
-  {
-    id: "order.steer",
-    route: "#/order/W1",
-    fixtures: ["typical", "many-agents", "long-text"],
-    open: async (page) => {
-      const fleet = page.getByRole("tab", { name: "Fleet" });
-      if ((await fleet.count()) > 0) await fleet.click();
-      // A finished order's agents sit under its "Done (n)" fold.
-      if ((await page.locator("[data-lane]").count()) === 0) await page.getByRole("button", { name: /^Done \(/ }).click();
-      await page.locator("[data-lane]").first().click();
-    },
-  },
-  // F4: steering states. In the log: each receipt stage the hub reports, with a cut reply and a cut stopped command,
-  // and a steer waiting on the lead's running step. Sent from the lead's box: refused (not sent, with Resend, Edit
-  // and Dismiss), cut off by the link, unanswered, and one still sending. In T12's sheet: its queued and withdrawn
-  // steers, and a steer that found no hub, still in the box.
-  { id: "order", route: "#/order/W1", fixtures: ["order-steering"] },
-  {
-    id: "order.lead",
-    route: "#/order/W1",
-    fixtures: ["order-steering"],
-    open: async (page) => {
-      const lead = page.getByRole("tab", { name: "Lead" });
-      if ((await lead.count()) > 0) await lead.click();
-      const box = page.getByRole("textbox", { name: "Steer the lead" });
-      for (const text of [STEER_SENDS.refused, STEER_SENDS.cutOff, STEER_SENDS.unanswered, STEER_SENDS.sending]) {
-        await box.fill(text);
-        await box.press("Enter");
-        // The box empties once the hub answers; the last one never does.
-        if (text !== STEER_SENDS.sending) await expect(box).toHaveValue("");
-      }
-      await expect(page.locator('[data-receipt="sending"]')).toHaveCount(1);
-    },
-  },
-  {
-    id: "order.steer",
-    route: "#/order/W1",
-    fixtures: ["order-steering"],
-    open: async (page) => {
-      const fleet = page.getByRole("tab", { name: "Fleet" });
-      if ((await fleet.count()) > 0) await fleet.click();
-      // T12 has finished: it sits under the fleet's folded "Done" list.
-      const lane = page.locator(`[data-lane="T12"]`);
-      if ((await lane.count()) === 0) await page.getByRole("button", { name: /^Done \(/ }).click();
-      await lane.click();
-      const box = page.getByRole("textbox", { name: "Steer T12" });
-      await box.fill(STEER_SENDS.offline);
-      await box.press("Enter");
-      await expect(page.getByText("Not connected to the hub, so this steer wasn’t sent.")).toBeVisible();
-    },
-  },
 ];
 
 // Platform checks that need a screen writer's work before they can pass; the owner turns theirs on when it lands.
@@ -349,19 +334,3 @@ export const platformChecks: Record<"appMenu", boolean> = {
   // F1: the macOS app menu, with an Edit menu wired to the text actions.
   appMenu: true,
 };
-
-/** The last sentence of order W1's lead's latest message, as the fixture's thread_tail says. */
-function leadMessageEnding(fixture: string): string {
-  const dir = process.env.QA_FIXTURE_DIR ?? path.join(import.meta.dirname, "..", "fixtures");
-  const file = JSON.parse(readFileSync(path.join(dir, `${fixture}.json`), "utf8")) as {
-    calls: Array<{ tool: string; input?: Record<string, unknown>; outcome: { ok: boolean; output?: Record<string, unknown> } }>;
-  };
-  const order = file.calls.find((c) => c.tool === "order_get" && c.input?.["workstreamId"] === "W1")?.outcome.output;
-  const thread = (order?.["lead"] as { threadRef?: { threadId: string } } | undefined)?.threadRef?.threadId;
-  const tail = file.calls.find((c) => c.tool === "thread_tail" && c.input?.["threadId"] === thread && c.input?.["n"] === 50)?.outcome.output;
-  const latest = ((tail?.["thread"] as { latestMessageTail?: string } | undefined)?.latestMessageTail ?? "").trim();
-  const ending = latest.split(/(?<=[.!?])\s+/).at(-1) ?? latest;
-  // An empty ending would match any row: the fixture must have the lead's message.
-  if (ending.length < 10) throw new Error(`${fixture}: no latest lead message for W1 to check against`);
-  return ending;
-}
