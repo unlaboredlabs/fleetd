@@ -1,11 +1,11 @@
-// Writes the site's fixture shots (site.ts) into site/. Run through `pnpm site:shots`, which sets the 2x scale.
+// Writes the site's fixture shots (site.ts) into the repo. Run through `pnpm site:shots`, which sets the 2x scale.
 import path from "node:path";
 import { type Page, test } from "@playwright/test";
 import { desktopDir, launch, settle, setView, show } from "./harness.ts";
 import { type FixtureName, screens } from "./registry.ts";
 import { siteShots } from "./site.ts";
 
-const site = path.resolve(desktopDir, "../../site");
+const repo = path.resolve(desktopDir, "../..");
 
 const hideByClass = async (page: Page, selector: string, text: string, how: "display: none" | "visibility: hidden") => {
   const target = page.locator(selector, { hasText: text }).first();
@@ -14,6 +14,7 @@ const hideByClass = async (page: Page, selector: string, text: string, how: "dis
   if (rule === "") throw new Error(`"${text}" has no class to hide it by`);
   await page.addStyleTag({ content: `${rule} { ${how} !important; }` });
 };
+
 const only = process.env["SITE_SHOTS"]?.split(",");
 
 for (const shot of siteShots.filter((s) => only === undefined || only.includes(s.file))) {
@@ -33,7 +34,7 @@ for (const shot of siteShots.filter((s) => only === undefined || only.includes(s
       await hideByClass(page, '[role="status"]', "Sample data, not connected", "display: none");
       await hideByClass(page, "button", "Sample data, no hub", "visibility: hidden");
       await settle(page);
-      await page.screenshot({ path: path.join(site, shot.file), animations: "disabled", caret: "hide" });
+      await page.screenshot({ path: path.join(repo, shot.file), animations: "disabled", caret: "hide" });
     } finally {
       await close();
     }

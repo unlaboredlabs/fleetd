@@ -1,6 +1,7 @@
 // Every link on fleetd.sh resolves. Run by CI from the repo root:
-//   node .github/docs-links.mjs              internal: each href/src in site/home.html and site/docs/*.html names a file
-//                                            in site/ (clean URLs as Vercel serves them) and an id on that page
+//   node .github/docs-links.mjs              internal: each href/src in site/home.html and the built docs' pages
+//                                            (site/docs/**/*.html) names a file in site/ (clean URLs as Vercel serves
+//                                            them) and an id on that page
 //   node .github/docs-links.mjs --external   external: each http(s) link answers, 10 s per try, two tries
 // Links into this repository on GitHub (…/fleetd/blob|tree|edit/main/<path>) are checked against the checkout instead,
 // so a PR that adds a page and links to it passes before it merges.
@@ -8,7 +9,14 @@ import fs from "node:fs";
 import path from "node:path";
 import { resolve } from "./docs-serve.mjs";
 
-const PAGES = ["site/home.html", ...fs.readdirSync("site/docs").filter((n) => n.endsWith(".html")).map((n) => `site/docs/${n}`)];
+// Starlight's own assets (_astro/, pagefind/) hold no pages.
+const PAGES = [
+  "site/home.html",
+  ...fs
+    .readdirSync("site/docs", { recursive: true })
+    .filter((n) => n.endsWith(".html") && !/^(_astro|pagefind)\//u.test(n))
+    .map((n) => `site/docs/${n}`),
+];
 const OWN = /^https:\/\/github\.com\/unlaboredlabs\/fleetd\/(?:blob|tree|edit)\/main\/(.+)$/u;
 // Hosts that are examples or this site itself (production lags a PR), never fetched.
 const SKIP = new Set(["fleetd.sh", "www.fleetd.sh", "127.0.0.1", "localhost", "hub.your-tailnet.ts.net"]);

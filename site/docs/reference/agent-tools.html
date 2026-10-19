@@ -1,0 +1,1721 @@
+<!DOCTYPE html><html lang="en" dir="ltr" data-theme="dark" data-has-toc data-has-sidebar class="astro-g5ptsecz"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>Agent tools | fleetd docs</title><link rel="canonical" href="https://fleetd.sh/docs/reference/agent-tools.html"/><link rel="sitemap" href="/docs/sitemap-index.xml"/><link rel="shortcut icon" href="/docs/favicon.svg" type="image/svg+xml"/><meta name="generator" content="Astro v7.4.0"/><meta name="generator" content="Starlight v0.42.6"/><meta property="og:title" content="Agent tools"/><meta property="og:type" content="article"/><meta property="og:url" content="https://fleetd.sh/docs/reference/agent-tools.html"/><meta property="og:locale" content="en"/><meta property="og:description" content="The tools fleetd gives each agent, the Claude Code tools it blocks, the settings it forces and the limits the hub enforces."/><meta property="og:site_name" content="fleetd docs"/><meta name="twitter:card" content="summary_large_image"/><meta name="description" content="The tools fleetd gives each agent, the Claude Code tools it blocks, the settings it forces and the limits the hub enforces."/><script>
+	window.StarlightThemeProvider = (() => {
+		const storedTheme =
+			typeof localStorage !== 'undefined' && localStorage.getItem('starlight-theme');
+		const theme =
+			storedTheme ||
+			(window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+		document.documentElement.dataset.theme = theme === 'light' ? 'light' : 'dark';
+		return {
+			updatePickers(theme = storedTheme || 'auto') {
+				document.querySelectorAll('starlight-theme-select').forEach((picker) => {
+					const select = picker.querySelector('select');
+					if (select) select.value = theme;
+					/** @type {HTMLTemplateElement | null} */
+					const tmpl = document.querySelector(`#theme-icons`);
+					const newIcon = tmpl && tmpl.content.querySelector('.' + theme);
+					if (newIcon) {
+						const oldIcon = picker.querySelector('svg.label-icon');
+						if (oldIcon) {
+							oldIcon.replaceChildren(...newIcon.cloneNode(true).childNodes);
+						}
+					}
+				});
+			},
+		};
+	})();
+</script><template id="theme-icons"><svg aria-hidden="true" class="light astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M5 12a1 1 0 0 0-1-1H3a1 1 0 0 0 0 2h1a1 1 0 0 0 1-1Zm.64 5-.71.71a1 1 0 0 0 0 1.41 1 1 0 0 0 1.41 0l.71-.71A1 1 0 0 0 5.64 17ZM12 5a1 1 0 0 0 1-1V3a1 1 0 0 0-2 0v1a1 1 0 0 0 1 1Zm5.66 2.34a1 1 0 0 0 .7-.29l.71-.71a1 1 0 1 0-1.41-1.41l-.66.71a1 1 0 0 0 0 1.41 1 1 0 0 0 .66.29Zm-12-.29a1 1 0 0 0 1.41 0 1 1 0 0 0 0-1.41l-.71-.71a1.004 1.004 0 1 0-1.43 1.41l.73.71ZM21 11h-1a1 1 0 0 0 0 2h1a1 1 0 0 0 0-2Zm-2.64 6A1 1 0 0 0 17 18.36l.71.71a1 1 0 0 0 1.41 0 1 1 0 0 0 0-1.41l-.76-.66ZM12 6.5a5.5 5.5 0 1 0 5.5 5.5A5.51 5.51 0 0 0 12 6.5Zm0 9a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Zm0 3.5a1 1 0 0 0-1 1v1a1 1 0 0 0 2 0v-1a1 1 0 0 0-1-1Z"/></svg><svg aria-hidden="true" class="dark astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21.64 13a1 1 0 0 0-1.05-.14 8.049 8.049 0 0 1-3.37.73 8.15 8.15 0 0 1-8.14-8.1 8.59 8.59 0 0 1 .25-2A1 1 0 0 0 8 2.36a10.14 10.14 0 1 0 14 11.69 1 1 0 0 0-.36-1.05Zm-9.5 6.69A8.14 8.14 0 0 1 7.08 5.22v.27a10.15 10.15 0 0 0 10.14 10.14 9.784 9.784 0 0 0 2.1-.22 8.11 8.11 0 0 1-7.18 4.32v-.04Z"/></svg><svg aria-hidden="true" class="auto astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21 14h-1V7a3 3 0 0 0-3-3H7a3 3 0 0 0-3 3v7H3a1 1 0 0 0-1 1v2a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3v-2a1 1 0 0 0-1-1ZM6 7a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v7H6V7Zm14 10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-1h16v1Z"/></svg></template><link rel="stylesheet" href="/docs/_astro/print.ehPL0gv-.css" media="print"><link rel="stylesheet" href="/docs/_astro/index.Df6hsKY8.css"><style>@layer starlight.components{svg:where(.astro-hkc32dio){color:var(--sl-icon-color);font-size:var(--sl-icon-size,1em);width:1em;height:1em;overflow:visible}}
+</style><script type="module" src="/docs/_astro/page.cNngjUgL.js"></script></head><body class="astro-g5ptsecz"><a class="sl-skip-link astro-qb7clj6f" href="#_top">Skip to content</a><div class="page sl-flex astro-yntsjkba"><header class="header astro-yntsjkba"><div class="header astro-by6fddyj"><div class="title-wrapper sl-flex astro-by6fddyj"><a href="/docs/index.html" class="site-title sl-flex astro-6rvad3va"><img class="astro-6rvad3va" alt src="/docs/_astro/icon.BdYr-TZB.svg" width="1024" height="1024"><span class="astro-6rvad3va" translate="no">fleetd docs</span></a></div><div class="sl-flex print:hidden astro-by6fddyj"><site-search class="astro-by6fddyj astro-b5kgnn7o" data-translations="{&quot;placeholder&quot;:&quot;Search&quot;}" data-strip-trailing-slash><button data-open-modal disabled aria-label="Search" aria-keyshortcuts="Control+K" class="astro-b5kgnn7o"><svg aria-hidden="true" class="astro-b5kgnn7o astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21.71 20.29 18 16.61A9 9 0 1 0 16.61 18l3.68 3.68a.999.999 0 0 0 1.42 0 1 1 0 0 0 0-1.39ZM11 18a7 7 0 1 1 0-14 7 7 0 0 1 0 14Z"/></svg><span class="sl-hidden md:sl-block astro-b5kgnn7o" aria-hidden="true">Search</span><kbd class="sl-hidden md:sl-flex astro-b5kgnn7o" style="display: none;"><kbd class="astro-b5kgnn7o">Ctrl</kbd><kbd class="astro-b5kgnn7o">K</kbd></kbd></button><dialog style="padding:0" aria-label="Search" class="astro-b5kgnn7o"><div class="dialog-frame sl-flex astro-b5kgnn7o"><button data-close-modal class="sl-flex md:sl-hidden astro-b5kgnn7o">Cancel</button><div class="search-container astro-b5kgnn7o"><div id="starlight__search" class="astro-b5kgnn7o"></div></div></div></dialog></site-search><script>
+	(() => {
+		const openBtn = document.querySelector('button[data-open-modal]');
+		const shortcut = openBtn?.querySelector('kbd');
+		if (!openBtn || !(shortcut instanceof HTMLElement)) return;
+		const platformKey = shortcut.querySelector('kbd');
+		if (platformKey && /(Mac|iPhone|iPod|iPad)/i.test(navigator.platform)) {
+			platformKey.textContent = '⌘';
+			openBtn.setAttribute('aria-keyshortcuts', 'Meta+K');
+		}
+		shortcut.style.display = '';
+	})();
+</script><script type="module" src="/docs/_astro/Search.astro_astro_type_script_index_0_lang.DrbjDjUC.js"></script></div><div class="sl-hidden md:sl-flex print:hidden right-group astro-by6fddyj"><div class="sl-flex social-icons astro-by6fddyj"><a href="https://github.com/unlaboredlabs/fleetd" rel="me" class="sl-flex astro-n2mnl6yq"><span class="sr-only astro-n2mnl6yq">GitHub</span><svg aria-hidden="true" class="astro-n2mnl6yq astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M12 .3a12 12 0 0 0-3.8 23.38c.6.12.83-.26.83-.57L9 21.07c-3.34.72-4.04-1.61-4.04-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.08-.74.09-.73.09-.73 1.2.09 1.83 1.24 1.83 1.24 1.08 1.83 2.81 1.3 3.5 1 .1-.78.42-1.31.76-1.61-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.14-.3-.54-1.52.1-3.18 0 0 1-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.28-1.55 3.29-1.23 3.29-1.23.64 1.66.24 2.88.12 3.18a4.65 4.65 0 0 1 1.23 3.22c0 4.61-2.8 5.63-5.48 5.92.42.36.81 1.1.81 2.22l-.01 3.29c0 .31.2.69.82.57A12 12 0 0 0 12 .3Z"/></svg></a></div><starlight-theme-select><label style="--sl-select-width: 6.25em" class="astro-2z5xp7gb"><span class="sr-only astro-2z5xp7gb">Select theme</span><svg aria-hidden="true" class="icon label-icon astro-2z5xp7gb astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21 14h-1V7a3 3 0 0 0-3-3H7a3 3 0 0 0-3 3v7H3a1 1 0 0 0-1 1v2a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3v-2a1 1 0 0 0-1-1ZM6 7a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v7H6V7Zm14 10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-1h16v1Z"/></svg><select autocomplete="off" class="astro-2z5xp7gb"><option value="dark" class="astro-2z5xp7gb">Dark</option><option value="light" class="astro-2z5xp7gb">Light</option><option value="auto" selected class="astro-2z5xp7gb">Auto</option></select><svg aria-hidden="true" class="icon caret astro-2z5xp7gb astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M17 9.17a1 1 0 0 0-1.41 0L12 12.71 8.46 9.17a1 1 0 1 0-1.41 1.42l4.24 4.24a1.002 1.002 0 0 0 1.42 0L17 10.59a1.002 1.002 0 0 0 0-1.42Z"/></svg></label></starlight-theme-select><script>
+	StarlightThemeProvider.updatePickers();
+</script><script type="module">var e=`starlight-theme`,t=e=>e===`auto`||e===`dark`||e===`light`?e:`auto`,n=()=>t(typeof localStorage<`u`&&localStorage.getItem(e));function r(t){typeof localStorage<`u`&&localStorage.setItem(e,t===`light`||t===`dark`?t:``)}var i=()=>matchMedia(`(prefers-color-scheme: light)`).matches?`light`:`dark`;function a(e){StarlightThemeProvider.updatePickers(e),document.documentElement.dataset.theme=e===`auto`?i():e,r(e)}matchMedia(`(prefers-color-scheme: light)`).addEventListener(`change`,()=>{n()===`auto`&&a(`auto`)});var o=class extends HTMLElement{constructor(){super(),a(n()),this.querySelector(`select`)?.addEventListener(`change`,e=>{e.currentTarget instanceof HTMLSelectElement&&a(t(e.currentTarget.value))})}};customElements.define(`starlight-theme-select`,o);</script><script type="module">var e=class extends HTMLElement{constructor(){super();let e=this.querySelector(`select`);e&&(e.addEventListener(`change`,e=>{e.currentTarget instanceof HTMLSelectElement&&(window.location.pathname=e.currentTarget.value)}),window.addEventListener(`pageshow`,t=>{if(!t.persisted)return;let n=e.querySelector(`option[selected]`)?.index;n!==e.selectedIndex&&(e.selectedIndex=n??0)}))}};customElements.define(`starlight-lang-select`,e);</script></div></div></header><nav class="sidebar print:hidden astro-yntsjkba" aria-label="Main"><button popovertarget="starlight__sidebar" class="sl-menu-button sl-flex md:sl-hidden print:hidden astro-r2osgdlg"><svg aria-hidden="true" class="open-menu astro-r2osgdlg astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M3 8h18a1 1 0 1 0 0-2H3a1 1 0 0 0 0 2Zm18 8H3a1 1 0 0 0 0 2h18a1 1 0 0 0 0-2Zm0-5H3a1 1 0 0 0 0 2h18a1 1 0 0 0 0-2Z"/></svg><svg aria-hidden="true" class="close-menu astro-r2osgdlg astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="m13.41 12 6.3-6.29a1.004 1.004 0 1 0-1.42-1.42L12 10.59l-6.29-6.3a1.004 1.004 0 0 0-1.42 1.42l6.3 6.29-6.3 6.29a1 1 0 0 0 0 1.42.998.998 0 0 0 1.42 0l6.29-6.3 6.29 6.3a.999.999 0 0 0 1.42 0 1 1 0 0 0 0-1.42L13.41 12Z"/></svg><span class="sr-only astro-r2osgdlg">Menu</span></button><script type="module">var e=class extends HTMLElement{constructor(){super();let e=matchMedia(`(min-width: 50em)`),t=()=>{this.popover=e.matches?null:`auto`};t(),e.addEventListener(`change`,()=>t()),this.addEventListener(`toggle`,({newState:e})=>this.trapFocus(e===`open`))}trapFocus(e){document.querySelectorAll(`.main-frame, .sl-skip-link`).forEach(t=>{t.toggleAttribute(`inert`,e)})}};customElements.define(`sl-sidebar-pane`,e);</script><sl-sidebar-pane popover id="starlight__sidebar" class="sidebar-pane astro-yntsjkba"><div class="sidebar-content sl-flex astro-yntsjkba"><sl-sidebar-state-persist data-hash="19o6qwi" class="astro-ipdry5cl"><script aria-hidden="true">
+		(() => {
+			try {
+				if (!matchMedia('(min-width: 50em)').matches) return;
+				/** @type {HTMLElement | null} */
+				const target = document.querySelector('sl-sidebar-state-persist');
+				const state = JSON.parse(sessionStorage.getItem('sl-sidebar-state') || '0');
+				if (!target || !state || target.dataset.hash !== state.hash) return;
+				window._starlightScrollRestore = state.scroll;
+				customElements.define(
+					'sl-sidebar-restore',
+					class SidebarRestore extends HTMLElement {
+						connectedCallback() {
+							try {
+								const idx = parseInt(this.dataset.index || '');
+								const details = this.closest('details');
+								if (details && typeof state.open[idx] === 'boolean') details.open = state.open[idx];
+							} catch {}
+						}
+					}
+				);
+			} catch {}
+		})();
+	</script><ul class="top-level astro-rmhv4bp6"><li class="astro-rmhv4bp6"><details open class="astro-rmhv4bp6"><summary class="astro-rmhv4bp6"><span class="group-label astro-rmhv4bp6"><span class="large astro-rmhv4bp6">Get started</span></span><svg aria-hidden="true" class="caret astro-rmhv4bp6 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.25rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></summary><sl-sidebar-restore data-index="0"></sl-sidebar-restore><ul class="astro-rmhv4bp6"><li class="astro-rmhv4bp6"><a href="/docs/install.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Install</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/quick-start.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Quick start</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/concepts.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Concepts</span></a></li></ul></details></li><li class="astro-rmhv4bp6"><details open class="astro-rmhv4bp6"><summary class="astro-rmhv4bp6"><span class="group-label astro-rmhv4bp6"><span class="large astro-rmhv4bp6">Use fleetd</span></span><svg aria-hidden="true" class="caret astro-rmhv4bp6 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.25rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></summary><sl-sidebar-restore data-index="1"></sl-sidebar-restore><ul class="astro-rmhv4bp6"><li class="astro-rmhv4bp6"><a href="/docs/machines.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Machines</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/projects-and-orders.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Projects &amp; orders</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/merge-train.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Merge train</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/steering.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Steering</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/approvals-and-secrets.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Approvals &amp; secrets</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/desktop-app.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">The desktop app</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/status.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Status</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/time-inspector.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Where time went</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/what-agents-are-told.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">What agents are told</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/mcp-clients.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">MCP clients</span></a></li></ul></details></li><li class="astro-rmhv4bp6"><details open class="astro-rmhv4bp6"><summary class="astro-rmhv4bp6"><span class="group-label astro-rmhv4bp6"><span class="large astro-rmhv4bp6">Reference</span></span><svg aria-hidden="true" class="caret astro-rmhv4bp6 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.25rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></summary><sl-sidebar-restore data-index="2"></sl-sidebar-restore><ul class="astro-rmhv4bp6"><li class="astro-rmhv4bp6"><a href="/docs/reference/cli.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">CLI reference</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/reference/agent-tools.html" aria-current="page" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Agent tools</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/config-and-files.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Config &amp; files</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/security.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Security model</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/glossary.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Glossary</span></a></li></ul></details></li><li class="astro-rmhv4bp6"><details open class="astro-rmhv4bp6"><summary class="astro-rmhv4bp6"><span class="group-label astro-rmhv4bp6"><span class="large astro-rmhv4bp6">Help</span></span><svg aria-hidden="true" class="caret astro-rmhv4bp6 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.25rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></summary><sl-sidebar-restore data-index="3"></sl-sidebar-restore><ul class="astro-rmhv4bp6"><li class="astro-rmhv4bp6"><a href="/docs/troubleshooting.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Troubleshooting</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/updating-and-uninstall.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Updating &amp; uninstall</span></a></li></ul></details></li></ul><script aria-hidden="true">
+		(() => {
+			const scroller = document.getElementById('starlight__sidebar');
+			if (!window._starlightScrollRestore || !scroller) return;
+			scroller.scrollTop = window._starlightScrollRestore;
+			delete window._starlightScrollRestore;
+		})();
+	</script></sl-sidebar-state-persist><div class="md:sl-hidden"><div class="mobile-preferences sl-flex astro-p4azlveh"><div class="social-icons astro-p4azlveh"><a href="https://github.com/unlaboredlabs/fleetd" rel="me" class="sl-flex astro-n2mnl6yq"><span class="sr-only astro-n2mnl6yq">GitHub</span><svg aria-hidden="true" class="astro-n2mnl6yq astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M12 .3a12 12 0 0 0-3.8 23.38c.6.12.83-.26.83-.57L9 21.07c-3.34.72-4.04-1.61-4.04-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.08-.74.09-.73.09-.73 1.2.09 1.83 1.24 1.83 1.24 1.08 1.83 2.81 1.3 3.5 1 .1-.78.42-1.31.76-1.61-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.14-.3-.54-1.52.1-3.18 0 0 1-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.28-1.55 3.29-1.23 3.29-1.23.64 1.66.24 2.88.12 3.18a4.65 4.65 0 0 1 1.23 3.22c0 4.61-2.8 5.63-5.48 5.92.42.36.81 1.1.81 2.22l-.01 3.29c0 .31.2.69.82.57A12 12 0 0 0 12 .3Z"/></svg></a></div><starlight-theme-select><label style="--sl-select-width: 6.25em" class="astro-2z5xp7gb"><span class="sr-only astro-2z5xp7gb">Select theme</span><svg aria-hidden="true" class="icon label-icon astro-2z5xp7gb astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21 14h-1V7a3 3 0 0 0-3-3H7a3 3 0 0 0-3 3v7H3a1 1 0 0 0-1 1v2a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3v-2a1 1 0 0 0-1-1ZM6 7a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v7H6V7Zm14 10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-1h16v1Z"/></svg><select autocomplete="off" class="astro-2z5xp7gb"><option value="dark" class="astro-2z5xp7gb">Dark</option><option value="light" class="astro-2z5xp7gb">Light</option><option value="auto" selected class="astro-2z5xp7gb">Auto</option></select><svg aria-hidden="true" class="icon caret astro-2z5xp7gb astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M17 9.17a1 1 0 0 0-1.41 0L12 12.71 8.46 9.17a1 1 0 1 0-1.41 1.42l4.24 4.24a1.002 1.002 0 0 0 1.42 0L17 10.59a1.002 1.002 0 0 0 0-1.42Z"/></svg></label></starlight-theme-select><script>
+	StarlightThemeProvider.updatePickers();
+</script></div></div></div></sl-sidebar-pane></nav><div class="main-frame astro-yntsjkba"><script type="module">var e=document.getElementById(`starlight__sidebar`),t=e?.querySelector(`sl-sidebar-state-persist`),n=`sl-sidebar-state`,r=()=>{let r=[],i=t?.dataset.hash||``;try{let e=sessionStorage.getItem(n),t=JSON.parse(e||`{}`);Array.isArray(t.open)&&t.hash===i&&(r=t.open)}catch{}return{hash:i,open:r,scroll:e?.scrollTop||0}},i=e=>{try{sessionStorage.setItem(n,JSON.stringify(e))}catch{}},a=()=>i(r()),o=(e,t)=>{let n=r();n.open[t]=e,i(n)};t?.addEventListener(`click`,e=>{if(!(e.target instanceof Element))return;let t=e.target.closest(`summary`)?.closest(`details`);if(!t)return;let n=t.querySelector(`sl-sidebar-restore`),r=parseInt(n?.dataset.index||``);isNaN(r)||o(!t.open,r)}),addEventListener(`visibilitychange`,()=>{document.visibilityState===`hidden`&&a()});</script><div class="lg:sl-flex astro-lrzkfocr"><aside class="right-sidebar-container print:hidden astro-lrzkfocr"><div class="right-sidebar astro-lrzkfocr"><div class="lg:sl-hidden astro-qok35upx"><mobile-starlight-toc data-min-h="2" data-max-h="3" class="astro-66cqc7ze"><nav aria-labelledby="starlight__on-this-page--mobile" class="astro-66cqc7ze"><details id="starlight__mobile-toc" class="astro-66cqc7ze"><summary id="starlight__on-this-page--mobile" class="sl-flex astro-66cqc7ze"><span class="toggle sl-flex astro-66cqc7ze">On this page<svg aria-hidden="true" class="caret astro-66cqc7ze astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></span><span class="display-current astro-66cqc7ze"></span></summary><div class="dropdown astro-66cqc7ze"><ul class="isMobile astro-jugkfwgx" style="--depth: 0;"><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#_top" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Overview</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#roles" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Roles</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#hub-limits" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Hub limits</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#lead-tools" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Lead tools</span></a><ul class="isMobile astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#spawn_agent" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">spawn_agent</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#message_agent" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">message_agent</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#agent_status" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">agent_status</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#list_agents" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">list_agents</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#stop_agent" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">stop_agent</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#brief" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">brief</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#ask" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">ask</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#ask_withdraw" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">ask_withdraw</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#decide" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">decide</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#claim_done" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">claim_done</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#gated_run" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">gated_run</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#plan_milestone" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">plan_milestone</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#plan_add" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">plan_add</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#plan_edit" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">plan_edit</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#plan_drop" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">plan_drop</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#plan_show" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">plan_show</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#status_set" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">status_set</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#decisions_search" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">decisions_search</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#change_enqueue" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">change_enqueue</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#change_status" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">change_status</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#workstream_spawn" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">workstream_spawn</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#inventory" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">inventory</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#task-tools" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Task tools</span></a><ul class="isMobile astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#report" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">report</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#ask_lead" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">ask_lead</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#claim_done-task" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">claim_done (task)</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#claude-code-tools" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Claude Code tools</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#settings-fleetd-forces" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Settings fleetd forces</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#what-your-own-setup-adds" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">What your own setup adds</span></a><ul class="isMobile astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#see-it-in-a-session" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">See it in a session</span></a></li></ul></li></ul></div></details></nav></mobile-starlight-toc><script type="module" src="/docs/_astro/MobileTableOfContents.astro_astro_type_script_index_0_lang.C3fM4Kra.js"></script></div><div class="right-sidebar-panel sl-hidden lg:sl-block astro-qok35upx"><div class="sl-container astro-qok35upx"><starlight-toc data-min-h="2" data-max-h="3"><nav aria-labelledby="starlight__on-this-page"><h2 id="starlight__on-this-page">On this page</h2><ul class="astro-jugkfwgx" style="--depth: 0;"><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#_top" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Overview</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#roles" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Roles</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#hub-limits" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Hub limits</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#lead-tools" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Lead tools</span></a><ul class="astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#spawn_agent" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">spawn_agent</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#message_agent" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">message_agent</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#agent_status" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">agent_status</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#list_agents" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">list_agents</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#stop_agent" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">stop_agent</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#brief" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">brief</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#ask" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">ask</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#ask_withdraw" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">ask_withdraw</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#decide" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">decide</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#claim_done" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">claim_done</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#gated_run" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">gated_run</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#plan_milestone" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">plan_milestone</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#plan_add" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">plan_add</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#plan_edit" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">plan_edit</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#plan_drop" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">plan_drop</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#plan_show" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">plan_show</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#status_set" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">status_set</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#decisions_search" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">decisions_search</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#change_enqueue" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">change_enqueue</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#change_status" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">change_status</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#workstream_spawn" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">workstream_spawn</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#inventory" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">inventory</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#task-tools" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Task tools</span></a><ul class="astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#report" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">report</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#ask_lead" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">ask_lead</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#claim_done-task" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">claim_done (task)</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#claude-code-tools" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Claude Code tools</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#settings-fleetd-forces" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Settings fleetd forces</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#what-your-own-setup-adds" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">What your own setup adds</span></a><ul class="astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#see-it-in-a-session" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">See it in a session</span></a></li></ul></li></ul></nav></starlight-toc><script type="module" src="/docs/_astro/TableOfContents.astro_astro_type_script_index_0_lang.BpJaGz7G.js"></script></div></div></div></aside><div class="main-pane astro-lrzkfocr"><main data-pagefind-body class="astro-g5ptsecz" lang="en" dir="ltr"><div class="content-panel astro-a7po4psb"><div class="sl-container astro-a7po4psb"><h1 id="_top" class="astro-bebwqqxs">Agent tools</h1></div></div><div class="content-panel astro-a7po4psb"><div class="sl-container astro-a7po4psb"><div class="sl-markdown-content"><p>Generated from fleetd’s source by <code dir="auto">cargo run -p docsgen</code>, so it matches the code. Don’t edit this file by hand: CI fails when it differs from the generator’s output.</p>
+<p>Every agent fleetd starts is a Claude Code session. fleetd adds its own MCP server, named <code dir="auto">fleetd</code>, with the tools for the agent’s role. Claude Code shows them as <code dir="auto">mcp__fleetd__&lt;tool&gt;</code>. Each call goes to the hub, which checks it whatever the prompt says.</p>
+<div class="sl-heading-wrapper level-h2"><h2 id="roles">Roles</h2><a class="sl-anchor-link" href="#roles"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Roles”</span></a></div>
+<p>The app shows each agent’s role on its lane. The role decides the fleetd tools; every session gets the same <a href="#claude-code-tools">Claude Code tools</a>.</p>
+<table>
+<thead>
+<tr>
+<th>Role</th>
+<th>How it starts</th>
+<th>fleetd tools</th>
+<th>Can start agents</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Lead</td>
+<td>One per project, started by the project’s first order</td>
+<td><a href="#lead-tools">Lead tools</a></td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Finish-all lead</td>
+<td>A lead whose workstream runs the finish-all playbook. It also uses <code dir="auto">inventory</code> and <code dir="auto">workstream_spawn</code></td>
+<td><a href="#lead-tools">Lead tools</a></td>
+<td>Yes, child workstreams too</td>
+</tr>
+<tr>
+<td>Implementer</td>
+<td><code dir="auto">spawn_agent</code> with kind <code dir="auto">write</code>. Gets its own worktree and branch</td>
+<td><a href="#task-tools">Task tools</a></td>
+<td>No</td>
+</tr>
+<tr>
+<td>Reader</td>
+<td><code dir="auto">spawn_agent</code> with kind <code dir="auto">read</code></td>
+<td><a href="#task-tools">Task tools</a></td>
+<td>No</td>
+</tr>
+<tr>
+<td>Reviewer</td>
+<td><code dir="auto">spawn_agent</code> with kind <code dir="auto">review</code></td>
+<td><a href="#task-tools">Task tools</a></td>
+<td>No</td>
+</tr>
+<tr>
+<td>Verifier</td>
+<td>A review task the review gate starts as the verifier</td>
+<td><a href="#task-tools">Task tools</a></td>
+<td>No</td>
+</tr>
+<tr>
+<td>QA</td>
+<td><code dir="auto">spawn_agent</code> with kind <code dir="auto">review</code> and <code dir="auto">qa: true</code></td>
+<td><a href="#task-tools">Task tools</a></td>
+<td>No</td>
+</tr>
+<tr>
+<td>Router</td>
+<td>One <code dir="auto">claude -p</code> on the hub that reads each new order; not a session</td>
+<td>None, no MCP servers</td>
+<td>No</td>
+</tr>
+</tbody>
+</table>
+<p>The router’s Claude Code tools: none. fleetd starts it with <code dir="auto">--tools ""</code>, <code dir="auto">--strict-mcp-config</code> and <code dir="auto">--safe-mode</code>.</p>
+<div class="sl-heading-wrapper level-h2"><h2 id="hub-limits">Hub limits</h2><a class="sl-anchor-link" href="#hub-limits"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Hub limits”</span></a></div>
+<p>The hub checks these on every fleetd call a session makes, through its MCP tools or a <code dir="auto">fleetd</code> command in its shell. A refusal says why and what to do instead.</p>
+<table>
+<thead>
+<tr>
+<th>Limit</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Who can start agents</td>
+<td>A lead, with <code dir="auto">spawn_agent</code>, <code dir="auto">workstream_spawn</code>. A task’s agent can’t.</td>
+</tr>
+<tr>
+<td>Depth</td>
+<td>1. A lead is depth 0 and its tasks depth 1; nothing goes deeper.</td>
+</tr>
+<tr>
+<td>Open tasks per lead</td>
+<td>32 (queued, running or idle). Slots cap what runs at once.</td>
+</tr>
+<tr>
+<td>Calls a task’s agent may make</td>
+<td><code dir="auto">report</code>, <code dir="auto">ask_lead</code>, <code dir="auto">claim_done</code>. Every other call is refused.</td>
+</tr>
+<tr>
+<td>Finish-all children open at once</td>
+<td>5 by default; the policy file’s <code dir="auto">finishAll.maxChildren</code> changes it.</td>
+</tr>
+<tr>
+<td>What a child workstream may serve</td>
+<td><code dir="auto">issue</code>, <code dir="auto">defect</code>, <code dir="auto">done</code>. Never invented work.</td>
+</tr>
+<tr>
+<td>Gated commands (<code dir="auto">gated_run</code>)</td>
+<td>Classes <code dir="auto">irreversible</code>, <code dir="auto">money</code>, <code dir="auto">credential</code>. Run only after a human approves; at most 1800 s.</td>
+</tr>
+<tr>
+<td>What a lead may ask the human (<code dir="auto">ask</code>)</td>
+<td>Classes <code dir="auto">product</code>, <code dir="auto">money</code>, <code dir="auto">credential</code>, <code dir="auto">irreversible</code>. Anything else it decides itself (<code dir="auto">decide</code>).</td>
+</tr>
+</tbody>
+</table>
+<p>These limits cover calls to fleetd, not what the agent’s own shell can do. A task runs with full Bash, so <code dir="auto">gated_run</code> is not the only way it could run a command. A process that leaves its session’s process tree (for example with <code dir="auto">setsid</code>) and scrubs its environment counts as you, with no limits: see “Known limit” on the Security page. Run agents you don’t trust as a different OS user.</p>
+<div class="sl-heading-wrapper level-h2"><h2 id="lead-tools">Lead tools</h2><a class="sl-anchor-link" href="#lead-tools"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Lead tools”</span></a></div>
+<p>Every lead gets these, the finish-all lead included.</p>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>What it does</th>
+<th>Needs a human</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="#spawn_agent"><code dir="auto">spawn_agent</code></a></td>
+<td>Start a fleetd agent (a task) with its own session, slot and lane.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><a href="#message_agent"><code dir="auto">message_agent</code></a></td>
+<td>Steer a task: a running one takes the message at its next tool boundary (now: true stops its current step first), a waiting one gets it as its answer, and an ended one continues in its own thread.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><a href="#agent_status"><code dir="auto">agent_status</code></a></td>
+<td>One task as stored: state, queued reason, thread, result.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><a href="#list_agents"><code dir="auto">list_agents</code></a></td>
+<td>The project’s tasks, newest first, optionally by state or workstream.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><a href="#stop_agent"><code dir="auto">stop_agent</code></a></td>
+<td>Stop a task: interrupts its thread and releases its slot and leases.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><a href="#brief"><code dir="auto">brief</code></a></td>
+<td>Freeze a draft workstream’s brief (goal, why, pointers, constraints, doneWhen checks, tier, estimate) and start it.</td>
+<td>Changing a frozen brief (amend) needs an ask the human approved.</td>
+</tr>
+<tr>
+<td><a href="#ask"><code dir="auto">ask</code></a></td>
+<td>Ask the human about product, money, credentials or irreversible actions only, with a dotted decision key and your recommendation.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><a href="#ask_withdraw"><code dir="auto">ask_withdraw</code></a></td>
+<td>Withdraw an ask, naming the existing decision that answers it (use).</td>
+<td>No</td>
+</tr>
+<tr>
+<td><a href="#decide"><code dir="auto">decide</code></a></td>
+<td>Log a decision you made yourself (anything that is not product, money, credentials or irreversible).</td>
+<td>No</td>
+</tr>
+<tr>
+<td><a href="#claim_done"><code dir="auto">claim_done</code></a></td>
+<td>Claim a workstream done: fleetd runs its frozen done-when checks itself, and only all of them passing makes it done.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><a href="#gated_run"><code dir="auto">gated_run</code></a></td>
+<td>A prod write, spend, delete or credential use: the node runs exactly this argv only after a human approves it; secrets come from the node’s own sinks.</td>
+<td>A human approves the exact command (an approve ask) before the node runs it.</td>
+</tr>
+<tr>
+<td><a href="#plan_milestone"><code dir="auto">plan_milestone</code></a></td>
+<td>Add a milestone to the project’s plan.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><a href="#plan_add"><code dir="auto">plan_add</code></a></td>
+<td>Add a plan item (must or polish, size s|m|l, after other items).</td>
+<td>No</td>
+</tr>
+<tr>
+<td><a href="#plan_edit"><code dir="auto">plan_edit</code></a></td>
+<td>Change a plan item.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><a href="#plan_drop"><code dir="auto">plan_drop</code></a></td>
+<td>Drop a plan item, with why or steer.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><a href="#plan_show"><code dir="auto">plan_show</code></a></td>
+<td>The project’s plan.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><a href="#status_set"><code dir="auto">status_set</code></a></td>
+<td>Your one-line status for a workstream; it shows as “lead says”.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><a href="#decisions_search"><code dir="auto">decisions_search</code></a></td>
+<td>Search the decision log.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><a href="#change_enqueue"><code dir="auto">change_enqueue</code></a></td>
+<td>Put a PR no task’s result put there on its repo’s merge train; only the train merges.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><a href="#change_status"><code dir="auto">change_status</code></a></td>
+<td>A merge-train change as stored.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><a href="#workstream_spawn"><code dir="auto">workstream_spawn</code></a></td>
+<td>A finish-all lead starts a child workstream for one item with a value source.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><a href="#inventory"><code dir="auto">inventory</code></a></td>
+<td>The project’s open work, ranked.</td>
+<td>No</td>
+</tr>
+</tbody>
+</table>
+<div class="sl-heading-wrapper level-h3"><h3 id="spawn_agent">spawn_agent</h3><a class="sl-anchor-link" href="#spawn_agent"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “spawn_agent”</span></a></div>
+<p>Start a fleetd agent (a task) with its own session, slot and lane. kind write|read|review; a writer needs areas from the project’s policy and serves (done:&lt;n&gt;, issue:&lt;ref&gt;, defect:&lt;text&gt; or ask:&lt;id&gt;) and gets its own worktree and branch; a review task needs pr. model and effort are optional. A busy area or a full slot board queues it and it starts by itself. Its result arrives in a later wake: end your turn instead of waiting.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code dir="auto">areas</code></td>
+<td>string[]</td>
+<td>no</td>
+<td>At most 20 items.</td>
+</tr>
+<tr>
+<td><code dir="auto">effort</code></td>
+<td>string</td>
+<td>no</td>
+<td>One of <code dir="auto">low</code>, <code dir="auto">medium</code>, <code dir="auto">high</code>, <code dir="auto">max</code>.</td>
+</tr>
+<tr>
+<td><code dir="auto">estimateMinutes</code></td>
+<td>number</td>
+<td>no</td>
+<td>Older leads only: fleetd no longer asks for time estimates and the CLI no longer sends one.</td>
+</tr>
+<tr>
+<td><code dir="auto">item</code></td>
+<td>string</td>
+<td>no</td>
+<td>The plan item this task works on; refused when it belongs to another order.</td>
+</tr>
+<tr>
+<td><code dir="auto">kind</code></td>
+<td>string</td>
+<td>no</td>
+<td>Only write tasks get a worktree and leases. One of <code dir="auto">write</code>, <code dir="auto">read</code>, <code dir="auto">review</code>. Default <code dir="auto">"write"</code>.</td>
+</tr>
+<tr>
+<td><code dir="auto">model</code></td>
+<td>string</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code dir="auto">pr</code></td>
+<td>string</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code dir="auto">prompt</code></td>
+<td>string</td>
+<td>yes</td>
+<td>At most 8000 characters.</td>
+</tr>
+<tr>
+<td><code dir="auto">qa</code></td>
+<td>boolean</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code dir="auto">serves</code></td>
+<td>string</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code dir="auto">tier</code></td>
+<td>string</td>
+<td>no</td>
+<td>One of <code dir="auto">S</code>, <code dir="auto">M</code>, <code dir="auto">L</code>.</td>
+</tr>
+<tr>
+<td><code dir="auto">title</code></td>
+<td>string</td>
+<td>yes</td>
+<td>One line. At most 80 characters.</td>
+</tr>
+<tr>
+<td><code dir="auto">workstreamId</code></td>
+<td>string</td>
+<td>yes</td>
+<td><code dir="auto">W&lt;n&gt;</code>, e.g. <code dir="auto">W1</code>.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Who may call:</strong> a lead, checked by the hub. <strong>Needs a human:</strong> no.</p>
+<div class="expressive-code"><link rel="stylesheet" href="/docs/_astro/ec.83jdg.css"><script type="module" src="/docs/_astro/ec.0vx5m.js"></script><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="json"><code><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"name"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"spawn_agent"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"arguments"</span><span style="--0:#E1E4E8;--1:#24292E">: {</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"areas"</span><span style="--0:#E1E4E8;--1:#24292E">: [</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#9ECBFF;--1:#032F62">"api"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">    </span></span><span style="--0:#E1E4E8;--1:#24292E">],</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"kind"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"write"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"prompt"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"Limit uploads to 10 a minute per API key. Over the limit, answer 429 with Retry-After."</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"serves"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"done:0"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"title"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"Rate-limit the upload API"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"workstreamId"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"W3"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">  </span></span><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="{  &quot;name&quot;: &quot;spawn_agent&quot;,  &quot;arguments&quot;: {    &quot;areas&quot;: [      &quot;api&quot;    ],    &quot;kind&quot;: &quot;write&quot;,    &quot;prompt&quot;: &quot;Limit uploads to 10 a minute per API key. Over the limit, answer 429 with Retry-After.&quot;,    &quot;serves&quot;: &quot;done:0&quot;,    &quot;title&quot;: &quot;Rate-limit the upload API&quot;,    &quot;workstreamId&quot;: &quot;W3&quot;  }}"><div></div></button></div></figure></div>
+<div class="sl-heading-wrapper level-h3"><h3 id="message_agent">message_agent</h3><a class="sl-anchor-link" href="#message_agent"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “message_agent”</span></a></div>
+<p>Steer a task: a running one takes the message at its next tool boundary (now: true stops its current step first), a waiting one gets it as its answer, and an ended one continues in its own thread.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code dir="auto">message</code></td>
+<td>string</td>
+<td>yes</td>
+<td>At most 8000 characters.</td>
+</tr>
+<tr>
+<td><code dir="auto">now</code></td>
+<td>boolean</td>
+<td>no</td>
+<td>Default <code dir="auto">false</code>.</td>
+</tr>
+<tr>
+<td><code dir="auto">taskId</code></td>
+<td>string</td>
+<td>yes</td>
+<td><code dir="auto">T&lt;n&gt;</code>, e.g. <code dir="auto">T1</code>.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Who may call:</strong> a lead, checked by the hub. <strong>Needs a human:</strong> no.</p>
+<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="json"><code><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"name"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"message_agent"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"arguments"</span><span style="--0:#E1E4E8;--1:#24292E">: {</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"message"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"Keep the old endpoint working until the mobile client ships."</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"taskId"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"T7"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">  </span></span><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="{  &quot;name&quot;: &quot;message_agent&quot;,  &quot;arguments&quot;: {    &quot;message&quot;: &quot;Keep the old endpoint working until the mobile client ships.&quot;,    &quot;taskId&quot;: &quot;T7&quot;  }}"><div></div></button></div></figure></div>
+<div class="sl-heading-wrapper level-h3"><h3 id="agent_status">agent_status</h3><a class="sl-anchor-link" href="#agent_status"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “agent_status”</span></a></div>
+<p>One task as stored: state, queued reason, thread, result.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code dir="auto">taskId</code></td>
+<td>string</td>
+<td>yes</td>
+<td><code dir="auto">T&lt;n&gt;</code>, e.g. <code dir="auto">T1</code>.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Who may call:</strong> a lead, checked by the hub. <strong>Needs a human:</strong> no.</p>
+<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="json"><code><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"name"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"agent_status"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"arguments"</span><span style="--0:#E1E4E8;--1:#24292E">: {</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"taskId"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"T7"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">  </span></span><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="{  &quot;name&quot;: &quot;agent_status&quot;,  &quot;arguments&quot;: {    &quot;taskId&quot;: &quot;T7&quot;  }}"><div></div></button></div></figure></div>
+<div class="sl-heading-wrapper level-h3"><h3 id="list_agents">list_agents</h3><a class="sl-anchor-link" href="#list_agents"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “list_agents”</span></a></div>
+<p>The project’s tasks, newest first, optionally by state or workstream.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code dir="auto">state</code></td>
+<td>string</td>
+<td>no</td>
+<td>One of <code dir="auto">queued</code>, <code dir="auto">running</code>, <code dir="auto">idle</code>, <code dir="auto">done</code>, <code dir="auto">failed</code>, <code dir="auto">cancelled</code>.</td>
+</tr>
+<tr>
+<td><code dir="auto">workstreamId</code></td>
+<td>string</td>
+<td>no</td>
+<td><code dir="auto">W&lt;n&gt;</code>, e.g. <code dir="auto">W1</code>.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Who may call:</strong> a lead, checked by the hub. <strong>Needs a human:</strong> no.</p>
+<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="json"><code><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"name"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"list_agents"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"arguments"</span><span style="--0:#E1E4E8;--1:#24292E">: {</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"state"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"running"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">  </span></span><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="{  &quot;name&quot;: &quot;list_agents&quot;,  &quot;arguments&quot;: {    &quot;state&quot;: &quot;running&quot;  }}"><div></div></button></div></figure></div>
+<div class="sl-heading-wrapper level-h3"><h3 id="stop_agent">stop_agent</h3><a class="sl-anchor-link" href="#stop_agent"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “stop_agent”</span></a></div>
+<p>Stop a task: interrupts its thread and releases its slot and leases.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code dir="auto">reason</code></td>
+<td>string</td>
+<td>no</td>
+<td>At most 200 characters.</td>
+</tr>
+<tr>
+<td><code dir="auto">taskId</code></td>
+<td>string</td>
+<td>yes</td>
+<td><code dir="auto">T&lt;n&gt;</code>, e.g. <code dir="auto">T1</code>.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Who may call:</strong> a lead, checked by the hub. <strong>Needs a human:</strong> no.</p>
+<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="json"><code><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"name"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"stop_agent"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"arguments"</span><span style="--0:#E1E4E8;--1:#24292E">: {</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"reason"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"T9 covers this now."</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"taskId"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"T7"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">  </span></span><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="{  &quot;name&quot;: &quot;stop_agent&quot;,  &quot;arguments&quot;: {    &quot;reason&quot;: &quot;T9 covers this now.&quot;,    &quot;taskId&quot;: &quot;T7&quot;  }}"><div></div></button></div></figure></div>
+<div class="sl-heading-wrapper level-h3"><h3 id="brief">brief</h3><a class="sl-anchor-link" href="#brief"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “brief”</span></a></div>
+<p>Freeze a draft workstream’s brief (goal, why, pointers, constraints, doneWhen checks, tier, estimate) and start it. A frozen brief changes only with amend: an ask the human answered approving it.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code dir="auto">amend</code></td>
+<td>string</td>
+<td>no</td>
+<td>The human-answered ask that approved changing an already frozen brief.</td>
+</tr>
+<tr>
+<td><code dir="auto">brief</code></td>
+<td>object</td>
+<td>yes</td>
+<td>A <code dir="auto">Brief</code> whose <code dir="auto">tier</code> may be left out, as <code dir="auto">fleetd brief create</code> takes it; the playbook’s <code dir="auto">tierDefault</code> fills it.</td>
+</tr>
+<tr>
+<td><code dir="auto">brief.baseline</code></td>
+<td>string</td>
+<td>no</td>
+<td>At most 1000 characters.</td>
+</tr>
+<tr>
+<td><code dir="auto">brief.budget</code></td>
+<td>object</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code dir="auto">brief.budget.agentHours</code></td>
+<td>number</td>
+<td>no</td>
+<td>Older briefs only; a lead now gives <code dir="auto">size</code>.</td>
+</tr>
+<tr>
+<td><code dir="auto">brief.budget.size</code></td>
+<td>string</td>
+<td>no</td>
+<td>How big a research spend the lead allows, relative like plan sizes; never a time guess. One of <code dir="auto">S</code>, <code dir="auto">M</code>, <code dir="auto">L</code>.</td>
+</tr>
+<tr>
+<td><code dir="auto">brief.constraints</code></td>
+<td>string[]</td>
+<td>yes</td>
+<td>At most 20 items.</td>
+</tr>
+<tr>
+<td><code dir="auto">brief.decisionRule</code></td>
+<td>object</td>
+<td>no</td>
+<td>Applied to the improvement: candidate − baseline, negated when lower is better. GO when it is at least <code dir="auto">goAtLeast</code>, STOP when it is below <code dir="auto">stopBelow</code>, INCONCLUSIVE in between.</td>
+</tr>
+<tr>
+<td><code dir="auto">brief.decisionRule.better</code></td>
+<td>string</td>
+<td>yes</td>
+<td>One of <code dir="auto">higher</code>, <code dir="auto">lower</code>.</td>
+</tr>
+<tr>
+<td><code dir="auto">brief.decisionRule.goAtLeast</code></td>
+<td>number</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code dir="auto">brief.decisionRule.stopBelow</code></td>
+<td>number</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code dir="auto">brief.doneWhen</code></td>
+<td>object[]</td>
+<td>yes</td>
+<td>At most 20 items.</td>
+</tr>
+<tr>
+<td><code dir="auto">brief.estimate</code></td>
+<td>object</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code dir="auto">brief.estimate.gates</code></td>
+<td>string[]</td>
+<td>yes</td>
+<td>At most 20 items.</td>
+</tr>
+<tr>
+<td><code dir="auto">brief.estimate.rawMinutes</code></td>
+<td>number</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code dir="auto">brief.goal</code></td>
+<td>string</td>
+<td>yes</td>
+<td>At most 1000 characters.</td>
+</tr>
+<tr>
+<td><code dir="auto">brief.metric</code></td>
+<td>string</td>
+<td>no</td>
+<td>One line. At most 200 characters.</td>
+</tr>
+<tr>
+<td><code dir="auto">brief.pointers</code></td>
+<td>string[]</td>
+<td>yes</td>
+<td>At most 20 items.</td>
+</tr>
+<tr>
+<td><code dir="auto">brief.tier</code></td>
+<td>string</td>
+<td>no</td>
+<td>One of <code dir="auto">S</code>, <code dir="auto">M</code>, <code dir="auto">L</code>.</td>
+</tr>
+<tr>
+<td><code dir="auto">brief.why</code></td>
+<td>string</td>
+<td>yes</td>
+<td>At most 2000 characters.</td>
+</tr>
+<tr>
+<td><code dir="auto">workstreamId</code></td>
+<td>string</td>
+<td>yes</td>
+<td><code dir="auto">W&lt;n&gt;</code>, e.g. <code dir="auto">W1</code>.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Who may call:</strong> a lead, checked by the hub. <strong>Needs a human:</strong> Changing a frozen brief (amend) needs an ask the human approved.</p>
+<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="json"><code><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"name"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"brief"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"arguments"</span><span style="--0:#E1E4E8;--1:#24292E">: {</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"brief"</span><span style="--0:#E1E4E8;--1:#24292E">: {</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#79B8FF;--1:#005CC5">"constraints"</span><span style="--0:#E1E4E8;--1:#24292E">: [</span></div></div><div class="ec-line"><div class="code"><span class="indent">        </span><span style="--0:#9ECBFF;--1:#032F62">"No new service; use the existing Redis."</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">      </span></span><span style="--0:#E1E4E8;--1:#24292E">],</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#79B8FF;--1:#005CC5">"doneWhen"</span><span style="--0:#E1E4E8;--1:#24292E">: [</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">        </span></span><span style="--0:#E1E4E8;--1:#24292E">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">          </span><span style="--0:#79B8FF;--1:#005CC5">"repo"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"acme/shop"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">          </span><span style="--0:#79B8FF;--1:#005CC5">"type"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"pr_merged"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">        </span></span><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">      </span></span><span style="--0:#E1E4E8;--1:#24292E">],</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#79B8FF;--1:#005CC5">"goal"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"Uploads are rate-limited per API key."</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#79B8FF;--1:#005CC5">"pointers"</span><span style="--0:#E1E4E8;--1:#24292E">: [</span></div></div><div class="ec-line"><div class="code"><span class="indent">        </span><span style="--0:#9ECBFF;--1:#032F62">"api/src/upload.rs"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">      </span></span><span style="--0:#E1E4E8;--1:#24292E">],</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#79B8FF;--1:#005CC5">"tier"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"S"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#79B8FF;--1:#005CC5">"why"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"One client's retry loop took the upload service down."</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">    </span></span><span style="--0:#E1E4E8;--1:#24292E">},</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"workstreamId"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"W3"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">  </span></span><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="{  &quot;name&quot;: &quot;brief&quot;,  &quot;arguments&quot;: {    &quot;brief&quot;: {      &quot;constraints&quot;: [        &quot;No new service; use the existing Redis.&quot;      ],      &quot;doneWhen&quot;: [        {          &quot;repo&quot;: &quot;acme/shop&quot;,          &quot;type&quot;: &quot;pr_merged&quot;        }      ],      &quot;goal&quot;: &quot;Uploads are rate-limited per API key.&quot;,      &quot;pointers&quot;: [        &quot;api/src/upload.rs&quot;      ],      &quot;tier&quot;: &quot;S&quot;,      &quot;why&quot;: &quot;One client&#x27;s retry loop took the upload service down.&quot;    },    &quot;workstreamId&quot;: &quot;W3&quot;  }}"><div></div></button></div></figure></div>
+<div class="sl-heading-wrapper level-h3"><h3 id="ask">ask</h3><a class="sl-anchor-link" href="#ask"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “ask”</span></a></div>
+<p>Ask the human about product, money, credentials or irreversible actions only, with a dotted decision key and your recommendation. kind do: steps a human performs; kind secret: a value sealed to a machine (you only see its fingerprint). Never block on it: carry on (proceededOnRec) or with other work. The answer arrives in a later wake.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code dir="auto">blocks</code></td>
+<td>string</td>
+<td>no</td>
+<td>At most 200 characters. Default <code dir="auto">"nothing"</code>.</td>
+</tr>
+<tr>
+<td><code dir="auto">class</code></td>
+<td>string</td>
+<td>yes</td>
+<td>Any string: the hub refuses classes outside AskClass with the “decide this yourself” fix text.</td>
+</tr>
+<tr>
+<td><code dir="auto">context</code></td>
+<td>string</td>
+<td>no</td>
+<td>At most 400 characters.</td>
+</tr>
+<tr>
+<td><code dir="auto">envName</code></td>
+<td>string</td>
+<td>no</td>
+<td>An env: sink’s variable, when the key’s own name (<code dir="auto">secret_env_name</code>) is not wanted or valid.</td>
+</tr>
+<tr>
+<td><code dir="auto">key</code></td>
+<td>string</td>
+<td>yes</td>
+<td>Lowercase dotted slug, [a-z0-9]+(.[a-z0-9_-]+)*, at most 80.</td>
+</tr>
+<tr>
+<td><code dir="auto">kind</code></td>
+<td>string</td>
+<td>no</td>
+<td>One of <code dir="auto">decide</code>, <code dir="auto">do</code>, <code dir="auto">secret</code>. Default <code dir="auto">"decide"</code>.</td>
+</tr>
+<tr>
+<td><code dir="auto">options</code></td>
+<td>object[]</td>
+<td>no</td>
+<td>At most 6 items.</td>
+</tr>
+<tr>
+<td><code dir="auto">options[].consequence</code></td>
+<td>string</td>
+<td>no</td>
+<td>One line, what happens if the human picks it. Absent only on asks stored before labels. At most 200 characters.</td>
+</tr>
+<tr>
+<td><code dir="auto">options[].key</code></td>
+<td>string</td>
+<td>yes</td>
+<td>The decision value recorded when the human picks it, e.g. “public-snapshot”. At most 2000 characters.</td>
+</tr>
+<tr>
+<td><code dir="auto">options[].label</code></td>
+<td>string</td>
+<td>no</td>
+<td>A few words, e.g. “Public snapshot”. Absent only on asks stored before labels: show <code dir="auto">humanize_key</code>. At most 80 characters.</td>
+</tr>
+<tr>
+<td><code dir="auto">proceededOnRec</code></td>
+<td>boolean</td>
+<td>no</td>
+<td>Default <code dir="auto">false</code>.</td>
+</tr>
+<tr>
+<td><code dir="auto">recommendation</code></td>
+<td>string</td>
+<td>no</td>
+<td>The key of one of <code dir="auto">options</code>. At most 2000 characters.</td>
+</tr>
+<tr>
+<td><code dir="auto">recommendationWhy</code></td>
+<td>string</td>
+<td>no</td>
+<td>One line. At most 200 characters.</td>
+</tr>
+<tr>
+<td><code dir="auto">sink</code></td>
+<td>string</td>
+<td>no</td>
+<td>Required for secret; the ask’s key names the secret.</td>
+</tr>
+<tr>
+<td><code dir="auto">steps</code></td>
+<td>object[]</td>
+<td>no</td>
+<td>At most 20 items.</td>
+</tr>
+<tr>
+<td><code dir="auto">steps[].command</code></td>
+<td>string</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code dir="auto">steps[].expect</code></td>
+<td>string</td>
+<td>no</td>
+<td>What the human should see when the step worked. At most 500 characters.</td>
+</tr>
+<tr>
+<td><code dir="auto">steps[].text</code></td>
+<td>string</td>
+<td>yes</td>
+<td>At most 500 characters.</td>
+</tr>
+<tr>
+<td><code dir="auto">steps[].where</code></td>
+<td>string</td>
+<td>yes</td>
+<td>A machineId or “browser”.</td>
+</tr>
+<tr>
+<td><code dir="auto">text</code></td>
+<td>string</td>
+<td>yes</td>
+<td>The question, one short line. At most 500 characters.</td>
+</tr>
+<tr>
+<td><code dir="auto">verify</code></td>
+<td>object</td>
+<td>no</td>
+<td>Do only. One of these shapes: {pr, repo, type}; {ref, repo, type}; {contains, status, type, url}; {argv, expectExit, machineId, type}; {repo, testId, type}; {criteria, type}; {question, type}.</td>
+</tr>
+<tr>
+<td><code dir="auto">workstreamId</code></td>
+<td>string</td>
+<td>no</td>
+<td><code dir="auto">W&lt;n&gt;</code>, e.g. <code dir="auto">W1</code>.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Who may call:</strong> a lead, checked by the hub. <strong>Needs a human:</strong> no.</p>
+<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="json"><code><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"name"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"ask"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"arguments"</span><span style="--0:#E1E4E8;--1:#24292E">: {</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"class"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"money"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"key"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"billing.provider"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"options"</span><span style="--0:#E1E4E8;--1:#24292E">: [</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">      </span></span><span style="--0:#E1E4E8;--1:#24292E">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">        </span><span style="--0:#79B8FF;--1:#005CC5">"consequence"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"2.9% + 30c a charge; live this week."</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">        </span><span style="--0:#79B8FF;--1:#005CC5">"key"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"stripe"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">        </span><span style="--0:#79B8FF;--1:#005CC5">"label"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"Stripe"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">      </span></span><span style="--0:#E1E4E8;--1:#24292E">},</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">      </span></span><span style="--0:#E1E4E8;--1:#24292E">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">        </span><span style="--0:#79B8FF;--1:#005CC5">"consequence"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"5% + 50c; handles sales tax for you."</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">        </span><span style="--0:#79B8FF;--1:#005CC5">"key"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"paddle"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">        </span><span style="--0:#79B8FF;--1:#005CC5">"label"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"Paddle"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">      </span></span><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">    </span></span><span style="--0:#E1E4E8;--1:#24292E">],</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"proceededOnRec"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#79B8FF;--1:#005CC5">true</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"recommendation"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"stripe"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"recommendationWhy"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"Cheaper at our volume, and the team knows it."</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"text"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"Which payment provider should checkout use?"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">  </span></span><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="{  &quot;name&quot;: &quot;ask&quot;,  &quot;arguments&quot;: {    &quot;class&quot;: &quot;money&quot;,    &quot;key&quot;: &quot;billing.provider&quot;,    &quot;options&quot;: [      {        &quot;consequence&quot;: &quot;2.9% + 30c a charge; live this week.&quot;,        &quot;key&quot;: &quot;stripe&quot;,        &quot;label&quot;: &quot;Stripe&quot;      },      {        &quot;consequence&quot;: &quot;5% + 50c; handles sales tax for you.&quot;,        &quot;key&quot;: &quot;paddle&quot;,        &quot;label&quot;: &quot;Paddle&quot;      }    ],    &quot;proceededOnRec&quot;: true,    &quot;recommendation&quot;: &quot;stripe&quot;,    &quot;recommendationWhy&quot;: &quot;Cheaper at our volume, and the team knows it.&quot;,    &quot;text&quot;: &quot;Which payment provider should checkout use?&quot;  }}"><div></div></button></div></figure></div>
+<div class="sl-heading-wrapper level-h3"><h3 id="ask_withdraw">ask_withdraw</h3><a class="sl-anchor-link" href="#ask_withdraw"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “ask_withdraw”</span></a></div>
+<p>Withdraw an ask, naming the existing decision that answers it (use).</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code dir="auto">askId</code></td>
+<td>string</td>
+<td>yes</td>
+<td><code dir="auto">A&lt;n&gt;</code>, e.g. <code dir="auto">A1</code>.</td>
+</tr>
+<tr>
+<td><code dir="auto">use</code></td>
+<td>string</td>
+<td>no</td>
+<td>The existing decision that answers it.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Who may call:</strong> a lead, checked by the hub. <strong>Needs a human:</strong> no.</p>
+<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="json"><code><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"name"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"ask_withdraw"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"arguments"</span><span style="--0:#E1E4E8;--1:#24292E">: {</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"askId"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"A4"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"use"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"D12"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">  </span></span><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="{  &quot;name&quot;: &quot;ask_withdraw&quot;,  &quot;arguments&quot;: {    &quot;askId&quot;: &quot;A4&quot;,    &quot;use&quot;: &quot;D12&quot;  }}"><div></div></button></div></figure></div>
+<div class="sl-heading-wrapper level-h3"><h3 id="decide">decide</h3><a class="sl-anchor-link" href="#decide"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “decide”</span></a></div>
+<p>Log a decision you made yourself (anything that is not product, money, credentials or irreversible).</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code dir="auto">key</code></td>
+<td>string</td>
+<td>yes</td>
+<td>Lowercase dotted slug, [a-z0-9]+(.[a-z0-9_-]+)*, at most 80.</td>
+</tr>
+<tr>
+<td><code dir="auto">scope</code></td>
+<td>string</td>
+<td>no</td>
+<td>One of <code dir="auto">project</code>, <code dir="auto">workstream</code>. Default <code dir="auto">"workstream"</code>.</td>
+</tr>
+<tr>
+<td><code dir="auto">value</code></td>
+<td>string</td>
+<td>yes</td>
+<td>At most 2000 characters.</td>
+</tr>
+<tr>
+<td><code dir="auto">why</code></td>
+<td>string</td>
+<td>no</td>
+<td>At most 2000 characters.</td>
+</tr>
+<tr>
+<td><code dir="auto">workstreamId</code></td>
+<td>string</td>
+<td>no</td>
+<td><code dir="auto">W&lt;n&gt;</code>, e.g. <code dir="auto">W1</code>.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Who may call:</strong> a lead, checked by the hub. <strong>Needs a human:</strong> no.</p>
+<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="json"><code><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"name"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"decide"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"arguments"</span><span style="--0:#E1E4E8;--1:#24292E">: {</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"key"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"api.pagination"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"value"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"cursor"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"why"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"Stable when rows are inserted mid-scroll."</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">  </span></span><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="{  &quot;name&quot;: &quot;decide&quot;,  &quot;arguments&quot;: {    &quot;key&quot;: &quot;api.pagination&quot;,    &quot;value&quot;: &quot;cursor&quot;,    &quot;why&quot;: &quot;Stable when rows are inserted mid-scroll.&quot;  }}"><div></div></button></div></figure></div>
+<div class="sl-heading-wrapper level-h3"><h3 id="claim_done">claim_done</h3><a class="sl-anchor-link" href="#claim_done"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “claim_done”</span></a></div>
+<p>Claim a workstream done: fleetd runs its frozen done-when checks itself, and only all of them passing makes it done. A failed claim says what failed.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code dir="auto">workstreamId</code></td>
+<td>string</td>
+<td>yes</td>
+<td><code dir="auto">W&lt;n&gt;</code>, e.g. <code dir="auto">W1</code>.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Who may call:</strong> a lead, a task’s agent, checked by the hub. <strong>Needs a human:</strong> no.</p>
+<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="json"><code><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"name"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"claim_done"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"arguments"</span><span style="--0:#E1E4E8;--1:#24292E">: {</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"workstreamId"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"W3"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">  </span></span><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="{  &quot;name&quot;: &quot;claim_done&quot;,  &quot;arguments&quot;: {    &quot;workstreamId&quot;: &quot;W3&quot;  }}"><div></div></button></div></figure></div>
+<div class="sl-heading-wrapper level-h3"><h3 id="gated_run">gated_run</h3><a class="sl-anchor-link" href="#gated_run"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “gated_run”</span></a></div>
+<p>A prod write, spend, delete or credential use: the node runs exactly this argv only after a human approves it; secrets come from the node’s own sinks. The exit code and output tail arrive in a later wake.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code dir="auto">argv</code></td>
+<td>string[]</td>
+<td>yes</td>
+<td>At most 64 items.</td>
+</tr>
+<tr>
+<td><code dir="auto">class</code></td>
+<td>string</td>
+<td>yes</td>
+<td>One of <code dir="auto">irreversible</code>, <code dir="auto">money</code>, <code dir="auto">credential</code>.</td>
+</tr>
+<tr>
+<td><code dir="auto">cwd</code></td>
+<td>string</td>
+<td>no</td>
+<td>An absolute path.</td>
+</tr>
+<tr>
+<td><code dir="auto">reason</code></td>
+<td>string</td>
+<td>yes</td>
+<td>At most 500 characters.</td>
+</tr>
+<tr>
+<td><code dir="auto">secretEnv</code></td>
+<td>object[]</td>
+<td>no</td>
+<td>At most 20 items.</td>
+</tr>
+<tr>
+<td><code dir="auto">secretEnv[].name</code></td>
+<td>string</td>
+<td>yes</td>
+<td>Matches <code dir="auto">^[A-Za-z_][A-Za-z0-9_]{0,127}$</code>.</td>
+</tr>
+<tr>
+<td><code dir="auto">secretEnv[].secretKey</code></td>
+<td>string</td>
+<td>yes</td>
+<td>Lowercase dotted slug, [a-z0-9]+(.[a-z0-9_-]+)*, at most 80.</td>
+</tr>
+<tr>
+<td><code dir="auto">timeoutSec</code></td>
+<td>integer</td>
+<td>no</td>
+<td>1 to 1800. Default <code dir="auto">1800</code>.</td>
+</tr>
+<tr>
+<td><code dir="auto">workstreamId</code></td>
+<td>string</td>
+<td>no</td>
+<td><code dir="auto">W&lt;n&gt;</code>, e.g. <code dir="auto">W1</code>.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Who may call:</strong> a lead, checked by the hub. <strong>Needs a human:</strong> A human approves the exact command (an approve ask) before the node runs it.</p>
+<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="json"><code><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"name"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"gated_run"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"arguments"</span><span style="--0:#E1E4E8;--1:#24292E">: {</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"argv"</span><span style="--0:#E1E4E8;--1:#24292E">: [</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#9ECBFF;--1:#032F62">"fly"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#9ECBFF;--1:#032F62">"deploy"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#9ECBFF;--1:#032F62">"--app"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#9ECBFF;--1:#032F62">"shop-prod"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">    </span></span><span style="--0:#E1E4E8;--1:#24292E">],</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"class"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"irreversible"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"reason"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"Ship the upload rate limit to production."</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"workstreamId"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"W3"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">  </span></span><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="{  &quot;name&quot;: &quot;gated_run&quot;,  &quot;arguments&quot;: {    &quot;argv&quot;: [      &quot;fly&quot;,      &quot;deploy&quot;,      &quot;--app&quot;,      &quot;shop-prod&quot;    ],    &quot;class&quot;: &quot;irreversible&quot;,    &quot;reason&quot;: &quot;Ship the upload rate limit to production.&quot;,    &quot;workstreamId&quot;: &quot;W3&quot;  }}"><div></div></button></div></figure></div>
+<div class="sl-heading-wrapper level-h3"><h3 id="plan_milestone">plan_milestone</h3><a class="sl-anchor-link" href="#plan_milestone"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “plan_milestone”</span></a></div>
+<p>Add a milestone to the project’s plan.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code dir="auto">position</code></td>
+<td>integer</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code dir="auto">title</code></td>
+<td>string</td>
+<td>yes</td>
+<td>One line. At most 120 characters.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Who may call:</strong> a lead, checked by the hub. <strong>Needs a human:</strong> no.</p>
+<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="json"><code><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"name"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"plan_milestone"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"arguments"</span><span style="--0:#E1E4E8;--1:#24292E">: {</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"title"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"Public beta"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">  </span></span><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="{  &quot;name&quot;: &quot;plan_milestone&quot;,  &quot;arguments&quot;: {    &quot;title&quot;: &quot;Public beta&quot;  }}"><div></div></button></div></figure></div>
+<div class="sl-heading-wrapper level-h3"><h3 id="plan_add">plan_add</h3><a class="sl-anchor-link" href="#plan_add"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “plan_add”</span></a></div>
+<p>Add a plan item (must or polish, size s|m|l, after other items). After a milestone’s first 10 minutes a change needs why, or steer when the human’s steer asked for it.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code dir="auto">after</code></td>
+<td>string[]</td>
+<td>no</td>
+<td>At most 20 items.</td>
+</tr>
+<tr>
+<td><code dir="auto">check</code></td>
+<td>integer</td>
+<td>no</td>
+<td>0 to 19.</td>
+</tr>
+<tr>
+<td><code dir="auto">milestoneId</code></td>
+<td>string</td>
+<td>yes</td>
+<td><code dir="auto">M&lt;n&gt;</code>, e.g. <code dir="auto">M1</code>.</td>
+</tr>
+<tr>
+<td><code dir="auto">pr</code></td>
+<td>string</td>
+<td>no</td>
+<td>Like <code dir="auto">https://github.com/&lt;owner&gt;/&lt;name&gt;/pull/&lt;n&gt;</code>.</td>
+</tr>
+<tr>
+<td><code dir="auto">size</code></td>
+<td>string</td>
+<td>no</td>
+<td>Absent: <code dir="auto">m</code>, with a warning to size it. One of <code dir="auto">s</code>, <code dir="auto">m</code>, <code dir="auto">l</code>.</td>
+</tr>
+<tr>
+<td><code dir="auto">steer</code></td>
+<td>string</td>
+<td>no</td>
+<td>The change carries out a steer; it stands in for <code dir="auto">--why</code> and acknowledges the steer.</td>
+</tr>
+<tr>
+<td><code dir="auto">title</code></td>
+<td>string</td>
+<td>yes</td>
+<td>One line. At most 120 characters.</td>
+</tr>
+<tr>
+<td><code dir="auto">weight</code></td>
+<td>string</td>
+<td>no</td>
+<td>One of <code dir="auto">must</code> (Counts toward the headline number), <code dir="auto">polish</code> (Shown beside the number, never in it). Default <code dir="auto">"must"</code>.</td>
+</tr>
+<tr>
+<td><code dir="auto">why</code></td>
+<td>string</td>
+<td>no</td>
+<td>One line. At most 200 characters.</td>
+</tr>
+<tr>
+<td><code dir="auto">workstreamId</code></td>
+<td>string</td>
+<td>no</td>
+<td><code dir="auto">W&lt;n&gt;</code>, e.g. <code dir="auto">W1</code>.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Who may call:</strong> a lead, checked by the hub. <strong>Needs a human:</strong> no.</p>
+<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="json"><code><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"name"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"plan_add"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"arguments"</span><span style="--0:#E1E4E8;--1:#24292E">: {</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"milestoneId"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"M1"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"size"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"s"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"title"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"Rate-limit uploads"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"weight"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"must"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">  </span></span><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="{  &quot;name&quot;: &quot;plan_add&quot;,  &quot;arguments&quot;: {    &quot;milestoneId&quot;: &quot;M1&quot;,    &quot;size&quot;: &quot;s&quot;,    &quot;title&quot;: &quot;Rate-limit uploads&quot;,    &quot;weight&quot;: &quot;must&quot;  }}"><div></div></button></div></figure></div>
+<div class="sl-heading-wrapper level-h3"><h3 id="plan_edit">plan_edit</h3><a class="sl-anchor-link" href="#plan_edit"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “plan_edit”</span></a></div>
+<p>Change a plan item.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code dir="auto">after</code></td>
+<td>string[]</td>
+<td>no</td>
+<td>Replaces the list. At most 20 items.</td>
+</tr>
+<tr>
+<td><code dir="auto">checkAdd</code></td>
+<td>integer[]</td>
+<td>no</td>
+<td>At most 20 items.</td>
+</tr>
+<tr>
+<td><code dir="auto">checkRemove</code></td>
+<td>integer[]</td>
+<td>no</td>
+<td>At most 20 items.</td>
+</tr>
+<tr>
+<td><code dir="auto">itemId</code></td>
+<td>string</td>
+<td>yes</td>
+<td><code dir="auto">P&lt;n&gt;</code>, e.g. <code dir="auto">P1</code>.</td>
+</tr>
+<tr>
+<td><code dir="auto">milestoneId</code></td>
+<td>string</td>
+<td>no</td>
+<td><code dir="auto">M&lt;n&gt;</code>, e.g. <code dir="auto">M1</code>.</td>
+</tr>
+<tr>
+<td><code dir="auto">position</code></td>
+<td>integer</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code dir="auto">prAdd</code></td>
+<td>string[]</td>
+<td>no</td>
+<td>At most 20 items.</td>
+</tr>
+<tr>
+<td><code dir="auto">prRemove</code></td>
+<td>string[]</td>
+<td>no</td>
+<td>At most 20 items.</td>
+</tr>
+<tr>
+<td><code dir="auto">size</code></td>
+<td>string</td>
+<td>no</td>
+<td>One of <code dir="auto">s</code>, <code dir="auto">m</code>, <code dir="auto">l</code>.</td>
+</tr>
+<tr>
+<td><code dir="auto">steer</code></td>
+<td>string</td>
+<td>no</td>
+<td><code dir="auto">--steer S12</code>, as on <code dir="auto">plan add</code>.</td>
+</tr>
+<tr>
+<td><code dir="auto">title</code></td>
+<td>string</td>
+<td>no</td>
+<td>One line. At most 120 characters.</td>
+</tr>
+<tr>
+<td><code dir="auto">weight</code></td>
+<td>string</td>
+<td>no</td>
+<td>One of <code dir="auto">must</code> (Counts toward the headline number), <code dir="auto">polish</code> (Shown beside the number, never in it).</td>
+</tr>
+<tr>
+<td><code dir="auto">why</code></td>
+<td>string</td>
+<td>no</td>
+<td>One line. At most 200 characters.</td>
+</tr>
+<tr>
+<td><code dir="auto">workstreamId</code></td>
+<td>string</td>
+<td>no</td>
+<td><code dir="auto">W&lt;n&gt;</code>, e.g. <code dir="auto">W1</code>.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Who may call:</strong> a lead, checked by the hub. <strong>Needs a human:</strong> no.</p>
+<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="json"><code><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"name"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"plan_edit"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"arguments"</span><span style="--0:#E1E4E8;--1:#24292E">: {</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"itemId"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"P4"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"size"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"m"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"why"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"The limiter needs a shared store."</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">  </span></span><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="{  &quot;name&quot;: &quot;plan_edit&quot;,  &quot;arguments&quot;: {    &quot;itemId&quot;: &quot;P4&quot;,    &quot;size&quot;: &quot;m&quot;,    &quot;why&quot;: &quot;The limiter needs a shared store.&quot;  }}"><div></div></button></div></figure></div>
+<div class="sl-heading-wrapper level-h3"><h3 id="plan_drop">plan_drop</h3><a class="sl-anchor-link" href="#plan_drop"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “plan_drop”</span></a></div>
+<p>Drop a plan item, with why or steer.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code dir="auto">itemId</code></td>
+<td>string</td>
+<td>yes</td>
+<td><code dir="auto">P&lt;n&gt;</code>, e.g. <code dir="auto">P1</code>.</td>
+</tr>
+<tr>
+<td><code dir="auto">steer</code></td>
+<td>string</td>
+<td>no</td>
+<td><code dir="auto">--steer S12</code>, as on <code dir="auto">plan add</code>.</td>
+</tr>
+<tr>
+<td><code dir="auto">why</code></td>
+<td>string</td>
+<td>no</td>
+<td>One line. At most 200 characters.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Who may call:</strong> a lead, checked by the hub. <strong>Needs a human:</strong> no.</p>
+<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="json"><code><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"name"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"plan_drop"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"arguments"</span><span style="--0:#E1E4E8;--1:#24292E">: {</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"itemId"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"P6"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"why"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"The client already throttles."</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">  </span></span><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="{  &quot;name&quot;: &quot;plan_drop&quot;,  &quot;arguments&quot;: {    &quot;itemId&quot;: &quot;P6&quot;,    &quot;why&quot;: &quot;The client already throttles.&quot;  }}"><div></div></button></div></figure></div>
+<div class="sl-heading-wrapper level-h3"><h3 id="plan_show">plan_show</h3><a class="sl-anchor-link" href="#plan_show"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “plan_show”</span></a></div>
+<p>The project’s plan.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code dir="auto">workstreamId</code></td>
+<td>string</td>
+<td>no</td>
+<td><code dir="auto">W&lt;n&gt;</code>, e.g. <code dir="auto">W1</code>.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Who may call:</strong> a lead, checked by the hub. <strong>Needs a human:</strong> no.</p>
+<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="json"><code><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"name"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"plan_show"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"arguments"</span><span style="--0:#E1E4E8;--1:#24292E">: {}</span></div></div><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="{  &quot;name&quot;: &quot;plan_show&quot;,  &quot;arguments&quot;: {}}"><div></div></button></div></figure></div>
+<div class="sl-heading-wrapper level-h3"><h3 id="status_set">status_set</h3><a class="sl-anchor-link" href="#status_set"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “status_set”</span></a></div>
+<p>Your one-line status for a workstream; it shows as “lead says”.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code dir="auto">text</code></td>
+<td>string</td>
+<td>yes</td>
+<td>One line. At most 280 characters.</td>
+</tr>
+<tr>
+<td><code dir="auto">workstreamId</code></td>
+<td>string</td>
+<td>no</td>
+<td><code dir="auto">W&lt;n&gt;</code>, e.g. <code dir="auto">W1</code>.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Who may call:</strong> a lead, checked by the hub. <strong>Needs a human:</strong> no.</p>
+<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="json"><code><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"name"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"status_set"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"arguments"</span><span style="--0:#E1E4E8;--1:#24292E">: {</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"text"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"Limiter merged; checking the 429 path."</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"workstreamId"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"W3"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">  </span></span><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="{  &quot;name&quot;: &quot;status_set&quot;,  &quot;arguments&quot;: {    &quot;text&quot;: &quot;Limiter merged; checking the 429 path.&quot;,    &quot;workstreamId&quot;: &quot;W3&quot;  }}"><div></div></button></div></figure></div>
+<div class="sl-heading-wrapper level-h3"><h3 id="decisions_search">decisions_search</h3><a class="sl-anchor-link" href="#decisions_search"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “decisions_search”</span></a></div>
+<p>Search the decision log.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code dir="auto">query</code></td>
+<td>string</td>
+<td>yes</td>
+<td>At most 200 characters.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Who may call:</strong> a lead, checked by the hub. <strong>Needs a human:</strong> no.</p>
+<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="json"><code><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"name"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"decisions_search"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"arguments"</span><span style="--0:#E1E4E8;--1:#24292E">: {</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"query"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"pagination"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">  </span></span><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="{  &quot;name&quot;: &quot;decisions_search&quot;,  &quot;arguments&quot;: {    &quot;query&quot;: &quot;pagination&quot;  }}"><div></div></button></div></figure></div>
+<div class="sl-heading-wrapper level-h3"><h3 id="change_enqueue">change_enqueue</h3><a class="sl-anchor-link" href="#change_enqueue"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “change_enqueue”</span></a></div>
+<p>Put a PR no task’s result put there on its repo’s merge train; only the train merges.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code dir="auto">item</code></td>
+<td>string</td>
+<td>no</td>
+<td>Stores the PR as a link of that plan item (for a PR no task of the item wrote).</td>
+</tr>
+<tr>
+<td><code dir="auto">prUrl</code></td>
+<td>string</td>
+<td>yes</td>
+<td>Like <code dir="auto">https://github.com/&lt;owner&gt;/&lt;name&gt;/pull/&lt;n&gt;</code>.</td>
+</tr>
+<tr>
+<td><code dir="auto">serves</code></td>
+<td>string</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code dir="auto">taskId</code></td>
+<td>string</td>
+<td>no</td>
+<td><code dir="auto">T&lt;n&gt;</code>, e.g. <code dir="auto">T1</code>.</td>
+</tr>
+<tr>
+<td><code dir="auto">tier</code></td>
+<td>string</td>
+<td>no</td>
+<td>One of <code dir="auto">S</code>, <code dir="auto">M</code>, <code dir="auto">L</code>.</td>
+</tr>
+<tr>
+<td><code dir="auto">workstreamId</code></td>
+<td>string</td>
+<td>no</td>
+<td><code dir="auto">W&lt;n&gt;</code>, e.g. <code dir="auto">W1</code>.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Who may call:</strong> a lead, checked by the hub. <strong>Needs a human:</strong> no.</p>
+<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="json"><code><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"name"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"change_enqueue"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"arguments"</span><span style="--0:#E1E4E8;--1:#24292E">: {</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"prUrl"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"https://github.com/acme/shop/pull/42"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"workstreamId"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"W3"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">  </span></span><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="{  &quot;name&quot;: &quot;change_enqueue&quot;,  &quot;arguments&quot;: {    &quot;prUrl&quot;: &quot;https://github.com/acme/shop/pull/42&quot;,    &quot;workstreamId&quot;: &quot;W3&quot;  }}"><div></div></button></div></figure></div>
+<div class="sl-heading-wrapper level-h3"><h3 id="change_status">change_status</h3><a class="sl-anchor-link" href="#change_status"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “change_status”</span></a></div>
+<p>A merge-train change as stored.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code dir="auto">changeId</code></td>
+<td>string</td>
+<td>yes</td>
+<td><code dir="auto">X&lt;n&gt;</code>, e.g. <code dir="auto">X1</code>.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Who may call:</strong> a lead, checked by the hub. <strong>Needs a human:</strong> no.</p>
+<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="json"><code><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"name"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"change_status"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"arguments"</span><span style="--0:#E1E4E8;--1:#24292E">: {</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"changeId"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"X12"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">  </span></span><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="{  &quot;name&quot;: &quot;change_status&quot;,  &quot;arguments&quot;: {    &quot;changeId&quot;: &quot;X12&quot;  }}"><div></div></button></div></figure></div>
+<div class="sl-heading-wrapper level-h3"><h3 id="workstream_spawn">workstream_spawn</h3><a class="sl-anchor-link" href="#workstream_spawn"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “workstream_spawn”</span></a></div>
+<p>A finish-all lead starts a child workstream for one item with a value source.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code dir="auto">serves</code></td>
+<td>string</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code dir="auto">template</code></td>
+<td>string</td>
+<td>no</td>
+<td>The prefixes <code dir="auto">bug:</code>/<code dir="auto">fix:</code>, <code dir="auto">research:</code> and <code dir="auto">finish:</code> pick bugfix, research and finish-all. One of <code dir="auto">bugfix</code>, <code dir="auto">feature</code>, <code dir="auto">research</code>, <code dir="auto">finish-all</code>.</td>
+</tr>
+<tr>
+<td><code dir="auto">text</code></td>
+<td>string</td>
+<td>yes</td>
+<td>At most 4000 characters.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Who may call:</strong> a lead, checked by the hub. <strong>Needs a human:</strong> no.</p>
+<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="json"><code><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"name"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"workstream_spawn"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"arguments"</span><span style="--0:#E1E4E8;--1:#24292E">: {</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"serves"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"issue:#88"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"text"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"Fix the flaky upload test"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">  </span></span><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="{  &quot;name&quot;: &quot;workstream_spawn&quot;,  &quot;arguments&quot;: {    &quot;serves&quot;: &quot;issue:#88&quot;,    &quot;text&quot;: &quot;Fix the flaky upload test&quot;  }}"><div></div></button></div></figure></div>
+<div class="sl-heading-wrapper level-h3"><h3 id="inventory">inventory</h3><a class="sl-anchor-link" href="#inventory"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “inventory”</span></a></div>
+<p>The project’s open work, ranked.</p>
+<p>No parameters.</p>
+<p><strong>Who may call:</strong> a lead, checked by the hub. <strong>Needs a human:</strong> no.</p>
+<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="json"><code><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"name"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"inventory"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"arguments"</span><span style="--0:#E1E4E8;--1:#24292E">: {}</span></div></div><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="{  &quot;name&quot;: &quot;inventory&quot;,  &quot;arguments&quot;: {}}"><div></div></button></div></figure></div>
+<div class="sl-heading-wrapper level-h2"><h2 id="task-tools">Task tools</h2><a class="sl-anchor-link" href="#task-tools"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Task tools”</span></a></div>
+<p>Every task’s agent gets these: implementers, readers, reviewers, verifiers and QA.</p>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>What it does</th>
+<th>Needs a human</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="#report"><code dir="auto">report</code></a></td>
+<td>A reviewer records its verdict once, before its final message: the full SHA it reviewed, the number of blocking and non-blocking findings and a one-paragraph summary.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><a href="#ask_lead"><code dir="auto">ask_lead</code></a></td>
+<td>Ask your lead a question.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><a href="#claim_done-task"><code dir="auto">claim_done</code></a></td>
+<td>Claim your workstream done: fleetd runs its done-when checks itself.</td>
+<td>No</td>
+</tr>
+</tbody>
+</table>
+<div class="sl-heading-wrapper level-h3"><h3 id="report">report</h3><a class="sl-anchor-link" href="#report"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “report”</span></a></div>
+<p>A reviewer records its verdict once, before its final message: the full SHA it reviewed, the number of blocking and non-blocking findings and a one-paragraph summary. A writer reports each slice whose PR is complete with kind slice_ready and its prUrl: its review starts at once while you go on with the next slice.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code dir="auto">blocking</code></td>
+<td>integer</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code dir="auto">kind</code></td>
+<td>string</td>
+<td>no</td>
+<td>Verdict (the default) for a review, slice_ready for a writer’s PR that is ready. One of <code dir="auto">verdict</code>, <code dir="auto">slice_ready</code>.</td>
+</tr>
+<tr>
+<td><code dir="auto">metricValues</code></td>
+<td>object</td>
+<td>no</td>
+<td>A research workstream’s judge reports its metric for the baseline and the candidate; the hub computes the verdict.</td>
+</tr>
+<tr>
+<td><code dir="auto">metricValues.baseline</code></td>
+<td>number</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code dir="auto">metricValues.candidate</code></td>
+<td>number</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td><code dir="auto">nonBlocking</code></td>
+<td>integer</td>
+<td>no</td>
+<td></td>
+</tr>
+<tr>
+<td><code dir="auto">prHeadSha</code></td>
+<td>string</td>
+<td>no</td>
+<td>Full lowercase hex commit SHA, 40 or 64 characters.</td>
+</tr>
+<tr>
+<td><code dir="auto">prUrl</code></td>
+<td>string</td>
+<td>no</td>
+<td>Like <code dir="auto">https://github.com/&lt;owner&gt;/&lt;name&gt;/pull/&lt;n&gt;</code>.</td>
+</tr>
+<tr>
+<td><code dir="auto">summary</code></td>
+<td>string</td>
+<td>no</td>
+<td>At most 1000 characters.</td>
+</tr>
+<tr>
+<td><code dir="auto">taskId</code></td>
+<td>string</td>
+<td>no</td>
+<td><code dir="auto">T&lt;n&gt;</code>, e.g. <code dir="auto">T1</code>.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Who may call:</strong> a task’s agent, checked by the hub. <strong>Needs a human:</strong> no.</p>
+<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="json"><code><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"name"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"report"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"arguments"</span><span style="--0:#E1E4E8;--1:#24292E">: {</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"blocking"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#79B8FF;--1:#005CC5">0</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"nonBlocking"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#79B8FF;--1:#005CC5">2</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"prHeadSha"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"3f2a9c0d41b7e85a6c2f19d0e4b3a7c8d5e6f102"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"summary"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"The limiter is correct. Two nits: a magic number and a missing test for the reset."</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"taskId"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"T8"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">  </span></span><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="{  &quot;name&quot;: &quot;report&quot;,  &quot;arguments&quot;: {    &quot;blocking&quot;: 0,    &quot;nonBlocking&quot;: 2,    &quot;prHeadSha&quot;: &quot;3f2a9c0d41b7e85a6c2f19d0e4b3a7c8d5e6f102&quot;,    &quot;summary&quot;: &quot;The limiter is correct. Two nits: a magic number and a missing test for the reset.&quot;,    &quot;taskId&quot;: &quot;T8&quot;  }}"><div></div></button></div></figure></div>
+<div class="sl-heading-wrapper level-h3"><h3 id="ask_lead">ask_lead</h3><a class="sl-anchor-link" href="#ask_lead"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “ask_lead”</span></a></div>
+<p>Ask your lead a question. Carry on with what you can; the answer arrives as a message. If you can’t go on without it, end your turn: the answer continues this thread.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code dir="auto">question</code></td>
+<td>string</td>
+<td>yes</td>
+<td>At most 4000 characters.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Who may call:</strong> a task’s agent, checked by the hub. <strong>Needs a human:</strong> no.</p>
+<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="json"><code><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"name"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"ask_lead"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"arguments"</span><span style="--0:#E1E4E8;--1:#24292E">: {</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"question"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"Should the limit apply to admin keys too?"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">  </span></span><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="{  &quot;name&quot;: &quot;ask_lead&quot;,  &quot;arguments&quot;: {    &quot;question&quot;: &quot;Should the limit apply to admin keys too?&quot;  }}"><div></div></button></div></figure></div>
+<div class="sl-heading-wrapper level-h3"><h3 id="claim_done-task">claim_done (task)</h3><a class="sl-anchor-link" href="#claim_done-task"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “claim_done (task)”</span></a></div>
+<p>Claim your workstream done: fleetd runs its done-when checks itself.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code dir="auto">workstreamId</code></td>
+<td>string</td>
+<td>yes</td>
+<td><code dir="auto">W&lt;n&gt;</code>, e.g. <code dir="auto">W1</code>.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Who may call:</strong> a lead, a task’s agent, checked by the hub. <strong>Needs a human:</strong> no.</p>
+<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="json"><code><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"name"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"claim_done"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"arguments"</span><span style="--0:#E1E4E8;--1:#24292E">: {</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"workstreamId"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"W3"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">  </span></span><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="{  &quot;name&quot;: &quot;claim_done&quot;,  &quot;arguments&quot;: {    &quot;workstreamId&quot;: &quot;W3&quot;  }}"><div></div></button></div></figure></div>
+<div class="sl-heading-wrapper level-h2"><h2 id="claude-code-tools">Claude Code tools</h2><a class="sl-anchor-link" href="#claude-code-tools"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Claude Code tools”</span></a></div>
+<p>The same for every session. The router gets none. Listed for Claude Code 2.1.302, the version fleetd is tested with.</p>
+<p><strong>Allowed:</strong> <code dir="auto">Bash</code>, <code dir="auto">DesignSync</code>, <code dir="auto">Edit</code>, <code dir="auto">NotebookEdit</code>, <code dir="auto">Read</code>, <code dir="auto">ReportFindings</code>, <code dir="auto">Skill</code>, <code dir="auto">ToolSearch</code>, <code dir="auto">WebFetch</code>, <code dir="auto">WebSearch</code>, <code dir="auto">Write</code>.</p>
+<p>A project’s policy file can deny more with <code dir="auto">tools.deny</code>. In a run started approval-required, Claude Code asks before it uses a tool and the question comes to you; <code dir="auto">tools.allow</code> answers it ahead of time.</p>
+<p><strong>Blocked</strong>, in <code dir="auto">--disallowedTools</code> and in the <code dir="auto">permissions.deny</code> of fleetd’s settings, so your own settings can’t turn them back on:</p>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code dir="auto">Task</code>, <code dir="auto">Agent</code></td>
+<td>fleetd manages agents (spawn_agent). Task and Agent are one tool: init lists Task, the model sees Agent, and denying either removes both.</td>
+</tr>
+<tr>
+<td><code dir="auto">Workflow</code>, <code dir="auto">ListAgents</code>, <code dir="auto">SendMessage</code>, <code dir="auto">TaskStop</code>, <code dir="auto">TaskOutput</code>, <code dir="auto">TeamCreate</code>, <code dir="auto">TeamDelete</code></td>
+<td>fleetd manages agents. Every agent is a fleetd task with its own session, slot, worktree, lane, steering and receipts, started with spawn_agent.</td>
+</tr>
+<tr>
+<td><code dir="auto">AskUserQuestion</code>, <code dir="auto">EnterPlanMode</code>, <code dir="auto">ExitPlanMode</code></td>
+<td>Nobody sits at a terminal to answer it, so the run would stall. Agents use ask or ask_lead.</td>
+</tr>
+<tr>
+<td><code dir="auto">CronCreate</code>, <code dir="auto">CronDelete</code>, <code dir="auto">CronList</code>, <code dir="auto">ScheduleWakeup</code></td>
+<td>fleetd schedules work (tasks, wakes), never inside one claude process the node may restart.</td>
+</tr>
+<tr>
+<td><code dir="auto">EnterWorktree</code>, <code dir="auto">ExitWorktree</code></td>
+<td>fleetd owns worktrees, one per writer. A session that moves its own folder can’t be resumed.</td>
+</tr>
+</tbody>
+</table>
+<p>fleetd also blocks any tool like these that a newer Claude Code adds: it reads the installed claude’s tool list when it checks the machine, and a session that still offers one fails the check.</p>
+<div class="sl-heading-wrapper level-h2"><h2 id="settings-fleetd-forces">Settings fleetd forces</h2><a class="sl-anchor-link" href="#settings-fleetd-forces"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Settings fleetd forces”</span></a></div>
+<p>Set in the claude process’s environment. “In settings” marks the ones also in fleetd’s settings file for a session, which outranks the <code dir="auto">env</code> in your own settings.</p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Value</th>
+<th>Where</th>
+<th>In settings</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code dir="auto">CLAUDE_CODE_DISABLE_BACKGROUND_TASKS</code></td>
+<td><code dir="auto">1</code></td>
+<td>Every claude fleetd starts</td>
+<td>yes</td>
+<td>Takes run_in_background out of Bash and Agent and refuses it: a background job outlives the turn fleetd tracks.</td>
+</tr>
+<tr>
+<td><code dir="auto">CLAUDE_CODE_DISABLE_WORKFLOWS</code></td>
+<td><code dir="auto">1</code></td>
+<td>Every claude fleetd starts</td>
+<td>yes</td>
+<td>Removes the Workflow tool: fleetd manages agents.</td>
+</tr>
+<tr>
+<td><code dir="auto">CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS</code></td>
+<td><code dir="auto">1</code></td>
+<td>Every claude fleetd starts</td>
+<td>yes</td>
+<td>Removes the built-in Explore and Plan agents: fleetd manages agents.</td>
+</tr>
+<tr>
+<td><code dir="auto">CLAUDE_CODE_DISABLE_AGENT_VIEW</code></td>
+<td><code dir="auto">1</code></td>
+<td>Every claude fleetd starts</td>
+<td>yes</td>
+<td>Removes the built-in claude agent: fleetd manages agents.</td>
+</tr>
+<tr>
+<td><code dir="auto">CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS</code></td>
+<td>removed</td>
+<td>Every claude fleetd starts</td>
+<td>yes</td>
+<td>Agent teams: fleetd manages agents.</td>
+</tr>
+<tr>
+<td><code dir="auto">CLAUDE_CODE_COORDINATOR_MODE</code></td>
+<td>removed</td>
+<td>Every claude fleetd starts</td>
+<td>yes</td>
+<td>Coordinator mode turns a session into one that only delegates (its tools become Task, ListAgents, SendMessage, TaskStop, Workflow).</td>
+</tr>
+<tr>
+<td><code dir="auto">CLAUDE_CODE_DISABLE_AUTO_MEMORY</code></td>
+<td><code dir="auto">1</code>, and <code dir="auto">autoMemoryEnabled: false</code></td>
+<td>Every claude fleetd starts</td>
+<td>yes</td>
+<td>fleetd owns an agent’s context (briefs, decisions, instructions). Notes claude keeps per folder would carry stale, unreviewed text from one agent’s worktree to the next. A project opts back in with claude.autoMemory: true in its policy file.</td>
+</tr>
+<tr>
+<td><code dir="auto">DISABLE_AUTOUPDATER</code></td>
+<td><code dir="auto">1</code></td>
+<td>Sessions</td>
+<td>yes</td>
+<td>Keeps the claude fleetd checked. An update mid-run would swap the binary under a live session.</td>
+</tr>
+<tr>
+<td><code dir="auto">CLAUDE_CODE_STARTUP_FAILURE_RESULTS</code></td>
+<td><code dir="auto">1</code></td>
+<td>Sessions</td>
+<td>no</td>
+<td>A refusal at startup arrives as a result fleetd can read, not only as stderr.</td>
+</tr>
+<tr>
+<td><code dir="auto">CLAUDECODE</code>, <code dir="auto">CLAUDE_CODE_ENTRYPOINT</code>, <code dir="auto">CLAUDE_CODE_SSE_PORT</code></td>
+<td>removed</td>
+<td>Sessions</td>
+<td>no</td>
+<td>claude sets it for its own children and treats a process that has it as nested inside another session.</td>
+</tr>
+</tbody>
+</table>
+<div class="sl-heading-wrapper level-h2"><h2 id="what-your-own-setup-adds">What your own setup adds</h2><a class="sl-anchor-link" href="#what-your-own-setup-adds"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “What your own setup adds”</span></a></div>
+<p>fleetd starts sessions with your own Claude Code setup underneath. The router is the exception: it runs in safe mode with none of it (see <a href="#roles">Roles</a>).</p>
+<table>
+<thead>
+<tr>
+<th>Your setup</th>
+<th>In a session</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>MCP servers (user, project, local)</td>
+<td>Loaded. fleetd adds its <code dir="auto">fleetd</code> server next to them.</td>
+</tr>
+<tr>
+<td>Skills, plugins, hooks, <code dir="auto">CLAUDE.md</code></td>
+<td>Loaded as in your own <code dir="auto">claude</code>.</td>
+</tr>
+<tr>
+<td>Allow and deny rules</td>
+<td>Applied. fleetd’s blocked tools stay blocked: its settings outrank yours.</td>
+</tr>
+<tr>
+<td>Your own agents (<code dir="auto">~/.claude/agents</code>)</td>
+<td>Listed, but nothing can start them: the Agent tool is blocked.</td>
+</tr>
+<tr>
+<td>Env in your settings</td>
+<td>Applied, except the switches above, which fleetd sets last.</td>
+</tr>
+</tbody>
+</table>
+<p>A project’s policy file can add rules for its sessions: <code dir="auto">tools.allow</code> and <code dir="auto">tools.deny</code> (Claude Code rule syntax), and <code dir="auto">claude.autoMemory: true</code>.</p>
+<div class="sl-heading-wrapper level-h3"><h3 id="see-it-in-a-session">See it in a session</h3><a class="sl-anchor-link" href="#see-it-in-a-session"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “See it in a session”</span></a></div>
+<table>
+<thead>
+<tr>
+<th>Where</th>
+<th>What you see</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>App: an order, then <strong>Show full prompt</strong> on an agent’s lane</td>
+<td>“What T1 was told”: the exact first message, which prompt versions it used and the tools it never gets.</td>
+</tr>
+<tr>
+<td>CLI on the hub machine: <code dir="auto">fleetd prompts show --session &lt;machine&gt;/&lt;thread&gt;</code></td>
+<td>The first message alone.</td>
+</tr>
+<tr>
+<td>MCP client: <code dir="auto">session_prompt_get</code></td>
+<td>The same as the app.</td>
+</tr>
+<tr>
+<td><code dir="auto">claude mcp list</code> in the project’s folder</td>
+<td>Your own MCP servers, which the session loads too.</td>
+</tr>
+</tbody>
+</table>
+</div><footer class="sl-flex astro-ddtxxk7k"><div class="meta sl-flex astro-ddtxxk7k"><a href="https://github.com/unlaboredlabs/fleetd/edit/main/docs/site/src/content/docs/reference/agent-tools.md" class="sl-flex print:hidden astro-qlekgd3o"><svg aria-hidden="true" class="astro-qlekgd3o astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.2em;"><path d="M22 7.24a1 1 0 0 0-.29-.71l-4.24-4.24a1 1 0 0 0-1.1-.22 1 1 0 0 0-.32.22l-2.83 2.83L2.29 16.05a1 1 0 0 0-.29.71V21a1 1 0 0 0 1 1h4.24a1 1 0 0 0 .76-.29l10.87-10.93L21.71 8c.1-.1.17-.2.22-.33a1 1 0 0 0 0-.24v-.14l.07-.05ZM6.83 20H4v-2.83l9.93-9.93 2.83 2.83L6.83 20ZM18.17 8.66l-2.83-2.83 1.42-1.41 2.82 2.82-1.41 1.42Z"/></svg>Edit page</a></div><div class="pagination-links print:hidden astro-b5raizh3" dir="ltr"><a href="/docs/reference/cli.html" rel="prev" class="astro-b5raizh3"><svg aria-hidden="true" class="astro-b5raizh3 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.5rem;"><path d="M17 11H9.41l3.3-3.29a1.004 1.004 0 1 0-1.42-1.42l-5 5a1 1 0 0 0-.21.33 1 1 0 0 0 0 .76 1 1 0 0 0 .21.33l5 5a1.002 1.002 0 0 0 1.639-.325 1 1 0 0 0-.219-1.095L9.41 13H17a1 1 0 0 0 0-2Z"/></svg><span class="astro-b5raizh3">Previous<br class="astro-b5raizh3"><span class="link-title astro-b5raizh3">CLI reference</span></span></a><a href="/docs/config-and-files.html" rel="next" class="astro-b5raizh3"><svg aria-hidden="true" class="astro-b5raizh3 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.5rem;"><path d="M17.92 11.62a1.001 1.001 0 0 0-.21-.33l-5-5a1.003 1.003 0 1 0-1.42 1.42l3.3 3.29H7a1 1 0 0 0 0 2h7.59l-3.3 3.29a1.002 1.002 0 0 0 .325 1.639 1 1 0 0 0 1.095-.219l5-5a1 1 0 0 0 .21-.33 1 1 0 0 0 0-.76Z"/></svg><span class="astro-b5raizh3">Next<br class="astro-b5raizh3"><span class="link-title astro-b5raizh3">Config &amp; files</span></span></a></div></footer></div></div></main></div></div></div></div></body></html>

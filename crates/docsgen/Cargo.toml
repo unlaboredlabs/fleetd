@@ -1,6 +1,6 @@
 [package]
 name = "docsgen"
-description = "Generates fleetd.sh/docs (site/docs/) from docs/site/*.md and the binary's own help"
+description = "Writes the generated parts of fleetd.sh/docs (the CLI reference, the prompt table) from the binary itself"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,7 +10,6 @@ publish = false
 # The CLI reference comes from the same usage text `fleetd help` prints, so it can't drift from the binary.
 fleetd = { path = "../fleetd" }
 fleetd-contracts = { path = "../fleetd-contracts" }
-pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
 serde_json.workspace = true
 
 [lints]

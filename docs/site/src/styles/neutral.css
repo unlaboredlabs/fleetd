@@ -1,0 +1,52 @@
+/* Starlight's own layout and type, with a neutral palette: no tint in the grays, plain blue links. */
+:root {
+  --sl-color-accent-low: #10243e;
+  --sl-color-accent: #3b82f6;
+  --sl-color-accent-high: #bfdbfe;
+  --sl-color-white: #ffffff;
+  --sl-color-gray-1: #ececec;
+  --sl-color-gray-2: #c8c8c8;
+  --sl-color-gray-3: #a0a0a0;
+  --sl-color-gray-4: #6e6e6e;
+  --sl-color-gray-5: #3f3f3f;
+  --sl-color-gray-6: #262626;
+  --sl-color-black: #161616;
+}
+
+:root[data-theme="light"] {
+  --sl-color-accent-low: #dbeafe;
+  --sl-color-accent: #1d4ed8;
+  --sl-color-accent-high: #1e3a8a;
+  --sl-color-white: #111111;
+  --sl-color-gray-1: #222222;
+  --sl-color-gray-2: #3a3a3a;
+  --sl-color-gray-3: #595959;
+  --sl-color-gray-4: #8a8a8a;
+  --sl-color-gray-5: #c4c4c4;
+  --sl-color-gray-6: #ececec;
+  --sl-color-gray-7: #f6f6f6;
+  --sl-color-black: #ffffff;
+}
+
+/* Inline code stands out from prose in both themes. */
+.sl-markdown-content :not(pre) > code {
+  background-color: var(--sl-color-gray-6);
+  border: 1px solid var(--sl-color-gray-5);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+}
+
+/* The title and the current page stay neutral; blue is for links. */
+.site-title {
+  color: var(--sl-color-white);
+}
+.sidebar-content a[aria-current="page"],
+.sidebar-content a[aria-current="page"]:hover,
+.sidebar-content a[aria-current="page"]:focus {
+  background-color: var(--sl-color-gray-6);
+  color: var(--sl-color-white);
+  font-weight: 600;
+}
+:root:not([data-theme="light"]) .sidebar-content a[aria-current="page"] {
+  background-color: var(--sl-color-gray-5);
+}
