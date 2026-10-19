@@ -59,6 +59,41 @@ export const screens: readonly Screen[] = [
   },
   // E2: every design-system primitive with stress content, so the primitives pass before any screen uses them.
   { id: "gallery", route: "#/gallery", fixtures: ["typical"], pending: "E2's gallery (feat/desktop-ui) has not landed" },
+  // F8: Add project (the pick list, its empty and loading states, gh and machine problems) and Machines.
+  { id: "projects.add", route: "#/projects/add", fixtures: ["typical", "empty", "long-text", "node-too-old", "hub-unreachable"] },
+  // The sheet's later states, reached by adding from the pick list. The fixtures must answer project_add (and, for a
+  // clone, play its project.clone_progress events; app/fleetd-app/src/project_add/fixture.rs has the data).
+  {
+    id: "projects.add.cloning",
+    route: "#/projects/add",
+    fixtures: ["typical"],
+    open: async (page) => {
+      await page.getByRole("textbox", { name: "GitHub URL, folder path, or filter" }).fill("acme/checkout-v2");
+      await page.keyboard.press("Enter");
+    },
+    pending: "E3b's fixtures don't answer project_add or play clone events yet",
+  },
+  {
+    id: "projects.add.ready",
+    route: "#/projects/add",
+    fixtures: ["typical", "long-text"],
+    open: async (page) => {
+      await page.getByRole("textbox", { name: "GitHub URL, folder path, or filter" }).fill("/home/dev/src/pricing");
+      await page.keyboard.press("Enter");
+    },
+    pending: "E3b's fixtures don't answer project_add yet",
+  },
+  {
+    id: "projects.add.error",
+    route: "#/projects/add",
+    fixtures: ["typical"],
+    open: async (page) => {
+      await page.getByRole("textbox", { name: "GitHub URL, folder path, or filter" }).fill("acme/ledger-ui");
+      await page.keyboard.press("Enter");
+    },
+    pending: "E3b's fixtures don't refuse a clone into an existing folder yet",
+  },
+  { id: "machines", route: "#/machines", fixtures: ["typical", "empty", "long-text", "many-agents", "hub-unreachable"] },
 ];
 
 // Platform checks that need a screen writer's work before they can pass; the owner turns theirs on when it lands.
