@@ -1,0 +1,109 @@
+/* Message prose: hierarchy from weight and space, not heading sizes; everything wraps. */
+.root {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: var(--text-md);
+  line-height: var(--leading-md);
+}
+.root > * + * {
+  margin-top: var(--space-2);
+}
+.root h1,
+.root h2,
+.root h3,
+.root h4,
+.root h5,
+.root h6 {
+  font-size: var(--text-md);
+  line-height: var(--leading-md);
+  font-weight: var(--weight-strong);
+}
+.root > :is(h1, h2, h3, h4, h5, h6):not(:first-child) {
+  margin-top: var(--space-4);
+}
+.root ul,
+.root ol {
+  padding-left: var(--space-6);
+}
+.root li + li,
+.root li > ul,
+.root li > ol {
+  margin-top: 2px;
+}
+.root li::marker {
+  color: var(--quiet);
+}
+.root li:has(> input[type="checkbox"]) {
+  list-style: none;
+  margin-left: calc(-1 * var(--space-4));
+}
+.root input[type="checkbox"] {
+  margin: 0 var(--space-1-5) 0 0;
+  vertical-align: -2px;
+  accent-color: var(--accent-fill);
+}
+.root a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.root blockquote {
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--hairline);
+  color: var(--quiet);
+}
+.root hr {
+  border: none;
+  height: 1px;
+  background: var(--hairline);
+}
+.root strong {
+  font-weight: var(--weight-strong);
+}
+.tableWrap {
+  overflow-x: auto;
+  max-width: 100%;
+}
+.root table {
+  border-collapse: collapse;
+  min-width: 50%;
+}
+.root th,
+.root td {
+  padding: var(--space-1) var(--space-3) var(--space-1) 0;
+  border-bottom: 1px solid var(--hairline);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.root th {
+  font-weight: var(--weight-strong);
+  color: var(--quiet);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+}
+
+.frame {
+  position: relative;
+  min-width: 0;
+}
+.toggle {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--space-1);
+}
+.raw {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--sidebar);
+  border: 1px solid var(--hairline);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

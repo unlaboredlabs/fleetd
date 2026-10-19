@@ -20,8 +20,14 @@
   },
   "dependencies": {
     "@napi-rs/keyring": "2.1.1",
+    "@tanstack/react-virtual": "3.14.21",
+    "lucide-react": "1.59.0",
+    "radix-ui": "1.8.1",
     "react": "19.3.1",
     "react-dom": "19.3.1",
+    "react-markdown": "10.1.0",
+    "remark-gfm": "4.0.1",
+    "shiki": "4.5.0",
     "ws": "8.22.0",
     "zod": "4.6.7"
   },
@@ -37,6 +43,7 @@
     "eslint": "10.13.0",
     "eslint-plugin-react-hooks": "7.1.1",
     "globals": "17.13.0",
+    "happy-dom": "21.0.3",
     "typescript": "6.0.3",
     "typescript-eslint": "8.71.2",
     "vite": "8.3.4",
