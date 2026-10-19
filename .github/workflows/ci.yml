@@ -73,11 +73,13 @@ jobs:
       - name: fleetd.sh/docs is the current build
         # site/docs/ is committed (the Vercel project has no build step). This fails while it differs from a fresh
         # Starlight build of docs/site. Fix: npm ci --prefix docs/site && npm run build --prefix docs/site, then commit.
+        # The search index (site/docs/pagefind) is left out: Pagefind chunks it in the order the filesystem lists the
+        # pages, which differs between machines, and it is built from the same HTML in the same run.
         run: |
           npm ci --prefix docs/site --no-audit --no-fund
           npm run build --prefix docs/site
-          if [ -n "$(git status --porcelain -- site/docs)" ]; then
-            git status --short -- site/docs | head -20
+          if [ -n "$(git status --porcelain -- site/docs ':!site/docs/pagefind')" ]; then
+            git status --short -- site/docs ':!site/docs/pagefind' | head -20
             echo "::error::site/docs differs from a fresh build of docs/site; rebuild and commit it (site/README.md, Docs)"
             exit 1
           fi
