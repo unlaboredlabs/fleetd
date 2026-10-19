@@ -70,8 +70,11 @@ const validator = (file: string, ref: string, shape: "closed" | "partial" = "clo
 };
 
 const tools = load("McpTools.json")["$defs"]["McpTools"] as { properties: Record<string, JsonValue> };
-/** The hub's error codes: a fixture's fail() can only answer with one of these. */
-const ERROR_CODES = new Set((load("AppServerMessage.json")["$defs"]["ErrorCode"] as { enum: Array<string> }).enum);
+/**
+ * What a fixture's fail() can answer with: the hub's error codes, and the shell's own for a call the link lost or
+ * never sent (src/shared/hub.ts HubError), so a screen's offline and cut-off states can be shot.
+ */
+const ERROR_CODES = new Set([...(load("AppServerMessage.json")["$defs"]["ErrorCode"] as { enum: Array<string> }).enum, "timeout", "offline", "disconnected"]);
 
 const describe = (errors: ReadonlyArray<ErrorObject> | null | undefined) =>
   (errors ?? []).slice(0, 3).map((e) => `${e.instancePath || "/"} ${e.message ?? ""}`).join("; ");

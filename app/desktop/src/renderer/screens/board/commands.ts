@@ -21,7 +21,8 @@ const subscribePending = (l: () => void) => {
   listeners.add(l);
   return () => listeners.delete(l);
 };
-const askForOrder = (text: string | undefined, where = "#/") => {
+/** Puts `text` in the board composer and opens the board (the palette's "New order: …", an order's Reorder). */
+export const askForOrder = (text: string | undefined, where = "#/") => {
   pending = text === undefined ? {} : { text };
   for (const l of listeners) l();
   go(where);

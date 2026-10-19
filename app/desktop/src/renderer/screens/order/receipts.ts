@@ -7,14 +7,33 @@ import { clip, clock, inlinePlain, shortElapsed } from "./format";
 
 export type Tone = "quiet" | "good" | "warn" | "bad";
 
-/** What the receipt offers: drop a queued steer, or resend an ignored one as ⌘Enter. */
-export type ReceiptAct = { readonly kind: "withdraw"; readonly steerId: string } | { readonly kind: "redirect"; readonly steerId: string };
+/**
+ * What the receipt offers: drop a queued steer, or resend an ignored one as ⌘Enter; for a steer the hub doesn't
+ * have, send it again under its own id, put its words back in the box, or let it go.
+ */
+export type ReceiptAct =
+  | { readonly kind: "withdraw"; readonly steerId: string }
+  | { readonly kind: "redirect"; readonly steerId: string }
+  | { readonly kind: "resend" | "edit" | "dismiss"; readonly requestId: string };
+
+export const ACT_LABEL: Readonly<Record<ReceiptAct["kind"], string>> = {
+  withdraw: "Withdraw",
+  redirect: "Interrupt and redirect",
+  resend: "Resend",
+  edit: "Edit",
+  dismiss: "Dismiss",
+};
 
 export interface Receipt {
-  readonly stage: SteerStage | "sending" | "not_sent";
+  readonly stage: SteerStage | "sending" | "reconnecting" | "unanswered" | "not_sent";
   readonly line: string;
+  /**
+   * Words quoted after the line (the agent's reply, the step it stopped), in full: the line cuts them to the space
+   * left, with the rest in a tooltip and a copyable popover.
+   */
+  readonly quote?: { readonly text: string; readonly code?: boolean };
   readonly tone: Tone;
-  readonly act?: ReceiptAct;
+  readonly acts?: readonly ReceiptAct[];
   /** The hub's own words on a failure, behind Details rather than in the line. */
   readonly detail?: string;
 }
@@ -56,21 +75,21 @@ export function receipt(s: Steer, redirected = false): Receipt {
             ? " · after its running step"
             : s.how === "stopped"
               ? s.stoppedTool
-                ? ` · stopped \`${clip(s.stoppedTool, 60)}\``
+                ? " · stopped"
                 : " · stopped its current step"
               : s.how === "joined"
                 ? " · joined its running turn"
                 : "";
-      return { ...base, line: `${s.id} · delivered${at(s.deliveredAt)}${how}${detail}`, tone: "quiet" };
+      const tool = s.how === "stopped" && s.stoppedTool ? { quote: { text: s.stoppedTool, code: true } } : {};
+      return { ...base, line: `${s.id} · delivered${at(s.deliveredAt)}${how}${detail}`, ...tool, tone: "quiet" };
     }
     case "acknowledged": {
-      const said = s.ackExcerpt ? ` · “${clip(inlinePlain(s.ackExcerpt), 90)}”` : "";
       const plan = s.planChange ? ` · ${s.planChange}` : "";
-      return { ...base, line: `${s.id} · acknowledged${at(s.ackedAt)}${said}${plan}`, tone: "good" };
+      return { ...base, line: `${s.id} · acknowledged${at(s.ackedAt)}${plan}`, ...said(s.ackExcerpt), tone: "good" };
     }
     case "unacknowledged": {
-      const reply = s.ackExcerpt ? ` · its reply: “${clip(inlinePlain(s.ackExcerpt), 80)}”` : "";
-      return { ...base, line: `${s.id} · not acknowledged${reply}`, tone: "warn", ...(redirected ? {} : { act: { kind: "redirect", steerId: s.id } }) };
+      const reply = s.ackExcerpt ? " · its reply:" : "";
+      return { ...base, line: `${s.id} · not acknowledged${reply}`, ...said(s.ackExcerpt), tone: "warn", ...(redirected ? {} : { acts: [{ kind: "redirect", steerId: s.id }] }) };
     }
     case "withdrawn":
       return { ...base, line: `${s.id} · withdrawn`, tone: "quiet" };
@@ -81,16 +100,33 @@ export function receipt(s: Steer, redirected = false): Receipt {
   }
 }
 
-const withdraw = (s: Steer): { act?: ReceiptAct } => (canWithdraw(s) ? { act: { kind: "withdraw", steerId: s.id } } : {});
+const withdraw = (s: Steer): { acts?: readonly ReceiptAct[] } => (canWithdraw(s) ? { acts: [{ kind: "withdraw", steerId: s.id }] } : {});
+
+const said = (excerpt: string | undefined): { quote?: { text: string } } => (excerpt ? { quote: { text: `“${inlinePlain(excerpt)}”` } } : {});
 
 export function sendingReceipt(s: Sending): Receipt {
+  const id = { requestId: s.requestId };
   switch (s.state.t) {
     case "sending":
       return { stage: "sending", line: "sending…", tone: "quiet" };
     case "reconnecting":
-      return { stage: "sending", line: "sending… (reconnecting; it is sent again when the hub is back)", tone: "quiet" };
+      return { stage: "reconnecting", line: "sending… the link to the hub dropped; it is sent again when the link is back", tone: "quiet" };
+    case "unanswered":
+      // Safe to send again: the hub keeps one steer per id.
+      return {
+        stage: "unanswered",
+        line: "no answer from the hub yet; it may have it",
+        tone: "warn",
+        acts: [{ kind: "resend", ...id }, { kind: "dismiss", ...id }],
+      };
     case "failed":
-      return { stage: "not_sent", line: "not sent: the hub refused it. Your words are still in the box.", tone: "bad", detail: s.state.message };
+      return {
+        stage: "not_sent",
+        line: s.state.offline === true ? "not sent: not connected to the hub" : "not sent: the hub refused it",
+        tone: "bad",
+        ...(s.state.offline === true ? {} : { detail: s.state.message }),
+        acts: [{ kind: "resend", ...id }, { kind: "edit", ...id }, { kind: "dismiss", ...id }],
+      };
   }
 }
 
