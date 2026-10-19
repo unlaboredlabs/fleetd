@@ -346,6 +346,52 @@
       ],
       "type": "string"
     },
+    "ApprovalAnswerInput": {
+      "properties": {
+        "decision": {
+          "$ref": "#/$defs/ApprovalDecision"
+        },
+        "message": {
+          "description": "A denial's reason, passed to the lead.",
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        },
+        "requestId": {
+          "$ref": "#/$defs/ChatRequestId"
+        }
+      },
+      "required": [
+        "requestId",
+        "decision"
+      ],
+      "type": "object"
+    },
+    "ApprovalAnswerOutput": {
+      "properties": {
+        "message": {
+          "$ref": "#/$defs/ChatMessage"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "message"
+      ],
+      "type": "object"
+    },
+    "ApprovalDecision": {
+      "description": "The human's answer to a `command_approval`.",
+      "enum": [
+        "approve",
+        "deny"
+      ],
+      "type": "string"
+    },
     "AreaName": {
       "description": "Lowercase slug, [a-z0-9][a-z0-9_-]*, at most 40",
       "pattern": "^[a-z0-9][a-z0-9_-]*$",
@@ -642,6 +688,60 @@
       ],
       "type": "object"
     },
+    "AttachmentGetInput": {
+      "properties": {
+        "attachmentId": {
+          "$ref": "#/$defs/AttachmentId"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        }
+      },
+      "required": [
+        "projectRef",
+        "attachmentId"
+      ],
+      "type": "object"
+    },
+    "AttachmentGetOutput": {
+      "properties": {
+        "attachmentId": {
+          "$ref": "#/$defs/AttachmentId"
+        },
+        "bytes": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "dataB64": {
+          "description": "Standard base64.",
+          "type": "string"
+        },
+        "mime": {
+          "$ref": "#/$defs/AttachmentMime"
+        },
+        "name": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "attachmentId",
+        "name",
+        "mime",
+        "bytes",
+        "dataB64"
+      ],
+      "type": "object"
+    },
     "AttachmentId": {
       "pattern": "^F[1-9][0-9]*$",
       "type": "string"
@@ -707,6 +807,35 @@
         "attachmentId",
         "bytes",
         "sha256"
+      ],
+      "type": "object"
+    },
+    "AttachmentRef": {
+      "description": "A file on a message: what the app shows without fetching it. Its bytes come from `attachment_get`.",
+      "properties": {
+        "attachmentId": {
+          "$ref": "#/$defs/AttachmentId"
+        },
+        "bytes": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "mime": {
+          "$ref": "#/$defs/AttachmentMime"
+        },
+        "name": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "attachmentId",
+        "name",
+        "mime",
+        "bytes"
       ],
       "type": "object"
     },
@@ -1373,6 +1502,11 @@
           "const": "order_outcome",
           "description": "An order's outcome (done, stopped, failed) as a one-line event.",
           "type": "string"
+        },
+        {
+          "const": "question",
+          "description": "A question the lead asked with the retired questions tool, and its answer.",
+          "type": "string"
         }
       ],
       "x-open": true
@@ -1413,11 +1547,10 @@
         "attachments": {
           "default": [],
           "items": {
-            "$ref": "#/$defs/AttachmentId"
+            "$ref": "#/$defs/AttachmentRef"
           },
           "maxItems": 8,
-          "type": "array",
-          "uniqueItems": true
+          "type": "array"
         },
         "author": {
           "$ref": "#/$defs/ChatAuthor"
@@ -1504,7 +1637,7 @@
       "x-open": true
     },
     "ChatRequestId": {
-      "pattern": "^R[1-9][0-9]*$",
+      "pattern": "^Q[1-9][0-9]*$",
       "type": "string"
     },
     "ChatSendInput": {
@@ -2011,20 +2144,10 @@
       "type": "object"
     },
     "CommandApprovalItem": {
-      "description": "A risky command (prod write, spend, delete, credential use) or a session's permission prompt waits for the\nhuman: the exact command, then Approve or Deny. Answered with `approval_answer`, naming `requestId`.",
+      "description": "A risky command (prod write, spend, delete, credential use) or a session's permission prompt waits for the\nhuman: the exact command, then Approve or Deny. Answered with `approval_answer`, naming `requestId`. Exactly one of\n`gated` and `permission`.",
       "properties": {
         "answeredAt": {
           "$ref": "#/$defs/Timestamp"
-        },
-        "argv": {
-          "description": "The exact argv that runs once approved. Absent for a session's permission prompt, which has `tool`.",
-          "items": {
-            "maxLength": 4000,
-            "type": "string"
-          },
-          "maxItems": 64,
-          "minItems": 1,
-          "type": "array"
         },
         "by": {
           "description": "The key name of the person who answered.",
@@ -2033,69 +2156,44 @@
           "pattern": "^[^\\r\\n]*$",
           "type": "string"
         },
-        "class": {
-          "$ref": "#/$defs/GatedClass"
-        },
-        "cwd": {
-          "maxLength": 1000,
-          "minLength": 1,
-          "type": "string"
-        },
         "exitCode": {
           "format": "int64",
           "type": "integer"
         },
-        "inputSummary": {
-          "maxLength": 2000,
-          "type": "string"
+        "gated": {
+          "$ref": "#/$defs/GatedRunSpec",
+          "description": "A gated command: exactly what runs once approved."
         },
         "machineId": {
-          "$ref": "#/$defs/MachineId"
+          "$ref": "#/$defs/MachineId",
+          "description": "Where it runs, or the machine of the session that asks."
+        },
+        "note": {
+          "description": "Why it is open again (\"not run: the node was offline when approved\"), or why it failed without running.",
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
         },
         "outputTail": {
           "description": "The end of the output, once it ran.",
           "maxLength": 2000,
           "type": "string"
         },
-        "reason": {
-          "description": "One line: why.",
-          "maxLength": 300,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
+        "permission": {
+          "$ref": "#/$defs/ToolPermission",
+          "description": "A session's permission prompt: the tool and what it would do."
         },
         "requestId": {
           "$ref": "#/$defs/ChatRequestId"
         },
-        "secretEnv": {
-          "description": "Names only; the values come from the node's own sinks.",
-          "items": {
-            "$ref": "#/$defs/EnvName"
-          },
-          "maxItems": 16,
-          "type": "array"
-        },
         "state": {
           "$ref": "#/$defs/CommandApprovalState"
-        },
-        "timeoutSec": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "tool": {
-          "description": "A permission prompt: the tool the agent wants to use, with `inputSummary`.",
-          "maxLength": 120,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
         }
       },
       "required": [
         "requestId",
         "machineId",
-        "class",
-        "reason",
         "state"
       ],
       "type": "object"
@@ -5169,11 +5267,23 @@
         "actions_list.output": {
           "$ref": "#/$defs/ActionsListOutput"
         },
+        "approval_answer.input": {
+          "$ref": "#/$defs/ApprovalAnswerInput"
+        },
+        "approval_answer.output": {
+          "$ref": "#/$defs/ApprovalAnswerOutput"
+        },
         "asks_list.input": {
           "$ref": "#/$defs/AsksListInput"
         },
         "asks_list.output": {
           "$ref": "#/$defs/AsksListOutput"
+        },
+        "attachment_get.input": {
+          "$ref": "#/$defs/AttachmentGetInput"
+        },
+        "attachment_get.output": {
+          "$ref": "#/$defs/AttachmentGetOutput"
         },
         "attachment_put.input": {
           "$ref": "#/$defs/AttachmentPutInput"
@@ -5378,6 +5488,12 @@
         },
         "project_remove.output": {
           "$ref": "#/$defs/ProjectRemoveOutput"
+        },
+        "project_stop.input": {
+          "$ref": "#/$defs/ProjectStopInput"
+        },
+        "project_stop.output": {
+          "$ref": "#/$defs/ProjectStopOutput"
         },
         "projects_list.input": {
           "$ref": "#/$defs/ProjectsListInput"
@@ -5629,8 +5745,12 @@
       "required": [
         "actions_list.input",
         "actions_list.output",
+        "approval_answer.input",
+        "approval_answer.output",
         "asks_list.input",
         "asks_list.output",
+        "attachment_get.input",
+        "attachment_get.output",
         "attachment_put.input",
         "attachment_put.output",
         "attention_policy.input",
@@ -5699,6 +5819,8 @@
         "project_inspect.output",
         "project_remove.input",
         "project_remove.output",
+        "project_stop.input",
+        "project_stop.output",
         "projects_list.input",
         "projects_list.output",
         "prompt_get.input",
@@ -7741,6 +7863,54 @@
       ],
       "type": "object"
     },
+    "ProjectStopInput": {
+      "properties": {
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "reason": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "projectRef"
+      ],
+      "type": "object"
+    },
+    "ProjectStopOutput": {
+      "properties": {
+        "cancelled": {
+          "description": "Tasks this call cancelled.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "message": {
+          "$ref": "#/$defs/ChatMessage",
+          "description": "The system line it wrote into the chat."
+        },
+        "next": {
+          "type": "string"
+        },
+        "stopped": {
+          "description": "Orders this call stopped.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "stopped",
+        "cancelled",
+        "message"
+      ],
+      "type": "object"
+    },
     "ProjectSummary": {
       "properties": {
         "lastActivityAt": {
@@ -8891,11 +9061,13 @@
           "pattern": "^[^\\r\\n]*$",
           "type": "string"
         },
+        "envName": {
+          "$ref": "#/$defs/EnvName",
+          "description": "An `env:` sink: the variable it writes, when not the one `name` gives (`secrets::secret_env_name`)."
+        },
         "fingerprint": {
-          "description": "Once stored.",
-          "maxLength": 100,
-          "minLength": 1,
-          "type": "string"
+          "$ref": "#/$defs/SecretFingerprint",
+          "description": "Once stored."
         },
         "name": {
           "description": "The secret's key, e.g. `stripe.test_key`.",
@@ -8904,14 +9076,18 @@
           "pattern": "^[^\\r\\n]*$",
           "type": "string"
         },
+        "note": {
+          "description": "Why it is open again, or why it could not be stored.",
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
         "requestId": {
           "$ref": "#/$defs/ChatRequestId"
         },
         "sink": {
-          "description": "Where it lands: `env:<machine>:<absolute path>` or `file:<machine>:<absolute path>`.",
-          "maxLength": 600,
-          "minLength": 1,
-          "type": "string"
+          "$ref": "#/$defs/SecretSink"
         },
         "state": {
           "$ref": "#/$defs/SecretRequestState"
@@ -8948,7 +9124,12 @@
     "SecretSubmitInput": {
       "properties": {
         "askId": {
-          "$ref": "#/$defs/AskId"
+          "$ref": "#/$defs/AskId",
+          "description": "A secret ask (the questions tool). Exactly one of askId and requestId."
+        },
+        "requestId": {
+          "$ref": "#/$defs/ChatRequestId",
+          "description": "A chat's `secret_request` item."
         },
         "sealed": {
           "$ref": "#/$defs/SealedSecret",
@@ -8956,7 +9137,6 @@
         }
       },
       "required": [
-        "askId",
         "sealed"
       ],
       "type": "object"
@@ -8972,12 +9152,14 @@
         "next": {
           "type": "string"
         },
+        "requestId": {
+          "$ref": "#/$defs/ChatRequestId"
+        },
         "truncated": {
           "type": "boolean"
         }
       },
       "required": [
-        "askId",
         "fingerprint"
       ],
       "type": "object"
