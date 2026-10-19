@@ -1,4 +1,4 @@
-//! M9: playbook frontmatter, the research brief floor, and the intake router's answer.
+//! M9: playbook frontmatter, the research brief floor, and where intake placed an order.
 
 use std::borrow::Cow;
 

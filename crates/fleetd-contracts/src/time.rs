@@ -160,7 +160,7 @@ span_kinds! {
     ChangeMerge = 56, "change.merge", Pipeline;
     /// needs_rebase or ci_failed until the next head.
     ChangeBlocked = 57, "change.blocked", Pipeline;
-    /// The intake router, from submit to routed.
+    /// Intake, from submit to placed.
     IntakeRoute = 58, "intake.route", Pipeline;
     Idle = 60, "idle", Idle;
     /// Lost data: spans the node dropped or the hub could not take. `extra.count` says how many.

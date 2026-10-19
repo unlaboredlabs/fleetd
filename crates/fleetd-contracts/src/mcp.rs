@@ -346,11 +346,11 @@ pub type IntakeRefs = List<IntakeRef, 0, 20>;
 input!(
     #[serde(remote = "Self")]
     IntakeSubmitInput {
-        /// With projectId, or neither: then the router picks the project unless the text starts with `@<project>`.
+        /// With projectId, or neither: then a leading `@<project>` picks the project, else the only one the caller may use.
         machine_id: Option<MachineId>,
         project_id: Option<ProjectId>,
         text: IntakeText,
-        /// Skips the router for the template, like a `fix:` or `research:` prefix.
+        /// The playbook the order's workstream pins; none when absent.
         template: Option<PlaybookName>,
         /// From attachment_put; delivered to the project under `.fleetd/attachments/<W>/` when the order is placed.
         attachments: Option<Attachments>,

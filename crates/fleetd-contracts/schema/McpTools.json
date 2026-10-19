@@ -4194,7 +4194,7 @@
         },
         "machineId": {
           "$ref": "#/$defs/MachineId",
-          "description": "With projectId, or neither: then the router picks the project unless the text starts with `@<project>`."
+          "description": "With projectId, or neither: then a leading `@<project>` picks the project, else the only one the caller may use."
         },
         "projectId": {
           "$ref": "#/$defs/ProjectId"
@@ -4208,7 +4208,7 @@
         },
         "template": {
           "$ref": "#/$defs/PlaybookName",
-          "description": "Skips the router for the template, like a `fix:` or `research:` prefix."
+          "description": "The playbook the order's workstream pins; none when absent."
         },
         "text": {
           "maxLength": 4000,
@@ -8980,7 +8980,7 @@
         },
         {
           "const": "intake.route",
-          "description": "The intake router, from submit to routed.",
+          "description": "Intake, from submit to placed.",
           "type": "string"
         },
         {

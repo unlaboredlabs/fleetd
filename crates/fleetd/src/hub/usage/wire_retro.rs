@@ -89,7 +89,7 @@ impl OpsPorts {
             &env,
             Some(Duration::from_millis(RUN_TIMEOUT_MS)),
         )
-        .map_err(|e| format!("cannot create the router's directory: {e}"))?;
+        .map_err(|e| format!("cannot create the one-shot runner's directory: {e}"))?;
         Ok(self.retro_runner.get_or_init(|| runner))
     }
 }
