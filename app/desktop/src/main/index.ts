@@ -1,7 +1,6 @@
 // Before anything else: a release build refuses debugging switches before Chromium can act on them.
 import "./debug-guard";
 import { isAbsolute, join } from "node:path";
-import tls from "node:tls";
 import { app, BrowserWindow, nativeTheme, powerMonitor, session } from "electron";
 import { RELEASE_BUILD } from "./build";
 import { fixtureRequest, loadFixture } from "./hub/fixture";
@@ -45,9 +44,6 @@ const opener = new Opener();
 // per userData directory, so this comes after it is set (and parallel QA runs, each with its own, don't collide).
 const primary = listenForLinks(opener);
 if (!primary) app.quit();
-
-// Hubs behind a company or private CA: trust what the OS trusts, as the GPUI app did, not only Node's bundled roots.
-tls.setDefaultCACertificates([...tls.getCACertificates("bundled"), ...tls.getCACertificates("system")]);
 
 const fixtureDir = (): string => process.env["FLEETD_FIXTURE_DIR"] ?? join(app.getAppPath(), "fixtures");
 /** The same resolution as loadFixture: a name in the fixture dir, or an absolute path. */
@@ -139,7 +135,7 @@ void app.whenReady().then(() => {
     },
   });
   createWindow(mode);
-  startUpdater();
+  void startUpdater();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow(mode);
   });

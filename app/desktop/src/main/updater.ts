@@ -1,5 +1,5 @@
 import { app, dialog, shell } from "electron";
-import { AppImageUpdater, DebUpdater, MacUpdater } from "electron-updater";
+import type { AppImageUpdater, DebUpdater, MacUpdater } from "electron-updater";
 import { feedUrl } from "./update-feed";
 
 const CHECK_EVERY_MS = 4 * 60 * 60 * 1000;
@@ -10,10 +10,12 @@ const DEB = "fleetd-desktop-linux-amd64.deb";
  * and install it when the app quits (Squirrel.Mac requires it signed by the same team). Any other Linux install is
  * the deb (the installer only installs the AppImage), which can't update itself because dpkg needs root: it only
  * checks, and tells the user once per version where to get the new .deb and how to install it. Returns the updater,
- * so the shell can offer "restart to update" on its `update-downloaded` event.
+ * so the shell can offer "restart to update" on its `update-downloaded` event. electron-updater loads here, after the
+ * window is up, not with the app (it costs ~20 ms of startup).
  */
-export const startUpdater = (): MacUpdater | AppImageUpdater | DebUpdater | null => {
+export const startUpdater = async (): Promise<MacUpdater | AppImageUpdater | DebUpdater | null> => {
   if (!app.isPackaged) return null;
+  const { AppImageUpdater, DebUpdater, MacUpdater } = await import("electron-updater");
   const url = feedUrl(app.getVersion(), process.env["FLEETD_BASE_URL"]);
   const options = { provider: "generic" as const, url };
   const deb = process.platform === "linux" && process.env["APPIMAGE"] === undefined;
