@@ -3,6 +3,7 @@
 // hub's quiet windows only urgent items. No clock and no I/O, so it is unit-tested; the shell posts what `due`
 // returns.
 import type { NotifyTarget } from "../../../shared/app";
+import type { ProjectKey } from "./routes";
 
 /** When the hub's attention_policy can't be read (an older hub): the hub's own defaults, minus quiet hours. */
 const FALLBACK_COALESCE_MS = 20 * 60_000;
@@ -46,20 +47,28 @@ export interface AttentionEvent {
   readonly type: string;
   readonly summary: string;
   readonly attention: "loud" | "urgent" | null;
-  readonly askId: string | null;
+  /** The project it is about, when it names one: clicking it opens that project's chat. */
+  readonly project: ProjectKey | null;
+  /** The chat message it is about, when the event carries one. */
+  readonly messageId: string | null;
 }
 
 /** Reads a hub event (the /app protocol's HubEvent) defensively: anything off-shape is not for attention. */
 export const attentionEvent = (event: Readonly<Record<string, unknown>>): AttentionEvent | null => {
   const attention = event["attention"];
   if (attention !== "loud" && attention !== "urgent") return null;
-  const type = typeof event["type"] === "string" ? event["type"] : "";
-  const askId = type === "ask.created" ? record(event["data"])?.["askId"] : undefined;
+  // chat.message and chat.waiting name the project in `data.projectRef`; other events at the top level.
+  const data = record(event["data"]);
+  const ref = record(data?.["projectRef"]);
+  const machineId = ref?.["machineId"] ?? event["machineId"];
+  const projectId = ref?.["projectId"] ?? event["projectId"];
+  const messageId = data?.["messageId"];
   return {
-    type,
+    type: typeof event["type"] === "string" ? event["type"] : "",
     summary: typeof event["summary"] === "string" ? event["summary"] : "",
     attention,
-    askId: typeof askId === "string" ? askId : null,
+    project: typeof machineId === "string" && typeof projectId === "string" ? { machineId, projectId } : null,
+    messageId: typeof messageId === "string" ? messageId : null,
   };
 };
 
@@ -72,11 +81,10 @@ export interface Notification {
 interface Pending {
   readonly line: string;
   readonly urgent: boolean;
-  readonly askId: string | null;
+  readonly project: ProjectKey | null;
+  readonly messageId: string | null;
   /** About a machine or its setup (machine.*, doctor.*, usage.*), so Machines explains it. */
   readonly machine: boolean;
-  /** How many open-asks reads had been sent when this arrived; only later ones can say it was answered. */
-  readonly asksSent: number;
 }
 
 const oneLine = (text: string, max: number): string => {
@@ -86,24 +94,30 @@ const oneLine = (text: string, max: number): string => {
   return chars.length <= max ? flat : `${chars.slice(0, max - 1).join("")}…`;
 };
 
+const sameKey = (a: ProjectKey | null, b: ProjectKey | null): boolean =>
+  a !== null && b !== null && a.machineId === b.machineId && a.projectId === b.projectId;
+
 export class Notifier {
   #pending: Array<Pending> = [];
   #lastSent: number | null = null;
 
-  push(event: AttentionEvent, asksSent: number): void {
+  push(event: AttentionEvent): void {
     if (event.attention === null) return;
     this.#pending.push({
       line: oneLine(event.summary, 140),
       urgent: event.attention === "urgent",
-      askId: event.askId,
+      project: event.project,
+      messageId: event.messageId,
       machine: ["machine.", "doctor.", "usage."].some((p) => event.type.startsWith(p)),
-      asksSent,
     });
   }
 
-  /** What to show now, if anything. `stillOpen(askId, asksSent)` drops asks answered or withdrawn meanwhile. */
-  due(now: number, policy: Policy, stillOpen: (askId: string, asksSent: number) => boolean): Notification | null {
-    this.#pending = this.#pending.filter((p) => p.askId === null || stillOpen(p.askId, p.asksSent));
+  /**
+   * What to show now, if anything. `stillNeeded(project)` drops items about a project you have answered meanwhile
+   * (its lead no longer waits for you); it returns true while that isn't known.
+   */
+  due(now: number, policy: Policy, stillNeeded: (project: ProjectKey) => boolean): Notification | null {
+    this.#pending = this.#pending.filter((p) => p.project === null || p.machine || stillNeeded(p.project));
     const quiet = quietAt(policy, now);
     const sendable = (p: Pending) => !quiet || p.urgent;
     if (!this.#pending.some(sendable)) return null;
@@ -114,12 +128,20 @@ export class Notifier {
     const [first, ...rest] = send;
     if (first === undefined) return null;
     const body = rest.length === 0 ? first.line : `${first.line} (+${rest.length} more)`;
+    const one = first.project !== null && send.every((p) => sameKey(p.project, first.project)) ? first.project : null;
     const target: NotifyTarget =
-      rest.length === 0 && first.askId !== null
-        ? { kind: "ask", askId: first.askId }
+      one !== null && !first.machine
+        ? {
+            kind: "chat",
+            machineId: one.machineId,
+            projectId: one.projectId,
+            // The message only when it is the one thing this notification is about.
+            ...(rest.length === 0 && first.messageId !== null ? { messageId: first.messageId } : {}),
+          }
         : send.every((p) => p.machine)
           ? { kind: "machines" }
-          : { kind: "inbox" };
+          : // Several projects: Status lists which need you.
+            { kind: "status" };
     return { title: "fleetd needs you", body, target };
   }
 }
