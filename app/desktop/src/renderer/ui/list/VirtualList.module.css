@@ -1,0 +1,17 @@
+.scroller {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  contain: strict;
+}
+.inner {
+  position: relative;
+  width: 100%;
+}
+.row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+}

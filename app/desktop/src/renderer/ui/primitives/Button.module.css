@@ -1,0 +1,120 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1-5);
+  flex: none;
+  min-width: 0;
+  max-width: 100%;
+  height: var(--control);
+  padding: 0 var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font-size: var(--text-md);
+  line-height: var(--leading-md);
+  font-weight: var(--weight-regular);
+  white-space: nowrap;
+  cursor: default;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+.button > svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+.label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.md {
+  height: var(--field);
+  padding: 0 var(--space-3);
+}
+.sm {
+  height: var(--control);
+}
+.icon {
+  width: var(--control);
+  padding: 0;
+}
+.md.icon {
+  width: var(--field);
+}
+
+.primary {
+  background: var(--accent-fill);
+  color: var(--on-accent);
+  font-weight: var(--weight-strong);
+}
+.primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent-fill) 88%, black);
+}
+.secondary {
+  border-color: var(--border);
+  color: var(--text);
+  background: var(--raised);
+}
+.secondary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--raised) 100%, transparent);
+  box-shadow: inset 0 0 0 100px var(--hover);
+}
+.ghost {
+  color: var(--text);
+}
+.ghost:hover:not(:disabled),
+.ghost[data-state="open"] {
+  background: var(--hover);
+}
+.quiet {
+  color: var(--quiet);
+}
+.quiet:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+/* Destructive is a colour inside a confirmation, not a button style spread around the app. */
+.danger {
+  background: var(--danger);
+  color: var(--bg);
+  font-weight: var(--weight-strong);
+}
+.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 88%, black);
+}
+
+.button:active:not(:disabled) {
+  box-shadow: inset 0 0 0 100px var(--selected);
+}
+.button:disabled {
+  color: var(--faint);
+  background: transparent;
+  border-color: var(--hairline);
+  font-weight: inherit;
+}
+.ghost:disabled,
+.quiet:disabled {
+  border-color: transparent;
+}
+
+.kbd {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--hairline);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--quiet);
+  white-space: nowrap;
+}
+.primary .kbd {
+  color: inherit;
+  border-color: color-mix(in srgb, var(--on-accent) 35%, transparent);
+}
