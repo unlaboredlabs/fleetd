@@ -56,12 +56,15 @@ fn to_lease(row: &Row<'_>) -> rusqlite::Result<Lease> {
     })
 }
 
-/// The all-or-none rule over the project's lease rows, inside the caller's transaction.
+/// The all-or-none rule over the project's lease rows, inside the caller's transaction. A `whole` area (one whose
+/// globs cover the repo, such as `all`) overlaps every other area, so it conflicts with any area another task holds,
+/// and any area conflicts with a `whole` one another task holds.
 fn acquire_in(
     db: &Connection,
     project_ref: &ProjectRef,
     task_id: &TaskId,
     areas: &[AreaName],
+    whole: &[AreaName],
     since: &str,
 ) -> rusqlite::Result<Grant> {
     let (m, p) = (
@@ -73,7 +76,9 @@ fn acquire_in(
         .query_map(params![m, p], |r| Ok((r.get(0)?, r.get(1)?)))?
         .collect::<rusqlite::Result<_>>()?;
     let holder = |area: &str| held.iter().find(|(a, _)| a == area).map(|(_, t)| t.clone());
-    let conflicts: Vec<(&str, String)> = areas
+    let is_whole = |area: &str| whole.iter().any(|w| w.as_str() == area);
+    let wants_whole = areas.iter().any(|a| is_whole(a.as_str()));
+    let mut conflicts: Vec<(&str, String)> = areas
         .iter()
         .filter_map(|a| {
             holder(a.as_str())
@@ -81,6 +86,11 @@ fn acquire_in(
                 .map(|t| (a.as_str(), t))
         })
         .collect();
+    for (area, by) in held.iter().filter(|(_, t)| t != task_id.as_str()) {
+        if (wants_whole || is_whole(area)) && !conflicts.iter().any(|(a, _)| *a == area.as_str()) {
+            conflicts.push((area.as_str(), by.clone()));
+        }
+    }
     if !conflicts.is_empty() {
         return Ok(Grant::Queued(conflict_reason(&conflicts)));
     }
@@ -110,17 +120,19 @@ impl Leases {
         Arc::new(Self { db, events, clock })
     }
 
-    /// Takes every area in `areas` for the task, or none: if another task holds any of them, the reason names every
-    /// conflict. Areas the task already holds count as granted.
+    /// Takes every area in `areas` for the task, or none: if another task holds any of them, or any area at all
+    /// while one side is `whole` (covers the repo), the reason names every conflict. Areas the task already holds
+    /// count as granted.
     pub fn acquire(
         &self,
         project_ref: &ProjectRef,
         task_id: &TaskId,
         areas: &[AreaName],
+        whole: &[AreaName],
     ) -> Result<Grant, StoreError> {
         let since = iso_ms(now_ms(self.clock.as_ref()));
         self.db
-            .transaction(|db| Ok(acquire_in(db, project_ref, task_id, areas, &since)?))
+            .transaction(|db| Ok(acquire_in(db, project_ref, task_id, areas, whole, &since)?))
     }
 
     /// Drops every lease the task holds and returns them.
@@ -274,7 +286,7 @@ mod tests {
     impl Kit {
         fn take(&self, p: &str, n: u32, names: &[&str]) -> Grant {
             self.leases
-                .acquire(&project(p), &t(n), &areas(names))
+                .acquire(&project(p), &t(n), &areas(names), &areas(&["all"]))
                 .unwrap()
         }
         fn held(&self, n: u32) -> Vec<String> {
@@ -327,6 +339,22 @@ mod tests {
         k.leases.release(&t(3)).unwrap();
         assert_eq!(k.take("pa", 2, &["hub", "web", "docs"]), Grant::Granted);
         assert_eq!(k.held(2), ["docs", "hub", "web"]);
+    }
+
+    #[test]
+    fn a_whole_repo_area_waits_for_every_other_area_and_they_wait_for_it() {
+        let k = kit();
+        assert_eq!(k.take("pa", 1, &["hub"]), Grant::Granted);
+        // `all` covers hub's files: it waits even though no one holds the name.
+        assert_eq!(k.take("pa", 2, &["all"]), queued("lease: hub held by T1"));
+        assert_eq!(k.take("pa", 3, &["docs"]), Grant::Granted);
+        k.leases.release(&t(1)).unwrap();
+        k.leases.release(&t(3)).unwrap();
+        assert_eq!(k.take("pa", 2, &["all"]), Grant::Granted);
+        // And while `all` is held, any other area waits for it.
+        assert_eq!(k.take("pa", 4, &["docs"]), queued("lease: all held by T2"));
+        // Another project is not affected.
+        assert_eq!(k.take("pb", 5, &["docs"]), Grant::Granted);
     }
 
     #[test]

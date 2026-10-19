@@ -24,7 +24,7 @@ use fleetd_contracts::ledger::WorkstreamId;
 use fleetd_contracts::prim::NonEmpty;
 use fleetd_contracts::prim::{Int, Text};
 use fleetd_contracts::tasks::{
-    PolicyFile, PrUrl, Task, TaskId, TaskKind, TaskResult, TaskResultStatus, TaskState,
+    AreaName, PolicyFile, PrUrl, Task, TaskId, TaskKind, TaskResult, TaskResultStatus, TaskState,
 };
 use serde_json::{Map, Value, json};
 
@@ -570,6 +570,23 @@ impl Tasks {
         }
     }
 
+    /// The project's areas whose globs cover the whole repo (`all`); just `all` when the policy can't be read.
+    async fn whole_areas(&self, r: &ProjectRef) -> Vec<AreaName> {
+        match self.d.policies.get(r).await {
+            Ok(policy) => policy
+                .areas
+                .iter()
+                .filter(|(_, globs)| {
+                    globs.iter().any(|g| {
+                        matches!(glob::GlobMatcher::new(g.as_str()), glob::GlobMatcher::All)
+                    })
+                })
+                .map(|(name, _)| AreaName::unchecked(name.as_str()))
+                .collect(),
+            Err(_) => vec![AreaName::unchecked("all")],
+        }
+    }
+
     async fn try_start_inner(
         self: &Arc<Self>,
         stored: &StoredTask,
@@ -579,7 +596,9 @@ impl Tasks {
         let r = &task.project_ref;
         if task.kind == TaskKind::Write
             && let crate::hub::slots::Grant::Queued(reason) =
-                self.d.leases.acquire(r, &task.task_id, &task.areas)?
+                self.d
+                    .leases
+                    .acquire(r, &task.task_id, &task.areas, &self.whole_areas(r).await)?
         {
             return self.queue(stored, "lease", &reason);
         }
@@ -884,9 +903,10 @@ impl Tasks {
                     return Ok(());
                 }
                 if task.kind == TaskKind::Write {
+                    let whole = self.whole_areas(&task.project_ref).await;
                     self.d
                         .leases
-                        .acquire(&task.project_ref, &task.task_id, &task.areas)?;
+                        .acquire(&task.project_ref, &task.task_id, &task.areas, &whole)?;
                 }
                 let request = SlotRequest {
                     holder: task.task_id.as_str(),
