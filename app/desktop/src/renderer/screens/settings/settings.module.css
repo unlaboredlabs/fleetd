@@ -363,6 +363,8 @@
   overflow: hidden;
 }
 .diffLine {
+  /* Holds its screen-reader label: positioned against the page, it would make the window itself scroll. */
+  position: relative;
   display: grid;
   grid-template-columns: 20px minmax(0, 1fr);
   padding: 2px var(--space-2) 2px 0;

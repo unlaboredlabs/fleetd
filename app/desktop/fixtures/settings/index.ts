@@ -64,8 +64,8 @@ function agents(from: Fixture): Fixture {
   const ref = (p: JsonObject): JsonObject => ({ machineId: asText(p["machineId"]), projectId: asText(p["projectId"]) });
   const rows: JsonObject[] = [];
   const [first, second] = projects;
-  if (first) rows.push({ projectRef: ref(first), share: 12, used: 6 });
-  if (second) rows.push({ projectRef: ref(second), share: 3, used: 3 });
+  if (first) rows.push({ projectRef: ref(first), maxAgents: 12, running: 6, queued: 0, used: 7 });
+  if (second) rows.push({ projectRef: ref(second), maxAgents: 3, running: 3, queued: 2, used: 3 });
   const slots: JsonObject = { cap: 16, used: 9, queued: 2, reservedBand: 2, perProject: rows };
   if (f.snapshot) f.snapshot["slots"] = clone(slots);
   for (const frame of f.live) if (frame["slots"] !== undefined) frame["slots"] = clone(slots);

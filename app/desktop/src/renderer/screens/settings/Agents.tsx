@@ -5,8 +5,8 @@ import { Slider } from "radix-ui";
 import { useState } from "react";
 import type { ProjectRef, SlotState } from "../../../shared/contracts";
 import { useData } from "../../src/data/react";
-import { Button, Input, Popover, PopoverContent, PopoverTrigger, Separator, Text, textClass } from "../../ui";
-import { agentsLabel, changeLine, clampMax, projectAgents, serialNote, type ProjectAgents } from "./agents";
+import { Button, Checkbox, Input, Popover, PopoverContent, PopoverTrigger, Separator, Text, textClass } from "../../ui";
+import { agentsLabel, changeLine, clampMax, extrasOver, pauseLine, projectAgents, serialNote, type ProjectAgents } from "./agents";
 import { errorText, useHubCall, useLive } from "./hub";
 import { scopeName, useProjects } from "./parts";
 import s from "./settings.module.css";
@@ -25,7 +25,7 @@ export function AgentsCapControl({ projectRef }: { projectRef: ProjectRef }) {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button size="sm" variant="ghost" aria-label={`Max agents: ${a.running} running of ${a.max}`}>
+        <Button size="sm" variant="ghost" aria-label={`Max agents: ${a.running} running of ${a.max}${a.queued > 0 ? `, ${a.queued} waiting` : ""}`}>
           <span className={textClass({ size: "xs", tabular: true })}>{agentsLabel(a)}</span>
         </Button>
       </PopoverTrigger>
@@ -48,7 +48,9 @@ export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; t
   const [draft, setDraft] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [echo, setEcho] = useState<Echo | null>(null);
+  const [pause, setPause] = useState(false);
   const value = clampMax(draft ?? a.max, a.cap);
+  const over = extrasOver(a.running, value);
   if (draft !== null && !busy && echo?.ok === true && draft === a.max) setDraft(null);
   const changed = value !== a.max;
   const id = `agents-${props.projectRef.machineId}-${props.projectRef.projectId}`;
@@ -57,11 +59,19 @@ export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; t
   const save = () => {
     setBusy(true);
     setEcho(null);
-    // The fleet cap is the default: a max equal to it saves as no limit of the project's own.
-    call("cap_set", { share: { projectRef: props.projectRef, share: value >= a.cap ? 0 : value } }).then(
-      () => {
+    const pauseExtras = pause && over > 0;
+    call("cap_set", { project: { projectRef: props.projectRef, maxAgents: value, ...(pauseExtras ? { pauseExtras: true } : {}) } }).then(
+      (o) => {
         setBusy(false);
-        setEcho({ ok: true, text: `Saved: at most ${value} at once.` });
+        setPause(false);
+        const paused = o.paused?.length ?? 0;
+        setEcho({
+          ok: true,
+          text:
+            paused > 0
+              ? `Saved: at most ${value} at once. ${paused === 1 ? "1 agent is" : `${paused} agents are`} saving work and waiting for a slot.`
+              : `Saved: at most ${value} at once.`,
+        });
         props.onSaved?.();
       },
       (e: unknown) => {
@@ -107,6 +117,7 @@ export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; t
       <Text size="xs" tone="quiet">
         {changeLine(a, value)}
       </Text>
+      {over > 0 ? <Checkbox checked={pause} onCheckedChange={(c) => setPause(c === true)} label={pauseLine(over)} /> : null}
       {serial ? (
         <Text size="xs" tone="quiet">
           {serial}
@@ -117,7 +128,14 @@ export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; t
           {busy ? "Saving…" : "Save"}
         </Button>
         {changed ? (
-          <Button variant="ghost" disabled={busy} onClick={() => setDraft(null)}>
+          <Button
+            variant="ghost"
+            disabled={busy}
+            onClick={() => {
+              setDraft(null);
+              setPause(false);
+            }}
+          >
             Discard changes
           </Button>
         ) : null}
@@ -202,7 +220,7 @@ function FleetCap({ slots }: { slots: SlotState }) {
       <div className={s.settingLabel}>
         <Text strong>Whole fleet</Text>
         <Text size="xs" tone="quiet">
-          {`Every project's agents together, on every machine. ${slots.used} running now${slots.queued > 0 ? `, ${slots.queued} waiting` : ""}.`}
+          {`Every project's agents and leads together, on every machine. ${slots.used} running now${slots.queued > 0 ? `, ${slots.queued} waiting` : ""}. Changing it needs an admin key.`}
         </Text>
       </div>
       <div className={s.stack}>
