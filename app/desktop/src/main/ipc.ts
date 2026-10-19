@@ -1,9 +1,12 @@
-import { clipboard, ipcMain, shell, type IpcMainInvokeEvent } from "electron";
+import { clipboard, ipcMain, Menu, shell, type IpcMainInvokeEvent } from "electron";
 import { IPC, type InvokeChannel } from "../shared/channels";
 import { parseRequest, type RequestArgs } from "../shared/ipc";
 import type { OpenOutcome } from "../shared/hub";
 import { externalUrl } from "./external";
 import type { HubService } from "./hub/service";
+import { applyMenuState } from "./menuState";
+import type { Notifier } from "./notify";
+import type { Opener } from "./opener";
 import { isOwnPage } from "./security";
 
 /** Only our own top-level page may call main: not a subframe, not a local file, not a page navigated elsewhere. */
@@ -24,7 +27,7 @@ const handle = <C extends InvokeChannel>(
   });
 };
 
-export const registerIpc = (hub: HubService): void => {
+export const registerIpc = (hub: HubService, frame: { opener: Opener; notifier: Notifier }): void => {
   handle(IPC.hubState, () => hub.state());
   handle(IPC.hubSubscribe, (event) => hub.subscribe(event.sender));
   handle(IPC.hubUnsubscribe, (event) => hub.unsubscribe(event.sender));
@@ -44,4 +47,7 @@ export const registerIpc = (hub: HubService): void => {
       return { ok: false, message: `The browser didn't open: ${String(error)}` };
     }
   });
+  handle(IPC.appReady, () => frame.opener.ready());
+  handle(IPC.appNotify, (_event, request) => frame.notifier.show(request));
+  handle(IPC.appMenuState, (_event, enabled) => applyMenuState(Menu.getApplicationMenu(), enabled));
 };
