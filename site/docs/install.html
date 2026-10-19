@@ -63,13 +63,14 @@ or with <code>--no-init</code>, it only installs and prints the next command.</p
 <tr><td>macOS, Apple silicon</td><td>yes</td><td>yes</td></tr>
 <tr><td>macOS, Intel</td><td>yes</td><td>yes</td></tr>
 </tbody></table></div>
-<p>The hub also needs <code>git</code>, and the <code>claude</code> and <code>gh</code> CLIs logged in to your own accounts. A worker needs only
+<p>The desktop app needs macOS 12 or newer. The hub also needs <code>git</code>, and the <code>claude</code> and <code>gh</code> CLIs logged in to your own accounts. A worker needs only
 <code>claude</code>. <code>fleetd init</code> checks each one and prints the install command for anything missing.</p>
 <h2 id="what-it-installs">What it installs<a class="anchor" href="#what-it-installs" aria-label="Link to this section">#</a></h2>
 <ul>
 <li>The CLI at <code>~/.fleetd/bin/fleetd</code>, linked from <code>~/.local/bin/fleetd</code>.</li>
-<li>The desktop app, on macOS and on Linux with a display: <code>~/Applications/fleetd.app</code>, or <code>~/.local/share/fleetd/app</code>
-with a menu entry.</li>
+<li>The desktop app, on macOS and on Linux with a display: <code>~/Applications/fleetd.app</code>, or
+<code>~/.local/share/fleetd/app/fleetd-desktop.AppImage</code> with a menu entry. It updates itself. Over an earlier fleetd app
+it replaces it and keeps its pairing.</li>
 </ul>
 <p>Every download is checked against the release's <code>SHA256SUMS</code>. The installer needs no sudo, and only <code>fleetd init</code>
 sets up services. Running it again replaces what it installed. To read it first, open
@@ -81,7 +82,7 @@ sets up services. Running it again replaces what it installed. To read it first,
 <p>Without a terminal (here, a script):</p>
 <pre class="code console" data-copy><code><span class="c">$ curl -fsSL https://fleetd.sh | sh -s -- --app</span>
 <span class="o">fleetd: installed the CLI: ~/.fleetd/bin/fleetd
-fleetd: installed the app: ~/.local/share/fleetd/app (menu entry: ~/.local/share/applications/fleetd.desktop)
+fleetd: installed the app: ~/.local/share/fleetd/app/fleetd-desktop.AppImage (menu entry: ~/.local/share/applications/fleetd-desktop.desktop)
 
 Next, run:
   fleetd init</span></code></pre>

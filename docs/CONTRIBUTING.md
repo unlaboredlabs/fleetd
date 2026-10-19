@@ -2,7 +2,7 @@
 
 ## Layout
 
-fleetd is one Cargo workspace. The shipped `fleetd` is one static binary with no Node in it.
+fleetd is one Cargo workspace and the desktop app. The shipped `fleetd` is one static binary with no Node in it.
 
 - `crates/fleetd`: the binary. `hub/` holds the MCP endpoint, app socket, leads, merge train, ledger and the rest;
   `node/` is the per-machine sidecar that runs the agents; `cli/` is setup, `update` and the lead-side commands. The
@@ -17,20 +17,12 @@ fleetd is one Cargo workspace. The shipped `fleetd` is one static binary with no
   (`fleetd-schema --check`) fail while either is out of date or hand-edited. A Rust enum a newer hub may extend gets
   `#[schemars(extend("x-open" = true))]`, so the app's type also admits values it doesn't know yet.
 - `playbooks/`: the built-in playbooks, embedded in the binary.
-- `app/`: the desktop app (`fleetd-app`, GPUI pinned to a Zed release tag) and its speed harness (`app/bench/`, run
-  with `app/bench/run.sh`).
-- `app/desktop`: the Electron + React app replacing `fleetd-app` (see below). Its own pnpm workspace, outside Cargo.
+- `app/desktop`: the desktop app, Electron + React (see below). Its own pnpm workspace, outside Cargo.
 - `tests/lab`: the end-to-end lab suite.
 - `site/` and `.github/release/`: the `fleetd.sh` installer and site, and the release pipeline. `docs/site/` holds
   the docs' sources and `crates/docsgen` renders them into `site/docs/`.
 
-## Building the app
-
-On Linux the app needs GPUI's `-dev` packages. Without root, `app/bench/linux-sysroot.sh` extracts them and
-`source app/bench/linux-env.sh` points cargo at them. On macOS, `app/packaging/macos-bundle.sh` wraps the binary in
-`fleetd.app`, which notifications need.
-
-## The Electron app
+## The desktop app
 
 `app/desktop` needs Node 24 and pnpm (the version in its `package.json`). In that directory: `pnpm install`, then
 `pnpm dev` (hot reload), `pnpm build` and `pnpm start` (the built app), and `pnpm typecheck`, `pnpm lint` and
@@ -54,21 +46,19 @@ DevTools-driven tests; never ship one. `pnpm debug-guard-check` checks both.
   (`ipc.ts`). A new channel goes in both, then in `src/main/ipc.ts` and the preload.
 - `src/renderer`: the React app.
 - Releases: `electron-builder.yml` packs the built app (a universal, Developer ID-signed `fleetd.app`, an AppImage and
-  a deb) in `build-release.yml`'s `desktop-*` jobs, which run while the repo variable `FLEETD_RELEASE_DESKTOP` is
-  `true` or a dispatch of Nightly asks for them. The app updates itself from `latest-mac.yml` / `latest-linux.yml` on
-  the release (`src/main/updater.ts`); `FLEETD_APP=electron` makes the installer fetch it.
+  a deb) in `build-release.yml`'s `desktop-*` jobs. The app updates itself from `latest-mac.yml` / `latest-linux.yml`
+  on the release (`src/main/updater.ts`), and `fleetd update` reads the same feed.
 
 ## Checks
 
 ```sh
 cargo fmt --all --check
-cargo clippy --workspace --exclude fleetd-app --exclude fleetd-bench --all-targets -- -D warnings
-cargo test --workspace --exclude fleetd-app --exclude fleetd-bench
-cargo clippy -p fleetd-app -p fleetd-bench --all-targets -- -D warnings && cargo test -p fleetd-app -p fleetd-bench
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
 ```
 
-The app's seal test opens what Rust seals with libsodium from `tests/lab`, so run `npm ci --prefix tests/lab` first.
-CI runs all of these on every PR.
+The node's seal test opens what Rust seals with libsodium from `tests/lab`; without `npm ci --prefix tests/lab` it
+skips that half. CI runs all of these on every PR, and the desktop app's checks above.
 
 `crates/fleetd` must not link macOS frameworks, because the darwin binaries are cross-built on Linux. The
 `darwin-deps` CI job checks this: rusqlite takes only named features such as `bundled`, chrono has no `clock`, and

@@ -123,8 +123,8 @@ never opens the hub to the internet.</p>
 <p>On the hub machine, if it has a desktop, the app is installed too and pairs by itself when you open it. To work from
 another computer, install fleetd there without the wizard and open the app:</p>
 <pre class="code sh" data-copy><code><span class="l">curl -fsSL https://fleetd.sh | sh -s -- --no-init</span>
-<span class="l">open ~/Applications/fleetd.app                    # macOS</span>
-<span class="l">~/.local/share/fleetd/app/fleetd-app &amp;            # Linux (or &quot;fleetd&quot; in your app menu)</span></code></pre>
+<span class="l">open ~/Applications/fleetd.app                        # macOS</span>
+<span class="l">~/.local/share/fleetd/app/fleetd-desktop.AppImage &amp;   # Linux (or &quot;fleetd&quot; in your app menu)</span></code></pre>
 <p>Enter the hub address and the pairing code <code>fleetd init</code> printed. Codes last 15 minutes; <code>fleetd pair</code> on the hub
 prints a new one. The app opens on the board, ready to type: enter an order, such as <code>fix the typo in the README</code>,
 and press Enter.</p>

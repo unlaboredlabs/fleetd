@@ -20,14 +20,15 @@ or with `--no-init`, it only installs and prints the next command.
 | macOS, Apple silicon | yes | yes |
 | macOS, Intel | yes | yes |
 
-The hub also needs `git`, and the `claude` and `gh` CLIs logged in to your own accounts. A worker needs only
+The desktop app needs macOS 12 or newer. The hub also needs `git`, and the `claude` and `gh` CLIs logged in to your own accounts. A worker needs only
 `claude`. `fleetd init` checks each one and prints the install command for anything missing.
 
 ## What it installs
 
 - The CLI at `~/.fleetd/bin/fleetd`, linked from `~/.local/bin/fleetd`.
-- The desktop app, on macOS and on Linux with a display: `~/Applications/fleetd.app`, or `~/.local/share/fleetd/app`
-  with a menu entry.
+- The desktop app, on macOS and on Linux with a display: `~/Applications/fleetd.app`, or
+  `~/.local/share/fleetd/app/fleetd-desktop.AppImage` with a menu entry. It updates itself. Over an earlier fleetd app
+  it replaces it and keeps its pairing.
 
 Every download is checked against the release's `SHA256SUMS`. The installer needs no sudo, and only `fleetd init`
 sets up services. Running it again replaces what it installed. To read it first, open
@@ -46,7 +47,7 @@ Without a terminal (here, a script):
 ```console
 $ curl -fsSL https://fleetd.sh | sh -s -- --app
 fleetd: installed the CLI: ~/.fleetd/bin/fleetd
-fleetd: installed the app: ~/.local/share/fleetd/app (menu entry: ~/.local/share/applications/fleetd.desktop)
+fleetd: installed the app: ~/.local/share/fleetd/app/fleetd-desktop.AppImage (menu entry: ~/.local/share/applications/fleetd-desktop.desktop)
 
 Next, run:
   fleetd init

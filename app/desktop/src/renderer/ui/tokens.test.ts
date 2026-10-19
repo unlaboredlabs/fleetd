@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-// The same AA guarantee the GPUI theme tested (theme.rs), checked against the CSS the app actually ships. Read from
+// The tokens' AA contrast, checked against the CSS the app actually ships. Read from
 // disk: Vitest blanks CSS imports, even ?raw ones.
 const css = readFileSync(new URL("./tokens.css", import.meta.url), "utf8");
 
