@@ -57,7 +57,11 @@ function MachineSeg({ m, now, onOpen }: { m: MachineLive; now: number; onOpen?: 
     <Tooltip content={full}>
       <button type="button" className={s.machineSeg} onClick={onOpen} disabled={!onOpen} aria-label={`${full}: open Machines`}>
         <span className={s.machineText} data-text="truncate">
-          <span className={s.machineName}>{m.name}</span> <Dot color={m.status === "online" ? "var(--success)" : "var(--warning)"} />{" "}
+          <span className={s.machineName}>{m.name}</span>
+          {/* The gaps are margins: whitespace between inline elements is easy to lose to a reformat. */}
+          <span className={s.machineDot}>
+            <Dot color={m.status === "online" ? "var(--success)" : "var(--warning)"} />
+          </span>
           {parts.map(([text, tone], i) => (
             <span key={i} className={cx(TONE[tone])}>
               {i > 0 ? " · " : ""}

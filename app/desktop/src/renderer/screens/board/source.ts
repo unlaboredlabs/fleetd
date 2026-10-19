@@ -7,6 +7,7 @@ import type { HubError } from "../../../shared/hub";
 import { CallError } from "../../src/data/queries";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { selectBoardData } from "../../src/data/selectors";
+import { plainReason } from "../shell/model";
 import type { ComposerApi, Draft } from "./Composer";
 import { type ProjectKey, projectKey } from "./live";
 import type { BoardModel, SentOrder } from "./model";
@@ -142,7 +143,7 @@ export const useBoardSource = (addProject: () => void): BoardSource => {
       : c.view === "refused"
         ? c.message
         : c.view === "skeleton" && c.reason !== undefined
-          ? `Not connected: ${c.reason}`
+          ? `Reconnecting: ${plainReason(c.reason, c.hub)}`
           : "Not connected to the hub.";
   return { model: { data, sent: sent.orders, boardError }, composer, actions, watch, lastUsed, offline };
 };

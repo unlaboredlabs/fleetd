@@ -616,6 +616,12 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+.machineDot {
+  display: inline-block;
+  margin: 0 var(--space-1-5);
+  vertical-align: middle;
+  line-height: 0;
+}
 .moreChips {
   flex: none;
   color: var(--quiet);
