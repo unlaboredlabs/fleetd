@@ -98,7 +98,8 @@ export class PromptHub {
   /** Set to make every call fail as if the hub dropped; the tests and the error fixtures use it. */
   offline = false;
 
-  constructor(registry: ReadonlyArray<RegistryEntry>) {
+  /** `edits: false` is a hub nobody has edited a prompt on. */
+  constructor(registry: ReadonlyArray<RegistryEntry>, { edits = true } = {}) {
     this.prompts = registry.map((e) => ({ ...e, global: null, projects: new Map() }));
     this.prompts.push({
       id: INSTRUCTIONS,
@@ -114,6 +115,12 @@ export class PromptHub {
       projects: new Map([["devbox/storefront", { text: "Use pnpm, not npm. The staging site is https://staging.storefront.test.\n", base: "" }]]),
     });
 
+    if (!edits) {
+      const own = this.get(INSTRUCTIONS);
+      own.global = null;
+      own.projects.clear();
+      return;
+    }
     // The release before this one shipped the lead prompt without its status line; the human edited that text.
     const lead = this.get("lead.start");
     const statusLine = lead.text.split("\n").find((l) => l.includes("fleetd status set")) ?? "";

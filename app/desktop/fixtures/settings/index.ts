@@ -57,7 +57,15 @@ export default defineGroup({
   extend: {
     typical: basics,
     "long-text": basics,
-    empty: basics,
+    empty: (f) => {
+      basics(f);
+      // An empty hub still has every prompt; the recording read none of them.
+      const hub = new PromptHub(registry, { edits: false });
+      for (const { id } of hub.prompts) {
+        const got = hub.answer("prompt_get", { id });
+        if (got.ok && f.output("prompt_get", { id }) === undefined) f.answer("prompt_get", { id }, json(got.output));
+      }
+    },
     "many-prompts": (f) => {
       basics(f);
       // The list marks some prompts stale; their reads carry a 3-way update to match.

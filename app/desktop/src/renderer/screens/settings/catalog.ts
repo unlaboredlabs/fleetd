@@ -139,9 +139,16 @@ export function groupOf(summary: PromptSummary): GroupKey {
   return ENTRIES[summary.id]?.group ?? HUB_GROUP[summary.group];
 }
 
-/** "per new order" → "Sent per new order." */
+/**
+ * "per new order" → "Sent per new order.", with the hub's tool names read as words ("every lead_restart" → "every
+ * lead restart"), since this line is for people.
+ */
 function sentence(sentWhen: string): string {
-  const s = sentWhen.trim().replace(/\.$/u, "");
+  const s = sentWhen
+    .trim()
+    .replace(/\.$/u, "")
+    .replace(/`/gu, "")
+    .replace(/\b([a-z]+(?:_[a-z]+)+)\b/gu, (w) => w.replaceAll("_", " "));
   return s === "" ? "" : `Sent ${s}.`;
 }
 

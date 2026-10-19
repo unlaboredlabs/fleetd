@@ -57,9 +57,9 @@ group("the prompt catalog", () => {
   });
 
   it("shows a prompt from a newer hub in Other, with the hub's own words", () => {
-    const [other] = sections([summary("wake.something_new", { title: "Wake: something new", sentWhen: "per new thing." })], "");
+    const [other] = sections([summary("wake.something_new", { title: "Wake: something new", sentWhen: "per `wake_set` that fired late." })], "");
     expect(other?.group.key).toBe("other");
-    expect(other?.rows[0]).toMatchObject({ name: "Wake: something new", description: "Sent per new thing." });
+    expect(other?.rows[0]).toMatchObject({ name: "Wake: something new", description: "Sent per wake set that fired late." });
   });
 });
 
