@@ -23,6 +23,15 @@ const STATUS_TYPES = new Set(["ci.main", "github.drift", "source.stale", "source
 const TIME_PREFIXES = ["task.", "change.", "ask.", "workstream."];
 const TIME_TYPES = new Set(["lead.woken", "pr.merged"]);
 
+/** The orders an event is about: `data.workstreamId`, plus `data.workstreamIds` (a lead woken for several). */
+const ordersNamed = (event: HubEvent): readonly string[] => {
+  const one = dataField(event, "workstreamId");
+  const data: unknown = event.data;
+  const many: unknown = typeof data === "object" && data !== null ? (data as Record<string, unknown>)["workstreamIds"] : undefined;
+  const ids = Array.isArray(many) ? many.filter((w): w is string => typeof w === "string") : [];
+  return [...new Set(one === undefined ? ids : [one, ...ids])];
+};
+
 const startsWithAny = (type: string, prefixes: readonly string[]): boolean => prefixes.some((p) => type.startsWith(p));
 
 /** `machines`: the ones the store knows; a known machine's status change is patched in place, no resync. */
@@ -30,12 +39,13 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   const type = event.type;
   const out: Invalidation[] = [];
   const workstreamId = dataField(event, "workstreamId");
+  const orders = ordersNamed(event);
   const shapesOrders = startsWithAny(type, ORDER_PREFIXES) || ORDER_TYPES.has(type);
 
   if (type.startsWith("ask.") || ASK_TYPES.has(type)) out.push({ tool: "asks_list" });
   if (shapesOrders) {
     out.push({ tool: "orders_board" });
-    if (workstreamId !== undefined) out.push({ tool: "order_get", where: { workstreamId } });
+    for (const id of orders) out.push({ tool: "order_get", where: { workstreamId: id } });
   }
   if (type.startsWith("steer.")) {
     out.push(workstreamId === undefined ? { tool: "steers_list" } : { tool: "steers_list", where: { workstreamId } });
@@ -43,8 +53,10 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   if (shapesOrders || STATUS_TYPES.has(type)) out.push({ tool: "status_get" }, { tool: "plan_get" });
   // Only the open order's time reads: they are scoped `{ kind: "order", workstreamId }`, matched inside `scope`.
   // time_spans is paged; its view fetches new pages itself, so it is not refetched whole here.
-  if (workstreamId !== undefined && (startsWithAny(type, TIME_PREFIXES) || TIME_TYPES.has(type))) {
-    out.push({ tool: "time_breakdown", where: { workstreamId } }, { tool: "time_insights", where: { workstreamId } });
+  if (startsWithAny(type, TIME_PREFIXES) || TIME_TYPES.has(type)) {
+    for (const id of orders) {
+      out.push({ tool: "time_breakdown", where: { workstreamId: id } }, { tool: "time_insights", where: { workstreamId: id } });
+    }
   }
   if (type.startsWith("thread.") && event.threadId !== undefined) {
     out.push({ tool: "thread_tail", where: { threadId: event.threadId } });

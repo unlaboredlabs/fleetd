@@ -53,6 +53,15 @@ describe("event effects", () => {
     expect(matches(w1, { workstreamId: "W2" })).toBe(false);
   });
 
+  it("a lead woken for several orders refetches each one's detail and time", () => {
+    const fx = effectsOf(e("lead.woken", { workstreamIds: ["W1", "W2"], triggers: ["task"] }));
+    for (const id of ["W1", "W2"]) {
+      expect(fx.invalidate).toContainEqual({ tool: "order_get", where: { workstreamId: id } });
+      expect(fx.invalidate).toContainEqual({ tool: "time_breakdown", where: { workstreamId: id } });
+      expect(fx.invalidate).toContainEqual({ tool: "time_insights", where: { workstreamId: id } });
+    }
+  });
+
   it("matches queries by their input's fields", () => {
     expect(matches({ workstreamId: "W1", n: 3 }, { workstreamId: "W1" })).toBe(true);
     expect(matches({ workstreamId: "W2" }, { workstreamId: "W1" })).toBe(false);
