@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HubFrame } from "../../shared/hub";
-import { HubClient } from "./client";
+import { HubClient, MAX_FRAME_BYTES, PING_EVERY_MS, READY_TIMEOUT_MS, STABLE_MS } from "./client";
 import type { ConnectionEvents, Transport } from "./transport";
 
 /** A hub on the other end of a fake transport: records what the client sends, lets the test answer. */
@@ -9,6 +9,7 @@ class FakeHub {
   sent: Array<Record<string, unknown>> = [];
   events: ConnectionEvents | null = null;
   closedByClient = 0;
+  pings = 0;
 
   readonly transport: Transport = (url, events) => {
     this.urls.push(url);
@@ -16,6 +17,9 @@ class FakeHub {
     this.sent = [];
     return {
       send: (text) => this.sent.push(JSON.parse(text) as Record<string, unknown>),
+      ping: () => {
+        this.pings++;
+      },
       close: () => {
         this.closedByClient++;
       },
@@ -24,6 +28,10 @@ class FakeHub {
 
   open(): void {
     this.events?.onOpen();
+  }
+
+  pong(): void {
+    this.events?.onPong();
   }
 
   frame(frame: Record<string, unknown>): void {
@@ -45,7 +53,8 @@ class FakeHub {
 const setup = () => {
   const hub = new FakeHub();
   const frames: Array<HubFrame> = [];
-  const client = new HubClient({ hub: "http://devbox:4790", key: "k1", transport: hub.transport, emit: (f) => frames.push(f) });
+  // No jitter, so delays read exactly.
+  const client = new HubClient({ hub: "http://devbox:4790", key: "k1", transport: hub.transport, emit: (f) => frames.push(f), random: () => 0.5 });
   const states = () => frames.flatMap((f) => (f.t === "state" ? [f.state.phase] : []));
   return { hub, frames, client, states };
 };
@@ -124,7 +133,7 @@ describe("HubClient", () => {
     await expect(inFlight).resolves.toMatchObject({ ok: false, error: { code: "disconnected" } });
   });
 
-  it("reconnects with backoff, resetting it once a connection got ready, and resyncs each time", () => {
+  it("reconnects with backoff, and resyncs on every new connection", () => {
     const { hub, client, states } = setup();
     client.start();
     hub.close(1006);
@@ -136,14 +145,77 @@ describe("HubClient", () => {
     hub.close(1006);
     expect(client.state).toMatchObject({ phase: "retrying", retryAt: Date.now() + 1000 });
     vi.advanceTimersByTime(1000);
-    hub.ready(20);
-    hub.close(1001, "hub shutting down");
-    expect(client.state).toMatchObject({ phase: "retrying", reason: "The hub closed the connection: hub shutting down.", retryAt: Date.now() + 500 });
-    vi.advanceTimersByTime(500);
     hub.open();
     hub.frame({ t: "ready", protocol: 1 });
     expect(hub.sent).toEqual([{ t: "auth", key: "k1" }, { t: "snapshot" }]);
-    expect(states()).toEqual(["connecting", "retrying", "connecting", "retrying", "connecting", "live", "retrying", "connecting", "live"]);
+    expect(states()).toEqual(["connecting", "retrying", "connecting", "retrying", "connecting", "live"]);
+  });
+
+  it("keeps backing off from a hub that accepts the key and then drops, and starts over after a stable link", () => {
+    const { hub, client } = setup();
+    client.start();
+    const delays: Array<number> = [];
+    for (let i = 0; i < 4; i++) {
+      hub.ready();
+      hub.close(1006);
+      const state = client.state;
+      if (state.phase !== "retrying") throw new Error(state.phase);
+      delays.push(state.retryAt - Date.now());
+      vi.advanceTimersByTime(state.retryAt - Date.now());
+    }
+    expect(delays).toEqual([500, 1000, 2000, 4000]);
+    hub.ready();
+    vi.advanceTimersByTime(STABLE_MS);
+    hub.pong();
+    hub.close(1006);
+    expect(client.state).toMatchObject({ phase: "retrying", retryAt: Date.now() + 500 });
+  });
+
+  it("jitters the backoff by up to a quarter either way", () => {
+    const hub = new FakeHub();
+    for (const [random, delay] of [[0, 375], [0.999, 625]] as const) {
+      const client = new HubClient({ hub: "http://devbox:4790", key: "k1", transport: hub.transport, emit: () => undefined, random: () => random });
+      client.start();
+      hub.close(1006);
+      expect(client.state).toMatchObject({ retryAt: Date.now() + delay });
+      client.stop();
+    }
+  });
+
+  it("pings a quiet link and gives it up when nothing comes back", () => {
+    const { hub, client } = setup();
+    client.start();
+    hub.ready();
+    vi.advanceTimersByTime(PING_EVERY_MS);
+    expect(hub.pings).toBe(1);
+    hub.pong();
+    vi.advanceTimersByTime(PING_EVERY_MS);
+    expect(client.state.phase).toBe("live");
+    expect(hub.pings).toBe(2);
+    // No pong, no frame since: the next tick is past the deadline.
+    vi.advanceTimersByTime(PING_EVERY_MS);
+    expect(client.state).toMatchObject({ phase: "retrying", reason: "The hub stopped answering." });
+    expect(hub.closedByClient).toBe(1);
+  });
+
+  it("gives up a connection that never gets ready", () => {
+    const { hub, client } = setup();
+    client.start();
+    hub.open();
+    vi.advanceTimersByTime(READY_TIMEOUT_MS);
+    expect(client.state).toMatchObject({ phase: "retrying", reason: "The hub didn't accept the connection in time." });
+    expect(hub.closedByClient).toBe(1);
+    vi.advanceTimersByTime(500);
+    expect(hub.urls).toHaveLength(2);
+  });
+
+  it("refuses a call frame over the size cap without sending it", async () => {
+    const { hub, client } = setup();
+    client.start();
+    hub.ready();
+    const before = hub.sent.length;
+    await expect(client.call({ tool: "x", input: "y".repeat(MAX_FRAME_BYTES) })).resolves.toMatchObject({ ok: false, error: { code: "invalid" } });
+    expect(hub.sent).toHaveLength(before);
   });
 
   it("stops for good when the hub closes with 4401", () => {

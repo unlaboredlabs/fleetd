@@ -364,19 +364,19 @@ mod tests {
         assert_eq!(wrap("short", 30, "│  "), "short");
         assert_eq!(
             wrap(
-                "│  open: fleetd://pair?hub=http%3A%2F%2Fforge.example:4791&code=X",
+                "│  open: fleetd://pair?hub=http%3A%2F%2Fdevbox.example:4791&code=X",
                 30,
                 "│  "
             ),
-            "│  open:\n│  fleetd://pair?hub=http%3A%2F%2Fforge.example:4791&code=X"
+            "│  open:\n│  fleetd://pair?hub=http%3A%2F%2Fdevbox.example:4791&code=X"
         );
         assert_eq!(
             wrap(
-                "│  fleetd://pair?hub=http%3A%2F%2Fforge.example:4791&code=X",
+                "│  fleetd://pair?hub=http%3A%2F%2Fdevbox.example:4791&code=X",
                 30,
                 "│  "
             ),
-            "│  fleetd://pair?hub=http%3A%2F%2Fforge.example:4791&code=X"
+            "│  fleetd://pair?hub=http%3A%2F%2Fdevbox.example:4791&code=X"
         );
     }
 

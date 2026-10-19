@@ -21,12 +21,15 @@ body,
 }
 
 .shell {
-  display: grid;
-  grid-template-rows: var(--top-bar-height) 1fr;
+  display: flex;
+  flex-direction: column;
   height: 100%;
 }
 
 .top-bar {
+  flex: none;
+  height: var(--top-bar-height);
+  box-sizing: border-box;
   -webkit-app-region: drag;
   user-select: none;
   padding-inline-start: var(--traffic-lights-inset);
@@ -34,6 +37,7 @@ body,
 }
 
 .content {
+  flex: 1;
   display: grid;
   place-items: center;
 }
@@ -42,4 +46,12 @@ body,
   font-size: 20px;
   font-weight: 600;
   margin: 0;
+}
+
+.fixture-banner {
+  padding: 4px 12px;
+  font-size: 12px;
+  text-align: center;
+  background: Mark;
+  color: MarkText;
 }

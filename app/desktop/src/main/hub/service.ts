@@ -17,6 +17,8 @@ export type HubMode =
 export class HubService {
   readonly #mode: HubMode;
   readonly #subscribers = new Set<WebContents>();
+  /** Windows that subscribed and haven't had their snapshot yet: events and live diffs would mean nothing to them. */
+  readonly #awaitingSnapshot = new Set<WebContents>();
   #source: HubSource | null = null;
   /** Set from FLEETD_HUB_URL + FLEETD_AGENT_KEY: used for this run, never stored. */
   readonly #ephemeral: boolean;
@@ -40,18 +42,21 @@ export class HubService {
     return this.#source?.state ?? this.#unpaired;
   }
 
-  /** Each subscribe starts the window from the current state and, when connected, a fresh snapshot. */
+  /** Each subscribe starts the window from the current state, then (when connected) a fresh snapshot and live frame. */
   subscribe(contents: WebContents): void {
     if (!this.#subscribers.has(contents)) {
       this.#subscribers.add(contents);
-      contents.once("destroyed", () => this.#subscribers.delete(contents));
+      contents.once("destroyed", () => this.unsubscribe(contents));
     }
+    this.#awaitingSnapshot.add(contents);
     this.#send(contents, { t: "state", state: this.state() });
     this.#source?.resync();
+    this.#source?.refreshLive();
   }
 
   unsubscribe(contents: WebContents): void {
     this.#subscribers.delete(contents);
+    this.#awaitingSnapshot.delete(contents);
   }
 
   call(request: CallRequest): Promise<CallOutcome> {
@@ -112,7 +117,11 @@ export class HubService {
   }
 
   #broadcast(frame: HubFrame): void {
-    for (const contents of this.#subscribers) this.#send(contents, frame);
+    for (const contents of this.#subscribers) {
+      if (frame.t === "snapshot") this.#awaitingSnapshot.delete(contents);
+      else if ((frame.t === "event" || frame.t === "live") && this.#awaitingSnapshot.has(contents)) continue;
+      this.#send(contents, frame);
+    }
   }
 
   #send(contents: WebContents, frame: HubFrame): void {

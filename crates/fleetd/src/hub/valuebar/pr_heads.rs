@@ -86,11 +86,11 @@ mod tests {
     #[test]
     fn rest_path_of_a_github_pr_only() {
         assert_eq!(
-            pulls_path("https://github.com/wynn-dev/lab/pull/7").as_deref(),
-            Some("repos/wynn-dev/lab/pulls/7")
+            pulls_path("https://github.com/acme/storefront/pull/7").as_deref(),
+            Some("repos/acme/storefront/pulls/7")
         );
         assert_eq!(
-            pulls_path("https://github.com/wynn-dev/lab/pull/7/files"),
+            pulls_path("https://github.com/acme/storefront/pull/7/files"),
             None
         );
         assert_eq!(

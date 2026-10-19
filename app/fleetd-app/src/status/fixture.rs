@@ -51,13 +51,8 @@ pub fn doc(scope: &StatusScope, variant: Variant) -> StatusDoc {
     if kind != "order" {
         markers.push(json!({ "at": at("08:41:00"), "text": "−1 item: W9 stopped", "pctBefore": 70, "pctAfter": 71, "deltaItems": -1 }));
     }
-    let eta = match kind.as_str() {
-        "fleet" => json!({ "current": "2026-10-22T14:00:00.000Z", "rate": 4.1, "samples": 18, "basis": "fleet", "chain": "P12 full lab run" }),
-        "project" => json!({ "current": "2026-10-22T14:00:00.000Z", "original": "2026-10-21T18:00:00.000Z",
-            "slip": { "scopeMinutes": 360, "speedMinutes": 840 }, "rate": 3.2, "samples": 11, "basis": "project", "chain": "P12 full lab run" }),
-        _ => json!({ "current": "2026-10-18T15:10:00.000Z", "original": "2026-10-18T12:30:00.000Z",
-            "slip": { "scopeMinutes": 40, "speedMinutes": 120 }, "lead": "2026-10-18T11:30:00.000Z", "rate": 1.4, "samples": 6, "basis": "order" }),
-    };
+    // The hub still sends an ETA; fleetd never shows one.
+    let eta = json!({ "samples": 0, "basis": "none" });
     let gates = match kind.as_str() {
         "order" => json!([
             { "kind": "live", "label": "review of #212", "serial": true, "since": at("10:03:11"), "workstreamId": "W14" },
@@ -97,28 +92,26 @@ pub fn doc(scope: &StatusScope, variant: Variant) -> StatusDoc {
     let parts = match kind.as_str() {
         "fleet" => json!([
             { "title": "storefront", "scope": { "kind": "project", "projectRef": { "machineId": "devbox", "projectId": "storefront" } },
-              "progress": progress(64, 7, 11, Some("+3 items"), github.as_ref()), "eta": "2026-10-22T14:00:00.000Z" },
+              "progress": progress(64, 7, 11, Some("+3 items"), github.as_ref()) },
             { "title": "web-app", "scope": { "kind": "project", "projectRef": { "machineId": "devbox", "projectId": "web-app" } },
-              "progress": progress(86, 6, 7, None, None), "eta": "2026-10-18T17:00:00.000Z" },
+              "progress": progress(86, 6, 7, None, None) },
             { "title": "mailer", "scope": { "kind": "project", "projectRef": { "machineId": "devbox", "projectId": "mailer" } },
               "progress": progress(0, 0, 1, None, None) }
         ]),
         "project" => json!([
-            { "title": "M1 Multi-currency checkout", "milestoneId": "M1", "progress": progress(58, 4, 7, Some("+3 items"), github.as_ref()),
-              "eta": "2026-10-22T14:00:00.000Z" },
-            { "title": "M2 Search under 200 ms", "milestoneId": "M2", "progress": progress(75, 3, 4, None, None), "eta": "2026-10-18T16:00:00.000Z" }
+            { "title": "M1 Multi-currency checkout", "milestoneId": "M1", "progress": progress(58, 4, 7, Some("+3 items"), github.as_ref()) },
+            { "title": "M2 Search under 200 ms", "milestoneId": "M2", "progress": progress(75, 3, 4, None, None) }
         ]),
         _ => json!([
-            { "title": "M1 Multi-currency checkout", "milestoneId": "M1", "progress": progress(62, 3, 5, None, github.as_ref()),
-              "eta": "2026-10-18T15:10:00.000Z" }
+            { "title": "M1 Multi-currency checkout", "milestoneId": "M1", "progress": progress(62, 3, 5, None, github.as_ref()) }
         ]),
     };
     let doing_t31 = json!({ "itemId": "P12", "workstreamId": "W14", "title": "Round totals per currency, not per line",
-        "taskIds": ["T31"], "changeIds": [], "eta": "2026-10-18T10:40:00.000Z" });
+        "taskIds": ["T31"], "changeIds": [] });
     let doing_t33 = json!({ "itemId": "P13", "workstreamId": "W14", "title": "Review #212", "taskIds": ["T33"], "changeIds": ["X12"],
-        "gate": "CI on #212", "eta": "2026-10-18T09:55:00.000Z", "overdueMinutes": 12 });
+        "gate": "CI on #212" });
     let mut doing_w9 = json!({ "itemId": "P21", "workstreamId": "W9", "title": "Login form keeps the email on error",
-        "taskIds": ["T41"], "changeIds": [], "eta": "2026-10-18T11:20:00.000Z" });
+        "taskIds": ["T41"], "changeIds": [] });
     if let Some(s) = &github {
         doing_w9["stale"] = s.clone();
     }
@@ -143,16 +136,12 @@ pub fn doc(scope: &StatusScope, variant: Variant) -> StatusDoc {
         "fleet" => (3, json!(["A7", "A2", "A3"])),
         _ => (1, json!(["A7"])),
     };
-    let mut risks = vec![
+    let risks = vec![
         json!({ "rule": "ci_red_main", "level": "danger", "message": "main CI red on acme/storefront: rust (macos) since 09:40" }),
         json!({ "rule": "machine_flaky", "level": "warning", "message": "buildbox went offline 3× today (last 09:55, still offline)" }),
-        json!({ "rule": "slipping", "level": "warning", "message": "ETA slipped 20h (6h scope, 14h slower)" }),
+        json!({ "rule": "slipping", "level": "warning", "message": "slower than usual: review of #212" }),
         json!({ "rule": "riskiest_item", "level": "warning", "message": "riskiest: P12 Round totals per currency (l, 2 failed attempts)" }),
     ];
-    if kind == "order" {
-        risks.insert(1, json!({ "rule": "estimate_drift", "level": "warning", "message": "lead estimated 1h 30m; measured speed says 5h" }));
-        risks.truncate(4);
-    }
     let mut ci_store = json!({ "repo": "acme/storefront", "state": "red", "sha": "a41c09e", "failing": ["rust (macos)"],
         "since": at("09:40:00"), "asOf": at(if quiet { "10:01:02" } else { "10:06:58" }) });
     if let Some(s) = &github {

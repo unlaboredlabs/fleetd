@@ -1,11 +1,18 @@
-import type { CallOutcome, ConnectOutcome, HubFrame, HubState } from "../shared/hub";
+import type { CallOutcome, ConnectOutcome, HubFrame, HubState, OpenOutcome } from "../shared/hub";
 import type { LiveScope } from "../shared/ipc";
 
 /** `window.fleetd`: everything the renderer can ask of main. There is no other bridge. */
 export interface FleetdApi {
   readonly platform: "darwin" | "linux" | "win32" | "other";
+  /** The fixture standing in for the hub (FLEETD_FIXTURE), or null. The shell shows a banner while it's set. */
+  readonly fixture: string | null;
   /** Writes text to the clipboard (the page has no clipboard permission of its own). */
   copy(text: string): Promise<void>;
+  /**
+   * Opens an https link to github.com (or a subdomain) or fleetd.sh in the user's browser. Anything else comes back
+   * as `{ ok: false, message }` saying why; it never rejects.
+   */
+  openExternal(url: string): Promise<OpenOutcome>;
   readonly hub: {
     state(): Promise<HubState>;
     /**

@@ -17,7 +17,7 @@ use super::records::{Db, ListFilter};
 use super::service::{ReviewGate, Train, TrainOptions, Verdict};
 use crate::clock::SystemClock;
 
-const REPO: &str = "wynn-dev/lab";
+const REPO: &str = "acme/storefront";
 const GIT_ENV: [(&str, &str); 8] = [
     ("HOME", "/tmp"),
     ("LANG", "C"),
@@ -1124,7 +1124,7 @@ async fn holds_while_the_freeze_decision_is_true_and_resumes_when_it_goes() {
             None,
         )
         .await;
-    let key = "policy.freeze.wynn-dev.lab";
+    let key = "policy.freeze.acme.storefront";
     let freeze = DecisionView {
         decision_id: "D1".into(),
         key: key.into(),

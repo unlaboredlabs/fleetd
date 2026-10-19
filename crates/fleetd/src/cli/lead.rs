@@ -42,7 +42,7 @@ pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>
   status set "<one line>" [--workstream <W>]
   decisions search "<query>"
   task spawn --workstream <W> --title <t> --prompt <p> [--kind write|read|review] [--areas a,b]
-      [--model <m>] [--effort low|medium|high|max] [--tier S|M|L] [--estimate <min>]
+      [--model <m>] [--effort low|medium|high|max] [--tier S|M|L]
       [--serves done:<n>|issue:<ref>|defect:<text>|ask:<A>] [--pr <url>] [--qa] [--item P<n>]
              delegate work to a subagent; writers need --areas and --serves and get their own
              branch; a review task needs --pr, and --qa marks it a QA run; --item links it to
@@ -74,11 +74,12 @@ pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>
       [--position <n>] [--why "<note>"] [--steer S<n>]
   plan drop P<n> (--why "<reason>" | --steer S<n>)
   plan show [--workstream <W>]
-             keep the project's plan: milestones of must or polish items sized s, m or l. Link
-             work with --item; only fleetd marks an item done, once its PRs merged through the
-             train and its done-when checks passed. Changing scope after a milestone's first 10
-             minutes needs --why, and the status view shows it as a marker. --steer S<n> says the
-             human's steer asked for it: it stands in for --why and acknowledges the steer
+             keep the project's plan: milestones of must or polish items sized s, m or l
+             (relative size, never hours). Link work with --item; only fleetd marks an item
+             done, once its PRs merged through the train and its done-when checks passed.
+             Changing scope after a milestone's first 10 minutes needs --why, and the status
+             view shows it as a marker. --steer S<n> says the human's steer asked for it: it
+             stands in for --why and acknowledges the steer
   inventory  the project's open work ranked: failing checks, open issues (gh), open asks and
              TODO/FIXME markers; with nothing left that has a value source and no open child, the
              project's finish-all workstream goes idle
@@ -144,7 +145,6 @@ const OPTIONS: &[(&str, Kind)] = &[
     ("model", Kind::Str),
     ("effort", Kind::Str),
     ("tier", Kind::Str),
-    ("estimate", Kind::Str),
     ("serves", Kind::Str),
     ("pr", Kind::Str),
     ("qa", Kind::Bool),
@@ -213,14 +213,6 @@ fn s(value: Option<&str>) -> Option<Value> {
 
 fn all_digits(text: &str) -> bool {
     !text.is_empty() && text.bytes().all(|b| b.is_ascii_digit())
-}
-
-/// `/^\d+(\.\d+)?$/`
-fn is_minutes(text: &str) -> bool {
-    match text.split_once('.') {
-        Some((whole, frac)) => all_digits(whole) && all_digits(frac),
-        None => all_digits(text),
-    }
 }
 
 /// `/^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i`
@@ -490,18 +482,12 @@ pub fn parse_lead_args(
                     "model",
                     "effort",
                     "tier",
-                    "estimate",
                     "serves",
                     "pr",
                     "qa",
                     "item",
                 ])?;
                 required(&["workstream", "title", "prompt"])?;
-                if let Some(estimate) = v.str("estimate")
-                    && !is_minutes(estimate)
-                {
-                    return Err(format!("--estimate is minutes, got '{estimate}'"));
-                }
                 // The contract refuses it too, but this says it in one plain line.
                 if v.str("kind").unwrap_or("write") == "write" && v.str("serves").is_none() {
                     return Err(format!("a write task needs --serves: {SERVES_FIX}"));
@@ -516,7 +502,6 @@ pub fn parse_lead_args(
                     ("model", s(v.str("model"))),
                     ("effort", s(v.str("effort"))),
                     ("tier", s(v.str("tier"))),
-                    ("estimateMinutes", v.str("estimate").map(number)),
                     ("serves", s(v.str("serves"))),
                     ("pr", s(v.str("pr"))),
                     ("qa", v.flag("qa").then_some(Value::Bool(true))),

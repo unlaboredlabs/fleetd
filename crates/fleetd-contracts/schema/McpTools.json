@@ -893,8 +893,13 @@
     "BriefBudget": {
       "properties": {
         "agentHours": {
+          "description": "Older briefs only; a lead now gives `size`.",
           "exclusiveMinimum": 0,
           "type": "number"
+        },
+        "size": {
+          "$ref": "#/$defs/Tier",
+          "description": "How big a research spend the lead allows, relative like plan sizes; never a time guess."
         }
       },
       "type": "object"
@@ -3765,19 +3770,27 @@
     },
     "IncidentClass": {
       "description": "`policy_bypass`: a PR on a watched repo was merged by something other than the train. M12: `re_ask`, a human was\nasked about a key that already had an active Decision; `override`, a human replaced a lead's Decision with another\nvalue; `playbook_reverted`, a retro wording change missed its metric and was rolled back.",
-      "enum": [
-        "false_claim",
-        "estimate_miss",
-        "polish_loop",
-        "misfiled_ask",
-        "out_of_area",
-        "stall",
-        "policy_bypass",
-        "re_ask",
-        "override",
-        "playbook_reverted"
-      ],
-      "type": "string"
+      "oneOf": [
+        {
+          "enum": [
+            "false_claim",
+            "polish_loop",
+            "misfiled_ask",
+            "out_of_area",
+            "stall",
+            "policy_bypass",
+            "re_ask",
+            "override",
+            "playbook_reverted"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "estimate_miss",
+          "description": "Retired: fleetd no longer scores time estimates. Kept so older incidents still read.",
+          "type": "string"
+        }
+      ]
     },
     "IncidentCount": {
       "properties": {
@@ -7452,19 +7465,27 @@
     },
     "RetroMetricClass": {
       "description": "The fixed metric list, defined in code: incident counts per class, and agent-minutes per done workstream. A\nproposal names one; the retro cannot add or change them.",
-      "enum": [
-        "false_claim",
-        "estimate_miss",
-        "polish_loop",
-        "misfiled_ask",
-        "out_of_area",
-        "stall",
-        "policy_bypass",
-        "re_ask",
-        "override",
-        "agent_minutes_per_done"
-      ],
-      "type": "string"
+      "oneOf": [
+        {
+          "enum": [
+            "false_claim",
+            "polish_loop",
+            "misfiled_ask",
+            "out_of_area",
+            "stall",
+            "policy_bypass",
+            "re_ask",
+            "override",
+            "agent_minutes_per_done"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "estimate_miss",
+          "description": "Retired: fleetd no longer scores time estimates. Kept so older proposals still read.",
+          "type": "string"
+        }
+      ]
     },
     "RetroProposal": {
       "properties": {
@@ -7768,11 +7789,6 @@
             }
           ]
         },
-        "estimate_miss": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
         "false_claim": {
           "maximum": 9007199254740991,
           "minimum": 0,
@@ -7797,7 +7813,6 @@
       "required": [
         "target",
         "false_claim",
-        "estimate_miss",
         "polish_loop",
         "agent_minutes_per_done"
       ],
@@ -8674,7 +8689,7 @@
       "description": "Why a part is not live: its source went quiet past its cadence.",
       "properties": {
         "reason": {
-          "description": "\"no heartbeat from forge for 4m\", \"GitHub not reached for 4m: …\".",
+          "description": "\"no heartbeat from devbox for 4m\", \"GitHub not reached for 4m: …\".",
           "maxLength": 200,
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",
@@ -8969,7 +8984,7 @@
       "type": "object"
     },
     "StatusScope": {
-      "description": "What a status doc covers. `key()` is the form stored per human key (\"fleet\", \"project:forge/p1\", \"order:W41\").",
+      "description": "What a status doc covers. `key()` is the form stored per human key (\"fleet\", \"project:devbox/p1\", \"order:W41\").",
       "oneOf": [
         {
           "properties": {

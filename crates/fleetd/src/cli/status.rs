@@ -1,6 +1,6 @@
 //! `fleetd status`: an order's, a project's or the fleet's progress, read from the hub's status doc (status_get) and,
 //! with `--watch`, kept current by status_wait, which blocks on the hub until the doc changes. It lays out only what
-//! the hub decided: the number, the ETA, and which parts are stale. Every time printed is absolute, so a block left on
+//! the hub decided: the number, what it waits on, and which parts are stale. It never shows a time estimate. Every time printed is absolute, so a block left on
 //! screen never reads as fresher than it is. Also `fleetd hub github-webhook`, which wraps github_webhook_set.
 
 use std::io::{IsTerminal, Write};
@@ -15,8 +15,7 @@ use fleetd_contracts::mcp::{StatusGetOutput, StatusWaitOutput};
 use fleetd_contracts::model::MachineStatus;
 use fleetd_contracts::plan::PlanItemId;
 use fleetd_contracts::status::{
-    CiState, EtaBasis, HeadlineSource, Health, MIN_SAMPLES, Marker, RiskLevel, Since, StaleMark,
-    StatusDoc, StatusEta, StatusScope,
+    CiState, HeadlineSource, Health, Marker, RiskLevel, Since, StaleMark, StatusDoc, StatusScope,
 };
 use serde_json::{Value, json};
 
@@ -26,7 +25,7 @@ use super::mcp_client::{McpClient, McpError};
 use super::time::resolve_project;
 
 pub const STATUS_USAGE: &str = r#"  status [<order>|<project>] [--watch] [--json] [--hub <url> --key-file <path>]
-             progress fleetd verified, the ETA from measured speed, what it waits on, what changed
+             progress fleetd verified, what it waits on, what is slower than usual, what changed
              since you last looked, health and risks; for an order (W41), a project by id or title
              (<machine>/<project> when two machines have one), or the whole fleet. --watch prints
              each new version as the hub sends it; stale parts say so. On the hub machine it
@@ -124,17 +123,6 @@ fn dur(ms: i64) -> String {
     }
 }
 
-/// `+6h`, `+40m`, `-1h30m`.
-fn signed_minutes(minutes: i64) -> String {
-    let sign = if minutes < 0 { "-" } else { "+" };
-    let m = minutes.abs();
-    match (m / 60, m % 60) {
-        (0, m) => format!("{sign}{m}m"),
-        (h, 0) => format!("{sign}{h}h"),
-        (h, m) => format!("{sign}{h}h{m:02}m"),
-    }
-}
-
 /// Absolute times in the hub machine's zone, relative to the doc's own `now`, so nothing printed ever ticks.
 struct Clock {
     now: Option<DateTime<Utc>>,
@@ -190,48 +178,6 @@ fn marker_text(marker: &Marker, pct: i64, c: &Clock) -> String {
         _ => String::new(),
     };
     format!("{from}{} ({})", marker.text, c.at(&marker.at))
-}
-
-fn eta_line(eta: &StatusEta, c: &Clock) -> String {
-    let samples = eta.samples.get();
-    let Some(current) = eta.current.as_ref().filter(|_| eta.basis != EtaBasis::None) else {
-        return format!("measuring: {samples} of {MIN_SAMPLES} verified");
-    };
-    let mut parts = vec![c.at(current)];
-    if let Some(original) = &eta.original {
-        let slip = eta
-            .slip
-            .as_ref()
-            .map(|s| {
-                format!(
-                    " ({} scope, {} slower)",
-                    signed_minutes(s.scope_minutes.get()),
-                    signed_minutes(s.speed_minutes.get())
-                )
-            })
-            .unwrap_or_default();
-        parts.push(format!("planned {}{slip}", c.at(original)));
-    }
-    if let Some(lead) = &eta.lead {
-        parts.push(format!(
-            "lead estimated {}; measured speed wins",
-            c.at(lead)
-        ));
-    }
-    let rate = eta
-        .rate
-        .map(|r| format!("{:.1} pts/busy h, ", r.get()))
-        .unwrap_or_default();
-    let basis = match eta.basis {
-        EtaBasis::Order | EtaBasis::None => "",
-        EtaBasis::Project => " (project's speed)",
-        EtaBasis::Fleet => " (fleet's speed)",
-    };
-    parts.push(format!("{rate}{samples} samples{basis}"));
-    if let Some(chain) = &eta.chain {
-        parts.push(format!("set by {chain}"));
-    }
-    parts.join("   ")
 }
 
 fn since_line(since: &Since, c: &Clock) -> String {
@@ -409,14 +355,13 @@ pub fn render(doc: &StatusDoc, zone: Tz) -> String {
         (HeadlineSource::Template, None) => "[template]".to_owned(),
     };
     out.push(format!("  {}   {tag}", doc.headline.text));
-    out.push(format!("  eta {}", eta_line(&doc.eta, &c)));
     if !doc.gates.is_empty() {
         let gates: Vec<String> = doc
             .gates
             .iter()
             .map(|g| format!("{}{}", g.label, if g.serial { " (serial)" } else { "" }))
             .collect();
-        out.push(format!("  waiting on  {}", gates.join("; ")));
+        out.push(format!("  waiting on: {}", gates.join(" → ")));
     }
     out.push(format!("  {}", since_line(&doc.since, &c)));
     section(&mut out, "health", &[health_line(&doc.health, &c)]);
@@ -452,18 +397,13 @@ pub fn render(doc: &StatusDoc, zone: Tz) -> String {
         .parts
         .iter()
         .map(|part| {
-            let eta = part
-                .eta
-                .as_ref()
-                .map(|e| format!("   eta {}", c.at(e)))
-                .unwrap_or_default();
             let marker = part
                 .progress
                 .marker
                 .as_ref()
                 .map(|m| format!("   {}", m.text))
                 .unwrap_or_default();
-            format!("{}  {}%{eta}{marker}", part.title, part.progress.pct.get())
+            format!("{}  {}%{marker}", part.title, part.progress.pct.get())
         })
         .collect();
     let parts_label = match doc.scope {
@@ -489,11 +429,6 @@ pub fn render(doc: &StatusDoc, zone: Tz) -> String {
             }
             if let Some(gate) = &row.gate {
                 cells.push(gate.to_string());
-            }
-            match (&row.eta, row.overdue_minutes.map(|m| m.get())) {
-                (_, Some(late)) if late > 0 => cells.push(format!("overdue {late}m")),
-                (Some(eta), _) => cells.push(format!("eta {}", c.at(eta))),
-                _ => {}
             }
             if let Some(stale) = &row.stale {
                 cells.push(format!("({})", c.stale(stale)));
@@ -1049,32 +984,32 @@ mod tests {
             "  ↓ from 69% · +3 items: time inspector added (14:00)"
         );
         for want in [
-            "  eta Thu 14:00   planned Wed 18:00 (+6h scope, +14h slower)   4.1 pts/busy h, 18 samples",
-            "  waiting on  P12 full lab run (serial); CI on #212",
+            "  waiting on: P12 full lab run (serial) → CI on #212",
             "  since you last looked here 09:12  7 merged, 3 verified, 1 failed, +3 items",
             "health  main CI acme/storefront RED (rust (macos)) as of 14:01:50 · 1 of 2 machines online · lab-b OFFLINE last seen 13:58:07 (stale) · claude 58% 5h · 8 running, slots 8/40, 1 queued",
             "stale   machine:lab-b since 13:58:52: no heartbeat from lab-b for 4m",
-            "doing   P12 full lab run   T88   eta 14:40",
+            "doing   P12 full lab run   T88",
             "next    P14 switch default runner (after P12)",
             "done    P9 node outbox   #208 merged by the train 13:12",
         ] {
             assert!(text.contains(want), "missing {want:?} in\n{text}");
         }
         assert!(!text.contains("needs"), "zero asks print nothing");
+        assert!(
+            !text.contains("eta") && !text.contains("Thu 14:00"),
+            "no time estimate is ever printed"
+        );
     }
 
     #[test]
-    fn a_clean_doc_is_live_and_no_samples_means_no_eta() {
-        let mut d = doc(json!([]));
+    fn a_clean_doc_is_live() {
         assert!(
-            render(&d, chrono_tz::UTC)
+            render(&doc(json!([])), chrono_tz::UTC)
                 .lines()
                 .next()
                 .unwrap()
                 .ends_with("(live)")
         );
-        d.eta = serde_json::from_value(json!({ "samples": 2, "basis": "none" })).unwrap();
-        assert!(render(&d, chrono_tz::UTC).contains("  eta measuring: 2 of 5 verified"));
     }
 
     #[test]
