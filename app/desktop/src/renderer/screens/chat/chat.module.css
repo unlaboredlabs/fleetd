@@ -1,0 +1,127 @@
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+  min-width: 0;
+}
+
+.input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  /* Grows with its text, up to a dozen lines, then scrolls. */
+  field-sizing: content;
+  min-height: 36px;
+  max-height: calc(12 * var(--leading-md) + 16px);
+  padding: var(--space-2) var(--space-3);
+  resize: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--raised);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-md);
+  line-height: var(--leading-md);
+  overflow-wrap: anywhere;
+}
+.input::placeholder {
+  color: var(--faint);
+}
+.input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1-5);
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 280px;
+  min-width: 0;
+  height: 22px;
+  padding: 0 var(--space-1) 0 var(--space-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  color: var(--quiet);
+}
+.failed {
+  color: var(--danger);
+}
+.remove {
+  all: unset;
+  flex: none;
+  width: 16px;
+  text-align: center;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+.remove:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.remove:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+.removeIcon {
+  display: block;
+  width: 12px;
+  height: 12px;
+  margin: 0 auto;
+  stroke-width: 2;
+}
+
+.how {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.spacer {
+  flex: 1;
+}
+/* The key hint, or why the last message or file didn't go: wraps rather than pushing Send off the row. */
+.note {
+  flex: 0 1 auto;
+  min-width: 0;
+  text-align: right;
+}
+.keys {
+  font-size: var(--text-xs);
+  color: var(--quiet);
+}
+
+/* The line under one of your messages. */
+.receipt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--space-2);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  min-width: 0;
+}
+.tone-quiet {
+  color: var(--quiet);
+}
+.tone-warn {
+  color: var(--warning);
+}
+.tone-bad {
+  color: var(--danger);
+}
+.linkButton {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
