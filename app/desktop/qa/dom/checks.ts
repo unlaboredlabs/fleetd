@@ -468,7 +468,8 @@ export function runChecks(opts: CheckOptions): Finding[] {
   }
   if (dragBoxes.length > 0) {
     const focusable = document.body.querySelectorAll(
-      "button, a[href], input, textarea, select, summary, [role='button'], [role='link'], [role='tab'], [role='menuitem'], [role='option'], [role='radio'], [role='checkbox'], [role='switch'], [role='combobox'], [tabindex]:not([tabindex='-1'])",
+      // The same list base.css makes no-drag (minus its [data-no-drag] opt-out marker); keep the two in step.
+      "button, a[href], input, textarea, select, summary, label, [role='button'], [role='link'], [role='tab'], [role='menuitem'], [role='option'], [role='radio'], [role='checkbox'], [role='switch'], [role='combobox'], [role='slider'], [tabindex]:not([tabindex='-1']), [contenteditable='true']",
     );
     for (const el of focusable) {
       if (hidden(el) || screenReaderOnly(el) || exempt(el, "drag")) continue;

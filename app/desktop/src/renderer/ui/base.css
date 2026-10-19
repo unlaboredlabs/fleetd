@@ -69,6 +69,7 @@ select {
  * macOS title bar: Electron drags the window from the union of every app-region: drag box, minus the no-drag
  * boxes, whatever is stacked on top. So anything you can click or focus opts out here, once, wherever it sits; a
  * control inside or over the top bar stays a control. Floating surfaces opt out as a whole (Overlay.module.css).
+ * The QA gate's drag check (qa/dom/checks.ts) looks for the same list; keep the two in step.
  */
 :is(
     button,
