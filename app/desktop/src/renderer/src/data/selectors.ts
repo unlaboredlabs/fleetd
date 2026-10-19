@@ -395,21 +395,34 @@ const leadActive = (lanes: DataState["live"]["lanes"], key: ProjectKey): boolean
 };
 
 /** The sidebar's and status's projects, by title; undefined until loaded. */
+const sameRow = (a: ProjectRow, b: ProjectRow): boolean =>
+  a.project === b.project && a.needsYou === b.needsYou && a.running === b.running && a.working === b.working && a.state === b.state;
+
+// The rows last handed out: a lane frame (4 Hz on the strip) that changes no row's fields hands back the same rows
+// and the same list, so the sidebar and the chat header don't re-render for it.
+let lastRows: readonly ProjectRow[] | undefined;
+
 export const selectProjectList = memo(
   (s) => [s.fresh, s.projects, s.chatStates, selectAgentsByProject(s), s.live.lanes],
   (fresh, projects, chats, agents, liveLanes): readonly ProjectRow[] | undefined => {
-    if (!fresh || agents === undefined) return undefined;
-    return Object.entries(projects)
-      .map(([key, project]) => {
+    if (!fresh || agents === undefined) return (lastRows = undefined);
+    const before = new Map((lastRows ?? []).map((r) => [r.key, r]));
+    const rows = Object.entries(projects)
+      .map(([key, project]): ProjectRow => {
         const running = (agents[key] ?? noProjectLanes).filter((l) => l.role !== "lead" && active(l.status)).length;
         const chat = chats[key];
         const leadWorking = chat?.leadWorking ?? leadActive(liveLanes, key);
         const needsYou = chat?.needsYou === true;
         const working = running > 0 || leadWorking;
-        return { key, project, needsYou, running, working, state: projectStateWord(needsYou, working) };
+        const row = { key, project, needsYou, running, working, state: projectStateWord(needsYou, working) };
+        const prior = before.get(key);
+        return prior !== undefined && sameRow(prior, row) ? prior : row;
       })
       // A stable order (by title): rows must not move under the pointer, and ⌘1–9 keep their targets.
       .sort((a, b) => a.project.title.localeCompare(b.project.title) || a.key.localeCompare(b.key));
+    const unchanged = lastRows?.length === rows.length && rows.every((r, i) => r === lastRows?.[i]);
+    if (!unchanged) lastRows = rows;
+    return lastRows;
   },
 );
 

@@ -227,6 +227,20 @@ describe("one state word per project", () => {
 });
 
 describe("the project list", () => {
+  it("hands back the same row and list when a lane frame changes none of their fields", () => {
+    const s = withBoard(run([live(), snapshot(1)]), [card("W1")]);
+    const row = selectProjectRow("devbox/storefront")(s);
+    const list = selectProjectList(s);
+    // A spark-only frame: the lane is still working, so no row field moves.
+    const next = run([{ t: "live", frame: { at: "2026-10-19T10:00:02.000Z", full: false, lanes: [liveLane("T1", "working", { spark: { endAt: "2026-10-19T10:00:02.000Z", samples: [3] } })] } }], s);
+    expect(next.live.lanes).not.toBe(s.live.lanes);
+    expect(selectProjectList(next)).toBe(list);
+    expect(selectProjectRow("devbox/storefront")(next)).toBe(row);
+    // A lane that stops working does move it.
+    const idle = run([{ t: "live", frame: { at: "2026-10-19T10:00:03.000Z", full: false, lanes: [liveLane("T1", "idle")] } }], next);
+    expect(selectProjectRow("devbox/storefront")(idle)?.running).toBe(0);
+  });
+
   it("keeps a stable order by title, whatever needs you or works", () => {
     let s = withBoard(run([live(), snapshot(1)]), []);
     const storefront = s.projects["devbox/storefront"];
