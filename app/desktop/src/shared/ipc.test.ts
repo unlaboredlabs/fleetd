@@ -103,4 +103,12 @@ describe("parseRequest", () => {
     expect(parseRequest(IPC.hubState, []).ok).toBe(true);
     expect(parseRequest(IPC.hubState, [1]).ok).toBe(false);
   });
+
+  it("reads a drop only at an absolute path, and the folder picker takes nothing", () => {
+    expect(parseRequest(IPC.projectsReadDrop, ["/home/dev/src/storefront"]).ok).toBe(true);
+    expect(parseRequest(IPC.projectsReadDrop, ["C:\\src\\storefront"]).ok).toBe(true);
+    for (const path of ["", "relative/path", "~/src", 42]) expect(parseRequest(IPC.projectsReadDrop, [path]).ok).toBe(false);
+    expect(parseRequest(IPC.projectsPickFolder, []).ok).toBe(true);
+    expect(parseRequest(IPC.projectsPickFolder, ["/etc"]).ok).toBe(false);
+  });
 });

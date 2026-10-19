@@ -2,7 +2,7 @@
 // argument list here before any handler runs, and refuses anything else.
 import { z } from "zod";
 import { LinkHandlerClaim, NotifyRequest } from "./app";
-import { MenuState } from "./menu";
+import { MENU_COMMANDS } from "./menu";
 import { IPC, type InvokeChannel } from "./channels";
 
 /** A call's input as JSON, at most; the hub has no use for more, and main shouldn't buffer it. */
@@ -87,6 +87,27 @@ export const ConnectRequest = z.strictObject({
 });
 export type ConnectRequest = z.infer<typeof ConnectRequest>;
 
+/** A secret ask's value and the box key of the machine it goes to; main seals it (main/secret.ts). */
+export const SecretRequest = z.strictObject({
+  askId: z.string().regex(/^A[1-9][0-9]*$/u),
+  boxPubKey: z.string().regex(/^[A-Za-z0-9+/]{43}=$/u),
+  // 8192 UTF-8 bytes at most; main checks the byte length, this only bounds the string.
+  value: z.string().min(1).max(8192),
+});
+export type SecretRequest = z.infer<typeof SecretRequest>;
+/** An absolute path the renderer got from a drop (webUtils.getPathForFile). */
+export const DropPath = z.string().min(2).max(4096).refine((p) => p.startsWith("/") || /^[A-Za-z]:[\\/]/u.test(p), "an absolute path");
+
+// Defined here rather than beside their types (shared/pairing.ts, shared/menu.ts), which the renderer imports: zod
+// stays in main's bundle and out of the renderer's startup.
+const PairRequest = z.strictObject({
+  hub: z.string().trim().min(1).max(2048),
+  code: z.string().trim().min(1).max(64),
+});
+const ProbeRequest = z.string().trim().min(1).max(2048);
+/** The enabled commands; any menu command left out is disabled. */
+const MenuState = z.array(z.enum(MENU_COMMANDS)).max(MENU_COMMANDS.length);
+
 const none = z.tuple([]);
 
 /** The argument list each invoke channel accepts. */
@@ -99,6 +120,14 @@ export const REQUESTS = {
   [IPC.hubResync]: none,
   [IPC.hubConnect]: z.tuple([ConnectRequest]),
   [IPC.hubForget]: none,
+  [IPC.pairStart]: none,
+  [IPC.pairProbe]: z.tuple([ProbeRequest]),
+  [IPC.pairRedeem]: z.tuple([PairRequest]),
+  [IPC.pairAuto]: none,
+  [IPC.secretSubmit]: z.tuple([SecretRequest]),
+  [IPC.systemHostName]: none,
+  [IPC.projectsPickFolder]: none,
+  [IPC.projectsReadDrop]: z.tuple([DropPath]),
   [IPC.copy]: z.tuple([z.string().max(1_000_000)]),
   [IPC.appReady]: none,
   [IPC.appNotify]: z.tuple([NotifyRequest]),

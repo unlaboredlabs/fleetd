@@ -6,7 +6,9 @@ import { MENU_COMMANDS } from "../../../shared/menu";
 import { closeOverlay, commandFor, runCommand } from "../palette";
 // Not in the palette's public surface yet; the menu needs to hear when commands come and go.
 import { subscribeRegistry } from "../palette/registry";
-import { onHubEvent } from "./hubFeed";
+import type { HubEvent } from "../../../shared/hub";
+import { useDataLayer, useToolQuery } from "../../src/data/react";
+import { useHubEvents } from "./hubFeed";
 import { currentRoute, navigate } from "./navigation";
 import { attentionEvent, FALLBACK_POLICY, Notifier, policyFrom, policyStale, quietAt, type Policy } from "./notifier";
 import { BOARD, type Route } from "./routes";
@@ -80,7 +82,8 @@ export const useMenuState = (): void => {
 
 const CHECK_EVERY_MS = 15_000;
 
-// The hub's attention policy as last read; one per window, shared with the other notifications (the Status digest).
+// The hub's attention policy as the data layer last read it (a decision.recorded event refetches it, so quiet hours
+// set from the phone or the CLI apply at once); shared with the other notifications (the Status digest).
 let policy: Policy = FALLBACK_POLICY;
 
 /** Inside the hub's quiet hours now: only urgent items may notify. */
@@ -92,35 +95,38 @@ export const quietNow = (nowMs: number): boolean => quietAt(policy, nowMs);
  */
 export const useNotifications = (live: boolean): void => {
   const [notifier] = useState(() => new Notifier());
+  const { store } = useDataLayer();
+  // An ask the store knows is closed (answered or withdrawn meanwhile) is dropped; one it hasn't loaded yet stays.
+  const [check] = useState(() => () => {
+    const now = Date.now();
+    const asks = store.getState().asks;
+    const due = notifier.due(now, policy, (askId) => asks?.[askId] === undefined || asks[askId].state === "open");
+    if (due !== null) void window.fleetd.app.notify({ tag: "needs-you", ...due });
+  });
+  const [onEvent] = useState(() => (event: HubEvent) => {
+    const attention = attentionEvent(event);
+    if (attention === null) return;
+    notifier.push(attention, 0);
+    check();
+  });
+  useHubEvents(onEvent);
+
+  // Fetched once the connection is fresh, and again whenever an event says it changed.
+  const policyQuery = useToolQuery("attention_policy", {});
+  const { data: policyOutput, refetch } = policyQuery;
+  useEffect(() => {
+    policy = policyFrom(policyOutput) ?? FALLBACK_POLICY;
+  }, [policyOutput]);
 
   useEffect(() => {
     if (!live) return;
-    let cancelled = false;
-    const refresh = async () => {
-      const out = await window.fleetd.hub.call("attention_policy", {});
-      if (!cancelled && out.ok) policy = policyFrom(out.output) ?? FALLBACK_POLICY;
-    };
-    const check = () => {
-      const now = Date.now();
-      if (policyStale(policy, now)) void refresh();
-      // Until the store exposes the open asks, an ask answered within the window still shows.
-      const due = notifier.due(now, policy, () => true);
-      if (due !== null) void window.fleetd.app.notify({ tag: "needs-you", ...due });
-    };
-    void refresh();
-    const offEvents = onHubEvent((event) => {
-      const attention = attentionEvent(event);
-      if (attention === null) return;
-      notifier.push(attention, 0);
+    const timer = setInterval(() => {
+      // The hub sends the quiet window under way and the next; past the last one, ask for the next ones.
+      if (policyStale(policy, Date.now())) void refetch();
       check();
-    });
-    const timer = setInterval(check, CHECK_EVERY_MS);
-    return () => {
-      cancelled = true;
-      offEvents();
-      clearInterval(timer);
-    };
-  }, [live, notifier]);
+    }, CHECK_EVERY_MS);
+    return () => clearInterval(timer);
+  }, [live, check, refetch]);
 };
 
 /** A field Esc should leave rather than act through (the composer, a search box). */

@@ -536,7 +536,7 @@ async function main() {
   check(open.asks.length === 3, `the lead filed 3 asks, found ${open.asks.length}`);
   // The inbox panel holds the whole batch and the reply field; the board's strip shows only the first two asks.
   await screen.show("inbox", "#/board?inbox");
-  const panel = screen.page.getByRole("complementary", { name: "Needs you" });
+  const panel = screen.page.locator('[data-screen="inbox"]');
   for (const ask of open.asks as Array<Body>) await panel.getByText(String(ask.text)).first().waitFor({ timeout: 30_000 });
   await screen.settle();
   await screen.png(path.join(shots, "capture-inbox.png"));

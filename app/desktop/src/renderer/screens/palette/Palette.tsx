@@ -5,6 +5,7 @@
 import { Dialog as D } from "radix-ui";
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { display, isShortcutId } from "../../../shared/shortcuts";
+import { useDataLayer } from "../../src/data/react";
 import { Kbd, Text } from "../../ui";
 import { rank } from "./rank";
 import { GROUP_LABELS, currentTextAction, snapshotItems, subscribeRegistry, subscribeSources, type Command } from "./registry";
@@ -88,13 +89,15 @@ export function Palette({ initialQuery }: { initialQuery: string }) {
 
   const plan = useMemo(() => (replying ? planReply(query, items) : undefined), [replying, query, items]);
 
+  const layer = useDataLayer();
   const sendReply = async () => {
     const raw = query.trim();
     if (raw === "" || reply.sending || plan?.kind !== "ready") return;
     setReply({ sending: true });
     // The batch the preview showed goes with the text, so the hub answers that batch or refuses; never another.
     const input = plan.batchId === undefined ? { raw } : { raw, batchId: plan.batchId };
-    const result = readReplyOutcome(await window.fleetd.hub.call("inbox_reply", input));
+    // Through the data layer, the way every screen calls the hub.
+    const result = readReplyOutcome(await layer.call("inbox_reply", input));
     setReply({ sending: false, result });
     // Answered: clear the field for the next one. Not read: keep the text so it can be fixed.
     if (result.ok) setQuery("");

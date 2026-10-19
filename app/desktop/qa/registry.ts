@@ -28,6 +28,23 @@ export const fixtures = [
   "hub-unreachable",
   "pairing-failed",
   "node-too-old",
+  // F9: the whole real prompt registry, with edits, a project's own texts and a default changed under an edit.
+  "settings-prompts",
+  "board-stage",
+  "board-finish",
+  // Group fixtures (fixtures/<group>/index.ts), named <group>-<what>.
+  "projects-cloning",
+  "projects-errors",
+  "projects-machines",
+  // F6: the Status view's own states (fixtures/status).
+  "status-stale",
+  "status-planning",
+  "status-legacy",
+  "status-skeleton",
+  // E3b's shared stress fixture; the time inspector fills it with a ~15k-span order (fixtures/time).
+  "time-heavy",
+  "conversation-20k",
+  "order-told-overrides",
 ] as const;
 export type FixtureName = (typeof fixtures)[number];
 
@@ -81,9 +98,77 @@ export const screens: readonly Screen[] = [
     route: "#/",
     fixtures: ["empty", "typical", "many-agents", "long-text", "hub-unreachable", "pairing-failed", "node-too-old"],
   },
+  // F10: connecting to a hub. pairing-failed: the form after the hub refused the saved key, with the fix;
+  // hub-unreachable: retrying, with the reason and the countdown. #/onboarding?key opens on the key path.
+  {
+    id: "onboarding",
+    route: "#/onboarding",
+    fixtures: ["pairing-failed", "hub-unreachable"],
+  },
+  {
+    id: "onboarding.key",
+    route: "#/onboarding?key",
+    fixtures: ["pairing-failed"],
+  },
+  // F5: the inbox panel with every ask shape (needs-you), the long-text stress ask, and nothing to answer.
+  { id: "inbox", route: "#/board?inbox", fixtures: ["needs-you", "long-text", "empty"] },
+  // F2: the board (#/ and #/board). board.empty, board.list, board.stage and board.finish are its states: the stage
+  // and finish fixtures put one order on it mid-run and after every PR merged.
+  {
+    id: "board",
+    route: "#/board",
+    fixtures: ["empty", "typical", "long-text", "many-agents", "needs-you", "board-stage", "board-finish"],
+  },
   // E2: every design-system primitive with short, long and empty content, one section per entry, so the primitives
   // pass before any screen uses them. Needs a build with the gallery in it: `pnpm qa:build`.
   ...gallerySections.map((s) => ({ id: `gallery.${s}`, route: `#/gallery?section=${s}`, fixtures: ["long-text"] as const })),
+  // F8: Add project (the pick list, its empty and loading states, gh and machine problems) and Machines.
+  { id: "projects.add", route: "#/projects/add", fixtures: ["typical", "empty", "long-text", "node-too-old", "hub-unreachable"] },
+  // Opened from Machines, which subscribed first: the sheet must still find the live connection and list repos.
+  {
+    id: "projects.add.pick",
+    route: "#/machines",
+    fixtures: ["typical"],
+    open: async (page) => {
+      await page.getByRole("button", { name: "Add project…" }).click();
+    },
+  },
+  // The sheet's later states, reached by adding from the pick list (fixtures/projects answers project_add).
+  {
+    id: "projects.add.cloning",
+    route: "#/projects/add",
+    fixtures: ["projects-cloning"],
+    open: async (page) => {
+      await page.getByRole("listbox", { name: "Repos" }).waitFor();
+      await page.getByRole("textbox", { name: "GitHub URL, folder path, or filter" }).fill("acme/checkout-v2");
+      await page.keyboard.press("Enter");
+      // The fixture's progress events are timed; shoot once the bar shows git's 42%.
+      await page.locator('[role="progressbar"][aria-valuenow="34"]').waitFor();
+    },
+  },
+  {
+    id: "projects.add.ready",
+    route: "#/projects/add",
+    fixtures: ["typical", "long-text"],
+    open: async (page) => {
+      await page.getByRole("listbox", { name: "Repos" }).waitFor();
+      await page.getByRole("textbox", { name: "GitHub URL, folder path, or filter" }).fill("/home/dev/src/pricing");
+      await page.keyboard.press("Enter");
+    },
+  },
+  {
+    id: "projects.add.error",
+    route: "#/projects/add",
+    fixtures: ["typical", "projects-errors"],
+    // The error state is the point: a clone refused because its folder exists, offering to add that folder.
+    expect: "error",
+    open: async (page) => {
+      await page.getByRole("listbox", { name: "Repos" }).waitFor();
+      await page.getByRole("textbox", { name: "GitHub URL, folder path, or filter" }).fill("acme/ledger-ui");
+      await page.keyboard.press("Enter");
+    },
+  },
+  { id: "machines", route: "#/machines", fixtures: ["typical", "empty", "long-text", "many-agents", "hub-unreachable", "projects-machines"] },
   // F11: the command palette, its reply mode (typed text switches it) and the shortcuts sheet.
   {
     id: "palette",
@@ -101,6 +186,76 @@ export const screens: readonly Screen[] = [
     },
   },
   { id: "shortcuts", route: "#/", fixtures: ["typical"], open: (page) => page.keyboard.press("ControlOrMeta+Slash") },
+  // F9: Settings. Prompts opens on the lead's first message, the longest text; many-prompts lists 72 with long
+  // keys and titles; settings-prompts is the real registry with edits. Compare and Update are deep links.
+  { id: "settings.general", route: "#/settings/general", fixtures: ["typical", "empty", "hub-unreachable"] },
+  {
+    id: "settings.prompts",
+    route: "#/settings/prompts?prompt=lead.start",
+    fixtures: ["settings-prompts", "many-prompts", "long-text", "empty", "hub-unreachable"],
+  },
+  {
+    id: "settings.prompts.compare",
+    route: "#/settings/prompts?prompt=task.brief.write&for=devbox/storefront&view=compare",
+    fixtures: ["settings-prompts"],
+  },
+  { id: "settings.prompts.update", route: "#/settings/prompts?prompt=lead.start&view=update", fixtures: ["settings-prompts"] },
+  { id: "settings.instructions", route: "#/settings/instructions?for=devbox/storefront", fixtures: ["settings-prompts", "typical", "empty"] },
+  // F6: Status for the fleet, a project and an order: live, stale sources, planning, long text and unknown wire
+  // values, a hub without the progress model, the skeleton before the first answer, and the link down. needs-you
+  // joins once F5's card text passes the raw-text check (it flags share_snapshots / share.example.test today).
+  ...(
+    [
+      ["status.fleet", "#/status"],
+      ["status.project", "#/status/project/devbox/storefront"],
+      ["status.order", "#/status/order/W14"],
+    ] as const
+  ).map(([id, route]) => ({
+    id,
+    route,
+    fixtures: ["typical", "long-text", "empty", "hub-unreachable", "status-stale", "status-planning", "status-legacy", "status-skeleton"] as const,
+  })),
+  // F7: the time inspector (fixtures/time): an order's timeline, ~15k spans in time-heavy; the fleet's breakdown;
+  // its insights. Each tab's root carries its own id, so the three are shot apart.
+  {
+    id: "time.timeline",
+    route: "#/time/order/W8",
+    fixtures: ["typical", "long-text", "many-agents", "time-heavy", "empty"],
+  },
+  {
+    id: "time.breakdown",
+    route: "#/time",
+    fixtures: ["typical", "long-text", "empty"],
+  },
+  // With no hub, the breakdown says so in words (time.breakdown.offline): a connection state, not an error page.
+  { id: "time.breakdown", route: "#/time", fixtures: ["hub-unreachable"] },
+  // The harness waits for the id before `open`, so the insights entry waits for the screen root, then opens the tab.
+  {
+    id: "time",
+    route: "#/time",
+    fixtures: ["typical", "long-text", "empty"],
+    open: (page) => page.getByRole("tab", { name: "Insights" }).click(),
+  },
+  // F3: the order view on the fixtures' one order, W1: fleet, PRs, done-when and the lead's conversation (a wake,
+  // markdown, steers and receipts, 20k streamed lines). The empty hub has no W1: its not-found state is expected.
+  { id: "order", route: "#/order/W1", fixtures: ["typical", "long-text", "many-agents", "conversation", "conversation-20k"] },
+  { id: "order", route: "#/order/W1", fixtures: ["empty"], expect: "error" },
+  {
+    id: "order.told",
+    route: "#/order/W1",
+    fixtures: ["conversation", "long-text", "order-told-overrides"],
+    open: (page) => page.getByRole("button", { name: "What the lead was told" }).click(),
+  },
+  {
+    id: "order.steer",
+    route: "#/order/W1",
+    fixtures: ["typical", "many-agents", "long-text"],
+    open: async (page) => {
+      const fleet = page.getByRole("tab", { name: "Fleet" });
+      if ((await fleet.count()) > 0) await fleet.click();
+      await page.locator("[data-lane]").first().click();
+    },
+  },
 ];
 
 // Platform checks that need a screen writer's work before they can pass; the owner turns theirs on when it lands.

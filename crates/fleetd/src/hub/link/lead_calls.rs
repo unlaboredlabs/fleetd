@@ -96,6 +96,34 @@ impl LeadCalls {
         Ok(agent)
     }
 
+    /// The project a call from `machine_id` acts on: the one whose workspace holds `cwd`, else the calling session's
+    /// own. A writer works in a worktree under the node's home, outside every workspace, so its calls (`report`,
+    /// `ask_lead`, `claim_done`) are known by the session the node attributed them to. Without a session, a cwd
+    /// outside every workspace is refused as before.
+    pub fn call_project(
+        &self,
+        machine_id: &MachineId,
+        projects: &[ProjectSummary],
+        cwd: &str,
+        thread: Option<&ThreadRef>,
+    ) -> Result<ProjectRef, McpToolError> {
+        if let Some(project) = project_for_cwd(projects, cwd) {
+            return Ok(ProjectRef {
+                machine_id: machine_id.clone(),
+                project_id: project.project_id.clone(),
+            });
+        }
+        let (Some(thread), Some(directory)) = (thread, self.directory.get()) else {
+            return Err(outside_every_project(machine_id, cwd, projects));
+        };
+        let (_, own) = directory.agent_of(thread)?;
+        if own.machine_id != *machine_id || !projects.iter().any(|p| p.project_id == own.project_id)
+        {
+            return Err(outside_every_project(machine_id, cwd, projects));
+        }
+        Ok(own)
+    }
+
     pub fn register(&self, op: &str, handler: Arc<dyn LeadCallHandler>) {
         self.handlers
             .write()
