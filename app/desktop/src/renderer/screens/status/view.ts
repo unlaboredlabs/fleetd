@@ -365,3 +365,14 @@ export const scopeFromRoute = (hash: string): StatusScope | null => {
   return null;
 };
 
+
+/** What Needs you shows for one ask id: its card only while the layer holds it open. An ask answered or closed a
+ * moment ago (the event patched the store before status_get refetched) must not offer its buttons again. */
+export const needsYouRow = <A extends { readonly state: string }>(
+  asks: Readonly<Record<string, A>> | undefined,
+  id: string,
+): { readonly kind: "card"; readonly ask: A } | { readonly kind: "changed" } | { readonly kind: "loading" } => {
+  if (asks === undefined) return { kind: "loading" };
+  const ask = asks[id];
+  return ask?.state === "open" ? { kind: "card", ask } : { kind: "changed" };
+};

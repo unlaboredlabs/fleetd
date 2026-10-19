@@ -7,6 +7,7 @@ import {
   headlineText,
   limitName,
   machineView,
+  needsYouRow,
   nextAgeChange,
   progressRowView,
   scopeFromRoute,
@@ -190,5 +191,15 @@ describe("the digest", () => {
       "Not live: GitHub unchecked 6m. Fixing cart rounding and speeding up product search, waiting on the full lab run. 3 decisions need you. Since the last digest: 7 merged, 3 verified, 2 started, 1 failed.",
     );
     expect(digestText(fixture("order-planning")).title).toBe("fleetd · planning");
+  });
+});
+
+describe("needs you", () => {
+  it("shows a card only for an ask the layer holds open, never one answered a moment ago", () => {
+    const asks = { A1: { state: "open" }, A2: { state: "answered" } };
+    expect(needsYouRow(asks, "A1")).toEqual({ kind: "card", ask: { state: "open" } });
+    expect(needsYouRow(asks, "A2"), "the doc still lists it until status_get refetches").toEqual({ kind: "changed" });
+    expect(needsYouRow(asks, "A3")).toEqual({ kind: "changed" });
+    expect(needsYouRow(undefined, "A1")).toEqual({ kind: "loading" });
   });
 });
