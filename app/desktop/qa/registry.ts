@@ -74,6 +74,8 @@ export const fixtures = [
   "chat-gated",
   "chat-waiting",
   "chat-empty",
+  // Eight projects in all four states, one with a ~120-character name (fixtures/kit/shared.ts).
+  "status-rows",
   // F5 (A5): a chat with every state of the two inline items (fixtures/inline).
   "inline-items",
 ] as const;
@@ -325,6 +327,25 @@ export const screens: readonly Screen[] = [
     id: "palette.search",
     route: "#/",
     fixtures: ["typical", "long-text", "empty"],
+    open: async (page) => {
+      await page.keyboard.press("ControlOrMeta+K");
+      await page.getByRole("combobox", { name: "Search" }).fill("st");
+    },
+  },
+  // Eight projects, one with a ~120-character name. Over Status: status-rows carries no chats, so #/ (a project's
+  // chat) would show its error behind the palette.
+  {
+    id: "palette",
+    variant: "projects",
+    route: "#/status",
+    fixtures: ["status-rows"],
+    open: (page) => page.keyboard.press("ControlOrMeta+K"),
+  },
+  {
+    id: "palette.search",
+    variant: "projects",
+    route: "#/status",
+    fixtures: ["status-rows"],
     open: async (page) => {
       await page.keyboard.press("ControlOrMeta+K");
       await page.getByRole("combobox", { name: "Search" }).fill("st");
