@@ -127,7 +127,7 @@ pub async fn put(
         // Unused uploads go here rather than on a timer: every upload checks.
         let stale: Vec<String> = {
             let mut stmt = c.prepare(
-                "DELETE FROM attachments WHERE workstream_id IS NULL AND created_ms < ?1 RETURNING sha256",
+                "DELETE FROM attachments WHERE workstream_id IS NULL AND project IS NULL AND created_ms < ?1 RETURNING sha256",
             )?;
             stmt.query_map([now - UNUSED_TTL_MS], |r| r.get(0))?
                 .collect::<rusqlite::Result<_>>()?
@@ -160,9 +160,14 @@ pub async fn put(
 fn in_project(hub: &Hub, n: i64, project: &ProjectRef) -> Result<bool, ToolError> {
     Ok(hub.db.with(|c| {
         Ok(c.query_row(
-            "SELECT 1 FROM attachments a JOIN workstreams w ON w.n = CAST(substr(a.workstream_id, 2) AS INTEGER)
-             WHERE a.n = ?1 AND w.machine_id = ?2 AND w.project_id = ?3",
-            params![n, project.machine_id.as_str(), project.project_id.as_str()],
+            "SELECT 1 FROM attachments a LEFT JOIN workstreams w ON w.n = CAST(substr(a.workstream_id, 2) AS INTEGER)
+             WHERE a.n = ?1 AND (a.project = ?4 OR (w.machine_id = ?2 AND w.project_id = ?3))",
+            params![
+                n,
+                project.machine_id.as_str(),
+                project.project_id.as_str(),
+                format!("{}/{}", project.machine_id, project.project_id)
+            ],
             |_| Ok(()),
         )
         .optional()?
@@ -220,6 +225,29 @@ pub async fn get(
     })
 }
 
+/// What a chat message shows of each attachment, from its row.
+pub fn refs(
+    hub: &Hub,
+    ids: &[AttachmentId],
+) -> Result<Vec<fleetd_contracts::chat::AttachmentRef>, ToolError> {
+    let mut out = Vec::new();
+    for id in ids {
+        let Some(r) = row(hub, id)? else { continue };
+        let Ok(mime) = serde_json::from_value::<AttachmentMime>(serde_json::Value::String(r.mime))
+        else {
+            continue;
+        };
+        out.push(fleetd_contracts::chat::AttachmentRef {
+            attachment_id: id.clone(),
+            name: fleetd_contracts::prim::Line::new(r.name.as_str())
+                .unwrap_or_else(|_| fleetd_contracts::prim::Line::unchecked("file")),
+            mime,
+            bytes: Count::unchecked(r.bytes),
+        });
+    }
+    Ok(out)
+}
+
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
@@ -261,14 +289,16 @@ pub fn check(hub: &Hub, caller: &Caller, ids: &[AttachmentId]) -> Result<(), Too
     Ok(())
 }
 
-/// Writes the attachments into the project under `.fleetd/attachments/<W>/` and returns the wake's lines, one per
+/// Writes the attachments into the project under `.fleetd/attachments/<folder>/` (the order's id, or `chat`), marks
+/// them as the project's, and returns the lines for the lead, one per
 /// file. A file the machine could not take says so in its line instead of failing the order.
 pub async fn deliver(
     hub: &Hub,
     caller: &Caller,
     ids: &[AttachmentId],
     project: &ProjectRef,
-    workstream_id: &WorkstreamId,
+    folder: &str,
+    workstream_id: Option<&WorkstreamId>,
 ) -> Result<Vec<String>, ToolError> {
     check(hub, caller, ids)?;
     let mut lines = Vec::new();
@@ -281,7 +311,7 @@ pub async fn deliver(
             k += 1;
             name = format!("{k}-{}", r.name);
         }
-        let rel = format!(".fleetd/attachments/{workstream_id}/{name}");
+        let rel = format!(".fleetd/attachments/{folder}/{name}");
         let path = dir(hub).join(&r.sha256);
         let data = tokio::fs::read(&path).await.map_err(|e| {
             tracing::error!(error = %e, "attachment file missing");
@@ -301,8 +331,12 @@ pub async fn deliver(
         let n: i64 = id.as_str()[1..].parse().unwrap_or(0);
         hub.db.with(|c| {
             c.execute(
-                "UPDATE attachments SET workstream_id = ?1 WHERE n = ?2",
-                params![workstream_id.as_str(), n],
+                "UPDATE attachments SET workstream_id = COALESCE(?1, workstream_id), project = ?2 WHERE n = ?3",
+                params![
+                    workstream_id.map(|w| w.as_str()),
+                    format!("{}/{}", project.machine_id, project.project_id),
+                    n
+                ],
             )?;
             Ok(())
         })?;

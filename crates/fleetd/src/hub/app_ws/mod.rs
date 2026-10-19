@@ -10,6 +10,7 @@ use crate::hub::mcp::invalid_input;
 use crate::hub::store::now_ms;
 use axum::extract::ws::{CloseFrame, Message, WebSocket};
 use fleetd_contracts::app::AppClientMessage;
+use fleetd_contracts::auth::Role;
 use fleetd_contracts::hello::PROTOCOL_VERSION;
 use fleetd_contracts::mcp::ErrorCode;
 use serde_json::{Value, json};
@@ -149,6 +150,8 @@ struct Session {
     calls: JoinSet<()>,
     /// The live subscription's pump, and the one-frame slot it writes to.
     live: Option<tokio::task::JoinHandle<()>>,
+    /// The chat subscription's forwarder of `chat_delta` frames.
+    chat: Option<tokio::task::JoinHandle<()>>,
     live_slot: Arc<live::LiveSlot>,
     budget: Arc<live::ConnBudget>,
     status_wait: Option<PendingWait>,
@@ -197,10 +200,38 @@ impl Session {
         };
         match message {
             AppClientMessage::Auth { .. } => unreachable!("handled above"),
-            AppClientMessage::Chat { .. } => {
-                let later = ToolError::new(ErrorCode::Invalid, "This hub streams no chat yet.")
-                    .with_fix("Read the chat with chat_history.");
-                self.send(error_frame(&later, None));
+            AppClientMessage::Chat { project } => {
+                // A new `chat` request replaces the running one; none stops it.
+                if let Some(old) = self.chat.take() {
+                    old.abort();
+                }
+                let Some(project) = project else {
+                    return After::Continue;
+                };
+                if !crate::hub::api::allows(&info, Role::Read, Some(&project.machine_id)) {
+                    let refused = crate::hub::api::forbidden(Role::Read, Some(&project.machine_id));
+                    self.send(error_frame(&refused, None));
+                    return After::Continue;
+                }
+                let mut deltas = self.hub.chat.subscribe();
+                let out = self.out.clone();
+                self.chat = Some(tokio::spawn(async move {
+                    loop {
+                        match deltas.recv().await {
+                            Ok(delta) if delta.project_ref == project => {
+                                let mut frame = serde_json::to_value(&delta).unwrap_or_default();
+                                frame["t"] = json!("chat_delta");
+                                if out.send(frame).is_err() {
+                                    return;
+                                }
+                            }
+                            Ok(_) => {}
+                            // A slow connection missed frames: the offsets show the gap, and the app reads again.
+                            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                            Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
+                        }
+                    }
+                }));
             }
             AppClientMessage::Call { id, tool, input } => {
                 // Reap finished calls so the in-flight count is current.
@@ -338,6 +369,7 @@ pub async fn handle(hub: Arc<Hub>, tools: Arc<Registry>, mut socket: WebSocket) 
         stream: None,
         calls: JoinSet::new(),
         live: None,
+        chat: None,
         live_slot: Arc::default(),
         budget: Arc::default(),
         status_wait: None,
@@ -385,6 +417,9 @@ pub async fn handle(hub: Arc<Hub>, tools: Arc<Registry>, mut socket: WebSocket) 
     }
     if let Some(live) = session.live.take() {
         live.abort();
+    }
+    if let Some(chat) = session.chat.take() {
+        chat.abort();
     }
     session.calls.abort_all();
     if let Some((code, reason)) = close {

@@ -578,7 +578,7 @@ pub const ENTRIES: &[Entry] = &[
         WakesAndMessages,
         Any,
         "A steer: the human's (or the lead's) words mid-run",
-        "per steer (steer_send, order_note, task message), straight to the agent, at its next tool boundary or now",
+        "per steer (steer_send, task message), straight to the agent, at its next tool boundary or now",
         "id!=the steer, S<n>; who!=the human or your lead; scope!=the order (W<n> 'title') or the task (T<n> (kind) for W<n>); text!=the words; references=references and attachments, or nothing",
         &[(
             "names-steer",
@@ -613,7 +613,7 @@ pub const ENTRIES: &[Entry] = &[
         WakesAndMessages,
         Lead,
         "Wake: the human stopped an order",
-        "per order_stop",
+        "per order that project_stop stops",
         "workstreamId!=W<n>; title!=the order's title; why!=why; cancelled!=how many tasks were cancelled",
         &[(
             "stop-work",

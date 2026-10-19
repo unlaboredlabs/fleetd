@@ -647,7 +647,7 @@ async fn add(client: &mut McpClient, out: &Out, v: &args::Parsed, home: &Path) -
 }
 
 fn finish(out: &Out) -> Result<(), Stop> {
-    let next = "Give it an order in the app's composer, or from any agent with intake_submit; its lead starts with the first one.";
+    let next = "Write to its lead in the app's chat, or from any agent with chat_send; the lead starts with the first message.";
     if out.tty {
         let _ = cliclack::outro(next);
     } else {

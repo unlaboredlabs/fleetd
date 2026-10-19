@@ -68,6 +68,7 @@ Every lead gets these, the finish-all lead included.
 | [`decisions_search`](#decisions_search) | Search the decision log. | No |
 | [`change_enqueue`](#change_enqueue) | Put a PR no task's result put there on its repo's merge train; only the train merges. | No |
 | [`change_status`](#change_status) | A merge-train change as stored. | No |
+| [`workstream_open`](#workstream_open) | Open a workstream for work you took from the chat: a draft you then freeze with brief. | No |
 | [`workstream_spawn`](#workstream_spawn) | A finish-all lead starts a child workstream for one item with a value source. | No |
 | [`inventory`](#inventory) | The project's open work, ranked. | No |
 
@@ -609,6 +610,28 @@ A merge-train change as stored.
   "name": "change_status",
   "arguments": {
     "changeId": "X12"
+  }
+}
+```
+
+### workstream_open
+
+Open a workstream for work you took from the chat: a draft you then freeze with brief. template picks the playbook (feature, bugfix, research, finish-all); serves is optional.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `serves` | string | no |  |
+| `template` | string | no | The prefixes `bug:`/`fix:`, `research:` and `finish:` pick bugfix, research and finish-all. One of `bugfix`, `feature`, `research`, `finish-all`. |
+| `text` | string | yes | At most 4000 characters. |
+
+**Who may call:** a lead, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "workstream_open",
+  "arguments": {
+    "template": "feature",
+    "text": "Build the schedules page"
   }
 }
 ```

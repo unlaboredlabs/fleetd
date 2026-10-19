@@ -1,6 +1,22 @@
 /// Tool descriptions in tools/list, word for word as older hubs listed them.
 pub const DESCRIPTIONS: &[(&str, &str)] = &[
     (
+        "chat_send",
+        "Write to a project's lead in its chat. It goes in at once: a new turn when the lead is idle, joined to its turn when it works, held while it starts (leadWaiting says why and what to do). attachments from attachment_put. The lead's replies arrive as chat.message events. Idempotent per clientRequestId.",
+    ),
+    (
+        "chat_history",
+        "A page of a project's chat, oldest first: the newest limit messages, or before/after a seq. Past orders, steers and questions read in as history. state carries needsYou (the lead waits on your reply) and leadWorking.",
+    ),
+    (
+        "project_stop",
+        "Stop everything in a project: every open order stops, its agents are cancelled and what waits on you is withdrawn, one line in the chat says so and the lead hears it. The lead and the chat stay. A person's device (a human key) only.",
+    ),
+    (
+        "attachment_get",
+        "One file of a project's chat or orders, base64, at most 5 MiB: to show an image a message carries. Read on the project's machine.",
+    ),
+    (
         "fleetd_status",
         "Every machine (online/offline), the 50 most recently active projects, the latest failed/waiting/usage-limited events and PRs the merge train sent back (needs_rebase, ci_failed), the slot board (cap, used, queued, per-project shares) and the events cursor. Start here.",
     ),
@@ -86,7 +102,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "intake_submit",
-        "Give one intent in plain words (e.g. \"fix: the README has a typo\"). Without machineId and projectId, a leading @<project> (title or folder name) picks the project, else a one-shot claude router does; when it cannot, you get an askId for the human to pick the project. Prefixes bug:/fix:, research: and finish: set the template. Creates a draft workstream and wakes the lead, starting it if the project has none; echoes where it went and why. leadWaiting, when present, says why no lead could take it yet and what to do. Idempotent per clientRequestId.",
+        "Moved to the project chat: write to the project's lead with chat_send. Kept for one release; it answers with that fix.",
     ),
     (
         "workstream_list",
@@ -202,7 +218,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "order_note",
-        "Add to an order for its lead, with optional references (files, orders, PRs) and attachments from attachment_put. It reaches the lead as a steer (steerId): at its next tool boundary, or, when urgent, now, stopping its current step. A person's device (a human key) only.",
+        "Moved to the project chat: write to the project's lead with chat_send. Kept for one release; it answers with that fix.",
     ),
     (
         "steer_send",
@@ -218,15 +234,15 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "order_stop",
-        "Stop an order: cancels its queued and running tasks, withdraws its asks, sets it stopped and tells its lead. Merged PRs stay. Idempotent. A person's device (a human key) only.",
+        "Moved: stop everything in a project with project_stop, or tell its lead in chat_send. Kept for one release; it answers with that fix.",
     ),
     (
         "intake_preview",
-        "Where intake_submit would send this text (an @project prefix, else the router), without creating anything. Cached for 10 minutes.",
+        "Moved to the project chat: pick the project and write to its lead with chat_send. Kept for one release; it answers with that fix.",
     ),
     (
         "attachment_put",
-        "Upload one file (png, jpeg, webp, gif, text or PDF; at most 5 MiB, base64) for a later intake_submit or order_note. Unused uploads are deleted after 24 h.",
+        "Upload one file (png, jpeg, webp, gif, text or PDF; at most 5 MiB, base64) for a later chat_send. Unused uploads are deleted after 24 h.",
     ),
     (
         "project_files",
