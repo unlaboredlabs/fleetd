@@ -791,6 +791,16 @@ pub const ENTRIES: &[Entry] = &[
         &[]
     ),
     entry!(
+        "plan.granularity",
+        Msg,
+        Lead,
+        Lead,
+        "Plan item too big or unsized",
+        "when `fleetd plan add` (or `plan edit --size`) gets an item with no size or one bigger than m",
+        "item!=P<n>; reason!=why, \"has no size (counted as m)\" or \"is size l\"",
+        &[]
+    ),
+    entry!(
         "watchdog.nudge",
         Msg,
         WakesAndMessages,
@@ -893,6 +903,12 @@ pub const ENTRIES: &[Entry] = &[
                 "numbers-from-facts",
                 "uses only numbers from the facts",
                 r"only numbers that appear in the facts",
+                Code
+            ),
+            (
+                "no-time",
+                "never estimates time",
+                r"never estimate time",
                 Code
             ),
         ]

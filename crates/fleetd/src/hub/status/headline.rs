@@ -64,8 +64,19 @@ pub fn template(f: &HeadlineFacts) -> String {
     format!("{doing}{waiting}. {needs}.")
 }
 
-/// The Code rules: one line of at most 160 characters, no quotes or preamble, and every digit run it contains
-/// appears in the facts.
+/// Phrases that estimate time ("eta", "~2 hours", "in 30 min", "by 5pm", "by Thursday", "should take"): fleetd shows
+/// no time estimates.
+static TIME_PHRASE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    let unit = r"(?:h|hrs?|hours?|m|mins?|minutes?|days?|weeks?)";
+    let when = r"(?:\d{1,2}(?::\d{2})?\s*(?:am|pm)?|noon|midnight|tonight|tomorrow|today|eod|end of (?:the )?day|mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)";
+    regex::Regex::new(&format!(
+        r"(?i)\betas?\b|~\s*\d|\b(?:about|around|roughly|approx(?:imately)?|in|within|another|under)\s+(?:an?|\d+(?:\.\d+)?)\s*{unit}\b|\bby\s+{when}\b|\b(?:should|will|would|could|might)\s+take\b|\b{unit}\s+(?:left|to go|remaining)\b|\b(?:tomorrow|tonight|later today)\b"
+    ))
+    .expect("time phrase pattern")
+});
+
+/// The Code rules: one line of at most 160 characters, no quotes or preamble, no time estimate, and every digit
+/// run it contains appears in the facts.
 pub fn check_reply(reply: &str, facts_json: &str) -> Result<String, &'static str> {
     let line = reply.trim();
     if line.is_empty() {
@@ -82,6 +93,9 @@ pub fn check_reply(reply: &str, facts_json: &str) -> Result<String, &'static str
         || line.starts_with("Here")
     {
         return Err("quotes or a preamble");
+    }
+    if TIME_PHRASE.is_match(line) {
+        return Err("a time estimate");
     }
     let allowed: std::collections::HashSet<&str> = digit_runs(facts_json).collect();
     if digit_runs(line).any(|n| !allowed.contains(n)) {
@@ -254,6 +268,30 @@ mod tests {
             Err("quotes or a preamble")
         );
         assert!(check_reply(&"a".repeat(161), &json).is_err());
+        for estimate in [
+            "Switching runners at 72%, eta soon.",
+            "Switching runners, about 2 hours left.",
+            "Switching runners at 72%, done in 30 min.",
+            "Switching runners; it should take a while.",
+            "Switching runners, ready by 5pm.",
+            "Switching runners, landing by Thursday.",
+            "Switching runners at ~72%.",
+            "Switching runners, finishing tomorrow.",
+        ] {
+            assert_eq!(
+                check_reply(estimate, &json),
+                Err("a time estimate"),
+                "{estimate}"
+            );
+        }
+        assert!(
+            check_reply(
+                "Switching runners at 72%, merged by the train, in review.",
+                &json
+            )
+            .is_ok(),
+            "state words are not time"
+        );
     }
 
     #[test]

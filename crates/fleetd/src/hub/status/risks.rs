@@ -21,10 +21,6 @@ pub struct RiskFacts {
     pub machines_down: Vec<(String, String, String, i64)>,
     /// (ask key, order, open for ms)
     pub blocked_asks: Vec<(String, String, i64)>,
-    /// (slip text, scope part text, speed part text) when the ETA slipped past the threshold.
-    pub slip: Option<(String, String, String)>,
-    /// (lead's estimate text, measured text)
-    pub estimate_drift: Option<(String, String)>,
     /// (item, title, size letter, failed attempts) of every open must item, plan order.
     pub open_must: Vec<(String, String, char, i64)>,
     /// (check name, distinct PRs it failed on in 24 h)
@@ -40,6 +36,8 @@ pub struct RiskFacts {
     pub no_plan: Vec<(String, String, i64)>,
     /// (steer, who it went to, sent at clock text) of steers unacknowledged, or delivered past [`STEER_ACK_MS`].
     pub steers_unacked: Vec<(String, String, String)>,
+    /// (item, where it is, measured time there) of items past 1.5× their stage's usual time, slowest first.
+    pub slower: Vec<(String, String, String)>,
 }
 
 /// A delivered steer is a risk once it has gone this long without an acknowledgement.
@@ -99,18 +97,11 @@ pub fn risks(f: &RiskFacts) -> Vec<Risk> {
             ));
         }
     }
-    if let Some((slip, scope, speed)) = &f.slip {
+    for (item, stage, took) in f.slower.iter().take(2) {
         out.push(risk(
-            RiskRule::Slipping,
+            RiskRule::SlowerThanUsual,
             Warning,
-            format!("ETA slipped {slip} ({scope} scope, {speed} slower)"),
-        ));
-    }
-    if let Some((lead, measured)) = &f.estimate_drift {
-        out.push(risk(
-            RiskRule::EstimateDrift,
-            Warning,
-            format!("lead estimated {lead}; measured speed says {measured}"),
+            format!("{item} is slower than usual {stage} ({took} so far)"),
         ));
     }
     if let Some(r) = riskiest(&f.open_must) {

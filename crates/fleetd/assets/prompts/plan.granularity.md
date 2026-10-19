@@ -1,0 +1,1 @@
+{{item}} {{reason}}. Split anything bigger than m into items of size s or m, and give every item a size: progress moves with each item's stages, so big or unsized items leave it flat. Split it (`fleetd plan add "<part>" --milestone M<n> --size s|m`, then `fleetd plan drop {{item}} --why "split"`), or size it with `fleetd plan edit {{item}} --size s|m|l`.
