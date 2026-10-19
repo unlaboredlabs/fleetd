@@ -8152,6 +8152,11 @@
           "const": "slower_than_usual",
           "description": "An item has spent over 1.5× the usual time in its current stage.",
           "type": "string"
+        },
+        {
+          "const": "train_stuck",
+          "description": "A PR waiting for the merge train is held by the train's last error (a checkout the node won't run git in, a\nblocked worktree, a refused merge).",
+          "type": "string"
         }
       ],
       "x-open": true

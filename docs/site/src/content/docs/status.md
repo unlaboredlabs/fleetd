@@ -35,7 +35,7 @@ blocks the rest.
 | Desktop app | ⌘. (Ctrl+. on Linux). See [The desktop app](/docs/desktop-app#status). |
 | Terminal, the whole fleet | `fleetd status` |
 | Terminal, one project | `fleetd status storefront` |
-| Terminal, one order | `fleetd status W41`. A new order shows "Nothing to show" (exit 3) until its lead has written the brief. |
+| Terminal, one order | `fleetd status W41`. A new order says `W41 is a draft: waiting for the lead's brief` (exit 0) until its lead has written the brief; `--watch` waits for it. |
 
 | Option | Does |
 |---|---|
@@ -103,13 +103,13 @@ The stages, in pipeline order. "Waiting on" lists the ones left after the item's
 | a writer | A [writer](/docs/glossary#writer) task to start. |
 | the writer's push | The writer to push its branch. |
 | a PR | The pull request to open. |
-| review of #212 | Reviews of that PR, as its tier needs. |
+| review of #212 | Reviews of that PR. Left out when its tier needs none, as for an `S` change. |
 | CI on #212 | CI on the PR's current commit. |
 | merge | The merge train to rebase, check and merge it. |
 | done-when checks | The hub to run the order's [done-when checks](/docs/glossary#done-when-check). |
 
-"Waiting on" lists every stage left, even one this item skips, such as review for an `S` change. If it doesn't move,
-see [An order is stuck](/docs/troubleshooting#stuck).
+If the merge train can't move a PR, risks list it with the train's error. For a checkout outside the node's `cmdRoots`
+that includes the fix. If it doesn't move, see [An order is stuck](/docs/troubleshooting#stuck).
 
 An item that has spent over 1.5 times the usual time in its current stage is marked `SLOWER THAN USUAL` and listed
 under risks. "Usual" is measured from this project's own history.

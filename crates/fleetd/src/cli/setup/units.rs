@@ -48,6 +48,12 @@ pub struct ServiceSpec {
     pub log_path: String,
 }
 
+/// With a relocated fleetd dir (a second fleet), a service unit belongs to this fleet only when it names `home` (its
+/// hub's or node's home). Any other unit is the first fleet's, and is never written, stopped or removed.
+pub fn foreign_unit(unit_text: Option<&str>, home: &str) -> bool {
+    crate::home::relocated().is_some() && unit_text.is_some_and(|unit| !unit.contains(home))
+}
+
 /// POSIX shell quoting: bare when safe, else single quotes.
 pub fn q(value: &str) -> String {
     let safe = !value.is_empty()

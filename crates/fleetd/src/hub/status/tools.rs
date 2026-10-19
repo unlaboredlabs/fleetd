@@ -39,7 +39,19 @@ fn may_read(hub: &Hub, caller: &Caller, scope: &StatusScope) -> Result<(), ToolE
     require(caller, Role::Read, Some(&machine))
 }
 
-fn not_found(scope: &StatusScope) -> ToolError {
+pub(super) fn not_found(hub: &Hub, scope: &StatusScope) -> ToolError {
+    if let StatusScope::Order { workstream_id } = scope
+        && let Ok(Some(order)) = hub
+            .db
+            .with(|c| Ok(crate::hub::plan::order_info(c, workstream_id.as_str())?))
+        && order.state == fleetd_contracts::ledger::WorkstreamState::Draft
+    {
+        return ToolError::new(
+            ErrorCode::NotFound,
+            format!("{workstream_id} is a draft: waiting for the lead's brief."),
+        )
+        .with_fix("status_wait on it returns its doc once the brief exists.");
+    }
     ToolError::new(
         ErrorCode::NotFound,
         format!("Nothing to show for {}.", scope.key()),
@@ -57,7 +69,7 @@ async fn status_get(
     let doc = hub
         .status
         .get(&hub, &caller, &input.scope, since)
-        .ok_or_else(|| not_found(&input.scope))?;
+        .ok_or_else(|| not_found(&hub, &input.scope))?;
     Ok(StatusGetOutput {
         doc,
         next: Some("status_wait with after = this version".into()),

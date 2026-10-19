@@ -412,6 +412,9 @@ pub enum RiskRule {
     SteerUnacknowledged,
     /// An item has spent over 1.5× the usual time in its current stage.
     SlowerThanUsual,
+    /// A PR waiting for the merge train is held by the train's last error (a checkout the node won't run git in, a
+    /// blocked worktree, a refused merge).
+    TrainStuck,
     /// A rule this build doesn't know (a newer hub): shown as a plain risk line. Never sent.
     #[serde(other)]
     #[schemars(skip)]

@@ -36,7 +36,13 @@ pub struct MachineLayout {
 
 pub fn machine_layout(home: &str) -> MachineLayout {
     let home = home.trim_end_matches('/');
-    let fleetd = format!("{home}/.fleetd");
+    machine_layout_at(home, &format!("{home}/.fleetd"))
+}
+
+/// The layout with fleetd's own directory at `fleetd` (`FLEETD_HOME` on this machine) instead of `~/.fleetd`.
+pub fn machine_layout_at(home: &str, fleetd: &str) -> MachineLayout {
+    let home = home.trim_end_matches('/');
+    let fleetd = fleetd.trim_end_matches('/').to_owned();
     let share = format!("{home}/.local/share/fleetd");
     MachineLayout {
         node_home: format!("{fleetd}/node"),
@@ -54,6 +60,8 @@ pub fn machine_layout(home: &str) -> MachineLayout {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Facts {
     pub home: String,
+    /// fleetd's own directory there; empty means `<home>/.fleetd`.
+    pub fleetd: String,
     pub config_home: String,
     pub user: String,
     pub uid: u32,
@@ -75,14 +83,23 @@ pub struct Facts {
 }
 
 impl Facts {
+    pub fn layout(&self) -> MachineLayout {
+        if self.fleetd.is_empty() {
+            machine_layout(&self.home)
+        } else {
+            machine_layout_at(&self.home, &self.fleetd)
+        }
+    }
+
     fn file(&self, path: &str) -> Option<&str> {
         self.files.get(path).and_then(|f| f.as_deref())
     }
 }
 
-/// The probe: POSIX sh only, so a machine needs nothing but a shell to be read. One fact per line.
-pub fn probe_command(suffix: &str) -> String {
-    let l = machine_layout("$H");
+/// The probe: POSIX sh only, so a machine needs nothing but a shell to be read. One fact per line. `fleetd`: this
+/// machine's relocated fleetd dir (`FLEETD_HOME`), for `--local` only; a machine over SSH keeps `~/.fleetd`.
+pub fn probe_command(suffix: &str, fleetd: Option<&str>) -> String {
+    let l = machine_layout_at("$H", "$F");
     let dirs = Dirs {
         home: "$H",
         config_home: "$C",
@@ -98,8 +115,11 @@ pub fn probe_command(suffix: &str) -> String {
             .join(" ")
     };
     [
-        r#"H=$HOME; C=${XDG_CONFIG_HOME:-$HOME/.config}"#.to_owned(),
-        r#"echo "home $H"; echo "config $C"; echo "user $(id -un)"; echo "uid $(id -u)"; echo "os $(uname -s)"; echo "arch $(uname -m)"; echo "path $PATH""#.into(),
+        format!(
+            r#"H=$HOME; C=${{XDG_CONFIG_HOME:-$HOME/.config}}; F={}"#,
+            fleetd.map_or_else(|| "$H/.fleetd".to_owned(), q)
+        ),
+        r#"echo "home $H"; echo "fleetd $F"; echo "config $C"; echo "user $(id -un)"; echo "uid $(id -u)"; echo "os $(uname -s)"; echo "arch $(uname -m)"; echo "path $PATH""#.into(),
         r#"CL=$(command -v claude || true); for c in "$H/.local/bin/claude" "$H/.claude/local/claude" /opt/homebrew/bin/claude /usr/local/bin/claude; do [ -n "$CL" ] && break; [ -x "$c" ] && CL=$c; done"#.into(),
         r#"if [ -n "$CL" ]; then echo "claude $CL"; echo "claude_version $("$CL" --version 2>/dev/null | head -n 1)"; fi"#.into(),
         r#"L=unknown; if command -v loginctl >/dev/null 2>&1; then L=$(loginctl show-user "$(id -un)" -p Linger --value 2>/dev/null || true); fi; echo "linger ${L:-unknown}""#.into(),
@@ -117,6 +137,7 @@ pub fn parse_facts(output: &str) -> Result<Facts, String> {
         let (key, rest) = line.split_once(' ').unwrap_or((line, ""));
         match key {
             "home" => facts.home = rest.into(),
+            "fleetd" => facts.fleetd = rest.into(),
             "config" => facts.config_home = rest.into(),
             "user" => facts.user = rest.into(),
             "uid" => facts.uid = rest.trim().parse().map_err(|_| format!("uid '{rest}'"))?,
@@ -325,7 +346,7 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
         ));
     }
 
-    let l = machine_layout(&facts.home);
+    let l = facts.layout();
     let dirs = Dirs {
         home: &facts.home,
         config_home: &facts.config_home,
@@ -394,6 +415,16 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
 
     let text = render_unit(platform, &node_spec);
     let existing_unit = facts.file(&unit_file(Role::Node));
+    // A second fleet on this machine (its own fleetd dir) never takes over the first one's node service.
+    if input.service
+        && l.fleetd != machine_layout(&facts.home).fleetd
+        && existing_unit.is_some_and(|unit| !unit.contains(&l.node_home))
+    {
+        return Err(format!(
+            "the {} service on this machine runs another fleet's node. Fix: give this fleet its own --unit-suffix, or pass --no-service",
+            unit_file(Role::Node).rsplit('/').next().unwrap_or_default()
+        ));
+    }
     let node_changed = input.service && existing_unit != Some(text.as_str());
     let node_existed = input.service && existing_unit.is_some();
     if node_changed {
@@ -631,29 +662,36 @@ pub fn old_t3_removal(
     )
 }
 
-/// Commands that undo `machine add`: the node's service always; with `purge` also the node's key and settings,
-/// fleetd's Claude login and config, its logs, and what an older fleetd left. The fleetd binary stays: it may be
-/// the CLI the installer put there.
+/// Commands that undo `machine add`: the node's service (unless `own_service` is false: the unit there runs another
+/// fleet's node); with `purge` also the node's key and settings, fleetd's Claude login and config, its logs, and,
+/// for the default fleet only, what an older fleetd left. The fleetd binary stays: it may be the CLI the installer
+/// put there.
+#[allow(clippy::too_many_arguments)]
 pub fn plan_machine_remove(
     platform: Platform,
     home: &str,
+    fleetd: Option<&str>,
     config_home: &str,
     uid: u32,
     suffix: &str,
+    own_service: bool,
     purge: bool,
 ) -> Vec<Step> {
-    let l = machine_layout(home);
+    let l = fleetd.map_or_else(|| machine_layout(home), |f| machine_layout_at(home, f));
     let dirs = Dirs { home, config_home };
     let unit_file = |role: Role| unit_path(platform, &dirs, role, suffix);
     let services = ServiceManager::new(platform, uid, suffix, unit_file);
-    let mut steps = vec![step(
-        "stop and remove the node service",
-        format!(
-            "{}; rm -f {}",
-            services.remove(Role::Node),
-            q(&unit_file(Role::Node))
-        ),
-    )];
+    let mut steps = Vec::new();
+    if own_service {
+        steps.push(step(
+            "stop and remove the node service",
+            format!(
+                "{}; rm -f {}",
+                services.remove(Role::Node),
+                q(&unit_file(Role::Node))
+            ),
+        ));
+    }
     if purge {
         let mut paths = vec![&l.node_home, &l.env_file, &l.logs];
         paths.extend(l.legacy_share.iter());
@@ -664,7 +702,9 @@ pub fn plan_machine_remove(
                 paths.iter().map(|p| q(p)).collect::<Vec<_>>().join(" ")
             ),
         ));
-        steps.push(old_t3_removal(platform, home, config_home, uid, suffix));
+        if fleetd.is_none() {
+            steps.push(old_t3_removal(platform, home, config_home, uid, suffix));
+        }
     }
     if platform == Platform::Linux {
         steps.push(step(
@@ -946,6 +986,69 @@ mod tests {
         assert!(parse_facts("nothing\n").is_err());
     }
 
+    /// A second fleet on this machine (`FLEETD_HOME`) sets up its node in its own directory and never takes over
+    /// the first one's node service.
+    #[test]
+    fn a_relocated_fleet_keeps_to_its_own_dir_and_service() {
+        let mut facts = fresh_facts("ada", "x64");
+        facts.fleetd = "/tmp/second".into();
+        let plan = plan_machine_add(&facts, &input()).unwrap();
+        let text = summary(&plan).to_string();
+        assert!(text.contains("/tmp/second/node"), "{text}");
+        assert!(!text.contains("/home/ada/.fleetd"), "{text}");
+
+        let unit = "/home/ada/.config/systemd/user/fleetd-node.service";
+        facts.files.insert(
+            unit.into(),
+            Some(
+                "ExecStart=/home/ada/.fleetd/bin/fleetd node run --home /home/ada/.fleetd/node\n"
+                    .into(),
+            ),
+        );
+        let Err(refused) = plan_machine_add(&facts, &input()) else {
+            panic!("took over the first fleet's node service");
+        };
+        assert!(refused.contains("another fleet's node"), "{refused}");
+        assert!(refused.contains("--unit-suffix"), "{refused}");
+        let no_service = MachineAddInput {
+            service: false,
+            ..input()
+        };
+        assert!(plan_machine_add(&facts, &no_service).is_ok());
+        facts.fleetd = String::new();
+        assert!(
+            plan_machine_add(&facts, &input()).is_ok(),
+            "the default fleet keeps rewriting its own unit"
+        );
+    }
+
+    #[test]
+    fn the_probe_reads_a_relocated_fleetd_dir() {
+        let home = tempfile::tempdir().unwrap();
+        let fleet = tempfile::tempdir().unwrap();
+        let (h, f) = (
+            home.path().to_str().unwrap(),
+            fleet.path().to_str().unwrap(),
+        );
+        std::fs::create_dir_all(format!("{f}/node")).unwrap();
+        std::fs::write(format!("{f}/node/node.json"), "{}\n").unwrap();
+        std::fs::create_dir_all(format!("{h}/.fleetd/node")).unwrap();
+        std::fs::write(format!("{h}/.fleetd/node/node.json"), "{\"real\":1}\n").unwrap();
+        let out = std::process::Command::new("/bin/sh")
+            .args(["-c", &probe_command("", Some(f))])
+            .env("HOME", h)
+            .output()
+            .unwrap();
+        let facts = parse_facts(&String::from_utf8_lossy(&out.stdout)).unwrap();
+        assert_eq!(facts.fleetd, f);
+        assert_eq!(facts.file(&format!("{f}/node/node.json")), Some("{}\n"));
+        assert!(
+            !facts
+                .files
+                .contains_key(&format!("{h}/.fleetd/node/node.json"))
+        );
+    }
+
     /// The probe is POSIX sh, so it runs here as it would on a machine.
     #[test]
     fn the_probe_runs_in_sh_and_reads_back() {
@@ -955,7 +1058,7 @@ mod tests {
         std::fs::write(format!("{h}/.fleetd/node/node.json"), "{\"hub\":\"x\"}\n").unwrap();
         std::fs::write(format!("{h}/.fleetd/claude.env"), "").unwrap();
         let out = std::process::Command::new("/bin/sh")
-            .args(["-c", &probe_command("")])
+            .args(["-c", &probe_command("", None)])
             .env("HOME", h)
             .env_remove("XDG_CONFIG_HOME")
             .output()

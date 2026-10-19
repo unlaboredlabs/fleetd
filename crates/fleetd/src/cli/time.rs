@@ -15,13 +15,13 @@ use serde_json::{Value, json};
 use super::args::{self, Kind, Spec};
 use super::mcp_client::{McpClient, McpError};
 
-pub const TIME_USAGE: &str = r#"  time [<order>|<project>] [--since 7d] [--spans <rule>] [--json] [--hub <url> --key-file <path>]
+pub const TIME_USAGE: &str = r#"  time [<order>|<project>] [--since 7d] [--spans <rule>] [--json] [--hub <url> --key-file <path> | --home <dir>]
              where agents' time went: an order's critical path, agent time by category, the
              slowest commands and the findings; a project by id or title (<machine>/<project>
              when two machines have one), the whole fleet with neither. --since takes 1h to
              400d, a date or an ISO time; --spans <rule> lists the spans a finding points at. On the
              hub machine it needs no --hub or --key-file
-  time --retention <days> [--hub <url> --key-file <path>]
+  time --retention <days> [--hub <url> --key-file <path> | --home <dir>]
              keep 1-365 days of timelines (admin key); daily totals are kept 400 days
 "#;
 
@@ -29,6 +29,8 @@ pub const TIME_USAGE: &str = r#"  time [<order>|<project>] [--since 7d] [--spans
 pub struct TimeArgs {
     /// Both, or neither for the hub on this machine.
     pub hub: Option<(String, String)>,
+    /// That hub's home, when it isn't the default.
+    pub home: Option<String>,
     /// The order id or project as given; empty for the fleet.
     pub target: String,
     pub since: String,
@@ -82,6 +84,7 @@ pub fn parse_time_args(argv: &[String], now: DateTime<Utc>, zone: Tz) -> Result<
     const OPTIONS: &[(&str, Kind)] = &[
         ("hub", Kind::Str),
         ("key-file", Kind::Str),
+        ("home", Kind::Str),
         ("since", Kind::Str),
         ("spans", Kind::Str),
         ("json", Kind::Bool),
@@ -120,6 +123,7 @@ pub fn parse_time_args(argv: &[String], now: DateTime<Utc>, zone: Tz) -> Result<
     };
     Ok(TimeArgs {
         hub,
+        home: v.string("home").filter(|s| !s.is_empty()),
         target: v.positionals.first().cloned().unwrap_or_default(),
         since: parse_since(v.str("since").unwrap_or("7d"), now, zone)?,
         spans: v.string("spans").filter(|s| !s.is_empty()),
@@ -604,7 +608,7 @@ pub async fn time_command(argv: &[String]) -> u8 {
             }
         }
         None => {
-            let local = match super::hub_key::resolve_home(None) {
+            let local = match super::hub_key::resolve_home(args.home.as_deref()) {
                 Ok(home) => super::setup::doctor::connect_as(&home, "fleetd-time").await,
                 Err(message) => Err(super::setup::Failure {
                     message,

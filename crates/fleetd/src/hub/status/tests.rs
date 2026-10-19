@@ -815,3 +815,103 @@ async fn a_finished_milestone_lowers_the_project_and_its_fleet_bar_only_with_a_m
             .is_none()
     );
 }
+
+/// A tier-S PR waits on no review, and the train's error holding it is a risk that says what to do.
+#[tokio::test]
+async fn a_pr_held_by_the_train_shows_the_real_wait_and_the_fix() {
+    use fleetd_contracts::status::{RiskLevel, RiskRule};
+    let clock = ManualClock::at(T0);
+    let (hub, _home) = hub(clock.clone());
+    let (r, by) = (project(), "lead:devbox/storefront");
+    hub.plans
+        .milestone(
+            &r,
+            serde_json::from_value::<PlanMilestoneCall>(json!({ "title": "Checkout" })).unwrap(),
+        )
+        .unwrap();
+    hub.plans
+        .add(
+            &r,
+            by,
+            add(
+                "cart page",
+                json!({ "workstreamId": "W1", "pr": "https://github.com/acme/storefront/pull/212", "size": "s" }),
+            ),
+        )
+        .unwrap();
+    let error = format!(
+        "git: {}/srv/work/storefront is outside cmdRoots, the directories this node runs commands in (/home/ada) on devbox. Fix: …",
+        crate::hub::train::git::REFUSED_HERE
+    );
+    let change = json!({
+        "changeId": "X1", "projectRef": { "machineId": "devbox", "projectId": "storefront" }, "repo": "acme/storefront",
+        "prNumber": 212, "prUrl": "https://github.com/acme/storefront/pull/212", "branch": "fleetd/T1-x",
+        "workstreamId": "W1", "serves": "done:0", "tier": "S", "headSha": "b".repeat(40), "state": "queued",
+        "reviews": [], "lastError": error, "createdAt": iso_ms_of(T0 as i64), "updatedAt": iso_ms_of(T0 as i64),
+    });
+    hub.db
+        .with(|c| {
+            c.execute(
+                "INSERT INTO changes (repo, pr_number, state, machine_id, project_id, train_order, data)
+                 VALUES ('acme/storefront', 212, 'queued', 'devbox', 'storefront', 0, ?)",
+                [change.to_string()],
+            )?;
+            c.execute("UPDATE plan_items SET started_ms = ?", [T0 as i64])?;
+            Ok(())
+        })
+        .unwrap();
+    clock.advance(Duration::from_secs(1));
+    let scope = StatusScope::Order {
+        workstream_id: WorkstreamId::unchecked("W1"),
+    };
+    let d = hub.status.get(&hub, &person(), &scope, None).unwrap();
+    let steps: Vec<&str> = d.in_progress[0]
+        .waiting_on
+        .iter()
+        .flatten()
+        .map(|s| s.as_str())
+        .collect();
+    assert_eq!(steps, ["CI on #212", "merge", "done-when checks"]);
+    let stuck: Vec<_> = d
+        .risks
+        .iter()
+        .filter(|r| r.rule == RiskRule::TrainStuck)
+        .collect();
+    assert_eq!(stuck.len(), 1, "{:?}", d.risks);
+    assert_eq!(stuck[0].level, RiskLevel::Danger);
+    assert!(
+        stuck[0]
+            .message
+            .as_str()
+            .contains("\"cmdRoots\" in node.json on devbox"),
+        "{}",
+        stuck[0].message.as_str()
+    );
+}
+
+/// An order just sent has no doc until its brief exists: it says so instead of "nothing to show".
+#[tokio::test]
+async fn a_draft_order_is_waiting_for_its_brief() {
+    let clock = ManualClock::at(T0);
+    let (hub, _home) = hub(clock.clone());
+    set_order_state(&hub, "draft");
+    let scope = StatusScope::Order {
+        workstream_id: WorkstreamId::unchecked("W1"),
+    };
+    assert!(hub.status.get(&hub, &person(), &scope, None).is_none());
+    let refused = super::tools::not_found(&hub, &scope);
+    assert_eq!(
+        (refused.code, refused.message.as_str()),
+        (
+            ErrorCode::NotFound,
+            "W1 is a draft: waiting for the lead's brief."
+        )
+    );
+    let missing = super::tools::not_found(
+        &hub,
+        &StatusScope::Order {
+            workstream_id: WorkstreamId::unchecked("W9"),
+        },
+    );
+    assert!(missing.message.starts_with("Nothing to show"));
+}

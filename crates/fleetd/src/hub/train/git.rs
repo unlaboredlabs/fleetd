@@ -59,6 +59,9 @@ fn linked_gitdir(worktree: &str, dot_git: &str) -> Option<String> {
 /// Marks the error a person has to fix: something that is not the train's sits where its worktree goes.
 pub const BLOCKED: &str = "the train's worktree is blocked: ";
 
+/// Marks the other error a person has to fix: the project's node refuses to run commands in its checkout.
+pub const REFUSED_HERE: &str = "the node refuses to run the train's git there: ";
+
 fn blocked(worktree: &str, root: &str, gitdir: Option<&str>) -> String {
     let what = match gitdir {
         Some(gitdir) => format!("a worktree of another repository ({gitdir})"),
@@ -173,7 +176,18 @@ impl TrainGit<'_> {
                 ..Default::default()
             });
         }
-        out.map_err(|e| GitError(format!("{head} on {}: {e}", self.machine_id)))
+        let out = out.map_err(|e| GitError(format!("{head} on {}: {e}", self.machine_id)))?;
+        // Every command here runs in the checkout or its worktree, so a refusal is about where they are, never git.
+        if let Some(why) =
+            crate::node::cmd::refusal(out.exit_code.is_none() && !out.timed_out, &out.output_tail)
+        {
+            return Err(GitError(format!(
+                "{REFUSED_HERE}{why} on {}. Fix: {}",
+                self.machine_id,
+                crate::node::cmd::outside_roots_fix(self.machine_id.as_str())
+            )));
+        }
+        Ok(out)
     }
 
     /// Fails unless it exits 0; returns the output.

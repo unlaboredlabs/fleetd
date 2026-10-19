@@ -54,7 +54,7 @@ same checks. The tables below give each check's id in brackets, such as `[claude
 | "claude on the hub is not logged in" `[claude_login]` | The hub's own `claude` (used by the router and the retro) is logged out. | `claude auth login`, or through your proxy. For a gateway or token, see [claude.env](/docs/config-and-files#claude-env). |
 | "The hub's address `http://…` is not HTTPS" `[https]` | The hub listens on plain HTTP outside loopback or a tailnet. | Serve it over HTTPS, then point fleetd at it (below). |
 | "The hub has no address set up", or `setup.json` is unreadable `[https]` | `~/.fleetd/hub/setup.json` is missing or broken. | Same as above: `fleetd init --url <https address>`. |
-| "… has no hub set up" `[exit 4]` | The hub was started by hand without `fleetd init` first, so its home has no `setup.json`. | Run step 1 of [Run a second fleet](/docs/config-and-files#second-fleet) with that `--home` and `--listen`: `HOME=$(mktemp -d) fleetd init --home <home> --no-service --listen <host:port> </dev/null`. |
+| "… has no hub set up" `[exit 4]` | The hub was started by hand without `fleetd init` first, so its home has no `setup.json`. | Run the fix it prints. For a hub you run yourself, that is `fleetd init --no-service --home <home> --listen <host:port>`, which leaves the running hub alone. |
 
 This is what doctor shows when the hub is down:
 
@@ -104,6 +104,7 @@ fixed. fleetd turns claude's auto-updater off for its own sessions.
 | "No git commit identity is set on laptop" `[commit_identity]` | The node has no commit author. | Set up over SSH: `fleetd machine add laptop`. Joined with a code: `fleetd pair --worker laptop`, then run what it prints on laptop. The hub machine: `fleetd machine add --local`. |
 | "Commits on laptop use … ; the hub's identity is …" `[commit_identity]` | The machine's git config differs from the hub's. | Same as above. |
 | "… free under ~ on laptop; fleetd needs at least 5.0 GB" `[disk]` | Low disk. Each writer gets its own git worktree. | Free space under the named path. `df -h <path>` shows what is left. |
+| "The node on laptop won't run commands in … (outside its cmdRoots)" `[cmd-roots]` | A project's checkout is outside the node's `cmdRoots`, so the merge train can't merge its PRs. | Move the checkout into your home directory, or add its folder to `cmdRoots` in [`node.json`](/docs/config-and-files#node-json) and restart the node. |
 | "laptop sleeps after 15 min idle on AC power" `[sleep]` | The machine sleeps between orders and drops off the fleet. | Turn off sleep on AC power (below). |
 | "New turns on laptop are paused by the usage breaker" `[usage_breaker]` | Its Claude login hit a plan or rate limit. | Wait for the reset (the finding says when), or, once it has capacity, call `usage_resume` from an [MCP client](/docs/mcp-clients). |
 
@@ -157,15 +158,15 @@ fleetd status W41
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| "Nothing to show for order:W41" | The lead hasn't written the order's [brief](/docs/glossary#brief) yet. | Wait for the lead's first message, then run it again. If the lead never starts, see [Its lead](/docs/projects-and-orders#its-lead). |
-| A pull request stays queued on the [merge train](/docs/glossary#merge-train) | The train can't work in the checkout, or CI or a review is pending. | In the project's checkout on its worker, run `fleetd change status X<n>`. The change id `X<n>` is listed by the `train_get` tool. It prints the train's own reason. |
-| `change status` says "… is not a git checkout" for a real checkout | The checkout is outside the node's `cmdRoots` (default: your home directory). | Add its folder to `cmdRoots` in [`node.json`](/docs/config-and-files#node-json) and restart the node. |
+| "W41 is a draft: waiting for the lead's brief" | The lead hasn't written the order's [brief](/docs/glossary#brief) yet. | `fleetd status W41 --watch` shows it once the brief exists. If the lead never starts, see [Its lead](/docs/projects-and-orders#its-lead). |
+| A pull request stays queued on the [merge train](/docs/glossary#merge-train) | The train can't work in the checkout, or CI or a review is pending. | `fleetd status` lists a PR the train can't move under risks, with the train's error. For more, run `fleetd change status X<n>` in the project's checkout on its worker. The change id `X<n>` is listed by the `train_get` tool. |
+| A risk says "#212 can't merge: its checkout on laptop is outside the node's cmdRoots" | The checkout is outside the node's `cmdRoots` (default: your home directory). | Add its folder to `cmdRoots` in [`node.json`](/docs/config-and-files#node-json) and restart the node. |
 | The order waits and the app says why | The lead can't start: `claude` logged out, out of range, or the worker offline. | See [Claude](#claude) and [Machines](#machines). |
 
-"Waiting on" lists the stages left for the item in fleetd's pipeline, in order. It can list a stage the item doesn't
-need, such as a review for an `S` change. See [What it waits on](/docs/status#waits).
+"Waiting on" lists the stages left for the item in fleetd's pipeline, in order, leaving out review when the PR's tier
+needs none. See [What it waits on](/docs/status#waits).
 
 `fleetd change status` is a lead-side command: run it inside the project's checkout on the worker. If that node uses
-a non-default `--home`, set `FLEETD_NODE_SOCK=<node home>/node.sock`.
+a non-default home, set `FLEETD_HOME` as it has, or `FLEETD_NODE_SOCK=<node home>/node.sock`.
 
 Then check the logs (above) for the hub and the order's worker.

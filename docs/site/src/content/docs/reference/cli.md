@@ -199,7 +199,7 @@ print a one-time enrollment token (15 min) for `fleetd node join`
 ### fleetd hub github-webhook {#hub-github-webhook}
 
 ```text
-fleetd hub github-webhook (--url <public url>/github | --off) [--hub <url> --key-file <path>]
+fleetd hub github-webhook (--url <public url>/github | --off) [--hub <url> --key-file <path> | --home <dir>]
 ```
 
 let GitHub tell the hub about pull requests, checks and pushes on the train's repos as they happen (admin key). It needs a URL GitHub can reach that forwards to this hub, which fleetd never creates; without one the hub syncs with GitHub on its own
@@ -293,7 +293,7 @@ your custom instructions, appended to every lead and task
 ### fleetd time {#time}
 
 ```text
-fleetd time [<order>|<project>] [--since 7d] [--spans <rule>] [--json] [--hub <url> --key-file <path>]
+fleetd time [<order>|<project>] [--since 7d] [--spans <rule>] [--json] [--hub <url> --key-file <path> | --home <dir>]
 ```
 
 where agents' time went: an order's critical path, agent time by category, the slowest commands and the findings; a project by id or title (\<machine\>/\<project\> when two machines have one), the whole fleet with neither. `--since` takes 1h to 400d, a date or an ISO time; `--spans` \<rule\> lists the spans a finding points at. On the hub machine it needs no `--hub` or `--key-file`
@@ -301,7 +301,7 @@ where agents' time went: an order's critical path, agent time by category, the s
 ### fleetd time {#time-retention}
 
 ```text
-fleetd time --retention <days> [--hub <url> --key-file <path>]
+fleetd time --retention <days> [--hub <url> --key-file <path> | --home <dir>]
 ```
 
 keep 1-365 days of timelines (admin key); daily totals are kept 400 days
@@ -309,7 +309,7 @@ keep 1-365 days of timelines (admin key); daily totals are kept 400 days
 ### fleetd status {#status}
 
 ```text
-fleetd status [<order>|<project>] [--watch] [--json] [--hub <url> --key-file <path>]
+fleetd status [<order>|<project>] [--watch] [--json] [--hub <url> --key-file <path> | --home <dir>]
 ```
 
 progress (verified plus work in flight), why it fell, the critical path it waits on, what is slower than usual, what changed since you last looked, health and risks; for an order (W41), a project by id or title (\<machine\>/\<project\> when two machines have one), or the whole fleet. `--watch` prints each new version as the hub sends it; stale parts say so. On the hub machine it needs no `--hub` or `--key-file`
@@ -317,7 +317,7 @@ progress (verified plus work in flight), why it fell, the critical path it waits
 ### fleetd steer {#steer}
 
 ```text
-fleetd steer <W|T> "<text>" [--now] [--wait] --key-file <human key> [--hub <url>]
+fleetd steer <W|T> "<text>" [--now] [--wait] --key-file <human key> [--hub <url> | --home <dir>]
 ```
 
 steer an order's lead (W41) or one agent (T88) mid-run. Plain: it lands at the agent's next step, after the tool it is running returns. `--now` stops that step and delivers at once. `--wait` follows the receipt: exit 0 acknowledged, 1 not acknowledged, withdrawn or failed. Without `--hub` it uses the hub on this machine
@@ -325,7 +325,7 @@ steer an order's lead (W41) or one agent (T88) mid-run. Plain: it lands at the a
 ### fleetd steer withdraw {#steer-withdraw}
 
 ```text
-fleetd steer withdraw S<n> --key-file <human key> [--hub <url>]
+fleetd steer withdraw S<n> --key-file <human key> [--hub <url> | --home <dir>]
 ```
 
 take back a steer the agent has not taken in yet
@@ -333,7 +333,7 @@ take back a steer the agent has not taken in yet
 ### fleetd steers {#steers}
 
 ```text
-fleetd steers [W|T] --key-file <human key> [--hub <url>]
+fleetd steers [W|T] --key-file <human key> [--hub <url> | --home <dir>]
 ```
 
 recent steers and their receipts
@@ -341,7 +341,7 @@ recent steers and their receipts
 ### fleetd answer {#answer}
 
 ```text
-fleetd answer --key-file <human key> [--hub <url>]
+fleetd answer --key-file <human key> [--hub <url> | --home <dir>]
 ```
 
 the open questions: each choice's label, what happens if you pick it, and the lead's recommendation
@@ -349,7 +349,7 @@ the open questions: each choice's label, what happens if you pick it, and the le
 ### fleetd answer {#answer-key-file}
 
 ```text
-fleetd answer "<reply>" --key-file <human key> [--hub <url>]
+fleetd answer "<reply>" --key-file <human key> [--hub <url> | --home <dir>]
 ```
 
 answer them: "1 a", "1-3 go" (take the recommendation), "2: your own answer", "3 skip" (skip for now: the lead keeps its recommendation), "4 later", "\#B4 1 b". A question's answer can be taken back for 10 s
@@ -357,7 +357,7 @@ answer them: "1 a", "1-3 go" (take the recommendation), "2: your own answer", "3
 ### fleetd answer undo {#answer-undo}
 
 ```text
-fleetd answer undo A<n> --key-file <human key> [--hub <url>]
+fleetd answer undo A<n> --key-file <human key> [--hub <url> | --home <dir>]
 ```
 
 take an answer back within 10 s; the question is open again

@@ -2666,7 +2666,8 @@ export type KnownRiskRule =
   | "slipping"
   | "estimate_drift"
   | "steer_unacknowledged"
-  | "slower_than_usual";
+  | "slower_than_usual"
+  | "train_stuck";
 /** KnownRiskRule, or a value from a newer hub. */
 export type RiskRule = KnownRiskRule | (string & {});
 

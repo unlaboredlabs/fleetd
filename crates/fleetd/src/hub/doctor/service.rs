@@ -54,6 +54,8 @@ pub trait DoctorFleet: Send + Sync {
     /// The node's runner (`runner_info` over the link): claude's version, login and conformance. `None` while the
     /// machine's node can't answer it; its claude checks then wait for it.
     fn runner_info(&self, machine_id: &str) -> BoxFut<'_, Option<RunnerInfo>>;
+    /// The machine's projects whose checkout its node refuses to run commands in: `(path, why)`.
+    fn refused_projects(&self, machine_id: &str) -> BoxFut<'_, Vec<(String, String)>>;
 }
 
 pub struct DoctorDeps {
@@ -221,7 +223,7 @@ impl Doctor {
         let setup = config.machines.get(id);
         let fleet = &self.deps.fleet;
         let online = machine.status != "offline";
-        let (runner, usage, probe) = tokio::join!(
+        let (runner, usage, probe, refused) = tokio::join!(
             async {
                 if online {
                     fleet.runner_info(id).await
@@ -238,6 +240,13 @@ impl Doctor {
                     Ok(ActionOutcome { probe: Some(p), .. }) => Ok(p),
                     Ok(outcome) => Err(format!("{id}'s node did not probe: {}", outcome.message)),
                     Err(e) => Err(e),
+                }
+            },
+            async {
+                if online {
+                    Some(fleet.refused_projects(id).await)
+                } else {
+                    None
                 }
             }
         );
@@ -261,6 +270,9 @@ impl Doctor {
             self.now_ms(),
         ));
         out.push(checks::usage_breaker(id, &usage.breaker));
+        if let Some(refused) = refused {
+            out.push(checks::cmd_roots(id, &refused));
+        }
         out
     }
 

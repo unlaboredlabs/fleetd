@@ -159,7 +159,8 @@ You'll set up fleetd on one machine, pair the desktop app, and send a first piec
    fleetd status W1 --watch
    ```
 
-   It says "Nothing to show for order:W1" until the lead has written the order's brief. Run it again after that.
+   Until the lead has written the order's brief it says "W1 is a draft: waiting for the lead's brief", and `--watch`
+   then shows the order once the brief exists.
 
    </TabItem>
    </Tabs>

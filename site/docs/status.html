@@ -99,7 +99,7 @@ blocks the rest.</p>
 </tr>
 <tr>
 <td>Terminal, one order</td>
-<td><code dir="auto">fleetd status W41</code>. A new order shows “Nothing to show” (exit 3) until its lead has written the brief.</td>
+<td><code dir="auto">fleetd status W41</code>. A new order says <code dir="auto">W41 is a draft: waiting for the lead's brief</code> (exit 0) until its lead has written the brief; <code dir="auto">--watch</code> waits for it.</td>
 </tr>
 </tbody>
 </table>
@@ -224,7 +224,7 @@ a reason (<code dir="auto">--why</code>), and status shows it next to the number
 </tr>
 <tr>
 <td>review of #212</td>
-<td>Reviews of that PR, as its tier needs.</td>
+<td>Reviews of that PR. Left out when its tier needs none, as for an <code dir="auto">S</code> change.</td>
 </tr>
 <tr>
 <td>CI on #212</td>
@@ -240,8 +240,8 @@ a reason (<code dir="auto">--why</code>), and status shows it next to the number
 </tr>
 </tbody>
 </table>
-<p>“Waiting on” lists every stage left, even one this item skips, such as review for an <code dir="auto">S</code> change. If it doesn’t move,
-see <a href="/docs/troubleshooting#stuck">An order is stuck</a>.</p>
+<p>If the merge train can’t move a PR, risks list it with the train’s error. For a checkout outside the node’s <code dir="auto">cmdRoots</code>
+that includes the fix. If it doesn’t move, see <a href="/docs/troubleshooting#stuck">An order is stuck</a>.</p>
 <p>An item that has spent over 1.5 times the usual time in its current stage is marked <code dir="auto">SLOWER THAN USUAL</code> and listed
 under risks. “Usual” is measured from this project’s own history.</p>
 <p><code dir="auto">--json</code> also shows how much of the slot cap was held over the last hour (<code dir="auto">health.slots.utilization</code>), as measured.

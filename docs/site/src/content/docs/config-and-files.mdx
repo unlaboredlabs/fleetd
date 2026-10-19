@@ -52,7 +52,7 @@ after you change it.
 | `hub` | The hub's address. |
 | `machineId`, `name`, `tags` | How the hub knows this machine. |
 | `enrolled` | `true` once the hub accepted the node's key. |
-| `cmdRoots` | Folders the node may run commands in, and below. Absent: your home directory. A project's checkout must be inside one, or the merge train and checks fail on it. |
+| `cmdRoots` | Folders the node may run commands in, and below. Absent: your home directory. A project's checkout must be inside one: `fleetd project add` refuses one outside, and `fleetd doctor` flags an existing one. |
 | `claudeConfigDir` | A dedicated claude profile for this machine's sessions. See [below](#claude-profile). |
 
 ## The Claude login {#claude}
@@ -169,60 +169,60 @@ A broken file is refused with the exact problem, never ignored, so a typo can't 
 </TabItem>
 </Tabs>
 
-`--unit-suffix <s>` adds a suffix to these names, to run a second fleet's services on one machine.
+`--unit-suffix <s>` adds a suffix to these names, to run a second fleet's services on one machine. A second fleet
+never writes, stops or removes the first one's services.
 
 ## Run a second fleet on one machine {#second-fleet}
 
-To try fleetd next to a fleet you already run, run a test hub and node by hand, each with its own home and port.
+To try fleetd next to a fleet you already run, give the test fleet its own folder with `FLEETD_HOME` and its own port.
+Every command then keeps all its state there and never reads or writes `~/.fleetd`.
 
-1. Set up the test hub's files. `fleetd init` reads `~/.fleetd/node/node.json`, and on a machine that is already a
-   worker it repairs that worker instead. A throwaway `HOME` for this one command keeps it away from your fleet:
+1. Set up the test hub's files. Run `export FLEETD_HOME=$HOME/fleetd-test` in each terminal you use for it.
 
    ```sh
-   T=$HOME/fleetd-test
-   HOME=$(mktemp -d) fleetd init --home $T/hub --no-service --listen 127.0.0.1:4797 --url http://127.0.0.1:4797 \
+   export FLEETD_HOME=$HOME/fleetd-test
+   fleetd init --no-service --listen 127.0.0.1:4797 --url http://127.0.0.1:4797 \
      --git-identity "Your Name <id+you@users.noreply.github.com>" </dev/null
    ```
 
-   With no terminal (`</dev/null`), `init` only writes the hub's setup, `$T/hub/setup.json`, and starts nothing. A hub
-   started without it can't be used by `fleetd doctor` or `fleetd project add`: they report "… has no hub set up".
+   With no terminal (`</dev/null`), `init` only writes the hub's setup and the CLI's key, and starts nothing.
 
 2. Start the hub. Keep the terminal open; it logs there.
 
    ```sh
-   fleetd hub start --home $T/hub --listen 127.0.0.1:4797
+   fleetd hub start --listen 127.0.0.1:4797
    ```
 
 3. In another terminal, add this machine as a worker of the test hub:
 
    ```sh
-   fleetd hub token create --machine test-1 --home $T/hub
-   fleetd node join --hub http://127.0.0.1:4797 --token <token> --machine test-1 --home $T/node
+   fleetd hub token create --machine test-1
+   fleetd node join --hub http://127.0.0.1:4797 --token <token> --machine test-1
    ```
 
-4. Use the test fleet. Pass `--home $T/hub` to the commands that take it, and `--hub` and `--key-file` to the rest:
+4. Use the test fleet as you would your own:
 
    ```sh
-   fleetd doctor --home $T/hub
-   fleetd project add ~/src/sandbox --machine test-1 --home $T/hub --yes
-   (umask 077; fleetd hub key create --human --name test --home $T/hub > $T/human.key)
-   fleetd status --hub http://127.0.0.1:4797 --key-file $T/human.key
+   fleetd doctor
+   fleetd project add ~/src/sandbox --machine test-1 --yes
+   fleetd status
    ```
 
-Stop the hub and node with Ctrl+C. Delete `$T` to remove the test fleet.
+Stop the hub and node with Ctrl+C. Delete `$FLEETD_HOME` to remove the test fleet. To run it as services instead, add
+`--unit-suffix <s>` to `fleetd init` and `fleetd machine add`.
 
-### What `--home` covers {#home-scope}
+### What FLEETD_HOME covers {#home-scope}
 
-| Command | Uses |
+| | Where |
 |---|---|
-| `init`, `doctor`, `uninstall`, `machine`, `pair`, `project`, `hub`, `prompts`, `instructions` | `--home`, the hub's home. Default: `~/.fleetd/hub`. |
-| `node join`, `node run` | `--home`, the node's home. Default: `~/.fleetd/node`. |
-| `status`, `time` | `--hub` and `--key-file`, both optional. Without them, the hub at `~/.fleetd/hub`. |
-| `answer`, `steer`, `steers` | `--key-file`, always. `--hub` is optional: without it, the hub at `~/.fleetd/hub`. |
+| The hub's home: `init`, `doctor`, `uninstall`, `machine`, `pair`, `project`, `hub`, `prompts`, `instructions`, and `status`, `time`, `answer`, `steer`, `steers` without `--hub` | `$FLEETD_HOME/hub` |
+| The node's home: `node join`, `node run` | `$FLEETD_HOME/node` |
+| The app's hand-off from `init` and `pair` | `$FLEETD_HOME/app-pair.json`. Start the desktop app with the same `FLEETD_HOME` to pair with it. |
+| Lead-side commands (`claim`, `change`, `plan`, …) | `FLEETD_NODE_SOCK`, else `$FLEETD_HOME/node/node.sock`. Sessions get it set. |
 | `listen`, `retro` | `--hub` and `--key-file`, always. |
-| `init` | Also reads `~/.fleetd/node/node.json`, as above. |
-| `pair` | Also writes the app's hand-off, `app-pair.json`, under `$XDG_CONFIG_HOME/fleetd` (default `~/.config/fleetd`; macOS: `~/Library/Application Support/fleetd`). |
-| Lead-side commands (`claim`, `change`, `plan`, …) | The node socket in `FLEETD_NODE_SOCK`. Default: `~/.fleetd/node/node.sock`. Sessions get it set. |
+
+`--home <dir>` names one hub's or node's folder. Without `FLEETD_HOME`, that command keeps everything else in the
+folder above it, so `--home $T/hub` works like `FLEETD_HOME=$T`. `FLEETD_HOME` wins when both are given.
 
 ## Ports and addresses {#ports}
 
@@ -252,7 +252,7 @@ Each node holds timings it hasn't sent yet in `sessions.sqlite`. While the hub i
 
 | | Where |
 |---|---|
-| Pairing hand-off from `fleetd init` or `fleetd pair` | `~/.config/fleetd/app-pair.json` (macOS: `~/Library/Application Support/fleetd/app-pair.json`) |
+| Pairing hand-off from `fleetd init` or `fleetd pair` | `~/.config/fleetd/app-pair.json` (macOS: `~/Library/Application Support/fleetd/app-pair.json`), or `$FLEETD_HOME/app-pair.json` for a [second fleet](#second-fleet) |
 | Its hub address and key | `desktop-hub.bin` in the same folder, encrypted with the OS keychain or keyring. Without one (no keyring on Linux, or an unsigned or ad-hoc signed Mac build): `desktop-hub.json`, mode `0600`. |
 | Its own browser state | `desktop/` in the same folder. |
 
