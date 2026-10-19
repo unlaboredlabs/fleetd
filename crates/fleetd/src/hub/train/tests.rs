@@ -1393,13 +1393,11 @@ fn merged_outside(kit: &Kit, number: i64, base: &str) {
         .format("%Y-%m-%dT%H:%M:%SZ")
         .to_string();
     let pull = FakePull {
-        base: base.into(),
-        branch: format!("outside-{number}"),
-        body: String::new(),
         state: "closed".into(),
         merged: true,
         merge_sha: Some("f".repeat(40)),
         merged_at: Some(merged_at),
+        ..FakePull::open(&format!("outside-{number}"), base, "")
     };
     kit.gh.pulls.lock().unwrap().insert(number, pull);
 }
