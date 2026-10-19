@@ -23,7 +23,7 @@ describe("budgets", () => {
     expect(regressions({ firstPaintMs: 389, idleRssMb: 260, idleUniqueMb: 170, scrollFps: 61, keyP95Ms: 2 }, base)).toEqual([
       { metric: "idleRssMb", value: 260, limit: 230 },
     ]);
-    expect(regressions({ ...base, scrollFps: 50, keyP95Ms: 11 }, base).map((r) => r.metric)).toEqual(["scrollFps", "keyP95Ms"]);
+    expect(regressions({ ...base, scrollFps: 50, keyP95Ms: 15 }, base).map((r) => r.metric)).toEqual(["scrollFps", "keyP95Ms"]);
   });
 });
 

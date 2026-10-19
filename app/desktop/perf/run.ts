@@ -1,6 +1,6 @@
 // The desktop app's four budgets, measured: `pnpm perf` (after `pnpm build`). Prints one line per budget.
 //
-//   --runs N             launches timed for first paint (default 5; the median counts)
+//   --runs N             launches timed for first paint after an untimed first one (default 5; the median counts)
 //   --json FILE          also write the numbers as JSON
 //   --baseline FILE      exit 1 when a number regressed past budgets.ts's limit from FILE (the Linux CI job)
 //   --strict             exit 1 when a number misses its budget (the Mac, where the budgets apply)
@@ -26,9 +26,10 @@ const IDLE_MS = 10_000;
 const SCROLL_MS = 4_000;
 const KEYS = "the writer ran the tests again and asked for a review";
 
-const firstPaint = async (): Promise<Array<number>> => {
+/** One untimed launch first (a fresh runner's first one fills the font and shader caches, 8 s on CI), then RUNS. */
+const firstPaint = async (): Promise<{ cold: number; warm: Array<number> }> => {
   const times: Array<number> = [];
-  for (let i = 0; i < RUNS; i++) {
+  for (let i = 0; i <= RUNS; i++) {
     const spawned = Date.now();
     const app = launch();
     try {
@@ -38,7 +39,8 @@ const firstPaint = async (): Promise<Array<number>> => {
       await app.stop();
     }
   }
-  return times;
+  const [cold = Number.NaN, ...warm] = times;
+  return { cold, warm };
 };
 
 /** rAF timestamps while `during` runs. */
@@ -142,14 +144,14 @@ const main = async () => {
       const scrolled = await scroll(page);
       const typed = await keys(page);
       results = {
-        firstPaintMs: median(paints),
+        firstPaintMs: median(paints.warm),
         idleRssMb: median(samples.map((m) => m.rssMb)),
         idleUniqueMb: median(samples.map((m) => m.uniqueMb)),
         scrollFps: scrolled.fps,
         keyP95Ms: typed.p95,
       };
       detail = {
-        firstPaintMs: `median of ${paints.length} launches: ${paints.map((p) => p.toFixed(0)).join(", ")} ms`,
+        firstPaintMs: `median of ${paints.warm.length} launches: ${paints.warm.map((p) => p.toFixed(0)).join(", ")} ms (the untimed first: ${paints.cold.toFixed(0)} ms)`,
         idleRssMb: `summed over ${samples[0]?.processes ?? 0} processes after ${IDLE_MS / 1000} s idle`,
         idleUniqueMb: process.platform === "linux" ? "PSS, the same processes" : "physical footprint (top MEM), the same processes",
         scrollFps: `${SCROLL.label}; ${(scrolled.dropped * 100).toFixed(1)}% long frames, ${(scrolled.moved / 1000).toFixed(0)}k px, display ${scrolled.refreshHz.toFixed(0)} Hz`,

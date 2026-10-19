@@ -36,7 +36,8 @@ export const BUDGETS: Record<Metric, Budget> = {
   idleUniqueMb: { label: "idle memory (unique)", unit: "MB", limit: 300, higher: false, ratio: 0.15, slack: 25 },
   // 60 fps, allowing 5% of frames to rAF jitter: below 57 means frames were dropped.
   scrollFps: { label: "log scroll", unit: "fps", limit: 57, higher: true, ratio: 0.1, slack: 3 },
-  keyP95Ms: { label: "keypress to screen", unit: "ms", limit: 16, higher: false, ratio: 0.5, slack: 4 },
+  // A p95 over ~50 keys moves with one or two slow keys, hence the wide slack.
+  keyP95Ms: { label: "keypress to screen", unit: "ms", limit: 16, higher: false, ratio: 0.5, slack: 8 },
 };
 
 export const METRICS = Object.keys(BUDGETS) as ReadonlyArray<Metric>;
