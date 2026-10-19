@@ -29,6 +29,12 @@
   min-width: 0;
   font-size: var(--text-md);
 }
+/* The project before the title: a long project name gives way to the order's title. */
+.crumb {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 30%;
+}
 .figures {
   flex: none;
   max-width: 50%;

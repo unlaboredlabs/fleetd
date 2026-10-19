@@ -1,5 +1,6 @@
 // The palette's way into the time inspector. A go-to has to exist before the screen ever mounts, so it registers
-// when this module loads (the shell's screen host imports the screen); it replaces the palette's plain "Time".
+// when this module loads (the shell's screen host imports the screen). It registers at screen priority: the
+// palette's plain "Time" default registers later, and among defaults the last one wins, which would hide this one.
 import { registerCommands } from "../palette";
 import { timeRouteFor } from "./route";
 
@@ -16,5 +17,5 @@ registerCommands(
       },
     },
   ],
-  "default",
+  "screen",
 );
