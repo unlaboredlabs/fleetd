@@ -200,6 +200,15 @@ struct MergeJson {
     merged: bool,
 }
 
+/// An open PR as the list answers it: enough to see a draft marked ready.
+#[derive(Clone, Debug, Deserialize)]
+pub struct OpenPull {
+    pub number: i64,
+    #[serde(default)]
+    pub draft: bool,
+    pub head: PullHead,
+}
+
 #[derive(Deserialize)]
 struct ClosedPull {
     number: i64,
@@ -774,6 +783,16 @@ impl TrainGitHub {
                 "deleting the webhook on {repo} failed: {message}"
             ))),
         }
+    }
+
+    /// The repo's open PRs, newest first (one page).
+    pub async fn open_pulls(&self, repo: &str) -> Result<Vec<OpenPull>, GhError> {
+        self.json(
+            "GET",
+            &format!("repos/{repo}/pulls?state=open&sort=created&direction=desc&per_page=100"),
+            &[],
+        )
+        .await
     }
 
     /// Recently updated closed PRs that were merged.

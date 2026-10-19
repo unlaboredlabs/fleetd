@@ -1,18 +1,17 @@
 #!/usr/bin/env bash
 # Staples a release's already-published fleetd.app once Apple accepts its notarization, without rebuilding: the
-# release job ships the app signed but unstapled when Apple's queue outlasts its wait (see macos-sign.sh). It does
-# this for each Mac app on the release: the GPUI app (fleetd-app-macos-universal.zip, notarized as
-# fleetd-app-notarize.zip) and the Electron app (fleetd-desktop-macos-universal.zip, notarized as
-# fleetd-desktop-notarize.zip), which also gets its latest-mac.yml rewritten for the new zip.
+# release job ships the app signed but unstapled when Apple's queue outlasts its wait (see macos-sign.sh). The app is
+# fleetd-desktop-macos-universal.zip, notarized as fleetd-desktop-notarize.zip; its latest-mac.yml is rewritten for
+# the new zip.
 #
 #   TAG=nightly [SUBMISSION=<id>] .github/release/macos-staple.sh
 #
 # It downloads the release's app zip and checks the submission's ticket covers that exact code (the cdhash of each
 # architecture), so it never staples a ticket onto a different build. Without SUBMISSION it takes the newest
-# accepted submission of that app whose ticket matches. Then it staples, requires Gatekeeper to say
+# accepted submission of the app whose ticket matches. Then it staples, requires Gatekeeper to say
 # "accepted, source=Notarized Developer ID", and replaces the zip and its SHA256SUMS line as publish.sh writes them.
 # Without SUBMISSION, "nothing to do yet" (no notary key, a nightly building, nothing accepted) exits 0. With it, the
-# submission must cover one of the apps.
+# submission must cover the app.
 # Env: TAG, GH_TOKEN, NOTARY_KEY_ID, NOTARY_ISSUER, NOTARY_KEY_P8_BASE64, optional SUBMISSION.
 set -euo pipefail
 : "${TAG:?}"
@@ -111,7 +110,8 @@ for s in sorted(json.load(sys.stdin)["history"], key=lambda s: s["createdDate"],
   fi
 
   mkdir -p "$work/out"
-  ditto -c -k --keepParent "$app" "$work/out/$asset"
+  # --norsrc, as the release job zips it (see build-release.yml): no `._*` entries for a plain unzip to break the seal.
+  ditto -c -k --keepParent --norsrc "$app" "$work/out/$asset"
   (cd "$work/out" && shasum -a 256 "$asset") > "$work/new"
   awk 'NR == FNR { built[$2] = 1; next } !($2 in built)' "$work/new" "$work/SHA256SUMS" | cat "$work/new" - | sort -k2 > "$work/out/SHA256SUMS"
   cat "$work/out/SHA256SUMS"
@@ -133,9 +133,8 @@ for s in sorted(json.load(sys.stdin)["history"], key=lambda s: s["createdDate"],
   echo "stapled and replaced $asset on $TAG"
 }
 
-staple fleetd-app-macos-universal.zip fleetd-app-notarize.zip
 staple fleetd-desktop-macos-universal.zip fleetd-desktop-notarize.zip latest-mac.yml
-# An explicit id that fits neither app is a mistake; the scheduled check just waits for Apple.
+# An explicit id that doesn't fit the app is a mistake; the scheduled check just waits for Apple.
 if [ -n "${SUBMISSION:-}" ] && [ "$pending" = 1 ] && [ "$matched" = 0 ]; then
-  die "submission $SUBMISSION covers no unstapled app on $TAG"
+  die "submission $SUBMISSION doesn't cover the unstapled app on $TAG"
 fi

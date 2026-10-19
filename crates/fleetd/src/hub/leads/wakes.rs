@@ -39,6 +39,8 @@ pub enum LineKind {
     Human,
     /// The lead ended a turn with an order frozen and nothing under way (`orders::idle`).
     Idle,
+    /// A slot is free and approved work is runnable (`orders::filler`).
+    Runnable,
 }
 
 #[derive(Debug, Clone)]
@@ -95,6 +97,7 @@ impl Trigger {
                 LineKind::ResearchVerdict => "research_verdict",
                 LineKind::Human => "human",
                 LineKind::Idle => "idle",
+                LineKind::Runnable => "runnable",
             },
         }
     }

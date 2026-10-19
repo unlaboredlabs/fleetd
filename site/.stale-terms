@@ -28,3 +28,8 @@ from npm
 # Sessions use the user's own claude setup (~/.claude); fleetd keeps no claude profile of its own.
 \.fleetd/claude\b(?!\.env)
 CLAUDE_CONFIG_DIR=~/\.fleetd
+
+# The GPUI app (fleetd-app) is gone: the desktop app is the Electron one in app/desktop.
+\bfleetd-app\b
+\bGPUI\b
+\bfleetd-bench\b

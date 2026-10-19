@@ -1,19 +1,18 @@
 // `FLEETD_LAB_SLOT=<n> node tests/lab/site-capture.ts`: re-shoots the fleetd.sh landing page from the real product.
 // `node tests/lab/site-capture.ts --docs` only recaptures the docs' ```console capture=NAME blocks (no lab, no claude).
-// A lab hub and node, a haiku lead that files three numbered asks, the desktop app under a private Xvfb answering
-// them, and the setup CLI in a throwaway HOME. Writes site/capture-*.png and rewrites the `<!-- capture:NAME -->`
+// A lab hub and node, a haiku lead that files three numbered asks, the desktop app (app/desktop, launched by its QA
+// harness, so `pnpm install && pnpm qa:build` there first) answering them, and the setup CLI in a throwaway HOME. Writes site/capture-*.png and rewrites the `<!-- capture:NAME -->`
 // blocks in site/home.html and the same blocks in site/fleetd.txt. Costs three tiny claude-haiku turns. Every process
 // it starts is stopped by the PID captured at spawn; it never touches a hub or node it didn't start.
 //
 // Everything that knows how the lab lays out a machine is in stageLab(); the rest drives only the fleetd CLI, MCP
 // tools and the app.
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import zlib from "node:zlib";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
@@ -33,7 +32,6 @@ import {
   nodeEnv,
   nodeHome,
   prepareMachineHome,
-  RELEASE,
   REPO,
   SLOT,
   scrubbedEnv,
@@ -48,26 +46,19 @@ if (process.env.FLEETD_LAB_SLOT === undefined && !DOCS_ONLY) throw new Error("se
 
 const SITE = path.join(REPO, "site");
 const RUN = path.join(LAB, "site-capture");
-const APP = path.join(RELEASE, "fleetd-app");
-const BENCH = path.join(RELEASE, "fleetd-bench");
-const SYSROOT = process.env.FLEETD_SYSROOT ?? path.join(os.homedir(), "src/fleetd-lab/sysroot");
 const MACHINE = "builder-1";
 const TURN_MS = 240_000;
 const ENDED = ["thread.completed", "thread.failed", "thread.interrupted"];
 
-// The app, as it is laid out today. A redesign changes these and nothing else in this file.
-/** The app's default window, in logical pixels; the captures are this times GPUI_X11_SCALE_FACTOR. */
+/** The app's window (the QA harness's medium size), in logical pixels; the captures are this at the page's scale. */
 const APP_WINDOW = { width: 1400, height: 900 };
-/** Screen pixels at the page's scale: the needs-you strip's "+N more" (opens the inbox panel), and the panel's
- * terse reply field. */
-const CLICK = { inbox: [2204, 433], reply: [2443, 1746] } as const;
 const REPLY = "1 go 2 nvm 3 b";
 
 /** What the lead is told to run: the asks are arranged, the filing, batching and answering are real. */
 const ASK_MESSAGE = `Run these three commands in your shell, one after the other, exactly as written, then stop:
-fleetd ask --key site.pricing.headline --class product --text "Pricing page headline: the copy review left two variants in site/pricing.md. Ship A?" --rec "Pay for machines, not seats"
-fleetd ask --key deps.moment --class product --text "Drop the moment dependency and format invoice and receipt dates with the built-in Intl API instead?" --rec "drop moment"
-fleetd ask --key billing.team.trial --class money --text "Free trial length for the Team plan?" --options "7 days,14 days,30 days" --rec "7 days" --blocks "the Team plan launch"`;
+fleetd ask --key site.pricing.headline --class product --text "Pricing page headline: the copy review left two variants in site/pricing.md. Ship A?" --context "Both variants are in site/pricing.md; the Team plan launch uses the one picked." --option 'a|Pay for machines, not seats|the page leads with A' --option 'b|One price per machine. Every agent included.|the page leads with B' --rec a --why "A is shorter and names the pricing model in five words"
+fleetd ask --key deps.moment --class product --text "Drop the moment dependency and format invoice and receipt dates with the built-in Intl API instead?" --context "moment is only used in src/dates.js, for two formats." --option 'drop|Drop moment|dates format through Intl; one dependency fewer' --option 'keep|Keep moment|nothing changes' --rec drop --why "Intl covers both formats and moment is in maintenance mode"
+fleetd ask --key billing.team.trial --class money --text "Free trial length for the Team plan?" --option '7|7 days|trials end after a week' --option '14|14 days|trials end after two weeks' --option '30|30 days|trials end after a month' --rec 7 --why "a week is enough to try it on one repo" --blocks "the Team plan launch"`;
 
 /** The demo project the lead works in. */
 const STOREFRONT: Record<string, string> = {
@@ -142,88 +133,21 @@ async function stageLab() {
   return { operateKey, humanKey, workspace };
 }
 
-// ---- The app under a private Xvfb (app/bench's sysroot build), read through the framebuffer Xvfb keeps under -fbdir. ----
+// ---- The app, through app/desktop's QA harness: the release main bundle on the lab hub with the human key. ----
 
-async function startDisplay(width: number, height: number, humanKey: string) {
-  const xvfb = path.join(SYSROOT, "usr/bin/Xvfb-fleetd");
-  check(fs.existsSync(xvfb), `${xvfb} exists (run app/bench/linux-sysroot.sh)`);
-  // Xvfb-fleetd looks for xkbcomp in /tmp/xk (see linux-sysroot.sh). Refuse a directory we don't own.
-  fs.mkdirSync("/tmp/xk", { recursive: true, mode: 0o700 });
-  check(fs.statSync("/tmp/xk").uid === process.getuid?.(), "/tmp/xk is ours");
-  fs.rmSync("/tmp/xk/xkbcomp", { force: true });
-  fs.symlinkSync(path.join(SYSROOT, "usr/bin/xkbcomp"), "/tmp/xk/xkbcomp");
-  const n = Array.from({ length: 53 }, (_, i) => i + 47).find((d) => !fs.existsSync(`/tmp/.X${d}-lock`));
-  check(n, "a free X display");
-  const fbdir = path.join(RUN, "fb");
-  fs.mkdirSync(fbdir, { recursive: true });
-  spawnTracked("xvfb", [xvfb, [`:${n}`, "-screen", "0", `${width}x${height}x24`, "-fbdir", fbdir, "-nolisten", "tcp"]], scrubbedEnv());
-  await until("Xvfb socket", 10_000, async () => fs.existsSync(`/tmp/.X11-unix/X${n}`) || (await pause(100)));
-  const lib = path.join(SYSROOT, "usr/lib", process.arch === "arm64" ? "aarch64-linux-gnu" : "x86_64-linux-gnu");
-  const env = {
-    ...scrubbedEnv(),
-    LANG: "C.UTF-8",
-    DISPLAY: `:${n}`,
-    LD_LIBRARY_PATH: lib,
-    VK_ICD_FILENAMES: path.join(SYSROOT, "usr/share/vulkan/icd.d/lvp_icd.json"),
-  };
-  const scale = width / APP_WINDOW.width;
-  check(height === APP_WINDOW.height * scale, `the page's ${width}x${height} is the app window at one scale`);
-  spawnTracked("app", [APP, []], { ...env, GPUI_X11_SCALE_FACTOR: String(scale), FLEETD_HUB_URL: HUB_URL, FLEETD_AGENT_KEY: humanKey });
-  const fb = path.join(fbdir, "Xvfb_screen0");
-  const bench = (...args: Array<string>) => execFileSync(BENCH, args, { env, stdio: "ignore" });
+async function startApp(scale: number, humanKey: string) {
+  // The harness reads its scale when it loads.
+  process.env.QA_SCALE = String(scale);
+  const qa = await import("../../app/desktop/qa/harness.ts");
+  const { app, page, close } = await qa.launch(undefined, undefined, { url: HUB_URL, key: humanKey });
+  cleanups.push(close);
+  await qa.setView(app, page, "medium", "light");
   return {
-    click: ([x, y]: readonly [number, number]) => bench("click", String(x), String(y)),
-    type: (text: string) => bench("type", text),
-    hash: () => createHash("sha1").update(fs.readFileSync(fb)).digest("hex"),
-    /** Waits until the screen differs from `from` (when given) and then holds still for 2 s. */
-    settled: async (from?: string) => {
-      let last = "";
-      let since = Date.now();
-      return until("the app to settle", 60_000, async () => {
-        const h = createHash("sha1").update(fs.readFileSync(fb)).digest("hex");
-        if (h !== last) [last, since] = [h, Date.now()];
-        if (h !== from && Date.now() - since >= 2_000) return h;
-        await pause(250);
-        return undefined;
-      });
-    },
-    png: (out: string) => fs.writeFileSync(out, xwdToPng(fs.readFileSync(fb), width, height)),
+    page,
+    show: (screen: string, route: string) => qa.show(page, screen, route),
+    settle: () => qa.settle(page),
+    png: (out: string) => page.screenshot({ path: out, animations: "disabled", caret: "hide" }),
   };
-}
-
-/** Xvfb's -fbdir file is an XWD dump, 32 bpp BGRX; a PNG is IHDR + one zlib IDAT + IEND. */
-function xwdToPng(xwd: Buffer, width: number, height: number) {
-  const h = (i: number) => xwd.readUInt32BE(i * 4);
-  check(h(4) === width && h(5) === height && h(11) === 32, `framebuffer is ${h(4)}x${h(5)} at ${h(11)} bpp`);
-  const [bpl, offset] = [h(12), h(0) + h(19) * 12];
-  const raw = Buffer.alloc((width * 3 + 1) * height);
-  for (let y = 0; y < height; y++) {
-    const row = y * (width * 3 + 1);
-    for (let x = 0; x < width; x++) {
-      const src = offset + y * bpl + x * 4;
-      raw[row + 1 + x * 3] = xwd[src + 2]!;
-      raw[row + 2 + x * 3] = xwd[src + 1]!;
-      raw[row + 3 + x * 3] = xwd[src]!;
-    }
-  }
-  const chunk = (type: string, data: Buffer) => {
-    const body = Buffer.concat([Buffer.from(type, "latin1"), data]);
-    const out = Buffer.alloc(body.length + 8);
-    out.writeUInt32BE(data.length, 0);
-    body.copy(out, 4);
-    out.writeUInt32BE(zlib.crc32(body), body.length + 4);
-    return out;
-  };
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(width, 0);
-  ihdr.writeUInt32BE(height, 4);
-  ihdr.set([8, 2, 0, 0, 0], 8);
-  return Buffer.concat([
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    chunk("IHDR", ihdr),
-    chunk("IDAT", zlib.deflateSync(raw, { level: 9 })),
-    chunk("IEND", Buffer.alloc(0)),
-  ]);
 }
 
 // ---- Setup transcripts and train lines ----
@@ -556,8 +480,9 @@ async function main() {
   const html = fs.readFileSync(path.join(SITE, "home.html"), "utf8");
   const size = /<img src="\/capture-inbox\.png" width="(\d+)" height="(\d+)"/u.exec(html);
   check(size, "home.html sizes capture-inbox.png");
-  const [width, height] = [Number(size![1]), Number(size![2])];
-  for (const bin of [APP, BENCH, fleetdCommand([])[0]]) check(fs.existsSync(bin), `${bin} is built (cargo build --release --locked -p fleetd -p fleetd-app -p fleetd-bench)`);
+  const scale = Number(size![1]) / APP_WINDOW.width;
+  check(Number(size![2]) === APP_WINDOW.height * scale, `home.html's capture-inbox.png is the app window at one scale`);
+  check(fs.existsSync(fleetdCommand([])[0]), `${fleetdCommand([])[0]} is built (cargo build --release --locked -p fleetd)`);
   fs.rmSync(RUN, { recursive: true, force: true });
   const shots = path.join(RUN, "shots");
   fs.mkdirSync(shots, { recursive: true });
@@ -597,9 +522,9 @@ async function main() {
   // Turn 1: the lead starts. The app comes up meanwhile, with an empty inbox.
   let from = await cursor();
   const lead = ok(await callTool("lead_start", { machineId: MACHINE, projectId, model: MODEL, effort: "low" }), "lead_start").threadId as string;
-  const screen = await startDisplay(width, height, humanKey);
+  const screen = await startApp(scale, humanKey);
   await turn("lead start", from, lead);
-  const empty = await screen.settled();
+  await screen.show("board", "#/board");
   log(`lead ${lead} started; app up`);
 
   // Turn 2: the lead files the asks from its shell; the hub batches them; the app shows the batch.
@@ -609,21 +534,21 @@ async function main() {
   await waitEvent("batch.ready", 120_000, { cursor: from, types: ["batch.ready"] });
   const open = ok(await callTool("asks_list", { state: "open" }), "asks_list");
   check(open.asks.length === 3, `the lead filed 3 asks, found ${open.asks.length}`);
-  const board = await screen.settled(empty);
   // The inbox panel holds the whole batch and the reply field; the board's strip shows only the first two asks.
-  screen.click(CLICK.inbox);
-  await screen.settled(board);
-  screen.png(path.join(shots, "capture-inbox.png"));
+  await screen.show("inbox", "#/board?inbox");
+  const panel = screen.page.locator('[data-screen="inbox"]');
+  for (const ask of open.asks as Array<Body>) await panel.getByText(String(ask.text)).first().waitFor({ timeout: 30_000 });
+  await screen.settle();
+  await screen.png(path.join(shots, "capture-inbox.png"));
   log("captured the inbox");
 
   // The reply, typed into the inbox panel's reply field; Enter sends it as the human. Turn 3: the hub wakes the lead with the answers.
   from = await cursor();
-  screen.click(CLICK.reply);
-  screen.type(REPLY);
-  const typed = await screen.settled();
-  screen.type("\n");
-  await screen.settled(typed);
-  screen.png(path.join(shots, "capture-reply.png"));
+  const reply = panel.getByRole("textbox", { name: "Reply" });
+  await reply.fill(REPLY);
+  await reply.press("Enter");
+  await screen.settle();
+  await screen.png(path.join(shots, "capture-reply.png"));
   log("captured the inbox after the reply");
   const woken = await waitEvent("the lead woken with the answers", 120_000, { cursor: from, types: ["lead.woken"], match: (e) => e.threadId === lead });
   await turn("the lead's wake", woken.cursor, lead);

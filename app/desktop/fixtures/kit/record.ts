@@ -58,7 +58,7 @@ const collect = (v: JsonValue): void => {
   for (const x of Object.values(v)) collect(x);
 };
 
-/** The read calls the app's screens make (app/fleetd-app/src/state.rs `tools!`), over everything seen so far. */
+/** The read calls the app's screens make, over everything seen so far. */
 const sweepCalls = (since: string): Array<readonly [string, JsonObject]> => {
   const calls: Array<readonly [string, JsonObject]> = [
     ["orders_board", {}],

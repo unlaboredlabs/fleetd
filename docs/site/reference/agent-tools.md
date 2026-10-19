@@ -657,24 +657,26 @@ Every task's agent gets these: implementers, readers, reviewers, verifiers and Q
 
 | Tool | What it does | Needs a human |
 |---|---|---|
-| [`report`](#report) | Record your review verdict once, before your final message: the full SHA you reviewed, the number of blocking and non-blocking findings and a one-paragraph summary. | No |
+| [`report`](#report) | A reviewer records its verdict once, before its final message: the full SHA it reviewed, the number of blocking and non-blocking findings and a one-paragraph summary. | No |
 | [`ask_lead`](#ask_lead) | Ask your lead a question. | No |
 | [`claim_done`](#claim_done-task) | Claim your workstream done: fleetd runs its done-when checks itself. | No |
 
 ### report
 
-Record your review verdict once, before your final message: the full SHA you reviewed, the number of blocking and non-blocking findings and a one-paragraph summary.
+A reviewer records its verdict once, before its final message: the full SHA it reviewed, the number of blocking and non-blocking findings and a one-paragraph summary. A writer reports each slice whose PR is complete with kind slice_ready and its prUrl: its review starts at once while you go on with the next slice.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `blocking` | integer | yes |  |
+| `blocking` | integer | no |  |
+| `kind` | string | no | Verdict (the default) for a review, slice_ready for a writer's PR that is ready. One of `verdict`, `slice_ready`. |
 | `metricValues` | object | no | A research workstream's judge reports its metric for the baseline and the candidate; the hub computes the verdict. |
 | `metricValues.baseline` | number | yes |  |
 | `metricValues.candidate` | number | yes |  |
-| `nonBlocking` | integer | yes |  |
-| `prHeadSha` | string | yes | Full lowercase hex commit SHA, 40 or 64 characters. |
-| `summary` | string | yes | At most 1000 characters. |
-| `taskId` | string | yes | `T<n>`, e.g. `T1`. |
+| `nonBlocking` | integer | no |  |
+| `prHeadSha` | string | no | Full lowercase hex commit SHA, 40 or 64 characters. |
+| `prUrl` | string | no | Like `https://github.com/<owner>/<name>/pull/<n>`. |
+| `summary` | string | no | At most 1000 characters. |
+| `taskId` | string | no | `T<n>`, e.g. `T1`. |
 
 **Who may call:** a task's agent, checked by the hub. **Needs a human:** no.
 

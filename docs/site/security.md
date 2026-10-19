@@ -19,9 +19,9 @@ fleetd is built for one person or a small team running their own fleet.
 
 - **Agent keys are hashed.** A `fld_` key is shown once; the hub stores only its hash and prefix. Each key has read,
   operate or admin rights on every machine or a named list. A revoked key stops on its next request.
-- **A person's device holds a human key**: in the OS keychain on Linux and in a Developer ID signed Mac app; in a
-  file only you can read (0600) in an unsigned or ad-hoc signed Mac build, whose keychain trust would reset with
-  every update. Only human keys answer secret, approve and checklist asks, so no agent can approve itself.
+- **A person's device holds a human key**, encrypted with the OS keychain; in a file only you can read (0600) on Linux
+  without a keyring and in an unsigned or ad-hoc signed Mac build, whose keychain trust would reset with every
+  update. Only human keys answer secret, approve and checklist asks, so no agent can approve itself.
 - **The node socket trusts the node's OS user.** Lead-side calls reach the hub through `~/.fleetd/node/node.sock`
   (mode 0600). The node tells who is calling from the process tree, not from anything the caller says: a process
   that descends from a session's claude (its tools, its shell commands) acts as that session, a lead or a task, and

@@ -12,18 +12,16 @@
 #
 #   macos-sign.sh enabled             prints true when the signing secrets are set (else logs and prints false)
 #   macos-sign.sh keychain            a temporary keychain with the identity, on this job's search list
-#   macos-sign.sh sign <path>...      a .app (nested code first, never --deep) or bare binaries
-#   macos-sign.sh verify <path>...    checks a signature: Team ID, hardened runtime, team-based requirement (the
-#                                     desktop app is signed by electron-builder, with this job's keychain)
+#   macos-sign.sh sign <binary>...    bare binaries (the CLI); the app is signed by electron-builder, with this
+#                                     job's keychain
+#   macos-sign.sh verify <path>...    checks a signature: Team ID, hardened runtime, team-based requirement
 #   macos-sign.sh notarize <zip>      submits and waits: 0 Accepted, 3 still in progress, else fails with Apple's log
 #   macos-sign.sh cleanup             deletes the keychain and any decoded key material (run it with always())
 set -euo pipefail
-here="$(cd "$(dirname "$0")" && pwd)"
 tmp="${RUNNER_TEMP:?}"
 keychain="$tmp/fleetd-signing.keychain-db"
 p12="$tmp/fleetd-signing.p12"
 p8="$tmp/fleetd-notary.p8"
-entitlements="$here/../../app/packaging/fleetd.entitlements"
 
 die() { echo "::error::$*"; exit 1; }
 verify() {
@@ -63,20 +61,9 @@ keychain)
 
 sign)
   shift
-  sign() { codesign --force --options runtime --timestamp --sign "$MACOS_SIGN_IDENTITY" "$@"; }
   for path in "$@"; do
-    if [ -d "$path" ]; then
-      main="$path/Contents/MacOS/$(plutil -extract CFBundleExecutable raw -o - "$path/Contents/Info.plist")"
-      # Inside out: every other Mach-O in the bundle (helpers, dylibs; none today), deepest first, then the bundle,
-      # which signs its main executable with the entitlements.
-      find "$path/Contents" -type f | awk '{ print length, $0 }' | sort -rn | cut -d' ' -f2- | while IFS= read -r nested; do
-        if [ "$nested" != "$main" ] && file -b "$nested" | grep -q Mach-O; then sign "$nested"; fi
-      done
-      sign --entitlements "$entitlements" "$path"
-    else
-      # One identifier for the CLI, whatever the asset is called (it's installed as `fleetd`).
-      sign --identifier sh.fleetd.cli "$path"
-    fi
+    # One identifier for the CLI, whatever the asset is called (it's installed as `fleetd`).
+    codesign --force --options runtime --timestamp --sign "$MACOS_SIGN_IDENTITY" --identifier sh.fleetd.cli "$path"
     verify "$path"
   done
   ;;
@@ -122,7 +109,7 @@ cleanup)
   ;;
 
 *)
-  echo "usage: macos-sign.sh enabled|keychain|sign <path>...|verify <path>...|notarize <zip>|cleanup" >&2
+  echo "usage: macos-sign.sh enabled|keychain|sign <binary>...|verify <path>...|notarize <zip>|cleanup" >&2
   exit 2
   ;;
 esac
