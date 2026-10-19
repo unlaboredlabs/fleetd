@@ -11,6 +11,7 @@ import {
   type ToolOutput,
 } from "../../../shared/contracts";
 import type { HubError, HubFrame } from "../../../shared/hub";
+import type { LiveScope } from "../../../shared/ipc";
 import { effectsOf, matches, type Invalidation } from "./effects";
 import { applyFrame, createDataStore, ingest, type DataStore } from "./store";
 
@@ -31,6 +32,13 @@ export interface HubApi {
   readonly call: RawCall;
   subscribe(listener: (frame: HubFrame) => void): () => void;
   resync(): Promise<void>;
+  live(scope: LiveScope | null): Promise<void>;
+}
+
+/** What the open screen wants live: every open order's lanes (board, machines) and/or one order in focus. */
+export interface LiveWant {
+  readonly board?: boolean | undefined;
+  readonly focus?: string | undefined;
 }
 
 /** How long events coalesce before their refetches go out: a burst (a merge, a batch) costs one round. */
@@ -68,6 +76,11 @@ export interface DataLayer {
     tool: T,
     input: ToolInput<T>,
   ): { queryKey: QueryKey; queryFn: () => Promise<ToolOutput<T>> };
+  /**
+   * The live subscription, set from the route; the only caller of `hub.live`. An unchanged scope sends nothing.
+   * Main keeps the scope and re-sends it on every reconnect and on window focus, so the layer sends only changes.
+   */
+  setLive(want: LiveWant): void;
   /** Start applying main's frames; returns the stop. */
   start(): () => void;
 }
@@ -169,11 +182,23 @@ export const createDataLayer = (hub: HubApi, now: () => number = Date.now): Data
     timer ??= setTimeout(flush, INVALIDATE_EVERY_MS);
   };
 
+  let liveSent: string | undefined;
+  const setLive = (want: LiveWant) => {
+    const board = want.board === true;
+    const scope: LiveScope | null =
+      !board && want.focus === undefined ? null : want.focus === undefined ? { board } : { board, focus: want.focus };
+    const key = JSON.stringify(scope);
+    if (key === liveSent) return;
+    liveSent = key;
+    void hub.live(scope);
+  };
+
   return {
     store,
     queryClient,
     call,
     toolQuery,
+    setLive,
     start: () => {
       const stopCache = queryClient.getQueryCache().subscribe(onCache);
       const stop = hub.subscribe(onFrame);

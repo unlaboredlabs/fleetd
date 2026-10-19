@@ -10,6 +10,7 @@ const fakeHub = () => {
   const calls: string[] = [];
   const inputs: unknown[] = [];
   const resyncs = vi.fn(() => Promise.resolve());
+  const lives = vi.fn((_scope: unknown) => Promise.resolve());
   const hub: HubApi = {
     call: (tool, input) => {
       calls.push(tool);
@@ -18,8 +19,9 @@ const fakeHub = () => {
     },
     subscribe: (l) => ((listener = l), () => undefined),
     resync: resyncs,
+    live: lives,
   };
-  return { hub, send: (f: HubFrame) => listener(f), answers, calls, inputs, resyncs };
+  return { hub, send: (f: HubFrame) => listener(f), answers, calls, inputs, resyncs, lives };
 };
 
 const board = { at: "2026-10-19T10:00:00.000Z", orders: [card("W1")], trains: [] };
@@ -130,6 +132,25 @@ describe("data layer", () => {
     expect(fake.calls).toHaveLength(2);
     expect(Object.keys(layer.store.getState().orders ?? {})).toEqual(["W2"]);
     stop();
+  });
+});
+
+describe("live scope", () => {
+  it("sends only changes, and stops when nothing wants live values", () => {
+    const fake = fakeHub();
+    const layer = createDataLayer(fake.hub);
+    layer.setLive({ board: true });
+    layer.setLive({ board: true });
+    layer.setLive({ board: true, focus: "W1" });
+    layer.setLive({ focus: "W1" });
+    layer.setLive({});
+    layer.setLive({ board: false });
+    expect(fake.lives.mock.calls.map(([scope]) => scope)).toEqual([
+      { board: true },
+      { board: true, focus: "W1" },
+      { board: false, focus: "W1" },
+      null,
+    ]);
   });
 });
 
