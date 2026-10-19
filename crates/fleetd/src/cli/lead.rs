@@ -84,6 +84,8 @@ pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>
   inventory  the project's open work ranked: failing checks, open issues (gh), open asks and
              TODO/FIXME markers; with nothing left that has a value source and no open child, the
              project's finish-all workstream goes idle
+  workstream open --text "<intent>" [--template bugfix|feature|research|finish-all] [--serves <s>]
+             open a workstream for work taken from the chat: a draft to brief
   workstream spawn --text "<intent>" --serves issue:<#n|url>|defect:<text>|done:<n>
       [--template bugfix|feature|research]
              a finish-all lead starts a child workstream for one item with a value source
@@ -698,10 +700,20 @@ pub fn parse_lead_args(
                 ("workstreamId", s(v.str("workstream"))),
             ])
         }
+        Some("workstream") if sub == Some("open") && rest.is_empty() => {
+            only(&["text", "serves", "template"])?;
+            required(&["text"])?;
+            defined(vec![
+                ("op", s(Some("workstream_open"))),
+                ("text", s(v.str("text"))),
+                ("serves", s(v.str("serves"))),
+                ("template", s(v.str("template"))),
+            ])
+        }
         Some("workstream") => {
             if sub != Some("spawn") || !rest.is_empty() {
                 return Err(
-                    r#"expected fleetd workstream spawn --text "<intent>" --serves <value source>"#
+                    r#"expected fleetd workstream open --text "<intent>", or workstream spawn --text "<intent>" --serves <value source>"#
                         .into(),
                 );
             }
@@ -1455,6 +1467,13 @@ pub fn format_result(result: &Value) -> String {
             ));
             next = "end with your one-paragraph result and stop.".into();
         }
+        "workstream_open" => {
+            lines.push(format!("Opened {}.", st(result, "workstreamId")));
+            next = format!(
+                "freeze its brief with fleetd brief create --workstream {}.",
+                st(result, "workstreamId")
+            );
+        }
         "workstream_spawn" => {
             let playbook = opt(result, "playbook")
                 .and_then(Value::as_str)
@@ -1667,6 +1686,27 @@ mod tests {
         assert_eq!(
             parse(&["task", "message", "T88", "stop that", "--now"]).unwrap(),
             json!({ "op": "task_message", "taskId": "T88", "message": "stop that", "now": true })
+        );
+    }
+
+    #[test]
+    fn workstream_open_takes_the_intent_and_an_optional_template() {
+        assert_eq!(
+            parse(&[
+                "workstream",
+                "open",
+                "--text",
+                "build schedules",
+                "--template",
+                "feature"
+            ])
+            .unwrap(),
+            json!({ "op": "workstream_open", "text": "build schedules", "template": "feature" })
+        );
+        assert!(
+            parse(&["workstream", "open"])
+                .unwrap_err()
+                .contains("--text")
         );
     }
 
