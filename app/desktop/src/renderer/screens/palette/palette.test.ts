@@ -155,12 +155,23 @@ describe("keys while the palette is open", () => {
   });
   const ctrl = (k: string, code: string) => ({ key: k, code, metaKey: false, ctrlKey: true, shiftKey: false, altKey: false, repeat: false, isComposing: false });
 
-  it("leaves Ctrl+N to the palette on Linux, and lets only Ctrl+K through", () => {
-    offs.push(registerCommands([item("order.new", "New order", "actions"), item("palette.toggle", "Palette", "actions"), item("board.open", "Board", "go-to")]));
+  it("holds back only the palette's own Ctrl+N/P off macOS; other shortcuts still run", () => {
+    offs.push(
+      registerCommands([
+        item("order.new", "New order", "actions"),
+        item("palette.toggle", "Palette", "actions"),
+        item("board.open", "Board", "go-to"),
+        item("shortcuts.show", "Shortcuts", "actions"),
+      ]),
+    );
     expect(dispatchable(ctrl("n", "KeyN"), "linux", false)).toBe("order.new");
     expect(dispatchable(ctrl("n", "KeyN"), "linux", true)).toBeUndefined();
-    expect(dispatchable(ctrl("0", "Digit0"), "linux", true)).toBeUndefined();
     expect(dispatchable(ctrl("k", "KeyK"), "linux", true)).toBe("palette.toggle");
+    expect(dispatchable(ctrl("0", "Digit0"), "linux", true)).toBe("board.open");
+    // The footer's "All shortcuts" key works from inside the palette.
+    expect(dispatchable(ctrl("/", "Slash"), "linux", true)).toBe("shortcuts.show");
+    // On macOS Ctrl isn't Mod, so ⌘N keeps meaning New order with the palette open.
+    expect(dispatchable({ ...ctrl("n", "KeyN"), ctrlKey: false, metaKey: true }, "darwin", true)).toBe("order.new");
   });
 
   it("finds a letter shortcut on a layout without Latin letters", () => {
