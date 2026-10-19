@@ -191,7 +191,7 @@ impl Tasks {
 
     /// Tells each running writer or reader above `max_agents` to push its work and end its turn, and queues it with
     /// a resume message. Its slot frees when that turn ends; the queue continues it in the same thread once one is
-    /// free for it. One the node can't reach keeps running.
+    /// free for it. One the node can't reach, or one waiting on its lead's answer, keeps running.
     async fn pause_extras(self: &Arc<Self>, r: &ProjectRef, max_agents: i64) -> Vec<TaskId> {
         let _guard = self.lock.lock().await;
         let mut paused = Vec::new();
@@ -209,6 +209,9 @@ impl Tasks {
             else {
                 continue;
             };
+            if self.asking.lock().unwrap().contains(&task.task_id) {
+                continue;
+            }
             let set = self.d.db.prompts().for_task(r, task.task_id.as_str());
             let pause = set.render("task.pause", &[("maxAgents", &max_agents)]);
             let id = request_id(task, &["pause", &task.attempt.get().to_string()]);
