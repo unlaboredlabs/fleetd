@@ -1,11 +1,19 @@
 // Writes the site's fixture shots (site.ts) into site/. Run through `pnpm site:shots`, which sets the 2x scale.
 import path from "node:path";
-import { test } from "@playwright/test";
-import { desktopDir, launch, setView, show } from "./harness.ts";
+import { type Page, test } from "@playwright/test";
+import { desktopDir, launch, settle, setView, show } from "./harness.ts";
 import { type FixtureName, screens } from "./registry.ts";
 import { siteShots } from "./site.ts";
 
 const site = path.resolve(desktopDir, "../../site");
+
+const hideByClass = async (page: Page, selector: string, text: string, how: "display: none" | "visibility: hidden") => {
+  const target = page.locator(selector, { hasText: text }).first();
+  await target.waitFor({ state: "attached", timeout: 10_000 });
+  const rule = await target.evaluate((el) => [...el.classList].map((c) => `.${CSS.escape(c)}`).join(""));
+  if (rule === "") throw new Error(`"${text}" has no class to hide it by`);
+  await page.addStyleTag({ content: `${rule} { ${how} !important; }` });
+};
 const only = process.env["SITE_SHOTS"]?.split(",");
 
 for (const shot of siteShots.filter((s) => only === undefined || only.includes(s.file))) {
@@ -17,12 +25,14 @@ for (const shot of siteShots.filter((s) => only === undefined || only.includes(s
       await setView(app, page, "medium", "light");
       await show(page, entry.id, entry.route, entry.open);
       await settled();
-      // The fixture banner keeps sample data from passing for a live hub inside the app; on the site the caption
-      // says what the picture is.
-      // By CSS, not role: an open sheet hides the page behind it from the accessibility tree.
-      await page.locator('[role="status"]', { hasText: "Sample data, not connected" }).evaluateAll((els) => {
-        for (const el of els) el.remove();
-      });
+      // The fixture chrome (the banner, and the sidebar's "Sample data, no hub" line) keeps sample data from passing
+      // for a live hub inside the app; on the site the caption says what the picture is. Hidden by a stylesheet rule on
+      // each one's class, so a re-render can't bring it back; found by CSS, since an open sheet hides the page from the
+      // accessibility tree.
+      // The banner takes its row with it; the sidebar line keeps its place.
+      await hideByClass(page, '[role="status"]', "Sample data, not connected", "display: none");
+      await hideByClass(page, "button", "Sample data, no hub", "visibility: hidden");
+      await settle(page);
       await page.screenshot({ path: path.join(site, shot.file), animations: "disabled", caret: "hide" });
     } finally {
       await close();
