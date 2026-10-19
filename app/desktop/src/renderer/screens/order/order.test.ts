@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { sendModeFor, type KeyLike } from "./composer";
+import { sendModeFor, type KeyLike } from "./composerModel";
 import type { AgentLane, HubEvent, Steer, TailItem } from "../../../shared/contracts";
-import { buildConversation, entryIndexAt, splitBlocks, fanOut, foldLabel, mentions, rollup, systemHeadline, type ConversationInput } from "./conversation";
+import { buildConversation, entryIndexAt, splitBlocks, fanOut, foldLabel, mentions, rollup, systemHeadline, type ConversationInput } from "./conversationModel";
 import { jumpFromHash } from "./data";
 import { doneRows, doneSummary } from "./doneWhen";
 import { clock, codeRuns, machineCode } from "./format";
