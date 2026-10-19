@@ -56,12 +56,6 @@ export function Shell() {
   }, [layer, liveFocus]);
   const hub = useHubState();
   const data = useShellData();
-  const machineViews = useData(selectMachines);
-  // The banner names nodes running an older fleetd than the hub.
-  const bannerMachines = useMemo(
-    () => machineViews?.map((v) => ({ name: v.machine.name, nodeVersion: v.machine.nodeVersion })),
-    [machineViews],
-  );
   // Undefined until this connection's asks loaded: a "0" then would claim nothing needs you.
   const needsYou = useData(selectNeedsYouCount);
   // Only while they are on their way: with the hub unreachable or refusing, nothing is coming, so no skeleton.
@@ -187,7 +181,7 @@ export function Shell() {
                 Sample data, not connected
               </div>
             ) : null}
-            {chrome ? <ConnectionBanner machines={bannerMachines} /> : null}
+            {chrome ? <ConnectionBanner /> : null}
             <div className={s.screen}>
               <ScreenHost screen={shown} />
             </div>

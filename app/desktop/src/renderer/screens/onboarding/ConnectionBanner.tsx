@@ -1,6 +1,5 @@
 import { olderNodes } from "../../../shared/pairing";
 import { Text } from "../../ui";
-import { plainReason } from "../shell/model";
 import type { Reaching } from "./form";
 import { useHubProbe, useHubState, useReaching, useSecondsUntil } from "./hooks";
 import { Prose } from "./Prose";
@@ -42,7 +41,7 @@ function Reconnecting({ reach }: { reach: Reaching }) {
   return (
     <div className={s.banner} data-tone="warning" role="status" data-banner="reconnecting">
       <Text tone="warning" tabular>
-        {reach.reason === null ? `Connecting to ${reach.hub}…` : `Lost the hub: ${plainReason(reach.reason, reach.hub)}. ${when}`}
+        {reach.reason === null ? `Connecting to ${reach.hub}…` : `Lost the hub: ${reach.reason.replace(/\.$/u, "")}. ${when}`}
       </Text>
     </div>
   );
