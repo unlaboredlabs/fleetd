@@ -378,6 +378,12 @@ jobs:
         run: |
           .github/release/macos-sign.sh verify dist/fleetd.app
           codesign -d --entitlements - --xml dist/fleetd.app | plutil -p -
+      - name: Load the native keyring module from the packed app
+        # It reads the GPUI app's keychain item once; a native module only loads from outside the asar.
+        run: |
+          ELECTRON_RUN_AS_NODE=1 dist/fleetd.app/Contents/MacOS/fleetd -e \
+            'const k = require(process.resourcesPath + "/app.asar/node_modules/@napi-rs/keyring"); console.log(process.arch, "keyring:", typeof k.Entry); if (typeof k.Entry !== "function") process.exit(1)'
+          find dist/fleetd.app/Contents/Resources/app.asar.unpacked -name '*.node' -exec lipo -archs {} \; -print
       - name: Notarize and staple
         id: notarize
         if: steps.secrets.outputs.sign == 'true' && steps.secrets.outputs.notarize == 'true'
