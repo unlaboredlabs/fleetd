@@ -1779,6 +1779,19 @@ fn pop<T: Clone, const MAX: usize>(list: &mut List<T, 0, MAX>, more: &mut Count)
 pub fn fit(doc: &mut StatusDoc) {
     let size = |d: &StatusDoc| serde_json::to_vec(d).map_or(0, |v| v.len());
     while size(doc) > MAX_DOC_BYTES {
+        // The sparkline keeps its shape with a dozen points: its oldest go first.
+        if let Some(series) = doc
+            .progress
+            .estimate
+            .as_mut()
+            .and_then(|e| e.series.as_mut())
+            && series.len() > 12
+        {
+            let mut v = std::mem::take(series).into_inner();
+            v.remove(0);
+            *series = List::unchecked(v);
+            continue;
+        }
         let more = &mut doc.more;
         let trimmed = pop(&mut doc.done, &mut more.done)
             || pop(&mut doc.next, &mut more.next)
@@ -1857,9 +1870,25 @@ mod tests {
             "more": { "done": 0, "inProgress": 0, "next": 0, "risks": 0, "parts": 0, "stale": 0 },
         });
         let mut doc: StatusDoc = serde_json::from_value(doc).unwrap();
+        let point = json!({ "at": "2026-10-18T10:00:00.000Z", "pct": 50, "verifiedPct": 20,
+            "drop": { "reason": "scope_change", "fromPct": 60, "text": long(200) } });
+        doc.progress.estimate = Some(
+            serde_json::from_value(
+                json!({ "pct": 50, "verifiedPct": 20, "inFlightPct": 30, "weights": "default",
+                "series": vec![point; super::super::estimate::DOC_SERIES] }),
+            )
+            .unwrap(),
+        );
         assert!(serde_json::to_vec(&doc).unwrap().len() > 40 * 1024);
         fit(&mut doc);
         assert!(serde_json::to_vec(&doc).unwrap().len() <= MAX_DOC_BYTES);
+        let series = doc
+            .progress
+            .estimate
+            .as_ref()
+            .and_then(|e| e.series.as_ref())
+            .unwrap();
+        assert_eq!(series.len(), 12, "the sparkline keeps a dozen points");
         assert_eq!(
             (doc.more.done.get(), doc.more.next.get()),
             (10, 10),

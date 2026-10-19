@@ -613,6 +613,9 @@ pub fn compute(w: &World, scope: &StatusScope, s: &Scope<'_>) -> ModelOut {
     }
 }
 
+/// Points a doc carries (the store keeps [`model::SERIES_CAP`]); `fit` trims further, oldest first, to fit a frame.
+pub const DOC_SERIES: usize = 48;
+
 /// How often a figure with work in flight is re-rendered for its in-stage credit.
 pub const TICK_MS: i64 = 60_000;
 
@@ -739,7 +742,8 @@ pub fn estimate_of(out: &ModelOut, series: Option<&[Point]>) -> ProgressEstimate
         weights: out.basis,
         series: series.map(|pts| {
             List::unchecked(
-                pts.iter()
+                pts[pts.len().saturating_sub(DOC_SERIES)..]
+                    .iter()
                     .map(|x| ProgressPoint {
                         at: Timestamp(iso_ms(x.at_ms)),
                         pct: pct(x.pct),
