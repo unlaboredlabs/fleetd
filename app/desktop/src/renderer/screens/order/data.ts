@@ -1,8 +1,8 @@
 // The order view's data: the order, its lanes (live), events and claims from the shared store and selectors; the
 // brief, the lead's log and the steers as call-based reads that hub events refresh. Undefined from a selector means
 // the link isn't fresh or the read hasn't landed: a skeleton, never the last connection's data. Held here, per view:
-// the lead's log accumulated across refetches (the tail tool returns the newest 50), its streamed messages in full
-// (the store keeps a 2,000-character tail), and the steers this view is sending.
+// the lead's log accumulated across refetches (the tail tool returns the newest 50) and its streamed messages in full
+// (the store keeps a 2,000-character tail). The steers on their way to the hub outlive the view (outbox.ts).
 
 import { useEffect, useMemo, useReducer, useRef } from "react";
 import type { AgentLane, CheckSpec, Claim, HubEvent, PrRef, Steer, SteerMode, SteerTarget, TailItem } from "../../../shared/contracts";
@@ -12,8 +12,11 @@ import { selectLeadStream, selectOrder, selectOrderEvents } from "../../src/data
 import { projectKey } from "../../src/data/store";
 import { toast } from "../../ui";
 import type { Streamed } from "./conversationModel";
+import { useOrderSends, useOutbox, steersInput, type SendOutcome } from "./outbox";
 import { mergeSteer } from "./receipts";
-import { afterCall, reconnectWatcher, redirectId, type CallResult, type Sending } from "./sending";
+import { redirectId, type Sending } from "./sending";
+
+export type { SendOutcome } from "./outbox";
 
 export interface OrderData {
   readonly status: "loading" | "ready" | { readonly error: string; readonly code: string };
@@ -65,15 +68,16 @@ export function jumpFromHash(hash: string): Jump | undefined {
   return thread && item ? { thread, item } : undefined;
 }
 
-/** "sent": the hub has it. "pending": cut off, resent when the link is back. "failed": the hub refused it. */
-export type SendOutcome = "sent" | "pending" | "failed";
-
 export interface OrderActions {
   /** `requestId` is minted once per composed steer by the composer, and reused if it is sent again. */
   readonly steer: (target: SteerTarget, text: string, mode: SteerMode, requestId: string) => Promise<SendOutcome>;
   readonly withdraw: (steerId: string) => void;
   /** Send an unacknowledged steer's words again, interrupting. */
   readonly redirect: (steerId: string) => void;
+  /** A steer the hub doesn't have: send it again under its own id, put its words back in its box, or drop it. */
+  readonly resend: (requestId: string) => void;
+  readonly edit: (requestId: string) => void;
+  readonly dismiss: (requestId: string) => void;
   readonly stop: () => void;
 }
 
@@ -81,17 +85,13 @@ export interface OrderActions {
 export interface Steering {
   readonly tail: readonly TailItem[];
   readonly steers: readonly Steer[];
-  readonly sending: readonly Sending[];
-  readonly redirected: ReadonlySet<string>;
   readonly focus?: OrderData["focus"];
 }
 
 export type SteeringAction =
   | { readonly t: "tail"; readonly items: readonly TailItem[] }
   | { readonly t: "steers"; readonly steers: readonly Steer[] }
-  | { readonly t: "sending"; readonly s: Sending }
-  | { readonly t: "focus"; readonly threadId: string; readonly items?: readonly TailItem[]; readonly index?: number }
-  | { readonly t: "sent"; readonly requestId: string; readonly result: CallResult };
+  | { readonly t: "focus"; readonly threadId: string; readonly items?: readonly TailItem[]; readonly index?: number };
 
 
 const tailKey = (i: TailItem) => (i.kind === "message" ? `m${i.at}${i.role}${i.text.slice(0, 64)}` : `a${i.at}${i.action.summary}`);
@@ -103,7 +103,7 @@ function mergeTail(old: readonly TailItem[], newestFirst: readonly TailItem[]): 
   return [...old, ...add].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
 }
 
-export const emptySteering = (): Steering => ({ tail: [], steers: [], sending: [], redirected: new Set() });
+export const emptySteering = (): Steering => ({ tail: [], steers: [] });
 
 export function steeringReducer(s: Steering, a: SteeringAction): Steering {
   switch (a.t) {
@@ -111,23 +111,11 @@ export function steeringReducer(s: Steering, a: SteeringAction): Steering {
       return { ...s, tail: mergeTail(s.tail, a.items) };
     case "steers":
       return { ...s, steers: a.steers.reduce<readonly Steer[]>(mergeSteer, s.steers) };
-    case "sending":
-      // Upsert: a resend (same id) is the same row.
-      return { ...s, sending: [...s.sending.filter((x) => x.requestId !== a.s.requestId), a.s] };
     case "focus": {
       const item = a.index === undefined ? undefined : a.items?.[a.index];
       // The window is oldest first; merged like a tail page so the item stays when it is older than the newest 50.
       const tail = a.items ? mergeTail(s.tail, [...a.items].reverse()) : s.tail;
       return { ...s, tail, focus: item ? { threadId: a.threadId, at: item.at } : { threadId: a.threadId, missing: a.items !== undefined } };
-    }
-    case "sent": {
-      const row = s.sending.find((x) => x.requestId === a.requestId);
-      if (row === undefined) return a.result.ok ? { ...s, steers: mergeSteer(s.steers, a.result.steer) } : s;
-      const next = afterCall(row, a.result);
-      const sending = next.row ? s.sending.map((x) => (x.requestId === a.requestId ? (next.row ?? x) : x)) : s.sending.filter((x) => x.requestId !== a.requestId);
-      const steers = next.steer ? mergeSteer(s.steers, next.steer) : s.steers;
-      const redirected = next.steer && a.requestId.startsWith("redirect:") ? new Set([...s.redirected, a.requestId.slice("redirect:".length)]) : s.redirected;
-      return { ...s, steers, sending, redirected };
     }
   }
 }
@@ -161,15 +149,15 @@ export function useOrder(workstreamId: string, jump?: Jump): [OrderData, OrderAc
   const page = useData(selectOrder(workstreamId));
   const events = useData(selectOrderEvents(workstreamId));
   const projects = useData((s) => s.projects);
-  const hubPhase = useData((s) => s.hub.phase);
-  const generation = useData((s) => s.generation);
   const [local, dispatch] = useReducer(steeringReducer, undefined, emptySteering);
+  const outbox = useOutbox();
+  const sends = useOrderSends(workstreamId);
 
   const orderQ = useToolQuery("order_get", { workstreamId });
   const briefQ = useToolQuery("workstream_get", { workstreamId });
   const thread = page?.lead?.threadRef;
   const tailQ = useToolQuery("thread_tail", { machineId: thread?.machineId ?? "", threadId: thread?.threadId ?? "", n: 50 }, { enabled: thread !== undefined });
-  const steersQ = useToolQuery("steers_list", { workstreamId, limit: 100 });
+  const steersQ = useToolQuery("steers_list", steersInput(workstreamId));
 
   useEffect(() => {
     if (tailQ.data) dispatch({ t: "tail", items: tailQ.data.items });
@@ -181,35 +169,17 @@ export function useOrder(workstreamId: string, jump?: Jump): [OrderData, OrderAc
   // The lead's messages as they streamed, in full (the store keeps them per lead).
   const stream = useData(selectLeadStream(page?.lead?.laneId ?? ""));
 
-  // Read by the actions and the reconnect resend, which outlive a render.
+  // Read by the actions, which outlive a render.
   const steersRef = useRef(local.steers);
-  const sendingRef = useRef(local.sending);
   useEffect(() => {
     steersRef.current = local.steers;
-    sendingRef.current = local.sending;
   });
 
   const refetchSteers = steersQ.refetch;
   const refetchOrder = orderQ.refetch;
-  const { actions, send } = useMemo(() => {
-    /** One steer_send for a row, with the row's own id; a timeout while the link stays up is retried once. */
-    const send = async (row: Sending): Promise<SendOutcome> => {
-      for (let attempt = 0; ; attempt++) {
-        dispatch({ t: "sending", s: { ...row, state: { t: "sending" } } });
-        const r = await layer.call("steer_send", { target: row.target, text: row.text, mode: row.mode, clientRequestId: row.requestId });
-        const result: CallResult = r.ok ? { ok: true, steer: r.output } : { ok: false, code: r.error.code, message: r.error.message };
-        dispatch({ t: "sent", requestId: row.requestId, result });
-        if (result.ok) return "sent";
-        if (result.code === "timeout" && attempt === 0) continue;
-        return result.code === "timeout" || result.code === "disconnected" ? "pending" : "failed";
-      }
-    };
-    const steer = (target: SteerTarget, text: string, mode: SteerMode, requestId: string) => {
-      // A retry of a refused steer keeps its row (and its id).
-      const prior = sendingRef.current.find((r) => r.requestId === requestId);
-      return send({ requestId, target, workstreamId, text, mode, at: prior?.at ?? new Date().toISOString(), state: { t: "sending" } });
-    };
-    const actions: OrderActions = {
+  const actions = useMemo<OrderActions>(() => {
+    const steer = (target: SteerTarget, text: string, mode: SteerMode, requestId: string) => outbox.steer(workstreamId, target, text, mode, requestId);
+    return {
       steer,
       withdraw: (steerId) => {
         void layer.call("steer_withdraw", { steerId }).then((r) => {
@@ -223,26 +193,14 @@ export function useOrder(workstreamId: string, jump?: Jump): [OrderData, OrderAc
         const s = steersRef.current.find((x) => x.id === steerId);
         if (s) void steer(s.target, s.text, "now", redirectId(steerId));
       },
+      resend: (requestId) => void outbox.resend(workstreamId, requestId),
+      edit: (requestId) => outbox.edit(workstreamId, requestId),
+      dismiss: (requestId) => outbox.dismiss(workstreamId, requestId),
       stop: () => {
         void layer.call("order_stop", { workstreamId }).then(() => refetchOrder());
       },
     };
-    return { actions, send };
-  }, [layer, workstreamId, refetchSteers, refetchOrder]);
-
-  // Steers the link cut off go again, under their own ids, on the first snapshot after a real loss: a phase other
-  // than live, then a new generation (every snapshot bumps it). Keyed on those two values only.
-  const watcher = useRef(reconnectWatcher());
-  const sendRef = useRef(send);
-  useEffect(() => {
-    sendRef.current = send;
-  });
-  useEffect(() => {
-    watcher.current({ t: "state", state: { phase: hubPhase } }, []);
-  }, [hubPhase]);
-  useEffect(() => {
-    for (const row of watcher.current({ t: "snapshot" }, sendingRef.current)) void sendRef.current(row);
-  }, [generation]);
+  }, [layer, outbox, workstreamId, refetchSteers, refetchOrder]);
 
   // Open at a transcript item: the lead's window around it here; an agent's thread is the steer sheet's to show.
   const jumpThread = jump?.thread;
@@ -292,11 +250,11 @@ export function useOrder(workstreamId: string, jump?: Jump): [OrderData, OrderAc
       steers: log.steers,
       events,
       streamed: log.streamed,
-      sending: local.sending,
-      redirected: local.redirected,
+      sending: sends.sending,
+      redirected: sends.redirected,
       ...(local.focus ? { focus: local.focus } : {}),
     };
-  }, [workstreamId, page, orderQ.error, briefQ.data, tailQ.error, tailQ.data, steersQ.data, projects, events, local, stream]);
+  }, [workstreamId, page, orderQ.error, briefQ.data, tailQ.error, tailQ.data, steersQ.data, projects, events, local, sends, stream]);
 
   return [data, actions];
 }

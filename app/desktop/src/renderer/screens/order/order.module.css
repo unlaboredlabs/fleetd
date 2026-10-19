@@ -430,6 +430,13 @@
 .tone-bad {
   color: var(--danger);
 }
+/* The quoted reply or stopped step: on the line when it fits, else on a line of its own, cut to its width. */
+.receiptQuote {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  display: flex;
+}
 .linkButton {
   padding: 0;
   border: none;

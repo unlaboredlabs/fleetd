@@ -5,10 +5,10 @@
 import type { Virtualizer } from "@tanstack/react-virtual";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { cx, IdChip, InlineCode, Markdown, Text, Tooltip, VirtualList, type TextProps } from "../../ui";
+import { cx, IdChip, InlineCode, Markdown, Text, Tooltip, Truncate, VirtualList, type TextProps } from "../../ui";
 import { foldLabel, jumpTarget, systemHeadline, type Author, type Call, type Entry } from "./conversationModel";
 import { clock, codeRuns, machineCode } from "./format";
-import type { Receipt, ReceiptAct } from "./receipts";
+import { ACT_LABEL, type Receipt, type ReceiptAct } from "./receipts";
 import s from "./order.module.css";
 
 export interface ReceiptHandlers {
@@ -33,16 +33,28 @@ export function InlineText(props: { text: string } & Omit<TextProps, "children">
 }
 
 export function ReceiptLine({ receipt, onAct }: { receipt: Receipt } & ReceiptHandlers) {
-  const act = receipt.act;
   return (
     <div className={cx(s.receipt, s[`tone-${receipt.tone}`])} data-receipt={receipt.stage}>
       <InlineText size="xs" tone="inherit" text={receipt.line} />
-      {receipt.detail ? <IdChip label="Details" id={receipt.detail} kind="error" size="xs" tone="quiet" /> : null}
-      {act ? (
-        <button type="button" className={s.linkButton} onClick={() => onAct(act)}>
-          {act.kind === "withdraw" ? "Withdraw" : "Interrupt and redirect"}
-        </button>
+      {receipt.quote ? (
+        <span className={s.receiptQuote}>
+          {receipt.quote.code === true ? (
+            <Truncate as="code" size="xs" tone="inherit" mono>
+              {receipt.quote.text}
+            </Truncate>
+          ) : (
+            <Truncate size="xs" tone="inherit">
+              {receipt.quote.text}
+            </Truncate>
+          )}
+        </span>
       ) : null}
+      {receipt.detail ? <IdChip label="Details" id={receipt.detail} kind="error" size="xs" tone="quiet" /> : null}
+      {receipt.acts?.map((act) => (
+        <button key={act.kind} type="button" className={s.linkButton} onClick={() => onAct(act)}>
+          {ACT_LABEL[act.kind]}
+        </button>
+      ))}
     </div>
   );
 }
@@ -201,9 +213,11 @@ export function Conversation(
     notice?: { text: string; error: boolean };
     /** A transcript jump: scroll to the row holding the item at `at`, open it if it is a fold, light it briefly. */
     focus?: { readonly index: number; readonly at: string } | undefined;
+    /** Changes when a steer is sent from the box below: the log goes to its end, where the steer and its receipt are. */
+    toEnd?: number;
   } & ReceiptHandlers,
 ) {
-  const { entries, onAct, focus } = props;
+  const { entries, onAct, focus, toEnd } = props;
   const [lit, setLit] = useState<Lit | undefined>(undefined);
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
   const onToggle = useCallback((key: string) => {
@@ -234,6 +248,15 @@ export function Conversation(
     // Once per jump target, not on every new row.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusKey]);
+
+  useEffect(() => {
+    const v = virtualizer.current;
+    if (toEnd === undefined || toEnd === 0 || !v || entries.length === 0) return;
+    // Back at the end, the list's own follow keeps the receipt in view as it changes.
+    v.scrollToIndex(entries.length - 1, { align: "end" });
+    // Once per send; the row it lands on is already in `entries` (the outbox adds it before the send resolves).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [toEnd]);
 
   if (entries.length === 0 && props.notice) {
     return (
