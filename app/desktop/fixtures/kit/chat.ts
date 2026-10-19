@@ -155,7 +155,7 @@ export const commandApproval = (state: "open" | "ran" | "denied", f: Fixture, pe
           argv: ["pnpm", "--filter", "storefront", "db:migrate", "--env", "production"],
           cwd: "/home/dev/src/storefront",
           class: "irreversible",
-          reason: "Adds the share_snapshots table to the production database.",
+          reason: "Adds the share snapshots table to the production database.",
           secretEnv: [{ name: "DATABASE_URL", secretKey: "storefront.database_url" }],
           timeoutSec: 600,
         },
@@ -234,3 +234,20 @@ export const statusRow = (f: Fixture, ref: Ref, title: string, state: RowState, 
 
 export const answerRows = (f: Fixture, rows: ReadonlyArray<JsonObject>): Fixture =>
   f.answer("status_projects", {}, { rows: [...rows].sort((a, b) => asText(a["title"]).localeCompare(asText(b["title"]))) });
+
+/**
+ * The chat's last message, a lead reply in state "streaming", grows by `appends` over the live chat feed: one
+ * chat_delta every `everyMs` after the app subscribes, each at the offset (UTF-16 length) the text has reached. It
+ * stays unfinished, as a screenshot mid-reply needs; the fixture settles on the last frame.
+ */
+export const streamReply = (f: Fixture, ref: Ref, appends: ReadonlyArray<string>, everyMs = 400): Fixture => {
+  const page = obj(f.output("chat_history", { projectRef: { ...ref } }));
+  const last = arr(page["messages"]).filter(isObject).at(-1);
+  if (last?.["state"] !== "streaming") throw new Error("streamReply needs the chat's last message to be streaming");
+  let offset = asText(last["text"]).length;
+  appends.forEach((append, i) => {
+    f.later((i + 1) * everyMs, "chat_delta", { projectRef: { ...ref }, messageId: last["messageId"] ?? "m1", seq: last["seq"] ?? 1, offset, append });
+    offset += append.length;
+  });
+  return f;
+};
