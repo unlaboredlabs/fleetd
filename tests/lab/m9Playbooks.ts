@@ -93,7 +93,7 @@ export async function m9Playbooks(lab: Lab) {
     baseline: "the README as it is",
     metric: "seconds to read the README",
     decisionRule: { better: "lower", goAtLeast: 5, stopBelow: 5 },
-    budget: { agentHours: 1 },
+    budget: { size: "S" },
   };
   const { baseline: _b, decisionRule: _r, ...unregistered } = research;
   const missing = fleetd("brief", "create", "--workstream", wr, "--json", JSON.stringify(unregistered));

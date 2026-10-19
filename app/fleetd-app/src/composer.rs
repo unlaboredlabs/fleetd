@@ -1039,7 +1039,7 @@ mod tests {
     #[test]
     fn a_leading_at_project_picks_it() {
         let targets =
-            vec![Target { key: ("forge".into(), "fleetd".into()), title: "fleetd".into(), machine: "forge".into(), machine_offline: false }];
+            vec![Target { key: ("devbox".into(), "fleetd".into()), title: "fleetd".into(), machine: "devbox".into(), machine_offline: false }];
         assert_eq!(project_prefix("@fleetd harden it", &targets).map(|t| t.key.1.as_str()), Some("fleetd"));
         assert!(project_prefix("@fleetd", &targets).is_none(), "not until the name is finished");
         assert!(project_prefix("@web harden", &targets).is_none());

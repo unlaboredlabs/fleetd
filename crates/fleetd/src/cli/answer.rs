@@ -256,7 +256,7 @@ mod tests {
 
     fn ask(extra: Value) -> Ask {
         let mut value = json!({
-            "askId": "A7", "projectRef": { "machineId": "forge", "projectId": "console" },
+            "askId": "A7", "projectRef": { "machineId": "devbox", "projectId": "console" },
             "workstreamId": "W1", "kind": "decide", "key": "share.link", "class": "product",
             "text": "What should a shared link show?", "recommendation": "public-snapshot",
             "blocks": "Copy link button", "proceededOnRec": false, "state": "open",

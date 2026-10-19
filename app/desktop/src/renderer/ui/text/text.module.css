@@ -1,0 +1,143 @@
+/* min-width: 0 everywhere: a flex or grid child otherwise refuses to shrink below its text and overflows. */
+.text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.pre {
+  white-space: pre-wrap;
+}
+
+.xs {
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+}
+.sm {
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+}
+.md {
+  font-size: var(--text-md);
+  line-height: var(--leading-md);
+}
+.lg {
+  font-size: var(--text-lg);
+  line-height: var(--leading-lg);
+}
+.xl {
+  font-size: var(--text-xl);
+  line-height: var(--leading-xl);
+}
+.display {
+  font-size: var(--text-display);
+  line-height: var(--leading-display);
+  font-variant-numeric: tabular-nums;
+}
+
+.default {
+  color: var(--text);
+}
+.quiet {
+  color: var(--quiet);
+}
+.faint {
+  color: var(--faint);
+}
+.accent {
+  color: var(--accent);
+}
+.danger {
+  color: var(--danger);
+}
+.success {
+  color: var(--success);
+}
+.warning {
+  color: var(--warning);
+}
+.inherit {
+  color: inherit;
+}
+
+.regular {
+  font-weight: var(--weight-regular);
+}
+.strong {
+  font-weight: var(--weight-strong);
+}
+.mono {
+  font-family: var(--font-mono);
+}
+.mono.md {
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+}
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+.truncate {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inline {
+  display: inline-block;
+  vertical-align: bottom;
+}
+.clamp {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.clickable {
+  cursor: pointer;
+}
+.clickable:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--faint);
+  text-underline-offset: 3px;
+}
+
+.expanded {
+  display: block;
+  max-height: 50vh;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.popoverText {
+  max-height: 40vh;
+  overflow-y: auto;
+}
+.popoverActions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-2);
+}
+
+.idChip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  max-width: 100%;
+}
+.idCopy {
+  flex: none;
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+.idChip:hover .idCopy,
+.idCopy:focus-visible,
+.idCopy[data-copied] {
+  opacity: 1;
+}
+.idCopy svg {
+  width: 12px;
+  height: 12px;
+}

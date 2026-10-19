@@ -75,7 +75,7 @@ fn lab() -> Lab {
 
 fn person(key_id: &str) -> Caller {
     serde_json::from_value::<Caller>(json!({
-        "keyId": key_id, "name": "wynn-mac", "prefix": "fld_abcdef", "createdAt": AT,
+        "keyId": key_id, "name": "laptop", "prefix": "fld_abcdef", "createdAt": AT,
         "grants": [{ "role": "operate", "machines": "*" }],
     }))
     .map(|c| Caller {

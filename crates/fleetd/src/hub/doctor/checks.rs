@@ -899,8 +899,8 @@ mod tests {
             "http://127.0.0.1:4790",
             "http://localhost:4790/",
             "http://[::1]:4790",
-            "http://100.104.249.49:4790",
-            "http://forge.tailb10092.ts.net:4790",
+            "http://100.101.102.103:4790",
+            "http://devbox.tail1234.ts.net:4790",
             "http://[fd7a:115c:a1e0::b430:f932]:4790",
         ] {
             assert!(sealed_http(url).is_some(), "{url}");
@@ -908,7 +908,7 @@ mod tests {
         for url in [
             "http://192.168.8.227:4790",
             "http://100.128.0.1:4790",
-            "http://forge.example.com",
+            "http://devbox.example.com",
             "http://10.0.0.2:4790",
         ] {
             assert_eq!(sealed_http(url), None, "{url}");
@@ -932,11 +932,11 @@ mod tests {
         let slept = SleptSpan::new(woke_at - 646_000, woke_at).unwrap();
         let now = woke_at + 3 * 60_000;
 
-        let warn = idle_sleep("forge", Ok(&probe(Some(kde))), Some(&slept), now).check;
+        let warn = idle_sleep("devbox", Ok(&probe(Some(kde))), Some(&slept), now).check;
         assert_eq!(warn.status, Warn);
         assert_eq!(
             warn.message,
-            "forge sleeps after 15 min idle on AC power (KDE power management) (logind IdleAction too). fleetd keeps \
+            "devbox sleeps after 15 min idle on AC power (KDE power management) (logind IdleAction too). fleetd keeps \
              it awake while agents run, but it still sleeps between orders, and asleep it is unreachable: queued work \
              and wakes wait until someone wakes it. It slept 10m46s (woke 3m00s ago)."
         );
@@ -947,7 +947,7 @@ mod tests {
 
         // No idle sleep: a pass whatever the last sleep was, so a sleep never flaps the check.
         let quiet = idle_sleep(
-            "forge",
+            "devbox",
             Ok(&probe(Some(serde_json::json!([])))),
             Some(&slept),
             now,
@@ -960,17 +960,17 @@ mod tests {
             quiet.message
         );
         let long_ago = idle_sleep(
-            "forge",
+            "devbox",
             Ok(&probe(Some(serde_json::json!([])))),
             Some(&slept),
             now + 3_600_000,
         );
         assert_eq!(
             long_ago.check.message,
-            "forge does not sleep when idle on AC power."
+            "devbox does not sleep when idle on AC power."
         );
 
-        let old_node = idle_sleep("forge", Ok(&probe(None)), None, now).check;
+        let old_node = idle_sleep("devbox", Ok(&probe(None)), None, now).check;
         assert_eq!(
             (old_node.status, old_node.fix.and_then(|f| f.command)),
             (Unknown, Some("fleetd update".into()))

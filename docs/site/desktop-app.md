@@ -83,16 +83,15 @@ A stopped order isn't reopened. ⌘[ and ⌘] go to the previous and next order,
 
 ⌘. opens Status for what you're looking at: the open order, the selected project, or the whole fleet; ⌘. again goes
 back. It's also in the sidebar above Board, in the palette ("Status", "Status for W41") and on an order's header. It
-shows the progress fleetd verified, the ETA from measured speed, what the work waits on, what changed since you last
-looked, then health, what needs you, risks, and the items in progress, next and done. What needs you has the inbox's
-one-tap answers.
+shows the progress fleetd verified, what the work waits on, what changed since you last looked, then health, what
+needs you, risks, and the items in progress, next and done. What needs you has the inbox's one-tap answers.
 
 It updates as things happen, without a refresh. A part whose source has gone quiet gets a warning outline with
 "stale 4m" and the reason, and keeps its last value. While the app is reconnecting the whole view greys out with
 "Not live: reconnecting", and after it reconnects it shows empty bars until the fresh numbers arrive. What the number
-means and how the ETA is measured: [Status](status.md).
+means and what it waits on: [Status](status.md).
 
-![Status for the fleet: 72% verified, the ETA and what it waits on, two stale sources outlined, health, projects and what needs you.](/docs/img/status.png)
+![Status for the fleet: 72% verified, what it waits on, two stale sources outlined, health, projects and what needs you.](/docs/img/status.png)
 
 ## Inbox and replies {#reply}
 
