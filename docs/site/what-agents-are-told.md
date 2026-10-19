@@ -19,6 +19,15 @@ A [steer](steering.md) reaches the agent as one short message from you, wrapped 
 which asks it to begin its reply with the steer's id. When you steer an agent directly, its lead hears about it in a
 wake line (`wake.agent_steer`).
 
+## No time estimates {#no-time}
+
+Agents are bad at judging time, so fleetd never asks one for an estimate. No prompt asks for an ETA, a duration or
+"this should take", and leads are told never to put one in a brief, an ask, a status line, a plan or a summary. Plan
+items and research budgets are sized S, M or L instead. In place of a clock, leads work for throughput: keep every
+slot busy, run work that touches separate areas in parallel, judge each slice as it lands, put each finished PR on the
+train at once, and never sit idle while work is runnable. What fleetd measures (CI runs, span durations, ages) is
+shown as measured; see [Status](status.md).
+
 ## Claude's auto memory is off {#auto-memory}
 
 Claude Code can keep its own notes per folder ("auto memory") and read them back in later sessions. fleetd turns that

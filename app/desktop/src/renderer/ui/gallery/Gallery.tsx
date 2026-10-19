@@ -708,7 +708,11 @@ function LayoutSection() {
             <Sidebar>
               <SidebarSection>
                 <SidebarItem label="Board" icon={<LayoutGrid />} current trailing="⌘1" />
-                <SidebarItem label="Inbox" icon={<Inbox />} trailing={<StatusChip tone="needs-you">2</StatusChip>} />
+                <SidebarItem label="Inbox" icon={<Inbox />} trailing={
+                    <StatusChip tone="needs-you" inRow>
+                      2
+                    </StatusChip>
+                  } />
               </SidebarSection>
               <SidebarSection
                 title="Projects"

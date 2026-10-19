@@ -588,6 +588,24 @@ pub fn close_if_done(db: &Connection, n: i64) -> Result<bool, Fail> {
     Ok(true)
 }
 
+/// An undone answer's batch takes its item back.
+pub fn reopen_batch(db: &Connection, n: i64) -> Result<(), Fail> {
+    db.execute("UPDATE batches SET state = 'open' WHERE n = ?", [n])?;
+    Ok(())
+}
+
+/// Decide answers marked with an undo window and not yet delivered to their lead.
+pub fn held_answers(db: &Connection) -> Result<Vec<Ask>, Fail> {
+    let mut stmt = db.prepare_cached(
+        "SELECT data FROM asks WHERE state IN ('answered', 'defaulted')
+           AND json_extract(data, '$.answer.undoUntil') IS NOT NULL
+           AND json_extract(data, '$.answer.deliveredAt') IS NULL
+         ORDER BY n",
+    )?;
+    let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+    rows.map(|row| decode(row?)).collect()
+}
+
 /// Latest open batch the human has been shown; the collecting one only when none was published.
 pub fn latest_open_batch(db: &Connection) -> Result<Option<StoredBatch>, Fail> {
     batch_by(

@@ -3,6 +3,17 @@ import { useEffect, useLayoutEffect, useRef, type ReactNode, type RefObject } fr
 import { cx } from "../lib/cx";
 import s from "./VirtualList.module.css";
 
+/**
+ * Pinning to the end, done by TanStack itself: anchored to the end, the view stays at the bottom when items are
+ * appended AND when the last item grows in place (a streaming message), as long as the reader is within
+ * `scrollEndThreshold` px of the end. Scrolled up, nothing moves.
+ */
+export function followOptions(followOutput: boolean | undefined) {
+  return followOutput
+    ? ({ anchorTo: "end", followOnAppend: true, scrollEndThreshold: 24 } as const)
+    : ({ anchorTo: "start", followOnAppend: false } as const);
+}
+
 export interface VirtualListProps<T> {
   items: ReadonlyArray<T>;
   /** A stable key per item (its id), so measured heights survive inserts. */
@@ -21,6 +32,8 @@ export interface VirtualListProps<T> {
   /** For scroll-to-index and friends. */
   virtualizerRef?: RefObject<Virtualizer<HTMLDivElement, Element> | null>;
   "aria-label"?: string;
+  /** `presentation` when the rows carry their own roles (a table's rows). */
+  role?: "list" | "presentation";
 }
 
 /**
@@ -30,7 +43,6 @@ export interface VirtualListProps<T> {
 export function VirtualList<T>(props: VirtualListProps<T>) {
   const { items, getKey, followOutput, startAtEnd, gap = 0 } = props;
   const scrollRef = useRef<HTMLDivElement>(null);
-  const atEnd = useRef(true);
 
   // TanStack Virtual returns a mutable instance the React Compiler can't memoize; this component opts out of it.
   // eslint-disable-next-line react-hooks/incompatible-library
@@ -44,6 +56,7 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     },
     overscan: props.overscan ?? 8,
     gap,
+    ...followOptions(followOutput),
   });
 
   const { virtualizerRef } = props;
@@ -61,20 +74,12 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useLayoutEffect(() => {
-    if (followOutput && atEnd.current && items.length > 0) virtualizer.scrollToIndex(items.length - 1, { align: "end" });
-  }, [followOutput, items.length, virtualizer]);
-
   return (
     <div
       ref={scrollRef}
       className={cx(s.scroller, props.className)}
-      role="list"
+      role={props.role ?? "list"}
       aria-label={props["aria-label"]}
-      onScroll={(e) => {
-        const el = e.currentTarget;
-        atEnd.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
-      }}
     >
       <div className={s.inner} style={{ height: virtualizer.getTotalSize() }}>
         {virtualizer.getVirtualItems().map((row) => {
@@ -86,7 +91,7 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
               ref={virtualizer.measureElement}
               data-index={row.index}
               className={s.row}
-              role="listitem"
+              role={props.role === "presentation" ? "presentation" : "listitem"}
               style={{ transform: `translateY(${row.start}px)` }}
             >
               {props.renderItem(item, row.index)}

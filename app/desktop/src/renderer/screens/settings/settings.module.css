@@ -5,14 +5,16 @@
  */
 
 .frame {
+  container: settings / inline-size;
   display: grid;
-  grid-template-columns: 200px minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr);
   height: 100%;
   min-height: 0;
   min-width: 0;
 }
 
 .nav {
+  width: 200px;
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
@@ -164,10 +166,11 @@
   padding-top: var(--space-2);
 }
 .groupHead {
-  display: grid;
-  grid-template-columns: 14px minmax(0, 1fr) auto;
-  align-items: start;
-  gap: var(--space-1-5);
+  /* Title and counts share a line when they fit; the counts drop under the title when they don't. */
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  column-gap: var(--space-1-5);
   width: 100%;
   padding: var(--space-1) var(--space-2);
   border: 0;
@@ -177,17 +180,23 @@
   font: inherit;
   text-align: left;
 }
-.groupBlurb {
-  grid-column: 2 / -1;
-  min-width: 0;
+.groupHead > :nth-child(2) {
+  flex: 0 1 auto;
 }
 .groupHead > :nth-child(3) {
+  margin-left: auto;
   padding-top: 2px;
+}
+.groupBlurb {
+  flex: 1 0 100%;
+  min-width: 0;
+  padding-left: calc(14px + var(--space-1-5));
 }
 .groupHead:hover {
   background: var(--hover);
 }
 .chevron {
+  flex: none;
   width: 14px;
   height: 20px;
   color: var(--quiet);
@@ -311,13 +320,25 @@
 }
 
 .placeholders {
-  display: grid;
-  grid-template-columns: max-content max-content minmax(0, 1fr);
-  gap: var(--space-1) var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+/* Token, status and description on one line when there is room; the description wraps below when there is not. */
+.placeholder {
+  display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
+  gap: 2px var(--space-3);
+  min-width: 0;
+}
+.placeholder > :last-child {
+  flex: 1 1 180px;
+  min-width: 0;
 }
 .chipButton {
-  justify-self: start;
+  flex: none;
+  max-width: 100%;
   padding: 0 var(--space-1-5);
   border: 1px solid var(--hairline);
   border-radius: var(--radius-sm);
@@ -408,4 +429,17 @@
 h1.navTitle {
   margin: 0;
   font: inherit;
+}
+
+/* Beside the app's sidebar on a small window: narrower side columns, so the editor keeps a readable measure. */
+@container settings (max-width: 880px) {
+  .nav {
+    width: 164px;
+  }
+  .split {
+    grid-template-columns: minmax(200px, 236px) minmax(0, 1fr);
+  }
+  .detail {
+    padding-inline: var(--space-4);
+  }
 }

@@ -652,7 +652,7 @@ function Detail(props: {
 
 function PlaceholderRow(props: { name: string; status: string; missing: boolean; description: string; onInsert: () => void }) {
   return (
-    <>
+    <div className={s.placeholder}>
       <button type="button" className={s.chipButton} onClick={props.onInsert} aria-label={`Insert the ${props.name} placeholder`}>
         <code>{token(props.name)}</code>
       </button>
@@ -662,7 +662,7 @@ function PlaceholderRow(props: { name: string; status: string; missing: boolean;
       <Text size="xs" tone="quiet">
         {props.description}
       </Text>
-    </>
+    </div>
   );
 }
 

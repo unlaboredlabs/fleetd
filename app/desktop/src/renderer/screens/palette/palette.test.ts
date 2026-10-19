@@ -17,7 +17,7 @@ describe("rank", () => {
   it("matches subsequences and prefers word starts and runs", () => {
     expect(score("frt", "fleet-infra")).toBeUndefined();
     expect(score("fi", "fleet-infra")).toBeDefined();
-    expect(score("fle", "fleetd")).toBeGreaterThan(score("fle", "forge-lead-e") ?? Infinity);
+    expect(score("fle", "fleetd")).toBeGreaterThan(score("fle", "field-lead-e") ?? Infinity);
     expect(score("dn", "desktop-notify")).toBeGreaterThan(score("dn", "addon") ?? Infinity);
     expect(score("FLEET", "fleetd")).toBe(score("fleet", "fleetd"));
   });

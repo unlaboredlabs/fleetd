@@ -42,6 +42,25 @@ const FixtureFile = z.object({
 });
 export type FixtureFile = z.infer<typeof FixtureFile>;
 
+/** Set alongside FLEETD_FIXTURE to use a fixture in a packaged build (a QA run of the release app). */
+export const ALLOW_PACKAGED = "FLEETD_DEV_FIXTURES";
+
+/**
+ * Which fixture, if any, replaces the hub. A packaged app ignores a stray FLEETD_FIXTURE (fake data must never pass
+ * for a real hub) unless FLEETD_DEV_FIXTURES=1 is set too.
+ */
+export const fixtureRequest = (
+  vars: NodeJS.ProcessEnv,
+  packaged: boolean,
+): { kind: "none" } | { kind: "ignored"; reason: string } | { kind: "fixture"; name: string } => {
+  const name = vars["FLEETD_FIXTURE"];
+  if (name === undefined || name === "") return { kind: "none" };
+  if (packaged && vars[ALLOW_PACKAGED] !== "1") {
+    return { kind: "ignored", reason: `FLEETD_FIXTURE is ignored in a packaged app unless ${ALLOW_PACKAGED}=1 is set too.` };
+  }
+  return { kind: "fixture", name };
+};
+
 /** FLEETD_FIXTURE is a name in FLEETD_FIXTURE_DIR (default <app>/fixtures) or an absolute path. Throws a readable message. */
 export const loadFixture = (fixture: string, dir: string): FixtureFile => {
   const file = isAbsolute(fixture) ? fixture : join(dir, `${fixture}.json`);
@@ -103,7 +122,9 @@ export class FixtureSource implements HubSource {
     this.#cancelReplay();
     if (this.#file.state.phase !== "live") return;
     let at = 0;
-    for (const { afterMs, ...frame } of this.#file.frames) {
+    for (const { afterMs, ...checked } of this.#file.frames) {
+      // Fixtures are recorded hub frames, checked at the fields main relies on, like a live hub's.
+      const frame = checked as HubFrame;
       at += afterMs ?? 0;
       if (at === 0) this.#emit(frame);
       else this.#replay.push(setTimeout(() => this.#emit(frame), at));

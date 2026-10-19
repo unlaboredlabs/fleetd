@@ -3,7 +3,9 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { matches } from "../../src/main/hub/fixture.ts";
 import { Fixture } from "./fixture.ts";
-import { assertClean, makeSanitizer } from "./sanitize.ts";
+import { assertClean, findLeaks } from "./leaks.ts";
+import { makeSanitizer } from "./sanitize.ts";
+import { buildShared, recorded } from "./shared.ts";
 import { fitStrings, validateFixture } from "./schema.ts";
 
 describe("Fixture answers", () => {
@@ -24,6 +26,17 @@ describe("Fixture answers", () => {
     expect(f.answers("asks_list")).toHaveLength(1);
     f.fail("asks_list", {}, { code: "failed", message: "no" });
     expect(answer(f, "asks_list", {})).toEqual({ ok: false, error: { code: "failed", message: "no" } });
+  });
+
+  it("turns timed frames into main's afterMs steps, settling at the last one unless told otherwise", () => {
+    const event = (seq: number) => ({ seq, at: "2026-10-19T10:00:00.000Z", type: "machine.online", summary: "devbox is online" });
+    const f = new Fixture("t", "").later(3000, "event", event(2)).later(1000, "event", event(1));
+    f.events.push(event(0));
+    const file = f.toFile();
+    expect(file.frames.map((fr) => fr.afterMs)).toEqual([undefined, 1000, 2000]);
+    expect(file.settleMs).toBe(3000);
+    expect(f.settleAt(5000).toFile().settleMs).toBe(5000);
+    expect(Fixture.fromFile(file).timeline.map((t) => t.ms)).toEqual([1000, 3000]);
   });
 
   it("copies share nothing with their base", () => {
@@ -53,10 +66,41 @@ describe("sanitize", () => {
     expect(s.value(raw)).toEqual(out);
   });
 
-  it("refuses output that still names a person or the lab", () => {
-    expect(() => assertClean("x", '{"a":"/srv/fleetd-lab/slot-4"}')).toThrow(/fleetd-lab/u);
-    expect(() => assertClean("x", '{"a":"fld_abcdefghijklmnopqrstuvwxyz"}')).toThrow();
-    expect(() => assertClean("x", '{"a":"devbox"}')).not.toThrow();
+  // Samples are built, not written out, so no scanner mistakes this file for a leak of its own.
+  const x = (n: number) => "a1B2".repeat(n);
+  const SAMPLES: Array<[string, string]> = [
+    ["GitHub token", `token ghp_${x(9)}`],
+    ["GitHub app token", `gho_${x(9)}`],
+    ["fine-grained GitHub token", `github_pat_${x(12)}`],
+    ["Anthropic key", `sk-ant-api03-${x(10)}`],
+    ["Slack token", `xoxb-${x(6)}`],
+    ["JWT", `Bearer eyJ${x(4)}.eyJ${x(4)}.${x(4)}`],
+    ["fleetd key", `fld_abcdefghijklmnopqrstuvwx`],
+    ["email", "Author: someone <12345+someone@users.noreply.github.com>"],
+    ["tailnet IPv4", "http://100.101.102.103:4790"],
+    ["tailnet IPv6", "[fd7a:115c:a1e0:ab12::1]:4790"],
+    ["tailnet host", "http://buildbox.tail1234.ts.net:4790"],
+    ["another home", "/Users/someone/src/app and /home/other/src"],
+    ["private repo URL", "https://github.com/someone/private-thing/pull/4"],
+  ];
+
+  it.each(SAMPLES)("rewrites a %s so nothing of it is left", (_what, sample) => {
+    expect(findLeaks(sample)).not.toEqual([]);
+    expect(findLeaks(JSON.stringify(s.value({ text: sample })))).toEqual([]);
+  });
+
+  it("maps every repo outside acme onto an acme stand-in, in repo fields and in object keys", () => {
+    const out = s.value({ repo: "someone/private-thing", repos: ["someorg/secret-app"], byRepo: { "someone/private-thing": 1, [`${lab}/repo-a`]: 2 } });
+    const json = JSON.stringify(out);
+    expect(json).not.toMatch(/private-thing|secret-app|someone|someorg/u);
+    expect(out).toMatchObject({ repo: expect.stringMatching(/^acme\//u) as unknown, byRepo: { "/home/dev/src/checkout": 2 } });
+    expect(s.value({ repo: "someone/private-thing" })).toEqual({ repo: (out as { repo: string }).repo });
+  });
+
+  it("refuses output that still names the lab or a key, and passes the stand-ins", () => {
+    expect(() => assertClean("x", '{"a":"/srv/fleetd-lab/slot-4"}')).toThrow(/the lab/u);
+    expect(() => assertClean("x", `{"a":"fld_abcdefghijklmnopqrstuvwxyz"}`)).toThrow();
+    expect(() => assertClean("x", '{"a":"devbox","repo":"acme/storefront","p":"/home/dev/src","e":"dev@example.com"}')).not.toThrow();
   });
 });
 
@@ -71,16 +115,42 @@ describe("schema", () => {
     expect(f.events[0]?.["summary"]).toHaveLength(200);
   });
 
+  it("refuses a field the hub never sends, a misspelled input key and an unknown error code", () => {
+    const extra = new Fixture("t", "").answer("orders_board", {}, { orders: [], trains: [], at: "2026-10-19T10:00:00.000Z", surprise: 1 });
+    expect(validateFixture(extra).join("\n")).toMatch(/orders_board .*output/u);
+    const typo = new Fixture("t", "").fail("order_get", { workstreamIdd: "W1" }, { code: "not_found", message: "no" });
+    expect(validateFixture(typo).join("\n")).toMatch(/order_get input/u);
+    const code = new Fixture("t", "").fail("order_get", { workstreamId: "W1" }, { code: "not_a_code", message: "no" });
+    expect(validateFixture(code).join("\n")).toMatch(/not a hub error code/u);
+    expect(validateFixture(new Fixture("t", "").fail("order_get", { workstreamId: "W1" }, { code: "not_found", message: "no" }))).toEqual([]);
+  });
+
   it("names the call whose output the hub could not have sent", () => {
     const f = new Fixture("t", "").answer("orders_board", {}, { orders: "nope" });
     expect(validateFixture(f).join("\n")).toMatch(/orders_board/u);
   });
 });
 
-// Run with FLEETD_FIXTURE_DENYLIST=<file outside the repo> to check the committed recordings against real names.
-describe.skipIf(process.env["FLEETD_FIXTURE_DENYLIST"] === undefined)("recorded fixtures", () => {
+// Always: the generic leak patterns. With FLEETD_FIXTURE_DENYLIST=<file outside the repo>, the real names too.
+describe("recorded fixtures", () => {
   const dir = path.join(import.meta.dirname, "../recorded");
-  it.each(fs.readdirSync(dir).filter((f) => f.endsWith(".json")))("%s names nothing on the denylist", (file) => {
-    expect(() => assertClean(file, fs.readFileSync(path.join(dir, file), "utf8"))).not.toThrow();
+  it.each(fs.readdirSync(dir).filter((f) => f.endsWith(".json")))("%s leaks nothing", (file) => {
+    expect(findLeaks(fs.readFileSync(path.join(dir, file), "utf8"))).toEqual([]);
+  });
+});
+
+describe("recorded moments", () => {
+  const dir = path.join(import.meta.dirname, "../recorded");
+  it.each(fs.readdirSync(dir).filter((f) => f.endsWith(".json")))("%s is traffic a hub could send", (file) => {
+    expect(validateFixture(recorded(file.slice(0, -5)))).toEqual([]);
+  });
+});
+
+// What `pnpm fixtures` checks, in the desktop CI job too, which runs tests but not the build.
+describe("shared fixtures", () => {
+  const shared = [...buildShared().values()];
+  it.each(shared.map((f) => [f.name, f] as const))("%s leaks nothing and is traffic a hub could send", (_name, f) => {
+    expect(findLeaks(JSON.stringify(f.toFile()))).toEqual([]);
+    expect(validateFixture(f)).toEqual([]);
   });
 });

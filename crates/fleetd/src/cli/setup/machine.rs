@@ -868,10 +868,10 @@ mod tests {
     #[test]
     fn machine_id_from_an_ssh_host() {
         assert_eq!(
-            machine_id_from_host("wynn@Mac-Mini.tail1234.ts.net"),
+            machine_id_from_host("ada@Mac-Mini.tail1234.ts.net"),
             "mac-mini"
         );
-        assert_eq!(machine_id_from_host("forge"), "forge");
+        assert_eq!(machine_id_from_host("devbox"), "devbox");
         assert_eq!(machine_id_from_host("build_box_2"), "build-box-2");
     }
 

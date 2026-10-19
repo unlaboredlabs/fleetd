@@ -18,7 +18,6 @@ use fleetd_contracts::steer::{
     Steer, SteerBy, SteerEventData, SteerId, SteerMode, SteerReceipt, SteerStage, SteerTarget,
 };
 use fleetd_contracts::tasks::{Task, TaskState};
-use serde_json::json;
 
 use crate::hub::api::{Caller, Hub, ToolError, allows, require};
 use crate::hub::executor::Executors;
@@ -603,6 +602,7 @@ fn summary(steer: &Steer) -> String {
 }
 
 fn emit(hub: &Hub, steer: &Steer, kind: HubEventType, extra: Option<serde_json::Value>) {
+    let queued = kind == HubEventType::SteerQueued;
     let data = SteerEventData {
         steer_id: steer.id.clone(),
         workstream_id: steer.workstream_id.clone(),
@@ -613,18 +613,16 @@ fn emit(hub: &Hub, steer: &Steer, kind: HubEventType, extra: Option<serde_json::
         stage: steer.stage,
         how: steer.how,
         excerpt: steer.ack_excerpt.clone(),
+        text: queued.then(|| js_take(&steer.text, 120).to_owned()),
+        mode: queued.then_some(steer.mode),
+        by: queued.then(|| steer.by.clone()),
+        reason: steer
+            .detail
+            .as_ref()
+            .filter(|_| kind == HubEventType::SteerFailed)
+            .map(|r| r.to_string()),
     };
     let mut data = serde_json::to_value(data).unwrap_or_default();
-    if kind == HubEventType::SteerQueued {
-        data["text"] = json!(js_take(&steer.text, 120));
-        data["mode"] = json!(steer.mode);
-        data["by"] = json!(steer.by);
-    }
-    if let Some(reason) = &steer.detail
-        && kind == HubEventType::SteerFailed
-    {
-        data["reason"] = json!(reason);
-    }
     if let (Some(extra), Some(map)) = (extra, data.as_object_mut()) {
         map.extend(extra.as_object().cloned().unwrap_or_default());
     }
