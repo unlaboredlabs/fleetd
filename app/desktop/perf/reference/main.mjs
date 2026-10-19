@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { app, BrowserWindow } from "electron";
 
 const PAINTS = `new Promise((resolve) => {
-  const read = () => Object.fromEntries(performance.getEntriesByType("paint").map((e) => [e.name, performance.timeOrigin + e.startTime]));
+  const read = () => ({ ...Object.fromEntries(performance.getEntriesByType("paint").map((e) => [e.name, performance.timeOrigin + e.startTime])), navigationStart: performance.timeOrigin });
   const found = read();
   if (found["first-contentful-paint"] !== undefined) return resolve(found);
   new PerformanceObserver(() => {
@@ -22,13 +22,14 @@ void app.whenReady().then(() => {
     show: false,
     webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, spellcheck: false },
   });
+  const created = Date.now();
   win.once("ready-to-show", () => {
     const shown = Date.now();
     win.show();
     void win.webContents.executeJavaScript(PAINTS).then((/** @type {Record<string, number>} */ paints) => {
       const fcp = paints["first-contentful-paint"];
       console.error(
-        `FLEETD_PERF launch main_start_epoch_ms=${mainStart.toFixed(1)} first_contentful_paint_epoch_ms=${fcp?.toFixed(1) ?? "none"} ready_to_show_epoch_ms=${shown}`,
+        `FLEETD_PERF launch main_start_epoch_ms=${mainStart.toFixed(1)} first_contentful_paint_epoch_ms=${fcp?.toFixed(1) ?? "none"} ready_to_show_epoch_ms=${shown} window_created_epoch_ms=${created} load_start_epoch_ms=${paints["navigationStart"]?.toFixed(1) ?? "none"}`,
       );
     });
   });
