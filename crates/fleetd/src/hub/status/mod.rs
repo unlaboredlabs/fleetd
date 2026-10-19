@@ -5,6 +5,7 @@
 pub mod eta;
 pub mod fresh;
 pub mod headline;
+pub mod model;
 pub mod progress;
 pub mod render;
 pub mod risks;
