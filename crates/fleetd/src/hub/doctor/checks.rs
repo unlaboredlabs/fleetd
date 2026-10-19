@@ -568,7 +568,41 @@ pub fn runner_checks(machine_id: &str, info: &RunnerInfo) -> Vec<Entry> {
     };
     let mut out = vec![version, login, conformance];
     out.extend(auto_memory_check(machine_id, info));
+    out.extend(subagents_check(machine_id, info));
     out
+}
+
+/// Claude Code's own subagents are off in fleetd sessions: the probe's init and the latest session's offered no agent
+/// tool and no built-in agent fleetd's knobs remove. No line from a node that predates the check.
+fn subagents_check(machine_id: &str, info: &RunnerInfo) -> Option<Entry> {
+    let leaks = info.subagent_leaks.as_ref()?;
+    Some(if leaks.is_empty() {
+        machine_entry(
+            machine_id,
+            "claude_subagents",
+            Pass,
+            "Claude subagents off (fleetd manages agents)",
+            None,
+        )
+    } else {
+        machine_entry(
+            machine_id,
+            "claude_subagents",
+            Fail,
+            &format!(
+                "claude on {machine_id} still offers its own subagents in fleetd sessions ({}): they would run \
+                 outside fleetd's slots, so no new session starts there.",
+                leaks.join(", ")
+            ),
+            Some(manual(
+                "Install the claude version fleetd was tested with",
+                Some(format!(
+                    "claude install {}",
+                    crate::node::runner::version::TESTED
+                )),
+            )),
+        )
+    })
 }
 
 /// What the latest session's `system/init` showed of claude's auto memory, which fleetd keeps off. No line until a
@@ -1001,6 +1035,8 @@ mod tests {
             proxy_source: None,
             config_dir: None,
             auto_memory: None,
+            agent_tools: None,
+            subagent_leaks: None,
         };
         let fix = |info: Option<RunnerInfo>| {
             let entry = machine_online(&degraded, None, info.as_ref());
@@ -1090,6 +1126,8 @@ mod tests {
             proxy_source: None,
             config_dir: None,
             auto_memory: None,
+            agent_tools: None,
+            subagent_leaks: None,
         };
         let statuses = |i: &RunnerInfo| {
             runner_checks("mac", i)
@@ -1128,6 +1166,35 @@ mod tests {
         );
         let kept = memory(true);
         assert_eq!(kept.status, Warn);
+        // Subagents: a pass once a probe found none on, a failure naming them with the reinstall otherwise.
+        let subagents = |leaks: Vec<String>| {
+            runner_checks(
+                "mac",
+                &RunnerInfo {
+                    subagent_leaks: Some(leaks),
+                    ..info(Some("2.1.302"), LoginStatus::LoggedIn, Some(true))
+                },
+            )
+            .pop()
+            .unwrap()
+            .check
+        };
+        let off = subagents(vec![]);
+        assert_eq!(
+            (off.status, off.message.as_str()),
+            (Pass, "Claude subagents off (fleetd manages agents)")
+        );
+        let on = subagents(vec!["Agent".into(), "agent Explore".into()]);
+        assert_eq!(on.status, Fail);
+        assert!(
+            on.message.contains("(Agent, agent Explore)"),
+            "{}",
+            on.message
+        );
+        assert_eq!(
+            on.fix.and_then(|f| f.command).as_deref(),
+            Some("claude install 2.1.302")
+        );
         assert!(
             kept.fix
                 .unwrap()

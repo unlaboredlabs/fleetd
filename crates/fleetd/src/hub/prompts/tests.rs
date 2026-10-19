@@ -210,3 +210,56 @@ fn shipped_texts_are_not_hard_wrapped() {
         }
     }
 }
+
+/// What agents read never sends them back to the shell: prompts, and every hint, refusal and digest line the hub
+/// writes (string literals in its source), name fleetd's tools, not lead-side `fleetd` commands or their flags.
+#[test]
+fn agent_facing_texts_name_tools_not_fleetd_commands() {
+    let command = regex::Regex::new(
+        r"fleetd (task (spawn|list|status|message|cancel)|ask\b|decide\b|brief create|claim done|plan (add|edit|drop|show|milestone)|gated run|status set|change (enqueue|status)|review verdict|decisions search|inventory|workstream spawn)",
+    )
+    .unwrap();
+    let flag = regex::Regex::new(r#""[^"]*--(workstream|amend|proceeded|serves|item|steer|milestone|rec|why|context|option|sink|env-name|class|scope|task)\b"#).unwrap();
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut found = Vec::new();
+    for entry in super::registry::ENTRIES {
+        if let Some(m) = command.find(entry.default) {
+            found.push(format!("prompt {}: {}", entry.id, m.as_str()));
+        }
+    }
+    let mut dirs = vec![root.join("src/hub")];
+    while let Some(dir) = dirs.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap() {
+            let path = entry.unwrap().path();
+            let name = path.file_name().unwrap().to_string_lossy().into_owned();
+            if path.is_dir() {
+                dirs.push(path);
+                continue;
+            }
+            if !name.ends_with(".rs") || name == "tests.rs" || name.ends_with("_tests.rs") {
+                continue;
+            }
+            let text = std::fs::read_to_string(&path).unwrap();
+            // Unit tests at the end of a file may quote the old texts.
+            let code = text.split("#[cfg(test)]").next().unwrap();
+            for (n, line) in code.lines().enumerate() {
+                if line.trim_start().starts_with("//") {
+                    continue;
+                }
+                if command.is_match(line) || flag.is_match(line) {
+                    found.push(format!(
+                        "{}:{}: {}",
+                        path.strip_prefix(root).unwrap().display(),
+                        n + 1,
+                        line.trim()
+                    ));
+                }
+            }
+        }
+    }
+    assert!(
+        found.is_empty(),
+        "agent-facing texts name lead-side commands:\n{}",
+        found.join("\n")
+    );
+}

@@ -25,7 +25,7 @@ use crate::hub::store::{EventLog, HubDb, NewEvent};
 pub const QUIET_WINDOW_MS: i64 = 30_000;
 
 /// The fix text for a question the lead must decide itself.
-pub const DECIDE_YOURSELF: &str = "decide this yourself and log it with `fleetd decide`";
+pub const DECIDE_YOURSELF: &str = "decide this yourself and log it with `decide`";
 
 const UNROUTED_ASK_PREFIX: &str = "intake.route.";
 const PLAYBOOK_ASK_PREFIX: &str = "playbook.";
@@ -134,11 +134,11 @@ pub fn lead_decide_rule(input: &AskInput) -> Option<LedgerError> {
     let question_len = input.text.encode_utf16().count();
     if question_len > ASK_QUESTION_MAX {
         problems.push(format!(
-            "the question is {question_len} characters (at most {ASK_QUESTION_MAX}): ask it in one short line and put the background in --context"
+            "the question is {question_len} characters (at most {ASK_QUESTION_MAX}): ask it in one short line and put the background in context"
         ));
     }
     if options.len() < 2 {
-        problems.push("it needs 2 to 6 options, one --option per choice".to_string());
+        problems.push("it needs 2 to 6 options, one per choice".to_string());
     }
     let unlabelled: Vec<&str> = options
         .iter()
@@ -173,7 +173,9 @@ pub fn lead_decide_rule(input: &AskInput) -> Option<LedgerError> {
         ));
     }
     if input.recommendation_why.is_none() {
-        problems.push("it has no --why (one line: why you recommend that option)".to_string());
+        problems.push(
+            "it has no recommendationWhy (one line: why you recommend that option)".to_string(),
+        );
     }
     if problems.is_empty() {
         return None;
@@ -187,9 +189,8 @@ pub fn lead_decide_rule(input: &AskInput) -> Option<LedgerError> {
     ))
 }
 
-/// `fleetd ask …` with every value the lead gave and `<…>` where something is missing.
+/// The `ask` tool's arguments with every value the lead gave and `<…>` where something is missing.
 fn decide_fix(input: &AskInput) -> String {
-    let quote = |text: &str| format!("'{}'", text.replace('\'', "'\\''"));
     let mut keys: Vec<String> = input
         .options
         .iter()
@@ -209,64 +210,42 @@ fn decide_fix(input: &AskInput) -> String {
     } else {
         input.text.to_string()
     };
-    let mut parts = vec![
-        "fleetd ask".to_string(),
-        format!("--key {}", input.key),
-        format!("--class {}", input.class),
-        format!("--text {}", quote(&text)),
-        format!(
-            "--context {}",
-            quote(
-                input
-                    .context
-                    .as_deref()
-                    .unwrap_or("<1-2 lines of background>")
-            )
-        ),
-    ];
-    for key in &keys {
-        let given = input
-            .options
-            .iter()
-            .flatten()
-            .find(|o| o.key.as_str() == key);
-        let label = given
-            .and_then(|o| o.label.as_ref().map(|l| l.to_string()))
-            .unwrap_or_else(|| format!("<short label, e.g. {}>", humanize_key(key)));
-        let consequence = given
-            .and_then(|o| o.consequence.as_ref().map(|c| c.to_string()))
-            .unwrap_or_else(|| "<what happens if the human picks this>".into());
-        parts.push(format!(
-            "--option {}",
-            quote(&format!("{key}|{label}|{consequence}"))
-        ));
-    }
-    parts.push(format!(
-        "--rec {}",
-        input
-            .recommendation
-            .as_deref()
-            .map_or_else(|| keys[0].clone(), str::to_string)
-    ));
-    parts.push(format!(
-        "--why {}",
-        quote(
-            input
-                .recommendation_why
-                .as_deref()
-                .unwrap_or("<one line: why you recommend it>")
-        )
-    ));
+    let options: Vec<serde_json::Value> = keys
+        .iter()
+        .map(|key| {
+            let given = input
+                .options
+                .iter()
+                .flatten()
+                .find(|o| o.key.as_str() == key);
+            let label = given
+                .and_then(|o| o.label.as_ref().map(|l| l.to_string()))
+                .unwrap_or_else(|| format!("<short label, e.g. {}>", humanize_key(key)));
+            let consequence = given
+                .and_then(|o| o.consequence.as_ref().map(|c| c.to_string()))
+                .unwrap_or_else(|| "<what happens if the human picks this>".into());
+            serde_json::json!({ "key": key, "label": label, "consequence": consequence })
+        })
+        .collect();
+    let mut args = serde_json::json!({
+        "key": input.key.to_string(),
+        "class": input.class.to_string(),
+        "text": text,
+        "context": input.context.as_deref().unwrap_or("<1-2 lines of background>"),
+        "options": options,
+        "recommendation": input.recommendation.as_deref().map_or_else(|| keys[0].clone(), str::to_string),
+        "recommendationWhy": input.recommendation_why.as_deref().unwrap_or("<one line: why you recommend it>"),
+    });
     if input.blocks.as_str() != "nothing" {
-        parts.push(format!("--blocks {}", quote(&input.blocks)));
+        args["blocks"] = input.blocks.to_string().into();
     }
     if input.proceeded_on_rec {
-        parts.push("--proceeded".into());
+        args["proceededOnRec"] = true.into();
     }
     if let Some(w) = &input.workstream_id {
-        parts.push(format!("--workstream {w}"));
+        args["workstreamId"] = w.to_string().into();
     }
-    format!("Send it again as: {}", parts.join(" "))
+    format!("Call `ask` again with: {args}")
 }
 
 /// Step 1 of the ask path.
@@ -286,9 +265,7 @@ pub fn validate_ask(input: &AskInput) -> Option<LedgerError> {
                 "\"{}\" is not something fleetd asks the human about (only product, money, credential, irreversible): {DECIDE_YOURSELF}.",
                 input.class
             ),
-            format!(
-                "Run `fleetd decide --key {key} --value <your choice> --why <reason>` and carry on."
-            ),
+            format!("Call `decide` with key {key}, your choice as value and why, and carry on."),
         ));
     };
     if input.kind == AskKind::Decide
@@ -299,26 +276,26 @@ pub fn validate_ask(input: &AskInput) -> Option<LedgerError> {
     {
         return Some(LedgerError::invalid_fix(
             "A decide ask needs a recommendation.",
-            "Add --rec with what you would choose.",
+            "Add a recommendation with what you would choose.",
         ));
     }
     if input.kind == AskKind::Secret {
         let Some(sink) = input.sink.as_deref() else {
             return Some(LedgerError::invalid_fix(
                 "A secret ask needs a sink.",
-                "Add --sink env:<machine>:<path> or file:<machine>:<path>.",
+                "Add a sink: env:<machine>:<path> or file:<machine>:<path>.",
             ));
         };
         if class == AskClass::Product {
             return Some(LedgerError::invalid_fix(
                 "A secret is not a product call.",
-                "File it with --class credential.",
+                "File it with class credential.",
             ));
         }
         if sink.starts_with("env:") && input.env_name.is_none() && secret_env_name(key).is_none() {
             return Some(LedgerError::invalid_fix(
                 format!("The key {key} names no valid environment variable."),
-                "Add --env-name with the variable the env file should hold.",
+                "Add envName with the variable the env file should hold.",
             ));
         }
     }
@@ -331,7 +308,7 @@ pub fn validate_ask(input: &AskInput) -> Option<LedgerError> {
     {
         return Some(LedgerError::invalid_fix(
             "An approve ask needs its stored command, with the same class.",
-            "Use `fleetd gated run`.",
+            "Use `gated_run`.",
         ));
     }
     if let Some(verify) = &input.verify {

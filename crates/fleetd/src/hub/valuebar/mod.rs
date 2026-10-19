@@ -168,7 +168,7 @@ impl ValueBar {
         else {
             return Err(not_found(
                 format!("No task {} in this project.", verdict.task_id),
-                Some("Pass --task with your own task id."),
+                Some("Pass taskId with your own task id."),
             ));
         };
         if task.kind != TaskKind::Review {

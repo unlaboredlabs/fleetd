@@ -284,7 +284,7 @@ async fn fails_while_the_file_is_missing_then_passes_and_marks_the_workstream_do
             "  done:0 (on lab-a: `test -f docs/x.md` exits 0): fail, exit 1",
             "    > `test -f docs/x.md` in /w/p1 exited 1 (expected 0)",
             "    > checked /w/p1",
-            "  next: fix what failed (e.g. a task with --serves done:0), then `fleetd claim done --workstream W1` again.",
+            "  next: fix what failed (e.g. a task with serves done:0), then `claim_done` {workstreamId: \"W1\"} again.",
         ]
         .join("\n")
     );
