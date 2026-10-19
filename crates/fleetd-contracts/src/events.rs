@@ -418,7 +418,7 @@ pub struct WorkstreamEventData {
     pub by: Option<String>,
 }
 
-/// `ask.created`, `ask.auto`, `ask.answered`, `ask.undone`, `ask.delivered`.
+/// `ask.created`, `ask.auto`, `ask.closed`, `ask.answered`, `ask.undone`, `ask.delivered`.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]

@@ -70,7 +70,7 @@ pub fn hub_event_data_document() -> Value {
         data!(ProjectAddFailedData: ProjectAddFailed);
         data!(WorkstreamEventData: WorkstreamCreated, WorkstreamRunning, WorkstreamState, WorkstreamDone);
         data!(WorkstreamNoteData: WorkstreamNote);
-        data!(AskEventData: AskCreated, AskAuto, AskAnswered, AskUndone, AskDelivered);
+        data!(AskEventData: AskCreated, AskAuto, AskClosed, AskAnswered, AskUndone, AskDelivered);
         data!(TaskEventData: TaskQueued, TaskStarted, TaskCompleted, TaskFailed, TaskCancelled, TaskOutOfArea);
         data!(ClaimEventData: ClaimPassed, ClaimFailed);
         data!(TrainEventData: ChangeQueued, ChangeReady, ChangeNeedsRebase, ChangeCiFailed, ChangeRefused, PrMerged,
