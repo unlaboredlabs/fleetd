@@ -18,6 +18,8 @@ const ORDER_PREFIXES = ["workstream.", "task.", "change.", "claim.", "ask.", "st
 const ORDER_TYPES = new Set(["pr.merged", "review.verdict", "lead.started", "lead.woken", "batch.ready"]);
 const ASK_TYPES = new Set(["batch.ready", "decision.recorded", "gated.ran"]);
 const STATUS_TYPES = new Set(["ci.main", "github.drift", "source.stale", "source.fresh", "digest.ready"]);
+/** Status's health strip shows machines (online, slept, last seen) and claude usage too. */
+const STATUS_PREFIXES = ["machine.", "usage."];
 const TIME_PREFIXES = ["task.", "thread.", "workstream.", "lead.", "change.", "pr."];
 
 const startsWithAny = (type: string, prefixes: readonly string[]): boolean => prefixes.some((p) => type.startsWith(p));
@@ -38,6 +40,7 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
     out.push(workstreamId === undefined ? { tool: "steers_list" } : { tool: "steers_list", where: { workstreamId } });
   }
   if (shapesOrders || STATUS_TYPES.has(type)) out.push({ tool: "status_get" }, { tool: "plan_get" });
+  else if (startsWithAny(type, STATUS_PREFIXES)) out.push({ tool: "status_get" });
   if (startsWithAny(type, TIME_PREFIXES)) {
     out.push({ tool: "time_spans" }, { tool: "time_breakdown" }, { tool: "time_insights" });
   }

@@ -7,7 +7,8 @@ import { AppFrame, Button, TopBar } from "../../ui";
 import { useNeedsYouSource } from "../inbox";
 import { openPalette, PaletteHost, useCommands, type Command } from "../palette";
 import { ProjectsHost } from "../projects";
-import { useEscape, useMainProcess, useMenuState, useModHeld, useNotifications } from "./effects";
+import { quietNow, useEscape, useMainProcess, useMenuState, useModHeld, useNotifications } from "./effects";
+import { postDigest, useStatusDigest } from "../status/digest";
 import { useHubState } from "./hubFeed";
 import { InboxPanel } from "./InboxPanel";
 import { leadLaneId, selectBoard, selectInbox, selectMachines, selectNeedsYouCount, selectProjects } from "../../src/data/selectors";
@@ -59,6 +60,7 @@ export function Shell() {
   useMainProcess();
   useMenuState();
   useNotifications(hub?.phase === "live");
+  useStatusDigest(postDigest, quietNow);
   useEscape(route);
   useNeedsYouSource();
 

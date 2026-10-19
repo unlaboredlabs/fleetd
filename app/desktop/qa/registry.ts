@@ -36,6 +36,11 @@ export const fixtures = [
   "projects-cloning",
   "projects-errors",
   "projects-machines",
+  // F6: the Status view's own states (fixtures/status).
+  "status-stale",
+  "status-planning",
+  "status-legacy",
+  "status-skeleton",
 ] as const;
 export type FixtureName = (typeof fixtures)[number];
 
@@ -192,6 +197,20 @@ export const screens: readonly Screen[] = [
   },
   { id: "settings.prompts.update", route: "#/settings/prompts?prompt=lead.start&view=update", fixtures: ["settings-prompts"] },
   { id: "settings.instructions", route: "#/settings/instructions?for=devbox/storefront", fixtures: ["settings-prompts", "typical", "empty"] },
+  // F6: Status for the fleet, a project and an order: live, stale sources, planning, long text and unknown wire
+  // values, a hub without the progress model, the skeleton before the first answer, and the link down. needs-you
+  // joins once F5's card text passes the raw-text check (it flags share_snapshots / share.example.test today).
+  ...(
+    [
+      ["status.fleet", "#/status"],
+      ["status.project", "#/status/project/devbox/storefront"],
+      ["status.order", "#/status/order/W14"],
+    ] as const
+  ).map(([id, route]) => ({
+    id,
+    route,
+    fixtures: ["typical", "long-text", "empty", "hub-unreachable", "status-stale", "status-planning", "status-legacy", "status-skeleton"] as const,
+  })),
 ];
 
 // Platform checks that need a screen writer's work before they can pass; the owner turns theirs on when it lands.
