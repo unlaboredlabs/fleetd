@@ -291,6 +291,10 @@
   align-items: baseline;
   padding: var(--space-2) var(--pad) 0;
 }
+/* A long message's next block continues the one above, with no gap. */
+.rowMore {
+  padding-top: var(--space-2);
+}
 .rowLast {
   padding-bottom: var(--space-4);
 }

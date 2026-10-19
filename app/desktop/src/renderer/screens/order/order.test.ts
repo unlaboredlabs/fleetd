@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { sendModeFor, type KeyLike } from "./composer";
 import type { AgentLane, HubEvent, Steer, TailItem } from "./contracts";
-import { buildConversation, entryIndexAt, fanOut, foldLabel, mentions, rollup, systemHeadline, type ConversationInput } from "./conversation";
+import { buildConversation, entryIndexAt, splitBlocks, fanOut, foldLabel, mentions, rollup, systemHeadline, type ConversationInput } from "./conversation";
 import { jumpFromHash } from "./data";
 import { doneRows, doneSummary } from "./doneWhen";
 import { clock } from "./format";
@@ -140,7 +140,7 @@ describe("the conversation", () => {
           ev(3, "03:02", "pr.merged", { prNumber: 211 }),
         ],
         leadWorking: true,
-        streaming: { messageId: "m9", text: "You approved both of my" },
+        streamed: [{ messageId: "m9", text: "You approved both of my" }],
       }),
     );
     expect(conv[1]).toMatchObject({ kind: "events", text: "T31 started, T33 started, #211 merged" });
@@ -148,9 +148,29 @@ describe("the conversation", () => {
     expect(conv[4]).toMatchObject({ kind: "say", streaming: true, text: "You approved both of my" });
   });
 
-  it("marks a message the hub cut at 2,000 characters", () => {
-    const long = `${"x".repeat(1999)}…`;
-    expect(buildConversation(input({ tail: [msg("01:00", "assistant", long)] }))[0]).toMatchObject({ clipped: true });
+  it("shows a message the hub cut at 2,000 characters in full when it streamed in, else says it was cut", () => {
+    const full = `${"x".repeat(2500)} the end`;
+    const cut = `${full.slice(0, 1999)}…`;
+    expect(buildConversation(input({ tail: [msg("01:00", "assistant", cut)] }))[0]).toMatchObject({ clipped: true });
+    const conv = buildConversation(input({ tail: [msg("01:00", "assistant", cut)], streamed: [{ messageId: "m1", text: full }] }));
+    expect(conv).toHaveLength(1);
+    expect(conv[0]).toMatchObject({ kind: "say", text: full });
+    expect(conv[0]).not.toHaveProperty("clipped");
+  });
+
+  it("cuts a long message into rows at blank lines, never inside a code fence, keeping earlier rows as it grows", () => {
+    const para = (n: number) => Array.from({ length: 10 }, (_, i) => `line ${n}.${i}`).join("\n");
+    const text = [para(1), "", para(2), "", "```sh", ...Array.from({ length: 100 }, (_, i) => `echo ${i}`), "```", "", para(3), "", para(4)].join("\n");
+    const blocks = splitBlocks(text, 40);
+    expect(blocks.length).toBeGreaterThan(2);
+    for (const b of blocks) expect((b.match(/^```/gm) ?? []).length % 2).toBe(0);
+    expect(blocks.join("\n").replace(/\n```\n```sh/g, "")).toBe(text);
+    const grown = splitBlocks(`${text}\nmore`, 40);
+    expect(grown.slice(0, -1)).toEqual(blocks.slice(0, -1));
+    const conv = buildConversation(input({ streamed: [{ messageId: "m", text }], leadWorking: true }));
+    expect(conv[0]).toMatchObject({ kind: "say", author: { kind: "lead" } });
+    expect(conv.slice(1).every((e) => e.kind === "more")).toBe(true);
+    expect(conv.at(-1)).toMatchObject({ streaming: true });
   });
 
   it("keeps keys stable as the log grows, so measured rows survive", () => {

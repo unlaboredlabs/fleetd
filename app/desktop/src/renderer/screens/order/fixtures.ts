@@ -4,9 +4,9 @@
 // defaults and with project overrides; long titles and criteria; 20+ agents; and a 20k-item log for the scroll
 // budget. No personal data: acme/storefront on devbox and buildbox.
 
-import type { AgentLane, CheckSpec, Claim, PromptSummary, SessionPrompt, Steer, TailItem } from "./contracts";
+import type { AgentLane, CheckSpec, Claim, LiveText, PromptSummary, SessionPrompt, Steer, TailItem } from "./contracts";
 
-export type OrderFixture = "typical" | "conversation" | "long-text" | "many-agents" | "empty" | "huge-log";
+export type OrderFixture = "typical" | "conversation" | "long-text" | "many-agents" | "empty" | "huge-log" | "huge-stream";
 
 const T = (m: number, s = 0) => new Date(Date.UTC(2026, 9, 19, 8, m, s)).toISOString();
 const PROJECT = { machineId: "devbox", projectId: "p-storefront" };
@@ -74,6 +74,7 @@ const STREAMING =
 function tail(fixture: OrderFixture): TailItem[] {
   if (fixture === "empty") return [];
   if (fixture === "huge-log") return hugeLog(20_000);
+  if (fixture === "huge-stream") return [];
   const items: TailItem[] = [
     { kind: "message", at: T(1), role: "user", text: "You are the lead of project storefront (devbox/p-storefront) in fleetd.\n\nHow you work:\n- You never write code yourself." },
     { kind: "message", at: T(3), role: "assistant", text: "Froze the brief for **W1**: two checks, tier M. Starting T1 as the writer." },
@@ -102,6 +103,17 @@ function hugeLog(n: number): TailItem[] {
     const at = new Date(Date.UTC(2026, 9, 19, 0, 0, 0) + i * 1000).toISOString();
     if (i % 3 === 0) out.push({ kind: "message", at, role: "assistant", text: i % 9 === 0 ? `Step ${i}: ran **pnpm test**, \`${i}\` passed.\n\n- one\n- two` : `Line ${i} of the lead's log, plain words that wrap when the pane is narrow.` });
     else out.push({ kind: "action", at, action: { at, kind: "command", status: "completed", summary: `pnpm test --shard ${i}`, failed: false } });
+  }
+  return out;
+}
+
+/** 20k lines streamed by the lead, a new message every 400 lines (the shape of E3b's conversation-20k). */
+function streamedLines(n: number): LiveText[] {
+  const runs = ["ok   storefront-checkout > formats receipt dates for en-GB", "run  pnpm --filter storefront build", "edit src/checkout/receipt/formatReceiptDate.ts"];
+  const out: LiveText[] = [];
+  for (let line = 1; line <= n; line++) {
+    const text = line % 25 === 0 ? `## Step ${line / 25}` : `${line}  ${runs[line % runs.length] ?? ""}`;
+    out.push({ laneId: "lead-storefront", messageId: `stream-${Math.floor(line / 400)}`, append: `${text}\n` });
   }
   return out;
 }
@@ -291,7 +303,12 @@ export function orderCalls(fixture: OrderFixture) {
     steers_list: { steers: steers(fixture).reverse() },
     session_prompt_get: { session: sessionPrompt(fixture !== "typical") },
     prompts_list: { prompts: REGISTRY },
-    /** Live text for the lead: the streaming message. */
-    streaming: fixture === "conversation" || fixture === "typical" ? { laneId: "lead-storefront", messageId: "m-live", append: STREAMING } : undefined,
+    /** Live text for the lead: the streaming message, or 20k streamed lines. */
+    streaming:
+      fixture === "huge-stream"
+        ? streamedLines(20_000)
+        : fixture === "conversation" || fixture === "typical"
+          ? [{ laneId: "lead-storefront", messageId: "m-live", append: STREAMING }]
+          : [],
   };
 }

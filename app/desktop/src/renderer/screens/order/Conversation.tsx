@@ -139,6 +139,19 @@ const Row = memo(function Row(props: { entry: Entry; open: boolean; last: boolea
           </Text>
         </div>
       );
+    case "more":
+      return (
+        <div className={cx(s.row, s.rowMore, last)} data-entry="more">
+          <span />
+          <span />
+          <div className={s.body}>
+            <Markdown source={e.text} />
+            {e.streaming ? <span className={s.streaming}>Still writing…</span> : null}
+            {e.clipped ? <span className={s.streaming}>The hub sends a message’s first 2,000 characters; the rest is in the thread.</span> : null}
+            {e.receipt ? <ReceiptLine receipt={e.receipt} onAct={onAct} /> : null}
+          </div>
+        </div>
+      );
     case "rollup":
       return (
         <div className={cx(s.indented, last)} data-entry="rollup">
@@ -184,7 +197,7 @@ export function Conversation(
 
   // The streaming message grows in place; VirtualList follows new rows, this follows the growth.
   const lastEntry = entries.at(-1);
-  const growing = lastEntry?.kind === "say" && lastEntry.streaming ? lastEntry.text.length : 0;
+  const growing = (lastEntry?.kind === "say" || lastEntry?.kind === "more") && lastEntry.streaming ? lastEntry.text.length + entries.length : 0;
   useEffect(() => {
     const v = virtualizer.current;
     const el = v?.scrollElement;

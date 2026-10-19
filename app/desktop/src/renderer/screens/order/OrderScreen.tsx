@@ -97,10 +97,10 @@ export function OrderView(props: { data: OrderData; actions: OrderActions; platf
         leadWorking,
         steers: data.steers,
         sending: data.sending,
-        ...(data.streaming ? { streaming: data.streaming } : {}),
+        streamed: data.streamed,
         lanes: data.lanes,
       }),
-    [data.tail, w, data.events, leadWorking, data.steers, data.sending, data.streaming, data.lanes],
+    [data.tail, w, data.events, leadWorking, data.steers, data.sending, data.streamed, data.lanes],
   );
   // A jump to the lead's transcript scrolls the log; one to an agent's opens its steer box at the item.
   const focus = data.focus;

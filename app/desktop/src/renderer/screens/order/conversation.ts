@@ -45,7 +45,16 @@ export type Entry =
   | { readonly kind: "working"; readonly key: string; readonly calls: readonly Call[] }
   | { readonly kind: "others"; readonly key: string; readonly at: string; readonly n: number; readonly about: string }
   | { readonly kind: "events"; readonly key: string; readonly at: string; readonly text: string }
-  | { readonly kind: "rollup"; readonly key: string; readonly text: string };
+  | { readonly kind: "rollup"; readonly key: string; readonly text: string }
+  /** The next block of a long message, its own row so a 20k-line message scrolls like 20k short ones. */
+  | {
+      readonly kind: "more";
+      readonly key: string;
+      readonly text: string;
+      readonly receipt?: Receipt;
+      readonly streaming?: boolean;
+      readonly clipped?: boolean;
+    };
 
 /** The order ids ("W12") a text names, as whole words. */
 export function mentions(text: string): string[] {
@@ -127,6 +136,11 @@ export function systemHeadline(text: string): string {
 const TAIL_TEXT = 2000;
 const isClipped = (text: string): boolean => text.length >= TAIL_TEXT - 1 && text.endsWith("…");
 
+export interface Streamed {
+  readonly messageId: string;
+  readonly text: string;
+}
+
 export interface ConversationInput {
   /** The lead's tail, oldest first. */
   readonly tail: readonly TailItem[];
@@ -138,8 +152,8 @@ export interface ConversationInput {
   /** This order's steers, to the lead and to its tasks, by anyone. */
   readonly steers: readonly Steer[];
   readonly sending: readonly Sending[];
-  /** The lead's message as it streams in, when the tail doesn't hold it yet. */
-  readonly streaming?: { readonly messageId: string; readonly text: string };
+  /** The lead's messages as they streamed in on the live feed, oldest first: in full, where the tail cuts them. */
+  readonly streamed?: readonly Streamed[];
   readonly lanes: readonly AgentLane[];
 }
 
@@ -182,6 +196,8 @@ export function buildConversation(input: ConversationInput): Entry[] {
   items.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
 
   const out: Entry[] = [];
+  const streamed = input.streamed ?? [];
+  const used = new Set<string>();
   let calls: ActionItem[] = [];
   let foldStart: string | undefined;
   const seen = new Map<string, number>();
@@ -253,13 +269,17 @@ export function buildConversation(input: ConversationInput): Entry[] {
       foldStart = item.at;
       out.push({ kind: "system", key: keyFor("system", item.at), at: item.at, headline: systemHeadline(item.text), text: item.text });
     } else {
+      // The live feed has it in full when it streamed while the view was open; the tail may cut it.
+      const head = isClipped(item.text) ? item.text.slice(0, -1) : item.text;
+      const full = streamed.find((m) => !used.has(m.messageId) && (m.text === item.text || (head.length > 0 && m.text.startsWith(head))));
+      if (full) used.add(full.messageId);
       out.push({
         kind: "say",
         key: keyFor("say", item.at),
         at: item.at,
         author: { kind: "lead" },
-        text: item.text,
-        ...(isClipped(item.text) ? { clipped: true } : {}),
+        text: full?.text ?? item.text,
+        ...(full === undefined && isClipped(item.text) ? { clipped: true } : {}),
       });
     }
   }
@@ -271,10 +291,12 @@ export function buildConversation(input: ConversationInput): Entry[] {
     flush();
   }
 
-  const live = input.streaming;
-  if (live && live.text.trim() !== "" && !tail.some((i) => i.kind === "message" && i.role === "assistant" && i.text === live.text)) {
-    out.push({ kind: "say", key: `live:${live.messageId}`, at: "", author: { kind: "lead" }, text: live.text, streaming: true });
-  }
+  // Streamed messages the tail doesn't hold yet; the newest is still arriving while the lead works.
+  const fresh = streamed.filter((m) => !used.has(m.messageId) && m.text.trim() !== "");
+  fresh.forEach((m, i) => {
+    const streaming = input.leadWorking && i === fresh.length - 1;
+    out.push({ kind: "say", key: `live:${m.messageId}`, at: "", author: { kind: "lead" }, text: m.text, ...(streaming ? { streaming } : {}) });
+  });
 
   for (const s of input.sending) {
     out.push({
@@ -290,6 +312,51 @@ export function buildConversation(input: ConversationInput): Entry[] {
 
   const roll = rollup(input.lanes);
   if (roll !== undefined) out.push({ kind: "rollup", key: "rollup", text: roll });
+  return out.flatMap(split);
+}
+
+/** A long message as several rows: the first keeps its time and author, the last its receipt and flags. */
+function split(e: Entry): Entry[] {
+  if (e.kind !== "say") return [e];
+  const blocks = splitBlocks(e.text);
+  if (blocks.length === 1) return [e];
+  const { receipt: r, streaming, clipped, ...head } = e;
+  const flags = { ...(r ? { receipt: r } : {}), ...(streaming ? { streaming } : {}), ...(clipped ? { clipped } : {}) };
+  return blocks.map((text, i): Entry => {
+    if (i === 0) return { ...head, text };
+    return { kind: "more", key: `${e.key}#${i}`, text, ...(i === blocks.length - 1 ? flags : {}) };
+  });
+}
+
+const FENCE = /^\s*(`{3,}|~{3,})/;
+
+/**
+ * Markdown cut into blocks of about `max` lines, at blank lines where it can, never inside a code fence (a fence
+ * that runs long is closed and reopened). Only the last block changes as text is appended, so earlier rows keep
+ * their keys and measured heights.
+ */
+export function splitBlocks(text: string, max = 40): string[] {
+  const lines = text.split("\n");
+  if (lines.length <= max + max / 2) return [text];
+  const out: string[] = [];
+  let cur: string[] = [];
+  let fence: { open: string; marker: string } | undefined;
+  for (const line of lines) {
+    const f = FENCE.exec(line)?.[1];
+    if (f !== undefined) fence = fence === undefined ? { open: line, marker: f } : line.trim().startsWith(fence.marker) ? undefined : fence;
+    cur.push(line);
+    const atBreak = fence === undefined && line.trim() === "";
+    if ((cur.length >= max && atBreak) || cur.length >= 2 * max) {
+      if (fence === undefined) {
+        out.push(cur.join("\n"));
+        cur = [];
+      } else {
+        out.push([...cur, fence.marker].join("\n"));
+        cur = [fence.open];
+      }
+    }
+  }
+  if (cur.length > 0) out.push(cur.join("\n"));
   return out;
 }
 

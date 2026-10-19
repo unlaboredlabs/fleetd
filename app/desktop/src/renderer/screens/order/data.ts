@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import type { HubFrame } from "../../../shared/hub";
 import type { AgentLane, CheckSpec, Claim, HubEvent, LiveText, PrRef, Steer, SteerMode, SteerTarget, TailItem, ThreadRef } from "./contracts";
+import type { Streamed } from "./conversation";
 import { mergeSteer, type Sending } from "./receipts";
 
 export interface OrderData {
@@ -29,7 +30,8 @@ export interface OrderData {
   readonly tailError?: string | undefined;
   readonly steers: readonly Steer[];
   readonly events: readonly HubEvent[];
-  readonly streaming?: { readonly messageId: string; readonly text: string };
+  /** The lead's messages as they streamed in, oldest first (the tail cuts long ones at 2,000 characters). */
+  readonly streamed: readonly Streamed[];
   readonly sending: readonly Sending[];
   /** A transcript item to open at (#/order/<id>?thread=&item=), once the lead's window around it has loaded. */
   readonly focus?: { readonly threadId: string; readonly at?: string; readonly missing?: boolean };
@@ -92,6 +94,9 @@ interface State extends OrderData {
   readonly names: ReadonlyMap<string, string>;
 }
 
+// Streamed messages kept per view: plenty for a 20k-line run, bounded for a session left open for days.
+const MAX_STREAMED = 400;
+
 const tailKey = (i: TailItem) => (i.kind === "message" ? `m${i.at}${i.role}${i.text.slice(0, 64)}` : `a${i.at}${i.action.summary}`);
 
 function mergeTail(old: readonly TailItem[], newestFirst: readonly TailItem[]): readonly TailItem[] {
@@ -129,8 +134,12 @@ function reduce(s: State, a: Action): State {
     }
     case "error":
       return { ...s, status: { error: a.message } };
-    case "tail":
-      return { ...s, tail: mergeTail(s.tail, a.items), tailError: undefined };
+    case "tail": {
+      // A message the tail now holds in full needs no streamed copy; a cut one keeps it.
+      const whole = new Set(a.items.flatMap((i) => (i.kind === "message" ? [i.text] : [])));
+      const streamed = s.streamed.filter((m) => !whole.has(m.text));
+      return { ...s, tail: mergeTail(s.tail, a.items), tailError: undefined, streamed: streamed.length === s.streamed.length ? s.streamed : streamed };
+    }
     case "tailError":
       return { ...s, tailError: a.message };
     case "steers":
@@ -141,17 +150,21 @@ function reduce(s: State, a: Action): State {
       return { ...s, names: a.names, projectName: projectName(a.names, s.projectRef) };
     case "live": {
       const lead = s.lead;
-      let streaming = s.streaming;
+      let streamed = s.streamed;
       for (const t of a.text) {
         if (lead === undefined || t.laneId !== lead.laneId) continue;
-        streaming = streaming?.messageId === t.messageId ? { messageId: t.messageId, text: streaming.text + t.append } : { messageId: t.messageId, text: t.append };
+        const last = streamed.at(-1);
+        streamed =
+          last?.messageId === t.messageId
+            ? [...streamed.slice(0, -1), { messageId: t.messageId, text: last.text + t.append }]
+            : [...streamed.slice(-(MAX_STREAMED - 1)), { messageId: t.messageId, text: t.append }];
       }
       const live = new Map(a.lanes.map((l) => [l.laneId, l]));
       const patch = (l: AgentLane): AgentLane => {
         const f = live.get(l.laneId) as AgentLane["live"];
         return f ? { ...l, status: f.status, live: f } : l;
       };
-      return { ...s, lanes: s.lanes.map(patch), ...(lead ? { lead: patch(lead) } : {}), ...(streaming ? { streaming } : {}) };
+      return { ...s, lanes: s.lanes.map(patch), ...(lead ? { lead: patch(lead) } : {}), streamed };
     }
     case "sending":
       return { ...s, sending: [...s.sending, a.s] };
@@ -181,6 +194,7 @@ const initial = (workstreamId: string): State => ({
   steers: [],
   events: [],
   sending: [],
+  streamed: [],
   names: new Map(),
 });
 
@@ -314,13 +328,13 @@ export function useOrder(workstreamId: string, jump?: Jump): [OrderData, OrderAc
 export function orderFromCalls(
   workstreamId: string,
   calls: { order_get: unknown; workstream_get: unknown; thread_tail: unknown; steers_list: unknown },
-  live?: LiveText,
+  live: readonly LiveText[] = [],
 ): OrderData {
   const brief = (calls.workstream_get as WorkstreamGet).workstream.brief?.doneWhen;
   let s = reduce(initial(workstreamId), { t: "order", out: calls.order_get as OrderGet, ...(brief ? { brief } : {}) });
   s = reduce(s, { t: "projects", names: new Map([[`${s.projectRef?.machineId ?? ""}/${s.projectRef?.projectId ?? ""}`, "storefront"]]) });
   s = reduce(s, { t: "tail", items: (calls.thread_tail as { items: readonly TailItem[] }).items });
   s = reduce(s, { t: "steers", steers: (calls.steers_list as { steers: readonly Steer[] }).steers });
-  if (live) s = reduce(s, { t: "live", lanes: [], text: [live] });
+  if (live.length > 0) s = reduce(s, { t: "live", lanes: [], text: live });
   return s;
 }
