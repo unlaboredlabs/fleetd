@@ -5,10 +5,10 @@ import { useState } from "react";
 import { CallError } from "../../src/data/queries";
 import { useToolQuery } from "../../src/data/react";
 import { Button, Code, Dialog, IdChip, Text, Tooltip } from "../../ui";
-import { Message } from "./Conversation";
+import { Message } from "./text";
 import type { PromptSummary, SessionPrompt, ThreadRef } from "../../../shared/contracts";
 import { toldView, type ToldGroup, type ToldWho } from "./told";
-import s from "./order.module.css";
+import s from "./chat.module.css";
 
 const noPrompts: readonly PromptSummary[] = [];
 
