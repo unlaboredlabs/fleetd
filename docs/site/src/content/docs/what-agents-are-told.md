@@ -207,6 +207,8 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 | `task.brief.read` | every read task attempt | changes no files (prompt only); does the task itself, no subagents |
 | `task.brief.review` | every review, verifier and judge task attempt | changes no files (prompt only); does the task itself, no subagents; ends with one review verdict (the \`report\` tool) |
 | `task.train_rebase` | per PR the train could not rebase |  |
+| `task.pause` | per running agent above the new max when a person lowers it and pauses the extras |  |
+| `task.resume` | per paused agent when a slot frees for it |  |
 | `task.train_ci_failed` | per PR whose CI failed or timed out |  |
 
 ### Reviews and checks
@@ -236,6 +238,7 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 | `digest.tasks.running` | each digest, per running task |  |
 | `digest.tasks.idle` | each digest, per idle task |  |
 | `digest.tasks.queued` | each digest, per queued task |  |
+| `digest.agents` | each digest, first line of its tasks section |  |
 | `digest.tasks.ended` | each digest, per task ended since the last wake |  |
 | `digest.train.repo` | each digest, per train |  |
 | `digest.train.merged` | each digest, per merge since the last wake |  |
@@ -260,6 +263,7 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 | `wake.agent_steer` | per steer\_send to a task, at the lead's next wake (debounced, never an interrupt) |  |
 | `wake.order_refs` | per new order with references or attachments |  |
 | `wake.order_stopped` | per order\_stop | does no more work on a stopped order (prompt only) |
+| `wake.cap_raised` | when a person raises the project's max agents |  |
 | `wake.runnable` | when a slot frees, the lead is idle and approved, unblocked work no task has taken waits; once per change in that work | the lead decides what to start; the hub never spawns (prompt only) |
 | `wake.order_idle` | when the lead ends a turn with a frozen order and nothing under way |  |
 | `wake.scheduled_late` | a wake\_set message that fired late |  |

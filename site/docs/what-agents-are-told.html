@@ -361,6 +361,16 @@ tied to code: a description must match its tool, and a <code dir="auto">next:</c
 <td></td>
 </tr>
 <tr>
+<td><code dir="auto">task.pause</code></td>
+<td>per running agent above the new max when a person lowers it and pauses the extras</td>
+<td></td>
+</tr>
+<tr>
+<td><code dir="auto">task.resume</code></td>
+<td>per paused agent when a slot frees for it</td>
+<td></td>
+</tr>
+<tr>
 <td><code dir="auto">task.train_ci_failed</code></td>
 <td>per PR whose CI failed or timed out</td>
 <td></td>
@@ -477,6 +487,11 @@ tied to code: a description must match its tool, and a <code dir="auto">next:</c
 <tr>
 <td><code dir="auto">digest.tasks.queued</code></td>
 <td>each digest, per queued task</td>
+<td></td>
+</tr>
+<tr>
+<td><code dir="auto">digest.agents</code></td>
+<td>each digest, first line of its tasks section</td>
 <td></td>
 </tr>
 <tr>
@@ -598,6 +613,11 @@ tied to code: a description must match its tool, and a <code dir="auto">next:</c
 <td><code dir="auto">wake.order_stopped</code></td>
 <td>per order_stop</td>
 <td>does no more work on a stopped order (prompt only)</td>
+</tr>
+<tr>
+<td><code dir="auto">wake.cap_raised</code></td>
+<td>when a person raises the project’s max agents</td>
+<td></td>
 </tr>
 <tr>
 <td><code dir="auto">wake.runnable</code></td>

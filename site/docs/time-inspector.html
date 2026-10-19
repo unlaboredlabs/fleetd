@@ -219,8 +219,8 @@ the order sooner.</li>
 <tbody>
 <tr>
 <td><code dir="auto">queue_wait</code></td>
-<td>A task waited for a slot while the fleet had free ones (its project’s share, or the slots kept for lead turns). Or a ready PR waited out a CI run it couldn’t join, because the <a href="/docs/merge-train#batches">batch</a> was full or batching was off.</td>
-<td>Raise the share or the cap with <code dir="auto">cap_set</code>. Raise <code dir="auto">FLEETD_TRAIN_BATCH_MAX</code>, or fix why batching turned off for the repo.</td>
+<td>A task waited for a slot while the fleet had free ones (its project’s max agents, or the slots kept for lead turns). Or a ready PR waited out a CI run it couldn’t join, because the <a href="/docs/merge-train#batches">batch</a> was full or batching was off.</td>
+<td>Raise the project’s max agents or the fleet cap (<code dir="auto">fleetd project set</code>). Raise <code dir="auto">FLEETD_TRAIN_BATCH_MAX</code>, or fix why batching turned off for the repo.</td>
 </tr>
 <tr>
 <td><code dir="auto">contention</code></td>
