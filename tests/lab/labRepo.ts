@@ -1,7 +1,8 @@
 // Sets up, idempotently, the lab's GitHub repo (default `unlaboredlabs/fleetd-lab`, which must already exist) and
 // clones it into the lab. Every slot shares the one repo and works in its own branch namespace (m7Train.ts NAMESPACE):
-// - main holds the seed: a README and a GitHub Actions workflow `ci` whose one check, `ci`, fails iff a file `FAIL`
-//   exists at the root, and runs for every PR except those into `noci/**`; the `seed` tag marks it, and the lab resets
+// - main holds the seed: a README, two packages (packages/alpha, packages/beta) and a GitHub Actions workflow `ci`
+//   whose one check, `ci`, fails iff a file `FAIL` exists at the root, and runs for every PR except those into
+//   `noci/**`; the `seed` tag marks it, and the lab resets
 //   a namespace's main to it after each run;
 // - squash merges only, branches deleted on merge;
 // - rulesets: `slot/*/main` (and main) require the checks `ci` and `fleetd/train`, `noci/*/main` only `fleetd/train`.
@@ -131,10 +132,16 @@ if (!listed.ok) {
   }
 }
 
-// 4. The seed on main and its tag, unless the tag exists. Admins bypass main's ruleset.
-if (gh("api", `repos/${repo}/git/ref/tags/${SEED_TAG}`).ok) {
-  console.log(`tag ${SEED_TAG} exists`);
-} else {
+// 4. The seed on main and its tag: written when the tag is missing or its files differ from these. Admins bypass
+// main's ruleset; moving the tag changes what every namespace resets to next.
+const SEED_FILES: Record<string, string> = {
+  "README.md": README,
+  ".github/workflows/ci.yml": WORKFLOW,
+  // Two workspace packages, so a project without policy areas infers the areas `alpha` and `beta` (areas.rs).
+  "packages/alpha/README.md": "# alpha\n\nA lab package.\n",
+  "packages/beta/README.md": "# beta\n\nA lab package.\n",
+};
+{
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fleetd-lab-seed-"));
   try {
     git(dir, "init", "-q", "-b", "main");
@@ -143,14 +150,21 @@ if (gh("api", `repos/${repo}/git/ref/tags/${SEED_TAG}`).ok) {
     if (hasMain) git(dir, "reset", "-q", "FETCH_HEAD");
     // Only the seed's files: what earlier runs merged into main stays in its history, not in the seed.
     git(dir, "rm", "-q", "-r", "--cached", "--ignore-unmatch", ".");
-    fs.writeFileSync(path.join(dir, "README.md"), README);
-    fs.mkdirSync(path.join(dir, ".github", "workflows"), { recursive: true });
-    fs.writeFileSync(path.join(dir, ".github", "workflows", "ci.yml"), WORKFLOW);
-    git(dir, "add", "README.md", ".github/workflows/ci.yml");
-    git(dir, "commit", "-q", "-m", "chore: the lab seed: a ci check that fails iff FAIL exists, never on noci/**");
-    git(dir, "push", "-q", "origin", "HEAD:refs/heads/main");
-    git(dir, "push", "-q", "origin", `HEAD:refs/tags/${SEED_TAG}`);
-    console.log(`pushed the seed to main and tagged it ${SEED_TAG}`);
+    for (const [file, text] of Object.entries(SEED_FILES)) {
+      fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
+      fs.writeFileSync(path.join(dir, file), text);
+      git(dir, "add", file);
+    }
+    const tree = git(dir, "write-tree");
+    const tagged = gh("api", `repos/${repo}/commits/${SEED_TAG}`, "--jq", ".commit.tree.sha");
+    if (tagged.ok && tagged.stdout.trim() === tree) {
+      console.log(`tag ${SEED_TAG} is current`);
+    } else {
+      git(dir, "commit", "-q", "-m", "chore: the lab seed: a ci check that fails iff FAIL exists, never on noci/**; two packages");
+      git(dir, "push", "-q", "origin", "HEAD:refs/heads/main");
+      git(dir, "push", "-q", "--force", "origin", `HEAD:refs/tags/${SEED_TAG}`);
+      console.log(`pushed the seed to main and tagged it ${SEED_TAG}`);
+    }
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
