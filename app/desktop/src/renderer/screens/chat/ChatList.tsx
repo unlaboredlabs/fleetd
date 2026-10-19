@@ -5,7 +5,6 @@
 import type { Virtualizer } from "@tanstack/react-virtual";
 import { FileText, Image } from "lucide-react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { projectKey } from "../../src/data/store";
 import type { AgentLane } from "../../../shared/contracts";
 import { Button, cx, Text, Truncate, VirtualList } from "../../ui";
 import type { ChatItem } from "../../src/data/chat";
@@ -150,13 +149,7 @@ const RowView = memo(function RowView(props: {
             </Text>
           ) : null}
           {i.author === "human" ? (
-            <MessageReceipt
-              projectKey={projectKey(project)}
-              clientRequestId={i.clientRequestId}
-              text={i.text}
-              message={{ state: i.state, error: i.error ? { ...i.error, offline: i.offline === true } : undefined }}
-              latest={props.mineLatest}
-            />
+            <MessageReceipt project={project} item={i} latest={props.mineLatest} />
           ) : null}
         </div>
       );

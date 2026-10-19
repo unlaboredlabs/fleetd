@@ -3,28 +3,38 @@
 // by button, drop or paste (images included); a long paste becomes a file. The words, the files and an unsent
 // message's "not connected" note stay per project across navigation (drafts.ts).
 
+interface ProjectRef {
+  readonly machineId: string;
+  readonly projectId: string;
+}
+
 import { Paperclip, X } from "lucide-react";
 import { useRef, type ClipboardEvent, type DragEvent, type KeyboardEvent } from "react";
+import type { ChatDelivery } from "../../../shared/contracts";
+import type { ChatItem } from "../../src/data/chat";
+import type { ChatAttachment } from "../../src/data/chat-contract";
+import { useData, useDataLayer } from "../../src/data/react";
+import { projectKey as keyOf } from "../../src/data/store";
+import { selectLeadWorking } from "../../src/data/selectors";
 import { Button, cx, IdChip, Text, Truncate } from "../../ui";
 import { useCommands } from "../palette";
 import { fmtBytes, PASTE_AS_FILE, pastedName } from "./attachments";
-import { useChatActions, useLeadWorking } from "./useChat";
-import { ACT_LABEL, checkMessage, KEY_HINT, placeholder, receiptFor, sendsOn, type Act, type Sendable } from "./composerModel";
+import { ACT_LABEL, checkMessage, KEY_HINT, placeholder, receiptFor, sendsOn, type Act } from "./composerModel";
 import { useDraft } from "./drafts";
-import c from "./chat.module.css";
+import c from "./composer.module.css";
 
 export interface ChatComposerProps {
-  /** "machineId/projectId" (projectKey). */
-  projectKey: string;
+  project: ProjectRef;
   /** After a message leaves the box: the list scrolls to it. */
   onSent?: () => void;
   autoFocus?: boolean;
 }
 
-export function ChatComposer({ projectKey, onSent, autoFocus }: ChatComposerProps) {
+export function ChatComposer({ project, onSent, autoFocus }: ChatComposerProps) {
+  const projectKey = keyOf(project);
   const [draft, setDraft, drafts] = useDraft(projectKey);
-  const working = useLeadWorking(projectKey);
-  const chat = useChatActions();
+  const working = useData(selectLeadWorking(projectKey));
+  const { chat } = useDataLayer();
   const box = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const pastes = useRef(0);
@@ -47,17 +57,18 @@ export function ChatComposer({ projectKey, onSent, autoFocus }: ChatComposerProp
       if (checked.reason !== "") setDraft((d) => ({ ...d, error: checked.reason }));
       return;
     }
-    const ids: string[] = [];
+    const files: ChatAttachment[] = [];
     for (const a of draft.attached) {
-      if (!a.upload) return setDraft((d) => ({ ...d, error: `${a.name} is still uploading.` }));
-      if (!a.upload.ok) return setDraft((d) => ({ ...d, error: `${a.name} didn’t upload: ${a.upload && !a.upload.ok ? a.upload.message : ""} Remove it to send.` }));
-      ids.push(a.upload.id);
+      const up = a.upload;
+      if (!up) return setDraft((d) => ({ ...d, error: `${a.name} is still uploading.` }));
+      if (!up.ok) return setDraft((d) => ({ ...d, error: `${a.name} didn’t upload: ${up.message} Remove it to send.` }));
+      files.push({ attachmentId: up.id, name: a.name, mime: up.mime, bytes: a.bytes });
     }
     const sent = { text: draft.text, attached: draft.attached };
     // The words leave the box at once; the layer's item holds them (and offers Edit if they don't go).
     setDraft(() => ({ text: "", attached: [] }));
     onSent?.();
-    void chat.send(projectKey, { text: checked.text, ...(ids.length > 0 ? { attachments: ids } : {}) }).then((outcome) => {
+    void chat.send(projectKey, { text: checked.text, ...(files.length > 0 ? { attachments: files } : {}) }).then((outcome) => {
       // No hub: nothing was sent and no item holds the words, so they come back, unless new ones were typed.
       if (outcome !== "offline") return;
       setDraft((d) => (d.text === "" && d.attached.length === 0 ? { ...sent, offline: true } : d));
@@ -170,23 +181,32 @@ export function ChatComposer({ projectKey, onSent, autoFocus }: ChatComposerProp
 }
 
 /** The quiet line under one of your messages, with Resend / Edit / Dismiss when it didn't go. */
-export function MessageReceipt(props: { projectKey: string; clientRequestId?: string | undefined; text: string; message: Sendable; latest: boolean }) {
-  const r = receiptFor(props.message, props.latest);
-  const chat = useChatActions();
-  const [, setDraft] = useDraft(props.projectKey);
+export function MessageReceipt({ project, item, latest = false }: { project: ProjectRef; item: ChatItem; latest?: boolean }) {
+  const projectKey = keyOf(project);
+  const { chat } = useDataLayer();
+  const [, setDraft] = useDraft(projectKey);
+  const r = receiptFor(
+    {
+      state: item.state,
+      error: item.error === undefined ? undefined : { ...item.error, ...(item.offline === true ? { offline: true } : {}) },
+      // The layer's message type predates the generated ChatMessage, which carries delivery.
+      delivery: (item.message as { readonly delivery?: ChatDelivery } | undefined)?.delivery,
+    },
+    latest,
+  );
   if (r === undefined) return null;
-  const crid = props.clientRequestId;
+  const crid = item.clientRequestId;
   const act = (a: Act) => {
     if (crid === undefined) return;
-    if (a === "resend") return chat.retry(props.projectKey, crid);
+    if (a === "resend") return void chat.retry(projectKey, crid);
     if (a === "edit") {
       // The words go back in the box (after any already there); the message goes.
-      setDraft((d) => ({ ...d, text: d.text.trim() === "" ? props.text : `${d.text}\n\n${props.text}` }));
+      setDraft((d) => ({ ...d, text: d.text.trim() === "" ? item.text : `${d.text}\n\n${item.text}` }));
     }
-    chat.discard(props.projectKey, crid);
+    chat.discard(projectKey, crid);
   };
   return (
-    <div className={cx(c.receipt, c[`tone-${r.kind}`])} data-receipt={props.message.state}>
+    <div className={cx(c.receipt, c[`tone-${r.kind}`])} data-receipt={item.state}>
       <Text size="xs" tone="inherit">
         {r.line}
       </Text>

@@ -10,7 +10,6 @@ import { useChatData } from "./data";
 import { chatRows, rowIndexOf } from "./model";
 import { ChatComposer } from "./Composer";
 import { AgentsCapControl, type ProjectRef } from "./slots";
-import { projectKey } from "../../src/data/store";
 import { roleWords, type ToldWho } from "./told";
 import { ToldPanel } from "./ToldPanel";
 import s from "./view.module.css";
@@ -76,7 +75,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
         <ChatList rows={rows} project={project} onLoadOlder={onLoadOlder} onTold={onTold} openAt={openAt} sent={sent} />
       )}
       <div className={s.composer}>
-        <ChatComposer projectKey={projectKey(project)} onSent={() => setSent((n) => n + 1)} />
+        <ChatComposer project={project} onSent={() => setSent((n) => n + 1)} />
       </div>
       <ToldPanel open={told} projectRef={project} onClose={() => setTold(undefined)} />
     </div>
