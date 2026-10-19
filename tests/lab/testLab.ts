@@ -12,6 +12,7 @@ import { askCard } from "./askCard.ts";
 import { degradedMachine } from "./degradedMachine.ts";
 import { demoFanout } from "./demoFanout.ts";
 import { desktopShell } from "./desktopShell.ts";
+import { efficiency } from "./efficiency.ts";
 import { FAILURE_SCENARIOS } from "./failure/index.ts";
 import {
   type Body,
@@ -97,6 +98,9 @@ const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab)
   // Claude's own subagents are refused and an MCP spawn is a fleetd task with its lane. Restarts lab-a's lead, so only
   // when named.
   { name: "nosub", run: noSubagents, only: true },
+  // A freed slot offers the next approved item; a slice gets its reviewer before the next slice. Restarts lab-a's lead
+  // and adds the testbed project for its run, so only when named.
+  { name: "eff", run: efficiency, only: true },
   // A real lead writes its own labelled ask; the answer goes through the undo window. Only when named.
   { name: "ask", run: askCard, only: true },
   // One PR through the train into a base CI never runs for. Only when named, with FLEETD_LAB_NAMESPACE=noci/<n>.
