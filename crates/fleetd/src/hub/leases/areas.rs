@@ -192,6 +192,17 @@ pub fn infer(m: &Manifests, dirs: &[String]) -> BTreeMap<String, Vec<String>> {
     for c in CONTAINERS {
         resolve(vec![format!("{c}/*")], Ecosystem::Plain);
     }
+    // No area inside another: a member that holds other members (a top-level folder a `*` pattern matched) gives
+    // way to them, and docs/ and hidden folders are never members.
+    let paths: Vec<String> = members.keys().cloned().collect();
+    members.retain(|path, _| {
+        !CONTAINERS.contains(&path.as_str())
+            && path != "docs"
+            && !path.split('/').any(|seg| seg.starts_with('.'))
+            && !paths
+                .iter()
+                .any(|other| other.starts_with(&format!("{path}/")))
+    });
     let roots = |eco: Ecosystem| -> &[&str] {
         match eco {
             Ecosystem::Cargo => &CARGO_ROOT,
@@ -218,14 +229,24 @@ pub fn infer(m: &Manifests, dirs: &[String]) -> BTreeMap<String, Vec<String>> {
     }
     for (path, eco) in members {
         let last = path.rsplit('/').next().unwrap_or(&path);
-        let name = [slug(last), slug(&path.replace('/', "-"))]
+        let joined = slug(&path.replace('/', "-"));
+        // The folder's name, else parent-folder, else a number on that: every member gets an area of its own.
+        let base: String = if joined.is_empty() {
+            "area".into()
+        } else {
+            joined.chars().take(36).collect()
+        };
+        let numbered = (2..).map(|n| format!("{base}-{n}"));
+        let Some(name) = [slug(last), joined]
             .into_iter()
-            .find(|n| !n.is_empty() && !areas.contains_key(n));
-        if let Some(name) = name {
-            let mut globs = vec![format!("{path}/**")];
-            globs.extend(roots(eco).iter().map(|r| (*r).to_owned()));
-            areas.insert(name, globs);
-        }
+            .chain(numbered)
+            .find(|n| !n.is_empty() && !areas.contains_key(n))
+        else {
+            continue;
+        };
+        let mut globs = vec![format!("{path}/**")];
+        globs.extend(roots(eco).iter().map(|r| (*r).to_owned()));
+        areas.insert(name, globs);
     }
     areas
 }
@@ -328,6 +349,44 @@ mod tests {
                 "all-tools": ["apps/All Tools/**"],
             })
         );
+    }
+
+    #[test]
+    fn no_area_nests_in_another_and_same_named_folders_get_distinct_names() {
+        // pnpm `*` matches every top-level folder: apps/ holds apps/web, so apps itself is no area; docs/ has its own
+        // area and .github is hidden. A top-level web/ package and apps/web both want the name `web`.
+        let m = Manifests {
+            pnpm_workspace: Some("packages: ['*']\n".into()),
+            ..Manifests::default()
+        };
+        let areas = infer(
+            &m,
+            &dirs(&[
+                "apps", "docs", "web", ".github", "tools", "tools/x", "apps/web",
+            ]),
+        );
+        assert_eq!(
+            serde_json::to_value(&areas).unwrap(),
+            json!({
+                "all": ["**"],
+                "docs": ["docs/**"],
+                "web": ["apps/web/**"],
+                "web-2": ["web/**", "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock"],
+                "tools": ["tools/**", "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock"],
+            })
+        );
+        // No member's globs fall inside another member's.
+        let roots: Vec<String> = areas
+            .iter()
+            .filter(|(name, _)| name.as_str() != "all")
+            .map(|(_, globs)| globs[0].trim_end_matches("/**").to_owned())
+            .collect();
+        for a in &roots {
+            assert!(
+                !roots.iter().any(|b| b.starts_with(&format!("{a}/"))),
+                "{a} holds another area: {roots:?}"
+            );
+        }
     }
 
     #[test]
