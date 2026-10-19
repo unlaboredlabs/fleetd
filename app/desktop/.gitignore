@@ -1,3 +1,5 @@
 node_modules/
 out/
+qa-results/
+test-results/
 /fixtures/*.json

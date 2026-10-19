@@ -8,12 +8,12 @@ use fleetd_contracts::ledger::{Ask, AskId, Tier, Workstream, WorkstreamId, Works
 use fleetd_contracts::live::OrderCard;
 use fleetd_contracts::model::{Machine, MachineStatus};
 use fleetd_contracts::node_link::NodeLoad;
-use fleetd_contracts::plan::{PlanChangeKind, PlanItemId, PlanItemState, Size, Weight};
-use fleetd_contracts::prim::{Count, Int, Line, List, NonNegative, Text};
+use fleetd_contracts::plan::{PlanItemId, PlanItemState, Size, Weight};
+use fleetd_contracts::prim::{Count, Int, Line, List, Text};
 use fleetd_contracts::status::{
-    CiState, DoneRow, EtaBasis, EtaSlip, Gate, GateKind, Headline, HeadlineFacts, HeadlineSource,
-    Health, HealthCi, HealthMachine, HealthSlots, HealthUsage, InProgressRow, Marker, MoreCounts,
-    NeedsYou, NextRow, Progress, ScopePart, SleptAt, StaleMark, StaleSource, StatusDoc, StatusEta,
+    CiState, DoneRow, EtaBasis, Gate, GateKind, Headline, HeadlineFacts, HeadlineSource, Health,
+    HealthCi, HealthMachine, HealthSlots, HealthUsage, InProgressRow, Marker, MoreCounts, NeedsYou,
+    NextRow, Progress, ScopePart, SleptAt, StaleMark, StaleSource, StatusDoc, StatusEta,
     StatusScope, StatusSteer,
 };
 use fleetd_contracts::tasks::{SlotState, TaskId};
@@ -21,7 +21,6 @@ use fleetd_contracts::train::{ChangeId, ChangeState, GitHubRepo};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value;
 
-use super::eta::{self, ChainItem, Rate};
 use super::fresh::{self, Fresh};
 use super::progress::Figure;
 use super::risks::{self, RiskFacts};
@@ -31,6 +30,8 @@ use crate::hub::plan::{self, clip, figure_of, marker_of, parse_ms, progress_of};
 use crate::hub::store::iso_ms;
 
 const DAY_MS: i64 = 24 * 3_600_000;
+/// Done plan items and estimate rows are read this far back.
+const WINDOW_MS: i64 = 7 * DAY_MS;
 
 /// An order the view counts: open, or done in the last day.
 #[derive(Clone, Debug)]
@@ -86,6 +87,8 @@ pub struct World {
     pub placeholders: HashMap<String, Placeholder>,
     /// The last day's steers and any still waiting for a receipt, newest first.
     pub steers: Vec<fleetd_contracts::steer::Steer>,
+    /// What the progress model reads beyond this.
+    pub model: super::estimate::ModelData,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -144,13 +147,17 @@ fn estimate_rows(c: &Connection, from_ms: i64) -> rusqlite::Result<Vec<EstRow>> 
     .collect()
 }
 
-const RECENT_TYPES: [&str; 6] = [
+const RECENT_TYPES: [&str; 9] = [
     "machine.offline",
     "machine.slept",
     "change.ci_failed",
     "task.failed",
     "claim.failed",
     "github.drift",
+    // The progress model: stage moves and the causes that may lower a figure.
+    "change.state",
+    "plan.changed",
+    "review.verdict",
 ];
 
 fn recent_events(c: &Connection, from_ms: i64) -> rusqlite::Result<Vec<(String, Value)>> {
@@ -174,7 +181,12 @@ fn recent_events(c: &Connection, from_ms: i64) -> rusqlite::Result<Vec<(String, 
 type ChangeLinks = HashMap<String, (String, Option<String>)>;
 
 impl World {
-    pub fn read(hub: &Hub, now: i64, slots_queued_since: Option<i64>) -> anyhow::Result<World> {
+    pub fn read(
+        hub: &Hub,
+        now: i64,
+        slots_queued_since: Option<i64>,
+        calibration: std::sync::Arc<super::model::Calibration>,
+    ) -> anyhow::Result<World> {
         let since_iso = iso_ms(now - DAY_MS);
         // Bounded reads: open and recent plan items, Changes only as repos (plus the few the last day's CI failures
         // name), so a render costs the same after months of history.
@@ -198,10 +210,10 @@ impl World {
                     .collect::<rusqlite::Result<_>>()?;
                 Ok((
                     order_rows(c, &since_iso)?,
-                    plan::store::items_live(c, now - eta::WINDOW_MS)?,
+                    plan::store::items_live(c, now - WINDOW_MS)?,
                     plan::store::milestones_all(c)?,
                     plan::store::changes_all(c, 200)?,
-                    estimate_rows(c, now - eta::WINDOW_MS)?,
+                    estimate_rows(c, now - WINDOW_MS)?,
                     recent_events(c, now - DAY_MS)?,
                     change_repos,
                     placeholders,
@@ -261,6 +273,14 @@ impl World {
             .collect();
         let failures = item_failures(&items, &recent, &links);
         let steers = crate::hub::steer::store::recent(&hub.db, now - DAY_MS)?;
+        let model = hub.db.with(|c| {
+            Ok(super::estimate::ModelData::read(
+                c,
+                &orders,
+                &since_iso,
+                calibration,
+            )?)
+        })?;
         Ok(World {
             now,
             tz: crate::hub::attention::hub_zone(),
@@ -282,6 +302,7 @@ impl World {
             slots_queued_since,
             placeholders,
             steers,
+            model,
         })
     }
 }
@@ -385,15 +406,15 @@ fn capped<T: PartialEq, const MAX: usize>(mut v: Vec<T>) -> (List<T, 0, MAX>, i6
 }
 
 /// Which orders, items and machines a scope covers.
-struct Scope<'a> {
-    title: String,
-    orders: Vec<&'a Order>,
+pub struct Scope<'a> {
+    pub title: String,
+    pub orders: Vec<&'a Order>,
     /// Items in the figure: open milestones (an order: all its items).
-    items: Vec<&'a ItemRow>,
+    pub items: Vec<&'a ItemRow>,
     /// Items for rates and durations, done milestones included.
-    history: Vec<&'a ItemRow>,
-    pkeys: HashSet<String>,
-    machines: HashSet<String>,
+    pub history: Vec<&'a ItemRow>,
+    pub pkeys: HashSet<String>,
+    pub machines: HashSet<String>,
 }
 
 fn status_steer(x: &fleetd_contracts::steer::Steer) -> StatusSteer {
@@ -532,242 +553,17 @@ fn figure(w: &World, s: &Scope<'_>, virtuals: &[&Order]) -> Figure {
     f
 }
 
-fn rate_of(w: &World, pkeys: Option<&HashSet<String>>, ws: Option<&str>) -> Rate {
-    let from = w.now - eta::WINDOW_MS;
-    let in_scope = |pk: &str, iws: Option<&str>| {
-        pkeys.is_none_or(|p| p.contains(pk)) && ws.is_none_or(|ws| iws == Some(ws))
-    };
-    let planned: HashSet<&str> = w
-        .items
-        .iter()
-        .filter_map(|i| i.workstream_id.as_deref())
-        .collect();
-    let mut r = Rate::default();
-    for i in w
-        .items
-        .iter()
-        .filter(|i| i.state == PlanItemState::Done && i.done_ms.is_some_and(|d| d >= from))
-    {
-        if in_scope(&i.pkey, i.workstream_id.as_deref()) {
-            r.points += i.size.points();
-            r.samples += 1;
-        }
-    }
-    let mut busy = Vec::new();
-    for e in w
-        .estimates
-        .iter()
-        .filter(|e| in_scope(&e.pkey, Some(&e.ws)))
-    {
-        busy.push((e.started_ms, e.done_ms));
-        if !planned.contains(e.ws.as_str()) && e.done_ms.is_some_and(|d| d >= from) {
-            r.points += e.tier.points();
-            r.samples += 1;
-        }
-    }
-    r.busy_ms = eta::busy_ms(&busy, w.now);
-    r
-}
-
-/// Median start-to-done of the last 20 done items of each size.
-fn durations(items: &[&ItemRow]) -> HashMap<Size, i64> {
-    let mut by: HashMap<Size, Vec<(i64, i64)>> = HashMap::new();
-    for i in items {
-        if let (Some(s), Some(d)) = (i.started_ms, i.done_ms) {
-            by.entry(i.size).or_default().push((d, d - s));
-        }
-    }
-    by.into_iter()
-        .filter_map(|(size, mut v)| {
-            v.sort_by_key(|(d, _)| std::cmp::Reverse(*d));
-            Some((
-                size,
-                eta::median(v.into_iter().take(20).map(|(_, d)| d).collect())?,
-            ))
-        })
-        .collect()
-}
-
-struct EtaOut {
-    eta: StatusEta,
-    slipped: Option<(String, String, String)>,
-    drift: Option<(String, String)>,
-}
-
-fn eta_of(hub: &Hub, w: &World, scope: &StatusScope, s: &Scope<'_>, f: &Figure) -> EtaOut {
-    let fleet = rate_of(w, None, None);
-    let project = rate_of(w, Some(&s.pkeys), None);
-    let running_in = |pkeys: Option<&HashSet<String>>| {
-        w.orders
-            .iter()
-            .filter(|o| {
-                o.w.state != WorkstreamState::Done && pkeys.is_none_or(|p| p.contains(&o.pkey))
-            })
-            .count()
-            .max(1) as f64
-    };
-    let (rate, samples, basis) = match scope {
-        StatusScope::Order { workstream_id } => {
-            let own = rate_of(w, Some(&s.pkeys), Some(workstream_id.as_str()));
-            let done_items = s
-                .history
-                .iter()
-                .filter(|i| i.state == PlanItemState::Done)
-                .count();
-            match (own.per_hour(), project.per_hour(), fleet.per_hour()) {
-                (Some(r), _, _) if done_items >= 3 => (Some(r), own.samples, EtaBasis::Order),
-                (_, Some(r), _) => (
-                    Some(r / running_in(Some(&s.pkeys))),
-                    project.samples,
-                    EtaBasis::Project,
-                ),
-                (_, _, Some(r)) => (Some(r / running_in(None)), fleet.samples, EtaBasis::Fleet),
-                _ => (
-                    None,
-                    own.samples.max(project.samples).max(fleet.samples),
-                    EtaBasis::None,
-                ),
-            }
-        }
-        StatusScope::Project { .. } => match (project.per_hour(), fleet.per_hour()) {
-            (Some(r), _) => (Some(r), project.samples, EtaBasis::Project),
-            (_, Some(r)) => (
-                Some(r * running_in(Some(&s.pkeys)) / running_in(None)),
-                fleet.samples,
-                EtaBasis::Fleet,
-            ),
-            _ => (None, project.samples.max(fleet.samples), EtaBasis::None),
-        },
-        StatusScope::Fleet => match fleet.per_hour() {
-            Some(r) => (Some(r), fleet.samples, EtaBasis::Fleet),
-            None => (None, fleet.samples, EtaBasis::None),
-        },
-    };
-    let throughput = rate.map(|r| eta::throughput_eta(w.now, f.remaining_must_pts(), r));
-    let open_must: Vec<ChainItem> = s
-        .items
-        .iter()
-        .filter(|i| i.state == PlanItemState::Open && i.weight == Weight::Must)
-        .map(|i| ChainItem {
-            n: i.n,
-            size: i.size,
-            started_ms: i.started_ms,
-            after: i.data.after.clone(),
-        })
-        .collect();
-    let d = durations(&s.history);
-    let chain = if open_must.is_empty() {
-        None
-    } else {
-        eta::chain(&open_must, &d, w.now)
-    };
-    let chain_eta = chain.as_ref().map(|(len, _)| w.now + len);
-    let current = match (throughput, chain_eta) {
-        (Some(t), Some(c)) => Some(t.max(c)),
-        (t, _) => t,
-    };
-    let chain_label = match (&chain, throughput, chain_eta) {
-        (Some((_, path)), Some(t), Some(c)) if c > t => path.first().and_then(|n| {
-            let i = w.items.iter().find(|i| i.n == *n)?;
-            Some(line::<160>(&format!("P{} {}", i.n, i.data.title)))
-        }),
-        _ => None,
-    };
-    let key = scope.key();
-    let mut original = None;
-    if let (Some(cur), StatusScope::Order { .. }) = (current, scope)
-        && samples >= eta::MIN_SAMPLES
-    {
-        let basis_text = serde_json::to_value(basis)
-            .ok()
-            .and_then(|v| v.as_str().map(str::to_owned))
-            .unwrap_or_default();
-        original = hub
-            .db
-            .with(|c| {
-                c.prepare_cached(
-                    "INSERT OR IGNORE INTO status_eta (scope, original_ms, set_ms, basis) VALUES (?, ?, ?, ?)",
-                )?
-                .execute(params![key, cur, w.now, basis_text])?;
-                Ok(c.query_row("SELECT original_ms, set_ms FROM status_eta WHERE scope = ?", [&key], |r| {
-                    Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))
-                })
-                .optional()?)
-            })
-            .ok()
-            .flatten();
-    }
-    let mut slip = None;
-    let mut slipped = None;
-    if let (Some(cur), Some((orig, set_ms))) = (current, original) {
-        let scope_pts: i64 = w
-            .markers
-            .iter()
-            .filter(|m| {
-                m.at_ms >= set_ms && m.kind == PlanChangeKind::Scope && s.pkeys.contains(&m.pkey)
-            })
-            .filter(|m| match scope {
-                StatusScope::Order { workstream_id } => {
-                    m.workstream_id.as_deref() == Some(workstream_id.as_str())
-                }
-                _ => true,
-            })
-            .map(|m| m.delta_size)
-            .sum();
-        let (sc, sp) = eta::slip(cur, orig, scope_pts, rate);
-        if cur != orig {
-            slip = Some(EtaSlip {
-                scope_minutes: Int::unchecked(sc),
-                speed_minutes: Int::unchecked(sp),
-            });
-        }
-        let started = s
-            .orders
-            .first()
-            .and_then(|o| parse_ms(o.w.created_at.as_str()))
-            .unwrap_or(set_ms);
-        if eta::slipping(cur, orig, started) {
-            slipped = Some((
-                duration(cur - orig),
-                duration(sc * 60_000),
-                duration(sp * 60_000),
-            ));
-        }
-    }
-    let mut lead = None;
-    let mut drift = None;
-    if let StatusScope::Order { workstream_id } = scope
-        && let Some(o) = s.orders.first()
-        && let Ok(Some(est)) = hub.estimates.eta(&o.w)
-        && let Some(e) = w.estimates.iter().find(|e| e.ws == workstream_id.as_str())
-        && let Some(cur) = current
-    {
-        let lead_done = e.started_ms + (est.calibrated_minutes.get() * 60_000.0) as i64;
-        if eta::lead_differs(lead_done, cur, e.started_ms) {
-            lead = Some(ts(lead_done));
-            drift = Some((
-                format!(
-                    "{} (×{} calibrated)",
-                    hours(lead_done - e.started_ms),
-                    est.ratio.get()
-                ),
-                hours(cur - e.started_ms),
-            ));
-        }
-    }
-    EtaOut {
-        eta: StatusEta {
-            current: current.map(ts),
-            original: original.map(|(o, _)| ts(o)),
-            slip,
-            lead,
-            rate: rate.and_then(|r| NonNegative::new((r * 10.0).round() / 10.0).ok()),
-            samples: Count::unchecked(samples),
-            basis,
-            chain: chain_label,
-        },
-        slipped,
-        drift,
+/// What a doc sends for the retired ETA: enough for apps from before the change to decode it, nothing else.
+fn retired_eta() -> StatusEta {
+    StatusEta {
+        current: None,
+        original: None,
+        slip: None,
+        lead: None,
+        rate: None,
+        samples: Count::unchecked(0),
+        basis: EtaBasis::None,
+        chain: None,
     }
 }
 
@@ -904,6 +700,69 @@ pub fn render(
     let mut wake = Wake(None, now);
     let virtuals = virtual_orders(w, &s);
     let f = figure(w, &s, &virtuals);
+    let mo = super::estimate::compute(w, scope, &s);
+    if let Some(t) = mo.wake_at {
+        wake.at(t);
+    }
+    // The model's part of an in-progress row: stage, credit, slowness, what it waits on and what waits on it.
+    let blocked_by: HashMap<i64, Vec<i64>> = s.items.iter().fold(HashMap::new(), |mut m, i| {
+        if i.state == PlanItemState::Open {
+            for a in &i.data.after {
+                m.entry(*a).or_default().push(i.n);
+            }
+        }
+        m
+    });
+    let after_titles = |i: &ItemRow| -> Vec<String> {
+        i.data
+            .after
+            .iter()
+            .filter_map(|a| {
+                w.items
+                    .iter()
+                    .find(|x| x.n == *a && x.state == PlanItemState::Open)
+            })
+            .map(|x| clip(&format!("P{} {}", x.n, x.data.title), 80))
+            .collect()
+    };
+    let unit_fields = |key: super::model::UnitKey, after: &[String]| -> InProgressRow {
+        let p = mo.units.get(&key);
+        let blocking: Vec<PlanItemId> = match &key {
+            super::model::UnitKey::Item(n) => blocked_by
+                .get(n)
+                .into_iter()
+                .flatten()
+                .map(|x| PlanItemId::unchecked(format!("P{x}")))
+                .collect(),
+            super::model::UnitKey::Order(_) => vec![],
+        };
+        let steps: Vec<Line<1, 80>> = p
+            .filter(|p| !p.verified)
+            .map(|p| super::estimate::steps(p.stage, mo.prs.get(&key).copied(), after))
+            .unwrap_or_default()
+            .iter()
+            .map(|x| line::<80>(x))
+            .collect();
+        InProgressRow {
+            item_id: None,
+            workstream_id: WorkstreamId::unchecked("W0"),
+            title: line("—"),
+            task_ids: List::default(),
+            change_ids: List::default(),
+            gate: None,
+            eta: None,
+            overdue_minutes: None,
+            stale: None,
+            steers: None,
+            stage: p.map(|p| p.stage),
+            credit_pct: p
+                .map(|p| Int::unchecked(((p.credit * 100.0).floor() as i64).clamp(0, 100))),
+            slower_than_usual: p.map(|p| p.slower).filter(|s| *s),
+            waiting_on: (!steps.is_empty()).then(|| capped::<_, 8>(steps).0),
+            blocking: (!blocking.is_empty()).then(|| capped::<_, 10>(blocking).0),
+            critical: (mo.critical.as_ref() == Some(&key)).then_some(true),
+        }
+    };
     let markers: Vec<Marker> = w
         .markers
         .iter()
@@ -1107,7 +966,6 @@ pub fn render(
 
     // Rows.
     let item_by_n: HashMap<i64, &ItemRow> = w.items.iter().map(|i| (i.n, i)).collect();
-    let d = durations(&s.history);
     let order_stale = |ws: &str| -> Option<StaleMark> {
         let card = w.cards.get(ws)?;
         if let Some(m) = machine_stale_by.get(card.project_ref.machine_id.as_str()) {
@@ -1190,10 +1048,6 @@ pub fn render(
                     .filter(|t| i.data.links.tasks.iter().any(|l| l.as_str() == t))
                     .collect();
                 if i.started_ms.is_some() || !mine.is_empty() {
-                    let eta_ms = i.started_ms.and_then(|s0| d.get(&i.size).map(|d| s0 + d));
-                    if let Some(e) = eta_ms {
-                        wake.at(e);
-                    }
                     in_progress.push(InProgressRow {
                         item_id: Some(id),
                         workstream_id: WorkstreamId::unchecked(ws.unwrap_or("W0")),
@@ -1207,12 +1061,11 @@ pub fn render(
                         )
                         .0,
                         gate: ws.and_then(gate_of).map(|g| line(&g)),
-                        eta: eta_ms.map(ts),
-                        overdue_minutes: eta_ms
-                            .filter(|e| *e < now)
-                            .map(|e| Count::unchecked((now - e) / 60_000)),
+                        eta: None,
+                        overdue_minutes: None,
                         stale: ws.and_then(order_stale),
                         steers: None,
+                        ..unit_fields(super::model::UnitKey::Item(i.n), &after_titles(i))
                     });
                 } else {
                     let after: Vec<PlanItemId> = i
@@ -1264,6 +1117,7 @@ pub fn render(
                 overdue_minutes: None,
                 stale: order_stale(o.id()),
                 steers: None,
+                ..unit_fields(super::model::UnitKey::Order(o.id().to_owned()), &[])
             });
         }
     }
@@ -1351,8 +1205,6 @@ pub fn render(
         count: Count::unchecked(asks.len() as i64),
         ask_ids: capped::<AskId, 10>(asks.iter().map(|a| a.ask_id.clone()).collect()).0,
     };
-
-    let eta_out = eta_of(hub, w, scope, &s, &f);
 
     // Risks.
     let tasks_waiting = |m: &str| -> i64 {
@@ -1458,8 +1310,6 @@ pub fn render(
                 )
             })
             .collect(),
-        slip: eta_out.slipped.clone(),
-        estimate_drift: eta_out.drift.clone(),
         open_must,
         ci_repeat: ci_repeat(w, &s),
         flaky: machines
@@ -1518,6 +1368,17 @@ pub fn render(
             })
             .collect(),
         steers_unacked,
+        slower: mo
+            .slower
+            .iter()
+            .map(|(label, stage, elapsed)| {
+                (
+                    clip(label, 80),
+                    super::estimate::stage_phrase(*stage).to_owned(),
+                    risks::age(*elapsed),
+                )
+            })
+            .collect(),
     };
     let (risk_list, risks_more) = capped::<_, 5>(risks::risks(&rf));
 
@@ -1539,13 +1400,33 @@ pub fn render(
                     continue;
                 }
                 let marker = w.markers.iter().find(|m| &m.pkey == pk).map(marker_of);
-                let ce = eta_of(hub, w, &child, &cs, &cf);
+                let mut progress = progress_of(&cf, now, marker);
+                // The project's bar under the same drop rule as its own doc (the same stored series), so it never
+                // falls without a marker; a part carries no sparkline of its own.
+                let cmo = super::estimate::compute(w, &child, &cs);
+                let ccauses = super::estimate::causes(w, &child, &cs);
+                let ckey = child.key();
+                let cseries = hub
+                    .db
+                    .with(|c| {
+                        Ok(super::estimate::series(
+                            c,
+                            &ckey,
+                            cmo.estimate,
+                            &ccauses,
+                            now,
+                        )?)
+                    })
+                    .ok();
+                let mut estimate = super::estimate::estimate_of(&cmo, cseries.as_deref());
+                estimate.series = None;
+                progress.estimate = Some(estimate);
                 parts.push(ScopePart {
                     title: line(&cs.title),
                     scope: Some(child),
                     milestone_id: None,
-                    progress: progress_of(&cf, now, marker),
-                    eta: ce.eta.current,
+                    progress,
+                    eta: None,
                 });
             }
         }
@@ -1589,6 +1470,17 @@ pub fn render(
         .filter_map(|pk| w.change_repos.get(pk))
         .flatten()
         .find_map(|r| github_stale.get(r).cloned());
+    // The estimate's series, with the drop rule applied: it falls only with an observed cause, which it shows.
+    let causes = super::estimate::causes(w, scope, &s);
+    let key = scope.key();
+    let series = hub
+        .db
+        .with(|c| {
+            super::estimate::store_planning(c, &mo.fix_planning)?;
+            Ok(super::estimate::series(c, &key, mo.estimate, &causes, now)?)
+        })
+        .ok();
+    progress.estimate = Some(super::estimate::estimate_of(&mo, series.as_deref()));
 
     let doing: Vec<String> = in_progress
         .iter()
@@ -1614,19 +1506,6 @@ pub fn render(
         waiting_on: gates.iter().take(2).map(|g| g.label.to_string()).collect(),
         needs_you: asks.len() as i64,
         first_ask: asks.first().map(|a| a.key.to_string()),
-        eta: eta_out
-            .eta
-            .current
-            .as_ref()
-            .and_then(|t| parse_ms(t.as_str()))
-            .map(|t| clock(t, now, tz)),
-        planned: eta_out
-            .eta
-            .original
-            .as_ref()
-            .and_then(|t| parse_ms(t.as_str()))
-            .map(|t| clock(t, now, tz)),
-        slipped: eta_out.slipped.is_some(),
         risks: risk_list
             .iter()
             .take(2)
@@ -1642,7 +1521,7 @@ pub fn render(
         now: ts(now),
         progress,
         markers: capped::<_, 3>(markers).0,
-        eta: eta_out.eta,
+        eta: retired_eta(),
         gates: List::try_from(gates).unwrap_or_default(),
         headline: Headline {
             text: line("…"),
@@ -1707,6 +1586,19 @@ fn pop<T: Clone, const MAX: usize>(list: &mut List<T, 0, MAX>, more: &mut Count)
 pub fn fit(doc: &mut StatusDoc) {
     let size = |d: &StatusDoc| serde_json::to_vec(d).map_or(0, |v| v.len());
     while size(doc) > MAX_DOC_BYTES {
+        // The sparkline keeps its shape with a dozen points: its oldest go first.
+        if let Some(series) = doc
+            .progress
+            .estimate
+            .as_mut()
+            .and_then(|e| e.series.as_mut())
+            && series.len() > 12
+        {
+            let mut v = std::mem::take(series).into_inner();
+            v.remove(0);
+            *series = List::unchecked(v);
+            continue;
+        }
         let more = &mut doc.more;
         let trimmed = pop(&mut doc.done, &mut more.done)
             || pop(&mut doc.next, &mut more.next)
@@ -1785,9 +1677,25 @@ mod tests {
             "more": { "done": 0, "inProgress": 0, "next": 0, "risks": 0, "parts": 0, "stale": 0 },
         });
         let mut doc: StatusDoc = serde_json::from_value(doc).unwrap();
+        let point = json!({ "at": "2026-10-18T10:00:00.000Z", "pct": 50, "verifiedPct": 20,
+            "drop": { "reason": "scope_change", "fromPct": 60, "text": long(200) } });
+        doc.progress.estimate = Some(
+            serde_json::from_value(
+                json!({ "pct": 50, "verifiedPct": 20, "inFlightPct": 30, "weights": "default",
+                "series": vec![point; super::super::estimate::DOC_SERIES] }),
+            )
+            .unwrap(),
+        );
         assert!(serde_json::to_vec(&doc).unwrap().len() > 40 * 1024);
         fit(&mut doc);
         assert!(serde_json::to_vec(&doc).unwrap().len() <= MAX_DOC_BYTES);
+        let series = doc
+            .progress
+            .estimate
+            .as_ref()
+            .and_then(|e| e.series.as_ref())
+            .unwrap();
+        assert_eq!(series.len(), 12, "the sparkline keeps a dozen points");
         assert_eq!(
             (doc.more.done.get(), doc.more.next.get()),
             (10, 10),

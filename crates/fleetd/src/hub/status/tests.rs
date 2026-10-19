@@ -517,6 +517,204 @@ async fn an_item_with_no_order_is_verified_by_its_own_prs_only() {
     );
 }
 
+fn set_change(hub: &Hub, state: &str, from: Option<&str>) {
+    let now = crate::hub::store::now_ms(hub.clock.as_ref());
+    let at = crate::hub::store::iso_ms(now);
+    let change = json!({
+        "changeId": "X1", "projectRef": { "machineId": "devbox", "projectId": "storefront" }, "repo": "acme/storefront",
+        "prNumber": 212, "prUrl": "https://github.com/acme/storefront/pull/212", "branch": "fleetd/T1-x",
+        "workstreamId": "W1", "serves": "done:0", "tier": "M", "headSha": "b".repeat(40), "state": state,
+        "reviews": [], "createdAt": iso_ms_of(T0 as i64), "updatedAt": at,
+    });
+    hub.db
+        .with(|c| {
+            c.execute("DELETE FROM changes", [])?;
+            c.execute(
+                "INSERT INTO changes (repo, pr_number, state, machine_id, project_id, train_order, data)
+                 VALUES ('acme/storefront', 212, ?, 'devbox', 'storefront', 0, ?)",
+                params![state, change.to_string()],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    if let Some(from) = from {
+        hub.events
+            .append(crate::hub::store::NewEvent {
+                at: fleetd_contracts::ids::Timestamp(at),
+                r#type: fleetd_contracts::events::HubEventType::ChangeState,
+                machine_id: Some(MachineId::unchecked("devbox")),
+                project_id: Some(ProjectId::unchecked("storefront")),
+                thread_id: None,
+                summary: format!("X1 {from} → {state}"),
+                data: Some(json!({
+                    "changeId": "X1", "workstreamId": "W1", "repo": "acme/storefront", "prNumber": 212,
+                    "from": from, "to": state,
+                })),
+                attention: None,
+            })
+            .unwrap();
+    }
+}
+
+fn iso_ms_of(ms: i64) -> String {
+    crate::hub::store::iso_ms(ms)
+}
+
+#[tokio::test]
+async fn the_estimate_rises_with_observed_stages_and_falls_only_with_an_explained_marker() {
+    use fleetd_contracts::plan::ItemStage;
+    use fleetd_contracts::status::{DropReason, RiskRule};
+    let clock = ManualClock::at(T0);
+    let (hub, _home) = hub(clock.clone());
+    let (r, by) = (project(), "lead:devbox/storefront");
+    hub.plans
+        .milestone(
+            &r,
+            serde_json::from_value::<PlanMilestoneCall>(json!({ "title": "Checkout" })).unwrap(),
+        )
+        .unwrap();
+    hub.plans
+        .add(
+            &r,
+            by,
+            add(
+                "cart page",
+                json!({ "workstreamId": "W1", "pr": "https://github.com/acme/storefront/pull/212", "size": "m" }),
+            ),
+        )
+        .unwrap();
+    let scope = StatusScope::Order {
+        workstream_id: WorkstreamId::unchecked("W1"),
+    };
+    let step = |secs: u64| {
+        clock.advance(Duration::from_secs(secs));
+        hub.status.get(&hub, &person(), &scope, None).unwrap()
+    };
+    let d = step(1);
+    let e0 = d.progress.estimate.clone().unwrap();
+    let planning = e0.planning.clone().unwrap();
+    assert!(
+        !planning.active,
+        "the plan exists, so planning's share is fixed"
+    );
+    assert!(e0.pct.get() > 0, "planning counts: not 0%");
+    assert_eq!(e0.verified_pct.get(), 0);
+    assert_eq!(
+        d.progress.pct.get(),
+        0,
+        "the old figure is unchanged for the GPUI app"
+    );
+
+    set_change(&hub, "reviewing", None);
+    hub.db
+        .with(|c| {
+            c.execute("UPDATE plan_items SET started_ms = ?", [T0 as i64])?;
+            Ok(())
+        })
+        .unwrap();
+    let d = step(1);
+    let e1 = d.progress.estimate.clone().unwrap();
+    assert!(
+        e1.pct > e0.pct,
+        "a PR opened: {} > {}",
+        e1.pct.get(),
+        e0.pct.get()
+    );
+    assert_eq!(d.in_progress[0].stage, Some(ItemStage::PrOpen));
+
+    set_change(&hub, "ready", Some("reviewing"));
+    let e2 = step(1).progress.estimate.unwrap();
+    assert!(e2.pct > e1.pct, "review passed");
+    assert!(e2.pct.get() < 100 && e2.in_flight_pct.get() == e2.pct.get());
+
+    set_change(&hub, "ci_failed", Some("ci"));
+    let d = step(1);
+    let e3 = d.progress.estimate.clone().unwrap();
+    assert!(e3.pct < e2.pct, "CI failed: the item fell back a stage");
+    let series = e3.series.clone().unwrap();
+    let drop = series
+        .last()
+        .unwrap()
+        .drop
+        .clone()
+        .expect("the drop is explained");
+    assert_eq!(drop.reason, DropReason::CiFailed);
+    assert_eq!(drop.from_pct, e2.pct);
+    assert_eq!(drop.text.as_str(), "CI failed on #212");
+
+    set_change(&hub, "ready", None);
+    step(1);
+    hub.db
+        .with(|c| {
+            c.execute("DELETE FROM changes", [])?;
+            Ok(())
+        })
+        .unwrap();
+    let e4 = step(1).progress.estimate.unwrap();
+    let held = e4.series.unwrap();
+    assert!(
+        held.windows(2)
+            .all(|w| w[1].pct >= w[0].pct || w[1].drop.is_some()),
+        "never a silent drop: {held:?}"
+    );
+
+    // Review usually takes 20 minutes here, measured on 5 items: ten hours in review is slower than usual.
+    use crate::hub::status::model::{Calibration, DurationRow, Params, StageDurations, UnitKind};
+    let mut durations = StageDurations::spread(
+        20 * 60_000,
+        &crate::hub::status::model::StageWeights::default(),
+    );
+    durations.p50[ItemStage::PrOpen.index()] = 20 * 60_000;
+    durations.samples = 5;
+    durations.stage_samples = [5; 8];
+    let mut cal = Calibration::default();
+    cal.projects.insert(
+        "devbox/storefront".into(),
+        Params {
+            durations: vec![DurationRow {
+                kind: UnitKind::Item,
+                size: fleetd_contracts::plan::Size::M,
+                durations,
+            }],
+            ..Params::default()
+        },
+    );
+    hub.status.set_calibration(Arc::new(cal));
+    set_change(&hub, "reviewing", None);
+    let d = step(10 * 3600);
+    assert_eq!(d.in_progress[0].slower_than_usual, Some(true));
+    assert!(
+        d.risks.iter().any(|r| r.rule == RiskRule::SlowerThanUsual
+            && r.message.as_str().contains("slower than usual")),
+        "{:?}",
+        d.risks
+    );
+    let row = &d.in_progress[0];
+    assert_eq!(
+        row.critical,
+        Some(true),
+        "the only open item is the critical path"
+    );
+    let steps: Vec<&str> = row
+        .waiting_on
+        .iter()
+        .flatten()
+        .map(|s| s.as_str())
+        .collect();
+    assert_eq!(
+        steps,
+        ["review of #212", "CI on #212", "merge", "done-when checks"]
+    );
+    assert!(
+        d.eta.current.is_none() && d.eta.basis == fleetd_contracts::status::EtaBasis::None,
+        "no time estimates; the retired ETA still decodes in older apps"
+    );
+    let text = serde_json::to_string(&d).unwrap();
+    assert!(
+        !text.contains("p50") && !text.contains("overdueMinutes") && !text.contains("\"current\"")
+    );
+}
+
 /// Needs you counts open asks; every event that opens or closes one, including a held answer and its undo, must mark
 /// the status doc dirty or a live view keeps a skipped ask listed or an undone one missing.
 #[test]
@@ -532,4 +730,92 @@ fn every_event_that_opens_or_closes_an_ask_is_followed() {
     ] {
         assert!(super::FOLLOWED.contains(&t), "{}", t.as_str());
     }
+}
+
+#[tokio::test]
+async fn a_finished_milestone_lowers_the_project_and_its_fleet_bar_only_with_a_marker() {
+    use fleetd_contracts::status::DropReason;
+    let clock = ManualClock::at(T0);
+    let (hub, _home) = hub(clock.clone());
+    let (r, by) = (project(), "lead:devbox/storefront");
+    for title in ["Checkout", "Search"] {
+        hub.plans
+            .milestone(
+                &r,
+                serde_json::from_value::<PlanMilestoneCall>(json!({ "title": title })).unwrap(),
+            )
+            .unwrap();
+    }
+    hub.plans
+        .add(
+            &r,
+            by,
+            add(
+                "cart page",
+                json!({ "workstreamId": "W1", "pr": "https://github.com/acme/storefront/pull/212", "size": "m" }),
+            ),
+        )
+        .unwrap();
+    hub.plans
+        .add(
+            &r,
+            by,
+            add("search box", json!({ "milestoneId": "M2", "size": "m" })),
+        )
+        .unwrap();
+    let scope = StatusScope::Project {
+        project_ref: r.clone(),
+    };
+    let step = |scope: &StatusScope| {
+        clock.advance(Duration::from_secs(1));
+        hub.status.get(&hub, &person(), scope, None).unwrap()
+    };
+    let part_pct = |d: &fleetd_contracts::status::StatusDoc| {
+        d.parts[0].progress.estimate.as_ref().unwrap().pct.get()
+    };
+    step(&scope);
+    step(&StatusScope::Fleet);
+    set_change(&hub, "merged", None);
+    let before = step(&scope).progress.estimate.unwrap();
+    let fleet = step(&StatusScope::Fleet);
+    assert!(
+        before.pct.get() >= 40,
+        "a merged m of two: {}",
+        before.pct.get()
+    );
+    assert_eq!(
+        part_pct(&fleet),
+        before.pct.get(),
+        "the fleet's bar is the project's figure"
+    );
+
+    assert!(
+        hub.plans.verify("W1"),
+        "M1 finishes and leaves the project's figure"
+    );
+    let after = step(&scope).progress.estimate.unwrap();
+    assert!(
+        after.pct < before.pct,
+        "only the search box is left: {}",
+        after.pct.get()
+    );
+    let last = after.series.as_ref().unwrap().last().unwrap().clone();
+    let drop = last.drop.expect("the drop is explained");
+    assert_eq!(drop.reason, DropReason::ScopeChange);
+    assert!(drop.text.as_str().contains("M1"), "{}", drop.text.as_str());
+    let fleet = step(&StatusScope::Fleet);
+    assert_eq!(
+        part_pct(&fleet),
+        after.pct.get(),
+        "the fleet's bar falls with the same marker, never silently"
+    );
+    assert!(
+        fleet.parts[0]
+            .progress
+            .estimate
+            .as_ref()
+            .unwrap()
+            .series
+            .is_none()
+    );
 }

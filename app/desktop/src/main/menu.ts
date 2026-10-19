@@ -1,0 +1,111 @@
+import { app, Menu, shell, type MenuItemConstructorOptions } from "electron";
+import type { MenuCommand } from "../shared/menu";
+import type { Opener } from "./opener";
+import { accelerator, isShortcutId } from "../shared/shortcuts";
+
+const REPO_URL = "https://github.com/unlaboredlabs/fleetd";
+const DOCS_URL = "https://fleetd.sh/docs";
+
+
+/**
+ * A menu item that runs a palette command. Its key is shared/shortcuts.ts's: the renderer's keymap runs it, so a
+ * click here only covers the mouse. Linux doesn't register the accelerator at all (it would fire twice there);
+ * macOS needs it registered to show it, and hands a key the page didn't take to the menu, which ignores it.
+ */
+const item = (opener: Opener, id: MenuCommand, label: string): MenuItemConstructorOptions => ({
+  // The id is the command id, so the renderer's enabled list (menuState.ts) finds the item.
+  id,
+  label,
+  ...(isShortcutId(id) ? { accelerator: accelerator(id), registerAccelerator: process.platform === "darwin" } : {}),
+  // With the window closed (macOS), a click opens it and runs the command once the page is up.
+  click: (_item, _window, event) => {
+    if (event.triggeredByAccelerator) return;
+    opener.command(id);
+  },
+});
+
+/**
+ * The full app menu. Edit uses Chromium's own roles, so Undo/Cut/Copy/Paste/Select All act on whichever text field
+ * has focus, and macOS adds its dictation and emoji items to it.
+ */
+export const installMenu = (opener: Opener): void => {
+  const mac = process.platform === "darwin";
+  const separator = { type: "separator" } as const;
+  const template: Array<MenuItemConstructorOptions> = [
+    ...(mac
+      ? [
+          {
+            label: app.name,
+            submenu: [
+              { role: "about" },
+              separator,
+              item(opener, "settings.open", "Settings…"),
+              separator,
+              { role: "services" },
+              separator,
+              { role: "hide" },
+              { role: "hideOthers" },
+              { role: "unhide" },
+              separator,
+              { role: "quit" },
+            ],
+          } satisfies MenuItemConstructorOptions,
+        ]
+      : []),
+    {
+      label: "File",
+      submenu: [
+        item(opener, "order.new", "New Order"),
+        item(opener, "go:projects.add", "Add Project…"),
+        item(opener, "composer.focus", "Focus Composer"),
+        separator,
+        ...(mac ? [{ role: "close" } as const] : [item(opener, "settings.open", "Settings…"), separator, { role: "quit" } as const]),
+      ],
+    },
+    {
+      label: "Edit",
+      submenu: [
+        { role: "undo" },
+        { role: "redo" },
+        separator,
+        { role: "cut" },
+        { role: "copy" },
+        { role: "paste" },
+        ...(mac ? [{ role: "pasteAndMatchStyle" } as const] : []),
+        { role: "delete" },
+        { role: "selectAll" },
+      ],
+    },
+    {
+      label: "View",
+      submenu: [
+        item(opener, "status.toggle", "Status"),
+        item(opener, "board.open", "Board"),
+        item(opener, "inbox.toggle", "Inbox"),
+        item(opener, "board.toggleGrouping", "Group by Project or Status"),
+        separator,
+        item(opener, "palette.toggle", "Command Palette"),
+        item(opener, "shortcuts.show", "Keyboard Shortcuts"),
+        item(opener, "sidebar.toggle", "Toggle Sidebar"),
+        separator,
+        { role: "togglefullscreen" },
+        // Reload and devtools only in development: a reload drops the live view's state for nothing.
+        ...(app.isPackaged ? [] : [separator, { role: "reload" } as const, { role: "toggleDevTools" } as const]),
+      ],
+    },
+    {
+      label: "Order",
+      submenu: [item(opener, "order.previous", "Previous Order"), item(opener, "order.next", "Next Order"), separator, item(opener, "order.stop", "Stop Order…")],
+    },
+    { role: "windowMenu" },
+    {
+      role: "help",
+      submenu: [
+        { label: "fleetd on GitHub", click: () => void shell.openExternal(REPO_URL) },
+        { label: "Docs", click: () => void shell.openExternal(DOCS_URL) },
+        ...(mac ? [] : [separator, { role: "about" } as const]),
+      ],
+    },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+};

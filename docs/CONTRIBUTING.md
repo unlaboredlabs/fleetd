@@ -13,7 +13,9 @@ fleetd is one Cargo workspace. The shipped `fleetd` is one static binary with no
   re-recording the fixtures in the same PR.
 - `crates/fleetd-contracts`: serde types for everything that crosses a wire between fleetd components, shared by the
   binary and the app. `cargo run -p fleetd-contracts --bin fleetd-schema` rewrites the committed JSON Schemas in
-  `schema/`; a test fails while they are out of date.
+  `schema/` and the desktop app's TypeScript in `app/desktop/src/shared/contracts/generated/`; a test and a CI step
+  (`fleetd-schema --check`) fail while either is out of date or hand-edited. A Rust enum a newer hub may extend gets
+  `#[schemars(extend("x-open" = true))]`, so the app's type also admits values it doesn't know yet.
 - `playbooks/`: the built-in playbooks, embedded in the binary.
 - `app/`: the desktop app (`fleetd-app`, GPUI pinned to a Zed release tag) and its speed harness (`app/bench/`, run
   with `app/bench/run.sh`).

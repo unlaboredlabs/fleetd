@@ -23,6 +23,8 @@ export class HubService {
   /** Set from FLEETD_HUB_URL + FLEETD_AGENT_KEY: used for this run, never stored. */
   readonly #ephemeral: boolean;
   #unpaired: HubState = { phase: "unpaired" };
+  /** The renderer's live scope, kept here so a client made later (a first pairing, a re-pair) starts with it. */
+  #live: LiveScope | null = null;
 
   constructor(mode: HubMode) {
     this.#mode = mode;
@@ -64,6 +66,7 @@ export class HubService {
   }
 
   live(scope: LiveScope | null): void {
+    this.#live = scope;
     this.#source?.live(scope);
   }
 
@@ -113,6 +116,7 @@ export class HubService {
     this.#source?.stop();
     const client = new HubClient({ hub, key, transport: this.#mode.transport, emit: (frame) => this.#broadcast(frame) });
     this.#source = client;
+    client.live(this.#live);
     client.start();
   }
 
