@@ -4,7 +4,9 @@
 // or an approximation rather than a measurement (spec §2f).
 import { useCallback, useMemo, useState, type KeyboardEvent } from "react";
 import { Button, Dot, Tab, TabList, TabPanel, Tabs, Text, Truncate, copyText, cx, toast } from "../../ui";
+import { useCommands } from "../palette";
 import { Breakdown } from "./Breakdown";
+import "./commands";
 import { FilterBar } from "./FilterBar";
 import { Insights } from "./Insights";
 import { LinkedSheet, TranscriptSheet } from "./Sheets";
@@ -13,6 +15,7 @@ import { askLinked, askWindow, hubClient, linkedKeeps, useAsk, useTimeData, type
 import { loadFilters, queryOf, saveFilters, type Filters } from "./filters";
 import { NO_NAMES, ROLE_WORD, fmtDur, isMissingEmpty, missing, missingSentence, type Names } from "./format";
 import { buildModel } from "./model";
+import { orderRoute } from "./route";
 import type { Category, Span, ThreadWindowOutput } from "./types";
 import s from "./Time.module.css";
 
@@ -36,8 +39,7 @@ export interface TimeScreenProps {
 }
 
 const routeToOrder = (order: string, at?: { readonly threadId: string; readonly itemId: string }) => {
-  const q = at === undefined ? "" : `?${new URLSearchParams({ thread: at.threadId, item: at.itemId }).toString()}`;
-  window.location.hash = `#/order/${encodeURIComponent(order)}${q}`;
+  window.location.hash = orderRoute(order, at);
 };
 
 const copyLink = (url: string) => {
@@ -152,6 +154,26 @@ export function TimeScreen(props: TimeScreenProps) {
     setWindowAt(span);
     askThreadWindow(askWindow(client, { machineId: span.machineId, threadId: span.threadId, itemId: span.itemId }));
   };
+
+  // While the inspector is open, the palette can drive it.
+  const compareOn = filters.compare && order === undefined;
+  useCommands(
+    [
+      { id: "time:timeline", title: "Time: timeline", group: "actions", enabled: () => order !== undefined, run: () => setTab("timeline") },
+      { id: "time:breakdown", title: "Time: breakdown", group: "actions", run: () => setTab("breakdown") },
+      { id: "time:insights", title: "Time: insights", group: "actions", run: () => setTab("insights") },
+      { id: "time:whole", title: "Time: show the whole order", detail: "Undo the zoom", group: "actions", enabled: () => view !== undefined, run: () => setView(undefined) },
+      { id: "time:clear", title: "Time: clear the lit spans", group: "actions", enabled: () => highlight !== undefined, run: () => setHighlight(undefined) },
+      {
+        id: "time:compare",
+        title: compareOn ? "Time: stop comparing" : "Time: compare with the period before",
+        group: "actions",
+        enabled: () => order === undefined,
+        run: () => changeFilters({ ...filters, compare: !filters.compare }),
+      },
+    ],
+    [compareOn],
+  );
 
   const onKeyDown = (e: KeyboardEvent) => {
     // Esc closes the innermost thing: the sheets close themselves, then the highlight, then the zoom.
