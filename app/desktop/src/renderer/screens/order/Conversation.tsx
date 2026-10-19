@@ -6,7 +6,7 @@ import type { Virtualizer } from "@tanstack/react-virtual";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cx, IdChip, InlineCode, Markdown, Text, Tooltip, VirtualList, type TextProps } from "../../ui";
-import { foldLabel, jumpTarget, systemHeadline, type Author, type Call, type Entry } from "./conversation";
+import { foldLabel, jumpTarget, systemHeadline, type Author, type Call, type Entry } from "./conversationModel";
 import { clock, codeRuns, machineCode } from "./format";
 import type { Receipt, ReceiptAct } from "./receipts";
 import s from "./order.module.css";
