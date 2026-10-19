@@ -167,7 +167,8 @@ export const screens: readonly Screen[] = [
   {
     id: "board",
     route: "#/board",
-    fixtures: ["empty", "typical", "long-text", "many-agents", "needs-you", "board-stage", "board-finish"],
+    // hub-unreachable: the composer shows main's reason and fix for a lost hub, so their wording is seen and checked.
+    fixtures: ["empty", "typical", "long-text", "many-agents", "needs-you", "board-stage", "board-finish", "hub-unreachable"],
   },
   // E2: every design-system primitive with short, long and empty content, one section per entry, so the primitives
   // pass before any screen uses them. Needs a build with the gallery in it: `pnpm qa:build`.
