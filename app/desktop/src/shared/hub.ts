@@ -1,5 +1,5 @@
 // The hub data the renderer sees: the /app protocol's own shapes, generated from crates/fleetd-contracts.
-import type { FleetStatus, HubEvent, LiveFrame } from "./contracts";
+import type { ChatDelta, FleetStatus, HubEvent, LiveFrame } from "./contracts";
 
 export type { HubEvent, LiveFrame };
 /** The answer to `snapshot`: fleetd_status's data, with the event cursor to resume from. */
@@ -33,6 +33,8 @@ export type HubFrame =
   | { readonly t: "snapshot"; readonly snapshot: Snapshot }
   | { readonly t: "event"; readonly event: HubEvent }
   | { readonly t: "live"; readonly frame: LiveFrame }
+  /** Streamed text of the subscribed chat's lead message (see hub.chat). */
+  | { readonly t: "chat_delta"; readonly delta: ChatDelta }
   /** A session-level hub error (not an answer to a call). */
   | { readonly t: "error"; readonly error: HubError };
 

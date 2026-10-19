@@ -8,6 +8,7 @@ use schemars::generate::SchemaSettings;
 use serde_json::{Map, Value};
 
 use crate::app::{AppClientMessage, AppServerMessage};
+use crate::chat::{ChatMessage, ProjectChatState};
 use crate::events::{
     AskEventData, ClaimEventData, HubEvent, HubEventType, MachineSleptData, PromptChangedData,
     ThreadEventData, TrainEventData, WorkstreamEventData, WorkstreamNoteData,
@@ -21,7 +22,7 @@ use crate::status::{
     SourceFreshData, SourceStaleData,
 };
 use crate::steer::SteerEventData;
-use crate::tasks::TaskEventData;
+use crate::tasks::{AgentsCapData, TaskEventData};
 use crate::tasks::{SlotState, Task};
 use crate::train::{Change, TrainState};
 use crate::usage::UsageEventData;
@@ -92,6 +93,7 @@ fn hub_event_data_document_for(side: Side) -> Value {
         data!(WorkstreamNoteData: WorkstreamNote);
         data!(AskEventData: AskCreated, AskAuto, AskClosed, AskAnswered, AskUndone, AskDelivered);
         data!(TaskEventData: TaskQueued, TaskStarted, TaskCompleted, TaskFailed, TaskCancelled, TaskOutOfArea);
+        data!(AgentsCapData: AgentsCap);
         data!(ClaimEventData: ClaimPassed, ClaimFailed);
         data!(TrainEventData: ChangeQueued, ChangeReady, ChangeNeedsRebase, ChangeCiFailed, ChangeRefused, PrMerged,
             TrainFrozen, TrainResumed, TrainBlocked);
@@ -103,6 +105,8 @@ fn hub_event_data_document_for(side: Side) -> Value {
         data!(PlanChangedData: PlanChanged);
         data!(PlanVerifiedData: PlanVerified);
         data!(PromptChangedData: PromptChanged);
+        data!(crate::chat::ChatMessageEventData: ChatMessage);
+        data!(crate::chat::ProjectChatState: ChatWaiting);
         data!(SteerEventData: SteerQueued, SteerDelivered, SteerAcknowledged, SteerUnacknowledged, SteerWithdrawn,
             SteerFailed);
         let required: Vec<Value> = properties.keys().cloned().map(Value::String).collect();
@@ -243,6 +247,8 @@ fn json_schemas_for(side: Side) -> BTreeMap<&'static str, Value> {
         Incident,
         Change,
         TrainState,
+        ChatMessage,
+        ProjectChatState,
     );
     out.insert("McpTools", mcp_tools_document_for(side));
     out.insert("HubEventData", hub_event_data_document_for(side));

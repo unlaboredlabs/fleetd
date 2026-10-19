@@ -75,6 +75,13 @@ export const CallRequest = z.strictObject({
 });
 export type CallRequest = z.infer<typeof CallRequest>;
 
+/** The chat on screen, for its streamed text. */
+export const ChatScope = z.strictObject({
+  machineId: z.string().min(1).max(200),
+  projectId: z.string().min(1).max(200),
+});
+export type ChatScope = z.infer<typeof ChatScope>;
+
 export const LiveScope = z.strictObject({
   board: z.boolean(),
   focus: z.string().min(1).max(64).optional(),
@@ -89,7 +96,8 @@ export type ConnectRequest = z.infer<typeof ConnectRequest>;
 
 /** A secret ask's value and the box key of the machine it goes to; main seals it (main/secret.ts). */
 export const SecretRequest = z.strictObject({
-  askId: z.string().regex(/^A[1-9][0-9]*$/u),
+  /** The secret request item's requestId (ChatRequestId), "R<n>". */
+  requestId: z.string().regex(/^R[1-9][0-9]*$/u),
   boxPubKey: z.string().regex(/^[A-Za-z0-9+/]{43}=$/u),
   // 8192 UTF-8 bytes at most; main checks the byte length, this only bounds the string.
   value: z.string().min(1).max(8192),
@@ -117,6 +125,7 @@ export const REQUESTS = {
   [IPC.hubUnsubscribe]: none,
   [IPC.hubCall]: z.tuple([CallRequest]),
   [IPC.hubLive]: z.tuple([LiveScope.nullable()]),
+  [IPC.hubChat]: z.tuple([ChatScope.nullable()]),
   [IPC.hubResync]: none,
   [IPC.hubConnect]: z.tuple([ConnectRequest]),
   [IPC.hubForget]: none,

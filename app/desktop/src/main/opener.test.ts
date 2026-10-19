@@ -54,25 +54,25 @@ describe("Opener", () => {
     opener.ready();
     windows[0]?.close();
 
-    opener.open({ kind: "ask", askId: "A1" });
+    opener.open({ kind: "chat", machineId: "devbox", projectId: "storefront", messageId: "m-1" });
     expect(windows).toHaveLength(2);
     const second = windows[1];
     expect(second?.sent).toEqual([]);
     opener.ready();
-    expect(second?.sent).toEqual([[IPC.appOpen, { kind: "ask", askId: "A1" }]]);
+    expect(second?.sent).toEqual([[IPC.appOpen, { kind: "chat", machineId: "devbox", projectId: "storefront", messageId: "m-1" }]]);
   });
 
   it("keeps only the latest target of a kind while it waits", () => {
     const opener = new Opener();
-    opener.open({ kind: "ask", askId: "A1" });
-    opener.open({ kind: "ask", askId: "A2" });
-    opener.open({ kind: "inbox" });
+    opener.open({ kind: "chat", machineId: "devbox", projectId: "storefront", messageId: "m-1" });
+    opener.open({ kind: "chat", machineId: "devbox", projectId: "api", messageId: "m-2" });
+    opener.open({ kind: "status" });
     const w = fakeWindow();
     opener.attach(w.win);
     opener.ready();
     expect(w.sent).toEqual([
-      [IPC.appOpen, { kind: "ask", askId: "A2" }],
-      [IPC.appOpen, { kind: "inbox" }],
+      [IPC.appOpen, { kind: "chat", machineId: "devbox", projectId: "api", messageId: "m-2" }],
+      [IPC.appOpen, { kind: "status" }],
     ]);
   });
 

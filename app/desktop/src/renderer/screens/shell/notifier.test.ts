@@ -3,58 +3,70 @@ import { attentionEvent, FALLBACK_POLICY, Notifier, policyFrom, policyStale, qui
 
 const MIN = 60_000;
 const T0 = Date.parse("2026-10-17T10:00:00.000Z");
+const storefront = { machineId: "devbox", projectId: "storefront" };
+const api = { machineId: "devbox", projectId: "api" };
 
-const event = (summary: string, attention: "loud" | "urgent" | null, askId: string | null = null): AttentionEvent => ({
-  type: askId === null ? "usage.breaker" : "ask.created",
+const event = (summary: string, attention: "loud" | "urgent" | null, at: Partial<AttentionEvent> = {}): AttentionEvent => ({
+  type: "chat.message",
   summary,
   attention,
-  askId,
+  project: null,
+  messageId: null,
+  ...at,
 });
-const open = () => true;
+const needed = () => true;
 
 describe("Notifier", () => {
-  it("notifies at once, then at most once per window with the rest folded in", () => {
+  it("opens the project's chat at the message it is about", () => {
+    const n = new Notifier();
+    n.push(event("storefront: 1. Buy the domain? I'd say yes.", "urgent", { project: storefront, messageId: "m-7" }));
+    expect(n.due(T0, FALLBACK_POLICY, needed)).toEqual({
+      title: "fleetd needs you",
+      body: "storefront: 1. Buy the domain? I'd say yes.",
+      target: { kind: "chat", machineId: "devbox", projectId: "storefront", messageId: "m-7" },
+    });
+  });
+
+  it("notifies at once, then at most once per window, folding the rest into one", () => {
     const policy: Policy = { coalesceMs: 20 * MIN, quiet: [] };
     const n = new Notifier();
-    n.push(event("A1 pay: Buy the\ndomain?", "urgent", "A1"), 0);
-    n.push(event("thread failed", null), 0);
-    expect(n.due(T0, policy, open)).toEqual({ title: "fleetd needs you", body: "A1 pay: Buy the domain?", target: { kind: "ask", askId: "A1" } });
-    expect(n.due(T0, policy, open)).toBeNull();
-    n.push(event("buildbox breaker open", "loud"), 0);
-    n.push(event("A2 token", "loud", "A2"), 0);
-    expect(n.due(T0 + 19 * MIN, policy, open)).toBeNull();
-    expect(n.due(T0 + 20 * MIN, policy, open)).toMatchObject({ body: "buildbox breaker open (+1 more)", target: { kind: "inbox" } });
-    n.push(event("devbox breaker open", "loud"), 0);
-    expect(n.due(T0 + 40 * MIN, policy, open)?.target).toEqual({ kind: "machines" });
+    n.push(event("first", "loud", { project: storefront }));
+    expect(n.due(T0, policy, needed)).not.toBeNull();
+    n.push(event("storefront again", "loud", { project: storefront, messageId: "m-8" }));
+    n.push(event("storefront once more", "loud", { project: storefront, messageId: "m-9" }));
+    expect(n.due(T0 + 19 * MIN, policy, needed)).toBeNull();
+    // Two about one project open that chat, at no single message.
+    expect(n.due(T0 + 20 * MIN, policy, needed)).toMatchObject({
+      body: "storefront again (+1 more)",
+      target: { kind: "chat", machineId: "devbox", projectId: "storefront" },
+    });
+    n.push(event("storefront", "loud", { project: storefront }));
+    n.push(event("api", "loud", { project: api }));
+    expect(n.due(T0 + 40 * MIN, policy, needed)?.target).toEqual({ kind: "status" });
+    n.push(event("buildbox breaker open", "loud", { type: "usage.breaker" }));
+    expect(n.due(T0 + 60 * MIN, policy, needed)?.target).toEqual({ kind: "machines" });
   });
 
   it("holds loud items in quiet windows and lets urgent ones through", () => {
     const policy: Policy = { coalesceMs: 20 * MIN, quiet: [[T0 - 60 * MIN, T0 + 60 * MIN]] };
     const n = new Notifier();
-    n.push(event("A1 token", "loud", "A1"), 0);
-    expect(n.due(T0, policy, open)).toBeNull();
-    n.push(event("A2 drop the db", "urgent", "A2"), 0);
-    expect(n.due(T0, policy, open)?.body).toBe("A2 drop the db");
-    expect(n.due(T0 + 59 * MIN, policy, open)).toBeNull();
-    expect(n.due(T0 + 60 * MIN, policy, open)?.body).toBe("A1 token");
+    n.push(event("loud one", "loud", { project: api }));
+    expect(n.due(T0, policy, needed)).toBeNull();
+    n.push(event("drop the db?", "urgent", { project: storefront }));
+    expect(n.due(T0, policy, needed)?.body).toBe("drop the db?");
+    expect(n.due(T0 + 60 * MIN, policy, needed)?.body).toBe("loud one");
   });
 
-  it("drops asks answered meanwhile, but only on a read sent after they arrived", () => {
-    const policy: Policy = { coalesceMs: 20 * MIN, quiet: [] };
+  it("drops a project you answered meanwhile", () => {
     const n = new Notifier();
-    n.push(event("first", "loud"), 0);
-    expect(n.due(T0, policy, open)).not.toBeNull();
-    const landed = (last: number) => (_: string, sent: number) => last <= sent;
-    n.push(event("A3 pay", "urgent", "A3"), 4);
-    expect(n.due(T0 + 20 * MIN, policy, landed(4))).not.toBeNull();
-    n.push(event("A4 pay", "urgent", "A4"), 4);
-    expect(n.due(T0 + 40 * MIN, policy, landed(5))).toBeNull();
+    n.push(event("storefront asks", "loud", { project: storefront }));
+    expect(n.due(T0, FALLBACK_POLICY, (p) => p.projectId !== "storefront")).toBeNull();
   });
 
   it("cuts long summaries to one line", () => {
     const n = new Notifier();
-    n.push(event("word ".repeat(60), "loud"), 0);
-    const body = n.due(T0, FALLBACK_POLICY, open)?.body ?? "";
+    n.push(event("word ".repeat(60), "loud"));
+    const body = n.due(T0, FALLBACK_POLICY, needed)?.body ?? "";
     expect(body).toHaveLength(140);
     expect(body.endsWith("…")).toBe(true);
   });
@@ -67,20 +79,24 @@ describe("policy", () => {
     if (policy === null) return;
     expect(quietAt(policy, T0)).toBe(true);
     expect(quietAt(policy, T0 + 60 * MIN)).toBe(false);
-    expect(policyStale(policy, T0)).toBe(false);
     expect(policyStale(policy, T0 + 60 * MIN)).toBe(true);
-    expect(policyStale(FALLBACK_POLICY, T0)).toBe(false);
     expect(policyFrom({ quiet: [] })).toBeNull();
   });
 
-  it("reads only events the hub marked for attention", () => {
-    expect(attentionEvent({ seq: 1, type: "ask.created", summary: "A1 pay", attention: "urgent", data: { askId: "A1" } })).toEqual({
-      type: "ask.created",
-      summary: "A1 pay",
-      attention: "urgent",
-      askId: "A1",
-    });
+  it("reads the project and the message an event marked for attention is about", () => {
+    expect(
+      attentionEvent({ seq: 1, type: "chat.message", summary: "s", attention: "urgent", machineId: "devbox", projectId: "storefront", data: { messageId: "m-1" } }),
+    ).toEqual({ type: "chat.message", summary: "s", attention: "urgent", project: storefront, messageId: "m-1" });
+    expect(
+      attentionEvent({
+        seq: 4,
+        type: "chat.message",
+        summary: "s",
+        attention: "loud",
+        data: { projectRef: storefront, messageId: "m-2", author: "lead", seq: 9, state: "final" },
+      }),
+    ).toMatchObject({ project: storefront, messageId: "m-2" });
     expect(attentionEvent({ seq: 2, type: "thread.failed", summary: "x" })).toBeNull();
-    expect(attentionEvent({ seq: 3, type: "usage.breaker", summary: "x", attention: "loud", data: { askId: "A9" } })?.askId).toBeNull();
+    expect(attentionEvent({ seq: 3, type: "usage.breaker", summary: "x", attention: "loud" })?.project).toBeNull();
   });
 });

@@ -37,6 +37,7 @@ export const registerIpc = (hub: HubService, frame: { opener: Opener; notifier: 
   handle(IPC.hubUnsubscribe, (event) => hub.unsubscribe(event.sender));
   handle(IPC.hubCall, (_event, request) => hub.call(request));
   handle(IPC.hubLive, (_event, scope) => hub.live(scope));
+  handle(IPC.hubChat, (_event, project) => hub.chat(project));
   handle(IPC.hubResync, () => hub.resync());
   handle(IPC.hubConnect, (_event, request) => hub.connect(request));
   handle(IPC.hubForget, () => hub.forget());
