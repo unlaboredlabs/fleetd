@@ -38,7 +38,12 @@ const hatch = (color: string, line: number, gap: number, dpr: number): CanvasPat
     c.lineTo(o + size, 0);
   }
   c.stroke();
-  return c.createPattern(tile, "repeat") ?? undefined;
+  const pattern = c.createPattern(tile, "repeat");
+  if (pattern === null) return undefined;
+  // The tile is drawn in device pixels, and the paint context is already scaled by dpr: undo one of the two, or the
+  // stripes come out dpr times too wide (soft and off-legend on Retina).
+  pattern.setTransform(new DOMMatrix().scale(1 / dpr));
+  return pattern;
 };
 
 /**
