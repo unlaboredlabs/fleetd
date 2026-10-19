@@ -234,10 +234,11 @@ function setupTranscripts() {
   return { init, add };
 }
 
-// ---- The docs' capture blocks (docs/site/*.md) ----
+// ---- The docs' capture blocks (docs/site/src/content/docs/**/*.md and .mdx) ----
 
-const DOCS = path.join(REPO, "docs/site");
-const DOCS_BLOCK = /^```console capture=([a-z0-9-]+)\n([\s\S]*?)^```$/gmu;
+const DOCS = path.join(REPO, "docs/site/src/content/docs");
+// A block may be indented, as a step of a numbered list; its lines carry the same indent.
+const DOCS_BLOCK = /^( *)```console capture=([a-z0-9-]+)\n([\s\S]*?)^\1```$/gmu;
 
 /** The `$ ` commands of a transcript, a trailing backslash continuing one onto the next line. */
 export function docsCommands(body: string) {
@@ -252,20 +253,24 @@ export function docsCommands(body: string) {
   return commands;
 }
 
+const dedent = (body: string, indent: string) => body.split("\n").map((l) => (l.startsWith(indent) ? l.slice(indent.length) : l)).join("\n");
+const reindent = (body: string, indent: string) => body.replace(/^(?=.)/gmu, indent);
+
 /** Each block's `$ ` commands run in a fresh throwaway HOME where the standard `fleetd init` already ran (unless the
  * block's first command is `fleetd init`), each followed by its output; `[exit N]` only when N isn't 0. Blocks named
  * in `given` (output only the lab run has, like the digest) take that text instead; without it they're left alone. */
 export function docsBlocks(given: Record<string, string>) {
   const blocks = new Map<string, { file: string; body: string }>();
-  for (const name of fs.readdirSync(DOCS).filter((n) => n.endsWith(".md")).sort()) {
+  const names = fs.readdirSync(DOCS, { recursive: true, encoding: "utf8" }).filter((n) => /\.mdx?$/u.test(n)).sort();
+  for (const name of names) {
     const file = path.join(DOCS, name);
-    for (const [, block, body] of fs.readFileSync(file, "utf8").matchAll(DOCS_BLOCK)) {
-      check(!blocks.has(block!), `capture=${block} is used once across docs/site`);
+    for (const [, indent, block, body] of fs.readFileSync(file, "utf8").matchAll(DOCS_BLOCK)) {
+      check(!blocks.has(block!), `capture=${block} is used once across the docs`);
       if (block! in given) {
         blocks.set(block!, { file, body: `${given[block!]}\n` });
         continue;
       }
-      const commands = docsCommands(body!);
+      const commands = docsCommands(dedent(body!, indent!));
       if (commands.length === 0) {
         log(`docs: capture=${block} in ${name} has no $ command and no lab output; left as is`);
         continue;
@@ -282,19 +287,21 @@ export function docsBlocks(given: Record<string, string>) {
   return blocks;
 }
 
-/** Writes the blocks back into docs/site and regenerates site/docs. */
+/** Writes the blocks back into the docs' sources and rebuilds site/docs. */
 function fillDocs(blocks: ReturnType<typeof docsBlocks>) {
   for (const [name, { body }] of blocks) assertPublishable(`docs capture=${name}`, body);
   const files = new Set([...blocks.values()].map((b) => b.file));
   for (const file of files) {
-    const text = fs.readFileSync(file, "utf8").replace(DOCS_BLOCK, (all, name: string) => {
+    const text = fs.readFileSync(file, "utf8").replace(DOCS_BLOCK, (all, indent: string, name: string) => {
       const b = blocks.get(name);
-      return b === undefined || b.file !== file ? all : `\`\`\`console capture=${name}\n${b.body}\`\`\``;
+      return b === undefined || b.file !== file ? all : `${indent}\`\`\`console capture=${name}\n${reindent(b.body, indent)}${indent}\`\`\``;
     });
     fs.writeFileSync(file, text);
   }
   execFileSync("cargo", ["run", "-q", "--locked", "-p", "docsgen"], { cwd: REPO, stdio: "inherit" });
-  log(`docs: recaptured ${blocks.size} block(s) in ${files.size} file(s) under docs/site and regenerated site/docs`);
+  execFileSync("npm", ["ci", "--prefix", "docs/site"], { cwd: REPO, stdio: "inherit" });
+  execFileSync("npm", ["run", "build", "--prefix", "docs/site"], { cwd: REPO, stdio: "inherit" });
+  log(`docs: recaptured ${blocks.size} block(s) in ${files.size} file(s) and rebuilt site/docs`);
 }
 
 interface TrainLine {

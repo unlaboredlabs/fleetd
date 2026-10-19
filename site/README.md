@@ -33,77 +33,80 @@ names this machine, its home or lab paths, a non-loopback address or a key. Revi
 The callout positions (`--x`, `--y`) and the hand-written callout text are not generated: the script lists quotes and
 ids on the page that its run didn't produce, and you re-aim the callouts if the app's layout moved.
 
-`fleet-board.png`, the board at the top of the page, and the app shots in the docs (`site/docs/img/`) are the app's
+`fleet-board.png`, the board at the top of the page, and the app shots in the docs (`docs/site/public/img/`) are the app's
 screens on E3b's fixtures, which are sanitized lab hub traffic (`app/desktop/fixtures`), at 1400x900@2x in the light
 theme, without the sample-data banner. `app/desktop/qa/site.ts` lists them; `pnpm fixtures && pnpm qa:build && pnpm
-site:shots` in `app/desktop` writes them into `site/`. Re-shoot them when what those screens show changes, and keep
+site:shots` in `app/desktop` writes them in place. Re-shoot them when what those screens show changes, and keep
 the captions and alt texts true to the picture.
 
 ## Docs (fleetd.sh/docs)
 
-`site/docs/` is generated from `docs/site/*.md` by `crates/docsgen` and committed (Vercel has no build step). After
-editing a page, regenerate and commit both:
+The docs are an [Astro Starlight](https://starlight.astro.build) site in `docs/site/`. Its build, `site/docs/`, is
+committed, because the Vercel project has no build step. After editing a page, rebuild and commit both:
 
 ```sh
-cargo run -q -p docsgen
+cargo run -q -p docsgen                  # only when the CLI or the prompt registry changed
+npm ci --prefix docs/site
+npm run build --prefix docs/site
 ```
 
-CI fails while `site/docs/` is out of date (`cargo run -q -p docsgen -- --check`). To read the result locally with
-clean URLs, run `node .github/docs-serve.mjs` and open http://127.0.0.1:4791/docs.
+CI fails while the generated pages or `site/docs/` are out of date. To read the docs locally with clean URLs, run
+`node .github/docs-serve.mjs` and open http://127.0.0.1:4791/docs, or `npm run dev --prefix docs/site` while
+writing.
 
 ### Where
 
-- One file per page: `docs/site/<slug>.md`. Lowercase, `-` separated (`quick-start.md`, `projects-and-orders.md`).
-- `docs/site/cli.md` holds only the CLI reference's frontmatter and intro; the reference itself is generated from
-  `fleetd help`.
-- Images, if any: `site/docs/img/<name>.png` (committed by hand, not generated), referenced as `/docs/img/<name>.png`.
+- One file per page: `docs/site/src/content/docs/<slug>.md`, or `.mdx` when the page uses tabs. Lowercase,
+  `-` separated. The page lives at `/docs/<slug>`.
+- The sidebar is the `sidebar` list in `docs/site/astro.config.mjs`. A new page needs an entry there.
+- Generated, don't edit: `reference/cli.md` (from `fleetd help`), `reference/agent-tools.md` (from the agent tools),
+  and the prompt table between `<!-- prompt-table -->` markers in `what-agents-are-told.md`. `cargo run -q -p docsgen`
+  writes them; `crates/docsgen/src/main.rs` lists them.
+- Images: `docs/site/public/img/<name>.png`, referenced as `/docs/img/<name>.png`.
 
-### Frontmatter (all keys, nothing else is accepted)
+### Frontmatter
 
 ```markdown
 ---
 title: Quick start
-section: Get started
-order: 20
-description: Install, set up the hub and send a first order in three steps.
+description: Set up the hub, pair the desktop app and send your first order.
 ---
 ```
 
-| key | required | meaning |
-|---|---|---|
-| `title` | yes | Page `<h1>`, nav label, `<title>`, search. Short: "Machines", not "Managing your machines". |
-| `section` | yes | Nav group label. Pages with the same section are one group. |
-| `order` | yes | Integer, unique across all pages. Sorts the nav and prev/next. Sections sort by their lowest page order, so keep a section's pages contiguous. Use steps of 10. |
-| `description` | yes | One sentence, plain text. `<meta description>`, the /docs index list and search results. |
-| `slug` | no | URL segment; defaults to the filename stem. The page lives at `/docs/<slug>`. |
+`title` is the page's `<h1>` and sidebar label: short, "Machines", not "Managing your machines". `description` is one
+plain sentence for search and link previews; quote it when it contains `: `.
 
-`/docs` itself is generated: a compact list of every section and page with its description. No intro page.
+### Writing
 
-### Body
-
-- CommonMark plus GFM tables, strikethrough and task lists. No raw HTML (it's escaped). No `#` h1 (the title is the h1).
-- `##` and `###` get an id (lowercased words joined by `-`: `## Remove a machine` -> `#remove-a-machine`), a hover `#`
-  link, and `##` headings make the "On this page" list. Pin an id with `## Remove a machine {#remove}`.
-- Links between pages: `[Machines](machines.md)`, `[doctor](troubleshooting.md#claude_login)`, the CLI reference:
-  `[machine add](cli.md#machine-add)`. Rendered as `/docs/<slug>#anchor`. Missing pages/anchors fail the build.
-- A blockquote renders as a short note (rule on the left). Use sparingly.
-- Inline `code` for machine text only (commands, paths, ids, keys). `fleetd <cmd>` written as code must be a command in
-  `fleetd help` (CI checks it, like the landing page).
+- Start with one sentence on what the reader will do, or what the page is.
+- Example first, then explanation. Numbered steps with the exact command, then its expected output in a ` ```text `
+  block.
+- Options, fields and states as tables. Troubleshooting as symptom, cause, fix.
+- Short sentences, plain words, no paragraph over about three lines.
+- Link a fleetd term to the [Glossary](https://fleetd.sh/docs/glossary) the first time a page uses it.
+- No time estimates in text or examples: measured durations only.
+- Links between pages are absolute: `[Machines](/docs/machines#remove)`. CI checks every link and anchor.
+- Pin an anchor that other pages or fleetd's output use: `## Remove a machine {#remove}`.
+- Inline `code` for machine text only (commands, paths, ids, keys). A `fleetd <cmd>` written as code must be a
+  command in `fleetd help` (CI checks it, like the landing page).
+- Callouts: `:::note`, `:::tip`, `:::caution`. Tabs (`.mdx` only): `<Tabs syncKey="os">` with `macOS` and `Linux`
+  items, as in `install.mdx`.
 
 ### Code blocks
 
-| fence | rendered | copy button copies |
-|---|---|---|
-| ` ```sh ` | commands to run, one per line, no `$ ` | the whole block |
-| ` ```console ` | a transcript: lines starting `$ ` are commands (bold), the rest is output (grey) | only the `$ ` lines, without `$ ` |
-| ` ```text ` | plain output or file content | nothing (no button) |
-| ` ```yaml `, ` ```toml `, ` ```json `, ` ```ini ` | file content | the whole block |
+| fence | for |
+|---|---|
+| ` ```sh ` | commands to run, one per line, no `$ ` |
+| ` ```text ` | output, or file content without a language |
+| ` ```console capture=<name> ` | a transcript the capture script fills from the real binary (below) |
+| ` ```yaml `, ` ```ini `, ` ```json ` | file content |
 
-Every block except `text` gets a copy button. No syntax highlighting.
+Every block gets a copy button and syntax highlighting.
 
 ### Captured output (real output, recaptured by script)
 
-Mark a `console` block whose output must come from the real binary with `capture=<name>` in the info string:
+Mark a `console` block whose output must come from the real binary with `capture=<name>` in the info string. It may
+be indented as a step of a numbered list:
 
 ````markdown
 ```console capture=doctor-fresh
@@ -117,19 +120,11 @@ $ fleetd doctor
   each marked block's `$ ` lines in order, in a fresh throwaway HOME (user `demo`, shown as `~`) where `fleetd init
   --listen 127.0.0.1:4778 --git-identity "Demo <demo@users.noreply.github.com>" --no-service` has already run (unless
   the block's first command is `fleetd init` itself), writes each command's output under it, keeps a nonzero exit as
-  a final `[exit N]` line, and regenerates `site/docs`. It refuses to write a hostname, a real `/home` path, a
+  a final `[exit N]` line, and rebuilds `site/docs`. It refuses to write a hostname, a real `/home` path, a
   non-loopback IP or a key.
-- Blocks named `init` and `machine-add` get exactly the landing page's transcripts (the `fleetd init --yes
-  --no-service …` wizard and `fleetd machine add builder-1 --dry-run` as the plan only, each ending in `[exit 0]`).
-- Output that needs a live hub, a node or claude can't be captured that way. A block named `digest` is filled from
-  the full lab run (`FLEETD_LAB_SLOT=8 node tests/lab/site-capture.ts`, which also does everything `--docs` does).
-  For anything else that needs a live fleet, paste real output from a lab run into an unmarked `console` block.
+- Output that needs a live hub, a node or claude can't be captured that way. Paste real output from a lab run into a
+  ` ```text ` block instead.
 - Never invent or edit output by hand inside a capture block.
-
-### Doctor findings (Troubleshooting)
-
-Use the check id as the heading id so `fleetd doctor` output can be matched to the page: `## claude is not logged in
-{#claude_login}`. One `##` per finding, fix first.
 
 ## Vercel project settings
 
