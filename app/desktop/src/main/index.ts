@@ -6,6 +6,7 @@ import { osCredentialEnv } from "./hub/os";
 import { HubService, type HubMode } from "./hub/service";
 import { webSocketTransport } from "./hub/transport";
 import { registerIpc } from "./ipc";
+import { claimProtocolOnce } from "./protocol";
 import { harden, lockSession, pageUrl } from "./security";
 import { startUpdater } from "./updater";
 
@@ -82,6 +83,7 @@ void app.whenReady().then(() => {
   app.on("will-quit", () => hub.stop());
   createWindow(mode);
   startUpdater();
+  claimProtocolOnce();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow(mode);
   });
