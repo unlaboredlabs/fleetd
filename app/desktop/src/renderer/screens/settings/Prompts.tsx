@@ -1,11 +1,19 @@
 // Settings → Prompts: every text fleetd sends a model, grouped, searchable, each editable hub-wide or for one
 // project. Warnings come from the hub's dry run as you type and never block a save. A running session keeps the
 // text it started with.
-import { ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Button, Dialog, Dot, IdChip, Input, Tab, TabList, TabPanel, Tabs, Text, Textarea, cx, textClass } from "../../ui";
-import { describe, groupOf, sections, type CatalogRow } from "./catalog";
-import type { ProjectRef, PromptDetail, PromptScope, PromptSummary, PromptWarning } from "./contracts";
+import { Button, Dialog, Dot, IdChip, Tab, TabList, TabPanel, Tabs, Text, Textarea, copyText, cx, textClass } from "../../ui";
+import { describe, sections, type CatalogRow } from "./catalog";
+import {
+  type ProjectRef,
+  type ProjectSummary,
+  type PromptDetail,
+  type PromptScope,
+  type PromptSummary,
+  type PromptWarning,
+  type PromptsListOutput,
+  type RetiredPromptOverride,
+} from "./contracts";
 import { DiffBlock } from "./DiffBlock";
 import { counts, diffLines, sameProse } from "./diff";
 import {
@@ -32,7 +40,7 @@ import {
 } from "./editor";
 import { errorText, useHubCall, useLive, useRead, useRefetch, type Load } from "./hub";
 import { ConfirmDiscard, ScopeSelect, scopeName, useProjects } from "./parts";
-import { toggleGroup, useCollapsed } from "./prefs";
+import { orphanAdvice, orphanHeadline, targetName, whyLine } from "./orphans";
 import { replaceRoute, type SettingsRoute, type View } from "./route";
 import s from "./settings.module.css";
 
@@ -232,6 +240,7 @@ export function Prompts({ route }: { route: SettingsRoute }) {
   const pendingWhy =
     pending && pending.id !== selected ? "Opening another prompt drops them." : `Showing ${pending ? scopeName(pending.scope, projects) : here} drops them.`;
   const listed = list.state === "ready" ? list.value.prompts.find((p) => p.id === selected) : undefined;
+  const orphans = list.state === "ready" ? list.value.orphans : [];
   const name = d ? describe(d).name : listed ? describe(listed).name : "this prompt";
   const resetScope = d && confirmReset ? (confirmReset === "update" ? updateTarget(d, scope).scope : editScope(d, scope)) : null;
 
@@ -259,6 +268,14 @@ export function Prompts({ route }: { route: SettingsRoute }) {
           </Text>
         </div>
       </div>
+      {orphans.length > 0 ? (
+        <Orphans
+          orphans={orphans}
+          projects={projects}
+          onOpen={(id) => request({ scope, id })}
+          onDeleted={refetchPrompts}
+        />
+      ) : null}
       <div className={s.split}>
         <PromptList list={list} selected={selected} scope={scope} onPick={(id) => request({ scope, id })} onRetry={reloadList} />
         <div className={s.detailPane}>
@@ -345,60 +362,33 @@ function badge(summary: PromptSummary, scope: Scope): { label: string; update?: 
   return null;
 }
 
+const EVENTS_DOC = "https://fleetd.sh/docs/what-agents-are-told#wake-events";
+
 function PromptList(props: {
-  list: Load<{ prompts: PromptSummary[] }>;
+  list: Load<PromptsListOutput>;
   selected: string | null;
   scope: Scope;
   onPick: (id: string) => void;
   onRetry: () => void;
 }) {
   const { list, selected, scope } = props;
-  const [query, setQuery] = useState("");
-  const collapsed = useCollapsed();
   const prompts = useMemo(() => (list.state === "ready" ? list.value.prompts : []), [list]);
-  const shown = useMemo(() => sections(prompts, query), [prompts, query]);
-  const total = useMemo(() => sections(prompts, "").reduce((n, g) => n + g.rows.length, 0), [prompts]);
-  const searching = query.trim() !== "";
+  const shown = useMemo(() => sections(prompts), [prompts]);
   const listRef = useRef<HTMLDivElement>(null);
 
-  // A prompt opened from elsewhere sits in a group that may be folded: unfold it and bring the row into view.
-  const selectedGroup = useMemo(() => {
-    const hit = prompts.find((p) => p.id === selected);
-    return hit ? groupOf(hit) : null;
-  }, [prompts, selected]);
-  useEffect(() => {
-    if (selectedGroup && collapsed.has(selectedGroup)) toggleGroup(selectedGroup);
-    // Unfold once per selection, not every time the person folds it again.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedGroup, selected]);
   useEffect(() => {
     // Scrolls the list only: scrollIntoView would also scroll the window when anything below overflows it.
-    const list = listRef.current;
-    const row = list?.querySelector('[aria-current="true"]');
-    if (!list || !row) return;
+    const el = listRef.current;
+    const row = el?.querySelector('[aria-current="true"]');
+    if (!el || !row) return;
     const r = row.getBoundingClientRect();
-    const l = list.getBoundingClientRect();
-    if (r.top < l.top) list.scrollTop -= l.top - r.top;
-    else if (r.bottom > l.bottom) list.scrollTop += Math.min(r.bottom - l.bottom, r.top - l.top);
-  }, [selected, selectedGroup]);
+    const l = el.getBoundingClientRect();
+    if (r.top < l.top) el.scrollTop -= l.top - r.top;
+    else if (r.bottom > l.bottom) el.scrollTop += Math.min(r.bottom - l.bottom, r.top - l.top);
+  }, [selected, shown]);
 
   return (
     <div className={s.listPane}>
-      <div className={s.search}>
-        <Input
-          type="search"
-          value={query}
-          placeholder={total > 0 ? `Search ${total} prompts` : "Search prompts"}
-          aria-label="Search prompts"
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Escape" && query !== "") {
-              e.stopPropagation();
-              setQuery("");
-            }
-          }}
-        />
-      </div>
       <div ref={listRef} className={s.list} role="navigation" aria-label="Prompts">
         {list.state === "loading" ? (
           <div className={s.empty}>
@@ -411,61 +401,142 @@ function PromptList(props: {
               <Button onClick={props.onRetry}>Try again</Button>
             </div>
           </div>
-        ) : shown.length === 0 ? (
-          <div className={s.empty}>
-            <Text tone="quiet">No prompt matches “{query.trim()}”.</Text>
-            <div>
-              <Button onClick={() => setQuery("")}>Clear the search</Button>
-            </div>
-          </div>
         ) : (
-          shown.map(({ group, rows }) => {
-            const open = searching || !collapsed.has(group.key);
-            const edited = rows.filter((r) => r.summary.scope !== "default").length;
-            const updates = rows.filter((r) => r.summary.stale).length;
-            return (
-              <section key={group.key} className={s.group} aria-label={group.title}>
-                <button
-                  type="button"
-                  className={s.groupHead}
-                  aria-expanded={open}
-                  disabled={searching}
-                  onClick={() => toggleGroup(group.key)}
-                >
-                  <ChevronRight className={s.chevron} aria-hidden />
-                  <Text strong>{group.title}</Text>
-                  <Text size="xs" tone={updates > 0 ? "warning" : "quiet"} tabular>
-                    {updates > 0 ? `${updates} to review · ` : ""}
-                    {edited > 0 ? `${edited} edited · ` : ""}
-                    {rows.length}
-                  </Text>
-                  {open && !searching ? (
-                    <span className={s.groupBlurb}>
-                      <Text size="xs" tone="quiet">
-                        {group.blurb}
+          <>
+            {shown.map(({ group, rows }) => {
+              const edited = rows.filter((r) => r.summary.scope !== "default").length;
+              const updates = rows.filter((r) => r.summary.stale).length;
+              return (
+                <section key={group.key} className={s.group} aria-label={group.title}>
+                  <div className={s.groupTitle}>
+                    <Text strong>{group.title}</Text>
+                    {updates + edited > 0 ? (
+                      <Text size="xs" tone={updates > 0 ? "warning" : "quiet"} tabular>
+                        {updates > 0 ? `${updates} to review` : `${edited} edited`}
                       </Text>
-                    </span>
-                  ) : null}
-                </button>
-                {open ? (
+                    ) : null}
+                  </div>
                   <div className={s.groupRows}>
                     {rows.map((row) => (
-                      <PromptRow
-                        key={row.summary.id}
-                        row={row}
-                        scope={scope}
-                        isCurrent={row.summary.id === selected}
-                        onPick={props.onPick}
-                      />
+                      <PromptRow key={row.summary.id} row={row} scope={scope} isCurrent={row.summary.id === selected} onPick={props.onPick} />
                     ))}
                   </div>
-                ) : null}
-              </section>
-            );
-          })
+                </section>
+              );
+            })}
+            <div className={s.eventsNote}>
+              <Text size="xs" tone="quiet">
+                What the lead hears when a PR merges, a task ends or a check fails is a fixed event line that fleetd writes, so
+                it isn't a prompt and isn't listed here.
+              </Text>
+              <div>
+                <Button size="sm" variant="ghost" onClick={() => void window.fleetd.openExternal(EVENTS_DOC)}>
+                  How event lines read
+                </Button>
+              </div>
+            </div>
+          </>
         )}
       </div>
     </div>
+  );
+}
+
+/** Edits of prompts fleetd no longer has: what each said, where it could go, and Delete. */
+function Orphans(props: {
+  orphans: ReadonlyArray<RetiredPromptOverride>;
+  projects: ReadonlyArray<ProjectSummary> | undefined;
+  onOpen: (id: string) => void;
+  onDeleted: () => void;
+}) {
+  const hubCall = useHubCall();
+  const [shownText, setShownText] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<RetiredPromptOverride | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
+  const [echo, setEcho] = useState<Echo | null>(null);
+  const key = (o: RetiredPromptOverride) => `${o.id}|${o.scope}|${o.projectRef?.machineId ?? ""}/${o.projectRef?.projectId ?? ""}`;
+  const remove = (o: RetiredPromptOverride) => {
+    setEcho(null);
+    hubCall("prompt_reset", { id: o.id, scope: o.scope, ...(o.scope === "project" && o.projectRef ? { projectRef: o.projectRef } : {}) }).then(
+      () => {
+        setEcho({ ok: true, text: `Deleted your edit to ${o.title}.` });
+        props.onDeleted();
+      },
+      (e: unknown) => setEcho({ ok: false, text: errorText(e) }),
+    );
+  };
+  return (
+    <section className={s.orphans} aria-label="Edits that no longer apply">
+      {props.orphans.map((o) => {
+        const k = key(o);
+        const target = targetName(o);
+        const open = shownText === k;
+        return (
+          <div key={k} className={s.orphan}>
+            <div className={s.orphanHead}>
+              <Dot color="var(--warning)" />
+              <Text strong>{orphanHeadline(o, props.projects)}</Text>
+            </div>
+            <Text size="xs" tone="quiet">{`${whyLine(o)} ${orphanAdvice(o)}`}</Text>
+            {open ? (
+              <pre className={s.orphanText} data-text="code">
+                {o.text}
+              </pre>
+            ) : null}
+            <div className={s.actions}>
+              <Button size="sm" onClick={() => setShownText(open ? null : k)}>
+                {open ? "Hide your text" : "Show your text"}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  void copyText(o.text).then((ok) => setCopied(ok ? k : null));
+                }}
+              >
+                {copied === k ? "Copied" : "Copy your text"}
+              </Button>
+              {target && o.suggestedTarget ? (
+                <Button size="sm" variant="ghost" onClick={() => o.suggestedTarget && props.onOpen(o.suggestedTarget)}>
+                  {`Open ${target}`}
+                </Button>
+              ) : null}
+              <Button size="sm" variant="ghost" onClick={() => setConfirm(o)}>
+                Delete this edit
+              </Button>
+            </div>
+          </div>
+        );
+      })}
+      {echo ? (
+        <div role="status">
+          <Text size="xs" tone={echo.ok ? "quiet" : "danger"}>
+            {echo.text}
+          </Text>
+        </div>
+      ) : null}
+      <Dialog
+        open={confirm !== null}
+        onOpenChange={(o) => !o && setConfirm(null)}
+        title={confirm ? `Delete your edit to ${confirm.title}?` : ""}
+        description="fleetd doesn't send this prompt any more, so deleting it changes nothing agents are told. Copy the text first if you want to keep it."
+        footer={
+          <>
+            <Button onClick={() => setConfirm(null)}>Cancel</Button>
+            <Button
+              variant="danger"
+              onClick={() => {
+                const o = confirm;
+                setConfirm(null);
+                if (o) remove(o);
+              }}
+            >
+              Delete
+            </Button>
+          </>
+        }
+      />
+    </section>
   );
 }
 
