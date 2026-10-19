@@ -379,13 +379,15 @@ const leadActive = (lanes: DataState["live"]["lanes"], key: ProjectKey): boolean
 
 /** The sidebar's and status's projects: needs-you first, then working, then by title; undefined until loaded. */
 export const selectProjectList = memo(
-  (s) => [s.fresh, s.projects, s.needsYou, selectAgentsByProject(s), s.live.lanes],
-  (fresh, projects, needsYou, agents, liveLanes): readonly ProjectRow[] | undefined => {
+  (s) => [s.fresh, s.projects, s.chatStates, selectAgentsByProject(s), s.live.lanes],
+  (fresh, projects, chats, agents, liveLanes): readonly ProjectRow[] | undefined => {
     if (!fresh || agents === undefined) return undefined;
     return Object.entries(projects)
       .map(([key, project]) => {
         const running = (agents[key] ?? noProjectLanes).filter((l) => l.role !== "lead" && active(l.status)).length;
-        return { key, project, needsYou: needsYou[key] === true, running, working: running > 0 || leadActive(liveLanes, key) };
+        const chat = chats[key];
+        const leadWorking = chat?.leadWorking ?? leadActive(liveLanes, key);
+        return { key, project, needsYou: chat?.needsYou === true, running, working: running > 0 || leadWorking };
       })
       .sort(
         (a, b) =>
@@ -403,12 +405,12 @@ export const selectNeedsYouTotal = memo(
 );
 
 export const selectNeedsYou = perKey((key) => (s: DataState): boolean | undefined =>
-  s.fresh && key in s.projects ? s.needsYou[key] === true : undefined,
+  s.fresh && key in s.projects ? s.chatStates[key]?.needsYou === true : undefined,
 );
 
 /** Whether the project's lead is at work now: typing then steers it rather than starting a turn. */
 export const selectLeadWorking = perKey((key) => (s: DataState): boolean | undefined =>
-  s.fresh ? leadActive(s.live.lanes, key) : undefined,
+  s.fresh ? (s.chatStates[key]?.leadWorking ?? leadActive(s.live.lanes, key)) : undefined,
 );
 
 export interface ChatView {
