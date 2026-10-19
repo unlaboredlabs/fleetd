@@ -7,7 +7,7 @@
 import type { ActionItem, AgentLane, HubEvent, Steer, TailItem } from "../../../shared/contracts";
 import { plural } from "./format";
 import { type Receipt, receipt, sendingReceipt } from "./receipts";
-import { taskOfTarget, type Sending } from "./sending";
+import { taskOfTarget, unsettled, type Sending } from "./sending";
 
 export type Author = { readonly kind: "you"; readonly keyName?: string } | { readonly kind: "lead" };
 
@@ -365,9 +365,7 @@ export function buildConversation(input: ConversationInput): Entry[] {
     }
   }
 
-  for (const s of input.sending) {
-    // A cut-off steer the hub turns out to have (steers_list after a reconnect) shows once, as the hub's.
-    if (s.state.t !== "failed" && steers.some((st) => sameSteer(st, s))) continue;
+  for (const s of unsettled(input.sending, steers)) {
     const to = taskOfTarget(s.target);
     out.push({
       kind: "say",
@@ -428,17 +426,6 @@ export function splitBlocks(text: string, max = 40): string[] {
   }
   if (cur.length > 0) out.push(cur.join("\n"));
   return out;
-}
-
-// Clocks differ a little between the app and the hub; a steer queued well before the send is an older one.
-const SKEW_MS = 5000;
-
-function sameSteer(st: Steer, s: Sending): boolean {
-  return (
-    st.text === s.text &&
-    taskOfTarget(st.target) === taskOfTarget(s.target) &&
-    Date.parse(st.queuedAt) >= Date.parse(s.at) - SKEW_MS
-  );
 }
 
 const settled = (l: AgentLane): boolean => l.status === "done" || l.status === "failed" || l.status === "cancelled";

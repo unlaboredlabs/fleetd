@@ -18,6 +18,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { expect, type Page } from "@playwright/test";
+import { STEER_SENDS } from "../fixtures/order/steerSends.ts";
 
 export const fixtures = [
   "empty",
@@ -49,6 +50,8 @@ export const fixtures = [
   "time-heavy",
   "conversation-20k",
   "order-told-overrides",
+  // F4: every steering state (fixtures/order).
+  "order-steering",
 ] as const;
 export type FixtureName = (typeof fixtures)[number];
 
@@ -290,6 +293,42 @@ export const screens: readonly Screen[] = [
       // A finished order's agents sit under its "Done (n)" fold.
       if ((await page.locator("[data-lane]").count()) === 0) await page.getByRole("button", { name: /^Done \(/ }).click();
       await page.locator("[data-lane]").first().click();
+    },
+  },
+  // F4: steering states. In the log: each receipt stage the hub reports, with a cut reply and a cut stopped command,
+  // and a steer waiting on the lead's running step. Sent from the lead's box: refused (not sent, with Resend, Edit
+  // and Dismiss), cut off by the link, unanswered, and one still sending. In T12's sheet: its queued and withdrawn
+  // steers, and a steer that found no hub, still in the box.
+  { id: "order", route: "#/order/W1", fixtures: ["order-steering"] },
+  {
+    id: "order.lead",
+    route: "#/order/W1",
+    fixtures: ["order-steering"],
+    open: async (page) => {
+      const lead = page.getByRole("tab", { name: "Lead" });
+      if ((await lead.count()) > 0) await lead.click();
+      const box = page.getByRole("textbox", { name: "Steer the lead" });
+      for (const text of [STEER_SENDS.refused, STEER_SENDS.cutOff, STEER_SENDS.unanswered, STEER_SENDS.sending]) {
+        await box.fill(text);
+        await box.press("Enter");
+        // The box empties once the hub answers; the last one never does.
+        if (text !== STEER_SENDS.sending) await expect(box).toHaveValue("");
+      }
+      await expect(page.locator('[data-receipt="sending"]')).toHaveCount(1);
+    },
+  },
+  {
+    id: "order.steer",
+    route: "#/order/W1",
+    fixtures: ["order-steering"],
+    open: async (page) => {
+      const fleet = page.getByRole("tab", { name: "Fleet" });
+      if ((await fleet.count()) > 0) await fleet.click();
+      await page.locator("[data-lane]").filter({ hasText: "T12" }).first().click();
+      const box = page.getByRole("textbox", { name: "Steer T12" });
+      await box.fill(STEER_SENDS.offline);
+      await box.press("Enter");
+      await expect(page.getByText("Not connected to the hub, so this steer wasn’t sent.")).toBeVisible();
     },
   },
 ];

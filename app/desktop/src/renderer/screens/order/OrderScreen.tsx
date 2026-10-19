@@ -19,6 +19,7 @@ import { jumpFromHash, useOrder, type Jump, type OrderActions, type OrderData } 
 import { ActivityText, Fleet } from "./Fleet";
 import { shortModel } from "./format";
 import { waitingLine, type ReceiptAct } from "./receipts";
+import { draftKey } from "./outbox";
 import { redirecting } from "./sending";
 import { SteerSheet, type SheetAgent } from "./SteerSheet";
 import { roleWords, type ToldWho } from "./told";
@@ -98,6 +99,8 @@ export function OrderView(props: { data: OrderData; actions: OrderActions; platf
   const [stopping, setStopping] = useState(false);
   const leadInput = useRef<HTMLTextAreaElement>(null);
   const sidebar = useShellData().projects;
+  // Bumped by every steer sent from the lead's box: the log scrolls to it and its receipt.
+  const [sentCount, setSentCount] = useState(0);
 
   const lead = data.lead;
   const leadWorking = lead?.status === "working" || lead?.status === "starting";
@@ -143,8 +146,10 @@ export function OrderView(props: { data: OrderData; actions: OrderActions; platf
   // Keep an open sheet's lane live as frames arrive.
   const sheetAgent = sheet ? { ...sheet, lane: (sheet.lane.role === "lead" ? lead : data.lanes.find((l) => l.laneId === sheet.lane.laneId)) ?? sheet.lane } : undefined;
 
-  // Receipts only show once the steers answered for this connection; a stale one can't act.
+  // The hub's receipts only show once the steers answered for this connection; a stale one can't act. A steer the
+  // hub doesn't have is this app's own, and can always be resent, edited or dropped.
   const onAct = (act: ReceiptAct) => {
+    if ("requestId" in act) return actions[act.kind](act.requestId);
     if (!data.logReady) return;
     if (act.kind === "withdraw") actions.withdraw(act.steerId);
     else actions.redirect(act.steerId);
@@ -299,7 +304,7 @@ export function OrderView(props: { data: OrderData; actions: OrderActions; platf
           </Button>
         ) : null}
       </div>
-      <Conversation entries={data.logReady ? entries : noEntries} notice={notice} onAct={onAct} focus={focusIndex === undefined || focusAt === undefined ? undefined : { index: focusIndex, at: focusAt }} />
+      <Conversation entries={data.logReady ? entries : noEntries} notice={notice} onAct={onAct} toEnd={sentCount} focus={focusIndex === undefined || focusAt === undefined ? undefined : { index: focusIndex, at: focusAt }} />
       <div className={s.asks}>
         <NeedsYouStrip workstreamId={w} />
       </div>
@@ -310,7 +315,12 @@ export function OrderView(props: { data: OrderData; actions: OrderActions; platf
           who={{ name: "the lead", ref: w }}
           platform={platform}
           label="Steer the lead"
-          onSend={(text, mode, requestId) => steerTo({ workstreamId: w }, text, mode, requestId)}
+          draftKey={draftKey(w, { workstreamId: w })}
+          onSend={(text, mode, requestId) => {
+            const sent = steerTo({ workstreamId: w }, text, mode, requestId);
+            setSentCount((n) => n + 1);
+            return sent;
+          }}
         />
       </div>
     </div>
@@ -350,6 +360,7 @@ export function OrderView(props: { data: OrderData; actions: OrderActions; platf
 
       <SteerSheet
         agent={sheetAgent}
+        workstreamId={w}
         steers={data.steers}
         sending={data.sending}
         redirected={redirected}
