@@ -2,6 +2,9 @@
 // order's phase and "needs you" come from its open asks and its lanes' live statuses, never from a count the board
 // cached when it was fetched.
 //
+// Every selector of hub data is undefined while the connection is not fresh (a skeleton, never the last connection's
+// data shown as live) and until the reads it depends on loaded.
+//
 // Selectors are memoized on the slices they read, so a component re-renders only when its inputs changed, and
 // useSyncExternalStore sees a stable value between changes.
 import type { AgentLane, Ask, Batch, LiveLane, Machine, MachineLive, OrderCard, TrainLive } from "../../../shared/contracts";
@@ -89,9 +92,9 @@ export interface InboxItem {
 
 /** Open asks, newest batch first, then by number; undefined until this connection's asks have loaded. */
 export const selectInbox = memo(
-  (s) => [s.asks, s.batches],
-  (asks, batches): readonly InboxItem[] | undefined => {
-    if (asks === undefined) return undefined;
+  (s) => [s.fresh, s.asks, s.batches],
+  (fresh, asks, batches): readonly InboxItem[] | undefined => {
+    if (!fresh || asks === undefined) return undefined;
     const items = Object.values(asks)
       .filter(isOpen)
       .map((ask) => ({ ask, batch: ask.batchId === undefined ? undefined : batches[ask.batchId] }))
@@ -105,9 +108,10 @@ export const selectInbox = memo(
   },
 );
 
+/** Undefined until the asks loaded: "0" would claim nothing needs you before anything was asked. */
 export const selectNeedsYouCount = memo(
   (s) => [selectInbox(s)],
-  (inbox) => inbox?.length ?? 0,
+  (inbox): number | undefined => inbox?.length,
 );
 
 // Lanes and orders.
@@ -162,9 +166,10 @@ const noAsks: readonly Ask[] = [];
 
 /** The board: every order with its live phase, by phase then most recently updated; undefined until loaded. */
 export const selectBoard = memo(
-  (s) => [s.orders, selectOpenAsksByOrder(s), s.live.lanes, s.details],
-  (orders, asks, liveLanes, details): readonly OrderView[] | undefined => {
-    if (orders === undefined) return undefined;
+  (s) => [s.fresh, s.orders, s.asks !== undefined, selectOpenAsksByOrder(s), s.live.lanes, s.details],
+  (fresh, orders, asksLoaded, asks, liveLanes, details): readonly OrderView[] | undefined => {
+    // Phases count open asks, so the board waits for them too.
+    if (!fresh || orders === undefined || !asksLoaded) return undefined;
     return Object.values(orders)
       .map((card) =>
         orderView(card, asks[card.workstreamId] ?? noAsks, liveLanes, details[card.workstreamId]),
@@ -190,7 +195,7 @@ export const selectOrder = perKey((workstreamId) =>
   memo(
     (s) =>
       [
-        s.orders?.[workstreamId],
+        s.fresh && s.asks !== undefined ? s.orders?.[workstreamId] : undefined,
         selectOpenAsksByOrder(s)[workstreamId] ?? noAsks,
         s.live.lanes,
         s.details[workstreamId],
@@ -222,9 +227,11 @@ export interface MachineView {
 }
 
 export const selectMachines = memo(
-  (s) => [s.machines, s.live.machines],
-  (machines, live): readonly MachineView[] =>
-    Object.values(machines)
+  (s) => [s.fresh, s.machines, s.live.machines],
+  (fresh, machines, live): readonly MachineView[] | undefined =>
+    !fresh
+      ? undefined
+      : Object.values(machines)
       .map((machine) => {
         const now = live[machine.machineId];
         // The feed's status is newer than the snapshot's when it has one.
@@ -234,13 +241,14 @@ export const selectMachines = memo(
 );
 
 export const selectTrains = memo(
-  (s) => [s.trains],
-  (trains): readonly TrainLive[] => Object.values(trains).sort((a, b) => a.repo.localeCompare(b.repo)),
+  (s) => [s.fresh && s.orders !== undefined, s.trains],
+  (loaded, trains): readonly TrainLive[] | undefined =>
+    loaded ? Object.values(trains).sort((a, b) => a.repo.localeCompare(b.repo)) : undefined,
 );
 
 export const selectProjects = memo(
-  (s) => [s.projects],
-  (projects) => Object.values(projects).sort((a, b) => a.title.localeCompare(b.title)),
+  (s) => [s.fresh, s.projects],
+  (fresh, projects) => (fresh ? Object.values(projects).sort((a, b) => a.title.localeCompare(b.title)) : undefined),
 );
 
 /** The hub's clock now, from the live feed's skew. */

@@ -1,6 +1,6 @@
 // Call-based reads through TanStack Query, wired to the store: main's frames feed the store, events invalidate the
 // reads they make stale, and results the store holds by entity (board, order, asks) are folded into it.
-import { QueryClient, type QueryKey } from "@tanstack/react-query";
+import { QueryClient, type Query, type QueryKey } from "@tanstack/react-query";
 import { typedCall, type Call, type RawCall, type ToolInput, type ToolName, type ToolOutput } from "../../../shared/contracts";
 import type { HubError, HubFrame } from "../../../shared/hub";
 import { effectsOf, matches, type Invalidation } from "./effects";
@@ -60,16 +60,37 @@ export const createDataLayer = (hub: HubApi, now: () => number = Date.now): Data
   const toolQuery = <T extends ToolName>(tool: T, input: ToolInput<T>) => ({
     queryKey: callKey(tool, input),
     queryFn: async (): Promise<ToolOutput<T>> => {
-      const generation = store.getState().generation;
       const outcome = await call(tool, input);
       if (!outcome.ok) throw new CallError(outcome.error);
-      // An answer meant for an older connection describes the past: the refetch the snapshot started replaces it.
-      if (store.getState().generation === generation) {
-        store.setState((s) => ingest(s, { tool, input, output: outcome.output } as Parameters<typeof ingest>[1]));
-      }
       return outcome.output;
     },
   });
+
+  // Queries an event made stale while their call was in flight. That answer predates the event, so it is not folded
+  // into the store, and the query runs once more when it lands: at most one call per read in flight, none cancelled
+  // (a steady event stream would otherwise keep restarting a slow call), and never an older answer over a newer one.
+  const dirty = new Set<string>();
+
+  const reset = () => {
+    dirty.clear();
+    pending = [];
+    void queryClient.resetQueries();
+  };
+
+  // The store takes call results only from what the query cache kept: a cancelled or superseded fetch never lands.
+  const onCache: Parameters<ReturnType<QueryClient["getQueryCache"]>["subscribe"]>[0] = (e) => {
+    if (e.type !== "updated") return;
+    const q = e.query as Query<unknown, Error, unknown>;
+    if (e.action.type === "error") dirty.delete(q.queryHash);
+    if (e.action.type !== "success") return;
+    if (dirty.delete(q.queryHash)) {
+      void queryClient.invalidateQueries({ queryKey: q.queryKey, exact: true });
+      return;
+    }
+    const [scope, tool, input] = q.queryKey;
+    if (scope !== "call") return;
+    store.setState((s) => ingest(s, { tool, input, output: q.state.data } as Parameters<typeof ingest>[1]));
+  };
 
   let pending: Invalidation[] = [];
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -77,12 +98,13 @@ export const createDataLayer = (hub: HubApi, now: () => number = Date.now): Data
     timer = undefined;
     const batch = pending;
     pending = [];
-    void queryClient.invalidateQueries({
-      predicate: (q) => {
-        const [scope, tool, input] = q.queryKey;
-        return scope === "call" && batch.some((i) => i.tool === tool && matches(input, i.where));
-      },
-    });
+    const stale = (q: Query): boolean => {
+      const [scope, tool, input] = q.queryKey;
+      return scope === "call" && batch.some((i) => i.tool === tool && matches(input, i.where));
+    };
+    const inFlight = (q: Query): boolean => q.state.fetchStatus === "fetching";
+    for (const q of queryClient.getQueryCache().findAll({ predicate: (q) => stale(q) && inFlight(q) })) dirty.add(q.queryHash);
+    void queryClient.invalidateQueries({ predicate: (q) => stale(q) && !inFlight(q) });
   };
 
   const onFrame = (frame: HubFrame) => {
@@ -91,13 +113,14 @@ export const createDataLayer = (hub: HubApi, now: () => number = Date.now): Data
     // A repeated event (the stream resumed past it) changes nothing and refetches nothing.
     if (next === prev) return;
     store.setState(next, true);
-    if (effects.refetchAll === true) {
-      pending = [];
-      void queryClient.invalidateQueries();
+    // A new snapshot, or the link dropping: every cached answer describes a connection that is gone. Reset drops it
+    // (screens show skeletons, not old data as live); reads run again once the connection is fresh.
+    if (effects.refetchAll === true || (prev.fresh && !next.fresh)) {
+      reset();
       return;
     }
     if (frame.t !== "event") return;
-    const { invalidate, resync } = effectsOf(frame.event);
+    const { invalidate, resync } = effectsOf(frame.event, prev.machines);
     if (resync) void hub.resync();
     if (invalidate.length === 0) return;
     pending.push(...invalidate);
@@ -110,9 +133,11 @@ export const createDataLayer = (hub: HubApi, now: () => number = Date.now): Data
     call,
     toolQuery,
     start: () => {
+      const stopCache = queryClient.getQueryCache().subscribe(onCache);
       const stop = hub.subscribe(onFrame);
       return () => {
         stop();
+        stopCache();
         if (timer !== undefined) clearTimeout(timer);
       };
     },

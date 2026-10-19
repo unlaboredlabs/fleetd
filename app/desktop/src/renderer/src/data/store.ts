@@ -79,6 +79,8 @@ export interface DataState {
 
 const RECENT_EVENTS = 200;
 const ORDER_EVENTS = 100;
+/** Orders whose event lines are kept; the least recently active goes first. */
+const ORDERS_WITH_EVENTS = 100;
 const TEXT_TAIL = 2000;
 
 const emptyLive: LiveState = { lanes: {}, text: {}, machines: {}, stale: true };
@@ -168,6 +170,19 @@ const patchOrder = (s: DataState, workstreamId: string | undefined, patch: Parti
   return { ...s, orders: { ...s.orders, [workstreamId]: { ...card, ...patch } } };
 };
 
+const withOrderEvent = (
+  rings: DataState["orderEvents"],
+  workstreamId: string,
+  event: HubEvent,
+): DataState["orderEvents"] => {
+  const next = { ...rings, [workstreamId]: pushCapped(rings[workstreamId] ?? [], event, ORDER_EVENTS) };
+  const keys = Object.keys(next);
+  if (keys.length <= ORDERS_WITH_EVENTS) return next;
+  const lastSeq = (k: string) => next[k]?.at(-1)?.seq ?? 0;
+  const oldest = keys.reduce((a, b) => (lastSeq(b) < lastSeq(a) ? b : a));
+  return Object.fromEntries(Object.entries(next).filter(([k]) => k !== oldest));
+};
+
 /**
  * One hub event: kept for the event lines, and patched straight into the entities it changes, so what counts open
  * asks or shows an order's state is right at once. The refetches it triggers (see `effectsOf`) then bring the rest.
@@ -179,10 +194,7 @@ export const applyEvent = (s: DataState, event: HubEvent): DataState => {
     ...s,
     cursor: event.seq,
     events: pushCapped(s.events, event, RECENT_EVENTS),
-    orderEvents:
-      workstreamId === undefined
-        ? s.orderEvents
-        : { ...s.orderEvents, [workstreamId]: pushCapped(s.orderEvents[workstreamId] ?? [], event, ORDER_EVENTS) },
+    orderEvents: workstreamId === undefined ? s.orderEvents : withOrderEvent(s.orderEvents, workstreamId, event),
   };
   const askId = dataField(event, "askId");
   switch (event.type) {
@@ -276,9 +288,10 @@ export const ingest = (s: DataState, call: Ingest): DataState => {
     case "order_get": {
       const { order, asks, lead, doneLanes, claims, truncated } = call.output;
       const id = order.workstreamId;
-      // order_get lists the order's open asks: one it no longer lists was closed.
+      // order_get lists the order's open asks: one it no longer lists was closed. Closed asks are only kept until
+      // the next list, so the store holds what is open.
       const others = Object.values(s.asks ?? {}).filter(
-        (a) => truncated === true || a.workstreamId !== id || a.state !== "open",
+        (a) => a.state === "open" && (truncated === true || a.workstreamId !== id),
       );
       return {
         ...s,
@@ -289,8 +302,8 @@ export const ingest = (s: DataState, call: Ingest): DataState => {
     }
     case "asks_list": {
       if (call.input.state !== "open" || call.input.batchId !== undefined) return s;
-      // Every open ask, unless truncated: an ask the store still has open that the list leaves out was closed.
-      const kept = Object.values(s.asks ?? {}).filter((a) => call.output.truncated === true || a.state !== "open");
+      // Every open ask, unless truncated: an ask the list leaves out was closed (or is closed already) and goes.
+      const kept = call.output.truncated === true ? Object.values(s.asks ?? {}).filter((a) => a.state === "open") : [];
       return {
         ...s,
         asks: byId([...kept, ...call.output.asks], (a) => a.askId),

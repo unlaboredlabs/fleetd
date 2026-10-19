@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyFrame, applyLive, ingest, initialState, type DataState } from "./store";
-import { selectBoard, selectConnection, selectInbox, selectOrder } from "./selectors";
+import { selectBoard, selectConnection, selectInbox, selectNeedsYouCount, selectOrder } from "./selectors";
 import { ask, card, event, lane, live, liveLane, project, snapshot } from "./fixtures.test-util";
 import type { HubFrame } from "../../../shared/hub";
 
@@ -96,6 +96,31 @@ describe("events patch what they change", () => {
       output: { at: "2026-10-19T10:00:00.000Z", orders: [card("W3")], trains: [] },
     });
     expect(Object.keys(s.orders ?? {}).sort()).toEqual(["W3", "W9"]);
+  });
+});
+
+describe("bounds and freshness", () => {
+  it("serves nothing while the link is down, and no needs-you count before the asks load", () => {
+    let s = withBoard(run([live(), snapshot(1)]));
+    expect(selectNeedsYouCount(s)).toBeUndefined();
+    expect(selectBoard(s)).toBeUndefined();
+    s = withAsks(s);
+    expect(selectNeedsYouCount(s)).toBe(1);
+    s = run([{ t: "state", state: { phase: "connecting", hub: "devbox:4710", attempt: 1 } }], s);
+    expect(selectBoard(s)).toBeUndefined();
+    expect(selectNeedsYouCount(s)).toBeUndefined();
+  });
+
+  it("keeps closed asks only until the next list, and event lines for the 100 most recent orders", () => {
+    let s = withAsks(withBoard(run([live(), snapshot(1)])));
+    s = run([event(2, "ask.closed", { askId: "A1", workstreamId: "W1" })], s);
+    s = withAsks(s, []);
+    expect(s.asks).toEqual({});
+    const frames = Array.from({ length: 120 }, (_, i) => event(10 + i, "task.started", { workstreamId: `W${i}` }));
+    s = run(frames, s);
+    expect(Object.keys(s.orderEvents)).toHaveLength(100);
+    expect(s.orderEvents["W0"]).toBeUndefined();
+    expect(s.orderEvents["W119"]).toHaveLength(1);
   });
 });
 

@@ -36,7 +36,9 @@ describe("event effects", () => {
 
   it("a machine or project coming or going resyncs; an unknown type does nothing", () => {
     expect(effectsOf(e("project.added")).resync).toBe(true);
-    expect(effectsOf(e("machine.offline")).resync).toBe(true);
+    // A known machine's status is patched in place; only one the snapshot lacks resyncs.
+    expect(effectsOf(e("machine.offline", undefined, { machineId: "devbox" }), { devbox: {} }).resync).toBe(false);
+    expect(effectsOf(e("machine.online", undefined, { machineId: "buildbox" }), { devbox: {} }).resync).toBe(true);
     expect(effectsOf(e("rocket.launched"))).toEqual({ invalidate: [], resync: false });
     expect(tools(e("prompt.changed"))).toContain("prompts_list");
   });

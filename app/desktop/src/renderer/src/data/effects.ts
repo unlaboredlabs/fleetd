@@ -10,7 +10,7 @@ export interface Invalidation {
 
 export interface EventEffects {
   readonly invalidate: readonly Invalidation[];
-  /** The fleet's shape changed (a machine or project came or went): take a fresh snapshot. */
+  /** The fleet's shape changed (a project came or went, a machine the snapshot didn't have): take a fresh snapshot. */
   readonly resync: boolean;
 }
 
@@ -22,7 +22,8 @@ const TIME_PREFIXES = ["task.", "thread.", "workstream.", "lead.", "change.", "p
 
 const startsWithAny = (type: string, prefixes: readonly string[]): boolean => prefixes.some((p) => type.startsWith(p));
 
-export const effectsOf = (event: HubEvent): EventEffects => {
+/** `machines`: the ones the store knows; a known machine's status change is patched in place, no resync. */
+export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unknown>> = {}): EventEffects => {
   const type = event.type;
   const out: Invalidation[] = [];
   const workstreamId = dataField(event, "workstreamId");
@@ -54,7 +55,8 @@ export const effectsOf = (event: HubEvent): EventEffects => {
   if (type === "decision.recorded") out.push({ tool: "attention_policy" }, { tool: "decisions_search" });
   if (type.startsWith("usage.") || type === "thread.usage_limited") out.push({ tool: "usage_status" });
 
-  const resync = type.startsWith("machine.") || type === "project.added" || type === "project.removed";
+  const newMachine = type.startsWith("machine.") && (event.machineId === undefined || !(event.machineId in machines));
+  const resync = newMachine || type === "project.added" || type === "project.removed";
   if (resync) out.push({ tool: "projects_list" });
   return { invalidate: out, resync };
 };
