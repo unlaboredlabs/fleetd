@@ -731,3 +731,91 @@ fn every_event_that_opens_or_closes_an_ask_is_followed() {
         assert!(super::FOLLOWED.contains(&t), "{}", t.as_str());
     }
 }
+
+#[tokio::test]
+async fn a_finished_milestone_lowers_the_project_and_its_fleet_bar_only_with_a_marker() {
+    use fleetd_contracts::status::DropReason;
+    let clock = ManualClock::at(T0);
+    let (hub, _home) = hub(clock.clone());
+    let (r, by) = (project(), "lead:devbox/storefront");
+    for title in ["Checkout", "Search"] {
+        hub.plans
+            .milestone(
+                &r,
+                serde_json::from_value::<PlanMilestoneCall>(json!({ "title": title })).unwrap(),
+            )
+            .unwrap();
+    }
+    hub.plans
+        .add(
+            &r,
+            by,
+            add(
+                "cart page",
+                json!({ "workstreamId": "W1", "pr": "https://github.com/acme/storefront/pull/212", "size": "m" }),
+            ),
+        )
+        .unwrap();
+    hub.plans
+        .add(
+            &r,
+            by,
+            add("search box", json!({ "milestoneId": "M2", "size": "m" })),
+        )
+        .unwrap();
+    let scope = StatusScope::Project {
+        project_ref: r.clone(),
+    };
+    let step = |scope: &StatusScope| {
+        clock.advance(Duration::from_secs(1));
+        hub.status.get(&hub, &person(), scope, None).unwrap()
+    };
+    let part_pct = |d: &fleetd_contracts::status::StatusDoc| {
+        d.parts[0].progress.estimate.as_ref().unwrap().pct.get()
+    };
+    step(&scope);
+    step(&StatusScope::Fleet);
+    set_change(&hub, "merged", None);
+    let before = step(&scope).progress.estimate.unwrap();
+    let fleet = step(&StatusScope::Fleet);
+    assert!(
+        before.pct.get() >= 40,
+        "a merged m of two: {}",
+        before.pct.get()
+    );
+    assert_eq!(
+        part_pct(&fleet),
+        before.pct.get(),
+        "the fleet's bar is the project's figure"
+    );
+
+    assert!(
+        hub.plans.verify("W1"),
+        "M1 finishes and leaves the project's figure"
+    );
+    let after = step(&scope).progress.estimate.unwrap();
+    assert!(
+        after.pct < before.pct,
+        "only the search box is left: {}",
+        after.pct.get()
+    );
+    let last = after.series.as_ref().unwrap().last().unwrap().clone();
+    let drop = last.drop.expect("the drop is explained");
+    assert_eq!(drop.reason, DropReason::ScopeChange);
+    assert!(drop.text.as_str().contains("M1"), "{}", drop.text.as_str());
+    let fleet = step(&StatusScope::Fleet);
+    assert_eq!(
+        part_pct(&fleet),
+        after.pct.get(),
+        "the fleet's bar falls with the same marker, never silently"
+    );
+    assert!(
+        fleet.parts[0]
+            .progress
+            .estimate
+            .as_ref()
+            .unwrap()
+            .series
+            .is_none()
+    );
+}

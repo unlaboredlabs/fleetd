@@ -1401,10 +1401,26 @@ pub fn render(
                 }
                 let marker = w.markers.iter().find(|m| &m.pkey == pk).map(marker_of);
                 let mut progress = progress_of(&cf, now, marker);
-                progress.estimate = Some(super::estimate::estimate_of(
-                    &super::estimate::compute(w, &child, &cs),
-                    None,
-                ));
+                // The project's bar under the same drop rule as its own doc (the same stored series), so it never
+                // falls without a marker; a part carries no sparkline of its own.
+                let cmo = super::estimate::compute(w, &child, &cs);
+                let ccauses = super::estimate::causes(w, &child, &cs);
+                let ckey = child.key();
+                let cseries = hub
+                    .db
+                    .with(|c| {
+                        Ok(super::estimate::series(
+                            c,
+                            &ckey,
+                            cmo.estimate,
+                            &ccauses,
+                            now,
+                        )?)
+                    })
+                    .ok();
+                let mut estimate = super::estimate::estimate_of(&cmo, cseries.as_deref());
+                estimate.series = None;
+                progress.estimate = Some(estimate);
                 parts.push(ScopePart {
                     title: line(&cs.title),
                     scope: Some(child),

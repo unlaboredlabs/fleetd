@@ -564,13 +564,11 @@ pub fn cause_of(event_type: &str, data: &Value, at_ms: i64) -> Option<Cause> {
         )
     };
     let (reason, text) = match event_type {
+        // Every plan marker changes a figure's denominator, so any of them explains a drop: added or removed scope,
+        // a finished milestone leaving the project's figure, items closed with their order, a reopened item.
         "plan.changed" => match str_of("kind")? {
-            "scope" if data.get("deltaSize").and_then(Value::as_i64).unwrap_or(0) > 0 => {
-                (DropReason::ScopeChange, str_of("note")?.to_owned())
-            }
-            "milestone_reopened" => (DropReason::ScopeChange, str_of("note")?.to_owned()),
             "reopened" => (DropReason::Reopened, str_of("note")?.to_owned()),
-            _ => return None,
+            _ => (DropReason::ScopeChange, str_of("note")?.to_owned()),
         },
         "change.ci_failed" => (DropReason::CiFailed, format!("CI failed on {}", pr())),
         "review.verdict" if data.get("blocking").and_then(Value::as_i64).unwrap_or(0) > 0 => {
@@ -932,13 +930,15 @@ mod tests {
         .unwrap();
         assert_eq!(c.reason, DropReason::ReviewFailed);
         assert!(cause_of("change.state", &json!({ "from": "ready", "to": "ci" }), 5).is_none());
-        assert!(
-            cause_of(
-                "plan.changed",
-                &json!({ "kind": "scope", "deltaSize": -3, "note": "x" }),
-                5
-            )
-            .is_none()
+        let done = cause_of(
+            "plan.changed",
+            &json!({ "kind": "milestone_done", "note": "M1 checkout done (1 item)" }),
+            5,
+        );
+        assert_eq!(
+            done.unwrap().text,
+            "M1 checkout done (1 item)",
+            "a finished milestone leaves the figure with its marker"
         );
         let c = cause_of(
             "plan.changed",
