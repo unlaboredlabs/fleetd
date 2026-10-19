@@ -1259,3 +1259,84 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod against_a_hub {
+    use std::sync::Arc;
+
+    use crate::clock::SystemClock;
+    use crate::hub::api::{self, HubConfig, Listen};
+    use crate::hub::store::HubDb;
+    use fleetd_contracts::auth::{Grant, KeyKind};
+    use serde_json::json;
+
+    /// Scripts read the exit code: an order just sent (a draft until the lead's brief) is waiting, not refused.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_draft_order_exits_0_and_an_unknown_one_3() {
+        let home = tempfile::tempdir().unwrap();
+        let config = HubConfig {
+            home: home.path().to_path_buf(),
+            listen: Listen::default(),
+            url: None,
+            queue_ttl_sec: None,
+            router_model: None,
+        };
+        let hub = crate::hub::serve::build_on(
+            HubDb::open_memory().unwrap(),
+            config,
+            Arc::new(SystemClock),
+        )
+        .unwrap();
+        let at = "2026-10-18T10:00:00.000Z";
+        let w = json!({
+            "workstreamId": "W1", "projectRef": { "machineId": "devbox", "projectId": "storefront" },
+            "title": "Checkout redesign",
+            "source": { "text": "Checkout redesign", "channel": "app", "by": "human", "at": at },
+            "state": "draft", "createdAt": at, "updatedAt": at,
+        });
+        hub.db
+            .with(|c| {
+                c.execute(
+                    "INSERT INTO workstreams (machine_id, project_id, state, data) VALUES ('devbox', 'storefront', 'draft', ?)",
+                    [w.to_string()],
+                )?;
+                Ok(())
+            })
+            .unwrap();
+        let grants: Vec<Grant> =
+            serde_json::from_value(json!([{ "role": "read", "machines": "*" }])).unwrap();
+        let key = hub
+            .auth
+            .create_key("test", &grants, KeyKind::Agent)
+            .unwrap()
+            .key;
+        let key_file = home.path().join("read.key");
+        std::fs::write(&key_file, format!("{key}\n")).unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+        let served = tokio::spawn(crate::hub::http::serve(
+            listener,
+            hub.clone(),
+            Arc::new(api::registry()),
+        ));
+        let status = |order: &str| {
+            let argv: Vec<String> = [
+                order,
+                "--hub",
+                &url,
+                "--key-file",
+                key_file.to_str().unwrap(),
+            ]
+            .map(str::to_owned)
+            .to_vec();
+            async move { super::status_command(&argv).await }
+        };
+        assert_eq!(status("W1").await, 0, "a draft is waiting for its brief");
+        assert_eq!(
+            status("W9").await,
+            3,
+            "an order that doesn't exist is refused"
+        );
+        served.abort();
+    }
+}
