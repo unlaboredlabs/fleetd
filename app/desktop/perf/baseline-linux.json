@@ -1,7 +1,7 @@
 {
-  "firstPaintMs": 363,
-  "idleMemoryMb": 294,
-  "idleRssMb": 613,
+  "firstPaintMs": 402,
+  "idleMemoryMb": 302,
+  "idleRssMb": 551,
   "scrollFps": 60,
-  "keyP95Ms": 3.2
+  "keyP95Ms": 2.1
 }
