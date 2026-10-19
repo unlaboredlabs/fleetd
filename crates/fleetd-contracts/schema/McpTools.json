@@ -3101,6 +3101,10 @@
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
+        },
+        "utilization": {
+          "$ref": "#/$defs/SlotUtilization",
+          "description": "How much of the cap was held recently."
         }
       },
       "required": [
@@ -8549,6 +8553,35 @@
         "projectRef",
         "share",
         "used"
+      ],
+      "type": "object"
+    },
+    "SlotUtilization": {
+      "description": "Slot use the board measured over the last hour (or since the hub started, when that is later): held slot time,\nnever a projection. Serial waits behind free slots are `time_insights` findings.",
+      "properties": {
+        "pct": {
+          "description": "floor(100 · slot time held / slot time the cap offered) over the window.",
+          "maximum": 100,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "peak": {
+          "description": "The most slots held at once in the window.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "windowMs": {
+          "description": "The window measured, at most an hour.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "windowMs",
+        "pct",
+        "peak"
       ],
       "type": "object"
     },
