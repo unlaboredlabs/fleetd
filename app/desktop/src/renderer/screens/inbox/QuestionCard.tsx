@@ -147,7 +147,8 @@ function OpenBody(props: QuestionCardViewProps & { titleId: string }) {
       }
       return;
     }
-    // The palette's picker keys (pickerKey): 1–9 pick, Enter confirms (or, with nothing picked, moves to the
+    // COPY of the palette's pickerKey (screens/palette/keymap.ts, not on this branch yet; swap to it once it is):
+    // 1–9 pick, Enter confirms (or, with nothing picked, moves to the
     // recommendation), N picks the No answer. A focused button acts on Enter itself; radio items don't.
     if (target instanceof HTMLButtonElement && target.getAttribute("role") !== "radio") return;
     if (e.shiftKey) return;
