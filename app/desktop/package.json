@@ -17,13 +17,16 @@
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit && tsc -p tsconfig.qa.json --noEmit && tsc -p tsconfig.fixtures.json --noEmit",
     "lint": "eslint --max-warnings 0 .",
     "test": "vitest run",
-    "qa:build": "VITE_FLEETD_GALLERY=1 electron-vite build",
+    "qa:build": "VITE_FLEETD_GALLERY=1 MAIN_VITE_FLEETD_TEST_BUILD=1 electron-vite build",
     "qa": "playwright test -c qa/playwright.config.ts --project=screens",
     "qa:selftest": "playwright test -c qa/playwright.config.ts --project=selftest",
-    "fixtures": "node fixtures/build.ts"
+    "fixtures": "node fixtures/build.ts",
+    "debug-guard-check": "node scripts/debug-guard-check.ts",
+    "build:test": "MAIN_VITE_FLEETD_TEST_BUILD=1 electron-vite build"
   },
   "dependencies": {
     "@napi-rs/keyring": "2.1.1",
+    "@tanstack/react-query": "5.104.4",
     "@tanstack/react-virtual": "3.14.21",
     "lucide-react": "1.59.0",
     "radix-ui": "1.8.1",
@@ -33,7 +36,8 @@
     "remark-gfm": "4.0.1",
     "shiki": "4.5.0",
     "ws": "8.22.0",
-    "zod": "4.6.7"
+    "zod": "4.6.7",
+    "zustand": "5.0.15"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
