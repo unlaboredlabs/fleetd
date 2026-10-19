@@ -223,3 +223,59 @@ fn cards_get_a_short_title() {
     );
     assert_eq!(short_title(&w), "Three pages on the merge train");
 }
+
+#[test]
+fn review_fix_work_is_open_defect_fixes_and_prs_sent_back_by_a_review() {
+    use super::review_fixes::{Fix, select};
+    use crate::hub::valuebar::rules::PrVerdict;
+    let id = fleetd_contracts::ledger::WorkstreamId::new("W14").unwrap();
+    let defect = json!({ "serves": "defect: the share link goes stale after a toggle" });
+    let tasks = vec![
+        task("T1", "write", "done", json!({ "serves": "done:0" })),
+        task("T4", "write", "running", defect.clone()),
+        task("T5", "write", "queued", json!({ "serves": "done:0" })),
+        task("T6", "write", "cancelled", defect.clone()),
+        task("T7", "review", "running", json!({})),
+    ];
+    let mut sent_back = change("X1", 11, "T1", "reviewing");
+    sent_back.reviews.clear();
+    let mut merged = change("X2", 12, "T1", "merged");
+    merged.reviews.clear();
+    let mut fix_pr = change("X3", 13, "T4", "ci");
+    fix_pr.reviews.clear();
+    fix_pr.serves =
+        fleetd_contracts::ledger::Serves::new("defect: unpriced tokens are dropped").unwrap();
+    let mut plain = change("X4", 14, "T5", "reviewing");
+    plain.reviews.clear();
+    let verdicts = |c: &Change| match c.pr_number.get() {
+        11 | 12 => vec![PrVerdict {
+            task_id: "T2".into(),
+            sha: "b".repeat(40),
+            blocking: 2,
+        }],
+        _ => vec![PrVerdict {
+            task_id: "T2".into(),
+            sha: "b".repeat(40),
+            blocking: 0,
+        }],
+    };
+
+    let open = select(&id, &tasks, &[sent_back, merged, fix_pr, plain], verdicts);
+    assert_eq!(
+        open.iter().map(|f| f.fix.clone()).collect::<Vec<_>>(),
+        vec![
+            Fix::Task(fleetd_contracts::tasks::TaskId::new("T4").unwrap()),
+            Fix::Pr(fleetd_contracts::train::ChangeId::new("X1").unwrap()),
+            Fix::Pr(fleetd_contracts::train::ChangeId::new("X3").unwrap()),
+        ],
+        "a live defect fix and the PRs a review sent back or that fix a defect; never what landed, ended or only serves the brief"
+    );
+    assert_eq!(
+        open.iter().map(|f| f.line.as_str()).collect::<Vec<_>>(),
+        [
+            "T4 \"T4 work\" (running)",
+            "o/testbed#11 (changes requested)",
+            "o/testbed#13 (fixes a defect)"
+        ]
+    );
+}

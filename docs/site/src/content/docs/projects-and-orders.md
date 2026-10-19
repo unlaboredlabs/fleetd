@@ -188,11 +188,15 @@ Questions land in the inbox (⌘I), numbered. Reply in one line, such as `1 go 2
 2. The hub runs the brief's done-when checks itself.
 3. Only all of them passing makes the order done. A failure wakes the lead with the exit code and output.
 
+An order never closes over its review fixes: a task fixing what a review found, or a pull request a review sent back.
+While one is open, `claim_done` is refused, and a claim whose checks pass meanwhile keeps the order open. The lead
+says so in chat and claims again once the fixes land.
+
 `claims_list` shows every claim with its evidence.
 
 A done order cleans up after itself:
 
 - Its pull requests still waiting (queued, in review, needing a rebase, or with failed CI) are closed on GitHub with a
   comment saying why.
-- Its leftover tasks are cancelled.
+- Its leftover tasks are cancelled, except review fixes, which keep going.
 - A pull request the train is already rebasing, checking or merging is left to land.

@@ -114,6 +114,22 @@ pub fn claim_passed_line(
     )
 }
 
+pub fn claim_held_line(
+    set: &PromptSet,
+    claim_id: &ClaimId,
+    workstream_id: &WorkstreamId,
+    fixes: &[String],
+) -> String {
+    set.render(
+        "wake.claim_held",
+        &[
+            ("claimId", claim_id),
+            ("workstreamId", workstream_id),
+            ("fixes", &fixes.join(", ")),
+        ],
+    )
+}
+
 /// One evidence line per failed claim, for the false-claim incident.
 pub fn failed_claim_evidence(claim_id: &ClaimId, results: &[CheckResult]) -> String {
     let parts: Vec<String> = results

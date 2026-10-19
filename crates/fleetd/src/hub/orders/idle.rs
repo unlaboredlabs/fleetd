@@ -1,5 +1,5 @@
 //! Order lifecycle follow-ups the hub runs off the event log. When an order is done, its leftover PRs and tasks
-//! are closed (`on_done`). And a safety net for a lead that ends its turn with an order frozen and nothing under way: no task running or queued,
+//! are closed (`on_done`), except review-fix work, which keeps going and the lead is told. And a safety net for a lead that ends its turn with an order frozen and nothing under way: no task running or queued,
 //! no PR in the train, no open ask and no wake coming. Nothing would ever wake it again, so the hub wakes it once per
 //! order with a plain line. Bounded: a second idle turn on the same order gets no second nudge.
 use crate::hub::prompts::PromptSet;
@@ -13,6 +13,7 @@ use fleetd_contracts::ledger::{WorkstreamId, WorkstreamState};
 use fleetd_contracts::tasks::TaskState;
 use fleetd_contracts::train::ChangeState;
 
+use super::review_fixes::{Fix, listed};
 use crate::hub::api::Hub;
 use crate::hub::leads::records::WorkstreamFilter;
 use crate::hub::leads::wakes::{LineKind, Trigger};
@@ -206,7 +207,9 @@ pub async fn run(hub: Arc<Hub>) {
 }
 
 /// An order is done when its done-when passed (the design's rule), so what it left running is closed: PRs not on
-/// their way in leave the train and close on GitHub with a note, and its live tasks are cancelled.
+/// their way in leave the train and close on GitHub with a note, and its live tasks are cancelled. Review-fix work
+/// is never cancelled: a claim holds the order open over it, and anything a different path left (a research verdict)
+/// keeps going while the lead is told in one line.
 async fn on_done(hub: &Hub, event: &fleetd_contracts::events::HubEvent) {
     let Some(id) = event
         .data
@@ -222,7 +225,15 @@ async fn on_done(hub: &Hub, event: &fleetd_contracts::events::HubEvent) {
     };
     let r = w.workstream.project_ref;
     let why = format!("{id} is done: its done-when checks passed without this PR");
-    for change in hub.train.close_leftovers(&r, &id, &why).await {
+    let fixes = super::review_fixes::open(hub, &r, &id);
+    let kept_prs: Vec<_> = fixes
+        .iter()
+        .filter_map(|f| match &f.fix {
+            Fix::Pr(change_id) => Some(change_id.clone()),
+            Fix::Task(_) => None,
+        })
+        .collect();
+    for change in hub.train.close_leftovers(&r, &id, &why, &kept_prs).await {
         tracing::info!(change = %change.change_id, pr = %change.pr_url, "order done: closed its leftover PR");
     }
     let caller = crate::hub::tasks::TaskCaller {
@@ -230,16 +241,35 @@ async fn on_done(hub: &Hub, event: &fleetd_contracts::events::HubEvent) {
         by: "hub".into(),
     };
     for task in super::order_tasks(hub, &id) {
-        if matches!(
-            task.state,
-            TaskState::Queued | TaskState::Running | TaskState::Idle
-        ) && let Err(error) = hub
-            .tasks
-            .cancel(&caller, &task.task_id, Some(&format!("Cancelled: {why}.")))
-            .await
+        let kept = fixes
+            .iter()
+            .any(|f| f.fix == Fix::Task(task.task_id.clone()));
+        if !kept
+            && matches!(
+                task.state,
+                TaskState::Queued | TaskState::Running | TaskState::Idle
+            )
+            && let Err(error) = hub
+                .tasks
+                .cancel(&caller, &task.task_id, Some(&format!("Cancelled: {why}.")))
+                .await
         {
             tracing::warn!(task = %task.task_id, ?error, "order done: task not cancelled");
         }
+    }
+    if !fixes.is_empty() {
+        tracing::info!(workstream = %id, fixes = %listed(&fixes), "order done: review fixes kept");
+        let text = hub.db.prompts().for_lead(&r).render(
+            "wake.order_done_fixes_kept",
+            &[("workstreamId", &id), ("fixes", &listed(&fixes))],
+        );
+        hub.leads.wakes.trigger(
+            &r,
+            Trigger::Line {
+                kind: LineKind::ClaimPassed,
+                text,
+            },
+        );
     }
 }
 

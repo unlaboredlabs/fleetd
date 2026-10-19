@@ -4,6 +4,7 @@ pub mod filler;
 pub mod idle;
 pub mod notes;
 pub mod phase;
+pub mod review_fixes;
 pub mod tools;
 
 #[cfg(test)]

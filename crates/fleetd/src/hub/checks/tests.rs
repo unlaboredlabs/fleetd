@@ -61,6 +61,10 @@ struct Fake {
     node: Arc<Mutex<(i64, String)>>,
     /// Each command run: machine, cwd and argv.
     commands: Arc<Mutex<Vec<Value>>>,
+    /// The open review-fix work every workstream has.
+    review_fixes: Mutex<Vec<String>>,
+    /// A review fix that starts when a check runs a command, as one spawned while the workstream verifies.
+    fix_on_check: Mutex<Option<String>>,
 }
 
 impl Ports for Fake {
@@ -86,6 +90,9 @@ impl Ports for Fake {
             .lock()
             .unwrap()
             .push(json!({ "machineId": machine, "cwd": cwd, "argv": argv }));
+        if let Some(fix) = self.fix_on_check.lock().unwrap().take() {
+            self.review_fixes.lock().unwrap().push(fix);
+        }
         let (code, tail) = self.node.lock().unwrap().clone();
         Box::pin(async move {
             Ok(CommandRun {
@@ -113,6 +120,9 @@ impl Ports for Fake {
     }
     fn tasks_of(&self, _: &ProjectRef, _: &WorkstreamId, _: usize) -> Vec<Task> {
         vec![]
+    }
+    fn review_fixes(&self, _: &Workstream) -> Vec<String> {
+        self.review_fixes.lock().unwrap().clone()
     }
     fn spawn_judge(&self, _: JudgeSpawn) -> BoxFuture<'_, Result<Task, Refusal>> {
         Box::pin(async { Err(super::ports::invalid("no judges here", None)) })
@@ -452,4 +462,72 @@ async fn refuses_drafts_other_projects_and_unknown_workstreams() {
         "W3 is idle: finish-all: nothing left with a value source. A finish-all run ends idle, not done."
     );
     assert!(k.commands.lock().unwrap().is_empty());
+}
+
+/// The review fix of a live hub's W1, T4, spawned from its PR's review findings.
+const T4: &str =
+    "T4 \"Share card: fresh link after changes, flag unpriced tokens, uncap counts\" (running)";
+
+#[tokio::test]
+async fn a_review_fix_spawned_while_the_order_verifies_keeps_it_open_and_the_lead_is_told() {
+    // W1/T4: the claim started with nothing open; the fix was spawned while its checks ran; the checks passed.
+    let k = kit(vec![workstream("W1", Some(vec![doc_check()]))]);
+    k.set_node(0, "");
+    *k.ports.fix_on_check.lock().unwrap() = Some(T4.into());
+
+    let held = k.claims.claim_done(&w1(), LEAD_BY, None).await.unwrap();
+    assert_eq!(
+        held.claim.as_ref().map(|c| c.outcome),
+        Some(ClaimOutcome::Pass),
+        "the checks themselves passed"
+    );
+    assert_eq!(
+        (held.state, k.state()),
+        (WorkstreamState::Running, WorkstreamState::Running)
+    );
+    assert!(held.next.contains("stays open"), "{}", held.next);
+    assert!(
+        k.events_of(&[HubEventType::WorkstreamDone, HubEventType::ClaimPassed])
+            .await
+            .is_empty(),
+        "never done over an open fix, so nothing cancels it"
+    );
+    let states = k.events_of(&[HubEventType::WorkstreamState]).await;
+    let (_, summary, data) = states.last().unwrap();
+    assert_eq!(data["state"], "running");
+    assert_eq!(data["reason"], format!("review fixes still open: {T4}"));
+    assert!(summary.starts_with("W1 stays open: C1 passed"), "{summary}");
+    let wakes = k.ports.wakes.lock().unwrap().clone();
+    assert!(
+        matches!(wakes.last(), Some(ClaimWake::Held { fixes, .. }) if fixes == &[T4.to_string()]),
+        "{wakes:?}"
+    );
+
+    // The fix landed: the next claim makes it done.
+    k.ports.review_fixes.lock().unwrap().clear();
+    let done = k.claims.claim_done(&w1(), LEAD_BY, None).await.unwrap();
+    assert_eq!(
+        (done.state, k.state()),
+        (WorkstreamState::Done, WorkstreamState::Done)
+    );
+}
+
+#[tokio::test]
+async fn claim_done_refuses_while_review_fixes_are_open_and_starts_no_claim() {
+    let k = kit(vec![workstream("W1", Some(vec![doc_check()]))]);
+    k.ports.review_fixes.lock().unwrap().extend([
+        T4.to_string(),
+        "o/testbed#31 (changes requested)".to_string(),
+    ]);
+
+    let refused = k.claims.claim_done(&w1(), LEAD_BY, None).await.unwrap_err();
+    assert!(
+        refused.message.contains(&format!(
+            "W1 has review fixes still open: {T4}, o/testbed#31 (changes requested)"
+        )),
+        "{}",
+        refused.message
+    );
+    assert_eq!(k.state(), WorkstreamState::Running);
+    assert!(k.commands.lock().unwrap().is_empty(), "no check ran");
 }

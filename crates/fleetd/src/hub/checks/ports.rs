@@ -24,6 +24,13 @@ pub enum ClaimWake {
         claim_id: ClaimId,
         workstream_id: WorkstreamId,
     },
+    /// Every check passed, but review-fix work is still open, so the workstream stays open.
+    Held {
+        claim_id: ClaimId,
+        workstream_id: WorkstreamId,
+        /// One line per open fix.
+        fixes: Vec<String>,
+    },
 }
 
 /// The pinned playbook's numbers the value bar and estimates read.
@@ -121,6 +128,8 @@ pub trait Ports: Send + Sync + 'static {
     fn task(&self, id: &TaskId) -> Option<Task>;
     /// The workstream's tasks, newest first.
     fn tasks_of(&self, project: &ProjectRef, workstream: &WorkstreamId, limit: usize) -> Vec<Task>;
+    /// Its open review-fix work (`orders::review_fixes`), one line each: a workstream never closes over it.
+    fn review_fixes(&self, workstream: &Workstream) -> Vec<String>;
     fn spawn_judge(&self, spawn: JudgeSpawn) -> BoxFuture<'_, Result<Task, Refusal>>;
     // ledger: Asks
     fn file_human_ask(&self, ask: HumanAsk) -> BoxFuture<'_, Result<HumanAskFiled, Refusal>>;

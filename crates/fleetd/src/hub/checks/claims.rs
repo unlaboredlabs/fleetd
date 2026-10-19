@@ -191,6 +191,11 @@ impl Claims {
             if w.state != WorkstreamState::Verifying {
                 return Ok(());
             }
+            // Review fixes spawned while it verified would be cancelled as leftovers once it is done: it stays open.
+            let fixes = self.ports.review_fixes(&w);
+            if !fixes.is_empty() {
+                return self.hold(&w, claim, fixes);
+            }
             let done = Workstream {
                 state: WorkstreamState::Done,
                 updated_at: now_ts(self.clock.as_ref()),
@@ -258,6 +263,39 @@ impl Claims {
                     .collect(),
             })?;
         }
+        Ok(())
+    }
+
+    /// Every check passed while review-fix work is open: back to running, recorded with why, and the lead is told.
+    fn hold(&self, w: &Workstream, claim: &Claim, fixes: Vec<String>) -> Result<(), StoreError> {
+        self.ports.put_workstream(&Workstream {
+            state: WorkstreamState::Running,
+            updated_at: now_ts(self.clock.as_ref()),
+            ..w.clone()
+        });
+        let reason = format!("review fixes still open: {}", fixes.join(", "));
+        self.emit(
+            w,
+            HubEventType::WorkstreamState,
+            format!(
+                "{} stays open: {} passed, but {reason}",
+                w.workstream_id, claim.claim_id
+            ),
+            serde_json::json!({
+                "workstreamId": w.workstream_id,
+                "state": "running",
+                "claimId": claim.claim_id,
+                "reason": reason,
+            }),
+        )?;
+        self.ports.wake(
+            &w.project_ref,
+            ClaimWake::Held {
+                claim_id: claim.claim_id.clone(),
+                workstream_id: w.workstream_id.clone(),
+                fixes,
+            },
+        );
         Ok(())
     }
 
@@ -339,6 +377,18 @@ impl Claims {
             }
             _ => {}
         }
+        let fixes = self.ports.review_fixes(&w);
+        if !fixes.is_empty() {
+            return Err(invalid(
+                format!(
+                    "{workstream_id} has review fixes still open: {}. It is done only once they land.",
+                    fixes.join(", ")
+                ),
+                Some(
+                    "Say so in chat in one line. Let them land, then claim again; cancel one only if it truly isn't needed, and say why.",
+                ),
+            ));
+        }
         if w.brief.is_none() {
             return Err(invalid(
                 format!(
@@ -407,7 +457,13 @@ impl Claims {
                     .ports
                     .workstream(workstream_id)
                     .map_or(WorkstreamState::Verifying, |w| w.state);
-                let next = if claim.outcome == ClaimOutcome::Pass {
+                let next = if claim.outcome == ClaimOutcome::Pass
+                    && state == WorkstreamState::Running
+                {
+                    format!(
+                        "Every check passed, but {workstream_id} stays open: review fixes are still open (see the wake). Say so in chat; claim again once they land."
+                    )
+                } else if claim.outcome == ClaimOutcome::Pass {
                     format!(
                         "{workstream_id} is {}: every check passed. Spawn nothing more for it.",
                         state_name(state)

@@ -468,6 +468,26 @@ pub const ENTRIES: &[Entry] = &[
         &[]
     ),
     entry!(
+        "wake.claim_held",
+        Wake,
+        ReviewsAndChecks,
+        Lead,
+        "Wake: claim passed, review fixes open",
+        "per claim that passed while review-fix work was still open",
+        "claimId!=C<n>; workstreamId!=W<n>; fixes!=the open review fixes, comma-separated",
+        &[]
+    ),
+    entry!(
+        "wake.order_done_fixes_kept",
+        Wake,
+        ReviewsAndChecks,
+        Lead,
+        "Wake: order done, review fixes kept",
+        "per order that became done while review-fix work was open (not through a claim)",
+        "workstreamId!=W<n>; fixes!=the open review fixes, comma-separated",
+        &[]
+    ),
+    entry!(
         "wake.train.line",
         Wake,
         WakesAndMessages,
