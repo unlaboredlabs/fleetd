@@ -10,7 +10,7 @@
 //      the entry says `expect: "error"`; register error fixtures as a separate entry with that field.
 //   3. A screen with no route of its own gets `open`, using keys, roles and labels rather than CSS classes:
 //        { id: "palette", route: "#/", fixtures: ["typical"], open: (page) => page.keyboard.press("ControlOrMeta+K") }
-//        { id: "chat", route: "#/project/devbox/storefront", fixtures: ["chat-strip"], variant: "strip-open",
+//        { id: "chat", route: CHAT, fixtures: ["chat-strip"], variant: "strip-open",
 //          open: (page) => page.getByRole("button", { name: /agents? working/u }).first().click() }
 // Fixtures are E3b's, built by `pnpm fixtures` into app/desktop/fixtures/<name>.json.
 // Run it locally: `pnpm fixtures && pnpm qa:build && pnpm qa` (QA_SCREENS=<id>,<id> to limit), then open
@@ -115,6 +115,10 @@ const gallerySections = [
   "list",
   "layout",
 ] as const;
+
+// The fixtures' storefront project, a real hub project from the sanitized recording, so its id is a UUID; it shows
+// only in the route, never as text.
+const CHAT = "#/project/devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22";
 
 /** An entry's name in test titles, shot files and the contact sheet. */
 export const label = (s: Pick<Screen, "id" | "variant">) => (s.variant === undefined ? s.id : `${s.id}~${s.variant}`);
@@ -274,7 +278,7 @@ export const screens: readonly Screen[] = [
     open: (page) => page.getByRole("tab", { name: "Insights" }).click(),
   },
   // The lead chat (lead-chat-spec.md). Registered ahead of the slices, each pending until its writer lands it and
-  // deletes `pending` (check the id, route and open step then). The project is the fixtures' devbox/storefront.
+  // deletes `pending` (check the id, route and open step then).
   // A1 (F1): the sidebar's needs-you dot and running indicator, around the remembered project's chat.
   {
     id: "shell",
@@ -286,14 +290,14 @@ export const screens: readonly Screen[] = [
   // orders, a reply streaming in, attachments, the lead waiting on you, a first message, and the link down.
   {
     id: "chat",
-    route: "#/project/devbox/storefront",
+    route: CHAT,
     fixtures: ["chat-long", "chat-streaming", "chat-attachments", "chat-waiting", "chat-empty", "typical", "long-text", "empty", "hub-unreachable"],
     pending: "A2 messages (F3), A3 composer (F4) and fixtures/chat (E3b)",
   },
   // A5 (F5): the two inline items: the masked secret field, and the exact gated command with Approve / Deny.
   {
     id: "chat",
-    route: "#/project/devbox/storefront",
+    route: CHAT,
     fixtures: ["chat-secret", "chat-gated", "long-text"],
     variant: "inline",
     pending: "A5 inline secret and gated command (F5) and fixtures/chat (E3b)",
@@ -302,14 +306,14 @@ export const screens: readonly Screen[] = [
   // lanes.
   {
     id: "chat",
-    route: "#/project/devbox/storefront",
+    route: CHAT,
     fixtures: ["chat-strip", "many-agents"],
     variant: "strip",
     pending: "A4 live strip (F2)",
   },
   {
     id: "chat",
-    route: "#/project/devbox/storefront",
+    route: CHAT,
     fixtures: ["chat-strip", "many-agents", "long-text"],
     open: (page) => page.getByRole("button", { name: /agents? working/u }).first().click(),
     variant: "strip-open",
@@ -319,7 +323,7 @@ export const screens: readonly Screen[] = [
   // contract).
   {
     id: "chat",
-    route: "#/project/devbox/storefront",
+    route: CHAT,
     fixtures: ["chat-max-agents", "long-text"],
     open: (page) => page.getByRole("button", { name: /Max agents/u }).first().click(),
     variant: "max-agents",
