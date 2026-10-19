@@ -2,6 +2,7 @@
 // how below (attach, mention, Enter). Enter sends and keeps focus; Shift+Enter adds a line. The rules live in
 // composerLogic.ts; this file is the box.
 import { useEffect, useId, useImperativeHandle, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type Ref } from "react";
+import { AtSign, Paperclip } from "lucide-react";
 import {
   Button,
   Menu,
@@ -299,7 +300,7 @@ export function Composer(props: ComposerProps) {
   const sendable = text.trim() !== "" && !props.offline;
 
   return (
-    <div className={c.composer} onDragOver={(e) => e.preventDefault()} onDrop={onDrop} data-composer="docked">
+    <div className={c.composer} onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
       <Text as="h2" strong className={cx(c.heading)}>
         What should the fleet do?
       </Text>
@@ -352,6 +353,8 @@ export function Composer(props: ComposerProps) {
       <div className={c.field}>
         <textarea
           ref={box}
+          // The demo recorder (FLEETD_DEMO_TYPE) types the order here once it can take focus.
+          data-composer="ready"
           className={c.input}
           rows={1}
           value={text}
@@ -416,11 +419,12 @@ export function Composer(props: ComposerProps) {
         </div>
       ) : null}
       <div className={c.how}>
-        <Button variant="quiet" onClick={() => fileInput.current?.click()}>
-          + attach
+        <Button variant="quiet" icon={<Paperclip />} onClick={() => fileInput.current?.click()}>
+          Attach
         </Button>
         <Button
           variant="quiet"
+          icon={<AtSign />}
           onClick={() => {
             const el = box.current;
             if (!el) return;
@@ -434,7 +438,7 @@ export function Composer(props: ComposerProps) {
             });
           }}
         >
-          @ mention
+          Mention
         </Button>
         <input
           ref={fileInput}

@@ -1,6 +1,6 @@
 // The board, drawn from a BoardModel: the docked composer, then either the one open order on the stage or the
 // orders grouped by project, then the train and machine strips. Rows come from model.ts; this file draws them.
-import type { Ref } from "react";
+import { useEffect, type Ref } from "react";
 import { Button, StatusChip, Text, Truncate, VirtualList, cx, type StatusTone } from "../../ui";
 import { peekNow, useNow } from "./clock";
 import { Composer, type ComposerApi, type ComposerHandle } from "./Composer";
@@ -36,9 +36,12 @@ export interface BoardViewProps {
   readonly filter?: ProjectKey | undefined;
   readonly lastUsed?: ProjectKey | undefined;
   readonly offline?: string | undefined;
+  /** Told which order is on the stage, so its detail (the agents a card leaves out) can be fetched. */
+  readonly onStage?: ((workstreamId: string | undefined) => void) | undefined;
 }
 
 const EMPTY: readonly AgentLane[] = [];
+const NO_ITEMS: readonly Item[] = [];
 
 const CHIP_TONE: Record<OrderPhase, StatusTone> = {
   waiting_on_you: "needs-you",
@@ -54,14 +57,18 @@ const CHIP_TONE: Record<OrderPhase, StatusTone> = {
   done: "done",
 };
 
-export function BoardView({ model, actions, composer, composerHandle, filter, lastUsed, offline }: BoardViewProps) {
+export function BoardView({ model, actions, composer, composerHandle, filter, lastUsed, offline, onStage }: BoardViewProps) {
   // The clock ticks only while something on the board changes with time alone.
   const now = hubNow(model.live, useNow(needsClock(model.live, hubNow(model.live, peekNow()))));
   const staged = stagedOrder(model, now, filter);
   const drawn = staged ? heldLanes(staged.lanes, now) : EMPTY;
   const seen = staged ? seenLanes(model.live, staged.card.workstreamId) : EMPTY;
+  const stagedId = staged?.card.workstreamId;
+  useEffect(() => onStage?.(stagedId), [onStage, stagedId]);
   const items: Item[] = staged ? stageItems(model, staged, drawn, seen) : listItems(model, now, filter);
-  const present = usePresence(items, itemKey);
+  // Rows come and go with motion on the stage only. Its rows are few (a card lists at most 12 agents), while the
+  // order list is long and virtual, where a row changing height under the virtualizer would move the rows around it.
+  const present = usePresence(staged ? items : NO_ITEMS, itemKey);
   const state = staged ? (items.some((i) => i.kind === "finish") ? "finish" : "stage") : items.some((i) => i.kind === "empty") ? "empty" : "list";
 
   const targets: Target[] = model.projects.map((p) => ({
@@ -91,22 +98,27 @@ export function BoardView({ model, actions, composer, composerHandle, filter, la
         />
       </div>
       <div className={s.list} data-screen={`board.${state}`}>
-        <VirtualList
-          items={present}
-          getKey={(p) => p.key}
-          estimateSize={32}
-          aria-label={staged ? staged.card.title : "Orders"}
-          renderItem={(p, i) => (
-            <Row
-              present={p}
-              last={i === present.length - 1}
-              now={now}
-              stale={model.live.stale}
-              actions={actions}
-              composerHandle={composerHandle}
-            />
-          )}
-        />
+        {staged ? (
+          <div className={s.stageScroll} role="list" aria-label={staged.card.title}>
+            {present.map((p) => (
+              <Row key={p.key} present={p} now={now} stale={model.live.stale} actions={actions} composerHandle={composerHandle} />
+            ))}
+            <div className={s.listEnd} />
+          </div>
+        ) : (
+          <VirtualList
+            items={items}
+            getKey={itemKey}
+            estimateSize={32}
+            aria-label="Orders"
+            renderItem={(item, i) => (
+              <div className={s.col}>
+                <ItemView item={item} now={now} stale={model.live.stale} actions={actions} composerHandle={composerHandle} />
+                {i === items.length - 1 ? <div className={s.listEnd} /> : null}
+              </div>
+            )}
+          />
+        )}
       </div>
       <TrainStrip trains={trains(model.live)} mergedAt={model.live.mergedAt} now={now} {...(actions.openPr ? { onOpenPr: actions.openPr } : {})} />
       <MachineStrip machines={machines(model.live)} slots={model.live.slots} now={now} />
@@ -116,25 +128,22 @@ export function BoardView({ model, actions, composer, composerHandle, filter, la
 
 function Row({
   present,
-  last,
   now,
   stale,
   actions,
   composerHandle,
 }: {
   present: Present<Item>;
-  last: boolean;
   now: number;
   stale: boolean;
   actions: BoardActions;
   composerHandle?: Ref<ComposerHandle> | undefined;
 }) {
   return (
-    <div className={cx(s.present, present.leaving && s.leaving, present.entering && s.entering)}>
+    <div role="listitem" className={cx(s.present, present.leaving && s.leaving, present.entering && s.entering)} {...leavingProps(present.leaving)}>
       <div>
         <div className={s.col}>
           <ItemView item={present.item} now={now} stale={stale} actions={actions} composerHandle={composerHandle} />
-          {last ? <div className={s.listEnd} /> : null}
         </div>
       </div>
     </div>
@@ -240,6 +249,9 @@ function ItemView({
   }
 }
 
+/** A row on its way out is gone for readers and the keyboard while it collapses. */
+const leavingProps = (leaving: boolean) => (leaving ? { "aria-hidden": true, inert: true } : {});
+
 const toneClass = (tone: ReturnType<typeof stageTone>) =>
   tone === "success" ? s.success : tone === "warning" ? s.warning : tone === "danger" ? s.danger : s.quietText;
 
@@ -303,7 +315,7 @@ function OrderCardRow({ item, now, stale, open }: { item: Extract<Item, { kind: 
       {rows.length > 0 ? (
         <div className={cx(s.cardBody, s.cardLanes)}>
           {rows.map((r) => (
-            <div key={r.key} className={cx(s.present, r.leaving && s.leaving, r.entering && s.entering)}>
+            <div key={r.key} className={cx(s.present, r.leaving && s.leaving, r.entering && s.entering)} {...leavingProps(r.leaving)}>
               <div>
                 <LaneRow lane={r.item} density="card" now={now} stale={stale} />
               </div>

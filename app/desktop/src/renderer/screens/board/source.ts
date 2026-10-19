@@ -4,9 +4,9 @@
 import { useCallback, useEffect, useMemo, useReducer } from "react";
 import type { CallOutcome, HubFrame } from "../../../shared/hub";
 import type { ComposerApi, Draft } from "./Composer";
-import type { AskSummary, IntakeSubmitInput, IntakeSubmitOutput, LiveFrame, OrdersBoardOutput } from "./contracts";
+import type { AgentLane, AskSummary, IntakeSubmitInput, IntakeSubmitOutput, LiveFrame, OrdersBoardOutput } from "./contracts";
 import { ORDER_DONE_HOLD_MS } from "./fleet";
-import { EMPTY, type LiveState, type ProjectKey, applyFrame, markStale, projectKey, setBoard } from "./live";
+import { EMPTY, type LiveState, type ProjectKey, applyFrame, markStale, projectKey, setBoard, setDone } from "./live";
 import type { BoardModel, Conn, Project, SentOrder } from "./model";
 import type { BoardActions } from "./BoardView";
 
@@ -17,6 +17,7 @@ const str = (v: unknown): string | undefined => (typeof v === "string" ? v : und
 
 interface State {
   readonly conn: Conn;
+  readonly snapshot: boolean;
   readonly projects: readonly Project[];
   readonly live: LiveState;
   readonly asks: readonly AskSummary[];
@@ -36,11 +37,13 @@ type Action =
   | { readonly t: "boards"; readonly out: OrdersBoardOutput }
   | { readonly t: "boardsFailed"; readonly message: string }
   | { readonly t: "asks"; readonly asks: readonly AskSummary[] }
+  | { readonly t: "done"; readonly workstreamId: string; readonly lanes: readonly AgentLane[] }
   | { readonly t: "sent"; readonly order: SentOrder; readonly draft?: DraftParts }
   | { readonly t: "unsend"; readonly requestId: string };
 
 const initial: State = {
   conn: "connecting",
+  snapshot: false,
   projects: [],
   live: EMPTY,
   asks: [],
@@ -69,7 +72,7 @@ const reduce = (s: State, a: Action): State => {
       // A reconnect never shows cached data as live: the feed greys until the next frame, the boards refetch.
       return { ...s, conn: a.conn, note: a.note, live: a.conn === "live" ? s.live : markStale(s.live) };
     case "snapshot":
-      return { ...s, projects: a.projects };
+      return { ...s, projects: a.projects, snapshot: true };
     case "live":
       return { ...s, live: applyFrame(s.live, a.frame, a.at) };
     case "boards": {
@@ -88,6 +91,8 @@ const reduce = (s: State, a: Action): State => {
       return { ...s, errors: new Map(s.projects.map((p) => [p.key, a.message])) };
     case "asks":
       return { ...s, asks: a.asks };
+    case "done":
+      return { ...s, live: setDone(s.live, a.workstreamId, a.lanes) };
     case "sent": {
       const sent = s.sent.some((o) => o.requestId === a.order.requestId)
         ? s.sent.map((o) => (o.requestId === a.order.requestId ? a.order : o))
@@ -140,6 +145,8 @@ export interface BoardSource {
   readonly lastUsed: ProjectKey | undefined;
   /** Why Send is off, when the hub isn't live. */
   readonly offline: string | undefined;
+  /** The order on the stage: its detail is fetched, for the agents a card leaves out. */
+  readonly watch: (workstreamId: string | undefined) => void;
 }
 
 export const useBoardSource = (addProject: () => void): BoardSource => {
@@ -159,6 +166,22 @@ export const useBoardSource = (addProject: () => void): BoardSource => {
       if (o.ok && isObject(o.output) && Array.isArray(o.output["asks"])) dispatch({ t: "asks", asks: o.output["asks"] as AskSummary[] });
     });
   }, [hub]);
+
+  const [watched, watch] = useReducer((_: string | undefined, w: string | undefined) => w, undefined);
+  const fetchDetail = useCallback(
+    (workstreamId: string) => {
+      void hub.call("order_get", { workstreamId }).then((o) => {
+        if (o.ok && isObject(o.output) && Array.isArray(o.output["doneLanes"])) {
+          dispatch({ t: "done", workstreamId, lanes: o.output["doneLanes"] as AgentLane[] });
+        }
+      });
+    },
+    [hub],
+  );
+  // The staged order's detail, when it takes the stage and whenever the boards refetch.
+  useEffect(() => {
+    if (watched !== undefined) fetchDetail(watched);
+  }, [watched, fetchDetail, s.live.boards]);
 
   useEffect(() => {
     let boardsDue: number | undefined;
@@ -287,6 +310,6 @@ export const useBoardSource = (addProject: () => void): BoardSource => {
     [s.sent, s.drafts, submit],
   );
 
-  const model: BoardModel = { conn: s.conn, projects: s.projects, live: s.live, asks: s.asks, loaded: s.loaded, errors: s.errors, sent: s.sent };
-  return { model, composer, actions, lastUsed: s.lastUsed, offline: s.conn === "live" ? undefined : (s.note ?? "Not connected to the hub.") };
+  const model: BoardModel = { conn: s.conn, snapshot: s.snapshot, projects: s.projects, live: s.live, asks: s.asks, loaded: s.loaded, errors: s.errors, sent: s.sent };
+  return { model, composer, actions, watch, lastUsed: s.lastUsed, offline: s.conn === "live" ? undefined : (s.note ?? "Not connected to the hub.") };
 };

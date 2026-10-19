@@ -34,6 +34,7 @@ export function BoardScreen() {
       filter={filter}
       lastUsed={source.lastUsed}
       offline={source.offline}
+      onStage={source.watch}
       actions={{
         ...source.actions,
         openOrder: (id) => go(`#/order/${encodeURIComponent(id)}`),

@@ -27,6 +27,8 @@ export interface LiveState {
   readonly ended: ReadonlyMap<string, string>;
   /** Lanes that left their board card, per order. */
   readonly left: ReadonlyMap<string, readonly Left[]>;
+  /** Each watched order's finished agents, from order_get (a card leaves them out): the finish counts them. */
+  readonly done: ReadonlyMap<string, readonly AgentLane[]>;
   /** When each PR chip was first seen merged (hub ms); 0 for merges already there when its board first loaded. */
   readonly mergedAt: ReadonlyMap<string, number>;
   /** Every lane each order on a board has listed, at its latest snapshot: the finish counts its agents from it. */
@@ -45,6 +47,7 @@ export const EMPTY: LiveState = {
   left: new Map(),
   seen: new Map(),
   mergedAt: new Map(),
+  done: new Map(),
   machines: [],
   slots: undefined,
   skewMs: undefined,
@@ -111,6 +114,13 @@ export const setBoard = (s: LiveState, key: ProjectKey, out: OrdersBoardOutput):
   return { ...s, boards, left, ended, seen, mergedAt };
 };
 
+/** An order's finished agents, from its detail (order_get's doneLanes). */
+export const setDone = (s: LiveState, workstreamId: string, lanes: readonly AgentLane[]): LiveState => {
+  const done = new Map(s.done);
+  done.set(workstreamId, lanes);
+  return { ...s, done };
+};
+
 export const markStale = (s: LiveState): LiveState => (s.stale ? s : { ...s, stale: true });
 
 /** `ended`: when the feed first said the lane settled; it stops the lane's clock until the snapshot says when. */
@@ -143,12 +153,17 @@ export const orderLanes = (s: LiveState, workstreamId: string): AgentLane[] => {
   return lanes.map((l) => merge(l, s.lanes.get(l.laneId), s.ended.get(l.laneId)));
 };
 
-/** Every lane the order has had, finished ones included: its lanes now, then the ones that left, at their latest. */
+/**
+ * Every lane the order has had, finished ones included: its lanes now, then the finished ones its detail lists
+ * (they may predate this client), then any other lane it has seen leave.
+ */
 export const seenLanes = (s: LiveState, workstreamId: string): AgentLane[] => {
-  const now = orderLanes(s, workstreamId);
-  const ids = new Set(now.map((l) => l.laneId));
-  const old = [...(s.seen.get(workstreamId)?.values() ?? [])].filter((l) => !ids.has(l.laneId));
-  return [...now, ...old.map((l) => merge(l, s.lanes.get(l.laneId), s.ended.get(l.laneId)))];
+  const out = new Map(orderLanes(s, workstreamId).map((l) => [l.laneId, l]));
+  for (const l of s.done.get(workstreamId) ?? []) if (!out.has(l.laneId)) out.set(l.laneId, l);
+  for (const l of s.seen.get(workstreamId)?.values() ?? []) {
+    if (!out.has(l.laneId)) out.set(l.laneId, merge(l, s.lanes.get(l.laneId), s.ended.get(l.laneId)));
+  }
+  return [...out.values()];
 };
 
 /** One train per repo: projects sharing a repo report the same train; the most recent snapshot wins. */

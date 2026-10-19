@@ -26,6 +26,17 @@
 .list {
   flex: 1;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.list > * {
+  flex: 1;
+  min-height: 0;
+}
+.stageScroll {
+  overflow-y: auto;
+  /* Rows above the reader change height (a finished agent folding away); the view must not jump with them. */
+  overflow-anchor: none;
 }
 
 /* Presence: a row expands in when it arrives and collapses in place when it leaves, in the flow. */
@@ -510,13 +521,15 @@
   height: var(--space-8);
 }
 
-/* Strips at the bottom: one line each, nothing wraps; each segment truncates. */
+/* Strips at the bottom: one line each, nothing wraps; each segment truncates. 32 px keeps the text the QA gate's
+   8 px off the window's bottom edge. */
 .strip {
   flex: none;
   display: flex;
   align-items: center;
   gap: var(--space-4);
-  height: var(--row);
+  height: 32px;
+  line-height: var(--leading-xs);
   padding: 0 var(--space-4);
   background: var(--sidebar);
   border-top: 1px solid var(--hairline);

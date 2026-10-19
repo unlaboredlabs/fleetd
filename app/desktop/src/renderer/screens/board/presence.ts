@@ -18,6 +18,8 @@ export const heldLanes = (lanes: readonly AgentLane[], now: number): AgentLane[]
     return ended !== undefined && now < ended + DONE_HOLD_MS;
   });
 
+const reducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
 export interface Present<T> {
   readonly item: T;
   readonly key: string;
@@ -54,16 +56,15 @@ export const usePresence = <T,>(items: readonly T[], keyOf: (item: T) => string)
       return now.has(key) || item === undefined ? [] : [{ item, key, index }];
     });
     setPrev({ items, keys, sig });
-    if (left.length > 0) setGone((g) => [...g.filter((x) => !now.has(x.key)), ...left]);
+    if (left.length > 0 && !reducedMotion()) setGone((g) => [...g.filter((x) => !now.has(x.key)), ...left]);
     const arrived = keys.filter((k) => !before.has(k));
     if (arrived.length > 0 || entered.size > 0) setEntered(new Set(arrived));
   }
 
   useEffect(() => {
     if (gone.length === 0) return;
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const done = new Set(gone);
-    const t = window.setTimeout(() => setGone((g) => g.filter((x) => !done.has(x))), reduce ? 0 : EXIT_MS + 20);
+    const t = window.setTimeout(() => setGone((g) => g.filter((x) => !done.has(x))), EXIT_MS + 20);
     return () => window.clearTimeout(t);
   }, [gone]);
 

@@ -26,6 +26,8 @@ export const fixtures = [
   "hub-unreachable",
   "pairing-failed",
   "node-too-old",
+  "board-stage",
+  "board-finish",
 ] as const;
 export type FixtureName = (typeof fixtures)[number];
 
@@ -75,6 +77,13 @@ export const screens: readonly Screen[] = [
     id: "shell",
     route: "#/",
     fixtures: ["empty", "typical", "hub-unreachable", "pairing-failed", "node-too-old"],
+  },
+  // F2: the board (#/ and #/board). board.empty, board.list, board.stage and board.finish are its states: the stage
+  // and finish fixtures put one order on it mid-run and after every PR merged.
+  {
+    id: "board",
+    route: "#/board",
+    fixtures: ["empty", "typical", "long-text", "many-agents", "needs-you", "board-stage", "board-finish"],
   },
   // E2: every design-system primitive with short, long and empty content, one section per entry, so the primitives
   // pass before any screen uses them. Needs a build with the gallery in it: `pnpm qa:build`.

@@ -32,6 +32,8 @@ export type Conn = "live" | "connecting" | "offline" | "unpaired";
 
 export interface BoardModel {
   readonly conn: Conn;
+  /** The hub's snapshot (projects, machines) arrived: until then an empty board is loading, not empty. */
+  readonly snapshot: boolean;
   readonly projects: readonly Project[];
   readonly live: LiveState;
   /** The live ask state (E1's selector): open asks are what makes an order "needs you". */
@@ -224,7 +226,9 @@ export const listItems = (m: BoardModel, nowMs: number, filter?: ProjectKey): It
 };
 
 const emptyWhy = (m: BoardModel, filter?: ProjectKey): "no-projects" | "loading" | "idle" | "offline" => {
-  if (m.conn !== "live" && m.live.boards.size === 0) return "offline";
+  if (m.live.boards.size === 0 && m.conn === "connecting") return "loading";
+  if (m.live.boards.size === 0 && m.conn !== "live") return "offline";
+  if (!m.snapshot) return "loading";
   if (m.projects.length === 0) return "no-projects";
   const wanted = m.projects.filter((p) => filter === undefined || p.key === filter);
   return wanted.every((p) => m.loaded.has(p.key) || m.errors.has(p.key)) ? "idle" : "loading";
