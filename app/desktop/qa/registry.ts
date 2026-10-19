@@ -317,36 +317,18 @@ export const screens: readonly Screen[] = [
     },
   },
   { id: "machines", route: "#/machines", fixtures: ["typical", "empty", "long-text", "many-agents", "hub-unreachable", "projects-machines"] },
-  // F11: the command palette (projects first, then go-tos), a typed search, and the shortcuts sheet.
+  // F11: the command palette (projects first, then go-tos), a typed search, and the shortcuts sheet. status-rows
+  // has eight projects, one with a ~120-character name.
   {
     id: "palette",
     route: "#/",
-    fixtures: ["typical", "long-text", "empty", "many-prompts"],
+    fixtures: ["typical", "long-text", "empty", "many-prompts", "status-rows"],
     open: (page) => page.keyboard.press("ControlOrMeta+K"),
   },
   {
     id: "palette.search",
     route: "#/",
-    fixtures: ["typical", "long-text", "empty"],
-    open: async (page) => {
-      await page.keyboard.press("ControlOrMeta+K");
-      await page.getByRole("combobox", { name: "Search" }).fill("st");
-    },
-  },
-  // Eight projects, one with a ~120-character name. Over Status: status-rows carries no chats, so #/ (a project's
-  // chat) would show its error behind the palette.
-  {
-    id: "palette",
-    variant: "projects",
-    route: "#/status",
-    fixtures: ["status-rows"],
-    open: (page) => page.keyboard.press("ControlOrMeta+K"),
-  },
-  {
-    id: "palette.search",
-    variant: "projects",
-    route: "#/status",
-    fixtures: ["status-rows"],
+    fixtures: ["typical", "long-text", "empty", "status-rows"],
     open: async (page) => {
       await page.keyboard.press("ControlOrMeta+K");
       await page.getByRole("combobox", { name: "Search" }).fill("st");
