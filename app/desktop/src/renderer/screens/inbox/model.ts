@@ -13,6 +13,8 @@ export interface Answered {
   /** The receipt: when the lead got it. Null while sending or inside the undo window. */
   readonly deliveredAt: string | null;
   readonly sending: boolean;
+  /** Secret asks: the node's fingerprint of what it stored (8 hex characters), to compare, never the value. */
+  readonly fingerprint?: string;
 }
 
 /** A failed or late event worth a human's look, from the snapshot's `attention` and loud events since. */
@@ -141,12 +143,17 @@ export const replied = (state: InboxState, askId: string, output: InboxReplyOutp
 };
 
 /** A secret the node took: no undo, the receipt is the submit itself. */
-export const secretSent = (state: InboxState, askId: string, nowMs: number): InboxState => {
+export const secretSent = (state: InboxState, askId: string, nowMs: number, fingerprint: string): InboxState => {
   const entry = state.answered.get(askId);
   if (entry === undefined) return state;
   return {
     ...state,
-    answered: withEntry(state.answered, askId, { ...entry, sending: false, deliveredAt: new Date(nowMs).toISOString() }),
+    answered: withEntry(state.answered, askId, {
+      ...entry,
+      sending: false,
+      deliveredAt: new Date(nowMs).toISOString(),
+      ...(fingerprint === "" ? {} : { fingerprint }),
+    }),
   };
 };
 

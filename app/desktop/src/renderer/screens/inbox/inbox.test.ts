@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import fixture from "../../../../fixtures/inbox/asks.json";
-import { answerLabel, cardOptions, choices, cleanFreeText, humanizeKey, optionLabel, pickLabel, replyFor, takesSkip } from "./ask";
+import { answerLabel, cardKey, cardOptions, choices, cleanFreeText, humanizeKey, optionLabel, pickLabel, replyFor, secretEnvLines, takesSkip } from "./ask";
 import type { Ask, InboxReplyOutput } from "./contracts";
-import { answering, emptyInbox, needsYou, normalizeAsk, replied, secretTarget, undone, withAsks, withEvent, withSnapshot } from "./model";
+import { answering, answeringAs, emptyInbox, needsYou, normalizeAsk, replied, secretSent, secretTarget, undone, withAsks, withEvent, withSnapshot } from "./model";
 
 const asks = fixture.asks as unknown as Ask[];
 const ask = (id: string): Ask => {
@@ -158,5 +158,46 @@ describe("a secret ask's destination", () => {
       expect(target.ok).toBe(false);
       if (!target.ok) expect(target.fix).toContain(fix);
     }
+  });
+});
+
+describe("the card's keys", () => {
+  const press = (key: string, extra: Partial<Parameters<typeof cardKey>[0]> = {}) => ({
+    key,
+    code: /^[1-9]$/u.test(key) ? `Digit${key}` : key,
+    shiftKey: false,
+    metaKey: false,
+    ctrlKey: false,
+    altKey: false,
+    isComposing: false,
+    ...extra,
+  });
+  const onCard = { inField: false, onButton: false };
+
+  it("picks with 1–9 and N and confirms with Enter on the card", () => {
+    expect(cardKey(press("3"), onCard)).toEqual({ kind: "pick", n: 3 });
+    expect(cardKey(press("n"), onCard)).toEqual({ kind: "no" });
+    expect(cardKey(press("Enter"), onCard)).toEqual({ kind: "enter" });
+    expect(cardKey(press("Enter"), { inField: false, onButton: true })).toBeUndefined();
+  });
+
+  it("leaves every key typed in a field alone, so a secret or an answer keeps its 1s, ns and Enter", () => {
+    for (const key of ["1", "n", "N", "Enter", "9"]) expect(cardKey(press(key), { inField: true, onButton: false })).toBeUndefined();
+    expect(cardKey(press("2", { isComposing: true }), onCard)).toBeUndefined();
+    expect(cardKey(press("2", { metaKey: true }), onCard)).toBeUndefined();
+  });
+});
+
+describe("what an approval and a secret show", () => {
+  it("names every secret an approved command gets, never a value", () => {
+    const approve = ask("A14");
+    if (approve.gated === undefined) throw new Error("A14 has no command");
+    expect(secretEnvLines(approve.gated)).toEqual(["`DATABASE_URL` gets the secret `staging.db_url`"]);
+    expect(secretEnvLines({ ...approve.gated, secretEnv: undefined } as never)).toEqual([]);
+  });
+
+  it("keeps the node's fingerprint for the receipt", () => {
+    const sealed = answeringAs(emptyInbox, ask("A17"), "Sealed and sent");
+    expect(secretSent(sealed, "A17", 0, "ab12cd34").answered.get("A17")).toMatchObject({ fingerprint: "ab12cd34", sending: false });
   });
 });

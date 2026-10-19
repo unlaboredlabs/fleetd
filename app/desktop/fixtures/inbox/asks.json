@@ -143,7 +143,13 @@
         "cwd": "/srv/storefront",
         "class": "irreversible",
         "reason": "Adds the `share_snapshots` table",
-        "timeoutSec": 600
+        "timeoutSec": 600,
+        "secretEnv": [
+          {
+            "name": "DATABASE_URL",
+            "secretKey": "staging.db_url"
+          }
+        ]
       },
       "blocks": "the staging deploy",
       "proceededOnRec": false,
@@ -222,8 +228,8 @@
       "options": [
         {
           "key": "thirty-days",
-          "label": "Keep each snapshot for thirty days after it was last opened by anyone, then delete it quietly",
-          "consequence": "Old links keep working while people still open them; a snapshot nobody has looked at for a month disappears and its link shows a plain not-found page instead of the card."
+          "label": "Keep each snapshot for thirty days after anyone last opened it, then delete it",
+          "consequence": "Old links keep working while people still open them; one nobody has opened for a month is deleted quietly and its link shows a plain not-found page instead of the card."
         },
         {
           "key": "forever",

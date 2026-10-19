@@ -44,6 +44,13 @@ export interface GatedRunSpec {
   readonly class: "irreversible" | "money" | "credential";
   readonly reason: string;
   readonly timeoutSec: number;
+  /** Environment variables the node fills from stored secrets before running argv. */
+  readonly secretEnv?: readonly SecretEnvEntry[];
+}
+
+export interface SecretEnvEntry {
+  readonly name: string;
+  readonly secretKey: string;
 }
 
 export interface ToolPermission {

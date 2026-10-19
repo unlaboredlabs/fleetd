@@ -143,7 +143,7 @@ export const createInboxStore = ({ hub, secret }: Pick<FleetdApi, "hub" | "secre
       if (!target.ok || value === "") return;
       set(answeringAs(state, ask, `Sealed and sent ${target.where}`));
       void secret.submit({ askId: ask.askId, boxPubKey: target.boxPubKey, value }).then((out) => {
-        set(out.ok ? secretSent(state, ask.askId, now()) : answerFailed(state, ask.askId, errorText(out.error)));
+        set(out.ok ? secretSent(state, ask.askId, now(), out.fingerprint) : answerFailed(state, ask.askId, errorText(out.error)));
         scheduleDismissals();
         fetchAsks();
       });

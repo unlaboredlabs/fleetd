@@ -24,3 +24,13 @@
   font-weight: 600;
   margin: 0;
 }
+
+/* TEMPORARY with App.tsx's inbox host, until F1's shell lands. */
+.inbox-host {
+  position: fixed;
+  top: var(--top-bar-height);
+  right: 0;
+  bottom: 0;
+  width: 420px;
+  border-left: 1px solid var(--border);
+}

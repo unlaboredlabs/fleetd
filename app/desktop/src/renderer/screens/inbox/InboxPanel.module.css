@@ -23,6 +23,12 @@
   flex: 1;
   min-height: 0;
 }
+/* Radix lays the viewport's content out as a table, which grows to its widest unbreakable line; this panel only
+   scrolls vertically, so the content takes the panel's width and its text wraps or truncates inside it. */
+.scroll [data-radix-scroll-area-viewport] > div {
+  display: block !important;
+  min-width: 0 !important;
+}
 .body {
   display: flex;
   flex-direction: column;

@@ -2,7 +2,7 @@
 // answer given anywhere reads the same and clears everywhere (one store).
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { Button, Code, cx, IdChip, InlineCode, Input, RadioCard, RadioGroup, Text, Textarea, Truncate } from "../../ui";
-import { cardOptions, classTag, takesFreeText, takesSkip, type CardPick } from "./ask";
+import { cardKey, cardOptions, classTag, secretEnvLines, takesFreeText, takesSkip, type CardPick } from "./ask";
 import type { Ask, GatedRunSpec } from "./contracts";
 import { prose } from "./prose";
 import { askPlace, secretTarget, type Answered, type SecretTarget } from "./model";
@@ -76,7 +76,7 @@ function Header({ ask, place }: { ask: Ask; place: QuestionCardViewProps["place"
     <header className={s.header}>
       <div className={s.place}>
         {ask.number === undefined ? null : (
-          <Text size="xs" tone="faint" tabular className={cx(s.number)} title={`Reply to it as ${ask.number} in the reply field`}>
+          <Text size="xs" tone="quiet" tabular className={cx(s.number)} title={`Reply to it as ${ask.number} in the reply field`}>
             {ask.number}
           </Text>
         )}
@@ -136,36 +136,39 @@ function OpenBody(props: QuestionCardViewProps & { titleId: string }) {
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>): void => {
-    if (e.metaKey || e.ctrlKey || e.altKey) return;
     const target = e.target as HTMLElement;
-    if (target instanceof HTMLTextAreaElement) {
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        send();
-      } else if (e.key === "Escape" && text === "") {
-        e.preventDefault();
-        rootRef.current?.focus();
-      }
-      return;
-    }
-    // COPY of the palette's pickerKey (screens/palette/keymap.ts, not on this branch yet; swap to it once it is):
-    // 1–9 pick, Enter confirms (or, with nothing picked, moves to the
-    // recommendation), N picks the No answer. A focused button acts on Enter itself; radio items don't.
-    if (target instanceof HTMLButtonElement && target.getAttribute("role") !== "radio") return;
-    if (e.shiftKey) return;
-    const digit = /^(?:Digit|Numpad)([1-9])$/u.exec(e.code)?.[1] ?? (/^[1-9]$/u.test(e.key) ? e.key : undefined);
+    const key = cardKey(
+      { key: e.key, code: e.code, shiftKey: e.shiftKey, metaKey: e.metaKey, ctrlKey: e.ctrlKey, altKey: e.altKey, isComposing: e.nativeEvent.isComposing },
+      {
+        inField: target.isContentEditable || target.closest("input, textarea, select, [contenteditable]") !== null,
+        onButton: target instanceof HTMLButtonElement && target.getAttribute("role") !== "radio",
+      },
+    );
+    if (key === undefined) return;
     let value: string | undefined;
-    if (digit !== undefined) value = values[Number(digit) - 1];
-    else if (e.key.toLowerCase() === "n") value = options.find((o) => o.id === "no")?.id;
-    else if (e.key === "Enter") {
+    if (key.kind === "pick") value = values[key.n - 1];
+    else if (key.kind === "no") value = options.find((o) => o.id === "no")?.id;
+    else if (picked !== "") {
       e.preventDefault();
-      if (picked !== "") send();
-      else value = options.find((o) => o.recommended)?.id;
-    }
+      send();
+      return;
+    } else value = options.find((o) => o.recommended)?.id;
     if (value === undefined) return;
     e.preventDefault();
     setPicked(value);
     if (value !== OTHER) rootRef.current?.querySelector<HTMLElement>(`[data-value="${CSS.escape(value)}"]`)?.focus();
+  };
+
+  // The free-text field's own keys: Enter sends, Shift+Enter is a new line, Escape (when empty) leaves it.
+  const onTextKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
+    if (e.nativeEvent.isComposing) return;
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      send();
+    } else if (e.key === "Escape" && text === "") {
+      e.preventDefault();
+      rootRef.current?.focus();
+    }
   };
 
   return (
@@ -220,6 +223,7 @@ function OpenBody(props: QuestionCardViewProps & { titleId: string }) {
           minRows={2}
           maxRows={8}
           onChange={(e) => setText(e.target.value)}
+          onKeyDown={onTextKeyDown}
         />
       ) : null}
       <div className={s.actions}>
@@ -326,8 +330,9 @@ function SecretEntry(props: { target: SecretTarget; live: boolean; onSecret: ((f
           disabled={!props.live}
           onChange={(e) => setTyped(e.target.value !== "")}
           onKeyDown={(e) => {
-            if (e.key === "Enter") {
+            if (e.key === "Enter" && !e.nativeEvent.isComposing) {
               e.preventDefault();
+              e.stopPropagation();
               send();
             }
           }}
@@ -356,6 +361,11 @@ function GatedCommand({ gated }: { gated: GatedRunSpec }) {
         {prose(gated.reason)} · in {gated.cwd === undefined ? "the project folder" : <InlineCode>{gated.cwd}</InlineCode>} · stops
         after {minutes} min
       </Text>
+      {secretEnvLines(gated).map((line) => (
+        <Text key={line} size="xs" tone="quiet">
+          {prose(line)}
+        </Text>
+      ))}
     </div>
   );
 }
@@ -393,7 +403,12 @@ function AnsweredBody(props: {
   if (answered.sending) status = "Sending…";
   else if (left > 0) status = `You can undo this for ${left} s.`;
   else if (answered.deliveredAt === null) status = "Passing it to the lead…";
-  else status = `The lead has your answer · ${clock(answered.deliveredAt)}`;
+  else if (answered.ask.kind === "secret") {
+    status =
+      answered.fingerprint === undefined
+        ? `Stored · ${clock(answered.deliveredAt)}`
+        : `Stored · ${clock(answered.deliveredAt)} · fingerprint \`${answered.fingerprint}\``;
+  } else status = `The lead has your answer · ${clock(answered.deliveredAt)}`;
   return (
     <div className={s.body}>
       <Text as="p" id={props.titleId} className={cx(s.question)}>
@@ -406,7 +421,7 @@ function AnsweredBody(props: {
       <div className={s.actions}>
         <span aria-live="polite">
           <Text size="sm" tone={answered.deliveredAt === null ? "quiet" : "success"} tabular>
-            {status}
+            {prose(status)}
           </Text>
         </span>
         {left > 0 ? (

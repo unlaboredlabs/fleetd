@@ -76,6 +76,8 @@ export const screens: readonly Screen[] = [
     route: "#/",
     fixtures: ["empty", "typical", "hub-unreachable", "pairing-failed", "node-too-old"],
   },
+  // F5: the inbox panel with every ask shape (needs-you), the long-text stress ask, and nothing to answer.
+  { id: "inbox", route: "#/board?inbox", fixtures: ["needs-you", "long-text", "empty"] },
   // E2: every design-system primitive with short, long and empty content, one section per entry, so the primitives
   // pass before any screen uses them. Needs a build with the gallery in it: `pnpm qa:build`.
   ...gallerySections.map((s) => ({ id: `gallery.${s}`, route: `#/gallery?section=${s}`, fixtures: ["long-text"] as const })),

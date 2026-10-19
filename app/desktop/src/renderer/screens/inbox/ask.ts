@@ -1,7 +1,7 @@
 // What a question card shows and what it sends. Everything here mirrors the hub (ledger.rs `humanize_key`,
 // `Ask::choices`, `AskAnswer::display`; grammar.rs for the reply text), so the app, the CLI and the phone agree.
 import { humanizeKey as humanizeSlug } from "../../ui";
-import type { Ask, AskAnswer, AskOption } from "./contracts";
+import type { Ask, AskAnswer, AskOption, GatedRunSpec } from "./contracts";
 
 /** The hub's undo window (ASK_UNDO_WINDOW_MS). */
 export const UNDO_WINDOW_MS = 10_000;
@@ -179,3 +179,37 @@ export const cardOptions = (ask: Ask): CardOption[] => {
 /** "Something else…" and "Skip for now" are for product calls, and a skip needs a recommendation to keep. */
 export const takesFreeText = (ask: Ask): boolean => ask.kind === "decide";
 export const takesSkip = (ask: Ask): boolean => ask.kind === "decide" && ask.recommendation !== undefined;
+
+export type CardKey = { readonly kind: "pick"; readonly n: number } | { readonly kind: "no" } | { readonly kind: "enter" };
+
+export interface CardKeyInput {
+  readonly key: string;
+  readonly code: string;
+  readonly shiftKey: boolean;
+  readonly metaKey: boolean;
+  readonly ctrlKey: boolean;
+  readonly altKey: boolean;
+  readonly isComposing: boolean;
+}
+
+/**
+ * The card's keys, the palette's picker keys (COPY of screens/palette/keymap.ts pickerKey, not on this branch yet;
+ * swap to it once it is): 1–9 pick, Enter confirms, N picks the No answer. Nothing typed in a field is a shortcut
+ * (`inField`: an input, textarea, select or contenteditable), nor is a key mid-IME or with a modifier; a focused
+ * plain button (`onButton`) keeps Enter for itself.
+ */
+export const cardKey = (e: CardKeyInput, target: { readonly inField: boolean; readonly onButton: boolean }): CardKey | undefined => {
+  if (target.inField || e.isComposing || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return undefined;
+  const digit = /^(?:Digit|Numpad)([1-9])$/u.exec(e.code)?.[1] ?? (/^[1-9]$/u.test(e.key) ? e.key : undefined);
+  if (digit !== undefined) return { kind: "pick", n: Number(digit) };
+  if (e.key.toLowerCase() === "n") return { kind: "no" };
+  if (e.key === "Enter" && !target.onButton) return { kind: "enter" };
+  return undefined;
+};
+
+/**
+ * The secrets an approved command is started with, as the person must see them before approving: the variable and
+ * the stored secret it comes from, never a value. Backticks: prose() shows them as code.
+ */
+export const secretEnvLines = (gated: GatedRunSpec): string[] =>
+  (gated.secretEnv ?? []).map((e) => `\`${e.name}\` gets the secret \`${e.secretKey}\``);
