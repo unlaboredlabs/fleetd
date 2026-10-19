@@ -34,7 +34,11 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   if (type.startsWith("ask.") || ASK_TYPES.has(type)) out.push({ tool: "asks_list" });
   if (shapesOrders) {
     out.push({ tool: "orders_board" });
-    if (workstreamId !== undefined) out.push({ tool: "order_get", where: { workstreamId } });
+    if (workstreamId !== undefined) {
+      out.push({ tool: "order_get", where: { workstreamId } });
+      // The order view's brief and claims (done-when).
+      if (type.startsWith("workstream.") || type.startsWith("claim.")) out.push({ tool: "workstream_get", where: { workstreamId } });
+    }
   }
   if (type.startsWith("steer.")) {
     out.push(workstreamId === undefined ? { tool: "steers_list" } : { tool: "steers_list", where: { workstreamId } });

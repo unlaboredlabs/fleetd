@@ -10,6 +10,7 @@ import { BoardStrips } from "../board/Strips";
 import { AddProjectScreen, MachinesScreen } from "../projects";
 import { StatusScreen } from "../status/StatusScreen";
 import { TimeScreen } from "../time/TimeScreen";
+import { OrderScreen } from "../order/OrderScreen";
 import type { Screen } from "./routes";
 
 /** A screen that hasn't landed yet. It carries the screen's id, so the route table is testable end to end now. */
@@ -26,7 +27,13 @@ export function ScreenHost({ screen }: { screen: Screen }) {
     case "board":
       return <BoardScreen project={screen.project} />;
     case "order":
-      return <Pending id="order" title="Order" />;
+      return (
+        <OrderScreen
+          key={screen.orderId}
+          id={screen.orderId}
+          {...(screen.at ? { jump: { thread: screen.at.threadId, item: screen.at.itemId } } : {})}
+        />
+      );
     case "status":
       return <StatusScreen />;
     case "machines":

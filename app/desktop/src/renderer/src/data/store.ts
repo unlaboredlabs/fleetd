@@ -49,6 +49,11 @@ export interface LiveState {
   readonly ended: Readonly<Record<string, string>>;
   /** The tail of the message each lane is writing. */
   readonly text: Readonly<Record<string, { readonly messageId: string; readonly text: string }>>;
+  /**
+   * A project lead's recent messages in full, oldest first (the order view's conversation): `text` keeps a tail, and
+   * a lead can stream far more than that before its log has the message. Bounded per lead by STREAM_CHARS.
+   */
+  readonly streams?: Readonly<Record<string, readonly { readonly messageId: string; readonly text: string }[]>> | undefined;
   readonly machines: Readonly<Record<string, MachineLive>>;
   readonly slots?: SlotState | undefined;
   /** Hub clock minus local clock, in ms; see `applyLive`. */
@@ -89,6 +94,35 @@ const ORDER_EVENTS = 100;
 /** Orders whose event lines are kept; the least recently active goes first. */
 const ORDERS_WITH_EVENTS = 100;
 const TEXT_TAIL = 2000;
+const STREAM_CHARS = 1_500_000;
+const isLeadLane = (laneId: string) => laneId.startsWith("lead:");
+
+type Stream = readonly { readonly messageId: string; readonly text: string }[];
+/** Appends to a lead's stream, dropping its oldest messages past the cap (the newest is cut to its tail). */
+const appendStream = (stream: Stream, messageId: string, append: string): Stream => {
+  const last = stream.at(-1);
+  let next = last?.messageId === messageId ? [...stream.slice(0, -1), { messageId, text: last.text + append }] : [...stream, { messageId, text: append }];
+  let size = next.reduce((n, m) => n + m.text.length, 0);
+  while (size > STREAM_CHARS && next.length > 1) {
+    size -= next[0]?.text.length ?? 0;
+    next = next.slice(1);
+  }
+  const only = next[0];
+  if (size > STREAM_CHARS && only !== undefined) next = [{ messageId: only.messageId, text: only.text.slice(-STREAM_CHARS) }];
+  return next;
+};
+
+/**
+ * The leads' streams after a live frame. A frame with no lead text keeps them, identity included; a full frame
+ * starts them over, as it does `text`.
+ */
+export const applyStreams = (streams: LiveState["streams"], frame: LiveFrame): LiveState["streams"] => {
+  const lead = (frame.text ?? []).filter((t) => isLeadLane(t.laneId));
+  if (lead.length === 0) return frame.full ? {} : streams;
+  const next: Record<string, Stream> = frame.full ? {} : { ...streams };
+  for (const t of lead) next[t.laneId] = appendStream(next[t.laneId] ?? [], t.messageId, t.append);
+  return next;
+};
 
 const emptyLive: LiveState = { lanes: {}, ended: {}, text: {}, machines: {}, stale: true };
 
@@ -159,7 +193,7 @@ export const applyFrame = (s: DataState, frame: HubFrame, nowMs: number): [DataS
     case "event":
       return [applyEvent(s, frame.event), {}];
     case "live":
-      return [{ ...s, live: applyLive(s.live, frame.frame, nowMs) }, {}];
+      return [{ ...s, live: { ...applyLive(s.live, frame.frame, nowMs), streams: applyStreams(s.live.streams, frame.frame) } }, {}];
     case "error":
       return [{ ...s, sessionError: frame.error }, {}];
   }

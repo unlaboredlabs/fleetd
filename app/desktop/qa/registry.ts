@@ -43,6 +43,8 @@ export const fixtures = [
   "status-skeleton",
   // E3b's shared stress fixture; the time inspector fills it with a ~15k-span order (fixtures/time).
   "time-heavy",
+  "conversation-20k",
+  "order-told-overrides",
 ] as const;
 export type FixtureName = (typeof fixtures)[number];
 
@@ -233,6 +235,25 @@ export const screens: readonly Screen[] = [
     route: "#/time",
     fixtures: ["typical", "long-text", "empty"],
     open: (page) => page.getByRole("tab", { name: "Insights" }).click(),
+  // F3: the order view on the fixtures' one order, W1: fleet, PRs, done-when and the lead's conversation (a wake,
+  // markdown, steers and receipts, 20k streamed lines). The empty hub has no W1: its not-found state is expected.
+  { id: "order", route: "#/order/W1", fixtures: ["typical", "long-text", "many-agents", "conversation", "conversation-20k"] },
+  { id: "order", route: "#/order/W1", fixtures: ["empty"], expect: "error" },
+  {
+    id: "order.told",
+    route: "#/order/W1",
+    fixtures: ["conversation", "long-text", "order-told-overrides"],
+    open: (page) => page.getByRole("button", { name: "What the lead was told" }).click(),
+  },
+  {
+    id: "order.steer",
+    route: "#/order/W1",
+    fixtures: ["typical", "many-agents", "long-text"],
+    open: async (page) => {
+      const fleet = page.getByRole("tab", { name: "Fleet" });
+      if ((await fleet.count()) > 0) await fleet.click();
+      await page.locator("[data-lane]").first().click();
+    },
   },
 ];
 
