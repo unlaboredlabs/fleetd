@@ -80,7 +80,7 @@ pub struct Playbook {
 
 /// What the research playbook adds to the floor, as refusal text.
 pub const RESEARCH_FIELDS_FIX: &str =
-    "a research brief needs baseline, metric, decisionRule and budget.agentHours";
+    "a research brief needs baseline, metric, decisionRule and budget.size (S, M or L)";
 
 /// The research floor: `Err` names every missing field.
 pub fn research_brief_rule(brief: &Brief) -> Result<(), String> {
@@ -94,13 +94,12 @@ pub fn research_brief_rule(brief: &Brief) -> Result<(), String> {
     if brief.decision_rule.is_none() {
         missing.push("decisionRule");
     }
-    if brief
+    if !brief
         .budget
         .as_ref()
-        .and_then(|budget| budget.agent_hours)
-        .is_none()
+        .is_some_and(|b| b.size.is_some() || b.agent_hours.is_some())
     {
-        missing.push("budget.agentHours");
+        missing.push("budget.size");
     }
     if missing.is_empty() {
         Ok(())
@@ -239,7 +238,7 @@ mod tests {
         research["metric"] = json!("pass rate on the eval set");
         research["decisionRule"] =
             json!({ "better": "higher", "goAtLeast": 0.1, "stopBelow": 0.02 });
-        research["budget"] = json!({ "agentHours": 4 });
+        research["budget"] = json!({ "size": "M" });
         assert!(serde_json::from_value::<ResearchBrief>(research.clone()).is_ok());
         assert!(serde_json::from_value::<Brief>(brief.clone()).is_ok());
         assert!(serde_json::from_value::<ResearchBrief>(brief).is_err());
@@ -254,7 +253,7 @@ mod tests {
             .to_string();
         assert!(message.contains(RESEARCH_FIELDS_FIX), "{message}");
         assert!(
-            message.contains("missing baseline, decisionRule, budget.agentHours"),
+            message.contains("missing baseline, decisionRule, budget.size"),
             "{message}"
         );
     }

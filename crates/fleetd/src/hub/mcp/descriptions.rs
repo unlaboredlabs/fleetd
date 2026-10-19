@@ -94,7 +94,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "workstream_get",
-        "One workstream with its frozen brief and headline (the lead's own words), its open asks, the decisions scoped to it, its ETA (raw estimate × the tier's measured ratio) and its last 20 claims with each check's result. Only a claim whose checks all passed makes it done.",
+        "One workstream with its frozen brief and headline (the lead's own words), its open asks, the decisions scoped to it, and its last 20 claims with each check's result. Only a claim whose checks all passed makes it done.",
     ),
     (
         "workstream_spawn",
@@ -158,7 +158,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "incidents_list",
-        "Incidents the hub detected (false_claim, estimate_miss, polish_loop, misfiled_ask, out_of_area, stall, policy_bypass, re_ask, override, playbook_reverted), newest first, with evidence lines, plus per-class counts over the last windowDays (default 7). Filter by projectRef, workstreamId or class.",
+        "Incidents the hub detected (false_claim, polish_loop, misfiled_ask, out_of_area, stall, policy_bypass, re_ask, override, playbook_reverted), newest first, with evidence lines, plus per-class counts over the last windowDays (default 7). Filter by projectRef, workstreamId or class.",
     ),
     (
         "retro_proposals",

@@ -18,13 +18,13 @@ const URL_ = `http://127.0.0.1:${PORT}`;
 const HOME = path.join(LAB, `m12-retro-${PORT}`);
 const REF = { machineId: "lab-a", projectId: "p-demo" };
 
-/** Three false claims, two estimate misses and a polish loop on bugfix-style work over the last week. */
+/** Three false claims, two stalls and a polish loop on bugfix-style work over the last week. */
 const HISTORY: ReadonlyArray<{ readonly class: string; readonly evidence: ReadonlyArray<string> }> = [
   { class: "false_claim", evidence: ["C3 on W4: the lead claimed done; check 0 (cmd: pnpm test) failed with exit 1", "The repro was never run before the claim."] },
   { class: "false_claim", evidence: ["C5 on W6: the lead claimed done; check 0 (test: repro-login) failed", "The task said 'fixed' with 0 commands run."] },
   { class: "false_claim", evidence: ["C8 on W9: the lead claimed done; check 1 (http GET /healthz) returned 500"] },
-  { class: "estimate_miss", evidence: ["W4 (tier S) took 95 min against a raw estimate of 20 min: 4.8x, over the 2x limit."] },
-  { class: "estimate_miss", evidence: ["W9 (tier S) took 70 min against a raw estimate of 15 min: 4.7x, over the 2x limit."] },
+  { class: "stall", evidence: ["T7 on W4 made no progress for 25 min."] },
+  { class: "stall", evidence: ["T12 on W9 made no progress for 30 min."] },
   { class: "polish_loop", evidence: ["Change C2 had 3 review rounds with zero blocking findings after the first."] },
 ];
 
