@@ -4,6 +4,8 @@ import type { LiveScope } from "../shared/ipc";
 /** `window.fleetd`: everything the renderer can ask of main. There is no other bridge. */
 export interface FleetdApi {
   readonly platform: "darwin" | "linux" | "win32" | "other";
+  /** The fixture standing in for the hub (FLEETD_FIXTURE), or null. The shell shows a banner while it's set. */
+  readonly fixture: string | null;
   /** Writes text to the clipboard (the page has no clipboard permission of its own). */
   copy(text: string): Promise<void>;
   readonly hub: {
