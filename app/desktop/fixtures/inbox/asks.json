@@ -1,0 +1,156 @@
+{
+  "note": "asks_list output for the inbox and question card: Wynn's two share-card questions as the lead now sends them, the same first question as stored before labels, an approval, a checklist and a long-text stress ask.",
+  "projects": [{ "machineId": "devbox", "projectId": "storefront", "title": "storefront" }],
+  "orders": [
+    { "workstreamId": "W1", "projectRef": { "machineId": "devbox", "projectId": "storefront" }, "title": "Share card for usage" },
+    { "workstreamId": "W2", "projectRef": { "machineId": "devbox", "projectId": "storefront" }, "title": "Nightly deploy to the staging box" }
+  ],
+  "asks": [
+    {
+      "askId": "A11",
+      "batchId": "B3",
+      "number": 1,
+      "projectRef": { "machineId": "devbox", "projectId": "storefront" },
+      "workstreamId": "W1",
+      "kind": "decide",
+      "key": "share.link",
+      "class": "product",
+      "text": "What should Copy link share?",
+      "context": "Copy link needs a URL people can open without your console's key. It only works for viewers who can reach your console's address.",
+      "options": [
+        {
+          "key": "image-only",
+          "label": "Copy the image only",
+          "consequence": "No link: the button copies the card as an image, and nothing is served from your console."
+        },
+        {
+          "key": "public-snapshot",
+          "label": "A public snapshot link",
+          "consequence": "Copy link saves the card as a PNG on your console and links to it with no login. Account names stay masked unless you turned them on."
+        }
+      ],
+      "recommendation": "public-snapshot",
+      "recommendationWhy": "People can open it without your key, and only that frozen image is exposed.",
+      "blocks": "the Copy link button",
+      "proceededOnRec": false,
+      "state": "open",
+      "createdAt": "2026-10-19T10:12:00.000Z"
+    },
+    {
+      "askId": "A12",
+      "batchId": "B3",
+      "number": 2,
+      "projectRef": { "machineId": "devbox", "projectId": "storefront" },
+      "workstreamId": "W1",
+      "kind": "decide",
+      "key": "share.headline",
+      "class": "product",
+      "text": "How should the card's headline compare your plan with your usage?",
+      "context": "The console doesn't know what your plan costs, so you type your monthly total once (for example 200). The card covers the last 7 days.",
+      "options": [
+        {
+          "key": "monthly-vs-week",
+          "label": "Monthly plan vs this week's usage",
+          "consequence": "The headline reads \"$200/mo plan → $1,840 of usage this week\", as in your example."
+        },
+        {
+          "key": "prorated",
+          "label": "Prorate the plan to the week",
+          "consequence": "The headline reads \"$46 of plan → $1,840 of usage, 40×\"."
+        }
+      ],
+      "recommendation": "monthly-vs-week",
+      "recommendationWhy": "It matches your example, and the monthly price is the number people know.",
+      "blocks": "the card's headline wording",
+      "proceededOnRec": true,
+      "state": "open",
+      "createdAt": "2026-10-19T10:13:00.000Z"
+    },
+    {
+      "askId": "A13",
+      "batchId": "B3",
+      "number": 3,
+      "projectRef": { "machineId": "devbox", "projectId": "storefront" },
+      "workstreamId": "W1",
+      "kind": "decide",
+      "key": "share.link.old",
+      "class": "product",
+      "text": "The share card's 'copy a link' needs a URL people can open without the console's key. Plan: when you click Copy link, the card's PNG is saved on the console and served at /console/share/<random id>.png with no login (only that frozen image, account names masked unless you turned them on). It only works for viewers who can reach your console's address. OK, or drop the link and keep copy-image only?",
+      "options": [{ "key": "public-snapshot" }, { "key": "image-only" }],
+      "recommendation": "public frozen PNG snapshot under an unguessable URL, served without login",
+      "blocks": "Copy link button",
+      "proceededOnRec": false,
+      "state": "open",
+      "createdAt": "2026-10-19T09:58:00.000Z"
+    },
+    {
+      "askId": "A14",
+      "batchId": "B3",
+      "number": 4,
+      "projectRef": { "machineId": "devbox", "projectId": "storefront" },
+      "workstreamId": "W2",
+      "kind": "approve",
+      "key": "deploy.staging",
+      "class": "irreversible",
+      "text": "Run the database migration on the staging box?",
+      "gated": {
+        "argv": ["pnpm", "run", "migrate", "--env", "staging"],
+        "cwd": "/srv/storefront",
+        "class": "irreversible",
+        "reason": "Adds the share_snapshots table",
+        "timeoutSec": 600
+      },
+      "blocks": "the staging deploy",
+      "proceededOnRec": false,
+      "state": "open",
+      "createdAt": "2026-10-19T10:20:00.000Z"
+    },
+    {
+      "askId": "A15",
+      "batchId": "B3",
+      "number": 5,
+      "projectRef": { "machineId": "devbox", "projectId": "storefront" },
+      "workstreamId": "W2",
+      "kind": "do",
+      "key": "dns.share",
+      "class": "product",
+      "text": "Point share.example.test at the staging box",
+      "steps": [
+        { "text": "Add an A record for share.example.test to your console's address.", "where": "browser", "expect": "dig share.example.test shows the address." },
+        { "text": "Reload the proxy.", "where": "buildbox", "command": "sudo systemctl reload caddy" }
+      ],
+      "verify": { "type": "http", "url": "https://share.example.test/health", "status": 200 },
+      "blocks": "nothing",
+      "proceededOnRec": false,
+      "state": "open",
+      "createdAt": "2026-10-19T10:22:00.000Z"
+    },
+    {
+      "askId": "A16",
+      "batchId": "B3",
+      "number": 6,
+      "projectRef": { "machineId": "devbox", "projectId": "storefront" },
+      "workstreamId": "W1",
+      "kind": "decide",
+      "key": "share.retention",
+      "class": "money",
+      "text": "How long should shared snapshots stay up before your console deletes them on its own?",
+      "context": "Every snapshot is a PNG of about 300 KB kept on your console's disk; links people already posted stop working once the file is gone, and there is no way to bring a deleted snapshot back.",
+      "options": [
+        {
+          "key": "thirty-days",
+          "label": "Keep each snapshot for thirty days after it was last opened by anyone, then delete it quietly",
+          "consequence": "Old links keep working while people still open them; a snapshot nobody has looked at for a month disappears and its link shows a plain not-found page instead of the card."
+        },
+        { "key": "forever", "label": "Keep them forever", "consequence": "Links never break; disk use grows by roughly 9 MB a month at your current sharing rate." },
+        { "key": "seven-days", "label": "Seven days", "consequence": "Small disk use; most links posted in chats break within the week." }
+      ],
+      "recommendation": "thirty-days",
+      "recommendationWhy": "Links that are still being opened keep working, and the disk stays small.",
+      "blocks": "the snapshot cleanup job, the storage settings page and the share card's footer text explaining how long a link lasts",
+      "proceededOnRec": false,
+      "state": "open",
+      "createdAt": "2026-10-19T10:25:00.000Z"
+    }
+  ]
+}
