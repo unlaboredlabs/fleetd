@@ -923,3 +923,51 @@ async fn a_tasks_agent_is_a_worker_its_question_wakes_the_lead_and_it_cannot_spa
         fleetd_contracts::mcp::ErrorCode::Invalid
     );
 }
+
+/// `stop_agent` frees the slot and leases only once the agent's claude has exited. With the machine away the node
+/// can't stop it, so the task stays running and holding its slot, and the refusal says so.
+#[tokio::test]
+async fn a_cancel_the_node_cannot_carry_out_keeps_the_task_and_its_slot() {
+    let lab = lab();
+    let task = running_task(&lab.hub, "p1");
+    lab.hub
+        .slots
+        .acquire(crate::hub::slots::SlotRequest {
+            holder: "T1",
+            project_ref: &task.project_ref,
+            priority: crate::hub::slots::priority_of(task.kind),
+        })
+        .unwrap();
+    let used = lab.hub.slots.state().used.get();
+    assert_eq!(used, 1);
+    let caller = crate::hub::tasks::TaskCaller {
+        project_ref: task.project_ref.clone(),
+        by: "lead:lab-a/p1".into(),
+    };
+    let refused = lab
+        .hub
+        .tasks
+        .cancel(&caller, &task.task_id, None)
+        .await
+        .unwrap_err();
+    assert!(
+        refused
+            .message
+            .contains("T1 could not be stopped (machine lab-a has no live node link)"),
+        "{}",
+        refused.message
+    );
+    assert_eq!(
+        refused.fix.as_deref(),
+        Some("Call stop_agent again shortly.")
+    );
+    assert_eq!(
+        lab.hub.tasks.get(&task.task_id).unwrap().unwrap().state,
+        TaskState::Running
+    );
+    assert_eq!(
+        lab.hub.slots.state().used.get(),
+        used,
+        "the slot stays held"
+    );
+}

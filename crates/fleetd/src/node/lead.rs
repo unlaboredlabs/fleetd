@@ -195,12 +195,12 @@ pub type Identify = Arc<dyn Fn(i32) -> PeerSession + Send + Sync>;
 pub fn attribute(
     mut frame: LeadCallFrame,
     peer: Option<PeerSession>,
-) -> Result<LeadCallFrame, LeadResultFrame> {
+) -> Result<LeadCallFrame, Box<LeadResultFrame>> {
     let refuse = |message: String, fix: &str| {
-        Err(error_frame(
+        Err(Box::new(error_frame(
             frame.id.as_str(),
             McpToolError::new(ErrorCode::Forbidden, message).with_fix(fix),
-        ))
+        )))
     };
     let claimed = frame.thread_id.as_ref().map(|t| t.as_str().to_owned());
     match peer {
@@ -278,7 +278,7 @@ async fn serve_connection(mut conn: UnixStream, relay: LeadRelay, identify: Iden
             };
             match attribute(frame, peer) {
                 Ok(frame) => relay.call(frame).await,
-                Err(refused) => refused,
+                Err(refused) => *refused,
             }
         }
         Err(why) => bad_frame(&format!("not a lead_call frame: {why}")),
@@ -370,7 +370,7 @@ mod attribution_tests {
         serde_json::from_value(value).unwrap()
     }
 
-    fn named(r: Result<LeadCallFrame, LeadResultFrame>) -> Result<Option<String>, String> {
+    fn named(r: Result<LeadCallFrame, Box<LeadResultFrame>>) -> Result<Option<String>, String> {
         r.map(|f| f.thread_id.map(|t| t.as_str().to_owned()))
             .map_err(|e| e.error.unwrap().message)
     }

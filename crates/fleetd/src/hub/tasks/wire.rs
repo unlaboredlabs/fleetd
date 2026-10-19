@@ -154,6 +154,10 @@ impl TaskPorts for HubTaskPorts {
         })
     }
 
+    fn stop<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Result<(), PortError>> {
+        Box::pin(async move { self.executors.stop(thread).await.map_err(port_error) })
+    }
+
     fn action_texts<'a>(
         &'a self,
         thread: &'a ThreadRef,

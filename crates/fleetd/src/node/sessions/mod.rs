@@ -66,6 +66,8 @@ const STOP_GRACE: Duration = Duration::from_secs(5);
 /// An idle process gets stdin closed, and SIGTERM after this if it is still there.
 const REAP_GRACE: Duration = Duration::from_secs(10);
 const EXIT_WAIT: Duration = Duration::from_secs(20);
+/// `stop`: how long a SIGKILLed claude gets to be reaped before the stop is reported as failed.
+const KILL_WAIT: Duration = Duration::from_secs(5);
 /// `project_remove`: how long the project's stopped processes get to exit (SIGTERM comes at [`STOP_GRACE`]). The
 /// hub's own wait for the reply is longer.
 const REMOVE_WAIT: Duration = Duration::from_secs(12);
@@ -2003,13 +2005,34 @@ impl SessionService {
         let target = self.st().live.get_mut(id).map(|live| {
             live.ending = Some("stopped".into());
             live.closing = true;
-            (live.commands.clone(), live.exited.clone())
+            (live.commands.clone(), live.exited.clone(), live.pid)
         });
-        if let Some((commands, mut exited)) = target {
+        if let Some((commands, mut exited, pid)) = target {
             let _ = commands
                 .send(SessionCommand::Shutdown { grace: STOP_GRACE })
                 .await;
-            let _ = tokio::time::timeout(EXIT_WAIT, exited.wait_for(|e| *e)).await;
+            if tokio::time::timeout(EXIT_WAIT, exited.wait_for(|e| *e))
+                .await
+                .is_err()
+            {
+                // The kill ladder ends in SIGKILL well within EXIT_WAIT; this is the backstop, on the process group
+                // the node spawned claude in.
+                let _ = nix::sys::signal::killpg(
+                    nix::unistd::Pid::from_raw(pid as i32),
+                    nix::sys::signal::Signal::SIGKILL,
+                );
+                if tokio::time::timeout(KILL_WAIT, exited.wait_for(|e| *e))
+                    .await
+                    .is_err()
+                {
+                    return Err(error(
+                        SessionErrorCode::Internal,
+                        format!(
+                            "the session's claude (pid {pid}) did not exit, even after SIGKILL"
+                        ),
+                    ));
+                }
+            }
         }
         if remove_worktree
             && let (Some(base_ref), Some(branch)) = (row.local.base_ref, row.local.branch)
