@@ -18,11 +18,11 @@ const byId = (id: string): JsonObject => {
 };
 
 /** The order new asks go on: the open batch's existing asks' order, else the busiest order. */
-const targetOrder = (f: Fixture): { workstreamId?: JsonValue; projectRef?: JsonValue } => {
+const targetOrder = (f: Fixture): { workstreamId: JsonValue | undefined; projectRef: JsonValue | undefined } => {
   const first = arr(obj(f.answers("asks_list")[0]?.output)["asks"]).find(isObject);
   if (first !== undefined) return { workstreamId: first["workstreamId"], projectRef: first["projectRef"] };
   const order = busiestOrder(f);
-  return order === undefined ? {} : { workstreamId: order.workstreamId, projectRef: obj(order.output["order"])["projectRef"] };
+  return order === undefined ? { workstreamId: undefined, projectRef: undefined } : { workstreamId: order.workstreamId, projectRef: obj(order.output["order"])["projectRef"] };
 };
 
 /**

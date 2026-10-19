@@ -10,7 +10,7 @@ export interface AsksLoad {
   /** Why the last read failed; undefined while it hasn't, or once a retry worked. */
   readonly error: HubError | undefined;
   readonly retrying: boolean;
-  retry(): void;
+  readonly retry: () => void;
 }
 
 export const useAsksLoad = (): AsksLoad => {

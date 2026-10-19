@@ -17,6 +17,7 @@ import { redirecting } from "./sending";
 import { SteerSheet, type SheetAgent } from "./SteerSheet";
 import { roleWords, type ToldWho } from "./told";
 import { ToldPanel } from "./ToldPanel";
+import { NeedsYouStrip } from "../inbox";
 import s from "./order.module.css";
 
 /** The one export F1's router mounts, at #/order/<id>[?thread=&item=]. */
@@ -240,6 +241,7 @@ export function OrderView(props: { data: OrderData; actions: OrderActions; platf
       </div>
       <Conversation entries={data.logReady ? entries : noEntries} notice={notice} onAct={onAct} focus={focusIndex === undefined || focusAt === undefined ? undefined : { index: focusIndex, at: focusAt }} />
       <div className={s.bottom}>
+        <NeedsYouStrip workstreamId={w} />
         {waiting ? <InlineText size="xs" tone="quiet" className={cx(s.waiting)} text={waiting} /> : null}
         <SteerComposer
           who={{ name: "the lead", ref: w }}

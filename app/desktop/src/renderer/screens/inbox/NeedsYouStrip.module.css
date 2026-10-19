@@ -3,6 +3,13 @@
   flex-direction: column;
   min-width: 0;
 }
+.cards {
+  max-height: 45vh;
+  overflow-y: auto;
+  min-width: 0;
+  /* Room for the card's focus bar, which sits in the gutter to the left. */
+  padding-left: var(--space-2);
+}
 .head {
   display: flex;
   flex-wrap: wrap;

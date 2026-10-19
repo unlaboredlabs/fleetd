@@ -46,9 +46,13 @@ export function NeedsYouStrip({ workstreamId, project, limit }: NeedsYouStripPro
           {more > 0 ? `${String(more)} more in the inbox` : "Open the inbox"}
         </Button>
       </div>
-      {shown.map((ask) => (
-        <QuestionCard key={ask.askId} ask={ask} />
-      ))}
+      {/* The host's fixed area (under the board's composer, above the order's) can't grow without pushing the rest
+          off screen, so the cards scroll within at most about half the window. */}
+      <div className={s.cards}>
+        {shown.map((ask) => (
+          <QuestionCard key={ask.askId} ask={ask} />
+        ))}
+      </div>
     </section>
   );
 }
