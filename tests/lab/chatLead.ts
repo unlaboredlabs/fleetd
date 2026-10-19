@@ -62,8 +62,10 @@ const TOOL_FROM: Readonly<Record<string, string>> = {
 const GONE_HUB_TOOLS = ["asks_list", "inbox_reply", "inbox_undo", "digest_get"];
 /** An ask tool in a session's init list: fleetd's own (lead) or Claude's. The worker's ask_lead (to its lead) stays. */
 const ASK_TOOL = /^(mcp__fleetd__ask|mcp__fleetd__ask_withdraw|AskUserQuestion)$/u;
-/** Internal ids a lead message must not carry: W-, T-, P-, M-, C- and R-numbers. */
-const INTERNAL_ID = /\b[WTPMCR]\d+\b/u;
+/** Internal ids a lead message must not carry: workstream, task, plan, milestone, claim, request and other hub ids. */
+const INTERNAL_ID = /\b[WTPMCRHX]\d+\b/u;
+/** main's lead prompt before the chat rewrite (H3); the lead must start on a newer one. */
+const OLD_LEAD_PROMPT = "lead.start@82105e96e9";
 
 type Ref = { readonly machineId: string; readonly projectId: string };
 
@@ -416,7 +418,8 @@ async function tersePart(lab: Lab, chat: Chat, ref: Ref) {
   const asking = said.find((m) => /^\s*1[.)]\s/mu.test(m.text));
   check(asking, `the lead asks as numbered items: ${JSON.stringify(said.map((m) => m.text))}`);
   const items = asking!.text.split("\n").filter((l) => /^\s*\d+[.)]\s/u.test(l));
-  check(/\brec(ommend)?/iu.test(asking!.text), `the question carries a recommendation: ${asking!.text}`);
+  const bare = items.filter((l) => !/\brec/iu.test(l));
+  check(bare.length === 0, `every numbered question carries a Rec: ${JSON.stringify(bare)}`);
   check((await chat.state()).needsYou === true, "needs-you is on while the lead waits for the answer");
   const noWrite = (await tasksOf(lab, ref)).filter((t) => t.kind === "write" && ["queued", "running"].includes(t.state) && String(t.title).toLowerCase().includes("digest"));
   check(noWrite.length === 0, `nothing built before the answer: ${JSON.stringify(noWrite.map((t) => t.title))}`);
@@ -502,7 +505,7 @@ async function gatedPart(lab: Lab, chat: Chat, ref: Ref, humanCall: Lab["callToo
 
   // Held: nothing runs while nobody approves, and an agent key cannot approve.
   await new Promise((r) => setTimeout(r, 10_000));
-  const byAgent = await lab.callTool("approval_answer", { requestId: item.requestId, approve: true });
+  const byAgent = await lab.callTool("approval_answer", { requestId: item.requestId, decision: "approve" });
   check(byAgent.isError, `an agent key cannot approve: ${JSON.stringify(byAgent.body)}`);
   const held = (await chat.history()).find((m) => m.item?.requestId === item.requestId)?.item;
   check(held?.state === "open" && !fs.existsSync(marker), `still open and not run before Approve: ${JSON.stringify(held)}`);
@@ -510,7 +513,7 @@ async function gatedPart(lab: Lab, chat: Chat, ref: Ref, humanCall: Lab["callToo
   ok(`held ${item.requestId} for 10 s and an agent key's approve: still open, nothing ran`);
 
   const cursor = await lab.cursor();
-  const approved = await humanCall("approval_answer", { requestId: item.requestId, approve: true });
+  const approved = await humanCall("approval_answer", { requestId: item.requestId, decision: "approve" });
   check(!approved.isError, `approval_answer: ${JSON.stringify(approved.body)}`);
   const ran = await chat.item(sent.seq, cursor, "the approved command ran", 60_000, (i) => i.requestId === item.requestId && ["ran", "failed"].includes(i.state));
   check(ran.item!.state === "ran" && ran.item!.exitCode === 0 && fs.readFileSync(marker, "utf8") === "gated\n", `ran once approved: ${JSON.stringify(ran.item)}`);
@@ -538,8 +541,9 @@ async function buildPart(lab: Lab, chat: Chat, ref: Ref) {
   await chat.reply(answered, "the build answer");
   // The research order did not swallow the answer by closing with no build under it.
   const closed = (await eventsSince(lab, sent.cursor, ["workstream.done"])).filter((e) => e.data?.workstreamId === workstreamId && e.seq < writer.seq);
-  check(closed.length === 0 || writer.task.workstreamId !== workstreamId, `the research order closed before the build started: ${JSON.stringify(closed.map((e) => e.summary))}`);
-  ok(`research agent → offer → "build it" → writer "${writer.task.title}"${closed.length > 0 ? " (as follow-up work)" : ""}`);
+  check(closed.length === 0, `the research order closed before the build started: ${JSON.stringify(closed.map((e) => e.summary))}`);
+  const how = writer.task.workstreamId === workstreamId ? "on the same order (brief amended)" : "as a new order";
+  ok(`research agent → offer → "build it" → writer "${writer.task.title}" ${how}; the research order did not close first`);
 }
 
 // ---- fixes: bug (b), W1/T4: review fixes survive a workstream closing ----
@@ -663,9 +667,12 @@ async function toolsPart(lab: Lab, chat: Chat, hubTools: ReadonlySet<string>) {
   check(read.some((s) => s.what === "lead"), `the lead session's tools were read: ${JSON.stringify(sessions.map((s) => s.what))}`);
   const asking = read.filter((s) => s.tools.some((t) => ASK_TOOL.test(t)));
   check(asking.length === 0, `no session has an ask tool: ${JSON.stringify(asking.map((s) => [s.what, s.tools.filter((t) => ASK_TOOL.test(t))]))}`);
+  const started = (await eventsSince(lab, 0, ["lead.started"])).filter((e) => e.threadId === lead).at(-1);
+  const promptRef = String(started?.data?.promptRef ?? "");
+  check(promptRef.startsWith("lead.start@") && promptRef !== OLD_LEAD_PROMPT, `the lead starts on the chat prompt, not ${OLD_LEAD_PROMPT}: ${JSON.stringify(started?.data)}`);
   const leadTools = read.find((s) => s.what === "lead")!.tools;
   check(leadTools.includes("mcp__fleetd__decide"), `the lead keeps decide: ${JSON.stringify(leadTools.filter((t) => t.startsWith("mcp__fleetd__")))}`);
-  ok(`${read.length} sessions (${[...new Set(read.map((s) => s.what))].join(", ")}): no ask tool; the hub has none of ${GONE_HUB_TOOLS.join(", ")}`);
+  ok(`${read.length} sessions (${[...new Set(read.map((s) => s.what))].join(", ")}): no ask tool; the hub has none of ${GONE_HUB_TOOLS.join(", ")}; lead prompt ${promptRef}`);
 }
 
 // ---- history: an order from before the chat reads back as history ----
@@ -752,13 +759,16 @@ async function capPart(lab: Lab, chat: Chat, ref: Ref, need: (t: string) => void
   let from = await lab.cursor();
   const six = spawnSleepers(lab, fleetd, w, "six-way", 6, 15);
   const sixIds = new Set(six.map((s) => s.taskId));
-  const overCap = six.slice(2).filter((s) => !/queued/iu.test(s.stdout));
-  check(overCap.length === 0, `a spawn beyond the cap says it is queued: ${JSON.stringify(overCap.map((s) => s.stdout.trim()))}`);
+  const overCap = six.slice(2).filter((s) => !/queued: 2\/2 running/iu.test(s.stdout));
+  check(overCap.length === 0, `a spawn beyond the cap says "queued: 2/2 running…": ${JSON.stringify(overCap.map((s) => s.stdout.trim()))}`);
+  const reasons = await Promise.all(six.slice(2).map(async (s) => (await taskGet(lab, s.taskId)).queuedReason as string | undefined));
+  check(reasons.every((r) => r === "agents: 2/2 running" || r === undefined), `queued for the cap: ${JSON.stringify(reasons)}`);
   let sampled = 0;
   const sampling = (async () => {
     for (let done = false; !done; ) {
       const ts = (await tasksOf(lab, ref)).filter((t) => sixIds.has(t.taskId));
-      sampled = Math.max(sampled, ts.filter((t) => t.state === "running").length);
+      const slots = ((await lab.callTool("fleetd_status")).body.slots?.perProject as Array<Body> | undefined)?.find((p) => sameProject(p.projectRef, ref));
+      sampled = Math.max(sampled, ts.filter((t) => t.state === "running").length, (slots?.running as number | undefined) ?? 0);
       done = ts.every((t) => ["done", "failed", "cancelled"].includes(t.state));
       if (!done) await new Promise((r) => setTimeout(r, 2_000));
     }
