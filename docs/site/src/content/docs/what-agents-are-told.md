@@ -10,12 +10,9 @@ fleetd prompts list
 fleetd prompts show lead.start
 ```
 
-fleetd has a small set of prompts, about eight: the lead's (with its playbooks), the writer's brief, the reviewer's,
-the verifier's, the research judge's, the steer, the retro, and your own instructions. Each is listed in
-`fleetd prompts list`, in the app's Settings → Prompts, and in the [table at the end of this page](#prompts). You can
-edit each one.
-
-Everything else an agent hears is [event lines](#events): facts in a fixed format, not prompts.
+The prompts fleetd sends a model are listed in `fleetd prompts list`, in the app's Settings → Prompts, and in the
+[table at the end of this page](#prompts). You can edit each one. Everything else, such as the event lines a lead is
+woken with, is fixed text: see [Not editable](#not-editable).
 
 ## How a session gets its instructions {#how}
 
@@ -23,8 +20,8 @@ There is no hidden system prompt. fleetd's text reaches a model in one of three 
 
 | Way | Used for |
 |---|---|
-| The first message of a session | Leads, writers, reviewers, verifiers, judges. |
-| A later message into a session | Your chat messages and [steers](/docs/steering), and [event lines](#events). |
+| The first message of a session | Leads, tasks, reviewers, judges. |
+| A later message into a session | Wakes, review findings, train news, nudges, [steers](/docs/steering). |
 | The input of a one-shot `claude -p` with no tools | The retro. |
 
 Your own claude setup still applies underneath. See [Config & files](/docs/config-and-files#claude).
@@ -32,43 +29,29 @@ Your own claude setup still applies underneath. See [Config & files](/docs/confi
 Agents act through fleetd's MCP tools. The list, generated from the code, is in
 [Agent tools](/docs/reference/agent-tools).
 
-## Event lines {#events}
-
-When something happens that a lead or agent should know, fleetd tells it in one short line per event. The lines for
-one wake arrive together:
-
-```text
-PR #12 merged
-T4 failed: CI red in rust (macos)
-agent R2 finished: 2 blockers
-agents: 7 running of 12, 2 queued
-```
-
-| | |
-|---|---|
-| Who writes them | fleetd's code, from the event. No model writes them. |
-| Format | One line per event, with the same fields every time. |
-| Editable | No. They aren't prompts and don't appear under Prompts. |
-
-## The lead in chat {#lead-chat}
-
-The lead's prompt is written for a chat with you. It is told to:
-
-- write short, plain messages, state first;
-- ask only about product calls, money and irreversible steps, as numbered questions with a recommendation each;
-- read your reply itself, log it with `decide`, and never ask the same question twice;
-- leave internal ids, keys and work numbers out of its messages;
-- plan its work to the project's [Max agents](/docs/projects#max-agents) cap.
-
-The playbooks (feature, bug fix, research, finishing open work) are sections of the lead's prompt. The lead picks one
-from what you wrote.
-
 ## Rules agents work by {#rules}
+
+### How the lead talks to you {#chat}
+
+Each project's lead talks to you in that project's chat. It is told to:
+
+- Lead with the state: what is done, what is running, what is blocked.
+- Keep it short and plain, with no internal ids, keys or branch names.
+- Ask only for product, money or irreversible calls, as numbered items at the end of its message, each with its
+  recommendation.
+- Read short replies by item number: "1 go, 2 rec", "do it", "rec" (take the recommendations), "nvm" (drop it).
+- Log every answer as a decision and check the decisions before asking, so it never asks the same question twice.
+- Ask a human done-when check as one line, such as "looks good on your end?".
+- Turn a reply that asks for work into work in the same turn. Work never closes while your latest reply asks for
+  something not yet started; if the lead won't build it, it says why.
+
+fleetd backs the last rule up: a done claim counts only for the brief it checked, so changing the brief to the build
+voids a claim made before.
 
 ### No time estimates {#no-time}
 
-fleetd never asks an agent how long something will take. Leads are told never to put an ETA or a duration in a brief,
-an ask, a status line, a plan or a summary. Plan items are sized `s`, `m` or `l` instead.
+fleetd never asks an agent how long something will take. Leads are told never to put an ETA or a duration in the chat,
+a brief, a status line, a plan or a summary. Plan items are sized `s`, `m` or `l` instead.
 
 What fleetd measures, such as CI runs and span durations, is shown as measured. See [Status](/docs/status).
 
@@ -81,7 +64,22 @@ In place of a clock, leads are told to work for throughput:
 - Have each slice reviewed as it lands, and put each finished PR on the train at once.
 - End a turn only to wait on their agents, or when nothing approved can run.
 
-They are also told that no gate relaxes for speed: reviews, CI, the train, done-when checks and your approvals stay
+### The agent cap {#cap}
+
+Each project has a cap on how many agents run at once, its [Max agents](/docs/projects#max-agents). Every wake tells the lead the live count, such as "agents: 7
+running of 12, 2 queued". The lead is told to:
+
+- Plan to the cap: at most that many slices at once, the rest queued by value, each started as a slot frees.
+- Treat a queued spawn as normal. The hub starts it when a slot frees; the lead doesn't spawn it again.
+- Never work around the cap: no doing an agent's work itself, no running agents one by one to dodge it, and no asking
+  you to raise it unless you asked about speed.
+- At a cap of 1, work one agent at a time and say so once in the chat.
+
+Lowering the cap stops nothing that is running; raising it starts queued agents at once.
+
+### Gates never relax {#gates}
+
+Leads are also told that no gate relaxes for speed: reviews, CI, the train, done-when checks and your approvals stay
 exactly as they are, and no filler work is made up to fill a slot. fleetd backs this up with two wakes, never with a
 task of its own. See [How the lead schedules work](/docs/projects#scheduling).
 
@@ -113,7 +111,7 @@ Leads and tasks reach fleetd through MCP tools from a `fleetd` server in their s
 
 | Agent | Gets |
 |---|---|
-| Lead | `spawn_agent`, `message_agent`, `agent_status`, `list_agents`, `stop_agent`, plus `decide`, `brief`, `claim_done`, `plan_*`, `gated_run` and more. |
+| Lead | `spawn_agent`, `message_agent`, `agent_status`, `list_agents`, `stop_agent`, plus `workstream_open`, `brief`, `decide`, `claim_done`, `plan_*`, `request_secret`, `gated_run` and more. |
 | Task | `report` (a review verdict, or a writer's PR that is ready for review), `ask_lead` and `claim_done`. |
 
 - Results come back in the lead's next wake, never by polling.
@@ -148,7 +146,7 @@ On the hub machine:
 | `fleetd prompts reset lead.start` | Go back to fleetd's text. |
 
 - A project's version beats the hub-wide one, which beats fleetd's.
-- The retro has only the hub-wide level.
+- One-shots have only the hub-wide level.
 - Your versions are files under `~/.fleetd/hub/prompts/`. Change them with `fleetd prompts edit`, not by hand.
 - From an MCP client: `prompts_list`, `prompt_get`, `prompt_set` (with `dryRun` to see the warnings only) and
   `prompt_reset`.
@@ -177,7 +175,7 @@ fleetd instructions show
 ```
 
 They are added to every lead's first message and every task brief (writers, reviewers and judges), hub-wide first,
-under "Custom instructions from the human". They are not added to the router, the retro or wakes.
+under "Custom instructions from the human". They are not added to the retro or wakes.
 
 They are sized for about 500 characters; past that, `edit` warns. After your editor closes, `edit` prints any
 warnings and asks `Save? [Y/n]` on the terminal. In a script, `</dev/null` takes the default, Yes.
@@ -190,8 +188,15 @@ Your version stays in use.
   merged, Keep mine, or Use the new default.
 - On the hub, `fleetd prompts list` marks it `update`, and `fleetd prompts diff <id>` shows both changes.
 
-If fleetd merges or removes a prompt you edited, your edit moves into the prompt that replaces it, or Settings →
-Prompts flags it for you to review.
+## When fleetd retires a prompt you edited {#retired}
+
+A release can fold a prompt into another one or replace it with fixed text. Your edit to it then stops applying, but
+fleetd keeps it. Settings → Prompts lists it with the prompt that covers it now: copy what you still want into that
+one, then delete the old edit. From an MCP client, `prompts_list` returns these under `orphans`, and `prompt_reset`
+with the old id deletes one.
+
+An edited playbook file is listed the same way. Its review and check rules still apply, but its instructions no longer
+reach the lead: the lead prompt has a section for each kind of work.
 
 ## What a running agent keeps {#pinning}
 
@@ -214,8 +219,41 @@ fleetd prompts show --session <machine>/<thread>
 
 ## Not editable {#not-editable}
 
-[Event lines](#events), MCP tool descriptions (fleetd's agent tools included), and what the hub answers back (each
-`next:` and `fix:`) are tied to code: a description must match its tool, and a `next:` must name a real tool or command. See
+### Wake events {#wake-events}
+
+A lead is woken with its project's state, then one line per thing that happened since its last wake:
+
+```
+# project lab (devbox/lab), 2026-10-19T14:02:11.000Z
+agents: 3 running of 6, 1 queued
+
+## Work
+- W2 running (bugfix): flaky login test
+  done when: done:0 test login_flaky passes in acme/app
+
+## Events
+- PR #12 merged as 4f1c2a9e0b7d: https://github.com/acme/app/pull/12 (C4, tier S, serves done:0, by T4)
+- T5 finished: port the parser (branch fleetd/T5-port, PR https://github.com/acme/app/pull/13)
+  > Ported; 2 blockers left for review.
+- T7 waiting for an answer: docs
+  > Which branch should the docs go to?
+- W4 research verdict STOP: candidate 1.2 vs baseline 1.1 (higher is better): improvement 0.1 (go line 5, stop line 2)
+```
+
+Each event is `- <subject> <what>: <detail>`, sometimes followed by `  > ` lines quoting an agent. The ids (W2, T5,
+C4) are for the lead's tools; the lead doesn't repeat them to you. The format is fixed in code, so it is the same in
+every project.
+
+### Fixed messages {#fixed}
+
+These are short notices, the same everywhere: the brief of a read-only or review task, a reviewer's note on what
+changed since its last review, "fix your PR" (a rebase, red CI or blocking review findings), a denied tool call with
+its reason, the plan's sizing warning, the watchdog's nudge and the note after a usage limit resets.
+
+### Tool texts {#tool-texts}
+
+MCP tool descriptions, fleetd's agent tools included, and what the hub answers back (each `next:` and `fix:`) are
+tied to code: a description must match its tool, and a `next:` must name a real tool or command. See
 [Agent tools](/docs/reference/agent-tools) and the [CLI reference](/docs/reference/cli).
 
 ## Every prompt {#prompts}
