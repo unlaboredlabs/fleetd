@@ -91,7 +91,7 @@ pub fn question(data: &Value) -> Vec<NewMessage> {
         ChatAuthor::Lead,
         ChatHistorySource::Question,
         format!("ask:{id}"),
-        text.trim().to_owned(),
+        plain_question(text),
         asked,
     )];
     let answer = &data["answer"];
@@ -109,6 +109,17 @@ pub fn question(data: &Value) -> Vec<NewMessage> {
         ));
     }
     out
+}
+
+/// A done-check question reads "Check done:0 of W5 (<the order>): Did …?": the ids go, the question stays.
+fn plain_question(text: &str) -> String {
+    let text = text.trim();
+    if text.starts_with("Check done:")
+        && let Some((_, question)) = text.split_once("): ")
+    {
+        return question.trim().to_owned();
+    }
+    text.to_owned()
 }
 
 /// The key of a lead message read off its thread, shared by the live mirror and the history read.
@@ -187,5 +198,12 @@ mod tests {
         );
         let open = json!({ "askId": "A2", "text": "Which plan?", "createdAt": "2026-10-19T08:13:41.719Z" });
         assert_eq!(question(&open).len(), 1);
+        // A done-check question loses its ids, even when the order's text has a question mark of its own.
+        let check = json!({ "askId": "A3", "createdAt": "2026-10-19T08:13:41.719Z",
+            "text": "Check done:0 of W5 (what model does the lead use ?): Did the answer explain which and why?" });
+        assert_eq!(
+            question(&check)[0].text,
+            "Did the answer explain which and why?"
+        );
     }
 }
