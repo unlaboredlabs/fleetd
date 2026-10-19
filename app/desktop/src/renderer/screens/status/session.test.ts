@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { CallOutcome } from "../../../shared/hub";
 import type { StatusDoc, StatusScope } from "./contracts";
 import { fixture } from "./fixtures";
+import { armAgeRedraw } from "./hooks";
+import { agesOnScreen } from "./view";
 import { StatusController, type StatusHub, type Timers } from "./controller";
 import { initial, Looked, phase, reduce, WAIT_DEADLINE_MS, WAIT_SEC, type Action, type Effect, type StatusSession } from "./session";
 
@@ -173,5 +175,41 @@ describe("the controller", () => {
     expect(h.link()).not.toBeNull();
     h.c.close(false);
     expect(h.link()).toBeNull();
+  });
+});
+
+describe("the age clock on a quiet live view", () => {
+  it("still redraws when an unchanged wait answer re-arms it every 25 s", () => {
+    let now = 0;
+    const timers: { at: number; fn: () => void; live: boolean }[] = [];
+    const t: Timers = {
+      now: () => now,
+      set: (fn, ms) => {
+        const timer = { at: now + ms, fn, live: true };
+        timers.push(timer);
+        return () => (timer.live = false);
+      },
+    };
+    let session: StatusSession = { ...initial, scope: fleet, linkUp: true, fresh: true, doc: doc(4), receivedMs: 0 };
+    // One age on screen, "stale 11m" since 09:55:45 at the doc's 10:07:12: it next reads differently 33 s later,
+    // longer than a wait round, which is where a stale clock froze it.
+    const ages = (n: number): number[] => [n - Date.parse("2026-10-19T09:55:45.000Z")];
+    expect(agesOnScreen(session.doc ?? doc(4), Date.parse(session.doc?.now ?? "")).length).toBeGreaterThan(0);
+    let redraws = 0;
+    let cancel = armAgeRedraw(session, ages, t, () => (redraws += 1));
+    // Each "unchanged" answer hands the view a new session object (a new wait deadline), which re-arms the timer.
+    for (let tick = 0; tick < 3 && redraws === 0; tick++) {
+      for (const step = now + 25_000; now < step; now += 1_000) {
+        for (const timer of timers.filter((x) => x.live && x.at <= now)) {
+          timer.live = false;
+          timer.fn();
+        }
+      }
+      session = { ...session, waitDeadline: now + WAIT_DEADLINE_MS };
+      cancel();
+      cancel = armAgeRedraw(session, ages, t, () => (redraws += 1));
+    }
+    expect(redraws, "an age changes within a minute, so the view must redraw within one").toBeGreaterThan(0);
+    expect(now).toBeLessThanOrEqual(50_000);
   });
 });

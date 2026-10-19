@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { StatusScope } from "./contracts";
-import { statusController } from "./controller";
+import { realTimers, statusController, type Timers } from "./controller";
 import { hubNow, Looked, type StatusSession } from "./session";
 import { nextAgeChange } from "./view";
 
@@ -28,19 +28,21 @@ export const useStatusSession = (scope: StatusScope): StatusSession => {
   return useSyncExternalStore(controller.subscribe, () => controller.state);
 };
 
+/** Arms the one age timer from the REAL clock now, to the next moment an on-screen age reads differently. It must
+ * not use the clock of the last paint: every "unchanged" wait answer re-arms it, and a delay measured from a stale
+ * clock would be pushed out each time and never fire, freezing "stale 12m" on a live view. */
+export const armAgeRedraw = (session: StatusSession, ages: (now: number) => number[], timers: Timers, redraw: () => void): (() => void) => {
+  const wait = nextAgeChange(ages(hubNow(session, timers.now())));
+  // +50 ms so the redraw lands after the boundary, not just before it.
+  return wait === null ? () => undefined : timers.set(redraw, wait + 50);
+};
+
 /** The hub's clock, redrawn only when an age on screen would read differently (at most once a minute). Between
  * redraws it is the clock of the last paint; a new doc carries the hub's own `now`. */
 export const useHubNow = (session: StatusSession, ages: (now: number) => number[]): number => {
   const [local, setLocal] = useState(() => Date.now());
-  const now = hubNow(session, local);
-  const wait = nextAgeChange(ages(now));
-  useEffect(() => {
-    if (wait === null) return;
-    // +50 ms so the redraw lands after the boundary, not just before it.
-    const id = setTimeout(() => setLocal(Date.now()), wait + 50);
-    return () => clearTimeout(id);
-  }, [wait, session]);
-  return now;
+  useEffect(() => armAgeRedraw(session, ages, realTimers, () => setLocal(Date.now())), [session, ages, local]);
+  return hubNow(session, local);
 };
 
 const reducedMotion = (): boolean => window.matchMedia("(prefers-reduced-motion: reduce)").matches;

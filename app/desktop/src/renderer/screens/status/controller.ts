@@ -16,7 +16,7 @@ export interface Timers {
   set(fn: () => void, ms: number): () => void;
 }
 
-const realTimers: Timers = {
+export const realTimers: Timers = {
   now: () => Date.now(),
   set: (fn, ms) => {
     const id = setTimeout(fn, ms);
