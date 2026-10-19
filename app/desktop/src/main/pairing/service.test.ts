@@ -28,7 +28,7 @@ const setup = (
     fetch,
     connect: (url, key) => {
       seen.connected.push([url, key]);
-      return Promise.resolve(opts.connect ?? { ok: true });
+      return opts.connect ?? { ok: true };
     },
     appPairFile: FILE,
     readText: () => Promise.resolve(opts.file ?? null),

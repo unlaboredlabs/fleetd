@@ -1,5 +1,6 @@
 import { readFile, rm } from "node:fs/promises";
-import { homedir, hostname } from "node:os";
+import { hostname } from "node:os";
+import { join } from "node:path";
 import type { ConnectOutcome } from "../../shared/hub";
 import {
   hubOrigin,
@@ -11,7 +12,6 @@ import {
   type PairStart,
   type Probe,
 } from "../../shared/pairing";
-import { appPairFile } from "./appPairFile";
 import { probe, redeem, type Fetch } from "./hubHttp";
 
 /** The startup probe only decides a hint, so it gives up quickly. */
@@ -20,7 +20,7 @@ const PROBE_TIMEOUT_MS = 2_000;
 export interface PairingDeps {
   readonly fetch: Fetch;
   /** The hub service's connect: validates, saves the key with safeStorage, connects. */
-  readonly connect: (url: string, key: string) => Promise<ConnectOutcome>;
+  readonly connect: (url: string, key: string) => ConnectOutcome;
   readonly appPairFile: string;
   readonly readText: (path: string) => Promise<string | null>;
   readonly remove: (path: string) => Promise<void>;
@@ -31,10 +31,14 @@ export interface PairingDeps {
 /** Names the new key on the hub: this computer's name. */
 const deviceName = (): string => hostname().trim().replace(/\.local$/u, "") || "desktop app";
 
-export const realPairingDeps = (connect: PairingDeps["connect"]): PairingDeps => ({
+/**
+ * `fleetdDir` is the fleetd dir main already resolved (FLEETD_HOME, else <appData>/fleetd), where `fleetd init` /
+ * `fleetd pair` write app-pair.json (crates/fleetd/src/cli/pair.rs `app_pair_file`).
+ */
+export const realPairingDeps = (fleetdDir: string, connect: PairingDeps["connect"]): PairingDeps => ({
   fetch: (url, init) => globalThis.fetch(url, init),
   connect,
-  appPairFile: appPairFile(process.env, process.platform, homedir()),
+  appPairFile: join(fleetdDir, "app-pair.json"),
   readText: (path) => readFile(path, "utf8").catch(() => null),
   remove: (path) => rm(path, { force: true }),
   now: Date.now,
@@ -81,7 +85,7 @@ export class PairingService {
       await this.#deps.remove(this.#deps.appPairFile).catch(() => undefined);
     }
     if (!result.ok) return result;
-    const connected = await this.#deps.connect(origin.origin, result.paired.key);
+    const connected = this.#deps.connect(origin.origin, result.paired.key);
     return connected.ok
       ? { ok: true, hubName: result.paired.hubName }
       : {

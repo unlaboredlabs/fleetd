@@ -1,2 +1,5 @@
 packages:
   - .
+# esbuild works from its platform package; its postinstall only re-checks that binary.
+allowBuilds:
+  esbuild: false
