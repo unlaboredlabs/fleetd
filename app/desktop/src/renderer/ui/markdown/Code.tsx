@@ -48,7 +48,7 @@ export interface CodeProps {
   wrap?: boolean;
   /** Hide the header (language, wrap and copy controls). */
   bare?: boolean;
-  className?: string;
+  className?: string | undefined;
 }
 
 /** A block of machine text with syntax colours, a copy button and a wrap toggle. */

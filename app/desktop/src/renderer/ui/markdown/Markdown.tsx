@@ -12,7 +12,7 @@ const REMARK = [remarkGfm];
 function fenceOf(children: ReactNode): { code: string; lang: string | null } | null {
   const el = Array.isArray(children) ? (children as ReactNode[])[0] : children;
   if (!el || typeof el !== "object" || !("props" in el)) return null;
-  const props = (el as ReactElement<{ className?: string; children?: ReactNode }>).props;
+  const props = (el as ReactElement<{ className?: string | undefined; children?: ReactNode }>).props;
   const lang = /language-([\w+-]+)/.exec(props.className ?? "")?.[1] ?? null;
   const kids = props.children;
   const code = typeof kids === "string" ? kids : Array.isArray(kids) ? kids.filter((k) => typeof k === "string").join("") : "";
@@ -50,7 +50,7 @@ const COMPONENTS: Components = {
 export interface MarkdownProps {
   /** The message or prompt as written (markdown). */
   source: string;
-  className?: string;
+  className?: string | undefined;
   /** Show a Formatted/Raw switch, for places where "exactly as sent" matters (prompts, what an agent was told). */
   rawToggle?: boolean;
   /** Start in raw view. */
