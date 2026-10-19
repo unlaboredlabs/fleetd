@@ -172,7 +172,7 @@ const SEED_FILES: Record<string, string> = {
 
 // 5. The lab clone.
 if (fs.existsSync(path.join(clone, ".git"))) {
-  git(clone, "fetch", "-q", "--tags", "origin");
+  git(clone, "fetch", "-q", "--tags", "--force", "origin");
   console.log(`${clone} exists; fetched`);
 } else {
   fs.mkdirSync(path.dirname(clone), { recursive: true });
