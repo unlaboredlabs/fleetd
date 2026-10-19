@@ -137,14 +137,16 @@ export const paintRows = (ctx: CanvasRenderingContext2D, f: Frame): Map<number, 
         ctx.fillStyle = fill;
         ctx.fillRect(x0, y, bw, BAR_H);
       }
-      const edge = bar.failed ? p.danger : p.edge[bar.cat];
+      // A failure shows as a danger edge once the bar is wide enough to carry one; thinner, the hover card says it,
+      // so a dense zoom-out isn't painted red by a few failed calls among thousands.
+      const edge = bar.failed && bw >= 3 ? p.danger : p.edge[bar.cat];
       if (edge !== undefined) {
         if (bw >= 3) {
           ctx.strokeStyle = edge;
           ctx.lineWidth = 1;
           ctx.strokeRect(x0 + 0.5, y + 0.5, bw - 1, BAR_H - 1);
-        } else if (fill === undefined || bar.failed) {
-          // Too thin for an outline: the edge colour is the bar.
+        } else if (fill === undefined) {
+          // An outline-only category too thin for an outline: the edge colour is the bar.
           ctx.fillStyle = edge;
           ctx.fillRect(x0, y, bw, BAR_H);
         }

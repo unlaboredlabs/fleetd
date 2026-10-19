@@ -3,7 +3,7 @@
 // number is the hub's (`time_*` tools); the screen lays them out and says plainly where a figure is a bound, a split
 // or an approximation rather than a measurement (spec §2f).
 import { useCallback, useMemo, useState, type KeyboardEvent } from "react";
-import { Button, Dot, Tab, TabList, TabPanel, Tabs, Text, Truncate, cx } from "../../ui";
+import { Button, Dot, Tab, TabList, TabPanel, Tabs, Text, Truncate, copyText, cx, toast } from "../../ui";
 import { Breakdown } from "./Breakdown";
 import { FilterBar } from "./FilterBar";
 import { Insights } from "./Insights";
@@ -25,15 +25,24 @@ export interface TimeScreenProps {
   readonly names?: Names;
   /** Defaults to the hub through main. */
   readonly client?: TimeClient;
-  /** Opens the order view, at a thread item when one is given (from a span's transcript). */
+  /** Opens the order view, at a thread item when one is given. Defaults to the route (#/order/<id>?thread=&item=). */
   readonly onOpenOrder?: (order: string, at?: { readonly threadId: string; readonly itemId: string }) => void;
-  /** Opens a CI check's page in the browser. */
+  /** Opens a CI check's page in the browser. Without one, the link is copied: the renderer opens nothing itself. */
   readonly onOpenUrl?: (url: string) => void;
   /** Fixed "now" for fixtures and screenshots. */
   readonly now?: number;
   /** Filters to start from instead of the saved ones (fixtures). */
   readonly initialFilters?: Filters;
 }
+
+const routeToOrder = (order: string, at?: { readonly threadId: string; readonly itemId: string }) => {
+  const q = at === undefined ? "" : `?${new URLSearchParams({ thread: at.threadId, item: at.itemId }).toString()}`;
+  window.location.hash = `#/order/${encodeURIComponent(order)}${q}`;
+};
+
+const copyLink = (url: string) => {
+  void copyText(url).then((ok) => toast({ title: ok ? "Link to the check copied" : "Couldn't copy the link", tone: ok ? "success" : "danger" }));
+};
 
 interface Highlight {
   readonly ids: ReadonlySet<number>;
@@ -43,6 +52,8 @@ interface Highlight {
 
 export function TimeScreen(props: TimeScreenProps) {
   const names = props.names ?? NO_NAMES;
+  const openOrder = props.onOpenOrder ?? routeToOrder;
+  const openUrl = props.onOpenUrl ?? copyLink;
   const [client] = useState<TimeClient>(() => props.client ?? hubClient());
   const [order, setOrder] = useState(props.order);
   const [filters, setFilters] = useState<Filters>(() => props.initialFilters ?? loadFilters());
@@ -105,6 +116,8 @@ export function TimeScreen(props: TimeScreenProps) {
 
   const changeOrder = (o: string | undefined) => {
     setOrder(o);
+    // The route follows, so back/forward and a reload keep the order; outside the router this changes nothing.
+    window.location.hash = o === undefined ? "#/time" : `#/time/order/${encodeURIComponent(o)}`;
     setView(undefined);
     setHighlight(undefined);
     setTab(o !== undefined ? "timeline" : tab === "timeline" ? "breakdown" : tab);
@@ -132,7 +145,7 @@ export function TimeScreen(props: TimeScreenProps) {
   /** A click on one span: a check's page, else its transcript at that item. */
   const openSpan = (span: Span) => {
     if (span.extra?.url !== undefined) {
-      props.onOpenUrl?.(span.extra.url);
+      openUrl(span.extra.url);
       return;
     }
     if (span.machineId === undefined || span.threadId === undefined || span.itemId === undefined) return;
@@ -174,8 +187,8 @@ export function TimeScreen(props: TimeScreenProps) {
   return (
     <div className={cx(s.screen)} data-screen="time" onKeyDown={onKeyDown}>
       <header className={cx(s.head)}>
-        {order !== undefined && props.onOpenOrder !== undefined ? (
-          <Button variant="ghost" onClick={() => props.onOpenOrder?.(order)}>
+        {order !== undefined ? (
+          <Button variant="ghost" onClick={() => openOrder(order)}>
             ‹ Order
           </Button>
         ) : null}
@@ -288,8 +301,8 @@ export function TimeScreen(props: TimeScreenProps) {
         answer={windowAnswer}
         onClose={() => setWindowAt(undefined)}
         onOpenInOrder={
-          orderOf !== undefined && props.onOpenOrder !== undefined && windowAt?.threadId !== undefined && windowAt.itemId !== undefined
-            ? () => props.onOpenOrder?.(orderOf, { threadId: windowAt.threadId ?? "", itemId: windowAt.itemId ?? "" })
+          orderOf !== undefined && windowAt?.threadId !== undefined && windowAt.itemId !== undefined
+            ? () => openOrder(orderOf, { threadId: windowAt.threadId ?? "", itemId: windowAt.itemId ?? "" })
             : undefined
         }
       />

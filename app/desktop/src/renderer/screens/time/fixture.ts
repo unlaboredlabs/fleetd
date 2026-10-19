@@ -12,6 +12,7 @@ import {
   type CommandStat,
   type CriticalPath,
   type Gap,
+  type InsightRule,
   type Insight,
   type InsightNumber,
   type Span,
@@ -620,8 +621,8 @@ export const fixtureNames = (): Names => {
 
 const scopeOrder = (input: { scope: TimeBreakdownInput["scope"] }) => (input.scope.kind === "order" ? input.scope.workstreamId : undefined);
 
-/** A client that answers the time_* tools from this fixture, for tests, the gallery and the screenshot registry. */
-export const fixtureClient = (opts: FixtureOptions = {}): TimeClient => {
+/** Answers the time_* tools (and thread_window) from this fixture; undefined for any other tool. */
+export const fixtureAnswers = (opts: FixtureOptions = {}): ((tool: string, input: unknown) => unknown) => {
   const dense = opts.dense === true ? 10 : 1;
   const cache = new Map<string, Collected>();
   const data = (order: string | undefined, compare: boolean, scope: TimeBreakdownInput["scope"]): Collected => {
@@ -723,6 +724,12 @@ export const fixtureClient = (opts: FixtureOptions = {}): TimeClient => {
         return undefined;
     }
   };
+  return answer;
+};
+
+/** A client that answers the time_* tools from this fixture, for tests and the gallery. */
+export const fixtureClient = (opts: FixtureOptions = {}): TimeClient => {
+  const answer = fixtureAnswers(opts);
   return {
     call: (tool, input) => {
       const output = answer(tool, input);
@@ -750,4 +757,59 @@ export const fixtureOrder = (dense = false): { spans: Span[]; path: CriticalPath
   if (w8 === undefined) throw new Error("the fixture week has W8");
   const b = buildOrder(w8, dense ? 10 : 1);
   return { spans: b.spans.slice().sort((a, z) => a.id - z.id), path: b.path };
+};
+
+/** One recorded answer in E0's fixture file format (`calls[]`): the input is matched partially, first match wins. */
+export interface FixtureCall {
+  readonly tool: string;
+  readonly input?: Record<string, unknown>;
+  readonly outcome: { readonly ok: true; readonly output: unknown };
+}
+
+const RULES: readonly InsightRule[] = ["full_suite_repeat", "ci_check_critical", "human_wait", "batching_delay", "slots_full", "slow_commands", "startup", "coverage"];
+
+/**
+ * The time inspector's answers for a hub fixture (E3b's kit puts them in a fixture's `calls`): W8's timeline (paged,
+ * about 15k spans when dense), its breakdown and insights, and the fleet's and each project's week, with compare.
+ * Inputs leave out the period (it moves with the clock), and the most specific entries come first.
+ */
+export const timeCalls = (opts: FixtureOptions = {}): FixtureCall[] => {
+  const answer = fixtureAnswers(opts);
+  const ok = (tool: string, input: Record<string, unknown>, full: Record<string, unknown>): FixtureCall => ({
+    tool,
+    input,
+    outcome: { ok: true, output: answer(tool, { since: "2026-10-11T00:00:00.000Z", filters: {}, ...full }) },
+  });
+  const order = { kind: "order", workstreamId: FIXTURE_ORDER } as const;
+  const names = fixtureNames();
+  const scopes: TimeBreakdownInput["scope"][] = [
+    { kind: "fleet" },
+    ...names.projects.map((p) => ({ kind: "project" as const, projectRef: { machineId: p.machineId, projectId: p.projectId } })),
+    ...names.machines.map((m) => ({ kind: "machine" as const, machineId: m })),
+  ];
+  const compare = { since: "2026-10-04T00:00:00.000Z", until: "2026-10-11T00:00:00.000Z" };
+  const out: FixtureCall[] = [];
+  // Linked spans by rule, before the pages (whose inputs they would also match).
+  for (const scope of [order, ...scopes]) for (const rule of RULES) out.push(ok("time_spans", { scope, rule }, { scope, rule, limit: 500 }));
+  // W8's pages, newest cursor first; the first page (no cursor) last.
+  const pages: FixtureCall[] = [];
+  let after: number | undefined;
+  for (;;) {
+    const input = { scope: order, ...(after === undefined ? {} : { afterId: after }) };
+    const call = ok("time_spans", input, { ...input, limit: 500 });
+    pages.push(call);
+    const next = (call.outcome.output as { nextAfterId?: number }).nextAfterId;
+    if (next === undefined) break;
+    after = next;
+  }
+  out.push(...pages.reverse());
+  for (const tool of ["time_breakdown", "time_insights"]) {
+    out.push(ok(tool, { scope: order }, { scope: order }));
+    for (const scope of scopes) out.push(ok(tool, { scope, compare: {} }, { scope, compare }), ok(tool, { scope }, { scope }));
+  }
+  const failed = fixtureOrder(opts.dense === true).spans.find((s) => s.label === "npm test" && s.status === "failed");
+  if (failed?.threadId !== undefined && failed.itemId !== undefined) {
+    out.push(ok("thread_window", {}, { machineId: "devbox", threadId: failed.threadId, itemId: failed.itemId }));
+  }
+  return out;
 };
