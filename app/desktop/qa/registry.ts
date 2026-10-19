@@ -24,6 +24,13 @@ export const fixtures = [
   "hub-unreachable",
   "pairing-failed",
   "node-too-old",
+  // F6: the Status view's states (generated with its docs; see screens/status/fixtures.ts).
+  "status-typical",
+  "status-stale",
+  "status-planning",
+  "status-long-text",
+  "status-legacy",
+  "status-skeleton",
 ] as const;
 export type FixtureName = (typeof fixtures)[number];
 
@@ -59,6 +66,20 @@ export const screens: readonly Screen[] = [
   },
   // E2: every design-system primitive with stress content, so the primitives pass before any screen uses them.
   { id: "gallery", route: "#/gallery", fixtures: ["typical"], pending: "E2's gallery (feat/desktop-ui) has not landed" },
+  // F6: Status for the fleet, a project and an order: live, stale sources, planning, long text and unknown wire
+  // values, a hub without the progress model, the skeleton before the first answer, and the link down.
+  ...(
+    [
+      ["status.fleet", "#/status"],
+      ["status.project", "#/status/project/devbox/storefront"],
+      ["status.order", "#/status/order/W14"],
+    ] as const
+  ).map(([id, route]) => ({
+    id,
+    route,
+    fixtures: ["status-typical", "status-stale", "status-planning", "status-long-text", "status-legacy", "status-skeleton", "hub-unreachable"] as const,
+    pending: "F1's route table (screens/shell/screens.tsx) mounts StatusScreen",
+  })),
 ];
 
 // Platform checks that need a screen writer's work before they can pass; the owner turns theirs on when it lands.

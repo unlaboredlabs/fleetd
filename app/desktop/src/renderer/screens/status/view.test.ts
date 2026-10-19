@@ -21,7 +21,7 @@ import {
   when,
 } from "./view";
 
-import { fixture, fixtureFiles } from "./fixtures";
+import { fixture, fixtureAnswers } from "./fixtures";
 const NOW = Date.parse("2026-10-19T10:07:12.000Z");
 
 beforeAll(() => {
@@ -31,9 +31,9 @@ beforeAll(() => {
 
 describe("fixtures", () => {
   it("every status fixture decodes as a status_get answer", () => {
-    const files = Object.entries(fixtureFiles);
-    expect(files.length).toBeGreaterThanOrEqual(9);
-    for (const [name, output] of files) expect(asGetOutput(output), name).toBeDefined();
+    const answers = Object.entries(fixtureAnswers);
+    expect(answers.length).toBeGreaterThanOrEqual(18);
+    for (const [name, output] of answers) expect(asGetOutput(output), name).toBeDefined();
   });
 });
 
