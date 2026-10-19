@@ -683,11 +683,11 @@ mod tests {
         MachineAddInput {
             machine_id: "mac-mini".into(),
             tags: vec!["macos".into(), "xcode".into()],
-            hub_url: "https://forge.example.ts.net".into(),
+            hub_url: "https://devbox.example.ts.net".into(),
             unit_suffix: String::new(),
             git_identity: Some(GitIdentity {
-                name: "wynn-dev".into(),
-                email: "1+wynn-dev@users.noreply.github.com".into(),
+                name: "ada-lovelace".into(),
+                email: "1+ada-lovelace@users.noreply.github.com".into(),
             }),
             binary_digest: "b".repeat(64),
             binary_target: ("linux".into(), "x64".into()),
@@ -716,7 +716,7 @@ mod tests {
     /// The `--dry-run` output: every command on a fresh Linux machine, in order.
     #[test]
     fn fresh_linux_plan_matches_snapshot() {
-        let plan = plan_machine_add(&fresh_facts("wynn", "x64"), &input()).unwrap();
+        let plan = plan_machine_add(&fresh_facts("ada", "x64"), &input()).unwrap();
         let actual = format!(
             "{}\n",
             serde_json::to_string_pretty(&summary(&plan)).unwrap()
@@ -743,11 +743,11 @@ mod tests {
             panic!("unit text")
         };
         assert!(text.contains(
-            "ExecStart=/home/wynn/.fleetd/bin/fleetd node run --home /home/wynn/.fleetd/node\n"
+            "ExecStart=/home/ada/.fleetd/bin/fleetd node run --home /home/ada/.fleetd/node\n"
         ));
         assert!(!text.contains("CLAUDE_CONFIG_DIR"));
         assert!(text.contains(
-            "Environment=PATH=/home/wynn/.fleetd/bin:/home/wynn/.local/bin:/usr/local/bin:"
+            "Environment=PATH=/home/ada/.fleetd/bin:/home/ada/.local/bin:/usr/local/bin:"
         ));
         assert!(text.contains("KillMode=mixed\n"));
     }
@@ -755,15 +755,15 @@ mod tests {
     /// A second run on a set-up machine only makes sure the node runs.
     #[test]
     fn rerun_is_idempotent_and_keeps_the_users_node_settings() {
-        let first = plan_machine_add(&fresh_facts("wynn", "x64"), &input()).unwrap();
-        let mut facts = fresh_facts("wynn", "x64");
+        let first = plan_machine_add(&fresh_facts("ada", "x64"), &input()).unwrap();
+        let mut facts = fresh_facts("ada", "x64");
         let l = machine_layout(&facts.home);
         for s in &first.steps {
             if let (Some(file), Some(Stdin::Text { text, .. })) = (&s.writes, &s.stdin) {
                 facts.files.insert(file.clone(), Some(text.clone()));
             }
         }
-        let node = json!({ "hub": "https://forge.example.ts.net", "machineId": "mac-mini", "name": "mac-mini",
+        let node = json!({ "hub": "https://devbox.example.ts.net", "machineId": "mac-mini", "name": "mac-mini",
             "tags": ["macos", "xcode"], "cmdRoots": ["/srv"], "enrolled": true });
         facts
             .files
@@ -808,7 +808,7 @@ mod tests {
     #[test]
     fn no_service_writes_no_unit_and_says_how_to_run_the_node() {
         let plan = plan_machine_add(
-            &fresh_facts("wynn", "x64"),
+            &fresh_facts("ada", "x64"),
             &MachineAddInput {
                 service: false,
                 ..input()
@@ -829,14 +829,14 @@ mod tests {
         assert_eq!(
             plan.run_by_hand.as_deref(),
             Some(
-                "GIT_AUTHOR_NAME=wynn-dev GIT_AUTHOR_EMAIL=1+wynn-dev@users.noreply.github.com GIT_COMMITTER_NAME=wynn-dev GIT_COMMITTER_EMAIL=1+wynn-dev@users.noreply.github.com /home/wynn/.fleetd/bin/fleetd node run --home /home/wynn/.fleetd/node"
+                "GIT_AUTHOR_NAME=ada-lovelace GIT_AUTHOR_EMAIL=1+ada-lovelace@users.noreply.github.com GIT_COMMITTER_NAME=ada-lovelace GIT_COMMITTER_EMAIL=1+ada-lovelace@users.noreply.github.com /home/ada/.fleetd/bin/fleetd node run --home /home/ada/.fleetd/node"
             )
         );
     }
 
     #[test]
     fn refuses_another_arch_unknown_os_and_a_missing_or_wrong_claude() {
-        let facts = fresh_facts("wynn", "arm64");
+        let facts = fresh_facts("ada", "arm64");
         assert!(
             plan_machine_add(&facts, &input())
                 .err()
@@ -845,12 +845,12 @@ mod tests {
         );
         let win = Facts {
             platform: "win32".into(),
-            ..fresh_facts("wynn", "x64")
+            ..fresh_facts("ada", "x64")
         };
         assert!(plan_machine_add(&win, &input()).is_err());
         let none = Facts {
             claude: None,
-            ..fresh_facts("wynn", "x64")
+            ..fresh_facts("ada", "x64")
         };
         assert!(
             plan_machine_add(&none, &input()).err().unwrap().ends_with(
@@ -859,7 +859,7 @@ mod tests {
         );
         let newer = Facts {
             claude_version: Some("2.2.1 (Claude Code)".into()),
-            ..fresh_facts("wynn", "x64")
+            ..fresh_facts("ada", "x64")
         };
         assert!(
             plan_machine_add(&newer, &input())
@@ -870,7 +870,7 @@ mod tests {
         // Older than tested: set up anyway, with a note that says so and how to update.
         let older = Facts {
             claude_version: Some("2.1.296 (Claude Code)".into()),
-            ..fresh_facts("wynn", "x64")
+            ..fresh_facts("ada", "x64")
         };
         let plan = plan_machine_add(&older, &input()).unwrap();
         assert!(

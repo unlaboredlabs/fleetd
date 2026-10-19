@@ -2,7 +2,7 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
   testDir: ".",
-  globalSetup: "./clean.ts",
+  globalSetup: "./setup.ts",
   globalTeardown: "./report.ts",
   // Each test launches its own app; Electron windows are heavy, so not one per core.
   workers: process.env.CI ? 3 : 4,

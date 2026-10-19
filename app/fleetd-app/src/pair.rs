@@ -280,10 +280,10 @@ mod tests {
     fn pairing_posts_the_normalized_code_and_returns_the_key() {
         let (url, seen) = fake_hub(concat!(
             "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 79\r\n\r\n",
-            r#"{"key":"fld_abc","hubUrl":"http://100.64.0.1:4790","hubName":"forge"}          "#
+            r#"{"key":"fld_abc","hubUrl":"http://100.64.0.1:4790","hubName":"devbox"}          "#
         ));
         let paired = async_io::block_on(pair(&url, "abcd 2345", "mac")).unwrap();
-        assert_eq!(paired, Paired { key: "fld_abc".into(), hub_url: "http://100.64.0.1:4790".into(), hub_name: "forge".into() });
+        assert_eq!(paired, Paired { key: "fld_abc".into(), hub_url: "http://100.64.0.1:4790".into(), hub_name: "devbox".into() });
         let request = seen.join().unwrap();
         assert!(request.starts_with("POST /pair HTTP/1.1\r\n"), "{request}");
         assert!(!request.to_ascii_lowercase().contains("authorization"));

@@ -1,30 +1,41 @@
 // The real OS behind CredentialEnv: safeStorage, the GPUI app's keychain items, and the app's own code signature.
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { app, safeStorage } from "electron";
 import type { Entry as KeyringEntry } from "@napi-rs/keyring";
-import type { CredentialEnv } from "./credentials";
+import { app, safeStorage } from "electron";
+import { useOsEncryption, type CredentialEnv } from "./credentials";
 
-const TEAM_ID = /TeamIdentifier=(?!not set)\S+/u;
+interface Signature {
+  readonly teamSigned: boolean;
+  readonly identifier: string | null;
+}
 
-/** Whether this Mac build is signed with a Team ID. Ad-hoc and unsigned builds can't keep keychain trust across updates. */
-const codesignTeam = (): boolean => {
-  if (process.platform !== "darwin" || !app.isPackaged) return false;
+/** This Mac build's signature: a Team ID or not (ad-hoc and unsigned builds can't keep keychain trust across updates). */
+const readSignature = (): Signature => {
+  if (process.platform !== "darwin" || !app.isPackaged) return { teamSigned: false, identifier: null };
   try {
     // codesign -d reports on stderr, which execFileSync only hands back on failure; 2>&1 keeps it either way.
     const report = execFileSync("/bin/sh", ["-c", '/usr/bin/codesign -dv "$0" 2>&1', app.getPath("exe")], { encoding: "utf8" });
-    return TEAM_ID.test(report);
+    return {
+      teamSigned: /^TeamIdentifier=(?!not set)\S+/mu.test(report),
+      identifier: /^Identifier=(\S+)/mu.exec(report)?.[1] ?? null,
+    };
   } catch {
-    return false;
+    return { teamSigned: false, identifier: null };
   }
 };
 
-/** Run after app ready (safeStorage needs it). `relocated`: FLEETD_HOME is set, so the OS keychain is never read. */
+/** Run after app ready (safeStorage needs it). `relocated`: FLEETD_HOME is set, so no OS store is ever touched. */
 export const osCredentialEnv = (dir: string, relocated: boolean): CredentialEnv => {
-  let signed: boolean | null = null;
-  const teamSigned = () => (signed ??= codesignTeam());
-  const plainLinux = process.platform === "linux" && safeStorage.getSelectedStorageBackend() === "basic_text";
-  const encrypted = safeStorage.isEncryptionAvailable() && !plainLinux && (process.platform !== "darwin" || teamSigned());
+  let signature: Signature | null = null;
+  const signed = () => (signature ??= readSignature());
+  const encrypted = useOsEncryption({
+    platform: process.platform,
+    relocated,
+    teamSigned: () => signed().teamSigned,
+    available: () => safeStorage.isEncryptionAvailable(),
+    linuxBackend: () => safeStorage.getSelectedStorageBackend(),
+  });
   return {
     dir,
     platform: process.platform,
@@ -38,6 +49,7 @@ export const osCredentialEnv = (dir: string, relocated: boolean): CredentialEnv 
             return new Entry(service, account).getPassword();
           },
         },
-    teamSigned,
+    teamSigned: () => signed().teamSigned,
+    bundleId: () => signed().identifier,
   };
 };

@@ -8,6 +8,7 @@ import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import { askCard } from "./askCard.ts";
 import { degradedMachine } from "./degradedMachine.ts";
 import { demoFanout } from "./demoFanout.ts";
 import { desktopShell } from "./desktopShell.ts";
@@ -90,6 +91,8 @@ const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab)
   // One order on the testbed through the train, with a human-approved gated run: its timeline must add up. After m9,
   // whose router must not see the testbed project.
   { name: "time", run: timeInspector },
+  // A real lead writes its own labelled ask; the answer goes through the undo window. Only when named.
+  { name: "ask", run: askCard, only: true },
   // The app demo: one order fanned out to writers, reviewers and verifiers on the testbed. Only when named.
   { name: "demo", run: demoFanout, only: true },
   { name: "desktop", run: desktopShell, only: true },
@@ -142,6 +145,15 @@ async function main() {
     for (const m of MACHINES) joinNode(HUB_URL, hubHome, m.id);
 
     client = await connectClient(key);
+    // FLEETD_LAB_APP_HANDOFF=<file>: a human key, as the desktop app pairs one, for an /app client watching the run
+    // (app/desktop/fixtures/kit/record.ts records the run's frames and call results into fixtures).
+    const handoff = process.env.FLEETD_LAB_APP_HANDOFF;
+    if (handoff !== undefined) {
+      const human = /fld_[a-z2-7]{20,}/u.exec(cli("hub", "key", "create", "--home", hubHome, "--human", "--name", "recorder"))?.[0];
+      if (human === undefined) throw new Error("hub key create --human printed no key");
+      fs.writeFileSync(handoff, `${JSON.stringify({ hubUrl: HUB_URL, key: human })}\n`, { mode: 0o600 });
+      ok(`app handoff written to ${handoff}`);
+    }
     const callTool = callToolWith(() => client!);
     ok(`MCP client connected; ${(await client.listTools()).tools.length} tools`);
     const cursor = async () => (await callTool("fleetd_status")).body.cursor as number;
