@@ -194,13 +194,33 @@ export async function assertExpectedState(page: Page, screen: Pick<Screen, "id" 
   }
 }
 
-// Fonts loaded, no skeletons, and two frames painted after the last layout change. `fonts.ready` waits for the faces
-// the current layout asked for; `fonts.status` alone is "loaded" before any face has been requested.
+// Fonts loaded, no skeletons, and the layout unchanged for three frames in a row. Components that fit themselves to
+// their measured size (a ResizeObserver, then a re-render, sometimes twice) settle a frame or more after the last
+// font or resize, more often on the slower macOS runners; a fixed two frames shot them mid-fit. `fonts.ready` waits
+// for the faces the current layout asked for; `fonts.status` alone is "loaded" before any face has been requested.
+// A page that never holds still (a running animation) is shot after 3 s rather than hanging the run.
 export async function settle(page: Page) {
   await page.waitForFunction(() => !document.querySelector("[aria-busy='true']"), undefined, { timeout: 10_000 });
   await page.evaluate(async () => {
     await document.fonts.ready;
-    await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(null))));
+    const frame = () => new Promise((done) => requestAnimationFrame(() => done(null)));
+    const layout = () => {
+      let sig = `${document.body.scrollWidth}x${document.body.scrollHeight}`;
+      for (const el of document.body.getElementsByTagName("*")) {
+        const r = el.getBoundingClientRect();
+        sig += `|${Math.round(r.left)},${Math.round(r.top)},${Math.round(r.width)},${Math.round(r.height)}`;
+      }
+      return sig;
+    };
+    const until = performance.now() + 3_000;
+    let last = layout();
+    let still = 0;
+    while (still < 3 && performance.now() < until) {
+      await frame();
+      const now = layout();
+      still = now === last ? still + 1 : 0;
+      last = now;
+    }
   });
 }
 
