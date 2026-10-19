@@ -1,0 +1,11 @@
+# Areas let writers on different parts of fleetd run at once: a writer leases only the areas it changes, and the
+# globs say which files each area owns. They are disjoint, and every tracked file belongs to exactly one area.
+areas:
+  contracts: ["crates/fleetd-contracts/**"]
+  hub: ["crates/fleetd/src/hub/**", "crates/fleetd/tests/**", "crates/fleetd/assets/**"]
+  cli: ["crates/fleetd/src/cli/**", "crates/fleetd/src/node/**", "crates/fleetd/src/*.rs", "crates/fleetd/examples/**", "crates/fleetd/Cargo.toml"]
+  app: ["app/**"]
+  site: ["site/**", "docs/**", "crates/docsgen/**"]
+  ci: [".github/**"]
+  lab: ["tests/**"]
+  root: ["*", ".fleetd/**", ".local/**", "playbooks/**", "scripts/**"]
