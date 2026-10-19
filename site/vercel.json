@@ -9,6 +9,11 @@
       "source": "/docs/cli",
       "destination": "/docs/reference/cli",
       "permanent": true
+    },
+    {
+      "source": "/docs/projects-and-orders",
+      "destination": "/docs/projects",
+      "permanent": true
     }
   ],
   "rewrites": [

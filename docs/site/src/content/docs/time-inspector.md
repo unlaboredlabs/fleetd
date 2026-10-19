@@ -1,10 +1,10 @@
 ---
 title: Where time went
-description: See what your agents spent their time on and what they waited for, and find what slows orders down.
+description: See what your agents spent their time on and what they waited for, and find what slows work down.
 ---
 
-You'll find what made an [order](/docs/glossary#order) slow: the test suite an agent ran many times, the CI check that
-finished last, or the [ask](/docs/glossary#ask) that waited on your answer.
+You'll find what made a piece of work slow: the test suite an agent ran many times, the CI check that finished last,
+or the question that waited on your reply.
 
 ```console
 $ fleetd time W41
@@ -45,8 +45,8 @@ stream on each machine and the hub's own events, with no extra model calls.
 
 | Where | How |
 |---|---|
-| Desktop app | Time in the sidebar or an order's header. See [The desktop app](/docs/desktop-app#time). |
-| Terminal, one order | `fleetd time W41` |
+| Desktop app | Time in the sidebar, or expand the agents strip in a chat. See [The desktop app](/docs/desktop-app#time). |
+| Terminal, one piece of work | `fleetd time W41`, with its [workstream](/docs/glossary#workstream) id |
 | Terminal, one project | `fleetd time storefront` |
 | Terminal, the whole fleet | `fleetd time` |
 
@@ -68,15 +68,15 @@ Time falls into seven groups, with the same names and colors everywhere:
 | tools | Tool calls: Bash commands, reads, edits, web, MCP, and fleetd's "done" checks. |
 | machine | Starting `claude`, API retries, compaction, and `claude`'s own work between steps. |
 | queue | Waiting for fleetd: a free slot, an area lease, a usage limit, an offline machine, a lead's wake. |
-| you | Waiting on you: blocking asks and approvals. |
+| you | Waiting on you: your reply, a secret, an approval. |
 | pipeline | CI, review and the merge train. |
-| idle | A session alive with nothing to do. Never counted against an order. |
+| idle | A session alive with nothing to do. Never counted against the work. |
 
 ## Wall time and agent time {#wall-vs-agent}
 
 | Number | Means |
 |---|---|
-| **Wall time** | The clock: from when you sent the order to when it was done. |
+| **Wall time** | The clock: from when the work started to when it was done. |
 | **Agent time** | Every agent's time added up. Three writers working for an hour at once are three hours of agent time. |
 | **Parallelism** | Agent time divided by wall time. |
 
@@ -85,16 +85,16 @@ to more than its tool time.
 
 ## Read the critical path {#critical-path}
 
-The [critical path](/docs/glossary#critical-path) is the one chain of work that decided when the order finished. Its rows add up to the wall time.
+The [critical path](/docs/glossary#critical-path) is the one chain of work that decided when the work finished. Its rows add up to the wall time.
 
-**To make an order faster, shorten what is on the path.** Work off the path ran in parallel, so speeding it up changes
+**To make work finish sooner, shorten what is on the path.** Work off the path ran in parallel, so speeding it up changes
 nothing.
 
 In the example above:
 
-- The 34 minutes waiting for your answer about `deploy.region` are on the path. Answering sooner would have finished
-  the order sooner.
-- `cargo test --workspace` took 51 minutes in total, but only 9 of them held the order up.
+- The 34 minutes waiting for your answer about `deploy.region` are on the path. Replying sooner would have finished
+  it sooner.
+- `cargo test --workspace` took 51 minutes in total, but only 9 of them held the work up.
 
 "Nothing running" on the path points at missing data, not idle time. The coverage line says so.
 
@@ -131,8 +131,8 @@ Where a number is a bound rather than a measurement, the views say so.
 | Exit codes | Exact for failed Bash commands. Other tools show only ok or failed. |
 | Across machines | Each machine's clock is aligned to the hub's. Lanes from two machines can be off by the network delay. |
 | CI queueing | Shown only when fleetd knows when the commit was pushed. |
-| The [lead](/docs/glossary#lead)'s time | Split equally between the orders its wake was about, marked "split". |
-| Waiting on you | From when the ask reached your inbox to your answer. |
+| The [lead](/docs/glossary#lead)'s time | Split equally between the pieces of work its wake was about, marked "split". |
+| Waiting on you | From when the lead asked in the chat to your reply. |
 
 The coverage line says "incomplete" when data is missing, for example from a machine running an older fleetd, or from
 before the retention window. It never fills a gap with a guess.
@@ -142,7 +142,7 @@ before the retention window. It never fills a gap with a guess.
 | Data | Kept |
 |---|---|
 | Every span | 30 days by default (1 to 365). |
-| Daily totals and each order's critical path | 400 days. |
+| Daily totals and each piece of work's critical path | 400 days. |
 
 Change it with an admin key:
 

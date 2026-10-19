@@ -77,14 +77,14 @@ Expected output starts like this:
 | Command | Needs |
 |---|---|
 | `fleetd status`, `fleetd time` | Nothing on the hub machine. Elsewhere, `--hub <url> --key-file <file>`. |
-| `fleetd answer`, `fleetd steer`, `fleetd steers` | Always `--key-file` with a [human key](/docs/glossary#human-key). `--hub <url>` off the hub machine. |
+| `fleetd steer`, `fleetd steers` | Always `--key-file` with a [human key](/docs/glossary#human-key). `--hub <url>` off the hub machine. |
 | `fleetd listen`, `fleetd retro` | Always `--hub <url>` and `--key-file <file>`. |
 
 To make a human key file on the hub:
 
 ```sh
 (umask 077; fleetd hub key create --human --name terminal > ~/.fleetd/human.key)
-fleetd answer --key-file ~/.fleetd/human.key
+fleetd steers --key-file ~/.fleetd/human.key
 ```
 
 ## Roles

@@ -1,11 +1,11 @@
 ---
 title: Quick start
-description: Set up the hub, pair the desktop app and send your first order.
+description: Install fleetd, open a project and chat with its lead.
 ---
 
-import { Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+import { Steps } from '@astrojs/starlight/components';
 
-You'll set up fleetd on one machine, pair the desktop app, and send a first piece of work.
+You'll install fleetd, open a project in the desktop app, and tell its lead what you want.
 
 **Before you start**, have these on the machine:
 
@@ -13,7 +13,7 @@ You'll set up fleetd on one machine, pair the desktop app, and send a first piec
 - The `claude` CLI, logged in. fleetd uses your own Claude Code setup, including any proxy in `~/.claude/settings.json`.
 - `git`, and the `gh` CLI logged in to GitHub.
 - A GitHub repo to work on. fleetd branches from its default branch and merges back into it; see
-  [Which branch fleetd works on](/docs/projects-and-orders#branches).
+  [Which branch fleetd works on](/docs/projects#branches).
 
 <Steps>
 
@@ -54,12 +54,7 @@ You'll set up fleetd on one machine, pair the desktop app, and send a first piec
    Note the pairing code it prints, such as `K4QW-7RNP`. A line starting with ✗ ends with the command that fixes it. Run `fleetd init` again at any time: it keeps what
    works and repairs the rest.
 
-2. **Connect a client.**
-
-   Pick the desktop app, or the terminal if this machine has no display. The choice carries through the next steps.
-
-   <Tabs syncKey="client">
-   <TabItem label="Desktop app">
+2. **Open the desktop app.**
 
    On the hub machine, open the app: it pairs with the hub by itself.
 
@@ -69,104 +64,38 @@ You'll set up fleetd on one machine, pair the desktop app, and send a first piec
    curl -fsSL https://fleetd.sh | sh -s -- --no-init
    ```
 
-   On macOS, open `~/Applications/fleetd.app`. On Linux, open **fleetd** from your app menu. On the "Connect to your
-   fleetd hub" screen, enter the hub address and the pairing code from step 1. A code works once, for 15 minutes; run
-   `fleetd pair` on the hub for a new one.
+   On macOS, open `~/Applications/fleetd.app`. On Linux, open **fleetd** from your app menu. Enter the hub address
+   and the pairing code from step 1. A code works once, for 15 minutes; run `fleetd pair` on the hub for a new one.
 
-   The app opens on the board, with the cursor in the order box.
+3. **Open your project.**
 
-   </TabItem>
-   <TabItem label="Without the app">
+   The sidebar lists your projects. Click the one the wizard added. It opens the chat with that project's
+   [lead](/docs/glossary#lead): the Claude session that plans the work and runs the agents. Each project has one.
 
-   On the hub, create a [human key](/docs/glossary#human-key) for your terminal and keep it in a file only you can read:
+4. **Tell the lead what you want.**
 
-   ```sh
-   (umask 077; fleetd hub key create --human --name terminal > ~/.fleetd/human.key)
-   ```
-
-   The key is printed once, so this file is the only copy. Then save the MCP script from
-   [MCP clients](/docs/mcp-clients#script) as `~/mcp.sh`.
-
-   </TabItem>
-   </Tabs>
-
-3. **Send your first order.**
-
-   An [order](/docs/glossary#order) is one line that says what you want.
-
-   <Tabs syncKey="client">
-   <TabItem label="Desktop app">
-
-   Type it in the order box and press Enter:
+   Type a message and press Enter:
 
    ```text
    fix the typo in the README
    ```
 
-   The order appears as a card on the board.
+   The lead answers in the chat and starts agents. A strip under its message shows who is working; pull requests and
+   merges show up as one-line events.
 
-   </TabItem>
-   <TabItem label="Without the app">
+5. **Reply when it asks.**
 
-   Send it with the `intake_submit` tool. `clientRequestId` is any unique string; it makes a retry safe.
+   The lead asks only about product calls, money and irreversible steps, as numbered items with a recommendation
+   each. A project with a question waiting shows a dot in the sidebar. Reply in plain words, or tersely:
 
-   ```sh
-   FLEETD_HUB=http://hub.your-tailnet.ts.net:4790 FLEETD_KEY_FILE=~/.fleetd/human.key \
-     sh ~/mcp.sh intake_submit '{"clientRequestId":"first-order","text":"fix the typo in the README"}'
+   ```text
+   1 go, 2 rec
    ```
 
-   Use the hub address from step 1. The answer names the order, such as `W1`.
+6. **Watch it land.**
 
-   </TabItem>
-   </Tabs>
-
-   The order starts the project's [lead](/docs/glossary#lead): a Claude session that plans the work and runs other
-   agents. It never writes code itself.
-
-4. **Answer its questions.**
-
-   When the lead needs a decision, it sends an [ask](/docs/glossary#ask). Reply in one line, such as `1 go`.
-
-   <Tabs syncKey="client">
-   <TabItem label="Desktop app">
-
-   Open the inbox with ⌘I (Ctrl+I on Linux) and type the reply. See [Inbox and replies](/docs/desktop-app#reply).
-
-   </TabItem>
-   <TabItem label="Without the app">
-
-   ```sh
-   fleetd answer --key-file ~/.fleetd/human.key
-   fleetd answer "1 go" --key-file ~/.fleetd/human.key
-   ```
-
-   The first lists open questions with each choice; the second answers. Asks for secrets need the app.
-
-   </TabItem>
-   </Tabs>
-
-5. **Watch it finish.**
-
-   <Tabs syncKey="client">
-   <TabItem label="Desktop app">
-
-   The card shows the order's phase and every agent at work.
-
-   </TabItem>
-   <TabItem label="Without the app">
-
-   ```sh
-   fleetd status W1 --watch
-   ```
-
-   Until the lead has written the order's brief it says "W1 is a draft: waiting for the lead's brief", and `--watch`
-   then shows the order once the brief exists.
-
-   </TabItem>
-   </Tabs>
-
-   Each pull request goes through review, then the [merge train](/docs/glossary#merge-train) merges it once CI passes.
-   The order is done when the hub has run its checks and they all pass.
+   Each pull request goes through review, then the [merge train](/docs/glossary#merge-train) merges it once CI
+   passes. The lead says in the chat when the work is done and checked.
 
 </Steps>
 
@@ -174,4 +103,5 @@ You'll set up fleetd on one machine, pair the desktop app, and send a first piec
 
 - [Concepts](/docs/concepts): how the pieces fit together.
 - [Machines](/docs/machines): add more machines that run agents.
-- [Projects & orders](/docs/projects-and-orders): add repos and give them work.
+- [Chat with the lead](/docs/chat): give work, reply, steer.
+- [Projects](/docs/projects): add more repos.

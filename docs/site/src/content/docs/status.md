@@ -1,10 +1,30 @@
 ---
 title: Status
-description: How far along an order, a project or the fleet is, what it waits on, and what is slower than usual.
+description: Each project's state and progress at a glance, and the terminal's full view of what the work waits on.
 ---
 
-Status shows how far along an [order](/docs/glossary#order), a project or the whole fleet is, and what the work is
-waiting on.
+Status shows, for each project, what state it is in and how far along its work is.
+
+## In the app {#app}
+
+Status has one row per project:
+
+| Column | Shows |
+|---|---|
+| State | `working`, `waiting on you`, `idle` or `blocked`. |
+| Progress | The two-tone bar: verified work, then work in flight. |
+| Agents | How many agents are running. |
+| Last merged | The latest pull request the train merged. |
+
+Click a row to open that project's chat. Hover or expand it for detail. Open Status with ⌘. (Ctrl+. on Linux), or from
+the sidebar.
+
+Status never shows a finish time or an ETA. It shows state instead.
+
+## In the terminal {#cli}
+
+`fleetd status` on the hub machine gives the full view: progress, why it fell, what the work waits on, health and
+risks.
 
 ```console
 $ fleetd status storefront
@@ -25,17 +45,11 @@ next    P14 switch the default provider (after P12), P16 docs page
 done    P9 webhook outbox   #208 merged by the train 13:12 · check 2 passed C7
 ```
 
-Status never shows a finish time or an ETA. It shows state instead: what is verified, what is in flight, and what
-blocks the rest.
-
-## Open it
-
-| Where | How |
+| Command | Shows |
 |---|---|
-| Desktop app | ⌘. (Ctrl+. on Linux). See [The desktop app](/docs/desktop-app#status). |
-| Terminal, the whole fleet | `fleetd status` |
-| Terminal, one project | `fleetd status storefront` |
-| Terminal, one order | `fleetd status W41`. A new order says `W41 is a draft: waiting for the lead's brief` (exit 0) until its lead has written the brief; `--watch` waits for it. |
+| `fleetd status` | The whole fleet. |
+| `fleetd status storefront` | One project. |
+| `fleetd status W41` | One piece of the lead's work (a [workstream](/docs/glossary#workstream)). A new one says `W41 is a draft: waiting for the lead's brief` until the lead has planned it; `--watch` waits for it. |
 
 | Option | Does |
 |---|---|
@@ -43,7 +57,7 @@ blocks the rest.
 | `--json` | Print JSON. |
 | `--hub <url> --key-file <path>` | Use a hub on another machine. |
 
-See the [CLI reference](/docs/reference/cli#status).
+See the [CLI reference](/docs/reference/cli#status). The rest of this page explains that view.
 
 ## What the number means {#number}
 
@@ -70,7 +84,7 @@ Items are **must** or **polish**. Polish shows beside the number ("polish 2/5") 
 | `m` | 3 |
 | `l` | 8 |
 
-While a lead is still planning, status says so instead of showing 0%. An order with no plan counts as one item until
+While a lead is still planning, status says so instead of showing 0%. Work with no plan counts as one item until
 it gets one, and is listed as a risk if it stays without a plan.
 
 ## Plans and markers {#plans}
@@ -99,17 +113,17 @@ The stages, in pipeline order. "Waiting on" lists the ones left after the item's
 
 | Step | Waits for |
 |---|---|
-| the brief | The lead to write the order's [brief](/docs/glossary#brief). |
+| the brief | The lead to plan the work (its [brief](/docs/glossary#brief)). |
 | a writer | A [writer](/docs/glossary#writer) task to start. |
 | the writer's push | The writer to push its branch. |
 | a PR | The pull request to open. |
 | review of #212 | Reviews of that PR. Left out when its tier needs none, as for an `S` change. |
 | CI on #212 | CI on the PR's current commit. |
 | merge | The merge train to rebase, check and merge it. |
-| done-when checks | The hub to run the order's [done-when checks](/docs/glossary#done-when-check). |
+| done-when checks | The hub to run the work's [done-when checks](/docs/glossary#done-when-check). |
 
 If the merge train can't move a PR, risks list it with the train's error. For a checkout outside the node's `cmdRoots`
-that includes the fix. If it doesn't move, see [An order is stuck](/docs/troubleshooting#stuck).
+that includes the fix. If it doesn't move, see [Work is stuck](/docs/troubleshooting#stuck).
 
 An item that has spent over 1.5 times the usual time in its current stage is marked `SLOWER THAN USUAL` and listed
 under risks. "Usual" is measured from this project's own history.
@@ -119,8 +133,8 @@ When work waited while slots sat free, [Where time went](/docs/time-inspector#se
 
 ## Since you last looked {#since}
 
-Counts what happened in this scope since you last looked: merged PRs, verified items, started orders, failures, new
-asks and scope changes.
+Counts what happened in this scope since you last looked: merged PRs, verified items, started work, failures and
+scope changes.
 
 - The app moves your mark when you leave the view after reading it.
 - `fleetd status` keeps its own mark on each machine.

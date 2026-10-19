@@ -87,7 +87,7 @@ To give a worker's sessions their own claude profile:
 
 A session resumes only under the config dir it started in.
 
-The hub's own `claude` (the order router and the retro) uses your normal login on the hub machine, or the gateway
+The hub's own `claude` (the router and the retro) uses your normal login on the hub machine, or the gateway
 variables in `claude.env`.
 
 ## claude.env {#claude-env}
@@ -138,9 +138,9 @@ branchPrefix: team-a/
 | `areas` | the whole repo | What a writer task may touch. A task leases one or more areas. Names are lowercase slugs. |
 | `defaults.model` | `claude-opus-5-5` | The project's task model. |
 | `defaults.effort` | `high` | `low`, `medium`, `high` or `max`. |
-| `finishAll.maxChildren` | `5` | The most child orders one `finish:` run starts, 1 to 50. |
+| `finishAll.maxChildren` | `5` | The most pieces of work one finish-all run starts at once, 1 to 50. |
 | `tools.allow`, `tools.deny` | none | Claude permission rules for every session. Deny wins. |
-| `lead.autoStart` | `true` | `false`: orders wait for `lead_start` instead of starting the lead. |
+| `lead.autoStart` | `true` | `false`: your messages wait for `lead_start` instead of starting the lead. |
 | `claude.autoMemory` | `false` | `true`: sessions keep claude's own auto memory. |
 | `branchPrefix` | `fleetd/` | What writer and train branches start with. Must end in `/`. |
 
@@ -243,7 +243,7 @@ one agent's work or wait, such as a tool call or a CI check.
 | Data | Kept |
 |---|---|
 | Spans | 30 days (1 to 365 with `fleetd time --retention <days>`) |
-| Daily totals and each order's critical path | 400 days |
+| Daily totals and each piece of work's critical path | 400 days |
 
 Each node holds timings it hasn't sent yet in `sessions.sqlite`. While the hub is away, it keeps up to 7 days or
 500,000 of them, then drops the oldest; the timeline shows the gap.

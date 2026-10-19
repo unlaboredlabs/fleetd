@@ -3,19 +3,20 @@ title: Steering
 description: Redirect a lead or any agent while it works, see when it took your words in, and take a steer back.
 ---
 
-You'll send a [steer](/docs/glossary#steer): a short message to an agent that is already working.
+You'll send a [steer](/docs/glossary#steer): a short message to an agent that is already working. In a project's chat,
+any message you send while the lead works is a steer.
 
 ```text
 skip the docs page, ship the API first
 ```
 
-A steer goes straight to the agent. It doesn't wait for the lead's next wake, and each steer gets a
+A steer goes straight to the agent. It doesn't wait for the lead's next wake, and each steer gets a small
 [receipt](#receipts) that says whether the agent took it in.
 
 ## Send a steer {#keys}
 
-1. Open the order in the desktop app.
-2. Type in the box under the lead's conversation.
+1. Open the project's chat in the desktop app.
+2. Type in the box at the bottom while the lead works.
 3. Press one of two keys:
 
 | Key | Label | What happens |
@@ -64,7 +65,7 @@ back. Past that time it is **expired**.
 
 ## Steer any agent {#agents}
 
-1. In an order, click an agent's lane: a writer, a reviewer, a verifier or the lead.
+1. In the chat, expand the agents strip and click an agent: a writer, a reviewer or a verifier.
 2. Its sheet opens: what it is doing now, its last steps, its steers, and a box with the same two keys.
 
 When you steer an agent directly, its lead is told at its next wake: what you said, to whom, and that the agent now
@@ -84,13 +85,13 @@ Once delivered, a steer can't be taken back. Send another one that says what cha
 
 ## When a steer changes the plan {#plan}
 
-If your steer changes what the order delivers, the lead updates the plan in the same turn and names your steer:
+If your steer changes what the work delivers, the lead updates the plan in the same turn and names your steer:
 
 ```sh
 fleetd plan drop P3 --steer S12
 ```
 
-That also counts as acknowledging the steer. [Status](/docs/status) shows it on the order: "↳ you steered S12 14:02 ·
+That also counts as acknowledging the steer. `fleetd status` shows it on the work: "↳ you steered S12 14:02 ·
 acknowledged · −1 item".
 
 ## From the command line {#cli}
@@ -103,7 +104,7 @@ acknowledged · −1 item".
    (umask 077; fleetd hub key create --human --name terminal > ~/.fleetd/human.key)
    ```
 
-2. Steer an order's lead (`W41`) or one agent (`T88`):
+2. Steer the lead working on `W41`, or one agent (`T88`):
 
    ```sh
    fleetd steer W41 "skip the docs page; ship the API first" --key-file ~/.fleetd/human.key

@@ -10,8 +10,12 @@ fleetd prompts list
 fleetd prompts show lead.start
 ```
 
-Every word fleetd sends a model is listed in `fleetd prompts list`, in the app's Settings → Prompts, and in the
-[table at the end of this page](#prompts). You can edit each one.
+fleetd has a small set of prompts, about eight: the lead's (with its playbooks), the writer's brief, the reviewer's,
+the verifier's, the research judge's, the steer, the retro, and your own instructions. Each is listed in
+`fleetd prompts list`, in the app's Settings → Prompts, and in the [table at the end of this page](#prompts). You can
+edit each one.
+
+Everything else an agent hears is [event lines](#events): facts in a fixed format, not prompts.
 
 ## How a session gets its instructions {#how}
 
@@ -19,14 +23,45 @@ There is no hidden system prompt. fleetd's text reaches a model in one of three 
 
 | Way | Used for |
 |---|---|
-| The first message of a session | Leads, tasks, reviewers, judges. |
-| A later message into a session | Wakes, review findings, train news, nudges, [steers](/docs/steering). |
-| The input of a one-shot `claude -p` with no tools | The order router, the retro, the status headline. |
+| The first message of a session | Leads, writers, reviewers, verifiers, judges. |
+| A later message into a session | Your chat messages and [steers](/docs/steering), and [event lines](#events). |
+| The input of a one-shot `claude -p` with no tools | The retro. |
 
 Your own claude setup still applies underneath. See [Config & files](/docs/config-and-files#claude).
 
 Agents act through fleetd's MCP tools. The list, generated from the code, is in
 [Agent tools](/docs/reference/agent-tools).
+
+## Event lines {#events}
+
+When something happens that a lead or agent should know, fleetd tells it in one short line per event. The lines for
+one wake arrive together:
+
+```text
+PR #12 merged
+T4 failed: CI red in rust (macos)
+agent R2 finished: 2 blockers
+agents: 7 running of 12, 2 queued
+```
+
+| | |
+|---|---|
+| Who writes them | fleetd's code, from the event. No model writes them. |
+| Format | One line per event, with the same fields every time. |
+| Editable | No. They aren't prompts and don't appear under Prompts. |
+
+## The lead in chat {#lead-chat}
+
+The lead's prompt is written for a chat with you. It is told to:
+
+- write short, plain messages, state first;
+- ask only about product calls, money and irreversible steps, as numbered questions with a recommendation each;
+- read your reply itself, log it with `decide`, and never ask the same question twice;
+- leave internal ids, keys and work numbers out of its messages;
+- plan its work to the project's [Max agents](/docs/projects#max-agents) cap.
+
+The playbooks (feature, bug fix, research, finishing open work) are sections of the lead's prompt. The lead picks one
+from what you wrote.
 
 ## Rules agents work by {#rules}
 
@@ -48,7 +83,7 @@ In place of a clock, leads are told to work for throughput:
 
 They are also told that no gate relaxes for speed: reviews, CI, the train, done-when checks and your approvals stay
 exactly as they are, and no filler work is made up to fill a slot. fleetd backs this up with two wakes, never with a
-task of its own. See [How the lead schedules work](/docs/projects-and-orders#scheduling).
+task of its own. See [How the lead schedules work](/docs/projects#scheduling).
 
 ### Claude's auto memory is off {#auto-memory}
 
@@ -78,7 +113,7 @@ Leads and tasks reach fleetd through MCP tools from a `fleetd` server in their s
 
 | Agent | Gets |
 |---|---|
-| Lead | `spawn_agent`, `message_agent`, `agent_status`, `list_agents`, `stop_agent`, plus `ask`, `decide`, `brief`, `claim_done`, `plan_*`, `gated_run` and more. |
+| Lead | `spawn_agent`, `message_agent`, `agent_status`, `list_agents`, `stop_agent`, plus `decide`, `brief`, `claim_done`, `plan_*`, `gated_run` and more. |
 | Task | `report` (a review verdict, or a writer's PR that is ready for review), `ask_lead` and `claim_done`. |
 
 - Results come back in the lead's next wake, never by polling.
@@ -113,7 +148,7 @@ On the hub machine:
 | `fleetd prompts reset lead.start` | Go back to fleetd's text. |
 
 - A project's version beats the hub-wide one, which beats fleetd's.
-- One-shots and playbooks have only the hub-wide level.
+- The retro has only the hub-wide level.
 - Your versions are files under `~/.fleetd/hub/prompts/`. Change them with `fleetd prompts edit`, not by hand.
 - From an MCP client: `prompts_list`, `prompt_get`, `prompt_set` (with `dryRun` to see the warnings only) and
   `prompt_reset`.
@@ -155,10 +190,8 @@ Your version stays in use.
   merged, Keep mine, or Use the new default.
 - On the hub, `fleetd prompts list` marks it `update`, and `fleetd prompts diff <id>` shows both changes.
 
-:::caution
-An edited playbook gets no notice when fleetd's version changes. After an update, check it with
-`fleetd prompts diff playbook.<name>`.
-:::
+If fleetd merges or removes a prompt you edited, your edit moves into the prompt that replaces it, or Settings →
+Prompts flags it for you to review.
 
 ## What a running agent keeps {#pinning}
 
@@ -168,8 +201,8 @@ attempt, a lead at its next start. To give a running lead your edit now, restart
 
 ## See exactly what an agent was told {#told}
 
-In an order, click "What the lead was told", or open an agent's sheet. It shows the exact first message, which version
-of each prompt it used, and the tools it never gets.
+In a project's chat, open "What the lead was told", or open an agent from the agents strip. It shows the exact first
+message, which version of each prompt it used, and the tools it never gets.
 
 On the hub machine:
 
@@ -181,8 +214,8 @@ fleetd prompts show --session <machine>/<thread>
 
 ## Not editable {#not-editable}
 
-MCP tool descriptions, fleetd's agent tools included, and what the hub answers back (each `next:` and `fix:`) are
-tied to code: a description must match its tool, and a `next:` must name a real tool or command. See
+[Event lines](#events), MCP tool descriptions (fleetd's agent tools included), and what the hub answers back (each
+`next:` and `fix:`) are tied to code: a description must match its tool, and a `next:` must name a real tool or command. See
 [Agent tools](/docs/reference/agent-tools) and the [CLI reference](/docs/reference/cli).
 
 ## Every prompt {#prompts}
