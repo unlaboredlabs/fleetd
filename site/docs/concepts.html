@@ -36,6 +36,7 @@
 <li><a href="/docs/machines">Machines</a></li>
 <li><a href="/docs/projects-and-orders">Projects &amp; orders</a></li>
 <li><a href="/docs/steering">Steering</a></li>
+<li><a href="/docs/merge-train">Merge train</a></li>
 <li><a href="/docs/approvals-and-secrets">Approvals &amp; secrets</a></li>
 <li><a href="/docs/what-agents-are-told">What agents are told</a></li>
 <li><a href="/docs/desktop-app">The desktop app</a></li>
@@ -86,7 +87,8 @@ ready change onto its base, waits for CI on that exact head and squash-merges it
 no check but <code>fleetd/train</code>, and no workflow's <code>on:</code> can run for the PR) merges on fleetd's own checks, and the merge
 says so. A change's tier sets its reviews:
 S needs none, M one clean review, L two plus a verifier, each bound to the current patch. A PR body needs a
-<code>Source:</code> line naming what it serves. You can freeze a repo's train with <code>train_freeze</code>.</p>
+<code>Source:</code> line naming what it serves. You can freeze a repo's train with <code>train_freeze</code>. Disjoint ready PRs merge
+together in one CI run, and a PR stacked on another is tested ahead on it; see <a href="/docs/merge-train">Merge train</a>.</p>
 <h2 id="done-checked">Done, checked<a class="anchor" href="#done-checked" aria-label="Link to this section">#</a></h2>
 <p>A lead can't just say "done". <code>fleetd claim done</code> makes the hub run the workstream's done-when checks itself
 (a PR merged, CI green, a command or test on a machine, an HTTP check, a judge, a person), and only all of them

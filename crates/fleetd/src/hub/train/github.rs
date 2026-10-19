@@ -15,6 +15,8 @@ use crate::hub::status::fresh::{self, Fresh};
 use fleetd_contracts::projects::CiInfo;
 
 pub const TRAIN_CONTEXT: &str = "fleetd/train";
+/// The speculative CI of a stacked PR on top of its parent: informative, never required.
+pub const STACK_CONTEXT: &str = "fleetd/stack";
 pub const GH_AUTH_FIX: &str = "run `gh auth login` on the hub machine";
 
 pub struct GhOut {
@@ -94,13 +96,67 @@ pub struct PullBase {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+pub struct Label {
+    pub name: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
 pub struct Pull {
+    #[serde(default)]
+    pub number: i64,
+    #[serde(default)]
+    pub title: String,
     pub state: String,
+    /// Absent from a PR list, which has `merged_at` only.
+    #[serde(default)]
     pub merged: bool,
+    #[serde(default)]
+    pub merged_at: Option<String>,
     pub merge_commit_sha: Option<String>,
     pub body: Option<String>,
     pub head: PullHead,
     pub base: PullBase,
+    #[serde(default)]
+    pub labels: Vec<Label>,
+}
+
+/// The label that keeps a PR off the train until someone takes it off.
+pub const HOLD_LABEL: &str = "hold";
+
+impl Pull {
+    pub fn held(&self) -> bool {
+        self.labels
+            .iter()
+            .any(|l| l.name.eq_ignore_ascii_case(HOLD_LABEL))
+    }
+}
+
+/// The machine-readable line in a batch PR's body naming each member and the head it was built from
+/// (`fleetd-batch: #7@<sha> #8@<sha>`), which recovery and the `pr_merged` check read.
+pub const BATCH_MARKER: &str = "fleetd-batch:";
+
+/// Each member a batch PR's body names on its `fleetd-batch:` line, with the head sha it was built from (None when
+/// the line names none).
+pub fn batch_heads(body: &str) -> Vec<(i64, Option<String>)> {
+    body.lines()
+        .find_map(|l| l.trim().strip_prefix(BATCH_MARKER))
+        .map(|rest| {
+            rest.split_whitespace()
+                .filter_map(|w| {
+                    let (n, sha) = match w.trim_start_matches('#').split_once('@') {
+                        Some((n, sha)) => (n, Some(sha.to_lowercase())),
+                        None => (w.trim_start_matches('#'), None),
+                    };
+                    Some((n.parse().ok()?, sha))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The PR numbers a batch PR's body names on its `fleetd-batch:` line.
+pub fn batch_members(body: &str) -> Vec<i64> {
+    batch_heads(body).into_iter().map(|(n, _)| n).collect()
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -117,6 +173,20 @@ pub struct CheckRun {
     pub completed_at: Option<String>,
     #[serde(default)]
     pub head_sha: Option<String>,
+}
+
+/// Whether `new` replaces `seen`, a run of the same check: the newer one does, except that a cancelled twin never
+/// stands in for a run that is still going (a superseded workflow run is cancelled while its replacement runs).
+fn supersedes(new: &CheckRun, seen: &CheckRun) -> bool {
+    let cancelled = |r: &CheckRun| r.conclusion.as_deref() == Some("cancelled");
+    let running = |r: &CheckRun| r.status != "completed";
+    if cancelled(new) && running(seen) {
+        return false;
+    }
+    if cancelled(seen) && running(new) {
+        return true;
+    }
+    new.id > seen.id
 }
 
 #[derive(Deserialize)]
@@ -334,7 +404,8 @@ impl TrainGitHub {
         }
         args.push(path.into());
         for (k, v) in fields {
-            args.push("-f".into());
+            // `draft` is a JSON boolean; -f would send the string "true".
+            args.push(if *k == "draft" { "-F" } else { "-f" }.into());
             args.push(format!("{k}={v}"));
         }
         let out = self.gh.run(args).await.map_err(|spawn| {
@@ -442,7 +513,7 @@ impl TrainGitHub {
         let mut latest: HashMap<String, CheckRun> = HashMap::new();
         for r in runs.check_runs {
             match latest.get(&r.name) {
-                Some(seen) if seen.id >= r.id => {}
+                Some(seen) if !supersedes(&r, seen) => {}
                 Some(_) => {
                     latest.insert(r.name.clone(), r);
                 }
@@ -456,6 +527,27 @@ impl TrainGitHub {
             .into_iter()
             .filter_map(|n| latest.remove(&n))
             .collect())
+    }
+
+    /// Posts `state` of the `fleetd/stack` context on a stacked PR's head: how it fares on top of its parent.
+    pub async fn post_stack_status(
+        &self,
+        repo: &str,
+        sha: &str,
+        state: &str,
+        description: &str,
+        target_url: &str,
+    ) -> Result<(), GhError> {
+        let description: String = description.chars().take(140).collect();
+        let fields = [
+            ("state", state),
+            ("context", STACK_CONTEXT),
+            ("description", description.as_str()),
+            ("target_url", target_url),
+        ];
+        self.json::<Value>("POST", &format!("repos/{repo}/statuses/{sha}"), &fields)
+            .await
+            .map(|_| ())
     }
 
     /// Posts `fleetd/train=success` on `sha`.
@@ -476,14 +568,20 @@ impl TrainGitHub {
             .map(|_| ())
     }
 
-    /// Squash-merges pinned to `sha`.
-    pub async fn merge(&self, repo: &str, n: i64, sha: &str) -> Result<MergeOutcome, GhError> {
+    /// Squash-merges pinned to `sha`; `message` is the squash commit's title and body when GitHub's default won't do.
+    pub async fn merge(
+        &self,
+        repo: &str,
+        n: i64,
+        sha: &str,
+        message: Option<(&str, &str)>,
+    ) -> Result<MergeOutcome, GhError> {
+        let mut fields = vec![("merge_method", "squash"), ("sha", sha)];
+        if let Some((title, body)) = message {
+            fields.extend([("commit_title", title), ("commit_message", body)]);
+        }
         match self
-            .call(
-                "PUT",
-                &format!("repos/{repo}/pulls/{n}/merge"),
-                &[("merge_method", "squash"), ("sha", sha)],
-            )
+            .call("PUT", &format!("repos/{repo}/pulls/{n}/merge"), &fields)
             .await?
         {
             Reply::Err {
@@ -521,6 +619,117 @@ impl TrainGitHub {
         )
         .await
         .map(|_| ())
+    }
+
+    /// Opens a PR from `head` (a branch of `repo`) into `base`, or, when one is already open, retitles it. Its number.
+    pub async fn open_pull(
+        &self,
+        repo: &str,
+        head: &str,
+        base: &str,
+        title: &str,
+        body: &str,
+        draft: bool,
+    ) -> Result<i64, GhError> {
+        #[derive(Deserialize)]
+        struct Opened {
+            number: i64,
+        }
+        if let Some(open) = self.open_pull_for(repo, head).await? {
+            self.edit_pull(repo, open, &[("title", title), ("body", body)])
+                .await?;
+            return Ok(open);
+        }
+        let draft = if draft { "true" } else { "false" };
+        let fields = [
+            ("head", head),
+            ("base", base),
+            ("title", title),
+            ("body", body),
+            ("draft", draft),
+        ];
+        let opened: Opened = self
+            .json("POST", &format!("repos/{repo}/pulls"), &fields)
+            .await?;
+        Ok(opened.number)
+    }
+
+    /// The open PR whose head is `branch` of `repo`, if any.
+    pub async fn open_pull_for(&self, repo: &str, branch: &str) -> Result<Option<i64>, GhError> {
+        let pulls = self.pulls_for(repo, branch, "open").await?;
+        Ok(pulls.first().map(|p| p.number))
+    }
+
+    /// PRs whose head is `branch` of `repo`, in `state` ("open", "closed"), newest first.
+    pub async fn pulls_for(
+        &self,
+        repo: &str,
+        branch: &str,
+        state: &str,
+    ) -> Result<Vec<Pull>, GhError> {
+        let owner = repo.split('/').next().unwrap_or_default();
+        self.json(
+            "GET",
+            &format!("repos/{repo}/pulls?head={owner}:{branch}&state={state}&per_page=10"),
+            &[],
+        )
+        .await
+    }
+
+    /// PATCHes the PR: title, body, base or state.
+    pub async fn edit_pull(
+        &self,
+        repo: &str,
+        n: i64,
+        fields: &[(&str, &str)],
+    ) -> Result<(), GhError> {
+        self.json::<Value>("PATCH", &format!("repos/{repo}/pulls/{n}"), fields)
+            .await
+            .map(|_| ())
+    }
+
+    /// The repo's branches whose names start with `prefix`.
+    pub async fn matching_branches(
+        &self,
+        repo: &str,
+        prefix: &str,
+    ) -> Result<Vec<String>, GhError> {
+        #[derive(Deserialize)]
+        struct Ref {
+            #[serde(rename = "ref")]
+            ref_: String,
+        }
+        let refs: Vec<Ref> = self
+            .json(
+                "GET",
+                &format!("repos/{repo}/git/matching-refs/heads/{prefix}?per_page=100"),
+                &[],
+            )
+            .await?;
+        Ok(refs
+            .into_iter()
+            .filter_map(|r| r.ref_.strip_prefix("refs/heads/").map(String::from))
+            .collect())
+    }
+
+    /// Deletes a branch of the train's own; one already gone counts as deleted.
+    pub async fn delete_branch(&self, repo: &str, branch: &str) -> Result<(), GhError> {
+        match self
+            .call(
+                "DELETE",
+                &format!("repos/{repo}/git/refs/heads/{branch}"),
+                &[],
+            )
+            .await?
+        {
+            Reply::Ok(_)
+            | Reply::Err {
+                status: 404 | 422, ..
+            } => Ok(()),
+            Reply::Err { message, .. } => Err(GhError::failed(format!(
+                "deleting {branch} on {repo} failed: {message}"
+            ))),
+        }
     }
 
     /// The repo's default branch, the base main CI is read on.
@@ -589,7 +798,7 @@ impl TrainGitHub {
             .collect())
     }
 
-    /// Commit status contexts on `sha` other than the train's own.
+    /// Commit status contexts on `sha` other than fleetd's own (`fleetd/train`, `fleetd/stack`).
     pub async fn status_contexts(&self, repo: &str, sha: &str) -> Result<Vec<String>, GhError> {
         let combined: Value = self
             .json(
@@ -603,7 +812,7 @@ impl TrainGitHub {
             .into_iter()
             .flatten()
             .filter_map(|s| s["context"].as_str())
-            .filter(|c| *c != TRAIN_CONTEXT)
+            .filter(|c| !c.starts_with("fleetd/"))
             .map(str::to_owned)
             .collect())
     }
