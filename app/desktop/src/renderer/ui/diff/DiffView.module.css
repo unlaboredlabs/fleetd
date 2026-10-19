@@ -107,16 +107,16 @@
   min-width: 100%;
 }
 .unified {
-  grid-template-columns: max-content max-content 1ch minmax(0, 1fr);
+  grid-template-columns: max-content max-content 2ch minmax(0, 1fr);
 }
 .split {
-  grid-template-columns: max-content 1ch minmax(0, 1fr) max-content 1ch minmax(0, 1fr);
+  grid-template-columns: max-content 2ch minmax(0, 1fr) max-content 2ch minmax(0, 1fr);
 }
 .nowrap.unified {
-  grid-template-columns: max-content max-content 1ch max-content;
+  grid-template-columns: max-content max-content 2ch max-content;
 }
 .nowrap.split {
-  grid-template-columns: max-content 1ch minmax(max-content, 1fr) max-content 1ch minmax(max-content, 1fr);
+  grid-template-columns: max-content 2ch minmax(max-content, 1fr) max-content 2ch minmax(max-content, 1fr);
 }
 .row {
   display: contents;
@@ -131,6 +131,7 @@
 .mark {
   user-select: none;
   color: var(--quiet);
+  text-align: center;
 }
 .text {
   padding-right: var(--space-3);
