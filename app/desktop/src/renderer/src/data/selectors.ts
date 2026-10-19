@@ -142,7 +142,7 @@ export interface OrderView {
   readonly phase: Phase;
   /** Open asks about this order, now. */
   readonly asks: readonly Ask[];
-  /** False when the asks couldn't be read: the phase then counts no questions, so show no needs-you marks. */
+  /** False when the asks couldn't be read: `asks` is empty and the phase uses the board's cached count instead. */
   readonly asksKnown: boolean;
   /** The card's lanes (active ones), live. */
   readonly lanes: readonly AgentLane[];
@@ -164,7 +164,8 @@ const orderView = (
   const phase = orderPhase({
     state: card.state,
     headline: card.next,
-    openAsks: openAsks.length,
+    // Asks unreadable: fall back to the hub's count from the board, so an order waiting on you still says so.
+    openAsks: asksKnown ? openAsks.length : card.needsYou,
     lanes: [...lanes, ...(detail?.doneLanes ?? [])],
     hasTasks: card.total > 0,
     prs: card.prs,

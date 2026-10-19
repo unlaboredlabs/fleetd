@@ -110,7 +110,8 @@ describe("a failed asks read", () => {
     let s = withBoard(run([live(), snapshot(1)]), [card("W1", { phase: "waiting_on_you", needsYou: 1 })]);
     expect(selectBoard(s)).toBeUndefined();
     s = failRead(s, "asks_list", { state: "open" }, { code: "failed", message: "node offline" });
-    expect(selectBoard(s)?.map((o) => [o.card.workstreamId, o.phase.phase, o.asksKnown])).toEqual([["W1", "working", false]]);
+    // The board's own count stands in: an order waiting on you still says so, and sorts first.
+    expect(selectBoard(s)?.map((o) => [o.card.workstreamId, o.phase.phase, o.asksKnown])).toEqual([["W1", "waiting_on_you", false]]);
     expect(selectOrder("W1")(s)?.asksKnown).toBe(false);
     expect(selectAsksError(s)?.message).toBe("node offline");
     expect(selectNeedsYouCount(s)).toBeUndefined();
@@ -118,6 +119,15 @@ describe("a failed asks read", () => {
     expect(selectAsksError(s)).toBeUndefined();
     expect(selectBoard(s)?.[0]?.asksKnown).toBe(true);
     expect(selectBoard(s)?.[0]?.phase.phase).toBe("waiting_on_you");
+  });
+
+  it("falls back to the board's needsYou, which sorts the order above working ones", () => {
+    let s = withBoard(run([live(), snapshot(1)]), [card("W1"), card("W2", { needsYou: 2, updatedAt: "2026-10-19T09:00:00.000Z" })]);
+    s = failRead(s, "asks_list", { state: "open" }, { code: "failed", message: "x" });
+    expect(selectBoard(s)?.map((o) => [o.card.workstreamId, o.phase.phase, o.phase.detail])).toEqual([
+      ["W2", "waiting_on_you", "2 questions"],
+      ["W1", "working", "1 working"],
+    ]);
   });
 
   it("only the open-asks read counts, and a snapshot forgets the failure", () => {

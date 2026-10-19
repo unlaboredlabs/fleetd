@@ -13,7 +13,7 @@ import {
 import type { HubError, HubFrame } from "../../../shared/hub";
 import type { LiveScope } from "../../../shared/ipc";
 import { effectsOf, matches, type Invalidation } from "./effects";
-import { applyFrame, createDataStore, failRead, ingest, type DataStore } from "./store";
+import { applyFrame, applyReply, applyUndo, createDataStore, failRead, ingest, type DataStore } from "./store";
 
 export class CallError extends Error {
   constructor(readonly error: HubError) {
@@ -87,7 +87,7 @@ export interface DataLayer {
 
 export const createDataLayer = (hub: HubApi, now: () => number = Date.now): DataLayer => {
   const store = createDataStore();
-  const call = typedCall(hub.call);
+  const typed = typedCall(hub.call);
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -161,6 +161,11 @@ export const createDataLayer = (hub: HubApi, now: () => number = Date.now): Data
     timer = undefined;
     const batch = pending;
     pending = [];
+    invalidateNow(batch);
+  };
+
+  /** Refetch what `batch` names; a read already in flight is marked dirty, so its (older) answer never lands. */
+  function invalidateNow(batch: readonly Invalidation[]): void {
     const stale = (q: Query): boolean => {
       const [scope, tool, input] = q.queryKey;
       return scope === "call" && batch.some((i) => i.tool === tool && matches(input, i.where));
@@ -168,6 +173,35 @@ export const createDataLayer = (hub: HubApi, now: () => number = Date.now): Data
     const inFlight = (q: Query): boolean => q.state.fetchStatus === "fetching";
     for (const q of queryClient.getQueryCache().findAll({ predicate: (q) => stale(q) && inFlight(q) })) dirty.add(q.queryHash);
     void queryClient.invalidateQueries({ predicate: (q) => stale(q) && !inFlight(q) });
+  }
+
+  // The person's own writes change the asks before any event says so. Apply them now and refetch now, not after the
+  // event batch window: a list read that raced the write must not land in between and bring an answered ask back.
+  const afterWrite = (tool: ToolName, output: unknown): void => {
+    if (tool !== "inbox_reply" && tool !== "inbox_undo") return;
+    const before = store.getState();
+    store.setState(
+      tool === "inbox_reply"
+        ? applyReply(before, output as ToolOutput<"inbox_reply">)
+        : applyUndo(before, output as ToolOutput<"inbox_undo">),
+    );
+    const askIds =
+      tool === "inbox_reply"
+        ? (output as ToolOutput<"inbox_reply">).applied.flatMap((a) => (a.askId === undefined ? [] : [a.askId]))
+        : [(output as ToolOutput<"inbox_undo">).ask.askId];
+    const orders = new Set(askIds.flatMap((id) => { const w = before.asks?.[id]?.workstreamId; return w === undefined ? [] : [w]; }));
+    invalidateNow([
+      { tool: "asks_list" },
+      { tool: "orders_board" },
+      { tool: "status_get" },
+      ...[...orders].map((workstreamId) => ({ tool: "order_get" as const, where: { workstreamId } })),
+    ]);
+  };
+
+  const call: Call = async (tool, input, options) => {
+    const outcome = await typed(tool, input, options);
+    if (outcome.ok) afterWrite(tool, outcome.output);
+    return outcome;
   };
 
   const onFrame = (frame: HubFrame) => {

@@ -389,3 +389,19 @@ export const failRead = (s: DataState, tool: unknown, input: unknown, error: Hub
   if (tool !== "asks_list" || asks?.state !== "open" || asks.batchId !== undefined) return s;
   return { ...s, asksError: error };
 };
+
+const CLOSES: ReadonlySet<string> = new Set(["answered", "skipped", "withdrawn", "retired"]);
+
+/**
+ * The person's own reply, applied the moment the hub confirms it rather than when its event arrives: every ask it
+ * closed leaves the open asks, so counts drop at once. The refetch that follows (and any event) agrees.
+ */
+export const applyReply = (s: DataState, output: ToolOutput<"inbox_reply">): DataState =>
+  output.applied.reduce(
+    (next, a) => (a.askId !== undefined && CLOSES.has(a.outcome) ? patchAsk(next, a.askId, { state: "answered" }) : next),
+    s,
+  );
+
+/** An undone answer: the hub returns the ask, open again. */
+export const applyUndo = (s: DataState, output: ToolOutput<"inbox_undo">): DataState =>
+  s.asks === undefined ? s : { ...s, asks: { ...s.asks, [output.ask.askId]: output.ask } };
