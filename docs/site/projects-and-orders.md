@@ -93,6 +93,26 @@ The lead freezes a brief, runs writer and reviewer tasks on your workers, and pu
 board shows every order's phase and live agents; open one for its PRs, checks and the lead's conversation
 ([Follow an order](desktop-app.md#order)).
 
+## How the lead schedules work {#scheduling}
+
+The lead plans each order as small items (sizes S, M or L, some waiting `after` others) and starts every item it can in
+parallel, as long as slots are free. fleetd keeps that going without ever starting work by itself:
+
+- **A free slot is offered.** When a slot frees and the lead is idle, fleetd wakes it with the next plan items that
+  can start: in an order whose brief is frozen, not waiting on another open item, and with no task or PR yet. A
+  finish-all order with room for another child is offered too; its lead picks from the inventory. When nothing
+  qualifies, the lead stays idle.
+- **Once per change.** A lead hears about the same runnable work once. It is told again only when that changes: an
+  item is taken, done, added or unblocked.
+- **Slices are reviewed as they land.** A writer reports each finished PR with `report` (kind `slice_ready`), or
+  marks its draft PR ready on GitHub, which the train notices on its own polling (no webhook needed); fleetd puts it
+  on the train and starts its reviewers under the order's review rules right away, while the writer goes on. A
+  new head is reviewed again from what changed, at the same blocking-only bar.
+
+Nothing here relaxes a gate: every PR still gets its tier's reviews and green CI and goes through the train, done is
+still decided by the done-when checks, and anything that needs your approval still waits for it. The slots board and
+the lead's limit of 32 open tasks apply to the reviewers fleetd starts as to any task.
+
 ## Add to it, steer it, stop it
 
 In the order, Enter adds your words to the lead's queue: it takes them in at its next step, after the tool it is

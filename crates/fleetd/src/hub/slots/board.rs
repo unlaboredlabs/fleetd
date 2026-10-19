@@ -215,6 +215,15 @@ impl Board {
         }
     }
 
+    /// How many more write, read or review tasks of the project could take a slot now: under the cap less the lead
+    /// band, and under its share.
+    pub fn room(&self, r: &ProjectRef) -> i64 {
+        let v = self.view(r);
+        (v.cap - reserved_band(v.cap) - v.used)
+            .min(v.share - v.project_used)
+            .max(0)
+    }
+
     fn reason_for(&self, i: usize) -> Option<String> {
         let c = &self.claims[i];
         blocker(self.view(&c.project_ref), c.priority)
@@ -571,6 +580,20 @@ mod tests {
             Some("slots: project share 3/3 in use")
         );
         assert_eq!(blocker(shared, SlotPriority::Lead), None);
+    }
+
+    #[test]
+    fn room_is_what_a_task_of_the_project_could_take_now() {
+        let (a, b) = (project("pa"), project("pb"));
+        let mut k = Kit::new(10);
+        assert_eq!(k.board.room(&a), 9, "one slot is the lead band");
+        k.work("T1");
+        k.acquire(&lead_holder(&b), &b, SlotPriority::Lead);
+        assert_eq!((k.board.room(&a), k.board.room(&b)), (7, 7));
+        k.set_cap(None, Some((a.clone(), 1)));
+        assert_eq!((k.board.room(&a), k.board.room(&b)), (0, 7));
+        k.release("T1");
+        assert_eq!(k.board.room(&a), 1);
     }
 
     #[test]

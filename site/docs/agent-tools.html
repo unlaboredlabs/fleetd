@@ -537,21 +537,23 @@
 <h2 id="task-tools">Task tools<a class="anchor" href="#task-tools" aria-label="Link to this section">#</a></h2>
 <p>Every task's agent gets these: implementers, readers, reviewers, verifiers and QA.</p>
 <div class="table"><table><thead><tr><th>Tool</th><th>What it does</th><th>Needs a human</th></tr></thead><tbody>
-<tr><td><a href="#report"><code>report</code></a></td><td>Record your review verdict once, before your final message: the full SHA you reviewed, the number of blocking and non-blocking findings and a one-paragraph summary.</td><td>No</td></tr>
+<tr><td><a href="#report"><code>report</code></a></td><td>A reviewer records its verdict once, before its final message: the full SHA it reviewed, the number of blocking and non-blocking findings and a one-paragraph summary.</td><td>No</td></tr>
 <tr><td><a href="#ask_lead"><code>ask_lead</code></a></td><td>Ask your lead a question.</td><td>No</td></tr>
 <tr><td><a href="#claim_done-task"><code>claim_done</code></a></td><td>Claim your workstream done: fleetd runs its done-when checks itself.</td><td>No</td></tr>
 </tbody></table></div>
 <h3 id="report">report<a class="anchor" href="#report" aria-label="Link to this section">#</a></h3>
-<p>Record your review verdict once, before your final message: the full SHA you reviewed, the number of blocking and non-blocking findings and a one-paragraph summary.</p>
+<p>A reviewer records its verdict once, before its final message: the full SHA it reviewed, the number of blocking and non-blocking findings and a one-paragraph summary. A writer reports each slice whose PR is complete with kind slice_ready and its prUrl: its review starts at once while you go on with the next slice.</p>
 <div class="table"><table><thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr></thead><tbody>
-<tr><td><code>blocking</code></td><td>integer</td><td>yes</td><td></td></tr>
+<tr><td><code>blocking</code></td><td>integer</td><td>no</td><td></td></tr>
+<tr><td><code>kind</code></td><td>string</td><td>no</td><td>Verdict (the default) for a review, slice_ready for a writer's PR that is ready. One of <code>verdict</code>, <code>slice_ready</code>.</td></tr>
 <tr><td><code>metricValues</code></td><td>object</td><td>no</td><td>A research workstream's judge reports its metric for the baseline and the candidate; the hub computes the verdict.</td></tr>
 <tr><td><code>metricValues.baseline</code></td><td>number</td><td>yes</td><td></td></tr>
 <tr><td><code>metricValues.candidate</code></td><td>number</td><td>yes</td><td></td></tr>
-<tr><td><code>nonBlocking</code></td><td>integer</td><td>yes</td><td></td></tr>
-<tr><td><code>prHeadSha</code></td><td>string</td><td>yes</td><td>Full lowercase hex commit SHA, 40 or 64 characters.</td></tr>
-<tr><td><code>summary</code></td><td>string</td><td>yes</td><td>At most 1000 characters.</td></tr>
-<tr><td><code>taskId</code></td><td>string</td><td>yes</td><td><code>T&lt;n&gt;</code>, e.g. <code>T1</code>.</td></tr>
+<tr><td><code>nonBlocking</code></td><td>integer</td><td>no</td><td></td></tr>
+<tr><td><code>prHeadSha</code></td><td>string</td><td>no</td><td>Full lowercase hex commit SHA, 40 or 64 characters.</td></tr>
+<tr><td><code>prUrl</code></td><td>string</td><td>no</td><td>Like <code>https://github.com/&lt;owner&gt;/&lt;name&gt;/pull/&lt;n&gt;</code>.</td></tr>
+<tr><td><code>summary</code></td><td>string</td><td>no</td><td>At most 1000 characters.</td></tr>
+<tr><td><code>taskId</code></td><td>string</td><td>no</td><td><code>T&lt;n&gt;</code>, e.g. <code>T1</code>.</td></tr>
 </tbody></table></div>
 <p><strong>Who may call:</strong> a task's agent, checked by the hub. <strong>Needs a human:</strong> no.</p>
 <pre class="code json" data-copy><code>{
