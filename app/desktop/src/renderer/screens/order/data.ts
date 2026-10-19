@@ -181,13 +181,6 @@ export function useOrder(workstreamId: string, jump?: Jump): [OrderData, OrderAc
   // The lead's messages as they streamed, in full (the store keeps them per lead).
   const stream = useData(selectLeadStream(page?.lead?.laneId ?? ""));
 
-  // The live feed for this order's lanes and its lead's text while the view is open; the board's when it closes.
-  // (A view-scoped subscription setting, not a read: the frames themselves go through the store.)
-  useEffect(() => {
-    void window.fleetd.hub.live({ board: false, focus: workstreamId });
-    return () => void window.fleetd.hub.live({ board: true });
-  }, [workstreamId]);
-
   // Read by the actions and the reconnect resend, which outlive a render.
   const steersRef = useRef(local.steers);
   const sendingRef = useRef(local.sending);

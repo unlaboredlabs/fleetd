@@ -12,7 +12,7 @@ import { postDigest, useStatusDigest } from "../status/digest";
 import { useHubState } from "./hubFeed";
 import { InboxPanel } from "./InboxPanel";
 import { leadLaneId, selectBoard, selectInbox, selectMachines, selectNeedsYouCount, selectProjects } from "../../src/data/selectors";
-import { useData } from "../../src/data/react";
+import { useData, useDataLayer } from "../../src/data/react";
 import { Seen, sidebarOrders, toShellData, type ShellData } from "./model";
 import { navigate, useRoute } from "./navigation";
 import type { Route, Screen } from "./routes";
@@ -47,6 +47,13 @@ const JUMPS = [1, 2, 3, 4, 5, 6, 7, 8, 9] as const;
 
 export function Shell() {
   const route = useRoute();
+  // The live feed follows the route: an open order gets its lanes and its lead's text, every other screen the
+  // board's (the strips and Machines read it). The layer is the only caller of hub.live and sends only changes.
+  const layer = useDataLayer();
+  const liveFocus = route.screen.id === "order" ? route.screen.orderId : undefined;
+  useEffect(() => {
+    layer.setLive(liveFocus === undefined ? { board: true } : { focus: liveFocus });
+  }, [layer, liveFocus]);
   const hub = useHubState();
   const data = useShellData();
   // Undefined until this connection's asks loaded: a "0" then would claim nothing needs you.
