@@ -137,7 +137,6 @@ export const screens: readonly Screen[] = [
     route: CHAT,
     fixtures: ["live-0", "live-3", "live-20"],
     variant: "strip",
-    pending: "the chat screen (F3) mounts LiveStrip and A1 adds #/project/<machineId>/<projectId>",
   },
   // F4 (A3): the composer under storefront's chat while the lead works. Sent from the box: refused (Resend, Edit,
   // Dismiss), cut off by the link, unanswered (Resend, Dismiss), and one still sending; then a message that found no
