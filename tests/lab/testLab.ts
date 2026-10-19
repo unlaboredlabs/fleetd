@@ -11,6 +11,7 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { askCard } from "./askCard.ts";
 import { degradedMachine } from "./degradedMachine.ts";
 import { demoFanout } from "./demoFanout.ts";
+import { desktopShell } from "./desktopShell.ts";
 import { FAILURE_SCENARIOS } from "./failure/index.ts";
 import {
   type Body,
@@ -94,6 +95,7 @@ const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab)
   { name: "ask", run: askCard, only: true },
   // The app demo: one order fanned out to writers, reviewers and verifiers on the testbed. Only when named.
   { name: "demo", run: demoFanout, only: true },
+  { name: "desktop", run: desktopShell, only: true },
   // The native runner's failure scenarios (tests/lab/failure): they restart lab-b and add a machine, so they go last.
   ...FAILURE_SCENARIOS,
 ];
@@ -143,6 +145,15 @@ async function main() {
     for (const m of MACHINES) joinNode(HUB_URL, hubHome, m.id);
 
     client = await connectClient(key);
+    // FLEETD_LAB_APP_HANDOFF=<file>: a human key, as the desktop app pairs one, for an /app client watching the run
+    // (app/desktop/fixtures/kit/record.ts records the run's frames and call results into fixtures).
+    const handoff = process.env.FLEETD_LAB_APP_HANDOFF;
+    if (handoff !== undefined) {
+      const human = /fld_[a-z2-7]{20,}/u.exec(cli("hub", "key", "create", "--home", hubHome, "--human", "--name", "recorder"))?.[0];
+      if (human === undefined) throw new Error("hub key create --human printed no key");
+      fs.writeFileSync(handoff, `${JSON.stringify({ hubUrl: HUB_URL, key: human })}\n`, { mode: 0o600 });
+      ok(`app handoff written to ${handoff}`);
+    }
     const callTool = callToolWith(() => client!);
     ok(`MCP client connected; ${(await client.listTools()).tools.length} tools`);
     const cursor = async () => (await callTool("fleetd_status")).body.cursor as number;

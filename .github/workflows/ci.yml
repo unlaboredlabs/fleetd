@@ -103,7 +103,7 @@ jobs:
         run: |
           run=true
           if [ "$RUNNER_OS" = macOS ] && git rev-parse -q --verify HEAD^1 >/dev/null &&
-            git diff --quiet HEAD^1 HEAD -- app crates/fleetd-contracts crates/fleetd/src/node/power Cargo.toml Cargo.lock .github/workflows/ci.yml; then
+            git diff --quiet HEAD^1 HEAD -- app ':(exclude)app/desktop' crates/fleetd-contracts crates/fleetd/src/node/power Cargo.toml Cargo.lock .github/workflows/ci.yml; then
             run=false
             echo "Nothing macOS-relevant changed; the Linux leg covers this."
           fi
@@ -170,3 +170,46 @@ jobs:
       - uses: actions/checkout@v7
       - if: hashFiles('crates/fleetd/Cargo.toml') != ''
         run: .github/release/check-darwin-deps.sh
+
+  desktop:
+    # app/desktop, the Electron app (its own pnpm workspace): typecheck, lint, unit tests and a build. Runs when
+    # app/desktop or this workflow changed; otherwise it reports success at once, so it can be a required check.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: app/desktop
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+      - name: Scope
+        id: scope
+        working-directory: .
+        run: |
+          run=true
+          if git rev-parse -q --verify HEAD^1 >/dev/null && git diff --quiet HEAD^1 HEAD -- app/desktop .github/workflows/ci.yml; then
+            run=false
+            echo "app/desktop didn't change."
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+      - if: steps.scope.outputs.run == 'true'
+        uses: pnpm/action-setup@v6
+        with:
+          package_json_file: app/desktop/package.json
+      - if: steps.scope.outputs.run == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: app/desktop/pnpm-lock.yaml
+      - if: steps.scope.outputs.run == 'true'
+        run: pnpm install --frozen-lockfile
+      - if: steps.scope.outputs.run == 'true'
+        run: pnpm typecheck
+      - if: steps.scope.outputs.run == 'true'
+        run: pnpm lint
+      - if: steps.scope.outputs.run == 'true'
+        run: pnpm test
+      - if: steps.scope.outputs.run == 'true'
+        run: pnpm build

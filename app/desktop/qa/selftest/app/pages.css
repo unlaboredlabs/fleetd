@@ -1,0 +1,22 @@
+html, body { margin: 0; height: 100%; font: 14px/20px sans-serif; color: #1c2024; background: #fff; }
+@media (prefers-color-scheme: dark) { html, body { color: #edeef0; background: #111214; } }
+.page { box-sizing: border-box; height: 100%; padding: 24px; overflow: auto; }
+.case { margin: 0 0 24px; }
+.w200 { width: 200px; }
+.nowrap { white-space: nowrap; }
+.clip { overflow: hidden; }
+.ellipsis { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.short { height: 20px; }
+.clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.scroller { height: 80px; overflow: auto; border: 1px solid #ccc; }
+.stack { position: relative; }
+.pull-up { margin-top: -20px; }
+.overlay { position: absolute; left: 40px; top: 2px; }
+.edge-left { position: fixed; left: 2px; top: 300px; }
+.edge-right { position: fixed; right: 3px; top: 340px; }
+pre, code { font-family: monospace; }
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+.sr-only-inset { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.sticky-head { position: sticky; top: 0; background: #fff; }
+@media (prefers-color-scheme: dark) { .sticky-head { background: #111214; } }
+.sticky-clear { position: sticky; top: 0; }

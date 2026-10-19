@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2024", "ESNext.Array", "DOM"],
+    "types": ["node"],
+    "allowImportingTsExtensions": true,
+    "tsBuildInfoFile": "./node_modules/.cache/tsconfig.fixtures.tsbuildinfo"
+  },
+  "include": ["fixtures/**/*.ts", "src/shared/**/*", "src/main/hub/fixture.ts", "src/main/hub/source.ts", "src/renderer/screens/board/contracts.ts"]
+}
