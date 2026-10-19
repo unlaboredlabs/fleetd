@@ -1,0 +1,2 @@
+- Claim {{claimId}} on {{workstreamId}}: every done-when check passed, but write work that hasn't landed is still open: {{work}}. (Ids, for tools only: {{ids}}.) {{workstreamId}} stays open so that work ships.
+  next: say so in chat in one line, in plain words, no ids. Let it land, then `claim_done` {workstreamId: "{{workstreamId}}"} again. If some of it is truly not needed or failed for good, close over it on purpose: `claim_done` {workstreamId: "{{workstreamId}}", closeOver: "<why, in plain words>"}, and say why in chat.

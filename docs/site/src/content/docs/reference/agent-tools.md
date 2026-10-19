@@ -356,6 +356,7 @@ Claim a workstream done: fleetd runs its frozen done-when checks itself, and onl
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
+| `closeOver` | string | no | At most 300 characters. |
 | `workstreamId` | string | yes | `W<n>`, e.g. `W1`. |
 
 **Who may call:** a lead, a task's agent, checked by the hub. **Needs a human:** no.
@@ -716,6 +717,7 @@ Claim your workstream done: fleetd runs its done-when checks itself.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
+| `closeOver` | string | no | At most 300 characters. |
 | `workstreamId` | string | yes | `W<n>`, e.g. `W1`. |
 
 **Who may call:** a lead, a task's agent, checked by the hub. **Needs a human:** no.

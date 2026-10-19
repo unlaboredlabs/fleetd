@@ -1,0 +1,65 @@
+{
+  "$defs": {
+    "MachineId": {
+      "description": "Machine slug, [a-z0-9-]{1,32}",
+      "pattern": "^[a-z0-9-]{1,32}$",
+      "type": "string"
+    },
+    "ProjectChatState": {
+      "description": "One chat's state, for the sidebar and the status row.",
+      "properties": {
+        "lastMessageAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "lastSeq": {
+          "description": "The newest message's `seq`; 0 for an empty chat.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "leadWorking": {
+          "description": "The lead is mid-turn.",
+          "type": "boolean"
+        },
+        "needsYou": {
+          "description": "The lead's last message waits for a human reply, or an inline item is open.",
+          "type": "boolean"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        }
+      },
+      "required": [
+        "projectRef",
+        "needsYou",
+        "leadWorking",
+        "lastSeq"
+      ],
+      "type": "object"
+    },
+    "ProjectId": {
+      "type": "string"
+    },
+    "ProjectRef": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId"
+      ],
+      "type": "object"
+    },
+    "Timestamp": {
+      "format": "date-time",
+      "type": "string"
+    }
+  },
+  "$ref": "#/$defs/ProjectChatState",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

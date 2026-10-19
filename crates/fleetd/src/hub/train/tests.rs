@@ -2942,3 +2942,42 @@ async fn a_checkout_outside_the_nodes_cmd_roots_says_so_and_needs_a_person() {
         (None, true)
     );
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_done_order_closes_its_leftover_prs_but_keeps_the_review_fixes_it_is_told_to() {
+    let kit = Kit::new();
+    // Tier M: both wait for reviews, so both are leftovers when the order is done.
+    let leftover = kit
+        .enqueue(
+            kit.open_pr(7, "left", &[add("l.txt", "l\n")], "Source: done:0"),
+            Some(Tier::M),
+        )
+        .await;
+    let fix = kit
+        .enqueue(
+            kit.open_pr(8, "fix", &[add("f.txt", "f\n")], "Source: done:0"),
+            Some(Tier::M),
+        )
+        .await;
+
+    let closed = kit
+        .train
+        .close_leftovers(
+            &project(),
+            &ws(),
+            "W1 is done",
+            std::slice::from_ref(&fix.change_id),
+        )
+        .await;
+    assert_eq!(
+        closed.iter().map(|c| c.pr_number.get()).collect::<Vec<_>>(),
+        [7]
+    );
+    assert_eq!(kit.get(&leftover.change_id).state, ChangeState::Abandoned);
+    assert_eq!(kit.get(&fix.change_id).state, ChangeState::Reviewing);
+    let pulls = kit.gh.pulls.lock().unwrap();
+    assert_eq!(
+        (pulls[&7].state.as_str(), pulls[&8].state.as_str()),
+        ("closed", "open")
+    );
+}
