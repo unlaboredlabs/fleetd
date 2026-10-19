@@ -2,6 +2,7 @@
 //! fleet, a project or an order. One task follows the event log and the freshness deadlines; it re-renders only the
 //! scopes someone viewed in the last 10 minutes, at most every 250 ms, and bumps a doc's version only when its
 //! content changes. `status_wait` blocks on that version. Nothing polls.
+pub mod estimate;
 pub mod eta;
 pub mod fresh;
 pub mod headline;
@@ -130,6 +131,8 @@ pub struct Status {
     wake: Notify,
     /// Since-you-looked counts per key, scope and mark, with the seq they run to.
     since_cache: Mutex<HashMap<String, (i64, i64, fleetd_contracts::status::Since)>>,
+    /// Stage weights and durations the progress model measures against; built-in until the nightly recompute.
+    calibration: Mutex<Arc<model::Calibration>>,
 }
 
 fn content_of(doc: &StatusDoc) -> String {
@@ -166,7 +169,26 @@ impl Status {
             headlines: Mutex::default(),
             wake: Notify::new(),
             since_cache: Mutex::default(),
+            calibration: Mutex::default(),
         })
+    }
+
+    /// The progress model's new calibration (at hub start and nightly); every doc re-renders against it.
+    pub fn set_calibration(&self, calibration: Arc<model::Calibration>) {
+        *self.calibration.lock().unwrap_or_else(|e| e.into_inner()) = calibration;
+        {
+            let mut st = self.state.lock().unwrap();
+            let viewed: Vec<String> = st.viewed.keys().cloned().collect();
+            st.dirty.extend(viewed);
+        }
+        self.wake.notify_one();
+    }
+
+    pub fn calibration(&self) -> Arc<model::Calibration> {
+        self.calibration
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     fn view(&self, scope: &StatusScope, now: i64) {
@@ -196,7 +218,7 @@ impl Status {
             };
             st.slots_queued_since
         };
-        let world = match render::World::read(hub, now, since) {
+        let world = match render::World::read(hub, now, since, self.calibration()) {
             Ok(w) => w,
             Err(error) => {
                 tracing::error!(%error, "status: reading the hub failed");
@@ -599,7 +621,7 @@ impl Status {
             },
         };
         let now = now_ms(hub.clock.as_ref());
-        if let Ok(world) = render::World::read(hub, now, None)
+        if let Ok(world) = render::World::read(hub, now, None, self.calibration())
             && let Some(rendered) =
                 render::render(hub, &world, &self.fresh, &scope, hub.events.head())
         {

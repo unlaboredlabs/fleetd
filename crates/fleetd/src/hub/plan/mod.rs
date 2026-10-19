@@ -624,6 +624,7 @@ impl Plans {
                     after,
                     evidence: None,
                     drop_reason: None,
+                    created_ms: Some(now),
                 },
             };
             item.n = store::item_insert(c, &item)?;

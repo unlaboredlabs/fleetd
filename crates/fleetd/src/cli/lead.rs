@@ -1528,6 +1528,9 @@ pub fn format_result(result: &Value) -> String {
         }
         _ => next = "undefined".into(),
     }
+    if let Some(warning) = opt(result, "warning").and_then(Value::as_str) {
+        lines.push(format!("Warning: {warning}"));
+    }
     let next = opt(result, "next")
         .and_then(Value::as_str)
         .map(str::to_owned)
@@ -1938,7 +1941,8 @@ mod tests {
         );
         assert_eq!(
             parse(&["plan", "add", "x", "--milestone", "M1"]).unwrap()["size"],
-            "m"
+            Value::Null,
+            "no size goes as none: the hub counts it as m and warns"
         );
         let edit = parse(&[
             "plan",

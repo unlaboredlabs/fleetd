@@ -137,6 +137,7 @@ protocol with code: a description must match its tool, a <code>next:</code> must
 <div class="table"><table><thead><tr><th>Id</th><th>Sent</th><th>Safety rules</th></tr></thead><tbody>
 <tr><td><code>lead.start</code></td><td>lead start and every lead_restart, followed by the digest</td><td>the lead never writes code (prompt only); delegates only with <code>fleetd task spawn</code>, no other agents (prompt only); asks the human only about product, money, credentials, irreversible (prompt only); secrets only through <code>fleetd ask --kind secret</code>; prod writes, spends and deletes only through <code>fleetd gated run</code>; never blocks on a question (<code>--proceeded</code>) (prompt only); done only through <code>fleetd claim done</code>; every write says what it serves; only the merge train merges; never re-asks a key the digest lists (prompt only); a frozen brief changes only with <code>--amend</code></td></tr>
 <tr><td><code>lead.digest</code></td><td>the top of the lead's first message and of every wake</td><td>the digest is the truth, over the lead's memory (prompt only)</td></tr>
+<tr><td><code>plan.granularity</code></td><td>when <code>fleetd plan add</code> (or <code>plan edit --size</code>) gets an item with no size or one likely over an hour of agent time</td><td></td></tr>
 </tbody></table></div>
 <h3 id="tasks">Tasks<a class="anchor" href="#tasks" aria-label="Link to this section">#</a></h3>
 <div class="table"><table><thead><tr><th>Id</th><th>Sent</th><th>Safety rules</th></tr></thead><tbody>

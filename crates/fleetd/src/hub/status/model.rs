@@ -273,6 +273,11 @@ pub struct Obs {
     pub what: What,
 }
 
+/// A span label that pushes a branch: `git push …` (also inside a compound command) or `gh pr create`.
+pub fn is_push(label: &str) -> bool {
+    label.contains("git push") || label.trim_start().starts_with("gh pr create")
+}
+
 /// Where a Change puts its item. A failed review, a red CI or a rebase conflict send the item back to "PR open";
 /// a refused or abandoned Change no longer counts.
 pub fn change_stage(state: ChangeState) -> Option<ItemStage> {
@@ -623,7 +628,8 @@ pub fn cause_of(event_type: &str, data: &Value, at_ms: i64) -> Option<Cause> {
     })
 }
 
-/// The next point. The estimate may fall only when a cause was observed since the previous point, and that point
+/// The next point. The estimate may fall only when a cause was observed since the previous point (same millisecond
+/// included: an event can land in the ms a point was taken), and that point
 /// says why; otherwise it holds. Verified likewise falls only on added scope or a reopened item.
 pub fn next_point(
     prev: Option<&Point>,
@@ -642,7 +648,7 @@ pub fn next_point(
     };
     let since: Vec<&Cause> = causes
         .iter()
-        .filter(|c| c.at_ms > p.at_ms && c.at_ms <= now)
+        .filter(|c| c.at_ms >= p.at_ms && c.at_ms <= now)
         .collect();
     let verified = if raw_verified < p.verified
         && !since
@@ -875,7 +881,7 @@ mod tests {
 
     #[test]
     fn the_estimate_drops_only_with_a_marker() {
-        let p0 = next_point(None, 40, 20, &[], 0);
+        let p0 = next_point(None, 40, 20, &[], 1_000);
         assert_eq!((p0.pct, p0.verified), (40, 20));
         let held = next_point(Some(&p0), 35, 20, &[], 60_000);
         assert_eq!((held.pct, held.drop.clone()), (40, None), "no cause: hold");

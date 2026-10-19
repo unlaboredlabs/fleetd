@@ -86,6 +86,8 @@ pub struct World {
     pub placeholders: HashMap<String, Placeholder>,
     /// The last day's steers and any still waiting for a receipt, newest first.
     pub steers: Vec<fleetd_contracts::steer::Steer>,
+    /// What the progress model reads beyond this.
+    pub model: super::estimate::ModelData,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -144,13 +146,17 @@ fn estimate_rows(c: &Connection, from_ms: i64) -> rusqlite::Result<Vec<EstRow>> 
     .collect()
 }
 
-const RECENT_TYPES: [&str; 6] = [
+const RECENT_TYPES: [&str; 9] = [
     "machine.offline",
     "machine.slept",
     "change.ci_failed",
     "task.failed",
     "claim.failed",
     "github.drift",
+    // The progress model: stage moves and the causes that may lower a figure.
+    "change.state",
+    "plan.changed",
+    "review.verdict",
 ];
 
 fn recent_events(c: &Connection, from_ms: i64) -> rusqlite::Result<Vec<(String, Value)>> {
@@ -174,7 +180,12 @@ fn recent_events(c: &Connection, from_ms: i64) -> rusqlite::Result<Vec<(String, 
 type ChangeLinks = HashMap<String, (String, Option<String>)>;
 
 impl World {
-    pub fn read(hub: &Hub, now: i64, slots_queued_since: Option<i64>) -> anyhow::Result<World> {
+    pub fn read(
+        hub: &Hub,
+        now: i64,
+        slots_queued_since: Option<i64>,
+        calibration: std::sync::Arc<super::model::Calibration>,
+    ) -> anyhow::Result<World> {
         let since_iso = iso_ms(now - DAY_MS);
         // Bounded reads: open and recent plan items, Changes only as repos (plus the few the last day's CI failures
         // name), so a render costs the same after months of history.
@@ -261,6 +272,14 @@ impl World {
             .collect();
         let failures = item_failures(&items, &recent, &links);
         let steers = crate::hub::steer::store::recent(&hub.db, now - DAY_MS)?;
+        let model = hub.db.with(|c| {
+            Ok(super::estimate::ModelData::read(
+                c,
+                &orders,
+                &since_iso,
+                calibration,
+            )?)
+        })?;
         Ok(World {
             now,
             tz: crate::hub::attention::hub_zone(),
@@ -282,6 +301,7 @@ impl World {
             slots_queued_since,
             placeholders,
             steers,
+            model,
         })
     }
 }
@@ -385,15 +405,15 @@ fn capped<T: PartialEq, const MAX: usize>(mut v: Vec<T>) -> (List<T, 0, MAX>, i6
 }
 
 /// Which orders, items and machines a scope covers.
-struct Scope<'a> {
-    title: String,
-    orders: Vec<&'a Order>,
+pub struct Scope<'a> {
+    pub title: String,
+    pub orders: Vec<&'a Order>,
     /// Items in the figure: open milestones (an order: all its items).
-    items: Vec<&'a ItemRow>,
+    pub items: Vec<&'a ItemRow>,
     /// Items for rates and durations, done milestones included.
-    history: Vec<&'a ItemRow>,
-    pkeys: HashSet<String>,
-    machines: HashSet<String>,
+    pub history: Vec<&'a ItemRow>,
+    pub pkeys: HashSet<String>,
+    pub machines: HashSet<String>,
 }
 
 fn status_steer(x: &fleetd_contracts::steer::Steer) -> StatusSteer {
@@ -907,6 +927,18 @@ pub fn render(
     let mut wake = Wake(None, now);
     let virtuals = virtual_orders(w, &s);
     let f = figure(w, &s, &virtuals);
+    let mo = super::estimate::compute(w, scope, &s);
+    if let Some(t) = mo.wake_at {
+        wake.at(t);
+    }
+    let unit_fields = |key: super::model::UnitKey| {
+        let p = mo.units.get(&key);
+        (
+            p.map(|p| p.stage),
+            p.map(|p| Int::unchecked(((p.credit * 100.0).floor() as i64).clamp(0, 100))),
+            p.map(|p| p.slower).filter(|s| *s),
+        )
+    };
     let markers: Vec<Marker> = w
         .markers
         .iter()
@@ -1216,9 +1248,9 @@ pub fn render(
                             .map(|e| Count::unchecked((now - e) / 60_000)),
                         stale: ws.and_then(order_stale),
                         steers: None,
-                        stage: None,
-                        credit_pct: None,
-                        slower_than_usual: None,
+                        stage: unit_fields(super::model::UnitKey::Item(i.n)).0,
+                        credit_pct: unit_fields(super::model::UnitKey::Item(i.n)).1,
+                        slower_than_usual: unit_fields(super::model::UnitKey::Item(i.n)).2,
                     });
                 } else {
                     let after: Vec<PlanItemId> = i
@@ -1270,9 +1302,9 @@ pub fn render(
                 overdue_minutes: None,
                 stale: order_stale(o.id()),
                 steers: None,
-                stage: None,
-                credit_pct: None,
-                slower_than_usual: None,
+                stage: unit_fields(super::model::UnitKey::Order(o.id().to_owned())).0,
+                credit_pct: unit_fields(super::model::UnitKey::Order(o.id().to_owned())).1,
+                slower_than_usual: unit_fields(super::model::UnitKey::Order(o.id().to_owned())).2,
             });
         }
     }
@@ -1361,7 +1393,10 @@ pub fn render(
         ask_ids: capped::<AskId, 10>(asks.iter().map(|a| a.ask_id.clone()).collect()).0,
     };
 
-    let eta_out = eta_of(hub, w, scope, &s, &f);
+    let mut eta_out = eta_of(hub, w, scope, &s, &f);
+    eta_out.eta.p50 = mo.p50.map(ts);
+    eta_out.eta.p90 = mo.p90.map(ts);
+    eta_out.eta.accuracy = super::estimate::accuracy(&w.model.calibration);
 
     // Risks.
     let tasks_waiting = |m: &str| -> i64 {
@@ -1527,6 +1562,18 @@ pub fn render(
             })
             .collect(),
         steers_unacked,
+        slower: mo
+            .slower
+            .iter()
+            .map(|(label, stage, elapsed, usual)| {
+                (
+                    clip(label, 80),
+                    super::estimate::stage_phrase(*stage).to_owned(),
+                    risks::age(*elapsed),
+                    risks::age(*usual),
+                )
+            })
+            .collect(),
     };
     let (risk_list, risks_more) = capped::<_, 5>(risks::risks(&rf));
 
@@ -1549,11 +1596,16 @@ pub fn render(
                 }
                 let marker = w.markers.iter().find(|m| &m.pkey == pk).map(marker_of);
                 let ce = eta_of(hub, w, &child, &cs, &cf);
+                let mut progress = progress_of(&cf, now, marker);
+                progress.estimate = Some(super::estimate::estimate_of(
+                    &super::estimate::compute(w, &child, &cs),
+                    None,
+                ));
                 parts.push(ScopePart {
                     title: line(&cs.title),
                     scope: Some(child),
                     milestone_id: None,
-                    progress: progress_of(&cf, now, marker),
+                    progress,
                     eta: ce.eta.current,
                 });
             }
@@ -1598,6 +1650,17 @@ pub fn render(
         .filter_map(|pk| w.change_repos.get(pk))
         .flatten()
         .find_map(|r| github_stale.get(r).cloned());
+    // The estimate's series, with the drop rule applied: it falls only with an observed cause, which it shows.
+    let causes = super::estimate::causes(w, scope, &s);
+    let key = scope.key();
+    let series = hub
+        .db
+        .with(|c| {
+            super::estimate::store_planning(c, &mo.fix_planning)?;
+            Ok(super::estimate::series(c, &key, mo.estimate, &causes, now)?)
+        })
+        .ok();
+    progress.estimate = Some(super::estimate::estimate_of(&mo, series.as_deref()));
 
     let doing: Vec<String> = in_progress
         .iter()

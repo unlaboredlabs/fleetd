@@ -40,6 +40,8 @@ pub struct RiskFacts {
     pub no_plan: Vec<(String, String, i64)>,
     /// (steer, who it went to, sent at clock text) of steers unacknowledged, or delivered past [`STEER_ACK_MS`].
     pub steers_unacked: Vec<(String, String, String)>,
+    /// (item, where it is, time there, usual time) of items past 1.5× their stage's usual time, slowest first.
+    pub slower: Vec<(String, String, String, String)>,
 }
 
 /// A delivered steer is a risk once it has gone this long without an acknowledgement.
@@ -111,6 +113,13 @@ pub fn risks(f: &RiskFacts) -> Vec<Risk> {
             RiskRule::EstimateDrift,
             Warning,
             format!("lead estimated {lead}; measured speed says {measured}"),
+        ));
+    }
+    for (item, stage, took, usual) in f.slower.iter().take(2) {
+        out.push(risk(
+            RiskRule::SlowerThanUsual,
+            Warning,
+            format!("{item} is slower than usual: {took} {stage}, usually {usual}"),
         ));
     }
     if let Some(r) = riskiest(&f.open_must) {

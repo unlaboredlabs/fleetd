@@ -516,3 +516,160 @@ async fn an_item_with_no_order_is_verified_by_its_own_prs_only() {
         "an order's failing claim never reopens it"
     );
 }
+
+fn set_change(hub: &Hub, state: &str, from: Option<&str>) {
+    let now = crate::hub::store::now_ms(hub.clock.as_ref());
+    let at = crate::hub::store::iso_ms(now);
+    let change = json!({
+        "changeId": "X1", "projectRef": { "machineId": "devbox", "projectId": "storefront" }, "repo": "acme/storefront",
+        "prNumber": 212, "prUrl": "https://github.com/acme/storefront/pull/212", "branch": "fleetd/T1-x",
+        "workstreamId": "W1", "serves": "done:0", "tier": "M", "headSha": "b".repeat(40), "state": state,
+        "reviews": [], "createdAt": iso_ms_of(T0 as i64), "updatedAt": at,
+    });
+    hub.db
+        .with(|c| {
+            c.execute("DELETE FROM changes", [])?;
+            c.execute(
+                "INSERT INTO changes (repo, pr_number, state, machine_id, project_id, train_order, data)
+                 VALUES ('acme/storefront', 212, ?, 'devbox', 'storefront', 0, ?)",
+                params![state, change.to_string()],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    if let Some(from) = from {
+        hub.events
+            .append(crate::hub::store::NewEvent {
+                at: fleetd_contracts::ids::Timestamp(at),
+                r#type: fleetd_contracts::events::HubEventType::ChangeState,
+                machine_id: Some(MachineId::unchecked("devbox")),
+                project_id: Some(ProjectId::unchecked("storefront")),
+                thread_id: None,
+                summary: format!("X1 {from} → {state}"),
+                data: Some(json!({
+                    "changeId": "X1", "workstreamId": "W1", "repo": "acme/storefront", "prNumber": 212,
+                    "from": from, "to": state,
+                })),
+                attention: None,
+            })
+            .unwrap();
+    }
+}
+
+fn iso_ms_of(ms: i64) -> String {
+    crate::hub::store::iso_ms(ms)
+}
+
+#[tokio::test]
+async fn the_estimate_rises_with_observed_stages_and_falls_only_with_an_explained_marker() {
+    use fleetd_contracts::plan::ItemStage;
+    use fleetd_contracts::status::{DropReason, RiskRule};
+    let clock = ManualClock::at(T0);
+    let (hub, _home) = hub(clock.clone());
+    let (r, by) = (project(), "lead:devbox/storefront");
+    hub.plans
+        .milestone(
+            &r,
+            serde_json::from_value::<PlanMilestoneCall>(json!({ "title": "Checkout" })).unwrap(),
+        )
+        .unwrap();
+    hub.plans
+        .add(
+            &r,
+            by,
+            add(
+                "cart page",
+                json!({ "workstreamId": "W1", "pr": "https://github.com/acme/storefront/pull/212", "size": "m" }),
+            ),
+        )
+        .unwrap();
+    let scope = StatusScope::Order {
+        workstream_id: WorkstreamId::unchecked("W1"),
+    };
+    let step = |secs: u64| {
+        clock.advance(Duration::from_secs(secs));
+        hub.status.get(&hub, &person(), &scope, None).unwrap()
+    };
+    let d = step(1);
+    let e0 = d.progress.estimate.clone().unwrap();
+    let planning = e0.planning.clone().unwrap();
+    assert!(
+        !planning.active,
+        "the plan exists, so planning's share is fixed"
+    );
+    assert!(e0.pct.get() > 0, "planning counts: not 0%");
+    assert_eq!(e0.verified_pct.get(), 0);
+    assert_eq!(
+        d.progress.pct.get(),
+        0,
+        "the old figure is unchanged for the GPUI app"
+    );
+
+    set_change(&hub, "reviewing", None);
+    hub.db
+        .with(|c| {
+            c.execute("UPDATE plan_items SET started_ms = ?", [T0 as i64])?;
+            Ok(())
+        })
+        .unwrap();
+    let d = step(1);
+    let e1 = d.progress.estimate.clone().unwrap();
+    assert!(
+        e1.pct > e0.pct,
+        "a PR opened: {} > {}",
+        e1.pct.get(),
+        e0.pct.get()
+    );
+    assert_eq!(d.in_progress[0].stage, Some(ItemStage::PrOpen));
+
+    set_change(&hub, "ready", Some("reviewing"));
+    let e2 = step(1).progress.estimate.unwrap();
+    assert!(e2.pct > e1.pct, "review passed");
+    assert!(e2.pct.get() < 100 && e2.in_flight_pct.get() == e2.pct.get());
+
+    set_change(&hub, "ci_failed", Some("ci"));
+    let d = step(1);
+    let e3 = d.progress.estimate.clone().unwrap();
+    assert!(e3.pct < e2.pct, "CI failed: the item fell back a stage");
+    let series = e3.series.clone().unwrap();
+    let drop = series
+        .last()
+        .unwrap()
+        .drop
+        .clone()
+        .expect("the drop is explained");
+    assert_eq!(drop.reason, DropReason::CiFailed);
+    assert_eq!(drop.from_pct, e2.pct);
+    assert_eq!(drop.text.as_str(), "CI failed on #212");
+
+    set_change(&hub, "ready", None);
+    step(1);
+    hub.db
+        .with(|c| {
+            c.execute("DELETE FROM changes", [])?;
+            Ok(())
+        })
+        .unwrap();
+    let e4 = step(1).progress.estimate.unwrap();
+    let held = e4.series.unwrap();
+    assert!(
+        held.windows(2)
+            .all(|w| w[1].pct >= w[0].pct || w[1].drop.is_some()),
+        "never a silent drop: {held:?}"
+    );
+
+    set_change(&hub, "reviewing", None);
+    let d = step(10 * 3600);
+    assert_eq!(d.in_progress[0].slower_than_usual, Some(true));
+    assert!(
+        d.risks.iter().any(|r| r.rule == RiskRule::SlowerThanUsual
+            && r.message.as_str().contains("slower than usual")),
+        "{:?}",
+        d.risks
+    );
+    let eta = d.eta;
+    assert!(
+        eta.p50.is_some() && eta.p90 >= eta.p50,
+        "a range, not a point"
+    );
+}
