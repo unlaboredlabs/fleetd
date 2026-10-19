@@ -60,8 +60,8 @@ const TAILNET_V4 = /\b100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}\
 const TAILNET_V6 = /\bfd7a:115c:a1e0:[0-9a-f:]*/giu;
 const TAILNET_HOST = /\b[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.ts\.net\b/giu;
 const HOME = /\/(?:home|Users)\/(?!dev\b)[A-Za-z0-9._-]+/gu;
-// An owner/repo pair: in a GitHub URL, or a whole string under a repo-ish key.
-const GITHUB_URL = /github\.com\/([A-Za-z0-9-]+)\/([A-Za-z0-9._-]+?)(?=\.git\b|[/#?"\s)]|$)/giu;
+// An owner/repo pair: in a GitHub URL or SSH remote (github.com:owner/repo), or a whole string under a repo-ish key.
+const GITHUB_URL = /github\.com([/:])([A-Za-z0-9-]+)\/([A-Za-z0-9._-]+?)(?=\.git\b|[/#?"\s)]|$)/giu;
 const OWNER_REPO = /^([A-Za-z0-9-]+)\/([A-Za-z0-9._-]+)$/u;
 const REPO_KEYS = new Set(["repo", "repos", "fullName", "nameWithOwner"]);
 const STAND_INS = ["storefront", "billing", "docs", "inventory", "search", "mobile", "admin", "analytics", "payments", "emails"];
@@ -81,7 +81,7 @@ export const makeSanitizer = (lab: string, hubPort: number) => {
     out = out.replace(/acme\/storefront-\d\b/gu, "acme/storefront").replace(/\bstorefront-\d\b/gu, "storefront");
     // Each lab slot works in its own branch namespace of the one repo; the app shows fleetd's own branch names.
     out = out.replace(SLOT_BRANCH, "").replace(/fleetd-lab/giu, "storefront");
-    out = out.replace(GITHUB_URL, (_m, owner: string, name: string) => `github.com/${repo(owner, name)}`);
+    out = out.replace(GITHUB_URL, (_m, sep: string, owner: string, name: string) => `github.com${sep}${repo(owner, name)}`);
     out = out.replace(/unlaboredlabs/giu, "acme");
     out = out.replace(TOKENS, "<redacted>");
     out = out.replace(TAILNET_V4, "10.0.0.2").replace(TAILNET_V6, "fd00::2").replace(TAILNET_HOST, "devbox");

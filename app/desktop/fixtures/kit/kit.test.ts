@@ -82,6 +82,7 @@ describe("sanitize", () => {
     ["tailnet host", "http://buildbox.tail1234.ts.net:4790"],
     ["another home", "/Users/someone/src/app and /home/other/src"],
     ["private repo URL", "https://github.com/someone/private-thing/pull/4"],
+    ["private repo SSH remote", "git@github.com:someorg/private-thing.git"],
   ];
 
   it.each(SAMPLES)("rewrites a %s so nothing of it is left", (_what, sample) => {
