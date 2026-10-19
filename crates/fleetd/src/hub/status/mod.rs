@@ -2,6 +2,7 @@
 //! fleet, a project or an order. One task follows the event log and the freshness deadlines; it re-renders only the
 //! scopes someone viewed in the last 10 minutes, at most every 250 ms, and bumps a doc's version only when its
 //! content changes. `status_wait` blocks on that version. Nothing polls.
+pub mod calib;
 pub mod estimate;
 pub mod fresh;
 pub mod headline;
@@ -10,6 +11,7 @@ pub mod progress;
 pub mod render;
 pub mod risks;
 pub mod seen;
+pub mod timeline;
 pub mod tools;
 
 use std::collections::{HashMap, HashSet};

@@ -363,4 +363,14 @@ pub(crate) const MIGRATIONS: &[&str] = &[
   CREATE INDEX tasks_by_workstream ON tasks (workstream_id);
   CREATE INDEX changes_by_workstream ON changes (CASE WHEN json_valid(data) THEN json_extract(data, '$.workstreamId') END);
   "#,
+    // The progress model's calibration (one row: the stage weights and durations measured nightly, see
+    // `hub/status/calib.rs`) and its forecast log: each unit's predicted finish from when it appeared, and when it
+    // was verified, for the forecast-accuracy figure.
+    r#"
+  CREATE TABLE progress_calibration (id INTEGER PRIMARY KEY CHECK (id = 1), computed_ms INTEGER NOT NULL,
+    data TEXT NOT NULL);
+  CREATE TABLE progress_forecasts (unit TEXT PRIMARY KEY, pkey TEXT NOT NULL, predicted_ms INTEGER NOT NULL,
+    p50_ms INTEGER NOT NULL, p90_ms INTEGER NOT NULL, done_ms INTEGER) WITHOUT ROWID;
+  CREATE INDEX progress_forecasts_done ON progress_forecasts (done_ms) WHERE done_ms IS NOT NULL;
+  "#,
 ];
