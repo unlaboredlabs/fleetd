@@ -111,6 +111,23 @@ describe("chat history", () => {
     await vi.waitFor(() => expect(items(layer)).toEqual([["m1", "sent"], ["m2", "sent"], ["m3", "sent"]]));
   });
 
+  it("a resync while the latest page is loading reads it again, and the chat doesn't stay on its skeleton", async () => {
+    const fake = fakeHub();
+    const layer = createDataLayer(fake.hub);
+    layer.start();
+    fake.send(live());
+    fake.send(snapshot(1));
+    layer.chat.open(KEY);
+    await Promise.resolve();
+    // A resync snapshot arrives with the first read still out.
+    fake.send(snapshot(2));
+    await Promise.resolve();
+    expect(fake.of("chat_history")).toHaveLength(2);
+    fake.of("chat_history")[0]?.answer(page([msg(1)]));
+    fake.of("chat_history")[1]?.answer(page([msg(1), msg(2)]));
+    await vi.waitFor(() => expect(items(layer)).toEqual([["m1", "sent"], ["m2", "sent"]]));
+  });
+
   it("subscribes to the open chat's stream; deltas merge without duplicates; a gap reads the latest page again", async () => {
     const { fake, layer } = await connected();
     expect(fake.chats).toEqual([ref]);

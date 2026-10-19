@@ -33,6 +33,12 @@ export interface Chat {
   readonly leadWaiting: Readonly<Record<string, string>>;
   readonly hasOlder: boolean;
   readonly loadingOlder: boolean;
+  /**
+   * Paging back past CHAT_KEEP evicted the newest messages: the window is above the latest, live messages aren't
+   * added to it, and loadNewer pages back down.
+   */
+  readonly hasNewer: boolean;
+  readonly loadingNewer: boolean;
   /** The latest page landed this generation. */
   readonly loaded: boolean;
   readonly error?: HubError | undefined;
@@ -48,6 +54,8 @@ export const emptyChat: Chat = {
   leadWaiting: {},
   hasOlder: false,
   loadingOlder: false,
+  hasNewer: false,
+  loadingNewer: false,
   loaded: false,
   missing: [],
 };
@@ -66,8 +74,11 @@ const newer = (incoming: ChatMessage, current: ChatMessage): boolean => {
 const without = <T>(map: Readonly<Record<string, T>>, key: string): Readonly<Record<string, T>> =>
   key in map ? Object.fromEntries(Object.entries(map).filter(([k]) => k !== key)) : map;
 
-/** Messages folded into a chat. A final message ends its stream; the chat keeps its newest CHAT_KEEP. */
-export const mergeMessages = (chat: Chat, incoming: readonly ChatMessage[]): Chat => {
+/**
+ * Messages folded into a chat. A final message ends its stream. The chat keeps CHAT_KEEP messages, evicting from the
+ * end away from where it is paging: the oldest normally, the newest while paging back.
+ */
+export const mergeMessages = (chat: Chat, incoming: readonly ChatMessage[], evict: "oldest" | "newest" = "oldest"): Chat => {
   if (incoming.length === 0) return chat;
   const byId = new Map(chat.messages.map((m) => [m.messageId, m]));
   let streams = chat.streams;
@@ -87,20 +98,32 @@ export const mergeMessages = (chat: Chat, incoming: readonly ChatMessage[]): Cha
   return {
     ...chat,
     missing: chat.missing.some((seq) => got.has(seq)) ? chat.missing.filter((seq) => !got.has(seq)) : chat.missing,
-    messages: trimmed ? sorted.slice(sorted.length - CHAT_KEEP) : sorted,
+    messages: !trimmed ? sorted : evict === "oldest" ? sorted.slice(sorted.length - CHAT_KEEP) : sorted.slice(0, CHAT_KEEP),
     streams,
-    hasOlder: chat.hasOlder || trimmed,
+    hasOlder: chat.hasOlder || (trimmed && evict === "oldest"),
+    hasNewer: chat.hasNewer || (trimmed && evict === "newest"),
   };
 };
 
-/** A history page: the latest one (`older` false) or one before the oldest message held. */
-export const applyHistory = (chat: Chat, page: ChatHistoryOutput, older: boolean): Chat => {
-  const merged = mergeMessages(chat, page.messages);
+/** A live message: folded in, unless the window is paged above the latest and doesn't hold it. */
+export const mergeLive = (chat: Chat, message: ChatMessage): Chat =>
+  chat.hasNewer && !chat.messages.some((m) => m.messageId === message.messageId) ? chat : mergeMessages(chat, [message]);
+
+/**
+ * A history page: the latest one, one before the oldest message held, or one after the newest. The latest page on
+ * a window paged above it starts the window over there, so the chat never holds two runs with a hole between.
+ */
+export const applyHistory = (chat: Chat, page: ChatHistoryOutput, direction: "latest" | "older" | "newer"): Chat => {
+  const base = direction === "latest" && chat.hasNewer ? { ...chat, messages: [], streams: {}, hasNewer: false } : chat;
+  const merged = mergeMessages(base, page.messages, direction === "older" ? "newest" : "oldest");
+  const fresh = !chat.loaded || base !== chat;
   return {
     ...merged,
     // The latest page says nothing about what's older than messages already held from an earlier page.
-    hasOlder: older ? page.moreBefore : chat.loaded ? merged.hasOlder : page.moreBefore,
-    loadingOlder: older ? false : chat.loadingOlder,
+    hasOlder: direction === "older" ? page.moreBefore : fresh ? page.moreBefore || merged.hasOlder : merged.hasOlder,
+    hasNewer: direction === "newer" ? page.moreAfter : merged.hasNewer,
+    loadingOlder: direction === "older" ? false : chat.loadingOlder,
+    loadingNewer: direction === "newer" ? false : chat.loadingNewer,
     loaded: true,
     error: undefined,
     gap: false,
