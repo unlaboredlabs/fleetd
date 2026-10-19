@@ -21,7 +21,6 @@ import {
   type Filled,
 } from "./editor";
 import registry from "./fixture/registry.json";
-import { parseCollapsed } from "./prefs";
 import { formatRoute, parseRoute } from "./route";
 
 const summary = (id: string, extra: Partial<PromptSummary> = {}): PromptSummary => ({
@@ -39,8 +38,9 @@ const summary = (id: string, extra: Partial<PromptSummary> = {}): PromptSummary 
 const all = registry.prompts.map((p) => summary(p.id, { title: p.title, sentWhen: p.sentWhen }));
 
 group("the prompt catalog", () => {
-  it("names, describes and groups every prompt this fleetd ships", () => {
-    expect(all.length).toBeGreaterThanOrEqual(60);
+  it("names, describes and groups every editable prompt this fleetd ships", () => {
+    // Nine editable prompts; the instructions have their own page.
+    expect(all.length).toBe(8);
     const unknown = all.filter((p) => groupOf(p) === "other").map((p) => p.id);
     expect(unknown).toEqual([]);
     for (const p of all) {
@@ -49,23 +49,14 @@ group("the prompt catalog", () => {
       expect(d.description.length, p.id).toBeGreaterThan(20);
     }
     // No two prompts in one group read the same.
-    for (const s of sections(all, "")) {
+    for (const s of sections(all)) {
       const names = s.rows.map((r) => r.name);
       expect(new Set(names).size, s.group.key).toBe(names.length);
     }
   });
 
-  it("finds a prompt by any word of its name, description, hub title or id, accents and case aside", () => {
-    const ids = (q: string) => sections(all, q).flatMap((s) => s.rows.map((r) => r.summary.id));
-    expect(ids("WOULD not TAKE")).toEqual(["wake.train.refused"]);
-    expect(ids("pull request refused")).toEqual(["wake.train.refused", "wake.train.gave_up"]);
-    expect(ids("status.headline")).toEqual(["status.headline"]);
-    expect(ids("waivéd")).toEqual(["digest.train.waived"]);
-    expect(ids("no such words")).toEqual([]);
-  });
-
   it("keeps the groups in their order, leaves out empty ones and the instructions", () => {
-    const shown = sections([...all, summary("instructions", { kind: "instructions", group: "instructions" })], "");
+    const shown = sections([...all, summary("instructions", { kind: "instructions", group: "instructions" })]);
     const order = GROUPS.map((g) => g.key);
     const keys = shown.map((s) => s.group.key);
     expect(keys).toEqual(order.filter((k) => keys.includes(k)));
@@ -73,10 +64,10 @@ group("the prompt catalog", () => {
     expect(shown.flatMap((s) => s.rows).some((r) => r.summary.id === "instructions")).toBe(false);
   });
 
-  it("shows a prompt from a newer hub in Other, with the hub's own words", () => {
-    const [other] = sections([summary("wake.something_new", { title: "Wake: something new", sentWhen: "per `wake_set` that fired late." })], "");
-    expect(other?.group.key).toBe("other");
-    expect(other?.rows[0]).toMatchObject({ name: "Wake: something new", description: "Sent per wake set that fired late." });
+  it("shows a prompt from a newer hub in its hub group, with the hub's own words", () => {
+    const [messages] = sections([summary("wake.something_new", { title: "Wake: something new", sentWhen: "per `wake_set` that fired late." })]);
+    expect(messages?.group.key).toBe("messages");
+    expect(messages?.rows[0]).toMatchObject({ name: "Wake: something new", description: "Sent per wake set that fired late." });
   });
 });
 
@@ -255,11 +246,4 @@ group("settings state", () => {
     expect(parseScope("nonsense")).toEqual(HUB);
   });
 
-  it("remembers folded groups, and starts with only the lead's and the tasks' open", () => {
-    expect([...parseCollapsed(JSON.stringify(["digest"]))]).toEqual(["digest"]);
-    const first = parseCollapsed(null);
-    expect(first.has("lead") || first.has("tasks")).toBe(false);
-    expect(first.has("digest")).toBe(true);
-    expect(parseCollapsed("{damaged")).toEqual(first);
-  });
 });

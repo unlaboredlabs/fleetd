@@ -8,6 +8,8 @@ export type {
   PromptSetOutput,
   PromptSummary,
   PromptWarning,
+  PromptsListOutput,
+  RetiredPromptOverride,
 } from "../../../shared/contracts";
 import type { PromptGetOutput } from "../../../shared/contracts";
 
@@ -16,3 +18,4 @@ export type PromptDetail = PromptGetOutput;
 
 /** The registry id of the human's own instructions; they have their own page, not a row in the prompt list. */
 export const INSTRUCTIONS = "instructions";
+

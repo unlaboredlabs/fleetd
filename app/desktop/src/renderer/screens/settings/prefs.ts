@@ -9,7 +9,7 @@ export const MOTION_PREFS: ReadonlyArray<{ value: MotionPref; label: string }> =
   { value: "full", label: "Full" },
 ];
 
-const KEY = { motion: "fleetd.motion", digest: "fleetd.digest", collapsed: "fleetd.settings.promptGroups" } as const;
+const KEY = { motion: "fleetd.motion", digest: "fleetd.digest" } as const;
 
 function read(key: string): string | null {
   try {
@@ -38,23 +38,9 @@ const subscribe = (l: () => void) => {
 
 let motion: MotionPref = parseMotion(read(KEY.motion));
 let digest = read(KEY.digest) === "on";
-let collapsed: ReadonlySet<string> = parseCollapsed(read(KEY.collapsed));
 
 export function parseMotion(raw: string | null): MotionPref {
   return raw === "reduce" || raw === "full" ? raw : "system";
-}
-
-/** The stored list of collapsed groups, or the first-run default: everything but the lead's and the tasks'. */
-export function parseCollapsed(raw: string | null): ReadonlySet<string> {
-  if (raw !== null) {
-    try {
-      const v: unknown = JSON.parse(raw);
-      if (Array.isArray(v)) return new Set(v.filter((x): x is string => typeof x === "string"));
-    } catch {
-      // A damaged value falls back to the default below.
-    }
-  }
-  return new Set(["orders", "task-news", "reviews", "train", "digest", "keep-going", "one-shots", "playbooks", "other"]);
 }
 
 /**
@@ -82,14 +68,5 @@ export function setDigest(on: boolean) {
   notify();
 }
 
-export function toggleGroup(key: string) {
-  const next = new Set(collapsed);
-  if (!next.delete(key)) next.add(key);
-  collapsed = next;
-  write(KEY.collapsed, JSON.stringify([...next]));
-  notify();
-}
-
 export const useMotion = () => useSyncExternalStore(subscribe, () => motion);
 export const useDigest = () => useSyncExternalStore(subscribe, () => digest);
-export const useCollapsed = () => useSyncExternalStore(subscribe, () => collapsed);

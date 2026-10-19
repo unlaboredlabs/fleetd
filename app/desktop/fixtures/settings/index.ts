@@ -3,9 +3,9 @@
 // registry from the fake prompt hub: every prompt's real text, a hub-wide edit made against an older default (the
 // 3-way Update view), a project's own edit, and the instructions at both levels.
 import fs from "node:fs";
-import { defineGroup } from "../kit/group.ts";
+import { defineGroup, SHARED } from "../kit/group.ts";
 import { Fixture } from "../kit/fixture.ts";
-import { asText, clone, isObject, type JsonObject, type JsonValue } from "../kit/json.ts";
+import { clone, isObject, type JsonObject, type JsonValue } from "../kit/json.ts";
 import { PROJECTS, PromptHub, type RegistryEntry } from "./promptHub.ts";
 
 const registry = (
@@ -37,26 +37,12 @@ function basics(f: Fixture) {
   f.answer("prompt_set", { dryRun: true }, { ref: "lead.start@5e771ed000", warnings: [] });
 }
 
-/** A recorded prompt_get turned into one whose default changed since the human edited it (the Update view). */
-function staled(detail: JsonObject): JsonObject {
-  const d = clone(detail);
-  const def = isObject(d["default"]) ? d["default"] : { ref: "", text: "" };
-  const id = asText(d["id"]);
-  const text = asText(def["text"]);
-  const base = { ref: `${id}@0ba5e0ba5e`, text: text.replace(/[^\n]*\n?$/u, "") };
-  const note = "Keep each message under 200 words.";
-  const yours = { ref: `${id}@0f0f0f0f0f`, text: `${base.text}\n${note}\n` };
-  d["scope"] = "global";
-  d["global"] = { ...yours, base: base.ref };
-  d["effective"] = yours;
-  d["stale"] = { scope: "global", base, current: def, yours, merged: `${text}\n${note}\n`, conflicts: false };
-  return d;
-}
+/** Every shared fixture: what Settings calls besides the recorded prompt reads. */
+const shared = (f: Fixture) => basics(f);
 
 export default defineGroup({
   extend: {
-    typical: basics,
-    "long-text": basics,
+    ...Object.fromEntries(SHARED.map((name) => [name, shared])),
     empty: (f) => {
       basics(f);
       // An empty hub still has every prompt; the recording read none of them.
@@ -65,16 +51,6 @@ export default defineGroup({
         const got = hub.answer("prompt_get", { id });
         if (got.ok && f.output("prompt_get", { id }) === undefined) f.answer("prompt_get", { id }, json(got.output));
       }
-    },
-    "many-prompts": (f) => {
-      basics(f);
-      // The list marks some prompts stale; their reads carry a 3-way update to match.
-      const stale = new Set<string>();
-      for (const a of f.answers("prompts_list")) {
-        const prompts = isObject(a.output) ? a.output["prompts"] : undefined;
-        for (const p of Array.isArray(prompts) ? prompts : []) if (isObject(p) && p["stale"] === true) stale.add(asText(p["id"]));
-      }
-      f.update("prompt_get", (out) => (isObject(out) && stale.has(asText(out["id"])) ? staled(out) : out));
     },
   },
   fixtures: (base) => {
