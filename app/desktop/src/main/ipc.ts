@@ -4,6 +4,7 @@ import { parseRequest, type RequestArgs } from "../shared/ipc";
 import type { OpenOutcome } from "../shared/hub";
 import { externalUrl } from "./external";
 import type { HubService } from "./hub/service";
+import type { PairingService } from "./pairing/service";
 import { applyMenuState } from "./menuState";
 import type { Notifier } from "./notify";
 import type { Opener } from "./opener";
@@ -27,7 +28,7 @@ const handle = <C extends InvokeChannel>(
   });
 };
 
-export const registerIpc = (hub: HubService, frame: { opener: Opener; notifier: Notifier }): void => {
+export const registerIpc = (hub: HubService, frame: { opener: Opener; notifier: Notifier }, pairing: PairingService): void => {
   handle(IPC.hubState, () => hub.state());
   handle(IPC.hubSubscribe, (event) => hub.subscribe(event.sender));
   handle(IPC.hubUnsubscribe, (event) => hub.unsubscribe(event.sender));
@@ -37,6 +38,10 @@ export const registerIpc = (hub: HubService, frame: { opener: Opener; notifier: 
   handle(IPC.hubConnect, (_event, request) => hub.connect(request));
   handle(IPC.hubForget, () => hub.forget());
   handle(IPC.copy, (_event, text) => clipboard.writeText(text));
+  handle(IPC.pairStart, () => pairing.start());
+  handle(IPC.pairProbe, (_event, address) => pairing.probe(address));
+  handle(IPC.pairRedeem, (_event, request) => pairing.redeem(request));
+  handle(IPC.pairAuto, () => pairing.auto());
   handle(IPC.openExternal, async (_event, url): Promise<OpenOutcome> => {
     const checked = externalUrl(url);
     if (!checked.ok) return checked;

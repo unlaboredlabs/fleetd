@@ -81,6 +81,18 @@ export const screens: readonly Screen[] = [
     route: "#/",
     fixtures: ["empty", "typical", "many-agents", "long-text", "hub-unreachable", "pairing-failed", "node-too-old"],
   },
+  // F10: connecting to a hub. pairing-failed: the form after the hub refused the saved key, with the fix;
+  // hub-unreachable: retrying, with the reason and the countdown. #/onboarding?key opens on the key path.
+  {
+    id: "onboarding",
+    route: "#/onboarding",
+    fixtures: ["pairing-failed", "hub-unreachable"],
+  },
+  {
+    id: "onboarding.key",
+    route: "#/onboarding?key",
+    fixtures: ["pairing-failed"],
+  },
   // E2: every design-system primitive with short, long and empty content, one section per entry, so the primitives
   // pass before any screen uses them. Needs a build with the gallery in it: `pnpm qa:build`.
   ...gallerySections.map((s) => ({ id: `gallery.${s}`, route: `#/gallery?section=${s}`, fixtures: ["long-text"] as const })),

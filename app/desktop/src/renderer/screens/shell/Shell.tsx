@@ -11,6 +11,7 @@ import { InboxPanel } from "./InboxPanel";
 import { EMPTY_SHELL_DATA, Seen, sidebarOrders, type ShellData } from "./model";
 import { navigate, useRoute } from "./navigation";
 import type { Route, Screen } from "./routes";
+import { ConnectionBanner, needsOnboarding } from "../onboarding";
 import { ScreenHost, StripsBody } from "./screens";
 import { Sidebar } from "./Sidebar";
 import s from "./shell.module.css";
@@ -45,9 +46,11 @@ export function Shell() {
     if (open !== undefined) seen.mark(open.key, open.lastActivityAt);
   }, [screen, data.projects, seen]);
 
-  // Before pairing there is nothing to navigate; the onboarding screen has the window to itself.
-  const onboarding = hub?.phase === "unpaired" || screen.id === "onboarding";
-  const shown: Screen = hub?.phase === "unpaired" && screen.id !== "gallery" && screen.id !== "onboarding" ? { id: "onboarding", hub: null, code: null } : screen;
+  // Before pairing, after a refused key, or on a hub of another protocol there is nothing to navigate; the
+  // onboarding screen has the window to itself.
+  const blocked = hub !== null && needsOnboarding(hub);
+  const onboarding = blocked || screen.id === "onboarding";
+  const shown: Screen = blocked && screen.id !== "gallery" && screen.id !== "onboarding" ? { id: "onboarding", hub: null, code: null } : screen;
   const chrome = !onboarding && shown.id !== "gallery";
 
   const go = (next: Screen) => navigate({ screen: next, inbox: route.inbox });
@@ -134,6 +137,7 @@ export function Shell() {
                 Sample data, not connected
               </div>
             ) : null}
+            {chrome ? <ConnectionBanner /> : null}
             <div className={s.screen}>
               <ScreenHost screen={shown} />
             </div>
