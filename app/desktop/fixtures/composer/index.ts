@@ -5,7 +5,7 @@ import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import { at } from "../kit/ids.ts";
 import { arr, obj } from "../kit/stress.ts";
-import type { JsonObject } from "../kit/json.ts";
+import { asText, type JsonObject } from "../kit/json.ts";
 import { CHAT_SENDS } from "./sends.ts";
 
 const STOREFRONT = { machineId: "devbox", projectId: "dcffccea-c5a7-40a6-940d-7f70239ffa22" } as const;
@@ -39,7 +39,7 @@ function composerSends(f: Fixture): void {
   // The lead is mid-turn on the live feed too, so the box reads as a steer.
   f.live = f.live.map((frame) => ({
     ...frame,
-    lanes: arr(frame["lanes"]).map((l) => (String(obj(l)["laneId"]).startsWith(`lead:${STOREFRONT.machineId}/${STOREFRONT.projectId}`) ? { ...obj(l), status: "working" } : l)),
+    lanes: arr(frame["lanes"]).map((l) => (asText(obj(l)["laneId"]).startsWith(`lead:${STOREFRONT.machineId}/${STOREFRONT.projectId}`) ? { ...obj(l), status: "working" } : l)),
   }));
 
   const sent = (seq: number, text: string): JsonObject => msg(seq, "human", text, 0, { clientRequestId: `qa-${seq}`, delivery: "queued" });
