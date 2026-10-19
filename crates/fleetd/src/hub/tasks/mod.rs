@@ -4,6 +4,7 @@
 //! The thread's status transitions, read off the event log, end the task: the result goes into the record and,
 //! inline, into one lead wake; the slot and leases are released and the queue is tried again.
 pub mod branch_diff;
+pub mod cap;
 pub mod glob;
 pub mod hooks;
 pub mod policy;
@@ -603,6 +604,18 @@ impl Tasks {
         }
 
         let continuing = task.thread_ref.is_some() && stored.pending_message.is_some();
+        // A paused agent's thread is still pushing its work: it continues once that turn ended, when its stop frees
+        // the slot and runs the queue again.
+        if continuing
+            && let Some(thread) = &task.thread_ref
+            && self
+                .d
+                .store
+                .thread_get(thread)?
+                .is_some_and(|t| t.thread.status == fleetd_contracts::model::ThreadStatus::Running)
+        {
+            return Ok(task.clone());
+        }
         let started = if continuing {
             let thread = task.thread_ref.as_ref().expect("continuing has a thread");
             let message = stored
@@ -1385,6 +1398,7 @@ const SCAN_LIMIT: usize = 10_000;
 /// What leads read from tasks: digest lines, live tasks and cancels for removed projects (leads' TasksHook, set in
 /// `wire`).
 impl Tasks {
+    /// The agents line ("agents: 7 running of 12, 2 queued"), then a line per task.
     pub fn digest_lines(
         &self,
         project_ref: &ProjectRef,
@@ -1392,14 +1406,37 @@ impl Tasks {
         limit: usize,
         prompts: &crate::hub::prompts::PromptSet,
     ) -> Vec<String> {
+        let agents = self.d.slots.agents(project_ref);
+        let mut lines = vec![prompts.render(
+            "digest.agents",
+            &[
+                ("running", &agents.running),
+                ("maxAgents", &agents.max_agents),
+                ("queued", &agents.queued),
+            ],
+        )];
         let since = since.map(Timestamp::as_str);
         match self.db(|c| TaskRecords::for_digest(c, project_ref, since, limit)) {
-            Ok(tasks) => render::task_digest_lines(prompts, &tasks, since),
-            Err(error) => {
-                tracing::warn!(%error, "tasks: digest lines not read");
-                Vec::new()
-            }
+            Ok(tasks) => lines.extend(render::task_digest_lines(prompts, &tasks, since)),
+            Err(error) => tracing::warn!(%error, "tasks: digest lines not read"),
         }
+        lines
+    }
+
+    /// A task waiting for a slot, as its spawn answers: "queued: 12/12 running, starts when a slot frees, position 3".
+    pub fn queued_next(&self, task: &Task) -> Option<String> {
+        if task.state != TaskState::Queued {
+            return None;
+        }
+        let position = self.d.slots.position(task.task_id.as_str())?;
+        let reason = task.queued_reason.as_ref()?.as_str();
+        let why = reason
+            .strip_prefix("agents: ")
+            .or_else(|| reason.strip_prefix("slots: "))
+            .unwrap_or(reason);
+        Some(format!(
+            "queued: {why}, starts when a slot frees, position {position}. fleetd starts it by itself; don't spawn it again."
+        ))
     }
 
     pub fn live(&self, project_ref: Option<&ProjectRef>) -> Vec<(TaskId, ProjectRef)> {

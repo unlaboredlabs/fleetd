@@ -2,7 +2,7 @@
 pub const DESCRIPTIONS: &[(&str, &str)] = &[
     (
         "fleetd_status",
-        "Every machine (online/offline), the 50 most recently active projects, the latest failed/waiting/usage-limited events and PRs the merge train sent back (needs_rebase, ci_failed), the slot board (cap, used, queued, per-project shares) and the events cursor. Start here.",
+        "Every machine (online/offline), the 50 most recently active projects, the latest failed/waiting/usage-limited events and PRs the merge train sent back (needs_rebase, ci_failed), the slot board (cap, used, queued, and each project's max agents, running and queued agents) and the events cursor. Start here.",
     ),
     (
         "projects_list",
@@ -142,7 +142,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "cap_set",
-        "Admin: set the global cap on running turns (1-1000) and/or one project's share of it (0-1000). Applies at once; queued tasks start as soon as they fit. Returns the slot board.",
+        "Set a project's max agents (1 up to the fleet cap; its lead's turns don't count) and/or, with an admin key, the fleet cap on running turns (1-1000). Lowering stops nothing: running agents finish their work and new ones queue; pauseExtras has the agents above the new max push their work and wait. Raising starts queued agents at once and wakes the lead. Returns the slot board.",
     ),
     (
         "usage_status",

@@ -1,4 +1,4 @@
-//! The slot board: a global cap on running turns, per-project shares, and a FIFO queue within priority.
+//! The slot board: a fleet cap on running turns, each project's max agents, and a FIFO queue within priority.
 //! A slot is held while a lead's or task's thread is running, read from the executor's thread events, and
 //! from a grant until that thread first runs. Threads that belong to no lead or task are not counted.
 pub mod board;
@@ -62,8 +62,16 @@ pub struct SlotsOptions {
 pub struct CapInput {
     /// 1..1000.
     pub cap: Option<i64>,
-    /// A project's share, 0..1000.
-    pub share: Option<(ProjectRef, i64)>,
+    /// A project's max agents, 1 up to the cap.
+    pub max_agents: Option<(ProjectRef, i64)>,
+}
+
+/// A project's agents as its lead is told them: "agents: 7 running of 12, 2 queued".
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Agents {
+    pub running: i64,
+    pub max_agents: i64,
+    pub queued: i64,
 }
 
 pub struct SlotRequest<'a> {
@@ -123,7 +131,8 @@ fn persist(db: &HubDb, ops: Vec<Op>) -> Result<(), StoreError> {
                     db.prepare_cached("INSERT INTO slot_settings (key, value) VALUES ('cap', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value")?
                         .execute([cap])?;
                 }
-                Op::Share(r, share) => {
+                // The table keeps its name from when this was a project's share, so an older hub's database opens.
+                Op::MaxAgents(r, share) => {
                     db.prepare_cached(
                         "INSERT INTO slot_shares (machine_id, project_id, share) VALUES (?, ?, ?)
                          ON CONFLICT (machine_id, project_id) DO UPDATE SET share = excluded.share",
@@ -136,7 +145,7 @@ fn persist(db: &HubDb, ops: Vec<Op>) -> Result<(), StoreError> {
     })
 }
 
-/// The persisted board: cap, shares and claims as the last hub left them.
+/// The persisted board: cap, max agents and claims as the last hub left them.
 fn load(db: &HubDb, default_cap: i64) -> Result<Board, StoreError> {
     db.with(|db| {
         let cap: Option<i64> = db.query_row("SELECT value FROM slot_settings WHERE key = 'cap'", [], |r| r.get(0)).optional()?;
@@ -173,7 +182,9 @@ fn slot_state(s: BoardState) -> SlotState {
                 .into_iter()
                 .map(|row| SlotStatePerProject {
                     project_ref: row.project_ref,
-                    share: count(row.share),
+                    max_agents: count(row.max_agents),
+                    running: count(row.running),
+                    queued: count(row.queued),
                     used: count(row.used),
                 })
                 .collect(),
@@ -413,13 +424,38 @@ impl Slots {
         Ok(())
     }
 
-    /// `cap_set`: the global cap, a project's share, or both. Persisted; applies at once.
+    /// `cap_set`: the fleet cap, a project's max agents, or both. Persisted; applies at once, starting queued
+    /// agents that now fit before it returns.
     pub fn set_cap(&self, input: CapInput) -> Result<SlotState, StoreError> {
         self.locked(|b| {
-            b.set_cap(input.cap, input.share);
+            b.set_cap(input.cap, input.max_agents);
             ((), true)
         })?;
         Ok(self.state())
+    }
+
+    pub fn agents(&self, r: &ProjectRef) -> Agents {
+        let board = self.board();
+        let (running, queued) = board.agents(r);
+        Agents {
+            running,
+            max_agents: board.max_agents_of(r),
+            queued,
+        }
+    }
+
+    /// The queued holder's place in line, from 1 ([`Board::position`]).
+    pub fn position(&self, holder: &str) -> Option<i64> {
+        self.board().position(holder)
+    }
+
+    /// The project's running writers and readers above its max agents, newest first ([`Board::extras`]).
+    pub fn extras(&self, r: &ProjectRef) -> Vec<String> {
+        self.board().extras(r)
+    }
+
+    pub fn cap(&self) -> i64 {
+        self.board().cap()
     }
 
     /// Slots the project's tasks could take now ([`Board::room`]).
