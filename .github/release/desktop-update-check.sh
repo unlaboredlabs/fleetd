@@ -34,6 +34,13 @@ cp "$asset" "$feed/"
 
 (cd "$feed" && exec python3 -I -m http.server "$port" --bind 127.0.0.1) > "$feed/http.log" 2>&1 &
 server=$!
+# Serving this feed, not an older one still on the port (a server that can't bind exits within the first second).
+sleep 1
+for _ in $(seq 20); do
+  kill -0 "$server" 2>/dev/null || { cat "$feed/http.log"; echo "::error::the feed server didn't start"; exit 1; }
+  if curl -fsS -o /dev/null "http://127.0.0.1:$port/$yml" 2>/dev/null && kill -0 "$server" 2>/dev/null; then break; fi
+  sleep 0.5
+done
 # Its own process group, so the stop below reaches every helper (and the AppImage runtime's child).
 set -m
 FLEETD_BASE_URL="http://127.0.0.1:$port" "$@" > "$log" 2>&1 &
