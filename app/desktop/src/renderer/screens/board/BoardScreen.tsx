@@ -1,5 +1,6 @@
 // The board screen (routes #/, #/board and #/board/<machineId>/<projectId>): F1's screens.tsx mounts this.
 import { useRef, useSyncExternalStore } from "react";
+import { toast } from "../../ui";
 import { BoardView } from "./BoardView";
 import type { ComposerHandle } from "./Composer";
 import { type ProjectKey, projectKey } from "./live";
@@ -40,6 +41,11 @@ export function BoardScreen() {
         openOrder: (id) => go(`#/order/${encodeURIComponent(id)}`),
         addProject: () => go("#/projects/add"),
         openAsk: (askId) => go(`#/board?inbox&ask=${encodeURIComponent(askId)}`),
+        openPr: (url) => {
+          void window.fleetd.openExternal(url).then((o) => {
+            if (!o.ok) toast({ title: "Couldn't open the PR", description: o.message, tone: "danger" });
+          });
+        },
       }}
     />
   );

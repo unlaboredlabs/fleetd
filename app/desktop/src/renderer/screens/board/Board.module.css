@@ -368,6 +368,20 @@
   font-size: var(--text-sm);
   color: var(--text);
 }
+.prLink {
+  all: unset;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--text);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+.prLink:hover {
+  text-decoration: underline;
+}
+.prLink:focus-visible {
+  box-shadow: var(--focus-ring);
+}
 .groupTitle {
   flex: 0 1 auto;
 }

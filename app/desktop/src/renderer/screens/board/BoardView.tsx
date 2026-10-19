@@ -186,7 +186,7 @@ function ItemView({
     case "sent":
       return <Sent sent={item.sent} actions={actions} composerHandle={composerHandle} />;
     case "card":
-      return <OrderCardRow item={item} now={now} stale={stale} open={actions.openOrder} />;
+      return <OrderCardRow item={item} now={now} stale={stale} open={actions.openOrder} openPr={actions.openPr} />;
     case "stageTitle":
       return <StageTitle item={item} open={actions.openOrder} />;
     case "stageHead":
@@ -208,7 +208,7 @@ function ItemView({
       const written = writtenIn(g);
       return (
         <div className={s.group}>
-          <span className={s.prNumber}>#{g.pr.number}</span>
+          <PrNumber number={g.pr.number} url={g.pr.url} open={actions.openPr} />
           <Truncate expand="none" className={cx(s.groupTitle)}>
             {g.writer?.title ?? `PR #${g.pr.number}`}
           </Truncate>
@@ -252,6 +252,24 @@ function ItemView({
 /** A row on its way out is gone for readers and the keyboard while it collapses. */
 const leavingProps = (leaving: boolean) => (leaving ? { "aria-hidden": true, inert: true } : {});
 
+/** "#221", a link to the PR on GitHub when the app can open one; the click stays off the row it sits in. */
+function PrNumber({ number, url, open }: { number: number; url: string; open?: ((url: string) => void) | undefined }) {
+  if (!open) return <span className={s.prNumber}>#{number}</span>;
+  return (
+    <button
+      type="button"
+      className={cx(s.prNumber, s.prLink)}
+      aria-label={`Open PR #${number} on GitHub`}
+      onClick={(e) => {
+        e.stopPropagation();
+        open(url);
+      }}
+    >
+      #{number}
+    </button>
+  );
+}
+
 const toneClass = (tone: ReturnType<typeof stageTone>) =>
   tone === "success" ? s.success : tone === "warning" ? s.warning : tone === "danger" ? s.danger : s.quietText;
 
@@ -284,7 +302,19 @@ function StageTitle({ item, open }: { item: Extract<Item, { kind: "stageTitle" }
   );
 }
 
-function OrderCardRow({ item, now, stale, open }: { item: Extract<Item, { kind: "card" }>; now: number; stale: boolean; open: (id: string) => void }) {
+function OrderCardRow({
+  item,
+  now,
+  stale,
+  open,
+  openPr,
+}: {
+  item: Extract<Item, { kind: "card" }>;
+  now: number;
+  stale: boolean;
+  open: (id: string) => void;
+  openPr?: ((url: string) => void) | undefined;
+}) {
   const { card, phase, lanes } = item;
   const done = phase === "done" || phase === "stopped";
   const drawn = done ? EMPTY : heldLanes(lanes, now);
@@ -331,7 +361,7 @@ function OrderCardRow({ item, now, stale, open }: { item: Extract<Item, { kind: 
         <div className={cx(s.cardBody, s.prLine)}>
           {card.prs.map((p) => (
             <span key={p.changeId} className={s.prChip}>
-              <span className={s.prNumber}>#{p.number}</span>
+              <PrNumber number={p.number} url={p.url} open={openPr} />
               <Track state={p.state} review={prReview(p)} />
               <span className={toneClass(stageTone(p.state))}>{prLabel(p)}</span>
             </span>
