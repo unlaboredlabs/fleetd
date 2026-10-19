@@ -44,6 +44,8 @@ export const IPC = {
   appReady: "app:ready",
   /** invoke(NotifyRequest) → void. Posts a system notification; clicking it sends `appOpen` with its target. */
   appNotify: "app:notify",
+  /** invoke(LinkHandlerClaim | null) → LinkHandlerStatus. Null only reads; a reason claims fleetd:// if it should. */
+  appLinkHandler: "app:linkHandler",
   /** invoke(MenuCommand[]) → void. The menu commands enabled now; main greys out the rest. */
   appMenuState: "app:menuState",
   /** main → renderer: a command id (shared/shortcuts.ts or the palette registry), from a click in the app menu. */

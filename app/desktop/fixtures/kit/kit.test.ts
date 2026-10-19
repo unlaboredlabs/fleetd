@@ -82,6 +82,7 @@ describe("sanitize", () => {
     ["tailnet host", "http://buildbox.tail1234.ts.net:4790"],
     ["another home", "/Users/someone/src/app and /home/other/src"],
     ["private repo URL", "https://github.com/someone/private-thing/pull/4"],
+    ["private repo SSH remote", "git@github.com:someorg/private-thing.git"],
   ];
 
   it.each(SAMPLES)("rewrites a %s so nothing of it is left", (_what, sample) => {
@@ -93,7 +94,7 @@ describe("sanitize", () => {
     const out = s.value({
       repo: "unlaboredlabs/fleetd-lab",
       url: "https://github.com/unlaboredlabs/fleetd-lab/pull/12",
-      path: `${lab}/lab-repo/site/pricing.md`,
+      path: `${path.dirname(lab)}/lab-repo/site/pricing.md`,
       title: "fleetd-lab",
       branch: "slot/4/fleetd/T3-write-alpha-md",
       noci: "noci/4/fleetd/T5-review",
@@ -109,6 +110,25 @@ describe("sanitize", () => {
       summary: "pushed fleetd/T3-write-alpha-md to acme/storefront",
     });
     expect(findLeaks(JSON.stringify(out))).toEqual([]);
+  });
+
+  it("rewrites the lab root's shared clone from a slot dir, base branches, any casing and git remotes", () => {
+    const slot = makeSanitizer("/home/someone/src/fleetd-lab/slot-3", 4855);
+    expect(
+      slot.value({
+        path: "/home/someone/src/fleetd-lab/lab-repo/site/a.md",
+        base: "slot/3/main",
+        compare: "noci/3/main...slot/3/fleetd/T1-x",
+        title: "Fleetd-Lab",
+        remote: "git@github.com:unlaboredlabs/fleetd-lab.git",
+      }),
+    ).toEqual({
+      path: "/home/dev/src/storefront/site/a.md",
+      base: "main",
+      compare: "main...fleetd/T1-x",
+      title: "storefront",
+      remote: "git@github.com:acme/storefront.git",
+    });
   });
 
   it("maps every repo outside acme onto an acme stand-in, in repo fields and in object keys", () => {

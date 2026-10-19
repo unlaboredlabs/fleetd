@@ -1,6 +1,5 @@
 // Pairing with a hub: the pure rules shared by main (which talks to the hub) and the renderer (which shows it).
 // The contract is `POST <hub>/pair {code, deviceName}` → `{key, hubUrl, hubName}` or the hub's `{code, message, fix}`.
-import { z } from "zod";
 
 /** The /app protocol this app speaks (fleetd_contracts::hello::PROTOCOL_VERSION). */
 export const APP_PROTOCOL = 1;
@@ -59,13 +58,11 @@ export const keyStoreLine = (store: KeyStore): string =>
       ? "The key comes from FLEETD_AGENT_KEY for this run and is saved nowhere."
       : `The key is kept in a file only you can read (${store.path}), not encrypted. ${store.why} ${store.fix}`;
 
-export const PairRequest = z.strictObject({
-  hub: z.string().trim().min(1).max(2048),
-  code: z.string().trim().min(1).max(64),
-});
-export type PairRequest = z.infer<typeof PairRequest>;
-
-export const ProbeRequest = z.string().trim().min(1).max(2048);
+/** What the renderer sends to redeem a code; shared/ipc.ts validates it in main. */
+export interface PairRequest {
+  readonly hub: string;
+  readonly code: string;
+}
 
 /** Crockford base32 without I L O U, as `fleetd pair` mints them. */
 const CODE_CHARS = /^[0-9A-HJKMNP-TV-Z]{8}$/u;
@@ -107,12 +104,12 @@ export const hubOrigin = (input: string): { ok: true; origin: string } | { ok: f
 
 /** Reads app-pair.json's text; null unless it names a hub and a code. `nowMs` decides `expired`. */
 export const readAppPair = (text: string, nowMs: number): AppPair | null => {
-  const parsed = z
-    .object({ hub: z.string().min(1), code: z.string().min(1), expiresAt: z.string() })
-    .safeParse(safeJson(text));
-  if (!parsed.success) return null;
-  const at = Date.parse(parsed.data.expiresAt);
-  return { hub: parsed.data.hub, code: parsed.data.code, expired: Number.isNaN(at) || at <= nowMs };
+  const json = safeJson(text);
+  if (typeof json !== "object" || json === null) return null;
+  const { hub, code, expiresAt } = json as Record<string, unknown>;
+  if (typeof hub !== "string" || hub === "" || typeof code !== "string" || code === "" || typeof expiresAt !== "string") return null;
+  const at = Date.parse(expiresAt);
+  return { hub, code, expired: Number.isNaN(at) || at <= nowMs };
 };
 
 const safeJson = (text: string): unknown => {

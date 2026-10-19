@@ -1,7 +1,6 @@
 // Secret asks: the value is sealed here, in main, to the sink machine's X25519 box key with libsodium's
 // crypto_box_seal (the same construction as the node's crypto_box_seal_open and the old app's seal.rs), so the hub
 // only relays ciphertext and the renderer never gets the plaintext back. It is never logged.
-import sodium from "libsodium-wrappers";
 import type { CallOutcome, HubError, SecretOutcome } from "../shared/hub";
 import type { SecretRequest } from "../shared/ipc";
 
@@ -25,6 +24,8 @@ export const seal = async (boxPubKey: string, value: string): Promise<{ ok: true
     if (key.length !== 32 || key.toString("base64") !== boxPubKey.trim()) {
       return refused("The machine's box key is not a 32-byte key.", "Restart the node on that machine so it reports its key again.");
     }
+    // Loaded on the first secret, not at startup: libsodium instantiates its WebAssembly on import.
+    const { default: sodium } = await import("libsodium-wrappers");
     await sodium.ready;
     return { ok: true, sealed: Buffer.from(sodium.crypto_box_seal(plain, key)).toString("base64") };
   } finally {

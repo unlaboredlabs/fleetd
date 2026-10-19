@@ -8,6 +8,9 @@
 # CLI keeps the previous run's assets, checksums and versions for it. Both files go up last, so a reader never sees
 # checksums for assets that are not there yet.
 #
+# The desktop app's update feeds (latest-mac.yml, latest-linux.yml, from update-yml.sh) go up after the assets they
+# point at, for the same reason. A nightly that didn't build the desktop app keeps the previous feeds.
+#
 # Env: CHANNEL, VERSION, APP_BUILT, CLI_PUBLISH, GH_TOKEN, GITHUB_SHA, GITHUB_REF_NAME.
 set -euo pipefail
 : "${CHANNEL:?}" "${VERSION:?}" "${APP_BUILT:?}" "${CLI_PUBLISH:?}" "${GITHUB_SHA:?}"
@@ -56,5 +59,7 @@ else
   gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --verify-tag --title "fleetd $VERSION" --generate-notes
 fi
 gh release upload "$tag" "${assets[@]}" --clobber
+feeds=(latest-*.yml)
+if [ ${#feeds[@]} -gt 0 ]; then gh release upload "$tag" "${feeds[@]}" --clobber; fi
 gh release upload "$tag" SHA256SUMS release.json --clobber
 echo "published https://github.com/${GITHUB_REPOSITORY:-unlaboredlabs/fleetd}/releases/tag/$tag"

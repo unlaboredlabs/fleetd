@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from "electron";
-import type { OpenTarget } from "../shared/app";
+import type { LinkHandlerStatus, OpenTarget } from "../shared/app";
 import { IPC } from "../shared/channels";
 import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, HubState, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { KeyStore, PairOutcome, PairStart, Probe } from "../shared/pairing";
@@ -84,6 +84,7 @@ const api: FleetdApi = {
       return () => openListeners.delete(listener);
     },
     notify: (request) => ipcRenderer.invoke(IPC.appNotify, request) as Promise<void>,
+    linkHandler: (claim) => ipcRenderer.invoke(IPC.appLinkHandler, claim) as Promise<LinkHandlerStatus>,
     setMenuState: (enabled) => ipcRenderer.invoke(IPC.appMenuState, enabled) as Promise<void>,
   },
 };

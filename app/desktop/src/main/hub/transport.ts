@@ -1,5 +1,6 @@
 import WebSocket from "ws";
 import type { SocketError } from "./explain";
+import { trustSystemCAs } from "../trust";
 
 /**
  * What a connection reports. `onClose` comes exactly once, also after a failed connect (code 1006); `error` is the
@@ -25,6 +26,7 @@ export type Transport = (url: string, events: ConnectionEvents) => Connection;
 
 /** Node's built-in WebSocket can't ping, so `ws`. */
 export const webSocketTransport: Transport = (url, events) => {
+  trustSystemCAs();
   const socket = new WebSocket(url, { maxPayload: 64 * 1024 * 1024 });
   let closed = false;
   let error: SocketError | undefined;

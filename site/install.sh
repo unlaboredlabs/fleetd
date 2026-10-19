@@ -9,7 +9,8 @@
 # With a terminal it then runs `fleetd init` (the setup wizard) on it; --no-init, or no terminal, only installs.
 #
 # FLEETD_CHANNEL=nightly|stable picks the release (default nightly). FLEETD_BASE_URL points at another directory
-# of release assets.
+# of release assets. FLEETD_APP=electron installs the new Electron app instead (an AppImage on Linux), until it
+# replaces the current one; that app then updates itself.
 #
 # Everything runs from main at the end, so a partly downloaded script does nothing.
 set -eu
@@ -32,7 +33,8 @@ Usage: curl -fsSL https://fleetd.sh | sh -s -- [options]
   --no-init     don't start the setup wizard (fleetd init) after installing
   --uninstall   remove the CLI and the app (fleetd's data in ~/.fleetd stays)
 
-Environment: FLEETD_CHANNEL=nightly|stable (default nightly), FLEETD_BASE_URL=<asset directory>
+Environment: FLEETD_CHANNEL=nightly|stable (default nightly), FLEETD_BASE_URL=<asset directory>,
+             FLEETD_APP=electron (the new desktop app, before it becomes the default)
 EOF
 }
 
@@ -93,7 +95,7 @@ install_cli() {
 }
 
 install_app_macos() {
-  if ! fetch fleetd-app-macos-universal.zip "$tmp/app.zip"; then
+  if ! fetch "$mac_asset" "$tmp/app.zip"; then
     warn "no desktop app on the $channel channel yet; skipping it"
     return 0
   fi
@@ -104,6 +106,48 @@ install_app_macos() {
   mv "$tmp/app/fleetd.app" "$HOME/Applications/.fleetd.app.new"
   swap "$HOME/Applications/.fleetd.app.new" "$HOME/Applications/fleetd.app"
   say "installed the app: ~/Applications/fleetd.app"
+  installed=1
+}
+
+install_app_linux_electron() {
+  if ! fetch fleetd-desktop-linux-x86_64.AppImage "$tmp/fleetd-desktop.AppImage"; then
+    warn "no desktop app for linux-$arch on the $channel channel yet; skipping it"
+    return 0
+  fi
+  mkdir -p "$app_dir_parent" "$apps_dir"
+  rm -rf "$app_dir.new"
+  mkdir -p "$app_dir.new"
+  # The app updates this file in place, under the same name.
+  mv "$tmp/fleetd-desktop.AppImage" "$app_dir.new/fleetd-desktop.AppImage"
+  chmod 755 "$app_dir.new/fleetd-desktop.AppImage"
+  # Best effort: without it the menu entry gets a generic icon. Extracting needs no FUSE.
+  if (cd "$tmp" && "$app_dir.new/fleetd-desktop.AppImage" --appimage-extract fleetd-desktop.png >/dev/null 2>&1); then
+    mv "$tmp/squashfs-root/fleetd-desktop.png" "$app_dir.new/fleetd.png" 2>/dev/null || true
+  fi
+  swap "$app_dir.new" "$app_dir"
+  # Named after the app's Wayland app_id / WM_CLASS (desktopName in app/desktop/package.json), so its windows get
+  # this entry's name and icon. %u hands a fleetd:// pairing link to the app.
+  cat >"$apps_dir/.fleetd-desktop.desktop.new" <<DESKTOP
+[Desktop Entry]
+Type=Application
+Name=fleetd
+Comment=Watch and steer your software factory
+Exec=$app_dir/fleetd-desktop.AppImage %u
+Icon=$app_dir/fleetd.png
+Terminal=false
+Categories=Development;
+StartupWMClass=fleetd-desktop
+MimeType=x-scheme-handler/fleetd;
+DESKTOP
+  mv "$apps_dir/.fleetd-desktop.desktop.new" "$apps_dir/fleetd-desktop.desktop"
+  rm -f "$apps_dir/fleetd.desktop"
+  if command -v xdg-mime >/dev/null 2>&1; then
+    xdg-mime default fleetd-desktop.desktop x-scheme-handler/fleetd 2>/dev/null || true
+  fi
+  if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database "$apps_dir" 2>/dev/null || true
+  fi
+  say "installed the app: $app_dir/fleetd-desktop.AppImage (menu entry: $apps_dir/fleetd-desktop.desktop)"
   installed=1
 }
 
@@ -121,6 +165,7 @@ install_app_linux() {
   sed -e "s|^Exec=.*|Exec=$app_dir/fleetd-app %u|" -e "s|^Icon=.*|Icon=$app_dir/fleetd.png|" \
     "$app_dir/fleetd.desktop" >"$apps_dir/.fleetd.desktop.new"
   mv "$apps_dir/.fleetd.desktop.new" "$apps_dir/fleetd.desktop"
+  rm -f "$apps_dir/fleetd-desktop.desktop"
   # Best effort: without these the app still pairs by code, only the fleetd:// link does not open it.
   if command -v xdg-mime >/dev/null 2>&1; then
     xdg-mime default fleetd.desktop x-scheme-handler/fleetd 2>/dev/null || true
@@ -140,7 +185,7 @@ uninstall() {
   rm -rf "$bin_dir"
   link="$HOME/.local/bin/fleetd"
   if [ -L "$link" ] && [ "$(readlink "$link")" = "$bin_dir/fleetd" ]; then rm -f "$link"; fi
-  rm -rf "$HOME/Applications/fleetd.app" "$app_dir" "$apps_dir/fleetd.desktop"
+  rm -rf "$HOME/Applications/fleetd.app" "$app_dir" "$apps_dir/fleetd.desktop" "$apps_dir/fleetd-desktop.desktop"
   rmdir "$app_dir_parent" 2>/dev/null || true
   say "removed the fleetd CLI and app. Your data in ~/.fleetd is still there; delete it yourself if you want it gone."
 }
@@ -200,6 +245,11 @@ main() {
     *) die "FLEETD_CHANNEL must be nightly or stable, not $channel" ;;
   esac
   base="${FLEETD_BASE_URL:-$default_base}"
+  case "${FLEETD_APP:-}" in
+    "") electron=0 mac_asset=fleetd-app-macos-universal.zip ;;
+    electron) electron=1 mac_asset=fleetd-desktop-macos-universal.zip ;;
+    *) die "FLEETD_APP must be electron or unset, not $FLEETD_APP" ;;
+  esac
 
   command -v curl >/dev/null 2>&1 || die "need curl"
   command -v tar >/dev/null 2>&1 || die "need tar"
@@ -220,6 +270,8 @@ main() {
       warn "no desktop app for linux-$arch yet; skipping it"
     elif [ "$os" = darwin ]; then
       install_app_macos
+    elif [ "$electron" = 1 ]; then
+      install_app_linux_electron
     else
       install_app_linux
     fi
