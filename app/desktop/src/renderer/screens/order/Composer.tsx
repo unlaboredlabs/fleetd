@@ -2,7 +2,7 @@
 // primary button queues for the agent's next step and reads "Interrupt" while the modifier is held; the secondary
 // interrupts and redirects now. Both modes by mouse too.
 
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import { Button, cx, Text, Textarea } from "../../ui";
 import { keyHint, modKey, placeholder, primaryLabel, secondaryLabel, sendModeFor, type Platform, type SteerWords } from "./composerModel";
 import type { SteerMode } from "../../../shared/contracts";
@@ -39,15 +39,18 @@ export interface SteerComposerProps {
   /** Focus it when it mounts (the steer sheet). */
   autoFocus?: boolean;
   label: string;
+  /** The textarea, for "Steer the lead" in the palette. */
+  inputRef?: RefObject<HTMLTextAreaElement | null>;
 }
 
-export function SteerComposer({ who, platform, onSend, draftKey, autoFocus, label }: SteerComposerProps) {
+export function SteerComposer({ who, platform, onSend, draftKey, autoFocus, label, inputRef }: SteerComposerProps) {
   const [draft, setDraft] = useDraft(draftKey);
   const text = draft.text;
   const [focused, setFocused] = useState(false);
   const [busy, setBusy] = useState(false);
   const held = useModHeld(platform, focused);
-  const ref = useRef<HTMLTextAreaElement>(null);
+  const own = useRef<HTMLTextAreaElement>(null);
+  const ref = inputRef ?? own;
   const canSend = text.trim() !== "" && !busy;
 
   const send = (mode: SteerMode) => {

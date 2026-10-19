@@ -2,7 +2,13 @@
 // conversation about this order on the right, with a receipt under every steer, the line for a steer waiting on
 // the lead's next step, and the steer composer at the bottom. Every lane opens its steer box.
 
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useShellData } from "../shell/data";
+import { sidebarOrders } from "../shell/model";
+import { useOrderCommands } from "./commands";
+import { askForOrder } from "../board/commands";
+import { useNow as useClock } from "../board/clock";
+import { useData } from "../../src/data/react";
 import { Button, cx, Dialog, IdChip, StatusChip, Text, Truncate } from "../../ui";
 import { SteerComposer } from "./Composer";
 import { Conversation, InlineText } from "./Conversation";
@@ -87,6 +93,10 @@ export function OrderView(props: { data: OrderData; actions: OrderActions; platf
   const [sheet, setSheet] = useState<SheetAgent | undefined>(undefined);
   const [toldOpen, setToldOpen] = useState<{ thread: ThreadRef; who: ToldWho; name: string }>();
   const [confirmStop, setConfirmStop] = useState(false);
+  // Stop was confirmed and the hub hasn't said the order stopped yet.
+  const [stopping, setStopping] = useState(false);
+  const leadInput = useRef<HTMLTextAreaElement>(null);
+  const sidebar = useShellData().projects;
   // Bumped by every steer sent from the lead's box: the log scrolls to it and its receipt.
   const [sentCount, setSentCount] = useState(0);
 
@@ -104,9 +114,10 @@ export function OrderView(props: { data: OrderData; actions: OrderActions; platf
         steers: data.steers,
         sending: data.sending,
         streamed: data.streamed,
+        ...(data.latest ? { latest: data.latest } : {}),
         lanes: data.lanes,
       }),
-    [redirected, data.tail, w, data.events, leadWorking, data.steers, data.sending, data.streamed, data.lanes],
+    [redirected, data.tail, w, data.events, leadWorking, data.steers, data.sending, data.streamed, data.latest, data.lanes],
   );
   // A jump to the lead's transcript scrolls the log; one to an agent's opens its steer box at the item.
   const focus = data.focus;
@@ -126,6 +137,8 @@ export function OrderView(props: { data: OrderData; actions: OrderActions; platf
   const pill = fanOut(data.lanes, data.asks);
   const status = [pill, data.total ? `${data.settled ?? 0}/${data.total} settled` : undefined].filter(Boolean).join(" · ");
   const finished = data.phase === "stopped" || data.phase === "done" || data.phase === "failed";
+  const skew = useData((st) => st.live.skewMs ?? 0);
+  const laneNow = useClock(data.lanes.some((l) => l.status === "working" || l.status === "starting")) + skew;
   const running = data.lanes.filter((l) => l.status === "working" || l.status === "starting" || l.status === "queued").length;
 
   // Keep an open sheet's lane live as frames arrive.
@@ -158,6 +171,38 @@ export function OrderView(props: { data: OrderData; actions: OrderActions; platf
       ? { text: "Couldn’t load the lead’s log; it loads again when the hub answers.", error: true }
       : { text: data.logReady ? `The lead hasn’t said anything about ${w} yet.` : "Loading the lead’s log…", error: false };
 
+  const sidebarIds = useMemo(() => sidebarOrders(sidebar), [sidebar]);
+  const go = useCallback((hash: string) => {
+    window.location.hash = hash;
+  }, []);
+  const steerLead = useCallback(() => {
+    setTab("lead");
+    // The lead pane may have just mounted (narrow window): focus after it renders.
+    requestAnimationFrame(() => leadInput.current?.focus());
+  }, []);
+  const pickAgent = useCallback(() => {
+    setTab("fleet");
+    requestAnimationFrame(() => root.current?.querySelector<HTMLElement>("[data-lane]")?.focus());
+  }, []);
+  useOrderCommands(
+    {
+      workstreamId: w,
+      sidebar: sidebarIds,
+      finished,
+      lanes: data.lanes,
+      steers: data.steers,
+      go,
+      askStop: () => setConfirmStop(true),
+      steerLead,
+      pickAgent,
+      steerLane: (lane) => setSheet(agentOf(lane, w)),
+      withdraw: (id) => {
+        if (data.logReady) actions.withdraw(id);
+      },
+    },
+    [w, finished, sidebarIds, data.lanes, data.steers],
+  );
+
   // The hub's words for an unknown order name its internals; say it plainly and keep them behind Copy.
   const failure = typeof data.status === "object" ? data.status : undefined;
   const errorText = failure ? (failure.code === "not_found" ? `${w} isn’t on this hub.` : `Couldn’t load ${w}.`) : undefined;
@@ -186,19 +231,30 @@ export function OrderView(props: { data: OrderData; actions: OrderActions; platf
       </nav>
       {status ? (
         <span className={s.headerStatus}>
-          <StatusChip tone={data.phase && data.phase in PHASE_TONE ? PHASE_TONE[data.phase as keyof typeof PHASE_TONE] : "quiet"}>{status}</StatusChip>
+          {data.asks > 0 ? (
+            // Its questions are answered in the inbox (and in the cards above the composer).
+            <button type="button" className={s.pillButton} onClick={() => (location.hash = `#/order/${w}?inbox`)} title="Open its questions in the inbox">
+              <StatusChip tone="needs-you">{status}</StatusChip>
+            </button>
+          ) : (
+            <StatusChip tone={data.phase && data.phase in PHASE_TONE ? PHASE_TONE[data.phase as keyof typeof PHASE_TONE] : "quiet"}>{status}</StatusChip>
+          )}
         </span>
       ) : null}
       <div className={s.headerActions}>
-        <Button variant="ghost" onClick={() => (location.hash = "#/time")}>
+        <Button variant="ghost" onClick={() => (location.hash = `#/time/order/${w}`)}>
           Time
         </Button>
         <Button variant="ghost" onClick={() => (location.hash = `#/status/order/${w}`)}>
           Status
         </Button>
-        {finished || errorText !== undefined ? null : (
-          <Button variant="secondary" onClick={() => setConfirmStop(true)}>
-            Stop
+        {data.phase === "stopped" && data.sourceText ? (
+          <Button variant="secondary" title="Put this order's words back in the board's composer" onClick={() => askForOrder(data.sourceText ?? "")}>
+            Reorder
+          </Button>
+        ) : finished || errorText !== undefined ? null : (
+          <Button variant="secondary" disabled={stopping} onClick={() => setConfirmStop(true)}>
+            {stopping ? `Stopping ${w}…` : "Stop"}
           </Button>
         )}
       </div>
@@ -215,6 +271,8 @@ export function OrderView(props: { data: OrderData; actions: OrderActions; platf
         claim={data.claim}
         summary={pill}
         onOpenLane={(l) => setSheet(agentOf(l, w))}
+        now={laneNow}
+        onTold={(l) => openTold(agentOf(l, w))}
       />
     </div>
   );
@@ -247,6 +305,7 @@ export function OrderView(props: { data: OrderData; actions: OrderActions; platf
       <div className={s.bottom}>
         {waiting ? <InlineText size="xs" tone="quiet" className={cx(s.waiting)} text={waiting} /> : null}
         <SteerComposer
+          inputRef={leadInput}
           who={{ name: "the lead", ref: w }}
           platform={platform}
           label="Steer the lead"
@@ -268,6 +327,11 @@ export function OrderView(props: { data: OrderData; actions: OrderActions; platf
         <div className={cx(s.logEmpty, s.errorRow)} data-screen="order.error">
           <Text tone={failure?.code === "not_found" ? "quiet" : "danger"}>{errorText}</Text>
           {failure ? <IdChip label="Details" id={failure.error} kind="error" size="xs" tone="quiet" /> : null}
+          {failure?.code === "not_found" ? null : (
+            <Button variant="secondary" onClick={actions.retry}>
+              Retry
+            </Button>
+          )}
         </div>
       ) : wide ? (
         <div className={s.panes}>
@@ -307,7 +371,7 @@ export function OrderView(props: { data: OrderData; actions: OrderActions; platf
         open={confirmStop}
         onOpenChange={setConfirmStop}
         title={`Stop ${w}?`}
-        description={`Its ${running} running ${running === 1 ? "agent is" : "agents are"} cancelled; merged PRs stay. A stopped order isn’t reopened.`}
+        description={`Its ${running} running ${running === 1 ? "agent is" : "agents are"} cancelled; merged PRs stay. A stopped order isn’t reopened; Reorder starts it again.`}
         footer={
           <>
             <Button variant="ghost" onClick={() => setConfirmStop(false)}>
@@ -317,6 +381,7 @@ export function OrderView(props: { data: OrderData; actions: OrderActions; platf
               variant="danger"
               onClick={() => {
                 setConfirmStop(false);
+                setStopping(true);
                 actions.stop();
               }}
             >

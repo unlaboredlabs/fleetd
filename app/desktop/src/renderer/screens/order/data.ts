@@ -35,6 +35,10 @@ export interface OrderData {
   /** Absent while the brief is a draft. */
   readonly doneWhen?: readonly CheckSpec[];
   readonly claim?: Claim;
+  /** The end of the lead's latest message and when it was written (thread_tail's thread summary). */
+  readonly latest?: { readonly text: string; readonly at: string };
+  /** The words the order was given, for Reorder. */
+  readonly sourceText?: string;
   /** The lead's log, oldest first, kept across refetches. */
   readonly tail: readonly TailItem[];
   readonly tailError?: string | undefined;
@@ -79,6 +83,8 @@ export interface OrderActions {
   readonly edit: (requestId: string) => void;
   readonly dismiss: (requestId: string) => void;
   readonly stop: () => void;
+  /** Ask the hub again after a load error. */
+  readonly retry: () => void;
 }
 
 /** What this view holds itself, beside the store. */
@@ -177,6 +183,7 @@ export function useOrder(workstreamId: string, jump?: Jump): [OrderData, OrderAc
 
   const refetchSteers = steersQ.refetch;
   const refetchOrder = orderQ.refetch;
+  const refetchBrief = briefQ.refetch;
   const actions = useMemo<OrderActions>(() => {
     const steer = (target: SteerTarget, text: string, mode: SteerMode, requestId: string) => outbox.steer(workstreamId, target, text, mode, requestId);
     return {
@@ -199,8 +206,12 @@ export function useOrder(workstreamId: string, jump?: Jump): [OrderData, OrderAc
       stop: () => {
         void layer.call("order_stop", { workstreamId }).then(() => refetchOrder());
       },
+      retry: () => {
+        void refetchOrder();
+        void refetchBrief();
+      },
     };
-  }, [layer, outbox, workstreamId, refetchSteers, refetchOrder]);
+  }, [layer, outbox, workstreamId, refetchSteers, refetchOrder, refetchBrief]);
 
   // Open at a transcript item: the lead's window around it here; an agent's thread is the steer sheet's to show.
   const jumpThread = jump?.thread;
@@ -244,6 +255,8 @@ export function useOrder(workstreamId: string, jump?: Jump): [OrderData, OrderAc
       asks: page?.asks.length ?? 0,
       ...(doneWhen ? { doneWhen } : {}),
       ...(claim ? { claim } : {}),
+      ...(briefQ.data ? { sourceText: briefQ.data.workstream.source.text } : {}),
+      ...(log.logReady && tailQ.data ? { latest: { text: tailQ.data.thread.latestMessageTail, at: tailQ.data.thread.lastProgressAt } } : {}),
       tail: log.tail,
       tailError,
       logReady: log.logReady,

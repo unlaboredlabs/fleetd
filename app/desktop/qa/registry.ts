@@ -256,6 +256,8 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       const fleet = page.getByRole("tab", { name: "Fleet" });
       if ((await fleet.count()) > 0) await fleet.click();
+      // A finished order's agents sit under its "Done (n)" fold.
+      if ((await page.locator("[data-lane]").count()) === 0) await page.getByRole("button", { name: /^Done \(/ }).click();
       await page.locator("[data-lane]").first().click();
     },
   },
@@ -288,7 +290,10 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       const fleet = page.getByRole("tab", { name: "Fleet" });
       if ((await fleet.count()) > 0) await fleet.click();
-      await page.locator("[data-lane]").filter({ hasText: "T12" }).first().click();
+      // T12 has finished: it sits under the fleet's folded "Done" list.
+      const lane = page.locator(`[data-lane="T12"]`);
+      if ((await lane.count()) === 0) await page.getByRole("button", { name: /^Done \(/ }).click();
+      await lane.click();
       const box = page.getByRole("textbox", { name: "Steer T12" });
       await box.fill(STEER_SENDS.offline);
       await box.press("Enter");
