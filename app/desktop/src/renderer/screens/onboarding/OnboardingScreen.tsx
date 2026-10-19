@@ -83,6 +83,7 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
       dispatch({ type: "failed", failure: outcome.failure });
       codeField.current?.focus();
     }
+    return outcome.ok;
   }, []);
 
   useEffect(() => {
@@ -110,7 +111,11 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
     if (form.busy) return;
     if (!form.useKey) {
       const request = { hub: form.hub, code: form.code };
-      return pair(form.hub, () => window.fleetd.pair.redeem(request));
+      const fromLink = form.linkCode !== null && form.linkCode === form.code;
+      const ok = await pair(form.hub, () => window.fleetd.pair.redeem(request));
+      // The link may have been meant for another install that holds fleetd://; main claims it back when it should.
+      if (!ok && fromLink) dispatch({ type: "linkChecked", status: await window.fleetd.app.linkHandler("pair-failed") });
+      return;
     }
     const key = form.key.trim();
     if (key === "") {
@@ -176,6 +181,7 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
         </div>
       </form>
       {form.error === null ? null : <Failure failure={form.error} />}
+      {form.linkNote === null ? null : <Prose text={form.linkNote} />}
       <div className={s.hint}>
         <Text tone="quiet">
           {form.useKey

@@ -1,4 +1,5 @@
 // The connect form's state: what it shows and when it pairs by itself. Pure, so the decisions are tested.
+import type { LinkHandlerStatus } from "../../../shared/app";
 import type { HubState } from "../../../shared/hub";
 import { hubOrigin, LOCAL_HUB, protocolFit, type PairFailure, type PairStart } from "../../../shared/pairing";
 
@@ -17,6 +18,10 @@ export interface Form {
   readonly firstRun: boolean;
   /** The address came from a fleetd://pair link, which any web page can open. */
   readonly hubFromLink: boolean;
+  /** The code a fleetd://pair link brought, while it is still the one in the field. */
+  readonly linkCode: string | null;
+  /** After a link's code failed: whether this app takes fleetd:// links now (see `linkNote`). */
+  readonly linkNote: string | null;
   /** Ask main to pair from app-pair.json (set by `started`; main reads the code, this page never sees it). */
   readonly autoPending: boolean;
 }
@@ -27,7 +32,8 @@ export type Action =
   | { type: "toggleKey" }
   | { type: "submitting"; hub: string }
   | { type: "failed"; failure: PairFailure }
-  | { type: "paired"; hubName: string };
+  | { type: "paired"; hubName: string }
+  | { type: "linkChecked"; status: LinkHandlerStatus };
 
 export const KEY_CREATE = "fleetd hub key create --human --name <device>";
 
@@ -51,6 +57,8 @@ export const initialForm = (
     notice: state.phase === "unpaired" ? (state.note ?? null) : null,
     firstRun: state.phase === "unpaired",
     hubFromLink: link.hub !== undefined,
+    linkCode: linked ? (link.code ?? null) : null,
+    linkNote: null,
     autoPending: false,
   };
 };
@@ -92,7 +100,12 @@ export const reduce = (form: Form, action: Action): Form => {
       return { ...form, hub, error, status: `Found your hub at ${probe.hub}. Enter the code from \`fleetd pair\` to connect.` };
     }
     case "edit":
-      return { ...form, [action.field]: action.value, hubFromLink: action.field === "hub" ? false : form.hubFromLink };
+      return {
+        ...form,
+        [action.field]: action.value,
+        hubFromLink: action.field === "hub" ? false : form.hubFromLink,
+        linkCode: action.field === "code" ? null : form.linkCode,
+      };
     case "toggleKey": {
       const useKey = !form.useKey;
       // A key is a long-lived secret: never send it to an address a link chose; the person types it.
@@ -100,9 +113,11 @@ export const reduce = (form: Form, action: Action): Form => {
       return { ...form, useKey, error: null, ...(clearHub ? { hub: "", hubFromLink: false, status: null } : {}) };
     }
     case "submitting":
-      return { ...form, busy: true, error: null, autoPending: false, status: `Pairing with ${action.hub}…` };
+      return { ...form, busy: true, error: null, linkNote: null, autoPending: false, status: `Pairing with ${action.hub}…` };
     case "failed":
       return { ...form, busy: false, status: null, error: action.failure };
+    case "linkChecked":
+      return { ...form, linkNote: linkNote(action.status) };
     case "paired":
       return { ...form, busy: false, code: "", key: "", error: null, status: `Paired with ${action.hubName}. Connecting…` };
   }
@@ -151,3 +166,14 @@ export const reaching = (
 
 /** A reason as a sentence: a final period unless it already ends in one, or in ? or !. */
 export const sentence = (text: string): string => (/[.?!…]$/u.test(text.trim()) ? text.trim() : `${text.trim()}.`);
+
+/**
+ * What to say after a fleetd://pair link's code failed, once main has made this app the link handler where it can
+ * (another install may have been opening the links). Null when there is nothing to add.
+ */
+export const linkNote = (status: LinkHandlerStatus): string | null =>
+  !status.packaged
+    ? "This development build doesn't open fleetd:// links. Type the code from `fleetd pair` instead."
+    : status.handler
+      ? "fleetd:// links open this app now. Open the link again, or a new one from `fleetd pair` if this code was used up."
+      : null;

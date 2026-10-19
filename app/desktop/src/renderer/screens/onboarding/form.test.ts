@@ -87,3 +87,17 @@ describe("needsOnboarding", () => {
     expect(needsOnboarding({ phase: "retrying", hub: "h", reason: "r", retryAt: 0 })).toBe(false);
   });
 });
+
+describe("a link whose code failed", () => {
+  const linked = initialForm(unpaired, { hub: "http://devbox:4790", code: "WXYZ-6789" });
+  it("remembers the link's code only while it is the one in the field", () => {
+    expect(linked.linkCode).toBe("WXYZ-6789");
+    expect(reduce(linked, { type: "edit", field: "code", value: "ABCD-2345" }).linkCode).toBeNull();
+  });
+
+  it("says to open the link again once this app takes links, and to type the code in a dev build", () => {
+    expect(reduce(linked, { type: "linkChecked", status: { packaged: true, handler: true } }).linkNote).toContain("Open the link again");
+    expect(reduce(linked, { type: "linkChecked", status: { packaged: false, handler: false } }).linkNote).toContain("Type the code");
+    expect(reduce(linked, { type: "linkChecked", status: { packaged: true, handler: false } }).linkNote).toBeNull();
+  });
+});
