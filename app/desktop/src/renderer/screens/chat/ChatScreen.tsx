@@ -57,7 +57,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   );
 
   return (
-    <div className={s.screen} data-screen={view !== undefined ? "chat" : data.loadError !== undefined ? "chat.error" : "chat.loading"}>
+    <div className={s.screen} data-screen={data.missing ? "chat.missing" : view !== undefined ? "chat" : data.loadError !== undefined ? "chat.error" : "chat.loading"}>
       <header className={s.header}>
         <span className={s.title}>{title ? <Truncate strong>{title}</Truncate> : null}</span>
         {state ? (
@@ -65,9 +65,13 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
             <StatusChip tone={TONE[state]}>{STATE_WORDS[state]}</StatusChip>
           </span>
         ) : null}
-        <AgentsCapControl projectRef={project} />
+        {data.missing ? null : <AgentsCapControl projectRef={project} />}
       </header>
-      {rows === undefined && data.loadError !== undefined ? (
+      {data.missing ? (
+        <div className={s.loading} role="status">
+          <Text tone="quiet">This project isn’t on the hub. It may have been removed.</Text>
+        </div>
+      ) : rows === undefined && data.loadError !== undefined ? (
         <div className={s.loading} role="alert">
           <Text tone="quiet">Couldn’t load the conversation.</Text>
           <IdChip label="Details" id={data.loadError.message} kind="error" size="xs" tone="quiet" />
@@ -91,9 +95,11 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
           sent={sent}
         />
       )}
-      <div className={s.composer}>
-        <ChatComposer project={project} onSent={() => setSent((n) => n + 1)} />
-      </div>
+      {data.missing ? null : (
+        <div className={s.composer}>
+          <ChatComposer project={project} onSent={() => setSent((n) => n + 1)} />
+        </div>
+      )}
       <ToldPanel open={told} projectRef={project} onClose={() => setTold(undefined)} />
     </div>
   );

@@ -38,11 +38,6 @@ export const fixtures = [
   "live-0",
   "live-3",
   "live-20",
-  // F3: the lead chat's messages (fixtures/chat): history pages, a streaming reply, attachments, migrated history.
-  "chat-long",
-  "chat-streaming",
-  "chat-attachments",
-  "chat-migrated",
   // F4: the chat composer's sends (fixtures/composer).
   "composer-sends",
   "composer-waiting",
@@ -136,13 +131,6 @@ const CHAT = "#/project/devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22";
 export const label = (s: Pick<Screen, "id" | "variant">) => (s.variant === undefined ? s.id : `${s.id}~${s.variant}`);
 
 export const screens: readonly Screen[] = [
-  // F3 (A2): the project's lead chat. chat-long opens at its newest message with older pages above; streaming,
-  // attachments and history from before the chat each in their own fixture.
-  {
-    id: "chat",
-    route: CHAT,
-    fixtures: ["chat-long", "chat-streaming", "chat-attachments", "chat-migrated"],
-  },
   // F2 (A4): the live strip under the lead's latest message, in the project's chat. live-0 draws no strip.
   {
     id: "chat",
@@ -213,9 +201,10 @@ export const screens: readonly Screen[] = [
   {
     id: "chat",
     route: CHAT,
-    fixtures: ["chat-long", "chat-streaming", "chat-attachments", "chat-waiting", "chat-empty", "typical", "long-text", "empty", "hub-unreachable"],
-    pending: "A2 messages (F3), A3 composer (F4) and fixtures/chat (E3b)",
+    fixtures: ["chat-long", "chat-streaming", "chat-attachments", "chat-waiting", "chat-empty", "typical", "long-text", "hub-unreachable"],
   },
+  // A link to a project the hub doesn't have (here, a hub with none): says so, rather than loading forever.
+  { id: "chat", route: CHAT, fixtures: ["empty"], variant: "missing", expect: "error" },
   // A5 (F5): the two inline items: the masked secret field, and the exact gated command with Approve / Deny.
   {
     id: "chat",

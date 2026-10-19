@@ -22,6 +22,8 @@ export interface ChatData {
   readonly retry: () => void;
   readonly agents: readonly AgentLane[] | undefined;
   readonly title: string | undefined;
+  /** The hub has no such project (a stale link, or one removed): nothing will load. */
+  readonly missing: boolean;
   readonly loadOlder: () => void;
   readonly loadNewer: () => void;
   readonly jumpToLatest: () => void;
@@ -35,6 +37,7 @@ export function useChatData(project: ProjectRef): ChatData {
   const leadWorking = useData(selectLeadWorking(key));
   const agents = useData(selectProjectAgents(key));
   const title = useData((s) => s.projects[key]?.title);
+  const missing = useData((s) => s.fresh && !(key in s.projects));
   const loadError = useData((s) => (s.chats[key]?.loaded === true ? undefined : s.chats[key]?.error));
   const status = useToolQuery("status_projects", ALL);
   const row = status.data?.rows.find((r) => r.projectRef.machineId === project.machineId && r.projectRef.projectId === project.projectId);
@@ -49,5 +52,5 @@ export function useChatData(project: ProjectRef): ChatData {
   const jumpToLatest = useCallback(() => layer.chat.jumpToLatest(key), [layer, key]);
   // open() reads the newest page again while none has landed.
   const retry = useCallback(() => layer.chat.open(key), [layer, key]);
-  return { view, state, leadWorking, loadError, retry, agents, title, loadOlder, loadNewer, jumpToLatest };
+  return { view, state, leadWorking, loadError, retry, agents, title, missing, loadOlder, loadNewer, jumpToLatest };
 }

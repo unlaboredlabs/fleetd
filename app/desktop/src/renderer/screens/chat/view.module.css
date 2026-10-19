@@ -144,6 +144,9 @@
   display: block;
   max-width: min(100%, 360px);
   max-height: 240px;
+  /* A tiny image (an icon, a 2 px crop) still reads as an image rather than a stray mark. */
+  min-width: 48px;
+  min-height: 48px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   object-fit: contain;
