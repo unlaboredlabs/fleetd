@@ -45,6 +45,8 @@ pub trait ClaimsHook: Send + Sync {
     fn latest(&self, workstream_id: &WorkstreamId) -> Option<Claim>;
     /// Newest first, at most `limit` (workstream_get shows 20).
     fn list(&self, workstream_id: &WorkstreamId, limit: usize) -> Vec<Claim>;
+    /// The brief changed: a claim still checking the old done-when stops and never counts.
+    fn void(&self, workstream_id: &WorkstreamId);
 }
 
 /// Estimates: ETAs and recording a done workstream.

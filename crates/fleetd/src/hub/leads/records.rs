@@ -275,6 +275,33 @@ impl LeadRecords {
         })
     }
 
+    /// Like `workstream_put`, but only while the stored workstream still has `expect`'s state and brief hash: a claim
+    /// concluding and a brief being amended can't overwrite each other. False when it changed meanwhile.
+    pub fn workstream_put_if(
+        &self,
+        stored: &StoredWorkstream,
+        expect: &Workstream,
+    ) -> Result<bool, StoreError> {
+        let w = &stored.workstream;
+        let data = serde_json::to_string(w)?;
+        let amends = serde_json::to_string(&stored.amends)?;
+        self.db.with(|c| {
+            let changed = c.execute(
+                "UPDATE workstreams SET state = ?, amends = ?, data = ?
+                 WHERE n = ? AND state = ? AND json_extract(data, '$.briefHash') IS ?",
+                params![
+                    state_str(w.state),
+                    amends,
+                    data,
+                    workstream_number(&w.workstream_id),
+                    state_str(expect.state),
+                    expect.brief_hash.as_ref().map(|h| h.as_str()),
+                ],
+            )?;
+            Ok(changed == 1)
+        })
+    }
+
     /// Newest first.
     pub fn workstreams_list(
         &self,
@@ -328,5 +355,63 @@ impl LeadRecords {
         })
         .map(|ws| ws.into_iter().map(|w| w.workstream_id).collect())
         .unwrap_or_default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fleetd_contracts::ledger::BriefHash;
+
+    /// A concluding claim and an amend each write only over the workstream they read: the second writer loses.
+    #[test]
+    fn a_conditional_put_loses_once_the_state_or_brief_changed() {
+        let records = LeadRecords::new(HubDb::open_memory().unwrap());
+        let (w, _) = records
+            .workstream_create(NewWorkstream {
+                project_ref: serde_json::from_value(
+                    serde_json::json!({ "machineId": "lab-a", "projectId": "p1" }),
+                )
+                .unwrap(),
+                title: "schedules".into(),
+                text: "should we build schedules?".into(),
+                channel: IntakeChannel::Mcp,
+                by: "human".into(),
+                at: Timestamp::from("2026-10-19T19:01:42.801Z".to_owned()),
+                client_request_id: None,
+                playbook: None,
+                parent: None,
+            })
+            .unwrap();
+        let put = |next: &Workstream, expect: &Workstream| {
+            records
+                .workstream_put_if(
+                    &StoredWorkstream {
+                        workstream: next.clone(),
+                        amends: vec![],
+                    },
+                    expect,
+                )
+                .unwrap()
+        };
+        let research = Workstream {
+            state: WorkstreamState::Verifying,
+            brief_hash: Some(BriefHash::unchecked("a".repeat(64))),
+            ..w.clone()
+        };
+        assert!(put(&research, &w));
+        let build = Workstream {
+            state: WorkstreamState::Running,
+            brief_hash: Some(BriefHash::unchecked("b".repeat(64))),
+            ..research.clone()
+        };
+        assert!(put(&build, &research));
+        let done = Workstream {
+            state: WorkstreamState::Done,
+            ..research.clone()
+        };
+        assert!(!put(&done, &research), "the stale claim's write loses");
+        let stored = records.workstream_get(&w.workstream_id).unwrap().unwrap();
+        assert_eq!(stored.workstream, build);
     }
 }

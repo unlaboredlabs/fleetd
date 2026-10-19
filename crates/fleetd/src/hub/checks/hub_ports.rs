@@ -71,6 +71,22 @@ impl Ports for HubPorts {
         stored.workstream = workstream.clone();
         logged(records.workstream_put(&stored), "storing a workstream");
     }
+    fn put_workstream_if(&self, workstream: &Workstream, expect: &Workstream) -> bool {
+        let Some(hub) = self.hub() else { return false };
+        let records = &hub.leads.records;
+        let Some(Some(mut stored)) = logged(
+            records.workstream_get(&workstream.workstream_id),
+            "reading a workstream",
+        ) else {
+            return false;
+        };
+        stored.workstream = workstream.clone();
+        logged(
+            records.workstream_put_if(&stored, expect),
+            "storing a workstream",
+        )
+        .unwrap_or(false)
+    }
     fn wake(&self, project: &ProjectRef, wake: ClaimWake) {
         let Some(hub) = self.hub() else { return };
         let set = hub.db.prompts().for_lead(project);
