@@ -6,7 +6,7 @@ import { useMemo, useRef, useState } from "react";
 import type { ChatItem, CommandApprovalItem, Machine, SecretRequestItem } from "../../../shared/contracts";
 import type { HubError } from "../../../shared/hub";
 import { Button, Code, cx, InlineCode, Input, Text } from "../../ui";
-import { useData } from "../../src/data/react";
+import { useData, useDataLayer } from "../../src/data/react";
 import { prose } from "./prose";
 import { approvalOutcome, classWords, secretEnvLine, secretOutcome, secretTarget, shellLine, type Outcome } from "./request";
 import s from "./InlineChatItem.module.css";
@@ -156,12 +156,13 @@ function SecretItem({ item }: { item: SecretRequestItem }) {
 
 function ApprovalItem({ item }: { item: CommandApprovalItem }) {
   const live = useLive();
+  const { call } = useDataLayer();
   const { shown, busy, error, run } = useSent(item);
   const outcome = approvalOutcome(shown);
   const env = secretEnvLine(item);
   const answer = (approve: boolean): void =>
     run(async () => {
-      const out = await window.fleetd.hub.call("approval_answer", { requestId: item.requestId, approve });
+      const out = await call("approval_answer", { requestId: item.requestId, approve });
       return out.ok ? { ok: true, sent: { state: approve ? "approved" : "denied" } } : out;
     });
   return (
