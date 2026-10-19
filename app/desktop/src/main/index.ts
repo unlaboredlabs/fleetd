@@ -5,6 +5,7 @@ import { fixtureRequest, loadFixture } from "./hub/fixture";
 import { osCredentialEnv } from "./hub/os";
 import { HubService, type HubMode } from "./hub/service";
 import { webSocketTransport } from "./hub/transport";
+import { instrument } from "./instrument";
 import { registerIpc } from "./ipc";
 import { harden, lockSession, pageUrl } from "./security";
 
@@ -60,6 +61,7 @@ const createWindow = (mode: HubMode): BrowserWindow => {
     },
   });
   win.once("ready-to-show", () => win.show());
+  instrument(win);
   void win.loadURL(pageUrl());
   return win;
 };
