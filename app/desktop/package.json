@@ -4,6 +4,10 @@
   "private": true,
   "version": "0.0.0",
   "description": "fleetd desktop app",
+  "homepage": "https://fleetd.sh",
+  "author": "fleetd contributors",
+  "license": "MIT",
+  "desktopName": "fleetd-desktop.desktop",
   "type": "module",
   "main": "out/main/index.js",
   "packageManager": "pnpm@12.11.2",
@@ -17,10 +21,12 @@
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit && tsc -p tsconfig.qa.json --noEmit && tsc -p tsconfig.fixtures.json --noEmit",
     "lint": "eslint --max-warnings 0 .",
     "test": "vitest run",
-    "qa:build": "VITE_FLEETD_GALLERY=1 electron-vite build",
+    "qa:build": "VITE_FLEETD_GALLERY=1 MAIN_VITE_FLEETD_TEST_BUILD=1 electron-vite build",
     "qa": "playwright test -c qa/playwright.config.ts --project=screens",
     "qa:selftest": "playwright test -c qa/playwright.config.ts --project=selftest",
-    "fixtures": "node fixtures/build.ts"
+    "fixtures": "node fixtures/build.ts",
+    "debug-guard-check": "node scripts/debug-guard-check.ts",
+    "build:test": "MAIN_VITE_FLEETD_TEST_BUILD=1 electron-vite build"
   },
   "dependencies": {
     "@napi-rs/keyring": "2.1.1",
@@ -28,6 +34,7 @@
     "@tanstack/react-virtual": "3.14.21",
     "lucide-react": "1.59.0",
     "radix-ui": "1.8.1",
+    "electron-updater": "6.8.9",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "react-markdown": "10.1.0",
@@ -38,6 +45,7 @@
     "zustand": "5.0.15"
   },
   "devDependencies": {
+    "@electron/fuses": "1.8.0",
     "@eslint/js": "10.0.1",
     "@playwright/test": "1.64.1",
     "@types/node": "^24.19.2",
@@ -47,6 +55,7 @@
     "@vitejs/plugin-react": "6.1.2",
     "ajv": "8.20.0",
     "electron": "44.9.0",
+    "electron-builder": "26.15.3",
     "electron-vite": "6.0.0",
     "esbuild": "0.28.2",
     "eslint": "10.13.0",

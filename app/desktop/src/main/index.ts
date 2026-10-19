@@ -1,6 +1,9 @@
+// Before anything else: a release build refuses debugging switches before Chromium can act on them.
+import "./debug-guard";
 import { isAbsolute, join } from "node:path";
 import tls from "node:tls";
 import { app, BrowserWindow, nativeTheme, powerMonitor } from "electron";
+import { RELEASE_BUILD } from "./build";
 import { fixtureRequest, loadFixture } from "./hub/fixture";
 import { osCredentialEnv } from "./hub/os";
 import { HubService, type HubMode } from "./hub/service";
@@ -8,9 +11,11 @@ import { webSocketTransport } from "./hub/transport";
 import { registerIpc } from "./ipc";
 import { installMenu } from "./menu";
 import { Notifier } from "./notify";
+import { claimLinkHandler } from "./linkHandlerMain";
 import { listenForLinks } from "./links";
 import { Opener } from "./opener";
 import { harden, lockSession, pageUrl } from "./security";
+import { startUpdater } from "./updater";
 import { restorePlacement, trackPlacement } from "./windowState";
 
 /** Height of the renderer's top bar; the macOS traffic lights are centred in it. */
@@ -39,7 +44,7 @@ if (!primary) app.quit();
 tls.setDefaultCACertificates([...tls.getCACertificates("bundled"), ...tls.getCACertificates("system")]);
 
 const hubMode = (): HubMode => {
-  const request = fixtureRequest(process.env, app.isPackaged);
+  const request = fixtureRequest(process.env, RELEASE_BUILD);
   if (request.kind === "ignored") console.warn(request.reason);
   if (request.kind !== "fixture") {
     return { kind: "hub", credentials: osCredentialEnv(FLEETD_DIR, fleetdHome !== undefined), vars: process.env, transport: webSocketTransport };
@@ -96,6 +101,7 @@ void app.whenReady().then(() => {
   const hub = new HubService(mode);
   registerIpc(hub, { opener, notifier: new Notifier(opener) });
   installMenu(opener);
+  claimLinkHandler("first-run");
   app.on("browser-window-focus", () => hub.windowFocused());
   powerMonitor.on("resume", () => hub.systemResumed());
   app.on("will-quit", () => hub.stop());
@@ -106,6 +112,7 @@ void app.whenReady().then(() => {
     },
   });
   createWindow(mode);
+  startUpdater();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow(mode);
   });
