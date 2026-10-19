@@ -129,16 +129,24 @@ const launch = async (name: string, binary: string, args: Array<string>, env: Re
   return { code: stopped.byUs ? null : code, opened: [...opened], output };
 };
 
-const REMOTE = [
-  { name: "--remote-debugging-port=9333", args: ["--remote-debugging-port=9333"], env: {} },
-  { name: "-remote-debugging-port=9333", args: ["-remote-debugging-port=9333"], env: {} },
-  { name: "--remote-debugging-pipe", args: ["--remote-debugging-pipe"], env: {} },
-  { name: "ELECTRON_EXTRA_LAUNCH_ARGS", args: [], env: { ELECTRON_EXTRA_LAUNCH_ARGS: "--remote-debugging-port=9333" } },
+interface Case {
+  readonly name: string;
+  readonly args: Array<string>;
+  readonly env: Record<string, string>;
+  /** False where the fuse makes Electron drop the setting before the app sees it: it starts, and nothing listens. */
+  readonly refused: boolean;
+}
+
+const REMOTE: Array<Case> = [
+  { name: "--remote-debugging-port=9333", args: ["--remote-debugging-port=9333"], env: {}, refused: true },
+  { name: "-remote-debugging-port=9333", args: ["-remote-debugging-port=9333"], env: {}, refused: true },
+  { name: "--remote-debugging-pipe", args: ["--remote-debugging-pipe"], env: {}, refused: true },
+  { name: "ELECTRON_EXTRA_LAUNCH_ARGS", args: [], env: { ELECTRON_EXTRA_LAUNCH_ARGS: "--remote-debugging-port=9333" }, refused: true },
 ];
-const INSPECT = [
-  { name: "--inspect=9334", args: ["--inspect=9334"], env: {} },
-  { name: "--inspect-brk=9334", args: ["--inspect-brk=9334"], env: {} },
-  { name: "NODE_OPTIONS=--inspect", args: [], env: { NODE_OPTIONS: "--inspect=9334" } },
+const INSPECT: Array<Case> = [
+  { name: "--inspect=9334", args: ["--inspect=9334"], env: {}, refused: true },
+  { name: "--inspect-brk=9334", args: ["--inspect-brk=9334"], env: {}, refused: true },
+  { name: "NODE_OPTIONS=--inspect", args: [], env: { NODE_OPTIONS: "--inspect=9334" }, refused: false },
 ];
 
 if (process.platform !== "linux") fail("Linux only");
@@ -147,9 +155,14 @@ const release = values.packaged ?? fakePackage("release", build("release", false
 const test = values["test-packaged"] ?? (real ? null : fakePackage("test", build("test", true)));
 
 for (const c of real ? [...REMOTE, ...INSPECT] : REMOTE) {
-  const run = await launch(c.name, release, c.args, c.env);
-  if (run.code !== REFUSED_EXIT) fail(`release build with ${c.name}: exit ${run.code ?? "none (still running)"}, not ${REFUSED_EXIT}\n${run.output}`);
+  const run = await launch(c.name, release, c.args, c.env, c.refused ? START_MS : 3000);
   if (run.opened.length > 0) fail(`release build with ${c.name}: port ${run.opened.join(", ")} listened`);
+  if (!c.refused) {
+    if (run.code !== null) fail(`release build with ${c.name}: exit ${run.code}\n${run.output}`);
+    console.log(`ok  release build ignores ${c.name} (fuse; nothing listened)`);
+    continue;
+  }
+  if (run.code !== REFUSED_EXIT) fail(`release build with ${c.name}: exit ${run.code ?? "none (still running)"}, not ${REFUSED_EXIT}\n${run.output}`);
   if (!run.output.includes("refusing to start")) fail(`release build with ${c.name}: no refusal message\n${run.output}`);
   console.log(`ok  release build refuses ${c.name} (exit ${REFUSED_EXIT}, nothing listened)`);
 }
