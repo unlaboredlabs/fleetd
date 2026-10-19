@@ -14,6 +14,8 @@ export interface ChatData {
   readonly agents: readonly AgentLane[] | undefined;
   readonly title: string | undefined;
   readonly loadOlder: () => void;
+  readonly loadNewer: () => void;
+  readonly jumpToLatest: () => void;
 }
 
 export function useChatData(project: ProjectRef): ChatData {
@@ -29,5 +31,7 @@ export function useChatData(project: ProjectRef): ChatData {
     layer.chat.open(key);
   }, [layer, key]);
   const loadOlder = useCallback(() => layer.chat.loadOlder(key), [layer, key]);
-  return { view, needsYou, leadWorking, agents, title, loadOlder };
+  const loadNewer = useCallback(() => layer.chat.loadNewer(key), [layer, key]);
+  const jumpToLatest = useCallback(() => layer.chat.jumpToLatest(key), [layer, key]);
+  return { view, needsYou, leadWorking, agents, title, loadOlder, loadNewer, jumpToLatest };
 }

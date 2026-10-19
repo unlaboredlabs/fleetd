@@ -36,6 +36,8 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
             items: view.items,
             hasOlder: view.hasOlder,
             loadingOlder: view.loadingOlder,
+            hasNewer: view.hasNewer,
+            loadingNewer: view.loadingNewer,
             strip,
             // "Today" is read against the clock when the chat changes; nothing ticks while it's idle.
             // eslint-disable-next-line react-hooks/purity
@@ -46,8 +48,9 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   const openAt = message === undefined || rows === undefined ? undefined : rowIndexOf(rows, message);
   const state = stateWord(data.needsYou, data.leadWorking);
   const title = data.title ?? "";
-  const { loadOlder } = data;
+  const { loadOlder, loadNewer, jumpToLatest } = data;
   const onLoadOlder = useCallback(() => loadOlder(), [loadOlder]);
+  const onLoadNewer = useCallback(() => loadNewer(), [loadNewer]);
   const onTold = useCallback(
     (lane: AgentLane) => {
       if (!lane.threadRef) return;
@@ -73,7 +76,16 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
           <Text tone="quiet">{view === undefined && data.title !== undefined ? "Loading the conversation…" : "Loading…"}</Text>
         </div>
       ) : (
-        <ChatList rows={rows} project={project} onLoadOlder={onLoadOlder} onTold={onTold} openAt={openAt} sent={sent} />
+        <ChatList
+          rows={rows}
+          project={project}
+          onLoadOlder={onLoadOlder}
+          onLoadNewer={onLoadNewer}
+          onJumpToLatest={jumpToLatest}
+          onTold={onTold}
+          openAt={openAt}
+          sent={sent}
+        />
       )}
       <div className={s.composer}>
         <ChatComposer project={project} onSent={() => setSent((n) => n + 1)} />

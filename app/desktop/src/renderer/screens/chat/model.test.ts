@@ -60,6 +60,22 @@ describe("the chat's rows", () => {
     expect(rowIndexOf(r, "nope")).toBeUndefined();
   });
 
+  it("show history from before the chat as the conversation it was, under one divider, and a way back down", () => {
+    const old = (id: string, author: ChatItem["author"], time: string): ChatItem =>
+      item(id, author, time, { kind: "event", message: { history: "order" } as ChatItem["message"] });
+    const r = rows([old("h1", "human", at(19, 8)), old("h2", "lead", at(19, 8, 1)), item("n1", "human", at(19, 9))], { hasNewer: true });
+    expect(r.map((x) => (x.kind === "message" ? `${x.item.id}:${x.history ? "history" : "now"}` : x.kind))).toEqual([
+      "top",
+      "history",
+      "day",
+      "h1:history",
+      "h2:history",
+      "n1:now",
+      "bottom",
+    ]);
+    expect(rows([], { hasNewer: true, loadingNewer: true }).at(-1)).toEqual({ kind: "bottom", key: "bottom", state: "loading" });
+  });
+
   it("word days plainly", () => {
     expect(dayLabel(at(19, 1), NOW, "UTC")).toBe("Today");
     expect(dayLabel(at(18, 1), NOW, "UTC")).toBe("Yesterday");
