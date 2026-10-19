@@ -351,7 +351,19 @@
 
 .log {
   flex: 1;
+  /* The conversation keeps a few rows in view however many questions wait below it. */
+  min-height: 140px;
+}
+/* This order's question cards (F5's strip), between the log and the composer: they scroll on their own. */
+.asks {
+  flex: 0 1 auto;
   min-height: 0;
+  max-height: 45%;
+  overflow-y: auto;
+  padding: 0 var(--pad);
+}
+.asks:empty {
+  display: none;
 }
 .logEmpty {
   flex: 1;

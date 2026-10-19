@@ -1,4 +1,4 @@
-// Wynn's report B5: the lead's last message must not end mid-sentence once the lead is idle.
+// Report B5 (order view): the lead's last message must not end mid-sentence once the lead is idle.
 import { describe, expect, it } from "vitest";
 import { buildConversation, completeWith } from "./conversationModel";
 

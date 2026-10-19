@@ -4,6 +4,7 @@
 import type { AgentLane, Steer } from "../../../shared/contracts";
 import { useCommands, type Command } from "../palette";
 import { stepOrder } from "../shell/model";
+import { timeRoute } from "../time/route";
 
 export interface OrderCommandContext {
   readonly workstreamId: string;
@@ -70,7 +71,7 @@ export function orderCommands(c: OrderCommandContext): Command[] {
       }),
     ),
     { id: `order.status:${w}`, title: `Status for ${w}`, detail: "Its plan, progress and risks", group: "go-to", keywords: ["status", "progress"], run: () => c.go(`#/status/order/${w}`) },
-    { id: `order.time:${w}`, title: `Time for ${w}`, detail: "Where this order's time went", group: "go-to", keywords: ["time", "slow"], run: () => c.go(`#/time/order/${w}`) },
+    { id: `order.time:${w}`, title: `Time for ${w}`, detail: "Where this order's time went", group: "go-to", keywords: ["time", "slow"], run: () => c.go(timeRoute(w)) },
   ];
 }
 

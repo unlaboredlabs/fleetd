@@ -259,17 +259,19 @@ export const screens: readonly Screen[] = [
   },
   // F3: the order view on the fixtures' one order, W1: fleet, PRs, done-when and the lead's conversation (a wake,
   // markdown, steers and receipts, 20k streamed lines). The empty hub has no W1: its not-found state is expected.
-  { id: "order", route: "#/order/W1", fixtures: ["typical", "long-text", "many-agents", "conversation", "conversation-20k"] },
+  { id: "order", route: "#/order/W1", fixtures: ["typical", "long-text", "many-agents", "conversation", "conversation-20k", "needs-you"] },
   { id: "order", route: "#/order/W1", fixtures: ["empty"], expect: "error" },
-  // Wynn's B5: the idle lead's last message ends as the thread's last message does, never mid-sentence.
+  // Report B5: the idle lead's last message ends as the thread's last message does, never mid-sentence.
   {
     id: "order.lead",
     route: "#/order/W1",
     fixtures: ["long-text", "conversation"],
     open: async (page) => {
+      // The route is up once any screen is; the order and its log load after.
+      await page.locator('[data-screen="order.lead"]').waitFor({ timeout: 30_000 });
       const lastRow = page.locator('[data-entry="say"], [data-entry="more"]').last();
       const fixture = await page.evaluate(() => (window as unknown as { fleetd: { fixture: string | null } }).fleetd.fixture);
-      await expect(lastRow).toContainText(leadMessageEnding(fixture ?? ""), { timeout: 10_000 });
+      await expect(lastRow).toContainText(leadMessageEnding(fixture ?? ""), { timeout: 30_000 });
     },
   },
   {
