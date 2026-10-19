@@ -8,7 +8,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::LazyLock;
 
 /// The only fields a wording change may touch. Every other frontmatter field is a gate, including any added later.
-pub const WORDING_FIELDS: [&str; 2] = ["leadInstructions", "estimatePrior"];
+pub const WORDING_FIELDS: [&str; 1] = ["estimatePrior"];
 
 /// At most this many changes are read from one answer.
 pub const MAX_CHANGES: usize = 10;
@@ -168,6 +168,10 @@ pub fn check_change(
     let fields = changed_fields(&before, &after, &change.playbook, ctx.parser).map_err(clip300)?;
     if fields.is_empty() {
         return Err("the diff changes nothing".into());
+    }
+    // The lead prompt has a section per kind of work; a playbook's leadInstructions reach no agent.
+    if fields.iter().any(|f| f == "leadInstructions") {
+        return Err("leadInstructions reach no agent; change the playbook's rules instead".into());
     }
     let kind = if fields
         .iter()
@@ -344,18 +348,19 @@ mod tests {
 
     #[test]
     fn the_hub_classifies_a_change_by_the_fields_it_touches_not_by_what_the_model_says() {
-        let (wording, _) = check(vec![change(
+        let (wording, dropped) = check(vec![change(
             &edit(
                 "  Idle is success.",
                 "  Run the repro yourself before you claim done.",
             ),
             "wording",
         )]);
-        assert_eq!(
-            (wording[0].kind, fields(&wording[0])),
-            ("wording", vec!["leadInstructions"])
+        assert!(wording.is_empty());
+        assert!(
+            dropped[0]
+                .reason
+                .starts_with("leadInstructions reach no agent")
         );
-        assert!(wording[0].after.contains("Run the repro yourself"));
 
         let (prior, _) = check(vec![change(
             &edit("estimatePrior: 5", "estimatePrior: 4"),
@@ -393,7 +398,7 @@ mod tests {
         assert!(
             dropped[0]
                 .reason
-                .starts_with("a wording change may touch only leadInstructions and estimatePrior"),
+                .starts_with("a wording change may touch only estimatePrior"),
             "{}",
             dropped[0].reason
         );
