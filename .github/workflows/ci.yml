@@ -212,6 +212,13 @@ jobs:
           cache: pnpm
           cache-dependency-path: app/desktop/pnpm-lock.yaml
       - if: steps.scope.outputs.run == 'true'
+        name: No paths that differ only in case
+        # macOS checkouts are case-insensitive: Composer.tsx beside composer.ts breaks the Mac build and the
+        # "./composer" import alike, so the extension is ignored too.
+        run: |
+          clashes=$(git ls-files | sed -E 's/\.[^./]+$//' | awk '{ l = tolower($0) } (l in seen) && seen[l] != $0 { print seen[l] " / " $0; next } { seen[l] = $0 }')
+          if [ -n "$clashes" ]; then echo "Paths that differ only in case (rename one):"; echo "$clashes"; exit 1; fi
+      - if: steps.scope.outputs.run == 'true'
         run: pnpm install --frozen-lockfile
       - if: steps.scope.outputs.run == 'true'
         run: pnpm typecheck
