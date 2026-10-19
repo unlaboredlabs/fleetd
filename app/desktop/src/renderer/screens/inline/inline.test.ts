@@ -65,6 +65,8 @@ describe("a command approval", () => {
     expect(approvalOutcome(approval("R6"))).toEqual({ tone: "danger", text: "Failed · exit 1" });
     expect(approvalOutcome(approval("R7"))?.text).toBe("Denied. Nothing ran.");
     expect(approvalOutcome(approval("R8"))?.text).toBe("Approved. Running…");
-    expect(approvalOutcome({ ...approval("R4"), state: "queued_on_node" })?.text).toBe("queued_on_node");
+    // A state from a newer hub never shows as a raw word.
+    expect(approvalOutcome({ ...approval("R4"), state: "queued_on_node" })?.text).toBe("Changed on the hub. Update the app to see how.");
+    expect(secretOutcome({ ...secret("R1"), state: "sealed_pending" })?.text).toBe("Changed on the hub. Update the app to see how.");
   });
 });

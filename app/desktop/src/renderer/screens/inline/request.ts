@@ -45,6 +45,9 @@ export const classWords = (c: CommandApprovalItem["class"]): string =>
 
 export type Outcome = { readonly tone: "quiet" | "success" | "danger" | "warning"; readonly text: string };
 
+/** A state from a newer hub: no raw word, just what to do. */
+const NEWER: Outcome = { tone: "quiet", text: "Changed on the hub. Update the app to see how." };
+
 /** The result line under an approval, or undefined while it waits for Approve / Deny. */
 export const approvalOutcome = (item: CommandApprovalItem): Outcome | undefined => {
   const exit = item.exitCode === undefined ? "" : ` · exit ${String(item.exitCode)}`;
@@ -60,8 +63,7 @@ export const approvalOutcome = (item: CommandApprovalItem): Outcome | undefined 
     case "denied":
       return { tone: "quiet", text: "Denied. Nothing ran." };
     default:
-      // A state from a newer hub: say it plainly rather than guess.
-      return { tone: "quiet", text: item.state };
+      return NEWER;
   }
 };
 
@@ -72,5 +74,5 @@ export const secretOutcome = (item: SecretRequestItem): Outcome | undefined => {
   }
   if (item.state === "withdrawn") return { tone: "quiet", text: "The lead doesn't need it any more." };
   if (item.state === "open") return undefined;
-  return { tone: "quiet", text: item.state };
+  return NEWER;
 };
