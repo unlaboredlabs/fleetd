@@ -181,7 +181,7 @@ function WaitingOn({ doc, now }: { doc: StatusDoc; now: number }) {
     <div className={cx(s.stateBlock)}>
       <div className={cx(s.inline)}>
         <Text size="xs" tone="quiet">
-          waiting on
+          {v.through === null ? "waiting on" : `critical path, through ${v.through}: waiting on`}
         </Text>
         {v.path.length === 0 ? (
           <Text size="xs" tone="quiet">

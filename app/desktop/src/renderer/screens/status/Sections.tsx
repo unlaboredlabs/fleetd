@@ -120,6 +120,7 @@ export function Sections({ doc, now }: { doc: StatusDoc; now: number }) {
                     </Text>
                   ) : null}
                   <Text>{r.title}</Text>
+                  {r.critical === true ? <StatusChip tone="working">critical path</StatusChip> : null}
                   {r.slowerThanUsual === true ? <StatusChip tone="failed">slower than usual</StatusChip> : null}
                 </span>
                 <span className={cx(s.rowMeta)}>

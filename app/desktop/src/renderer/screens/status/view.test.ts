@@ -82,18 +82,20 @@ describe("the sparkline", () => {
 });
 
 describe("what it waits on", () => {
-  it("is the critical path in order and what blocks it, with measured ages and no estimated time", () => {
+  it("is the critical row's path in order, and what blocks other work, with measured ages and no estimated time", () => {
     expect(stateView(fixture("order"), NOW)).toEqual({
-      path: ["review of #212", "CI", "merge", "P14 JPY and KRW carts"],
+      through: "P12 Round totals per currency, not per line",
+      path: ["review of #213", "CI on #213", "merge", "done-when checks"],
       blocking: [
-        { label: "main CI is red on acme/storefront", since: "for 27m" },
         { label: "review of #212", since: "for 4m" },
+        { label: "P12 Round totals per currency, not per line holds up P14, P15", since: null },
       ],
     });
   });
 
-  it("falls back to the gates, serial first, on a hub without the state fields", () => {
+  it("falls back to the gates, serial first, on a hub without the path", () => {
     expect(stateView(fixture("fleet-legacy"), NOW)).toEqual({
+      through: null,
       path: ["P12 full lab run", "CI on #212 (rust (macos) 8m)"],
       blocking: [{ label: "P12 full lab run", since: null }],
     });
@@ -108,7 +110,7 @@ describe("what it waits on", () => {
   it("no fixture carries an estimated time the view could show", () => {
     for (const [name, output] of Object.entries(fixtureAnswers)) {
       const text = JSON.stringify(output);
-      expect(text, name).not.toMatch(/"(p50|p90|accuracy|overdueMinutes|original|lead|current)"/u);
+      expect(text, name).not.toMatch(/"(p50|p90|accuracy|overdueMinutes|original|lead|current|eta)":"/u);
     }
   });
 });
@@ -142,8 +144,13 @@ describe("words", () => {
 
   it("an in-progress row says its stage, its credit and what it waits on, never a time", () => {
     const [t31, t33] = fixture("order").inProgress;
-    expect(t31 && progressRowView(t31)).toEqual(["first push", "46% credited"]);
-    expect(t33 && progressRowView(t33)).toEqual(["PR open", "61% credited", "waiting on CI on #212"]);
+    expect(t31 && progressRowView(t31)).toEqual([
+      "first push",
+      "46% credited",
+      "waiting on review of #213 → CI on #213 → merge → done-when checks",
+      "holds up P14, P15",
+    ]);
+    expect(t33 && progressRowView(t33)).toEqual(["PR open", "61% credited", "waiting on CI on #212 → merge"]);
     expect(t33?.slowerThanUsual).toBe(true);
   });
 

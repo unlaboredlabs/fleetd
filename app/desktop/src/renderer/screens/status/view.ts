@@ -3,7 +3,6 @@
 // rules are turned into words here, and an unknown wire value gets a generic phrase instead of breaking.
 
 import type {
-  PathStep,
   HealthMachine,
   HealthUsage,
   InProgressRow,
@@ -220,28 +219,33 @@ export const spark = (series: readonly ProgressPoint[], width: number, height: n
   return { estimate: path((p) => p.pct), verified: path((p) => p.verifiedPct), drops };
 };
 
-/** What the scope waits on, as state, never as a time: the critical path in order ("review of #12 → CI →
- * merge") and what blocks work now, each with how long it has been so (a measured age). */
+/** What the scope waits on, as state, never as a time: the critical path in order ("review of #12 → CI on #12 →
+ * merge") and what blocks other work, the gates with how long they have held (a measured age). */
 export interface StateView {
+  /** Whose path it is ("P12 Round totals…"), when the hub marked a critical row. */
+  readonly through: string | null;
   readonly path: readonly string[];
   readonly blocking: readonly { readonly label: string; readonly since: string | null }[];
 }
 
-const stepLabel = (step: PathStep): string => (typeof step === "string" ? step : step.label);
+const rowName = (row: InProgressRow): string => (row.itemId === undefined ? row.title : `${row.itemId} ${row.title}`);
 
 export const stateView = (doc: StatusDoc, nowMs: number): StateView => {
   const sinceText = (iso?: string): string | null => {
     const a = since(iso, nowMs);
     return a === null ? null : `for ${age(a)}`;
   };
-  // A hub before the progress model's state fields: its gates, serial first, are the same facts.
   const gates = [...doc.gates].sort((a, b) => Number(b.serial) - Number(a.serial));
-  const path = doc.waitingOn !== undefined ? doc.waitingOn.map(stepLabel) : gates.map((g) => g.label);
-  const blocking =
-    doc.blocking !== undefined
-      ? doc.blocking.map((b) => ({ label: b.label, since: sinceText(b.since) }))
-      : gates.filter((g) => g.serial).map((g) => ({ label: g.label, since: sinceText(g.since) }));
-  return { path, blocking };
+  const critical = doc.inProgress.find((r) => r.critical === true && (r.waitingOn?.length ?? 0) > 0);
+  // A hub before the progress model's path: its gates, serial first, are the same facts.
+  const path = critical?.waitingOn ?? gates.map((g) => g.label);
+  const blocking = [
+    ...gates.filter((g) => g.serial).map((g) => ({ label: g.label, since: sinceText(g.since) })),
+    ...doc.inProgress
+      .filter((r) => (r.blocking?.length ?? 0) > 0)
+      .map((r) => ({ label: `${rowName(r)} holds up ${(r.blocking ?? []).join(", ")}`, since: null })),
+  ];
+  return { through: critical ? rowName(critical) : null, path, blocking };
 };
 
 /** Risk rules that are about predicted time; the product shows none (the hub stops sending them too). */
@@ -300,12 +304,14 @@ export const machineView = (m: HealthMachine, nowMs: number): string => {
   return parts.length === 0 ? "online" : parts.join(" · ");
 };
 
-/** The In-progress row's right side: the stage fleetd saw, its credit, and what it waits on. */
+/** The In-progress row's right side: the stage fleetd saw, its credit, what it waits on and what waits on it. */
 export const progressRowView = (row: InProgressRow): readonly string[] => {
   const meta: string[] = [];
   if (row.stage !== undefined) meta.push(stageName(row.stage));
   if (row.creditPct !== undefined) meta.push(`${clampPct(row.creditPct)}% credited`);
-  if (row.gate !== undefined) meta.push(`waiting on ${row.gate}`);
+  const waits = row.waitingOn !== undefined && row.waitingOn.length > 0 ? row.waitingOn.join(" → ") : row.gate;
+  if (waits !== undefined) meta.push(`waiting on ${waits}`);
+  if (row.blocking !== undefined && row.blocking.length > 0) meta.push(`holds up ${row.blocking.join(", ")}`);
   return meta;
 };
 

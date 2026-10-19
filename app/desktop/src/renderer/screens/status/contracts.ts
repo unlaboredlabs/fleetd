@@ -135,6 +135,12 @@ export interface InProgressRow {
   readonly creditPct?: number;
   /** Past 1.5× the usual time for its stage (also a Risk). */
   readonly slowerThanUsual?: boolean;
+  /** What it still waits on, in order: "review of #12", "CI on #12", "merge", "done-when checks". */
+  readonly waitingOn?: readonly string[];
+  /** Open plan items that wait on it. */
+  readonly blocking?: readonly string[];
+  /** The scope's critical path runs through it. */
+  readonly critical?: boolean;
 }
 
 export type ItemStage = Open<
@@ -233,17 +239,6 @@ export interface MoreCounts {
   readonly stale: number;
 }
 
-/** PM (provisional, not on the wire yet): one step of the critical path, "review of #12" → "CI" → "merge". */
-export type PathStep = string | { readonly label: string; readonly since?: Timestamp; readonly workstreamId?: string };
-
-/** PM (provisional): something stopping work now, with when it started (a measured age, not an estimate). */
-export interface Blocker {
-  readonly label: string;
-  readonly since?: Timestamp;
-  readonly itemId?: string;
-  readonly workstreamId?: string;
-}
-
 export interface StatusDoc {
   readonly scope: StatusScope;
   readonly title: string;
@@ -265,10 +260,7 @@ export interface StatusDoc {
   readonly stale: readonly StaleSource[];
   readonly more: MoreCounts;
   readonly virtualTier?: Open<"S" | "M" | "L">;
-  /** PM (provisional): the critical path, in order. Without it the view falls back to `gates`. */
-  readonly waitingOn?: readonly PathStep[];
-  /** PM (provisional): what blocks work now. Without it the view uses the serial gates. */
-  readonly blocking?: readonly Blocker[];
+
 }
 
 export interface StatusGetOutput {

@@ -74,18 +74,8 @@ export const statusDoc = (kind: Kind, quiet = false, asks: readonly string[] = k
       ? { at: at("09:58:20"), text: "+1 item: rounding for JPY carts added", pctBefore: was, pctAfter: pct, deltaItems: 1 }
       : { at: at("10:00:04"), text: "+3 items: currency table export added", pctBefore: was, pctAfter: pct, deltaItems: 3 };
   const markers: Json[] = kind === "order" ? [marker] : [marker, { at: at("08:41:00"), text: "−1 item: W9 stopped", pctBefore: 70, pctAfter: 71, deltaItems: -1 }];
-  // The hub's contract still requires `eta`; the app never shows it (no time estimates in the product), so the
-  // fixtures carry the bare minimum and no times.
-  const eta: Obj = { samples: { fleet: 18, project: 11, order: 6 }[kind], basis: kind };
-  // The critical path and what blocks it (PM's provisional waitingOn / blocking).
-  const waitingOn: Json[] =
-    kind === "order"
-      ? ["review of #212", "CI", "merge", "P14 JPY and KRW carts"]
-      : ["P12 full lab run", "review of #212", "CI", "merge"];
-  const blocking: Json[] = [
-    { label: "main CI is red on acme/storefront", since: at("09:40:00") },
-    ...(kind === "order" ? [{ label: "review of #212", since: at("10:03:11"), itemId: "P13", workstreamId: "W14" }] : []),
-  ];
+  // Retired: the hub still sends `eta` for old apps, always empty (no time estimates in the product).
+  const eta: Obj = { samples: 0, basis: "none" };
   const gates: Json[] =
     kind === "order"
       ? [
@@ -131,6 +121,9 @@ export const statusDoc = (kind: Kind, quiet = false, asks: readonly string[] = k
     changeIds: [],
     stage: "first_push",
     creditPct: 46,
+    waitingOn: ["review of #213", "CI on #213", "merge", "done-when checks"],
+    blocking: ["P14", "P15"],
+    critical: true,
     steers: [{ id: "S12", text: "skip the docs page for now", stage: "acknowledged", at: at("09:50:00"), planChange: "−1 item" }],
   };
   const t33: Obj = {
@@ -142,6 +135,7 @@ export const statusDoc = (kind: Kind, quiet = false, asks: readonly string[] = k
     gate: "CI on #212",
     stage: "pr_open",
     creditPct: 61,
+    waitingOn: ["CI on #212", "merge"],
     slowerThanUsual: true,
   };
   const w9: Obj = {
@@ -191,8 +185,6 @@ export const statusDoc = (kind: Kind, quiet = false, asks: readonly string[] = k
     markers,
     eta,
     gates,
-    waitingOn,
-    blocking,
     headline,
     since,
     parts,
@@ -250,16 +242,13 @@ export const planningDoc = (): Obj => ({
   done: [],
   risks: [],
   gates: [],
-  waitingOn: ["the lead's plan"],
-  blocking: [],
   virtualTier: "M",
-  eta: { samples: 2, basis: "none" },
   headline: { text: "The lead is planning the order. Nothing needs you.", source: "template", reason: "facts changed, rewriting", at: at("10:07:05") },
   needsYou: { count: 0, askIds: [] },
   more: { done: 0, inProgress: 0, next: 0, risks: 0, parts: 0, stale: 0 },
 });
 
-/** A hub without the progress model: no estimate, stage credit, critical path or blockers (gates stand in). */
+/** A hub without the progress model: no estimate, stage credit or critical path (the gates stand in). */
 export const legacyDoc = (kind: Kind, asks?: readonly string[]): Obj => {
   const d = statusDoc(kind, false, asks);
   const strip = (p: Json | undefined): Json => {
@@ -267,12 +256,13 @@ export const legacyDoc = (kind: Kind, asks?: readonly string[]): Obj => {
     const { estimate: _e, ...rest } = p;
     return rest;
   };
-  const { waitingOn: _w, blocking: _b, ...rest } = d;
   return {
-    ...rest,
+    ...d,
     progress: strip(d["progress"]),
     parts: (d["parts"] as Obj[]).map((p) => ({ ...p, progress: strip(p["progress"]) })),
-    inProgress: (d["inProgress"] as Obj[]).map(({ stage: _s, creditPct: _p, slowerThanUsual: _u, ...row }) => row),
+    inProgress: (d["inProgress"] as Obj[]).map(
+      ({ stage: _s, creditPct: _p, slowerThanUsual: _u, waitingOn: _w, blocking: _b, critical: _c, ...row }) => row,
+    ),
   };
 };
 
@@ -312,10 +302,7 @@ export const emptyDoc = (kind: Kind): Obj => ({
   title: { fleet: "Fleet", project: "storefront", order: "Fix cart total rounding" }[kind],
   progress: { pct: 0, done: 0, total: 0, polishDone: 0, polishTotal: 0, asOf: at("10:07:10") },
   markers: [],
-  eta: { samples: 0, basis: "none" },
   gates: [],
-  waitingOn: [],
-  blocking: [],
   headline: { text: "Nothing running. Nothing needs you.", source: "template", reason: "no generated line yet", at: at("10:07:05") },
   since: { merged: 0, verified: 0, started: 0, failed: 0, asked: 0, scopeItems: 0 },
   parts: [],
