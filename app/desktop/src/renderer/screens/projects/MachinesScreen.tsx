@@ -9,6 +9,7 @@ import { Button, Dot, IdChip, Menu, MenuContent, MenuItem, MenuTrigger, Text, Tr
 import type { Machine, ProjectSummary } from "./contracts";
 import { machineOrder, machineParts, slotsText, type Tone } from "./machineText";
 import { RemoveProjectDialog, type RemoveTarget } from "./RemoveProjectDialog";
+import { SetupChecks } from "./SetupChecks";
 import { tilde } from "./source";
 import { openAddProject, openProject } from "./store";
 import s from "./projects.module.css";
@@ -75,6 +76,7 @@ export function MachinesScreen() {
           ))}
         </div>
       )}
+      {machines !== undefined ? <SetupChecks now={now} /> : null}
       <RemoveProjectDialog project={removing} onClose={() => setRemoving(null)} />
     </div>
   );
