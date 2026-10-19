@@ -34,8 +34,13 @@
   flex: 1;
   min-height: 0;
 }
+/* The composer (F4's) sits on the rows' measure, inset from the window's edges. */
 .composer {
   flex: none;
+  width: 100%;
+  max-width: calc(var(--measure) + 2 * var(--pad));
+  margin: 0 auto;
+  padding: var(--space-2) var(--pad) var(--space-3);
 }
 .composer:empty {
   display: none;

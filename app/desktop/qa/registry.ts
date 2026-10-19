@@ -36,6 +36,11 @@ export const fixtures = [
   "live-0",
   "live-3",
   "live-20",
+  // F3: the lead chat's messages (fixtures/chat): history pages, a streaming reply, attachments, migrated history.
+  "chat-long",
+  "chat-streaming",
+  "chat-attachments",
+  "chat-migrated",
   // Group fixtures (fixtures/<group>/index.ts), named <group>-<what>.
   "projects-cloning",
   // F10: the connect screen's states (fixtures/onboarding).
@@ -107,6 +112,13 @@ const gallerySections = [
 ] as const;
 
 export const screens: readonly Screen[] = [
+  // F3 (A2): the project's lead chat. chat-long opens at its newest message with older pages above; streaming,
+  // attachments and history from before the chat each in their own fixture.
+  {
+    id: "chat",
+    route: "#/project/devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
+    fixtures: ["chat-long", "chat-streaming", "chat-attachments", "chat-migrated"],
+  },
   // F2 (A4): the live strip under the lead's latest message, in the project's chat. live-0 draws no strip.
   {
     id: "chat",
