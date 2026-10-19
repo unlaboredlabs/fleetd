@@ -1,0 +1,328 @@
+// The lead's conversation, focused on one order (steering-spec §7, order-view brief B): its messages at full
+// weight, fleetd's own messages to the lead (wakes, digests, its start) collapsed to one muted line, runs about
+// other orders folded, finished tool-call runs folded, this order's hub events merged between messages, and every
+// steer under its real author (Steer.by) with its receipt. Built here from the hub's data, never by a model.
+// The fold/merge rules follow the GPUI order view (app/fleetd-app/src/order.rs) and T3 Code's work log grouping.
+
+import type { ActionItem, AgentLane, HubEvent, Steer, TailItem } from "./contracts";
+import { plural } from "./format";
+import { type Receipt, type Sending, receipt, sendingReceipt } from "./receipts";
+
+export type Author = { readonly kind: "you"; readonly keyName?: string } | { readonly kind: "lead" };
+
+export interface Call {
+  readonly summary: string;
+  readonly failed: boolean;
+}
+
+export type Entry =
+  | {
+      readonly kind: "say";
+      readonly key: string;
+      readonly at: string;
+      readonly author: Author;
+      /** A steer sent straight to one of the order's agents: "T88". */
+      readonly to?: string;
+      readonly text: string;
+      readonly receipt?: Receipt;
+      /** Still arriving on the live feed. */
+      readonly streaming?: boolean;
+      /** The hub sent only the first 2,000 characters. */
+      readonly clipped?: boolean;
+    }
+  /** fleetd's machine text to the lead: one muted line, expandable to the rendered text. */
+  | { readonly kind: "system"; readonly key: string; readonly at: string; readonly headline: string; readonly text: string }
+  | {
+      readonly kind: "fold";
+      readonly key: string;
+      readonly secs: number;
+      readonly commands: number;
+      readonly failed: number;
+      readonly calls: readonly Call[];
+    }
+  /** The lead is mid-turn: its latest calls, unfolded. */
+  | { readonly kind: "working"; readonly key: string; readonly calls: readonly Call[] }
+  | { readonly kind: "others"; readonly key: string; readonly n: number; readonly about: string }
+  | { readonly kind: "events"; readonly key: string; readonly at: string; readonly text: string }
+  | { readonly kind: "rollup"; readonly key: string; readonly text: string };
+
+/** The order ids ("W12") a text names, as whole words. */
+export function mentions(text: string): string[] {
+  const out: string[] = [];
+  for (const m of text.matchAll(/(?<![A-Za-z0-9])W[1-9][0-9]*(?![A-Za-z0-9])/g)) {
+    if (!out.includes(m[0])) out.push(m[0]);
+  }
+  return out;
+}
+
+const field = (e: HubEvent, k: string): string | undefined => {
+  const v = e.data?.[k];
+  return typeof v === "string" ? v : typeof v === "number" ? String(v) : undefined;
+};
+
+/** "T31 started", "#211 merged", else the event's own summary. */
+export function eventPhrase(e: HubEvent): string {
+  const task = field(e, "taskId");
+  const pr = field(e, "prNumber");
+  if (task !== undefined) {
+    if (e.type === "task.started") return `${task} started`;
+    if (e.type === "task.done" || e.type === "task.completed") return `${task} finished`;
+    if (e.type === "task.failed") return `${task} failed`;
+    if (e.type === "task.cancelled") return `${task} cancelled`;
+  }
+  if (e.type === "pr.merged" && pr !== undefined) return `#${pr} merged`;
+  return e.summary;
+}
+
+/** "Worked for 48s · ran 3 commands (1 failed)". */
+export function foldLabel(secs: number, commands: number, failed: number, calls: number): string {
+  const time = secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m ${String(secs % 60).padStart(2, "0")}s`;
+  const did = commands === 0 ? plural(calls, "tool call") : commands === 1 ? "ran 1 command" : `ran ${commands} commands`;
+  return `Worked for ${time} · ${did}${failed > 0 ? ` (${failed} failed)` : ""}`;
+}
+
+/** The steer a user message in the lead's log is: the hub's steer text begins with its id ("S12 · the human…"). */
+function steerOf(text: string, steers: readonly Steer[]): Steer | undefined {
+  const head = /^\s*(S[1-9][0-9]*)\b/.exec(text)?.[1];
+  return head === undefined ? undefined : steers.find((s) => s.id === head && "workstreamId" in s.target);
+}
+
+const plain = (line: string): string =>
+  line
+    .replace(/^\s*(?:[-*+]|\d+\.)\s+/, "")
+    .replace(/^#+\s*/, "")
+    .replace(/[*_`]+/g, "")
+    .trim();
+
+/** A sentence's first clause, from the human's side: "The human settled 2 of your asks; see…" → "you settled 2 of its asks". */
+function fromYourSide(line: string): string {
+  const first = plain(line).split(/;\s|\.\s|:\s(?=[A-Z])/)[0] ?? "";
+  const turned = first.replace(/^The human\b/, "you").replace(/\byour\b/g, "its");
+  return turned.length > 120 ? `${turned.slice(0, 119)}…` : turned;
+}
+
+/** One muted line for fleetd's text to the lead: why it was woken, that it started, or what fleetd said. */
+export function systemHeadline(text: string): string {
+  const why = /^##\s*Why you are woken\s*$/m.exec(text);
+  if (why) {
+    const reasons = text
+      .slice(why.index + why[0].length)
+      .split("\n")
+      .filter((l) => /^\s*-\s+\S/.test(l));
+    const first = reasons[0];
+    if (first !== undefined) {
+      const more = reasons.length > 1 ? ` (+${reasons.length - 1} more)` : "";
+      return `Woken: ${fromYourSide(first)}${more}`;
+    }
+    return "Woken by fleetd";
+  }
+  if (/^\s*You are the lead of project\b/.test(text)) return "Started: fleetd's first message to the lead";
+  if (/^\s*#\s*fleetd digest\b/.test(text)) return "fleetd's digest of the project";
+  const line = text.split("\n").map(plain).find((l) => l.length > 0) ?? "";
+  return `From fleetd: ${line.length > 100 ? `${line.slice(0, 99)}…` : line}`;
+}
+
+// The hub cuts tail messages at 2,000 characters with a trailing ellipsis (hub/api/grants.rs TAIL_TEXT).
+const TAIL_TEXT = 2000;
+const isClipped = (text: string): boolean => text.length >= TAIL_TEXT - 1 && text.endsWith("…");
+
+export interface ConversationInput {
+  /** The lead's tail, oldest first. */
+  readonly tail: readonly TailItem[];
+  /** The order ("W41"). */
+  readonly workstreamId: string;
+  /** This order's hub events. */
+  readonly events: readonly HubEvent[];
+  readonly leadWorking: boolean;
+  /** This order's steers, to the lead and to its tasks, by anyone. */
+  readonly steers: readonly Steer[];
+  readonly sending: readonly Sending[];
+  /** The lead's message as it streams in, when the tail doesn't hold it yet. */
+  readonly streaming?: { readonly messageId: string; readonly text: string };
+  readonly lanes: readonly AgentLane[];
+}
+
+type Item =
+  | { readonly t: "tail"; readonly at: string; readonly item: TailItem }
+  | { readonly t: "event"; readonly at: string; readonly event: HubEvent }
+  | { readonly t: "steer"; readonly at: string; readonly steer: Steer };
+
+const authorOf = (s: Steer): Author => (s.by.kind === "lead" ? { kind: "lead" } : { kind: "you", keyName: s.by.keyName });
+const taskOf = (s: Steer): string | undefined => ("taskId" in s.target ? s.target.taskId : undefined);
+
+function steerSay(s: Steer, at: string): Entry {
+  const to = taskOf(s);
+  return {
+    kind: "say",
+    key: `steer:${s.id}`,
+    at,
+    author: authorOf(s),
+    ...(to === undefined ? {} : { to }),
+    text: s.text,
+    receipt: receipt(s),
+  };
+}
+
+export function buildConversation(input: ConversationInput): Entry[] {
+  const { tail, workstreamId: w, steers } = input;
+  // Steers the lead's log already holds show where the lead received them; the rest (to a task, or not taken in
+  // yet) are woven in by the time they were queued.
+  const inLog = new Set<string>();
+  for (const i of tail) {
+    if (i.kind === "message" && i.role === "user") {
+      const s = steerOf(i.text, steers);
+      if (s) inLog.add(s.id);
+    }
+  }
+  const items: Item[] = tail.map((item) => ({ t: "tail", at: item.at, item }));
+  for (const event of input.events) items.push({ t: "event", at: event.at, event });
+  for (const steer of steers) if (!inLog.has(steer.id)) items.push({ t: "steer", at: steer.queuedAt, steer });
+  // Stable: equal times keep tail order, then events, then steers.
+  items.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+
+  const out: Entry[] = [];
+  let calls: ActionItem[] = [];
+  let foldStart: string | undefined;
+  const seen = new Map<string, number>();
+  const keyFor = (prefix: string, at: string): string => {
+    const n = seen.get(at) ?? 0;
+    seen.set(at, n + 1);
+    return `${prefix}:${at}:${n}`;
+  };
+  const flush = () => {
+    const first = calls[0];
+    const last = calls.at(-1);
+    if (first === undefined || last === undefined) return;
+    const start = foldStart ?? first.at;
+    const secs = Math.max(0, Math.round((Date.parse(last.at) - Date.parse(start)) / 1000)) || 0;
+    out.push({
+      kind: "fold",
+      key: `fold:${start}`,
+      secs,
+      commands: calls.filter((c) => c.kind === "command").length,
+      failed: calls.filter((c) => c.failed).length,
+      calls: calls.map((c) => ({ summary: c.summary, failed: c.failed })),
+    });
+    calls = [];
+    foldStart = undefined;
+  };
+
+  for (const it of items) {
+    if (it.t === "event") {
+      const phrase = eventPhrase(it.event);
+      const prev = out.at(-1);
+      if (prev?.kind === "events") out[out.length - 1] = { ...prev, text: `${prev.text}, ${phrase}` };
+      else out.push({ kind: "events", key: `events:${it.event.seq}`, at: it.at, text: phrase });
+      continue;
+    }
+    if (it.t === "steer") {
+      flush();
+      out.push(steerSay(it.steer, it.at));
+      continue;
+    }
+    const item = it.item;
+    if (item.kind === "action") {
+      calls.push(item.action);
+      continue;
+    }
+    if (item.role === "system") continue;
+    if (item.role === "user") {
+      const s = steerOf(item.text, steers);
+      if (s) {
+        flush();
+        foldStart = item.at;
+        out.push(steerSay(s, item.at));
+        continue;
+      }
+    }
+    const ids = mentions(item.text);
+    if (ids.length > 0 && !ids.includes(w)) {
+      // Its calls belong to that other order too.
+      calls = [];
+      foldStart = undefined;
+      const prev = out.at(-1);
+      if (prev?.kind === "others") out[out.length - 1] = { ...prev, n: prev.n + 1 };
+      else out.push({ kind: "others", key: keyFor("others", item.at), n: 1, about: ids[0] ?? "" });
+      continue;
+    }
+    flush();
+    if (item.role === "user") {
+      // In a lead's thread every other user message is fleetd's own: wakes, digests, its start, nudges.
+      foldStart = item.at;
+      out.push({ kind: "system", key: keyFor("system", item.at), at: item.at, headline: systemHeadline(item.text), text: item.text });
+    } else {
+      out.push({
+        kind: "say",
+        key: keyFor("say", item.at),
+        at: item.at,
+        author: { kind: "lead" },
+        text: item.text,
+        ...(isClipped(item.text) ? { clipped: true } : {}),
+      });
+    }
+  }
+
+  if (input.leadWorking && calls.length > 0) {
+    out.push({ kind: "working", key: "working", calls: calls.slice(-3).map((c) => ({ summary: c.summary, failed: c.failed })) });
+    calls = [];
+  } else {
+    flush();
+  }
+
+  const live = input.streaming;
+  if (live && live.text.trim() !== "" && !tail.some((i) => i.kind === "message" && i.role === "assistant" && i.text === live.text)) {
+    out.push({ kind: "say", key: `live:${live.messageId}`, at: "", author: { kind: "lead" }, text: live.text, streaming: true });
+  }
+
+  for (const s of input.sending) {
+    out.push({
+      kind: "say",
+      key: `sending:${s.requestId}`,
+      at: s.at,
+      author: { kind: "you" },
+      ...(s.taskId === undefined ? {} : { to: s.taskId }),
+      text: s.text,
+      receipt: sendingReceipt(s),
+    });
+  }
+
+  const roll = rollup(input.lanes);
+  if (roll !== undefined) out.push({ kind: "rollup", key: "rollup", text: roll });
+  return out;
+}
+
+const settled = (l: AgentLane): boolean => l.status === "done" || l.status === "failed" || l.status === "cancelled";
+
+/** "All 3 agents finished: #211 #212", or "2 of 3 finished; T32 failed". Undefined while any agent still runs. */
+export function rollup(lanes: readonly AgentLane[]): string | undefined {
+  const agents = lanes.filter((l) => l.role !== "lead");
+  if (agents.length === 0 || !agents.every(settled)) return undefined;
+  const failed = agents.filter((l) => l.status !== "done").map((l) => l.taskId ?? l.laneId);
+  const prs = [...new Set(agents.flatMap((l) => (l.pr ? [`#${l.pr.number}`] : [])))];
+  const n = agents.length;
+  if (failed.length === 0) return `All ${plural(n, "agent")} finished${prs.length > 0 ? `: ${prs.join(" ")}` : ""}`;
+  return `${n - failed.length} of ${n} finished; ${failed.join(", ")} ${failed.length === 1 ? "failed" : "did not finish"}`;
+}
+
+/** The pill: the most urgent state first ("1 needs you · 3 working · 3 done", "all 3 done"). */
+export function fanOut(lanes: readonly AgentLane[], asks: number): string | undefined {
+  const count = (f: (l: AgentLane) => boolean) => lanes.filter(f).length;
+  const waiting = count((l) => l.status === "waiting") + asks;
+  const working = count((l) => l.status === "working" || l.status === "starting");
+  const queued = count((l) => l.status === "queued");
+  const failed = count((l) => l.status === "failed");
+  const done = count((l) => l.status === "done");
+  if (lanes.length === 0 && waiting === 0) return undefined;
+  if (waiting + working + queued + failed === 0) return `all ${done} done`;
+  const parts: Array<[number, string]> = [
+    [waiting, "needs you"],
+    [failed, "failed"],
+    [working, "working"],
+    [queued, "queued"],
+    [done, "done"],
+  ];
+  return parts
+    .filter(([n]) => n > 0)
+    .map(([n, word]) => `${n} ${word}`)
+    .join(" · ");
+}
