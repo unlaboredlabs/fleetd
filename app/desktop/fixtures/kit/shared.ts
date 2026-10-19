@@ -9,7 +9,7 @@ import { at } from "./ids.ts";
 import { isObject, type JsonObject, asText } from "./json.ts";
 import { arr, busiestOrder, longText, manyAgents, manyPrompts, NODE_TOO_OLD, obj, streamedLines, timeSpans } from "./stress.ts";
 import { explainLoss } from "../../src/main/hub/explain.ts";
-import { answerRows, commandApproval, LOG, SCREENSHOT, type Draft, firstProject, fromLines, liveStrip, migrated, type Ref, secretRequest, statusRow, streamReply, writeChat } from "./chat.ts";
+import { agentsAt, answerRows, commandApproval, LOG, SCREENSHOT, type Draft, firstProject, fromLines, liveStrip, migrated, type Ref, secretRequest, statusRow, streamReply, writeChat } from "./chat.ts";
 import { longChat, QUESTION, STREAMING_REST, STREAMING_SO_FAR, TERSE } from "./chatText.ts";
 import { uuid } from "./ids.ts";
 import { LONG_TITLES, ofLength } from "./text.ts";
@@ -179,6 +179,12 @@ const withProjectsMix = (f: Fixture): Fixture => {
     writeChat(f, ref, drafts, { needsYou: p.needsYou, leadWorking: p.working });
     return statusRow(f, ref, p.title, p.row, p.extra);
   });
+  // The sidebar counts a project's running agents from its live lanes: give each the agents its row says.
+  agentsAt(
+    f,
+    PROJECTS.flatMap((p) => ((p.extra?.agents ?? 0) > 0 ? [{ ref: { machineId: p.machine, projectId: id(p.title) }, n: p.extra?.agents ?? 0 }] : [])),
+    true,
+  );
   return answerRows(f, rows);
 };
 
