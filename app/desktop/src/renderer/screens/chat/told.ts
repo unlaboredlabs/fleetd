@@ -107,7 +107,7 @@ const TOOL_WHY: ReadonlyArray<{ readonly label: string; readonly why: string; re
   },
   {
     label: "Asking at the terminal",
-    why: "Nobody sits at an agent's terminal; it asks you with fleetd ask, which reaches your inbox.",
+    why: "Nobody sits at an agent's terminal; it asks the lead, and the lead asks you in the chat.",
     names: ["AskUserQuestion"],
   },
   {

@@ -27,7 +27,6 @@ export const fixtures = [
   "long-text",
   "many-prompts",
   "many-agents",
-  "needs-you",
   "conversation",
   "hub-unreachable",
   "pairing-failed",
@@ -140,7 +139,6 @@ export const screens: readonly Screen[] = [
     route: CHAT,
     fixtures: ["live-0", "live-3", "live-20"],
     variant: "strip",
-    pending: "the chat screen (F3) mounts LiveStrip and A1 adds #/project/<machineId>/<projectId>",
   },
   // F4 (A3): the composer under storefront's chat while the lead works. Sent from the box: refused (Resend, Edit,
   // Dismiss), cut off by the link, unanswered (Resend, Dismiss), and one still sending; then a message that found no
@@ -204,9 +202,10 @@ export const screens: readonly Screen[] = [
   {
     id: "chat",
     route: CHAT,
-    fixtures: ["chat-long", "chat-streaming", "chat-attachments", "chat-waiting", "chat-empty", "typical", "long-text", "empty", "hub-unreachable"],
-    pending: "A2 messages (F3), A3 composer (F4) and fixtures/chat (E3b)",
+    fixtures: ["chat-long", "chat-streaming", "chat-attachments", "chat-waiting", "chat-empty", "typical", "long-text", "hub-unreachable"],
   },
+  // A link to a project the hub doesn't have (here, a hub with none): says so, rather than loading forever.
+  { id: "chat", route: CHAT, fixtures: ["empty"], variant: "missing", expect: "error" },
   // A5 (F5): the two inline items, every state: the masked secret field (and saved, withdrawn), the exact command
   // with Approve / Deny (and ran, failed, open again after the node was offline, a denied tool permission, running).
   { id: "chat", route: CHAT, fixtures: ["inline-items"], variant: "inline" },

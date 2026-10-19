@@ -5,8 +5,10 @@
 import type { Virtualizer } from "@tanstack/react-virtual";
 import { Paperclip } from "lucide-react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import type { AgentLane } from "../../../shared/contracts";
-import { Button, cx, IdChip, Text, VirtualList } from "../../ui";
+import type { AgentLane, AttachmentRef } from "../../../shared/contracts";
+import { Button, cx, Text, Truncate, VirtualList } from "../../ui";
+import { useToolQuery } from "../../src/data/react";
+import { fmtBytes } from "./attachments";
 import type { ChatItem } from "../../src/data/chat";
 
 import { shortClock } from "./format";
@@ -23,13 +25,40 @@ import s from "./view.module.css";
  * An attachment as a chip. The chat contract carries only its id (no name, type or size yet), so it reads
  * "Attachment n" with the id behind copy, never as text.
  */
-function Attachment({ id, n }: { id: string; n: number }) {
+function FileChip({ file }: { file: AttachmentRef }) {
   return (
     <span className={s.attachment}>
       <Paperclip className={s.attachmentIcon} aria-hidden />
-      <IdChip label={`Attachment ${String(n)}`} id={id} kind="attachment" size="xs" />
+      {/* A file name is a machine token (pasted-1.txt, receipt-dates.png): the code voice, cut to fit. */}
+      <span className={s.attachmentName} data-text="code">
+        <Truncate size="sm" mono>
+          {file.name}
+        </Truncate>
+      </span>
+      <Text size="xs" tone="quiet" tabular>
+        {fmtBytes(file.bytes)}
+      </Text>
     </span>
   );
+}
+
+// An image shows itself, fetched once its row is on screen (the list only mounts visible rows). Until then, and
+// if it can't be read, it is a file like any other.
+function ImageAttachment({ project, file }: { project: ProjectRef; file: AttachmentRef }) {
+  const got = useToolQuery("attachment_get", { projectRef: project, attachmentId: file.attachmentId });
+  if (got.data === undefined) return <FileChip file={file} />;
+  return (
+    <img
+      className={s.attachmentImage}
+      src={`data:${got.data.mime};base64,${got.data.dataB64}`}
+      alt={file.name}
+      title={file.name}
+    />
+  );
+}
+
+function Attachment({ project, file }: { project: ProjectRef; file: AttachmentRef }) {
+  return file.mime.startsWith("image/") ? <ImageAttachment project={project} file={file} /> : <FileChip file={file} />;
 }
 
 function Top({ state, onLoadOlder }: { state: "more" | "loading" | "start"; onLoadOlder: () => void }) {
@@ -51,6 +80,26 @@ function Top({ state, onLoadOlder }: { state: "more" | "loading" | "start"; onLo
         <Text size="xs" tone="quiet">
           This is the start of the conversation.
         </Text>
+      )}
+    </div>
+  );
+}
+
+function Bottom({ state, onLoadNewer, onJumpToLatest }: { state: "more" | "loading"; onLoadNewer: () => void; onJumpToLatest: () => void }) {
+  // Reaching the bottom of what is loaded asks for the page after it.
+  useEffect(() => {
+    if (state === "more") onLoadNewer();
+  }, [state, onLoadNewer]);
+  return (
+    <div className={s.top}>
+      {state === "loading" ? (
+        <Text size="xs" tone="quiet">
+          Loading later messages…
+        </Text>
+      ) : (
+        <Button variant="secondary" onClick={onJumpToLatest}>
+          Jump to latest
+        </Button>
       )}
     </div>
   );
@@ -94,12 +143,24 @@ const RowView = memo(function RowView(props: {
   /** This is the person's newest message: its receipt shows even once sent. */
   mineLatest: boolean;
   onLoadOlder: () => void;
+  onLoadNewer: () => void;
+  onJumpToLatest: () => void;
   onTold: (lane: AgentLane) => void;
 }) {
   const { row: r, project } = props;
   switch (r.kind) {
     case "top":
       return <Top state={r.state} onLoadOlder={props.onLoadOlder} />;
+    case "bottom":
+      return <Bottom state={r.state} onLoadNewer={props.onLoadNewer} onJumpToLatest={props.onJumpToLatest} />;
+    case "history":
+      return (
+        <div className={s.day} role="separator">
+          <Text size="xs" tone="quiet">
+            From before this chat
+          </Text>
+        </div>
+      );
     case "day":
       return (
         <div className={s.day} role="separator">
@@ -132,7 +193,7 @@ const RowView = memo(function RowView(props: {
     case "message": {
       const i = r.item;
       return (
-        <div className={cx(s.message, r.head && s.messageHead, i.author === "human" && s.mine)} data-entry="message" data-author={i.author}>
+        <div className={cx(s.message, r.head && s.messageHead, r.history && s.historyMessage)} data-entry="message" data-author={i.author}>
           {r.head ? (
             <div className={s.head}>
               <Text size="xs" strong tone={i.author === "human" ? "accent" : "default"}>
@@ -146,8 +207,8 @@ const RowView = memo(function RowView(props: {
           {i.text.trim() !== "" ? <Message text={i.text} /> : null}
           {i.attachments.length > 0 ? (
             <div className={s.attachments}>
-              {i.attachments.map((a, n) => (
-                <Attachment key={a} id={a} n={n + 1} />
+              {i.attachments.map((a) => (
+                <Attachment key={a.attachmentId} project={project} file={a} />
               ))}
             </div>
           ) : null}
@@ -169,6 +230,8 @@ export function ChatList(props: {
   rows: readonly Row[];
   project: ProjectRef;
   onLoadOlder: () => void;
+  onLoadNewer: () => void;
+  onJumpToLatest: () => void;
   onTold: (lane: AgentLane) => void;
   /** A message to open at (a notification's link): scrolled to once it is loaded. */
   openAt?: number | undefined;
@@ -230,7 +293,15 @@ export function ChatList(props: {
         virtualizerRef={virtualizer}
         aria-label="Conversation with the lead"
         renderItem={(r) => (
-          <RowView row={r} project={props.project} mineLatest={r.key === mineLatest} onLoadOlder={props.onLoadOlder} onTold={props.onTold} />
+          <RowView
+            row={r}
+            project={props.project}
+            mineLatest={r.key === mineLatest}
+            onLoadOlder={props.onLoadOlder}
+            onLoadNewer={props.onLoadNewer}
+            onJumpToLatest={props.onJumpToLatest}
+            onTold={props.onTold}
+          />
         )}
       />
     </div>

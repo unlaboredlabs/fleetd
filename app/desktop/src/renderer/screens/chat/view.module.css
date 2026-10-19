@@ -27,15 +27,25 @@
   flex: none;
 }
 .loading {
+  display: flex;
   flex: 1;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  align-items: center;
+  gap: var(--space-2);
   padding: var(--space-4) var(--pad);
 }
 .log {
   flex: 1;
   min-height: 0;
 }
+/* The composer (F4's) sits on the rows' measure, inset from the window's edges. */
 .composer {
   flex: none;
+  width: 100%;
+  max-width: calc(var(--measure) + 2 * var(--pad));
+  margin: 0 auto;
+  padding: var(--space-2) var(--pad) var(--space-3);
 }
 .composer:empty {
   display: none;
@@ -107,6 +117,10 @@
 .strip:empty {
   display: none;
 }
+/* A message from before the chat existed (an old order's conversation): the same message, a step quieter. */
+.historyMessage {
+  color: var(--quiet);
+}
 .attachments {
   display: flex;
   flex-wrap: wrap;
@@ -121,6 +135,21 @@
   padding: 2px var(--space-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
+}
+.attachmentName {
+  display: inline-flex;
+  min-width: 0;
+}
+.attachmentImage {
+  display: block;
+  max-width: min(100%, 360px);
+  max-height: 240px;
+  /* A tiny image (an icon, a 2 px crop) still reads as an image rather than a stray mark. */
+  min-width: 48px;
+  min-height: 48px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  object-fit: contain;
 }
 .attachmentIcon {
   flex: none;

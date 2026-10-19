@@ -4,7 +4,9 @@
 // the strip's lanes.
 import { useCallback, useMemo, useState } from "react";
 import type { AgentLane, ThreadRef } from "../../../shared/contracts";
-import { StatusChip, Text, Truncate, type StatusTone } from "../../ui";
+import { Button, IdChip, StatusChip, Text, Truncate, type StatusTone } from "../../ui";
+import { STATE_WORDS } from "../status/rows";
+import type { ProjectStateWord } from "../../src/data/selectors";
 import { ChatList } from "./ChatList";
 import { useChatData } from "./data";
 import { chatRows, rowIndexOf } from "./model";
@@ -15,12 +17,7 @@ import { roleWords, type ToldWho } from "./told";
 import { ToldPanel } from "./ToldPanel";
 import s from "./view.module.css";
 
-function stateWord(needsYou: boolean | undefined, working: boolean | undefined): { word: string; tone: StatusTone } | undefined {
-  if (needsYou === true) return { word: "waiting on you", tone: "needs-you" };
-  if (working === true) return { word: "working", tone: "working" };
-  if (needsYou === false && working === false) return { word: "idle", tone: "idle" };
-  return undefined;
-}
+const TONE: Readonly<Record<ProjectStateWord, StatusTone>> = { waiting_on_you: "needs-you", blocked: "failed", working: "working", idle: "idle" };
 
 export function ChatScreen({ project, message }: { project: ProjectRef; message?: string }) {
   const data = useChatData(project);
@@ -36,6 +33,8 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
             items: view.items,
             hasOlder: view.hasOlder,
             loadingOlder: view.loadingOlder,
+            hasNewer: view.hasNewer,
+            loadingNewer: view.loadingNewer,
             strip,
             // "Today" is read against the clock when the chat changes; nothing ticks while it's idle.
             // eslint-disable-next-line react-hooks/purity
@@ -44,10 +43,11 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
     [view, strip],
   );
   const openAt = message === undefined || rows === undefined ? undefined : rowIndexOf(rows, message);
-  const state = stateWord(data.needsYou, data.leadWorking);
+  const state = data.state;
   const title = data.title ?? "";
-  const { loadOlder } = data;
+  const { loadOlder, loadNewer, jumpToLatest } = data;
   const onLoadOlder = useCallback(() => loadOlder(), [loadOlder]);
+  const onLoadNewer = useCallback(() => loadNewer(), [loadNewer]);
   const onTold = useCallback(
     (lane: AgentLane) => {
       if (!lane.threadRef) return;
@@ -58,26 +58,49 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   );
 
   return (
-    <div className={s.screen} data-screen={view === undefined ? "chat.loading" : "chat"}>
+    <div className={s.screen} data-screen={data.missing ? "chat.missing" : view !== undefined ? "chat" : data.loadError !== undefined ? "chat.error" : "chat.loading"}>
       <header className={s.header}>
         <span className={s.title}>{title ? <Truncate strong>{title}</Truncate> : null}</span>
         {state ? (
           <span className={s.flexNone}>
-            <StatusChip tone={state.tone}>{state.word}</StatusChip>
+            <StatusChip tone={TONE[state]}>{STATE_WORDS[state]}</StatusChip>
           </span>
         ) : null}
-        <AgentsCapControl projectRef={project} />
+        {data.missing ? null : <AgentsCapControl projectRef={project} />}
       </header>
-      {rows === undefined ? (
+      {data.missing ? (
+        <div className={s.loading} role="status">
+          <Text tone="quiet">This project isn’t on the hub. It may have been removed.</Text>
+        </div>
+      ) : rows === undefined && data.loadError !== undefined ? (
+        <div className={s.loading} role="alert">
+          <Text tone="quiet">Couldn’t load the conversation.</Text>
+          <IdChip label="Details" id={data.loadError.message} kind="error" size="xs" tone="quiet" />
+          <Button variant="secondary" onClick={data.retry}>
+            Retry
+          </Button>
+        </div>
+      ) : rows === undefined ? (
         <div className={s.loading}>
           <Text tone="quiet">{view === undefined && data.title !== undefined ? "Loading the conversation…" : "Loading…"}</Text>
         </div>
       ) : (
-        <ChatList rows={rows} project={project} onLoadOlder={onLoadOlder} onTold={onTold} openAt={openAt} sent={sent} />
+        <ChatList
+          rows={rows}
+          project={project}
+          onLoadOlder={onLoadOlder}
+          onLoadNewer={onLoadNewer}
+          onJumpToLatest={jumpToLatest}
+          onTold={onTold}
+          openAt={openAt}
+          sent={sent}
+        />
       )}
-      <div className={s.composer}>
-        <ChatComposer project={project} onSent={() => setSent((n) => n + 1)} />
-      </div>
+      {data.missing ? null : (
+        <div className={s.composer}>
+          <ChatComposer project={project} onSent={() => setSent((n) => n + 1)} />
+        </div>
+      )}
       <ToldPanel open={told} projectRef={project} onClose={() => setTold(undefined)} />
     </div>
   );

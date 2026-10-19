@@ -6,11 +6,16 @@ import type { ChatItem } from "../../src/data/chat";
 export type Row =
   | { readonly kind: "top"; readonly key: "top"; readonly state: "more" | "loading" | "start" }
   | { readonly kind: "day"; readonly key: string; readonly label: string }
-  | { readonly kind: "message"; readonly key: string; readonly item: ChatItem; readonly head: boolean }
+  /** `history`: written before the chat existed (an old order, a note, a steer), shown as the conversation it was. */
+  | { readonly kind: "message"; readonly key: string; readonly item: ChatItem; readonly head: boolean; readonly history: boolean }
+  /** Above the first message from before the chat existed. */
+  | { readonly kind: "history"; readonly key: string }
   | { readonly kind: "system"; readonly key: string; readonly item: ChatItem }
   | { readonly kind: "event"; readonly key: string; readonly item: ChatItem }
   | { readonly kind: "inline"; readonly key: string; readonly item: ChatItem }
-  | { readonly kind: "strip"; readonly key: "strip" };
+  | { readonly kind: "strip"; readonly key: "strip" }
+  /** Paged above the newest messages: more below, and the way back to the latest. */
+  | { readonly kind: "bottom"; readonly key: "bottom"; readonly state: "more" | "loading" };
 
 /** Messages from one author this close together read as one turn: the name and time show once. */
 const GROUP_MS = 5 * 60_000;
@@ -39,11 +44,16 @@ export interface RowsInput {
   readonly items: readonly ChatItem[];
   readonly hasOlder: boolean;
   readonly loadingOlder: boolean;
+  readonly hasNewer?: boolean;
+  readonly loadingNewer?: boolean;
   /** Show the live strip (the project has agents at work, or the strip has something to say). */
   readonly strip: boolean;
   readonly nowMs: number;
   readonly timeZone?: string;
 }
+
+/** From before the chat existed: the layer shows these as one-liners, this view as the conversation they were. */
+const isHistory = (item: ChatItem): boolean => item.message?.history !== undefined;
 
 export function chatRows(i: RowsInput): Row[] {
   const out: Row[] = [{ kind: "top", key: "top", state: i.loadingOlder ? "loading" : i.hasOlder ? "more" : "start" }];
@@ -54,25 +64,33 @@ export function chatRows(i: RowsInput): Row[] {
   i.items.forEach((item, n) => {
     if (item.author === "lead" && item.kind === "message") leadLast = n;
   });
+  let inHistory = false;
   i.items.forEach((item, n) => {
+    const history = isHistory(item);
+    if (history && !inHistory) out.push({ kind: "history", key: `history:${item.id}` });
+    inHistory = history;
     const day = dayKey(item.at, i.timeZone);
     if (day !== lastDay) {
       out.push({ kind: "day", key: `day:${day}`, label: dayLabel(item.at, i.nowMs, i.timeZone) });
       lastDay = day;
       prev = undefined;
     }
-    if (item.kind === "event") out.push({ kind: "event", key: item.id, item });
+    if (history && item.author !== "system") {
+      const head = prev === undefined || prev.author !== item.author || Date.parse(item.at) - Date.parse(prev.at) > GROUP_MS;
+      out.push({ kind: "message", key: item.id, item, head, history: true });
+    } else if (item.kind === "event") out.push({ kind: "event", key: item.id, item });
     else if (item.kind === "secret" || item.kind === "gated") out.push({ kind: "inline", key: item.id, item });
     else if (item.author === "system") out.push({ kind: "system", key: item.id, item });
     else {
       const head =
         prev === undefined || prev.kind !== "message" || prev.author !== item.author || Date.parse(item.at) - Date.parse(prev.at) > GROUP_MS;
-      out.push({ kind: "message", key: item.id, item, head });
+      out.push({ kind: "message", key: item.id, item, head, history: false });
     }
     prev = item;
     if (i.strip && n === leadLast) out.push({ kind: "strip", key: "strip" });
   });
   if (i.strip && leadLast === -1) out.push({ kind: "strip", key: "strip" });
+  if (i.hasNewer === true) out.push({ kind: "bottom", key: "bottom", state: i.loadingNewer === true ? "loading" : "more" });
   return out;
 }
 
@@ -91,7 +109,8 @@ const plain = (line: string): string =>
 
 /** fleetd's own message to the lead, as one quiet line: why it was woken, or its first line. */
 export function systemHeadline(text: string): string {
-  const why = /^##\s*Why you are woken\s*$/m.exec(text);
+  // A wake lists its reasons under "## Events" (before #242, "## Why you are woken").
+  const why = /^##\s*(?:Why you are woken|Events)\s*$/m.exec(text);
   if (why) {
     const reasons = text
       .slice(why.index + why[0].length)
@@ -105,6 +124,7 @@ export function systemHeadline(text: string): string {
     }
     return "Woken by fleetd";
   }
+  if (/^\s*#\s*(?:fleetd digest|project)\b/.test(text)) return "fleetd's digest of the project";
   const line = text.split("\n").map(plain).find((l) => l.length > 0) ?? "";
   return line.length > 120 ? `${line.slice(0, 119)}…` : line;
 }

@@ -62,8 +62,7 @@ const collect = (v: JsonValue): void => {
 const sweepCalls = (since: string): Array<readonly [string, JsonObject]> => {
   const calls: Array<readonly [string, JsonObject]> = [
     ["orders_board", {}],
-    ["asks_list", { state: "open" }],
-    ["asks_list", {}],
+    ["status_projects", {}],
     ["prompts_list", {}],
     ["doctor_list", {}],
     ["attention_policy", {}],
@@ -77,6 +76,7 @@ const sweepCalls = (since: string): Array<readonly [string, JsonObject]> => {
     const projectRef = { machineId, projectId };
     calls.push(
       ["project_get", projectRef],
+      ["chat_history", { projectRef }],
       ["orders_board", { projectRef, includeDoneSince: since }],
       ["tasks_list", { projectRef, limit: 100 }],
       ["workstream_list", { machineId, projectId, limit: 50 }],
