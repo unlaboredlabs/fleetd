@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { matches } from "../../src/main/hub/fixture.ts";
 import { Fixture } from "./fixture.ts";
 import { assertClean, makeSanitizer } from "./sanitize.ts";
+import { recorded } from "./shared.ts";
 import { fitStrings, validateFixture } from "./schema.ts";
 
 describe("Fixture answers", () => {
@@ -24,6 +25,17 @@ describe("Fixture answers", () => {
     expect(f.answers("asks_list")).toHaveLength(1);
     f.fail("asks_list", {}, { code: "failed", message: "no" });
     expect(answer(f, "asks_list", {})).toEqual({ ok: false, error: { code: "failed", message: "no" } });
+  });
+
+  it("turns timed frames into main's afterMs steps, settling at the last one unless told otherwise", () => {
+    const event = (seq: number) => ({ seq, at: "2026-10-19T10:00:00.000Z", type: "machine.online", summary: "devbox is online" });
+    const f = new Fixture("t", "").later(3000, "event", event(2)).later(1000, "event", event(1));
+    f.events.push(event(0));
+    const file = f.toFile();
+    expect(file.frames.map((fr) => fr.afterMs)).toEqual([undefined, 1000, 2000]);
+    expect(file.settleMs).toBe(3000);
+    expect(f.settleAt(5000).toFile().settleMs).toBe(5000);
+    expect(Fixture.fromFile(file).timeline.map((t) => t.ms)).toEqual([1000, 3000]);
   });
 
   it("copies share nothing with their base", () => {
@@ -82,5 +94,12 @@ describe.skipIf(process.env["FLEETD_FIXTURE_DENYLIST"] === undefined)("recorded 
   const dir = path.join(import.meta.dirname, "../recorded");
   it.each(fs.readdirSync(dir).filter((f) => f.endsWith(".json")))("%s names nothing on the denylist", (file) => {
     expect(() => assertClean(file, fs.readFileSync(path.join(dir, file), "utf8"))).not.toThrow();
+  });
+});
+
+describe("recorded moments", () => {
+  const dir = path.join(import.meta.dirname, "../recorded");
+  it.each(fs.readdirSync(dir).filter((f) => f.endsWith(".json")))("%s is traffic a hub could send", (file) => {
+    expect(validateFixture(recorded(file.slice(0, -5)))).toEqual([]);
   });
 });
