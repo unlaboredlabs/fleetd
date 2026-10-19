@@ -70,7 +70,7 @@ pub struct HubConfig {
     /// How long a write to an offline machine waits in the queue; absent means 24 h.
     pub queue_ttl_sec: Option<u64>,
     /// The retro's one-shot model; absent means claude-haiku-5-5.
-    pub router_model: Option<String>,
+    pub retro_model: Option<String>,
 }
 
 impl HubConfig {

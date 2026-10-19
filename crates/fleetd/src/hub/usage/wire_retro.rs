@@ -85,7 +85,7 @@ impl OpsPorts {
         let env = std::env::vars().collect();
         let runner = OneShot::new(
             &hub.config.home,
-            hub.config.router_model.clone(),
+            hub.config.retro_model.clone(),
             &env,
             Some(Duration::from_millis(RUN_TIMEOUT_MS)),
         )
@@ -103,7 +103,7 @@ impl RetroRunner for OpsPorts {
                     let model = self
                         .hub()
                         .config
-                        .router_model
+                        .retro_model
                         .clone()
                         .unwrap_or_else(|| "claude-haiku-5-5".into());
                     let run = OrchestratorRun {
