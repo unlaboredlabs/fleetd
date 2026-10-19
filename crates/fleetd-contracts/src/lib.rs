@@ -32,6 +32,7 @@ pub mod subscriptions;
 pub mod tasks;
 pub mod time;
 pub mod train;
+pub mod ts;
 pub mod usage;
 pub mod verification;
 pub mod wakes;
