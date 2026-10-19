@@ -435,6 +435,16 @@ jobs:
           mkdir -p "$RUNNER_TEMP/launch"
           ditto dist/fleetd.app "$RUNNER_TEMP/launch/fleetd.app"
           .github/release/desktop-update-check.sh dist/fleetd-desktop-macos-universal.zip "$RUNNER_TEMP/launch/fleetd.app/Contents/MacOS/fleetd"
+      - name: Packaged smoke (on the unpublished test build)
+        # Ad-hoc signed and this runner's architecture only: it never carries our Team ID, stays in
+        # app/desktop/dist-test and is never uploaded. See the desktop-linux job.
+        working-directory: app/desktop
+        run: |
+          pnpm fixtures
+          pnpm build:test
+          CSC_IDENTITY_AUTO_DISCOVERY=false pnpm exec electron-builder --mac --dir --arm64 --publish never -c.directories.output=dist-test \
+            -c.mac.identity=- -c.mac.hardenedRuntime=false -c.extraMetadata.version="$FLEETD_VERSION"
+          node scripts/packaged-smoke.ts dist-test/mac-arm64/fleetd.app/Contents/MacOS/fleetd
       - name: Stage
         run: |
           rm -rf dist/fleetd.app
@@ -490,6 +500,17 @@ jobs:
           DONE_MARKER="update notice: fleetd 99.0.0" xvfb-run -a .github/release/desktop-update-check.sh \
             dist/fleetd-desktop-linux-x86_64.AppImage "$RUNNER_TEMP/deb/opt/fleetd/fleetd-desktop" --no-sandbox
           ls -l dist
+      - name: Debug guard and packaged smoke (on the unpublished test build)
+        # The release package above must refuse every debugging switch; the test build (MAIN_VITE_FLEETD_TEST_BUILD=1)
+        # accepts --remote-debugging-port, so the smoke can drive the packed app and see a module missing from the
+        # asar. It stays in app/desktop/dist-test, outside dist/, and is never uploaded.
+        working-directory: app/desktop
+        run: |
+          pnpm fixtures
+          pnpm build:test
+          pnpm exec electron-builder --linux --dir --publish never -c.directories.output=dist-test -c.extraMetadata.version="$FLEETD_VERSION"
+          node scripts/debug-guard-check.ts --packaged dist/linux-unpacked/fleetd-desktop --test-packaged dist-test/linux-unpacked/fleetd-desktop
+          node scripts/packaged-smoke.ts dist-test/linux-unpacked/fleetd-desktop --no-sandbox --ozone-platform=headless
       - uses: actions/upload-artifact@v7
         with:
           name: desktop-linux
