@@ -24,7 +24,7 @@ const TIME_PREFIXES = ["task.", "change.", "ask.", "workstream."];
 const TIME_TYPES = new Set(["lead.woken", "pr.merged"]);
 
 /** The orders an event is about: `data.workstreamId`, plus `data.workstreamIds` (a lead woken for several). */
-const ordersNamed = (event: HubEvent): readonly string[] => {
+export const ordersNamed = (event: HubEvent): readonly string[] => {
   const one = dataField(event, "workstreamId");
   const data: unknown = event.data;
   const many: unknown = typeof data === "object" && data !== null ? (data as Record<string, unknown>)["workstreamIds"] : undefined;
