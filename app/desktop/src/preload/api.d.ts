@@ -1,3 +1,5 @@
+import type { NotifyRequest, OpenTarget } from "../shared/app";
+import type { MenuCommand } from "../shared/menu";
 import type { CallOutcome, ConnectOutcome, HubFrame, HubState, OpenOutcome } from "../shared/hub";
 import type { LiveScope } from "../shared/ipc";
 
@@ -27,6 +29,18 @@ export interface FleetdApi {
     resync(): Promise<void>;
     connect(url: string, key: string): Promise<ConnectOutcome>;
     forget(): Promise<void>;
+  };
+  readonly app: {
+    /** Command ids clicked in the app menu (an accelerator runs in the renderer's keymap instead). Returns the unsubscribe. */
+    onMenuCommand(listener: (id: string) => void): () => void;
+    /**
+     * Clicked notifications and fleetd:// links. Targets that arrived before the first listener (a link that
+     * launched the app) are delivered to it. Returns the unsubscribe.
+     */
+    onOpen(listener: (target: OpenTarget) => void): () => void;
+    notify(request: NotifyRequest): Promise<void>;
+    /** The menu commands enabled now; main greys out the other menu items. */
+    setMenuState(enabled: ReadonlyArray<MenuCommand>): Promise<void>;
   };
 }
 

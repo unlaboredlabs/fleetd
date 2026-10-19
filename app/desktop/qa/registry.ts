@@ -79,7 +79,7 @@ export const screens: readonly Screen[] = [
   {
     id: "shell",
     route: "#/",
-    fixtures: ["empty", "typical", "hub-unreachable", "pairing-failed", "node-too-old"],
+    fixtures: ["empty", "typical", "many-agents", "long-text", "hub-unreachable", "pairing-failed", "node-too-old"],
   },
   // E2: every design-system primitive with short, long and empty content, one section per entry, so the primitives
   // pass before any screen uses them. Needs a build with the gallery in it: `pnpm qa:build`.
@@ -106,5 +106,5 @@ export const screens: readonly Screen[] = [
 // Platform checks that need a screen writer's work before they can pass; the owner turns theirs on when it lands.
 export const platformChecks: Record<"appMenu", boolean> = {
   // F1: the macOS app menu, with an Edit menu wired to the text actions.
-  appMenu: false,
+  appMenu: true,
 };

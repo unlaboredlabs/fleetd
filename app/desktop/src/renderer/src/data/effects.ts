@@ -18,7 +18,19 @@ const ORDER_PREFIXES = ["workstream.", "task.", "change.", "claim.", "ask.", "st
 const ORDER_TYPES = new Set(["pr.merged", "review.verdict", "lead.started", "lead.woken", "batch.ready"]);
 const ASK_TYPES = new Set(["batch.ready", "decision.recorded", "gated.ran"]);
 const STATUS_TYPES = new Set(["ci.main", "github.drift", "source.stale", "source.fresh", "digest.ready"]);
-const TIME_PREFIXES = ["task.", "thread.", "workstream.", "lead.", "change.", "pr."];
+// What changes an order's time, as the GPUI inspector refetched it. thread.* is left out: it fires constantly, and
+// the spans it moves arrive with the task and change events that close them.
+const TIME_PREFIXES = ["task.", "change.", "ask.", "workstream."];
+const TIME_TYPES = new Set(["lead.woken", "pr.merged"]);
+
+/** The orders an event is about: `data.workstreamId`, plus `data.workstreamIds` (a lead woken for several). */
+export const ordersNamed = (event: HubEvent): readonly string[] => {
+  const one = dataField(event, "workstreamId");
+  const data: unknown = event.data;
+  const many: unknown = typeof data === "object" && data !== null ? (data as Record<string, unknown>)["workstreamIds"] : undefined;
+  const ids = Array.isArray(many) ? many.filter((w): w is string => typeof w === "string") : [];
+  return [...new Set(one === undefined ? ids : [one, ...ids])];
+};
 
 const startsWithAny = (type: string, prefixes: readonly string[]): boolean => prefixes.some((p) => type.startsWith(p));
 
@@ -27,19 +39,24 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   const type = event.type;
   const out: Invalidation[] = [];
   const workstreamId = dataField(event, "workstreamId");
+  const orders = ordersNamed(event);
   const shapesOrders = startsWithAny(type, ORDER_PREFIXES) || ORDER_TYPES.has(type);
 
   if (type.startsWith("ask.") || ASK_TYPES.has(type)) out.push({ tool: "asks_list" });
   if (shapesOrders) {
     out.push({ tool: "orders_board" });
-    if (workstreamId !== undefined) out.push({ tool: "order_get", where: { workstreamId } });
+    for (const id of orders) out.push({ tool: "order_get", where: { workstreamId: id } });
   }
   if (type.startsWith("steer.")) {
     out.push(workstreamId === undefined ? { tool: "steers_list" } : { tool: "steers_list", where: { workstreamId } });
   }
   if (shapesOrders || STATUS_TYPES.has(type)) out.push({ tool: "status_get" }, { tool: "plan_get" });
-  if (startsWithAny(type, TIME_PREFIXES)) {
-    out.push({ tool: "time_spans" }, { tool: "time_breakdown" }, { tool: "time_insights" });
+  // Only the open order's time reads: they are scoped `{ kind: "order", workstreamId }`, matched inside `scope`.
+  // time_spans is paged; its view fetches new pages itself, so it is not refetched whole here.
+  if (startsWithAny(type, TIME_PREFIXES) || TIME_TYPES.has(type)) {
+    for (const id of orders) {
+      out.push({ tool: "time_breakdown", where: { workstreamId: id } }, { tool: "time_insights", where: { workstreamId: id } });
+    }
   }
   if (type.startsWith("thread.") && event.threadId !== undefined) {
     out.push({ tool: "thread_tail", where: { threadId: event.threadId } });
@@ -61,10 +78,12 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   return { invalidate: out, resync };
 };
 
-/** Whether a query's input matches an invalidation's `where`. */
+/** Whether a query's input matches an invalidation's `where`, at its top level or inside its `scope`. */
 export const matches = (input: unknown, where: Invalidation["where"]): boolean => {
   if (where === undefined) return true;
   if (typeof input !== "object" || input === null) return false;
   const fields = input as Readonly<Record<string, unknown>>;
-  return Object.entries(where).every(([k, v]) => fields[k] === v);
+  const scope: unknown = fields["scope"];
+  const scoped = typeof scope === "object" && scope !== null ? (scope as Readonly<Record<string, unknown>>) : {};
+  return Object.entries(where).every(([k, v]) => fields[k] === v || scoped[k] === v);
 };
