@@ -24,7 +24,7 @@ export function ActivityText({ lane }: { lane: AgentLane }) {
         </Truncate>
       </span>
       {line.machine ? (
-        <Truncate size="sm" mono tone="quiet" expand="none">
+        <Truncate as="code" size="sm" mono tone="quiet" expand="none">
           {line.machine}
         </Truncate>
       ) : null}
@@ -104,7 +104,7 @@ function Lane({ lane, now, onOpen, onTold }: { lane: AgentLane; now: number; onO
           ) : null}
           {lane.branch ? (
             <span className={s.laneBranch}>
-              <Truncate size="sm" mono tone="quiet">
+              <Truncate as="code" size="sm" mono tone="quiet">
                 {lane.branch}
               </Truncate>
             </span>

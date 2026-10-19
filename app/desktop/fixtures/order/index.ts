@@ -68,12 +68,14 @@ function conversationForOrderView(f: Fixture): void {
   }
 }
 
-/** The lead is mid-reply while its lines stream in (a stream into an idle lead would be a stale copy). */
+/** The lead is mid-reply, running a command, while its lines stream in (a stream into an idle lead would be a stale copy). */
 function leadWorking(f: Fixture): void {
   f.update("order_get", (out) => {
     const lead = obj(obj(out)["lead"]);
     if (Object.keys(lead).length === 0) return out;
-    return { ...obj(out), lead: { ...lead, status: "working", live: { ...obj(lead["live"]), status: "working" } } };
+    // Running a command whose words are keys (a kebab package name): it must read as code, not as prose.
+    const activity = { activity: { kind: "command", text: "pnpm test --filter storefront-share-card" }, since: at(f.now, -72_000) };
+    return { ...obj(out), lead: { ...lead, status: "working", live: { ...obj(lead["live"]), status: "working", activity } } };
   });
 }
 
