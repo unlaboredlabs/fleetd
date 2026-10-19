@@ -11,13 +11,14 @@ Status has one row per project:
 
 | Column | Shows |
 |---|---|
-| State | `working`, `waiting on you`, `idle` or `blocked`. |
-| Progress | The two-tone bar: verified work, then work in flight. |
+| State | `waiting on you`, `blocked`, `working` or `idle`. |
+| Progress | The two-tone bar: solid is verified work, lighter is credit for work in flight. No bar when nothing can be counted yet. |
 | Agents | How many agents are running. |
 | Last merged | The latest pull request the train merged. |
 
-Click a row to open that project's chat. Hover or expand it for detail. Open Status with ⌘. (Ctrl+. on Linux), or from
-the sidebar.
+Rows needing you come first, then blocked, working and idle. Click a row to open that project's chat. Hover it for
+detail: why it is blocked, the verified and in-flight shares, the latest drops, and a source that has gone quiet.
+Open Status with ⌘. (Ctrl+. on Linux), or from the sidebar.
 
 Status never shows a finish time or an ETA. It shows state instead.
 
@@ -33,7 +34,6 @@ storefront  70%  polish 2/5    as of 14:02:07 (live)
   11 of 18 required items verified
   ↓ from 74% · +3 items: checkout redesign added (14:00)
   ↓ from 66% · CI failed on #212 (13:20)
-  Switching payments to the new provider, waiting on the full test run. Nothing needs you.   [generated]
   waiting on: P12 full test run: review of #212 → CI on #212 → merge   holds up P14, P16
   since you last looked here 09:12  7 merged, 3 verified, 1 failed, +3 items
 health  main CI acme/storefront green as of 14:01:50 · 2 of 2 machines online · claude 58% 5h 41% wk · 8 running, slots 8/40
@@ -173,20 +173,3 @@ To have GitHub tell the hub about changes as they happen:
 
 This adds a webhook to every repo the train merges into. Turn it off with `fleetd hub github-webhook --off`. A webhook
 only makes the hub look sooner; a lost or forged delivery can't change what it records.
-
-## The headline {#headline}
-
-The sentence under the number is written by Claude (haiku, through your `claude` login on the hub, no tools) from
-facts fleetd computed.
-
-- It never mentions time.
-- Every number in it must appear in those facts, or it is thrown away.
-- When it can't be written, a plain template is shown instead, labelled `template`.
-
-Change how it's written with `fleetd prompts edit status.headline`. See
-[What agents are told](/docs/what-agents-are-told).
-
-## Daily notification {#notification}
-
-The app can post a desktop notification at 09:00 and 18:00 with the fleet's number, its headline and what happened
-since the last one. Turn it on in Settings → General → Status digest. It is off by default and respects quiet hours.
