@@ -8,15 +8,14 @@ import { isWorking } from "../board/words";
 import { cx, StatusChip, Text, Truncate } from "../../ui";
 import type { StatusDoc, StatusScope } from "./contracts";
 import { TwoToneBar } from "./Hero";
-import { NeedsYou } from "./NeedsYou";
 import { figure, progressRowView, riskTarget, rowLanes, scopeRoute, shownRisks, staleWords, when } from "./view";
 import s from "./status.module.css";
 
 const openOrder = (workstreamId: string): void => {
   window.location.hash = `#/order/${encodeURIComponent(workstreamId)}`;
 };
-const openRisk = (target: "machines" | "inbox"): void => {
-  window.location.hash = target === "machines" ? "#/machines" : `${window.location.hash.split("?")[0] ?? "#/status"}?inbox`;
+const openRisk = (_target: "machines"): void => {
+  window.location.hash = "#/machines";
 };
 const openScope = (scope: StatusScope): void => {
   window.location.hash = scopeRoute(scope);
@@ -112,9 +111,6 @@ export function Sections({ doc, now }: { doc: StatusDoc; now: number }) {
         </Section>
       ) : null}
 
-      <Section title="Needs you" count={doc.needsYou.count}>
-        <NeedsYou askIds={doc.needsYou.askIds} count={doc.needsYou.count} />
-      </Section>
 
       <Section title="Risks" count={risks.length} more={doc.more.risks}>
         {risks.length === 0 ? (
@@ -127,7 +123,7 @@ export function Sections({ doc, now }: { doc: StatusDoc; now: number }) {
             return (
               <Row
                 key={`${r.rule}${r.message}`}
-                label={target === "machines" ? `${r.message}: open Machines` : `${r.message}: open the inbox`}
+                label={`${r.message}: open Machines`}
                 onOpen={target === null ? undefined : () => openRisk(target)}
               >
                 <span className={cx(s.rowMain)}>

@@ -96,7 +96,8 @@ export type ConnectRequest = z.infer<typeof ConnectRequest>;
 
 /** A secret ask's value and the box key of the machine it goes to; main seals it (main/secret.ts). */
 export const SecretRequest = z.strictObject({
-  askId: z.string().regex(/^A[1-9][0-9]*$/u),
+  /** The secret request item's requestId (ChatRequestId), "R<n>". */
+  requestId: z.string().regex(/^R[1-9][0-9]*$/u),
   boxPubKey: z.string().regex(/^[A-Za-z0-9+/]{43}=$/u),
   // 8192 UTF-8 bytes at most; main checks the byte length, this only bounds the string.
   value: z.string().min(1).max(8192),

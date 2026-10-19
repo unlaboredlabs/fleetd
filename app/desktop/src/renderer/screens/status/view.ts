@@ -368,21 +368,10 @@ export const scopeFromRoute = (hash: string): StatusScope | null => {
 };
 
 
-/** What Needs you shows for one ask id: its card only while the layer holds it open. An ask answered or closed a
- * moment ago (the event patched the store before status_get refetched) must not offer its buttons again. */
-export const needsYouRow = <A extends { readonly state: string }>(
-  asks: Readonly<Record<string, A>> | undefined,
-  id: string,
-): { readonly kind: "card"; readonly ask: A } | { readonly kind: "changed" } | { readonly kind: "loading" } => {
-  if (asks === undefined) return { kind: "loading" };
-  const ask = asks[id];
-  return ask?.state === "open" ? { kind: "card", ask } : { kind: "changed" };
-};
-
-/** Where a risk leads, as in the old app: machine trouble to Machines, a blocking ask to the inbox. Others are read
+/** Where a risk leads: machine trouble to Machines. Others are read
  * where they stand (the row names its order or check). */
-export const riskTarget = (rule: string): "machines" | "inbox" | null =>
-  rule === "machine_offline" || rule === "machine_flaky" || rule === "usage_high" ? "machines" : rule === "blocked_on_you" ? "inbox" : null;
+export const riskTarget = (rule: string): "machines" | null =>
+  rule === "machine_offline" || rule === "machine_flaky" || rule === "usage_high" ? "machines" : null;
 
 /** A repo's CI runs on GitHub, where a red check is read. */
 export const ciUrl = (repo: string): string => `https://github.com/${repo.split("/").map(encodeURIComponent).join("/")}/actions`;
