@@ -765,6 +765,9 @@ fn eta_of(hub: &Hub, w: &World, scope: &StatusScope, s: &Scope<'_>, f: &Figure) 
             samples: Count::unchecked(samples),
             basis,
             chain: chain_label,
+            p50: None,
+            p90: None,
+            accuracy: None,
         },
         slipped,
         drift,
@@ -1213,6 +1216,9 @@ pub fn render(
                             .map(|e| Count::unchecked((now - e) / 60_000)),
                         stale: ws.and_then(order_stale),
                         steers: None,
+                        stage: None,
+                        credit_pct: None,
+                        slower_than_usual: None,
                     });
                 } else {
                     let after: Vec<PlanItemId> = i
@@ -1264,6 +1270,9 @@ pub fn render(
                 overdue_minutes: None,
                 stale: order_stale(o.id()),
                 steers: None,
+                stage: None,
+                credit_pct: None,
+                slower_than_usual: None,
             });
         }
     }

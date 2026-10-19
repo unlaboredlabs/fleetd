@@ -103,6 +103,41 @@ pub enum PlanItemState {
     Dropped,
 }
 
+/// The observable stages an item passes on its way to verified, in order. Each is credited only once fleetd saw it.
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum ItemStage {
+    Planned,
+    BriefFrozen,
+    TaskStarted,
+    FirstPush,
+    PrOpen,
+    ReviewPassed,
+    CiGreen,
+    Merged,
+    Verified,
+}
+
+impl ItemStage {
+    pub const ALL: [ItemStage; 9] = [
+        Self::Planned,
+        Self::BriefFrozen,
+        Self::TaskStarted,
+        Self::FirstPush,
+        Self::PrOpen,
+        Self::ReviewPassed,
+        Self::CiGreen,
+        Self::Merged,
+        Self::Verified,
+    ];
+
+    pub fn index(self) -> usize {
+        self as usize
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum MilestoneState {
@@ -252,8 +287,9 @@ pub struct PlanAddCall {
     pub workstream_id: Option<WorkstreamId>,
     #[serde(default)]
     pub weight: Weight,
+    /// Absent: `m`, with a warning to size it.
     #[serde(default)]
-    pub size: Size,
+    pub size: Option<Size>,
     #[serde(default)]
     pub after: UniqueList<PlanItemId, 0, 20>,
     pub pr: Option<GitHubPrUrl>,
@@ -324,6 +360,8 @@ pub struct PlanItemResult {
     pub item: PlanItem,
     pub change: Option<PlanChange>,
     pub next: Option<String>,
+    /// Granularity: the item has no size, or is likely over an hour of agent time; split it.
+    pub warning: Option<String>,
 }
 
 #[skip_serializing_none]
@@ -348,7 +386,7 @@ mod tests {
         let add: PlanAddCall =
             serde_json::from_value(serde_json::json!({ "title": "lab run", "milestoneId": "M1" }))
                 .unwrap();
-        assert_eq!((add.weight, add.size), (Weight::Must, Size::M));
+        assert_eq!((add.weight, add.size), (Weight::Must, None));
         assert_eq!(Size::L.points(), 8);
     }
 }

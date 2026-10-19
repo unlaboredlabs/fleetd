@@ -2251,6 +2251,30 @@
       ],
       "type": "object"
     },
+    "DropReason": {
+      "oneOf": [
+        {
+          "const": "scope_change",
+          "description": "Work was added (a scope-change marker).",
+          "type": "string"
+        },
+        {
+          "const": "review_failed",
+          "description": "A review blocked: the item fell back to \"PR open\".",
+          "type": "string"
+        },
+        {
+          "const": "ci_failed",
+          "description": "CI failed: the item fell back a stage.",
+          "type": "string"
+        },
+        {
+          "const": "reopened",
+          "description": "A done item reopened when a later check failed.",
+          "type": "string"
+        }
+      ]
+    },
     "Effort": {
       "enum": [
         "low",
@@ -2492,6 +2516,41 @@
         "projects",
         "attention",
         "cursor"
+      ],
+      "type": "object"
+    },
+    "ForecastAccuracy": {
+      "description": "How close past ETAs came: \"ETAs have been within ±20% this week\".",
+      "properties": {
+        "samples": {
+          "description": "Items behind it.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "windowDays": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "withinPct": {
+          "description": "Four in five of the window's items finished within ±this % of their predicted p50.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "withinPct",
+        "samples",
+        "windowDays",
+        "text"
       ],
       "type": "object"
     },
@@ -3440,6 +3499,12 @@
           "maxItems": 10,
           "type": "array"
         },
+        "creditPct": {
+          "description": "Share of the item's size credited to the estimate.",
+          "maximum": 100,
+          "minimum": 0,
+          "type": "integer"
+        },
         "eta": {
           "$ref": "#/$defs/Timestamp",
           "description": "started + the median duration of done items of its size."
@@ -3458,6 +3523,14 @@
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
+        },
+        "slowerThanUsual": {
+          "description": "Past 1.5× the usual time for its current stage: flagged in Risks, never credited past 90% of the stage.",
+          "type": "boolean"
+        },
+        "stage": {
+          "$ref": "#/$defs/ItemStage",
+          "description": "The furthest stage fleetd observed for the item."
         },
         "stale": {
           "$ref": "#/$defs/StaleMark"
@@ -4056,6 +4129,21 @@
         "idle"
       ],
       "type": "object"
+    },
+    "ItemStage": {
+      "description": "The observable stages an item passes on its way to verified, in order. Each is credited only once fleetd saw it.",
+      "enum": [
+        "planned",
+        "brief_frozen",
+        "task_started",
+        "first_push",
+        "pr_open",
+        "review_passed",
+        "ci_green",
+        "merged",
+        "verified"
+      ],
+      "type": "string"
     },
     "KindTotal": {
       "properties": {
@@ -6062,6 +6150,37 @@
       },
       "type": "object"
     },
+    "PlanningState": {
+      "description": "Planning counts: while the lead plans (no plan items yet) it has its own small bar, not 0%.",
+      "properties": {
+        "active": {
+          "description": "The lead is still planning: the order has no plan items yet.",
+          "type": "boolean"
+        },
+        "pct": {
+          "description": "The planning bar: elapsed over the usual planning time, at most 90 while active, 100 once the plan exists.",
+          "maximum": 100,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sharePct": {
+          "description": "Planning's share of the order's work, fixed when the plan appears.",
+          "maximum": 100,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "since": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "active",
+        "pct",
+        "sharePct",
+        "since"
+      ],
+      "type": "object"
+    },
     "PlaybookChangeKind": {
       "enum": [
         "wording",
@@ -6186,6 +6305,10 @@
           "minimum": 0,
           "type": "integer"
         },
+        "estimate": {
+          "$ref": "#/$defs/ProgressEstimate",
+          "description": "The estimate the headline shows: verified work plus credit for the observed stages of work in flight."
+        },
         "marker": {
           "$ref": "#/$defs/Marker",
           "description": "The latest scope change, e.g. \"↓ from 80% · +3 items: time inspector added\"."
@@ -6228,6 +6351,106 @@
         "polishDone",
         "polishTotal",
         "asOf"
+      ],
+      "type": "object"
+    },
+    "ProgressDrop": {
+      "description": "Why the estimate fell, shown as a marker on the sparkline.",
+      "properties": {
+        "fromPct": {
+          "maximum": 100,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reason": {
+          "$ref": "#/$defs/DropReason"
+        },
+        "text": {
+          "description": "\"CI failed on #212\", \"+2 items: time inspector added\".",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "reason",
+        "fromPct",
+        "text"
+      ],
+      "type": "object"
+    },
+    "ProgressEstimate": {
+      "description": "The headline estimate and its two-tone bar: solid is what fleetd verified, lighter is in-flight credit. Every\nstage it credits is one fleetd observed (an event, a PR or a CI state), never an agent's word.",
+      "properties": {
+        "inFlightPct": {
+          "description": "The lighter part: credit for open items' reached stages, smoothed within the current stage.",
+          "maximum": 100,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "pct": {
+          "description": "verified + in flight, floored; 100 only when everything is verified.",
+          "maximum": 100,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "planning": {
+          "$ref": "#/$defs/PlanningState",
+          "description": "Present for an order while its lead plans, and after (with its fixed share)."
+        },
+        "series": {
+          "description": "The doc's own scope only: the estimate over time, oldest first. A drop carries its reason.",
+          "items": {
+            "$ref": "#/$defs/ProgressPoint"
+          },
+          "maxItems": 96,
+          "type": "array"
+        },
+        "verifiedPct": {
+          "description": "The solid part: must points verified over must points (planning share included once fixed).",
+          "maximum": 100,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "weights": {
+          "$ref": "#/$defs/WeightsBasis",
+          "description": "Where the stage weights came from."
+        }
+      },
+      "required": [
+        "pct",
+        "verifiedPct",
+        "inFlightPct",
+        "weights"
+      ],
+      "type": "object"
+    },
+    "ProgressPoint": {
+      "description": "One point of the progress series.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "drop": {
+          "$ref": "#/$defs/ProgressDrop",
+          "description": "Set when the estimate fell at this point; it never falls without one."
+        },
+        "pct": {
+          "maximum": 100,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "verifiedPct": {
+          "maximum": 100,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "at",
+        "pct",
+        "verifiedPct"
       ],
       "type": "object"
     },
@@ -7727,6 +7950,11 @@
           "const": "steer_unacknowledged",
           "description": "A steer was not acknowledged, or has gone 10 minutes delivered without it.",
           "type": "string"
+        },
+        {
+          "const": "slower_than_usual",
+          "description": "An item has spent over 1.5× the usual time in its current stage.",
+          "type": "string"
         }
       ]
     },
@@ -8757,6 +8985,9 @@
     "StatusEta": {
       "description": "ETA from measured throughput; the lead's own estimate only as a comparison.",
       "properties": {
+        "accuracy": {
+          "$ref": "#/$defs/ForecastAccuracy"
+        },
         "basis": {
           "$ref": "#/$defs/EtaBasis"
         },
@@ -8778,6 +9009,13 @@
         "original": {
           "$ref": "#/$defs/Timestamp",
           "description": "The first ETA with enough samples, stored once (orders and milestones only)."
+        },
+        "p50": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "The progress model's range: remaining stage time from history (median and 90th percentile), spread over the\nslots the scope can use. Shown as \"p50–p90\"."
+        },
+        "p90": {
+          "$ref": "#/$defs/Timestamp"
         },
         "rate": {
           "description": "Points verified per busy hour.",
@@ -11601,6 +11839,25 @@
         {
           "const": "polish",
           "description": "Shown beside the number, never in it.",
+          "type": "string"
+        }
+      ]
+    },
+    "WeightsBasis": {
+      "oneOf": [
+        {
+          "const": "project",
+          "description": "Measured on this project's finished items.",
+          "type": "string"
+        },
+        {
+          "const": "fleet",
+          "description": "Too few in the project: measured across the fleet.",
+          "type": "string"
+        },
+        {
+          "const": "default",
+          "description": "Too few anywhere: the built-in weights.",
           "type": "string"
         }
       ]

@@ -8,7 +8,7 @@ use serde_with::skip_serializing_none;
 use crate::ids::{EventSeq, MachineId, ProjectRef, Timestamp};
 use crate::ledger::{AskId, Tier, WorkstreamId};
 use crate::model::MachineStatus;
-use crate::plan::{MilestoneId, PlanItemId};
+use crate::plan::{ItemStage, MilestoneId, PlanItemId};
 use crate::prim::{AnyInt, Count, Int, Line, List, NonNegative, Text};
 use crate::prompts::PromptRef;
 use crate::steer::{SteerId, SteerStage};
@@ -87,6 +87,99 @@ pub struct Progress {
     /// The latest scope change, e.g. "↓ from 80% · +3 items: time inspector added".
     pub marker: Option<Marker>,
     pub stale: Option<StaleMark>,
+    /// The estimate the headline shows: verified work plus credit for the observed stages of work in flight.
+    pub estimate: Option<ProgressEstimate>,
+}
+
+/// The headline estimate and its two-tone bar: solid is what fleetd verified, lighter is in-flight credit. Every
+/// stage it credits is one fleetd observed (an event, a PR or a CI state), never an agent's word.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProgressEstimate {
+    /// verified + in flight, floored; 100 only when everything is verified.
+    pub pct: Int<0, 100>,
+    /// The solid part: must points verified over must points (planning share included once fixed).
+    pub verified_pct: Int<0, 100>,
+    /// The lighter part: credit for open items' reached stages, smoothed within the current stage.
+    pub in_flight_pct: Int<0, 100>,
+    /// Present for an order while its lead plans, and after (with its fixed share).
+    pub planning: Option<PlanningState>,
+    /// Where the stage weights came from.
+    pub weights: WeightsBasis,
+    /// The doc's own scope only: the estimate over time, oldest first. A drop carries its reason.
+    pub series: Option<List<ProgressPoint, 0, 96>>,
+}
+
+/// Planning counts: while the lead plans (no plan items yet) it has its own small bar, not 0%.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanningState {
+    /// The lead is still planning: the order has no plan items yet.
+    pub active: bool,
+    /// The planning bar: elapsed over the usual planning time, at most 90 while active, 100 once the plan exists.
+    pub pct: Int<0, 100>,
+    /// Planning's share of the order's work, fixed when the plan appears.
+    pub share_pct: Int<0, 100>,
+    pub since: Timestamp,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum WeightsBasis {
+    /// Measured on this project's finished items.
+    Project,
+    /// Too few in the project: measured across the fleet.
+    Fleet,
+    /// Too few anywhere: the built-in weights.
+    Default,
+}
+
+/// One point of the progress series.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProgressPoint {
+    pub at: Timestamp,
+    pub pct: Int<0, 100>,
+    pub verified_pct: Int<0, 100>,
+    /// Set when the estimate fell at this point; it never falls without one.
+    pub drop: Option<ProgressDrop>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DropReason {
+    /// Work was added (a scope-change marker).
+    ScopeChange,
+    /// A review blocked: the item fell back to "PR open".
+    ReviewFailed,
+    /// CI failed: the item fell back a stage.
+    CiFailed,
+    /// A done item reopened when a later check failed.
+    Reopened,
+}
+
+/// Why the estimate fell, shown as a marker on the sparkline.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProgressDrop {
+    pub reason: DropReason,
+    pub from_pct: Int<0, 100>,
+    /// "CI failed on #212", "+2 items: time inspector added".
+    pub text: Line<1, 200>,
+}
+
+/// How close past ETAs came: "ETAs have been within ±20% this week".
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ForecastAccuracy {
+    /// Four in five of the window's items finished within ±this % of their predicted p50.
+    pub within_pct: Count,
+    /// Items behind it.
+    pub samples: Count,
+    pub window_days: Count,
+    pub text: Line<1, 120>,
 }
 
 /// A change to a figure's denominator, shown next to it.
@@ -141,6 +234,11 @@ pub struct StatusEta {
     pub basis: EtaBasis,
     /// The serial chain that sets `current` when it is later than throughput says, e.g. "P12 full lab run".
     pub chain: Option<Line<1, 160>>,
+    /// The progress model's range: remaining stage time from history (median and 90th percentile), spread over the
+    /// slots the scope can use. Shown as "p50–p90".
+    pub p50: Option<Timestamp>,
+    pub p90: Option<Timestamp>,
+    pub accuracy: Option<ForecastAccuracy>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
@@ -242,6 +340,12 @@ pub struct InProgressRow {
     pub stale: Option<StaleMark>,
     /// The order's latest steers, newest first, on its first in-progress row only.
     pub steers: Option<List<StatusSteer, 0, 3>>,
+    /// The furthest stage fleetd observed for the item.
+    pub stage: Option<ItemStage>,
+    /// Share of the item's size credited to the estimate.
+    pub credit_pct: Option<Int<0, 100>>,
+    /// Past 1.5× the usual time for its current stage: flagged in Risks, never credited past 90% of the stage.
+    pub slower_than_usual: Option<bool>,
 }
 
 /// A steer as the status doc shows it: "↳ you steered S12 14:02 · acknowledged · −1 item".
@@ -293,6 +397,8 @@ pub enum RiskRule {
     NoPlan,
     /// A steer was not acknowledged, or has gone 10 minutes delivered without it.
     SteerUnacknowledged,
+    /// An item has spent over 1.5× the usual time in its current stage.
+    SlowerThanUsual,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
