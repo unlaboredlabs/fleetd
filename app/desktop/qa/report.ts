@@ -5,6 +5,17 @@ import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { Shot } from "./harness.ts";
 import { resultsDir } from "./harness.ts";
+import { screens } from "./registry.ts";
+
+export interface Pending {
+  screen: string;
+  fixtures: readonly string[];
+  reason: string;
+}
+
+// Registered but skipped: named in every summary, so "0 findings" never hides a screen that wasn't shot.
+export const pendingScreens = (): Pending[] =>
+  screens.flatMap((s) => (s.pending === undefined ? [] : [{ screen: s.id, fixtures: s.fixtures, reason: s.pending }]));
 
 const esc = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] ?? c);
@@ -18,7 +29,7 @@ export function readShots(dir = resultsDir): Shot[] {
     .map((f) => JSON.parse(readFileSync(path.join(shotsDir, f), "utf8")) as Shot);
 }
 
-export function contactSheet(shots: Shot[]) {
+export function contactSheet(shots: Shot[], pending: Pending[] = []) {
   const total = shots.reduce((n, s) => n + s.findings.length, 0);
   const byScreen = Map.groupBy(shots, (s) => s.screen);
   const sections = [...byScreen].map(([screen, list]) => {
@@ -52,18 +63,21 @@ export function contactSheet(shots: Shot[]) {
 </style></head>
 <body><h1>fleetd desktop QA — ${shots.length} shots, ${total} findings</h1>
 <p>Red frames have findings; each image opens with the findings drawn on it. Raw data: <a href="findings.json">findings.json</a>.</p>
+${pending.length ? `<h2>Not shot: ${pending.length} pending screen${pending.length === 1 ? "" : "s"}</h2><ul>${pending.map((p) => `<li><b>${esc(p.screen)}</b> (${esc(p.fixtures.join(", "))}): ${esc(p.reason)}</li>`).join("")}</ul>` : ""}
 ${sections.join("\n")}
 </body></html>`;
 }
 
 export default function writeReport() {
   const shots = readShots();
-  if (shots.length === 0) return;
+  const pending = pendingScreens();
+  if (shots.length === 0 && pending.length === 0) return;
   const total = shots.reduce((n, s) => n + s.findings.length, 0);
   writeFileSync(
     path.join(resultsDir, "findings.json"),
-    JSON.stringify({ shots: shots.length, findings: total, results: shots }, null, 2),
+    JSON.stringify({ shots: shots.length, findings: total, pending, results: shots }, null, 2),
   );
-  writeFileSync(path.join(resultsDir, "index.html"), contactSheet(shots));
-  console.log(`QA contact sheet: ${path.join(resultsDir, "index.html")} (${shots.length} shots, ${total} findings)`);
+  writeFileSync(path.join(resultsDir, "index.html"), contactSheet(shots, pending));
+  const skipped = pending.length ? `; NOT SHOT, pending: ${pending.map((p) => `${p.screen} (${p.reason})`).join(", ")}` : "";
+  console.log(`QA contact sheet: ${path.join(resultsDir, "index.html")} (${shots.length} shots, ${total} findings${skipped})`);
 }

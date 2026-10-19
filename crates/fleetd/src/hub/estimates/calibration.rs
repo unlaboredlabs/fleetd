@@ -8,8 +8,6 @@ pub const MIN_SAMPLES: u32 = 5;
 pub const P80_MIN_SAMPLES: u32 = 10;
 /// How many of the tier's latest done workstreams the ratio looks at.
 pub const WINDOW: usize = 20;
-/// actual/raw above this is an estimate miss.
-pub const MISS_RATIO: f64 = 2.0;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Calibration {

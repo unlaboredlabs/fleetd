@@ -94,7 +94,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "workstream_get",
-        "One workstream with its frozen brief and headline (the lead's own words), its open asks, the decisions scoped to it, its ETA (raw estimate × the tier's measured ratio) and its last 20 claims with each check's result. Only a claim whose checks all passed makes it done.",
+        "One workstream with its frozen brief and headline (the lead's own words), its open asks, the decisions scoped to it, and its last 20 claims with each check's result. Only a claim whose checks all passed makes it done.",
     ),
     (
         "workstream_spawn",
@@ -110,7 +110,11 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "inbox_reply",
-        "Answer a batch tersely: \"1 go 2 nvm 3 b\", \"1-3 go\", \"recs fine\" (accept every recommendation), \"2: free text\", \"4 later\", \"pref: <standing preference>\", \"forget D12\". Binds to the latest open batch unless it starts with \"#B<n>\". Each answer becomes a Decision and wakes its lead. Unparseable text changes nothing and returns a hint. Approve asks take only \"<n> go\" (the node runs the stored command) or \"<n> no\"; secret, approve and do asks take answers from human keys only.",
+        "Answer a batch tersely: \"1 go 2 nvm 3 b\", \"1-3 go\", \"recs fine\" (accept every recommendation), \"2: free text\", \"3 skip\" (skip for now: the lead keeps its recommendation, no decision), \"4 later\", \"pref: <standing preference>\", \"forget D12\". Binds to the latest open batch unless it starts with \"#B<n>\". Letters pick the options in the order listed. A decide answer can be taken back with inbox_undo for 10 s; then it becomes a Decision and wakes its lead. Other answers become a Decision at once. Unparseable text changes nothing and returns a hint. Approve asks take only \"<n> go\" (the node runs the stored command) or \"<n> no\"; secret, approve and do asks take answers from human keys only.",
+    ),
+    (
+        "inbox_undo",
+        "Take back a decide answer within 10 s of inbox_reply (its applied item's undoUntil): the ask is open again and its lead never hears of the answer. Refused once the window passed; record a new decision instead.",
     ),
     (
         "secret_submit",
@@ -154,7 +158,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "incidents_list",
-        "Incidents the hub detected (false_claim, estimate_miss, polish_loop, misfiled_ask, out_of_area, stall, policy_bypass, re_ask, override, playbook_reverted), newest first, with evidence lines, plus per-class counts over the last windowDays (default 7). Filter by projectRef, workstreamId or class.",
+        "Incidents the hub detected (false_claim, polish_loop, misfiled_ask, out_of_area, stall, policy_bypass, re_ask, override, playbook_reverted), newest first, with evidence lines, plus per-class counts over the last windowDays (default 7). Filter by projectRef, workstreamId or class.",
     ),
     (
         "retro_proposals",

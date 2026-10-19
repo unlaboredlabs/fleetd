@@ -18,12 +18,16 @@ export const IPC = {
   hubForget: "hub:forget",
   /** invoke(text) → void. Writes the clipboard; the page itself has no clipboard permission. */
   copy: "app:copy",
+  /** invoke(url) → OpenOutcome. Opens an https github.com / fleetd.sh link in the user's browser; refuses the rest. */
+  openExternal: "app:openExternal",
   /** main → renderer: HubFrame */
   hubFrame: "hub:frame",
   /** invoke() → void. The page can take commands and targets now; main sends what it held for it. */
   appReady: "app:ready",
   /** invoke(NotifyRequest) → void. Posts a system notification; clicking it sends `appOpen` with its target. */
   appNotify: "app:notify",
+  /** invoke(MenuCommand[]) → void. The menu commands enabled now; main greys out the rest. */
+  appMenuState: "app:menuState",
   /** main → renderer: a command id (shared/shortcuts.ts or the palette registry), from a click in the app menu. */
   menuCommand: "menu:command",
   /** main → renderer: OpenTarget, from a clicked notification or a fleetd:// link. */

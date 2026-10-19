@@ -167,7 +167,7 @@ const withConversation = (f: Fixture): Fixture => {
 
 /** Every shared fixture, by name, freshly built. */
 export const buildShared = (): Map<SharedName, Fixture> => {
-  const typical = Fixture.from(recorded("lab-peak"), "typical", "A real lab hub mid-run: orders in flight, live lanes, the train, prompts and time.");
+  const typical = Fixture.from(recorded("lab-demo"), "typical", "A real lab hub mid-order: one order fanned out to writers, reviewers and verifiers, three PRs in the train, live lanes, prompts and time.");
   const copy = (name: SharedName, note: string) => Fixture.from(typical, name, note);
   const shared: Array<Fixture> = [
     Fixture.from(recorded("lab-start"), "empty", "A real lab hub before anything happened: machines online, no projects, orders, asks or time."),

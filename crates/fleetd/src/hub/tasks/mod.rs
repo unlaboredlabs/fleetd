@@ -323,6 +323,24 @@ impl Tasks {
         self.d.ports.workstream(id)
     }
 
+    /// A research order whose budget is spent gets no more agent turns.
+    fn budget_check(&self, ws: &fleetd_contracts::ledger::Workstream) -> Result<(), TaskError> {
+        let now = crate::hub::store::now_ms(self.d.clock.as_ref());
+        let refused = self
+            .d
+            .db
+            .with(|c| Ok(crate::hub::playbooks::budget::refusal(c, ws, now)?))
+            .map_err(store_error)?;
+        match refused {
+            Some(why) => Err(lead_error(
+                ErrorCode::Invalid,
+                why,
+                Some(crate::hub::playbooks::budget::FIX),
+            )),
+            None => Ok(()),
+        }
+    }
+
     /// `kind` says what it waits for (`lease`, `offline`, `usage`, `slot`) for the time inspector's queue spans.
     fn queue(&self, stored: &StoredTask, kind: &str, reason: &str) -> Result<Task, StoreError> {
         let task = &stored.task;
@@ -1029,6 +1047,7 @@ impl Tasks {
                 None,
             ));
         }
+        self.budget_check(&ws)?;
         if let Some(item) = &input.item {
             let mut refused = None;
             self.d
@@ -1140,6 +1159,9 @@ impl Tasks {
         let stored = self.owned(caller, task_id)?;
         let task = stored.task.clone();
         let id = task_id.as_str();
+        if let Some(ws) = self.workstream(&task.workstream_id) {
+            self.budget_check(&ws)?;
+        }
         match task.state {
             TaskState::Cancelled => Err(lead_error(
                 ErrorCode::Invalid,

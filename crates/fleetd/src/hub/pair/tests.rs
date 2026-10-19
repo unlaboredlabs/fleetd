@@ -48,7 +48,7 @@ fn codes_parse_in_any_case_with_or_without_the_hyphen_and_with_look_alikes() {
 #[test]
 fn a_code_redeems_once_in_any_spelling_and_returns_its_name() {
     let (codes, db, _) = setup();
-    let minted = codes.create(Some("wynn-mac")).unwrap();
+    let minted = codes.create(Some("laptop")).unwrap();
     let stored: String = db
         .with(|c| Ok(c.query_row("SELECT hash FROM pair_codes", [], |r| r.get(0))?))
         .unwrap();
@@ -58,7 +58,7 @@ fn a_code_redeems_once_in_any_spelling_and_returns_its_name() {
         "only the hash is stored"
     );
     let typed = minted.code.to_lowercase().replace('-', "");
-    assert_eq!(codes.redeem(&typed).unwrap(), Some("wynn-mac".to_owned()));
+    assert_eq!(codes.redeem(&typed).unwrap(), Some("laptop".to_owned()));
     assert!(matches!(
         codes.redeem(&minted.code),
         Err(RedeemError::Invalid)

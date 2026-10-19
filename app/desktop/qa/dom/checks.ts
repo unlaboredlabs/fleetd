@@ -97,6 +97,14 @@ function opaque(s: CSSStyleDeclaration) {
   return alpha >= 0.9;
 }
 
+// text-overflow draws an ellipsis only on a single-line block container that clips; on a flex or grid container, or
+// on wrapping text, it does nothing and the text is simply cut.
+const ELLIPSIS_DISPLAYS = ["block", "inline-block", "list-item", "flow-root", "table-cell"];
+function ellipsizes(s: CSSStyleDeclaration) {
+  const nowrap = s.whiteSpace === "nowrap" || s.whiteSpace === "pre" || s.getPropertyValue("text-wrap-mode") === "nowrap";
+  return s.textOverflow === "ellipsis" && clips(s.overflowX) && nowrap && ELLIPSIS_DISPLAYS.includes(s.display);
+}
+
 const scrolls = (v: string) => v === "auto" || v === "scroll";
 const clips = (v: string) => v !== "visible";
 
@@ -199,40 +207,40 @@ export function runChecks(opts: CheckOptions): Finding[] {
     const s = style(el);
     return (s.position === "sticky" || s.position === "fixed") && opaque(s) && !hidden(el);
   });
-  if (occluders.length > 0) {
-    for (const run of runs) {
-      for (const occ of occluders) {
-        if (occ.contains(run.el)) continue;
-        const o = rectOf(occ.getBoundingClientRect());
-        const hit = intersect(run.visible, o);
-        if (empty(hit)) continue;
-        const top = document.elementFromPoint((hit.left + hit.right) / 2, (hit.top + hit.bottom) / 2);
-        if (!top || !occ.contains(top)) continue;
-        const v = run.visible;
-        if (o.left <= v.left + SLOP && o.right >= v.right - SLOP) {
-          // A full-width bar covers the run's top or bottom part.
-          if (o.top <= v.top) v.top = Math.min(v.bottom, o.bottom);
-          else v.bottom = Math.max(v.top, o.top);
-        } else {
-          v.right = v.left;
-        }
+  // Cuts the parts of `v` (the visible rect of `el`) that an occluder is drawn over.
+  const uncover = (el: Element, v: Rect) => {
+    for (const occ of occluders) {
+      if (occ.contains(el)) continue;
+      const o = rectOf(occ.getBoundingClientRect());
+      const hit = intersect(v, o);
+      if (empty(hit)) continue;
+      const top = document.elementFromPoint((hit.left + hit.right) / 2, (hit.top + hit.bottom) / 2);
+      if (!top || !occ.contains(top)) continue;
+      if (o.left <= v.left + SLOP && o.right >= v.right - SLOP) {
+        // A full-width bar covers the top or bottom part.
+        if (o.top <= v.top) v.top = Math.min(v.bottom, o.bottom);
+        else v.bottom = Math.max(v.top, o.top);
+      } else {
+        v.right = v.left;
       }
     }
-    for (let i = runs.length - 1; i >= 0; i--) {
-      const run = runs[i];
-      if (run && empty(run.visible)) runs.splice(i, 1);
-    }
+  };
+  for (let i = runs.length - 1; i >= 0; i--) {
+    const run = runs[i];
+    if (!run) continue;
+    uncover(run.el, run.visible);
+    if (empty(run.visible)) runs.splice(i, 1);
   }
 
-  // 1. Overflow: a text run outside the box that holds it, unless that box scrolls on that axis or truncates with an
-  // ellipsis (sideways) or a line clamp (downwards). Each run is reported once, on the nearest box it escapes, so an
-  // overflow shows where it starts rather than on every ancestor. Line boxes are taller than the ink, so the
-  // vertical test uses the trimmed run (see `ink`); a tight line-height never counts.
+  // 1. Overflow: a text run outside the box that holds it. A box that scrolls, ellipsizes (sideways) or clamps
+  // (downwards) contains the run on that axis, and from there on its own box stands for the run: it must itself fit
+  // every ancestor, or the ellipsis never shows and an outer pane cuts the line. Each run is reported once, on the
+  // nearest box it escapes. Line boxes are taller than the ink, so the vertical test uses the trimmed run (`inkOf`);
+  // a tight line-height never counts.
   const reportedOverflow = new Set<Element>();
   for (const run of allRuns) {
-    let checkX = true;
-    let checkY = true;
     const ink = inkOf(run.rect);
+    const extent = { left: run.rect.left, right: run.rect.right, top: ink.top, bottom: ink.bottom };
     for (let e: Element | null = run.el; e && e !== document.documentElement; e = e.parentElement) {
       const s = style(e);
       if (s.display === "inline" || s.display === "contents") continue;
@@ -244,16 +252,16 @@ export function runChecks(opts: CheckOptions): Finding[] {
         right: r.left + e.clientLeft + e.clientWidth,
         bottom: r.top + e.clientTop + e.clientHeight,
       };
-      const ellipsis = s.textOverflow === "ellipsis" && clips(s.overflowX);
-      const clamped = s.getPropertyValue("-webkit-line-clamp") !== "none" && clips(s.overflowY);
-      const outX = checkX && (run.rect.left < box.left - SLOP || run.rect.right > box.right + SLOP);
-      const outY = checkY && (ink.top < box.top - SLOP || ink.bottom > box.bottom + SLOP);
+      const containsX = scrolls(s.overflowX) || ellipsizes(s);
+      const containsY = scrolls(s.overflowY) || (s.getPropertyValue("-webkit-line-clamp") !== "none" && clips(s.overflowY));
+      const outX = extent.left < box.left - SLOP || extent.right > box.right + SLOP;
+      const outY = extent.top < box.top - SLOP || extent.bottom > box.bottom + SLOP;
       const problem =
-        outX && !scrolls(s.overflowX) && !ellipsis
+        outX && !containsX
           ? clips(s.overflowX)
-            ? "text is cut off at the side: wrap it or truncate with an ellipsis"
-            : "text runs out of its box sideways: wrap it or truncate with an ellipsis"
-          : outY && !scrolls(s.overflowY) && !clamped
+            ? "text is cut off at the side: wrap it or truncate with an ellipsis (a flex child needs min-width: 0)"
+            : "text runs out of its box sideways: wrap it or truncate with an ellipsis (a flex child needs min-width: 0)"
+          : outY && !containsY
             ? clips(s.overflowY)
               ? "text is cut off at the bottom: the box must grow to fit its wrapped text"
               : "text spills out of its box: the box must grow to fit its wrapped text"
@@ -271,10 +279,10 @@ export function runChecks(opts: CheckOptions): Finding[] {
         }
         break;
       }
-      if (scrolls(s.overflowX) || ellipsis) checkX = false;
-      if (scrolls(s.overflowY) || clamped) checkY = false;
+      if (containsX) Object.assign(extent, { left: box.left, right: box.right });
+      if (containsY) Object.assign(extent, { top: box.top, bottom: box.bottom });
       // A positioned box sits where it is put, past its ancestors' edges on purpose (popovers, badges).
-      if (s.position === "absolute" || s.position === "fixed" || (!checkX && !checkY)) break;
+      if (s.position === "absolute" || s.position === "fixed") break;
     }
   }
 
@@ -382,7 +390,10 @@ export function runChecks(opts: CheckOptions): Finding[] {
   for (const el of controls) {
     if (hidden(el) || screenReaderOnly(el)) continue;
     const rect = rectOf(el.getBoundingClientRect());
-    const visible = intersect(rect, clipOf(el.parentElement ?? el));
+    // The box itself is cut by its ancestors' clips, not its own; a fixed box escapes them.
+    const clip = style(el).position === "fixed" || !el.parentElement ? viewport : clipOf(el.parentElement);
+    const visible = intersect(rect, clip);
+    uncover(el, visible);
     if (!empty(visible)) edgeTargets.push({ el, rect, visible, text: el.textContent || el.getAttribute("aria-label") || "" });
   }
   // Inside a box that scrolls on an axis, content passes the window edge on that axis while scrolling; only the

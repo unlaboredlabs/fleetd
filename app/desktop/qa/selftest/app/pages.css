@@ -20,3 +20,10 @@ pre, code { font-family: monospace; }
 .sticky-head { position: sticky; top: 0; background: #fff; }
 @media (prefers-color-scheme: dark) { .sticky-head { background: #111214; } }
 .sticky-clear { position: sticky; top: 0; }
+.pane { width: 200px; overflow: hidden; }
+.row { display: flex; gap: 8px; }
+.grow { flex: 1; }
+.grow.shrinks { min-width: 0; }
+.flex-ellipsis { display: flex; width: 200px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.palette { position: fixed; top: 80px; left: 50%; width: 400px; margin-left: -200px; padding: 16px; background: #fff; border: 1px solid #ccc; }
+@media (prefers-color-scheme: dark) { .palette { background: #111214; } }

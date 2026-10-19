@@ -1,31 +1,26 @@
-import { app, BrowserWindow, Menu, shell, type BaseWindow, type MenuItemConstructorOptions } from "electron";
-import { IPC } from "../shared/channels";
-import { accelerator, isShortcutId, type ShortcutId } from "../shared/shortcuts";
+import { app, Menu, shell, type MenuItemConstructorOptions } from "electron";
+import type { MenuCommand } from "../shared/menu";
+import type { Opener } from "./opener";
+import { accelerator, isShortcutId } from "../shared/shortcuts";
 
 const REPO_URL = "https://github.com/unlaboredlabs/fleetd";
 const DOCS_URL = "https://fleetd.sh/docs";
 
-/** Palette commands (renderer/screens/palette/defaults.ts) that have a menu item but no key. */
-type MenuOnlyId = "go:projects.add";
-
-const send = (id: ShortcutId | MenuOnlyId, focused: BaseWindow | undefined): void => {
-  const win = (focused instanceof BrowserWindow ? focused : null) ?? BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
-  if (win === undefined || win.isDestroyed()) return;
-  if (!win.isVisible()) win.show();
-  win.webContents.send(IPC.menuCommand, id);
-};
 
 /**
  * A menu item that runs a palette command. Its key is shared/shortcuts.ts's: the renderer's keymap runs it, so a
  * click here only covers the mouse. Linux doesn't register the accelerator at all (it would fire twice there);
  * macOS needs it registered to show it, and hands a key the page didn't take to the menu, which ignores it.
  */
-const item = (id: ShortcutId | MenuOnlyId, label: string): MenuItemConstructorOptions => ({
+const item = (opener: Opener, id: MenuCommand, label: string): MenuItemConstructorOptions => ({
+  // The id is the command id, so the renderer's enabled list (menuState.ts) finds the item.
+  id,
   label,
   ...(isShortcutId(id) ? { accelerator: accelerator(id), registerAccelerator: process.platform === "darwin" } : {}),
-  click: (_item, focused, event) => {
+  // With the window closed (macOS), a click opens it and runs the command once the page is up.
+  click: (_item, _window, event) => {
     if (event.triggeredByAccelerator) return;
-    send(id, focused);
+    opener.command(id);
   },
 });
 
@@ -33,7 +28,7 @@ const item = (id: ShortcutId | MenuOnlyId, label: string): MenuItemConstructorOp
  * The full app menu. Edit uses Chromium's own roles, so Undo/Cut/Copy/Paste/Select All act on whichever text field
  * has focus, and macOS adds its dictation and emoji items to it.
  */
-export const installMenu = (): void => {
+export const installMenu = (opener: Opener): void => {
   const mac = process.platform === "darwin";
   const separator = { type: "separator" } as const;
   const template: Array<MenuItemConstructorOptions> = [
@@ -44,7 +39,7 @@ export const installMenu = (): void => {
             submenu: [
               { role: "about" },
               separator,
-              item("settings.open", "Settings…"),
+              item(opener, "settings.open", "Settings…"),
               separator,
               { role: "services" },
               separator,
@@ -60,11 +55,11 @@ export const installMenu = (): void => {
     {
       label: "File",
       submenu: [
-        item("order.new", "New Order"),
-        item("go:projects.add", "Add Project…"),
-        item("composer.focus", "Focus Composer"),
+        item(opener, "order.new", "New Order"),
+        item(opener, "go:projects.add", "Add Project…"),
+        item(opener, "composer.focus", "Focus Composer"),
         separator,
-        ...(mac ? [{ role: "close" } as const] : [item("settings.open", "Settings…"), separator, { role: "quit" } as const]),
+        ...(mac ? [{ role: "close" } as const] : [item(opener, "settings.open", "Settings…"), separator, { role: "quit" } as const]),
       ],
     },
     {
@@ -84,14 +79,14 @@ export const installMenu = (): void => {
     {
       label: "View",
       submenu: [
-        item("status.toggle", "Status"),
-        item("board.open", "Board"),
-        item("inbox.toggle", "Inbox"),
-        item("board.toggleGrouping", "Group by Project or Status"),
+        item(opener, "status.toggle", "Status"),
+        item(opener, "board.open", "Board"),
+        item(opener, "inbox.toggle", "Inbox"),
+        item(opener, "board.toggleGrouping", "Group by Project or Status"),
         separator,
-        item("palette.toggle", "Command Palette"),
-        item("shortcuts.show", "Keyboard Shortcuts"),
-        item("sidebar.toggle", "Toggle Sidebar"),
+        item(opener, "palette.toggle", "Command Palette"),
+        item(opener, "shortcuts.show", "Keyboard Shortcuts"),
+        item(opener, "sidebar.toggle", "Toggle Sidebar"),
         separator,
         { role: "togglefullscreen" },
         // Reload and devtools only in development: a reload drops the live view's state for nothing.
@@ -100,7 +95,7 @@ export const installMenu = (): void => {
     },
     {
       label: "Order",
-      submenu: [item("order.previous", "Previous Order"), item("order.next", "Next Order"), separator, item("order.stop", "Stop Order…")],
+      submenu: [item(opener, "order.previous", "Previous Order"), item(opener, "order.next", "Next Order"), separator, item(opener, "order.stop", "Stop Order…")],
     },
     { role: "windowMenu" },
     {
