@@ -152,6 +152,7 @@ const OPTIONS: &[(&str, Kind)] = &[
     ("now", Kind::Bool),
     ("state", Kind::Str),
     ("reason", Kind::Str),
+    ("close-over", Kind::Str),
     ("task", Kind::Str),
     ("sha", Kind::Str),
     ("blocking", Kind::Str),
@@ -1713,6 +1714,32 @@ mod tests {
     fn decision() -> Value {
         json!({ "decisionId": "D3", "key": "api.health.path", "scope": { "kind": "project", "projectRef": { "machineId": "lab-a", "projectId": "p" } },
             "value": "/healthz", "source": "human", "state": "active", "at": "2026-10-17T10:00:00.000Z" })
+    }
+
+    #[test]
+    fn claim_done_takes_a_close_over_why() {
+        let plain = parse(&["claim", "done", "--workstream", "W1"]).unwrap();
+        assert_eq!(plain, json!({ "op": "claim_done", "workstreamId": "W1" }));
+        let on_purpose = parse(&[
+            "claim",
+            "done",
+            "--workstream",
+            "W1",
+            "--close-over",
+            "redone in the next order",
+        ])
+        .unwrap();
+        assert_eq!(
+            on_purpose,
+            json!({ "op": "claim_done", "workstreamId": "W1", "closeOver": "redone in the next order" })
+        );
+        let call: fleetd_contracts::lead_calls::LeadCall =
+            serde_json::from_value(on_purpose).unwrap();
+        assert!(matches!(
+            call,
+            fleetd_contracts::lead_calls::LeadCall::ClaimDone(c)
+                if c.close_over.as_ref().map(|w| w.as_str()) == Some("redone in the next order")
+        ));
     }
 
     #[test]
