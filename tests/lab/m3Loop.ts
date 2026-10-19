@@ -92,8 +92,22 @@ export async function m3Loop(lab: Lab) {
   ok(`asks_list: ${ask!.askId} api.health.path is item ${ask!.number} of ${ask!.batchId} (${listed.asks.length} open; batch.ready seq ${ready.event.seq})`);
 
   // The reply becomes Decision D1, echoed, and the answer reaches the lead inline in its next wake.
+  const phaseOf = async () =>
+    ((await callTool("orders_board", { projectRef: ref })).body.orders as Array<Body>).find((o) => o.workstreamId === workstreamId)?.phase;
+  const asked = await phaseOf();
+  const replyFrom = await lab.cursor();
   const replied = (await callTool("inbox_reply", { raw: `${ask!.number} go` })).body;
   check(replied.parsed && replied.echo === `Logged: ${ask!.number} → /healthz (D1)`, `inbox_reply: ${JSON.stringify(replied)}`);
+  // The app refetches the order card on the ask's own event: the card leaves "needs you" within 1 s of the answer.
+  const answeredAt = Date.now();
+  const closed = await lab.waitEvent(`ask.closed for ${ask!.askId}`, 1_000, { cursor: replyFrom, types: ["ask.closed"], match: (e) => e.data?.askId === ask!.askId });
+  const answeredPhase = await phaseOf();
+  const tookMs = Date.now() - answeredAt;
+  check(
+    asked === "waiting_on_you" && closed.event.data.workstreamId === workstreamId && answeredPhase !== "waiting_on_you" && tookMs <= 1_000,
+    `the order card leaves needs you within 1 s of the answer: ${asked} -> ${answeredPhase} in ${tookMs} ms (${JSON.stringify(closed.event)})`,
+  );
+  ok(`${workstreamId}'s card: ${asked} -> ${answeredPhase} ${tookMs} ms after the answer (ask.closed seq ${closed.event.seq})`);
   const decision = (await callTool("decisions_search", { query: "api.health.path" })).body.decisions[0];
   check(decision?.key === "api.health.path" && decision.value === "/healthz" && decision.source === "agent", `decision: ${JSON.stringify(decision)}`);
   ok(`inbox_reply "${ask!.number} go": ${replied.echo}; D1 by ${decision.by} (source ${decision.source})`);

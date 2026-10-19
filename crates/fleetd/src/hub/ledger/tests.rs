@@ -3,7 +3,8 @@ use std::sync::Arc;
 
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::ledger::{
-    AskKind, AskState, DecisionKey, DecisionScope, DecisionSource, DecisionState, WorkstreamId,
+    AskKind, AskState, BatchId, DecisionKey, DecisionScope, DecisionSource, DecisionState,
+    WorkstreamId,
 };
 use fleetd_contracts::prim::Text;
 
@@ -14,6 +15,7 @@ use crate::hub::store::{EventLog, HubDb};
 struct Kit {
     decisions: Decisions,
     asks: Asks,
+    inbox: Inbox,
     events: Arc<EventLog>,
 }
 
@@ -23,7 +25,8 @@ fn kit() -> Kit {
     let events = Arc::new(EventLog::new(db.clone(), clock.clone()).unwrap());
     Kit {
         decisions: Decisions::new(db.clone(), events.clone(), clock.clone()),
-        asks: Asks::new(db, events.clone(), clock),
+        asks: Asks::new(db.clone(), events.clone(), clock.clone()),
+        inbox: Inbox::new(db, events.clone(), clock),
         events,
     }
 }
@@ -328,4 +331,106 @@ async fn attaches_a_repeat_key_to_the_open_ask_in_the_same_project_not_across_pr
         .collect();
     assert_eq!(items, [(1, "A1".to_string()), (2, "A2".to_string())]);
     assert_eq!(summaries(&k.events, "ask.created").len(), 2);
+}
+
+/// The board's "needs you · N questions" is counted from open asks and refetched on `ask.*` events: every way an ask
+/// stops being open must say so, or the card shows answered questions while the order runs (W1, 2026-10-19).
+#[tokio::test]
+async fn every_way_an_ask_closes_announces_it_so_the_order_card_leaves_needs_you() {
+    use crate::hub::orders::phase::{PhaseInput, phase};
+    use fleetd_contracts::ledger::WorkstreamState;
+    use fleetd_contracts::live::{AgentRole, LaneStatus, OrderPhase};
+
+    let k = kit();
+    let w1 = WorkstreamId::new("W1").unwrap();
+    for name in [
+        "share.public_link",
+        "share.pay_comparison",
+        "share.window",
+        "share.render",
+    ] {
+        let input = AskInput {
+            workstream_id: Some(w1.clone()),
+            ..ask(name, &p("p1"))
+        };
+        k.asks.create(&input, "lead:lab-a/p1").unwrap();
+    }
+    let card = |k: &Kit| {
+        let open = k
+            .asks
+            .list(&AskFilter {
+                state: Some(AskState::Open),
+                workstream_id: Some(w1.clone()),
+                ..Default::default()
+            })
+            .unwrap()
+            .len();
+        let lanes = [(AgentRole::Implementer, LaneStatus::Working, None)];
+        phase(&PhaseInput {
+            state: WorkstreamState::Running,
+            headline: None,
+            open_asks: open,
+            lanes: &lanes,
+            prs: &[],
+            lead_working: false,
+        })
+    };
+    assert_eq!(
+        card(&k),
+        (OrderPhase::WaitingOnYou, Some("4 questions".into()))
+    );
+
+    // The human answers one and drops one; the hub withdraws one; one is answered in place (a saved secret).
+    let reply = ReplyInput {
+        batch_id: Some(BatchId::new("B1").unwrap()),
+        ..ReplyInput::new("1 go 2 drop")
+    };
+    assert!(k.inbox.reply(&reply, &human()).unwrap().parsed);
+    k.asks
+        .withdraw("A3", None, None, Some("project removed"))
+        .unwrap();
+    k.asks
+        .update("A4", |a| fleetd_contracts::ledger::Ask {
+            state: AskState::Answered,
+            ..a
+        })
+        .unwrap();
+    // Rewriting an already-closed ask is not a second close.
+    k.asks.update("A4", |a| a).unwrap();
+
+    assert_eq!(card(&k), (OrderPhase::Working, Some("1 working".into())));
+    let closed: Vec<_> = k
+        .events
+        .page(0, None, None)
+        .unwrap()
+        .events
+        .into_iter()
+        .filter(|e| e.r#type.as_str() == "ask.closed")
+        .map(|e| {
+            let d = e.data.unwrap();
+            (
+                e.project_id.map(|p| p.to_string()),
+                d["askId"].as_str().unwrap().to_owned(),
+                d["state"].as_str().unwrap().to_owned(),
+                d["workstreamId"].clone(),
+            )
+        })
+        .collect();
+    let row = |id: &str, state: &str| {
+        (
+            Some("p1".to_owned()),
+            id.to_owned(),
+            state.to_owned(),
+            serde_json::json!("W1"),
+        )
+    };
+    assert_eq!(
+        closed,
+        [
+            row("A1", "answered"),
+            row("A2", "withdrawn"),
+            row("A3", "withdrawn"),
+            row("A4", "answered")
+        ]
+    );
 }

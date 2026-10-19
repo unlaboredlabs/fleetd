@@ -254,6 +254,28 @@ enum Created {
     },
 }
 
+/// `ask.closed`: an open ask was answered or withdrawn. Every open-ask count (an order card's "needs you", the inbox,
+/// the status doc) is read from the asks table and refetched on events; an answer's `decision.recorded` names no
+/// order and a withdrawal emits nothing else, so this is the event those counts recompute on.
+pub(crate) fn closed_event(ask: &Ask, now_ms: i64) -> NewEvent {
+    let (machine_id, project_id) = project_fields(ask.project_ref.as_ref());
+    let state = repo::ask_state_text(&ask.state);
+    let mut data = json!({ "askId": ask.ask_id, "key": ask.key, "state": state });
+    if let Some(w) = &ask.workstream_id {
+        data["workstreamId"] = json!(w);
+    }
+    NewEvent {
+        at: Timestamp(iso_at(now_ms)),
+        r#type: HubEventType::AskClosed,
+        machine_id,
+        project_id,
+        thread_id: None,
+        summary: format!("{} {} {state}", ask.ask_id, ask.key),
+        data: Some(data),
+        attention: None,
+    }
+}
+
 pub struct Asks {
     ctx: Ctx,
     /// The one pending quiet-window timer: a new schedule replaces it.
@@ -543,17 +565,22 @@ impl Asks {
         ask_id: &str,
         change: impl FnOnce(Ask) -> Ask,
     ) -> Result<Ask, LedgerError> {
-        self.ctx.write(|db| {
+        let (was, next) = self.ctx.write(|db| {
             let Some(row) = repo::get_ask_row(db, ask_id)? else {
                 return Err(LedgerError::not_found(format!("No ask {ask_id}.")).into());
             };
+            let was = row.ask.state;
             let next = change(row.ask);
             repo::put_ask(db, &next)?;
             if let Some(n) = next.batch_id.as_deref().and_then(batch_n) {
                 repo::close_if_done(db, n)?;
             }
-            Ok(next)
-        })
+            Ok((was, next))
+        })?;
+        if was == AskState::Open && next.state != AskState::Open {
+            self.ctx.emit(closed_event(&next, self.ctx.now_ms()));
+        }
+        Ok(next)
     }
 
     /// Puts an answered ask back in front of the human with `evidence` saying why (a failed verify, a command that
@@ -613,7 +640,7 @@ impl Asks {
         reason: Option<&str>,
     ) -> Result<Ask, LedgerError> {
         let now = self.ctx.now_ms();
-        self.ctx.write(|db| {
+        let withdrawn = self.ctx.write(|db| {
             let row = repo::get_ask_row(db, ask_id)?;
             let row = match row {
                 Some(row)
@@ -664,7 +691,9 @@ impl Asks {
                 repo::close_if_done(db, n)?;
             }
             Ok(withdrawn)
-        })
+        })?;
+        self.ctx.emit(closed_event(&withdrawn, now));
+        Ok(withdrawn)
     }
 
     pub fn get(&self, ask_id: &str) -> Result<Option<Ask>, LedgerError> {
