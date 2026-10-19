@@ -1,0 +1,581 @@
+{
+ "doc": {
+  "scope": {
+   "kind": "project",
+   "projectRef": {
+    "machineId": "devbox",
+    "projectId": "storefront"
+   }
+  },
+  "title": "storefront",
+  "version": 12,
+  "seq": 4810,
+  "now": "2026-10-19T10:07:12.000Z",
+  "progress": {
+   "pct": 64,
+   "polishPct": 33,
+   "done": 7,
+   "total": 11,
+   "polishDone": 1,
+   "polishTotal": 3,
+   "asOf": "2026-10-19T10:01:02.000Z",
+   "marker": {
+    "at": "2026-10-19T10:00:04.000Z",
+    "text": "+3 items: currency table export added",
+    "pctBefore": 69,
+    "pctAfter": 64,
+    "deltaItems": 3
+   },
+   "estimate": {
+    "pct": 71,
+    "verifiedPct": 52,
+    "inFlightPct": 19,
+    "weights": "project",
+    "planning": {
+     "active": false,
+     "pct": 100,
+     "sharePct": 8,
+     "since": "2026-10-19T07:02:00.000Z"
+    },
+    "series": [
+     {
+      "at": "2026-10-19T07:00:00.000Z",
+      "pct": 0,
+      "verifiedPct": 0
+     },
+     {
+      "at": "2026-10-19T07:04:00.000Z",
+      "pct": 3,
+      "verifiedPct": 0
+     },
+     {
+      "at": "2026-10-19T07:09:00.000Z",
+      "pct": 5,
+      "verifiedPct": 1
+     },
+     {
+      "at": "2026-10-19T07:14:00.000Z",
+      "pct": 7,
+      "verifiedPct": 2
+     },
+     {
+      "at": "2026-10-19T07:19:00.000Z",
+      "pct": 9,
+      "verifiedPct": 3
+     },
+     {
+      "at": "2026-10-19T07:23:00.000Z",
+      "pct": 11,
+      "verifiedPct": 4
+     },
+     {
+      "at": "2026-10-19T07:28:00.000Z",
+      "pct": 13,
+      "verifiedPct": 5
+     },
+     {
+      "at": "2026-10-19T07:33:00.000Z",
+      "pct": 15,
+      "verifiedPct": 6
+     },
+     {
+      "at": "2026-10-19T07:38:00.000Z",
+      "pct": 17,
+      "verifiedPct": 7
+     },
+     {
+      "at": "2026-10-19T07:43:00.000Z",
+      "pct": 19,
+      "verifiedPct": 8
+     },
+     {
+      "at": "2026-10-19T07:47:00.000Z",
+      "pct": 21,
+      "verifiedPct": 9
+     },
+     {
+      "at": "2026-10-19T07:52:00.000Z",
+      "pct": 23,
+      "verifiedPct": 10
+     },
+     {
+      "at": "2026-10-19T07:57:00.000Z",
+      "pct": 25,
+      "verifiedPct": 11
+     },
+     {
+      "at": "2026-10-19T08:02:00.000Z",
+      "pct": 26,
+      "verifiedPct": 12
+     },
+     {
+      "at": "2026-10-19T08:07:00.000Z",
+      "pct": 28,
+      "verifiedPct": 14
+     },
+     {
+      "at": "2026-10-19T08:11:00.000Z",
+      "pct": 30,
+      "verifiedPct": 15
+     },
+     {
+      "at": "2026-10-19T08:16:00.000Z",
+      "pct": 32,
+      "verifiedPct": 16
+     },
+     {
+      "at": "2026-10-19T08:21:00.000Z",
+      "pct": 34,
+      "verifiedPct": 18
+     },
+     {
+      "at": "2026-10-19T08:26:00.000Z",
+      "pct": 35,
+      "verifiedPct": 19
+     },
+     {
+      "at": "2026-10-19T08:31:00.000Z",
+      "pct": 37,
+      "verifiedPct": 20
+     },
+     {
+      "at": "2026-10-19T08:35:00.000Z",
+      "pct": 39,
+      "verifiedPct": 22
+     },
+     {
+      "at": "2026-10-19T08:40:00.000Z",
+      "pct": 41,
+      "verifiedPct": 23
+     },
+     {
+      "at": "2026-10-19T08:45:00.000Z",
+      "pct": 55,
+      "verifiedPct": 25,
+      "drop": {
+       "reason": "ci_failed",
+       "fromPct": 61,
+       "text": "CI failed on #212: rust (macos)"
+      }
+     },
+     {
+      "at": "2026-10-19T08:50:00.000Z",
+      "pct": 44,
+      "verifiedPct": 26
+     },
+     {
+      "at": "2026-10-19T08:55:00.000Z",
+      "pct": 46,
+      "verifiedPct": 28
+     },
+     {
+      "at": "2026-10-19T08:59:00.000Z",
+      "pct": 48,
+      "verifiedPct": 29
+     },
+     {
+      "at": "2026-10-19T09:04:00.000Z",
+      "pct": 49,
+      "verifiedPct": 31
+     },
+     {
+      "at": "2026-10-19T09:09:00.000Z",
+      "pct": 51,
+      "verifiedPct": 32
+     },
+     {
+      "at": "2026-10-19T09:14:00.000Z",
+      "pct": 53,
+      "verifiedPct": 34
+     },
+     {
+      "at": "2026-10-19T09:19:00.000Z",
+      "pct": 54,
+      "verifiedPct": 35
+     },
+     {
+      "at": "2026-10-19T09:23:00.000Z",
+      "pct": 56,
+      "verifiedPct": 37
+     },
+     {
+      "at": "2026-10-19T09:28:00.000Z",
+      "pct": 58,
+      "verifiedPct": 39
+     },
+     {
+      "at": "2026-10-19T09:33:00.000Z",
+      "pct": 59,
+      "verifiedPct": 40
+     },
+     {
+      "at": "2026-10-19T09:38:00.000Z",
+      "pct": 74,
+      "verifiedPct": 42,
+      "drop": {
+       "reason": "scope_change",
+       "fromPct": 80,
+       "text": "+3 items: currency table export added"
+      }
+     },
+     {
+      "at": "2026-10-19T09:43:00.000Z",
+      "pct": 63,
+      "verifiedPct": 44
+     },
+     {
+      "at": "2026-10-19T09:47:00.000Z",
+      "pct": 64,
+      "verifiedPct": 45
+     },
+     {
+      "at": "2026-10-19T09:52:00.000Z",
+      "pct": 66,
+      "verifiedPct": 47
+     },
+     {
+      "at": "2026-10-19T09:57:00.000Z",
+      "pct": 68,
+      "verifiedPct": 49
+     },
+     {
+      "at": "2026-10-19T10:02:00.000Z",
+      "pct": 69,
+      "verifiedPct": 50
+     },
+     {
+      "at": "2026-10-19T10:07:12.000Z",
+      "pct": 71,
+      "verifiedPct": 52
+     }
+    ]
+   },
+   "stale": {
+    "since": "2026-10-19T10:01:02.000Z",
+    "reason": "GitHub not reached since 10:01: gh: connect: network is unreachable"
+   }
+  },
+  "markers": [
+   {
+    "at": "2026-10-19T10:00:04.000Z",
+    "text": "+3 items: currency table export added",
+    "pctBefore": 69,
+    "pctAfter": 64,
+    "deltaItems": 3
+   },
+   {
+    "at": "2026-10-19T08:41:00.000Z",
+    "text": "−1 item: W9 stopped",
+    "pctBefore": 70,
+    "pctAfter": 71,
+    "deltaItems": -1
+   }
+  ],
+  "eta": {
+   "current": "2026-10-22T14:00:00.000Z",
+   "original": "2026-10-21T18:00:00.000Z",
+   "slip": {
+    "scopeMinutes": 360,
+    "speedMinutes": 840
+   },
+   "rate": 3.2,
+   "samples": 11,
+   "basis": "project",
+   "chain": "P12 full lab run",
+   "p50": "2026-10-21T18:30:00.000Z",
+   "p90": "2026-10-22T14:00:00.000Z",
+   "accuracy": {
+    "withinPct": 25,
+    "samples": 11,
+    "windowDays": 7,
+    "text": "ETAs have been within ±25% this week"
+   }
+  },
+  "gates": [
+   {
+    "kind": "plan",
+    "label": "P12 full lab run",
+    "serial": true,
+    "itemId": "P12",
+    "workstreamId": "W14"
+   },
+   {
+    "kind": "live",
+    "label": "CI on #212 (rust (macos) 8m)",
+    "serial": false,
+    "workstreamId": "W14"
+   }
+  ],
+  "headline": {
+   "text": "Not live: GitHub unchecked 6m. Rounding fix in review, search speedup merging.",
+   "source": "template",
+   "reason": "facts changed, rewriting",
+   "at": "2026-10-19T10:07:05.000Z"
+  },
+  "since": {
+   "seenAt": "2026-10-19T09:12:30.000Z",
+   "merged": 3,
+   "verified": 2,
+   "started": 1,
+   "failed": 0,
+   "asked": 1,
+   "scopeItems": 3
+  },
+  "parts": [
+   {
+    "title": "M1 Multi-currency checkout",
+    "milestoneId": "M1",
+    "progress": {
+     "pct": 58,
+     "done": 4,
+     "total": 7,
+     "polishDone": 0,
+     "polishTotal": 0,
+     "asOf": "2026-10-19T10:07:10.000Z",
+     "estimate": {
+      "pct": 66,
+      "verifiedPct": 48,
+      "inFlightPct": 18,
+      "weights": "project"
+     },
+     "marker": {
+      "at": "2026-10-19T10:00:04.000Z",
+      "text": "+3 items",
+      "pctBefore": 63,
+      "pctAfter": 58,
+      "deltaItems": 3
+     },
+     "stale": {
+      "since": "2026-10-19T10:01:02.000Z",
+      "reason": "GitHub not reached since 10:01: gh: connect: network is unreachable"
+     }
+    },
+    "eta": "2026-10-22T14:00:00.000Z"
+   },
+   {
+    "title": "M2 Search under 200 ms",
+    "milestoneId": "M2",
+    "progress": {
+     "pct": 75,
+     "done": 3,
+     "total": 4,
+     "polishDone": 0,
+     "polishTotal": 0,
+     "asOf": "2026-10-19T10:07:10.000Z",
+     "estimate": {
+      "pct": 80,
+      "verifiedPct": 70,
+      "inFlightPct": 10,
+      "weights": "project"
+     }
+    },
+    "eta": "2026-10-19T16:00:00.000Z"
+   }
+  ],
+  "done": [
+   {
+    "itemId": "P9",
+    "workstreamId": "W14",
+    "title": "Totals use integer minor units",
+    "doneAt": "2026-10-19T09:46:12.000Z",
+    "evidence": "#208 merged by the train 09:46 · check 2 passed"
+   },
+   {
+    "itemId": "P8",
+    "workstreamId": "W12",
+    "title": "Search index warms on deploy",
+    "doneAt": "2026-10-19T09:12:40.000Z",
+    "evidence": "#205 merged by the train 09:12 · check 1 passed"
+   },
+   {
+    "workstreamId": "W11",
+    "title": "Product page shows stock per size",
+    "doneAt": "2026-10-19T08:30:02.000Z",
+    "evidence": "W11 verified: 3 of 3 checks passed"
+   }
+  ],
+  "inProgress": [
+   {
+    "itemId": "P12",
+    "workstreamId": "W14",
+    "title": "Round totals per currency, not per line",
+    "taskIds": [
+     "T31"
+    ],
+    "changeIds": [],
+    "eta": "2026-10-19T10:40:00.000Z",
+    "stage": "first_push",
+    "creditPct": 46,
+    "steers": [
+     {
+      "id": "S12",
+      "text": "skip the docs page for now",
+      "stage": "acknowledged",
+      "at": "2026-10-19T09:50:00.000Z",
+      "planChange": "−1 item"
+     }
+    ]
+   },
+   {
+    "itemId": "P13",
+    "workstreamId": "W14",
+    "title": "Review #212",
+    "taskIds": [
+     "T33"
+    ],
+    "changeIds": [
+     "X12"
+    ],
+    "gate": "CI on #212",
+    "eta": "2026-10-19T09:55:00.000Z",
+    "overdueMinutes": 12,
+    "stage": "pr_open",
+    "creditPct": 61,
+    "slowerThanUsual": true
+   }
+  ],
+  "next": [
+   {
+    "itemId": "P14",
+    "workstreamId": "W14",
+    "title": "JPY and KRW carts round to whole units",
+    "after": [
+     "P12"
+    ]
+   },
+   {
+    "itemId": "P15",
+    "title": "Currency table export for finance",
+    "after": [
+     "P12",
+     "P14"
+    ]
+   },
+   {
+    "itemId": "P16",
+    "title": "Docs page: how totals are rounded",
+    "after": []
+   }
+  ],
+  "needsYou": {
+   "count": 1,
+   "askIds": [
+    "A7"
+   ]
+  },
+  "risks": [
+   {
+    "rule": "ci_red_main",
+    "level": "danger",
+    "message": "main CI red on acme/storefront: rust (macos) since 09:40"
+   },
+   {
+    "rule": "slower_than_usual",
+    "level": "warning",
+    "message": "P13 Review #212 has been in PR open 2× longer than usual"
+   },
+   {
+    "rule": "machine_flaky",
+    "level": "warning",
+    "message": "buildbox went offline 3× today (last 09:55, still offline)"
+   },
+   {
+    "rule": "slipping",
+    "level": "warning",
+    "message": "ETA slipped 20h (6h scope, 14h slower)"
+   },
+   {
+    "rule": "riskiest_item",
+    "level": "warning",
+    "message": "riskiest: P12 Round totals per currency (L, 2 failed attempts)"
+   }
+  ],
+  "health": {
+   "ci": [
+    {
+     "repo": "acme/storefront",
+     "state": "red",
+     "sha": "a41c09e",
+     "failing": [
+      "rust (macos)"
+     ],
+     "since": "2026-10-19T09:40:00.000Z",
+     "asOf": "2026-10-19T10:01:02.000Z",
+     "stale": {
+      "since": "2026-10-19T10:01:02.000Z",
+      "reason": "GitHub not reached since 10:01: gh: connect: network is unreachable"
+     }
+    }
+   ],
+   "machines": [
+    {
+     "machineId": "devbox",
+     "status": "online",
+     "lastSeenAt": "2026-10-19T10:07:05.000Z",
+     "dropsToday": 0
+    },
+    {
+     "machineId": "buildbox",
+     "status": "offline",
+     "lastSeenAt": "2026-10-19T09:55:00.000Z",
+     "dropsToday": 3,
+     "stale": {
+      "since": "2026-10-19T09:55:45.000Z",
+      "reason": "no heartbeat from buildbox since 09:55"
+     }
+    }
+   ],
+   "usage": [
+    {
+     "limitType": "five_hour",
+     "machineId": "devbox",
+     "utilization": 0.58,
+     "status": "allowed",
+     "observedAt": "2026-10-19T10:05:20.000Z"
+    },
+    {
+     "limitType": "seven_day",
+     "machineId": "buildbox",
+     "utilization": 0.41,
+     "status": "allowed",
+     "observedAt": "2026-10-19T09:52:30.000Z",
+     "stale": {
+      "since": "2026-10-19T09:55:45.000Z",
+      "reason": "no heartbeat from buildbox since 09:55"
+     }
+    }
+   ],
+   "slots": {
+    "running": 8,
+    "used": 8,
+    "cap": 40,
+    "queued": 1
+   }
+  },
+  "stale": [
+   {
+    "source": "machine:buildbox",
+    "since": "2026-10-19T09:55:45.000Z",
+    "reason": "no heartbeat from buildbox since 09:55"
+   },
+   {
+    "source": "usage:buildbox",
+    "since": "2026-10-19T09:55:45.000Z",
+    "reason": "buildbox is silent, so its usage reading is from 09:52"
+   },
+   {
+    "source": "github:acme/storefront",
+    "since": "2026-10-19T10:01:02.000Z",
+    "reason": "GitHub not reached since 10:01: gh: connect: network is unreachable"
+   }
+  ],
+  "more": {
+   "done": 2,
+   "inProgress": 0,
+   "next": 1,
+   "risks": 0,
+   "parts": 0,
+   "stale": 0
+  }
+ }
+}

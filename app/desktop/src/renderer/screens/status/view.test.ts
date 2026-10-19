@@ -1,0 +1,183 @@
+import { beforeAll, describe, expect, it, vi } from "vitest";
+import { asGetOutput } from "./contracts";
+import { toggleRoute } from "./commands";
+import { digestText } from "./digest";
+import {
+  age,
+  etaView,
+  figure,
+  headlineText,
+  limitName,
+  machineView,
+  nextAgeChange,
+  progressRowView,
+  scopeFromRoute,
+  scopeRoute,
+  sourceName,
+  span,
+  spark,
+  stageName,
+  statusFor,
+  when,
+} from "./view";
+
+import { fixture, fixtureFiles } from "./fixtures";
+const NOW = Date.parse("2026-10-19T10:07:12.000Z");
+
+beforeAll(() => {
+  // `when` reads the viewer's zone; pin it so the expectations hold on every machine.
+  vi.stubEnv("TZ", "UTC");
+});
+
+describe("fixtures", () => {
+  it("every status fixture decodes as a status_get answer", () => {
+    const files = Object.entries(fixtureFiles);
+    expect(files.length).toBeGreaterThanOrEqual(9);
+    for (const [name, output] of files) expect(asGetOutput(output), name).toBeDefined();
+  });
+});
+
+describe("the figure", () => {
+  it("shows the estimate with verified beside it, the bar in two tones", () => {
+    const f = figure(fixture("fleet").progress);
+    expect(f).toMatchObject({ pct: 78, verifiedPct: 58, inFlightPct: 20, verifiedNote: "verified 58%", planning: null });
+    expect(f.detail).toEqual(["13 of 18 must items verified", "polish 2/5"]);
+  });
+
+  it("falls back to the verified-only figure on a hub without the progress model", () => {
+    expect(figure(fixture("fleet-legacy").progress)).toMatchObject({ pct: 72, verifiedPct: 72, inFlightPct: 0, verifiedNote: null });
+  });
+
+  it("says planning, not 0%, while the lead plans", () => {
+    const d = fixture("order-planning");
+    expect(figure(d.progress, d.virtualTier)).toMatchObject({ pct: null, planning: 55, detail: [] });
+  });
+
+  it("never lets the lighter part run past 100", () => {
+    const p = { ...fixture("fleet").progress, estimate: { pct: 100, verifiedPct: 97, inFlightPct: 5, weights: "default" } };
+    expect(figure(p).inFlightPct).toBe(3);
+  });
+});
+
+describe("the sparkline", () => {
+  it("draws both lines and one explained marker per drop", () => {
+    const series = fixture("fleet").progress.estimate?.series ?? [];
+    const g = spark(series, 600, 40);
+    expect(g?.drops.map((d) => d.label)).toEqual([
+      "↓ 61% → 55%: CI failed on #212: rust (macos) (CI failed)",
+      "↓ 80% → 74%: +3 items: currency table export added (scope added)",
+    ]);
+    expect(g?.estimate.startsWith("M0 40")).toBe(true);
+    expect(g?.estimate.endsWith("L600 8.8"), "ends at 78% at the right edge").toBe(true);
+  });
+
+  it("names an unknown drop reason generically", () => {
+    const series = fixture("fleet-long-text").progress.estimate?.series ?? [];
+    expect(spark(series, 600, 40)?.drops.some((d) => d.label.endsWith("(fell back)"))).toBe(true);
+  });
+
+  it("needs two points", () => {
+    expect(spark([{ at: "2026-10-19T10:00:00Z", pct: 4, verifiedPct: 0 }], 600, 40)).toBeNull();
+  });
+});
+
+describe("the ETA", () => {
+  it("is a p50–p90 range with the slip, the chain and the forecast accuracy", () => {
+    const e = etaView(fixture("project").eta, NOW);
+    expect(e.main).toBe("eta Wed 18:30 – Thu 14:00");
+    expect(e.isRange).toBe(true);
+    expect(e.rest).toEqual(["planned Wed 18:00 (+6h scope, +14h slower)", "set by the chain through P12 full lab run", "3.2 pts/busy h (project's)", "11 samples"]);
+    expect(e.accuracy).toBe("ETAs have been within ±25% this week (11 items)");
+  });
+
+  it("says the lead's estimate drifted, with the measured one shown", () => {
+    expect(etaView(fixture("order").eta, NOW).drift).toBe("The lead's estimate said 11:30; measured speed says 14:40. The measured one is shown.");
+  });
+
+  it("is honest when there are too few samples", () => {
+    expect(etaView({ samples: 2, basis: "none" }, NOW).main).toBe("no ETA yet: measuring, 2 of 5 verified");
+  });
+});
+
+describe("words", () => {
+  it("never puts a wire name on screen", () => {
+    expect(sourceName("machine:buildbox")).toBe("buildbox");
+    expect(sourceName("github:acme/storefront")).toBe("GitHub for acme/storefront");
+    expect(sourceName("weird_source:x")).toBe("weird source x");
+    expect(limitName("five_hour")).toBe("5h");
+    expect(limitName("seven_day")).toBe("wk");
+    expect(limitName("something_new")).toBe("something new");
+    expect(stageName("first_push")).toBe("first push");
+    expect(stageName("stage_from_a_newer_hub")).toBe("stage from a newer hub");
+  });
+
+  it("ages redraw only when their text changes", () => {
+    expect(age(59_000)).toBe("<1m");
+    expect(age(4 * 60_000 + 5_000)).toBe("4m");
+    expect(age(3 * 3_600_000)).toBe("3h");
+    expect(nextAgeChange([59_000, 4 * 60_000 + 5_000])).toBe(1_000);
+    expect(nextAgeChange([3_600_000 + 60_000])).toBe(3_540_000);
+    expect(nextAgeChange([])).toBeNull();
+    expect(span(6 * 3_600_000 + 20 * 60_000)).toBe("6h 20m");
+  });
+
+  it("says the day only when it isn't today", () => {
+    expect(when("2026-10-19T14:00:00.000Z", NOW)).toBe("14:00");
+    expect(when("2026-10-22T14:00:00.000Z", NOW)).toBe("Thu 14:00");
+    expect(when("2026-11-30T09:00:00.000Z", NOW)).toBe("Nov 30 09:00");
+  });
+
+  it("an in-progress row says its stage, credit and lateness", () => {
+    const [t31, t33] = fixture("order").inProgress;
+    expect(t31 && progressRowView(t31, NOW)).toEqual({ meta: ["first push", "46% credited"], eta: "eta 10:40" });
+    expect(t33 && progressRowView(t33, NOW)).toEqual({ meta: ["PR open", "61% credited", "CI on #212"], eta: "overdue 12m" });
+  });
+
+  it("a machine says how long it's been gone and when it slept", () => {
+    const m = fixture("fleet").health.machines[1];
+    expect(m && machineView(m, NOW)).toBe("offline 12m · 3× today");
+    const slept = { machineId: "devbox", status: "online", dropsToday: 1, slept: { fromMs: NOW - 3_600_000, toMs: NOW - 3_600_000 + 646_000 } };
+    expect(machineView(slept, NOW)).toBe("slept 10m46s at 09:17");
+  });
+});
+
+describe("the headline", () => {
+  it("keeps the hub's Not live clause, and adds one when the app isn't live or a source is stale", () => {
+    expect(headlineText(fixture("fleet-stale"), true)).toMatch(/^Not live: GitHub unchecked 6m\. /u);
+    expect(headlineText(fixture("fleet"), true)).toMatch(/^Not live: buildbox, claude usage on buildbox stale\. Fixing/u);
+    const clean = { ...fixture("fleet"), stale: [] };
+    expect(headlineText(clean, true)).toBe(clean.headline.text);
+    expect(headlineText(clean, false)).toBe(`Not live: ${clean.headline.text}`);
+  });
+});
+
+describe("routes and ⌘.", () => {
+  it("round-trips every scope", () => {
+    for (const name of ["fleet", "project", "order"]) {
+      const scope = fixture(name).scope;
+      expect(scopeFromRoute(scopeRoute(scope))).toEqual(scope);
+    }
+    expect(scopeFromRoute("#/status?inbox&ask=A7")).toEqual({ kind: "fleet" });
+    expect(scopeFromRoute("#/board")).toBeNull();
+  });
+
+  it("opens the status of where you are, and goes back from it", () => {
+    expect(statusFor("#/order/W14")).toEqual({ kind: "order", workstreamId: "W14" });
+    expect(statusFor("#/board/devbox/storefront")).toEqual({ kind: "project", projectRef: { machineId: "devbox", projectId: "storefront" } });
+    expect(statusFor("#/settings")).toEqual({ kind: "fleet" });
+    expect(toggleRoute("#/order/W14")).toBe("#/status/order/W14");
+    expect(toggleRoute("#/status/order/W14")).toBe("#/order/W14");
+    expect(toggleRoute("#/status"), "opened elsewhere: back to the board").toBe("#/board");
+  });
+});
+
+describe("the digest", () => {
+  it("says the figure, what changed since the last digest, and when it isn't live", () => {
+    const { title, body } = digestText(fixture("fleet-stale"));
+    expect(title).toBe("fleetd · 78%");
+    expect(body).toBe(
+      "Not live: GitHub unchecked 6m. Fixing cart rounding and speeding up product search, waiting on the full lab run. Since the last digest: 7 merged, 3 verified, 2 started, 1 failed. 3 need you.",
+    );
+    expect(digestText(fixture("order-planning")).title).toBe("fleetd · planning");
+  });
+});
