@@ -4,7 +4,6 @@ import { toggleRoute } from "./commands";
 import { digestText } from "./digest";
 import {
   age,
-  etaView,
   figure,
   headlineText,
   limitName,
@@ -13,10 +12,11 @@ import {
   progressRowView,
   scopeFromRoute,
   scopeRoute,
+  shownRisks,
   sourceName,
-  span,
   spark,
   stageName,
+  stateView,
   statusFor,
   when,
 } from "./view";
@@ -81,21 +81,35 @@ describe("the sparkline", () => {
   });
 });
 
-describe("the ETA", () => {
-  it("is a p50–p90 range with the slip, the chain and the forecast accuracy", () => {
-    const e = etaView(fixture("project").eta, NOW);
-    expect(e.main).toBe("eta Wed 18:30 – Thu 14:00");
-    expect(e.isRange).toBe(true);
-    expect(e.rest).toEqual(["planned Wed 18:00 (+6h scope, +14h slower)", "set by the chain through P12 full lab run", "3.2 pts/busy h (project's)", "11 samples"]);
-    expect(e.accuracy).toBe("ETAs have been within ±25% this week (11 items)");
+describe("what it waits on", () => {
+  it("is the critical path in order and what blocks it, with measured ages and no estimated time", () => {
+    expect(stateView(fixture("order"), NOW)).toEqual({
+      path: ["review of #212", "CI", "merge", "P14 JPY and KRW carts"],
+      blocking: [
+        { label: "main CI is red on acme/storefront", since: "for 27m" },
+        { label: "review of #212", since: "for 4m" },
+      ],
+    });
   });
 
-  it("says the lead's estimate drifted, with the measured one shown", () => {
-    expect(etaView(fixture("order").eta, NOW).drift).toBe("The lead's estimate said 11:30; measured speed says 14:40. The measured one is shown.");
+  it("falls back to the gates, serial first, on a hub without the state fields", () => {
+    expect(stateView(fixture("fleet-legacy"), NOW)).toEqual({
+      path: ["P12 full lab run", "CI on #212 (rust (macos) 8m)"],
+      blocking: [{ label: "P12 full lab run", since: null }],
+    });
   });
 
-  it("is honest when there are too few samples", () => {
-    expect(etaView({ samples: 2, basis: "none" }, NOW).main).toBe("no ETA yet: measuring, 2 of 5 verified");
+  it("never shows a risk about predicted time", () => {
+    const doc = fixture("fleet");
+    const risks = [...doc.risks, { rule: "slipping", level: "warning", message: "ETA slipped 20h" }, { rule: "estimate_drift", level: "warning", message: "lead estimated 1h" }];
+    expect(shownRisks({ ...doc, risks }).map((r) => r.rule)).toEqual(doc.risks.map((r) => r.rule));
+  });
+
+  it("no fixture carries an estimated time the view could show", () => {
+    for (const [name, output] of Object.entries(fixtureAnswers)) {
+      const text = JSON.stringify(output);
+      expect(text, name).not.toMatch(/"(p50|p90|accuracy|overdueMinutes|original|lead|current)"/u);
+    }
   });
 });
 
@@ -118,7 +132,6 @@ describe("words", () => {
     expect(nextAgeChange([59_000, 4 * 60_000 + 5_000])).toBe(1_000);
     expect(nextAgeChange([3_600_000 + 60_000])).toBe(3_540_000);
     expect(nextAgeChange([])).toBeNull();
-    expect(span(6 * 3_600_000 + 20 * 60_000)).toBe("6h 20m");
   });
 
   it("says the day only when it isn't today", () => {
@@ -127,10 +140,11 @@ describe("words", () => {
     expect(when("2026-11-30T09:00:00.000Z", NOW)).toBe("Nov 30 09:00");
   });
 
-  it("an in-progress row says its stage, credit and lateness", () => {
+  it("an in-progress row says its stage, its credit and what it waits on, never a time", () => {
     const [t31, t33] = fixture("order").inProgress;
-    expect(t31 && progressRowView(t31, NOW)).toEqual({ meta: ["first push", "46% credited"], eta: "eta 10:40" });
-    expect(t33 && progressRowView(t33, NOW)).toEqual({ meta: ["PR open", "61% credited", "CI on #212"], eta: "overdue 12m" });
+    expect(t31 && progressRowView(t31)).toEqual(["first push", "46% credited"]);
+    expect(t33 && progressRowView(t33)).toEqual(["PR open", "61% credited", "waiting on CI on #212"]);
+    expect(t33?.slowerThanUsual).toBe(true);
   });
 
   it("a machine says how long it's been gone and when it slept", () => {

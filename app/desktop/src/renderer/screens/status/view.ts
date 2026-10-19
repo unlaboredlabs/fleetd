@@ -3,6 +3,7 @@
 // rules are turned into words here, and an unknown wire value gets a generic phrase instead of breaking.
 
 import type {
+  PathStep,
   HealthMachine,
   HealthUsage,
   InProgressRow,
@@ -12,10 +13,8 @@ import type {
   Since,
   StaleMark,
   StatusDoc,
-  StatusEta,
   StatusScope,
 } from "./contracts";
-import { MIN_SAMPLES } from "./contracts";
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -26,16 +25,6 @@ export const age = (ms: number): string => {
   const m = Math.floor(Math.max(0, ms) / MIN);
   if (m < 1) return "<1m";
   if (m < 60) return `${m}m`;
-  if (m < 2880) return `${Math.floor(m / 60)}h`;
-  return `${Math.floor(m / 1440)}d`;
-};
-
-/** A length of time: "40m", "6h 20m", "14h", "3d". */
-export const span = (ms: number): string => {
-  const m = Math.floor(Math.abs(ms) / MIN);
-  if (m < 1) return "<1m";
-  if (m < 60) return `${m}m`;
-  if (m < 600 && m % 60 !== 0) return `${Math.floor(m / 60)}h ${m % 60}m`;
   if (m < 2880) return `${Math.floor(m / 60)}h`;
   return `${Math.floor(m / 1440)}d`;
 };
@@ -231,51 +220,33 @@ export const spark = (series: readonly ProgressPoint[], width: number, height: n
   return { estimate: path((p) => p.pct), verified: path((p) => p.verifiedPct), drops };
 };
 
-export interface EtaView {
-  /** "eta 14:40 – 16:10", "eta Thu 14:00", or the measuring sentence. */
-  readonly main: string;
-  readonly isRange: boolean;
-  readonly rest: readonly string[];
-  /** "The lead's estimate said …; measured speed says …", when they drifted apart. */
-  readonly drift: string | null;
-  readonly accuracy: string | null;
+/** What the scope waits on, as state, never as a time: the critical path in order ("review of #12 → CI →
+ * merge") and what blocks work now, each with how long it has been so (a measured age). */
+export interface StateView {
+  readonly path: readonly string[];
+  readonly blocking: readonly { readonly label: string; readonly since: string | null }[];
 }
 
-export const etaView = (eta: StatusEta, nowMs: number): EtaView => {
-  const rest: string[] = [];
-  let main: string;
-  let isRange = false;
-  if (eta.p50 !== undefined && eta.p90 !== undefined) {
-    const [a, b] = [when(eta.p50, nowMs), when(eta.p90, nowMs)];
-    isRange = a !== b;
-    main = isRange ? `eta ${a} – ${b}` : `eta ${a}`;
-  } else if (eta.current !== undefined) {
-    main = `eta ${when(eta.current, nowMs)}`;
-  } else {
-    main = `no ETA yet: measuring, ${eta.samples} of ${MIN_SAMPLES} verified`;
-  }
-  if (eta.original !== undefined) {
-    const slip: string[] = [];
-    const s = eta.slip;
-    if (s && s.scopeMinutes !== 0) slip.push(`${s.scopeMinutes > 0 ? "+" : "−"}${span(s.scopeMinutes * MIN)} scope`);
-    if (s && s.speedMinutes !== 0)
-      slip.push(`${s.speedMinutes > 0 ? "+" : "−"}${span(s.speedMinutes * MIN)} ${s.speedMinutes > 0 ? "slower" : "faster"}`);
-    rest.push(`planned ${when(eta.original, nowMs)}${slip.length > 0 ? ` (${slip.join(", ")})` : ""}`);
-  }
-  if (eta.chain !== undefined) rest.push(`set by the chain through ${eta.chain}`);
-  if (eta.rate !== undefined) {
-    const basis = eta.basis === "project" ? " (project's)" : eta.basis === "fleet" ? " (fleet's)" : "";
-    rest.push(`${eta.rate.toFixed(1)} pts/busy h${basis}`);
-  }
-  if (eta.samples > 0 && (eta.current !== undefined || eta.p50 !== undefined)) rest.push(`${eta.samples} samples`);
-  const shown = eta.p50 ?? eta.current;
-  const drift =
-    eta.lead !== undefined && shown !== undefined
-      ? `The lead's estimate said ${when(eta.lead, nowMs)}; measured speed says ${when(shown, nowMs)}. The measured one is shown.`
-      : null;
-  const accuracy = eta.accuracy ? `${eta.accuracy.text} (${eta.accuracy.samples} items)` : null;
-  return { main, isRange, rest, drift, accuracy };
+const stepLabel = (step: PathStep): string => (typeof step === "string" ? step : step.label);
+
+export const stateView = (doc: StatusDoc, nowMs: number): StateView => {
+  const sinceText = (iso?: string): string | null => {
+    const a = since(iso, nowMs);
+    return a === null ? null : `for ${age(a)}`;
+  };
+  // A hub before the progress model's state fields: its gates, serial first, are the same facts.
+  const gates = [...doc.gates].sort((a, b) => Number(b.serial) - Number(a.serial));
+  const path = doc.waitingOn !== undefined ? doc.waitingOn.map(stepLabel) : gates.map((g) => g.label);
+  const blocking =
+    doc.blocking !== undefined
+      ? doc.blocking.map((b) => ({ label: b.label, since: sinceText(b.since) }))
+      : gates.filter((g) => g.serial).map((g) => ({ label: g.label, since: sinceText(g.since) }));
+  return { path, blocking };
 };
+
+/** Risk rules that are about predicted time; the product shows none (the hub stops sending them too). */
+const TIME_RULES: ReadonlySet<string> = new Set(["slipping", "estimate_drift"]);
+export const shownRisks = (doc: StatusDoc): StatusDoc["risks"] => doc.risks.filter((r) => !TIME_RULES.has(r.rule));
 
 /** "Since you looked (09:12):" and its counts; null parts when nothing changed. */
 export const sinceView = (s: Since, nowMs: number): { lead: string; parts: readonly { text: string; bad: boolean }[] } => {
@@ -329,19 +300,13 @@ export const machineView = (m: HealthMachine, nowMs: number): string => {
   return parts.length === 0 ? "online" : parts.join(" · ");
 };
 
-/** The In-progress row's right side: stage, credit, gate, ETA or overdue. */
-export const progressRowView = (row: InProgressRow, nowMs: number): { meta: readonly string[]; eta: string | null } => {
+/** The In-progress row's right side: the stage fleetd saw, its credit, and what it waits on. */
+export const progressRowView = (row: InProgressRow): readonly string[] => {
   const meta: string[] = [];
   if (row.stage !== undefined) meta.push(stageName(row.stage));
   if (row.creditPct !== undefined) meta.push(`${clampPct(row.creditPct)}% credited`);
-  if (row.gate !== undefined) meta.push(row.gate);
-  const eta =
-    row.overdueMinutes !== undefined && row.overdueMinutes > 0
-      ? `overdue ${span(row.overdueMinutes * MIN)}`
-      : row.eta !== undefined
-        ? `eta ${when(row.eta, nowMs)}`
-        : null;
-  return { meta, eta };
+  if (row.gate !== undefined) meta.push(`waiting on ${row.gate}`);
+  return meta;
 };
 
 /** The headline as shown: the hub writes "Not live: …" for stale sources; if the app itself isn't live, or a

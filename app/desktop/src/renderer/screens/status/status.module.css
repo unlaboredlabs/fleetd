@@ -219,7 +219,11 @@
   box-shadow: var(--focus-ring);
 }
 
-.etaBlock {
+.quietSpan {
+  color: var(--quiet);
+  font-weight: var(--weight-regular);
+}
+.stateBlock {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
@@ -323,13 +327,13 @@ button.row:focus-visible {
 .rowFull {
   flex-basis: 100%;
 }
-/* Parts line up in columns: title, figure, bar, ETA; a marker or stale mark takes its own line under them. */
+/* Parts line up in columns: title, figure, bar; a marker or stale mark takes its own line under them. */
 .partRow {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 9ch minmax(80px, 240px) 13ch;
+  grid-template-columns: minmax(0, 1fr) 9ch minmax(80px, 240px);
   align-items: baseline;
 }
-.partRow > :nth-child(n + 5) {
+.partRow > :nth-child(n + 4) {
   grid-column: 1 / -1;
 }
 .partPct {

@@ -50,7 +50,7 @@ export default defineGroup({
     own(base("typical"), "planning", "Status: W14's lead is still planning, so the order shows its planning bar, not 0%.", (k, asks) =>
       k === "order" ? planningDoc() : statusDoc(k, false, asks),
     ),
-    own(base("typical"), "legacy", "Status: a hub without the progress model (no estimate, range or accuracy).", (k, asks) => legacyDoc(k, asks)),
+    own(base("typical"), "legacy", "Status: a hub without the progress model (no estimate, stage credit, critical path or blockers).", (k, asks) => legacyDoc(k, asks)),
     own(base("typical"), "skeleton", "Status: the hub is live but hasn't answered status_get yet: the skeleton, no numbers.", (k, asks) => statusDoc(k, false, asks), HOLD_MS),
   ],
 });

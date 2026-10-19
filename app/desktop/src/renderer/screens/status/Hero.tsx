@@ -3,11 +3,11 @@ import type { ProgressPoint, StatusDoc } from "./contracts";
 import { useTween } from "./hooks";
 import {
   asOf,
-  etaView,
   figure,
   headlineText,
   markerDirection,
   sinceView,
+  stateView,
   spark,
   staleWords,
   when,
@@ -15,7 +15,8 @@ import {
 } from "./view";
 import s from "./status.module.css";
 
-/** The number, its bars, the sparkline, the headline, the ETA and since-you-last-looked. */
+/** The number, its bars, the sparkline, the headline, what it waits on and since-you-last-looked. No time
+ * estimates anywhere (notes/no-time-product-brief.md): state, and measured ages only. */
 export function Hero({ doc, live, session, now }: { doc: StatusDoc; live: boolean; session: string; now: number }) {
   const f = figure(doc.progress, doc.virtualTier);
   const stale = doc.progress.stale;
@@ -30,7 +31,7 @@ export function Hero({ doc, live, session, now }: { doc: StatusDoc; live: boolea
       <Markers doc={doc} now={now} />
       <Sparkline series={doc.progress.estimate?.series ?? []} now={now} />
       <Headline doc={doc} live={live} now={now} />
-      <Eta doc={doc} now={now} />
+      <WaitingOn doc={doc} now={now} />
       <SinceLine doc={doc} now={now} />
     </section>
   );
@@ -173,52 +174,35 @@ function Headline({ doc, live, now }: { doc: StatusDoc; live: boolean; now: numb
   );
 }
 
-function Eta({ doc, now }: { doc: StatusDoc; now: number }) {
-  const e = etaView(doc.eta, now);
+/** The critical path in order, then what blocks work now and for how long it has. */
+function WaitingOn({ doc, now }: { doc: StatusDoc; now: number }) {
+  const v = stateView(doc, now);
   return (
-    <div className={cx(s.etaBlock)}>
+    <div className={cx(s.stateBlock)}>
       <div className={cx(s.inline)}>
-        {e.isRange ? (
-          <Tooltip content="Likely (half of similar work finishes by the first time) to at the latest (nine in ten by the second).">
-            <span tabIndex={0}>
-              <Text strong tabular>
-                {e.main}
-              </Text>
-            </span>
-          </Tooltip>
+        <Text size="xs" tone="quiet">
+          waiting on
+        </Text>
+        {v.path.length === 0 ? (
+          <Text size="xs" tone="quiet">
+            nothing: the work in flight can go on
+          </Text>
         ) : (
-          <Text strong={e.main.startsWith("eta")} tone={e.main.startsWith("eta") ? "default" : "quiet"} tabular>
-            {e.main}
-          </Text>
+          <Text strong>{v.path.join(" → ")}</Text>
         )}
-        {e.rest.map((r) => (
-          <Text key={r} size="xs" tone="quiet" tabular>
-            {r}
-          </Text>
-        ))}
       </div>
-      {doc.gates.length > 0 ? (
+      {v.blocking.length > 0 ? (
         <div className={cx(s.inline)}>
           <Text size="xs" tone="quiet">
-            waiting on
+            blocking
           </Text>
-          {doc.gates.map((g) => (
-            <Text key={g.label} size="xs" strong={g.serial}>
-              {g.serial ? `${g.label} (serial)` : g.label}
-              {g.since !== undefined ? ` · since ${when(g.since, now)}` : ""}
+          {v.blocking.map((b) => (
+            <Text key={b.label} size="xs" strong tone="warning">
+              {b.label}
+              {b.since !== null ? <span className={cx(s.quietSpan)}> {b.since}</span> : null}
             </Text>
           ))}
         </div>
-      ) : null}
-      {e.drift !== null ? (
-        <Text size="xs" tone="warning">
-          {e.drift}
-        </Text>
-      ) : null}
-      {e.accuracy !== null ? (
-        <Text size="xs" tone="quiet">
-          {e.accuracy}
-        </Text>
       ) : null}
     </div>
   );

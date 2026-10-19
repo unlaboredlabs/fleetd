@@ -3,7 +3,7 @@ import { cx, StatusChip, Text, Truncate } from "../../ui";
 import type { StatusDoc, StatusScope } from "./contracts";
 import { TwoToneBar } from "./Hero";
 import { NeedsYou } from "./NeedsYou";
-import { figure, progressRowView, scopeRoute, staleWords, when } from "./view";
+import { figure, progressRowView, scopeRoute, shownRisks, staleWords, when } from "./view";
 import s from "./status.module.css";
 
 const openOrder = (workstreamId: string): void => {
@@ -46,6 +46,7 @@ function Row({ onOpen, children, label, grid }: { onOpen?: (() => void) | undefi
 
 export function Sections({ doc, now }: { doc: StatusDoc; now: number }) {
   const partsTitle = doc.scope.kind === "fleet" ? "Projects" : "Milestones";
+  const risks = shownRisks(doc);
   return (
     <div className={cx(s.sections)}>
       {doc.parts.length > 0 ? (
@@ -62,9 +63,6 @@ export function Sections({ doc, now }: { doc: StatusDoc; now: number }) {
                 <span className={cx(s.partBar)}>
                   <TwoToneBar small verified={f.verifiedPct} inFlight={f.inFlightPct} label={`${f.verifiedPct}% verified`} />
                 </span>
-                <Text size="xs" tone="quiet" tabular>
-                  {p.eta !== undefined ? `eta ${when(p.eta, now)}` : "no ETA yet"}
-                </Text>
                 {p.progress.marker ? (
                   <Text size="xs" tone="warning">
                     {p.progress.marker.text}
@@ -85,13 +83,13 @@ export function Sections({ doc, now }: { doc: StatusDoc; now: number }) {
         <NeedsYou askIds={doc.needsYou.askIds} count={doc.needsYou.count} />
       </Section>
 
-      <Section title="Risks" count={doc.risks.length} more={doc.more.risks}>
-        {doc.risks.length === 0 ? (
+      <Section title="Risks" count={risks.length} more={doc.more.risks}>
+        {risks.length === 0 ? (
           <Text size="xs" tone="quiet">
             none fleetd can see
           </Text>
         ) : (
-          doc.risks.map((r) => (
+          risks.map((r) => (
             <div key={`${r.rule}${r.message}`} className={cx(s.risk)}>
               <span aria-hidden>
                 <Text strong tone={r.level === "danger" ? "danger" : "warning"}>
@@ -112,7 +110,7 @@ export function Sections({ doc, now }: { doc: StatusDoc; now: number }) {
           </Text>
         ) : (
           doc.inProgress.map((r) => {
-            const v = progressRowView(r, now);
+            const meta = progressRowView(r);
             return (
               <Row key={`${r.workstreamId}${r.itemId ?? ""}${r.title}`} label={`Open ${r.title}`} onOpen={() => openOrder(r.workstreamId)}>
                 <span className={cx(s.rowMain)}>
@@ -125,16 +123,11 @@ export function Sections({ doc, now }: { doc: StatusDoc; now: number }) {
                   {r.slowerThanUsual === true ? <StatusChip tone="failed">slower than usual</StatusChip> : null}
                 </span>
                 <span className={cx(s.rowMeta)}>
-                  {v.meta.map((m) => (
+                  {meta.map((m) => (
                     <Text key={m} size="xs" tone="quiet">
                       {m}
                     </Text>
                   ))}
-                  {v.eta !== null ? (
-                    <Text size="xs" tone={v.eta.startsWith("overdue") ? "warning" : "quiet"} tabular>
-                      {v.eta}
-                    </Text>
-                  ) : null}
                 </span>
                 {r.stale ? (
                   <Text size="xs" tone="warning" className={cx(s.rowFull)}>

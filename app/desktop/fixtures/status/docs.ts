@@ -74,41 +74,18 @@ export const statusDoc = (kind: Kind, quiet = false, asks: readonly string[] = k
       ? { at: at("09:58:20"), text: "+1 item: rounding for JPY carts added", pctBefore: was, pctAfter: pct, deltaItems: 1 }
       : { at: at("10:00:04"), text: "+3 items: currency table export added", pctBefore: was, pctAfter: pct, deltaItems: 3 };
   const markers: Json[] = kind === "order" ? [marker] : [marker, { at: at("08:41:00"), text: "−1 item: W9 stopped", pctBefore: 70, pctAfter: 71, deltaItems: -1 }];
-  const eta: Obj = {
-    fleet: {
-      current: "2026-10-22T14:00:00.000Z",
-      rate: 4.1,
-      samples: 18,
-      basis: "fleet",
-      chain: "P12 full lab run",
-      p50: "2026-10-21T16:00:00.000Z",
-      p90: "2026-10-22T14:00:00.000Z",
-      accuracy: { withinPct: 20, samples: 18, windowDays: 7, text: "ETAs have been within ±20% this week" },
-    },
-    project: {
-      current: "2026-10-22T14:00:00.000Z",
-      original: "2026-10-21T18:00:00.000Z",
-      slip: { scopeMinutes: 360, speedMinutes: 840 },
-      rate: 3.2,
-      samples: 11,
-      basis: "project",
-      chain: "P12 full lab run",
-      p50: "2026-10-21T18:30:00.000Z",
-      p90: "2026-10-22T14:00:00.000Z",
-      accuracy: { withinPct: 25, samples: 11, windowDays: 7, text: "ETAs have been within ±25% this week" },
-    },
-    order: {
-      current: "2026-10-19T15:10:00.000Z",
-      original: "2026-10-19T12:30:00.000Z",
-      slip: { scopeMinutes: 40, speedMinutes: 120 },
-      lead: "2026-10-19T11:30:00.000Z",
-      rate: 1.4,
-      samples: 6,
-      basis: "order",
-      p50: "2026-10-19T14:40:00.000Z",
-      p90: "2026-10-19T16:10:00.000Z",
-    },
-  }[kind];
+  // The hub's contract still requires `eta`; the app never shows it (no time estimates in the product), so the
+  // fixtures carry the bare minimum and no times.
+  const eta: Obj = { samples: { fleet: 18, project: 11, order: 6 }[kind], basis: kind };
+  // The critical path and what blocks it (PM's provisional waitingOn / blocking).
+  const waitingOn: Json[] =
+    kind === "order"
+      ? ["review of #212", "CI", "merge", "P14 JPY and KRW carts"]
+      : ["P12 full lab run", "review of #212", "CI", "merge"];
+  const blocking: Json[] = [
+    { label: "main CI is red on acme/storefront", since: at("09:40:00") },
+    ...(kind === "order" ? [{ label: "review of #212", since: at("10:03:11"), itemId: "P13", workstreamId: "W14" }] : []),
+  ];
   const gates: Json[] =
     kind === "order"
       ? [
@@ -136,15 +113,15 @@ export const statusDoc = (kind: Kind, quiet = false, asks: readonly string[] = k
   }[kind];
   const parts: Json[] = {
     fleet: [
-      { title: "storefront", scope: SCOPES.project, progress: progress(64, 7, 11, [71, 52, 19], "+3 items", g), eta: "2026-10-22T14:00:00.000Z" },
-      { title: "web-app", scope: { kind: "project", projectRef: { machineId: "devbox", projectId: "web-app" } }, progress: progress(86, 6, 7, [90, 86, 4]), eta: "2026-10-19T17:00:00.000Z" },
+      { title: "storefront", scope: SCOPES.project, progress: progress(64, 7, 11, [71, 52, 19], "+3 items", g) },
+      { title: "web-app", scope: { kind: "project", projectRef: { machineId: "devbox", projectId: "web-app" } }, progress: progress(86, 6, 7, [90, 86, 4]) },
       { title: "mailer", scope: { kind: "project", projectRef: { machineId: "devbox", projectId: "mailer" } }, progress: progress(0, 0, 1, [9, 0, 9]) },
     ],
     project: [
-      { title: "M1 Multi-currency checkout", milestoneId: "M1", progress: progress(58, 4, 7, [66, 48, 18], "+3 items", g), eta: "2026-10-22T14:00:00.000Z" },
-      { title: "M2 Search under 200 ms", milestoneId: "M2", progress: progress(75, 3, 4, [80, 70, 10]), eta: "2026-10-19T16:00:00.000Z" },
+      { title: "M1 Multi-currency checkout", milestoneId: "M1", progress: progress(58, 4, 7, [66, 48, 18], "+3 items", g) },
+      { title: "M2 Search under 200 ms", milestoneId: "M2", progress: progress(75, 3, 4, [80, 70, 10]) },
     ],
-    order: [{ title: "M1 Multi-currency checkout", milestoneId: "M1", progress: progress(62, 3, 5, [68, 40, 28], undefined, g), eta: "2026-10-19T15:10:00.000Z" }],
+    order: [{ title: "M1 Multi-currency checkout", milestoneId: "M1", progress: progress(62, 3, 5, [68, 40, 28], undefined, g) }],
   }[kind];
   const t31: Obj = {
     itemId: "P12",
@@ -152,7 +129,6 @@ export const statusDoc = (kind: Kind, quiet = false, asks: readonly string[] = k
     title: "Round totals per currency, not per line",
     taskIds: ["T31"],
     changeIds: [],
-    eta: "2026-10-19T10:40:00.000Z",
     stage: "first_push",
     creditPct: 46,
     steers: [{ id: "S12", text: "skip the docs page for now", stage: "acknowledged", at: at("09:50:00"), planChange: "−1 item" }],
@@ -164,8 +140,6 @@ export const statusDoc = (kind: Kind, quiet = false, asks: readonly string[] = k
     taskIds: ["T33"],
     changeIds: ["X12"],
     gate: "CI on #212",
-    eta: "2026-10-19T09:55:00.000Z",
-    overdueMinutes: 12,
     stage: "pr_open",
     creditPct: 61,
     slowerThanUsual: true,
@@ -176,7 +150,6 @@ export const statusDoc = (kind: Kind, quiet = false, asks: readonly string[] = k
     title: "Login form keeps the email on error",
     taskIds: ["T41"],
     changeIds: [],
-    eta: "2026-10-19T11:20:00.000Z",
     stage: "task_started",
     creditPct: 12,
     ...(g ? { stale: g } : {}),
@@ -218,6 +191,8 @@ export const statusDoc = (kind: Kind, quiet = false, asks: readonly string[] = k
     markers,
     eta,
     gates,
+    waitingOn,
+    blocking,
     headline,
     since,
     parts,
@@ -236,7 +211,6 @@ export const statusDoc = (kind: Kind, quiet = false, asks: readonly string[] = k
     risks: [
       { rule: "ci_red_main", level: "danger", message: "main CI red on acme/storefront: rust (macos) since 09:40" },
       { rule: "machine_flaky", level: "warning", message: "buildbox went offline 3× today (last 09:55, still offline)" },
-      { rule: "slipping", level: "warning", message: "ETA slipped 20h (6h scope, 14h slower)" },
       { rule: "riskiest_item", level: "warning", message: "riskiest: P12 Round totals per currency (L, 2 failed attempts)" },
     ],
     health: {
@@ -276,6 +250,8 @@ export const planningDoc = (): Obj => ({
   done: [],
   risks: [],
   gates: [],
+  waitingOn: ["the lead's plan"],
+  blocking: [],
   virtualTier: "M",
   eta: { samples: 2, basis: "none" },
   headline: { text: "The lead is planning the order. Nothing needs you.", source: "template", reason: "facts changed, rewriting", at: at("10:07:05") },
@@ -283,7 +259,7 @@ export const planningDoc = (): Obj => ({
   more: { done: 0, inProgress: 0, next: 0, risks: 0, parts: 0, stale: 0 },
 });
 
-/** A hub without the progress model: no estimate, range, accuracy or stage credit. */
+/** A hub without the progress model: no estimate, stage credit, critical path or blockers (gates stand in). */
 export const legacyDoc = (kind: Kind, asks?: readonly string[]): Obj => {
   const d = statusDoc(kind, false, asks);
   const strip = (p: Json | undefined): Json => {
@@ -291,14 +267,12 @@ export const legacyDoc = (kind: Kind, asks?: readonly string[]): Obj => {
     const { estimate: _e, ...rest } = p;
     return rest;
   };
-  const eta = d["eta"] as Obj;
-  const { p50: _a, p90: _b, accuracy: _c, ...legacyEta } = eta;
+  const { waitingOn: _w, blocking: _b, ...rest } = d;
   return {
-    ...d,
+    ...rest,
     progress: strip(d["progress"]),
     parts: (d["parts"] as Obj[]).map((p) => ({ ...p, progress: strip(p["progress"]) })),
     inProgress: (d["inProgress"] as Obj[]).map(({ stage: _s, creditPct: _p, slowerThanUsual: _u, ...row }) => row),
-    eta: legacyEta,
   };
 };
 
@@ -340,6 +314,8 @@ export const emptyDoc = (kind: Kind): Obj => ({
   markers: [],
   eta: { samples: 0, basis: "none" },
   gates: [],
+  waitingOn: [],
+  blocking: [],
   headline: { text: "Nothing running. Nothing needs you.", source: "template", reason: "no generated line yet", at: at("10:07:05") },
   since: { merged: 0, verified: 0, started: 0, failed: 0, asked: 0, scopeItems: 0 },
   parts: [],

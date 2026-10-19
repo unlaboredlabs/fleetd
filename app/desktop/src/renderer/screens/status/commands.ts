@@ -21,7 +21,7 @@ export const statusToggleCommand = {
   id: "status.toggle",
   title: "Status",
   group: "go-to",
-  keywords: ["progress", "eta", "health"],
+  keywords: ["progress", "blocking", "health"],
   run: (): void => {
     window.location.hash = toggleRoute(window.location.hash);
   },

@@ -2,6 +2,8 @@
 // serde shapes field for field until E1's generated types land; then this file re-exports those under the same names.
 //
 // The progress-model fields (PR #169, feat/progress-model) are optional: a hub without them renders as before.
+// No time estimates in the product (notes/no-time-product-brief.md): the hub's ETA fields (`eta`, part and row
+// ETAs, overdue minutes) are deliberately absent here, so nothing in the view can read them. Measured ages are fine.
 // Wire enums are open (`Open<…>`): a value this build doesn't know renders a generic fallback, never breaks.
 
 export type Timestamp = string;
@@ -62,15 +64,6 @@ export interface ProgressEstimate {
   readonly series?: readonly ProgressPoint[];
 }
 
-export interface ForecastAccuracy {
-  /** Four in five of the window's items finished within ±this % of their predicted p50. */
-  readonly withinPct: number;
-  readonly samples: number;
-  readonly windowDays: number;
-  /** "ETAs have been within ±20% this week". */
-  readonly text: string;
-}
-
 export interface Progress {
   readonly pct: number;
   readonly polishPct?: number;
@@ -82,23 +75,6 @@ export interface Progress {
   readonly marker?: Marker;
   readonly stale?: StaleMark;
   readonly estimate?: ProgressEstimate;
-}
-
-export type EtaBasis = Open<"order" | "project" | "fleet" | "none">;
-
-export interface StatusEta {
-  readonly current?: Timestamp;
-  readonly original?: Timestamp;
-  readonly slip?: { readonly scopeMinutes: number; readonly speedMinutes: number };
-  readonly lead?: Timestamp;
-  readonly rate?: number;
-  readonly samples: number;
-  readonly basis: EtaBasis;
-  readonly chain?: string;
-  /** The progress model's range: median and 90th percentile of the remaining time. */
-  readonly p50?: Timestamp;
-  readonly p90?: Timestamp;
-  readonly accuracy?: ForecastAccuracy;
 }
 
 export interface Gate {
@@ -153,8 +129,6 @@ export interface InProgressRow {
   readonly taskIds: readonly string[];
   readonly changeIds: readonly string[];
   readonly gate?: string;
-  readonly eta?: Timestamp;
-  readonly overdueMinutes?: number;
   readonly stale?: StaleMark;
   readonly steers?: readonly StatusSteer[];
   readonly stage?: ItemStage;
@@ -248,7 +222,6 @@ export interface ScopePart {
   readonly scope?: StatusScope;
   readonly milestoneId?: string;
   readonly progress: Progress;
-  readonly eta?: Timestamp;
 }
 
 export interface MoreCounts {
@@ -260,6 +233,17 @@ export interface MoreCounts {
   readonly stale: number;
 }
 
+/** PM (provisional, not on the wire yet): one step of the critical path, "review of #12" → "CI" → "merge". */
+export type PathStep = string | { readonly label: string; readonly since?: Timestamp; readonly workstreamId?: string };
+
+/** PM (provisional): something stopping work now, with when it started (a measured age, not an estimate). */
+export interface Blocker {
+  readonly label: string;
+  readonly since?: Timestamp;
+  readonly itemId?: string;
+  readonly workstreamId?: string;
+}
+
 export interface StatusDoc {
   readonly scope: StatusScope;
   readonly title: string;
@@ -268,7 +252,6 @@ export interface StatusDoc {
   readonly now: Timestamp;
   readonly progress: Progress;
   readonly markers: readonly Marker[];
-  readonly eta: StatusEta;
   readonly gates: readonly Gate[];
   readonly headline: Headline;
   readonly since: Since;
@@ -282,6 +265,10 @@ export interface StatusDoc {
   readonly stale: readonly StaleSource[];
   readonly more: MoreCounts;
   readonly virtualTier?: Open<"S" | "M" | "L">;
+  /** PM (provisional): the critical path, in order. Without it the view falls back to `gates`. */
+  readonly waitingOn?: readonly PathStep[];
+  /** PM (provisional): what blocks work now. Without it the view uses the serial gates. */
+  readonly blocking?: readonly Blocker[];
 }
 
 export interface StatusGetOutput {
@@ -294,8 +281,6 @@ export interface StatusWaitOutput {
   readonly unchanged?: boolean;
   readonly version: number;
 }
-
-export const MIN_SAMPLES = 5;
 
 export const scopeKey = (scope: StatusScope): string => {
   switch (scope.kind) {

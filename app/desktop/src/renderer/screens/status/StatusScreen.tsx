@@ -1,5 +1,6 @@
 // The Status view (⌘.): how far the fleet, a project or an order is, as fleetd verified it, and what is in the way.
-// Spec: docs/build/status-spec.md §10, plus the progress model (two-tone bar, planning, sparkline, ETA range).
+// Spec: docs/build/status-spec.md §10, plus the progress model (two-tone bar, planning, sparkline) and the
+// no-time rule: state and measured ages, never an estimated time.
 
 import { useMemo, useSyncExternalStore } from "react";
 import { Button, cx, Dot, Text } from "../../ui";
