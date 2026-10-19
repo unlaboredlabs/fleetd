@@ -14,6 +14,7 @@ import {
   refill,
   startOn,
   synced,
+  syncedMerge,
   updateTarget,
   warningLine,
   type Filled,
@@ -175,6 +176,26 @@ group("defaults that change under an edit", () => {
     // No record of the base: nothing to send, and the Edit tab won't save it.
     const { base: _, ...noBase } = stale;
     expect(fillBase(detail({ ...staleHubWide, stale: noBase }))).toBeNull();
+  });
+
+  it("keeps a merge in progress against the default it merges, when fleetd's default moves again", () => {
+    const first = syncedMerge(null, staleHubWide, "hub", "");
+    expect(first?.filled.base).toBe(v2.ref);
+    // Default three ships while the merge is being edited.
+    const v3 = v("4", "Default three.\n");
+    const moved = detail({ ...staleHubWide, default: v3, stale: { ...stale, current: v3, merged: "Default three.\nMine.\n" } });
+    const during = syncedMerge(first?.filled ?? null, moved, "hub", "Default two.\nMine, merged.\n");
+    expect(during).toMatchObject({ refill: false, filled: { base: v2.ref } });
+    // An untouched merge simply takes the newer one.
+    expect(syncedMerge(first?.filled ?? null, moved, "hub", first?.filled.text ?? "")).toMatchObject({ refill: true, filled: { base: v3.ref } });
+    expect(syncedMerge(null, detail(), "hub", "")).toBeNull();
+  });
+
+  it("asks before a link drops a merge-only draft", () => {
+    const filled = { scope: "hub", id: "lead.start", ref: mine.ref, text: mine.text, base: v1.ref };
+    const mergeDraft = { filled, text: mine.text, mergedFilled: { ...filled, ref: v2.ref, text: "merged", base: v2.ref }, merged: "merged, edited" };
+    expect(startOn(mergeDraft, { prompt: "router", for: null })).toMatchObject({ id: "lead.start", ask: { id: "router" } });
+    expect(startOn({ ...mergeDraft, merged: "merged" }, { prompt: "router", for: null }).ask).toBeNull();
   });
 
   it("opens on a kept draft and asks before following a link to another prompt or scope", () => {

@@ -48,7 +48,20 @@ export const fillBase = (d: PromptDetail): string | null => (d.stale ? (d.stale.
  * base it was written against, even when fleetd's default moved meanwhile (a hub upgrade).
  */
 export function synced(before: Filled | null, d: PromptDetail, scope: string, editor: string): { filled: Filled; refill: boolean } {
-  const now: Filled = { scope, id: d.id, ref: d.effective.ref, text: d.effective.text, base: fillBase(d) };
+  return keepBase(before, { scope, id: d.id, ref: d.effective.ref, text: d.effective.text, base: fillBase(d) }, editor);
+}
+
+/**
+ * The same for the Update view's merge: it is written against the new default it merges in, and a merge in
+ * progress keeps that base when fleetd's default moves again, so a save of it comes back stale with the newer
+ * change to merge instead of dropping it. Null when there is nothing stale to merge.
+ */
+export function syncedMerge(before: Filled | null, d: PromptDetail, scope: string, merged: string): { filled: Filled; refill: boolean } | null {
+  if (!d.stale) return null;
+  return keepBase(before, { scope, id: d.id, ref: d.stale.current.ref, text: d.stale.merged, base: d.stale.current.ref }, merged);
+}
+
+function keepBase(before: Filled | null, now: Filled, editor: string): { filled: Filled; refill: boolean } {
   const take = refill(before, now, editor);
   if (take || before === null || editor === before.text) return { filled: now, refill: take };
   return { filled: { ...now, base: before.base }, refill: false };
@@ -62,11 +75,12 @@ export function updateTarget(d: PromptDetail, s: Scope): { scope: PromptScope; p
 /** Where the page opens: the route, unless a kept draft for another prompt or scope would be dropped, in which case
  * it opens on the draft and asks before following the route. */
 export function startOn(
-  kept: { filled: Filled; text: string } | null,
+  kept: { filled: Filled; text: string; mergedFilled?: Filled | null; merged?: string } | null,
   route: Pick<SettingsRoute, "prompt" | "for">,
 ): { scope: Scope; id: string | null; ask: { scope: Scope; id: string | null } | null } {
   const target = { scope: parseScope(route.for), id: route.prompt };
-  if (!kept || kept.text === kept.filled.text) return { ...target, ask: null };
+  const draft = kept !== null && (kept.text !== kept.filled.text || (kept.mergedFilled != null && kept.merged !== kept.mergedFilled.text));
+  if (!kept || !draft) return { ...target, ask: null };
   const here = { scope: parseScope(kept.filled.scope), id: kept.filled.id };
   const to = { scope: target.scope, id: target.id ?? here.id };
   const same = scopeKey(to.scope) === kept.filled.scope && to.id === here.id;

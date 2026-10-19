@@ -27,12 +27,12 @@ import {
   isDirty,
   parseScope,
   projectRefOf,
-  refill,
   resetLine,
   savedLine,
   scopeKey,
   startOn,
   synced,
+  syncedMerge,
   token,
   updateTarget,
   warningLine,
@@ -102,10 +102,10 @@ export function Prompts({ route }: { route: SettingsRoute }) {
       setChecked({ text: next.filled.text, warnings: d.warnings });
     }
     setFilled(next.filled);
-    if (d.stale) {
-      const m: Filled = { scope: sk, id: d.id, ref: d.stale.current.ref, text: d.stale.merged, base: d.stale.current.ref };
-      if (refill(mergedFilled, m, merged)) setMerged(m.text);
-      setMergedFilled(m);
+    const m = syncedMerge(mergedFilled, d, sk, merged);
+    if (m) {
+      if (m.refill) setMerged(m.filled.text);
+      setMergedFilled(m.filled);
       if (toUpdate) {
         setToUpdate(false);
         setView("update");
@@ -205,7 +205,8 @@ export function Prompts({ route }: { route: SettingsRoute }) {
     if (d && filled) save(text, { scope: editScope(d, scope), projectRef }, filled.base);
   };
   const saveUpdate = (text: string) => {
-    if (d?.stale) save(text, updateTarget(d, scope), d.stale.current.ref);
+    // The default the merge was written against: if fleetd's moved again meanwhile, the save comes back stale.
+    if (d?.stale) save(text, updateTarget(d, scope), mine(mergedFilled) ? mergedFilled.base : d.stale.current.ref);
   };
 
   const reset = (which: ResetFor) => {
