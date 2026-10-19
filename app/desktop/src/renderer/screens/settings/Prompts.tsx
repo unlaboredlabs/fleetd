@@ -400,19 +400,19 @@ function PromptList(props: {
                   onClick={() => toggleGroup(group.key)}
                 >
                   <ChevronRight className={s.chevron} aria-hidden />
-                  <span className={s.rowText}>
-                    <Text strong>{group.title}</Text>
-                    {open && !searching ? (
-                      <Text size="xs" tone="quiet">
-                        {group.blurb}
-                      </Text>
-                    ) : null}
-                  </span>
+                  <Text strong>{group.title}</Text>
                   <Text size="xs" tone={updates > 0 ? "warning" : "quiet"} tabular>
                     {updates > 0 ? `${updates} to review · ` : ""}
                     {edited > 0 ? `${edited} edited · ` : ""}
                     {rows.length}
                   </Text>
+                  {open && !searching ? (
+                    <span className={s.groupBlurb}>
+                      <Text size="xs" tone="quiet">
+                        {group.blurb}
+                      </Text>
+                    </span>
+                  ) : null}
                 </button>
                 {open ? (
                   <div className={s.groupRows}>
@@ -496,7 +496,7 @@ function Detail(props: {
         <IdChip label={row.name} id={d.id} kind="prompt" strong size="lg" />
         <Text tone="quiet">{row.description}</Text>
         <Text size="xs" tone="quiet">
-          {`When: ${d.sentWhen.replace(/\.$/u, "")}. ${inEffect} ${lands}`}
+          {`${inEffect} ${lands}`}
         </Text>
       </div>
 
@@ -518,16 +518,18 @@ function Detail(props: {
         </TabList>
 
         <TabPanel value="edit" className={s.panel}>
-          <Textarea
-            ref={area}
-            className={s.editor}
-            aria-label={`${row.name}: text`}
-            value={editor}
-            minRows={10}
-            maxRows={40}
-            placeholder="An empty prompt can't be saved."
-            onChange={(e) => props.setEditor(e.target.value)}
-          />
+          {/* The prompt exactly as sent, markdown and placeholders included: a code view to the QA text rule. */}
+          <div data-text="code">
+            <Textarea
+              ref={area}
+              aria-label={`${row.name}: text`}
+              value={editor}
+              minRows={10}
+              maxRows={40}
+              placeholder="An empty prompt can't be saved."
+              onChange={(e) => props.setEditor(e.target.value)}
+            />
+          </div>
           <Warnings text={editor} checked={props.checked} />
           <div className={s.actions}>
             <Button variant="primary" disabled={!canSave(editor, d.effective.text, busy)} onClick={() => props.onSave(editor)}>
@@ -708,14 +710,15 @@ function Update(props: {
           <Text>Both changed the same lines. Keep one side between the &lt;&lt;&lt;&lt;&lt;&lt;&lt; and &gt;&gt;&gt;&gt;&gt;&gt;&gt; markers; left in, they are sent as written.</Text>
         </div>
       ) : null}
-      <Textarea
-        className={s.editor}
-        aria-label="Both changes together"
-        value={props.merged}
-        minRows={10}
-        maxRows={40}
-        onChange={(e) => props.setMerged(e.target.value)}
-      />
+      <div data-text="code">
+        <Textarea
+          aria-label="Both changes together"
+          value={props.merged}
+          minRows={10}
+          maxRows={40}
+          onChange={(e) => props.setMerged(e.target.value)}
+        />
+      </div>
       <Warnings text={props.merged} checked={props.checked} />
       <div className={s.actions}>
         <Button variant="primary" disabled={props.busy || props.merged.trim() === ""} onClick={() => props.onSave(props.merged)}>

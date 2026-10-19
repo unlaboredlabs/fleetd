@@ -177,6 +177,13 @@
   font: inherit;
   text-align: left;
 }
+.groupBlurb {
+  grid-column: 2 / -1;
+  min-width: 0;
+}
+.groupHead > :nth-child(3) {
+  padding-top: 2px;
+}
 .groupHead:hover {
   background: var(--hover);
 }
@@ -280,10 +287,6 @@
   flex-direction: column;
   gap: var(--space-3);
   padding-top: var(--space-3);
-}
-.editor {
-  font-size: var(--text-md);
-  line-height: 22px;
 }
 .warnings {
   display: flex;
