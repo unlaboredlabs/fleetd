@@ -192,14 +192,16 @@ export const screens: readonly Screen[] = [
   },
   // The lead chat (lead-chat-spec.md), registered ahead of its slices, each pending until its writer lands it and
   // deletes `pending` (check the id, route and open step then).
-  // A1 (F1): the sidebar's needs-you dot and running indicator, around the remembered project's chat.
+  // A1 (F1): the sidebar's needs-you dot and running indicator around the remembered project's chat, and on Status
+  // with status-rows (eight projects mixing both marks, neither, and a ~120-character name; only some have chats, so
+  // it is shot beside Status rather than a chat).
   {
     id: "shell",
     route: "#/",
     fixtures: ["chat-waiting", "live-20", "chat-empty"],
     variant: "chat",
-    pending: "A1 frame (F1) and fixtures/chat (E3b)",
   },
+  { id: "shell", route: "#/status", fixtures: ["status-rows"], variant: "sidebar" },
   // A2/A3 (F3, F4): the conversation and its composer: Markdown, paging through a long history with the migrated
   // orders, a reply streaming in, attachments, the lead waiting on you, a first message, and the link down.
   {
