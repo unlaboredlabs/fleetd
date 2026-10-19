@@ -3,7 +3,7 @@
 // chips in train order (queued → CI → merged); a chip that changes place slides there, a merged one leaves after
 // 10 s. Every move is one transition on a change; nothing runs while the trains stand still.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Dot, Truncate, cx, toast } from "../../ui";
+import { Dot, Tooltip, Truncate, cx, toast } from "../../ui";
 import type { MachineLive, PrChip, SlotState, TrainLive } from "./contracts";
 import { peekNow, useNow } from "./clock";
 import { useData } from "../../src/data/react";
@@ -39,19 +39,34 @@ export function MachineStrip({
   return (
     <div className={s.strip} data-strip="machines">
       {machines.map((m) => (
-        <button type="button" key={m.machineId} className={s.machineSeg} onClick={onOpen} disabled={!onOpen} aria-label={`${m.name}: open Machines`}>
-          <span className={s.machineName}>{m.name}</span>
-          <Dot color={m.status === "online" ? "var(--success)" : "var(--warning)"} label={m.status} />
-          {machineParts(m, now).map(([text, tone], i) => (
-            <span key={i} className={cx(TONE[tone])}>
-              {i > 0 ? "· " : ""}
-              {text}
-            </span>
-          ))}
-        </button>
+        <MachineSeg key={m.machineId} m={m} now={now} onOpen={onOpen} />
       ))}
       {slots ? <span className={s.slots}>{slotsText(slots.cap, use)}</span> : null}
     </div>
+  );
+}
+
+/**
+ * One machine on the strip. Its text is one line that ends in "…" when the window is narrow (the whole of it in the
+ * tooltip), so the least important parts at its end (memory, claude usage) are the ones that go.
+ */
+function MachineSeg({ m, now, onOpen }: { m: MachineLive; now: number; onOpen?: (() => void) | undefined }) {
+  const parts = machineParts(m, now);
+  const full = `${m.name} ${parts.map(([t]) => t).join(" · ")}`;
+  return (
+    <Tooltip content={full}>
+      <button type="button" className={s.machineSeg} onClick={onOpen} disabled={!onOpen} aria-label={`${full}: open Machines`}>
+        <span className={s.machineText} data-text="truncate">
+          <span className={s.machineName}>{m.name}</span> <Dot color={m.status === "online" ? "var(--success)" : "var(--warning)"} />{" "}
+          {parts.map(([text, tone], i) => (
+            <span key={i} className={cx(TONE[tone])}>
+              {i > 0 ? " · " : ""}
+              {text}
+            </span>
+          ))}
+        </span>
+      </button>
+    </Tooltip>
   );
 }
 
@@ -125,7 +140,30 @@ function Chips({ chips, onOpenPr }: { chips: readonly { chip: PrChip; leaving: b
     }
     was.current = now;
   }, [order]);
+  // Chips that don't fit are left off whole (never cut at the side), and counted: "+2".
+  const [more, setMore] = useState(0);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      const slots = [...el.querySelectorAll<HTMLElement>("[data-chip]")];
+      for (const n of slots) n.style.display = "";
+      const fits = (n: HTMLElement, room: number) => n.offsetLeft - el.offsetLeft + n.offsetWidth <= room;
+      let hidden = 0;
+      if (!slots.every((n) => fits(n, el.clientWidth))) {
+        for (const n of [...slots].reverse()) {
+          if (fits(n, el.clientWidth - MORE_W)) break;
+          n.style.display = "none";
+          hidden++;
+        }
+      }
+      setMore(hidden);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [order]);
   return (
+    <>
     <span ref={box} className={s.chips}>
       {chips.map(({ chip, leaving }, i) => (
         <span key={chip.changeId} data-chip={chip.changeId} className={s.chipSlot}>
@@ -142,8 +180,13 @@ function Chips({ chips, onOpenPr }: { chips: readonly { chip: PrChip; leaving: b
         </span>
       ))}
     </span>
+    {more > 0 ? <span className={s.moreChips}>+{more}</span> : null}
+    </>
   );
 }
+
+/** Room kept for the "+2" after the chips that fit. */
+const MORE_W = 32;
 
 function ChipBody({ chip }: { chip: PrChip }) {
   return (
