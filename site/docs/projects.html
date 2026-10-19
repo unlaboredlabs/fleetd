@@ -210,16 +210,17 @@ both; the lead plans to them.</p>
 <td>Per project: Max agents</td>
 <td>The project’s agents: writers, readers, reviewers, verifiers. Not the lead’s own turns.</td>
 <td>The fleet cap</td>
-<td>The “agents 6 / 12” control in the project’s chat header, or the project’s settings. From 1 up to the fleet cap.</td>
+<td>Click “agents 6 / 12” in the project’s chat header, or use Settings → Agents. From 1 up to the fleet cap.</td>
 </tr>
 <tr>
 <td>Fleet-wide</td>
 <td>Every running turn, leads included.</td>
 <td></td>
-<td>The fleet’s settings. Needs an admin key.</td>
+<td>Settings → Agents → Whole fleet. Needs an admin key.</td>
 </tr>
 </tbody>
 </table>
+<p>The header shows “· 2 waiting” when agents are queued. Before you save, the slider says what the change will do.</p>
 <p>From an <a href="/docs/mcp-clients">MCP client</a>: <code dir="auto">cap_set {project: {projectRef, maxAgents, pauseExtras?}}</code> with an operate
 key, or <code dir="auto">cap_set {cap}</code> for the fleet cap with an admin key.</p>
 <p>When the cap is reached:</p>
@@ -245,7 +246,7 @@ the merge train.</li>
 <td>Max agents 6 → 3: 6 running finish their work; new agents wait.</td>
 </tr>
 <tr>
-<td>Lower it and choose “pause the extras now”</td>
+<td>Lower it and tick “Pause the extras now”</td>
 <td>Agents over the cap push their work in progress and wait. Each resumes when a slot frees.</td>
 <td>Max agents 6 → 3: 3 agents push their work and wait; 3 keep running.</td>
 </tr>
