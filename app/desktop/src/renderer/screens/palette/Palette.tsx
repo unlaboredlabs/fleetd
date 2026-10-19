@@ -110,9 +110,14 @@ export function Palette({ initialQuery }: { initialQuery: string }) {
     <D.Root open onOpenChange={(open) => !open && closeOverlay()}>
       <D.Portal>
         <D.Overlay className={s.backdrop} />
-        <D.Content className={s.palette} data-screen={replying ? "palette.reply" : "palette"} aria-describedby={undefined}>
-          {/* Names the dialog for screen readers (aria-labelledby reads hidden text); hidden, not clipped, so it takes no box. */}
-          <D.Title hidden>Command palette</D.Title>
+        {/* Named by aria-label, not a visually hidden title, until the QA overflow check exempts sr-only text (E3). */}
+        <D.Content
+          className={s.palette}
+          data-screen={replying ? "palette.reply" : "palette"}
+          aria-label="Command palette"
+          aria-labelledby={undefined}
+          aria-describedby={undefined}
+        >
           <div className={s.field}>
             {replying ? <span className={s.mode}>Reply</span> : null}
             <input
