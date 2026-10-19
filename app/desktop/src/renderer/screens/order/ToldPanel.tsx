@@ -1,27 +1,16 @@
 // "What <x> was told": what a session was sent at its start, in human words (order-view brief A).
 
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { CallError } from "../../src/data/queries";
+import { useToolQuery } from "../../src/data/react";
 import { Button, Code, Dialog, IdChip, Text, Tooltip } from "../../ui";
 import { Message } from "./Conversation";
 import type { PromptSummary, SessionPrompt, ThreadRef } from "../../../shared/contracts";
 import { toldView, type ToldGroup, type ToldWho } from "./told";
 import s from "./order.module.css";
 
-type Load = { readonly t: "loading" } | { readonly t: "failed"; readonly message: string } | { readonly t: "ready"; readonly prompt: SessionPrompt; readonly registry: readonly PromptSummary[] };
-
-/** What the panel needs: the session's prompt and the registry's titles. Fixtures pass it ready. */
-export type ToldSource = (thread: ThreadRef, projectRef: { machineId: string; projectId: string } | undefined) => Promise<Load>;
-
-export const hubToldSource: ToldSource = async (thread, projectRef) => {
-  const [sp, list] = await Promise.all([
-    window.fleetd.hub.call("session_prompt_get", { machineId: thread.machineId, threadId: thread.threadId }),
-    window.fleetd.hub.call("prompts_list", projectRef ? { projectRef } : {}),
-  ]);
-  if (!sp.ok) return { t: "failed", message: sp.error.message };
-  const registry = list.ok ? (list.output as { prompts: readonly PromptSummary[] }).prompts : [];
-  return { t: "ready", prompt: (sp.output as { session: SessionPrompt }).session, registry };
-};
+const noPrompts: readonly PromptSummary[] = [];
 
 function Groups({ groups }: { groups: readonly ToldGroup[] }) {
   return (
@@ -111,38 +100,25 @@ function Body({ prompt, registry, who }: { prompt: SessionPrompt; registry: read
   );
 }
 
-/** Keyed by the thread, so opening another agent's panel starts from "loading". */
-function Loader(props: { thread: ThreadRef; who: ToldWho; projectRef: { machineId: string; projectId: string } | undefined; source: ToldSource }) {
-  const { source } = props;
+function Loader(props: { thread: ThreadRef; who: ToldWho; projectRef: { machineId: string; projectId: string } | undefined }) {
   const { machineId, threadId } = props.thread;
-  const pm = props.projectRef?.machineId;
-  const pp = props.projectRef?.projectId;
-  const [load, setLoad] = useState<Load>({ t: "loading" });
-  // Primitive deps: the order refetches on every event, handing over equal but new objects.
-  useEffect(() => {
-    let live = true;
-    void source({ machineId, threadId }, pm !== undefined && pp !== undefined ? { machineId: pm, projectId: pp } : undefined).then((l) => {
-      if (live) setLoad(l);
-    });
-    return () => {
-      live = false;
-    };
-  }, [machineId, threadId, pm, pp, source]);
-  if (load.t === "loading") return <Text tone="quiet">Loading what it was sent…</Text>;
-  if (load.t === "failed")
+  const prompt = useToolQuery("session_prompt_get", { machineId, threadId });
+  // The registry's titles; without them the ids still read as words.
+  const registry = useToolQuery("prompts_list", props.projectRef ? { projectRef: props.projectRef } : {});
+  if (prompt.error instanceof CallError)
     return (
       <div className={s.errorRow}>
         <Text tone="quiet">Couldn’t load what it was sent.</Text>
-        <IdChip label="Details" id={load.message} kind="error" size="xs" tone="quiet" />
+        <IdChip label="Details" id={prompt.error.error.message} kind="error" size="xs" tone="quiet" />
       </div>
     );
-  return <Body prompt={load.prompt} registry={load.registry} who={props.who} />;
+  if (prompt.data === undefined || (registry.data === undefined && !registry.isError)) return <Text tone="quiet">Loading what it was sent…</Text>;
+  return <Body prompt={prompt.data.session} registry={registry.data?.prompts ?? noPrompts} who={props.who} />;
 }
 
 export function ToldPanel(props: {
   open: { thread: ThreadRef; who: ToldWho; name: string } | undefined;
   projectRef: { machineId: string; projectId: string } | undefined;
-  source: ToldSource;
   onClose: () => void;
 }) {
   const { open } = props;
@@ -157,7 +133,7 @@ export function ToldPanel(props: {
       wide
     >
       {open === undefined ? null : (
-        <Loader key={`${open.thread.machineId}/${open.thread.threadId}`} thread={open.thread} who={open.who} projectRef={props.projectRef} source={props.source} />
+        <Loader key={`${open.thread.machineId}/${open.thread.threadId}`} thread={open.thread} who={open.who} projectRef={props.projectRef} />
       )}
     </Dialog>
   );

@@ -309,9 +309,9 @@ export function buildConversation(input: ConversationInput): Entry[] {
     flush();
   }
 
-  // Streamed messages the tail doesn't hold yet, while the lead works; once it is idle the tail has its replies, and
-  // a part left over is a stale copy.
-  const fresh = input.leadWorking ? streamed.filter((m) => !used.has(m.messageId) && m.text.trim() !== "") : [];
+  // Streamed messages the tail doesn't hold yet (it refetches on the thread's events); the newest is still arriving
+  // while the lead works.
+  const fresh = streamed.filter((m) => !used.has(m.messageId) && m.text.trim() !== "");
   fresh.forEach((m, i) => {
     const streaming = input.leadWorking && i === fresh.length - 1;
     out.push({ kind: "say", key: `live:${m.messageId}`, at: "", author: { kind: "lead" }, text: m.text, ...(streaming ? { streaming } : {}) });

@@ -215,6 +215,10 @@ const noEvents: DataState["events"] = [];
 /** A lane's live values as the feed last sent them (a project lead's included, which no card lists). */
 export const selectLiveLane = perKey((laneId) => (s: DataState) => s.live.lanes[laneId]);
 
+/** A project lead's recent messages in full, as streamed, oldest first. */
+export const selectLeadStream = perKey((laneId) => (s: DataState) => s.live.streams?.[laneId] ?? noStream);
+const noStream: NonNullable<DataState["live"]["streams"]>[string] = [];
+
 /** The message a lane is writing, as streamed so far. */
 export const selectLiveText = perKey((laneId) => (s: DataState) => s.live.text[laneId]);
 

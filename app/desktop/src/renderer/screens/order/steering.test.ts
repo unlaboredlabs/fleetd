@@ -3,7 +3,7 @@
 import { describe, expect, it } from "vitest";
 import type { Steer, TailItem } from "../../../shared/contracts";
 import { buildConversation, entryIndexAt, jumpTarget, type Entry } from "./conversation";
-import { emptyOrder, orderReducer, type OrderAction, type OrderData } from "./data";
+import { emptySteering, steeringReducer, type Steering, type SteeringAction } from "./data";
 import { reconnectWatcher, redirectId, redirecting, type Sending } from "./sending";
 
 const T0 = "2026-10-19T09:00:00.000Z";
@@ -31,15 +31,15 @@ const steer = (id: string, text: string, over: Partial<Steer> = {}): Steer => ({
   queuedAt: later(1),
   ...over,
 });
-const run = (actions: readonly OrderAction[]): OrderData => actions.reduce(orderReducer, emptyOrder("W1"));
-const conv = (d: OrderData, extra: Partial<Parameters<typeof buildConversation>[0]> = {}): Entry[] =>
+const run = (actions: readonly SteeringAction[]): Steering => actions.reduce(steeringReducer, emptySteering());
+const conv = (d: Steering, extra: Partial<Parameters<typeof buildConversation>[0]> = {}): Entry[] =>
   buildConversation({ tail: [], workstreamId: "W1", events: [], leadWorking: false, steers: d.steers, sending: d.sending, lanes: [], ...extra });
 const says = (c: Entry[]) => c.filter((e) => e.kind === "say");
 const lineOf = (e: Entry | undefined) => (e?.kind === "say" ? e.receipt?.line : undefined);
 
 describe("a steer the link cut off", () => {
   const words = "skip the docs page";
-  const cut: OrderAction[] = [
+  const cut: SteeringAction[] = [
     { t: "sending", s: row("crid-1", words) },
     { t: "sent", requestId: "crid-1", result: { ok: false, code: "disconnected", message: "the link to the hub dropped" } },
   ];
@@ -146,3 +146,4 @@ describe("a transcript jump to a tool call", () => {
     expect(jumpTarget(c[0] as Entry, later(0))).toEqual({ open: false });
   });
 });
+

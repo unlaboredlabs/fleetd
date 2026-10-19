@@ -137,6 +137,14 @@ describe("live frames", () => {
     expect(Object.keys(l.lanes)).toEqual(["T2"]);
   });
 
+  it("keeps a lead's messages in full past the text tail, and no stream for other lanes", () => {
+    const parts = Array.from({ length: 30 }, (_, i) => ({ laneId: "lead:devbox/p1", messageId: i < 20 ? "m1" : "m2", append: `${"x".repeat(299)}\n` }));
+    const l = applyLive(initialState().live, { ...frame(false, []), text: [...parts, { laneId: "T1", messageId: "t", append: "hi" }] }, 0);
+    expect(l.streams?.["lead:devbox/p1"]?.map((m) => [m.messageId, m.text.length])).toEqual([["m1", 6000], ["m2", 3000]]);
+    expect(l.text["lead:devbox/p1"]?.text).toHaveLength(2000);
+    expect(l.streams?.["T1"]).toBeUndefined();
+  });
+
   it("appends streamed text per message, keeping a 2000-unit tail", () => {
     let l = applyLive(initialState().live, { ...frame(false, []), text: [{ laneId: "L", messageId: "m1", append: "Hello " }, { laneId: "L", messageId: "m1", append: "there" }] }, 0);
     expect(l.text["L"]).toEqual({ messageId: "m1", text: "Hello there" });

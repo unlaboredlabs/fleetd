@@ -1,12 +1,16 @@
-// STOPGAP until E1's store and Query hooks land: the order's data straight from hub calls, refreshed by the hub's
-// own events and live frames (no polling). The screen reads only `OrderData`, so swapping this for E1's selectors
-// touches this file alone. Outputs are cast to the contract shapes in ./contracts, which E1's generated types replace.
+// The order view's data: the order, its lanes (live), events and claims from the shared store and selectors; the
+// brief, the lead's log and the steers as call-based reads that hub events refresh. Undefined from a selector means
+// the link isn't fresh or the read hasn't landed: a skeleton, never the last connection's data. Held here, per view:
+// the lead's log accumulated across refetches (the tail tool returns the newest 50), its streamed messages in full
+// (the store keeps a 2,000-character tail), and the steers this view is sending.
 
-import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
+import { useEffect, useMemo, useReducer, useRef } from "react";
+import type { AgentLane, CheckSpec, Claim, HubEvent, PrRef, Steer, SteerMode, SteerTarget, TailItem } from "../../../shared/contracts";
+import { CallError } from "../../src/data/queries";
+import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
+import { selectLeadStream, selectOrder, selectOrderEvents } from "../../src/data/selectors";
+import { projectKey } from "../../src/data/store";
 import { toast } from "../../ui";
-import type { HubFrame } from "../../../shared/hub";
-import { dataField } from "../../../shared/contracts";
-import type { AgentLane, CheckSpec, Claim, HubEvent, LiveText, PrRef, Steer, SteerMode, SteerTarget, TailItem, ThreadRef } from "../../../shared/contracts";
 import type { Streamed } from "./conversation";
 import { mergeSteer } from "./receipts";
 import { afterCall, reconnectWatcher, redirectId, type CallResult, type Sending } from "./sending";
@@ -28,7 +32,7 @@ export interface OrderData {
   /** Absent while the brief is a draft. */
   readonly doneWhen?: readonly CheckSpec[];
   readonly claim?: Claim;
-  /** The lead's log, oldest first, kept across refetches (the tail tool returns the newest 50). */
+  /** The lead's log, oldest first, kept across refetches. */
   readonly tail: readonly TailItem[];
   readonly tailError?: string | undefined;
   readonly steers: readonly Steer[];
@@ -68,43 +72,22 @@ export interface OrderActions {
   readonly stop: () => void;
 }
 
-type CardShape = {
-  readonly title: string;
-  readonly projectRef: { readonly machineId: string; readonly projectId: string };
-  readonly phase: string;
-  readonly settled: number;
-  readonly total: number;
-  readonly lanes: readonly AgentLane[];
-  readonly prs: readonly PrRef[];
-};
-type OrderGet = {
-  readonly order: CardShape;
-  readonly lead?: AgentLane;
-  readonly doneLanes: readonly AgentLane[];
-  readonly asks: readonly unknown[];
-  readonly claims?: readonly Claim[];
-};
-type WorkstreamGet = { readonly workstream: { readonly brief?: { readonly doneWhen: readonly CheckSpec[] } } };
+/** What this view holds itself, beside the store. */
+export interface Steering {
+  readonly tail: readonly TailItem[];
+  readonly steers: readonly Steer[];
+  readonly sending: readonly Sending[];
+  readonly redirected: ReadonlySet<string>;
+  readonly focus?: OrderData["focus"];
+}
 
-type Action =
-  | { readonly t: "order"; readonly out: OrderGet; readonly brief?: readonly CheckSpec[] }
-  | { readonly t: "error"; readonly message: string; readonly code: string }
+export type SteeringAction =
   | { readonly t: "tail"; readonly items: readonly TailItem[] }
-  | { readonly t: "tailError"; readonly message: string }
   | { readonly t: "steers"; readonly steers: readonly Steer[] }
-  | { readonly t: "event"; readonly event: HubEvent }
-  | { readonly t: "projects"; readonly names: ReadonlyMap<string, string> }
-  | { readonly t: "live"; readonly lanes: readonly { readonly laneId: string }[]; readonly text: readonly LiveText[] }
   | { readonly t: "sending"; readonly s: Sending }
   | { readonly t: "focus"; readonly threadId: string; readonly items?: readonly TailItem[]; readonly index?: number }
   | { readonly t: "sent"; readonly requestId: string; readonly result: CallResult };
 
-interface State extends OrderData {
-  readonly names: ReadonlyMap<string, string>;
-}
-
-// Streamed messages kept per view: plenty for a 20k-line run, bounded for a session left open for days.
-const MAX_STREAMED = 400;
 
 const tailKey = (i: TailItem) => (i.kind === "message" ? `m${i.at}${i.role}${i.text.slice(0, 64)}` : `a${i.at}${i.action.summary}`);
 
@@ -115,66 +98,14 @@ function mergeTail(old: readonly TailItem[], newestFirst: readonly TailItem[]): 
   return [...old, ...add].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
 }
 
-const projectName = (names: ReadonlyMap<string, string>, ref?: { machineId: string; projectId: string }) =>
-  ref ? (names.get(`${ref.machineId}/${ref.projectId}`) ?? "this project") : "";
+export const emptySteering = (): Steering => ({ tail: [], steers: [], sending: [], redirected: new Set() });
 
-function reduce(s: State, a: Action): State {
+export function steeringReducer(s: Steering, a: SteeringAction): Steering {
   switch (a.t) {
-    case "order": {
-      const o = a.out;
-      const running = o.order.lanes.filter((l) => l.role !== "lead");
-      const ids = new Set(running.map((l) => l.laneId));
-      return {
-        ...s,
-        status: "ready",
-        title: o.order.title,
-        projectRef: o.order.projectRef,
-        projectName: projectName(s.names, o.order.projectRef),
-        phase: o.order.phase,
-        settled: o.order.settled,
-        total: o.order.total,
-        ...(o.lead ? { lead: o.lead } : {}),
-        lanes: [...running, ...o.doneLanes.filter((l) => !ids.has(l.laneId))],
-        prs: o.order.prs,
-        asks: o.asks.length,
-        ...(a.brief ? { doneWhen: a.brief } : {}),
-        ...(o.claims?.[0] ? { claim: o.claims[0] } : {}),
-      };
-    }
-    case "error":
-      return { ...s, status: { error: a.message, code: a.code } };
-    case "tail": {
-      // A message the tail now holds in full needs no streamed copy; a cut one keeps it.
-      const whole = new Set(a.items.flatMap((i) => (i.kind === "message" ? [i.text] : [])));
-      const streamed = s.streamed.filter((m) => !whole.has(m.text));
-      return { ...s, tail: mergeTail(s.tail, a.items), tailError: undefined, streamed: streamed.length === s.streamed.length ? s.streamed : streamed };
-    }
-    case "tailError":
-      return { ...s, tailError: a.message };
+    case "tail":
+      return { ...s, tail: mergeTail(s.tail, a.items) };
     case "steers":
       return { ...s, steers: a.steers.reduce<readonly Steer[]>(mergeSteer, s.steers) };
-    case "event":
-      return s.events.some((e) => e.seq === a.event.seq) ? s : { ...s, events: [...s.events, a.event] };
-    case "projects":
-      return { ...s, names: a.names, projectName: projectName(a.names, s.projectRef) };
-    case "live": {
-      const lead = s.lead;
-      let streamed = s.streamed;
-      for (const t of a.text) {
-        if (lead === undefined || t.laneId !== lead.laneId) continue;
-        const last = streamed.at(-1);
-        streamed =
-          last?.messageId === t.messageId
-            ? [...streamed.slice(0, -1), { messageId: t.messageId, text: last.text + t.append }]
-            : [...streamed.slice(-(MAX_STREAMED - 1)), { messageId: t.messageId, text: t.append }];
-      }
-      const live = new Map(a.lanes.map((l) => [l.laneId, l]));
-      const patch = (l: AgentLane): AgentLane => {
-        const f = live.get(l.laneId) as AgentLane["live"];
-        return f ? { ...l, status: f.status, live: f } : l;
-      };
-      return { ...s, lanes: s.lanes.map(patch), ...(lead ? { lead: patch(lead) } : {}), streamed };
-    }
     case "sending":
       // Upsert: a resend (same id) is the same row.
       return { ...s, sending: [...s.sending.filter((x) => x.requestId !== a.s.requestId), a.s] };
@@ -196,155 +127,76 @@ function reduce(s: State, a: Action): State {
   }
 }
 
-/** The reducer and its start, for tests of how sends, resends and refetches combine. */
-export const orderReducer = (s: OrderData, a: Action): OrderData => reduce({ names: new Map(), ...s }, a);
-export type OrderAction = Action;
-export const emptyOrder = (workstreamId: string): OrderData => initial(workstreamId);
-
-const initial = (workstreamId: string): State => ({
-  status: "loading",
-  workstreamId,
-  title: "",
-  projectName: "",
-  lanes: [],
-  prs: [],
-  asks: 0,
-  tail: [],
-  steers: [],
-  events: [],
-  sending: [],
-  redirected: new Set(),
-  streamed: [],
-  names: new Map(),
-});
-
-const errorText = (o: { ok: false; error: { message: string } }) => o.error.message;
+const noLanes: readonly AgentLane[] = [];
 
 export function useOrder(workstreamId: string, jump?: Jump): [OrderData, OrderActions] {
-  const [state, dispatch] = useReducer(reduce, workstreamId, initial);
-  // Read by the frame listener and the actions, which outlive a render.
-  const leadThread = useRef<ThreadRef | undefined>(undefined);
-  const steersRef = useRef(state.steers);
-  const sendingRef = useRef(state.sending);
+  const layer = useDataLayer();
+  const page = useData(selectOrder(workstreamId));
+  const events = useData(selectOrderEvents(workstreamId));
+  const projects = useData((s) => s.projects);
+  const hubPhase = useData((s) => s.hub.phase);
+  const generation = useData((s) => s.generation);
+  const [local, dispatch] = useReducer(steeringReducer, undefined, emptySteering);
+
+  const orderQ = useToolQuery("order_get", { workstreamId });
+  const briefQ = useToolQuery("workstream_get", { workstreamId });
+  const thread = page?.lead?.threadRef;
+  const tailQ = useToolQuery("thread_tail", { machineId: thread?.machineId ?? "", threadId: thread?.threadId ?? "", n: 50 }, { enabled: thread !== undefined });
+  const steersQ = useToolQuery("steers_list", { workstreamId, limit: 100 });
+
   useEffect(() => {
-    leadThread.current = state.lead?.threadRef;
-    steersRef.current = state.steers;
-    sendingRef.current = state.sending;
-  });
-
-  const loadOrder = useCallback(async () => {
-    const [o, w] = await Promise.all([
-      window.fleetd.hub.call("order_get", { workstreamId }),
-      window.fleetd.hub.call("workstream_get", { workstreamId }),
-    ]);
-    if (!o.ok) return dispatch({ t: "error", message: errorText(o), code: o.error.code });
-    const brief = w.ok ? (w.output as WorkstreamGet).workstream.brief?.doneWhen : undefined;
-    dispatch({ t: "order", out: o.output as OrderGet, ...(brief ? { brief } : {}) });
-  }, [workstreamId]);
-
-  const loadTail = useCallback(async () => {
-    const thread = leadThread.current;
-    if (thread === undefined) return;
-    const r = await window.fleetd.hub.call("thread_tail", { machineId: thread.machineId, threadId: thread.threadId, n: 50 });
-    if (r.ok) dispatch({ t: "tail", items: (r.output as { items: readonly TailItem[] }).items });
-    else dispatch({ t: "tailError", message: errorText(r) });
-  }, []);
-
-  const loadSteers = useCallback(async () => {
-    const r = await window.fleetd.hub.call("steers_list", { workstreamId, limit: 100 });
-    if (r.ok) dispatch({ t: "steers", steers: (r.output as { steers: readonly Steer[] }).steers });
-  }, [workstreamId]);
-
-  /** One steer_send for a row, with the row's own id; a timeout while the link stays up is retried once. */
-  const send = useCallback(async (row: Sending): Promise<SendOutcome> => {
-    for (let attempt = 0; ; attempt++) {
-      dispatch({ t: "sending", s: { ...row, state: { t: "sending" } } });
-      const r = await window.fleetd.hub.call("steer_send", { target: row.target, text: row.text, mode: row.mode, clientRequestId: row.requestId });
-      const result: CallResult = r.ok ? { ok: true, steer: r.output as Steer } : { ok: false, code: r.error.code, message: r.error.message };
-      dispatch({ t: "sent", requestId: row.requestId, result });
-      if (result.ok) return "sent";
-      if (result.code === "timeout" && attempt === 0) continue;
-      return result.code === "timeout" || result.code === "disconnected" ? "pending" : "failed";
-    }
-  }, []);
-
-  const leadThreadId = state.lead?.threadRef?.threadId;
+    if (tailQ.data) dispatch({ t: "tail", items: tailQ.data.items });
+  }, [tailQ.data]);
   useEffect(() => {
-    void loadOrder();
-    void loadSteers();
-  }, [loadOrder, loadSteers]);
-  useEffect(() => {
-    if (leadThreadId !== undefined) void loadTail();
-  }, [leadThreadId, loadTail]);
+    if (steersQ.data) dispatch({ t: "steers", steers: steersQ.data.steers });
+  }, [steersQ.data]);
 
-  // Open at a transcript item: the lead's window around it here; an agent's thread is the steer sheet's to show.
-  const jumpThread = jump?.thread;
-  const jumpItem = jump?.item;
-  const leadMachine = state.lead?.threadRef?.machineId;
-  useEffect(() => {
-    if (jumpThread === undefined || jumpItem === undefined || leadThreadId === undefined || leadMachine === undefined) return;
-    if (jumpThread !== leadThreadId) return dispatch({ t: "focus", threadId: jumpThread });
-    void window.fleetd.hub
-      .call("thread_window", { machineId: leadMachine, threadId: leadThreadId, itemId: jumpItem, before: 25, after: 25 })
-      .then((r) => {
-        if (!r.ok) return dispatch({ t: "focus", threadId: jumpThread, items: [] });
-        const out = r.output as { items: readonly TailItem[]; focus?: number };
-        dispatch({ t: "focus", threadId: jumpThread, items: out.items, ...(out.focus === undefined ? {} : { index: out.focus }) });
-      });
-  }, [jumpThread, jumpItem, leadThreadId, leadMachine]);
+  // The lead's messages as they streamed, in full (the store keeps them per lead).
+  const stream = useData(selectLeadStream(page?.lead?.laneId ?? ""));
 
+  // The live feed for this order's lanes and its lead's text while the view is open; the board's when it closes.
+  // (A view-scoped subscription setting, not a read: the frames themselves go through the store.)
   useEffect(() => {
     void window.fleetd.hub.live({ board: false, focus: workstreamId });
-    let tailTimer: number | undefined;
-    // A burst of thread events (one per item) refetches the tail once.
-    const tailSoon = () => {
-      window.clearTimeout(tailTimer);
-      tailTimer = window.setTimeout(() => void loadTail(), 250);
-    };
-    const resendable = reconnectWatcher();
-    const off = window.fleetd.hub.subscribe((frame: HubFrame) => {
-      for (const row of resendable(frame, sendingRef.current)) void send(row);
-      if (frame.t === "snapshot") {
-        const projects = (frame.snapshot as { projects?: ReadonlyArray<{ machineId: string; projectId: string; title: string }> }).projects ?? [];
-        dispatch({ t: "projects", names: new Map(projects.map((p) => [`${p.machineId}/${p.projectId}`, p.title])) });
-        void loadOrder();
-        void loadSteers();
-        tailSoon();
-      } else if (frame.t === "event") {
-        const e = frame.event;
-        if (e.threadId != null && e.threadId === leadThread.current?.threadId) tailSoon();
-        if (dataField(e, "workstreamId") !== workstreamId) return;
-        if (e.type.startsWith("steer.")) void loadSteers();
-        else {
-          dispatch({ t: "event", event: e });
-          void loadOrder();
-        }
-      } else if (frame.t === "live") {
-        const f = frame.frame as unknown as { lanes: readonly { laneId: string }[]; text: readonly LiveText[] };
-        dispatch({ t: "live", lanes: f.lanes, text: f.text });
-      }
-    });
-    return () => {
-      off();
-      window.clearTimeout(tailTimer);
-      void window.fleetd.hub.live({ board: true });
-    };
-  }, [workstreamId, loadOrder, loadSteers, loadTail, send]);
+    return () => void window.fleetd.hub.live({ board: true });
+  }, [workstreamId]);
 
-  const actions = useMemo<OrderActions>(() => {
+  // Read by the actions and the reconnect resend, which outlive a render.
+  const steersRef = useRef(local.steers);
+  const sendingRef = useRef(local.sending);
+  useEffect(() => {
+    steersRef.current = local.steers;
+    sendingRef.current = local.sending;
+  });
+
+  const refetchSteers = steersQ.refetch;
+  const refetchOrder = orderQ.refetch;
+  const { actions, send } = useMemo(() => {
+    /** One steer_send for a row, with the row's own id; a timeout while the link stays up is retried once. */
+    const send = async (row: Sending): Promise<SendOutcome> => {
+      for (let attempt = 0; ; attempt++) {
+        dispatch({ t: "sending", s: { ...row, state: { t: "sending" } } });
+        const r = await layer.call("steer_send", { target: row.target, text: row.text, mode: row.mode, clientRequestId: row.requestId });
+        const result: CallResult = r.ok ? { ok: true, steer: r.output } : { ok: false, code: r.error.code, message: r.error.message };
+        dispatch({ t: "sent", requestId: row.requestId, result });
+        if (result.ok) return "sent";
+        if (result.code === "timeout" && attempt === 0) continue;
+        return result.code === "timeout" || result.code === "disconnected" ? "pending" : "failed";
+      }
+    };
     const steer = (target: SteerTarget, text: string, mode: SteerMode, requestId: string) => {
       // A retry of a refused steer keeps its row (and its id).
       const prior = sendingRef.current.find((r) => r.requestId === requestId);
       return send({ requestId, target, workstreamId, text, mode, at: prior?.at ?? new Date().toISOString(), state: { t: "sending" } });
     };
-    return {
+    const actions: OrderActions = {
       steer,
       withdraw: (steerId) => {
-        void window.fleetd.hub.call("steer_withdraw", { steerId }).then((r) => {
-          if (r.ok) return dispatch({ t: "steers", steers: [r.output as Steer] });
+        void layer.call("steer_withdraw", { steerId }).then((r) => {
+          if (r.ok) return dispatch({ t: "steers", steers: [r.output] });
           // Refused (already delivered) or no hub: say so, and show what the hub has now.
           toast({ title: `${steerId} wasn’t withdrawn`, description: r.error.message, tone: "warning" });
-          void loadSteers();
+          void refetchSteers();
         });
       },
       redirect: (steerId) => {
@@ -352,25 +204,70 @@ export function useOrder(workstreamId: string, jump?: Jump): [OrderData, OrderAc
         if (s) void steer(s.target, s.text, "now", redirectId(steerId));
       },
       stop: () => {
-        void window.fleetd.hub.call("order_stop", { workstreamId }).then(() => loadOrder());
+        void layer.call("order_stop", { workstreamId }).then(() => refetchOrder());
       },
     };
-  }, [workstreamId, loadOrder, loadSteers, send]);
+    return { actions, send };
+  }, [layer, workstreamId, refetchSteers, refetchOrder]);
 
-  return [state, actions];
-}
+  // Steers the link cut off go again, under their own ids, on the first snapshot after a real loss: a phase other
+  // than live, then a new generation (every snapshot bumps it). Keyed on those two values only.
+  const watcher = useRef(reconnectWatcher());
+  const sendRef = useRef(send);
+  useEffect(() => {
+    sendRef.current = send;
+  });
+  useEffect(() => {
+    watcher.current({ t: "state", state: { phase: hubPhase } }, []);
+  }, [hubPhase]);
+  useEffect(() => {
+    for (const row of watcher.current({ t: "snapshot" }, sendingRef.current)) void sendRef.current(row);
+  }, [generation]);
 
-/** The state the hook reaches after these call outputs and live text: for previews and fixture checks. */
-export function orderFromCalls(
-  workstreamId: string,
-  calls: { order_get: unknown; workstream_get: unknown; thread_tail: unknown; steers_list: unknown },
-  live: readonly LiveText[] = [],
-): OrderData {
-  const brief = (calls.workstream_get as WorkstreamGet).workstream.brief?.doneWhen;
-  let s = reduce(initial(workstreamId), { t: "order", out: calls.order_get as OrderGet, ...(brief ? { brief } : {}) });
-  s = reduce(s, { t: "projects", names: new Map([[`${s.projectRef?.machineId ?? ""}/${s.projectRef?.projectId ?? ""}`, "storefront"]]) });
-  s = reduce(s, { t: "tail", items: (calls.thread_tail as { items: readonly TailItem[] }).items });
-  s = reduce(s, { t: "steers", steers: (calls.steers_list as { steers: readonly Steer[] }).steers });
-  if (live.length > 0) s = reduce(s, { t: "live", lanes: [], text: live });
-  return s;
+  // Open at a transcript item: the lead's window around it here; an agent's thread is the steer sheet's to show.
+  const jumpThread = jump?.thread;
+  const jumpItem = jump?.item;
+  const leadThreadId = thread?.threadId;
+  const leadMachine = thread?.machineId;
+  useEffect(() => {
+    if (jumpThread === undefined || jumpItem === undefined || leadThreadId === undefined || leadMachine === undefined) return;
+    if (jumpThread !== leadThreadId) return dispatch({ t: "focus", threadId: jumpThread });
+    void layer.call("thread_window", { machineId: leadMachine, threadId: leadThreadId, itemId: jumpItem, before: 25, after: 25 }).then((r) => {
+      if (!r.ok) return dispatch({ t: "focus", threadId: jumpThread, items: [] });
+      dispatch({ t: "focus", threadId: jumpThread, items: r.output.items, ...(r.output.focus === undefined ? {} : { index: r.output.focus }) });
+    });
+  }, [layer, jumpThread, jumpItem, leadThreadId, leadMachine]);
+
+  const data = useMemo<OrderData>(() => {
+    const failure = orderQ.error instanceof CallError ? orderQ.error.error : undefined;
+    const card = page?.card;
+    const active = page?.lanes ?? noLanes;
+    const ids = new Set(active.map((l) => l.laneId));
+    const done = (page?.detail?.doneLanes ?? noLanes).filter((l) => !ids.has(l.laneId));
+    const doneWhen = briefQ.data?.workstream.brief?.doneWhen;
+    const claim = page?.detail?.claims[0] ?? briefQ.data?.claims?.[0];
+    const tailError = tailQ.error instanceof CallError ? tailQ.error.error.message : undefined;
+    return {
+      status: card !== undefined ? "ready" : failure !== undefined ? { error: failure.message, code: failure.code } : "loading",
+      workstreamId,
+      title: card?.title ?? "",
+      projectName: card ? (projects[projectKey(card.projectRef)]?.title ?? "this project") : "",
+      ...(page ? { projectRef: page.card.projectRef, phase: page.phase.phase, settled: page.card.settled, total: page.card.total, prs: page.card.prs } : { prs: [] }),
+      ...(page?.lead ? { lead: page.lead } : {}),
+      lanes: done.length === 0 ? active : [...active, ...done],
+      asks: page?.asks.length ?? 0,
+      ...(doneWhen ? { doneWhen } : {}),
+      ...(claim ? { claim } : {}),
+      tail: local.tail,
+      tailError,
+      steers: local.steers,
+      events,
+      streamed: stream,
+      sending: local.sending,
+      redirected: local.redirected,
+      ...(local.focus ? { focus: local.focus } : {}),
+    };
+  }, [workstreamId, page, orderQ.error, briefQ.data, tailQ.error, projects, events, local, stream]);
+
+  return [data, actions];
 }

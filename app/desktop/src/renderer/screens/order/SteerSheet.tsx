@@ -2,7 +2,9 @@
 // steers sent to it with their receipts, and a composer aimed at it with the same two keys. A steer to a task also
 // reaches the order's lead as a line in its next wake, so the lead's plan doesn't fork; the sheet says so.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
+import { CallError } from "../../src/data/queries";
+import { useToolQuery } from "../../src/data/react";
 import { Button, cx, IdChip, RoleTag, Sheet, Text } from "../../ui";
 import { SteerComposer } from "./Composer";
 import { FleetdText, InlineText, Message, ReceiptLine, type ReceiptHandlers } from "./Conversation";
@@ -16,21 +18,16 @@ import type { SendOutcome } from "./data";
 import { roleWords } from "./told";
 import s from "./order.module.css";
 
-/** The newest `n` items oldest first, or (with `item`) the window around that item and its index. */
-export type TailSource = (
-  thread: ThreadRef,
-  n: number,
-  item?: string,
-) => Promise<{ items: readonly TailItem[]; focus?: number | undefined } | { error: string }>;
-
-export const hubTailSource: TailSource = async (thread, n, item) => {
-  if (item !== undefined) {
-    const r = await window.fleetd.hub.call("thread_window", { machineId: thread.machineId, threadId: thread.threadId, itemId: item, before: 25, after: 25 });
-    return r.ok ? (r.output as { items: readonly TailItem[]; focus?: number }) : { error: r.error.message };
-  }
-  const r = await window.fleetd.hub.call("thread_tail", { machineId: thread.machineId, threadId: thread.threadId, n });
-  return r.ok ? { items: [...(r.output as { items: readonly TailItem[] }).items].reverse() } : { error: r.error.message };
-};
+/** The agent's newest 20 items oldest first, or (a transcript jump) the window around one item and its index. */
+function useItems(thread: ThreadRef | undefined, item: string | undefined): { items: readonly TailItem[]; focus?: number | undefined } | { error: string } | undefined {
+  const where = { machineId: thread?.machineId ?? "", threadId: thread?.threadId ?? "" };
+  const tail = useToolQuery("thread_tail", { ...where, n: 20 }, { enabled: thread !== undefined && item === undefined });
+  const win = useToolQuery("thread_window", { ...where, itemId: item ?? "", before: 25, after: 25 }, { enabled: thread !== undefined && item !== undefined });
+  const q = item === undefined ? tail : win;
+  if (q.error instanceof CallError) return { error: q.error.error.message };
+  if (item !== undefined) return win.data;
+  return tail.data ? { items: [...tail.data.items].reverse() } : undefined;
+}
 
 export interface SheetAgent {
   readonly lane: AgentLane;
@@ -40,21 +37,9 @@ export interface SheetAgent {
   readonly ref: string;
 }
 
-function Items({ thread, source, focusItem }: { thread: ThreadRef | undefined; source: TailSource; focusItem?: string | undefined }) {
-  const [state, setState] = useState<Awaited<ReturnType<TailSource>> | undefined>(undefined);
-  const machineId = thread?.machineId;
-  const threadId = thread?.threadId;
+function Items({ thread, focusItem }: { thread: ThreadRef | undefined; focusItem?: string | undefined }) {
+  const state = useItems(thread, focusItem);
   const lit = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (machineId === undefined || threadId === undefined) return;
-    let live = true;
-    void source({ machineId, threadId }, 20, focusItem).then((r) => {
-      if (live) setState(r);
-    });
-    return () => {
-      live = false;
-    };
-  }, [machineId, threadId, source, focusItem]);
   const focus = state && "items" in state ? state.focus : undefined;
   useEffect(() => {
     if (focus !== undefined) lit.current?.scrollIntoView({ block: "center" });
@@ -96,7 +81,6 @@ export function SteerSheet(
     steers: readonly Steer[];
     platform: Platform;
     nowMs: number;
-    tailSource: TailSource;
     /** Open at this transcript item (a time inspector jump). */
     focusItem?: string;
     onSteer: (target: SteerTarget, text: string, mode: SteerMode, requestId: string) => Promise<SendOutcome>;
@@ -143,7 +127,7 @@ export function SteerSheet(
           <div className={s.section}>
             <span className={s.sectionLabel}>Its last items</span>
           </div>
-          <Items thread={agent.lane.threadRef} source={props.tailSource} focusItem={props.focusItem} />
+          <Items thread={agent.lane.threadRef} focusItem={props.focusItem} />
 
           {mine.length + pending.length > 0 ? (
             <>

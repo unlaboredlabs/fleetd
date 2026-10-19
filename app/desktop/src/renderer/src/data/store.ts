@@ -42,6 +42,11 @@ export interface LiveState {
   readonly lanes: Readonly<Record<string, LiveLane>>;
   /** The tail of the message each lane is writing. */
   readonly text: Readonly<Record<string, { readonly messageId: string; readonly text: string }>>;
+  /**
+   * A project lead's recent messages in full, oldest first (the order view's conversation): `text` keeps a tail, and
+   * a lead can stream far more than that before its log has the message. Bounded per lead by STREAM_CHARS.
+   */
+  readonly streams?: Readonly<Record<string, readonly { readonly messageId: string; readonly text: string }[]>>;
   readonly machines: Readonly<Record<string, MachineLive>>;
   readonly slots?: SlotState | undefined;
   /** Hub clock minus local clock, in ms; see `applyLive`. */
@@ -82,6 +87,23 @@ const ORDER_EVENTS = 100;
 /** Orders whose event lines are kept; the least recently active goes first. */
 const ORDERS_WITH_EVENTS = 100;
 const TEXT_TAIL = 2000;
+const STREAM_CHARS = 1_500_000;
+const isLeadLane = (laneId: string) => laneId.startsWith("lead:");
+
+type Stream = readonly { readonly messageId: string; readonly text: string }[];
+/** Appends to a lead's stream, dropping its oldest messages past the cap (the newest is cut to its tail). */
+const appendStream = (stream: Stream, messageId: string, append: string): Stream => {
+  const last = stream.at(-1);
+  let next = last?.messageId === messageId ? [...stream.slice(0, -1), { messageId, text: last.text + append }] : [...stream, { messageId, text: append }];
+  let size = next.reduce((n, m) => n + m.text.length, 0);
+  while (size > STREAM_CHARS && next.length > 1) {
+    size -= next[0]?.text.length ?? 0;
+    next = next.slice(1);
+  }
+  const only = next[0];
+  if (size > STREAM_CHARS && only !== undefined) next = [{ messageId: only.messageId, text: only.text.slice(-STREAM_CHARS) }];
+  return next;
+};
 
 const emptyLive: LiveState = { lanes: {}, text: {}, machines: {}, stale: true };
 
@@ -255,14 +277,17 @@ export const applyLive = (live: LiveState, frame: LiveFrame, nowMs: number): Liv
     lanes[lane.laneId] = spark === undefined ? lane : { ...lane, spark };
   }
   const text: Record<string, { messageId: string; text: string }> = frame.full ? {} : { ...live.text };
+  const streams: Record<string, Stream> = frame.full ? {} : { ...live.streams };
   for (const t of frame.text ?? []) {
     const prev = text[t.laneId];
     const base = prev !== undefined && prev.messageId === t.messageId ? prev.text : "";
     text[t.laneId] = { messageId: t.messageId, text: tail(base + t.append, TEXT_TAIL) };
+    if (isLeadLane(t.laneId)) streams[t.laneId] = appendStream(streams[t.laneId] ?? [], t.messageId, t.append);
   }
   return {
     lanes,
     text,
+    streams,
     machines: frame.machines === undefined ? live.machines : byId(frame.machines, (m) => m.machineId),
     slots: frame.slots ?? live.slots,
     skewMs,

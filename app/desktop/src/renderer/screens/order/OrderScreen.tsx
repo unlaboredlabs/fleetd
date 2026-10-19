@@ -14,9 +14,9 @@ import { ActivityText, Fleet } from "./Fleet";
 import { shortModel } from "./format";
 import { waitingLine, type ReceiptAct } from "./receipts";
 import { redirecting } from "./sending";
-import { hubTailSource, SteerSheet, type SheetAgent, type TailSource } from "./SteerSheet";
+import { SteerSheet, type SheetAgent } from "./SteerSheet";
 import { roleWords, type ToldWho } from "./told";
-import { hubToldSource, ToldPanel, type ToldSource } from "./ToldPanel";
+import { ToldPanel } from "./ToldPanel";
 import s from "./order.module.css";
 
 /** The one export F1's router mounts, at #/order/<id>[?thread=&item=]. */
@@ -29,8 +29,6 @@ export function OrderScreen({ id, jump }: { id: string; jump?: Jump }) {
       data={data}
       actions={actions}
       platform={window.fleetd.platform}
-      told={hubToldSource}
-      tail={hubTailSource}
       {...(target ? { jumpItem: target.item } : {})}
     />
   );
@@ -77,7 +75,7 @@ function agentOf(lane: AgentLane, workstreamId: string): SheetAgent {
 
 const leadSteers = (steers: readonly Steer[]) => steers.filter((st) => "workstreamId" in st.target);
 
-export function OrderView(props: { data: OrderData; actions: OrderActions; platform: Platform; told: ToldSource; tail: TailSource; jumpItem?: string }) {
+export function OrderView(props: { data: OrderData; actions: OrderActions; platform: Platform; jumpItem?: string }) {
   const { data, actions, platform } = props;
   const w = data.workstreamId;
   const root = useRef<HTMLDivElement>(null);
@@ -280,14 +278,13 @@ export function OrderView(props: { data: OrderData; actions: OrderActions; platf
         redirected={redirected}
         platform={platform}
         nowMs={now}
-        tailSource={props.tail}
         {...(props.jumpItem && sheetAgent?.lane.threadRef?.threadId === focus?.threadId ? { focusItem: props.jumpItem } : {})}
         onSteer={steerTo}
         onAct={onAct}
         onTold={openTold}
         onClose={() => setSheet(undefined)}
       />
-      <ToldPanel open={toldOpen} projectRef={data.projectRef} source={props.told} onClose={() => setToldOpen(undefined)} />
+      <ToldPanel open={toldOpen} projectRef={data.projectRef} onClose={() => setToldOpen(undefined)} />
       <Dialog
         open={confirmStop}
         onOpenChange={setConfirmStop}
