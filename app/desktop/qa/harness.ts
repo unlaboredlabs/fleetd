@@ -99,6 +99,9 @@ export async function setView(app: ElectronApplication, page: Page, size: SizeNa
     },
     { width, height, theme },
   );
+  // A window can't outgrow its screen (macOS runners have small ones), so the page's viewport is set too: layout,
+  // the checks and the screenshot all see exactly the size asked for.
+  await page.setViewportSize({ width, height });
   await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
   await page.waitForFunction(
     (v) => window.innerWidth === v.width && window.innerHeight === v.height,

@@ -65,7 +65,12 @@ test("the macOS window, traffic lights included, for the contact sheet", async (
       if (!windowId) throw new Error(`no window id in "${source}"`);
       const name = `window--typical--medium--${theme}--darwin@${scale}x`;
       const png = path.join("png", `${name}.png`);
-      execFileSync("screencapture", ["-x", "-o", `-l${windowId}`, path.join(resultsDir, png)]);
+      try {
+        execFileSync("screencapture", ["-x", "-o", `-l${windowId}`, path.join(resultsDir, png)]);
+      } catch (error) {
+        // Without the Screen Recording permission this is an extra picture lost, not a QA failure.
+        test.skip(true, `screencapture failed: ${String(error)}`);
+      }
       const shot = { screen: "window", fixture: "typical", size: "medium", theme, scale, platform: "darwin", png, findings: [] };
       writeFileSync(path.join(resultsDir, "shots", `${name}.json`), JSON.stringify(shot, null, 2));
     }
