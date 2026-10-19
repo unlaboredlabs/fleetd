@@ -46,7 +46,8 @@ const err = (c: Call, code: string, message: string): AddMsg => ({ t: "answer", 
 
 describe("the add flow", () => {
   it("holds a failure that comes before the answer, then ends the add with it", () => {
-    let [s, calls] = run(live(), start());
+    const [started, calls] = run(live(), start());
+    let s = started;
     const add = only(calls, "project_add");
     expect(add.input).toEqual({ machineId: "devbox", url: "acme/ledger" });
     [s] = run(s, event(11, "project.add_failed", { addId: "a1", repo: "acme/ledger", path: "/p", code: "clone_failed", message: "git: remote hung up", fix: "Try again." }));
@@ -57,7 +58,8 @@ describe("the add flow", () => {
   });
 
   it("ignores someone else's add and matches its own by addId", () => {
-    let [s, calls] = run(live(), start());
+    const [started, calls] = run(live(), start());
+    let s = started;
     const add = only(calls, "project_add");
     [s] = run(s, event(12, "project.added", added("other")), ok(add, { machineId: "devbox", path: "/p", created: true, addId: "a2" }));
     expect(s.phase.kind).toBe("working");
@@ -110,8 +112,7 @@ describe("the add flow", () => {
     [s] = run(s, event(21, "project.added", added("a9")));
     expect(s.phase.kind).toBe("ready");
 
-    [s, calls] = run(s, start());
-    [s] = run(s, { t: "live", live: false });
+    [s] = run(s, start(), { t: "live", live: false });
     [s, calls] = run(s, { t: "snapshot", cursor: 30 });
     [s] = run(s, ok(only(calls, "events_wait"), { events: [], cursor: 30, more: false }));
     expect(s.phase).toMatchObject({ kind: "failed", failure: { action: { kind: "retry", request: cloneReq } } });
@@ -155,10 +156,11 @@ describe("the add flow", () => {
   });
 
   it("ignores an answer to an earlier add", () => {
-    let [s, calls] = run(live(), start());
+    const [started, calls] = run(live(), start());
+    let s = started;
     const first = only(calls, "project_add");
     [s] = run(s, err(first, "invalid", "nope"), { t: "back" });
-    [s, calls] = run(s, start({ kind: "folder", machineId: "devbox", path: "/srv/x" }));
+    [s] = run(s, start({ kind: "folder", machineId: "devbox", path: "/srv/x" }));
     [s] = run(s, ok(first, { machineId: "devbox", path: "/p", created: true, addId: "stale" }));
     expect(s.addId).toBeUndefined();
     expect(s.awaiting).toBe(true);

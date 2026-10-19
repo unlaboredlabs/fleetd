@@ -1,4 +1,4 @@
-import type { CallOutcome, ConnectOutcome, HubFrame, HubState } from "../shared/hub";
+import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, HubState } from "../shared/hub";
 import type { LiveScope } from "../shared/ipc";
 
 /** `window.fleetd`: everything the renderer can ask of main. There is no other bridge. */
@@ -18,6 +18,18 @@ export interface FleetdApi {
     resync(): Promise<void>;
     connect(url: string, key: string): Promise<ConnectOutcome>;
     forget(): Promise<void>;
+  };
+  readonly system: {
+    /** This computer's host name (without .local). */
+    hostName(): Promise<string>;
+  };
+  readonly projects: {
+    /** A native folder picker; null when cancelled. */
+    pickFolder(): Promise<string | null>;
+    /** The path of a File from a drop; "" when it has none (text, a browser link). */
+    pathForFile(file: File): string;
+    /** What a dropped folder or file holds for Add project. */
+    readDrop(path: string): Promise<DropInfo>;
   };
 }
 

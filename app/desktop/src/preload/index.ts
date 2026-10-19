@@ -1,6 +1,6 @@
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
+import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from "electron";
 import { IPC } from "../shared/channels";
-import type { CallOutcome, ConnectOutcome, HubFrame, HubState } from "../shared/hub";
+import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, HubState } from "../shared/hub";
 import type { FleetdApi } from "./api";
 
 const listeners = new Set<(frame: HubFrame) => void>();
@@ -28,6 +28,15 @@ const api: FleetdApi = {
     resync: () => ipcRenderer.invoke(IPC.hubResync) as Promise<void>,
     connect: (url, key) => ipcRenderer.invoke(IPC.hubConnect, { url, key }) as Promise<ConnectOutcome>,
     forget: () => ipcRenderer.invoke(IPC.hubForget) as Promise<void>,
+  },
+  system: {
+    hostName: () => ipcRenderer.invoke(IPC.systemHostName) as Promise<string>,
+  },
+  projects: {
+    pickFolder: () => ipcRenderer.invoke(IPC.projectsPickFolder) as Promise<string | null>,
+    // Electron dropped File.path; only the preload can map a dropped File to its path.
+    pathForFile: (file) => webUtils.getPathForFile(file),
+    readDrop: (path) => ipcRenderer.invoke(IPC.projectsReadDrop, path) as Promise<DropInfo>,
   },
 };
 

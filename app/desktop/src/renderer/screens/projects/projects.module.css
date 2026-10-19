@@ -1,0 +1,266 @@
+/* Add project and Machines. Tokens only; the design system owns controls and text. */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.note {
+  padding: 0 var(--space-1);
+}
+
+/* The repo list: section headers by machine and GitHub, then rows. */
+.list {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.group {
+  padding: var(--space-3) var(--space-2) var(--space-1);
+}
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--space-2);
+  min-height: var(--row);
+  padding: var(--space-1) var(--space-2);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  font: inherit;
+  min-width: 0;
+}
+.row:hover {
+  background: var(--hover);
+}
+.row[aria-selected="true"] {
+  background: var(--selected);
+}
+.rowMain {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.rowSide {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  min-width: 0;
+  max-width: 180px;
+  justify-self: end;
+}
+.tag {
+  flex: none;
+  padding: 0 var(--space-1-5);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  color: var(--quiet);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+}
+
+.problems {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+}
+.problem {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-2);
+}
+
+/* The footer: the machine picker, where it goes, and the buttons. */
+.footer {
+  flex: 1 1 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.machines {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1-5);
+}
+.machine[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--selected);
+  font-weight: var(--weight-strong);
+}
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.where {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Working: the three steps and the clone's bar. */
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+}
+.step {
+  display: grid;
+  grid-template-columns: 12px 72px minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: var(--space-2);
+}
+.stepBar {
+  grid-column: 3;
+}
+.bar {
+  height: 4px;
+  margin-top: var(--space-1-5);
+  border-radius: 2px;
+  background: var(--hairline);
+  overflow: hidden;
+}
+/* Drawn at each event's value: it moves when git reports, never on its own. */
+.barFill {
+  height: 100%;
+  background: var(--accent-fill);
+  transform-origin: left;
+  transition: transform var(--dur-base) var(--ease-out);
+}
+.ring {
+  width: 6px;
+  height: 6px;
+  border: 1px solid var(--quiet);
+  border-radius: 50%;
+}
+
+/* Ready. */
+.facts {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: var(--space-1-5) var(--space-3);
+  padding: var(--space-3) 0;
+}
+.dd {
+  margin: 0;
+}
+.lead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--selected);
+}
+
+.error {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+}
+.errorHead {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+/* The window while something is dragged over it. */
+.dropOverlay {
+  position: fixed;
+  inset: var(--edge-inset);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--bg) 85%, transparent);
+  pointer-events: none;
+}
+
+/* Machines. */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-6);
+  min-width: 0;
+  max-width: 1100px;
+}
+.pageHead {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+.pageTitle {
+  flex: 1;
+  min-width: 0;
+}
+.cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  min-width: 0;
+}
+.cardHead {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1-5) var(--space-3);
+  min-width: 0;
+}
+.cardName {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  max-width: 100%;
+}
+.parts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+}
+.projects {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--hairline);
+  padding-top: var(--space-1);
+}
+.project {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) auto auto;
+  align-items: center;
+  column-gap: var(--space-3);
+  min-height: var(--row);
+}

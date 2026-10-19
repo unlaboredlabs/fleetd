@@ -16,6 +16,12 @@ export const IPC = {
   hubConnect: "hub:connect",
   /** invoke() → void. Disconnects and deletes the saved key. */
   hubForget: "hub:forget",
+  /** invoke() → string. This computer's host name, to tell whether it is one of the hub's machines. */
+  systemHostName: "system:host-name",
+  /** invoke() → string | null. A native folder picker; null when cancelled. */
+  projectsPickFolder: "projects:pick-folder",
+  /** invoke(path) → DropInfo. What a folder or file dropped on the window holds for Add project. */
+  projectsReadDrop: "projects:read-drop",
   /** main → renderer: HubFrame */
   hubFrame: "hub:frame",
 } as const;

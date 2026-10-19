@@ -237,7 +237,7 @@ export interface Failure {
 }
 
 /** What to offer when a clone's folder already exists: add it only when it is the same repo, open it when it is the project. */
-export const useInstead = (t: CloneTarget, request: Request | undefined): FailAction | undefined => {
+export const existingFolderAction = (t: CloneTarget, request: Request | undefined): FailAction | undefined => {
   if (!t.exists) return undefined;
   if (t.projectId) return { kind: "open", project: { machineId: t.machineId, projectId: t.projectId } };
   if (request?.kind === "clone" && t.sameRemote) return { kind: "use_existing", request: { ...request, useExisting: true } };

@@ -104,3 +104,7 @@ export const machineIdFromHost = (host: string): string => {
   }
   return id.replace(/^-+|-+$/gu, "").slice(0, 32);
 };
+
+/** A copy without `keys`: optional fields are left out, never set to undefined (exactOptionalPropertyTypes). */
+export const omit = <T extends object, K extends keyof T>(o: T, ...keys: ReadonlyArray<K>): Omit<T, K> =>
+  Object.fromEntries(Object.entries(o).filter(([k]) => !(keys as ReadonlyArray<PropertyKey>).includes(k))) as Omit<T, K>;

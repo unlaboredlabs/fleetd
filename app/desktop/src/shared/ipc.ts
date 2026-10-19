@@ -26,6 +26,9 @@ export const ConnectRequest = z.strictObject({
 });
 export type ConnectRequest = z.infer<typeof ConnectRequest>;
 
+/** An absolute path the renderer got from a drop (webUtils.getPathForFile). */
+export const DropPath = z.string().min(2).max(4096).refine((p) => p.startsWith("/") || /^[A-Za-z]:[\\/]/u.test(p), "an absolute path");
+
 const none = z.tuple([]);
 
 /** The argument list each invoke channel accepts. */
@@ -38,6 +41,9 @@ export const REQUESTS = {
   [IPC.hubResync]: none,
   [IPC.hubConnect]: z.tuple([ConnectRequest]),
   [IPC.hubForget]: none,
+  [IPC.systemHostName]: none,
+  [IPC.projectsPickFolder]: none,
+  [IPC.projectsReadDrop]: z.tuple([DropPath]),
 } as const satisfies Record<InvokeChannel, z.ZodType>;
 
 export type RequestArgs<C extends InvokeChannel> = z.infer<(typeof REQUESTS)[C]>;

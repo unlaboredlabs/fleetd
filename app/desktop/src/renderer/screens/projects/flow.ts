@@ -16,8 +16,8 @@ import {
   type ProjectDiscoverOutput,
   type ProjectInspectOutput,
 } from "./contracts";
-import { discovery, progress, ready, useInstead, type Discovery, type Failure, type ProjectKey, type Ready, type Request, type Step } from "./discovery";
-import { baseName } from "./source";
+import { discovery, progress, ready, existingFolderAction, type Discovery, type Failure, type ProjectKey, type Ready, type Request, type Step } from "./discovery";
+import { baseName, omit } from "./source";
 
 export interface Job {
   /** "acme/storefront", or a folder's name. */
@@ -100,7 +100,7 @@ const str = (data: unknown, key: string): string | undefined => {
 };
 
 const finish = (s: AddState): AddState => {
-  const { request: _r, addId: _a, held: _h, ...rest } = s;
+  const rest = omit(s, "request", "addId", "held");
   return { ...rest, awaiting: false, early: [], lost: false };
 };
 
@@ -114,7 +114,7 @@ const withJob = (s: AddState, change: (job: Job) => Job): AddState =>
 
 const waiting = (s: AddState, why: string): AddState =>
   withJob(s, (job) => {
-    const { fraction: _f, ...rest } = job;
+    const rest = omit(job, "fraction");
     return { ...rest, detail: why };
   });
 
@@ -157,7 +157,7 @@ const onEvent = (s: AddState, e: HubEvent, names: Names): Step_ => {
     const p = progress(e.data as CloneProgressData);
     return [
       withJob(s, (job) => {
-        const { fraction: _f, ...rest } = job;
+        const rest = omit(job, "fraction");
         return { ...rest, step: p.step, detail: p.detail, ...(p.fraction === undefined ? {} : { fraction: p.fraction }) };
       }),
       [],
@@ -172,7 +172,7 @@ const onEvent = (s: AddState, e: HubEvent, names: Names): Step_ => {
   const failed = e.data as ProjectAddFailedData;
   const f = failure(failed.message, failed.fix);
   if (failed.code === "dest_exists") {
-    const { addId: _a, ...rest } = s;
+    const rest = omit(s, "addId");
     return holdAndInspect(rest, f);
   }
   return [fail(s, f), []];
@@ -278,9 +278,9 @@ const answer = (s: AddState, c: Call, outcome: Outcome, names: Names): Step_ => 
     }
     case "inspect": {
       const held = s.held ?? { message: "The folder for the clone already exists." };
-      const { held: _h, ...rest } = s;
+      const rest = omit(s, "held");
       const target = outcome.ok ? (outcome.output as ProjectInspectOutput).clone : undefined;
-      const action = target ? useInstead(target, s.request) : undefined;
+      const action = target ? existingFolderAction(target, s.request) : undefined;
       return [fail(rest, action ? { ...held, action } : held), []];
     }
     case "recover": {
@@ -319,8 +319,6 @@ const answer = (s: AddState, c: Call, outcome: Outcome, names: Names): Step_ => 
         [],
       ];
     }
-    case "discover":
-      return [s, []];
   }
 };
 
