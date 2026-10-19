@@ -5,7 +5,7 @@ import globals from "globals";
 import tseslint from "typescript-eslint";
 
 export default defineConfig(
-  { ignores: ["out/", "dist/", "node_modules/", "eslint.config.js", "qa-results/", "test-results/", "fixtures/*.json"] },
+  { ignores: ["out/", "dist/", "dist-test/", "node_modules/", "eslint.config.js", "qa-results/", "test-results/", "fixtures/*.json"] },
   js.configs.recommended,
   tseslint.configs.strictTypeChecked,
   {
