@@ -57,6 +57,7 @@ import { m8Desktop } from "./m8Desktop.ts";
 import { m9Playbooks } from "./m9Playbooks.ts";
 import { noCiTrain } from "./noCiTrain.ts";
 import { noSubagents } from "./noSubagents.ts";
+import { trainBatch } from "./trainBatch.ts";
 import { offlineQueue } from "./offlineQueue.ts";
 import { scenarioPush } from "./scenarioPush.ts";
 import { statusFresh } from "./statusFresh.ts";
@@ -100,6 +101,9 @@ const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab)
   { name: "ask", run: askCard, only: true },
   // One PR through the train into a base CI never runs for. Only when named, with FLEETD_LAB_NAMESPACE=noci/<n>.
   { name: "noci", run: noCiTrain, only: true },
+  // Batches and stacks on the lab repo: a batch of three in one CI run, a red batch bisected, a stacked PR green on
+  // its parent before it lands. Only when named.
+  { name: "batch", run: trainBatch, only: true },
   // The app demo: one order fanned out to writers, reviewers and verifiers on the lab repo. Only when named.
   { name: "demo", run: demoFanout, only: true },
   { name: "desktop", run: desktopShell, only: true },
