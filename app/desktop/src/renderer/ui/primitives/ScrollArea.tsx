@@ -5,7 +5,7 @@ import s from "./Misc.module.css";
 
 export interface ScrollAreaProps {
   children: ReactNode;
-  className?: string;
+  className?: string | undefined;
   /** The scrolling element, for virtualizers and scroll-to. */
   viewportRef?: Ref<HTMLDivElement>;
   horizontal?: boolean;
