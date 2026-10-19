@@ -2,6 +2,7 @@ import { clipboard, ipcMain, type IpcMainInvokeEvent } from "electron";
 import { IPC, type InvokeChannel } from "../shared/channels";
 import { parseRequest, type RequestArgs } from "../shared/ipc";
 import type { HubService } from "./hub/service";
+import { submitSecret } from "./secret";
 import { rendererOrigin } from "./security";
 
 /** Only our own top-level page may call main; a subframe or a navigated-away page can't. */
@@ -33,5 +34,6 @@ export const registerIpc = (hub: HubService): void => {
   handle(IPC.hubResync, () => hub.resync());
   handle(IPC.hubConnect, (_event, request) => hub.connect(request));
   handle(IPC.hubForget, () => hub.forget());
+  handle(IPC.secretSubmit, (_event, request) => submitSecret(request, (tool, input) => hub.call({ tool, input })));
   handle(IPC.copy, (_event, text) => clipboard.writeText(text));
 };

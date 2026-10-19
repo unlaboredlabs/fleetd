@@ -2,7 +2,7 @@
 // results; the cards read the result. One state for every surface, so answering on the board clears the panel too.
 import type { HubEvent } from "../../../shared/hub";
 import { UNDO_WINDOW_MS, pickLabel, type CardPick } from "./ask";
-import type { Ask, AskOption, InboxReplyOutput } from "./contracts";
+import type { Ask, AskOption, InboxReplyOutput, Machine } from "./contracts";
 
 /** An ask answered from this app, shown collapsed until its receipt has been seen. */
 export interface Answered {
@@ -37,6 +37,8 @@ export interface InboxState {
   readonly projects: ReadonlyMap<string, string>;
   /** workstreamId → order title. */
   readonly orders: ReadonlyMap<string, string>;
+  /** machineId → what a secret ask needs to seal to it. */
+  readonly machines: ReadonlyMap<string, Machine>;
   /** The reply field's last result: the hub's echo, or its hint when it could not read the reply. */
   readonly replyEcho: { readonly ok: boolean; readonly text: string } | null;
   readonly loadError: string | null;
@@ -51,6 +53,7 @@ export const emptyInbox: InboxState = {
   attention: [],
   projects: new Map(),
   orders: new Map(),
+  machines: new Map(),
   replyEcho: null,
   loadError: null,
 };
@@ -84,13 +87,16 @@ export const withAsks = (state: InboxState, asks: readonly Ask[]): InboxState =>
   open: asks.filter((a) => a.state === "open" && !state.answered.has(a.askId)).map(normalizeAsk),
 });
 
-export const answering = (state: InboxState, ask: Ask, pick: CardPick): InboxState => ({
+export const answering = (state: InboxState, ask: Ask, pick: CardPick): InboxState => answeringAs(state, ask, pickLabel(ask, pick));
+
+/** An answer on its way, collapsed to "You chose: <label>". */
+export const answeringAs = (state: InboxState, ask: Ask, label: string): InboxState => ({
   ...state,
   open: state.open.filter((a) => a.askId !== ask.askId),
   errors: without(state.errors, ask.askId),
   answered: withEntry(state.answered, ask.askId, {
     ask,
-    label: pickLabel(ask, pick),
+    label,
     undoBy: null,
     deliveredAt: null,
     sending: true,
@@ -131,6 +137,16 @@ export const replied = (state: InboxState, askId: string, output: InboxReplyOutp
       deliveredAt: undoable ? null : new Date(nowMs).toISOString(),
       sending: false,
     }),
+  };
+};
+
+/** A secret the node took: no undo, the receipt is the submit itself. */
+export const secretSent = (state: InboxState, askId: string, nowMs: number): InboxState => {
+  const entry = state.answered.get(askId);
+  if (entry === undefined) return state;
+  return {
+    ...state,
+    answered: withEntry(state.answered, askId, { ...entry, sending: false, deliveredAt: new Date(nowMs).toISOString() }),
   };
 };
 
@@ -195,6 +211,16 @@ export const withSnapshot = (state: InboxState, snapshot: Readonly<Record<string
     const title = str(p?.["title"]);
     if (machine !== null && id !== null && title !== null) projects.set(projectKey(machine, id), title);
   }
+  const machines = new Map<string, Machine>();
+  const machineList = snapshot["machines"];
+  for (const raw of Array.isArray(machineList) ? machineList : []) {
+    const m = record(raw);
+    const id = str(m?.["machineId"]);
+    const status = m?.["status"];
+    if (id === null || (status !== "online" && status !== "offline" && status !== "degraded")) continue;
+    const key = str(m?.["boxPubKey"]);
+    machines.set(id, { machineId: id, name: str(m?.["name"]) ?? id, status, ...(key === null ? {} : { boxPubKey: key }) });
+  }
   const events = snapshot["attention"];
   const attention: AttentionItem[] = [];
   for (const raw of Array.isArray(events) ? events : []) {
@@ -204,7 +230,7 @@ export const withSnapshot = (state: InboxState, snapshot: Readonly<Record<string
     if (item !== null) attention.push(item);
   }
   attention.sort((a, b) => b.seq - a.seq);
-  return { ...state, live: true, projects, attention: attention.slice(0, ATTENTION_MAX) };
+  return { ...state, live: true, projects, machines, attention: attention.slice(0, ATTENTION_MAX) };
 };
 
 /** What an event changes here directly; the store refetches the asks for the rest (`refetchesAsks`). */
@@ -262,4 +288,35 @@ export const needsYou = (state: InboxState, workstreamId?: string): Ask[] => {
   const all = [...state.open, ...[...state.answered.values()].map((a) => a.ask)];
   const mine = workstreamId === undefined ? all : all.filter((a) => a.workstreamId === workstreamId);
   return mine.sort((a, b) => batchNumber(b) - batchNumber(a) || (a.number ?? 0) - (b.number ?? 0));
+};
+
+export type SecretTarget =
+  | { readonly ok: true; readonly machine: string; readonly boxPubKey: string; readonly where: string }
+  | { readonly ok: false; readonly message: string; readonly fix: string };
+
+/** secrets.rs parse_secret_sink, as far as the card needs it: the machine and the path. */
+const SINK = /^(env|file):([a-z0-9-]{1,32}):(\/[^\n\r]*)$/u;
+
+/** Where a secret ask's value goes and the key to seal it to, or why it can't be sent now and what to do. */
+export const secretTarget = (state: Pick<InboxState, "machines">, ask: Ask): SecretTarget => {
+  const sink = SINK.exec(ask.sink ?? "");
+  const [, kind, machineId, path] = sink ?? [];
+  if (kind === undefined || machineId === undefined || path === undefined) {
+    return { ok: false, message: "This ask doesn't say where the secret goes.", fix: "Decline it; the lead will ask again with a destination." };
+  }
+  const machine = state.machines.get(machineId);
+  if (machine === undefined) {
+    return { ok: false, message: `The hub doesn't know the machine ${machineId}.`, fix: "Decline it, or add that machine and ask the lead again." };
+  }
+  if (machine.boxPubKey === undefined) {
+    return { ok: false, message: `${machine.name} takes no secrets yet: its node has no box key.`, fix: `Update fleetd on ${machine.name}, then send the secret.` };
+  }
+  if (machine.status === "offline") {
+    return { ok: false, message: `${machine.name} is offline.`, fix: `Send the secret once ${machine.name} is back online.` };
+  }
+  const where =
+    kind === "env"
+      ? `as ${ask.envName ?? "its variable"} in ${path} on ${machine.name}`
+      : `to ${path} on ${machine.name}`;
+  return { ok: true, machine: machine.name, boxPubKey: machine.boxPubKey, where };
 };

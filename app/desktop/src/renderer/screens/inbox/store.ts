@@ -8,11 +8,14 @@ import type { Ask, AsksListOutput, InboxReplyOutput, InboxUndoOutput, OrdersBoar
 import {
   answerFailed,
   answering,
+  answeringAs,
   dismissed,
   emptyInbox,
   missingOrders,
   refetchesAsks,
   replied,
+  secretSent,
+  secretTarget,
   undoFailed,
   undone,
   withAsks,
@@ -45,7 +48,7 @@ const coalesced = (run: () => Promise<void>): (() => void) => {
   return go;
 };
 
-export const createInboxStore = (hub: FleetdApi["hub"], now: () => number = Date.now) => {
+export const createInboxStore = ({ hub, secret }: Pick<FleetdApi, "hub" | "secret">, now: () => number = Date.now) => {
   let state = emptyInbox;
   const listeners = new Set<() => void>();
   let started = false;
@@ -129,6 +132,23 @@ export const createInboxStore = (hub: FleetdApi["hub"], now: () => number = Date
       return true;
     },
 
+    /**
+     * A secret ask's value, straight from its password field: main seals and submits it, and the field is emptied
+     * at once, so the page holds the plaintext no longer than the person's typing did.
+     */
+    submitSecret(ask: Ask, field: HTMLInputElement): void {
+      const target = secretTarget(state, ask);
+      const value = field.value;
+      field.value = "";
+      if (!target.ok || value === "") return;
+      set(answeringAs(state, ask, `Sealed and sent ${target.where}`));
+      void secret.submit({ askId: ask.askId, boxPubKey: target.boxPubKey, value }).then((out) => {
+        set(out.ok ? secretSent(state, ask.askId, now()) : answerFailed(state, ask.askId, errorText(out.error)));
+        scheduleDismissals();
+        fetchAsks();
+      });
+    },
+
     undo(askId: string): void {
       void hub.call("inbox_undo", { askId }).then((out) => {
         set(out.ok ? undone(state, (out.output as InboxUndoOutput).ask) : undoFailed(state, askId, errorText(out.error)));
@@ -160,7 +180,7 @@ export type InboxStore = ReturnType<typeof createInboxStore>;
 let shared: InboxStore | null = null;
 
 /** The app's inbox store, created on first use. */
-export const inboxStore = (): InboxStore => (shared ??= createInboxStore(window.fleetd.hub));
+export const inboxStore = (): InboxStore => (shared ??= createInboxStore(window.fleetd));
 
 export const useInbox = (): InboxState => {
   const store = inboxStore();

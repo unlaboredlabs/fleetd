@@ -34,3 +34,6 @@ export type HubFrame =
   | { readonly t: "live"; readonly frame: LiveFrame }
   /** A session-level hub error (not an answer to a call). */
   | { readonly t: "error"; readonly error: HubError };
+
+/** A secret ask's submit: the node's fingerprint of what it stored (8 hex characters), never the value. */
+export type SecretOutcome = { readonly ok: true; readonly fingerprint: string } | { readonly ok: false; readonly error: HubError };

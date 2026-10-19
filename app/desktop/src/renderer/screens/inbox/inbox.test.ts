@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import fixture from "../../../../fixtures/inbox/asks.json";
 import { answerLabel, cardOptions, choices, cleanFreeText, humanizeKey, optionLabel, pickLabel, replyFor, takesSkip } from "./ask";
 import type { Ask, InboxReplyOutput } from "./contracts";
-import { answering, emptyInbox, needsYou, normalizeAsk, replied, undone, withAsks, withEvent, withSnapshot } from "./model";
+import { answering, emptyInbox, needsYou, normalizeAsk, replied, secretTarget, undone, withAsks, withEvent, withSnapshot } from "./model";
 
 const asks = fixture.asks as unknown as Ask[];
 const ask = (id: string): Ask => {
@@ -128,5 +128,35 @@ describe("the inbox state", () => {
       { seq: 12, at: "2026-10-19T10:29:00.000Z", summary: "An implementer stopped: the tests would not start.", urgent: false, project: "storefront" },
     ]);
     expect(withEvent(next, { seq: 13, type: "task.done", summary: "quiet" })).toBe(next);
+  });
+});
+
+describe("a secret ask's destination", () => {
+  const secret = { ...ask("A11"), kind: "secret", sink: "env:devbox:/srv/storefront/.env", envName: "STRIPE_KEY" } as Ask;
+  const key = "a".repeat(43) + "=";
+  const withMachine = (machine: Record<string, unknown>) =>
+    withSnapshot(emptyInbox, { cursor: 1, machines: [{ machineId: "devbox", name: "devbox", ...machine }] });
+
+  it("seals to the sink machine's key and says where the value lands", () => {
+    expect(secretTarget(withMachine({ status: "online", boxPubKey: key }), secret)).toEqual({
+      ok: true,
+      machine: "devbox",
+      boxPubKey: key,
+      where: "as STRIPE_KEY in /srv/storefront/.env on devbox",
+    });
+  });
+
+  it("says why it can't be sent, with what to do, before anything is typed", () => {
+    const cases: Array<[ReturnType<typeof withMachine>, Ask, string]> = [
+      [withMachine({ status: "online" }), secret, "Update fleetd on devbox"],
+      [withMachine({ status: "offline", boxPubKey: key }), secret, "back online"],
+      [withSnapshot(emptyInbox, { cursor: 1, machines: [] }), secret, "add that machine"],
+      [withMachine({ status: "online", boxPubKey: key }), { ...secret, sink: "env:devbox:relative" }, "with a destination"],
+    ];
+    for (const [state, a, fix] of cases) {
+      const target = secretTarget(state, a);
+      expect(target.ok).toBe(false);
+      if (!target.ok) expect(target.fix).toContain(fix);
+    }
   });
 });

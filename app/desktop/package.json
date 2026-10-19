@@ -21,6 +21,7 @@
   "dependencies": {
     "@napi-rs/keyring": "2.1.1",
     "@tanstack/react-virtual": "3.14.21",
+    "libsodium-wrappers": "0.8.4",
     "lucide-react": "1.59.0",
     "radix-ui": "1.8.1",
     "react": "19.3.1",

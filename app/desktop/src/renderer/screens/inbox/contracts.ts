@@ -72,7 +72,10 @@ export interface Ask {
   readonly verify?: { readonly type: string };
   readonly gated?: GatedRunSpec;
   readonly permission?: ToolPermission;
+  /** secret: `env:<machineId>:<path>` or `file:<machineId>:<path>`. */
   readonly sink?: string;
+  /** secret with an env: sink, when the variable is not the one its key names. */
+  readonly envName?: string;
   readonly evidence?: string;
   readonly blocks: string;
   readonly proceededOnRec: boolean;
@@ -125,4 +128,15 @@ export interface OrderCard {
 
 export interface OrdersBoardOutput {
   readonly orders: readonly OrderCard[];
+}
+
+export type MachineStatus = "online" | "offline" | "degraded";
+
+/** The snapshot's machines, as far as secret asks need them. */
+export interface Machine {
+  readonly machineId: string;
+  readonly name: string;
+  readonly status: MachineStatus;
+  /** Absent: the node takes no secrets (yet). */
+  readonly boxPubKey?: string;
 }

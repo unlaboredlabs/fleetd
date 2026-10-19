@@ -1,10 +1,10 @@
 // The one question card. The board's Needs you, the inbox panel, the order view and Status all render this, so an
 // answer given anywhere reads the same and clears everywhere (one store).
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
-import { Button, cx, IdChip, RadioCard, RadioGroup, Text, Textarea, Truncate } from "../../ui";
+import { Button, cx, IdChip, Input, RadioCard, RadioGroup, Text, Textarea, Truncate } from "../../ui";
 import { cardOptions, classTag, takesFreeText, takesSkip, type CardPick } from "./ask";
 import type { Ask, GatedRunSpec } from "./contracts";
-import { askPlace, type Answered } from "./model";
+import { askPlace, secretTarget, type Answered, type SecretTarget } from "./model";
 import { inboxStore, useInbox } from "./store";
 import s from "./QuestionCard.module.css";
 
@@ -13,6 +13,9 @@ const OTHER = " other";
 
 export interface QuestionCardViewProps {
   ask: Ask;
+  /** Secret asks: where the value goes, or why it can't be sent now. */
+  secret?: SecretTarget | undefined;
+  onSecret?: ((field: HTMLInputElement) => void) | undefined;
   place: { readonly project: string; readonly order: string | null };
   answered?: Answered | undefined;
   error?: string | undefined;
@@ -33,6 +36,8 @@ export function QuestionCard({ ask, autoFocus }: { ask: Ask; autoFocus?: boolean
     <QuestionCardView
       ask={ask}
       place={askPlace(inbox, ask)}
+      secret={ask.kind === "secret" ? secretTarget(inbox, ask) : undefined}
+      onSecret={(field) => store.submitSecret(ask, field)}
       answered={inbox.answered.get(ask.askId)}
       error={inbox.errors.get(ask.askId)}
       live={inbox.live}
@@ -177,6 +182,7 @@ function OpenBody(props: QuestionCardViewProps & { titleId: string }) {
         </Text>
       ) : null}
       <Details ask={ask} />
+      {props.secret === undefined ? null : <SecretEntry target={props.secret} live={live} onSecret={props.onSecret} />}
       <RadioGroup aria-labelledby={props.titleId} value={picked} onValueChange={setPicked} className={s.options}>
         {options.map((o, i) => (
           <RadioCard
@@ -280,17 +286,62 @@ function Details({ ask }: { ask: Ask }) {
           ))}
         </ol>
       )}
-      {ask.kind === "secret" ? (
-        <Text as="p" size="sm" tone="quiet">
-          {`The lead needs a secret${ask.sink === undefined ? "" : ` for ${ask.sink}`}. Entering secrets isn't in this app yet; decline it here or send it from the terminal.`}
-        </Text>
-      ) : null}
       {ask.evidence === undefined ? null : (
         <Text as="p" size="sm" tone="quiet" preserveLines>
           {ask.evidence}
         </Text>
       )}
     </>
+  );
+}
+
+/**
+ * A password field whose value React never copies: it is read once on send, handed to main to seal, and the field
+ * is emptied in the same step (store.submitSecret).
+ */
+function SecretEntry(props: { target: SecretTarget; live: boolean; onSecret: ((field: HTMLInputElement) => void) | undefined }) {
+  const field = useRef<HTMLInputElement>(null);
+  const [typed, setTyped] = useState(false);
+  const { target } = props;
+  if (!target.ok) {
+    return (
+      <p role="alert" className={s.alert}>
+        <Text size="sm" tone="warning">{`${target.message} ${target.fix}`}</Text>
+      </p>
+    );
+  }
+  const send = (): void => {
+    if (field.current !== null && props.live) props.onSecret?.(field.current);
+    setTyped(false);
+  };
+  return (
+    <div className={s.detail}>
+      <Text size="sm">{`The value is saved ${target.where}.`}</Text>
+      <div className={s.secretRow}>
+        <Input
+          ref={field}
+          type="password"
+          aria-label="Secret value"
+          placeholder="Paste or type the value"
+          autoComplete="off"
+          className={cx(s.secretInput)}
+          disabled={!props.live}
+          onChange={(e) => setTyped(e.target.value !== "")}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              send();
+            }
+          }}
+        />
+        <Button variant="primary" disabled={!typed || !props.live} onClick={send}>
+          Seal and send
+        </Button>
+      </div>
+      <Text size="xs" tone="quiet">
+        {`It is sealed on this computer to ${target.machine}'s key. The hub only passes it on, and fleetd never shows it again.`}
+      </Text>
+    </div>
   );
 }
 

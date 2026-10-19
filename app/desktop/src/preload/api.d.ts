@@ -1,11 +1,15 @@
-import type { CallOutcome, ConnectOutcome, HubFrame, HubState } from "../shared/hub";
-import type { LiveScope } from "../shared/ipc";
+import type { CallOutcome, ConnectOutcome, HubFrame, HubState, SecretOutcome } from "../shared/hub";
+import type { LiveScope, SecretRequest } from "../shared/ipc";
 
 /** `window.fleetd`: everything the renderer can ask of main. There is no other bridge. */
 export interface FleetdApi {
   readonly platform: "darwin" | "linux" | "win32" | "other";
   /** Writes text to the clipboard (the page has no clipboard permission of its own). */
   copy(text: string): Promise<void>;
+  readonly secret: {
+    /** Main seals `value` to `boxPubKey` and submits it; the value is never sent back or shown again. */
+    submit(request: SecretRequest): Promise<SecretOutcome>;
+  };
   readonly hub: {
     state(): Promise<HubState>;
     /**
