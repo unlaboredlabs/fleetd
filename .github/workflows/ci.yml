@@ -43,8 +43,9 @@ jobs:
         # answer). Its own step so a claude protocol drift reads as such; re-record the fixtures when bumping TESTED.
         run: cargo test --locked -p fleetd --lib node::runner
       - name: The docs' generated pages are up to date
-        # The CLI reference, the Agent tools page and the prompt table in docs/site/src/content/docs come from the code. This fails
-        # while they differ from a fresh render. Fix: cargo run -q -p docsgen, then rebuild and commit (site/README.md).
+        # The CLI reference, the Agent tools page and the prompt table in docs/site/src/content/docs come from the
+        # code. This fails while they differ from a fresh render. Fix: cargo run -q -p docsgen, then rebuild and commit
+        # (site/README.md).
         run: cargo run --locked -q -p docsgen -- --check
       # For the site job. The dependencies are already built by the tests, so this compiles only the binary.
       - run: cargo run --locked -q -p fleetd -- help > "$RUNNER_TEMP/fleetd-help.txt"
