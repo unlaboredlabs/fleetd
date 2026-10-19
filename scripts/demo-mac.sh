@@ -9,7 +9,8 @@
 # through Chromium's own capture (FLEETD_RECORD), so there is no Screen Recording permission and no ffmpeg, and
 # paints the traffic lights the window server draws back into each frame.
 #
-# The fleetd it runs is the nightly release: the CLI and the desktop app (fleetd-desktop-macos-universal.zip) from
+# The fleetd it runs is the nightly release: the CLI and the desktop app (fleetd-desktop-macos-universal.zip, or the
+# GPUI fleetd-app-macos-universal.zip while the nightly doesn't carry the desktop app yet) from
 # https://github.com/unlaboredlabs/fleetd/releases/download/nightly/, each checked against the release's SHA256SUMS
 # as site/install.sh does, and the lab driver (tests/lab) checked out at the commit release.json names, so the two
 # match. It prints that commit and its date, and refuses a nightly without the board pass (#138). FLEETD_DEMO_BUILD=1,
@@ -185,12 +186,18 @@ if [ "$build" = 0 ]; then
   case "$(uname -m)" in arm64) cli_asset=fleetd-darwin-arm64 ;; x86_64) cli_asset=fleetd-darwin-x64 ;; *) die "no fleetd for $(uname -m)" ;; esac
   fetch "$cli_asset" "$nightly/fleetd"
   chmod 755 "$nightly/fleetd"
-  awk '$2 == "fleetd-desktop-macos-universal.zip" || $2 == "*fleetd-desktop-macos-universal.zip" { found = 1 } END { exit !found }' "$nightly/SHA256SUMS" ||
-    die "the nightly has no desktop app yet (its release builds it once FLEETD_RELEASE_DESKTOP is on); set FLEETD_DEMO_BUILD=1 to build it"
-  fetch fleetd-desktop-macos-universal.zip "$nightly/app.zip"
+  # The desktop app once the nightly carries it (its release builds it with FLEETD_RELEASE_DESKTOP on); until then
+  # the GPUI app, which records itself the same way (FLEETD_RECORD, the same log lines and files).
+  if awk '$2 == "fleetd-desktop-macos-universal.zip" || $2 == "*fleetd-desktop-macos-universal.zip" { found = 1 } END { exit !found }' "$nightly/SHA256SUMS"; then
+    app_zip=fleetd-desktop-macos-universal.zip app_exe=fleetd recorder=app/desktop/src/main/instrument/record.ts
+  else
+    say "The nightly has no desktop app yet; recording the GPUI app"
+    app_zip=fleetd-app-macos-universal.zip app_exe=fleetd-app recorder=app/record/src/lib.rs
+  fi
+  fetch "$app_zip" "$nightly/app.zip"
   rm -rf "$nightly/fleetd.app"
   ditto -x -k "$nightly/app.zip" "$nightly" && rm -f "$nightly/app.zip"
-  app="$nightly/fleetd.app/Contents/MacOS/fleetd"
+  app="$nightly/fleetd.app/Contents/MacOS/$app_exe"
   [ -x "$app" ] || die "the app archive has no fleetd.app"
   fleetd_bin="$nightly/fleetd"
 else
@@ -210,11 +217,12 @@ else
   printf '#!/bin/sh\nexec "%s" "%s" --fleetd-launcher="$0" "$@"\n' "$electron" "$repo/app/desktop" >"$app"
   chmod 755 "$app"
   fleetd_bin="$repo/target/release/fleetd"
+  recorder=app/desktop/src/main/instrument/record.ts
 fi
 
-# The app must have the desktop recorder and the lab driver FLEETD_DEMO_APP (#136); both must have the board pass (#138).
-git -C "$repo" cat-file -e "$app_commit:app/desktop/src/main/instrument/record.ts" 2>/dev/null ||
-  die "the app (${app_commit:0:7}) predates the desktop app's recorder; wait for a nightly with it, or set FLEETD_DEMO_BUILD=1"
+# The app must have its recorder and the lab driver FLEETD_DEMO_APP (#136); both must have the board pass (#138).
+git -C "$repo" cat-file -e "$app_commit:$recorder" 2>/dev/null ||
+  die "the app (${app_commit:0:7}) predates its recorder ($recorder); wait for a nightly with it, or set FLEETD_DEMO_BUILD=1"
 grep -q FLEETD_DEMO_APP "$repo/tests/lab/demoFanout.ts" ||
   die "the lab driver at ${cli_commit:0:7} predates the demo recorder (#136); wait for a nightly with it"
 if [ "${FLEETD_DEMO_ANY_COMMIT:-}" != 1 ]; then
