@@ -1,11 +1,11 @@
 // The status view cannot be stale (docs/site/status.md): a source that goes quiet is flagged within its cadence and
-// clears when it is back. On the testbed's train row that m7 leaves, with the hub restarted on short GitHub windows
+// clears when it is back. On the lab repo's train row that m7 leaves, with the hub restarted on short GitHub windows
 // and a lab-only `gh` that fails while a flag file exists (the lab hub has no public URL, so webhooks stay off and a
 // dead `gh` is the honest dropped connection):
-// 1. baseline: a clean fleet doc, the testbed's main CI fresh, both machines online;
+// 1. baseline: a clean fleet doc, the lab repo's main CI fresh, both machines online;
 // 2. lab-b's node is killed: machine:lab-b goes stale within 45 s of silence + 5 s, the headline says "Not live" and
 //    names it, `fleetd status` prints OFFLINE; once it relinks, the doc is clean again within 20 s;
-// 3. GitHub is cut: source.stale for github:<testbed> within 30 + 10 + 5 s, the CI entry is marked and the headline
+// 3. GitHub is cut: source.stale for github:<lab repo> within 30 + 10 + 5 s, the CI entry is marked and the headline
 //    says "Not live"; once it is back, source.fresh and a clean doc within 10 + 5 s.
 // The doc is read through status_wait, which blocks until it changes. No claude turns are asserted; the headline's
 // one-shots (haiku) may run.
