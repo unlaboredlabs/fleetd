@@ -14,7 +14,7 @@ use fleetd_contracts::ledger::{AskState, Decision, DecisionScope, DecisionSource
 use fleetd_contracts::mcp::{
     AsksListInput, AsksListOutput, DecisionsRecordInput, DecisionsRecordOutput,
     DecisionsSearchInput, DecisionsSearchOutput, DigestGetInput, DigestGetOutput, ErrorCode,
-    InboxReplyInput,
+    InboxReplyInput, InboxUndoInput, InboxUndoOutput,
 };
 use fleetd_contracts::prim::List;
 
@@ -163,11 +163,37 @@ pub fn register(tools: &mut Registry) {
                 .reply(&reply, &actor_of(&caller))
                 .map_err(refusal)?;
             if result.parsed {
-                result.next = Some(
-                    "Each answer is a Decision now and reaches its lead in its next wake.".into(),
-                );
+                result.next = Some(if result.applied.iter().any(|a| a.undo_until.is_some()) {
+                    "Decide answers can be taken back with inbox_undo for 10 s; then each becomes a Decision (a skip leaves the lead on its recommendation) and reaches its lead, and ask.delivered follows.".into()
+                } else {
+                    "Each answer is a Decision now and reaches its lead in its next wake.".into()
+                });
             }
             Ok::<_, ToolError>(result)
+        },
+    );
+
+    tools.add(
+        "inbox_undo",
+        |hub: Arc<Hub>, caller: Caller, input: InboxUndoInput| async move {
+            let grants = caller.clone();
+            let allows_here: super::inbox::Allows =
+                Box::new(move |r: Option<&ProjectRef>| match r {
+                    None => allows_everywhere(&grants, Role::Operate),
+                    Some(r) => allows(&grants, Role::Operate, Some(&r.machine_id)),
+                });
+            let ask = hub
+                .inbox
+                .undo(&input.ask_id, Some(&allows_here))
+                .map_err(refusal)?;
+            Ok::<_, ToolError>(InboxUndoOutput {
+                next: Some(format!(
+                    "{} is open again; answer it with inbox_reply.",
+                    ask.ask_id
+                )),
+                ask,
+                truncated: None,
+            })
         },
     );
 
@@ -277,29 +303,39 @@ pub fn lead_call(
                 .as_ref()
                 .map(|w| own_workstream(hub, &r, w))
                 .transpose()?;
-            let outcome = hub.asks.create(
-                &AskInput {
-                    project_ref: Some(r),
-                    workstream_id,
-                    kind: call.kind.into(),
-                    key: call.key,
-                    class: call.class.to_string(),
-                    text: call.text,
-                    context: call.context,
-                    recommendation: call.recommendation,
-                    recommendation_why: call.recommendation_why,
-                    options: call.options,
-                    steps: call.steps,
-                    verify: call.verify,
-                    sink: call.sink,
-                    env_name: call.env_name,
-                    gated: None,
-                    permission: None,
-                    blocks: call.blocks,
-                    proceeded_on_rec: call.proceeded_on_rec,
-                },
-                by,
-            )?;
+            let input = AskInput {
+                project_ref: Some(r),
+                workstream_id,
+                kind: call.kind.into(),
+                key: call.key,
+                class: call.class.to_string(),
+                text: call.text,
+                context: call.context,
+                recommendation: call.recommendation,
+                recommendation_why: call.recommendation_why,
+                options: call.options,
+                steps: call.steps,
+                verify: call.verify,
+                sink: call.sink,
+                env_name: call.env_name,
+                gated: None,
+                permission: None,
+                blocks: call.blocks,
+                proceeded_on_rec: call.proceeded_on_rec,
+            };
+            if let Some(refused) = super::lead_decide_rule(&input) {
+                return Err(refused);
+            }
+            let mut input = input;
+            // The recommended option first, so reply letter "a" is always the recommendation.
+            if let (Some(options), Some(rec)) = (input.options.take(), &input.recommendation) {
+                let (first, rest): (Vec<_>, Vec<_>) = options
+                    .into_inner()
+                    .into_iter()
+                    .partition(|o| o.key == *rec);
+                input.options = Some(List::unchecked(first.into_iter().chain(rest).collect()));
+            }
+            let outcome = hub.asks.create(&input, by)?;
             Ok(LeadCallResult::Ask(AskResult {
                 state: if outcome.state == OutcomeState::Auto {
                     AskState::Auto

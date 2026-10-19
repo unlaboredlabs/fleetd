@@ -967,6 +967,10 @@ pub struct AskAnswer {
     /// The reply text it was parsed from.
     pub raw: String,
     pub kind: Option<AskAnswerKind>,
+    /// The reply's note ("1 a: because …"), kept for the decision's why.
+    pub note: Option<String>,
+    /// Who the decision will be recorded as, once the undo window passes.
+    pub source: Option<DecisionSource>,
     /// Until then `inbox_undo` reopens the ask and the lead never hears of the answer.
     pub undo_until: Option<Timestamp>,
     /// The receipt: when the lead was woken with this answer. Absent while the undo window runs.
@@ -1212,6 +1216,8 @@ mod tests {
             at: Timestamp("2026-10-19T00:00:00.000Z".into()),
             raw: "1 skip".into(),
             kind: Some(AskAnswerKind::Skip),
+            note: None,
+            source: None,
             undo_until: None,
             delivered_at: None,
         };
