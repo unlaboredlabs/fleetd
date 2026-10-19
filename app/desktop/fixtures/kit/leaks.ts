@@ -36,12 +36,57 @@ export const localWords = (): Array<readonly [string, RegExp]> => {
     .map((w) => ["a denylisted word", new RegExp(`(?<![A-Za-z0-9])${escape(w)}(?![A-Za-z0-9])`, "iu")] as const);
 };
 
-/** Every leak in `text`, as "<what>: …context…", using LEAKS plus the local words. */
-export const findLeaks = (text: string): Array<string> =>
+const scan = (text: string, where = ""): Array<string> =>
   [...LEAKS, ...localWords()].flatMap(([what, pattern]) => {
     const hit = pattern.exec(text);
-    return hit === null ? [] : [`${what}: "${text.slice(Math.max(0, hit.index - 40), hit.index + 40).replaceAll("\n", " ")}"`];
+    return hit === null ? [] : [`${what}${where}: "${text.slice(Math.max(0, hit.index - 40), hit.index + 40).replaceAll("\n", " ")}"`];
   });
+
+const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+/** The chunks that only draw pixels; anything else (tEXt, iTXt, zTXt, eXIf, tIME…) can carry text. */
+const PIXEL_CHUNKS = new Set(["IHDR", "PLTE", "IDAT", "IEND", "tRNS", "gAMA", "sRGB", "cHRM", "pHYs"]);
+
+/** Problems with one attached file's bytes: text is scanned whole; a PNG may only hold pixel chunks; nothing else. */
+const attachmentLeaks = (mime: string, data: Buffer, name: string): Array<string> => {
+  const where = ` in attachment ${name}`;
+  if (mime.startsWith("text/")) return scan(data.toString("utf8"), where);
+  if (mime !== "image/png") return [`an attachment the check can't read${where} (${mime}): use text/* or a metadata-free PNG`];
+  if (!data.subarray(0, 8).equals(PNG_SIGNATURE)) return [`a PNG that isn't one${where}`];
+  const out: Array<string> = [];
+  for (let at = 8; at + 8 <= data.length; ) {
+    const length = data.readUInt32BE(at);
+    const type = data.toString("latin1", at + 4, at + 8);
+    if (!PIXEL_CHUNKS.has(type)) out.push(`PNG metadata (${type})${where}`);
+    at += 12 + length;
+  }
+  return out;
+};
+
+/** Every attachment's bytes in a fixture (any object with dataB64), which base64 hides from a scan of the JSON. */
+const attachedFiles = (v: unknown, out: Array<string>): void => {
+  if (Array.isArray(v)) for (const x of v) attachedFiles(x, out);
+  else if (typeof v === "object" && v !== null) {
+    const o = v as Record<string, unknown>;
+    if (typeof o["dataB64"] === "string") {
+      const mime = typeof o["mime"] === "string" ? o["mime"] : "unknown";
+      out.push(...attachmentLeaks(mime, Buffer.from(o["dataB64"], "base64"), typeof o["name"] === "string" ? o["name"] : "unnamed"));
+    }
+    for (const x of Object.values(o)) attachedFiles(x, out);
+  }
+};
+
+/** Every leak in `text` (a fixture's JSON, or any text), as "<what>: …context…", attachments decoded and checked. */
+export const findLeaks = (text: string): Array<string> => {
+  const leaks = scan(text);
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    return leaks;
+  }
+  attachedFiles(json, leaks);
+  return leaks;
+};
 
 export const assertClean = (name: string, text: string): void => {
   const leaks = findLeaks(text);
