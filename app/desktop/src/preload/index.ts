@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import { IPC } from "../shared/channels";
 import type { CallOutcome, ConnectOutcome, HubFrame, HubState } from "../shared/hub";
+import type { PairOutcome, PairStart, Probe } from "../shared/pairing";
 import type { FleetdApi } from "./api";
 
 const listeners = new Set<(frame: HubFrame) => void>();
@@ -28,6 +29,11 @@ const api: FleetdApi = {
     resync: () => ipcRenderer.invoke(IPC.hubResync) as Promise<void>,
     connect: (url, key) => ipcRenderer.invoke(IPC.hubConnect, { url, key }) as Promise<ConnectOutcome>,
     forget: () => ipcRenderer.invoke(IPC.hubForget) as Promise<void>,
+  },
+  pair: {
+    start: () => ipcRenderer.invoke(IPC.pairStart) as Promise<PairStart>,
+    probe: (hub) => ipcRenderer.invoke(IPC.pairProbe, hub) as Promise<Probe>,
+    redeem: (request) => ipcRenderer.invoke(IPC.pairRedeem, request) as Promise<PairOutcome>,
   },
 };
 

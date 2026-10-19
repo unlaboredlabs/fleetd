@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { app, BrowserWindow, nativeTheme } from "electron";
 import { HubService } from "./hub/service";
 import { registerIpc } from "./ipc";
+import { PairingService, realPairingDeps } from "./pairing/service";
 import { harden, lockSession } from "./security";
 
 /** Height of the renderer's top bar; the macOS traffic lights are centred in it. */
@@ -41,7 +42,8 @@ const createWindow = (): BrowserWindow => {
 void app.whenReady().then(() => {
   lockSession();
   const hub = new HubService();
-  registerIpc(hub);
+  const pairing = new PairingService(realPairingDeps((url, key) => hub.connect({ url, key })));
+  registerIpc(hub, pairing);
   createWindow();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

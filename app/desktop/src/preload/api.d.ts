@@ -1,5 +1,6 @@
 import type { CallOutcome, ConnectOutcome, HubFrame, HubState } from "../shared/hub";
 import type { LiveScope } from "../shared/ipc";
+import type { PairOutcome, PairRequest, PairStart, Probe } from "../shared/pairing";
 
 /** `window.fleetd`: everything the renderer can ask of main. There is no other bridge. */
 export interface FleetdApi {
@@ -18,6 +19,14 @@ export interface FleetdApi {
     resync(): Promise<void>;
     connect(url: string, key: string): Promise<ConnectOutcome>;
     forget(): Promise<void>;
+  };
+  readonly pair: {
+    /** A code `fleetd init` left on this computer, and whether a hub answers there. Never rejects. */
+    start(): Promise<PairStart>;
+    /** The hub's version and protocol from its /healthz. Never rejects. */
+    probe(hub: string): Promise<Probe>;
+    /** Trades a code for a key, then saves it and connects. Never rejects: failures carry the hub's fix. */
+    redeem(request: PairRequest): Promise<PairOutcome>;
   };
 }
 

@@ -2,6 +2,7 @@
 // argument list here before any handler runs, and refuses anything else.
 import { z } from "zod";
 import { IPC, type InvokeChannel } from "./channels";
+import { PairRequest, ProbeRequest } from "./pairing";
 
 /** MCP tool names: lowercase words joined by underscores. */
 const toolName = z.string().regex(/^[a-z][a-z0-9_]{0,63}$/u);
@@ -38,6 +39,9 @@ export const REQUESTS = {
   [IPC.hubResync]: none,
   [IPC.hubConnect]: z.tuple([ConnectRequest]),
   [IPC.hubForget]: none,
+  [IPC.pairStart]: none,
+  [IPC.pairProbe]: z.tuple([ProbeRequest]),
+  [IPC.pairRedeem]: z.tuple([PairRequest]),
 } as const satisfies Record<InvokeChannel, z.ZodType>;
 
 export type RequestArgs<C extends InvokeChannel> = z.infer<(typeof REQUESTS)[C]>;

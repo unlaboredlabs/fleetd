@@ -16,6 +16,12 @@ export const IPC = {
   hubConnect: "hub:connect",
   /** invoke() → void. Disconnects and deletes the saved key. */
   hubForget: "hub:forget",
+  /** invoke() → PairStart. app-pair.json and whether a hub answers, for the connect screen. */
+  pairStart: "pair:start",
+  /** invoke(hub address) → Probe. The hub's /healthz. */
+  pairProbe: "pair:probe",
+  /** invoke(PairRequest) → PairOutcome. POST <hub>/pair, then saves the key and connects like hubConnect. */
+  pairRedeem: "pair:redeem",
   /** main → renderer: HubFrame */
   hubFrame: "hub:frame",
 } as const;

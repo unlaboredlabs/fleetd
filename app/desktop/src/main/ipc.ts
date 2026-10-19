@@ -2,6 +2,7 @@ import { ipcMain, type IpcMainInvokeEvent } from "electron";
 import { IPC, type InvokeChannel } from "../shared/channels";
 import { parseRequest, type RequestArgs } from "../shared/ipc";
 import type { HubService } from "./hub/service";
+import type { PairingService } from "./pairing/service";
 import { rendererOrigin } from "./security";
 
 /** Only our own top-level page may call main; a subframe or a navigated-away page can't. */
@@ -24,7 +25,7 @@ const handle = <C extends InvokeChannel>(
   });
 };
 
-export const registerIpc = (hub: HubService): void => {
+export const registerIpc = (hub: HubService, pairing: PairingService): void => {
   handle(IPC.hubState, () => hub.state());
   handle(IPC.hubSubscribe, (event) => hub.subscribe(event.sender));
   handle(IPC.hubUnsubscribe, (event) => hub.unsubscribe(event.sender));
@@ -33,4 +34,7 @@ export const registerIpc = (hub: HubService): void => {
   handle(IPC.hubResync, () => hub.resync());
   handle(IPC.hubConnect, (_event, request) => hub.connect(request));
   handle(IPC.hubForget, () => hub.forget());
+  handle(IPC.pairStart, () => pairing.start());
+  handle(IPC.pairProbe, (_event, address) => pairing.probe(address));
+  handle(IPC.pairRedeem, (_event, request) => pairing.redeem(request));
 };
