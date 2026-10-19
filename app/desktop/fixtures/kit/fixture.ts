@@ -16,6 +16,23 @@ export interface HubErrorJson {
 
 type TimedKind = "event" | "live" | "snapshot";
 
+/** Rows of `tool`'s answers under `field` matching `where`, e.g. asks_list's asks with askId A1. */
+export interface Rows {
+  readonly tool: string;
+  readonly field: string;
+  readonly where: JsonObject;
+}
+
+/**
+ * What answering a call changes, as the hub would (main's FixtureSource applies it): frames `ms` after the call, and
+ * rows later answers leave out (`hide`) or include again (`show`).
+ */
+export interface CallThen {
+  readonly frames?: ReadonlyArray<{ readonly ms: number; readonly kind: TimedKind; readonly payload: JsonObject }>;
+  readonly hide?: ReadonlyArray<Rows>;
+  readonly show?: ReadonlyArray<Rows>;
+}
+
 /** src/main/hub/fixture.ts: the longest gap between frames, and the longest call delay. */
 const MAX_AFTER_MS = 600_000;
 
@@ -28,6 +45,28 @@ const leaves = (v: JsonValue | undefined): number =>
   Array.isArray(v) ? v.reduce<number>((n, x) => n + leaves(x), 0) : isObject(v) ? Object.values(v).reduce<number>((n, x) => n + leaves(x), 0) : v === undefined ? 0 : 1;
 
 const sameJson = (a: JsonValue | undefined, b: JsonValue | undefined) => JSON.stringify(a) === JSON.stringify(b);
+
+const timedFrame = (kind: TimedKind, payload: JsonObject, afterMs: number): FixtureFrame => {
+  const num = (v: JsonValue | undefined) => (typeof v === "number" ? v : 0);
+  if (kind === "snapshot") return { t: "snapshot", snapshot: { ...payload, cursor: num(payload["cursor"]) }, afterMs };
+  if (kind === "event") return { t: "event", event: { ...payload, seq: num(payload["seq"]), type: asText(payload["type"]) }, afterMs };
+  return { t: "live", frame: { ...payload, full: payload["full"] === true }, afterMs };
+};
+
+/** A CallThen as main reads it: each frame `afterMs` after the one before (the first after the call). */
+const thenFile = (then: CallThen): NonNullable<FixtureCall["then"]> => {
+  let previous = 0;
+  const frames = (then.frames ?? []).toSorted((a, b) => a.ms - b.ms).map(({ ms, kind, payload }) => {
+    const afterMs = Math.max(0, Math.round(ms - previous));
+    previous = ms;
+    return timedFrame(kind, payload, afterMs);
+  });
+  return {
+    ...(frames.length === 0 ? {} : { frames }),
+    ...(then.hide === undefined ? {} : { hide: then.hide.map((r) => ({ ...r })) }),
+    ...(then.show === undefined ? {} : { show: then.show.map((r) => ({ ...r })) }),
+  };
+};
 
 export class Fixture {
   readonly name: string;
@@ -45,7 +84,7 @@ export class Fixture {
   timeline: Array<{ ms: number; kind: TimedKind; payload: JsonObject }> = [];
   /** When the screen is final, for the QA harness to screenshot; defaults to the last timed frame. */
   settleMs: number | undefined;
-  calls: Array<{ tool: string; input: JsonObject | undefined; output?: JsonValue; error?: HubErrorJson; delayMs?: number }> = [];
+  calls: Array<{ tool: string; input: JsonObject | undefined; output?: JsonValue; error?: HubErrorJson; delayMs?: number; then?: CallThen }> = [];
   /**
    * What pairing finds instead of the network (src/main/pairing/fixture.ts): app-pair.json, the hub's /healthz and
    * /pair answers, and where the key would be kept. Absent: no file, no hub answers, the OS store.
@@ -124,6 +163,14 @@ export class Fixture {
     return this;
   }
 
+  /** What answering `tool` for exactly this input changes afterwards (see CallThen); the answer must exist. */
+  then(tool: string, input: JsonObject | undefined, then: CallThen): this {
+    const call = this.calls.find((c) => c.tool === tool && sameJson(c.input, input));
+    if (call === undefined) throw new Error(`${this.name}: then() for ${tool} ${JSON.stringify(input)}, which has no answer`);
+    call.then = then;
+    return this;
+  }
+
   /** Makes `tool` fail with a hub error for inputs containing `input`. */
   fail(tool: string, input: JsonObject | undefined, error: HubErrorJson, delayMs?: number): this {
     this.#put({ tool, input, error, ...(delayMs === undefined ? {} : { delayMs }) });
@@ -187,6 +234,7 @@ export class Fixture {
         ...(c.input === undefined ? {} : { input: c.input }),
         outcome: c.error === undefined ? { ok: true, output: c.output ?? null } : { ok: false, error: { ...c.error } },
         ...(c.delayMs === undefined ? {} : { delayMs: c.delayMs }),
+        ...(c.then === undefined ? {} : { then: thenFile(c.then) }),
       }));
     return {
       version: 1,

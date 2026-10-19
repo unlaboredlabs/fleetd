@@ -103,6 +103,10 @@ const payloads = (f: Fixture, problems: Array<string>): Array<Payload> => {
     }
     // A misspelled input key would never match the screen's call, so the screen shows not_found and still "passes".
     if (c.input !== undefined) out.push({ what: `${c.tool} input ${JSON.stringify(c.input).slice(0, 80)}`, fn: validator("McpTools.json", `#/$defs/McpTools/properties/${c.tool}.input`, "partial"), value: c.input });
+    for (const t of c.then?.frames ?? []) {
+      if (t.kind !== "event") continue;
+      out.push({ what: `${c.tool} then: event ${asText(t.payload["type"])}`, fn: validator("HubEvent.json", "#/$defs/HubEvent"), value: t.payload });
+    }
     if (c.error !== undefined && !ERROR_CODES.has(c.error.code)) problems.push(`${f.name}: ${c.tool} fails with "${c.error.code}", not a hub error code (${[...ERROR_CODES].join(", ")})`);
     if (c.output === undefined || f.pendingContracts.has(c.tool)) continue;
     out.push({ what: `${c.tool} ${JSON.stringify(c.input ?? {}).slice(0, 80)} output`, fn: validator("McpTools.json", `#/$defs/McpTools/properties/${c.tool}.output`), value: c.output });
