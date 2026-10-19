@@ -71,6 +71,28 @@ export const readPalette = (el: Element, dpr: number): Palette => {
   };
 };
 
+/**
+ * Palettes by the theme the document actually has (`data-theme` on <html>), not React's theme state: the theme
+ * provider sets the attribute in an effect that runs after its children's, so a read keyed on React state could
+ * cache the old colours under the new key.
+ */
+export const paletteCache = (read: (el: Element, dpr: number) => Palette) => {
+  let cached: { key: string; palette: Palette } | undefined;
+  return (theme: string, dpr: number, el: Element): Palette => {
+    const key = `${theme}:${dpr}`;
+    if (cached?.key !== key) cached = { key, palette: read(el, dpr) };
+    return cached.palette;
+  };
+};
+
+/** The document's theme, and a subscription to its changes, for useSyncExternalStore. */
+export const documentTheme = (): string => document.documentElement.dataset["theme"] ?? "";
+export const watchDocumentTheme = (onChange: () => void): (() => void) => {
+  const mo = new MutationObserver(onChange);
+  mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  return () => mo.disconnect();
+};
+
 export interface Frame {
   readonly model: Model;
   readonly v0: number;

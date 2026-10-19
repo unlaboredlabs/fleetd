@@ -1,12 +1,12 @@
 // The order timeline: one row per lane, each row's spans as bars on one time axis, the critical path as a line
 // under them. Bars are painted on one canvas (only the visible rows); labels, the axis and the hover card are DOM.
 // Drag to zoom, Ctrl/⌘ + wheel to zoom at the pointer, Shift + wheel to pan, click a bar for its transcript.
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type RefObject } from "react";
-import { Button, RoleTag, Text, Truncate, cx, useTheme } from "../../ui";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type PointerEvent, type RefObject } from "react";
+import { Button, RoleTag, Text, Truncate, cx } from "../../ui";
 import { barCard, laneCard, pathCard, type Card } from "./cards";
 import { CAT_LABEL, SHOWN, clockMs, fmtDur, type Names } from "./format";
 import { hit, padded, rowRange, ticks, type Bar, type Model } from "./model";
-import { ROW_H, paintPath, paintRows, readPalette, type Palette } from "./paint";
+import { ROW_H, documentTheme, paintPath, paintRows, paletteCache, readPalette, watchDocumentTheme } from "./paint";
 import type { Span } from "./types";
 import s from "./Time.module.css";
 
@@ -54,7 +54,7 @@ const sizeCanvas = (c: HTMLCanvasElement, w: number, h: number, dpr: number) => 
 };
 
 export function Timeline({ model: m, names, nowMs, view, onView, lit, onSpan }: TimelineProps) {
-  const { resolved } = useTheme();
+  const theme = useSyncExternalStore(watchDocumentTheme, documentTheme);
   const rootRef = useRef<HTMLDivElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
@@ -72,41 +72,28 @@ export function Timeline({ model: m, names, nowMs, view, onView, lit, onSpan }: 
   const [v0, v1] = view ?? [m.startMs, m.endMs];
   const tickList = useMemo(() => ticks(v0, v1), [v0, v1]);
   // The category colours come from the tokens, so they are read again when the theme changes; patterns are cached.
-  const paletteRef = useRef<{ key: string; palette: Palette } | undefined>(undefined);
-  const paletteFor = useCallback(
-    (el: Element): Palette => {
-      const key = `${resolved}:${dpr}`;
-      if (paletteRef.current?.key !== key) paletteRef.current = { key, palette: readPalette(el, dpr) };
-      return paletteRef.current.palette;
-    },
-    [resolved, dpr],
-  );
+  const [palettes] = useState(() => paletteCache(readPalette));
 
-  // One paint per change; requestAnimationFrame folds a burst (a drag, a scroll) into one frame.
-  useEffect(() => {
+  // Painted synchronously on every change (a repaint takes well under a millisecond at 15k spans), so no frame
+  // shows a canvas older than the DOM around it: after a theme change the bars are already in the new palette.
+  useLayoutEffect(() => {
     const c = canvasRef.current;
     const ctx = c?.getContext("2d");
     const root = rootRef.current;
     if (c == null || ctx == null || root === null || size.width <= 0) return;
-    const id = requestAnimationFrame(() => {
-      sizeCanvas(c, size.width, size.height, dpr);
-      const palette = paletteFor(root);
-      barsRef.current = paintRows(ctx, { model: m, v0, v1, width: size.width, height: size.height, scrollTop, dpr, ticks: tickList, lit, drag, palette });
-    });
-    return () => cancelAnimationFrame(id);
-  }, [m, v0, v1, size.width, size.height, scrollTop, dpr, tickList, lit, drag, paletteFor]);
+    sizeCanvas(c, size.width, size.height, dpr);
+    const palette = palettes(theme, dpr, root);
+    barsRef.current = paintRows(ctx, { model: m, v0, v1, width: size.width, height: size.height, scrollTop, dpr, ticks: tickList, lit, drag, palette });
+  }, [m, v0, v1, size.width, size.height, scrollTop, dpr, tickList, lit, drag, palettes, theme]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const c = pathRef.current;
     const ctx = c?.getContext("2d");
     const root = rootRef.current;
     if (c == null || ctx == null || root === null || size.width <= 0) return;
-    const id = requestAnimationFrame(() => {
-      sizeCanvas(c, size.width, ROW_H, dpr);
-      paintPath(ctx, m, v0, v1, size.width, ROW_H, dpr, paletteFor(root));
-    });
-    return () => cancelAnimationFrame(id);
-  }, [m, v0, v1, size.width, dpr, paletteFor]);
+    sizeCanvas(c, size.width, ROW_H, dpr);
+    paintPath(ctx, m, v0, v1, size.width, ROW_H, dpr, palettes(theme, dpr, root));
+  }, [m, v0, v1, size.width, dpr, palettes, theme]);
 
   const msAt = useCallback((x: number) => v0 + ((v1 - v0) * Math.min(Math.max(x, 0), size.width)) / Math.max(1, size.width), [v0, v1, size.width]);
 

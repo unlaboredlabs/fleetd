@@ -203,6 +203,10 @@ export const useAsk = <T>(): [Answer<T> | undefined, (p: Promise<Answer<T>> | un
   return [answer, ask];
 };
 
+/** The spans a highlight lit, oldest first: what "List them" shows, never a fresh query that could differ. */
+export const litSpans = (spans: readonly Span[], ids: ReadonlySet<number>): Span[] =>
+  spans.filter((s) => ids.has(s.id)).sort((a, b) => a.startMs - b.startMs || a.id - b.id);
+
 export const askLinked = (client: TimeClient, q: TimeQuery, l: Linked): Promise<Answer<Span[]>> =>
   call(
     client,

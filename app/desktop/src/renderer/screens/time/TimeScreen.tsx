@@ -11,7 +11,7 @@ import { FilterBar } from "./FilterBar";
 import { Insights } from "./Insights";
 import { LinkedSheet, TranscriptSheet } from "./Sheets";
 import { Timeline } from "./Timeline";
-import { askLinked, askWindow, hubClient, linkedKeeps, useAsk, useTimeData, type Linked, type TimeClient } from "./data";
+import { askLinked, askWindow, hubClient, linkedKeeps, litSpans, useAsk, useTimeData, type Linked, type TimeClient } from "./data";
 import { loadFilters, queryOf, saveFilters, type Filters } from "./filters";
 import { NO_NAMES, ROLE_WORD, fmtDur, isMissingEmpty, missing, missingSentence, type Names } from "./format";
 import { buildModel } from "./model";
@@ -141,7 +141,8 @@ export function TimeScreen(props: TimeScreenProps) {
   const listHighlight = () => {
     if (highlight === undefined) return;
     setLinked(highlight.linked);
-    askLinkedSpans(askLinked(client, query, highlight.linked));
+    // The lit spans are already here, by id; asking the hub again by rule or kind would list other spans.
+    askLinkedSpans(Promise.resolve({ ok: true, value: litSpans(model?.spans ?? [], highlight.ids) }));
   };
 
   /** A click on one span: a check's page, else its transcript at that item. */

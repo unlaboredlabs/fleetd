@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { errorText, eventConcerns, linkedKeeps, mergeSpans, parseBreakdown, resumeAfter } from "./data";
+import { errorText, eventConcerns, linkedKeeps, litSpans, mergeSpans, parseBreakdown, resumeAfter } from "./data";
 import { fixtureClient } from "./fixture";
 import { DEFAULT_FILTERS, decodeFilters, parseWhen, period, queryOf, spansInput } from "./filters";
 import type { Span, TimeSpansOutput } from "./types";
@@ -118,5 +118,13 @@ describe("errors", () => {
     expect(errorText({ ok: false, error: { code: "not_found", message: raw } })).toBe("The hub has no time data for this yet.");
     expect(errorText({ ok: false, error: { code: "offline", message: raw } })).toMatch(/^Not connected/u);
     expect(errorText({ ok: false, error: { code: "weird", message: raw, fix: "Restart the hub." } })).toBe("The hub couldn't answer. Restart the hub.");
+  });
+});
+
+describe("list the lit spans", () => {
+  it("lists exactly the spans a highlight lit, not what a rule or kind query would return", () => {
+    const spans = [span(1, 5), span(2, 6), span(3, 7), span(4, 8)].map((s, i) => ({ ...s, startMs: 40 - i * 10 }));
+    expect(litSpans(spans, new Set([2, 4])).map((s) => s.id)).toEqual([4, 2]);
+    expect(litSpans(spans, new Set())).toEqual([]);
   });
 });
