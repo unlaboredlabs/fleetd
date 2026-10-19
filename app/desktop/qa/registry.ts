@@ -23,7 +23,6 @@ export const fixtures = [
   "long-text",
   "many-prompts",
   "many-agents",
-  "needs-you",
   "conversation",
   "hub-unreachable",
   "pairing-failed",

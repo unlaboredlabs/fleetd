@@ -21,7 +21,6 @@ export const SHARED = [
   "chat-attachments",
   "chat-secret",
   "chat-gated",
-  "chat-strip",
   "chat-waiting",
   "chat-empty",
   "status-rows",

@@ -99,13 +99,33 @@ const withConversation = (f: Fixture): Fixture => {
 
 // ---- The lead chat ----
 
-/** Every snapshot project gets a chat state and a status row, so the sidebar and Status never meet an unknown one. */
-const withProjectRows = (f: Fixture): Fixture => {
+/**
+ * Every other snapshot project gets a chat and a status row too, so no sidebar entry spins and the dot agrees with
+ * the row. They cycle working / waiting on you / blocked / idle by position, as fixtures/status cycles its rows.
+ */
+const withProjectRows = (f: Fixture, first: { needsYou?: boolean; leadWorking?: boolean }): Fixture => {
   const projects = arr(f.snapshot?.["projects"]).filter(isObject);
   const rows = projects.map((p, i) => {
     const ref = { machineId: asText(p["machineId"]), projectId: asText(p["projectId"]) };
-    if (!arr(f.snapshot?.["chats"]).some((c) => obj(obj(c)["projectRef"])["projectId"] === ref.projectId)) setChatState(f, ref, { needsYou: false, leadWorking: false, lastSeq: 0 });
-    return i === 0 ? statusRow(f, ref, asText(p["title"]), "working", { agents: 3, pct: [40, 25], merged: "Receipt dates use Intl" }) : statusRow(f, ref, asText(p["title"]), "idle");
+    const title = asText(p["title"]);
+    if (i === 0) {
+      const state = first.needsYou === true ? "waiting_on_you" : first.leadWorking === true ? "working" : "idle";
+      return statusRow(f, ref, title, state, state === "working" ? { agents: 3, pct: [40, 25], merged: "Receipt dates use Intl" } : {});
+    }
+    switch (i % 4) {
+      case 0:
+        writeChat(f, ref, [{ author: "human", text: "keep going on the export" }, { author: "lead", text: "On it. Two agents working." }], { leadWorking: true });
+        return statusRow(f, ref, title, "working", { agents: 2, pct: [30, 20] });
+      case 1:
+        writeChat(f, ref, fromLines(QUESTION).slice(0, 1), { needsYou: true });
+        return statusRow(f, ref, title, "waiting_on_you", { pct: [50, 0], merged: "Nightly export resumes after a crash" });
+      case 2:
+        writeChat(f, ref, [{ author: "lead", text: "Stuck: main CI is red, so nothing can merge. Fixing CI first." }]);
+        return statusRow(f, ref, title, "blocked", { blocked: "main CI is red", pct: [20, 0] });
+      default:
+        writeChat(f, ref, []);
+        return statusRow(f, ref, title, "idle");
+    }
   });
   return answerRows(f, rows);
 };
@@ -113,7 +133,7 @@ const withProjectRows = (f: Fixture): Fixture => {
 /** The first project's chat: the lead's numbered question with its recommendations, and terse replies. */
 const withChat = (f: Fixture, drafts: ReadonlyArray<Draft> = [...fromLines(QUESTION), ...fromLines(TERSE)], opts: { needsYou?: boolean; leadWorking?: boolean } = {}): Fixture => {
   writeChat(f, firstProject(f), drafts, opts);
-  return withProjectRows(f);
+  return withProjectRows(f, opts);
 };
 
 const LONG = 520;
@@ -194,12 +214,6 @@ const chatFixtures = (copy: (name: SharedName, note: string) => Fixture): Array<
       ],
       { needsYou: true },
     ),
-    strip(withChat(copy("chat-strip", "20 agents working under the lead's message, across two orders, with PR and merge one-liners."), [
-      ...fromLines(TERSE),
-      { author: "system", text: "PR #214 opened: receipt dates use Intl" },
-      { author: "system", text: "PR #213 merged: pricing headline from the copy review" },
-      { author: "lead", text: "20 agents on it: 12 on receipts and checkout, 8 on the export. I'll say when something needs you." },
-    ], { leadWorking: true }), 20),
     strip(withChat(copy("chat-waiting", "The lead asked its numbered question and waits on you: the needs-you dot, no agents running."), fromLines(QUESTION).slice(0, 1), { needsYou: true }), 0),
     withChat(copy("chat-empty", "A project whose chat has no messages yet."), []),
     withProjectsMix(copy("status-rows", "Eight projects: rows in all four states (one planning, one stale, one with a ~120-character name), and the sidebar's needs-you and running mix.")),
@@ -208,7 +222,7 @@ const chatFixtures = (copy: (name: SharedName, note: string) => Fixture): Array<
 
 /** Every shared fixture, by name, freshly built. */
 export const buildShared = (): Map<SharedName, Fixture> => {
-  const typical = withChat(Fixture.from(recorded("lab-demo"), "typical", "A real lab hub mid-order: one order fanned out to writers, reviewers and verifiers, three PRs in the train, live lanes, prompts and time."));
+  const typical = withChat(Fixture.from(recorded("lab-demo"), "typical", "A real lab hub mid-order: one order fanned out to writers, reviewers and verifiers, three PRs in the train, live lanes, prompts and time."), undefined, { leadWorking: true });
   const copy = (name: SharedName, note: string) => Fixture.from(typical, name, note);
   const shared: Array<Fixture> = [
     answerRows(Fixture.from(recorded("lab-start"), "empty", "A real lab hub before anything happened: machines online, no projects, orders, chats or time."), []),
