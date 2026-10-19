@@ -235,6 +235,7 @@ export const screens: readonly Screen[] = [
     route: "#/time",
     fixtures: ["typical", "long-text", "empty"],
     open: (page) => page.getByRole("tab", { name: "Insights" }).click(),
+  },
   // F3: the order view on the fixtures' one order, W1: fleet, PRs, done-when and the lead's conversation (a wake,
   // markdown, steers and receipts, 20k streamed lines). The empty hub has no W1: its not-found state is expected.
   { id: "order", route: "#/order/W1", fixtures: ["typical", "long-text", "many-agents", "conversation", "conversation-20k"] },
