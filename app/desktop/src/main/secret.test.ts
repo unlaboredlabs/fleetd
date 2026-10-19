@@ -1,6 +1,6 @@
 import sodium from "libsodium-wrappers";
 import { describe, expect, it } from "vitest";
-import rust from "../../fixtures/secrets/rust-seal.json";
+import rust from "./secret.rust-seal.json";
 import { SECRET_MAX_BYTES, seal, submitSecret } from "./secret";
 
 const bytes = (b64: string) => new Uint8Array(Buffer.from(b64, "base64"));
