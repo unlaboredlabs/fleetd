@@ -241,7 +241,7 @@ export type AskAnswerKind = "option" | "text" | "skip";
 
 export type AskClass = "product" | "money" | "credential" | "irreversible";
 
-/** `ask.created`, `ask.auto`, `ask.answered`, `ask.undone`, `ask.delivered`. */
+/** `ask.created`, `ask.auto`, `ask.closed`, `ask.answered`, `ask.undone`, `ask.delivered`. */
 export type AskEventData = {
   askId: AskId;
   batchId?: BatchId;
@@ -4051,6 +4051,7 @@ export interface ToolMap {
 export interface HubEventDataMap {
   "ask.answered": AskEventData;
   "ask.auto": AskEventData;
+  "ask.closed": AskEventData;
   "ask.created": AskEventData;
   "ask.delivered": AskEventData;
   "ask.undone": AskEventData;

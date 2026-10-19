@@ -10,7 +10,7 @@
       "type": "string"
     },
     "AskEventData": {
-      "description": "`ask.created`, `ask.auto`, `ask.answered`, `ask.undone`, `ask.delivered`.",
+      "description": "`ask.created`, `ask.auto`, `ask.closed`, `ask.answered`, `ask.undone`, `ask.delivered`.",
       "properties": {
         "askId": {
           "$ref": "#/$defs/AskId"
@@ -401,6 +401,9 @@
         "ask.auto": {
           "$ref": "#/$defs/AskEventData"
         },
+        "ask.closed": {
+          "$ref": "#/$defs/AskEventData"
+        },
         "ask.created": {
           "$ref": "#/$defs/AskEventData"
         },
@@ -561,6 +564,7 @@
       "required": [
         "ask.answered",
         "ask.auto",
+        "ask.closed",
         "ask.created",
         "ask.delivered",
         "ask.undone",
