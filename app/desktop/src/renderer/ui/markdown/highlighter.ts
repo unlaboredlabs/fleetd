@@ -51,8 +51,8 @@ const ALIASES: Record<string, CodeLang> = {
 export function resolveLang(tag: string | undefined | null): CodeLang | null {
   if (!tag) return null;
   const t = tag.trim().toLowerCase();
-  if (t in LANGS) return t as CodeLang;
-  return ALIASES[t] ?? null;
+  if (Object.hasOwn(LANGS, t)) return t as CodeLang;
+  return Object.hasOwn(ALIASES, t) ? (ALIASES[t] ?? null) : null;
 }
 
 /** The grammar for a file path, by extension. */
@@ -97,6 +97,23 @@ export interface Token {
 }
 export type Tokens = Token[][];
 
+/*
+ * Tokenizing runs on the main thread, and a TextMate grammar on one very long line (minified code, base64, a
+ * one-line lockfile) can take tens of seconds. So lines past MAX_LINE stay plain, and a block past the size caps
+ * is not highlighted at all.
+ */
+export const MAX_LINE = 1000;
+export const MAX_CHARS = 100_000;
+export const MAX_LINES = 5000;
+
+/** Whether a block is small enough to highlight. */
+export function canHighlight(code: string): boolean {
+  if (code.length > MAX_CHARS) return false;
+  let lines = 1;
+  for (let i = code.indexOf("\n"); i !== -1; i = code.indexOf("\n", i + 1)) if (++lines > MAX_LINES) return false;
+  return true;
+}
+
 /** A small LRU of highlighted blocks, keyed by language and text. */
 const CACHE_MAX = 300;
 const cache = new Map<string, Tokens>();
@@ -111,12 +128,14 @@ export function cachedTokens(code: string, lang: CodeLang): Tokens | undefined {
   return hit;
 }
 
-export async function highlight(code: string, lang: CodeLang): Promise<Tokens> {
+/** Tokens for a block, or null when it is too big to highlight (render it plain). */
+export async function highlight(code: string, lang: CodeLang): Promise<Tokens | null> {
+  if (!canHighlight(code)) return null;
   const hit = cachedTokens(code, lang);
   if (hit) return hit;
   const h = await highlighter();
   await ensureLang(h, lang);
-  const tokens = h.codeToTokensBase(code, { lang, theme: THEME }).map((line) =>
+  const tokens = h.codeToTokensBase(code, { lang, theme: THEME, tokenizeMaxLineLength: MAX_LINE, tokenizeTimeLimit: 500 }).map((line) =>
     // fontStyle is a bit set; bit 1 is italic.
     line.map((t) => ({ content: t.content, color: t.color, italic: ((t.fontStyle ?? 0) & 1) === 1 })),
   );

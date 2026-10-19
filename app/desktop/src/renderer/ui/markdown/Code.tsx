@@ -5,18 +5,18 @@ import { cx } from "../lib/cx";
 import { Button } from "../primitives/Button";
 import { Tooltip } from "../primitives/Tooltip";
 import { Truncate } from "../text/Truncate";
-import { cachedTokens, highlight, resolveLang, type CodeLang, type Tokens } from "./highlighter";
+import { cachedTokens, canHighlight, highlight, resolveLang, type CodeLang, type Tokens } from "./highlighter";
 import s from "./Code.module.css";
 
 /** Highlighted tokens for a block: plain text first, colours once the grammar is ready (same metrics, no shift). */
 export function useTokens(code: string, lang: CodeLang | null): Tokens | undefined {
   const [done, setDone] = useState<{ code: string; lang: CodeLang; tokens: Tokens } | null>(null);
   useEffect(() => {
-    if (!lang || cachedTokens(code, lang)) return;
+    if (!lang || !canHighlight(code) || cachedTokens(code, lang)) return;
     let live = true;
     highlight(code, lang).then(
       (tokens) => {
-        if (live) setDone({ code, lang, tokens });
+        if (live && tokens) setDone({ code, lang, tokens });
       },
       // An unknown grammar or a tokenizer failure leaves the block as plain text, which is still correct.
       () => undefined,
@@ -25,7 +25,7 @@ export function useTokens(code: string, lang: CodeLang | null): Tokens | undefin
       live = false;
     };
   }, [code, lang]);
-  if (!lang) return undefined;
+  if (!lang || !canHighlight(code)) return undefined;
   if (done && done.code === code && done.lang === lang) return done.tokens;
   return cachedTokens(code, lang);
 }
@@ -54,10 +54,11 @@ export interface CodeProps {
 /** A block of machine text with syntax colours, a copy button and a wrap toggle. */
 export const Code = memo(function Code({ code, lang, title, wrap: initialWrap = true, bare, className }: CodeProps) {
   const grammar = resolveLang(lang);
-  const tokens = useTokens(code, grammar);
+  // Fences end in a newline; highlighting it would add an empty last line.
+  const text = code.replace(/\n$/, "");
+  const tokens = useTokens(text, grammar);
   const [wrap, setWrap] = useState(initialWrap);
   const [copied, setCopied] = useState(false);
-  const text = code.replace(/\n$/, "");
   const lines = tokens ?? text.split("\n");
 
   return (
