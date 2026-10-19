@@ -135,6 +135,7 @@ struct ClosedPull {
     number: i64,
     merged_at: Option<String>,
     merge_commit_sha: Option<String>,
+    base: PullBase,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -142,6 +143,7 @@ pub struct MergedPull {
     pub number: i64,
     pub merged_at: String,
     pub merge_sha: Option<String>,
+    pub base: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -581,6 +583,7 @@ impl TrainGitHub {
                     number: p.number,
                     merged_at,
                     merge_sha: p.merge_commit_sha,
+                    base: p.base.ref_,
                 })
             })
             .collect())
@@ -603,6 +606,74 @@ impl TrainGitHub {
             .filter(|c| *c != TRAIN_CONTEXT)
             .map(str::to_owned)
             .collect())
+    }
+
+    /// How many workflow runs GitHub has for `sha`, in any state (queued and waiting count).
+    pub async fn workflow_runs(&self, repo: &str, sha: &str) -> Result<i64, GhError> {
+        #[derive(Deserialize)]
+        struct Runs {
+            total_count: i64,
+        }
+        let runs: Runs = self
+            .json(
+                "GET",
+                &format!("repos/{repo}/actions/runs?head_sha={sha}&per_page=1"),
+                &[],
+            )
+            .await?;
+        Ok(runs.total_count)
+    }
+
+    /// The repo's active workflow files as they are on `base`; `None` for one that can't be read there. GitHub's own
+    /// dynamic workflows (Copilot, Dependabot) are left out, as adding a project leaves them out.
+    pub async fn workflow_files(
+        &self,
+        repo: &str,
+        base: &str,
+    ) -> Result<Vec<Option<String>>, GhError> {
+        let listed: Value = self
+            .json(
+                "GET",
+                &format!("repos/{repo}/actions/workflows?per_page=100"),
+                &[],
+            )
+            .await?;
+        let paths: Vec<String> = listed["workflows"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|w| w["state"].as_str() == Some("active"))
+            .filter_map(|w| w["path"].as_str())
+            .filter(|p| !p.starts_with("dynamic/"))
+            .map(str::to_owned)
+            .collect();
+        let mut files = Vec::with_capacity(paths.len());
+        for path in paths {
+            let file = match self
+                .call(
+                    "GET",
+                    &format!("repos/{repo}/contents/{path}?ref={base}"),
+                    &[],
+                )
+                .await?
+            {
+                Reply::Ok(v) => v["content"].as_str().and_then(|b64| {
+                    use base64::Engine;
+                    let bytes = base64::engine::general_purpose::STANDARD
+                        .decode(b64.replace('\n', ""))
+                        .ok()?;
+                    String::from_utf8(bytes).ok()
+                }),
+                Reply::Err { status: 404, .. } => None,
+                Reply::Err { message, .. } => {
+                    return Err(GhError::failed(format!(
+                        "gh api repos/{repo}/contents/{path} failed: {message}"
+                    )));
+                }
+            };
+            files.push(file);
+        }
+        Ok(files)
     }
 
     /// The repo's workflows and the checks `branch` requires, read as adding a project reads them; any read failing
@@ -680,7 +751,7 @@ mod tests {
     async fn a_304_answers_from_the_body_its_etag_came_with() {
         let (gh, fresh, github) =
             github(vec![(0, OK_200, ""), (1, NOT_MODIFIED, NOT_MODIFIED_ERR)]);
-        let repo = "unlaboredlabs/fleetd-testbed";
+        let repo = "unlaboredlabs/fleetd-lab";
         fresh.expect(&fresh::github(repo), 180_000, 0);
         assert_eq!(github.default_branch(repo).await.unwrap(), "main");
         assert!(
@@ -710,11 +781,7 @@ mod tests {
     async fn a_404_is_an_answer_with_its_status() {
         let (_, _, github) = github(vec![(1, NOT_FOUND, NOT_FOUND_ERR)]);
         let Reply::Err { status, message } = github
-            .call(
-                "GET",
-                "repos/unlaboredlabs/fleetd-testbed/pulls/999999",
-                &[],
-            )
+            .call("GET", "repos/unlaboredlabs/fleetd-lab/pulls/999999", &[])
             .await
             .unwrap()
         else {

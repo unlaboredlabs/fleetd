@@ -169,7 +169,7 @@ export const prepareMachineHome = (id: string, opts: MachineHomeOptions = {}) =>
 /** m7 and m9 push to GitHub as the user: their agents need the user's `gh` login, copied into each machine's HOME. */
 export const requireGhLogin = () => {
   if (!fs.existsSync(path.join(os.homedir(), ".config/gh/hosts.yml"))) {
-    throw new Error("this scenario pushes to the GitHub testbed with your gh login, and ~/.config/gh/hosts.yml is missing: run gh auth login");
+    throw new Error("this scenario pushes to the GitHub lab repo with your gh login, and ~/.config/gh/hosts.yml is missing: run gh auth login");
   }
 };
 

@@ -11,9 +11,9 @@ pub const MAX_DEPTH: u32 = 1;
 pub const MAX_OPEN_TASKS: usize = 32;
 
 /// The calls a task's agent makes: its review verdict (`report`), a question for its lead, and a done claim.
-const WORKER_OPS: &[&str] = &["review_verdict", "ask_lead", "claim_done"];
+pub const WORKER_OPS: &[&str] = &["review_verdict", "ask_lead", "claim_done"];
 /// The calls that start an agent.
-const SPAWN_OPS: &[&str] = &["task_spawn", "workstream_spawn"];
+pub const SPAWN_OPS: &[&str] = &["task_spawn", "workstream_spawn"];
 
 /// Which of fleetd's agents a lead-side call comes from, by the session it names.
 #[derive(Clone, Debug, PartialEq, Eq)]

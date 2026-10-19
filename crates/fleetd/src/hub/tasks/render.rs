@@ -3,7 +3,9 @@
 use std::sync::LazyLock;
 
 use fleetd_contracts::ledger::Brief;
-use fleetd_contracts::tasks::{Task, TaskKind, TaskResult, TaskResultStatus, TaskState};
+use fleetd_contracts::tasks::{
+    BranchPrefix, DEFAULT_BRANCH_PREFIX, Task, TaskKind, TaskResult, TaskResultStatus, TaskState,
+};
 use regex::Regex;
 
 use crate::hub::prompts::PromptSet;
@@ -85,8 +87,11 @@ pub fn slug_of(title: &str) -> String {
     }
 }
 
-pub fn branch_for(task_id: &str, title: &str) -> String {
-    format!("fleetd/{task_id}-{}", slug_of(title))
+/// A write task's branch, the only branch fleetd names: the train pushes to a PR's own branch, and review refs live
+/// under refs/fleetd/. `prefix` is the policy's `branchPrefix`.
+pub fn branch_for(prefix: Option<&BranchPrefix>, task_id: &str, title: &str) -> String {
+    let prefix = prefix.map_or(DEFAULT_BRANCH_PREFIX, |p| p.as_str());
+    format!("{prefix}{task_id}-{}", slug_of(title))
 }
 
 /// The last `max` characters, starting with "…" when cut.
@@ -349,4 +354,22 @@ pub fn task_digest_lines(set: &PromptSet, tasks: &[Task], since: Option<&str>) -
         ));
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_task_branch_starts_with_the_policys_prefix_else_fleetd() {
+        assert_eq!(
+            branch_for(None, "T1", "Add alpha page"),
+            "fleetd/T1-add-alpha-page"
+        );
+        let slot = BranchPrefix::new("slot/3/fleetd/").unwrap();
+        assert_eq!(
+            branch_for(Some(&slot), "T12", "Add alpha page"),
+            "slot/3/fleetd/T12-add-alpha-page"
+        );
+    }
 }

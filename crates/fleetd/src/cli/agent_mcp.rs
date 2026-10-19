@@ -30,14 +30,19 @@ pub enum Role {
     Worker,
 }
 
-struct Tool {
-    name: &'static str,
+/// The server's name in a session's `--mcp-config`; claude shows its tools as `mcp__fleetd__<name>`.
+pub const SERVER_NAME: &str = "fleetd";
+
+pub struct Tool {
+    pub name: &'static str,
     /// The lead call's `op`.
-    op: &'static str,
-    worker: bool,
-    lead: bool,
-    description: &'static str,
-    schema: fn() -> Value,
+    pub op: &'static str,
+    pub worker: bool,
+    pub lead: bool,
+    pub description: &'static str,
+    pub schema: fn() -> Value,
+    /// What a person must do before the call takes effect; `None` when nothing.
+    pub human: Option<&'static str>,
 }
 
 const fn lead(
@@ -53,6 +58,16 @@ const fn lead(
         lead: true,
         description,
         schema,
+        human: None,
+    }
+}
+
+impl Tool {
+    const fn needs(self, human: &'static str) -> Tool {
+        Tool {
+            human: Some(human),
+            ..self
+        }
     }
 }
 
@@ -97,7 +112,8 @@ static TOOLS: &[Tool] = &[
         "Freeze a draft workstream's brief (goal, why, pointers, constraints, doneWhen checks, tier, estimate) and \
          start it. A frozen brief changes only with amend: an ask the human answered approving it.",
         inline_schema::<BriefCreateCall>,
-    ),
+    )
+    .needs("Changing a frozen brief (amend) needs an ask the human approved."),
     lead(
         "ask",
         "ask",
@@ -132,7 +148,8 @@ static TOOLS: &[Tool] = &[
         "A prod write, spend, delete or credential use: the node runs exactly this argv only after a human approves \
          it; secrets come from the node's own sinks. The exit code and output tail arrive in a later wake.",
         inline_schema::<GatedRunCall>,
-    ),
+    )
+    .needs("A human approves the exact command (an approve ask) before the node runs it."),
     lead(
         "plan_milestone",
         "plan_milestone",
@@ -208,6 +225,7 @@ static TOOLS: &[Tool] = &[
         description: "Record your review verdict once, before your final message: the full SHA you reviewed, the \
                       number of blocking and non-blocking findings and a one-paragraph summary.",
         schema: inline_schema::<ReviewVerdict>,
+        human: None,
     },
     Tool {
         name: "ask_lead",
@@ -217,6 +235,7 @@ static TOOLS: &[Tool] = &[
         description: "Ask your lead a question. Carry on with what you can; the answer arrives as a message. If you \
                       can't go on without it, end your turn: the answer continues this thread.",
         schema: inline_schema::<AskLeadCall>,
+        human: None,
     },
     Tool {
         name: "claim_done",
@@ -225,10 +244,11 @@ static TOOLS: &[Tool] = &[
         lead: false,
         description: "Claim your workstream done: fleetd runs its done-when checks itself.",
         schema: inline_schema::<ClaimDoneCall>,
+        human: None,
     },
 ];
 
-fn tools_for(role: Role) -> impl Iterator<Item = &'static Tool> {
+pub fn tools_for(role: Role) -> impl Iterator<Item = &'static Tool> {
     TOOLS.iter().filter(move |t| match role {
         Role::Lead => t.lead,
         Role::Worker => t.worker,

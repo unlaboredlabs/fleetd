@@ -4,8 +4,8 @@
 #   bash <(curl -fsSL https://raw.githubusercontent.com/unlaboredlabs/fleetd/main/scripts/demo-mac.sh)
 #
 # It runs the lab's demo order (tests/lab/demoFanout.ts: one tier-L order, three writers, reviewers and a verifier,
-# the public testbed unlaboredlabs/fleetd-testbed through the merge train) on a hub and node of its own, with the
-# desktop app (app/desktop, Electron) recording its own window and prints the MP4's path. The app records its page
+# the public lab repo unlaboredlabs/fleetd-lab through the merge train, in branch namespace slot/9) on a hub and
+# node of its own, with the desktop app (app/desktop, Electron) recording its own window and prints the MP4's path. The app records its page
 # through Chromium's own capture (FLEETD_RECORD), so there is no Screen Recording permission and no ffmpeg, and
 # paints the traffic lights the window server draws back into each frame.
 #
@@ -35,9 +35,9 @@
 #   FLEETD_DEMO_REF          with FLEETD_DEMO_BUILD=1 and no checkout: the branch or tag to build (default main)
 #   FLEETD_DEMO_ANY_COMMIT=1 skip the board-pass check (for trying the script itself)
 #
-# It drives lab slot 9 (ports 4975 and up) against unlaboredlabs/fleetd-testbed. Ctrl-C, or any exit, stops the
+# It drives lab slot 9 (ports 4975 and up) against unlaboredlabs/fleetd-lab. Ctrl-C, or any exit, stops the
 # demo driver, which closes this run's PRs and stops the hub, node and app by their PIDs; then this script stops
-# whatever is still running from the PIDs it recorded, closes what its testbed ledger lists, and deletes every copy
+# whatever is still running from the PIDs it recorded, closes what its PR ledger lists, and deletes every copy
 # of the logins it made.
 set -euo pipefail
 
@@ -79,11 +79,11 @@ chmod 700 "$SANDBOX"
 H="$SANDBOX/home"
 mkdir -p "$H/.claude" "$H/.config/gh" "$SANDBOX/recordings"
 
-TESTBED_REPO=unlaboredlabs/fleetd-testbed
+LAB_REPO=unlaboredlabs/fleetd-lab
 lab="$SANDBOX/lab"
 slot="$lab/slot-9"
 run="$slot/e2e-4975"
-ledger="$slot/demo-testbed.ledger"
+ledger="$slot/demo.ledger"
 lab_pid=""
 
 # stop_pid <pid> <binary>: only if that pid still runs that binary; TERM, then KILL after 30 s.
@@ -112,10 +112,10 @@ cleanup() {
   if [ -s "$ledger" ]; then
     while read -r kind value; do
       case "$kind" in
-        pr) if [ "$(gh pr view "$value" -R "$TESTBED_REPO" --json state --jq .state 2>/dev/null)" = OPEN ]; then
-          gh pr close "$value" -R "$TESTBED_REPO" --delete-branch >/dev/null 2>&1 || true
+        pr) if [ "$(gh pr view "$value" -R "$LAB_REPO" --json state --jq .state 2>/dev/null)" = OPEN ]; then
+          gh pr close "$value" -R "$LAB_REPO" --delete-branch >/dev/null 2>&1 || true
         fi ;;
-        branch) gh api -X DELETE "repos/$TESTBED_REPO/git/refs/heads/$value" >/dev/null 2>&1 || true ;;
+        branch) gh api -X DELETE "repos/$LAB_REPO/git/refs/heads/$value" >/dev/null 2>&1 || true ;;
       esac
     done <"$ledger"
     rm -f "$ledger"
@@ -284,7 +284,7 @@ reply="$(cd "$SANDBOX" && env -i HOME="$H" PATH="$PATH" USER="$user" LANG="${LAN
   claude -p "Reply with the single word OK and nothing else." --model claude-haiku-5-5 2>&1 || true)"
 case "$reply" in *OK*) say "Claude answers" ;; *) die "claude in the sandbox did not answer: $reply" ;; esac
 
-[ -d "$slot/testbed/.git" ] || HOME="$H" git clone -q "https://github.com/$TESTBED_REPO" "$slot/testbed"
+[ -d "$slot/lab-repo/.git" ] || HOME="$H" git clone -q "https://github.com/$LAB_REPO" "$slot/lab-repo"
 
 rec="$SANDBOX/recordings/$(date +%Y%m%d-%H%M%S)"
 say "Running the demo order; the app opens and records itself. Leave the Mac awake."

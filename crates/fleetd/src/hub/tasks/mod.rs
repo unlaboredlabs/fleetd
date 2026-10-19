@@ -1,5 +1,6 @@
 //! fleetd-owned tasks: every subagent a lead runs. Spawn resolves model and effort, takes leases (writers) and a
-//! slot or queues with the reason, and launches a thread (writers in a new worktree on `fleetd/<taskId>-<slug>`).
+//! slot or queues with the reason, and launches a thread (writers in a new worktree on `<branchPrefix><taskId>-<slug>`,
+//! `fleetd/` by default).
 //! The thread's status transitions, read off the event log, end the task: the result goes into the record and,
 //! inline, into one lead wake; the slot and leases are released and the queue is tried again.
 pub mod branch_diff;
@@ -391,7 +392,13 @@ impl Tasks {
         } else {
             None
         };
-        let branch = write.then(|| branch_for(task.task_id.as_str(), task.title.as_str()));
+        let branch = write.then(|| {
+            branch_for(
+                policy.branch_prefix.as_ref(),
+                task.task_id.as_str(),
+                task.title.as_str(),
+            )
+        });
         let globs = area_globs(&policy, &area_names(task));
         let set = self.d.db.prompts().current(Some(r));
         let prompt = render_task_prompt(

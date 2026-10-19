@@ -45,6 +45,7 @@
 <p>Reference</p>
 <ul>
 <li><a href="/docs/cli">CLI reference</a></li>
+<li><a href="/docs/agent-tools">Agent tools</a></li>
 <li><a href="/docs/config-and-files">Config &amp; files</a></li>
 <li><a href="/docs/security">Security model</a></li>
 <li><a href="/docs/troubleshooting">Troubleshooting</a></li>
@@ -98,7 +99,9 @@ gets <code>spawn_agent</code>, <code>message_agent</code>, <code>agent_status</c
 <code>claim_done</code>, <code>plan_*</code>, <code>gated_run</code> and the rest of what it used to run as <code>fleetd</code> commands. A task gets three:
 <code>report</code> (a review verdict), <code>ask_lead</code> and <code>claim_done</code>. Results come back in the lead's next wake, never by polling.
 The hub enforces the split whatever a prompt says: a task can't start, steer or stop agents, and a lead has at most
-32 tasks open at once. A refusal says why and what to do instead. The lead-side <code>fleetd</code> commands stay for you.</p>
+32 tasks open at once. A refusal says why and what to do instead. The lead-side <code>fleetd</code> commands stay for you.
+<a href="/docs/agent-tools">Agent tools</a> lists every tool with its parameters, the blocked Claude Code tools and the
+settings fleetd forces, generated from the code.</p>
 <h2 id="safety">Safety rules: code or prompt<a class="anchor" href="#safety" aria-label="Link to this section">#</a></h2>
 <p>Most rules don't depend on the prompt. fleetd enforces them in code whatever the text says: secrets are sealed to a
 machine, gated commands wait for your tap, only the train merges, and done is decided by the hub running the checks.
