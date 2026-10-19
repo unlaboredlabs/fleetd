@@ -224,7 +224,7 @@ pub fn build_on(
     let auth = Arc::new(Auth::new(db.clone(), clock.clone()));
     let decisions = Arc::new(Decisions::new(db.clone(), events.clone(), clock.clone()));
     let asks = Arc::new(Asks::new(db.clone(), events.clone(), clock.clone()));
-    let inbox = Arc::new(Inbox::new(db.clone(), events.clone(), clock.clone()));
+    let inbox = Inbox::new(db.clone(), events.clone(), clock.clone());
     let digests = Arc::new(HumanDigests::new(
         asks.clone(),
         decisions.clone(),

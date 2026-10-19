@@ -18,7 +18,7 @@ describe("appUrl", () => {
     expect(url(" ws://hub:4790/app/ ")).toBe("ws://hub:4790/app");
     expect(url("100.1.2.3:4790")).toBe("ws://100.1.2.3:4790/app");
     expect(url("http://hub")).toBe("ws://hub/app");
-    expect(url("https://forge.tail1234.ts.net")).toBe("wss://forge.tail1234.ts.net/app");
+    expect(url("https://hub.your-tailnet.ts.net")).toBe("wss://hub.your-tailnet.ts.net/app");
     expect(url("wss://[::1]:4790/app")).toBe("wss://[::1]:4790/app");
   });
 

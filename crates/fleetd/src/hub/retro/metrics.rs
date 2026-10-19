@@ -8,12 +8,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 /// Any regression on one of these reverts a wording change, whatever its own metric did.
-pub const GUARDED: [&str; 4] = [
-    "false_claim",
-    "estimate_miss",
-    "polish_loop",
-    "agent_minutes_per_done",
-];
+pub const GUARDED: [&str; 3] = ["false_claim", "polish_loop", "agent_minutes_per_done"];
 pub const DAY_MS: i64 = 86_400_000;
 const SCAN: usize = 5000;
 
@@ -117,7 +112,6 @@ pub async fn snapshot(
             Some(count(target) as f64)
         },
         false_claim: count("false_claim"),
-        estimate_miss: count("estimate_miss"),
         polish_loop: count("polish_loop"),
         agent_minutes_per_done: minutes,
     }
@@ -147,7 +141,6 @@ pub fn judge(baseline: &RetroSnapshot, measured: &RetroSnapshot) -> Result<(), S
     let guarded = |s: &RetroSnapshot, g: &str| -> Option<f64> {
         match g {
             "false_claim" => Some(s.false_claim as f64),
-            "estimate_miss" => Some(s.estimate_miss as f64),
             "polish_loop" => Some(s.polish_loop as f64),
             _ => s.agent_minutes_per_done,
         }

@@ -265,11 +265,11 @@ mod tests {
     #[test]
     fn app_url_takes_tls_forms_with_the_name_to_verify() {
         assert_eq!(
-            app_url("https://forge.tail1234.ts.net").unwrap(),
+            app_url("https://devbox.tail1234.ts.net").unwrap(),
             HubAddr {
-                url: "wss://forge.tail1234.ts.net/app".into(),
-                addr: "forge.tail1234.ts.net:443".into(),
-                tls_name: Some("forge.tail1234.ts.net".into()),
+                url: "wss://devbox.tail1234.ts.net/app".into(),
+                addr: "devbox.tail1234.ts.net:443".into(),
+                tls_name: Some("devbox.tail1234.ts.net".into()),
             }
         );
         let v6 = app_url("wss://[::1]:4790/app").unwrap();

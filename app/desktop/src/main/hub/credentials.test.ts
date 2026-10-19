@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync, existsSync 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { clearCredentials, fromEnv, loadCredentials, PAIR_AGAIN, saveCredentials, type CredentialEnv } from "./credentials";
+import { clearCredentials, fromEnv, loadCredentials, PAIR_AGAIN, saveCredentials, useOsEncryption, type CredentialEnv } from "./credentials";
 
 let dir: string;
 let keychainReads: Array<string>;
@@ -22,6 +22,7 @@ const env = (over: Partial<CredentialEnv> & { items?: Record<string, string>; de
   platform: "linux",
   crypto,
   teamSigned: () => true,
+  bundleId: () => "sh.fleetd.app",
   keychain: {
     get: (service, account) => {
       keychainReads.push(`${service}/${account}`);
@@ -73,10 +74,15 @@ describe("credentials", () => {
     expect(keychainReads).toEqual(["fleetd/hub"]);
   });
 
-  it("never retries a denied read, and asks to pair again", () => {
-    expect(loadCredentials(env({ denied: true }))).toEqual({ saved: null, note: PAIR_AGAIN });
-    expect(loadCredentials(env({ denied: true }))).toEqual({ saved: null });
+  it("on macOS never retries a denied read, and asks to pair again", () => {
+    const denied = env({ platform: "darwin", denied: true });
+    expect(loadCredentials(denied)).toEqual({ saved: null, note: PAIR_AGAIN });
+    expect(loadCredentials(denied)).toEqual({ saved: null });
     expect(keychainReads).toHaveLength(1);
+  });
+
+  it("on Linux without a Secret Service finds nothing to move, and says nothing", () => {
+    expect(loadCredentials(env({ denied: true }))).toEqual({ saved: null });
   });
 
   it("on macOS takes the GPUI app's hub.json first, and leaves it in place", () => {
@@ -90,6 +96,10 @@ describe("credentials", () => {
   it("on macOS reads the Developer ID item only when this build is team-signed too", () => {
     const items = { "fleetd/hub-developer-id": gpui };
     expect(loadCredentials(env({ platform: "darwin", items, teamSigned: () => false }))).toEqual({ saved: null });
+    expect(keychainReads).toEqual([]);
+    rmSync(join(dir, "desktop-migrated"));
+    // Another bundle id: GPUI's item wouldn't trust it, so reading would prompt.
+    expect(loadCredentials(env({ platform: "darwin", items, bundleId: () => "com.github.Electron" }))).toEqual({ saved: null });
     expect(keychainReads).toEqual([]);
     rmSync(join(dir, "desktop-migrated"));
     expect(loadCredentials(env({ platform: "darwin", items })).saved?.key).toBe("old-key");
@@ -111,5 +121,37 @@ describe("credentials", () => {
     expect(fromEnv({ FLEETD_HUB_URL: "http://h", FLEETD_AGENT_KEY: "k" })).toEqual({ url: "http://h", key: "k" });
     expect(fromEnv({ FLEETD_HUB_URL: "http://h" })).toBeNull();
     expect(fromEnv({ FLEETD_HUB_URL: "http://h", FLEETD_AGENT_KEY: "" })).toBeNull();
+  });
+});
+
+describe("useOsEncryption", () => {
+  const ask = (over: Partial<Parameters<typeof useOsEncryption>[0]>) => {
+    const asked: Array<string> = [];
+    const use = useOsEncryption({
+      platform: "darwin",
+      relocated: false,
+      teamSigned: () => (asked.push("teamSigned"), true),
+      available: () => (asked.push("available"), true),
+      linuxBackend: () => (asked.push("backend"), "gnome_libsecret"),
+      ...over,
+    });
+    return { use, asked };
+  };
+
+  it("on an unsigned or ad-hoc Mac never asks safeStorage anything", () => {
+    expect(ask({ teamSigned: () => false })).toEqual({ use: false, asked: [] });
+  });
+
+  it("on a team-signed Mac checks the signature before safeStorage", () => {
+    expect(ask({})).toEqual({ use: true, asked: ["teamSigned", "available"] });
+  });
+
+  it("never touches the OS store for a relocated home", () => {
+    expect(ask({ relocated: true })).toEqual({ use: false, asked: [] });
+  });
+
+  it("on Linux refuses the plain-text backend", () => {
+    expect(ask({ platform: "linux", linuxBackend: () => "basic_text" }).use).toBe(false);
+    expect(ask({ platform: "linux" }).use).toBe(true);
   });
 });

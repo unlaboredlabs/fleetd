@@ -494,6 +494,7 @@ impl Shell {
                         div()
                             .pl(px(48.))
                             .h(px(metric::LINE + 6.))
+                            .flex_none()
                             .flex()
                             .items_center()
                             .text_size(px(size::XS))
