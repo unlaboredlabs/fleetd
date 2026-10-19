@@ -4,18 +4,26 @@ import { useCallback, useEffect } from "react";
 import type { AgentLane } from "../../../shared/contracts";
 import type { HubError } from "../../../shared/hub";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
-import { selectChat, selectLeadWorking, selectNeedsYou, selectProjectAgents, type ChatView } from "../../src/data/selectors";
+import {
+  projectStateWord,
+  selectChat,
+  selectLeadWorking,
+  selectProjectAgents,
+  selectProjectRow,
+  type ChatView,
+  type ProjectStateWord,
+} from "../../src/data/selectors";
 import { projectKey } from "../../src/data/store";
-import { stateWord, type StateWord } from "../status/rows";
 import type { ProjectRef } from "./slots";
 
-// Status's own query (same input, so one cached read): the header's state word is the Status row's.
+// Status's own query (same input, so one cached read), only for what the hub alone knows (blocked); needs-you
+// and working come from the project row the sidebar dot reads, so the dot, the header and Status agree.
 const ALL = {} as const;
 
 export interface ChatData {
   readonly view: ChatView | undefined;
-  /** The project's state word, as its Status row says it; from the chat's state until Status has read. */
-  readonly state: StateWord | undefined;
+  /** The project's state word: the sidebar's and Status's. */
+  readonly state: ProjectStateWord | undefined;
   readonly leadWorking: boolean | undefined;
   /** The newest page couldn't be read (before any page landed): the chat shows why, with retry. */
   readonly loadError: HubError | undefined;
@@ -33,7 +41,7 @@ export function useChatData(project: ProjectRef): ChatData {
   const key = projectKey(project);
   const layer = useDataLayer();
   const view = useData(selectChat(key));
-  const needsYou = useData(selectNeedsYou(key));
+  const projectRow = useData(selectProjectRow(key));
   const leadWorking = useData(selectLeadWorking(key));
   const agents = useData(selectProjectAgents(key));
   const title = useData((s) => s.projects[key]?.title);
@@ -41,8 +49,7 @@ export function useChatData(project: ProjectRef): ChatData {
   const loadError = useData((s) => (s.chats[key]?.loaded === true ? undefined : s.chats[key]?.error));
   const status = useToolQuery("status_projects", ALL);
   const row = status.data?.rows.find((r) => r.projectRef.machineId === project.machineId && r.projectRef.projectId === project.projectId);
-  const state: StateWord | undefined =
-    row !== undefined ? stateWord(row.state) : needsYou === true ? "waiting_on_you" : leadWorking === true ? "working" : needsYou === false && leadWorking === false ? "idle" : undefined;
+  const state = projectRow === undefined ? undefined : projectStateWord(projectRow.needsYou, projectRow.working, row?.state);
   // Idempotent: loads the newest page once per connection.
   useEffect(() => {
     layer.chat.open(key);

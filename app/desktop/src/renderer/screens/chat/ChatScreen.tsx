@@ -5,7 +5,8 @@
 import { useCallback, useMemo, useState } from "react";
 import type { AgentLane, ThreadRef } from "../../../shared/contracts";
 import { Button, IdChip, StatusChip, Text, Truncate, type StatusTone } from "../../ui";
-import { STATE_WORDS, type StateWord } from "../status/rows";
+import { STATE_WORDS } from "../status/rows";
+import type { ProjectStateWord } from "../../src/data/selectors";
 import { ChatList } from "./ChatList";
 import { useChatData } from "./data";
 import { chatRows, rowIndexOf } from "./model";
@@ -16,7 +17,7 @@ import { roleWords, type ToldWho } from "./told";
 import { ToldPanel } from "./ToldPanel";
 import s from "./view.module.css";
 
-const TONE: Readonly<Record<StateWord, StatusTone>> = { waiting_on_you: "needs-you", blocked: "failed", working: "working", idle: "idle" };
+const TONE: Readonly<Record<ProjectStateWord, StatusTone>> = { waiting_on_you: "needs-you", blocked: "failed", working: "working", idle: "idle" };
 
 export function ChatScreen({ project, message }: { project: ProjectRef; message?: string }) {
   const data = useChatData(project);
