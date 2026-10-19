@@ -1,3 +1,5 @@
+// Before anything else: a release build refuses debugging switches before Chromium can act on them.
+import "./debug-guard";
 import { isAbsolute, join } from "node:path";
 import tls from "node:tls";
 import { app, BrowserWindow, nativeTheme, powerMonitor } from "electron";
