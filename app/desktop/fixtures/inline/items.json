@@ -1,0 +1,13 @@
+{
+  "note": "The two inline chat items (ChatItem, feat/chat-contracts) in every state, for the chat fixtures (E3b) and the inline item tests. acme/storefront on devbox; no personal data.",
+  "items": [
+    { "kind": "secret_request", "requestId": "R1", "name": "stripe.test_key", "text": "The Stripe test key for the staging box", "sink": "env:devbox:/srv/storefront/.env", "state": "open" },
+    { "kind": "secret_request", "requestId": "R2", "name": "cdn.token", "text": "The deploy token for the CDN", "sink": "file:devbox:/srv/storefront/.cdn-token", "state": "stored", "fingerprint": "ab12cd34", "answeredAt": "2026-10-19T10:22:00.000Z" },
+    { "kind": "secret_request", "requestId": "R3", "name": "analytics.key", "text": "A key for the old analytics service", "sink": "env:devbox:/srv/storefront/.env", "state": "withdrawn" },
+    { "kind": "command_approval", "requestId": "R4", "machineId": "devbox", "class": "irreversible", "reason": "Run the database migration on the staging box: it adds the `share_snapshots` table", "argv": ["pnpm", "run", "migrate", "--env", "staging"], "cwd": "/srv/storefront", "secretEnv": ["DATABASE_URL"], "timeoutSec": 600, "state": "open" },
+    { "kind": "command_approval", "requestId": "R5", "machineId": "devbox", "class": "money", "reason": "Clear the staging CDN cache; each purge is billed", "argv": ["./scripts/purge-cdn.sh", "--all"], "timeoutSec": 120, "state": "ran", "exitCode": 0, "outputTail": "purged 412 objects\ndone in 3.1s", "answeredAt": "2026-10-19T10:25:30.000Z" },
+    { "kind": "command_approval", "requestId": "R6", "machineId": "devbox", "class": "credential", "reason": "Rotate the staging database password; the old one leaked into a log", "argv": ["./scripts/rotate-db-password.sh", "staging"], "timeoutSec": 300, "state": "failed", "exitCode": 1, "outputTail": "error: the staging database refused the connection" },
+    { "kind": "command_approval", "requestId": "R7", "machineId": "devbox", "class": "irreversible", "reason": "Let the writer delete the generated fixtures folder", "tool": "Bash", "inputSummary": "rm -rf fixtures/generated", "state": "denied" },
+    { "kind": "command_approval", "requestId": "R8", "machineId": "buildbox", "class": "money", "reason": "Run the full end-to-end suite against staging; it uses paid browser minutes", "argv": ["pnpm", "run", "e2e", "--", "--env", "staging", "--workers", "8"], "timeoutSec": 1800, "state": "approved" }
+  ]
+}
