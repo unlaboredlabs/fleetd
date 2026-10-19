@@ -9,14 +9,16 @@
 //
 // First paint is timed from this script's spawn to the page's first contentful paint (FLEETD_PERF's stderr line),
 // with no debugger attached. Memory is the RSS of every process in the app's tree after 10 s idle. Scroll and
-// keypress drive the page over CDP (Playwright's connectOverCDP), with input going through Chromium's own pipeline.
+// keypress drive the page over CDP (Playwright's connectOverCDP), with input going through Chromium's own pipeline;
+// keypress latency is read from Chromium's EventLatency trace, which ends at presentation (perf/trace.ts).
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import { parseArgs } from "node:util";
-import { chromium, type Page } from "@playwright/test";
+import { type Browser, chromium, type Page } from "@playwright/test";
 import { devtoolsPort, launch, type Memory, sleep } from "./app.ts";
 import { BUDGETS, frameStats, median, type Metric, METRICS, quantile, regressions, type Results, withinBudget } from "./budgets.ts";
 import { COMPOSER, SCROLL } from "./targets.ts";
+import { keyLatencies, traced } from "./trace.ts";
 
 const { values: flags } = parseArgs({
   options: { runs: { type: "string", default: "5" }, json: { type: "string" }, baseline: { type: "string" }, strict: { type: "boolean", default: false } },
@@ -88,39 +90,17 @@ const scroll = async (page: Page) => {
   return { ...frameStats(stamps, refreshMs), refreshHz: 1000 / refreshMs, moved };
 };
 
-/**
- * Per key: from the keydown's timestamp (when Chromium received it) to the frame that shows it. The page measures
- * to just after the next frame's rendering work (a message posted from requestAnimationFrame); the Event Timing API,
- * which ends at presentation but reports only events of 16 ms and more, overrides that for any slow key.
- */
-const keys = async (page: Page) => {
+/** Per key: Chromium's EventLatency for the key press, input timestamp to presentation (perf/trace.ts). */
+const keys = async (browser: Browser, page: Page) => {
   await COMPOSER.open(page);
-  const field = page.locator(COMPOSER.selector);
-  await field.click();
-  await page.evaluate((selector) => {
-    const latencies: Array<{ start: number; frame: number }> = [];
-    const slow: Array<{ start: number; duration: number }> = [];
-    Object.assign(window, { __perfKeys: latencies, __perfSlow: slow });
-    new PerformanceObserver((list) => {
-      for (const e of list.getEntries()) if (e.name === "keydown") slow.push({ start: e.startTime, duration: e.duration });
-    }).observe({ type: "event", durationThreshold: 16 } as PerformanceObserverInit);
-    document.querySelector(selector)?.addEventListener("keydown", (event) => {
-      const start = event.timeStamp;
-      requestAnimationFrame(() => {
-        const channel = new MessageChannel();
-        channel.port1.onmessage = () => latencies.push({ start, frame: performance.now() });
-        channel.port2.postMessage(null);
-      });
-    });
-  }, COMPOSER.selector);
-  await page.keyboard.type(KEYS, { delay: 60 });
-  await sleep(500);
-  const { measured, slow } = await page.evaluate(() => {
-    const w = window as unknown as { __perfKeys: Array<{ start: number; frame: number }>; __perfSlow: Array<{ start: number; duration: number }> };
-    return { measured: w.__perfKeys, slow: w.__perfSlow };
+  await page.locator(COMPOSER.selector).click();
+  const events = await traced(browser, async () => {
+    await page.keyboard.type(KEYS, { delay: 60 });
+    await sleep(500);
   });
-  const latencies = measured.map((k) => Math.max(k.frame - k.start, slow.find((s) => Math.abs(s.start - k.start) < 1)?.duration ?? 0));
-  return { p95: quantile(latencies, 0.95), p50: quantile(latencies, 0.5), count: latencies.length, slow: slow.length };
+  const latencies = keyLatencies(events);
+  if (latencies.length < KEYS.length * 0.9) throw new Error(`the trace has ${latencies.length} key presses for ${KEYS.length} keys`);
+  return { p95: quantile(latencies, 0.95), p50: quantile(latencies, 0.5), count: latencies.length, slow: latencies.filter((l) => l >= 16).length };
 };
 
 const main = async () => {
@@ -143,7 +123,7 @@ const main = async () => {
       const page = browser.contexts().flatMap((c) => c.pages()).find((p) => p.url().endsWith("/index.html"));
       if (page === undefined) throw new Error("no app window over CDP");
       const scrolled = await scroll(page);
-      const typed = await keys(page);
+      const typed = await keys(browser, page);
       results = {
         firstPaintMs: median(paints.warm),
         idleMemoryMb: median(samples.map((m) => m.uniqueMb)),
@@ -155,7 +135,7 @@ const main = async () => {
         firstPaintMs: `median of ${paints.warm.length} launches: ${paints.warm.map((p) => p.toFixed(0)).join(", ")} ms (the untimed first: ${paints.cold.toFixed(0)} ms)`,
         idleMemoryMb: `${process.platform === "linux" ? "PSS" : "physical footprint"} summed over all ${samples[0]?.processes ?? 0} processes read (${[...new Set(samples[0]?.kinds ?? [])].join(", ")}) after ${IDLE_MS / 1000} s idle`,
         scrollFps: `${SCROLL.label}; ${(scrolled.dropped * 100).toFixed(1)}% long frames, ${(scrolled.moved / 1000).toFixed(0)}k px, display ${scrolled.refreshHz.toFixed(0)} Hz`,
-        keyP95Ms: `${COMPOSER.label}; p50 ${typed.p50.toFixed(1)} ms over ${typed.count} keys, ${typed.slow} at 16 ms or more`,
+        keyP95Ms: `${COMPOSER.label}; EventLatency, key press to presentation; p50 ${typed.p50.toFixed(1)} ms over ${typed.count} keys, ${typed.slow} at 16 ms or more`,
       };
     } finally {
       await browser.close();
