@@ -15,10 +15,7 @@
 // Run it locally: `pnpm fixtures && pnpm qa:build && pnpm qa` (QA_SCREENS=<id>,<id> to limit), then open
 // qa-results/index.html.
 
-import { readFileSync } from "node:fs";
-import path from "node:path";
-import { expect, type Page } from "@playwright/test";
-import { STEER_SENDS } from "../fixtures/order/steerSends.ts";
+import type { Page } from "@playwright/test";
 
 export const fixtures = [
   "empty",
@@ -112,12 +109,14 @@ const gallerySections = [
 ] as const;
 
 export const screens: readonly Screen[] = [
-  // E0/F1: the frame (top bar, sidebar) around the default route, and the connection states it shows.
+  // F1: the frame (top bar, sidebar of projects) around #/, which opens the last project's chat (the first one on a
+  // fresh install), and the connection states it shows. With no projects, #/ offers to add one (home.empty).
   {
     id: "shell",
     route: "#/",
     fixtures: ["empty", "typical", "many-agents", "long-text", "hub-unreachable", "pairing-failed", "node-too-old"],
   },
+  { id: "home.empty", route: "#/", fixtures: ["empty"] },
   // F10: connecting to a hub, one fixture per state (fixtures/onboarding). The form: no hub here, a hub found, a
   // refused key, app-pair.json used up / expired / untrusted, a rate limit, an unreadable saved key and a key that
   // would be kept in a file. #/onboarding?key opens on the key path; a fleetd://pair link lands with ?hub=&code=.
@@ -149,13 +148,14 @@ export const screens: readonly Screen[] = [
   // A hub on another protocol, either way round.
   { id: "onboarding.mismatch", route: "#/onboarding", fixtures: ["onboarding-app-too-old", "onboarding-hub-too-old"] },
   // F5: the inbox panel with every ask shape (needs-you), the long-text stress ask, and nothing to answer.
-  { id: "inbox", route: "#/board?inbox", fixtures: ["needs-you", "long-text", "empty"] },
+  { id: "inbox", route: "#/board?inbox", fixtures: ["needs-you", "long-text", "empty"], pending: "the lead chat removed the inbox (A1); F5 deletes it (A5)" },
   // The answering flow, as the fixture's hub plays it (ask.answered, then ask.delivered once the undo window has
   // passed): the first question collapses to "You chose" with the 10 s Undo and every count drops at once; the
   // approval (no undo window) shows its receipt at once; then the first one's receipt arrives. Shot at the end.
   {
     id: "inbox.answered",
     route: "#/board?inbox&ask=A1",
+    pending: "the lead chat removed the inbox (A1); F5 deletes it (A5)",
     fixtures: ["needs-you"],
     open: async (page) => {
       await page.keyboard.press("1");
@@ -179,12 +179,13 @@ export const screens: readonly Screen[] = [
     },
   },
   // The open-asks read refused: the reason, the hub's fix and Retry; the badge is plain "Inbox", not loading.
-  { id: "inbox.error", route: "#/board?inbox", fixtures: ["inbox-error"], expect: "error" },
+  { id: "inbox.error", route: "#/board?inbox", fixtures: ["inbox-error"], expect: "error", pending: "the lead chat removed the inbox (A1); F5 deletes it (A5)" },
   // F2: the board (#/ and #/board). board.empty, board.list, board.stage and board.finish are its states: the stage
   // and finish fixtures put one order on it mid-run and after every PR merged.
   {
     id: "board",
     route: "#/board",
+    pending: "the lead chat removed the board as a surface (A1); F2 deletes it (A4)",
     // hub-unreachable: the composer shows main's reason and fix for a lost hub, so their wording is seen and checked.
     fixtures: ["empty", "typical", "long-text", "many-agents", "needs-you", "board-stage", "board-finish", "hub-unreachable"],
   },
@@ -305,80 +306,6 @@ export const screens: readonly Screen[] = [
     fixtures: ["typical", "long-text", "empty"],
     open: (page) => page.getByRole("tab", { name: "Insights" }).click(),
   },
-  // F3: the order view on the fixtures' one order, W1: fleet, PRs, done-when and the lead's conversation (a wake,
-  // markdown, steers and receipts, 20k streamed lines). The empty hub has no W1: its not-found state is expected.
-  { id: "order", route: "#/order/W1", fixtures: ["typical", "long-text", "many-agents", "conversation", "conversation-20k", "needs-you"] },
-  { id: "order", route: "#/order/W1", fixtures: ["empty"], expect: "error" },
-  // Report B5: the idle lead's last message ends as the thread's last message does, never mid-sentence.
-  {
-    id: "order.lead",
-    route: "#/order/W1",
-    fixtures: ["long-text", "conversation"],
-    open: async (page) => {
-      // The route is up once any screen is; the order and its log load after.
-      await page.locator('[data-screen="order.lead"]').waitFor({ timeout: 30_000 });
-      const lastRow = page.locator('[data-entry="say"], [data-entry="more"]').last();
-      const fixture = await page.evaluate(() => (window as unknown as { fleetd: { fixture: string | null } }).fleetd.fixture);
-      await expect(lastRow).toContainText(leadMessageEnding(fixture ?? ""), { timeout: 30_000 });
-    },
-  },
-  {
-    id: "order.told",
-    route: "#/order/W1",
-    fixtures: ["conversation", "long-text", "order-told-overrides"],
-    open: (page) => page.getByRole("button", { name: "What the lead was told" }).click(),
-  },
-  {
-    id: "order.steer",
-    route: "#/order/W1",
-    fixtures: ["typical", "many-agents", "long-text"],
-    open: async (page) => {
-      const fleet = page.getByRole("tab", { name: "Fleet" });
-      if ((await fleet.count()) > 0) await fleet.click();
-      // A finished order's agents sit under its "Done (n)" fold.
-      if ((await page.locator("[data-lane]").count()) === 0) await page.getByRole("button", { name: /^Done \(/ }).click();
-      await page.locator("[data-lane]").first().click();
-    },
-  },
-  // F4: steering states. In the log: each receipt stage the hub reports, with a cut reply and a cut stopped command,
-  // and a steer waiting on the lead's running step. Sent from the lead's box: refused (not sent, with Resend, Edit
-  // and Dismiss), cut off by the link, unanswered, and one still sending. In T12's sheet: its queued and withdrawn
-  // steers, and a steer that found no hub, still in the box.
-  { id: "order", route: "#/order/W1", fixtures: ["order-steering"] },
-  {
-    id: "order.lead",
-    route: "#/order/W1",
-    fixtures: ["order-steering"],
-    open: async (page) => {
-      const lead = page.getByRole("tab", { name: "Lead" });
-      if ((await lead.count()) > 0) await lead.click();
-      const box = page.getByRole("textbox", { name: "Steer the lead" });
-      for (const text of [STEER_SENDS.refused, STEER_SENDS.cutOff, STEER_SENDS.unanswered, STEER_SENDS.sending]) {
-        await box.fill(text);
-        await box.press("Enter");
-        // The box empties once the hub answers; the last one never does.
-        if (text !== STEER_SENDS.sending) await expect(box).toHaveValue("");
-      }
-      await expect(page.locator('[data-receipt="sending"]')).toHaveCount(1);
-    },
-  },
-  {
-    id: "order.steer",
-    route: "#/order/W1",
-    fixtures: ["order-steering"],
-    open: async (page) => {
-      const fleet = page.getByRole("tab", { name: "Fleet" });
-      if ((await fleet.count()) > 0) await fleet.click();
-      // T12 has finished: it sits under the fleet's folded "Done" list.
-      const lane = page.locator(`[data-lane="T12"]`);
-      if ((await lane.count()) === 0) await page.getByRole("button", { name: /^Done \(/ }).click();
-      await lane.click();
-      const box = page.getByRole("textbox", { name: "Steer T12" });
-      await box.fill(STEER_SENDS.offline);
-      await box.press("Enter");
-      await expect(page.getByText("Not connected to the hub, so this steer wasn’t sent.")).toBeVisible();
-    },
-  },
 ];
 
 // Platform checks that need a screen writer's work before they can pass; the owner turns theirs on when it lands.
@@ -386,19 +313,3 @@ export const platformChecks: Record<"appMenu", boolean> = {
   // F1: the macOS app menu, with an Edit menu wired to the text actions.
   appMenu: true,
 };
-
-/** The last sentence of order W1's lead's latest message, as the fixture's thread_tail says. */
-function leadMessageEnding(fixture: string): string {
-  const dir = process.env.QA_FIXTURE_DIR ?? path.join(import.meta.dirname, "..", "fixtures");
-  const file = JSON.parse(readFileSync(path.join(dir, `${fixture}.json`), "utf8")) as {
-    calls: Array<{ tool: string; input?: Record<string, unknown>; outcome: { ok: boolean; output?: Record<string, unknown> } }>;
-  };
-  const order = file.calls.find((c) => c.tool === "order_get" && c.input?.["workstreamId"] === "W1")?.outcome.output;
-  const thread = (order?.["lead"] as { threadRef?: { threadId: string } } | undefined)?.threadRef?.threadId;
-  const tail = file.calls.find((c) => c.tool === "thread_tail" && c.input?.["threadId"] === thread && c.input?.["n"] === 50)?.outcome.output;
-  const latest = ((tail?.["thread"] as { latestMessageTail?: string } | undefined)?.latestMessageTail ?? "").trim();
-  const ending = latest.split(/(?<=[.!?])\s+/).at(-1) ?? latest;
-  // An empty ending would match any row: the fixture must have the lead's message.
-  if (ending.length < 10) throw new Error(`${fixture}: no latest lead message for W1 to check against`);
-  return ending;
-}
