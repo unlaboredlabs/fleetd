@@ -9,7 +9,6 @@ export const SHARED = [
   "long-text",
   "many-prompts",
   "many-agents",
-  "needs-you",
   "conversation",
   "hub-unreachable",
   "pairing-failed",

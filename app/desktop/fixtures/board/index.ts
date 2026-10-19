@@ -1,6 +1,6 @@
 // The board's own fixtures: the stage mid-run (PR groups with their checkers, checks landing, one writer still
 // writing) and the finish (every PR merged, the lead closing). Both start from the typical lab hub, with its
-// snapshot, and replace the board answer, the open asks and the live feed with a scene.
+// snapshot, and replace the board answer and the live feed with a scene.
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import type { JsonObject, JsonValue } from "../kit/json.ts";
@@ -20,7 +20,6 @@ const fromScene = (base: Fixture, make: (now: number) => Scene): Fixture => {
   // Only the project the scene's order belongs to has a board; the others answer empty.
   for (const { input } of f.answers("orders_board")) f.drop("orders_board", input);
   f.answer("orders_board", {}, json(scene.board));
-  f.answer("asks_list", { state: "open" }, { batches: [], asks: [] });
   for (const order of scene.board.orders) {
     f.answer("order_get", { workstreamId: order.workstreamId }, json({ order, doneLanes: scene.done[order.workstreamId] ?? [], asks: [] }));
   }

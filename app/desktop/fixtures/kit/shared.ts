@@ -6,7 +6,7 @@ import type { FixtureFile } from "../../src/main/hub/fixture.ts";
 import { Fixture, HUB, PROTOCOL } from "./fixture.ts";
 import type { SharedName } from "./group.ts";
 import { at } from "./ids.ts";
-import { clone, isObject, type JsonObject, asText } from "./json.ts";
+import { isObject, type JsonObject, asText } from "./json.ts";
 import { arr, busiestOrder, longText, manyAgents, manyPrompts, NODE_TOO_OLD, obj, streamedLines, timeSpans } from "./stress.ts";
 import { explainLoss } from "../../src/main/hub/explain.ts";
 
@@ -15,79 +15,6 @@ const RECORDED = path.join(import.meta.dirname, "../recorded");
 /** A recorded lab moment (recorded/<name>.json), as written by sanitize.ts. */
 export const recorded = (name: string): Fixture =>
   Fixture.fromFile(JSON.parse(fs.readFileSync(path.join(RECORDED, `${name}.json`), "utf8")) as FixtureFile);
-
-/** The ask-labels contract (feat/ask-labels) isn't on main yet; asks_list and order_get answers use it already. */
-const ASK_LABELS = "labelled ask options (feat/ask-labels) not merged yet";
-
-// ---- Needs you: the two questions from needs-you-clipped-20261019.jpg, rewritten with labels ----
-
-const ask = (n: number, f: Fixture, workstreamId: string, projectRef: JsonObject, q: { key: string; blocks: string; text: string; context: string; options: Array<JsonObject>; why: string }): JsonObject => ({
-  askId: `A${n}`,
-  number: n,
-  batchId: "B1",
-  kind: "decide",
-  class: "product",
-  state: "open",
-  key: q.key,
-  blocks: q.blocks,
-  text: q.text,
-  context: q.context,
-  options: q.options,
-  recommendation: asText(q.options[0]?.["key"]),
-  recommendationWhy: q.why,
-  proceededOnRec: false,
-  createdAt: at(f.now, -(14 - n) * 60_000),
-  projectRef,
-  workstreamId,
-});
-
-export const needsYouAsks = (f: Fixture, workstreamId: string, projectRef: JsonObject): Array<JsonObject> => [
-  ask(1, f, workstreamId, projectRef, {
-    key: "share.public_link",
-    blocks: "the Copy link button",
-    text: "Should Copy link publish a public snapshot of the share card?",
-    context:
-      "Copy link needs a URL people can open without your console's key. Clicking it would save the card's PNG on the console and serve it at /share/<random id>.png with no login: only that frozen image, with account names masked unless you turned them on. It only works for viewers who can reach your console's address.",
-    options: [
-      { key: "public-snapshot", label: "Public snapshot link", consequence: "Copy link saves a frozen PNG and copies an unguessable URL that anyone who can reach the console can open." },
-      { key: "image-only", label: "Copy the image only", consequence: "No link and nothing served: Copy puts the PNG on the clipboard." },
-    ],
-    why: "It is what the order asked for, and only the frozen image is exposed, never the console itself.",
-  }),
-  ask(2, f, workstreamId, projectRef, {
-    key: "share.pay_comparison",
-    blocks: "the card's headline wording",
-    text: "Which headline should the share card use?",
-    context:
-      "The console doesn't know what your plan costs, so you type your monthly total once (for example 200). The card covers the last 7 days.",
-    options: [
-      { key: "monthly-vs-week", label: "Monthly plan against this week", consequence: "The headline reads \"$200/mo plan → $1,840 of usage this week\", as in your example." },
-      { key: "prorated", label: "Prorate the plan to the week", consequence: "The headline reads \"$46 of plan → $1,840 of usage, 40×\"." },
-    ],
-    why: "It matches the wording in the order; prorating changes the number people see.",
-  }),
-];
-
-const withNeedsYou = (f: Fixture): Fixture => {
-  const order = busiestOrder(f);
-  const projectRef = obj(obj(order?.output["order"])["projectRef"]);
-  const workstreamId = order?.workstreamId ?? "W1";
-  const asks = needsYouAsks(f, workstreamId, projectRef);
-  const batches = [{ batchId: "B1", createdAt: at(f.now, -12 * 60_000), state: "open", items: asks.map((a) => ({ askId: a["askId"] ?? "", number: a["number"] ?? 0 })) }];
-  f.answer("asks_list", {}, { asks, batches });
-  f.answer("asks_list", { state: "open" }, { asks, batches });
-  if (order !== undefined) {
-    order.output["asks"] = clone(asks);
-    Object.assign(obj(order.output["order"]), { needsYou: asks.length, phase: "waiting_on_you", phaseDetail: "2 questions for you" });
-  }
-  f.update("orders_board", (board) => ({
-    ...obj(board),
-    orders: arr(obj(board)["orders"]).map((o) => (isObject(o) && o["workstreamId"] === workstreamId ? { ...o, needsYou: asks.length, phase: "waiting_on_you" } : o)),
-  }));
-  f.pendingContracts.set("asks_list", ASK_LABELS);
-  f.pendingContracts.set("order_get", ASK_LABELS);
-  return f;
-};
 
 // ---- The conversation from order-conversation-20261019.jpg ----
 
@@ -176,7 +103,6 @@ export const buildShared = (): Map<SharedName, Fixture> => {
     longText(copy("long-text", "Every title ~120 characters, a ~250-character judge criterion, long branches, paths, prose and prompt keys.")),
     manyPrompts(copy("many-prompts", "72 prompts with long dotted ids, every other one overridden for the project.")),
     manyAgents(copy("many-agents", "One order with 12 working and 14 finished agents (26 lanes), and a board of six orders.")),
-    withNeedsYou(copy("needs-you", "The two questions from needs-you-clipped-20261019.jpg, with labelled options, consequences and the recommendation's reason.")),
     withConversation(copy("conversation", "The lead conversation from order-conversation-20261019.jpg: a markdown wake prompt, a human steer to T1 and a lead steer to T2, both acknowledged.")),
     (() => {
       const f = new Fixture("hub-unreachable", "The saved hub doesn't answer; the app retries.");

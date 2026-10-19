@@ -58,7 +58,6 @@ const own = (base: Fixture, what: string, note: string, docs: (kind: Kind, asks:
 export default defineGroup({
   extend: {
     typical: (f) => answer(f, (k, asks) => statusDoc(k, false, asks)),
-    "needs-you": (f) => answer(f, (k, asks) => statusDoc(k, false, asks)),
     empty: (f) => answer(f, (k) => emptyDoc(k)),
     "long-text": (f) => {
       answer(f, (k, asks) => longTextDoc(k, asks));
