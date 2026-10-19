@@ -200,20 +200,28 @@ both; the lead plans to them.</p>
 <thead>
 <tr>
 <th>Cap</th>
+<th>Counts</th>
+<th>Default</th>
 <th>Set it</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>Per project</td>
-<td>The “agents 6 / 12” control in the project’s chat header, or the project’s settings. From 1 up to the fleet’s slots.</td>
+<td>Per project: Max agents</td>
+<td>The project’s agents: writers, readers, reviewers, verifiers. Not the lead’s own turns.</td>
+<td>The fleet cap</td>
+<td>The “agents 6 / 12” control in the project’s chat header, or the project’s settings. From 1 up to the fleet cap.</td>
 </tr>
 <tr>
 <td>Fleet-wide</td>
-<td>The fleet’s settings.</td>
+<td>Every running turn, leads included.</td>
+<td></td>
+<td>The fleet’s settings. Needs an admin key.</td>
 </tr>
 </tbody>
 </table>
+<p>From an <a href="/docs/mcp-clients">MCP client</a>: <code dir="auto">cap_set {project: {projectRef, maxAgents, pauseExtras?}}</code> with an operate
+key, or <code dir="auto">cap_set {cap}</code> for the fleet cap with an admin key.</p>
 <p>When the cap is reached:</p>
 <ul>
 <li>A new agent <strong>queues</strong>; it doesn’t fail. The lead is told its place in line, and the hub starts it the moment a
@@ -236,7 +244,7 @@ the merge train.</li>
 </tr>
 <tr>
 <td>Lower it and choose “pause the extras now”</td>
-<td>Agents over the cap push their work in progress and park until a slot frees.</td>
+<td>Agents over the cap push their work in progress and wait. Each resumes when a slot frees.</td>
 </tr>
 <tr>
 <td>Raise the cap</td>
