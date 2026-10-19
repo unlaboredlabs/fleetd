@@ -1,24 +1,22 @@
-// The app frame: the top bar (the window's drag region, the traffic lights inset on macOS), the sidebar, the screen
-// the route names, the inbox panel and the strips along the bottom. Navigation is the hash (routes.ts).
+// The app frame: the top bar (the window's drag region, the traffic lights inset on macOS), the sidebar of projects,
+// and the screen the route names: a project's lead chat, or Status, Time or Settings. Navigation is the hash
+// (routes.ts); `#/` opens the project you last had open.
 import { PanelLeft, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import { display } from "../../../shared/shortcuts";
-import { AppFrame, Button, TopBar } from "../../ui";
-import { useAsksLoad, useNeedsYouSource } from "../inbox";
+import { AppFrame, Button, EmptyState, TopBar } from "../../ui";
 import { openPalette, PaletteHost, useCommands, type Command } from "../palette";
 import { ProjectsHost } from "../projects";
-import { quietNow, useEscape, useMainProcess, useMenuState, useModHeld, useNotifications } from "./effects";
+import { quietNow, useMainProcess, useMenuState, useModHeld, useNotifications } from "./effects";
 import { postDigest, useStatusDigest } from "../status/digest";
 import { useHubState } from "./hubFeed";
-import { InboxPanel } from "./InboxPanel";
-import { selectNeedsYouCount } from "../../src/data/selectors";
-import { useData, useDataLayer } from "../../src/data/react";
-import { Seen, sidebarOrders } from "./model";
-import { useShellData } from "./data";
+import { useDataLayer } from "../../src/data/react";
+import { homeProject, projectId, stepProject } from "./model";
+import { useSidebarProjects } from "./data";
 import { navigate, useRoute } from "./navigation";
-import type { Route, Screen } from "./routes";
+import type { Screen } from "./routes";
 import { ConnectionBanner, needsOnboarding } from "../onboarding";
-import { ScreenHost, StripsBody } from "./screens";
+import { ScreenHost } from "./screens";
 import { Sidebar } from "./Sidebar";
 import s from "./shell.module.css";
 
@@ -26,43 +24,49 @@ const platform = window.fleetd.platform;
 
 const JUMPS = [1, 2, 3, 4, 5, 6, 7, 8, 9] as const;
 
+/** The project `#/` opens, kept across launches: the app opens where you left it. */
+const LAST_PROJECT = "fleetd.lastProject";
+const readLast = (): string | null => {
+  try {
+    return window.localStorage.getItem(LAST_PROJECT);
+  } catch {
+    return null;
+  }
+};
+
 export function Shell() {
-  const route = useRoute();
-  // The live feed follows the route: an open order gets its lanes and its lead's text, every other screen the
-  // board's (the strips and Machines read it). The layer is the only caller of hub.live and sends only changes.
+  const screen = useRoute();
+  // The live feed: the board's lanes, which the chat's agent strip reads. The layer is the only caller of hub.live
+  // and sends only changes.
   const layer = useDataLayer();
-  const liveFocus = route.screen.id === "order" ? route.screen.orderId : undefined;
   useEffect(() => {
-    layer.setLive(liveFocus === undefined ? { board: true } : { focus: liveFocus });
-  }, [layer, liveFocus]);
+    layer.setLive({ board: true });
+  }, [layer]);
   const hub = useHubState();
-  const data = useShellData();
-  // Undefined until this connection's asks loaded: a "0" then would claim nothing needs you.
-  const needsYou = useData(selectNeedsYouCount);
-  // Only while they are on their way: with the hub unreachable or refusing, nothing is coming, so no skeleton.
-  // A failed read is not "loading": the badge goes back to plain "Inbox" (the count is unknown) and the panel says why.
-  const asksFailed = useAsksLoad().error !== undefined;
-  const countLoading = needsYou === undefined && !asksFailed && (hub?.phase === "live" || hub?.phase === "connecting");
+  const projects = useSidebarProjects();
   const [sidebarHidden, setSidebarHidden] = useState(false);
-  const [seen] = useState(() => new Seen());
   const modHeld = useModHeld();
 
   useMainProcess();
   useMenuState();
   useNotifications(hub?.phase === "live");
   useStatusDigest(postDigest, quietNow);
-  useEscape(route);
-  useNeedsYouSource();
 
-  // What was there when the app connected counts as seen; a project you open is seen up to now.
-  if (data.projects !== undefined) seen.prime(data.projects);
-  const screen = route.screen;
+  const open = screen.id === "project" ? screen.project : null;
   useEffect(() => {
-    if (screen.id !== "board" || screen.project === null) return;
-    const key = screen.project;
-    const open = data.projects?.find((p) => p.key.machineId === key.machineId && p.key.projectId === key.projectId);
-    if (open !== undefined) seen.mark(open.key, open.lastActivityAt);
-  }, [screen, data.projects, seen]);
+    if (open === null) return;
+    try {
+      window.localStorage.setItem(LAST_PROJECT, projectId(open));
+    } catch {
+      // Without storage the app opens on the first project instead; nothing else depends on it.
+    }
+  }, [open]);
+
+  // `#/` becomes the last project once the projects are known; Back doesn't return to the bare `#/`.
+  const home = screen.id === "home" && projects !== undefined ? homeProject(projects, readLast()) : null;
+  useEffect(() => {
+    if (home !== null) navigate({ id: "project", project: home, message: null }, { replace: true });
+  }, [home]);
 
   // Before pairing, after a refused key, or on a hub of another protocol there is nothing to navigate; the
   // onboarding screen has the window to itself.
@@ -71,32 +75,27 @@ export function Shell() {
   const shown: Screen = blocked && screen.id !== "gallery" && screen.id !== "onboarding" ? { id: "onboarding", hub: null, code: null } : screen;
   const chrome = !onboarding && shown.id !== "gallery";
 
-  const go = (next: Screen) => navigate({ screen: next, inbox: route.inbox });
-  const setInbox = (inbox: Route["inbox"]) => navigate({ ...route, inbox }, { replace: inbox === null });
-  const orders = sidebarOrders(data.projects);
+  const go = (next: Screen) => navigate(next);
+  const step = (by: 1 | -1) => {
+    const next = projects === undefined ? null : stepProject(projects, open, by);
+    if (next !== null) go({ id: "project", project: next, message: null });
+  };
 
   useCommands(
     [
       { id: "sidebar.toggle", title: "Toggle sidebar", group: "actions", enabled: () => chrome, run: () => setSidebarHidden((h) => !h) },
-      {
-        id: "inbox.toggle",
-        title: "Inbox",
-        detail: "What needs you",
-        group: "go-to",
-        keywords: ["needs you", "questions", "asks"],
-        enabled: () => chrome,
-        run: () => setInbox(route.inbox === null ? { askId: null } : null),
-      },
+      { id: "project.previous", title: "Previous project", group: "projects", searchOnly: true, enabled: () => chrome && (projects?.length ?? 0) > 0, run: () => step(-1) },
+      { id: "project.next", title: "Next project", group: "projects", searchOnly: true, enabled: () => chrome && (projects?.length ?? 0) > 0, run: () => step(1) },
       ...JUMPS.map(
         (n): Command => ({
-          id: `order.open.${String(n)}`,
-          title: `Open order ${String(n)} in the sidebar`,
-          group: "orders",
+          id: `project.open.${String(n)}`,
+          title: `Open project ${String(n)} in the sidebar`,
+          group: "projects",
           searchOnly: true,
-          enabled: () => chrome && orders[n - 1] !== undefined,
+          enabled: () => chrome && projects?.[n - 1] !== undefined,
           run: () => {
-            const id = orders[n - 1];
-            if (id !== undefined) go({ id: "order", orderId: id, at: null });
+            const p = projects?.[n - 1];
+            if (p !== undefined) go({ id: "project", project: p.key, message: null });
           },
         }),
       ),
@@ -122,29 +121,9 @@ export function Shell() {
       }
       trailing={
         chrome ? (
-          <>
-            <Button
-              variant={needsYou !== undefined && needsYou > 0 ? "secondary" : "quiet"}
-              className={needsYou !== undefined && needsYou > 0 ? s.needsYou : undefined}
-              aria-busy={countLoading}
-              shortcut={display("inbox.toggle", platform)}
-              aria-pressed={route.inbox !== null}
-              onClick={() => setInbox(route.inbox === null ? { askId: null } : null)}
-            >
-              {countLoading ? (
-                <>
-                  Inbox <span className={s.countSkeleton} aria-label="Loading" />
-                </>
-              ) : needsYou !== undefined && needsYou > 0 ? (
-                `${String(needsYou)} need you`
-              ) : (
-                "Inbox"
-              )}
-            </Button>
-            <Button variant="quiet" icon={<Search />} shortcut={display("palette.toggle", platform)} onClick={() => openPalette()}>
-              Commands
-            </Button>
-          </>
+          <Button variant="quiet" icon={<Search />} shortcut={display("palette.toggle", platform)} onClick={() => openPalette()}>
+            Commands
+          </Button>
         ) : undefined
       }
     />
@@ -154,27 +133,34 @@ export function Shell() {
     <div className={s.root} data-screen="shell">
       <AppFrame
         topBar={top}
-        sidebar={chrome && !sidebarHidden ? <Sidebar data={data} route={route} seen={seen} hub={hub} jumpHints={modHeld} go={go} /> : undefined}
+        sidebar={chrome && !sidebarHidden ? <Sidebar projects={projects} screen={screen} hub={hub} jumpHints={modHeld} go={go} /> : undefined}
       >
-        <div className={s.body}>
-          <div className={s.column}>
-            {/* Fixture data must never pass for a live hub. */}
-            {window.fleetd.fixture !== null ? (
-              <div className={s.fixtureBanner} role="status">
-                Sample data, not connected
-              </div>
-            ) : null}
-            {chrome ? <ConnectionBanner /> : null}
-            <div className={s.screen}>
-              <ScreenHost screen={shown} />
+        <div className={s.column}>
+          {/* Fixture data must never pass for a live hub. */}
+          {window.fleetd.fixture !== null ? (
+            <div className={s.fixtureBanner} role="status">
+              Sample data, not connected
             </div>
-            {chrome ? (
-              <footer className={s.strips}>
-                <StripsBody onOpenMachines={() => go({ id: "machines" })} />
-              </footer>
-            ) : null}
+          ) : null}
+          {chrome ? <ConnectionBanner /> : null}
+          <div className={s.screen}>
+            {shown.id === "home" && projects !== undefined && projects.length === 0 ? (
+              <div data-screen="home.empty" style={{ display: "contents" }}>
+                <EmptyState
+                  title="Add a project to chat with its lead"
+                  actions={
+                    <Button variant="primary" onClick={() => go({ id: "projects.add" })}>
+                      Add a project
+                    </Button>
+                  }
+                >
+                  Each project has a lead. Tell it what you want; it runs the agents and asks you only what it needs.
+                </EmptyState>
+              </div>
+            ) : (
+              <ScreenHost screen={shown} />
+            )}
           </div>
-          {chrome && route.inbox !== null ? <InboxPanel count={needsYou} askId={route.inbox.askId} onClose={() => setInbox(null)} /> : null}
         </div>
       </AppFrame>
       <PaletteHost />

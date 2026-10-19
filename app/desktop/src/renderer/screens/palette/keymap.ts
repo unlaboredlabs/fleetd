@@ -5,8 +5,8 @@
 import { shortcutFor, type KeyInput, type Platform, type ShortcutId } from "../../../shared/shortcuts";
 import { commandFor } from "./registry";
 
-/** Held down, these step through orders; every other shortcut fires once per press. */
-const REPEATS: ReadonlySet<ShortcutId> = new Set(["order.previous", "order.next"]);
+/** Held down, these step through projects; every other shortcut fires once per press. */
+const REPEATS: ReadonlySet<ShortcutId> = new Set(["project.previous", "project.next"]);
 
 /** Ctrl+N/P step the palette's selection. Off macOS Ctrl is Mod, so while it is open they are its keys, not ⌘N. */
 const paletteKey = (event: KeyInput, platform: Platform): boolean =>

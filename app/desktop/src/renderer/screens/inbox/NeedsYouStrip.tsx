@@ -1,7 +1,6 @@
 // The question cards outside the inbox: the board's Needs you (under its composer, the first few with "+N more")
 // and an order's own asks above its follow-up composer. Same card, same state as the panel.
 import type { ReactNode } from "react";
-import { display } from "../../../shared/shortcuts";
 import { Button, Text } from "../../ui";
 import { useData } from "../../src/data/react";
 import { selectInbox, selectOpenAsksByOrder } from "../../src/data/selectors";
@@ -37,14 +36,13 @@ export function NeedsYouStrip({ workstreamId, project, limit }: NeedsYouStripPro
   const total = (open ?? []).filter((i) => !ui.answered.has(i.ask.askId)).length;
   const shown = limit === undefined ? asks : asks.slice(0, limit);
   const more = asks.length - shown.length;
-  const key = display("inbox.toggle", window.fleetd.platform);
   return (
     <section className={s.strip} aria-label="Needs you">
       <div className={s.head}>
         <Text size="xs" tone="quiet" strong>
           {workstreamId === undefined ? `Needs you ${String(waiting)}` : `Needs you ${String(waiting)} of ${String(total)}`}
         </Text>
-        <Button variant="quiet" shortcut={key} onClick={() => openInbox()}>
+        <Button variant="quiet" onClick={() => openInbox()}>
           {more > 0 ? `${String(more)} more in the inbox` : "Open the inbox"}
         </Button>
       </div>

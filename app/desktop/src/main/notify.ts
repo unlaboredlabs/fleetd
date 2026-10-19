@@ -4,7 +4,7 @@ import type { Opener } from "./opener";
 
 /**
  * Posts the renderer's notifications. When and what to notify is the renderer's call (it has the hub's
- * attention rules and the open asks); main only shows them and opens their target on a click.
+ * attention rules and which projects still need you); main only shows them and opens their target on a click.
  */
 export class Notifier {
   // Held so the click handler outlives garbage collection (macOS otherwise drops it), one per tag.
