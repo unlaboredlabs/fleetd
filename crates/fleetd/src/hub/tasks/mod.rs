@@ -5,6 +5,8 @@
 //! inline, into one lead wake; the slot and leases are released and the queue is tried again.
 pub mod branch_diff;
 pub mod cap;
+#[cfg(test)]
+mod cap_tests;
 pub mod glob;
 pub mod hooks;
 pub mod policy;

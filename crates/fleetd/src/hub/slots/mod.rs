@@ -467,3 +467,68 @@ impl Slots {
         slot_state(self.board().state())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Barrier;
+
+    use fleetd_contracts::ids::{MachineId, ProjectId};
+
+    use super::*;
+    use crate::hub::store::test_clock::ManualClock;
+
+    /// Spawns racing from many lead calls at once take the board's lock one at a time: never past max agents.
+    #[test]
+    fn concurrent_spawns_never_overshoot_max_agents() {
+        let db = HubDb::open_memory().unwrap();
+        let store = HubStore::new(db.clone());
+        let events = EventLog::new(db.clone(), ManualClock::at(1_792_000_000_000)).unwrap();
+        let slots = Slots::new(
+            db,
+            &store,
+            &events,
+            Arc::new(|_, _| None),
+            SlotsOptions::default(),
+        )
+        .unwrap();
+        let r = ProjectRef {
+            machine_id: MachineId::unchecked("lab-a"),
+            project_id: ProjectId::unchecked("p1"),
+        };
+        slots
+            .set_cap(CapInput {
+                cap: None,
+                max_agents: Some((r.clone(), 2)),
+            })
+            .unwrap();
+        let n = 24;
+        let start = Arc::new(Barrier::new(n));
+        let granted: usize = std::thread::scope(|s| {
+            let handles: Vec<_> = (1..=n)
+                .map(|i| {
+                    let (slots, r, start) = (&slots, &r, start.clone());
+                    s.spawn(move || {
+                        start.wait();
+                        let holder = format!("T{i}");
+                        let grant = slots.acquire(SlotRequest {
+                            holder: &holder,
+                            project_ref: r,
+                            priority: SlotPriority::Work,
+                        });
+                        usize::from(grant.unwrap().granted())
+                    })
+                })
+                .collect();
+            handles.into_iter().map(|h| h.join().unwrap()).sum()
+        });
+        assert_eq!(granted, 2);
+        assert_eq!(
+            slots.agents(&r),
+            Agents {
+                running: 2,
+                max_agents: 2,
+                queued: n as i64 - 2
+            }
+        );
+    }
+}

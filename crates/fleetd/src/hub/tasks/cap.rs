@@ -27,6 +27,7 @@ pub struct ProjectCap {
     pub pause_extras: bool,
 }
 
+#[derive(Debug)]
 pub struct CapOutcome {
     pub slots: SlotState,
     pub paused: Vec<TaskId>,
