@@ -99,7 +99,7 @@ const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab)
   // when named.
   { name: "nosub", run: noSubagents, only: true },
   // A freed slot offers the next approved item; a slice gets its reviewer before the next slice. Restarts lab-a's lead
-  // and adds the testbed project for its run, so only when named.
+  // and adds the lab repo project for its run, so only when named.
   { name: "eff", run: efficiency, only: true },
   // A real lead writes its own labelled ask; the answer goes through the undo window. Only when named.
   { name: "ask", run: askCard, only: true },

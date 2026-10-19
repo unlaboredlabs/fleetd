@@ -1,7 +1,7 @@
 // Max efficiency without compromising (`npm run lab eff`), end to end on lab-a.
 // A. A freed slot is offered the next approved item within one event: with an order running on a frozen brief and an
 //    open plan item nobody took, the first lead wake after a task's slot frees names that item. The hub spawns nothing.
-// B. A pushed slice gets a reviewer before the next slice: a writer on the testbed opens two PRs and reports each with
+// B. A pushed slice gets a reviewer before the next slice: a writer in this slot's namespace of the lab repo opens two PRs and reports each with
 //    `report` (kind slice_ready); the first PR's reviewer starts before the second PR reaches the train, while the
 //    writer still runs. Gates hold: neither PR is ready without its review.
 // Costs a few haiku/low lead turns, one tiny read task, one writer and its reviewers.
@@ -11,7 +11,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { type Body, fleetdCommand, type Lab, MODEL, nodeSock, requireGhLogin, scrubbedEnv, userMessages } from "./harness.ts";
 import { prepareRepo } from "./m5Tasks.ts";
-import { cleanTestbed, git as testbedGit, prepareCheckout, REPO, removeTestbedProject, TESTBED } from "./m7Train.ts";
+import { BASE, BRANCH_PREFIX, CLONE, checkClone, NAMESPACE, onBase, prepareCheckout, REPO, removeLabRepoProject, resetNamespace } from "./m7Train.ts";
 
 const MACHINE = "lab-a";
 const TURN_MS = 240_000;
@@ -109,15 +109,15 @@ async function slotFiller(lab: Lab) {
 async function sliceReviews(lab: Lab) {
   const { callTool, check, ok } = lab;
   requireGhLogin();
-  check(fs.existsSync(path.join(TESTBED, ".git")), `${TESTBED} is a clone of ${REPO} (run node tests/lab/testbed.ts)`);
-  cleanTestbed();
+  check(NAMESPACE.startsWith("slot/"), `eff needs CI: run it in a slot/<n> namespace, not ${NAMESPACE}`);
+  checkClone(check);
+  resetNamespace();
   const dir = `lab/eff-${new Date().toISOString().slice(0, 19).replace(/\D/gu, "")}`;
   prepareCheckout(`areas:\n  eff: ["${dir}/**"]\ndefaults:\n  model: ${MODEL}\n  effort: low\n`);
-  const opened: Array<number> = [];
   try {
-    const projectId = await lab.addProject(MACHINE, TESTBED, "fleetd-testbed");
+    const projectId = await lab.addProject(MACHINE, CLONE, "fleetd-lab");
     const ref = { machineId: MACHINE, projectId };
-    const fleetd = shell(TESTBED);
+    const fleetd = shell(CLONE);
     let cursor = await lab.cursor();
     const started = await callTool("lead_start", { ...ref, model: MODEL, effort: "low" });
     check(!started.isError, `lead_start: ${JSON.stringify(started.body)}`);
@@ -127,14 +127,14 @@ async function sliceReviews(lab: Lab) {
     const intake = await callTool("intake_submit", { ...ref, text: `${QUIET} Two docs slices.`, clientRequestId: randomUUID() });
     check(!intake.isError, `intake_submit: ${JSON.stringify(intake.body)}`);
     const w = intake.body.workstreamId as string;
-    const onMain = (file: string) => ({ type: "cmd", machineId: MACHINE, argv: ["gh", "api", `repos/${REPO}/contents/${file}`, "--silent"], expectExit: 0 });
+    const onMain = (file: string) => ({ type: "cmd", machineId: MACHINE, argv: ["gh", "api", onBase(file), "--silent"], expectExit: 0 });
     const brief = { goal: `two slices: ${dir}/one.md and ${dir}/two.md`, why: "the eff lab scenario", pointers: [], constraints: [], tier: "M", doneWhen: [onMain(`${dir}/one.md`), onMain(`${dir}/two.md`)] };
     const frozen = fleetd("brief", "create", "--workstream", w, "--json", JSON.stringify(brief));
     check(frozen.code === 0, `brief create ${w}: ${JSON.stringify(frozen)}`);
 
     // One writer, two slices, each reported as soon as its PR is open.
     const slice = (n: string, line: string) =>
-      `On a new branch fleetd/eff-${n} from origin/main (git fetch origin; git checkout -b fleetd/eff-${n} origin/main), create ${dir}/${n}.md containing exactly the line ${line}, commit it, push the branch, and open a PR with gh pr create --base main --head fleetd/eff-${n} --title "eff ${n}" --body "Source: done:0". Then call the report tool with kind "slice_ready" and prUrl set to that PR's URL.`;
+      `On a new branch ${BRANCH_PREFIX}eff-${n} from origin/${BASE} (git fetch origin; git checkout -b ${BRANCH_PREFIX}eff-${n} origin/${BASE}), create ${dir}/${n}.md containing exactly the line ${line}, commit it, push the branch, and open a PR with gh pr create --base ${BASE} --head ${BRANCH_PREFIX}eff-${n} --title "eff ${n}" --body "Source: done:0". Then call the report tool with kind "slice_ready" and prUrl set to that PR's URL.`;
     cursor = await lab.cursor();
     const spawned = fleetd(
       "task", "spawn", "--workstream", w, "--title", "two slices", "--areas", "eff", "--serves", "done:0", "--model", MODEL, "--effort", "low",
@@ -147,7 +147,6 @@ async function sliceReviews(lab: Lab) {
     // The order of what happened: the first slice queued, its reviewer started, then the second slice queued.
     const seen = await eventsSince(lab, cursor, ["change.queued", "task.queued", "task.started"]);
     const queued = seen.filter((e) => e.type === "change.queued" && e.data?.workstreamId === w);
-    for (const q of queued) opened.push(q.data.prNumber as number);
     check(queued.length >= 2, `both slices reached the train: ${JSON.stringify(queued.map((e) => e.summary))}`);
     const [first, second] = queued;
     const firstUrl = `https://github.com/${REPO}/pull/${first!.data.prNumber}`;
@@ -167,10 +166,9 @@ async function sliceReviews(lab: Lab) {
       if (["queued", "running", "idle"].includes(t.state)) fleetd("task", "cancel", t.taskId);
     }
   } finally {
-    for (const n of opened) spawnSync("gh", ["pr", "close", String(n), "-R", REPO, "--delete-branch"], { cwd: path.dirname(TESTBED), env: scrubbedEnv(), stdio: "ignore" });
-    cleanTestbed();
-    await removeTestbedProject(lab).catch((error: unknown) => lab.log(`could not remove the testbed project: ${String(error)}`));
-    fs.rmSync(path.join(TESTBED, ".fleetd"), { recursive: true, force: true });
-    testbedGit("checkout", "-q", "--force", "main");
+    // Only this slot's namespace, never the repo's main.
+    resetNamespace();
+    await removeLabRepoProject(lab).catch((error: unknown) => lab.log(`could not remove the lab repo project: ${String(error)}`));
+    fs.rmSync(path.join(CLONE, ".fleetd"), { recursive: true, force: true });
   }
 }
