@@ -2,9 +2,8 @@
 // argument list here before any handler runs, and refuses anything else.
 import { z } from "zod";
 import { LinkHandlerClaim, NotifyRequest } from "./app";
-import { MenuState } from "./menu";
+import { MENU_COMMANDS } from "./menu";
 import { IPC, type InvokeChannel } from "./channels";
-import { PairRequest, ProbeRequest } from "./pairing";
 
 /** A call's input as JSON, at most; the hub has no use for more, and main shouldn't buffer it. */
 export const MAX_CALL_INPUT_BYTES = 1024 * 1024;
@@ -98,6 +97,16 @@ export const SecretRequest = z.strictObject({
 export type SecretRequest = z.infer<typeof SecretRequest>;
 /** An absolute path the renderer got from a drop (webUtils.getPathForFile). */
 export const DropPath = z.string().min(2).max(4096).refine((p) => p.startsWith("/") || /^[A-Za-z]:[\\/]/u.test(p), "an absolute path");
+
+// Defined here rather than beside their types (shared/pairing.ts, shared/menu.ts), which the renderer imports: zod
+// stays in main's bundle and out of the renderer's startup.
+const PairRequest = z.strictObject({
+  hub: z.string().trim().min(1).max(2048),
+  code: z.string().trim().min(1).max(64),
+});
+const ProbeRequest = z.string().trim().min(1).max(2048);
+/** The enabled commands; any menu command left out is disabled. */
+const MenuState = z.array(z.enum(MENU_COMMANDS)).max(MENU_COMMANDS.length);
 
 const none = z.tuple([]);
 
