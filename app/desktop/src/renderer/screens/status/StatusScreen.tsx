@@ -7,9 +7,10 @@
 import { useMemo } from "react";
 import type { ProjectStatusRow } from "../../../shared/contracts";
 import { useData, useToolQuery } from "../../src/data/react";
+import { selectProjectList } from "../../src/data/selectors";
 import { Button, cx, Dot, Text, Tooltip, Truncate } from "../../ui";
 import { asGetOutput } from "./contracts";
-import { barOf, orderRows, STATE_WORDS, stateWord } from "./rows";
+import { barOf, orderRows, STATE_WORDS, type StateWord } from "./rows";
 import { dropLines, staleWords, when } from "./view";
 import s from "./status.module.css";
 
@@ -22,9 +23,10 @@ export const projectHref = (ref: ProjectStatusRow["projectRef"]): string =>
 export function StatusScreen() {
   const fresh = useData((st) => st.fresh);
   const query = useToolQuery("status_projects", ALL);
-  const rows = useMemo(() => (query.data === undefined ? undefined : orderRows(query.data.rows)), [query.data]);
+  const projects = useData(selectProjectList);
+  const rows = useMemo(() => (query.data === undefined ? undefined : orderRows(query.data.rows, projects)), [query.data, projects]);
   // The hub's clock for "merged 14:02": the newest as-of any row carries.
-  const now = rows?.reduce((max, r) => Math.max(max, Date.parse(r.asOf) || 0), 0);
+  const now = rows?.reduce((max, r) => Math.max(max, Date.parse(r.row.asOf) || 0), 0);
 
   return (
     <div className={cx(s.screen)} data-screen="status.fleet" data-phase={rows === undefined ? "skeleton" : "live"}>
@@ -52,8 +54,8 @@ export function StatusScreen() {
           <Text tone="quiet">No projects yet.</Text>
         ) : (
           <ul className={cx(s.rows)} aria-label="Projects">
-            {rows.map((row) => (
-              <Row key={`${row.projectRef.machineId}/${row.projectRef.projectId}`} row={row} now={now ?? 0} />
+            {rows.map(({ row, word }) => (
+              <Row key={`${row.projectRef.machineId}/${row.projectRef.projectId}`} row={row} state={word} now={now ?? 0} />
             ))}
           </ul>
         )}
@@ -64,8 +66,7 @@ export function StatusScreen() {
 
 const TONE = { waiting_on_you: "warning", blocked: "danger", working: "default", idle: "quiet" } as const;
 
-function Row({ row, now }: { row: ProjectStatusRow; now: number }) {
-  const state = stateWord(row.state);
+function Row({ row, state, now }: { row: ProjectStatusRow; state: StateWord; now: number }) {
   const { bar, planning } = barOf(row);
   const word = (
     <Text size="sm" strong={state !== "idle"} tone={TONE[state]}>
