@@ -132,14 +132,14 @@ describe("registry", () => {
 
   it("drops disabled commands from the palette and lets their keys fall through", () => {
     let enabled = false;
-    offs.push(registerCommands([item("order.stop", "Stop order", "orders", { enabled: () => enabled })]));
-    const press = { key: ">", code: "Period", metaKey: true, ctrlKey: false, shiftKey: true, altKey: false, repeat: false, isComposing: false };
+    offs.push(registerCommands([item("sidebar.toggle", "Toggle sidebar", "actions", { enabled: () => enabled })]));
+    const press = { key: "b", code: "KeyB", metaKey: true, ctrlKey: false, shiftKey: false, altKey: false, repeat: false, isComposing: false };
     expect(dispatchable(press, "darwin")).toBeUndefined();
-    expect(snapshotItems().some((c) => c.id === "order.stop")).toBe(false);
+    expect(snapshotItems().some((c) => c.id === "sidebar.toggle")).toBe(false);
     enabled = true;
-    expect(dispatchable(press, "darwin")).toBe("order.stop");
+    expect(dispatchable(press, "darwin")).toBe("sidebar.toggle");
     expect(dispatchable({ ...press, repeat: true }, "darwin")).toBeUndefined();
-    expect(commandFor("order.stop")?.title).toBe("Stop order");
+    expect(commandFor("sidebar.toggle")?.title).toBe("Toggle sidebar");
   });
 
   it("merges source items after commands, skipping ids already present", () => {
@@ -178,20 +178,16 @@ describe("keys while the palette is open", () => {
   it("holds back only the palette's own Ctrl+N/P off macOS; other shortcuts still run", () => {
     offs.push(
       registerCommands([
-        item("order.new", "New order", "actions"),
         item("palette.toggle", "Palette", "actions"),
-        item("board.open", "Board", "go-to"),
+        item("project.open.1", "Project 1", "projects"),
         item("shortcuts.show", "Shortcuts", "actions"),
       ]),
     );
-    expect(dispatchable(ctrl("n", "KeyN"), "linux", false)).toBe("order.new");
     expect(dispatchable(ctrl("n", "KeyN"), "linux", true)).toBeUndefined();
     expect(dispatchable(ctrl("k", "KeyK"), "linux", true)).toBe("palette.toggle");
-    expect(dispatchable(ctrl("0", "Digit0"), "linux", true)).toBe("board.open");
+    expect(dispatchable(ctrl("1", "Digit1"), "linux", true)).toBe("project.open.1");
     // The footer's "All shortcuts" key works from inside the palette.
     expect(dispatchable(ctrl("/", "Slash"), "linux", true)).toBe("shortcuts.show");
-    // On macOS Ctrl isn't Mod, so ⌘N keeps meaning New order with the palette open.
-    expect(dispatchable({ ...ctrl("n", "KeyN"), ctrlKey: false, metaKey: true }, "darwin", true)).toBe("order.new");
   });
 
   it("finds a letter shortcut on a layout without Latin letters", () => {

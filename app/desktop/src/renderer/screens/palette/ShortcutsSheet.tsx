@@ -8,15 +8,15 @@ import { useReturnFocus } from "./focus";
 import { closeOverlay } from "./state";
 import s from "./Palette.module.css";
 
-const SECTIONS: readonly ShortcutSection[] = ["General", "Go to", "Orders", "Board"];
+const SECTIONS: readonly ShortcutSection[] = ["General", "Projects", "Go to", "Composer"];
 
-/** "Open order 1…9" reads as one row, not nine. */
+/** "Open project 1…9" reads as one row, not nine. */
 const rowsFor = (list: readonly Shortcut[], platform: Platform): { title: string; keys: string }[] => {
   const out: { title: string; keys: string }[] = [];
   const jumps = list.filter((sc) => /^Mod\+[1-9]$/u.test(sc.keys));
   for (const sc of list) {
     if (!jumps.includes(sc)) out.push({ title: sc.title.replace(/…$/u, ""), keys: displayKeys(sc.keys, platform) });
-    else if (sc === jumps[0]) out.push({ title: "Open an order in the sidebar", keys: `${displayKeys(sc.keys, platform).slice(0, -1)}1–9` });
+    else if (sc === jumps[0]) out.push({ title: "Open a project in the sidebar", keys: `${displayKeys(sc.keys, platform).slice(0, -1)}1–9` });
   }
   return out;
 };
