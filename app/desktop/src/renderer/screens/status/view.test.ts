@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import type { ProjectStatusRow } from "../../../shared/contracts";
-import { barOf, orderRows, stateWord } from "./rows";
+import type { ProjectRow } from "../../src/data/selectors";
+import { barOf, orderRows } from "./rows";
 import { age, dropLines, staleWords, when } from "./view";
 
 const NOW = Date.parse("2026-10-19T10:07:12.000Z");
@@ -19,15 +20,38 @@ const row = (title: string, state: string, extra: Partial<ProjectStatusRow> = {}
   ...extra,
 });
 
+const project = (title: string, chat: { needsYou?: boolean; working?: boolean } = {}): ProjectRow => ({
+  key: `devbox/${title}`,
+  project: { machineId: "devbox", projectId: title, title, lastActivityAt: "2026-10-19T10:00:00.000Z", threads: { active: 0, total: 0 }, workspaceRoot: `/home/dev/${title}` } as unknown as ProjectRow["project"],
+  needsYou: chat.needsYou ?? false,
+  working: chat.working ?? false,
+  running: 0,
+  state: "idle",
+});
+
 describe("status rows", () => {
   it("put what needs you first, then blocked, working, idle; by title within each", () => {
-    const rows = [row("web", "idle"), row("api", "working"), row("shop", "waiting_on_you"), row("mail", "blocked"), row("app", "working")];
-    expect(orderRows(rows).map((r) => r.title)).toEqual(["shop", "mail", "api", "app", "web"]);
+    const rows = [row("web", "idle"), row("api", "working"), row("shop", "idle"), row("mail", "blocked"), row("app", "working")];
+    const chat = [project("shop", { needsYou: true })];
+    expect(orderRows(rows, chat).map((r) => [r.row.title, r.word])).toEqual([
+      ["shop", "waiting_on_you"],
+      ["mail", "blocked"],
+      ["api", "working"],
+      ["app", "working"],
+      ["web", "idle"],
+    ]);
   });
 
-  it("read a state a newer hub sends as idle", () => {
-    expect(stateWord("paused_for_lunch")).toBe("idle");
-    expect(stateWord("blocked")).toBe("blocked");
+  it("say waiting on you only when the chat does, so Status, the sidebar dot and the chat header agree", () => {
+    // The row's own "waiting on you" never counts; the hub's chat state is the one source for it.
+    expect(orderRows([row("billing", "waiting_on_you")], [project("billing")])[0]?.word).toBe("idle");
+    expect(orderRows([row("billing", "idle")], [project("billing", { needsYou: true })])[0]?.word).toBe("waiting_on_you");
+    // From the row: blocked, and a working (PRs in CI or review) its agents can't show.
+    expect(orderRows([row("shop", "blocked")], [project("shop", { working: true })])[0]?.word).toBe("blocked");
+    expect(orderRows([row("shop", "working")], [project("shop")])[0]?.word).toBe("working");
+    expect(orderRows([row("shop", "idle")], [project("shop", { working: true })])[0]?.word).toBe("working");
+    // A state a newer hub sends reads as idle; no chat state yet reads as not waiting.
+    expect(orderRows([row("x", "paused_for_lunch")], undefined)[0]?.word).toBe("idle");
   });
 
   it("draw the two-tone bar only when something is counted: planning and nothing-to-count show no number", () => {
