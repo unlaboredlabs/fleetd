@@ -5,13 +5,15 @@
 #
 # It runs the lab's demo order (tests/lab/demoFanout.ts: one tier-L order, three writers, reviewers and a verifier,
 # the public testbed unlaboredlabs/fleetd-testbed through the merge train) on a hub and node of its own, with the
-# app recording its own window (FLEETD_RECORD, no Screen Recording permission), and prints the MP4's path.
+# desktop app (app/desktop, Electron) recording its own window and prints the MP4's path. The app records its page
+# through Chromium's own capture (FLEETD_RECORD), so there is no Screen Recording permission and no ffmpeg; the
+# macOS traffic lights are not in the picture.
 #
-# The fleetd it runs is the nightly release: the CLI and fleetd.app from
+# The fleetd it runs is the nightly release: the CLI and the desktop app (fleetd-desktop-macos-universal.zip) from
 # https://github.com/unlaboredlabs/fleetd/releases/download/nightly/, each checked against the release's SHA256SUMS
 # as site/install.sh does, and the lab driver (tests/lab) checked out at the commit release.json names, so the two
 # match. It prints that commit and its date, and refuses a nightly without the board pass (#138). FLEETD_DEMO_BUILD=1,
-# or running it from a checkout, builds from source with cargo instead.
+# or running it from a checkout, builds from source instead (cargo for the CLI, pnpm for the app).
 #
 # Everything lives in FLEETD_DEMO_DIR (default ~/fleetd-demo): the binaries, the fleetd checkout, a pinned Node if
 # yours is older than 24, a sandbox HOME for the hub, node, agents and app, the lab, the recordings. Your own
@@ -25,7 +27,7 @@
 #   token (one browser approval, pasted once, kept 0600 in the sandbox for the next run). Your /login itself sits in
 #   the macOS Keychain, which a sandbox can't borrow without writing to it when claude refreshes it.
 #
-# Needs git, gh (logged in), claude and curl (and cargo to build). Costs about 20 haiku turns and 15 minutes.
+# Needs git, gh (logged in), claude and curl (and cargo and pnpm to build). Costs about 20 haiku turns and 15 minutes.
 # Ctrl-C stops everything it started; then run it again. Environment:
 #   FLEETD_DEMO_DIR          the sandbox (default ~/fleetd-demo)
 #   FLEETD_DEMO_BUILD=1      build from source instead of using the nightly
@@ -44,19 +46,20 @@ die() { printf 'demo-mac: %s\n' "$*" >&2; exit 1; }
 REPO=unlaboredlabs/fleetd
 BOARD_PASS_PR=138
 
-[ "$(uname -s)" = Darwin ] || die "this records the macOS app; on Linux use app/bench/record.sh"
+[ "$(uname -s)" = Darwin ] || die "this records the macOS app; on Linux, app/desktop's pnpm perf:record exercises the recorder"
 user="${USER:-$(id -un)}"
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd -P || true)"
 in_checkout=0
-if [ -n "$here" ] && [ -f "$here/tests/lab/demoFanout.ts" ] && [ -d "$here/app/record" ]; then in_checkout=1; fi
+if [ -n "$here" ] && [ -f "$here/tests/lab/demoFanout.ts" ] && [ -f "$here/app/desktop/package.json" ]; then in_checkout=1; fi
 build=0
 if [ "${FLEETD_DEMO_BUILD:-}" = 1 ] || [ "$in_checkout" = 1 ]; then build=1; fi
 # /usr/bin/git is a stub that offers to install the Command Line Tools; run it to know.
 git --version >/dev/null 2>&1 || die "git needs the Command Line Tools: xcode-select --install"
 needs="gh claude curl shasum ditto"
-[ "$build" = 1 ] && needs="$needs cargo"
+[ "$build" = 1 ] && needs="$needs cargo pnpm"
 for c in $needs; do
-  command -v "$c" >/dev/null || die "$c is missing$([ "$c" = cargo ] && echo ' (install Rust from https://rustup.rs)')"
+  case "$c" in cargo) hint=' (install Rust from https://rustup.rs)' ;; pnpm) hint=' (https://pnpm.io/installation)' ;; *) hint='' ;; esac
+  command -v "$c" >/dev/null || die "$c is missing$hint"
 done
 gh auth status >/dev/null 2>&1 || die "gh is not logged in: gh auth login"
 
@@ -144,6 +147,25 @@ clone_at() {
   git -C "$repo" checkout -q --detach FETCH_HEAD
 }
 
+# Node 24 or newer for the lab driver (and the app build); else a pinned build in the sandbox, checked against nodejs.org's SHASUMS256.
+NODE_VERSION=v24.22.0
+node_ok() { command -v node >/dev/null && [ "$(node -p 'process.versions.node.split(".")[0]')" -ge 24 ]; }
+if ! node_ok; then
+  case "$(uname -m)" in
+    arm64) arch=arm64 sum=6a9724d9b50a5f22b4816cded441b5a8d9ddae546191a5e5b7efa5a5e2ee26d5 ;;
+    x86_64) arch=x64 sum=495e3f273c645f3c4677d438304cdfc701729ea5dec5728f5c8e76a2dece4b91 ;;
+    *) die "no Node build for $(uname -m)" ;;
+  esac
+  dir="$SANDBOX/node-$NODE_VERSION-darwin-$arch"
+  if [ ! -x "$dir/bin/node" ]; then
+    say "Fetching Node $NODE_VERSION into the sandbox"
+    tgz="$SANDBOX/node-$NODE_VERSION-darwin-$arch.tar.gz"
+    curl -fsSL "https://nodejs.org/dist/$NODE_VERSION/node-$NODE_VERSION-darwin-$arch.tar.gz" -o "$tgz"
+    echo "$sum  $tgz" | shasum -a 256 -c - >/dev/null || { rm -f "$tgz"; die "the Node download does not match its checksum"; }
+    tar -xzf "$tgz" -C "$SANDBOX" && rm -f "$tgz"
+  fi
+  PATH="$dir/bin:$PATH"
+fi
 if [ "$build" = 0 ]; then
   nightly="$SANDBOX/nightly"
   rm -rf "$nightly" && mkdir -p "$nightly"
@@ -163,9 +185,12 @@ if [ "$build" = 0 ]; then
   case "$(uname -m)" in arm64) cli_asset=fleetd-darwin-arm64 ;; x86_64) cli_asset=fleetd-darwin-x64 ;; *) die "no fleetd for $(uname -m)" ;; esac
   fetch "$cli_asset" "$nightly/fleetd"
   chmod 755 "$nightly/fleetd"
-  fetch fleetd-app-macos-universal.zip "$nightly/app.zip"
+  awk '$2 == "fleetd-desktop-macos-universal.zip" || $2 == "*fleetd-desktop-macos-universal.zip" { found = 1 } END { exit !found }' "$nightly/SHA256SUMS" ||
+    die "the nightly has no desktop app yet (its release builds it once FLEETD_RELEASE_DESKTOP is on); set FLEETD_DEMO_BUILD=1 to build it"
+  fetch fleetd-desktop-macos-universal.zip "$nightly/app.zip"
+  rm -rf "$nightly/fleetd.app"
   ditto -x -k "$nightly/app.zip" "$nightly" && rm -f "$nightly/app.zip"
-  app="$nightly/fleetd.app/Contents/MacOS/fleetd-app"
+  app="$nightly/fleetd.app/Contents/MacOS/fleetd"
   [ -x "$app" ] || die "the app archive has no fleetd.app"
   fleetd_bin="$nightly/fleetd"
 else
@@ -173,14 +198,23 @@ else
   cli_commit="$(git -C "$repo" rev-parse HEAD)"
   app_commit="$cli_commit"
   say "Building fleetd ${cli_commit:0:7} from $repo (release; the first build takes a while)"
-  (cd "$repo" && cargo build --release --locked -p fleetd -p fleetd-app)
-  app="$repo/target/release/fleetd-app"
+  (cd "$repo" && cargo build --release --locked -p fleetd)
+  (cd "$repo/app/desktop" && pnpm install --frozen-lockfile && pnpm build)
+  # The driver starts the app as one executable with no arguments; this one runs Electron on the built app. Its own
+  # path stays on the command line (the unused switch), so the PID checks below still find it.
+  app="$SANDBOX/fleetd-desktop"
+  # Requiring the package fetches Electron's binary on first use; its progress goes to stderr, the path to $electron.
+  (cd "$repo/app/desktop" && node -e 'require("electron")' >&2)
+  electron="$(cd "$repo/app/desktop" && node -p 'require("electron")')"
+  # shellcheck disable=SC2016 # $0 and $@ belong to the wrapper.
+  printf '#!/bin/sh\nexec "%s" "%s" --fleetd-launcher="$0" "$@"\n' "$electron" "$repo/app/desktop" >"$app"
+  chmod 755 "$app"
   fleetd_bin="$repo/target/release/fleetd"
 fi
 
-# The app must have the recorder and the lab driver FLEETD_DEMO_APP (#136); both must have the board pass (#138).
-git -C "$repo" cat-file -e "$app_commit:app/record/src/lib.rs" 2>/dev/null ||
-  die "the app (${app_commit:0:7}) predates its recorder (#136); wait for a nightly with it, or set FLEETD_DEMO_BUILD=1"
+# The app must have the desktop recorder and the lab driver FLEETD_DEMO_APP (#136); both must have the board pass (#138).
+git -C "$repo" cat-file -e "$app_commit:app/desktop/src/main/instrument/record.ts" 2>/dev/null ||
+  die "the app (${app_commit:0:7}) predates the desktop app's recorder; wait for a nightly with it, or set FLEETD_DEMO_BUILD=1"
 grep -q FLEETD_DEMO_APP "$repo/tests/lab/demoFanout.ts" ||
   die "the lab driver at ${cli_commit:0:7} predates the demo recorder (#136); wait for a nightly with it"
 if [ "${FLEETD_DEMO_ANY_COMMIT:-}" != 1 ]; then
@@ -195,25 +229,6 @@ if [ "${FLEETD_DEMO_ANY_COMMIT:-}" != 1 ]; then
   done
 fi
 
-# Node 24 or newer for the lab driver; else a pinned build in the sandbox, checked against nodejs.org's SHASUMS256.
-NODE_VERSION=v24.22.0
-node_ok() { command -v node >/dev/null && [ "$(node -p 'process.versions.node.split(".")[0]')" -ge 24 ]; }
-if ! node_ok; then
-  case "$(uname -m)" in
-    arm64) arch=arm64 sum=6a9724d9b50a5f22b4816cded441b5a8d9ddae546191a5e5b7efa5a5e2ee26d5 ;;
-    x86_64) arch=x64 sum=495e3f273c645f3c4677d438304cdfc701729ea5dec5728f5c8e76a2dece4b91 ;;
-    *) die "no Node build for $(uname -m)" ;;
-  esac
-  dir="$SANDBOX/node-$NODE_VERSION-darwin-$arch"
-  if [ ! -x "$dir/bin/node" ]; then
-    say "Fetching Node $NODE_VERSION into the sandbox"
-    tgz="$SANDBOX/node-$NODE_VERSION-darwin-$arch.tar.gz"
-    curl -fsSL "https://nodejs.org/dist/$NODE_VERSION/node-$NODE_VERSION-darwin-$arch.tar.gz" -o "$tgz"
-    echo "$sum  $tgz" | shasum -a 256 -c - >/dev/null || { rm -f "$tgz"; die "the Node download does not match its checksum"; }
-    tar -xzf "$tgz" -C "$SANDBOX" && rm -f "$tgz"
-  fi
-  PATH="$dir/bin:$PATH"
-fi
 # The sandbox HOME, so npm reads no ~/.npmrc and caches nothing in ~/.npm; no package needs an install script.
 (cd "$repo/tests/lab" && HOME="$H" npm ci --ignore-scripts --no-audit --no-fund --silent)
 
@@ -264,7 +279,7 @@ case "$reply" in *OK*) say "Claude answers" ;; *) die "claude in the sandbox did
 [ -d "$slot/testbed/.git" ] || HOME="$H" git clone -q "https://github.com/$TESTBED_REPO" "$slot/testbed"
 
 rec="$SANDBOX/recordings/$(date +%Y%m%d-%H%M%S)"
-say "Running the demo order; the app opens and records itself. Leave the Mac awake and the window in view."
+say "Running the demo order; the app opens and records itself. Leave the Mac awake."
 # In the background, so a signal reaches the trap at once and the trap hands it on to the driver.
 (cd "$repo/tests/lab" && exec env -i HOME="$H" PATH="$PATH" USER="$user" LANG="${LANG:-en_US.UTF-8}" \
   FLEETD_LAB="$lab" FLEETD_LAB_SLOT=9 FLEETD_BIN="$fleetd_bin" FLEETD_DEMO_APP="$app" FLEETD_DEMO_RECORD="$rec" \

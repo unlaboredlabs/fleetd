@@ -11,7 +11,7 @@
 import { mkdirSync } from "node:fs";
 import { open, rm, writeFile, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
-import { app, BrowserWindow, screen, session, systemPreferences } from "electron";
+import { app, BrowserWindow, powerSaveBlocker, screen, session, systemPreferences } from "electron";
 import { type Chunk, RECORDER_GLOBAL, type RecorderApi, type RecorderStart, type Take } from "../../shared/recorder";
 import { rendererOrigin } from "../security";
 import { bitrateFor, type RecordConfig } from "./recordConfig";
@@ -91,6 +91,10 @@ export const startRecording = async (target: BrowserWindow, config: RecordConfig
     recorder.destroy();
     return undefined;
   }
+  // A covered or napping window would stop producing frames: keep it rendering, and keep macOS from App Napping the
+  // process, for as long as the recording runs (the process exits after it).
+  target.webContents.setBackgroundThrottling(false);
+  powerSaveBlocker.start("prevent-app-suspension");
   const started = performance.now();
   const seconds = () => (performance.now() - started) / 1000;
   const access = process.platform === "darwin" ? systemPreferences.getMediaAccessStatus("screen") === "granted" : "n/a";

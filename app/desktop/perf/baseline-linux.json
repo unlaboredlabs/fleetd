@@ -1,0 +1,7 @@
+{
+  "firstPaintMs": 600,
+  "idleRssMb": 700,
+  "idleUniqueMb": 300,
+  "scrollFps": 55,
+  "keyP95Ms": 16
+}
