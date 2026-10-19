@@ -208,7 +208,7 @@ export const screens: readonly Screen[] = [
     [
       ["status.fleet", "#/status"],
       ["status.project", "#/status/project/devbox/storefront"],
-      ["status.order", "#/status/order/W14"],
+      ["status.order", "#/status/order/W1"],
     ] as const
   ).map(([id, route]) => ({
     id,
