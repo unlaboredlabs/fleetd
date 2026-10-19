@@ -1,6 +1,7 @@
 //! Area leases: one writer per area within a project, from spawn until the task ends. A task takes all of its
 //! areas at once or none of them, so no task ever holds some areas while waiting for others, and two tasks can
 //! never deadlock on each other's areas. The hub never releases a lease on its own; one held past 4 h is flagged.
+pub mod areas;
 pub mod policy;
 
 use std::sync::Arc;

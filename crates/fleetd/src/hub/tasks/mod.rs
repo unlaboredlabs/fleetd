@@ -1094,7 +1094,7 @@ impl Tasks {
                     unknown.join(", ")
                 ),
                 Some(&format!(
-                    "Use areas from .fleetd/policy.yaml: {}.",
+                    "Use the project's areas (.fleetd/policy.yaml, else inferred from the repo): {}.",
                     known.join(", ")
                 )),
             ));
