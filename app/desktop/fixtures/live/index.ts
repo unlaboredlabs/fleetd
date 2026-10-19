@@ -85,6 +85,30 @@ const fromBase = (base: Fixture, agents: number): Fixture => {
   for (const { input } of f.answers("orders_board")) f.drop("orders_board", input);
   f.answer("orders_board", {}, { orders, trains: [], at: iso(now) });
   f.live = [{ at: iso(now), full: true, lanes: live.slice(0, 64) }];
+  // The project's chat: the human's order and the lead's reply, under which the strip sits.
+  const message = (seq: number, author: string, text: string, ago: number): JsonObject => ({
+    messageId: `m${seq}`,
+    projectRef,
+    seq,
+    author,
+    text,
+    attachments: [],
+    createdAt: iso(now - ago),
+    state: "final",
+  });
+  const messages =
+    agents === 0
+      ? [message(1, "human", "Round the cart totals once, in one place.", 900_000), message(2, "lead", "Done: all three PRs merged. Nothing is running.", 60_000)]
+      : [
+          message(1, "human", "Round the cart totals once, in one place.", 600_000),
+          message(2, "lead", "On it. Writers are splitting the change into three PRs; reviews start as each one opens.", 540_000),
+        ];
+  f.answer("chat_history", { projectRef }, {
+    messages,
+    moreBefore: false,
+    moreAfter: false,
+    state: { projectRef, needsYou: false, leadWorking: agents > 0, lastSeq: messages.length, lastMessageAt: iso(now - 60_000) },
+  });
   return f;
 };
 
