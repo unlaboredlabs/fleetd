@@ -107,11 +107,6 @@
   gap: var(--space-1);
   min-width: 0;
 }
-.command {
-  padding: var(--space-2);
-  border-radius: var(--radius-sm);
-  background: var(--hover);
-}
 .steps {
   display: flex;
   flex-direction: column;

@@ -16,7 +16,7 @@ export const needsYouSource = {
     const state = inboxStore().get();
     return state.open.map((ask) => ({
       id: `ask:${ask.askId}`,
-      title: ask.text,
+      title: ask.text.replace(/`/gu, ""),
       group: "needs-you" as const,
       ...(ask.batchId === undefined || ask.number === undefined ? {} : { ask: { batchId: ask.batchId, number: ask.number } }),
       detail: ask.blocks === "nothing" ? "Needs your answer" : `Blocks ${ask.blocks}`,

@@ -1,9 +1,10 @@
 // The one question card. The board's Needs you, the inbox panel, the order view and Status all render this, so an
 // answer given anywhere reads the same and clears everywhere (one store).
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
-import { Button, cx, IdChip, Input, RadioCard, RadioGroup, Text, Textarea, Truncate } from "../../ui";
+import { Button, Code, cx, IdChip, InlineCode, Input, RadioCard, RadioGroup, Text, Textarea, Truncate } from "../../ui";
 import { cardOptions, classTag, takesFreeText, takesSkip, type CardPick } from "./ask";
 import type { Ask, GatedRunSpec } from "./contracts";
+import { prose } from "./prose";
 import { askPlace, secretTarget, type Answered, type SecretTarget } from "./model";
 import { inboxStore, useInbox } from "./store";
 import s from "./QuestionCard.module.css";
@@ -170,11 +171,11 @@ function OpenBody(props: QuestionCardViewProps & { titleId: string }) {
   return (
     <div ref={rootRef} className={s.body} tabIndex={-1} onKeyDown={onKeyDown}>
       <Text as="h3" id={props.titleId} strong className={cx(s.question)}>
-        {ask.text}
+        {prose(ask.text)}
       </Text>
       {ask.context === undefined ? null : (
         <Text as="p" tone="quiet" className={cx(s.context)}>
-          {ask.context}
+          {prose(ask.context)}
         </Text>
       )}
       {ask.proceededOnRec ? (
@@ -190,10 +191,10 @@ function OpenBody(props: QuestionCardViewProps & { titleId: string }) {
             key={o.id}
             value={o.id}
             data-value={o.id}
-            label={o.label}
-            {...(o.detail === undefined ? {} : { detail: o.detail })}
+            label={prose(o.label)}
+            {...(o.detail === undefined ? {} : { detail: prose(o.detail) })}
             {...(o.recommended ? { tag: "Recommended" } : {})}
-            {...(o.reason === undefined ? {} : { reason: `Why: ${o.reason}` })}
+            {...(o.reason === undefined ? {} : { reason: prose(`Why: ${o.reason}`) })}
             {...(i < 9 ? { shortcut: String(i + 1) } : {})}
             disabled={!live}
           />
@@ -260,27 +261,23 @@ function Details({ ask }: { ask: Ask }) {
           <Text size="xs" tone="quiet">
             {ask.permission.toolName}
           </Text>
-          <Text mono size="sm" className={cx(s.command)}>
-            {ask.permission.summary}
-          </Text>
+          <Code code={ask.permission.summary} bare />
         </div>
       )}
       {ask.steps === undefined || ask.steps.length === 0 ? null : (
         <ol className={s.steps}>
           {ask.steps.map((step, i) => (
             <li key={i} className={s.step}>
-              <Text>{step.text}</Text>
+              <Text>{prose(step.text)}</Text>
               <Text size="xs" tone="quiet">
                 {step.where === "browser" ? "In a browser" : `On ${step.where}`}
               </Text>
               {step.command === undefined ? null : (
-                <Text mono size="sm" className={cx(s.command)}>
-                  {step.command}
-                </Text>
+                <Code code={step.command} lang="sh" bare />
               )}
               {step.expect === undefined ? null : (
                 <Text size="sm" tone="quiet">
-                  Expect: {step.expect}
+                  Expect: {prose(step.expect)}
                 </Text>
               )}
             </li>
@@ -289,7 +286,7 @@ function Details({ ask }: { ask: Ask }) {
       )}
       {ask.evidence === undefined ? null : (
         <Text as="p" size="sm" tone="quiet" preserveLines>
-          {ask.evidence}
+          {prose(ask.evidence)}
         </Text>
       )}
     </>
@@ -354,11 +351,10 @@ function GatedCommand({ gated }: { gated: GatedRunSpec }) {
   const minutes = Math.ceil(gated.timeoutSec / 60);
   return (
     <div className={s.detail}>
-      <Text mono size="sm" className={cx(s.command)}>
-        {shellLine(gated.argv)}
-      </Text>
+      <Code code={shellLine(gated.argv)} lang="sh" bare />
       <Text size="xs" tone="quiet">
-        {`${gated.reason} · in ${gated.cwd ?? "the project folder"} · stops after ${minutes} min`}
+        {prose(gated.reason)} · in {gated.cwd === undefined ? "the project folder" : <InlineCode>{gated.cwd}</InlineCode>} · stops
+        after {minutes} min
       </Text>
     </div>
   );
@@ -405,7 +401,7 @@ function AnsweredBody(props: {
         <Text strong>{answered.label}</Text>
       </Text>
       <Text as="p" size="xs" tone="quiet" className={cx(s.question)}>
-        {answered.ask.text}
+        {prose(answered.ask.text)}
       </Text>
       <div className={s.actions}>
         <span aria-live="polite">

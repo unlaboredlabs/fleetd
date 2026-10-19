@@ -142,7 +142,7 @@
         ],
         "cwd": "/srv/storefront",
         "class": "irreversible",
-        "reason": "Adds the share_snapshots table",
+        "reason": "Adds the `share_snapshots` table",
         "timeoutSec": 600
       },
       "blocks": "the staging deploy",
@@ -162,12 +162,12 @@
       "kind": "do",
       "key": "dns.share",
       "class": "product",
-      "text": "Point share.example.test at the staging box",
+      "text": "Point `share.example.test` at the staging box",
       "steps": [
         {
-          "text": "Add an A record for share.example.test to your console's address.",
+          "text": "Add an A record for `share.example.test` to your console's address.",
           "where": "browser",
-          "expect": "dig share.example.test shows the address."
+          "expect": "`dig share.example.test` shows the address."
         },
         {
           "text": "Reload the proxy.",
