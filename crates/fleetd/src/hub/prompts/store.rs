@@ -18,7 +18,7 @@ use rusqlite::{OptionalExtension, params};
 use sha2::{Digest, Sha256};
 
 use super::registry::{self, Audience, ENTRIES, Entry, INSTRUCTIONS};
-use super::render::{self, merge, ref_of, rule_present, warnings};
+use super::render::{self, merge, ref_of, rule_present, same_words, warnings};
 use crate::hub::playbooks::load::{git_blob_sha, parse_playbook};
 use crate::hub::store::{HubDb, StoreError};
 
@@ -550,11 +550,23 @@ impl Prompts<'_> {
         }
     }
 
+    /// Whether an override edited from `base` is still up to date with the default shipped now. A default that
+    /// changed only in whitespace (texts reflowed from hard-wrapped lines into paragraphs) is the same default.
+    fn base_current(&self, e: &Entry, base: Option<&str>) -> bool {
+        let Some(base) = base else { return false };
+        base == ref_of(e.id, e.default)
+            || self
+                .version(base)
+                .ok()
+                .flatten()
+                .is_some_and(|text| same_words(&text, e.default))
+    }
+
     fn stale_of(&self, e: &Entry, scope: PromptScope, o: &Override) -> Option<StalePrompt> {
-        let current = ref_of(e.id, e.default);
-        if e.playbook().is_some() || o.base.as_deref() == Some(current.as_str()) {
+        if e.playbook().is_some() || self.base_current(e, o.base.as_deref()) {
             return None;
         }
+        let current = ref_of(e.id, e.default);
         let base = o.base.as_ref().and_then(|b| {
             self.version(b).ok().flatten().map(|text| PromptVersion {
                 r#ref: PromptRef::unchecked(b.clone()),
@@ -672,7 +684,7 @@ impl Prompts<'_> {
         for project in levels {
             for e in ENTRIES.iter().filter(|e| e.playbook().is_none()) {
                 if let Some(o) = self.override_of(e, project.as_ref())
-                    && o.base.as_deref() != Some(ref_of(e.id, e.default).as_str())
+                    && !self.base_current(e, o.base.as_deref())
                 {
                     out.push(StaleOverride {
                         entry: e,

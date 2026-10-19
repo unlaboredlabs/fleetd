@@ -147,14 +147,23 @@ that did not pass), 2 usage, 3 refused, 4 hub or node unreachable, 78 (<code>lis
 <dd>take back a steer the agent has not taken in yet</dd>
 <dt id="steers"><a class="anchor" href="#steers" aria-label="Link to fleetd steers">#</a><pre class="syn"><code>fleetd steers [W|T] --key-file &lt;human key&gt; [--hub &lt;url&gt;]</code></pre></dt>
 <dd>recent steers and their receipts</dd>
+<dt id="answer"><a class="anchor" href="#answer" aria-label="Link to fleetd answer">#</a><pre class="syn"><code>fleetd answer --key-file &lt;human key&gt; [--hub &lt;url&gt;]</code></pre></dt>
+<dd>the open questions: each choice's label, what happens if you pick it, and the lead's recommendation</dd>
+<dt id="answer-key-file"><a class="anchor" href="#answer-key-file" aria-label="Link to fleetd answer">#</a><pre class="syn"><code>fleetd answer &quot;&lt;reply&gt;&quot; --key-file &lt;human key&gt; [--hub &lt;url&gt;]</code></pre></dt>
+<dd>answer them: &quot;1 a&quot;, &quot;1-3 go&quot; (take the recommendation), &quot;2: your own answer&quot;, &quot;3 skip&quot; (skip for now: the lead keeps its recommendation), &quot;4 later&quot;, &quot;#B4 1 b&quot;. A question's answer can be taken back for 10 s</dd>
+<dt id="answer-undo"><a class="anchor" href="#answer-undo" aria-label="Link to fleetd answer undo">#</a><pre class="syn"><code>fleetd answer undo A&lt;n&gt; --key-file &lt;human key&gt; [--hub &lt;url&gt;]</code></pre></dt>
+<dd>take an answer back within 10 s; the question is open again</dd>
 </dl>
 <h2 id="lead-side-commands">Lead-side commands<a class="anchor" href="#lead-side-commands" aria-label="Link to this section">#</a></h2>
 <p class="lede">Run by a lead or task inside a project workspace.</p>
 <dl class="cli">
 <dt id="brief-create"><a class="anchor" href="#brief-create" aria-label="Link to fleetd brief create">#</a><pre class="syn"><code>fleetd brief create --workstream &lt;W&gt; (--json '&lt;Brief&gt;' | --file &lt;path&gt;) [--amend &lt;A&gt;]</code></pre></dt>
 <dd>freeze the brief of a draft workstream and start it</dd>
-<dt id="ask"><a class="anchor" href="#ask" aria-label="Link to fleetd ask">#</a><pre class="syn"><code>fleetd ask --key &lt;k&gt; --class &lt;product|money|credential|irreversible&gt; --text &lt;t&gt; --rec &lt;r&gt;
-    [--options a,b] [--blocks &quot;&lt;step&gt;&quot;] [--proceeded] [--workstream &lt;W&gt;]</code></pre></dt>
+<dt id="ask"><a class="anchor" href="#ask" aria-label="Link to fleetd ask">#</a><pre class="syn"><code>fleetd ask --key &lt;k&gt; --class &lt;product|money|credential|irreversible&gt; --text &quot;&lt;short question&gt;&quot;
+    [--context &quot;&lt;1-2 lines of background&gt;&quot;] --option '&lt;key&gt;|&lt;Label&gt;|&lt;what happens if picked&gt;'
+    --option '...' (2 to 6) --rec &lt;option key&gt; --why &quot;&lt;one line: why you recommend it&gt;&quot;
+    [--blocks &quot;&lt;step&gt;&quot;] [--proceeded] [--workstream &lt;W&gt;]</code></pre></dt>
+<dd>the human sees the labels and consequences as choices; keys are only recorded</dd>
 <dt id="ask-kind-do"><a class="anchor" href="#ask-kind-do" aria-label="Link to fleetd ask">#</a><pre class="syn"><code>fleetd ask --kind do --key &lt;k&gt; --class &lt;c&gt; --text &lt;t&gt; --step '&lt;json&gt;' [--step '&lt;json&gt;' ...]
     [--verify '&lt;check json&gt;']</code></pre></dt>
 <dd>a step is {&quot;text&quot;,&quot;where&quot;:&quot;&lt;machine&gt;|browser&quot;,&quot;command&quot;?,&quot;expect&quot;?}; <code>--verify</code> is a cmd or http check fleetd runs once the human ticks it done (a failure reopens it) ask the human; answers already in the decision log come back at once</dd>

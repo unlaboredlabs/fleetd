@@ -5,9 +5,10 @@ use std::time::Duration;
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{ProjectRef, Timestamp};
 use fleetd_contracts::ledger::{
-    Ask, AskAnswer, AskBlocks, AskClass, AskId, AskKind, AskOptions, AskState, AskSteps, AskText,
-    Batch, BatchId, BatchState, CheckSpec, Decision, DecisionId, DecisionKey, DecisionState,
-    DecisionValue, EnvName, GatedRunSpec, ToolPermission, WorkstreamId,
+    ASK_QUESTION_MAX, Ask, AskAnswer, AskBlocks, AskClass, AskContext, AskId, AskKind, AskOptions,
+    AskRecommendationWhy, AskState, AskSteps, AskText, Batch, BatchId, BatchState, CheckSpec,
+    Decision, DecisionId, DecisionKey, DecisionState, DecisionValue, EnvName, GatedRunSpec,
+    ToolPermission, WorkstreamId, humanize_key,
 };
 use fleetd_contracts::secrets::SecretSink;
 use rusqlite::Connection;
@@ -44,7 +45,9 @@ pub struct AskInput {
     pub key: DecisionKey,
     pub class: String,
     pub text: AskText,
+    pub context: Option<AskContext>,
     pub recommendation: Option<DecisionValue>,
+    pub recommendation_why: Option<AskRecommendationWhy>,
     pub options: Option<AskOptions>,
     pub steps: Option<AskSteps>,
     /// do: re-checked once the human ticks it done.
@@ -116,6 +119,154 @@ fn has_placeholder(command: &str) -> bool {
                 && inner.chars().next().is_some_and(|c| !c.is_whitespace())
                 && inner.chars().last().is_some_and(|c| !c.is_whitespace())
         })
+}
+
+/// A lead's decide ask must be readable as a card: a short question, two to six options each with a label and a
+/// consequence, the recommendation one of their keys, and a one-line reason for it. Hub-made asks are exempt. The
+/// fix is the whole command to send, filled with what the lead already gave.
+pub fn lead_decide_rule(input: &AskInput) -> Option<LedgerError> {
+    if input.kind != AskKind::Decide {
+        return None;
+    }
+    let options: Vec<_> = input.options.iter().flatten().collect();
+    let rec = input.recommendation.as_deref();
+    let mut problems = Vec::new();
+    let question_len = input.text.encode_utf16().count();
+    if question_len > ASK_QUESTION_MAX {
+        problems.push(format!(
+            "the question is {question_len} characters (at most {ASK_QUESTION_MAX}): ask it in one short line and put the background in --context"
+        ));
+    }
+    if options.len() < 2 {
+        problems.push("it needs 2 to 6 options, one --option per choice".to_string());
+    }
+    let unlabelled: Vec<&str> = options
+        .iter()
+        .filter(|o| o.label.is_none() || o.consequence.is_none())
+        .map(|o| o.key.as_str())
+        .collect();
+    if !unlabelled.is_empty() {
+        problems.push(format!(
+            "option{} {} {} no label or no consequence",
+            if unlabelled.len() == 1 { "" } else { "s" },
+            unlabelled
+                .iter()
+                .map(|k| format!("\"{k}\""))
+                .collect::<Vec<_>>()
+                .join(", "),
+            if unlabelled.len() == 1 { "has" } else { "have" }
+        ));
+    }
+    if options
+        .iter()
+        .enumerate()
+        .any(|(i, o)| options[..i].iter().any(|e| e.key == o.key))
+    {
+        problems.push("two options share a key".to_string());
+    }
+    if let Some(rec) = rec
+        && options.len() >= 2
+        && !options.iter().any(|o| o.key.as_str() == rec)
+    {
+        problems.push(format!(
+            "the recommendation \"{rec}\" is not one of the option keys"
+        ));
+    }
+    if input.recommendation_why.is_none() {
+        problems.push("it has no --why (one line: why you recommend that option)".to_string());
+    }
+    if problems.is_empty() {
+        return None;
+    }
+    Some(LedgerError::invalid_fix(
+        format!(
+            "The human could not tell what they are choosing: {}.",
+            problems.join("; ")
+        ),
+        decide_fix(input),
+    ))
+}
+
+/// `fleetd ask …` with every value the lead gave and `<…>` where something is missing.
+fn decide_fix(input: &AskInput) -> String {
+    let quote = |text: &str| format!("'{}'", text.replace('\'', "'\\''"));
+    let mut keys: Vec<String> = input
+        .options
+        .iter()
+        .flatten()
+        .map(|o| o.key.to_string())
+        .collect();
+    if let Some(rec) = &input.recommendation
+        && !keys.iter().any(|k| k == rec.as_str())
+    {
+        keys.insert(0, rec.to_string());
+    }
+    while keys.len() < 2 {
+        keys.push(format!("<key {}>", keys.len() + 1));
+    }
+    let text = if input.text.encode_utf16().count() > ASK_QUESTION_MAX {
+        "<the question in one short line>".to_string()
+    } else {
+        input.text.to_string()
+    };
+    let mut parts = vec![
+        "fleetd ask".to_string(),
+        format!("--key {}", input.key),
+        format!("--class {}", input.class),
+        format!("--text {}", quote(&text)),
+        format!(
+            "--context {}",
+            quote(
+                input
+                    .context
+                    .as_deref()
+                    .unwrap_or("<1-2 lines of background>")
+            )
+        ),
+    ];
+    for key in &keys {
+        let given = input
+            .options
+            .iter()
+            .flatten()
+            .find(|o| o.key.as_str() == key);
+        let label = given
+            .and_then(|o| o.label.as_ref().map(|l| l.to_string()))
+            .unwrap_or_else(|| format!("<short label, e.g. {}>", humanize_key(key)));
+        let consequence = given
+            .and_then(|o| o.consequence.as_ref().map(|c| c.to_string()))
+            .unwrap_or_else(|| "<what happens if the human picks this>".into());
+        parts.push(format!(
+            "--option {}",
+            quote(&format!("{key}|{label}|{consequence}"))
+        ));
+    }
+    parts.push(format!(
+        "--rec {}",
+        input
+            .recommendation
+            .as_deref()
+            .map_or_else(|| keys[0].clone(), str::to_string)
+    ));
+    parts.push(format!(
+        "--why {}",
+        quote(
+            input
+                .recommendation_why
+                .as_deref()
+                .unwrap_or("<one line: why you recommend it>")
+        )
+    ));
+    if input.blocks.as_str() != "nothing" {
+        parts.push(format!("--blocks {}", quote(&input.blocks)));
+    }
+    if input.proceeded_on_rec {
+        parts.push("--proceeded".into());
+    }
+    if let Some(w) = &input.workstream_id {
+        parts.push(format!("--workstream {w}"));
+    }
+    format!("Send it again as: {}", parts.join(" "))
 }
 
 /// Step 1 of the ask path.
@@ -252,6 +403,28 @@ enum Created {
         batch: StoredBatch,
         published_now: bool,
     },
+}
+
+/// `ask.closed`: an open ask was answered or withdrawn. Every open-ask count (an order card's "needs you", the inbox,
+/// the status doc) is read from the asks table and refetched on events; an answer's `decision.recorded` names no
+/// order and a withdrawal emits nothing else, so this is the event those counts recompute on.
+pub(crate) fn closed_event(ask: &Ask, now_ms: i64) -> NewEvent {
+    let (machine_id, project_id) = project_fields(ask.project_ref.as_ref());
+    let state = repo::ask_state_text(&ask.state);
+    let mut data = json!({ "askId": ask.ask_id, "key": ask.key, "state": state });
+    if let Some(w) = &ask.workstream_id {
+        data["workstreamId"] = json!(w);
+    }
+    NewEvent {
+        at: Timestamp(iso_at(now_ms)),
+        r#type: HubEventType::AskClosed,
+        machine_id,
+        project_id,
+        thread_id: None,
+        summary: format!("{} {} {state}", ask.ask_id, ask.key),
+        data: Some(data),
+        attention: None,
+    }
 }
 
 pub struct Asks {
@@ -409,8 +582,10 @@ impl Asks {
                 key: input.key.clone(),
                 class,
                 text: input.text.clone(),
+                context: input.context.clone(),
                 options: input.options.clone(),
                 recommendation: input.recommendation.clone(),
+                recommendation_why: input.recommendation_why.clone(),
                 steps: input.steps.clone(),
                 verify: input.verify.clone(),
                 sink: input.sink.clone(),
@@ -543,17 +718,22 @@ impl Asks {
         ask_id: &str,
         change: impl FnOnce(Ask) -> Ask,
     ) -> Result<Ask, LedgerError> {
-        self.ctx.write(|db| {
+        let (was, next) = self.ctx.write(|db| {
             let Some(row) = repo::get_ask_row(db, ask_id)? else {
                 return Err(LedgerError::not_found(format!("No ask {ask_id}.")).into());
             };
+            let was = row.ask.state;
             let next = change(row.ask);
             repo::put_ask(db, &next)?;
             if let Some(n) = next.batch_id.as_deref().and_then(batch_n) {
                 repo::close_if_done(db, n)?;
             }
-            Ok(next)
-        })
+            Ok((was, next))
+        })?;
+        if was == AskState::Open && next.state != AskState::Open {
+            self.ctx.emit(closed_event(&next, self.ctx.now_ms()));
+        }
+        Ok(next)
     }
 
     /// Puts an answered ask back in front of the human with `evidence` saying why (a failed verify, a command that
@@ -613,7 +793,7 @@ impl Asks {
         reason: Option<&str>,
     ) -> Result<Ask, LedgerError> {
         let now = self.ctx.now_ms();
-        self.ctx.write(|db| {
+        let withdrawn = self.ctx.write(|db| {
             let row = repo::get_ask_row(db, ask_id)?;
             let row = match row {
                 Some(row)
@@ -657,6 +837,11 @@ impl Asks {
                     by: "hub".into(),
                     at: Timestamp(iso_at(now)),
                     raw: String::new(),
+                    kind: None,
+                    note: None,
+                    source: None,
+                    undo_until: None,
+                    delivered_at: None,
                 });
             }
             repo::put_ask(db, &withdrawn)?;
@@ -664,7 +849,9 @@ impl Asks {
                 repo::close_if_done(db, n)?;
             }
             Ok(withdrawn)
-        })
+        })?;
+        self.ctx.emit(closed_event(&withdrawn, now));
+        Ok(withdrawn)
     }
 
     pub fn get(&self, ask_id: &str) -> Result<Option<Ask>, LedgerError> {

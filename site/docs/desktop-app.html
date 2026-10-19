@@ -124,8 +124,9 @@ means and how the ETA is measured: <a href="/docs/status">Status</a>.</p>
 takes its recommendation, <code>n</code> answers no, Esc closes. Or answer a whole batch in one line in its reply field:</p>
 <div class="table"><table><thead><tr><th>Reply</th><th>Means</th></tr></thead><tbody>
 <tr><td><code>1 go</code></td><td>accept item 1 (also <code>yes</code>, <code>y</code>, <code>ok</code>, <code>rec</code>)</td></tr>
-<tr><td><code>2 nvm</code></td><td>reject item 2 (also <code>no</code>, <code>drop</code>, <code>skip</code>, <code>n</code>)</td></tr>
-<tr><td><code>3 b</code></td><td>pick option b of item 3 (<code>a</code> to <code>f</code>)</td></tr>
+<tr><td><code>2 nvm</code></td><td>reject item 2 (also <code>no</code>, <code>drop</code>, <code>n</code>)</td></tr>
+<tr><td><code>3 b</code></td><td>pick option b of item 3 (<code>a</code> to <code>f</code>; <code>a</code> is the recommendation)</td></tr>
+<tr><td><code>4 skip</code></td><td>skip a question for now: the lead keeps its recommendation, nothing is recorded</td></tr>
 <tr><td><code>1-3 go</code></td><td>the same answer for items 1 to 3</td></tr>
 <tr><td><code>2: use the staging bucket</code></td><td>answer in your own words</td></tr>
 <tr><td><code>4 later</code></td><td>not now; it stays open</td></tr>
@@ -135,7 +136,9 @@ takes its recommendation, <code>n</code> answers no, Esc closes. Or answer a who
 <tr><td><code>pref: no new dependencies</code></td><td>a standing preference for every lead</td></tr>
 <tr><td><code>forget D12</code></td><td>drop decision 12</td></tr>
 </tbody></table></div>
-<p>Mix them: <code>1 go 2 nvm 3 b</code>. A reply the app can't read changes nothing and shows a hint.</p>
+<p>Mix them: <code>1 go 2 nvm 3 b</code>. A reply the app can't read changes nothing and shows a hint. You have 10 seconds to take
+back an answer to a question before its lead hears of it. From a terminal, <code>fleetd answer --key-file &lt;human key&gt;</code> lists
+the open questions with each choice and what it does, and <code>fleetd answer "1 b" --key-file …</code> replies.</p>
 <p>Asks that block work also raise a desktop notification: at most one every 20 minutes, with the rest folded in as "+N
 more", and only urgent ones in quiet hours (23:00 to 08:00 unless a <code>policy.quiet_hours</code> decision says otherwise).
 Clicking it opens the ask.</p>
