@@ -114,12 +114,17 @@ export async function show(page: Page, screenId: string, route: string, open?: (
   await page.evaluate((r) => {
     window.location.hash = r;
   }, route);
+  // A screen reached by an interaction (the palette, a sheet's later state) isn't there until `open` runs: wait for
+  // the page itself first, then for the screen.
+  if (open) {
+    await page.locator("[data-screen]").first().waitFor({ state: "visible", timeout: 10_000 });
+    await open(page);
+  }
   // A screen marks its sub-states as "<id>.<state>" (board.empty), so either form means it is up.
   await page
     .locator(`[data-screen="${screenId}"], [data-screen^="${screenId}."]`)
     .first()
     .waitFor({ state: "visible", timeout: 10_000 });
-  if (open) await open(page);
   await settle(page);
 }
 

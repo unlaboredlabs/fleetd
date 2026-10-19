@@ -165,4 +165,13 @@ describe("the add flow", () => {
     expect(s.addId).toBeUndefined();
     expect(s.awaiting).toBe(true);
   });
+
+  it("looks for repos once connected when the sheet opened before the hub was", () => {
+    const [waiting, none] = run(initialAdd, { t: "discover" });
+    expect(none).toEqual([]);
+    const [, calls] = run(waiting, { t: "live", live: true }, { t: "snapshot", cursor: 3 });
+    only(calls, "project_discover");
+    const [, again] = run(live(), { t: "snapshot", cursor: 4 });
+    expect(again).toEqual([]);
+  });
 });

@@ -55,9 +55,20 @@ export interface AddState {
   /** Bumped by each start, so an answer to an earlier add is ignored. */
   readonly gen: number;
   readonly live: boolean;
+  /** A look for repos was asked for while offline: it runs on the next snapshot. */
+  readonly discoverWanted: boolean;
 }
 
-export const initialAdd: AddState = { discovery: null, phase: { kind: "pick" }, awaiting: false, early: [], lost: false, gen: 0, live: false };
+export const initialAdd: AddState = {
+  discovery: null,
+  phase: { kind: "pick" },
+  awaiting: false,
+  early: [],
+  lost: false,
+  gen: 0,
+  live: false,
+  discoverWanted: false,
+};
 
 export type Purpose = "discover" | "add" | "inspect" | "recover";
 
@@ -191,7 +202,9 @@ export const active = (s: AddState): boolean => s.request !== undefined && (s.aw
 export const step = (s: AddState, msg: AddMsg, names: Names): Step_ => {
   switch (msg.t) {
     case "discover":
-      return s.live ? [{ ...s, discovery: null }, [call(s, "discover", "project_discover", {})]] : [s, []];
+      return s.live
+        ? [{ ...s, discovery: null, discoverWanted: false }, [call(s, "discover", "project_discover", {})]]
+        : [{ ...s, discovery: null, discoverWanted: true }, []];
     case "live": {
       if (msg.live) return [{ ...s, live: true }, []];
       if (!active(s) || s.lost) return [{ ...s, live: false }, []];
@@ -199,7 +212,10 @@ export const step = (s: AddState, msg: AddMsg, names: Names): Step_ => {
     }
     case "snapshot": {
       const seen = s.seen === undefined || s.seen < msg.cursor ? msg.cursor : s.seen;
-      return recover({ ...s, seen, live: true });
+      const [next, calls] = recover({ ...s, seen, live: true });
+      if (!next.discoverWanted) return [next, calls];
+      const looking = { ...next, discoverWanted: false };
+      return [looking, [...calls, call(looking, "discover", "project_discover", {})]];
     }
     case "start": {
       const r = msg.request;
@@ -223,6 +239,7 @@ export const step = (s: AddState, msg: AddMsg, names: Names): Step_ => {
         lost: false,
         gen: s.gen + 1,
         live: s.live,
+        discoverWanted: false,
         ...(s.seen === undefined ? {} : { seen: s.seen, since: s.seen }),
       };
       if (!s.live) return [waiting({ ...base, awaiting: false, lost: true }, LOST), []];

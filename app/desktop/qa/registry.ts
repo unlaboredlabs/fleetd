@@ -24,6 +24,9 @@ export const fixtures = [
   "hub-unreachable",
   "pairing-failed",
   "node-too-old",
+  // Group fixtures (fixtures/<group>/index.ts), named <group>-<what>.
+  "projects-errors",
+  "projects-machines",
 ] as const;
 export type FixtureName = (typeof fixtures)[number];
 
@@ -61,39 +64,38 @@ export const screens: readonly Screen[] = [
   { id: "gallery", route: "#/gallery", fixtures: ["typical"], pending: "E2's gallery (feat/desktop-ui) has not landed" },
   // F8: Add project (the pick list, its empty and loading states, gh and machine problems) and Machines.
   { id: "projects.add", route: "#/projects/add", fixtures: ["typical", "empty", "long-text", "node-too-old", "hub-unreachable"] },
-  // The sheet's later states, reached by adding from the pick list. The fixtures must answer project_add (and, for a
-  // clone, play its project.clone_progress events; app/fleetd-app/src/project_add/fixture.rs has the data).
+  // The sheet's later states, reached by adding from the pick list (fixtures/projects answers project_add).
   {
     id: "projects.add.cloning",
     route: "#/projects/add",
     fixtures: ["typical"],
     open: async (page) => {
+      await page.getByRole("listbox", { name: "Repos" }).waitFor();
       await page.getByRole("textbox", { name: "GitHub URL, folder path, or filter" }).fill("acme/checkout-v2");
       await page.keyboard.press("Enter");
     },
-    pending: "E3b's fixtures don't answer project_add or play clone events yet",
   },
   {
     id: "projects.add.ready",
     route: "#/projects/add",
     fixtures: ["typical", "long-text"],
     open: async (page) => {
+      await page.getByRole("listbox", { name: "Repos" }).waitFor();
       await page.getByRole("textbox", { name: "GitHub URL, folder path, or filter" }).fill("/home/dev/src/pricing");
       await page.keyboard.press("Enter");
     },
-    pending: "E3b's fixtures don't answer project_add yet",
   },
   {
     id: "projects.add.error",
     route: "#/projects/add",
-    fixtures: ["typical"],
+    fixtures: ["typical", "projects-errors"],
     open: async (page) => {
+      await page.getByRole("listbox", { name: "Repos" }).waitFor();
       await page.getByRole("textbox", { name: "GitHub URL, folder path, or filter" }).fill("acme/ledger-ui");
       await page.keyboard.press("Enter");
     },
-    pending: "E3b's fixtures don't refuse a clone into an existing folder yet",
   },
-  { id: "machines", route: "#/machines", fixtures: ["typical", "empty", "long-text", "many-agents", "hub-unreachable"] },
+  { id: "machines", route: "#/machines", fixtures: ["typical", "empty", "long-text", "many-agents", "hub-unreachable", "projects-machines"] },
 ];
 
 // Platform checks that need a screen writer's work before they can pass; the owner turns theirs on when it lands.

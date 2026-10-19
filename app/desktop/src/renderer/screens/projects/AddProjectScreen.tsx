@@ -248,10 +248,13 @@ function RowView(props: { row: Row; d: Discovery; to: Worker | null; selected: b
       onClick={props.onPick}
       onDoubleClick={props.onGo}
     >
+      {/* Repo and folder names are the names on disk and on GitHub, shown as they are (samp: machine text). */}
       <span className={s.rowMain}>
-        <Truncate expand="none">{title}</Truncate>
+        <Truncate expand="none" as="samp" className={cx(s.name)}>
+          {title}
+        </Truncate>
         {sub ? (
-          <Truncate expand="none" size="sm" tone="quiet" mono={mono}>
+          <Truncate expand="none" size="sm" tone="quiet" mono={mono} {...(mono ? { as: "samp" } : {})}>
             {sub}
           </Truncate>
         ) : null}
@@ -332,35 +335,39 @@ function PickFooter({ pick }: { pick: PickData }) {
   const local = localMachine();
   const workers = d?.workers ?? [];
   let where = "";
+  let note = "";
   let label = "Add project";
   let enabled = d !== null;
   let picker = false;
+  const nameOf = (id: string) => workers.find((w) => w.machineId === id)?.name ?? id;
   switch (p.kind) {
     case "clone": {
       label = "Clone and add";
       picker = true;
       if (to) {
         const path = clonePath(to, p.repo);
-        where = path ? `${tilde(path)} on ${to.name}` : `into its clone folder on ${to.name}`;
+        if (path) where = `${tilde(path)} on ${to.name}`;
+        else note = `Into its clone folder on ${to.name}.`;
       } else {
-        where = "No machine is online to clone onto.";
+        note = "No machine is online to clone onto.";
         enabled = false;
       }
       break;
     }
-    case "folder": {
-      const name = workers.find((w) => w.machineId === p.machineId)?.name ?? p.machineId;
-      if (p.fixed) where = `${tilde(p.path)} on ${name}, as it is: nothing is cloned`;
-      else {
+    case "folder":
+      if (p.fixed) {
+        where = `${tilde(p.path)} on ${nameOf(p.machineId)}`;
+        note = "Added as it is: nothing is cloned.";
+      } else {
         picker = true;
         enabled = p.path.startsWith("/");
-        where = enabled ? `${p.path} on ${name}` : "Type the full path, starting with /.";
+        if (enabled) where = `${p.path} on ${nameOf(p.machineId)}`;
+        else note = "Type the full path, starting with /.";
       }
       break;
-    }
     case "open":
       label = "Open project";
-      where = `Already a project on ${workers.find((w) => w.machineId === p.project.machineId)?.name ?? p.project.machineId}.`;
+      note = `Already a project on ${nameOf(p.project.machineId)}.`;
       break;
     case "nothing":
       enabled = false;
@@ -369,10 +376,15 @@ function PickFooter({ pick }: { pick: PickData }) {
   return (
     <div className={s.footer}>
       {picker && workers.length > 0 ? <MachinePicker workers={workers} chosen={to?.machineId} best={d?.best} /> : null}
+      {note ? (
+        <Text size="sm" tone="quiet">
+          {note}
+        </Text>
+      ) : null}
       <div className={s.actions}>
         <span className={s.where}>
           {where ? (
-            <Truncate size="sm" tone="quiet" mono={p.kind !== "open" && enabled}>
+            <Truncate size="sm" tone="quiet" mono as="samp">
               {where}
             </Truncate>
           ) : null}
