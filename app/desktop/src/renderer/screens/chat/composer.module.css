@@ -34,9 +34,7 @@
   color: var(--faint);
 }
 .input:focus {
-  outline: none;
   border-color: var(--accent);
-  box-shadow: var(--focus-ring);
 }
 
 .chips {
@@ -70,9 +68,6 @@
 .remove:hover {
   background: var(--hover);
   color: var(--text);
-}
-.remove:focus-visible {
-  box-shadow: var(--focus-ring);
 }
 .removeIcon {
   display: block;
