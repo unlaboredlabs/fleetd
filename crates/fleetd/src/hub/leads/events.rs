@@ -97,6 +97,19 @@ pub enum Event<'a> {
         claim: &'a str,
         workstream: &'a str,
     },
+    /// The checks passed, but write work of the order has not landed, so it stays open. `ids` are for tools only.
+    ClaimHeld {
+        claim: &'a str,
+        workstream: &'a str,
+        work: &'a str,
+        ids: &'a str,
+    },
+    /// The order became done some other way while write work of it had not landed; that work keeps going.
+    OrderDoneWorkKept {
+        workstream: &'a str,
+        work: &'a str,
+        ids: &'a str,
+    },
     PrMerged {
         change: &'a str,
         pr_url: &'a str,
@@ -261,6 +274,27 @@ impl Event<'_> {
             ),
             Event::ClaimPassed { claim, workstream } => (
                 format!("- claim {claim} on {workstream} passed: {workstream} is done"),
+                vec![],
+            ),
+            Event::ClaimHeld {
+                claim,
+                workstream,
+                work,
+                ids,
+            } => (
+                format!(
+                    "- claim {claim} on {workstream} passed, but write work that hasn't landed is still open: {work} (ids: {ids}); {workstream} stays open"
+                ),
+                vec![],
+            ),
+            Event::OrderDoneWorkKept {
+                workstream,
+                work,
+                ids,
+            } => (
+                format!(
+                    "- {workstream} is done; its write work that hadn't landed keeps going: {work} (ids: {ids})"
+                ),
                 vec![],
             ),
             Event::PrMerged {
@@ -524,6 +558,23 @@ mod tests {
                 workstream: "W3"
             }),
             "- claim C2 on W3 passed: W3 is done"
+        );
+        assert_eq!(
+            r(Event::ClaimHeld {
+                claim: "C2",
+                workstream: "W3",
+                work: "the review's fixes",
+                ids: "T7"
+            }),
+            "- claim C2 on W3 passed, but write work that hasn't landed is still open: the review's fixes (ids: T7); W3 stays open"
+        );
+        assert_eq!(
+            r(Event::OrderDoneWorkKept {
+                workstream: "W3",
+                work: "the review's fixes",
+                ids: "T7"
+            }),
+            "- W3 is done; its write work that hadn't landed keeps going: the review's fixes (ids: T7)"
         );
     }
 

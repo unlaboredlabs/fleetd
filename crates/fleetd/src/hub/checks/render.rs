@@ -106,6 +106,21 @@ pub fn claim_passed_line(claim_id: &ClaimId, workstream_id: &WorkstreamId) -> St
     .render()
 }
 
+pub fn claim_held_line(
+    claim_id: &ClaimId,
+    workstream_id: &WorkstreamId,
+    work: &[crate::hub::orders::open_work::OpenWork],
+) -> String {
+    use crate::hub::orders::open_work::{ids, listed};
+    Event::ClaimHeld {
+        claim: claim_id.as_str(),
+        workstream: workstream_id.as_str(),
+        work: &listed(work),
+        ids: &ids(work),
+    }
+    .render()
+}
+
 /// One evidence line per failed claim, for the false-claim incident.
 pub fn failed_claim_evidence(claim_id: &ClaimId, results: &[CheckResult]) -> String {
     let parts: Vec<String> = results
