@@ -18,6 +18,8 @@ const ORDER_PREFIXES = ["workstream.", "task.", "change.", "claim.", "ask.", "st
 const ORDER_TYPES = new Set(["pr.merged", "review.verdict", "lead.started", "lead.woken", "batch.ready"]);
 const ASK_TYPES = new Set(["batch.ready", "decision.recorded", "gated.ran"]);
 const STATUS_TYPES = new Set(["ci.main", "github.drift", "source.stale", "source.fresh", "digest.ready"]);
+/** Status's health strip shows machines (online, slept, last seen) and claude usage too. */
+const STATUS_PREFIXES = ["machine.", "usage."];
 // What changes an order's time, as the GPUI inspector refetched it. thread.* is left out: it fires constantly, and
 // the spans it moves arrive with the task and change events that close them.
 const TIME_PREFIXES = ["task.", "change.", "ask.", "workstream."];
@@ -45,12 +47,17 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   if (type.startsWith("ask.") || ASK_TYPES.has(type)) out.push({ tool: "asks_list" });
   if (shapesOrders) {
     out.push({ tool: "orders_board" });
-    for (const id of orders) out.push({ tool: "order_get", where: { workstreamId: id } });
+    for (const id of orders) {
+      out.push({ tool: "order_get", where: { workstreamId: id } });
+      // The order view's brief and claims (done-when).
+      if (type.startsWith("workstream.") || type.startsWith("claim.")) out.push({ tool: "workstream_get", where: { workstreamId: id } });
+    }
   }
   if (type.startsWith("steer.")) {
     out.push(workstreamId === undefined ? { tool: "steers_list" } : { tool: "steers_list", where: { workstreamId } });
   }
   if (shapesOrders || STATUS_TYPES.has(type)) out.push({ tool: "status_get" }, { tool: "plan_get" });
+  else if (startsWithAny(type, STATUS_PREFIXES)) out.push({ tool: "status_get" });
   // Only the open order's time reads: they are scoped `{ kind: "order", workstreamId }`, matched inside `scope`.
   // time_spans is paged; its view fetches new pages itself, so it is not refetched whole here.
   if (startsWithAny(type, TIME_PREFIXES) || TIME_TYPES.has(type)) {
@@ -75,6 +82,8 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   const newMachine = type.startsWith("machine.") && (event.machineId === undefined || !(event.machineId in machines));
   const resync = newMachine || type === "project.added" || type === "project.removed";
   if (resync) out.push({ tool: "projects_list" });
+  // Add project's list marks which repos are already projects.
+  if (type === "project.added" || type === "project.removed") out.push({ tool: "project_discover" });
   return { invalidate: out, resync };
 };
 

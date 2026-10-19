@@ -406,10 +406,23 @@ impl NodeLinkServer {
                 "machineId": machine_id, "projectId": project.project_id,
             }))
             .expect("a stored project's ref decodes");
+            let thread = frame
+                .thread_id
+                .map(|thread_id| fleetd_contracts::ids::ThreadRef {
+                    machine_id: machine_id.clone(),
+                    thread_id,
+                });
+            let agent = self
+                .deps
+                .lead_calls
+                .agent_of(thread.as_ref(), &project_ref)?;
+            crate::hub::tasks::policy::check(&agent, &op_of(&frame.call))?;
             let caller = LeadCaller {
                 by: lead_by(&project_ref),
                 project_ref,
                 cwd: cwd.to_owned(),
+                thread,
+                agent,
             };
             handler.handle(caller, frame.call).await
         }

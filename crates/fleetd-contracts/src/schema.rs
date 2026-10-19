@@ -110,6 +110,22 @@ fn hub_event_data_document_for(side: Side) -> Value {
     })
 }
 
+/// A self-contained schema for a tool's input, every subschema inlined: an MCP `inputSchema`. The type's own doc
+/// comment is left out; the tool's description says what it does.
+pub fn inline_schema<T: JsonSchema>() -> Value {
+    let mut generator = SchemaSettings::draft2020_12()
+        .with(|s| s.inline_subschemas = true)
+        .into_generator();
+    let Value::Object(mut root) = T::json_schema(&mut generator).to_value() else {
+        unreachable!("a root schema is an object")
+    };
+    strip_optional_nulls(&mut root);
+    root.remove("$schema");
+    root.remove("title");
+    root.remove("description");
+    Value::Object(root)
+}
+
 fn document_with(
     name: &str,
     side: Side,

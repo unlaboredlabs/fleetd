@@ -34,3 +34,14 @@ export type HubFrame =
   | { readonly t: "live"; readonly frame: LiveFrame }
   /** A session-level hub error (not an answer to a call). */
   | { readonly t: "error"; readonly error: HubError };
+
+/** A secret ask's submit: the node's fingerprint of what it stored (8 hex characters), never the value. */
+export type SecretOutcome = { readonly ok: true; readonly fingerprint: string } | { readonly ok: false; readonly error: HubError };
+/**
+ * What a folder or file dropped on the window holds for Add project: a folder (whether it is a git checkout, and its
+ * GitHub origin as "owner/name"), a link file's GitHub repository, or nothing usable. Never file contents.
+ */
+export type DropInfo =
+  | { readonly kind: "folder"; readonly path: string; readonly git: boolean; readonly repo?: string }
+  | { readonly kind: "link"; readonly repo: string }
+  | { readonly kind: "other" };

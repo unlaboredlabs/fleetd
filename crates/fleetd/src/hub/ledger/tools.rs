@@ -455,6 +455,6 @@ fn decide_workstream(
         } else {
             "Your project has several open workstreams."
         },
-        "Pass --workstream W<n> from your digest, or --scope project for a project-wide decision.",
+        "Pass workstreamId W<n> from your digest, or scope project for a project-wide decision.",
     ))
 }

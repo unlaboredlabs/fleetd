@@ -1,0 +1,534 @@
+/*
+ * The order view. One left inset (--pad) for every column: the header, the fleet, the conversation's gutter and
+ * the composer all start on it, so nothing touches the pane's edge. The conversation is a three-column grid
+ * (time · author · message) on one baseline.
+ */
+.screen {
+  --pad: var(--space-4);
+  --time-w: 60px;
+  --author-w: 76px;
+  --gutter: calc(var(--time-w) + var(--author-w) + 2 * var(--space-3));
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* Header: back · breadcrumb (one line, truncated) · status · actions. */
+.header {
+  flex: none;
+  min-height: var(--bar);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--pad);
+  border-bottom: 1px solid var(--hairline);
+}
+.crumbs {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1-5);
+}
+.crumbProject {
+  flex: 0 1 auto;
+  max-width: 30%;
+  min-width: 0;
+}
+.crumbSep {
+  flex: none;
+  color: var(--faint);
+}
+.crumbTitle {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.headerStatus {
+  flex: none;
+  max-width: 28%;
+  min-width: 0;
+}
+.headerActions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* Panes: fleet | lead side by side when wide, tabs when narrow. */
+.panes {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.left {
+  flex: 0 0 44%;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  border-right: 1px solid var(--hairline);
+  padding: 0 var(--pad) var(--pad);
+}
+.right {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.narrow .left {
+  flex: 1;
+  border-right: none;
+}
+.tabs {
+  flex: none;
+  display: flex;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--pad);
+  border-bottom: 1px solid var(--hairline);
+}
+
+/* A section caption: quiet, strong, small; the detail beside it. */
+.section {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-4) 0 var(--space-1-5);
+  min-width: 0;
+}
+.sectionLabel {
+  flex: none;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  font-weight: var(--weight-strong);
+  color: var(--quiet);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.note {
+  color: var(--quiet);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+}
+
+/* Fleet lanes: a clickable row per agent; two lines, both sized to their text. */
+.lane {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr) auto;
+  column-gap: var(--space-3);
+  row-gap: 2px;
+  align-items: baseline;
+  width: 100%;
+  padding: var(--space-1-5) var(--space-2);
+  margin: 0 calc(-1 * var(--space-2));
+  width: calc(100% + 2 * var(--space-2));
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.lane:hover {
+  background: var(--hover);
+}
+.lane:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+.laneHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.laneMeta {
+  justify-self: end;
+  min-width: 0;
+}
+.laneActivity {
+  grid-column: 2 / 4;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1-5);
+  min-width: 0;
+}
+.activityWords {
+  flex: none;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--quiet);
+}
+.laneModel {
+  flex: none;
+  margin-left: auto;
+}
+.loud {
+  color: var(--text);
+  font-weight: var(--weight-strong);
+}
+.danger {
+  color: var(--danger);
+}
+
+/* PRs and done-when rows wrap; the mark sits on the first line. */
+.prRow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 2px 0;
+}
+.prLink {
+  flex: none;
+  color: var(--accent);
+  font-size: var(--text-sm);
+  font-family: var(--font-mono);
+  text-decoration: none;
+}
+.prLink:hover {
+  text-decoration: underline;
+}
+.check {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  column-gap: var(--space-2);
+  align-items: start;
+  padding: var(--space-1) 0;
+}
+.checkMark {
+  width: 16px;
+  height: var(--leading-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.checkMark svg {
+  width: 14px;
+  height: 14px;
+}
+.checkBody {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.checkVerdict {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--space-1-5);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  min-width: 0;
+}
+.checkKind {
+  color: var(--quiet);
+  font-weight: var(--weight-strong);
+  margin-right: var(--space-1-5);
+}
+.pending {
+  color: var(--faint);
+}
+.passed {
+  color: var(--success);
+}
+.failed {
+  color: var(--danger);
+}
+.error {
+  color: var(--warning);
+}
+
+/* The lead pane: its header, the log, the composer. */
+.leadHead {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--bar);
+  padding: var(--space-1) var(--pad);
+  border-bottom: 1px solid var(--hairline);
+  min-width: 0;
+}
+.leadName {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1-5);
+}
+.leadState {
+  flex: 1;
+  min-width: 0;
+}
+.activityButton {
+  flex: none;
+  max-width: 40%;
+  min-width: 0;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1-5);
+}
+.activityButton:hover {
+  text-decoration: underline;
+}
+
+.log {
+  flex: 1;
+  min-height: 0;
+}
+.logEmpty {
+  flex: 1;
+  padding: var(--space-4) var(--pad);
+}
+.errorRow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+/* One conversation row: time · author · message, on the first line's baseline. */
+.row {
+  display: grid;
+  grid-template-columns: var(--time-w) var(--author-w) minmax(0, 1fr);
+  column-gap: var(--space-3);
+  align-items: baseline;
+  padding: var(--space-2) var(--pad) 0;
+}
+/* A long message's next block continues the one above, with no gap. */
+.rowMore {
+  padding-top: var(--space-2);
+}
+.rowLast {
+  padding-bottom: var(--space-4);
+}
+/* A transcript jump's target: lit once, then fades (no motion under reduce-motion: --dur-base is 0). */
+.row,
+.indented {
+  transition: background-color var(--dur-base) var(--ease-out);
+}
+.lit {
+  background: var(--selected);
+}
+.time {
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--quiet);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.author {
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--quiet);
+  min-width: 0;
+}
+.authorYou {
+  color: var(--accent);
+}
+.body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.to {
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--quiet);
+}
+/* Rows with no author: they start at the message column. */
+.indented {
+  padding: var(--space-2) var(--pad) 0 calc(var(--pad) + var(--gutter));
+  min-width: 0;
+}
+.disclosure {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  max-width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--quiet);
+  text-align: left;
+  cursor: pointer;
+}
+.disclosure:hover {
+  color: var(--text);
+}
+.disclosure:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+.chevron {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  align-self: center;
+}
+.systemText {
+  margin-top: var(--space-1-5);
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--hairline);
+}
+.calls {
+  margin-top: 2px;
+  display: flex;
+  flex-direction: column;
+}
+.call {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  color: var(--quiet);
+  min-width: 0;
+}
+.callFailed {
+  color: var(--danger);
+}
+.streaming {
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--quiet);
+}
+
+/* A receipt line under a steer. */
+.receipt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--space-2);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  min-width: 0;
+}
+.tone-quiet {
+  color: var(--quiet);
+}
+.tone-good {
+  color: var(--success);
+}
+.tone-warn {
+  color: var(--warning);
+}
+.tone-bad {
+  color: var(--danger);
+}
+.linkButton {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+}
+
+/* The bottom of the lead pane: the waiting line and the composer. */
+.bottom {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+  padding: var(--space-2) var(--pad) var(--space-3);
+  border-top: 1px solid var(--hairline);
+}
+.waiting {
+  min-width: 0;
+}
+.composerFoot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.hint {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+/* The two send buttons wrap together, never one under the other. */
+.composerButtons {
+  flex: none;
+  margin-left: auto;
+  display: flex;
+  gap: var(--space-2);
+}
+.flexNone {
+  flex: none;
+}
+.composerError {
+  color: var(--danger);
+}
+
+/* The steer sheet. */
+.sheetBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.sheetItems {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.sheetItem {
+  display: grid;
+  grid-template-columns: var(--time-w, 60px) minmax(0, 1fr);
+  column-gap: var(--space-3);
+  align-items: baseline;
+}
+.leadTold {
+  padding: var(--space-2) var(--space-3);
+  border-left: 2px solid var(--hairline);
+}
+
+/* What it was told. */
+.told {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.toldGroup {
+  padding-top: var(--space-2);
+}
+.toldRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto);
+  column-gap: var(--space-3);
+  align-items: baseline;
+  padding: 2px 0 2px var(--space-3);
+}
+.toldTool {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-1) 0;
+}
+.toldFirst {
+  margin-top: var(--space-1);
+}

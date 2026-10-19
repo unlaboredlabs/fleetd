@@ -66,6 +66,8 @@ const READ_TIMEOUT: Duration = Duration::from_secs(15);
 const LAUNCH_TIMEOUT: Duration = Duration::from_secs(60);
 /// The node first stops the project's claude processes and waits up to 12 s for them to exit.
 const REMOVE_TIMEOUT: Duration = Duration::from_secs(30);
+/// The node's stop waits up to 25 s for claude to exit (its kill ladder, then a SIGKILL).
+const STOP_TIMEOUT: Duration = Duration::from_secs(40);
 /// The node keeps the last 2000 characters of the assistant's text on the summary; a shorter tail is the whole text.
 const SUMMARY_TAIL_MAX: usize = 2000;
 
@@ -74,6 +76,7 @@ pub enum NodeOperation {
     Launch,
     Send,
     Interrupt,
+    Stop,
     Answer,
     Read,
     Project,
@@ -85,6 +88,7 @@ impl NodeOperation {
             Self::Launch => "launch",
             Self::Send => "send",
             Self::Interrupt => "interrupt",
+            Self::Stop => "stop",
             Self::Answer => "answer",
             Self::Read => "read",
             Self::Project => "project",
@@ -148,6 +152,8 @@ pub struct LaunchInput {
 pub struct LaunchOptions {
     /// Default: the project root. Tasks launch writers in a new worktree on their own branch.
     pub workspace: Option<SessionWorkspace>,
+    /// Leads and tasks get fleetd's agent MCP tools for their role; a thread a person starts gets none.
+    pub role: fleetd_contracts::sessions::SessionRole,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1332,6 +1338,7 @@ impl Executors {
             allowed_tools: rules.allow,
             disallowed_tools: rules.deny,
             auto_memory: rules.auto_memory,
+            role: options.role,
         };
         self.call(machine_id, op, SessionCall::Launch(launch), LAUNCH_TIMEOUT)
             .await?;
@@ -1420,6 +1427,17 @@ impl Executors {
             reason: Some("interrupted through fleetd".into()),
         };
         self.call(&r.machine_id, NodeOperation::Interrupt, call, READ_TIMEOUT)
+            .await?;
+        Ok(())
+    }
+
+    /// Ends the thread's claude process; `Ok` only once the node saw it exit (it escalates to SIGKILL).
+    pub async fn stop(&self, r: &ThreadRef) -> Result<(), ExecutorError> {
+        let call = SessionCall::Stop {
+            session_id: r.thread_id.clone(),
+            remove_worktree: false,
+        };
+        self.call(&r.machine_id, NodeOperation::Stop, call, STOP_TIMEOUT)
             .await?;
         Ok(())
     }

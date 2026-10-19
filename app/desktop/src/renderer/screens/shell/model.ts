@@ -28,23 +28,22 @@ export interface SidebarProject {
 }
 
 export interface ShellData {
-  readonly projects: ReadonlyArray<SidebarProject>;
+  /** Undefined until this connection's projects loaded (startup, and after every link drop): not "no projects". */
+  readonly projects: ReadonlyArray<SidebarProject> | undefined;
   readonly machinesDown: number;
-  /** Open asks across the fleet. */
-  readonly needsYou: number;
 }
 
-export const EMPTY_SHELL_DATA: ShellData = { projects: [], machinesDown: 0, needsYou: 0 };
 
 export const projectId = (key: ProjectKey): string => `${key.machineId}\u0000${key.projectId}`;
 
 /** A finished or stopped order stays listed this long, as on the board (board.rs DONE_HOLD_SECS). */
 export const DONE_HOLD_MS = 600_000;
 
+/** Each input is undefined until it loaded for this connection, as the data layer's selectors give them. */
 export interface ShellInputs {
-  readonly projects: ReadonlyArray<{ readonly machineId: string; readonly projectId: string; readonly title: string; readonly lastActivityAt: string }>;
+  readonly projects: undefined | ReadonlyArray<{ readonly machineId: string; readonly projectId: string; readonly title: string; readonly lastActivityAt: string }>;
   /** Board order: by phase, then most recently updated. */
-  readonly board: ReadonlyArray<{
+  readonly board: undefined | ReadonlyArray<{
     readonly card: {
       readonly workstreamId: string;
       readonly title: string;
@@ -55,8 +54,8 @@ export interface ShellInputs {
     readonly asks: ReadonlyArray<unknown>;
     readonly lanes: ReadonlyArray<{ readonly status: string }>;
   }>;
-  readonly inbox: ReadonlyArray<{ readonly ask: { readonly projectRef?: ProjectKey | undefined } }>;
-  readonly machines: ReadonlyArray<{ readonly machine: { readonly status: string } }>;
+  readonly inbox: undefined | ReadonlyArray<{ readonly ask: { readonly projectRef?: ProjectKey | undefined } }>;
+  readonly machines: undefined | ReadonlyArray<{ readonly machine: { readonly status: string } }>;
   /** The lead lanes' live statuses, by project. */
   readonly leadStatus: (key: ProjectKey) => string | undefined;
 }
@@ -64,20 +63,22 @@ export interface ShellInputs {
 const finished = (phase: string): boolean => phase === "done" || phase === "stopped";
 
 export const toShellData = (inputs: ShellInputs, nowMs: number): ShellData => {
+  // Orders and needs-you marks appear once the board and the asks have loaded; until then a project shows neither,
+  // rather than claiming it has none.
   const needs = new Map<string, number>();
-  for (const { ask } of inputs.inbox) {
+  for (const { ask } of inputs.inbox ?? []) {
     if (ask.projectRef === undefined) continue;
     const id = projectId(ask.projectRef);
     needs.set(id, (needs.get(id) ?? 0) + 1);
   }
-  const orders = new Map<string, Array<ShellInputs["board"][number]>>();
-  for (const view of inputs.board) {
+  const orders = new Map<string, Array<NonNullable<ShellInputs["board"]>[number]>>();
+  for (const view of inputs.board ?? []) {
     const done = finished(view.phase.phase);
     if (done && !(nowMs - Date.parse(view.card.updatedAt) < DONE_HOLD_MS)) continue;
     const id = projectId(view.card.projectRef);
     orders.set(id, [...(orders.get(id) ?? []), view]);
   }
-  const projects = inputs.projects.map((p): SidebarProject => {
+  const projects = inputs.projects?.map((p): SidebarProject => {
     const key = { machineId: p.machineId, projectId: p.projectId };
     const mine = orders.get(projectId(key)) ?? [];
     return {
@@ -92,13 +93,12 @@ export const toShellData = (inputs: ShellInputs, nowMs: number): ShellData => {
   });
   return {
     projects,
-    machinesDown: inputs.machines.filter((m) => m.machine.status !== "online").length,
-    needsYou: inputs.inbox.length,
+    machinesDown: (inputs.machines ?? []).filter((m) => m.machine.status !== "online").length,
   };
 };
 
 /** The orders the sidebar lists, in its order; ⌘1..9 open the first nine, ⌘[ and ⌘] step through them. */
-export const sidebarOrders = (projects: ReadonlyArray<SidebarProject>): Array<string> => projects.flatMap((p) => p.orders.map((o) => o.id));
+export const sidebarOrders = (projects: ReadonlyArray<SidebarProject> | undefined): Array<string> => (projects ?? []).flatMap((p) => p.orders.map((o) => o.id));
 
 /** The order before or after `current` in the sidebar, wrapping; the first (or last) when none is open. */
 export const stepOrder = (orders: ReadonlyArray<string>, current: string | null, by: 1 | -1): string | null => {
@@ -143,10 +143,10 @@ export const connLine = (state: HubState | null): { readonly label: string; read
   switch (state?.phase) {
     case undefined:
       return { label: "Starting…", tone: "quiet" };
+    case "connecting":
+      return { label: state.hub === "" ? "Connecting…" : `Connecting to ${host(state.hub)}…`, tone: "quiet" };
     case "unpaired":
       return { label: "Not connected to a hub", tone: "quiet" };
-    case "connecting":
-      return { label: `Connecting to ${host(state.hub)}…`, tone: "quiet" };
     case "live":
       return { label: `Connected to ${host(state.hub)}`, tone: "success" };
     case "retrying":

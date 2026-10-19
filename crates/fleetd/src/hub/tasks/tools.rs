@@ -141,7 +141,7 @@ pub async fn lead_call(
                 ErrorCode::NotFound,
                 format!("There is no task {} in your project.", c.task_id.as_str()),
             )
-            .with_fix("Run `fleetd task list`.")),
+            .with_fix("Call `list_agents`.")),
         },
         LeadCall::TaskMessage(c) => Ok(LeadCallResult::TaskMessage(frame(
             tasks
@@ -155,6 +155,6 @@ pub async fn lead_call(
             )))
         }
         _ => Err(TaskError::new(ErrorCode::Invalid, "Not a task call.")
-            .with_fix("Use fleetd task spawn|list|status|message|cancel.")),
+            .with_fix("Use spawn_agent, list_agents, agent_status, message_agent or stop_agent.")),
     }
 }

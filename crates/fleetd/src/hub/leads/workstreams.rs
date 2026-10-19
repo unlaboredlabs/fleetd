@@ -52,7 +52,7 @@ fn title_of(text: &str) -> String {
 
 fn amend_fix(id: &WorkstreamId) -> String {
     format!(
-        "File `fleetd ask --class product --key {}.brief --text \"<the change and why>\" --rec \"<your proposal>\" --workstream {id}` and rerun with --amend once the human answers it.",
+        "File `ask` with class product, key {}.brief, the change and why as text, your proposal as recommendation and workstreamId {id}; call `brief` again with amend once the human answers it.",
         id.as_str().to_lowercase()
     )
 }
@@ -251,9 +251,7 @@ impl Workstreams {
         if let Some(short) = playbook.as_ref().and_then(|p| floor_refusal(p, &brief)) {
             return Err(LeadError::invalid(
                 short,
-                format!(
-                    "Add what is missing to the brief and run `fleetd brief create --workstream {id}` again."
-                ),
+                format!("Add what is missing to the brief and call `brief` for {id} again."),
             ));
         }
         if is_closed(w.state) {
@@ -266,9 +264,7 @@ impl Workstreams {
             ));
         }
         let hash = BriefHash::unchecked(brief_hash(&brief));
-        let running = format!(
-            "Plan the work and report progress with `fleetd status set \"<one line>\" --workstream {id}`."
-        );
+        let running = format!("Plan the work and report progress with `status_set` for {id}.");
         let result = |state: WorkstreamState, next: String| BriefCreateResult {
             workstream_id: id.clone(),
             brief_hash: hash.clone(),
@@ -332,7 +328,7 @@ impl Workstreams {
                     "The brief of {id} is frozen; changing it needs an ask the human answered."
                 ),
                 format!(
-                    "File `fleetd ask --class product --key {}.brief --text \"<the change and why>\" --rec \"<your proposal>\" --workstream {id}`, carry on meanwhile, and rerun with --amend <askId> once it is answered.",
+                    "File `ask` with class product, key {}.brief, the change and why as text, your proposal as recommendation and workstreamId {id}; carry on meanwhile, and call `brief` again with amend <askId> once it is answered.",
                     id.as_str().to_lowercase()
                 ),
             ));
@@ -385,7 +381,7 @@ impl Workstreams {
                         } else {
                             "Your project has several open workstreams."
                         },
-                        "Pass --workstream W<n> with an id from your digest.",
+                        "Pass workstreamId W<n> with an id from your digest.",
                     ));
                 }
                 self.own(caller, &open[0].workstream_id)?
