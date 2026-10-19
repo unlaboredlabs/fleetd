@@ -104,6 +104,7 @@ lead:                     # optional
   autoStart: false        # orders wait for lead_start instead of starting the lead (default true)
 claude:                   # optional
   autoMemory: true        # the sessions keep claude's own auto memory (default false: fleetd turns it off)
+branchPrefix: team-a/     # optional: what writer branches start with (default fleetd/), ending in /
 ```
 
 Area names are lowercase slugs. A broken file is refused with the exact problem, never ignored, so a typo can't widen
@@ -128,12 +129,13 @@ port: their nodes dial out. Change it with `fleetd init --listen <host:port> --u
 
 ## Hub environment {#env}
 
-Two variables in the hub's environment tune how it follows GitHub; the defaults suit almost everyone.
+Three variables in the hub's environment tune how it follows GitHub; the defaults suit almost everyone.
 
 | variable | default | does |
 |---|---|---|
 | `FLEETD_STATUS_GITHUB_STALE_SEC` | `180` | seconds without a good GitHub answer before [Status](status.md#stale-data) marks a repo stale |
 | `FLEETD_MAIN_CI_EVERY_SEC` | `60` | how often each merge train checks its main branch's CI (every 5 minutes with GitHub webhooks on) |
+| `FLEETD_TRAIN_NO_CI_GRACE_SEC` | `90` | how long a head may have no check and no workflow run before the train merges it on fleetd's own checks |
 
 ## The app
 
