@@ -1,3 +1,0 @@
-# The app is written wide (gpui builder chains read better on one line); crates/ use the defaults.
-max_width = 150
-use_small_heuristics = "Max"

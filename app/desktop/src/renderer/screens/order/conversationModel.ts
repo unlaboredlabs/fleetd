@@ -2,7 +2,7 @@
 // weight, fleetd's own messages to the lead (wakes, digests, its start) collapsed to one muted line, runs about
 // other orders folded, finished tool-call runs folded, this order's hub events merged between messages, and every
 // steer under its real author (Steer.by) with its receipt. Built here from the hub's data, never by a model.
-// The fold/merge rules follow the GPUI order view (app/fleetd-app/src/order.rs) and T3 Code's work log grouping.
+// The fold/merge rules follow T3 Code's work log grouping.
 
 import type { ActionItem, AgentLane, HubEvent, Steer, TailItem } from "../../../shared/contracts";
 import { plural } from "./format";

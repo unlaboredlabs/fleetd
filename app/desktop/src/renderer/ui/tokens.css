@@ -1,5 +1,5 @@
 /*
- * fleetd design tokens, ported from the GPUI theme (app/fleetd-app/src/theme.rs) so both apps read the same.
+ * fleetd design tokens.
  *
  * Principles, in order: work is quiet and decisions are loud; hierarchy comes from weight, grey and space, not
  * from cards, borders or size jumps; mono is only for machine text; one accent, used for focus, links, unread and

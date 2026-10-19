@@ -1326,7 +1326,7 @@ fn app_hint() -> (bool, String) {
     let data = std::env::var_os("XDG_DATA_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|| home.join(".local/share"));
-    let bin = data.join("fleetd/app/fleetd-app");
+    let bin = data.join("fleetd/app/fleetd-desktop.AppImage");
     if bin.is_file() {
         (true, "open fleetd from your app menu".into())
     } else {

@@ -1,7 +1,7 @@
-# The product workspace: the crates, the GPUI app and its bench.
+# The product workspace: the hub, node and CLI (crates/fleetd), its contracts and the docs generator.
 [workspace]
 resolver = "3"
-members = ["crates/*", "app/fleetd-app", "app/bench", "app/record"]
+members = ["crates/*"]
 
 [workspace.package]
 version = "0.0.0"
@@ -9,8 +9,6 @@ edition = "2024"
 license = "MIT"
 
 [workspace.dependencies]
-fleetd-contracts = { path = "crates/fleetd-contracts" }
-
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_with = { version = "3", default-features = false, features = ["macros"] }
@@ -47,14 +45,7 @@ serde_path_to_error = "0.1"
 [workspace.lints.rust]
 unsafe_code = "forbid"
 
-# Same shape as Zed's own release profile, so the app's bench numbers compare with what Zed ships.
 [profile.release]
 lto = "thin"
 codegen-units = 1
 strip = true
-
-# gpui comes from zed's workspace, whose [patch] does not apply to a git dependency. Mirror the
-# patches gpui itself relies on (zed's Cargo.toml at the pinned rev in app/fleetd-app/Cargo.toml).
-[patch.crates-io]
-async-task = { git = "https://github.com/smol-rs/async-task.git", rev = "b4486cd71e4e94fbda54ce6302444de14f4d190e" }
-calloop = { git = "https://github.com/zed-industries/calloop", rev = "3759371fee14c40066d64777e2a36b6ffcc22590" }

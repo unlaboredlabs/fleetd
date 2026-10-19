@@ -89,8 +89,8 @@ another computer, install fleetd there without the wizard and open the app:
 
 ```sh
 curl -fsSL https://fleetd.sh | sh -s -- --no-init
-open ~/Applications/fleetd.app                    # macOS
-~/.local/share/fleetd/app/fleetd-app &            # Linux (or "fleetd" in your app menu)
+open ~/Applications/fleetd.app                        # macOS
+~/.local/share/fleetd/app/fleetd-desktop.AppImage &   # Linux (or "fleetd" in your app menu)
 ```
 
 Enter the hub address and the pairing code `fleetd init` printed. Codes last 15 minutes; `fleetd pair` on the hub
