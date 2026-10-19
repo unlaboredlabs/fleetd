@@ -909,7 +909,7 @@ mod tests {
 
         let agent = Caller {
             human: false,
-            name: "adri",
+            name: "lead",
             allows_operate: &everywhere,
         };
         let refused = approvals

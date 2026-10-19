@@ -365,7 +365,7 @@ mod tests {
         let at = "2026-10-17T10:00:00.000Z";
         let task = json!({
             "taskId": "T1",
-            "projectRef": { "machineId": "forge", "projectId": "p1" },
+            "projectRef": { "machineId": "devbox", "projectId": "p1" },
             "workstreamId": "W1",
             "title": "add file",
             "kind": "write",

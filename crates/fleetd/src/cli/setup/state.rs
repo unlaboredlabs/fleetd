@@ -128,15 +128,15 @@ mod tests {
     #[test]
     fn parses_a_git_identity() {
         assert_eq!(
-            parse_git_identity("wynn-dev <66362261+wynn-dev@users.noreply.github.com>"),
+            parse_git_identity("ada-lovelace <12345678+ada-lovelace@users.noreply.github.com>"),
             Some(GitIdentity {
-                name: "wynn-dev".into(),
-                email: "66362261+wynn-dev@users.noreply.github.com".into()
+                name: "ada-lovelace".into(),
+                email: "12345678+ada-lovelace@users.noreply.github.com".into()
             })
         );
         assert_eq!(
-            parse_git_identity("  Wynn Dev  < a@b >  ").map(|i| i.name),
-            Some("Wynn Dev".into())
+            parse_git_identity("  Ada Lovelace  < a@b >  ").map(|i| i.name),
+            Some("Ada Lovelace".into())
         );
         assert_eq!(parse_git_identity("no email"), None);
         assert_eq!(parse_git_identity("<a@b>"), None);

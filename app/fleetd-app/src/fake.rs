@@ -140,7 +140,7 @@ pub fn fixture_state() -> State {
     state.batches = vec![from(json!({ "batchId": "B1", "createdAt": AT, "state": "open",
         "items": [{ "number": 1, "askId": "A7" }, { "number": 2, "askId": "A2" }, { "number": 3, "askId": "A3" }] }))];
     let checks = json!([
-        { "id": "hub/gh_auth", "scope": "hub", "status": "ok", "message": "gh is logged in as wynn-dev." },
+        { "id": "hub/gh_auth", "scope": "hub", "status": "ok", "message": "gh is logged in as ada-lovelace." },
         { "id": "devbox/disk", "scope": "machine", "machineId": "devbox", "status": "warn", "message": "12 GB free on /home (under 20 GB)." },
         { "id": "buildbox/node", "scope": "machine", "machineId": "buildbox", "status": "fail", "message": "claude on buildbox exited 3 times in 10 min.",
           "fix": { "kind": "auto", "label": "Restart the node on buildbox" } },

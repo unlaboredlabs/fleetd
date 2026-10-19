@@ -9,7 +9,7 @@ use serde_json::Value;
 #[derive(Debug, Default, PartialEq)]
 pub struct Tailnet {
     pub ipv4: Option<String>,
-    /// MagicDNS name without the trailing dot, e.g. `forge.tail1234.ts.net`.
+    /// MagicDNS name without the trailing dot, e.g. `devbox.tail1234.ts.net`.
     pub dns_name: Option<String>,
     pub peers: Vec<Peer>,
 }
@@ -258,22 +258,22 @@ mod tests {
     #[test]
     fn reads_tailscale_status() {
         let json = r#"{"BackendState":"Running",
-          "Self":{"DNSName":"forge.tail1.ts.net.","TailscaleIPs":["fd7a::1","100.1.2.3"],"OS":"linux","Online":true},
+          "Self":{"DNSName":"devbox.tail1.ts.net.","TailscaleIPs":["fd7a::1","100.1.2.3"],"OS":"linux","Online":true},
           "Peer":{
             "a":{"DNSName":"mac-mini.tail1.ts.net.","OS":"macOS","Online":true},
             "b":{"DNSName":"iphone.tail1.ts.net.","OS":"iOS","Online":true},
             "c":{"DNSName":"box.tail1.ts.net.","OS":"linux","Online":false},
-            "d":{"DNSName":"anvil.tail1.ts.net.","OS":"linux","Online":true}}}"#;
+            "d":{"DNSName":"homeserver.tail1.ts.net.","OS":"linux","Online":true}}}"#;
         let tailnet = parse_tailscale_status(json).unwrap();
         assert_eq!(tailnet.ipv4.as_deref(), Some("100.1.2.3"));
-        assert_eq!(tailnet.dns_name.as_deref(), Some("forge.tail1.ts.net"));
+        assert_eq!(tailnet.dns_name.as_deref(), Some("devbox.tail1.ts.net"));
         assert_eq!(
             tailnet
                 .peers
                 .iter()
                 .map(|p| p.name.as_str())
                 .collect::<Vec<_>>(),
-            ["anvil", "mac-mini"]
+            ["homeserver", "mac-mini"]
         );
         assert_eq!(tailnet.peers[1].dns_name, "mac-mini.tail1.ts.net");
         assert_eq!(
@@ -379,8 +379,8 @@ mod tests {
         );
         assert_eq!(install_command("gh", "macos", None), "brew install gh");
         assert_eq!(
-            noreply_identity(r#"{"login":"wynn-dev","id":66362261,"name":null}"#).as_deref(),
-            Some("wynn-dev <66362261+wynn-dev@users.noreply.github.com>")
+            noreply_identity(r#"{"login":"ada-lovelace","id":12345678,"name":null}"#).as_deref(),
+            Some("ada-lovelace <12345678+ada-lovelace@users.noreply.github.com>")
         );
     }
 }
