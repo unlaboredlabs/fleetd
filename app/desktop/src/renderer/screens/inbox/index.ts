@@ -4,3 +4,5 @@ export { QuestionCard, QuestionCardView, type QuestionCardViewProps } from "./Qu
 export { useInboxUi, inboxUi } from "./store";
 export { needsYou } from "./model";
 export { useNeedsYouSource, inboxHash } from "./needsYouSource";
+export { NeedsYouStrip, OpenAsksButton, type NeedsYouStripProps } from "./NeedsYouStrip";
+export { useAsksLoad } from "./load";

@@ -21,11 +21,22 @@
 .place {
   contain: inline-size;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-1-5);
   min-width: 0;
 }
-.place > * {
+.project {
+  flex: 0 1 auto;
+}
+.order {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  flex: 1 1 10em;
+  min-width: 0;
+}
+.order > :last-child {
   min-width: 0;
 }
 .number {

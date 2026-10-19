@@ -4,7 +4,7 @@ import { PanelLeft, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { display } from "../../../shared/shortcuts";
 import { AppFrame, Button, TopBar } from "../../ui";
-import { useNeedsYouSource } from "../inbox";
+import { useAsksLoad, useNeedsYouSource } from "../inbox";
 import { openPalette, PaletteHost, useCommands, type Command } from "../palette";
 import { ProjectsHost } from "../projects";
 import { quietNow, useEscape, useMainProcess, useMenuState, useModHeld, useNotifications } from "./effects";
@@ -59,7 +59,9 @@ export function Shell() {
   // Undefined until this connection's asks loaded: a "0" then would claim nothing needs you.
   const needsYou = useData(selectNeedsYouCount);
   // Only while they are on their way: with the hub unreachable or refusing, nothing is coming, so no skeleton.
-  const countLoading = needsYou === undefined && (hub?.phase === "live" || hub?.phase === "connecting");
+  // A failed read is not "loading": the badge goes back to plain "Inbox" (the count is unknown) and the panel says why.
+  const asksFailed = useAsksLoad().error !== undefined;
+  const countLoading = needsYou === undefined && !asksFailed && (hub?.phase === "live" || hub?.phase === "connecting");
   const [sidebarHidden, setSidebarHidden] = useState(false);
   const [seen] = useState(() => new Seen());
   const modHeld = useModHeld();

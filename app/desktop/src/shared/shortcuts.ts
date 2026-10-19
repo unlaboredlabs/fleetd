@@ -33,6 +33,9 @@ export const SHORTCUTS = {
   "order.stop": { keys: "Mod+Shift+.", title: "Stop Order…", section: "Orders" },
   ...jump,
   "board.toggleGrouping": { keys: "Mod+Shift+G", title: "Group by Project or Status", section: "Board" },
+  "composer.pickProject": { keys: "Mod+Shift+P", title: "Pick the Order's Project", section: "Board" },
+  "composer.pickType": { keys: "Mod+Shift+T", title: "Pick the Order's Type", section: "Board" },
+  "composer.attach": { keys: "Mod+Shift+A", title: "Attach a File to the Order", section: "Board" },
 } as const satisfies Record<string, Shortcut>;
 
 export type ShortcutId = keyof typeof SHORTCUTS;
@@ -50,6 +53,9 @@ export const LOCAL_KEYS: readonly { readonly where: string; readonly keys: reado
   { where: "Command palette", keys: ["↑", "↓"], title: "Move the selection" },
   { where: "Command palette", keys: ["Enter"], title: "Run it" },
   { where: "Command palette", keys: ["1 go 2 nvm"], title: "Reply to the inbox by number" },
+  { where: "The board", keys: ["↑", "↓"], title: "Move between orders" },
+  { where: "The board", keys: ["J", "K"], title: "Move between orders" },
+  { where: "The board", keys: ["Enter"], title: "Open the selected order" },
   { where: "Anywhere", keys: ["Esc"], title: "Close the menu, panel or sheet" },
 ];
 

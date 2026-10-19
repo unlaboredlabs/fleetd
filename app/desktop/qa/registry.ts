@@ -49,6 +49,8 @@ export const fixtures = [
   "onboarding-hub-too-old",
   "projects-errors",
   "projects-machines",
+  // F5: the inbox with the open-asks read refused.
+  "inbox-error",
   // F6: the Status view's own states (fixtures/status).
   "status-stale",
   "status-planning",
@@ -143,12 +145,30 @@ export const screens: readonly Screen[] = [
   { id: "onboarding.mismatch", route: "#/onboarding", fixtures: ["onboarding-app-too-old", "onboarding-hub-too-old"] },
   // F5: the inbox panel with every ask shape (needs-you), the long-text stress ask, and nothing to answer.
   { id: "inbox", route: "#/board?inbox", fixtures: ["needs-you", "long-text", "empty"] },
+  // The answering flow: the first question answered (collapsed to "You chose", with the 10 s Undo) and the approval
+  // approved (no undo window: its receipt at once).
+  {
+    id: "inbox.answered",
+    route: "#/board?inbox&ask=A1",
+    fixtures: ["needs-you"],
+    open: async (page) => {
+      await page.keyboard.press("1");
+      await page.keyboard.press("Enter");
+      const approval = page.getByRole("region", { name: /database migration/u });
+      await approval.getByRole("radio", { name: /Approve/u }).click();
+      await approval.getByRole("button", { name: /Send answer/u }).click();
+      await page.getByText(/The lead has your answer/u).waitFor();
+    },
+  },
+  // The open-asks read refused: the reason, the hub's fix and Retry; the badge is plain "Inbox", not loading.
+  { id: "inbox.error", route: "#/board?inbox", fixtures: ["inbox-error"], expect: "error" },
   // F2: the board (#/ and #/board). board.empty, board.list, board.stage and board.finish are its states: the stage
   // and finish fixtures put one order on it mid-run and after every PR merged.
   {
     id: "board",
     route: "#/board",
-    fixtures: ["empty", "typical", "long-text", "many-agents", "needs-you", "board-stage", "board-finish"],
+    // hub-unreachable: the composer shows main's reason and fix for a lost hub, so their wording is seen and checked.
+    fixtures: ["empty", "typical", "long-text", "many-agents", "needs-you", "board-stage", "board-finish", "hub-unreachable"],
   },
   // E2: every design-system primitive with short, long and empty content, one section per entry, so the primitives
   // pass before any screen uses them. Needs a build with the gallery in it: `pnpm qa:build`.
