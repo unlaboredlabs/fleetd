@@ -7,7 +7,6 @@
 use std::collections::HashSet;
 
 use super::contract::{Change, ChangeId, ChangeState};
-use super::git::Rebase;
 use super::github::Pull;
 use super::records::TERMINAL_STATES;
 use super::service::{Checks, Train, checks, lock, short};
@@ -88,20 +87,28 @@ impl Train {
     /// Where a stacked Change whose parent landed forked from it, newest first: the parent's merged head, then the
     /// heads seen before the train rebased it. The rebase cuts the first one the branch contains.
     pub(super) fn forks_of(&self, change: &Change) -> Vec<String> {
-        let Some(stacked) = lock(&self.lanes).stacked.get(&change.change_id).cloned() else {
-            return Vec::new();
-        };
-        let Some(parent) = self
-            .records
-            .get(&stacked.parent)
+        let parent = lock(&self.lanes)
+            .stacked
+            .get(&change.change_id)
+            .map(|s| s.parent.clone());
+        match parent
+            .and_then(|p| self.records.get(&p))
             .filter(|p| p.state == ChangeState::Merged)
-        else {
-            return Vec::new();
-        };
-        let mut forks = vec![parent.head_sha.to_string()];
-        forks.extend(stacked.heads.into_iter().rev());
-        forks.dedup();
-        forks
+        {
+            Some(parent) => self.parent_heads(change, &parent),
+            None => Vec::new(),
+        }
+    }
+
+    /// The parent's heads the stacked Change may have forked from, newest first: its head now, then the ones seen.
+    fn parent_heads(&self, child: &Change, parent: &Change) -> Vec<String> {
+        let mut heads = vec![parent.head_sha.to_string()];
+        if let Some(stacked) = lock(&self.lanes).stacked.get(&child.change_id) {
+            heads.extend(stacked.heads.iter().rev().cloned());
+        }
+        let mut seen = HashSet::new();
+        heads.retain(|h| seen.insert(h.clone()));
+        heads
     }
 
     /// Each pass, before the freeze: stacked Changes are tested ahead on their parent, retargeted to the base once it
@@ -172,13 +179,38 @@ impl Train {
         for (_, spec) in gone {
             self.close_spec(&spec).await;
         }
-        let mut lanes = lock(&self.lanes);
-        let records = &self.records;
-        lanes.stacked.retain(|id, _| {
-            records
-                .get(id)
-                .is_some_and(|c| !TERMINAL_STATES.contains(&c.state))
-        });
+        {
+            let mut lanes = lock(&self.lanes);
+            let records = &self.records;
+            lanes.stacked.retain(|id, _| {
+                records
+                    .get(id)
+                    .is_some_and(|c| !TERMINAL_STATES.contains(&c.state))
+            });
+        }
+        self.sweep_scratch(repo).await;
+    }
+
+    /// Deletes the train's scratch branches nothing uses: no batch is in flight between passes, and a speculative
+    /// build the hub forgot (a restart) or failed to close is not live. GitHub closes a PR whose head branch goes.
+    async fn sweep_scratch(&self, repo: &str) {
+        let Some(prefix) = self.scratch_prefix(repo).await else {
+            return;
+        };
+        let Ok(branches) = self.github.matching_branches(repo, &prefix).await else {
+            return;
+        };
+        let live: HashSet<String> = lock(&self.lanes)
+            .specs
+            .values()
+            .filter(|s| s.repo == repo)
+            .map(|s| s.branch.clone())
+            .collect();
+        for branch in branches.into_iter().filter(|b| !live.contains(b)) {
+            if let Err(e) = self.github.delete_branch(repo, &branch).await {
+                tracing::warn!(repo, branch, error = %e.message, "train: scratch branch not deleted");
+            }
+        }
     }
 
     /// The parent landed: the stacked PR now goes into the parent's base, through the train like any other.
@@ -270,12 +302,15 @@ impl Train {
         };
         let built = {
             let _held = git_lock.lock().await;
-            match git.rebase(base, &child.branch, &[]).await {
-                Ok(Rebase::Rebased { head_sha, .. }) => git
-                    .push_scratch(&branch)
-                    .await
-                    .map(|()| Some(head_sha.to_string())),
-                Ok(Rebase::Conflict { .. }) => Ok(None),
+            let forks = self.parent_heads(child, parent);
+            let parent_at = (parent.branch.as_str(), parent.head_sha.as_str());
+            let child_at = (child.branch.as_str(), child.head_sha.as_str());
+            match git.build_stack(base, parent_at, child_at, &forks).await {
+                Ok(Ok(sha)) => git.push_scratch(&branch).await.map(|()| Some(sha)),
+                Ok(Err(why)) => {
+                    tracing::info!(repo, change_id = %child.change_id, why, "train: no speculative build");
+                    Ok(None)
+                }
                 Err(e) => Err(e),
             }
         };
@@ -295,9 +330,7 @@ impl Train {
             Err(e) => {
                 return tracing::warn!(repo, change_id = %child.change_id, error = e.0, "train: speculative build failed");
             }
-            Ok(None) => {
-                tracing::info!(repo, change_id = %child.change_id, "train: stacked PR does not rebase onto {base} with its parent");
-            }
+            Ok(None) => {}
             Ok(Some(sha)) => {
                 let title = format!(
                     "fleetd: #{} on top of #{}, tested ahead",

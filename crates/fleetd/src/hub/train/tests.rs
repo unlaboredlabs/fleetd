@@ -131,6 +131,12 @@ struct FakeGh {
     /// A branch to push an empty commit to the first time CI is read on the batch's head: an author pushing while a
     /// batch is in CI.
     push_during_ci: Mutex<Option<String>>,
+    /// A branch to push an empty commit to when the next merge is asked for: a push after the train's last look.
+    push_on_merge: Mutex<Option<String>>,
+    /// PRs whose next close GitHub fails.
+    fail_close: Mutex<Vec<i64>>,
+    /// The next merge goes through, but the answer is an error.
+    merge_then_fail: Mutex<bool>,
 }
 
 fn ok(body: Value) -> GhOut {
@@ -178,7 +184,12 @@ impl FakeGh {
         if self.head_of("fleetd/train/batch").as_deref() != Some(sha) {
             return;
         }
-        let head = self.head_of(&branch).unwrap();
+        self.push_empty(&branch);
+        *push = None;
+    }
+
+    fn push_empty(&self, branch: &str) {
+        let head = self.head_of(branch).unwrap();
         let moved = git(
             &self.origin,
             &[
@@ -194,7 +205,6 @@ impl FakeGh {
             &self.origin,
             &["update-ref", &format!("refs/heads/{branch}"), &moved],
         );
-        *push = None;
     }
 
     /// Squash onto the base: the base's head as parent, the PR head's tree. Refused like GitHub when the head or
@@ -305,6 +315,15 @@ impl FakeGh {
                 pulls.insert(n, pull);
                 ok(json!({ "number": n }))
             }
+            (["pulls", n], "PATCH")
+                if {
+                    let mut failing = self.fail_close.lock().unwrap();
+                    let at = failing.iter().position(|f| *f == number(Some(n)));
+                    at.map(|i| failing.remove(i)).is_some()
+                } =>
+            {
+                http_error(500, "Server Error")
+            }
             (["pulls", n], "PATCH") => match self.pulls.lock().unwrap().get_mut(&number(Some(n))) {
                 Some(p) => {
                     for (k, v) in &fields {
@@ -333,7 +352,33 @@ impl FakeGh {
                     None => http_error(404, "Not Found"),
                 }
             }
-            (["git", "refs", "heads", ..], "DELETE") => ok(Value::Null),
+            (["git", "refs", "heads", branch @ ..], "DELETE") => {
+                let branch = branch.join("/");
+                git_out(
+                    &self.origin,
+                    &["update-ref", "-d", &format!("refs/heads/{branch}")],
+                );
+                // GitHub closes a PR whose head branch is deleted.
+                for p in self.pulls.lock().unwrap().values_mut() {
+                    if p.branch == branch && p.state == "open" {
+                        p.state = "closed".into();
+                    }
+                }
+                ok(Value::Null)
+            }
+            (["git", "matching-refs", "heads", prefix @ ..], "GET") => {
+                let prefix = prefix.join("/");
+                let refs = git(
+                    &self.origin,
+                    &["for-each-ref", "--format=%(refname)", "refs/heads/"],
+                );
+                ok(Value::Array(
+                    refs.lines()
+                        .filter(|r| r.starts_with(&format!("refs/heads/{prefix}")))
+                        .map(|r| json!({ "ref": r }))
+                        .collect(),
+                ))
+            }
             (["pulls"], _) if query.contains("state=closed") => {
                 let pulls = self.pulls.lock().unwrap();
                 ok(Value::Array(
@@ -349,6 +394,16 @@ impl FakeGh {
                 None => http_error(404, "Not Found"),
             },
             (["pulls", n, "merge"], "PUT") => {
+                if let Some(branch) = self.push_on_merge.lock().unwrap().take() {
+                    self.push_empty(&branch);
+                }
+                if std::mem::take(&mut *self.merge_then_fail.lock().unwrap()) {
+                    let n = number(Some(n));
+                    if let Some(p) = self.pulls.lock().unwrap().get_mut(&n) {
+                        self.merge(n, p, fields.get("sha").copied().unwrap_or_default());
+                    }
+                    return http_error(502, "Bad Gateway");
+                }
                 let mut scripted = self.merge_replies.lock().unwrap();
                 if !scripted.is_empty() {
                     return scripted.remove(0);
@@ -776,6 +831,9 @@ impl Kit {
             polls: Mutex::default(),
             log: Mutex::default(),
             push_during_ci: Mutex::default(),
+            push_on_merge: Mutex::default(),
+            fail_close: Mutex::default(),
+            merge_then_fail: Mutex::default(),
         });
         let host = Arc::new(FakeHost {
             checkout,
@@ -2325,4 +2383,175 @@ fn a_cancelled_check_is_red_only_once_nothing_else_runs() {
         ]),
         Checks::Red(_)
     ));
+}
+
+/// Three disjoint tier-S PRs, ready: 7 (a), 8 (b), 9 (c).
+async fn three_ready(kit: &Kit) -> [Change; 3] {
+    let mut out = Vec::new();
+    for (n, branch) in [(7, "a"), (8, "b"), (9, "c")] {
+        let file = format!("{branch}1.txt");
+        let pr = kit.open_pr(n, branch, &[(file.as_str(), Some("x\n"))], "Source: done:0");
+        out.push(kit.enqueue(pr, None).await);
+    }
+    out.try_into().unwrap_or_else(|_| unreachable!())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_member_pushed_to_after_the_last_look_is_neither_closed_nor_merged_and_its_new_head_goes_next()
+ {
+    let kit = Kit::new();
+    let [a, b, c] = three_ready(&kit).await;
+    *kit.gh.push_on_merge.lock().unwrap() = Some("b".into());
+
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(state_of(&kit, &a), ChangeState::Merged);
+    assert_eq!(state_of(&kit, &c), ChangeState::Merged);
+    let moved = kit.get(&b.change_id);
+    assert_eq!(moved.state, ChangeState::Ready);
+    assert!(
+        moved
+            .last_error
+            .as_deref()
+            .unwrap()
+            .starts_with("pushed to while batch"),
+        "{:?}",
+        moved.last_error
+    );
+    let pulls = kit.gh.pulls.lock().unwrap();
+    assert_eq!(pulls[&8].state, "open", "never closed as landed");
+    assert!(pulls[&8].comments.is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_member_close_that_failed_after_the_merge_is_retried_by_the_next_pass() {
+    let kit = Kit::new();
+    let [a, ..] = three_ready(&kit).await;
+    kit.gh.fail_close.lock().unwrap().push(7);
+
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(state_of(&kit, &a), ChangeState::Merged);
+    assert_eq!(kit.gh.pulls.lock().unwrap()[&7].state, "open");
+
+    kit.train.step(REPO).await;
+    let pulls = kit.gh.pulls.lock().unwrap();
+    assert_eq!(pulls[&7].state, "closed");
+    assert!(
+        pulls[&7]
+            .comments
+            .iter()
+            .any(|c| c.starts_with("Landed in #"))
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_merge_github_did_but_answered_with_an_error_is_finished_by_the_next_pass_never_merged_twice()
+ {
+    let kit = Kit::new();
+    let changes = three_ready(&kit).await;
+    *kit.gh.merge_then_fail.lock().unwrap() = true;
+
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(merged_prs(&kit).len(), 1);
+    assert!(
+        changes
+            .iter()
+            .all(|c| state_of(&kit, c) == ChangeState::Ready)
+    );
+
+    kit.train.step(REPO).await;
+    assert_eq!(merged_prs(&kit).len(), 1, "the batch is not merged again");
+    let main = kit.head_of("main");
+    for c in &changes {
+        let done = kit.get(&c.change_id);
+        assert_eq!(
+            (done.state, done.merged_sha.as_deref()),
+            (ChangeState::Merged, Some(main.as_str()))
+        );
+        assert_eq!(
+            kit.gh.pulls.lock().unwrap()[&c.pr_number.get()].state,
+            "closed"
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn scratch_branches_and_prs_nothing_uses_are_swept_and_a_merged_batch_leaves_no_branch() {
+    let kit = Kit::new();
+    // What a hub that restarted mid-way left: a speculative build and a batch, each with an open PR.
+    for (n, branch) in [(50, "fleetd/train/stack-99"), (51, "fleetd/train/batch")] {
+        kit.commit(branch, &[add("left.txt", "left\n")], Some("origin/main"));
+        kit.gh
+            .pulls
+            .lock()
+            .unwrap()
+            .insert(n, FakePull::open(branch, "main", "left over"));
+    }
+    // A task branch outside the train's namespace is never touched.
+    kit.commit(
+        "fleetd/T3-docs",
+        &[add("t3.txt", "t3\n")],
+        Some("origin/main"),
+    );
+    // Frozen, so the first pass only sweeps.
+    three_ready(&kit).await;
+    let key = "policy.freeze.acme.storefront";
+    let freeze = DecisionView {
+        decision_id: "D1".into(),
+        key: key.into(),
+        value: "true".into(),
+        why: None,
+        global: false,
+    };
+    kit.host
+        .decisions
+        .lock()
+        .unwrap()
+        .insert(key.into(), freeze);
+
+    assert!(!kit.train.step(REPO).await);
+    assert!(kit.gh.head_of("fleetd/train/stack-99").is_none());
+    assert!(kit.gh.head_of("fleetd/train/batch").is_none());
+    assert!(kit.gh.head_of("fleetd/T3-docs").is_some());
+    let states = {
+        let pulls = kit.gh.pulls.lock().unwrap();
+        (pulls[&50].state.clone(), pulls[&51].state.clone())
+    };
+    assert_eq!(states, ("closed".into(), "closed".into()));
+
+    kit.host.decisions.lock().unwrap().clear();
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(merged_prs(&kit).len(), 1);
+    assert!(
+        kit.gh.head_of("fleetd/train/batch").is_none(),
+        "deleted once merged"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_speculative_build_follows_its_parents_new_head_not_the_childs_stale_copy() {
+    let kit = Kit::new();
+    // The parent never gets its review, so it waits; the child is ready.
+    let parent_url = kit.open_pr(7, "p", &[add("p.txt", "p\n")], "Source: done:0");
+    kit.enqueue(parent_url, Some(Tier::M)).await;
+    let child_url = kit.stacked_pr(8, "c", "p", &[add("pair-b", "b\n")]);
+    kit.enqueue(child_url, None).await;
+    let child_head = kit.head_of("c");
+    kit.train.step(REPO).await;
+    kit.train.step(REPO).await;
+    let status = |state: &str| format!("status fleetd/stack {state} {child_head}");
+    assert!(kit.gh.log.lock().unwrap().contains(&status("success")));
+
+    // The parent's author pushes a commit the child doesn't have; together they are now red.
+    kit.commit("p", &[add("pair-a", "a\n")], None);
+    for _ in 0..3 {
+        kit.train.step(REPO).await;
+    }
+    let log = kit.gh.log.lock().unwrap();
+    let green = log.iter().position(|l| *l == status("success")).unwrap();
+    let red = log.iter().rposition(|l| *l == status("failure"));
+    assert!(
+        red.is_some_and(|r| r > green),
+        "rebuilt on the parent's new head: {log:?}"
+    );
+    assert!(merged_prs(&kit).is_empty());
 }

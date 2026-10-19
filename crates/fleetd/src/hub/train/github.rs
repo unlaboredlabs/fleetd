@@ -688,6 +688,30 @@ impl TrainGitHub {
             .map(|_| ())
     }
 
+    /// The repo's branches whose names start with `prefix`.
+    pub async fn matching_branches(
+        &self,
+        repo: &str,
+        prefix: &str,
+    ) -> Result<Vec<String>, GhError> {
+        #[derive(Deserialize)]
+        struct Ref {
+            #[serde(rename = "ref")]
+            ref_: String,
+        }
+        let refs: Vec<Ref> = self
+            .json(
+                "GET",
+                &format!("repos/{repo}/git/matching-refs/heads/{prefix}?per_page=100"),
+                &[],
+            )
+            .await?;
+        Ok(refs
+            .into_iter()
+            .filter_map(|r| r.ref_.strip_prefix("refs/heads/").map(String::from))
+            .collect())
+    }
+
     /// Deletes a branch of the train's own; one already gone counts as deleted.
     pub async fn delete_branch(&self, repo: &str, branch: &str) -> Result<(), GhError> {
         match self

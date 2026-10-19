@@ -43,6 +43,8 @@ pub struct Lanes {
     pub(super) stacked: HashMap<ChangeId, super::stack::Stacked>,
     /// The speculative build of each stacked PR.
     pub(super) specs: HashMap<ChangeId, super::stack::Spec>,
+    /// Batch members whose PR is known closed, so reconcile reads them no more.
+    pub(super) closed: HashSet<ChangeId>,
 }
 
 /// The batch PR a Change landed in.
@@ -125,6 +127,13 @@ impl Train {
             .unwrap_or_else(|| change.project_ref.clone());
         let prefix = self.host.branch_prefix(&owner).await?;
         Some(format!("{prefix}train/{name}"))
+    }
+
+    /// `<prefix>train/` of the project that owns the repo's train.
+    pub(super) async fn scratch_prefix(&self, repo: &str) -> Option<String> {
+        let owner = self.records.train(repo)?.project_ref;
+        let prefix = self.host.branch_prefix(&owner).await?;
+        Some(format!("{prefix}train/"))
     }
 
     /// After refresh and the freeze: a batch of disjoint ready Changes, or the first takeable one alone. True when
@@ -378,6 +387,7 @@ impl Train {
             .iter()
             .map(|m| BatchMember {
                 branch: m.change.branch.to_string(),
+                head_sha: m.change.head_sha.to_string(),
                 title: m.pull.title.trim().to_string(),
                 pr_number: m.change.pr_number.get(),
                 patch_id: m.change.patch_id.as_deref().unwrap_or_default().to_string(),
@@ -534,6 +544,9 @@ impl Train {
                         .await;
                 }
                 *open_pr = None;
+                if let Err(e) = self.github.delete_branch(repo, &branch).await {
+                    tracing::warn!(repo, branch, error = %e.message, "train: batch branch not deleted");
+                }
                 Round::Merged
             }
             Ok(MergeOutcome::Refused { status, message }) => {
@@ -542,6 +555,9 @@ impl Train {
                 Round::Refused(merging, why)
             }
             Err(e) => {
+                // GitHub may have merged it all the same: the PR stays as it is, and the next pass's reconcile
+                // finishes the members if it did.
+                *open_pr = None;
                 self.release(&merging, Some(&format!("GitHub: {}", e.message)));
                 Round::Stop
             }
@@ -549,14 +565,49 @@ impl Train {
     }
 
     /// Merged in `landed`: recorded as merged with the batch's squash, and its own PR closed with a link to it.
+    /// Its PR is read first: one pushed to since its head was batched did not land as it is now, so it goes back to
+    /// ready for its new head instead (read again later when GitHub can't be read now).
     pub(super) async fn finish_batch_member(
         &self,
         change: &Change,
         landed: &Landed,
         ci_note: Option<&str>,
     ) {
+        let pull = match self.github.pull(&change.repo, change.pr_number.get()).await {
+            Ok(pull) => pull,
+            Err(e) => {
+                return tracing::warn!(change_id = %change.change_id, error = %e.message, "train: batch member not read; the next pass finishes it");
+            }
+        };
+        if pull.head.sha.to_lowercase() != change.head_sha.as_str() {
+            let why = format!(
+                "pushed to while batch #{} merged: the batch landed its head {}, not the new one, which goes \
+                 through the train",
+                landed.pr_number,
+                short(change.head_sha.as_str())
+            );
+            let from = [
+                ChangeState::Ready,
+                ChangeState::Rebasing,
+                ChangeState::Ci,
+                ChangeState::Merging,
+            ];
+            self.update(&change.change_id, Some(&from), |mut c| {
+                c.state = ChangeState::Ready;
+                c.last_error = Some(error_text(&why));
+                c
+            });
+            return;
+        }
         self.finish_merged(change, Some(&landed.merged_sha), ci_note, Some(landed))
             .await;
+        if pull.state == "open" {
+            self.close_member(change, landed).await;
+        }
+    }
+
+    /// Closes a landed member's PR with a link to its batch; a failure is retried by the next pass's reconcile.
+    async fn close_member(&self, change: &Change, landed: &Landed) {
         let others: Vec<String> = landed
             .members
             .iter()
@@ -570,12 +621,72 @@ impl Train {
             short(&landed.merged_sha),
             others.join(", ")
         );
-        if let Err(e) = self
+        match self
             .github
             .close(&change.repo, change.pr_number.get(), &comment)
             .await
         {
-            tracing::warn!(change_id = %change.change_id, error = %e.message, "train: batch member not closed");
+            Ok(()) => {
+                lock(&self.lanes).closed.insert(change.change_id.clone());
+            }
+            Err(e) => {
+                tracing::warn!(change_id = %change.change_id, error = %e.message, "train: batch member not closed")
+            }
+        }
+    }
+
+    /// Each pass: the members of merged batch PRs that are not finished, because the hub restarted, a merge call
+    /// failed after GitHub merged, or closing the PR failed, are finished now; each only at the head the batch
+    /// recorded for it.
+    pub(super) async fn reconcile_batches(&self, repo: &str) {
+        let Some(prefix) = self.scratch_prefix(repo).await else {
+            return;
+        };
+        let Ok(pulls) = self
+            .github
+            .pulls_for(repo, &format!("{prefix}batch"), "closed")
+            .await
+        else {
+            return;
+        };
+        for p in pulls.into_iter().filter(|p| p.merged_at.is_some()) {
+            let heads = batch_heads(p.body.as_deref().unwrap_or_default());
+            let landed = Landed {
+                pr_number: p.number,
+                merged_sha: p.merge_commit_sha.clone().unwrap_or_default(),
+                members: heads.iter().map(|(n, _)| *n).collect(),
+            };
+            for (n, sha) in &heads {
+                let Some(change) = self.records.latest_for(repo, *n) else {
+                    continue;
+                };
+                if sha.as_deref() != Some(change.head_sha.as_str())
+                    || lock(&self.lanes).closed.contains(&change.change_id)
+                {
+                    continue;
+                }
+                match change.state {
+                    ChangeState::Merged => {
+                        let open = self
+                            .github
+                            .pull(repo, *n)
+                            .await
+                            .is_ok_and(|pull| pull.state == "open");
+                        if !open {
+                            lock(&self.lanes).closed.insert(change.change_id.clone());
+                            continue;
+                        }
+                        self.close_member(&change, &landed).await;
+                    }
+                    ChangeState::Ready
+                    | ChangeState::Rebasing
+                    | ChangeState::Ci
+                    | ChangeState::Merging => {
+                        self.finish_batch_member(&change, &landed, None).await
+                    }
+                    _ => {}
+                }
+            }
         }
     }
 

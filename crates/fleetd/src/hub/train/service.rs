@@ -1519,7 +1519,8 @@ impl Train {
         self.main_ci_pass(&repo, &train.project_ref).await;
         self.check_bypasses(&repo, train.watch_since_ms, &train.project_ref)
             .await;
-        // Speculative CI never merges, so it runs while the train is frozen too.
+        // Bookkeeping of merges already done, and speculative CI, which never merges: both run while frozen too.
+        self.reconcile_batches(&repo).await;
         self.stack_pass(&repo).await;
         if self.frozen(&repo, train.frozen, &train.project_ref) {
             return false;
