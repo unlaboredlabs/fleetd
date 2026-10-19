@@ -46,6 +46,11 @@ export class Fixture {
   /** When the screen is final, for the QA harness to screenshot; defaults to the last timed frame. */
   settleMs: number | undefined;
   calls: Array<{ tool: string; input: JsonObject | undefined; output?: JsonValue; error?: HubErrorJson; delayMs?: number }> = [];
+  /**
+   * What pairing finds instead of the network (src/main/pairing/fixture.ts): app-pair.json, the hub's /healthz and
+   * /pair answers, and where the key would be kept. Absent: no file, no hub answers, the OS store.
+   */
+  pair: JsonObject | undefined;
 
   constructor(name: string, note: string) {
     this.name = name;
@@ -58,6 +63,7 @@ export class Fixture {
     f.now = base.now;
     f.state = { ...base.state };
     f.connect = base.connect;
+    f.pair = base.pair === undefined ? undefined : clone(base.pair);
     f.snapshot = base.snapshot === undefined ? undefined : clone(base.snapshot);
     f.events = clone(base.events);
     f.live = clone(base.live);
@@ -153,7 +159,7 @@ export class Fixture {
   }
 
   /** The file main loads. Within a tool, more specific inputs come first, since main takes the first match. */
-  toFile(): FixtureFile & { settleMs?: number } {
+  toFile(): FixtureFile & { settleMs?: number; pair?: JsonObject } {
     const frames: Array<FixtureFrame> = [];
     const num = (v: JsonValue | undefined) => (typeof v === "number" ? v : 0);
     if (this.snapshot !== undefined) frames.push({ t: "snapshot", snapshot: { ...this.snapshot, cursor: num(this.snapshot["cursor"]) } });
@@ -192,6 +198,7 @@ export class Fixture {
       calls,
       ...(this.connect === undefined ? {} : { connect: this.connect }),
       ...(settleMs === undefined ? {} : { settleMs }),
+      ...(this.pair === undefined ? {} : { pair: this.pair }),
     };
   }
 }

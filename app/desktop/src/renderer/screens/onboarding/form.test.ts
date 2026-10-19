@@ -46,6 +46,11 @@ describe("the connect form", () => {
     expect(reduce(form, { type: "started", start: { ...noHub, problem } }).error).toEqual(problem);
   });
 
+  it("says why there is no key when main knows", () => {
+    expect(initialForm({ phase: "unpaired", note: "The saved key couldn't be read. Pair again to continue." }, {}).notice).toContain("couldn't be read");
+    expect(initialForm(unpaired, {}).notice).toBeNull();
+  });
+
   it("shows a refused key's fix, and no probe line about another address", () => {
     const elsewhere = initialForm({ phase: "refused", hub: "http://devbox:4790", message: "Unknown agent key." }, {});
     expect(reduce(elsewhere, { type: "started", start: noHub })).toMatchObject({ hub: "http://devbox:4790", status: null });
@@ -65,10 +70,10 @@ describe("the connect form", () => {
 describe("reaching the hub", () => {
   const hub = "http://127.0.0.1:4790";
   it("keeps the last reason through a retry's connecting phase, so the layout holds", () => {
-    const last = { hub, reason: "connection refused" };
-    expect(reaching({ phase: "connecting", hub, attempt: 0 }, null)).toEqual({ hub, reason: null, retryAt: null });
-    expect(reaching({ phase: "retrying", hub, reason: "connection refused", retryAt: 5 }, null).reason).toBe("connection refused");
-    expect(reaching({ phase: "connecting", hub, attempt: 3 }, last)).toEqual({ hub, reason: "connection refused", retryAt: null });
+    const last = { hub, reason: "Nothing is listening at 127.0.0.1:4790", fix: "Start the hub." };
+    expect(reaching({ phase: "connecting", hub, attempt: 0 }, null)).toEqual({ hub, reason: null, fix: null, retryAt: null });
+    expect(reaching({ phase: "retrying", hub, reason: last.reason, fix: last.fix, retryAt: 5 }, null)).toMatchObject({ reason: last.reason, fix: last.fix });
+    expect(reaching({ phase: "connecting", hub, attempt: 3 }, last)).toEqual({ ...last, retryAt: null });
     expect(reaching({ phase: "connecting", hub: "http://other:4790", attempt: 3 }, last).reason).toBeNull();
   });
 });

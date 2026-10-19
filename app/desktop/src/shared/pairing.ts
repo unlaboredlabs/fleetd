@@ -43,6 +43,22 @@ export interface PairStart {
   readonly probe: Probe;
 }
 
+/** Where this app keeps its hub key, so the screens never claim more than is true. */
+export type KeyStore =
+  | { readonly kind: "os"; readonly where: string }
+  /** A 0600 file: `why` the OS store isn't used, and `fix`, how to get the key into it. */
+  | { readonly kind: "file"; readonly path: string; readonly why: string; readonly fix: string }
+  /** FLEETD_HUB_URL and FLEETD_AGENT_KEY: used for this run, saved nowhere. */
+  | { readonly kind: "env" };
+
+/** One line for the connect form and Settings. */
+export const keyStoreLine = (store: KeyStore): string =>
+  store.kind === "os"
+    ? `The key is kept encrypted in ${store.where}.`
+    : store.kind === "env"
+      ? "The key comes from FLEETD_AGENT_KEY for this run and is saved nowhere."
+      : `The key is kept in a file only you can read (${store.path}), not encrypted. ${store.why} ${store.fix}`;
+
 export const PairRequest = z.strictObject({
   hub: z.string().trim().min(1).max(2048),
   code: z.string().trim().min(1).max(64),
@@ -130,8 +146,9 @@ export const compareVersions = (a: string, b: string): number | null => {
   return x[4] === undefined ? 1 : y[4] === undefined ? -1 : 0;
 };
 
-/** Machines whose node runs an older fleetd than the hub, by name. */
+/** Machines whose node runs an older fleetd than the hub, by name. A node reporting 0.0.0 hasn't said its version. */
 export const olderNodes = (
   machines: ReadonlyArray<{ readonly name: string; readonly nodeVersion: string }>,
   hubVersion: string,
-): ReadonlyArray<string> => machines.filter((m) => compareVersions(m.nodeVersion, hubVersion) === -1).map((m) => m.name);
+): ReadonlyArray<string> =>
+  machines.filter((m) => compareVersions(m.nodeVersion, "0.0.0") !== 0 && compareVersions(m.nodeVersion, hubVersion) === -1).map((m) => m.name);

@@ -12,6 +12,14 @@ const PairSection = z.object({
   healthz: z.json().optional(),
   /** /pair's answer; absent: the hub can't be reached. */
   redeem: z.object({ status: z.int().min(100).max(599), body: z.json() }).optional(),
+  /** Where the key would be kept; absent: the OS store. */
+  store: z
+    .union([
+      z.object({ kind: z.literal("os"), where: z.string() }),
+      z.object({ kind: z.literal("file"), path: z.string(), why: z.string(), fix: z.string() }),
+      z.object({ kind: z.literal("env") }),
+    ])
+    .optional(),
 });
 
 const APP_PAIR = "fixture:app-pair.json";
@@ -38,5 +46,6 @@ export const fixturePairingDeps = (file: string, connect: PairingDeps["connect"]
     // Main runs on the real clock: a fixture's appPair needs a far-future expiresAt to count as fresh.
     now: Date.now,
     deviceName: () => "devbox",
+    keyStore: pair.store ?? { kind: "os", where: "the OS keychain" },
   };
 };

@@ -34,6 +34,19 @@ export const fixtures = [
   "board-finish",
   // Group fixtures (fixtures/<group>/index.ts), named <group>-<what>.
   "projects-cloning",
+  // F10: the connect screen's states (fixtures/onboarding).
+  "onboarding-first-run",
+  "onboarding-local-hub",
+  "onboarding-link",
+  "onboarding-app-pair",
+  "onboarding-app-pair-expired",
+  "onboarding-app-pair-untrusted",
+  "onboarding-rate-limited",
+  "onboarding-unreadable-key",
+  "onboarding-file-store",
+  "onboarding-not-found",
+  "onboarding-app-too-old",
+  "onboarding-hub-too-old",
   "projects-errors",
   "projects-machines",
   // F6: the Status view's own states (fixtures/status).
@@ -98,18 +111,36 @@ export const screens: readonly Screen[] = [
     route: "#/",
     fixtures: ["empty", "typical", "many-agents", "long-text", "hub-unreachable", "pairing-failed", "node-too-old"],
   },
-  // F10: connecting to a hub. pairing-failed: the form after the hub refused the saved key, with the fix;
-  // hub-unreachable: retrying, with the reason and the countdown. #/onboarding?key opens on the key path.
+  // F10: connecting to a hub, one fixture per state (fixtures/onboarding). The form: no hub here, a hub found, a
+  // refused key, app-pair.json used up / expired / untrusted, a rate limit, an unreadable saved key and a key that
+  // would be kept in a file. #/onboarding?key opens on the key path; a fleetd://pair link lands with ?hub=&code=.
   {
     id: "onboarding",
     route: "#/onboarding",
-    fixtures: ["pairing-failed", "hub-unreachable"],
+    fixtures: [
+      "pairing-failed",
+      "onboarding-first-run",
+      "onboarding-local-hub",
+      "onboarding-app-pair",
+      "onboarding-app-pair-expired",
+      "onboarding-app-pair-untrusted",
+      "onboarding-rate-limited",
+      "onboarding-unreadable-key",
+      "onboarding-file-store",
+    ],
   },
+  { id: "onboarding.key", route: "#/onboarding?key", fixtures: ["pairing-failed", "onboarding-file-store"] },
   {
-    id: "onboarding.key",
-    route: "#/onboarding?key",
-    fixtures: ["pairing-failed"],
+    id: "onboarding",
+    route: "#/onboarding?hub=http%3A%2F%2Fbuildbox%3A4790&code=WXYZ-6789",
+    fixtures: ["onboarding-link"],
+    sizes: ["small"],
   },
+  // Reaching a saved hub: the words for a refused connect and an unknown name. (A first attempt can't be shot: the
+  // harness first settles on #/, whose sidebar stays busy while a connection is on its way.)
+  { id: "onboarding.connecting", route: "#/onboarding", fixtures: ["hub-unreachable", "onboarding-not-found"] },
+  // A hub on another protocol, either way round.
+  { id: "onboarding.mismatch", route: "#/onboarding", fixtures: ["onboarding-app-too-old", "onboarding-hub-too-old"] },
   // F5: the inbox panel with every ask shape (needs-you), the long-text stress ask, and nothing to answer.
   { id: "inbox", route: "#/board?inbox", fixtures: ["needs-you", "long-text", "empty"] },
   // F2: the board (#/ and #/board). board.empty, board.list, board.stage and board.finish are its states: the stage
