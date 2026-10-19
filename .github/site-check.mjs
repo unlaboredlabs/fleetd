@@ -2,17 +2,20 @@
 //   node .github/site-check.mjs <file holding `fleetd help` output>
 // Fails on an index.* at the root of site/, on a vercel.json rewrite or redirect that lands on no file (or `/` not
 // serving home.html to a browser and install.sh to curl), on a line of site/.stale-terms in the page's text or the docs' sources
-// (docs/site/*.md), and on a `fleetd <command>` written as code in hand-written text that `fleetd help` doesn't list.
+// (docs/site/src/content/docs/**/*.md and .mdx), and on a `fleetd <command>` written as code that `fleetd help` doesn't list.
 // Capture blocks (home.html's markers, the docs' ```console capture=NAME) are fleetd's own output
 // (tests/lab/site-capture.ts), so the command check skips them; the stale terms still apply there, since a block nobody
-// re-captured goes stale too. site/docs/ is generated from the sources (CI checks it's up to date) and its CLI reference
-// is fleetd's own help, so it isn't checked here.
+// re-captured goes stale too. site/docs/ is built from the sources (CI checks it's up to date), so it isn't checked here.
 import fs from "node:fs";
 
+const CONTENT = "docs/site/src/content/docs";
+// Written by crates/docsgen from the binary itself (its own help, its own tools), so they say only what fleetd has.
+const GENERATED = new Set(["reference/cli.md", "reference/agent-tools.md"]);
 const DOCS = fs
-  .readdirSync("docs/site")
-  .filter((n) => n.endsWith(".md"))
-  .map((n) => `docs/site/${n}`);
+  .readdirSync(CONTENT, { recursive: true })
+  .filter((n) => /\.mdx?$/u.test(n) && !GENERATED.has(n))
+  .sort()
+  .map((n) => `${CONTENT}/${n}`);
 const FILES = ["site/home.html", "site/fleetd.txt", "site/README.md", ...DOCS];
 const help = fs.readFileSync(process.argv[2], "utf8");
 const errors = [];
@@ -92,9 +95,10 @@ for (const file of FILES) {
       if (/<!-- capture:[\w-]+ -->/u.test(line)) inCapture = true;
       if (/<!-- \/capture:[\w-]+ -->/u.test(line)) inCapture = false;
       let code = [];
-      if (file.endsWith(".md") && /^```/u.test(line)) {
+      // Fences may be indented, inside a list.
+      if (/\.mdx?$/u.test(file) && /^\s*```/u.test(line)) {
         if (fence === undefined) {
-          fence = line.slice(3).trim().split(/\s+/u)[0] || "text";
+          fence = line.trim().slice(3).trim().split(/\s+/u)[0] || "text";
           inCapture = /\bcapture=/u.test(line);
         } else {
           fence = undefined;
@@ -103,8 +107,8 @@ for (const file of FILES) {
         return;
       }
       if (inCapture) return;
-      if (fence === "sh") code = [line];
-      else if (fence === "console") code = line.startsWith("$ ") ? [line.slice(2)] : [];
+      if (fence === "sh") code = [line.trim()];
+      else if (fence === "console") code = line.trim().startsWith("$ ") ? [line.trim().slice(2)] : [];
       else if (fence !== undefined) return;
       // A command is written as code: <code>fleetd …</code>, `fleetd …`, or a "$ fleetd …" line. Prose ("the fleetd app") isn't one.
       const found = fence === undefined ? [...line.matchAll(/<code[^>]*>(.*?)<\/code>|`([^`]+)`|^\s*\$ (.*)$/gu)] : code.map((c) => [c, undefined, undefined, c]);

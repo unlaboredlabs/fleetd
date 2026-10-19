@@ -42,10 +42,9 @@ jobs:
         # failure classifier and the conformance probe (against a stand-in replaying the recorded initialize
         # answer). Its own step so a claude protocol drift reads as such; re-record the fixtures when bumping TESTED.
         run: cargo test --locked -p fleetd --lib node::runner
-      - name: fleetd.sh/docs and the generated pages are up to date
-        # site/docs/ is committed (Vercel has no build step); this fails while it differs from docs/site/*.md and
-        # fleetd help, or while a page docsgen writes from the code (docs/site/reference/agent-tools.md) differs from
-        # what it generates. Fix: cargo run -q -p docsgen, then commit docs/site and site/docs.
+      - name: The docs' generated pages are up to date
+        # The CLI reference, the Agent tools page and the prompt table in docs/site/src/content/docs come from the code. This fails
+        # while they differ from a fresh render. Fix: cargo run -q -p docsgen, then rebuild and commit (site/README.md).
         run: cargo run --locked -q -p docsgen -- --check
       # For the site job. The dependencies are already built by the tests, so this compiles only the binary.
       - run: cargo run --locked -q -p fleetd -- help > "$RUNNER_TEMP/fleetd-help.txt"
@@ -59,16 +58,29 @@ jobs:
     # fleetd.sh may only mention what fleetd has: no index.* at the root of site/ (Vercel would serve it at / instead
     # of the installer), nothing from site/.stale-terms, and only `fleetd` commands that `fleetd help` lists, on the
     # landing page and in the docs' sources; every vercel.json rewrite lands on a file (under cleanUrls) and `/` is the
-    # landing page for a browser and install.sh for curl; every link on the site resolves; and no tracked file names a
-    # maintainer's own machine, login or home directory.
+    # landing page for a browser and install.sh for curl; site/docs is the docs' current build; every link on the site
+    # resolves; and no tracked file names a maintainer's own machine, login or home directory.
     needs: rust-crates
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: 24
+          cache: npm
+          cache-dependency-path: docs/site/package-lock.json
+      - name: fleetd.sh/docs is the current build
+        # site/docs/ is committed (the Vercel project has no build step). This fails while it differs from a fresh
+        # Starlight build of docs/site. Fix: npm ci --prefix docs/site && npm run build --prefix docs/site, then commit.
+        run: |
+          npm ci --prefix docs/site --no-audit --no-fund
+          npm run build --prefix docs/site
+          if [ -n "$(git status --porcelain -- site/docs)" ]; then
+            git status --short -- site/docs | head -20
+            echo "::error::site/docs differs from a fresh build of docs/site; rebuild and commit it (site/README.md, Docs)"
+            exit 1
+          fi
       - uses: actions/download-artifact@v8
         with:
           name: fleetd-help

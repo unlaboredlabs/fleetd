@@ -1,4 +1,4 @@
-//! The "Agent tools" reference page, written whole to `docs/site/reference/agent-tools.md` from the code fleetd runs:
+//! The "Agent tools" reference page, written whole to `docs/site/src/content/docs/reference/agent-tools.md` from the code fleetd runs:
 //! the agent MCP server's tool registry and schemas (`cli/agent_mcp.rs`), the hub's call policy
 //! (`hub/tasks/policy.rs`), and the deny list and environment claude is launched with (`node/runner/claude`). Only
 //! the example calls and a few lines of framing are written here, and every example is checked against its tool's
@@ -27,13 +27,11 @@ use fleetd_contracts::sessions::SessionRole;
 use fleetd_contracts::tasks::{TaskId, TaskKind};
 use serde_json::{Value, json};
 
-/// Under `docs/site/`.
+/// Under Starlight's content directory.
 pub const PATH: &str = "reference/agent-tools.md";
 
 const FRONT: &str = "---
 title: Agent tools
-section: Reference
-order: 85
 description: The tools fleetd gives each agent, the Claude Code tools it blocks, the settings it forces and the limits the hub enforces.
 sidebar: { order: 20 }
 ---

@@ -1,0 +1,120 @@
+---
+title: Quick start
+description: Set up the hub, pair the desktop app and send your first order.
+---
+
+import { Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+You'll set up fleetd on one machine, pair the desktop app, and send a first piece of work.
+
+**Before you start**, have these on the machine:
+
+- macOS or Linux x64.
+- The `claude` CLI, logged in. fleetd uses your own Claude Code setup, including any proxy in `~/.claude/settings.json`.
+- `git`, and the `gh` CLI logged in to GitHub.
+- A GitHub repo to work on.
+
+<Steps>
+
+1. **Install and run the setup wizard.**
+
+   Run this on the always-on machine that will be your [hub](/docs/glossary#hub), the machine that coordinates all
+   the work:
+
+   ```sh
+   curl -fsSL https://fleetd.sh | sh
+   ```
+
+   The installer starts the wizard, `fleetd init`. Press Enter to take the default at each question. It walks through
+   six parts:
+
+   | Part | What it sets up |
+   |---|---|
+   | 1. This machine | Makes this machine the hub and picks where it listens: your tailnet, your LAN, or this machine only. |
+   | 2. Logins | Checks `claude` and `gh`, and picks the commit author for your agents. |
+   | 3. Hub | Runs the hub as a background service. |
+   | 4. Workers | Picks the [workers](/docs/glossary#worker): the machines that run agents. This machine can be one. |
+   | 5. Project | Adds your first [project](/docs/glossary#project): a git repo on a worker. |
+   | 6. App & check | Prints a pairing code for the desktop app, then runs `fleetd doctor`. |
+
+   Expected output ends like this:
+
+   ```text
+   ✓  pairing code K4QW-7RNP · one use, 15 min
+   │  In the fleetd app, enter http://hub.your-tailnet.ts.net:4790 and the code, or open:
+   │  fleetd://pair?hub=http%3A%2F%2Fhub.your-tailnet.ts.net%3A4790&code=K4QW-7RNP
+   ✓  doctor 12 of 12 checks pass
+   ◇  fleetd is ready ─────────────────────────────────────╮
+   │                                                       │
+   │  hub       http://hub.your-tailnet.ts.net:4790        │
+   │  workers   homeserver                                 │
+   │  project   ~/src/hello on homeserver                  │
+   │  app       code K4QW-7RNP                             │
+   │  PATH      add: export PATH="$HOME/.local/bin:$PATH"  │
+   ├───────────────────────────────────────────────────────╯
+   ```
+
+   A line starting with ✗ ends with the command that fixes it. Run `fleetd init` again at any time: it keeps what
+   works and repairs the rest.
+
+2. **Open the desktop app and pair it.**
+
+   <Tabs syncKey="where">
+   <TabItem label="On the hub machine">
+
+   The installer put the app on this machine. Open it: it pairs with the hub by itself.
+
+   </TabItem>
+   <TabItem label="On another computer">
+
+   Install fleetd without the wizard, then open the app:
+
+   ```sh
+   curl -fsSL https://fleetd.sh | sh -s -- --no-init
+   ```
+
+   On macOS, open `~/Applications/fleetd.app`. On Linux, open **fleetd** from your app menu.
+
+   On the "Connect to your fleetd hub" screen, enter the hub address and the pairing code from step 1. A code works
+   once, for 15 minutes. To get a new one, run `fleetd pair` on the hub.
+
+   </TabItem>
+   </Tabs>
+
+   The app opens on the board, with the cursor in the order box.
+
+3. **Send your first order.**
+
+   An [order](/docs/glossary#order) is one line that says what you want. Type it and press Enter:
+
+   ```text
+   fix the typo in the README
+   ```
+
+   The order appears as a card on the board. It starts the project's [lead](/docs/glossary#lead): a Claude session
+   that plans the work and runs other agents. It never writes code itself.
+
+4. **Answer its questions.**
+
+   When the lead needs a decision, it sends an [ask](/docs/glossary#ask) to the inbox. Open it with ⌘I (Ctrl+I on
+   Linux) and reply in one line, such as:
+
+   ```text
+   1 go
+   ```
+
+   See [Inbox and replies](/docs/desktop-app#reply) for the full reply format.
+
+5. **Watch it finish.**
+
+   The card shows the order's phase and every agent at work. Each pull request goes through review, then the
+   [merge train](/docs/glossary#merge-train) merges it once CI passes. The order is done when the hub has run its
+   checks and they all pass.
+
+</Steps>
+
+## Next steps
+
+- [Concepts](/docs/concepts): how the pieces fit together.
+- [Machines](/docs/machines): add more machines that run agents.
+- [Projects & orders](/docs/projects-and-orders): add repos and give them work.

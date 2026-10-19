@@ -1,0 +1,139 @@
+---
+title: Troubleshooting
+description: Every fleetd doctor finding, what causes it, and the command that fixes it.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Find the problem `fleetd doctor` reported, and fix it.
+
+## Run the doctor {#doctor}
+
+On the hub:
+
+```sh
+fleetd doctor
+```
+
+Example output:
+
+```text
+✗ doctor hub: gh is not logged in on the hub; the merge train and PR checks need it. Fix: gh auth login
+✗ doctor hub: claude on the hub is not logged in; the intake router and the retro can't reach a model. Fix: claude auth login
+! doctor laptop: laptop is degraded: claude is not logged in. Fix: claude auth login
+✗ doctor laptop: laptop: claude 2.1.302, not logged in, so its sessions can't start. Fix: claude auth login
+✗ doctor laptop: No git commit identity is set on laptop. Fix: fleetd pair --worker laptop, then run what it prints on laptop
+✓ doctor: 7 of 12 checks pass
+[exit 1]
+```
+
+| Mark | Means |
+|---|---|
+| ✓ | The check passed. |
+| ✗ | A failure. Fix it. |
+| ! | A warning, or a check that couldn't tell. |
+
+Every finding ends with `Fix:` and the command to run. Run it on the machine the finding names. The app's Machines
+screen shows the same checks. Each table below gives the check's id in brackets, such as `[claude_login]`.
+
+## The hub {#hub}
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| "the hub does not answer at `http://…`" `[exit 4]` | The hub isn't running. | `fleetd init`. If you run the hub yourself (`--no-service`): `fleetd hub start`. Log: `~/.fleetd/hub/hub.log`. |
+| "The hub does not answer at its own address …/healthz" `[reachable]` | The hub service is stuck. | [Restart the hub service](#restart). |
+| "gh is not logged in on the hub" `[gh_auth]` | `gh` is missing or logged out. | `gh auth login`. If `gh` is missing, install it from [cli.github.com](https://cli.github.com) first. |
+| "claude on the hub is not logged in" `[claude_login]` | The hub's own `claude` (used by the router and the retro) is logged out. | `claude auth login`, or through your proxy. For a gateway or token, see [claude.env](/docs/config-and-files#claude-env). |
+| "The hub's address `http://…` is not HTTPS" `[https]` | The hub listens on plain HTTP outside loopback or a tailnet. | Serve it over HTTPS, then point fleetd at it (below). |
+| "The hub has no address set up", or `setup.json` is unreadable `[https]` | `~/.fleetd/hub/setup.json` is missing or broken. | Same as above: `fleetd init --url <https address>`. |
+
+This is what doctor shows when the hub is down:
+
+```console capture=doctor-no-hub
+$ fleetd doctor
+✗  doctor the hub does not answer at http://127.0.0.1:4778: error sending request for url (http://127.0.0.1:4778/mcp): client error (Connect): tcp connect error: Connection refused (os error 111). Fix: fleetd init (it starts the hub and repairs its setup)
+[exit 4]
+```
+
+To serve the hub over HTTPS with Tailscale, stop the hub, then:
+
+```sh
+tailscale serve --bg 4790
+fleetd init --url https://<that address>
+```
+
+Plain HTTP is accepted on loopback and on a tailnet address (`100.64.0.0/10` or a `*.ts.net` name). If the HTTPS
+address stops answering, check where it points with `tailscale serve status`.
+
+## Claude {#claude}
+
+These apply to every worker, and to the hub's own `claude`.
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| "claude 2.1.302, not logged in, so its sessions can't start" `[claude_login]` | `claude` on that machine is logged out, or its login expired. | `claude auth login` on that machine, or log in through your proxy. |
+| "claude is not installed on laptop" `[claude_version]` | No `claude` on the machine's `PATH`. | `curl -fsSL https://claude.ai/install.sh \| bash` |
+| "claude 2.1.296 is older than fleetd is tested with" `[claude_version]` ! | An older `claude`. It may work: fleetd checks its protocol at every start. | `claude update` |
+| "claude 2.2.0 is newer than this fleetd supports" `[claude_version]` | A `claude` past fleetd's supported range. Sessions are refused. | `claude install 2.1.302`, or `fleetd update` |
+| "claude 2.1.303 is newer than 2.1.302, the version this fleetd was tested with" `[claude_version]` ! | Newer, but inside the supported range. Sessions run. | `claude install 2.1.302` |
+| "`claude --version` printed …, which fleetd can't read" `[claude_version]` | A broken install. | `curl -fsSL https://claude.ai/install.sh \| bash -s 2.1.302` |
+| "did not answer fleetd's protocol probe as expected" `[runner_conformance]` | This `claude` speaks a different protocol. | `claude install 2.1.302` |
+| "`claude --version` and the running claude disagree" `[runner_conformance]` | Two `claude` installs on `PATH`. | Reinstall with `curl -fsSL https://claude.ai/install.sh \| bash`, and remove the other. |
+| "has not probed its claude yet" `[runner_conformance]` | The node just started. | Nothing: it clears by itself. |
+| "still offers its own subagents in fleetd sessions" `[claude_subagents]` | This `claude` version exposes subagents fleetd can't turn off. No new session starts there. | `claude install 2.1.302` |
+| "kept its auto memory on" `[claude_auto_memory]` ! | Your claude settings override fleetd's. | Set `"autoMemoryEnabled": false` in `~/.claude/settings.json` on that machine, then `fleetd update`. |
+
+fleetd is tested with claude `>=2.1.300, <2.2.0`. A machine with a ✗ claude finding runs no sessions until it is
+fixed. fleetd turns claude's auto-updater off for its own sessions.
+
+## Machines {#machines}
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| "laptop is offline (last seen …)" `[online]` | The node is down, or the machine is asleep or off the network. | Wake it, then [restart the node](#restart). Log: `~/.fleetd/logs/node.log`. |
+| "laptop is degraded: …" `[online]` | Usually a claude problem on that machine. | The fix the finding names: see [Claude](#claude). |
+| "No git commit identity is set on laptop" `[commit_identity]` | The node has no commit author. | Set up over SSH: `fleetd machine add laptop`. Joined with a code: `fleetd pair --worker laptop`, then run what it prints on laptop. The hub machine: `fleetd machine add --local`. |
+| "Commits on laptop use … ; the hub's identity is …" `[commit_identity]` | The machine's git config differs from the hub's. | Same as above. |
+| "… free under ~ on laptop; fleetd needs at least 5.0 GB" `[disk]` | Low disk. Each writer gets its own git worktree. | Free space under the named path. `df -h <path>` shows what is left. |
+| "laptop sleeps after 15 min idle on AC power" `[sleep]` | The machine sleeps between orders and drops off the fleet. | Turn off sleep on AC power (below). |
+| "New turns on laptop are paused by the usage breaker" `[usage_breaker]` | Its Claude login hit a plan or rate limit. | Wait for the reset (the finding says when), or, once it has capacity, call `usage_resume` from an [MCP client](/docs/mcp-clients). |
+
+### Keep a machine awake {#sleep}
+
+While agents run, the node keeps its machine awake. Between orders nothing does. Sleep on battery only is fine.
+
+| Desktop | Fix |
+|---|---|
+| macOS | `sudo pmset -c sleep 0` |
+| GNOME | `gsettings set org.gnome.settings-daemon.plugins.power sleep-inactive-ac-type 'nothing'` |
+| KDE Plasma | System Settings > Power Management > On AC Power > When inactive: Do nothing |
+| logind `IdleAction` | `IdleAction=ignore` in `/etc/systemd/logind.conf.d/fleetd.conf`, then reboot |
+
+When a machine wakes, its node reconnects at once, resumes any run that went quiet, and the machine strip shows
+"slept 10m46s" for a while.
+
+## Restart a service {#restart}
+
+<Tabs syncKey="os">
+<TabItem label="macOS">
+
+```sh
+launchctl kickstart -k gui/$(id -u)/sh.fleetd.hub     # the hub
+launchctl kickstart -k gui/$(id -u)/sh.fleetd.node    # a node, on that machine
+```
+
+</TabItem>
+<TabItem label="Linux">
+
+```sh
+systemctl --user restart fleetd-hub.service     # the hub
+systemctl --user restart fleetd-node.service    # a node, on that machine
+```
+
+</TabItem>
+</Tabs>
+
+| Log | Where |
+|---|---|
+| Hub | `~/.fleetd/hub/hub.log` |
+| Node | `~/.fleetd/logs/node.log` |

@@ -1,0 +1,223 @@
+---
+title: The desktop app
+description: Pair the app with your hub, give work, follow an order, answer the inbox, and the keyboard shortcuts.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+You'll pair the desktop app with your hub and use it to give work, follow it and answer questions.
+
+The app is installed with fleetd on any machine with a display. To add it on Linux without a display, see
+[Install](/docs/install#options). Shortcuts below use ⌘; on Linux, use Ctrl.
+
+## Pair it with the hub {#pair}
+
+On the hub machine, the app pairs by itself when it opens. On another computer:
+
+1. On the hub, print a pairing code:
+
+   ```console capture=pair
+   $ fleetd pair
+   Pairing code: 38X0-57P8  (single use, valid until 2026-10-18T22:43:43.690Z)
+   Hub address:  http://127.0.0.1:4778
+   Pairing link: fleetd://pair?hub=http%3A%2F%2F127.0.0.1%3A4778&code=38X0-57P8
+
+   The fleetd app on this machine pairs by itself when it opens. On another device, open the
+   app and enter the code and hub address above, or open the link there.
+   ```
+
+2. In the app, on "Connect to your fleetd hub", enter the hub address and the code. Or open the `fleetd://pair` link.
+
+The code works once, for 15 minutes. To connect with a key instead, click "Use a key instead".
+
+To change hubs, open Settings (⌘,) → General → Hub.
+
+## The board {#board}
+
+The app opens on the board, with the cursor in the order box ("What should the fleet do?").
+
+| Part of the board | Shows |
+|---|---|
+| Order box | Where you type a new order. |
+| Needs you | Asks waiting for you. |
+| Order cards | Every open order, grouped by project (⌘⇧G groups by status). Each card shows its phase, live agents, PRs and where each PR is on the merge train. |
+| Strips at the bottom | Machine load and the merge trains. |
+
+Cards don't move under your pointer; they re-sort after you move away. When only one order is open, it fills the
+board: the writers at work, then each PR with its reviewers and how many checks are in.
+
+![The board with one order on it: three PRs, each with the agent that wrote it and two reviewers and a verifier at work under it.](/docs/img/board.png)
+
+The sidebar lists Status, Board, Machines and Time, then each project with its orders. An amber dot means an order
+needs you. Hold ⌘ to see the ⌘1–⌘9 jump keys.
+
+To add a project, click "+" next to Projects, then paste a GitHub URL or `owner/repo`, or drop a folder on the app.
+See [Add a project](/docs/projects-and-orders#add-a-project).
+
+## Give work {#composer}
+
+Type one line in the order box and press Enter. Shift+Enter adds a new line.
+
+| Control | Does |
+|---|---|
+| Project picker | Where the order goes. "Any project" lets the hub pick. A leading `@project` also picks it. |
+| Type picker | Feature (the default), fix, research or finish. A prefix such as `fix:` also picks it. |
+| Attach | Up to 8 files (images, text, PDF; 5 MiB each). You can also paste or drop them. |
+| `@` | A menu of the project's files, orders and PRs. Pick with ↑ ↓ and Enter or Tab. |
+
+- An order is at most 4,000 bytes. Attach longer detail as a file.
+- A paste over 3,500 bytes becomes an attached file, `pasted-N.txt`.
+- The lead finds attachments in `.fleetd/attachments/<W>/` in the project, kept out of git.
+
+The order appears as a card at once. If the hub can't tell the project, the card asks which one. If sending fails, it
+offers Retry and Edit.
+
+## Follow an order {#order}
+
+Click a card, or select it and press Enter.
+
+| Side | Shows |
+|---|---|
+| Left | The order's agents, its PRs, and its done-when checks with their results. |
+| Right | The lead's conversation for this order. Finished turns fold to one line. |
+
+The box under the conversation talks to the lead:
+
+| Do | How | The lead |
+|---|---|---|
+| Add to the lead's queue | Enter | Reads it at its next step, after the running tool. See [Steering](/docs/steering#next-step). |
+| Interrupt and redirect | ⌘Enter, or hold ⌘ and click | Stops its current step and reads it at once. |
+| Stop the order | ⌘⇧., then confirm | Cancels its agents and withdraws its asks. Merged PRs stay. |
+
+Each steer shows its [receipt](/docs/steering#receipts) under it. Click an agent's lane to steer that agent instead.
+
+![An order with steers in its conversation: one acknowledged with the lead's reply, one not acknowledged, one still queued with Withdraw, and the steer box under them.](/docs/img/steering.png)
+
+To see exactly what an agent was sent, click "What the lead was told" in the order, or "What _name_ was told" in an
+agent's sheet. See [What agents are told](/docs/what-agents-are-told#told).
+
+⌘[ and ⌘] go to the previous and next order. Esc goes back to the board.
+
+## Status {#status}
+
+⌘. opens Status for what you're looking at: the open order, the selected project, or the whole fleet. Press ⌘. again
+to go back. It is also in the sidebar and the command palette.
+
+It shows verified progress, what the work waits on, what changed since you last looked, health, what needs you, and
+risks. It updates live. A part whose data is old gets a warning outline and says how old.
+
+![Status for the fleet: 72% verified, what it waits on, two stale sources outlined, health, projects and what needs you.](/docs/img/status.png)
+
+What the number means: [Status](/docs/status).
+
+## Inbox and replies {#reply}
+
+⌘I opens the inbox. The badge counts what needs you.
+
+On a question card:
+
+| Key | Does |
+|---|---|
+| 1–9 | Pick that option. |
+| Enter | Take the recommendation. |
+| N | Answer no. |
+| Esc | Close the inbox. |
+
+Or answer a batch in one line in the reply field. Mix forms: `1 go 2 nvm 3 b`.
+
+| Reply | Means |
+|---|---|
+| `1 go` | Accept item 1. Also `yes`, `y`, `ok`, `rec`. |
+| `2 nvm` | Reject item 2. Also `no`, `drop`, `n`. |
+| `3 b` | Pick option b of item 3 (`a` to `f`; `a` is the recommendation). |
+| `4 skip` | Skip for now: the lead keeps its recommendation, nothing is recorded. |
+| `1-3 go` | The same answer for items 1 to 3. |
+| `2: use the staging bucket` | Answer in your own words. |
+| `4 later` | Not now; it stays open. |
+| `5 done` | You did a checklist's steps. |
+| `recs fine` | Accept every recommendation you didn't mention. |
+| `#B4 1 go` | Answer batch 4, not the latest. |
+| `pref: no new dependencies` | A standing preference for every lead. |
+| `forget D12` | Drop decision 12. |
+
+- A reply the app can't read changes nothing and shows a hint.
+- You have 10 seconds to undo an answer before its lead hears of it.
+- From a terminal: `fleetd answer --key-file <human key>` lists open questions, and `fleetd answer "1 b" --key-file …`
+  replies.
+
+Asks that block work also raise a desktop notification. Clicking it opens the ask.
+
+## Where time went {#time}
+
+Open Time from the sidebar, an order's header, or the command palette. It has three tabs:
+
+| Tab | Shows |
+|---|---|
+| Timeline | A lane per agent, PR, CI check and ask, with the critical path marked. Hover a bar for the command, its duration and exit code. |
+| Breakdown | Agent time by group, with the slowest commands and CI checks. |
+| Insights | Findings, each with the spans behind it. |
+
+![Where an order's time went: a lane per agent, PR, CI check and ask, the critical path underlined, and the legend.](/docs/img/time.png)
+
+How to read it: [Where time went](/docs/time-inspector).
+
+## Settings {#settings}
+
+Open Settings with ⌘,.
+
+| Section | Has |
+|---|---|
+| General | Appearance (light, dark, match system), motion, the hub connection, Claude auto memory, the status digest notification, and how long time data is kept. |
+| Prompts | Every prompt fleetd sends agents, to read and edit. See [What agents are told](/docs/what-agents-are-told). |
+| Instructions | Your own text, added to every agent's first message. |
+
+## Shortcuts {#shortcuts}
+
+⌘/ shows every shortcut in the app.
+
+<Tabs syncKey="os">
+<TabItem label="macOS">
+
+| Keys | Does |
+|---|---|
+| ⌘K | Command palette |
+| ⌘/ | Keyboard shortcuts |
+| ⌘N | New order |
+| ⌘L | Focus the order box |
+| ⌘B | Toggle the sidebar |
+| ⌘0 | Board |
+| ⌘I | Inbox |
+| ⌘. | Status |
+| ⌘, | Settings |
+| ⌘[ / ⌘] | Previous / next order |
+| ⌘1 to ⌘9 | Open that order in the sidebar |
+| ⇧⌘. | Stop the order (asks to confirm) |
+| ⇧⌘G | Group the board by project or status |
+| Enter / ⌘Enter | In an order: add to the queue / interrupt and redirect |
+| Esc | Close the menu, panel or sheet |
+
+</TabItem>
+<TabItem label="Linux">
+
+| Keys | Does |
+|---|---|
+| Ctrl+K | Command palette |
+| Ctrl+/ | Keyboard shortcuts |
+| Ctrl+N | New order |
+| Ctrl+L | Focus the order box |
+| Ctrl+B | Toggle the sidebar |
+| Ctrl+0 | Board |
+| Ctrl+I | Inbox |
+| Ctrl+. | Status |
+| Ctrl+, | Settings |
+| Ctrl+[ / Ctrl+] | Previous / next order |
+| Ctrl+1 to Ctrl+9 | Open that order in the sidebar |
+| Ctrl+Shift+. | Stop the order (asks to confirm) |
+| Ctrl+Shift+G | Group the board by project or status |
+| Enter / Ctrl+Enter | In an order: add to the queue / interrupt and redirect |
+| Esc | Close the menu, panel or sheet |
+
+</TabItem>
+</Tabs>
+
+In the command palette, ↑ ↓ move and Enter runs. You can also type an inbox reply there, such as `1 go 2 nvm`.

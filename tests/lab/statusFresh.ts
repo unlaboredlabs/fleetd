@@ -1,4 +1,4 @@
-// The status view cannot be stale (docs/site/status.md): a source that goes quiet is flagged within its cadence and
+// The status view cannot be stale (fleetd.sh/docs/status): a source that goes quiet is flagged within its cadence and
 // clears when it is back. On the testbed's train row that m7 leaves, with the hub restarted on short GitHub windows
 // and a lab-only `gh` that fails while a flag file exists (the lab hub has no public URL, so webhooks stay off and a
 // dead `gh` is the honest dropped connection):
