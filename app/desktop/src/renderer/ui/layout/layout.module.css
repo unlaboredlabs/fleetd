@@ -1,0 +1,293 @@
+/* The frame: top bar across, sidebar left, content right. Content keeps the QA gate's edge inset. */
+.frame {
+  display: grid;
+  grid-template-rows: var(--top-bar-height) minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+  grid-template-areas:
+    "top top"
+    "side main";
+  height: 100%;
+  min-height: 0;
+  background: var(--bg);
+}
+.noSidebar {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "top"
+    "main";
+}
+.frame > .topBar {
+  grid-area: top;
+}
+.frame > .sidebar {
+  grid-area: side;
+}
+.main {
+  grid-area: main;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.topBar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  height: var(--top-bar-height);
+  padding-inline: max(var(--space-3), var(--traffic-lights-inset)) var(--space-3);
+  border-bottom: 1px solid var(--hairline);
+  background: var(--sidebar);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+/* Anything you can click stays clickable inside the drag region. */
+.topBar :is(button, a, input, textarea, select, [role="button"], [role="tab"], [data-no-drag]) {
+  -webkit-app-region: no-drag;
+}
+.topLeading,
+.topTrailing {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+}
+.topCenter {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
+}
+
+.crumbs {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.crumb {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  /* Earlier crumbs give way first; the current one keeps its room longest. */
+  flex: 0 1 auto;
+}
+.crumb:not(:last-child) {
+  flex-shrink: 4;
+  color: var(--quiet);
+}
+.crumb:last-child {
+  font-weight: var(--weight-strong);
+}
+.crumbSep {
+  flex: none;
+  color: var(--faint);
+}
+.crumbLink {
+  min-width: 0;
+  max-width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+.crumbLink:hover {
+  color: var(--text);
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--sidebar);
+  overflow-y: auto;
+  padding: var(--space-2) var(--space-2) var(--space-3);
+}
+.sidebarSection + .sidebarSection {
+  margin-top: var(--space-3);
+}
+.sidebarSectionHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--control);
+  padding: 0 var(--space-1) 0 var(--space-2);
+  color: var(--quiet);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+}
+.sidebarSectionTitle {
+  flex: 1;
+  min-width: 0;
+}
+.sidebarItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+  min-height: var(--row);
+  padding: var(--space-1) var(--space-2);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+.sidebarItem:hover {
+  background: var(--hover);
+}
+.sidebarItem[aria-current="page"],
+.sidebarItem[data-selected] {
+  background: var(--selected);
+}
+.sidebarItem:disabled {
+  color: var(--faint);
+  background: transparent;
+}
+.sidebarItem > svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--quiet);
+}
+.sidebarLabel {
+  flex: 1;
+  min-width: 0;
+}
+.sidebarTrailing {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  color: var(--quiet);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+.indent {
+  padding-left: var(--space-6);
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.fill {
+  flex: 1;
+}
+.panelBody {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.padded {
+  padding: var(--space-4);
+}
+.measure {
+  max-width: var(--measure);
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  column-gap: var(--space-3);
+  row-gap: var(--space-1);
+  min-width: 0;
+  min-height: var(--bar);
+  padding: var(--space-2) var(--space-4);
+}
+.bordered {
+  border-bottom: 1px solid var(--hairline);
+}
+.sectionTitles {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 240px;
+  min-width: 0;
+  padding-top: 2px;
+}
+.sectionTitleRow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.sectionCount {
+  flex: none;
+  color: var(--quiet);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+.sectionActions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  flex: none;
+  max-width: 100%;
+}
+
+.strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  column-gap: var(--space-4);
+  row-gap: var(--space-1);
+  min-width: 0;
+  min-height: var(--row);
+  padding: var(--space-1) var(--space-4);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--quiet);
+}
+.stripTop {
+  border-top: 1px solid var(--hairline);
+}
+.stripBottom {
+  border-bottom: 1px solid var(--hairline);
+}
+.stripLabel {
+  flex: none;
+  color: var(--quiet);
+  font-weight: var(--weight-strong);
+}
+.stripItem {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  min-width: 0;
+  max-width: 100%;
+}
+.stripValue {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  max-width: 480px;
+  margin: var(--space-8) auto;
+  padding: 0 var(--space-4);
+}
+.emptyActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
