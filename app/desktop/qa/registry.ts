@@ -28,6 +28,8 @@ export const fixtures = [
   "hub-unreachable",
   "pairing-failed",
   "node-too-old",
+  // F9: the whole real prompt registry, with edits, a project's own texts and a default changed under an edit.
+  "settings-prompts",
 ] as const;
 export type FixtureName = (typeof fixtures)[number];
 
@@ -115,6 +117,21 @@ export const screens: readonly Screen[] = [
     },
   },
   { id: "shortcuts", route: "#/", fixtures: ["typical"], open: (page) => page.keyboard.press("ControlOrMeta+Slash") },
+  // F9: Settings. Prompts opens on the lead's first message, the longest text; many-prompts lists 72 with long
+  // keys and titles; settings-prompts is the real registry with edits. Compare and Update are deep links.
+  { id: "settings.general", route: "#/settings/general", fixtures: ["typical", "empty", "hub-unreachable"] },
+  {
+    id: "settings.prompts",
+    route: "#/settings/prompts?prompt=lead.start",
+    fixtures: ["settings-prompts", "many-prompts", "long-text", "empty", "hub-unreachable"],
+  },
+  {
+    id: "settings.prompts.compare",
+    route: "#/settings/prompts?prompt=task.brief.write&for=devbox/storefront&view=compare",
+    fixtures: ["settings-prompts"],
+  },
+  { id: "settings.prompts.update", route: "#/settings/prompts?prompt=lead.start&view=update", fixtures: ["settings-prompts"] },
+  { id: "settings.instructions", route: "#/settings/instructions?for=devbox/storefront", fixtures: ["settings-prompts", "typical", "empty"] },
 ];
 
 // Platform checks that need a screen writer's work before they can pass; the owner turns theirs on when it lands.

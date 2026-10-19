@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { EmptyState, GalleryScreen } from "../../ui";
 import { OnboardingScreen } from "../onboarding";
 import { InboxPanel } from "../inbox";
+import { SettingsScreen } from "../settings/SettingsScreen";
 import type { Screen } from "./routes";
 
 /** A screen that hasn't landed yet. It carries the screen's id, so the route table is testable end to end now. */
@@ -30,7 +31,7 @@ export function ScreenHost({ screen }: { screen: Screen }) {
     case "projects.add":
       return <Pending id="projects.add" title="Add a project" />;
     case "settings":
-      return <Pending id={`settings.${screen.tab}`} title="Settings" />;
+      return <SettingsScreen />;
     case "onboarding":
       return <OnboardingScreen hub={screen.hub ?? undefined} code={screen.code ?? undefined} />;
     case "gallery":

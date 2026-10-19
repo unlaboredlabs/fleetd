@@ -1,5 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { registerSettingsCommands } from "../screens/settings/commands";
+import { applyMotion } from "../screens/settings/prefs";
 import { applyTheme, UiProvider } from "../ui";
 import { App } from "./App";
 import { createDataLayer } from "./data/queries";
@@ -9,8 +11,10 @@ import "./styles.css";
 document.documentElement.dataset["platform"] = window.fleetd.platform;
 // Before the first render, so the first paint is already in the right theme.
 applyTheme();
+applyMotion();
 
 const data = createDataLayer(window.fleetd.hub);
+registerSettingsCommands(data);
 
 const root = document.getElementById("root");
 if (root === null) throw new Error("index.html has no #root");
