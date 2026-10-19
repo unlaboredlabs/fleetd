@@ -127,6 +127,18 @@ it, because other work ran at the same time; only 9 of them held the order up.</
 <p>Two waits that happen at once, such as two writers each queued for a slot, count once on the path and twice in
 agent time. When nothing was running at some moment of the path, it shows as "nothing running" and the coverage
 line says so; that points at missing data, not at idle time.</p>
+<h2 id="serial-waits">Waits behind free capacity<a class="anchor" href="#serial-waits" aria-label="Link to this section">#</a></h2>
+<p>Some findings point at work that ran one thing after another while the fleet had room for more. Each ends with
+what to change:</p>
+<div class="table"><table><thead><tr><th>finding</th><th>means</th><th>fix</th></tr></thead><tbody>
+<tr><td><code>queue_wait</code></td><td>a task waited for a slot although the fleet had free ones (its project's share, or the slots kept for lead turns), or a PR waited in the train's line while other PRs' CI ran</td><td>raise the share or the cap with <code>cap_set</code>; batch PRs that touch different files</td></tr>
+<tr><td><code>contention</code></td><td>tasks waited one after another for one area lease, or for one machine's claude usage</td><td>define narrower areas in <code>.fleetd/policy.yaml</code> (without one, every write task takes the single area <code>all</code>); a larger plan or another machine</td></tr>
+<tr><td><code>idle_lead</code></td><td>a lead sat idle while a plan item of its running order was ready to start and slots were free</td><td>the lead should start ready items before its turn ends</td></tr>
+<tr><td><code>slots_underused</code></td><td>two or more ready plan items waited at the same time while slots were free</td><td>start ready items together</td></tr>
+</tbody></table></div>
+<p>A plan item counts as ready once its order runs and every item it comes after is done, until its lead spawns a task for
+it; an ask that blocks the order pauses it. Short gaps while fleetd wakes a lead don't count. A finding appears once
+its wait adds up to 5 minutes in the range.</p>
 <h2 id="limits">What is not exact<a class="anchor" href="#limits" aria-label="Link to this section">#</a></h2>
 <p>fleetd shows only what it can see. Where a number is a bound or a rule rather than a measurement, the views say so:</p>
 <ul>
@@ -172,6 +184,7 @@ days:</p>
 <ul>
 <li><a href="#what-it-measures">What it measures</a></li>
 <li><a href="#critical-path">Reading the critical path</a></li>
+<li><a href="#serial-waits">Waits behind free capacity</a></li>
 <li><a href="#limits">What is not exact</a></li>
 <li><a href="#retention">How long it is kept</a></li>
 </ul>

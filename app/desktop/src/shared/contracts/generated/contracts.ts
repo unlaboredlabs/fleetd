@@ -1375,7 +1375,7 @@ export type InsightNumber = {
   value: number;
 };
 
-export type InsightRule =
+export type KnownInsightRule =
   | "full_suite_repeat"
   | "repeat_no_change"
   | "failing_repeat"
@@ -1394,7 +1394,13 @@ export type InsightRule =
   | "first_token"
   | "startup"
   | "offline"
-  | "coverage";
+  | "coverage"
+  | "queue_wait"
+  | "contention"
+  | "idle_lead"
+  | "slots_underused";
+/** KnownInsightRule, or a value from a newer hub. */
+export type InsightRule = KnownInsightRule | (string & {});
 
 export type IntakeChannel = "app" | "mcp" | "lead";
 

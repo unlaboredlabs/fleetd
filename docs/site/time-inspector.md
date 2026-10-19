@@ -91,6 +91,22 @@ Two waits that happen at once, such as two writers each queued for a slot, count
 agent time. When nothing was running at some moment of the path, it shows as "nothing running" and the coverage
 line says so; that points at missing data, not at idle time.
 
+## Waits behind free capacity {#serial-waits}
+
+Some findings point at work that ran one thing after another while the fleet had room for more. Each ends with
+what to change:
+
+| finding | means | fix |
+|---|---|---|
+| `queue_wait` | a task waited for a slot although the fleet had free ones (its project's share, or the slots kept for lead turns), or a PR waited in the train's line while other PRs' CI ran | raise the share or the cap with `cap_set`; batch PRs that touch different files |
+| `contention` | tasks waited one after another for one area lease, or for one machine's claude usage | define narrower areas in `.fleetd/policy.yaml` (without one, every write task takes the single area `all`); a larger plan or another machine |
+| `idle_lead` | a lead sat idle while a plan item of its running order was ready to start and slots were free | the lead should start ready items before its turn ends |
+| `slots_underused` | two or more ready plan items waited at the same time while slots were free | start ready items together |
+
+A plan item counts as ready once its order runs and every item it comes after is done, until its lead spawns a task for
+it; an ask that blocks the order pauses it. Short gaps while fleetd wakes a lead don't count. A finding appears once
+its wait adds up to 5 minutes in the range.
+
 ## What is not exact {#limits}
 
 fleetd shows only what it can see. Where a number is a bound or a rule rather than a measurement, the views say so:

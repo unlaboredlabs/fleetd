@@ -4010,28 +4010,53 @@
       "type": "object"
     },
     "InsightRule": {
-      "enum": [
-        "full_suite_repeat",
-        "repeat_no_change",
-        "failing_repeat",
-        "slow_commands",
-        "ci_check_critical",
-        "ci_reaction",
-        "slots_full",
-        "human_wait",
-        "batching_delay",
-        "approval_rule",
-        "usage_parks",
-        "retries",
-        "review_share",
-        "train_line",
-        "rebase_loops",
-        "first_token",
-        "startup",
-        "offline",
-        "coverage"
+      "oneOf": [
+        {
+          "enum": [
+            "full_suite_repeat",
+            "repeat_no_change",
+            "failing_repeat",
+            "slow_commands",
+            "ci_check_critical",
+            "ci_reaction",
+            "slots_full",
+            "human_wait",
+            "batching_delay",
+            "approval_rule",
+            "usage_parks",
+            "retries",
+            "review_share",
+            "train_line",
+            "rebase_loops",
+            "first_token",
+            "startup",
+            "offline",
+            "coverage"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "queue_wait",
+          "description": "Serial waits: work that waited while capacity existed. A task queued for a slot while the fleet had free\nones (a project share, the lead band), or a PR that waited out another PR's train cycle.",
+          "type": "string"
+        },
+        {
+          "const": "contention",
+          "description": "Tasks serialized on one shared resource: an area lease, or one machine's usage limit.",
+          "type": "string"
+        },
+        {
+          "const": "idle_lead",
+          "description": "A lead was idle while its running order had a plan item ready to start and slots were free.",
+          "type": "string"
+        },
+        {
+          "const": "slots_underused",
+          "description": "Two or more ready plan items of a project waited side by side for a start while slots were free.",
+          "type": "string"
+        }
       ],
-      "type": "string"
+      "x-open": true
     },
     "IntakeChannel": {
       "enum": [

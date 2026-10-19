@@ -1008,7 +1008,29 @@ fn rule_input(
         paths: paths(c, scope, since, until, now, cache)?,
         task_titles: titles,
         slot_cap: cap,
+        serial: super::serial::load(c, scope, since, until)?,
     })
+}
+
+/// The rules' input for `scope` over `[since, until)`, read the way `time_insights` reads it: for offline replays.
+pub fn read_rule_input(
+    c: &Connection,
+    scope: &TimeScope,
+    since: i64,
+    until: i64,
+    cap: i64,
+) -> Result<RuleInput, StoreError> {
+    let l = load(c, scope, since, until, None)?;
+    rule_input(
+        c,
+        scope,
+        &l,
+        since,
+        until,
+        until,
+        cap,
+        &PathCache::default(),
+    )
 }
 
 async fn time_spans(
