@@ -83,3 +83,12 @@
 .alert {
   padding-top: var(--space-3);
 }
+.failed {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4) 0;
+}
+.failed p {
+  margin: 0;
+}
