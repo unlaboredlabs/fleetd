@@ -4,6 +4,7 @@
 //   --json FILE          also write the numbers as JSON
 //   --baseline FILE      exit 1 when a number regressed past budgets.ts's limit from FILE (the Linux CI job)
 //   --strict             exit 1 when a number misses its budget (the Mac, where the budgets apply)
+//   (CI gates first paint only over a bare Electron window, perf/reference, which moves with the runner too)
 //   FLEETD_PERF_APP      a packaged app's executable instead of the built out/ (e.g. fleetd.app/Contents/MacOS/fleetd)
 //   FLEETD_PERF_FIXTURE  a fixture (pnpm fixtures) to launch on, instead of an unpaired app
 //
@@ -13,10 +14,11 @@
 // keypress latency is read from Chromium's EventLatency trace, which ends at presentation (perf/trace.ts).
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
+import path from "node:path";
 import { parseArgs } from "node:util";
 import { type Browser, chromium, type Page } from "@playwright/test";
 import { devtoolsPort, launch, type Memory, sleep } from "./app.ts";
-import { BUDGETS, frameStats, median, type Metric, METRICS, quantile, regressions, type Results, withinBudget } from "./budgets.ts";
+import { frameStats, median, type Metric, METRICS, quantile, regressions, type Results, RULES, withinBudget } from "./budgets.ts";
 import { COMPOSER, SCROLL } from "./targets.ts";
 import { keyLatencies, traced } from "./trace.ts";
 
@@ -29,21 +31,32 @@ const SCROLL_MS = 4_000;
 // About 160 keys: a p95 over fewer swings with two or three slow ones on a shared CI runner.
 const KEYS = "the writer ran the tests again and asked for a review. ".repeat(3).trim();
 
-/** One untimed launch first (a fresh runner's first one fills the font and shader caches, 8 s on CI), then RUNS. */
-const firstPaint = async (): Promise<{ cold: number; warm: Array<number> }> => {
-  const times: Array<number> = [];
-  for (let i = 0; i <= RUNS; i++) {
-    const spawned = Date.now();
-    const app = launch();
-    try {
-      const line = await app.waitFor(/^FLEETD_PERF launch .*first_contentful_paint_epoch_ms=([\d.]+)/u, 30_000);
-      times.push(Number(line[1]) - spawned);
-    } finally {
-      await app.stop();
-    }
+const REFERENCE = path.join(import.meta.dirname, "reference", "main.mjs");
+
+/** From spawn until the window is shown and has painted its first content: the later of ready-to-show and FCP. */
+const timeLaunch = async (entry?: string): Promise<number> => {
+  const spawned = Date.now();
+  const app = launch(entry === undefined ? {} : { entry });
+  try {
+    const line = await app.waitFor(/^FLEETD_PERF launch .*first_contentful_paint_epoch_ms=([\d.]+).* ready_to_show_epoch_ms=(\d+)/u, 30_000);
+    return Math.max(Number(line[1]), Number(line[2])) - spawned;
+  } finally {
+    await app.stop();
   }
-  const [cold = Number.NaN, ...warm] = times;
-  return { cold, warm };
+};
+
+/**
+ * The app and the bare reference, alternately, so both see the runner in the same state. One untimed launch of each
+ * first (a fresh runner's first launch fills the OS page cache: 5-8 s on CI), then RUNS of each.
+ */
+const firstPaint = async () => {
+  const app: Array<number> = [];
+  const bare: Array<number> = [];
+  for (let i = 0; i <= RUNS; i++) {
+    app.push(await timeLaunch());
+    bare.push(await timeLaunch(REFERENCE));
+  }
+  return { coldApp: app[0] ?? Number.NaN, app: app.slice(1), bare: bare.slice(1) };
 };
 
 /** rAF timestamps while `during` runs. */
@@ -124,15 +137,22 @@ const main = async () => {
       if (page === undefined) throw new Error("no app window over CDP");
       const scrolled = await scroll(page);
       const typed = await keys(browser, page);
+      const firstPaintMs = median(paints.app);
+      const firstPaintRefMs = median(paints.bare);
       results = {
-        firstPaintMs: median(paints.warm),
+        firstPaintMs,
+        firstPaintRefMs,
+        firstPaintOverMs: firstPaintMs - firstPaintRefMs,
         idleMemoryMb: median(samples.map((m) => m.uniqueMb)),
         idleRssMb: median(samples.map((m) => m.rssMb)),
         scrollFps: scrolled.fps,
         keyP95Ms: typed.p95,
       };
       detail = {
-        firstPaintMs: `median of ${paints.warm.length} launches: ${paints.warm.map((p) => p.toFixed(0)).join(", ")} ms (the untimed first: ${paints.cold.toFixed(0)} ms)`,
+        firstPaintMs: `median of ${paints.app.length} warm launches: ${paints.app.map((p) => p.toFixed(0)).join(", ")} ms (the untimed first: ${paints.coldApp.toFixed(0)} ms)`,
+        firstPaintRefMs: `the same for a bare Electron window with one line of text, launched alternately: ${paints.bare.map((p) => p.toFixed(0)).join(", ")} ms`,
+        firstPaintOverMs: "what the app adds to Electron's own start; CI gates this, not the runner-bound first paint",
+        idleRssMb: "summed RSS of the same processes; counts the shared Electron pages once per process, never gated",
         idleMemoryMb: `${process.platform === "linux" ? "PSS" : "physical footprint"} summed over all ${samples[0]?.processes ?? 0} processes read (${[...new Set(samples[0]?.kinds ?? [])].join(", ")}) after ${IDLE_MS / 1000} s idle`,
         scrollFps: `${SCROLL.label}; ${(scrolled.dropped * 100).toFixed(1)}% long frames, ${(scrolled.moved / 1000).toFixed(0)}k px, display ${scrolled.refreshHz.toFixed(0)} Hz`,
         keyP95Ms: `${COMPOSER.label}; EventLatency, key press to presentation; p50 ${typed.p50.toFixed(1)} ms over ${typed.count} keys, ${typed.slow} at 16 ms or more`,
@@ -147,17 +167,21 @@ const main = async () => {
   const electron = process.env["FLEETD_PERF_APP"] ? "packaged app" : `Electron ${electronVersion()}`;
   const header = `fleetd desktop budgets: ${os.platform()} ${os.arch()}, ${os.cpus()[0]?.model.trim() ?? "unknown cpu"}, ${electron}`;
   const rows = METRICS.map((metric) => {
-    const b = BUDGETS[metric];
+    const rule = RULES[metric];
     const value = results[metric];
     const ok = withinBudget(metric, value);
     const shown = metric === "keyP95Ms" ? value.toFixed(1) : value.toFixed(0);
-    const budget = `budget ${b.higher ? "≥" : "<"} ${b.limit} ${b.unit}`;
-    return { metric, ok, line: `  ${b.label.padEnd(21)} ${`${shown} ${b.unit}`.padStart(8)}   ${budget.padEnd(17)} ${ok ? "ok  " : "MISS"}  ${detail[metric]}` };
+    const gate = rule.limit !== undefined ? `budget ${rule.higher ? "≥" : "<"} ${rule.limit} ${rule.unit}` : rule.regress !== undefined ? "CI regression" : "information";
+    const verdict = ok === undefined ? "    " : ok ? "ok  " : "MISS";
+    return { ok, line: `  ${rule.label.padEnd(19)} ${`${shown} ${rule.unit}`.padStart(8)}   ${gate.padEnd(17)} ${verdict}  ${detail[metric]}` };
   });
-  const rss = `  ${"(summed RSS)".padEnd(21)} ${`${results.idleRssMb.toFixed(0)} MB`.padStart(8)}   ${"not gated".padEnd(17)}       counts the shared Electron pages once per process`;
-  const definition =
-    "  idle memory = deduplicated memory summed over every app process: PSS on Linux, physical footprint (Activity Monitor's Memory) on macOS";
-  const report = [header, ...rows.map((r) => r.line), rss, definition].join("\n");
+  const definitions = [
+    "  first paint: from spawning the app until its window is shown and has painted its first content (the later of ready-to-show and FCP)",
+    "  idle memory: deduplicated memory summed over every app process after 10 s idle: PSS on Linux, physical footprint (Activity Monitor's Memory) on macOS",
+    "  log scroll: requestAnimationFrame rate while wheel-scrolling the log",
+    `  keypress to screen: Chromium's EventLatency per key press, from the OS input timestamp to the presentation of the frame that shows it${process.platform === "linux" && process.env["WAYLAND_DISPLAY"] === undefined ? " (on X11/Xvfb, presentation is the swap, with no wait for a display's vsync)" : ""}`,
+  ];
+  const report = [header, ...rows.map((r) => r.line), ...definitions].join("\n");
   console.log(report);
   if (flags.json !== undefined) writeFileSync(flags.json, `${JSON.stringify(results, null, 2)}\n`);
 
@@ -165,11 +189,11 @@ const main = async () => {
   if (flags.baseline !== undefined) {
     const baseline = JSON.parse(readFileSync(flags.baseline, "utf8")) as Results;
     const worse = regressions(results, baseline);
-    for (const r of worse) console.log(`REGRESSION ${BUDGETS[r.metric].label}: ${r.value.toFixed(1)} past ${r.limit.toFixed(1)} (baseline ${baseline[r.metric]})`);
+    for (const r of worse) console.log(`REGRESSION ${RULES[r.metric].label}: ${r.value.toFixed(1)} past ${r.limit.toFixed(1)} (baseline ${baseline[r.metric]})`);
     failed ||= worse.length > 0;
     if (worse.length === 0) console.log(`no regression from ${flags.baseline}`);
   }
-  if (flags.strict && rows.some((r) => !r.ok)) failed = true;
+  if (flags.strict && rows.some((r) => r.ok === false)) failed = true;
   const summary = process.env["GITHUB_STEP_SUMMARY"];
   if (summary !== undefined) appendFileSync(summary, `### Desktop budgets\n\n\`\`\`\n${report}\n\`\`\`\n`);
   process.exitCode = failed ? 1 : 0;

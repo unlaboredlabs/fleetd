@@ -26,6 +26,8 @@ export interface LaunchOptions {
   readonly env?: Record<string, string>;
   /** Opens a DevTools port for Playwright's connectOverCDP; startup stays free of a debugger either way. */
   readonly debug?: boolean;
+  /** Runs Electron on this app instead of ours (perf/reference), whatever FLEETD_PERF_APP says. */
+  readonly entry?: string;
 }
 
 export const launch = (options: LaunchOptions = {}): Launched => {
@@ -52,7 +54,9 @@ export const launch = (options: LaunchOptions = {}): Launched => {
     if (env["DISPLAY"] === undefined && env["WAYLAND_DISPLAY"] === undefined) args.push("--ozone-platform=headless");
   }
   const child =
-    packaged !== undefined && packaged !== ""
+    options.entry !== undefined
+      ? spawn(electronBinary(), [options.entry, ...args], { env, stdio: ["ignore", "ignore", "pipe"] })
+      : packaged !== undefined && packaged !== ""
       ? spawn(packaged, args, { env, stdio: ["ignore", "ignore", "pipe"] })
       : spawn(electronBinary(), [desktopDir, ...args], { env, stdio: ["ignore", "ignore", "pipe"] });
   const lines: Array<string> = [];
