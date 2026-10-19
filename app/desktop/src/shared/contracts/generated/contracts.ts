@@ -373,7 +373,10 @@ export type Brief = {
 };
 
 export type BriefBudget = {
+  /** Older briefs only; a lead now gives `size`. */
   agentHours?: number;
+  /** How big a research spend the lead allows, relative like plan sizes; never a time guess. */
+  size?: Tier;
 };
 
 export type BriefHash = string;
@@ -1285,7 +1288,6 @@ export type Incident = {
  */
 export type IncidentClass =
   | "false_claim"
-  | "estimate_miss"
   | "polish_loop"
   | "misfiled_ask"
   | "out_of_area"
@@ -1293,7 +1295,8 @@ export type IncidentClass =
   | "policy_bypass"
   | "re_ask"
   | "override"
-  | "playbook_reverted";
+  | "playbook_reverted"
+  | "estimate_miss";
 
 export type IncidentCount = {
   class: IncidentClass;
@@ -2417,7 +2420,6 @@ export type RetroMetric = {
  */
 export type RetroMetricClass =
   | "false_claim"
-  | "estimate_miss"
   | "polish_loop"
   | "misfiled_ask"
   | "out_of_area"
@@ -2425,7 +2427,8 @@ export type RetroMetricClass =
   | "policy_bypass"
   | "re_ask"
   | "override"
-  | "agent_minutes_per_done";
+  | "agent_minutes_per_done"
+  | "estimate_miss";
 
 export type RetroProposal = {
   appliedAt?: Timestamp;
@@ -2532,7 +2535,6 @@ export type RetroRunOutput = {
  */
 export type RetroSnapshot = {
   agent_minutes_per_done: number | null;
-  estimate_miss: number;
   false_claim: number;
   polish_loop: number;
   target: number | null;
@@ -2838,7 +2840,7 @@ export type Spark = {
 
 /** Why a part is not live: its source went quiet past its cadence. */
 export type StaleMark = {
-  /** "no heartbeat from forge for 4m", "GitHub not reached for 4m: …". */
+  /** "no heartbeat from devbox for 4m", "GitHub not reached for 4m: …". */
   reason: string;
   /** The source's last good signal (a heartbeat, a GitHub answer, a train pass). */
   since: Timestamp;
@@ -2933,7 +2935,7 @@ export type StatusGetOutput = {
   truncated?: boolean;
 };
 
-/** What a status doc covers. `key()` is the form stored per human key ("fleet", "project:forge/p1", "order:W41"). */
+/** What a status doc covers. `key()` is the form stored per human key ("fleet", "project:devbox/p1", "order:W41"). */
 export type StatusScope = {
   kind: "fleet";
 } | {
