@@ -10,7 +10,7 @@ import type { HubEvent } from "../../../shared/hub";
 import { useToolQuery } from "../../src/data/react";
 import { useHubEvents } from "./hubFeed";
 import { navigate } from "./navigation";
-import { attentionEvent, FALLBACK_POLICY, Notifier, policyFrom, policyStale, quietAt, type Policy } from "./notifier";
+import { attentionEvent, FALLBACK_POLICY, Notifier, policyFrom, policyStale, type Policy } from "./notifier";
 import type { Screen } from "./routes";
 
 const platform = window.fleetd.platform;
@@ -81,11 +81,8 @@ export const useMenuState = (): void => {
 const CHECK_EVERY_MS = 15_000;
 
 // The hub's attention policy as the data layer last read it (a decision.recorded event refetches it, so quiet hours
-// set from the phone or the CLI apply at once); shared with the other notifications (the Status digest).
+// set from the phone or the CLI apply at once).
 let policy: Policy = FALLBACK_POLICY;
-
-/** Inside the hub's quiet hours now: only urgent items may notify. */
-export const quietNow = (nowMs: number): boolean => quietAt(policy, nowMs);
 
 /**
  * Posts the "needs you" notification the hub's attention rules and policy allow, at most one per coalescing window.

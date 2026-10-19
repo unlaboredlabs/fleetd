@@ -45,6 +45,8 @@ describe("event effects", () => {
     expect(tools(e("prompt.changed"))).toContain("prompts_list");
     // Status's health strip: a machine going quiet or sleeping, a usage reading.
     expect(tools(e("machine.slept", undefined, { machineId: "devbox" }))).toContain("status_get");
+    expect(tools(e("pr.merged", { workstreamId: "W1" }))).toContain("status_projects");
+    expect(tools(e("machine.offline", undefined, { machineId: "devbox" }))).toContain("status_projects");
     expect(tools(e("usage.updated"))).toContain("status_get");
   });
 
