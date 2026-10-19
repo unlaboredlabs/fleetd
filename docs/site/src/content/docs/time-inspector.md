@@ -3,8 +3,8 @@ title: Where time went
 description: See what your agents spent their time on and what they waited for, and find what slows orders down.
 ---
 
-You'll find what made an order slow: the test suite an agent ran many times, the CI check that finished last, or the
-ask that waited on your answer.
+You'll find what made an [order](/docs/glossary#order) slow: the test suite an agent ran many times, the CI check that
+finished last, or the [ask](/docs/glossary#ask) that waited on your answer.
 
 ```console
 $ fleetd time W41
@@ -85,7 +85,7 @@ to more than its tool time.
 
 ## Read the critical path {#critical-path}
 
-The critical path is the one chain of work that decided when the order finished. Its rows add up to the wall time.
+The [critical path](/docs/glossary#critical-path) is the one chain of work that decided when the order finished. Its rows add up to the wall time.
 
 **To make an order faster, shorten what is on the path.** Work off the path ran in parallel, so speeding it up changes
 nothing.
@@ -111,7 +111,7 @@ Where a number is a bound rather than a measurement, the views say so.
 | Exit codes | Exact for failed Bash commands. Other tools show only ok or failed. |
 | Across machines | Each machine's clock is aligned to the hub's. Lanes from two machines can be off by the network delay. |
 | CI queueing | Shown only when fleetd knows when the commit was pushed. |
-| The lead's time | Split equally between the orders its wake was about, marked "split". |
+| The [lead](/docs/glossary#lead)'s time | Split equally between the orders its wake was about, marked "split". |
 | Waiting on you | From when the ask reached your inbox to your answer. |
 
 The coverage line says "incomplete" when data is missing, for example from a machine running an older fleetd, or from

@@ -12,7 +12,8 @@ You'll set up fleetd on one machine, pair the desktop app, and send a first piec
 - macOS or Linux x64.
 - The `claude` CLI, logged in. fleetd uses your own Claude Code setup, including any proxy in `~/.claude/settings.json`.
 - `git`, and the `gh` CLI logged in to GitHub.
-- A GitHub repo to work on.
+- A GitHub repo to work on. fleetd branches from its default branch and merges back into it; see
+  [Which branch fleetd works on](/docs/projects-and-orders#branches).
 
 <Steps>
 
@@ -40,10 +41,6 @@ You'll set up fleetd on one machine, pair the desktop app, and send a first piec
    Expected output ends like this:
 
    ```text
-   ✓  pairing code K4QW-7RNP · one use, 15 min
-   │  In the fleetd app, enter http://hub.your-tailnet.ts.net:4790 and the code, or open:
-   │  fleetd://pair?hub=http%3A%2F%2Fhub.your-tailnet.ts.net%3A4790&code=K4QW-7RNP
-   ✓  doctor 12 of 12 checks pass
    ◇  fleetd is ready ─────────────────────────────────────╮
    │                                                       │
    │  hub       http://hub.your-tailnet.ts.net:4790        │
@@ -54,62 +51,121 @@ You'll set up fleetd on one machine, pair the desktop app, and send a first piec
    ├───────────────────────────────────────────────────────╯
    ```
 
-   A line starting with ✗ ends with the command that fixes it. Run `fleetd init` again at any time: it keeps what
+   Note the pairing code it prints, such as `K4QW-7RNP`. A line starting with ✗ ends with the command that fixes it. Run `fleetd init` again at any time: it keeps what
    works and repairs the rest.
 
-2. **Open the desktop app and pair it.**
+2. **Connect a client.**
 
-   <Tabs syncKey="where">
-   <TabItem label="On the hub machine">
+   Pick the desktop app, or the terminal if this machine has no display. The choice carries through the next steps.
 
-   The installer put the app on this machine. Open it: it pairs with the hub by itself.
+   <Tabs syncKey="client">
+   <TabItem label="Desktop app">
 
-   </TabItem>
-   <TabItem label="On another computer">
+   On the hub machine, open the app: it pairs with the hub by itself.
 
-   Install fleetd without the wizard, then open the app:
+   On another computer, install fleetd without the wizard, then open the app:
 
    ```sh
    curl -fsSL https://fleetd.sh | sh -s -- --no-init
    ```
 
-   On macOS, open `~/Applications/fleetd.app`. On Linux, open **fleetd** from your app menu.
+   On macOS, open `~/Applications/fleetd.app`. On Linux, open **fleetd** from your app menu. On the "Connect to your
+   fleetd hub" screen, enter the hub address and the pairing code from step 1. A code works once, for 15 minutes; run
+   `fleetd pair` on the hub for a new one.
 
-   On the "Connect to your fleetd hub" screen, enter the hub address and the pairing code from step 1. A code works
-   once, for 15 minutes. To get a new one, run `fleetd pair` on the hub.
+   The app opens on the board, with the cursor in the order box.
+
+   </TabItem>
+   <TabItem label="Without the app">
+
+   On the hub, create a [human key](/docs/glossary#human-key) for your terminal and keep it in a file only you can read:
+
+   ```sh
+   (umask 077; fleetd hub key create --human --name terminal > ~/.fleetd/human.key)
+   ```
+
+   The key is printed once, so this file is the only copy. Then save the MCP script from
+   [MCP clients](/docs/mcp-clients#script) as `~/mcp.sh`.
 
    </TabItem>
    </Tabs>
 
-   The app opens on the board, with the cursor in the order box.
-
 3. **Send your first order.**
 
-   An [order](/docs/glossary#order) is one line that says what you want. Type it and press Enter:
+   An [order](/docs/glossary#order) is one line that says what you want.
+
+   <Tabs syncKey="client">
+   <TabItem label="Desktop app">
+
+   Type it in the order box and press Enter:
 
    ```text
    fix the typo in the README
    ```
 
-   The order appears as a card on the board. It starts the project's [lead](/docs/glossary#lead): a Claude session
-   that plans the work and runs other agents. It never writes code itself.
+   The order appears as a card on the board.
+
+   </TabItem>
+   <TabItem label="Without the app">
+
+   Send it with the `intake_submit` tool. `clientRequestId` is any unique string; it makes a retry safe.
+
+   ```sh
+   FLEETD_HUB=http://127.0.0.1:4790 FLEETD_KEY_FILE=~/.fleetd/human.key \
+     sh ~/mcp.sh intake_submit '{"clientRequestId":"first-order","text":"fix the typo in the README"}'
+   ```
+
+   The answer names the order, such as `W1`. Use your hub's address if it isn't on `127.0.0.1`.
+
+   </TabItem>
+   </Tabs>
+
+   The order starts the project's [lead](/docs/glossary#lead): a Claude session that plans the work and runs other
+   agents. It never writes code itself.
 
 4. **Answer its questions.**
 
-   When the lead needs a decision, it sends an [ask](/docs/glossary#ask) to the inbox. Open it with ⌘I (Ctrl+I on
-   Linux) and reply in one line, such as:
+   When the lead needs a decision, it sends an [ask](/docs/glossary#ask). Reply in one line, such as `1 go`.
 
-   ```text
-   1 go
+   <Tabs syncKey="client">
+   <TabItem label="Desktop app">
+
+   Open the inbox with ⌘I (Ctrl+I on Linux) and type the reply. See [Inbox and replies](/docs/desktop-app#reply).
+
+   </TabItem>
+   <TabItem label="Without the app">
+
+   ```sh
+   fleetd answer --key-file ~/.fleetd/human.key
+   fleetd answer "1 go" --key-file ~/.fleetd/human.key
    ```
 
-   See [Inbox and replies](/docs/desktop-app#reply) for the full reply format.
+   The first lists open questions with each choice; the second answers. Asks for secrets need the app.
+
+   </TabItem>
+   </Tabs>
 
 5. **Watch it finish.**
 
-   The card shows the order's phase and every agent at work. Each pull request goes through review, then the
-   [merge train](/docs/glossary#merge-train) merges it once CI passes. The order is done when the hub has run its
-   checks and they all pass.
+   <Tabs syncKey="client">
+   <TabItem label="Desktop app">
+
+   The card shows the order's phase and every agent at work.
+
+   </TabItem>
+   <TabItem label="Without the app">
+
+   ```sh
+   fleetd status W1 --watch
+   ```
+
+   It says "Nothing to show for order:W1" until the lead has written the order's brief. Run it again after that.
+
+   </TabItem>
+   </Tabs>
+
+   Each pull request goes through review, then the [merge train](/docs/glossary#merge-train) merges it once CI passes.
+   The order is done when the hub has run its checks and they all pass.
 
 </Steps>
 

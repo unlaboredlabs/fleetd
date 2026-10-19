@@ -26,6 +26,7 @@ You'll add a repo as a [project](/docs/glossary#project), send it work, and foll
    Default branch: main
    CI: none; required checks: none
    Merge: unprotected, squash allowed
+   Give it an order in the app's composer, or from any agent with intake_submit; its lead starts with the first one.
    ```
 
 2. Read the `Lead needs:` line. It names anything to fix on GitHub before the first pull request, such as
@@ -45,6 +46,12 @@ You'll add a repo as a [project](/docs/glossary#project), send it work, and foll
 | `--dest <dir>` | Clone into that folder. |
 | `--use-existing` | Add the folder's checkout when it already holds the same repo. Without a terminal, this is how you accept it. |
 
+:::caution[Checkouts must be under your home directory]
+A node runs commands only under its `cmdRoots`, which default to your home directory. A checkout elsewhere, such as
+in `/tmp`, is added, but the merge train then fails on it with "… is not a git checkout". List its folder in
+`cmdRoots` in [`node.json`](/docs/config-and-files#node-json) and restart the node.
+:::
+
 fleetd reads GitHub through `gh` on the hub machine. A private repo clones on any worker where `gh auth login` was run.
 When something is in the way, such as an offline worker or a folder that exists, it prints the command that fixes it.
 
@@ -55,7 +62,22 @@ fleetd project list
 fleetd project remove devbox/storefront
 ```
 
-`remove` stops the project's agents and forgets it. Its files, branches and worktrees stay.
+`list` prints each project as `<machineId>/<projectId>`, its title and its folder. `remove` stops the project's agents and forgets it. Its files, branches and worktrees stay.
+
+## Which branch fleetd works on {#branches}
+
+| What | Is |
+|---|---|
+| The base each writer branches from | The checkout's `origin/HEAD`, else its current branch. |
+| A task's branch | `fleetd/T<n>-<slug>`, such as `fleetd/T1-fix-readme-typo`. |
+| Where the merge train merges | Each pull request's base branch. |
+
+The `Default branch:` line that `project add` prints is GitHub's default branch. fleetd uses it only to watch main's
+CI. To work against another branch, point the checkout's `origin/HEAD` at it on the worker:
+
+```sh
+git remote set-head origin release
+```
 
 ## Its lead {#its-lead}
 
@@ -72,11 +94,24 @@ If the lead can't start, the order waits and the app says why. Common causes:
 
 Once the worker is back with a working `claude`, the lead starts and picks up every waiting order.
 
-To pick the lead's model and effort, or start it before any order, call `lead_start {machineId, projectId, model,
-effort}` from an [MCP client](/docs/mcp-clients). The default is `claude-opus-5-5` at high effort.
-
 To keep a lead from starting by itself, set `lead.autoStart: false` in the project's
 [policy file](/docs/config-and-files#policy). Orders then wait for `lead_start`.
+
+## Models and cost {#models}
+
+By default the lead and every task run on `claude-opus-5-5` at high effort.
+
+| To change | Do |
+|---|---|
+| The lead's model and effort | Call `lead_start {machineId, projectId, model, effort}` from an [MCP client](/docs/mcp-clients) before the project's first order. They are saved for the project. |
+| The tasks' model and effort | Set `defaults.model` and `defaults.effort` in the project's [policy file](/docs/config-and-files#policy), committed to the default branch. |
+
+For example, to try fleetd cheaply on a test project:
+
+1. Before its first order, call
+   `lead_start {"machineId":"devbox","projectId":"<id>","model":"claude-haiku-5-5","effort":"low"}`. `fleetd project
+   list` shows the ids.
+2. Commit `.fleetd/policy.yaml` with `defaults: {model: claude-haiku-5-5, effort: low}` to the default branch.
 
 ## Send an order {#send}
 
@@ -94,7 +129,8 @@ In the desktop app, type one line in the board's order box and press Enter. See 
 
 You can attach screenshots or files, and `@`-mention files, orders and PRs. The lead gets them with the order.
 
-From an MCP client, `intake_submit {text}` sends an order, and `intake_preview {text}` shows where it would go.
+From an [MCP client](/docs/mcp-clients), `intake_submit {text, clientRequestId}` sends an order, and
+`intake_preview {text}` shows where it would go.
 
 ## Follow it {#follow}
 

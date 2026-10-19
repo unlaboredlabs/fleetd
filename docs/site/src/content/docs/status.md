@@ -3,7 +3,8 @@ title: Status
 description: How far along an order, a project or the fleet is, what it waits on, and what is slower than usual.
 ---
 
-Status shows how far along an order, a project or the whole fleet is, and what the work is waiting on.
+Status shows how far along an [order](/docs/glossary#order), a project or the whole fleet is, and what the work is
+waiting on.
 
 ```console
 $ fleetd status storefront
@@ -34,7 +35,7 @@ blocks the rest.
 | Desktop app | ⌘. (Ctrl+. on Linux). See [The desktop app](/docs/desktop-app#status). |
 | Terminal, the whole fleet | `fleetd status` |
 | Terminal, one project | `fleetd status storefront` |
-| Terminal, one order | `fleetd status W41` |
+| Terminal, one order | `fleetd status W41`. A new order shows "Nothing to show" (exit 3) until its lead has written the brief. |
 
 | Option | Does |
 |---|---|
@@ -93,6 +94,22 @@ Items the hub closes itself also get a marker, such as "−2 items: closed with 
 1. The item in progress that the most unfinished work runs through.
 2. What it still waits on, in order: earlier items, then review, CI, merge and done-when checks.
 3. The items it holds up.
+
+The stages, in pipeline order. "Waiting on" lists the ones left after the item's current stage:
+
+| Step | Waits for |
+|---|---|
+| the brief | The lead to write the order's [brief](/docs/glossary#brief). |
+| a writer | A [writer](/docs/glossary#writer) task to start. |
+| the writer's push | The writer to push its branch. |
+| a PR | The pull request to open. |
+| review of #212 | Reviews of that PR, as its tier needs. |
+| CI on #212 | CI on the PR's current commit. |
+| merge | The merge train to rebase, check and merge it. |
+| done-when checks | The hub to run the order's [done-when checks](/docs/glossary#done-when-check). |
+
+"Waiting on" lists every stage left, even one this item skips, such as review for an `S` change. If it doesn't move,
+see [An order is stuck](/docs/troubleshooting#stuck).
 
 An item that has spent over 1.5 times the usual time in its current stage is marked `SLOWER THAN USUAL` and listed
 under risks. "Usual" is measured from this project's own history.

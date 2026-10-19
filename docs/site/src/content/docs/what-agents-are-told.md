@@ -123,7 +123,7 @@ Saving never refuses text that isn't empty, but it warns:
 | A required placeholder is missing | That value no longer reaches the agent. |
 | Unknown placeholder | `{{name}}` isn't one this prompt fills; it is sent as written. |
 | A safety rule is missing | Its wording is gone. The warning says whether code still enforces it. |
-| Too long | Over three times the length of fleetd's text. |
+| Too long | Over three times the length of fleetd's text, plus 500 characters. Every session that gets it pays for it. |
 
 ## Your own instructions {#instructions}
 
@@ -137,6 +137,9 @@ fleetd instructions show
 
 They are added to every lead's first message and every task brief (writers, reviewers and judges), hub-wide first,
 under "Custom instructions from the human". They are not added to the router, the retro or wakes.
+
+They are sized for about 500 characters; past that, `edit` warns. After your editor closes, `edit` prints any
+warnings and asks `Save? [Y/n]` on the terminal. In a script, `</dev/null` takes the default, Yes.
 
 ## When fleetd changes a default you edited {#updates}
 

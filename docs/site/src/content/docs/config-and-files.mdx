@@ -5,7 +5,8 @@ description: Where fleetd keeps its state, the Claude login it uses, the project
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-Where fleetd keeps everything, and the settings you can change.
+Where fleetd keeps everything, and the settings you can change. The [hub](/docs/glossary#hub) keeps its state under
+`~/.fleetd/hub`; each [worker](/docs/glossary#worker)'s [node](/docs/glossary#node) under `~/.fleetd/node`.
 
 ## ~/.fleetd {#home}
 
@@ -22,7 +23,7 @@ Where fleetd keeps everything, and the settings you can change.
     prompts/<id>.md      your version of a prompt, hub-wide
     prompts/projects/<key>/<id>.md   the same for one project
   node/                  the node's home (every worker)
-    node.json            the hub it belongs to, its machine id, an optional claudeConfigDir
+    node.json            the node's settings (below)
     node-key.pem         proves the node to the hub
     node-box-key.pem     opens secrets sealed to this machine
     node.sock            the socket lead-side commands use to reach the hub
@@ -33,6 +34,26 @@ Where fleetd keeps everything, and the settings you can change.
 ```
 
 `fleetd uninstall` keeps all of it. See [Updating & uninstall](/docs/updating-and-uninstall).
+
+## Logs {#logs}
+
+| Run as | Hub log | Node log |
+|---|---|---|
+| A service (`fleetd init`, `fleetd machine add`) | `~/.fleetd/hub/hub.log` | `~/.fleetd/logs/node.log` |
+| By hand (`fleetd hub start`, `fleetd node join` or `node run`) | stdout | stdout |
+
+## node.json {#node-json}
+
+`~/.fleetd/node/node.json` on each worker. `fleetd node join` and `fleetd machine add` write it. Restart the node
+after you change it.
+
+| Key | Means |
+|---|---|
+| `hub` | The hub's address. |
+| `machineId`, `name`, `tags` | How the hub knows this machine. |
+| `enrolled` | `true` once the hub accepted the node's key. |
+| `cmdRoots` | Folders the node may run commands in, and below. Absent: your home directory. A project's checkout must be inside one, or the merge train and checks fail on it. |
+| `claudeConfigDir` | A dedicated claude profile for this machine's sessions. See [below](#claude-profile). |
 
 ## The Claude login {#claude}
 
@@ -146,7 +167,58 @@ A broken file is refused with the exact problem, never ignored, so a typo can't 
 </TabItem>
 </Tabs>
 
-`--unit-suffix <s>` adds a suffix to these names, to run a second fleet on one machine.
+`--unit-suffix <s>` adds a suffix to these names, to run a second fleet's services on one machine.
+
+## Run a second fleet on one machine {#second-fleet}
+
+To try fleetd next to a fleet you already run, run a test hub and node by hand, each with its own home and port.
+
+1. Set up the test hub's files. `fleetd init` reads `~/.fleetd/node/node.json`, and on a machine that is already a
+   worker it repairs that worker instead. A throwaway `HOME` for this one command keeps it away from your fleet:
+
+   ```sh
+   T=$HOME/fleetd-test
+   HOME=$(mktemp -d) fleetd init --home $T/hub --no-service --listen 127.0.0.1:4797 --url http://127.0.0.1:4797 \
+     --git-identity "Your Name <id+you@users.noreply.github.com>" </dev/null
+   ```
+
+   With no terminal (`</dev/null`), `init` only writes the hub's setup, `$T/hub/setup.json`, and starts nothing. A hub
+   started without it can't be used by `fleetd doctor` or `fleetd project add`: they report "… has no hub set up".
+
+2. Start the hub. Keep the terminal open; it logs to stdout.
+
+   ```sh
+   fleetd hub start --home $T/hub --listen 127.0.0.1:4797
+   ```
+
+3. In another terminal, add this machine as a worker of the test hub:
+
+   ```sh
+   fleetd hub token create --machine test-1 --home $T/hub
+   fleetd node join --hub http://127.0.0.1:4797 --token <token> --machine test-1 --home $T/node
+   ```
+
+4. Use the test fleet. Pass `--home $T/hub` to the commands that take it, and `--hub` and `--key-file` to the rest:
+
+   ```sh
+   fleetd doctor --home $T/hub
+   fleetd project add ~/src/sandbox --machine test-1 --home $T/hub --yes
+   (umask 077; fleetd hub key create --human --name test --home $T/hub > $T/human.key)
+   fleetd status --hub http://127.0.0.1:4797 --key-file $T/human.key
+   ```
+
+Stop the hub and node with Ctrl+C. Delete `$T` to remove the test fleet.
+
+### What `--home` covers {#home-scope}
+
+| Command | Uses |
+|---|---|
+| `init`, `doctor`, `uninstall`, `machine`, `pair`, `project`, `hub`, `prompts`, `instructions` | `--home`, the hub's home. Default: `~/.fleetd/hub`. |
+| `node join`, `node run` | `--home`, the node's home. Default: `~/.fleetd/node`. |
+| `status`, `time`, `answer`, `steer`, `steers`, `listen`, `retro` | `--hub` and `--key-file`. Without them, the hub at `~/.fleetd/hub`. |
+| `init` | Also reads `~/.fleetd/node/node.json`, as above. |
+| `pair` | Also writes the app's hand-off, `app-pair.json`, under `$XDG_CONFIG_HOME/fleetd` (default `~/.config/fleetd`). |
+| Lead-side commands (`claim`, `change`, `plan`, …) | The node socket in `FLEETD_NODE_SOCK`. Default: `~/.fleetd/node/node.sock`. Sessions get it set. |
 
 ## Ports and addresses {#ports}
 
@@ -161,7 +233,8 @@ Change it with `fleetd init --listen <host:port> --url <url>`.
 
 ## Timelines {#timelines}
 
-The hub keeps the spans behind [Where time went](/docs/time-inspector) in `hub.sqlite`:
+The hub keeps the spans behind [Where time went](/docs/time-inspector) in `hub.sqlite`. A span is one stretch of
+one agent's work or wait, such as a tool call or a CI check.
 
 | Data | Kept |
 |---|---|

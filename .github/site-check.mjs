@@ -9,8 +9,8 @@
 import fs from "node:fs";
 
 const CONTENT = "docs/site/src/content/docs";
-// Written by crates/docsgen from the binary itself (its own help, its own tools), so they say only what fleetd has.
-const GENERATED = new Set(["reference/cli.md", "reference/agent-tools.md"]);
+// Written by crates/docsgen from the binary's own help, so it says only what fleetd has.
+const GENERATED = new Set(["reference/cli.md"]);
 const DOCS = fs
   .readdirSync(CONTENT, { recursive: true })
   .filter((n) => /\.mdx?$/u.test(n) && !GENERATED.has(n))

@@ -100,3 +100,22 @@ If your shell can't find `fleetd`, add `~/.local/bin` to your `PATH`:
 ```sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
+
+## Build from source {#from-source}
+
+With a Rust toolchain:
+
+```sh
+git clone https://github.com/unlaboredlabs/fleetd
+cd fleetd
+cargo build --release --locked -p fleetd
+```
+
+The CLI is `target/release/fleetd`. Copy it to `~/.local/bin/fleetd`, or run it from there. A worker you add with
+`fleetd machine add` gets a copy of the hub's binary, so build once on the hub. Building the desktop app is covered in
+[CONTRIBUTING](https://github.com/unlaboredlabs/fleetd/blob/main/docs/CONTRIBUTING.md).
+
+## Already have a fleet on this machine? {#second-fleet}
+
+To try fleetd next to a fleet you already run, don't run the installer's wizard. Follow
+[Run a second fleet on one machine](/docs/config-and-files#second-fleet) instead.

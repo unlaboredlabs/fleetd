@@ -146,6 +146,10 @@ stop its agents and forget it; its files, branches and worktrees stay
 
 ## Running by hand {#running-by-hand}
 
+:::tip
+Run `fleetd init --no-service` before `fleetd hub start`: it writes the setup the other commands read. The whole order is in [Run a second fleet on one machine](/docs/config-and-files#second-fleet).
+:::
+
 ### fleetd hub start {#hub-start}
 
 ```text

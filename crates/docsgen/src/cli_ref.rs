@@ -181,6 +181,14 @@ Every `fleetd` command, from `fleetd help` in the binary this site was built wit
         if let Some(aside) = aside {
             md.push_str(&format!("{}.\n\n", md_text(&capitalize(aside))));
         }
+        // `hub start` alone leaves a hub the other commands can't use; the docs walk through the order that works.
+        if group.id == "running-by-hand" {
+            md.push_str(
+                ":::tip\nRun `fleetd init --no-service` before `fleetd hub start`: it writes the setup the other \
+                 commands read. The whole order is in [Run a second fleet on one \
+                 machine](/docs/config-and-files#second-fleet).\n:::\n\n",
+            );
+        }
         for entry in &group.entries {
             let synopsis: Vec<String> = entry
                 .synopsis

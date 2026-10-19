@@ -49,6 +49,7 @@ Each steer gets an id, such as `S12`, and its receipt shows under your message:
 | not acknowledged | The agent's turn ended without naming S12. The receipt quotes what it said instead. |
 | withdrawn | You took it back before the agent saw it. |
 | failed | It couldn't be delivered. The receipt says why. |
+| expired | The agent's machine stayed offline past the hub's queue time, so it was never delivered. |
 
 Agents are asked to begin their next message with the steer's id. That is how fleetd knows the agent read your words
 as yours.
@@ -59,7 +60,7 @@ thing, send the steer again with ⌘Enter.
 :::
 
 If the agent's machine is offline, the steer waits ("waiting for lab-b (until 14:30)") and goes when the machine is
-back. Past that time it fails. If your Claude usage is used up, it says when it will go ("held: usage resets 14:00").
+back. Past that time it is **expired**.
 
 ## Steer any agent {#agents}
 
@@ -71,9 +72,9 @@ works to it. The lead is never interrupted for this.
 
 | The agent | Your steer |
 |---|---|
-| hasn't started yet | Reaches it with its instructions. |
 | is working | Arrives at its next step, or at once with ⌘Enter. |
 | has finished | Continues its conversation. |
+| hasn't started yet | Is refused: "T88 has not started yet." Wait for it to start, or cancel it and spawn it with the new prompt. |
 
 ## Take a steer back {#withdraw}
 
@@ -99,28 +100,27 @@ acknowledged · −1 item".
 1. On the hub, create one and keep it in a file only you can read:
 
    ```sh
-   fleetd hub key create --human --name my-terminal > ~/.fleetd/me.key
-   chmod 600 ~/.fleetd/me.key
+   (umask 077; fleetd hub key create --human --name terminal > ~/.fleetd/human.key)
    ```
 
 2. Steer an order's lead (`W41`) or one agent (`T88`):
 
    ```sh
-   fleetd steer W41 "skip the docs page; ship the API first" --key-file ~/.fleetd/me.key
-   fleetd steer T88 "stop: the schema changed, rebase first" --now --wait --key-file ~/.fleetd/me.key
+   fleetd steer W41 "skip the docs page; ship the API first" --key-file ~/.fleetd/human.key
+   fleetd steer T88 "stop: the schema changed, rebase first" --now --wait --key-file ~/.fleetd/human.key
    ```
 
 3. List recent steers, or take one back:
 
    ```sh
-   fleetd steers W41 --key-file ~/.fleetd/me.key
-   fleetd steer withdraw S12 --key-file ~/.fleetd/me.key
+   fleetd steers W41 --key-file ~/.fleetd/human.key
+   fleetd steer withdraw S12 --key-file ~/.fleetd/human.key
    ```
 
 | Option | Does |
 |---|---|
 | `--now` | Same as ⌘Enter: stop the current step and deliver at once. |
-| `--wait` | Print each receipt as it arrives. Exits 0 when acknowledged; 1 when not acknowledged, withdrawn or failed. |
+| `--wait` | Print each receipt as it arrives. Exits 0 when acknowledged; 1 when not acknowledged, withdrawn, failed or expired. |
 | `--hub <url>` | The hub to use, from another machine. |
 
 See the [CLI reference](/docs/reference/cli#steer).
@@ -128,5 +128,6 @@ See the [CLI reference](/docs/reference/cli#steer).
 A lead steers its own agents the same way with `fleetd task message T88 "<text>"`, adding `--now` to stop the
 agent's current step.
 
-From an MCP client: `steer_send {target: {workstreamId} | {taskId}, text, mode: "queue" | "now"}` (operate, human
-key), `steer_withdraw {steerId}` and `steers_list {workstreamId?, taskId?}`.
+From an MCP client: `steer_send {target: {workstreamId} | {taskId}, text, mode: "queue" | "now", clientRequestId}`
+(operate, human key), `steer_withdraw {steerId}` and `steers_list {workstreamId?, taskId?}`. `clientRequestId` is any
+unique string; sending the same one again doesn't send the steer twice.
