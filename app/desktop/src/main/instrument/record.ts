@@ -1,6 +1,6 @@
 // FLEETD_RECORD=<dir>[,fps]: the app records its own window to <dir>/fleetd.mp4 (H.264), keeps a PNG of it every
-// 2 s in <dir>/frames/, and between clipStart() and SIGUSR1 also writes <dir>/clip.mp4. The log lines are the GPUI
-// recorder's (app/record), which tests/lab/demoFanout.ts and .github/workflows/record-mac.yml read.
+// 2 s in <dir>/frames/, and between clipStart() and SIGUSR1 also writes <dir>/clip.mp4. tests/lab/demoFanout.ts reads
+// its log lines.
 //
 // The capture is Chromium's tab capture of the app window's own frame, encoded by MediaRecorder in a hidden
 // recorder window (src/renderer/demo/recorder.ts): no OS screen capture, so no Screen Recording permission, and no
