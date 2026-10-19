@@ -67,11 +67,11 @@
 <tr><td>Reviewer</td><td><code>spawn_agent</code> with kind <code>review</code></td><td><a href="#task-tools">Task tools</a></td><td>No</td></tr>
 <tr><td>Verifier</td><td>A review task the review gate starts as the verifier</td><td><a href="#task-tools">Task tools</a></td><td>No</td></tr>
 <tr><td>QA</td><td><code>spawn_agent</code> with kind <code>review</code> and <code>qa: true</code></td><td><a href="#task-tools">Task tools</a></td><td>No</td></tr>
-<tr><td>Router</td><td>One <code>claude -p</code> on the hub that reads each new order; not a session</td><td>None</td><td>No</td></tr>
+<tr><td>Router</td><td>One <code>claude -p</code> on the hub that reads each new order; not a session</td><td>None, no MCP servers</td><td>No</td></tr>
 </tbody></table></div>
-<p>The router has no tools at all, Claude Code's included: fleetd starts it with <code>--tools ""</code> and <code>--safe-mode</code>.</p>
+<p>The router's Claude Code tools: none. fleetd starts it with <code>--tools ""</code>, <code>--strict-mcp-config</code> and <code>--safe-mode</code>.</p>
 <h2 id="hub-limits">Hub limits<a class="anchor" href="#hub-limits" aria-label="Link to this section">#</a></h2>
-<p>The hub enforces these on every call, from MCP or from a <code>fleetd</code> command in the agent's shell. A refusal says why and what to do instead.</p>
+<p>The hub checks these on every fleetd call a session makes, through its MCP tools or a <code>fleetd</code> command in its shell. A refusal says why and what to do instead.</p>
 <div class="table"><table><thead><tr><th>Limit</th><th>Value</th></tr></thead><tbody>
 <tr><td>Who can start agents</td><td>A lead, with <code>spawn_agent</code>, <code>workstream_spawn</code>. A task's agent can't.</td></tr>
 <tr><td>Depth</td><td>1. A lead is depth 0 and its tasks depth 1; nothing goes deeper.</td></tr>
@@ -82,6 +82,7 @@
 <tr><td>Gated commands (<code>gated_run</code>)</td><td>Classes <code>irreversible</code>, <code>money</code>, <code>credential</code>. Run only after a human approves; at most 1800 s.</td></tr>
 <tr><td>What a lead may ask the human (<code>ask</code>)</td><td>Classes <code>product</code>, <code>money</code>, <code>credential</code>, <code>irreversible</code>. Anything else it decides itself (<code>decide</code>).</td></tr>
 </tbody></table></div>
+<p>These limits cover calls to fleetd, not what the agent's own shell can do. A task runs with full Bash, so <code>gated_run</code> is not the only way it could run a command. A process that leaves its session's process tree (for example with <code>setsid</code>) and scrubs its environment counts as you, with no limits: see "Known limit" on the Security page. Run agents you don't trust as a different OS user.</p>
 <h2 id="lead-tools">Lead tools<a class="anchor" href="#lead-tools" aria-label="Link to this section">#</a></h2>
 <p>Every lead gets these, the finish-all lead included.</p>
 <div class="table"><table><thead><tr><th>Tool</th><th>What it does</th><th>Needs a human</th></tr></thead><tbody>
@@ -587,7 +588,7 @@
   }
 }</code></pre>
 <h2 id="claude-code-tools">Claude Code tools<a class="anchor" href="#claude-code-tools" aria-label="Link to this section">#</a></h2>
-<p>The same for every role but the router, which gets none. Listed for Claude Code 2.1.302, the version fleetd is tested with.</p>
+<p>The same for every session. The router gets none. Listed for Claude Code 2.1.302, the version fleetd is tested with.</p>
 <p><strong>Allowed:</strong> <code>Bash</code>, <code>DesignSync</code>, <code>Edit</code>, <code>NotebookEdit</code>, <code>Read</code>, <code>ReportFindings</code>, <code>Skill</code>, <code>ToolSearch</code>, <code>WebFetch</code>, <code>WebSearch</code>, <code>Write</code>.</p>
 <p>A project's policy file can deny more with <code>tools.deny</code>. In a run started approval-required, Claude Code asks before it uses a tool and the question comes to you; <code>tools.allow</code> answers it ahead of time.</p>
 <p><strong>Blocked</strong>, in <code>--disallowedTools</code> and in the <code>permissions.deny</code> of fleetd's settings, so your own settings can't turn them back on:</p>
@@ -600,21 +601,21 @@
 </tbody></table></div>
 <p>fleetd also blocks any tool like these that a newer Claude Code adds: it reads the installed claude's tool list when it checks the machine, and a session that still offers one fails the check.</p>
 <h2 id="settings-fleetd-forces">Settings fleetd forces<a class="anchor" href="#settings-fleetd-forces" aria-label="Link to this section">#</a></h2>
-<p>Set in the environment and in fleetd's settings file for the session, which outranks yours.</p>
-<div class="table"><table><thead><tr><th>Variable</th><th>Value</th><th>Where</th><th>Why</th></tr></thead><tbody>
-<tr><td><code>CLAUDE_CODE_DISABLE_BACKGROUND_TASKS</code></td><td><code>1</code></td><td>Every claude fleetd starts</td><td>Takes run_in_background out of Bash and Agent and refuses it: a background job outlives the turn fleetd tracks.</td></tr>
-<tr><td><code>CLAUDE_CODE_DISABLE_WORKFLOWS</code></td><td><code>1</code></td><td>Every claude fleetd starts</td><td>Removes the Workflow tool: fleetd manages agents.</td></tr>
-<tr><td><code>CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS</code></td><td><code>1</code></td><td>Every claude fleetd starts</td><td>Removes the built-in Explore and Plan agents: fleetd manages agents.</td></tr>
-<tr><td><code>CLAUDE_CODE_DISABLE_AGENT_VIEW</code></td><td><code>1</code></td><td>Every claude fleetd starts</td><td>Removes the built-in claude agent: fleetd manages agents.</td></tr>
-<tr><td><code>CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS</code></td><td>removed</td><td>Every claude fleetd starts</td><td>Agent teams: fleetd manages agents.</td></tr>
-<tr><td><code>CLAUDE_CODE_COORDINATOR_MODE</code></td><td>removed</td><td>Every claude fleetd starts</td><td>Coordinator mode turns a session into one that only delegates (its tools become Task, ListAgents, SendMessage, TaskStop, Workflow).</td></tr>
-<tr><td><code>CLAUDE_CODE_DISABLE_AUTO_MEMORY</code></td><td><code>1</code>, and <code>autoMemoryEnabled: false</code></td><td>Every claude fleetd starts</td><td>fleetd owns an agent's context (briefs, decisions, instructions). Notes claude keeps per folder would carry stale, unreviewed text from one agent's worktree to the next. A project opts back in with claude.autoMemory: true in its policy file.</td></tr>
-<tr><td><code>DISABLE_AUTOUPDATER</code></td><td><code>1</code></td><td>Sessions</td><td>Keeps the claude fleetd checked. An update mid-run would swap the binary under a live session.</td></tr>
-<tr><td><code>CLAUDE_CODE_STARTUP_FAILURE_RESULTS</code></td><td><code>1</code></td><td>Sessions</td><td>A refusal at startup arrives as a result fleetd can read, not only as stderr.</td></tr>
-<tr><td><code>CLAUDECODE</code>, <code>CLAUDE_CODE_ENTRYPOINT</code>, <code>CLAUDE_CODE_SSE_PORT</code></td><td>removed</td><td>Sessions</td><td>claude sets it for its own children and treats a process that has it as nested inside another session.</td></tr>
+<p>Set in the claude process's environment. "In settings" marks the ones also in fleetd's settings file for a session, which outranks the <code>env</code> in your own settings.</p>
+<div class="table"><table><thead><tr><th>Variable</th><th>Value</th><th>Where</th><th>In settings</th><th>Why</th></tr></thead><tbody>
+<tr><td><code>CLAUDE_CODE_DISABLE_BACKGROUND_TASKS</code></td><td><code>1</code></td><td>Every claude fleetd starts</td><td>yes</td><td>Takes run_in_background out of Bash and Agent and refuses it: a background job outlives the turn fleetd tracks.</td></tr>
+<tr><td><code>CLAUDE_CODE_DISABLE_WORKFLOWS</code></td><td><code>1</code></td><td>Every claude fleetd starts</td><td>yes</td><td>Removes the Workflow tool: fleetd manages agents.</td></tr>
+<tr><td><code>CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS</code></td><td><code>1</code></td><td>Every claude fleetd starts</td><td>yes</td><td>Removes the built-in Explore and Plan agents: fleetd manages agents.</td></tr>
+<tr><td><code>CLAUDE_CODE_DISABLE_AGENT_VIEW</code></td><td><code>1</code></td><td>Every claude fleetd starts</td><td>yes</td><td>Removes the built-in claude agent: fleetd manages agents.</td></tr>
+<tr><td><code>CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS</code></td><td>removed</td><td>Every claude fleetd starts</td><td>yes</td><td>Agent teams: fleetd manages agents.</td></tr>
+<tr><td><code>CLAUDE_CODE_COORDINATOR_MODE</code></td><td>removed</td><td>Every claude fleetd starts</td><td>yes</td><td>Coordinator mode turns a session into one that only delegates (its tools become Task, ListAgents, SendMessage, TaskStop, Workflow).</td></tr>
+<tr><td><code>CLAUDE_CODE_DISABLE_AUTO_MEMORY</code></td><td><code>1</code>, and <code>autoMemoryEnabled: false</code></td><td>Every claude fleetd starts</td><td>yes</td><td>fleetd owns an agent's context (briefs, decisions, instructions). Notes claude keeps per folder would carry stale, unreviewed text from one agent's worktree to the next. A project opts back in with claude.autoMemory: true in its policy file.</td></tr>
+<tr><td><code>DISABLE_AUTOUPDATER</code></td><td><code>1</code></td><td>Sessions</td><td>yes</td><td>Keeps the claude fleetd checked. An update mid-run would swap the binary under a live session.</td></tr>
+<tr><td><code>CLAUDE_CODE_STARTUP_FAILURE_RESULTS</code></td><td><code>1</code></td><td>Sessions</td><td>no</td><td>A refusal at startup arrives as a result fleetd can read, not only as stderr.</td></tr>
+<tr><td><code>CLAUDECODE</code>, <code>CLAUDE_CODE_ENTRYPOINT</code>, <code>CLAUDE_CODE_SSE_PORT</code></td><td>removed</td><td>Sessions</td><td>no</td><td>claude sets it for its own children and treats a process that has it as nested inside another session.</td></tr>
 </tbody></table></div>
 <h2 id="what-your-own-setup-adds">What your own setup adds<a class="anchor" href="#what-your-own-setup-adds" aria-label="Link to this section">#</a></h2>
-<p>fleetd starts sessions with your own Claude Code setup underneath. The router is the exception: it runs in safe mode with none of it.</p>
+<p>fleetd starts sessions with your own Claude Code setup underneath. The router is the exception: it runs in safe mode with none of it (see <a href="#roles">Roles</a>).</p>
 <div class="table"><table><thead><tr><th>Your setup</th><th>In a session</th></tr></thead><tbody>
 <tr><td>MCP servers (user, project, local)</td><td>Loaded. fleetd adds its <code>fleetd</code> server next to them.</td></tr>
 <tr><td>Skills, plugins, hooks, <code>CLAUDE.md</code></td><td>Loaded as in your own <code>claude</code>.</td></tr>

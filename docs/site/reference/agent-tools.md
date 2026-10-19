@@ -23,13 +23,13 @@ The app shows each agent's role on its lane. The role decides the fleetd tools; 
 | Reviewer | `spawn_agent` with kind `review` | [Task tools](#task-tools) | No |
 | Verifier | A review task the review gate starts as the verifier | [Task tools](#task-tools) | No |
 | QA | `spawn_agent` with kind `review` and `qa: true` | [Task tools](#task-tools) | No |
-| Router | One `claude -p` on the hub that reads each new order; not a session | None | No |
+| Router | One `claude -p` on the hub that reads each new order; not a session | None, no MCP servers | No |
 
-The router has no tools at all, Claude Code's included: fleetd starts it with `--tools ""` and `--safe-mode`.
+The router's Claude Code tools: none. fleetd starts it with `--tools ""`, `--strict-mcp-config` and `--safe-mode`.
 
 ## Hub limits
 
-The hub enforces these on every call, from MCP or from a `fleetd` command in the agent's shell. A refusal says why and what to do instead.
+The hub checks these on every fleetd call a session makes, through its MCP tools or a `fleetd` command in its shell. A refusal says why and what to do instead.
 
 | Limit | Value |
 |---|---|
@@ -41,6 +41,8 @@ The hub enforces these on every call, from MCP or from a `fleetd` command in the
 | What a child workstream may serve | `issue`, `defect`, `done`. Never invented work. |
 | Gated commands (`gated_run`) | Classes `irreversible`, `money`, `credential`. Run only after a human approves; at most 1800 s. |
 | What a lead may ask the human (`ask`) | Classes `product`, `money`, `credential`, `irreversible`. Anything else it decides itself (`decide`). |
+
+These limits cover calls to fleetd, not what the agent's own shell can do. A task runs with full Bash, so `gated_run` is not the only way it could run a command. A process that leaves its session's process tree (for example with `setsid`) and scrubs its environment counts as you, with no limits: see "Known limit" on the Security page. Run agents you don't trust as a different OS user.
 
 ## Lead tools
 
@@ -729,7 +731,7 @@ Claim your workstream done: fleetd runs its done-when checks itself.
 
 ## Claude Code tools
 
-The same for every role but the router, which gets none. Listed for Claude Code 2.1.302, the version fleetd is tested with.
+The same for every session. The router gets none. Listed for Claude Code 2.1.302, the version fleetd is tested with.
 
 **Allowed:** `Bash`, `DesignSync`, `Edit`, `NotebookEdit`, `Read`, `ReportFindings`, `Skill`, `ToolSearch`, `WebFetch`, `WebSearch`, `Write`.
 
@@ -749,24 +751,24 @@ fleetd also blocks any tool like these that a newer Claude Code adds: it reads t
 
 ## Settings fleetd forces
 
-Set in the environment and in fleetd's settings file for the session, which outranks yours.
+Set in the claude process's environment. "In settings" marks the ones also in fleetd's settings file for a session, which outranks the `env` in your own settings.
 
-| Variable | Value | Where | Why |
-|---|---|---|---|
-| `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS` | `1` | Every claude fleetd starts | Takes run_in_background out of Bash and Agent and refuses it: a background job outlives the turn fleetd tracks. |
-| `CLAUDE_CODE_DISABLE_WORKFLOWS` | `1` | Every claude fleetd starts | Removes the Workflow tool: fleetd manages agents. |
-| `CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS` | `1` | Every claude fleetd starts | Removes the built-in Explore and Plan agents: fleetd manages agents. |
-| `CLAUDE_CODE_DISABLE_AGENT_VIEW` | `1` | Every claude fleetd starts | Removes the built-in claude agent: fleetd manages agents. |
-| `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` | removed | Every claude fleetd starts | Agent teams: fleetd manages agents. |
-| `CLAUDE_CODE_COORDINATOR_MODE` | removed | Every claude fleetd starts | Coordinator mode turns a session into one that only delegates (its tools become Task, ListAgents, SendMessage, TaskStop, Workflow). |
-| `CLAUDE_CODE_DISABLE_AUTO_MEMORY` | `1`, and `autoMemoryEnabled: false` | Every claude fleetd starts | fleetd owns an agent's context (briefs, decisions, instructions). Notes claude keeps per folder would carry stale, unreviewed text from one agent's worktree to the next. A project opts back in with claude.autoMemory: true in its policy file. |
-| `DISABLE_AUTOUPDATER` | `1` | Sessions | Keeps the claude fleetd checked. An update mid-run would swap the binary under a live session. |
-| `CLAUDE_CODE_STARTUP_FAILURE_RESULTS` | `1` | Sessions | A refusal at startup arrives as a result fleetd can read, not only as stderr. |
-| `CLAUDECODE`, `CLAUDE_CODE_ENTRYPOINT`, `CLAUDE_CODE_SSE_PORT` | removed | Sessions | claude sets it for its own children and treats a process that has it as nested inside another session. |
+| Variable | Value | Where | In settings | Why |
+|---|---|---|---|---|
+| `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS` | `1` | Every claude fleetd starts | yes | Takes run_in_background out of Bash and Agent and refuses it: a background job outlives the turn fleetd tracks. |
+| `CLAUDE_CODE_DISABLE_WORKFLOWS` | `1` | Every claude fleetd starts | yes | Removes the Workflow tool: fleetd manages agents. |
+| `CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS` | `1` | Every claude fleetd starts | yes | Removes the built-in Explore and Plan agents: fleetd manages agents. |
+| `CLAUDE_CODE_DISABLE_AGENT_VIEW` | `1` | Every claude fleetd starts | yes | Removes the built-in claude agent: fleetd manages agents. |
+| `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` | removed | Every claude fleetd starts | yes | Agent teams: fleetd manages agents. |
+| `CLAUDE_CODE_COORDINATOR_MODE` | removed | Every claude fleetd starts | yes | Coordinator mode turns a session into one that only delegates (its tools become Task, ListAgents, SendMessage, TaskStop, Workflow). |
+| `CLAUDE_CODE_DISABLE_AUTO_MEMORY` | `1`, and `autoMemoryEnabled: false` | Every claude fleetd starts | yes | fleetd owns an agent's context (briefs, decisions, instructions). Notes claude keeps per folder would carry stale, unreviewed text from one agent's worktree to the next. A project opts back in with claude.autoMemory: true in its policy file. |
+| `DISABLE_AUTOUPDATER` | `1` | Sessions | yes | Keeps the claude fleetd checked. An update mid-run would swap the binary under a live session. |
+| `CLAUDE_CODE_STARTUP_FAILURE_RESULTS` | `1` | Sessions | no | A refusal at startup arrives as a result fleetd can read, not only as stderr. |
+| `CLAUDECODE`, `CLAUDE_CODE_ENTRYPOINT`, `CLAUDE_CODE_SSE_PORT` | removed | Sessions | no | claude sets it for its own children and treats a process that has it as nested inside another session. |
 
 ## What your own setup adds
 
-fleetd starts sessions with your own Claude Code setup underneath. The router is the exception: it runs in safe mode with none of it.
+fleetd starts sessions with your own Claude Code setup underneath. The router is the exception: it runs in safe mode with none of it (see [Roles](#roles)).
 
 | Your setup | In a session |
 |---|---|

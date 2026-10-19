@@ -51,7 +51,7 @@ whatever the prompt says.
 const SETUP: &str = "## What your own setup adds
 
 fleetd starts sessions with your own Claude Code setup underneath. The router is the exception: it runs in safe \
-mode with none of it.
+mode with none of it (see [Roles](#roles)).
 
 | Your setup | In a session |
 |---|---|
@@ -80,7 +80,8 @@ pub fn page(root: &Path) -> Result<String, String> {
     let mut md = String::from(FRONT);
     md.push('\n');
     md.push_str(&INTRO.replace("{server}", SERVER_NAME));
-    md.push_str(&roles());
+    let router = router()?;
+    md.push_str(&roles(&router));
     md.push_str(&limits(&lead_tools, &task_tools)?);
     md.push_str(&tool_section(
         "Lead tools",
@@ -97,8 +98,8 @@ pub fn page(root: &Path) -> Result<String, String> {
         &task_tools,
         &lead_names,
     )?);
-    md.push_str(&builtins(root)?);
-    md.push_str(&switches());
+    md.push_str(&builtins(root, &router)?);
+    md.push_str(&switches()?);
     md.push_str(&SETUP.replace("{server}", SERVER_NAME));
     Ok(md)
 }
@@ -199,6 +200,50 @@ fn started_as(role: AgentRole) -> Option<String> {
     None
 }
 
+/// What the router's one-shot gets, read from the argv fleetd starts it with. A flag change the page can't describe
+/// fails generation instead of leaving the page wrong.
+struct Router {
+    /// `--tools`: empty means none, Claude Code's included.
+    tools: Vec<String>,
+}
+
+fn router() -> Result<Router, String> {
+    let args = fleetd::hub::intake::router::one_shot_args("m");
+    let has = |flag: &str| args.iter().any(|a| a == flag);
+    let mismatch = |why: &str| {
+        format!(
+            "agent tools: the router's one_shot_args changed ({why}); update the router's row in agent_tools.rs"
+        )
+    };
+    let tools = args
+        .iter()
+        .position(|a| a == "--tools")
+        .and_then(|i| args.get(i + 1))
+        .ok_or_else(|| mismatch("no --tools"))?;
+    if !has("--safe-mode") || !has("--strict-mcp-config") || has("--mcp-config") {
+        return Err(mismatch(
+            "the page says it runs in safe mode with no MCP servers",
+        ));
+    }
+    Ok(Router {
+        tools: tools
+            .split([',', ' '])
+            .filter(|t| !t.is_empty())
+            .map(str::to_owned)
+            .collect(),
+    })
+}
+
+impl Router {
+    fn claude_tools(&self) -> String {
+        if self.tools.is_empty() {
+            "none".to_owned()
+        } else {
+            format!("only {}", code_list(self.tools.iter().map(String::as_str)))
+        }
+    }
+}
+
 fn tool_set(session: SessionRole) -> &'static str {
     match session.cli_arg() {
         Some("lead") => "[Lead tools](#lead-tools)",
@@ -207,7 +252,7 @@ fn tool_set(session: SessionRole) -> &'static str {
     }
 }
 
-fn roles() -> String {
+fn roles(router: &Router) -> String {
     let mut md = String::from(
         "## Roles\n\nThe app shows each agent's role on its lane. The role decides the fleetd tools; every session \
          gets the same [Claude Code tools](#claude-code-tools).\n\n| Role | How it starts | fleetd tools | Can start \
@@ -253,15 +298,16 @@ fn roles() -> String {
             ));
         }
     }
-    md.push_str(&format!(
-        "| Router | One `claude -p` on the hub that reads each new order; not a session | {} | No |\n",
-        tool_set(SessionRole::Plain)
-    ));
-    md.push('\n');
     md.push_str(
-        "The router has no tools at all, Claude Code's included: fleetd starts it with `--tools \"\"` and \
-         `--safe-mode`.\n\n",
+        "| Router | One `claude -p` on the hub that reads each new order; not a session | None, no MCP servers | \
+         No |\n\n",
     );
+    md.push_str(&format!(
+        "The router's Claude Code tools: {}. fleetd starts it with `--tools \"{}\"`, `--strict-mcp-config` and \
+         `--safe-mode`.\n\n",
+        router.claude_tools(),
+        router.tools.join(",")
+    ));
     md
 }
 
@@ -294,8 +340,8 @@ fn limits(lead: &[&Tool], task: &[&Tool]) -> Result<String, String> {
     let gated_classes = enum_values(&inline_schema::<GatedClass>());
     let ask_classes = enum_values(&inline_schema::<AskClass>());
     let mut md = String::from(
-        "## Hub limits\n\nThe hub enforces these on every call, from MCP or from a `fleetd` command in the agent's \
-         shell. A refusal says why and what to do instead.\n\n| Limit | Value |\n|---|---|\n",
+        "## Hub limits\n\nThe hub checks these on every fleetd call a session makes, through its MCP tools or a \
+         `fleetd` command in its shell. A refusal says why and what to do instead.\n\n| Limit | Value |\n|---|---|\n",
     );
     md.push_str(&format!(
         "| Who can start agents | A lead, with {}. A task's agent can't. |\n",
@@ -327,6 +373,12 @@ fn limits(lead: &[&Tool], task: &[&Tool]) -> Result<String, String> {
         "| What a lead may ask the human (`ask`) | Classes {}. Anything else it decides itself (`decide`). |\n\n",
         code_list(ask_classes.iter().map(String::as_str))
     ));
+    md.push_str(
+        "These limits cover calls to fleetd, not what the agent's own shell can do. A task runs with full Bash, so \
+         `gated_run` is not the only way it could run a command. A process that leaves its session's process tree \
+         (for example with `setsid`) and scrubs its environment counts as you, with no limits: see \"Known limit\" \
+         on the Security page. Run agents you don't trust as a different OS user.\n\n",
+    );
     Ok(md)
 }
 
@@ -786,19 +838,20 @@ fn recorded_tools(root: &Path) -> Result<BTreeSet<String>, String> {
     Ok(tools)
 }
 
-fn builtins(root: &Path) -> Result<String, String> {
+fn builtins(root: &Path, router: &Router) -> Result<String, String> {
     let blocked: Vec<&str> = DISALLOWED_WHY.iter().map(|(t, _)| *t).collect();
     let allowed: Vec<String> = recorded_tools(root)?
         .into_iter()
         .filter(|t| !blocked.contains(&t.as_str()) && !conformance::agent_like(t))
         .collect();
     let mut md = format!(
-        "## Claude Code tools\n\nThe same for every role but the router, which gets none. Listed for Claude Code \
+        "## Claude Code tools\n\nThe same for every session. The router gets {}. Listed for Claude Code \
          {TESTED}, the version fleetd is tested with.\n\n**Allowed:** {}.\n\nA project's policy file can deny more \
          with `tools.deny`. In a run started approval-required, Claude Code asks before it uses a tool and the \
          question comes to you; `tools.allow` answers it ahead of time.\n\n**Blocked**, in `--disallowedTools` and in the \
          `permissions.deny` of fleetd's settings, so your own settings can't turn them back on:\n\n| Tool | Why \
          |\n|---|---|\n",
+        router.claude_tools(),
         code_list(allowed.iter().map(String::as_str))
     );
     for (tools, why) in grouped(
@@ -815,17 +868,24 @@ fn builtins(root: &Path) -> Result<String, String> {
     Ok(md)
 }
 
-fn switches() -> String {
+fn switches() -> Result<String, String> {
     let all = "Every claude fleetd starts";
+    let overlay: Value = serde_json::from_str(&fleetd::node::sessions::settings_overlay(false))
+        .map_err(|e| format!("agent tools: the settings overlay: {e}"))?;
     let mut md = String::from(
-        "## Settings fleetd forces\n\nSet in the environment and in fleetd's settings file for the session, which \
-         outranks yours.\n\n| Variable | Value | Where | Why |\n|---|---|---|---|\n",
+        "## Settings fleetd forces\n\nSet in the claude process's environment. \"In settings\" marks the ones also \
+         in fleetd's settings file for a session, which outranks the `env` in your own settings.\n\n| Variable | \
+         Value | Where | In settings | Why |\n|---|---|---|---|---|\n",
     );
     let mut rows = |items: Vec<(String, &str)>, value: &str, where_: &str| {
         for (names, why) in grouped(items) {
+            let in_settings = names
+                .iter()
+                .all(|n| overlay["env"].get(n.trim_matches('`')).is_some());
             md.push_str(&format!(
-                "| {} | {value} | {where_} | {} |\n",
+                "| {} | {value} | {where_} | {} | {} |\n",
                 names.join(", "),
+                if in_settings { "yes" } else { "no" },
                 cell(why)
             ));
         }
@@ -854,7 +914,7 @@ fn switches() -> String {
     }
     rows(named(NESTING_VARS_WHY), "removed", "Sessions");
     md.push('\n');
-    md
+    Ok(md)
 }
 
 #[cfg(test)]
@@ -958,6 +1018,26 @@ mod tests {
             prose("done:<n> or `T<n>`, a*"),
             "done:&lt;n> or `T<n>`, a\\*"
         );
+    }
+
+    #[test]
+    fn the_router_row_comes_from_its_flags() {
+        let page = page(&root()).unwrap();
+        assert!(router().unwrap().tools.is_empty());
+        assert!(page.contains(
+            "The router's Claude Code tools: none. fleetd starts it with `--tools \"\"`"
+        ));
+        assert!(page.contains("The router gets none."));
+    }
+
+    #[test]
+    fn the_settings_column_follows_the_overlay() {
+        let page = page(&root()).unwrap();
+        assert!(page.contains(
+            "| `CLAUDE_CODE_DISABLE_WORKFLOWS` | `1` | Every claude fleetd starts | yes |"
+        ));
+        assert!(page.contains("| `CLAUDE_CODE_STARTUP_FAILURE_RESULTS` | `1` | Sessions | no |"));
+        assert!(page.contains("| `DISABLE_AUTOUPDATER` | `1` | Sessions | yes |"));
     }
 
     #[test]

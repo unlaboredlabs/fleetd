@@ -237,7 +237,7 @@ fn mcp_config(role: SessionRole, sock: &Path, session_id: &str) -> String {
     format!("{}\n", serde_json::json!({ "mcpServers": servers }))
 }
 
-fn settings_overlay(auto_memory: bool) -> String {
+pub fn settings_overlay(auto_memory: bool) -> String {
     let mut env = subagents_off_settings_env();
     env.insert("DISABLE_AUTOUPDATER".into(), "1".into());
     let mut overlay = serde_json::json!({
