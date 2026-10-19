@@ -1,6 +1,7 @@
 // The chat composer's words and rules, pure. One box: the hub decides whether a message starts the lead's turn or
 // reaches it mid-turn as a steer (chat_send), so the composer only says which to expect.
 
+import type { ChatDelivery } from "../../../shared/contracts";
 import type { HubError } from "../../../shared/hub";
 
 export interface KeyLike {
@@ -19,16 +20,14 @@ export const placeholder = (working: boolean | undefined): string =>
 
 export const KEY_HINT = "Enter send · ⇧Enter new line";
 
-const utf8 = new TextEncoder();
-/** The hub's limit on a message's text, in UTF-8 bytes; more goes in as a file. */
-export const MAX_BYTES = 4000;
+/** chat_send's limit on a message's text (ChatSendInput.text, JSON string length); more goes in as a file. */
+export const MAX_CHARS = 20_000;
 
-/** The trimmed text, or why it can't be sent. "1 go" and "nvm" are messages like any other. */
+/** The trimmed text, or why it can't be sent. "1 go" and "nvm" are messages like any other; files need a word. */
 export function checkMessage(text: string, attachments: number): { ok: true; text: string } | { ok: false; reason: string } {
   const t = text.trim();
-  if (t === "" && attachments === 0) return { ok: false, reason: "" };
-  const bytes = utf8.encode(t).length;
-  if (bytes > MAX_BYTES) return { ok: false, reason: `That’s ${bytes} bytes; a message is at most ${MAX_BYTES}. Paste the rest as a file.` };
+  if (t === "") return { ok: false, reason: attachments > 0 ? "Add a few words about the files." : "" };
+  if (t.length > MAX_CHARS) return { ok: false, reason: `A message is at most ${MAX_CHARS.toLocaleString("en-US")} characters; this is ${t.length.toLocaleString("en-US")}. Attach the rest as a file.` };
   return { ok: true, text: t };
 }
 
@@ -46,14 +45,15 @@ export const ACT_LABEL: Readonly<Record<Act, string>> = { resend: "Resend", edit
 export interface Sendable {
   readonly state: "sent" | "streaming" | "pending" | "reconnecting" | "unanswered" | "failed";
   readonly error?: (HubError & { readonly offline?: boolean }) | undefined;
-  readonly delivery?: "sent" | "delivered" | undefined;
-  /** It reached the lead mid-turn. */
-  readonly steer?: boolean | undefined;
+  /** How it reached the lead (ChatMessage.delivery): it started a turn, joined the running one, or waits for one. */
+  readonly delivery?: ChatDelivery | undefined;
+  /** chat_send's word on why the lead doesn't have it yet, with the fix. */
+  readonly leadWaiting?: string | undefined;
 }
 
 /**
- * The receipt under one of your messages. A sent message says nothing unless it is your latest: then "sent", or
- * "delivered" once the lead has it ("at its next step" when it was working). Trouble always shows.
+ * The receipt under one of your messages. A sent message says nothing unless it is your latest: then how it reached
+ * the lead. Trouble, and a lead that can't take it yet, always show.
  */
 export function receiptFor(m: Sendable, latest: boolean): Receipt | undefined {
   switch (m.state) {
@@ -70,8 +70,17 @@ export function receiptFor(m: Sendable, latest: boolean): Receipt | undefined {
         : { kind: "bad", line: "not sent: the hub refused it", ...(m.error ? { detail: m.error.message } : {}), acts: ["resend", "edit", "dismiss"] };
     case "sent":
     case "streaming":
+      if (m.leadWaiting !== undefined && latest) return { kind: "warn", line: `sent; the lead doesn’t have it yet: ${m.leadWaiting}`, acts: [] };
       if (!latest) return undefined;
-      if (m.delivery === "delivered") return { kind: "quiet", line: m.steer === true ? "delivered at its next step" : "delivered" };
-      return { kind: "quiet", line: m.steer === true ? "sent; the lead reads it at its next step" : "sent" };
+      switch (m.delivery) {
+        case "turn":
+          return { kind: "quiet", line: "delivered" };
+        case "steer":
+          return { kind: "quiet", line: "delivered; the lead reads it at its next step" };
+        case "queued":
+          return { kind: "quiet", line: "sent; the lead takes it when it’s free" };
+        default:
+          return { kind: "quiet", line: "sent" };
+      }
   }
 }

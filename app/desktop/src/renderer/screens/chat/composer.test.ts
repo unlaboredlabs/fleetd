@@ -20,10 +20,10 @@ describe("the box", () => {
   it("takes terse replies as they are, and a file on its own", () => {
     expect(checkMessage("  1 go, 2 rec ", 0)).toEqual({ ok: true, text: "1 go, 2 rec" });
     expect(checkMessage("nvm", 0)).toEqual({ ok: true, text: "nvm" });
-    expect(checkMessage("", 1)).toEqual({ ok: true, text: "" });
+    expect(checkMessage("", 1)).toEqual({ ok: false, reason: "Add a few words about the files." });
     expect(checkMessage("   ", 0)).toEqual({ ok: false, reason: "" });
-    const long = checkMessage("é".repeat(2001), 0);
-    expect(long.ok ? "" : long.reason).toMatch(/4002 bytes/);
+    const long = checkMessage("x".repeat(20_001), 0);
+    expect(long.ok ? "" : long.reason).toMatch(/20,001/);
   });
 
   it("says a message to a working lead lands at its next step", () => {
@@ -42,11 +42,16 @@ describe("the box", () => {
 describe("receipts", () => {
   const m = (over: Partial<Sendable>): Sendable => ({ state: "sent", ...over });
 
-  it("stay quiet: only your latest message says sent or delivered", () => {
-    expect(receiptFor(m({}), false)).toBeUndefined();
+  it("stay quiet: only your latest message says how it reached the lead", () => {
+    expect(receiptFor(m({ delivery: "turn" }), false)).toBeUndefined();
     expect(receiptFor(m({}), true)).toEqual({ kind: "quiet", line: "sent" });
-    expect(receiptFor(m({ delivery: "delivered" }), true)).toEqual({ kind: "quiet", line: "delivered" });
-    expect(receiptFor(m({ steer: true }), true)?.line).toMatch(/next step/);
+    expect(receiptFor(m({ delivery: "turn" }), true)).toEqual({ kind: "quiet", line: "delivered" });
+    expect(receiptFor(m({ delivery: "steer" }), true)?.line).toMatch(/next step/);
+    expect(receiptFor(m({ delivery: "queued" }), true)?.line).toMatch(/when it’s free/);
+  });
+
+  it("say when the lead can't take it yet, and why", () => {
+    expect(receiptFor(m({ leadWaiting: "devbox is offline; start it" }), true)).toMatchObject({ kind: "warn", line: expect.stringContaining("devbox is offline") as unknown });
   });
 
   it("tell a cut-off link, no answer, no hub and a refusal apart, each with its way out", () => {
