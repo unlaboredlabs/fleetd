@@ -40,6 +40,7 @@ const deviceName = (): string => hostname().trim().replace(/\.local$/u, "") || "
  * `fleetd pair` write app-pair.json (crates/fleetd/src/cli/pair.rs `app_pair_file`).
  */
 export const realPairingDeps = (fleetdDir: string, connect: PairingDeps["connect"], firstRun: () => boolean): PairingDeps => ({
+  // Node's fetch, not Electron's `net`: the page's session (defaultSession) blocks every request but its own origin.
   fetch: (url, init) => globalThis.fetch(url, init),
   connect,
   firstRun,
