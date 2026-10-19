@@ -20,8 +20,21 @@ export const IPC = {
   copy: "app:copy",
   /** invoke(SecretRequest) → SecretOutcome. Main seals the value to the machine's key and submits it. */
   secretSubmit: "secret:submit",
+  /** invoke(url) → OpenOutcome. Opens an https github.com / fleetd.sh link in the user's browser; refuses the rest. */
+  openExternal: "app:openExternal",
   /** main → renderer: HubFrame */
   hubFrame: "hub:frame",
+  /** invoke() → void. The page can take commands and targets now; main sends what it held for it. */
+  appReady: "app:ready",
+  /** invoke(NotifyRequest) → void. Posts a system notification; clicking it sends `appOpen` with its target. */
+  appNotify: "app:notify",
+  /** invoke(MenuCommand[]) → void. The menu commands enabled now; main greys out the rest. */
+  appMenuState: "app:menuState",
+  /** main → renderer: a command id (shared/shortcuts.ts or the palette registry), from a click in the app menu. */
+  menuCommand: "menu:command",
+  /** main → renderer: OpenTarget, from a clicked notification or a fleetd:// link. */
+  appOpen: "app:open",
 } as const;
 
-export type InvokeChannel = Exclude<(typeof IPC)[keyof typeof IPC], typeof IPC.hubFrame>;
+type PushChannel = typeof IPC.hubFrame | typeof IPC.menuCommand | typeof IPC.appOpen;
+export type InvokeChannel = Exclude<(typeof IPC)[keyof typeof IPC], PushChannel>;

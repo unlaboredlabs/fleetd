@@ -11,9 +11,9 @@ use crate::effort::Effort;
 use crate::events::{HubEvent, HubEventType};
 use crate::ids::{EventSeq, MachineId, ProjectId, ProjectRef, ThreadId, Timestamp};
 use crate::ledger::{
-    Ask, AskId, AskState, Batch, BatchId, Decision, DecisionId, DecisionKey, DecisionScope,
-    DecisionSource, DecisionValue, DecisionWhy, IntakeText, Lead, PlaybookName, PlaybookRef,
-    Serves, Workstream, WorkstreamId, WorkstreamState,
+    Ask, AskAnswerKind, AskId, AskState, Batch, BatchId, Decision, DecisionId, DecisionKey,
+    DecisionScope, DecisionSource, DecisionValue, DecisionWhy, IntakeText, Lead, PlaybookName,
+    PlaybookRef, Serves, Workstream, WorkstreamId, WorkstreamState,
 };
 use crate::live::{AgentLane, OrderCard, TrainLive};
 use crate::model::{
@@ -664,11 +664,14 @@ input!(InboxReplyInput {
     batch_id: Option<BatchId>,
 });
 
-/// answered: a Decision was written. later: moved to the next batch. retired: "forget Dn". pref: "pref:" recorded.
+/// answered: the ask is answered (a decide ask's decision is written once `undoUntil` passes). skipped: "skip",
+/// the lead keeps its recommendation and no decision is written. later: moved to the next batch. retired: "forget
+/// Dn". pref: "pref:" recorded.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum InboxReplyOutcome {
     Answered,
+    Skipped,
     Withdrawn,
     Later,
     Retired,
@@ -681,7 +684,14 @@ input!(InboxReplyApplied {
     ask_id: Option<AskId>,
     outcome: InboxReplyOutcome,
     value: Option<String>,
+    /// What the human sees: the picked option's label, the free text, or the kept recommendation's label.
+    label: Option<String>,
+    /// option, text or skip, for a decide ask.
+    kind: Option<AskAnswerKind>,
+    /// Absent while a decide answer's undo window runs.
     decision_id: Option<DecisionId>,
+    /// Until then `inbox_undo` takes the answer back.
+    undo_until: Option<Timestamp>,
     /// The written decision's source and by, filled by the hub from the caller (human device or agent key).
     source: Option<DecisionSource>,
     by: Option<String>,
@@ -695,6 +705,14 @@ output!(InboxReplyOutput {
     applied: Vec<InboxReplyApplied>,
     /// How to fix an unparseable reply.
     hint: Option<String>,
+});
+
+// inbox_undo: takes back a decide answer inside its undo window (`ASK_UNDO_WINDOW_MS`); the ask is open again and
+// the lead never hears of it. After the window it is refused: answer the ask again or record a new decision.
+input!(InboxUndoInput { ask_id: AskId });
+output!(InboxUndoOutput {
+    /// The ask, open again in its batch.
+    ask: Ask,
 });
 
 // decisions_search
@@ -1229,6 +1247,7 @@ tools! {
     inventory => Inventory, Read, InventoryInput, InventoryOutput;
     asks_list => AsksList, Read, AsksListInput, AsksListOutput;
     inbox_reply => InboxReply, Operate, InboxReplyInput, InboxReplyOutput;
+    inbox_undo => InboxUndo, Operate, InboxUndoInput, InboxUndoOutput;
     decisions_search => DecisionsSearch, Read, DecisionsSearchInput, DecisionsSearchOutput;
     decisions_record => DecisionsRecord, Operate, DecisionsRecordInput, DecisionsRecordOutput;
     digest_get => DigestGet, Read, DigestGetInput, DigestGetOutput;
@@ -1343,7 +1362,7 @@ mod tests {
     #[test]
     fn inputs_fill_documented_defaults() {
         let tail: ThreadTailInput =
-            decode(json!({ "machineId": "forge", "threadId": "t1" })).unwrap();
+            decode(json!({ "machineId": "devbox", "threadId": "t1" })).unwrap();
         assert_eq!(tail.n.get(), 10);
         assert_eq!(
             decode::<EventsWaitInput>(json!({}))
@@ -1352,12 +1371,12 @@ mod tests {
                 .get(),
             50
         );
-        let launch = json!({ "machineId": "forge", "projectId": "p1", "prompt": "hi", "model": "claude-haiku-5-5", "effort": "low", "clientRequestId": "r1" });
+        let launch = json!({ "machineId": "devbox", "projectId": "p1", "prompt": "hi", "model": "claude-haiku-5-5", "effort": "low", "clientRequestId": "r1" });
         assert_eq!(
             decode::<ThreadLaunchInput>(launch).unwrap().runtime_mode,
             RuntimeMode::FullAccess
         );
-        let wake = json!({ "target": { "machineId": "forge", "threadId": "t1" }, "schedule": { "kind": "at", "at": "2026-10-17T10:00:00.000Z", "tz": "UTC" }, "message": "x", "clientRequestId": "r1" });
+        let wake = json!({ "target": { "machineId": "devbox", "threadId": "t1" }, "schedule": { "kind": "at", "at": "2026-10-17T10:00:00.000Z", "tz": "UTC" }, "message": "x", "clientRequestId": "r1" });
         let wake: WakeSetInput = decode(wake).unwrap();
         assert!(wake.once);
         assert_eq!(wake.catch_up, WakeCatchUp::FireOnce);
@@ -1376,7 +1395,7 @@ mod tests {
     #[test]
     fn inputs_refuse_values_past_their_bounds() {
         assert!(
-            decode::<ThreadTailInput>(json!({ "machineId": "forge", "threadId": "t1", "n": 51 }))
+            decode::<ThreadTailInput>(json!({ "machineId": "devbox", "threadId": "t1", "n": 51 }))
                 .is_err()
         );
         assert!(decode::<EventsWaitInput>(json!({ "timeoutSec": 51 })).is_err());
@@ -1396,11 +1415,11 @@ mod tests {
         let base = json!({ "text": "fix the login bug", "clientRequestId": "r1" });
         assert!(decode::<IntakeSubmitInput>(base.clone()).is_ok());
         let mut both = base.clone();
-        both["machineId"] = "forge".into();
+        both["machineId"] = "devbox".into();
         both["projectId"] = "p1".into();
         assert!(decode::<IntakeSubmitInput>(both).is_ok());
         let mut one = base.clone();
-        one["machineId"] = "forge".into();
+        one["machineId"] = "devbox".into();
         assert!(decode::<IntakeSubmitInput>(one).is_err());
         let mut chore = base;
         chore["template"] = "chore".into();
@@ -1409,7 +1428,7 @@ mod tests {
 
     #[test]
     fn the_tool_table_matches_ts_names_and_scopes() {
-        assert_eq!(McpToolName::ALL.len(), 73);
+        assert_eq!(McpToolName::ALL.len(), 74);
         for tool in McpToolName::ALL {
             assert_eq!(McpToolName::parse(tool.as_str()), Some(*tool));
             assert_eq!(serde_json::to_value(tool).unwrap(), tool.as_str());
@@ -1450,8 +1469,8 @@ mod tests {
     fn steer_outputs_round_trip_with_every_field_set() {
         let steer = json!({
             "id": "S12", "target": { "taskId": "T88" }, "workstreamId": "W41",
-            "thread": { "machineId": "forge", "threadId": "t1" }, "runId": "r1",
-            "by": { "kind": "human", "keyName": "wynn-mac" }, "mode": "now", "text": "skip the docs page",
+            "thread": { "machineId": "devbox", "threadId": "t1" }, "runId": "r1",
+            "by": { "kind": "human", "keyName": "laptop" }, "mode": "now", "text": "skip the docs page",
             "stage": "acknowledged", "queuedAt": "2026-10-18T14:02:07.120Z",
             "deliveredAt": "2026-10-18T14:02:07.143Z", "how": "stopped", "stoppedTool": "cargo test",
             "seenAt": "2026-10-18T14:02:07.150Z", "ackedAt": "2026-10-18T14:02:08.910Z",

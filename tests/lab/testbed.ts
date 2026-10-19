@@ -3,7 +3,7 @@
 // - squash merges only;
 // - a ruleset on main requiring the checks `ci` and `fleetd/train`, with no force-push and no deletion.
 //
-//   node tests/lab/testbed.ts [--repo unlaboredlabs/fleetd-testbed] [--clone /home/wynn/src/fleetd-lab/testbed]
+//   node tests/lab/testbed.ts [--repo unlaboredlabs/fleetd-testbed] [--clone ~/src/fleetd-lab/testbed]
 //
 // Uses the `gh` login on this machine. It only ever touches the one repo it is given.
 import { execFileSync, spawnSync } from "node:child_process";
@@ -15,7 +15,7 @@ import { parseArgs } from "node:util";
 const { values: args } = parseArgs({
   options: {
     repo: { type: "string", default: "unlaboredlabs/fleetd-testbed" },
-    clone: { type: "string", default: "/home/wynn/src/fleetd-lab/testbed" },
+    clone: { type: "string", default: path.join(os.homedir(), "src/fleetd-lab/testbed") },
   },
 });
 const repo = args.repo;

@@ -7,7 +7,7 @@ import path from "node:path";
 import { _electron as electron, type ElectronApplication, type Page } from "@playwright/test";
 import { buildSync } from "esbuild";
 import type { Box, CheckOptions, Finding, ScrollStep } from "./dom/checks.ts";
-import { type FixtureName, type SizeName, sizes, type Theme } from "./registry.ts";
+import { type FixtureName, type Screen, type SizeName, sizes, type Theme } from "./registry.ts";
 
 const qaDir = import.meta.dirname;
 export const desktopDir = path.resolve(qaDir, "..");
@@ -35,20 +35,39 @@ function checksScript() {
 export interface Launched {
   app: ElectronApplication;
   page: Page;
+  // Resolves once the fixture's timed frames have all arrived and the page is stable.
+  settled: () => Promise<void>;
   close: () => Promise<void>;
 }
 
-// The fixture's "now", so relative times ("3 min ago") read the same on every run.
-function fixtureNow(file: string) {
+// From the fixture file: its "now", so relative times ("3 min ago") read the same on every run, and its "settleMs",
+// how long after a subscribe its timed frames keep arriving.
+export function fixtureMeta(file: string) {
   if (!existsSync(file)) throw new Error(`Fixture ${file} not found: run \`pnpm fixtures\` in app/desktop first.`);
   const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
-  if (typeof parsed === "object" && parsed !== null && "now" in parsed && typeof parsed.now === "string") return parsed.now;
-  return undefined;
+  if (typeof parsed !== "object" || parsed === null) return {};
+  return {
+    now: "now" in parsed && typeof parsed.now === "string" ? parsed.now : undefined,
+    settleMs: "settleMs" in parsed && typeof parsed.settleMs === "number" ? parsed.settleMs : 0,
+  };
+}
+
+// Retries only a launch that never started (the binary busy or missing for a moment), never a test outcome.
+const LAUNCH_RACE = /ETXTBSY|ENOENT|EAGAIN|spawn|Process failed to launch/;
+async function launchElectron(options: Parameters<typeof electron.launch>[0], attempts = 3): Promise<ElectronApplication> {
+  try {
+    return await electron.launch(options);
+  } catch (error) {
+    if (attempts <= 1 || !LAUNCH_RACE.test(String(error))) throw error;
+    await new Promise((done) => setTimeout(done, 500));
+    return launchElectron(options, attempts - 1);
+  }
 }
 
 // `fixture` is required for the app; only the self-test's stand-in window runs without one.
 export async function launch(fixture: FixtureName | undefined, main = appMain): Promise<Launched> {
-  const now = fixture === undefined ? undefined : fixtureNow(path.join(fixturesDir, `${fixture}.json`));
+  if (!existsSync(main)) throw new Error(`${main} is missing: run \`pnpm qa:build\` in app/desktop first.`);
+  const { now, settleMs = 0 } = fixture === undefined ? {} : fixtureMeta(path.join(fixturesDir, `${fixture}.json`));
   const userData = mkdtempSync(path.join(tmpdir(), "fleetd-qa-"));
   // Only what Electron needs: never the user's fleetd home, credentials or the agent's own session variables.
   const env: Record<string, string> = {
@@ -59,7 +78,7 @@ export async function launch(fixture: FixtureName | undefined, main = appMain): 
     LANG: "en_US.UTF-8",
     TZ: "UTC",
   };
-  for (const key of ["DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "TMPDIR"]) {
+  for (const key of ["DISPLAY", "XAUTHORITY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "TMPDIR"]) {
     const value = process.env[key];
     if (value) env[key] = value;
   }
@@ -72,15 +91,24 @@ export async function launch(fixture: FixtureName | undefined, main = appMain): 
     // No display (CI, an ssh session): render offscreen. Layout, fonts and screenshots are the same.
     if (!env["DISPLAY"] && !env["WAYLAND_DISPLAY"]) args.push("--ozone-platform=headless");
   }
-  const app = await electron.launch({ args, env, cwd: desktopDir, timeout: 30_000 });
+  const app = await launchElectron({ args, env, cwd: desktopDir, timeout: 30_000 });
   const page = await app.firstWindow();
+  // Entry animations of the first screen play reduced too.
+  await page.emulateMedia({ reducedMotion: "reduce" });
   if (now) {
     await page.clock.setFixedTime(new Date(now));
     await page.reload();
   }
+  // The renderer subscribed on this load, so the fixture's timeline runs from here.
+  const settledAt = Date.now() + settleMs;
   return {
     app,
     page,
+    settled: async () => {
+      const left = settledAt - Date.now();
+      if (left > 0) await new Promise((done) => setTimeout(done, left));
+      await settle(page);
+    },
     close: async () => {
       await app.close();
       rmSync(userData, { recursive: true, force: true });
@@ -114,21 +142,46 @@ export async function show(page: Page, screenId: string, route: string, open?: (
   await page.evaluate((r) => {
     window.location.hash = r;
   }, route);
+  if (open) {
+    // The route is up once any screen is; then the interaction brings up this one.
+    await page.locator("[data-screen]").first().waitFor({ state: "visible", timeout: 10_000 });
+    await settle(page);
+    await open(page);
+  }
   // A screen marks its sub-states as "<id>.<state>" (board.empty), so either form means it is up.
   await page
     .locator(`[data-screen="${screenId}"], [data-screen^="${screenId}."]`)
     .first()
     .waitFor({ state: "visible", timeout: 10_000 });
-  if (open) await open(page);
   await settle(page);
 }
 
-// Fonts loaded, no skeletons, and two frames painted after the last layout change.
+// A sub-state ending in one of these is an error page, whether the screen's own or one of its panels'.
+const ERROR_STATES = new Set(["error", "not-found", "notfound", "missing", "failed"]);
+
+// Fails when the view shows an error or not-found state the registry entry doesn't expect, or expects one and
+// shows none.
+export async function assertExpectedState(page: Page, screen: Pick<Screen, "id" | "expect">) {
+  const states = await page.locator("[data-screen]").evaluateAll((els) => els.map((e) => e.getAttribute("data-screen") ?? ""));
+  const errors = states.filter((s) => ERROR_STATES.has(s.split(".").pop() ?? ""));
+  if (screen.expect === "error" && errors.length === 0) {
+    throw new Error(`${screen.id} expects an error state but shows ${states.join(", ")}`);
+  }
+  if (screen.expect !== "error" && errors.length > 0) {
+    throw new Error(
+      `${screen.id} shows ${errors.join(", ")}: fix the route or fixture (an id the fixture doesn't have?), or register the entry with expect: "error"`,
+    );
+  }
+}
+
+// Fonts loaded, no skeletons, and two frames painted after the last layout change. `fonts.ready` waits for the faces
+// the current layout asked for; `fonts.status` alone is "loaded" before any face has been requested.
 export async function settle(page: Page) {
-  await page.waitForFunction(() => document.fonts.status === "loaded" && !document.querySelector("[aria-busy='true']"), undefined, {
-    timeout: 10_000,
+  await page.waitForFunction(() => !document.querySelector("[aria-busy='true']"), undefined, { timeout: 10_000 });
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+    await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(null))));
   });
-  await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(null)))));
 }
 
 // macOS draws the traffic lights over the page; nothing of ours may sit under them.

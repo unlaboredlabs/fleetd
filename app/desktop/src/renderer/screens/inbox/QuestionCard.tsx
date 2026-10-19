@@ -118,7 +118,7 @@ function OpenBody(props: QuestionCardViewProps & { titleId: string }) {
   const values = [...options.map((o) => o.id), ...(freeText ? [OTHER] : [])];
 
   useEffect(() => {
-    if (props.autoFocus === true) rootRef.current?.focus();
+    if (props.autoFocus === true) rootRef.current?.focus({ preventScroll: true });
   }, [props.autoFocus]);
 
   useEffect(() => {

@@ -17,8 +17,8 @@ const HASH = /\b(?=[0-9a-f]*[0-9])(?=[0-9a-f]*[a-f])[0-9a-f]{7,}\b/gi;
 const DOTTED = /(?<![\w./-])[a-z][a-z0-9_-]*(?:\.[a-z0-9_-]+)+(?![\w/-])/g;
 // waiting_on_you, pay_comparison: English never uses underscores between words.
 const SNAKE = /(?<![\w./-])[a-z][a-z0-9]*(?:_[a-z0-9]+)+(?![\w/-])/g;
-// a-monthly-vs-week: three or more lowercase segments, at least one letter (2026-10-19 is a date). Two-segment
-// words ("follow-up") are too often English.
+// a-monthly-vs-week: three or more lowercase segments, none of them a bare number (2026-10-19 is a date,
+// last-7-days is English). Two-segment words ("follow-up") are too often English.
 const KEBAB = /(?<![\w./-])[a-z0-9]+(?:-[a-z0-9]+){2,}(?![\w/-])/g;
 
 // Explicit and small: dotted tokens that are file names or hostnames, and hyphenated English words.
@@ -88,7 +88,7 @@ export function findRawText(text: string): RawTextHit[] {
   collect(HASH, withoutUuids, () => true, "hash", out);
   collect(DOTTED, withoutUuids, (m) => !isAllowedDotted(m), "slug", out);
   collect(SNAKE, withoutUuids, () => true, "slug", out);
-  collect(KEBAB, withoutUuids, (m) => /[a-z]/.test(m) && !ENGLISH_HYPHENATED.has(m), "slug", out);
+  collect(KEBAB, withoutUuids, (m) => /[a-z]/.test(m) && !/(^|-)\d+(-|$)/.test(m) && !ENGLISH_HYPHENATED.has(m), "slug", out);
   for (const re of MARKDOWN) {
     const m = re.exec(text);
     if (m) out.push({ kind: "markdown", match: m[0].trim() });

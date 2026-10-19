@@ -79,8 +79,13 @@
     "BriefBudget": {
       "properties": {
         "agentHours": {
+          "description": "Older briefs only; a lead now gives `size`.",
           "exclusiveMinimum": 0,
           "type": "number"
+        },
+        "size": {
+          "$ref": "#/$defs/Tier",
+          "description": "How big a research spend the lead allows, relative like plan sizes; never a time guess."
         }
       },
       "type": "object"

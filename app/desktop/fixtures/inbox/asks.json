@@ -1,5 +1,5 @@
 {
-  "note": "The inbox's own asks, used by fixtures/inbox/index.ts and the inbox unit tests: two of Wynn's share-card questions as the lead now sends them, the first one as stored before labels (bare keys, a free-text recommendation), an approval, a checklist, a secret, and a long-text stress ask.",
+  "note": "The inbox's own asks, used by fixtures/inbox/index.ts and the inbox unit tests: the two share-card questions as the lead now sends them, the first one as stored before labels (bare keys, a free-text recommendation), an approval, a checklist, a secret, and a long-text stress ask.",
   "projects": [
     {
       "machineId": "devbox",

@@ -87,7 +87,7 @@ export function DataTable<T>(props: DataTableProps<T>) {
     <div role="row" className={cx(s.row, s.head)} style={{ gridTemplateColumns: template }}>
       {columns.map((c) => (
         <div key={c.key} role="columnheader" className={cx(s.cell, c.align === "end" && s.end)}>
-          <Truncate size="xs" tone="quiet" expand="none">
+          <Truncate size="xs" tone="quiet">
             {c.header}
           </Truncate>
         </div>
@@ -109,7 +109,7 @@ export function DataTable<T>(props: DataTableProps<T>) {
         </div>
       ) : props.virtual ? (
         <div style={{ flex: 1, minHeight: 0 }}>
-          <VirtualList items={props.rows} getKey={props.getKey} renderItem={renderRow} estimateSize={29} />
+          <VirtualList items={props.rows} getKey={props.getKey} renderItem={renderRow} estimateSize={29} role="presentation" />
         </div>
       ) : (
         <div role="rowgroup">{props.rows.map(renderRow)}</div>

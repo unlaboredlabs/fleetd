@@ -92,6 +92,8 @@ describe("the inbox state", () => {
     const delivered = withEvent(back, {
       seq: 9,
       type: "ask.delivered",
+      at: "2026-10-19T10:30:11.000Z",
+      summary: "The lead has the answer.",
       data: { askId: "A11", deliveredAt: "2026-10-19T10:30:11.000Z" },
     });
     expect(delivered.answered.get("A11")).toMatchObject({ undoBy: null, deliveredAt: "2026-10-19T10:30:11.000Z" });
@@ -127,7 +129,7 @@ describe("the inbox state", () => {
     expect(next.attention).toEqual([
       { seq: 12, at: "2026-10-19T10:29:00.000Z", summary: "An implementer stopped: the tests would not start.", urgent: false, project: "storefront" },
     ]);
-    expect(withEvent(next, { seq: 13, type: "task.done", summary: "quiet" })).toBe(next);
+    expect(withEvent(next, { seq: 13, at: "2026-10-19T10:29:30.000Z", type: "task.done", summary: "quiet" })).toBe(next);
   });
 });
 

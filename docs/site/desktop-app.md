@@ -83,16 +83,15 @@ A stopped order isn't reopened. ⌘[ and ⌘] go to the previous and next order,
 
 ⌘. opens Status for what you're looking at: the open order, the selected project, or the whole fleet; ⌘. again goes
 back. It's also in the sidebar above Board, in the palette ("Status", "Status for W41") and on an order's header. It
-shows the progress fleetd verified, the ETA from measured speed, what the work waits on, what changed since you last
-looked, then health, what needs you, risks, and the items in progress, next and done. What needs you has the inbox's
-one-tap answers.
+shows the progress fleetd verified, what the work waits on, what changed since you last looked, then health, what
+needs you, risks, and the items in progress, next and done. What needs you has the inbox's one-tap answers.
 
 It updates as things happen, without a refresh. A part whose source has gone quiet gets a warning outline with
 "stale 4m" and the reason, and keeps its last value. While the app is reconnecting the whole view greys out with
 "Not live: reconnecting", and after it reconnects it shows empty bars until the fresh numbers arrive. What the number
-means and how the ETA is measured: [Status](status.md).
+means and what it waits on: [Status](status.md).
 
-![Status for the fleet: 72% verified, the ETA and what it waits on, two stale sources outlined, health, projects and what needs you.](/docs/img/status.png)
+![Status for the fleet: 72% verified, what it waits on, two stale sources outlined, health, projects and what needs you.](/docs/img/status.png)
 
 ## Inbox and replies {#reply}
 
@@ -102,8 +101,9 @@ takes its recommendation, `n` answers no, Esc closes. Or answer a whole batch in
 | Reply | Means |
 |---|---|
 | `1 go` | accept item 1 (also `yes`, `y`, `ok`, `rec`) |
-| `2 nvm` | reject item 2 (also `no`, `drop`, `skip`, `n`) |
-| `3 b` | pick option b of item 3 (`a` to `f`) |
+| `2 nvm` | reject item 2 (also `no`, `drop`, `n`) |
+| `3 b` | pick option b of item 3 (`a` to `f`; `a` is the recommendation) |
+| `4 skip` | skip a question for now: the lead keeps its recommendation, nothing is recorded |
 | `1-3 go` | the same answer for items 1 to 3 |
 | `2: use the staging bucket` | answer in your own words |
 | `4 later` | not now; it stays open |
@@ -113,7 +113,9 @@ takes its recommendation, `n` answers no, Esc closes. Or answer a whole batch in
 | `pref: no new dependencies` | a standing preference for every lead |
 | `forget D12` | drop decision 12 |
 
-Mix them: `1 go 2 nvm 3 b`. A reply the app can't read changes nothing and shows a hint.
+Mix them: `1 go 2 nvm 3 b`. A reply the app can't read changes nothing and shows a hint. You have 10 seconds to take
+back an answer to a question before its lead hears of it. From a terminal, `fleetd answer --key-file <human key>` lists
+the open questions with each choice and what it does, and `fleetd answer "1 b" --key-file …` replies.
 
 Asks that block work also raise a desktop notification: at most one every 20 minutes, with the rest folded in as "+N
 more", and only urgent ones in quiet hours (23:00 to 08:00 unless a `policy.quiet_hours` decision says otherwise).

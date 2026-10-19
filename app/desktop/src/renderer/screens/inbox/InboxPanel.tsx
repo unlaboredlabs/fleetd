@@ -1,7 +1,7 @@
-// The inbox panel's body. F1's shell hosts it over any route (?inbox, ?inbox&ask=<askId>) and owns ⌘I; this is
-// what is inside: every ask as a question card, the other things that need a look, and the reply field.
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { X } from "lucide-react";
+// The inbox panel's body. F1's shell hosts it over any route (?inbox, ?inbox&ask=<askId>) with its header, close
+// button, ⌘I and Esc; this is what is inside: every ask as a question card, the other things that need a look, and
+// the reply field.
+import { useEffect, useRef, useState } from "react";
 import { Button, cx, Input, ScrollArea, StatusChip, Text, Truncate } from "../../ui";
 import { needsYou, type AttentionItem } from "./model";
 import { QuestionCard } from "./QuestionCard";
@@ -11,13 +11,11 @@ import s from "./InboxPanel.module.css";
 export interface InboxPanelProps {
   /** Open on this ask: it is scrolled to and takes the keyboard. */
   askId?: string | undefined;
-  onClose: () => void;
 }
 
-export function InboxPanel({ askId, onClose }: InboxPanelProps) {
+export function InboxPanel({ askId }: InboxPanelProps) {
   const inbox = useInbox();
   const asks = needsYou(inbox);
-  const openCount = inbox.open.length;
   const focusId = asks.some((a) => a.askId === askId) ? askId : inbox.open[0]?.askId;
   const bodyRef = useRef<HTMLDivElement>(null);
 
@@ -26,26 +24,8 @@ export function InboxPanel({ askId, onClose }: InboxPanelProps) {
     bodyRef.current?.querySelector(`[data-ask="${CSS.escape(askId)}"]`)?.scrollIntoView({ block: "nearest" });
   }, [askId, inbox.loaded]);
 
-  const onKeyDown = (e: KeyboardEvent<HTMLElement>): void => {
-    if (e.key === "Escape" && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) {
-      e.preventDefault();
-      onClose();
-    }
-  };
-
   return (
-    <aside className={s.panel} data-screen="inbox" aria-label="Needs you" onKeyDown={onKeyDown}>
-      <header className={s.head}>
-        <Text strong>Needs you</Text>
-        {openCount > 0 ? (
-          <Text tone="quiet" tabular>
-            {openCount}
-          </Text>
-        ) : null}
-        <Button variant="quiet" iconOnly aria-label="Close the inbox" className={cx(s.close)} onClick={onClose}>
-          <X />
-        </Button>
-      </header>
+    <div className={s.panel} data-screen="inbox">
       <ScrollArea className={cx(s.scroll)}>
         <div ref={bodyRef} className={s.body}>
           {inbox.loadError === null ? null : (
@@ -70,7 +50,7 @@ export function InboxPanel({ askId, onClose }: InboxPanelProps) {
         </div>
       </ScrollArea>
       <ReplyField live={inbox.live} echo={inbox.replyEcho} />
-    </aside>
+    </div>
   );
 }
 

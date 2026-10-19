@@ -206,7 +206,7 @@ mod tests {
         if brief {
             w["brief"] = json!({
                 "goal": "a docs page", "why": "people ask", "pointers": [], "constraints": [], "tier": "S",
-                "doneWhen": [{ "type": "pr_merged", "repo": "wynn-dev/lab" }, { "type": "human", "question": "does it read well?" }],
+                "doneWhen": [{ "type": "pr_merged", "repo": "acme/storefront" }, { "type": "human", "question": "does it read well?" }],
             });
         }
         serde_json::from_value(w).unwrap()
@@ -248,7 +248,7 @@ mod tests {
             ),
             (
                 "an issue URL",
-                write(Some("issue:https://github.com/wynn-dev/lab/issues/3")),
+                write(Some("issue:https://github.com/acme/storefront/issues/3")),
                 workstream("running", true),
                 None,
             ),
@@ -341,7 +341,7 @@ mod tests {
         );
     }
 
-    const PR: &str = "https://github.com/wynn-dev/lab/pull/7";
+    const PR: &str = "https://github.com/acme/storefront/pull/7";
 
     fn v(task: &str, sha: &str, blocking: u32) -> PrVerdict {
         PrVerdict {
@@ -535,12 +535,12 @@ mod tests {
     #[test]
     fn pr_key_is_one_per_pr() {
         assert_eq!(
-            pr_key("https://GitHub.com/Wynn-Dev/Lab/pull/7/"),
-            "github.com/wynn-dev/lab/pull/7"
+            pr_key("https://GitHub.com/Acme/Storefront/pull/7/"),
+            "github.com/acme/storefront/pull/7"
         );
         assert_eq!(
-            pr_key("https://github.com/wynn-dev/lab/pulls/7?x=1#top"),
-            "github.com/wynn-dev/lab/pull/7"
+            pr_key("https://github.com/acme/storefront/pulls/7?x=1#top"),
+            "github.com/acme/storefront/pull/7"
         );
     }
 }

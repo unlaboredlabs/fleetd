@@ -41,15 +41,20 @@ pub fn button(t: &Theme, id: impl Into<ElementId>, label: impl Into<SharedString
         .text_size(px(size::MD))
         .whitespace_nowrap()
         .child(label.into());
+    // A disabled button drops its variant's colour: a faded accent fill still reads as the action to press.
+    if !enabled {
+        return match variant {
+            Variant::Ghost => base,
+            _ => base.border_1().border_color(t.hairline),
+        }
+        .text_color(t.faint);
+    }
     let base = match variant {
         Variant::Primary => base.bg(t.accent_fill).text_color(t.on_accent).font_weight(STRONG),
         Variant::Secondary => base.border_1().border_color(t.border).text_color(t.text),
         Variant::Ghost => base.text_color(t.quiet),
         Variant::Danger => base.border_1().border_color(t.danger).text_color(t.danger),
     };
-    if !enabled {
-        return base.opacity(0.45);
-    }
     let hover = t.hover;
     let text = t.text;
     clickable(t, base).hover(move |s| match variant {
@@ -189,11 +194,16 @@ pub fn field(t: &Theme, focused: bool) -> Div {
 
 /// A clickable list row: full width, fixed height, hover and selected overlays. Inset it by giving its list
 /// horizontal padding.
+///
+/// `flex_none`: a list is a flex column, and a flex item shrinks when the column overflows. `overflow_hidden` sets
+/// its automatic min height to 0, so in a list longer than its scroll area every row shrank to nothing and the
+/// labels painted over each other (Settings → Prompts with the hub's 60 prompts; the bench's 9 fit).
 pub fn row(t: &Theme, id: impl Into<ElementId>, selected: bool) -> Stateful<Div> {
     let hover = t.hover;
     clickable(t, div().id(id))
         .w_full()
         .h(px(metric::ROW))
+        .flex_none()
         .px_2()
         .flex()
         .items_center()
@@ -203,6 +213,13 @@ pub fn row(t: &Theme, id: impl Into<ElementId>, selected: bool) -> Stateful<Div>
         .overflow_hidden()
         .when(selected, |d| d.bg(t.selected))
         .when(!selected, |d| d.hover(move |s| s.bg(hover)))
+}
+
+/// A table: `cols` columns, each as wide as its widest cell, every row as tall as its tallest cell. Add the cells
+/// row by row as direct children. Use it instead of fixed-height rows of fixed-width cells: a cell that does not fit
+/// (a longer id, a wider platform font) wraps and pushes its row down instead of painting over the next one.
+pub fn table(cols: u16) -> Div {
+    div().grid().grid_cols_max_content(cols).gap_x_3().gap_y_0p5()
 }
 
 /// A floating surface (palette, composer): raised tone, hairline, one soft shadow.
