@@ -3,13 +3,12 @@
 // (the follow rule is T3 Code's: apps/web MessagesTimeline.logic.ts). Scrolling to the top loads older pages; the
 // list keeps its place while they arrive above.
 import type { Virtualizer } from "@tanstack/react-virtual";
-import { FileText, Image } from "lucide-react";
+import { Paperclip } from "lucide-react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentLane } from "../../../shared/contracts";
-import { Button, cx, Text, Truncate, VirtualList } from "../../ui";
+import { Button, cx, IdChip, Text, VirtualList } from "../../ui";
 import type { ChatItem } from "../../src/data/chat";
 
-type ChatAttachment = ChatItem["attachments"][number];
 import { shortClock } from "./format";
 import { systemHeadline, type Row } from "./model";
 import { MessageReceipt } from "./Composer";
@@ -20,22 +19,15 @@ import type { ProjectRef } from "./slots";
 import { Disclosure, InlineText, Message } from "./text";
 import s from "./view.module.css";
 
-const sizeWords = (n: number): string => (n < 1024 ? `${String(n)} B` : n < 1024 * 1024 ? `${String(Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
-
-function Attachment({ a }: { a: ChatAttachment }) {
-  const Icon = a.mime.startsWith("image/") ? Image : FileText;
-  const size = a.bytes === undefined ? undefined : sizeWords(a.bytes);
+/**
+ * An attachment as a chip. The chat contract carries only its id (no name, type or size yet), so it reads
+ * "Attachment n" with the id behind copy, never as text.
+ */
+function Attachment({ id, n }: { id: string; n: number }) {
   return (
-    <span className={s.attachment} title={size ? `${a.name} · ${size}` : a.name}>
-      <Icon className={s.attachmentIcon} aria-hidden />
-      <Truncate as="code" size="xs" mono>
-        {a.name}
-      </Truncate>
-      {size ? (
-        <Text size="xs" tone="quiet" className={cx(s.flexNone)}>
-          {size}
-        </Text>
-      ) : null}
+    <span className={s.attachment}>
+      <Paperclip className={s.attachmentIcon} aria-hidden />
+      <IdChip label={`Attachment ${String(n)}`} id={id} kind="attachment" size="xs" />
     </span>
   );
 }
@@ -154,8 +146,8 @@ const RowView = memo(function RowView(props: {
           {i.text.trim() !== "" ? <Message text={i.text} /> : null}
           {i.attachments.length > 0 ? (
             <div className={s.attachments}>
-              {i.attachments.map((a) => (
-                <Attachment key={a.attachmentId} a={a} />
+              {i.attachments.map((a, n) => (
+                <Attachment key={a} id={a} n={n + 1} />
               ))}
             </div>
           ) : null}
