@@ -225,9 +225,9 @@ export const screens: readonly Screen[] = [
     id: "chat",
     route: CHAT,
     fixtures: ["settings-agents", "long-text"],
-    open: (page) => page.getByRole("button", { name: /Max agents/u }).first().click(),
+    // The header control's accessible name is "Max agents: <running> running of <max>[, <n> waiting]".
+    open: (page) => page.getByRole("button", { name: /^Max agents: \d+ running of \d+/u }).click(),
     variant: "max-agents",
-    pending: "A9 Max agents slider (F9): confirm the header control's name",
   },
   // F1: the frame (top bar, sidebar of projects) around #/, which opens the last project's chat (the first one on a
   // fresh install), and the connection states it shows. With no projects, #/ offers to add one (home.empty).
