@@ -5,8 +5,10 @@
 import type { Virtualizer } from "@tanstack/react-virtual";
 import { Paperclip } from "lucide-react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import type { AgentLane } from "../../../shared/contracts";
-import { Button, cx, IdChip, Text, VirtualList } from "../../ui";
+import type { AgentLane, AttachmentRef } from "../../../shared/contracts";
+import { Button, cx, Text, Truncate, VirtualList } from "../../ui";
+import { useToolQuery } from "../../src/data/react";
+import { fmtBytes } from "./attachments";
 import type { ChatItem } from "../../src/data/chat";
 
 import { shortClock } from "./format";
@@ -23,13 +25,40 @@ import s from "./view.module.css";
  * An attachment as a chip. The chat contract carries only its id (no name, type or size yet), so it reads
  * "Attachment n" with the id behind copy, never as text.
  */
-function Attachment({ id, n }: { id: string; n: number }) {
+function FileChip({ file }: { file: AttachmentRef }) {
   return (
     <span className={s.attachment}>
       <Paperclip className={s.attachmentIcon} aria-hidden />
-      <IdChip label={`Attachment ${String(n)}`} id={id} kind="attachment" size="xs" />
+      {/* A file name is a machine token (pasted-1.txt, receipt-dates.png): the code voice, cut to fit. */}
+      <span className={s.attachmentName} data-text="code">
+        <Truncate size="sm" mono>
+          {file.name}
+        </Truncate>
+      </span>
+      <Text size="xs" tone="quiet" tabular>
+        {fmtBytes(file.bytes)}
+      </Text>
     </span>
   );
+}
+
+// An image shows itself, fetched once its row is on screen (the list only mounts visible rows). Until then, and
+// if it can't be read, it is a file like any other.
+function ImageAttachment({ project, file }: { project: ProjectRef; file: AttachmentRef }) {
+  const got = useToolQuery("attachment_get", { projectRef: project, attachmentId: file.attachmentId });
+  if (got.data === undefined) return <FileChip file={file} />;
+  return (
+    <img
+      className={s.attachmentImage}
+      src={`data:${got.data.mime};base64,${got.data.dataB64}`}
+      alt={file.name}
+      title={file.name}
+    />
+  );
+}
+
+function Attachment({ project, file }: { project: ProjectRef; file: AttachmentRef }) {
+  return file.mime.startsWith("image/") ? <ImageAttachment project={project} file={file} /> : <FileChip file={file} />;
 }
 
 function Top({ state, onLoadOlder }: { state: "more" | "loading" | "start"; onLoadOlder: () => void }) {
@@ -178,8 +207,8 @@ const RowView = memo(function RowView(props: {
           {i.text.trim() !== "" ? <Message text={i.text} /> : null}
           {i.attachments.length > 0 ? (
             <div className={s.attachments}>
-              {i.attachments.map((a, n) => (
-                <Attachment key={a} id={a} n={n + 1} />
+              {i.attachments.map((a) => (
+                <Attachment key={a.attachmentId} project={project} file={a} />
               ))}
             </div>
           ) : null}

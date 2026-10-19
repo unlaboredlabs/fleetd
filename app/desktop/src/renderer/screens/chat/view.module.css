@@ -131,6 +131,18 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
 }
+.attachmentName {
+  display: inline-flex;
+  min-width: 0;
+}
+.attachmentImage {
+  display: block;
+  max-width: min(100%, 360px);
+  max-height: 240px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  object-fit: contain;
+}
 .attachmentIcon {
   flex: none;
   width: 14px;
