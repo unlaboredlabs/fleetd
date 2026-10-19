@@ -158,13 +158,13 @@ export async function setView(app: ElectronApplication, page: Page, size: SizeNa
 
 // For a picture of the real window (the macOS traffic lights are native, so a page screenshot can't show them): no
 // viewport override, the window itself at the size, and the page laid out in it. Throws when the screen can't hold
-// that size, rather than labelling a cropped or shrunk window with it. Returns the display's real scale factor.
+// that size, rather than labelling a cropped or shrunk window with it.
 export async function setNativeView(app: ElectronApplication, page: Page, size: SizeName, theme: Theme) {
   const { width, height } = sizes[size];
   views.delete(page);
   await (await cdp(page)).send("Emulation.clearDeviceMetricsOverride");
   const real = await app.evaluate(
-    async ({ BrowserWindow, nativeTheme, screen }, v) => {
+    async ({ BrowserWindow, nativeTheme }, v) => {
       nativeTheme.themeSource = v.theme;
       const win = BrowserWindow.getAllWindows()[0];
       if (!win) throw new Error("the app opened no window");
@@ -176,7 +176,7 @@ export async function setNativeView(app: ElectronApplication, page: Page, size: 
         if (w === v.width && h === v.height) break;
       }
       const [w = 0, h = 0] = win.getContentSize();
-      return { width: w, height: h, scaleFactor: screen.getDisplayMatching(win.getBounds()).scaleFactor };
+      return { width: w, height: h };
     },
     { width, height, theme },
   );
@@ -185,7 +185,6 @@ export async function setNativeView(app: ElectronApplication, page: Page, size: 
   }
   await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
   await page.waitForFunction((v) => window.innerWidth === v.width && window.innerHeight === v.height, { width, height });
-  return real;
 }
 
 // The viewport each page was last set to.
