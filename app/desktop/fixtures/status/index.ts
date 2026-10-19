@@ -1,12 +1,12 @@
-// The Status view's answers (F6): status_get for the fleet, storefront and W14, a status_wait held open for the
-// whole shot (nothing changes while it is taken), and the seen mark. Added to the shared fixtures, plus the states
+// The Status view's answers (F6): status_get for the fleet, storefront and W14 (the data layer refetches it on
+// events; there is no long-poll), and the seen mark. Added to the shared fixtures, plus the states
 // only Status has: stale sources, the lead still planning, a hub without the progress model, and the skeleton.
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import { isObject, type JsonObject } from "../kit/json.ts";
 import { emptyDoc, type Kind, legacyDoc, longTextDoc, planningDoc, SCOPES, statusDoc } from "./docs.ts";
 
-/** The transport's longest delay: a wait that is still open when the screenshot is taken. */
+/** The transport's longest delay: a status_get still unanswered when the screenshot is taken (the skeleton). */
 const HOLD_MS = 600_000;
 const KINDS: readonly Kind[] = ["fleet", "project", "order"];
 
@@ -27,7 +27,6 @@ const answer = (f: Fixture, docs: (kind: Kind, asks: readonly string[]) => JsonO
   for (const kind of KINDS) {
     const doc = docs(kind, asks);
     f.answer("status_get", { scope: SCOPES[kind] }, { doc }, getDelayMs);
-    f.answer("status_wait", { scope: SCOPES[kind] }, { unchanged: true, version: doc["version"] ?? 0 }, HOLD_MS);
   }
   f.answer("status_seen", undefined, { recorded: true });
 };
@@ -43,6 +42,8 @@ const own = (
   const f = Fixture.from(base, `status-${what}`, note);
   if (checked) f.pendingContracts.delete("status_get");
   answer(f, docs, getDelayMs, checked);
+  // The held answer is the state being shot, not a frame still to come: nothing to wait for before the shot.
+  if (getDelayMs !== undefined) f.settleAt(0);
   return f;
 };
 
