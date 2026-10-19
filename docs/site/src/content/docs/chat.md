@@ -14,6 +14,9 @@ Lead:  Fixed in "Align the checkout button on Safari", merged.
 
 Each project has one lead and one ongoing chat. Click the project in the sidebar to open it.
 
+<!-- TODO(screenshot): chat.png, a lead's reply with the agents strip, and secret and approval items, captured by the
+cutover pipeline (app/desktop/qa/site.ts) once the chat screens are registered. -->
+
 ## Send a message {#send}
 
 Type in the box at the bottom of the chat and press Enter. Shift+Enter adds a new line.
