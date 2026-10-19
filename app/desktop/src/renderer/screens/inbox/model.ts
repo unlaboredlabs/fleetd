@@ -183,12 +183,15 @@ const humanEventType = (type: string): string => {
   return words.charAt(0).toUpperCase() + words.slice(1);
 };
 
-/** The snapshot's attention events and loud ones since, newest first, at most ten. */
+/**
+ * The snapshot's attention events and loud ones since, newest first, at most ten. An ask's filing is left out: while
+ * the ask is open the list above shows it, and once it is answered the event would still say it needs a look.
+ */
 export const attentionItems = (s: Pick<DataState, "attention" | "events" | "projects">): AttentionItem[] => {
   const seen = new Set<number>();
   const out: AttentionItem[] = [];
   for (const e of [...s.attention, ...s.events]) {
-    if ((e.attention !== "loud" && e.attention !== "urgent") || seen.has(e.seq)) continue;
+    if ((e.attention !== "loud" && e.attention !== "urgent") || e.type === "ask.created" || seen.has(e.seq)) continue;
     seen.add(e.seq);
     const project =
       e.machineId !== undefined && e.projectId !== undefined ? (s.projects[`${e.machineId}/${e.projectId}`]?.title ?? null) : null;
