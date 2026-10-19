@@ -11,7 +11,8 @@ export type ClientMessage =
   | { t: "snapshot" }
   | { t: "events"; cursor: number }
   | { t: "call"; id: string; tool: string; input: unknown }
-  | { t: "live"; board: boolean; focus?: string };
+  | { t: "live"; board: boolean; focus?: string }
+  | { t: "chat"; project?: { machineId: string; projectId: string } };
 
 const cursor = z.int().min(0);
 
@@ -28,6 +29,7 @@ export const ServerFrame = z.discriminatedUnion("t", [
     fix: z.string().optional(),
   }),
   z.looseObject({ t: z.literal("live"), full: z.boolean() }),
+  z.looseObject({ t: z.literal("chat_delta"), messageId: z.string(), index: z.int().min(0), append: z.string() }),
 ]);
 /** Checked at the fields above; the rest is typed by the contracts the hub validated it against. */
 export type ServerFrame = AppServerMessage;

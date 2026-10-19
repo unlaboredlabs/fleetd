@@ -1,5 +1,5 @@
-// The frame's window-level wiring: menu clicks, things main asks it to open, notifications, Esc, and the held ⌘
-// that shows the sidebar's jump numbers.
+// The frame's window-level wiring: menu clicks, things main asks it to open, notifications, and the held ⌘ that
+// shows the sidebar's jump numbers.
 import { useEffect, useState } from "react";
 import type { OpenTarget } from "../../../shared/app";
 import { MENU_COMMANDS } from "../../../shared/menu";
@@ -7,26 +7,24 @@ import { closeOverlay, commandFor, runCommand } from "../palette";
 // Not in the palette's public surface yet; the menu needs to hear when commands come and go.
 import { subscribeRegistry } from "../palette/registry";
 import type { HubEvent } from "../../../shared/hub";
-import { useDataLayer, useToolQuery } from "../../src/data/react";
+import { useToolQuery } from "../../src/data/react";
 import { useHubEvents } from "./hubFeed";
-import { currentRoute, navigate } from "./navigation";
-import { attentionEvent, FALLBACK_POLICY, Notifier, policyFrom, policyStale, quietAt, type Policy } from "./notifier";
-import { BOARD, type Route } from "./routes";
+import { navigate } from "./navigation";
+import { attentionEvent, FALLBACK_POLICY, Notifier, policyFrom, policyStale, type Policy } from "./notifier";
+import type { Screen } from "./routes";
 
 const platform = window.fleetd.platform;
 
-const routeFor = (target: OpenTarget, from: Route): Route => {
+const screenFor = (target: OpenTarget): Screen => {
   switch (target.kind) {
-    case "ask":
-      return { screen: from.screen, inbox: { askId: target.askId } };
-    case "inbox":
-      return { screen: from.screen, inbox: { askId: null } };
+    case "chat":
+      return { id: "project", project: { machineId: target.machineId, projectId: target.projectId }, message: target.messageId ?? null };
     case "machines":
-      return { screen: { id: "machines" }, inbox: null };
+      return { id: "machines" };
     case "status":
-      return { screen: { id: "status", scope: { kind: "fleet" } }, inbox: null };
+      return { id: "status" };
     case "pair":
-      return { screen: { id: "onboarding", hub: target.hub, code: target.code }, inbox: null };
+      return { id: "onboarding", hub: target.hub, code: target.code };
   }
 };
 
@@ -39,7 +37,7 @@ export const useMainProcess = (): void => {
     });
     const offOpen = window.fleetd.app.onOpen((target) => {
       closeOverlay();
-      navigate(routeFor(target, currentRoute()));
+      navigate(screenFor(target));
     });
     return () => {
       offMenu();
@@ -83,11 +81,8 @@ export const useMenuState = (): void => {
 const CHECK_EVERY_MS = 15_000;
 
 // The hub's attention policy as the data layer last read it (a decision.recorded event refetches it, so quiet hours
-// set from the phone or the CLI apply at once); shared with the other notifications (the Status digest).
+// set from the phone or the CLI apply at once).
 let policy: Policy = FALLBACK_POLICY;
-
-/** Inside the hub's quiet hours now: only urgent items may notify. */
-export const quietNow = (nowMs: number): boolean => quietAt(policy, nowMs);
 
 /**
  * Posts the "needs you" notification the hub's attention rules and policy allow, at most one per coalescing window.
@@ -95,18 +90,16 @@ export const quietNow = (nowMs: number): boolean => quietAt(policy, nowMs);
  */
 export const useNotifications = (live: boolean): void => {
   const [notifier] = useState(() => new Notifier());
-  const { store } = useDataLayer();
-  // An ask the store knows is closed (answered or withdrawn meanwhile) is dropped; one it hasn't loaded yet stays.
   const [check] = useState(() => () => {
     const now = Date.now();
-    const asks = store.getState().asks;
-    const due = notifier.due(now, policy, (askId) => asks?.[askId] === undefined || asks[askId].state === "open");
+    // Every project counts as still needing you until the chat layer's needs-you state lands (A7 selectNeedsYou).
+    const due = notifier.due(now, policy, () => true);
     if (due !== null) void window.fleetd.app.notify({ tag: "needs-you", ...due });
   });
   const [onEvent] = useState(() => (event: HubEvent) => {
     const attention = attentionEvent(event);
     if (attention === null) return;
-    notifier.push(attention, 0);
+    notifier.push(attention);
     check();
   });
   useHubEvents(onEvent);
@@ -127,34 +120,6 @@ export const useNotifications = (live: boolean): void => {
     }, CHECK_EVERY_MS);
     return () => clearInterval(timer);
   }, [live, check, refetch]);
-};
-
-/** A field Esc should leave rather than act through (the composer, a search box). */
-const editable = (target: EventTarget | null): target is HTMLElement =>
-  target instanceof HTMLElement && (target.isContentEditable || target.matches("input, textarea, select"));
-
-/**
- * Esc closes the inbox, else leaves an order for the board. Menus, sheets and the palette take it first, and in a
- * text field (the composer) it only leaves the field, so a half-typed steer never sends you off the order.
- */
-export const useEscape = (route: Route): void => {
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented) return;
-      if (document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]') !== null) return;
-      if (editable(event.target)) {
-        event.target.blur();
-        event.preventDefault();
-        return;
-      }
-      if (route.inbox !== null) navigate({ ...route, inbox: null }, { replace: true });
-      else if (route.screen.id === "order") navigate({ screen: BOARD, inbox: null });
-      else return;
-      event.preventDefault();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [route]);
 };
 
 /** True while ⌘ (Ctrl elsewhere) is held on its own. */

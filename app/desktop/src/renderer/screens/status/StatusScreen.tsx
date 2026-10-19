@@ -1,193 +1,163 @@
-// The Status view (⌘.): how far the fleet, a project or an order is, as fleetd verified it, and what is in the way.
-// Spec: docs/build/status-spec.md §10, plus the progress model (two-tone bar, planning, sparkline) and the
-// no-time rule: state and measured ages, never an estimated time.
+// Status (⌘.): one row per project. A state word, the two-tone progress bar (solid = verified, lighter = in flight),
+// agents running, last merged. A row opens the project's chat. Detail lives in the hovers; nothing estimates time.
+// It cannot be stale: the rows come from the data layer (status_projects, refetched on events), which drops every
+// answer on a reconnect, so the view is a skeleton until this connection has answered; a row whose source went
+// quiet says so.
 
-import { useMemo, useSyncExternalStore } from "react";
-import { Button, cx, Dot, Text, Truncate } from "../../ui";
-import type { StatusDoc, StatusScope } from "./contracts";
-import { useData } from "../../src/data/react";
-import { projectKey } from "../../src/data/store";
-import { useHubNow, useStatus } from "./hooks";
-import { Health } from "./Health";
-import { Hero } from "./Hero";
-import { Sections } from "./Sections";
-import { phase, type Phase, type StatusRead } from "./session";
-import { agesOnScreen, clock, scopeFromRoute, scopeRoute, sourceName, staleAge } from "./view";
+import { useMemo } from "react";
+import type { ProjectStatusRow } from "../../../shared/contracts";
+import { useData, useToolQuery } from "../../src/data/react";
+import { Button, cx, Dot, Text, Tooltip, Truncate } from "../../ui";
+import { asGetOutput } from "./contracts";
+import { barOf, orderRows, STATE_WORDS, stateWord } from "./rows";
+import { dropLines, staleWords, when } from "./view";
 import s from "./status.module.css";
 
-const subscribeHash = (cb: () => void): (() => void) => {
-  window.addEventListener("hashchange", cb);
-  return () => window.removeEventListener("hashchange", cb);
-};
+const ALL = {} as const;
 
-export const go = (scope: StatusScope): void => {
-  window.location.hash = scopeRoute(scope);
-};
+/** A project's chat (F1's route table). */
+export const projectHref = (ref: ProjectStatusRow["projectRef"]): string =>
+  `#/project/${encodeURIComponent(ref.machineId)}/${encodeURIComponent(ref.projectId)}`;
 
-/** Routes: #/status, #/status/project/<machineId>/<projectId>, #/status/order/<id>. */
 export function StatusScreen() {
-  const hash = useSyncExternalStore(subscribeHash, () => window.location.hash);
-  const route = (hash.split("?")[0] ?? "").split("/").slice(0, 5).join("/");
-  // One scope object per route, so the query and the look restart only when the route means another scope.
-  const scope = useMemo<StatusScope>(() => scopeFromRoute(route) ?? { kind: "fleet" }, [route]);
-  const read = useStatus(scope);
-  const p = phase(read);
-  const doc = read.doc ?? null;
-  const now = useHubNow(read, (n) => (doc ? agesOnScreen(doc, n) : []));
+  const fresh = useData((st) => st.fresh);
+  const query = useToolQuery("status_projects", ALL);
+  const rows = useMemo(() => (query.data === undefined ? undefined : orderRows(query.data.rows)), [query.data]);
+  // The hub's clock for "merged 14:02": the newest as-of any row carries.
+  const now = rows?.reduce((max, r) => Math.max(max, Date.parse(r.asOf) || 0), 0);
 
   return (
-    <div className={cx(s.screen)} data-screen={`status.${scope.kind}`} data-phase={p}>
-      <Header scope={scope} doc={doc} phase={p} linkUp={read.fresh} />
-      <div className={cx(s.body)}>
-        <div className={cx(s.measure)}>
-          <Banner read={read} phase={p} />
-          {doc ? (
-            <>
-              <StaleList doc={doc} now={now} />
-              {/* Keyed by route: a scope switch mounts a new hero, whose first paint never tweens. */}
-              <Hero key={route} doc={doc} live={p === "live"} now={now} />
-              <Health doc={doc} now={now} />
-              <Sections doc={doc} now={now} />
-            </>
-          ) : (
-            <Skeleton />
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Header({ scope, doc, phase: p, linkUp }: { scope: StatusScope; doc: StatusDoc | null; phase: Phase; linkUp: boolean }) {
-  const project = useOrderProject(scope.kind === "order" ? scope.workstreamId : undefined);
-  const crumbs: { label: string; to: StatusScope }[] = [{ label: "Fleet", to: { kind: "fleet" } }];
-  if (scope.kind === "project") crumbs.push({ label: doc?.title ?? scope.projectRef.projectId, to: scope });
-  if (scope.kind === "order") {
-    if (project) crumbs.push({ label: project.title, to: { kind: "project", projectRef: project.ref } });
-    crumbs.push({ label: doc?.title ?? scope.workstreamId, to: scope });
-  }
-  const staleCount = doc?.stale.length ?? 0;
-  const [tone, words] =
-    p === "live"
-      ? staleCount > 0
-        ? (["var(--warning)", `live · ${staleCount} source${staleCount === 1 ? "" : "s"} stale · as of ${clock(doc?.now ?? "")}`] as const)
-        : (["var(--success)", `live · as of ${clock(doc?.now ?? "")}`] as const)
-      : p === "notLive"
-        ? (["var(--warning)", `not live · data from ${clock(doc?.now ?? "")}`] as const)
-        : linkUp
-          ? (["var(--faint)", "syncing"] as const)
-          : (["var(--warning)", "not live"] as const);
-  return (
-    <header className={cx(s.header)}>
-      <nav className={cx(s.crumbs)} aria-label="Status scope">
+    <div className={cx(s.screen)} data-screen="status.fleet" data-phase={rows === undefined ? "skeleton" : "live"}>
+      <header className={cx(s.header)}>
         <Text strong>Status</Text>
-        {crumbs.map((c, i) => (
-          <span key={c.label} className={cx(s.crumb)}>
-            {i > 0 ? <span aria-hidden className={cx(s.faint)}>›</span> : null}
-            {/* A crumb can be a long project or order title: it ends in an ellipsis, with the full title on hover. */}
-            {i === crumbs.length - 1 ? (
-              <span aria-current="page" className={cx(s.crumbText)}>
-                <Truncate expand="none" strong>
-                  {c.label}
-                </Truncate>
-              </span>
-            ) : (
-              <button type="button" className={cx(s.crumbLink)} onClick={() => go(c.to)}>
-                <Truncate expand="none" tone="quiet">
-                  {c.label}
-                </Truncate>
-              </button>
-            )}
+        {!fresh ? (
+          <span className={cx(s.liveness)} role="status">
+            <Dot color="var(--warning)" />
+            <Text size="xs">not live: reconnecting</Text>
           </span>
-        ))}
-        {scope.kind === "order" ? (
-          <Button variant="ghost" onClick={() => (window.location.hash = `#/order/${encodeURIComponent(scope.workstreamId)}`)}>
-            Open order
-          </Button>
+        ) : query.isError ? (
+          <span className={cx(s.liveness)} role="alert">
+            <Dot color="var(--warning)" />
+            <Text size="xs">not live: the hub's answer failed</Text>
+            <Button variant="quiet" onClick={() => void query.refetch()}>
+              Retry
+            </Button>
+          </span>
         ) : null}
-      </nav>
-      <div className={cx(s.liveness)} role="status">
-        <Dot color={tone} />
-        <Text size="xs" tone={p === "live" && staleCount === 0 ? "quiet" : "default"} tabular>
-          {words}
-        </Text>
+      </header>
+      <div className={cx(s.body)}>
+        {rows === undefined ? (
+          <Skeleton />
+        ) : rows.length === 0 ? (
+          <Text tone="quiet">No projects yet.</Text>
+        ) : (
+          <ul className={cx(s.rows)} aria-label="Projects">
+            {rows.map((row) => (
+              <Row key={`${row.projectRef.machineId}/${row.projectRef.projectId}`} row={row} now={now ?? 0} />
+            ))}
+          </ul>
+        )}
       </div>
-    </header>
-  );
-}
-
-/** An order's project, from the board the data layer holds, for the breadcrumb (Fleet › project › order). */
-const useOrderProject = (workstreamId: string | undefined): { title: string; ref: { machineId: string; projectId: string } } | undefined => {
-  const ref = useData((st) => (workstreamId === undefined || !st.fresh ? undefined : st.orders?.[workstreamId]?.projectRef));
-  const title = useData((st) => (ref === undefined ? undefined : st.projects[projectKey(ref)]?.title));
-  return ref === undefined ? undefined : { title: title ?? ref.projectId, ref };
-};
-
-/** Why the view isn't live: the link, a failed read (with Retry), or the first sync after (re)connecting. */
-function Banner({ read, phase: p }: { read: StatusRead & { retry: () => void }; phase: Phase }) {
-  if (p === "live") return null;
-  const from = read.doc ? ` · data from ${clock(read.doc.now)}` : "";
-  const text = !read.fresh
-    ? "Not live: reconnecting to the hub. Numbers show once it has answered."
-    : read.error !== null
-      ? `Not live: the hub's status answer failed: ${read.error}${from}`
-      : "Syncing with the hub. Numbers show once it answers.";
-  const warn = !read.fresh || read.error !== null;
-  return (
-    <div className={warn ? s.bannerWarn : s.banner} role={warn ? "alert" : "status"}>
-      <Dot color={warn ? "var(--warning)" : "var(--faint)"} />
-      <Text className={cx(s.grow)}>{text}</Text>
-      {read.fresh && read.error !== null ? (
-        <Button variant="secondary" onClick={read.retry}>
-          Retry
-        </Button>
-      ) : null}
     </div>
   );
 }
 
-/** Every source the hub says is stale, with its reason and age. The parts that depend on it carry their own mark. */
-function StaleList({ doc, now }: { doc: StatusDoc; now: number }) {
-  if (doc.stale.length === 0) return null;
+const TONE = { waiting_on_you: "warning", blocked: "danger", working: "default", idle: "quiet" } as const;
+
+function Row({ row, now }: { row: ProjectStatusRow; now: number }) {
+  const state = stateWord(row.state);
+  const { bar, planning } = barOf(row);
+  const word = (
+    <Text size="sm" strong={state !== "idle"} tone={TONE[state]}>
+      {STATE_WORDS[state]}
+    </Text>
+  );
   return (
-    <section className={cx(s.staleList)} aria-label="Stale sources">
-      {doc.stale.map((src) => (
-        <div key={src.source} className={cx(s.staleRow)}>
-          <Text size="xs" strong tone="warning" tabular>
-            {staleAge(src, now)}
-          </Text>
-          <Text size="xs">
-            {sourceName(src.source)}: {src.reason}
-          </Text>
-          <Text size="xs" tone="quiet" tabular>
-            since {clock(src.since)}
-          </Text>
-        </div>
-      ))}
-      {doc.more.stale > 0 ? (
-        <Text size="xs" tone="quiet">
-          and {doc.more.stale} more
+    <li>
+      <a className={cx(s.row)} href={projectHref(row.projectRef)}>
+        <span className={cx(s.title)}>
+          <Truncate expand="none" strong>
+            {row.title}
+          </Truncate>
+          {row.stale ? (
+            <Tooltip content={staleWords(row.stale, now)}>
+              <span className={cx(s.stale)} tabIndex={0}>
+                <Text size="xs" strong tone="warning">
+                  stale
+                </Text>
+              </span>
+            </Tooltip>
+          ) : null}
+        </span>
+        {row.blockedReason !== undefined && state === "blocked" ? (
+          <Tooltip content={row.blockedReason}>
+            <span className={cx(s.word)} tabIndex={0}>
+              {word}
+            </span>
+          </Tooltip>
+        ) : (
+          <span className={cx(s.word)}>{word}</span>
+        )}
+        {bar !== null ? (
+          <Tooltip content={<Drops row={row} pct={bar} />}>
+            <span className={cx(s.progress)} tabIndex={0}>
+              <span className={cx(s.bar)} role="img" aria-label={`${bar.pct}% done, ${bar.verifiedPct}% verified`}>
+                <span className={cx(s.barVerified)} style={{ width: `${bar.verifiedPct}%` }} />
+                <span className={cx(s.barInFlight)} style={{ width: `${bar.inFlightPct}%` }} />
+              </span>
+              <Text size="sm" tabular>{`${bar.pct}%`}</Text>
+            </span>
+          </Tooltip>
+        ) : (
+          <span className={cx(s.progress)}>
+            <Text size="xs" tone="quiet">
+              {planning ? "planning" : "nothing to count yet"}
+            </Text>
+          </span>
+        )}
+        <Text size="xs" tone={row.agentsRunning > 0 ? "default" : "quiet"} tabular className={cx(s.agents)}>
+          {row.agentsRunning === 1 ? "1 agent" : `${row.agentsRunning} agents`}
         </Text>
-      ) : null}
-    </section>
+        {row.lastMerged !== undefined ? (
+          <Tooltip content={row.lastMerged.prNumber === undefined ? row.lastMerged.title : `#${row.lastMerged.prNumber}: ${row.lastMerged.title}`}>
+            <span className={cx(s.merged)} tabIndex={0}>
+              <Text size="xs" tone="quiet" tabular>
+                merged {when(row.lastMerged.at, now || Date.parse(row.lastMerged.at))}
+              </Text>
+            </span>
+          </Tooltip>
+        ) : (
+          <Text size="xs" tone="quiet" className={cx(s.merged)}>
+            nothing merged yet
+          </Text>
+        )}
+      </a>
+    </li>
   );
 }
 
-/** Heads and bar outlines only: no digit shows until the hub has answered. */
+/** The bar's hover: verified and in flight, then why it last fell. The drops are in the project's own status doc,
+ * read only while this hover is open. */
+function Drops({ row, pct }: { row: ProjectStatusRow; pct: { pct: number; verifiedPct: number; inFlightPct: number } }) {
+  const query = useToolQuery("status_get", { scope: { kind: "project", projectRef: row.projectRef } });
+  const doc = query.data === undefined ? undefined : asGetOutput(query.data)?.doc;
+  const lines = doc === undefined ? [] : dropLines(doc.progress.estimate?.series ?? []);
+  return (
+    <span className={cx(s.drops)}>
+      <span>{`${pct.pct}% done: ${pct.verifiedPct}% verified, ${pct.inFlightPct}% in flight`}</span>
+      {lines.map((l) => (
+        <span key={l}>{l}</span>
+      ))}
+    </span>
+  );
+}
+
+/** Row outlines only: no word, number or count until this connection has answered. */
 function Skeleton() {
   return (
     <div className={cx(s.skeleton)} aria-hidden>
-      <div className={cx(s.skelNumber)} />
-      <div className={cx(s.skelBar)} />
-      <div className={cx(s.skelLine)} />
-      <div className={cx(s.skelLine)} />
-      {["Health", "Needs you", "Risks", "In progress", "Next up", "Done"].map((h) => (
-        <div key={h} className={cx(s.skelSection)}>
-          <Text size="xs" strong tone="quiet">
-            {h}
-          </Text>
-          <div className={cx(s.skelLine)} />
-        </div>
+      {[0, 1, 2].map((i) => (
+        <div key={i} className={cx(s.skelRow)} />
       ))}
     </div>
   );

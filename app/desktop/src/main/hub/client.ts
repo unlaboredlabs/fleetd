@@ -4,7 +4,7 @@
 // long-poll is silent when nothing happens, so the client pings and drops a link that goes quiet: a half-open socket
 // (Wi-Fi or tailnet gone without a sleep) must not keep showing as live.
 import type { CallOutcome, HubError, HubFrame, HubState } from "../../shared/hub";
-import { MAX_CALL_INPUT_BYTES, type CallRequest, type LiveScope } from "../../shared/ipc";
+import { MAX_CALL_INPUT_BYTES, type CallRequest, type ChatScope, type LiveScope } from "../../shared/ipc";
 import { appUrl, backoff, CLOSE_UNAUTHORIZED, parseServerFrame, type ClientMessage, type ServerFrame } from "./protocol";
 import type { HubSource } from "./source";
 import type { Connection, Transport } from "./transport";
@@ -53,6 +53,7 @@ export class HubClient implements HubSource {
   #nextCallId = 0;
   readonly #pending = new Map<string, Pending>();
   #live: LiveScope | null = null;
+  #chat: ChatScope | null = null;
   #readyAt = 0;
   /** When anything last came from the hub on this connection. */
   #heardAt = 0;
@@ -120,6 +121,12 @@ export class HubClient implements HubSource {
   live(scope: LiveScope | null): void {
     this.#live = scope;
     if (this.#ready) this.#sendLive();
+  }
+
+  /** The hub forgets the chat subscription with the socket, so it's sent again on every ready. */
+  chat(project: ChatScope | null): void {
+    this.#chat = project;
+    if (this.#ready) this.#sendChat();
   }
 
   /** The hub sends a full live frame after each subscribe, so a window coming back to front asks again. */
@@ -196,6 +203,7 @@ export class HubClient implements HubSource {
         this.#setState({ phase: "live", hub: this.#options.hub, protocol: frame.protocol });
         this.#send({ t: "snapshot" });
         if (this.#live !== null) this.#sendLive();
+        if (this.#chat !== null) this.#sendChat();
         return;
       }
       case "snapshot": {
@@ -218,6 +226,11 @@ export class HubClient implements HubSource {
       case "live": {
         const { t: _t, ...live } = frame;
         this.#options.emit({ t: "live", frame: live });
+        return;
+      }
+      case "chat_delta": {
+        const { t: _t, ...delta } = frame;
+        this.#options.emit({ t: "chat_delta", delta });
         return;
       }
       case "result": {
@@ -315,6 +328,10 @@ export class HubClient implements HubSource {
     this.#resumeTimer = null;
     this.#readyTimer = null;
     this.#heartbeat = null;
+  }
+
+  #sendChat(): void {
+    this.#send(this.#chat === null ? { t: "chat" } : { t: "chat", project: this.#chat });
   }
 
   #sendLive(): void {
