@@ -215,6 +215,9 @@ pub struct Train {
     git_locks: RepoLocks,
     /// One pass of a repo's loop at a time.
     step_locks: RepoLocks,
+    /// One enqueue of a PR at a time, from its open check to its row, so callers racing on one PR (a writer's
+    /// report, its result, the draft-ready pass) get one Change.
+    enqueue_locks: RepoLocks,
     kicks: Mutex<HashMap<String, Arc<Notify>>>,
     loops: Mutex<HashSet<String>>,
     recovered: Mutex<HashSet<String>>,
@@ -266,6 +269,7 @@ impl Train {
             rows: Mutex::new(()),
             git_locks: Mutex::default(),
             step_locks: Mutex::default(),
+            enqueue_locks: Mutex::default(),
             kicks: Mutex::default(),
             loops: Mutex::default(),
             recovered: Mutex::default(),
@@ -1909,6 +1913,8 @@ impl Train {
                 Some("Call `list_agents`."),
             ));
         }
+        let enqueue_lock = repo_lock(&self.enqueue_locks, &format!("{repo}#{pr_number}"));
+        let held = enqueue_lock.lock().await;
         if let Some(existing) = self.records.open_for(&repo, pr_number) {
             self.kick(&repo);
             return Ok(self.one(existing));
@@ -2046,6 +2052,8 @@ impl Train {
             updated_at: at,
             ..row
         });
+        // The row exists: a racing enqueue of this PR now finds it.
+        drop(held);
         self.state_span(None, &change);
         self.emit(
             project_ref,

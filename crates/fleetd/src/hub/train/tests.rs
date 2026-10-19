@@ -514,7 +514,11 @@ impl FakeGh {
 impl GhRunner for FakeGh {
     fn run(&self, args: Vec<String>) -> BoxFut<'_, Result<GhOut, String>> {
         let out = self.answer(&args);
-        Box::pin(async move { Ok(out) })
+        // Like a real `gh` call, an answer is a suspension point, so racing callers interleave.
+        Box::pin(async move {
+            tokio::task::yield_now().await;
+            Ok(out)
+        })
     }
 }
 
@@ -2841,5 +2845,49 @@ async fn a_writers_draft_marked_ready_is_reviewed_on_the_trains_pass_once_per_he
             })
             .iter()
             .all(|c| c.pr_number.get() != 8)
+    );
+}
+
+/// A writer's report, its result and the draft-ready pass may enqueue one PR at once: one Change, one review round.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn racing_enqueues_of_one_pr_make_one_change_and_one_review_round() {
+    use super::calls::slice_ready;
+    use fleetd_contracts::lead_calls::SliceReadyCall;
+    let kit = Kit::with_reviews();
+    let writer = kit.running_task("T1", "write");
+    let pr = kit.open_pr(7, "slice-1", &[add("a1.txt", "a\n")], "Source: done:0");
+    let call = || SliceReadyCall {
+        pr_url: GitHubPrUrl::unchecked(pr.clone()),
+    };
+    let input = || ChangeEnqueueCall {
+        task_id: Some(writer.clone()),
+        ..enqueue_call(pr.clone(), None)
+    };
+    let r = project();
+    let (a, b, c, d) = tokio::join!(
+        slice_ready(&kit.train, &r, &writer, call()),
+        slice_ready(&kit.train, &r, &writer, call()),
+        kit.train.enqueue(&r, input()),
+        kit.train.enqueue(&r, input()),
+    );
+    let ids: std::collections::HashSet<String> = [
+        a.unwrap().0.change_id,
+        b.unwrap().0.change_id,
+        c.unwrap().change_id,
+        d.unwrap().change_id,
+    ]
+    .into_iter()
+    .map(|id| id.to_string())
+    .collect();
+    assert_eq!(ids.len(), 1, "{ids:?}");
+    let listed = kit.train.list(&ListFilter {
+        limit: 10,
+        ..Default::default()
+    });
+    assert_eq!(listed.len(), 1);
+    assert_eq!(
+        kit.host.review_spawns.lock().unwrap().len(),
+        1,
+        "one review round"
     );
 }
