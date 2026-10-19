@@ -241,21 +241,21 @@ export function TimeScreen(props: TimeScreenProps) {
         {orderInfo !== undefined ? (
           <Truncate tone="quiet" className={cx(s.crumb)}>{`${orderInfo.project} ›`}</Truncate>
         ) : null}
-        <Truncate strong as="h2">
+        {/* The title has the room first: up to two lines, then an ellipsis that opens the whole title. */}
+        <Truncate strong as="h2" lines={2} className={cx(s.title)}>
           {title}
         </Truncate>
-        <span className={cx(s.grow)} />
         {figures.length > 0 ? (
-          <Text size="xs" tone="quiet" tabular className={cx(s.figures)}>
+          <Truncate size="xs" tone="quiet" tabular className={cx(s.figures)}>
             {figures.join(" · ")}
-          </Text>
+          </Truncate>
         ) : null}
         {badge.length > 0 ? (
           <span className={cx(s.badge)}>
             <Dot color="var(--warning)" />
-            <Text size="xs" tone="warning">
+            <Truncate size="xs" tone="warning">
               {badge.join(" · ")}
-            </Text>
+            </Truncate>
           </span>
         ) : null}
       </header>
