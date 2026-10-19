@@ -61,6 +61,23 @@ export const screens: readonly Screen[] = [
   },
   // E2: every design-system primitive with stress content, so the primitives pass before any screen uses them.
   { id: "gallery", route: "#/gallery", fixtures: ["typical"], pending: "E2's gallery (feat/desktop-ui) has not landed" },
+  // F11: the command palette, its reply mode (typed text switches it) and the shortcuts sheet.
+  {
+    id: "palette",
+    route: "#/",
+    fixtures: ["typical", "long-text", "empty", "many-prompts"],
+    open: (page) => page.keyboard.press("ControlOrMeta+K"),
+  },
+  {
+    id: "palette.reply",
+    route: "#/",
+    fixtures: ["needs-you", "long-text", "empty"],
+    open: async (page) => {
+      await page.keyboard.press("ControlOrMeta+K");
+      await page.getByRole("combobox", { name: "Search or reply" }).fill("1 go 2 nvm 3 b");
+    },
+  },
+  { id: "shortcuts", route: "#/", fixtures: ["typical"], open: (page) => page.keyboard.press("ControlOrMeta+Slash") },
   // F7: the time inspector (fixtures/time): an order's timeline, ~15k spans in time-heavy; the fleet's breakdown;
   // its insights. Each tab's root carries its own id, so the three are shot apart.
   {

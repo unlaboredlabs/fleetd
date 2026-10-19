@@ -32,14 +32,15 @@ export const harden = (): void => {
 /** Run once the app is ready (sessions exist then). */
 export const lockSession = (): void => {
   const ses = session.defaultSession;
-  // Copy buttons write the clipboard; nothing may read it, and every other permission stays denied.
-  const allowed = (permission: string, url: string) => permission === "clipboard-sanitized-write" && isOwnUrl(url);
-  ses.setPermissionRequestHandler((contents, permission, callback, details) => {
-    callback(allowed(permission, details.requestingUrl || contents.getURL()));
-  });
-  ses.setPermissionCheckHandler((_contents, permission, requestingOrigin) => allowed(permission, requestingOrigin));
+  // No permission at all, the clipboard included: Electron asks for "clipboard-read" on writeText too, so writes go
+  // through window.fleetd.copy instead.
+  ses.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+  ses.setPermissionCheckHandler(() => false);
+  // Pages get their own files and nothing else. Main's own requests (electron `net`, e.g. the updater) carry no
+  // webContents and pass.
   ses.webRequest.onBeforeRequest((details, callback) => {
-    const allowed = isOwnUrl(details.url) || details.url.startsWith("devtools://") || details.url.startsWith("data:");
+    const fromPage = details.webContentsId !== undefined;
+    const allowed = !fromPage || isOwnUrl(details.url) || details.url.startsWith("devtools://") || details.url.startsWith("data:");
     callback({ cancel: !allowed });
   });
 };
