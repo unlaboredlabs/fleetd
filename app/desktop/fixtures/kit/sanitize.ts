@@ -24,8 +24,9 @@ const MACHINES: Record<string, string> = { "lab-a": "devbox", "lab-b": "buildbox
 /** The literal rewrites for one lab slot, longest first so a path goes before its prefix. */
 const literalRewrites = (lab: string, hubPort: number): Array<[string, string]> => {
   const pairs: Array<[string, string]> = [
-    // The one lab repo (unlaboredlabs/fleetd-lab, cloned to <lab>/lab-repo) and, in older recordings, the testbed.
-    [path.join(lab, "lab-repo"), "/home/dev/src/storefront"],
+    // The one lab repo (unlaboredlabs/fleetd-lab), cloned once at the lab root and shared by every slot, and, in
+    // older recordings, the slot's own testbed.
+    [path.join(/^slot-\d+$/u.test(path.basename(lab)) ? path.dirname(lab) : lab, "lab-repo"), "/home/dev/src/storefront"],
     [path.join(lab, "testbed"), "/home/dev/src/storefront"],
     [path.join(lab, "repo-a"), "/home/dev/src/checkout"],
     [path.join(lab, "repo-b"), "/home/dev/src/billing"],
@@ -47,20 +48,20 @@ const literalRewrites = (lab: string, hubPort: number): Array<[string, string]> 
   return pairs.toSorted((a, b) => b[0].length - a[0].length);
 };
 
-const SLOT_BRANCH = /\b(?:slot|noci)\/\d+\/(?=fleetd\/)/gu;
+const SLOT_BRANCH = /\b(?:slot|noci)\/\d+\/(?=fleetd\/|main\b)/gu;
 const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/giu;
 const SHA = /\b[0-9a-f]{40}\b/gu;
 // Short shas (7-12 hex with a digit and a letter), as in promptRefs ("lead.start@786007aa14") and commit summaries.
 const SHORT_SHA = /\b(?=[0-9a-f]*[0-9])(?=[0-9a-f]*[a-f])[0-9a-f]{7,12}\b/gu;
-const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[a-z]{2,}\b/gu;
+const EMAIL = /(?<!\bgit)(?<![A-Za-z0-9._%+-])(?!git@github\.com\b)[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[a-z]{2,}\b/gu;
 const BASE64_KEY = /\b[A-Za-z0-9+/]{43}=/gu;
 const TOKENS = /\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-ant-[A-Za-z0-9_-]{10,}|xox[abpr]-[A-Za-z0-9-]{10,}|eyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}|fld_[a-z2-7]{20,})/gu;
 const TAILNET_V4 = /\b100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}\b/gu;
 const TAILNET_V6 = /\bfd7a:115c:a1e0:[0-9a-f:]*/giu;
 const TAILNET_HOST = /\b[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.ts\.net\b/giu;
 const HOME = /\/(?:home|Users)\/(?!dev\b)[A-Za-z0-9._-]+/gu;
-// An owner/repo pair: in a GitHub URL, or a whole string under a repo-ish key.
-const GITHUB_URL = /github\.com\/([A-Za-z0-9-]+)\/([A-Za-z0-9._-]+?)(?=\.git\b|[/#?"\s)]|$)/giu;
+// An owner/repo pair: in a GitHub URL or SSH remote (github.com:owner/repo), or a whole string under a repo-ish key.
+const GITHUB_URL = /github\.com([/:])([A-Za-z0-9-]+)\/([A-Za-z0-9._-]+?)(?=\.git\b|[/#?"\s)]|$)/giu;
 const OWNER_REPO = /^([A-Za-z0-9-]+)\/([A-Za-z0-9._-]+)$/u;
 const REPO_KEYS = new Set(["repo", "repos", "fullName", "nameWithOwner"]);
 const STAND_INS = ["storefront", "billing", "docs", "inventory", "search", "mobile", "admin", "analytics", "payments", "emails"];
@@ -79,8 +80,8 @@ export const makeSanitizer = (lab: string, hubPort: number) => {
     // A slot's own testbed is fleetd-testbed-<n>; the literal above leaves "-<n>".
     out = out.replace(/acme\/storefront-\d\b/gu, "acme/storefront").replace(/\bstorefront-\d\b/gu, "storefront");
     // Each lab slot works in its own branch namespace of the one repo; the app shows fleetd's own branch names.
-    out = out.replace(SLOT_BRANCH, "");
-    out = out.replace(GITHUB_URL, (_m, owner: string, name: string) => `github.com/${repo(owner, name)}`);
+    out = out.replace(SLOT_BRANCH, "").replace(/fleetd-lab/giu, "storefront");
+    out = out.replace(GITHUB_URL, (_m, sep: string, owner: string, name: string) => `github.com${sep}${repo(owner, name)}`);
     out = out.replace(/unlaboredlabs/giu, "acme");
     out = out.replace(TOKENS, "<redacted>");
     out = out.replace(TAILNET_V4, "10.0.0.2").replace(TAILNET_V6, "fd00::2").replace(TAILNET_HOST, "devbox");
