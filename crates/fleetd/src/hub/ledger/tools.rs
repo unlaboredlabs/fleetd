@@ -323,7 +323,10 @@ pub fn lead_call(
                 blocks: call.blocks,
                 proceeded_on_rec: call.proceeded_on_rec,
             };
-            if let Some(refused) = super::lead_decide_rule(&input) {
+            // A class fleetd does not ask about is refused first: that fix is "decide it yourself", not "add labels".
+            if let Some(refused) =
+                super::validate_ask(&input).or_else(|| super::lead_decide_rule(&input))
+            {
                 return Err(refused);
             }
             let mut input = input;
