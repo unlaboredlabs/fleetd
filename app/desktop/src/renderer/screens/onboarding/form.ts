@@ -11,6 +11,8 @@ export interface Form {
   /** A plain line above the fields: what was found, or what is happening. */
   readonly status: string | null;
   readonly error: PairFailure | null;
+  /** Why there is no key, when main knows (a saved key it couldn't read). */
+  readonly notice: string | null;
   /** No key saved yet: the only time app-pair.json may pair by itself. */
   readonly firstRun: boolean;
   /** The address came from a fleetd://pair link, which any web page can open. */
@@ -46,6 +48,7 @@ export const initialForm = (
       state.phase === "refused"
         ? { code: "", message: state.message, fix: "Pair again with a code from `fleetd pair` on the hub, or use another key." }
         : null,
+    notice: state.phase === "unpaired" ? (state.note ?? null) : null,
     firstRun: state.phase === "unpaired",
     hubFromLink: link.hub !== undefined,
     autoPending: false,
@@ -116,7 +119,7 @@ export const mismatchFailure = (fit: "hub-older" | "app-older", hub: string): Pa
     : {
         code: "app_too_old",
         message: `This app is older than the hub at ${hub}, so they can't work together.`,
-        fix: "Update the app: choose Check for Updates in the fleetd menu, or reinstall it with `curl -fsSL https://fleetd.sh | sh`.",
+        fix: "Update the app: choose Check for Updates… (in the fleetd menu on macOS, the Help menu on Linux), or run `fleetd update` on this computer.",
       };
 
 /** The connection screens a running app has to show instead of its content. */
@@ -131,14 +134,17 @@ export interface Reaching {
   readonly hub: string;
   /** Null on a first attempt; otherwise why the last one failed. */
   readonly reason: string | null;
+  /** What to do about `reason`. */
+  readonly fix: string | null;
   /** Epoch ms of the next attempt; null while one is running. */
   readonly retryAt: number | null;
 }
 
 export const reaching = (
   state: Extract<HubState, { phase: "connecting" | "retrying" }>,
-  last: { readonly hub: string; readonly reason: string } | null,
-): Reaching =>
-  state.phase === "retrying"
-    ? { hub: state.hub, reason: state.reason, retryAt: state.retryAt }
-    : { hub: state.hub, reason: state.attempt > 0 && last?.hub === state.hub ? last.reason : null, retryAt: null };
+  last: { readonly hub: string; readonly reason: string; readonly fix: string | null } | null,
+): Reaching => {
+  if (state.phase === "retrying") return { hub: state.hub, reason: state.reason, fix: state.fix ?? null, retryAt: state.retryAt };
+  const held = state.attempt > 0 && last?.hub === state.hub ? last : null;
+  return { hub: state.hub, reason: held?.reason ?? null, fix: held?.fix ?? null, retryAt: null };
+};

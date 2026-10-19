@@ -2,3 +2,4 @@
 export { OnboardingScreen, type OnboardingProps } from "./OnboardingScreen";
 export { ConnectionBanner, type ConnectionBannerProps } from "./ConnectionBanner";
 export { needsOnboarding } from "./form";
+export { useKeyStore } from "./hooks";

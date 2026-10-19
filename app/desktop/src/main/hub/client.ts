@@ -8,6 +8,7 @@ import { MAX_CALL_INPUT_BYTES, type CallRequest, type LiveScope } from "../../sh
 import { appUrl, backoff, CLOSE_UNAUTHORIZED, parseServerFrame, type ClientMessage, type ServerFrame } from "./protocol";
 import type { HubSource } from "./source";
 import type { Connection, Transport } from "./transport";
+import { explainAbandon, explainLoss, type Loss, type SocketError } from "./explain";
 
 export const DEFAULT_CALL_TIMEOUT_MS = 30_000;
 /** From dialling to `ready`: covers a TCP connect into a black hole, a stalled upgrade and an unanswered auth. */
@@ -137,9 +138,11 @@ export class HubClient implements HubSource {
       return;
     }
     this.#setState({ phase: "connecting", hub: this.#options.hub, attempt: this.#attempt });
+    let opened = false;
     const connection = this.#options.transport(url.url, {
       onOpen: () => {
         if (this.#connection !== connection) return;
+        opened = true;
         this.#heardAt = Date.now();
         this.#send({ t: "auth", key: this.#options.key });
       },
@@ -151,33 +154,33 @@ export class HubClient implements HubSource {
       onPong: () => {
         if (this.#connection === connection) this.#heardAt = Date.now();
       },
-      onClose: (code, reason) => {
+      onClose: (code, reason, error) => {
         if (this.#connection !== connection) return;
         this.#connection = null;
-        this.#onClose(code, reason);
+        this.#onClose(code, reason, error, opened);
       },
     });
     this.#connection = connection;
     this.#readyTimer = setTimeout(() => {
       this.#readyTimer = null;
-      this.#abandon("The hub didn't accept the connection in time.");
+      this.#abandon(explainAbandon(this.#options.hub, "not-ready"));
     }, READY_TIMEOUT_MS);
   }
 
   /** Every PING_EVERY_MS: a ping, or, when nothing was heard for SILENT_DEAD_MS, the link is given up. */
   #startHeartbeat(): void {
     this.#heartbeat = setInterval(() => {
-      if (Date.now() - this.#heardAt >= SILENT_DEAD_MS) this.#abandon("The hub stopped answering.");
+      if (Date.now() - this.#heardAt >= SILENT_DEAD_MS) this.#abandon(explainAbandon(this.#options.hub, "silent"));
       else this.#connection?.ping();
     }, PING_EVERY_MS);
   }
 
   /** Drops a link that can't be trusted any more, and retries. */
-  #abandon(reason: string): void {
+  #abandon(loss: Loss): void {
     const connection = this.#connection;
     this.#connection = null;
     connection?.close();
-    this.#lost(reason);
+    this.#lost(loss);
   }
 
   #onFrame(frame: ServerFrame | null): void {
@@ -249,22 +252,22 @@ export class HubClient implements HubSource {
     }, backoff(this.#resumeAttempt++));
   }
 
-  #onClose(code: number, reason: string): void {
+  #onClose(code: number, reason: string, error: SocketError | undefined, opened: boolean): void {
     if (code === CLOSE_UNAUTHORIZED) {
       this.#refuse(`The hub refused the key${reason === "" ? "" : ` (${reason})`}.`);
       return;
     }
-    this.#lost(reason === "" ? `The connection ended (${code}).` : `The hub closed the connection: ${reason}.`);
+    this.#lost(explainLoss(this.#options.hub, code, reason, error, opened));
   }
 
-  #lost(reason: string): void {
+  #lost({ reason, fix }: Loss): void {
     const wasReady = this.#dropLink();
     this.#clearTimers();
     if (this.#stopped) return;
     if (wasReady && Date.now() - this.#readyAt >= STABLE_MS) this.#attempt = 0;
     // ±25 %, so many apps behind one restarting hub don't come back in lockstep.
     const retryIn = Math.round(backoff(this.#attempt++) * (0.75 + 0.5 * (this.#options.random ?? Math.random)()));
-    this.#setState({ phase: "retrying", hub: this.#options.hub, reason, retryAt: Date.now() + retryIn });
+    this.#setState({ phase: "retrying", hub: this.#options.hub, reason, fix, retryAt: Date.now() + retryIn });
     this.#retryTimer = setTimeout(() => {
       this.#retryTimer = null;
       this.#connect();

@@ -3,7 +3,8 @@ import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import type { Entry as KeyringEntry } from "@napi-rs/keyring";
 import { app, safeStorage } from "electron";
-import { useOsEncryption, type CredentialEnv } from "./credentials";
+import type { KeyStore } from "../../shared/pairing";
+import { keyStoreOf, osEncryption, type CredentialEnv } from "./credentials";
 
 interface Signature {
   readonly teamSigned: boolean;
@@ -26,17 +27,19 @@ const readSignature = (): Signature => {
 };
 
 /** Run after app ready (safeStorage needs it). `relocated`: FLEETD_HOME is set, so no OS store is ever touched. */
-export const osCredentialEnv = (dir: string, relocated: boolean): CredentialEnv => {
+export const osCredentialEnv = (dir: string, relocated: boolean): CredentialEnv & { readonly store: KeyStore } => {
   let signature: Signature | null = null;
   const signed = () => (signature ??= readSignature());
-  const encrypted = useOsEncryption({
+  const no = osEncryption({
     platform: process.platform,
     relocated,
     teamSigned: () => signed().teamSigned,
     available: () => safeStorage.isEncryptionAvailable(),
     linuxBackend: () => safeStorage.getSelectedStorageBackend(),
   });
+  const encrypted = no === null;
   return {
+    store: keyStoreOf(no, process.platform, dir),
     dir,
     platform: process.platform,
     crypto: encrypted ? { encrypt: (text) => safeStorage.encryptString(text), decrypt: (blob) => safeStorage.decryptString(blob) } : null,

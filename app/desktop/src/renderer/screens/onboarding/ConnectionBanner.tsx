@@ -34,15 +34,20 @@ export function ConnectionBanner({ machines }: ConnectionBannerProps) {
   );
 }
 
-/** One line for every attempt: only the countdown changes, so a fast-failing hub doesn't flash. */
+/** One layout for every attempt: only the countdown changes, so a fast-failing hub doesn't flash. */
 function Reconnecting({ reach }: { reach: Reaching }) {
   const seconds = useSecondsUntil(reach.retryAt);
   const when = seconds === null || seconds === 0 ? "Reconnecting…" : `Trying again in ${seconds} s.`;
   return (
     <div className={s.banner} data-tone="warning" role="status" data-banner="reconnecting">
-      <Text tone="warning" tabular>
-        {reach.reason === null ? `Connecting to ${reach.hub}…` : `Lost the hub: ${reach.reason.replace(/\.$/u, "")}. ${when}`}
-      </Text>
+      {reach.reason === null ? (
+        <Text tone="warning">{`Connecting to ${reach.hub}…`}</Text>
+      ) : (
+        <>
+          <Text tone="warning" tabular>{`Lost the hub: ${reach.reason}. ${when}`}</Text>
+          {reach.fix === null ? null : <Prose text={reach.fix} tone="quiet" size="sm" />}
+        </>
+      )}
     </div>
   );
 }
