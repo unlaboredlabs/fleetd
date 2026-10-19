@@ -11,8 +11,6 @@ const NEVER_ON_HEAD: &[&str] = &[
     "check_suite",
     "create",
     "delete",
-    "deployment",
-    "deployment_status",
     "discussion",
     "discussion_comment",
     "fork",
@@ -203,6 +201,8 @@ mod tests {
         ] {
             assert!(may_run(yaml, "main", "x"), "{yaml}");
         }
+        // A preview deployment of the head (Vercel, Netlify) reports on the head's sha.
+        assert!(may_run("on: deployment_status", "main", "x"));
         // paths filters aren't evaluated: the run may happen.
         assert!(may_run(
             "on:\n  pull_request:\n    paths: [\"src/**\"]\n",
