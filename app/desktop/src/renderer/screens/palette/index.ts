@@ -16,4 +16,3 @@ export {
   type TextAction,
 } from "./registry";
 export { openPalette, openShortcuts, closeOverlay } from "./state";
-export { pickerKey, type PickerKey } from "./keymap";

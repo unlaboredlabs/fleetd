@@ -1,5 +1,5 @@
-// The app's hash routes (binding for every screen; the QA harness navigates by setting location.hash). The inbox
-// is a panel over any route, so it lives in the query: `#/order/W14?inbox&ask=A1`.
+// The app's hash routes (binding for every screen; the QA harness navigates by setting location.hash). A project's
+// lead chat is the main surface; Status, Time and Settings are secondary. notes/electron-routes.md has the table.
 
 /** A project is (machine, project): the same repo can be checked out on two machines. */
 export interface ProjectKey {
@@ -7,19 +7,14 @@ export interface ProjectKey {
   readonly projectId: string;
 }
 
-export const SETTINGS_TABS = ["general", "prompts", "instructions"] as const;
+export const SETTINGS_TABS = ["general", "agents", "prompts", "instructions"] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
 
-export interface TranscriptItem {
-  readonly threadId: string;
-  readonly itemId: string;
-}
-
 export type Screen =
-  | { readonly id: "board"; readonly project: ProjectKey | null }
-  /** `at` scrolls the conversation to one transcript item (the time inspector's jump). */
-  | { readonly id: "order"; readonly orderId: string; readonly at: TranscriptItem | null }
-  /** One row per project; there is no per-project or per-order Status. */
+  /** `#/`: the last project opened, else the first; the frame resolves it once the projects have loaded. */
+  | { readonly id: "home" }
+  /** A project's lead chat; `message` scrolls to one message (a clicked notification). */
+  | { readonly id: "project"; readonly project: ProjectKey; readonly message: string | null }
   | { readonly id: "status" }
   | { readonly id: "machines" }
   /** The time inspector, for one order or (null) the fleet. */
@@ -30,14 +25,7 @@ export type Screen =
   | { readonly id: "onboarding"; readonly hub: string | null; readonly code: string | null }
   | { readonly id: "gallery" };
 
-export interface Route {
-  readonly screen: Screen;
-  /** Null when the panel is closed; `askId` scrolls it to that ask. */
-  readonly inbox: { readonly askId: string | null } | null;
-}
-
-export const BOARD: Screen = { id: "board", project: null };
-export const HOME: Route = { screen: BOARD, inbox: null };
+export const HOME: Screen = { id: "home" };
 
 const isSettingsTab = (tab: string | undefined): tab is SettingsTab => SETTINGS_TABS.some((t) => t === tab);
 
@@ -50,23 +38,11 @@ const decode = (segment: string): string | null => {
   }
 };
 
-const project = (machineId: string | undefined, projectId: string | undefined): ProjectKey | null =>
-  machineId === undefined || projectId === undefined ? null : { machineId, projectId };
-
 const screenOf = (parts: ReadonlyArray<string>, query: URLSearchParams): Screen => {
   const [head, a, b] = parts;
   switch (head) {
-    case undefined:
-    case "board":
-      return { id: "board", project: project(a, b) };
-    case "inbox":
-      return BOARD;
-    case "order": {
-      if (a === undefined) return BOARD;
-      const threadId = query.get("thread");
-      const itemId = query.get("item");
-      return { id: "order", orderId: a, at: threadId && itemId ? { threadId, itemId } : null };
-    }
+    case "project":
+      return a === undefined || b === undefined ? HOME : { id: "project", project: { machineId: a, projectId: b }, message: query.get("message") || null };
     case "status":
       return { id: "status" };
     case "time":
@@ -75,18 +51,19 @@ const screenOf = (parts: ReadonlyArray<string>, query: URLSearchParams): Screen 
     case "gallery":
       return { id: head };
     case "projects":
-      return a === "add" ? { id: "projects.add" } : BOARD;
+      return a === "add" ? { id: "projects.add" } : HOME;
     case "settings":
       return { id: "settings", tab: isSettingsTab(a) ? a : "general" };
     case "onboarding":
       return { id: "onboarding", hub: query.get("hub") || null, code: query.get("code") || null };
     default:
-      return BOARD;
+      // The removed surfaces (#/board, #/order, #/inbox) and anything unknown land on the home project.
+      return HOME;
   }
 };
 
-/** Any hash, including a hand-typed or stale one, gives a route; what isn't one is the board. */
-export const parseHash = (hash: string): Route => {
+/** Any hash, including a hand-typed or stale one, gives a screen; what isn't one is home. */
+export const parseHash = (hash: string): Screen => {
   const raw = hash.replace(/^#\/?/u, "");
   const at = raw.indexOf("?");
   const path = at === -1 ? raw : raw.slice(0, at);
@@ -98,24 +75,22 @@ export const parseHash = (hash: string): Route => {
     if (value === null) return HOME;
     parts.push(value);
   }
-  const inbox = parts[0] === "inbox" || query.has("inbox") ? { askId: query.get("ask") || null } : null;
-  return { screen: screenOf(parts, query), inbox };
+  return screenOf(parts, query);
 };
 
 const path = (screen: Screen): Array<string> => {
   switch (screen.id) {
-    case "board":
-      return screen.project === null ? [] : ["board", screen.project.machineId, screen.project.projectId];
-    case "order":
-      return ["order", screen.orderId];
+    case "home":
+      return [];
+    case "project":
+      return ["project", screen.project.machineId, screen.project.projectId];
     case "time":
       return screen.orderId === null ? ["time"] : ["time", "order", screen.orderId];
-    case "status":
-      return ["status"];
     case "projects.add":
       return ["projects", "add"];
     case "settings":
       return ["settings", screen.tab];
+    case "status":
     case "machines":
     case "onboarding":
     case "gallery":
@@ -123,23 +98,15 @@ const path = (screen: Screen): Array<string> => {
   }
 };
 
-export const toHash = (route: Route): string => {
+export const toHash = (screen: Screen): string => {
   const query = new URLSearchParams();
-  if (route.screen.id === "order" && route.screen.at !== null) {
-    query.set("thread", route.screen.at.threadId);
-    query.set("item", route.screen.at.itemId);
+  if (screen.id === "project" && screen.message !== null) query.set("message", screen.message);
+  if (screen.id === "onboarding") {
+    if (screen.hub !== null) query.set("hub", screen.hub);
+    if (screen.code !== null) query.set("code", screen.code);
   }
-  if (route.screen.id === "onboarding") {
-    if (route.screen.hub !== null) query.set("hub", route.screen.hub);
-    if (route.screen.code !== null) query.set("code", route.screen.code);
-  }
-  if (route.inbox !== null) {
-    query.set("inbox", "");
-    if (route.inbox.askId !== null) query.set("ask", route.inbox.askId);
-  }
-  // `inbox=` reads as a flag; write it as one.
-  const q = query.toString().replace(/(^|&)inbox=(?=&|$)/u, "$1inbox");
-  return `#/${path(route.screen).map(encodeURIComponent).join("/")}${q === "" ? "" : `?${q}`}`;
+  const q = query.toString();
+  return `#/${path(screen).map(encodeURIComponent).join("/")}${q === "" ? "" : `?${q}`}`;
 };
 
 export const sameProject = (a: ProjectKey | null, b: ProjectKey | null): boolean =>
