@@ -118,6 +118,10 @@ pub enum ItemStage {
     CiGreen,
     Merged,
     Verified,
+    /// A stage this build doesn't know (a newer hub). Never sent; not in `ALL`.
+    #[serde(other)]
+    #[schemars(skip)]
+    Unknown,
 }
 
 impl ItemStage {

@@ -133,6 +133,10 @@ pub enum WeightsBasis {
     Fleet,
     /// Too few anywhere: the built-in weights.
     Default,
+    /// A basis this build doesn't know (a newer hub). Never sent.
+    #[serde(other)]
+    #[schemars(skip)]
+    Unknown,
 }
 
 /// One point of the progress series.
@@ -158,6 +162,10 @@ pub enum DropReason {
     CiFailed,
     /// A done item reopened when a later check failed.
     Reopened,
+    /// A reason this build doesn't know (a newer hub): show the drop's text. Never sent.
+    #[serde(other)]
+    #[schemars(skip)]
+    Unknown,
 }
 
 /// Why the estimate fell, shown as a marker on the sparkline.
@@ -203,7 +211,9 @@ pub enum EtaBasis {
     /// Too few samples in the order: the project's rate shared among its running orders.
     Project,
     Fleet,
-    /// Too few samples anywhere: no ETA ("measuring: 2 of 5 verified").
+    /// Too few samples anywhere: no ETA ("measuring: 2 of 5 verified"). Also what a basis this build doesn't know
+    /// decodes as.
+    #[serde(other)]
     None,
 }
 
@@ -248,7 +258,8 @@ pub enum GateKind {
     Plan,
     /// An open time span on the scope's tasks or changes.
     Live,
-    /// The order's phase, when no span says more.
+    /// The order's phase, when no span says more. Also what a kind this build doesn't know decodes as.
+    #[serde(other)]
     Phase,
 }
 
@@ -272,7 +283,9 @@ pub struct Gate {
 pub enum HeadlineSource {
     /// Phrased by the `status.headline` prompt from the current facts.
     Generated,
-    /// The deterministic template: the facts changed, claude was unavailable, or the daily limit was hit.
+    /// The deterministic template: the facts changed, claude was unavailable, or the daily limit was hit. Also what a
+    /// source this build doesn't know decodes as.
+    #[serde(other)]
     Template,
 }
 
@@ -399,13 +412,19 @@ pub enum RiskRule {
     SteerUnacknowledged,
     /// An item has spent over 1.5× the usual time in its current stage.
     SlowerThanUsual,
+    /// A rule this build doesn't know (a newer hub): shown as a plain risk line. Never sent.
+    #[serde(other)]
+    #[schemars(skip)]
+    Unknown,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum RiskLevel {
-    Warning,
     Danger,
+    /// Also what a level this build doesn't know decodes as.
+    #[serde(other)]
+    Warning,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -422,7 +441,8 @@ pub enum CiState {
     Green,
     Red,
     Pending,
-    /// Not fetched since the hub started.
+    /// Not fetched since the hub started. Also what a state this build doesn't know decodes as.
+    #[serde(other)]
     Unknown,
 }
 
@@ -664,6 +684,23 @@ pub struct PlanVerifiedData {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unknown_variants_degrade_instead_of_failing_the_doc() {
+        let from = |v: &str| serde_json::Value::String(v.into());
+        let rule: RiskRule = serde_json::from_value(from("brand_new_rule")).unwrap();
+        assert_eq!(rule, RiskRule::Unknown);
+        let level: RiskLevel = serde_json::from_value(from("catastrophic")).unwrap();
+        assert_eq!(level, RiskLevel::Warning);
+        let ci: CiState = serde_json::from_value(from("flaky")).unwrap();
+        assert_eq!(ci, CiState::Unknown);
+        let reason: DropReason = serde_json::from_value(from("brand_new")).unwrap();
+        assert_eq!(reason, DropReason::Unknown);
+        let stage: ItemStage = serde_json::from_value(from("deployed")).unwrap();
+        assert_eq!(stage, ItemStage::Unknown);
+        let basis: EtaBasis = serde_json::from_value(from("model")).unwrap();
+        assert_eq!(basis, EtaBasis::None);
+    }
 
     #[test]
     fn scope_wire_and_key() {

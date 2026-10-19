@@ -1482,7 +1482,7 @@
         },
         {
           "const": "unknown",
-          "description": "Not fetched since the hub started.",
+          "description": "Not fetched since the hub started. Also what a state this build doesn't know decodes as.",
           "type": "string"
         }
       ]
@@ -2380,7 +2380,7 @@
         },
         {
           "const": "none",
-          "description": "Too few samples anywhere: no ETA (\"measuring: 2 of 5 verified\").",
+          "description": "Too few samples anywhere: no ETA (\"measuring: 2 of 5 verified\"). Also what a basis this build doesn't know\ndecodes as.",
           "type": "string"
         }
       ]
@@ -2697,7 +2697,7 @@
         },
         {
           "const": "phase",
-          "description": "The order's phase, when no span says more.",
+          "description": "The order's phase, when no span says more. Also what a kind this build doesn't know decodes as.",
           "type": "string"
         }
       ]
@@ -2920,7 +2920,7 @@
         },
         {
           "const": "template",
-          "description": "The deterministic template: the facts changed, claude was unavailable, or the daily limit was hit.",
+          "description": "The deterministic template: the facts changed, claude was unavailable, or the daily limit was hit. Also what a\nsource this build doesn't know decodes as.",
           "type": "string"
         }
       ]
@@ -4132,18 +4132,22 @@
     },
     "ItemStage": {
       "description": "The observable stages an item passes on its way to verified, in order. Each is credited only once fleetd saw it.",
-      "enum": [
-        "planned",
-        "brief_frozen",
-        "task_started",
-        "first_push",
-        "pr_open",
-        "review_passed",
-        "ci_green",
-        "merged",
-        "verified"
-      ],
-      "type": "string"
+      "oneOf": [
+        {
+          "enum": [
+            "planned",
+            "brief_frozen",
+            "task_started",
+            "first_push",
+            "pr_open",
+            "review_passed",
+            "ci_green",
+            "merged",
+            "verified"
+          ],
+          "type": "string"
+        }
+      ]
     },
     "KindTotal": {
       "properties": {
@@ -7921,11 +7925,19 @@
       "type": "object"
     },
     "RiskLevel": {
-      "enum": [
-        "warning",
-        "danger"
-      ],
-      "type": "string"
+      "oneOf": [
+        {
+          "enum": [
+            "danger"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "warning",
+          "description": "Also what a level this build doesn't know decodes as.",
+          "type": "string"
+        }
+      ]
     },
     "RiskRule": {
       "oneOf": [
