@@ -1,8 +1,4 @@
 import { Shell } from "../screens/shell/Shell";
-import { UiProvider } from "../ui";
 
-export const App = () => (
-  <UiProvider>
-    <Shell />
-  </UiProvider>
-);
+// main.tsx provides the data layer and the design system around this.
+export const App = () => <Shell />;

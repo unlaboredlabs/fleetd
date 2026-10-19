@@ -213,10 +213,11 @@
         },
         {
           "const": "unknown",
-          "description": "Not fetched since the hub started.",
+          "description": "Not fetched since the hub started. Also what a state this build doesn't know decodes as.",
           "type": "string"
         }
-      ]
+      ],
+      "x-open": true
     },
     "ClaimEventData": {
       "description": "`claim.passed`, `claim.failed`.",

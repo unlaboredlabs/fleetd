@@ -201,6 +201,7 @@ pub fn progress_of(f: &Figure, as_of_ms: i64, marker: Option<Marker>) -> Progres
         as_of: Timestamp(iso_ms(as_of_ms)),
         marker,
         stale: None,
+        estimate: None,
     }
 }
 
@@ -613,7 +614,7 @@ impl Plans {
                 workstream_id: call.workstream_id.as_ref().map(|w| w.to_string()),
                 state: PlanItemState::Open,
                 weight: call.weight,
-                size: call.size,
+                size: call.size.unwrap_or_default(),
                 position: store::next_item_position(c, m.n)?,
                 started_ms: None,
                 done_ms: None,
@@ -623,6 +624,7 @@ impl Plans {
                     after,
                     evidence: None,
                     drop_reason: None,
+                    created_ms: Some(now),
                 },
             };
             item.n = store::item_insert(c, &item)?;
@@ -648,6 +650,7 @@ impl Plans {
                     "link work with `fleetd task spawn … --item P{}`; fleetd marks it done when its PR merges through the train and its checks pass.",
                     item.n
                 )),
+                warning: None,
             })
         })?;
         self.emit(pending);
@@ -770,6 +773,7 @@ impl Plans {
                 item: item_contract(&item),
                 change: change.as_ref().map(change_contract),
                 next: None,
+                warning: None,
             })
         })?;
         self.emit(pending);
@@ -826,6 +830,7 @@ impl Plans {
                 item: item_contract(&item),
                 change: change.as_ref().map(change_contract),
                 next: None,
+                warning: None,
             })
         })?;
         self.emit(pending);
