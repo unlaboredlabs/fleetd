@@ -277,6 +277,16 @@ impl FakeGh {
         let number = |s: Option<&&str>| s.and_then(|s| s.parse::<i64>().ok()).unwrap_or(0);
         match (parts.as_slice(), method) {
             ([], "GET") => ok(json!({ "default_branch": "main" })),
+            (["pulls"], "GET") if query.contains("state=open") && !query.contains("head=") => {
+                let pulls = self.pulls.lock().unwrap();
+                ok(Value::Array(
+                    pulls
+                        .iter()
+                        .filter(|(_, p)| p.state == "open")
+                        .map(|(n, p)| self.pull_json(*n, p))
+                        .collect(),
+                ))
+            }
             (["pulls"], "GET") if query.contains("head=") => {
                 let head = query
                     .split('&')
@@ -521,6 +531,8 @@ struct FakeHost {
     /// Reviewers the real review gate asked for, and the refusal the spawn path answers with, if any.
     review_spawns: Mutex<Vec<ReviewSpawn>>,
     spawn_refusal: Mutex<Option<String>>,
+    /// Running write tasks' branches, by task id.
+    branches: Mutex<HashMap<String, String>>,
 }
 
 impl FakeHost {
@@ -571,6 +583,20 @@ impl FakeHost {
 impl TrainHost for FakeHost {
     fn task(&self, task_id: &TaskId) -> Option<TaskView> {
         self.tasks.lock().unwrap().get(task_id.as_str()).cloned()
+    }
+    fn running_writers(&self, _: &ProjectRef) -> Vec<(TaskId, String)> {
+        let tasks = self.tasks.lock().unwrap();
+        self.branches
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(id, _)| {
+                tasks
+                    .get(*id)
+                    .is_some_and(|t| t.state == "running" && t.kind == "write")
+            })
+            .map(|(id, b)| (TaskId::unchecked(id), b.clone()))
+            .collect()
     }
     fn message_task<'a>(
         &'a self,
@@ -879,12 +905,14 @@ impl Kit {
             wakes: Mutex::default(),
             review_spawns: Mutex::default(),
             spawn_refusal: Mutex::default(),
+            branches: Mutex::default(),
         });
         let gate = Arc::new(FakeGate::default());
         let worktree = dir.join("train-wt").display().to_string();
         let mut options = TrainOptions {
             auto_run: false,
             bypass_every: Duration::ZERO,
+            ready_every: Duration::ZERO,
             worktree_for: Arc::new(move |_| worktree.clone()),
             ..TrainOptions::default()
         };
@@ -2600,6 +2628,7 @@ async fn a_speculative_build_follows_its_parents_new_head_not_the_childs_stale_c
         "rebuilt on the parent's new head: {log:?}"
     );
     assert!(merged_prs(&kit).is_empty());
+}
 
 impl Kit {
     fn running_task(&self, id: &str, kind: &str) -> TaskId {
@@ -2737,4 +2766,80 @@ async fn a_ready_slice_gets_the_orders_reviewer_and_a_refused_spawn_never_lets_i
         held.last_error
     );
     assert_eq!(kit.host.review_spawns.lock().unwrap().len(), 1);
+}
+
+/// A running writer's draft PR marked ready is a ready slice, found on the train's own pass (no webhook): it goes to
+/// the review gate once per head. A PR that was never a draft waits for the writer's result as before.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_writers_draft_marked_ready_is_reviewed_on_the_trains_pass_once_per_head() {
+    let kit = Kit::new();
+    let writer = kit.running_task("T1", "write");
+    kit.host
+        .branches
+        .lock()
+        .unwrap()
+        .insert("T1".into(), "fleetd/T1-slice".into());
+    let pr = kit.open_pr(
+        7,
+        "fleetd/T1-slice",
+        &[add("a1.txt", "a\n")],
+        "Source: done:0",
+    );
+    // A second train change keeps the repo's train (and its pass) alive.
+    let other = kit.open_pr(3, "other", &[add("o.txt", "o\n")], "Source: done:0");
+    kit.enqueue(other, None).await;
+    kit.gh.pulls.lock().unwrap().get_mut(&7).unwrap().draft = true;
+    let reviewed = || {
+        kit.gate
+            .reviewed
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|c| c.pr_number.get() == 7)
+            .count()
+    };
+
+    kit.train.step(REPO).await;
+    assert_eq!(reviewed(), 0, "a draft is not a slice yet");
+    kit.gh.pulls.lock().unwrap().get_mut(&7).unwrap().draft = false;
+    kit.train.step(REPO).await;
+    assert_eq!(reviewed(), 1, "marked ready: reviewed at once");
+    let change = kit
+        .train
+        .list(&ListFilter {
+            limit: 10,
+            ..Default::default()
+        })
+        .into_iter()
+        .find(|c| c.pr_url.as_str() == pr)
+        .unwrap();
+    assert_eq!(
+        (change.state, change.task_id.as_ref()),
+        (ChangeState::Reviewing, Some(&writer))
+    );
+    kit.train.step(REPO).await;
+    assert_eq!(reviewed(), 1, "once per head");
+
+    // Opened ready, never seen as a draft: left for the writer's result.
+    kit.host
+        .branches
+        .lock()
+        .unwrap()
+        .insert("T1".into(), "fleetd/T1-later".into());
+    kit.open_pr(
+        8,
+        "fleetd/T1-later",
+        &[add("a2.txt", "b\n")],
+        "Source: done:0",
+    );
+    kit.train.step(REPO).await;
+    assert!(
+        kit.train
+            .list(&ListFilter {
+                limit: 10,
+                ..Default::default()
+            })
+            .iter()
+            .all(|c| c.pr_number.get() != 8)
+    );
 }

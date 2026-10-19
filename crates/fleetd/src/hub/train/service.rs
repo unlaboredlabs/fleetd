@@ -77,6 +77,8 @@ pub struct TrainOptions {
     pub no_ci_grace: Duration,
     /// How often merged PRs are checked for bypasses.
     pub bypass_every: Duration,
+    /// How often a repo's open PRs are read for a running writer's draft marked ready.
+    pub ready_every: Duration,
     /// Merges GitHub refuses (405/409) before the train gives up on a Change.
     pub merge_attempts: u32,
     /// Most ready Changes merged as one batch (one CI run, one squash); 1 takes each alone
@@ -103,6 +105,7 @@ impl Default for TrainOptions {
                     .unwrap_or(90),
             ),
             bypass_every: Duration::from_secs(60),
+            ready_every: Duration::from_secs(60),
             merge_attempts: 3,
             batch_max: std::env::var("FLEETD_TRAIN_BATCH_MAX")
                 .ok()
@@ -218,6 +221,10 @@ pub struct Train {
     last_bypass_check: Mutex<HashMap<String, i64>>,
     /// Per repo, the bases its Changes' PRs target: a PR merged into another branch is not the train's to judge.
     bases: Mutex<HashMap<String, HashSet<String>>>,
+    last_ready_check: Mutex<HashMap<String, i64>>,
+    /// Each watched PR's draft flag as last read, and the heads already sent to review as a ready slice.
+    drafts: Mutex<HashMap<(String, i64), bool>>,
+    ready_heads: Mutex<HashSet<(String, i64, String)>>,
     merge_refusals: Mutex<HashMap<ChangeId, u32>>,
     /// The train's last push per change: the head it pushed and when, for `ci.queue` spans.
     pub(super) pushed: Mutex<HashMap<ChangeId, (String, i64)>>,
@@ -264,6 +271,9 @@ impl Train {
             recovered: Mutex::default(),
             last_bypass_check: Mutex::default(),
             bases: Mutex::default(),
+            last_ready_check: Mutex::default(),
+            drafts: Mutex::default(),
+            ready_heads: Mutex::default(),
             merge_refusals: Mutex::default(),
             pushed: Mutex::default(),
             ci_configs: Mutex::default(),
@@ -1346,6 +1356,72 @@ impl Train {
         }
     }
 
+    /// A running writer's PR seen as a draft and now marked ready is a ready slice: it goes on the train at once, as
+    /// that writer's, so its review starts while the writer works on (the same path as its `report` with kind
+    /// slice_ready). Once per head. Read from the repo's open PRs on the train's own polling, so it needs no
+    /// webhook; a PR opened ready goes on the train with the writer's result as before.
+    async fn ready_pass(&self, repo: &str, project_ref: &ProjectRef) {
+        let now = self.now_ms();
+        let due = lock(&self.last_ready_check)
+            .get(repo)
+            .is_none_or(|at| now - at >= self.options.ready_every.as_millis() as i64);
+        if !due {
+            return;
+        }
+        let writers = self.host.running_writers(project_ref);
+        if writers.is_empty() {
+            return;
+        }
+        lock(&self.last_ready_check).insert(repo.to_string(), now);
+        let pulls = match self.github.open_pulls(repo).await {
+            Ok(pulls) => pulls,
+            Err(e) => {
+                tracing::warn!(repo, error = %e.message, "train: open PRs not read");
+                return;
+            }
+        };
+        for pull in pulls {
+            let Some((task_id, _)) = writers.iter().find(|(_, b)| *b == pull.head.ref_) else {
+                continue;
+            };
+            let key = (repo.to_string(), pull.number);
+            let was_draft = lock(&self.drafts).insert(key, pull.draft);
+            if pull.draft || was_draft != Some(true) {
+                continue;
+            }
+            let head = (repo.to_string(), pull.number, pull.head.sha.to_lowercase());
+            if !lock(&self.ready_heads).insert(head) {
+                continue;
+            }
+            let pr_url = format!("https://github.com/{repo}/pull/{}", pull.number);
+            let call = fleetd_contracts::lead_calls::SliceReadyCall {
+                pr_url: GitHubPrUrl::unchecked(pr_url.clone()),
+            };
+            match super::calls::slice_ready(self, project_ref, task_id, call).await {
+                Ok((change, _)) => {
+                    tracing::info!(change_id = %change.change_id, %pr_url, "train: a draft marked ready is a slice")
+                }
+                Err(e) => {
+                    let fix = e
+                        .fix
+                        .as_ref()
+                        .map(|f| format!(" Fix: {f}."))
+                        .unwrap_or_default();
+                    let line = self.lead_prompts(project_ref).render(
+                        "wake.train.refused",
+                        &[
+                            ("prUrl", &pr_url),
+                            ("taskId", task_id),
+                            ("message", &e.message),
+                            ("fix", &fix),
+                        ],
+                    );
+                    self.wake_lead(project_ref, line).await;
+                }
+            }
+        }
+    }
+
     /// After a restart: a Change the train was merging is finished if GitHub merged it, else put back first in line.
     async fn recover(&self, repo: &str) {
         for change in self.records.in_train(repo, HEAD_STATES) {
@@ -1516,6 +1592,7 @@ impl Train {
             self.recover(&repo).await;
         }
         self.refresh(&repo).await;
+        self.ready_pass(&repo, &train.project_ref).await;
         self.main_ci_pass(&repo, &train.project_ref).await;
         self.check_bypasses(&repo, train.watch_since_ms, &train.project_ref)
             .await;

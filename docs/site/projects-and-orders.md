@@ -104,8 +104,9 @@ parallel, as long as slots are free. fleetd keeps that going without ever starti
   qualifies, the lead stays idle.
 - **Once per change.** A lead hears about the same runnable work once. It is told again only when that changes: an
   item is taken, done, added or unblocked.
-- **Slices are reviewed as they land.** A writer reports each finished PR with `report` (kind `slice_ready`); fleetd
-  puts it on the train and starts its reviewers under the order's review rules right away, while the writer goes on. A
+- **Slices are reviewed as they land.** A writer reports each finished PR with `report` (kind `slice_ready`), or
+  marks its draft PR ready on GitHub, which the train notices on its own polling (no webhook needed); fleetd puts it
+  on the train and starts its reviewers under the order's review rules right away, while the writer goes on. A
   new head is reviewed again from what changed, at the same blocking-only bar.
 
 Nothing here relaxes a gate: every PR still gets its tier's reviews and green CI and goes through the train, done is
