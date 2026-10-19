@@ -14,6 +14,10 @@ fn user_home() -> PathBuf {
 }
 
 pub fn fleetd_dir() -> PathBuf {
+    // Unit tests never read or write the developer's own fleet, whatever their environment says.
+    if cfg!(test) {
+        return std::env::temp_dir().join("fleetd-unit-tests");
+    }
     resolve(
         std::env::var_os("FLEETD_HOME").as_deref(),
         BESIDE_HOME.get().map(PathBuf::as_path),
