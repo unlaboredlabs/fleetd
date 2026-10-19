@@ -370,3 +370,61 @@ async fn pausing_the_extras_parks_the_newest_and_continues_them_in_their_thread(
     assert_eq!(node.sent(&hub).await, ("t3".to_owned(), resume));
     assert_eq!(resumed.await.unwrap().state, TaskState::Running);
 }
+
+/// An agent waiting on its lead's answer is never paused, and one that asks while paused continues only with the
+/// answer in hand, so a question is never left behind by a pause.
+#[tokio::test]
+async fn a_question_to_the_lead_outlives_a_pause() {
+    let (hub, _home) = hub();
+    let mut node = Node::link(&hub).await;
+    for n in 1..=3 {
+        running(&hub, n);
+    }
+    let (t2, t3) = (
+        super::TaskId::unchecked("T2"),
+        super::TaskId::unchecked("T3"),
+    );
+    hub.tasks.ask_lead(&t3, "which API version?").unwrap();
+    let tasks = hub.tasks.clone();
+    let change = tokio::spawn(async move { tasks.set_caps(set(1, true)).await.unwrap() });
+    assert_eq!(node.sent(&hub).await.0, "t2", "only T2 is told to pause");
+    let outcome = change.await.unwrap();
+    assert_eq!(
+        outcome.paused,
+        std::slice::from_ref(&t2),
+        "T3 waits on its lead, so it keeps running"
+    );
+    assert_eq!(
+        hub.tasks.get(&t3).unwrap().unwrap().state,
+        TaskState::Running
+    );
+
+    // Paused T2 asks during its checkpoint turn, which then ends: a free slot doesn't continue it yet.
+    hub.tasks.ask_lead(&t2, "keep the old endpoint?").unwrap();
+    let stored = hub
+        .db
+        .with(|c| Ok(super::TaskRecords::get(c, &t2)?))
+        .unwrap()
+        .unwrap();
+    let thread = stored.task.thread_ref.clone().unwrap();
+    let mut summary = hub.store.thread_get(&thread).unwrap().unwrap();
+    summary.thread.status = fleetd_contracts::model::ThreadStatus::Completed;
+    hub.store.thread_upsert(&summary).unwrap();
+    assert_eq!(
+        hub.tasks.try_start(stored, true).await.state,
+        TaskState::Queued
+    );
+
+    // The lead's answer goes into the resume, which then goes out.
+    let lead = super::TaskCaller {
+        project_ref: project(),
+        by: "lead:lab-a/p1".into(),
+    };
+    hub.tasks.message(&lead, &t2, "yes, keep it").await.unwrap();
+    let (to, text) = node.sent(&hub).await;
+    assert_eq!(to, "t2");
+    assert!(
+        text.starts_with("A slot is free again") && text.ends_with("yes, keep it"),
+        "{text}"
+    );
+}

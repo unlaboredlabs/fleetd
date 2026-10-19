@@ -215,6 +215,10 @@ pub struct Tasks {
     lock: tokio::sync::Mutex<()>,
     /// Machines a queued task waits on; one waiter each.
     awaiting: Mutex<HashSet<MachineId>>,
+    /// Tasks whose `ask_lead` question their lead hasn't answered yet (any message to the task answers it). Such a
+    /// task is never paused, and a paused one that asks isn't continued until the answer is in its resume. Not kept
+    /// across a hub restart: then the answer still reaches the task, only maybe after its resume.
+    asking: Mutex<HashSet<TaskId>>,
     /// Set once in `hub/serve` (`wire::wire`) to usage, the value bar and receipts; unset passes through.
     pub hooks: TaskHooks,
     cursor: i64,
@@ -237,6 +241,7 @@ impl Tasks {
             d: deps,
             lock: tokio::sync::Mutex::new(()),
             awaiting: Mutex::new(HashSet::new()),
+            asking: Mutex::new(HashSet::new()),
             hooks: TaskHooks::default(),
             cursor,
             applied: std::sync::atomic::AtomicI64::new(cursor),
@@ -304,6 +309,7 @@ impl Tasks {
     }
 
     fn release_all(&self, task: &Task) -> Result<(), StoreError> {
+        self.asking.lock().unwrap().remove(&task.task_id);
         self.d.slots.release(task.task_id.as_str())?;
         self.d.leases.release(&task.task_id)?;
         Ok(())
@@ -607,7 +613,10 @@ impl Tasks {
 
         let continuing = task.thread_ref.is_some() && stored.pending_message.is_some();
         // A paused agent's thread is still pushing its work: it continues once that turn ended, when its stop frees
-        // the slot and runs the queue again.
+        // the slot and runs the queue again. One that asked its lead meanwhile continues with the answer.
+        if continuing && self.asking.lock().unwrap().contains(&task.task_id) {
+            return Ok(task.clone());
+        }
         if continuing
             && let Some(thread) = &task.thread_ref
             && self
@@ -1219,9 +1228,14 @@ impl Tasks {
                     pending_message: Some(pending),
                 })
                 .map_err(store_error)?;
+                if self.asking.lock().unwrap().remove(task_id) {
+                    // A paused agent held back for this answer can continue now, if a slot is free.
+                    self.retry_later();
+                }
                 Ok(task)
             }
             TaskState::Running => {
+                self.asking.lock().unwrap().remove(task_id);
                 let thread = task
                     .thread_ref
                     .as_ref()
@@ -1235,6 +1249,7 @@ impl Tasks {
                 Ok(task)
             }
             _ => {
+                self.asking.lock().unwrap().remove(task_id);
                 let mut next = task;
                 next.attempt = Int::unchecked(next.attempt.get() + 1);
                 Ok(self
@@ -1379,6 +1394,7 @@ impl Tasks {
                 None,
             ));
         };
+        self.asking.lock().unwrap().insert(task_id.clone());
         let set = self.d.db.prompts().for_lead(&task.project_ref);
         let text =
             render::task_waiting_lines(&set, task_id.as_str(), task.title.as_str(), question);
