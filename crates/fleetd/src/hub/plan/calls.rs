@@ -69,6 +69,24 @@ fn acknowledge(
     out
 }
 
+/// The granularity warning, worded by the `plan.granularity` prompt: an item with no size, or bigger than m.
+fn granularity(
+    hub: &Hub,
+    r: &fleetd_contracts::ids::ProjectRef,
+    item: &fleetd_contracts::plan::PlanItem,
+    unsized_item: bool,
+) -> Option<String> {
+    let reason = match (unsized_item, item.size) {
+        (true, _) => "has no size (counted as m)",
+        (false, fleetd_contracts::plan::Size::L) => "is size l",
+        _ => return None,
+    };
+    Some(hub.db.prompts().for_lead(r).render(
+        "plan.granularity",
+        &[("item", &item.item_id), ("reason", &reason)],
+    ))
+}
+
 fn answer(
     hub: &Hub,
     caller: &LeadCaller,
@@ -90,12 +108,18 @@ fn answer(
         }
         LeadCall::PlanAdd(mut c) => {
             let steer = steered(hub, r, c.steer.as_ref(), &mut c.why)?;
-            let out = plans.add(r, by, c)?;
+            let unsized_item = c.size.is_none();
+            let mut out = plans.add(r, by, c)?;
+            out.warning = granularity(hub, r, &out.item, unsized_item);
             LeadCallResult::PlanAdd(acknowledge(hub, r, steer, out))
         }
         LeadCall::PlanEdit(mut c) => {
             let steer = steered(hub, r, c.steer.as_ref(), &mut c.why)?;
-            let out = plans.edit(r, by, c)?;
+            let resized = c.size.is_some();
+            let mut out = plans.edit(r, by, c)?;
+            if resized {
+                out.warning = granularity(hub, r, &out.item, false);
+            }
             LeadCallResult::PlanEdit(acknowledge(hub, r, steer, out))
         }
         LeadCall::PlanDrop(mut c) => {
@@ -127,4 +151,18 @@ fn answer(
             .into());
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn the_granularity_warning_asks_to_split_anything_bigger_than_m() {
+        let text = crate::hub::prompts::PromptSet::defaults().render(
+            "plan.granularity",
+            &[("item", &"P4"), ("reason", &"has no size (counted as m)")],
+        );
+        assert!(text.starts_with("P4 has no size (counted as m). Split anything bigger than m"));
+        assert!(text.contains("`plan_edit` P4 and size s, m or l"));
+        assert!(!text.contains("hour"), "sizes, never hours");
+    }
 }

@@ -50,7 +50,6 @@ pub trait ClaimsHook: Send + Sync {
 /// Estimates: ETAs and recording a done workstream.
 pub trait EstimatesHook: Send + Sync {
     fn eta(&self, workstream: &Workstream) -> Option<Eta>;
-    fn eta_text(&self, eta: &Eta) -> String;
     fn record_done(&self, workstream_id: &WorkstreamId);
 }
 

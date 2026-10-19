@@ -8,7 +8,7 @@ use serde_with::skip_serializing_none;
 use crate::ids::{EventSeq, MachineId, ProjectRef, Timestamp};
 use crate::ledger::{AskId, Tier, WorkstreamId};
 use crate::model::MachineStatus;
-use crate::plan::{MilestoneId, PlanItemId};
+use crate::plan::{ItemStage, MilestoneId, PlanItemId};
 use crate::prim::{AnyInt, Count, Int, Line, List, NonNegative, Text};
 use crate::prompts::PromptRef;
 use crate::steer::{SteerId, SteerStage};
@@ -87,6 +87,97 @@ pub struct Progress {
     /// The latest scope change, e.g. "↓ from 80% · +3 items: time inspector added".
     pub marker: Option<Marker>,
     pub stale: Option<StaleMark>,
+    /// The estimate the headline shows: verified work plus credit for the observed stages of work in flight.
+    pub estimate: Option<ProgressEstimate>,
+}
+
+/// The headline estimate and its two-tone bar: solid is what fleetd verified, lighter is in-flight credit. Every
+/// stage it credits is one fleetd observed (an event, a PR or a CI state), never an agent's word.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProgressEstimate {
+    /// verified + in flight, floored; 100 only when everything is verified.
+    pub pct: Int<0, 100>,
+    /// The solid part: must points verified over must points (planning share included once fixed).
+    pub verified_pct: Int<0, 100>,
+    /// The lighter part: credit for open items' reached stages, smoothed within the current stage.
+    pub in_flight_pct: Int<0, 100>,
+    /// Present for an order while its lead plans, and after (with its fixed share).
+    pub planning: Option<PlanningState>,
+    /// Where the stage weights came from.
+    pub weights: WeightsBasis,
+    /// The doc's own scope only: the estimate over time, oldest first. A drop carries its reason.
+    pub series: Option<List<ProgressPoint, 0, 96>>,
+}
+
+/// Planning counts: while the lead plans (no plan items yet) it has its own small bar, not 0%.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanningState {
+    /// The lead is still planning: the order has no plan items yet.
+    pub active: bool,
+    /// The planning bar: elapsed over the usual planning time, at most 90 while active, 100 once the plan exists.
+    pub pct: Int<0, 100>,
+    /// Planning's share of the order's work, fixed when the plan appears.
+    pub share_pct: Int<0, 100>,
+    pub since: Timestamp,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
+pub enum WeightsBasis {
+    /// Measured on this project's finished items.
+    Project,
+    /// Too few in the project: measured across the fleet.
+    Fleet,
+    /// Too few anywhere: the built-in weights.
+    Default,
+    /// A basis this build doesn't know (a newer hub). Never sent.
+    #[serde(other)]
+    #[schemars(skip)]
+    Unknown,
+}
+
+/// One point of the progress series.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProgressPoint {
+    pub at: Timestamp,
+    pub pct: Int<0, 100>,
+    pub verified_pct: Int<0, 100>,
+    /// Set when the estimate fell at this point; it never falls without one.
+    pub drop: Option<ProgressDrop>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
+pub enum DropReason {
+    /// Work was added (a scope-change marker).
+    ScopeChange,
+    /// A review blocked: the item fell back to "PR open".
+    ReviewFailed,
+    /// CI failed: the item fell back a stage.
+    CiFailed,
+    /// A done item reopened when a later check failed.
+    Reopened,
+    /// A reason this build doesn't know (a newer hub): show the drop's text. Never sent.
+    #[serde(other)]
+    #[schemars(skip)]
+    Unknown,
+}
+
+/// Why the estimate fell, shown as a marker on the sparkline.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProgressDrop {
+    pub reason: DropReason,
+    pub from_pct: Int<0, 100>,
+    /// "CI failed on #212", "+2 items: time inspector added".
+    pub text: Line<1, 200>,
 }
 
 /// A change to a figure's denominator, shown next to it.
@@ -104,13 +195,16 @@ pub struct Marker {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
 pub enum EtaBasis {
     /// The scope's own measured rate.
     Order,
     /// Too few samples in the order: the project's rate shared among its running orders.
     Project,
     Fleet,
-    /// Too few samples anywhere: no ETA ("measuring: 2 of 5 verified").
+    /// Too few samples anywhere: no ETA ("measuring: 2 of 5 verified"). Also what a basis this build doesn't know
+    /// decodes as.
+    #[serde(other)]
     None,
 }
 
@@ -122,7 +216,9 @@ pub struct EtaSlip {
     pub speed_minutes: AnyInt,
 }
 
-/// ETA from measured throughput; the lead's own estimate only as a comparison.
+/// Retired: fleetd shows no time estimates (progress, the critical path and "slower than usual" instead). The hub
+/// sends `{ samples: 0, basis: "none" }` so apps from before the change still decode the doc; every other field is
+/// absent.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -145,12 +241,14 @@ pub struct StatusEta {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
 pub enum GateKind {
     /// An in-progress item with open items `after` it.
     Plan,
     /// An open time span on the scope's tasks or changes.
     Live,
-    /// The order's phase, when no span says more.
+    /// The order's phase, when no span says more. Also what a kind this build doesn't know decodes as.
+    #[serde(other)]
     Phase,
 }
 
@@ -171,10 +269,13 @@ pub struct Gate {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
 pub enum HeadlineSource {
     /// Phrased by the `status.headline` prompt from the current facts.
     Generated,
-    /// The deterministic template: the facts changed, claude was unavailable, or the daily limit was hit.
+    /// The deterministic template: the facts changed, claude was unavailable, or the daily limit was hit. Also what a
+    /// source this build doesn't know decodes as.
+    #[serde(other)]
     Template,
 }
 
@@ -235,13 +336,26 @@ pub struct InProgressRow {
     pub task_ids: List<TaskId, 0, 10>,
     pub change_ids: List<ChangeId, 0, 10>,
     pub gate: Option<Line<1, 160>>,
-    /// started + the median duration of done items of its size.
+    /// Retired with the ETA: always absent.
     pub eta: Option<Timestamp>,
-    /// Minutes past `eta`.
+    /// Retired with the ETA: always absent.
     pub overdue_minutes: Option<Count>,
     pub stale: Option<StaleMark>,
     /// The order's latest steers, newest first, on its first in-progress row only.
     pub steers: Option<List<StatusSteer, 0, 3>>,
+    /// The furthest stage fleetd observed for the item.
+    pub stage: Option<ItemStage>,
+    /// Share of the item's size credited to the estimate.
+    pub credit_pct: Option<Int<0, 100>>,
+    /// Past 1.5× the usual time for its current stage: flagged in Risks, never credited past 90% of the stage.
+    pub slower_than_usual: Option<bool>,
+    /// What it still waits on, in order: open items it is `after`, then its remaining stages, e.g.
+    /// ["review of #12", "CI on #12", "merge", "done-when checks"].
+    pub waiting_on: Option<List<Line<1, 80>, 0, 8>>,
+    /// Open items that wait on it.
+    pub blocking: Option<List<PlanItemId, 0, 10>>,
+    /// It is the scope's critical path: the most unfinished work (its own and what waits on it) runs through it.
+    pub critical: Option<bool>,
 }
 
 /// A steer as the status doc shows it: "↳ you steered S12 14:02 · acknowledged · −1 item".
@@ -278,11 +392,14 @@ pub struct NeedsYou {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
 pub enum RiskRule {
     CiRedMain,
     MachineOffline,
     BlockedOnYou,
+    /// Retired with the ETA: no longer raised.
     Slipping,
+    /// Retired with the ETA: no longer raised.
     EstimateDrift,
     RiskiestItem,
     CiRedRepeat,
@@ -293,13 +410,22 @@ pub enum RiskRule {
     NoPlan,
     /// A steer was not acknowledged, or has gone 10 minutes delivered without it.
     SteerUnacknowledged,
+    /// An item has spent over 1.5× the usual time in its current stage.
+    SlowerThanUsual,
+    /// A rule this build doesn't know (a newer hub): shown as a plain risk line. Never sent.
+    #[serde(other)]
+    #[schemars(skip)]
+    Unknown,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
 pub enum RiskLevel {
-    Warning,
     Danger,
+    /// Also what a level this build doesn't know decodes as.
+    #[serde(other)]
+    Warning,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -312,11 +438,13 @@ pub struct Risk {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
 pub enum CiState {
     Green,
     Red,
     Pending,
-    /// Not fetched since the hub started.
+    /// Not fetched since the hub started. Also what a state this build doesn't know decodes as.
+    #[serde(other)]
     Unknown,
 }
 
@@ -403,6 +531,7 @@ pub struct ScopePart {
     pub scope: Option<StatusScope>,
     pub milestone_id: Option<MilestoneId>,
     pub progress: Progress,
+    /// Retired with the ETA: always absent.
     pub eta: Option<Timestamp>,
 }
 
@@ -451,7 +580,8 @@ pub struct StatusDoc {
     pub virtual_tier: Option<Tier>,
 }
 
-/// What the headline prompt is given: code builds it, the model only phrases it. Canonical JSON, at most 2 KB.
+/// What the headline prompt is given: code builds it, the model only phrases it. Canonical JSON, at most 2 KB. It
+/// carries no time estimates, and a generated line with a time phrase is rejected.
 #[skip_serializing_none]
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -466,9 +596,6 @@ pub struct HeadlineFacts {
     pub waiting_on: Vec<String>,
     pub needs_you: i64,
     pub first_ask: Option<String>,
-    pub eta: Option<String>,
-    pub planned: Option<String>,
-    pub slipped: bool,
     /// At most 2 risk messages.
     pub risks: Vec<String>,
 }
@@ -558,6 +685,23 @@ pub struct PlanVerifiedData {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unknown_variants_degrade_instead_of_failing_the_doc() {
+        let from = |v: &str| serde_json::Value::String(v.into());
+        let rule: RiskRule = serde_json::from_value(from("brand_new_rule")).unwrap();
+        assert_eq!(rule, RiskRule::Unknown);
+        let level: RiskLevel = serde_json::from_value(from("catastrophic")).unwrap();
+        assert_eq!(level, RiskLevel::Warning);
+        let ci: CiState = serde_json::from_value(from("flaky")).unwrap();
+        assert_eq!(ci, CiState::Unknown);
+        let reason: DropReason = serde_json::from_value(from("brand_new")).unwrap();
+        assert_eq!(reason, DropReason::Unknown);
+        let stage: ItemStage = serde_json::from_value(from("deployed")).unwrap();
+        assert_eq!(stage, ItemStage::Unknown);
+        let basis: EtaBasis = serde_json::from_value(from("model")).unwrap();
+        assert_eq!(basis, EtaBasis::None);
+    }
 
     #[test]
     fn scope_wire_and_key() {
