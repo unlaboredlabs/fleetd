@@ -30,7 +30,7 @@ export interface DataTableProps<T> {
   /** Render only the visible rows (long tables); the table then fills its parent's height. */
   virtual?: boolean;
   "aria-label": string;
-  className?: string;
+  className?: string | undefined;
 }
 
 /**

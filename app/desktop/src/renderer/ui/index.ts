@@ -73,3 +73,5 @@ export {
   type Crumb,
   type SidebarItemProps,
 } from "./layout/Layout";
+export { DiffView, type DiffViewProps, type DiffMode } from "./diff/DiffView";
+export { parsePatch, toSplitRows, type ParsedPatch, type DiffFile, type DiffHunk, type DiffLine } from "./diff/parsePatch";

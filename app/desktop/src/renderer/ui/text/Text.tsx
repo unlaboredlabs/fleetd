@@ -23,7 +23,7 @@ export interface TextProps extends TextStyleProps {
   as?: ElementType;
   /** Keep the author's line breaks (messages, prompts). */
   preserveLines?: boolean;
-  className?: string;
+  className?: string | undefined;
   id?: string;
   title?: string;
   children?: ReactNode;

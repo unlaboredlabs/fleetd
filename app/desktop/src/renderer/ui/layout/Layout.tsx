@@ -61,7 +61,7 @@ export function Breadcrumb({ items, className }: { items: ReadonlyArray<Crumb>; 
   );
 }
 
-export function Sidebar({ children, className, "aria-label": label }: { children: ReactNode; className?: string; "aria-label"?: string }) {
+export function Sidebar({ children, className, "aria-label": label }: { children: ReactNode; className?: string | undefined; "aria-label"?: string }) {
   return (
     <nav className={cx(s.sidebar, className)} aria-label={label ?? "Sidebar"}>
       {children}
@@ -125,7 +125,7 @@ export function Panel(props: {
   measure?: boolean;
   /** Take the remaining height in a column. */
   fill?: boolean;
-  className?: string;
+  className?: string | undefined;
   "aria-label"?: string;
 }) {
   return (
@@ -147,7 +147,7 @@ export function SectionHeader(props: {
   /** A hairline under it (a pane header); off for headers inside a flow. */
   bordered?: boolean;
   as?: "h1" | "h2" | "h3";
-  className?: string;
+  className?: string | undefined;
 }) {
   const As = props.as ?? "h2";
   return (
@@ -171,7 +171,7 @@ export function SectionHeader(props: {
 }
 
 /** A thin band of facts (the train strip, the machine strip). Items wrap onto a second line instead of clipping. */
-export function Strip(props: { label?: string; children: ReactNode; edge?: "top" | "bottom"; className?: string; "aria-label"?: string }) {
+export function Strip(props: { label?: string; children: ReactNode; edge?: "top" | "bottom"; className?: string | undefined; "aria-label"?: string }) {
   return (
     <div
       className={cx(s.strip, props.edge === "top" && s.stripTop, props.edge === "bottom" && s.stripBottom, props.className)}
