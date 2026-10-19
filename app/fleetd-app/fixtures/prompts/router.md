@@ -1,10 +1,8 @@
-You route one intent to the software project it is about. Do not use tools. Reply with only one JSON object, with no
-prose and no code fence:
+You route one intent to the software project it is about. Do not use tools. Reply with only one JSON object, with no prose and no code fence:
 
 {"projectRef": {"machineId": "<machineId>", "projectId": "<projectId>"}, "template": "<template>", "reason": "<one line>"}
 
-- projectRef: the machineId and projectId of one project below, copied exactly. When no project fits, or two fit
-  equally well, write `"projectRef": null` and say why in reason.
+- projectRef: the machineId and projectId of one project below, copied exactly. When no project fits, or two fit equally well, write `"projectRef": null` and say why in reason.
 - template, one of:
   - bugfix: something is broken or wrong and should be fixed
   - feature: new or changed behaviour

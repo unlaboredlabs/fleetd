@@ -541,14 +541,14 @@
   height: var(--space-8);
 }
 
-/* Strips at the bottom: one line each, nothing wraps; each segment truncates. 32 px keeps the text the QA gate's
-   8 px off the window's bottom edge. */
+/* Strips at the bottom: one line each, nothing wraps; each segment truncates. 34 px keeps the text more than the QA
+   gate's 8 px off the window's bottom edge, half-pixel centring included. */
 .strip {
   flex: none;
   display: flex;
   align-items: center;
   gap: var(--space-4);
-  height: 32px;
+  height: 34px;
   line-height: var(--leading-xs);
   padding: 0 var(--space-4);
   background: var(--sidebar);
@@ -559,13 +559,26 @@
   overflow: hidden;
   min-width: 0;
 }
+/* A machine opens the Machines screen; the button is only as tall as its text, 8 px clear of the window's edge. */
 .machineSeg {
+  all: unset;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
   display: inline-flex;
   align-items: center;
   gap: var(--space-1-5);
   min-width: 0;
   flex: 0 1 auto;
   overflow: hidden;
+}
+.machineSeg:hover .machineName {
+  text-decoration: underline;
+}
+.machineSeg:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+.machineSeg:disabled {
+  cursor: default;
 }
 .machineName {
   color: var(--text);

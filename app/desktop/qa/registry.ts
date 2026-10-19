@@ -6,6 +6,8 @@
 //      harness waits for either.
 //   2. Add an entry below: the id, the hash route that shows it, and the fixtures it must survive: the stress
 //      fixtures that touch its data (long-text, many-*), plus empty and the error states it renders.
+//      A screen whose route ends on an error or not-found state ("<id>.error", "<id>.not-found") fails, unless
+//      the entry says `expect: "error"`; register error fixtures as a separate entry with that field.
 //   3. A screen with no route of its own gets `open`, using keys, roles and labels rather than CSS classes:
 //        { id: "palette", route: "#/", fixtures: ["typical"], open: (page) => page.keyboard.press("ControlOrMeta+K") }
 //        { id: "inbox", route: "#/board?inbox", fixtures: ["needs-you", "long-text", "empty"] }
@@ -52,6 +54,9 @@ export interface Screen {
   open?: (page: Page) => Promise<void>;
   // Registered ahead of its PR: skipped, with this reason, until the owner deletes the field.
   pending?: string;
+  // The route is meant to land on an error or not-found state ("<id>.error"). Without this, such a state fails the
+  // test: a route to a missing entity would otherwise check an empty error page and pass.
+  expect?: "error";
 }
 
 const gallerySections = [
@@ -76,7 +81,7 @@ export const screens: readonly Screen[] = [
   {
     id: "shell",
     route: "#/",
-    fixtures: ["empty", "typical", "hub-unreachable", "pairing-failed", "node-too-old"],
+    fixtures: ["empty", "typical", "many-agents", "long-text", "hub-unreachable", "pairing-failed", "node-too-old"],
   },
   // F2: the board (#/ and #/board). board.empty, board.list, board.stage and board.finish are its states: the stage
   // and finish fixtures put one order on it mid-run and after every PR merged.
@@ -88,10 +93,27 @@ export const screens: readonly Screen[] = [
   // E2: every design-system primitive with short, long and empty content, one section per entry, so the primitives
   // pass before any screen uses them. Needs a build with the gallery in it: `pnpm qa:build`.
   ...gallerySections.map((s) => ({ id: `gallery.${s}`, route: `#/gallery?section=${s}`, fixtures: ["long-text"] as const })),
+  // F11: the command palette, its reply mode (typed text switches it) and the shortcuts sheet.
+  {
+    id: "palette",
+    route: "#/",
+    fixtures: ["typical", "long-text", "empty", "many-prompts"],
+    open: (page) => page.keyboard.press("ControlOrMeta+K"),
+  },
+  {
+    id: "palette.reply",
+    route: "#/",
+    fixtures: ["needs-you", "long-text", "empty"],
+    open: async (page) => {
+      await page.keyboard.press("ControlOrMeta+K");
+      await page.getByRole("combobox", { name: "Search or reply" }).fill("1 go 2 nvm 3 b");
+    },
+  },
+  { id: "shortcuts", route: "#/", fixtures: ["typical"], open: (page) => page.keyboard.press("ControlOrMeta+Slash") },
 ];
 
 // Platform checks that need a screen writer's work before they can pass; the owner turns theirs on when it lands.
 export const platformChecks: Record<"appMenu", boolean> = {
   // F1: the macOS app menu, with an Edit menu wired to the text actions.
-  appMenu: false,
+  appMenu: true,
 };

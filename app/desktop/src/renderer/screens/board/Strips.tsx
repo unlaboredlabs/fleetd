@@ -3,9 +3,12 @@
 // chips in train order (queued → CI → merged); a chip that changes place slides there, a merged one leaves after
 // 10 s. Every move is one transition on a change; nothing runs while the trains stand still.
 import { useLayoutEffect, useRef } from "react";
-import { Dot, Truncate, cx } from "../../ui";
+import { Dot, Truncate, cx, toast } from "../../ui";
 import type { MachineLive, PrChip, SlotState, TrainLive } from "./contracts";
-import { EXIT_MS, MERGED_HOLD_MS, type SlotUse } from "./live";
+import { peekNow, useNow } from "./clock";
+import { EXIT_MS, MERGED_HOLD_MS, type SlotUse, hubNow, machines, needsClock, slotUse, trains } from "./live";
+import { useBoardPalette } from "./commands";
+import { useBoardState } from "./source";
 import { Track } from "./parts";
 import { STAGE_WORD, type Tone, machineParts, slotsText, stageTone } from "./words";
 import s from "./Board.module.css";
@@ -23,17 +26,20 @@ export function MachineStrip({
   slots,
   use,
   now,
+  onOpen,
 }: {
   machines: readonly MachineLive[];
   slots: SlotState | undefined;
   use: SlotUse;
   now: number;
+  /** Opens the Machines screen. */
+  onOpen?: (() => void) | undefined;
 }) {
   if (machines.length === 0 && !slots) return null;
   return (
     <div className={s.strip} data-strip="machines">
       {machines.map((m) => (
-        <span key={m.machineId} className={s.machineSeg}>
+        <button type="button" key={m.machineId} className={s.machineSeg} onClick={onOpen} disabled={!onOpen} aria-label={`${m.name}: open Machines`}>
           <span className={s.machineName}>{m.name}</span>
           <Dot color={m.status === "online" ? "var(--success)" : "var(--warning)"} label={m.status} />
           {machineParts(m, now).map(([text, tone], i) => (
@@ -42,7 +48,7 @@ export function MachineStrip({
               {text}
             </span>
           ))}
-        </span>
+        </button>
       ))}
       {slots ? <span className={s.slots}>{slotsText(slots.cap, use)}</span> : null}
     </div>
@@ -145,6 +151,27 @@ function ChipBody({ chip }: { chip: PrChip }) {
       <span className={s.prNumber}>#{chip.number}</span>
       <Track state={chip.state} review={0} />
       <span className={TONE[stageTone(chip.state)]}>{STAGE_WORD[chip.state]}</span>
+    </>
+  );
+}
+
+/**
+ * The strips along the bottom of the window, under every screen (the frame mounts this): the merge trains, then
+ * the machines and the slot board, from the board's store.
+ */
+export function BoardStrips({ onOpenMachines }: { onOpenMachines: () => void }) {
+  useBoardPalette();
+  const { live } = useBoardState();
+  const now = hubNow(live, useNow(needsClock(live, hubNow(live, peekNow()))));
+  const openPr = (url: string) => {
+    void window.fleetd.openExternal(url).then((o) => {
+      if (!o.ok) toast({ title: "Couldn't open the PR", description: o.message, tone: "danger" });
+    });
+  };
+  return (
+    <>
+      <TrainStrip trains={trains(live)} mergedAt={live.mergedAt} now={now} onOpenPr={openPr} />
+      <MachineStrip machines={machines(live)} slots={live.slots} use={slotUse(live)} now={now} onOpen={onOpenMachines} />
     </>
   );
 }

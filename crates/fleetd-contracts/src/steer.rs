@@ -192,6 +192,12 @@ pub struct SteerEventData {
     pub stage: SteerStage,
     pub how: Option<DeliveredHow>,
     pub excerpt: Option<Text<0, 200>>,
+    /// steer.queued: the first 120 characters, the mode and who sent it.
+    pub text: Option<String>,
+    pub mode: Option<SteerMode>,
+    pub by: Option<SteerBy>,
+    /// steer.failed: why.
+    pub reason: Option<String>,
 }
 
 /// The token an agent's text must contain to acknowledge `id`: the id as a whole word ("S12", not "S120").

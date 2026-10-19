@@ -1,7 +1,8 @@
 // The board's data, from the hub through window.fleetd: the snapshot's projects and machines, orders_board, the
-// open asks, the live feed, and the orders sent from the composer. A stand-in for E1's store and Query hooks: when
-// they land, this file becomes selectors over them and BoardView doesn't change.
-import { useCallback, useEffect, useMemo, useReducer } from "react";
+// open asks, the live feed, and the orders sent from the composer. One store for the window, held while anything
+// reads it (the board, and the frame's strips under every screen), so they draw the same data from one subscription.
+// A stand-in for E1's store and Query hooks: when the board moves onto them, this file becomes selectors over them.
+import { useMemo, useSyncExternalStore } from "react";
 import type { CallOutcome, HubFrame } from "../../../shared/hub";
 import type { ComposerApi, Draft } from "./Composer";
 import type { AgentLane, AskSummary, IntakeSubmitInput, IntakeSubmitOutput, LiveFrame, OrdersBoardOutput } from "./contracts";
@@ -15,7 +16,7 @@ type DraftParts = Pick<Draft, "template" | "attachments" | "refs">;
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const str = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined);
 
-interface State {
+export interface State {
   readonly conn: Conn;
   readonly snapshot: boolean;
   readonly projects: readonly Project[];
@@ -149,125 +150,169 @@ export interface BoardSource {
   readonly watch: (workstreamId: string | undefined) => void;
 }
 
-export const useBoardSource = (addProject: () => void): BoardSource => {
-  const [s, dispatch] = useReducer(reduce, initial);
-  const hub = window.fleetd.hub;
+let state: State = initial;
+const listeners = new Set<() => void>();
+const dispatch = (a: Action) => {
+  state = reduce(state, a);
+  for (const l of listeners) l();
+};
 
-  const fetchBoards = useCallback(() => {
-    const includeDoneSince = new Date(Date.now() - ORDER_DONE_HOLD_MS).toISOString();
-    void hub.call("orders_board", { includeDoneSince }).then((o) => {
+const hub = () => window.fleetd.hub;
+/** The order on the stage: its detail is refetched with the boards. */
+let watched: string | undefined;
+
+const fetchDetail = (workstreamId: string) => {
+  void hub()
+    .call("order_get", { workstreamId })
+    .then((o) => {
+      if (o.ok && isObject(o.output) && Array.isArray(o.output["doneLanes"])) {
+        dispatch({ t: "done", workstreamId, lanes: o.output["doneLanes"] as AgentLane[] });
+      }
+    });
+};
+
+const fetchBoards = () => {
+  const includeDoneSince = new Date(Date.now() - ORDER_DONE_HOLD_MS).toISOString();
+  void hub()
+    .call("orders_board", { includeDoneSince })
+    .then((o) => {
       if (o.ok && isObject(o.output) && Array.isArray(o.output["orders"])) dispatch({ t: "boards", out: o.output as unknown as OrdersBoardOutput });
       else if (!o.ok) dispatch({ t: "boardsFailed", message: message(o) });
     });
-  }, [hub]);
+  if (watched !== undefined) fetchDetail(watched);
+};
 
-  const fetchAsks = useCallback(() => {
-    void hub.call("asks_list", { state: "open" }).then((o) => {
+const fetchAsks = () => {
+  void hub()
+    .call("asks_list", { state: "open" })
+    .then((o) => {
       if (o.ok && isObject(o.output) && Array.isArray(o.output["asks"])) dispatch({ t: "asks", asks: o.output["asks"] as AskSummary[] });
     });
-  }, [hub]);
+};
 
-  const [watched, watch] = useReducer((_: string | undefined, w: string | undefined) => w, undefined);
-  const fetchDetail = useCallback(
-    (workstreamId: string) => {
-      void hub.call("order_get", { workstreamId }).then((o) => {
-        if (o.ok && isObject(o.output) && Array.isArray(o.output["doneLanes"])) {
-          dispatch({ t: "done", workstreamId, lanes: o.output["doneLanes"] as AgentLane[] });
-        }
-      });
-    },
-    [hub],
-  );
-  // The staged order's detail, when it takes the stage and whenever the boards refetch.
-  useEffect(() => {
-    if (watched !== undefined) fetchDetail(watched);
-  }, [watched, fetchDetail, s.live.boards]);
-
-  useEffect(() => {
-    let boardsDue: number | undefined;
-    let asksDue: number | undefined;
-    // A burst of events is one refetch.
-    const soon = (due: number | undefined, run: () => void) => {
-      window.clearTimeout(due);
-      return window.setTimeout(run, 250);
-    };
-    const onFrame = (frame: HubFrame) => {
-      switch (frame.t) {
-        case "state": {
-          const phase = frame.state.phase;
-          const conn: Conn = phase === "live" ? "live" : phase === "unpaired" ? "unpaired" : phase === "connecting" ? "connecting" : "offline";
-          const note =
-            phase === "retrying"
-              ? `Not connected: ${frame.state.reason}`
-              : phase === "refused"
-                ? frame.state.message
-                : phase === "live"
-                  ? undefined
-                  : "Not connected to the hub.";
-          dispatch({ t: "conn", conn, note });
-          if (phase === "live") void hub.live({ board: true });
-          return;
-        }
-        case "snapshot":
-          dispatch({ t: "snapshot", projects: projectsOf(frame.snapshot) });
-          fetchBoards();
-          fetchAsks();
-          return;
-        case "live":
-          dispatch({ t: "live", frame: frame.frame as unknown as LiveFrame, at: Date.now() });
-          return;
-        case "event": {
-          const type = frame.event.type;
-          if (BOARD_EVENTS.some((p) => type.startsWith(p))) boardsDue = soon(boardsDue, fetchBoards);
-          if (ASK_EVENTS.some((p) => type.startsWith(p))) asksDue = soon(asksDue, fetchAsks);
-          if (type.startsWith("project.")) void hub.resync();
-          return;
-        }
-        case "error":
-          return;
+/** The hub subscription, while anything reads the store. */
+const start = (): (() => void) => {
+  let boardsDue: number | undefined;
+  let asksDue: number | undefined;
+  // A burst of events is one refetch.
+  const soon = (due: number | undefined, run: () => void) => {
+    window.clearTimeout(due);
+    return window.setTimeout(run, 250);
+  };
+  const onFrame = (frame: HubFrame) => {
+    switch (frame.t) {
+      case "state": {
+        const phase = frame.state.phase;
+        const conn: Conn = phase === "live" ? "live" : phase === "unpaired" ? "unpaired" : phase === "connecting" ? "connecting" : "offline";
+        const note =
+          phase === "retrying"
+            ? `Not connected: ${frame.state.reason}`
+            : phase === "refused"
+              ? frame.state.message
+              : phase === "live"
+                ? undefined
+                : "Not connected to the hub.";
+        dispatch({ t: "conn", conn, note });
+        if (phase === "live") void hub().live({ board: true });
+        return;
       }
-    };
-    const unsubscribe = hub.subscribe(onFrame);
-    return () => {
-      unsubscribe();
-      window.clearTimeout(boardsDue);
-      window.clearTimeout(asksDue);
-    };
-  }, [hub, fetchBoards, fetchAsks]);
+      case "snapshot":
+        dispatch({ t: "snapshot", projects: projectsOf(frame.snapshot) });
+        fetchBoards();
+        fetchAsks();
+        return;
+      case "live":
+        dispatch({ t: "live", frame: frame.frame as unknown as LiveFrame, at: Date.now() });
+        return;
+      case "event": {
+        const type = frame.event.type;
+        if (BOARD_EVENTS.some((p) => type.startsWith(p))) boardsDue = soon(boardsDue, fetchBoards);
+        if (ASK_EVENTS.some((p) => type.startsWith(p))) asksDue = soon(asksDue, fetchAsks);
+        if (type.startsWith("project.")) void hub().resync();
+        return;
+      }
+      case "error":
+        return;
+    }
+  };
+  const unsubscribe = hub().subscribe(onFrame);
+  return () => {
+    unsubscribe();
+    window.clearTimeout(boardsDue);
+    window.clearTimeout(asksDue);
+  };
+};
 
-  const submit = useCallback(
-    (order: SentOrder, draft: DraftParts) => {
-      dispatch({ t: "sent", order: { ...order, status: { kind: "sending" } }, draft });
-      const [machineId, projectId] = order.to?.split("/") ?? [];
-      const input: IntakeSubmitInput = {
-        ...(machineId !== undefined && projectId !== undefined ? { machineId, projectId } : {}),
-        text: order.text,
-        template: draft.template,
-        ...(draft.attachments.length > 0 ? { attachments: draft.attachments } : {}),
-        ...(draft.refs.length > 0 ? { refs: draft.refs } : {}),
-        clientRequestId: order.requestId,
-      };
-      void hub.call("intake_submit", input).then((o) => {
-        if (!o.ok) return dispatch({ t: "sent", order: { ...order, status: { kind: "failed", message: message(o) } } });
-        const out = (isObject(o.output) ? o.output : {}) as IntakeSubmitOutput;
-        if (out.askId !== undefined) {
-          fetchAsks();
-          return dispatch({ t: "sent", order: { ...order, status: { kind: "unrouted", askId: out.askId } } });
-        }
-        if (out.workstreamId !== undefined) {
-          const project = out.echo ? projectKey(out.echo.projectRef) : undefined;
-          dispatch({ t: "sent", order: { ...order, status: { kind: "placed", workstreamId: out.workstreamId, project, leadWaiting: out.leadWaiting } } });
-          fetchBoards();
-        }
-      });
-    },
-    [hub, fetchBoards, fetchAsks],
-  );
+let stop: (() => void) | undefined;
+const subscribe = (listener: () => void) => {
+  listeners.add(listener);
+  stop ??= start();
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0) {
+      stop?.();
+      stop = undefined;
+    }
+  };
+};
 
+/** The board's state, shared by every reader in the window. */
+export const useBoardState = (): State => useSyncExternalStore(subscribe, () => state);
+
+/** Puts an order on the stage: its detail is fetched now and with every board refetch. */
+const watch = (workstreamId: string | undefined) => {
+  if (workstreamId === watched) return;
+  watched = workstreamId;
+  if (workstreamId !== undefined) fetchDetail(workstreamId);
+};
+
+const submit = (order: SentOrder, draft: DraftParts) => {
+  dispatch({ t: "sent", order: { ...order, status: { kind: "sending" } }, draft });
+  const [machineId, projectId] = order.to?.split("/") ?? [];
+  const input: IntakeSubmitInput = {
+    ...(machineId !== undefined && projectId !== undefined ? { machineId, projectId } : {}),
+    text: order.text,
+    template: draft.template,
+    ...(draft.attachments.length > 0 ? { attachments: draft.attachments } : {}),
+    ...(draft.refs.length > 0 ? { refs: draft.refs } : {}),
+    clientRequestId: order.requestId,
+  };
+  void hub()
+    .call("intake_submit", input)
+    .then((o) => {
+      if (!o.ok) return dispatch({ t: "sent", order: { ...order, status: { kind: "failed", message: message(o) } } });
+      const out = (isObject(o.output) ? o.output : {}) as IntakeSubmitOutput;
+      if (out.askId !== undefined) {
+        fetchAsks();
+        return dispatch({ t: "sent", order: { ...order, status: { kind: "unrouted", askId: out.askId } } });
+      }
+      if (out.workstreamId !== undefined) {
+        const project = out.echo ? projectKey(out.echo.projectRef) : undefined;
+        dispatch({ t: "sent", order: { ...order, status: { kind: "placed", workstreamId: out.workstreamId, project, leadWaiting: out.leadWaiting } } });
+        fetchBoards();
+      }
+    });
+};
+
+const actions = {
+  retry: (requestId: string) => {
+    const order = state.sent.find((o) => o.requestId === requestId);
+    const draft = state.drafts.get(requestId);
+    if (order && draft) submit(order, draft);
+  },
+  edit: (requestId: string) => {
+    const order = state.sent.find((o) => o.requestId === requestId);
+    dispatch({ t: "unsend", requestId });
+    return order?.text;
+  },
+};
+
+export const useBoardSource = (addProject: () => void): BoardSource => {
+  const s = useBoardState();
   const composer = useMemo<ComposerApi>(
     () => ({
       preview: async (text) => {
-        const o = await hub.call("intake_preview", { text });
+        const o = await hub().call("intake_preview", { text });
         if (!o.ok || !isObject(o.output) || !isObject(o.output["echo"])) return undefined;
         const ref = o.output["echo"]["projectRef"];
         return isObject(ref) && typeof ref["machineId"] === "string" && typeof ref["projectId"] === "string"
@@ -275,11 +320,11 @@ export const useBoardSource = (addProject: () => void): BoardSource => {
           : undefined;
       },
       files: async (target, query) => {
-        const o = await hub.call("project_files", { machineId: target.machineId, projectId: target.projectId, query, limit: 20 });
+        const o = await hub().call("project_files", { machineId: target.machineId, projectId: target.projectId, query, limit: 20 });
         return o.ok && isObject(o.output) && Array.isArray(o.output["paths"]) ? o.output["paths"].filter((p) => typeof p === "string") : [];
       },
       upload: async (name, mime, dataB64) => {
-        const o = await hub.call("attachment_put", { name, mime, dataB64 }, { timeoutMs: 120_000 });
+        const o = await hub().call("attachment_put", { name, mime, dataB64 }, { timeoutMs: 120_000 });
         if (!o.ok) return { ok: false, message: message(o) };
         const id = isObject(o.output) ? str(o.output["attachmentId"]) : undefined;
         return id === undefined ? { ok: false, message: "The hub didn't say where it put the file." } : { ok: true, id };
@@ -291,25 +336,8 @@ export const useBoardSource = (addProject: () => void): BoardSource => {
       },
       addProject,
     }),
-    [hub, submit, addProject],
+    [addProject],
   );
-
-  const actions = useMemo(
-    () => ({
-      retry: (requestId: string) => {
-        const order = s.sent.find((o) => o.requestId === requestId);
-        const draft = s.drafts.get(requestId);
-        if (order && draft) submit(order, draft);
-      },
-      edit: (requestId: string) => {
-        const order = s.sent.find((o) => o.requestId === requestId);
-        dispatch({ t: "unsend", requestId });
-        return order?.text;
-      },
-    }),
-    [s.sent, s.drafts, submit],
-  );
-
   const model: BoardModel = { conn: s.conn, snapshot: s.snapshot, projects: s.projects, live: s.live, asks: s.asks, loaded: s.loaded, errors: s.errors, sent: s.sent };
   return { model, composer, actions, watch, lastUsed: s.lastUsed, offline: s.conn === "live" ? undefined : (s.note ?? "Not connected to the hub.") };
 };

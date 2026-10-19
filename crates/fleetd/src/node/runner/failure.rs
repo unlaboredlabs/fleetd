@@ -698,8 +698,8 @@ mod tests {
         assert!(f.message.contains("OAuth token has expired"));
         assert!(!retryable(Auth));
         assert_eq!(
-            auth_fix("forge"),
-            "On forge: claude auth login (or, when claude goes through your proxy, log in with your proxy as you \
+            auth_fix("devbox"),
+            "On devbox: claude auth login (or, when claude goes through your proxy, log in with your proxy as you \
              normally do)"
         );
     }

@@ -98,11 +98,6 @@ impl Shell {
             let lanes = self.state.live.lanes(&r.workstream_id);
             let lane = r.task_ids.iter().find_map(|task| lanes.iter().find(|l| l.task_id.as_ref() == Some(task))).cloned();
             let key = format!("p-{}", row_key(r.item_id.as_deref(), Some(r.workstream_id.as_str())));
-            let eta = match (r.overdue_minutes.map(|m| m.get()).filter(|m| *m > 0), &r.eta) {
-                (Some(m), _) => Some((format!("overdue {}", super::span(m * 60_000)), true)),
-                (None, Some(eta)) => Some((format!("eta {}", when(eta.as_str(), now)), false)),
-                (None, None) => None,
-            };
             let row = ui::row(t, SharedString::from(format!("status-doing-{i}")), false)
                 .when(r.stale.is_some(), |d| d.border_1().border_color(t.warning))
                 .child(item_id(t, r.item_id.as_deref().unwrap_or(r.workstream_id.as_str())))
@@ -120,7 +115,6 @@ impl Shell {
                     r.gate.as_ref().map(|g| div().flex_none().text_size(px(size::XS)).text_color(t.quiet).child(format!("waiting on {}", &**g))),
                 )
                 .children(r.stale.as_ref().map(|s| div().flex_none().text_size(px(size::XS)).text_color(t.warning).child(stale_age(s, now))))
-                .children(eta.map(|(e, late)| div().flex_none().text_size(px(size::XS)).text_color(if late { t.warning } else { t.quiet }).child(e)))
                 .on_click(order_click(r.workstream_id.clone(), cx));
             col = col.child(self.entering(&key, row.into_any_element()));
         }
@@ -205,9 +199,6 @@ impl Shell {
             } else {
                 format!("{}/{} must", pr.done, pr.total)
             }))
-            .children(
-                p.eta.as_ref().map(|e| div().flex_none().text_size(px(size::XS)).text_color(t.quiet).child(format!("eta {}", when(e.as_str(), now)))),
-            )
             .children(pr.marker.as_ref().map(|m| {
                 div()
                     .min_w_0()
@@ -287,6 +278,7 @@ fn line(t: &Theme) -> Div {
     div()
         .w_full()
         .h(px(metric::ROW))
+        .flex_none()
         .px_2()
         .flex()
         .items_center()

@@ -1,32 +1,22 @@
-// The board screen (routes #/, #/board and #/board/<machineId>/<projectId>): F1's screens.tsx mounts this.
-import { useRef, useSyncExternalStore } from "react";
+// The board screen (#/ and #/board/<machineId>/<projectId>): F1's screen host mounts it.
+import { useRef } from "react";
 import { toast } from "../../ui";
 import { BoardView } from "./BoardView";
+import { useBoardCommands } from "./commands";
 import type { ComposerHandle } from "./Composer";
-import { type ProjectKey, projectKey } from "./live";
+import { projectKey } from "./live";
 import { useBoardSource } from "./source";
-
-const subscribeHash = (on: () => void) => {
-  window.addEventListener("hashchange", on);
-  return () => window.removeEventListener("hashchange", on);
-};
-
-/** The project a "#/board/<machineId>/<projectId>" route filters to. */
-export const routeProject = (hash: string): ProjectKey | undefined => {
-  const m = /^#\/board\/([^/?]+)\/([^/?]+)/u.exec(hash);
-  return m?.[1] !== undefined && m[2] !== undefined
-    ? projectKey({ machineId: decodeURIComponent(m[1]), projectId: decodeURIComponent(m[2]) })
-    : undefined;
-};
 
 const go = (hash: string) => {
   window.location.hash = hash;
 };
 
-export function BoardScreen() {
-  const filter = routeProject(useSyncExternalStore(subscribeHash, () => window.location.hash));
+/** `project`: the route's project (#/board/<machineId>/<projectId>), which the board is filtered to. */
+export function BoardScreen({ project }: { project: { readonly machineId: string; readonly projectId: string } | null }) {
+  const filter = project === null ? undefined : projectKey(project);
   const composer = useRef<ComposerHandle>(null);
   const source = useBoardSource(() => go("#/projects/add"));
+  useBoardCommands(composer);
   return (
     <BoardView
       model={source.model}

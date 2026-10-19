@@ -1,6 +1,7 @@
 // The /app WebSocket protocol as main speaks it (crates/fleetd-contracts/src/app.rs). Server frames are checked at
 // the fields the client relies on; payloads go on to the renderer as they came.
 import { z } from "zod";
+import type { AppServerMessage } from "../../shared/contracts";
 
 /** The hub's close code for a refused key. */
 export const CLOSE_UNAUTHORIZED = 4401;
@@ -28,7 +29,8 @@ export const ServerFrame = z.discriminatedUnion("t", [
   }),
   z.looseObject({ t: z.literal("live"), full: z.boolean() }),
 ]);
-export type ServerFrame = z.infer<typeof ServerFrame>;
+/** Checked at the fields above; the rest is typed by the contracts the hub validated it against. */
+export type ServerFrame = AppServerMessage;
 
 /** A frame this build can read, or null: not JSON, an unknown `t` (a newer hub) or a malformed one, all skipped. */
 export const parseServerFrame = (text: string): ServerFrame | null => {
@@ -39,7 +41,7 @@ export const parseServerFrame = (text: string): ServerFrame | null => {
     return null;
   }
   const parsed = ServerFrame.safeParse(json);
-  return parsed.success ? parsed.data : null;
+  return parsed.success ? (parsed.data as ServerFrame) : null;
 };
 
 /** Delay before reconnect attempt `attempt` (0-based): 0.5 s doubling to a 30 s cap. */

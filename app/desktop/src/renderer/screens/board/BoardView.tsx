@@ -8,11 +8,10 @@ import type { Target } from "./composerLogic";
 import type { AgentLane, OrderPhase } from "./contracts";
 import { groupLabel, nowLane, reviewProgress, writtenIn } from "./fleet";
 import { fmtAgo, fmtElapsed, parseMs } from "./format";
-import { type ProjectKey, hubNow, machines, needsClock, seenLanes, slotUse, trains } from "./live";
+import { type ProjectKey, hubNow, needsClock, seenLanes } from "./live";
 import { type BoardModel, type Held, type Item, type SentOrder, itemKey, leadNote, listItems, sameHeld, stableOrder, stageItems, stagedOrder } from "./model";
 import { ActivityLine, Check, LaneRow, Track } from "./parts";
 import { type Present, heldLanes, stageDrawn, usePresence } from "./presence";
-import { MachineStrip, TrainStrip } from "./Strips";
 import { describe, isWorking, prLabel, prReview, stageTone } from "./words";
 import s from "./Board.module.css";
 
@@ -127,8 +126,6 @@ export function BoardView({ model, actions, composer, composerHandle, filter, la
           />
         )}
       </div>
-      <TrainStrip trains={trains(model.live)} mergedAt={model.live.mergedAt} now={now} {...(actions.openPr ? { onOpenPr: actions.openPr } : {})} />
-      <MachineStrip machines={machines(model.live)} slots={model.live.slots} use={slotUse(model.live)} now={now} />
     </div>
   );
 }
