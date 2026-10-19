@@ -1,15 +1,12 @@
-// The command palette (⌘K): one field that reaches every command, order, project, machine, settings page and
-// prompt, and that also takes a terse inbox reply ("1 go 2 nvm 3 b"). Up/Down or the mouse pick, Enter or a click
-// runs, Esc or a click outside closes. Typed text nothing matches can become a new order (the last row).
+// The command palette (⌘K): one field that reaches every project's lead chat, every command, machine, settings
+// page and prompt. Up/Down or the mouse pick, Enter or a click runs, Esc or a click outside closes.
 
 import { Dialog as D } from "radix-ui";
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { display, isShortcutId } from "../../../shared/shortcuts";
-import { useDataLayer } from "../../src/data/react";
 import { Kbd, Text } from "../../ui";
 import { rank } from "./rank";
 import { GROUP_LABELS, currentTextAction, snapshotItems, subscribeRegistry, subscribeSources, type Command } from "./registry";
-import { isReply, planReply, readReplyOutcome, type ReplyResult } from "./reply";
 import { useReturnFocus } from "./focus";
 import { closeOverlay, noteRecent, readRecent } from "./state";
 import s from "./Palette.module.css";
@@ -57,7 +54,6 @@ export function Palette({ initialQuery }: { initialQuery: string }) {
   const listId = useId();
   const [query, setQuery] = useState(initialQuery);
   const [selected, setSelected] = useState(0);
-  const [reply, setReply] = useState<{ readonly sending: boolean; readonly result?: ReplyResult }>({ sending: false });
   const [recent] = useState(readRecent);
   const items = useItems();
   const listRef = useRef<HTMLDivElement>(null);
@@ -66,8 +62,7 @@ export function Palette({ initialQuery }: { initialQuery: string }) {
   const ranRef = useRef(false);
   const returnFocus = useReturnFocus(() => ranRef.current);
 
-  const replying = isReply(query);
-  const rows = useMemo(() => (replying ? [] : buildRows(query, items, recent)), [replying, query, items, recent]);
+  const rows = useMemo(() => buildRows(query, items, recent), [query, items, recent]);
   const current = Math.min(selected, Math.max(0, rows.length - 1));
   const rowId = (i: number) => `${listId}-${i}`;
 
@@ -87,22 +82,6 @@ export function Palette({ initialQuery }: { initialQuery: string }) {
     row.item.run();
   };
 
-  const plan = useMemo(() => (replying ? planReply(query, items) : undefined), [replying, query, items]);
-
-  const layer = useDataLayer();
-  const sendReply = async () => {
-    const raw = query.trim();
-    if (raw === "" || reply.sending || plan?.kind !== "ready") return;
-    setReply({ sending: true });
-    // The batch the preview showed goes with the text, so the hub answers that batch or refuses; never another.
-    const input = plan.batchId === undefined ? { raw } : { raw, batchId: plan.batchId };
-    // Through the data layer, the way every screen calls the hub.
-    const result = readReplyOutcome(await layer.call("inbox_reply", input));
-    setReply({ sending: false, result });
-    // Answered: clear the field for the next one. Not read: keep the text so it can be fixed.
-    if (result.ok) setQuery("");
-  };
-
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     const ctrlOnly = event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey;
     const step = event.key === "ArrowDown" || (ctrlOnly && event.key === "n") ? 1 : event.key === "ArrowUp" || (ctrlOnly && event.key === "p") ? -1 : 0;
@@ -113,11 +92,9 @@ export function Palette({ initialQuery }: { initialQuery: string }) {
     }
     if (event.key === "Enter" && !event.nativeEvent.isComposing) {
       event.preventDefault();
-      if (replying) void sendReply();
-      else run(rows[current]);
+      run(rows[current]);
     }
   };
-
 
   return (
     <D.Root open onOpenChange={(open) => !open && closeOverlay()}>
@@ -126,7 +103,7 @@ export function Palette({ initialQuery }: { initialQuery: string }) {
         {/* Named by aria-label, not a visually hidden title, until the QA overflow check exempts sr-only text (E3). */}
         <D.Content
           className={s.palette}
-          data-screen={replying ? "palette.reply" : "palette"}
+          data-screen={query.trim() === "" ? "palette" : "palette.search"}
           aria-label="Command palette"
           aria-labelledby={undefined}
           aria-describedby={undefined}
@@ -138,7 +115,6 @@ export function Palette({ initialQuery }: { initialQuery: string }) {
           onCloseAutoFocus={returnFocus}
         >
           <div className={s.field}>
-            {replying ? <span className={s.mode}>Reply</span> : null}
             <input
               ref={inputRef}
               className={s.input}
@@ -146,53 +122,21 @@ export function Palette({ initialQuery }: { initialQuery: string }) {
               onChange={(event) => {
                 setQuery(event.target.value);
                 setSelected(0);
-                if (!reply.sending) setReply({ sending: false });
               }}
               onKeyDown={onKeyDown}
-              placeholder="Search orders, projects and settings, or reply: 1 go 2 nvm"
-              aria-label="Search or reply"
+              placeholder="Go to a project, Status, Time or Settings"
+              aria-label="Search"
               role="combobox"
               aria-expanded
-              aria-controls={replying ? undefined : listId}
-              aria-activedescendant={!replying && rows.length > 0 ? rowId(current) : undefined}
+              aria-controls={listId}
+              aria-activedescendant={rows.length > 0 ? rowId(current) : undefined}
               spellCheck={false}
               autoComplete="off"
-              maxLength={4000}
+              maxLength={200}
             />
           </div>
 
-          {replying || reply.result ? (
-            <div className={s.reply} role="status">
-              {plan?.kind === "ambiguous" ? (
-                <Text as="p" tone="warning">
-                  {`Questions from ${plan.batches.length} batches are open, so say which one: start with #${plan.batches.join(" or #")}.`}
-                </Text>
-              ) : null}
-              {plan?.kind === "ready" && plan.items.length > 0 ? (
-                <ol className={s.asks} aria-label={plan.batchId === undefined ? "Questions" : `Questions in ${plan.batchId}`}>
-                  {plan.items.map(({ n, item }) => (
-                    <li key={n} className={s.ask}>
-                      <span className={s.askNumber}>{n}</span>
-                      <Text tone={item ? "default" : "quiet"}>{item ? item.title : "Not an open question right now"}</Text>
-                    </li>
-                  ))}
-                </ol>
-              ) : null}
-              {reply.result ? (
-                <Text as="p" tone={reply.result.ok ? "success" : "danger"}>
-                  {reply.result.text}
-                </Text>
-              ) : null}
-              {replying ? (
-                <Text as="p" size="sm" tone="quiet">
-                  {reply.sending ? "Sending…" : "Enter sends it to the inbox. go or yes takes the recommendation, nvm or no drops it, a letter picks an option, “2: text” answers in your words."}
-                </Text>
-              ) : null}
-            </div>
-          ) : null}
-
-          {replying ? null : (
-            <div className={s.list} id={listId} role="listbox" aria-label="Results" ref={listRef}>
+          <div className={s.list} id={listId} role="listbox" aria-label="Results" ref={listRef}>
               {rows.length === 0 ? (
                 <div className={s.empty}>
                   <Text tone="quiet">Nothing matches.</Text>
@@ -217,7 +161,7 @@ export function Palette({ initialQuery }: { initialQuery: string }) {
                         onClick={() => run(row)}
                       >
                         <div className={s.rowText}>
-                          <Text strong={row.kind === "item" && row.item.group === "needs-you"}>{row.kind === "item" ? row.item.title : row.title}</Text>
+                          <Text>{row.kind === "item" ? row.item.title : row.title}</Text>
                           {row.kind === "item" && row.item.detail ? (
                             <Text size="sm" tone="quiet">
                               {row.item.detail}
@@ -231,11 +175,10 @@ export function Palette({ initialQuery }: { initialQuery: string }) {
                 })
               )}
             </div>
-          )}
 
           <div className={s.footer}>
             <Text size="xs" tone="quiet">
-              {replying ? "Esc closes" : "↑↓ move · Enter runs · Esc closes"}
+              ↑↓ move · Enter runs · Esc closes
             </Text>
             <Text size="xs" tone="quiet">
               {`All shortcuts ${display("shortcuts.show", platform)}`}

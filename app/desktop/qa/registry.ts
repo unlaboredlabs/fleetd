@@ -238,7 +238,7 @@ export const screens: readonly Screen[] = [
     },
   },
   { id: "machines", route: "#/machines", fixtures: ["typical", "empty", "long-text", "many-agents", "hub-unreachable", "projects-machines"] },
-  // F11: the command palette, its reply mode (typed text switches it) and the shortcuts sheet.
+  // F11: the command palette (projects first, then go-tos), a typed search, and the shortcuts sheet.
   {
     id: "palette",
     route: "#/",
@@ -246,12 +246,12 @@ export const screens: readonly Screen[] = [
     open: (page) => page.keyboard.press("ControlOrMeta+K"),
   },
   {
-    id: "palette.reply",
+    id: "palette.search",
     route: "#/",
-    fixtures: ["needs-you", "long-text", "empty"],
+    fixtures: ["typical", "long-text", "empty"],
     open: async (page) => {
       await page.keyboard.press("ControlOrMeta+K");
-      await page.getByRole("combobox", { name: "Search or reply" }).fill("1 go 2 nvm 3 b");
+      await page.getByRole("combobox", { name: "Search" }).fill("st");
     },
   },
   { id: "shortcuts", route: "#/", fixtures: ["typical"], open: (page) => page.keyboard.press("ControlOrMeta+Slash") },

@@ -2,21 +2,23 @@
 
 import { Dialog as D } from "radix-ui";
 import { X } from "lucide-react";
-import { LOCAL_KEYS, SHORTCUTS, displayKeys, type Platform, type Shortcut, type ShortcutSection } from "../../../shared/shortcuts";
+import { LOCAL_KEYS, SHORTCUTS, displayKeys, type Platform, type Shortcut } from "../../../shared/shortcuts";
 import { Button, Kbd, Text } from "../../ui";
 import { useReturnFocus } from "./focus";
 import { closeOverlay } from "./state";
 import s from "./Palette.module.css";
 
-const SECTIONS: readonly ShortcutSection[] = ["General", "Go to", "Orders", "Board"];
+const ALL: readonly Shortcut[] = Object.values(SHORTCUTS);
+/** In the table's own order, so the sheet follows the table. */
+const SECTIONS = [...new Set(ALL.map((sc) => sc.section))];
 
-/** "Open order 1…9" reads as one row, not nine. */
+/** "Open project 1…9" reads as one row, not nine. */
 const rowsFor = (list: readonly Shortcut[], platform: Platform): { title: string; keys: string }[] => {
   const out: { title: string; keys: string }[] = [];
   const jumps = list.filter((sc) => /^Mod\+[1-9]$/u.test(sc.keys));
   for (const sc of list) {
     if (!jumps.includes(sc)) out.push({ title: sc.title.replace(/…$/u, ""), keys: displayKeys(sc.keys, platform) });
-    else if (sc === jumps[0]) out.push({ title: "Open an order in the sidebar", keys: `${displayKeys(sc.keys, platform).slice(0, -1)}1–9` });
+    else if (sc === jumps[0]) out.push({ title: sc.title.replace(/ 1\b/u, " 1–9"), keys: `${displayKeys(sc.keys, platform).slice(0, -1)}1–9` });
   }
   return out;
 };
@@ -24,7 +26,6 @@ const rowsFor = (list: readonly Shortcut[], platform: Platform): { title: string
 export function ShortcutsSheet() {
   const platform = window.fleetd.platform;
   const returnFocus = useReturnFocus();
-  const all: readonly Shortcut[] = Object.values(SHORTCUTS);
   const local = Map.groupBy(LOCAL_KEYS, (k) => k.where);
   return (
     <D.Root open onOpenChange={(open) => !open && closeOverlay()}>
@@ -44,7 +45,7 @@ export function ShortcutsSheet() {
               <section key={section} className={s.sheetSection}>
                 <h3>{section}</h3>
                 <dl className={s.sheetRows}>
-                  {rowsFor(all.filter((sc) => sc.section === section), platform).map((row) => (
+                  {rowsFor(ALL.filter((sc) => sc.section === section), platform).map((row) => (
                     <div key={row.title} className={s.sheetRow}>
                       <dt>
                         <Text>{row.title}</Text>
