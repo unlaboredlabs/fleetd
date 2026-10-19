@@ -84,6 +84,9 @@ pub struct SessionLocal {
     /// The project opted back into claude's auto memory (policy `claude.autoMemory`); kept for every respawn too.
     #[serde(default)]
     pub auto_memory: bool,
+    /// Decides the fleetd MCP tools the session gets; sessions stored before roles existed get none.
+    #[serde(default)]
+    pub role: fleetd_contracts::sessions::SessionRole,
 }
 
 #[derive(Clone, Debug, PartialEq)]

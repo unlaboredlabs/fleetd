@@ -1,1 +1,1 @@
-no brief yet: register it with `fleetd brief create --workstream {{workstreamId}} --json '<Brief>'`
+no brief yet: register it with `brief` {workstreamId: "{{workstreamId}}"}

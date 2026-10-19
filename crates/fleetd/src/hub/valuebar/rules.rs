@@ -66,7 +66,7 @@ pub fn write_refusal(request: &SpawnRequest, workstream: &Workstream) -> Option<
         }
         Some(s) if !is_serves(s) => {
             return Some(SpawnRefusal::new(
-                format!("--serves {s} is not valid."),
+                format!("serves {s} is not valid."),
                 Some(SERVES_FIX),
             ));
         }
@@ -114,7 +114,7 @@ pub fn review_refusal(
         } else {
             Some(SpawnRefusal::new(
                 "A review task needs the PR it reviews.".into(),
-                Some("Pass --pr <PR URL>."),
+                Some("Pass pr with the PR URL."),
             ))
         };
     };
@@ -142,7 +142,7 @@ pub fn review_refusal(
                 short(&last.sha),
                 last.task_id
             ),
-            fix: Some("Send the PR to the train. If you know of a blocking defect, fix it in a write task with --serves defect:<text>.".into()),
+            fix: Some("Send the PR to the train. If you know of a blocking defect, fix it in a write task with serves defect:<text>.".into()),
             polish_loop: Some(vec![
                 format!("Review {qa}requested for {pr} after two consecutive clean verdicts on different heads."),
                 format!("{}: 0 blocking at {}", before.task_id, before.sha),
@@ -162,7 +162,7 @@ pub fn review_refusal(
                 rounds.len()
             ),
             Some(
-                "Send the PR to the train. If it still has a blocking defect, fix it with a write task (--serves defect:<text>) and let the train's review gate check it, or ask the human.",
+                "Send the PR to the train. If it still has a blocking defect, fix it with a write task (serves defect:<text>) and let the train's review gate check it, or ask the human.",
             ),
         ));
     }
@@ -280,7 +280,7 @@ mod tests {
                 "an unknown kind of serves",
                 write(Some("vibes:yes")),
                 workstream("running", true),
-                Some("--serves vibes:yes is not valid."),
+                Some("serves vibes:yes is not valid."),
             ),
             (
                 "done:2 past the last check",
