@@ -6,13 +6,13 @@ import { useId, useState, type CSSProperties } from "react";
 import { useData } from "../../src/data/react";
 import { selectBoardData } from "../../src/data/selectors";
 import { Button, RoleTag, Text, Truncate, cx, roleTint, toast } from "../../ui";
-import { useNow } from "../board/clock";
-import type { AgentLane } from "../board/contracts";
-import { fleet, groupLabel, reviewProgress, writtenIn } from "../board/fleet";
-import { hubNow, projectKey } from "../board/live";
-import { Check, LaneRow, MiddleCut, Track } from "../board/parts";
-import { isRunning, stageTone } from "../board/words";
-import { FOLDED_LINES, type ProjectRef, type StripLine, projectAgents, selectStrip, stripHeadline } from "./strip";
+import { useNow } from "./clock";
+import type { AgentLane } from "./contracts";
+import { groupLabel, reviewProgress, writtenIn } from "./fleet";
+import { hubNow, projectKey } from "./lanes";
+import { Check, LaneRow, MiddleCut, Track } from "./parts";
+import { isRunning, stageTone } from "./words";
+import { FOLDED_LINES, type ProjectRef, type StripLine, projectFleet, selectStrip, stripHeadline } from "./strip";
 import s from "./live.module.css";
 
 const openPr = (url: string) => {
@@ -87,7 +87,7 @@ function PrLink({ pr }: { pr: NonNullable<StripLine["pr"]> }) {
   return (
     <button type="button" className={s.pr} onClick={() => openPr(pr.url)} aria-label={`Open PR #${pr.number} on GitHub`}>
       <span className={s.prNumber}>#{pr.number}</span>
-      <span className={s.prLabel}>{pr.label.replace(/^#\d+ · /u, "")}</span>
+      {pr.label !== "" ? <span className={s.prLabel}>{pr.label}</span> : null}
     </button>
   );
 }
@@ -95,10 +95,9 @@ function PrLink({ pr }: { pr: NonNullable<StripLine["pr"]> }) {
 /** Unfolded: the agents as lanes, writers first, then each PR with its checkers; and where the time went. */
 function Lanes({ project, onTold }: LiveStripProps) {
   const d = useData(selectBoardData);
-  const lanes = projectAgents(d, project);
+  const { lanes, fleet: f } = projectFleet(d, project);
   const orders = (d.orders ?? []).filter((o) => projectKey(o.card.projectRef) === projectKey(project));
   const now = hubNow(d, useNow(lanes.some((l) => isRunning(l.status))));
-  const f = fleet(lanes, lanes, orders.flatMap((o) => o.card.prs));
   const row = (l: AgentLane, indent: boolean) => (
     <div key={l.laneId} className={cx(indent && s.indent)}>
       <LaneRow lane={l} density="card" now={now} stale={d.stale} {...(onTold ? { onOpen: onTold } : {})} />
@@ -117,9 +116,11 @@ function Lanes({ project, onTold }: LiveStripProps) {
             <div key={g.pr.changeId}>
               <div className={s.group}>
                 <span className={s.prNumber}>#{g.pr.number}</span>
-                <Truncate expand="none" size="sm">
-                  {g.writer?.title ?? `PR #${g.pr.number}`}
-                </Truncate>
+                {g.writer ? (
+                  <Truncate expand="none" size="sm">
+                    {g.writer.title}
+                  </Truncate>
+                ) : null}
                 <Track state={g.pr.state} review={reviewProgress(g)} />
                 <span className={cx(s.groupLabel, stageTone(g.pr.state) === "success" ? s.success : s.quiet)}>{groupLabel(g)}</span>
                 {written ? (

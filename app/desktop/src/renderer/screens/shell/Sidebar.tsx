@@ -1,7 +1,8 @@
-// The sidebar: the projects first, each opening its lead chat, with an amber dot when the lead is waiting for your
-// reply and the number of agents working; then Status, Time and Settings; then the connection. Holding ⌘ (Ctrl)
+// The sidebar: the projects first (alphabetical, so none moves), each opening its lead chat, with an amber dot when
+// the lead is waiting for your reply and the number of agents working; then Status, Time, Machines and Settings;
+// then the connection. Holding ⌘ (Ctrl)
 // shows jump numbers on the first nine projects, which ⌘1..9 open.
-import { Activity, Clock, Plus, Settings } from "lucide-react";
+import { Activity, Clock, Plus, Server, Settings } from "lucide-react";
 import type { ReactNode } from "react";
 import { display, type ShortcutId } from "../../../shared/shortcuts";
 import { Button, Dot, Kbd, Sidebar as Frame, SidebarItem, SidebarSection, Text, Truncate } from "../../ui";
@@ -11,10 +12,14 @@ import s from "./shell.module.css";
 
 const platform = window.fleetd.platform;
 
+const kbd = (id: ShortcutId): ReactNode => <Kbd>{display(id, platform)}</Kbd>;
+
 const TONE = { success: "var(--success)", warning: "var(--warning)", danger: "var(--danger)", quiet: "var(--faint)" } as const;
 
 export interface SidebarProps {
   readonly projects: ReadonlyArray<SidebarProject> | undefined;
+  /** Machines not online; undefined until known. */
+  readonly machinesDown: number | undefined;
   readonly screen: Screen;
   readonly hub: Parameters<typeof connLine>[0];
   /** ⌘ (Ctrl) is held: show the jump numbers. */
@@ -34,10 +39,10 @@ const marks = (p: SidebarProject): ReactNode => (
   </>
 );
 
-export function Sidebar({ projects, screen, hub, jumpHints, go }: SidebarProps) {
+export function Sidebar({ projects, machinesDown, screen, hub, jumpHints, go }: SidebarProps) {
   const conn = connLine(hub, window.fleetd.fixture !== null);
-  const nav = (label: string, icon: ReactNode, target: Screen, current: boolean, key?: ShortcutId) => (
-    <SidebarItem label={label} icon={icon} current={current} trailing={key === undefined ? undefined : <Kbd>{display(key, platform)}</Kbd>} onClick={() => go(target)} />
+  const nav = (label: string, icon: ReactNode, target: Screen, current: boolean, trailing?: ReactNode) => (
+    <SidebarItem label={label} icon={icon} current={current} trailing={trailing} onClick={() => go(target)} />
   );
   const open = screen.id === "project" ? screen.project : null;
 
@@ -83,9 +88,16 @@ export function Sidebar({ projects, screen, hub, jumpHints, go }: SidebarProps) 
       </SidebarSection>
 
       <SidebarSection>
-        {nav("Status", <Activity />, { id: "status" }, screen.id === "status", "status.toggle")}
+        {nav("Status", <Activity />, { id: "status" }, screen.id === "status", kbd("status.toggle"))}
         {nav("Time", <Clock />, { id: "time", orderId: null }, screen.id === "time")}
-        {nav("Settings", <Settings />, { id: "settings", tab: "general" }, screen.id === "settings", "settings.open")}
+        {nav(
+          "Machines",
+          <Server />,
+          { id: "machines" },
+          screen.id === "machines",
+          machinesDown !== undefined && machinesDown > 0 ? <Text size="xs" tone="warning">{`${String(machinesDown)} down`}</Text> : undefined,
+        )}
+        {nav("Settings", <Settings />, { id: "settings", tab: "general" }, screen.id === "settings", kbd("settings.open"))}
       </SidebarSection>
 
       <button type="button" className={s.conn} onClick={() => go({ id: "settings", tab: "general" })}>
