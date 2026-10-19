@@ -74,7 +74,16 @@ pub async fn run(args: UpdateArgs) -> Result<()> {
             .context("release.json is not valid")?;
 
     let cli_latest = release.cli_version.as_deref().filter(|v| *v != current);
-    let app = installed_app();
+    let mut app = installed_app();
+    if let Some(a) = &app {
+        a.tidy();
+    }
+    if matches!(app, Some(App::MacOs(_))) && macos_major().is_some_and(|v| v < 12) {
+        println!(
+            "the fleetd app needs macOS 12 or newer; the app you have stays as it is (the CLI still updates)"
+        );
+        app = None;
+    }
     // No feed: the release has no app build for this OS (yet).
     let feed = match &app {
         Some(a) => get(&http, &format!("{base}/{}", a.feed()))
@@ -96,6 +105,11 @@ pub async fn run(args: UpdateArgs) -> Result<()> {
     }
     if let (Some(app), Some(v)) = (&app, app_latest) {
         println!("app {} -> {v}", app.describe());
+        if app.gpui() {
+            println!(
+                "this replaces the earlier fleetd app with the new one, which keeps its pairing"
+            );
+        }
     }
     if args.check || (cli_latest.is_none() && app_latest.is_none()) {
         if args.check && (cli_latest.is_some() || app_latest.is_some()) {
@@ -139,9 +153,7 @@ pub async fn run(args: UpdateArgs) -> Result<()> {
         app.replace(&bytes)?;
         println!("updated {}", app.path().display());
         if gpui {
-            println!(
-                "it replaces the previous fleetd app: quit that one if it is open. The new app keeps its pairing."
-            );
+            println!("if the earlier fleetd app is open, quit it and open the new one");
         }
     }
     Ok(())
@@ -263,11 +275,26 @@ impl App {
         }
     }
 
-    /// The GPUI app is still installed here.
+    /// The GPUI app is still installed here. On Linux a `fleetd-app` beside the AppImage is the launcher a
+    /// pre-Electron `fleetd update` installed with it (build-release.yml's fleetd-app-linux-x64.tar.gz), not GPUI.
     fn gpui(&self) -> bool {
         match self {
             App::MacOs(p) => p.join("Contents/MacOS/fleetd-app").exists(),
-            App::Linux(p) => p.join("fleetd-app").exists(),
+            App::Linux(p) => p.join("fleetd-app").exists() && !self.binary().exists(),
+        }
+    }
+
+    /// After a pre-Electron `fleetd update` moved a Linux install to the AppImage: drop its launcher and give the app
+    /// the installer's menu entry, without downloading anything.
+    fn tidy(&self) {
+        if let App::Linux(dir) = self
+            && dir.join("fleetd-app").exists()
+            && self.binary().exists()
+        {
+            match retire_gpui_linux(dir) {
+                Ok(()) => println!("moved the app's menu entry to the new fleetd app"),
+                Err(e) => eprintln!("could not move the app's menu entry: {e:#}"),
+            }
         }
     }
 
@@ -392,6 +419,23 @@ fn retire_gpui_linux(dir: &Path) -> Result<()> {
         .stderr(std::process::Stdio::null())
         .status();
     Ok(())
+}
+
+/// The running macOS's major version (`sw_vers -productVersion`), or None off macOS or when it can't be read.
+fn macos_major() -> Option<u32> {
+    if !cfg!(target_os = "macos") {
+        return None;
+    }
+    let out = Command::new("sw_vers")
+        .arg("-productVersion")
+        .output()
+        .ok()?;
+    String::from_utf8_lossy(&out.stdout)
+        .trim()
+        .split('.')
+        .next()?
+        .parse()
+        .ok()
 }
 
 /// The `version` of the package.json at the root of an Electron app.asar. The archive is a Chromium pickle holding
@@ -562,8 +606,11 @@ mod tests {
         };
         assert!(app.is_current(&feed(b"appimage v2")));
         assert!(!app.is_current(&feed(b"appimage v3")));
-        // A GPUI install is never current, whatever else is there.
-        fs::write(dir.path().join("fleetd-app"), b"gpui").unwrap();
-        assert!(!app.is_current(&feed(b"appimage v2")));
+        // The launcher a pre-Electron `fleetd update` put beside it doesn't make it GPUI.
+        fs::write(dir.path().join("fleetd-app"), b"#!/bin/sh").unwrap();
+        assert!(app.is_current(&feed(b"appimage v2")));
+        // A GPUI install (its binary, no AppImage) is never current.
+        fs::remove_file(app.binary()).unwrap();
+        assert!(app.gpui() && !app.is_current(&feed(b"appimage v2")));
     }
 }

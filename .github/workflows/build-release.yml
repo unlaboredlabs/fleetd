@@ -343,6 +343,21 @@ jobs:
           ../../.github/release/desktop-fuses-check.sh dist/linux-unpacked/fleetd-desktop dist/linux-unpacked/fleetd-desktop --no-sandbox --ozone-platform=headless
           mv dist/fleetd-desktop-linux-x86_64.AppImage dist/fleetd-desktop-linux-amd64.deb ../../dist/
           dpkg-deb -I ../../dist/fleetd-desktop-linux-amd64.deb | grep -E '^ (Package|Version|Depends):'
+      - name: The app under the GPUI app's name, for pre-Electron CLIs
+        # A `fleetd update` from before the Electron app knows only fleetd-app-linux-x64.tar.gz and unpacks it over
+        # ~/.local/share/fleetd/app, whose menu entry runs `fleetd-app`. So this ships the AppImage with a `fleetd-app`
+        # that launches it, and that one update moves the user over; the next `fleetd update` or install replaces the
+        # menu entry and drops the launcher. Remove once those CLIs are gone.
+        run: |
+          stage="$RUNNER_TEMP/legacy"
+          mkdir -p "$stage"
+          cp dist/fleetd-desktop-linux-x86_64.AppImage "$stage/fleetd-desktop.AppImage"
+          cp app/desktop/build/icon.png "$stage/fleetd.png"
+          # shellcheck disable=SC2016 # $0 and $@ belong to the launcher.
+          printf '#!/bin/sh\nexec "$(dirname "$0")/fleetd-desktop.AppImage" "$@"\n' > "$stage/fleetd-app"
+          chmod 755 "$stage/fleetd-desktop.AppImage" "$stage/fleetd-app"
+          tar -C "$stage" -czf dist/fleetd-app-linux-x64.tar.gz fleetd-desktop.AppImage fleetd.png fleetd-app
+          tar -tvzf dist/fleetd-app-linux-x64.tar.gz
       - name: Write latest-linux.yml
         # The AppImage only: the deb is updated by the installer or the package manager (see src/main/updater.ts).
         run: |
