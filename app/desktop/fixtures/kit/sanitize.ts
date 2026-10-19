@@ -24,8 +24,11 @@ const FORBIDDEN = [
   /unlaboredlabs/iu,
   /fleetd-lab/iu,
   /fleetd-testbed/iu,
-  /\b100\.\d+\.\d+\.\d+\b/u,
+  // Tailnet addresses (100.64.0.0/10) and names.
+  /\b100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d+\.\d+\b/u,
+  /\.ts\.net\b/iu,
   /fld_[a-z2-7]{20,}/u,
+  /[A-Za-z0-9._%+-]+@(?!example\.com)[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[a-z]{2,}\b/u,
 ];
 
 const MACHINES: Record<string, string> = { "lab-a": "devbox", "lab-b": "buildbox" };
@@ -57,6 +60,7 @@ const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/g
 const SHA = /\b[0-9a-f]{40}\b/gu;
 // Short shas (7-12 hex with a digit and a letter), as in promptRefs ("lead.start@786007aa14") and commit summaries.
 const SHORT_SHA = /\b(?=[0-9a-f]*[0-9])(?=[0-9a-f]*[a-f])[0-9a-f]{7,12}\b/gu;
+const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[a-z]{2,}\b/gu;
 const BASE64_KEY = /\b[A-Za-z0-9+/]{43}=/gu;
 
 export const makeSanitizer = (lab: string, hubPort: number) => {
@@ -74,6 +78,8 @@ export const makeSanitizer = (lab: string, hubPort: number) => {
     out = out.replace(SHORT_SHA, (m) => sha(m).slice(0, m.length));
     out = out.replace(BASE64_KEY, (m) => Buffer.from(sha(m).slice(0, 32), "hex").toString("base64").slice(0, 43) + "=");
     out = out.replace(/fld_[a-z2-7]{20,}/gu, "fld_redacted");
+    // Commit authors and the like: a GitHub noreply address carries the account's numeric id.
+    out = out.replace(EMAIL, (m) => (m.endsWith("@example.com") ? m : "dev@example.com"));
     return out;
   };
   const value = (v: JsonValue): JsonValue => {
@@ -85,8 +91,23 @@ export const makeSanitizer = (lab: string, hubPort: number) => {
   return { text, value };
 };
 
+/**
+ * FLEETD_FIXTURE_DENYLIST=<file>: more words that must never appear, one per line, such as the recording person's
+ * own repo names. Kept outside the repo, since the list itself would say what it hides.
+ */
+export const denylist = (): Array<RegExp> => {
+  const file = process.env["FLEETD_FIXTURE_DENYLIST"];
+  if (file === undefined) return [];
+  return fs
+    .readFileSync(file, "utf8")
+    .split("\n")
+    .map((w) => w.trim())
+    .filter((w) => w.length >= 3)
+    .map((w) => new RegExp(`(?<![A-Za-z0-9])${escape(w)}(?![A-Za-z0-9])`, "iu"));
+};
+
 export const assertClean = (name: string, json: string) => {
-  for (const pattern of FORBIDDEN) {
+  for (const pattern of [...FORBIDDEN, ...denylist()]) {
     const hit = pattern.exec(json);
     if (hit !== null) throw new Error(`${name}: "${json.slice(Math.max(0, hit.index - 60), hit.index + 60)}" still matches ${pattern}`);
   }
@@ -146,6 +167,18 @@ export const momentOf = (lines: ReadonlyArray<RawLine>, at: number, name: string
   return f;
 };
 
+/** The GitHub repos a person can see are theirs, not the lab's: project_discover lists stand-ins instead. */
+export const ACME_REPOS: Array<JsonObject> = [
+  { repo: "acme/storefront", url: "https://github.com/acme/storefront", private: false, description: "Marketing site and checkout for the Team plan", pushedAt: "2026-10-19T08:12:00Z", checkouts: [] },
+  { repo: "acme/billing", url: "https://github.com/acme/billing", private: true, description: "Invoices, receipts and the nightly export", pushedAt: "2026-10-18T17:40:00Z", checkouts: [] },
+  { repo: "acme/docs", url: "https://github.com/acme/docs", private: false, description: "Public docs site", pushedAt: "2026-10-16T09:05:00Z", checkouts: [] },
+];
+
+const withoutPersonalRepos = (tool: string, output: JsonValue): JsonValue => {
+  if (tool !== "project_discover" || !isObject(output) || !isObject(output["github"])) return output;
+  return { ...output, github: { ...output["github"], owners: ["acme"], repos: ACME_REPOS } };
+};
+
 /** Every string in the fixture rewritten; inputs too, so they still match what the screens will ask for. */
 export const sanitizeFixture = (f: Fixture, s: ReturnType<typeof makeSanitizer>): Fixture => {
   const out = Fixture.from(f, f.name, f.note);
@@ -155,7 +188,7 @@ export const sanitizeFixture = (f: Fixture, s: ReturnType<typeof makeSanitizer>)
   out.calls = out.calls.map((c) => ({
     ...c,
     input: c.input === undefined ? undefined : (s.value(c.input) as JsonObject),
-    ...(c.output === undefined ? {} : { output: s.value(c.output) }),
+    ...(c.output === undefined ? {} : { output: s.value(withoutPersonalRepos(c.tool, c.output)) }),
     ...(c.error === undefined ? {} : { error: { ...c.error, message: s.text(c.error.message), ...(c.error.fix === undefined ? {} : { fix: s.text(c.error.fix) }) } }),
   }));
   return out;
@@ -163,10 +196,10 @@ export const sanitizeFixture = (f: Fixture, s: ReturnType<typeof makeSanitizer>)
 
 const main = () => {
   const { values } = parseArgs({
-    options: { raw: { type: "string" }, lab: { type: "string" }, out: { type: "string" }, at: { type: "string", multiple: true }, port: { type: "string" } },
+    options: { raw: { type: "string" }, lab: { type: "string" }, out: { type: "string" }, at: { type: "string", multiple: true }, port: { type: "string" }, name: { type: "string" } },
   });
   if (values.raw === undefined || values.lab === undefined || values.out === undefined) {
-    throw new Error("usage: sanitize.ts --raw <raw.jsonl> --lab <slot dir> --out <dir> [--at start|peak|end|<ISO>]... [--port <hub port>]");
+    throw new Error("usage: sanitize.ts --raw <raw.jsonl> --lab <slot dir> --out <dir> [--at start|peak|end|<ISO>]... [--name <file name, for one --at>] [--port <hub port>]");
   }
   const lines = readRaw(values.raw);
   const slot = Number(/slot-(\d)/u.exec(values.lab)?.[1] ?? 0);
@@ -182,7 +215,7 @@ const main = () => {
             ? // Just before the hub's first event: the first sweep's answers, nothing happened yet.
               (lines.find((l) => l.kind === "frame" && l.frame["t"] === "event")?.at ?? 1) - 1
             : Date.parse(which);
-    const name = `lab-${/^[a-z]+$/u.test(which) ? which : new Date(at).toISOString().slice(11, 19).replaceAll(":", "")}`;
+    const name = values.name ?? `lab-${/^[a-z]+$/u.test(which) ? which : new Date(at).toISOString().slice(11, 19).replaceAll(":", "")}`;
     const fixture = sanitizeFixture(momentOf(lines, at, name, `Recorded from a lab hub at ${which}.`), s);
     fitStrings(fixture);
     const problems = validateFixture(fixture);

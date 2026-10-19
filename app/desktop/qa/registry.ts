@@ -25,6 +25,7 @@ export const fixtures = [
   "pairing-failed",
   "node-too-old",
   // Group fixtures (fixtures/<group>/index.ts), named <group>-<what>.
+  "projects-cloning",
   "projects-errors",
   "projects-machines",
 ] as const;
@@ -68,11 +69,13 @@ export const screens: readonly Screen[] = [
   {
     id: "projects.add.cloning",
     route: "#/projects/add",
-    fixtures: ["typical"],
+    fixtures: ["projects-cloning"],
     open: async (page) => {
       await page.getByRole("listbox", { name: "Repos" }).waitFor();
       await page.getByRole("textbox", { name: "GitHub URL, folder path, or filter" }).fill("acme/checkout-v2");
       await page.keyboard.press("Enter");
+      // The fixture's progress events are timed; shoot once the bar shows git's 42%.
+      await page.locator('[role="progressbar"][aria-valuenow="34"]').waitFor();
     },
   },
   {

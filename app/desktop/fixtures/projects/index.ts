@@ -195,6 +195,32 @@ export default defineGroup({
       return f;
     })(),
     (() => {
+      // A clone part way through. Calls are static, so its progress comes as timed events. They start after the QA
+      // step has typed acme/checkout-v2 and pressed Enter (well under 2 s), and stop at 42% so the bar shows.
+      const f = Fixture.from(base("typical"), "projects-cloning", "Add project: a clone receiving objects, 42% in");
+      const cursor = typeof f.snapshot?.["cursor"] === "number" ? f.snapshot["cursor"] : 0;
+      const progress = (n: number, phase: string, percent: number | null, detail: string | null): JsonObject => ({
+        seq: cursor + n,
+        at: f.now,
+        type: "project.clone_progress",
+        machineId: "devbox",
+        summary: "cloning acme/checkout-v2",
+        data: {
+          addId: "add-1",
+          repo: "acme/checkout-v2",
+          path: "/home/dev/src/checkout-v2",
+          phase,
+          ...(percent === null ? {} : { percent }),
+          ...(detail === null ? {} : { detail }),
+        },
+      });
+      f.later(2_500, "event", progress(1, "starting", null, null));
+      f.later(2_800, "event", progress(2, "receiving", 12, "1.20 MiB | 2.31 MiB/s"));
+      f.later(3_100, "event", progress(3, "receiving", 42, "4.10 MiB | 2.31 MiB/s"));
+      f.settleAt(3_400);
+      return f;
+    })(),
+    (() => {
       // Machines in every state: one asleep a while ago and back, one degraded, one offline for a while.
       const f = Fixture.from(base("typical"), "projects-machines", "Machines: slept, degraded, offline, usage near its limits");
       const now = Date.parse(f.now);
