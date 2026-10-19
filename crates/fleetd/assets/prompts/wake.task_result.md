@@ -1,4 +1,4 @@
 - {{taskId}} {{verb}}: {{title}}{{where}}{{receipts}}
   result:
 {{result}}
-  next: judge the result; `fleetd task message {{taskId}} "<text>"` continues the same thread.
+  next: judge the result; `message_agent` {taskId: "{{taskId}}"} continues the same thread.

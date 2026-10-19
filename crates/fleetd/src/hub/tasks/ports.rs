@@ -114,6 +114,8 @@ pub trait TaskPorts: Send + Sync {
         thread: &'a ThreadRef,
         client_request_id: &'a str,
     ) -> BoxFut<'a, Result<(), PortError>>;
+    /// Executors.stop(ref): ends the thread's claude process; `Ok` only once the node saw it exit.
+    fn stop<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Result<(), PortError>>;
     /// Executors.actions(ref, limit): each action's summary and output tail, newest first; empty when unreadable.
     fn action_texts<'a>(
         &'a self,

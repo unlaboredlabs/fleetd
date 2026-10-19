@@ -31,15 +31,37 @@ pub const LOGIN_ENV: [&str; 4] = [
 const BASE_ENV: [&str; 4] = ["HOME", "PATH", "USER", "LANG"];
 
 /// No tools, no MCP servers, no saved session, and none of the user's customizations; the login still applies.
-pub const ONE_SHOT_FLAGS: [&str; 7] = [
+pub const ONE_SHOT_FLAGS: [&str; 5] = [
     "--tools",
     "",
     "--strict-mcp-config",
     "--no-session-persistence",
     "--safe-mode",
-    "--settings",
-    crate::node::runner::claude::AUTO_MEMORY_OFF_SETTINGS,
 ];
+
+/// The one-shot's `--settings`: auto memory off, and claude's own subagents off as in every claude fleetd starts.
+pub fn one_shot_settings() -> String {
+    serde_json::json!({
+        "autoMemoryEnabled": false,
+        "env": crate::node::runner::claude::subagents_off_settings_env(),
+    })
+    .to_string()
+}
+
+/// The one-shot's full argv after the binary. It has no tools at all (`--tools ""`); the deny list still names the
+/// agent tools, so a claude that ignored `--tools` would not get them either.
+pub fn one_shot_args(model: &str) -> Vec<String> {
+    let mut args: Vec<String> = ["-p", "--output-format", "json", "--model", model]
+        .iter()
+        .chain(ONE_SHOT_FLAGS.iter())
+        .map(|a| (*a).to_owned())
+        .collect();
+    args.push("--disallowedTools".into());
+    args.extend(crate::node::runner::claude::disallowed_tools([]));
+    args.push("--settings".into());
+    args.push(one_shot_settings());
+    args
+}
 
 #[derive(Debug, Clone)]
 pub struct RouterProject {
@@ -126,6 +148,11 @@ pub fn router_env(source: &HashMap<String, String>) -> Vec<(String, String)> {
                 .map(|v| (k.to_string(), v.clone()))
         })
         .chain([(memory_key.to_owned(), memory_off.to_owned())])
+        .chain(
+            crate::node::runner::claude::SUBAGENTS_OFF_ENV
+                .iter()
+                .map(|(k, v)| ((*k).to_owned(), (*v).to_owned())),
+        )
         .collect()
 }
 
@@ -319,10 +346,8 @@ impl OneShot {
 
     /// Runs `claude` once with the prompt on stdin, killed at the timeout.
     async fn spawn(&self, prompt: &str) -> Result<(Option<i32>, String, String), String> {
-        let mut args: Vec<&str> = vec!["-p", "--output-format", "json", "--model", &self.model];
-        args.extend(ONE_SHOT_FLAGS);
         let mut child = Command::new("claude")
-            .args(&args)
+            .args(one_shot_args(&self.model))
             .current_dir(&self.cwd)
             .env_clear()
             .envs(self.env.iter().cloned())
@@ -675,7 +700,7 @@ exit "$(cat "$dir/reply-$n.exit")"
         assert_eq!(fake.calls(), 1);
         let (args, env, prompt) = fake.call(1);
         assert_eq!(
-            args,
+            args[..10],
             [
                 "-p",
                 "--output-format",
@@ -687,20 +712,31 @@ exit "$(cat "$dir/reply-$n.exit")"
                 "--strict-mcp-config",
                 "--no-session-persistence",
                 "--safe-mode",
-                "--settings",
-                r#"{"autoMemoryEnabled":false}"#
             ]
         );
+        // Claude's own subagents are off here too: denied by name, and the knobs set over the user's settings.
+        let denied = args.iter().position(|a| a == "--disallowedTools").unwrap();
+        assert_eq!(args[denied + 1..denied + 3], ["Task", "Agent"]);
+        let settings: Value = serde_json::from_str(args.last().unwrap()).unwrap();
+        assert_eq!(settings["autoMemoryEnabled"], false);
+        assert_eq!(settings["env"]["CLAUDE_CODE_DISABLE_AGENT_VIEW"], "1");
         assert!(
             env.lines()
                 .any(|l| l == "ANTHROPIC_BASE_URL=http://proxy.invalid")
         );
         assert!(env.lines().any(|l| l == "ANTHROPIC_AUTH_TOKEN=test-token"));
-        // No session variable of the hub's own; only fleetd's auto memory switch.
-        assert!(
-            env.lines()
-                .filter(|l| l.starts_with("CLAUDE"))
-                .eq(["CLAUDE_CODE_DISABLE_AUTO_MEMORY=1"]),
+        // No session variable of the hub's own; only fleetd's auto memory and subagent switches.
+        let mut claude_vars: Vec<&str> = env.lines().filter(|l| l.starts_with("CLAUDE")).collect();
+        claude_vars.sort_unstable();
+        assert_eq!(
+            claude_vars,
+            [
+                "CLAUDE_CODE_DISABLE_AGENT_VIEW=1",
+                "CLAUDE_CODE_DISABLE_AUTO_MEMORY=1",
+                "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1",
+                "CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS=1",
+                "CLAUDE_CODE_DISABLE_WORKFLOWS=1",
+            ],
             "{env}"
         );
         assert!(prompt.contains(TEXT) && prompt.contains(r#""title":"repo-b""#));

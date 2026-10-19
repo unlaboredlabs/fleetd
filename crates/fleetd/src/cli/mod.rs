@@ -2,6 +2,7 @@
 //! Exit codes: 0 ok, 1 failed (a claim that did not pass), 2 usage, 3 refused, 4 hub or node unreachable,
 //! 78 (`listen`) the hub refused the key.
 
+pub mod agent_mcp;
 pub mod answer;
 pub mod args;
 pub mod hub_key;
@@ -248,6 +249,9 @@ pub fn main() -> ExitCode {
         && matches!(argv.get(1).map(String::as_str), Some("start" | "serve"))
     {
         return node::hub_start(&argv[2..]);
+    }
+    if argv.first().map(String::as_str) == Some("agent-mcp") {
+        return ExitCode::from(agent_mcp::run(&argv[1..]));
     }
     if is_long_running(&argv) {
         let runtime = tokio::runtime::Builder::new_multi_thread()

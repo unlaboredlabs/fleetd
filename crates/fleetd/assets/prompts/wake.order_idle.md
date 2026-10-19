@@ -1,1 +1,1 @@
-- You ended your turn without starting work or asking anything for {{workstreamId}} '{{title}}': nothing else will wake you for it. Continue it now (spawn its tasks), ask the human, or say why it waits with `fleetd status set --workstream {{workstreamId}}`.
+- You ended your turn without starting work or asking anything for {{workstreamId}} '{{title}}': nothing else will wake you for it. Continue it now (spawn its tasks), ask the human, or say why it waits with `status_set` {workstreamId: "{{workstreamId}}"}.
