@@ -43,6 +43,25 @@ describe("event effects", () => {
     expect(tools(e("prompt.changed"))).toContain("prompts_list");
   });
 
+  it("refetches only the open order's time reads, never the paged spans whole", () => {
+    const fx = effectsOf(e("task.completed", { workstreamId: "W1", taskId: "T3" }));
+    expect(fx.invalidate).toContainEqual({ tool: "time_breakdown", where: { workstreamId: "W1" } });
+    expect(tools(e("task.completed", { workstreamId: "W1" }))).not.toContain("time_spans");
+    expect(tools(e("thread.completed", undefined, { threadId: "t1" }))).not.toContain("time_breakdown");
+    const w1 = { scope: { kind: "order", workstreamId: "W1" }, since: "2026-10-19T00:00:00.000Z" };
+    expect(matches(w1, { workstreamId: "W1" })).toBe(true);
+    expect(matches(w1, { workstreamId: "W2" })).toBe(false);
+  });
+
+  it("a lead woken for several orders refetches each one's detail and time", () => {
+    const fx = effectsOf(e("lead.woken", { workstreamIds: ["W1", "W2"], triggers: ["task"] }));
+    for (const id of ["W1", "W2"]) {
+      expect(fx.invalidate).toContainEqual({ tool: "order_get", where: { workstreamId: id } });
+      expect(fx.invalidate).toContainEqual({ tool: "time_breakdown", where: { workstreamId: id } });
+      expect(fx.invalidate).toContainEqual({ tool: "time_insights", where: { workstreamId: id } });
+    }
+  });
+
   it("matches queries by their input's fields", () => {
     expect(matches({ workstreamId: "W1", n: 3 }, { workstreamId: "W1" })).toBe(true);
     expect(matches({ workstreamId: "W2" }, { workstreamId: "W1" })).toBe(false);
