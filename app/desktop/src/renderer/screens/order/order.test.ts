@@ -99,9 +99,17 @@ describe("the conversation", () => {
     expect(systemHeadline("You are the lead of project storefront (devbox/p1) in fleetd.")).toBe(
       "Started: fleetd's first message to the lead",
     );
+    expect(systemHeadline("## Why you are woken\n- New intent W2: 'Lab run. The harness spawns every task'.")).toBe("Woken: New intent W2: 'Lab run…'");
     expect(systemHeadline("You seem stalled; continue the task from where you stopped.")).toBe(
       "From fleetd: You seem stalled; continue the task from where you stopped.",
     );
+  });
+
+  it("shows a steer once, where a log holds it, whoever it went to", () => {
+    const s = steer("S1", "acknowledged", { target: { taskId: "T1" }, queuedAt: at("00:59") });
+    const conv = buildConversation(input({ steers: [s], tail: [msg("01:00", "user", "S1 · the human steers T1 directly: 'skip the docs page'")] }));
+    expect(conv).toHaveLength(1);
+    expect(conv[0]).toMatchObject({ kind: "say", to: "T1", author: { kind: "you" } });
   });
 
   it("names a steer's real author: the lead's message to a task is not yours", () => {
@@ -223,6 +231,7 @@ describe("machine tokens in agent text", () => {
     expect(machineCode("thread 30dbf7e3-87b1-4f78-bede-43e659f04647 and sha 9cd88e70")).toBe("thread `30dbf7e3-87b1-4f78-bede-43e659f04647` and sha `9cd88e70`");
     expect(machineCode("a follow-up on ShareCard.tsx at github.com, waiting_on_you")).toBe("a follow-up on ShareCard.tsx at github.com, `waiting_on_you`");
     expect(machineCode("run `echo a_b` then\n```\nx.y_z 9cd88e70\n```\n[link](https://x.dev/a_b-c-d)")).toBe("run `echo a_b` then\n```\nx.y_z 9cd88e70\n```\n[link](https://x.dev/a_b-c-d)");
+    expect(machineCode("the route /share/<id>.png and <https://x.dev>")).toBe("the route /share/`<id>`.png and <https://x.dev>");
     expect(machineCode("the fix-receipt-dates branch, not defaced or 12345678")).toBe("the `fix-receipt-dates` branch, not defaced or 12345678");
   });
 });

@@ -93,7 +93,9 @@ export function machineCode(md: string): string {
   let last = 0;
   const wrap = (s: string) => s.replace(TOKEN, (t) => (isMachine(t) ? `\`${t}\`` : t));
   for (const m of md.matchAll(PROTECT)) {
-    out += wrap(md.slice(last, m.index)) + m[0];
+    // "<id>" in prose is a placeholder, not an autolink or HTML: shown as code, never dropped.
+    const kept = m[0].startsWith("<") && !/[:@]/.test(m[0]) ? `\`${m[0]}\`` : m[0];
+    out += wrap(md.slice(last, m.index)) + kept;
     last = m.index + m[0].length;
   }
   return out + wrap(md.slice(last));

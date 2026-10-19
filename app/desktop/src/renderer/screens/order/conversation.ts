@@ -94,7 +94,7 @@ export function foldLabel(secs: number, commands: number, failed: number, calls:
 /** The steer a user message in the lead's log is: the hub's steer text begins with its id ("S12 · the human…"). */
 function steerOf(text: string, steers: readonly Steer[]): Steer | undefined {
   const head = /^\s*(S[1-9][0-9]*)\b/.exec(text)?.[1];
-  return head === undefined ? undefined : steers.find((s) => s.id === head && "workstreamId" in s.target);
+  return head === undefined ? undefined : steers.find((s) => s.id === head);
 }
 
 const plain = (line: string): string =>
@@ -107,7 +107,9 @@ const plain = (line: string): string =>
 /** A sentence's first clause, from the human's side: "The human settled 2 of your asks; see…" → "you settled 2 of its asks". */
 function fromYourSide(line: string): string {
   const first = plain(line).split(/;\s|\.\s|:\s(?=[A-Z])/)[0] ?? "";
-  const turned = first.replace(/^The human\b/, "you").replace(/\byour\b/g, "its");
+  const cut = first.replace(/^The human\b/, "you").replace(/\byour\b/g, "its");
+  // A quote cut at its first sentence still closes.
+  const turned = (cut.match(/(?<![A-Za-z])'|'(?![A-Za-z])/g) ?? []).length % 2 === 1 ? `${cut}…'` : cut;
   return turned.length > 120 ? `${turned.slice(0, 119)}…` : turned;
 }
 
@@ -301,8 +303,9 @@ export function buildConversation(input: ConversationInput): Entry[] {
     flush();
   }
 
-  // Streamed messages the tail doesn't hold yet; the newest is still arriving while the lead works.
-  const fresh = streamed.filter((m) => !used.has(m.messageId) && m.text.trim() !== "");
+  // Streamed messages the tail doesn't hold yet, while the lead works; once it is idle the tail has its replies, and
+  // a part left over is a stale copy.
+  const fresh = input.leadWorking ? streamed.filter((m) => !used.has(m.messageId) && m.text.trim() !== "") : [];
   fresh.forEach((m, i) => {
     const streaming = input.leadWorking && i === fresh.length - 1;
     out.push({ kind: "say", key: `live:${m.messageId}`, at: "", author: { kind: "lead" }, text: m.text, ...(streaming ? { streaming } : {}) });
