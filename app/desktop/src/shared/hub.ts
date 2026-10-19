@@ -1,10 +1,9 @@
-// The hub data the renderer sees. Snapshot, HubEvent and LiveFrame are the /app protocol's own shapes
-// (crates/fleetd-contracts/src/app.rs); until the generated contract types land they are typed by the fields the
-// shell itself relies on.
+// The hub data the renderer sees: the /app protocol's own shapes, generated from crates/fleetd-contracts.
+import type { FleetStatus, HubEvent, LiveFrame } from "./contracts";
 
-export type Snapshot = { readonly cursor: number } & Readonly<Record<string, unknown>>;
-export type HubEvent = { readonly seq: number; readonly type: string } & Readonly<Record<string, unknown>>;
-export type LiveFrame = { readonly full: boolean } & Readonly<Record<string, unknown>>;
+export type { HubEvent, LiveFrame };
+/** The answer to `snapshot`: fleetd_status's data, with the event cursor to resume from. */
+export type Snapshot = FleetStatus;
 
 /** The connection as the UI should present it. The key itself never leaves main. */
 export type HubState =

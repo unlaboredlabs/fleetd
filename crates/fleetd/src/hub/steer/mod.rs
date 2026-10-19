@@ -18,7 +18,6 @@ use fleetd_contracts::steer::{
     Steer, SteerBy, SteerEventData, SteerId, SteerMode, SteerReceipt, SteerStage, SteerTarget,
 };
 use fleetd_contracts::tasks::{Task, TaskState};
-use serde_json::json;
 
 use crate::hub::api::{Caller, Hub, ToolError, allows, require};
 use crate::hub::executor::Executors;

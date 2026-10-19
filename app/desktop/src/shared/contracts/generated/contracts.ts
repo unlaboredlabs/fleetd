@@ -1,5 +1,6 @@
 // Generated from crates/fleetd-contracts by `cargo run -p fleetd-contracts --bin fleetd-schema`.
 // Do not edit: CI regenerates it and fails on any difference.
+/* eslint-disable -- generated; the schemas are what they are (a machine id or "browser" is just a string). */
 
 /** The /app protocol this build speaks. */
 export const PROTOCOL_VERSION = 1;
