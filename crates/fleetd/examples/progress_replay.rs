@@ -8,7 +8,7 @@
 //! order is replayed with the built-in model, and leave-one-out: calibrated from every other order (all databases,
 //! or only those of its own kind, live or lab) pooled across projects and unit kinds, minimum sample counts ignored.
 //! Progress quality: steadiness, drops only with a reason, and how far the estimate is from the share of the order's
-//! time that had passed. The ETA error is for us only: the product shows no time estimate.
+//! time that had passed.
 use std::path::{Path, PathBuf};
 
 use fleetd::hub::status::calib;
@@ -275,24 +275,6 @@ fn rank(mut v: Vec<f64>, p: f64) -> Option<f64> {
     v.get(r.max(1) - 1).copied()
 }
 
-/// |p50 − finish| per replayed minute, absolute and over the time left, and whether it finished by p90.
-#[derive(Default)]
-struct Errors(Vec<(f64, f64, bool)>);
-
-impl Errors {
-    fn json(&self) -> Value {
-        let abs = self.0.iter().map(|e| e.0 / MIN as f64).collect::<Vec<_>>();
-        let rel = self.0.iter().map(|e| e.1).collect::<Vec<_>>();
-        let r2 = |x: Option<f64>| x.map(|x| (x * 100.0).round() / 100.0);
-        json!({
-            "minutes": self.0.len(),
-            "absMinutes": { "p50": r2(rank(abs.clone(), 0.5)), "p90": r2(rank(abs, 0.9)) },
-            "relative": { "p50": r2(rank(rel.clone(), 0.5)), "p90": r2(rank(rel, 0.9)) },
-            "p90Coverage": r2(Some(self.0.iter().filter(|e| e.2).count() as f64 / self.0.len().max(1) as f64)),
-        })
-    }
-}
-
 /// |estimate − share of the order's time passed| per replayed minute, in points.
 #[derive(Default)]
 struct Tracking(Vec<f64>);
@@ -405,8 +387,6 @@ fn main() -> anyhow::Result<()> {
     };
 
     let mut out_orders = Vec::new();
-    // errors[variant][live? 0 : 1]
-    let mut errors: Vec<[Errors; 2]> = VARIANTS.iter().map(|_| Default::default()).collect();
     let mut worst_flat = [(0i64, 0i64, 0i64); 2];
     let mut tracking: Vec<[Tracking; 2]> = VARIANTS.iter().map(|_| Default::default()).collect();
     let mut drop_counts = [[(0usize, 0usize); 3]; 2];
@@ -452,25 +432,6 @@ fn main() -> anyhow::Result<()> {
                     .push((r.2[0].pct as f64 - realized).abs());
             }
         }
-        let mut loo_eta = Vec::new();
-        for (k, cal) in cals.iter().enumerate() {
-            let mut t = o.start();
-            while t < done {
-                let (_, progress) = o.group_at(cal, t);
-                if !progress.is_empty() {
-                    let (p50, p90) =
-                        model::scope_eta(&progress.iter().collect::<Vec<_>>(), 1, (0, 0), t);
-                    let err = (p50 - done).abs() as f64;
-                    errors[k][tag]
-                        .0
-                        .push((err, err / (done - t).max(MIN) as f64, done <= p90));
-                    if k == 1 {
-                        loo_eta.push(json!({ "t": t, "p50": p50, "p90": p90 }));
-                    }
-                }
-                t += MIN;
-            }
-        }
         out_orders.push(json!({
             "source": sources[o.source].0, "live": o.live, "workstream": o.ws, "start": o.start(), "done": done,
             "units": o.units.iter().map(|u| json!({
@@ -479,7 +440,7 @@ fn main() -> anyhow::Result<()> {
             })).collect::<Vec<_>>(),
             "longestFlatMs": { "old": flat.0, "builtIn": flat.1, "looAll": flat.2 },
             "jumps": { "builtIn": jumps(o, &cals[0], &rows, 0), "looAll": jumps(o, &cals[1], &rows, 1) },
-            "series": rows_json(&rows), "internalEtaLooAll": loo_eta,
+            "series": rows_json(&rows),
         }));
     }
 
@@ -524,8 +485,6 @@ fn main() -> anyhow::Result<()> {
                 .collect::<serde_json::Map<_, _>>(),
             "drops": VARIANTS.iter().zip(&drop_counts[tag]).map(|(n, (all, bare))| (n.to_string(), json!({ "all": all, "unexplained": bare })))
                 .collect::<serde_json::Map<_, _>>(),
-            "internalEtaError": VARIANTS.iter().zip(&errors).map(|(n, e)| (n.to_string(), e[tag].json()))
-                .collect::<serde_json::Map<_, _>>(),
         })
     };
     let all_units: Vec<&Timeline> = orders
@@ -550,7 +509,6 @@ fn main() -> anyhow::Result<()> {
             "looSameKind: the same, from other live orders only for a live order and other lab orders only for a lab order",
             "tracking: |estimate % - share of the order's wall time passed| at every replayed minute, in points",
             "drops: points where the estimate fell; unexplained = without a stated reason (must be 0)",
-            "internalEtaError (not a product figure): |p50 - actual finish| at every replayed minute; relative = over the time that was left; p90Coverage = share of minutes the finish came by p90",
             "jumps: one-minute rises of 10+ points; stageFilledBefore = elapsed/usual in the stage the unit was in (the model caps credit at 0.9 of it)",
         ],
         "orders": out_orders,

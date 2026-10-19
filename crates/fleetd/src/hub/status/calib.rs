@@ -157,7 +157,6 @@ pub fn derive(units: &[Timeline], now: i64) -> Calibration {
             .into_iter()
             .map(|(k, v)| (k.to_owned(), params(&v)))
             .collect(),
-        accuracy: None,
         computed_ms: now,
     }
 }
