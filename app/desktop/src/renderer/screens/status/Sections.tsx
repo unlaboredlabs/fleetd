@@ -33,17 +33,18 @@ function Section({ title, count, more, children }: { title: string; count: numbe
 }
 
 /** A row that opens what it names. Its text wraps; the button is the whole row so it stays one target. */
-function Row({ onOpen, children, label }: { onOpen?: (() => void) | undefined; children: ReactNode; label: string }) {
+function Row({ onOpen, children, label, grid }: { onOpen?: (() => void) | undefined; children: ReactNode; label: string; grid?: boolean }) {
+  const className = cx(s.row, grid && s.partRow);
   return onOpen ? (
-    <button type="button" className={cx(s.row)} onClick={onOpen} aria-label={label}>
+    <button type="button" className={className} onClick={onOpen} aria-label={label}>
       {children}
     </button>
   ) : (
-    <div className={cx(s.row)}>{children}</div>
+    <div className={className}>{children}</div>
   );
 }
 
-export function Sections({ doc, live, now }: { doc: StatusDoc; live: boolean; now: number }) {
+export function Sections({ doc, now }: { doc: StatusDoc; now: number }) {
   const partsTitle = doc.scope.kind === "fleet" ? "Projects" : "Milestones";
   return (
     <div className={cx(s.sections)}>
@@ -53,10 +54,8 @@ export function Sections({ doc, live, now }: { doc: StatusDoc; live: boolean; no
             const f = figure(p.progress);
             const scope = p.scope;
             return (
-              <Row key={p.milestoneId ?? p.title} label={`${p.title} status`} onOpen={scope ? () => openScope(scope) : undefined}>
-                <span className={cx(s.partTitle)}>
-                  <Truncate expand="none">{p.title}</Truncate>
-                </span>
+              <Row grid key={p.milestoneId ?? p.title} label={`${p.title} status`} onOpen={scope ? () => openScope(scope) : undefined}>
+                <Truncate expand="none">{p.title}</Truncate>
                 <Text strong tabular className={cx(s.partPct)}>
                   {f.pct === null ? "planning" : `${f.pct}%`}
                 </Text>
@@ -83,7 +82,7 @@ export function Sections({ doc, live, now }: { doc: StatusDoc; live: boolean; no
       ) : null}
 
       <Section title="Needs you" count={doc.needsYou.count}>
-        <NeedsYou askIds={doc.needsYou.askIds} count={doc.needsYou.count} live={live} />
+        <NeedsYou askIds={doc.needsYou.askIds} count={doc.needsYou.count} />
       </Section>
 
       <Section title="Risks" count={doc.risks.length} more={doc.more.risks}>

@@ -34,8 +34,8 @@ export function StatusScreen() {
   const now = useHubNow(session, (n) => (doc ? agesOnScreen(doc, n) : []));
 
   return (
-    <div className={cx(s.screen)} data-screen={`status.${scope.kind}`} data-phase={p} aria-busy={p === "skeleton"}>
-      <Header scope={scope} doc={doc} phase={p} />
+    <div className={cx(s.screen)} data-screen={`status.${scope.kind}`} data-phase={p}>
+      <Header scope={scope} doc={doc} phase={p} linkUp={session.linkUp} />
       <div className={cx(s.body)}>
         <div className={cx(s.measure)}>
           <Banner session={session} phase={p} />
@@ -44,7 +44,7 @@ export function StatusScreen() {
               <StaleList doc={doc} now={now} />
               <Hero doc={doc} live={p === "live"} session={`${String(session.session)}:${route}`} now={now} />
               <Health doc={doc} now={now} />
-              <Sections doc={doc} live={p === "live"} now={now} />
+              <Sections doc={doc} now={now} />
             </>
           ) : (
             <Skeleton />
@@ -55,7 +55,7 @@ export function StatusScreen() {
   );
 }
 
-function Header({ scope, doc, phase: p }: { scope: StatusScope; doc: StatusDoc | null; phase: Phase }) {
+function Header({ scope, doc, phase: p, linkUp }: { scope: StatusScope; doc: StatusDoc | null; phase: Phase; linkUp: boolean }) {
   const crumbs: { label: string; to: StatusScope }[] = [{ label: "Fleet", to: { kind: "fleet" } }];
   if (scope.kind === "project") crumbs.push({ label: doc?.title ?? scope.projectRef.projectId, to: scope });
   if (scope.kind === "order") crumbs.push({ label: doc?.title ?? scope.workstreamId, to: scope });
@@ -67,7 +67,9 @@ function Header({ scope, doc, phase: p }: { scope: StatusScope; doc: StatusDoc |
         : (["var(--success)", `live · as of ${clock(doc?.now ?? "")}`] as const)
       : p === "notLive"
         ? (["var(--warning)", `not live · data from ${clock(doc?.now ?? "")}`] as const)
-        : (["var(--faint)", "syncing"] as const);
+        : linkUp
+          ? (["var(--faint)", "syncing"] as const)
+          : (["var(--warning)", "not live"] as const);
   return (
     <header className={cx(s.header)}>
       <nav className={cx(s.crumbs)} aria-label="Status scope">

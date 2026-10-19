@@ -21,19 +21,7 @@ export function Hero({ doc, live, session, now }: { doc: StatusDoc; live: boolea
   const stale = doc.progress.stale;
   return (
     <section className={stale ? s.heroStale : s.hero} aria-label="Progress">
-      <div className={cx(s.figureRow)}>
-        {f.planning === null ? <Number f={f} session={session} live={live} /> : <Planning pct={f.planning} />}
-        <div className={cx(s.figureMeta)}>
-          {f.detail.map((d) => (
-            <Text key={d} size="xs" tone="quiet">
-              {d}
-            </Text>
-          ))}
-          <Text size="xs" tone="quiet" tabular>
-            {asOf(doc.progress.asOf, now)}
-          </Text>
-        </div>
-      </div>
+      <FigureBlock f={f} session={session} live={live} meta={[...f.detail, asOf(doc.progress.asOf, now)]} />
       {stale ? (
         <Text size="xs" tone="warning">
           {staleWords(stale, now)}
@@ -48,30 +36,56 @@ export function Hero({ doc, live, session, now }: { doc: StatusDoc; live: boolea
   );
 }
 
-function Number({ f, session, live }: { f: Figure; session: string; live: boolean }) {
+/** The number (or "planning") with its meta on one line, and the bar across the full width under it. */
+function FigureBlock({ f, session, live, meta }: { f: Figure; session: string; live: boolean; meta: readonly string[] }) {
   const pct = f.pct ?? 0;
   // The figure tweens only while live; a not-live gap is its own session (session.ts bumps it).
   const shown = useTween(pct, live ? session : `${session}:still`);
   const k = pct === 0 ? 1 : shown / pct;
   return (
-    <div className={cx(s.figure)}>
-      <div className={cx(s.numberLine)}>
-        <Text size="display" strong tabular className={cx(s.number)}>
-          {`${Math.round(shown)}%`}
-        </Text>
-        {f.verifiedNote !== null ? (
-          <Text size="xs" tone="quiet" tabular>
-            {f.verifiedNote}
-          </Text>
-        ) : null}
-        {!live ? (
-          <Text size="xs" strong tone="warning">
-            not live
-          </Text>
-        ) : null}
+    <>
+      <div className={cx(s.figureRow)}>
+        <div className={cx(s.numberLine)}>
+          {f.planning === null ? (
+            <Text size="display" strong tabular className={cx(s.number)}>
+              {`${Math.round(shown)}%`}
+            </Text>
+          ) : (
+            <Text size="xl" strong>
+              planning
+            </Text>
+          )}
+          {f.planning !== null ? (
+            <Text size="xs" tone="quiet">
+              the lead is writing the plan; progress counts once it has items
+            </Text>
+          ) : f.verifiedNote !== null ? (
+            <Text size="xs" tone="quiet" tabular>
+              {f.verifiedNote}
+            </Text>
+          ) : null}
+          {!live ? (
+            <Text size="xs" strong tone="warning">
+              not live
+            </Text>
+          ) : null}
+        </div>
+        <div className={cx(s.figureMeta)}>
+          {meta.map((d) => (
+            <Text key={d} size="xs" tone="quiet" tabular>
+              {d}
+            </Text>
+          ))}
+        </div>
       </div>
-      <TwoToneBar verified={f.verifiedPct * k} inFlight={f.inFlightPct * k} label={`${pct}% estimated, ${f.verifiedPct}% verified`} />
-    </div>
+      {f.planning === null ? (
+        <TwoToneBar verified={f.verifiedPct * k} inFlight={f.inFlightPct * k} label={`${pct}% estimated, ${f.verifiedPct}% verified`} />
+      ) : (
+        <div className={cx(s.planningBar)} role="img" aria-label={`planning ${f.planning}% of its usual time`}>
+          <div className={cx(s.barInFlight)} style={{ width: `${f.planning}%` }} />
+        </div>
+      )}
+    </>
   );
 }
 
@@ -81,25 +95,6 @@ export function TwoToneBar({ verified, inFlight, label, small }: { verified: num
     <div className={small ? s.barSmall : s.bar} role="img" aria-label={label}>
       <div className={cx(s.barVerified)} style={{ width: `${verified}%` }} />
       <div className={cx(s.barInFlight)} style={{ width: `${inFlight}%` }} />
-    </div>
-  );
-}
-
-/** While the lead plans there is nothing to count yet: "planning" with its own bar, never a flat 0%. */
-function Planning({ pct }: { pct: number }) {
-  return (
-    <div className={cx(s.figure)}>
-      <div className={cx(s.numberLine)}>
-        <Text size="xl" strong>
-          planning
-        </Text>
-        <Text size="xs" tone="quiet">
-          the lead is writing the plan; progress counts once it has items
-        </Text>
-      </div>
-      <div className={cx(s.planningBar)} role="img" aria-label={`planning ${pct}% of its usual time`}>
-        <div className={cx(s.barInFlight)} style={{ width: `${pct}%` }} />
-      </div>
     </div>
   );
 }
@@ -128,7 +123,7 @@ function Markers({ doc, now }: { doc: StatusDoc; now: number }) {
 }
 
 const SPARK_W = 600;
-const SPARK_H = 40;
+const SPARK_H = 56;
 
 /** The estimate over time (and verified under it). Every drop has a marker whose explanation is listed below the
  * line, so a fall is never silent. */

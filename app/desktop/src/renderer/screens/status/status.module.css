@@ -2,6 +2,8 @@
  * except the figure's one 400 ms move on a real change (hooks.ts useTween). */
 
 .screen {
+  flex: 1;
+  width: 100%;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -102,20 +104,14 @@
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
+  justify-content: space-between;
   gap: var(--space-2) var(--space-6);
-}
-.figure {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  flex: 1 1 360px;
-  min-width: 0;
 }
 .figureMeta {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  text-align: right;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0 var(--space-3);
 }
 .numberLine {
   display: flex;
@@ -175,7 +171,7 @@
 }
 .sparkSvg {
   width: 100%;
-  height: 40px;
+  height: 56px;
   overflow: visible;
 }
 .sparkEstimate,
@@ -327,17 +323,19 @@ button.row:focus-visible {
 .rowFull {
   flex-basis: 100%;
 }
-.partTitle {
-  flex: 1 1 200px;
-  min-width: 0;
+/* Parts line up in columns: title, figure, bar, ETA; a marker or stale mark takes its own line under them. */
+.partRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 9ch minmax(80px, 240px) 13ch;
+  align-items: baseline;
+}
+.partRow > :nth-child(n + 5) {
+  grid-column: 1 / -1;
 }
 .partPct {
-  min-width: 4ch;
   text-align: right;
 }
 .partBar {
-  flex: 0 1 240px;
-  min-width: 80px;
   align-self: center;
 }
 .risk {

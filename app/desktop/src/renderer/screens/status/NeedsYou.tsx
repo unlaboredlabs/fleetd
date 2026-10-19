@@ -1,8 +1,10 @@
-// Needs you renders the inbox's own question cards (F5, screens/inbox/QuestionCard), so an answer here is the same
-// one-tap answer as in the inbox. Until that card is on this branch's base, each ask opens the inbox panel on it
-// (route `?inbox&ask=<id>`), which is where the card lives: the one swap point is this file.
+// Needs you renders the inbox's own question cards (F5), from the inbox's one store, so an answer here is the same
+// one-tap answer as in the inbox and clears everywhere. An ask the store doesn't hold yet (still loading, or answered
+// a moment ago) links to the inbox panel on it rather than showing a card that can't act.
 
 import { Button, Text } from "../../ui";
+import { QuestionCard } from "../inbox/QuestionCard";
+import { useInbox } from "../inbox/store";
 import s from "./status.module.css";
 
 const openAsk = (askId: string): void => {
@@ -10,7 +12,8 @@ const openAsk = (askId: string): void => {
   window.location.hash = `${route}?inbox&ask=${encodeURIComponent(askId)}`;
 };
 
-export function NeedsYou({ askIds, count, live }: { askIds: readonly string[]; count: number; live: boolean }) {
+export function NeedsYou({ askIds, count }: { askIds: readonly string[]; count: number }) {
+  const inbox = useInbox();
   if (count === 0) {
     return (
       <Text size="xs" tone="quiet">
@@ -20,15 +23,19 @@ export function NeedsYou({ askIds, count, live }: { askIds: readonly string[]; c
   }
   return (
     <div className={s.asks}>
-      {askIds.map((id, i) => (
-        <div key={id} className={s.ask}>
-          <Text strong>{i === 0 ? "A decision is waiting for you" : "Another decision is waiting"}</Text>
-          {/* Answers go through the hub; with the link down they'd only fail, so the button waits for it. */}
-          <Button variant={i === 0 ? "primary" : "secondary"} disabled={!live} onClick={() => openAsk(id)}>
-            Answer
-          </Button>
-        </div>
-      ))}
+      {askIds.map((id) => {
+        const ask = inbox.open.find((a) => a.askId === id);
+        return ask ? (
+          <QuestionCard key={id} ask={ask} />
+        ) : (
+          <div key={id} className={s.ask}>
+            <Text>{inbox.loaded ? "A decision that just changed" : "A decision is waiting for you"}</Text>
+            <Button variant="secondary" onClick={() => openAsk(id)}>
+              Open in the inbox
+            </Button>
+          </div>
+        );
+      })}
       {count > askIds.length ? (
         <Button variant="quiet" onClick={() => (window.location.hash = "#/inbox")}>
           {`All ${count} in the inbox`}

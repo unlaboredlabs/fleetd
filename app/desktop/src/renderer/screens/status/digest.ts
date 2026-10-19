@@ -22,11 +22,17 @@ export const useDigestEnabled = (): boolean =>
     return () => prefListeners.delete(cb);
   }, digestEnabled);
 
-/** "fleetd · 72%", then the headline (with its Not live clause), what changed since the last digest, and how many
- * decisions wait. */
+/** "fleetd · 72% · 3 need you", then the headline (with its Not live clause) and what changed since the last
+ * digest. The count sits in the title because a generated headline may not say it. */
 export const digestText = (doc: StatusDoc): { title: string; body: string } => {
   const f = figure(doc.progress, doc.virtualTier);
-  const title = f.pct === null ? "fleetd · planning" : doc.progress.total > 0 || doc.progress.polishTotal > 0 || doc.progress.estimate ? `fleetd · ${f.pct}%` : "fleetd";
+  const counted = doc.progress.total > 0 || doc.progress.polishTotal > 0 || doc.progress.estimate !== undefined;
+  const n = doc.needsYou.count;
+  const title = [
+    "fleetd",
+    ...(f.pct === null ? ["planning"] : counted ? [`${f.pct}%`] : []),
+    ...(n === 0 ? [] : [n === 1 ? "1 needs you" : `${n} need you`]),
+  ].join(" · ");
   const parts = [headlineText(doc, true)];
   const s = doc.since;
   const counts = (
@@ -40,9 +46,6 @@ export const digestText = (doc: StatusDoc): { title: string; body: string } => {
     .filter(([n]) => n > 0)
     .map(([n, w]) => `${n} ${w}`);
   if (counts.length > 0) parts.push(`Since the last digest: ${counts.join(", ")}.`);
-  const n = doc.needsYou.count;
-  if (n === 1) parts.push("1 needs you.");
-  if (n > 1) parts.push(`${n} need you.`);
   return { title, body: parts.join(" ") };
 };
 

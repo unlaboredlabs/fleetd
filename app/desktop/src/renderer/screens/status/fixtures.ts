@@ -1,24 +1,19 @@
-// The status docs inside the transport fixtures (app/desktop/fixtures/status-*.json, FLEETD_FIXTURE=<name>), by
-// "<scope>[-<variant>]", for the tests. One source: the screenshots and the tests read the same answers.
+// The status docs the screenshots use (fixtures/status/docs.ts), by "<scope>[-<variant>]", for the tests: one source
+// for both.
+import { legacyDoc, longTextDoc, planningDoc, statusDoc, type Kind } from "../../../../fixtures/status/docs";
 import type { StatusDoc } from "./contracts";
 
-interface Envelope {
-  readonly calls: readonly { readonly tool: string; readonly outcome: { readonly ok: boolean; readonly output?: unknown } }[];
-}
+const VARIANTS: Record<string, (kind: Kind) => unknown> = {
+  typical: (k) => statusDoc(k),
+  stale: (k) => statusDoc(k, true),
+  planning: (k) => (k === "order" ? planningDoc() : statusDoc(k)),
+  legacy: legacyDoc,
+  "long-text": longTextDoc,
+};
 
-const files = import.meta.glob<Envelope>("../../../../fixtures/status-*.json", { eager: true, import: "default" });
-
-/** Every status_get answer in the fixtures, keyed "<file>/<scope kind>". */
+/** Every status_get answer the fixtures give, keyed "<variant>/<scope kind>". */
 export const fixtureAnswers: Record<string, unknown> = Object.fromEntries(
-  Object.entries(files).flatMap(([path, env]) => {
-    const file = path.replace(/^.*\/status-|\.json$/gu, "");
-    return env.calls
-      .filter((c) => c.tool === "status_get" && c.outcome.ok)
-      .map((c) => {
-        const output = c.outcome.output as { doc: { scope: { kind: string } } };
-        return [`${file}/${output.doc.scope.kind}`, output];
-      });
-  }),
+  Object.entries(VARIANTS).flatMap(([variant, doc]) => (["fleet", "project", "order"] as const).map((k) => [`${variant}/${k}`, { doc: doc(k) }])),
 );
 
 /** "fleet", "order-stale", "order-planning", "fleet-long-text", "fleet-legacy". */

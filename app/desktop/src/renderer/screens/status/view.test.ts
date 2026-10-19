@@ -32,7 +32,7 @@ beforeAll(() => {
 describe("fixtures", () => {
   it("every status fixture decodes as a status_get answer", () => {
     const answers = Object.entries(fixtureAnswers);
-    expect(answers.length).toBeGreaterThanOrEqual(18);
+    expect(answers.length).toBe(15);
     for (const [name, output] of answers) expect(asGetOutput(output), name).toBeDefined();
   });
 });
@@ -174,9 +174,9 @@ describe("routes and ⌘.", () => {
 describe("the digest", () => {
   it("says the figure, what changed since the last digest, and when it isn't live", () => {
     const { title, body } = digestText(fixture("fleet-stale"));
-    expect(title).toBe("fleetd · 78%");
+    expect(title).toBe("fleetd · 78% · 3 need you");
     expect(body).toBe(
-      "Not live: GitHub unchecked 6m. Fixing cart rounding and speeding up product search, waiting on the full lab run. Since the last digest: 7 merged, 3 verified, 2 started, 1 failed. 3 need you.",
+      "Not live: GitHub unchecked 6m. Fixing cart rounding and speeding up product search, waiting on the full lab run. 3 decisions need you. Since the last digest: 7 merged, 3 verified, 2 started, 1 failed.",
     );
     expect(digestText(fixture("order-planning")).title).toBe("fleetd · planning");
   });

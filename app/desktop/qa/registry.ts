@@ -24,11 +24,9 @@ export const fixtures = [
   "hub-unreachable",
   "pairing-failed",
   "node-too-old",
-  // F6: the Status view's states (generated with its docs; see screens/status/fixtures.ts).
-  "status-typical",
+  // F6: the Status view's own states (fixtures/status).
   "status-stale",
   "status-planning",
-  "status-long-text",
   "status-legacy",
   "status-skeleton",
 ] as const;
@@ -67,7 +65,8 @@ export const screens: readonly Screen[] = [
   // E2: every design-system primitive with stress content, so the primitives pass before any screen uses them.
   { id: "gallery", route: "#/gallery", fixtures: ["typical"], pending: "E2's gallery (feat/desktop-ui) has not landed" },
   // F6: Status for the fleet, a project and an order: live, stale sources, planning, long text and unknown wire
-  // values, a hub without the progress model, the skeleton before the first answer, and the link down.
+  // values, a hub without the progress model, the skeleton before the first answer, and the link down. needs-you
+  // joins once F5's card text passes the raw-text check (it flags share_snapshots / share.example.test today).
   ...(
     [
       ["status.fleet", "#/status"],
@@ -77,7 +76,7 @@ export const screens: readonly Screen[] = [
   ).map(([id, route]) => ({
     id,
     route,
-    fixtures: ["status-typical", "status-stale", "status-planning", "status-long-text", "status-legacy", "status-skeleton", "hub-unreachable"] as const,
+    fixtures: ["typical", "long-text", "empty", "hub-unreachable", "status-stale", "status-planning", "status-legacy", "status-skeleton"] as const,
     pending: "F1's route table (screens/shell/screens.tsx) mounts StatusScreen",
   })),
 ];
