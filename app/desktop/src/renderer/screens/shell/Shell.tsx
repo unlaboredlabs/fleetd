@@ -53,6 +53,8 @@ export function Shell() {
   const data = useShellData();
   // Undefined until this connection's asks loaded: a "0" then would claim nothing needs you.
   const needsYou = useData(selectNeedsYouCount);
+  // Only while they are on their way: with the hub unreachable or refusing, nothing is coming, so no skeleton.
+  const countLoading = needsYou === undefined && (hub?.phase === "live" || hub?.phase === "connecting");
   const [sidebarHidden, setSidebarHidden] = useState(false);
   const [seen] = useState(() => new Seen());
   const modHeld = useModHeld();
@@ -132,16 +134,16 @@ export function Shell() {
             <Button
               variant={needsYou !== undefined && needsYou > 0 ? "secondary" : "quiet"}
               className={needsYou !== undefined && needsYou > 0 ? s.needsYou : undefined}
-              aria-busy={needsYou === undefined}
+              aria-busy={countLoading}
               shortcut={display("inbox.toggle", platform)}
               aria-pressed={route.inbox !== null}
               onClick={() => setInbox(route.inbox === null ? { askId: null } : null)}
             >
-              {needsYou === undefined ? (
+              {countLoading ? (
                 <>
                   Inbox <span className={s.countSkeleton} aria-label="Loading" />
                 </>
-              ) : needsYou > 0 ? (
+              ) : needsYou !== undefined && needsYou > 0 ? (
                 `${String(needsYou)} need you`
               ) : (
                 "Inbox"
