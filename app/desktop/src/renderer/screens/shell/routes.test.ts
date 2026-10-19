@@ -10,9 +10,8 @@ describe("routes", () => {
       { screen: { id: "board", project: storefront }, inbox: null },
       { screen: { id: "order", orderId: "W14", at: null }, inbox: { askId: "A1" } },
       { screen: { id: "order", orderId: "W14", at: { threadId: "t-1", itemId: "i-9" } }, inbox: null },
-      { screen: { id: "status", scope: { kind: "fleet" } }, inbox: null },
-      { screen: { id: "status", scope: { kind: "project", project: storefront } }, inbox: null },
-      { screen: { id: "status", scope: { kind: "order", orderId: "W14" } }, inbox: { askId: null } },
+      { screen: { id: "status" }, inbox: null },
+      { screen: { id: "status" }, inbox: { askId: null } },
       { screen: { id: "machines" }, inbox: null },
       { screen: { id: "time", orderId: null }, inbox: null },
       { screen: { id: "time", orderId: "W14" }, inbox: null },
@@ -43,7 +42,9 @@ describe("routes", () => {
     expect(parseHash("#/inbox")).toEqual({ screen: HOME.screen, inbox: { askId: null } });
     expect(parseHash("#/settings")).toEqual({ screen: { id: "settings", tab: "general" }, inbox: null });
     expect(parseHash("#/settings/nope")).toEqual({ screen: { id: "settings", tab: "general" }, inbox: null });
-    expect(parseHash("#/status/project/devbox")).toEqual({ screen: { id: "status", scope: { kind: "fleet" } }, inbox: null });
+    // The old scoped Status links land on the one Status list.
+    expect(parseHash("#/status/project/devbox/storefront")).toEqual({ screen: { id: "status" }, inbox: null });
+    expect(parseHash("#/status/order/W14")).toEqual({ screen: { id: "status" }, inbox: null });
     expect(parseHash("#/order")).toEqual(HOME);
     expect(parseHash("#/whatever/else")).toEqual(HOME);
     expect(parseHash("#/order/%E0%A4%A")).toEqual(HOME);

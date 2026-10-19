@@ -248,9 +248,6 @@ export function OrderView(props: { data: OrderData; actions: OrderActions; platf
         <Button variant="ghost" onClick={() => (location.hash = timeRoute(w))}>
           Time
         </Button>
-        <Button variant="ghost" onClick={() => (location.hash = `#/status/order/${w}`)}>
-          Status
-        </Button>
         {data.phase === "stopped" && data.sourceText ? (
           <Button variant="secondary" title="Put this order's words back in the board's composer" onClick={() => askForOrder(data.sourceText ?? "")}>
             Reorder

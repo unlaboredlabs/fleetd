@@ -10,11 +10,6 @@ export interface ProjectKey {
 export const SETTINGS_TABS = ["general", "prompts", "instructions"] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
 
-export type StatusScope =
-  | { readonly kind: "fleet" }
-  | { readonly kind: "project"; readonly project: ProjectKey }
-  | { readonly kind: "order"; readonly orderId: string };
-
 export interface TranscriptItem {
   readonly threadId: string;
   readonly itemId: string;
@@ -24,7 +19,8 @@ export type Screen =
   | { readonly id: "board"; readonly project: ProjectKey | null }
   /** `at` scrolls the conversation to one transcript item (the time inspector's jump). */
   | { readonly id: "order"; readonly orderId: string; readonly at: TranscriptItem | null }
-  | { readonly id: "status"; readonly scope: StatusScope }
+  /** One row per project; there is no per-project or per-order Status. */
+  | { readonly id: "status" }
   | { readonly id: "machines" }
   /** The time inspector, for one order or (null) the fleet. */
   | { readonly id: "time"; readonly orderId: string | null }
@@ -58,7 +54,7 @@ const project = (machineId: string | undefined, projectId: string | undefined): 
   machineId === undefined || projectId === undefined ? null : { machineId, projectId };
 
 const screenOf = (parts: ReadonlyArray<string>, query: URLSearchParams): Screen => {
-  const [head, a, b, c] = parts;
+  const [head, a, b] = parts;
   switch (head) {
     case undefined:
     case "board":
@@ -71,11 +67,8 @@ const screenOf = (parts: ReadonlyArray<string>, query: URLSearchParams): Screen 
       const itemId = query.get("item");
       return { id: "order", orderId: a, at: threadId && itemId ? { threadId, itemId } : null };
     }
-    case "status": {
-      if (a === "order" && b !== undefined) return { id: "status", scope: { kind: "order", orderId: b } };
-      const key = a === "project" ? project(b, c) : null;
-      return { id: "status", scope: key === null ? { kind: "fleet" } : { kind: "project", project: key } };
-    }
+    case "status":
+      return { id: "status" };
     case "time":
       return { id: "time", orderId: a === "order" && b !== undefined ? b : null };
     case "machines":
@@ -109,17 +102,6 @@ export const parseHash = (hash: string): Route => {
   return { screen: screenOf(parts, query), inbox };
 };
 
-const statusPath = (scope: StatusScope): Array<string> => {
-  switch (scope.kind) {
-    case "fleet":
-      return ["status"];
-    case "project":
-      return ["status", "project", scope.project.machineId, scope.project.projectId];
-    case "order":
-      return ["status", "order", scope.orderId];
-  }
-};
-
 const path = (screen: Screen): Array<string> => {
   switch (screen.id) {
     case "board":
@@ -129,7 +111,7 @@ const path = (screen: Screen): Array<string> => {
     case "time":
       return screen.orderId === null ? ["time"] : ["time", "order", screen.orderId];
     case "status":
-      return statusPath(screen.scope);
+      return ["status"];
     case "projects.add":
       return ["projects", "add"];
     case "settings":

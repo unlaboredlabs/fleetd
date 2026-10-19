@@ -5,7 +5,7 @@ export const timeRoute = (order?: string): string => (order === undefined ? "#/t
 
 /** The inspector at the scope you're looking at: an order's timeline from anything about that order, else the fleet. */
 export const timeRouteFor = (hash: string): string => {
-  const order = /^#\/(?:order|status\/order|time\/order)\/([^/?]+)/u.exec(hash)?.[1];
+  const order = /^#\/(?:order|time\/order)\/([^/?]+)/u.exec(hash)?.[1];
   return order === undefined ? "#/time" : `#/time/order/${order}`;
 };
 

@@ -70,7 +70,6 @@ export function orderCommands(c: OrderCommandContext): Command[] {
         run: () => c.withdraw(s.id),
       }),
     ),
-    { id: `order.status:${w}`, title: `Status for ${w}`, detail: "Its plan, progress and risks", group: "go-to", keywords: ["status", "progress"], run: () => c.go(`#/status/order/${w}`) },
     { id: `order.time:${w}`, title: `Time for ${w}`, detail: "Where this order's time went", group: "go-to", keywords: ["time", "slow"], run: () => c.go(timeRoute(w)) },
   ];
 }

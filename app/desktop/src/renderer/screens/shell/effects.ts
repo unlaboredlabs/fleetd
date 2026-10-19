@@ -24,7 +24,7 @@ const routeFor = (target: OpenTarget, from: Route): Route => {
     case "machines":
       return { screen: { id: "machines" }, inbox: null };
     case "status":
-      return { screen: { id: "status", scope: { kind: "fleet" } }, inbox: null };
+      return { screen: { id: "status" }, inbox: null };
     case "pair":
       return { screen: { id: "onboarding", hub: target.hub, code: target.code }, inbox: null };
   }

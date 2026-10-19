@@ -1,5 +1,5 @@
 // Commands that need nothing but the route table (notes/electron-routes.md): the palette itself, the shortcuts
-// sheet, and plain navigation. A screen that does better (status at the focused order's scope, the inbox panel's
+// sheet, and plain navigation. A screen that does better (the inbox panel's
 // own toggle) registers the same id and wins while it is mounted.
 
 import type { Command } from "./registry";
@@ -15,16 +15,6 @@ export const splitHash = (hash: string): [string, URLSearchParams] => {
   const at = body.indexOf("?");
   const path = at < 0 ? body : body.slice(0, at);
   return [path === "" ? "/" : path, new URLSearchParams(at < 0 ? "" : body.slice(at + 1))];
-};
-
-/** Status at the scope you're looking at: an order's, a project's, or the fleet's. */
-export const statusRouteFor = (hash: string): string => {
-  const [path] = splitHash(hash);
-  const order = /^\/order\/([^/?]+)/u.exec(path)?.[1];
-  if (order !== undefined) return `#/status/order/${order}`;
-  const project = /^\/board\/([^/]+)\/([^/]+)/u.exec(path);
-  if (project) return `#/status/project/${project[1] ?? ""}/${project[2] ?? ""}`;
-  return "#/status";
 };
 
 /** The inbox is a panel kept in the query (`?inbox`), so it opens over whatever route you're on. */
@@ -58,7 +48,7 @@ export const defaultCommands = (): Command[] => [
     run: () => {
       const [path] = splitHash(window.location.hash);
       if (path.startsWith("/status")) window.history.back();
-      else go(statusRouteFor(window.location.hash));
+      else go("#/status");
     },
   },
   { id: "go:machines", title: "Machines", detail: "Machines and setup checks", group: "go-to", run: () => go("#/machines") },

@@ -74,7 +74,6 @@ describe("the order view's commands", () => {
       "steer.task:T1",
       "steer.task:T3",
       "steer.withdraw:S4",
-      "order.status:W2",
       "order.time:W2",
     ]);
     run("steer.task:T3");

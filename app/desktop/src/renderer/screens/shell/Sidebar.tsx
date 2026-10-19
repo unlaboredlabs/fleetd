@@ -34,7 +34,7 @@ export function Sidebar({ data, route, seen, hub, jumpHints, go }: SidebarProps)
   return (
     <Frame aria-label="Sidebar">
       <SidebarSection>
-        {nav("Status", <Activity />, { id: "status", scope: { kind: "fleet" } }, screen.id === "status", <Kbd>{display("status.toggle", platform)}</Kbd>)}
+        {nav("Status", <Activity />, { id: "status" }, screen.id === "status", <Kbd>{display("status.toggle", platform)}</Kbd>)}
         {nav("Board", <LayoutGrid />, { id: "board", project: null }, screen.id === "board" && screen.project === null, <Kbd>{display("board.open", platform)}</Kbd>)}
         {nav(
           "Machines",

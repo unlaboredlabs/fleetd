@@ -43,7 +43,8 @@
 /* title · state · bar and % · agents · last merged */
 .row {
   display: grid;
-  grid-template-columns: minmax(14ch, 1fr) 13ch minmax(80px, 280px) 9ch 17ch;
+  /* The title takes the slack first; the bar shrinks before it does. */
+  grid-template-columns: minmax(16ch, 3fr) 13ch minmax(80px, 2fr) 9ch 17ch;
   align-items: center;
   gap: var(--space-3);
   min-height: var(--row);

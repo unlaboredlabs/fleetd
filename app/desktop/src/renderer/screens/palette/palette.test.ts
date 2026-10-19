@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { statusRouteFor, toggleInboxHash } from "./defaults";
+import { toggleInboxHash } from "./defaults";
 import { dispatchable } from "./keymap";
 import { pushRecent, rank, score } from "./rank";
 import { bindLatest, commandFor, registerCommands, registerSource, runCommand, snapshotItems, type Command } from "./registry";
@@ -230,12 +230,6 @@ describe("reply batches", () => {
 });
 
 describe("default navigation", () => {
-  it("opens status at the scope on screen", () => {
-    expect(statusRouteFor("#/order/W14")).toBe("#/status/order/W14");
-    expect(statusRouteFor("#/board/devbox/storefront?inbox")).toBe("#/status/project/devbox/storefront");
-    expect(statusRouteFor("#/settings")).toBe("#/status");
-  });
-
   it("toggles the inbox panel in the query, keeping the route", () => {
     expect(toggleInboxHash("#/order/W14")).toBe("#/order/W14?inbox");
     expect(toggleInboxHash("#/order/W14?inbox&ask=A3")).toBe("#/order/W14");
