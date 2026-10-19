@@ -82,8 +82,28 @@ describe("a project's draft", () => {
     d.attach("devbox/api", [new File(["png"], "shot.png", { type: "image/png" }), new File([new Uint8Array([0xff, 0xfe, 0x00])], "blob.bin")]);
     await vi.waitFor(() => expect(d.store.getState()["devbox/api"]?.attached.every((a) => a.upload !== undefined)).toBe(true));
     const draft = d.store.getState()["devbox/api"];
-    expect(draft?.attached.map((a) => [a.name, a.upload])).toEqual([["shot.png", { ok: true, id: "att-1", mime: "image/png" }]]);
+    expect(draft?.attached.map((a) => [a.name, a.upload])).toEqual([["shot.png", { ok: true, ref: { attachmentId: "att-1", name: "shot.png", mime: "image/png", bytes: 3 } }]]);
     expect(draft?.error).toMatch(/blob.bin: only images, text and PDF/);
+  });
+
+  it("takes back a message that didn't go with its files, after words already in the box", () => {
+    const d = createDrafts(layer(() => Promise.resolve({ ok: true, output: {} })));
+    d.set("devbox/api", (x) => ({ ...x, text: "and also" }));
+    const ref = { attachmentId: "F1", name: "shot.png", mime: "image/png", bytes: 68 } as const;
+    d.restore("devbox/api", "see this", [ref]);
+    const draft = d.store.getState()["devbox/api"];
+    expect(draft?.text).toBe("and also\n\nsee this");
+    expect(draft?.attached.map((a) => [a.name, a.bytes, a.upload])).toEqual([["shot.png", 68, { ok: true, ref }]]);
+  });
+
+  it("keeps a restored message's files within the per-message limit, and says how many didn't fit", () => {
+    const d = createDrafts(layer(() => Promise.resolve({ ok: true, output: {} })));
+    const ref = (n: number) => ({ attachmentId: `F${n}`, name: `f${n}.png`, mime: "image/png", bytes: 1 }) as const;
+    d.restore("devbox/api", "one", [1, 2, 3, 4, 5].map(ref));
+    d.restore("devbox/api", "two", [6, 7, 8, 9, 10].map(ref));
+    const draft = d.store.getState()["devbox/api"];
+    expect(draft?.attached).toHaveLength(8);
+    expect(draft?.error).toMatch(/2 of its files didn’t fit/);
   });
 
   it("counts a file the hub refused as not uploaded", async () => {

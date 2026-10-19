@@ -1,8 +1,14 @@
+/* On the conversation's reading measure, inset from the window's edges like its rows (the chat screen's --pad). */
 .composer {
   display: flex;
   flex-direction: column;
   gap: var(--space-1-5);
+  box-sizing: border-box;
+  width: 100%;
   min-width: 0;
+  max-width: calc(var(--measure) + 2 * var(--pad, var(--space-4)));
+  margin: 0 auto;
+  padding: var(--space-2) var(--pad, var(--space-4)) var(--space-4);
 }
 
 .input {
@@ -28,9 +34,7 @@
   color: var(--faint);
 }
 .input:focus {
-  outline: none;
   border-color: var(--accent);
-  box-shadow: var(--focus-ring);
 }
 
 .chips {
@@ -64,9 +68,6 @@
 .remove:hover {
   background: var(--hover);
   color: var(--text);
-}
-.remove:focus-visible {
-  box-shadow: var(--focus-ring);
 }
 .removeIcon {
   display: block;

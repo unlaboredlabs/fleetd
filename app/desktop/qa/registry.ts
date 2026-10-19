@@ -15,7 +15,11 @@
 // Run it locally: `pnpm fixtures && pnpm qa:build && pnpm qa` (QA_SCREENS=<id>,<id> to limit), then open
 // qa-results/index.html.
 
-import type { Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
+import { CHAT_SENDS } from "../fixtures/composer/sends.ts";
+
+/** A 1×1 PNG, for the composer's attach step. */
+const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=", "base64");
 
 export const fixtures = [
   "empty",
@@ -35,6 +39,9 @@ export const fixtures = [
   "live-0",
   "live-3",
   "live-20",
+  // F4: the chat composer's sends (fixtures/composer).
+  "composer-sends",
+  "composer-waiting",
   // Group fixtures (fixtures/<group>/index.ts), named <group>-<what>.
   "projects-cloning",
   // F10: the connect screen's states (fixtures/onboarding).
@@ -132,6 +139,44 @@ export const screens: readonly Screen[] = [
     fixtures: ["live-0", "live-3", "live-20"],
     variant: "strip",
     pending: "the chat screen (F3) mounts LiveStrip and A1 adds #/project/<machineId>/<projectId>",
+  },
+  // F4 (A3): the composer under storefront's chat while the lead works. Sent from the box: refused (Resend, Edit,
+  // Dismiss), cut off by the link, unanswered (Resend, Dismiss), and one still sending; then a message that found no
+  // hub, back in the box with the reason, and a file attached beside it. composer-waiting: the hub stored the
+  // message, but the lead can't take it yet, and says why.
+  { id: "chat", route: CHAT, fixtures: ["composer-sends"] },
+  {
+    id: "chat.composer",
+    route: CHAT,
+    fixtures: ["composer-sends"],
+    open: async (page) => {
+      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      const box = page.getByRole("textbox", { name: "Message the lead" });
+      for (const text of [CHAT_SENDS.refused, CHAT_SENDS.cutOff, CHAT_SENDS.unanswered, CHAT_SENDS.sending]) {
+        await box.fill(text);
+        await box.press("Enter");
+        await expect(box).toHaveValue("");
+      }
+      await expect(page.locator('[data-receipt="failed"]')).toHaveCount(1);
+      await expect(page.locator('[data-receipt="unanswered"]')).toHaveCount(1);
+      await box.fill(CHAT_SENDS.offline);
+      await box.press("Enter");
+      await expect(page.getByText("Not connected to the hub, so this wasn’t sent.")).toBeVisible();
+      await page.locator('[data-composer] input[type="file"]').setInputFiles({ name: "checkout-error.png", mimeType: "image/png", buffer: PNG });
+      await expect(page.getByText(/checkout-error\.png · \d+ B/)).toBeVisible();
+    },
+  },
+  {
+    id: "chat.composer",
+    route: CHAT,
+    fixtures: ["composer-waiting"],
+    open: async (page) => {
+      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      const box = page.getByRole("textbox", { name: "Message the lead" });
+      await box.fill(CHAT_SENDS.waiting);
+      await box.press("Enter");
+      await expect(page.getByText(/the lead doesn’t have it yet/)).toBeVisible();
+    },
   },
   // ...and opened to its lanes.
   {

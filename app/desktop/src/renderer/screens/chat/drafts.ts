@@ -4,11 +4,13 @@
 
 import { useStore } from "zustand";
 import { createStore, type StoreApi } from "zustand/vanilla";
+import type { AttachmentRef } from "../../../shared/contracts";
 import type { DataLayer } from "../../src/data/queries";
 import { useDataLayer } from "../../src/data/react";
 import { fmtBytes, looksText, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, mimeFor, toBase64 } from "./attachments";
 
-export type Upload = { readonly ok: true; readonly id: string; readonly mime: string } | { readonly ok: false; readonly message: string };
+/** Uploaded: the hub's reference to the file, which a message carries. */
+export type Upload = { readonly ok: true; readonly ref: AttachmentRef } | { readonly ok: false; readonly message: string };
 
 export interface Attached {
   readonly local: number;
@@ -36,6 +38,8 @@ export interface Drafts {
   set(key: string, next: (now: Draft) => Draft): void;
   /** Uploads each file (attachment_put); a refused one says why. */
   attach(key: string, files: readonly File[]): void;
+  /** A message that didn't go, back in the box: its words after any already there, and its files, already uploaded. */
+  restore(key: string, text: string, files: readonly AttachmentRef[]): void;
 }
 
 const isEmpty = (d: Draft) => d.text === "" && d.attached.length === 0 && d.offline !== true && d.error === undefined;
@@ -57,6 +61,17 @@ export function createDrafts(layer: Pick<DataLayer, "call">): Drafts {
   return {
     store,
     set,
+    restore: (key, text, files) =>
+      set(key, (d) => {
+        const room = Math.max(0, MAX_ATTACHMENTS - d.attached.length);
+        const left = files.length - room;
+        return {
+          ...d,
+          text: d.text.trim() === "" ? text : `${d.text}\n\n${text}`,
+          attached: [...d.attached, ...files.slice(0, room).map((ref): Attached => ({ local: nextLocal++, name: ref.name, bytes: ref.bytes, upload: { ok: true, ref } }))],
+          ...(left > 0 ? { error: `A message carries at most ${MAX_ATTACHMENTS} files; ${left} of its files didn’t fit.` } : {}),
+        };
+      }),
     attach: (key, files) => {
       let count = (store.getState()[key] ?? emptyDraft).attached.length;
       for (const file of files) {
@@ -78,7 +93,7 @@ export function createDrafts(layer: Pick<DataLayer, "call">): Drafts {
           const mime = mimeFor(file.name, looksText(buf));
           if (!mime) return settle(key, local, undefined, `${file.name}: only images, text and PDF files attach.`);
           const o = await layer.call("attachment_put", { name: file.name, mime, dataB64: toBase64(buf) }, { timeoutMs: 120_000 });
-          settle(key, local, o.ok ? { ok: true, id: o.output.attachmentId, mime } : { ok: false, message: o.error.message });
+          settle(key, local, o.ok ? { ok: true, ref: { attachmentId: o.output.attachmentId, name: file.name, mime, bytes: o.output.bytes } } : { ok: false, message: o.error.message });
         });
       }
     },
