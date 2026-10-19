@@ -159,6 +159,10 @@ fn slug(text: &str) -> String {
 /// Areas for a repo whose committed directories are `dirs` (top-level names, and `parent/child` for each listed
 /// parent), as area name -> globs. Always `all`; nothing else when the layout shows no members.
 pub fn infer(m: &Manifests, dirs: &[String]) -> BTreeMap<String, Vec<String>> {
+    disjoint(layout_areas(m, dirs))
+}
+
+fn layout_areas(m: &Manifests, dirs: &[String]) -> BTreeMap<String, Vec<String>> {
     let dirs: BTreeSet<&str> = dirs.iter().map(String::as_str).collect();
     let mut members: BTreeMap<String, Ecosystem> = BTreeMap::new();
     let mut resolve = |patterns: Vec<String>, eco: Ecosystem| {
@@ -251,6 +255,25 @@ pub fn infer(m: &Manifests, dirs: &[String]) -> BTreeMap<String, Vec<String>> {
     areas
 }
 
+/// The folder an area's first glob covers (`docs/site/**` -> `docs/site`); `None` for `all`.
+fn folder(globs: &[String]) -> Option<&str> {
+    globs.first()?.strip_suffix("/**")
+}
+
+/// No area inside another: an area whose folder holds another area's folder (docs/ around a docs/site package) is
+/// left out, so the inner ones keep running beside each other; the outer folder's other files fall to `all`. Two
+/// writers then never share a folder. Root files a member's change touches (lock files) are shared on purpose.
+fn disjoint(mut areas: BTreeMap<String, Vec<String>>) -> BTreeMap<String, Vec<String>> {
+    let folders: Vec<String> = areas
+        .values()
+        .filter_map(|g| folder(g).map(str::to_owned))
+        .collect();
+    areas.retain(|_, globs| {
+        folder(globs).is_none_or(|f| !folders.iter().any(|o| o.starts_with(&format!("{f}/"))))
+    });
+    areas
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -260,8 +283,35 @@ mod tests {
         list.iter().map(|d| (*d).to_owned()).collect()
     }
 
+    /// No two inferred areas share a folder: neither's folder lies inside the other's.
+    fn assert_disjoint(areas: &BTreeMap<String, Vec<String>>) {
+        let folders: Vec<&str> = areas.values().filter_map(|g| folder(g)).collect();
+        for a in &folders {
+            for b in &folders {
+                assert!(
+                    a == b || !(b.starts_with(&format!("{a}/"))),
+                    "{a} holds {b}: {areas:?}"
+                );
+            }
+        }
+        let mut sorted = folders.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(
+            sorted.len(),
+            folders.len(),
+            "two areas on one folder: {areas:?}"
+        );
+    }
+
+    fn checked(m: &Manifests, d: &[String]) -> BTreeMap<String, Vec<String>> {
+        let areas = infer(m, d);
+        assert_disjoint(&areas);
+        areas
+    }
+
     fn infer_json(m: &Manifests, d: &[&str]) -> serde_json::Value {
-        serde_json::to_value(infer(m, &dirs(d))).unwrap()
+        serde_json::to_value(checked(m, &dirs(d))).unwrap()
     }
 
     #[test]
@@ -320,13 +370,13 @@ mod tests {
             ..Manifests::default()
         };
         assert!(dirs_to_list(&pnpm).contains(&"libs".to_owned()));
-        let areas = infer(&pnpm, &dirs(&["libs", "libs/core", "libs/scratch"]));
+        let areas = checked(&pnpm, &dirs(&["libs", "libs/core", "libs/scratch"]));
         assert_eq!(areas.keys().collect::<Vec<_>>(), ["all", "core"]);
     }
 
     #[test]
     fn container_directories_without_a_manifest_and_name_clashes() {
-        let areas = infer(
+        let areas = checked(
             &Manifests::default(),
             &dirs(&[
                 "apps",
@@ -359,7 +409,7 @@ mod tests {
             pnpm_workspace: Some("packages: ['*']\n".into()),
             ..Manifests::default()
         };
-        let areas = infer(
+        let areas = checked(
             &m,
             &dirs(&[
                 "apps", "docs", "web", ".github", "tools", "tools/x", "apps/web",
@@ -390,6 +440,33 @@ mod tests {
     }
 
     #[test]
+    fn a_member_inside_docs_keeps_its_area_and_docs_gives_way() {
+        let m = Manifests {
+            package_json: Some(r#"{"workspaces":["packages/*","docs/site"]}"#.into()),
+            ..Manifests::default()
+        };
+        assert!(dirs_to_list(&m).contains(&"docs".to_owned()));
+        let areas = infer_json(
+            &m,
+            &[
+                "docs",
+                "packages",
+                "docs/site",
+                "docs/guides",
+                "packages/ui",
+            ],
+        );
+        assert_eq!(
+            areas,
+            json!({
+                "all": ["**"],
+                "site": ["docs/site/**", "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock"],
+                "ui": ["packages/ui/**", "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock"],
+            })
+        );
+    }
+
+    #[test]
     fn a_repo_without_members_keeps_one_area_and_a_huge_one_gets_one_per_container() {
         assert_eq!(
             infer_json(&Manifests::default(), &["src", "test"]),
@@ -400,7 +477,7 @@ mod tests {
             .chain(["packages".into(), "apps".into(), "apps/web".into()])
             .collect();
         assert_eq!(
-            serde_json::to_value(infer(&Manifests::default(), &many)).unwrap(),
+            serde_json::to_value(checked(&Manifests::default(), &many)).unwrap(),
             json!({ "all": ["**"], "apps": ["apps/**"], "packages": ["packages/**"] })
         );
     }

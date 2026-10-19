@@ -147,7 +147,7 @@ branchPrefix: team-a/
 Without `areas`, each workspace member is an area, named after its directory: Cargo `[workspace] members`,
 package.json `workspaces`, pnpm-workspace.yaml `packages`, and each directory under a top-level `apps/`, `crates/`,
 `packages/` or `services/`. A top-level `docs/` is the area `docs`, and `all` (the whole repo) is always there for work
-that spans members. `fleetd project add` and `fleetd doctor` show a project's areas. Set `areas` to choose your own;
+that spans members. Areas never nest: a folder that holds a member is left out, so its members run side by side. `fleetd project add` and `fleetd doctor` show a project's areas. Set `areas` to choose your own;
 then only those count.
 
 A broken file is refused with the exact problem, never ignored, so a typo can't widen what a writer may touch.
