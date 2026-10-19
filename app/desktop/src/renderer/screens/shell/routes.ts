@@ -7,7 +7,7 @@ export interface ProjectKey {
   readonly projectId: string;
 }
 
-export const SETTINGS_TABS = ["general", "prompts", "instructions"] as const;
+export const SETTINGS_TABS = ["general", "agents", "prompts", "instructions"] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
 
 export type Screen =
