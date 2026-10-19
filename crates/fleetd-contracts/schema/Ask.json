@@ -19,6 +19,12 @@
         "class": {
           "$ref": "#/$defs/AskClass"
         },
+        "context": {
+          "description": "One or two lines of background, shown under the question.",
+          "maxLength": 400,
+          "minLength": 1,
+          "type": "string"
+        },
         "createdAt": {
           "$ref": "#/$defs/Timestamp"
         },
@@ -56,9 +62,7 @@
         },
         "options": {
           "items": {
-            "maxLength": 2000,
-            "minLength": 1,
-            "type": "string"
+            "$ref": "#/$defs/AskOption"
           },
           "maxItems": 6,
           "type": "array"
@@ -76,9 +80,16 @@
           "description": "Absent only on an `intake.route.*` ask: the human picks the project by answering it."
         },
         "recommendation": {
-          "description": "Required for decide.",
+          "description": "Required for decide. On asks filed since labels, the key of one of `options`.",
           "maxLength": 2000,
           "minLength": 1,
+          "type": "string"
+        },
+        "recommendationWhy": {
+          "description": "The lead's one-line reason for its recommendation.",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
           "type": "string"
         },
         "sink": {
@@ -97,6 +108,7 @@
           "type": "array"
         },
         "text": {
+          "description": "The question. On asks filed since labels, one short line; the background is in `context`.",
           "maxLength": 500,
           "minLength": 1,
           "type": "string"
@@ -130,9 +142,28 @@
         "by": {
           "type": "string"
         },
+        "deliveredAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "The receipt: when the lead was woken with this answer. Absent while the undo window runs."
+        },
+        "kind": {
+          "$ref": "#/$defs/AskAnswerKind"
+        },
+        "note": {
+          "description": "The reply's note (\"1 a: because …\"), kept for the decision's why.",
+          "type": "string"
+        },
         "raw": {
           "description": "The reply text it was parsed from.",
           "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/DecisionSource",
+          "description": "Who the decision will be recorded as, once the undo window passes."
+        },
+        "undoUntil": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "Until then `inbox_undo` reopens the ask and the lead never hears of the answer."
         },
         "value": {
           "type": "string"
@@ -145,6 +176,15 @@
         "raw"
       ],
       "type": "object"
+    },
+    "AskAnswerKind": {
+      "description": "option: one of the ask's options (`value` is its key). text: the human's own words (\"Something else…\"). skip:\n\"Skip for now\", the lead carries on with its recommendation (`value`) and no decision is recorded. Absent on\nanswers recorded before kinds, and for approve, do and secret answers (\"go\", \"done\", \"no\").",
+      "enum": [
+        "option",
+        "text",
+        "skip"
+      ],
+      "type": "string"
     },
     "AskClass": {
       "enum": [
@@ -168,6 +208,35 @@
         "approve"
       ],
       "type": "string"
+    },
+    "AskOption": {
+      "description": "One choice of a decide ask. The human reads `label` and `consequence`; `key` is internal and is what gets recorded.",
+      "properties": {
+        "consequence": {
+          "description": "One line, what happens if the human picks it. Absent only on asks stored before labels.",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "key": {
+          "description": "The decision value recorded when the human picks it, e.g. \"public-snapshot\".",
+          "maxLength": 2000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "label": {
+          "description": "A few words, e.g. \"Public snapshot\". Absent only on asks stored before labels: show [`humanize_key`].",
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "type": "object"
     },
     "AskState": {
       "enum": [
@@ -357,6 +426,15 @@
     "DecisionKey": {
       "description": "Lowercase dotted slug, [a-z0-9]+(.[a-z0-9_-]+)*, at most 80",
       "pattern": "^[a-z0-9]+(\\.[a-z0-9_-]+)*$",
+      "type": "string"
+    },
+    "DecisionSource": {
+      "description": "Filled by the hub from the caller: a human device, an agent key, or a lead-side call.",
+      "enum": [
+        "human",
+        "lead",
+        "agent"
+      ],
       "type": "string"
     },
     "EnvName": {

@@ -200,7 +200,7 @@ Adds `app/fleetd-app/src/live/` (lanes, activity line, sparklines, strips, motio
 Same machine and method as above. "Before" is 5ef96e8 (main plus the empty live hooks), run right before this one:
 main has grown since the last section (29.1 MiB, 48 mapped files), so compare against that run, not the sections above.
 
-**forge**, Linux 7.0.0-38-generic, AMD Ryzen 9 9955HX 16-Core Processor, Xvfb 1600x1000, software-rendered (lavapipe, no GPU). 2026-10-18T15:10Z, fleetd 15b2f0b, gpui zed v1.24.2 (fb69067).
+**devbox**, Linux 7.0.0-38-generic, AMD Ryzen 9 9955HX 16-Core Processor, Xvfb 1600x1000, software-rendered (lavapipe, no GPU). 2026-10-18T15:10Z, fleetd 15b2f0b, gpui zed v1.24.2 (fb69067).
 | Metric | Value |
 |---|---|
 | Binary size (release, stripped) | 30.0 MiB |

@@ -246,7 +246,7 @@ fn client_request_id() -> String {
 }
 
 /// `--hub`, else the hub this machine runs (`fleetd init`).
-fn hub_url(hub: Option<String>) -> Result<String, String> {
+pub(super) fn hub_url(hub: Option<String>) -> Result<String, String> {
     if let Some(hub) = hub {
         return Ok(hub);
     }
@@ -260,7 +260,7 @@ fn hub_url(hub: Option<String>) -> Result<String, String> {
     }
 }
 
-enum Failure {
+pub(super) enum Failure {
     /// Exit 4: the hub could not be reached.
     Unreachable(String),
     /// Exit 3: the hub refused (or the key is not a human key).
@@ -269,11 +269,15 @@ enum Failure {
 
 impl Failure {
     fn report(self) -> u8 {
+        self.report_as("steer")
+    }
+
+    pub(super) fn report_as(self, command: &str) -> u8 {
         let (code, message) = match self {
             Failure::Unreachable(m) => (4, m),
             Failure::Refused(m) => (3, m),
         };
-        eprintln!("fleetd steer: {message}");
+        eprintln!("fleetd {command}: {message}");
         code
     }
 }
@@ -287,7 +291,7 @@ impl From<McpError> for Failure {
     }
 }
 
-async fn call(
+pub(super) async fn call(
     client: &mut McpClient,
     tool: &str,
     input: Value,

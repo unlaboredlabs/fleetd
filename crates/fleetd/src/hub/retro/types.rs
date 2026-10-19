@@ -7,9 +7,8 @@ use std::sync::LazyLock;
 pub const PLAYBOOK_NAMES: [&str; 4] = ["bugfix", "feature", "research", "finish-all"];
 
 /// The fixed metric list, defined in code: incident counts per class, and agent-minutes per done workstream.
-pub const METRIC_CLASSES: [&str; 10] = [
+pub const METRIC_CLASSES: [&str; 9] = [
     "false_claim",
-    "estimate_miss",
     "polish_loop",
     "misfiled_ask",
     "out_of_area",
@@ -88,7 +87,6 @@ pub struct RetroSnapshot {
     #[serde(serialize_with = "js_number")]
     pub target: Option<f64>,
     pub false_claim: u64,
-    pub estimate_miss: u64,
     pub polish_loop: u64,
     #[serde(serialize_with = "js_number")]
     pub agent_minutes_per_done: Option<f64>,
