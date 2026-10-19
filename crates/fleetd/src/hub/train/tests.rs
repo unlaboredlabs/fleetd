@@ -1198,6 +1198,57 @@ async fn merges_on_local_checks_into_a_base_its_workflows_ignore() {
     );
 }
 
+/// PR `number`, merged into `base` without the train, after the train started watching.
+fn merged_outside(kit: &Kit, number: i64, base: &str) {
+    let merged_at = (chrono::Utc::now() + chrono::Duration::hours(1))
+        .format("%Y-%m-%dT%H:%M:%SZ")
+        .to_string();
+    let pull = FakePull {
+        base: base.into(),
+        branch: format!("outside-{number}"),
+        body: String::new(),
+        state: "closed".into(),
+        merged: true,
+        merge_sha: Some("f".repeat(40)),
+        merged_at: Some(merged_at),
+    };
+    kit.gh.pulls.lock().unwrap().insert(number, pull);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_merge_outside_the_train_is_a_bypass_only_into_a_base_the_train_guards() {
+    let kit = Kit::new();
+    let pr = kit.open_pr_on(
+        "slot/1/main",
+        7,
+        "slot/1/fleetd/T1-docs",
+        &[add("docs.md", "docs\n")],
+        "Source: done:0",
+    );
+    kit.enqueue(pr, None).await;
+    assert!(kit.train.step(REPO).await);
+    merged_outside(&kit, 8, "slot/2/main");
+    merged_outside(&kit, 9, "slot/1/main");
+    merged_outside(&kit, 10, "main");
+
+    kit.train.step(REPO).await;
+    let flagged: Vec<String> = kit
+        .host
+        .incidents
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|i| i.evidence[0].clone())
+        .collect();
+    assert_eq!(flagged.len(), 2, "{flagged:?}");
+    assert!(flagged.iter().any(|e| e.starts_with(&format!("{REPO}#9 "))));
+    assert!(
+        flagged
+            .iter()
+            .any(|e| e.starts_with(&format!("{REPO}#10 ")))
+    );
+}
+
 /// Right after a push GitHub has no run for the head yet; inside the grace window that is not "no CI".
 #[tokio::test(flavor = "multi_thread")]
 async fn a_run_github_creates_after_the_push_is_waited_for() {

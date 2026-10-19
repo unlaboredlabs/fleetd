@@ -174,6 +174,8 @@ pub struct Train {
     loops: Mutex<HashSet<String>>,
     recovered: Mutex<HashSet<String>>,
     last_bypass_check: Mutex<HashMap<String, i64>>,
+    /// Per repo, the bases its Changes' PRs target: a PR merged into another branch is not the train's to judge.
+    bases: Mutex<HashMap<String, HashSet<String>>>,
     merge_refusals: Mutex<HashMap<ChangeId, u32>>,
     /// The train's last push per change: the head it pushed and when, for `ci.queue` spans.
     pushed: Mutex<HashMap<ChangeId, (String, i64)>>,
@@ -217,6 +219,7 @@ impl Train {
             loops: Mutex::default(),
             recovered: Mutex::default(),
             last_bypass_check: Mutex::default(),
+            bases: Mutex::default(),
             merge_refusals: Mutex::default(),
             pushed: Mutex::default(),
             ci_configs: Mutex::default(),
@@ -998,6 +1001,7 @@ impl Train {
     async fn take_inner(&self, change: &Change) -> Result<(), TakeError> {
         let repo = &change.repo;
         let pull = self.github.pull(repo, change.pr_number.get()).await?;
+        self.guard_base(repo, &pull.base.ref_);
         if pull.merged {
             self.abandon(change, "was merged outside the train").await;
             return Ok(());
@@ -1201,6 +1205,7 @@ impl Train {
                     continue;
                 }
             };
+            self.guard_base(repo, &pull.base.ref_);
             if pull.merged {
                 self.saw_change(
                     &change.project_ref,
@@ -1247,6 +1252,15 @@ impl Train {
         lock(&self.recovered).insert(repo.to_string());
     }
 
+    fn guard_base(&self, repo: &str, base: &str) {
+        lock(&self.bases)
+            .entry(repo.to_lowercase())
+            .or_default()
+            .insert(base.to_owned());
+    }
+
+    /// PRs merged without the train into the repo's default branch or a base its Changes target. Others share the
+    /// repo, not the train: another fleet's namespace, or a branch fleetd never merges into.
     async fn check_bypasses(&self, repo: &str, watch_since_ms: i64, project_ref: &ProjectRef) {
         let now = self.now_ms();
         {
@@ -1263,7 +1277,23 @@ impl Train {
             Ok(merged) => merged,
             Err(e) => return tracing::warn!(repo, error = %e.message, "train: bypass check failed"),
         };
+        let default = match self.sync.base(repo) {
+            Some(base) => base,
+            None => match self.github.default_branch(repo).await {
+                Ok(base) => {
+                    self.sync.set_base(repo, base.clone());
+                    base
+                }
+                Err(e) => {
+                    return tracing::warn!(repo, error = %e.message, "train: bypass check failed");
+                }
+            },
+        };
+        let guarded = lock(&self.bases).get(repo).cloned().unwrap_or_default();
         for pr in merged {
+            if pr.base != default && !guarded.contains(&pr.base) {
+                continue;
+            }
             // Date.parse of an unreadable time is NaN, which is never before the watch start.
             if parse_iso(&pr.merged_at).is_some_and(|at| at < watch_since_ms) {
                 continue;
@@ -1730,6 +1760,7 @@ impl Train {
                 Some("Check the URL; the hub reads PRs with its own `gh` login."),
             )
         })?;
+        self.guard_base(&repo, &pull.base.ref_);
         let expected = input
             .serves
             .as_ref()

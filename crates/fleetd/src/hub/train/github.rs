@@ -135,6 +135,7 @@ struct ClosedPull {
     number: i64,
     merged_at: Option<String>,
     merge_commit_sha: Option<String>,
+    base: PullBase,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -142,6 +143,7 @@ pub struct MergedPull {
     pub number: i64,
     pub merged_at: String,
     pub merge_sha: Option<String>,
+    pub base: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -581,6 +583,7 @@ impl TrainGitHub {
                     number: p.number,
                     merged_at,
                     merge_sha: p.merge_commit_sha,
+                    base: p.base.ref_,
                 })
             })
             .collect())
