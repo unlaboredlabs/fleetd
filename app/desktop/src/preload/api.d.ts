@@ -28,10 +28,8 @@ export interface FleetdApi {
   readonly projects: {
     /** A native folder picker; null when cancelled. */
     pickFolder(): Promise<string | null>;
-    /** The path of a File from a drop; "" when it has none (text, a browser link). */
-    pathForFile(file: File): string;
-    /** What a dropped folder or file holds for Add project. */
-    readDrop(path: string): Promise<DropInfo>;
+    /** What a dropped folder or link file holds for Add project; `other` for anything else (or a File with no path). */
+    readDrop(file: File): Promise<DropInfo>;
   };
 }
 

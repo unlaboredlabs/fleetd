@@ -79,7 +79,9 @@ const usePick = () => {
   const selected = sel.rows === rows ? sel.n : first;
   const select = (n: number) => setSel({ rows, n });
   const to = target(withWorkers, ui.machine ?? null);
-  return { ui, d: withWorkers, rows, selected, select, to };
+  const picked = ui.machine;
+  const planFor = (r: Row | undefined) => plan(r, withWorkers, to, picked);
+  return { ui, d: withWorkers, rows, selected, select, to, planFor };
 };
 
 const requestFor = (p: Plan, to: Worker | null): { request: Request; path: string } | null => {
@@ -105,7 +107,7 @@ const submit = (p: Plan, to: Worker | null) => {
 };
 
 function Pick({ pick }: { pick: PickData }) {
-  const { ui, d, rows, selected, select, to } = pick;
+  const { ui, d, rows, selected, select, to, planFor } = pick;
   const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
     if (rows.length === 0 && e.key !== "Enter") return;
     if (e.key === "ArrowDown" || (e.ctrlKey && e.key === "n")) {
@@ -116,7 +118,7 @@ function Pick({ pick }: { pick: PickData }) {
       select((selected - 1 + rows.length) % rows.length);
     } else if (e.key === "Enter") {
       e.preventDefault();
-      submit(plan(rows[selected], d, to), to);
+      submit(planFor(rows[selected]), to);
     }
   };
 
@@ -137,7 +139,7 @@ function Pick({ pick }: { pick: PickData }) {
             Looking for repos on your machines and on GitHub…
           </Text>
         ) : (
-          <List d={d} rows={rows} selected={selected} select={select} text={ui.text} to={to} />
+          <List d={d} rows={rows} selected={selected} select={select} text={ui.text} to={to} planFor={planFor} />
         )}
       </div>
     </>
@@ -166,8 +168,9 @@ function List(props: {
   select: (n: number) => void;
   text: string;
   to: Worker | null;
+  planFor: (r: Row) => Plan;
 }) {
-  const { d, rows, selected, select, text, to } = props;
+  const { d, rows, selected, select, text, to, planFor } = props;
   const name = (id: string) => d.workers.find((w) => w.machineId === id)?.name ?? id;
   if (rows.length === 0) {
     const hint = otherHost(text);
@@ -194,7 +197,7 @@ function List(props: {
                   {group}
                 </Text>
               ) : null}
-              <RowView row={r} d={d} to={to} selected={i === selected} onPick={() => select(i)} onGo={() => submit(plan(r, d, to), to)} />
+              <RowView row={r} d={d} planFor={planFor} selected={i === selected} onPick={() => select(i)} onGo={() => submit(planFor(r), to)} />
             </div>
           );
         })}
@@ -210,8 +213,8 @@ const rowKey = (r: Row, found: ReadonlyArray<Found>): string => {
   return f?.source.kind === "checkout" ? `co:${f.source.machineId}:${f.source.path}` : `gh:${f?.name ?? r.index}`;
 };
 
-function RowView(props: { row: Row; d: Discovery; to: Worker | null; selected: boolean; onPick: () => void; onGo: () => void }) {
-  const { row, d, to } = props;
+function RowView(props: { row: Row; d: Discovery; planFor: (r: Row) => Plan; selected: boolean; onPick: () => void; onGo: () => void }) {
+  const { row, d } = props;
   const ref = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (props.selected) ref.current?.scrollIntoView({ block: "nearest" });
@@ -227,7 +230,9 @@ function RowView(props: { row: Row; d: Discovery; to: Worker | null; selected: b
   } else if (row.kind === "folder") {
     title = row.path;
     mono = true;
-    sub = to ? `a folder on ${to.name}` : "no machine is online";
+    const p = props.planFor(row);
+    const on = p.kind === "folder" ? (d.workers.find((w) => w.machineId === p.machineId)?.name ?? p.machineId) : null;
+    sub = on === null ? "no machine is online" : `a folder on ${on}`;
   } else {
     const f = d.found[row.index];
     title = f?.name ?? "";
@@ -330,8 +335,8 @@ function MachinePicker({ workers, chosen, best }: { workers: ReadonlyArray<Worke
 }
 
 function PickFooter({ pick }: { pick: PickData }) {
-  const { d, rows, selected, to } = pick;
-  const p = plan(rows[selected], d, to);
+  const { d, rows, selected, to, planFor } = pick;
+  const p = planFor(rows[selected]);
   const local = localMachine();
   const workers = d?.workers ?? [];
   let where = "";
@@ -375,7 +380,7 @@ function PickFooter({ pick }: { pick: PickData }) {
   }
   return (
     <div className={s.footer}>
-      {picker && workers.length > 0 ? <MachinePicker workers={workers} chosen={to?.machineId} best={d?.best} /> : null}
+      {picker && workers.length > 0 ? <MachinePicker workers={workers} chosen={p.kind === "folder" ? p.machineId : to?.machineId} best={d?.best} /> : null}
       {note ? (
         <Text size="sm" tone="quiet">
           {note}

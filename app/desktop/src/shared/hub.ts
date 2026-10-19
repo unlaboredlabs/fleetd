@@ -36,10 +36,10 @@ export type HubFrame =
   | { readonly t: "error"; readonly error: HubError };
 
 /**
- * A folder or file dropped on the window, as Add project needs it: a folder's GitHub origin (from .git/config), or
- * the GitHub address in a small link file (.webloc, .url, .desktop). Main reads only those, never returns contents.
+ * What a folder or file dropped on the window holds for Add project: a folder (whether it is a git checkout, and its
+ * GitHub origin as "owner/name"), a link file's GitHub repository, or nothing usable. Never file contents.
  */
 export type DropInfo =
-  | { readonly kind: "folder"; readonly path: string; readonly git: boolean; readonly origin?: string }
-  | { readonly kind: "file"; readonly path: string; readonly link?: string }
-  | { readonly kind: "missing"; readonly path: string };
+  | { readonly kind: "folder"; readonly path: string; readonly git: boolean; readonly repo?: string }
+  | { readonly kind: "link"; readonly repo: string }
+  | { readonly kind: "other" };

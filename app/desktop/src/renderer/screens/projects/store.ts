@@ -6,7 +6,7 @@ import { toast } from "../../ui";
 import type { HubEvent, Machine } from "./contracts";
 import type { Request } from "./discovery";
 import { onHubFrame, getFleet, machineName } from "./fleet";
-import { initialAdd, step, type AddMsg, type AddState, type Call } from "./flow";
+import { initialAdd, seedFrom, step, type AddMsg, type AddState, type Call } from "./flow";
 import { machineIdFromHost, omit } from "./source";
 
 export const ADD_ROUTE = "#/projects/add";
@@ -73,6 +73,7 @@ const wire = () => {
     else if (frame.t === "snapshot") dispatch({ t: "snapshot", cursor: frame.snapshot.cursor });
     else if (frame.t === "event") dispatch({ t: "event", event: frame.event as unknown as HubEvent });
   });
+  for (const msg of seedFrom(getFleet())) dispatch(msg);
   void window.fleetd.system.hostName().then((hostName) => set({ ...ui, hostName }));
 };
 
@@ -88,19 +89,22 @@ export const useAddUi = (): AddUi => useSyncExternalStore(subscribe, () => ui);
  * Opens Add project from anywhere: the sidebar's + Add, the palette, the empty board, the File menu, a drop. A
  * `prefill` (a pasted or dropped URL or path) replaces what is typed unless an add is running.
  */
-export const openAddProject = (prefill?: { text: string; note?: Note }): void => {
+/** The machine a prefill goes to: the one it names (a removed project's), else this computer for a path. */
+export const prefillMachine = (text: string, given: string | undefined, local: string | undefined): string | undefined =>
+  given ?? (/^[/~.]/u.test(text.trim()) ? local : undefined);
+
+export const openAddProject = (prefill?: { text: string; note?: Note; machine?: string }): void => {
   wire();
   if (window.location.hash !== ADD_ROUTE) returnTo = window.location.hash || "#/board";
   const working = ui.add.phase.kind === "working";
   if (prefill && !working) {
-    const local = localMachine();
-    const isPath = /^[/~.]/u.test(prefill.text.trim());
-    const rest = omit(ui, "note");
+    const machine = prefillMachine(prefill.text, prefill.machine, localMachine()?.machineId);
+    const rest = omit(ui, "note", "machine");
     set({
       ...rest,
       text: prefill.text,
       ...(prefill.note ? { note: prefill.note } : {}),
-      ...(isPath && local ? { machine: local.machineId } : {}),
+      ...(machine === undefined ? {} : { machine }),
       add: ui.add.phase.kind === "pick" ? ui.add : { ...ui.add, phase: { kind: "pick" } },
     });
   }

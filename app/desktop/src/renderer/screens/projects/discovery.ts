@@ -152,13 +152,16 @@ export type Plan =
   | { readonly kind: "open"; readonly project: ProjectKey }
   | { readonly kind: "nothing" };
 
-export const plan = (row: Row | undefined, d: Discovery | null, to: Worker | null): Plan => {
+/** `picked`: the machine chosen for a typed path. It is kept even when offline (the hub then says so), never swapped. */
+export const plan = (row: Row | undefined, d: Discovery | null, to: Worker | null, picked?: string): Plan => {
   if (row === undefined) return { kind: "nothing" };
   switch (row.kind) {
     case "clone":
       return { kind: "clone", repo: row.repo };
-    case "folder":
-      return to ? { kind: "folder", machineId: to.machineId, path: row.path, fixed: false } : { kind: "nothing" };
+    case "folder": {
+      const machineId = picked ?? to?.machineId;
+      return machineId === undefined ? { kind: "nothing" } : { kind: "folder", machineId, path: row.path, fixed: false };
+    }
     case "found": {
       const f = d?.found[row.index];
       if (!f) return { kind: "nothing" };

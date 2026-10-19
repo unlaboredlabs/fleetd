@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ProjectDiscoverOutput, ProjectInspect } from "./contracts";
 import { discovery, plan, progress, ready, rows, target } from "./discovery";
+import { prefillMachine } from "./store";
 import { addSource, githubRepo, linkUrl, machineIdFromHost, otherHost, tilde } from "./source";
 
 const names = (id: string) => `${id}-name`;
@@ -158,5 +159,14 @@ describe("what people paste and drop", () => {
     expect(tilde("/srv/x")).toBe("/srv/x");
     expect(machineIdFromHost("Dev Box.local")).toBe("dev-box");
     expect(machineIdFromHost("buildbox")).toBe("buildbox");
+  });
+
+  it("re-adds a removed project's folder on its own machine, even when another is suggested or it is offline", () => {
+    const d = discovery(out, names);
+    const typed = rows("/home/dev/src/billing", d.found);
+    expect(plan(typed.rows[0], d, target(d, "buildbox"), "buildbox")).toEqual({ kind: "folder", machineId: "buildbox", path: "/home/dev/src/billing", fixed: false });
+    expect(prefillMachine("/home/dev/src/billing", "buildbox", "devbox")).toBe("buildbox");
+    expect(prefillMachine("~/src/x", undefined, "devbox")).toBe("devbox");
+    expect(prefillMachine("acme/x", undefined, "devbox")).toBeUndefined();
   });
 });

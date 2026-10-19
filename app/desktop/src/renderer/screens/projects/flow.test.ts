@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { HubEvent } from "./contracts";
 import type { Request } from "./discovery";
-import { initialAdd, step, type AddMsg, type AddState, type Call } from "./flow";
+import { initialAdd, seedFrom, step, type AddMsg, type AddState, type Call } from "./flow";
 
 const names = (id: string) => `${id}-name`;
 const AT = "2026-10-18T10:00:00.000Z";
@@ -173,5 +173,14 @@ describe("the add flow", () => {
     only(calls, "project_discover");
     const [, again] = run(live(), { t: "snapshot", cursor: 4 });
     expect(again).toEqual([]);
+  });
+
+  it("joins a connection that was live before it listened (the palette or Machines opened first)", () => {
+    const seeded = seedFrom({ live: true, synced: true, cursor: 40 });
+    const [s, calls] = run(initialAdd, ...seeded, { t: "discover" });
+    only(calls, "project_discover");
+    const [, adding] = run(s, start());
+    expect(only(adding, "project_add").input).toEqual({ machineId: "devbox", url: "acme/ledger" });
+    expect(seedFrom({ live: false, synced: false })).toEqual([]);
   });
 });

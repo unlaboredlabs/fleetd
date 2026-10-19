@@ -35,30 +35,26 @@ const machinesSource: Source = {
 /** What a drop means for Add project, or null when it is nothing it can use. */
 const fromDrop = async (data: DataTransfer): Promise<{ text: string; note?: Note } | null> => {
   const file = data.files[0];
-  const path = file ? window.fleetd.projects.pathForFile(file) : "";
-  if (path !== "") {
-    const info = await window.fleetd.projects.readDrop(path);
-    if (info.kind === "missing") return { text: "", note: { text: `${tilde(path)} isn't there any more.`, problem: true } };
-    if (info.kind === "file") {
-      const repo = info.link === undefined ? null : githubRepo(info.link);
-      if (info.link !== undefined && repo !== null) return { text: info.link, note: { text: `From ${path.split(/[\\/]/u).pop() ?? path}.`, problem: false } };
-      return { text: "", note: { text: "That file has no GitHub link in it. Drop a repo's folder, or a link to it on GitHub.", problem: true } };
+  if (file) {
+    const info = await window.fleetd.projects.readDrop(file);
+    if (info.kind === "other") {
+      return { text: "", note: { text: "Drop a repo's folder, or a link to it on GitHub (a browser link or a saved link file).", problem: true } };
     }
+    if (info.kind === "link") return { text: info.repo, note: { text: `From ${file.name}.`, problem: false } };
     const local = localMachine();
     if (local) {
       const note = info.git
         ? `A folder on this computer, which is ${local.name}.`
-        : `${tilde(path)} isn't a git checkout yet: run git init there first, or pick its repo's folder.`;
-      return { text: path, note: { text: note, problem: !info.git } };
+        : `${tilde(info.path)} isn't a git checkout yet: run git init there first, or pick its repo's folder.`;
+      return { text: info.path, note: { text: note, problem: !info.git } };
     }
-    const repo = info.origin === undefined ? null : githubRepo(info.origin);
-    if (repo !== null) {
-      return { text: repo, note: { text: `This computer isn't one of your machines, so the fleet clones ${repo} from GitHub instead.`, problem: false } };
+    if (info.repo !== undefined) {
+      return { text: info.repo, note: { text: `This computer isn't one of your machines, so the fleet clones ${info.repo} from GitHub instead.`, problem: false } };
     }
     return {
       text: "",
       note: {
-        text: `${tilde(path)} is on this computer, which isn't one of your machines, and it has no GitHub remote. Push it to GitHub and paste its URL, or add this computer with fleetd machine add --local.`,
+        text: `${tilde(info.path)} is on this computer, which isn't one of your machines, and it has no GitHub remote. Push it to GitHub and paste its URL, or add this computer with fleetd machine add --local.`,
         problem: true,
       },
     };
@@ -71,6 +67,12 @@ const fromDrop = async (data: DataTransfer): Promise<{ text: string; note?: Note
   const other = otherHost(t);
   return other === null ? null : { text: t, note: { text: other, problem: true } };
 };
+
+/** Text dropped on a text field is the field's (files never are: dropping one would open it in the window). */
+const fieldTakesIt = (e: DragEvent): boolean =>
+  e.dataTransfer?.types.includes("Files") !== true &&
+  e.target instanceof HTMLElement &&
+  (e.target.isContentEditable || e.target.closest("input, textarea, [contenteditable='true']") !== null);
 
 const accepts = (data: DataTransfer | null): boolean =>
   data !== null && (data.types.includes("Files") || data.types.includes("text/uri-list") || data.types.includes("text/plain"));
@@ -99,7 +101,7 @@ export function ProjectsHost() {
     // Counts nested enter/leave pairs so moving over child elements doesn't flicker the overlay.
     let depth = 0;
     const enter = (e: DragEvent) => {
-      if (!accepts(e.dataTransfer)) return;
+      if (fieldTakesIt(e) || !accepts(e.dataTransfer)) return;
       depth += 1;
       setOver(true);
     };
@@ -108,7 +110,7 @@ export function ProjectsHost() {
       if (depth === 0) setOver(false);
     };
     const overHandler = (e: DragEvent) => {
-      if (e.defaultPrevented || !accepts(e.dataTransfer)) return;
+      if (e.defaultPrevented || fieldTakesIt(e) || !accepts(e.dataTransfer)) return;
       // Without this the drop navigates the window to the file or link.
       e.preventDefault();
       if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
@@ -116,6 +118,7 @@ export function ProjectsHost() {
     const drop = (e: DragEvent) => {
       depth = 0;
       setOver(false);
+      if (fieldTakesIt(e)) return;
       const data = e.dataTransfer;
       if (e.defaultPrevented || data === null) {
         e.preventDefault();

@@ -65,6 +65,15 @@ export const screens: readonly Screen[] = [
   { id: "gallery", route: "#/gallery", fixtures: ["typical"], pending: "E2's gallery (feat/desktop-ui) has not landed" },
   // F8: Add project (the pick list, its empty and loading states, gh and machine problems) and Machines.
   { id: "projects.add", route: "#/projects/add", fixtures: ["typical", "empty", "long-text", "node-too-old", "hub-unreachable"] },
+  // Opened from Machines, which subscribed first: the sheet must still find the live connection and list repos.
+  {
+    id: "projects.add.pick",
+    route: "#/machines",
+    fixtures: ["typical"],
+    open: async (page) => {
+      await page.getByRole("button", { name: "Add project…" }).click();
+    },
+  },
   // The sheet's later states, reached by adding from the pick list (fixtures/projects answers project_add).
   {
     id: "projects.add.cloning",

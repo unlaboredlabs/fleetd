@@ -17,6 +17,8 @@ export interface Fleet {
   readonly machineLive: ReadonlyMap<string, MachineLive>;
   /** The hub's clock minus ours, from live frames. */
   readonly skewMs: number;
+  /** The last snapshot's cursor. */
+  readonly cursor?: number;
 }
 
 const empty: Fleet = { live: false, synced: false, machines: [], projects: [], machineLive: new Map(), skewMs: 0 };
@@ -67,7 +69,7 @@ const onFrame = (frame: HubFrame) => {
     case "snapshot": {
       const s = frame.snapshot as unknown as FleetSnapshot;
       const rest = omit(fleet, "slots");
-      set({ ...rest, synced: true, machines: s.machines, projects: s.projects, ...(s.slots ? { slots: s.slots } : {}) });
+      set({ ...rest, synced: true, cursor: s.cursor, machines: s.machines, projects: s.projects, ...(s.slots ? { slots: s.slots } : {}) });
       break;
     }
     case "event": {

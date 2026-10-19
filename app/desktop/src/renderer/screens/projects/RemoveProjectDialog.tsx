@@ -38,7 +38,7 @@ export function RemoveProjectDialog({ project, onClose }: { project: RemoveTarge
     toast({
       title: `${p.title} removed from ${machine}`,
       description: "Its files, branches and worktrees stay.",
-      action: { label: "Add it again", onClick: () => openAddProject({ text: p.path }) },
+      action: { label: "Add it again", onClick: () => openAddProject({ text: p.path, machine: p.machineId }) },
     });
   };
 

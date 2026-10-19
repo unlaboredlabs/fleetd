@@ -340,3 +340,13 @@ const answer = (s: AddState, c: Call, outcome: Outcome, names: Names): Step_ => 
 };
 
 export type { ProjectKey };
+
+/**
+ * What the add flow must hear when it starts listening after the fleet already has: the connection as it is now and
+ * the snapshot it already took. Frames only reach listeners from when they join, so without this a sheet opened after
+ * the palette or Machines would wait forever for a "live" that came before it.
+ */
+export const seedFrom = (fleet: { readonly live: boolean; readonly synced: boolean; readonly cursor?: number }): ReadonlyArray<AddMsg> => {
+  if (!fleet.live) return [];
+  return fleet.synced && fleet.cursor !== undefined ? [{ t: "live", live: true }, { t: "snapshot", cursor: fleet.cursor }] : [{ t: "live", live: true }];
+};

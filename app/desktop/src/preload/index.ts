@@ -35,9 +35,12 @@ const api: FleetdApi = {
   },
   projects: {
     pickFolder: () => ipcRenderer.invoke(IPC.projectsPickFolder) as Promise<string | null>,
-    // Electron dropped File.path; only the preload can map a dropped File to its path.
-    pathForFile: (file) => webUtils.getPathForFile(file),
-    readDrop: (path) => ipcRenderer.invoke(IPC.projectsReadDrop, path) as Promise<DropInfo>,
+    // The page passes the dropped File, never a path: only a File from a real drop (or file picker) has one, so the
+    // page can't point main at a path of its choosing.
+    readDrop: (file) => {
+      const path = webUtils.getPathForFile(file);
+      return path === "" ? Promise.resolve<DropInfo>({ kind: "other" }) : (ipcRenderer.invoke(IPC.projectsReadDrop, path) as Promise<DropInfo>);
+    },
   },
 };
 
