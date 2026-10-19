@@ -98,6 +98,26 @@ In the example above:
 
 "Nothing running" on the path points at missing data, not idle time. The coverage line says so.
 
+## Waits behind free capacity {#serial-waits}
+
+Some findings point at work that waited while the fleet had room for more. Each one ends with what to change:
+
+| Finding | Means | Fix |
+|---|---|---|
+| `queue_wait` | A task waited for a slot while the fleet had free ones (its project's share, or the slots kept for lead turns). Or a ready PR waited out a CI run it couldn't join, because the [batch](/docs/merge-train#batches) was full or batching was off. | Raise the share or the cap with `cap_set`. Raise `FLEETD_TRAIN_BATCH_MAX`, or fix why batching turned off for the repo. |
+| `contention` | Tasks waited one after another for one area lease, or for one machine's claude usage. | Define narrower areas in `.fleetd/policy.yaml` (without them, every write task takes the one area `all`). For usage: a larger plan, or another machine. |
+| `idle_lead` | A [lead](/docs/glossary#lead) sat idle while a plan item of its order was ready to start and slots were free. | The lead should start ready items before its turn ends. |
+| `slots_underused` | Two or more ready plan items waited at the same time while slots were free. | Start ready items together. |
+
+A plan item counts as ready while its order runs (not stopped, failed, idle or being verified) and every item it comes
+after is done, until its lead starts a task for it. An ask that blocks the order pauses it. None of these count:
+
+- time with no free slot;
+- time when the machine is parked on its usage limit or offline;
+- short gaps while fleetd wakes a lead.
+
+A finding appears once its wait adds up to 5 minutes in the range.
+
 ## What is not exact {#limits}
 
 Where a number is a bound rather than a measurement, the views say so.

@@ -520,6 +520,7 @@ pub struct PeriodBreakdown {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
 pub enum InsightRule {
     FullSuiteRepeat,
     RepeatNoChange,
@@ -540,6 +541,19 @@ pub enum InsightRule {
     Startup,
     Offline,
     Coverage,
+    /// Serial waits: work that waited while capacity existed. A task queued for a slot while the fleet had free
+    /// ones (a project share, the lead band), or a PR that waited out another PR's train cycle.
+    QueueWait,
+    /// Tasks serialized on one shared resource: an area lease, or one machine's usage limit.
+    Contention,
+    /// A lead was idle while its running order had a plan item ready to start and slots were free.
+    IdleLead,
+    /// Two or more ready plan items of a project waited side by side for a start while slots were free.
+    SlotsUnderused,
+    /// A rule this build doesn't know (a newer hub). Never sent.
+    #[serde(other)]
+    #[schemars(skip)]
+    Unknown,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -589,6 +603,14 @@ mod tests {
         for cat in Category::ALL {
             assert_eq!(Category::from_code(cat.code()), Some(cat));
         }
+    }
+
+    #[test]
+    fn a_rule_from_a_newer_hub_degrades_instead_of_failing_the_insights() {
+        let rule: InsightRule = serde_json::from_value(serde_json::json!("brand_new")).unwrap();
+        assert_eq!(rule, InsightRule::Unknown);
+        let known: InsightRule = serde_json::from_value(serde_json::json!("idle_lead")).unwrap();
+        assert_eq!(known, InsightRule::IdleLead);
     }
 
     #[test]

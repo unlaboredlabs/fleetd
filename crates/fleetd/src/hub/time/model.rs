@@ -28,6 +28,8 @@ pub struct Row {
     pub workstream_id: Option<String>,
     pub task_id: Option<String>,
     pub thread_id: Option<String>,
+    /// The session's role: "lead", "implementer", "reviewer"…; absent on spans outside a lead's or task's session.
+    pub role: Option<String>,
     pub extra: SpanExtra,
 }
 
@@ -100,4 +102,54 @@ pub struct RuleInput {
     pub task_titles: HashMap<String, String>,
     /// The slot cap now.
     pub slot_cap: i64,
+    /// What the serial-wait rules read beyond the scope's spans.
+    pub serial: Serial,
+}
+
+/// A plan item of a running order that could have started: open, every `after` item done, no task spawned for it
+/// and no blocking ask open on its order. One per stretch, clipped to the period.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Ready {
+    /// `<machine>/<project>`.
+    pub project: String,
+    pub workstream_id: String,
+    /// "P3".
+    pub item_id: String,
+    pub title: String,
+    pub from_ms: i64,
+    pub to_ms: i64,
+}
+
+/// One run of a project's lead session.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct LeadRun {
+    pub project: String,
+    pub span_id: i64,
+    pub start_ms: i64,
+    pub end_ms: i64,
+}
+
+/// How the train batches now: the most PRs one CI run takes (0: not known, so no train findings), and the repos
+/// GitHub refused batch merges for, with why.
+#[derive(Clone, Debug, Default)]
+pub struct Batching {
+    pub max: i64,
+    pub off: HashMap<String, String>,
+}
+
+/// Fleet-wide facts for the serial-wait rules, read whatever the scope: whether a slot was free is a fleet fact.
+#[derive(Clone, Debug, Default)]
+pub struct Serial {
+    pub ready: Vec<Ready>,
+    /// `slots.full` spells.
+    pub slots_full: Vec<(i64, i64)>,
+    /// Every `queue.slot` wait in the fleet: while one waits, new work would wait too.
+    pub slot_queued: Vec<(i64, i64)>,
+    /// Per machine: when it was parked on a usage limit or offline, so its leads and tasks could not run.
+    pub machine_blocked: HashMap<String, Vec<(i64, i64)>>,
+    pub batching: Batching,
+    /// The runs of the leads of the projects in `ready`.
+    pub lead_runs: Vec<LeadRun>,
+    /// `<machine>/<project>` -> its title.
+    pub project_titles: HashMap<String, String>,
 }

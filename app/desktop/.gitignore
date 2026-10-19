@@ -4,3 +4,4 @@ dist/
 qa-results/
 test-results/
 /fixtures/*.json
+dist-test/

@@ -2,6 +2,7 @@
 //! A slot is held while a lead's or task's thread is running, read from the executor's thread events, and
 //! from a grant until that thread first runs. Threads that belong to no lead or task are not counted.
 pub mod board;
+pub mod usage;
 
 use std::sync::{Arc, Mutex};
 
@@ -82,6 +83,7 @@ pub struct Slots {
     time: std::sync::OnceLock<crate::hub::time::TimeSink>,
     /// While every slot is held: since when, and the most tasks queued meanwhile.
     full: Mutex<Option<(i64, i64)>>,
+    usage: Mutex<usage::Usage>,
 }
 
 fn project_ref(m: String, p: String) -> ProjectRef {
@@ -215,6 +217,8 @@ impl Slots {
             board.restore(&holder, running);
         }
         persist(&db, board.take_ops())?;
+        let at = board.state();
+        let usage = usage::Usage::new(crate::hub::time::wall_ms(), at.used, at.cap);
         let slots = Arc::new(Self {
             db,
             board: Mutex::new(board),
@@ -223,6 +227,7 @@ impl Slots {
             cursor: head,
             time: std::sync::OnceLock::new(),
             full: Mutex::new(None),
+            usage: Mutex::new(usage),
         });
         for t in store.threads_running()? {
             if slots
@@ -284,7 +289,7 @@ impl Slots {
                 board.evaluate();
             }
             persist(&self.db, board.take_ops())?;
-            self.saturation(&board.state());
+            self.track(&board.state());
             (result, freed)
         };
         if freed {
@@ -295,6 +300,19 @@ impl Slots {
 
     pub fn set_time(&self, sink: crate::hub::time::TimeSink) {
         let _ = self.time.set(sink);
+    }
+
+    fn track(&self, s: &BoardState) {
+        self.saturation(s);
+        self.usage
+            .lock()
+            .unwrap()
+            .set(crate::hub::time::wall_ms(), s.used, s.cap);
+    }
+
+    /// How much of the cap the board held over the last hour.
+    pub fn utilization(&self) -> usage::Utilization {
+        self.usage.lock().unwrap().read(crate::hub::time::wall_ms())
     }
 
     /// A `slots.full` span on the fleet lane for each spell with every slot held, with the peak queue.
@@ -389,6 +407,7 @@ impl Slots {
             let mut board = self.board();
             board.evaluate();
             persist(&self.db, board.take_ops())?;
+            self.track(&board.state());
         }
         listener();
         Ok(())

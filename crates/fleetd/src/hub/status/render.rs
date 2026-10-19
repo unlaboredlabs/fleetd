@@ -13,8 +13,8 @@ use fleetd_contracts::prim::{Count, Int, Line, List, Text};
 use fleetd_contracts::status::{
     CiState, DoneRow, EtaBasis, Gate, GateKind, Headline, HeadlineFacts, HeadlineSource, Health,
     HealthCi, HealthMachine, HealthSlots, HealthUsage, InProgressRow, Marker, MoreCounts, NeedsYou,
-    NextRow, Progress, ScopePart, SleptAt, StaleMark, StaleSource, StatusDoc, StatusEta,
-    StatusScope, StatusSteer,
+    NextRow, Progress, ScopePart, SleptAt, SlotUtilization, StaleMark, StaleSource, StatusDoc,
+    StatusEta, StatusScope, StatusSteer,
 };
 use fleetd_contracts::tasks::{SlotState, TaskId};
 use fleetd_contracts::train::{ChangeId, ChangeState, GitHubRepo};
@@ -70,6 +70,8 @@ pub struct World {
     pub machines: Vec<Machine>,
     pub loads: HashMap<String, NodeLoad>,
     pub slots: SlotState,
+    /// The board's last hour.
+    pub slot_use: crate::hub::slots::usage::Utilization,
     pub asks: Vec<Ask>,
     pub estimates: Vec<EstRow>,
     /// The last day's events of the types risks and health read: (type, stored JSON).
@@ -303,6 +305,7 @@ impl World {
             machines,
             loads,
             slots: hub.slots.state(),
+            slot_use: hub.slots.utilization(),
             asks,
             estimates,
             recent,
@@ -1585,6 +1588,11 @@ pub fn render(
                 used: w.slots.used,
                 cap: w.slots.cap,
                 queued: w.slots.queued,
+                utilization: Some(SlotUtilization {
+                    window_ms: Count::unchecked(w.slot_use.window_ms.max(0)),
+                    pct: Int::unchecked(w.slot_use.pct.clamp(0, 100)),
+                    peak: Count::unchecked(w.slot_use.peak.max(0)),
+                }),
             },
         },
         stale: stale_list,
