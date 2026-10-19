@@ -267,6 +267,21 @@ impl ChangeRecords {
         self.train(&key).expect("the train just ensured")
     }
 
+    /// Moves the repo's train to another project, keeping its freeze and watch window.
+    pub fn rebind_train(&self, repo: &str, project_ref: &ProjectRef) {
+        sql(&self.db, |conn| {
+            conn.execute(
+                "UPDATE trains SET machine_id = ?1, project_id = ?2 WHERE repo = ?3",
+                params![
+                    project_ref.machine_id.as_str(),
+                    project_ref.project_id.as_str(),
+                    repo.to_lowercase()
+                ],
+            )
+            .expect("rebind train")
+        });
+    }
+
     pub fn train(&self, repo: &str) -> Option<TrainRow> {
         sql(&self.db, |conn| {
             conn.query_row(

@@ -59,6 +59,8 @@ gets `spawn_agent`, `message_agent`, `agent_status`, `list_agents` and `stop_age
 `report` (a review verdict), `ask_lead` and `claim_done`. Results come back in the lead's next wake, never by polling.
 The hub enforces the split whatever a prompt says: a task can't start, steer or stop agents, and a lead has at most
 32 tasks open at once. A refusal says why and what to do instead. The lead-side `fleetd` commands stay for you.
+[Agent tools](reference/agent-tools.md) lists every tool with its parameters, the blocked Claude Code tools and the
+settings fleetd forces, generated from the code.
 
 ## Safety rules: code or prompt {#safety}
 
