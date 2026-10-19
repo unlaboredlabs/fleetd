@@ -1,7 +1,6 @@
 // Mounted once by the shell: the palette's "Add project…" and its machines, and a folder or a GitHub link dropped
-// on the window (a link dragged out of a browser works too). A lead chat owns every drop inside it (its composer
-// attaches files, images included), so this never acts there; elsewhere anything that isn't a folder or a GitHub
-// link is ignored, not turned into an Add project.
+// anywhere on the window, a lead chat included (a link dragged out of a browser works too). Files dropped on a chat
+// are its composer's (see dropOwner); any other file is ignored, never turned into an Add project.
 
 import { useEffect, useMemo, useState } from "react";
 import { Text } from "../../ui";
@@ -71,26 +70,43 @@ const fromDrop = async (data: DataTransfer): Promise<{ text: string; note?: Note
   return other === null ? null : { text: t, note: { text: other, problem: true } };
 };
 
-export type DropOwner = "chat" | "field" | "projects";
+export type DropOwner = "taken" | "field" | "projects";
 
 /**
- * Who handles a drop: a lead chat takes everything inside it (F4's composer attaches files there), a text field
- * takes dropped text (never files: one would open in the window), and Add project the rest.
+ * Who handles a drop. A lead chat's composer listens on the document, before this window listener, and attaches
+ * the files dropped on the chat (that drop arrives here already defaultPrevented: "taken"). It passes folders and
+ * links on, so a folder or a GitHub link opens Add project anywhere, chat included. A text field takes dropped
+ * text (never files: one would open in the window).
  */
-export const dropOwner = (where: { readonly inChat: boolean; readonly inField: boolean; readonly hasFiles: boolean }): DropOwner =>
-  where.inChat ? "chat" : where.inField && !where.hasFiles ? "field" : "projects";
+export const dropOwner = (drop: { readonly taken: boolean; readonly inField: boolean; readonly hasFiles: boolean }): DropOwner =>
+  drop.taken ? "taken" : drop.inField && !drop.hasFiles ? "field" : "projects";
 
 const ownerOf = (e: DragEvent): DropOwner => {
   const el = e.target instanceof Element ? e.target : null;
   return dropOwner({
-    inChat: el?.closest('[data-screen="chat"], [data-screen^="chat."]') != null,
+    taken: e.defaultPrevented,
     inField: el instanceof HTMLElement && (el.isContentEditable || el.closest("input, textarea, [contenteditable='true']") !== null),
     hasFiles: e.dataTransfer?.types.includes("Files") === true,
   });
 };
 
+/** Media and documents are never a project; a folder (no MIME type), a link file or a link may be. */
+const NOT_A_PROJECT = /^(?:image|video|audio)\/|^application\/pdf$/u;
+
+/**
+ * Whether a drag may be something Add project takes, from what a drag tells before the drop: the item kinds and
+ * their MIME types. Only a drag of nothing but media and documents is ruled out, so the overlay doesn't promise an
+ * Add project for an image.
+ */
+export const mayBeProject = (types: ReadonlyArray<string>, files: ReadonlyArray<{ readonly kind: string; readonly type: string }>): boolean => {
+  if (types.includes("text/uri-list") || (types.includes("text/plain") && !types.includes("Files"))) return true;
+  if (!types.includes("Files")) return false;
+  const items = files.filter((i) => i.kind === "file");
+  return items.length === 0 || items.some((i) => !NOT_A_PROJECT.test(i.type));
+};
+
 const accepts = (data: DataTransfer | null): boolean =>
-  data !== null && (data.types.includes("Files") || data.types.includes("text/uri-list") || data.types.includes("text/plain"));
+  data !== null && mayBeProject([...data.types], [...data.items].map((i) => ({ kind: i.kind, type: i.type })));
 
 export function ProjectsHost() {
   const [over, setOver] = useState(false);
@@ -126,17 +142,12 @@ export function ProjectsHost() {
       if (depth === 0) setOver(false);
     };
     const overHandler = (e: DragEvent) => {
-      const owner = ownerOf(e);
-      if (owner === "chat") {
-        // A file the chat doesn't take (dropped beside its composer) must still not open in the window.
+      if (ownerOf(e) !== "projects") return;
+      // A file Add project won't take must still never open in the window.
+      if (!accepts(e.dataTransfer)) {
         if (e.dataTransfer?.types.includes("Files") === true) e.preventDefault();
-        if (depth > 0) {
-          depth = 0;
-          setOver(false);
-        }
         return;
       }
-      if (e.defaultPrevented || owner === "field" || !accepts(e.dataTransfer)) return;
       // Without this the drop navigates the window to the file or link.
       e.preventDefault();
       if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
@@ -144,18 +155,11 @@ export function ProjectsHost() {
     const drop = (e: DragEvent) => {
       depth = 0;
       setOver(false);
-      const owner = ownerOf(e);
-      if (owner === "field") return;
-      if (owner === "chat") {
-        if (e.dataTransfer?.types.includes("Files") === true) e.preventDefault();
-        return;
-      }
+      if (ownerOf(e) !== "projects") return;
       const data = e.dataTransfer;
-      if (e.defaultPrevented || data === null) {
-        e.preventDefault();
-        return;
-      }
       e.preventDefault();
+      if (data === null) return;
+      // A folder or a GitHub link opens Add project; anything else (an image beside the composer) is ignored.
       void fromDrop(data).then((prefill) => {
         if (prefill === null) return;
         openAddProject(prefill);
