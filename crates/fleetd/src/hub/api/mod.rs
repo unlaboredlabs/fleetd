@@ -149,6 +149,7 @@ pub struct Hub {
     pub time: Arc<crate::hub::time::Time>,
     pub status: Arc<crate::hub::status::Status>,
     pub plans: Arc<crate::hub::plan::Plans>,
+    pub chat: Arc<crate::hub::chat::Chat>,
 }
 
 /// Every MCP tool the hub serves, from every area that registers. The one place that lists them.
@@ -177,5 +178,6 @@ pub fn registry() -> Registry {
     crate::hub::time::tools::register(&mut tools);
     crate::hub::plan::tools::register(&mut tools);
     crate::hub::status::tools::register(&mut tools);
+    crate::hub::chat::tools::register(&mut tools);
     tools
 }

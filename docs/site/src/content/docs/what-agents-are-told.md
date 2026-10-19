@@ -256,10 +256,10 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 | `wake.train.merged` | per merge |  |
 | `wake.train.gave_up` | per PR GitHub refused to merge too often |  |
 | `wake.train.refused` | per task PR the train would not take |  |
-| `steer.message` | per steer (steer\_send, order\_note, task message), straight to the agent, at its next tool boundary or now | asks the agent to name the steer first, so its receipt can say it was acknowledged (prompt only) |
+| `steer.message` | per steer (steer\_send, task message), straight to the agent, at its next tool boundary or now | asks the agent to name the steer first, so its receipt can say it was acknowledged (prompt only) |
 | `wake.agent_steer` | per steer\_send to a task, at the lead's next wake (debounced, never an interrupt) |  |
 | `wake.order_refs` | per new order with references or attachments |  |
-| `wake.order_stopped` | per order\_stop | does no more work on a stopped order (prompt only) |
+| `wake.order_stopped` | per order that project\_stop stops | does no more work on a stopped order (prompt only) |
 | `wake.runnable` | when a slot frees, the lead is idle and approved, unblocked work no task has taken waits; once per change in that work | the lead decides what to start; the hub never spawns (prompt only) |
 | `wake.order_idle` | when the lead ends a turn with a frozen order and nothing under way |  |
 | `wake.scheduled_late` | a wake\_set message that fired late |  |
