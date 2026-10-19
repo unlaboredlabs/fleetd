@@ -12,7 +12,7 @@ import { postDigest, useStatusDigest } from "../status/digest";
 import { useHubState } from "./hubFeed";
 import { useDataLayer } from "../../src/data/react";
 import { homeProject, projectId, stepProject } from "./model";
-import { useSidebarProjects } from "./data";
+import { useMachinesDown, useSidebarProjects } from "./data";
 import { navigate, useRoute } from "./navigation";
 import type { Screen } from "./routes";
 import { ConnectionBanner, needsOnboarding } from "../onboarding";
@@ -44,6 +44,7 @@ export function Shell() {
   }, [layer]);
   const hub = useHubState();
   const projects = useSidebarProjects();
+  const machinesDown = useMachinesDown();
   const [sidebarHidden, setSidebarHidden] = useState(false);
   const modHeld = useModHeld();
 
@@ -53,6 +54,15 @@ export function Shell() {
   useStatusDigest(postDigest, quietNow);
 
   const open = screen.id === "project" ? screen.project : null;
+  // One chat streams at a time: the one on screen.
+  const openKey = open === null ? null : projectId(open);
+  useEffect(() => {
+    if (openKey === null) {
+      layer.chat.close();
+      return;
+    }
+    layer.chat.open(openKey);
+  }, [layer, openKey]);
   useEffect(() => {
     if (open === null) return;
     try {
@@ -133,7 +143,7 @@ export function Shell() {
     <div className={s.root} data-screen="shell">
       <AppFrame
         topBar={top}
-        sidebar={chrome && !sidebarHidden ? <Sidebar projects={projects} screen={screen} hub={hub} jumpHints={modHeld} go={go} /> : undefined}
+        sidebar={chrome && !sidebarHidden ? <Sidebar projects={projects} machinesDown={machinesDown} screen={screen} hub={hub} jumpHints={modHeld} go={go} /> : undefined}
       >
         <div className={s.column}>
           {/* Fixture data must never pass for a live hub. */}
