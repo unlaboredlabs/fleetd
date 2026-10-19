@@ -44,7 +44,7 @@ export interface Ranked {
 
 /**
  * The rows for `query`, best first. With nothing typed: the recent items, then everything not `searchOnly`,
- * grouped. Typed: by score, then group; letters scattered mid-word ("dn" in "New order in fleetd") don't count.
+ * grouped. Typed: by score, then group; letters scattered mid-word ("dn" in "Add a project in fleetd") don't count.
  */
 export const rank = (query: string, items: readonly Command[], recentIds: readonly string[], limit = 60): Ranked => {
   const q = query.trim();
