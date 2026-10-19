@@ -148,3 +148,6 @@ export const reaching = (
   const held = state.attempt > 0 && last?.hub === state.hub ? last : null;
   return { hub: state.hub, reason: held?.reason ?? null, fix: held?.fix ?? null, retryAt: null };
 };
+
+/** A reason as a sentence: a final period unless it already ends in one, or in ? or !. */
+export const sentence = (text: string): string => (/[.?!…]$/u.test(text.trim()) ? text.trim() : `${text.trim()}.`);

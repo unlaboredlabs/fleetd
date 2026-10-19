@@ -146,8 +146,9 @@ export const compareVersions = (a: string, b: string): number | null => {
   return x[4] === undefined ? 1 : y[4] === undefined ? -1 : 0;
 };
 
-/** Machines whose node runs an older fleetd than the hub, by name. */
+/** Machines whose node runs an older fleetd than the hub, by name. A node reporting 0.0.0 hasn't said its version. */
 export const olderNodes = (
   machines: ReadonlyArray<{ readonly name: string; readonly nodeVersion: string }>,
   hubVersion: string,
-): ReadonlyArray<string> => machines.filter((m) => compareVersions(m.nodeVersion, hubVersion) === -1).map((m) => m.name);
+): ReadonlyArray<string> =>
+  machines.filter((m) => compareVersions(m.nodeVersion, "0.0.0") !== 0 && compareVersions(m.nodeVersion, hubVersion) === -1).map((m) => m.name);

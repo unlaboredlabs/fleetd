@@ -5,6 +5,8 @@ import { useData } from "../../src/data/react";
 import { errorText, useHubCall, useLive, useRead, useRefetch } from "./hub";
 import { MOTION_PREFS, parseMotion, setDigest, setMotion, useDigest, useMotion } from "./prefs";
 import s from "./settings.module.css";
+import { keyStoreLine } from "../../../shared/pairing";
+import { useKeyStore } from "../onboarding";
 
 const RETENTION = [7, 30, 90, 365] as const;
 
@@ -86,7 +88,7 @@ function phaseLine(state: HubState): { tone: string; text: string } {
       return { tone: "var(--faint)", text: state.attempt > 1 ? `Connecting, attempt ${state.attempt}…` : "Connecting…" };
     case "retrying": {
       const at = new Date(state.retryAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-      return { tone: "var(--warning)", text: `Can't reach it: ${state.reason}. Trying again at ${at}.` };
+      return { tone: "var(--warning)", text: `Can't reach it: ${state.reason}. ${state.fix === undefined ? "" : `${state.fix.replaceAll("`", "")} `}Trying again at ${at}.` };
     }
     case "refused":
       return { tone: "var(--danger)", text: `It refused this app's key: ${state.message} Pair again to get a new key.` };
@@ -97,11 +99,12 @@ function phaseLine(state: HubState): { tone: string; text: string } {
 
 function HubSetting() {
   const state = useData((s) => s.hub);
+  const store = useKeyStore();
   const [confirm, setConfirm] = useState(false);
   const hub = state.phase === "unpaired" ? null : state.hub;
   const line = phaseLine(state);
   return (
-    <Setting label="Hub" help="This app acts as you on this hub. Its key is encrypted by the OS (the Keychain on macOS) and never shown.">
+    <Setting label="Hub" help={`This app acts as you on this hub. ${store === null ? "" : keyStoreLine(store).replaceAll("`", "")}`}>
       {hub ? (
         <Truncate mono size="sm">
           {hub}
