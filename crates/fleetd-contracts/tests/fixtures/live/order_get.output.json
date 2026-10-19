@@ -300,11 +300,21 @@
       "key": "api.health.path",
       "class": "product",
       "text": "Which path should the health endpoint use?",
+      "context": "The load balancer probes it every 10 s; nothing calls it yet.",
       "options": [
-        "/healthz",
-        "/health"
+        {
+          "key": "/healthz",
+          "label": "/healthz",
+          "consequence": "Matches the probe default; no load balancer change."
+        },
+        {
+          "key": "/health",
+          "label": "/health",
+          "consequence": "Reads better, but the probe config changes too."
+        }
       ],
       "recommendation": "/healthz",
+      "recommendationWhy": "The probe already expects it.",
       "blocks": "nothing",
       "proceededOnRec": false,
       "state": "open",

@@ -185,11 +185,11 @@ export function Strip(props: { label?: string; children: ReactNode; edge?: "top"
 }
 
 /** One fact in a strip: an optional dot or icon, a label, a value. */
-export function StripItem(props: { icon?: ReactNode; label: string; value?: ReactNode; title?: string }) {
+export function StripItem(props: { icon?: ReactNode; label: string; value?: ReactNode; title?: string; inRow?: boolean }) {
   return (
     <span className={s.stripItem} title={props.title}>
       {props.icon}
-      <Truncate size="xs" tone="quiet" expand="none">
+      <Truncate size="xs" tone="quiet" expand={props.inRow ? "none" : "popover"}>
         {props.label}
       </Truncate>
       {props.value != null ? <span className={s.stripValue}>{props.value}</span> : null}

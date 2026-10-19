@@ -34,7 +34,30 @@ export interface CredentialEnv {
   readonly keychain: { get(service: string, account: string): string | null } | null;
   /** macOS: whether this build is signed with a Team ID (the GPUI app wrote its keychain item only then). */
   readonly teamSigned: () => boolean;
+  /** macOS: this build's code-signing identifier. GPUI's item trusts `sh.fleetd.app` + the Team ID, nothing else. */
+  readonly bundleId: () => string | null;
 }
+
+/** The GPUI app's bundle identifier; its keychain item opens without a prompt only for the same one. */
+export const GPUI_BUNDLE_ID = "sh.fleetd.app";
+
+/**
+ * Whether to encrypt with safeStorage. On macOS the Team-ID check comes first: asking safeStorage anything reads or
+ * creates its keychain item, whose trust an ad-hoc build loses at every update, and then every launch prompts (#143).
+ * A relocated home (FLEETD_HOME) never touches the OS store.
+ */
+export const useOsEncryption = (os: {
+  readonly platform: NodeJS.Platform;
+  readonly relocated: boolean;
+  readonly teamSigned: () => boolean;
+  readonly available: () => boolean;
+  readonly linuxBackend: () => string;
+}): boolean => {
+  if (os.relocated) return false;
+  if (os.platform === "darwin" && !os.teamSigned()) return false;
+  if (!os.available()) return false;
+  return os.platform !== "linux" || os.linuxBackend() !== "basic_text";
+};
 
 const ENCRYPTED = "desktop-hub.bin";
 const PLAIN = "desktop-hub.json";
@@ -139,12 +162,18 @@ const findGpuiKey = (env: CredentialEnv): Saved | null => {
   if (env.platform === "darwin") {
     const file = read(join(env.dir, GPUI_FILE));
     if (file !== null) return parse(file.toString("utf8"));
-    if (env.keychain === null || !env.teamSigned()) return null;
+    if (env.keychain === null || !env.teamSigned() || env.bundleId() !== GPUI_BUNDLE_ID) return null;
     const text = env.keychain.get(GPUI_SERVICE, GPUI_ACCOUNT_MAC_SIGNED);
     return text === null ? null : parse(text);
   }
   if (env.platform === "linux" && env.keychain !== null) {
-    const text = env.keychain.get(GPUI_SERVICE, GPUI_ACCOUNT_LINUX);
+    let text: string | null;
+    try {
+      text = env.keychain.get(GPUI_SERVICE, GPUI_ACCOUNT_LINUX);
+    } catch {
+      // No Secret Service: the GPUI app couldn't have saved a key there either, so there's nothing to move.
+      return null;
+    }
     return text === null ? null : parse(text);
   }
   return null;

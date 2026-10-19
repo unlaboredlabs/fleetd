@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::brand;
 
 brand!(
-    /// Stable machine id chosen at enrollment, e.g. "forge".
+    /// Stable machine id chosen at enrollment, e.g. "devbox".
     MachineId, name = "MachineId", pattern = r"^[a-z0-9-]{1,32}$", description = "Machine slug, [a-z0-9-]{1,32}"
 );
 brand!(

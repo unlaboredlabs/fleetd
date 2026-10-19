@@ -5,19 +5,21 @@
 //! reply := item ((";"|","|newline|" ") item)*
 //! item  := sel verb [note] | "recs" ["fine"|"ok"] | "all" verb | "#B" n (first only) | "pref:" text | "forget" Dn
 //! sel   := n | n "-" n | sel "," sel
-//! verb  := go|yes|y|ok|rec|recs | no|nvm|drop|skip|n | a-f | done | later | ":" text | "quoted text"
+//! verb  := go|yes|y|ok|rec|recs | no|nvm|drop|n | skip | a-f | done | later | ":" text | "quoted text"
 //! note  := ":" text | "quoted text"        (kept as the decision's why)
 //! ```
 //!
-//! Free text after ":" (and after "pref:") runs to the end of the line or the next ";".
+//! Free text after ":" (and after "pref:") runs to the end of the line or the next ";". "skip" on a decide ask is
+//! "Skip for now": the lead keeps its recommendation and no decision is recorded; on any other ask it is "no".
 use std::collections::{HashMap, HashSet};
 
-use fleetd_contracts::ledger::{Ask, AskClass, AskKind, AskState};
+use fleetd_contracts::ledger::{Ask, AskAnswerKind, AskClass, AskKind, AskState};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Verb {
     Accept,
     Reject,
+    Skip,
     Option(usize),
     Done,
     Later,
@@ -44,7 +46,7 @@ pub struct ReplyPlan {
     pub forgets: Vec<u64>,
 }
 
-pub const GRAMMAR_HINT: &str = r##"Reply like "1 go 2 nvm 3 b", "1-3 go", "recs fine", "2: your own answer", "#B4 1 go", "pref: <text>" or "forget D12"."##;
+pub const GRAMMAR_HINT: &str = r##"Reply like "1 go 2 nvm 3 b", "1-3 go", "recs fine", "2: your own answer", "4 skip", "#B4 1 go", "pref: <text>" or "forget D12"."##;
 
 const MAX_TEXT: usize = 2000;
 const MAX_NUMBER: u64 = 999;
@@ -53,7 +55,8 @@ const LETTERS: &str = "abcdef";
 fn verb_word(word: &str) -> Option<Verb> {
     Some(match word {
         "go" | "yes" | "y" | "ok" | "rec" | "recs" => Verb::Accept,
-        "no" | "nvm" | "drop" | "skip" | "n" => Verb::Reject,
+        "no" | "nvm" | "drop" | "n" => Verb::Reject,
+        "skip" => Verb::Skip,
         "done" => Verb::Done,
         "later" => Verb::Later,
         w if w.len() == 1 && LETTERS.contains(w) => Verb::Option(LETTERS.find(w)?),
@@ -418,6 +421,14 @@ pub enum Action {
         ask: Ask,
         value: String,
         note: Option<String>,
+        /// A decide ask's answer: one of its options, or the human's own words.
+        kind: Option<AskAnswerKind>,
+    },
+    /// "Skip for now" on a decide ask: the lead keeps `value`, its recommendation.
+    Skip {
+        number: u64,
+        ask: Ask,
+        value: String,
     },
     Withdraw {
         number: u64,
@@ -433,6 +444,7 @@ impl Action {
     pub fn number(&self) -> u64 {
         match self {
             Action::Answer { number, .. }
+            | Action::Skip { number, .. }
             | Action::Withdraw { number, .. }
             | Action::Later { number, .. } => *number,
         }
@@ -440,6 +452,7 @@ impl Action {
     pub fn ask(&self) -> &Ask {
         match self {
             Action::Answer { ask, .. }
+            | Action::Skip { ask, .. }
             | Action::Withdraw { ask, .. }
             | Action::Later { ask, .. } => ask,
         }
@@ -477,19 +490,34 @@ pub fn resolve_plan(
                verb: &Verb,
                note: Option<&String>,
                from_rest: bool| {
+        let decide = ask.kind == AskKind::Decide;
         let answer = |actions: &mut Vec<Action>, value: String| {
+            // Free text that names an option (its key or label) is that option.
+            let named = value.trim();
+            let option = ask.options.iter().flatten().find(|o| {
+                o.key.as_str().eq_ignore_ascii_case(named)
+                    || o.display_label().eq_ignore_ascii_case(named)
+            });
+            let (value, kind) = match option {
+                Some(o) => (o.key.to_string(), AskAnswerKind::Option),
+                None if ask.recommendation.as_deref() == Some(value.as_str()) => {
+                    (value, AskAnswerKind::Option)
+                }
+                None => (value, AskAnswerKind::Text),
+            };
             actions.push(Action::Answer {
                 number,
                 ask: ask.clone(),
                 value,
                 note: note.cloned(),
+                kind: decide.then_some(kind),
             })
         };
         // A stored command or a secret is never settled in bulk: "recs fine" and "all <answer>" pass over them.
         if from_rest && matches!(ask.kind, AskKind::Approve | AskKind::Secret) {
             return;
         }
-        let rejects_or_later = matches!(verb, Verb::Reject | Verb::Later);
+        let rejects_or_later = matches!(verb, Verb::Reject | Verb::Skip | Verb::Later);
         if ask.kind == AskKind::Secret && !rejects_or_later {
             hints.push(format!(
                 "Item {number} asks for a secret: enter it in the fleetd app, which seals it to its machine. Never put a secret in a reply."
@@ -516,9 +544,18 @@ pub fn resolve_plan(
                 }
                 Some(rec) => answer(actions, rec.to_string()),
             },
+            Verb::Skip if decide && ask.recommendation.is_some() => actions.push(Action::Skip {
+                number,
+                ask: ask.clone(),
+                value: ask
+                    .recommendation
+                    .as_ref()
+                    .map(|r| r.to_string())
+                    .unwrap_or_default(),
+            }),
             // A product call the human hands back is withdrawn ("your call"); a refused money, credential or
-            // irreversible step is logged as "no" so it is not asked again.
-            Verb::Reject => {
+            // irreversible step is logged as "no" so it is not asked again. "skip" on any other ask is "no".
+            Verb::Reject | Verb::Skip => {
                 if ask.class == AskClass::Product {
                     actions.push(Action::Withdraw {
                         number,
@@ -534,7 +571,7 @@ pub fn resolve_plan(
                         "Item {number} has no option {}.",
                         &LETTERS[*index..*index + 1]
                     )),
-                    Some(option) => answer(actions, option.to_string()),
+                    Some(option) => answer(actions, option.key.to_string()),
                 }
             }
             Verb::Done => {
@@ -646,9 +683,10 @@ mod tests {
             ("1 recs ok", plan(items(&[(1, Go)]))),
             ("1 GO", plan(items(&[(1, Go)]))),
             (
-                "1 no 2 drop 3 skip 4 n",
-                plan(items(&[(1, Nvm), (2, Nvm), (3, Nvm), (4, Nvm)])),
+                "1 no 2 drop 3 n",
+                plan(items(&[(1, Nvm), (2, Nvm), (3, Nvm)])),
             ),
+            ("3 skip", plan(items(&[(3, Verb::Skip)]))),
             (
                 "1 a 2 b 3 f",
                 plan(items(&[(1, opt(0)), (2, opt(1)), (3, opt(5))])),
@@ -878,7 +916,14 @@ mod tests {
             actions
                 .iter()
                 .map(|a| match a {
-                    Action::Answer { number, value, .. } => format!("{number}={value}"),
+                    Action::Answer {
+                        number,
+                        value,
+                        kind: None | Some(AskAnswerKind::Option),
+                        ..
+                    } => format!("{number}={value}"),
+                    Action::Answer { number, value, .. } => format!("{number}=text:{value}"),
+                    Action::Skip { number, value, .. } => format!("{number}:skip({value})"),
                     Action::Withdraw { number, .. } => format!("{number}:withdraw"),
                     Action::Later { number, .. } => format!("{number}:later"),
                 })
@@ -914,10 +959,12 @@ mod tests {
     fn resolves_against_the_batch() {
         let b = batch();
         assert_eq!(summary("1 go 2 a", &b), ok(&["1=rec1", "2=Team"]));
-        assert_eq!(summary("1: my own", &b), ok(&["1=my own"]));
+        assert_eq!(summary("1: my own", &b), ok(&["1=text:my own"]));
+        // Text that names an option is that option.
+        assert_eq!(summary("2: free", &b), ok(&["2=Free"]));
         assert_eq!(summary("3 done", &b), ok(&["3=done"]));
         // A rejected product ask is withdrawn; a rejected money ask is logged as no.
-        assert_eq!(summary("1 nvm 2 no", &b), ok(&["1:withdraw", "2=no"]));
+        assert_eq!(summary("1 nvm 2 no", &b), ok(&["1:withdraw", "2=text:no"]));
         // recs fine accepts every open item with a recommendation and leaves do-asks open.
         assert_eq!(summary("recs fine", &b), ok(&["1=rec1", "2=Free"]));
         assert_eq!(
@@ -945,6 +992,34 @@ mod tests {
         assert_eq!(summary("recs fine", &b), ok(&[]));
         hint(summary("1 go", &b), "Item 1 of B1 is already answered");
         hint(summary("2 go", &b), "already moved");
+    }
+
+    #[test]
+    fn skip_keeps_the_recommendation_on_a_decide_ask_and_is_no_elsewhere() {
+        let b = batch();
+        assert_eq!(
+            summary("1 skip 2 skip", &b),
+            ok(&["1:skip(rec1)", "2:skip(Free)"])
+        );
+        assert_eq!(summary("3 skip", &b), ok(&["3=no"]));
+        assert_eq!(
+            summary("all skip", &b),
+            ok(&["1:skip(rec1)", "2:skip(Free)", "3=no"])
+        );
+        let labelled = with(
+            ask(1),
+            serde_json::json!({ "options": [
+                { "key": "public-snapshot", "label": "Public snapshot", "consequence": "Anyone with the link sees a copy." },
+                { "key": "image-only", "label": "Image only", "consequence": "The link shows a PNG." }
+            ], "recommendation": "public-snapshot" }),
+        );
+        let l = [labelled];
+        assert_eq!(summary("1 b", &l), ok(&["1=image-only"]));
+        assert_eq!(summary("1: image only", &l), ok(&["1=image-only"]));
+        assert_eq!(
+            summary("1: neither, ask me Monday", &l),
+            ok(&["1=text:neither, ask me Monday"])
+        );
     }
 
     #[test]

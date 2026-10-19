@@ -128,6 +128,12 @@ export function Shell() {
       >
         <div className={s.body}>
           <div className={s.column}>
+            {/* Fixture data must never pass for a live hub. */}
+            {window.fleetd.fixture !== null ? (
+              <div className={s.fixtureBanner} role="status">
+                Sample data, not connected
+              </div>
+            ) : null}
             <div className={s.screen}>
               <ScreenHost screen={shown} />
             </div>

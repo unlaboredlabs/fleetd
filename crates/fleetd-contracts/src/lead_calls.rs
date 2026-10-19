@@ -10,10 +10,10 @@ use serde_with::skip_serializing_none;
 use crate::checked;
 use crate::effort::Effort;
 use crate::ledger::{
-    AskBlocks, AskId, AskKind, AskOptions, AskState, AskSteps, AskText, BriefDraft, BriefHash,
-    CheckSpec, Decision, DecisionId, DecisionKey, DecisionValue, DecisionWhy, EnvName,
-    GATED_MAX_TIMEOUT_SEC, GatedArgv, GatedClass, GatedCwd, GatedTimeoutSec, IntakeText,
-    PlaybookName, PlaybookRef, SecretEnv, Serves, Tier, WorkstreamId, WorkstreamState,
+    AskBlocks, AskContext, AskId, AskKind, AskOptions, AskRecommendationWhy, AskState, AskSteps,
+    AskText, BriefDraft, BriefHash, CheckSpec, Decision, DecisionId, DecisionKey, DecisionValue,
+    DecisionWhy, EnvName, GATED_MAX_TIMEOUT_SEC, GatedArgv, GatedClass, GatedCwd, GatedTimeoutSec,
+    IntakeText, PlaybookName, PlaybookRef, SecretEnv, Serves, Tier, WorkstreamId, WorkstreamState,
     ask_blocks_nothing, ask_kind_rule,
 };
 use crate::mcp::McpToolError;
@@ -66,9 +66,11 @@ impl From<AskCallKind> for AskKind {
     }
 }
 
-/// `fleetd ask [--kind decide|do|secret] --key k --class c --text t --rec r [--options a,b] [--steps '<json>']
+/// `fleetd ask [--kind decide|do|secret] --key k --class c --text "<short question>" [--context "<1-2 lines>"]
+/// --option 'key|Label|what happens if picked' (2-6 times) --rec <option key> --why "<one line>" [--steps '<json>']
 /// [--verify '<CheckSpec>'] [--sink env:<machine>:<path> [--env-name N]] [--blocks "step"] [--proceeded]
-/// [--workstream W12]`. Approve asks come only from `fleetd gated run`, so the command they run is stored with them.
+/// [--workstream W12]`. A decide ask needs labelled options with consequences and a recommendation among them; the
+/// hub refuses one without, saying what to send. Approve asks come only from `fleetd gated run`, so the command they run is stored with them.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(remote = "Self", rename_all = "camelCase")]
@@ -78,8 +80,12 @@ pub struct AskCall {
     pub key: DecisionKey,
     /// Any string: the hub refuses classes outside AskClass with the "decide this yourself" fix text.
     pub class: NonEmpty,
+    /// The question, one short line.
     pub text: AskText,
+    pub context: Option<AskContext>,
+    /// The key of one of `options`.
     pub recommendation: Option<DecisionValue>,
+    pub recommendation_why: Option<AskRecommendationWhy>,
     pub options: Option<AskOptions>,
     pub steps: Option<AskSteps>,
     /// do only.
@@ -179,7 +185,7 @@ fn default_task_kind() -> TaskKind {
 }
 
 /// `fleetd task spawn --workstream W1 --title t --prompt p [--kind write|read|review] [--areas a,b] [--model m]
-/// [--effort e] [--tier S|M|L] [--estimate <min>] [--serves s] [--pr <url>] [--qa]`. Absent model and effort resolve
+/// [--effort e] [--tier S|M|L] [--serves s] [--pr <url>] [--qa]`. Absent model and effort resolve
 /// from the policy file, then the project, then claude-opus-5-5/high. A write task needs `--serves`, a review task
 /// `--pr`; `--qa` marks a review task as a QA run.
 #[skip_serializing_none]
@@ -196,6 +202,7 @@ pub struct TaskSpawnCall {
     pub model: Option<NonEmpty>,
     pub effort: Option<Effort>,
     pub tier: Option<Tier>,
+    /// Older leads only: fleetd no longer asks for time estimates and the CLI no longer sends one.
     pub estimate_minutes: Option<NonNegative>,
     pub serves: Option<Serves>,
     pub pr: Option<PrUrl>,
@@ -549,13 +556,13 @@ mod tests {
         };
         assert!(
             call(with(
-                serde_json::json!({ "sink": "env:forge:/srv/app/.env", "envName": "STRIPE_KEY" })
+                serde_json::json!({ "sink": "env:devbox:/srv/app/.env", "envName": "STRIPE_KEY" })
             ))
             .is_ok()
         );
         assert!(
             call(with(
-                serde_json::json!({ "sink": "file:forge:/srv/app/key", "envName": "STRIPE_KEY" })
+                serde_json::json!({ "sink": "file:devbox:/srv/app/key", "envName": "STRIPE_KEY" })
             ))
             .is_err()
         );

@@ -837,10 +837,12 @@ impl Shell {
             .gap_3()
             .border_b_1()
             .border_color(t.hairline)
-            .child(div().text_color(t.quiet).child("Texts for"))
+            .child(div().flex_none().text_color(t.quiet).child("Editing texts for:"))
             .child(picker)
-            .child(div().flex_1())
-            .child(div().text_size(px(size::XS)).text_color(t.quiet).child("Running sessions keep the text they started with."));
+            .child(div().flex_1().min_w_0().whitespace_normal().text_size(px(size::XS)).text_color(t.quiet).child(match project {
+                None => "Hub-wide texts go to every project that has no edit of its own. Running sessions keep the text they started with.",
+                Some(_) => "This project's own texts; the rest come from hub-wide. Running sessions keep the text they started with.",
+            }));
         let confirm = self.prompt_confirm(cx);
         let list = self.prompt_list(cx);
         let detail = self.prompt_detail(cx);

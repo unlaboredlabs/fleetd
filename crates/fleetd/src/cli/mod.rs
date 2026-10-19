@@ -2,6 +2,7 @@
 //! Exit codes: 0 ok, 1 failed (a claim that did not pass), 2 usage, 3 refused, 4 hub or node unreachable,
 //! 78 (`listen`) the hub refused the key.
 
+pub mod answer;
 pub mod args;
 pub mod hub_key;
 pub mod lead;
@@ -66,7 +67,7 @@ setting up (on the hub machine):
 projects:
 {}
 running by hand:
-{}{}{}{}{}{}{}{}{}{}{}
+{}{}{}{}{}{}{}{}{}{}{}{}
 lead-side commands (run by a lead or task inside a project workspace):
 {}",
         UPDATE_USAGE,
@@ -85,6 +86,7 @@ lead-side commands (run by a lead or task inside a project workspace):
         time::TIME_USAGE,
         status::STATUS_USAGE,
         steer::STEER_USAGE,
+        answer::ANSWER_USAGE,
         lead::LEAD_USAGE
     )
 }
@@ -129,6 +131,7 @@ pub fn help_for(argv: &[String]) -> Option<String> {
         "update" => UPDATE_USAGE.to_owned(),
         "status" if !lead::is_lead_command(argv) => status::STATUS_USAGE.to_owned(),
         "steer" | "steers" => steer::STEER_USAGE.to_owned(),
+        "answer" => answer::ANSWER_USAGE.to_owned(),
         _ if lead::is_lead_command(argv) => lead::LEAD_USAGE.to_owned(),
         _ => return None,
     };
@@ -181,7 +184,7 @@ fn is_long_running(argv: &[String]) -> bool {
     match argv.first().map(String::as_str) {
         Some(
             "init" | "doctor" | "uninstall" | "machine" | "project" | "projects" | "node"
-            | "listen" | "retro" | "time" | "update" | "steer" | "steers",
+            | "listen" | "retro" | "time" | "update" | "steer" | "steers" | "answer",
         ) => true,
         Some("status") => !lead::is_lead_command(argv),
         Some("hub") => argv.get(1).map(String::as_str) == Some("github-webhook"),
@@ -203,6 +206,7 @@ async fn run_long_running(argv: &[String]) -> u8 {
         "hub" => status::github_webhook_command(&rest[1..]).await,
         "steer" => steer::steer_command(rest, false).await,
         "steers" => steer::steer_command(rest, true).await,
+        "answer" => answer::answer_command(rest).await,
         _ => update_command(rest).await,
     }
 }

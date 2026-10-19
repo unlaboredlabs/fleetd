@@ -167,27 +167,27 @@ mod tests {
 
     #[test]
     fn sink_paths_are_absolute_and_plain() {
-        let parsed = parse_secret_sink("env:forge:/home/w/.env").unwrap();
+        let parsed = parse_secret_sink("env:devbox:/home/w/.env").unwrap();
         assert_eq!(parsed.kind, SecretSinkKind::Env);
-        assert_eq!(parsed.machine_id.as_str(), "forge");
+        assert_eq!(parsed.machine_id.as_str(), "devbox");
         assert_eq!(parsed.path, "/home/w/.env");
         for bad in [
-            "env:forge:relative",
-            "env:forge:/a//b",
-            "env:forge:/a/./b",
-            "file:forge:/a/../b",
-            "file:forge:/a/",
-            "env:Forge:/a",
-            "vault:forge:/a",
-            "file:forge:/a\u{7}b",
-            "env:forge:/a\nb",
-            "env:forge:",
-            "env:forge:/",
+            "env:devbox:relative",
+            "env:devbox:/a//b",
+            "env:devbox:/a/./b",
+            "file:devbox:/a/../b",
+            "file:devbox:/a/",
+            "env:Devbox:/a",
+            "vault:devbox:/a",
+            "file:devbox:/a\u{7}b",
+            "env:devbox:/a\nb",
+            "env:devbox:",
+            "env:devbox:/",
             "env:/a",
         ] {
             assert!(parse_secret_sink(bad).is_none(), "{bad}");
         }
-        assert!(parse_secret_sink(&format!("file:forge:/{}", "a".repeat(1000))).is_none());
+        assert!(parse_secret_sink(&format!("file:devbox:/{}", "a".repeat(1000))).is_none());
     }
 
     #[test]

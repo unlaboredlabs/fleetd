@@ -201,7 +201,9 @@ pub fn render_human_digest(input: &DigestInput) -> String {
                 let shown: Vec<String> = options
                     .iter()
                     .enumerate()
-                    .map(|(i, o)| format!("{}) {}", &"abcdef"[i..i + 1], clip(o, 40)))
+                    .map(|(i, o)| {
+                        format!("{}) {}", &"abcdef"[i..i + 1], clip(&o.display_label(), 40))
+                    })
                     .collect();
                 line += &format!(" {}", shown.join(" "));
             }

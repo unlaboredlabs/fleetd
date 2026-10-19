@@ -905,6 +905,7 @@ fn section(t: &Theme, label: &'static str, detail: String) -> Div {
 fn call_row(t: &Theme, summary: &str, failed: bool) -> Div {
     div()
         .h(px(metric::LINE))
+        .flex_none()
         .flex()
         .items_center()
         .gap_2()
@@ -1011,7 +1012,7 @@ mod tests {
             .map(|(id, status, pr)| {
                 let mut lane = json!({ "laneId": id, "role": "implementer", "title": id, "status": status });
                 if let Some(n) = pr {
-                    lane["pr"] = json!({ "changeId": "X1", "repo": "wynn-dev/fleetd", "number": n, "url": format!("https://github.com/wynn-dev/fleetd/pull/{n}"),
+                    lane["pr"] = json!({ "changeId": "X1", "repo": "acme/storefront-api", "number": n, "url": format!("https://github.com/acme/storefront-api/pull/{n}"),
                         "state": "merged", "reviewsDone": 1, "reviewsNeeded": 1 });
                 }
                 serde_json::from_value(lane).unwrap()

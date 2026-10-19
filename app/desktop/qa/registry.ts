@@ -6,6 +6,8 @@
 //      harness waits for either.
 //   2. Add an entry below: the id, the hash route that shows it, and the fixtures it must survive: the stress
 //      fixtures that touch its data (long-text, many-*), plus empty and the error states it renders.
+//      A screen whose route ends on an error or not-found state ("<id>.error", "<id>.not-found") fails, unless
+//      the entry says `expect: "error"`; register error fixtures as a separate entry with that field.
 //   3. A screen with no route of its own gets `open`, using keys, roles and labels rather than CSS classes:
 //        { id: "palette", route: "#/", fixtures: ["typical"], open: (page) => page.keyboard.press("ControlOrMeta+K") }
 //        { id: "inbox", route: "#/board?inbox", fixtures: ["needs-you", "long-text", "empty"] }
@@ -50,6 +52,9 @@ export interface Screen {
   open?: (page: Page) => Promise<void>;
   // Registered ahead of its PR: skipped, with this reason, until the owner deletes the field.
   pending?: string;
+  // The route is meant to land on an error or not-found state ("<id>.error"). Without this, such a state fails the
+  // test: a route to a missing entity would otherwise check an empty error page and pass.
+  expect?: "error";
 }
 
 const gallerySections = [
