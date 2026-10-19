@@ -1,6 +1,7 @@
 // The screen host: which component each route shows. Each screen writer swaps their placeholder for their
 // component here (one import, one line), so the router stays the one place routes meet screens.
-import { EmptyState } from "../../ui";
+import { Suspense } from "react";
+import { EmptyState, GalleryScreen } from "../../ui";
 import type { Screen } from "./routes";
 
 /** A screen that hasn't landed yet. It carries the screen's id, so the route table is testable end to end now. */
@@ -31,7 +32,14 @@ export function ScreenHost({ screen }: { screen: Screen }) {
     case "onboarding":
       return <Pending id="onboarding" title="Connect to your hub" />;
     case "gallery":
-      return <Pending id="gallery" title="Gallery" />;
+      // Only dev builds and the screenshot suite's build carry the gallery.
+      return GalleryScreen === null ? (
+        <Pending id="gallery" title="Gallery" />
+      ) : (
+        <Suspense>
+          <GalleryScreen />
+        </Suspense>
+      );
   }
 }
 

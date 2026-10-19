@@ -76,11 +76,12 @@
   align-items: center;
   gap: var(--space-1);
   min-width: 0;
-  /* Earlier crumbs give way first; the current one keeps its room longest. */
   flex: 0 1 auto;
 }
+/* Earlier crumbs keep their width up to a cap and truncate past it; the current one takes what is left. */
 .crumb:not(:last-child) {
-  flex-shrink: 4;
+  flex-shrink: 0;
+  max-width: 30%;
   color: var(--quiet);
 }
 .crumb:last-child {
