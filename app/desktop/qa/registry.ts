@@ -46,6 +46,8 @@ export interface Screen {
   sizes?: readonly SizeName[];
   // Brings up a screen that has no route of its own; runs after the route has loaded.
   open?: (page: Page) => Promise<void>;
+  // Registered ahead of its PR: skipped, with this reason, until the owner deletes the field.
+  pending?: string;
 }
 
 export const screens: readonly Screen[] = [
@@ -56,5 +58,11 @@ export const screens: readonly Screen[] = [
     fixtures: ["empty", "typical", "hub-unreachable", "pairing-failed", "node-too-old"],
   },
   // E2: every design-system primitive with stress content, so the primitives pass before any screen uses them.
-  { id: "gallery", route: "#/gallery", fixtures: ["typical"] },
+  { id: "gallery", route: "#/gallery", fixtures: ["typical"], pending: "E2's gallery (feat/desktop-ui) has not landed" },
 ];
+
+// Platform checks that need a screen writer's work before they can pass; the owner turns theirs on when it lands.
+export const platformChecks: Record<"appMenu", boolean> = {
+  // F1: the macOS app menu, with an Edit menu wired to the text actions.
+  appMenu: false,
+};

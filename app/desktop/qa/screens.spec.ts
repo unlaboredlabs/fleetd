@@ -12,6 +12,7 @@ for (const screen of screens) {
   if (only && !only.includes(screen.id)) continue;
   for (const fixture of screen.fixtures) {
     test(`${screen.id} · ${fixture}`, async () => {
+      test.fixme(screen.pending !== undefined, screen.pending);
       const { app, page, close } = await launch(fixture);
       try {
         const reserved = await reservedRegions(app);

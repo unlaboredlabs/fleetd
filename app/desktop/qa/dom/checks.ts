@@ -201,7 +201,7 @@ export function runChecks(opts: CheckOptions): Finding[] {
           findings.push({
             check: "overflow",
             message: problem,
-            text: snippet(e.textContent ?? ""),
+            text: snippet(e.textContent),
             where: describe(e),
             box: toBox(intersect(rectOf(r), viewport)),
           });

@@ -11,7 +11,7 @@ import { type FixtureName, type SizeName, sizes, type Theme } from "./registry.t
 
 const qaDir = import.meta.dirname;
 export const desktopDir = path.resolve(qaDir, "..");
-export const fixturesDir = path.join(desktopDir, "fixtures");
+export const fixturesDir = process.env.QA_FIXTURE_DIR ?? path.join(desktopDir, "fixtures");
 export const resultsDir = process.env.QA_RESULTS ?? path.join(desktopDir, "qa-results");
 export const appMain = process.env.QA_APP_MAIN ?? path.join(desktopDir, "out", "main", "index.js");
 export const scale = Number(process.env.QA_SCALE ?? "1");
@@ -38,21 +38,21 @@ export interface Launched {
   close: () => Promise<void>;
 }
 
-// The fixture's "now", if it has one, so relative times ("3 min ago") read the same on every run.
+// The fixture's "now", so relative times ("3 min ago") read the same on every run.
 function fixtureNow(file: string) {
-  if (!existsSync(file)) return undefined;
+  if (!existsSync(file)) throw new Error(`Fixture ${file} not found: run \`pnpm fixtures\` in app/desktop first.`);
   const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
   if (typeof parsed === "object" && parsed !== null && "now" in parsed && typeof parsed.now === "string") return parsed.now;
   return undefined;
 }
 
-export async function launch(fixture: FixtureName, main = appMain): Promise<Launched> {
+// `fixture` is required for the app; only the self-test's stand-in window runs without one.
+export async function launch(fixture: FixtureName | undefined, main = appMain): Promise<Launched> {
+  const now = fixture === undefined ? undefined : fixtureNow(path.join(fixturesDir, `${fixture}.json`));
   const userData = mkdtempSync(path.join(tmpdir(), "fleetd-qa-"));
-  const fixtureFile = path.join(fixturesDir, `${fixture}.json`);
   // Only what Electron needs: never the user's fleetd home, credentials or the agent's own session variables.
   const env: Record<string, string> = {
-    FLEETD_FIXTURE: fixture,
-    FLEETD_FIXTURE_DIR: fixturesDir,
+    ...(fixture === undefined ? {} : { FLEETD_FIXTURE: fixture, FLEETD_FIXTURE_DIR: fixturesDir }),
     FLEETD_HOME: path.join(userData, "fleetd"),
     HOME: process.env.HOME ?? userData,
     PATH: process.env.PATH ?? "",
@@ -74,7 +74,6 @@ export async function launch(fixture: FixtureName, main = appMain): Promise<Laun
   }
   const app = await electron.launch({ args, env, cwd: desktopDir, timeout: 30_000 });
   const page = await app.firstWindow();
-  const now = fixtureNow(fixtureFile);
   if (now) {
     await page.clock.setFixedTime(new Date(now));
     await page.reload();

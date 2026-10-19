@@ -15,7 +15,7 @@ test.describe.configure({ mode: "serial" });
 
 let launched: Launched;
 test.beforeAll(async () => {
-  launched = await launch("empty", standIn);
+  launched = await launch(undefined, standIn);
 });
 test.afterAll(async () => {
   await launched.close();
