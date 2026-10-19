@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { _electron as electron, type ElectronApplication, type Page } from "@playwright/test";
 import { buildSync } from "esbuild";
-import type { Box, CheckOptions, Finding } from "./dom/checks.ts";
+import type { Box, CheckOptions, Finding, ScrollStep } from "./dom/checks.ts";
 import { type FixtureName, type SizeName, sizes, type Theme } from "./registry.ts";
 
 const qaDir = import.meta.dirname;
@@ -142,9 +142,12 @@ export async function reservedRegions(app: ElectronApplication): Promise<Box[]> 
   return [{ x: x - 4, y: y - 4, width: 62, height: 22 }];
 }
 
+// Calls one export of the checks bundle in the page.
+const run = <T>(page: Page, call: string) => page.evaluate<T>(`${checksScript()}\n;__fleetdQa.${call}`);
+
 export async function check(page: Page, reserved: Box[]): Promise<Finding[]> {
   const opts: CheckOptions = { edgeInset: EDGE_INSET, reserved };
-  return page.evaluate(`${checksScript()}\n;__fleetdQa.runChecks(${JSON.stringify(opts)})`);
+  return run<Finding[]>(page, `runChecks(${JSON.stringify(opts)})`);
 }
 
 export interface Shot {
@@ -156,28 +159,62 @@ export interface Shot {
   platform: NodeJS.Platform;
   png: string;
   overlay?: string;
+  // Screenshots taken while stepping through scroll containers: each container's last step, and any step with
+  // findings (annotated).
+  scrolled: { png: string; label: string }[];
   findings: Finding[];
 }
 
-// Screenshot, run the checks, and when they find anything, a second screenshot with the findings drawn on it.
+async function capture(page: Page, file: string, findings: Finding[]) {
+  if (findings.length > 0) await run(page, `annotate(${JSON.stringify(findings)})`);
+  await page.screenshot({ path: path.join(resultsDir, file), animations: "disabled", caret: "hide" });
+  if (findings.length > 0) await run(page, "clearAnnotations()");
+}
+
+// Screenshot and check the view; with `scroll`, also step every scroll container through its range and check at
+// each step. Any findings get an annotated screenshot.
 export async function shoot(
   page: Page,
   reserved: Box[],
   meta: Pick<Shot, "screen" | "fixture" | "size" | "theme">,
+  { scroll = true } = {},
 ): Promise<Shot> {
   const name = `${meta.screen}--${meta.fixture}--${meta.size}--${meta.theme}--${process.platform}@${scale}x`;
-  const pngDir = path.join(resultsDir, "png");
-  mkdirSync(pngDir, { recursive: true });
+  mkdirSync(path.join(resultsDir, "png"), { recursive: true });
   mkdirSync(path.join(resultsDir, "shots"), { recursive: true });
   const findings = await check(page, reserved);
   const png = path.join("png", `${name}.png`);
-  await page.screenshot({ path: path.join(resultsDir, png), animations: "disabled", caret: "hide" });
-  const shot: Shot = { ...meta, scale, platform: process.platform, png, findings };
+  await capture(page, png, []);
+  const shot: Shot = { ...meta, scale, platform: process.platform, png, scrolled: [], findings };
   if (findings.length > 0) {
     shot.overlay = path.join("png", `${name}.findings.png`);
-    await page.evaluate(`${checksScript()}\n;__fleetdQa.annotate(${JSON.stringify(findings)})`);
-    await page.screenshot({ path: path.join(resultsDir, shot.overlay), animations: "disabled", caret: "hide" });
-    await page.evaluate(`${checksScript()}\n;__fleetdQa.clearAnnotations()`);
+    await capture(page, shot.overlay, findings);
+  }
+
+  if (scroll) {
+    // The same problem on every row of a list is one finding.
+    const key = (f: Finding) => `${f.check}|${f.where}|${f.message}`;
+    const seen = new Set(findings.map(key));
+    const steps = await run<ScrollStep[]>(page, "scrollSteps()");
+    for (const [i, step] of steps.entries()) {
+      await run(page, `scrollToStep(${JSON.stringify(step)})`);
+      await settle(page);
+      const fresh = (await check(page, reserved)).filter((f) => !seen.has(key(f)));
+      const at = step.top > 0 ? `${step.top}px down` : `${step.left}px across`;
+      for (const f of fresh) {
+        seen.add(key(f));
+        findings.push({ ...f, where: `${f.where} (with ${step.where} scrolled ${at})` });
+      }
+      if (fresh.length > 0 || step.last) {
+        const file = path.join("png", `${name}.scroll-${i}${fresh.length > 0 ? ".findings" : ""}.png`);
+        await capture(page, file, fresh);
+        shot.scrolled.push({ png: file, label: `${step.where} scrolled ${at}` });
+      }
+    }
+    if (steps.length > 0) {
+      await run(page, "restoreScroll()");
+      await settle(page);
+    }
   }
   writeFileSync(path.join(resultsDir, "shots", `${name}.json`), JSON.stringify(shot, null, 2));
   return shot;

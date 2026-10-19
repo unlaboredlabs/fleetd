@@ -84,6 +84,19 @@ function hidden(el: Element) {
   return !el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true });
 }
 
+// Whether a background hides what is under it: a colour at least 90% opaque, or a backdrop blur.
+function opaque(s: CSSStyleDeclaration) {
+  if (s.backdropFilter !== "none" && s.backdropFilter !== "") return true;
+  const bg = s.backgroundColor;
+  if (bg === "transparent" || bg === "") return false;
+  const slash = /\/\s*([\d.]+)(%?)\s*\)$/.exec(bg);
+  const legacy = /^rgba\([^,]+,[^,]+,[^,]+,\s*([\d.]+)\s*\)$/.exec(bg);
+  const raw = slash ?? legacy;
+  if (!raw) return true;
+  const alpha = Number(raw[1]) / (raw[2] === "%" ? 100 : 1);
+  return alpha >= 0.9;
+}
+
 const scrolls = (v: string) => v === "auto" || v === "scroll";
 const clips = (v: string) => v !== "visible";
 
@@ -103,6 +116,24 @@ export function runChecks(opts: CheckOptions): Finding[] {
       styles.set(el, s);
     }
     return s;
+  };
+
+  // Screen-reader-only text (Radix VisuallyHidden, .sr-only: an absolutely positioned box clipped to nothing) is
+  // meant to be invisible, so it is exempt from the layout checks; its words still meet the raw-text rule.
+  const srMemo = new Map<Element, boolean>();
+  const screenReaderOnly = (el: Element): boolean => {
+    const known = srMemo.get(el);
+    if (known !== undefined) return known;
+    const s = style(el);
+    const clipped =
+      s.position === "absolute" &&
+      // `clip` is deprecated but is what Radix VisuallyHidden and most .sr-only rules still set.
+      (!["auto", ""].includes(s.getPropertyValue("clip")) ||
+        s.clipPath.startsWith("inset(50%") ||
+        (el.clientWidth <= 1 && el.clientHeight <= 1 && clips(s.overflowX)));
+    const result = clipped || (el.parentElement !== null && screenReaderOnly(el.parentElement));
+    srMemo.set(el, result);
+    return result;
   };
 
   // The region where an element's content can be seen: the viewport cut by every clipping ancestor.
@@ -156,8 +187,40 @@ export function runChecks(opts: CheckOptions): Finding[] {
       const rect = rectOf(r);
       if (empty(rect)) continue;
       const visible = intersect(rect, clipOf(el));
+      if (screenReaderOnly(el)) continue;
       allRuns.push({ node, el, rect, visible });
       if (!empty(visible)) runs.push({ node, el, rect, visible });
+    }
+  }
+
+  // Content scrolls under an opaque sticky or fixed bar (a list's header, the top bar) by design. Where such a bar is
+  // the topmost thing over a run, that part of the run is hidden, not overlapping, and is cut from its visible rect.
+  const occluders = [...document.body.querySelectorAll("*")].filter((el) => {
+    const s = style(el);
+    return (s.position === "sticky" || s.position === "fixed") && opaque(s) && !hidden(el);
+  });
+  if (occluders.length > 0) {
+    for (const run of runs) {
+      for (const occ of occluders) {
+        if (occ.contains(run.el)) continue;
+        const o = rectOf(occ.getBoundingClientRect());
+        const hit = intersect(run.visible, o);
+        if (empty(hit)) continue;
+        const top = document.elementFromPoint((hit.left + hit.right) / 2, (hit.top + hit.bottom) / 2);
+        if (!top || !occ.contains(top)) continue;
+        const v = run.visible;
+        if (o.left <= v.left + SLOP && o.right >= v.right - SLOP) {
+          // A full-width bar covers the run's top or bottom part.
+          if (o.top <= v.top) v.top = Math.min(v.bottom, o.bottom);
+          else v.bottom = Math.max(v.top, o.top);
+        } else {
+          v.right = v.left;
+        }
+      }
+    }
+    for (let i = runs.length - 1; i >= 0; i--) {
+      const run = runs[i];
+      if (run && empty(run.visible)) runs.splice(i, 1);
     }
   }
 
@@ -267,9 +330,10 @@ export function runChecks(opts: CheckOptions): Finding[] {
     if (parent.childElementCount < 2 || hidden(parent)) continue;
     const groups = new Map<string, { el: Element; rect: Rect }[]>();
     for (const child of parent.children) {
-      if (!(child instanceof HTMLElement) || hidden(child) || !child.textContent.trim()) continue;
+      if (!(child instanceof HTMLElement) || hidden(child) || !child.textContent.trim() || screenReaderOnly(child)) continue;
       const s = style(child);
-      if (s.display === "inline" || s.display === "contents" || s.position === "fixed") continue;
+      // Sticky and fixed boxes overlap the content scrolling under them by design (see occluders above).
+      if (s.display === "inline" || s.display === "contents" || s.position === "fixed" || s.position === "sticky") continue;
       if (exempt(child, "overlap")) continue;
       const rect = intersect(rectOf(child.getBoundingClientRect()), clipOf(parent));
       if (empty(rect)) continue;
@@ -316,7 +380,7 @@ export function runChecks(opts: CheckOptions): Finding[] {
     "button, a[href], input, textarea, select, [role='button'], [role='tab'], [role='menuitem'], [role='checkbox'], [role='switch'], [role='combobox']",
   );
   for (const el of controls) {
-    if (hidden(el)) continue;
+    if (hidden(el) || screenReaderOnly(el)) continue;
     const rect = rectOf(el.getBoundingClientRect());
     const visible = intersect(rect, clipOf(el.parentElement ?? el));
     if (!empty(visible)) edgeTargets.push({ el, rect, visible, text: el.textContent || el.getAttribute("aria-label") || "" });
@@ -376,6 +440,64 @@ export function runChecks(opts: CheckOptions): Finding[] {
   }
 
   return findings;
+}
+
+// Scrolling: the checks see only what is rendered and in view, so the harness steps every scroll container through
+// its range, a container-height at a time, and checks again at each step. A virtualized list is then checked on the
+// rows it renders at each step.
+
+export interface ScrollStep {
+  scroller: number;
+  top: number;
+  left: number;
+  where: string;
+  // The container's last step: the harness keeps a screenshot of it.
+  last: boolean;
+}
+
+// A 20k-line log is sampled, not walked: this many evenly spaced stops per axis at most.
+const MAX_STEPS = 40;
+
+interface QaWindow {
+  __fleetdQaScrollers?: { el: Element; top: number; left: number }[];
+}
+
+export function scrollSteps(): ScrollStep[] {
+  const scrollers: Element[] = [];
+  for (const el of document.querySelectorAll("*")) {
+    if (hidden(el) || el.closest("[data-text='code'], #fleetd-qa-overlay")) continue;
+    const s = getComputedStyle(el);
+    const y = scrolls(s.overflowY) && el.scrollHeight > el.clientHeight + SLOP;
+    const x = scrolls(s.overflowX) && el.scrollWidth > el.clientWidth + SLOP;
+    if (x || y) scrollers.push(el);
+  }
+  const root = document.scrollingElement;
+  if (root && root.scrollHeight > root.clientHeight + SLOP && !scrollers.includes(root)) scrollers.push(root);
+  // Lists that start at the end (a conversation) are restored to where they were.
+  (window as QaWindow).__fleetdQaScrollers = scrollers.map((el) => ({ el, top: el.scrollTop, left: el.scrollLeft }));
+
+  const stops = (max: number, page: number, start: number) => {
+    if (max <= SLOP) return [];
+    const count = Math.min(Math.ceil(max / Math.max(page, 1)), MAX_STEPS);
+    return Array.from({ length: count + 1 }, (_, k) => Math.round((max * k) / count)).filter((p) => Math.abs(p - start) > SLOP);
+  };
+  return scrollers.flatMap((el, scroller) => {
+    const where = describe(el);
+    const steps = [
+      ...stops(el.scrollHeight - el.clientHeight, el.clientHeight, el.scrollTop).map((top) => ({ top, left: 0 })),
+      ...stops(el.scrollWidth - el.clientWidth, el.clientWidth, el.scrollLeft).map((left) => ({ top: 0, left })),
+    ];
+    return steps.map((p, k) => ({ scroller, ...p, where, last: k === steps.length - 1 }));
+  });
+}
+
+export function scrollToStep(step: ScrollStep) {
+  const entry = (window as QaWindow).__fleetdQaScrollers?.[step.scroller];
+  entry?.el.scrollTo({ top: step.top, left: step.left, behavior: "instant" });
+}
+
+export function restoreScroll() {
+  for (const { el, top, left } of (window as QaWindow).__fleetdQaScrollers ?? []) el.scrollTo({ top, left, behavior: "instant" });
 }
 
 const COLORS: Record<CheckId, string> = {
