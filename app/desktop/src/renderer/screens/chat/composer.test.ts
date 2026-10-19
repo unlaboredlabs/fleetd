@@ -96,6 +96,16 @@ describe("a project's draft", () => {
     expect(draft?.attached.map((a) => [a.name, a.bytes, a.upload])).toEqual([["shot.png", 68, { ok: true, ref }]]);
   });
 
+  it("keeps a restored message's files within the per-message limit, and says how many didn't fit", () => {
+    const d = createDrafts(layer(() => Promise.resolve({ ok: true, output: {} })));
+    const ref = (n: number) => ({ attachmentId: `F${n}`, name: `f${n}.png`, mime: "image/png", bytes: 1 }) as const;
+    d.restore("devbox/api", "one", [1, 2, 3, 4, 5].map(ref));
+    d.restore("devbox/api", "two", [6, 7, 8, 9, 10].map(ref));
+    const draft = d.store.getState()["devbox/api"];
+    expect(draft?.attached).toHaveLength(8);
+    expect(draft?.error).toMatch(/2 of its files didn’t fit/);
+  });
+
   it("counts a file the hub refused as not uploaded", async () => {
     const d = createDrafts(layer(() => Promise.resolve({ ok: false, error: { code: "invalid", message: "too large" } })));
     d.attach("devbox/api", [new File(["hi"], "notes.txt", { type: "text/plain" })]);

@@ -62,11 +62,16 @@ export function createDrafts(layer: Pick<DataLayer, "call">): Drafts {
     store,
     set,
     restore: (key, text, files) =>
-      set(key, (d) => ({
-        ...d,
-        text: d.text.trim() === "" ? text : `${d.text}\n\n${text}`,
-        attached: [...d.attached, ...files.map((ref): Attached => ({ local: nextLocal++, name: ref.name, bytes: ref.bytes, upload: { ok: true, ref } }))],
-      })),
+      set(key, (d) => {
+        const room = Math.max(0, MAX_ATTACHMENTS - d.attached.length);
+        const left = files.length - room;
+        return {
+          ...d,
+          text: d.text.trim() === "" ? text : `${d.text}\n\n${text}`,
+          attached: [...d.attached, ...files.slice(0, room).map((ref): Attached => ({ local: nextLocal++, name: ref.name, bytes: ref.bytes, upload: { ok: true, ref } }))],
+          ...(left > 0 ? { error: `A message carries at most ${MAX_ATTACHMENTS} files; ${left} of its files didn’t fit.` } : {}),
+        };
+      }),
     attach: (key, files) => {
       let count = (store.getState()[key] ?? emptyDraft).attached.length;
       for (const file of files) {
