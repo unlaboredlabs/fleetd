@@ -234,7 +234,7 @@ impl Judges {
             Ok(v) = verdict => verdict_outcome(&task.task_id, &v),
             state = self.ended(cursor, &task.task_id) => JudgeOutcome {
                 result: CheckOutcome::Error,
-                evidence: format!("the judge task {} ended ({state}) without `fleetd review verdict`", task.task_id),
+                evidence: format!("the judge task {} ended ({state}) without a review verdict (`report`)", task.task_id),
             },
         };
         self.verdicts.forget(&task.task_id).await;

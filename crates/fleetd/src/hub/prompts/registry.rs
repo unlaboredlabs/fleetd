@@ -104,15 +104,16 @@ macro_rules! entry {
 
 const VERDICT: (&str, &str, &str, Enforcement) = (
     "one-verdict",
-    "ends with one `fleetd review verdict`",
-    r"review verdict",
+    "ends with one review verdict (the `report` tool)",
+    r"`report` tool",
     Code,
 );
 const NO_SUBAGENTS: (&str, &str, &str, Enforcement) = (
     "no-subagents",
     "does the task itself, no subagents",
     r"subagents",
-    // Every session's claude runs with the subagent tools (Task, Workflow) disallowed: see ALWAYS_DISALLOWED.
+    // Every session's claude runs with Claude Code's own subagent tools denied and its built-in agents off: see
+    // ALWAYS_DISALLOWED and SUBAGENTS_OFF_ENV. A task's agent can't start fleetd agents either (hub/tasks/policy.rs).
     Code,
 );
 const READ_ONLY: (&str, &str, &str, Enforcement) = (
@@ -140,9 +141,9 @@ pub const ENTRIES: &[Entry] = &[
             ),
             (
                 "tasks-only",
-                "delegates only with `fleetd task spawn`, no other agents",
-                r"fleetd task spawn",
-                Prompt
+                "delegates only with `spawn_agent`, no other agents",
+                r"spawn_agent",
+                Code
             ),
             (
                 "ask-four-classes",
@@ -152,32 +153,32 @@ pub const ENTRIES: &[Entry] = &[
             ),
             (
                 "secrets-via-ask",
-                "secrets only through `fleetd ask --kind secret`",
-                r"ask --kind secret",
+                "secrets only through `ask` with kind secret",
+                r"kind secret",
                 Code
             ),
             (
                 "gated-run",
-                "prod writes, spends and deletes only through `fleetd gated run`",
-                r"gated run",
+                "prod writes, spends and deletes only through `gated_run`",
+                r"gated_run",
                 Code
             ),
             (
                 "never-block",
-                "never blocks on a question (`--proceeded`)",
-                r"--proceeded",
+                "never blocks on a question (`proceededOnRec`)",
+                r"proceededOnRec",
                 Prompt
             ),
             (
                 "claim-done",
-                "done only through `fleetd claim done`",
-                r"claim done",
+                "done only through `claim_done`",
+                r"claim_done",
                 Code
             ),
             (
                 "serves",
                 "every write says what it serves",
-                r"--serves",
+                r"`serves`",
                 Code
             ),
             (
@@ -194,8 +195,8 @@ pub const ENTRIES: &[Entry] = &[
             ),
             (
                 "amend",
-                "a frozen brief changes only with `--amend`",
-                r"--amend",
+                "a frozen brief changes only with `amend`",
+                r"`amend`",
                 Code
             ),
         ]
@@ -796,7 +797,7 @@ pub const ENTRIES: &[Entry] = &[
         Lead,
         Lead,
         "Plan item too big or unsized",
-        "when `fleetd plan add` (or `plan edit --size`) gets an item with no size or one bigger than m",
+        "when `plan_add` (or `plan_edit` with a size) gets an item with no size or one bigger than m",
         "item!=P<n>; reason!=why, \"has no size (counted as m)\" or \"is size l\"",
         &[]
     ),

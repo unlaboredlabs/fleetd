@@ -486,14 +486,38 @@ fn a_lead_decide_ask_without_labels_is_refused_with_the_command_to_send() {
         "{}",
         refused.message
     );
-    assert!(refused.message.contains("no --why"), "{}", refused.message);
-    let fix = refused.fix.unwrap();
-    assert!(fix.starts_with("Send it again as: fleetd ask --key share.link --class product --text 'What about share.link?'"), "{fix}");
     assert!(
-        fix.contains("--option 'public-snapshot|<short label, e.g. Public snapshot>|<what happens if the human picks this>'"),
-        "{fix}"
+        refused.message.contains("no recommendationWhy"),
+        "{}",
+        refused.message
     );
-    assert!(fix.contains("--rec public-snapshot --why '<one line: why you recommend it>' --blocks 'Copy link button'"), "{fix}");
+    let fix = refused.fix.unwrap();
+    let args: serde_json::Value =
+        serde_json::from_str(fix.strip_prefix("Call `ask` again with: ").expect(&fix)).unwrap();
+    assert_eq!(
+        (&args["key"], &args["class"], &args["text"]),
+        (
+            &"share.link".into(),
+            &"product".into(),
+            &"What about share.link?".into()
+        )
+    );
+    assert_eq!(
+        args["options"][0],
+        serde_json::json!({ "key": "public-snapshot", "label": "<short label, e.g. Public snapshot>", "consequence": "<what happens if the human picks this>" })
+    );
+    assert_eq!(
+        (
+            &args["recommendation"],
+            &args["recommendationWhy"],
+            &args["blocks"]
+        ),
+        (
+            &"public-snapshot".into(),
+            &"<one line: why you recommend it>".into(),
+            &"Copy link button".into()
+        )
+    );
 
     // A recommendation that is not an option, a long question, a single option.
     let stray = AskInput {
@@ -511,12 +535,12 @@ fn a_lead_decide_ask_without_labels_is_refused_with_the_command_to_send() {
         ..labelled("share.link", &p1)
     };
     let refused = lead_decide_rule(&long).unwrap();
-    assert!(refused.message.contains("put the background in --context"));
+    assert!(refused.message.contains("put the background in context"));
     assert!(
         refused
             .fix
             .unwrap()
-            .contains("--text '<the question in one short line>'")
+            .contains(r#""text":"<the question in one short line>""#)
     );
     let none = AskInput {
         options: None,

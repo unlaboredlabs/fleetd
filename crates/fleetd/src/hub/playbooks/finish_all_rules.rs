@@ -38,7 +38,7 @@ pub fn spawn_refusal(
     {
         return Some(Refusal {
             message: format!("'{serves}' is not a value source a child can serve."),
-            fix: "Pass --serves issue:<#n|url> (an open issue), defect:<one line> (a failing check or error you saw) or done:<n> (a done-when check of the finish-all workstream). Never invent work.".into(),
+            fix: "Pass serves issue:<#n|url> (an open issue), defect:<one line> (a failing check or error you saw) or done:<n> (a done-when check of the finish-all workstream). Never invent work.".into(),
         });
     }
     let checks = parent.brief.as_ref().map_or(0, |b| b.done_when.len());

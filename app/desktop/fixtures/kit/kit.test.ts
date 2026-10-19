@@ -89,6 +89,28 @@ describe("sanitize", () => {
     expect(findLeaks(JSON.stringify(s.value({ text: sample })))).toEqual([]);
   });
 
+  it("rewrites the one lab repo, its clone, its title and the slots' branch namespaces", () => {
+    const out = s.value({
+      repo: "unlaboredlabs/fleetd-lab",
+      url: "https://github.com/unlaboredlabs/fleetd-lab/pull/12",
+      path: `${lab}/lab-repo/site/pricing.md`,
+      title: "fleetd-lab",
+      branch: "slot/4/fleetd/T3-write-alpha-md",
+      noci: "noci/4/fleetd/T5-review",
+      summary: "pushed slot/4/fleetd/T3-write-alpha-md to unlaboredlabs/fleetd-lab",
+    });
+    expect(out).toEqual({
+      repo: "acme/storefront",
+      url: "https://github.com/acme/storefront/pull/12",
+      path: "/home/dev/src/storefront/site/pricing.md",
+      title: "storefront",
+      branch: "fleetd/T3-write-alpha-md",
+      noci: "fleetd/T5-review",
+      summary: "pushed fleetd/T3-write-alpha-md to acme/storefront",
+    });
+    expect(findLeaks(JSON.stringify(out))).toEqual([]);
+  });
+
   it("maps every repo outside acme onto an acme stand-in, in repo fields and in object keys", () => {
     const out = s.value({ repo: "someone/private-thing", repos: ["someorg/secret-app"], byRepo: { "someone/private-thing": 1, [`${lab}/repo-a`]: 2 } });
     const json = JSON.stringify(out);

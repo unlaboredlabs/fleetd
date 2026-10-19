@@ -5,6 +5,7 @@
 pub mod branch_diff;
 pub mod glob;
 pub mod hooks;
+pub mod policy;
 pub mod ports;
 pub mod records;
 pub mod render;
@@ -1001,7 +1002,7 @@ impl Tasks {
             _ => Err(lead_error(
                 ErrorCode::NotFound,
                 format!("No task {} in this project.", task_id.as_str()),
-                Some("Run `fleetd task list`."),
+                Some("Call `list_agents`."),
             )),
         }
     }
@@ -1048,6 +1049,12 @@ impl Tasks {
             ));
         }
         self.budget_check(&ws)?;
+        let counts = self
+            .db(|c| TaskRecords::counts(c, r))
+            .map_err(store_error)?;
+        policy::check_fan_out(
+            (counts.queued.get() + counts.running.get() + counts.idle.get()) as usize,
+        )?;
         if let Some(item) = &input.item {
             let mut refused = None;
             self.d
@@ -1176,9 +1183,9 @@ impl Tasks {
                             "{id} has not started yet ({}).",
                             task.queued_reason.as_ref().map_or("queued", |r| r.as_str())
                         ),
-                        Some(&format!(
-                            "Wait for it to start, or `fleetd task cancel {id}` and spawn it again with the new prompt."
-                        )),
+                        Some(
+                            "Wait for it to start, or stop it with `stop_agent` and spawn it again with the new prompt.",
+                        ),
                     ));
                 }
                 let pending = match &stored.pending_message {
@@ -1273,18 +1280,27 @@ impl Tasks {
             }
             _ => {}
         }
-        if task.state == TaskState::Running
+        // The slot and leases go only once the agent's claude has exited: a cancel the node could not carry out
+        // leaves the task as it was, still holding them, and says so. Under the lock, so the thread's own end
+        // (interrupted) finds the task cancelled rather than failing it.
+        if matches!(task.state, TaskState::Running | TaskState::Idle)
             && let Some(thread) = &task.thread_ref
-            && let Err(error) = self
-                .d
-                .ports
-                .interrupt(
-                    thread,
-                    &request_id(&task, &["cancel", &task.attempt.get().to_string()]),
-                )
-                .await
+            && let Err(error) = self.d.ports.stop(thread).await
         {
-            tracing::warn!(task_id = id, error = ?error, "task cancel: interrupt failed");
+            tracing::warn!(task_id = id, error = ?error, "task cancel: stop failed");
+            let why = match &error {
+                PortError::Offline => {
+                    format!("machine {} has no live node link", thread.machine_id)
+                }
+                PortError::Failed(message) => message.clone(),
+            };
+            return Err(lead_error(
+                ErrorCode::Failed,
+                format!(
+                    "{id} could not be stopped ({why}); it keeps running and keeps its slot and leases."
+                ),
+                Some("Call stop_agent again shortly."),
+            ));
         }
         let at = self.now_iso();
         let reason = reason.map_or_else(|| format!("Cancelled by {}.", caller.by), str::to_owned);
@@ -1322,6 +1338,32 @@ impl Tasks {
 
     pub fn get(&self, task_id: &TaskId) -> Result<Option<Task>, StoreError> {
         Ok(self.db(|c| TaskRecords::get(c, task_id))?.map(|s| s.task))
+    }
+
+    /// The task whose agent runs in `thread`, if one does.
+    pub fn task_of_thread(&self, thread: &ThreadRef) -> Result<Option<Task>, StoreError> {
+        Ok(self
+            .db(|c| TaskRecords::by_thread(c, thread))?
+            .map(|s| s.task))
+    }
+
+    /// A task's agent asks its lead (`ask_lead`): the lead is woken with the question, as with a task waiting for
+    /// input, and answers with `message_agent`, which reaches the task as a steer.
+    pub fn ask_lead(&self, task_id: &TaskId, question: &str) -> Result<Task, TaskError> {
+        let Some(task) = self.get(task_id).map_err(store_error)? else {
+            return Err(lead_error(
+                ErrorCode::NotFound,
+                format!("No task {}.", task_id.as_str()),
+                None,
+            ));
+        };
+        let set = self.d.db.prompts().for_lead(&task.project_ref);
+        let text =
+            render::task_waiting_lines(&set, task_id.as_str(), task.title.as_str(), question);
+        self.d
+            .ports
+            .wake(&task.project_ref, WakeKind::TaskWaiting, text);
+        Ok(task)
     }
 
     /// Newest first.

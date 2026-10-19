@@ -457,7 +457,7 @@ pub fn render_lead_digest(input: &DigestInput) -> String {
                 .map(|a| answer_line(input.prompts, a))
                 .collect(),
             20,
-            "see `fleetd decisions search`",
+            "see `decisions_search`",
             "\n",
         ),
         Section::new(
@@ -499,14 +499,14 @@ pub fn render_lead_digest(input: &DigestInput) -> String {
             "Tasks",
             input.tasks.clone().unwrap_or_default(),
             20,
-            "`fleetd task list`",
+            "`list_agents`",
             "\n",
         ),
         Section::new(
             "Merge train (only it merges)",
             input.train.clone().unwrap_or_default(),
             12,
-            "`fleetd change status X<n>`",
+            "`change_status`",
             "\n",
         ),
         Section::new(
@@ -520,14 +520,14 @@ pub fn render_lead_digest(input: &DigestInput) -> String {
             "Decisions (most relevant)",
             ranked.iter().map(|d| decision_line(d)).collect(),
             DIGEST_DECISIONS,
-            "`fleetd decisions search \"<q>\"`",
+            "`decisions_search`",
             "\n",
         ),
         Section::new(
             "Do not re-ask: keys already decided or asked",
             keys,
             200,
-            "check with `fleetd decisions search`",
+            "check with `decisions_search`",
             ", ",
         ),
     ];

@@ -325,7 +325,7 @@ impl Claims {
                     format!(
                         "{workstream_id} is idle: {FINISH_ALL_IDLE}. A finish-all run ends idle, not done."
                     ),
-                    Some("Nothing to claim. Run `fleetd inventory` again when new work comes in."),
+                    Some("Nothing to claim. Call `inventory` again when new work comes in."),
                 ));
             }
             WorkstreamState::Stopped | WorkstreamState::Failed => {
@@ -345,7 +345,7 @@ impl Claims {
                     "{workstream_id} has no frozen brief, so it has no done-when checks to run."
                 ),
                 Some(&format!(
-                    "Register its brief with `fleetd brief create --workstream {workstream_id} --json '<Brief>'` first."
+                    "Register its brief with `brief` for {workstream_id} first."
                 )),
             ));
         }

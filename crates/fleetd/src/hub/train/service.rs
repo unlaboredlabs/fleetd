@@ -1673,7 +1673,7 @@ impl Train {
             return Err(TrainError::new(
                 "not_found",
                 format!("No task {task_id} in this project."),
-                Some("Run `fleetd task list`."),
+                Some("Call `list_agents`."),
             ));
         }
         if let Some(existing) = self.records.open_for(&repo, pr_number) {
@@ -1688,7 +1688,7 @@ impl Train {
         else {
             let refusal = Refusal::new(
                 "It names no workstream.",
-                "pass --task T<n> (the write task that opened it) or --workstream W<n>",
+                "pass taskId T<n> (the write task that opened it) or workstreamId W<n>",
             );
             return Err(self.refuse(project_ref, &pr_url, refusal, None).await);
         };
@@ -1706,9 +1706,7 @@ impl Train {
         let Some(brief) = workstream.brief.clone() else {
             let refusal = Refusal::new(
                 format!("{workstream_id} has no brief, so it has no tier or done-when."),
-                format!(
-                    "register its brief with `fleetd brief create --workstream {workstream_id}` first"
-                ),
+                format!("register its brief with `brief` for {workstream_id} first"),
             );
             return Err(self.refuse(project_ref, &pr_url, refusal, None).await);
         };
