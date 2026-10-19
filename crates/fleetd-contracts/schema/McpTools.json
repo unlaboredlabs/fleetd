@@ -4504,7 +4504,7 @@
         },
         {
           "const": "queue_wait",
-          "description": "Serial waits: work that waited while capacity existed. A task queued for a slot while the fleet had free\nones (a project share, the lead band), or a PR that waited out another PR's train cycle.",
+          "description": "Serial waits: work that waited while capacity existed. A task queued for a slot while the fleet had free\nones (a project's max agents, the lead band), or a PR that waited out another PR's train cycle.",
           "type": "string"
         },
         {
