@@ -1,7 +1,7 @@
 import type { LinkHandlerClaim, LinkHandlerStatus, NotifyRequest, OpenTarget } from "../shared/app";
 import type { MenuCommand } from "../shared/menu";
 import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, HubState, OpenOutcome, SecretOutcome } from "../shared/hub";
-import type { LiveScope, SecretRequest } from "../shared/ipc";
+import type { ChatScope, LiveScope, SecretRequest } from "../shared/ipc";
 import type { KeyStore, PairOutcome, PairRequest, PairStart, Probe } from "../shared/pairing";
 
 /** `window.fleetd`: everything the renderer can ask of main. There is no other bridge. */
@@ -31,6 +31,8 @@ export interface FleetdApi {
     call(tool: string, input: unknown, options?: { timeoutMs?: number }): Promise<CallOutcome>;
     /** The live subscription, or null to stop it. */
     live(scope: LiveScope | null): Promise<void>;
+    /** The chat whose streamed text arrives as `chat_delta` frames, or null to stop. Kept across reconnects. */
+    chat(project: ChatScope | null): Promise<void>;
     resync(): Promise<void>;
     connect(url: string, key: string): Promise<ConnectOutcome>;
     forget(): Promise<void>;

@@ -75,6 +75,13 @@ export const CallRequest = z.strictObject({
 });
 export type CallRequest = z.infer<typeof CallRequest>;
 
+/** The chat on screen, for its streamed text. */
+export const ChatScope = z.strictObject({
+  machineId: z.string().min(1).max(200),
+  projectId: z.string().min(1).max(200),
+});
+export type ChatScope = z.infer<typeof ChatScope>;
+
 export const LiveScope = z.strictObject({
   board: z.boolean(),
   focus: z.string().min(1).max(64).optional(),
@@ -118,6 +125,7 @@ export const REQUESTS = {
   [IPC.hubUnsubscribe]: none,
   [IPC.hubCall]: z.tuple([CallRequest]),
   [IPC.hubLive]: z.tuple([LiveScope.nullable()]),
+  [IPC.hubChat]: z.tuple([ChatScope.nullable()]),
   [IPC.hubResync]: none,
   [IPC.hubConnect]: z.tuple([ConnectRequest]),
   [IPC.hubForget]: none,
