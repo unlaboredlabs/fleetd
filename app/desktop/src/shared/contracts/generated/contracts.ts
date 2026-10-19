@@ -1034,9 +1034,9 @@ export type GithubWebhookSetOutput = {
 
 export type Headline = {
   at: Timestamp;
-  /** The prompt version that wrote a generated line, `status.headline@<sha10>`. */
+  /** The prompt version that wrote a generated line, from older hubs. */
   promptRef?: PromptRef;
-  /** Why the template shows: "facts changed, rewriting", "claude unavailable: …", "daily limit". */
+  /** Why the template shows, from older hubs that also generated lines. */
   reason?: string;
   source: HeadlineSource;
   /** Starts with "Not live: …" when a source the scope depends on is stale; the hub writes that clause. */
@@ -1406,11 +1406,12 @@ export type InsightRule = KnownInsightRule | (string & {});
 
 export type IntakeChannel = "app" | "mcp" | "lead";
 
-/** Where an intent went and why, whether the router, a prefix, `@<project>` or the caller decided it. */
+/** Where an intent went and why: the caller's project, `@<project>`, or the only project. */
 export type IntakeEcho = {
   projectRef: ProjectRef;
   reason: string;
-  template: PlaybookName;
+  /** The playbook the caller gave; absent means the project's lead decides how to run it. */
+  template?: PlaybookName;
 };
 
 export type IntakePreviewInput = {
@@ -1418,7 +1419,7 @@ export type IntakePreviewInput = {
 };
 
 export type IntakePreviewOutput = {
-  /** Absent: the router could not place it (intake_submit would ask the human). */
+  /** Absent: the text names no project and there is more than one (intake_submit would refuse it). */
   echo?: IntakeEcho;
   next?: string;
   truncated?: boolean;
@@ -2366,20 +2367,13 @@ export type PromptGetOutput = {
 };
 
 /** Where the app lists it. */
-export type PromptGroup =
-  | "lead"
-  | "tasks"
-  | "reviews_and_checks"
-  | "wakes_and_messages"
-  | "one_shots"
-  | "playbooks"
-  | "instructions";
+export type PromptGroup = "lead" | "tasks" | "reviews_and_checks" | "messages" | "one_shots" | "instructions";
 
 /** Prompt registry id, dotted lowercase words */
 export type PromptId = string;
 
 /** How the text reaches the model. */
-export type PromptKind = "start" | "wake" | "msg" | "oneshot" | "playbook" | "instructions";
+export type PromptKind = "start" | "msg" | "oneshot" | "instructions";
 
 /** A human's override: its text and the default it was edited from (absent for a hand-made file). */
 export type PromptOverride = {
@@ -2469,6 +2463,8 @@ export type PromptsListInput = {
 
 export type PromptsListOutput = {
   next?: string;
+  /** Your edits to prompts a release retired: hub-wide ones, and the asked project's. */
+  orphans: RetiredPromptOverride[];
   prompts: PromptSummary[];
   truncated?: boolean;
 };
@@ -2505,6 +2501,24 @@ export type ResearchVerdict = {
   outcome: ResearchOutcome;
   /** The brief's frozen rule. */
   rule: DecisionRule;
+};
+
+/**
+ * An override of a prompt a release retired (merged into another, or replaced by fixed text), kept so the human can
+ * carry what they wrote into a prompt that still exists. Its file stays until `prompt_reset` on its id.
+ */
+export type RetiredPromptOverride = {
+  /** The retired id. */
+  id: PromptId;
+  projectRef?: ProjectRef;
+  /** `global` or `project`. */
+  scope: PromptScope;
+  /** The prompt that now covers what this one said, when one does. fleetd never copies the text over itself. */
+  suggestedTarget?: PromptId;
+  text: string;
+  title: string;
+  /** What replaced it, in one line. */
+  why: string;
 };
 
 export type RetroMetric = {

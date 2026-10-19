@@ -350,7 +350,7 @@ describe("what an agent was told", () => {
       },
       [
         { id: "task.brief.write", title: "Writer's brief", kind: "start", group: "tasks", sentWhen: "", scope: "default", defaultRef: "task.brief.write@0123456789", stale: false },
-        { id: "steer.message", title: "A steer", kind: "msg", group: "wakes_and_messages", sentWhen: "", scope: "project", defaultRef: "steer.message@dddddddddd", stale: false },
+        { id: "steer.message", title: "A steer", kind: "msg", group: "messages", sentWhen: "", scope: "project", defaultRef: "steer.message@dddddddddd", stale: false },
       ],
       { project: "storefront", orderId: "W1", orderTitle: "Share card", role: "writer T1" },
     );
@@ -358,10 +358,10 @@ describe("what an agent was told", () => {
     expect(view.defaultCount).toBe(2);
     expect(view.defaults.map((g) => [g.label, g.rows.map((r) => r.title)])).toEqual([
       ["Tasks", ["Writer's brief"]],
-      ["Wakes and messages", ["Wake: task result"]],
+      ["Messages", ["Wake: task result"]],
     ]);
     expect(view.overrides.map((g) => [g.label, g.rows.map((r) => r.level)])).toEqual([
-      ["Wakes and messages", ["your edit for this project"]],
+      ["Messages", ["your edit for this project"]],
       ["Your instructions", ["your instructions for every project"]],
     ]);
     expect(view.tools.map((t) => [t.label, t.names])).toEqual([

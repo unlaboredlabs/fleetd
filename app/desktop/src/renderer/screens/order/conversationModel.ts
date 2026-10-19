@@ -119,7 +119,7 @@ function fromYourSide(line: string): string {
 
 /** One muted line for fleetd's text to the lead: why it was woken, that it started, or what fleetd said. */
 export function systemHeadline(text: string): string {
-  const why = /^##\s*Why you are woken\s*$/m.exec(text);
+  const why = /^##\s*(?:Why you are woken|Events)\s*$/m.exec(text);
   if (why) {
     const reasons = text
       .slice(why.index + why[0].length)
@@ -133,7 +133,7 @@ export function systemHeadline(text: string): string {
     return "Woken by fleetd";
   }
   if (/^\s*You are the lead of project\b/.test(text)) return "Started: fleetd's first message to the lead";
-  if (/^\s*#\s*fleetd digest\b/.test(text)) return "fleetd's digest of the project";
+  if (/^\s*#\s*(?:fleetd digest|project)\b/.test(text)) return "fleetd's digest of the project";
   const line = text.split("\n").map(plain).find((l) => l.length > 0) ?? "";
   return `From fleetd: ${line.length > 100 ? `${line.slice(0, 99)}…` : line}`;
 }
