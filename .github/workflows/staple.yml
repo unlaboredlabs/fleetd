@@ -1,7 +1,6 @@
-# Staples a published app (the GPUI app and the Electron app, when the release has it) once Apple accepts its
-# notarization, when the release job shipped it signed but unstapled because Apple's queue outlasted its wait. No
-# rebuild: see .github/release/macos-staple.sh. Every 30 minutes it checks the nightly; that's a no-op once the app
-# is stapled, while nothing accepted covers it yet, and on forks.
+# Staples a published app once Apple accepts its notarization, when the release job shipped it signed but unstapled
+# because Apple's queue outlasted its wait. No rebuild: see .github/release/macos-staple.sh. Every 30 minutes it
+# checks the nightly; that's a no-op once the app is stapled, while nothing accepted covers it yet, and on forks.
 name: Staple release
 
 on:
@@ -12,7 +11,7 @@ on:
         type: string
         default: nightly
       submission:
-        description: Notarization submission id (default the newest accepted one whose ticket matches each app)
+        description: Notarization submission id (default the newest accepted one whose ticket matches the app)
         type: string
         default: ""
   schedule:

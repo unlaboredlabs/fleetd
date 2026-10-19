@@ -19,10 +19,6 @@ on:
         description: build the app even when app/ is unchanged since the last nightly
         type: boolean
         default: false
-      desktop:
-        description: also build the Electron app (app/desktop) and its update feed; off until it replaces fleetd-app
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -58,13 +54,13 @@ jobs:
           has_cli=false
           if [ -f crates/fleetd/Cargo.toml ]; then has_cli=true; fi
           # Nightly rebuilds the app only when it changed since the build the nightly release carries. Comparing
-          # with that build, not the previous push, means a cancelled run never drops an app change. Cargo.lock is
-          # left out on purpose: it changes on most merges. Ship a dependency bump with force-app or a tag.
+          # with that build, not the previous push, means a cancelled run never drops an app change. app/ holds the
+          # app's lockfile and its generated contracts, so a dependency bump or a contract change counts.
           build_app=true
           if [ "$CHANNEL" = nightly ] && [ "$PUBLISH" = true ] && [ "$FORCE_APP" != true ]; then
             prev="$(curl -fsSL "https://github.com/$GITHUB_REPOSITORY/releases/download/nightly/release.json" 2>/dev/null | jq -r '.appCommit // empty' || true)"
             if [ -n "$prev" ] && git cat-file -e "$prev^{commit}" 2>/dev/null &&
-              git diff --quiet "$prev" HEAD -- app crates/fleetd-contracts; then
+              git diff --quiet "$prev" HEAD -- app; then
               build_app=false
             fi
             echo "app last built from: ${prev:-none}"
@@ -128,103 +124,11 @@ jobs:
           path: dist/
           if-no-files-found: error
 
-  app-macos:
-    needs: plan
-    # Builds that publish, and manual dispatches from a branch (dry runs that also prove signing, notarization and
-    # the key store on the signed app). Pull request dry runs skip it; PR CI already bundles the app on macOS.
-    if: needs.plan.outputs.build-app == 'true' && (inputs.publish || github.event_name == 'workflow_dispatch')
-    runs-on: macos-latest
-    timeout-minutes: 90
-    env:
-      FLEETD_VERSION: ${{ needs.plan.outputs.version }}
-      # Developer ID signing runs only when the certificate secrets exist, notarization only when the notary key
-      # does too; otherwise the app keeps the ad-hoc signature from macos-bundle.sh. See .github/release/macos-sign.sh.
-      MACOS_CERT_P12_BASE64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
-      MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
-      MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
-      NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
-      NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER }}
-      NOTARY_KEY_P8_BASE64: ${{ secrets.NOTARY_KEY_P8_BASE64 }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
-      - uses: Swatinem/rust-cache@v2
-        with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      # fleetd-app only: built together with fleetd, cargo would unify their features (serde_json preserve_order).
-      - name: Build arm64 and x86_64
-        run: cargo build --release --locked -p fleetd-app --target aarch64-apple-darwin --target x86_64-apple-darwin
-      - name: Bundle a universal fleetd.app
-        run: |
-          app="$(app/packaging/macos-bundle.sh target/aarch64-apple-darwin/release/fleetd-app target/x86_64-apple-darwin/release/fleetd-app)"
-          lipo -info "$app/Contents/MacOS/fleetd-app"
-          mkdir -p dist
-          mv "$app" dist/fleetd.app
-      - name: Signing secrets
-        id: secrets
-        run: |
-          echo "sign=$(.github/release/macos-sign.sh enabled)" >> "$GITHUB_OUTPUT"
-          notarize=false
-          if [ -n "$NOTARY_KEY_ID" ] && [ -n "$NOTARY_ISSUER" ] && [ -n "$NOTARY_KEY_P8_BASE64" ]; then notarize=true; fi
-          echo "notarize=$notarize" >> "$GITHUB_OUTPUT"
-      - name: Sign with the Developer ID
-        if: steps.secrets.outputs.sign == 'true'
-        run: |
-          .github/release/macos-sign.sh keychain
-          .github/release/macos-sign.sh sign dist/fleetd.app
-      - name: Notarize and staple
-        id: notarize
-        if: steps.secrets.outputs.sign == 'true' && steps.secrets.outputs.notarize == 'true'
-        run: |
-          ditto -c -k --keepParent dist/fleetd.app "$RUNNER_TEMP/fleetd-app-notarize.zip"
-          rc=0
-          .github/release/macos-sign.sh notarize "$RUNNER_TEMP/fleetd-app-notarize.zip" || rc=$?
-          if [ "$rc" = 3 ]; then exit 0; fi
-          [ "$rc" = 0 ] || exit "$rc"
-          xcrun stapler staple dist/fleetd.app
-          xcrun stapler validate dist/fleetd.app
-          echo "stapled=true" >> "$GITHUB_OUTPUT"
-      - name: Gatekeeper
-        if: steps.secrets.outputs.sign == 'true'
-        env:
-          NOTARIZED: ${{ steps.notarize.outputs.stapled }}
-        run: |
-          codesign --verify --deep --strict --verbose=2 dist/fleetd.app
-          out="$(spctl -a -vv -t exec dist/fleetd.app 2>&1 || true)"
-          echo "$out"
-          if [ "$NOTARIZED" = true ]; then
-            if ! echo "$out" | grep -q ': accepted' || ! echo "$out" | grep -q 'source=Notarized Developer ID'; then
-              echo "::error::Gatekeeper doesn't accept the notarized app"; exit 1
-            fi
-          else
-            echo "not notarized yet: Gatekeeper rejecting a downloaded copy is expected"
-          fi
-      - name: No keychain prompt on launch (signed app, dry runs)
-        # The signed app keeps its key in its own keychain item, trusted by Team ID, so it survives an update (the
-        # check re-signs a copy with a new cdhash). Dry runs only: it overwrites this runner's fleetd items.
-        if: steps.secrets.outputs.sign == 'true' && !inputs.publish
-        run: app/packaging/macos-key-store-check.sh dist/fleetd.app keychain
-      - name: Remove the signing keychain
-        if: always()
-        run: .github/release/macos-sign.sh cleanup
-      - name: Zip
-        run: |
-          ditto -c -k --keepParent dist/fleetd.app dist/fleetd-app-macos-universal.zip
-          rm -rf dist/fleetd.app
-          ls -l dist
-      - uses: actions/upload-artifact@v7
-        with:
-          name: app-macos
-          path: dist/
-          if-no-files-found: error
-
   cli-macos:
     # Signs and notarizes the darwin CLI binaries the Linux job cross-built. Without the secrets it does nothing
     # and the unsigned binaries ship as before. A bare binary can't be stapled; Gatekeeper finds its ticket online.
     needs: [plan, cli]
-    # Like app-macos: builds that publish and manual dispatches, not pull request dry runs.
+    # Like desktop-macos: builds that publish and manual dispatches, not pull request dry runs.
     if: inputs.publish || github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
     timeout-minutes: 60
@@ -279,44 +183,11 @@ jobs:
           if-no-files-found: error
           overwrite: true
 
-  app-linux:
-    needs: plan
-    if: needs.plan.outputs.build-app == 'true'
-    # 22.04, not 24.04: the binary needs the glibc it was linked against, and 22.04's 2.35 covers older distros.
-    runs-on: ubuntu-22.04
-    timeout-minutes: 60
-    env:
-      FLEETD_VERSION: ${{ needs.plan.outputs.version }}
-    steps:
-      - uses: actions/checkout@v7
-      - name: GPUI build deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libxkbcommon-dev libxkbcommon-x11-dev \
-            libxcb1-dev libx11-xcb-dev libfontconfig-dev libfreetype-dev libwayland-dev libvulkan-dev
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - name: Build
-        run: cargo build --release --locked -p fleetd-app
-      - name: Package
-        run: |
-          echo "needs glibc $(objdump -T target/release/fleetd-app | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -1)"
-          mkdir -p dist
-          app/packaging/linux-package.sh target/release/fleetd-app dist/fleetd-app-linux-x64.tar.gz
-          ls -l dist
-      - uses: actions/upload-artifact@v7
-        with:
-          name: app-linux
-          path: dist/
-          if-no-files-found: error
-
   desktop-macos:
     needs: plan
-    # The Electron app, behind the `desktop` input until it replaces fleetd-app. Same runs as app-macos: builds that
-    # publish and manual dispatches (a dispatch from a branch proves signing, notarization and the update feed).
-    if: inputs.desktop && needs.plan.outputs.build-app == 'true' && (inputs.publish || github.event_name == 'workflow_dispatch')
+    # The desktop app (app/desktop). Builds that publish, and manual dispatches from a branch (dry runs that also prove
+    # signing, notarization and the update feed). Pull request dry runs skip it and build only the Linux packages.
+    if: needs.plan.outputs.build-app == 'true' && (inputs.publish || github.event_name == 'workflow_dispatch')
     runs-on: macos-latest
     timeout-minutes: 90
     # The secrets go only to the steps that use them, never to the install, the build or the launched app.
@@ -447,7 +318,7 @@ jobs:
 
   desktop-linux:
     needs: plan
-    if: inputs.desktop && needs.plan.outputs.build-app == 'true'
+    if: needs.plan.outputs.build-app == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -497,7 +368,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: [plan, cli, cli-macos, app-macos, app-linux, desktop-macos, desktop-linux]
+    needs: [plan, cli, cli-macos, desktop-macos, desktop-linux]
     # Skipped builds (no CLI yet, app unchanged) must not skip publishing; failed or cancelled ones must.
     if: >-
       always() && inputs.publish && needs.plan.result == 'success' &&

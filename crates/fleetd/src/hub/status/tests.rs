@@ -599,11 +599,7 @@ async fn the_estimate_rises_with_observed_stages_and_falls_only_with_an_explaine
     );
     assert!(e0.pct.get() > 0, "planning counts: not 0%");
     assert_eq!(e0.verified_pct.get(), 0);
-    assert_eq!(
-        d.progress.pct.get(),
-        0,
-        "the old figure is unchanged for the GPUI app"
-    );
+    assert_eq!(d.progress.pct.get(), 0, "the size-only figure is unchanged");
 
     set_change(&hub, "reviewing", None);
     hub.db

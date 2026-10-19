@@ -1,1 +1,0 @@
-- New intent {{workstreamId}}: '{{text}}'. Register it with `fleetd brief create --workstream {{workstreamId}} --json '<Brief>'`.
