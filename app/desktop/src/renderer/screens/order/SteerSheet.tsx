@@ -10,7 +10,9 @@ import type { Platform } from "./composer";
 import type { AgentLane, Steer, SteerMode, SteerTarget, TailItem, ThreadRef } from "./contracts";
 import { ActivityText } from "./Fleet";
 import { clock } from "./format";
-import { receipt, waitingLine } from "./receipts";
+import { receipt, sendingReceipt, waitingLine } from "./receipts";
+import { taskOfTarget, type Sending } from "./sending";
+import type { SendOutcome } from "./data";
 import { roleWords } from "./told";
 import s from "./order.module.css";
 
@@ -97,7 +99,10 @@ export function SteerSheet(
     tailSource: TailSource;
     /** Open at this transcript item (a time inspector jump). */
     focusItem?: string;
-    onSteer: (target: SteerTarget, text: string, mode: SteerMode) => void;
+    onSteer: (target: SteerTarget, text: string, mode: SteerMode, requestId: string) => Promise<SendOutcome>;
+    /** Steers on their way to the hub, and refused ones. */
+    sending: readonly Sending[];
+    redirected: ReadonlySet<string>;
     onTold: (agent: SheetAgent) => void;
     onClose: () => void;
   } & ReceiptHandlers,
@@ -107,6 +112,7 @@ export function SteerSheet(
   const mine = agent
     ? props.steers.filter((st) => ("taskId" in agent.target ? "taskId" in st.target && st.target.taskId === agent.target.taskId : "workstreamId" in st.target))
     : [];
+  const pending = agent ? props.sending.filter((p) => taskOfTarget(p.target) === taskOfTarget(agent.target)) : [];
   const waiting = agent ? waitingLine(mine, agent.lane, `${agent.name}’s`, props.nowMs) : undefined;
   const title = agent ? (isLead ? "Steer the lead" : `Steer ${roleWords(agent.lane.role, agent.lane.taskId)}`) : "";
   return (
@@ -139,7 +145,7 @@ export function SteerSheet(
           </div>
           <Items thread={agent.lane.threadRef} source={props.tailSource} focusItem={props.focusItem} />
 
-          {mine.length > 0 ? (
+          {mine.length + pending.length > 0 ? (
             <>
               <div className={s.section}>
                 <span className={s.sectionLabel}>Steers</span>
@@ -152,7 +158,19 @@ export function SteerSheet(
                       {st.by.kind === "lead" ? "The lead" : "You"}
                     </Text>
                     <Message text={st.text} />
-                    <ReceiptLine receipt={receipt(st)} onAct={props.onAct} />
+                    <ReceiptLine receipt={receipt(st, props.redirected.has(st.id))} onAct={props.onAct} />
+                  </div>
+                </div>
+              ))}
+              {pending.map((p) => (
+                <div key={p.requestId} className={s.sheetItem}>
+                  <span className={s.time}>{clock(p.at)}</span>
+                  <div className={s.body}>
+                    <Text size="xs" tone="quiet">
+                      You
+                    </Text>
+                    <Message text={p.text} />
+                    <ReceiptLine receipt={sendingReceipt(p)} onAct={props.onAct} />
                   </div>
                 </div>
               ))}
@@ -170,7 +188,7 @@ export function SteerSheet(
             platform={props.platform}
             label={`Steer ${agent.name}`}
             autoFocus
-            onSend={(text, mode) => props.onSteer(agent.target, text, mode)}
+            onSend={(text, mode, requestId) => props.onSteer(agent.target, text, mode, requestId)}
           />
         </div>
       ) : null}

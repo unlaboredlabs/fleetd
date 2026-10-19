@@ -152,7 +152,7 @@ describe("the conversation", () => {
       }),
     );
     expect(conv[1]).toMatchObject({ kind: "events", text: "T31 started, T33 started, #211 merged" });
-    expect(conv[3]).toEqual({ kind: "working", key: "working", calls: ["b", "c", "d"].map((summary) => ({ summary, failed: false })) });
+    expect(conv[3]).toEqual({ kind: "working", key: "working", calls: ["b", "c", "d"].map((summary, i) => ({ summary, failed: false, at: at(`05:1${i + 1}`) })) });
     expect(conv[4]).toMatchObject({ kind: "say", streaming: true, text: "You approved both of my" });
   });
 

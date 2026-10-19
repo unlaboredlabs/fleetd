@@ -6,6 +6,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Button, cx, Text, Textarea } from "../../ui";
 import { keyHint, modKey, placeholder, primaryLabel, secondaryLabel, sendModeFor, type Platform, type SteerWords } from "./composer";
 import type { SteerMode } from "./contracts";
+import type { SendOutcome } from "./data";
 import s from "./order.module.css";
 
 /** Whether the platform's modifier is held, while the composer has focus. */
@@ -31,7 +32,8 @@ function useModHeld(platform: Platform, active: boolean): boolean {
 export interface SteerComposerProps {
   who: SteerWords;
   platform: Platform;
-  onSend: (text: string, mode: SteerMode) => void;
+  /** `requestId` is this composed steer's own: the same if it is sent again after a refusal. */
+  onSend: (text: string, mode: SteerMode, requestId: string) => Promise<SendOutcome>;
   /** Focus it when it mounts (the steer sheet). */
   autoFocus?: boolean;
   label: string;
@@ -40,16 +42,29 @@ export interface SteerComposerProps {
 export function SteerComposer({ who, platform, onSend, autoFocus, label }: SteerComposerProps) {
   const [text, setText] = useState("");
   const [focused, setFocused] = useState(false);
+  // One id per composed steer, minted when it is first sent: a second press, a double-click or a retry after a
+  // refusal is the same request, which the hub dedupes.
+  const [draftId, setDraftId] = useState<string | undefined>(undefined);
+  const [busy, setBusy] = useState(false);
   const held = useModHeld(platform, focused);
   const ref = useRef<HTMLTextAreaElement>(null);
-  const canSend = text.trim() !== "";
+  const canSend = text.trim() !== "" && !busy;
 
   const send = (mode: SteerMode) => {
     const body = text.trim();
-    if (body === "") return;
-    onSend(body, mode);
-    setText("");
-    ref.current?.focus();
+    if (body === "" || busy) return;
+    const id = draftId ?? crypto.randomUUID();
+    setDraftId(id);
+    setBusy(true);
+    void onSend(body, mode, id).then((outcome) => {
+      setBusy(false);
+      // Refused: the words stay for another try under the same id. Sent, or waiting for the link: a new steer next.
+      if (outcome !== "failed") {
+        setText("");
+        setDraftId(undefined);
+      }
+      ref.current?.focus();
+    });
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -69,7 +84,11 @@ export function SteerComposer({ who, platform, onSend, autoFocus, label }: Steer
         minRows={2}
         maxRows={10}
         autoFocus={autoFocus}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => {
+          setText(e.target.value);
+          // Edited words are a new steer.
+          setDraftId(undefined);
+        }}
         onKeyDown={onKeyDown}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}

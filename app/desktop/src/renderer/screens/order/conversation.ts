@@ -6,13 +6,16 @@
 
 import type { ActionItem, AgentLane, HubEvent, Steer, TailItem } from "./contracts";
 import { plural } from "./format";
-import { type Receipt, type Sending, receipt, sendingReceipt } from "./receipts";
+import { type Receipt, receipt, sendingReceipt } from "./receipts";
+import { taskOfTarget, type Sending } from "./sending";
 
 export type Author = { readonly kind: "you"; readonly keyName?: string } | { readonly kind: "lead" };
 
 export interface Call {
   readonly summary: string;
   readonly failed: boolean;
+  /** For a transcript jump to land on the call itself. */
+  readonly at: string;
 }
 
 export type Entry =
@@ -156,6 +159,8 @@ export interface ConversationInput {
   /** This order's steers, to the lead and to its tasks, by anyone. */
   readonly steers: readonly Steer[];
   readonly sending: readonly Sending[];
+  /** Steers whose "Interrupt and redirect" is in flight or done. */
+  readonly redirected?: ReadonlySet<string>;
   /** The lead's messages as they streamed in on the live feed, oldest first: in full, where the tail cuts them. */
   readonly streamed?: readonly Streamed[];
   readonly lanes: readonly AgentLane[];
@@ -169,7 +174,7 @@ type Item =
 const authorOf = (s: Steer): Author => (s.by.kind === "lead" ? { kind: "lead" } : { kind: "you", keyName: s.by.keyName });
 const taskOf = (s: Steer): string | undefined => ("taskId" in s.target ? s.target.taskId : undefined);
 
-function steerSay(s: Steer, at: string): Entry {
+function steerSay(s: Steer, at: string, redirected: ReadonlySet<string> | undefined): Entry {
   const to = taskOf(s);
   return {
     kind: "say",
@@ -178,7 +183,7 @@ function steerSay(s: Steer, at: string): Entry {
     author: authorOf(s),
     ...(to === undefined ? {} : { to }),
     text: s.text,
-    receipt: receipt(s),
+    receipt: receipt(s, redirected?.has(s.id) ?? false),
   };
 }
 
@@ -227,7 +232,7 @@ export function buildConversation(input: ConversationInput): Entry[] {
       secs,
       commands: calls.filter((c) => c.kind === "command").length,
       failed: calls.filter((c) => c.failed).length,
-      calls: calls.map((c) => ({ summary: c.summary, failed: c.failed })),
+      calls: calls.map((c) => ({ summary: c.summary, failed: c.failed, at: c.at })),
     });
     calls = [];
     foldStart = undefined;
@@ -243,7 +248,7 @@ export function buildConversation(input: ConversationInput): Entry[] {
     }
     if (it.t === "steer") {
       flush();
-      out.push(steerSay(it.steer, it.at));
+      out.push(steerSay(it.steer, it.at, input.redirected));
       continue;
     }
     const item = it.item;
@@ -257,7 +262,7 @@ export function buildConversation(input: ConversationInput): Entry[] {
       if (s) {
         flush();
         foldStart = item.at;
-        out.push(steerSay(s, item.at));
+        out.push(steerSay(s, item.at, input.redirected));
         continue;
       }
     }
@@ -297,7 +302,7 @@ export function buildConversation(input: ConversationInput): Entry[] {
   }
 
   if (input.leadWorking && calls.length > 0) {
-    out.push({ kind: "working", key: "working", calls: calls.slice(-3).map((c) => ({ summary: c.summary, failed: c.failed })) });
+    out.push({ kind: "working", key: "working", calls: calls.slice(-3).map((c) => ({ summary: c.summary, failed: c.failed, at: c.at })) });
     calls = [];
   } else {
     flush();
@@ -312,12 +317,15 @@ export function buildConversation(input: ConversationInput): Entry[] {
   });
 
   for (const s of input.sending) {
+    // A cut-off steer the hub turns out to have (steers_list after a reconnect) shows once, as the hub's.
+    if (s.state.t !== "failed" && steers.some((st) => sameSteer(st, s))) continue;
+    const to = taskOfTarget(s.target);
     out.push({
       kind: "say",
       key: `sending:${s.requestId}`,
       at: s.at,
       author: { kind: "you" },
-      ...(s.taskId === undefined ? {} : { to: s.taskId }),
+      ...(to === undefined ? {} : { to }),
       text: s.text,
       receipt: sendingReceipt(s),
     });
@@ -373,6 +381,17 @@ export function splitBlocks(text: string, max = 40): string[] {
   return out;
 }
 
+// Clocks differ a little between the app and the hub; a steer queued well before the send is an older one.
+const SKEW_MS = 5000;
+
+function sameSteer(st: Steer, s: Sending): boolean {
+  return (
+    st.text === s.text &&
+    taskOfTarget(st.target) === taskOfTarget(s.target) &&
+    Date.parse(st.queuedAt) >= Date.parse(s.at) - SKEW_MS
+  );
+}
+
 const settled = (l: AgentLane): boolean => l.status === "done" || l.status === "failed" || l.status === "cancelled";
 
 /** "All 3 agents finished: #211 #212", or "2 of 3 finished; T32 failed". Undefined while any agent still runs. */
@@ -417,4 +436,20 @@ export function entryIndexAt(entries: readonly Entry[], at: string): number {
     if (t !== "" && t <= at) best = i;
   });
   return best === -1 ? 0 : best;
+}
+
+/** Within a fold, the call a transcript item at `at` is: the last that starts at or before it. */
+export function callIndexAt(calls: readonly Call[], at: string): number {
+  let best = 0;
+  calls.forEach((c, i) => {
+    if (c.at <= at) best = i;
+  });
+  return best;
+}
+
+/** What a transcript jump does to its row: a fold opens and lights the call itself; any other row lights whole. */
+export function jumpTarget(e: Entry, at: string): { readonly open: boolean; readonly call?: number } {
+  if (e.kind === "fold") return { open: true, call: callIndexAt(e.calls, at) };
+  if (e.kind === "working") return { open: false, call: callIndexAt(e.calls, at) };
+  return { open: false };
 }

@@ -13,6 +13,7 @@ import { jumpFromHash, useOrder, type Jump, type OrderActions, type OrderData } 
 import { ActivityText, Fleet } from "./Fleet";
 import { shortModel } from "./format";
 import { waitingLine, type ReceiptAct } from "./receipts";
+import { redirecting } from "./sending";
 import { hubTailSource, SteerSheet, type SheetAgent, type TailSource } from "./SteerSheet";
 import { roleWords, type ToldWho } from "./told";
 import { hubToldSource, ToldPanel, type ToldSource } from "./ToldPanel";
@@ -88,9 +89,11 @@ export function OrderView(props: { data: OrderData; actions: OrderActions; platf
 
   const lead = data.lead;
   const leadWorking = lead?.status === "working" || lead?.status === "starting";
+  const redirected = useMemo(() => redirecting(data.sending, data.redirected), [data.sending, data.redirected]);
   const entries = useMemo(
     () =>
       buildConversation({
+        redirected,
         tail: data.tail,
         workstreamId: w,
         events: data.events,
@@ -100,11 +103,12 @@ export function OrderView(props: { data: OrderData; actions: OrderActions; platf
         streamed: data.streamed,
         lanes: data.lanes,
       }),
-    [data.tail, w, data.events, leadWorking, data.steers, data.sending, data.streamed, data.lanes],
+    [redirected, data.tail, w, data.events, leadWorking, data.steers, data.sending, data.streamed, data.lanes],
   );
   // A jump to the lead's transcript scrolls the log; one to an agent's opens its steer box at the item.
   const focus = data.focus;
-  const focusIndex = focus?.at !== undefined && focus.threadId === lead?.threadRef?.threadId ? entryIndexAt(entries, focus.at) : undefined;
+  const focusAt = focus?.at !== undefined && focus.threadId === lead?.threadRef?.threadId ? focus.at : undefined;
+  const focusIndex = focusAt === undefined ? undefined : entryIndexAt(entries, focusAt);
   const focusLane = focus && focus.threadId !== lead?.threadRef?.threadId ? data.lanes.find((l) => l.threadRef?.threadId === focus.threadId) : undefined;
   const [jumped, setJumped] = useState<string | undefined>(undefined);
   if (focusLane && jumped !== focusLane.laneId) {
@@ -112,8 +116,9 @@ export function OrderView(props: { data: OrderData; actions: OrderActions; platf
     setSheet(agentOf(focusLane, w));
   }
 
-  const queuedForLead = leadSteers(data.steers).some((st) => st.stage === "queued");
-  const now = useNow(queuedForLead && leadWorking);
+  // The waiting lines (the lead's, and an open sheet's agent) tick only while some steer waits on a working agent.
+  const anyWorking = leadWorking || data.lanes.some((l) => l.status === "working" || l.status === "starting");
+  const now = useNow(data.steers.some((st) => st.stage === "queued") && anyWorking);
   const waiting = waitingLine(leadSteers(data.steers), lead, "the lead’s", now);
   const pill = fanOut(data.lanes, data.asks);
   const status = [pill, data.total ? `${data.settled ?? 0}/${data.total} settled` : undefined].filter(Boolean).join(" · ");
@@ -137,12 +142,15 @@ export function OrderView(props: { data: OrderData; actions: OrderActions; platf
       },
     });
   };
-  const steerTo = (target: SteerTarget, text: string, mode: "queue" | "now") => actions.steer(target, text, mode);
+  const steerTo = (target: SteerTarget, text: string, mode: "queue" | "now", requestId: string) => actions.steer(target, text, mode, requestId);
   const notice =
     data.tailError !== undefined
       ? { text: data.tailError, error: true }
       : { text: data.status === "loading" ? "Loading the lead’s log…" : `The lead hasn’t said anything about ${w} yet.`, error: false };
 
+  // The hub's words for an unknown order name its internals; say it plainly and keep them behind Copy.
+  const failure = typeof data.status === "object" ? data.status : undefined;
+  const errorText = failure ? (failure.code === "not_found" ? `${w} isn’t on this hub.` : `Couldn’t load ${w}.`) : undefined;
   const header = (
     <header className={s.header}>
       <Button variant="ghost" onClick={() => (location.hash = "#/board")}>
@@ -163,7 +171,7 @@ export function OrderView(props: { data: OrderData; actions: OrderActions; platf
           {w}
         </Text>
         <span className={s.crumbTitle}>
-          <Truncate strong>{data.title || w}</Truncate>
+          {data.title ? <Truncate strong>{data.title}</Truncate> : null}
         </span>
       </nav>
       {status ? (
@@ -178,7 +186,7 @@ export function OrderView(props: { data: OrderData; actions: OrderActions; platf
         <Button variant="ghost" onClick={() => (location.hash = `#/status/order/${w}`)}>
           Status
         </Button>
-        {finished ? null : (
+        {finished || errorText !== undefined ? null : (
           <Button variant="secondary" onClick={() => setConfirmStop(true)}>
             Stop
           </Button>
@@ -225,22 +233,19 @@ export function OrderView(props: { data: OrderData; actions: OrderActions; platf
           </Button>
         ) : null}
       </div>
-      <Conversation entries={entries} notice={notice} onAct={onAct} focus={focusIndex} />
+      <Conversation entries={entries} notice={notice} onAct={onAct} focus={focusIndex === undefined || focusAt === undefined ? undefined : { index: focusIndex, at: focusAt }} />
       <div className={s.bottom}>
         {waiting ? <InlineText size="xs" tone="quiet" className={cx(s.waiting)} text={waiting} /> : null}
         <SteerComposer
           who={{ name: "the lead", ref: w }}
           platform={platform}
           label="Steer the lead"
-          onSend={(text, mode) => steerTo({ workstreamId: w }, text, mode)}
+          onSend={(text, mode, requestId) => steerTo({ workstreamId: w }, text, mode, requestId)}
         />
       </div>
     </div>
   );
 
-  // The hub's words for an unknown order name its internals; say it plainly and keep them behind Copy.
-  const failure = typeof data.status === "object" ? data.status : undefined;
-  const errorText = failure ? (failure.code === "not_found" ? `${w} isn’t on this hub.` : `Couldn’t load ${w}.`) : undefined;
   return (
     <div ref={root} className={cx(s.screen, !wide && s.narrow)} data-screen="order">
       {header}
@@ -271,6 +276,8 @@ export function OrderView(props: { data: OrderData; actions: OrderActions; platf
       <SteerSheet
         agent={sheetAgent}
         steers={data.steers}
+        sending={data.sending}
+        redirected={redirected}
         platform={platform}
         nowMs={now}
         tailSource={props.tail}

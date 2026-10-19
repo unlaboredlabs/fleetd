@@ -3,10 +3,12 @@
 // touches this file alone. Outputs are cast to the contract shapes in ./contracts, which E1's generated types replace.
 
 import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
+import { toast } from "../../ui";
 import type { HubFrame } from "../../../shared/hub";
 import type { AgentLane, CheckSpec, Claim, HubEvent, LiveText, PrRef, Steer, SteerMode, SteerTarget, TailItem, ThreadRef } from "./contracts";
 import type { Streamed } from "./conversation";
-import { mergeSteer, type Sending } from "./receipts";
+import { mergeSteer } from "./receipts";
+import { afterCall, reconnectWatcher, redirectId, type CallResult, type Sending } from "./sending";
 
 export interface OrderData {
   readonly status: "loading" | "ready" | { readonly error: string; readonly code: string };
@@ -33,6 +35,8 @@ export interface OrderData {
   /** The lead's messages as they streamed in, oldest first (the tail cuts long ones at 2,000 characters). */
   readonly streamed: readonly Streamed[];
   readonly sending: readonly Sending[];
+  /** Steers redirected from this view ("Interrupt and redirect" isn't offered twice). */
+  readonly redirected: ReadonlySet<string>;
   /** A transcript item to open at (#/order/<id>?thread=&item=), once the lead's window around it has loaded. */
   readonly focus?: { readonly threadId: string; readonly at?: string; readonly missing?: boolean };
 }
@@ -51,8 +55,12 @@ export function jumpFromHash(hash: string): Jump | undefined {
   return thread && item ? { thread, item } : undefined;
 }
 
+/** "sent": the hub has it. "pending": cut off, resent when the link is back. "failed": the hub refused it. */
+export type SendOutcome = "sent" | "pending" | "failed";
+
 export interface OrderActions {
-  readonly steer: (target: SteerTarget, text: string, mode: SteerMode) => void;
+  /** `requestId` is minted once per composed steer by the composer, and reused if it is sent again. */
+  readonly steer: (target: SteerTarget, text: string, mode: SteerMode, requestId: string) => Promise<SendOutcome>;
   readonly withdraw: (steerId: string) => void;
   /** Send an unacknowledged steer's words again, interrupting. */
   readonly redirect: (steerId: string) => void;
@@ -88,7 +96,7 @@ type Action =
   | { readonly t: "live"; readonly lanes: readonly { readonly laneId: string }[]; readonly text: readonly LiveText[] }
   | { readonly t: "sending"; readonly s: Sending }
   | { readonly t: "focus"; readonly threadId: string; readonly items?: readonly TailItem[]; readonly index?: number }
-  | { readonly t: "sent"; readonly requestId: string; readonly steer?: Steer; readonly error?: string };
+  | { readonly t: "sent"; readonly requestId: string; readonly result: CallResult };
 
 interface State extends OrderData {
   readonly names: ReadonlyMap<string, string>;
@@ -167,7 +175,8 @@ function reduce(s: State, a: Action): State {
       return { ...s, lanes: s.lanes.map(patch), ...(lead ? { lead: patch(lead) } : {}), streamed };
     }
     case "sending":
-      return { ...s, sending: [...s.sending, a.s] };
+      // Upsert: a resend (same id) is the same row.
+      return { ...s, sending: [...s.sending.filter((x) => x.requestId !== a.s.requestId), a.s] };
     case "focus": {
       const item = a.index === undefined ? undefined : a.items?.[a.index];
       // The window is oldest first; merged like a tail page so the item stays when it is older than the newest 50.
@@ -175,12 +184,21 @@ function reduce(s: State, a: Action): State {
       return { ...s, tail, focus: item ? { threadId: a.threadId, at: item.at } : { threadId: a.threadId, missing: a.items !== undefined } };
     }
     case "sent": {
-      const steers = a.steer ? mergeSteer(s.steers, a.steer) : s.steers;
-      const sending = a.error === undefined ? s.sending.filter((x) => x.requestId !== a.requestId) : s.sending.map((x) => (x.requestId === a.requestId ? { ...x, error: a.error ?? "" } : x));
-      return { ...s, steers, sending };
+      const row = s.sending.find((x) => x.requestId === a.requestId);
+      if (row === undefined) return a.result.ok ? { ...s, steers: mergeSteer(s.steers, a.result.steer) } : s;
+      const next = afterCall(row, a.result);
+      const sending = next.row ? s.sending.map((x) => (x.requestId === a.requestId ? (next.row ?? x) : x)) : s.sending.filter((x) => x.requestId !== a.requestId);
+      const steers = next.steer ? mergeSteer(s.steers, next.steer) : s.steers;
+      const redirected = next.steer && a.requestId.startsWith("redirect:") ? new Set([...s.redirected, a.requestId.slice("redirect:".length)]) : s.redirected;
+      return { ...s, steers, sending, redirected };
     }
   }
 }
+
+/** The reducer and its start, for tests of how sends, resends and refetches combine. */
+export const orderReducer = (s: OrderData, a: Action): OrderData => reduce({ names: new Map(), ...s }, a);
+export type OrderAction = Action;
+export const emptyOrder = (workstreamId: string): OrderData => initial(workstreamId);
 
 const initial = (workstreamId: string): State => ({
   status: "loading",
@@ -194,6 +212,7 @@ const initial = (workstreamId: string): State => ({
   steers: [],
   events: [],
   sending: [],
+  redirected: new Set(),
   streamed: [],
   names: new Map(),
 });
@@ -205,9 +224,11 @@ export function useOrder(workstreamId: string, jump?: Jump): [OrderData, OrderAc
   // Read by the frame listener and the actions, which outlive a render.
   const leadThread = useRef<ThreadRef | undefined>(undefined);
   const steersRef = useRef(state.steers);
+  const sendingRef = useRef(state.sending);
   useEffect(() => {
     leadThread.current = state.lead?.threadRef;
     steersRef.current = state.steers;
+    sendingRef.current = state.sending;
   });
 
   const loadOrder = useCallback(async () => {
@@ -232,6 +253,19 @@ export function useOrder(workstreamId: string, jump?: Jump): [OrderData, OrderAc
     const r = await window.fleetd.hub.call("steers_list", { workstreamId, limit: 100 });
     if (r.ok) dispatch({ t: "steers", steers: (r.output as { steers: readonly Steer[] }).steers });
   }, [workstreamId]);
+
+  /** One steer_send for a row, with the row's own id; a timeout while the link stays up is retried once. */
+  const send = useCallback(async (row: Sending): Promise<SendOutcome> => {
+    for (let attempt = 0; ; attempt++) {
+      dispatch({ t: "sending", s: { ...row, state: { t: "sending" } } });
+      const r = await window.fleetd.hub.call("steer_send", { target: row.target, text: row.text, mode: row.mode, clientRequestId: row.requestId });
+      const result: CallResult = r.ok ? { ok: true, steer: r.output as Steer } : { ok: false, code: r.error.code, message: r.error.message };
+      dispatch({ t: "sent", requestId: row.requestId, result });
+      if (result.ok) return "sent";
+      if (result.code === "timeout" && attempt === 0) continue;
+      return result.code === "timeout" || result.code === "disconnected" ? "pending" : "failed";
+    }
+  }, []);
 
   const leadThreadId = state.lead?.threadRef?.threadId;
   useEffect(() => {
@@ -266,7 +300,9 @@ export function useOrder(workstreamId: string, jump?: Jump): [OrderData, OrderAc
       window.clearTimeout(tailTimer);
       tailTimer = window.setTimeout(() => void loadTail(), 250);
     };
+    const resendable = reconnectWatcher();
     const off = window.fleetd.hub.subscribe((frame: HubFrame) => {
+      for (const row of resendable(frame, sendingRef.current)) void send(row);
       if (frame.t === "snapshot") {
         const projects = (frame.snapshot as { projects?: ReadonlyArray<{ machineId: string; projectId: string; title: string }> }).projects ?? [];
         dispatch({ t: "projects", names: new Map(projects.map((p) => [`${p.machineId}/${p.projectId}`, p.title])) });
@@ -293,33 +329,33 @@ export function useOrder(workstreamId: string, jump?: Jump): [OrderData, OrderAc
       window.clearTimeout(tailTimer);
       void window.fleetd.hub.live({ board: true });
     };
-  }, [workstreamId, loadOrder, loadSteers, loadTail]);
+  }, [workstreamId, loadOrder, loadSteers, loadTail, send]);
 
   const actions = useMemo<OrderActions>(() => {
-    const steer = (target: SteerTarget, text: string, mode: SteerMode) => {
-      const requestId = crypto.randomUUID();
-      const taskId = "taskId" in target ? target.taskId : undefined;
-      dispatch({ t: "sending", s: { requestId, workstreamId, ...(taskId ? { taskId } : {}), text, mode, at: new Date().toISOString() } });
-      void window.fleetd.hub.call("steer_send", { target, text, mode, clientRequestId: requestId }).then((r) => {
-        dispatch(r.ok ? { t: "sent", requestId, steer: r.output as Steer } : { t: "sent", requestId, error: errorText(r) });
-      });
+    const steer = (target: SteerTarget, text: string, mode: SteerMode, requestId: string) => {
+      // A retry of a refused steer keeps its row (and its id).
+      const prior = sendingRef.current.find((r) => r.requestId === requestId);
+      return send({ requestId, target, workstreamId, text, mode, at: prior?.at ?? new Date().toISOString(), state: { t: "sending" } });
     };
     return {
       steer,
       withdraw: (steerId) => {
         void window.fleetd.hub.call("steer_withdraw", { steerId }).then((r) => {
-          if (r.ok) dispatch({ t: "steers", steers: [r.output as Steer] });
+          if (r.ok) return dispatch({ t: "steers", steers: [r.output as Steer] });
+          // Refused (already delivered) or no hub: say so, and show what the hub has now.
+          toast({ title: `${steerId} wasn’t withdrawn`, description: r.error.message, tone: "warning" });
+          void loadSteers();
         });
       },
       redirect: (steerId) => {
         const s = steersRef.current.find((x) => x.id === steerId);
-        if (s) steer(s.target, s.text, "now");
+        if (s) void steer(s.target, s.text, "now", redirectId(steerId));
       },
       stop: () => {
         void window.fleetd.hub.call("order_stop", { workstreamId }).then(() => loadOrder());
       },
     };
-  }, [workstreamId, loadOrder]);
+  }, [workstreamId, loadOrder, loadSteers, send]);
 
   return [state, actions];
 }

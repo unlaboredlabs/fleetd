@@ -5,8 +5,8 @@
 import type { Virtualizer } from "@tanstack/react-virtual";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { cx, InlineCode, Markdown, Text, Tooltip, VirtualList, type TextProps } from "../../ui";
-import { foldLabel, systemHeadline, type Author, type Call, type Entry } from "./conversation";
+import { cx, IdChip, InlineCode, Markdown, Text, Tooltip, VirtualList, type TextProps } from "../../ui";
+import { foldLabel, jumpTarget, systemHeadline, type Author, type Call, type Entry } from "./conversation";
 import { clock, codeRuns, machineCode } from "./format";
 import type { Receipt, ReceiptAct } from "./receipts";
 import s from "./order.module.css";
@@ -37,6 +37,7 @@ export function ReceiptLine({ receipt, onAct }: { receipt: Receipt } & ReceiptHa
   return (
     <div className={cx(s.receipt, s[`tone-${receipt.tone}`])} data-receipt={receipt.stage}>
       <InlineText size="xs" tone="inherit" text={receipt.line} />
+      {receipt.detail ? <IdChip label="Details" id={receipt.detail} kind="error" size="xs" tone="quiet" /> : null}
       {act ? (
         <button type="button" className={s.linkButton} onClick={() => onAct(act)}>
           {act.kind === "withdraw" ? "Withdraw" : "Interrupt and redirect"}
@@ -77,10 +78,16 @@ export function FleetdText({ text }: { text: string }) {
   );
 }
 
-const Row = memo(function Row(props: { entry: Entry; open: boolean; last: boolean; lit: boolean; onToggle: (key: string) => void } & ReceiptHandlers) {
+type Lit = { readonly key: string; readonly call?: number | undefined };
+
+const Row = memo(function Row(
+  props: { entry: Entry; open: boolean; last: boolean; lit: Lit | undefined; onToggle: (key: string) => void } & ReceiptHandlers,
+) {
   const { entry: e, open, onToggle, onAct } = props;
   const toggle = () => onToggle(e.key);
-  const last = cx(props.last && s.rowLast, props.lit && s.lit);
+  // A lit call lights alone; otherwise the whole row does.
+  const litCall = props.lit?.call;
+  const last = cx(props.last && s.rowLast, props.lit !== undefined && litCall === undefined && s.lit);
   switch (e.kind) {
     case "say":
       return (
@@ -127,13 +134,13 @@ const Row = memo(function Row(props: { entry: Entry; open: boolean; last: boolea
           <Disclosure open={open} onToggle={toggle}>
             {foldLabel(e.secs, e.commands, e.failed, e.calls.length)}
           </Disclosure>
-          {open ? <Calls calls={e.calls} /> : null}
+          {open ? <Calls calls={e.calls} lit={litCall} /> : null}
         </div>
       );
     case "working":
       return (
         <div className={cx(s.indented, last)} data-entry="working">
-          <Calls calls={e.calls} />
+          <Calls calls={e.calls} lit={litCall} />
         </div>
       );
     case "others":
@@ -176,11 +183,11 @@ const Row = memo(function Row(props: { entry: Entry; open: boolean; last: boolea
   }
 });
 
-function Calls({ calls }: { calls: readonly Call[] }) {
+function Calls({ calls, lit }: { calls: readonly Call[]; lit?: number | undefined }) {
   return (
     <div className={s.calls}>
       {calls.map((c, i) => (
-        <Text key={i} mono className={cx(s.call, c.failed && s.callFailed)}>
+        <Text key={i} mono className={cx(s.call, c.failed && s.callFailed, i === lit && s.lit)}>
           {c.summary}
         </Text>
       ))}
@@ -192,12 +199,12 @@ export function Conversation(
   props: {
     entries: readonly Entry[];
     notice?: { text: string; error: boolean };
-    /** Scroll to this row and light it briefly (a transcript jump). */
-    focus?: number | undefined;
+    /** A transcript jump: scroll to the row holding the item at `at`, open it if it is a fold, light it briefly. */
+    focus?: { readonly index: number; readonly at: string } | undefined;
   } & ReceiptHandlers,
 ) {
   const { entries, onAct, focus } = props;
-  const [lit, setLit] = useState<string | undefined>(undefined);
+  const [lit, setLit] = useState<Lit | undefined>(undefined);
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
   const onToggle = useCallback((key: string) => {
     setOpen((prev) => {
@@ -208,13 +215,16 @@ export function Conversation(
   }, []);
   const virtualizer = useRef<Virtualizer<HTMLDivElement, Element> | null>(null);
 
-  const focusKey = focus === undefined ? undefined : entries[focus]?.key;
+  const target = focus === undefined ? undefined : entries[focus.index];
+  const focusKey = target === undefined || focus === undefined ? undefined : `${target.key}@${focus.at}`;
   useEffect(() => {
     const v = virtualizer.current;
-    if (focus === undefined || focusKey === undefined || !v) return;
+    if (focus === undefined || target === undefined || !v) return;
+    const jump = jumpTarget(target, focus.at);
     const frame = requestAnimationFrame(() => {
-      v.scrollToIndex(focus, { align: "center" });
-      setLit(focusKey);
+      if (jump.open) setOpen((prev) => new Set([...prev, target.key]));
+      v.scrollToIndex(focus.index, { align: "center" });
+      setLit({ key: target.key, call: jump.call });
     });
     const done = window.setTimeout(() => setLit(undefined), 1600);
     return () => {
@@ -243,7 +253,7 @@ export function Conversation(
         virtualizerRef={virtualizer}
         aria-label="The lead’s conversation"
         renderItem={(e, i) => (
-          <Row entry={e} open={open.has(e.key)} last={i === entries.length - 1} lit={lit === e.key} onToggle={onToggle} onAct={onAct} />
+          <Row entry={e} open={open.has(e.key)} last={i === entries.length - 1} lit={lit?.key === e.key ? lit : undefined} onToggle={onToggle} onAct={onAct} />
         )}
       />
     </div>

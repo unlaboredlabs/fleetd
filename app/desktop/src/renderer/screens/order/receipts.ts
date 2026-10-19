@@ -1,7 +1,8 @@
 // A steer's receipt as one line under its message (steering-spec §2, §7): queued → delivered → acknowledged, or
 // honestly not. The stages are decided by the hub from claude's own frames; this only words them.
 
-import type { AgentLane, Steer, SteerMode, SteerStage } from "./contracts";
+import type { AgentLane, Steer, SteerStage } from "./contracts";
+import type { Sending } from "./sending";
 import { clip, clock, inlinePlain, shortElapsed } from "./format";
 
 export type Tone = "quiet" | "good" | "warn" | "bad";
@@ -14,10 +15,14 @@ export interface Receipt {
   readonly line: string;
   readonly tone: Tone;
   readonly act?: ReceiptAct;
+  /** The hub's own words on a failure, behind Details rather than in the line. */
+  readonly detail?: string;
 }
 
-// A refetch can answer with an older stage than an event already told us; a receipt never moves back.
-const rank = (stage: SteerStage): number => (stage === "queued" ? 0 : stage === "delivered" ? 1 : 2);
+// A refetch can answer with an older stage than an event already told us; a receipt never moves back. A late
+// `--steer` ack turns "not acknowledged" into "acknowledged", never the other way.
+const RANK: Readonly<Record<SteerStage, number>> = { queued: 0, delivered: 1, unacknowledged: 2, acknowledged: 3, withdrawn: 3, failed: 3, expired: 3 };
+const rank = (stage: SteerStage): number => RANK[stage];
 
 const steerNumber = (id: string): number => Number(id.slice(1)) || Number.MAX_SAFE_INTEGER;
 
@@ -35,7 +40,8 @@ export function mergeSteer(rows: readonly Steer[], incoming: Steer): readonly St
 /** Only a queued steer, and only one a person sent: once delivered it can't be unsaid. */
 export const canWithdraw = (s: Steer): boolean => s.stage === "queued" && s.by.kind === "human";
 
-export function receipt(s: Steer): Receipt {
+/** `redirected`: its "Interrupt and redirect" is already in flight or done, so it isn't offered again. */
+export function receipt(s: Steer, redirected = false): Receipt {
   const at = (t: string | undefined) => (t ? ` ${clock(t)}` : "");
   const detail = s.detail ? ` · ${s.detail}` : "";
   const base = { stage: s.stage };
@@ -64,7 +70,7 @@ export function receipt(s: Steer): Receipt {
     }
     case "unacknowledged": {
       const reply = s.ackExcerpt ? ` · its reply: “${clip(inlinePlain(s.ackExcerpt), 80)}”` : "";
-      return { ...base, line: `${s.id} · not acknowledged${reply}`, tone: "warn", act: { kind: "redirect", steerId: s.id } };
+      return { ...base, line: `${s.id} · not acknowledged${reply}`, tone: "warn", ...(redirected ? {} : { act: { kind: "redirect", steerId: s.id } }) };
     }
     case "withdrawn":
       return { ...base, line: `${s.id} · withdrawn`, tone: "quiet" };
@@ -77,22 +83,16 @@ export function receipt(s: Steer): Receipt {
 
 const withdraw = (s: Steer): { act?: ReceiptAct } => (canWithdraw(s) ? { act: { kind: "withdraw", steerId: s.id } } : {});
 
-/** A steer the app sent that the hub has not answered yet, or refused. */
-export interface Sending {
-  readonly requestId: string;
-  readonly workstreamId: string;
-  /** "T88", or undefined for the lead. */
-  readonly taskId?: string;
-  readonly text: string;
-  readonly mode: SteerMode;
-  readonly at: string;
-  readonly error?: string;
+export function sendingReceipt(s: Sending): Receipt {
+  switch (s.state.t) {
+    case "sending":
+      return { stage: "sending", line: "sending…", tone: "quiet" };
+    case "reconnecting":
+      return { stage: "sending", line: "sending… (reconnecting; it is sent again when the hub is back)", tone: "quiet" };
+    case "failed":
+      return { stage: "not_sent", line: "not sent: the hub refused it. Your words are still in the box.", tone: "bad", detail: s.state.message };
+  }
 }
-
-export const sendingReceipt = (s: Sending): Receipt =>
-  s.error === undefined
-    ? { stage: "sending", line: "sending…", tone: "quiet" }
-    : { stage: "not_sent", line: `not sent: ${s.error}`, tone: "bad" };
 
 /**
  * "S12 waits for the lead's next step (running cargo test for 1m12s)": the oldest queued steer while the agent is
