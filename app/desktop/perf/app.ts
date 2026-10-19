@@ -5,6 +5,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { account, parsePs, parseTopMem, tree } from "./memory.ts";
 import { desktopDir } from "./targets.ts";
 
 /** The Electron binary; requiring the package downloads it on first use (pnpm runs no postinstall). */
@@ -92,26 +93,9 @@ export const launch = (options: LaunchOptions = {}): Launched => {
         check();
       }),
     memory() {
-      const table = execFileSync("ps", ["-A", "-o", "pid=,ppid=,rss="], { encoding: "utf8" })
-        .trim()
-        .split("\n")
-        .map((row) => {
-          const [pid = 0, ppid = 0, kb = 0] = row.trim().split(/\s+/u).map(Number);
-          return { pid, ppid, kb };
-        });
-      const tree = new Set<number>([child.pid ?? -1]);
-      // Children are listed after parents almost always; repeat until nothing new joins.
-      for (let grew = true; grew; ) {
-        grew = false;
-        for (const p of table) {
-          if (!tree.has(p.pid) && tree.has(p.ppid)) {
-            tree.add(p.pid);
-            grew = true;
-          }
-        }
-      }
-      const rssKb = table.reduce((sum, p) => (tree.has(p.pid) ? sum + p.kb : sum), 0);
-      return { rssMb: rssKb / 1024, uniqueMb: uniqueKb([...tree]) / 1024, processes: tree.size };
+      const procs = tree(parsePs(execFileSync("ps", ["-A", "-o", "pid=,ppid=,rss=,args="], { encoding: "utf8" })), child.pid ?? -1);
+      const sum = account(procs, deduplicatedKb(procs.map((p) => p.pid)), alive);
+      return { uniqueMb: sum.uniqueKb / 1024, rssMb: sum.rssKb / 1024, processes: sum.processes, kinds: sum.kinds };
     },
     async stop() {
       if (child.exitCode === null && child.signalCode === null) {
@@ -129,29 +113,31 @@ export interface Memory {
   readonly rssMb: number;
   readonly uniqueMb: number;
   readonly processes: number;
+  readonly kinds: ReadonlyArray<string>;
 }
 
-/**
- * Every Chromium process maps the same Electron framework, so summed RSS counts those pages once per process.
- * Deduplicated memory counts them once: PSS on Linux; on macOS the physical footprint top reports (Activity
- * Monitor's Memory column), which proc_pid_rusage gives for our own processes without any entitlement.
- */
-const uniqueKb = (pids: ReadonlyArray<number>): number => {
-  if (process.platform === "linux") {
-    return pids.reduce((sum, pid) => {
-      try {
-        return sum + Number(/^Pss:\s+(\d+)/mu.exec(readFileSync(`/proc/${pid}/smaps_rollup`, "utf8"))?.[1] ?? 0);
-      } catch {
-        return sum;
-      }
-    }, 0);
+const alive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
   }
-  const out = execFileSync("top", ["-l", "1", "-stats", "pid,mem", ...pids.flatMap((pid) => ["-pid", String(pid)])], { encoding: "utf8" });
-  const units: Record<string, number> = { B: 1 / 1024, K: 1, M: 1024, G: 1024 * 1024 };
-  return out.split("\n").reduce((sum, line) => {
-    const m = /^\s*(\d+)\s+([\d.]+)([BKMG])[+-]?\s*$/u.exec(line);
-    return m !== null && pids.includes(Number(m[1])) ? sum + Number(m[2]) * (units[m[3] ?? "K"] ?? 1) : sum;
-  }, 0);
+};
+
+/** KB per pid it could read: PSS on Linux, the physical footprint (top's MEM) on macOS. */
+const deduplicatedKb = (pids: ReadonlyArray<number>): Map<number, number> => {
+  if (process.platform !== "linux") return parseTopMem(execFileSync("top", ["-l", "1", "-stats", "pid,mem"], { encoding: "utf8" }));
+  const read = new Map<number, number>();
+  for (const pid of pids) {
+    try {
+      const pss = /^Pss:\s+(\d+)/mu.exec(readFileSync(`/proc/${pid}/smaps_rollup`, "utf8"))?.[1];
+      if (pss !== undefined) read.set(pid, Number(pss));
+    } catch {
+      // Unread: account() fails the measurement unless the process has exited.
+    }
+  }
+  return read;
 };
 
 export const devtoolsPort = async (app: Launched): Promise<number> =>

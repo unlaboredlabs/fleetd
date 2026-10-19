@@ -153,7 +153,7 @@ const main = async () => {
       };
       detail = {
         firstPaintMs: `median of ${paints.warm.length} launches: ${paints.warm.map((p) => p.toFixed(0)).join(", ")} ms (the untimed first: ${paints.cold.toFixed(0)} ms)`,
-        idleMemoryMb: `${process.platform === "linux" ? "PSS" : "physical footprint"} summed over ${samples[0]?.processes ?? 0} processes after ${IDLE_MS / 1000} s idle`,
+        idleMemoryMb: `${process.platform === "linux" ? "PSS" : "physical footprint"} summed over all ${samples[0]?.processes ?? 0} processes read (${[...new Set(samples[0]?.kinds ?? [])].join(", ")}) after ${IDLE_MS / 1000} s idle`,
         scrollFps: `${SCROLL.label}; ${(scrolled.dropped * 100).toFixed(1)}% long frames, ${(scrolled.moved / 1000).toFixed(0)}k px, display ${scrolled.refreshHz.toFixed(0)} Hz`,
         keyP95Ms: `${COMPOSER.label}; p50 ${typed.p50.toFixed(1)} ms over ${typed.count} keys, ${typed.slow} at 16 ms or more`,
       };
