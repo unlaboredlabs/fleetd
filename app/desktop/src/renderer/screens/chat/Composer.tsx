@@ -10,6 +10,7 @@ interface ProjectRef {
 
 import { Paperclip, X } from "lucide-react";
 import { useRef, type ClipboardEvent, type DragEvent, type KeyboardEvent } from "react";
+import type { AttachmentRef } from "../../../shared/contracts";
 import type { ChatItem } from "../../src/data/chat";
 import { useData, useDataLayer } from "../../src/data/react";
 import { projectKey as keyOf } from "../../src/data/store";
@@ -55,12 +56,12 @@ export function ChatComposer({ project, onSent, autoFocus }: ChatComposerProps) 
       if (checked.reason !== "") setDraft((d) => ({ ...d, error: checked.reason }));
       return;
     }
-    const files: string[] = [];
+    const files: AttachmentRef[] = [];
     for (const a of draft.attached) {
       const up = a.upload;
       if (!up) return setDraft((d) => ({ ...d, error: `${a.name} is still uploading.` }));
       if (!up.ok) return setDraft((d) => ({ ...d, error: `${a.name} didn’t upload: ${up.message} Remove it to send.` }));
-      files.push(up.id);
+      files.push(up.ref);
     }
     const sent = { text: draft.text, attached: draft.attached };
     // The words leave the box at once; the layer's item holds them (and offers Edit if they don't go).

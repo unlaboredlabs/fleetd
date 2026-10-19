@@ -9,20 +9,15 @@
 // reused on every resend, so the hub (which dedupes on it) never stores it twice. A call cut off by the link may
 // have reached the hub: it waits and goes again on reconnect, and is never called "not sent".
 import type { HubError } from "../../../shared/hub";
-import type { ChatDelta, ChatHistoryOutput, ChatMessage, KnownChatAuthor } from "./chat-contract";
+import type { AttachmentRef, ChatDelta, ChatHistoryOutput, ChatMessage, KnownChatAuthor } from "./chat-contract";
 
 /** How many messages a chat keeps in memory; older ones are paged back in from history. */
 export const CHAT_KEEP = 2000;
 export const CHAT_PAGE = 50;
 
-/**
- * A lead message's streamed text. `index` is the last delta frame applied. A stream joined mid-message (history
- * already had some of its text) can't be lined up with frames counted from 0: it shows the text it has until the
- * final message arrives.
- */
+/** A lead message's streamed text so far. */
 export interface Stream {
   readonly text: string;
-  readonly index?: number | undefined;
 }
 
 export interface Chat {
@@ -39,6 +34,8 @@ export interface Chat {
    */
   readonly hasNewer: boolean;
   readonly loadingNewer: boolean;
+  /** Live messages that arrived while the window was above the latest: folded in when it gets back there. */
+  readonly held: readonly ChatMessage[];
   /** The latest page landed this generation. */
   readonly loaded: boolean;
   readonly error?: HubError | undefined;
@@ -56,6 +53,7 @@ export const emptyChat: Chat = {
   loadingOlder: false,
   hasNewer: false,
   loadingNewer: false,
+  held: [],
   loaded: false,
   missing: [],
 };
@@ -105,9 +103,22 @@ export const mergeMessages = (chat: Chat, incoming: readonly ChatMessage[], evic
   };
 };
 
-/** A live message: folded in, unless the window is paged above the latest and doesn't hold it. */
-export const mergeLive = (chat: Chat, message: ChatMessage): Chat =>
-  chat.hasNewer && !chat.messages.some((m) => m.messageId === message.messageId) ? chat : mergeMessages(chat, [message]);
+/** How many live messages a window above the latest holds back; past that, the oldest of them are read again. */
+const HELD_MAX = 500;
+
+/**
+ * A live message: folded in, or, while the window is paged above the latest and doesn't hold it, kept aside until
+ * the window gets back there (a history page read before it happened won't have it).
+ */
+export const mergeLive = (chat: Chat, message: ChatMessage): Chat => {
+  if (!chat.hasNewer || chat.messages.some((m) => m.messageId === message.messageId)) return mergeMessages(chat, [message]);
+  const held = [...chat.held.filter((m) => m.messageId !== message.messageId || !newer(message, m)), message];
+  return { ...chat, held: held.length > HELD_MAX ? held.slice(held.length - HELD_MAX) : held };
+};
+
+/** Back at the latest: the held live messages go in. */
+const foldHeld = (chat: Chat): Chat =>
+  chat.hasNewer || chat.held.length === 0 ? chat : { ...mergeMessages(chat, chat.held), held: [] };
 
 /**
  * A history page: the latest one, one before the oldest message held, or one after the newest. The latest page on
@@ -117,7 +128,7 @@ export const applyHistory = (chat: Chat, page: ChatHistoryOutput, direction: "la
   const base = direction === "latest" && chat.hasNewer ? { ...chat, messages: [], streams: {}, hasNewer: false } : chat;
   const merged = mergeMessages(base, page.messages, direction === "older" ? "newest" : "oldest");
   const fresh = !chat.loaded || base !== chat;
-  return {
+  return foldHeld({
     ...merged,
     // The latest page says nothing about what's older than messages already held from an earlier page.
     hasOlder: direction === "older" ? page.moreBefore : fresh ? page.moreBefore || merged.hasOlder : merged.hasOlder,
@@ -127,25 +138,22 @@ export const applyHistory = (chat: Chat, page: ChatHistoryOutput, direction: "la
     loaded: true,
     error: undefined,
     gap: false,
-  };
+  });
 };
 
 /**
- * One streamed frame. A repeat is ignored, a skipped frame marks a gap (the latest page is read again), and a final
- * message takes no more. A stream joined mid-message takes none either (see Stream).
+ * One streamed frame, placed by its offset (the text's UTF-16 length before it): it extends the text when it starts
+ * at its end, a repeat (or the part already held) is skipped, and one starting past the end marks a gap (the latest
+ * page is read again). A final message takes no more. A chat joined mid-message goes on from history's text.
  */
 export const applyDelta = (chat: Chat, d: ChatDelta): Chat => {
   const message = chat.messages.find((m) => m.messageId === d.messageId);
   if (message !== undefined && !streaming(message)) return chat;
-  const current = chat.streams[d.messageId];
-  if (current === undefined) {
-    const had = message?.text ?? "";
-    if (d.index === 0 && had === "") return { ...chat, streams: { ...chat.streams, [d.messageId]: { text: d.append, index: 0 } } };
-    return had === "" ? { ...chat, gap: true } : chat;
-  }
-  if (current.index === undefined || d.index <= current.index) return chat;
-  if (d.index > current.index + 1) return { ...chat, gap: true };
-  return { ...chat, streams: { ...chat.streams, [d.messageId]: { text: current.text + d.append, index: d.index } } };
+  const text = chat.streams[d.messageId]?.text ?? message?.text ?? "";
+  if (d.offset > text.length) return { ...chat, gap: true };
+  if (d.offset + d.append.length <= text.length) return chat;
+  const next = text + d.append.slice(text.length - d.offset);
+  return { ...chat, streams: { ...chat.streams, [d.messageId]: { text: next } } };
 };
 
 // The person's messages on their way.
@@ -162,8 +170,7 @@ export type SendState =
 export interface ChatSend {
   readonly clientRequestId: string;
   readonly text: string;
-  /** attachment_put ids. */
-  readonly attachments: readonly string[];
+  readonly attachments: readonly AttachmentRef[];
   readonly at: string;
   readonly state: SendState;
   /** An earlier call was cut off: the hub may hold it, so it is never called "not sent". */
@@ -218,8 +225,8 @@ export interface ChatItem {
   /** Markdown; while streaming, the text so far. Empty on inline items: they read `message.item`. */
   readonly text: string;
   readonly at: string;
-  /** attachment_put ids. */
-  readonly attachments: readonly string[];
+  /** Each with its name, type and size; attachment_get reads its bytes. */
+  readonly attachments: readonly AttachmentRef[];
   readonly state: ChatItemState;
   readonly error?: HubError | undefined;
   /** Failed for want of a hub, not refused by one. */
@@ -233,7 +240,7 @@ export interface ChatItem {
   readonly message?: ChatMessage | undefined;
 }
 
-const noAttachments: readonly string[] = [];
+const noAttachments: readonly AttachmentRef[] = [];
 
 const authorOf = (a: ChatMessage["author"]): KnownChatAuthor => (a === "human" ? "human" : a === "lead" ? "lead" : "system");
 

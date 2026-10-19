@@ -27,7 +27,7 @@ const row = (id: string, patch: Partial<ChatSend> = {}): ChatSend => ({
   state: { t: "sending" },
   ...patch,
 });
-const delta = (messageId: string, index: number, append: string) => ({ projectRef: ref, messageId, seq: 1, index, append });
+const delta = (messageId: string, offset: number, append: string) => ({ projectRef: ref, messageId, seq: 1, offset, append });
 
 describe("chat messages", () => {
   it("merge by id in seq order, from any source in any order, and an older copy never wins", () => {
@@ -67,7 +67,8 @@ describe("chat messages", () => {
     }
     expect([chat.messages[0]?.seq, chat.hasNewer]).toEqual([1, true]);
     // A live message isn't added to a window above the latest; one it holds is still updated.
-    expect(mergeLive(chat, msg(3001))).toBe(chat);
+    const live = mergeLive(chat, msg(3001));
+    expect([live.messages, live.held.map((m) => m.seq)]).toEqual([chat.messages, [3001]]);
     expect(mergeLive(chat, msg(5, { text: "edited", updatedAt: "2026-10-20T00:00:00.000Z" })).messages[4]?.text).toBe("edited");
     while (chat.hasNewer) {
       const newest = chat.messages.at(-1)?.seq ?? 0;
@@ -77,6 +78,16 @@ describe("chat messages", () => {
     expect([chat.messages.at(-1)?.seq, chat.hasOlder, chat.messages.length]).toEqual([3001, true, CHAT_KEEP]);
   });
 
+  it("a live message that arrives above the latest is held and folded in once the window is back down", () => {
+    let chat = { ...applyHistory(emptyChat, page([msg(10), msg(11)], true), "latest"), hasNewer: true };
+    chat = mergeLive(chat, msg(600, { text: "the lead, meanwhile" }));
+    expect(chat.messages.map((m) => m.seq)).toEqual([10, 11]);
+    // The last page down was read before the message happened.
+    chat = applyHistory(chat, { ...page([msg(12)]), moreAfter: false }, "newer");
+    expect(chat.messages.map((m) => m.seq)).toEqual([10, 11, 12, 600]);
+    expect(chat.held).toEqual([]);
+  });
+
   it("the latest page on a window paged above it starts the window over", () => {
     let chat = applyHistory(emptyChat, page([msg(10), msg(11)], true), "latest");
     chat = { ...chat, hasNewer: true };
@@ -84,22 +95,23 @@ describe("chat messages", () => {
     expect([chat.messages.map((m) => m.seq), chat.hasNewer, chat.hasOlder]).toEqual([[500, 501], false, true]);
   });
 
-  it("streams frame by frame: a repeat is ignored, a skip is a gap, the final message ends it", () => {
+  it("streams by offset: a repeat or overlap adds only what's new, a jump past the end is a gap, the final ends it", () => {
     let chat = applyHistory(emptyChat, page([msg(1, { state: "streaming", text: "" })]), "latest");
     chat = applyDelta(chat, delta("m1", 0, "Hel"));
-    chat = applyDelta(chat, delta("m1", 1, "lo"));
-    chat = applyDelta(chat, delta("m1", 1, "lo"));
-    expect(chatItems(chat, []).map((i) => [i.text, i.state])).toEqual([["Hello", "streaming"]]);
-    expect(applyDelta(chat, delta("m1", 3, "x")).gap).toBe(true);
+    chat = applyDelta(chat, delta("m1", 3, "lo"));
+    chat = applyDelta(chat, delta("m1", 3, "lo"));
+    chat = applyDelta(chat, delta("m1", 4, "o, wo"));
+    expect(chatItems(chat, []).map((i) => [i.text, i.state])).toEqual([["Hello, wo", "streaming"]]);
+    expect(applyDelta(chat, delta("m1", 20, "x")).gap).toBe(true);
     chat = mergeMessages(chat, [msg(1, { text: "Hello, world", updatedAt: "2026-10-19T10:00:05.000Z" })]);
     expect(chatItems(chat, []).map((i) => [i.text, i.state])).toEqual([["Hello, world", "sent"]]);
-    expect(applyDelta(chat, delta("m1", 2, "!"))).toBe(chat);
+    expect(applyDelta(chat, delta("m1", 12, "!"))).toBe(chat);
   });
 
-  it("a stream joined mid-message shows what history had until the final copy, never doubled text", () => {
-    const chat = applyHistory(emptyChat, page([msg(1, { state: "streaming", text: "Halfway th" })]), "latest");
-    expect(applyDelta(chat, delta("m1", 7, "rough"))).toBe(chat);
-    expect(chatItems(chat, [])[0]?.text).toBe("Halfway th");
+  it("a chat joined mid-message goes on from history's text", () => {
+    let chat = applyHistory(emptyChat, page([msg(1, { state: "streaming", text: "Halfway th" })]), "latest");
+    chat = applyDelta(chat, delta("m1", 7, " through"));
+    expect(chatItems(chat, [])[0]?.text).toBe("Halfway through");
   });
 
   it("a stream that starts before its message is listed shows as the lead's, last", () => {
