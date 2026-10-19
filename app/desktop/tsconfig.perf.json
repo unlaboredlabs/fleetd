@@ -7,6 +7,5 @@
     "allowImportingTsExtensions": true,
     "tsBuildInfoFile": "./node_modules/.cache/tsconfig.perf.tsbuildinfo"
   },
-  "include": ["perf/**/*"],
-  "exclude": ["perf/out"]
+  "include": ["perf/**/*"]
 }

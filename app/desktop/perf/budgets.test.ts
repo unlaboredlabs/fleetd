@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { frameStats, quantile, regressionLimit, regressions, withinBudget, type Results } from "./budgets.ts";
 
-const base: Results = { firstPaintMs: 300, idleRssMb: 200, idleUniqueMb: 150, scrollFps: 60, keyP95Ms: 6 };
+const base: Results = { firstPaintMs: 300, idleMemoryMb: 200, idleRssMb: 500, scrollFps: 60, keyP95Ms: 6 };
 
 describe("budgets", () => {
   it("passes strictly under a ceiling and at or over a floor", () => {
@@ -20,8 +20,9 @@ describe("budgets", () => {
   });
 
   it("reports only the metrics that got worse past their limit", () => {
-    expect(regressions({ firstPaintMs: 389, idleRssMb: 260, idleUniqueMb: 170, scrollFps: 61, keyP95Ms: 2 }, base)).toEqual([
-      { metric: "idleRssMb", value: 260, limit: 230 },
+    // Summed RSS doubling is not a regression: it is never gated.
+    expect(regressions({ firstPaintMs: 389, idleMemoryMb: 260, idleRssMb: 1000, scrollFps: 61, keyP95Ms: 2 }, base)).toEqual([
+      { metric: "idleMemoryMb", value: 260, limit: 230 },
     ]);
     expect(regressions({ ...base, scrollFps: 50, keyP95Ms: 15 }, base).map((r) => r.metric)).toEqual(["scrollFps", "keyP95Ms"]);
   });

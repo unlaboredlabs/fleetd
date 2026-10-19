@@ -5,11 +5,10 @@
 //             from F1's route table, the scroller the conversation's VirtualList;
 //   composer: the board composer (F2), which carries data-composer="ready" for FLEETD_DEMO_TYPE anyway.
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 import type { Page } from "@playwright/test";
 
 export const desktopDir = path.resolve(import.meta.dirname, "..");
-const standIn = pathToFileURL(path.join(desktopDir, "perf", "out", "index.html")).toString();
+const standIn = "app://fleetd/perf/index.html";
 
 export interface Target {
   readonly label: string;

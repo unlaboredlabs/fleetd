@@ -24,7 +24,7 @@ const StandIn = () => {
     <div className={s.frame} data-screen="perf-standin">
       <header className={s.topBar} />
       <div className={s.log} data-perf="log">
-        <VirtualList items={lines} getKey={(l) => l.id} renderItem={(l) => <Row line={l} />} estimateSize={28} followOutput aria-label="Conversation" />
+        <VirtualList items={lines} getKey={(l) => l.id} renderItem={(l) => <Row line={l} />} estimateSize={28} followOutput startAtEnd aria-label="Conversation" />
       </div>
       <div className={s.composer}>
         <Textarea

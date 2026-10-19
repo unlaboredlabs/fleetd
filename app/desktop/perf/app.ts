@@ -132,9 +132,9 @@ export interface Memory {
 }
 
 /**
- * Every Chromium process maps the same Electron framework, so summed RSS counts those pages once per process. Unique
- * memory counts them once: PSS on Linux; on macOS the physical footprint top reports (Activity Monitor's Memory
- * column), which proc_pid_rusage gives for our own processes without any entitlement.
+ * Every Chromium process maps the same Electron framework, so summed RSS counts those pages once per process.
+ * Deduplicated memory counts them once: PSS on Linux; on macOS the physical footprint top reports (Activity
+ * Monitor's Memory column), which proc_pid_rusage gives for our own processes without any entitlement.
  */
 const uniqueKb = (pids: ReadonlyArray<number>): number => {
   if (process.platform === "linux") {

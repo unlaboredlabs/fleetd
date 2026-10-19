@@ -11,9 +11,9 @@
 import { mkdirSync } from "node:fs";
 import { open, rm, writeFile, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { app, BrowserWindow, powerSaveBlocker, screen, session, systemPreferences } from "electron";
 import { type Chunk, RECORDER_GLOBAL, type RecorderApi, type RecorderStart, type Take } from "../../shared/recorder";
-import { rendererOrigin } from "../security";
 import { bitrateFor, type RecordConfig } from "./recordConfig";
 
 const PULL_MS = 500;
@@ -35,11 +35,23 @@ const remote = (win: BrowserWindow): Call => {
   };
 };
 
-/** The recorder's own in-memory session: it may capture, and load nothing but its own page. */
-const recorderSession = (target: BrowserWindow) => {
+/** The recorder page: the dev server's while developing, else the built file. */
+const recorderUrl = (): string => {
+  const dev = process.env["ELECTRON_RENDERER_URL"];
+  return dev !== undefined && !app.isPackaged
+    ? new URL("demo/recorder.html", `${dev}/`).toString()
+    : pathToFileURL(join(import.meta.dirname, "../renderer/demo/recorder.html")).toString();
+};
+
+/**
+ * The recorder's own in-memory session, apart from the page session (which refuses file:// outright): it may
+ * capture, and load nothing but its own page and script.
+ */
+const recorderSession = (target: BrowserWindow, page: string) => {
   const ses = session.fromPartition("fleetd-recorder");
-  const origin = rendererOrigin();
-  const own = (url: string) => (origin === "file://" ? url.startsWith("file://") : url.startsWith(`${origin}/`));
+  const assets = new URL("../assets/", page).toString();
+  const devOrigin = page.startsWith("file:") ? null : new URL(page).origin;
+  const own = (url: string) => (devOrigin === null ? url === page || url.startsWith(assets) : url.startsWith(`${devOrigin}/`));
   ses.setPermissionRequestHandler((_contents, permission, callback) => callback(permission === "media" || permission === "display-capture"));
   ses.setPermissionCheckHandler((_contents, permission) => permission === "media" || permission === "display-capture");
   ses.webRequest.onBeforeRequest((details, callback) => callback({ cancel: !own(details.url) }));
@@ -49,15 +61,14 @@ const recorderSession = (target: BrowserWindow) => {
 };
 
 const openRecorder = async (target: BrowserWindow): Promise<BrowserWindow> => {
+  const page = recorderUrl();
   const win = new BrowserWindow({
     show: false,
     skipTaskbar: true,
     focusable: false,
-    webPreferences: { session: recorderSession(target), sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false },
+    webPreferences: { session: recorderSession(target, page), sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false },
   });
-  const dev = process.env["ELECTRON_RENDERER_URL"];
-  if (dev !== undefined && !app.isPackaged) await win.loadURL(new URL("demo/recorder.html", `${dev}/`).toString());
-  else await win.loadFile(join(import.meta.dirname, "../renderer/demo/recorder.html"));
+  await win.loadURL(page);
   return win;
 };
 

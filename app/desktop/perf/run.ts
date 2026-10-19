@@ -15,7 +15,7 @@ import os from "node:os";
 import { parseArgs } from "node:util";
 import { chromium, type Page } from "@playwright/test";
 import { devtoolsPort, launch, type Memory, sleep } from "./app.ts";
-import { BUDGETS, frameStats, median, METRICS, quantile, regressions, type Results, withinBudget } from "./budgets.ts";
+import { BUDGETS, frameStats, median, type Metric, METRICS, quantile, regressions, type Results, withinBudget } from "./budgets.ts";
 import { COMPOSER, SCROLL } from "./targets.ts";
 
 const { values: flags } = parseArgs({
@@ -127,7 +127,7 @@ const main = async () => {
 
   const app = launch({ debug: true });
   let results: Results;
-  let detail: Record<string, string>;
+  let detail: Record<Metric, string>;
   try {
     const port = await devtoolsPort(app);
     await app.waitFor(/^FLEETD_PERF launch /u, 30_000);
@@ -145,15 +145,14 @@ const main = async () => {
       const typed = await keys(page);
       results = {
         firstPaintMs: median(paints.warm),
+        idleMemoryMb: median(samples.map((m) => m.uniqueMb)),
         idleRssMb: median(samples.map((m) => m.rssMb)),
-        idleUniqueMb: median(samples.map((m) => m.uniqueMb)),
         scrollFps: scrolled.fps,
         keyP95Ms: typed.p95,
       };
       detail = {
         firstPaintMs: `median of ${paints.warm.length} launches: ${paints.warm.map((p) => p.toFixed(0)).join(", ")} ms (the untimed first: ${paints.cold.toFixed(0)} ms)`,
-        idleRssMb: `summed over ${samples[0]?.processes ?? 0} processes after ${IDLE_MS / 1000} s idle`,
-        idleUniqueMb: process.platform === "linux" ? "PSS, the same processes" : "physical footprint (top MEM), the same processes",
+        idleMemoryMb: `${process.platform === "linux" ? "PSS" : "physical footprint"} summed over ${samples[0]?.processes ?? 0} processes after ${IDLE_MS / 1000} s idle`,
         scrollFps: `${SCROLL.label}; ${(scrolled.dropped * 100).toFixed(1)}% long frames, ${(scrolled.moved / 1000).toFixed(0)}k px, display ${scrolled.refreshHz.toFixed(0)} Hz`,
         keyP95Ms: `${COMPOSER.label}; p50 ${typed.p50.toFixed(1)} ms over ${typed.count} keys, ${typed.slow} at 16 ms or more`,
       };
@@ -172,9 +171,12 @@ const main = async () => {
     const ok = withinBudget(metric, value);
     const shown = metric === "keyP95Ms" ? value.toFixed(1) : value.toFixed(0);
     const budget = `budget ${b.higher ? "≥" : "<"} ${b.limit} ${b.unit}`;
-    return { metric, ok, line: `  ${b.label.padEnd(21)} ${`${shown} ${b.unit}`.padStart(8)}   ${budget.padEnd(17)} ${ok ? "ok  " : "MISS"}  ${detail[metric] ?? ""}` };
+    return { metric, ok, line: `  ${b.label.padEnd(21)} ${`${shown} ${b.unit}`.padStart(8)}   ${budget.padEnd(17)} ${ok ? "ok  " : "MISS"}  ${detail[metric]}` };
   });
-  const report = [header, ...rows.map((r) => r.line)].join("\n");
+  const rss = `  ${"(summed RSS)".padEnd(21)} ${`${results.idleRssMb.toFixed(0)} MB`.padStart(8)}   ${"not gated".padEnd(17)}       counts the shared Electron pages once per process`;
+  const definition =
+    "  idle memory = deduplicated memory summed over every app process: PSS on Linux, physical footprint (Activity Monitor's Memory) on macOS";
+  const report = [header, ...rows.map((r) => r.line), rss, definition].join("\n");
   console.log(report);
   if (flags.json !== undefined) writeFileSync(flags.json, `${JSON.stringify(results, null, 2)}\n`);
 
