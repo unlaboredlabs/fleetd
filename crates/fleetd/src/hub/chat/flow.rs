@@ -304,7 +304,12 @@ pub async fn project_stop(
     caller: &Caller,
     input: ProjectStopInput,
 ) -> Result<ProjectStopOutput, ToolError> {
-    crate::hub::orders::notes::require_human(caller, "project_stop")?;
+    // A person's device, or the hub's own admin (the `fleetd project stop` command on the hub machine).
+    if !crate::hub::api::is_human(caller)
+        && !crate::hub::api::allows_everywhere(caller, Role::Admin)
+    {
+        crate::hub::orders::notes::require_human(caller, "project_stop")?;
+    }
     let r = input.project_ref.clone();
     require(caller, Role::Operate, Some(&r.machine_id))?;
     let open = hub

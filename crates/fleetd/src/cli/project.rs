@@ -21,6 +21,9 @@ pub const PROJECT_USAGE: &str =
              repo cloned onto one (the least busy worker by default), with progress;
              then its CI, merge rules and what the lead will need. No argument: pick one
   project list [--machine <id>] [--home <dir>] [--hub <url>]
+  project stop <machine>/<project> [--yes] [--home <dir>] [--hub <url>]
+             stop everything running in it: its agents are cancelled, the lead and
+             its chat stay, and the chat says so
   project remove <machine>/<project> [--yes] [--home <dir>] [--hub <url>]
              stop its agents and forget it; its files, branches and worktrees stay
 ";
@@ -236,6 +239,7 @@ pub async fn project_command(argv: &[String]) -> u8 {
         "add" => add(&mut client, &out, &v, &home).await,
         "list" => list(&mut client, &v).await,
         "remove" => remove(&mut client, &out, &v).await,
+        "stop" => stop(&mut client, &out, &v).await,
         other => return usage(&format!("unknown project command '{other}'")),
     };
     match result {
@@ -272,7 +276,33 @@ async fn list(client: &mut McpClient, v: &args::Parsed) -> Result<(), Stop> {
     Ok(())
 }
 
-async fn remove(client: &mut McpClient, out: &Out, v: &args::Parsed) -> Result<(), Stop> {
+/// `fleetd project stop <machine>/<project>`: the safety valve, every agent of the project stops.
+async fn stop(client: &mut McpClient, out: &Out, v: &args::Parsed) -> Result<(), Stop> {
+    let (machine, project) = find(client, v).await?;
+    let title = s(&project, "/title").to_owned();
+    if out.tty {
+        let sure = cliclack::confirm(format!(
+            "Stop everything in {title} on {machine}? Its agents are cancelled; the lead stays."
+        ))
+        .initial_value(false)
+        .interact()
+        .unwrap_or(false);
+        if !sure {
+            return Ok(());
+        }
+    }
+    let body = call(
+        client,
+        "project_stop",
+        json!({ "projectRef": { "machineId": machine, "projectId": s(&project, "/projectId") } }),
+    )
+    .await?;
+    out.success(&format!("{title}: {}", s(&body, "/message/text")));
+    Ok(())
+}
+
+/// The project a `<machine>/<project id or title>` argument names.
+async fn find(client: &mut McpClient, v: &args::Parsed) -> Result<(String, Value), Stop> {
     let Some(target) = v.positionals.first() else {
         return Err(Stop(
             2,
@@ -312,6 +342,13 @@ async fn remove(client: &mut McpClient, out: &Out, v: &args::Parsed) -> Result<(
             )),
         ));
     };
+    Ok((machine.to_owned(), project.clone()))
+}
+
+async fn remove(client: &mut McpClient, out: &Out, v: &args::Parsed) -> Result<(), Stop> {
+    let (machine, project) = find(client, v).await?;
+    let project = &project;
+    let machine = machine.as_str();
     let title = s(project, "/title").to_owned();
     if out.tty {
         let sure = cliclack::confirm(format!(

@@ -135,6 +135,14 @@ add a project: a checkout on a machine (this one by default), or a GitHub repo c
 fleetd project list [--machine <id>] [--home <dir>] [--hub <url>]
 ```
 
+### fleetd project stop {#project-stop}
+
+```text
+fleetd project stop <machine>/<project> [--yes] [--home <dir>] [--hub <url>]
+```
+
+stop everything running in it: its agents are cancelled, the lead and its chat stay, and the chat says so
+
 ### fleetd project remove {#project-remove}
 
 ```text
