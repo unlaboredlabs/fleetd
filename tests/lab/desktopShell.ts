@@ -91,6 +91,8 @@ const launch = async (lab: Lab, name: string, port: number, hub: { url: string; 
   };
   onCleanup(quit);
   const page = await lab.until(`${name} app's page`, 30_000, async () => connectPage(port).catch(() => undefined));
+  // The page target shows up before the document has loaded, and with it the preload's bridge.
+  await lab.until(`${name} app's window.fleetd`, 30_000, async () => ((await page.eval<boolean>(`document.readyState === "complete" && typeof window.fleetd === "object"`)) ? true : undefined));
   // Every frame main sends, in order, as the renderer's store would see them.
   await page.eval(`(window.__frames = [], window.fleetd.hub.subscribe((f) => window.__frames.push(f)), true)`);
   return {
