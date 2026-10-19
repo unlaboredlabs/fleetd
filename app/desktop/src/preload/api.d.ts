@@ -1,4 +1,4 @@
-import type { NotifyRequest, OpenTarget } from "../shared/app";
+import type { LinkHandlerClaim, LinkHandlerStatus, NotifyRequest, OpenTarget } from "../shared/app";
 import type { MenuCommand } from "../shared/menu";
 import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, HubState, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { LiveScope, SecretRequest } from "../shared/ipc";
@@ -64,6 +64,11 @@ export interface FleetdApi {
      */
     onOpen(listener: (target: OpenTarget) => void): () => void;
     notify(request: NotifyRequest): Promise<void>;
+    /**
+     * Whether this app opens fleetd:// links. With a claim ("user" from Settings, "pair-failed" from onboarding),
+     * main makes it the handler first when it should; a dev build never does.
+     */
+    linkHandler(claim: LinkHandlerClaim | null): Promise<LinkHandlerStatus>;
     /** The menu commands enabled now; main greys out the other menu items. */
     setMenuState(enabled: ReadonlyArray<MenuCommand>): Promise<void>;
   };

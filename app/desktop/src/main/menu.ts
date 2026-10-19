@@ -1,5 +1,6 @@
 import { app, Menu, shell, type MenuItemConstructorOptions } from "electron";
 import type { MenuCommand } from "../shared/menu";
+import { RELEASE_BUILD } from "./build";
 import type { Opener } from "./opener";
 import { accelerator, isShortcutId } from "../shared/shortcuts";
 
@@ -89,8 +90,9 @@ export const installMenu = (opener: Opener): void => {
         item(opener, "sidebar.toggle", "Toggle Sidebar"),
         separator,
         { role: "togglefullscreen" },
-        // Reload and devtools only in development: a reload drops the live view's state for nothing.
-        ...(app.isPackaged ? [] : [separator, { role: "reload" } as const, { role: "toggleDevTools" } as const]),
+        // Reload and devtools only in dev and test builds: a reload drops the live view's state for nothing, and
+        // devtools reach window.fleetd. Keyed on the build, not app.isPackaged (the executable's name).
+        ...(RELEASE_BUILD ? [] : [separator, { role: "reload" } as const, { role: "toggleDevTools" } as const]),
       ],
     },
     {

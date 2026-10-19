@@ -15,6 +15,7 @@ import {
 } from "../../shared/pairing";
 import { privateHubOrigin, readAppPairFile, removeAppPairFile, type FileRead } from "./appPairFile";
 import { probe, redeem, type Fetch } from "./hubHttp";
+import { trustSystemCAs } from "../trust";
 
 /** The startup probe only decides a hint, so it gives up quickly. */
 const PROBE_TIMEOUT_MS = 2_000;
@@ -41,7 +42,10 @@ const deviceName = (): string => hostname().trim().replace(/\.local$/u, "") || "
  */
 export const realPairingDeps = (fleetdDir: string, connect: PairingDeps["connect"], firstRun: () => boolean): PairingDeps => ({
   // Node's fetch, not Electron's `net`: the page's session (defaultSession) blocks every request but its own origin.
-  fetch: (url, init) => globalThis.fetch(url, init),
+  fetch: (url, init) => {
+    trustSystemCAs();
+    return globalThis.fetch(url, init);
+  },
   connect,
   firstRun,
   appPairFile: join(fleetdDir, "app-pair.json"),

@@ -228,3 +228,23 @@ jobs:
         run: pnpm test
       - if: steps.scope.outputs.run == 'true'
         run: pnpm build
+      - name: A release build refuses debugging switches
+        # Builds both variants, lays each out as a packaged app and launches it: with a DevTools switch the release
+        # build must exit before anything listens; the test build must still listen. The fuse-only cases (--inspect)
+        # run against the real package in build-release.yml.
+        if: steps.scope.outputs.run == 'true'
+        run: pnpm debug-guard-check
+      - name: Test build (DevTools-driven perf and recording)
+        # The release build refuses --remote-debugging-port, which the perf and recording runs drive the app with.
+        if: steps.scope.outputs.run == 'true'
+        run: pnpm build:test
+      - name: Budgets (Linux)
+        # Measured on this runner, not the budget machine (an M-series Mac: scripts/perf-mac.sh), so this fails on a
+        # regression from perf/baseline-linux.json and only reports the budgets. The numbers go to the job summary.
+        if: steps.scope.outputs.run == 'true'
+        run: xvfb-run -a -s "-screen 0 1920x1200x24" pnpm perf --baseline perf/baseline-linux.json --json "$RUNNER_TEMP/perf.json"
+      - name: Demo recording (Linux)
+        # FLEETD_RECORD + FLEETD_DEMO_TYPE end to end: the app records itself typing an order, the clip ends on
+        # SIGUSR1, and both MP4s must be H.264 with frames.
+        if: steps.scope.outputs.run == 'true'
+        run: xvfb-run -a -s "-screen 0 1920x1200x24" pnpm perf:record

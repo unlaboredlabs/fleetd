@@ -1,0 +1,70 @@
+# Packaging for the release workflow (.github/workflows/build-release.yml, the desktop-* jobs). It runs after
+# `pnpm build` and packs out/ only. The release passes the version (-c.extraMetadata.version) and, on macOS, the
+# signing identity (CSC_NAME + CSC_KEYCHAIN from .github/release/macos-sign.sh). Notarization, stapling, the zip and
+# latest-mac.yml happen in the workflow, so a slow notary queue can ship the app unstapled and staple it later
+# (.github/release/macos-staple.sh). Update metadata comes from .github/release/update-yml.sh, not from a publish
+# config: the app sets its own feed (src/main/updater.ts).
+appId: sh.fleetd.app
+productName: fleetd
+copyright: Copyright © 2026 Weishang Lu and fleetd contributors
+directories:
+  output: dist
+  buildResources: build
+files:
+  - out/**
+  - package.json
+# Native modules can't load from inside the asar (@napi-rs/keyring, for the GPUI app's keychain item).
+asarUnpack:
+  - "**/*.node"
+protocols:
+  # fleetd://pair links (printed by `fleetd pair`) open the app.
+  - name: fleetd pairing
+    schemes: [fleetd]
+electronLanguages: [en]
+# Electron's fuses, flipped in the binary before signing. Without them anything running as the user could run the
+# signed app as plain Node (ELECTRON_RUN_AS_NODE, NODE_OPTIONS, --inspect) under our Team ID, and read the keychain
+# items it trusts without a prompt, or swap the app code beside the signed binary. The page loads from app://, so it
+# needs no file:// privileges. Asar integrity is checked on macOS (Electron doesn't on Linux).
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+  enableCookieEncryption: true
+  grantFileProtocolExtraPrivileges: false
+extraResources:
+  - from: build/app-update.yml
+    to: app-update.yml
+
+mac:
+  target:
+    - target: dir
+      arch: universal
+  category: public.app-category.developer-tools
+  minimumSystemVersion: "12.0"
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  notarize: false
+  # Each half of the universal app carries both keyring builds (pnpm's supportedArchitectures), identical in both, so
+  # the merge keeps them as they are; the module loads the one for the running CPU.
+  x64ArchFiles: "**/node_modules/@napi-rs/keyring-darwin-*/*.node"
+
+linux:
+  target:
+    - target: AppImage
+      arch: x64
+    - target: deb
+      arch: x64
+  category: Development
+  executableName: fleetd-desktop
+  artifactName: fleetd-desktop-linux-${arch}.${ext}
+  syncDesktopName: true
+  files:
+    - "!**/node_modules/@napi-rs/keyring-linux-arm64-*{,/**}"
+deb:
+  # Not "fleetd": that name belongs to the CLI if it is ever packaged.
+  packageName: fleetd-desktop
+  maintainer: fleetd contributors <https://github.com/unlaboredlabs/fleetd>
