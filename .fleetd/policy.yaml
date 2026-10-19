@@ -4,7 +4,36 @@ areas:
   contracts: ["crates/fleetd-contracts/**"]
   hub: ["crates/fleetd/src/hub/**", "crates/fleetd/tests/**", "crates/fleetd/assets/**"]
   cli: ["crates/fleetd/src/cli/**", "crates/fleetd/src/node/**", "crates/fleetd/src/*.rs", "crates/fleetd/examples/**", "crates/fleetd/Cargo.toml"]
-  app: ["app/**"]
+  # The five screens below get their own areas so app PRs on different screens run side by side; `app` lists
+  # everything else under app/ one directory at a time, since a glob can't exclude the screens.
+  app-status: ["app/desktop/src/renderer/screens/status/**"]
+  app-order: ["app/desktop/src/renderer/screens/order/**"]
+  app-projects: ["app/desktop/src/renderer/screens/projects/**"]
+  app-inbox: ["app/desktop/src/renderer/screens/inbox/**"]
+  app-settings: ["app/desktop/src/renderer/screens/settings/**"]
+  app:
+    - "app/*"
+    - "app/desktop/*"
+    - "app/desktop/build/**"
+    - "app/desktop/fixtures/**"
+    - "app/desktop/perf/**"
+    - "app/desktop/qa/**"
+    - "app/desktop/scripts/**"
+    - "app/desktop/src/*"
+    - "app/desktop/src/main/**"
+    - "app/desktop/src/preload/**"
+    - "app/desktop/src/shared/**"
+    - "app/desktop/src/renderer/*"
+    - "app/desktop/src/renderer/demo/**"
+    - "app/desktop/src/renderer/perf/**"
+    - "app/desktop/src/renderer/src/**"
+    - "app/desktop/src/renderer/ui/**"
+    - "app/desktop/src/renderer/screens/*"
+    - "app/desktop/src/renderer/screens/board/**"
+    - "app/desktop/src/renderer/screens/onboarding/**"
+    - "app/desktop/src/renderer/screens/palette/**"
+    - "app/desktop/src/renderer/screens/shell/**"
+    - "app/desktop/src/renderer/screens/time/**"
   site: ["site/**", "docs/**", "crates/docsgen/**"]
   ci: [".github/**"]
   lab: ["tests/**"]
