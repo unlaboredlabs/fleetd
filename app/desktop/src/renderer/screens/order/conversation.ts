@@ -4,7 +4,7 @@
 // steer under its real author (Steer.by) with its receipt. Built here from the hub's data, never by a model.
 // The fold/merge rules follow the GPUI order view (app/fleetd-app/src/order.rs) and T3 Code's work log grouping.
 
-import type { ActionItem, AgentLane, HubEvent, Steer, TailItem } from "./contracts";
+import type { ActionItem, AgentLane, HubEvent, Steer, TailItem } from "../../../shared/contracts";
 import { plural } from "./format";
 import { type Receipt, receipt, sendingReceipt } from "./receipts";
 import { taskOfTarget, type Sending } from "./sending";
@@ -69,7 +69,8 @@ export function mentions(text: string): string[] {
 }
 
 const field = (e: HubEvent, k: string): string | undefined => {
-  const v = e.data?.[k];
+  const data: unknown = e.data;
+  const v: unknown = typeof data === "object" && data !== null ? (data as Record<string, unknown>)[k] : undefined;
   return typeof v === "string" ? v : typeof v === "number" ? String(v) : undefined;
 };
 

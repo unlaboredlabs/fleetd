@@ -1,7 +1,7 @@
 // A steer's receipt as one line under its message (steering-spec §2, §7): queued → delivered → acknowledged, or
 // honestly not. The stages are decided by the hub from claude's own frames; this only words them.
 
-import type { AgentLane, Steer, SteerStage } from "./contracts";
+import type { AgentLane, Steer, SteerStage } from "../../../shared/contracts";
 import type { Sending } from "./sending";
 import { clip, clock, inlinePlain, shortElapsed } from "./format";
 

@@ -3,7 +3,7 @@
 // it) never stores the same steer twice. A call cut off by the link may have reached the hub: that is not "not
 // sent". Only the hub's refusal, or no hub at all, is.
 
-import type { Steer, SteerMode, SteerTarget } from "./contracts";
+import type { Steer, SteerMode, SteerTarget } from "../../../shared/contracts";
 
 export type SendState =
   | { readonly t: "sending" }

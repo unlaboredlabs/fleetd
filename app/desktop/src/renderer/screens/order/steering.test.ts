@@ -1,7 +1,7 @@
 // Regressions from #187's review: a steer cut off by the link is never "not sent" and never shows twice; a
 // redirect can't send twice; a jump to a tool call opens its fold and lights the call.
 import { describe, expect, it } from "vitest";
-import type { Steer, TailItem } from "./contracts";
+import type { Steer, TailItem } from "../../../shared/contracts";
 import { buildConversation, entryIndexAt, jumpTarget, type Entry } from "./conversation";
 import { emptyOrder, orderReducer, type OrderAction, type OrderData } from "./data";
 import { reconnectWatcher, redirectId, redirecting, type Sending } from "./sending";

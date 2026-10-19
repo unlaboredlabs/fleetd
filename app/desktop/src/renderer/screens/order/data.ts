@@ -5,7 +5,8 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import { toast } from "../../ui";
 import type { HubFrame } from "../../../shared/hub";
-import type { AgentLane, CheckSpec, Claim, HubEvent, LiveText, PrRef, Steer, SteerMode, SteerTarget, TailItem, ThreadRef } from "./contracts";
+import { dataField } from "../../../shared/contracts";
+import type { AgentLane, CheckSpec, Claim, HubEvent, LiveText, PrRef, Steer, SteerMode, SteerTarget, TailItem, ThreadRef } from "../../../shared/contracts";
 import type { Streamed } from "./conversation";
 import { mergeSteer } from "./receipts";
 import { afterCall, reconnectWatcher, redirectId, type CallResult, type Sending } from "./sending";
@@ -310,10 +311,9 @@ export function useOrder(workstreamId: string, jump?: Jump): [OrderData, OrderAc
         void loadSteers();
         tailSoon();
       } else if (frame.t === "event") {
-        const e = frame.event as unknown as HubEvent & { threadId?: string };
-        const data = e.data ?? {};
-        if (e.threadId !== undefined && e.threadId === leadThread.current?.threadId) tailSoon();
-        if (data["workstreamId"] !== workstreamId) return;
+        const e = frame.event;
+        if (e.threadId != null && e.threadId === leadThread.current?.threadId) tailSoon();
+        if (dataField(e, "workstreamId") !== workstreamId) return;
         if (e.type.startsWith("steer.")) void loadSteers();
         else {
           dispatch({ t: "event", event: e });

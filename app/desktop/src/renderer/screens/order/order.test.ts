@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { sendModeFor, type KeyLike } from "./composer";
-import type { AgentLane, HubEvent, Steer, TailItem } from "./contracts";
+import type { AgentLane, HubEvent, Steer, TailItem } from "../../../shared/contracts";
 import { buildConversation, entryIndexAt, splitBlocks, fanOut, foldLabel, mentions, rollup, systemHeadline, type ConversationInput } from "./conversation";
 import { jumpFromHash } from "./data";
 import { doneRows, doneSummary } from "./doneWhen";
@@ -348,8 +348,8 @@ describe("what an agent was told", () => {
         disallowedTools: ["Task", "Workflow", "CronCreate", "Bash"],
       },
       [
-        { id: "task.brief.write", title: "Writer's brief", group: "tasks", sentWhen: "", scope: "default", defaultRef: "task.brief.write@0123456789", stale: false },
-        { id: "steer.message", title: "A steer", group: "wakes_and_messages", sentWhen: "", scope: "project", defaultRef: "steer.message@dddddddddd", stale: false },
+        { id: "task.brief.write", title: "Writer's brief", kind: "start", group: "tasks", sentWhen: "", scope: "default", defaultRef: "task.brief.write@0123456789", stale: false },
+        { id: "steer.message", title: "A steer", kind: "msg", group: "wakes_and_messages", sentWhen: "", scope: "project", defaultRef: "steer.message@dddddddddd", stale: false },
       ],
       { project: "storefront", orderId: "W1", orderTitle: "Share card", role: "writer T1" },
     );

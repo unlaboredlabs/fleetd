@@ -2,7 +2,7 @@
 // pinned, grouped under the registry's own titles and groups, with every all-default prompt folded into one line
 // and only the overrides spelled out; the hashes stay behind hover and copy.
 
-import type { PromptGroup, PromptScope, PromptSummary, SessionPrompt } from "./contracts";
+import type { PromptGroup, PromptScope, PromptSummary, SessionPrompt } from "../../../shared/contracts";
 
 export interface ToldRow {
   readonly id: string;

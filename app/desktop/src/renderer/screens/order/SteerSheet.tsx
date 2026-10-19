@@ -7,7 +7,7 @@ import { Button, cx, IdChip, RoleTag, Sheet, Text } from "../../ui";
 import { SteerComposer } from "./Composer";
 import { FleetdText, InlineText, Message, ReceiptLine, type ReceiptHandlers } from "./Conversation";
 import type { Platform } from "./composer";
-import type { AgentLane, Steer, SteerMode, SteerTarget, TailItem, ThreadRef } from "./contracts";
+import type { AgentLane, Steer, SteerMode, SteerTarget, TailItem, ThreadRef } from "../../../shared/contracts";
 import { ActivityText } from "./Fleet";
 import { clock } from "./format";
 import { receipt, sendingReceipt, waitingLine } from "./receipts";

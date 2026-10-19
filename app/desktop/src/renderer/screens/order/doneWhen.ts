@@ -1,7 +1,7 @@
 // Done when: the brief's checks, each with the latest claim's result. A judge check carries the judge's verdict
 // and its reason; any check that didn't pass carries its evidence.
 
-import type { CheckOutcome, CheckSpec, Claim } from "./contracts";
+import type { CheckOutcome, CheckSpec, Claim } from "../../../shared/contracts";
 
 export type CheckState = "pending" | "passed" | "failed" | "error";
 

@@ -2,7 +2,7 @@
 
 import { CheckCircle2, Circle, CircleAlert, CircleX } from "lucide-react";
 import { cx, RoleTag, StatusChip, Text, Truncate, type StatusTone } from "../../ui";
-import type { AgentLane, CheckSpec, Claim, LaneStatus, PrRef } from "./contracts";
+import type { AgentLane, CheckSpec, Claim, LaneStatus, PrRef } from "../../../shared/contracts";
 import { doneRows, doneSummary, type CheckState } from "./doneWhen";
 import { shortModel } from "./format";
 import { InlineText } from "./Conversation";

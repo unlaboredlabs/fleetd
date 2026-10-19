@@ -1,6 +1,6 @@
 // What each agent of the order is doing, in words (app/fleetd-app/src/live/activity.rs), and its PR's stage.
 
-import type { AgentLane, PrRef } from "./contracts";
+import type { AgentLane, PrRef } from "../../../shared/contracts";
 import { shortElapsed } from "./format";
 
 export interface ActivityLine {

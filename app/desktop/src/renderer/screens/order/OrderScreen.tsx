@@ -7,7 +7,7 @@ import { Button, cx, Dialog, IdChip, StatusChip, Text, Truncate } from "../../ui
 import { SteerComposer } from "./Composer";
 import { Conversation, InlineText } from "./Conversation";
 import type { Platform } from "./composer";
-import type { AgentLane, Steer, SteerTarget, ThreadRef } from "./contracts";
+import type { AgentLane, Steer, SteerTarget, ThreadRef } from "../../../shared/contracts";
 import { buildConversation, entryIndexAt, fanOut } from "./conversation";
 import { jumpFromHash, useOrder, type Jump, type OrderActions, type OrderData } from "./data";
 import { ActivityText, Fleet } from "./Fleet";

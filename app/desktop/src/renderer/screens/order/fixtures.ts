@@ -4,7 +4,7 @@
 // defaults and with project overrides; long titles and criteria; 20+ agents; and a 20k-item log for the scroll
 // budget. No personal data: acme/storefront on devbox and buildbox.
 
-import type { AgentLane, CheckSpec, Claim, LiveText, PromptSummary, SessionPrompt, Steer, TailItem } from "./contracts";
+import type { AgentLane, CheckSpec, Claim, LiveText, PromptSummary, SessionPrompt, Steer, TailItem } from "../../../shared/contracts";
 
 export type OrderFixture = "typical" | "conversation" | "long-text" | "many-agents" | "empty" | "huge-log" | "huge-stream";
 
@@ -247,6 +247,7 @@ const REGISTRY: PromptSummary[] = [
   id,
   title,
   group: group as PromptSummary["group"],
+  kind: id === "instructions" ? "instructions" : id.startsWith("playbook") ? "playbook" : id === "router" || id === "retro" ? "oneshot" : id.startsWith("lead.start") || id.startsWith("task.brief") ? "start" : "wake",
   sentWhen: "",
   scope: "default",
   defaultRef: `${id}@0123456789`,

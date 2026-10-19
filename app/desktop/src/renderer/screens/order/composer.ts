@@ -2,7 +2,7 @@
 // never cuts a running tool), ⌘Enter interrupts its current step and redirects it now. Shift+Enter is a newline.
 // The key resolution follows T3 Code's composer dispatch (packages/client-runtime/src/state/composerDispatch.ts).
 
-import type { SteerMode } from "./contracts";
+import type { SteerMode } from "../../../shared/contracts";
 
 export type Platform = "darwin" | "linux" | "win32" | "other";
 

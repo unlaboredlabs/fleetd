@@ -4,7 +4,7 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button, Code, Dialog, IdChip, Text, Tooltip } from "../../ui";
 import { Message } from "./Conversation";
-import type { PromptSummary, SessionPrompt, ThreadRef } from "./contracts";
+import type { PromptSummary, SessionPrompt, ThreadRef } from "../../../shared/contracts";
 import { toldView, type ToldGroup, type ToldWho } from "./told";
 import s from "./order.module.css";
 
