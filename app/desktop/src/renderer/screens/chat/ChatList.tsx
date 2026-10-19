@@ -14,7 +14,9 @@ import { shortClock } from "./format";
 import { systemHeadline, type Row } from "./model";
 import { MessageReceipt } from "./Composer";
 import { LiveStrip } from "../live";
-import { InlineChatItem, type ProjectRef } from "./slots";
+import type { ChatItem as InlineItem } from "../../../shared/contracts";
+import { InlineChatItem } from "../inline";
+import type { ProjectRef } from "./slots";
 import { Disclosure, InlineText, Message } from "./text";
 import s from "./view.module.css";
 
@@ -78,6 +80,20 @@ function SystemLine({ item }: { item: ChatItem }) {
   );
 }
 
+/**
+ * A secret field or a gated command (F5). The hub's message carries the item; E1's stub contract doesn't type it
+ * yet, so it is read from the message here until E1 moves to H1's generated contract.
+ */
+function Inline({ item }: { item: ChatItem }) {
+  const inline = (item.message as { readonly item?: InlineItem } | undefined)?.item;
+  if (inline !== undefined) return <InlineChatItem item={inline} />;
+  return (
+    <Text size="xs" tone="quiet">
+      {item.kind === "secret" ? "The lead needs a secret here." : "The lead wants to run a command that needs your approval."}
+    </Text>
+  );
+}
+
 const AUTHOR = { human: "You", lead: "Lead", system: "fleetd" } as const;
 
 const RowView = memo(function RowView(props: {
@@ -112,7 +128,7 @@ const RowView = memo(function RowView(props: {
     case "inline":
       return (
         <div className={s.message} data-entry="inline">
-          <InlineChatItem item={r.item} project={project} />
+          <Inline item={r.item} />
         </div>
       );
     case "strip":
