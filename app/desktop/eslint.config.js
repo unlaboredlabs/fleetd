@@ -5,7 +5,7 @@ import globals from "globals";
 import tseslint from "typescript-eslint";
 
 export default defineConfig(
-  { ignores: ["out/", "node_modules/", "eslint.config.js"] },
+  { ignores: ["out/", "node_modules/", "eslint.config.js", "qa-results/", "test-results/"] },
   js.configs.recommended,
   tseslint.configs.strictTypeChecked,
   {
@@ -26,7 +26,11 @@ export default defineConfig(
     languageOptions: { globals: globals.browser },
   },
   {
-    files: ["src/main/**/*.ts", "src/preload/**/*.ts", "*.config.ts"],
+    files: ["src/main/**/*.ts", "src/preload/**/*.ts", "*.config.ts", "qa/**/*.{ts,js}"],
     languageOptions: { globals: globals.node },
+  },
+  {
+    files: ["qa/selftest/app/pages.js"],
+    languageOptions: { globals: globals.browser },
   },
 );
