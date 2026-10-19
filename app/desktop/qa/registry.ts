@@ -114,12 +114,14 @@ export const screens: readonly Screen[] = [
     fixtures: ["live-0", "live-3", "live-20"],
     pending: "the chat screen (F3) mounts LiveStrip and A1 adds #/project/<machineId>/<projectId>",
   },
-  // E0/F1: the frame (top bar, sidebar) around the default route, and the connection states it shows.
+  // F1: the frame (top bar, sidebar of projects) around #/, which opens the last project's chat (the first one on a
+  // fresh install), and the connection states it shows. With no projects, #/ offers to add one (home.empty).
   {
     id: "shell",
     route: "#/",
     fixtures: ["empty", "typical", "many-agents", "long-text", "hub-unreachable", "pairing-failed", "node-too-old"],
   },
+  { id: "home.empty", route: "#/", fixtures: ["empty"] },
   // F10: connecting to a hub, one fixture per state (fixtures/onboarding). The form: no hub here, a hub found, a
   // refused key, app-pair.json used up / expired / untrusted, a rate limit, an unreadable saved key and a key that
   // would be kept in a file. #/onboarding?key opens on the key path; a fleetd://pair link lands with ?hub=&code=.
@@ -155,6 +157,7 @@ export const screens: readonly Screen[] = [
   {
     id: "board",
     route: "#/board",
+    pending: "the lead chat removed the board as a surface (A1); F2 deletes it (A4)",
     // hub-unreachable: the composer shows main's reason and fix for a lost hub, so their wording is seen and checked.
     fixtures: ["empty", "typical", "long-text", "many-agents", "needs-you", "board-stage", "board-finish", "hub-unreachable"],
   },

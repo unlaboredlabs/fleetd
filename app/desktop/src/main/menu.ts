@@ -73,7 +73,6 @@ export const installMenu = (opener: Opener, checkForUpdates: (() => Promise<void
     {
       label: "File",
       submenu: [
-        item(opener, "order.new", "New Order"),
         item(opener, "go:projects.add", "Add Project…"),
         item(opener, "composer.focus", "Focus Composer"),
         separator,
@@ -98,9 +97,7 @@ export const installMenu = (opener: Opener, checkForUpdates: (() => Promise<void
       label: "View",
       submenu: [
         item(opener, "status.toggle", "Status"),
-        item(opener, "board.open", "Board"),
-        item(opener, "inbox.toggle", "Inbox"),
-        item(opener, "board.toggleGrouping", "Group by Project or Status"),
+        item(opener, "go:time", "Time"),
         separator,
         item(opener, "palette.toggle", "Command Palette"),
         item(opener, "shortcuts.show", "Keyboard Shortcuts"),
@@ -113,8 +110,8 @@ export const installMenu = (opener: Opener, checkForUpdates: (() => Promise<void
       ],
     },
     {
-      label: "Order",
-      submenu: [item(opener, "order.previous", "Previous Order"), item(opener, "order.next", "Next Order"), separator, item(opener, "order.stop", "Stop Order…")],
+      label: "Project",
+      submenu: [item(opener, "project.previous", "Previous Project"), item(opener, "project.next", "Next Project")],
     },
     { role: "windowMenu" },
     {

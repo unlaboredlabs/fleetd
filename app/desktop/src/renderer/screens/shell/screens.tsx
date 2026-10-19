@@ -3,13 +3,12 @@
 import { lazy, Suspense, type ReactNode } from "react";
 import { EmptyState, GalleryScreen } from "../../ui";
 import type { Screen } from "./routes";
+import { ChatScreen } from "../chat";
 
 // Each screen is its own chunk, loaded when its route first opens: the app starts by parsing the shell and the one
 // screen it shows, not all of them (startup time and idle memory, perf/budgets.ts).
 const OnboardingScreen = lazy(() => import("../onboarding/OnboardingScreen").then((m) => ({ default: m.OnboardingScreen })));
 const SettingsScreen = lazy(() => import("../settings/SettingsScreen").then((m) => ({ default: m.SettingsScreen })));
-const BoardScreen = lazy(() => import("../board/BoardScreen").then((m) => ({ default: m.BoardScreen })));
-const BoardStrips = lazy(() => import("../board/Strips").then((m) => ({ default: m.BoardStrips })));
 const AddProjectScreen = lazy(() => import("../projects/AddProjectScreen").then((m) => ({ default: m.AddProjectScreen })));
 const MachinesScreen = lazy(() => import("../projects/MachinesScreen").then((m) => ({ default: m.MachinesScreen })));
 const StatusScreen = lazy(() => import("../status/StatusScreen").then((m) => ({ default: m.StatusScreen })));
@@ -33,11 +32,17 @@ export function ScreenHost({ screen }: { screen: Screen }) {
 
 function screenFor(screen: Screen): ReactNode {
   switch (screen.id) {
-    case "board":
-      return <BoardScreen project={screen.project} />;
-    case "order":
-      // The order view is gone (lead-chat spec §3); F1's frame routes projects to their chat instead.
+    case "home":
+      // Resolved by the frame to the last project; this shows only while the projects load or when there are none.
       return null;
+    case "project":
+      return (
+        <ChatScreen
+          key={`${screen.project.machineId}/${screen.project.projectId}`}
+          project={screen.project}
+          {...(screen.message !== null ? { message: screen.message } : {})}
+        />
+      );
     case "status":
       return <StatusScreen />;
     case "machines":
@@ -58,18 +63,4 @@ function screenFor(screen: Screen): ReactNode {
         <GalleryScreen />
       );
   }
-}
-
-/** The question cards are gone (no questions tool); F1's frame rewrite removes the panel itself. */
-export function InboxBody(_props: { askId: string | null; onClose: () => void }) {
-  return null;
-}
-
-/** The machine and train strips along the bottom (F2). Renders nothing until there is something to show. */
-export function StripsBody(props: { onOpenMachines: () => void }) {
-  return (
-    <Suspense>
-      <BoardStrips onOpenMachines={props.onOpenMachines} />
-    </Suspense>
-  );
 }
