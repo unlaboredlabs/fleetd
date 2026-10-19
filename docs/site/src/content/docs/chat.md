@@ -76,6 +76,12 @@ Everything shows up in the chat, quietly:
 For a project's progress at a glance, see [Status](/docs/status). For where the time went, see
 [Where time went](/docs/time-inspector).
 
+## Stop everything {#stop}
+
+To stop all of a project's work at once, say "stop" in the chat, or use Stop in the chat header. Every running and
+queued agent is stopped, and the lead says so in the chat. Merged pull requests stay, and so do the lead and the
+chat: write again to start new work.
+
 ## Secrets and risky commands {#inline}
 
 Two things never go through plain chat text:

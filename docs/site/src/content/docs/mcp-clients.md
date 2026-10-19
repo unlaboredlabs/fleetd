@@ -111,13 +111,19 @@ as stopping an order or steering, need one.
 |---|---|---|
 | `chat_send {projectRef, text, attachments?, clientRequestId}` | Write to a project's lead. It starts a turn when the lead is idle, steers it when it works, or waits while it starts. | operate |
 | `chat_history {projectRef, before?, after?, limit?}` | A page of a project's chat, oldest first; up to 100 messages. Without `before` or `after`, the newest. | read |
-| `secret_submit` | Answer a secret item in a chat. | operate, human key |
+| `approval_answer {requestId, decision, message?}` | Approve or deny an approval item: `decision` is `approve` or `deny`; `message` is a denial's reason for the lead. | operate, human key |
+| `secret_submit {requestId, sealed}` | Answer a secret item with a value sealed to the target machine. | operate, human key |
+| `project_stop {projectRef, reason?}` | Stop every running and queued agent of the project and tell the lead in its chat. Merged PRs, the lead and the chat stay. | operate, human key |
 | `attachment_put {name, mime, dataB64}` | Upload a file (image, text or PDF, at most 5 MiB) for a message. | operate |
+| `attachment_get {projectRef, attachmentId}` | Read a file attached to a project's chat. | read |
 | `project_files {machineId, projectId, query}` | A project's files, for `@`-mentions. | read |
 | `workstream_list`, `workstream_get`, `thread_tail`, `fleetd_status` | Lower-level views of the lead's work. | read |
 
 `projectRef` is `{"machineId": "devbox", "projectId": "<id>"}`; `fleetd project list` prints both, as
 `<machineId>/<projectId>`.
+
+`intake_submit` and the `order_*` tools are gone; for one release they answer with an error that points to
+`chat_send`.
 
 `clientRequestId` is any unique string you choose per request. Sending the same one again returns the same message
 instead of a second one. `events_wait` waits for changes, so a client doesn't need to poll: a new message is a

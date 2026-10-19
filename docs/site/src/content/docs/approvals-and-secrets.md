@@ -44,7 +44,8 @@ The target machine must be online when you enter the secret. Nothing is queued.
 
 A gated command can use a stored secret as an environment variable. The node reads it from its own files.
 
-From an MCP client, a secret is entered with `secret_submit`, which takes only a human key.
+From an MCP client, a secret is entered with `secret_submit` and an item is answered with `approval_answer`. Both
+take only a human key.
 
 ## Tool permission rules {#tool-rules}
 
