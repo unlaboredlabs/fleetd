@@ -5,9 +5,10 @@ use std::time::Duration;
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{ProjectRef, Timestamp};
 use fleetd_contracts::ledger::{
-    Ask, AskAnswer, AskBlocks, AskClass, AskId, AskKind, AskOptions, AskState, AskSteps, AskText,
-    Batch, BatchId, BatchState, CheckSpec, Decision, DecisionId, DecisionKey, DecisionState,
-    DecisionValue, EnvName, GatedRunSpec, ToolPermission, WorkstreamId,
+    Ask, AskAnswer, AskBlocks, AskClass, AskContext, AskId, AskKind, AskOptions,
+    AskRecommendationWhy, AskState, AskSteps, AskText, Batch, BatchId, BatchState, CheckSpec,
+    Decision, DecisionId, DecisionKey, DecisionState, DecisionValue, EnvName, GatedRunSpec,
+    ToolPermission, WorkstreamId,
 };
 use fleetd_contracts::secrets::SecretSink;
 use rusqlite::Connection;
@@ -44,7 +45,9 @@ pub struct AskInput {
     pub key: DecisionKey,
     pub class: String,
     pub text: AskText,
+    pub context: Option<AskContext>,
     pub recommendation: Option<DecisionValue>,
+    pub recommendation_why: Option<AskRecommendationWhy>,
     pub options: Option<AskOptions>,
     pub steps: Option<AskSteps>,
     /// do: re-checked once the human ticks it done.
@@ -409,8 +412,10 @@ impl Asks {
                 key: input.key.clone(),
                 class,
                 text: input.text.clone(),
+                context: input.context.clone(),
                 options: input.options.clone(),
                 recommendation: input.recommendation.clone(),
+                recommendation_why: input.recommendation_why.clone(),
                 steps: input.steps.clone(),
                 verify: input.verify.clone(),
                 sink: input.sink.clone(),
@@ -657,6 +662,9 @@ impl Asks {
                     by: "hub".into(),
                     at: Timestamp(iso_at(now)),
                     raw: String::new(),
+                    kind: None,
+                    undo_until: None,
+                    delivered_at: None,
                 });
             }
             repo::put_ask(db, &withdrawn)?;

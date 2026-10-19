@@ -190,13 +190,19 @@ impl Inbox {
                 by: actor.by.clone(),
                 at: Timestamp(iso_at(now)),
                 raw: input.raw.clone(),
+                kind: None,
+                undo_until: None,
+                delivered_at: None,
             };
             let applied = |number: Option<u64>, ask_id, outcome, value, decision_id| Applied {
                 number: number.map(|n| Positive::unchecked(n as i64)),
                 ask_id,
                 outcome,
                 value,
+                label: None,
+                kind: None,
                 decision_id,
+                undo_until: None,
                 source: Some(actor.source),
                 by: Some(actor.by.clone()),
             };
