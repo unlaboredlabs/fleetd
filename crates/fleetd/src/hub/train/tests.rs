@@ -82,9 +82,10 @@ enum FakeCi {
     Unreadable,
     /// No workflows; main requires only the train's own `fleetd/train` status.
     TrainOnly,
-    /// A CI workflow whose run for the head appears from the `run_from`th check-run poll on (never: a workflow that
-    /// does not run for this base), and whose `ci` check is green from the `green_from`th.
+    /// A CI workflow file `yaml`, whose run for the head appears from the `run_from`th check-run poll on, and whose
+    /// `ci` check is green from the `green_from`th.
     Workflow {
+        yaml: &'static str,
         run_from: Option<u32>,
         green_from: Option<u32>,
     },
@@ -268,6 +269,14 @@ impl FakeGh {
                     .collect();
                 ok(json!({ "total_count": mine.len(), "statuses": mine }))
             }
+            (["contents", ..], "GET") => match self.ci {
+                FakeCi::Workflow { yaml, .. } => {
+                    use base64::Engine;
+                    let content = base64::engine::general_purpose::STANDARD.encode(yaml);
+                    ok(json!({ "encoding": "base64", "content": content }))
+                }
+                _ => ok(json!({ "encoding": "base64", "content": "b246IHB1bGxfcmVxdWVzdAo=" })),
+            },
             (["actions", "workflows"], "GET") => match self.ci {
                 FakeCi::Actions | FakeCi::Workflow { .. } => ok(
                     json!({ "total_count": 1, "workflows": [{ "name": "CI", "path": ".github/workflows/ci.yml", "state": "active" }] }),
@@ -1101,9 +1110,14 @@ async fn the_trains_own_required_status_is_not_ci() {
     );
 }
 
+const ON_PULL_REQUEST: &str = "on:\n  pull_request:\n";
+const IGNORES_NOCI: &str =
+    "on:\n  pull_request:\n    branches-ignore: [\"noci/**\"]\n  push:\n    branches: [main]\n";
+
 #[tokio::test(flavor = "multi_thread")]
-async fn a_workflow_that_never_runs_for_the_head_is_not_ci() {
+async fn a_workflow_whose_triggers_skip_the_pr_is_not_ci() {
     let workflow = FakeCi::Workflow {
+        yaml: "on:\n  pull_request:\n    branches: [release]\n",
         run_from: None,
         green_from: None,
     };
@@ -1117,6 +1131,7 @@ async fn a_workflow_that_never_runs_for_the_head_is_not_ci() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_started_workflow_run_with_no_checks_yet_is_waited_for() {
     let workflow = FakeCi::Workflow {
+        yaml: "on: workflow_dispatch\n",
         run_from: Some(1),
         green_from: None,
     };
@@ -1172,6 +1187,7 @@ async fn merges_into_the_pull_requests_own_base_when_it_is_not_the_default_branc
 #[tokio::test(flavor = "multi_thread")]
 async fn merges_on_local_checks_into_a_base_its_workflows_ignore() {
     let workflow = FakeCi::Workflow {
+        yaml: IGNORES_NOCI,
         run_from: None,
         green_from: None,
     };
@@ -1249,19 +1265,57 @@ async fn a_merge_outside_the_train_is_a_bypass_only_into_a_base_the_train_guards
     );
 }
 
-/// Right after a push GitHub has no run for the head yet; inside the grace window that is not "no CI".
+/// GitHub may take minutes to start a run. A workflow whose trigger matches the PR is CI before any run exists: with
+/// no grace at all, the train still waits for its check instead of merging on local checks.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_run_github_creates_after_the_push_is_waited_for() {
+async fn a_triggered_workflow_is_ci_however_long_github_takes_to_start_it() {
     let workflow = FakeCi::Workflow {
-        run_from: Some(2),
+        yaml: ON_PULL_REQUEST,
+        run_from: None,
         green_from: Some(4),
     };
     let kit = Kit::with(workflow, |o| {
         o.poll_interval = Duration::ZERO;
-        o.no_ci_grace = Duration::from_secs(60);
+        o.no_ci_grace = Duration::ZERO;
     });
     assert_eq!(merge_docs(&kit).await, None);
     assert!(*kit.gh.polls.lock().unwrap() >= 4);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_lab_workflow_is_ci_for_a_slot_base_and_not_for_a_noci_one() {
+    let workflow = FakeCi::Workflow {
+        yaml: IGNORES_NOCI,
+        run_from: None,
+        green_from: None,
+    };
+    let kit = Kit::with(workflow, one_poll);
+    let pr = kit.open_pr_on(
+        "slot/1/main",
+        7,
+        "slot/1/fleetd/T1-docs",
+        &[add("docs.md", "docs\n")],
+        "Source: done:0",
+    );
+    let (_, change_id) = kit.author_task(Some(&pr)).await;
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(kit.get(&change_id).state, ChangeState::CiFailed);
+    assert!(kit.gh.merges.lock().unwrap().is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_unreadable_workflow_file_is_ci() {
+    let workflow = FakeCi::Workflow {
+        yaml: "on: [::",
+        run_from: None,
+        green_from: None,
+    };
+    let kit = Kit::with(workflow, one_poll);
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")], "Source: done:0");
+    let (_, change_id) = kit.author_task(Some(&pr)).await;
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(kit.get(&change_id).state, ChangeState::CiFailed);
+    assert!(kit.gh.merges.lock().unwrap().is_empty());
 }
 
 #[tokio::test(flavor = "multi_thread")]

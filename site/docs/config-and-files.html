@@ -149,7 +149,7 @@ port: their nodes dial out. Change it with <code>fleetd init --listen &lt;host:p
 <div class="table"><table><thead><tr><th>variable</th><th>default</th><th>does</th></tr></thead><tbody>
 <tr><td><code>FLEETD_STATUS_GITHUB_STALE_SEC</code></td><td><code>180</code></td><td>seconds without a good GitHub answer before <a href="/docs/status#stale-data">Status</a> marks a repo stale</td></tr>
 <tr><td><code>FLEETD_MAIN_CI_EVERY_SEC</code></td><td><code>60</code></td><td>how often each merge train checks its main branch's CI (every 5 minutes with GitHub webhooks on)</td></tr>
-<tr><td><code>FLEETD_TRAIN_NO_CI_GRACE_SEC</code></td><td><code>90</code></td><td>how long a head may have no check and no workflow run before the train merges it on fleetd's own checks</td></tr>
+<tr><td><code>FLEETD_TRAIN_NO_CI_GRACE_SEC</code></td><td><code>90</code></td><td>how long a head may have no check before the train asks whether its PR has CI at all</td></tr>
 </tbody></table></div>
 <h2 id="the-app">The app<a class="anchor" href="#the-app" aria-label="Link to this section">#</a></h2>
 <p>The app's pairing hand-off from <code>fleetd init</code> or <code>fleetd pair</code> on the same machine is

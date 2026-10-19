@@ -1,5 +1,6 @@
 //! fleetd-owned tasks: every subagent a lead runs. Spawn resolves model and effort, takes leases (writers) and a
-//! slot or queues with the reason, and launches a thread (writers in a new worktree on `fleetd/<taskId>-<slug>`).
+//! slot or queues with the reason, and launches a thread (writers in a new worktree on `<branchPrefix><taskId>-<slug>`,
+//! `fleetd/` by default).
 //! The thread's status transitions, read off the event log, end the task: the result goes into the record and,
 //! inline, into one lead wake; the slot and leases are released and the queue is tried again.
 pub mod branch_diff;

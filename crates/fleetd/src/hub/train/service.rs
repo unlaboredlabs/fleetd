@@ -21,6 +21,7 @@ use super::main_ci::{DriftCounts, GithubSync, MainCi, ci_state};
 use super::records::{ChangeRecords, Db, HEAD_STATES, ListFilter, QUEUED_STATES};
 use super::rules::{Refusal, check_source, check_tier, freeze_key, is_frozen_value};
 use super::time::{iso, millis, parse_iso};
+use super::triggers;
 use crate::clock::Clock;
 use crate::hub::status::fresh::{self, Fresh};
 use fleetd_contracts::ledger::WorkstreamId;
@@ -71,8 +72,8 @@ pub struct TrainOptions {
     pub poll_interval: Duration,
     /// How long CI may take on a rebased head.
     pub ci_timeout: Duration,
-    /// How long a head may have no checks at all before the train asks GitHub whether the repo has CI, so a slow CI
-    /// start is not taken for none (`FLEETD_TRAIN_NO_CI_GRACE_SEC`, default 90).
+    /// How long a head may have no checks at all before the train asks GitHub whether its PR has CI; the answer comes
+    /// from the workflows' triggers, not this wait (`FLEETD_TRAIN_NO_CI_GRACE_SEC`, default 90).
     pub no_ci_grace: Duration,
     /// How often merged PRs are checked for bypasses.
     pub bypass_every: Duration,
@@ -106,6 +107,9 @@ impl Default for TrainOptions {
         }
     }
 }
+
+/// A repo's CI config for one base as read at a time: workflows and required checks, and the workflow files.
+type CiConfig = (i64, CiInfo, Vec<Option<String>>);
 
 /// How long a repo's CI config (workflows, required checks) is trusted before it is read again.
 const CI_CONFIG_TTL_MS: i64 = 10 * 60_000;
@@ -180,7 +184,7 @@ pub struct Train {
     /// The train's last push per change: the head it pushed and when, for `ci.queue` spans.
     pushed: Mutex<HashMap<ChangeId, (String, i64)>>,
     /// Each repo and base branch's CI config and when it was read.
-    ci_configs: Mutex<HashMap<(String, String), (i64, CiInfo)>>,
+    ci_configs: Mutex<HashMap<(String, String), CiConfig>>,
     sync: GithubSync,
     /// The follower and every repo loop, aborted by `stop`.
     tasks: Mutex<Vec<tokio::task::JoinHandle<()>>>,
@@ -794,7 +798,7 @@ impl Train {
             }
             let elapsed = self.now_ms() - start;
             if runs_seen == Some(false) && elapsed >= self.options.no_ci_grace.as_millis() as i64 {
-                match self.has_ci(repo, base, sha).await {
+                match self.has_ci(repo, base, change.branch.as_str(), sha).await {
                     Ok(false) => {
                         self.check_spans(change, sha, &[]);
                         return CiOutcome::NoCi(format!("no CI on {repo}: used local checks"));
@@ -836,12 +840,12 @@ impl Train {
         }
     }
 
-    /// Whether anything reports CI on `sha` (a commit status other than the train's), `base` requires a check other
-    /// than the train's own, or one of the repo's workflows started a run for `sha`. Asked only after the grace
-    /// window, so a run GitHub has yet to create is not taken for none; workflows that never run for this base (a
-    /// `branches-ignore`) are not CI for it. The config is cached per repo and base; a failed read is an error, not
-    /// "no CI".
-    async fn has_ci(&self, repo: &str, base: &str, sha: &str) -> Result<bool, GhError> {
+    /// Whether `sha`, the head of a PR from `head` into `base`, has CI: anything reports on it (a commit status other
+    /// than the train's, a workflow run), `base` requires a check other than the train's own, or one of the repo's
+    /// workflows has a trigger that can run for this PR. Decided from the workflows' `on:`, never from how long GitHub
+    /// takes to start a run, and "may run" wins every doubt. The config is cached per repo and base; a failed read is
+    /// an error, not "no CI".
+    async fn has_ci(&self, repo: &str, base: &str, head: &str, sha: &str) -> Result<bool, GhError> {
         if !self.github.status_contexts(repo, sha).await?.is_empty() {
             return Ok(true);
         }
@@ -849,20 +853,34 @@ impl Train {
         let now = self.now_ms();
         let cached = lock(&self.ci_configs)
             .get(&key)
-            .filter(|(at, _)| now - at < CI_CONFIG_TTL_MS)
-            .map(|(_, ci)| ci.clone());
-        let ci = match cached {
-            Some(ci) => ci,
+            .filter(|(at, ..)| now - at < CI_CONFIG_TTL_MS)
+            .map(|(_, ci, files)| (ci.clone(), files.clone()));
+        let (ci, files) = match cached {
+            Some(read) => read,
             None => {
                 let ci = self.github.ci_config(repo, base).await?;
-                lock(&self.ci_configs).insert(key, (now, ci.clone()));
-                ci
+                let files = if ci.workflows.is_empty() {
+                    Vec::new()
+                } else {
+                    self.github.workflow_files(repo, base).await?
+                };
+                lock(&self.ci_configs).insert(key, (now, ci.clone(), files.clone()));
+                (ci, files)
             }
         };
         if ci.required_checks.iter().any(|c| c != TRAIN_CONTEXT) {
             return Ok(true);
         }
-        Ok(!ci.workflows.is_empty() && self.github.workflow_runs(repo, sha).await? > 0)
+        if ci.workflows.is_empty() {
+            return Ok(false);
+        }
+        if self.github.workflow_runs(repo, sha).await? > 0 {
+            return Ok(true);
+        }
+        Ok(files.iter().any(|f| {
+            f.as_deref()
+                .is_none_or(|yaml| triggers::may_run(yaml, base, head))
+        }))
     }
 
     /// One `ci.check` span per check run of the deciding poll, from GitHub's own stamps; a check still running when
@@ -1241,7 +1259,11 @@ impl Train {
     /// After a restart: a Change the train was merging is finished if GitHub merged it, else put back first in line.
     async fn recover(&self, repo: &str) {
         for change in self.records.in_train(repo, HEAD_STATES) {
-            match self.github.pull(repo, change.pr_number.get()).await {
+            let pull = self.github.pull(repo, change.pr_number.get()).await;
+            if let Ok(pull) = &pull {
+                self.guard_base(repo, &pull.base.ref_);
+            }
+            match pull {
                 Ok(pull) if pull.merged && change.state == ChangeState::Merging => {
                     self.finish_merged(&change, pull.merge_commit_sha.as_deref(), None)
                         .await

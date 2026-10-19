@@ -624,6 +624,58 @@ impl TrainGitHub {
         Ok(runs.total_count)
     }
 
+    /// The repo's active workflow files as they are on `base`; `None` for one that can't be read there. GitHub's own
+    /// dynamic workflows (Copilot, Dependabot) are left out, as adding a project leaves them out.
+    pub async fn workflow_files(
+        &self,
+        repo: &str,
+        base: &str,
+    ) -> Result<Vec<Option<String>>, GhError> {
+        let listed: Value = self
+            .json(
+                "GET",
+                &format!("repos/{repo}/actions/workflows?per_page=100"),
+                &[],
+            )
+            .await?;
+        let paths: Vec<String> = listed["workflows"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|w| w["state"].as_str() == Some("active"))
+            .filter_map(|w| w["path"].as_str())
+            .filter(|p| !p.starts_with("dynamic/"))
+            .map(str::to_owned)
+            .collect();
+        let mut files = Vec::with_capacity(paths.len());
+        for path in paths {
+            let file = match self
+                .call(
+                    "GET",
+                    &format!("repos/{repo}/contents/{path}?ref={base}"),
+                    &[],
+                )
+                .await?
+            {
+                Reply::Ok(v) => v["content"].as_str().and_then(|b64| {
+                    use base64::Engine;
+                    let bytes = base64::engine::general_purpose::STANDARD
+                        .decode(b64.replace('\n', ""))
+                        .ok()?;
+                    String::from_utf8(bytes).ok()
+                }),
+                Reply::Err { status: 404, .. } => None,
+                Reply::Err { message, .. } => {
+                    return Err(GhError::failed(format!(
+                        "gh api repos/{repo}/contents/{path} failed: {message}"
+                    )));
+                }
+            };
+            files.push(file);
+        }
+        Ok(files)
+    }
+
     /// The repo's workflows and the checks `branch` requires, read as adding a project reads them; any read failing
     /// is an error, never "no CI".
     pub async fn ci_config(&self, repo: &str, branch: &str) -> Result<CiInfo, GhError> {
