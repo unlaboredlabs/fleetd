@@ -58,7 +58,9 @@ export const fixtures = [
   "onboarding-hub-too-old",
   "projects-errors",
   "projects-machines",
-  // F6: the Status view's own states (fixtures/status).
+  // F6: the Status view's own states (fixtures/status), and E3b's eight-project mix (all four words, planning,
+  // stale, a ~120-character name).
+  "status-rows",
   "status-stale",
   "status-planning",
   "status-skeleton",
@@ -353,7 +355,7 @@ export const screens: readonly Screen[] = [
   {
     id: "status.fleet",
     route: "#/status",
-    fixtures: ["typical", "long-text", "empty", "many-agents", "hub-unreachable", "status-stale", "status-planning", "status-skeleton"],
+    fixtures: ["typical", "status-rows", "long-text", "empty", "many-agents", "hub-unreachable", "status-stale", "status-planning", "status-skeleton"],
   },
   // F7: the time inspector (fixtures/time): an order's timeline, ~15k spans in time-heavy; the fleet's breakdown;
   // its insights. Each tab's root carries its own id, so the three are shot apart.
