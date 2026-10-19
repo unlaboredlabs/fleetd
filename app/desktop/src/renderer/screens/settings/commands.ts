@@ -1,9 +1,10 @@
 // Settings in the command palette: its three pages, and every prompt by its plain name (typed, not listed: there
-// are 60 of them), each opening in Settings → Prompts.
+// are 60 of them), each opening in Settings → Prompts. main.tsx registers them once, with the app's data layer.
 import { registerCommands, registerSource, type Command } from "../palette";
 import { GROUPS, describe, groupOf } from "./catalog";
-import type { PromptsListOutput, PromptSummary } from "./contracts";
-import { call, hubPhase, onHubChange } from "./hub";
+import { hashKey } from "@tanstack/react-query";
+import type { DataLayer } from "../../src/data/queries";
+import type { PromptSummary } from "./contracts";
 import { promptHref, tabHref } from "./route";
 
 const go = (hash: string) => {
@@ -37,53 +38,45 @@ const pages: Command[] = [
   },
 ];
 
-let prompts: ReadonlyArray<PromptSummary> = [];
-let asking = false;
-const listeners = new Set<() => void>();
-
-/** The list is fetched the first time the palette asks while connected; names don't change with edits. */
-function load() {
-  if (prompts.length > 0 || asking || hubPhase().phase !== "live") return;
-  asking = true;
-  call<PromptsListOutput>("prompts_list", {}).then(
-    (o) => {
-      asking = false;
-      prompts = o.prompts.filter((p) => p.kind !== "instructions");
-      for (const l of listeners) l();
-    },
-    () => {
-      // Tried again the next time the palette opens.
-      asking = false;
-    },
-  );
-}
-
 const groupTitle = (p: PromptSummary) => GROUPS.find((g) => g.key === groupOf(p))?.title ?? "";
 
-registerCommands(pages, "default");
-registerSource({
-  id: "prompts",
-  items: () => {
-    load();
-    return prompts.map((p) => {
-      const { name, description } = describe(p);
-      return {
-        id: `prompt:${p.id}`,
-        title: name,
-        detail: description,
-        group: "prompts",
-        keywords: [p.id, p.title, groupTitle(p)],
-        searchOnly: true,
-        run: () => go(promptHref(p.id)),
-      };
-    });
-  },
-  subscribe: (onChange) => {
-    listeners.add(onChange);
-    const off = onHubChange(load);
-    return () => {
-      listeners.delete(onChange);
-      off();
-    };
-  },
-});
+/**
+ * Registers the Settings pages and a `prompts` source with the palette, for the life of the app. The prompts come
+ * from the data layer's hub-wide prompts_list, the same read the Prompts page makes, fetched the first time the
+ * palette asks while the connection is fresh (names don't change with edits). Returns the unregister.
+ */
+export function registerSettingsCommands(layer: DataLayer): () => void {
+  const read = layer.toolQuery("prompts_list", {});
+  const prompts = (): ReadonlyArray<PromptSummary> => layer.queryClient.getQueryData<{ prompts: PromptSummary[] }>(read.queryKey)?.prompts ?? [];
+  const offPages = registerCommands(pages, "default");
+  const offSource = registerSource({
+    id: "prompts",
+    items: () => {
+      const list = prompts();
+      // A failed read is tried again the next time the palette opens.
+      if (list.length === 0 && layer.store.getState().fresh) layer.queryClient.query(read).catch(() => undefined);
+      return list
+        .filter((p) => p.kind !== "instructions")
+        .map((p) => {
+          const { name, description } = describe(p);
+          return {
+            id: `prompt:${p.id}`,
+            title: name,
+            detail: description,
+            group: "prompts",
+            keywords: [p.id, p.title, groupTitle(p)],
+            searchOnly: true,
+            run: () => go(promptHref(p.id)),
+          };
+        });
+    },
+    subscribe: (onChange) =>
+      layer.queryClient.getQueryCache().subscribe((e) => {
+        if (e.type === "updated" && e.query.queryHash === hashKey(read.queryKey)) onChange();
+      }),
+  });
+  return () => {
+    offSource();
+    offPages();
+  };
+}

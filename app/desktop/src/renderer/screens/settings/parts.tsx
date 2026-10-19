@@ -1,14 +1,13 @@
 import { Button, Dialog, Select } from "../../ui";
-import type { ProjectSummary, ProjectsListOutput } from "./contracts";
+import { selectProjects } from "../../src/data/selectors";
+import { useData } from "../../src/data/react";
+import type { ProjectSummary } from "./contracts";
 import { HUB, scopeKey, type Scope } from "./editor";
-import { call, useCall, useHubPhase } from "./hub";
 
-/** The hub's projects, for the pickers. */
-export function useProjects(): ReadonlyArray<ProjectSummary> {
-  const live = useHubPhase().phase === "live";
-  const [load] = useCall(live ? "projects" : null, () => call<ProjectsListOutput>("projects_list", {}));
-  return load.state === "ready" ? load.value.projects : [];
-}
+const none: ReadonlyArray<ProjectSummary> = [];
+
+/** The hub's projects, for the pickers: the snapshot's, kept current by the data layer. */
+export const useProjects = (): ReadonlyArray<ProjectSummary> => useData(selectProjects) ?? none;
 
 export function scopeName(scope: Scope, projects: ReadonlyArray<ProjectSummary>): string {
   if (scope.kind === "hub") return "Hub-wide";

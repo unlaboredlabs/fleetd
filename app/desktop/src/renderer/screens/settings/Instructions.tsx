@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Button, Field, Separator, Text, Textarea } from "../../ui";
 import { INSTRUCTIONS, type PromptDetail, type PromptScope } from "./contracts";
 import { parseScope, projectRefOf, scopeKey, type Scope } from "./editor";
-import { call, errorText, useCall, useHubPhase, usePromptEvents } from "./hub";
+import { errorText, useHubCall, useLive, useRead, useRefetch } from "./hub";
 import { ConfirmDiscard, ScopeSelect, scopeName, useProjects } from "./parts";
 import { replaceRoute, type SettingsRoute } from "./route";
 import s from "./settings.module.css";
@@ -21,20 +21,16 @@ interface Draft {
 const fill = (d: Draft | null, saved: string): Draft => (d === null || d.text === d.from ? { from: saved, text: saved } : { from: saved, text: d.text });
 
 export function Instructions({ route }: { route: SettingsRoute }) {
-  const live = useHubPhase().phase === "live";
-  const events = usePromptEvents();
+  const live = useLive();
   const projects = useProjects();
   const [project, setProject] = useState<Scope | null>(() => (route.for ? parseScope(route.for) : null));
   const [pending, setPending] = useState<Scope | null>(null);
-  const [rev, setRev] = useState(0);
   const ref = project ? projectRefOf(project) : undefined;
   const key = project ? scopeKey(project) : "hub";
 
-  const [load, reload] = useCall(
-    live ? `instructions:${key}` : null,
-    () => call<PromptDetail>("prompt_get", { id: INSTRUCTIONS, ...(ref ? { projectRef: ref } : {}) }),
-    events + rev,
-  );
+  const [load, reload] = useRead("prompt_get", { id: INSTRUCTIONS, ...(ref ? { projectRef: ref } : {}) }, live);
+  const hubCall = useHubCall();
+  const refetch = useRefetch();
 
   const [global, setGlobal] = useState<Draft | null>(null);
   const [own, setOwn] = useState<{ key: string; draft: Draft } | null>(null);
@@ -68,14 +64,14 @@ export function Instructions({ route }: { route: SettingsRoute }) {
     if (!d || busy) return;
     setBusy(scope);
     setEcho(null);
-    call("prompt_set", { id: INSTRUCTIONS, scope, ...(scope === "project" && ref ? { projectRef: ref } : {}), text, base: d.default.ref }).then(
+    hubCall("prompt_set", { id: INSTRUCTIONS, scope, ...(scope === "project" && ref ? { projectRef: ref } : {}), text, base: d.default.ref }).then(
       () => {
         setBusy(null);
         const whose = scope === "project" && project ? `for ${scopeName(project, projects)}` : "for every project";
         setEcho({ ok: true, text: `Saved ${whose}. New sessions get them; a lead gets them at its next restart.` });
         if (scope === "global") setGlobal({ from: text, text });
         else setOwn({ key, draft: { from: text, text } });
-        setRev((r) => r + 1);
+        refetch(["prompt_get"]);
       },
       (e: unknown) => {
         setBusy(null);

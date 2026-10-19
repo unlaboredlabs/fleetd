@@ -1,5 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { registerSettingsCommands } from "../screens/settings/commands";
 import { applyMotion } from "../screens/settings/prefs";
 import { applyTheme, UiProvider } from "../ui";
 import { App } from "./App";
@@ -13,6 +14,7 @@ applyTheme();
 applyMotion();
 
 const data = createDataLayer(window.fleetd.hub);
+registerSettingsCommands(data);
 
 const root = document.getElementById("root");
 if (root === null) throw new Error("index.html has no #root");

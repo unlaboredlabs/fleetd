@@ -1,8 +1,8 @@
 import { useState, type ReactNode } from "react";
 import { Button, Dialog, Dot, InlineCode, Radio, RadioGroup, Select, Separator, Switch, Text, THEME_MODES, Truncate, textClass, useTheme } from "../../ui";
 import type { HubState } from "../../../shared/hub";
-import type { TimeRetentionSetOutput, TimeStore } from "./contracts";
-import { call, errorText, useCall, useHubPhase } from "./hub";
+import { useData } from "../../src/data/react";
+import { errorText, useHubCall, useLive, useRead, useRefetch } from "./hub";
 import { MOTION_PREFS, parseMotion, setDigest, setMotion, useDigest, useMotion } from "./prefs";
 import s from "./settings.module.css";
 
@@ -96,7 +96,7 @@ function phaseLine(state: HubState): { tone: string; text: string } {
 }
 
 function HubSetting() {
-  const state = useHubPhase();
+  const state = useData((s) => s.hub);
   const [confirm, setConfirm] = useState(false);
   const hub = state.phase === "unpaired" ? null : state.hub;
   const line = phaseLine(state);
@@ -162,11 +162,13 @@ export function formatBytes(b: number): string {
 const daysLabel = (d: number) => (d === 365 ? "1 year" : d === 1 ? "1 day" : `${d} days`);
 
 function RetentionSetting() {
-  const live = useHubPhase().phase === "live";
-  const [store, reload] = useCall<TimeStore>(live ? "time-store" : null, () =>
-    // The retention and the stored size come with any breakdown; the fleet's last hour is the cheapest one.
-    call<TimeStore>("time_breakdown", { scope: { kind: "fleet" }, since: new Date(Date.now() - 3_600_000).toISOString() }),
-  );
+  const live = useLive();
+  // The retention and the stored size come with any breakdown; the fleet's last hour (from when the page opened)
+  // is the cheapest one.
+  const [since] = useState(() => new Date(Date.now() - 3_600_000).toISOString());
+  const [store, reload] = useRead("time_breakdown", { scope: { kind: "fleet" }, since }, live);
+  const hubCall = useHubCall();
+  const refetch = useRefetch();
   const [saving, setSaving] = useState<number | null>(null);
   const [echo, setEcho] = useState<{ ok: boolean; text: string } | null>(null);
   const help = "How long the hub keeps the time inspector's detailed spans. Daily totals and critical paths stay 400 days.";
@@ -208,11 +210,11 @@ function RetentionSetting() {
             const d = Number(v);
             setSaving(d);
             setEcho(null);
-            call<TimeRetentionSetOutput>("time_retention_set", { retentionDays: d }).then(
+            hubCall("time_retention_set", { retentionDays: d }).then(
               (o) => {
                 setSaving(null);
                 setEcho({ ok: true, text: `Saved: ${daysLabel(o.retentionDays)}. Older spans go at the next hourly prune.` });
-                reload();
+                refetch(["time_breakdown"]);
               },
               (e: unknown) => {
                 setSaving(null);

@@ -1,89 +1,53 @@
-// Settings' way to the hub until E1's store and Query hooks land: typed calls over window.fleetd, and ONE shared
-// frame subscription for the connection phase and the prompt events (each subscribe makes main resync, so screens
-// must not open their own). When the store lands, useHubPhase/usePromptEvents become its selectors.
-import { useEffect, useState, useSyncExternalStore } from "react";
-import type { HubError, HubFrame, HubState } from "../../../shared/hub";
-import { PROMPT_EVENTS } from "./contracts";
+// Settings' reads and writes, all through the app's one data layer (src/renderer/src/data): reads are queries that
+// wait for a fresh connection and refetch when a hub event (prompt.changed, prompt.default_changed, …) makes them
+// stale; writes are calls, after which the page refetches what it shows rather than waiting for the event.
+import { useCallback } from "react";
+import type { ToolInput, ToolName, ToolOutput } from "../../../shared/contracts";
+import { CallError } from "../../src/data/queries";
+import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 
-export class CallFailed extends Error {
-  constructor(readonly error: HubError) {
-    super(error.fix ? `${error.message} ${error.fix}` : error.message);
-  }
-}
+export const errorText = (e: unknown): string => {
+  if (e instanceof CallError) return e.error.fix ? `${e.error.message} ${e.error.fix}` : e.error.message;
+  return e instanceof Error ? e.message : String(e);
+};
 
-export async function call<Out>(tool: string, input: object): Promise<Out> {
-  const outcome = await window.fleetd.hub.call(tool, input);
-  if (!outcome.ok) throw new CallFailed(outcome.error);
-  // The hub validated the output against the same contract this file mirrors.
-  return outcome.output as Out;
-}
-
-export const errorText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
-
-let phase: HubState = { phase: "connecting", hub: "", attempt: 0 };
-let promptSeq = 0;
-const listeners = new Set<() => void>();
-let started = false;
-
-function start() {
-  if (started) return;
-  started = true;
-  void window.fleetd.hub.state().then((s) => {
-    phase = s;
-    for (const l of listeners) l();
-  });
-  window.fleetd.hub.subscribe((frame: HubFrame) => {
-    if (frame.t === "state") phase = frame.state;
-    else if (frame.t === "event" && PROMPT_EVENTS.has(frame.event.type)) promptSeq += 1;
-    // A fresh snapshot after a reconnect may follow edits made elsewhere while away.
-    else if (frame.t === "snapshot") promptSeq += 1;
-    else return;
-    for (const l of listeners) l();
-  });
-}
-
-function subscribe(listener: () => void) {
-  start();
-  listeners.add(listener);
-  return () => listeners.delete(listener);
-}
-
-/** For code outside React (the palette's prompt source): called on every phase change and prompt event. */
-export const onHubChange = subscribe;
-export const hubPhase = (): HubState => phase;
-
-export function useHubPhase(): HubState {
-  return useSyncExternalStore(subscribe, () => phase);
-}
-
-/** Bumps whenever a prompt was saved or reset anywhere (another device, the CLI) or the connection resynced. */
-export function usePromptEvents(): number {
-  return useSyncExternalStore(subscribe, () => promptSeq);
-}
+/** Whether the app is connected to its hub right now. */
+export const useLive = (): boolean => useData((s) => s.hub.phase === "live");
 
 export type Load<T> = { state: "loading" } | { state: "ready"; value: T } | { state: "failed"; message: string };
 
 /**
- * A call's answer, refetched when `key` changes. An answer for an older key is dropped, so a slow reply for the
- * previous project or prompt never lands on the one now shown. A refetch for the same key (a reload, or a new
- * `version` after an event) keeps the last answer on screen until the new one arrives.
+ * `tool(input)` as a Load: loading until the first answer for this input; while it refetches (an event, a save),
+ * the last answer stays on screen. A query for another input never shows this one's answer.
  */
-export function useCall<T>(key: string | null, run: () => Promise<T>, version = 0): [Load<T>, () => void] {
-  const [load, setLoad] = useState<{ key: string | null; load: Load<T> }>({ key, load: { state: "loading" } });
-  const [nonce, setNonce] = useState(0);
-  useEffect(() => {
-    if (key === null) return;
-    let live = true;
-    run().then(
-      (value) => live && setLoad({ key, load: { state: "ready", value } }),
-      (e: unknown) => live && setLoad({ key, load: { state: "failed", message: errorText(e) } }),
-    );
-    return () => {
-      live = false;
-    };
-    // `run` closes over the same inputs as `key`; the key is the identity of the request.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, nonce, version]);
-  const shown: Load<T> = load.key === key ? load.load : { state: "loading" };
-  return [shown, () => setNonce((n) => n + 1)];
+export function useRead<T extends ToolName>(tool: T, input: ToolInput<T>, enabled = true): [Load<ToolOutput<T>>, () => void] {
+  const q = useToolQuery(tool, input, { enabled });
+  const load: Load<ToolOutput<T>> =
+    q.data !== undefined ? { state: "ready", value: q.data } : q.isError ? { state: "failed", message: errorText(q.error) } : { state: "loading" };
+  return [load, () => void q.refetch()];
+}
+
+/** A call that resolves to its output or throws the hub's error. */
+export function useHubCall() {
+  const layer = useDataLayer();
+  return useCallback(
+    async <T extends ToolName>(tool: T, input: ToolInput<T>): Promise<ToolOutput<T>> => {
+      const outcome = await layer.call(tool, input);
+      if (!outcome.ok) throw new CallError(outcome.error);
+      return outcome.output;
+    },
+    [layer],
+  );
+}
+
+/** Refetches every read of these tools now (after a write of ours; the hub's event would do it a moment later). */
+export function useRefetch() {
+  const layer = useDataLayer();
+  return useCallback(
+    (tools: readonly ToolName[]) =>
+      void layer.queryClient.invalidateQueries({
+        predicate: (q) => q.queryKey[0] === "call" && (tools as readonly unknown[]).includes(q.queryKey[1]),
+      }),
+    [layer],
+  );
 }

@@ -5,16 +5,7 @@ import { ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, Dialog, Dot, IdChip, Input, Tab, TabList, TabPanel, Tabs, Text, Textarea, cx, textClass } from "../../ui";
 import { describe, groupOf, sections, type CatalogRow } from "./catalog";
-import type {
-  ProjectRef,
-  PromptDetail,
-  PromptResetOutput,
-  PromptScope,
-  PromptSetOutput,
-  PromptsListOutput,
-  PromptSummary,
-  PromptWarning,
-} from "./contracts";
+import type { ProjectRef, PromptDetail, PromptScope, PromptSummary, PromptWarning } from "./contracts";
 import { DiffBlock } from "./DiffBlock";
 import { counts, diffLines, sameProse } from "./diff";
 import {
@@ -39,7 +30,7 @@ import {
   type Filled,
   type Scope,
 } from "./editor";
-import { call, errorText, useCall, useHubPhase, usePromptEvents } from "./hub";
+import { errorText, useHubCall, useLive, useRead, useRefetch, type Load } from "./hub";
 import { ConfirmDiscard, ScopeSelect, scopeName, useProjects } from "./parts";
 import { toggleGroup, useCollapsed } from "./prefs";
 import { replaceRoute, type SettingsRoute, type View } from "./route";
@@ -54,8 +45,10 @@ type ResetFor = "edit" | "update";
 let kept: { filled: Filled; text: string; mergedFilled: Filled | null; merged: string } | null = null;
 
 export function Prompts({ route }: { route: SettingsRoute }) {
-  const live = useHubPhase().phase === "live";
-  const events = usePromptEvents();
+  const live = useLive();
+  const hubCall = useHubCall();
+  const refetch = useRefetch();
+  const refetchPrompts = () => refetch(["prompts_list", "prompt_get"]);
   const projects = useProjects();
 
   // A kept draft for another prompt or scope opens first, and the route waits behind the discard confirm.
@@ -63,20 +56,12 @@ export function Prompts({ route }: { route: SettingsRoute }) {
   const [scope, setScope] = useState<Scope>(start.scope);
   const [selected, setSelected] = useState<string | null>(start.id);
   const [pending, setPending] = useState<Switch | null>(start.ask);
-  const [rev, setRev] = useState(0);
   const sk = scopeKey(scope);
   const projectRef = projectRefOf(scope);
 
-  const [list, reloadList] = useCall(
-    live ? `list:${sk}` : null,
-    () => call<PromptsListOutput>("prompts_list", projectRef ? { projectRef } : {}),
-    events + rev,
-  );
-  const [detail] = useCall(
-    live && selected ? `detail:${sk}:${selected}` : null,
-    () => call<PromptDetail>("prompt_get", { id: selected, ...(projectRef ? { projectRef } : {}) }),
-    events + rev,
-  );
+  const scoped = projectRef ? { projectRef } : {};
+  const [list, reloadList] = useRead("prompts_list", scoped, live);
+  const [detail] = useRead("prompt_get", { id: selected ?? "", ...scoped }, live && selected !== null);
 
   const [editor, setEditor] = useState(() => kept?.text ?? "");
   const [filled, setFilled] = useState<Filled | null>(() => kept?.filled ?? null);
@@ -134,7 +119,7 @@ export function Prompts({ route }: { route: SettingsRoute }) {
     if (!d || !onScreen || editorText.trim() === "" || checked?.text === editorText) return;
     const scopeOut = editScope(d, scope);
     const timer = window.setTimeout(() => {
-      call<PromptSetOutput>("prompt_set", {
+      hubCall("prompt_set", {
         id: d.id,
         scope: scopeOut,
         ...(scopeOut === "project" && projectRef ? { projectRef } : {}),
@@ -147,7 +132,7 @@ export function Prompts({ route }: { route: SettingsRoute }) {
       );
     }, 300);
     return () => window.clearTimeout(timer);
-  }, [d, onScreen, editorText, checked?.text, scope, projectRef]);
+  }, [d, onScreen, editorText, checked?.text, scope, projectRef, hubCall]);
 
   const go = (to: Switch) => {
     setPending(null);
@@ -178,7 +163,7 @@ export function Prompts({ route }: { route: SettingsRoute }) {
     if (!d || busy) return;
     setBusy(true);
     setEcho(null);
-    call<PromptSetOutput>("prompt_set", {
+    hubCall("prompt_set", {
       id: d.id,
       scope: target.scope,
       ...(target.scope === "project" && target.projectRef ? { projectRef: target.projectRef } : {}),
@@ -193,7 +178,7 @@ export function Prompts({ route }: { route: SettingsRoute }) {
         setChecked({ text, warnings: o.warnings });
         setToUpdate(behind);
         if (view === "update") setView("edit");
-        setRev((r) => r + 1);
+        refetchPrompts();
       },
       (e: unknown) => {
         setBusy(false);
@@ -214,7 +199,7 @@ export function Prompts({ route }: { route: SettingsRoute }) {
     const target = which === "update" ? updateTarget(d, scope) : { scope: editScope(d, scope), projectRef };
     setBusy(true);
     setEcho(null);
-    call<PromptResetOutput>("prompt_reset", {
+    hubCall("prompt_reset", {
       id: d.id,
       scope: target.scope,
       ...(target.scope === "project" && target.projectRef ? { projectRef: target.projectRef } : {}),
@@ -225,7 +210,7 @@ export function Prompts({ route }: { route: SettingsRoute }) {
         setFilled(null);
         setEcho({ ok: true, text: resetLine(target.scope, scopeName(scope, projects)) });
         setView("edit");
-        setRev((r) => r + 1);
+        refetchPrompts();
       },
       (e: unknown) => {
         setBusy(false);
@@ -361,7 +346,7 @@ function badge(summary: PromptSummary, scope: Scope): { label: string; update?: 
 }
 
 function PromptList(props: {
-  list: ReturnType<typeof useCall<PromptsListOutput>>[0];
+  list: Load<{ prompts: PromptSummary[] }>;
   selected: string | null;
   scope: Scope;
   onPick: (id: string) => void;
