@@ -42,9 +42,10 @@ jobs:
         # failure classifier and the conformance probe (against a stand-in replaying the recorded initialize
         # answer). Its own step so a claude protocol drift reads as such; re-record the fixtures when bumping TESTED.
         run: cargo test --locked -p fleetd --lib node::runner
-      - name: fleetd.sh/docs is up to date
+      - name: fleetd.sh/docs and the generated pages are up to date
         # site/docs/ is committed (Vercel has no build step); this fails while it differs from docs/site/*.md and
-        # fleetd help. Fix: cargo run -q -p docsgen, then commit site/docs.
+        # fleetd help, or while a page docsgen writes from the code (docs/site/reference/agent-tools.md) differs from
+        # what it generates. Fix: cargo run -q -p docsgen, then commit docs/site and site/docs.
         run: cargo run --locked -q -p docsgen -- --check
       # For the site job. The dependencies are already built by the tests, so this compiles only the binary.
       - run: cargo run --locked -q -p fleetd -- help > "$RUNNER_TEMP/fleetd-help.txt"
@@ -212,6 +213,13 @@ jobs:
           cache: pnpm
           cache-dependency-path: app/desktop/pnpm-lock.yaml
       - if: steps.scope.outputs.run == 'true'
+        name: No paths that differ only in case
+        # macOS checkouts are case-insensitive: Composer.tsx beside composer.ts breaks the Mac build and the
+        # "./composer" import alike, so the extension is ignored too.
+        run: |
+          clashes=$(git ls-files | sed -E 's/\.[^./]+$//' | awk '{ l = tolower($0) } (l in seen) && seen[l] != $0 { print seen[l] " / " $0; next } { seen[l] = $0 }')
+          if [ -n "$clashes" ]; then echo "Paths that differ only in case (rename one):"; echo "$clashes"; exit 1; fi
+      - if: steps.scope.outputs.run == 'true'
         run: pnpm install --frozen-lockfile
       - if: steps.scope.outputs.run == 'true'
         run: pnpm typecheck
@@ -221,3 +229,23 @@ jobs:
         run: pnpm test
       - if: steps.scope.outputs.run == 'true'
         run: pnpm build
+      - name: A release build refuses debugging switches
+        # Builds both variants, lays each out as a packaged app and launches it: with a DevTools switch the release
+        # build must exit before anything listens; the test build must still listen. The fuse-only cases (--inspect)
+        # run against the real package in build-release.yml.
+        if: steps.scope.outputs.run == 'true'
+        run: pnpm debug-guard-check
+      - name: Test build (DevTools-driven perf and recording)
+        # The release build refuses --remote-debugging-port, which the perf and recording runs drive the app with.
+        if: steps.scope.outputs.run == 'true'
+        run: pnpm build:test
+      - name: Budgets (Linux)
+        # Measured on this runner, not the budget machine (an M-series Mac: scripts/perf-mac.sh), so this fails on a
+        # regression from perf/baseline-linux.json and only reports the budgets. The numbers go to the job summary.
+        if: steps.scope.outputs.run == 'true'
+        run: xvfb-run -a -s "-screen 0 1920x1200x24" pnpm perf --baseline perf/baseline-linux.json --json "$RUNNER_TEMP/perf.json"
+      - name: Demo recording (Linux)
+        # FLEETD_RECORD + FLEETD_DEMO_TYPE end to end: the app records itself typing an order, the clip ends on
+        # SIGUSR1, and both MP4s must be H.264 with frames.
+        if: steps.scope.outputs.run == 'true'
+        run: xvfb-run -a -s "-screen 0 1920x1200x24" pnpm perf:record

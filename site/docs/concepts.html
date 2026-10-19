@@ -45,6 +45,7 @@
 <p>Reference</p>
 <ul>
 <li><a href="/docs/cli">CLI reference</a></li>
+<li><a href="/docs/agent-tools">Agent tools</a></li>
 <li><a href="/docs/config-and-files">Config &amp; files</a></li>
 <li><a href="/docs/security">Security model</a></li>
 <li><a href="/docs/troubleshooting">Troubleshooting</a></li>
@@ -67,7 +68,8 @@ machine is usually a worker too.</p>
 <h2 id="leads">Leads<a class="anchor" href="#leads" aria-label="Link to this section">#</a></h2>
 <p>Each project has one lead: a long-running <code>claude</code> session that turns orders into briefs, splits them into tasks
 for writer and reviewer sessions, and never writes code itself. Leads run on <code>claude-opus-5-5</code> by default. A
-project's first order starts its lead.</p>
+project's first order starts its lead. Leads and tasks reach fleetd through its MCP tools; <a href="/docs/agent-tools">Agent tools</a>
+lists what each role gets and what it can't do.</p>
 <h2 id="orders">Orders<a class="anchor" href="#orders" aria-label="Link to this section">#</a></h2>
 <p>An order is one line of intent, such as <code>fix the typo in the README</code>, sent from the app or with <code>intake_submit</code>
 over MCP. The hub picks the project (a leading <code>@project</code> names it), opens a workstream and wakes the lead. The lead

@@ -25,6 +25,7 @@ import {
 } from "../../../shared/contracts";
 import type { HubError, HubFrame, HubState } from "../../../shared/hub";
 import { ordersNamed } from "./effects";
+import { settled } from "./phase";
 
 /** "machineId/projectId". */
 export type ProjectKey = string;
@@ -41,8 +42,19 @@ export interface OrderDetail {
 
 export interface LiveState {
   readonly lanes: Readonly<Record<string, LiveLane>>;
+  /**
+   * When the feed first said each lane finished (the frame's hub time). A board card still lists a lane the feed
+   * just finished, without an end time; this is its end time until the hub's own arrives, so its clock stops and its
+   * check can hold for a moment before it leaves.
+   */
+  readonly ended: Readonly<Record<string, string>>;
   /** The tail of the message each lane is writing. */
   readonly text: Readonly<Record<string, { readonly messageId: string; readonly text: string }>>;
+  /**
+   * A project lead's recent messages in full, oldest first (the order view's conversation): `text` keeps a tail, and
+   * a lead can stream far more than that before its log has the message. Bounded per lead by STREAM_CHARS.
+   */
+  readonly streams?: Readonly<Record<string, readonly { readonly messageId: string; readonly text: string }[]>> | undefined;
   readonly machines: Readonly<Record<string, MachineLive>>;
   readonly slots?: SlotState | undefined;
   /** Hub clock minus local clock, in ms; see `applyLive`. */
@@ -83,8 +95,37 @@ const ORDER_EVENTS = 100;
 /** Orders whose event lines are kept; the least recently active goes first. */
 const ORDERS_WITH_EVENTS = 100;
 const TEXT_TAIL = 2000;
+const STREAM_CHARS = 1_500_000;
+const isLeadLane = (laneId: string) => laneId.startsWith("lead:");
 
-const emptyLive: LiveState = { lanes: {}, text: {}, machines: {}, stale: true };
+type Stream = readonly { readonly messageId: string; readonly text: string }[];
+/** Appends to a lead's stream, dropping its oldest messages past the cap (the newest is cut to its tail). */
+const appendStream = (stream: Stream, messageId: string, append: string): Stream => {
+  const last = stream.at(-1);
+  let next = last?.messageId === messageId ? [...stream.slice(0, -1), { messageId, text: last.text + append }] : [...stream, { messageId, text: append }];
+  let size = next.reduce((n, m) => n + m.text.length, 0);
+  while (size > STREAM_CHARS && next.length > 1) {
+    size -= next[0]?.text.length ?? 0;
+    next = next.slice(1);
+  }
+  const only = next[0];
+  if (size > STREAM_CHARS && only !== undefined) next = [{ messageId: only.messageId, text: only.text.slice(-STREAM_CHARS) }];
+  return next;
+};
+
+/**
+ * The leads' streams after a live frame. A frame with no lead text keeps them, identity included; a full frame
+ * starts them over, as it does `text`.
+ */
+export const applyStreams = (streams: LiveState["streams"], frame: LiveFrame): LiveState["streams"] => {
+  const lead = (frame.text ?? []).filter((t) => isLeadLane(t.laneId));
+  if (lead.length === 0) return frame.full ? {} : streams;
+  const next: Record<string, Stream> = frame.full ? {} : { ...streams };
+  for (const t of lead) next[t.laneId] = appendStream(next[t.laneId] ?? [], t.messageId, t.append);
+  return next;
+};
+
+const emptyLive: LiveState = { lanes: {}, ended: {}, text: {}, machines: {}, stale: true };
 
 export const initialState = (): DataState => ({
   hub: { phase: "connecting", hub: "", attempt: 0 },
@@ -153,7 +194,7 @@ export const applyFrame = (s: DataState, frame: HubFrame, nowMs: number): [DataS
     case "event":
       return [applyEvent(s, frame.event), {}];
     case "live":
-      return [{ ...s, live: applyLive(s.live, frame.frame, nowMs) }, {}];
+      return [{ ...s, live: { ...applyLive(s.live, frame.frame, nowMs), streams: applyStreams(s.live.streams, frame.frame) } }, {}];
     case "error":
       return [{ ...s, sessionError: frame.error }, {}];
   }
@@ -251,10 +292,27 @@ export const applyLive = (live: LiveState, frame: LiveFrame, nowMs: number): Liv
   const seen = Number.isNaN(at) ? undefined : at - nowMs;
   const skewMs =
     seen === undefined ? live.skewMs : !frame.full && live.skewMs !== undefined ? Math.max(live.skewMs, seen) : seen;
-  const lanes: Record<string, LiveLane> = frame.full ? {} : { ...live.lanes };
-  for (const lane of frame.lanes) {
-    const spark = lane.spark ?? live.lanes[lane.laneId]?.spark;
-    lanes[lane.laneId] = spark === undefined ? lane : { ...lane, spark };
+  // A delta that names no lane (streamed text, a machine) leaves the lanes as they were, identity included, so
+  // nothing that reads only lanes recomputes.
+  const keepLanes = !frame.full && frame.lanes.length === 0;
+  const lanes: Record<string, LiveLane> = keepLanes ? live.lanes : frame.full ? {} : { ...live.lanes };
+  if (!keepLanes) {
+    for (const lane of frame.lanes) {
+      const spark = lane.spark ?? live.lanes[lane.laneId]?.spark;
+      lanes[lane.laneId] = spark === undefined ? lane : { ...lane, spark };
+    }
+  }
+  // Kept for lanes still in scope; a lane's first finished frame sets it. Unchanged entries keep the old object.
+  let ended = live.ended;
+  if (!keepLanes) {
+    const next: Record<string, string> = {};
+    for (const [id, lane] of Object.entries(lanes)) {
+      const at = live.ended[id] ?? (settled(lane.status) ? frame.at : undefined);
+      if (at !== undefined) next[id] = at;
+    }
+    const was = Object.keys(live.ended);
+    const same = was.length === Object.keys(next).length && was.every((id) => next[id] === live.ended[id]);
+    if (!same) ended = next;
   }
   const text: Record<string, { messageId: string; text: string }> = frame.full ? {} : { ...live.text };
   for (const t of frame.text ?? []) {
@@ -264,6 +322,7 @@ export const applyLive = (live: LiveState, frame: LiveFrame, nowMs: number): Liv
   }
   return {
     lanes,
+    ended,
     text,
     machines: frame.machines === undefined ? live.machines : byId(frame.machines, (m) => m.machineId),
     slots: frame.slots ?? live.slots,

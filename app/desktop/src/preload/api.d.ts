@@ -1,7 +1,8 @@
-import type { NotifyRequest, OpenTarget } from "../shared/app";
+import type { LinkHandlerClaim, LinkHandlerStatus, NotifyRequest, OpenTarget } from "../shared/app";
 import type { MenuCommand } from "../shared/menu";
-import type { CallOutcome, ConnectOutcome, HubFrame, HubState, OpenOutcome } from "../shared/hub";
-import type { LiveScope } from "../shared/ipc";
+import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, HubState, OpenOutcome, SecretOutcome } from "../shared/hub";
+import type { LiveScope, SecretRequest } from "../shared/ipc";
+import type { PairOutcome, PairRequest, PairStart, Probe } from "../shared/pairing";
 
 /** `window.fleetd`: everything the renderer can ask of main. There is no other bridge. */
 export interface FleetdApi {
@@ -10,6 +11,10 @@ export interface FleetdApi {
   readonly fixture: string | null;
   /** Writes text to the clipboard (the page has no clipboard permission of its own). */
   copy(text: string): Promise<void>;
+  readonly secret: {
+    /** Main seals `value` to `boxPubKey` and submits it; the value is never sent back or shown again. */
+    submit(request: SecretRequest): Promise<SecretOutcome>;
+  };
   /**
    * Opens an https link to github.com (or a subdomain) or fleetd.sh in the user's browser. Anything else comes back
    * as `{ ok: false, message }` saying why; it never rejects.
@@ -30,6 +35,26 @@ export interface FleetdApi {
     connect(url: string, key: string): Promise<ConnectOutcome>;
     forget(): Promise<void>;
   };
+  readonly pair: {
+    /** Whether `fleetd init` left a code on this computer (not the code), and whether a hub answers. Never rejects. */
+    start(): Promise<PairStart>;
+    /** The hub's version and protocol from its /healthz. Never rejects. */
+    probe(hub: string): Promise<Probe>;
+    /** Trades a code for a key, then saves it and connects. Never rejects: failures carry the hub's fix. */
+    redeem(request: PairRequest): Promise<PairOutcome>;
+    /** Pairs from app-pair.json in main, only while no key is saved; the code never comes here. */
+    auto(): Promise<PairOutcome>;
+  };
+  readonly system: {
+    /** This computer's host name (without .local). */
+    hostName(): Promise<string>;
+  };
+  readonly projects: {
+    /** A native folder picker; null when cancelled. */
+    pickFolder(): Promise<string | null>;
+    /** What a dropped folder or link file holds for Add project; `other` for anything else (or a File with no path). */
+    readDrop(file: File): Promise<DropInfo>;
+  };
   readonly app: {
     /** Command ids clicked in the app menu (an accelerator runs in the renderer's keymap instead). Returns the unsubscribe. */
     onMenuCommand(listener: (id: string) => void): () => void;
@@ -39,6 +64,11 @@ export interface FleetdApi {
      */
     onOpen(listener: (target: OpenTarget) => void): () => void;
     notify(request: NotifyRequest): Promise<void>;
+    /**
+     * Whether this app opens fleetd:// links. With a claim ("user" from Settings, "pair-failed" from onboarding),
+     * main makes it the handler first when it should; a dev build never does.
+     */
+    linkHandler(claim: LinkHandlerClaim | null): Promise<LinkHandlerStatus>;
     /** The menu commands enabled now; main greys out the other menu items. */
     setMenuState(enabled: ReadonlyArray<MenuCommand>): Promise<void>;
   };

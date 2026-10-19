@@ -36,11 +36,16 @@ describe("event effects", () => {
 
   it("a machine or project coming or going resyncs; an unknown type does nothing", () => {
     expect(effectsOf(e("project.added")).resync).toBe(true);
+    // Add project's list marks the repos that are projects, so it is read again too.
+    expect(tools(e("project.removed"))).toContain("project_discover");
     // A known machine's status is patched in place; only one the snapshot lacks resyncs.
     expect(effectsOf(e("machine.offline", undefined, { machineId: "devbox" }), { devbox: {} }).resync).toBe(false);
     expect(effectsOf(e("machine.online", undefined, { machineId: "buildbox" }), { devbox: {} }).resync).toBe(true);
     expect(effectsOf(e("rocket.launched"))).toEqual({ invalidate: [], resync: false });
     expect(tools(e("prompt.changed"))).toContain("prompts_list");
+    // Status's health strip: a machine going quiet or sleeping, a usage reading.
+    expect(tools(e("machine.slept", undefined, { machineId: "devbox" }))).toContain("status_get");
+    expect(tools(e("usage.updated"))).toContain("status_get");
   });
 
   it("refetches only the open order's time reads, never the paged spans whole", () => {

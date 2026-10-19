@@ -1,7 +1,9 @@
-//! `cargo run -q -p docsgen`: renders `docs/site/*.md` and the CLI's own help into `site/docs/`, which is committed
-//! because the Vercel project has no build step. `-- --check` writes nothing and fails while `site/docs/` differs.
+//! `cargo run -q -p docsgen`: writes the generated pages under `docs/site/` ([`GENERATED`]), then renders
+//! `docs/site/*.md`, `docs/site/reference/*.md` and the CLI's own help into `site/docs/`, which is committed because
+//! the Vercel project has no build step. `-- --check` writes nothing and fails while either differs.
 //! The source format is in `site/README.md` ("Docs").
 
+mod agent_tools;
 mod cli_ref;
 mod prompts;
 
@@ -16,6 +18,9 @@ const JS: &str = include_str!("../assets/docs.js");
 const REPO: &str = "https://github.com/unlaboredlabs/fleetd";
 /// Generated files under site/docs/ that a run owns; anything else there (img/) is left alone.
 const KEEP: &[&str] = &["img"];
+/// Markdown pages under docs/site/ written whole from the code, committed like any page.
+type Generator = fn(&Path) -> Result<String, String>;
+const GENERATED: &[(&str, Generator)] = &[(agent_tools::PATH, agent_tools::page)];
 
 struct Front {
     title: String,
@@ -40,6 +45,37 @@ struct Page {
 fn main() -> ExitCode {
     let check = std::env::args().any(|a| a == "--check");
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut stale_pages = Vec::new();
+    for (path, generate) in GENERATED {
+        let page = match generate(&root) {
+            Ok(page) => page,
+            Err(error) => {
+                eprintln!("docsgen: {error}");
+                return ExitCode::FAILURE;
+            }
+        };
+        let file = root.join("docs/site").join(path);
+        if std::fs::read(&file).ok().as_deref() == Some(page.as_bytes()) {
+            continue;
+        }
+        if check {
+            stale_pages.push(*path);
+        } else if let Err(error) =
+            std::fs::create_dir_all(file.parent().expect("a file under docs/site"))
+                .and_then(|()| std::fs::write(&file, page))
+        {
+            eprintln!("docsgen: writing {}: {error}", file.display());
+            return ExitCode::FAILURE;
+        }
+    }
+    if !stale_pages.is_empty() {
+        for path in stale_pages {
+            println!(
+                "::error file=docs/site/{path}::docs/site/{path} differs from what the code generates; run `cargo run -q -p docsgen` and commit it"
+            );
+        }
+        return ExitCode::FAILURE;
+    }
     let files = match build(&root) {
         Ok(files) => files,
         Err(error) => {
@@ -101,22 +137,20 @@ fn list(dir: &Path) -> Vec<String> {
 
 fn build(root: &Path) -> Result<BTreeMap<String, String>, String> {
     let src = root.join("docs/site");
-    let mut sources: Vec<(String, String)> = std::fs::read_dir(&src)
-        .map_err(|e| format!("{}: {e}", src.display()))?
-        .filter_map(Result::ok)
-        .map(|e| e.path())
-        .filter(|p| p.extension().is_some_and(|x| x == "md"))
-        .map(|p| -> Result<(String, String), String> {
-            let name = p
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or_default()
-                .to_owned();
-            std::fs::read_to_string(&p)
-                .map(|t| (name, t))
-                .map_err(|e| format!("{}: {e}", p.display()))
-        })
-        .collect::<Result<_, _>>()?;
+    let mut sources: Vec<(String, String)> = Vec::new();
+    for dir in ["", "reference/"] {
+        let path = src.join(dir);
+        for p in std::fs::read_dir(&path)
+            .map_err(|e| format!("{}: {e}", path.display()))?
+            .filter_map(Result::ok)
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|x| x == "md"))
+        {
+            let name = p.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+            let text = std::fs::read_to_string(&p).map_err(|e| format!("{}: {e}", p.display()))?;
+            sources.push((format!("{dir}{name}"), text));
+        }
+    }
     sources.sort();
 
     let mut fronts = Vec::new();
@@ -223,6 +257,10 @@ fn frontmatter(file: &str, text: &str) -> Result<(Front, String), String> {
             .split_once(':')
             .ok_or_else(|| err(format!("frontmatter line {line:?} is not key: value")))?;
         let k = k.trim();
+        // `sidebar` is for the Starlight site; this one orders pages by `order`.
+        if k == "sidebar" {
+            continue;
+        }
         if !["title", "section", "order", "description", "slug"].contains(&k) {
             return Err(err(format!("unknown frontmatter key {k:?}")));
         }
@@ -238,7 +276,12 @@ fn frontmatter(file: &str, text: &str) -> Result<(Front, String), String> {
             .filter(|v| !v.is_empty())
             .ok_or_else(|| err(format!("frontmatter needs {k}")))
     };
-    let stem = file.trim_end_matches(".md").to_owned();
+    let stem = file
+        .rsplit('/')
+        .next()
+        .unwrap_or(file)
+        .trim_end_matches(".md")
+        .to_owned();
     let front = Front {
         title: take("title")?,
         section: take("section")?,

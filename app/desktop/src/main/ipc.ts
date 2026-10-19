@@ -4,9 +4,13 @@ import { parseRequest, type RequestArgs } from "../shared/ipc";
 import type { OpenOutcome } from "../shared/hub";
 import { externalUrl } from "./external";
 import type { HubService } from "./hub/service";
+import { claimLinkHandler, linkHandlerStatus } from "./linkHandlerMain";
+import type { PairingService } from "./pairing/service";
+import { submitSecret } from "./secret";
 import { applyMenuState } from "./menuState";
 import type { Notifier } from "./notify";
 import type { Opener } from "./opener";
+import { hostName, pickFolder, readDrop } from "./projects";
 import { isOwnPage } from "./security";
 
 /** Only our own top-level page may call main: not a subframe, not a local file, not a page navigated elsewhere. */
@@ -27,7 +31,7 @@ const handle = <C extends InvokeChannel>(
   });
 };
 
-export const registerIpc = (hub: HubService, frame: { opener: Opener; notifier: Notifier }): void => {
+export const registerIpc = (hub: HubService, frame: { opener: Opener; notifier: Notifier }, pairing: PairingService): void => {
   handle(IPC.hubState, () => hub.state());
   handle(IPC.hubSubscribe, (event) => hub.subscribe(event.sender));
   handle(IPC.hubUnsubscribe, (event) => hub.unsubscribe(event.sender));
@@ -36,7 +40,15 @@ export const registerIpc = (hub: HubService, frame: { opener: Opener; notifier: 
   handle(IPC.hubResync, () => hub.resync());
   handle(IPC.hubConnect, (_event, request) => hub.connect(request));
   handle(IPC.hubForget, () => hub.forget());
+  handle(IPC.secretSubmit, (_event, request) => submitSecret(request, (tool, input) => hub.call({ tool, input })));
+  handle(IPC.systemHostName, () => hostName());
+  handle(IPC.projectsPickFolder, (event) => pickFolder(event.sender));
+  handle(IPC.projectsReadDrop, (_event, path) => readDrop(path));
   handle(IPC.copy, (_event, text) => clipboard.writeText(text));
+  handle(IPC.pairStart, () => pairing.start());
+  handle(IPC.pairProbe, (_event, address) => pairing.probe(address));
+  handle(IPC.pairRedeem, (_event, request) => pairing.redeem(request));
+  handle(IPC.pairAuto, () => pairing.auto());
   handle(IPC.openExternal, async (_event, url): Promise<OpenOutcome> => {
     const checked = externalUrl(url);
     if (!checked.ok) return checked;
@@ -49,5 +61,6 @@ export const registerIpc = (hub: HubService, frame: { opener: Opener; notifier: 
   });
   handle(IPC.appReady, () => frame.opener.ready());
   handle(IPC.appNotify, (_event, request) => frame.notifier.show(request));
+  handle(IPC.appLinkHandler, (_event, claim) => (claim === null ? linkHandlerStatus() : claimLinkHandler(claim)));
   handle(IPC.appMenuState, (_event, enabled) => applyMenuState(Menu.getApplicationMenu(), enabled));
 };

@@ -924,6 +924,73 @@ async fn a_tasks_agent_is_a_worker_its_question_wakes_the_lead_and_it_cannot_spa
     );
 }
 
+/// A writer's session works in a worktree under the node's home, outside every workspace: its calls act on its own
+/// project, known by the session. Without a session such a cwd is still refused, and a session never reaches a
+/// project its machine doesn't have.
+#[tokio::test]
+async fn a_writers_call_from_its_worktree_acts_on_its_own_project() {
+    let lab = lab();
+    let task = running_task(&lab.hub, "p1");
+    let machine = MachineId::unchecked("lab-a");
+    let summary = |id: &str, root: &str| -> fleetd_contracts::model::ProjectSummary {
+        serde_json::from_value(json!({
+            "machineId": "lab-a", "projectId": id, "title": id, "workspaceRoot": root,
+            "threads": { "running": 0, "waiting": 0, "idle": 0, "failed": 0 }, "lastActivityAt": AT,
+        }))
+        .unwrap()
+    };
+    let projects = [summary("p1", "/work/project"), summary("p2", "/work/other")];
+    let thread = |id: &str| ThreadRef {
+        machine_id: machine.clone(),
+        thread_id: ThreadId::unchecked(id),
+    };
+    let calls = &lab.hub.lead_calls;
+    let worktree = "/home/me/.fleetd/node/worktrees/abc/task-thread";
+    assert_eq!(
+        calls.call_project(&machine, &projects, worktree, Some(&thread("task-thread"))),
+        Ok(task.project_ref.clone())
+    );
+    let other = calls
+        .call_project(
+            &machine,
+            &projects,
+            "/work/other/src",
+            Some(&thread("task-thread")),
+        )
+        .unwrap();
+    assert_eq!(
+        other.project_id.as_str(),
+        "p2",
+        "a cwd inside a workspace decides, as before"
+    );
+    let person = calls
+        .call_project(&machine, &projects, worktree, None)
+        .unwrap_err();
+    assert!(
+        person
+            .message
+            .contains("is not inside any project workspace"),
+        "{}",
+        person.message
+    );
+    assert!(
+        calls
+            .call_project(&machine, &projects, worktree, Some(&thread("someone-else")))
+            .is_err()
+    );
+    assert!(
+        calls
+            .call_project(
+                &machine,
+                &projects[1..],
+                worktree,
+                Some(&thread("task-thread"))
+            )
+            .is_err(),
+        "its project is not on this machine"
+    );
+}
+
 /// `stop_agent` frees the slot and leases only once the agent's claude has exited. With the machine away the node
 /// can't stop it, so the task stays running and holding its slot, and the refusal says so.
 #[tokio::test]

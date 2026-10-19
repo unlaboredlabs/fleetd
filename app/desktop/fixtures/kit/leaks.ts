@@ -13,12 +13,13 @@ export const LEAKS: ReadonlyArray<readonly [string, RegExp]> = [
   ["a Slack token", /\bxox[abpr]-[A-Za-z0-9-]{10,}/u],
   ["a JWT", /\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/u],
   ["a fleetd key", /\bfld_(?!redacted)[a-z2-7]{20,}/u],
-  ["an email address", /[A-Za-z0-9._%+-]+@(?!example\.com\b)[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[a-z]{2,}\b/u],
+  // git@github.com:owner/repo is a remote, not someone's address.
+  ["an email address", /(?<![A-Za-z0-9._%+-])(?!git@github\.com\b)[A-Za-z0-9._%+-]+@(?!example\.com\b)[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[a-z]{2,}\b/u],
   ["a tailnet IPv4 address", /\b100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}\b/u],
   ["a tailnet IPv6 address", /\bfd7a:115c:a1e0:/iu],
   ["a tailnet host", /\.ts\.net\b/iu],
   ["a home directory other than /home/dev", /\/(?:home|Users)\/(?!dev\b)[A-Za-z0-9._-]+/u],
-  ["a GitHub repo outside acme", /github\.com\/(?!acme\/)[A-Za-z0-9-]+\/[A-Za-z0-9._-]+/iu],
+  ["a GitHub repo outside acme", /github\.com[/:](?!acme\/)[A-Za-z0-9-]+\/[A-Za-z0-9._-]+/iu],
   ["a repo outside acme", /"(?:repo|fullName|nameWithOwner)": ?"(?!acme\/)[A-Za-z0-9-]+\/[A-Za-z0-9._-]+"/u],
   ["the lab", /fleetd-lab|fleetd-testbed|unlaboredlabs/iu],
 ];

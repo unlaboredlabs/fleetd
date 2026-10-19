@@ -23,7 +23,8 @@ machine is usually a worker too.
 
 Each project has one lead: a long-running `claude` session that turns orders into briefs, splits them into tasks
 for writer and reviewer sessions, and never writes code itself. Leads run on `claude-opus-5-5` by default. A
-project's first order starts its lead.
+project's first order starts its lead. Leads and tasks reach fleetd through its MCP tools; [Agent tools](reference/agent-tools.md)
+lists what each role gets and what it can't do.
 
 ## Orders
 

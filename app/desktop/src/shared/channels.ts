@@ -16,8 +16,24 @@ export const IPC = {
   hubConnect: "hub:connect",
   /** invoke() → void. Disconnects and deletes the saved key. */
   hubForget: "hub:forget",
+  /** invoke() → PairStart. app-pair.json and whether a hub answers, for the connect screen. */
+  pairStart: "pair:start",
+  /** invoke(hub address) → Probe. The hub's /healthz. */
+  pairProbe: "pair:probe",
+  /** invoke(PairRequest) → PairOutcome. POST <hub>/pair with a typed code, then saves the key and connects. */
+  pairRedeem: "pair:redeem",
+  /** invoke() → PairOutcome. Main pairs from app-pair.json itself (its code never reaches the page), then deletes it. */
+  pairAuto: "pair:auto",
+  /** invoke() → string. This computer's host name, to tell whether it is one of the hub's machines. */
+  systemHostName: "system:host-name",
+  /** invoke() → string | null. A native folder picker; null when cancelled. */
+  projectsPickFolder: "projects:pick-folder",
+  /** invoke(path) → DropInfo. What a folder or file dropped on the window holds for Add project. */
+  projectsReadDrop: "projects:read-drop",
   /** invoke(text) → void. Writes the clipboard; the page itself has no clipboard permission. */
   copy: "app:copy",
+  /** invoke(SecretRequest) → SecretOutcome. Main seals the value to the machine's key and submits it. */
+  secretSubmit: "secret:submit",
   /** invoke(url) → OpenOutcome. Opens an https github.com / fleetd.sh link in the user's browser; refuses the rest. */
   openExternal: "app:openExternal",
   /** main → renderer: HubFrame */
@@ -26,6 +42,8 @@ export const IPC = {
   appReady: "app:ready",
   /** invoke(NotifyRequest) → void. Posts a system notification; clicking it sends `appOpen` with its target. */
   appNotify: "app:notify",
+  /** invoke(LinkHandlerClaim | null) → LinkHandlerStatus. Null only reads; a reason claims fleetd:// if it should. */
+  appLinkHandler: "app:linkHandler",
   /** invoke(MenuCommand[]) → void. The menu commands enabled now; main greys out the rest. */
   appMenuState: "app:menuState",
   /** main → renderer: a command id (shared/shortcuts.ts or the palette registry), from a click in the app menu. */

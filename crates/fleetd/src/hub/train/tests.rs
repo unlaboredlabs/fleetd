@@ -18,6 +18,8 @@ use super::service::{ReviewGate, Train, TrainOptions, Verdict};
 use crate::clock::SystemClock;
 
 const REPO: &str = "acme/storefront";
+/// A project id the fake host no longer has, as after `project_remove`.
+const REMOVED: &str = "removed";
 const GIT_ENV: [(&str, &str); 8] = [
     ("HOME", "/tmp"),
     ("LANG", "C"),
@@ -458,8 +460,8 @@ impl TrainHost for FakeHost {
             }
         })
     }
-    fn project_root(&self, _: &ProjectRef) -> Option<String> {
-        Some(self.checkout.display().to_string())
+    fn project_root(&self, project_ref: &ProjectRef) -> Option<String> {
+        (project_ref.project_id.as_str() != REMOVED).then(|| self.checkout.display().to_string())
     }
     fn wake_lead<'a>(&'a self, _: &'a ProjectRef, line: String) -> BoxFut<'a, ()> {
         self.wakes.lock().unwrap().push(line);
@@ -970,6 +972,26 @@ async fn auto_enqueues_a_write_tasks_pr_rebases_it_onto_the_moved_base_and_merge
             state.queue.into_inner()
         ),
         (REPO, false, None, vec![])
+    );
+}
+
+/// A repo removed and re-added as a new project keeps its train: the next Change merges and the train follows it.
+#[tokio::test(flavor = "multi_thread")]
+async fn moves_the_train_to_the_repos_new_project_when_its_first_project_was_removed() {
+    let kit = Kit::new();
+    let removed = ProjectRef {
+        machine_id: MachineId::unchecked("lab-a"),
+        project_id: ProjectId::unchecked(REMOVED),
+    };
+    kit.train.records().ensure_train(REPO, &removed, 0);
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")], "Source: done:0");
+    let (_, change_id) = kit.author_task(Some(&pr)).await;
+
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(kit.get(&change_id).state, ChangeState::Merged);
+    assert_eq!(
+        kit.train.records().train(REPO).unwrap().project_ref,
+        project()
     );
 }
 
