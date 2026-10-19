@@ -1,20 +1,29 @@
 import { Suspense, useEffect, useState } from "react";
 import { GalleryScreen } from "../ui";
+import { BoardScreen } from "../screens/board/BoardScreen";
 
-// Until F1's route table lands, the one route besides the shell is the design-system gallery.
-const useIsGallery = () => {
+// Until F1's route table lands (#181 replaces this file's routing), the routes besides the shell are the
+// design-system gallery and the board.
+const useHash = () => {
   const [hash, setHash] = useState(window.location.hash);
   useEffect(() => {
     const onHash = () => setHash(window.location.hash);
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
-  return hash.startsWith("#/gallery");
+  return hash;
 };
 
 export const App = () => {
-  const gallery = useIsGallery();
-  if (gallery && GalleryScreen)
+  const hash = useHash();
+  if (hash.startsWith("#/board"))
+    return (
+      <div className="shell" data-screen="shell">
+        <header className="top-bar" />
+        <BoardScreen />
+      </div>
+    );
+  if (hash.startsWith("#/gallery") && GalleryScreen)
     return (
       <Suspense>
         <GalleryScreen />

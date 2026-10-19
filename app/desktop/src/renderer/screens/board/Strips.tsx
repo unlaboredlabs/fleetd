@@ -5,7 +5,7 @@
 import { useLayoutEffect, useRef } from "react";
 import { Dot, Truncate, cx } from "../../ui";
 import type { MachineLive, PrChip, SlotState, TrainLive } from "./contracts";
-import { EXIT_MS, MERGED_HOLD_MS } from "./live";
+import { EXIT_MS, MERGED_HOLD_MS, type SlotUse } from "./live";
 import { Track } from "./parts";
 import { STAGE_WORD, type Tone, machineParts, slotsText, stageTone } from "./words";
 import s from "./Board.module.css";
@@ -18,7 +18,17 @@ const TONE: Record<Tone, string | undefined> = {
   success: s.success,
 };
 
-export function MachineStrip({ machines, slots, now }: { machines: readonly MachineLive[]; slots: SlotState | undefined; now: number }) {
+export function MachineStrip({
+  machines,
+  slots,
+  use,
+  now,
+}: {
+  machines: readonly MachineLive[];
+  slots: SlotState | undefined;
+  use: SlotUse;
+  now: number;
+}) {
   if (machines.length === 0 && !slots) return null;
   return (
     <div className={s.strip} data-strip="machines">
@@ -34,7 +44,7 @@ export function MachineStrip({ machines, slots, now }: { machines: readonly Mach
           ))}
         </span>
       ))}
-      {slots ? <span className={s.slots}>{slotsText(slots)}</span> : null}
+      {slots ? <span className={s.slots}>{slotsText(slots.cap, use)}</span> : null}
     </div>
   );
 }

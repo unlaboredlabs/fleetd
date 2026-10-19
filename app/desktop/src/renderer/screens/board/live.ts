@@ -218,6 +218,34 @@ export const needsClock = (s: LiveState, hubNowMs: number): boolean => {
   return false;
 };
 
+export interface SlotUse {
+  /** Agents at work, counted exactly as each machine's "running" (`machines`). */
+  readonly agents: number;
+  /** Project leads in a turn: they hold slots too, and are said apart. */
+  readonly leads: number;
+  /** Agents drawn as queued. */
+  readonly queued: number;
+}
+
+/**
+ * Slot use from the lanes the board draws, so the slot count, the machines' "running" and the rows agree. The hub's
+ * own `slots.used` counts turns the board doesn't draw; only its cap is used.
+ */
+export const slotUse = (s: LiveState): SlotUse => {
+  const lanes = new Map<string, AgentLane>();
+  for (const b of s.boards.values()) for (const o of b.orders) for (const l of orderLanes(s, o.workstreamId)) lanes.set(l.laneId, l);
+  let agents = 0;
+  let queued = 0;
+  for (const l of lanes.values()) {
+    if (l.role === "lead") continue;
+    if (isRunning(l.status) && l.threadRef) agents++;
+    if (l.status === "queued") queued++;
+  }
+  let leads = 0;
+  for (const [id, l] of s.lanes) if (id.startsWith("lead:") && (l.status === "working" || l.status === "starting")) leads++;
+  return { agents, leads, queued };
+};
+
 export const hubNow = (s: LiveState, localNowMs: number): number => localNowMs + (s.skewMs ?? 0);
 
 /** The lane id of a project's lead (live.rs lead_lane_id), cut to the contract's 80 characters. */

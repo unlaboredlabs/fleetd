@@ -4,11 +4,11 @@ import { changedChars, checkText, mentionAt, projectPrefix, resolveTarget, templ
 import type { AgentLane, AskSummary, LaneStatus, LiveFrame, LiveLane, OrderCard, OrdersBoardOutput, PrRef, TrainLive } from "./contracts";
 import { finishHeadline, finished, fleet, groupLabel, hold, livePhase, phaseLabel, reviewProgress, stagePick, writtenIn } from "./fleet";
 import { fmtElapsed, fmtTokens, middleEllipsis, shortModel } from "./format";
-import { EMPTY, applyFrame, machines, needsClock, orderLanes, seenLanes, setBoard, setDone, trains } from "./live";
-import { type BoardModel, listItems, stageItems, stagedOrder } from "./model";
-import { heldLanes } from "./presence";
+import { EMPTY, applyFrame, machines, needsClock, orderLanes, seenLanes, setBoard, setDone, slotUse, trains } from "./live";
+import { type BoardModel, itemKey, listItems, stableOrder, stageItems, stagedOrder } from "./model";
+import { heldLanes, stageDrawn } from "./presence";
 import { visibleChips } from "./Strips";
-import { describe, fleetActivity, machineParts } from "./words";
+import { describe, fleetActivity, machineParts, slotsText } from "./words";
 
 const T0 = "2026-10-18T10:00:00.000Z";
 const at = (s: number) => new Date(Date.parse(T0) + s * 1000).toISOString();
@@ -369,5 +369,75 @@ group("composer rules", () => {
     expect(checkText("é".repeat(2001)).ok).toBe(false);
     expect(checkText(" go ")).toEqual({ ok: true, text: "go" });
     expect(changedChars("round totals", "round the totals")).toBe(4);
+  });
+});
+
+group("review #188 regressions", () => {
+  const model = (orders: OrderCard[], live = setBoard(EMPTY, KEY, board(orders))): BoardModel => ({
+    conn: "live",
+    snapshot: true,
+    projects: [
+      { key: KEY, machineId: "devbox", projectId: "storefront", title: "storefront", machine: "devbox", offline: false },
+      { key: "lab/other", machineId: "lab", projectId: "other", title: "other", machine: "lab", offline: false },
+    ],
+    live,
+    asks: [],
+    loaded: new Set([KEY, "lab/other"]),
+    errors: new Map(),
+    sent: [],
+  });
+
+  it("2: the slot count and each machine's running come from the same lanes, leads said apart", () => {
+    const on = (id: string, status: LaneStatus) => lane(id, status, { threadRef: { machineId: "devbox", threadId: `s-${id}` } });
+    let s = applyFrame(EMPTY, frame(0, true, [live("lead:devbox/storefront", "working")], { machines: [{ machineId: "devbox", name: "devbox", status: "online", running: 9, asOf: T0 }] }), ms(0));
+    s = setBoard(s, KEY, board([card("W1", [on("T1", "working"), on("T2", "queued"), on("T3", "done")])]));
+    const use = slotUse(s);
+    expect(machines(s)[0]?.running).toBe(use.agents);
+    expect(slotsText(40, use)).toBe("slots 2/40 (1 lead) · 1 queued");
+    expect(slotsText(40, { agents: 0, leads: 0, queued: 0 })).toBe("slots 0/40");
+  });
+
+  it("3: a command reaches the row whole, and the row's cut is one ellipsis in the middle", () => {
+    const text = "npm test -- cart --reporter=dot --run src/cart/total.test.ts src/cart/discounts.test.ts";
+    const l = lane("T1", "working", { live: live("T1", "working", { activity: { activity: { kind: "command", text }, since: T0 } }) });
+    expect(describe(l).machine).toBe(text);
+    const cut = middleEllipsis(text, 40);
+    expect(cut.split("…")).toHaveLength(2);
+    expect(cut.startsWith("npm test")).toBe(true);
+    expect(cut.endsWith("discounts.test.ts")).toBe(true);
+  });
+
+  it("4: a failed writer the header counts has its row, on the stage and after the hold", () => {
+    const failed = lane("T1", "failed", { taskId: "T1", statusReason: "tests failed", endedAt: at(5), pr: pr(221, "reviewing", { taskId: "T1" }) });
+    const m = model([card("W1", [failed, lane("R1", "working", { role: "reviewer", pr: pr(221, "reviewing") })], { prs: [pr(221, "reviewing", { taskId: "T1" })] })]);
+    const staged = stagedOrder(m, ms(60));
+    if (!staged) throw new Error("not staged");
+    const seen = seenLanes(m.live, "W1");
+    const drawn = stageDrawn(staged.lanes, seen, ms(60));
+    const items = stageItems(m, staged, drawn, seen);
+    const head = items.find((i) => i.kind === "stageHead");
+    expect(head?.kind === "stageHead" && head.text).toBe("1 failed · 1 reviewing");
+    expect(items.flatMap((i) => (i.kind === "lane" ? [i.lane.laneId] : []))).toEqual(["T1", "R1"]);
+    // Gone from the card, the failure is still drawn from what the order has had.
+    expect(stageDrawn([], [failed], ms(600)).map((l) => l.laneId)).toEqual(["T1"]);
+  });
+
+  it("5: a refetch that re-sorts by activity doesn't move the rows; a new question does", () => {
+    const other = (updatedAt: string) => card("W2", [], { projectRef: { machineId: "lab", projectId: "other" }, updatedAt });
+    const both = (a: string, b: string) => {
+      let s = setBoard(EMPTY, KEY, board([card("W1", [], { updatedAt: a })]));
+      s = setBoard(s, "lab/other", board([other(b)]));
+      return model([], s);
+    };
+    const first = stableOrder(listItems(both(at(9), at(1)), ms(10)), undefined);
+    const order = (r: ReturnType<typeof stableOrder>) => r.items.map(itemKey).filter((k) => k.startsWith("card:"));
+    expect(order(first)).toEqual(["card:W1", "card:W2"]);
+    // W2 is now the more recent: the fresh sort would swap them; the held order doesn't.
+    const second = stableOrder(listItems(both(at(9), at(20)), ms(30)), first.held);
+    expect(order(second)).toEqual(["card:W1", "card:W2"]);
+    // W2 needs you: that change re-sorts, and it rises.
+    const asked: BoardModel = { ...both(at(9), at(20)), asks: [{ askId: "A1", workstreamId: "W2", state: "open", text: "Which currency?" }] };
+    const third = stableOrder(listItems(asked, ms(30)), second.held);
+    expect(order(third)).toEqual(["card:W2", "card:W1"]);
   });
 });

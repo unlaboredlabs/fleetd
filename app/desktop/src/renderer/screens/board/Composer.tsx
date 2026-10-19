@@ -206,12 +206,15 @@ export function Composer(props: ComposerProps) {
   };
 
   const attach = (list: readonly File[]) => {
+    // Counted as files are taken: `attached` is the list from before this drop.
+    let count = attached.length;
     for (const file of list) {
-      if (attached.length >= MAX_ATTACHMENTS) return setError(`At most ${MAX_ATTACHMENTS} attachments per order.`);
+      if (count >= MAX_ATTACHMENTS) return setError(`At most ${MAX_ATTACHMENTS} attachments per order.`);
       if (file.size > MAX_ATTACHMENT_BYTES) {
         setError(`${file.name} is ${fmtBytes(file.size)}; attachments are at most 5 MB.`);
         continue;
       }
+      count++;
       const local = nextLocal.current++;
       setAttached((a) => [...a, { local, name: file.name, bytes: file.size }]);
       void file.arrayBuffer().then(async (buf) => {

@@ -1,9 +1,9 @@
 // The board's small pieces: the lane row, its activity bars, the PR track, the status mark.
-import type { CSSProperties, KeyboardEvent } from "react";
-import { RoleTag, Truncate, cx, roleTint } from "../../ui";
+import { useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
+import { RoleTag, Tooltip, Truncate, cx, roleTint } from "../../ui";
 import { bars } from "./bars";
 import type { AgentLane, ChangeState, Spark } from "./contracts";
-import { fmtElapsed, fmtTokens, parseMs, shortModel } from "./format";
+import { fmtElapsed, fmtTokens, middleEllipsis, parseMs, shortModel } from "./format";
 import { type Line, type Tone, ROLE_WORD, describe, isFinal, isWorking, trackFill } from "./words";
 import s from "./Board.module.css";
 
@@ -43,12 +43,49 @@ export function ActivityLine({ line, working, step, stale }: { line: Line; worki
   return (
     <span className={cx(s.activity, loud ? s.loud : s.quietText, TONE_CLASS[line.tone], stale && s.stale)}>
       <span className={s.words}>{line.words}</span>
-      {line.machine !== undefined ? (
-        <Truncate expand="none" mono size="sm" tone="inherit" className={cx(s.machine)}>
-          {line.machine}
-        </Truncate>
-      ) : null}
+      {line.machine !== undefined ? <MiddleCut text={line.machine} /> : null}
       {step !== undefined ? <span className={s.step}>{step}</span> : null}
+    </span>
+  );
+}
+
+let measure: CanvasRenderingContext2D | null | undefined;
+/** The width of one character of `el`'s (monospaced) font. */
+const charWidth = (el: HTMLElement): number => {
+  measure ??= document.createElement("canvas").getContext("2d");
+  if (!measure) return 7;
+  measure.font = getComputedStyle(el).font;
+  return measure.measureText("0000000000").width / 10 || 7;
+};
+
+/**
+ * Machine text (a command, a path) cut once, in the middle, to the room it has, so both the program and its
+ * target show; the whole text is in the tooltip. It is mono, so the room is a count of characters.
+ */
+export function MiddleCut({ text }: { text: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [fits, setFits] = useState<number | undefined>(undefined);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    // The observer reports the first size as soon as it starts, then each change.
+    const ro = new ResizeObserver(() => setFits(Math.max(3, Math.floor((el.clientWidth - 1) / charWidth(el)))));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const shown = fits === undefined ? text : middleEllipsis(text, fits);
+  // The measured box stays the same element whether or not the text is cut; only what is inside it changes.
+  return (
+    <span ref={ref} className={s.machine} data-text="truncate">
+      {shown === text ? (
+        text
+      ) : (
+        <Tooltip content={text}>
+          <span tabIndex={0} aria-label={text}>
+            {shown}
+          </span>
+        </Tooltip>
+      )}
     </span>
   );
 }

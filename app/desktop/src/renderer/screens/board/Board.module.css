@@ -191,8 +191,14 @@
 .words {
   flex: none;
 }
+/* Takes the line's room so it has a width to cut to; a cut command keeps its program and its target. */
 .machine {
-  flex: 0 1 auto;
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
 }
 .step {
   flex: none;

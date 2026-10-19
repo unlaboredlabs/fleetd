@@ -1,6 +1,6 @@
 // The board, drawn from a BoardModel: the docked composer, then either the one open order on the stage or the
 // orders grouped by project, then the train and machine strips. Rows come from model.ts; this file draws them.
-import { useEffect, type Ref } from "react";
+import { useEffect, useState, type Ref } from "react";
 import { Button, StatusChip, Text, Truncate, VirtualList, cx, type StatusTone } from "../../ui";
 import { peekNow, useNow } from "./clock";
 import { Composer, type ComposerApi, type ComposerHandle } from "./Composer";
@@ -8,10 +8,10 @@ import type { Target } from "./composerLogic";
 import type { AgentLane, OrderPhase } from "./contracts";
 import { groupLabel, nowLane, reviewProgress, writtenIn } from "./fleet";
 import { fmtAgo, fmtElapsed, parseMs } from "./format";
-import { type ProjectKey, hubNow, machines, needsClock, seenLanes, trains } from "./live";
-import { type BoardModel, type Item, type SentOrder, itemKey, leadNote, listItems, stageItems, stagedOrder } from "./model";
+import { type ProjectKey, hubNow, machines, needsClock, seenLanes, slotUse, trains } from "./live";
+import { type BoardModel, type Held, type Item, type SentOrder, itemKey, leadNote, listItems, sameHeld, stableOrder, stageItems, stagedOrder } from "./model";
 import { ActivityLine, Check, LaneRow, Track } from "./parts";
-import { type Present, heldLanes, usePresence } from "./presence";
+import { type Present, heldLanes, stageDrawn, usePresence } from "./presence";
 import { MachineStrip, TrainStrip } from "./Strips";
 import { describe, isWorking, prLabel, prReview, stageTone } from "./words";
 import s from "./Board.module.css";
@@ -61,11 +61,15 @@ export function BoardView({ model, actions, composer, composerHandle, filter, la
   // The clock ticks only while something on the board changes with time alone.
   const now = hubNow(model.live, useNow(needsClock(model.live, hubNow(model.live, peekNow()))));
   const staged = stagedOrder(model, now, filter);
-  const drawn = staged ? heldLanes(staged.lanes, now) : EMPTY;
   const seen = staged ? seenLanes(model.live, staged.card.workstreamId) : EMPTY;
+  const drawn = staged ? stageDrawn(staged.lanes, seen, now) : EMPTY;
   const stagedId = staged?.card.workstreamId;
   useEffect(() => onStage?.(stagedId), [onStage, stagedId]);
-  const items: Item[] = staged ? stageItems(model, staged, drawn, seen) : listItems(model, now, filter);
+  // The list holds its order while you look (stableOrder); the previous order is kept as state.
+  const [held, setHeld] = useState<Held | undefined>(undefined);
+  const listed = staged ? undefined : stableOrder(listItems(model, now, filter), held);
+  if (listed && !sameHeld(listed.held, held)) setHeld(listed.held);
+  const items: Item[] = staged ? stageItems(model, staged, drawn, seen) : (listed?.items ?? []);
   // Rows come and go with motion on the stage only. Its rows are few (a card lists at most 12 agents), while the
   // order list is long and virtual, where a row changing height under the virtualizer would move the rows around it.
   const present = usePresence(staged ? items : NO_ITEMS, itemKey);
@@ -80,7 +84,10 @@ export function BoardView({ model, actions, composer, composerHandle, filter, la
     offline: p.offline,
   }));
   const orders = [...model.live.boards.values()].flatMap((b) => b.orders.map((o) => ({ id: o.workstreamId, title: o.title })));
-  const prs = [...model.live.boards.values()].flatMap((b) => b.orders.flatMap((o) => o.prs.map((p) => ({ number: p.number, url: p.url, title: o.title }))));
+  // A PR is known by what its writer was for; the order's title when the writer isn't listed.
+  const prs = [...model.live.boards.values()].flatMap((b) =>
+    b.orders.flatMap((o) => o.prs.map((p) => ({ number: p.number, url: p.url, title: o.lanes.find((l) => l.taskId !== undefined && l.taskId === p.taskId)?.title ?? o.title }))),
+  );
 
   return (
     <div className={s.board} data-screen="board">
@@ -121,7 +128,7 @@ export function BoardView({ model, actions, composer, composerHandle, filter, la
         )}
       </div>
       <TrainStrip trains={trains(model.live)} mergedAt={model.live.mergedAt} now={now} {...(actions.openPr ? { onOpenPr: actions.openPr } : {})} />
-      <MachineStrip machines={machines(model.live)} slots={model.live.slots} now={now} />
+      <MachineStrip machines={machines(model.live)} slots={model.live.slots} use={slotUse(model.live)} now={now} />
     </div>
   );
 }
@@ -318,8 +325,8 @@ function OrderCardRow({
   const { card, phase, lanes } = item;
   const done = phase === "done" || phase === "stopped";
   const drawn = done ? EMPTY : heldLanes(lanes, now);
-  const rows = usePresence(drawn, (l) => l.laneId);
-  const speaker = rows.length === 0 && !done ? nowLane(lanes) : undefined;
+  // No height motion here: a card is a row of the virtual list, which would move the rows around it.
+  const speaker = drawn.length === 0 && !done ? nowLane(lanes) : undefined;
   const note = done ? undefined : leadNote(card, lanes);
   const created = parseMs(card.createdAt);
   return (
@@ -342,14 +349,10 @@ function OrderCardRow({
         {item.chip ? <StatusChip tone={CHIP_TONE[phase]}>{item.label}</StatusChip> : null}
         <span className={s.age}>{created === undefined ? "" : fmtAgo(now - created)}</span>
       </div>
-      {rows.length > 0 ? (
+      {drawn.length > 0 ? (
         <div className={cx(s.cardBody, s.cardLanes)}>
-          {rows.map((r) => (
-            <div key={r.key} className={cx(s.present, r.leaving && s.leaving, r.entering && s.entering)} {...leavingProps(r.leaving)}>
-              <div>
-                <LaneRow lane={r.item} density="card" now={now} stale={stale} />
-              </div>
-            </div>
+          {drawn.map((l) => (
+            <LaneRow key={l.laneId} lane={l} density="card" now={now} stale={stale} />
           ))}
         </div>
       ) : speaker ? (

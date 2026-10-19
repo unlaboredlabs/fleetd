@@ -1,7 +1,7 @@
 // The board as rows, pure: what the virtual list draws, in order. Every count on a row is computed here from the
 // same lanes the rows under it show, so a header never says "2 writing" over one lane.
 import type { AgentLane, AskSummary, OrderCard, OrderPhase } from "./contracts";
-import { type Group, chipHidden, finishHeadline, finished, fleet, idleHeadline, livePhase, onBoard, openAsksByOrder, phaseLabel, sortCards, stagePick } from "./fleet";
+import { type Group, chipHidden, finishHeadline, finished, fleet, hold, idleHeadline, livePhase, onBoard, openAsksByOrder, phaseLabel, sortCards, stagePick } from "./fleet";
 import { parseMs, plural } from "./format";
 import { type LiveState, type ProjectKey, leadLane, leadLaneId, orderLanes, projectKey, seenLanes } from "./live";
 import { fleetActivity, isFinal } from "./words";
@@ -167,8 +167,9 @@ export const stageItems = (m: BoardModel, staged: LiveCard, drawn: readonly Agen
   for (const lane of f.writers) items.push({ kind: "lane", lane, indent: false });
   for (const group of f.groups) {
     items.push({ kind: "group", group });
-    // The PR's writer, while it still works on it, then its checkers; a finished writer folds into the header.
-    const writer = group.writer && drawn.find((l) => l.laneId === group.writer?.laneId && !isFinal(l.status));
+    // The PR's writer, while it still works on it (or failed: a counted failure has its row), then its checkers;
+    // a writer that finished folds into the header's "written in".
+    const writer = group.writer && drawn.find((l) => l.laneId === group.writer?.laneId && l.status !== "done" && l.status !== "cancelled");
     if (writer) items.push({ kind: "lane", lane: writer, indent: true });
     for (const lane of group.rows) items.push({ kind: "lane", lane, indent: true });
   }
@@ -247,3 +248,24 @@ export const sentProject = (o: SentOrder): ProjectKey | undefined => {
 };
 
 export { seenLanes };
+
+/** The order the list was last drawn in, and which orders needed you then. */
+export interface Held {
+  readonly keys: readonly string[];
+  readonly needs: string;
+}
+
+/**
+ * Keeps the list where the eye left it: a refetch re-sorts by activity, but rows already shown keep their places and
+ * new ones go in after whatever precedes them. Only a change in what needs you re-sorts it, so that order rises.
+ */
+export const stableOrder = (items: readonly Item[], held: Held | undefined): { items: Item[]; held: Held } => {
+  const keys = items.map(itemKey);
+  const needs = items.flatMap((i) => (i.kind === "card" && i.phase === "waiting_on_you" ? [i.card.workstreamId] : [])).join(",");
+  const order = held !== undefined && held.needs === needs ? hold(held.keys, keys) : keys;
+  const byKey = new Map(items.map((i) => [itemKey(i), i]));
+  return { items: order.flatMap((k) => byKey.get(k) ?? []), held: { keys: order, needs } };
+};
+
+export const sameHeld = (a: Held | undefined, b: Held | undefined): boolean =>
+  a !== undefined && b !== undefined && a.needs === b.needs && a.keys.join("\n") === b.keys.join("\n");

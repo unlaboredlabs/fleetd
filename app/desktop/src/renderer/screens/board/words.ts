@@ -1,7 +1,7 @@
 // The board's vocabulary: one word per status, role and PR stage, and the lines built from them. Amber is "needs
 // you", danger only on failure words, and everything that is just working stays quiet.
-import type { AgentLane, AgentRole, ChangeState, LaneStatus, LoginLimit, MachineLive, OrderPhase, PrRef, SlotState } from "./contracts";
-import { fmtAgo, fmtElapsed, middleEllipsis, parseMs } from "./format";
+import type { AgentLane, AgentRole, ChangeState, LaneStatus, LoginLimit, MachineLive, OrderPhase, PrRef } from "./contracts";
+import { fmtAgo, fmtElapsed, parseMs } from "./format";
 
 export type Tone = "quiet" | "loud" | "warning" | "danger" | "success";
 
@@ -40,9 +40,6 @@ export const roleTint = (role: AgentRole): Tint => {
       return "lead";
   }
 };
-
-/** Commands are cut to this many characters, in the middle, so both the program and its target show. */
-const COMMAND_MAX = 80;
 
 /**
  * One activity line: words in the UI voice, then machine text (a command, path or pattern) in mono. `thinking`
@@ -88,7 +85,8 @@ export const describe = (lane: AgentLane): Line => {
       if (act === undefined) return lane.status === "starting" ? say("starting") : { ...say("thinking"), thinking: true };
       switch (act.kind) {
         case "command":
-          return doing("running", middleEllipsis(act.text, COMMAND_MAX));
+          // The whole command: the row cuts it once, in the middle, to the room it has (parts.tsx MiddleCut).
+          return doing("running", act.text);
         case "edit":
           return doing("editing", act.path);
         case "read":
@@ -240,5 +238,6 @@ const limitPart = (l: LoginLimit): [string, Tone][] => {
   return [[`${Math.round(l.utilization * 100)}% ${WINDOW_WORD[l.limitType] ?? l.limitType}`, tone]];
 };
 
-/** "slots 8/40 · 1 queued". */
-export const slotsText = (s: SlotState): string => `slots ${s.used}/${s.cap}${s.queued > 0 ? ` · ${s.queued} queued` : ""}`;
+/** "slots 8/40 (2 leads) · 1 queued": the board's own count of what holds a slot, against the hub's cap. */
+export const slotsText = (cap: number, use: { readonly agents: number; readonly leads: number; readonly queued: number }): string =>
+  `slots ${use.agents + use.leads}/${cap}${use.leads > 0 ? ` (${use.leads} lead${use.leads === 1 ? "" : "s"})` : ""}${use.queued > 0 ? ` · ${use.queued} queued` : ""}`;
