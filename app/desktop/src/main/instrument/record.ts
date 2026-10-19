@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { app, BrowserWindow, nativeTheme, powerSaveBlocker, screen, session, systemPreferences } from "electron";
 import { type Chunk, type Lights, RECORDER_GLOBAL, type RecorderApi, type RecorderStart, type Take } from "../../shared/recorder";
+import { DEV_BUILD } from "../build";
 import { bitrateFor, type RecordConfig, trafficLights } from "./recordConfig";
 
 const PULL_MS = 500;
@@ -41,7 +42,7 @@ const remote = (win: BrowserWindow): Call => {
 /** The recorder page: the dev server's while developing, else the built file. */
 const recorderUrl = (): string => {
   const dev = process.env["ELECTRON_RENDERER_URL"];
-  return dev !== undefined && !app.isPackaged
+  return dev !== undefined && DEV_BUILD
     ? new URL("demo/recorder.html", `${dev}/`).toString()
     : pathToFileURL(join(import.meta.dirname, "../renderer/demo/recorder.html")).toString();
 };

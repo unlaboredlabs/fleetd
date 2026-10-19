@@ -1,4 +1,5 @@
-// The Electron app's main process against the real hub (`npm run lab -- desktop`; needs `pnpm build` in app/desktop).
+// The Electron app's main process against the real hub (`npm run lab -- desktop`; needs `pnpm build:test` in app/desktop,
+// the build that accepts the DevTools switch this drives it with).
 // The built app runs with the lab key from FLEETD_HUB_URL/FLEETD_AGENT_KEY and a throwaway FLEETD_HOME, and the page
 // is driven over the DevTools protocol through window.fleetd, exactly as the renderer uses it:
 // 1. auth + snapshot: the state goes live and a snapshot with both lab machines arrives;
@@ -109,7 +110,7 @@ const launch = async (lab: Lab, name: string, port: number, hub: { url: string; 
 
 export async function desktopShell(lab: Lab) {
   const { check, ok, until } = lab;
-  check(fs.existsSync(MAIN), `${MAIN} is missing; run pnpm install && pnpm build in app/desktop`);
+  check(fs.existsSync(MAIN), `${MAIN} is missing; run pnpm install && pnpm build:test in app/desktop`);
   fs.mkdirSync(lab.dir, { recursive: true });
 
   const app = await launch(lab, "app", slotPort(DEVTOOLS[0]), { url: lab.hubUrl, key: lab.key });

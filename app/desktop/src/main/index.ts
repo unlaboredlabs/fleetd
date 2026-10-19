@@ -1,6 +1,9 @@
+// Before anything else: a release build refuses debugging switches before Chromium can act on them.
+import "./debug-guard";
 import { isAbsolute, join } from "node:path";
 import tls from "node:tls";
 import { app, BrowserWindow, nativeTheme, powerMonitor, session } from "electron";
+import { RELEASE_BUILD } from "./build";
 import { fixtureRequest, loadFixture } from "./hub/fixture";
 import { osCredentialEnv } from "./hub/os";
 import { HubService, type HubMode } from "./hub/service";
@@ -43,7 +46,7 @@ if (!primary) app.quit();
 tls.setDefaultCACertificates([...tls.getCACertificates("bundled"), ...tls.getCACertificates("system")]);
 
 const hubMode = (): HubMode => {
-  const request = fixtureRequest(process.env, app.isPackaged);
+  const request = fixtureRequest(process.env, RELEASE_BUILD);
   if (request.kind === "ignored") console.warn(request.reason);
   if (request.kind !== "fixture") {
     return { kind: "hub", credentials: osCredentialEnv(FLEETD_DIR, fleetdHome !== undefined), vars: process.env, transport: webSocketTransport };

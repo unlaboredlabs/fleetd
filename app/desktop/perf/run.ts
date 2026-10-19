@@ -1,11 +1,11 @@
-// The desktop app's four budgets, measured: `pnpm perf` (after `pnpm build`). Prints one line per budget.
+// The desktop app's four budgets, measured: `pnpm perf` after `pnpm build:test` (a release build refuses the DevTools
+// port the harness drives it through). Prints one line per budget.
 //
 //   --runs N             launches timed for first paint after an untimed first one (default 5; the median counts)
 //   --json FILE          also write the numbers as JSON
 //   --baseline FILE      exit 1 when a number regressed past budgets.ts's limit from FILE (the Linux CI job)
 //   --strict             exit 1 when a number misses its budget (the Mac, where the budgets apply)
 //   (CI gates first paint only over a bare Electron window, perf/reference, which moves with the runner too)
-//   FLEETD_PERF_APP      a packaged app's executable instead of the built out/ (e.g. fleetd.app/Contents/MacOS/fleetd)
 //   FLEETD_PERF_FIXTURE  a fixture (pnpm fixtures) to launch on, instead of an unpaired app
 //
 // First paint is timed from this script's spawn to the page's first contentful paint (FLEETD_PERF's stderr line),
@@ -164,7 +164,7 @@ const main = async () => {
     await app.stop();
   }
 
-  const electron = process.env["FLEETD_PERF_APP"] ? "packaged app" : `Electron ${electronVersion()}`;
+  const electron = `Electron ${electronVersion()}`;
   const header = `fleetd desktop budgets: ${os.platform()} ${os.arch()}, ${os.cpus()[0]?.model.trim() ?? "unknown cpu"}, ${electron}`;
   const rows = METRICS.map((metric) => {
     const rule = RULES[metric];

@@ -1,4 +1,4 @@
-// Launches the built app (or FLEETD_PERF_APP, a packaged executable) for a measurement: its own temporary state,
+// Launches the built app (`pnpm build:test`) for a measurement: its own temporary state,
 // a scrubbed environment, its stderr as lines, and stop/RSS by the PID it spawned.
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
@@ -26,7 +26,7 @@ export interface LaunchOptions {
   readonly env?: Record<string, string>;
   /** Opens a DevTools port for Playwright's connectOverCDP; startup stays free of a debugger either way. */
   readonly debug?: boolean;
-  /** Runs Electron on this app instead of ours (perf/reference), whatever FLEETD_PERF_APP says. */
+  /** Runs Electron on this app instead of ours (perf/reference). */
   readonly entry?: string;
 }
 
@@ -45,7 +45,6 @@ export const launch = (options: LaunchOptions = {}): Launched => {
   }
   const fixture = process.env["FLEETD_PERF_FIXTURE"];
   if (fixture !== undefined && fixture !== "") Object.assign(env, { FLEETD_FIXTURE: fixture, FLEETD_FIXTURE_DIR: path.join(desktopDir, "fixtures") });
-  const packaged = process.env["FLEETD_PERF_APP"];
   const args = [`--user-data-dir=${path.join(dir, "chromium")}`];
   if (options.debug === true) args.push("--remote-debugging-port=0");
   if (process.platform === "linux") {
@@ -53,12 +52,7 @@ export const launch = (options: LaunchOptions = {}): Launched => {
     args.push("--no-sandbox");
     if (env["DISPLAY"] === undefined && env["WAYLAND_DISPLAY"] === undefined) args.push("--ozone-platform=headless");
   }
-  const child =
-    options.entry !== undefined
-      ? spawn(electronBinary(), [options.entry, ...args], { env, stdio: ["ignore", "ignore", "pipe"] })
-      : packaged !== undefined && packaged !== ""
-      ? spawn(packaged, args, { env, stdio: ["ignore", "ignore", "pipe"] })
-      : spawn(electronBinary(), [desktopDir, ...args], { env, stdio: ["ignore", "ignore", "pipe"] });
+  const child = spawn(electronBinary(), [options.entry ?? desktopDir, ...args], { env, stdio: ["ignore", "ignore", "pipe"] });
   const lines: Array<string> = [];
   const waiters = new Set<() => void>();
   let partial = "";

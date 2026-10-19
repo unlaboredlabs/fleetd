@@ -1,4 +1,4 @@
-// `pnpm perf:record`: the demo recording end to end, without a hub. The app records itself (FLEETD_RECORD) and types
+// `pnpm perf:record` (after `pnpm build:test`): the demo recording end to end, without a hub. The app records itself (FLEETD_RECORD) and types
 // an order (FLEETD_DEMO_TYPE) into the stand-in composer; SIGUSR1 ends the clip as tests/lab/demoFanout.ts ends it,
 // SIGTERM ends the run. Then both MP4s are checked: H.264, moov before the first fragment, and real frames; and the
 // traffic lights, which the recorder paints on macOS, are forced on (FLEETD_RECORD_CHROME) and looked for in a still.

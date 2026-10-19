@@ -11,8 +11,12 @@ const env = (name: string): string | undefined => {
   return value === undefined || value === "" ? undefined : value;
 };
 
-/** Call right after the main window is created, before it is shown. */
+let instrumented = false;
+
+/** Call right after a window is created, before it is shown; only the first window is recorded and typed into. */
 export const instrument = (win: BrowserWindow): void => {
+  if (instrumented) return;
+  instrumented = true;
   if (env("FLEETD_PERF") !== undefined) reportLaunch(win);
   const record = env("FLEETD_RECORD");
   const order = env("FLEETD_DEMO_TYPE");

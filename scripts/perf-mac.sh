@@ -13,7 +13,6 @@
 # directory; nothing of your fleetd is read or written. Environment:
 #   FLEETD_PERF_DIR      the work directory (default ~/fleetd-perf)
 #   FLEETD_PERF_REF      the branch or tag to measure (default main; ignored in a checkout)
-#   FLEETD_PERF_APP      measure a packaged app instead, e.g. /Applications/fleetd.app/Contents/MacOS/fleetd
 set -euo pipefail
 
 say() { printf '\033[1m%s\033[0m\n' "$*"; }
@@ -66,6 +65,6 @@ pn() {
 cd "$repo/app/desktop"
 say "Installing and building (the first run fetches Electron)"
 pn install --frozen-lockfile --silent
-pn build >/dev/null
+pn build:test >/dev/null
 say "Measuring; windows will open and close"
 pn perf
