@@ -1,7 +1,8 @@
 //! `fleetd status`: an order's, a project's or the fleet's progress, read from the hub's status doc (status_get) and,
 //! with `--watch`, kept current by status_wait, which blocks on the hub until the doc changes. It lays out only what
-//! the hub decided: the number, what it waits on, and which parts are stale. It never shows a time estimate. Every time printed is absolute, so a block left on
-//! screen never reads as fresher than it is. Also `fleetd hub github-webhook`, which wraps github_webhook_set.
+//! the hub decided: the number (verified plus in flight), why it fell, what it waits on, and which parts are stale.
+//! It never shows a time estimate. Every time printed is absolute, so a block left on screen never reads as fresher
+//! than it is. Also `fleetd hub github-webhook`, which wraps github_webhook_set.
 
 use std::io::{IsTerminal, Write};
 use std::path::PathBuf;
@@ -15,7 +16,8 @@ use fleetd_contracts::mcp::{StatusGetOutput, StatusWaitOutput};
 use fleetd_contracts::model::MachineStatus;
 use fleetd_contracts::plan::PlanItemId;
 use fleetd_contracts::status::{
-    CiState, HeadlineSource, Health, Marker, RiskLevel, Since, StaleMark, StatusDoc, StatusScope,
+    CiState, DropReason, HeadlineSource, Health, InProgressRow, Marker, Progress, RiskLevel, Since,
+    StaleMark, StatusDoc, StatusScope,
 };
 use serde_json::{Value, json};
 
@@ -25,8 +27,8 @@ use super::mcp_client::{McpClient, McpError};
 use super::time::resolve_project;
 
 pub const STATUS_USAGE: &str = r#"  status [<order>|<project>] [--watch] [--json] [--hub <url> --key-file <path>]
-             progress fleetd verified, what it waits on, what is slower than usual, what changed
-             since you last looked, health and risks; for an order (W41), a project by id or title
+             progress (verified plus work in flight), why it fell, the critical path it waits on,
+             what is slower than usual, what changed since you last looked, health and risks; for an order (W41), a project by id or title
              (<machine>/<project> when two machines have one), or the whole fleet. --watch prints
              each new version as the hub sends it; stale parts say so. On the hub machine it
              needs no --hub or --key-file
@@ -309,6 +311,66 @@ fn row_label(item: Option<&PlanItemId>, order: Option<&WorkstreamId>, title: &st
     }
 }
 
+/// The number shown: the estimate (verified plus in-flight credit), or the verified share from a hub without one.
+fn shown_pct(p: &Progress) -> i64 {
+    p.estimate.as_ref().map_or(p.pct.get(), |e| e.pct.get())
+}
+
+const BAR: usize = 20;
+
+/// `[██████▒▒▒░░░░░░░░░░░]`: solid is verified, shaded is in flight.
+fn bar(verified: i64, in_flight: i64) -> String {
+    let cells = |pct: i64| (pct.clamp(0, 100) as usize * BAR + 50) / 100;
+    let solid = cells(verified);
+    let shaded = cells(verified + in_flight)
+        .saturating_sub(solid)
+        .min(BAR - solid);
+    format!(
+        "[{}{}{}]",
+        "█".repeat(solid),
+        "▒".repeat(shaded),
+        "░".repeat(BAR - solid - shaded)
+    )
+}
+
+/// The row the scope's critical path runs through, else the first that waits on anything.
+fn critical_row(doc: &StatusDoc) -> Option<&InProgressRow> {
+    let waits = |r: &&InProgressRow| r.waiting_on.as_ref().is_some_and(|w| !w.is_empty());
+    doc.in_progress
+        .iter()
+        .filter(waits)
+        .find(|r| r.critical == Some(true))
+        .or_else(|| doc.in_progress.iter().find(waits))
+}
+
+/// "waiting on: P12 full lab run: review of #12 → CI on #12 → merge   holds up P14, P16", from the critical row; a
+/// hub without per-row paths gives its gates instead.
+fn waiting_line(doc: &StatusDoc) -> Option<String> {
+    if let Some(row) = critical_row(doc) {
+        let path: Vec<&str> = row
+            .waiting_on
+            .iter()
+            .flatten()
+            .map(|w| w.as_str())
+            .collect();
+        let label = row_label(row.item_id.as_ref(), Some(&row.workstream_id), &row.title);
+        let mut line = format!("waiting on: {label}: {}", path.join(" → "));
+        if let Some(blocking) = row.blocking.as_ref().filter(|b| !b.is_empty()) {
+            let ids: Vec<&str> = blocking.iter().map(|b| b.as_str()).collect();
+            line.push_str(&format!("   holds up {}", ids.join(", ")));
+        }
+        return Some(line);
+    }
+    (!doc.gates.is_empty()).then(|| {
+        let gates: Vec<String> = doc
+            .gates
+            .iter()
+            .map(|g| format!("{}{}", g.label, if g.serial { " (serial)" } else { "" }))
+            .collect();
+        format!("waiting on: {}", gates.join(" → "))
+    })
+}
+
 /// What `fleetd status` prints for one doc.
 pub fn render(doc: &StatusDoc, zone: Tz) -> String {
     let c = Clock {
@@ -317,7 +379,7 @@ pub fn render(doc: &StatusDoc, zone: Tz) -> String {
     };
     let mut out: Vec<String> = Vec::new();
     let p = &doc.progress;
-    let pct = p.pct.get();
+    let pct = shown_pct(p);
     let live = match doc.stale.len() {
         0 => "live".to_owned(),
         1 => "NOT LIVE: 1 stale source".to_owned(),
@@ -337,8 +399,17 @@ pub fn render(doc: &StatusDoc, zone: Tz) -> String {
         .virtual_tier
         .map(|t| format!(", no plan: counts as one {t:?} item"))
         .unwrap_or_default();
+    let figure = match &p.estimate {
+        Some(e) => format!(
+            "{} {}% verified + {}% in flight · ",
+            bar(e.verified_pct.get(), e.in_flight_pct.get()),
+            e.verified_pct.get(),
+            e.in_flight_pct.get()
+        ),
+        None => String::new(),
+    };
     out.push(format!(
-        "  {} of {} required items verified{tier}{}",
+        "  {figure}{} of {} required items verified{tier}{}",
         p.done.get(),
         p.total.get(),
         p.stale
@@ -346,8 +417,34 @@ pub fn render(doc: &StatusDoc, zone: Tz) -> String {
             .map(|s| format!(" ({})", c.stale(s)))
             .unwrap_or_default()
     ));
+    if let Some(planning) = p.estimate.as_ref().and_then(|e| e.planning.as_ref())
+        && planning.active
+    {
+        out.push(format!(
+            "  the lead is planning: no plan items yet (planning {}% done)",
+            planning.pct.get()
+        ));
+    }
     for marker in doc.markers.iter() {
-        out.push(format!("  {}", marker_text(marker, pct, &c)));
+        out.push(format!("  {}", marker_text(marker, p.pct.get(), &c)));
+    }
+    // Scope changes already show as markers; the other drops say why the number fell.
+    let drops = p
+        .estimate
+        .iter()
+        .flat_map(|e| e.series.iter().flatten())
+        .rev();
+    for point in drops
+        .filter_map(|pt| pt.drop.as_ref().map(|d| (pt, d)))
+        .filter(|(_, d)| d.reason != DropReason::ScopeChange)
+        .take(3)
+    {
+        out.push(format!(
+            "  ↓ from {}% · {} ({})",
+            point.1.from_pct.get(),
+            point.1.text,
+            c.at(&point.0.at)
+        ));
     }
     let tag = match (doc.headline.source, &doc.headline.reason) {
         (HeadlineSource::Generated, _) => "[generated]".to_owned(),
@@ -355,13 +452,8 @@ pub fn render(doc: &StatusDoc, zone: Tz) -> String {
         (HeadlineSource::Template, None) => "[template]".to_owned(),
     };
     out.push(format!("  {}   {tag}", doc.headline.text));
-    if !doc.gates.is_empty() {
-        let gates: Vec<String> = doc
-            .gates
-            .iter()
-            .map(|g| format!("{}{}", g.label, if g.serial { " (serial)" } else { "" }))
-            .collect();
-        out.push(format!("  waiting on: {}", gates.join(" → ")));
+    if let Some(line) = waiting_line(doc) {
+        out.push(format!("  {line}"));
     }
     out.push(format!("  {}", since_line(&doc.since, &c)));
     section(&mut out, "health", &[health_line(&doc.health, &c)]);
@@ -403,7 +495,7 @@ pub fn render(doc: &StatusDoc, zone: Tz) -> String {
                 .as_ref()
                 .map(|m| format!("   {}", m.text))
                 .unwrap_or_default();
-            format!("{}  {}%{marker}", part.title, part.progress.pct.get())
+            format!("{}  {}%{marker}", part.title, shown_pct(&part.progress))
         })
         .collect();
     let parts_label = match doc.scope {
@@ -427,8 +519,22 @@ pub fn render(doc: &StatusDoc, zone: Tz) -> String {
             if !tasks.is_empty() {
                 cells.push(tasks.join(","));
             }
-            if let Some(gate) = &row.gate {
-                cells.push(gate.to_string());
+            if row.critical == Some(true) {
+                cells.push("critical path".to_owned());
+            }
+            match row.waiting_on.as_ref().filter(|w| !w.is_empty()) {
+                Some(path) => {
+                    let path: Vec<&str> = path.iter().map(|w| w.as_str()).collect();
+                    cells.push(format!("waiting on {}", path.join(" → ")));
+                }
+                None => cells.extend(row.gate.as_ref().map(|g| g.to_string())),
+            }
+            if let Some(blocking) = row.blocking.as_ref().filter(|b| !b.is_empty()) {
+                let ids: Vec<&str> = blocking.iter().map(|b| b.as_str()).collect();
+                cells.push(format!("holds up {}", ids.join(", ")));
+            }
+            if row.slower_than_usual == Some(true) {
+                cells.push("SLOWER THAN USUAL".to_owned());
             }
             if let Some(stale) = &row.stale {
                 cells.push(format!("({})", c.stale(stale)));
@@ -1010,6 +1116,60 @@ mod tests {
                 .unwrap()
                 .ends_with("(live)")
         );
+    }
+
+    #[test]
+    fn a_progress_v2_doc_shows_verified_and_in_flight_drops_and_the_critical_path() {
+        let mut d = doc(json!([]));
+        d.progress = serde_json::from_value(json!({
+            "pct": 61, "done": 11, "total": 18, "polishDone": 2, "polishTotal": 5, "asOf": "2026-10-18T14:02:07Z",
+            "estimate": { "pct": 70, "verifiedPct": 61, "inFlightPct": 9, "weights": "project", "series": [
+                { "at": "2026-10-18T13:00:00Z", "pct": 66, "verifiedPct": 58 },
+                { "at": "2026-10-18T13:20:00Z", "pct": 63, "verifiedPct": 58,
+                  "drop": { "reason": "ci_failed", "fromPct": 66, "text": "CI failed on #212" } },
+                { "at": "2026-10-18T14:00:00Z", "pct": 61, "verifiedPct": 58,
+                  "drop": { "reason": "scope_change", "fromPct": 69, "text": "+3 items: time inspector added" } },
+                { "at": "2026-10-18T14:02:00Z", "pct": 70, "verifiedPct": 61 }
+            ] }
+        }))
+        .unwrap();
+        d.in_progress = serde_json::from_value(json!([
+            { "itemId": "P11", "workstreamId": "W41", "title": "docs page", "taskIds": ["T87"], "changeIds": [],
+              "waitingOn": ["review of #210"] },
+            { "itemId": "P12", "workstreamId": "W41", "title": "full lab run", "taskIds": ["T88"], "changeIds": [],
+              "waitingOn": ["review of #212", "CI on #212", "merge"], "blocking": ["P14", "P16"], "critical": true,
+              "slowerThanUsual": true }
+        ]))
+        .unwrap();
+        let text = render(&d, chrono_tz::UTC);
+        assert!(text.starts_with("storefront  70%  polish 2/5"), "{text}");
+        for want in [
+            "  [████████████▒▒░░░░░░] 61% verified + 9% in flight · 11 of 18 required items verified",
+            "  ↓ from 66% · CI failed on #212 (13:20)",
+            "  waiting on: P12 full lab run: review of #212 → CI on #212 → merge   holds up P14, P16",
+            "        P12 full lab run   T88   critical path   waiting on review of #212 → CI on #212 → merge   holds up P14, P16   SLOWER THAN USUAL",
+        ] {
+            assert!(text.contains(want), "missing {want:?} in\n{text}");
+        }
+        assert_eq!(
+            text.matches("+3 items: time inspector added").count(),
+            1,
+            "a scope change shows once, as its marker"
+        );
+        assert!(
+            !text.contains("P12 full lab run (serial)"),
+            "per-row paths win over gates"
+        );
+    }
+
+    #[test]
+    fn the_bar_splits_verified_from_in_flight() {
+        assert_eq!(bar(0, 0), format!("[{}]", "░".repeat(20)));
+        assert_eq!(
+            bar(50, 25),
+            format!("[{}{}{}]", "█".repeat(10), "▒".repeat(5), "░".repeat(5))
+        );
+        assert_eq!(bar(100, 30), format!("[{}]", "█".repeat(20)));
     }
 
     #[test]
