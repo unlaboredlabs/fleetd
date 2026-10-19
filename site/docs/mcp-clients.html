@@ -218,14 +218,29 @@ as stopping an order or steering, need one.</p>
 <td>read</td>
 </tr>
 <tr>
-<td><code dir="auto">secret_submit</code></td>
-<td>Answer a secret item in a chat.</td>
+<td><code dir="auto">approval_answer {requestId, decision, message?}</code></td>
+<td>Approve or deny an approval item: <code dir="auto">decision</code> is <code dir="auto">approve</code> or <code dir="auto">deny</code>; <code dir="auto">message</code> is a denial’s reason for the lead.</td>
+<td>operate, human key</td>
+</tr>
+<tr>
+<td><code dir="auto">secret_submit {requestId, sealed}</code></td>
+<td>Answer a secret item with a value sealed to the target machine.</td>
+<td>operate, human key</td>
+</tr>
+<tr>
+<td><code dir="auto">project_stop {projectRef, reason?}</code></td>
+<td>Stop every running and queued agent of the project and tell the lead in its chat. Merged PRs, the lead and the chat stay.</td>
 <td>operate, human key</td>
 </tr>
 <tr>
 <td><code dir="auto">attachment_put {name, mime, dataB64}</code></td>
 <td>Upload a file (image, text or PDF, at most 5 MiB) for a message.</td>
 <td>operate</td>
+</tr>
+<tr>
+<td><code dir="auto">attachment_get {projectRef, attachmentId}</code></td>
+<td>Read a file attached to a project’s chat.</td>
+<td>read</td>
 </tr>
 <tr>
 <td><code dir="auto">project_files {machineId, projectId, query}</code></td>
@@ -241,6 +256,8 @@ as stopping an order or steering, need one.</p>
 </table>
 <p><code dir="auto">projectRef</code> is <code dir="auto">{"machineId": "devbox", "projectId": "&lt;id&gt;"}</code>; <code dir="auto">fleetd project list</code> prints both, as
 <code dir="auto">&lt;machineId&gt;/&lt;projectId&gt;</code>.</p>
+<p><code dir="auto">intake_submit</code> and the <code dir="auto">order_*</code> tools are gone; for one release they answer with an error that points to
+<code dir="auto">chat_send</code>.</p>
 <p><code dir="auto">clientRequestId</code> is any unique string you choose per request. Sending the same one again returns the same message
 instead of a second one. <code dir="auto">events_wait</code> waits for changes, so a client doesn’t need to poll: a new message is a
 <code dir="auto">chat.message</code> event.</p>
