@@ -20,7 +20,8 @@ or with `--no-init`, it only installs and prints the next command.
 | macOS, Apple silicon | yes | yes |
 | macOS, Intel | yes | yes |
 
-The desktop app needs macOS 12 or newer. The hub also needs `git`, and the `claude` and `gh` CLIs logged in to your own accounts. A worker needs only
+The desktop app needs macOS 12 or newer; on an older Mac the installer stops without changing anything. An earlier
+fleetd app you have there keeps working; install only the CLI with `--no-app`. The hub also needs `git`, and the `claude` and `gh` CLIs logged in to your own accounts. A worker needs only
 `claude`. `fleetd init` checks each one and prints the install command for anything missing.
 
 ## What it installs

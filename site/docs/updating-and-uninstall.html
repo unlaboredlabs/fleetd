@@ -61,7 +61,8 @@
 <p>It replaces the CLI, and the desktop app when the installer put it in its usual place, then restarts the hub and node
 services that run this binary. Every file is checked against the release's <code>SHA256SUMS</code>. The app also updates itself
 from the same release, and installs the update when you quit it. An earlier fleetd app is replaced by the current one,
-which keeps its pairing.</p>
+which keeps its pairing; on macOS 11 it stays as it is, since the current app needs macOS 12.</p>
+<p>Updating a Mac from before the current app: run <code>fleetd update</code> twice (the CLI first, then the app).</p>
 <p>Workers don't update themselves. Update the hub first, then each worker: run <code>fleetd update</code> there, or
 <code>fleetd machine add &lt;ssh-host&gt;</code> on the hub, which copies the hub's binary over. fleetd pins claude separately: see
 <a href="/docs/troubleshooting#claude_version">claude version</a>.</p>

@@ -63,7 +63,8 @@ or with <code>--no-init</code>, it only installs and prints the next command.</p
 <tr><td>macOS, Apple silicon</td><td>yes</td><td>yes</td></tr>
 <tr><td>macOS, Intel</td><td>yes</td><td>yes</td></tr>
 </tbody></table></div>
-<p>The desktop app needs macOS 12 or newer. The hub also needs <code>git</code>, and the <code>claude</code> and <code>gh</code> CLIs logged in to your own accounts. A worker needs only
+<p>The desktop app needs macOS 12 or newer; on an older Mac the installer stops without changing anything. An earlier
+fleetd app you have there keeps working; install only the CLI with <code>--no-app</code>. The hub also needs <code>git</code>, and the <code>claude</code> and <code>gh</code> CLIs logged in to your own accounts. A worker needs only
 <code>claude</code>. <code>fleetd init</code> checks each one and prints the install command for anything missing.</p>
 <h2 id="what-it-installs">What it installs<a class="anchor" href="#what-it-installs" aria-label="Link to this section">#</a></h2>
 <ul>
