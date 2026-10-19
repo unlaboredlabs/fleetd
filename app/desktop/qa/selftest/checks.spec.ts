@@ -96,6 +96,20 @@ test("screenshots are the viewport times the scale, at every size", async () => 
   }
 });
 
+test("a native resize after setView doesn't change what is checked and shot", async () => {
+  const { app, page } = launched;
+  await setView(app, page, "medium", "light");
+  await show(page, "shell", "#/");
+  // What macOS does when it clamps an oversized window: the native size changes under the viewport override, and
+  // lands with the next frame (here a throwaway screenshot), knocking the page off its set size.
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.setContentSize(1100, 720));
+  await page.screenshot();
+  expect(await page.evaluate(() => window.innerWidth)).toBe(1100);
+  const shot = await shoot(page, [], { screen: "resized", fixture: "empty", size: "medium", theme: "light" }, { scroll: false });
+  expect(pngSize(path.join(resultsDir, shot.png))).toEqual({ width: sizes.medium.width * scale, height: sizes.medium.height * scale });
+  expect(await page.evaluate(() => window.innerWidth)).toBe(sizes.medium.width);
+});
+
 test("content under the macOS window controls is reported", async () => {
   const { app, page } = launched;
   await setView(app, page, "medium", "light");
