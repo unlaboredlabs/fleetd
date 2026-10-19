@@ -7,6 +7,7 @@ pub mod model;
 pub mod path;
 pub mod project;
 pub mod rules;
+pub mod serial;
 pub mod store;
 pub mod tools;
 

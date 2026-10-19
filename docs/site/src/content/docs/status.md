@@ -114,6 +114,9 @@ see [An order is stuck](/docs/troubleshooting#stuck).
 An item that has spent over 1.5 times the usual time in its current stage is marked `SLOWER THAN USUAL` and listed
 under risks. "Usual" is measured from this project's own history.
 
+`--json` also shows how much of the slot cap was held over the last hour (`health.slots.utilization`), as measured.
+When work waited while slots sat free, [Where time went](/docs/time-inspector#serial-waits) names it and the fix.
+
 ## Since you last looked {#since}
 
 Counts what happened in this scope since you last looked: merged PRs, verified items, started orders, failures, new

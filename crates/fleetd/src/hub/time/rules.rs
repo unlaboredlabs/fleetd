@@ -56,16 +56,16 @@ const TEST_FAMILIES: &[&str] = &[
 
 /// One rule's result for one key, fired or not: the numbers are kept either way so a comparison can show them.
 #[derive(Clone, Debug)]
-struct Candidate {
-    rule: InsightRule,
-    key: String,
-    fired: bool,
-    message: String,
-    numbers: Vec<(&'static str, i64)>,
+pub(super) struct Candidate {
+    pub rule: InsightRule,
+    pub key: String,
+    pub fired: bool,
+    pub message: String,
+    pub numbers: Vec<(&'static str, i64)>,
     /// (start, id), sorted.
-    spans: Vec<(i64, i64)>,
+    pub spans: Vec<(i64, i64)>,
     /// The total time the finding names; findings rank by it.
-    weight: i64,
+    pub weight: i64,
 }
 
 /// "34s", "2m10s", "51m", "1h12m".
@@ -105,7 +105,7 @@ fn pct(values: &[i64], p: u32) -> i64 {
     v[idx.min(v.len() - 1)]
 }
 
-fn short(label: &str) -> String {
+pub(super) fn short(label: &str) -> String {
     let mut out = String::new();
     for c in label.chars() {
         if js_len(&out) + c.len_utf16() > 150 {
@@ -121,14 +121,14 @@ fn label(row: &Row) -> &str {
     row.label.as_deref().unwrap_or("")
 }
 
-fn spans<'a>(rows: impl IntoIterator<Item = &'a Row>) -> Vec<(i64, i64)> {
+pub(super) fn spans<'a>(rows: impl IntoIterator<Item = &'a Row>) -> Vec<(i64, i64)> {
     let mut out: Vec<(i64, i64)> = rows.into_iter().map(|r| (r.start_ms, r.id)).collect();
     out.sort_unstable();
     out.dedup();
     out
 }
 
-fn total<'a>(rows: impl IntoIterator<Item = &'a Row>) -> i64 {
+pub(super) fn total<'a>(rows: impl IntoIterator<Item = &'a Row>) -> i64 {
     rows.into_iter().map(Row::dur).sum()
 }
 
@@ -1028,6 +1028,10 @@ fn candidates(input: &RuleInput) -> Vec<Candidate> {
     startup(input, &mut out);
     offline(input, &mut out);
     coverage(input, &mut out);
+    super::serial::queue_wait(input, &mut out);
+    super::serial::contention(input, &mut out);
+    super::serial::idle_lead(input, &mut out);
+    super::serial::slots_underused(input, &mut out);
     out
 }
 
@@ -1096,6 +1100,20 @@ pub fn insights(input: &RuleInput) -> Vec<Insight> {
         .iter()
         .take(MAX_INSIGHTS)
         .map(|(_, c)| to_insight(c))
+        .collect()
+}
+
+/// Every rule's finding on `input`, fired or not, strongest first, and whether it fired: an offline replay reports
+/// what stayed under a threshold too.
+pub fn evaluate(input: &RuleInput) -> Vec<(Insight, bool)> {
+    let mut found: Vec<(i64, Candidate)> = candidates(input)
+        .into_iter()
+        .map(|c| (c.weight, c))
+        .collect();
+    rank(&mut found);
+    found
+        .iter()
+        .map(|(_, c)| (to_insight(c), c.fired))
         .collect()
 }
 
