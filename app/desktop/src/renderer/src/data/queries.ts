@@ -11,8 +11,8 @@ import {
   type ToolOutput,
 } from "../../../shared/contracts";
 import type { HubError, HubFrame } from "../../../shared/hub";
-import type { LiveScope } from "../../../shared/ipc";
-import { createChatActions, type ChatActions } from "./chat-layer";
+import type { ChatScope, LiveScope } from "../../../shared/ipc";
+import { createChatActions, refOf, type ChatActions } from "./chat-layer";
 import { effectsOf, matches, type Invalidation } from "./effects";
 import { applyFrame, applyReply, applyUndo, createDataStore, failRead, ingest, type DataStore } from "./store";
 
@@ -34,6 +34,7 @@ export interface HubApi {
   subscribe(listener: (frame: HubFrame) => void): () => void;
   resync(): Promise<void>;
   live(scope: LiveScope | null): Promise<void>;
+  chat(project: ChatScope | null): Promise<void>;
 }
 
 /** What the open screen wants live: every open order's lanes (board, machines) and/or one order in focus. */
@@ -91,7 +92,7 @@ export interface DataLayer {
 export const createDataLayer = (hub: HubApi, now: () => number = Date.now): DataLayer => {
   const store = createDataStore();
   const typed = typedCall(hub.call);
-  const chat = createChatActions(store, hub.call, now);
+  const chat = createChatActions(store, typed, (key) => void hub.chat(key === null ? null : refOf(key)), now);
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
