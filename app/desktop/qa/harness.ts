@@ -42,7 +42,7 @@ export interface Launched {
 
 // From the fixture file: its "now", so relative times ("3 min ago") read the same on every run, and its "settleMs",
 // how long after a subscribe its timed frames keep arriving.
-function fixtureMeta(file: string) {
+export function fixtureMeta(file: string) {
   if (!existsSync(file)) throw new Error(`Fixture ${file} not found: run \`pnpm fixtures\` in app/desktop first.`);
   const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
   if (typeof parsed !== "object" || parsed === null) return {};
@@ -52,8 +52,21 @@ function fixtureMeta(file: string) {
   };
 }
 
+// Retries only a launch that never started (the binary busy or missing for a moment), never a test outcome.
+const LAUNCH_RACE = /ETXTBSY|ENOENT|EAGAIN|spawn|Process failed to launch/;
+async function launchElectron(options: Parameters<typeof electron.launch>[0], attempts = 3): Promise<ElectronApplication> {
+  try {
+    return await electron.launch(options);
+  } catch (error) {
+    if (attempts <= 1 || !LAUNCH_RACE.test(String(error))) throw error;
+    await new Promise((done) => setTimeout(done, 500));
+    return launchElectron(options, attempts - 1);
+  }
+}
+
 // `fixture` is required for the app; only the self-test's stand-in window runs without one.
 export async function launch(fixture: FixtureName | undefined, main = appMain): Promise<Launched> {
+  if (!existsSync(main)) throw new Error(`${main} is missing: run \`pnpm qa:build\` in app/desktop first.`);
   const { now, settleMs = 0 } = fixture === undefined ? {} : fixtureMeta(path.join(fixturesDir, `${fixture}.json`));
   const userData = mkdtempSync(path.join(tmpdir(), "fleetd-qa-"));
   // Only what Electron needs: never the user's fleetd home, credentials or the agent's own session variables.
@@ -65,7 +78,7 @@ export async function launch(fixture: FixtureName | undefined, main = appMain): 
     LANG: "en_US.UTF-8",
     TZ: "UTC",
   };
-  for (const key of ["DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "TMPDIR"]) {
+  for (const key of ["DISPLAY", "XAUTHORITY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "TMPDIR"]) {
     const value = process.env[key];
     if (value) env[key] = value;
   }
@@ -78,8 +91,10 @@ export async function launch(fixture: FixtureName | undefined, main = appMain): 
     // No display (CI, an ssh session): render offscreen. Layout, fonts and screenshots are the same.
     if (!env["DISPLAY"] && !env["WAYLAND_DISPLAY"]) args.push("--ozone-platform=headless");
   }
-  const app = await electron.launch({ args, env, cwd: desktopDir, timeout: 30_000 });
+  const app = await launchElectron({ args, env, cwd: desktopDir, timeout: 30_000 });
   const page = await app.firstWindow();
+  // Entry animations of the first screen play reduced too.
+  await page.emulateMedia({ reducedMotion: "reduce" });
   if (now) {
     await page.clock.setFixedTime(new Date(now));
     await page.reload();
@@ -127,21 +142,28 @@ export async function show(page: Page, screenId: string, route: string, open?: (
   await page.evaluate((r) => {
     window.location.hash = r;
   }, route);
+  if (open) {
+    // The route is up once any screen is; then the interaction brings up this one.
+    await page.locator("[data-screen]").first().waitFor({ state: "visible", timeout: 10_000 });
+    await settle(page);
+    await open(page);
+  }
   // A screen marks its sub-states as "<id>.<state>" (board.empty), so either form means it is up.
   await page
     .locator(`[data-screen="${screenId}"], [data-screen^="${screenId}."]`)
     .first()
     .waitFor({ state: "visible", timeout: 10_000 });
-  if (open) await open(page);
   await settle(page);
 }
 
-// Fonts loaded, no skeletons, and two frames painted after the last layout change.
+// Fonts loaded, no skeletons, and two frames painted after the last layout change. `fonts.ready` waits for the faces
+// the current layout asked for; `fonts.status` alone is "loaded" before any face has been requested.
 export async function settle(page: Page) {
-  await page.waitForFunction(() => document.fonts.status === "loaded" && !document.querySelector("[aria-busy='true']"), undefined, {
-    timeout: 10_000,
+  await page.waitForFunction(() => !document.querySelector("[aria-busy='true']"), undefined, { timeout: 10_000 });
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+    await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(null))));
   });
-  await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(null)))));
 }
 
 // macOS draws the traffic lights over the page; nothing of ours may sit under them.

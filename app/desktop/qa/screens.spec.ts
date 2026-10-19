@@ -18,8 +18,8 @@ for (const screen of screens) {
         const reserved = await reservedRegions(app);
         const shots: Shot[] = [];
         // Shown once, then resized: a screen opened by an interaction stays open, as it would for a user.
-        await show(page, screen.id, screen.route, screen.open);
         await settled();
+        await show(page, screen.id, screen.route, screen.open);
         for (const size of screen.sizes ?? (Object.keys(sizes) as (keyof typeof sizes)[])) {
           for (const theme of themes) {
             await setView(app, page, size, theme);

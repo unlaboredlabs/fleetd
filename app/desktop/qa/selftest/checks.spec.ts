@@ -68,6 +68,13 @@ for (const route of ["#/", "#/good"]) {
   });
 }
 
+test("a screen brought up by an interaction is shown and checked", async () => {
+  const { app, page } = launched;
+  await setView(app, page, "small", "dark");
+  await show(page, "palette", "#/", (p) => p.keyboard.press("ControlOrMeta+K"));
+  expect(await check(page, [])).toEqual([]);
+});
+
 test("content under the macOS window controls is reported", async () => {
   const { app, page } = launched;
   await setView(app, page, "medium", "light");
