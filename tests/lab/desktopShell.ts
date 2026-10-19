@@ -5,8 +5,9 @@
 // 2. call: fleetd_status answers, an unknown tool comes back as not_found, a malformed request is refused in main;
 // 3. live: a board subscription gets a full frame;
 // 4. events: stopping and starting lab-b's node streams machine.offline and machine.online;
-// 5. reconnect: a hub restart shows retrying, then live with a fresh snapshot, and events and live flow again;
-// 6. pairing through window.fleetd.hub.connect: a refused key (close 4401) stops at the refused state; the right key
+// 5. liveness: with live frames off, a quiet link stays live for 50 s (the client pings; the hub answers);
+// 6. reconnect: a hub restart shows retrying, then live with a fresh snapshot, and events and live flow again;
+// 7. pairing through window.fleetd.hub.connect: a refused key (close 4401) stops at the refused state; the right key
 //    goes live, is saved (0600, never in the page), and a relaunch connects from the saved key.
 // The key never reaches the page. No claude turns.
 import { execFileSync, spawn } from "node:child_process";
@@ -29,7 +30,7 @@ interface Page {
 /** One DevTools connection to the app's page; `eval` awaits promises and returns JSON values. */
 const connectPage = async (port: number): Promise<Page> => {
   const pages = (await (await fetch(`http://127.0.0.1:${port}/json`)).json()) as Array<Body>;
-  const page = pages.find((p) => p.type === "page" && String(p.url).endsWith("/renderer/index.html"));
+  const page = pages.find((p) => p.type === "page" && String(p.url).startsWith("app://fleetd/"));
   if (page === undefined) throw new Error(`no app page on DevTools port ${port}`);
   const ws = new WebSocket(String(page.webSocketDebuggerUrl));
   await new Promise((resolve, reject) => {
@@ -58,8 +59,10 @@ const connectPage = async (port: number): Promise<Page> => {
 
 /** Launches the built app, with the hub and key for this run only or (null) its saved ones; stopped by its PID. */
 const launch = async (lab: Lab, name: string, port: number, hub: { url: string; key: string } | null, fresh = true): Promise<Page> => {
-  // Electron fetches its binary on first use; this returns its path.
-  const electron = execFileSync(process.execPath, ["-p", "require('electron')"], { cwd: DESKTOP, encoding: "utf8" }).trim();
+  // Electron fetches its binary on first use and prints its progress to stdout, so the path comes after a marker.
+  const out = execFileSync(process.execPath, ["-e", "process.stdout.write('\\n@electron=' + require('electron') + '\\n')"], { cwd: DESKTOP, encoding: "utf8" });
+  const electron = /^@electron=(.+)$/mu.exec(out)?.[1];
+  if (electron === undefined || !fs.existsSync(electron)) throw new Error(`no Electron binary from app/desktop: ${out}`);
   const home = path.join(lab.dir, name);
   if (fresh) fs.rmSync(home, { recursive: true, force: true });
   fs.mkdirSync(home, { recursive: true });
@@ -91,6 +94,8 @@ const launch = async (lab: Lab, name: string, port: number, hub: { url: string; 
   };
   onCleanup(quit);
   const page = await lab.until(`${name} app's page`, 30_000, async () => connectPage(port).catch(() => undefined));
+  // The page target shows up before the document has loaded, and with it the preload's bridge.
+  await lab.until(`${name} app's window.fleetd`, 30_000, async () => ((await page.eval<boolean>(`document.readyState === "complete" && typeof window.fleetd === "object"`)) ? true : undefined));
   // Every frame main sends, in order, as the renderer's store would see them.
   await page.eval(`(window.__frames = [], window.fleetd.hub.subscribe((f) => window.__frames.push(f)), true)`);
   return {
@@ -150,7 +155,16 @@ export async function desktopShell(lab: Lab) {
   );
   ok(`events: machine.offline #${offline.seq}, machine.online #${online.seq}, ${seqs.length} events in order after cursor ${snapshot.cursor}`);
 
-  // 5. reconnect
+  // 5. liveness
+  await app.eval(`window.fleetd.hub.live(null)`);
+  const quietFrom = (await frames()).length;
+  await new Promise((r) => setTimeout(r, 50_000));
+  const quiet = (await frames()).slice(quietFrom);
+  check(!quiet.some((f) => f.t === "state"), `a quiet link stays live: ${JSON.stringify(quiet.filter((f) => f.t === "state"))}`);
+  await app.eval(`window.fleetd.hub.live({ board: true })`);
+  ok(`liveness: 50 s with ${quiet.length} frames and no state change`);
+
+  // 6. reconnect
   const snapshotsBefore = await count("snapshot");
   const statesBefore = (await states()).length;
   await lab.startHub();
@@ -171,7 +185,7 @@ export async function desktopShell(lab: Lab) {
 
   check(!JSON.stringify(await frames()).includes(lab.key), "the key never reaches the page");
 
-  // 6. pairing
+  // 7. pairing
   const pairPort = slotPort(DEVTOOLS[1]);
   let pairing = await launch(lab, "pairing", pairPort, null);
   const phase = async () => (await pairing.eval<Body>("window.fleetd.hub.state()")).phase as string;

@@ -11,7 +11,11 @@ ipcRenderer.on(IPC.hubFrame, (_event: IpcRendererEvent, frame: HubFrame) => {
   for (const listener of listeners) listener(frame);
 });
 
+const FIXTURE_ARG = "--fleetd-fixture=";
+const fixture = process.argv.find((arg) => arg.startsWith(FIXTURE_ARG))?.slice(FIXTURE_ARG.length) ?? null;
+
 const api: FleetdApi = {
+  fixture,
   platform: process.platform === "darwin" || process.platform === "linux" || process.platform === "win32" ? process.platform : "other",
   copy: (text) => ipcRenderer.invoke(IPC.copy, text) as Promise<void>,
   hub: {

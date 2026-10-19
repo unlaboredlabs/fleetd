@@ -3,14 +3,12 @@ import { IPC, type InvokeChannel } from "../shared/channels";
 import { parseRequest, type RequestArgs } from "../shared/ipc";
 import type { HubService } from "./hub/service";
 import type { PairingService } from "./pairing/service";
-import { rendererOrigin } from "./security";
+import { isOwnPage } from "./security";
 
-/** Only our own top-level page may call main; a subframe or a navigated-away page can't. */
+/** Only our own top-level page may call main: not a subframe, not a local file, not a page navigated elsewhere. */
 const trustedSender = (event: IpcMainInvokeEvent): boolean => {
   const frame = event.senderFrame;
-  if (frame === null || frame !== event.sender.mainFrame) return false;
-  const origin = rendererOrigin();
-  return origin === "file://" ? frame.url.startsWith("file://") : frame.url.startsWith(`${origin}/`);
+  return frame !== null && frame === event.sender.mainFrame && isOwnPage(frame.url);
 };
 
 const handle = <C extends InvokeChannel>(
@@ -34,9 +32,9 @@ export const registerIpc = (hub: HubService, pairing: PairingService): void => {
   handle(IPC.hubResync, () => hub.resync());
   handle(IPC.hubConnect, (_event, request) => hub.connect(request));
   handle(IPC.hubForget, () => hub.forget());
+  handle(IPC.copy, (_event, text) => clipboard.writeText(text));
   handle(IPC.pairStart, () => pairing.start());
   handle(IPC.pairProbe, (_event, address) => pairing.probe(address));
   handle(IPC.pairRedeem, (_event, request) => pairing.redeem(request));
   handle(IPC.pairAuto, () => pairing.auto());
-  handle(IPC.copy, (_event, text) => clipboard.writeText(text));
 };
