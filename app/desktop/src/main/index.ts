@@ -11,7 +11,7 @@ import { webSocketTransport } from "./hub/transport";
 import { registerIpc } from "./ipc";
 import { installMenu } from "./menu";
 import { Notifier } from "./notify";
-import { claimLinkHandler } from "./linkHandlerMain";
+import { claimOnFirstRun } from "./linkHandlerMain";
 import { listenForLinks } from "./links";
 import { Opener } from "./opener";
 import { harden, lockSession, pageUrl } from "./security";
@@ -101,7 +101,7 @@ void app.whenReady().then(() => {
   const hub = new HubService(mode);
   registerIpc(hub, { opener, notifier: new Notifier(opener) });
   installMenu(opener);
-  claimLinkHandler("first-run");
+  claimOnFirstRun();
   app.on("browser-window-focus", () => hub.windowFocused());
   powerMonitor.on("resume", () => hub.systemResumed());
   app.on("will-quit", () => hub.stop());

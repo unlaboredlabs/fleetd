@@ -2,6 +2,7 @@ import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { app } from "electron";
 import type { LinkHandlerStatus } from "../shared/app";
+import { RELEASE_BUILD } from "./build";
 import { shouldClaim, type ClaimReason } from "./linkHandler";
 
 const SCHEME = "fleetd";
@@ -26,18 +27,29 @@ const record = (): void => {
   }
 };
 
-export const linkHandlerStatus = (): LinkHandlerStatus => ({
-  packaged: app.isPackaged,
-  handler: app.isPackaged && app.isDefaultProtocolClient(SCHEME),
-});
+// A dev, test or QA bundle never claims, even packed: it would take fleetd:// from the tester's real install.
+// RELEASE_BUILD is fixed at build time; app.isPackaged only reflects the executable's name.
+const isHandler = (): boolean => RELEASE_BUILD && app.isDefaultProtocolClient(SCHEME);
 
-/** Claims fleetd:// when `shouldClaim` says so, and reports where things stand. */
-export const claimLinkHandler = (reason: ClaimReason): LinkHandlerStatus => {
-  const isHandler = app.isPackaged && app.isDefaultProtocolClient(SCHEME);
-  if (shouldClaim({ packaged: app.isPackaged, reason, claimedBefore: claimedBefore(), isHandler })) {
-    // Recorded even when the OS refuses, so a refusal isn't retried on every launch.
+export const linkHandlerStatus = (): LinkHandlerStatus => ({ packaged: RELEASE_BUILD, handler: isHandler() });
+
+/**
+ * At launch: claims fleetd:// the first time a release build runs, then never again. It checks the record before
+ * asking the OS anything, because on Linux that question runs xdg-settings synchronously.
+ */
+export const claimOnFirstRun = (): void => {
+  const before = claimedBefore();
+  // A first-run claim doesn't depend on who holds the scheme now, so the OS isn't asked.
+  if (!shouldClaim({ packaged: RELEASE_BUILD, reason: "first-run", claimedBefore: before, isHandler: false })) return;
+  app.setAsDefaultProtocolClient(SCHEME);
+  // Recorded even when the OS refuses, so a refusal isn't retried on every launch.
+  record();
+};
+
+/** From Settings or onboarding: claims fleetd:// when `shouldClaim` says so, and reports where things stand. */
+export const claimLinkHandler = (reason: Exclude<ClaimReason, "first-run">): LinkHandlerStatus => {
+  if (shouldClaim({ packaged: RELEASE_BUILD, reason, claimedBefore: claimedBefore(), isHandler: isHandler() })) {
     app.setAsDefaultProtocolClient(SCHEME);
-    if (reason === "first-run") record();
   }
   return linkHandlerStatus();
 };
