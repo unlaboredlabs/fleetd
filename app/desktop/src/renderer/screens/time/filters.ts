@@ -17,9 +17,10 @@ export interface Filters {
   readonly range: Range;
   /** The custom range, hub ms: since, and until (absent: now). */
   readonly custom?: { readonly since: number; readonly until?: number };
-  readonly project?: { readonly machineId: string; readonly projectId: string };
-  readonly machine?: string;
-  readonly role?: AgentRole;
+  // Clearable: a cleared filter is set to undefined, which saving drops.
+  readonly project?: { readonly machineId: string; readonly projectId: string } | undefined;
+  readonly machine?: string | undefined;
+  readonly role?: AgentRole | undefined;
   readonly compare: boolean;
 }
 

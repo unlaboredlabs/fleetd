@@ -235,9 +235,7 @@ export const buildModel = (
     rows.push({ key: lane, name, kind: "other", from: at, to: at, summary: "", agentMs: 0, gaps: g });
   }
 
-  const rowByKey = new Map(rows.filter((r) => r.to > r.from).map((r, i) => [r.key, i] as const));
   const rowIndex = new Map(rows.map((r, i) => [r.key, i] as const));
-  void rowByKey;
   const segs: Seg[] = (path?.segments ?? []).map((seg) => {
     const span = seg.spanId === undefined ? undefined : byId.get(seg.spanId);
     const s = span === undefined ? undefined : spans[span];

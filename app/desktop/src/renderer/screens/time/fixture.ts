@@ -365,7 +365,7 @@ const breakdownOf = (d: Data): TimeBreakdownOutput => {
   const cats = new Map<string, { ms: number; n: number; kinds: Map<SpanKind, { ms: number; n: number }> }>();
   for (const s of d.spans) {
     if (s.exclMs === undefined || s.kind === "idle") continue;
-    const c = cats.get(s.cat) ?? { ms: 0, n: 0, kinds: new Map() };
+    const c = cats.get(s.cat) ?? { ms: 0, n: 0, kinds: new Map<SpanKind, { ms: number; n: number }>() };
     cats.set(s.cat, c);
     c.ms += s.exclMs;
     c.n += 1;
@@ -629,7 +629,7 @@ export const fixtureClient = (opts: FixtureOptions = {}): TimeClient => {
     const hit = cache.get(key);
     if (hit !== undefined) return hit;
     let specs = week();
-    if (order !== undefined && !specs.some((s) => s.id === order)) specs = [{ ...specs[0]!, id: order }];
+    if (order !== undefined && !specs.some((s) => s.id === order)) specs = specs.slice(0, 1).map((w8) => ({ ...w8, id: order }));
     if (compare) specs = specs.map(before);
     if (scope.kind === "project") specs = specs.filter((s) => s.project === scope.projectRef.projectId);
     if (scope.kind === "machine") specs = specs.filter((s) => s.machine === scope.machineId);
@@ -746,6 +746,8 @@ const TAIL_BUILD = "vite v6.2.0 building for production...\n✓ 412 modules tran
 
 /** W8's spans and path directly, for the model's tests and the frame-budget bench. */
 export const fixtureOrder = (dense = false): { spans: Span[]; path: CriticalPath } => {
-  const b = buildOrder(week()[0]!, dense ? 10 : 1);
+  const w8 = week()[0];
+  if (w8 === undefined) throw new Error("the fixture week has W8");
+  const b = buildOrder(w8, dense ? 10 : 1);
   return { spans: b.spans.slice().sort((a, z) => a.id - z.id), path: b.path };
 };

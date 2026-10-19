@@ -27,7 +27,7 @@ export const pieces = (message: string): Piece[] => {
 };
 
 /** The hub writes messages in lower case so they read inside a sentence; the list starts each with a capital. */
-export const capitalized = (s: string): string => (s.length === 0 ? s : s[0]?.toUpperCase() + s.slice(1));
+export const capitalized = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
 
 /** "noEdit" → "no edit", "totalMs" → "total": the hub's number names as words. */
 export const words = (name: string): string =>

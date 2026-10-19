@@ -1,0 +1,522 @@
+/* The time inspector. Tokens only (ui/tokens.css); no animation anywhere: the hover card and the bars are static. */
+
+.screen {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+
+.grow {
+  flex: 1 1 auto;
+}
+.noShrink {
+  flex: none;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--bar);
+  padding: var(--space-1) var(--space-4);
+  border-bottom: 1px solid var(--hairline);
+  min-width: 0;
+}
+.head h2 {
+  min-width: 0;
+  font-size: var(--text-md);
+}
+.figures {
+  flex: none;
+  max-width: 50%;
+}
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1-5);
+  padding: var(--space-1-5) var(--space-4);
+  border-bottom: 1px solid var(--hairline);
+}
+.chip {
+  max-width: 240px;
+}
+.chev {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  color: var(--quiet);
+}
+.menu {
+  max-height: 360px;
+  overflow-y: auto;
+}
+.customForm {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.customForm > * {
+  flex: 1 1 180px;
+}
+
+.tabs {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.tabList {
+  padding: 0 var(--space-4);
+}
+.panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.panel[hidden] {
+  display: none;
+}
+
+.banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1-5) var(--space-4);
+  border-bottom: 1px solid var(--hairline);
+  min-width: 0;
+}
+.litMark {
+  width: 10px;
+  height: 2px;
+  flex: none;
+  background: var(--accent);
+}
+.loadingLine {
+  padding: var(--space-1) var(--space-4);
+}
+.empty {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-6) var(--space-4);
+  max-width: var(--measure);
+}
+
+/* ---- timeline ---------------------------------------------------------------------------------------------- */
+
+.timeline {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.axis {
+  display: flex;
+  height: 24px;
+  flex: none;
+  border-bottom: 1px solid var(--hairline);
+  padding-right: var(--edge-inset);
+}
+.axisTicks {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+.tick {
+  position: absolute;
+  top: 4px;
+  padding-left: var(--space-1);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--quiet);
+  white-space: nowrap;
+}
+.scroller {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.sticky {
+  position: sticky;
+  top: 0;
+  display: flex;
+  padding-right: var(--edge-inset);
+}
+.labels {
+  position: relative;
+  flex: none;
+  overflow: hidden;
+}
+.label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  min-width: 0;
+  padding: 0 var(--space-2) 0 var(--space-4);
+  border: none;
+  background: transparent;
+  text-align: left;
+  color: var(--text);
+}
+.label:hover {
+  background: var(--hover);
+}
+.labelCheck {
+  padding-left: 36px;
+}
+.track {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  cursor: crosshair;
+  touch-action: none;
+}
+.canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+.pathRow {
+  display: flex;
+  align-items: center;
+  height: 26px;
+  flex: none;
+  border-top: 1px solid var(--hairline);
+  padding-right: var(--edge-inset);
+}
+.pathLabel {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  flex: none;
+  padding: 0 var(--space-2) 0 var(--space-4);
+  min-width: 0;
+}
+.pathTrack {
+  position: relative;
+  flex: 1 1 auto;
+  height: 100%;
+  min-width: 0;
+  cursor: pointer;
+}
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-1-5) var(--space-4);
+  border-top: 1px solid var(--hairline);
+  flex: none;
+}
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* Swatches mirror the canvas paint (paint.ts): static hatches, no motion. */
+.swatch {
+  width: 14px;
+  height: 8px;
+  flex: none;
+  border-radius: 1px;
+  display: inline-block;
+}
+.sw_model {
+  background: var(--accent);
+}
+.sw_tools {
+  background: var(--quiet);
+}
+.sw_machine {
+  border: 1px solid var(--warning);
+}
+.sw_queue {
+  border: 1px solid var(--warning);
+  background: repeating-linear-gradient(-45deg, var(--warning) 0 1.5px, transparent 1.5px 4.5px);
+}
+.sw_human {
+  background: var(--text);
+}
+.sw_pipeline {
+  border: 1px solid var(--quiet);
+  background: repeating-linear-gradient(-45deg, var(--quiet) 0 1px, transparent 1px 3.5px);
+}
+.sw_idle {
+  border: 1px dashed var(--faint);
+}
+.sw_failed {
+  border: 1px solid var(--danger);
+}
+.gapSwatch {
+  width: 14px;
+  height: 3px;
+  flex: none;
+  background: var(--warning);
+}
+
+.card {
+  position: fixed;
+  z-index: 60;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--raised);
+  box-shadow: var(--float-shadow);
+  /* The card never takes the pointer, so it can't steal hover from the bars under it. */
+  pointer-events: none;
+}
+.cardHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.cardNote {
+  padding-top: var(--space-1);
+}
+
+/* ---- breakdown and insights -------------------------------------------------------------------------------- */
+
+.scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-4) var(--space-6) var(--space-6);
+}
+.summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-bottom: var(--space-3);
+}
+.summaryLine {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+}
+.section {
+  padding-top: var(--space-6);
+}
+.sectionHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+  padding-bottom: var(--space-1);
+}
+.sectionHead h3 {
+  font-size: var(--text-md);
+}
+.after {
+  padding: var(--space-1) var(--space-2) 0;
+}
+
+.table {
+  display: grid;
+  column-gap: var(--space-3);
+}
+.tableHead,
+.tableRow {
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
+  align-items: center;
+  column-gap: var(--space-3);
+  padding: var(--space-1) var(--space-2);
+}
+.tableHead {
+  min-height: 22px;
+}
+.tableRow {
+  min-height: var(--row);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  text-align: left;
+  color: inherit;
+}
+.tableRow:hover {
+  background: var(--hover);
+}
+.cats {
+  grid-template-columns: minmax(96px, 160px) 64px 40px minmax(60px, 140px) minmax(0, 1fr);
+}
+.catsCompare {
+  grid-template-columns: minmax(96px, 160px) 64px 40px minmax(60px, 140px) minmax(0, 1fr) 72px 64px;
+}
+.pathTable {
+  grid-template-columns: minmax(96px, 160px) 64px 40px minmax(0, 1fr);
+}
+.cmdTable {
+  grid-template-columns: minmax(0, 1fr) repeat(5, 72px);
+}
+.repTable {
+  grid-template-columns: minmax(0, 1fr) 96px 64px 72px;
+}
+.humanRow {
+  display: flex;
+  gap: var(--space-2);
+  grid-column: auto;
+}
+.catCell {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.num {
+  justify-self: end;
+  text-align: right;
+}
+.meter {
+  display: block;
+  height: 6px;
+  min-width: 0;
+}
+.meter > span {
+  display: block;
+  height: 100%;
+  border-radius: 1px;
+  background: var(--quiet);
+}
+.notes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-top: var(--space-6);
+  max-width: calc(var(--measure) + 120px);
+}
+.notes h3 {
+  font-size: var(--text-md);
+}
+
+.intro {
+  padding-bottom: var(--space-2);
+  max-width: calc(var(--measure) + 200px);
+}
+.insights {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.insight {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+}
+.insight:hover {
+  background: var(--hover);
+}
+.insightNo {
+  width: 20px;
+  flex: none;
+}
+.insightBody {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: calc(var(--measure) + 160px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* ---- sheets ------------------------------------------------------------------------------------------------ */
+
+.transcript {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.trItem {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-1-5) var(--space-2);
+  border-radius: var(--radius-sm);
+  border-left: 2px solid transparent;
+}
+.trFocus {
+  background: var(--selected);
+  border-left-color: var(--accent);
+}
+.trAt {
+  width: 56px;
+  flex: none;
+}
+.trBody {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.trAction {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.trTail {
+  margin: var(--space-1) 0 0;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--selected);
+}
+.linked {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  height: 100%;
+  min-height: 320px;
+}
+.linkedList {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 60vh;
+}
+.linkedRow {
+  display: grid;
+  grid-template-columns: 60px 64px 48px 96px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 28px;
+  padding: 0 var(--space-2);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  text-align: left;
+  color: inherit;
+}
+.linkedRow:hover:not(:disabled) {
+  background: var(--hover);
+}

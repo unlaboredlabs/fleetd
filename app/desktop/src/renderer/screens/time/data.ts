@@ -97,24 +97,23 @@ const EMPTY: TimeData = { spans: [], spansDone: false };
 
 /** The breakdown, insights and (for an order) every span of a query, refetched on the events that concern it. */
 export const useTimeData = (client: TimeClient, query: TimeQuery): TimeData => {
-  const [data, setData] = useState<TimeData>(EMPTY);
   const key = JSON.stringify(query);
+  // Answers are kept with the query they answer, so a new query shows nothing stale while it is asked.
+  const [state, setState] = useState<{ readonly key: string; readonly data: TimeData }>({ key, data: EMPTY });
   const spansRef = useRef<readonly Span[]>([]);
 
   useEffect(() => {
-    let live = true;
-    let fetching = false;
-    let again = false;
+    const flags = { live: true, fetching: false, again: false };
+    const askedAgain = () => flags.again;
     spansRef.current = [];
-    setData(EMPTY);
     const q = JSON.parse(key) as TimeQuery;
     const set = (f: (d: TimeData) => TimeData) => {
-      if (live) setData(f);
+      if (flags.live) setState((prev) => ({ key, data: f(prev.key === key ? prev.data : EMPTY) }));
     };
     const pageFrom = async (after: number | undefined) => {
       for (;;) {
         const page = await call(client, "time_spans", spansInput(q, after), parseSpans);
-        if (!live) return;
+        if (!flags.live) return;
         if (!page.ok) {
           set((d) => ({ ...d, spansError: page.error, spansDone: true }));
           return;
@@ -129,13 +128,13 @@ export const useTimeData = (client: TimeClient, query: TimeQuery): TimeData => {
     };
     const fetchAll = async (after: number | undefined) => {
       // One refetch in flight; events that land meanwhile fold into one more.
-      if (fetching) {
-        again = true;
+      if (flags.fetching) {
+        flags.again = true;
         return;
       }
-      fetching = true;
+      flags.fetching = true;
       do {
-        again = false;
+        flags.again = false;
         const work: Promise<void>[] = [
           call(client, "time_breakdown", q.breakdown, parseBreakdown).then((breakdown) => set((d) => ({ ...d, breakdown }))),
           call(client, "time_insights", q.insights, parseInsights).then((insights) => set((d) => ({ ...d, insights }))),
@@ -143,8 +142,9 @@ export const useTimeData = (client: TimeClient, query: TimeQuery): TimeData => {
         if (q.spans) work.push(pageFrom(after));
         await Promise.all(work);
         after = resumeAfter(spansRef.current);
-      } while (again && live);
-      fetching = false;
+        // Read through a call: an event during the awaits above may have set it.
+      } while (askedAgain() && flags.live);
+      flags.fetching = false;
     };
     void fetchAll(undefined);
     const order = q.scope.kind === "order" ? q.scope.workstreamId : undefined;
@@ -155,12 +155,12 @@ export const useTimeData = (client: TimeClient, query: TimeQuery): TimeData => {
             if (frame.t === "event" && eventConcerns(frame.event, order)) void fetchAll(resumeAfter(spansRef.current));
           });
     return () => {
-      live = false;
+      flags.live = false;
       unsubscribe?.();
     };
   }, [client, key]);
 
-  return data;
+  return state.key === key ? state.data : EMPTY;
 };
 
 /** The spans a finding or a breakdown row links to: by rule or kind on the hub, narrowed here to a label or check. */
