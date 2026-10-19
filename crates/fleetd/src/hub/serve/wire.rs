@@ -72,11 +72,14 @@ impl LeadCallHandler for CheckCalls {
                 by: caller.by,
             };
             match call {
-                LeadCall::ClaimDone(c) => {
-                    crate::hub::checks::tools::lead_claim_done(&hub, &caller, &c.workstream_id)
-                        .await
-                        .map(LeadCallResult::ClaimDone)
-                }
+                LeadCall::ClaimDone(c) => crate::hub::checks::tools::lead_claim_done(
+                    &hub,
+                    &caller,
+                    &c.workstream_id,
+                    c.close_over.as_ref().map(|w| w.as_str()),
+                )
+                .await
+                .map(LeadCallResult::ClaimDone),
                 LeadCall::ReviewVerdict(v) => {
                     crate::hub::checks::tools::lead_review_verdict(&hub, &caller, v)
                         .await
