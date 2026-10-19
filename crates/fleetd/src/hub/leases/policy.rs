@@ -348,7 +348,7 @@ mod tests {
                 "",
                 "is invalid: the file is empty; it needs an `areas:` map",
             ),
-            ("owners: [wynn]\n", "is invalid: Missing key at [\"areas\"]"),
+            ("owners: [ada]\n", "is invalid: Missing key at [\"areas\"]"),
             (
                 "areas:\n  Docs: [docs/**]\n",
                 "is invalid: Expected a string matching the RegExp ^[a-z0-9][a-z0-9_-]*$ at [\"areas\"][\"Docs\"]",

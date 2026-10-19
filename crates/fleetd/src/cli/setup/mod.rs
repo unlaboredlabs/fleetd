@@ -635,7 +635,7 @@ fn init_options(argv: &[String]) -> Result<InitOptions, u8> {
         && reqwest::Url::parse(url).is_err()
     {
         return Err(usage(&format!(
-            "--url must be the hub's address, e.g. https://forge.tailnet.ts.net, got '{url}'"
+            "--url must be the hub's address, e.g. https://devbox.tailnet.ts.net, got '{url}'"
         )));
     }
     let identity = match v.str("git-identity") {

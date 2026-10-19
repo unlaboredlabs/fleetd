@@ -1,6 +1,8 @@
 // Runtime validation of every renderer → main request. The renderer is treated as untrusted: main parses each
 // argument list here before any handler runs, and refuses anything else.
 import { z } from "zod";
+import { NotifyRequest } from "./app";
+import { MenuState } from "./menu";
 import { IPC, type InvokeChannel } from "./channels";
 
 /** A call's input as JSON, at most; the hub has no use for more, and main shouldn't buffer it. */
@@ -104,6 +106,11 @@ export const REQUESTS = {
   [IPC.projectsPickFolder]: none,
   [IPC.projectsReadDrop]: z.tuple([DropPath]),
   [IPC.copy]: z.tuple([z.string().max(1_000_000)]),
+  [IPC.appReady]: none,
+  [IPC.appNotify]: z.tuple([NotifyRequest]),
+  [IPC.appMenuState]: z.tuple([MenuState]),
+  // The URL rules live in main (main/external.ts), which answers with the reason; this only bounds the size.
+  [IPC.openExternal]: z.tuple([z.string().max(8192)]),
 } as const satisfies Record<InvokeChannel, z.ZodType>;
 
 export type RequestArgs<C extends InvokeChannel> = z.infer<(typeof REQUESTS)[C]>;

@@ -5,7 +5,7 @@
 // At each moment: the last snapshot, the events after its cursor, the last full live frame and the partial ones after
 // it, and per call (tool + input) its latest answer. Then everything personal or environment-specific is rewritten:
 // lab machines become devbox/buildbox, the GitHub testbed acme/storefront, lab paths /home/dev/src/..., and every
-// UUID, git sha and key is remapped to a stable fake. The output is refused if a known personal string survives.
+// UUID, git sha and key is remapped to a stable fake. The output is refused if a leak survives (kit/leaks.ts, plus FLEETD_FIXTURE_DENYLIST, which is required).
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -13,29 +13,16 @@ import { parseArgs } from "node:util";
 import { Fixture } from "./fixture.ts";
 import { sha, uuid } from "./ids.ts";
 import { isObject, type JsonObject, type JsonValue, asText } from "./json.ts";
+import { assertClean } from "./leaks.ts";
 import type { RawLine } from "./record.ts";
 import { fitStrings, validateFixture } from "./schema.ts";
 
 const escape = (w: string) => w.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 
-/** Strings that must never reach a committed fixture, whatever the rewrite missed: this machine's user and host, the lab. */
-const FORBIDDEN = [
-  ...[os.userInfo().username, os.hostname()].filter((w) => w.length >= 3).map((w) => new RegExp(`\\b${escape(w)}\\b`, "iu")),
-  /unlaboredlabs/iu,
-  /fleetd-lab/iu,
-  /fleetd-testbed/iu,
-  // Tailnet addresses (100.64.0.0/10) and names.
-  /\b100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d+\.\d+\b/u,
-  /\.ts\.net\b/iu,
-  /fld_[a-z2-7]{20,}/u,
-  /[A-Za-z0-9._%+-]+@(?!example\.com)[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[a-z]{2,}\b/u,
-];
-
 const MACHINES: Record<string, string> = { "lab-a": "devbox", "lab-b": "buildbox" };
 
 /** The literal rewrites for one lab slot, longest first so a path goes before its prefix. */
 const literalRewrites = (lab: string, hubPort: number): Array<[string, string]> => {
-  const home = path.dirname(path.dirname(path.dirname(lab)));
   const pairs: Array<[string, string]> = [
     [path.join(lab, "testbed"), "/home/dev/src/storefront"],
     [path.join(lab, "repo-a"), "/home/dev/src/checkout"],
@@ -44,11 +31,10 @@ const literalRewrites = (lab: string, hubPort: number): Array<[string, string]> 
     ...Object.keys(MACHINES).map((m): [string, string] => [path.join(lab, `e2e-${hubPort}`, `home-${m}`), "/home/dev"]),
     [path.join(lab, `e2e-${hubPort}`), "/home/dev/.fleetd"],
     [lab, "/home/dev/.fleetd"],
-    [home, "/home/dev"],
+    [os.homedir(), "/home/dev"],
     [`127.0.0.1:${hubPort}`, "devbox:4790"],
     ["unlaboredlabs/fleetd-testbed", "acme/storefront"],
     ["fleetd-testbed", "storefront"],
-    ["unlaboredlabs", "acme"],
     ["repo-a", "checkout"],
     ["repo-b", "billing"],
   ];
@@ -62,10 +48,23 @@ const SHA = /\b[0-9a-f]{40}\b/gu;
 const SHORT_SHA = /\b(?=[0-9a-f]*[0-9])(?=[0-9a-f]*[a-f])[0-9a-f]{7,12}\b/gu;
 const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[a-z]{2,}\b/gu;
 const BASE64_KEY = /\b[A-Za-z0-9+/]{43}=/gu;
+const TOKENS = /\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-ant-[A-Za-z0-9_-]{10,}|xox[abpr]-[A-Za-z0-9-]{10,}|eyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}|fld_[a-z2-7]{20,})/gu;
+const TAILNET_V4 = /\b100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}\b/gu;
+const TAILNET_V6 = /\bfd7a:115c:a1e0:[0-9a-f:]*/giu;
+const TAILNET_HOST = /\b[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.ts\.net\b/giu;
+const HOME = /\/(?:home|Users)\/(?!dev\b)[A-Za-z0-9._-]+/gu;
+// An owner/repo pair: in a GitHub URL, or a whole string under a repo-ish key.
+const GITHUB_URL = /github\.com\/([A-Za-z0-9-]+)\/([A-Za-z0-9._-]+?)(?=\.git\b|[/#?"\s)]|$)/giu;
+const OWNER_REPO = /^([A-Za-z0-9-]+)\/([A-Za-z0-9._-]+)$/u;
+const REPO_KEYS = new Set(["repo", "repos", "fullName", "nameWithOwner"]);
+const STAND_INS = ["storefront", "billing", "docs", "inventory", "search", "mobile", "admin", "analytics", "payments", "emails"];
 
 export const makeSanitizer = (lab: string, hubPort: number) => {
   const literals = literalRewrites(lab, hubPort);
   const userWords = new RegExp(`\\b${escape(os.userInfo().username)}[\\w-]*`, "giu");
+  /** A repo outside acme becomes an acme stand-in, the same one every time. */
+  const repo = (owner: string, name: string) =>
+    owner.toLowerCase() === "acme" ? `${owner}/${name}` : `acme/${STAND_INS[parseInt(sha(`${owner}/${name}`).slice(0, 6), 16) % STAND_INS.length] ?? "docs"}`;
   const text = (s: string): string => {
     let out = s;
     for (const [from, to] of literals) out = out.replaceAll(from, to);
@@ -73,44 +72,35 @@ export const makeSanitizer = (lab: string, hubPort: number) => {
     out = out.replace(userWords, "dev");
     // A slot's own testbed is fleetd-testbed-<n>; the literal above leaves "-<n>".
     out = out.replace(/acme\/storefront-\d\b/gu, "acme/storefront").replace(/\bstorefront-\d\b/gu, "storefront");
+    out = out.replace(GITHUB_URL, (_m, owner: string, name: string) => `github.com/${repo(owner, name)}`);
+    out = out.replace(/unlaboredlabs/giu, "acme");
+    out = out.replace(TOKENS, "<redacted>");
+    out = out.replace(TAILNET_V4, "10.0.0.2").replace(TAILNET_V6, "fd00::2").replace(TAILNET_HOST, "devbox");
+    out = out.replace(HOME, "/home/dev");
     out = out.replace(UUID, (m) => uuid(m.toLowerCase()));
     out = out.replace(SHA, (m) => sha(m));
     out = out.replace(SHORT_SHA, (m) => sha(m).slice(0, m.length));
     out = out.replace(BASE64_KEY, (m) => Buffer.from(sha(m).slice(0, 32), "hex").toString("base64").slice(0, 43) + "=");
-    out = out.replace(/fld_[a-z2-7]{20,}/gu, "fld_redacted");
     // Commit authors and the like: a GitHub noreply address carries the account's numeric id.
     out = out.replace(EMAIL, (m) => (m.endsWith("@example.com") ? m : "dev@example.com"));
     return out;
   };
-  const value = (v: JsonValue): JsonValue => {
-    if (typeof v === "string") return text(v);
-    if (Array.isArray(v)) return v.map(value);
-    if (isObject(v)) return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, value(x)]));
+  /** A whole "owner/repo" string (a repo field, or a map key) after the other rewrites. */
+  const ownerRepo = (v: string): string => {
+    const out = text(v);
+    const pair = OWNER_REPO.exec(out);
+    return pair === null ? out : repo(pair[1] ?? "", pair[2] ?? "");
+  };
+  const value = (v: JsonValue, key = ""): JsonValue => {
+    if (typeof v === "string") return REPO_KEYS.has(key) ? ownerRepo(v) : text(v);
+    if (Array.isArray(v)) return v.map((x) => value(x, key));
+    // Keys too: a map keyed by thread id, path or repo carries the same data as a value would. Only a repo map's keys
+    // are read as owner/repo; elsewhere "site/pricing.md" is a path.
+    const rekey = /repo/iu.test(key) ? ownerRepo : text;
+    if (isObject(v)) return Object.fromEntries(Object.entries(v).map(([k, x]) => [rekey(k), value(x, k)]));
     return v;
   };
   return { text, value };
-};
-
-/**
- * FLEETD_FIXTURE_DENYLIST=<file>: more words that must never appear, one per line, such as the recording person's
- * own repo names. Kept outside the repo, since the list itself would say what it hides.
- */
-export const denylist = (): Array<RegExp> => {
-  const file = process.env["FLEETD_FIXTURE_DENYLIST"];
-  if (file === undefined) return [];
-  return fs
-    .readFileSync(file, "utf8")
-    .split("\n")
-    .map((w) => w.trim())
-    .filter((w) => w.length >= 3)
-    .map((w) => new RegExp(`(?<![A-Za-z0-9])${escape(w)}(?![A-Za-z0-9])`, "iu"));
-};
-
-export const assertClean = (name: string, json: string) => {
-  for (const pattern of [...FORBIDDEN, ...denylist()]) {
-    const hit = pattern.exec(json);
-    if (hit !== null) throw new Error(`${name}: "${json.slice(Math.max(0, hit.index - 60), hit.index + 60)}" still matches ${pattern}`);
-  }
 };
 
 const readRaw = (file: string): Array<RawLine> =>
@@ -201,6 +191,10 @@ const main = () => {
   if (values.raw === undefined || values.lab === undefined || values.out === undefined) {
     throw new Error("usage: sanitize.ts --raw <raw.jsonl> --lab <slot dir> --out <dir> [--at start|peak|end|<ISO>]... [--name <file name, for one --at>] [--port <hub port>]");
   }
+  // The generic checks can't know the recording person's own repo and host names; only their list can.
+  if (process.env["FLEETD_FIXTURE_DENYLIST"] === undefined) {
+    throw new Error("set FLEETD_FIXTURE_DENYLIST to a file outside the repo listing your own repo, org and host names, one per line");
+  }
   const lines = readRaw(values.raw);
   const slot = Number(/slot-(\d)/u.exec(values.lab)?.[1] ?? 0);
   const s = makeSanitizer(path.resolve(values.lab), Number(values.port ?? 4795 + 20 * slot));
@@ -219,7 +213,7 @@ const main = () => {
     const fixture = sanitizeFixture(momentOf(lines, at, name, `Recorded from a lab hub at ${which}.`), s);
     fitStrings(fixture);
     const problems = validateFixture(fixture);
-    for (const p of problems) console.warn(`schema: ${p}`);
+    if (problems.length > 0) throw new Error(`${name} isn't traffic a hub could send:\n${problems.join("\n")}`);
     const json = `${JSON.stringify(fixture.toFile(), null, 1)}\n`;
     assertClean(name, json);
     fs.writeFileSync(path.join(values.out, `${name}.json`), json);

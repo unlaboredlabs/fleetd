@@ -1,7 +1,7 @@
 // One test per registered screen × fixture: every size and theme, screenshots kept, any DOM finding fails it.
 
 import { expect, test } from "@playwright/test";
-import { describeFindings, launch, reservedRegions, type Shot, setView, settle, shoot, show } from "./harness.ts";
+import { assertExpectedState, describeFindings, launch, reservedRegions, type Shot, setView, settle, shoot, show } from "./harness.ts";
 import { screens, sizes, themes } from "./registry.ts";
 
 test.describe.configure({ mode: "parallel" });
@@ -18,8 +18,9 @@ for (const screen of screens) {
         const reserved = await reservedRegions(app);
         const shots: Shot[] = [];
         // Shown once, then resized: a screen opened by an interaction stays open, as it would for a user.
-        await show(page, screen.id, screen.route, screen.open);
         await settled();
+        await show(page, screen.id, screen.route, screen.open);
+        await assertExpectedState(page, screen);
         for (const size of screen.sizes ?? (Object.keys(sizes) as (keyof typeof sizes)[])) {
           for (const theme of themes) {
             await setView(app, page, size, theme);

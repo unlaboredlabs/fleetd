@@ -17,8 +17,11 @@ const pages = {
     <p class="case">A dialog title<span class="sr-only">read aloud to screen readers only, far longer than its one pixel box</span></p>
     <p class="case">Close<span class="sr-only-inset">a second hidden label, clipped with clip-path instead</span></p>
     <div class="case scroller"><div class="sticky-head">Opaque sticky header</div>${Array.from({ length: 12 }, (_, i) => `<div>Row ${i + 1} scrolls under the header <button>Open</button></div>`).join("")}</div>
+    <div class="case pane"><div class="row"><span>W1</span><div class="grow shrinks"><div class="ellipsis">A flex child that may shrink, so its ellipsis shows inside the pane</div></div></div></div>
     <div class="case w200" style="overflow-x: auto"><span class="nowrap">A wide line that scrolls sideways inside its own scroller</span></div>
   </div>`,
+  // A route to an order the fixture doesn't have.
+  "#/order/W2": `<div class="page" data-screen="order.not-found"><p>This order doesn't exist.</p></div>`,
   // Every marked element must be reported, and nothing else.
   "#/bad": `<div class="page" data-screen="bad">
     <div class="case w200 nowrap clip" data-testid="exp-overflow-clip">A long single line clipped at the edge with no ellipsis at all</div>
@@ -45,11 +48,20 @@ const pages = {
       <div class="pull-up" data-testid="exp-overlap-scrolled-b">drawn over by the next one</div>
     </div>
     <div class="case scroller"><div class="sticky-clear" data-testid="exp-overlap-sticky-a">See-through sticky header</div>${Array.from({ length: 12 }, (_, i) => `<div data-testid="exp-overlap-sticky-b">Row ${i + 1} shows through it</div>`).join("")}</div>
+    <div class="case pane" data-testid="exp-overflow-flexchild"><div class="row"><span>W1</span><div class="grow"><div class="ellipsis">A flex child without min-width grows to its text, so the pane cuts the line</div></div></div></div>
+    <div class="case flex-ellipsis" data-testid="exp-overflow-flexellipsis">A flex container never draws an ellipsis, so this is just cut off</div>
     <p class="case">Hidden label<span class="sr-only" data-testid="exp-raw-sronly">order eac3e0fe-ec61-4954-4f78-67240a80c42b</span></p>
     <span class="edge-left" data-testid="exp-edge-left">Touching the left edge</span>
     <button class="edge-right" data-testid="exp-edge-right">Right</button>
   </div>`,
 };
+
+// The palette has no route: Ctrl/Cmd+K brings it up over the current page, as in the app.
+window.addEventListener("keydown", (e) => {
+  if (e.key.toLowerCase() === "k" && (e.ctrlKey || e.metaKey) && !document.querySelector("[data-screen='palette']")) {
+    document.body.insertAdjacentHTML("beforeend", `<div class="palette" data-screen="palette"><p>Go to an order</p></div>`);
+  }
+});
 
 const render = () => {
   document.body.innerHTML = pages[location.hash || "#/"] ?? `<p data-screen="missing">No page ${location.hash}</p>`;

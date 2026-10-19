@@ -255,8 +255,8 @@ mod tests {
     #[test]
     fn keys_the_freeze_on_the_lowercased_repo() {
         assert_eq!(
-            freeze_key("Wynn-Dev/Fleetd-Testbed"),
-            "policy.freeze.wynn-dev.fleetd-testbed"
+            freeze_key("Acme/Storefront"),
+            "policy.freeze.acme.storefront"
         );
         assert!(is_frozen_value(" Yes ") && !is_frozen_value("false"));
     }

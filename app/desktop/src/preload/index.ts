@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from "electron";
+import type { OpenTarget } from "../shared/app";
 import { IPC } from "../shared/channels";
-import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, HubState } from "../shared/hub";
+import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, HubState, OpenOutcome } from "../shared/hub";
 import type { FleetdApi } from "./api";
 
 const listeners = new Set<(frame: HubFrame) => void>();
@@ -10,6 +11,16 @@ ipcRenderer.on(IPC.hubFrame, (_event: IpcRendererEvent, frame: HubFrame) => {
   for (const listener of listeners) listener(frame);
 });
 
+const commandListeners = new Set<(id: string) => void>();
+const openListeners = new Set<(target: OpenTarget) => void>();
+let ready = false;
+
+ipcRenderer.on(IPC.menuCommand, (_event: IpcRendererEvent, id: string) => {
+  for (const listener of commandListeners) listener(id);
+});
+ipcRenderer.on(IPC.appOpen, (_event: IpcRendererEvent, target: OpenTarget) => {
+  for (const listener of openListeners) listener(target);
+});
 const FIXTURE_ARG = "--fleetd-fixture=";
 const fixture = process.argv.find((arg) => arg.startsWith(FIXTURE_ARG))?.slice(FIXTURE_ARG.length) ?? null;
 
@@ -17,6 +28,7 @@ const api: FleetdApi = {
   fixture,
   platform: process.platform === "darwin" || process.platform === "linux" || process.platform === "win32" ? process.platform : "other",
   copy: (text) => ipcRenderer.invoke(IPC.copy, text) as Promise<void>,
+  openExternal: (url) => ipcRenderer.invoke(IPC.openExternal, url) as Promise<OpenOutcome>,
   hub: {
     state: () => ipcRenderer.invoke(IPC.hubState) as Promise<HubState>,
     subscribe: (listener) => {
@@ -45,6 +57,23 @@ const api: FleetdApi = {
       const path = webUtils.getPathForFile(file);
       return path === "" ? Promise.resolve<DropInfo>({ kind: "other" }) : (ipcRenderer.invoke(IPC.projectsReadDrop, path) as Promise<DropInfo>);
     },
+  },
+  app: {
+    onMenuCommand: (listener) => {
+      commandListeners.add(listener);
+      return () => commandListeners.delete(listener);
+    },
+    onOpen: (listener) => {
+      openListeners.add(listener);
+      // Main holds a launch link until the page listens; a reload asks again and gets nothing new.
+      if (!ready) {
+        ready = true;
+        void ipcRenderer.invoke(IPC.appReady);
+      }
+      return () => openListeners.delete(listener);
+    },
+    notify: (request) => ipcRenderer.invoke(IPC.appNotify, request) as Promise<void>,
+    setMenuState: (enabled) => ipcRenderer.invoke(IPC.appMenuState, enabled) as Promise<void>,
   },
 };
 

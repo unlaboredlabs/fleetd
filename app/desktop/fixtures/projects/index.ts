@@ -74,13 +74,13 @@ const discover = (f: Fixture, extra: { longName?: string; offline?: string } = {
     machines: out,
     github: {
       ghOn: "hub",
-      owners: ["acme", "acme-labs"],
+      owners: ["acme"],
       repos: [
         ...projects.map((p) => gh(`acme/${baseName(asText(p["workspaceRoot"]))}`, null, false)),
         gh("acme/ledger-ui", "Ledger front end", true),
         gh("acme/checkout-v2", "Checkout rewrite", true),
         gh("acme/brand-site", extra.longName ? LONG_TITLE : "Marketing site", false),
-        gh("acme-labs/edge-cache", "CDN worker", false),
+        gh("acme/edge-cache", "CDN worker", false),
       ],
     },
     best: machines.find((m) => m["status"] === "online" && asText(m["machineId"]) !== extra.offline)?.["machineId"] ?? "devbox",
