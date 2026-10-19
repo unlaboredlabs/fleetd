@@ -540,6 +540,59 @@ pub struct Health {
     pub slots: HealthSlots,
 }
 
+/// What a project is doing, in one word.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
+pub enum ProjectRowState {
+    /// Agents are running, or its PRs are in review, CI or the train.
+    Working,
+    /// The lead is waiting for your reply.
+    WaitingOnYou,
+    /// Something outside the work stops it: its machine is offline or at its usage limit, or main CI is red.
+    Blocked,
+    /// Nothing running and nothing waiting.
+    Idle,
+    /// A state this build doesn't know (a newer hub): show it as idle. Never sent.
+    #[serde(other)]
+    #[schemars(skip)]
+    Unknown,
+}
+
+/// The project's latest merge, as the train recorded it.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LastMerged {
+    /// The work's own title (its writer task's), not the PR's branch.
+    pub title: Line<1, 120>,
+    pub pr_number: Option<Count>,
+    pub pr_url: Option<Text<1, 300>>,
+    /// When the train merged it.
+    pub at: Timestamp,
+}
+
+/// One project on the Status screen: a state word, the two-tone bar, agents running and the last merge. No ETA.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectStatusRow {
+    pub project_ref: ProjectRef,
+    pub title: Line<1, 120>,
+    pub state: ProjectRowState,
+    /// Blocked only: why, in one line, for the expanded row.
+    pub blocked_reason: Option<Line<1, 160>>,
+    /// The project's progress estimate (verified, in flight, planning), without its series. Absent when the project
+    /// has nothing to count.
+    pub progress: Option<ProgressEstimate>,
+    /// Its lead and task sessions holding a slot now.
+    pub agents_running: Count,
+    pub last_merged: Option<LastMerged>,
+    pub as_of: Timestamp,
+    /// Set when a source the row reads (its machine, its repo on GitHub) went quiet.
+    pub stale: Option<StaleMark>,
+}
+
 /// A child figure: the fleet's projects, a project's milestones, an order's milestones.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]

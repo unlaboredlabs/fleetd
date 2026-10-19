@@ -29,18 +29,19 @@ describe("shortcut map", () => {
     expect(shortcutFor(key("k", "KeyK"), "darwin")).toBeUndefined();
   });
 
-  it("tells Status (⌘.) from Stop (⌘⇧.) by the physical key, whatever Shift types", () => {
+  it("matches punctuation and digits by the physical key, whatever Shift types", () => {
     expect(shortcutFor(key(".", "Period", { metaKey: true }), "darwin")).toBe("status.toggle");
-    expect(shortcutFor(key(">", "Period", { metaKey: true, shiftKey: true }), "darwin")).toBe("order.stop");
-    expect(shortcutFor(key("1", "Digit1", { ctrlKey: true }), "linux")).toBe("order.open.1");
-    expect(shortcutFor(key("0", "Numpad0", { ctrlKey: true }), "linux")).toBe("board.open");
+    expect(shortcutFor(key(">", "Period", { metaKey: true, shiftKey: true }), "darwin")).toBeUndefined();
+    expect(shortcutFor(key("[", "BracketLeft", { metaKey: true }), "darwin")).toBe("project.previous");
+    expect(shortcutFor(key("1", "Digit1", { ctrlKey: true }), "linux")).toBe("project.open.1");
+    expect(shortcutFor(key("1", "Numpad1", { ctrlKey: true }), "linux")).toBe("project.open.1");
   });
 
   it("writes keys as each platform reads them, and as Electron's accelerators", () => {
-    expect(display("order.stop", "darwin")).toBe("⇧⌘.");
-    expect(display("order.stop", "linux")).toBe("Ctrl+Shift+.");
+    expect(display("composer.attach", "darwin")).toBe("⇧⌘A");
+    expect(display("composer.attach", "linux")).toBe("Ctrl+Shift+A");
     expect(display("palette.toggle", "darwin")).toBe("⌘K");
-    expect(accelerator("order.stop")).toBe("CmdOrCtrl+Shift+.");
+    expect(accelerator("project.next")).toBe("CmdOrCtrl+]");
     expect(accelerator("settings.open")).toBe("CmdOrCtrl+,");
   });
 });

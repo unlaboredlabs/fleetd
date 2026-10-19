@@ -248,7 +248,8 @@ every project.
 
 These are short notices, the same everywhere: the brief of a read-only or review task, a reviewer's note on what
 changed since its last review, "fix your PR" (a rebase, red CI or blocking review findings), a denied tool call with
-its reason, the plan's sizing warning, the watchdog's nudge and the note after a usage limit resets.
+its reason, the plan's sizing warning, the pause and resume an agent gets when the max agents drops below it, the
+watchdog's nudge and the note after a usage limit resets.
 
 ### Tool texts {#tool-texts}
 

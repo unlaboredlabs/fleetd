@@ -15,6 +15,12 @@ const Frame = z.discriminatedUnion("t", [
   z.object({ t: z.literal("event"), event: z.looseObject({ seq: z.int().min(0), type: z.string() }), afterMs: delay }),
   z.object({ t: z.literal("live"), frame: z.looseObject({ full: z.boolean() }), afterMs: delay }),
   z.object({ t: z.literal("error"), error: hubError, afterMs: delay }),
+  // A streamed chat frame, replayed whatever chat is subscribed: a fixture streams the chat it shows.
+  z.object({
+    t: z.literal("chat_delta"),
+    delta: z.looseObject({ messageId: z.string(), offset: z.int().min(0), append: z.string() }),
+    afterMs: delay,
+  }),
 ]);
 
 /** Items of `tool`'s answers under `field` that match `where` (a deep subset), e.g. asks_list's asks with askId A1. */
@@ -195,6 +201,8 @@ export class FixtureSource implements HubSource {
   }
 
   live(): void {}
+
+  chat(): void {}
 
   refreshLive(): void {}
 

@@ -116,9 +116,3 @@
   padding: 2px var(--space-3);
   border-bottom: 1px solid var(--hairline);
 }
-.question {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  max-width: var(--measure);
-}

@@ -9,6 +9,6 @@
     "allowImportingTsExtensions": true,
     "tsBuildInfoFile": "./node_modules/.cache/tsconfig.qa.tsbuildinfo"
   },
-  // The words the order-steering fixture answers, which QA types.
-  "include": ["qa/**/*", "fixtures/order/steerSends.ts"]
+  // The words the composer fixtures answer, which QA types.
+  "include": ["qa/**/*", "fixtures/composer/sends.ts"]
 }

@@ -31,7 +31,7 @@ use crate::prompts::{
 };
 use crate::retro::{RetroProposal, RetroProposalState, RetroRun};
 use crate::secrets::{SealedSecret, SecretFingerprint};
-use crate::status::{StatusDoc, StatusScope};
+use crate::status::{ProjectStatusRow, StatusDoc, StatusScope};
 use crate::steer::{Steer, SteerId, SteerMode, SteerTarget};
 use crate::subscriptions::{Subscription, SubscriptionMachines, SubscriptionTypes, WebhookUrl};
 use crate::tasks::{SlotState, Task, TaskId, TaskState};
@@ -58,6 +58,8 @@ pub struct FleetStatus {
     pub cursor: EventSeq,
     /// Absent until the hub runs the slot board (M5).
     pub slots: Option<SlotState>,
+    /// Each project's chat: whether its lead waits on you, whether it works. Absent from hubs without chat.
+    pub chats: Option<List<crate::chat::ProjectChatState, 0, 50>>,
 }
 
 /// Declares an output struct with the fields every tool result carries: `next`, a hint for the next call, and
@@ -404,6 +406,21 @@ output!(AttachmentPutOutput {
     sha256: Text<64, 64>,
 });
 
+// attachment_get: one file of a project's chat or orders, to show it (an image in a chat message): at most 5 MiB, the
+// attachment_put cap. Read on the project's machine; the file must belong to that project, or the caller uploaded it.
+input!(AttachmentGetInput {
+    project_ref: ProjectRef,
+    attachment_id: AttachmentId,
+});
+output!(AttachmentGetOutput {
+    attachment_id: AttachmentId,
+    name: Line<1, 120>,
+    mime: AttachmentMime,
+    bytes: Count,
+    /// Standard base64.
+    data_b64: String,
+});
+
 // project_files: a project's files for @-mentions, best fuzzy match first.
 input!(ProjectFilesInput {
     machine_id: MachineId,
@@ -504,6 +521,21 @@ output!(OrderStopOutput {
     state: WorkstreamState,
     /// Tasks this call cancelled (0 when it was already stopped).
     cancelled: Count,
+});
+
+// project_stop: the safety valve. Stops every running and queued agent of the project and its open orders, withdraws
+// what waits on a person, and tells the lead in its chat. Merged PRs stay; the lead and the chat stay. Idempotent.
+input!(ProjectStopInput {
+    project_ref: ProjectRef,
+    reason: Option<Text<1, 200>>,
+});
+output!(ProjectStopOutput {
+    /// Orders this call stopped.
+    stopped: Count,
+    /// Tasks this call cancelled.
+    cancelled: Count,
+    /// The system line it wrote into the chat.
+    message: crate::chat::ChatMessage,
 });
 
 // time_spans: stored spans of a scope, oldest first, paged by id. `rule` lists the spans a finding links to.
@@ -755,19 +787,34 @@ output!(TasksListOutput {
 input!(TaskGetInput { task_id: TaskId });
 output!(TaskGetOutput { task: Task });
 
-// cap_set: the global cap, a project's share, or both.
-input!(CapSetShare { project_ref: ProjectRef, share: Int<0, 1000> });
+// cap_set: the fleet cap, a project's max agents, or both. Lowering stops nothing; raising starts queued agents at once.
+input!(CapSetProject {
+    project_ref: ProjectRef,
+    /// 1 up to the fleet cap.
+    max_agents: Int<1, 1000>,
+    /// Lowering: tell the agents above the new max to push their work in progress and wait; they resume when a slot
+    /// frees. Without it they finish their current work.
+    pause_extras: Option<bool>,
+});
 input!(
     #[serde(remote = "Self")]
-    CapSetInput { cap: Option<Int<1, 1000>>, share: Option<CapSetShare> }
+    CapSetInput {
+        /// The fleet cap on running turns, leads' included. Needs an admin key.
+        cap: Option<Int<1, 1000>>,
+        project: Option<CapSetProject>,
+    }
 );
 checked!(CapSetInput, |input| {
-    if input.cap.is_none() && input.share.is_none() {
-        return Err("expected cap, share or both".into());
+    if input.cap.is_none() && input.project.is_none() {
+        return Err("expected cap, project or both".into());
     }
     Ok(())
 });
-output!(CapSetOutput { slots: SlotState });
+output!(CapSetOutput {
+    slots: SlotState,
+    /// The agents `pauseExtras` paused.
+    paused: Option<List<TaskId, 0, 1000>>,
+});
 
 // claims_list
 input!(ClaimsListInput {
@@ -860,14 +907,39 @@ output!(UsageResumeOutput {
 });
 
 // secret_submit: human keys only. The hub relays the sealed value to the sink's node and waits for its fingerprint.
-input!(SecretSubmitInput {
-    ask_id: AskId,
-    /// Sealed in the desktop app to the sink machine's `box_pub_key` (see Machine).
-    sealed: SealedSecret,
+input!(
+    #[serde(remote = "Self")]
+    SecretSubmitInput {
+        /// A secret ask (the questions tool). Exactly one of askId and requestId.
+        ask_id: Option<AskId>,
+        /// A chat's `secret_request` item.
+        request_id: Option<crate::chat::ChatRequestId>,
+        /// Sealed in the desktop app to the sink machine's `box_pub_key` (see Machine).
+        sealed: SealedSecret,
+    }
+);
+checked!(SecretSubmitInput, |input| {
+    if input.ask_id.is_some() == input.request_id.is_some() {
+        return Err("give exactly one of askId and requestId".into());
+    }
+    Ok(())
 });
 output!(SecretSubmitOutput {
-    ask_id: AskId,
+    ask_id: Option<AskId>,
+    request_id: Option<crate::chat::ChatRequestId>,
     fingerprint: SecretFingerprint
+});
+
+// approval_answer: the human approves or denies a chat's `command_approval` item. Human keys only (the handler
+// checks). The item's new state arrives as a `chat.message` event.
+input!(ApprovalAnswerInput {
+    request_id: crate::chat::ChatRequestId,
+    decision: crate::chat::ApprovalDecision,
+    /// A denial's reason, passed to the lead.
+    message: Option<Text<1, 500>>,
+});
+output!(ApprovalAnswerOutput {
+    message: crate::chat::ChatMessage,
 });
 
 // doctor_list: the latest result of every check this key may read; rerun runs them all now first.
@@ -1119,6 +1191,12 @@ output!(StatusWaitOutput {
     unchanged: Option<bool>,
     version: Count,
 });
+// status_projects: one row per project the key reads, for the Status screen.
+input!(StatusProjectsInput {});
+output!(StatusProjectsOutput {
+    /// By title.
+    rows: List<ProjectStatusRow, 0, 200>,
+});
 input!(StatusSeenInput {
     scope: StatusScope,
     seq: EventSeq
@@ -1161,6 +1239,40 @@ pub struct GithubHook {
 output!(GithubWebhookSetOutput {
     /// The hooks now in place; empty when turned off.
     repos: List<GithubHook, 0, 100>,
+});
+
+// chat_send: the human writes to a project's lead. Delivered at once: a new turn when the lead is idle, a steer when
+// it is mid-turn, or queued while it starts. The same clientRequestId returns the same message.
+input!(ChatSendInput {
+    project_ref: ProjectRef,
+    text: Text<1, 20000>,
+    /// From attachment_put.
+    attachments: Option<Attachments>,
+    client_request_id: RequestId,
+});
+output!(ChatSendOutput {
+    message: crate::chat::ChatMessage,
+    /// Why the lead doesn't have it yet, with the fix; absent when it does or is starting.
+    lead_waiting: Option<String>,
+});
+
+// chat_history: a page of a project's chat, oldest first within the page. Without `before` or `after`, the newest
+// `limit` messages. `before: s` pages back from `s`; `after: s` reads what came after `s` (catching up after a
+// reconnect, or one message from its `chat.message` event).
+input!(ChatHistoryInput {
+    project_ref: ProjectRef,
+    before: Option<crate::chat::ChatSeq>,
+    after: Option<crate::chat::ChatSeq>,
+    #[serde(default)]
+    limit: IntOr<1, 100, 50>,
+});
+output!(ChatHistoryOutput {
+    messages: List<crate::chat::ChatMessage, 0, { crate::chat::CHAT_PAGE_MAX }>,
+    /// More messages before the first one of this page.
+    more_before: bool,
+    /// More messages after the last one of this page.
+    more_after: bool,
+    state: crate::chat::ProjectChatState,
 });
 
 /// Declares the static tool table: `McpToolName` with each tool's minimum grant role and its input and output types.
@@ -1257,7 +1369,7 @@ tools! {
     digest_get => DigestGet, Read, DigestGetInput, DigestGetOutput;
     tasks_list => TasksList, Read, TasksListInput, TasksListOutput;
     task_get => TaskGet, Read, TaskGetInput, TaskGetOutput;
-    cap_set => CapSet, Admin, CapSetInput, CapSetOutput;
+    cap_set => CapSet, Operate, CapSetInput, CapSetOutput;
     usage_status => UsageStatus, Read, UsageStatusInput, UsageStatusOutput;
     usage_resume => UsageResume, Operate, UsageResumeInput, UsageResumeOutput;
     claims_list => ClaimsList, Read, ClaimsListInput, ClaimsListOutput;
@@ -1269,12 +1381,15 @@ tools! {
     train_get => TrainGet, Read, TrainGetInput, TrainGetOutput;
     train_freeze => TrainFreeze, Operate, TrainFreezeInput, TrainFreezeOutput;
     secret_submit => SecretSubmit, Operate, SecretSubmitInput, SecretSubmitOutput;
+    // Human keys only (the handler checks).
+    approval_answer => ApprovalAnswer, Operate, ApprovalAnswerInput, ApprovalAnswerOutput;
     doctor_list => DoctorList, Read, DoctorListInput, DoctorListOutput;
     attention_policy => AttentionPolicy, Read, AttentionPolicyInput, AttentionPolicyOutput;
     // Admin keys, or a person's paired device (a human key) with operate on the machine; the handler checks which.
     doctor_fix => DoctorFix, Operate, DoctorFixInput, DoctorFixOutput;
     intake_preview => IntakePreview, Operate, IntakePreviewInput, IntakePreviewOutput;
     attachment_put => AttachmentPut, Operate, AttachmentPutInput, AttachmentPutOutput;
+    attachment_get => AttachmentGet, Read, AttachmentGetInput, AttachmentGetOutput;
     project_files => ProjectFiles, Read, ProjectFilesInput, ProjectFilesOutput;
     orders_board => OrdersBoard, Read, OrdersBoardInput, OrdersBoardOutput;
     order_get => OrderGet, Read, OrderGetInput, OrderGetOutput;
@@ -1295,12 +1410,17 @@ tools! {
     status_get => StatusGet, Read, StatusGetInput, StatusGetOutput;
     status_wait => StatusWait, Read, StatusWaitInput, StatusWaitOutput;
     status_seen => StatusSeen, Read, StatusSeenInput, StatusSeenOutput;
+    status_projects => StatusProjects, Read, StatusProjectsInput, StatusProjectsOutput;
     plan_get => PlanGet, Read, PlanGetInput, PlanGetOutput;
     github_webhook_set => GithubWebhookSet, Admin, GithubWebhookSetInput, GithubWebhookSetOutput;
     // Human keys only (the handler checks); the lead steers its tasks with `fleetd task message`.
     steer_send => SteerSend, Operate, SteerSendInput, SteerSendOutput;
     steer_withdraw => SteerWithdraw, Operate, SteerWithdrawInput, SteerWithdrawOutput;
     steers_list => SteersList, Read, SteersListInput, SteersListOutput;
+    chat_send => ChatSend, Operate, ChatSendInput, ChatSendOutput;
+    chat_history => ChatHistory, Read, ChatHistoryInput, ChatHistoryOutput;
+    // Human keys only (the handler checks).
+    project_stop => ProjectStop, Operate, ProjectStopInput, ProjectStopOutput;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
@@ -1432,12 +1552,12 @@ mod tests {
 
     #[test]
     fn the_tool_table_matches_ts_names_and_scopes() {
-        assert_eq!(McpToolName::ALL.len(), 74);
+        assert_eq!(McpToolName::ALL.len(), 80);
         for tool in McpToolName::ALL {
             assert_eq!(McpToolName::parse(tool.as_str()), Some(*tool));
             assert_eq!(serde_json::to_value(tool).unwrap(), tool.as_str());
         }
-        assert_eq!(McpToolName::CapSet.scope(), Role::Admin);
+        assert_eq!(McpToolName::CapSet.scope(), Role::Operate);
         assert_eq!(McpToolName::RetroRun.scope(), Role::Admin);
         assert_eq!(McpToolName::DoctorFix.scope(), Role::Operate);
         assert_eq!(McpToolName::FleetdStatus.scope(), Role::Read);

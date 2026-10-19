@@ -1,0 +1,256 @@
+// Max agents in the app: the chat header's "agents 6 / 12" control (it opens the slider in place), the same slider
+// per project in Settings → Agents, and the fleet-wide cap above them. Reads the hub's slot state from the data
+// layer's store; writes are cap_set calls through the layer, and the hub's next slot state confirms them.
+import { Slider } from "radix-ui";
+import { useState } from "react";
+import type { ProjectRef, SlotState } from "../../../shared/contracts";
+import { useData } from "../../src/data/react";
+import { Button, Checkbox, Input, Popover, PopoverContent, PopoverTrigger, Separator, Text, textClass } from "../../ui";
+import { agentsLabel, changeLine, clampMax, extrasOver, pauseLine, projectAgents, serialNote, type ProjectAgents } from "./agentsModel";
+import { errorText, useHubCall, useLive } from "./hub";
+import { scopeName, useProjects } from "./parts";
+import s from "./settings.module.css";
+
+type Echo = { ok: boolean; text: string };
+
+/** The hub's slot state for this connection; undefined until it is fresh (never the last connection's numbers). */
+const useSlots = (): SlotState | undefined => useData((st) => (st.fresh ? (st.live.slots ?? st.slots) : undefined));
+
+/** "agents 6 / 12" in the project's chat header; a click opens the Max agents slider in place. */
+export function AgentsCapControl({ projectRef }: { projectRef: ProjectRef }) {
+  const slots = useSlots();
+  const [open, setOpen] = useState(false);
+  if (!slots) return null;
+  const a = projectAgents(slots, projectRef);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button size="sm" variant="ghost" aria-label={`Max agents: ${a.running} running of ${a.max}${a.queued > 0 ? `, ${a.queued} waiting` : ""}`}>
+          <span className={textClass({ size: "xs", tabular: true })}>{agentsLabel(a)}</span>
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end">
+        <div className={s.agentsPopover}>
+          <AgentsPanel projectRef={projectRef} slots={slots} title="Max agents for this project" />
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/** One project's Max agents: the slider, what the change will do, and Save. */
+export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; title?: string }) {
+  const live = useLive();
+  const call = useHubCall();
+  const a: ProjectAgents = projectAgents(props.slots, props.projectRef);
+  // The draft follows the hub until it is moved; after a save it holds the saved value until the hub's slot state
+  // shows it, so the slider doesn't jump back for a moment.
+  const [draft, setDraft] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [echo, setEcho] = useState<Echo | null>(null);
+  const [pause, setPause] = useState(false);
+  const value = clampMax(draft ?? a.max, a.cap);
+  const over = extrasOver(a.running, value);
+  if (draft !== null && !busy && echo?.ok === true && draft === a.max) setDraft(null);
+  const changed = value !== a.max;
+  const id = `agents-${props.projectRef.machineId}-${props.projectRef.projectId}`;
+  const serial = changed ? serialNote(value) : null;
+
+  const save = () => {
+    setBusy(true);
+    setEcho(null);
+    const pauseExtras = pause && over > 0;
+    call("cap_set", { project: { projectRef: props.projectRef, maxAgents: value, ...(pauseExtras ? { pauseExtras: true } : {}) } }).then(
+      (o) => {
+        setBusy(false);
+        setPause(false);
+        const paused = o.paused?.length ?? 0;
+        setEcho({
+          ok: true,
+          text:
+            paused > 0
+              ? `Saved: at most ${value} at once. ${paused === 1 ? "1 agent is" : `${paused} agents are`} saving work and waiting for a slot.`
+              : `Saved: at most ${value} at once.`,
+        });
+      },
+      (e: unknown) => {
+        setBusy(false);
+        setEcho({ ok: false, text: errorText(e) });
+      },
+    );
+  };
+
+  return (
+    <div className={s.agentsPanel}>
+      <div className={s.agentsHead}>
+        <span id={`${id}-label`} className={textClass({ strong: true })}>
+          {props.title ?? "Max agents"}
+        </span>
+        <Text tabular strong>{`${value}`}</Text>
+      </div>
+      <Slider.Root
+        className={s.slider}
+        min={1}
+        max={Math.max(1, a.cap)}
+        step={1}
+        value={[value]}
+        disabled={!live || busy || a.cap <= 1}
+        onValueChange={([v]) => {
+          if (v !== undefined) setDraft(v);
+          setEcho(null);
+        }}
+      >
+        <Slider.Track className={s.sliderTrack}>
+          <Slider.Range className={s.sliderRange} />
+        </Slider.Track>
+        <Slider.Thumb className={s.sliderThumb} aria-labelledby={`${id}-label`} aria-describedby={`${id}-change`} />
+      </Slider.Root>
+      <div className={s.agentsScale}>
+        <Text size="xs" tone="quiet" tabular>
+          1
+        </Text>
+        <Text size="xs" tone="quiet" tabular>{`${a.cap}, the fleet's limit`}</Text>
+      </div>
+      <Text size="xs" tone="quiet" id={`${id}-change`}>
+        {changeLine(a, value)}
+      </Text>
+      {over > 0 ? <Checkbox checked={pause} onCheckedChange={(c) => setPause(c === true)} label={pauseLine(over)} /> : null}
+      {serial ? (
+        <Text size="xs" tone="quiet">
+          {serial}
+        </Text>
+      ) : null}
+      <div className={s.actions}>
+        <Button variant="primary" disabled={!live || !changed || busy} onClick={save}>
+          {busy ? "Saving…" : "Save"}
+        </Button>
+        {changed ? (
+          <Button
+            variant="ghost"
+            disabled={busy}
+            onClick={() => {
+              setDraft(null);
+              setPause(false);
+            }}
+          >
+            Discard changes
+          </Button>
+        ) : null}
+      </div>
+      {echo ? (
+        <div role="status">
+          <Text size="xs" tone={echo.ok ? "quiet" : "danger"}>
+            {echo.text}
+          </Text>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** Settings → Agents: the fleet-wide cap, then each project's max. */
+export function AgentsSettings() {
+  const slots = useSlots();
+  const projects = useProjects();
+  const live = useLive();
+  return (
+    <div className={s.scroll} data-screen="settings.agents">
+      <div className={s.column}>
+        <Text tone="quiet">
+          How many agents may run at once. fleetd holds to it: an agent past the limit waits, and starts the moment one
+          finishes. Reviews that gate a merge go first, so a low limit never stalls the merge train.
+        </Text>
+        {!live || !slots ? (
+          <Text tone="quiet">{live ? "Loading…" : "Connect to a hub to see and change this."}</Text>
+        ) : (
+          <>
+            <FleetCap slots={slots} />
+            <Separator />
+            {projects === undefined ? (
+              <Text tone="quiet">Loading…</Text>
+            ) : projects.length === 0 ? (
+              <Text tone="quiet">No projects yet. Each project you add gets its own max here.</Text>
+            ) : (
+              projects.map((p) => {
+                const ref = { machineId: p.machineId, projectId: p.projectId };
+                return (
+                  <section key={`${p.machineId}/${p.projectId}`} className={s.agentsRow} aria-label={p.title}>
+                    <AgentsPanel projectRef={ref} slots={slots} title={scopeName({ kind: "project", ref }, projects)} />
+                  </section>
+                );
+              })
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** The fleet-wide cap: every project's agents together, across every machine. */
+function FleetCap({ slots }: { slots: SlotState }) {
+  const call = useHubCall();
+  const [draft, setDraft] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [echo, setEcho] = useState<Echo | null>(null);
+  const text = draft ?? String(slots.cap);
+  const n = Number(text);
+  const valid = Number.isInteger(n) && n >= 1 && n <= 1000;
+  const changed = valid && n !== slots.cap;
+  const save = () => {
+    setBusy(true);
+    setEcho(null);
+    call("cap_set", { cap: n }).then(
+      (o) => {
+        setBusy(false);
+        setDraft(null);
+        setEcho({ ok: true, text: `Saved: at most ${o.slots.cap} agents at once across the fleet.` });
+      },
+      (e: unknown) => {
+        setBusy(false);
+        setEcho({ ok: false, text: errorText(e) });
+      },
+    );
+  };
+  return (
+    <div className={s.setting}>
+      <div className={s.settingLabel}>
+        <Text strong>Whole fleet</Text>
+        <Text size="xs" tone="quiet">
+          {`Every project's agents and leads together, on every machine. ${slots.used} running now${slots.queued > 0 ? `, ${slots.queued} waiting` : ""}. Changing it needs an admin key.`}
+        </Text>
+      </div>
+      <div className={s.stack}>
+        <div className={s.inline}>
+          <div className={s.capField}>
+            <Input
+              aria-label="Most agents at once across the fleet"
+              inputMode="numeric"
+              value={text}
+              aria-invalid={!valid}
+              onChange={(e) => {
+                setDraft(e.target.value);
+                setEcho(null);
+              }}
+            />
+          </div>
+          <Button variant="primary" disabled={!changed || busy} onClick={save}>
+            {busy ? "Saving…" : "Save"}
+          </Button>
+        </div>
+        {!valid ? (
+          <Text size="xs" tone="danger">
+            A whole number from 1 to 1000.
+          </Text>
+        ) : null}
+        {echo ? (
+          <div role="status">
+            <Text size="xs" tone={echo.ok ? "quiet" : "danger"}>
+              {echo.text}
+            </Text>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}

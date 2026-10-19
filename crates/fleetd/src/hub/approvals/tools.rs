@@ -35,8 +35,14 @@ async fn secret_submit(
         name: &caller.name,
         allows_operate: &allows_operate,
     };
+    let Some(ask_id) = &input.ask_id else {
+        return Err(
+            ToolError::new(ErrorCode::NotFound, "This hub has no chat requests yet.")
+                .with_fix("Answer the secret ask by its askId."),
+        );
+    };
     hub.approvals
-        .submit_secret(&who, input.ask_id.as_str(), input.sealed.as_str())
+        .submit_secret(&who, ask_id.as_str(), input.sealed.as_str())
         .await
         .map_err(refusal)
 }
