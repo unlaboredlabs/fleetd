@@ -22,10 +22,15 @@ fleetd is built for one person or a small team running their own fleet.
 - **A person's device holds a human key**, encrypted with the OS keychain; in a file only you can read (0600) on Linux
   without a keyring and in an unsigned or ad-hoc signed Mac build, whose keychain trust would reset with every
   update. Only human keys answer secret, approve and checklist asks, so no agent can approve itself.
-- **The node socket trusts the node's OS user.** Lead-side commands reach the hub through `~/.fleetd/node/node.sock`
-  (mode 0600), and the hub attributes each call to the project whose workspace contains the caller's working
-  directory. Any process running as that user can act as any project's lead on that machine. Run agents you don't
-  trust as a different user.
+- **The node socket trusts the node's OS user.** Lead-side calls reach the hub through `~/.fleetd/node/node.sock`
+  (mode 0600). The node tells who is calling from the process tree, not from anything the caller says: a process
+  that descends from a session's claude (its tools, its shell commands) acts as that session, a lead or a task, and
+  only on its own project. A task can't start, steer or stop agents, and a call that names another session is
+  refused. A process outside every session acts as you, on the project whose workspace contains its working
+  directory.
+- **Known limit:** a process that deliberately leaves its session's process tree (for example with `setsid`) and
+  scrubs its environment is treated as you. Any process of the node's OS user can do what that user can. Run agents
+  you don't trust as a different OS user.
 
 ## Secrets and commands
 

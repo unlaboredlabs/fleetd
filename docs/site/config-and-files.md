@@ -53,9 +53,9 @@ for fleetd. Otherwise log in as you normally do: `claude auth login`, or through
 `fleetd doctor` shows what each worker uses, e.g. `claude 2.1.302, logged in (Max), via proxy http://127.0.0.1:8317
 from ~/.claude/settings.json`.
 
-fleetd adds its own settings per session on top of yours, never in their place: an `--mcp-config` for its servers and
-a `--settings` overlay that pins claude's version, turns claude's auto memory off
-([why](what-agents-are-told.md#auto-memory)) and denies the tools agents never get (subagents, plan mode, worktrees,
+fleetd adds its own settings per session on top of yours, never in their place: an `--mcp-config` with its agent
+tools, and a `--settings` overlay that pins claude's version, turns claude's auto memory and its own subagents off
+([why](what-agents-are-told.md#no-subagents)) and denies the tools agents never get (subagents, plan mode, worktrees,
 cron).
 
 To give a worker's sessions a dedicated claude profile instead, set `"claudeConfigDir": "<dir>"` in

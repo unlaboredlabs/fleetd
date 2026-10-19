@@ -70,10 +70,15 @@ operate or admin rights on every machine or a named list. A revoked key stops on
 <li><strong>A person's device holds a human key</strong>, encrypted with the OS keychain; in a file only you can read (0600) on Linux
 without a keyring and in an unsigned or ad-hoc signed Mac build, whose keychain trust would reset with every
 update. Only human keys answer secret, approve and checklist asks, so no agent can approve itself.</li>
-<li><strong>The node socket trusts the node's OS user.</strong> Lead-side commands reach the hub through <code>~/.fleetd/node/node.sock</code>
-(mode 0600), and the hub attributes each call to the project whose workspace contains the caller's working
-directory. Any process running as that user can act as any project's lead on that machine. Run agents you don't
-trust as a different user.</li>
+<li><strong>The node socket trusts the node's OS user.</strong> Lead-side calls reach the hub through <code>~/.fleetd/node/node.sock</code>
+(mode 0600). The node tells who is calling from the process tree, not from anything the caller says: a process
+that descends from a session's claude (its tools, its shell commands) acts as that session, a lead or a task, and
+only on its own project. A task can't start, steer or stop agents, and a call that names another session is
+refused. A process outside every session acts as you, on the project whose workspace contains its working
+directory.</li>
+<li><strong>Known limit:</strong> a process that deliberately leaves its session's process tree (for example with <code>setsid</code>) and
+scrubs its environment is treated as you. Any process of the node's OS user can do what that user can. Run agents
+you don't trust as a different OS user.</li>
 </ul>
 <h2 id="secrets-and-commands">Secrets and commands<a class="anchor" href="#secrets-and-commands" aria-label="Link to this section">#</a></h2>
 <ul>

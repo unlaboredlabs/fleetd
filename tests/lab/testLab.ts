@@ -55,6 +55,7 @@ import { m6Verify } from "./m6Verify.ts";
 import { m7Train } from "./m7Train.ts";
 import { m8Desktop } from "./m8Desktop.ts";
 import { m9Playbooks } from "./m9Playbooks.ts";
+import { noSubagents } from "./noSubagents.ts";
 import { offlineQueue } from "./offlineQueue.ts";
 import { scenarioPush } from "./scenarioPush.ts";
 import { statusFresh } from "./statusFresh.ts";
@@ -91,6 +92,9 @@ const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab)
   // One order on the testbed through the train, with a human-approved gated run: its timeline must add up. After m9,
   // whose router must not see the testbed project.
   { name: "time", run: timeInspector },
+  // Claude's own subagents are refused and an MCP spawn is a fleetd task with its lane. Restarts lab-a's lead, so only
+  // when named.
+  { name: "nosub", run: noSubagents, only: true },
   // A real lead writes its own labelled ask; the answer goes through the undo window. Only when named.
   { name: "ask", run: askCard, only: true },
   // The app demo: one order fanned out to writers, reviewers and verifiers on the testbed. Only when named.

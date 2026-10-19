@@ -422,7 +422,7 @@ impl Plans {
             Some(i) if i.pkey == pk => Ok(i),
             _ => Err(not_found(
                 format!("There is no plan item {id} in your project."),
-                "Run `fleetd plan show` for your items.",
+                "Call `plan_show` for your items.",
             )),
         }
     }
@@ -436,7 +436,7 @@ impl Plans {
             Some(m) if m.pkey == pk => Ok(m),
             _ => Err(not_found(
                 format!("There is no milestone {id} in your project."),
-                "Run `fleetd plan show`, or add one with `fleetd plan milestone \"<title>\"`.",
+                "Call `plan_show`, or add one with `plan_milestone`.",
             )),
         }
     }
@@ -553,7 +553,7 @@ impl Plans {
                             - before.polish_total_pts
                     )
                 ),
-                "Add --why \"<reason>\"; it shows next to the figure as a marker.",
+                "Add why; it shows next to the figure as a marker.",
             ));
         };
         let delta_items =
@@ -647,7 +647,7 @@ impl Plans {
                 item: item_contract(&item),
                 change: change.as_ref().map(change_contract),
                 next: Some(format!(
-                    "link work with `fleetd task spawn … --item P{}`; fleetd marks it done when its PR merges through the train and its checks pass.",
+                    "link work with item P{} on `spawn_agent`; fleetd marks it done when its PR merges through the train and its checks pass.",
                     item.n
                 )),
                 warning: None,
@@ -906,7 +906,7 @@ impl Plans {
             return Err(forbidden(
                 format!("{item} belongs to {own}, not {ws}."),
                 format!(
-                    "Spawn it under {own}, or move the item with `fleetd plan edit {item} --workstream {ws}`."
+                    "Spawn it under {own}, or move the item with `plan_edit` (itemId {item}, workstreamId {ws})."
                 ),
             ));
         }
@@ -965,7 +965,7 @@ impl Plans {
             {
                 return Err(forbidden(
                     format!("{item} belongs to {own}, not {ws}."),
-                    "Enqueue it under the item's order, or leave out --item.",
+                    "Enqueue it under the item's order, or leave out item.",
                 ));
             }
             let mut prs: Vec<GitHubPrUrl> = row.data.links.prs.iter().cloned().collect();

@@ -13,7 +13,10 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 
 use super::claude::protocol::Line;
-use super::claude::{AUTO_MEMORY_OFF_ENV, AUTO_MEMORY_OFF_SETTINGS};
+use super::claude::{
+    AGENT_TOOLS, AUTO_MEMORY_OFF_ENV, AUTO_MEMORY_OFF_SETTINGS, SUBAGENTS_OFF_ENV,
+    subagents_off_settings_env,
+};
 use super::version::{self, SUPPORTED, TESTED};
 use super::{claude_setup, failure};
 
@@ -80,6 +83,8 @@ pub async fn probe(binary: &Path, env: &[(String, String)]) -> RunnerInfo {
         proxy_source: None,
         config_dir: Some(claude_setup::config_dir(env).to_string_lossy().into_owned()),
         auto_memory: None,
+        agent_tools: None,
+        subagent_leaks: None,
     };
     if let Some((url, source)) = claude_setup::proxy_of(env) {
         info.proxy = Some(url);
@@ -140,8 +145,216 @@ pub async fn probe(binary: &Path, env: &[(String, String)]) -> RunnerInfo {
             ));
         }
     }
+    if info.conformance_ok == Some(true) {
+        match discover(binary, env).await {
+            Ok(init) => {
+                let leaks = discovery_leaks(&init);
+                info.agent_tools = Some(init.tools.into_iter().filter(|t| agent_like(t)).collect());
+                if !leaks.is_empty() {
+                    info.conformance_ok = Some(false);
+                    problems.push(subagents_problem(&leaks));
+                }
+                info.subagent_leaks = Some(leaks);
+            }
+            Err(problem) => {
+                // Unread is not off: the doctor shows the check failed.
+                info.conformance_ok = Some(false);
+                info.subagent_leaks = Some(vec![format!(
+                    "tools unreadable: {}",
+                    problem.trim_end_matches('.')
+                )]);
+                problems.push(format!(
+                    "{problem} fleetd could not check that claude's own subagents are off. Fix: claude install \
+                     {TESTED}"
+                ));
+            }
+        }
+    }
     info.problem = (!problems.is_empty()).then(|| problems.join(" "));
     info
+}
+
+/// Built-in agents [`SUBAGENTS_OFF_ENV`] removes. `general-purpose` and `statusline-setup` stay in every claude
+/// 2.1.302 session whatever the settings (no knob, deny rule or `--agents` removes them), as do the user's and the
+/// project's own agents; none of them can run once the Agent tool is denied.
+pub const KNOB_REMOVED_AGENTS: &[&str] = &["claude", "Explore", "Plan"];
+
+/// A claude tool that starts, lists, messages or stops agents, teams, workflows or background tasks. MCP tools
+/// (`mcp__…`, fleetd's own among them) never count.
+pub fn agent_like(tool: &str) -> bool {
+    if tool.starts_with("mcp__") {
+        return false;
+    }
+    AGENT_TOOLS.contains(&tool)
+        || tool.starts_with("Task")
+        || ["Agent", "Team", "Workflow", "Subagent", "Swarm"]
+            .iter()
+            .any(|word| tool.contains(word))
+}
+
+/// The conformance check on a session's `system/init`: every agent tool it still offers, and every built-in agent
+/// fleetd's knobs should have removed. An init without a tool or agent list fails too: what can't be read is not
+/// off. Empty: claude's subagents are off.
+pub fn subagent_leaks(tools: Option<&[String]>, agents: Option<&[String]>) -> Vec<String> {
+    let mut leaks = Vec::new();
+    match tools {
+        Some(tools) if !tools.is_empty() => {
+            leaks.extend(tools.iter().filter(|t| agent_like(t)).cloned())
+        }
+        _ => leaks.push("init without a tool list".to_owned()),
+    }
+    match agents {
+        Some(agents) => leaks.extend(builtin_agent_leaks(agents)),
+        None => leaks.push("init without an agent list".to_owned()),
+    }
+    leaks
+}
+
+/// What the discovery run (fleetd's knobs, no deny list) must show for fleetd to trust its deny list: claude's own
+/// subagent tool under a name fleetd denies (else it was renamed and would slip through), no agent-like tool fleetd
+/// does not know yet, and no built-in agent the knobs remove. Empty: fine.
+pub fn discovery_leaks(init: &DiscoveredInit) -> Vec<String> {
+    let mut leaks = Vec::new();
+    if !init.tools.iter().any(|t| t == "Task" || t == "Agent") {
+        leaks.push("no subagent tool named Task or Agent (renamed?)".to_owned());
+    }
+    leaks.extend(
+        init.tools
+            .iter()
+            .filter(|t| agent_like(t) && !AGENT_TOOLS.contains(&t.as_str()))
+            .map(|t| format!("unknown agent tool {t}")),
+    );
+    leaks.extend(builtin_agent_leaks(&init.agents));
+    leaks
+}
+
+fn builtin_agent_leaks(agents: &[String]) -> Vec<String> {
+    agents
+        .iter()
+        .filter(|a| KNOB_REMOVED_AGENTS.contains(&a.as_str()))
+        .map(|a| format!("agent {a}"))
+        .collect()
+}
+
+pub fn subagents_problem(leaks: &[String]) -> String {
+    format!(
+        "claude still offers its own subagents in fleetd sessions ({}), which would run outside fleetd's slots. \
+         Fix: claude install {TESTED}",
+        leaks.join(", ")
+    )
+}
+
+/// What [`discover`] read off `system/init`.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct DiscoveredInit {
+    pub tools: Vec<String>,
+    pub agents: Vec<String>,
+}
+
+/// Points any model call the discovery run might make at a closed local port, and keeps proxies out of it.
+const DEAD_API: &str = "http://127.0.0.1:9";
+
+/// The tools and agents of a session started with fleetd's knobs but without its deny list, so a tool a new claude
+/// adds shows up here and goes on every session's deny list. `system/init` comes only after a user message, so this
+/// one runs logged out in an empty config dir and with the API at [`DEAD_API`]: claude answers "Not logged in" or
+/// retries a refused connection, and is killed once its init arrives. No model call, nothing leaves the machine.
+pub async fn discover(binary: &Path, env: &[(String, String)]) -> Result<DiscoveredInit, String> {
+    let config = tempfile::tempdir()
+        .map_err(|e| format!("could not make an empty claude config dir: {e}."))?;
+    let mut settings = serde_json::Map::new();
+    let mut settings_env = subagents_off_settings_env();
+    settings_env.insert("ANTHROPIC_BASE_URL".into(), DEAD_API.into());
+    settings_env.insert("NO_PROXY".into(), "*".into());
+    settings.insert("env".into(), settings_env.into());
+    settings.insert("autoMemoryEnabled".into(), false.into());
+    let settings = Value::Object(settings).to_string();
+    let mut cmd = Command::new(binary);
+    cmd.env_clear()
+        .envs(
+            env.iter()
+                .filter(|(k, _)| ["HOME", "PATH", "USER", "LANG", "TMPDIR"].contains(&k.as_str()))
+                .map(|(k, v)| (k, v)),
+        )
+        .env("CLAUDE_CONFIG_DIR", config.path())
+        .env(AUTO_MEMORY_OFF_ENV.0, AUTO_MEMORY_OFF_ENV.1)
+        .envs(SUBAGENTS_OFF_ENV.iter().copied())
+        .args([
+            "-p",
+            "--verbose",
+            "--input-format",
+            "stream-json",
+            "--output-format",
+            "stream-json",
+            "--strict-mcp-config",
+            "--setting-sources",
+            "",
+            "--settings",
+            &settings,
+        ])
+        .current_dir(config.path())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .kill_on_drop(true)
+        .process_group(0);
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("could not start claude to read its tools: {e}."))?;
+    let mut stdin = child.stdin.take().expect("piped stdin");
+    let mut stdout = BufReader::new(child.stdout.take().expect("piped stdout")).lines();
+    let read = async {
+        let message = serde_json::json!({
+            "type": "user",
+            "message": { "role": "user", "content": "fleetd probe" },
+        });
+        stdin
+            .write_all(format!("{message}\n").as_bytes())
+            .await
+            .map_err(|e| format!("could not write the probe message: {e}."))?;
+        while let Some(line) = stdout.next_line().await.map_err(|e| e.to_string())? {
+            let Ok(value) = serde_json::from_str::<Value>(&line) else {
+                continue;
+            };
+            if value["type"] == "system" && value["subtype"] == "init" {
+                let names = |key: &str| -> Result<Vec<String>, String> {
+                    value[key]
+                        .as_array()
+                        .map(|a| {
+                            a.iter()
+                                .filter_map(|v| v.as_str().map(str::to_owned))
+                                .collect()
+                        })
+                        .ok_or_else(|| format!("claude's system/init has no `{key}` list."))
+                };
+                let tools = names("tools")?;
+                if tools.is_empty() {
+                    return Err("claude's system/init lists no tools.".to_owned());
+                }
+                return Ok(DiscoveredInit {
+                    tools,
+                    agents: names("agents")?,
+                });
+            }
+        }
+        Err("claude exited before its system/init.".to_owned())
+    };
+    let found = match tokio::time::timeout(TIMEOUT, read).await {
+        Ok(found) => found,
+        Err(_) => Err(format!(
+            "claude sent no system/init within {}s.",
+            TIMEOUT.as_secs()
+        )),
+    };
+    drop(stdin);
+    // The whole group: anything claude started for the session goes with it.
+    if let Some(pid) = child.id() {
+        let _ = nix::sys::signal::killpg(
+            nix::unistd::Pid::from_raw(pid as i32),
+            nix::sys::signal::Signal::SIGKILL,
+        );
+    }
+    let _ = tokio::time::timeout(TIMEOUT, child.wait()).await;
+    found
 }
 
 fn command(binary: &Path, env: &[(String, String)]) -> Command {
@@ -390,6 +603,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
+    use crate::node::runner::claude::ALWAYS_DISALLOWED;
 
     fn fixture_out(name: &str) -> Vec<Value> {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -532,22 +746,41 @@ mod tests {
     /// non-JSON stdout line and 200 KB of stderr (past any pipe buffer), then `answer`, and waits for stdin to
     /// close. With an empty `answer` it exits 1 with "boom" on stderr instead.
     fn stand_in(dir: &Path, version: &str, answer: &str) -> PathBuf {
+        stand_in_with_init(dir, version, answer, &discovered_init(&["general-purpose"]))
+    }
+
+    /// A `system/init` as the discovery run reads it: fleetd's knobs applied, nothing denied.
+    fn discovered_init(agents: &[&str]) -> String {
+        serde_json::json!({
+            "type": "system", "subtype": "init",
+            "tools": ["Task", "Bash", "ListAgents", "Read", "SendMessage", "TaskStop", "mcp__fleetd__spawn_agent"],
+            "agents": agents,
+        })
+        .to_string()
+    }
+
+    /// [`stand_in`], answering a user message (the discovery run) with `init`.
+    fn stand_in_with_init(dir: &Path, version: &str, answer: &str, init: &str) -> PathBuf {
         use std::io::Write;
         use std::sync::atomic::{AtomicU32, Ordering};
         static N: AtomicU32 = AtomicU32::new(0);
         let n = N.fetch_add(1, Ordering::Relaxed);
         let answer_path = dir.join(format!("answer-{n}.json"));
         std::fs::write(&answer_path, answer).unwrap();
+        let init_path = dir.join(format!("init-{n}.json"));
+        std::fs::write(&init_path, format!("{init}\n")).unwrap();
         let script = format!(
             "#!/bin/sh\n\
              if [ \"$1\" = --version ]; then echo '{version}'; exit 0; fi\n\
              read -r request\n\
+             case \"$request\" in *'\"type\":\"user\"'*) cat '{i}'; while read -r more; do :; done; exit 0;; esac\n\
              if [ ! -s '{a}' ]; then echo boom >&2; exit 1; fi\n\
              echo 'Claude Code: a banner, not JSON'\n\
              head -c 200000 /dev/zero | tr '\\0' x >&2\n\
              cat '{a}'\n\
              while read -r more; do :; done\n",
-            a = answer_path.display()
+            a = answer_path.display(),
+            i = init_path.display()
         );
         // Written under a temp name, synced, closed and renamed, so nothing execs a half-written file.
         let tmp = dir.join(format!(".claude-{n}.tmp"));
@@ -600,6 +833,12 @@ mod tests {
         assert_eq!(info.version.as_deref(), Some("2.1.302 (Claude Code)"));
         assert!(info.version_ok);
         assert_eq!(info.conformance_ok, Some(true));
+        // The agent tools of this claude, for every session's deny list; fleetd's own MCP tools never count.
+        assert_eq!(
+            info.agent_tools.as_deref(),
+            Some(&["Task", "ListAgents", "SendMessage", "TaskStop"].map(String::from)[..])
+        );
+        assert_eq!(info.subagent_leaks.as_deref(), Some(&[][..]));
         assert_eq!(
             (info.login, info.login_kind.as_deref()),
             (LoginStatus::LoggedOut, Some("none"))
@@ -671,6 +910,129 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn a_claude_whose_builtin_agents_survive_the_knobs_fails_conformance() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin = stand_in_with_init(
+            dir.path(),
+            "2.1.302 (Claude Code)",
+            &format!("{}\n", recorded_answer()),
+            &discovered_init(&["general-purpose", "Explore", "my-own-agent"]),
+        );
+        let info = probe(&bin, &env()).await;
+        assert_eq!(info.conformance_ok, Some(false));
+        assert_eq!(
+            info.subagent_leaks.as_deref(),
+            Some(&["agent Explore".to_owned()][..])
+        );
+        let problem = info.problem.unwrap();
+        assert!(
+            problem.contains(
+                "claude still offers its own subagents in fleetd sessions (agent Explore)"
+            ),
+            "{problem}"
+        );
+    }
+
+    /// The tool list of claude 2.1.302 as recorded; a later claude may add tools under new names.
+    #[test]
+    fn the_agent_tools_are_derived_from_the_names_claude_reports() {
+        let init = fixture_out("init-partial-two-turns")
+            .into_iter()
+            .find(|m| m["type"] == "system" && m["subtype"] == "init")
+            .unwrap();
+        let tools: Vec<String> = serde_json::from_value(init["tools"].clone()).unwrap();
+        let agents: Vec<String> = serde_json::from_value(init["agents"].clone()).unwrap();
+        let found: Vec<&str> = tools
+            .iter()
+            .map(String::as_str)
+            .filter(|t| agent_like(t))
+            .collect();
+        assert_eq!(
+            found,
+            ["Task", "ListAgents", "SendMessage", "TaskStop", "Workflow"]
+        );
+        for later in [
+            "TeamCreate",
+            "TaskOutput",
+            "BackgroundAgentLaunch",
+            "SubagentFork",
+            "TaskCreate",
+        ] {
+            assert!(agent_like(later), "{later}");
+        }
+        for not in [
+            "Bash",
+            "Read",
+            "Skill",
+            "ToolSearch",
+            "mcp__fleetd__spawn_agent",
+            "mcp__x__SendMessage",
+        ] {
+            assert!(!agent_like(not), "{not}");
+        }
+        assert!(AGENT_TOOLS.iter().all(|t| ALWAYS_DISALLOWED.contains(t)));
+        // The session check: tools fleetd's deny list missed, and the built-in agents its knobs should have removed.
+        let leaks = subagent_leaks(Some(&tools), Some(&agents));
+        assert!(leaks.contains(&"Task".to_owned()) && leaks.contains(&"agent Plan".to_owned()));
+        assert!(!leaks.iter().any(|l| l.contains("general-purpose")));
+        let after = ["Bash".to_owned(), "mcp__fleetd__spawn_agent".to_owned()];
+        let general = ["general-purpose".to_owned()];
+        assert_eq!(
+            subagent_leaks(Some(&after), Some(&general)),
+            Vec::<String>::new()
+        );
+        // What can't be read is not off.
+        assert_eq!(
+            subagent_leaks(None, Some(&general)),
+            ["init without a tool list"]
+        );
+        assert_eq!(
+            subagent_leaks(Some(&[]), None),
+            ["init without a tool list", "init without an agent list"]
+        );
+    }
+
+    /// Discovery runs without the deny list, so it must find claude's subagent tool under a name fleetd denies, and
+    /// nothing agent-like that fleetd does not know.
+    #[test]
+    fn discovery_fails_closed_on_a_renamed_or_unknown_agent_tool() {
+        let init = |tools: &[&str]| DiscoveredInit {
+            tools: tools.iter().map(|t| (*t).to_owned()).collect(),
+            agents: vec!["general-purpose".into()],
+        };
+        assert_eq!(
+            discovery_leaks(&init(&["Agent", "Bash", "ListAgents"])),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            discovery_leaks(&init(&["Delegate", "Bash"])),
+            ["no subagent tool named Task or Agent (renamed?)"]
+        );
+        assert_eq!(
+            discovery_leaks(&init(&["Task", "TeamSpawn"])),
+            ["unknown agent tool TeamSpawn"]
+        );
+    }
+
+    #[tokio::test]
+    async fn an_init_without_tools_fails_conformance_and_the_doctor_check() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin = stand_in_with_init(
+            dir.path(),
+            "2.1.302 (Claude Code)",
+            &format!("{}\n", recorded_answer()),
+            &serde_json::json!({ "type": "system", "subtype": "init", "agents": [] }).to_string(),
+        );
+        let info = probe(&bin, &env()).await;
+        assert_eq!(info.conformance_ok, Some(false));
+        let leaks = info.subagent_leaks.unwrap();
+        assert_eq!(
+            leaks,
+            ["tools unreadable: claude's system/init has no `tools` list"]
+        );
+    }
+
     /// The real probe against the installed claude with an empty config dir: no credentials, no model call.
     /// `cargo test -p fleetd conformance -- --ignored`; `FLEETD_CLAUDE_BIN` picks the binary.
     #[tokio::test]
@@ -690,5 +1052,7 @@ mod tests {
         assert!(info.version_ok, "{info:?}");
         assert_eq!(info.conformance_ok, Some(true), "{info:?}");
         assert_eq!(info.login, LoginStatus::LoggedOut, "{info:?}");
+        assert_eq!(info.subagent_leaks.as_deref(), Some(&[][..]), "{info:?}");
+        assert!(info.agent_tools.unwrap().contains(&"Task".to_owned()));
     }
 }

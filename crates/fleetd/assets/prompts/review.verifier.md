@@ -6,5 +6,5 @@ Verify pull request {{prUrl}} ({{repo}}#{{prNumber}}, tier {{tier}}) at head {{h
 
 blocking = the number of test commands that failed, 0 when all passed. The hub counts the commands you ran and their exit codes; a verdict without them does not count.
 Do not read the PR description or comments. Do not change, commit or push anything.
-Finish with exactly one command, filled in:
-fleetd review verdict --task <your task id, from the first line> --sha {{headSha}} --blocking <n> --non-blocking <n> --summary "<the commands you ran and their exit codes; for failures, the failing tests>"
+Finish by calling the `report` tool once, filled in:
+{taskId: <your task id, from the first line>, prHeadSha: "{{headSha}}", blocking: <n>, nonBlocking: <n>, summary: "<the commands you ran and their exit codes; for failures, the failing tests>"}

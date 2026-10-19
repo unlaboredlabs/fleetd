@@ -17,7 +17,7 @@ use fleetd_contracts::steer::{DeliveredHow, SteerId, SteerReceipt, SteerStage, S
 use tokio::sync::mpsc;
 
 use super::fake::FakeRunner;
-use super::{Attached, CONTINUE_PROMPT, MCP_CONFIG, SessionConfig, SessionService, parse_env_file};
+use super::{Attached, CONTINUE_PROMPT, SessionConfig, SessionService, mcp_config, parse_env_file};
 use crate::node::runner::SessionCommand;
 use crate::node::runner::claude::ALWAYS_DISALLOWED;
 use crate::node::store::NodeStore;
@@ -82,6 +82,7 @@ fn launch(id: &str, mode: RuntimeMode, workspace: SessionWorkspace) -> SessionCa
         allowed_tools: vec!["Bash(npm test:*)".into()],
         disallowed_tools: vec!["WebFetch".into()],
         auto_memory: false,
+        role: fleetd_contracts::sessions::SessionRole::Worker,
     })
 }
 
@@ -263,10 +264,15 @@ async fn a_launch_runs_its_turn_streams_it_and_later_sends_continue_the_session(
     let spec = &hub.runner.spawned()[0];
     assert!(!spec.resume, "a first start uses --session-id");
     assert_eq!(spec.cwd, root);
+    // A task's session gets fleetd's agent MCP server with the worker's tools, naming the session.
+    let mcp: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(spec.mcp_config.as_ref().unwrap()).unwrap())
+            .unwrap();
     assert_eq!(
-        std::fs::read_to_string(spec.mcp_config.as_ref().unwrap()).unwrap(),
-        MCP_CONFIG
+        mcp["mcpServers"]["fleetd"]["args"],
+        serde_json::json!(["agent-mcp", "--role", "worker"])
     );
+    assert_eq!(mcp["mcpServers"]["fleetd"]["env"]["FLEETD_THREAD_ID"], "s1");
     for tool in ALWAYS_DISALLOWED {
         assert!(spec.disallowed_tools.iter().any(|t| t == tool));
     }
@@ -291,6 +297,12 @@ async fn a_launch_runs_its_turn_streams_it_and_later_sends_continue_the_session(
             .unwrap();
     assert_eq!(overlay["env"]["DISABLE_AUTOUPDATER"], "1");
     assert_eq!(overlay["permissions"]["deny"][0], "Task");
+    // Claude's own subagents are off by the knobs that work, and agent teams stay off whatever the user set.
+    for (key, value) in crate::node::runner::claude::SUBAGENTS_OFF_ENV {
+        assert_eq!(overlay["env"][key], *value, "{key}");
+    }
+    assert_eq!(overlay["env"]["CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"], "");
+    assert_eq!(last("CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS"), None);
     assert_eq!(last("FLEETD_THREAD_ID"), Some("s1"));
     assert_eq!(last("FLEETD_PROJECT_ID"), Some("p1"));
     assert_eq!(last("DISABLE_AUTOUPDATER"), Some("1"));
@@ -1273,4 +1285,20 @@ async fn each_steer_a_run_carries_gets_its_own_receipts() {
     }
     assert_eq!(finals["S1"], SteerStage::Acknowledged);
     assert_eq!(finals["S2"], SteerStage::Unacknowledged);
+}
+
+#[test]
+fn only_leads_and_workers_get_fleetds_agent_tools() {
+    use fleetd_contracts::sessions::SessionRole;
+    let sock = std::path::Path::new("/n/node.sock");
+    let servers = |role| -> serde_json::Value {
+        serde_json::from_str::<serde_json::Value>(&mcp_config(role, sock, "s1")).unwrap()["mcpServers"].clone()
+    };
+    assert_eq!(servers(SessionRole::Plain), serde_json::json!({}));
+    let lead = servers(SessionRole::Lead);
+    assert_eq!(
+        lead["fleetd"]["args"],
+        serde_json::json!(["agent-mcp", "--role", "lead"])
+    );
+    assert_eq!(lead["fleetd"]["env"]["FLEETD_NODE_SOCK"], "/n/node.sock");
 }

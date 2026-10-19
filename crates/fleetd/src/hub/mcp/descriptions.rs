@@ -134,7 +134,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "tasks_list",
-        "Tasks (the subagent runs leads spawn with fleetd task spawn), newest first, optionally for one projectRef and state (queued, running, idle, done, failed, cancelled). Queued tasks say why; ended ones carry their result.",
+        "Tasks (the agents leads start with spawn_agent), newest first, optionally for one projectRef and state (queued, running, idle, done, failed, cancelled). Queued tasks say why; ended ones carry their result.",
     ),
     (
         "task_get",
@@ -154,7 +154,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "claims_list",
-        "Claims (a lead's `fleetd claim done`), newest first: each done-when check fleetd ran itself, with pass/fail/error, evidence and exit codes. Filter by workstreamId, projectRef or outcome.",
+        "Claims (a lead's `claim_done`), newest first: each done-when check fleetd ran itself, with pass/fail/error, evidence and exit codes. Filter by workstreamId, projectRef or outcome.",
     ),
     (
         "incidents_list",
