@@ -12,9 +12,22 @@ export const DataProvider = ({ layer, children }: { layer: DataLayer; children: 
   useEffect(() => layer.start(), [layer]);
   return (
     <DataContext.Provider value={layer}>
-      <QueryClientProvider client={layer.queryClient}>{children}</QueryClientProvider>
+      <QueryClientProvider client={layer.queryClient}>
+        <AlwaysOn />
+        {children}
+      </QueryClientProvider>
     </DataContext.Provider>
   );
+};
+
+const openAsks = { state: "open" } as const;
+const wholeBoard = {};
+
+/** The reads every screen's counts depend on (the board, the inbox), kept loaded whatever screen is open. */
+const AlwaysOn = () => {
+  useToolQuery("orders_board", wholeBoard);
+  useToolQuery("asks_list", openAsks);
+  return null;
 };
 
 export const useDataLayer = (): DataLayer => {
