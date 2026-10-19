@@ -391,7 +391,13 @@ impl Tasks {
         } else {
             None
         };
-        let branch = write.then(|| branch_for(task.task_id.as_str(), task.title.as_str()));
+        let branch = write.then(|| {
+            branch_for(
+                policy.branch_prefix.as_ref(),
+                task.task_id.as_str(),
+                task.title.as_str(),
+            )
+        });
         let globs = area_globs(&policy, &area_names(task));
         let set = self.d.db.prompts().current(Some(r));
         let prompt = render_task_prompt(
