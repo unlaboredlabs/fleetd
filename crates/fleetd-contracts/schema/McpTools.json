@@ -346,6 +346,52 @@
       ],
       "type": "string"
     },
+    "ApprovalAnswerInput": {
+      "properties": {
+        "decision": {
+          "$ref": "#/$defs/ApprovalDecision"
+        },
+        "message": {
+          "description": "A denial's reason, passed to the lead.",
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        },
+        "requestId": {
+          "$ref": "#/$defs/ChatRequestId"
+        }
+      },
+      "required": [
+        "requestId",
+        "decision"
+      ],
+      "type": "object"
+    },
+    "ApprovalAnswerOutput": {
+      "properties": {
+        "message": {
+          "$ref": "#/$defs/ChatMessage"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "message"
+      ],
+      "type": "object"
+    },
+    "ApprovalDecision": {
+      "description": "The human's answer to a `command_approval`.",
+      "enum": [
+        "approve",
+        "deny"
+      ],
+      "type": "string"
+    },
     "AreaName": {
       "description": "Lowercase slug, [a-z0-9][a-z0-9_-]*, at most 40",
       "pattern": "^[a-z0-9][a-z0-9_-]*$",
@@ -642,6 +688,60 @@
       ],
       "type": "object"
     },
+    "AttachmentGetInput": {
+      "properties": {
+        "attachmentId": {
+          "$ref": "#/$defs/AttachmentId"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        }
+      },
+      "required": [
+        "projectRef",
+        "attachmentId"
+      ],
+      "type": "object"
+    },
+    "AttachmentGetOutput": {
+      "properties": {
+        "attachmentId": {
+          "$ref": "#/$defs/AttachmentId"
+        },
+        "bytes": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "dataB64": {
+          "description": "Standard base64.",
+          "type": "string"
+        },
+        "mime": {
+          "$ref": "#/$defs/AttachmentMime"
+        },
+        "name": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "attachmentId",
+        "name",
+        "mime",
+        "bytes",
+        "dataB64"
+      ],
+      "type": "object"
+    },
     "AttachmentId": {
       "pattern": "^F[1-9][0-9]*$",
       "type": "string"
@@ -707,6 +807,35 @@
         "attachmentId",
         "bytes",
         "sha256"
+      ],
+      "type": "object"
+    },
+    "AttachmentRef": {
+      "description": "A file on a message: what the app shows without fetching it. Its bytes come from `attachment_get`.",
+      "properties": {
+        "attachmentId": {
+          "$ref": "#/$defs/AttachmentId"
+        },
+        "bytes": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "mime": {
+          "$ref": "#/$defs/AttachmentMime"
+        },
+        "name": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "attachmentId",
+        "name",
+        "mime",
+        "bytes"
       ],
       "type": "object"
     },
@@ -1232,6 +1361,323 @@
       ],
       "type": "object"
     },
+    "ChatAuthor": {
+      "oneOf": [
+        {
+          "enum": [
+            "human",
+            "lead"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "system",
+          "description": "fleetd itself: one-line events (a PR merged, an agent started, a past order's state).",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "ChatDelivery": {
+      "description": "How a human message reached the lead.",
+      "oneOf": [
+        {
+          "const": "turn",
+          "description": "The lead was idle: the message started its next turn.",
+          "type": "string"
+        },
+        {
+          "const": "steer",
+          "description": "The lead was mid-turn: it takes the message at its next step, as a steer.",
+          "type": "string"
+        },
+        {
+          "const": "queued",
+          "description": "The lead is starting, or its machine is away: the message waits and goes in as soon as it can.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "ChatHistoryInput": {
+      "properties": {
+        "after": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "before": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "limit": {
+          "default": 50,
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        }
+      },
+      "required": [
+        "projectRef"
+      ],
+      "type": "object"
+    },
+    "ChatHistoryOutput": {
+      "properties": {
+        "messages": {
+          "items": {
+            "$ref": "#/$defs/ChatMessage"
+          },
+          "maxItems": 100,
+          "type": "array"
+        },
+        "moreAfter": {
+          "description": "More messages after the last one of this page.",
+          "type": "boolean"
+        },
+        "moreBefore": {
+          "description": "More messages before the first one of this page.",
+          "type": "boolean"
+        },
+        "next": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/ProjectChatState"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "messages",
+        "moreBefore",
+        "moreAfter",
+        "state"
+      ],
+      "type": "object"
+    },
+    "ChatHistorySource": {
+      "description": "Where a history message came from, for messages from before the chat existed (a read model; nothing is moved or\ndestroyed). Absent on messages written in the chat.",
+      "oneOf": [
+        {
+          "const": "order",
+          "description": "An order's text as it was submitted.",
+          "type": "string"
+        },
+        {
+          "const": "note",
+          "description": "A person's note on an order.",
+          "type": "string"
+        },
+        {
+          "const": "steer",
+          "description": "A person's steer to the lead or one of its agents.",
+          "type": "string"
+        },
+        {
+          "const": "lead_message",
+          "description": "What the lead said in its own session.",
+          "type": "string"
+        },
+        {
+          "const": "order_outcome",
+          "description": "An order's outcome (done, stopped, failed) as a one-line event.",
+          "type": "string"
+        },
+        {
+          "const": "question",
+          "description": "A question the lead asked with the retired questions tool, and its answer.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "ChatItem": {
+      "description": "The two things a chat can't carry as plain text, shown inline in place of the message text.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/SecretRequestItem",
+          "properties": {
+            "kind": {
+              "const": "secret_request",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/CommandApprovalItem",
+          "properties": {
+            "kind": {
+              "const": "command_approval",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ChatMessage": {
+      "properties": {
+        "attachments": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/AttachmentRef"
+          },
+          "maxItems": 8,
+          "type": "array"
+        },
+        "author": {
+          "$ref": "#/$defs/ChatAuthor"
+        },
+        "by": {
+          "description": "A human message: the key name of the person who wrote it.",
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "clientRequestId": {
+          "description": "A human message: the `clientRequestId` its `chat_send` carried, for the app's optimistic copy.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "delivery": {
+          "$ref": "#/$defs/ChatDelivery",
+          "description": "A human message: how it reached the lead."
+        },
+        "history": {
+          "$ref": "#/$defs/ChatHistorySource",
+          "description": "From before the chat: where this history message came from."
+        },
+        "item": {
+          "$ref": "#/$defs/ChatItem"
+        },
+        "messageId": {
+          "$ref": "#/$defs/ChatMessageId"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "seq": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "state": {
+          "$ref": "#/$defs/ChatMessageState"
+        },
+        "text": {
+          "description": "Markdown. Empty while a streamed message has no text yet, and for an inline `item`.",
+          "maxLength": 100000,
+          "type": "string"
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "Set when the text was last appended to, or an item's state changed."
+        }
+      },
+      "required": [
+        "messageId",
+        "projectRef",
+        "seq",
+        "author",
+        "text",
+        "createdAt",
+        "state"
+      ],
+      "type": "object"
+    },
+    "ChatMessageId": {
+      "pattern": "^m[1-9][0-9]*$",
+      "type": "string"
+    },
+    "ChatMessageState": {
+      "oneOf": [
+        {
+          "enum": [
+            "final"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "streaming",
+          "description": "The lead is still writing it: `chat_delta` frames append to its text until it is `final`.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "ChatRequestId": {
+      "pattern": "^Q[1-9][0-9]*$",
+      "type": "string"
+    },
+    "ChatSendInput": {
+      "properties": {
+        "attachments": {
+          "description": "From attachment_put.",
+          "items": {
+            "$ref": "#/$defs/AttachmentId"
+          },
+          "maxItems": 8,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "clientRequestId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "text": {
+          "maxLength": 20000,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "projectRef",
+        "text",
+        "clientRequestId"
+      ],
+      "type": "object"
+    },
+    "ChatSendOutput": {
+      "properties": {
+        "leadWaiting": {
+          "description": "Why the lead doesn't have it yet, with the fix; absent when it does or is starting.",
+          "type": "string"
+        },
+        "message": {
+          "$ref": "#/$defs/ChatMessage"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "message"
+      ],
+      "type": "object"
+    },
     "CheckOutcome": {
       "description": "`error` (the check could not run) counts as not passing.",
       "enum": [
@@ -1682,6 +2128,84 @@
         "sameRemote"
       ],
       "type": "object"
+    },
+    "CommandApprovalItem": {
+      "description": "A risky command (prod write, spend, delete, credential use) or a session's permission prompt waits for the\nhuman: the exact command, then Approve or Deny. Answered with `approval_answer`, naming `requestId`. Exactly one of\n`gated` and `permission`.",
+      "properties": {
+        "answeredAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "by": {
+          "description": "The key name of the person who answered.",
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "exitCode": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "gated": {
+          "$ref": "#/$defs/GatedRunSpec",
+          "description": "A gated command: exactly what runs once approved."
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId",
+          "description": "Where it runs, or the machine of the session that asks."
+        },
+        "note": {
+          "description": "Why it is open again (\"not run: the node was offline when approved\"), or why it failed without running.",
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "outputTail": {
+          "description": "The end of the output, once it ran.",
+          "maxLength": 2000,
+          "type": "string"
+        },
+        "permission": {
+          "$ref": "#/$defs/ToolPermission",
+          "description": "A session's permission prompt: the tool and what it would do."
+        },
+        "requestId": {
+          "$ref": "#/$defs/ChatRequestId"
+        },
+        "state": {
+          "$ref": "#/$defs/CommandApprovalState"
+        }
+      },
+      "required": [
+        "requestId",
+        "machineId",
+        "state"
+      ],
+      "type": "object"
+    },
+    "CommandApprovalState": {
+      "oneOf": [
+        {
+          "enum": [
+            "open",
+            "approved",
+            "denied"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "ran",
+          "description": "Approved and run: see `exitCode` and `outputTail`.",
+          "type": "string"
+        },
+        {
+          "const": "failed",
+          "description": "Approved, and the node could not run it.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
     },
     "CommandStat": {
       "properties": {
@@ -2559,6 +3083,14 @@
             "$ref": "#/$defs/HubEvent"
           },
           "maxItems": 10,
+          "type": "array"
+        },
+        "chats": {
+          "description": "Each project's chat: whether its lead waits on you, whether it works. Absent from hubs without chat.",
+          "items": {
+            "$ref": "#/$defs/ProjectChatState"
+          },
+          "maxItems": 50,
           "type": "array"
         },
         "cursor": {
@@ -3527,6 +4059,16 @@
         {
           "const": "source.fresh",
           "description": "A stale source answered again; `data.source`, `data.staleMs`.",
+          "type": "string"
+        },
+        {
+          "const": "chat.message",
+          "description": "A project's chat got a message, or one of its messages finished streaming or had an inline item change state;\n`data` is `chat::ChatMessageEventData`.",
+          "type": "string"
+        },
+        {
+          "const": "chat.waiting",
+          "description": "A project's chat started or stopped waiting on you, or its lead started or ended a turn; `data` is the\n`chat::ProjectChatState`.",
           "type": "string"
         }
       ],
@@ -4675,11 +5217,23 @@
         "actions_list.output": {
           "$ref": "#/$defs/ActionsListOutput"
         },
+        "approval_answer.input": {
+          "$ref": "#/$defs/ApprovalAnswerInput"
+        },
+        "approval_answer.output": {
+          "$ref": "#/$defs/ApprovalAnswerOutput"
+        },
         "asks_list.input": {
           "$ref": "#/$defs/AsksListInput"
         },
         "asks_list.output": {
           "$ref": "#/$defs/AsksListOutput"
+        },
+        "attachment_get.input": {
+          "$ref": "#/$defs/AttachmentGetInput"
+        },
+        "attachment_get.output": {
+          "$ref": "#/$defs/AttachmentGetOutput"
         },
         "attachment_put.input": {
           "$ref": "#/$defs/AttachmentPutInput"
@@ -4704,6 +5258,18 @@
         },
         "changes_list.output": {
           "$ref": "#/$defs/ChangesListOutput"
+        },
+        "chat_history.input": {
+          "$ref": "#/$defs/ChatHistoryInput"
+        },
+        "chat_history.output": {
+          "$ref": "#/$defs/ChatHistoryOutput"
+        },
+        "chat_send.input": {
+          "$ref": "#/$defs/ChatSendInput"
+        },
+        "chat_send.output": {
+          "$ref": "#/$defs/ChatSendOutput"
         },
         "claims_list.input": {
           "$ref": "#/$defs/ClaimsListInput"
@@ -4872,6 +5438,12 @@
         },
         "project_remove.output": {
           "$ref": "#/$defs/ProjectRemoveOutput"
+        },
+        "project_stop.input": {
+          "$ref": "#/$defs/ProjectStopInput"
+        },
+        "project_stop.output": {
+          "$ref": "#/$defs/ProjectStopOutput"
         },
         "projects_list.input": {
           "$ref": "#/$defs/ProjectsListInput"
@@ -5117,8 +5689,12 @@
       "required": [
         "actions_list.input",
         "actions_list.output",
+        "approval_answer.input",
+        "approval_answer.output",
         "asks_list.input",
         "asks_list.output",
+        "attachment_get.input",
+        "attachment_get.output",
         "attachment_put.input",
         "attachment_put.output",
         "attention_policy.input",
@@ -5127,6 +5703,10 @@
         "cap_set.output",
         "changes_list.input",
         "changes_list.output",
+        "chat_history.input",
+        "chat_history.output",
+        "chat_send.input",
+        "chat_send.output",
         "claims_list.input",
         "claims_list.output",
         "decisions_record.input",
@@ -5183,6 +5763,8 @@
         "project_inspect.output",
         "project_remove.input",
         "project_remove.output",
+        "project_stop.input",
+        "project_stop.output",
         "projects_list.input",
         "projects_list.output",
         "prompt_get.input",
@@ -6707,6 +7289,38 @@
       ],
       "type": "object"
     },
+    "ProjectChatState": {
+      "description": "One chat's state, for the sidebar and the status row.",
+      "properties": {
+        "lastMessageAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "lastSeq": {
+          "description": "The newest message's `seq`; 0 for an empty chat.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "leadWorking": {
+          "description": "The lead is mid-turn.",
+          "type": "boolean"
+        },
+        "needsYou": {
+          "description": "The lead's last message waits for a human reply, or an inline item is open.",
+          "type": "boolean"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        }
+      },
+      "required": [
+        "projectRef",
+        "needsYou",
+        "leadWorking",
+        "lastSeq"
+      ],
+      "type": "object"
+    },
     "ProjectDiscoverInput": {
       "properties": {
         "github": {
@@ -7110,6 +7724,54 @@
       },
       "required": [
         "ok"
+      ],
+      "type": "object"
+    },
+    "ProjectStopInput": {
+      "properties": {
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "reason": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "projectRef"
+      ],
+      "type": "object"
+    },
+    "ProjectStopOutput": {
+      "properties": {
+        "cancelled": {
+          "description": "Tasks this call cancelled.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "message": {
+          "$ref": "#/$defs/ChatMessage",
+          "description": "The system line it wrote into the chat."
+        },
+        "next": {
+          "type": "string"
+        },
+        "stopped": {
+          "description": "Orders this call stopped.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "stopped",
+        "cancelled",
+        "message"
       ],
       "type": "object"
     },
@@ -8250,13 +8912,88 @@
       "pattern": "^[0-9a-f]{8}$",
       "type": "string"
     },
+    "SecretRequestItem": {
+      "description": "The lead needs a secret. The app shows a masked field; the value never enters the transcript: it is sealed to the\nsink's machine and answered with `secret_submit`, naming `requestId`. Only its fingerprint comes back.",
+      "properties": {
+        "answeredAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "by": {
+          "description": "The key name of the person who answered.",
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "envName": {
+          "$ref": "#/$defs/EnvName",
+          "description": "An `env:` sink: the variable it writes, when not the one `name` gives (`secrets::secret_env_name`)."
+        },
+        "fingerprint": {
+          "$ref": "#/$defs/SecretFingerprint",
+          "description": "Once stored."
+        },
+        "name": {
+          "description": "The secret's key, e.g. `stripe.test_key`.",
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "note": {
+          "description": "Why it is open again, or why it could not be stored.",
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "requestId": {
+          "$ref": "#/$defs/ChatRequestId"
+        },
+        "sink": {
+          "$ref": "#/$defs/SecretSink"
+        },
+        "state": {
+          "$ref": "#/$defs/SecretRequestState"
+        },
+        "text": {
+          "description": "One line: why the lead needs it.",
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "requestId",
+        "name",
+        "text",
+        "sink",
+        "state"
+      ],
+      "type": "object"
+    },
+    "SecretRequestState": {
+      "enum": [
+        "open",
+        "stored",
+        "withdrawn"
+      ],
+      "type": "string",
+      "x-open": true
+    },
     "SecretSink": {
       "type": "string"
     },
     "SecretSubmitInput": {
       "properties": {
         "askId": {
-          "$ref": "#/$defs/AskId"
+          "$ref": "#/$defs/AskId",
+          "description": "A secret ask (the questions tool). Exactly one of askId and requestId."
+        },
+        "requestId": {
+          "$ref": "#/$defs/ChatRequestId",
+          "description": "A chat's `secret_request` item."
         },
         "sealed": {
           "$ref": "#/$defs/SealedSecret",
@@ -8264,7 +9001,6 @@
         }
       },
       "required": [
-        "askId",
         "sealed"
       ],
       "type": "object"
@@ -8280,12 +9016,14 @@
         "next": {
           "type": "string"
         },
+        "requestId": {
+          "$ref": "#/$defs/ChatRequestId"
+        },
         "truncated": {
           "type": "boolean"
         }
       },
       "required": [
-        "askId",
         "fingerprint"
       ],
       "type": "object"
