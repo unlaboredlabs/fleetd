@@ -500,9 +500,17 @@
         "kind": {
           "$ref": "#/$defs/AskAnswerKind"
         },
+        "note": {
+          "description": "The reply's note (\"1 a: because …\"), kept for the decision's why.",
+          "type": "string"
+        },
         "raw": {
           "description": "The reply text it was parsed from.",
           "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/DecisionSource",
+          "description": "Who the decision will be recorded as, once the undo window passes."
         },
         "undoUntil": {
           "$ref": "#/$defs/Timestamp",

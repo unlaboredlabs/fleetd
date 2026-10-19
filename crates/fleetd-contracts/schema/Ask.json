@@ -149,9 +149,17 @@
         "kind": {
           "$ref": "#/$defs/AskAnswerKind"
         },
+        "note": {
+          "description": "The reply's note (\"1 a: because …\"), kept for the decision's why.",
+          "type": "string"
+        },
         "raw": {
           "description": "The reply text it was parsed from.",
           "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/DecisionSource",
+          "description": "Who the decision will be recorded as, once the undo window passes."
         },
         "undoUntil": {
           "$ref": "#/$defs/Timestamp",
@@ -418,6 +426,15 @@
     "DecisionKey": {
       "description": "Lowercase dotted slug, [a-z0-9]+(.[a-z0-9_-]+)*, at most 80",
       "pattern": "^[a-z0-9]+(\\.[a-z0-9_-]+)*$",
+      "type": "string"
+    },
+    "DecisionSource": {
+      "description": "Filled by the hub from the caller: a human device, an agent key, or a lead-side call.",
+      "enum": [
+        "human",
+        "lead",
+        "agent"
+      ],
       "type": "string"
     },
     "EnvName": {

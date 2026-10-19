@@ -426,8 +426,11 @@ fn a_lead_decide_ask_without_labels_is_refused_with_the_command_to_send() {
     assert!(lead_decide_rule(&todo).is_none());
 }
 
+/// Ask id, outcome, value, and whether a decision came with it.
+type DeliveredAnswer = (String, AnswerOutcome, Option<String>, bool);
+
 #[derive(Default)]
-struct Delivered(std::sync::Mutex<Vec<(String, AnswerOutcome, Option<String>, bool)>>);
+struct Delivered(std::sync::Mutex<Vec<DeliveredAnswer>>);
 
 impl AnswerSink for Delivered {
     fn on_answered(&self, _project_ref: &ProjectRef, answers: Vec<Answer>) {

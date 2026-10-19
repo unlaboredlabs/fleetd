@@ -240,8 +240,9 @@ impl Shell {
                 } else if let Some(rec) = &ask.recommendation {
                     // An irreversible call is never the filled, easy button.
                     let variant = if ask.class == AskClass::Irreversible { Variant::Danger } else { Variant::Primary };
+                    let label = ask.choices().first().map_or_else(|| rec.to_string(), |o| o.display_label());
                     buttons = buttons
-                        .child(reply(clip(rec, 48), format!("{number} go"), variant, cx))
+                        .child(reply(clip(&label, 48), format!("{number} go"), variant, cx))
                         .child(div().text_size(px(size::XS)).text_color(t.quiet).child("recommended"));
                 }
                 for (i, option) in ask.options.iter().flatten().enumerate().take(6) {
@@ -287,7 +288,11 @@ impl Shell {
                 ask.text.to_string(),
                 true,
                 on_open.clone(),
-            )));
+            )))
+            .when_some(ask.context.as_ref(), |d, context| d.child(div().text_color(t.quiet).whitespace_normal().child(context.to_string())))
+            .when_some(ask.recommendation_why.as_ref(), |d, why| {
+                d.child(div().text_size(px(size::XS)).text_color(t.quiet).whitespace_normal().child(format!("Recommended: {why}")))
+            });
         if full {
             for (i, step) in ask.steps.iter().flatten().enumerate() {
                 block = block.child(
