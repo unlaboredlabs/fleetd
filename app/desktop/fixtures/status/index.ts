@@ -17,13 +17,8 @@ const openAsks = (f: Fixture): string[] => {
   return asks.flatMap((a) => (isObject(a) && typeof a["askId"] === "string" ? [a["askId"]] : []));
 };
 
-/** Docs with the progress model's fields (stage credit, the critical path) pass the schema only once #169 merges;
- * until then their status_get answers are unchecked. The legacy and empty docs stay checked. */
-const PROGRESS_MODEL = "progress model fields (#169) not merged yet";
-
-const answer = (f: Fixture, docs: (kind: Kind, asks: readonly string[]) => JsonObject, getDelayMs?: number, checked = false): void => {
+const answer = (f: Fixture, docs: (kind: Kind, asks: readonly string[]) => JsonObject, getDelayMs?: number): void => {
   const asks = openAsks(f);
-  if (!checked && !f.pendingContracts.has("status_get")) f.pendingContracts.set("status_get", PROGRESS_MODEL);
   for (const kind of KINDS) {
     const doc = docs(kind, asks);
     f.answer("status_get", { scope: SCOPES[kind] }, { doc }, getDelayMs);
@@ -31,17 +26,9 @@ const answer = (f: Fixture, docs: (kind: Kind, asks: readonly string[]) => JsonO
   f.answer("status_seen", undefined, { recorded: true });
 };
 
-const own = (
-  base: Fixture,
-  what: string,
-  note: string,
-  docs: (kind: Kind, asks: readonly string[]) => JsonObject,
-  getDelayMs?: number,
-  checked = false,
-): Fixture => {
+const own = (base: Fixture, what: string, note: string, docs: (kind: Kind, asks: readonly string[]) => JsonObject, getDelayMs?: number): Fixture => {
   const f = Fixture.from(base, `status-${what}`, note);
-  if (checked) f.pendingContracts.delete("status_get");
-  answer(f, docs, getDelayMs, checked);
+  answer(f, docs, getDelayMs);
   // The held answer is the state being shot, not a frame still to come: nothing to wait for before the shot.
   if (getDelayMs !== undefined) f.settleAt(0);
   return f;
@@ -51,10 +38,9 @@ export default defineGroup({
   extend: {
     typical: (f) => answer(f, (k, asks) => statusDoc(k, false, asks)),
     "needs-you": (f) => answer(f, (k, asks) => statusDoc(k, false, asks)),
-    empty: (f) => answer(f, (k) => emptyDoc(k), undefined, true),
+    empty: (f) => answer(f, (k) => emptyDoc(k)),
     "long-text": (f) => {
       answer(f, (k, asks) => longTextDoc(k, asks));
-      f.pendingContracts.delete("status_get");
       // On purpose: wire values a newer hub might send (a risk rule, a CI state, a stage), which must render a
       // generic fallback. The schema of this build rejects them, which is the point.
       f.pendingContracts.set("status_get", "values from a newer hub, on purpose");
@@ -65,7 +51,7 @@ export default defineGroup({
     own(base("typical"), "planning", "Status: W14's lead is still planning, so the order shows its planning bar, not 0%.", (k, asks) =>
       k === "order" ? planningDoc() : statusDoc(k, false, asks),
     ),
-    own(base("typical"), "legacy", "Status: a hub without the progress model (no estimate, stage credit, critical path or blockers).", (k, asks) => legacyDoc(k, asks), undefined, true),
+    own(base("typical"), "legacy", "Status: a hub without the progress model (no estimate, stage credit, critical path or blockers).", (k, asks) => legacyDoc(k, asks)),
     own(base("typical"), "skeleton", "Status: the hub is live but hasn't answered status_get yet: the skeleton, no numbers.", (k, asks) => statusDoc(k, false, asks), HOLD_MS),
   ],
 });

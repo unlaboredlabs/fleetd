@@ -292,8 +292,7 @@ export const machineView = (m: HealthMachine, nowMs: number): string => {
   const parts: string[] = [];
   if (m.status !== "online") {
     const a = since(m.lastSeenAt, nowMs);
-    const status = m.status === "offline" || m.status === "degraded" ? m.status : "not online";
-    parts.push(a === null ? status : `${status} ${age(a)}`);
+    parts.push(a === null ? m.status : `${m.status} ${age(a)}`);
   }
   if (m.slept && nowMs - m.slept.toMs < DAY) {
     const secs = Math.round((m.slept.toMs - m.slept.fromMs) / 1000);

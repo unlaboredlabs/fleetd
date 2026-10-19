@@ -155,7 +155,7 @@ describe("words", () => {
   it("a machine says how long it's been gone and when it slept", () => {
     const m = fixture("fleet").health.machines[1];
     expect(m && machineView(m, NOW)).toBe("offline 12m · 3× today");
-    const slept = { machineId: "devbox", status: "online", dropsToday: 1, slept: { fromMs: NOW - 3_600_000, toMs: NOW - 3_600_000 + 646_000 } };
+    const slept = { machineId: "devbox", status: "online" as const, dropsToday: 1, slept: { fromMs: NOW - 3_600_000, toMs: NOW - 3_600_000 + 646_000 } };
     expect(machineView(slept, NOW)).toBe("slept 10m46s at 09:17");
   });
 });
