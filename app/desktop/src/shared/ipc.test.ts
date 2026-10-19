@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { IPC } from "./channels";
-import { parseRequest } from "./ipc";
+import { MAX_CALL_INPUT_BYTES, MAX_CALL_INPUT_DEPTH, parseRequest } from "./ipc";
 
 describe("parseRequest", () => {
   it("accepts a well-formed call and keeps its input", () => {
@@ -17,6 +17,21 @@ describe("parseRequest", () => {
   it("refuses inputs that aren't plain JSON", () => {
     expect(parseRequest(IPC.hubCall, [{ tool: "x", input: { when: new Date() } }]).ok).toBe(false);
     expect(parseRequest(IPC.hubCall, [{ tool: "x", input: Number.NaN }]).ok).toBe(false);
+  });
+
+  it("caps a call's input in size and depth", () => {
+    const call = (input: unknown) => parseRequest(IPC.hubCall, [{ tool: "x", input }]).ok;
+    expect(call("y".repeat(MAX_CALL_INPUT_BYTES - 2))).toBe(true);
+    expect(call("y".repeat(MAX_CALL_INPUT_BYTES))).toBe(false);
+    const nest = (depth: number): unknown => {
+      let value: unknown = 1;
+      for (let i = 0; i < depth; i++) value = { a: value };
+      return value;
+    };
+    expect(call(nest(MAX_CALL_INPUT_DEPTH))).toBe(true);
+    expect(call(nest(MAX_CALL_INPUT_DEPTH + 1))).toBe(false);
+    // Far past any recursion limit: refused, not a stack overflow.
+    expect(call(nest(200_000))).toBe(false);
   });
 
   it("refuses unknown fields, extra arguments and out-of-range timeouts", () => {
