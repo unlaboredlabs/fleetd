@@ -580,6 +580,17 @@
 .machineSeg:disabled {
   cursor: default;
 }
+.machineText {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.moreChips {
+  flex: none;
+  color: var(--quiet);
+}
 .machineName {
   color: var(--text);
   flex: none;
