@@ -19,6 +19,12 @@ pub const SLOW_FACTOR: f64 = 1.5;
 /// Finished units a project needs before its own weights or durations are used, else the fleet's, else defaults.
 pub const MIN_WEIGHT_SAMPLES: i64 = 5;
 pub const MIN_DURATION_SAMPLES: i64 = 3;
+/// No stage is usually shorter than this: a stage passed in a second (CI already green on the head) still gets a
+/// minute of smoothing.
+pub const MIN_STAGE_MS: i64 = MIN;
+/// "Slower than usual" needs this many measured units for the stage, and at least [`SLOW_MIN_MS`] in it.
+pub const SLOW_MIN_SAMPLES: i64 = 5;
+pub const SLOW_MIN_MS: i64 = 10 * MIN;
 
 const MIN: i64 = 60_000;
 
@@ -80,6 +86,9 @@ pub struct StageDurations {
     pub p50: [i64; STAGES - 1],
     pub p90: [i64; STAGES - 1],
     pub samples: i64,
+    /// Per stage, the units that saw both its ends (0: the stage's time is its share of the unit's length).
+    #[serde(default)]
+    pub stage_samples: [i64; STAGES - 1],
 }
 
 impl StageDurations {
@@ -97,6 +106,7 @@ impl StageDurations {
             p50,
             p90,
             samples: 0,
+            stage_samples: [0; STAGES - 1],
         }
     }
 
@@ -388,13 +398,26 @@ pub fn item_progress(f: &ItemFacts, now: i64, r: &Resolved) -> ItemProgress {
         };
     }
     let elapsed = (now - entered).max(0);
-    let usual = r.durations.p50[k].max(1);
+    let usual = r.usual_ms(k);
     let frac = (elapsed as f64 / usual as f64).min(IN_STAGE_CAP);
     ItemProgress {
         stage,
         credit: r.weights.cum[k] + r.weights.weight(k + 1) * frac,
         verified: false,
-        slower: elapsed as f64 > SLOW_FACTOR * usual as f64,
+        slower: r.slow_at(k).is_some_and(|at| elapsed > at),
+    }
+}
+
+impl Resolved {
+    /// The usual time from stage `k` to the next, never under [`MIN_STAGE_MS`].
+    pub fn usual_ms(&self, k: usize) -> i64 {
+        self.durations.p50[k].max(MIN_STAGE_MS)
+    }
+
+    /// Time in stage `k` past which a unit is slower than usual; None while too few units measured the stage.
+    pub fn slow_at(&self, k: usize) -> Option<i64> {
+        (self.durations.stage_samples[k] >= SLOW_MIN_SAMPLES)
+            .then(|| ((SLOW_FACTOR * self.usual_ms(k) as f64) as i64).max(SLOW_MIN_MS))
     }
 }
 
@@ -710,14 +733,23 @@ mod tests {
 
     #[test]
     fn past_one_and_a_half_times_the_usual_it_is_slower_than_usual_not_inflated() {
-        let r = resolved();
         let k = ItemStage::PrOpen.index();
-        let usual = r.durations.p50[k];
         let f = facts(&[(ItemStage::PrOpen, 0)]);
-        assert!(!item_progress(&f, usual * 3 / 2, &r).slower);
-        let late = item_progress(&f, usual * 3 / 2 + 1, &r);
-        assert!(late.slower);
-        assert_eq!(late.credit, item_progress(&f, usual * 10, &r).credit);
+        let mut r = resolved();
+        assert!(
+            !item_progress(&f, 100 * r.usual_ms(k), &r).slower,
+            "the built-in times never call anything slow"
+        );
+        r.durations.p50[k] = 20 * M;
+        r.durations.stage_samples[k] = SLOW_MIN_SAMPLES;
+        assert!(!item_progress(&f, 30 * M, &r).slower);
+        let late = item_progress(&f, 30 * M + 1, &r);
+        assert!(late.slower, "past 1.5× a measured 20 minutes");
+        assert_eq!(
+            late.credit,
+            item_progress(&f, 300 * M, &r).credit,
+            "flagged, never inflated"
+        );
     }
 
     #[test]
@@ -947,6 +979,7 @@ mod tests {
                     p50: [M; STAGES - 1],
                     p90: [2 * M; STAGES - 1],
                     samples: n,
+                    stage_samples: [n; STAGES - 1],
                 },
             }],
             planning_share: Some(0.2),

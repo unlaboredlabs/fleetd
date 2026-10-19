@@ -75,11 +75,65 @@ fn weights_follow_where_the_time_went() {
         (d.kind, d.size, d.durations.samples),
         (UnitKind::Order, Size::M, 5)
     );
-    // A stage passed unseen takes no time of its own: it goes to the stage before it.
-    assert_eq!(d.durations.p50[ItemStage::BriefFrozen.index()], 0);
+    // A stage lasts until the next stage a unit was seen to reach: no push was seen, so task started runs to the PR.
     assert_eq!(d.durations.p50[ItemStage::Planned.index()], 10 * MIN);
     assert_eq!(d.durations.p50[ItemStage::TaskStarted.index()], 30 * MIN);
-    assert_eq!(d.durations.total_p50(), 60 * MIN);
+    assert_eq!(d.durations.p50[ItemStage::PrOpen.index()], 10 * MIN);
+    assert_eq!(d.durations.stage_samples[ItemStage::TaskStarted.index()], 5);
+    // A stage nobody saw is not measured at a few seconds: it keeps its share of the length, at least a minute.
+    let unseen = ItemStage::BriefFrozen.index();
+    assert_eq!(d.durations.stage_samples[unseen], 0);
+    assert!(d.durations.p50[unseen] >= model::MIN_STAGE_MS);
+}
+
+/// Realistic CI: the train usually finds CI already green (ready → merging in a second), sometimes waits minutes.
+#[test]
+fn a_few_seconds_of_ci_never_makes_normal_ci_slower_than_usual() {
+    let units: Vec<Timeline> = (0..6)
+        .map(|i| {
+            let at = T0 + i * DAY_MS;
+            let ci = if i < 4 { 1_000 } else { 6 * MIN };
+            unit(
+                &format!("W{i}"),
+                "m/p",
+                &[
+                    (at, What::Created),
+                    (at + 2 * MIN, What::TaskStarted),
+                    (at + 12 * MIN, change(ChangeState::Queued)),
+                    (at + 15 * MIN, change(ChangeState::Ready)),
+                    (at + 15 * MIN + ci, change(ChangeState::Merging)),
+                    (at + 16 * MIN + ci, change(ChangeState::Merged)),
+                    (at + 20 * MIN + ci, What::Verified),
+                ],
+            )
+        })
+        .collect();
+    let cal = derive(&units, T0);
+    let r = cal.resolve("m/p", UnitKind::Order, Size::M);
+    let k = ItemStage::ReviewPassed.index();
+    assert_eq!(r.durations.stage_samples[k], 6);
+    assert_eq!(
+        r.usual_ms(k),
+        model::MIN_STAGE_MS,
+        "1 s of CI is floored to a minute"
+    );
+    let in_ci = |minutes: i64| {
+        let f = model::ItemFacts {
+            reached: vec![(ItemStage::ReviewPassed, 0)],
+        };
+        model::item_progress(&f, minutes * MIN, &r).slower
+    };
+    assert!(!in_ci(4), "a normal few minutes of CI");
+    assert!(!in_ci(9), "under ten minutes is never slower than usual");
+    assert!(in_ci(11));
+    let few = derive(&units[..4], T0).resolve("m/p", UnitKind::Order, Size::M);
+    let f = model::ItemFacts {
+        reached: vec![(ItemStage::ReviewPassed, 0)],
+    };
+    assert!(
+        !model::item_progress(&f, 60 * MIN, &few).slower,
+        "4 units are too few to call anything slow"
+    );
 }
 
 #[test]
@@ -107,7 +161,7 @@ fn a_project_with_few_units_falls_back_to_the_fleet() {
     assert_eq!(r.basis, fleetd_contracts::status::WeightsBasis::Fleet);
     let r = cal.resolve("m/big", UnitKind::Order, Size::M);
     assert_eq!(r.basis, fleetd_contracts::status::WeightsBasis::Project);
-    assert_eq!(r.durations.total_p50(), 60 * MIN);
+    assert_eq!(r.durations.p50[ItemStage::TaskStarted.index()], 30 * MIN);
 }
 
 #[test]

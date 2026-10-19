@@ -13,7 +13,7 @@ use fleetd_contracts::plan::Size;
 use rusqlite::{Connection, OptionalExtension, params};
 
 use super::model::{
-    Calibration, DurationRow, Params, STAGES, StageDurations, StageWeights, UnitKind,
+    self, Calibration, DurationRow, Params, STAGES, StageDurations, StageWeights, UnitKind,
 };
 use super::timeline::{self, Timeline};
 use crate::hub::api::Hub;
@@ -90,24 +90,41 @@ pub fn params(units: &[&Timeline]) -> Params {
         p.weights = Some(StageWeights::from_shares(shares));
     }
     type Class = (UnitKind, Size);
-    let mut classes: Vec<(Class, Vec<[i64; STAGES]>)> = Vec::new();
+    let mut classes: Vec<(Class, Vec<([i64; STAGES], [bool; STAGES])>)> = Vec::new();
     for (t, f) in &done {
         let class = (t.kind, t.size);
+        let row = (*f, t.observed());
         match classes.iter_mut().find(|(c, _)| *c == class) {
-            Some((_, fs)) => fs.push(*f),
-            None => classes.push((class, vec![*f])),
+            Some((_, fs)) => fs.push(row),
+            None => classes.push((class, vec![row])),
         }
     }
+    let weights = p.weights.clone().unwrap_or_default();
     for ((kind, size), fs) in classes {
+        // A stage's usual time is how long units that saw it stayed in it: until the next stage they saw (a stage
+        // passed unseen, like a push no shell showed, leaves its time with the stage before it). A stage too few
+        // units saw gets its share of the class's measured length instead.
+        let total = p50_p90(fs.iter().map(|(f, _)| f[STAGES - 1] - f[0]).collect()).0;
+        let spread = StageDurations::spread(total, &weights);
         let mut d = StageDurations {
-            p50: [0; STAGES - 1],
-            p90: [0; STAGES - 1],
             samples: fs.len() as i64,
+            ..spread.clone()
         };
         for k in 0..STAGES - 1 {
-            let (a, b) = p50_p90(fs.iter().map(|f| f[k + 1] - f[k]).collect());
-            d.p50[k] = a;
-            d.p90[k] = b.max(a);
+            let seen: Vec<i64> = fs
+                .iter()
+                .filter(|(_, o)| o[k])
+                .filter_map(|(f, o)| {
+                    let next = (k + 1..STAGES).find(|j| o[*j])?;
+                    Some(f[next] - f[k])
+                })
+                .collect();
+            d.stage_samples[k] = seen.len() as i64;
+            if seen.len() >= model::MIN_DURATION_SAMPLES as usize {
+                let (a, b) = p50_p90(seen);
+                d.p50[k] = a.max(model::MIN_STAGE_MS);
+                d.p90[k] = b.max(d.p50[k]);
+            }
         }
         p.durations.push(DurationRow {
             kind,

@@ -50,6 +50,26 @@ impl Timeline {
             .map(|(_, at)| *at)
     }
 
+    /// Which stages were seen themselves (not only passed on the way to a later one). Planned always is.
+    pub fn observed(&self) -> [bool; STAGES] {
+        let mut seen = [false; STAGES];
+        seen[0] = true;
+        for o in &self.obs {
+            let stage = match &o.what {
+                What::BriefFrozen => Some(ItemStage::BriefFrozen),
+                What::TaskStarted => Some(ItemStage::TaskStarted),
+                What::Pushed => Some(ItemStage::FirstPush),
+                What::ChangeState { state, .. } => change_stage(*state),
+                What::Verified => Some(ItemStage::Verified),
+                What::Created | What::Reopened => None,
+            };
+            if let Some(s) = stage.filter(|s| s.index() < STAGES) {
+                seen[s.index()] = true;
+            }
+        }
+        seen
+    }
+
     /// When each stage was first reached. A stage passed without being seen takes the time of the next one seen, so
     /// its time counts toward the stage before it.
     pub fn first_reached(&self) -> [Option<i64>; STAGES] {

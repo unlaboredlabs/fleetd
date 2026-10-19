@@ -658,6 +658,28 @@ async fn the_estimate_rises_with_observed_stages_and_falls_only_with_an_explaine
         "never a silent drop: {held:?}"
     );
 
+    // Review usually takes 20 minutes here, measured on 5 items: ten hours in review is slower than usual.
+    use crate::hub::status::model::{Calibration, DurationRow, Params, StageDurations, UnitKind};
+    let mut durations = StageDurations::spread(
+        20 * 60_000,
+        &crate::hub::status::model::StageWeights::default(),
+    );
+    durations.p50[ItemStage::PrOpen.index()] = 20 * 60_000;
+    durations.samples = 5;
+    durations.stage_samples = [5; 8];
+    let mut cal = Calibration::default();
+    cal.projects.insert(
+        "devbox/storefront".into(),
+        Params {
+            durations: vec![DurationRow {
+                kind: UnitKind::Item,
+                size: fleetd_contracts::plan::Size::M,
+                durations,
+            }],
+            ..Params::default()
+        },
+    );
+    hub.status.set_calibration(Arc::new(cal));
     set_change(&hub, "reviewing", None);
     let d = step(10 * 3600);
     assert_eq!(d.in_progress[0].slower_than_usual, Some(true));

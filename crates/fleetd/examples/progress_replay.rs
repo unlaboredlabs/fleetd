@@ -221,6 +221,7 @@ fn pooled(units: &[&Timeline]) -> Calibration {
             p50: scale(base.durations.p50),
             p90: scale(base.durations.p90),
             samples: base.durations.samples,
+            stage_samples: base.durations.stage_samples,
         };
         for kind in [UnitKind::Item, UnitKind::Order] {
             rows.push(DurationRow {

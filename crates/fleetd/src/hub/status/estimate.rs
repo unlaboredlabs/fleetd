@@ -482,15 +482,17 @@ pub fn compute(w: &World, scope: &StatusScope, s: &Scope<'_>) -> ModelOut {
         let p = model::item_progress(&f, now, &r);
         let (stage, entered) = f.current();
         if !p.verified {
-            let usual = r.durations.p50[stage.index()];
-            let capped_at = entered + (usual as f64 * model::IN_STAGE_CAP) as i64;
+            let k = stage.index();
+            let capped_at = entered + (r.usual_ms(k) as f64 * model::IN_STAGE_CAP) as i64;
             if capped_at > now {
                 wake_at(now + TICK_MS);
             }
-            wake_at(entered + (usual as f64 * model::SLOW_FACTOR) as i64 + 1);
+            if let Some(slow) = r.slow_at(k) {
+                wake_at(entered + slow + 1);
+            }
         }
         if p.slower {
-            let usual = r.durations.p50[stage.index()].max(1);
+            let usual = r.usual_ms(stage.index());
             slower.push((
                 label_of(w, &key),
                 stage,
