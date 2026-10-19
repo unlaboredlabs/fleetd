@@ -6,13 +6,11 @@ export {
   commandFor,
   registerCommands,
   registerSource,
-  registerTextAction,
   runCommand,
   useCommands,
   useSource,
   type Command,
   type Group,
   type Source,
-  type TextAction,
 } from "./registry";
 export { openPalette, openShortcuts, closeOverlay } from "./state";

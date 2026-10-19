@@ -260,6 +260,7 @@ impl TaskPorts for HubTaskPorts {
         let kind = match kind {
             WakeKind::TaskResult => LineKind::TaskResult,
             WakeKind::TaskWaiting => LineKind::TaskWaiting,
+            WakeKind::CapRaised => LineKind::CapRaised,
         };
         hub.leads
             .wakes

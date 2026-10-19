@@ -542,7 +542,7 @@ pub enum InsightRule {
     Offline,
     Coverage,
     /// Serial waits: work that waited while capacity existed. A task queued for a slot while the fleet had free
-    /// ones (a project share, the lead band), or a PR that waited out another PR's train cycle.
+    /// ones (a project's max agents, the lead band), or a PR that waited out another PR's train cycle.
     QueueWait,
     /// Tasks serialized on one shared resource: an area lease, or one machine's usage limit.
     Contention,

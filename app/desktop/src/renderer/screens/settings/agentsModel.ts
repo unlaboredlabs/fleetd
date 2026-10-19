@@ -39,7 +39,8 @@ export function changeLine(a: ProjectAgents, next: number): string {
   }
   const over = extrasOver(a.running, next);
   if (over > 0) {
-    return `${a.running} running now, ${over} over the new max: they finish their current work, and new agents wait until fewer than ${next} run.`;
+    const until = next === 1 ? "until none is running" : `until fewer than ${next} run`;
+    return `${a.running} running now, ${over} over the new max: they finish their current work, and new agents wait ${until}.`;
   }
   if (a.queued > 0 && next > a.max) return `Up to ${next} at once. ${Math.min(a.queued, next - a.max)} of the ${a.queued} waiting can start now.`;
   if (next > a.max) return `Up to ${next} at once. Waiting agents start as soon as there is room.`;

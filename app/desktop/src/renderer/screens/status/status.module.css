@@ -57,10 +57,6 @@
 .row:hover {
   background: var(--hover);
 }
-.row:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
 
 .title {
   display: flex;
@@ -79,13 +75,6 @@
 .merged {
   min-width: 0;
   border-radius: var(--radius-sm);
-}
-.stale:focus-visible,
-.word:focus-visible,
-.progress:focus-visible,
-.merged:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
 }
 
 .progress {

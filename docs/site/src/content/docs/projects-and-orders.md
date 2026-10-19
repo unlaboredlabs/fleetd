@@ -165,6 +165,24 @@ No gate relaxes. Every PR still gets its tier's reviews and green CI and goes th
 by the done-when checks, and anything that needs your approval still waits for it. The reviewers fleetd starts count
 against the slots and the lead's limit of 32 open tasks like any task.
 
+## Max agents {#max-agents}
+
+Each project runs at most its **max agents** at once: writers, readers and reviewers. Its lead doesn't count. The
+fleet's cap on running sessions bounds every project, and is the default. Set it from a terminal:
+
+```sh
+fleetd project set devbox/storefront --max-agents 3
+fleetd project set --fleet-cap 20        # needs an admin key
+```
+
+- Beyond the max, new agents wait in line and start by themselves as slots free. A review that gates a merge goes
+  first, so even at 1 the merge train keeps moving.
+- Lowering it stops nothing: running agents finish their current work. Add `--pause-extras` to have the newest ones
+  push their work in progress and wait; they continue where they stopped when a slot frees.
+- Raising it starts waiting agents at once and tells the lead how many slots are free.
+- Each change is one line in the project's chat, and the lead sees "agents: 2 running of 3, 1 queued" every time
+  it wakes.
+
 ## Change or stop it {#steer}
 
 | You want to | In the order view | The lead |
