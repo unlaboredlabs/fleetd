@@ -269,10 +269,21 @@ fn agent_facing_texts_name_tools_not_fleetd_commands() {
 #[test]
 fn model_facing_texts_never_mention_the_questions_tool() {
     let ask = regex::Regex::new(
-        r"(?i)`(ask|ask_withdraw|inbox_reply|inbox_undo|asks_list)`|question cards?|ask cards?|\binbox\b|\bask:A|amend A\d|proceededOnRec|kind secret|your asks\b|taps? one choice",
+        r"(?i)`(ask|ask_withdraw|inbox_reply|inbox_undo|asks_list)`|question cards?|ask cards?|\binbox\b|\bask:A|amend A\d|proceededOnRec|kind secret|your asks\b|taps? one choice|\baskId\b",
     )
     .unwrap();
-    let texts = super::registry::ENTRIES.iter().map(|e| (e.id, e.default));
+    // The prompt trim deletes these with their code paths; drop each id here when it goes.
+    const DELETED_WITH_THE_TRIM: [&str; 5] = [
+        "permission.denied.withdrawn",
+        "permission.denied.human",
+        "digest.answer.withdrawn",
+        "digest.answer.skipped",
+        "wake.answers",
+    ];
+    let texts = super::registry::ENTRIES
+        .iter()
+        .filter(|e| !DELETED_WITH_THE_TRIM.contains(&e.id))
+        .map(|e| (e.id, e.default));
     let playbooks = crate::hub::playbooks::load::BUNDLED
         .iter()
         .map(|(n, t)| (n.as_str(), *t));

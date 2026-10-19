@@ -203,7 +203,7 @@ pub const ENTRIES: &[Entry] = &[
                 "agent-cap",
                 "plans to the agent cap and never works around it",
                 r"Never work around the cap",
-                Code
+                Prompt
             ),
             (
                 "no-time",
