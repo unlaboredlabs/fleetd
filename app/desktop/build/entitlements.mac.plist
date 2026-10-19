@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The hardened runtime's entitlements for the Electron fleetd.app, the app and every helper: one.
+  - cs.allow-jit: V8 compiles JavaScript to machine code in the main process and the renderer (and SwiftShader in
+    the GPU helper), in MAP_JIT memory. Without it the hardened runtime kills the app at its first script.
+  What it doesn't ask for, and why:
+  - cs.allow-unsigned-executable-memory: Electron 12+ JITs into MAP_JIT pages, which allow-jit covers.
+  - cs.disable-library-validation: every library in the bundle is signed with our Team ID at packaging; the app
+    loads no third-party native modules.
+  - cs.allow-dyld-environment-variables, cs.debugger: not used in a release build.
+  - device.camera, device.audio-input, automation.apple-events: unused. The demo recording captures the app's own
+    window (webContents.capturePage), which needs no permission.
+  - Network, notifications and safeStorage's keychain item need no entitlement outside the App Sandbox, which the
+    app doesn't use.
+  The release dry run launches the signed app (build-release.yml, "Launch the signed app"), so a missing exception
+  fails there, not on someone's Mac.
+-->
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+</dict>
+</plist>

@@ -1,5 +1,11 @@
 packages:
   - .
-# esbuild works from its platform package; its postinstall only re-checks that binary.
+# esbuild works from its platform package; its postinstall only re-checks that binary. electron-winstaller is
+# electron-builder's Windows piece, unused.
 allowBuilds:
   esbuild: false
+  electron-winstaller: false
+# Both architectures' native packages (@napi-rs/keyring's), so each half of the universal Mac app gets its own.
+supportedArchitectures:
+  os: [current]
+  cpu: [x64, arm64]
