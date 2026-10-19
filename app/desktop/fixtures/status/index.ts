@@ -19,8 +19,7 @@ const openAsks = (f: Fixture): string[] => {
 
 /** The tasks the fixture's board runs for W1, so In progress rows join real lanes (what each agent does now). */
 const boardTasks = (f: Fixture): string[] => {
-  const out = f.answers("orders_board")[0]?.output;
-  const orders = isObject(out) && Array.isArray(out["orders"]) ? out["orders"] : [];
+  const orders = f.answers("orders_board").flatMap((a) => (isObject(a.output) && Array.isArray(a.output["orders"]) ? a.output["orders"] : []));
   const w1 = orders.find((o) => isObject(o) && o["workstreamId"] === "W1");
   const lanes = isObject(w1) && Array.isArray(w1["lanes"]) ? w1["lanes"] : [];
   return lanes.flatMap((l) => (isObject(l) && typeof l["taskId"] === "string" ? [l["taskId"]] : []));

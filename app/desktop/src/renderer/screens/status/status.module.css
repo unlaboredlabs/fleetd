@@ -34,6 +34,26 @@
   gap: var(--space-2);
   min-width: 0;
 }
+.crumbText,
+.crumbLink {
+  min-width: 0;
+  max-width: 32ch;
+}
+.crumbLink {
+  border: 0;
+  background: none;
+  font: inherit;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.crumbLink:hover {
+  background: var(--hover);
+}
+.crumbLink:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
 .liveness {
   display: flex;
   align-items: center;

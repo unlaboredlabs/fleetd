@@ -3,7 +3,7 @@
 // no-time rule: state and measured ages, never an estimated time.
 
 import { useMemo, useSyncExternalStore } from "react";
-import { Button, cx, Dot, Text } from "../../ui";
+import { Button, cx, Dot, Text, Truncate } from "../../ui";
 import type { StatusDoc, StatusScope } from "./contracts";
 import { useData } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
@@ -84,14 +84,19 @@ function Header({ scope, doc, phase: p, linkUp }: { scope: StatusScope; doc: Sta
         {crumbs.map((c, i) => (
           <span key={c.label} className={cx(s.crumb)}>
             {i > 0 ? <span aria-hidden className={cx(s.faint)}>›</span> : null}
+            {/* A crumb can be a long project or order title: it ends in an ellipsis, with the full title on hover. */}
             {i === crumbs.length - 1 ? (
-              <span aria-current="page">
-                <Text strong>{c.label}</Text>
+              <span aria-current="page" className={cx(s.crumbText)}>
+                <Truncate expand="none" strong>
+                  {c.label}
+                </Truncate>
               </span>
             ) : (
-              <Button variant="quiet" onClick={() => go(c.to)}>
-                {c.label}
-              </Button>
+              <button type="button" className={cx(s.crumbLink)} onClick={() => go(c.to)}>
+                <Truncate expand="none" tone="quiet">
+                  {c.label}
+                </Truncate>
+              </button>
             )}
           </span>
         ))}
