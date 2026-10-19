@@ -86,7 +86,7 @@ fn facts(hub: &Hub, r: &ProjectRef) -> Vec<OrderFacts> {
             ..Default::default()
         })
         .unwrap_or_default();
-    let asks = super::open_asks_by_order(hub);
+    let asks = super::open_requests_by_order(hub);
     let changes = super::project_changes(hub, r);
     open.into_iter()
         .map(|w| {

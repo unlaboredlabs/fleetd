@@ -159,7 +159,6 @@ fn kit(workstreams: Vec<Workstream>) -> Kit {
         Arc::new(GitHub::new(Arc::new(GhCli))),
         judges,
         dyn_ports.clone(),
-        events.clone(),
         clock.clone(),
     ));
     let claims = Arc::new(Claims::new(

@@ -6,7 +6,7 @@ use super::wire::{OpsPorts, convert};
 use crate::hub::incidents::{IncidentFilter, IncidentInput};
 use crate::hub::intake::router::OneShot;
 use crate::hub::leads::records::WorkstreamFilter;
-use crate::hub::ledger::{AskInput, DecisionFilter};
+use crate::hub::ledger::DecisionFilter;
 use crate::hub::retro::metrics::RetroWork;
 use crate::hub::retro::service::{RUN_TIMEOUT_MS, RetroLedger, RetroPlaybooks, RetroRunner};
 use crate::hub::retro::types::OrchestratorRun;
@@ -208,30 +208,6 @@ fn required<T: serde::de::DeserializeOwned>(input: &Value, key: &str) -> Result<
     field(input, key)?.ok_or_else(|| format!("{key} is required"))
 }
 
-/// An `Asks.create` input from its wire JSON.
-pub(crate) fn ask_input_of(input: &Value) -> Result<AskInput, String> {
-    Ok(AskInput {
-        project_ref: field(input, "projectRef")?,
-        workstream_id: field(input, "workstreamId")?,
-        kind: required(input, "kind")?,
-        key: required(input, "key")?,
-        class: required(input, "class")?,
-        text: required(input, "text")?,
-        context: field(input, "context")?,
-        recommendation: field(input, "recommendation")?,
-        recommendation_why: field(input, "recommendationWhy")?,
-        options: field(input, "options")?,
-        steps: field(input, "steps")?,
-        verify: field(input, "verify")?,
-        sink: field(input, "sink")?,
-        env_name: field(input, "envName")?,
-        gated: field(input, "gated")?,
-        permission: field(input, "permission")?,
-        blocks: required(input, "blocks")?,
-        proceeded_on_rec: field(input, "proceededOnRec")?.unwrap_or(false),
-    })
-}
-
 impl RetroLedger for OpsPorts {
     fn global_value(&self, key: &str) -> BoxFut<'_, Option<String>> {
         let key = key.to_owned();
@@ -255,25 +231,6 @@ impl RetroLedger for OpsPorts {
             logged(self.hub().decisions.get(&id), "reading a decision")
                 .flatten()
                 .map(|d| d.value.as_str().to_string())
-        })
-    }
-    fn ask_state(&self, ask_id: &str) -> BoxFut<'_, Option<(String, Option<String>)>> {
-        let id = ask_id.to_owned();
-        Box::pin(async move {
-            let ask = logged(self.hub().asks.get(&id), "reading an ask").flatten()?;
-            let state = serde_json::to_value(ask.state).ok()?.as_str()?.to_string();
-            Some((state, ask.decision_id.map(|d| d.to_string())))
-        })
-    }
-    fn create_ask(&self, input: Value, by: &str) -> BoxFut<'_, Result<String, String>> {
-        let by = by.to_owned();
-        Box::pin(async move {
-            let input = ask_input_of(&input)?;
-            self.hub()
-                .asks
-                .create(&input, &by)
-                .map(|outcome| outcome.ask.ask_id.to_string())
-                .map_err(|e| e.message)
         })
     }
     fn incident(&self, incident_id: &str) -> BoxFut<'_, Option<Value>> {

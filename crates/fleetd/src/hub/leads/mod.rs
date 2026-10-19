@@ -21,12 +21,11 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
-use fleetd_contracts::ids::ProjectRef;
 
 pub use self::error::LeadError;
 pub use self::hooks::LeadHooks;
 pub use self::lead::{Leads, LeadsOptions};
-pub use self::ports::{Answer, LeadPorts};
+pub use self::ports::LeadPorts;
 pub use self::records::LeadRecords;
 pub use self::wakes::{LeadWakes, Trigger};
 pub use self::workstreams::Workstreams;
@@ -173,10 +172,6 @@ impl Area {
         }))
     }
 
-    /// The ledger's AnswerSink: each applied answer wakes its project's lead.
-    pub fn on_answered(&self, project_ref: &ProjectRef, answers: &[Answer]) {
-        self.wakes.on_answered(project_ref, answers);
-    }
 
     /// The area's loops: decision wakes, project removals (with their catch-up), routing answers, and the leads of
     /// orders that wait for their machine. They run until
@@ -185,7 +180,6 @@ impl Area {
         vec![
             tokio::spawn(Arc::clone(&self.wakes).run_decision_wakes()),
             tokio::spawn(Arc::clone(&self.removals).run()),
-            tokio::spawn(Arc::clone(&self.intake).run_answers()),
             tokio::spawn(Arc::clone(&self.leads).run_waiting()),
         ]
     }

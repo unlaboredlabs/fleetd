@@ -15,7 +15,6 @@ use fleetd_contracts::ledger::{
 use super::digest::{DigestInput, DigestPlaybook, WorkstreamFacts, one_line, render_lead_digest};
 use super::error::LeadError;
 use super::hooks::BoxFuture;
-use super::ports::{Answer, followed_up};
 use super::records::{LeadRecords, WorkstreamFilter};
 use super::{Ctx, now_iso};
 use crate::clock::Clock;
@@ -41,6 +40,8 @@ pub enum LineKind {
     Idle,
     /// A slot is free and approved work is runnable (`orders::filler`).
     Runnable,
+    /// A secret or approval request settled, or came back open (`approvals`).
+    Request,
 }
 
 #[derive(Debug, Clone)]
@@ -55,7 +56,6 @@ pub enum Trigger {
         /// M9: the playbook it pinned, whose instructions go into this wake.
         playbook: Option<DigestPlaybook>,
     },
-    Answer(Answer),
     /// A decision the human recorded that touches the lead's project.
     Decision(Decision),
     /// A task ended, a claim failed or passed late, a task waits on input, a train event, a research verdict: the area
@@ -86,7 +86,6 @@ impl Trigger {
     pub fn kind(&self) -> &'static str {
         match self {
             Trigger::Intent { .. } => "intent",
-            Trigger::Answer(_) => "answer",
             Trigger::Decision(_) => "decision",
             Trigger::Line { kind, .. } => match kind {
                 LineKind::TaskResult => "task_result",
@@ -98,6 +97,7 @@ impl Trigger {
                 LineKind::Human => "human",
                 LineKind::Idle => "idle",
                 LineKind::Runnable => "runnable",
+                LineKind::Request => "request",
             },
         }
     }
@@ -115,8 +115,7 @@ fn scope_text(scope: &DecisionScope) -> String {
     }
 }
 
-/// The "why you are woken" lines. Answers are already listed in the digest, so they get one summary line; so do
-/// playbook instructions the digest already shows.
+/// The "why you are woken" lines. Playbook instructions the digest already shows get one summary line.
 pub fn trigger_lines(set: &PromptSet, triggers: &[Trigger], digest: &str) -> Vec<String> {
     let mut lines = Vec::new();
     for t in triggers {
@@ -163,15 +162,7 @@ pub fn trigger_lines(set: &PromptSet, triggers: &[Trigger], digest: &str) -> Vec
                 ));
             }
             Trigger::Line { text, .. } => lines.push(text.clone()),
-            Trigger::Answer(_) => {}
         }
-    }
-    let answers = triggers
-        .iter()
-        .filter(|t| matches!(t, Trigger::Answer(_)))
-        .count();
-    if answers > 0 {
-        lines.push(set.render("wake.answers", &[("count", &answers)]));
     }
     lines
 }
@@ -282,7 +273,7 @@ impl<K: Clone + Eq + Hash + Send + 'static, T: Send + 'static> Debouncer<K, T> {
     }
 }
 
-/// The orders a wake serves: an intent's, an answered ask's, and any `W<n>` a line names or whose task `T<n>` it
+/// The orders a wake serves: an intent's, and any `W<n>` a line names or whose task `T<n>` it
 /// names. The time inspector splits the lead's turn equally over them.
 fn trigger_workstreams(
     triggers: &[Trigger],
@@ -294,7 +285,6 @@ fn trigger_workstreams(
     for t in triggers {
         let found: Vec<String> = match t {
             Trigger::Intent { workstream_id, .. } => vec![workstream_id.to_string()],
-            Trigger::Answer(a) => a.ask.workstream_id.iter().map(|w| w.to_string()).collect(),
             Trigger::Decision(_) => Vec::new(),
             Trigger::Line { text, .. } => re
                 .find_iter(text)
@@ -366,11 +356,10 @@ impl LeadWakes {
             });
     }
 
-    /// The lead digest as of now, with `answers` as its "since your last wake" list.
+    /// The lead digest as of now.
     pub async fn digest(
         &self,
         r: &ProjectRef,
-        answers: &[Answer],
         set: &PromptSet,
     ) -> Result<String, LeadError> {
         let ctx = &self.ctx;
@@ -398,7 +387,7 @@ impl LeadWakes {
                 );
             }
         }
-        let open_asks = ctx.ports().open_asks(Some(r), None, 50)?;
+        let open_requests = ctx.ports().open_requests(Some(r), 50)?;
         // Global, project and every workstream-scoped decision in the project; the digest ranks them.
         let decisions = ctx.ports().decisions_in_project(r, 500)?;
         let tasks = ctx
@@ -421,8 +410,7 @@ impl LeadWakes {
                 .map_or(r.project_id.as_str(), |p| p.title.as_str()),
             at: &at,
             workstreams: &workstreams,
-            open_asks: &open_asks,
-            answers,
+            open_requests: &open_requests,
             decisions: &decisions,
             tasks,
             train,
@@ -541,20 +529,13 @@ impl LeadWakes {
             });
             return Ok(());
         }
-        let answers: Vec<Answer> = triggers
-            .iter()
-            .filter_map(|t| match t {
-                Trigger::Answer(a) => Some(a.clone()),
-                _ => None,
-            })
-            .collect();
         // The lead keeps the texts its session started with.
         let set = self
             .ctx
             .db
             .prompts()
             .for_thread(&r.machine_id, lead.thread_id.as_str());
-        let message = render_wake(&set, &self.digest(r, &answers, &set).await?, &triggers);
+        let message = render_wake(&set, &self.digest(r, &set).await?, &triggers);
         let at = now_iso(&self.ctx);
         let crid = format!("fleetd-wake:{}:{}:{at}", key_of(r), lead.session_generation);
         // Through the offline write queue, so a wake to an offline machine waits for it instead of being dropped.
@@ -615,19 +596,8 @@ impl LeadWakes {
         Ok(())
     }
 
-    /// The ledger's AnswerSink (`wiring`) calls this. Each applied answer becomes a trigger for its project's lead. An approved command or a
-    /// checklist with a verify check reaches the lead later, from the approvals follow-up, with its outcome.
-    pub fn on_answered(self: &Arc<Self>, r: &ProjectRef, answers: &[Answer]) {
-        for answer in answers {
-            if !followed_up(answer) {
-                self.trigger(r, Trigger::Answer(answer.clone()));
-            }
-        }
-    }
-
     /// Wakes a lead when someone other than a lead records a decision in its project (decisions_record from a human
-    /// or an outside agent). Answers to asks are left out: the AnswerSink already delivers those. Follows the event
-    /// log from the hub's start, so it sees every path that records a decision.
+    /// or an outside agent). Follows the event log from the hub's start, so it sees every path that records a decision.
     pub async fn run_decision_wakes(self: Arc<Self>) {
         let events = Arc::clone(&self.ctx.events);
         let mut cursor = events.head();
@@ -667,7 +637,6 @@ impl LeadWakes {
                 };
                 if matches!(decision.scope, DecisionScope::Global)
                     || decision.source == DecisionSource::Lead
-                    || decision.ask_id.is_some()
                 {
                     continue;
                 }

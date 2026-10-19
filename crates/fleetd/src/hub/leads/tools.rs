@@ -37,10 +37,8 @@ pub fn register(tools: &mut Registry) {
             let files: Vec<AttachmentId> = input.attachments.iter().flatten().cloned().collect();
             crate::hub::intake::attachments::check(&hub, &caller, &files)?;
             let out = hub.leads.intake_submit(&caller, input).await?;
-            if let Some(w) = &out.workstream_id
-                && (!refs.is_empty() || !files.is_empty())
-            {
-                crate::hub::orders::notes::with_intent(&hub, &caller, w, &refs, &files).await?;
+            if !refs.is_empty() || !files.is_empty() {
+                crate::hub::orders::notes::with_intent(&hub, &caller, &out.workstream_id, &refs, &files).await?;
             }
             Ok(out)
         },
@@ -152,28 +150,18 @@ impl Area {
             })
             .await
             .map_err(refusal)?;
-        Ok(match result {
-            SubmitResult::Placed {
-                workstream_id,
-                echo,
-                next,
-                lead_waiting,
-            } => IntakeSubmitOutput {
-                workstream_id: Some(workstream_id),
-                ask_id: None,
-                echo: Some(echo),
-                lead_waiting,
-                next,
-                truncated: None,
-            },
-            SubmitResult::Asked { ask_id, next } => IntakeSubmitOutput {
-                workstream_id: None,
-                ask_id: Some(ask_id),
-                echo: None,
-                lead_waiting: None,
-                next: Some(next),
-                truncated: None,
-            },
+        let SubmitResult::Placed {
+            workstream_id,
+            echo,
+            next,
+            lead_waiting,
+        } = result;
+        Ok(IntakeSubmitOutput {
+            workstream_id,
+            echo: Some(echo),
+            lead_waiting,
+            next,
+            truncated: None,
         })
     }
 
@@ -233,18 +221,21 @@ impl Area {
             Some(w) if allows(caller, Role::Read, Some(&w.project_ref.machine_id)) => w,
             _ => return Err(unknown_workstream(id.as_str())),
         };
-        let mut asks = self
+        let mut requests: Vec<_> = self
             .ctx
             .ports()
-            .open_asks(None, Some(id), WORKSTREAM_ASKS + 1)
-            .map_err(refusal)?;
+            .open_requests(Some(&workstream.project_ref), 200)
+            .map_err(refusal)?
+            .into_iter()
+            .filter(|r| r.workstream_id.as_ref() == Some(id))
+            .collect();
         let mut decisions = self
             .ctx
             .ports()
             .decisions_of_workstream(id, WORKSTREAM_ASKS + 1)
             .map_err(refusal)?;
-        let truncated = asks.len() > WORKSTREAM_ASKS || decisions.len() > WORKSTREAM_ASKS;
-        asks.truncate(WORKSTREAM_ASKS);
+        let truncated = requests.len() > WORKSTREAM_ASKS || decisions.len() > WORKSTREAM_ASKS;
+        requests.truncate(WORKSTREAM_ASKS);
         decisions.truncate(WORKSTREAM_ASKS);
         let eta = self
             .ctx
@@ -264,11 +255,11 @@ impl Area {
             WorkstreamState::Done => {
                 format!("Done: its latest claim passed every done-when check (claims_list with workstreamId {}).", workstream.workstream_id)
             }
-            _ => "Open asks are answered with asks_list and inbox_reply.".into(),
+            _ => "Its open requests (a secret to enter, a command to approve) are answered in the project's chat.".into(),
         };
         Ok(WorkstreamGetOutput {
             workstream,
-            asks: List::unchecked(asks),
+            requests: List::unchecked(requests),
             decisions: List::unchecked(decisions),
             eta,
             claims: claims.map(List::unchecked),

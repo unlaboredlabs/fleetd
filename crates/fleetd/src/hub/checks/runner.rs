@@ -1,14 +1,13 @@
 //! Runs one done-when check and says pass, fail or error (could not run), with evidence. `cmd` runs on the node,
-//! `http` and the GitHub checks on the hub, `judge` through a review task, `human` through a do-ask.
+//! `http` and the GitHub checks on the hub, `judge` through a review task, `human` from the decision the lead logged after
+//! asking in chat.
 use super::github::{GhError, GitHub};
 use super::judges::{JudgeInput, Judges};
-use super::ports::{HumanAsk, Ports};
+use super::ports::Ports;
 use super::{units, utf16_prefix, utf16_suffix};
 use crate::clock::Clock;
-use crate::hub::store::{EventLog, WaitInput};
-use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectRef};
-use fleetd_contracts::ledger::{AskId, CheckSpec, Workstream, WorkstreamId};
+use fleetd_contracts::ledger::{CheckSpec, Workstream, WorkstreamId};
 use fleetd_contracts::prim::{Count, Text};
 use fleetd_contracts::verification::{CheckOutcome, CheckResult, CheckResultRanBy, ClaimId};
 use regex::Regex;
@@ -18,8 +17,13 @@ use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 pub const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
-/// Recorded as the filer of `human` check asks.
+/// Recorded as the source of what the claims area writes.
 pub const CLAIMS_BY: &str = "hub:claims";
+
+/// The decision a `human` check reads: `done.<index>`, the check's place in the brief's doneWhen.
+pub fn human_check_key(index: u32) -> String {
+    format!("done.{index}")
+}
 const EVIDENCE_MAX: usize = 2000;
 
 pub struct CheckContext<'a> {
@@ -248,7 +252,6 @@ pub struct CheckRunner {
     github: Arc<GitHub>,
     judges: Arc<Judges>,
     ports: Arc<dyn Ports>,
-    events: Arc<EventLog>,
     clock: Arc<dyn Clock>,
     http: reqwest::Client,
     time: std::sync::OnceLock<crate::hub::time::TimeSink>,
@@ -259,14 +262,12 @@ impl CheckRunner {
         github: Arc<GitHub>,
         judges: Arc<Judges>,
         ports: Arc<dyn Ports>,
-        events: Arc<EventLog>,
         clock: Arc<dyn Clock>,
     ) -> Self {
         Self {
             github,
             judges,
             ports,
-            events,
             clock,
             http: reqwest::Client::new(),
             time: std::sync::OnceLock::new(),
@@ -613,81 +614,43 @@ impl CheckRunner {
         result.unwrap_or_else(|e: GhError| verdict(CheckOutcome::Error, e.message))
     }
 
-    /// Waits for the human's answer to `ask_id`, read off the decision its answer records.
-    async fn answer_to(&self, cursor: i64, ask_id: &AskId) -> String {
-        let mut after = cursor;
-        loop {
-            let input = WaitInput {
-                cursor: Some(after),
-                types: Some(vec![HubEventType::DecisionRecorded]),
-                machine_id: None,
-                timeout_sec: 3600,
-            };
-            let Ok(page) = self.events.wait(input).await else {
-                continue;
-            };
-            after = page.cursor;
-            let answered = page.events.iter().any(|e| {
-                e.data
-                    .as_ref()
-                    .and_then(|d| d.get("askId"))
-                    .and_then(|v| v.as_str())
-                    == Some(ask_id.as_str())
-            });
-            if answered && let Some(value) = self.ports.ask_answer(ask_id) {
-                return value;
-            }
-        }
-    }
-
-    async fn human(&self, ctx: &CheckContext<'_>, index: u32, question: &str) -> Verdict {
+    /// A `human` check: the lead asks the question in chat and logs the person's answer as the decision
+    /// `done.<index>` on the workstream. Only an answer given for the brief as it stands counts: one logged before its
+    /// latest freeze or amend may be about another check under the same index.
+    fn human(&self, ctx: &CheckContext<'_>, index: u32, question: &str) -> Verdict {
         let w = ctx.workstream;
-        // One ask per claim, so an earlier answer never stands in for a fresh look.
-        let key = format!(
-            "{}.{}.done-{index}",
-            w.workstream_id.as_str().to_lowercase(),
-            ctx.claim_id.as_str().to_lowercase()
+        let key = human_check_key(index);
+        let ask_again = format!(
+            "ask the human in chat: \"{question}\", then log their answer with decide {{key: \"{key}\", value: \"yes\" or \"no\", workstreamId: \"{}\"}}",
+            w.workstream_id
         );
-        let cursor = self.events.head();
-        let ask = HumanAsk {
-            project_ref: w.project_ref.clone(),
-            workstream_id: w.workstream_id.clone(),
-            key,
-            text: utf16_prefix(
-                &format!(
-                    "Check done:{index} of {} ({}): {question}",
-                    w.workstream_id, w.title
+        let frozen = self.ports.brief_frozen_ms(&w.workstream_id);
+        let Some(answer) = self.ports.human_confirmation(&w.workstream_id, &key) else {
+            return verdict(
+                CheckOutcome::Fail,
+                utf16_prefix(&format!("not confirmed yet: {ask_again}"), EVIDENCE_MAX),
+            );
+        };
+        if frozen.is_some_and(|at| answer.at_ms < at) {
+            return verdict(
+                CheckOutcome::Fail,
+                utf16_prefix(
+                    &format!("the answer in {} predates the brief's latest version: {ask_again}", answer.decision_id),
+                    EVIDENCE_MAX,
                 ),
-                500,
-            )
-            .to_owned(),
-            step_text: question.to_owned(),
-            step_expect: "reply \"done\" when it holds; anything else fails the check".into(),
-            blocks: format!("{} being marked done", w.workstream_id),
-        };
-        let filed = match self.ports.file_human_ask(ask).await {
-            Ok(filed) => filed,
-            Err(e) => {
-                return verdict(
-                    CheckOutcome::Error,
-                    format!("could not ask the human: {}", e.message),
-                );
-            }
-        };
-        let value = match filed.auto_value {
-            Some(v) => v,
-            None => self.answer_to(cursor, &filed.ask_id).await,
-        };
-        if value.trim().to_lowercase() == "done" {
+            );
+        }
+        let value = answer.value.trim().to_lowercase();
+        if matches!(value.as_str(), "yes" | "done" | "pass") {
             verdict(
                 CheckOutcome::Pass,
-                format!("the human answered done to {}", filed.ask_id),
+                format!("the human said yes in chat ({})", answer.decision_id),
             )
         } else {
             verdict(
                 CheckOutcome::Fail,
                 utf16_prefix(
-                    &format!("the human answered \"{value}\" to {}", filed.ask_id),
+                    &format!("the human said \"{}\" in chat ({})", answer.value, answer.decision_id),
                     EVIDENCE_MAX,
                 ),
             )
@@ -746,7 +709,7 @@ impl CheckRunner {
                     exit_code: None,
                 }
             }
-            CheckSpec::Human { question } => self.human(ctx, check_index, question).await,
+            CheckSpec::Human { question } => self.human(ctx, check_index, question),
             _ => self.own(&scope, spec).await.expect("own check"),
         };
         CheckResult {

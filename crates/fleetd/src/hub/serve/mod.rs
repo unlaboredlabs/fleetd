@@ -5,7 +5,7 @@ use crate::hub::api::{self, Hub, HubConfig, Listen, Registry, Shutdown};
 use crate::hub::auth::Auth;
 use crate::hub::digests::HumanDigests;
 use crate::hub::http;
-use crate::hub::ledger::{Asks, Decisions, Inbox};
+use crate::hub::ledger::Decisions;
 use crate::hub::store::{EventLog, HubDb, HubStore, resolve_hub_home};
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -223,10 +223,9 @@ pub fn build_on(
     )?;
     let auth = Arc::new(Auth::new(db.clone(), clock.clone()));
     let decisions = Arc::new(Decisions::new(db.clone(), events.clone(), clock.clone()));
-    let asks = Arc::new(Asks::new(db.clone(), events.clone(), clock.clone()));
-    let inbox = Inbox::new(db.clone(), events.clone(), clock.clone());
+    let requests = crate::hub::approvals::store::Requests::new(db.clone());
     let digests = Arc::new(HumanDigests::new(
-        asks.clone(),
+        requests.clone(),
         decisions.clone(),
         store.clone(),
         events.clone(),
@@ -264,7 +263,7 @@ pub fn build_on(
     );
     let queue =
         crate::hub::queue::WriteQueue::from_config(&config, &db, &events, &clock, &executors);
-    let ops = crate::hub::usage::wire::build(&config, clock.clone());
+    let ops = crate::hub::usage::wire::build(&config, clock.clone(), requests.clone());
     let wakes = crate::hub::wakes::Wakes::new(
         db.clone(),
         queue.clone(),
@@ -336,9 +335,8 @@ pub fn build_on(
             executors: &executors,
             queue: &queue,
             commands: &node_commands,
-            asks: &asks,
+            requests: &requests,
             decisions: &decisions,
-            inbox: &inbox,
             lead_calls: &lead_calls,
             digests: &digests,
             claims: &checks.claims,
@@ -361,8 +359,6 @@ pub fn build_on(
         events,
         auth,
         decisions,
-        asks,
-        inbox,
         digests,
         executors,
         node_commands,
@@ -402,7 +398,6 @@ pub fn build_on(
     hub.slots.set_time(hub.time.sink());
     hub.leads.intake.set_time(hub.time.sink());
     crate::hub::train::calls::register_lead_calls(&hub);
-    crate::hub::checks::hub_ports::wire_misfiled(&hub);
     crate::hub::tasks::wire::wire(&hub, &hub_task_ports);
     wire::wire(&hub);
     crate::hub::approvals::tools::register_lead_calls(&hub);
@@ -416,9 +411,6 @@ pub fn build_on(
 pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>> {
     let _tools = tools;
     let mut loops = Vec::new();
-    if let Err(error) = hub.asks.start() {
-        tracing::error!(%error, "re-arming the collecting batch failed");
-    }
     let shutdown = hub.shutdown.clone();
     loops.push(tokio::spawn(
         hub.digests

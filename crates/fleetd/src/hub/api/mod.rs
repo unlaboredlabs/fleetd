@@ -116,8 +116,6 @@ pub struct Hub {
     pub events: Arc<EventLog>,
     pub auth: Arc<Auth>,
     pub decisions: Arc<crate::hub::ledger::Decisions>,
-    pub asks: Arc<crate::hub::ledger::Asks>,
-    pub inbox: Arc<crate::hub::ledger::Inbox>,
     pub digests: Arc<crate::hub::digests::HumanDigests>,
     pub executors: Arc<crate::hub::executor::Executors>,
     pub node_commands: Arc<crate::hub::link::NodeCommands>,

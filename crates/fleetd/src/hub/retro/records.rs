@@ -49,7 +49,7 @@ pub struct StoredProposal {
 }
 
 /// States in which a proposal still holds its playbook: no other change to it may start.
-pub const HOLDING: [&str; 3] = ["pending", "asked", "measuring"];
+pub const HOLDING: [&str; 2] = ["pending", "measuring"];
 
 fn n_of(id: &str) -> i64 {
     id.get(1..).and_then(|n| n.parse().ok()).unwrap_or(0)
@@ -146,8 +146,8 @@ impl RetroRecords<'_> {
             )?;
             proposal.proposal_id = format!("R{n}");
             c.execute(
-                "UPDATE retro_proposals SET state = ?, ask_id = ?, due_ms = ?, data = ? WHERE n = ?",
-                params![proposal.state, proposal.ask_id, Option::<i64>::None, json(&proposal), n],
+                "UPDATE retro_proposals SET state = ?, due_ms = ?, data = ? WHERE n = ?",
+                params![proposal.state, Option::<i64>::None, json(&proposal), n],
             )?;
             Ok(proposal)
         })
@@ -166,8 +166,8 @@ impl RetroRecords<'_> {
                 })
                 .flatten();
             c.execute(
-                "UPDATE retro_proposals SET state = ?, ask_id = ?, due_ms = ?, data = ? WHERE n = ?",
-                params![proposal.state, proposal.ask_id, due, json(proposal), n],
+                "UPDATE retro_proposals SET state = ?, due_ms = ?, data = ? WHERE n = ?",
+                params![proposal.state, due, json(proposal), n],
             )?;
             if let Some(prev) = previous_override {
                 c.execute(
@@ -176,17 +176,6 @@ impl RetroRecords<'_> {
                 )?;
             }
             Ok(())
-        })
-    }
-
-    pub fn by_ask(&self, ask_id: &str) -> Option<StoredProposal> {
-        q(self.0, |c| {
-            c.query_row(
-                "SELECT * FROM retro_proposals WHERE ask_id = ? ORDER BY n DESC LIMIT 1",
-                [ask_id],
-                stored,
-            )
-            .optional()
         })
     }
 

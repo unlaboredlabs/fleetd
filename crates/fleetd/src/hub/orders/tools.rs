@@ -103,13 +103,16 @@ async fn order_get(
         _ => return Err(unknown_order(id.as_str())),
     };
     let ports = hub.leads.ctx.ports();
-    let mut asks = ports
-        .open_asks(None, Some(id), ORDER_ASKS + 1)
-        .unwrap_or_default();
+    let mut requests: Vec<_> = ports
+        .open_requests(Some(&w.project_ref), 200)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|r| r.workstream_id.as_ref() == Some(id))
+        .collect();
     let changes = super::project_changes(&hub, &w.project_ref);
-    let joined = super::join(&hub, &w, &changes, asks.len());
-    let mut truncated = joined.truncated || asks.len() > ORDER_ASKS;
-    asks.truncate(ORDER_ASKS);
+    let joined = super::join(&hub, &w, &changes, requests.len());
+    let mut truncated = joined.truncated || requests.len() > ORDER_ASKS;
+    requests.truncate(ORDER_ASKS);
     let claims = hub
         .leads
         .ctx
@@ -136,7 +139,7 @@ async fn order_get(
         order: joined.card,
         lead,
         done_lanes: List::unchecked(joined.done),
-        asks: List::unchecked(asks),
+        requests: List::unchecked(requests),
         claims: claims.map(List::unchecked),
         next: Some("Add to it with order_note; stop it with order_stop.".into()),
         truncated: truncated.then_some(true),

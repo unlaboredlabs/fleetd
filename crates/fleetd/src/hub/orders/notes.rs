@@ -295,19 +295,13 @@ pub async fn stop(
             Err(error) => tracing::warn!(task = %task.task_id, ?error, "order_stop: cancel failed"),
         }
     }
-    for ask in hub
-        .leads
-        .ctx
-        .ports()
-        .open_asks(None, Some(&id), 200)
-        .unwrap_or_default()
-    {
-        let _ = hub
-            .leads
-            .ctx
-            .ports()
-            .withdraw_ask(&ask.ask_id, &format!("{id} was stopped."));
-    }
+    let project = crate::hub::usage::ports::ProjectRef {
+        machine_id: stored.workstream.project_ref.machine_id.to_string(),
+        project_id: stored.workstream.project_ref.project_id.to_string(),
+    };
+    hub.approvals
+        .close_open(&project, Some(id.as_str()), &format!("{id} was stopped"))
+        .await;
     let at = iso_ms(now_ms(hub.clock.as_ref()));
     stored.workstream.state = WorkstreamState::Stopped;
     stored.workstream.headline = Some(Headline::unchecked("Stopped by you"));

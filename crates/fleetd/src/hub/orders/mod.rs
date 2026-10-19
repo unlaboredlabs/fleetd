@@ -531,17 +531,17 @@ pub fn order_tasks(hub: &Hub, id: &WorkstreamId) -> Vec<Task> {
         .unwrap_or_default()
 }
 
-/// Every open ask, counted per workstream.
-pub fn open_asks_by_order(hub: &Hub) -> HashMap<WorkstreamId, usize> {
+/// Every open secret or approval request, counted per workstream.
+pub fn open_requests_by_order(hub: &Hub) -> HashMap<WorkstreamId, usize> {
     let mut out = HashMap::new();
-    let asks = hub
+    let requests = hub
         .leads
         .ctx
         .ports()
-        .open_asks(None, None, 500)
+        .open_requests(None, 500)
         .unwrap_or_default();
-    for ask in asks {
-        if let Some(w) = ask.workstream_id {
+    for request in requests {
+        if let Some(w) = request.workstream_id {
             *out.entry(w).or_insert(0) += 1;
         }
     }
@@ -587,7 +587,7 @@ pub fn join(hub: &Hub, w: &Workstream, changes: &[Change], open_asks: usize) -> 
 
 /// Cards for these orders, sorted for the board, and the trains of their repos.
 pub fn board(hub: &Hub, orders: &[Workstream]) -> (Vec<OrderCard>, Vec<TrainLive>, bool) {
-    let asks = open_asks_by_order(hub);
+    let asks = open_requests_by_order(hub);
     let mut changes: HashMap<ProjectRef, Vec<Change>> = HashMap::new();
     let mut cards = Vec::new();
     let mut truncated = orders.len() > BOARD_ORDERS;

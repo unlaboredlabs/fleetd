@@ -17,34 +17,28 @@ pub const NODE_SOCKET_PATH: &str = "node/node.sock";
 const SERVES_FIX: &str =
     "say what this serves: --serves done:<n> | issue:<ref> | defect:<text> | ask:<id>";
 
-pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>' | --file <path>) [--amend <A>]
-             freeze the brief of a draft workstream and start it
-  ask --key <k> --class <product|money|credential|irreversible> --text "<short question>"
-      [--context "<1-2 lines of background>"] --option '<key>|<Label>|<what happens if picked>'
-      --option '...' (2 to 6) --rec <option key> --why "<one line: why you recommend it>"
-      [--blocks "<step>"] [--proceeded] [--workstream <W>]
-             the human sees the labels and consequences as choices; keys are only recorded
-  ask --kind do --key <k> --class <c> --text <t> --step '<json>' [--step '<json>' ...]
-      [--verify '<check json>']
-             a step is {"text","where":"<machine>|browser","command"?,"expect"?}; --verify is a
-             cmd or http check fleetd runs once the human ticks it done (a failure reopens it)
-             ask the human; answers already in the decision log come back at once
-  ask --kind secret --key <k> --sink env:<machine>:<path>|file:<machine>:<path> [--env-name <N>]
-      --text <t> [--class credential]
-             the human enters it in the desktop app, sealed to that machine; an env: sink writes the line
-             <N>=<value> (N defaults to the key uppercased, . and - as _). You get its fingerprint, never the value
+pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>' | --file <path>) [--amend <decision key>]
+             freeze the brief of a draft workstream and start it; --amend changes a frozen brief once the
+             human said yes in chat and you logged it with decide
+  request secret --key <k> --sink env:<machine>:<path>|file:<machine>:<path> [--env-name <N>]
+      --text <t> [--workstream <W>]
+             the human enters it in a masked field in the project's chat, sealed to that machine; an env:
+             sink writes the line <N>=<value> (N defaults to the key uppercased, . and - as _). You get
+             its fingerprint in a wake, never the value
   gated run --class irreversible|money|credential --argv '<json array>' --reason <r> [--cwd <abs>]
       [--secret-env NAME=<secret key> ...] [--timeout <sec>] [--workstream <W>]
              a command the node runs exactly as stored, in the project workspace by default, only after
-             a human approves it; secrets come from the node's own sinks. The result arrives in a wake
-  ask withdraw <A> [--use <D>]
+             a human approves it in the project's chat; secrets come from the node's own sinks. The result
+             arrives in a wake
+  request withdraw <Q>
+             take back a secret request or a command approval the human said in chat is not needed
   decide --key <k> --value <v> [--why <w>] [--scope project|workstream] [--workstream <W>]
              log a decision you made yourself
   status set "<one line>" [--workstream <W>]
   decisions search "<query>"
   task spawn --workstream <W> --title <t> --prompt <p> [--kind write|read|review] [--areas a,b]
       [--model <m>] [--effort low|medium|high|max] [--tier S|M|L]
-      [--serves done:<n>|issue:<ref>|defect:<text>|ask:<A>] [--pr <url>] [--qa] [--item P<n>]
+      [--serves done:<n>|issue:<ref>|defect:<text>|decision:<key>] [--pr <url>] [--qa] [--item P<n>]
              delegate work to a subagent; writers need --areas and --serves and get their own
              branch; a review task needs --pr, and --qa marks it a QA run; --item links it to
              that plan item
@@ -93,7 +87,7 @@ pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>
 
 const LEAD_COMMANDS: &[&str] = &[
     "brief",
-    "ask",
+    "request",
     "decide",
     "status",
     "decisions",
@@ -129,14 +123,6 @@ const OPTIONS: &[(&str, Kind)] = &[
     ("key", Kind::Str),
     ("class", Kind::Str),
     ("text", Kind::Str),
-    ("rec", Kind::Str),
-    ("options", Kind::Str),
-    ("option", Kind::Multi),
-    ("context", Kind::Str),
-    ("step", Kind::Multi),
-    ("blocks", Kind::Str),
-    ("proceeded", Kind::Bool),
-    ("use", Kind::Str),
     ("value", Kind::Str),
     ("why", Kind::Str),
     ("scope", Kind::Str),
@@ -157,7 +143,6 @@ const OPTIONS: &[(&str, Kind)] = &[
     ("blocking", Kind::Str),
     ("non-blocking", Kind::Str),
     ("summary", Kind::Str),
-    ("verify", Kind::Str),
     ("sink", Kind::Str),
     ("env-name", Kind::Str),
     ("argv", Kind::Str),
@@ -312,122 +297,33 @@ pub fn parse_lead_args(
                 ("amend", s(v.str("amend"))),
             ])
         }
-        Some("ask") => {
-            if sub == Some("withdraw") {
-                only(&["use"])?;
-                if rest.len() != 1 {
-                    return Err("expected fleetd ask withdraw <A> [--use <D>]".into());
-                }
+        Some("request") => match sub {
+            Some("secret") if rest.is_empty() => {
+                only(&["key", "sink", "env-name", "text", "workstream"])?;
+                required(&["key", "sink", "text"])?;
                 defined(vec![
-                    ("op", s(Some("ask_withdraw"))),
-                    ("askId", s(Some(rest[0]))),
-                    ("use", s(v.str("use"))),
-                ])
-            } else {
-                if let Some(sub) = sub {
-                    return Err(format!("unexpected '{sub}': put the question in --text"));
-                }
-                only(&[
-                    "kind",
-                    "key",
-                    "class",
-                    "text",
-                    "rec",
-                    "why",
-                    "options",
-                    "option",
-                    "context",
-                    "step",
-                    "verify",
-                    "sink",
-                    "env-name",
-                    "blocks",
-                    "proceeded",
-                    "workstream",
-                ])?;
-                // A secret is a credential unless the lead says otherwise.
-                let class = v.str("class").or(if v.str("kind") == Some("secret") {
-                    Some("credential")
-                } else {
-                    None
-                });
-                for (flag, value) in [
-                    ("key", v.str("key")),
-                    ("class", class),
-                    ("text", v.str("text")),
-                ] {
-                    if value.is_none() {
-                        return Err(format!("--{flag} is required"));
-                    }
-                }
-                if v.str("kind") == Some("secret") && v.str("sink").is_none() {
-                    return Err(
-                        "a secret ask needs --sink env:<machine>:<path> or file:<machine>:<path>"
-                            .into(),
-                    );
-                }
-                let verify = v
-                    .str("verify")
-                    .map(|text| parse_json("--verify", text))
-                    .transpose()?;
-                // `key|Label|what happens`: the label and consequence may hold commas; only the first two '|' split.
-                let mut options: Vec<Value> = v
-                    .multi("option")
-                    .iter()
-                    .map(|o| {
-                        let mut parts = o.splitn(3, '|').map(str::trim);
-                        defined(vec![
-                            ("key", parts.next().map(|k| Value::String(k.to_owned()))),
-                            (
-                                "label",
-                                parts
-                                    .next()
-                                    .filter(|l| !l.is_empty())
-                                    .map(|l| Value::String(l.to_owned())),
-                            ),
-                            (
-                                "consequence",
-                                parts
-                                    .next()
-                                    .filter(|c| !c.is_empty())
-                                    .map(|c| Value::String(c.to_owned())),
-                            ),
-                        ])
-                    })
-                    .collect();
-                if let Some(bare) = v.str("options") {
-                    options.extend(split_list(bare));
-                }
-                let mut steps = Vec::new();
-                for (i, step) in v.multi("step").iter().enumerate() {
-                    steps.push(parse_json(&format!("--step {}", i + 1), step)?);
-                }
-                defined(vec![
-                    ("op", s(Some("ask"))),
-                    ("kind", s(v.str("kind"))),
+                    ("op", s(Some("request_secret"))),
                     ("key", s(v.str("key"))),
-                    ("class", s(class)),
-                    ("text", s(v.str("text"))),
-                    ("context", s(v.str("context"))),
-                    ("recommendation", s(v.str("rec"))),
-                    ("recommendationWhy", s(v.str("why"))),
-                    (
-                        "options",
-                        (!options.is_empty()).then_some(Value::Array(options)),
-                    ),
-                    ("steps", (!steps.is_empty()).then_some(Value::Array(steps))),
-                    ("verify", verify),
                     ("sink", s(v.str("sink"))),
                     ("envName", s(v.str("env-name"))),
-                    ("blocks", s(v.str("blocks"))),
-                    (
-                        "proceededOnRec",
-                        v.flag("proceeded").then_some(Value::Bool(true)),
-                    ),
+                    ("text", s(v.str("text"))),
                     ("workstreamId", s(v.str("workstream"))),
                 ])
             }
-        }
+            Some("withdraw") if rest.len() == 1 => {
+                only(&[])?;
+                defined(vec![
+                    ("op", s(Some("request_withdraw"))),
+                    ("requestId", s(Some(rest[0]))),
+                ])
+            }
+            _ => {
+                return Err(
+                    "expected fleetd request secret --key <k> --sink <sink> --text <t> or fleetd request withdraw <Q>"
+                        .into(),
+                );
+            }
+        },
         Some("decide") => {
             if let Some(sub) = sub {
                 return Err(format!("unexpected '{sub}': give the value with --value"));
@@ -1261,46 +1157,20 @@ pub fn format_result(result: &Value) -> String {
                 short(st(result, "briefHash")),
                 st(result, "state")
             ));
-            next = "carry on with the workstream. Changing this brief later needs a human-answered ask and --amend.".into();
+            next = "carry on with the workstream. Changing this brief later needs the human's yes in chat, logged with decide, and --amend <its key>.".into();
         }
-        "ask" => {
-            let decision = opt(result, "decision");
-            let state = st(result, "state");
-            let ask_id = st(result, "askId");
-            if let (true, Some(decision)) = (state == "auto", decision) {
-                lines.push(format!(
-                    "Already decided, so not asked: {}.",
-                    decision_line(decision)
-                ));
-                next = "use this answer and do not ask again.".into();
-            } else if state != "open" {
-                lines.push(format!("{ask_id} is {state}."));
-                if let Some(decision) = decision {
-                    lines.push(format!("Answer: {}.", decision_line(decision)));
-                }
-                next = "carry on.".into();
-            } else {
-                lines.push(if result.get("attached") == Some(&Value::Bool(true)) {
-                    format!("An ask with this key is already open as {ask_id}; yours was attached to it.")
-                } else {
-                    format!("Filed {ask_id}. It goes to the human in the next batch.")
-                });
-                let candidates = arr(result, "candidates");
-                if !candidates.is_empty() {
-                    lines.push("Decisions that may already answer it:".into());
-                    lines.extend(candidates.iter().map(|d| format!("  {}", decision_line(d))));
-                    next = format!(
-                        "if one of these answers it, run fleetd ask withdraw {ask_id} --use <D>; otherwise carry on without waiting. The answer arrives in a later wake."
-                    );
-                } else {
-                    next = "carry on without waiting; the answer arrives in a later wake.".into();
-                }
-            }
+        "request_secret" => {
+            lines.push(format!(
+                "{} {}: the human enters it in the project's chat; the value never reaches you.",
+                st(result, "requestId"),
+                st(result, "state")
+            ));
+            next = "carry on with other work; its fingerprint arrives in a wake.".into();
         }
-        "ask_withdraw" => {
+        "request_withdraw" => {
             lines.push(format!(
                 "{} is {}.",
-                st(result, "askId"),
+                st(result, "requestId"),
                 st(result, "state")
             ));
             next = "carry on.".into();
@@ -1317,7 +1187,7 @@ pub fn format_result(result: &Value) -> String {
             let decisions = arr(result, "decisions");
             if decisions.is_empty() {
                 lines.push("No decisions match.".into());
-                next = "decide it yourself and log it with fleetd decide; use fleetd ask only for product, money, credential or irreversible calls.".into();
+                next = "decide it yourself and log it with fleetd decide; ask the human in chat only for product, money, credential or irreversible calls.".into();
             } else {
                 lines.extend(decisions.iter().map(decision_line));
                 next = "use these answers; do not ask about these keys again.".into();
@@ -1543,8 +1413,8 @@ pub fn format_result(result: &Value) -> String {
         }
         "gated_run" => {
             lines.push(format!(
-                "{} {}: the command is stored and waits for a human to approve it; nothing runs before that.",
-                st(result, "askId"),
+                "{} {}: the command is stored and waits for a human to approve it in the chat; nothing runs before that.",
+                st(result, "requestId"),
                 st(result, "state")
             ));
             next =
@@ -1573,7 +1443,7 @@ pub struct LeadDeps<'a> {
     pub read_file: &'a dyn Fn(&str) -> std::io::Result<String>,
 }
 
-/// `fleetd brief|ask|decide|status|decisions|task|claim|review|change|gated|workstream|inventory …`.
+/// `fleetd brief|request|decide|status|decisions|task|claim|review|change|gated|workstream|inventory …`.
 pub fn lead_command(argv: &[String], deps: &LeadDeps) -> CliResult {
     let call = match parse_lead_args(argv, deps.read_file) {
         Ok(call) => call,
@@ -1711,61 +1581,12 @@ mod tests {
 
     #[test]
     fn fills_the_contract_defaults() {
-        let ask = parse(&[
-            "ask",
-            "--key",
-            "api.health.path",
-            "--class",
-            "product",
-            "--text",
-            "Path?",
-            "--context",
-            "The load balancer probes it.",
-            "--rec",
-            "/healthz",
-            "--why",
-            "The probe expects it.",
-            "--option",
-            "/healthz|/healthz|Matches the probe, no config change.",
-            "--option",
-            "/health | Shorter | The probe config changes too, then it works|",
-        ])
-        .unwrap();
-        assert_eq!(ask["kind"], "decide");
-        assert_eq!(ask["blocks"], "nothing");
-        assert_eq!(ask["proceededOnRec"], false);
-        assert_eq!(ask["context"], "The load balancer probes it.");
-        assert_eq!(ask["recommendationWhy"], "The probe expects it.");
-        assert_eq!(
-            ask["options"],
-            json!([
-                { "key": "/healthz", "label": "/healthz", "consequence": "Matches the probe, no config change." },
-                { "key": "/health", "label": "Shorter", "consequence": "The probe config changes too, then it works|" }
-            ])
-        );
-        // The old bare form still parses; the hub then refuses it with the command to send instead.
-        let bare = parse(&[
-            "ask",
-            "--key",
-            "a.b",
-            "--class",
-            "product",
-            "--text",
-            "t",
-            "--rec",
-            "x",
-            "--options",
-            "x, y",
-        ])
-        .unwrap();
-        assert_eq!(bare["options"], json!([{ "key": "x" }, { "key": "y" }]));
         assert_eq!(
             parse(&["decide", "--key", "a.b", "--value", "v"]).unwrap()["scope"],
             "workstream"
         );
         let secret = parse(&[
-            "ask",
-            "--kind",
+            "request",
             "secret",
             "--key",
             "stripe.test_key",
@@ -1775,7 +1596,12 @@ mod tests {
             "t",
         ])
         .unwrap();
-        assert_eq!(secret["class"], "credential");
+        assert_eq!(secret["op"], "request_secret");
+        assert_eq!(secret["sink"]["kind"], "env");
+        assert_eq!(
+            parse(&["request", "withdraw", "Q3"]).unwrap(),
+            json!({ "op": "request_withdraw", "requestId": "Q3" })
+        );
         let gated = parse(&[
             "gated",
             "run",
@@ -1797,78 +1623,19 @@ mod tests {
     }
 
     #[test]
-    fn takes_a_do_asks_steps_and_verify_as_json() {
-        let step1 = json!({ "text": "Create the DNS record", "where": "browser" });
-        let step2 = json!({ "text": "Reload", "where": "lab-a", "command": "systemctl --user reload caddy", "expect": "no output" });
-        let verify = json!({ "type": "http", "url": "https://example.com/health", "status": 200 });
-        let call = parse(&[
-            "ask",
-            "--kind",
-            "do",
-            "--key",
-            "dns.health",
-            "--class",
-            "irreversible",
-            "--text",
-            "Add DNS",
-            "--step",
-            &step1.to_string(),
-            "--step",
-            &step2.to_string(),
-            "--verify",
-            &verify.to_string(),
-        ])
-        .unwrap();
-        assert_eq!(call["steps"], json!([step1, step2]));
-        assert_eq!(call["verify"]["url"], "https://example.com/health");
-        let base = [
-            "ask", "--kind", "do", "--key", "a.b", "--class", "product", "--text", "t",
-        ];
-        let with = |extra: &[&str]| parse(&[&base[..], extra].concat());
-        assert!(
-            with(&["--step", "{text"])
-                .unwrap_err()
-                .starts_with("--step 1 is not valid JSON (")
-        );
-        assert!(
-            with(&["--step", &step1.to_string(), "--step", "nope"])
-                .unwrap_err()
-                .starts_with("--step 2 is not valid JSON (")
-        );
-        assert!(
-            with(&["--step", &step1.to_string(), "--verify", "{"])
-                .unwrap_err()
-                .starts_with("--verify is not valid JSON (")
-        );
-        // The contract's own checks: a do ask needs a step, and a step command takes no <placeholders>.
-        assert!(with(&[]).unwrap_err().starts_with("invalid input: "));
-        let placeholder =
-            json!({ "text": "x", "where": "browser", "command": "login <token>" }).to_string();
-        assert!(
-            with(&["--step", &placeholder])
-                .unwrap_err()
-                .starts_with("invalid input: ")
-        );
-    }
-
-    #[test]
     fn explains_usage_errors_in_one_line() {
         let cases: &[(&[&str], &str)] = &[
             (
-                &["ask", "--class", "product", "--text", "t", "--rec", "r"],
-                "--key is required",
+                &["request", "secret", "--key", "a.b", "--text", "t"],
+                "--sink is required",
             ),
             (
-                &["ask", "--key", "a.b", "--text", "t", "--rec", "r"],
-                "--class is required",
+                &["request", "secret", "--key", "a.b", "--sink", "env:m:/e", "--text", "t", "--value", "v"],
+                "--value does not apply to fleetd request",
             ),
             (
-                &["ask", "--kind", "secret", "--key", "a.b", "--text", "t"],
-                "a secret ask needs --sink env:<machine>:<path> or file:<machine>:<path>",
-            ),
-            (
-                &["ask", "--key", "a.b", "--value", "v"],
-                "--value does not apply to fleetd ask",
+                &["request", "withdraw"],
+                "expected fleetd request secret --key <k> --sink <sink> --text <t> or fleetd request withdraw <Q>",
             ),
             (
                 &["brief", "create", "--workstream", "W1"],
@@ -1954,13 +1721,13 @@ mod tests {
             assert_eq!(parse(args).unwrap_err(), *expected, "{args:?}");
         }
         assert!(
-            parse(&["ask", "--bogus"])
+            parse(&["request", "secret", "--bogus"])
                 .unwrap_err()
                 .starts_with("Unknown option '--bogus'")
         );
         assert!(
             parse(&[
-                "ask", "--key", "API.Path", "--class", "product", "--text", "t", "--rec", "r"
+                "request", "secret", "--key", "API.Path", "--sink", "env:m:/e", "--text", "t"
             ])
             .unwrap_err()
             .starts_with("invalid input: ")
@@ -2148,27 +1915,26 @@ mod tests {
     #[test]
     fn exit_codes() {
         let ask = [
-            "ask",
+            "request",
+            "secret",
             "--key",
-            "api.health.path",
-            "--class",
-            "product",
+            "stripe.test_key",
+            "--sink",
+            "env:lab-a:/srv/app/.env",
             "--text",
-            "Path?",
-            "--rec",
-            "/healthz",
+            "The test key",
         ];
-        let filed = command(&ask, Ok(json!({ "t": "lead_result", "id": "x", "result": { "op": "ask", "state": "open", "askId": "A1" } }))).0;
+        let filed = command(&ask, Ok(json!({ "t": "lead_result", "id": "x", "result": { "op": "request_secret", "state": "open", "requestId": "Q1" } }))).0;
         assert_eq!(
             filed,
-            CliResult { code: 0, stdout: "Filed A1. It goes to the human in the next batch.\nNext: carry on without waiting; the answer arrives in a later wake.\n".into(), stderr: String::new() }
+            CliResult { code: 0, stdout: "Q1 open: the human enters it in the project's chat; the value never reaches you.\nNext: carry on with other work; its fingerprint arrives in a wake.\n".into(), stderr: String::new() }
         );
-        let refused = command(&ask, Ok(json!({ "error": { "code": "invalid", "message": "naming is not a class you ask about", "fix": "decide this yourself" } }))).0;
+        let refused = command(&ask, Ok(json!({ "error": { "code": "invalid", "message": "no machine lab-a", "fix": "name a sink on a machine of this project" } }))).0;
         assert_eq!(
             refused,
             CliResult::err(
                 3,
-                "Refused: naming is not a class you ask about\nNext: decide this yourself\n".into()
+                "Refused: no machine lab-a\nNext: name a sink on a machine of this project\n".into()
             )
         );
         let offline = command(&ask, Ok(json!({ "error": { "code": "machine_offline", "message": "fleetd hub unreachable" } }))).0;

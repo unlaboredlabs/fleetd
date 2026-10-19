@@ -1,14 +1,14 @@
 //! The retro: fleetd improving its playbooks from evidence without moving goalposts. One `claude -p` turn reads the
 //! window's incidents and the current playbooks and proposes changes; the hub validates each and classifies it by
 //! the fields it touches. Wording changes apply as a new override file and are measured over their window against
-//! the window before: kept when their metric went down and no guarded metric went up, reverted otherwise. Gate
-//! changes go to a person as one batch of asks each Monday. Nothing applies until the global Decision
-//! `policy.retro.apply` is true; until then every proposal is only "suggested".
+//! the window before: kept when their metric went down and no guarded metric went up, reverted otherwise. A gate
+//! change waits, pending, until a person records the global Decision [`gate_key`] as apply or reject. Nothing applies
+//! until the global Decision `policy.retro.apply` is true; until then every proposal is only "suggested".
 use super::diff::apply_unified_diff;
 use super::metrics::{DAY_MS, RetroWork, judge, snapshot};
 use super::records::{HOLDING, RetroRecords, SqlRunner, StoredProposal};
 use super::types::{
-    DroppedChange, METRIC_CLASSES, OrchestratorRun, PLAYBOOK_ASK_PREFIX, PLAYBOOK_NAMES,
+    DroppedChange, METRIC_CLASSES, OrchestratorRun, PLAYBOOK_KEY_PREFIX, PLAYBOOK_NAMES,
     RetroProposal, RetroRun,
 };
 use super::validate::{Context, PlaybookParser, Validated, validate_answer};
@@ -68,10 +68,6 @@ pub trait RetroLedger: Send + Sync {
     fn global_value(&self, key: &str) -> BoxFut<'_, Option<String>>;
     /// A decision's value by id.
     fn decision_value(&self, decision_id: &str) -> BoxFut<'_, Option<String>>;
-    /// An ask's (state, decisionId).
-    fn ask_state(&self, ask_id: &str) -> BoxFut<'_, Option<(String, Option<String>)>>;
-    /// Asks.create for a hub-wide decide ask; returns its id or the ledger's message.
-    fn create_ask(&self, input: Value, by: &str) -> BoxFut<'_, Result<String, String>>;
     fn incident(&self, incident_id: &str) -> BoxFut<'_, Option<Value>>;
     fn incident_count(&self, class: &str, since_ms: i64) -> BoxFut<'_, u64>;
     /// Incidents.record with `{ class, projectRef, evidence }`.
@@ -154,11 +150,12 @@ pub fn render_retro_prompt(
     )
 }
 
-/// `playbook.<name>.<sha256(diff)[..10]>`.
-pub fn gate_ask_key(proposal: &RetroProposal) -> String {
+/// `playbook.<name>.<sha256(diff)[..10]>`: the global Decision a person records (apply or reject) to settle a gate
+/// change.
+pub fn gate_key(proposal: &RetroProposal) -> String {
     let hash = Sha256::digest(proposal.diff.as_bytes());
     let hex: String = hash.iter().map(|b| format!("{b:02x}")).collect();
-    format!("{PLAYBOOK_ASK_PREFIX}{}.{}", proposal.playbook, &hex[..10])
+    format!("{PLAYBOOK_KEY_PREFIX}{}.{}", proposal.playbook, &hex[..10])
 }
 
 /// The first Monday 09:00 in `tz` strictly after `after_ms` (cron `0 9 * * 1`).
@@ -305,61 +302,41 @@ impl Retro {
         }
     }
 
-    /// A person's answer to a gate ask: "apply" applies it; anything else, or a withdrawal, rejects it.
-    async fn on_gate_answer(
-        &self,
-        stored: StoredProposal,
-        decision: Option<String>,
-        withdrawn: bool,
-    ) -> RetroProposal {
-        let proposal = stored.proposal;
-        if proposal.state != "asked" {
+    /// A person's decision on a pending gate change: "apply" applies it; anything else rejects it.
+    async fn on_gate_decision(&self, proposal: RetroProposal, decision: &str) -> RetroProposal {
+        if proposal.state != "pending" || proposal.kind != "gate" {
             return proposal;
         }
         let now = self.now_ms();
-        if !withdrawn
-            && decision
-                .as_deref()
-                .is_some_and(|d| d.trim().to_lowercase() == "apply")
-        {
+        if decision.trim().eq_ignore_ascii_case("apply") {
             return self.apply_gate(proposal, now).await;
         }
-        let note = if withdrawn {
-            "the ask was withdrawn".to_string()
-        } else {
-            clip(
-                &format!("answered \"{}\"", decision.unwrap_or_default()),
-                500,
-            )
-        };
         let rejected = RetroProposal {
             state: "rejected".into(),
-            note: Some(note),
+            note: Some(clip(&format!("decided \"{}\"", decision.trim()), 500)),
             ..proposal
         };
         self.records().put(&rejected, None);
         rejected
     }
 
-    /// Catches up on gate asks answered or withdrawn while nothing was listening.
-    async fn settle_asks(&self) {
-        for stored in self.records().list(Some(&["asked"]), None, 100) {
-            let Some(ask_id) = stored.proposal.ask_id.clone() else {
-                continue;
-            };
-            let Some((state, decision_id)) = self.deps.ledger.ask_state(&ask_id).await else {
-                continue;
-            };
-            if state == "open" {
-                continue;
+    /// Settles each pending gate change whose decision is already in the log, also one recorded while nothing was
+    /// listening.
+    pub async fn settle_gates(&self) -> Vec<RetroProposal> {
+        let mut out = Vec::new();
+        let mut pending: Vec<StoredProposal> = self
+            .records()
+            .list(Some(&["pending"]), None, 100)
+            .into_iter()
+            .filter(|s| s.proposal.kind == "gate")
+            .collect();
+        pending.reverse();
+        for StoredProposal { proposal, .. } in pending {
+            if let Some(decision) = self.deps.ledger.global_value(&gate_key(&proposal)).await {
+                out.push(self.on_gate_decision(proposal, &decision).await);
             }
-            let decision = match decision_id {
-                Some(id) => self.deps.ledger.decision_value(&id).await,
-                None => None,
-            };
-            self.on_gate_answer(stored, decision, state == "withdrawn")
-                .await;
         }
+        out
     }
 
     pub async fn run(
@@ -380,7 +357,7 @@ impl Retro {
             });
         }
         let advise = input.advise || !self.apply_enabled().await;
-        self.settle_asks().await;
+        self.settle_gates().await;
         let n = records.begin_run(now, input.trigger, input.threshold_class.as_deref());
         let window_incidents = self
             .deps
@@ -515,7 +492,6 @@ impl Retro {
                     metric: a.change.metric.clone(),
                     expected: a.change.expected.clone(),
                     state: if advise { "suggested" } else { "pending" }.into(),
-                    ask_id: None,
                     reference: None,
                     previous_ref: None,
                     applied_at: None,
@@ -665,75 +641,17 @@ impl Retro {
         out
     }
 
-    /// Files one ask per pending gate change, all in the same batch; acts on answers already in the log.
-    pub async fn file_gate_asks(&self) -> Vec<RetroProposal> {
-        let _lock = self.lock.lock().await;
-        let mut out = Vec::new();
-        if !self.apply_enabled().await {
-            return out;
-        }
-        let mut pending: Vec<StoredProposal> = self
-            .records()
-            .list(Some(&["pending"]), None, 50)
-            .into_iter()
-            .filter(|s| s.proposal.kind == "gate")
-            .collect();
-        pending.reverse();
-        for StoredProposal { proposal: p, .. } in pending {
-            let text = clip(
-                &format!(
-                    "Playbook gate change {}: {} {}. Fixes {}; {} (retro_proposals shows the diff)",
-                    p.proposal_id,
-                    p.playbook,
-                    p.fields.join(", "),
-                    p.fixes_incidents.join(", "),
-                    p.expected
-                ),
-                500,
-            );
-            let input = json!({
-                "kind": "decide", "key": gate_ask_key(&p), "class": "product", "text": text, "recommendation": "apply",
-                "options": ["apply", "keep as is"], "blocks": "nothing", "proceededOnRec": false,
-            });
-            match self.deps.ledger.create_ask(input, "retro").await {
-                Err(e) => {
-                    tracing::warn!(proposal = %p.proposal_id, error = %e, "retro: gate ask not filed")
-                }
-                Ok(ask_id) => {
-                    // Hub-wide asks are never answered from the log, so each one reaches the person.
-                    let asked = RetroProposal {
-                        state: "asked".into(),
-                        ask_id: Some(ask_id),
-                        ..p
-                    };
-                    self.records().put(&asked, None);
-                    out.push(asked);
-                }
-            }
-        }
-        out
-    }
-
-    /// A decision answering one of the retro's gate asks.
+    /// A global decision recorded for one of the retro's gate changes.
     async fn on_decision(&self, event: &HubEvent) {
         let data = event.data.clone().unwrap_or(Value::Null);
-        let (Some(ask_id), Some(decision_id)) =
-            (data["askId"].as_str(), data["decisionId"].as_str())
-        else {
-            return;
-        };
         if !data["key"]
             .as_str()
-            .is_some_and(|k| k.starts_with(PLAYBOOK_ASK_PREFIX))
+            .is_some_and(|k| k.starts_with(PLAYBOOK_KEY_PREFIX))
         {
             return;
         }
-        let Some(stored) = self.records().by_ask(ask_id) else {
-            return;
-        };
-        let decision = self.deps.ledger.decision_value(decision_id).await;
         let _lock = self.lock.lock().await;
-        self.on_gate_answer(stored, decision, false).await;
+        self.settle_gates().await;
     }
 
     /// Three incidents of one class within a week start a run, once per class per week.
@@ -777,7 +695,8 @@ impl Retro {
         if let Err(refused) = self.run(input).await {
             tracing::warn!(reason = %refused.message, "retro: weekly run refused");
         }
-        self.file_gate_asks().await;
+        let _lock = self.lock.lock().await;
+        self.settle_gates().await;
     }
 
     /// Monday 09:00 in policy.tz, and the end of each measuring window. Sleeps at most an hour at a time, so a changed
@@ -814,7 +733,7 @@ impl Retro {
         })
     }
 
-    /// The weekly and end-of-window scheduler, the threshold trigger and the gate asks' answers. Runs until the hub
+    /// The weekly and end-of-window scheduler, the threshold trigger and the gate changes' decisions. Runs until the hub
     /// stops.
     pub async fn serve(self: Arc<Self>) {
         tokio::spawn(self.clone().schedule());

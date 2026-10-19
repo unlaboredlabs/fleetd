@@ -748,8 +748,13 @@ pub struct HumanRequest {
     pub gated: Option<GatedRunSpec>,
     /// approval of a session's tool prompt, instead of a gated run.
     pub permission: Option<ToolPermission>,
-    /// What happened: "fingerprint ab12cd34", "exit 0" and the output tail, or why it did not run.
+    /// What happened, in one line: "fingerprint ab12cd34", "exit 0 on devbox, approved by human:desk", or why it did
+    /// not run (and so is open again).
     pub evidence: Option<Text<0, 2000>>,
+    /// An approval that ran: its exit code (absent when a signal or the timeout ended it) and the end of its output,
+    /// with every injected secret value scrubbed.
+    pub exit_code: Option<i64>,
+    pub output_tail: Option<Text<0, 2000>>,
     pub created_at: Timestamp,
     pub answered_at: Option<Timestamp>,
     /// "human:<device>".

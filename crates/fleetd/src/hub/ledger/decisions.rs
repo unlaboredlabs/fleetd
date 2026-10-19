@@ -33,9 +33,6 @@ pub fn recorded_event(decision: &Decision, project: Option<&ProjectRef>) -> NewE
     if let Some(supersedes) = &decision.supersedes {
         data["supersedes"] = json!(supersedes);
     }
-    if let Some(ask_id) = &decision.ask_id {
-        data["askId"] = json!(ask_id);
-    }
     NewEvent {
         at: decision.at.clone(),
         r#type: HubEventType::DecisionRecorded,

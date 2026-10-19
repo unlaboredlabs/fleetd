@@ -271,7 +271,7 @@ impl Leads {
             &set,
             r,
             &project.title,
-            &self.wakes.digest(r, &[], &set).await?,
+            &self.wakes.digest(r, &set).await?,
         );
         let launched_ms = now_ms(self.ctx.clock.as_ref());
         let title: String = format!("fleetd lead: {}", project.title)

@@ -1,33 +1,19 @@
-//! Decisions, asks, batches and the reply grammar.
-//!
-//! Three services over one set of tables, each an `Arc` field on `Hub`:
-//! - [`Decisions`]: the keyed decision log, resolved workstream → project → global, with FTS5 search.
-//! - [`Asks`]: the ask path (class filter, auto-resolve, dedupe, candidates), batches and their 30 s quiet window.
-//! - [`Inbox`]: `inbox_reply`, the terse reply grammar applied in one transaction, then [`AnswerSink`] per project.
+//! The decision log: keyed decisions resolved workstream → project → global, with FTS5 search ([`Decisions`], an
+//! `Arc` field on `Hub`). A lead asks a person in chat and logs the answer here with `decide`, which is how it never
+//! asks twice.
 //!
 //! Every write runs in one `BEGIN IMMEDIATE` transaction that a [`LedgerError`] rolls back; events are appended after
 //! the commit.
-mod asks;
 mod decisions;
 pub mod digest_text;
-pub mod grammar;
-mod inbox;
 pub mod repo;
 mod tools;
 
 #[cfg(test)]
 mod tests;
 
-pub use asks::{
-    AskInput, AskOutcome, Asks, DECIDE_YOURSELF, QUIET_WINDOW_MS, lead_decide_rule, validate_ask,
-};
 pub use decisions::Decisions;
-pub use inbox::{
-    Answer, AnswerOutcome, AnswerSink, Inbox, MisfiledSink, ReplyInput, followed_up, pref_key,
-};
-pub use repo::{
-    AskFilter, DecisionFilter, RecordInput, StoredBatch, ask_n, batch_n, decision_n, fts_query,
-};
+pub use repo::{DecisionFilter, RecordInput, decision_n, fts_query};
 pub use tools::{WorkstreamLookup, lead_call, register};
 
 use std::sync::Arc;
@@ -241,7 +227,7 @@ pub(crate) fn text<T: for<'a> TryFrom<&'a str, Error = String>>(value: &str) -> 
         .unwrap_or_else(|error| panic!("ledger text out of bounds ({error}): {value:?}"))
 }
 
-/// `projectFields`: an event's machine and project, for asks and decisions that have one.
+/// `projectFields`: an event's machine and project, for decisions that have one.
 pub(crate) fn project_fields(
     project_ref: Option<&ProjectRef>,
 ) -> (Option<MachineId>, Option<ProjectId>) {

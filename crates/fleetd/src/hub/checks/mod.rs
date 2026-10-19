@@ -66,7 +66,6 @@ pub fn build(db: &Arc<HubDb>, events: &Arc<EventLog>, clock: &Arc<dyn Clock>) ->
         Arc::new(GitHub::new(gh)),
         judges,
         dyn_ports.clone(),
-        events.clone(),
         clock.clone(),
     ));
     let claims = Arc::new(Claims::new(

@@ -56,10 +56,10 @@ pub fn template(f: &HeadlineFacts) -> String {
         .first()
         .map(|w| format!("; waiting on {w}"))
         .unwrap_or_default();
-    let needs = match (f.needs_you, &f.first_ask) {
-        (0, _) => "Nothing needs you".to_owned(),
-        (1, Some(key)) => format!("1 needs you: {key}"),
-        (n, _) => format!("{n} need you"),
+    let needs = match f.needs_you {
+        0 => "Nothing needs you".to_owned(),
+        1 => "1 needs you".to_owned(),
+        n => format!("{n} need you"),
     };
     format!("{doing}{waiting}. {needs}.")
 }
@@ -236,10 +236,9 @@ mod tests {
         );
         let f = HeadlineFacts {
             needs_you: 1,
-            first_ask: Some("api.path".into()),
             ..Default::default()
         };
-        assert_eq!(template(&f), "Nothing running. 1 needs you: api.path.");
+        assert_eq!(template(&f), "Nothing running. 1 needs you.");
         let f = HeadlineFacts {
             needs_you: 3,
             ..Default::default()

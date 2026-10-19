@@ -4,11 +4,10 @@ use std::collections::{HashMap, HashSet};
 
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::ledger::{
-    Ask, AskAnswerKind, AskState, CheckSpec, Decision, DecisionScope, PlaybookRef, Workstream,
-    WorkstreamId, WorkstreamState,
+    CheckSpec, Decision, DecisionScope, HumanRequest, PlaybookRef, Workstream, WorkstreamId,
+    WorkstreamState,
 };
 
-use super::ports::Answer;
 use crate::hub::playbooks::finish_all_rules::is_finish_all;
 use crate::hub::prompts::PromptSet;
 
@@ -53,9 +52,8 @@ pub struct DigestInput<'a> {
     pub at: &'a str,
     /// Open workstreams, newest first.
     pub workstreams: &'a [Workstream],
-    pub open_asks: &'a [Ask],
-    /// Asks the human answered or dropped since the lead's last wake.
-    pub answers: &'a [Answer],
+    /// The project's open secret and approval requests: what waits on the person in chat.
+    pub open_requests: &'a [HumanRequest],
     /// Active decisions along the project's scope chain, any order.
     pub decisions: &'a [Decision],
     /// Lines from the tasks area; None leaves the section out.
@@ -254,87 +252,19 @@ pub fn state_text(state: WorkstreamState) -> &'static str {
     }
 }
 
-fn ask_line(a: &Ask) -> String {
-    let place = match &a.batch_id {
-        None => "not batched yet".to_string(),
-        Some(batch) => format!("#{} in {batch}", a.number.unwrap_or_default()),
+fn request_line(r: &HumanRequest) -> String {
+    let what = match (&r.secret, &r.gated, &r.permission) {
+        (Some(s), _, _) => format!("secret {} to enter", s.key),
+        (_, Some(g), _) => format!("approve your command: {}", one_line(g.reason.as_str(), 120)),
+        (_, _, Some(p)) => format!("approve a tool prompt: {} {}", p.tool_name, one_line(p.summary.as_str(), 120)),
+        _ => one_line(r.text.as_str(), 120),
     };
-    let rec = a
-        .recommendation
-        .as_ref()
-        .map(|r| format!("; rec {}", one_line(r.as_ref(), 80)))
-        .unwrap_or_default();
-    let proceeded = if a.proceeded_on_rec {
-        "; you proceeded on the rec"
-    } else {
-        ""
-    };
-    format!(
-        "- {} ({place}) [{}] {}: {}{rec}{proceeded}",
-        a.ask_id,
-        serde_plain(&a.class),
-        a.key,
-        one_line(a.text.as_ref(), 200)
-    )
-}
-
-fn answer_line(set: &PromptSet, answer: &Answer) -> String {
-    let ask = &answer.ask;
-    if answer.withdrawn {
-        return set.render(
-            "digest.answer.withdrawn",
-            &[("askId", &ask.ask_id), ("key", &ask.key)],
-        );
-    }
-    let value = answer
-        .value
-        .as_deref()
-        .or(answer.decision.as_ref().map(|d| d.value.as_ref()))
-        .unwrap_or("");
-    // The human reads labels; the lead gets the key it filed plus the label the human picked.
-    let label = ask
-        .options
-        .iter()
-        .flatten()
-        .find(|o| o.key.as_str() == value)
-        .and_then(|o| o.label.as_ref())
-        .map(|l| format!(" (\"{l}\")"))
-        .unwrap_or_default();
-    if ask.state == AskState::Defaulted {
-        return set.render(
-            "digest.answer.skipped",
-            &[
-                ("askId", &ask.ask_id),
-                ("key", &ask.key),
-                ("value", &format!("{}{label}", one_line(value, 300))),
-            ],
-        );
-    }
-    let own_words = ask
-        .answer
-        .as_ref()
-        .is_some_and(|a| a.kind == Some(AskAnswerKind::Text));
-    let decision = answer
-        .decision
-        .as_ref()
-        .map(|d| format!(" ({})", d.decision_id))
-        .unwrap_or_default();
-    let evidence = ask
+    let again = r
         .evidence
         .as_ref()
-        .map(|e| format!("; {}", one_line(e.as_ref(), 600)))
+        .map(|e| format!(" (open again: {})", one_line(e.as_str(), 160)))
         .unwrap_or_default();
-    format!(
-        "- {} {} → {}{}{label}{decision}{evidence}",
-        ask.ask_id,
-        ask.key,
-        if own_words {
-            "in the human's own words: "
-        } else {
-            ""
-        },
-        one_line(value, 300)
-    )
+    format!("- {} {what}{again}", r.request_id)
 }
 
 fn decision_line(d: &Decision) -> String {
@@ -406,14 +336,13 @@ impl Section {
 }
 
 // Section indexes, in render order.
-const ANSWERS: usize = 0;
-const WORKSTREAMS: usize = 1;
-const PLAYBOOKS: usize = 2;
-const TASKS: usize = 3;
-const TRAIN: usize = 4;
-const ASKS: usize = 5;
-const DECISIONS: usize = 6;
-const DO_NOT_RE_ASK: usize = 7;
+const WORKSTREAMS: usize = 0;
+const PLAYBOOKS: usize = 1;
+const TASKS: usize = 2;
+const TRAIN: usize = 3;
+const REQUESTS: usize = 4;
+const DECISIONS: usize = 5;
+const DO_NOT_RE_ASK: usize = 6;
 
 pub fn render_lead_digest(input: &DigestInput) -> String {
     let open: HashSet<&WorkstreamId> = input.workstreams.iter().map(|w| &w.workstream_id).collect();
@@ -422,7 +351,6 @@ pub fn render_lead_digest(input: &DigestInput) -> String {
     for key in ranked
         .iter()
         .map(|d| d.key.to_string())
-        .chain(input.open_asks.iter().map(|a| a.key.to_string()))
     {
         if !keys.contains(&key) {
             keys.push(key);
@@ -449,17 +377,6 @@ pub fn render_lead_digest(input: &DigestInput) -> String {
     }
 
     let mut sections = vec![
-        Section::new(
-            "Answers since your last wake",
-            input
-                .answers
-                .iter()
-                .map(|a| answer_line(input.prompts, a))
-                .collect(),
-            20,
-            "see `decisions_search`",
-            "\n",
-        ),
         Section::new(
             "Open workstreams",
             input
@@ -510,8 +427,8 @@ pub fn render_lead_digest(input: &DigestInput) -> String {
             "\n",
         ),
         Section::new(
-            "Your open asks",
-            input.open_asks.iter().map(ask_line).collect(),
+            "Waiting on the person (in chat)",
+            input.open_requests.iter().map(request_line).collect(),
             20,
             "older ones not shown",
             "\n",
@@ -524,7 +441,7 @@ pub fn render_lead_digest(input: &DigestInput) -> String {
             "\n",
         ),
         Section::new(
-            "Do not re-ask: keys already decided or asked",
+            "Do not re-ask: keys already decided",
             keys,
             200,
             "check with `decisions_search`",
@@ -532,7 +449,7 @@ pub fn render_lead_digest(input: &DigestInput) -> String {
         ),
     ];
 
-    let mut shown: Vec<usize> = vec![ANSWERS, WORKSTREAMS];
+    let mut shown: Vec<usize> = vec![WORKSTREAMS];
     if !following.is_empty() {
         shown.push(PLAYBOOKS);
     }
@@ -542,7 +459,7 @@ pub fn render_lead_digest(input: &DigestInput) -> String {
     if input.train.is_some() {
         shown.push(TRAIN);
     }
-    shown.extend([ASKS, DECISIONS, DO_NOT_RE_ASK]);
+    shown.extend([REQUESTS, DECISIONS, DO_NOT_RE_ASK]);
 
     let render = |sections: &[Section]| {
         let parts: Vec<String> = shown.iter().map(|&i| sections[i].render()).collect();
@@ -556,17 +473,16 @@ pub fn render_lead_digest(input: &DigestInput) -> String {
             ],
         )
     };
-    // Lowest value first: the key list, then decisions, asks, workstreams, and answers last. The first pass keeps a
+    // Lowest value first: the key list, then decisions, requests, and workstreams last. The first pass keeps a
     // few of each so no section vanishes while another is long; the second trims to nothing if it must.
-    let drop_order: [(usize, usize); 8] = [
+    let drop_order: [(usize, usize); 7] = [
         (DO_NOT_RE_ASK, 30),
         (DECISIONS, 3),
-        (ASKS, 5),
+        (REQUESTS, 5),
         (PLAYBOOKS, 1),
         (TASKS, 5),
         (TRAIN, 4),
         (WORKSTREAMS, 5),
-        (ANSWERS, 5),
     ];
     let mut text = render(&sections);
     for pass in [1, 0] {

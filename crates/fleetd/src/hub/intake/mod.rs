@@ -1,5 +1,5 @@
 //! Where a new intent goes. The caller's project, or a leading `@<project>`, decides the project; otherwise the router
-//! picks it, and when the router cannot, an unrouted ask lets the human pick. A template prefix (`fix:`) or the
+//! picks it, and when the router cannot, the intent is refused with the fix: name the project. A template prefix (`fix:`) or the
 //! caller's template beats the router's; with the project known and no template given, it is `feature`. The
 //! workstream pins the chosen template's playbook.
 pub mod attachments;
@@ -14,10 +14,7 @@ use std::sync::{Arc, OnceLock};
 
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectRef};
-use fleetd_contracts::ledger::{
-    AskId, Decision, DecisionKey, IntakeChannel, PlaybookName, PlaybookRef, UNROUTED_ASK_PREFIX,
-    WorkstreamId,
-};
+use fleetd_contracts::ledger::{IntakeChannel, PlaybookName, PlaybookRef, WorkstreamId};
 use fleetd_contracts::model::ProjectSummary;
 use fleetd_contracts::playbooks::IntakeEcho;
 use rusqlite::{OptionalExtension, params};
@@ -25,21 +22,17 @@ use serde::{Deserialize, Serialize};
 
 use self::prefix::{ProjectMatch, match_project, parse_intent, ref_of, slug_of};
 use self::router::{IntakeRouter, RouterProject, RouterRun};
-use crate::hub::leads::brief::sha256_hex;
 use crate::hub::leads::digest::clip_utf16;
 use crate::hub::leads::error::LeadError;
 use crate::hub::leads::lead::{AutoStart, Leads};
-use crate::hub::leads::ports::RouteAsk;
 use crate::hub::leads::records::WorkstreamFilter;
 use crate::hub::leads::workstreams::{IntakeInput, Workstreams};
 use crate::hub::leads::{Ctx, now_iso};
-use crate::hub::store::{NewEvent, StoreError, WaitInput};
+use crate::hub::store::{NewEvent, StoreError};
 
 /// Projects offered to the router, most recently active first.
 pub const ROUTER_PROJECTS: usize = 20;
 const RECENT_INTENTS: usize = 3;
-/// AskOptions holds at most 6.
-const ASK_OPTIONS: usize = 6;
 const DEFAULT_TEMPLATE: PlaybookName = PlaybookName::Feature;
 
 pub struct SubmitInput {
@@ -64,13 +57,9 @@ pub enum SubmitResult {
         /// Why no lead has the order yet, with the fix.
         lead_waiting: Option<String>,
     },
-    Asked {
-        ask_id: AskId,
-        next: String,
-    },
 }
 
-/// One routed or asked-about intent; `options` maps the ask's options back to projects.
+/// One routed intent, kept so a retry of the same request returns where it went.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Route {
@@ -80,66 +69,16 @@ struct Route {
     channel: IntakeChannel,
     by: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    options: Option<Vec<RouteOption>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     workstream_id: Option<WorkstreamId>,
     #[serde(skip_serializing_if = "Option::is_none")]
     echo: Option<IntakeEcho>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct RouteOption {
-    label: String,
-    #[serde(rename = "ref")]
-    project_ref: ProjectRef,
 }
 
 fn clip(text: &str, max: usize) -> String {
     clip_utf16(&text.split_whitespace().collect::<Vec<_>>().join(" "), max)
 }
 
-/// `intake.route.<words>-<hash>`: readable, and unique per request so two intents never share an ask.
-pub fn route_key(text: &str, client_request_id: &str) -> String {
-    let hash = &sha256_hex(client_request_id.as_bytes())[..6];
-    let slug = slug_of(text);
-    let words: String = slug
-        .chars()
-        .take(40)
-        .collect::<String>()
-        .trim_end_matches('-')
-        .to_string();
-    format!(
-        "{UNROUTED_ASK_PREFIX}{}{hash}",
-        if words.is_empty() {
-            String::new()
-        } else {
-            format!("{words}-")
-        }
-    )
-}
 
-/// Ask options: "<title> on <machine>", made unique with the project id when two read the same.
-fn options_of(projects: &[ProjectSummary]) -> Vec<RouteOption> {
-    let mut seen: Vec<String> = Vec::new();
-    projects
-        .iter()
-        .take(ASK_OPTIONS)
-        .map(|p| {
-            let mut label = clip(&format!("{} on {}", p.title, p.machine_id), 200);
-            if seen.contains(&label.to_lowercase()) {
-                label = clip(
-                    &format!("{} on {} ({})", p.title, p.machine_id, p.project_id),
-                    200,
-                );
-            }
-            seen.push(label.to_lowercase());
-            RouteOption {
-                label,
-                project_ref: ref_of(p),
-            }
-        })
-        .collect()
-}
 
 pub struct Intake {
     ctx: Arc<Ctx>,
@@ -164,7 +103,6 @@ struct Routed {
     echo: Option<IntakeEcho>,
     workstream_id: Option<WorkstreamId>,
     playbook: Option<PlaybookRef>,
-    ask_id: Option<AskId>,
     summary: String,
     runs: Vec<RouterRun>,
     error: Option<String>,
@@ -188,40 +126,26 @@ impl Intake {
         })
     }
 
-    fn get_route(
-        &self,
-        client_request_id: &str,
-    ) -> Result<Option<(Option<AskId>, Route)>, StoreError> {
-        let row: Option<(Option<String>, String)> = self.ctx.db.with(|c| {
+    fn get_route(&self, client_request_id: &str) -> Result<Option<Route>, StoreError> {
+        let row: Option<String> = self.ctx.db.with(|c| {
             Ok(c.query_row(
-                "SELECT ask_id, data FROM intake_routes WHERE client_request_id = ?",
+                "SELECT data FROM intake_routes WHERE client_request_id = ?",
                 params![client_request_id],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+                |r| r.get(0),
             )
             .optional()?)
         })?;
-        row.map(|(ask, data)| {
-            Ok((
-                ask.map(|a| serde_json::from_value(serde_json::Value::String(a)))
-                    .transpose()?,
-                serde_json::from_str(&data)?,
-            ))
-        })
-        .transpose()
+        // A route stored for an intent that waited on a routing question (before they went) has no workstream: none.
+        Ok(row.and_then(|data| serde_json::from_str(&data).ok()))
     }
 
-    fn put_route(
-        &self,
-        client_request_id: &str,
-        ask_id: Option<&AskId>,
-        route: &Route,
-    ) -> Result<(), StoreError> {
+    fn put_route(&self, client_request_id: &str, route: &Route) -> Result<(), StoreError> {
         let data = serde_json::to_string(route)?;
         self.ctx.db.with(|c| {
             c.execute(
-                "INSERT INTO intake_routes (client_request_id, ask_id, data) VALUES (?, ?, ?)
+                "INSERT INTO intake_routes (client_request_id, data) VALUES (?, ?)
                  ON CONFLICT (client_request_id) DO UPDATE SET data = excluded.data",
-                params![client_request_id, ask_id.map(|a| a.as_str()), data],
+                params![client_request_id, data],
             )?;
             Ok(())
         })
@@ -231,9 +155,6 @@ impl Intake {
         let mut data = serde_json::Map::new();
         if let Some(w) = &input.workstream_id {
             data.insert("workstreamId".into(), serde_json::to_value(w)?);
-        }
-        if let Some(a) = &input.ask_id {
-            data.insert("askId".into(), serde_json::to_value(a)?);
         }
         if let Some(echo) = &input.echo {
             data.insert("template".into(), serde_json::to_value(echo.template)?);
@@ -278,7 +199,6 @@ impl Intake {
         intent: &Intent<'_>,
         echo: IntakeEcho,
         runs: Vec<RouterRun>,
-        ask_id: Option<AskId>,
     ) -> Result<SubmitResult, LeadError> {
         let created = self.workstreams.intake(IntakeInput {
             project_ref: echo.project_ref.clone(),
@@ -340,7 +260,6 @@ impl Intake {
             echo: Some(echo.clone()),
             workstream_id: Some(id.clone()),
             playbook: created.playbook,
-            ask_id,
             runs,
             error: None,
             lead_waiting: lead_waiting.clone(),
@@ -373,10 +292,8 @@ impl Intake {
         let crid = input.client_request_id.clone();
         let result = self.submit_inner(input).await;
         if let (Some(time), Ok(placed)) = (self.time.get(), &result) {
-            let workstream = match placed {
-                SubmitResult::Placed { workstream_id, .. } => Some(workstream_id.to_string()),
-                SubmitResult::Asked { .. } => None,
-            };
+            let SubmitResult::Placed { workstream_id, .. } = placed;
+            let workstream = Some(workstream_id.to_string());
             let end = crate::hub::store::now_ms(self.ctx.clock.as_ref());
             time.span(crate::hub::time::NewSpan {
                 src_key: format!("intake/{crid}"),
@@ -411,7 +328,7 @@ impl Intake {
             channel: input.channel,
             by: &input.by,
         };
-        let place = |echo: IntakeEcho, runs: Vec<RouterRun>| self.place(&intent, echo, runs, None);
+        let place = |echo: IntakeEcho, runs: Vec<RouterRun>| self.place(&intent, echo, runs);
 
         if let Some(r) = &input.project_ref {
             let echo = Self::echo(
@@ -465,21 +382,15 @@ impl Intake {
         }
 
         // A retry of the same request returns what the first one got, without another router run.
-        if let Some((ask_id, route)) = self.get_route(&input.client_request_id)? {
-            if let (Some(workstream_id), Some(echo)) = (route.workstream_id, route.echo) {
-                return Ok(SubmitResult::Placed {
-                    workstream_id,
-                    echo,
-                    next: None,
-                    lead_waiting: None,
-                });
-            }
-            if let Some(ask_id) = ask_id {
-                return Ok(SubmitResult::Asked {
-                    next: format!("Answer {ask_id} with inbox_reply to pick the project."),
-                    ask_id,
-                });
-            }
+        if let Some(route) = self.get_route(&input.client_request_id)?
+            && let (Some(workstream_id), Some(echo)) = (route.workstream_id, route.echo)
+        {
+            return Ok(SubmitResult::Placed {
+                workstream_id,
+                echo,
+                next: None,
+                lead_waiting: None,
+            });
         }
 
         if allowed.is_empty() {
@@ -512,7 +423,6 @@ impl Intake {
             template: fixed,
             channel: input.channel,
             by: input.by.clone(),
-            options: None,
             workstream_id: None,
             echo: None,
         };
@@ -529,211 +439,30 @@ impl Intake {
                 reason,
             )?;
             let placed = place(echo.clone(), outcome.runs).await?;
-            if let SubmitResult::Placed { workstream_id, .. } = &placed {
-                self.put_route(
-                    &input.client_request_id,
-                    None,
-                    &Route {
-                        workstream_id: Some(workstream_id.clone()),
-                        echo: Some(echo),
-                        ..base
-                    },
-                )?;
-            }
+            let SubmitResult::Placed { workstream_id, .. } = &placed;
+            self.put_route(
+                &input.client_request_id,
+                &Route {
+                    workstream_id: Some(workstream_id.clone()),
+                    echo: Some(echo),
+                    ..base
+                },
+            )?;
             return Ok(placed);
         }
 
-        let options = options_of(&candidates);
         let why = outcome
             .why
             .unwrap_or_else(|| "the router gave no answer".into());
-        let key: DecisionKey = serde_json::from_value(serde_json::Value::String(route_key(
-            &input.text,
-            &input.client_request_id,
-        )))
-        .map_err(|e| {
-            LeadError::bare(
-                fleetd_contracts::mcp::ErrorCode::Invalid,
-                format!("The routing ask key is invalid: {e}"),
-            )
-        })?;
-        let ask_id = self.ctx.ports().create_route_ask(
-            RouteAsk {
-                key,
-                text: clip(
-                    &format!(
-                        "Which project is this intent for? \"{}\" ({why})",
-                        clip(&input.text, 300)
-                    ),
-                    500,
-                ),
-                options: options.iter().map(|o| o.label.clone()).collect(),
-                recommendation: options[0].label.clone(),
-                blocks: "this intent until it has a project".into(),
-            },
-            &input.by,
-        )?;
-        self.put_route(
-            &input.client_request_id,
-            Some(&ask_id),
-            &Route {
-                options: Some(options),
-                ..base
-            },
-        )?;
         self.routed(Routed {
-            ask_id: Some(ask_id.clone()),
             runs: outcome.runs,
-            summary: clip(
-                &format!("{ask_id}: which project for \"{}\"? {why}", input.text),
-                200,
-            ),
+            error: Some(why.clone()),
+            summary: clip(&format!("no project for \"{}\": {why}", input.text), 200),
             ..Default::default()
         })?;
-        Ok(SubmitResult::Asked {
-            next: format!(
-                "The router could not place this intent ({why}). Answer {ask_id} with inbox_reply to pick the project."
-            ),
-            ask_id,
-        })
-    }
-
-    /// The human's answer to a routing ask: the option it names, or a project title or folder name.
-    fn project_of_answer(
-        &self,
-        value: &str,
-        route: &Route,
-    ) -> Result<Option<ProjectRef>, LeadError> {
-        let wanted = value.trim().to_lowercase();
-        if let Some(option) = route
-            .options
-            .iter()
-            .flatten()
-            .find(|o| o.label.to_lowercase() == wanted)
-        {
-            return Ok(Some(option.project_ref.clone()));
-        }
-        let projects = self.ctx.store.projects_list(None, None)?;
-        Ok(
-            match match_project(value.trim().trim_start_matches('@'), &projects) {
-                ProjectMatch::One(p) => Some(ref_of(p)),
-                _ => None,
-            },
-        )
-    }
-
-    async fn on_answer(&self, decision: &Decision) -> Result<(), LeadError> {
-        let Some(ask_id) = &decision.ask_id else {
-            return Ok(());
-        };
-        let row: Option<(String, String)> = self.ctx.db.with(|c| {
-            Ok(c.query_row(
-                "SELECT client_request_id, data FROM intake_routes WHERE ask_id = ?",
-                params![ask_id.as_str()],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .optional()?)
-        })?;
-        let Some((client_request_id, data)) = row else {
-            return Ok(());
-        };
-        let route: Route = serde_json::from_str(&data).map_err(StoreError::from)?;
-        if route.workstream_id.is_some() {
-            return Ok(());
-        }
-        let value = decision.value.as_str();
-        let Some(r) = self.project_of_answer(value, &route)? else {
-            return self.routed(Routed {
-                ask_id: Some(ask_id.clone()),
-                error: Some(format!("the answer \"{}\" names no project", clip(value, 80))),
-                summary: clip(&format!("{ask_id}: the answer \"{value}\" names no project; submit the intent again with @<project>"), 200),
-                ..Default::default()
-            });
-        };
-        let echo = Self::echo(
-            r,
-            route.template.unwrap_or(DEFAULT_TEMPLATE),
-            format!("the human picked it in {ask_id}"),
-        )?;
-        let intent = Intent {
-            text: &route.text,
-            client_request_id: &client_request_id,
-            channel: route.channel,
-            by: &route.by,
-        };
-        match self
-            .place(&intent, echo.clone(), Vec::new(), Some(ask_id.clone()))
-            .await
-        {
-            Err(e) => self.routed(Routed {
-                ask_id: Some(ask_id.clone()),
-                summary: clip(
-                    &format!("{ask_id}: could not start the intent: {}", e.message),
-                    200,
-                ),
-                error: Some(e.message),
-                ..Default::default()
-            }),
-            Ok(SubmitResult::Placed { workstream_id, .. }) => Ok(self.put_route(
-                &client_request_id,
-                Some(ask_id),
-                &Route {
-                    workstream_id: Some(workstream_id),
-                    echo: Some(echo),
-                    ..route
-                },
-            )?),
-            Ok(SubmitResult::Asked { .. }) => Ok(()),
-        }
-    }
-
-    /// Answers arrive through the inbox as decision.recorded events; follows them from the hub's start.
-    pub async fn run_answers(self: Arc<Self>) {
-        let events = Arc::clone(&self.ctx.events);
-        let mut cursor = events.head();
-        loop {
-            let page = match events
-                .wait(WaitInput {
-                    cursor: Some(cursor),
-                    types: Some(vec![HubEventType::DecisionRecorded]),
-                    machine_id: None,
-                    timeout_sec: 3600,
-                })
-                .await
-            {
-                Ok(page) => page,
-                Err(error) => {
-                    tracing::warn!(%error, "intake answers: event log read failed");
-                    self.ctx
-                        .clock
-                        .sleep(std::time::Duration::from_secs(1))
-                        .await;
-                    continue;
-                }
-            };
-            cursor = page.cursor;
-            for event in page.events {
-                let Some(data) = &event.data else { continue };
-                if !data
-                    .get("key")
-                    .and_then(|k| k.as_str())
-                    .is_some_and(|k| k.starts_with(UNROUTED_ASK_PREFIX))
-                {
-                    continue;
-                }
-                let Some(id) = data.get("decisionId").and_then(|v| v.as_str()) else {
-                    continue;
-                };
-                match self.ctx.ports().decision(id) {
-                    Ok(Some(decision)) => {
-                        if let Err(error) = self.on_answer(&decision).await {
-                            tracing::warn!(%error, "intake: routing answer not applied");
-                        }
-                    }
-                    Ok(None) => {}
-                    Err(error) => tracing::warn!(%error, "intake: decision read failed"),
-                }
-            }
-        }
+        Err(LeadError::invalid(
+            format!("The router could not place this intent ({why})."),
+            "Name its project with @<project>, or send it in that project's chat.",
+        ))
     }
 }

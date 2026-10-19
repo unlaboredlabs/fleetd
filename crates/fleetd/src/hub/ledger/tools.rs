@@ -1,34 +1,25 @@
-//! The ledger's MCP tools (asks_list, inbox_reply, decisions_search, decisions_record, digest_get)
-//! and lead calls (ask, ask_withdraw, decide, decisions_search).
-use std::collections::HashSet;
+//! The ledger's MCP tools (decisions_search, decisions_record, digest_get) and lead calls (decide, decisions_search).
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::ids::Timestamp;
 use fleetd_contracts::ids::{MachineId, ProjectRef};
 use fleetd_contracts::lead_calls::{
-    AskResult, AskWithdrawResult, DecideResult, DecideScope, DecisionsSearchResult, LeadCall,
-    LeadCallResult,
+    DecideResult, DecideScope, DecisionsSearchResult, LeadCall, LeadCallResult,
 };
-use fleetd_contracts::ledger::{AskState, Decision, DecisionScope, DecisionSource, WorkstreamId};
+use fleetd_contracts::ledger::{Decision, DecisionScope, DecisionSource, WorkstreamId};
 use fleetd_contracts::mcp::{
-    AsksListInput, AsksListOutput, DecisionsRecordInput, DecisionsRecordOutput,
-    DecisionsSearchInput, DecisionsSearchOutput, DigestGetInput, DigestGetOutput, ErrorCode,
-    InboxReplyInput, InboxUndoInput, InboxUndoOutput,
+    DecisionsRecordInput, DecisionsRecordOutput, DecisionsSearchInput, DecisionsSearchOutput,
+    DigestGetInput, DigestGetOutput, ErrorCode,
 };
 use fleetd_contracts::prim::List;
 
-use super::asks::OutcomeState;
-use super::{
-    Actor, AskFilter, AskInput, DecisionFilter, LedgerCode, LedgerError, RecordInput, ReplyInput,
-};
+use super::{Actor, DecisionFilter, LedgerCode, LedgerError, RecordInput};
 use crate::hub::api::{
-    Caller, Hub, Registry, ToolError, allows, allows_everywhere, cap, is_human, require,
+    Caller, Hub, Registry, ToolError, allows, allows_everywhere, is_human, require,
     unknown_project,
 };
 
-const ASKS_LIMIT: usize = 100;
-const BATCHES_LIMIT: usize = 20;
 const SEARCH_LIMIT: i64 = 20;
 
 /// The project a workstream belongs to, and a project's open workstreams. The leads area provides it; until then
@@ -106,97 +97,6 @@ fn can_read_decision(hub: &Hub, caller: &Caller, decision: &Decision) -> bool {
 }
 
 pub fn register(tools: &mut Registry) {
-    tools.add("asks_list", |hub: Arc<Hub>, caller: Caller, input: AsksListInput| async move {
-        let listed: Vec<_> = hub
-            .asks
-            .list(&AskFilter { state: Some(input.state), batch_id: input.batch_id.clone(), limit: Some(1000), ..Default::default() })
-            .map_err(refusal)?
-            .into_iter()
-            .filter(|ask| allows(&caller, Role::Read, ask.project_ref.as_ref().map(|r| &r.machine_id)))
-            .collect();
-        let shown_asks = cap(listed, ASKS_LIMIT);
-        let ids: HashSet<String> = shown_asks.items.iter().map(|a| a.ask_id.to_string()).collect();
-        let in_batch: HashSet<String> = shown_asks.items.iter().filter_map(|a| a.batch_id.as_ref().map(|b| b.to_string())).collect();
-        let candidates = match &input.batch_id {
-            None => hub.asks.batches(None, None, Some(200)),
-            Some(batch_id) => hub.asks.batches(None, Some(batch_id), None),
-        }
-        .map_err(refusal)?;
-        // Only the caller's items are shown; numbers stay as fixed in the batch.
-        let batches: Vec<_> = candidates
-            .into_iter()
-            .filter(|b| in_batch.contains(b.batch_id.as_str()))
-            .map(|mut b| {
-                b.items.retain(|item| ids.contains(item.ask_id.as_str()));
-                b
-            })
-            .collect();
-        let shown_batches = cap(batches, BATCHES_LIMIT);
-        let truncated = shown_asks.truncated.or(shown_batches.truncated);
-        let next = if shown_asks.items.is_empty() {
-            "Nothing to answer. Wait for batch.ready with events_wait."
-        } else {
-            r##"Answer with inbox_reply, e.g. "1 go 2 nvm 3 b", "recs fine", "2: your own answer"; a leading "#B<n>" picks an older batch."##
-        };
-        Ok::<_, ToolError>(AsksListOutput {
-            batches: List::unchecked(shown_batches.items),
-            asks: List::unchecked(shown_asks.items),
-            next: Some(next.into()),
-            truncated: truncated.filter(|t| *t),
-        })
-    });
-
-    tools.add(
-        "inbox_reply",
-        |hub: Arc<Hub>, caller: Caller, input: InboxReplyInput| async move {
-            let grants = caller.clone();
-            let reply = ReplyInput {
-                raw: input.raw.to_string(),
-                batch_id: input.batch_id.clone(),
-                allows: Some(Box::new(move |r: Option<&ProjectRef>| match r {
-                    None => allows_everywhere(&grants, Role::Operate),
-                    Some(r) => allows(&grants, Role::Operate, Some(&r.machine_id)),
-                })),
-            };
-            let mut result = hub
-                .inbox
-                .reply(&reply, &actor_of(&caller))
-                .map_err(refusal)?;
-            if result.parsed {
-                result.next = Some(if result.applied.iter().any(|a| a.undo_until.is_some()) {
-                    "Decide answers can be taken back with inbox_undo for 10 s; then each becomes a Decision (a skip leaves the lead on its recommendation) and reaches its lead, and ask.delivered follows.".into()
-                } else {
-                    "Each answer is a Decision now and reaches its lead in its next wake.".into()
-                });
-            }
-            Ok::<_, ToolError>(result)
-        },
-    );
-
-    tools.add(
-        "inbox_undo",
-        |hub: Arc<Hub>, caller: Caller, input: InboxUndoInput| async move {
-            let grants = caller.clone();
-            let allows_here: super::inbox::Allows =
-                Box::new(move |r: Option<&ProjectRef>| match r {
-                    None => allows_everywhere(&grants, Role::Operate),
-                    Some(r) => allows(&grants, Role::Operate, Some(&r.machine_id)),
-                });
-            let ask = hub
-                .inbox
-                .undo(&input.ask_id, Some(&allows_here))
-                .map_err(refusal)?;
-            Ok::<_, ToolError>(InboxUndoOutput {
-                next: Some(format!(
-                    "{} is open again; answer it with inbox_reply.",
-                    ask.ask_id
-                )),
-                ask,
-                truncated: None,
-            })
-        },
-    );
-
     tools.add(
         "decisions_search",
         |hub: Arc<Hub>, caller: Caller, input: DecisionsSearchInput| async move {
@@ -259,7 +159,6 @@ pub fn register(tools: &mut Registry) {
                     scope: input.scope.clone(),
                     value: input.value.to_string(),
                     why: input.why.as_deref().map(String::from),
-                    ask_id: None,
                     project_ref: project,
                 },
                 &actor_of(&caller),
@@ -279,15 +178,14 @@ pub fn register(tools: &mut Registry) {
         Ok::<_, ToolError>(DigestGetOutput {
             text: digest.text,
             at: Timestamp(digest.at),
-            next: Some("Answer open items with inbox_reply. The hub emits digest.ready at 09:00 and 18:00 (policy.tz) as the cue to call this again.".into()),
+            next: Some("The hub emits digest.ready at 09:00 and 18:00 (policy.tz) as the cue to call this again.".into()),
             truncated: None,
         })
     });
 }
 
-/// The ledger's lead-side calls (`ask`, `ask_withdraw`, `decide`, `decisions_search`) for a caller already attributed
-/// to `project_ref` by its cwd, with `by` = `lead:<machineId>/<projectId>`. The link area's
-/// `LeadCalls` registry routes those four ops here and maps a refusal onto `LeadCallRefused` (`code.as_str()`,
+/// The ledger's lead-side calls (`decide`, `decisions_search`) for a caller already attributed to `project_ref` by its
+/// cwd, with `by` = `lead:<machineId>/<projectId>`. The link area's `LeadCalls` registry routes those ops here and maps a refusal onto `LeadCallRefused` (`code.as_str()`,
 /// `message`, `fix`).
 pub fn lead_call(
     hub: &Hub,
@@ -297,73 +195,6 @@ pub fn lead_call(
 ) -> Result<LeadCallResult, LedgerError> {
     let r = project_ref.clone();
     match call {
-        LeadCall::Ask(call) => {
-            let workstream_id = call
-                .workstream_id
-                .as_ref()
-                .map(|w| own_workstream(hub, &r, w))
-                .transpose()?;
-            let input = AskInput {
-                project_ref: Some(r),
-                workstream_id,
-                kind: call.kind.into(),
-                key: call.key,
-                class: call.class.to_string(),
-                text: call.text,
-                context: call.context,
-                recommendation: call.recommendation,
-                recommendation_why: call.recommendation_why,
-                options: call.options,
-                steps: call.steps,
-                verify: call.verify,
-                sink: call.sink,
-                env_name: call.env_name,
-                gated: None,
-                permission: None,
-                blocks: call.blocks,
-                proceeded_on_rec: call.proceeded_on_rec,
-            };
-            // A class fleetd does not ask about is refused first: that fix is "decide it yourself", not "add labels".
-            if let Some(refused) =
-                super::validate_ask(&input).or_else(|| super::lead_decide_rule(&input))
-            {
-                return Err(refused);
-            }
-            let mut input = input;
-            // The recommended option first, so reply letter "a" is always the recommendation.
-            if let (Some(options), Some(rec)) = (input.options.take(), &input.recommendation) {
-                let (first, rest): (Vec<_>, Vec<_>) = options
-                    .into_inner()
-                    .into_iter()
-                    .partition(|o| o.key == *rec);
-                input.options = Some(List::unchecked(first.into_iter().chain(rest).collect()));
-            }
-            let outcome = hub.asks.create(&input, by)?;
-            Ok(LeadCallResult::Ask(AskResult {
-                state: if outcome.state == OutcomeState::Auto {
-                    AskState::Auto
-                } else {
-                    AskState::Open
-                },
-                ask_id: outcome.ask.ask_id,
-                decision: outcome.decision,
-                attached: outcome.attached,
-                candidates: outcome
-                    .candidates
-                    .map(|c| List::unchecked(c.into_iter().take(5).collect())),
-                next: None,
-            }))
-        }
-        LeadCall::AskWithdraw(call) => {
-            let ask = hub
-                .asks
-                .withdraw(&call.ask_id, call.r#use.as_ref(), Some(&r), None)?;
-            Ok(LeadCallResult::AskWithdraw(AskWithdrawResult {
-                ask_id: ask.ask_id,
-                state: ask.state,
-                next: None,
-            }))
-        }
         LeadCall::Decide(call) => {
             let scope = if call.scope == DecideScope::Project {
                 DecisionScope::Project {
@@ -380,7 +211,6 @@ pub fn lead_call(
                     scope,
                     value: call.value.to_string(),
                     why: call.why.as_deref().map(String::from),
-                    ask_id: None,
                     project_ref: Some(r),
                 },
                 &Actor {
@@ -411,7 +241,7 @@ pub fn lead_call(
             }))
         }
         _ => Err(LedgerError::invalid(
-            "The ledger handles only ask, ask_withdraw, decide and decisions_search.",
+            "The ledger handles only decide and decisions_search.",
         )),
     }
 }

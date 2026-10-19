@@ -291,7 +291,11 @@ pub struct Ops {
     pub approvals: Arc<crate::hub::approvals::Approvals>,
 }
 
-pub fn build(config: &crate::hub::api::HubConfig, clock: Arc<dyn crate::clock::Clock>) -> Ops {
+pub fn build(
+    config: &crate::hub::api::HubConfig,
+    clock: Arc<dyn crate::clock::Clock>,
+    requests: Arc<crate::hub::approvals::store::Requests>,
+) -> Ops {
     let ports = Arc::new(OpsPorts::default());
     let usage = Arc::new(super::Usage::new(super::UsageDeps {
         events: ports.clone(),
@@ -317,7 +321,7 @@ pub fn build(config: &crate::hub::api::HubConfig, clock: Arc<dyn crate::clock::C
         clock: clock.clone(),
     });
     let approvals = crate::hub::approvals::Approvals::new(crate::hub::approvals::ApprovalsDeps {
-        asks: ports.clone(),
+        requests,
         nodes: ports.clone(),
         hub: ports.clone(),
         events: ports.clone(),

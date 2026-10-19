@@ -19,7 +19,6 @@ use super::{Ctx, now_iso};
 use crate::hub::store::{NewEvent, WaitInput};
 
 pub const STOPPED_REASON: &str = "its project was removed";
-pub const ASK_REASON: &str = "project deleted";
 const SCAN_LIMIT: usize = 10_000;
 
 pub struct ProjectRemovals {
@@ -36,10 +35,6 @@ impl ProjectRemovals {
     pub async fn reconcile(&self, r: &ProjectRef) -> Result<(), LeadError> {
         if self.ctx.store.project_get(r)?.is_some() {
             return Ok(());
-        }
-        let asks = self.ctx.ports().open_asks(Some(r), None, SCAN_LIMIT)?;
-        for ask in asks {
-            let _ = self.ctx.ports().withdraw_ask(&ask.ask_id, ASK_REASON);
         }
         if let Some(tasks) = self.ctx.hooks.tasks.get() {
             for (task_id, _) in tasks.live(Some(r)) {
@@ -86,11 +81,6 @@ impl ProjectRemovals {
         let mut add = |r: ProjectRef| {
             refs.insert(format!("{}/{}", r.machine_id, r.project_id), r);
         };
-        for ask in self.ctx.ports().open_asks(None, None, SCAN_LIMIT)? {
-            if let Some(r) = ask.project_ref {
-                add(r);
-            }
-        }
         if let Some(tasks) = self.ctx.hooks.tasks.get() {
             for (_, r) in tasks.live(None) {
                 add(r);

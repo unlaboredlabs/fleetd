@@ -1,4 +1,4 @@
-//! Spans folded out of the event log: queue waits, usage parks, ask batching and waits, wake debounces, offline
+//! Spans folded out of the event log: queue waits, usage parks, waits on a person's answer to a request, wake debounces, offline
 //! writes, and each order's bounds and critical path. It walks the log in seq order from `time_cursors('events')`,
 //! the way webhook delivery does, and wakes on the log's append notification; a replay is a no-op because every
 //! span key is deterministic. Facts about a machine's lanes that only the hub learns (a sleep the node reports when
@@ -309,105 +309,48 @@ fn apply(c: &Connection, e: &HubEvent) -> Result<(), StoreError> {
                 at,
             )?;
         }
-        HubEventType::AskCreated => {
-            let Some(ask_id) = data_str(e, "askId") else {
+        HubEventType::RequestOpened | HubEventType::RequestUpdated => {
+            let Some(id) = data_str(e, "requestId") else {
                 return Ok(());
             };
-            let Some(ask) = get_ask(c, ask_id) else {
-                return Ok(());
-            };
-            // A permission prompt's wait is the node's `wait.permission` span; its ask adds no second one.
-            if ask.permission.is_some() {
-                return Ok(());
+            let key = format!("request/{id}");
+            let state = data_str(e, "state").unwrap_or("");
+            if state == "open" {
+                let Some(r) = get_request(c, id) else {
+                    return Ok(());
+                };
+                // A permission prompt's wait is the node's `wait.permission` span; its request adds no second one.
+                if r.permission.is_some() {
+                    return Ok(());
+                }
+                let ids = Ids {
+                    machine_id: Some(r.project_ref.machine_id.to_string()),
+                    project_id: Some(r.project_ref.project_id.to_string()),
+                    workstream_id: r.workstream_id.as_ref().map(|w| w.to_string()),
+                    ..Ids::default()
+                };
+                let extra = SpanExtra {
+                    key: r
+                        .secret
+                        .as_ref()
+                        .and_then(|s| fleetd_contracts::prim::Text::new(s.key.to_string()).ok()),
+                    ..SpanExtra::default()
+                };
+                let lane = asks_lane(&ids);
+                return open(c, key, SpanKind::WaitAsk, at, ids, lane, extra);
             }
-            let ids = Ids {
-                machine_id: ask.project_ref.as_ref().map(|r| r.machine_id.to_string()),
-                project_id: ask.project_ref.as_ref().map(|r| r.project_id.to_string()),
-                workstream_id: ask.workstream_id.as_ref().map(|w| w.to_string()),
-                ..Ids::default()
-            };
-            let extra = SpanExtra {
-                key: fleetd_contracts::prim::Text::new(ask.key.to_string()).ok(),
-                ..SpanExtra::default()
-            };
-            let lane = asks_lane(&ids);
-            open(
-                c,
-                format!("ask/{ask_id}/batching"),
-                SpanKind::AskBatching,
-                at,
-                ids,
-                lane,
-                extra,
-            )?;
-        }
-        HubEventType::BatchReady => {
-            let items = e
-                .data
-                .as_ref()
-                .and_then(|d| d.get("items"))
-                .and_then(Value::as_array)
-                .cloned()
-                .unwrap_or_default();
-            for item in items {
-                let ask_id = item
-                    .as_str()
-                    .or_else(|| item.get("askId").and_then(Value::as_str));
-                let Some(ask_id) = ask_id else { continue };
-                published(c, ask_id, at)?;
-            }
-        }
-        HubEventType::AskAuto => {
-            if let Some(ask_id) = data_str(e, "askId") {
-                close_open(
-                    c,
-                    &[SpanKind::AskBatching],
-                    "src_key = ?2",
-                    &[&format!("ask/{ask_id}/batching")],
-                    at,
-                )?;
-            }
-        }
-        HubEventType::DecisionRecorded => {
-            let Some(ask_id) = data_str(e, "askId") else {
-                return Ok(());
-            };
-            let key = format!("ask/{ask_id}");
             let start: Option<i64> = c
                 .query_row("SELECT start_ms FROM time_spans WHERE src = 'h' AND src_key = ?1 AND end_ms IS NULL", [&key], |r| r.get(0))
                 .optional()?;
-            // An answer before the batch was published: batching ends here and the wait never opened.
-            close_open(
-                c,
-                &[SpanKind::AskBatching],
-                "src_key = ?2",
-                &[&format!("ask/{ask_id}/batching")],
-                at,
-            )?;
             let Some(start) = start else { return Ok(()) };
-            let ask = get_ask(c, ask_id);
-            let end = ask
-                .as_ref()
-                .and_then(|a| a.answer.as_ref())
-                .and_then(|a| parse_ms(a.at.as_str()))
-                .unwrap_or(at);
-            let decided_by = match data_str(e, "source") {
-                Some("human") => Some(DecidedBy::Human),
-                Some("lead") => Some(DecidedBy::Lead),
-                _ => None,
-            };
             let extra = SpanExtra {
-                decided_by,
-                // Read again: a gated ask's key becomes `gated.<askId>` only after it was filed.
-                key: ask
-                    .as_ref()
-                    .and_then(|a| fleetd_contracts::prim::Text::new(a.key.to_string()).ok()),
-                answered_by: ask.as_ref().and_then(|a| a.answer.as_ref()).and_then(|a| {
-                    fleetd_contracts::prim::Text::new(crate::node::util::head_utf16(&a.by, 80)).ok()
+                decided_by: Some(DecidedBy::Human),
+                answered_by: data_str(e, "by").and_then(|b| {
+                    fleetd_contracts::prim::Text::new(crate::node::util::head_utf16(b, 80)).ok()
                 }),
                 ..SpanExtra::default()
             };
-            close(c, &key, start, end, Some(extra))?;
+            close(c, &key, start, at, Some(extra))?;
         }
         HubEventType::LeadWoken => {
             let (Some(m), Some(t)) = (&machine, &thread) else {
@@ -566,44 +509,14 @@ pub fn busy_ms(c: &Connection, m: &str, t: &str, from: i64, to: i64) -> Result<i
 
 const BUSY_LOOKBACK_MS: i64 = 6 * 3600 * 1000;
 
-/// `ask/<id>/batching` ends and the wait starts: `wait.ask` when the ask holds something back, `ask.info` when not.
-fn published(c: &Connection, ask_id: &str, at: i64) -> Result<(), StoreError> {
-    close_open(
-        c,
-        &[SpanKind::AskBatching],
-        "src_key = ?2",
-        &[&format!("ask/{ask_id}/batching")],
-        at,
-    )?;
-    let Some(ask) = get_ask(c, ask_id) else {
-        return Ok(());
-    };
-    if ask.answer.is_some() || ask.permission.is_some() {
-        return Ok(());
-    }
-    let ids = Ids {
-        machine_id: ask.project_ref.as_ref().map(|r| r.machine_id.to_string()),
-        project_id: ask.project_ref.as_ref().map(|r| r.project_id.to_string()),
-        workstream_id: ask.workstream_id.as_ref().map(|w| w.to_string()),
-        ..Ids::default()
-    };
-    let blocking = ask.blocks.as_str() != "nothing" && !ask.proceeded_on_rec;
-    let kind = if blocking {
-        SpanKind::WaitAsk
-    } else {
-        SpanKind::AskInfo
-    };
-    let extra = SpanExtra {
-        key: fleetd_contracts::prim::Text::new(ask.key.to_string()).ok(),
-        ..SpanExtra::default()
-    };
-    let lane = asks_lane(&ids);
-    open(c, format!("ask/{ask_id}"), kind, at, ids, lane, extra)
-}
-
-/// Read on the projector's own connection: the ledger's reader would wait for the lock this transaction holds.
-fn get_ask(c: &Connection, ask_id: &str) -> Option<fleetd_contracts::ledger::Ask> {
-    crate::hub::ledger::repo::get_ask(c, ask_id).ok().flatten()
+/// Read on the projector's own connection: another reader would wait for the lock this transaction holds.
+fn get_request(c: &Connection, id: &str) -> Option<fleetd_contracts::ledger::HumanRequest> {
+    let n: i64 = id.strip_prefix('Q')?.parse().ok()?;
+    c.query_row("SELECT data FROM requests WHERE n = ?1", [n], |r| r.get::<_, String>(0))
+        .optional()
+        .ok()
+        .flatten()
+        .and_then(|data| serde_json::from_str(&data).ok())
 }
 
 fn workstream_from_summary(e: &HubEvent) -> Option<String> {

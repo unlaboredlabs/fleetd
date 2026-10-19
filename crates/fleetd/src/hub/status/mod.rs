@@ -44,14 +44,9 @@ const FOLLOWED: &[HubEventType] = &[
     HubEventType::WorkstreamRunning,
     HubEventType::WorkstreamState,
     HubEventType::WorkstreamDone,
-    HubEventType::AskCreated,
-    HubEventType::AskAuto,
-    HubEventType::AskClosed,
-    // A held answer takes its ask out of "needs you" at once, an undo puts it back, and the commit closes it.
-    HubEventType::AskAnswered,
-    HubEventType::AskUndone,
-    HubEventType::AskDelivered,
-    HubEventType::BatchReady,
+    // An open request is "needs you" until it settles.
+    HubEventType::RequestOpened,
+    HubEventType::RequestUpdated,
     HubEventType::DecisionRecorded,
     HubEventType::TaskQueued,
     HubEventType::TaskStarted,

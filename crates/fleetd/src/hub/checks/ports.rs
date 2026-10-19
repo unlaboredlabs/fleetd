@@ -2,7 +2,7 @@
 //! The hub's implementation (`HubPorts`, wired once those areas land) forwards to their services; tests use fakes.
 //! Keeping it to this one seam means the claim flow and the value bar run their real logic under test.
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef};
-use fleetd_contracts::ledger::{AskId, MetricValues, PlaybookRef, Workstream, WorkstreamId};
+use fleetd_contracts::ledger::{MetricValues, PlaybookRef, Workstream, WorkstreamId};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 use fleetd_contracts::model::ActionItem;
 use fleetd_contracts::tasks::{Task, TaskId};
@@ -33,24 +33,13 @@ pub struct PlaybookLimits {
     pub estimate_prior: f64,
 }
 
-/// A `do` ask a `human` check files (Asks.create with by = "hub:claims").
+/// The human's answer to a `human` check, as the lead logged it after asking in chat: the active `done.<n>`
+/// decision in the workstream's own scope.
 #[derive(Debug, Clone, PartialEq)]
-pub struct HumanAsk {
-    pub project_ref: ProjectRef,
-    pub workstream_id: WorkstreamId,
-    /// `<workstream>.<claim>.done-<i>`, lowercase.
-    pub key: String,
-    pub text: String,
-    pub step_text: String,
-    pub step_expect: String,
-    pub blocks: String,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct HumanAskFiled {
-    pub ask_id: AskId,
-    /// Set when the ledger answered it at once from an existing decision (state "auto").
-    pub auto_value: Option<String>,
+pub struct HumanConfirmation {
+    pub value: String,
+    pub decision_id: String,
+    pub at_ms: i64,
 }
 
 /// A review task the hub spawns for a `judge` check (by = "hub:judge", areas none).
@@ -122,9 +111,11 @@ pub trait Ports: Send + Sync + 'static {
     /// The workstream's tasks, newest first.
     fn tasks_of(&self, project: &ProjectRef, workstream: &WorkstreamId, limit: usize) -> Vec<Task>;
     fn spawn_judge(&self, spawn: JudgeSpawn) -> BoxFuture<'_, Result<Task, Refusal>>;
-    // ledger: Asks
-    fn file_human_ask(&self, ask: HumanAsk) -> BoxFuture<'_, Result<HumanAskFiled, Refusal>>;
-    fn ask_answer(&self, id: &AskId) -> Option<String>;
+    // ledger: the decision a `human` check reads, and when the brief it checks was last frozen
+    fn human_confirmation(&self, workstream: &WorkstreamId, key: &str) -> Option<HumanConfirmation>;
+    /// When the workstream's brief was last frozen or amended (its latest `workstream.running`, or a
+    /// `workstream.state` that amended it).
+    fn brief_frozen_ms(&self, workstream: &WorkstreamId) -> Option<i64>;
     // executor
     fn thread_actions<'a>(
         &'a self,

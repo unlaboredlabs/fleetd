@@ -20,7 +20,8 @@ pub struct RiskFacts {
     /// (machine, "offline"/"degraded", age text, tasks waiting)
     pub machines_down: Vec<(String, String, String, i64)>,
     /// (ask key, order, open for ms)
-    pub blocked_asks: Vec<(String, String, i64)>,
+    /// (what waits on the person, its order, open for ms) of every open request.
+    pub blocked_requests: Vec<(String, String, i64)>,
     /// (item, title, size letter, failed attempts) of every open must item, plan order.
     pub open_must: Vec<(String, String, char, i64)>,
     /// (check name, distinct PRs it failed on in 24 h)
@@ -90,12 +91,12 @@ pub fn risks(f: &RiskFacts) -> Vec<Risk> {
             ));
         }
     }
-    for (key, ws, open_ms) in &f.blocked_asks {
+    for (what, ws, open_ms) in &f.blocked_requests {
         if *open_ms >= BLOCKED_MS {
             out.push(risk(
                 RiskRule::BlockedOnYou,
                 Danger,
-                format!("`{key}` has blocked {ws} for {}", age(*open_ms)),
+                format!("{what} has blocked {ws} for {}", age(*open_ms)),
             ));
         }
     }
@@ -235,7 +236,7 @@ mod tests {
                 "13:40".into(),
             )],
             machines_down: vec![("buildbox".into(), "offline".into(), "4m".into(), 0)],
-            blocked_asks: vec![("api.path".into(), "W41".into(), BLOCKED_MS - 1)],
+            blocked_requests: vec![("the secret `stripe.key`".into(), "W41".into(), BLOCKED_MS - 1)],
             flaky: vec![("devbox".into(), 2, "11:02".into(), "11m".into())],
             usage: vec![
                 ("5h".into(), 0.58, false, "14:00".into()),
