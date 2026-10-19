@@ -11,29 +11,36 @@ const row = (projectId: string, marks: Partial<{ needsYou: boolean; working: boo
 const sidebar = (ids: Array<string>): ReadonlyArray<SidebarProject> => toSidebar(ids.map((id) => row(id))) ?? [];
 
 describe("sidebar projects", () => {
-  it("keeps the layer's order and marks, and says nothing until the projects loaded", () => {
+  it("keeps each project's marks, and says nothing until the projects loaded", () => {
     expect(toSidebar(undefined)).toBeUndefined();
     expect(toSidebar([row("api", { needsYou: true, working: true, running: 3 })])).toEqual([
       { key: { machineId: "devbox", projectId: "api" }, title: "api", needsYou: true, working: true, running: 3 },
     ]);
   });
 
+  it("lists projects alphabetically, so none moves as its state changes", () => {
+    // The layer puts needs-you and working first; the sidebar doesn't follow.
+    const listed = toSidebar([row("storefront", { needsYou: true }), row("billing", { working: true, running: 2 }), row("api")]);
+    expect(listed?.map((p) => p.title)).toEqual(["api", "billing", "storefront"]);
+  });
+
   it("steps forward and back, wrapping, from the open project or the ends", () => {
+    // Listed as api, billing, storefront.
     const projects = sidebar(["storefront", "api", "billing"]);
     const key = (projectId: string) => ({ machineId: "devbox", projectId });
     expect(stepProject(projects, key("api"), 1)).toEqual(key("billing"));
-    expect(stepProject(projects, key("billing"), 1)).toEqual(key("storefront"));
-    expect(stepProject(projects, key("storefront"), -1)).toEqual(key("billing"));
-    expect(stepProject(projects, null, 1)).toEqual(key("storefront"));
-    expect(stepProject(projects, null, -1)).toEqual(key("billing"));
+    expect(stepProject(projects, key("storefront"), 1)).toEqual(key("api"));
+    expect(stepProject(projects, key("api"), -1)).toEqual(key("storefront"));
+    expect(stepProject(projects, null, 1)).toEqual(key("api"));
+    expect(stepProject(projects, null, -1)).toEqual(key("storefront"));
     expect(stepProject([], null, 1)).toBeNull();
   });
 
   it("opens to the last project while it exists, else the first, else nothing", () => {
     const projects = sidebar(["storefront", "api"]);
     expect(homeProject(projects, "devbox/api")).toEqual({ machineId: "devbox", projectId: "api" });
-    expect(homeProject(projects, "devbox/gone")).toEqual({ machineId: "devbox", projectId: "storefront" });
-    expect(homeProject(projects, null)).toEqual({ machineId: "devbox", projectId: "storefront" });
+    expect(homeProject(projects, "devbox/gone")).toEqual({ machineId: "devbox", projectId: "api" });
+    expect(homeProject(projects, null)).toEqual({ machineId: "devbox", projectId: "api" });
     expect(homeProject([], "devbox/api")).toBeNull();
   });
 });
