@@ -35,14 +35,3 @@ export const middleEllipsis = (s: string, max: number): string => {
 /** "claude-haiku-5-5" → "haiku"; anything unfamiliar is shown whole. */
 export const shortModel = (model: string): string =>
   ["haiku", "sonnet", "opus", "fable"].find((f) => model.split(/[-_.]/u).includes(f)) ?? model;
-
-export const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? "" : "s"}`;
-
-/** "now", "12 m", "3 h", "2 d". */
-export const fmtAgo = (ms: number): string => {
-  const m = Math.floor(Math.max(0, ms) / 60_000);
-  if (m === 0) return "now";
-  if (m < 60) return `${m} m`;
-  if (m < 1440) return `${Math.floor(m / 60)} h`;
-  return `${Math.floor(m / 1440)} d`;
-};

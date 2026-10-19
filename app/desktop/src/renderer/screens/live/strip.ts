@@ -4,10 +4,10 @@
 import type { BoardData } from "../../src/data/selectors";
 import { selectBoardData } from "../../src/data/selectors";
 import type { DataState } from "../../src/data/store";
-import type { AgentLane } from "../board/contracts";
-import { projectKey } from "../board/live";
-import { type Fleet, fleet, groupLabel } from "../board/fleet";
-import { ROLE_WORD, describe, isFinal } from "../board/words";
+import type { AgentLane } from "./contracts";
+import { projectKey } from "./lanes";
+import { type Fleet, fleet, groupLabel } from "./fleet";
+import { ROLE_WORD, describe, isFinal } from "./words";
 
 export interface ProjectRef {
   readonly machineId: string;

@@ -1,6 +1,6 @@
-// The one 1 Hz clock for every elapsed label on the board: they all change on the same frame, once a second, and
-// only while something with a running clock is mounted and the window is visible. Nothing ticks when idle.
-import { createContext, useContext, useSyncExternalStore } from "react";
+// The one 1 Hz clock for every elapsed label: they all change on the same frame, once a second, and only while
+// something with a running clock is mounted and the window is visible. Nothing ticks when idle.
+import { useSyncExternalStore } from "react";
 
 const listeners = new Set<() => void>();
 let now = Date.now();
@@ -37,20 +37,10 @@ const subscribe = (l: () => void) => {
 };
 
 const noop = () => () => undefined;
-
-/** The clock's last reading, without subscribing: enough to decide whether to subscribe. */
-export const peekNow = (): number => now;
 const read = () => now;
 
 /**
  * Local epoch ms, re-rendering once a second while `running`. When not running it returns the time of the last
  * tick and never re-renders on its own.
  */
-export const useNow = (running: boolean): number => {
-  const fixed = useContext(FixedNow);
-  const live = useSyncExternalStore(fixed === undefined && running ? subscribe : noop, read);
-  return fixed ?? live;
-};
-
-/** A frozen clock for fixtures and screenshots, so every elapsed label is the same on every run. */
-export const FixedNow = createContext<number | undefined>(undefined);
+export const useNow = (running: boolean): number => useSyncExternalStore(running ? subscribe : noop, read);

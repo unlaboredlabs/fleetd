@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { ChatMessage, FleetStatus, LiveFrame, OrderCard } from "../../../shared/contracts";
 import { applyFrame, ingest, initialState } from "../../src/data/store";
-import type { AgentLane, LaneStatus } from "../board/contracts";
+import type { AgentLane, LaneStatus } from "./contracts";
 import { isEventLine } from "./EventLine";
-import { groupLabel } from "../board/fleet";
+import { groupLabel } from "./fleet";
 import { selectBoardData } from "../../src/data/selectors";
 import { FOLDED_LINES, projectFleet, selectStrip, stripHeadline, stripOf } from "./strip";
 

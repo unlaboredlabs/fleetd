@@ -2,7 +2,7 @@
 // suite then covers them at every size and theme on Linux and macOS, and any finding fails the PR.
 //
 // To register a screen (routes and ids: F1's route table, src/renderer/screens/shell/routes.ts):
-//   1. The screen's root carries data-screen="<id>", or "<id>.<state>" for a sub-state such as "board.empty"; the
+//   1. The screen's root carries data-screen="<id>", or "<id>.<state>" for a sub-state such as "chat.empty"; the
 //      harness waits for either.
 //   2. Add an entry below: the id, the hash route that shows it, and the fixtures it must survive: the stress
 //      fixtures that touch its data (long-text, many-*), plus empty and the error states it renders.
@@ -30,8 +30,6 @@ export const fixtures = [
   // F9: the whole real prompt registry, with edits, a project's own texts and a default changed under an edit.
   "settings-prompts",
   "settings-agents",
-  "board-stage",
-  "board-finish",
   // F2: the lead chat's live strip with 0, 3 and 20 agents at work (fixtures/live).
   "live-0",
   "live-3",
@@ -155,15 +153,6 @@ export const screens: readonly Screen[] = [
   { id: "onboarding.connecting", route: "#/onboarding", fixtures: ["hub-unreachable", "onboarding-not-found"] },
   // A hub on another protocol, either way round.
   { id: "onboarding.mismatch", route: "#/onboarding", fixtures: ["onboarding-app-too-old", "onboarding-hub-too-old"] },
-  // F2: the board (#/ and #/board). board.empty, board.list, board.stage and board.finish are its states: the stage
-  // and finish fixtures put one order on it mid-run and after every PR merged.
-  {
-    id: "board",
-    route: "#/board",
-    pending: "the lead chat removed the board as a surface (A1); F2 deletes it (A4)",
-    // hub-unreachable: the composer shows main's reason and fix for a lost hub, so their wording is seen and checked.
-    fixtures: ["empty", "typical", "long-text", "many-agents", "needs-you", "board-stage", "board-finish", "hub-unreachable"],
-  },
   // E2: every design-system primitive with short, long and empty content, one section per entry, so the primitives
   // pass before any screen uses them. Needs a build with the gallery in it: `pnpm qa:build`.
   ...gallerySections.map((s) => ({ id: `gallery.${s}`, route: `#/gallery?section=${s}`, fixtures: ["long-text"] as const })),

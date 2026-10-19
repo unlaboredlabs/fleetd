@@ -16,9 +16,6 @@ export interface SiteShot {
 }
 
 export const siteShots: readonly SiteShot[] = [
-  // The landing page's board.
-  { file: "site/fleet-board.png", screen: "board", fixture: "board-stage" },
-  { file: "docs/site/public/img/board.png", screen: "board", fixture: "board-stage" },
   { file: "docs/site/public/img/add-project.png", screen: "projects.add.cloning", fixture: "projects-cloning" },
   { file: "docs/site/public/img/steering.png", screen: "order.steer", fixture: "typical" },
   { file: "docs/site/public/img/time.png", screen: "time.timeline", fixture: "typical" },

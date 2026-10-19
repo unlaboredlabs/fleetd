@@ -6,12 +6,12 @@ import { useId, useState, type CSSProperties } from "react";
 import { useData } from "../../src/data/react";
 import { selectBoardData } from "../../src/data/selectors";
 import { Button, RoleTag, Text, Truncate, cx, roleTint, toast } from "../../ui";
-import { useNow } from "../board/clock";
-import type { AgentLane } from "../board/contracts";
-import { groupLabel, reviewProgress, writtenIn } from "../board/fleet";
-import { hubNow, projectKey } from "../board/live";
-import { Check, LaneRow, MiddleCut, Track } from "../board/parts";
-import { isRunning, stageTone } from "../board/words";
+import { useNow } from "./clock";
+import type { AgentLane } from "./contracts";
+import { groupLabel, reviewProgress, writtenIn } from "./fleet";
+import { hubNow, projectKey } from "./lanes";
+import { Check, LaneRow, MiddleCut, Track } from "./parts";
+import { isRunning, stageTone } from "./words";
 import { FOLDED_LINES, type ProjectRef, type StripLine, projectFleet, selectStrip, stripHeadline } from "./strip";
 import s from "./live.module.css";
 
