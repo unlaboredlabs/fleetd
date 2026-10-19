@@ -102,36 +102,12 @@ fn a_project_with_few_units_falls_back_to_the_fleet() {
         .map(|i| hour_item(&format!("W{i}"), "m/big", T0 + i * DAY_MS))
         .collect();
     units.push(hour_item("W9", "m/small", T0));
-    let cal = derive(&units, &[], T0);
+    let cal = derive(&units, T0);
     let r = cal.resolve("m/small", UnitKind::Order, Size::M);
     assert_eq!(r.basis, fleetd_contracts::status::WeightsBasis::Fleet);
     let r = cal.resolve("m/big", UnitKind::Order, Size::M);
     assert_eq!(r.basis, fleetd_contracts::status::WeightsBasis::Project);
     assert_eq!(r.durations.total_p50(), 60 * MIN);
-}
-
-#[test]
-fn accuracy_is_the_four_in_five_error_rounded_up_to_five() {
-    let f = |p50_min: i64, done_min: i64| Forecast {
-        unit: format!("u{p50_min}{done_min}"),
-        pkey: "m/p".into(),
-        predicted_ms: T0,
-        p50_ms: T0 + p50_min * MIN,
-        p90_ms: T0 + 2 * p50_min * MIN,
-        done_ms: Some(T0 + done_min * MIN),
-    };
-    // Errors 0%, 10%, 12%, 20%, 50%: the 4th of 5 is 20%.
-    let fs = [
-        f(100, 100),
-        f(90, 100),
-        f(112, 100),
-        f(80, 100),
-        f(150, 100),
-    ];
-    let a = accuracy(&fs, T0 + DAY_MS).unwrap();
-    assert_eq!((a.within_pct, a.samples), (20, 5));
-    // A week later they no longer count.
-    assert!(accuracy(&fs, T0 + 9 * DAY_MS).is_none());
 }
 
 #[test]
@@ -218,32 +194,6 @@ fn an_order_without_a_plan_is_one_unit_that_falls_back_on_ci() {
         let first = u.first_reached();
         assert_eq!(first[ReviewPassed.index()], Some(T0 + 25 * MIN));
         assert_eq!(first[CiGreen.index()], Some(T0 + 35 * MIN));
-        Ok(())
-    })
-    .unwrap();
-}
-
-#[test]
-fn the_forecast_log_keeps_the_first_prediction_and_records_the_finish() {
-    let db = HubDb::open_memory().unwrap();
-    let done = hour_item("W1", "m/p", T0);
-    let mut open = done.clone();
-    open.obs.truncate(2);
-    let cal = Calibration::default();
-    db.with(|c| {
-        log(c, &[open.clone()], &cal, T0 + 5 * MIN)?;
-        log(c, std::slice::from_ref(&open), &cal, T0 + 30 * MIN)?;
-        let first = forecasts(c, 0)?;
-        assert_eq!(first.len(), 1);
-        assert_eq!(
-            (first[0].predicted_ms, first[0].done_ms),
-            (T0 + 5 * MIN, None)
-        );
-        assert!(first[0].p90_ms >= first[0].p50_ms && first[0].p50_ms > T0 + 5 * MIN);
-        log(c, std::slice::from_ref(&done), &cal, T0 + 61 * MIN)?;
-        let fc = forecasts(c, 0)?;
-        assert_eq!(fc[0].done_ms, Some(T0 + 60 * MIN));
-        assert_eq!(fc[0].p50_ms, first[0].p50_ms);
         Ok(())
     })
     .unwrap();

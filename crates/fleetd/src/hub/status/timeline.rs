@@ -231,23 +231,27 @@ fn order_units(c: &Connection, o: &Order) -> rusqlite::Result<Vec<Timeline>> {
         "SELECT data FROM changes WHERE json_extract(data, '$.workstreamId') = ?1",
         ws,
     )?;
-    let pushes: Vec<(i64, String)> = {
-        let mut st = c.prepare(
+    // Pushes are the time inspector's: a hub without its tables has none.
+    let pushes: Vec<(i64, String)> = c
+        .prepare(
             "SELECT s.start_ms, s.task_id, l.text FROM time_spans s JOIN time_labels l ON l.id = s.label_id
              WHERE s.workstream_id = ?1 AND s.kind = ?2 AND s.task_id IS NOT NULL ORDER BY s.start_ms",
-        )?;
-        st.query_map(params![ws, SpanKind::Git.code()], |r| {
-            Ok((
-                r.get::<_, i64>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, String>(2)?,
-            ))
-        })?
-        .filter_map(|r| r.ok())
+        )
+        .and_then(|mut st| {
+            st.query_map(params![ws, SpanKind::Git.code()], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .unwrap_or_default()
+        .into_iter()
         .filter(|(_, _, label)| is_push(label))
         .map(|(at, task, _)| (at, task))
-        .collect()
-    };
+        .collect();
     let at_of = |ty: &str| {
         o.events
             .iter()

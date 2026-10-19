@@ -4,24 +4,30 @@
 //!
 //! cargo run -p fleetd --example progress_replay -- --out replay.json --hours 48 fleet.sqlite [lab.sqlite ...]
 //!
-//! The first database is the fleet: its orders also make the fleet curve. Each order is replayed with the model as the
-//! hub would have run it (calibrated from that database's units verified before the order began, which falls back to
-//! the built-in model until enough are), and with a what-if calibration from every other verified unit of its
-//! database, whatever their number.
+//! The first database is the live fleet (its orders also make the fleet curve), the rest are lab runs. Every finished
+//! order is replayed with the built-in model, and leave-one-out: calibrated from every other order (all databases,
+//! or only those of its own kind, live or lab) pooled across projects and unit kinds, minimum sample counts ignored.
+//! Progress quality: steadiness, drops only with a reason, and how far the estimate is from the share of the order's
+//! time that had passed. The ETA error is for us only: the product shows no time estimate.
 use std::path::{Path, PathBuf};
 
-use fleetd::hub::status::calib::{self, Forecast};
+use fleetd::hub::status::calib;
 use fleetd::hub::status::model::{
-    self, Calibration, Cause, Group, ItemProgress, MIN_DURATION_SAMPLES, MIN_WEIGHT_SAMPLES,
-    Params, Point, Unit, UnitKind, item_progress, next_point,
+    self, Calibration, Cause, DurationRow, Group, ItemProgress, MIN_DURATION_SAMPLES,
+    MIN_WEIGHT_SAMPLES, Params, Point, STAGES, StageDurations, Unit, UnitKind, item_progress,
+    next_point,
 };
 use fleetd::hub::status::timeline::{self, Timeline};
 use fleetd::hub::store::HubDb;
+use fleetd_contracts::plan::Size;
 use fleetd_contracts::status::DropReason;
 use rusqlite::{Connection, OpenFlags};
 use serde_json::{Value, json};
 
 const MIN: i64 = 60_000;
+/// A one-minute rise at least this big is reported as a jump.
+const JUMP: i64 = 10;
+const VARIANTS: [&str; 3] = ["builtIn", "looAll", "looSameKind"];
 
 /// Read through a read-only connection into a scratch copy, migrated there so an older hub's database reads like a
 /// current one (a branch build's database, migrated out of order, is read as it is).
@@ -46,6 +52,7 @@ fn load(path: &Path, hours: i64) -> anyhow::Result<Vec<Timeline>> {
 
 struct Order<'a> {
     source: usize,
+    live: bool,
     ws: &'a str,
     units: Vec<&'a Timeline>,
 }
@@ -54,15 +61,15 @@ impl Order<'_> {
     fn start(&self) -> i64 {
         self.units[0].order_ms
     }
-    fn live(&self) -> impl Iterator<Item = &&Timeline> {
+    fn live_units(&self) -> impl Iterator<Item = &&Timeline> {
         self.units.iter().filter(|u| !u.dropped)
     }
     fn done(&self) -> Option<i64> {
-        let done: Option<Vec<i64>> = self.live().map(|u| u.done_ms()).collect();
+        let done: Option<Vec<i64>> = self.live_units().map(|u| u.done_ms()).collect();
         done?.into_iter().max()
     }
     fn points(&self) -> f64 {
-        self.live().map(|u| u.size.points() as f64).sum()
+        self.live_units().map(|u| u.size.points() as f64).sum()
     }
     /// The new model's group at `t`, and each planned unit's progress.
     fn group_at(&self, cal: &Calibration, t: i64) -> (Group, Vec<ItemProgress>) {
@@ -75,14 +82,13 @@ impl Order<'_> {
             share,
             usual,
         );
-        let progress: Vec<ItemProgress> = self
-            .live()
-            .filter(|u| u.start_ms <= t)
+        let planned: Vec<&&Timeline> = self.live_units().filter(|u| u.start_ms <= t).collect();
+        let progress: Vec<ItemProgress> = planned
+            .iter()
             .map(|u| item_progress(&u.facts_at(t), t, &cal.resolve(&u.pkey, u.kind, u.size)))
             .collect();
-        let units = self
-            .live()
-            .filter(|u| u.start_ms <= t)
+        let units = planned
+            .iter()
             .zip(&progress)
             .map(|(u, p)| Unit {
                 points: u.size.points() as f64,
@@ -104,7 +110,7 @@ fn old_pct(orders: &[&Order], t: i64) -> i64 {
     let (mut done, mut total) = (0.0, 0.0);
     for u in orders
         .iter()
-        .flat_map(|o| o.live())
+        .flat_map(|o| o.live_units())
         .filter(|u| u.order_ms <= t)
     {
         total += u.size.points() as f64;
@@ -119,33 +125,40 @@ fn old_pct(orders: &[&Order], t: i64) -> i64 {
     }
 }
 
-/// (t, old, new as calibrated, new what-if).
-type Row = (i64, i64, Point, Point);
+/// (t, old, one point per calibration).
+type Row = (i64, i64, Vec<Point>);
 
+/// `cals[i][k]`: order i's calibration in variant k.
 fn curve(
     orders: &[&Order],
-    cals: &[(Calibration, Calibration)],
+    cals: &[Vec<Calibration>],
     causes: &[Cause],
     from: i64,
     to: i64,
 ) -> Vec<Row> {
+    let variants = cals.first().map_or(0, Vec::len);
     let mut rows: Vec<Row> = Vec::new();
     let mut t = from;
     while t <= to {
-        let at = |pick: fn(&(Calibration, Calibration)) -> &Calibration| {
-            let groups: Vec<Group> = orders
-                .iter()
-                .zip(cals)
-                .filter(|(o, _)| o.start() <= t)
-                .map(|(o, c)| o.group_at(pick(c), t).0)
-                .collect();
-            model::estimate(&groups)
-        };
-        let (a, b) = (at(|c| &c.0), at(|c| &c.1));
-        let prev = rows.last();
-        let pa = next_point(prev.map(|r| &r.2), a.pct, a.verified_pct, causes, t);
-        let pb = next_point(prev.map(|r| &r.3), b.pct, b.verified_pct, causes, t);
-        rows.push((t, old_pct(orders, t), pa, pb));
+        let points = (0..variants)
+            .map(|k| {
+                let groups: Vec<Group> = orders
+                    .iter()
+                    .zip(cals)
+                    .filter(|(o, _)| o.start() <= t)
+                    .map(|(o, c)| o.group_at(&c[k], t).0)
+                    .collect();
+                let e = model::estimate(&groups);
+                next_point(
+                    rows.last().map(|r| &r.2[k]),
+                    e.pct,
+                    e.verified_pct,
+                    causes,
+                    t,
+                )
+            })
+            .collect();
+        rows.push((t, old_pct(orders, t), points));
         t += MIN;
     }
     rows
@@ -174,28 +187,86 @@ fn rows_json(rows: &[Row]) -> Value {
             .map(|d| json!({ "reason": d.reason, "from": d.from_pct, "text": d.text }))
     };
     rows.iter()
-        .map(|(t, old, a, b)| {
-            json!({ "t": t, "old": old, "new": a.pct, "verified": a.verified, "drop": drop(a), "whatIf": b.pct })
+        .map(|(t, old, p)| {
+            json!({ "t": t, "old": old, "new": p[0].pct, "verified": p[0].verified, "drop": drop(&p[0]),
+                    "loo": p.get(1).map(|p| p.pct) })
         })
         .collect()
 }
 
-/// Every sample count raised to the model's minimum, so a calibration from few units is used rather than set aside.
-fn any_samples(mut c: Calibration) -> Calibration {
-    let bump = |p: &mut Params| {
-        if p.weights.is_some() {
-            p.weight_samples = p.weight_samples.max(MIN_WEIGHT_SAMPLES);
+/// One calibration from `units` pooled across projects and unit kinds, every sample count raised to the model's
+/// minimum. A size nobody measured is scaled from a measured one by points.
+fn pooled(units: &[&Timeline]) -> Calibration {
+    let us: Vec<Timeline> = units
+        .iter()
+        .map(|u| Timeline {
+            kind: UnitKind::Item,
+            pkey: "pooled".into(),
+            ..(*u).clone()
+        })
+        .collect();
+    let mut p = calib::derive(&us, 0).fleet;
+    let measured: Vec<DurationRow> = p.durations.clone();
+    let mut rows = Vec::new();
+    for size in [Size::S, Size::M, Size::L] {
+        let base = measured
+            .iter()
+            .find(|r| r.size == size)
+            .or_else(|| measured.iter().find(|r| r.size == Size::M))
+            .or(measured.first());
+        let Some(base) = base else { continue };
+        let k = size.points() as f64 / base.size.points() as f64;
+        let scale = |a: [i64; STAGES - 1]| a.map(|v| (v as f64 * k).round() as i64);
+        let d = StageDurations {
+            p50: scale(base.durations.p50),
+            p90: scale(base.durations.p90),
+            samples: base.durations.samples,
+        };
+        for kind in [UnitKind::Item, UnitKind::Order] {
+            rows.push(DurationRow {
+                kind,
+                size,
+                durations: d.clone(),
+            });
         }
-        for d in &mut p.durations {
-            d.durations.samples = d.durations.samples.max(MIN_DURATION_SAMPLES);
-        }
-        if p.planning_share.is_some() {
-            p.planning_samples = p.planning_samples.max(MIN_DURATION_SAMPLES);
-        }
-    };
-    bump(&mut c.fleet);
-    c.projects.values_mut().for_each(bump);
-    c
+    }
+    p.durations = rows;
+    bump(&mut p);
+    Calibration {
+        fleet: p,
+        ..Calibration::default()
+    }
+}
+
+fn bump(p: &mut Params) {
+    if p.weights.is_some() {
+        p.weight_samples = p.weight_samples.max(MIN_WEIGHT_SAMPLES);
+    }
+    for d in &mut p.durations {
+        d.durations.samples = d.durations.samples.max(MIN_DURATION_SAMPLES);
+    }
+    if p.planning_share.is_some() {
+        p.planning_samples = p.planning_samples.max(MIN_DURATION_SAMPLES);
+    }
+}
+
+/// The weights and per-size lengths a pooled calibration measured: a candidate for the built-in model.
+fn defaults_json(units: &[&Timeline]) -> Value {
+    let c = pooled(units);
+    let measured = units
+        .iter()
+        .filter(|u| !u.dropped && u.done_ms().is_some())
+        .count();
+    json!({
+        "units": measured,
+        "cumWeights": c.fleet.weights.map(|w| w.cum.map(|x| (x * 1000.0).round() / 1000.0)),
+        "totalMinutesBySize": c.fleet.durations.iter().filter(|r| r.kind == UnitKind::Item)
+            .map(|r| json!({ "size": r.size, "p50": r.durations.total_p50() as f64 / MIN as f64,
+                             "p90": r.durations.p90.iter().sum::<i64>() as f64 / MIN as f64 }))
+            .collect::<Vec<_>>(),
+        "planningShare": c.fleet.planning_share,
+        "planningMinutes": c.fleet.planning_p50_ms.map(|m| m as f64 / MIN as f64),
+    })
 }
 
 fn rank(mut v: Vec<f64>, p: f64) -> Option<f64> {
@@ -212,13 +283,65 @@ impl Errors {
     fn json(&self) -> Value {
         let abs = self.0.iter().map(|e| e.0 / MIN as f64).collect::<Vec<_>>();
         let rel = self.0.iter().map(|e| e.1).collect::<Vec<_>>();
+        let r2 = |x: Option<f64>| x.map(|x| (x * 100.0).round() / 100.0);
         json!({
-            "samples": self.0.len(),
-            "absMinutes": { "p50": rank(abs.clone(), 0.5), "p90": rank(abs, 0.9) },
-            "relative": { "p50": rank(rel.clone(), 0.5), "p90": rank(rel, 0.9) },
-            "finishedByP90": self.0.iter().filter(|e| e.2).count() as f64 / self.0.len().max(1) as f64,
+            "minutes": self.0.len(),
+            "absMinutes": { "p50": r2(rank(abs.clone(), 0.5)), "p90": r2(rank(abs, 0.9)) },
+            "relative": { "p50": r2(rank(rel.clone(), 0.5)), "p90": r2(rank(rel, 0.9)) },
+            "p90Coverage": r2(Some(self.0.iter().filter(|e| e.2).count() as f64 / self.0.len().max(1) as f64)),
         })
     }
+}
+
+/// |estimate − share of the order's time passed| per replayed minute, in points.
+#[derive(Default)]
+struct Tracking(Vec<f64>);
+
+impl Tracking {
+    fn json(&self) -> Value {
+        let r1 = |x: Option<f64>| x.map(|x| (x * 10.0).round() / 10.0);
+        let mean = (!self.0.is_empty()).then(|| self.0.iter().sum::<f64>() / self.0.len() as f64);
+        json!({ "minutes": self.0.len(), "meanAbsPoints": r1(mean), "p90AbsPoints": r1(rank(self.0.clone(), 0.9)) })
+    }
+}
+
+/// Points where a figure fell, and those of them without a stated reason.
+fn drops(rows: &[Row], k: usize) -> (usize, usize) {
+    rows.windows(2)
+        .filter(|w| w[1].2[k].pct < w[0].2[k].pct)
+        .fold((0, 0), |(n, bare), w| {
+            (n + 1, bare + usize::from(w[1].2[k].drop.is_none()))
+        })
+}
+
+/// Every one-minute rise of at least JUMP points, with what each unit did in that minute.
+fn jumps(o: &Order, cal: &Calibration, rows: &[Row], k: usize) -> Vec<Value> {
+    let mut out = Vec::new();
+    for w in rows.windows(2) {
+        let (a, b) = (&w[0], &w[1]);
+        let delta = b.2[k].pct - a.2[k].pct;
+        if delta < JUMP {
+            continue;
+        }
+        let units: Vec<Value> = o
+            .live_units()
+            .filter_map(|u| {
+                let r = cal.resolve(&u.pkey, u.kind, u.size);
+                let (s0, e0) = u.facts_at(a.0).current();
+                let (s1, _) = u.facts_at(b.0).current();
+                let usual = r.durations.p50.get(s0.index()).copied().unwrap_or(1).max(1);
+                let fill = (a.0 - e0) as f64 / usual as f64;
+                (s0 != s1 || fill >= model::IN_STAGE_CAP).then(|| {
+                    json!({ "unit": u.label, "from": s0, "to": s1,
+                            "stageFilledBefore": (fill.min(9.99) * 100.0).round() / 100.0,
+                            "heldAtCapBefore": fill >= model::IN_STAGE_CAP,
+                            "usualStageMinutes": usual as f64 / MIN as f64 })
+                })
+            })
+            .collect();
+        out.push(json!({ "minute": (b.0 - o.start()) / MIN, "from": a.2[k].pct, "to": b.2[k].pct, "units": units }));
+    }
+    out
 }
 
 fn main() -> anyhow::Result<()> {
@@ -234,16 +357,16 @@ fn main() -> anyhow::Result<()> {
     }
     anyhow::ensure!(!paths.is_empty(), "give at least one hub database copy");
     let mut sources: Vec<(String, Vec<Timeline>)> = Vec::new();
-    for path in &paths {
+    for (i, path) in paths.iter().enumerate() {
         let name = path
             .file_name()
             .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
         match load(path, hours) {
             Ok(units) => sources.push((name, units)),
+            Err(error) if i == 0 => anyhow::bail!("the fleet database {name}: {error}"),
             Err(error) => eprintln!("skipping {name}: {error}"),
         }
     }
-    anyhow::ensure!(!sources.is_empty(), "no database could be read");
     let mut orders: Vec<Order> = Vec::new();
     for (i, (_, units)) in sources.iter().enumerate() {
         let mut ids: Vec<&str> = units.iter().map(|u| u.workstream.as_str()).collect();
@@ -251,45 +374,46 @@ fn main() -> anyhow::Result<()> {
         for ws in ids {
             orders.push(Order {
                 source: i,
+                live: i == 0,
                 ws,
                 units: units.iter().filter(|u| u.workstream == ws).collect(),
             });
         }
     }
-    let cals_of = |o: &Order| {
-        let units = &sources[o.source].1;
-        let pick = |keep: &dyn Fn(&Timeline) -> bool| -> Vec<Timeline> {
-            units.iter().filter(|u| keep(u)).cloned().collect()
-        };
-        let before = pick(&|u| u.done_ms().is_some_and(|d| d < o.start()));
-        let others = pick(&|u| u.workstream != o.ws);
-        (
-            calib::derive(&before, &[], o.start()),
-            any_samples(calib::derive(&others, &[], o.start())),
-        )
-    };
-    let smallest: Vec<Option<i64>> = sources
-        .iter()
-        .map(|(_, units)| {
-            units
+    let same = |a: &Order, b: &Order| a.source == b.source && a.ws == b.ws;
+    let cals_of = |o: &Order| -> Vec<Calibration> {
+        let others = |keep: &dyn Fn(&Order) -> bool| -> Vec<&Timeline> {
+            orders
                 .iter()
-                .filter(|u| !u.dropped)
-                .filter_map(|u| Some(u.done_ms()? - u.start_ms))
-                .min()
-        })
-        .collect();
+                .filter(|x| !same(x, o) && keep(x))
+                .flat_map(|x| x.units.iter().copied())
+                .collect()
+        };
+        vec![
+            Calibration::default(),
+            pooled(&others(&|_| true)),
+            pooled(&others(&|x| x.live == o.live)),
+        ]
+    };
+    let smallest = |live: bool| {
+        orders
+            .iter()
+            .filter(|o| o.live == live)
+            .flat_map(|o| o.live_units())
+            .filter_map(|u| Some(u.done_ms()? - u.start_ms))
+            .min()
+    };
 
     let mut out_orders = Vec::new();
-    let mut errors = [
-        [Errors::default(), Errors::default()],
-        [Errors::default(), Errors::default()],
-    ];
-    let mut forecasts: [Vec<Forecast>; 2] = [Vec::new(), Vec::new()];
-    let mut worst_flat = [(0i64, 0i64), (0, 0)];
+    // errors[variant][live? 0 : 1]
+    let mut errors: Vec<[Errors; 2]> = VARIANTS.iter().map(|_| Default::default()).collect();
+    let mut worst_flat = [(0i64, 0i64, 0i64); 2];
+    let mut tracking: Vec<[Tracking; 2]> = VARIANTS.iter().map(|_| Default::default()).collect();
+    let mut drop_counts = [[(0usize, 0usize); 3]; 2];
     for o in orders.iter().filter(|o| o.done().is_some()) {
         let done = o.done().unwrap_or_default();
         let cals = cals_of(o);
-        let group = usize::from(o.source != 0);
+        let tag = usize::from(!o.live);
         let rows = curve(
             &[o],
             std::slice::from_ref(&cals),
@@ -299,14 +423,37 @@ fn main() -> anyhow::Result<()> {
         );
         let flat = (
             longest_flat(&rows, |r| r.1),
-            longest_flat(&rows, |r| r.2.pct),
+            longest_flat(&rows, |r| r.2[0].pct),
+            longest_flat(&rows, |r| r.2[1].pct),
         );
-        worst_flat[group] = (
-            worst_flat[group].0.max(flat.0),
-            worst_flat[group].1.max(flat.1),
-        );
-        let mut eta = Vec::new();
-        for (k, cal) in [&cals.0, &cals.1].into_iter().enumerate() {
+        let w = &mut worst_flat[tag];
+        *w = (w.0.max(flat.0), w.1.max(flat.1), w.2.max(flat.2));
+        for (k, counts) in drop_counts[tag].iter_mut().enumerate() {
+            let cal = &cals[k];
+            let rows_k = if k < 2 {
+                rows.iter()
+                    .map(|r| (r.0, r.1, vec![r.2[k].clone()]))
+                    .collect::<Vec<Row>>()
+            } else {
+                curve(
+                    &[o],
+                    &[vec![cal.clone()]],
+                    &o.units[0].causes,
+                    o.start(),
+                    done + MIN,
+                )
+            };
+            let (n, bare) = drops(&rows_k, 0);
+            *counts = (counts.0 + n, counts.1 + bare);
+            for r in rows_k.iter().filter(|r| r.0 <= done) {
+                let realized = 100.0 * (r.0 - o.start()) as f64 / (done - o.start()).max(1) as f64;
+                tracking[k][tag]
+                    .0
+                    .push((r.2[0].pct as f64 - realized).abs());
+            }
+        }
+        let mut loo_eta = Vec::new();
+        for (k, cal) in cals.iter().enumerate() {
             let mut t = o.start();
             while t < done {
                 let (_, progress) = o.group_at(cal, t);
@@ -314,34 +461,30 @@ fn main() -> anyhow::Result<()> {
                     let (p50, p90) =
                         model::scope_eta(&progress.iter().collect::<Vec<_>>(), 1, (0, 0), t);
                     let err = (p50 - done).abs() as f64;
-                    errors[group][k]
+                    errors[k][tag]
                         .0
                         .push((err, err / (done - t).max(MIN) as f64, done <= p90));
-                    if k == 0 {
-                        eta.push(json!({ "t": t, "p50": p50, "p90": p90 }));
+                    if k == 1 {
+                        loo_eta.push(json!({ "t": t, "p50": p50, "p90": p90 }));
                     }
                 }
                 t += MIN;
             }
         }
-        for u in o.live() {
-            forecasts[group].push(calib::forecast(u, u.start_ms, &cals.0));
-        }
-        let first = o.units[0];
         out_orders.push(json!({
-            "source": sources[o.source].0, "workstream": o.ws, "start": o.start(), "done": done,
-            "basis": cals.0.resolve(&first.pkey, first.kind, first.size).basis,
+            "source": sources[o.source].0, "live": o.live, "workstream": o.ws, "start": o.start(), "done": done,
             "units": o.units.iter().map(|u| json!({
                 "label": u.label, "kind": if u.kind == UnitKind::Order { "order" } else { "item" },
                 "size": u.size, "start": u.start_ms, "done": u.done_ms(), "dropped": u.dropped,
             })).collect::<Vec<_>>(),
-            "longestFlatMs": { "old": flat.0, "new": flat.1, "smallestUnitMs": smallest[o.source] },
-            "series": rows_json(&rows), "eta": eta,
+            "longestFlatMs": { "old": flat.0, "builtIn": flat.1, "looAll": flat.2 },
+            "jumps": { "builtIn": jumps(o, &cals[0], &rows, 0), "looAll": jumps(o, &cals[1], &rows, 1) },
+            "series": rows_json(&rows), "internalEtaLooAll": loo_eta,
         }));
     }
 
-    // The fleet: the first database's orders, each joining the figure (a scope change) when it was created.
-    let fleet_orders: Vec<&Order> = orders.iter().filter(|o| o.source == 0).collect();
+    // The fleet: the live database's orders, each joining the figure (a scope change) when it was created.
+    let fleet_orders: Vec<&Order> = orders.iter().filter(|o| o.live).collect();
     let fleet = (!fleet_orders.is_empty()).then(|| {
         let mut causes: Vec<Cause> = fleet_orders
             .iter()
@@ -352,8 +495,10 @@ fn main() -> anyhow::Result<()> {
             reason: DropReason::ScopeChange,
             text: format!("+1 order: {}", o.ws),
         }));
-        let cals: Vec<(Calibration, Calibration)> =
-            fleet_orders.iter().map(|o| cals_of(o)).collect();
+        let cals: Vec<Vec<Calibration>> = fleet_orders
+            .iter()
+            .map(|o| cals_of(o)[..2].to_vec())
+            .collect();
         let from = fleet_orders.iter().map(|o| o.start()).min().unwrap_or(0);
         let to = fleet_orders
             .iter()
@@ -363,52 +508,65 @@ fn main() -> anyhow::Result<()> {
             + MIN;
         curve(&fleet_orders, &cals, &causes, from, to)
     });
-    let fleet_flat = fleet
-        .as_ref()
-        .map(|r| (longest_flat(r, |r| r.1), longest_flat(r, |r| r.2.pct)));
+    let fleet_flat = fleet.as_ref().map(|r| {
+        json!({ "old": longest_flat(r, |r| r.1), "builtIn": longest_flat(r, |r| r.2[0].pct),
+                "looAll": longest_flat(r, |r| r.2[1].pct) })
+    });
 
-    let group_json = |g: usize, flat_fleet: Option<(i64, i64)>| {
-        let smallest = if g == 0 {
-            smallest[0]
-        } else {
-            smallest[1..].iter().flatten().min().copied()
-        };
-        let worst_new = worst_flat[g].1.max(flat_fleet.map_or(0, |f| f.1));
-        let latest = forecasts[g]
-            .iter()
-            .filter_map(|f| f.done_ms)
-            .max()
-            .unwrap_or(0);
+    let group = |tag: usize| {
+        let live = tag == 0;
+        let w = worst_flat[tag];
         json!({
-            "smallestUnitMs": smallest,
-            "longestFlatMs": {
-                "orders": { "old": worst_flat[g].0, "new": worst_flat[g].1 },
-                "fleet": flat_fleet.map(|(o, n)| json!({ "old": o, "new": n })),
-            },
-            "flatWithinSmallestUnit": smallest.is_some_and(|s| worst_new <= s),
-            "etaError": { "asShipped": errors[g][0].json(), "whatIfCalibratedFromOthers": errors[g][1].json() },
-            "forecastAccuracy": calib::accuracy(&forecasts[g], latest)
-                .map(|a| json!({ "withinPct": a.within_pct, "samples": a.samples })),
+            "orders": orders.iter().filter(|o| o.live == live && o.done().is_some()).count(),
+            "smallestUnitMs": smallest(live),
+            "longestFlatMsPerOrder": { "old": w.0, "builtIn": w.1, "looAll": w.2 },
+            "tracking": VARIANTS.iter().zip(&tracking).map(|(n, e)| (n.to_string(), e[tag].json()))
+                .collect::<serde_json::Map<_, _>>(),
+            "drops": VARIANTS.iter().zip(&drop_counts[tag]).map(|(n, (all, bare))| (n.to_string(), json!({ "all": all, "unexplained": bare })))
+                .collect::<serde_json::Map<_, _>>(),
+            "internalEtaError": VARIANTS.iter().zip(&errors).map(|(n, e)| (n.to_string(), e[tag].json()))
+                .collect::<serde_json::Map<_, _>>(),
         })
     };
+    let all_units: Vec<&Timeline> = orders
+        .iter()
+        .flat_map(|o| o.units.iter().copied())
+        .collect();
+    let live_units: Vec<&Timeline> = orders
+        .iter()
+        .filter(|o| o.live)
+        .flat_map(|o| o.units.iter().copied())
+        .collect();
     let report = json!({
         "hours": hours,
         "sources": sources.iter().map(|(n, u)| json!({ "name": n, "units": u.len() })).collect::<Vec<_>>(),
-        "fleet": group_json(0, fleet_flat),
-        "lab": (sources.len() > 1).then(|| group_json(1, None)),
+        "live": group(0),
+        "lab": group(1),
+        "fleetLongestFlatMs": fleet_flat,
+        "proposedDefaults": { "allData": defaults_json(&all_units), "liveOnly": defaults_json(&live_units) },
         "notes": [
-            "asShipped: calibrated from the database's units verified before the order began; with fewer than the model's minimum samples that is the built-in model",
-            "whatIfCalibratedFromOthers: calibrated from every other verified unit of the same database, minimum sample counts ignored",
-            "etaError: |p50 - actual finish| at every replayed minute of a finished order; relative = over the time that was left",
-            "forecastAccuracy: four in five units finished within ±withinPct of the p50 predicted when they were planned",
+            "builtIn: the model's built-in weights and lengths (M item = 60 min)",
+            "looAll: leave-one-out, calibrated from every other finished unit of every database, pooled across projects and unit kinds, minimum sample counts ignored; a size nobody measured is scaled by points",
+            "looSameKind: the same, from other live orders only for a live order and other lab orders only for a lab order",
+            "tracking: |estimate % - share of the order's wall time passed| at every replayed minute, in points",
+            "drops: points where the estimate fell; unexplained = without a stated reason (must be 0)",
+            "internalEtaError (not a product figure): |p50 - actual finish| at every replayed minute; relative = over the time that was left; p90Coverage = share of minutes the finish came by p90",
+            "jumps: one-minute rises of 10+ points; stageFilledBefore = elapsed/usual in the stage the unit was in (the model caps credit at 0.9 of it)",
         ],
         "orders": out_orders,
         "fleetSeries": fleet.map(|r| json!({ "source": sources[0].0, "series": rows_json(&r) })),
     });
     std::fs::write(&out, serde_json::to_string_pretty(&report)?)?;
+    let brief = |g: &Value| {
+        json!({ "orders": g["orders"], "smallestUnitMs": g["smallestUnitMs"],
+        "longestFlatMsPerOrder": g["longestFlatMsPerOrder"], "tracking": g["tracking"], "drops": g["drops"] })
+    };
     println!(
         "{}",
-        serde_json::to_string_pretty(&json!({ "fleet": report["fleet"], "lab": report["lab"] }))?
+        serde_json::to_string_pretty(&json!({
+            "live": brief(&report["live"]), "lab": brief(&report["lab"]),
+            "fleetLongestFlatMs": report["fleetLongestFlatMs"], "proposedDefaults": report["proposedDefaults"],
+        }))?
     );
     Ok(())
 }
