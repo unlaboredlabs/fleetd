@@ -1,6 +1,6 @@
 // Insights: the hub's deterministic findings (spec §6), strongest first, each with its numbers and a way to the
 // spans behind it. The app adds nothing to the message but layout.
-import { Button, Text, cx } from "../../ui";
+import { Button, InlineCode, Text, cx } from "../../ui";
 import type { Linked } from "./data";
 import { capitalized, compareLine, pieces } from "./insightText";
 import type { Insight } from "./types";
@@ -16,7 +16,10 @@ function Message({ text }: { text: string }) {
   return (
     <Text as="p">
       {pieces(capitalized(text)).map((p, i) =>
-        p.mono ? (
+        // The hub backticks machine text (commands, check names, keys): shown as code, exactly as written.
+        p.code ? (
+          <InlineCode key={i}>{p.text}</InlineCode>
+        ) : p.mono ? (
           <Text key={i} mono size="sm">
             {p.text}
           </Text>
@@ -50,7 +53,8 @@ export function Insights({ insights, compare, onLinked }: InsightsProps) {
       </Text>
       <ol className={cx(s.insights)}>
         {insights.map((ins, ix) => {
-          const linked: Linked = { title: capitalized(ins.message), rule: ins.rule };
+          // A title is plain text: the hub's backticks only mark code inside the message.
+          const linked: Linked = { title: capitalized(ins.message).replace(/`/gu, ""), rule: ins.rule };
           const n = ins.spanIds.length;
           const fired = ins.firedIn === undefined ? undefined : FIRED[ins.firedIn];
           return (

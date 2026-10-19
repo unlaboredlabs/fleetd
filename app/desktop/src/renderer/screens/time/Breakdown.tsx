@@ -2,7 +2,7 @@
 // slowest and repeated commands, the CI checks and the time spent waiting on you. With compare on, each category
 // shows the period before beside this one. Every row opens the spans behind it.
 import type { ReactNode } from "react";
-import { Text, Truncate, cx } from "../../ui";
+import { Text, Truncate, cx, humanizeKey } from "../../ui";
 import type { Linked } from "./data";
 import { CAT_LABEL, KIND_WORD, SHOWN, delta, fmtBytes, fmtDur, gapText, pct, type Missing } from "./format";
 import type { Category, CategoryTotal, SpanKind, TimeBreakdownOutput } from "./types";
@@ -281,12 +281,7 @@ export function Breakdown({ data: b, order, missing, pathIds, onLinked }: Breakd
               {fmtDur(b.humanWait.totalMs)} over {b.humanWait.n} wait{b.humanWait.n === 1 ? "" : "s"}
               {b.humanWait.longest !== undefined ? (
                 <>
-                  ; longest{" "}
-                  {b.humanWait.longest.label !== undefined ? (
-                    <Text mono size="sm">
-                      {b.humanWait.longest.label}
-                    </Text>
-                  ) : null}{" "}
+                  ; longest {b.humanWait.longest.label !== undefined ? `${humanizeKey(b.humanWait.longest.label)}, ` : ""}
                   {fmtDur(b.humanWait.longest.ms)}
                 </>
               ) : null}

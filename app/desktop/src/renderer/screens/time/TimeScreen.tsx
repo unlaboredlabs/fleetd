@@ -238,7 +238,7 @@ export function TimeScreen(props: TimeScreenProps) {
           {highlight !== undefined ? (
             <div className={cx(s.banner)}>
               <span className={cx(s.litMark)} aria-hidden />
-              <Truncate size="xs">{`${highlight.ids.size} span${highlight.ids.size === 1 ? "" : "s"} lit: ${highlight.title.replace(/`/gu, "")}`}</Truncate>
+              <Truncate size="xs">{`${highlight.ids.size} span${highlight.ids.size === 1 ? "" : "s"} lit: ${highlight.title}`}</Truncate>
               <span className={cx(s.grow)} />
               <Button variant="ghost" onClick={listHighlight}>
                 List them

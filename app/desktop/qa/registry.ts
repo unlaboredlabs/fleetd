@@ -24,6 +24,8 @@ export const fixtures = [
   "hub-unreachable",
   "pairing-failed",
   "node-too-old",
+  // E3b's shared stress fixture; the time inspector fills it with a ~15k-span order (fixtures/time).
+  "time-heavy",
 ] as const;
 export type FixtureName = (typeof fixtures)[number];
 
@@ -59,6 +61,27 @@ export const screens: readonly Screen[] = [
   },
   // E2: every design-system primitive with stress content, so the primitives pass before any screen uses them.
   { id: "gallery", route: "#/gallery", fixtures: ["typical"], pending: "E2's gallery (feat/desktop-ui) has not landed" },
+  // F7: the time inspector (fixtures/time): an order's timeline, ~15k spans in time-heavy; the fleet's breakdown;
+  // its insights. Each tab's root carries its own id, so the three are shot apart.
+  {
+    id: "time.timeline",
+    route: "#/time/order/W8",
+    fixtures: ["typical", "long-text", "many-agents", "time-heavy", "empty"],
+    pending: "F1's ScreenHost mounts TimeScreen and #/time/order/<id> with feat/desktop-shell-ui",
+  },
+  {
+    id: "time.breakdown",
+    route: "#/time",
+    fixtures: ["typical", "long-text", "empty", "hub-unreachable"],
+    pending: "F1's ScreenHost mounts TimeScreen with feat/desktop-shell-ui",
+  },
+  {
+    id: "time.insights",
+    route: "#/time",
+    fixtures: ["typical", "long-text", "empty"],
+    open: (page) => page.getByRole("tab", { name: "Insights" }).click(),
+    pending: "F1's ScreenHost mounts TimeScreen with feat/desktop-shell-ui",
+  },
 ];
 
 // Platform checks that need a screen writer's work before they can pass; the owner turns theirs on when it lands.

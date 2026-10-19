@@ -3,8 +3,9 @@
 // week of the fleet is made of orders like it. The roll-ups here stand in for the hub's so the numbers on screen
 // agree with the bars; they are fixture data, not the hub's rules. Ported from the GPUI app's time/fixture.rs.
 import type { CallOutcome, HubFrame } from "../../../shared/hub";
-import type { TimeClient } from "./data";
-import { NO_NAMES, KIND_WORD, fmtDur, type Names } from "./format";
+import type { TimeClient } from "./client";
+// Value imports carry ".ts": `pnpm fixtures` runs this file under plain Node (fixtures/time/index.ts).
+import { NO_NAMES, KIND_WORD, fmtDur, type Names } from "./format.ts";
 import {
   KIND_CATEGORY,
   type AgentRole,
@@ -23,7 +24,7 @@ import {
   type TimeBreakdownOutput,
   type TimeInsightsInput,
   type TimeSpansInput,
-} from "./types";
+} from "./types.ts";
 
 export const FIXTURE_ORDER = "W8";
 export const FIXTURE_NOW = Date.parse("2026-10-18T10:30:00.000Z");
@@ -59,12 +60,14 @@ class Gen {
   out: Draft[] = [];
   id: number;
   next: () => number;
-  constructor(
-    seed: number,
-    readonly dense: number,
-  ) {
+  readonly dense: number;
+  /** The full-suite command, long in the long-text fixture. */
+  readonly suite: string;
+  constructor(seed: number, dense: number, suite = "npm test") {
     this.id = seed * 100_000;
     this.next = rng(seed);
+    this.dense = dense;
+    this.suite = suite;
   }
   r(lo: number, hi: number) {
     return lo + Math.floor(this.next() * Math.max(1, hi - lo));
@@ -144,7 +147,7 @@ class Gen {
     const roll = this.r(0, 100);
     const file = `src/pages/${page}.tsx`;
     let pick: [SpanKind, string, string, number, number, number];
-    if (i % suiteEvery === suiteEvery - 1) pick = ["tool.bash", "npm test", "npm test", this.r(118_000, 142_000), 0.35, this.r(20_000, 60_000)];
+    if (i % suiteEvery === suiteEvery - 1) pick = ["tool.bash", this.suite, "npm test", this.r(118_000, 142_000), 0.35, this.r(20_000, 60_000)];
     else if (roll < 30) pick = ["tool.read", file, "Read", this.r(150, 1_200), 0, this.r(800, 9_000)];
     else if (roll < 40) pick = ["tool.read", `Grep: ${page[0]?.toUpperCase() ?? ""}${page.slice(1)}Section`, "Grep", this.r(200, 900), 0, this.r(200, 3_000)];
     else if (roll < 62) pick = ["tool.edit", file, "Edit", this.r(200, 1_500), 0, 0];
@@ -244,8 +247,19 @@ interface Built {
  * One order end to end: the lead freezes the brief, three writers (two wait for a slot), one asks you, a reviewer,
  * the PR through review, the train line, a rebase and CI with three checks, then merge. 1h42m of wall.
  */
-const buildOrder = (spec: OrderSpec, dense: number): Built => {
-  const g = new Gen(spec.seed, dense);
+/** Stress shapes: more agents in the order, and a long full-suite command. */
+interface Shape {
+  readonly agents?: number;
+  readonly long?: boolean;
+}
+
+const LONG_SUITE =
+  "cd /home/dev/worktrees/acme-storefront-add-three-short-pages && NODE_OPTIONS=--max-old-space-size=8192 npm test -- --runInBand --coverage --reporters=default --reporters=jest-junit --testPathIgnorePatterns=e2e --silent=false";
+
+const isSuite = (s: Span) => s.kind === "tool.bash" && (s.label === "npm test" || s.label === LONG_SUITE);
+
+const buildOrder = (spec: OrderSpec, dense: number, shape: Shape = {}): Built => {
+  const g = new Gen(spec.seed, dense, shape.long === true ? LONG_SUITE : "npm test");
   const t0 = spec.start;
   const m = (x: number) => t0 + Math.floor(x * spec.slow * MIN);
   const thread = (task: string | undefined, id: string, role: AgentRole): Lane => ({
@@ -292,6 +306,9 @@ const buildOrder = (spec: OrderSpec, dense: number): Built => {
   g.span(asks, "ask.info", m(31), m(32), (s) => (s.extra = { key: "copy.tone" }));
 
   g.work(rev, m(71), m(80), 99, PAGES[0]);
+  // More writers, off the critical path, for the many-agents fixture.
+  const extra = Array.from({ length: Math.max(0, (shape.agents ?? 4) - 4) }, (_, n) => thread(task(10 + n), `s-${spec.tasks + 10 + n}`, n % 4 === 3 ? "verifier" : "implementer"));
+  extra.forEach((l, n) => g.work(l, m(3 + (n % 7)), m(30 + ((n * 7) % 40)), spec.suiteEvery, PAGES[n % 3] ?? "about"));
   const label = (s: Draft) => (s.label = `#${spec.pr}`);
   for (const [kind, a, z] of [["change.review", 71, 80], ["change.queue", 80, 80.4], ["change.rebase", 80.4, 81]] as const) {
     path.push([g.span(change, kind, m(a), m(z), label), m(a), m(z)]);
@@ -331,6 +348,7 @@ const buildOrder = (spec: OrderSpec, dense: number): Built => {
   roles.set(lead.thread ?? "", { role: "lead", title: "lead" });
   w.forEach((l, n) => roles.set(l.thread ?? "", { role: "implementer", task: l.task ?? "", title: `${PAGES[n] ?? "about"} page` }));
   roles.set(rev.thread ?? "", { role: "reviewer", task: rev.task ?? "", title: `review #${spec.pr}` });
+  extra.forEach((l, n) => roles.set(l.thread ?? "", { role: l.role ?? "implementer", task: l.task ?? "", title: `${PAGES[n % 3] ?? "about"} page, part ${n + 2}` }));
   return {
     spans: g.out,
     path: {
@@ -464,7 +482,7 @@ type Finding = { rule: Insight["rule"]; message: string; numbers: InsightNumber[
 
 const findingsOf = (d: Data, fleet: boolean): Finding[] => {
   const out: Finding[] = [];
-  const suite = d.spans.filter((s) => s.kind === "tool.bash" && s.label === "npm test").sort((a, b) => a.startMs - b.startMs);
+  const suite = d.spans.filter(isSuite).sort((a, b) => a.startMs - b.startMs);
   const total = suite.reduce((n, s) => n + dur(s), 0);
   if (suite.length >= 5 && total >= 10 * MIN) {
     const last = new Map<string, number>();
@@ -477,7 +495,7 @@ const findingsOf = (d: Data, fleet: boolean): Finding[] => {
     }
     out.push({
       rule: "full_suite_repeat",
-      message: `agents ran the full test suite \`npm test\` ${suite.length}× (${fmtDur(total)}); ${k} run${k === 1 ? "" : "s"} followed no edit since the previous run`,
+      message: `agents ran the full test suite \`${suite[0]?.label ?? "npm test"}\` ${suite.length}× (${fmtDur(total)}); ${k} run${k === 1 ? "" : "s"} followed no edit since the previous run`,
       numbers: [{ name: "runs", value: suite.length }, { name: "totalMs", value: total }, { name: "noEdit", value: k }],
       spanIds: suite.map((s) => s.id),
     });
@@ -567,6 +585,10 @@ export interface FixtureOptions {
   dense?: boolean;
   /** A hub with missing data: a node dropped spans from writer b's run, and the reviewer's machine ran an older fleetd. */
   gaps?: boolean;
+  /** Agents in the order (default 4: three writers and a reviewer). */
+  agents?: number;
+  /** A long full-suite command, for the long-text fixture. */
+  long?: boolean;
   /** The order has more spans than the hub reads at once. */
   capped?: boolean;
   /** The hub keeps 30 days and the order began before that. */
@@ -578,11 +600,11 @@ interface Collected extends Data {
   built: Built[];
 }
 
-const collect = (specs: OrderSpec[], only: string | undefined, dense: number): Collected => {
+const collect = (specs: OrderSpec[], only: string | undefined, dense: number, shape: Shape = {}): Collected => {
   const d: Collected = { spans: [], paths: [], wall: 0, gaps: [], roles: new Map(), built: [] };
   for (const spec of specs) {
     if (only !== undefined && spec.id !== only) continue;
-    const b = buildOrder(spec, dense);
+    const b = buildOrder(spec, dense, shape);
     d.built.push(b);
     d.wall += b.wall[1] - b.wall[0];
     for (const [k, v] of b.roles) d.roles.set(k, v);
@@ -624,6 +646,7 @@ const scopeOrder = (input: { scope: TimeBreakdownInput["scope"] }) => (input.sco
 /** Answers the time_* tools (and thread_window) from this fixture; undefined for any other tool. */
 export const fixtureAnswers = (opts: FixtureOptions = {}): ((tool: string, input: unknown) => unknown) => {
   const dense = opts.dense === true ? 10 : 1;
+  const shape: Shape = { ...(opts.agents === undefined ? {} : { agents: opts.agents }), ...(opts.long === true ? { long: true } : {}) };
   const cache = new Map<string, Collected>();
   const data = (order: string | undefined, compare: boolean, scope: TimeBreakdownInput["scope"]): Collected => {
     const key = `${order ?? "*"}:${String(compare)}:${JSON.stringify(scope)}`;
@@ -634,7 +657,7 @@ export const fixtureAnswers = (opts: FixtureOptions = {}): ((tool: string, input
     if (compare) specs = specs.map(before);
     if (scope.kind === "project") specs = specs.filter((s) => s.project === scope.projectRef.projectId);
     if (scope.kind === "machine") specs = specs.filter((s) => s.machine === scope.machineId);
-    const d = collect(specs, order, dense);
+    const d = collect(specs, order, dense, shape);
     if (order === undefined && !compare) {
       fleetLane(d);
       if (scope.kind === "fleet") d.gaps.push({ why: "node_older", machineId: "buildbox", fromMs: Date.parse("2026-10-16T16:20:00.000Z"), toMs: Date.parse("2026-10-16T18:02:00.000Z") });
@@ -693,7 +716,7 @@ export const fixtureAnswers = (opts: FixtureOptions = {}): ((tool: string, input
       }
       case "thread_window": {
         const i = input as { threadId: string; itemId: string; before?: number; after?: number };
-        const lane = collect(week(), undefined, dense)
+        const lane = collect(week(), undefined, dense, shape)
           .spans.filter((s) => s.threadId === i.threadId && s.itemId !== undefined && s.kind !== "tools.parallel")
           .sort((a, b) => a.startMs - b.startMs);
         const focus = lane.findIndex((s) => s.itemId === i.itemId);
@@ -703,7 +726,7 @@ export const fixtureAnswers = (opts: FixtureOptions = {}): ((tool: string, input
           const at = new Date(s.startMs).toISOString();
           if (s.kind === "model.message") return { kind: "message", at, role: "assistant", text: SAYS[(s.id + n) % SAYS.length] ?? "" };
           const failed = s.status === "failed";
-          const tail = s.label === "npm test" ? (failed ? TAIL_FAIL : TAIL_PASS) : s.label === "npm run build" ? TAIL_BUILD : undefined;
+          const tail = isSuite(s) ? (failed ? TAIL_FAIL : TAIL_PASS) : s.label === "npm run build" ? TAIL_BUILD : undefined;
           return {
             kind: "action",
             at,
@@ -711,7 +734,8 @@ export const fixtureAnswers = (opts: FixtureOptions = {}): ((tool: string, input
               at,
               kind: s.kind === "tool.bash" || s.kind === "git" ? "command" : s.kind === "tool.edit" ? "file_change" : "tool_call",
               status: failed ? "failed" : "completed",
-              summary: s.label ?? KIND_WORD[s.kind],
+              // The hub keeps 200 characters of a summary.
+              summary: (s.label ?? KIND_WORD[s.kind]).slice(0, 200),
               failed,
               ...(tail === undefined ? {} : { outputTail: tail }),
               ...(s.exitCode === undefined ? {} : { exitCode: s.exitCode }),
@@ -807,7 +831,7 @@ export const timeCalls = (opts: FixtureOptions = {}): FixtureCall[] => {
     out.push(ok(tool, { scope: order }, { scope: order }));
     for (const scope of scopes) out.push(ok(tool, { scope, compare: {} }, { scope, compare }), ok(tool, { scope }, { scope }));
   }
-  const failed = fixtureOrder(opts.dense === true).spans.find((s) => s.label === "npm test" && s.status === "failed");
+  const failed = fixtureOrder(opts.dense === true).spans.find((s) => isSuite(s) && s.status === "failed");
   if (failed?.threadId !== undefined && failed.itemId !== undefined) {
     out.push(ok("thread_window", {}, { machineId: "devbox", threadId: failed.threadId, itemId: failed.itemId }));
   }

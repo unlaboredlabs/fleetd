@@ -57,7 +57,7 @@ describe("what isn't exact", () => {
 
   it("titles a span by its check, its ask, its command, or its kind", () => {
     expect(spanTitle(span("ci.check", { extra: { check: "lint" } }))).toBe("lint");
-    expect(spanTitle(span("wait.ask", { extra: { key: "deploy.region" } }))).toBe("ask deploy.region");
+    expect(spanTitle(span("wait.ask", { extra: { key: "deploy.region" } }), (k) => k.toUpperCase())).toBe("ask: DEPLOY.REGION");
     expect(spanTitle(span("tool.bash", { label: "cargo test" }))).toBe("cargo test");
     expect(spanTitle(span("run.startup"))).toBe("startup");
   });

@@ -15,6 +15,7 @@ import {
   titleIsMachineText,
   type Names,
 } from "./format";
+import { humanizeKey } from "../../ui";
 import { bucketShares, catLabel, type Bar, type Model } from "./model";
 
 export interface Card {
@@ -87,7 +88,7 @@ export const barCard = (m: Model, row: number, bar: Bar, names: Names, nowMs: nu
     lines.push(`${kids.length} calls at once; the group's time is exact`);
     for (const c of kids.slice(0, 6)) {
       const s = m.spans[c];
-      if (s !== undefined) lines.push(`≤ ${fmtDur((s.endMs ?? nowMs) - s.startMs)}  ${spanTitle(s)}`);
+      if (s !== undefined) lines.push(`≤ ${fmtDur((s.endMs ?? nowMs) - s.startMs)}  ${spanTitle(s, humanizeKey)}`);
     }
   }
   const x = span.extra;
@@ -106,7 +107,7 @@ export const barCard = (m: Model, row: number, bar: Bar, names: Names, nowMs: nu
         ? "Click to open the transcript."
         : "Click to zoom to it.";
   return {
-    title: spanTitle(span),
+    title: spanTitle(span, humanizeKey),
     mono: titleIsMachineText(span),
     tag: CAT_LABEL[span.cat],
     lines,

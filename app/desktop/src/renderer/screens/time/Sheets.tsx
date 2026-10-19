@@ -1,6 +1,6 @@
 // The two side sheets: a span's transcript (the items around it, that one marked) and the spans a finding or a
 // row links to, one per line as `fleetd time --spans` prints them.
-import { Button, Sheet, Text, Truncate, VirtualList, cx } from "../../ui";
+import { Button, Sheet, Text, Truncate, VirtualList, cx, humanizeKey } from "../../ui";
 import type { Answer } from "./data";
 import { clockMs, inexact, laneName, markedDur, spanTitle, type Names } from "./format";
 import type { Span, ThreadWindowOutput } from "./types";
@@ -97,6 +97,10 @@ export interface LinkedSheetProps {
 
 export function LinkedSheet({ title, answer, names, nowMs, onClose, onSpan }: LinkedSheetProps) {
   const spans = answer?.ok === true ? answer.value : [];
+  // A list over days needs the day beside each time; within one day the clock alone reads faster.
+  const day = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+  const days = spans.length > 0 && day(spans[0]?.startMs ?? 0) !== day(spans.at(-1)?.startMs ?? 0);
+  const when = (ms: number) => (days ? new Date(ms).toISOString().slice(5, 16).replace("T", " ") : clockMs(ms));
   return (
     <Sheet open={title !== undefined} onOpenChange={(o) => !o && onClose()} title={title ?? ""}>
       {answer === undefined ? (
@@ -120,9 +124,9 @@ export function LinkedSheet({ title, answer, names, nowMs, onClose, onSpan }: Li
                 const mark = inexact(x, names, false)?.mark;
                 const clickable = x.extra?.url !== undefined || (x.itemId !== undefined && x.threadId !== undefined);
                 return (
-                  <button type="button" className={cx(s.linkedRow)} disabled={!clickable} onClick={() => onSpan(x)}>
+                  <button type="button" className={cx(s.linkedRow, days && s.linkedRowDays)} disabled={!clickable} onClick={() => onSpan(x)}>
                     <Text size="xs" mono tone="quiet" tabular>
-                      {clockMs(x.startMs)}
+                      {when(x.startMs)}
                     </Text>
                     <Text size="xs" mono tabular>
                       {markedDur((x.endMs ?? nowMs) - x.startMs, mark)}
@@ -134,7 +138,7 @@ export function LinkedSheet({ title, answer, names, nowMs, onClose, onSpan }: Li
                       {laneName(names, x)}
                     </Truncate>
                     <Truncate expand="none" size="sm" mono>
-                      {spanTitle(x)}
+                      {spanTitle(x, humanizeKey)}
                     </Truncate>
                   </button>
                 );

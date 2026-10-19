@@ -20,8 +20,8 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  min-height: var(--bar);
-  padding: var(--space-1) var(--space-4);
+  /* Height from the padding around a control, so a control never sits nearer the window's top than the inset. */
+  padding: var(--space-2) var(--space-4);
   border-bottom: 1px solid var(--hairline);
   min-width: 0;
 }
@@ -163,16 +163,18 @@
   flex: none;
   overflow: hidden;
 }
+/* Inset from the window edge, as the QA edge rule asks of anything a pointer can hit. */
 .label {
   position: absolute;
-  left: 0;
+  left: var(--space-2);
   right: 0;
   display: flex;
   align-items: center;
   gap: var(--space-1-5);
   min-width: 0;
-  padding: 0 var(--space-2) 0 var(--space-4);
+  padding: 0 var(--space-2);
   border: none;
+  border-radius: var(--radius-sm);
   background: transparent;
   text-align: left;
   color: var(--text);
@@ -181,7 +183,7 @@
   background: var(--hover);
 }
 .labelCheck {
-  padding-left: 36px;
+  padding-left: 28px;
 }
 .track {
   position: relative;
@@ -223,7 +225,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-1) var(--space-3);
-  padding: var(--space-1-5) var(--space-4);
+  padding: var(--space-2) var(--space-4);
   border-top: 1px solid var(--hairline);
   flex: none;
 }
@@ -517,6 +519,9 @@
   background: transparent;
   text-align: left;
   color: inherit;
+}
+.linkedRowDays {
+  grid-template-columns: 96px 64px 48px 96px minmax(0, 1fr);
 }
 .linkedRow:hover:not(:disabled) {
   background: var(--hover);

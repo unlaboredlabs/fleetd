@@ -7,6 +7,8 @@ export interface Piece {
   readonly text: string;
   /** Machine text: a backticked command, or a word with a number in it. */
   readonly mono: boolean;
+  /** Backticked by the hub: code, shown exactly as written. */
+  readonly code: boolean;
 }
 
 /** A message split into pieces; a backticked run is one mono piece, the rest keeps its own spacing. */
@@ -15,12 +17,12 @@ export const pieces = (message: string): Piece[] => {
   message.split("`").forEach((part, ix) => {
     if (part === "") return;
     if (ix % 2 === 1) {
-      out.push({ text: part, mono: true });
+      out.push({ text: part, mono: true, code: true });
       return;
     }
     for (const word of part.split(/(\s+)/u)) {
       if (word === "") continue;
-      out.push({ text: word, mono: /\d/u.test(word) && !/^\s+$/u.test(word) });
+      out.push({ text: word, mono: /\d/u.test(word) && !/^\s+$/u.test(word), code: false });
     }
   });
   return out;

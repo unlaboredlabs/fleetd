@@ -190,10 +190,13 @@ export const markedDur = (ms: number, mark: Mark | undefined): string => {
 
 export const spanMs = (span: Span, nowMs: number): number => (span.endMs ?? nowMs) - span.startMs;
 
-/** The command, the path, the check, or the kind's word. */
-export const spanTitle = (span: Span): string => {
+/**
+ * The command, the path, the check, the ask, or the kind's word. An ask's key is internal, so screens pass the
+ * design system's humanizeKey; this file stays free of UI imports because the fixture build runs it under Node.
+ */
+export const spanTitle = (span: Span, humanize: (key: string) => string = (k) => k): string => {
   if (span.extra?.check !== undefined) return span.extra.check;
-  if (span.extra?.key !== undefined) return `ask ${span.extra.key}`;
+  if (span.extra?.key !== undefined) return `ask: ${humanize(span.extra.key)}`;
   if (span.label !== undefined && span.label !== "") return span.label;
   return KIND_WORD[span.kind];
 };

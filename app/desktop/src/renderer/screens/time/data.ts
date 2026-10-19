@@ -1,8 +1,10 @@
 // What the time inspector asks the hub, and how the answers land. Nothing here polls: a running order's open view
 // asks again only on the hub events that change it (spec §7), and stops when the view closes.
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { CallOutcome, HubEvent, HubFrame } from "../../../shared/hub";
+import type { CallOutcome, HubEvent } from "../../../shared/hub";
+import type { TimeClient } from "./client";
 import { spansInput, type TimeQuery } from "./filters";
+export type { TimeClient };
 import type {
   Coverage,
   InsightRule,
@@ -15,11 +17,6 @@ import type {
   TimeSpansOutput,
 } from "./types";
 
-/** The two things the screen needs from main; `window.fleetd.hub` in the app, a fixture in tests and the gallery. */
-export interface TimeClient {
-  call(tool: string, input: unknown): Promise<CallOutcome>;
-  subscribe(listener: (frame: HubFrame) => void): () => void;
-}
 
 export type Answer<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: string };
 
