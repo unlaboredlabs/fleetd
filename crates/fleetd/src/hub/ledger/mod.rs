@@ -18,7 +18,9 @@ mod tools;
 #[cfg(test)]
 mod tests;
 
-pub use asks::{AskInput, AskOutcome, Asks, DECIDE_YOURSELF, QUIET_WINDOW_MS, validate_ask};
+pub use asks::{
+    AskInput, AskOutcome, Asks, DECIDE_YOURSELF, QUIET_WINDOW_MS, lead_decide_rule, validate_ask,
+};
 pub use decisions::Decisions;
 pub use inbox::{
     Answer, AnswerOutcome, AnswerSink, Inbox, MisfiledSink, ReplyInput, followed_up, pref_key,
