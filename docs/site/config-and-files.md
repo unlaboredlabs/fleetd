@@ -141,6 +141,7 @@ These variables in the hub's environment tune how it follows GitHub and merges; 
 ## The app
 
 The app's pairing hand-off from `fleetd init` or `fleetd pair` on the same machine is
-`~/.config/fleetd/app-pair.json` (macOS: `~/Library/Application Support/fleetd/app-pair.json`). Its hub key is in the
-OS keychain, except in an unsigned or ad-hoc signed Mac build, which keeps it in
-`~/Library/Application Support/fleetd/hub.json` (mode 0600).
+`~/.config/fleetd/app-pair.json` (macOS: `~/Library/Application Support/fleetd/app-pair.json`). Its hub address and
+key are in `desktop-hub.bin` in the same directory, encrypted with the OS keychain, or in `desktop-hub.json` (mode
+0600) where there is no keychain to use (Linux without a keyring, an unsigned or ad-hoc signed Mac build). The app's
+own browser state is in `desktop/` there.

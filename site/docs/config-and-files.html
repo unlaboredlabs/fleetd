@@ -156,9 +156,10 @@ port: their nodes dial out. Change it with <code>fleetd init --listen &lt;host:p
 </tbody></table></div>
 <h2 id="the-app">The app<a class="anchor" href="#the-app" aria-label="Link to this section">#</a></h2>
 <p>The app's pairing hand-off from <code>fleetd init</code> or <code>fleetd pair</code> on the same machine is
-<code>~/.config/fleetd/app-pair.json</code> (macOS: <code>~/Library/Application Support/fleetd/app-pair.json</code>). Its hub key is in the
-OS keychain, except in an unsigned or ad-hoc signed Mac build, which keeps it in
-<code>~/Library/Application Support/fleetd/hub.json</code> (mode 0600).</p>
+<code>~/.config/fleetd/app-pair.json</code> (macOS: <code>~/Library/Application Support/fleetd/app-pair.json</code>). Its hub address and
+key are in <code>desktop-hub.bin</code> in the same directory, encrypted with the OS keychain, or in <code>desktop-hub.json</code> (mode
+0600) where there is no keychain to use (Linux without a keyring, an unsigned or ad-hoc signed Mac build). The app's
+own browser state is in <code>desktop/</code> there.</p>
 <nav class="pn" aria-label="Previous and next">
 <a class="prev" href="/docs/agent-tools"><span>Previous</span>Agent tools</a>
 <a class="next" href="/docs/security"><span>Next</span>Security model</a>

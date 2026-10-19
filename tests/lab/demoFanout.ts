@@ -147,7 +147,7 @@ const startApp = async (lab: Lab, bin: string, key: string, out: string, order: 
   lab.log(`started app pid=${child.pid}, recording into ${out}`);
   await lab.until("the app's recorder starts (app.log)", 60_000, async () => {
     const text = fs.existsSync(logFile) ? fs.readFileSync(logFile, "utf8") : "";
-    if (/FLEETD_RECORD error=|panicked/u.test(text) || child.exitCode !== null) throw new Error(`the app did not start recording; see ${logFile}`);
+    if (/FLEETD_RECORD error=/u.test(text) || child.exitCode !== null) throw new Error(`the app did not start recording; see ${logFile}`);
     if (text.includes("FLEETD_RECORD start")) return true;
     await sleep(250);
     return undefined;

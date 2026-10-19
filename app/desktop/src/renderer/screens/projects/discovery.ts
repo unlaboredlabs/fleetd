@@ -1,5 +1,4 @@
-// The hub's answers turned into what the Add project screen lists and says. Pure, so the GPUI app's tested
-// behaviour (app/fleetd-app/src/project_add) carries over as tests.
+// The hub's answers turned into what the Add project screen lists and says. Pure, so its behaviour is pinned by tests.
 
 import type { CloneProgressData, CloneTarget, ProjectDiscoverOutput, ProjectInspect, ProjectProblem } from "./contracts";
 import { addSource, baseName, tilde } from "./source";

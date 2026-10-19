@@ -5,6 +5,10 @@
 //! Release assets (built by .github/workflows/build-release.yml) have version-less names next to `SHA256SUMS` and
 //! `release.json`, at `releases/download/nightly/` or `releases/latest/download/`. Those are CDN downloads, not
 //! the GitHub API, so there is no token and no rate limit. `FLEETD_BASE_URL` points at another asset directory.
+//!
+//! The desktop app also updates itself (electron-updater, app/desktop/src/main/updater.ts) from the same directory's
+//! `latest-mac.yml` / `latest-linux.yml`. This reads the same feed and compares the same way, so the two never
+//! disagree about whether the app is current. It also replaces the GPUI app the Electron one succeeded.
 
 use std::collections::HashMap;
 use std::fs;
@@ -38,7 +42,13 @@ pub struct UpdateArgs {
 #[serde(rename_all = "camelCase")]
 struct Release {
     cli_version: Option<String>,
-    app_version: Option<String>,
+}
+
+/// The top-level keys of an electron-updater feed (.github/release/update-yml.sh writes it).
+#[derive(serde::Deserialize)]
+struct Feed {
+    version: String,
+    sha512: String,
 }
 
 pub async fn run(args: UpdateArgs) -> Result<()> {
@@ -64,20 +74,42 @@ pub async fn run(args: UpdateArgs) -> Result<()> {
             .context("release.json is not valid")?;
 
     let cli_latest = release.cli_version.as_deref().filter(|v| *v != current);
-    let app = installed_app();
-    let app_current = app.as_ref().and_then(|a| app_version(&a.binary()));
-    let app_latest = release
-        .app_version
-        .as_deref()
-        .filter(|v| app.is_some() && Some(*v) != app_current.as_deref());
+    let mut app = installed_app();
+    if let Some(a) = &app {
+        a.tidy();
+    }
+    if matches!(app, Some(App::MacOs(_))) && macos_major().is_some_and(|v| v < 12) {
+        println!(
+            "the fleetd app needs macOS 12 or newer; the app you have stays as it is (the CLI still updates)"
+        );
+        app = None;
+    }
+    // No feed: the release has no app build for this OS (yet).
+    let feed = match &app {
+        Some(a) => get(&http, &format!("{base}/{}", a.feed()))
+            .await
+            .ok()
+            .and_then(|bytes| serde_yaml_ng::from_slice::<Feed>(&bytes).ok()),
+        None => None,
+    };
+    let app_latest = app
+        .as_ref()
+        .zip(feed.as_ref())
+        .filter(|(a, f)| !a.is_current(f))
+        .map(|(_, f)| f.version.as_str());
 
     match (cli_latest, release.cli_version.as_deref()) {
         (Some(v), _) => println!("fleetd {current} -> {v} ({channel})"),
         (None, Some(_)) => println!("fleetd {current} is up to date ({channel})"),
         (None, None) => println!("the {channel} channel has no fleetd CLI build yet"),
     }
-    if let Some(v) = app_latest {
-        println!("app {} -> {v}", app_current.as_deref().unwrap_or("unknown"));
+    if let (Some(app), Some(v)) = (&app, app_latest) {
+        println!("app {} -> {v}", app.describe());
+        if app.gpui() {
+            println!(
+                "this replaces the earlier fleetd app with the new one, which keeps its pairing"
+            );
+        }
     }
     if args.check || (cli_latest.is_none() && app_latest.is_none()) {
         if args.check && (cli_latest.is_some() || app_latest.is_some()) {
@@ -117,8 +149,12 @@ pub async fn run(args: UpdateArgs) -> Result<()> {
     }
     if let (Some(app), Some(_)) = (app, app_latest) {
         let bytes = fetch(app.asset()).await?;
+        let gpui = app.gpui();
         app.replace(&bytes)?;
         println!("updated {}", app.path().display());
+        if gpui {
+            println!("if the earlier fleetd app is open, quit it and open the new one");
+        }
     }
     Ok(())
 }
@@ -201,7 +237,16 @@ fn home() -> PathBuf {
         .unwrap_or_default()
 }
 
-/// Where the installer (site/install.sh) puts the app.
+fn data_home() -> PathBuf {
+    std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home().join(".local/share"))
+}
+
+const APPIMAGE: &str = "fleetd-desktop.AppImage";
+
+/// Where the installer (site/install.sh) puts the app: the bundle on macOS, the AppImage's directory on Linux. The
+/// GPUI app used the same places.
 enum App {
     MacOs(PathBuf),
     Linux(PathBuf),
@@ -211,12 +256,9 @@ fn installed_app() -> Option<App> {
     let app = if cfg!(target_os = "macos") {
         App::MacOs(home().join("Applications/fleetd.app"))
     } else {
-        let data = std::env::var_os("XDG_DATA_HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| home().join(".local/share"));
-        App::Linux(data.join("fleetd/app"))
+        App::Linux(data_home().join("fleetd/app"))
     };
-    app.binary().exists().then_some(app)
+    (app.binary().exists() || app.gpui()).then_some(app)
 }
 
 impl App {
@@ -228,63 +270,197 @@ impl App {
 
     fn binary(&self) -> PathBuf {
         match self {
-            App::MacOs(p) => p.join("Contents/MacOS/fleetd-app"),
-            App::Linux(p) => p.join("fleetd-app"),
+            App::MacOs(p) => p.join("Contents/MacOS/fleetd"),
+            App::Linux(p) => p.join(APPIMAGE),
+        }
+    }
+
+    /// The GPUI app is still installed here. On Linux a `fleetd-app` beside the AppImage is the launcher a
+    /// pre-Electron `fleetd update` installed with it (build-release.yml's fleetd-app-linux-x64.tar.gz), not GPUI.
+    fn gpui(&self) -> bool {
+        match self {
+            App::MacOs(p) => p.join("Contents/MacOS/fleetd-app").exists(),
+            App::Linux(p) => p.join("fleetd-app").exists() && !self.binary().exists(),
+        }
+    }
+
+    /// After a pre-Electron `fleetd update` moved a Linux install to the AppImage: drop its launcher and give the app
+    /// the installer's menu entry, without downloading anything.
+    fn tidy(&self) {
+        if let App::Linux(dir) = self
+            && dir.join("fleetd-app").exists()
+            && self.binary().exists()
+        {
+            match retire_gpui_linux(dir) {
+                Ok(()) => println!("moved the app's menu entry to the new fleetd app"),
+                Err(e) => eprintln!("could not move the app's menu entry: {e:#}"),
+            }
         }
     }
 
     fn asset(&self) -> &'static str {
         match self {
-            App::MacOs(_) => "fleetd-app-macos-universal.zip",
-            App::Linux(_) => "fleetd-app-linux-x64.tar.gz",
+            App::MacOs(_) => "fleetd-desktop-macos-universal.zip",
+            App::Linux(_) => "fleetd-desktop-linux-x86_64.AppImage",
         }
     }
 
-    /// Unpacks next to the installed copy, then swaps the two with renames (an app bundle is never patched in
-    /// place). A running app keeps working from the old files until it restarts.
+    fn feed(&self) -> &'static str {
+        match self {
+            App::MacOs(_) => "latest-mac.yml",
+            App::Linux(_) => "latest-linux.yml",
+        }
+    }
+
+    /// As electron-updater decides it: the macOS app's own version (app.getVersion(), from the package.json in its
+    /// app.asar) against the feed's; the AppImage, which it replaces with the download byte for byte, by the feed's
+    /// sha512.
+    fn is_current(&self, feed: &Feed) -> bool {
+        if self.gpui() {
+            return false;
+        }
+        match self {
+            App::MacOs(p) => {
+                asar_version(&p.join("Contents/Resources/app.asar")).as_deref()
+                    == Some(feed.version.as_str())
+            }
+            App::Linux(_) => fs::read(self.binary()).is_ok_and(|bytes| {
+                use base64::Engine;
+                base64::engine::general_purpose::STANDARD.encode(sha2::Sha512::digest(&bytes))
+                    == feed.sha512
+            }),
+        }
+    }
+
+    fn describe(&self) -> String {
+        match self {
+            _ if self.gpui() => "(the GPUI app)".into(),
+            App::MacOs(p) => asar_version(&p.join("Contents/Resources/app.asar"))
+                .unwrap_or_else(|| "unknown".into()),
+            App::Linux(_) => "(an older build)".into(),
+        }
+    }
+
     fn replace(&self, archive: &[u8]) -> Result<()> {
-        let dest = self.path();
-        let parent = dest
-            .parent()
-            .ok_or_else(|| anyhow!("{} has no parent", dest.display()))?;
-        let work = parent.join(".fleetd-app-update");
-        _ = fs::remove_dir_all(&work);
-        fs::create_dir_all(&work)?;
-        let result = (|| -> Result<()> {
-            let file = work.join(self.asset());
-            fs::write(&file, archive)?;
-            let unpacked = work.join("unpacked");
-            fs::create_dir(&unpacked)?;
-            let (mut cmd, new) = match self {
-                App::MacOs(_) => (Command::new("ditto"), unpacked.join("fleetd.app")),
-                App::Linux(_) => (Command::new("tar"), unpacked.clone()),
-            };
-            match self {
-                App::MacOs(_) => cmd.arg("-x").arg("-k").arg(&file).arg(&unpacked),
-                App::Linux(_) => cmd.arg("-xzf").arg(&file).arg("-C").arg(&unpacked),
-            };
-            let status = cmd.status().context("unpacking the app")?;
-            if !status.success() || !new.exists() {
-                bail!("unpacking {} failed", self.asset());
+        match self {
+            App::MacOs(dest) => replace_bundle(dest, archive),
+            App::Linux(dir) => {
+                fs::create_dir_all(dir)?;
+                replace_file(&self.binary(), archive)?;
+                if self.gpui() {
+                    retire_gpui_linux(dir)?;
+                }
+                Ok(())
             }
-            let old = work.join("old");
-            fs::rename(dest, &old)?;
-            if let Err(e) = fs::rename(&new, dest) {
-                _ = fs::rename(&old, dest);
-                return Err(e.into());
-            }
-            Ok(())
-        })();
-        _ = fs::remove_dir_all(&work);
-        result.with_context(|| format!("updating {}", dest.display()))
+        }
     }
 }
 
-/// The app prints `fleetd-app <version>` for `--version` and exits before opening a window.
-fn app_version(binary: &Path) -> Option<String> {
-    let out = Command::new(binary).arg("--version").output().ok()?;
-    let text = String::from_utf8(out.stdout).ok()?;
-    text.trim().strip_prefix("fleetd-app ").map(str::to_string)
+/// Unpacks next to the installed bundle, then swaps the two with renames (an app bundle is never patched in place). A
+/// running app keeps working from the old files until it restarts.
+fn replace_bundle(dest: &Path, archive: &[u8]) -> Result<()> {
+    let parent = dest
+        .parent()
+        .ok_or_else(|| anyhow!("{} has no parent", dest.display()))?;
+    let work = parent.join(".fleetd-app-update");
+    _ = fs::remove_dir_all(&work);
+    fs::create_dir_all(&work)?;
+    let result = (|| -> Result<()> {
+        let file = work.join("app.zip");
+        fs::write(&file, archive)?;
+        let unpacked = work.join("unpacked");
+        fs::create_dir(&unpacked)?;
+        let new = unpacked.join("fleetd.app");
+        let status = Command::new("ditto")
+            .arg("-x")
+            .arg("-k")
+            .arg(&file)
+            .arg(&unpacked)
+            .status()
+            .context("unpacking the app")?;
+        if !status.success() || !new.exists() {
+            bail!("unpacking the app archive failed");
+        }
+        let old = work.join("old");
+        fs::rename(dest, &old)?;
+        if let Err(e) = fs::rename(&new, dest) {
+            _ = fs::rename(&old, dest);
+            return Err(e.into());
+        }
+        Ok(())
+    })();
+    _ = fs::remove_dir_all(&work);
+    result.with_context(|| format!("updating {}", dest.display()))
+}
+
+/// The GPUI app's binary and menu entry go; the AppImage gets the entry site/install.sh writes. Its icon stays.
+fn retire_gpui_linux(dir: &Path) -> Result<()> {
+    _ = fs::remove_file(dir.join("fleetd-app"));
+    _ = fs::remove_file(dir.join("fleetd.desktop"));
+    let apps = data_home().join("applications");
+    fs::create_dir_all(&apps)?;
+    let entry = format!(
+        "[Desktop Entry]\nType=Application\nName=fleetd\nComment=Watch and steer your software factory\n\
+         Exec={} %u\nIcon={}\nTerminal=false\nCategories=Development;\nStartupWMClass=fleetd-desktop\n\
+         MimeType=x-scheme-handler/fleetd;\n",
+        dir.join(APPIMAGE).display(),
+        dir.join("fleetd.png").display(),
+    );
+    fs::write(apps.join("fleetd-desktop.desktop"), entry)?;
+    _ = fs::remove_file(apps.join("fleetd.desktop"));
+    // Best effort, as in the installer: without it the app still pairs by code.
+    _ = Command::new("xdg-mime")
+        .args([
+            "default",
+            "fleetd-desktop.desktop",
+            "x-scheme-handler/fleetd",
+        ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+    Ok(())
+}
+
+/// The running macOS's major version (`sw_vers -productVersion`), or None off macOS or when it can't be read.
+fn macos_major() -> Option<u32> {
+    if !cfg!(target_os = "macos") {
+        return None;
+    }
+    let out = Command::new("sw_vers")
+        .arg("-productVersion")
+        .output()
+        .ok()?;
+    String::from_utf8_lossy(&out.stdout)
+        .trim()
+        .split('.')
+        .next()?
+        .parse()
+        .ok()
+}
+
+/// The `version` of the package.json at the root of an Electron app.asar. The archive is a Chromium pickle holding
+/// the JSON index (u32 LE: 4, the index pickle's size, its payload size, the JSON's length, then the JSON), followed
+/// by the files, each at its index offset from the end of that pickle.
+fn asar_version(asar: &Path) -> Option<String> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = fs::File::open(asar).ok()?;
+    let mut head = [0u8; 16];
+    file.read_exact(&mut head).ok()?;
+    let word = |i: usize| u32::from_le_bytes(head[i..i + 4].try_into().unwrap()) as u64;
+    let (index_size, json_len) = (word(4), word(12));
+    let mut json = vec![0u8; usize::try_from(json_len).ok().filter(|n| *n < 64 << 20)?];
+    file.read_exact(&mut json).ok()?;
+    let index: serde_json::Value = serde_json::from_slice(&json).ok()?;
+    let entry = &index["files"]["package.json"];
+    let offset: u64 = entry["offset"].as_str()?.parse().ok()?;
+    let size = usize::try_from(entry["size"].as_u64()?)
+        .ok()
+        .filter(|n| *n < 1 << 20)?;
+    file.seek(SeekFrom::Start(8 + index_size + offset)).ok()?;
+    let mut package = vec![0u8; size];
+    file.read_exact(&mut package).ok()?;
+    let package: serde_json::Value = serde_json::from_slice(&package).ok()?;
+    package["version"].as_str().map(str::to_string)
 }
 
 /// Restarts the hub and node services `fleetd init` created for this binary: the unit files (its usual
@@ -354,13 +530,13 @@ mod tests {
 
     #[test]
     fn reads_sha256sum_output() {
-        let sums = parse_sums("ABCDEF  fleetd-linux-x64\n0123 *fleetd-app-linux-x64.tar.gz\n\n");
+        let sums = parse_sums("ABCDEF  fleetd-linux-x64\n0123 *latest-linux.yml\n\n");
         assert_eq!(
             sums.get("fleetd-linux-x64").map(String::as_str),
             Some("abcdef")
         );
         assert_eq!(
-            sums.get("fleetd-app-linux-x64.tar.gz").map(String::as_str),
+            sums.get("latest-linux.yml").map(String::as_str),
             Some("0123")
         );
         assert_eq!(sums.len(), 2);
@@ -374,5 +550,67 @@ mod tests {
         );
         assert_eq!(default_channel("0.4.0", true), "stable");
         assert_eq!(default_channel("0.0.0", false), "nightly");
+    }
+
+    /// An app.asar as @electron/asar writes it: the index pickle, then the files.
+    fn asar(package: &str) -> Vec<u8> {
+        let other = b"console.log(1)";
+        let index = format!(
+            r#"{{"files":{{"out":{{"files":{{"main.js":{{"size":{},"offset":"0"}}}}}},"package.json":{{"size":{},"offset":"{}"}}}}}}"#,
+            other.len(),
+            package.len(),
+            other.len()
+        );
+        let padded = index.len().div_ceil(4) * 4;
+        let mut out = Vec::new();
+        for word in [4, padded + 8, padded + 4, index.len()] {
+            out.extend((word as u32).to_le_bytes());
+        }
+        out.extend(index.as_bytes());
+        out.resize(16 + padded, 0);
+        out.extend(other);
+        out.extend(package.as_bytes());
+        out
+    }
+
+    #[test]
+    fn reads_the_version_electron_reports_from_app_asar() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("app.asar");
+        fs::write(
+            &path,
+            asar(r#"{"name":"fleetd-desktop","version":"0.4.0-nightly.202610191200+abc1234"}"#),
+        )
+        .unwrap();
+        assert_eq!(
+            asar_version(&path).as_deref(),
+            Some("0.4.0-nightly.202610191200+abc1234")
+        );
+        fs::write(&path, b"not an asar").unwrap();
+        assert_eq!(asar_version(&path), None);
+    }
+
+    #[test]
+    fn an_appimage_is_current_when_its_bytes_match_the_feed() {
+        use base64::Engine;
+        let dir = tempfile::tempdir().unwrap();
+        let app = App::Linux(dir.path().to_path_buf());
+        fs::write(app.binary(), b"appimage v2").unwrap();
+        let feed = |bytes: &[u8]| -> Feed {
+            let sha512 =
+                base64::engine::general_purpose::STANDARD.encode(sha2::Sha512::digest(bytes));
+            let yml = format!(
+                "version: 2.0.0\nfiles:\n  - url: fleetd-desktop-linux-x86_64.AppImage\n    sha512: {sha512}\n    size: 11\npath: fleetd-desktop-linux-x86_64.AppImage\nsha512: {sha512}\nreleaseDate: '2026-10-19T12:00:00.000Z'\n"
+            );
+            serde_yaml_ng::from_str(&yml).unwrap()
+        };
+        assert!(app.is_current(&feed(b"appimage v2")));
+        assert!(!app.is_current(&feed(b"appimage v3")));
+        // The launcher a pre-Electron `fleetd update` put beside it doesn't make it GPUI.
+        fs::write(dir.path().join("fleetd-app"), b"#!/bin/sh").unwrap();
+        assert!(app.is_current(&feed(b"appimage v2")));
+        // A GPUI install (its binary, no AppImage) is never current.
+        fs::remove_file(app.binary()).unwrap();
+        assert!(app.gpui() && !app.is_current(&feed(b"appimage v2")));
     }
 }

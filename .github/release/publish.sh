@@ -8,6 +8,11 @@
 # CLI keeps the previous run's assets, checksums and versions for it. Both files go up last, so a reader never sees
 # checksums for assets that are not there yet.
 #
+# The GPUI app's macOS zip, retired, leaves the release and its checksums: a `fleetd update` from before the Electron
+# app then updates the CLI and stops, leaving the app alone (on macOS 11, where the Electron app can't run, it stays
+# GPUI), and the next `fleetd update` moves it over. Its Linux tarball is still built, around the AppImage, so that
+# CLI moves a Linux install in one run (build-release.yml).
+#
 # The desktop app's update feeds (latest-mac.yml, latest-linux.yml, from update-yml.sh) go up after the assets they
 # point at, for the same reason. A nightly that didn't build the desktop app keeps the previous feeds.
 #
@@ -26,6 +31,9 @@ cli_built=false
 if [ -n "$(compgen -G 'fleetd-linux-*')" ]; then cli_built=true; fi
 
 if [ "$CHANNEL" = nightly ]; then tag=nightly; else tag="${GITHUB_REF_NAME:?}"; fi
+# One line for whoever updates from before the Electron app (see the retired zip above).
+upgrade="Updating a Mac from before the Electron app: run \`fleetd update\` twice (the CLI first, then the app)."
+
 
 prev="$(mktemp -d)"
 if [ "$CHANNEL" = nightly ]; then
@@ -35,7 +43,10 @@ fi
 touch "$prev/SHA256SUMS"
 
 sha256sum "${assets[@]}" > "$prev/built"
-awk 'NR == FNR { built[$2] = 1; next } !($2 in built)' "$prev/built" "$prev/SHA256SUMS" | cat "$prev/built" - | sort -k2 > SHA256SUMS
+retired=(fleetd-app-macos-universal.zip)
+awk -v retired="${retired[*]}" 'BEGIN { split(retired, r, " "); for (i in r) gone[r[i]] = 1 }
+  NR == FNR { built[$2] = 1; next } !($2 in built) && !($2 in gone)' "$prev/built" "$prev/SHA256SUMS" |
+  cat "$prev/built" - | sort -k2 > SHA256SUMS
 
 jq -n --arg channel "$CHANNEL" --arg version "$VERSION" --arg commit "$GITHUB_SHA" --arg date "$(date -u +%FT%TZ)" \
   --arg cli "$cli_built" --arg app "$APP_BUILT" --slurpfile prev "$prev/release.json" '
@@ -49,6 +60,7 @@ cat SHA256SUMS release.json
 
 if [ "$CHANNEL" = nightly ]; then
   notes="Rolling build of main at ${GITHUB_SHA} (${VERSION}). Install: curl -fsSL https://fleetd.sh | sh"
+  notes+=$'\n\n'"$upgrade"
   git push -f origin "${GITHUB_SHA}:refs/tags/nightly"
   if gh release view nightly >/dev/null 2>&1; then
     gh release edit nightly --prerelease --title "Nightly" --notes "$notes"
@@ -56,10 +68,11 @@ if [ "$CHANNEL" = nightly ]; then
     gh release create nightly --prerelease --latest=false --title "Nightly" --notes "$notes"
   fi
 else
-  gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --verify-tag --title "fleetd $VERSION" --generate-notes
+  gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --verify-tag --title "fleetd $VERSION" --notes "$upgrade" --generate-notes
 fi
 gh release upload "$tag" "${assets[@]}" --clobber
 feeds=(latest-*.yml)
 if [ ${#feeds[@]} -gt 0 ]; then gh release upload "$tag" "${feeds[@]}" --clobber; fi
 gh release upload "$tag" SHA256SUMS release.json --clobber
+for name in "${retired[@]}"; do gh release delete-asset "$tag" "$name" -y 2>/dev/null || true; done
 echo "published https://github.com/${GITHUB_REPOSITORY:-unlaboredlabs/fleetd}/releases/tag/$tag"
