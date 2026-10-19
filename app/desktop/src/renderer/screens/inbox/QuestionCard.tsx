@@ -142,18 +142,23 @@ function OpenBody(props: QuestionCardViewProps & { titleId: string }) {
       }
       return;
     }
-    // A focused button acts on Enter itself; radio items don't, so Enter on one confirms the pick.
+    // The palette's picker keys (pickerKey): 1–9 pick, Enter confirms (or, with nothing picked, moves to the
+    // recommendation), N picks the No answer. A focused button acts on Enter itself; radio items don't.
     if (target instanceof HTMLButtonElement && target.getAttribute("role") !== "radio") return;
-    if (/^[1-9]$/u.test(e.key)) {
-      const value = values[Number(e.key) - 1];
-      if (value === undefined) return;
+    if (e.shiftKey) return;
+    const digit = /^(?:Digit|Numpad)([1-9])$/u.exec(e.code)?.[1] ?? (/^[1-9]$/u.test(e.key) ? e.key : undefined);
+    let value: string | undefined;
+    if (digit !== undefined) value = values[Number(digit) - 1];
+    else if (e.key.toLowerCase() === "n") value = options.find((o) => o.id === "no")?.id;
+    else if (e.key === "Enter") {
       e.preventDefault();
-      setPicked(value);
-      if (value !== OTHER) rootRef.current?.querySelector<HTMLElement>(`[data-value="${CSS.escape(value)}"]`)?.focus();
-    } else if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      send();
+      if (picked !== "") send();
+      else value = options.find((o) => o.recommended)?.id;
     }
+    if (value === undefined) return;
+    e.preventDefault();
+    setPicked(value);
+    if (value !== OTHER) rootRef.current?.querySelector<HTMLElement>(`[data-value="${CSS.escape(value)}"]`)?.focus();
   };
 
   return (
@@ -181,7 +186,7 @@ function OpenBody(props: QuestionCardViewProps & { titleId: string }) {
             label={o.label}
             {...(o.detail === undefined ? {} : { detail: o.detail })}
             {...(o.recommended ? { tag: "Recommended" } : {})}
-            {...(o.reason === undefined ? {} : { reason: o.reason })}
+            {...(o.reason === undefined ? {} : { reason: `Why: ${o.reason}` })}
             {...(i < 9 ? { shortcut: String(i + 1) } : {})}
             disabled={!live}
           />
