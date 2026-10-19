@@ -6,7 +6,7 @@ import { Fixture } from "./fixture.ts";
 import { assertClean, findLeaks } from "./leaks.ts";
 import { makeSanitizer } from "./sanitize.ts";
 import { buildShared, recorded } from "./shared.ts";
-import { LOG, SCREENSHOT, writeChat } from "./chat.ts";
+import { LOG, SCREENSHOT, streamReply, writeChat } from "./chat.ts";
 import { fitStrings, validateFixture } from "./schema.ts";
 
 describe("Fixture answers", () => {
@@ -218,6 +218,23 @@ describe("chat pages", () => {
     }
     expect(seen).toEqual(Array.from({ length: 123 }, (_, i) => i + 1));
     expect(page({ after: 123 }).messages).toEqual([]);
+  });
+});
+
+describe("streaming", () => {
+  it("streams a reply as chat_delta frames at the offsets the text reaches, and settles on the last", () => {
+    const f = new Fixture("t", "");
+    f.snapshot = { cursor: 0, machines: [], projects: [], attention: [] };
+    const ref = { machineId: "devbox", projectId: "p1" };
+    writeChat(f, ref, [{ author: "lead", text: "Both reviews", state: "streaming" }]);
+    streamReply(f, ref, [" are in.", " Merging."]);
+    const file = f.toFile();
+    const deltas = file.frames.flatMap((fr) => (fr.t === "chat_delta" ? [fr] : []));
+    expect(deltas.map((d) => [d.afterMs, d.delta.offset, d.delta.append])).toEqual([
+      [400, 12, " are in."],
+      [400, 20, " Merging."],
+    ]);
+    expect(file.settleMs).toBe(800);
   });
 });
 
