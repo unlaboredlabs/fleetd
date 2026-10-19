@@ -243,6 +243,16 @@ describe("attachments", () => {
     expect(withFile("text/plain", Buffer.from("/home/someone/src/x"))).not.toEqual([]);
     expect(withFile("text/plain", Buffer.from("cloned unlaboredlabs/fleetd-lab"))).not.toEqual([]);
     expect(withFile("text/plain", Buffer.from("all tests passed"))).toEqual([]);
+    const token = `ghp_${"a1B2".repeat(9)}`;
+    expect(withFile("text/plain", Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(token, "utf16le")]))).not.toEqual([]);
+    expect(withFile("text/plain", Buffer.concat([Buffer.from([0xfe, 0xff]), Buffer.from(token, "utf16le").swap16()]))).not.toEqual([]);
+  });
+
+  it("decodes data: URLs inside message text", () => {
+    const url = (mime: string, body: Buffer) => `see data:${mime};base64,${body.toString("base64")} here`;
+    expect(findLeaks(JSON.stringify({ text: url("text/plain", Buffer.from("/home/someone/src")) }))).not.toEqual([]);
+    expect(findLeaks(JSON.stringify({ text: url("image/png", png([["tEXt", Buffer.from("x")]])) })).join()).toMatch(/PNG metadata/u);
+    expect(findLeaks(JSON.stringify({ text: url("image/png", png([])) }))).toEqual([]);
   });
 
   it("allows a PNG with pixels only, and refuses text chunks or files it can't read", () => {

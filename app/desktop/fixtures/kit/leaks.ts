@@ -42,14 +42,23 @@ const scan = (text: string, where = ""): Array<string> =>
     return hit === null ? [] : [`${what}${where}: "${text.slice(Math.max(0, hit.index - 40), hit.index + 40).replaceAll("\n", " ")}"`];
   });
 
+const DATA_URL = /data:([\w.+-]+\/[\w.+-]+)?(?:;[\w=.-]+)*;base64,([A-Za-z0-9+/]+=*)/gu;
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 /** The chunks that only draw pixels; anything else (tEXt, iTXt, zTXt, eXIf, tIME…) can carry text. */
 const PIXEL_CHUNKS = new Set(["IHDR", "PLTE", "IDAT", "IEND", "tRNS", "gAMA", "sRGB", "cHRM", "pHYs"]);
 
+/** A text file's content however it is encoded: UTF-8, or UTF-16 either way round (a BOM or NUL bytes give it away). */
+const asText = (data: Buffer): string => {
+  if (!data.includes(0)) return data.toString("utf8");
+  const bigEndian = data[0] === 0xfe && data[1] === 0xff;
+  const le = bigEndian ? Buffer.from(data).swap16() : data;
+  return `${data.toString("utf8")}\n${le.subarray(0, le.length - (le.length % 2)).toString("utf16le")}`;
+};
+
 /** Problems with one attached file's bytes: text is scanned whole; a PNG may only hold pixel chunks; nothing else. */
 const attachmentLeaks = (mime: string, data: Buffer, name: string): Array<string> => {
   const where = ` in attachment ${name}`;
-  if (mime.startsWith("text/")) return scan(data.toString("utf8"), where);
+  if (mime.startsWith("text/")) return scan(asText(data), where);
   if (mime !== "image/png") return [`an attachment the check can't read${where} (${mime}): use text/* or a metadata-free PNG`];
   if (!data.subarray(0, 8).equals(PNG_SIGNATURE)) return [`a PNG that isn't one${where}`];
   const out: Array<string> = [];
@@ -78,6 +87,8 @@ const attachedFiles = (v: unknown, out: Array<string>): void => {
 /** Every leak in `text` (a fixture's JSON, or any text), as "<what>: …context…", attachments decoded and checked. */
 export const findLeaks = (text: string): Array<string> => {
   const leaks = scan(text);
+  // data: URLs carry files inside message text, base64 again.
+  for (const m of text.matchAll(DATA_URL)) leaks.push(...attachmentLeaks(m[1] ?? "unknown", Buffer.from(m[2] ?? "", "base64"), "a data: URL"));
   let json: unknown;
   try {
     json = JSON.parse(text);
