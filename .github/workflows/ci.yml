@@ -32,6 +32,11 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --locked --workspace --exclude fleetd-app --exclude fleetd-bench --all-targets -- -D warnings
       - run: cargo test --locked --workspace --exclude fleetd-app --exclude fleetd-bench
+      - name: Generated contracts are current
+        # crates/fleetd-contracts/schema/*.json and the desktop app's TypeScript
+        # (app/desktop/src/shared/contracts/generated/) are generated from the Rust contracts. This fails when either
+        # differs from a fresh render, a hand edit included. Fix: cargo run -p fleetd-contracts --bin fleetd-schema.
+        run: cargo run --locked -q -p fleetd-contracts --bin fleetd-schema -- --check
       - name: Claude runner conformance (fixtures)
         # CI has no claude. The streams recorded from claude at version.rs TESTED go through the decoders, the
         # failure classifier and the conformance probe (against a stand-in replaying the recorded initialize
