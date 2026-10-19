@@ -76,16 +76,11 @@ jobs:
         # Electron fetches its binary on first launch; fetch it here so the first test isn't timed on a download.
         run: pnpm exec install-electron
       - if: steps.scope.outputs.run == 'true'
-        name: Fixtures
-        # The fixture files are build output of app/desktop/fixtures (pnpm fixtures), validated against the contracts.
-        run: |
-          if node -e 'process.exit(require("./package.json").scripts.fixtures ? 0 : 1)'; then
-            pnpm fixtures
-          else
-            echo "No fixtures script yet."
-          fi
+        # Build output of app/desktop/fixtures, validated against the contracts' JSON Schemas.
+        run: pnpm fixtures
       - if: steps.scope.outputs.run == 'true'
-        run: pnpm build
+        # The app with the design-system gallery bundled, which release builds leave out.
+        run: pnpm qa:build
       - if: steps.scope.outputs.run == 'true'
         name: Self-test of the DOM checks
         run: pnpm qa:selftest

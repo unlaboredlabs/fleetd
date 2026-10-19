@@ -1,6 +1,7 @@
 // Runtime validation of every renderer → main request. The renderer is treated as untrusted: main parses each
 // argument list here before any handler runs, and refuses anything else.
 import { z } from "zod";
+import { NotifyRequest } from "./app";
 import { IPC, type InvokeChannel } from "./channels";
 
 /** MCP tool names: lowercase words joined by underscores. */
@@ -39,6 +40,8 @@ export const REQUESTS = {
   [IPC.hubConnect]: z.tuple([ConnectRequest]),
   [IPC.hubForget]: none,
   [IPC.copy]: z.tuple([z.string().max(1_000_000)]),
+  [IPC.appReady]: none,
+  [IPC.appNotify]: z.tuple([NotifyRequest]),
 } as const satisfies Record<InvokeChannel, z.ZodType>;
 
 export type RequestArgs<C extends InvokeChannel> = z.infer<(typeof REQUESTS)[C]>;

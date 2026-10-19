@@ -27,7 +27,12 @@ test("every planted violation is reported, and nothing else", async () => {
   const { app, page } = launched;
   await setView(app, page, "medium", "light");
   await show(page, "bad", "#/bad");
-  const findings = await check(page, []);
+  const inView = await check(page, []);
+  expect(inView.some((f) => f.where.includes("exp-overlap-scrolled")), "below the fold, before scrolling").toBe(false);
+
+  // shoot() checks the view, then steps the scroll containers and checks again at each step.
+  const shot = await shoot(page, [], { screen: "bad", fixture: "empty", size: "medium", theme: "light" });
+  const findings = shot.findings;
   const planted = await page
     .locator("[data-testid^='exp-']")
     .evaluateAll((els) => els.map((e) => e.getAttribute("data-testid") ?? ""));
@@ -41,10 +46,9 @@ test("every planted violation is reported, and nothing else", async () => {
   const stray = findings.filter((f) => !f.where.includes("data-testid=exp-"));
   expect(stray, "findings on elements that were not planted").toEqual([]);
 
-  // The same findings reach the shot record and the annotated screenshot.
-  const shot = await shoot(page, [], { screen: "bad", fixture: "empty", size: "medium", theme: "light" });
-  expect(shot.findings).toEqual(findings);
+  // The findings reach the shot record, the annotated screenshots and the report.
   expect(shot.overlay && existsSync(path.join(resultsDir, shot.overlay))).toBe(true);
+  expect(shot.scrolled.some((s) => s.png.endsWith(".findings.png") && existsSync(path.join(resultsDir, s.png)))).toBe(true);
   expect(readShots().map((s) => s.screen)).toContain("bad");
   expect(await page.locator("#fleetd-qa-overlay").count(), "the overlay is removed after its screenshot").toBe(0);
 });
@@ -55,8 +59,10 @@ for (const route of ["#/", "#/good"]) {
     for (const size of Object.keys(sizes) as (keyof typeof sizes)[]) {
       for (const theme of themes) {
         await setView(app, page, size, theme);
-        await show(page, route === "#/" ? "shell" : "good", route);
-        expect(await check(page, []), `${route} ${size} ${theme}`).toEqual([]);
+        const screen = route === "#/" ? "shell" : "good";
+        await show(page, screen, route);
+        const shot = await shoot(page, [], { screen, fixture: "empty", size, theme });
+        expect(shot.findings, `${route} ${size} ${theme}, scroll steps included`).toEqual([]);
       }
     }
   });

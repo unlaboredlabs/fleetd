@@ -20,6 +20,15 @@ export const IPC = {
   copy: "app:copy",
   /** main → renderer: HubFrame */
   hubFrame: "hub:frame",
+  /** invoke() → void. The page can take commands and targets now; main sends what it held for it. */
+  appReady: "app:ready",
+  /** invoke(NotifyRequest) → void. Posts a system notification; clicking it sends `appOpen` with its target. */
+  appNotify: "app:notify",
+  /** main → renderer: a command id (shared/shortcuts.ts or the palette registry), from a click in the app menu. */
+  menuCommand: "menu:command",
+  /** main → renderer: OpenTarget, from a clicked notification or a fleetd:// link. */
+  appOpen: "app:open",
 } as const;
 
-export type InvokeChannel = Exclude<(typeof IPC)[keyof typeof IPC], typeof IPC.hubFrame>;
+type PushChannel = typeof IPC.hubFrame | typeof IPC.menuCommand | typeof IPC.appOpen;
+export type InvokeChannel = Exclude<(typeof IPC)[keyof typeof IPC], PushChannel>;

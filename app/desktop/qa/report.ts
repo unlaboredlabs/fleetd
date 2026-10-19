@@ -31,6 +31,7 @@ export function contactSheet(shots: Shot[]) {
       return `<figure class="${s.findings.length ? "bad" : "ok"}">
   <a href="${esc(img)}"><img loading="lazy" src="${esc(img)}" alt="${esc(label)}"></a>
   <figcaption>${esc(label)} — ${s.findings.length ? `<b>${s.findings.length} finding${s.findings.length === 1 ? "" : "s"}</b> · <a href="${esc(s.png)}">clean shot</a>` : "no findings"}</figcaption>
+  ${s.scrolled.length ? `<p class="scrolled">Scrolled: ${s.scrolled.map((x) => `<a href="${esc(x.png)}">${esc(x.label)}</a>`).join(" · ")}</p>` : ""}
   ${items ? `<ol>${items}</ol>` : ""}
 </figure>`;
     });
@@ -47,7 +48,7 @@ export function contactSheet(shots: Shot[]) {
   figure.bad { border-color: #e5484d; }
   img { width: 100%; height: auto; display: block; border-radius: 4px; }
   figcaption { margin-top: 6px; } ol { margin: 6px 0 0; padding-left: 20px; font-size: 12px; overflow-wrap: anywhere; }
-  code { font-size: 11px; color: #60646c; }
+  code { font-size: 11px; color: #60646c; } .scrolled { margin: 4px 0 0; font-size: 12px; overflow-wrap: anywhere; }
 </style></head>
 <body><h1>fleetd desktop QA — ${shots.length} shots, ${total} findings</h1>
 <p>Red frames have findings; each image opens with the findings drawn on it. Raw data: <a href="findings.json">findings.json</a>.</p>

@@ -10,6 +10,8 @@
 //        { id: "palette", route: "#/", fixtures: ["typical"], open: (page) => page.keyboard.press("ControlOrMeta+K") }
 //        { id: "inbox", route: "#/board?inbox", fixtures: ["needs-you", "long-text", "empty"] }
 // Fixtures are E3b's, built by `pnpm fixtures` into app/desktop/fixtures/<name>.json.
+// Run it locally: `pnpm fixtures && pnpm qa:build && pnpm qa` (QA_SCREENS=<id>,<id> to limit), then open
+// qa-results/index.html.
 
 import type { Page } from "@playwright/test";
 
@@ -52,15 +54,33 @@ export interface Screen {
   pending?: string;
 }
 
+const gallerySections = [
+  "tokens",
+  "text",
+  "buttons",
+  "fields",
+  "choices",
+  "overlays",
+  "tabs",
+  "status",
+  "markdown",
+  "code",
+  "diff",
+  "table",
+  "list",
+  "layout",
+] as const;
+
 export const screens: readonly Screen[] = [
   // E0/F1: the frame (top bar, sidebar) around the default route, and the connection states it shows.
   {
     id: "shell",
     route: "#/",
-    fixtures: ["empty", "typical", "hub-unreachable", "pairing-failed", "node-too-old"],
+    fixtures: ["empty", "typical", "many-agents", "long-text", "hub-unreachable", "pairing-failed", "node-too-old"],
   },
-  // E2: every design-system primitive with stress content, so the primitives pass before any screen uses them.
-  { id: "gallery", route: "#/gallery", fixtures: ["typical"], pending: "E2's gallery (feat/desktop-ui) has not landed" },
+  // E2: every design-system primitive with short, long and empty content, one section per entry, so the primitives
+  // pass before any screen uses them. Needs a build with the gallery in it: `pnpm qa:build`.
+  ...gallerySections.map((s) => ({ id: `gallery.${s}`, route: `#/gallery?section=${s}`, fixtures: ["long-text"] as const })),
   // F11: the command palette, its reply mode (typed text switches it) and the shortcuts sheet.
   {
     id: "palette",
@@ -104,5 +124,5 @@ export const screens: readonly Screen[] = [
 // Platform checks that need a screen writer's work before they can pass; the owner turns theirs on when it lands.
 export const platformChecks: Record<"appMenu", boolean> = {
   // F1: the macOS app menu, with an Edit menu wired to the text actions.
-  appMenu: false,
+  appMenu: true,
 };

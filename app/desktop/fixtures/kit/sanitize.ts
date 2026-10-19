@@ -7,6 +7,7 @@
 // lab machines become devbox/buildbox, the GitHub testbed acme/storefront, lab paths /home/dev/src/..., and every
 // UUID, git sha and key is remapped to a stable fake. The output is refused if a known personal string survives.
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { Fixture } from "./fixture.ts";
@@ -15,8 +16,17 @@ import { isObject, type JsonObject, type JsonValue, asText } from "./json.ts";
 import type { RawLine } from "./record.ts";
 import { fitStrings, validateFixture } from "./schema.ts";
 
-/** Strings that must never reach a committed fixture, whatever the rewrite missed. */
-const FORBIDDEN = [/wynn/iu, /unlaboredlabs/iu, /fleetd-lab/iu, /fleetd-testbed/iu, /\bforge\b/iu, /\badri\b/iu, /\bhermes\b/iu, /100\.\d+\.\d+\.\d+/u, /fld_[a-z2-7]{20,}/u];
+const escape = (w: string) => w.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+
+/** Strings that must never reach a committed fixture, whatever the rewrite missed: this machine's user and host, the lab. */
+const FORBIDDEN = [
+  ...[os.userInfo().username, os.hostname()].filter((w) => w.length >= 3).map((w) => new RegExp(`\\b${escape(w)}\\b`, "iu")),
+  /unlaboredlabs/iu,
+  /fleetd-lab/iu,
+  /fleetd-testbed/iu,
+  /\b100\.\d+\.\d+\.\d+\b/u,
+  /fld_[a-z2-7]{20,}/u,
+];
 
 const MACHINES: Record<string, string> = { "lab-a": "devbox", "lab-b": "buildbox" };
 
@@ -36,7 +46,6 @@ const literalRewrites = (lab: string, hubPort: number): Array<[string, string]> 
     ["unlaboredlabs/fleetd-testbed", "acme/storefront"],
     ["fleetd-testbed", "storefront"],
     ["unlaboredlabs", "acme"],
-    ["wynn-dev", "dev"],
     ["repo-a", "checkout"],
     ["repo-b", "billing"],
   ];
@@ -52,9 +61,12 @@ const BASE64_KEY = /\b[A-Za-z0-9+/]{43}=/gu;
 
 export const makeSanitizer = (lab: string, hubPort: number) => {
   const literals = literalRewrites(lab, hubPort);
+  const userWords = new RegExp(`\\b${escape(os.userInfo().username)}[\\w-]*`, "giu");
   const text = (s: string): string => {
     let out = s;
     for (const [from, to] of literals) out = out.replaceAll(from, to);
+    // The user's own logins (a GitHub author such as "<user>-dev") read as "dev".
+    out = out.replace(userWords, "dev");
     // A slot's own testbed is fleetd-testbed-<n>; the literal above leaves "-<n>".
     out = out.replace(/acme\/storefront-\d\b/gu, "acme/storefront").replace(/\bstorefront-\d\b/gu, "storefront");
     out = out.replace(UUID, (m) => uuid(m.toLowerCase()));
