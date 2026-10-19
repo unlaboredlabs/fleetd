@@ -1,13 +1,24 @@
 // One hub connection: auth on every (re)connect, then a fresh snapshot and the event stream from its cursor, so the
 // renderer always resyncs and never shows data from a dead link as live. Reconnects with backoff until the key is
-// refused (close 4401, or an error before `ready`) or the client is stopped.
+// refused (close 4401, or an error before `ready`) or the client is stopped. The hub never pings and the event
+// long-poll is silent when nothing happens, so the client pings and drops a link that goes quiet: a half-open socket
+// (Wi-Fi or tailnet gone without a sleep) must not keep showing as live.
 import type { CallOutcome, HubError, HubFrame, HubState } from "../../shared/hub";
-import type { CallRequest, LiveScope } from "../../shared/ipc";
+import { MAX_CALL_INPUT_BYTES, type CallRequest, type LiveScope } from "../../shared/ipc";
 import { appUrl, backoff, CLOSE_UNAUTHORIZED, parseServerFrame, type ClientMessage, type ServerFrame } from "./protocol";
 import type { HubSource } from "./source";
 import type { Connection, Transport } from "./transport";
 
 export const DEFAULT_CALL_TIMEOUT_MS = 30_000;
+/** From dialling to `ready`: covers a TCP connect into a black hole, a stalled upgrade and an unanswered auth. */
+export const READY_TIMEOUT_MS = 15_000;
+export const PING_EVERY_MS = 15_000;
+/** Nothing heard (no frame, no pong) for this long: the link is dead. */
+export const SILENT_DEAD_MS = 30_000;
+/** A link must stay up this long before the backoff starts over, so a hub that accepts and drops isn't hammered. */
+export const STABLE_MS = 30_000;
+/** A call frame over this is refused before it's sent. */
+export const MAX_FRAME_BYTES = MAX_CALL_INPUT_BYTES + 4096;
 
 export interface HubClientOptions {
   /** As the user typed it; shown in the state. */
@@ -15,6 +26,8 @@ export interface HubClientOptions {
   readonly key: string;
   readonly transport: Transport;
   readonly emit: (frame: HubFrame) => void;
+  /** Jitter source, 0 ≤ r < 1; tests pin it. */
+  readonly random?: () => number;
 }
 
 interface Pending {
@@ -39,6 +52,11 @@ export class HubClient implements HubSource {
   #nextCallId = 0;
   readonly #pending = new Map<string, Pending>();
   #live: LiveScope | null = null;
+  #readyAt = 0;
+  /** When anything last came from the hub on this connection. */
+  #heardAt = 0;
+  #readyTimer: ReturnType<typeof setTimeout> | null = null;
+  #heartbeat: ReturnType<typeof setInterval> | null = null;
 
   constructor(options: HubClientOptions) {
     this.#options = options;
@@ -83,13 +101,17 @@ export class HubClient implements HubSource {
     }
     const id = `c${++this.#nextCallId}`;
     const { tool, input } = request;
+    const text = JSON.stringify({ t: "call", id, tool, input } satisfies ClientMessage);
+    if (Buffer.byteLength(text) > MAX_FRAME_BYTES) {
+      return Promise.resolve(fail("invalid", `The ${tool} request is too large to send.`));
+    }
     return new Promise<CallOutcome>((resolve) => {
       const timeoutMs = request.timeoutMs ?? DEFAULT_CALL_TIMEOUT_MS;
       const timer = setTimeout(() => {
         this.#settle(id, fail("timeout", `The hub didn't answer ${tool} within ${Math.round(timeoutMs / 1000)} s.`));
       }, timeoutMs);
       this.#pending.set(id, { resolve, timer });
-      this.#send({ t: "call", id, tool, input });
+      this.#connection?.send(text);
     });
   }
 
@@ -117,10 +139,17 @@ export class HubClient implements HubSource {
     this.#setState({ phase: "connecting", hub: this.#options.hub, attempt: this.#attempt });
     const connection = this.#options.transport(url.url, {
       onOpen: () => {
-        if (this.#connection === connection) this.#send({ t: "auth", key: this.#options.key });
+        if (this.#connection !== connection) return;
+        this.#heardAt = Date.now();
+        this.#send({ t: "auth", key: this.#options.key });
       },
       onText: (text) => {
-        if (this.#connection === connection) this.#onFrame(parseServerFrame(text));
+        if (this.#connection !== connection) return;
+        this.#heardAt = Date.now();
+        this.#onFrame(parseServerFrame(text));
+      },
+      onPong: () => {
+        if (this.#connection === connection) this.#heardAt = Date.now();
       },
       onClose: (code, reason) => {
         if (this.#connection !== connection) return;
@@ -129,6 +158,26 @@ export class HubClient implements HubSource {
       },
     });
     this.#connection = connection;
+    this.#readyTimer = setTimeout(() => {
+      this.#readyTimer = null;
+      this.#abandon("The hub didn't accept the connection in time.");
+    }, READY_TIMEOUT_MS);
+  }
+
+  /** Every PING_EVERY_MS: a ping, or, when nothing was heard for SILENT_DEAD_MS, the link is given up. */
+  #startHeartbeat(): void {
+    this.#heartbeat = setInterval(() => {
+      if (Date.now() - this.#heardAt >= SILENT_DEAD_MS) this.#abandon("The hub stopped answering.");
+      else this.#connection?.ping();
+    }, PING_EVERY_MS);
+  }
+
+  /** Drops a link that can't be trusted any more, and retries. */
+  #abandon(reason: string): void {
+    const connection = this.#connection;
+    this.#connection = null;
+    connection?.close();
+    this.#lost(reason);
   }
 
   #onFrame(frame: ServerFrame | null): void {
@@ -136,8 +185,11 @@ export class HubClient implements HubSource {
     switch (frame.t) {
       case "ready": {
         this.#ready = true;
-        this.#attempt = 0;
+        this.#readyAt = Date.now();
         this.#cursor = null;
+        if (this.#readyTimer !== null) clearTimeout(this.#readyTimer);
+        this.#readyTimer = null;
+        this.#startHeartbeat();
         this.#setState({ phase: "live", hub: this.#options.hub, protocol: frame.protocol });
         this.#send({ t: "snapshot" });
         if (this.#live !== null) this.#sendLive();
@@ -202,12 +254,17 @@ export class HubClient implements HubSource {
       this.#refuse(`The hub refused the key${reason === "" ? "" : ` (${reason})`}.`);
       return;
     }
+    this.#lost(reason === "" ? `The connection ended (${code}).` : `The hub closed the connection: ${reason}.`);
+  }
+
+  #lost(reason: string): void {
     const wasReady = this.#dropLink();
+    this.#clearTimers();
     if (this.#stopped) return;
-    if (wasReady) this.#attempt = 0;
-    const retryIn = backoff(this.#attempt++);
-    const reasonText = reason === "" ? `The connection ended (${code}).` : `The hub closed the connection: ${reason}.`;
-    this.#setState({ phase: "retrying", hub: this.#options.hub, reason: reasonText, retryAt: Date.now() + retryIn });
+    if (wasReady && Date.now() - this.#readyAt >= STABLE_MS) this.#attempt = 0;
+    // ±25 %, so many apps behind one restarting hub don't come back in lockstep.
+    const retryIn = Math.round(backoff(this.#attempt++) * (0.75 + 0.5 * (this.#options.random ?? Math.random)()));
+    this.#setState({ phase: "retrying", hub: this.#options.hub, reason, retryAt: Date.now() + retryIn });
     this.#retryTimer = setTimeout(() => {
       this.#retryTimer = null;
       this.#connect();
@@ -249,8 +306,12 @@ export class HubClient implements HubSource {
   #clearTimers(): void {
     if (this.#retryTimer !== null) clearTimeout(this.#retryTimer);
     if (this.#resumeTimer !== null) clearTimeout(this.#resumeTimer);
+    if (this.#readyTimer !== null) clearTimeout(this.#readyTimer);
+    if (this.#heartbeat !== null) clearInterval(this.#heartbeat);
     this.#retryTimer = null;
     this.#resumeTimer = null;
+    this.#readyTimer = null;
+    this.#heartbeat = null;
   }
 
   #sendLive(): void {

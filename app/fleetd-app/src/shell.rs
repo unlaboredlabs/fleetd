@@ -1845,7 +1845,7 @@ impl Shell {
                             .items_center()
                             .gap_2()
                             .child(ui::dot(color))
-                            .child(div().font_weight(STRONG).child(m.name.clone())),
+                            .child(div().min_w_0().overflow_hidden().text_ellipsis().font_weight(STRONG).child(m.name.clone())),
                     )
                     .child(div().w(px(72.)).flex_none().text_size(px(size::XS)).text_color(t.quiet).child(status))
                     .child(

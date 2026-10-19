@@ -137,3 +137,76 @@ fn a_project_id_never_steers_where_an_override_is_written() {
     assert_eq!(std::fs::read_dir(outside.path()).unwrap().count(), 0);
     assert!(!home.path().join("lead.start.md").exists());
 }
+
+/// The shipped texts were reflowed from hard-wrapped lines into paragraphs. An override edited from the wrapped text
+/// is not "behind the default": same words, so no update notice. A real change of words still is.
+#[test]
+fn a_reflowed_default_is_not_a_changed_default() {
+    let home = tempfile::tempdir().unwrap();
+    let db = crate::hub::store::HubDb::open(home.path()).unwrap();
+    let prompts = db.prompts();
+    let e = entry("lead.start").unwrap();
+    let wrapped = e.default.replacen(
+        " from the project's policy",
+        "\nfrom the project's policy",
+        1,
+    );
+    assert_ne!(wrapped, e.default);
+    let older = e.default.replacen("one clear goal", "a clear goal", 1);
+    for (base_text, stale) in [
+        (e.default.to_owned(), false),
+        (wrapped, false),
+        (older, true),
+    ] {
+        // Saving a text keeps it, as a release's `keep_defaults` keeps its shipped texts.
+        let base = prompts
+            .save(e, PromptScope::Global, None, &base_text, None)
+            .unwrap();
+        prompts
+            .save(
+                e,
+                PromptScope::Global,
+                None,
+                "mine {{project}} {{projectRef}}",
+                Some(&base),
+            )
+            .unwrap();
+        assert_eq!(prompts.stale().len(), usize::from(stale));
+        assert_eq!(prompts.detail(e, None).stale.is_some(), stale);
+        assert_eq!(
+            prompts
+                .list(None)
+                .iter()
+                .find(|s| s.id.as_str() == e.id)
+                .unwrap()
+                .stale,
+            stale
+        );
+    }
+}
+
+/// Every shipped text is paragraphs, one line each: the editor soft-wraps, so a hard wrap breaks lines mid-sentence.
+/// A long line that stops mid-sentence and goes on in the next line is a hard wrap.
+#[test]
+fn shipped_texts_are_not_hard_wrapped() {
+    let texts = super::registry::ENTRIES.iter().map(|e| (e.id, e.default));
+    let playbooks = crate::hub::playbooks::load::BUNDLED
+        .iter()
+        .map(|(n, t)| (n.as_str(), *t));
+    for (id, text) in texts.chain(playbooks) {
+        for pair in text.lines().collect::<Vec<_>>().windows(2) {
+            let (line, next) = (pair[0], pair[1].trim_start());
+            let block = ["- ", "* ", "#", "```", "|", ">", "{{"]
+                .iter()
+                .any(|p| next.starts_with(p))
+                || next
+                    .split_once(". ")
+                    .is_some_and(|(n, _)| n.chars().all(|c| c.is_ascii_digit()) && !n.is_empty());
+            let ends = line.trim_end().ends_with(['.', ':', '!', '?', '`']);
+            assert!(
+                line.len() < 90 || ends || next.is_empty() || block,
+                "{id} is hard-wrapped after: {line}"
+            );
+        }
+    }
+}

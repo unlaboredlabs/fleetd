@@ -366,12 +366,3 @@ export const scopeFromRoute = (hash: string): StatusScope | null => {
   return null;
 };
 
-/** Cmd+. from a route: an order → its Status, a project's board → the project's, else the fleet's; from Status,
- * back to where it was opened from (the caller keeps that). */
-export const statusFor = (hash: string): StatusScope => {
-  const path = (hash.replace(/^#/u, "").split("?")[0] ?? "").split("/").filter((p) => p !== "").map((p) => decodeURIComponent(p));
-  if (path[0] === "order" && path[1] !== undefined) return { kind: "order", workstreamId: path[1] };
-  if (path[0] === "board" && path[1] !== undefined && path[2] !== undefined)
-    return { kind: "project", projectRef: { machineId: path[1], projectId: path[2] } };
-  return { kind: "fleet" };
-};

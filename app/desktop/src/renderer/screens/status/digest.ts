@@ -49,16 +49,14 @@ export const digestText = (doc: StatusDoc): { title: string; body: string } => {
   return { title, body: parts.join(" ") };
 };
 
-export interface DigestNotification {
-  readonly title: string;
-  readonly body: string;
-  /** Opens the fleet's Status. */
-  readonly route: string;
-}
+/** Posts the digest through main's notifications (F1); clicking it opens Status. */
+export const postDigest = ({ title, body }: { title: string; body: string }): void => {
+  // Main's notify contract caps the title at 120 and the body at 400 characters.
+  const clip = (text: string, max: number): string => (text.length <= max ? text : `${text.slice(0, max - 1)}…`);
+  void window.fleetd.app.notify({ tag: "digest", title: clip(title, 120), body: clip(body, 400), target: { kind: "status" } });
+};
 
-/** Mounted once by the shell. `post` shows a system notification (F1's notifications); `quiet` is the hub's quiet
- * hours. Nothing is posted from an old or failed answer: no digest beats a wrong one. */
-export const useStatusDigest = (post: (n: DigestNotification) => void, quiet: (nowMs: number) => boolean): void => {
+export const useStatusDigest = (post: (n: { title: string; body: string }) => void, quiet: (nowMs: number) => boolean): void => {
   useEffect(
     () =>
       onHubEvent((event) => {
@@ -69,7 +67,7 @@ export const useStatusDigest = (post: (n: DigestNotification) => void, quiet: (n
           const out = outcome.ok ? asGetOutput(outcome.output) : undefined;
           if (!out) return;
           localStorage.setItem(LAST_SEQ, String(out.doc.seq));
-          post({ ...digestText(out.doc), route: "#/status" });
+          post(digestText(out.doc));
         });
       }),
     [post, quiet],

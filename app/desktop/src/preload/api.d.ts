@@ -1,15 +1,24 @@
-import type { CallOutcome, ConnectOutcome, HubFrame, HubState, SecretOutcome } from "../shared/hub";
+import type { NotifyRequest, OpenTarget } from "../shared/app";
+import type { MenuCommand } from "../shared/menu";
+import type { CallOutcome, ConnectOutcome, HubFrame, HubState, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { LiveScope, SecretRequest } from "../shared/ipc";
 
 /** `window.fleetd`: everything the renderer can ask of main. There is no other bridge. */
 export interface FleetdApi {
   readonly platform: "darwin" | "linux" | "win32" | "other";
+  /** The fixture standing in for the hub (FLEETD_FIXTURE), or null. The shell shows a banner while it's set. */
+  readonly fixture: string | null;
   /** Writes text to the clipboard (the page has no clipboard permission of its own). */
   copy(text: string): Promise<void>;
   readonly secret: {
     /** Main seals `value` to `boxPubKey` and submits it; the value is never sent back or shown again. */
     submit(request: SecretRequest): Promise<SecretOutcome>;
   };
+  /**
+   * Opens an https link to github.com (or a subdomain) or fleetd.sh in the user's browser. Anything else comes back
+   * as `{ ok: false, message }` saying why; it never rejects.
+   */
+  openExternal(url: string): Promise<OpenOutcome>;
   readonly hub: {
     state(): Promise<HubState>;
     /**
@@ -24,6 +33,18 @@ export interface FleetdApi {
     resync(): Promise<void>;
     connect(url: string, key: string): Promise<ConnectOutcome>;
     forget(): Promise<void>;
+  };
+  readonly app: {
+    /** Command ids clicked in the app menu (an accelerator runs in the renderer's keymap instead). Returns the unsubscribe. */
+    onMenuCommand(listener: (id: string) => void): () => void;
+    /**
+     * Clicked notifications and fleetd:// links. Targets that arrived before the first listener (a link that
+     * launched the app) are delivered to it. Returns the unsubscribe.
+     */
+    onOpen(listener: (target: OpenTarget) => void): () => void;
+    notify(request: NotifyRequest): Promise<void>;
+    /** The menu commands enabled now; main greys out the other menu items. */
+    setMenuState(enabled: ReadonlyArray<MenuCommand>): Promise<void>;
   };
 }
 

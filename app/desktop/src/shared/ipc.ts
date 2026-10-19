@@ -1,14 +1,75 @@
 // Runtime validation of every renderer → main request. The renderer is treated as untrusted: main parses each
 // argument list here before any handler runs, and refuses anything else.
 import { z } from "zod";
+import { NotifyRequest } from "./app";
+import { MenuState } from "./menu";
 import { IPC, type InvokeChannel } from "./channels";
+
+/** A call's input as JSON, at most; the hub has no use for more, and main shouldn't buffer it. */
+export const MAX_CALL_INPUT_BYTES = 1024 * 1024;
+export const MAX_CALL_INPUT_DEPTH = 64;
+export const MAX_CALL_INPUT_NODES = 10_000;
+
+const encoder = new TextEncoder();
+/** Bytes of `text` as a JSON string literal (quotes and escapes included). */
+const jsonStringBytes = (text: string): number => encoder.encode(JSON.stringify(text)).length;
+
+/**
+ * Plain JSON within the size, nesting and node caps, checked in one bounded pass: at most MAX_CALL_INPUT_NODES values
+ * are visited and the encoded size is summed as they are, so nothing is serialized before it's known to be small.
+ * Iterative, so deep nesting can't overflow the stack. IPC keeps shared references, which JSON can't express and
+ * which make a naive walk exponential (`x = [x, x]` sixty times over is a few hundred bytes), so an object or array
+ * met twice (shared or cyclic) is refused.
+ */
+export const isBoundedJson = (value: unknown): boolean => {
+  const seen = new Set<object>();
+  let nodes = 0;
+  let bytes = 0;
+  const stack: Array<[unknown, number]> = [[value, 1]];
+  for (let next = stack.pop(); next !== undefined; next = stack.pop()) {
+    const [item, depth] = next;
+    if (++nodes > MAX_CALL_INPUT_NODES) return false;
+    if (item === null) bytes += 4;
+    else if (typeof item === "boolean") bytes += item ? 4 : 5;
+    else if (typeof item === "number") {
+      if (!Number.isFinite(item)) return false;
+      bytes += String(item).length;
+    } else if (typeof item === "string") bytes += jsonStringBytes(item);
+    else if (typeof item !== "object" || depth > MAX_CALL_INPUT_DEPTH || seen.has(item)) return false;
+    else {
+      seen.add(item);
+      if (Array.isArray(item)) {
+        // Brackets and the commas between items.
+        bytes += 2 + Math.max(item.length - 1, 0);
+        // Checked before pushing, so one huge array can't flood the stack.
+        if (nodes + item.length > MAX_CALL_INPUT_NODES) return false;
+        for (const child of item) stack.push([child, depth + 1]);
+      } else {
+        const proto: unknown = Object.getPrototypeOf(item);
+        if (proto !== Object.prototype && proto !== null) return false;
+        const entries = Object.entries(item);
+        if (nodes + entries.length > MAX_CALL_INPUT_NODES) return false;
+        // Braces, commas, and a colon per key.
+        bytes += 2 + Math.max(entries.length - 1, 0);
+        for (const [key, child] of entries) {
+          bytes += jsonStringBytes(key) + 1;
+          stack.push([child, depth + 1]);
+        }
+      }
+    }
+    if (bytes > MAX_CALL_INPUT_BYTES) return false;
+  }
+  return true;
+};
 
 /** MCP tool names: lowercase words joined by underscores. */
 const toolName = z.string().regex(/^[a-z][a-z0-9_]{0,63}$/u);
 
 export const CallRequest = z.strictObject({
   tool: toolName,
-  input: z.json(),
+  input: z.custom<z.core.util.JSONType>(isBoundedJson, {
+    message: `Input must be plain JSON, at most ${MAX_CALL_INPUT_BYTES} bytes and ${MAX_CALL_INPUT_DEPTH} levels deep.`,
+  }),
   /** Defaults to 30 s. Long-polls such as status_wait pass their own. */
   timeoutMs: z.int().min(100).max(300_000).optional(),
 });
@@ -49,6 +110,11 @@ export const REQUESTS = {
   [IPC.hubForget]: none,
   [IPC.secretSubmit]: z.tuple([SecretRequest]),
   [IPC.copy]: z.tuple([z.string().max(1_000_000)]),
+  [IPC.appReady]: none,
+  [IPC.appNotify]: z.tuple([NotifyRequest]),
+  [IPC.appMenuState]: z.tuple([MenuState]),
+  // The URL rules live in main (main/external.ts), which answers with the reason; this only bounds the size.
+  [IPC.openExternal]: z.tuple([z.string().max(8192)]),
 } as const satisfies Record<InvokeChannel, z.ZodType>;
 
 export type RequestArgs<C extends InvokeChannel> = z.infer<(typeof REQUESTS)[C]>;

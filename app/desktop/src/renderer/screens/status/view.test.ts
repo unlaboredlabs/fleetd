@@ -1,6 +1,5 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { asGetOutput } from "./contracts";
-import { toggleRoute } from "./commands";
 import { digestText } from "./digest";
 import {
   age,
@@ -17,7 +16,6 @@ import {
   spark,
   stageName,
   stateView,
-  statusFor,
   when,
 } from "./view";
 
@@ -172,7 +170,7 @@ describe("the headline", () => {
   });
 });
 
-describe("routes and ⌘.", () => {
+describe("routes", () => {
   it("round-trips every scope", () => {
     for (const name of ["fleet", "project", "order"]) {
       const scope = fixture(name).scope;
@@ -182,14 +180,6 @@ describe("routes and ⌘.", () => {
     expect(scopeFromRoute("#/board")).toBeNull();
   });
 
-  it("opens the status of where you are, and goes back from it", () => {
-    expect(statusFor("#/order/W14")).toEqual({ kind: "order", workstreamId: "W14" });
-    expect(statusFor("#/board/devbox/storefront")).toEqual({ kind: "project", projectRef: { machineId: "devbox", projectId: "storefront" } });
-    expect(statusFor("#/settings")).toEqual({ kind: "fleet" });
-    expect(toggleRoute("#/order/W14")).toBe("#/status/order/W14");
-    expect(toggleRoute("#/status/order/W14")).toBe("#/order/W14");
-    expect(toggleRoute("#/status"), "opened elsewhere: back to the board").toBe("#/board");
-  });
 });
 
 describe("the digest", () => {

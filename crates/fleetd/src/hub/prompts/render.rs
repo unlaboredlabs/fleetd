@@ -13,6 +13,11 @@ pub fn ref_of(id: &str, text: &str) -> String {
     format!("{id}@{}", &git_blob_sha(text.as_bytes())[..10])
 }
 
+/// The same words in the same order, whatever the whitespace between them.
+pub fn same_words(a: &str, b: &str) -> bool {
+    a.split_whitespace().eq(b.split_whitespace())
+}
+
 /// One pass over `template`: each `{{name}}` with a value is replaced, any other is left as written. Values are never
 /// scanned, so a value that contains `{{x}}` stays as it is. One trailing newline of the file is dropped.
 pub fn render(template: &str, vars: &[(&str, &dyn Display)]) -> String {
