@@ -92,6 +92,6 @@ describe("toShellData", () => {
     expect(front).toMatchObject({ needsYou: 1, running: 2, stalled: false });
     expect(front?.orders[0]?.needsYou).toBe(true);
     expect(back).toMatchObject({ needsYou: 0, running: 0, stalled: true });
-    expect(toShellData(inputs, now)).toMatchObject({ machinesDown: 1, needsYou: 2 });
+    expect(toShellData(inputs, now)).toMatchObject({ machinesDown: 1 });
   });
 });

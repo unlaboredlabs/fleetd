@@ -127,3 +127,13 @@
   line-height: var(--leading-xs);
   text-align: center;
 }
+
+/* The inbox count's place while the asks load. Static: a skeleton that pulses would repaint for nothing. */
+.countSkeleton {
+  display: inline-block;
+  width: 2ch;
+  height: 0.8em;
+  border-radius: var(--radius-sm);
+  background: var(--selected);
+  vertical-align: middle;
+}

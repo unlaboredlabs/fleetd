@@ -8,7 +8,7 @@ import { openPalette, PaletteHost, useCommands, type Command } from "../palette"
 import { useEscape, useMainProcess, useMenuState, useModHeld, useNotifications } from "./effects";
 import { useHubState } from "./hubFeed";
 import { InboxPanel } from "./InboxPanel";
-import { leadLaneId, selectBoard, selectInbox, selectMachines, selectProjects } from "../../src/data/selectors";
+import { leadLaneId, selectBoard, selectInbox, selectMachines, selectNeedsYouCount, selectProjects } from "../../src/data/selectors";
 import { useData } from "../../src/data/react";
 import { Seen, sidebarOrders, toShellData, type ShellData } from "./model";
 import { navigate, useRoute } from "./navigation";
@@ -51,6 +51,8 @@ export function Shell() {
   const route = useRoute();
   const hub = useHubState();
   const data = useShellData();
+  // Undefined until this connection's asks loaded: a "0" then would claim nothing needs you.
+  const needsYou = useData(selectNeedsYouCount);
   const [sidebarHidden, setSidebarHidden] = useState(false);
   const [seen] = useState(() => new Seen());
   const modHeld = useModHeld();
@@ -128,13 +130,22 @@ export function Shell() {
         chrome ? (
           <>
             <Button
-              variant={data.needsYou > 0 ? "secondary" : "quiet"}
-              className={data.needsYou > 0 ? s.needsYou : undefined}
+              variant={needsYou !== undefined && needsYou > 0 ? "secondary" : "quiet"}
+              className={needsYou !== undefined && needsYou > 0 ? s.needsYou : undefined}
+              aria-busy={needsYou === undefined}
               shortcut={display("inbox.toggle", platform)}
               aria-pressed={route.inbox !== null}
               onClick={() => setInbox(route.inbox === null ? { askId: null } : null)}
             >
-              {data.needsYou > 0 ? `${String(data.needsYou)} need you` : "Inbox"}
+              {needsYou === undefined ? (
+                <>
+                  Inbox <span className={s.countSkeleton} aria-label="Loading" />
+                </>
+              ) : needsYou > 0 ? (
+                `${String(needsYou)} need you`
+              ) : (
+                "Inbox"
+              )}
             </Button>
             <Button variant="quiet" icon={<Search />} shortcut={display("palette.toggle", platform)} onClick={() => openPalette()}>
               Commands
@@ -168,7 +179,7 @@ export function Shell() {
               </footer>
             ) : null}
           </div>
-          {chrome && route.inbox !== null ? <InboxPanel count={data.needsYou} askId={route.inbox.askId} onClose={() => setInbox(null)} /> : null}
+          {chrome && route.inbox !== null ? <InboxPanel count={needsYou} askId={route.inbox.askId} onClose={() => setInbox(null)} /> : null}
         </div>
       </AppFrame>
       <PaletteHost />

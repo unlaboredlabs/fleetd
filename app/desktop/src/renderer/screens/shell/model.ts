@@ -30,8 +30,6 @@ export interface SidebarProject {
 export interface ShellData {
   readonly projects: ReadonlyArray<SidebarProject>;
   readonly machinesDown: number;
-  /** Open asks across the fleet. */
-  readonly needsYou: number;
 }
 
 
@@ -92,7 +90,6 @@ export const toShellData = (inputs: ShellInputs, nowMs: number): ShellData => {
   return {
     projects,
     machinesDown: inputs.machines.filter((m) => m.machine.status !== "online").length,
-    needsYou: inputs.inbox.length,
   };
 };
 
