@@ -360,11 +360,28 @@ export const selectProjectAgents = perKey((key) =>
   ),
 );
 
+/** A project's state word: the sidebar dot, the chat header and the Status row all show this one. */
+export type ProjectStateWord = "waiting_on_you" | "blocked" | "working" | "idle";
+
+/**
+ * The state word. Whether the lead waits on you comes only from the hub's chat state (ProjectChatState.needsYou),
+ * so no two places can disagree on it. `rowState` is the Status row's own word (status_projects): it adds
+ * "blocked" (a cause outside the work) and a "working" the agents count can't see (PRs in review, CI or the
+ * train), and its "waiting on you" never counts on its own.
+ */
+export const projectStateWord = (needsYou: boolean, working: boolean, rowState?: string): ProjectStateWord => {
+  if (needsYou) return "waiting_on_you";
+  if (rowState === "blocked") return "blocked";
+  return working || rowState === "working" ? "working" : "idle";
+};
+
 export interface ProjectRow {
   readonly key: ProjectKey;
   readonly project: ProjectSummary;
-  /** The lead is waiting for the person's reply. */
+  /** The lead is waiting for the person's reply: the hub's chat state, the one source for it. */
   readonly needsYou: boolean;
+  /** The state word without the Status row's own causes; the Status screen passes its row to projectStateWord. */
+  readonly state: ProjectStateWord;
   /** The lead or any of the project's agents is at work. */
   readonly working: boolean;
   /** Agents at work, the lead not counted. */
@@ -387,11 +404,21 @@ export const selectProjectList = memo(
         const running = (agents[key] ?? noProjectLanes).filter((l) => l.role !== "lead" && active(l.status)).length;
         const chat = chats[key];
         const leadWorking = chat?.leadWorking ?? leadActive(liveLanes, key);
-        return { key, project, needsYou: chat?.needsYou === true, running, working: running > 0 || leadWorking };
+        const needsYou = chat?.needsYou === true;
+        const working = running > 0 || leadWorking;
+        return { key, project, needsYou, running, working, state: projectStateWord(needsYou, working) };
       })
       // A stable order (by title): rows must not move under the pointer, and ⌘1–9 keep their targets.
       .sort((a, b) => a.project.title.localeCompare(b.project.title) || a.key.localeCompare(b.key));
   },
+);
+
+/** One project's row: what the sidebar dot, the chat header and the Status row read. */
+export const selectProjectRow = perKey((key) =>
+  memo(
+    (s) => [selectProjectList(s)],
+    (rows): ProjectRow | undefined => rows?.find((r) => r.key === key),
+  ),
 );
 
 /** How many projects' leads wait on the person (dock badge, window title). */
