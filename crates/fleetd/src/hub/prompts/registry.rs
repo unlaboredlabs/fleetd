@@ -208,6 +208,16 @@ pub const ENTRIES: &[Entry] = &[
         ]
     ),
     entry!(
+        "lead.areas",
+        Start,
+        Lead,
+        Lead,
+        "Lead: the project's areas",
+        "lead start and every lead_restart, after the first message",
+        "areas!=the area names, comma-separated; source!=from .fleetd/policy.yaml, or inferred from the repo",
+        &[]
+    ),
+    entry!(
         "lead.digest",
         Wake,
         Lead,

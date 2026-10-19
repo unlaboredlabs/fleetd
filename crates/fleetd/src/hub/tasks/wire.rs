@@ -499,6 +499,17 @@ impl PolicyHook for PolicyFromLeases {
             Ok(policy.lead.is_none_or(|l| l.auto_start))
         })
     }
+
+    fn areas(&self, project_ref: &ProjectRef) -> BoxFuture<Option<(Vec<String>, bool)>> {
+        let (policies, r) = (Arc::clone(&self.0), project_ref.clone());
+        Box::pin(async move {
+            let resolved = policies.resolve(&r).await.ok()?;
+            Some((
+                resolved.policy.areas.into_keys().collect(),
+                resolved.inferred,
+            ))
+        })
+    }
 }
 
 /// Everything tasks, slots and leases hook into once the `Hub` exists: the ports' leads half, the lead calls, the

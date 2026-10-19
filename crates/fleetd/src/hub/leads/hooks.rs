@@ -76,6 +76,10 @@ pub trait PolicyHook: Send + Sync {
         &self,
         project_ref: &ProjectRef,
     ) -> BoxFuture<Result<bool, super::error::LeadError>>;
+    /// The project's area names and whether they were inferred from the repo; `None` when the policy can't be read.
+    fn areas(&self, _project_ref: &ProjectRef) -> BoxFuture<Option<(Vec<String>, bool)>> {
+        Box::pin(async { None })
+    }
 }
 
 /// GitHub through `gh api`.

@@ -248,6 +248,20 @@ async fn read_github(
 }
 
 /// A checkout's inspect: GitHub's view when its remote is on GitHub, else what the checkout itself shows.
+/// The inspect with the checkout's areas: its policy file's, else the ones inferred from its layout.
+async fn with_areas(
+    hub: &Hub,
+    m: &MachineId,
+    path: &str,
+    mut inspect: ProjectInspect,
+) -> ProjectInspect {
+    if let Some(Ok(resolved)) = hub.policies.resolve_at(m, path).await {
+        inspect.areas = resolved.policy.areas.into_keys().collect();
+        inspect.areas_inferred = Some(resolved.inferred);
+    }
+    inspect
+}
+
 async fn inspect_checkout(facts: &RepoFacts) -> Result<ProjectInspect, ToolError> {
     match remote_repo(facts) {
         Some(repo) => read_github(&repo, Some(facts)).await,
@@ -559,7 +573,8 @@ pub async fn inspect(
         require(caller, Role::Read, Some(m))?;
         let m = target_machine(hub, Some(m))?;
         let facts = checkout(hub, &m, path.as_str()).await?;
-        (inspect_checkout(&facts).await?, None)
+        let inspect = inspect_checkout(&facts).await?;
+        (with_areas(hub, &m, path.as_str(), inspect).await, None)
     };
     Ok(ProjectInspectOutput {
         next: Some(match &clone {
@@ -635,7 +650,7 @@ pub async fn add(
     if let Some(path) = &input.path {
         let path = path.as_str().strip_suffix('/').unwrap_or(path.as_str());
         let facts = checkout(&hub, &m, path).await?;
-        let inspect = inspect_checkout(&facts).await?;
+        let inspect = with_areas(&hub, &m, path, inspect_checkout(&facts).await?).await;
         let (project_id, created) =
             register(&hub, &m, path, title.as_deref(), inspect.clone(), None).await?;
         return Ok(ProjectAddOutput {
@@ -660,7 +675,7 @@ pub async fn add(
     if target.exists {
         if target.same_remote && input.use_existing == Some(true) {
             let facts = checkout(&hub, &m, &target.path).await?;
-            let inspect = inspect_checkout(&facts).await?;
+            let inspect = with_areas(&hub, &m, &target.path, inspect_checkout(&facts).await?).await;
             let (project_id, created) = register(
                 &hub,
                 &m,
@@ -907,6 +922,7 @@ async fn clone_and_register(
             true,
         ),
     };
+    let inspect = with_areas(&hub, &m, &path, inspect).await;
     if let Err(e) = register(
         &hub,
         &m,
