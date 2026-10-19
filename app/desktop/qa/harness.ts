@@ -4,7 +4,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { _electron as electron, type ElectronApplication, type Page } from "@playwright/test";
+import { type CDPSession, _electron as electron, type ElectronApplication, type Page } from "@playwright/test";
 import { buildSync } from "esbuild";
 import type { Box, CheckOptions, Finding, ScrollStep } from "./dom/checks.ts";
 import { type FixtureName, type Screen, type SizeName, sizes, type Theme } from "./registry.ts";
@@ -128,14 +128,34 @@ export async function setView(app: ElectronApplication, page: Page, size: SizeNa
     { width, height, theme },
   );
   // A window can't outgrow its screen (macOS runners have small ones), so the page's viewport is set too: layout,
-  // the checks and the screenshot all see exactly the size asked for.
-  await page.setViewportSize({ width, height });
+  // the checks and the screenshot all see exactly the size asked for. Not with page.setViewportSize: on an Electron
+  // page it sends a device scale factor of 1, which overrides --force-device-scale-factor and makes every @2x shot
+  // a 1x one. The override below carries the scale, and is re-sent on every resize.
+  await cdp(page).then((session) =>
+    session.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: scale, mobile: false }),
+  );
   await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
   await page.waitForFunction(
-    (v) => window.innerWidth === v.width && window.innerHeight === v.height,
-    { width, height },
+    (v) => window.innerWidth === v.width && window.innerHeight === v.height && window.devicePixelRatio === v.scale,
+    { width, height, scale },
     { timeout: 5_000 },
   );
+}
+
+const sessions = new WeakMap<Page, Promise<CDPSession>>();
+function cdp(page: Page) {
+  let session = sessions.get(page);
+  if (!session) {
+    session = page.context().newCDPSession(page);
+    sessions.set(page, session);
+  }
+  return session;
+}
+
+// A PNG's size from its IHDR chunk.
+export function pngSize(file: string) {
+  const header = readFileSync(file).subarray(16, 24);
+  return { width: header.readUInt32BE(0), height: header.readUInt32BE(4) };
 }
 
 export async function show(page: Page, screenId: string, route: string, open?: (page: Page) => Promise<void>) {
@@ -222,6 +242,13 @@ async function capture(page: Page, file: string, findings: Finding[]) {
   if (findings.length > 0) await run(page, `annotate(${JSON.stringify(findings)})`);
   await page.screenshot({ path: path.join(resultsDir, file), animations: "disabled", caret: "hide" });
   if (findings.length > 0) await run(page, "clearAnnotations()");
+  // An "@2x" shot that is really 1x hides exactly what scale 2 is for (Retina text, hairlines, canvases).
+  const viewport = await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }));
+  const got = pngSize(path.join(resultsDir, file));
+  const want = { width: Math.round(viewport.width * scale), height: Math.round(viewport.height * scale) };
+  if (got.width !== want.width || got.height !== want.height) {
+    throw new Error(`${file} is ${got.width}×${got.height}, not the viewport × ${scale} (${want.width}×${want.height})`);
+  }
 }
 
 // Screenshot and check the view; with `scroll`, also step every scroll container through its range and check at

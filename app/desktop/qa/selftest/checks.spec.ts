@@ -5,7 +5,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
 import type { CheckId } from "../dom/allowlist.ts";
-import { assertExpectedState, check, type Launched, launch, resultsDir, setView, shoot, show } from "../harness.ts";
+import { assertExpectedState, check, type Launched, launch, pngSize, resultsDir, scale, setView, shoot, show } from "../harness.ts";
 import { readShots } from "../report.ts";
 import { sizes, themes } from "../registry.ts";
 
@@ -84,6 +84,16 @@ test("a route landing on a not-found state fails unless the entry expects it", a
   await show(page, "good", "#/good");
   await assertExpectedState(page, { id: "good" });
   await expect(assertExpectedState(page, { id: "good", expect: "error" })).rejects.toThrow(/expects an error/);
+});
+
+test("screenshots are the viewport times the scale, at every size", async () => {
+  const { app, page } = launched;
+  for (const size of Object.keys(sizes) as (keyof typeof sizes)[]) {
+    await setView(app, page, size, "light");
+    await show(page, "shell", "#/");
+    const shot = await shoot(page, [], { screen: "scale", fixture: "empty", size, theme: "light" }, { scroll: false });
+    expect(pngSize(path.join(resultsDir, shot.png))).toEqual({ width: sizes[size].width * scale, height: sizes[size].height * scale });
+  }
 });
 
 test("content under the macOS window controls is reported", async () => {
