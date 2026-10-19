@@ -1,12 +1,13 @@
 import { pathToFileURL } from "node:url";
 import { app, protocol, session, shell, type WebContents } from "electron";
+import { DEV_BUILD } from "./build";
 import { externalUrl } from "./external";
 import { APP_INDEX, APP_ORIGIN, APP_SCHEME, assetPath, originOf } from "./origin";
 
-/** The dev server while developing an unpackaged build; never in a packaged app. */
+/** The dev server under `electron-vite dev`; a built app never loads one, however it's launched. */
 const devUrl = (): string | null => {
   const dev = process.env["ELECTRON_RENDERER_URL"];
-  return dev !== undefined && !app.isPackaged ? dev : null;
+  return dev !== undefined && DEV_BUILD ? dev : null;
 };
 
 /** The one origin whose top frame gets the bridge and may navigate. */

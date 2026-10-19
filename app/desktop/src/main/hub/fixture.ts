@@ -42,21 +42,21 @@ const FixtureFile = z.object({
 });
 export type FixtureFile = z.infer<typeof FixtureFile>;
 
-/** Set alongside FLEETD_FIXTURE to use a fixture in a packaged build (a QA run of the release app). */
+/** Set alongside FLEETD_FIXTURE to use a fixture in a release build (a QA run of what ships). */
 export const ALLOW_PACKAGED = "FLEETD_DEV_FIXTURES";
 
 /**
- * Which fixture, if any, replaces the hub. A packaged app ignores a stray FLEETD_FIXTURE (fake data must never pass
+ * Which fixture, if any, replaces the hub. A release build ignores a stray FLEETD_FIXTURE (fake data must never pass
  * for a real hub) unless FLEETD_DEV_FIXTURES=1 is set too.
  */
 export const fixtureRequest = (
   vars: NodeJS.ProcessEnv,
-  packaged: boolean,
+  release: boolean,
 ): { kind: "none" } | { kind: "ignored"; reason: string } | { kind: "fixture"; name: string } => {
   const name = vars["FLEETD_FIXTURE"];
   if (name === undefined || name === "") return { kind: "none" };
-  if (packaged && vars[ALLOW_PACKAGED] !== "1") {
-    return { kind: "ignored", reason: `FLEETD_FIXTURE is ignored in a packaged app unless ${ALLOW_PACKAGED}=1 is set too.` };
+  if (release && vars[ALLOW_PACKAGED] !== "1") {
+    return { kind: "ignored", reason: `FLEETD_FIXTURE is ignored in a release build unless ${ALLOW_PACKAGED}=1 is set too.` };
   }
   return { kind: "fixture", name };
 };
