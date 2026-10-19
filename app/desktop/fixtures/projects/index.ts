@@ -117,7 +117,21 @@ const addAnswers = (f: Fixture) => {
   f.answer("project_remove", undefined, { ok: true });
 };
 
+/** The recorded checks predate the hub saying claude's login method in words (hub/doctor/checks.rs). */
+const loginInWords = (f: Fixture) =>
+  f.update("doctor_list", (out) =>
+    isObject(out)
+      ? {
+          ...out,
+          checks: objects(out["checks"]).map((c) =>
+            typeof c["message"] === "string" ? { ...c, message: c["message"].replace(" (oauth_token);", " with a long-lived login token;") } : c,
+          ),
+        }
+      : out,
+  );
+
 const typical = (f: Fixture) => {
+  loginInWords(f);
   addAnswers(f);
   f.answer("project_discover", undefined, discover(f));
 };
@@ -149,10 +163,12 @@ export default defineGroup({
     typical,
     "many-agents": typical,
     "long-text": (f) => {
+      loginInWords(f);
       addAnswers(f);
       f.answer("project_discover", undefined, discover(f, { longName: "receipts-and-invoices-date-formatting-service-with-a-very-long-repository-name" }));
     },
     empty: (f) => {
+      loginInWords(f);
       f.drop("project_discover");
       f.answer("project_discover", undefined, {
         machines: machinesOf(f).map((m) => ({ machineId: asText(m["machineId"]), online: true, cloneRoot: "/home/dev/src", repos: [] })),
@@ -161,6 +177,7 @@ export default defineGroup({
       });
     },
     "node-too-old": (f) => {
+      loginInWords(f);
       f.drop("project_discover");
       const d = discover(f);
       const machines = objects(d["machines"]).map((m, i) =>

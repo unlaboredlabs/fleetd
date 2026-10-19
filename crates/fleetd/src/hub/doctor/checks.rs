@@ -271,7 +271,7 @@ pub fn hub_claude_login(outcome: &CmdOutcome, proxy: Option<&str>) -> Entry {
     let method = status
         .get("authMethod")
         .and_then(Value::as_str)
-        .map_or(String::new(), |m| format!(" ({m})"));
+        .map_or(String::new(), auth_method_words);
     hub_entry(
         "claude_login",
         Pass,
@@ -280,6 +280,17 @@ pub fn hub_claude_login(outcome: &CmdOutcome, proxy: Option<&str>) -> Entry {
         ),
         None,
     )
+}
+
+/// claude's `authMethod` in words for a person; one this doesn't know stays as claude says it, as code.
+fn auth_method_words(method: &str) -> String {
+    match method {
+        "oauth_token" => " with a long-lived login token".into(),
+        "claude.ai" | "claudeai" => " with a Claude account".into(),
+        "api_key" | "apiKey" => " with an API key".into(),
+        "" => String::new(),
+        other => format!(" (`{other}`)"),
+    }
 }
 
 /// Why plain HTTP to `url` is safe, if it is: loopback never leaves the machine, and a tailnet address (100.64.0.0/10,
@@ -892,6 +903,30 @@ pub fn disk_space(machine_id: &str, probe: Result<&HostProbe, &str>) -> Entry {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_hub_login_says_its_method_in_words() {
+        let ran = |method: &str| CmdOutcome::Ran {
+            exit_code: 0,
+            stdout: serde_json::json!({ "loggedIn": true, "authMethod": method }).to_string(),
+            stderr: String::new(),
+        };
+        let message = |method: &str| {
+            hub_claude_login(&ran(method), None)
+                .check
+                .message
+                .to_string()
+        };
+        assert_eq!(
+            message("oauth_token"),
+            "claude on the hub is logged in with a long-lived login token; the intake router and the retro can run."
+        );
+        assert!(message("claude.ai").contains("logged in with a Claude account;"));
+        assert!(
+            message("something_new").contains("logged in (`something_new`);"),
+            "an unknown method shows as code"
+        );
+    }
 
     #[test]
     fn plain_http_is_fine_only_on_loopback_and_the_tailnet() {
