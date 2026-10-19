@@ -19,7 +19,7 @@ import { claimOnFirstRun } from "./linkHandlerMain";
 import { listenForLinks } from "./links";
 import { Opener } from "./opener";
 import { harden, lockSession, pageUrl } from "./security";
-import { startUpdater } from "./updater";
+import { updates } from "./updater";
 import { restorePlacement, trackPlacement } from "./windowState";
 
 /** Height of the renderer's top bar; the macOS traffic lights are centred in it. */
@@ -131,7 +131,8 @@ void app.whenReady().then(() => {
     return;
   }
   registerIpc(hub, { opener, notifier: new Notifier(opener) }, pairing);
-  installMenu(opener);
+  const updater = updates();
+  installMenu(opener, updater?.checkNow ?? null);
   claimOnFirstRun();
   app.on("browser-window-focus", () => hub.windowFocused());
   powerMonitor.on("resume", () => hub.systemResumed());
@@ -143,7 +144,7 @@ void app.whenReady().then(() => {
     },
   });
   createWindow(mode);
-  void startUpdater();
+  updater?.start();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow(mode);
   });
