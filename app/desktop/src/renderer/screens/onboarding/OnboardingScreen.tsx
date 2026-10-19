@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useReducer, useRef, useSyncExternalStore, type ReactNode, type SyntheticEvent } from "react";
 import type { HubState } from "../../../shared/hub";
-import { protocolFit, type PairFailure, type PairRequest } from "../../../shared/pairing";
+import { protocolFit, type PairFailure, type PairOutcome } from "../../../shared/pairing";
 import { Button, Field, Input, Text } from "../../ui";
-import { initialForm, KEY_CREATE, mismatchFailure, reduce } from "./form";
-import { useHubState, useSecondsUntil } from "./hooks";
+import { initialForm, KEY_CREATE, mismatchFailure, reduce, type Reaching } from "./form";
+import { useHubState, useReaching, useSecondsUntil } from "./hooks";
 import { CommandLine, Failure, Prose } from "./Prose";
 import s from "./onboarding.module.css";
 
@@ -11,6 +11,8 @@ export interface OnboardingProps {
   /** Overrides `#/onboarding?hub=&code=` (a fleetd://pair link), which fills the form and never submits it. */
   readonly hub?: string | undefined;
   readonly code?: string | undefined;
+  /** Open on the key path (`#/onboarding?key`). */
+  readonly useKey?: boolean | undefined;
 }
 
 const subscribeHash = (onChange: () => void) => {
@@ -30,9 +32,11 @@ const useHashQuery = (): URLSearchParams => {
  */
 export function OnboardingScreen(props: OnboardingProps) {
   const state = useHubState();
+  const reach = useReaching(state);
   const query = useHashQuery();
   const hub = props.hub ?? query.get("hub") ?? undefined;
   const code = props.code ?? query.get("code") ?? undefined;
+  const useKey = props.useKey ?? query.has("key");
   if (state === null) return <div className={s.screen} data-screen="onboarding" />;
   // A link to pair with a hub shows the form whatever the connection is doing.
   if (code === undefined) {
@@ -40,10 +44,10 @@ export function OnboardingScreen(props: OnboardingProps) {
       const fit = protocolFit(state.protocol);
       return fit === "ok" ? <Connected hub={state.hub} /> : <Mismatch failure={mismatchFailure(fit, state.hub)} />;
     }
-    if (state.phase === "connecting" || state.phase === "retrying") return <Connecting state={state} />;
+    if (reach !== null) return <Connecting reach={reach} />;
   }
   // Remounts on a new phase or link, so a refused key or a fresh link starts a fresh form.
-  return <ConnectForm key={`${state.phase}:${hub ?? ""}:${code ?? ""}`} state={state} link={{ hub, code }} />;
+  return <ConnectForm key={`${state.phase}:${hub ?? ""}:${code ?? ""}:${String(useKey)}`} state={state} link={{ hub, code, useKey }} />;
 }
 
 function Page({ id, title, children }: { id: string; title: string; children: ReactNode }) {
@@ -69,9 +73,9 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
     window.location.hash = "#/onboarding";
   };
 
-  const pair = useCallback(async (request: PairRequest) => {
-    dispatch({ type: "submitting", hub: request.hub });
-    const outcome = await window.fleetd.pair.redeem(request);
+  const pair = useCallback(async (hub: string, request: () => Promise<PairOutcome>) => {
+    dispatch({ type: "submitting", hub });
+    const outcome = await request();
     if (outcome.ok) {
       dispatch({ type: "paired", hubName: outcome.hubName });
       done();
@@ -91,9 +95,10 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
     };
   }, []);
 
+  // app-pair.json: main reads the code and pairs; this page only asked.
   useEffect(() => {
-    if (form.pending !== null) void pair(form.pending);
-  }, [form.pending, pair]);
+    if (form.autoPending) void pair(form.hub, () => window.fleetd.pair.auto());
+  }, [form.autoPending, form.hub, pair]);
 
   const fail = (failure: PairFailure, field: HTMLInputElement | null) => {
     dispatch({ type: "failed", failure });
@@ -104,8 +109,8 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
     event.preventDefault();
     if (form.busy) return;
     if (!form.useKey) {
-      const fromFile = form.codeFromFile !== null && form.code === form.codeFromFile;
-      return pair({ hub: form.hub, code: form.code, fromFile });
+      const request = { hub: form.hub, code: form.code };
+      return pair(form.hub, () => window.fleetd.pair.redeem(request));
     }
     const key = form.key.trim();
     if (key === "") {
@@ -190,23 +195,26 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
   );
 }
 
-function Connecting({ state }: { state: Extract<HubState, { phase: "connecting" | "retrying" }> }) {
-  const seconds = useSecondsUntil(state.phase === "retrying" ? state.retryAt : null);
+/** One layout for every attempt: only the countdown line changes, so a fast-failing hub doesn't flash. */
+function Connecting({ reach }: { reach: Reaching }) {
+  const seconds = useSecondsUntil(reach.retryAt);
   return (
-    <Page id="onboarding.connecting" title={state.phase === "retrying" ? "Can't reach your hub" : "Connecting to your hub"}>
+    <Page id="onboarding.connecting" title={reach.reason === null ? "Connecting to your hub" : "Can't reach your hub"}>
       <Text tone="quiet" mono size="sm">
-        {state.hub}
+        {reach.hub}
       </Text>
-      {state.phase === "retrying" ? (
+      {reach.reason === null ? null : (
         <Failure
           failure={{
             code: "",
-            message: state.reason,
+            message: reach.reason,
             fix: "Check the hub is running (`fleetd doctor` on the hub) and that this computer can reach it.",
           }}
         />
-      ) : null}
-      <Text tone="quiet">{seconds === null ? "Connecting…" : seconds === 0 ? "Trying again now…" : `Trying again in ${seconds} s.`}</Text>
+      )}
+      <Text tone="quiet" tabular>
+        {reach.reason === null ? "Connecting…" : seconds === null || seconds === 0 ? "Trying again now…" : `Trying again in ${seconds} s.`}
+      </Text>
       <ForgetHub />
     </Page>
   );

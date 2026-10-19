@@ -13,6 +13,7 @@ ipcRenderer.on(IPC.hubFrame, (_event: IpcRendererEvent, frame: HubFrame) => {
 
 const api: FleetdApi = {
   platform: process.platform === "darwin" || process.platform === "linux" || process.platform === "win32" ? process.platform : "other",
+  copy: (text) => ipcRenderer.invoke(IPC.copy, text) as Promise<void>,
   hub: {
     state: () => ipcRenderer.invoke(IPC.hubState) as Promise<HubState>,
     subscribe: (listener) => {
@@ -34,6 +35,7 @@ const api: FleetdApi = {
     start: () => ipcRenderer.invoke(IPC.pairStart) as Promise<PairStart>,
     probe: (hub) => ipcRenderer.invoke(IPC.pairProbe, hub) as Promise<Probe>,
     redeem: (request) => ipcRenderer.invoke(IPC.pairRedeem, request) as Promise<PairOutcome>,
+    auto: () => ipcRenderer.invoke(IPC.pairAuto) as Promise<PairOutcome>,
   },
 };
 

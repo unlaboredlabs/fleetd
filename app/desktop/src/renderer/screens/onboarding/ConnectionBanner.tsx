@@ -1,7 +1,7 @@
-import type { HubState } from "../../../shared/hub";
 import { olderNodes } from "../../../shared/pairing";
 import { Text } from "../../ui";
-import { useHubProbe, useHubState, useSecondsUntil } from "./hooks";
+import type { Reaching } from "./form";
+import { useHubProbe, useHubState, useReaching, useSecondsUntil } from "./hooks";
 import { Prose } from "./Prose";
 import s from "./onboarding.module.css";
 
@@ -16,11 +16,12 @@ export interface ConnectionBannerProps {
  */
 export function ConnectionBanner({ machines }: ConnectionBannerProps) {
   const state = useHubState();
+  const reach = useReaching(state);
   const live = state?.phase === "live" ? state.hub : null;
   const probe = useHubProbe(live);
   const behind = machines !== undefined && probe?.answers === true ? olderNodes(machines, probe.version) : [];
   if (state === null) return null;
-  if (state.phase === "connecting" || state.phase === "retrying") return <Reconnecting state={state} />;
+  if (reach !== null) return <Reconnecting reach={reach} />;
   if (behind.length === 0) return null;
   const one = behind.length === 1;
   const names = one ? behind.join("") : `${behind.slice(0, -1).join(", ")} and ${behind.slice(-1).join("")}`;
@@ -33,14 +34,13 @@ export function ConnectionBanner({ machines }: ConnectionBannerProps) {
   );
 }
 
-function Reconnecting({ state }: { state: Extract<HubState, { phase: "connecting" | "retrying" }> }) {
-  const seconds = useSecondsUntil(state.phase === "retrying" ? state.retryAt : null);
+/** One line for every attempt: only the countdown changes, so a fast-failing hub doesn't flash. */
+function Reconnecting({ reach }: { reach: Reaching }) {
+  const seconds = useSecondsUntil(reach.retryAt);
   const when = seconds === null || seconds === 0 ? "Reconnecting…" : `Trying again in ${seconds} s.`;
   return (
     <div className={s.banner} data-tone="warning" role="status" data-banner="reconnecting">
-      <Text>
-        {state.phase === "retrying" ? `Lost the hub: ${state.reason}` : `Connecting to ${state.hub}.`} {when}
-      </Text>
+      <Text tabular>{reach.reason === null ? `Connecting to ${reach.hub}…` : `Lost the hub: ${reach.reason} ${when}`}</Text>
     </div>
   );
 }

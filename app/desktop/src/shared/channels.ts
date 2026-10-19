@@ -20,8 +20,12 @@ export const IPC = {
   pairStart: "pair:start",
   /** invoke(hub address) → Probe. The hub's /healthz. */
   pairProbe: "pair:probe",
-  /** invoke(PairRequest) → PairOutcome. POST <hub>/pair, then saves the key and connects like hubConnect. */
+  /** invoke(PairRequest) → PairOutcome. POST <hub>/pair with a typed code, then saves the key and connects. */
   pairRedeem: "pair:redeem",
+  /** invoke() → PairOutcome. Main pairs from app-pair.json itself (its code never reaches the page), then deletes it. */
+  pairAuto: "pair:auto",
+  /** invoke(text) → void. Writes the clipboard; the page itself has no clipboard permission. */
+  copy: "app:copy",
   /** main → renderer: HubFrame */
   hubFrame: "hub:frame",
 } as const;

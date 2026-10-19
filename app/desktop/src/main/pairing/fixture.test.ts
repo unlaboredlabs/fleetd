@@ -12,7 +12,7 @@ const fixture = (body: unknown): string => {
 };
 
 describe("fixture pairing", () => {
-  it("replays the fixture's app-pair.json, /healthz and /pair, and spends the code", async () => {
+  it("replays the fixture's app-pair.json, /healthz and /pair on every load", async () => {
     const file = fixture({
       version: 1,
       pair: {
@@ -21,17 +21,17 @@ describe("fixture pairing", () => {
         redeem: { status: 401, body: { code: "pair_code_invalid", message: "Unknown code.", fix: "Run `fleetd pair` on the hub for a new code." } },
       },
     });
-    const service = new PairingService(fixturePairingDeps(file, () => ({ ok: true })));
+    const service = new PairingService(fixturePairingDeps(file, () => ({ ok: true }), () => true));
     const start = await service.start();
     expect(start.appPair?.expired).toBe(false);
     expect(start.probe.answers).toBe(true);
-    const outcome = await service.redeem({ hub: "http://hub.example.ts.net:4790", code: "ABCD-2345", fromFile: true });
+    const outcome = await service.auto();
     expect(outcome.ok || outcome.failure.fix).toContain("fleetd pair");
-    expect((await service.start()).appPair).toBeNull();
+    expect((await service.start()).appPair).not.toBeNull();
   });
 
   it("reaches no hub at all without a pair section", async () => {
-    const service = new PairingService(fixturePairingDeps(fixture({ version: 1 }), () => ({ ok: true })));
-    expect(await service.start()).toEqual({ appPair: null, probe: { answers: false, hub: "http://127.0.0.1:4790" } });
+    const service = new PairingService(fixturePairingDeps(fixture({ version: 1 }), () => ({ ok: true }), () => true));
+    expect(await service.start()).toEqual({ appPair: null, problem: null, probe: { answers: false, hub: "http://127.0.0.1:4790" } });
   });
 });

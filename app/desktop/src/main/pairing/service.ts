@@ -1,4 +1,3 @@
-import { readFile, rm } from "node:fs/promises";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import type { ConnectOutcome } from "../../shared/hub";
@@ -7,11 +6,14 @@ import {
   LOCAL_HUB,
   normalizeCode,
   readAppPair,
+  type AppPair,
+  type PairFailure,
   type PairOutcome,
   type PairRequest,
   type PairStart,
   type Probe,
 } from "../../shared/pairing";
+import { privateHubOrigin, readAppPairFile, removeAppPairFile, type FileRead } from "./appPairFile";
 import { probe, redeem, type Fetch } from "./hubHttp";
 
 /** The startup probe only decides a hint, so it gives up quickly. */
@@ -21,8 +23,10 @@ export interface PairingDeps {
   readonly fetch: Fetch;
   /** The hub service's connect: validates, saves the key with safeStorage, connects. */
   readonly connect: (url: string, key: string) => ConnectOutcome;
+  /** app-pair.json pairs by itself only on first run: no key saved, none refused. */
+  readonly firstRun: () => boolean;
   readonly appPairFile: string;
-  readonly readText: (path: string) => Promise<string | null>;
+  readonly readFile: (path: string) => Promise<FileRead>;
   readonly remove: (path: string) => Promise<void>;
   readonly now: () => number;
   readonly deviceName: () => string;
@@ -35,15 +39,18 @@ const deviceName = (): string => hostname().trim().replace(/\.local$/u, "") || "
  * `fleetdDir` is the fleetd dir main already resolved (FLEETD_HOME, else <appData>/fleetd), where `fleetd init` /
  * `fleetd pair` write app-pair.json (crates/fleetd/src/cli/pair.rs `app_pair_file`).
  */
-export const realPairingDeps = (fleetdDir: string, connect: PairingDeps["connect"]): PairingDeps => ({
+export const realPairingDeps = (fleetdDir: string, connect: PairingDeps["connect"], firstRun: () => boolean): PairingDeps => ({
   fetch: (url, init) => globalThis.fetch(url, init),
   connect,
+  firstRun,
   appPairFile: join(fleetdDir, "app-pair.json"),
-  readText: (path) => readFile(path, "utf8").catch(() => null),
-  remove: (path) => rm(path, { force: true }),
+  readFile: readAppPairFile,
+  remove: removeAppPairFile,
   now: Date.now,
   deviceName,
 });
+
+type Loaded = { kind: "none" } | { kind: "untrusted"; failure: PairFailure } | { kind: "found"; pair: AppPair & { origin: string } };
 
 export class PairingService {
   readonly #deps: PairingDeps;
@@ -52,11 +59,16 @@ export class PairingService {
     this.#deps = deps;
   }
 
-  /** What the connect screen opens with: a code `fleetd init` left here, and whether a hub answers. */
+  /** What the connect screen opens with: which hub app-pair.json names (never its code), and whether a hub answers. */
   async start(): Promise<PairStart> {
-    const text = await this.#deps.readText(this.#deps.appPairFile);
-    const appPair = text === null ? null : readAppPair(text, this.#deps.now());
-    return { appPair, probe: await this.probe(appPair?.hub ?? LOCAL_HUB) };
+    const loaded = await this.#load();
+    if (loaded.kind === "found" && loaded.pair.expired) await this.#spend();
+    const appPair = loaded.kind === "found" ? { hub: loaded.pair.origin, expired: loaded.pair.expired } : null;
+    return {
+      appPair,
+      problem: loaded.kind === "untrusted" ? loaded.failure : null,
+      probe: await this.probe(appPair?.hub ?? LOCAL_HUB),
+    };
   }
 
   async probe(hub: string): Promise<Probe> {
@@ -64,11 +76,32 @@ export class PairingService {
     return origin.ok ? probe(this.#deps.fetch, origin.origin, PROBE_TIMEOUT_MS) : { answers: false, hub };
   }
 
-  /** Trades the code for a key, then saves it and connects through the hub service. */
+  /** A typed code: trades it for a key, then saves it and connects through the hub service. */
   async redeem(request: PairRequest): Promise<PairOutcome> {
     const origin = hubOrigin(request.hub);
     if (!origin.ok) return origin;
-    const code = normalizeCode(request.code);
+    return this.#pair(origin.origin, request.code, false);
+  }
+
+  /** Pairs from app-pair.json, read again here: the page only asks, it never supplies the code or the hub. */
+  async auto(): Promise<PairOutcome> {
+    const fail = (message: string): PairOutcome => ({
+      ok: false,
+      failure: { code: "", message, fix: "Run `fleetd pair` on the hub and type the code it prints." },
+    });
+    if (!this.#deps.firstRun()) return fail("This app already has a hub key, so it won't pair from app-pair.json.");
+    const loaded = await this.#load();
+    if (loaded.kind === "untrusted") return { ok: false, failure: loaded.failure };
+    if (loaded.kind === "none") return fail("No pairing code from `fleetd init` on this computer.");
+    if (loaded.pair.expired) {
+      await this.#spend();
+      return fail("The code `fleetd init` left on this computer has expired.");
+    }
+    return this.#pair(loaded.pair.origin, loaded.pair.code, true);
+  }
+
+  async #pair(origin: string, typed: string, fromFile: boolean): Promise<PairOutcome> {
+    const code = normalizeCode(typed);
     if (code === null) {
       return {
         ok: false,
@@ -79,13 +112,11 @@ export class PairingService {
         },
       };
     }
-    const result = await redeem(this.#deps.fetch, origin.origin, code, this.#deps.deviceName());
+    const result = await redeem(this.#deps.fetch, origin, code, this.#deps.deviceName());
     // The hub has used up or refused the code: the file is spent either way.
-    if (request.fromFile && (result.ok || result.failure.code.startsWith("pair_code_"))) {
-      await this.#deps.remove(this.#deps.appPairFile).catch(() => undefined);
-    }
+    if (fromFile && (result.ok || result.failure.code.startsWith("pair_code_"))) await this.#spend();
     if (!result.ok) return result;
-    const connected = this.#deps.connect(origin.origin, result.paired.key);
+    const connected = this.#deps.connect(origin, result.paired.key);
     return connected.ok
       ? { ok: true, hubName: result.paired.hubName }
       : {
@@ -96,5 +127,26 @@ export class PairingService {
             fix: "Run `fleetd pair` on the hub for a new code and try again.",
           },
         };
+  }
+
+  async #load(): Promise<Loaded> {
+    const path = this.#deps.appPairFile;
+    const read = await this.#deps.readFile(path);
+    if (!read.ok) return read.missing ? { kind: "none" } : { kind: "untrusted", failure: read.failure };
+    const untrusted = (why: string): Loaded => ({
+      kind: "untrusted",
+      failure: { code: "", message: `Ignored ${path}: ${why}`, fix: "Type your hub's address and a code from `fleetd pair` below." },
+    });
+    const pair = readAppPair(read.text, this.#deps.now());
+    if (pair === null) return untrusted("it isn't a pairing file.");
+    const origin = hubOrigin(pair.hub);
+    if (!origin.ok || !privateHubOrigin(origin.origin)) {
+      return untrusted(`its hub (${pair.hub}) isn't on this computer, a private network or a tailnet.`);
+    }
+    return { kind: "found", pair: { ...pair, origin: origin.origin } };
+  }
+
+  async #spend(): Promise<void> {
+    await this.#deps.remove(this.#deps.appPairFile).catch(() => undefined);
   }
 }

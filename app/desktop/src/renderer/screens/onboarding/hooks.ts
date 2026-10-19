@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { HubState } from "../../../shared/hub";
 import type { Probe } from "../../../shared/pairing";
+import { reaching, type Reaching } from "./form";
 
 /**
  * The hub connection's state from main. Until the shared store (E1) carries it, this listens on its own; note each
@@ -16,6 +17,16 @@ export const useHubState = (): HubState | null => {
     [],
   );
   return state;
+};
+
+/** The connection on its way to the hub, holding the last failure's reason across attempts (see `reaching`). */
+export const useReaching = (state: HubState | null): Reaching | null => {
+  const [last, setLast] = useState<{ readonly hub: string; readonly reason: string } | null>(null);
+  if (state?.phase === "retrying" && (last?.hub !== state.hub || last.reason !== state.reason)) {
+    setLast({ hub: state.hub, reason: state.reason });
+  }
+  if (state === null || (state.phase !== "connecting" && state.phase !== "retrying")) return null;
+  return reaching(state, last);
 };
 
 /** Seconds until `at` (epoch ms), ticking once a second only while there is a deadline. */

@@ -80,11 +80,12 @@ void app.whenReady().then(() => {
   }
   const hub = new HubService(mode);
   const connect = (url: string, key: string) => hub.connect({ url, key });
+  const firstRun = () => hub.state().phase === "unpaired";
   const fixture = process.env["FLEETD_FIXTURE"];
   const pairing = new PairingService(
     mode.kind === "fixture" && fixture !== undefined
-      ? fixturePairingDeps(fixtureFile(fixture), connect)
-      : realPairingDeps(FLEETD_DIR, connect),
+      ? fixturePairingDeps(fixtureFile(fixture), connect, firstRun)
+      : realPairingDeps(FLEETD_DIR, connect, firstRun),
   );
   registerIpc(hub, pairing);
   app.on("browser-window-focus", () => hub.windowFocused());

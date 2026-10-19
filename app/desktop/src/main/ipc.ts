@@ -1,4 +1,4 @@
-import { ipcMain, type IpcMainInvokeEvent } from "electron";
+import { clipboard, ipcMain, type IpcMainInvokeEvent } from "electron";
 import { IPC, type InvokeChannel } from "../shared/channels";
 import { parseRequest, type RequestArgs } from "../shared/ipc";
 import type { HubService } from "./hub/service";
@@ -37,4 +37,6 @@ export const registerIpc = (hub: HubService, pairing: PairingService): void => {
   handle(IPC.pairStart, () => pairing.start());
   handle(IPC.pairProbe, (_event, address) => pairing.probe(address));
   handle(IPC.pairRedeem, (_event, request) => pairing.redeem(request));
+  handle(IPC.pairAuto, () => pairing.auto());
+  handle(IPC.copy, (_event, text) => clipboard.writeText(text));
 };

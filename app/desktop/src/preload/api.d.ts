@@ -5,6 +5,8 @@ import type { PairOutcome, PairRequest, PairStart, Probe } from "../shared/pairi
 /** `window.fleetd`: everything the renderer can ask of main. There is no other bridge. */
 export interface FleetdApi {
   readonly platform: "darwin" | "linux" | "win32" | "other";
+  /** Writes text to the clipboard (the page has no clipboard permission of its own). */
+  copy(text: string): Promise<void>;
   readonly hub: {
     state(): Promise<HubState>;
     /**
@@ -21,12 +23,14 @@ export interface FleetdApi {
     forget(): Promise<void>;
   };
   readonly pair: {
-    /** A code `fleetd init` left on this computer, and whether a hub answers there. Never rejects. */
+    /** Whether `fleetd init` left a code on this computer (not the code), and whether a hub answers. Never rejects. */
     start(): Promise<PairStart>;
     /** The hub's version and protocol from its /healthz. Never rejects. */
     probe(hub: string): Promise<Probe>;
     /** Trades a code for a key, then saves it and connects. Never rejects: failures carry the hub's fix. */
     redeem(request: PairRequest): Promise<PairOutcome>;
+    /** Pairs from app-pair.json in main, only while no key is saved; the code never comes here. */
+    auto(): Promise<PairOutcome>;
   };
 }
 

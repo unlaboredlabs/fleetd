@@ -1,26 +1,25 @@
 import { describe, expect, it } from "vitest";
 import type { PairStart } from "../../../shared/pairing";
-import { initialForm, needsOnboarding, reduce } from "./form";
+import { initialForm, needsOnboarding, reaching, reduce } from "./form";
 
 const unpaired = { phase: "unpaired" } as const;
-const noHub: PairStart = { appPair: null, probe: { answers: false, hub: "http://127.0.0.1:4790" } };
 const answering = { answers: true, hub: "http://100.64.0.1:4790", version: "0.5.0", protocol: 1 } as const;
-const fresh: PairStart = { appPair: { hub: "http://100.64.0.1:4790", code: "ABCD-2345", expired: false }, probe: answering };
+const noHub: PairStart = { appPair: null, problem: null, probe: { answers: false, hub: "http://127.0.0.1:4790" } };
+const fresh: PairStart = { appPair: { hub: "http://100.64.0.1:4790", expired: false }, problem: null, probe: answering };
+const found = (probe: PairStart["probe"]): PairStart => ({ appPair: null, problem: null, probe });
 
 describe("the connect form", () => {
-  it("pairs by itself only with a fresh app-pair.json code, and marks it for deletion", () => {
+  it("asks main to pair from a fresh app-pair.json on first run, and never holds its code", () => {
     const form = initialForm(unpaired, {});
     const started = reduce(form, { type: "started", start: fresh });
-    expect(started).toMatchObject({
-      hub: "http://100.64.0.1:4790",
-      code: "ABCD-2345",
-      pending: { hub: "http://100.64.0.1:4790", code: "ABCD-2345", fromFile: true },
-    });
-    expect(reduce(started, { type: "submitting", hub: "http://100.64.0.1:4790" }).pending).toBeNull();
-    const expired = { ...fresh, appPair: { hub: "http://100.64.0.1:4790", code: "ABCD-2345", expired: true } };
-    expect(reduce(form, { type: "started", start: expired })).toMatchObject({ code: "", hub: "http://100.64.0.1:4790", pending: null });
+    expect(started).toMatchObject({ hub: "http://100.64.0.1:4790", code: "", autoPending: true });
+    expect(reduce(started, { type: "submitting", hub: "http://100.64.0.1:4790" }).autoPending).toBe(false);
+    const refused = initialForm({ phase: "refused", hub: "http://127.0.0.1:4790", message: "Unknown agent key." }, {});
+    expect(reduce(refused, { type: "started", start: fresh }).autoPending).toBe(false);
+    const expired = { ...fresh, appPair: { hub: "http://100.64.0.1:4790", expired: true } };
+    expect(reduce(form, { type: "started", start: expired })).toMatchObject({ hub: "http://100.64.0.1:4790", autoPending: false });
     const typing = reduce(form, { type: "edit", field: "code", value: "WX" });
-    expect(reduce(typing, { type: "started", start: fresh }).pending).toBeNull();
+    expect(reduce(typing, { type: "started", start: fresh }).autoPending).toBe(false);
   });
 
   it("never pairs from a link by itself, and a link beats app-pair.json", () => {
@@ -29,24 +28,45 @@ describe("the connect form", () => {
     expect(reduce(linked, { type: "started", start: fresh })).toBe(linked);
   });
 
-  it("says whether a hub answers, and which side is too old", () => {
-    const form = initialForm(unpaired, {});
-    expect(reduce(form, { type: "started", start: noHub }).status).toContain("No hub answers");
-    const found = reduce(form, { type: "started", start: { appPair: null, probe: answering } });
-    expect(found.status).toContain("Found your hub at http://100.64.0.1:4790");
-    const old = reduce(form, { type: "started", start: { appPair: null, probe: { ...answering, protocol: 0 } } });
-    expect(old.error?.fix).toContain("fleetd update");
-    const newer = reduce(form, { type: "started", start: { appPair: null, probe: { ...answering, protocol: 2 } } });
-    expect(newer.error?.code).toBe("app_too_old");
+  it("won't send a key to an address a link chose", () => {
+    const linked = initialForm(unpaired, { hub: "http://elsewhere.example.com", code: "WXYZ-6789" });
+    expect(reduce(linked, { type: "toggleKey" })).toMatchObject({ useKey: true, hub: "" });
+    const typed = reduce(initialForm(unpaired, {}), { type: "edit", field: "hub", value: "http://devbox:4790" });
+    expect(reduce(typed, { type: "toggleKey" }).hub).toBe("http://devbox:4790");
   });
 
-  it("forgets the file once the code is edited, and shows a refused key's fix", () => {
-    const started = reduce(initialForm(unpaired, {}), { type: "started", start: fresh });
-    expect(reduce(started, { type: "edit", field: "code", value: "ABCD-2346" }).codeFromFile).toBeNull();
+  it("says whether a hub answers, which side is too old, and why app-pair.json was ignored", () => {
+    const form = initialForm(unpaired, {});
+    expect(reduce(form, { type: "started", start: noHub }).status).toContain("No hub answers");
+    expect(reduce(form, { type: "started", start: found(answering) }).status).toContain("Found your hub at http://100.64.0.1:4790");
+    expect(reduce(form, { type: "started", start: found({ ...answering, protocol: 0 }) }).error?.fix).toContain("fleetd update");
+    expect(reduce(form, { type: "started", start: found({ ...answering, protocol: 2 }) }).error?.code).toBe("app_too_old");
+    const problem = { code: "", message: "Ignored app-pair.json: it is a symlink.", fix: "Run `fleetd pair`." };
+    expect(reduce(form, { type: "started", start: { ...noHub, problem } }).error).toEqual(problem);
+  });
+
+  it("shows a refused key's fix", () => {
     const refused = initialForm({ phase: "refused", hub: "http://127.0.0.1:4790", message: "Unknown agent key." }, {});
     expect(refused.hub).toBe("http://127.0.0.1:4790");
     expect(refused.error).toMatchObject({ message: "Unknown agent key." });
     expect(refused.error?.fix).toContain("fleetd pair");
+  });
+
+  it("opens on the key path from #/onboarding?key, unless a link brings a code", () => {
+    expect(initialForm(unpaired, { useKey: true }).useKey).toBe(true);
+    expect(initialForm(unpaired, { useKey: true, hub: "h", code: "ABCD-2345" }).useKey).toBe(false);
+    expect(reduce(initialForm(unpaired, { useKey: true }), { type: "started", start: fresh }).autoPending).toBe(false);
+  });
+});
+
+describe("reaching the hub", () => {
+  const hub = "http://127.0.0.1:4790";
+  it("keeps the last reason through a retry's connecting phase, so the layout holds", () => {
+    const last = { hub, reason: "connection refused" };
+    expect(reaching({ phase: "connecting", hub, attempt: 0 }, null)).toEqual({ hub, reason: null, retryAt: null });
+    expect(reaching({ phase: "retrying", hub, reason: "connection refused", retryAt: 5 }, null).reason).toBe("connection refused");
+    expect(reaching({ phase: "connecting", hub, attempt: 3 }, last)).toEqual({ hub, reason: "connection refused", retryAt: null });
+    expect(reaching({ phase: "connecting", hub: "http://other:4790", attempt: 3 }, last).reason).toBeNull();
   });
 });
 

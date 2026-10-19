@@ -1,6 +1,6 @@
 // The design system's public surface. Screens import from "../ui" (or "@/ui"), never from the files inside.
 export { UiProvider } from "./UiProvider";
-export { applyTheme, resolveTheme, useTheme, THEME_MODES, type ThemeMode, type ResolvedTheme } from "./theme";
+export { applyTheme, resolveTheme, isThemeMode, useTheme, THEME_MODES, type ThemeMode, type ResolvedTheme } from "./theme";
 export { cx } from "./lib/cx";
 export { copyText } from "./lib/clipboard";
 
@@ -75,3 +75,4 @@ export {
 } from "./layout/Layout";
 export { DiffView, type DiffViewProps, type DiffMode } from "./diff/DiffView";
 export { parsePatch, toSplitRows, type ParsedPatch, type DiffFile, type DiffHunk, type DiffLine } from "./diff/parsePatch";
+export { GalleryScreen } from "./gallery";

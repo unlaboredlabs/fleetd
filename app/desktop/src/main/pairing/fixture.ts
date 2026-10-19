@@ -16,10 +16,10 @@ const PairSection = z.object({
 
 const APP_PAIR = "fixture:app-pair.json";
 
-export const fixturePairingDeps = (file: string, connect: PairingDeps["connect"]): PairingDeps => {
+export const fixturePairingDeps = (file: string, connect: PairingDeps["connect"], firstRun: () => boolean): PairingDeps => {
   const raw = z.object({ pair: PairSection.optional() }).parse(JSON.parse(readFileSync(file, "utf8")));
   const pair = raw.pair ?? {};
-  let appPair = pair.appPair === undefined ? null : JSON.stringify(pair.appPair);
+  const appPair = pair.appPair === undefined ? null : JSON.stringify(pair.appPair);
   const answer = (status: number, body: unknown) =>
     Promise.resolve(new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } }));
   return {
@@ -30,12 +30,11 @@ export const fixturePairingDeps = (file: string, connect: PairingDeps["connect"]
       return Promise.reject(new TypeError("fetch failed"));
     },
     connect,
+    firstRun,
     appPairFile: APP_PAIR,
-    readText: () => Promise.resolve(appPair),
-    remove: () => {
-      appPair = null;
-      return Promise.resolve();
-    },
+    readFile: () => Promise.resolve(appPair === null ? { ok: false, missing: true } : { ok: true, text: appPair }),
+    // A fixture replays the same on every load (the QA harness reloads after pinning the clock), so nothing is spent.
+    remove: () => Promise.resolve(),
     // Main runs on the real clock: a fixture's appPair needs a far-future expiresAt to count as fresh.
     now: Date.now,
     deviceName: () => "devbox",

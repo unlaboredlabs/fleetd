@@ -25,24 +25,27 @@ export type Probe =
   | { readonly answers: true; readonly hub: string; readonly version: string; readonly protocol: number }
   | { readonly answers: false; readonly hub: string };
 
-/** The `app-pair.json` that `fleetd init` / `fleetd pair` leave on the hub machine, as the app may use it. */
-export interface AppPairHint {
+/** The `app-pair.json` that `fleetd init` / `fleetd pair` leave on the hub machine, as main reads it. */
+export interface AppPair {
   readonly hub: string;
   readonly code: string;
   readonly expired: boolean;
 }
 
-/** What the connect screen starts from: a code left on this machine, and whether a hub answers at the address. */
+/**
+ * What the connect screen starts from. The file's code stays in main: the screen learns only which hub it names
+ * and whether it is still fresh, and asks main to pair from it (`pair:auto`).
+ */
 export interface PairStart {
-  readonly appPair: AppPairHint | null;
+  readonly appPair: { readonly hub: string; readonly expired: boolean } | null;
+  /** app-pair.json was there but not trusted (wrong owner or mode, a symlink, a public hub…), and why. */
+  readonly problem: PairFailure | null;
   readonly probe: Probe;
 }
 
 export const PairRequest = z.strictObject({
   hub: z.string().trim().min(1).max(2048),
   code: z.string().trim().min(1).max(64),
-  /** The code came from app-pair.json: main deletes the file once the hub has taken or refused it. */
-  fromFile: z.boolean(),
 });
 export type PairRequest = z.infer<typeof PairRequest>;
 
@@ -100,7 +103,7 @@ export const parseDeepLink = (link: string): { readonly hub: string; readonly co
 };
 
 /** Reads app-pair.json's text; null unless it names a hub and a code. `nowMs` decides `expired`. */
-export const readAppPair = (text: string, nowMs: number): AppPairHint | null => {
+export const readAppPair = (text: string, nowMs: number): AppPair | null => {
   const parsed = z
     .object({ hub: z.string().min(1), code: z.string().min(1), expiresAt: z.string() })
     .safeParse(safeJson(text));

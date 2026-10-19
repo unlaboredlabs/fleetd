@@ -42,6 +42,8 @@ export const REQUESTS = {
   [IPC.pairStart]: none,
   [IPC.pairProbe]: z.tuple([ProbeRequest]),
   [IPC.pairRedeem]: z.tuple([PairRequest]),
+  [IPC.pairAuto]: none,
+  [IPC.copy]: z.tuple([z.string().max(1_000_000)]),
 } as const satisfies Record<InvokeChannel, z.ZodType>;
 
 export type RequestArgs<C extends InvokeChannel> = z.infer<(typeof REQUESTS)[C]>;
