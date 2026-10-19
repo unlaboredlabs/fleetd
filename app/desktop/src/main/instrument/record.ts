@@ -4,7 +4,8 @@
 //
 // The capture is Chromium's tab capture of the app window's own frame, encoded by MediaRecorder in a hidden
 // recorder window (src/renderer/demo/recorder.ts): no OS screen capture, so no Screen Recording permission, and no
-// ffmpeg. It is the page only: the macOS traffic lights, which the window server draws, are not in it.
+// ffmpeg. The capture is the page only, so on macOS the recorder paints the traffic lights back where the window
+// server draws them (grey while the window is inactive, as macOS shows them).
 //
 // Quitting (SIGTERM, SIGINT, Cmd-Q, closing the window) waits for both files to be finished; a run killed outright
 // keeps what was written so far, which plays up to its last whole fragment.
@@ -12,9 +13,9 @@ import { mkdirSync } from "node:fs";
 import { open, rm, writeFile, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { app, BrowserWindow, powerSaveBlocker, screen, session, systemPreferences } from "electron";
-import { type Chunk, RECORDER_GLOBAL, type RecorderApi, type RecorderStart, type Take } from "../../shared/recorder";
-import { bitrateFor, type RecordConfig } from "./recordConfig";
+import { app, BrowserWindow, nativeTheme, powerSaveBlocker, screen, session, systemPreferences } from "electron";
+import { type Chunk, type Lights, RECORDER_GLOBAL, type RecorderApi, type RecorderStart, type Take } from "../../shared/recorder";
+import { bitrateFor, type RecordConfig, trafficLights } from "./recordConfig";
 
 const PULL_MS = 500;
 const STILL_MS = 2000;
@@ -32,6 +33,8 @@ const remote = (win: BrowserWindow): Call => {
     clipStart: () => call("clipStart") as Promise<undefined>,
     stop: (take: Take) => call("stop", take) as Promise<undefined>,
     drain: () => call("drain") as Promise<ReadonlyArray<Chunk>>,
+    setActive: (active: boolean) => call("setActive", active) as Promise<undefined>,
+    still: () => call("still") as Promise<Uint8Array | null>,
   };
 };
 
@@ -72,6 +75,18 @@ const openRecorder = async (target: BrowserWindow): Promise<BrowserWindow> => {
   return win;
 };
 
+/**
+ * The traffic lights to paint back, on macOS (FLEETD_RECORD_CHROME=1 elsewhere, to check the drawing on Linux CI).
+ * The position is the window's own; the app sets it in main/index.ts.
+ */
+const lightsFor = (target: BrowserWindow): Lights | null => {
+  const mac = process.platform === "darwin";
+  if (!mac && process.env["FLEETD_RECORD_CHROME"] !== "1") return null;
+  const position = (mac ? target.getWindowButtonPosition() : null) ?? { x: 16, y: 14 };
+  const major = mac ? Number(process.getSystemVersion().split(".")[0]) : 15;
+  return trafficLights(position, major, nativeTheme.shouldUseDarkColors);
+};
+
 export interface Recording {
   /** Begins clip.mp4 with the next frame. For a scripted demo, just before it starts typing. */
   clipStart(): void;
@@ -82,11 +97,13 @@ export const startRecording = async (target: BrowserWindow, config: RecordConfig
   const files: Record<Take, string> = { full: mp4, clip: join(config.dir, "clip.mp4") };
   let recorder: BrowserWindow;
   let size: { width: number; height: number };
+  let contentWidth: number;
   try {
     mkdirSync(join(config.dir, "frames"), { recursive: true });
     await Promise.all([rm(files.full, { force: true }), rm(files.clip, { force: true })]);
     recorder = await openRecorder(target);
     const [w = 0, h = 0] = target.getContentSize();
+    contentWidth = w;
     const scale = screen.getDisplayMatching(target.getBounds()).scaleFactor;
     // H.264 wants even dimensions.
     size = { width: Math.round(w * scale) & ~1, height: Math.round(h * scale) & ~1 };
@@ -96,7 +113,7 @@ export const startRecording = async (target: BrowserWindow, config: RecordConfig
   }
   const page = remote(recorder);
   try {
-    await page.start({ fps: config.fps, ...size, bitrate: bitrateFor(size.width, size.height, config.fps) });
+    await page.start({ fps: config.fps, ...size, contentWidth, bitrate: bitrateFor(size.width, size.height, config.fps), lights: lightsFor(target) });
   } catch (error) {
     log(`error=${String(error)}`);
     recorder.destroy();
@@ -143,12 +160,18 @@ export const startRecording = async (target: BrowserWindow, config: RecordConfig
   };
   const pump = setInterval(() => void pull().catch((error: unknown) => log(`error=${String(error)}`)), PULL_MS);
 
+  const active = () => void page.setActive(target.isFocused()).catch(() => undefined);
+  target.on("focus", active);
+  target.on("blur", active);
+  active();
+
   let stills = 0;
   const still = async () => {
-    if (target.isDestroyed()) return;
+    if (recorder.isDestroyed()) return;
     const at = seconds();
-    const image = await target.webContents.capturePage();
-    await writeFile(join(config.dir, "frames", `frame-${at.toFixed(1).padStart(6, "0")}s.png`), image.toPNG());
+    const png = await page.still();
+    if (png === null) return;
+    await writeFile(join(config.dir, "frames", `frame-${at.toFixed(1).padStart(6, "0")}s.png`), png);
     stills += 1;
   };
   void still();

@@ -5,12 +5,24 @@
 /** The full capture (`fleetd.mp4`) or the clip (`clip.mp4`). */
 export type Take = "full" | "clip";
 
+/** The macOS window buttons, in window points, with their fills and rims (active and inactive). */
+export interface Lights {
+  readonly centers: ReadonlyArray<readonly [number, number]>;
+  readonly radius: number;
+  readonly active: ReadonlyArray<readonly [string, string]>;
+  readonly inactive: readonly [string, string];
+}
+
 export interface RecorderStart {
   readonly fps: number;
   /** Physical pixels: the window's content size times its scale factor. */
   readonly width: number;
   readonly height: number;
+  /** The content width in points, for drawing in window coordinates. */
+  readonly contentWidth: number;
   readonly bitrate: number;
+  /** The traffic lights to paint over the capture (macOS), or null. */
+  readonly lights: Lights | null;
 }
 
 export type Chunk =
@@ -26,6 +38,10 @@ export interface RecorderApi {
   stop(take: Take): void;
   /** Everything encoded since the last call, in order. */
   drain(): Promise<ReadonlyArray<Chunk>>;
+  /** The window's focus, which greys the traffic lights out as macOS does. */
+  setActive(active: boolean): void;
+  /** The current frame as PNG, lights included; null before the first frame. */
+  still(): Promise<Uint8Array | null>;
 }
 
 export const RECORDER_GLOBAL = "__fleetdRecorder";

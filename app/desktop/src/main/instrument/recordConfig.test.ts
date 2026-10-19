@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bitrateFor, keyDelayMs, parseRecord } from "./recordConfig";
+import { bitrateFor, keyDelayMs, parseRecord, trafficLights } from "./recordConfig";
 
 describe("FLEETD_RECORD", () => {
   it("parses a directory and an optional rate, as the GPUI app did", () => {
@@ -21,5 +21,17 @@ describe("FLEETD_RECORD", () => {
     expect(keyDelayMs(0, "a")).toBe(30);
     expect(keyDelayMs(1, " ")).toBe(30 + 39 + 40);
     expect(keyDelayMs(2, ".")).toBe(30 + (15_838 % 40) + 180);
+  });
+});
+
+describe("traffic lights", () => {
+  it("centres the buttons in the app's 44 pt top bar, spaced as the macOS version spaces them", () => {
+    // main/index.ts puts the close button at (16, 14).
+    expect(trafficLights({ x: 16, y: 14 }, 15, false)).toMatchObject({ centers: [[23, 22], [43, 22], [63, 22]], radius: 6 });
+    expect(trafficLights({ x: 16, y: 14 }, 26, false)).toMatchObject({ centers: [[24, 22], [47, 22], [70, 22]], radius: 7 });
+  });
+
+  it("greys out by theme when the window is inactive", () => {
+    expect(trafficLights({ x: 0, y: 0 }, 15, true).inactive).not.toEqual(trafficLights({ x: 0, y: 0 }, 15, false).inactive);
   });
 });

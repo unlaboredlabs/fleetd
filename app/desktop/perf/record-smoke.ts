@@ -1,12 +1,14 @@
 // `pnpm perf:record`: the demo recording end to end, without a hub. The app records itself (FLEETD_RECORD) and types
 // an order (FLEETD_DEMO_TYPE) into the stand-in composer; SIGUSR1 ends the clip as tests/lab/demoFanout.ts ends it,
-// SIGTERM ends the run. Then both MP4s are checked: H.264, moov before the first fragment, and real frames.
+// SIGTERM ends the run. Then both MP4s are checked: H.264, moov before the first fragment, and real frames; and the
+// traffic lights, which the recorder paints on macOS, are forced on (FLEETD_RECORD_CHROME) and looked for in a still.
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { chromium } from "@playwright/test";
 import { devtoolsPort, launch, sleep } from "./app.ts";
 import { summarize } from "./mp4.ts";
+import { pixel } from "./png.ts";
 import { COMPOSER } from "./targets.ts";
 
 const ORDER = "@storefront Add a short page on what the merge train does.";
@@ -17,7 +19,7 @@ const check = (ok: boolean, what: string) => {
   if (!ok) problems.push(what);
 };
 
-const app = launch({ debug: true, env: { FLEETD_RECORD: `${out},30`, FLEETD_DEMO_TYPE: ORDER } });
+const app = launch({ debug: true, env: { FLEETD_RECORD: `${out},30`, FLEETD_DEMO_TYPE: ORDER, FLEETD_RECORD_CHROME: "1" } });
 try {
   const port = await devtoolsPort(app);
   await app.waitFor(/^FLEETD_RECORD start /u, 30_000);
@@ -53,7 +55,14 @@ for (const name of ["fleetd.mp4", "clip.mp4"]) {
     check(false, `${name} reads as MP4: ${String(error)}`);
   }
 }
-check(readdirSync(path.join(out, "frames")).some((f) => f.endsWith(".png")), "stills in frames/");
+const stills = readdirSync(path.join(out, "frames")).filter((f) => f.endsWith(".png"));
+check(stills.length > 0, `stills in frames/ (${stills.length})`);
+const last = stills.sort().at(-1);
+if (last !== undefined) {
+  // The close button's centre at the app's trafficLightPosition (16, 14), scale 1: (23, 22).
+  const [r, g, b] = pixel(readFileSync(path.join(out, "frames", last)), 23, 22);
+  check(r > 200 && g < 140 && b < 140, `the close button is painted in the still (rgb ${r},${g},${b})`);
+}
 rmSync(out, { recursive: true, force: true });
 if (problems.length > 0) {
   console.log(`\n${problems.length} check(s) failed`);

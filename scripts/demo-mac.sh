@@ -6,8 +6,8 @@
 # It runs the lab's demo order (tests/lab/demoFanout.ts: one tier-L order, three writers, reviewers and a verifier,
 # the public testbed unlaboredlabs/fleetd-testbed through the merge train) on a hub and node of its own, with the
 # desktop app (app/desktop, Electron) recording its own window and prints the MP4's path. The app records its page
-# through Chromium's own capture (FLEETD_RECORD), so there is no Screen Recording permission and no ffmpeg; the
-# macOS traffic lights are not in the picture.
+# through Chromium's own capture (FLEETD_RECORD), so there is no Screen Recording permission and no ffmpeg, and
+# paints the traffic lights the window server draws back into each frame.
 #
 # The fleetd it runs is the nightly release: the CLI and the desktop app (fleetd-desktop-macos-universal.zip) from
 # https://github.com/unlaboredlabs/fleetd/releases/download/nightly/, each checked against the release's SHA256SUMS
