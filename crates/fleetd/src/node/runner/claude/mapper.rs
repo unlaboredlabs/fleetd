@@ -489,8 +489,8 @@ impl StreamMapper {
                 events.push(RunnerEvent::Init {
                     auto_memory: auto_memory_on(system.memory_paths.as_ref()),
                     subagent_leaks: subagent_leaks(
-                        system.tools.as_deref().unwrap_or_default(),
-                        system.agents.as_deref().unwrap_or_default(),
+                        system.tools.as_deref(),
+                        system.agents.as_deref(),
                     ),
                     version: system.claude_code_version.unwrap_or_default(),
                     model: system.model.unwrap_or_default(),

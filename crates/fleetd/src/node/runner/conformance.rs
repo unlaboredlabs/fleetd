@@ -148,8 +148,8 @@ pub async fn probe(binary: &Path, env: &[(String, String)]) -> RunnerInfo {
     if info.conformance_ok == Some(true) {
         match discover(binary, env).await {
             Ok(init) => {
+                let leaks = discovery_leaks(&init);
                 info.agent_tools = Some(init.tools.into_iter().filter(|t| agent_like(t)).collect());
-                let leaks = builtin_agent_leaks(&init.agents);
                 if !leaks.is_empty() {
                     info.conformance_ok = Some(false);
                     problems.push(subagents_problem(&leaks));
@@ -157,7 +157,12 @@ pub async fn probe(binary: &Path, env: &[(String, String)]) -> RunnerInfo {
                 info.subagent_leaks = Some(leaks);
             }
             Err(problem) => {
+                // Unread is not off: the doctor shows the check failed.
                 info.conformance_ok = Some(false);
+                info.subagent_leaks = Some(vec![format!(
+                    "tools unreadable: {}",
+                    problem.trim_end_matches('.')
+                )]);
                 problems.push(format!(
                     "{problem} fleetd could not check that claude's own subagents are off. Fix: claude install \
                      {TESTED}"
@@ -188,14 +193,39 @@ pub fn agent_like(tool: &str) -> bool {
 }
 
 /// The conformance check on a session's `system/init`: every agent tool it still offers, and every built-in agent
-/// fleetd's knobs should have removed. Empty: claude's subagents are off.
-pub fn subagent_leaks(tools: &[String], agents: &[String]) -> Vec<String> {
-    tools
-        .iter()
-        .filter(|t| agent_like(t))
-        .cloned()
-        .chain(builtin_agent_leaks(agents))
-        .collect()
+/// fleetd's knobs should have removed. An init without a tool or agent list fails too: what can't be read is not
+/// off. Empty: claude's subagents are off.
+pub fn subagent_leaks(tools: Option<&[String]>, agents: Option<&[String]>) -> Vec<String> {
+    let mut leaks = Vec::new();
+    match tools {
+        Some(tools) if !tools.is_empty() => {
+            leaks.extend(tools.iter().filter(|t| agent_like(t)).cloned())
+        }
+        _ => leaks.push("init without a tool list".to_owned()),
+    }
+    match agents {
+        Some(agents) => leaks.extend(builtin_agent_leaks(agents)),
+        None => leaks.push("init without an agent list".to_owned()),
+    }
+    leaks
+}
+
+/// What the discovery run (fleetd's knobs, no deny list) must show for fleetd to trust its deny list: claude's own
+/// subagent tool under a name fleetd denies (else it was renamed and would slip through), no agent-like tool fleetd
+/// does not know yet, and no built-in agent the knobs remove. Empty: fine.
+pub fn discovery_leaks(init: &DiscoveredInit) -> Vec<String> {
+    let mut leaks = Vec::new();
+    if !init.tools.iter().any(|t| t == "Task" || t == "Agent") {
+        leaks.push("no subagent tool named Task or Agent (renamed?)".to_owned());
+    }
+    leaks.extend(
+        init.tools
+            .iter()
+            .filter(|t| agent_like(t) && !AGENT_TOOLS.contains(&t.as_str()))
+            .map(|t| format!("unknown agent tool {t}")),
+    );
+    leaks.extend(builtin_agent_leaks(&init.agents));
+    leaks
 }
 
 fn builtin_agent_leaks(agents: &[String]) -> Vec<String> {
@@ -286,7 +316,7 @@ pub async fn discover(binary: &Path, env: &[(String, String)]) -> Result<Discove
                 continue;
             };
             if value["type"] == "system" && value["subtype"] == "init" {
-                let names = |key: &str| -> Vec<String> {
+                let names = |key: &str| -> Result<Vec<String>, String> {
                     value[key]
                         .as_array()
                         .map(|a| {
@@ -294,11 +324,15 @@ pub async fn discover(binary: &Path, env: &[(String, String)]) -> Result<Discove
                                 .filter_map(|v| v.as_str().map(str::to_owned))
                                 .collect()
                         })
-                        .unwrap_or_default()
+                        .ok_or_else(|| format!("claude's system/init has no `{key}` list."))
                 };
+                let tools = names("tools")?;
+                if tools.is_empty() {
+                    return Err("claude's system/init lists no tools.".to_owned());
+                }
                 return Ok(DiscoveredInit {
-                    tools: names("tools"),
-                    agents: names("agents"),
+                    tools,
+                    agents: names("agents")?,
                 });
             }
         }
@@ -939,13 +973,63 @@ mod tests {
         }
         assert!(AGENT_TOOLS.iter().all(|t| ALWAYS_DISALLOWED.contains(t)));
         // The session check: tools fleetd's deny list missed, and the built-in agents its knobs should have removed.
-        let leaks = subagent_leaks(&tools, &agents);
+        let leaks = subagent_leaks(Some(&tools), Some(&agents));
         assert!(leaks.contains(&"Task".to_owned()) && leaks.contains(&"agent Plan".to_owned()));
         assert!(!leaks.iter().any(|l| l.contains("general-purpose")));
         let after = ["Bash".to_owned(), "mcp__fleetd__spawn_agent".to_owned()];
+        let general = ["general-purpose".to_owned()];
         assert_eq!(
-            subagent_leaks(&after, &["general-purpose".to_owned()]),
+            subagent_leaks(Some(&after), Some(&general)),
             Vec::<String>::new()
+        );
+        // What can't be read is not off.
+        assert_eq!(
+            subagent_leaks(None, Some(&general)),
+            ["init without a tool list"]
+        );
+        assert_eq!(
+            subagent_leaks(Some(&[]), None),
+            ["init without a tool list", "init without an agent list"]
+        );
+    }
+
+    /// Discovery runs without the deny list, so it must find claude's subagent tool under a name fleetd denies, and
+    /// nothing agent-like that fleetd does not know.
+    #[test]
+    fn discovery_fails_closed_on_a_renamed_or_unknown_agent_tool() {
+        let init = |tools: &[&str]| DiscoveredInit {
+            tools: tools.iter().map(|t| (*t).to_owned()).collect(),
+            agents: vec!["general-purpose".into()],
+        };
+        assert_eq!(
+            discovery_leaks(&init(&["Agent", "Bash", "ListAgents"])),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            discovery_leaks(&init(&["Delegate", "Bash"])),
+            ["no subagent tool named Task or Agent (renamed?)"]
+        );
+        assert_eq!(
+            discovery_leaks(&init(&["Task", "TeamSpawn"])),
+            ["unknown agent tool TeamSpawn"]
+        );
+    }
+
+    #[tokio::test]
+    async fn an_init_without_tools_fails_conformance_and_the_doctor_check() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin = stand_in_with_init(
+            dir.path(),
+            "2.1.302 (Claude Code)",
+            &format!("{}\n", recorded_answer()),
+            &serde_json::json!({ "type": "system", "subtype": "init", "agents": [] }).to_string(),
+        );
+        let info = probe(&bin, &env()).await;
+        assert_eq!(info.conformance_ok, Some(false));
+        let leaks = info.subagent_leaks.unwrap();
+        assert_eq!(
+            leaks,
+            ["tools unreadable: claude's system/init has no `tools` list"]
         );
     }
 
