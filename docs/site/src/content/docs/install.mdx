@@ -17,7 +17,7 @@ In a terminal, the installer then starts the setup wizard, `fleetd init`. Contin
 
 | | Needed on | Notes |
 |---|---|---|
-| macOS (Apple silicon or Intel) or Linux x64 | every machine | |
+| macOS (Apple silicon or Intel) or Linux x64 | every machine | The desktop app needs macOS 12 or newer. On an older Mac the installer stops without changing anything; install the CLI only with `--no-app`. |
 | `claude` CLI, logged in | every machine that runs agents | Your own Claude Code login. `fleetd init` checks it. |
 | `git` | the [hub](/docs/glossary#hub) | |
 | `gh` CLI, logged in | the hub | fleetd opens and merges pull requests with it. |
@@ -40,7 +40,7 @@ In a terminal, the installer then starts the setup wizard, `fleetd init`. Contin
 | What | Where |
 |---|---|
 | The CLI | `~/.fleetd/bin/fleetd`, linked from `~/.local/bin/fleetd` |
-| The desktop app (only with a display) | `~/.local/share/fleetd/app`, with an entry in your app menu |
+| The desktop app (only with a display) | `~/.local/share/fleetd/app/fleetd-desktop.AppImage`, with an entry in your app menu |
 
 </TabItem>
 </Tabs>
@@ -49,6 +49,7 @@ In a terminal, the installer then starts the setup wizard, `fleetd init`. Contin
 - Every download is checked against the release's `SHA256SUMS`.
 - Running it again replaces what it installed.
 - Only `fleetd init` sets up services.
+- The desktop app updates itself. Installed over an earlier fleetd app, it replaces it and keeps its pairing.
 
 To read the script first, open [fleetd.sh/install.sh](https://fleetd.sh/install.sh).
 
@@ -73,22 +74,15 @@ Expected output:
 
 ```text
 fleetd: installed the CLI: ~/.fleetd/bin/fleetd
-fleetd: installed the app: ~/.local/share/fleetd/app (menu entry: ~/.local/share/applications/fleetd.desktop)
+fleetd: installed the app: ~/.local/share/fleetd/app/fleetd-desktop.AppImage (menu entry: ~/.local/share/applications/fleetd-desktop.desktop)
 
 Next, run:
   fleetd init
 ```
 
-Environment variables, set before `sh`:
-
-| Variable | Does |
-|---|---|
-| `FLEETD_CHANNEL=stable` | Install from the stable channel. Releases are nightly builds for now, so this works once stable has a release. |
-| `FLEETD_APP=electron` | Install the new desktop app, the one these docs describe, until it becomes the default. It updates itself. |
-
-```sh
-curl -fsSL https://fleetd.sh | FLEETD_APP=electron sh
-```
+:::note
+Releases are nightly builds for now. `FLEETD_CHANNEL=stable` picks the stable channel once it has a release.
+:::
 
 ## Check the install
 

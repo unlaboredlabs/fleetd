@@ -253,7 +253,8 @@ Each node holds timings it hasn't sent yet in `sessions.sqlite`. While the hub i
 | | Where |
 |---|---|
 | Pairing hand-off from `fleetd init` or `fleetd pair` | `~/.config/fleetd/app-pair.json` (macOS: `~/Library/Application Support/fleetd/app-pair.json`) |
-| Its hub key | Encrypted with the OS keychain or keyring. Without one (no keyring on Linux, or an unsigned Mac build), a file only you can read (`0600`). |
+| Its hub address and key | `desktop-hub.bin` in the same folder, encrypted with the OS keychain or keyring. Without one (no keyring on Linux, or an unsigned or ad-hoc signed Mac build): `desktop-hub.json`, mode `0600`. |
+| Its own browser state | `desktop/` in the same folder. |
 
 ## Hub environment {#env}
 

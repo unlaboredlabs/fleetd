@@ -450,8 +450,12 @@ one agent’s work or wait, such as a tool call or a CI check.</p>
 <td><code dir="auto">~/.config/fleetd/app-pair.json</code> (macOS: <code dir="auto">~/Library/Application Support/fleetd/app-pair.json</code>)</td>
 </tr>
 <tr>
-<td>Its hub key</td>
-<td>Encrypted with the OS keychain or keyring. Without one (no keyring on Linux, or an unsigned Mac build), a file only you can read (<code dir="auto">0600</code>).</td>
+<td>Its hub address and key</td>
+<td><code dir="auto">desktop-hub.bin</code> in the same folder, encrypted with the OS keychain or keyring. Without one (no keyring on Linux, or an unsigned or ad-hoc signed Mac build): <code dir="auto">desktop-hub.json</code>, mode <code dir="auto">0600</code>.</td>
+</tr>
+<tr>
+<td>Its own browser state</td>
+<td><code dir="auto">desktop/</code> in the same folder.</td>
 </tr>
 </tbody>
 </table>

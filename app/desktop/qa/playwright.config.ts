@@ -12,5 +12,6 @@ export default defineConfig({
   projects: [
     { name: "selftest", testMatch: "selftest/*.spec.ts" },
     { name: "screens", testMatch: ["screens.spec.ts", "platform.spec.ts"] },
+    { name: "site", testMatch: "site.spec.ts" },
   ],
 });

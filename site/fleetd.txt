@@ -20,34 +20,34 @@ GitHub: https://github.com/unlaboredlabs/fleetd
 
 
 ONE ORDER, ITS FLEET
-A lab run against the public fleetd-lab repo: three writers opened a PR
-each, and every PR now has two reviewers and a verifier on it. Each row is an
-agent at work, grouped under the PR it checks. Image: fleet-board.png
+Recorded from a lab hub: three writers opened a PR each, and every PR now has
+two reviewers and a verifier on it. Each row is an agent at work, grouped under
+the PR it checks. Image: fleet-board.png
 
 
 FIG. 1  THE INBOX
 The fleetd desktop app on a live hub. The lead filed three asks for the
 storefront project: two product, one money. Image: capture-inbox.png
 
-  Needs you 3                                                       Ctrl+I
-  1  product  <project id>
+  Needs you 3                                                       ×
+  1  storefront
      Pricing page headline: the copy review left two variants in site/pricing.md. Ship A?
-     [Pay for machines, not seats] recommended  No
-  2  product  <project id>
+     ( ) Pay for machines, not seats   Recommended
+         Why: A is shorter and names the pricing model in five words
+     ( ) One price per machine. Every agent included.
+     ( ) Something else...
+  2  storefront
      Drop the moment dependency and format invoice and receipt dates with the built-in Intl API instead?
-     [drop moment] recommended  No
-  3  money    <project id> · blocks the Team plan launch
-     Free trial length for the Team plan?
-     [7 days] recommended  [14 days]  [30 days]  No
-  > Reply by number: 1 go 2 nvm 3 b
+     ( ) Drop moment   Recommended
+  > Reply by number: "1 go", "2: your words", "3 skip"
 
   10  The inbox panel (Ctrl+I): every ask that needs you, numbered, wherever you
       are in the app.
-  12  Ask 1, filed by the lead with `fleetd ask --class product`: its class and
-      the project it came from.
-  14  A money ask says what it holds up, here the Team plan launch.
-  16  Each ask leads with the lead's recommendation, 7 days, then the other
-      options it offered, and No.
+  12  Ask 1, filed by the lead with `fleetd ask`, and the project it came from.
+  14  The board shows the first ask too; the rest wait in the inbox, here the
+      money ask on the Team plan launch.
+  16  Each ask leads with the lead's recommendation and why, then the other
+      options with what each does, and Something else.
   18  The whole reply is one line. "1 go 2 nvm 3 b": ship the headline, drop the
       moment change, take the second option, 14 days.
 
@@ -56,33 +56,24 @@ FIG. 2  ENTER. EACH ANSWER BECOMES A DECISION.
 The same inbox right after the reply "1 go 2 nvm 3 b" went in.
 Image: capture-reply.png
 
-  Needs you 0
+  Needs you
   Nothing needs you.
-  ● Logged: 1 → Pay for machines, not seats (D1), 2 → dropped, 3 → 14 days (D2)
+  Logged: 1 → Pay for machines, not seats (undo for 10 s), 2 → dropped, 3 → 14 days (undo for 10 s)
 
   20  Nothing needs you: leads decide everything that isn't a product, money,
       credential or irreversible call.
-  22  What the reply did, as the app logs it: answers 1 and 3 became decisions
-      D1 and D2, and ask 2 was dropped.
+  22  What the reply did, as the app logs it: answers 1 and 3 are logged, ask 2
+      is dropped, and each answer can be taken back for 10 seconds.
 
 
 YOUR REPLY REACHES THE LEAD AS A WAKE FROM THE HUB
 The wake, verbatim:
 
   ## Answers since your last wake
-  - A1 site.pricing.headline → Pay for machines, not seats (D1)
   - A2 deps.moment: dropped by the human; do not pursue it
-  - A3 billing.team.trial → 14 days (D2)
-
-  ## Decisions (most relevant)
-  - D2 billing.team.trial = 14 days (project, human)
-  - D1 site.pricing.headline = Pay for machines, not seats (project, human)
-
-  ## Do not re-ask: keys already decided or asked
-  billing.team.trial, site.pricing.headline
 
   ## Why you are woken
-  - The human settled 3 of your asks; see "Answers since your last wake" above.
+  - The human settled 1 of your asks; see "Answers since your last wake" above.
 
 
 WHAT THE LEAD DOES WITHOUT ASKING YOU
@@ -98,8 +89,9 @@ WHAT THE LEAD DOES WITHOUT ASKING YOU
     have decided itself.
 
 What you get at 09:00 and 18:00 when that's all there is:
-  fleetd digest · Sun 18 Oct, 22:28
+  fleetd digest · Mon 19 Oct, 15:47
   Nothing needs you · 0 running · 0 done
+  Decided without you (1): deps.moment=Dropped by the human; do not pursue rem… (D3) · reply "forget D3" to undo one
 
 
 "DONE" IS CHECKED BY FLEETD
@@ -107,20 +99,15 @@ Merge-train events from a lab run against the public fleetd-lab repo
 (https://github.com/unlaboredlabs/fleetd-lab), 18 Oct 2026, UTC. The hub's
 own summaries, with the commit status the train posts before each merge.
 
-22:21:22  change.queued   X1 queued: unlaboredlabs/fleetd-lab#124 (tier L, done:1)
-22:21:25  change.queued   X2 queued: unlaboredlabs/fleetd-lab#125 (tier L, done:2)
-22:21:33  review.verdict  T4 review verdict at ad899ecd4930: 0 blocking, 1 non-blocking
-22:21:35  review.verdict  T5 review verdict at ad899ecd4930: 0 blocking, 0 non-blocking
-22:21:37  review.verdict  T8 review verdict at bbd67b733334: 0 blocking, 0 non-blocking
-22:21:38  review.verdict  T9 review verdict at bbd67b733334: 0 blocking, 0 non-blocking
-22:21:38  review.verdict  T6 review verdict at ad899ecd4930: 0 blocking, 0 non-blocking
-22:21:40  change.ready    X1 ready for the train: unlaboredlabs/fleetd-lab#124
-22:21:43  fleetd/train    X1: rebased onto main, CI green   [commit status on ad899ec]
-22:21:44  review.verdict  T7 review verdict at bbd67b733334: 0 blocking, 1 non-blocking
-22:21:44  change.ready    X2 ready for the train: unlaboredlabs/fleetd-lab#125
-22:21:47  pr.merged       X1 merged: unlaboredlabs/fleetd-lab#124 as a3dbc17d67bf
-22:22:07  fleetd/train    X2: rebased onto main, CI green   [commit status on 7d4a144]
-22:22:11  pr.merged       X2 merged: unlaboredlabs/fleetd-lab#125 as bf102d28ae7d
+13:15:17  change.queued     X1 queued: unlaboredlabs/fleetd-lab#160 (tier S, done:0)
+13:15:17  change.ready      X1 ready for the train: unlaboredlabs/fleetd-lab#160
+13:15:18  change.queued     X2 queued: unlaboredlabs/fleetd-lab#161 (tier S, done:0)
+13:15:18  change.ready      X2 ready for the train: unlaboredlabs/fleetd-lab#161
+13:15:21  train.frozen      Train for unlaboredlabs/fleetd-lab frozen: train batch lab: hold until every PR is green
+13:15:42  train.resumed     Train for unlaboredlabs/fleetd-lab resumed
+13:16:14  pr.merged         X1 merged: unlaboredlabs/fleetd-lab#160 as 2220967ee70a in batch #163
+13:16:17  pr.merged         X2 merged: unlaboredlabs/fleetd-lab#161 as 2220967ee70a in batch #163
+13:18:23  change.ci_failed  X6 CI failed on dda108b7c6b8: ci (failure) (log: …)
 
 
 SETUP IS A HUB AND YOUR MACHINES
@@ -153,9 +140,9 @@ Project  5/6
 –  project needs the hub running
 
 App & check  6/6
-✓  pairing code 8VF5-GD48 · one use, 15 min
+✓  pairing code SX7P-ZHTP · one use, 15 min
   In the fleetd app, enter http://hub.your-tailnet.ts.net:4791 and the code, or open:
-  fleetd://pair?hub=http%3A%2F%2Fhub.your-tailnet.ts.net%3A4791&code=8VF5-GD48
+  fleetd://pair?hub=http%3A%2F%2Fhub.your-tailnet.ts.net%3A4791&code=SX7P-ZHTP
 
 1 step(s) need you:
   start the hub, then run fleetd init again: fleetd hub start --home ~/.fleetd/hub --listen <tailnet-ip>:4791

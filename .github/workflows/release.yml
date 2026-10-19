@@ -14,7 +14,6 @@ jobs:
     uses: ./.github/workflows/build-release.yml
     with:
       channel: stable
-      desktop: ${{ vars.FLEETD_RELEASE_DESKTOP == 'true' }}
     permissions:
       contents: write
     secrets: inherit

@@ -32,6 +32,14 @@ Keep fleetd up to date, or remove it.
    - run `fleetd update` on the worker, or
    - run `fleetd machine add <ssh-host>` on the hub, which copies the hub's binary over.
 
+### The desktop app {#app}
+
+The app also updates itself from the same release, and installs the update when you quit it.
+
+- An earlier fleetd app is replaced by the current one, which keeps its pairing.
+- On macOS 11 the earlier app stays as it is: the current app needs macOS 12.
+- On a Mac from before the current app, run `fleetd update` twice: the first updates the CLI, the second the app.
+
 fleetd pins the `claude` version separately. See [Claude](/docs/troubleshooting#claude).
 
 ## Channels {#channels}

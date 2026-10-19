@@ -77,7 +77,8 @@
 <p>You’ll pair the desktop app with your <a href="/docs/glossary#hub">hub</a> and use it to give work, follow it and answer
 <a href="/docs/glossary#ask">asks</a>.</p>
 <p>The app is installed with fleetd on any machine with a display. To add it on Linux without a display, see
-<a href="/docs/install#options">Install</a>. Shortcuts below use ⌘; on Linux, use Ctrl.</p>
+<a href="/docs/install#options">Install</a>. It updates itself; <code dir="auto">fleetd update</code> updates it too. Shortcuts below use ⌘; on Linux,
+use Ctrl.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="pair">Pair it with the hub</h2><a class="sl-anchor-link" href="#pair"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Pair it with the hub”</span></a></div>
 <p>On the hub machine, the app pairs by itself when it opens. On another computer:</p>
 <ol>
@@ -120,12 +121,14 @@
 </tr>
 </tbody>
 </table>
+<p><img src="/docs/img/board.png" alt="The board with one order on it: three PRs, each with two reviewers and a verifier at work under it, and the merge train below."></p>
 <p>Cards keep their places when the board refreshes. A card moves only when its order comes to need you, or stops.
 Move between cards with ↑ ↓ (or J K) and open one with Enter.</p>
 <p>The sidebar lists Status, Board, Machines and Time, then each project with its orders. A dot means an order needs
 you. Hold ⌘ to see the ⌘1–⌘9 jump keys.</p>
-<p>To add a project, click “Add” next to Projects, then paste a GitHub URL or <code dir="auto">owner/repo</code>. See
-<a href="/docs/projects-and-orders#add-a-project">Add a project</a>.</p>
+<p>To add a project, click “Add” next to Projects, then paste a GitHub URL or <code dir="auto">owner/repo</code>, or drop a folder or a link on
+the app. See <a href="/docs/projects-and-orders#add-a-project">Add a project</a>.</p>
+<p><img src="/docs/img/add-project.png" alt="The Add project sheet cloning acme/checkout-v2: the clone at 42%, then inspect and register still to come."></p>
 <div class="sl-heading-wrapper level-h2"><h2 id="composer">Give work</h2><a class="sl-anchor-link" href="#composer"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Give work”</span></a></div>
 <p>Type one line in the order box and press Enter. Shift+Enter adds a new line.</p>
 <table>
@@ -211,10 +214,16 @@ project” button. If sending fails, it offers Retry and Edit.</p>
 <td>“Stop” in the order’s header, or ⌘⇧., then confirm</td>
 <td>Cancels its agents and withdraws its asks. Merged PRs stay.</td>
 </tr>
+<tr>
+<td>Send it again</td>
+<td>“Reorder”, on a stopped order</td>
+<td>Nothing: the order’s text goes back into the order box, to send as a new order.</td>
+</tr>
 </tbody>
 </table>
 <p>Each <a href="/docs/glossary#steer">steer</a> shows its <a href="/docs/steering#receipts">receipt</a> under it. Click an agent’s lane to steer
 that agent instead.</p>
+<p><img src="/docs/img/steering.png" alt="An order’s fleet with the steer sheet open for its verifier: what it was told, its last items, and the box that steers it."></p>
 <p>To see exactly what an agent was sent, click “What the lead was told” in the order, or “What <em>name</em> was told” in an
 agent’s sheet. See <a href="/docs/what-agents-are-told#told">What agents are told</a>.</p>
 <p>⌘[ and ⌘] go to the previous and next order. Esc goes back to the board.</p>
@@ -343,6 +352,7 @@ replies.</li>
 </tr>
 </tbody>
 </table>
+<p><img src="/docs/img/time.png" alt="Where an order’s time went: a lane per agent, PR, CI check and ask, the critical path underlined, and the legend."></p>
 <p>How to read it: <a href="/docs/time-inspector">Where time went</a>.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="settings">Settings</h2><a class="sl-anchor-link" href="#settings"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Settings”</span></a></div>
 <p>Open Settings with ⌘,.</p>
