@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import type { OpenTarget } from "../shared/app";
 import { IPC } from "../shared/channels";
-import type { CallOutcome, ConnectOutcome, HubFrame, HubState, OpenOutcome } from "../shared/hub";
+import type { CallOutcome, ConnectOutcome, HubFrame, HubState, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { PairOutcome, PairStart, Probe } from "../shared/pairing";
 import type { FleetdApi } from "./api";
 
@@ -29,6 +29,9 @@ const api: FleetdApi = {
   fixture,
   platform: process.platform === "darwin" || process.platform === "linux" || process.platform === "win32" ? process.platform : "other",
   copy: (text) => ipcRenderer.invoke(IPC.copy, text) as Promise<void>,
+  secret: {
+    submit: (request) => ipcRenderer.invoke(IPC.secretSubmit, request) as Promise<SecretOutcome>,
+  },
   openExternal: (url) => ipcRenderer.invoke(IPC.openExternal, url) as Promise<OpenOutcome>,
   hub: {
     state: () => ipcRenderer.invoke(IPC.hubState) as Promise<HubState>,

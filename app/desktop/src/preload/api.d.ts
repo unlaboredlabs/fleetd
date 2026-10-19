@@ -1,7 +1,7 @@
 import type { NotifyRequest, OpenTarget } from "../shared/app";
 import type { MenuCommand } from "../shared/menu";
-import type { CallOutcome, ConnectOutcome, HubFrame, HubState, OpenOutcome } from "../shared/hub";
-import type { LiveScope } from "../shared/ipc";
+import type { CallOutcome, ConnectOutcome, HubFrame, HubState, OpenOutcome, SecretOutcome } from "../shared/hub";
+import type { LiveScope, SecretRequest } from "../shared/ipc";
 import type { PairOutcome, PairRequest, PairStart, Probe } from "../shared/pairing";
 
 /** `window.fleetd`: everything the renderer can ask of main. There is no other bridge. */
@@ -11,6 +11,10 @@ export interface FleetdApi {
   readonly fixture: string | null;
   /** Writes text to the clipboard (the page has no clipboard permission of its own). */
   copy(text: string): Promise<void>;
+  readonly secret: {
+    /** Main seals `value` to `boxPubKey` and submits it; the value is never sent back or shown again. */
+    submit(request: SecretRequest): Promise<SecretOutcome>;
+  };
   /**
    * Opens an https link to github.com (or a subdomain) or fleetd.sh in the user's browser. Anything else comes back
    * as `{ ok: false, message }` saying why; it never rejects.

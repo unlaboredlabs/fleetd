@@ -5,6 +5,7 @@ import type { OpenOutcome } from "../shared/hub";
 import { externalUrl } from "./external";
 import type { HubService } from "./hub/service";
 import type { PairingService } from "./pairing/service";
+import { submitSecret } from "./secret";
 import { applyMenuState } from "./menuState";
 import type { Notifier } from "./notify";
 import type { Opener } from "./opener";
@@ -37,6 +38,7 @@ export const registerIpc = (hub: HubService, frame: { opener: Opener; notifier: 
   handle(IPC.hubResync, () => hub.resync());
   handle(IPC.hubConnect, (_event, request) => hub.connect(request));
   handle(IPC.hubForget, () => hub.forget());
+  handle(IPC.secretSubmit, (_event, request) => submitSecret(request, (tool, input) => hub.call({ tool, input })));
   handle(IPC.copy, (_event, text) => clipboard.writeText(text));
   handle(IPC.pairStart, () => pairing.start());
   handle(IPC.pairProbe, (_event, address) => pairing.probe(address));

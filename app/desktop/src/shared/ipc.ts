@@ -88,6 +88,15 @@ export const ConnectRequest = z.strictObject({
 });
 export type ConnectRequest = z.infer<typeof ConnectRequest>;
 
+/** A secret ask's value and the box key of the machine it goes to; main seals it (main/secret.ts). */
+export const SecretRequest = z.strictObject({
+  askId: z.string().regex(/^A[1-9][0-9]*$/u),
+  boxPubKey: z.string().regex(/^[A-Za-z0-9+/]{43}=$/u),
+  // 8192 UTF-8 bytes at most; main checks the byte length, this only bounds the string.
+  value: z.string().min(1).max(8192),
+});
+export type SecretRequest = z.infer<typeof SecretRequest>;
+
 const none = z.tuple([]);
 
 /** The argument list each invoke channel accepts. */
@@ -104,6 +113,7 @@ export const REQUESTS = {
   [IPC.pairProbe]: z.tuple([ProbeRequest]),
   [IPC.pairRedeem]: z.tuple([PairRequest]),
   [IPC.pairAuto]: none,
+  [IPC.secretSubmit]: z.tuple([SecretRequest]),
   [IPC.copy]: z.tuple([z.string().max(1_000_000)]),
   [IPC.appReady]: none,
   [IPC.appNotify]: z.tuple([NotifyRequest]),

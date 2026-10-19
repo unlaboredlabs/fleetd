@@ -3,6 +3,7 @@
 import { Suspense } from "react";
 import { EmptyState, GalleryScreen } from "../../ui";
 import { OnboardingScreen } from "../onboarding";
+import { InboxPanel } from "../inbox";
 import type { Screen } from "./routes";
 
 /** A screen that hasn't landed yet. It carries the screen's id, so the route table is testable end to end now. */
@@ -45,12 +46,8 @@ export function ScreenHost({ screen }: { screen: Screen }) {
 }
 
 /** The inbox panel's body (F5): the question cards, scrolled to `askId` when given. */
-export function InboxBody(_props: { askId: string | null; onClose: () => void }) {
-  return (
-    <div data-screen="inbox">
-      <EmptyState title="Nothing needs you">Questions from your leads show up here.</EmptyState>
-    </div>
-  );
+export function InboxBody({ askId }: { askId: string | null; onClose: () => void }) {
+  return <InboxPanel askId={askId ?? undefined} />;
 }
 
 /** The machine and train strips along the bottom (F2). Renders nothing until there is something to show. */

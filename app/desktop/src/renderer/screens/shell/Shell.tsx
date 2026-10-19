@@ -4,6 +4,7 @@ import { PanelLeft, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { display } from "../../../shared/shortcuts";
 import { AppFrame, Button, TopBar } from "../../ui";
+import { useNeedsYouSource } from "../inbox";
 import { openPalette, PaletteHost, useCommands, type Command } from "../palette";
 import { useEscape, useMainProcess, useMenuState, useModHeld, useNotifications } from "./effects";
 import { useHubState } from "./hubFeed";
@@ -58,6 +59,7 @@ export function Shell() {
   useMenuState();
   useNotifications(hub?.phase === "live");
   useEscape(route);
+  useNeedsYouSource();
 
   // What was there when the app connected counts as seen; a project you open is seen up to now.
   if (data.projects !== undefined) seen.prime(data.projects);
