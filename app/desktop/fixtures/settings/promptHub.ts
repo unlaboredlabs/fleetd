@@ -163,7 +163,9 @@ export class PromptHub {
         if (text === "" && p.id !== INSTRUCTIONS) return { ok: false, error: { code: "invalid", message: "A prompt can't be empty." } };
         const warnings = this.warnings(p, text);
         if (input["dryRun"] !== true) {
-          const edit = { text, base: p.text };
+          // As the hub: the default the text was written against, which keeps the edit stale until it is today's.
+          const base = typeof input["base"] === "string" ? this.textOf(p, input["base"]) : p.text;
+          const edit = { text, base };
           if (input["scope"] === "project" && key && p.perProject) p.projects.set(key, edit);
           else p.global = edit;
         }
@@ -185,6 +187,12 @@ export class PromptHub {
       default:
         return { ok: false, error: { code: "not_found", message: `The fixture hub has no ${tool}.` } };
     }
+  }
+
+  /** The text of one of the prompt's versions this hub knows, by ref; null for a ref it never shipped. */
+  private textOf(p: Prompt, ref: string): string | null {
+    const known = [p.text, p.global?.base, p.global?.text, ...[...p.projects.values()].flatMap((e) => [e.base, e.text])];
+    return known.find((t): t is string => typeof t === "string" && refOf(p.id, t) === ref) ?? null;
   }
 
   private version(p: Prompt, text: string): Version {
@@ -214,13 +222,13 @@ export class PromptHub {
       scope,
       defaultRef: refOf(p.id, p.text),
       ...(scope !== "default" ? { overrideRef: refOf(p.id, text) } : {}),
-      stale: edit !== null && edit.base !== null && edit.base !== p.text && p.id !== INSTRUCTIONS,
+      stale: edit !== null && edit.base !== p.text && p.kind !== "playbook" && p.id !== INSTRUCTIONS,
     };
   }
 
   private detail(p: Prompt, key: string | null) {
     const [text, scope, edit] = this.effective(p, key);
-    const stale = edit !== null && edit.base !== null && edit.base !== p.text && p.id !== INSTRUCTIONS;
+    const stale = edit !== null && edit.base !== p.text && p.kind !== "playbook" && p.id !== INSTRUCTIONS;
     const global = this.override(p, p.global);
     const project = this.override(p, key ? p.projects.get(key) : undefined);
     return {

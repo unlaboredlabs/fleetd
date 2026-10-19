@@ -1,5 +1,6 @@
 // The Prompts editor's rules, kept pure so they are tested without a screen.
 import type { PromptDetail, PromptScope, PromptSetOutput, PromptWarning, ProjectRef } from "./contracts";
+import type { SettingsRoute } from "./route";
 
 /** Whose texts the page shows: hub-wide, or one project's (which falls back to hub-wide where it has no edit). */
 export type Scope = { readonly kind: "hub" } | { readonly kind: "project"; readonly ref: ProjectRef };
@@ -10,7 +11,7 @@ export const scopeKey = (s: Scope): string => (s.kind === "hub" ? "hub" : `${s.r
 
 export const projectRefOf = (s: Scope): ProjectRef | undefined => (s.kind === "project" ? s.ref : undefined);
 
-/** "devbox/storefront" (the route's form) → a scope; anything else is hub-wide. */
+/** "devbox/storefront" (the route's form, and `scopeKey`'s) → a scope; anything else is hub-wide. */
 export function parseScope(raw: string | null): Scope {
   const m = raw ? /^([^/]+)\/([^/]+)$/u.exec(raw) : null;
   return m?.[1] && m[2] ? { kind: "project", ref: { machineId: m[1], projectId: m[2] } } : HUB;
@@ -31,6 +32,45 @@ export interface Filled {
   readonly id: string;
   readonly ref: string;
   readonly text: string;
+  /**
+   * The default the text was written against, which a save sends as `base`: the hub keeps an override whose base
+   * is not the current default stale and shows the 3-way update, so fleetd's change is never dropped silently. Null
+   * when the hub has no record of it (a hand-made file).
+   */
+  readonly base: string | null;
+}
+
+/** The default the hub's text for `d` was written against: a stale override's own base, else today's default. */
+export const fillBase = (d: PromptDetail): string | null => (d.stale ? (d.stale.base?.ref ?? null) : d.default.ref);
+
+/**
+ * What the editor holds after the hub sent `d` (see `refill`). A draft the hub's answer doesn't replace keeps the
+ * base it was written against, even when fleetd's default moved meanwhile (a hub upgrade).
+ */
+export function synced(before: Filled | null, d: PromptDetail, scope: string, editor: string): { filled: Filled; refill: boolean } {
+  const now: Filled = { scope, id: d.id, ref: d.effective.ref, text: d.effective.text, base: fillBase(d) };
+  const take = refill(before, now, editor);
+  if (take || before === null || editor === before.text) return { filled: now, refill: take };
+  return { filled: { ...now, base: before.base }, refill: false };
+}
+
+/** The level and project an Update action changes: the one that owns the stale override, whatever scope is shown. */
+export function updateTarget(d: PromptDetail, s: Scope): { scope: PromptScope; projectRef?: ProjectRef } {
+  return d.stale?.scope === "project" && s.kind === "project" ? { scope: "project", projectRef: s.ref } : { scope: "global" };
+}
+
+/** Where the page opens: the route, unless a kept draft for another prompt or scope would be dropped, in which case
+ * it opens on the draft and asks before following the route. */
+export function startOn(
+  kept: { filled: Filled; text: string } | null,
+  route: Pick<SettingsRoute, "prompt" | "for">,
+): { scope: Scope; id: string | null; ask: { scope: Scope; id: string | null } | null } {
+  const target = { scope: parseScope(route.for), id: route.prompt };
+  if (!kept || kept.text === kept.filled.text) return { ...target, ask: null };
+  const here = { scope: parseScope(kept.filled.scope), id: kept.filled.id };
+  const to = { scope: target.scope, id: target.id ?? here.id };
+  const same = scopeKey(to.scope) === kept.filled.scope && to.id === here.id;
+  return { ...here, ask: same ? null : to };
 }
 
 /**
@@ -63,6 +103,13 @@ export function warningLine(w: PromptWarning): string {
   if (w.enforced === "code") return `${w.message} fleetd still enforces this; agents will hit refusals they were not warned about.`;
   if (w.enforced === "prompt") return `${w.message} Nothing else enforces this.`;
   return w.message;
+}
+
+/** What a reset at `level` did, said plainly (resetting a project's level brings back the hub-wide text, if any). */
+export function resetLine(level: PromptScope, projectName: string): string {
+  return level === "project"
+    ? `${projectName}'s own edit is gone; it uses the hub-wide text again. New sessions get it; running ones keep theirs.`
+    : "Your hub-wide edit is gone; fleetd's default applies to every project without its own edit. New sessions get it; running ones keep theirs.";
 }
 
 export function savedLine(o: PromptSetOutput): string {

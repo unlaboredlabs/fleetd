@@ -5,7 +5,16 @@ import { ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, Dialog, Dot, IdChip, Input, Tab, TabList, TabPanel, Tabs, Text, Textarea, cx, textClass } from "../../ui";
 import { describe, groupOf, sections, type CatalogRow } from "./catalog";
-import type { PromptDetail, PromptSetOutput, PromptResetOutput, PromptsListOutput, PromptSummary, PromptWarning } from "./contracts";
+import type {
+  ProjectRef,
+  PromptDetail,
+  PromptResetOutput,
+  PromptScope,
+  PromptSetOutput,
+  PromptsListOutput,
+  PromptSummary,
+  PromptWarning,
+} from "./contracts";
 import { DiffBlock } from "./DiffBlock";
 import { counts, diffLines, sameProse } from "./diff";
 import {
@@ -19,9 +28,13 @@ import {
   parseScope,
   projectRefOf,
   refill,
+  resetLine,
   savedLine,
   scopeKey,
+  startOn,
+  synced,
   token,
+  updateTarget,
   warningLine,
   type Filled,
   type Scope,
@@ -32,8 +45,10 @@ import { toggleGroup, useCollapsed } from "./prefs";
 import { replaceRoute, type SettingsRoute, type View } from "./route";
 import s from "./settings.module.css";
 
-type Switch = { kind: "scope"; scope: Scope } | { kind: "prompt"; id: string };
+type Switch = { scope: Scope; id: string | null };
 type Echo = { ok: boolean; text: string };
+/** Which reset the confirm is for: the Edit tab's level, or the stale override's (Update → Use the new default). */
+type ResetFor = "edit" | "update";
 
 /** The unsaved draft, kept while Settings is closed or another tab is open, so leaving does not lose it. */
 let kept: { filled: Filled; text: string; mergedFilled: Filled | null; merged: string } | null = null;
@@ -43,9 +58,11 @@ export function Prompts({ route }: { route: SettingsRoute }) {
   const events = usePromptEvents();
   const projects = useProjects();
 
-  const [scope, setScope] = useState<Scope>(() => parseScope(route.for));
-  const [selected, setSelected] = useState<string | null>(route.prompt);
-  const [pending, setPending] = useState<Switch | null>(null);
+  // A kept draft for another prompt or scope opens first, and the route waits behind the discard confirm.
+  const [start] = useState(() => startOn(kept, route));
+  const [scope, setScope] = useState<Scope>(start.scope);
+  const [selected, setSelected] = useState<string | null>(start.id);
+  const [pending, setPending] = useState<Switch | null>(start.ask);
   const [rev, setRev] = useState(0);
   const sk = scopeKey(scope);
   const projectRef = projectRefOf(scope);
@@ -66,31 +83,42 @@ export function Prompts({ route }: { route: SettingsRoute }) {
   const [merged, setMerged] = useState(() => kept?.merged ?? "");
   const [mergedFilled, setMergedFilled] = useState<Filled | null>(() => kept?.mergedFilled ?? null);
   const [view, setView] = useState<View>(route.view);
-  const [synced, setSynced] = useState<PromptDetail | null>(null);
+  const [seen, setSeen] = useState<PromptDetail | null>(null);
   const [checked, setChecked] = useState<{ text: string; warnings: ReadonlyArray<PromptWarning> } | null>(null);
   const [busy, setBusy] = useState(false);
   const [echo, setEcho] = useState<Echo | null>(null);
-  const [confirmReset, setConfirmReset] = useState(false);
+  const [confirmReset, setConfirmReset] = useState<ResetFor | null>(null);
+  /** A save went out against an older default: show the 3-way update as soon as the hub answers with it. */
+  const [toUpdate, setToUpdate] = useState(false);
 
-  // Fill the editors from what the hub sent for the prompt and scope on screen (see `refill`), during render so the
+  // Fill the editors from what the hub sent for the prompt and scope on screen (see `synced`), during render so the
   // first paint of a new prompt already shows its text.
   const d = detail.state === "ready" ? detail.value : null;
-  if (d && d !== synced) {
-    setSynced(d);
-    const now: Filled = { scope: sk, id: d.id, ref: d.effective.ref, text: d.effective.text };
-    if (refill(filled, now, editor)) {
-      setEditor(now.text);
-      setChecked({ text: now.text, warnings: d.warnings });
+  if (d && d !== seen) {
+    setSeen(d);
+    const next = synced(filled, d, sk, editor);
+    if (next.refill) {
+      setEditor(next.filled.text);
+      setChecked({ text: next.filled.text, warnings: d.warnings });
     }
-    setFilled(now);
+    setFilled(next.filled);
     if (d.stale) {
-      const m: Filled = { scope: sk, id: d.id, ref: d.stale.current.ref, text: d.stale.merged };
+      const m: Filled = { scope: sk, id: d.id, ref: d.stale.current.ref, text: d.stale.merged, base: d.stale.current.ref };
       if (refill(mergedFilled, m, merged)) setMerged(m.text);
       setMergedFilled(m);
-    } else if (view === "update") setView("edit");
+      if (toUpdate) {
+        setToUpdate(false);
+        setView("update");
+      }
+    } else {
+      setMergedFilled(null);
+      if (view === "update") setView("edit");
+    }
   }
   const onScreen = d !== null && filled?.id === d.id && filled.scope === sk;
-  const dirty = onScreen && (isDirty(filled, editor) || (d.stale !== undefined && isDirty(mergedFilled, merged)));
+  // Known without the hub's answer, so a switch asked for before the prompt loads still asks first.
+  const mine = (f: Filled | null): f is Filled => f !== null && f.id === selected && f.scope === sk;
+  const dirty = (mine(filled) && isDirty(filled, editor)) || (mine(mergedFilled) && isDirty(mergedFilled, merged));
 
   useEffect(() => {
     kept = filled ? { filled, text: editor, mergedFilled, merged } : null;
@@ -111,7 +139,6 @@ export function Prompts({ route }: { route: SettingsRoute }) {
         scope: scopeOut,
         ...(scopeOut === "project" && projectRef ? { projectRef } : {}),
         text: editorText,
-        base: d.default.ref,
         dryRun: true,
       }).then(
         (o) => setChecked({ text: editorText, warnings: o.warnings }),
@@ -125,45 +152,46 @@ export function Prompts({ route }: { route: SettingsRoute }) {
   const go = (to: Switch) => {
     setPending(null);
     setEcho(null);
-    if (to.kind === "scope") setScope(to.scope);
-    else {
+    setScope(to.scope);
+    if (to.id !== selected) {
       setSelected(to.id);
       setView("edit");
     }
   };
   const request = (to: Switch) => {
-    const same = to.kind === "scope" ? scopeKey(to.scope) === sk : to.id === selected;
-    if (same) return;
+    if (scopeKey(to.scope) === sk && to.id === selected) return;
     if (dirty) setPending(to);
     else go(to);
   };
 
-  // A link from elsewhere (the palette): open that prompt and scope, asking first if it would drop a draft. Only a
-  // change of the route is a request; the page's own state changes are not.
+  // A link from elsewhere (the palette, the sidebar, a notice): open that prompt and scope, asking first if it would
+  // drop a draft. Only a change of the route is a request; the page's own state changes are not.
   const routeKey = `${route.prompt ?? ""}|${route.for ?? "hub"}`;
   const [seenRoute, setSeenRoute] = useState(routeKey);
   if (routeKey !== seenRoute) {
     setSeenRoute(routeKey);
-    if (route.prompt && route.prompt !== selected) request({ kind: "prompt", id: route.prompt });
-    else if ((route.for ?? "hub") !== sk) request({ kind: "scope", scope: parseScope(route.for) });
+    request({ scope: parseScope(route.for), id: route.prompt ?? selected });
   }
 
-  const save = (text: string) => {
+  /** Saves `text` at `target`, written against the default `base` (null: the one shipped now). */
+  const save = (text: string, target: { scope: PromptScope; projectRef?: ProjectRef | undefined }, base: string | null) => {
     if (!d || busy) return;
-    const scopeOut = editScope(d, scope);
     setBusy(true);
     setEcho(null);
     call<PromptSetOutput>("prompt_set", {
       id: d.id,
-      scope: scopeOut,
-      ...(scopeOut === "project" && projectRef ? { projectRef } : {}),
+      scope: target.scope,
+      ...(target.scope === "project" && target.projectRef ? { projectRef: target.projectRef } : {}),
       text,
-      base: d.default.ref,
+      ...(base !== null ? { base } : {}),
     }).then(
       (o) => {
         setBusy(false);
-        setEcho({ ok: true, text: savedLine(o) });
+        // The hub keeps an edit whose base is not today's default stale, and answers with both changes to merge.
+        const behind = base !== null && base !== d.default.ref;
+        setEcho({ ok: true, text: behind ? `${savedLine(o)} fleetd changed its default meanwhile: merge both changes below.` : savedLine(o) });
         setChecked({ text, warnings: o.warnings });
+        setToUpdate(behind);
         if (view === "update") setView("edit");
         setRev((r) => r + 1);
       },
@@ -173,21 +201,28 @@ export function Prompts({ route }: { route: SettingsRoute }) {
       },
     );
   };
+  const saveEdit = (text: string) => {
+    if (d && filled) save(text, { scope: editScope(d, scope), projectRef }, filled.base);
+  };
+  const saveUpdate = (text: string) => {
+    if (d?.stale) save(text, updateTarget(d, scope), d.stale.current.ref);
+  };
 
-  const reset = () => {
+  const reset = (which: ResetFor) => {
     if (!d || busy) return;
-    const scopeOut = editScope(d, scope);
+    const target = which === "update" ? updateTarget(d, scope) : { scope: editScope(d, scope), projectRef };
     setBusy(true);
     setEcho(null);
-    call<PromptResetOutput>("prompt_reset", { id: d.id, scope: scopeOut, ...(scopeOut === "project" && projectRef ? { projectRef } : {}) }).then(
-      (o) => {
+    call<PromptResetOutput>("prompt_reset", {
+      id: d.id,
+      scope: target.scope,
+      ...(target.scope === "project" && target.projectRef ? { projectRef: target.projectRef } : {}),
+    }).then(
+      () => {
         setBusy(false);
-        setEditor(o.effective.text);
-        setFilled({ scope: sk, id: d.id, ref: o.effective.ref, text: o.effective.text });
-        setEcho({
-          ok: true,
-          text: o.scope === "global" ? "Your edit here is gone; the hub-wide text applies again." : "Back to fleetd's default. New sessions get it; running ones keep their text.",
-        });
+        // The editor takes whatever is in effect now, from the refetch.
+        setFilled(null);
+        setEcho({ ok: true, text: resetLine(target.scope, scopeName(scope, projects)) });
         setView("edit");
         setRev((r) => r + 1);
       },
@@ -209,8 +244,10 @@ export function Prompts({ route }: { route: SettingsRoute }) {
 
   const here = scopeName(scope, projects);
   const pendingWhy =
-    pending?.kind === "scope" ? `Showing ${scopeName(pending.scope, projects)} drops them.` : "Opening another prompt drops them.";
-  const name = d ? describe(d).name : "";
+    pending && pending.id !== selected ? "Opening another prompt drops them." : `Showing ${pending ? scopeName(pending.scope, projects) : here} drops them.`;
+  const listed = list.state === "ready" ? list.value.prompts.find((p) => p.id === selected) : undefined;
+  const name = d ? describe(d).name : listed ? describe(listed).name : "this prompt";
+  const resetScope = d && confirmReset ? (confirmReset === "update" ? updateTarget(d, scope).scope : editScope(d, scope)) : null;
 
   return (
     <div className={s.page} data-screen={view === "edit" ? "settings.prompts" : `settings.prompts.${view}`}>
@@ -225,7 +262,7 @@ export function Prompts({ route }: { route: SettingsRoute }) {
             value={scope}
             hubWide="Hub-wide"
             projects={projects}
-            onChange={(next) => request({ kind: "scope", scope: next })}
+            onChange={(next) => request({ scope: next, id: selected })}
           />
         </div>
         <div className={s.scopeHint}>
@@ -237,7 +274,7 @@ export function Prompts({ route }: { route: SettingsRoute }) {
         </div>
       </div>
       <div className={s.split}>
-        <PromptList list={list} selected={selected} scope={scope} onPick={(id) => request({ kind: "prompt", id })} onRetry={reloadList} />
+        <PromptList list={list} selected={selected} scope={scope} onPick={(id) => request({ scope, id })} onRetry={reloadList} />
         <div className={s.detailPane}>
           {selected === null ? (
             <div className={s.empty}>
@@ -264,14 +301,17 @@ export function Prompts({ route }: { route: SettingsRoute }) {
               editor={editor}
               setEditor={setEditor}
               filledText={filled.text}
+              defaultMoved={filled.base !== null && filled.base !== d.default.ref && !d.stale && editor !== filled.text}
+              noBase={filled.base === null}
               merged={merged}
               setMerged={setMerged}
               checked={checked}
               busy={busy}
               echo={echo}
-              onSave={save}
-              onReset={() => setConfirmReset(true)}
-              onUseDefault={reset}
+              onSave={saveEdit}
+              onSaveUpdate={saveUpdate}
+              onReset={() => setConfirmReset("edit")}
+              onUseDefault={() => setConfirmReset("update")}
             />
           )}
         </div>
@@ -284,22 +324,23 @@ export function Prompts({ route }: { route: SettingsRoute }) {
         onDiscard={() => pending && go(pending)}
       />
       <Dialog
-        open={confirmReset}
-        onOpenChange={setConfirmReset}
-        title={`Reset ${name} to fleetd's default?`}
+        open={confirmReset !== null}
+        onOpenChange={(open) => !open && setConfirmReset(null)}
+        title={confirmReset === "update" ? `Use fleetd's new default for ${name}?` : `Reset ${name} to fleetd's default?`}
         description={
-          d && editScope(d, scope) === "project"
+          resetScope === "project"
             ? `Your edit for ${here} is deleted; ${here} gets the hub-wide text again. New sessions get it; running ones keep theirs.`
             : "Your hub-wide edit is deleted. Projects with their own edit keep it. New sessions get the default; running ones keep theirs."
         }
         footer={
           <>
-            <Button onClick={() => setConfirmReset(false)}>Cancel</Button>
+            <Button onClick={() => setConfirmReset(null)}>Cancel</Button>
             <Button
               variant="danger"
               onClick={() => {
-                setConfirmReset(false);
-                reset();
+                const which = confirmReset;
+                setConfirmReset(null);
+                if (which) reset(which);
               }}
             >
               Reset
@@ -470,7 +511,12 @@ function Detail(props: {
   checked: { text: string; warnings: ReadonlyArray<PromptWarning> } | null;
   busy: boolean;
   echo: Echo | null;
+  /** The draft was written against an older default than the one the hub ships now. */
+  defaultMoved: boolean;
+  /** The text in effect is a stale edit with no record of its base: only the Update view can save it. */
+  noBase: boolean;
   onSave: (text: string) => void;
+  onSaveUpdate: (text: string) => void;
   onReset: () => void;
   onUseDefault: () => void;
 }) {
@@ -517,6 +563,18 @@ function Detail(props: {
         </TabList>
 
         <TabPanel value="edit" className={s.panel}>
+          {props.defaultMoved ? (
+            <div className={s.warning}>
+              <Dot color="var(--warning)" />
+              <Text>fleetd changed this prompt's default while you were editing. Saving keeps your text and then shows both changes to merge.</Text>
+            </div>
+          ) : null}
+          {props.noBase ? (
+            <div className={s.warning}>
+              <Dot color="var(--warning)" />
+              <Text>fleetd's default changed since this edit, and there is no record of the default it started from. Save it from Update.</Text>
+            </div>
+          ) : null}
           {/* The prompt exactly as sent, markdown and placeholders included: a code view to the QA text rule. */}
           <div data-text="code">
             <Textarea
@@ -531,7 +589,7 @@ function Detail(props: {
           </div>
           <Warnings text={editor} checked={props.checked} />
           <div className={s.actions}>
-            <Button variant="primary" disabled={!canSave(editor, d.effective.text, busy)} onClick={() => props.onSave(editor)}>
+            <Button variant="primary" disabled={props.noBase || !canSave(editor, d.effective.text, busy)} onClick={() => props.onSave(editor)}>
               {busy ? "Saving…" : "Save"}
             </Button>
             <Button disabled={busy || !hasOverride(d, editScope(d, scope))} onClick={props.onReset}>
@@ -579,7 +637,9 @@ function Detail(props: {
               checked={props.checked}
               busy={busy}
               echo={props.echo}
-              onSave={props.onSave}
+              scope={scope}
+              scopeLabel={props.scopeLabel}
+              onSave={props.onSaveUpdate}
               onUseDefault={props.onUseDefault}
             />
           </TabPanel>
@@ -667,6 +727,8 @@ function Compare({ base, text }: { base: string; text: string }) {
 
 function Update(props: {
   d: PromptDetail;
+  scope: Scope;
+  scopeLabel: string;
   merged: string;
   setMerged: (t: string) => void;
   checked: { text: string; warnings: ReadonlyArray<PromptWarning> } | null;
@@ -678,8 +740,15 @@ function Update(props: {
   const stale = props.d.stale;
   if (!stale) return null;
   const conflicts = hasConflictMarkers(props.merged);
+  const level =
+    updateTarget(props.d, props.scope).scope === "project"
+      ? `These buttons change ${props.scopeLabel}'s own edit.`
+      : props.scope.kind === "project"
+        ? `The out-of-date edit is your hub-wide one, which ${props.scopeLabel} uses: these buttons change it for every project without its own edit.`
+        : "These buttons change your hub-wide edit, used by every project without its own.";
   return (
     <>
+      <Text tone="quiet">{level}</Text>
       {stale.base ? (
         <>
           <Text size="xs" strong tone="quiet">
