@@ -112,9 +112,10 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
     if (!form.useKey) {
       const request = { hub: form.hub, code: form.code };
       const fromLink = form.linkCode !== null && form.linkCode === form.code;
+      const before = fromLink ? await window.fleetd.app.linkHandler(null) : null;
       const ok = await pair(form.hub, () => window.fleetd.pair.redeem(request));
       // The link may have been meant for another install that holds fleetd://; main claims it back when it should.
-      if (!ok && fromLink) dispatch({ type: "linkChecked", status: await window.fleetd.app.linkHandler("pair-failed") });
+      if (!ok && before !== null) dispatch({ type: "linkChecked", before, after: await window.fleetd.app.linkHandler("pair-failed") });
       return;
     }
     const key = form.key.trim();

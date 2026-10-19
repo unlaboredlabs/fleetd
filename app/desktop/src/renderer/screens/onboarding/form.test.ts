@@ -95,9 +95,18 @@ describe("a link whose code failed", () => {
     expect(reduce(linked, { type: "edit", field: "code", value: "ABCD-2345" }).linkCode).toBeNull();
   });
 
-  it("says to open the link again once this app takes links, and to type the code in a dev build", () => {
-    expect(reduce(linked, { type: "linkChecked", status: { packaged: true, handler: true } }).linkNote).toContain("Open the link again");
-    expect(reduce(linked, { type: "linkChecked", status: { packaged: false, handler: false } }).linkNote).toContain("Type the code");
-    expect(reduce(linked, { type: "linkChecked", status: { packaged: true, handler: false } }).linkNote).toBeNull();
+  it("says what changed: links taken back, still elsewhere, or a dev build; nothing when this app had them", () => {
+    const yes = { packaged: true, handler: true };
+    const no = { packaged: true, handler: false };
+    expect(reduce(linked, { type: "linkChecked", before: no, after: yes }).linkNote).toContain("another app had them");
+    expect(reduce(linked, { type: "linkChecked", before: yes, after: yes }).linkNote).toBeNull();
+    expect(reduce(linked, { type: "linkChecked", before: no, after: no }).linkNote).toContain("Settings → General");
+    const dev = { packaged: false, handler: false };
+    expect(reduce(linked, { type: "linkChecked", before: dev, after: dev }).linkNote).toContain("Type the code");
+  });
+
+  it("ignores a late answer while another attempt runs", () => {
+    const busy = reduce(linked, { type: "submitting", hub: "http://devbox:4790" });
+    expect(reduce(busy, { type: "linkChecked", before: { packaged: false, handler: false }, after: { packaged: false, handler: false } })).toBe(busy);
   });
 });

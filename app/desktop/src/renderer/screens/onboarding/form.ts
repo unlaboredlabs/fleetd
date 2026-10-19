@@ -33,7 +33,7 @@ export type Action =
   | { type: "submitting"; hub: string }
   | { type: "failed"; failure: PairFailure }
   | { type: "paired"; hubName: string }
-  | { type: "linkChecked"; status: LinkHandlerStatus };
+  | { type: "linkChecked"; before: LinkHandlerStatus; after: LinkHandlerStatus };
 
 export const KEY_CREATE = "fleetd hub key create --human --name <device>";
 
@@ -117,7 +117,8 @@ export const reduce = (form: Form, action: Action): Form => {
     case "failed":
       return { ...form, busy: false, status: null, error: action.failure };
     case "linkChecked":
-      return { ...form, linkNote: linkNote(action.status) };
+      // A late answer about an earlier attempt says nothing about the one now running.
+      return form.busy ? form : { ...form, linkNote: linkNote(action.before, action.after) };
     case "paired":
       return { ...form, busy: false, code: "", key: "", error: null, status: `Paired with ${action.hubName}. Connecting…` };
   }
@@ -168,12 +169,11 @@ export const reaching = (
 export const sentence = (text: string): string => (/[.?!…]$/u.test(text.trim()) ? text.trim() : `${text.trim()}.`);
 
 /**
- * What to say after a fleetd://pair link's code failed, once main has made this app the link handler where it can
- * (another install may have been opening the links). Null when there is nothing to add.
+ * What to say after a fleetd://pair link's code failed, given whether this app opened fleetd:// links before and
+ * after main's claim (another install may have been taking them). Null when nothing changed: the hub's fix says it.
  */
-export const linkNote = (status: LinkHandlerStatus): string | null =>
-  !status.packaged
-    ? "This development build doesn't open fleetd:// links. Type the code from `fleetd pair` instead."
-    : status.handler
-      ? "fleetd:// links open this app now. Open the link again, or a new one from `fleetd pair` if this code was used up."
-      : null;
+export const linkNote = (before: LinkHandlerStatus, after: LinkHandlerStatus): string | null => {
+  if (!after.packaged) return "This development build doesn't open fleetd:// links. Type the code from `fleetd pair` instead.";
+  if (!after.handler) return "Another app opens fleetd:// links. To have them open this one, use Pairing links in Settings → General.";
+  return before.handler ? null : "fleetd:// links open this app now; another app had them. Open a new link from `fleetd pair` on the hub.";
+};
