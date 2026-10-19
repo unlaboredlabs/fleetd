@@ -172,37 +172,55 @@ export const commandApproval = (state: "open" | "ran" | "denied", f: Fixture, pe
  * `n` agents working for the project under the lead's message: one full live frame with their lanes, and the
  * project's orders on the board and in order_get (a hub order holds at most 12 lanes, so 20 agents span two).
  */
-export const liveStrip = (f: Fixture, ref: Ref, n: number): Fixture => {
+export const liveStrip = (f: Fixture, ref: Ref, n: number): Fixture => agentsAt(f, [{ ref, n }]);
+
+/**
+ * Agents at work in several projects at once: each project's `n` lanes on its own orders (a hub order holds at
+ * most 12), on the board and in order_get, and one full live frame with every lane. With `allWorking` every lane is
+ * "working", so a project's running count is exactly `n` (as a status row's agentsRunning says).
+ */
+export const agentsAt = (f: Fixture, projects: ReadonlyArray<{ ref: Ref; n: number }>, allWorking = false): Fixture => {
   const start = at(f.now, -30 * 60_000);
-  const lanes = Array.from({ length: n }, (_, i) => agentLane(f, i, false, ref.machineId, start));
   const orders: Array<JsonObject> = [];
-  for (let k = 0; k * 12 < n; k++) {
-    const own = lanes.slice(k * 12, (k + 1) * 12).map((l) => {
-      const { live: _live, ...rest } = l;
-      return rest;
+  const live: Array<JsonObject> = [];
+  let next = 0;
+  for (const { ref, n } of projects) {
+    const lanes = Array.from({ length: n }, () => {
+      const lane = agentLane(f, next++, false, ref.machineId, start);
+      return allWorking ? { ...lane, status: "working", live: { ...obj(lane["live"]), status: "working" } } : lane;
     });
-    orders.push({
-      workstreamId: `W${String(k + 1)}`,
-      title: LONG_TITLES[k % LONG_TITLES.length] ?? "",
-      projectRef: { ...ref },
-      createdAt: at(f.now, -40 * 60_000),
-      updatedAt: at(f.now, -5_000),
-      phase: "working",
-      state: "running",
-      lanes: own,
-      prs: [],
-      needsYou: 0,
-      settled: 0,
-      total: own.length,
-    });
+    live.push(...lanes.map((l) => obj(l["live"])));
+    for (let k = 0; k * 12 < n; k++) {
+      const own = lanes.slice(k * 12, (k + 1) * 12).map((l) => {
+        const { live: _live, ...rest } = l;
+        return rest;
+      });
+      orders.push({
+        workstreamId: `W${String(orders.length + 1)}`,
+        title: LONG_TITLES[orders.length % LONG_TITLES.length] ?? "",
+        projectRef: { ...ref },
+        createdAt: at(f.now, -40 * 60_000),
+        updatedAt: at(f.now, -5_000),
+        phase: "working",
+        state: "running",
+        lanes: own,
+        prs: [],
+        needsYou: 0,
+        settled: 0,
+        total: own.length,
+      });
+    }
   }
   f.drop("orders_board");
   f.answer("orders_board", {}, { orders, trains: [], at: f.now });
-  f.answer("orders_board", { projectRef: { ...ref } }, { orders, trains: [], at: f.now });
+  for (const { ref } of projects) {
+    const own = orders.filter((o) => obj(o["projectRef"])["projectId"] === ref.projectId);
+    f.answer("orders_board", { projectRef: { ...ref } }, { orders: own, trains: [], at: f.now });
+  }
   f.drop("order_get");
   for (const order of orders) f.answer("order_get", { workstreamId: order["workstreamId"] ?? "W1" }, { order, doneLanes: [], asks: [] });
   const machines = arr(obj(f.live.findLast((l) => l["full"] === true))["machines"]);
-  f.live = [{ at: f.now, full: true, lanes: lanes.map((l) => obj(l["live"])), text: [], ...(machines.length > 0 ? { machines } : {}) }];
+  f.live = [{ at: f.now, full: true, lanes: live, text: [], ...(machines.length > 0 ? { machines } : {}) }];
   return f;
 };
 
