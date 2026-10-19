@@ -108,7 +108,10 @@ export const selectInbox = memo(
   },
 );
 
-/** Undefined until the asks loaded: "0" would claim nothing needs you before anything was asked. */
+/** Why the open asks couldn't be read, while they can't: the inbox shows it; the board draws without needs-you marks. */
+export const selectAsksError = (s: DataState) => (s.fresh ? s.asksError : undefined);
+
+/** Undefined until the asks loaded (or when their read failed): "0" would claim nothing needs you. */
 export const selectNeedsYouCount = memo(
   (s) => [selectInbox(s)],
   (inbox): number | undefined => inbox?.length,
@@ -139,6 +142,8 @@ export interface OrderView {
   readonly phase: Phase;
   /** Open asks about this order, now. */
   readonly asks: readonly Ask[];
+  /** False when the asks couldn't be read: the phase then counts no questions, so show no needs-you marks. */
+  readonly asksKnown: boolean;
   /** The card's lanes (active ones), live. */
   readonly lanes: readonly AgentLane[];
 }
@@ -149,6 +154,7 @@ const orderView = (
   liveLanes: Readonly<Record<string, LiveLane>>,
   detail: OrderDetail | undefined,
   ended: Readonly<Record<string, string>> = {},
+  asksKnown = true,
 ): OrderView => {
   const lanes = card.lanes.map((l) => mergeLane(l, liveLanes[l.laneId], ended[l.laneId]));
   const lead = liveLanes[leadLaneId(card.projectRef)];
@@ -164,20 +170,23 @@ const orderView = (
     prs: card.prs,
     leadWorking,
   });
-  return { card, phase, asks: openAsks, lanes };
+  return { card, phase, asks: openAsks, asksKnown, lanes };
 };
 
 const noAsks: readonly Ask[] = [];
 
+const asksState = (s: DataState): "loading" | "loaded" | "failed" =>
+  s.asks !== undefined ? "loaded" : s.asksError !== undefined ? "failed" : "loading";
+
 /** The board: every order with its live phase, by phase then most recently updated; undefined until loaded. */
 export const selectBoard = memo(
-  (s) => [s.fresh, s.orders, s.asks !== undefined, selectOpenAsksByOrder(s), s.live.lanes, s.details, s.live.ended],
-  (fresh, orders, asksLoaded, asks, liveLanes, details, ended): readonly OrderView[] | undefined => {
-    // Phases count open asks, so the board waits for them too.
-    if (!fresh || orders === undefined || !asksLoaded) return undefined;
+  (s) => [s.fresh, s.orders, asksState(s), selectOpenAsksByOrder(s), s.live.lanes, s.details, s.live.ended],
+  (fresh, orders, asksAre, asks, liveLanes, details, ended): readonly OrderView[] | undefined => {
+    // Phases count open asks, so the board waits for them, but not on a read that failed.
+    if (!fresh || orders === undefined || asksAre === "loading") return undefined;
     return Object.values(orders)
       .map((card) =>
-        orderView(card, asks[card.workstreamId] ?? noAsks, liveLanes, details[card.workstreamId], ended),
+        orderView(card, asks[card.workstreamId] ?? noAsks, liveLanes, details[card.workstreamId], ended, asksAre === "loaded"),
       )
       .sort(
         (a, b) =>
@@ -200,15 +209,16 @@ export const selectOrder = perKey((workstreamId) =>
   memo(
     (s) =>
       [
-        s.fresh && s.asks !== undefined ? s.orders?.[workstreamId] : undefined,
+        s.fresh && asksState(s) !== "loading" ? s.orders?.[workstreamId] : undefined,
         selectOpenAsksByOrder(s)[workstreamId] ?? noAsks,
         s.live.lanes,
         s.details[workstreamId],
+        asksState(s) === "loaded",
       ],
-    (card, asks, liveLanes, detail): OrderPage | undefined => {
+    (card, asks, liveLanes, detail, asksKnown): OrderPage | undefined => {
       if (card === undefined) return undefined;
       const lead = detail?.lead === undefined ? undefined : mergeLane(detail.lead, liveLanes[detail.lead.laneId]);
-      return { ...orderView(card, asks, liveLanes, detail), detail, lead };
+      return { ...orderView(card, asks, liveLanes, detail, {}, asksKnown), detail, lead };
     },
   ),
 );

@@ -13,7 +13,7 @@ import {
 import type { HubError, HubFrame } from "../../../shared/hub";
 import type { LiveScope } from "../../../shared/ipc";
 import { effectsOf, matches, type Invalidation } from "./effects";
-import { applyFrame, createDataStore, ingest, type DataStore } from "./store";
+import { applyFrame, createDataStore, failRead, ingest, type DataStore } from "./store";
 
 export class CallError extends Error {
   constructor(readonly error: HubError) {
@@ -136,7 +136,15 @@ export const createDataLayer = (hub: HubApi, now: () => number = Date.now): Data
   const onCache: Parameters<ReturnType<QueryClient["getQueryCache"]>["subscribe"]>[0] = (e) => {
     if (e.type !== "updated") return;
     const q = e.query as Query<unknown, Error, unknown>;
-    if (e.action.type === "error") dirty.delete(q.queryHash);
+    if (e.action.type === "error") {
+      dirty.delete(q.queryHash);
+      const [scope, tool, input] = q.queryKey;
+      const error = q.state.error;
+      const hubError =
+        error instanceof CallError ? error.error : { code: "failed", message: error?.message ?? "The read failed." };
+      if (scope === "call") store.setState((s) => failRead(s, tool, input, hubError));
+      return;
+    }
     if (e.action.type !== "success") return;
     if (dirty.delete(q.queryHash)) {
       void queryClient.invalidateQueries({ queryKey: q.queryKey, exact: true });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { applyFrame, applyLive, applyStreams, ingest, initialState, type DataState } from "./store";
-import { selectBoard, selectConnection, selectInbox, selectNeedsYouCount, selectOrder } from "./selectors";
+import { applyFrame, applyLive, applyStreams, failRead, ingest, initialState, type DataState } from "./store";
+import { selectAsksError, selectBoard, selectConnection, selectInbox, selectNeedsYouCount, selectOrder } from "./selectors";
 import { ask, card, event, lane, live, liveLane, project, snapshot } from "./fixtures.test-util";
 import type { HubFrame } from "../../../shared/hub";
 
@@ -102,6 +102,30 @@ describe("events patch what they change", () => {
       output: { at: "2026-10-19T10:00:00.000Z", orders: [card("W3")], trains: [] },
     });
     expect(Object.keys(s.orders ?? {}).sort()).toEqual(["W3", "W9"]);
+  });
+});
+
+describe("a failed asks read", () => {
+  it("doesn't hold the board: orders show without needs-you marks, the error is readable, and a later list clears it", () => {
+    let s = withBoard(run([live(), snapshot(1)]), [card("W1", { phase: "waiting_on_you", needsYou: 1 })]);
+    expect(selectBoard(s)).toBeUndefined();
+    s = failRead(s, "asks_list", { state: "open" }, { code: "failed", message: "node offline" });
+    expect(selectBoard(s)?.map((o) => [o.card.workstreamId, o.phase.phase, o.asksKnown])).toEqual([["W1", "working", false]]);
+    expect(selectOrder("W1")(s)?.asksKnown).toBe(false);
+    expect(selectAsksError(s)?.message).toBe("node offline");
+    expect(selectNeedsYouCount(s)).toBeUndefined();
+    s = withAsks(s);
+    expect(selectAsksError(s)).toBeUndefined();
+    expect(selectBoard(s)?.[0]?.asksKnown).toBe(true);
+    expect(selectBoard(s)?.[0]?.phase.phase).toBe("waiting_on_you");
+  });
+
+  it("only the open-asks read counts, and a snapshot forgets the failure", () => {
+    let s = withBoard(run([live(), snapshot(1)]));
+    expect(failRead(s, "asks_list", { state: "answered" }, { code: "failed", message: "x" })).toBe(s);
+    expect(failRead(s, "status_get", {}, { code: "failed", message: "x" })).toBe(s);
+    s = run([snapshot(2)], failRead(s, "asks_list", { state: "open" }, { code: "failed", message: "x" }));
+    expect(s.asksError).toBeUndefined();
   });
 });
 

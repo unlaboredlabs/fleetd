@@ -135,6 +135,19 @@ describe("data layer", () => {
   });
 });
 
+describe("asks read failure", () => {
+  it("records a final asks_list error in the store", async () => {
+    const fake = fakeHub();
+    fake.hub = { ...fake.hub, call: () => Promise.resolve({ ok: false, error: { code: "forbidden", message: "no grant" } }) };
+    const layer = createDataLayer(fake.hub);
+    layer.start();
+    fake.send(live());
+    fake.send(snapshot(1));
+    await expect(layer.queryClient.query(layer.toolQuery("asks_list", { state: "open" }))).rejects.toThrow("no grant");
+    expect(layer.store.getState().asksError).toEqual({ code: "forbidden", message: "no grant" });
+  });
+});
+
 describe("live scope", () => {
   it("sends only changes, and stops when nothing wants live values", () => {
     const fake = fakeHub();
