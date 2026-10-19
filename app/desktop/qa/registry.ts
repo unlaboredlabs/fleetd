@@ -57,19 +57,19 @@ export const screens: readonly Screen[] = [
     route: "#/",
     fixtures: ["empty", "typical", "hub-unreachable", "pairing-failed", "node-too-old"],
   },
-  // F10: connecting to a hub. pairing-failed: the form after a refused app-pair.json code, with the hub's fix;
-  // hub-unreachable: connecting, with the reason and the retry. #/onboarding?key opens on the key path.
+  // F10: connecting to a hub. pairing-failed: the form after the hub refused the saved key, with the fix;
+  // hub-unreachable: retrying, with the reason and the countdown. #/onboarding?key opens on the key path.
   {
     id: "onboarding",
     route: "#/onboarding",
     fixtures: ["pairing-failed", "hub-unreachable"],
-    pending: "E3b's pairing-failed and hub-unreachable fixtures (with a pair section) have not landed",
+    pending: "E3b's fixtures (feat/desktop-fixtures) aren't on this base yet",
   },
   {
     id: "onboarding.key",
     route: "#/onboarding?key",
     fixtures: ["pairing-failed"],
-    pending: "E3b's pairing-failed and hub-unreachable fixtures (with a pair section) have not landed",
+    pending: "E3b's fixtures (feat/desktop-fixtures) aren't on this base yet",
   },
   // E2: every design-system primitive with stress content, so the primitives pass before any screen uses them.
   { id: "gallery", route: "#/gallery", fixtures: ["typical"], pending: "E2's gallery (feat/desktop-ui) has not landed" },

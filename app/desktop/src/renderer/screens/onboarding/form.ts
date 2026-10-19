@@ -1,6 +1,6 @@
 // The connect form's state: what it shows and when it pairs by itself. Pure, so the decisions are tested.
 import type { HubState } from "../../../shared/hub";
-import { LOCAL_HUB, protocolFit, type PairFailure, type PairStart } from "../../../shared/pairing";
+import { hubOrigin, LOCAL_HUB, protocolFit, type PairFailure, type PairStart } from "../../../shared/pairing";
 
 export interface Form {
   readonly hub: string;
@@ -72,6 +72,9 @@ export const reduce = (form: Form, action: Action): Form => {
           status: "The code `fleetd init` left on this computer has expired. Run `fleetd pair` on the hub for a new one.",
         };
       }
+      // The probe looked at app-pair.json's hub or this computer; about another address (a refused key's) it says nothing.
+      const origin = hubOrigin(hub);
+      if (!origin.ok || origin.origin !== probe.hub) return { ...form, hub, error };
       if (!probe.answers) {
         return {
           ...form,

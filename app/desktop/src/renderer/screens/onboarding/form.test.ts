@@ -6,6 +6,7 @@ const unpaired = { phase: "unpaired" } as const;
 const answering = { answers: true, hub: "http://100.64.0.1:4790", version: "0.5.0", protocol: 1 } as const;
 const noHub: PairStart = { appPair: null, problem: null, probe: { answers: false, hub: "http://127.0.0.1:4790" } };
 const fresh: PairStart = { appPair: { hub: "http://100.64.0.1:4790", expired: false }, problem: null, probe: answering };
+const local = { ...answering, hub: "http://127.0.0.1:4790" } as const;
 const found = (probe: PairStart["probe"]): PairStart => ({ appPair: null, problem: null, probe });
 
 describe("the connect form", () => {
@@ -38,14 +39,16 @@ describe("the connect form", () => {
   it("says whether a hub answers, which side is too old, and why app-pair.json was ignored", () => {
     const form = initialForm(unpaired, {});
     expect(reduce(form, { type: "started", start: noHub }).status).toContain("No hub answers");
-    expect(reduce(form, { type: "started", start: found(answering) }).status).toContain("Found your hub at http://100.64.0.1:4790");
-    expect(reduce(form, { type: "started", start: found({ ...answering, protocol: 0 }) }).error?.fix).toContain("fleetd update");
-    expect(reduce(form, { type: "started", start: found({ ...answering, protocol: 2 }) }).error?.code).toBe("app_too_old");
+    expect(reduce(form, { type: "started", start: found(local) }).status).toContain("Found your hub at http://127.0.0.1:4790");
+    expect(reduce(form, { type: "started", start: found({ ...local, protocol: 0 }) }).error?.fix).toContain("fleetd update");
+    expect(reduce(form, { type: "started", start: found({ ...local, protocol: 2 }) }).error?.code).toBe("app_too_old");
     const problem = { code: "", message: "Ignored app-pair.json: it is a symlink.", fix: "Run `fleetd pair`." };
     expect(reduce(form, { type: "started", start: { ...noHub, problem } }).error).toEqual(problem);
   });
 
-  it("shows a refused key's fix", () => {
+  it("shows a refused key's fix, and no probe line about another address", () => {
+    const elsewhere = initialForm({ phase: "refused", hub: "http://devbox:4790", message: "Unknown agent key." }, {});
+    expect(reduce(elsewhere, { type: "started", start: noHub })).toMatchObject({ hub: "http://devbox:4790", status: null });
     const refused = initialForm({ phase: "refused", hub: "http://127.0.0.1:4790", message: "Unknown agent key." }, {});
     expect(refused.hub).toBe("http://127.0.0.1:4790");
     expect(refused.error).toMatchObject({ message: "Unknown agent key." });
