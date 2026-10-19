@@ -6,6 +6,8 @@ import { osCredentialEnv } from "./hub/os";
 import { HubService, type HubMode } from "./hub/service";
 import { webSocketTransport } from "./hub/transport";
 import { registerIpc } from "./ipc";
+import { fixturePairingDeps } from "./pairing/fixture";
+import { PairingService, realPairingDeps } from "./pairing/service";
 import { installMenu } from "./menu";
 import { Notifier } from "./notify";
 import { listenForLinks } from "./links";
@@ -38,14 +40,21 @@ if (!primary) app.quit();
 // Hubs behind a company or private CA: trust what the OS trusts, as the GPUI app did, not only Node's bundled roots.
 tls.setDefaultCACertificates([...tls.getCACertificates("bundled"), ...tls.getCACertificates("system")]);
 
-const hubMode = (): HubMode => {
+const fixtureDir = (): string => process.env["FLEETD_FIXTURE_DIR"] ?? join(app.getAppPath(), "fixtures");
+/** The same resolution as loadFixture: a name in the fixture dir, or an absolute path. */
+const fixtureFile = (name: string): string => (isAbsolute(name) ? name : join(fixtureDir(), `${name}.json`));
+
+/** The hub, or a fixture standing in for it; `fixtureFile` is also where pairing finds the fixture's `pair` section. */
+const hubMode = (): { mode: HubMode; fixtureFile: string | null } => {
   const request = fixtureRequest(process.env, app.isPackaged);
   if (request.kind === "ignored") console.warn(request.reason);
   if (request.kind !== "fixture") {
-    return { kind: "hub", credentials: osCredentialEnv(FLEETD_DIR, fleetdHome !== undefined), vars: process.env, transport: webSocketTransport };
+    return {
+      mode: { kind: "hub", credentials: osCredentialEnv(FLEETD_DIR, fleetdHome !== undefined), vars: process.env, transport: webSocketTransport },
+      fixtureFile: null,
+    };
   }
-  const dir = process.env["FLEETD_FIXTURE_DIR"] ?? join(app.getAppPath(), "fixtures");
-  return { kind: "fixture", fixture: loadFixture(request.name, dir) };
+  return { mode: { kind: "fixture", fixture: loadFixture(request.name, fixtureDir()) }, fixtureFile: fixtureFile(request.name) };
 };
 
 const createWindow = (mode: HubMode): BrowserWindow => {
@@ -86,15 +95,26 @@ void app.whenReady().then(() => {
   if (!primary) return;
   lockSession(join(import.meta.dirname, "../renderer"));
   let mode: HubMode;
+  let pairing: PairingService;
+  let hub: HubService;
   try {
-    mode = hubMode();
+    const chosen = hubMode();
+    mode = chosen.mode;
+    const service = new HubService(mode);
+    hub = service;
+    const connect = (url: string, key: string) => service.connect({ url, key });
+    const firstRun = () => service.state().phase === "unpaired";
+    pairing = new PairingService(
+      chosen.fixtureFile === null
+        ? realPairingDeps(FLEETD_DIR, connect, firstRun)
+        : fixturePairingDeps(chosen.fixtureFile, connect, firstRun),
+    );
   } catch (error) {
     console.error(error instanceof Error ? error.message : error);
     app.exit(2);
     return;
   }
-  const hub = new HubService(mode);
-  registerIpc(hub, { opener, notifier: new Notifier(opener) });
+  registerIpc(hub, { opener, notifier: new Notifier(opener) }, pairing);
   installMenu(opener);
   app.on("browser-window-focus", () => hub.windowFocused());
   powerMonitor.on("resume", () => hub.systemResumed());

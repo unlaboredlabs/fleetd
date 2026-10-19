@@ -127,3 +127,32 @@
   line-height: var(--leading-xs);
   text-align: center;
 }
+
+/* The inbox count's place while the asks load. Static: a skeleton that pulses would repaint for nothing. */
+.countSkeleton {
+  display: inline-block;
+  width: 2ch;
+  height: 0.8em;
+  border-radius: var(--radius-sm);
+  background: var(--selected);
+  vertical-align: middle;
+}
+
+/* Static placeholder rows while the projects load; no shimmer, so nothing repaints. */
+.sidebarSkeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-1-5) var(--space-2);
+}
+.sidebarSkeleton > span {
+  height: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--selected);
+}
+.sidebarSkeleton > span:nth-child(2) {
+  width: 70%;
+}
+.sidebarSkeleton > span:nth-child(3) {
+  width: 55%;
+}

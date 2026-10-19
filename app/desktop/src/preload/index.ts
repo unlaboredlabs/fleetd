@@ -1,7 +1,8 @@
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
+import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from "electron";
 import type { OpenTarget } from "../shared/app";
 import { IPC } from "../shared/channels";
-import type { CallOutcome, ConnectOutcome, HubFrame, HubState, OpenOutcome } from "../shared/hub";
+import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, HubState, OpenOutcome, SecretOutcome } from "../shared/hub";
+import type { PairOutcome, PairStart, Probe } from "../shared/pairing";
 import type { FleetdApi } from "./api";
 
 const listeners = new Set<(frame: HubFrame) => void>();
@@ -28,6 +29,9 @@ const api: FleetdApi = {
   fixture,
   platform: process.platform === "darwin" || process.platform === "linux" || process.platform === "win32" ? process.platform : "other",
   copy: (text) => ipcRenderer.invoke(IPC.copy, text) as Promise<void>,
+  secret: {
+    submit: (request) => ipcRenderer.invoke(IPC.secretSubmit, request) as Promise<SecretOutcome>,
+  },
   openExternal: (url) => ipcRenderer.invoke(IPC.openExternal, url) as Promise<OpenOutcome>,
   hub: {
     state: () => ipcRenderer.invoke(IPC.hubState) as Promise<HubState>,
@@ -45,6 +49,24 @@ const api: FleetdApi = {
     resync: () => ipcRenderer.invoke(IPC.hubResync) as Promise<void>,
     connect: (url, key) => ipcRenderer.invoke(IPC.hubConnect, { url, key }) as Promise<ConnectOutcome>,
     forget: () => ipcRenderer.invoke(IPC.hubForget) as Promise<void>,
+  },
+  pair: {
+    start: () => ipcRenderer.invoke(IPC.pairStart) as Promise<PairStart>,
+    probe: (hub) => ipcRenderer.invoke(IPC.pairProbe, hub) as Promise<Probe>,
+    redeem: (request) => ipcRenderer.invoke(IPC.pairRedeem, request) as Promise<PairOutcome>,
+    auto: () => ipcRenderer.invoke(IPC.pairAuto) as Promise<PairOutcome>,
+  },
+  system: {
+    hostName: () => ipcRenderer.invoke(IPC.systemHostName) as Promise<string>,
+  },
+  projects: {
+    pickFolder: () => ipcRenderer.invoke(IPC.projectsPickFolder) as Promise<string | null>,
+    // The page passes the dropped File, never a path: only a File from a real drop (or file picker) has one, so the
+    // page can't point main at a path of its choosing.
+    readDrop: (file) => {
+      const path = webUtils.getPathForFile(file);
+      return path === "" ? Promise.resolve<DropInfo>({ kind: "other" }) : (ipcRenderer.invoke(IPC.projectsReadDrop, path) as Promise<DropInfo>);
+    },
   },
   app: {
     onMenuCommand: (listener) => {

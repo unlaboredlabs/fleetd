@@ -5,7 +5,7 @@ import { InboxBody } from "./screens";
 import s from "./shell.module.css";
 
 /** The inbox panel on the right, over whatever screen is open. F5's cards fill it. */
-export function InboxPanel({ count, askId, onClose }: { count: number; askId: string | null; onClose: () => void }) {
+export function InboxPanel({ count, askId, onClose }: { count: number | undefined; askId: string | null; onClose: () => void }) {
   return (
     <aside className={s.inbox} aria-label="Needs you">
       <Panel
@@ -14,7 +14,7 @@ export function InboxPanel({ count, askId, onClose }: { count: number; askId: st
           <SectionHeader
             bordered
             title="Needs you"
-            count={count > 0 ? count : undefined}
+            count={count !== undefined && count > 0 ? count : undefined}
             actions={
               <Button variant="quiet" iconOnly aria-label="Close the inbox" title={`Close (Esc or ${display("inbox.toggle", window.fleetd.platform)})`} onClick={onClose}>
                 <X />

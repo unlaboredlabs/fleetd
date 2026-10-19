@@ -1,0 +1,115 @@
+// The order view's fixtures: each order's brief and newest claim (workstream_get, and order_get's claims), so the
+// done-when rows show passed, failed with the judge's reason, and not checked yet; and a told panel whose session
+// pinned two project overrides with long names (order-told-overrides).
+import { Fixture } from "../kit/fixture.ts";
+import { defineGroup } from "../kit/group.ts";
+import { at } from "../kit/ids.ts";
+import { asText, type JsonObject, type JsonValue, isObject } from "../kit/json.ts";
+import { arr, obj } from "../kit/stress.ts";
+import { LONG_PARAGRAPH, LONG_TITLE } from "../kit/text.ts";
+
+const REASON = "The card shows the last 30 days, not 7, and the public snapshot link asks for a login.";
+
+/** The newest claim on a brief: the first check passed, the judge's failed with its reason, the rest not run. */
+function claim(f: Fixture, workstreamId: string, n: number, checks: Array<JsonValue>, long: boolean): JsonObject {
+  const results = checks.slice(0, 2).map((spec, i) => {
+    const judge = isObject(spec) && spec["type"] === "judge";
+    const pass = i === 0 && !judge;
+    return {
+      checkIndex: i,
+      spec,
+      result: pass ? "pass" : "fail",
+      evidence: pass ? "" : long ? `${REASON} ${LONG_PARAGRAPH}`.slice(0, 2000) : REASON,
+      ranBy: judge ? "judge" : "hub",
+      at: at(f.now, -5 * 60_000),
+    };
+  });
+  return { claimId: `C${n}`, workstreamId, by: "human", at: at(f.now, -5 * 60_000), results, outcome: "fail" };
+}
+
+function withBriefs(f: Fixture, long = false): void {
+  const workstreams = f.answers("workstream_list").flatMap(({ output }) => arr(obj(output)["workstreams"]));
+  for (const [n, w] of workstreams.entries()) {
+    if (!isObject(w) || typeof w["workstreamId"] !== "string") continue;
+    const id = w["workstreamId"];
+    const checks = arr(obj(w["brief"])["doneWhen"]);
+    const claims = checks.length > 0 ? [claim(f, id, n + 1, checks, long)] : [];
+    f.answer("workstream_get", { workstreamId: id }, { workstream: w, asks: [], decisions: [], claims });
+    f.update("order_get", (out, input) => (input?.["workstreamId"] === id && isObject(out) ? { ...out, claims } : out));
+  }
+}
+
+/** Each agent's last items, for its steer sheet: its brief from fleetd, a command, a reply in markdown. */
+function withAgentTails(f: Fixture): void {
+  const lanes = f.answers("order_get").flatMap(({ output }) => [...arr(obj(obj(output)["order"])["lanes"]), ...arr(obj(output)["doneLanes"])]);
+  for (const lane of lanes) {
+    const ref = obj(obj(lane)["threadRef"]);
+    if (typeof ref["threadId"] !== "string" || typeof ref["machineId"] !== "string") continue;
+    const t = (s: number) => at(f.now, -s * 1000);
+    const items = [
+      { kind: "message", role: "assistant", at: t(30), text: "Done with the receipt dates: every shipped locale now formats through **Intl**, and the tests pass." },
+      { kind: "action", at: t(60), action: { at: t(60), kind: "command", status: "completed", failed: false, summary: "pnpm test --filter storefront-checkout" } },
+      { kind: "message", role: "user", at: t(600), text: "### Task\nMove receipt date formatting to `Intl.DateTimeFormat`.\n\n- keep the en-GB output\n- open a PR when done" },
+    ];
+    f.answer("thread_tail", { machineId: ref["machineId"], threadId: ref["threadId"], n: 20 }, { items, thread: obj(f.answers("thread_tail")[0]?.output)["thread"] ?? {} });
+  }
+}
+
+/**
+ * The shared conversation answers thread_tail and steers_list without `n`/`limit`, so the recorded answers to the
+ * order view's own inputs (n 50, limit 100) would win as more specific; answer those inputs with the conversation.
+ */
+function conversationForOrderView(f: Fixture): void {
+  for (const [tool, extra] of [["thread_tail", { n: 50 }], ["steers_list", { limit: 100 }]] as const) {
+    for (const { input, output } of f.answers(tool)) {
+      if (input === undefined || Object.keys(extra).some((k) => k in input)) continue;
+      f.answer(tool, { ...input, ...extra }, output);
+    }
+  }
+}
+
+/** The lead is mid-reply while its lines stream in (a stream into an idle lead would be a stale copy). */
+function leadWorking(f: Fixture): void {
+  f.update("order_get", (out) => {
+    const lead = obj(obj(out)["lead"]);
+    if (Object.keys(lead).length === 0) return out;
+    return { ...obj(out), lead: { ...lead, status: "working", live: { ...obj(lead["live"]), status: "working" } } };
+  });
+}
+
+const both = (f: Fixture, long = false) => {
+  withBriefs(f, long);
+  withAgentTails(f);
+};
+
+export default defineGroup({
+  extend: {
+    typical: (f) => both(f),
+    "long-text": (f) => both(f, true),
+    "many-agents": (f) => both(f),
+    conversation: (f) => {
+      both(f);
+      conversationForOrderView(f);
+    },
+    "conversation-20k": (f) => {
+      both(f);
+      conversationForOrderView(f);
+      leadWorking(f);
+    },
+  },
+  fixtures: (base) => [
+    (() => {
+      const f = Fixture.from(base("conversation"), "order-told-overrides", "What an agent was told: two prompts overridden for the project, one with a long title.");
+      f.update("session_prompt_get", (out) => {
+        const session = obj(obj(out)["session"]);
+        const refs = arr(session["refs"]).map((r, i) => (isObject(r) && i < 2 ? { ...r, scope: "project" } : r));
+        return { ...obj(out), session: { ...session, refs } };
+      });
+      f.update("prompts_list", (out) => {
+        const prompts = arr(obj(out)["prompts"]).map((p, i) => (isObject(p) && i === 0 ? { ...p, title: `${asText(p["title"])}: ${LONG_TITLE}` } : p));
+        return { ...obj(out), prompts };
+      });
+      return f;
+    })(),
+  ],
+});

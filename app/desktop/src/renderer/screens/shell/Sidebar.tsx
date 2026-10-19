@@ -54,12 +54,20 @@ export function Sidebar({ data, route, seen, hub, jumpHints, go }: SidebarProps)
           </Button>
         }
       >
-        {data.projects.length === 0 ? (
+        {data.projects === undefined ? (
+          // Loading (startup, or a resync after the link dropped): never the "no projects" sentence, never old rows.
+          // Busy only while something is on its way, not while the hub is unreachable.
+          <div className={s.sidebarSkeleton} aria-busy={hub?.phase === "live" || hub?.phase === "connecting"} aria-label="Loading projects">
+            <span />
+            <span />
+            <span />
+          </div>
+        ) : data.projects.length === 0 ? (
           <Text as="p" size="xs" tone="quiet" className={s.sidebarNote}>
             No projects yet. Add one: a GitHub repo, or a folder on one of your machines.
           </Text>
         ) : null}
-        {data.projects.map((p) => {
+        {data.projects?.map((p) => {
           const selected = screen.id === "board" && sameProject(screen.project, p.key);
           const unread = !selected && seen.unread(p.key, p.lastActivityAt);
           return (

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyFrame, applyLive, ingest, initialState, type DataState } from "./store";
+import { applyFrame, applyLive, applyStreams, ingest, initialState, type DataState } from "./store";
 import { selectBoard, selectConnection, selectInbox, selectNeedsYouCount, selectOrder } from "./selectors";
 import { ask, card, event, lane, live, liveLane, project, snapshot } from "./fixtures.test-util";
 import type { HubFrame } from "../../../shared/hub";
@@ -141,6 +141,16 @@ describe("live frames", () => {
     expect(l.lanes["T1"]?.activity).toBeUndefined();
     l = applyLive(l, frame(true, [liveLane("T2", "queued")]), 0);
     expect(Object.keys(l.lanes)).toEqual(["T2"]);
+  });
+
+  it("keeps a lead's messages in full past the text tail, and no stream for other lanes", () => {
+    const parts = Array.from({ length: 30 }, (_, i) => ({ laneId: "lead:devbox/p1", messageId: i < 20 ? "m1" : "m2", append: `${"x".repeat(299)}\n` }));
+    const f = { ...frame(false, []), text: [...parts, { laneId: "T1", messageId: "t", append: "hi" }] };
+    const streams = applyStreams(undefined, f);
+    expect(streams?.["lead:devbox/p1"]?.map((m) => [m.messageId, m.text.length])).toEqual([["m1", 6000], ["m2", 3000]]);
+    expect(applyLive(initialState().live, f, 0).text["lead:devbox/p1"]?.text).toHaveLength(2000);
+    expect(streams?.["T1"]).toBeUndefined();
+    expect(applyStreams(streams, frame(false, []))).toBe(streams);
   });
 
   it("appends streamed text per message, keeping a 2000-unit tail", () => {

@@ -84,14 +84,23 @@ describe("toShellData", () => {
 
   it("lists each project's open orders in board order, and recently finished ones for a while", () => {
     const data = toShellData(inputs, now);
-    expect(data.projects.map((p) => p.orders.map((o) => o.id))).toEqual([["W14", "W12", "W9"], []]);
+    expect(data.projects?.map((p) => p.orders.map((o) => o.id))).toEqual([["W14", "W12", "W9"], []]);
   });
 
   it("counts what needs you, running agents, stalled leads and machines down", () => {
-    const [front, back] = toShellData(inputs, now).projects;
+    const [front, back] = toShellData(inputs, now).projects ?? [];
     expect(front).toMatchObject({ needsYou: 1, running: 2, stalled: false });
     expect(front?.orders[0]?.needsYou).toBe(true);
     expect(back).toMatchObject({ needsYou: 0, running: 0, stalled: true });
-    expect(toShellData(inputs, now)).toMatchObject({ machinesDown: 1, needsYou: 2 });
+    expect(toShellData(inputs, now)).toMatchObject({ machinesDown: 1 });
+  });
+
+  it("says nothing about projects, orders or asks it hasn't loaded yet", () => {
+    expect(toShellData({ ...inputs, projects: undefined }, now).projects).toBeUndefined();
+    const listed = toShellData({ ...inputs, board: undefined, inbox: undefined }, now).projects ?? [];
+    expect(listed.map((p) => [p.orders.length, p.needsYou])).toEqual([
+      [0, 0],
+      [0, 0],
+    ]);
   });
 });
