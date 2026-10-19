@@ -3,10 +3,33 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { cx } from "../lib/cx";
 import { Button } from "../primitives/Button";
+import { toast } from "../primitives/Toast";
 import { Code, InlineCode } from "./Code";
 import s from "./Markdown.module.css";
 
 const REMARK = [remarkGfm];
+
+/**
+ * A link that main opens in the browser (window.fleetd.openExternal decides which hosts; nothing navigates the app).
+ * A refused link says why in a toast. A link without a web address (react-markdown blanks unsafe schemes) is text.
+ */
+function ExternalLink({ href, children }: { href: string | undefined; children: ReactNode }) {
+  if (!href || !/^https?:\/\//i.test(href)) return <span>{children}</span>;
+  return (
+    <a
+      href={href}
+      title={href}
+      onClick={(e) => {
+        e.preventDefault();
+        void window.fleetd.openExternal(href).then((outcome) => {
+          if (!outcome.ok) toast({ title: "Link not opened", description: outcome.message, tone: "warning", key: "link-refused" });
+        });
+      }}
+    >
+      {children}
+    </a>
+  );
+}
 
 /** The text inside a fenced block's <code> element (react-markdown hands it over as children). */
 function fenceOf(children: ReactNode): { code: string; lang: string | null } | null {
@@ -25,21 +48,9 @@ const COMPONENTS: Components = {
     return fence ? <Code code={fence.code} lang={fence.lang} /> : <pre>{children}</pre>;
   },
   code: ({ children }) => <InlineCode>{children}</InlineCode>,
-  // https links open in the user's browser (main's window-open handler); nothing navigates the app itself.
-  a: ({ href, children }) => (
-    <a href={href} target="_blank" rel="noreferrer" title={href}>
-      {children}
-    </a>
-  ),
+  a: ({ href, children }) => <ExternalLink href={href}>{children}</ExternalLink>,
   // No remote content: an image becomes its alt text as a link.
-  img: ({ src, alt }) =>
-    typeof src === "string" ? (
-      <a href={src} target="_blank" rel="noreferrer" title={src}>
-        {alt || "image"}
-      </a>
-    ) : (
-      <span>{alt}</span>
-    ),
+  img: ({ src, alt }) => <ExternalLink href={typeof src === "string" ? src : undefined}>{alt || "image"}</ExternalLink>,
   table: ({ children }) => (
     <div className={s.tableWrap}>
       <table>{children}</table>
