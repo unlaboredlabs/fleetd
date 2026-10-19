@@ -3496,7 +3496,8 @@
           "description": "A stale source answered again; `data.source`, `data.staleMs`.",
           "type": "string"
         }
-      ]
+      ],
+      "x-open": true
     },
     "HumanWait": {
       "properties": {
