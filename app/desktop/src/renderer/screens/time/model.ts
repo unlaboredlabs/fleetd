@@ -61,6 +61,12 @@ export interface Model {
   readonly parallel: ReadonlySet<number>;
   /** parent span id → its children (a message's phases, a group's calls), as span indexes. */
   readonly children: ReadonlyMap<number, readonly number[]>;
+  /**
+   * span id → the id of the span whose bar shows it: itself when drawn, its group for a call inside
+   * `tools.parallel`. Spans with no bar (envelopes, idle, gaps) are absent. Lighting and listing go through it, so
+   * what is lit and what is listed are the same set.
+   */
+  readonly barOf: ReadonlyMap<number, number>;
   readonly hasPath: boolean;
   /** The hub sent only the first 400 steps of a longer path. */
   readonly pathTruncated: boolean;
@@ -125,6 +131,12 @@ export const buildModel = (
   };
   for (const s of spans) if (s.kind === "gap") addGap(s.lane, [s.startMs, s.endMs ?? nowMs, "node_dropped"]);
   for (const g of coverage?.gaps ?? []) if (g.lane !== undefined) addGap(g.lane, [g.fromMs, g.toMs, g.why]);
+
+  const barOf = new Map<number, number>();
+  for (const s of spans) {
+    if (drawn(s)) barOf.set(s.id, s.id);
+    else if (s.parent !== undefined && parallel.has(s.id)) barOf.set(s.id, s.parent);
+  }
 
   const groups = new Map<string, { first: number; kind: RowKind; items: number[] }>();
   spans.forEach((s, i) => {
@@ -273,6 +285,7 @@ export const buildModel = (
     path: segs,
     parallel,
     children,
+    barOf,
     hasPath: path !== undefined,
     pathTruncated: path?.segmentsTruncated === true,
   };
@@ -434,3 +447,13 @@ export const padded = (a: number, b: number): [number, number] => {
 
 /** The category's display label, re-exported for the canvas legend. */
 export const catLabel = (code: number): string => CAT_LABEL[CATEGORIES[code] ?? "idle"];
+
+/** The bars that show these spans: what a highlight lights, and so what its list lists. */
+export const barsFor = (m: Model, ids: Iterable<number>): Set<number> => {
+  const out = new Set<number>();
+  for (const id of ids) {
+    const bar = m.barOf.get(id);
+    if (bar !== undefined) out.add(bar);
+  }
+  return out;
+};
