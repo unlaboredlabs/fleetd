@@ -40,7 +40,7 @@ export const toggleInboxHash = (hash: string): string => {
 
 export const defaultCommands = (): Command[] => [
   { id: "palette.toggle", title: "Command palette", group: "actions", searchOnly: true, run: togglePalette },
-  { id: "shortcuts.show", title: "Keyboard shortcuts", group: "actions", keywords: ["keys", "hotkeys", "help"], run: toggleShortcuts },
+  { id: "shortcuts.show", title: "Keyboard shortcuts", group: "actions", searchOnly: true, keywords: ["keys", "hotkeys", "help"], run: toggleShortcuts },
   { id: "board.open", title: "Board", detail: "Every open order", group: "go-to", run: () => go("#/board") },
   {
     id: "inbox.toggle",

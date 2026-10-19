@@ -12,7 +12,7 @@ import { useEffect, useRef } from "react";
 import type { ShortcutId } from "../../../shared/shortcuts";
 
 /** Listed in this order when nothing is typed; also the tie-break when two items score the same. */
-export const GROUPS = ["needs-you", "orders", "actions", "go-to", "projects", "machines", "settings", "prompts"] as const;
+export const GROUPS = ["needs-you", "orders", "go-to", "actions", "projects", "machines", "settings", "prompts"] as const;
 export type Group = (typeof GROUPS)[number];
 
 export const GROUP_LABELS: Readonly<Record<Group, string>> = {

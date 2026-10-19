@@ -63,6 +63,10 @@
   font: inherit;
   font-size: var(--text-lg);
 }
+/* The palette is the field: its frame shows focus, so the input needs no ring of its own. */
+.input:focus-visible {
+  box-shadow: none;
+}
 .input::placeholder {
   color: var(--faint);
 }
