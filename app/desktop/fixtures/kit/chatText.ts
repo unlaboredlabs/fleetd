@@ -75,6 +75,15 @@ export const longChat = (n: number): Array<Line> => {
 /** The lead's message being written right now: what has streamed so far. */
 export const STREAMING_SO_FAR = "Both reviews are in. The first one passed; the second wants the locale tests to cover en-GB and de-DE before";
 
+/** What streams in after it, one append per frame; the message is still unfinished at the end. */
+export const STREAMING_REST = [
+  " it approves.",
+  "\n\nThe writer is adding them now:\n\n",
+  "- `en-GB`: 19 Oct 2026\n",
+  "- `de-DE`: 19.10.2026\n",
+  "\nCI runs again when they're in. Nothing needs you",
+];
+
 /** Orders from before the chat, as the migration shows them: what was asked, and how it ended. */
 export const MIGRATED: ReadonlyArray<{ readonly asked: string; readonly outcome: string }> = [
   { asked: "Move invoice and receipt dates from moment to Intl, with tests for every locale we ship", outcome: "Done: 2 PRs merged." },

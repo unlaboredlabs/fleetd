@@ -225,9 +225,7 @@ export class Fixture {
       const afterMs = Math.max(0, Math.round(ms - previous));
       if (afterMs > MAX_AFTER_MS) throw new Error(`${this.name}: a frame ${afterMs} ms after the one before it; main allows ${MAX_AFTER_MS}`);
       previous = Math.max(previous, ms);
-      if (kind === "snapshot") frames.push({ t: "snapshot", snapshot: { ...payload, cursor: num(payload["cursor"]) }, afterMs });
-      else if (kind === "event") frames.push({ t: "event", event: { ...payload, seq: num(payload["seq"]), type: asText(payload["type"]) }, afterMs });
-      else frames.push({ t: "live", frame: { ...payload, full: payload["full"] === true }, afterMs });
+      frames.push(timedFrame(kind, payload, afterMs));
     }
     // A delayed answer is part of what the screen waits for, too.
     const slowest = Math.max(0, ...this.calls.map((c) => c.delayMs ?? 0));

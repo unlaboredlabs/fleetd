@@ -74,6 +74,7 @@ export const fixtures = [
   "chat-gated",
   "chat-waiting",
   "chat-empty",
+  "status-rows",
   // F5 (A5): a chat with every state of the two inline items (fixtures/inline).
   "inline-items",
 ] as const;
@@ -215,7 +216,6 @@ export const screens: readonly Screen[] = [
     route: CHAT,
     fixtures: ["chat-secret", "chat-gated", "long-text"],
     variant: "inline-chat",
-    pending: "fixtures/chat (E3b)",
   },
   // A9 (F9): Max agents in the chat header, at the cap with work queued (Settings has it under settings.agents).
   {

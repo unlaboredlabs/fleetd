@@ -9,8 +9,8 @@ import { at } from "./ids.ts";
 import { isObject, type JsonObject, asText } from "./json.ts";
 import { arr, busiestOrder, longText, manyAgents, manyPrompts, NODE_TOO_OLD, obj, streamedLines, timeSpans } from "./stress.ts";
 import { explainLoss } from "../../src/main/hub/explain.ts";
-import { answerRows, commandApproval, LOG, SCREENSHOT, type Draft, firstProject, fromLines, liveStrip, migrated, type Ref, secretRequest, setChatState, statusRow, writeChat } from "./chat.ts";
-import { longChat, QUESTION, STREAMING_SO_FAR, TERSE } from "./chatText.ts";
+import { answerRows, commandApproval, LOG, SCREENSHOT, type Draft, firstProject, fromLines, liveStrip, migrated, type Ref, secretRequest, statusRow, streamReply, writeChat } from "./chat.ts";
+import { longChat, QUESTION, STREAMING_REST, STREAMING_SO_FAR, TERSE } from "./chatText.ts";
 import { uuid } from "./ids.ts";
 import { LONG_TITLES, ofLength } from "./text.ts";
 
@@ -167,7 +167,16 @@ const withProjectsMix = (f: Fixture): Fixture => {
   f.snapshot["chats"] = [];
   const rows = PROJECTS.map((p) => {
     const ref: Ref = { machineId: p.machine, projectId: id(p.title) };
-    setChatState(f, ref, { needsYou: p.needsYou, leadWorking: p.working, lastSeq: p.title === "mobile" ? 0 : 12, lastMessageAt: at(f.now, -120_000) });
+    // Every project has a chat, so opening any of them (the frame opens the first) shows it rather than an error.
+    const drafts: Array<Draft> =
+      p.title === "mobile"
+        ? []
+        : p.needsYou
+          ? fromLines(QUESTION).slice(0, 1)
+          : p.row === "blocked"
+            ? [{ author: "lead", text: `Stuck: ${p.extra?.blocked ?? "blocked"}. I'll pick it up as soon as that clears.` }]
+            : [{ author: "human", text: "how's it going" }, { author: "lead", text: p.working ? "Agents are on it. Nothing needs you." : "All done. Nothing running." }];
+    writeChat(f, ref, drafts, { needsYou: p.needsYou, leadWorking: p.working });
     return statusRow(f, ref, p.title, p.row, p.extra);
   });
   return answerRows(f, rows);
@@ -177,14 +186,17 @@ const chatFixtures = (copy: (name: SharedName, note: string) => Fixture): Array<
   const strip = (f: Fixture, n: number) => liveStrip(f, firstProject(f), n);
   return [
     withChat(copy("chat-long", `${String(LONG)}+ messages in the first project's chat, paged 50 at a time: migrated past orders first, Markdown, code, lists, the lead's numbered question and terse replies.`), longDrafts()),
-    strip(
-      withChat(
-        copy("chat-streaming", "The lead mid-reply (a streaming message with partial text) while 3 agents work under it."),
-        [...fromLines(QUESTION), { author: "lead", text: STREAMING_SO_FAR, state: "streaming" }],
-        { leadWorking: true },
-      ),
-      3,
-    ),
+    (() => {
+      const f = strip(
+        withChat(
+          copy("chat-streaming", "The lead mid-reply: its message streams in over the live chat feed, still unfinished, while 3 agents work under it."),
+          [...fromLines(QUESTION), { author: "lead", text: STREAMING_SO_FAR, state: "streaming" }],
+          { leadWorking: true },
+        ),
+        3,
+      );
+      return streamReply(f, firstProject(f), STREAMING_REST);
+    })(),
     withChat(copy("chat-attachments", "A screenshot and a log file sent to the lead, and its reply."), [
       ...fromLines(QUESTION),
       { author: "human", text: "the receipt looks off on mobile, see screenshot + log", attachments: [SCREENSHOT, LOG] },
