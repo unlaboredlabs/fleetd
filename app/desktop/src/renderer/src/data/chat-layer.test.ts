@@ -46,9 +46,9 @@ const page = (messages: ChatMessage[], { moreBefore = false, needsYou = false } 
   ok: true,
   output: { messages, moreBefore, moreAfter: false, state: { projectRef: ref, needsYou, leadWorking: false, lastSeq: messages.at(-1)?.seq ?? 0 } },
 });
-const delta = (messageId: string, index: number, append: string): HubFrame => ({
+const delta = (messageId: string, offset: number, append: string): HubFrame => ({
   t: "chat_delta",
-  delta: { projectRef: ref, messageId, seq: 3, index, append },
+  delta: { projectRef: ref, messageId, seq: 3, offset, append },
 });
 const messageEvent = (seq: number, m: ChatMessage, carry = true): HubFrame =>
   chatEvent(seq, "chat.message", {
@@ -135,7 +135,7 @@ describe("chat history", () => {
     fake.send(delta("m3", 0, "Looking"));
     fake.send(delta("m3", 0, "Looking"));
     expect(selectChat(KEY)(layer.store.getState())?.items.at(-1)).toMatchObject({ id: "m3", text: "Looking", state: "streaming" });
-    fake.send(delta("m3", 5, "!"));
+    fake.send(delta("m3", 50, "!"));
     await Promise.resolve();
     expect(fake.of("chat_history")).toHaveLength(2);
     fake.of("chat_history")[1]?.answer(page([msg(2), msg(3, { text: "Looking at it now", updatedAt: "2026-10-19T10:01:00.000Z" })]));

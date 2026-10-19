@@ -14,7 +14,7 @@ import {
   type Chat,
   type ChatSend,
 } from "./chat";
-import type { ChatHistoryOutput, ChatSendInput } from "./chat-contract";
+import type { AttachmentRef, ChatHistoryOutput, ChatSendInput } from "./chat-contract";
 import { chatOf, type DataState, type DataStore, type ProjectKey } from "./store";
 
 /** "sent": the hub has it. "pending": cut off, resent when the link is back. "failed": not sent, its row says why.
@@ -39,7 +39,8 @@ export interface ChatActions {
    * Sends the person's message. `clientRequestId` is the composed message's own (one per message, reused on every
    * retry); minted when absent. Its row shows at once and settles on the hub's echo.
    */
-  send(key: ProjectKey, input: { text: string; attachments?: readonly string[] }, clientRequestId?: string): Promise<SendOutcome>;
+  /** `attachments`: what attachment_put stored, so the pending row shows them before the hub's copy. */
+  send(key: ProjectKey, input: { text: string; attachments?: readonly AttachmentRef[] }, clientRequestId?: string): Promise<SendOutcome>;
   /** Sends a row again under its own id. */
   retry(key: ProjectKey, clientRequestId: string): Promise<SendOutcome | undefined>;
   discard(key: ProjectKey, clientRequestId: string): void;
@@ -164,7 +165,7 @@ export const createChatActions = (
       projectRef: refOf(key),
       text: row.text,
       clientRequestId: row.clientRequestId,
-      ...(row.attachments.length === 0 ? {} : { attachments: [...row.attachments] }),
+      ...(row.attachments.length === 0 ? {} : { attachments: row.attachments.map((a) => a.attachmentId) }),
     };
     for (let attempt = 0; ; attempt++) {
       const r = await call("chat_send", input);
