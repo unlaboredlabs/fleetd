@@ -36,6 +36,16 @@ export const OpenTarget = z.discriminatedUnion("kind", [
 ]);
 export type OpenTarget = z.infer<typeof OpenTarget>;
 
+/** Whether this app is the OS handler for fleetd:// links. A dev build never is, and never claims. */
+export interface LinkHandlerStatus {
+  readonly packaged: boolean;
+  readonly handler: boolean;
+}
+
+/** What may ask main to claim the scheme: the Settings action, or onboarding after a pairing link failed. */
+export const LinkHandlerClaim = z.enum(["user", "pair-failed"]);
+export type LinkHandlerClaim = z.infer<typeof LinkHandlerClaim>;
+
 export const NotifyRequest = z.strictObject({
   /** A later notification with the same tag replaces the earlier one. */
   tag: z.string().regex(/^[a-z0-9-]{1,32}$/u),

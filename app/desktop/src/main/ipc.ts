@@ -4,6 +4,7 @@ import { parseRequest, type RequestArgs } from "../shared/ipc";
 import type { OpenOutcome } from "../shared/hub";
 import { externalUrl } from "./external";
 import type { HubService } from "./hub/service";
+import { claimLinkHandler, linkHandlerStatus } from "./linkHandlerMain";
 import { applyMenuState } from "./menuState";
 import type { Notifier } from "./notify";
 import type { Opener } from "./opener";
@@ -49,5 +50,6 @@ export const registerIpc = (hub: HubService, frame: { opener: Opener; notifier: 
   });
   handle(IPC.appReady, () => frame.opener.ready());
   handle(IPC.appNotify, (_event, request) => frame.notifier.show(request));
+  handle(IPC.appLinkHandler, (_event, claim) => (claim === null ? linkHandlerStatus() : claimLinkHandler(claim)));
   handle(IPC.appMenuState, (_event, enabled) => applyMenuState(Menu.getApplicationMenu(), enabled));
 };

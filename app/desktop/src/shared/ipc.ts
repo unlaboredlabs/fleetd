@@ -1,7 +1,7 @@
 // Runtime validation of every renderer → main request. The renderer is treated as untrusted: main parses each
 // argument list here before any handler runs, and refuses anything else.
 import { z } from "zod";
-import { NotifyRequest } from "./app";
+import { LinkHandlerClaim, NotifyRequest } from "./app";
 import { MenuState } from "./menu";
 import { IPC, type InvokeChannel } from "./channels";
 
@@ -103,6 +103,7 @@ export const REQUESTS = {
   [IPC.appReady]: none,
   [IPC.appNotify]: z.tuple([NotifyRequest]),
   [IPC.appMenuState]: z.tuple([MenuState]),
+  [IPC.appLinkHandler]: z.tuple([LinkHandlerClaim.nullable()]),
   // The URL rules live in main (main/external.ts), which answers with the reason; this only bounds the size.
   [IPC.openExternal]: z.tuple([z.string().max(8192)]),
 } as const satisfies Record<InvokeChannel, z.ZodType>;
