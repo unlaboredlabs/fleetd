@@ -32,9 +32,10 @@ next    P14 switch the default provider (after P12), P16 docs page
 done    P9 webhook outbox   #208 merged by the train 13:12 · check 2 passed C7
 ```
 
-`fleetd status W41` shows one order and `fleetd status` the fleet. `--watch` keeps it on screen and prints each new
-version as the hub sends it; there is no refresh interval, so nothing changes unless something happened. Elsewhere,
-add `--hub <url> --key-file <path>`. See the [CLI reference](cli.md#status) for every option.
+`fleetd status W41` shows one order and `fleetd status` the fleet. An order you just sent has nothing to show until
+its lead writes the brief: status says `W41 is a draft: waiting for the lead's brief`, and `--watch` waits for it.
+`--watch` keeps it on screen and prints each new version as the hub sends it; there is no refresh interval, so
+nothing changes unless something happened. Elsewhere, add `--hub <url> --key-file <path>`. See the [CLI reference](cli.md#status) for every option.
 
 ## What the number means
 
@@ -77,8 +78,13 @@ closed with W41, not separately verified"), or of an order that was stopped.
 
 "Waiting on" follows the critical path: the item in progress that the most unfinished work runs through, what it
 still waits on in order (items it is `--after`, then its remaining stages such as review, CI, merge and done-when
-checks), and the items it holds up. Each row under `doing` shows its own path, `critical path` on that one item. An
-older hub without per-item paths lists up to three blockers instead.
+checks), and the items it holds up. Review is left out when the PR's tier asks for none. Each row under `doing` shows
+its own path, `critical path` on that one item. An older hub without per-item paths lists up to three blockers
+instead.
+
+A PR the merge train can't move is listed under risks with the train's error: a checkout outside the node's
+`cmdRoots` (with the fix, see [Config & files](config-and-files.md#fleetd)), a blocked train worktree, or a merge
+GitHub refused.
 
 An item that has spent over 1.5 times the usual time in its current stage is marked `SLOWER THAN USUAL` on its row and
 listed under risks, measured against how long that stage normally takes in this project.

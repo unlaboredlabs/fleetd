@@ -74,6 +74,14 @@ a hub check <code>hub/&lt;name&gt;</code> is <code>#hub-&lt;name&gt;</code>, a m
 [exit 4]</span></code></pre>
 <p>Run <code>fleetd init</code>. If you run the hub yourself (<code>--no-service</code>), start it with <code>fleetd hub start</code>. The log is
 <code>~/.fleetd/hub/hub.log</code>.</p>
+<h2 id="no-setup">The home has no hub set up<a class="anchor" href="#no-setup" aria-label="Link to this section">#</a></h2>
+<blockquote>
+<p>/tmp/fleet2/hub has no hub set up. Fix: a hub you started yourself answers there: fleetd init --no-service --home
+/tmp/fleet2/hub --listen 127.0.0.1:4797</p>
+</blockquote>
+<p><code>fleetd init</code> writes the hub's <code>setup.json</code> and the CLI's key; a hub started only with <code>fleetd hub start</code> has neither.
+Run the command the fix names: with <code>--no-service</code> it leaves the running hub alone. With no hub running there, the
+fix is plain <code>fleetd init</code> (with <code>--home</code> when it isn't the default).</p>
 <h2 id="hub-reachable">The hub doesn't answer at its own address<a class="anchor" href="#hub-reachable" aria-label="Link to this section">#</a></h2>
 <blockquote>
 <p>The hub does not answer at its own address http://…/healthz (…).</p>
@@ -161,6 +169,15 @@ is ….</p>
 <p>For one that joined with a code, run <code>fleetd pair --worker laptop</code> on the hub, then the command it prints on the
 machine. Without a hub identity, set one on the machine:
 <code>git config --global user.email '&lt;id&gt;+&lt;user&gt;@users.noreply.github.com'</code>.</p>
+<h2 id="cmd-roots">A project is outside cmdRoots<a class="anchor" href="#cmd-roots" aria-label="Link to this section">#</a></h2>
+<blockquote>
+<p>The node on laptop won't run commands in /srv/work/storefront (outside its cmdRoots), so the merge train can't
+merge its PRs.</p>
+</blockquote>
+<p>A node runs commands, the merge train's git included, only in its <code>cmdRoots</code>: your home directory unless <code>node.json</code>
+lists others. Move the checkout into your home directory, or add its directory to <code>cmdRoots</code> in
+<code>~/.fleetd/node/node.json</code> on that machine and restart the node (see <a href="/docs/config-and-files#fleetd">Config &amp; files</a>).
+Status lists each PR this holds under risks.</p>
 <h2 id="disk">Low disk space<a class="anchor" href="#disk" aria-label="Link to this section">#</a></h2>
 <blockquote>
 <p>… free under ~ on laptop; fleetd needs at least 5.0 GB.</p>
@@ -199,6 +216,7 @@ or, once the login has capacity, call <code>usage_resume</code> for that machine
 <p>On this page</p>
 <ul>
 <li><a href="#no-hub">The hub doesn't answer</a></li>
+<li><a href="#no-setup">The home has no hub set up</a></li>
 <li><a href="#hub-reachable">The hub doesn't answer at its own address</a></li>
 <li><a href="#hub-gh_auth">gh is not installed or not logged in</a></li>
 <li><a href="#hub-claude_login">claude on the hub is not logged in</a></li>
@@ -209,6 +227,7 @@ or, once the login has capacity, call <code>usage_resume</code> for that machine
 <li><a href="#claude_login">claude is not logged in on a worker</a></li>
 <li><a href="#runner_conformance">claude doesn't answer the protocol probe</a></li>
 <li><a href="#commit_identity">No or the wrong commit identity</a></li>
+<li><a href="#cmd-roots">A project is outside cmdRoots</a></li>
 <li><a href="#disk">Low disk space</a></li>
 <li><a href="#sleep">A machine sleeps when idle</a></li>
 <li><a href="#usage_breaker">The usage breaker is open</a></li>

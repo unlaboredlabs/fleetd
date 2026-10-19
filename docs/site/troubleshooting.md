@@ -33,6 +33,15 @@ $ fleetd doctor
 Run `fleetd init`. If you run the hub yourself (`--no-service`), start it with `fleetd hub start`. The log is
 `~/.fleetd/hub/hub.log`.
 
+## The home has no hub set up {#no-setup}
+
+> /tmp/fleet2/hub has no hub set up. Fix: a hub you started yourself answers there: fleetd init --no-service --home
+> /tmp/fleet2/hub --listen 127.0.0.1:4797
+
+`fleetd init` writes the hub's `setup.json` and the CLI's key; a hub started only with `fleetd hub start` has neither.
+Run the command the fix names: with `--no-service` it leaves the running hub alone. With no hub running there, the
+fix is plain `fleetd init` (with `--home` when it isn't the default).
+
 ## The hub doesn't answer at its own address {#hub-reachable}
 
 > The hub does not answer at its own address http://…/healthz (…).
@@ -166,6 +175,16 @@ For the hub's own machine, the finding prints `fleetd machine add --local`.
 For one that joined with a code, run `fleetd pair --worker laptop` on the hub, then the command it prints on the
 machine. Without a hub identity, set one on the machine:
 `git config --global user.email '<id>+<user>@users.noreply.github.com'`.
+
+## A project is outside cmdRoots {#cmd-roots}
+
+> The node on laptop won't run commands in /srv/work/storefront (outside its cmdRoots), so the merge train can't
+> merge its PRs.
+
+A node runs commands, the merge train's git included, only in its `cmdRoots`: your home directory unless `node.json`
+lists others. Move the checkout into your home directory, or add its directory to `cmdRoots` in
+`~/.fleetd/node/node.json` on that machine and restart the node (see [Config & files](config-and-files.md#fleetd)).
+Status lists each PR this holds under risks.
 
 ## Low disk space {#disk}
 

@@ -5,7 +5,7 @@ order: 90
 description: Where fleetd keeps its state, the Claude login it uses, the project policy file, and its port.
 ---
 
-## ~/.fleetd
+## ~/.fleetd {#fleetd}
 
 ```text
 ~/.fleetd/
@@ -20,7 +20,7 @@ description: Where fleetd keeps its state, the Claude login it uses, the project
     prompts/<id>.md      your version of a prompt, hub-wide
     prompts/projects/<key>/<id>.md   the same for one project (<key> is a hash of the project)
   node/                  the node's home (every worker)
-    node.json            the hub it belongs to, its machine id and an optional claudeConfigDir
+    node.json            the hub it belongs to, its machine id, and optional claudeConfigDir and cmdRoots
     node-key.pem         proves the node to the hub
     node-box-key.pem     opens secrets sealed to this machine
     node.sock            the socket lead-side commands reach the hub through
@@ -31,6 +31,32 @@ description: Where fleetd keeps its state, the Claude login it uses, the project
 ```
 
 Prompts and instructions: [What agents are told](what-agents-are-told.md). `fleetd uninstall` keeps all of it; see [Updating & uninstall](updating-and-uninstall.md).
+
+`cmdRoots` in `node.json` lists the directories the node runs commands in, the merge train's git included (default:
+your home directory). A project's checkout must be inside one: `fleetd project add` refuses one outside, and
+`fleetd doctor` flags an existing one. To use a checkout elsewhere, add its directory and restart the node:
+
+```json
+{ "cmdRoots": ["/home/you", "/srv/work"] }
+```
+
+## A second fleet on one machine {#fleetd-home}
+
+Set `FLEETD_HOME` to keep a second fleet apart from the one in `~/.fleetd`. Every command then keeps all its state
+there: the hub in `$FLEETD_HOME/hub`, the node in `$FLEETD_HOME/node`, the CLI's own files, and the app's
+`app-pair.json` (start the desktop app with the same `FLEETD_HOME` to pair with it).
+
+```sh
+export FLEETD_HOME=/tmp/fleet2
+fleetd init --no-service --listen 127.0.0.1:4797
+fleetd status
+```
+
+`--home <dir>` names one hub's (or node's) directory; whatever else that command keeps goes in the directory above
+it, so `--home /tmp/fleet2/hub` works like `FLEETD_HOME=/tmp/fleet2`. `status`, `time`, `steer`, `steers`, `answer`
+and `hub github-webhook` take `--home` too. `FLEETD_HOME` wins when both are given. User services are per user, not
+per fleet: give the second fleet its own `--unit-suffix`, or run it with `--no-service`. fleetd refuses to take over
+the first fleet's services.
 
 ## Timelines {#timelines}
 
@@ -119,7 +145,7 @@ what a writer may touch.
 | Hub | `~/.config/systemd/user/fleetd-hub.service` | `~/Library/LaunchAgents/sh.fleetd.hub.plist` |
 | Node | `~/.config/systemd/user/fleetd-node.service` | `~/Library/LaunchAgents/sh.fleetd.node.plist` |
 
-`--unit-suffix <s>` adds a suffix to these names, for a second fleet on one machine.
+`--unit-suffix <s>` adds a suffix to these names, for a [second fleet on one machine](#fleetd-home).
 
 ## Ports and addresses
 
@@ -141,6 +167,7 @@ These variables in the hub's environment tune how it follows GitHub and merges; 
 ## The app
 
 The app's pairing hand-off from `fleetd init` or `fleetd pair` on the same machine is
-`~/.config/fleetd/app-pair.json` (macOS: `~/Library/Application Support/fleetd/app-pair.json`). Its hub key is in the
+`~/.config/fleetd/app-pair.json` (macOS: `~/Library/Application Support/fleetd/app-pair.json`), or
+`$FLEETD_HOME/app-pair.json` for a [second fleet](#fleetd-home). Its hub key is in the
 OS keychain, except in an unsigned or ad-hoc signed Mac build, which keeps it in
 `~/Library/Application Support/fleetd/hub.json` (mode 0600).

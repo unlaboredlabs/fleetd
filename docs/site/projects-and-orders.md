@@ -27,7 +27,10 @@ from: checkouts under `~/src`, `~/code`, `~/projects`, `~/dev` and similar on ev
 orgs' repos from `gh repo list`.
 
 - **Where.** A clone goes to the least busy online worker, into its `~/src` (or `~/code`, `~/projects`), unless you
-  pass `--machine <id>` or `--dest <dir>`. A path is on this machine unless you pass `--machine`.
+  pass `--machine <id>` or `--dest <dir>`. A path is on this machine unless you pass `--machine`. A checkout must be
+  under your home directory, or under a directory listed in `cmdRoots` in the worker's `node.json` (see
+  [Config & files](config-and-files.md#fleetd)): the node runs the merge train's git only there, so `fleetd project
+  add` refuses one outside.
 - **What the lead will need.** Before it clones, fleetd reads the repo's default branch, its CI (workflows and the
   checks the default branch requires) and its merge rules (branch protection, rulesets, whether squash merges are
   allowed), and says in one line what that means, such as `no CI found: the merge train will only use local checks`

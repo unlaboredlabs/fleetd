@@ -78,9 +78,10 @@ doing   P12 full test run   T88   critical path   waiting on review of #212 → 
         P15 provider cutover   T90   waiting on CI on #214
 next    P14 switch the default provider (after P12), P16 docs page
 done    P9 webhook outbox   #208 merged by the train 13:12 · check 2 passed C7</span></code></pre>
-<p><code>fleetd status W41</code> shows one order and <code>fleetd status</code> the fleet. <code>--watch</code> keeps it on screen and prints each new
-version as the hub sends it; there is no refresh interval, so nothing changes unless something happened. Elsewhere,
-add <code>--hub &lt;url&gt; --key-file &lt;path&gt;</code>. See the <a href="/docs/cli#status">CLI reference</a> for every option.</p>
+<p><code>fleetd status W41</code> shows one order and <code>fleetd status</code> the fleet. An order you just sent has nothing to show until
+its lead writes the brief: status says <code>W41 is a draft: waiting for the lead's brief</code>, and <code>--watch</code> waits for it.
+<code>--watch</code> keeps it on screen and prints each new version as the hub sends it; there is no refresh interval, so
+nothing changes unless something happened. Elsewhere, add <code>--hub &lt;url&gt; --key-file &lt;path&gt;</code>. See the <a href="/docs/cli#status">CLI reference</a> for every option.</p>
 <h2 id="what-the-number-means">What the number means<a class="anchor" href="#what-the-number-means" aria-label="Link to this section">#</a></h2>
 <p>The number is <strong>verified</strong> work plus credit for work <strong>in flight</strong>, as a share of the <strong>required</strong> work, by size. The
 bar shows the two apart: solid (█) is verified, shaded (▒) is in flight.</p>
@@ -111,8 +112,12 @@ closed with W41, not separately verified"), or of an order that was stopped.</p>
 <h2 id="what-it-waits-on">What it waits on<a class="anchor" href="#what-it-waits-on" aria-label="Link to this section">#</a></h2>
 <p>"Waiting on" follows the critical path: the item in progress that the most unfinished work runs through, what it
 still waits on in order (items it is <code>--after</code>, then its remaining stages such as review, CI, merge and done-when
-checks), and the items it holds up. Each row under <code>doing</code> shows its own path, <code>critical path</code> on that one item. An
-older hub without per-item paths lists up to three blockers instead.</p>
+checks), and the items it holds up. Review is left out when the PR's tier asks for none. Each row under <code>doing</code> shows
+its own path, <code>critical path</code> on that one item. An older hub without per-item paths lists up to three blockers
+instead.</p>
+<p>A PR the merge train can't move is listed under risks with the train's error: a checkout outside the node's
+<code>cmdRoots</code> (with the fix, see <a href="/docs/config-and-files#fleetd">Config &amp; files</a>), a blocked train worktree, or a merge
+GitHub refused.</p>
 <p>An item that has spent over 1.5 times the usual time in its current stage is marked <code>SLOWER THAN USUAL</code> on its row and
 listed under risks, measured against how long that stage normally takes in this project.</p>
 <p>Status never shows an ETA or a finish time. Durations it has measured, such as how long a CI run took or how long ago

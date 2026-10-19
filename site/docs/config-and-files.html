@@ -69,7 +69,7 @@
     prompts/&lt;id&gt;.md      your version of a prompt, hub-wide
     prompts/projects/&lt;key&gt;/&lt;id&gt;.md   the same for one project (&lt;key&gt; is a hash of the project)
   node/                  the node's home (every worker)
-    node.json            the hub it belongs to, its machine id and an optional claudeConfigDir
+    node.json            the hub it belongs to, its machine id, and optional claudeConfigDir and cmdRoots
     node-key.pem         proves the node to the hub
     node-box-key.pem     opens secrets sealed to this machine
     node.sock            the socket lead-side commands reach the hub through
@@ -78,6 +78,22 @@
   claude.env             optional extra environment for every claude fleetd starts
   logs/node.log          the node service's log</code></pre>
 <p>Prompts and instructions: <a href="/docs/what-agents-are-told">What agents are told</a>. <code>fleetd uninstall</code> keeps all of it; see <a href="/docs/updating-and-uninstall">Updating &amp; uninstall</a>.</p>
+<p><code>cmdRoots</code> in <code>node.json</code> lists the directories the node runs commands in, the merge train's git included (default:
+your home directory). A project's checkout must be inside one: <code>fleetd project add</code> refuses one outside, and
+<code>fleetd doctor</code> flags an existing one. To use a checkout elsewhere, add its directory and restart the node:</p>
+<pre class="code json" data-copy><code>{ &quot;cmdRoots&quot;: [&quot;/home/you&quot;, &quot;/srv/work&quot;] }</code></pre>
+<h2 id="fleetd-home">A second fleet on one machine<a class="anchor" href="#fleetd-home" aria-label="Link to this section">#</a></h2>
+<p>Set <code>FLEETD_HOME</code> to keep a second fleet apart from the one in <code>~/.fleetd</code>. Every command then keeps all its state
+there: the hub in <code>$FLEETD_HOME/hub</code>, the node in <code>$FLEETD_HOME/node</code>, the CLI's own files, and the app's
+<code>app-pair.json</code> (start the desktop app with the same <code>FLEETD_HOME</code> to pair with it).</p>
+<pre class="code sh" data-copy><code><span class="l">export FLEETD_HOME=/tmp/fleet2</span>
+<span class="l">fleetd init --no-service --listen 127.0.0.1:4797</span>
+<span class="l">fleetd status</span></code></pre>
+<p><code>--home &lt;dir&gt;</code> names one hub's (or node's) directory; whatever else that command keeps goes in the directory above
+it, so <code>--home /tmp/fleet2/hub</code> works like <code>FLEETD_HOME=/tmp/fleet2</code>. <code>status</code>, <code>time</code>, <code>steer</code>, <code>steers</code>, <code>answer</code>
+and <code>hub github-webhook</code> take <code>--home</code> too. <code>FLEETD_HOME</code> wins when both are given. User services are per user, not
+per fleet: give the second fleet its own <code>--unit-suffix</code>, or run it with <code>--no-service</code>. fleetd refuses to take over
+the first fleet's services.</p>
 <h2 id="timelines">Timelines<a class="anchor" href="#timelines" aria-label="Link to this section">#</a></h2>
 <p>The hub keeps the spans behind <a href="/docs/time-inspector">Where time went</a> in <code>hub.sqlite</code> for 30 days, and their daily
 totals and each finished order's critical path for 400 days (older ranges show those totals, without the commands
@@ -141,7 +157,7 @@ what a writer may touch.</p>
 <tr><td>Hub</td><td><code>~/.config/systemd/user/fleetd-hub.service</code></td><td><code>~/Library/LaunchAgents/sh.fleetd.hub.plist</code></td></tr>
 <tr><td>Node</td><td><code>~/.config/systemd/user/fleetd-node.service</code></td><td><code>~/Library/LaunchAgents/sh.fleetd.node.plist</code></td></tr>
 </tbody></table></div>
-<p><code>--unit-suffix &lt;s&gt;</code> adds a suffix to these names, for a second fleet on one machine.</p>
+<p><code>--unit-suffix &lt;s&gt;</code> adds a suffix to these names, for a <a href="#fleetd-home">second fleet on one machine</a>.</p>
 <h2 id="ports-and-addresses">Ports and addresses<a class="anchor" href="#ports-and-addresses" aria-label="Link to this section">#</a></h2>
 <p>The hub listens on one port, 4790 by default: on your tailnet address when <code>fleetd init</code> finds Tailscale, otherwise
 on <code>127.0.0.1</code> only. The desktop app, nodes and MCP clients all use it (<code>&lt;hub url&gt;/mcp</code> for MCP). Workers open no
@@ -156,7 +172,8 @@ port: their nodes dial out. Change it with <code>fleetd init --listen &lt;host:p
 </tbody></table></div>
 <h2 id="the-app">The app<a class="anchor" href="#the-app" aria-label="Link to this section">#</a></h2>
 <p>The app's pairing hand-off from <code>fleetd init</code> or <code>fleetd pair</code> on the same machine is
-<code>~/.config/fleetd/app-pair.json</code> (macOS: <code>~/Library/Application Support/fleetd/app-pair.json</code>). Its hub key is in the
+<code>~/.config/fleetd/app-pair.json</code> (macOS: <code>~/Library/Application Support/fleetd/app-pair.json</code>), or
+<code>$FLEETD_HOME/app-pair.json</code> for a <a href="#fleetd-home">second fleet</a>. Its hub key is in the
 OS keychain, except in an unsigned or ad-hoc signed Mac build, which keeps it in
 <code>~/Library/Application Support/fleetd/hub.json</code> (mode 0600).</p>
 <nav class="pn" aria-label="Previous and next">
@@ -169,6 +186,7 @@ OS keychain, except in an unsigned or ad-hoc signed Mac build, which keeps it in
 <p>On this page</p>
 <ul>
 <li><a href="#fleetd">~/.fleetd</a></li>
+<li><a href="#fleetd-home">A second fleet on one machine</a></li>
 <li><a href="#timelines">Timelines</a></li>
 <li><a href="#claude">The Claude login</a></li>
 <li><a href="#claude-env">claude.env</a></li>
