@@ -12,9 +12,9 @@ export function PaletteHost() {
   const overlay = useOverlay();
 
   useEffect(() => {
-    // Default priority: this effect runs after the screens' own (React runs a parent's effects last), and a
-    // built-in must still never shadow a screen's command.
-    const offDefaults = registerCommands(defaultCommands(), "default");
+    // The lowest priority: this effect runs after the screens' own and the screen modules' (time, settings), and a
+    // built-in must never shadow either.
+    const offDefaults = registerCommands(defaultCommands(), "builtin");
     // Another shortcut pressed over the shortcuts sheet closes it first, so the command isn't hidden behind it.
     const offKeys = installKeymap(window.fleetd.platform, paletteOpen, (id) => {
       if (id !== "palette.toggle" && id !== "shortcuts.show") closeOverlay();

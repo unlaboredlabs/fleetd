@@ -138,8 +138,26 @@ export type ConnTone = "success" | "warning" | "danger" | "quiet";
 /** `http://100.64.0.1:4790/` → `100.64.0.1:4790`. */
 const host = (hub: string): string => hub.replace(/^[a-z]+:\/\//iu, "").replace(/\/+$/u, "");
 
-/** The sidebar's last line. A retry says why rather than counting down, so nothing repaints every second. */
-export const connLine = (state: HubState | null): { readonly label: string; readonly tone: ConnTone } => {
+/** Socket errors as people say them; anything else (the client's own sentences) passes through. */
+const SOCKET_ERRORS: ReadonlyArray<readonly [RegExp, (host: string) => string]> = [
+  [/\bECONNREFUSED\b/u, (h) => `nothing is answering at ${h}; is the hub running?`],
+  [/\b(?:ENOTFOUND|EAI_AGAIN)\b/u, (h) => `can't find ${h}; check the address and the network`],
+  [/\b(?:ETIMEDOUT|ESOCKETTIMEDOUT)\b/u, (h) => `${h} didn't answer in time`],
+  [/\b(?:EHOSTUNREACH|ENETUNREACH|ENETDOWN)\b/u, (h) => `this computer can't reach ${h}; check the network or VPN`],
+  [/\b(?:ECONNRESET|EPIPE)\b/u, () => "the connection was cut"],
+  [/\bconnection ended \(1006\)/iu, () => "the connection dropped"],
+];
+
+/** "connect ECONNREFUSED devbox:4790" → "nothing is answering at devbox:4790; is the hub running?" */
+export const plainReason = (reason: string, hub: string): string => {
+  const at = /\b([\w.-]+:\d+)\b/u.exec(reason)?.[1] ?? host(hub);
+  for (const [pattern, say] of SOCKET_ERRORS) if (pattern.test(reason)) return say(at);
+  return reason.replace(/\.$/u, "");
+};
+
+/** The sidebar's last line. A fixture never says it is connected; a retry says why rather than counting down. */
+export const connLine = (state: HubState | null, fixture = false): { readonly label: string; readonly tone: ConnTone } => {
+  if (fixture) return { label: "Sample data, no hub", tone: "quiet" };
   switch (state?.phase) {
     case undefined:
       return { label: "Starting…", tone: "quiet" };
@@ -150,7 +168,7 @@ export const connLine = (state: HubState | null): { readonly label: string; read
     case "live":
       return { label: `Connected to ${host(state.hub)}`, tone: "success" };
     case "retrying":
-      return { label: `Reconnecting to ${host(state.hub)}: ${state.reason}`, tone: "warning" };
+      return { label: `Reconnecting: ${plainReason(state.reason, state.hub)}`, tone: "warning" };
     case "refused":
       return { label: "The hub refused this key", tone: "danger" };
   }
