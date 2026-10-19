@@ -19,7 +19,7 @@ export function Field(props: {
   description?: ReactNode;
   error?: ReactNode;
   children: ReactNode;
-  className?: string;
+  className?: string | undefined;
 }) {
   const id = useId();
   const descId = props.description ? `${id}-desc` : undefined;

@@ -44,6 +44,7 @@ export const REQUESTS = {
   [IPC.systemHostName]: none,
   [IPC.projectsPickFolder]: none,
   [IPC.projectsReadDrop]: z.tuple([DropPath]),
+  [IPC.copy]: z.tuple([z.string().max(1_000_000)]),
 } as const satisfies Record<InvokeChannel, z.ZodType>;
 
 export type RequestArgs<C extends InvokeChannel> = z.infer<(typeof REQUESTS)[C]>;

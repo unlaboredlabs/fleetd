@@ -17,7 +17,7 @@ export interface VirtualListProps<T> {
   followOutput?: boolean;
   /** Start at the end instead of the top. */
   startAtEnd?: boolean;
-  className?: string;
+  className?: string | undefined;
   /** For scroll-to-index and friends. */
   virtualizerRef?: RefObject<Virtualizer<HTMLDivElement, Element> | null>;
   "aria-label"?: string;

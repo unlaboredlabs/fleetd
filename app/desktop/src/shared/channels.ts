@@ -22,6 +22,8 @@ export const IPC = {
   projectsPickFolder: "projects:pick-folder",
   /** invoke(path) → DropInfo. What a folder or file dropped on the window holds for Add project. */
   projectsReadDrop: "projects:read-drop",
+  /** invoke(text) → void. Writes the clipboard; the page itself has no clipboard permission. */
+  copy: "app:copy",
   /** main → renderer: HubFrame */
   hubFrame: "hub:frame",
 } as const;

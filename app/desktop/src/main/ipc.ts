@@ -1,4 +1,4 @@
-import { ipcMain, type IpcMainInvokeEvent } from "electron";
+import { clipboard, ipcMain, type IpcMainInvokeEvent } from "electron";
 import { IPC, type InvokeChannel } from "../shared/channels";
 import { parseRequest, type RequestArgs } from "../shared/ipc";
 import type { HubService } from "./hub/service";
@@ -37,4 +37,5 @@ export const registerIpc = (hub: HubService): void => {
   handle(IPC.systemHostName, () => hostName());
   handle(IPC.projectsPickFolder, (event) => pickFolder(event.sender));
   handle(IPC.projectsReadDrop, (_event, path) => readDrop(path));
+  handle(IPC.copy, (_event, text) => clipboard.writeText(text));
 };
