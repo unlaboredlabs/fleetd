@@ -41,6 +41,8 @@ export const fixtures = [
   "status-planning",
   "status-legacy",
   "status-skeleton",
+  // E3b's shared stress fixture; the time inspector fills it with a ~15k-span order (fixtures/time).
+  "time-heavy",
 ] as const;
 export type FixtureName = (typeof fixtures)[number];
 
@@ -211,6 +213,27 @@ export const screens: readonly Screen[] = [
     route,
     fixtures: ["typical", "long-text", "empty", "hub-unreachable", "status-stale", "status-planning", "status-legacy", "status-skeleton"] as const,
   })),
+  // F7: the time inspector (fixtures/time): an order's timeline, ~15k spans in time-heavy; the fleet's breakdown;
+  // its insights. Each tab's root carries its own id, so the three are shot apart.
+  {
+    id: "time.timeline",
+    route: "#/time/order/W8",
+    fixtures: ["typical", "long-text", "many-agents", "time-heavy", "empty"],
+  },
+  {
+    id: "time.breakdown",
+    route: "#/time",
+    fixtures: ["typical", "long-text", "empty"],
+  },
+  // With no hub, the breakdown says so in words (time.breakdown.offline): a connection state, not an error page.
+  { id: "time.breakdown", route: "#/time", fixtures: ["hub-unreachable"] },
+  // The harness waits for the id before `open`, so the insights entry waits for the screen root, then opens the tab.
+  {
+    id: "time",
+    route: "#/time",
+    fixtures: ["typical", "long-text", "empty"],
+    open: (page) => page.getByRole("tab", { name: "Insights" }).click(),
+  },
 ];
 
 // Platform checks that need a screen writer's work before they can pass; the owner turns theirs on when it lands.

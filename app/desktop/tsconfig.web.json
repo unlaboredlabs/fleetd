@@ -4,6 +4,7 @@
     "lib": ["ES2024", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
     "types": ["vite/client"],
+    "allowImportingTsExtensions": true,
     "tsBuildInfoFile": "./node_modules/.cache/tsconfig.web.tsbuildinfo"
   },
   "include": ["src/renderer/src/**/*", "src/renderer/ui/**/*", "src/renderer/screens/**/*", "src/shared/**/*", "src/preload/api.d.ts", "fixtures/status/docs.ts"]
