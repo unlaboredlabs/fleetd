@@ -601,6 +601,15 @@ async fn claim_done_refuses_over_unlanded_work_in_plain_words_until_closed_over_
         .await
         .unwrap();
     assert_eq!(closed.state, WorkstreamState::Done);
+    assert!(
+        closed.next.contains(&format!(
+            "closed on purpose over {}; {}, which is dropped",
+            t4().line,
+            pr.line
+        )),
+        "the reply names what is dropped, for the chat line: {}",
+        closed.next
+    );
     let done = k.events_of(&[HubEventType::WorkstreamDone]).await;
     let (_, summary, data) = done.last().unwrap();
     let reason = format!(

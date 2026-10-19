@@ -357,7 +357,7 @@ impl Claims {
         by: &str,
         project_ref: Option<&ProjectRef>,
         close_over: Option<&str>,
-    ) -> Result<(ClaimId, JoinHandle<Claim>), Refusal> {
+    ) -> Result<(ClaimId, JoinHandle<Claim>, Vec<OpenWork>), Refusal> {
         let _held = self.lock.lock().await;
         let not_found = || {
             not_found(
@@ -463,7 +463,13 @@ impl Claims {
         {
             previous.abort();
         }
-        Ok((claim_id, handle))
+        // What a closeOver claim may drop: the work the lead was shown.
+        let shown = if close_over.is_some() {
+            work
+        } else {
+            Vec::new()
+        };
+        Ok((claim_id, handle, shown))
     }
 
     /// Starts a claim on the workstream and waits up to the inline wait for its checks. With `project_ref`, refuses
@@ -476,7 +482,7 @@ impl Claims {
         project_ref: Option<&ProjectRef>,
         close_over: Option<&str>,
     ) -> Result<ClaimDoneOutcome, Refusal> {
-        let (claim_id, mut handle) = self
+        let (claim_id, mut handle, closing_over) = self
             .start(workstream_id, by, project_ref, close_over)
             .await?;
         let inline = tokio::select! {
@@ -496,6 +502,14 @@ impl Claims {
                 {
                     format!(
                         "Every check passed, but {workstream_id} stays open: write work of it hasn't landed (see the wake). Say so in chat in plain words; claim again once it lands."
+                    )
+                } else if claim.outcome == ClaimOutcome::Pass
+                    && state == WorkstreamState::Done
+                    && !closing_over.is_empty()
+                {
+                    format!(
+                        "{workstream_id} is done: every check passed, and it closed on purpose over {}, which is dropped. Say in chat, in plain words, what was dropped and why. Spawn nothing more for it.",
+                        listed(&closing_over)
                     )
                 } else if claim.outcome == ClaimOutcome::Pass {
                     format!(
