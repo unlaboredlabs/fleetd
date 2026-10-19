@@ -111,7 +111,8 @@ export async function trainBatch(lab: Lab) {
       why: "the train batch lab scenario",
       pointers: [],
       constraints: [],
-      doneWhen: [{ type: "cmd", machineId: MACHINE, argv: ["true"], expectExit: 0 }],
+      // Never passes: a lead that claims the order done would close the PRs still on the train as leftovers.
+      doneWhen: [{ type: "cmd", machineId: MACHINE, argv: ["false"], expectExit: 0 }],
       tier: "S",
       estimate: { rawMinutes: 5, gates: [] },
     };
