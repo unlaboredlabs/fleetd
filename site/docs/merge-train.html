@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Merge train · fleetd docs</title>
+<meta name="description" content="How fleetd merges PRs: one train per repo, batches of disjoint PRs in one CI run, stacked PRs tested ahead.">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="preload" href="/fonts/plex-sans-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/lilex-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/docs/docs.css?v=d81aa191">
+<script src="/docs/docs.js?v=1cc74a7d" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+  <a class="mark" href="/">fleetd</a><a class="crumb" href="/docs">docs</a>
+  <div class="search" role="search">
+    <input id="q" type="search" placeholder="Search" aria-label="Search the docs" autocomplete="off" spellcheck="false"><kbd>/</kbd>
+    <ul id="hits" role="listbox" hidden></ul>
+  </div>
+  <a class="gh" href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
+  <button class="menu" type="button" aria-controls="side" aria-expanded="false">Menu</button>
+</header>
+<div class="wrap">
+<nav class="side" id="side" aria-label="Docs">
+<p>Get started</p>
+<ul>
+<li><a href="/docs/install">Install</a></li>
+<li><a href="/docs/quick-start">Quick start</a></li>
+<li><a href="/docs/concepts">Concepts</a></li>
+</ul>
+<p>Using fleetd</p>
+<ul>
+<li><a href="/docs/machines">Machines</a></li>
+<li><a href="/docs/projects-and-orders">Projects &amp; orders</a></li>
+<li><a href="/docs/steering">Steering</a></li>
+<li><a href="/docs/merge-train" aria-current="page">Merge train</a></li>
+<li><a href="/docs/approvals-and-secrets">Approvals &amp; secrets</a></li>
+<li><a href="/docs/what-agents-are-told">What agents are told</a></li>
+<li><a href="/docs/desktop-app">The desktop app</a></li>
+<li><a href="/docs/status">Status</a></li>
+<li><a href="/docs/time-inspector">Where time went</a></li>
+</ul>
+<p>Reference</p>
+<ul>
+<li><a href="/docs/cli">CLI reference</a></li>
+<li><a href="/docs/agent-tools">Agent tools</a></li>
+<li><a href="/docs/config-and-files">Config &amp; files</a></li>
+<li><a href="/docs/security">Security model</a></li>
+<li><a href="/docs/troubleshooting">Troubleshooting</a></li>
+<li><a href="/docs/updating-and-uninstall">Updating &amp; uninstall</a></li>
+</ul>
+</nav>
+<main class="doc" id="main">
+<p class="kicker">Using fleetd</p>
+<h1>Merge train</h1>
+<p>Only fleetd merges. Each writer's PR goes on its repo's train, which rebases it onto its base, waits for CI on that
+exact head, posts the <code>fleetd/train</code> status and squash-merges it pinned to that head. A conflict or red CI goes back to
+the agent that wrote the PR, with the paths or failing checks. A repo with no CI at all (no workflows, no required
+checks) merges on fleetd's own checks, and the merge says so. Freeze a repo's train with <code>train_freeze</code>.</p>
+<p>A PR is ready for the train once its reviews pass: tier S needs none, M one clean review, L two plus a verifier, each
+bound to the PR's current patch. A PR body needs a <code>Source:</code> line naming what it serves.</p>
+<h2 id="batches">Batches<a class="anchor" href="#batches" aria-label="Link to this section">#</a></h2>
+<p>When several PRs are ready at once, the train merges them together in one CI run instead of one after another.
+It takes the first PR in line and adds the ones after it that:</p>
+<ul>
+<li>go into the same base branch,</li>
+<li>change none of the same files (lockfiles such as <code>Cargo.lock</code> or <code>package-lock.json</code> aside),</li>
+<li>are green on their own head.</li>
+</ul>
+<p>It squashes them onto the base in order on a branch of its own, <code>train/batch</code> under the project's branch prefix
+(<code>fleetd/train/batch</code> by default; see <code>branchPrefix</code> in <a href="/docs/config-and-files">the policy file</a>), and opens one PR for them,
+whose CI runs once. When that PR is green, the train posts <code>fleetd/train</code> on it and merges it as one squash. Each
+member PR is then closed with a comment linking the batch, and counts as merged for done-when checks.</p>
+<p>If the batch is red, the train drops the last member and tries again with the rest. The dropped PR later goes on its
+own, so it's the only one whose CI result blames it. A member that gets a new push, the <code>hold</code> label or is closed while
+the batch is in CI is left out before the merge, so untested code never lands.</p>
+<p>The most PRs in one batch is 4. Set <code>FLEETD_TRAIN_BATCH_MAX</code> in the hub's environment to change it; <code>1</code> turns batches
+off, so each PR goes alone. If GitHub refuses to merge a batch PR (for example, the base requires an approving review
+on every PR), the train stops batching that repo until the hub restarts.</p>
+<h2 id="stacked-prs">Stacked PRs<a class="anchor" href="#stacked-prs" aria-label="Link to this section">#</a></h2>
+<p>A PR whose base is another queued PR's branch waits until that parent lands; it never merges into the parent's
+branch. Meanwhile the train tests it ahead: it rebases the PR onto the parent's base, parent included, on
+<code>train/stack-&lt;n&gt;</code> under the branch prefix, and opens a draft PR there for its CI. The result shows on the stacked PR as the
+<code>fleetd/stack</code> status, which nothing requires. A red result also goes to the PR's author, so it can be fixed before
+the parent lands.</p>
+<p>When the parent lands, the train points the stacked PR at the parent's base, rebases it onto the parent's squash and
+runs CI on it again before merging, since the base wants an up-to-date branch. The draft PR is then closed.</p>
+<h2 id="holding-a-pr">Holding a PR<a class="anchor" href="#holding-a-pr" aria-label="Link to this section">#</a></h2>
+<p>Add the <code>hold</code> label to a PR to keep the train from taking it, alone or in a batch. Remove the label and it goes in
+its turn.</p>
+<h2 id="what-never-relaxes">What never relaxes<a class="anchor" href="#what-never-relaxes" aria-label="Link to this section">#</a></h2>
+<p>Batches and stacks only save waiting. Every PR in a batch is reviewed at its current patch, the batch's CI must be
+green and include the checks the base requires, <code>fleetd/train</code> is posted only on a head whose CI passed, and GitHub's
+rules on the base decide every merge. A stacked PR's early result never replaces the CI on the head that merges.</p>
+<nav class="pn" aria-label="Previous and next">
+<a class="prev" href="/docs/steering"><span>Previous</span>Steering</a>
+<a class="next" href="/docs/approvals-and-secrets"><span>Next</span>Approvals &amp; secrets</a>
+</nav>
+<p class="edit"><a href="https://github.com/unlaboredlabs/fleetd/edit/main/docs/site/merge-train.md">Edit this page</a></p>
+</main>
+<aside class="toc" aria-label="On this page">
+<p>On this page</p>
+<ul>
+<li><a href="#batches">Batches</a></li>
+<li><a href="#stacked-prs">Stacked PRs</a></li>
+<li><a href="#holding-a-pr">Holding a PR</a></li>
+<li><a href="#what-never-relaxes">What never relaxes</a></li>
+</ul>
+</aside>
+</div>
+<footer class="end"><span>fleetd · MIT</span><a href="/">fleetd.sh</a></footer>
+</body>
+</html>

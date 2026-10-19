@@ -47,7 +47,8 @@ ready change onto its base, waits for CI on that exact head and squash-merges it
 no check but `fleetd/train`, and no workflow's `on:` can run for the PR) merges on fleetd's own checks, and the merge
 says so. A change's tier sets its reviews:
 S needs none, M one clean review, L two plus a verifier, each bound to the current patch. A PR body needs a
-`Source:` line naming what it serves. You can freeze a repo's train with `train_freeze`.
+`Source:` line naming what it serves. You can freeze a repo's train with `train_freeze`. Disjoint ready PRs merge
+together in one CI run, and a PR stacked on another is tested ahead on it; see [Merge train](merge-train.md).
 
 ## Done, checked
 

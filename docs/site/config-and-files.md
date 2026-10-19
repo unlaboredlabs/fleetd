@@ -129,13 +129,14 @@ port: their nodes dial out. Change it with `fleetd init --listen <host:port> --u
 
 ## Hub environment {#env}
 
-Three variables in the hub's environment tune how it follows GitHub; the defaults suit almost everyone.
+These variables in the hub's environment tune how it follows GitHub and merges; the defaults suit almost everyone.
 
 | variable | default | does |
 |---|---|---|
 | `FLEETD_STATUS_GITHUB_STALE_SEC` | `180` | seconds without a good GitHub answer before [Status](status.md#stale-data) marks a repo stale |
 | `FLEETD_MAIN_CI_EVERY_SEC` | `60` | how often each merge train checks its main branch's CI (every 5 minutes with GitHub webhooks on) |
 | `FLEETD_TRAIN_NO_CI_GRACE_SEC` | `90` | how long a head may have no check before the train asks whether its PR has CI at all |
+| `FLEETD_TRAIN_BATCH_MAX` | `4` | the most ready PRs the [merge train](merge-train.md#batches) merges in one CI run; `1` takes each alone |
 
 ## The app
 

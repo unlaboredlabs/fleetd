@@ -36,6 +36,7 @@
 <li><a href="/docs/machines">Machines</a></li>
 <li><a href="/docs/projects-and-orders">Projects &amp; orders</a></li>
 <li><a href="/docs/steering">Steering</a></li>
+<li><a href="/docs/merge-train">Merge train</a></li>
 <li><a href="/docs/approvals-and-secrets">Approvals &amp; secrets</a></li>
 <li><a href="/docs/what-agents-are-told">What agents are told</a></li>
 <li><a href="/docs/desktop-app">The desktop app</a></li>
@@ -146,11 +147,12 @@ what a writer may touch.</p>
 on <code>127.0.0.1</code> only. The desktop app, nodes and MCP clients all use it (<code>&lt;hub url&gt;/mcp</code> for MCP). Workers open no
 port: their nodes dial out. Change it with <code>fleetd init --listen &lt;host:port&gt; --url &lt;url&gt;</code>.</p>
 <h2 id="env">Hub environment<a class="anchor" href="#env" aria-label="Link to this section">#</a></h2>
-<p>Three variables in the hub's environment tune how it follows GitHub; the defaults suit almost everyone.</p>
+<p>These variables in the hub's environment tune how it follows GitHub and merges; the defaults suit almost everyone.</p>
 <div class="table"><table><thead><tr><th>variable</th><th>default</th><th>does</th></tr></thead><tbody>
 <tr><td><code>FLEETD_STATUS_GITHUB_STALE_SEC</code></td><td><code>180</code></td><td>seconds without a good GitHub answer before <a href="/docs/status#stale-data">Status</a> marks a repo stale</td></tr>
 <tr><td><code>FLEETD_MAIN_CI_EVERY_SEC</code></td><td><code>60</code></td><td>how often each merge train checks its main branch's CI (every 5 minutes with GitHub webhooks on)</td></tr>
 <tr><td><code>FLEETD_TRAIN_NO_CI_GRACE_SEC</code></td><td><code>90</code></td><td>how long a head may have no check before the train asks whether its PR has CI at all</td></tr>
+<tr><td><code>FLEETD_TRAIN_BATCH_MAX</code></td><td><code>4</code></td><td>the most ready PRs the <a href="/docs/merge-train#batches">merge train</a> merges in one CI run; <code>1</code> takes each alone</td></tr>
 </tbody></table></div>
 <h2 id="the-app">The app<a class="anchor" href="#the-app" aria-label="Link to this section">#</a></h2>
 <p>The app's pairing hand-off from <code>fleetd init</code> or <code>fleetd pair</code> on the same machine is
