@@ -1,6 +1,6 @@
 // The app frame: the top bar (the window's drag region, the traffic lights inset on macOS), the sidebar, the screen
 // the route names, the inbox panel and the strips along the bottom. Navigation is the hash (routes.ts).
-import { Command as CommandIcon, PanelLeft } from "lucide-react";
+import { PanelLeft, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import { display } from "../../../shared/shortcuts";
 import { AppFrame, Button, TopBar } from "../../ui";
@@ -110,7 +110,7 @@ export function Shell() {
             >
               {data.needsYou > 0 ? `${String(data.needsYou)} need you` : "Inbox"}
             </Button>
-            <Button variant="quiet" icon={<CommandIcon />} shortcut={display("palette.toggle", platform)} onClick={() => openPalette()}>
+            <Button variant="quiet" icon={<Search />} shortcut={display("palette.toggle", platform)} onClick={() => openPalette()}>
               Commands
             </Button>
           </>
