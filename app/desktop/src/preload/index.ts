@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
+import type { OpenTarget } from "../shared/app";
 import { IPC } from "../shared/channels";
 import type { CallOutcome, ConnectOutcome, HubFrame, HubState } from "../shared/hub";
 import type { FleetdApi } from "./api";
@@ -8,6 +9,17 @@ const listeners = new Set<(frame: HubFrame) => void>();
 // One IPC listener for all subscribers; the IpcRendererEvent (which carries `sender`) never reaches the page.
 ipcRenderer.on(IPC.hubFrame, (_event: IpcRendererEvent, frame: HubFrame) => {
   for (const listener of listeners) listener(frame);
+});
+
+const commandListeners = new Set<(id: string) => void>();
+const openListeners = new Set<(target: OpenTarget) => void>();
+let ready = false;
+
+ipcRenderer.on(IPC.menuCommand, (_event: IpcRendererEvent, id: string) => {
+  for (const listener of commandListeners) listener(id);
+});
+ipcRenderer.on(IPC.appOpen, (_event: IpcRendererEvent, target: OpenTarget) => {
+  for (const listener of openListeners) listener(target);
 });
 
 const api: FleetdApi = {
@@ -28,6 +40,22 @@ const api: FleetdApi = {
     resync: () => ipcRenderer.invoke(IPC.hubResync) as Promise<void>,
     connect: (url, key) => ipcRenderer.invoke(IPC.hubConnect, { url, key }) as Promise<ConnectOutcome>,
     forget: () => ipcRenderer.invoke(IPC.hubForget) as Promise<void>,
+  },
+  app: {
+    onMenuCommand: (listener) => {
+      commandListeners.add(listener);
+      return () => commandListeners.delete(listener);
+    },
+    onOpen: (listener) => {
+      openListeners.add(listener);
+      // Main holds a launch link until the page listens; a reload asks again and gets nothing new.
+      if (!ready) {
+        ready = true;
+        void ipcRenderer.invoke(IPC.appReady);
+      }
+      return () => openListeners.delete(listener);
+    },
+    notify: (request) => ipcRenderer.invoke(IPC.appNotify, request) as Promise<void>,
   },
 };
 
