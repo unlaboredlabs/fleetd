@@ -32,7 +32,13 @@ On Linux the app needs GPUI's `-dev` packages. Without root, `app/bench/linux-sy
 
 `app/desktop` needs Node 24 and pnpm (the version in its `package.json`). In that directory: `pnpm install`, then
 `pnpm dev` (hot reload), `pnpm build` and `pnpm start` (the built app), and `pnpm typecheck`, `pnpm lint` and
-`pnpm test`, which CI's `desktop` job runs. Electron downloads its binary on first launch.
+`pnpm test`, which CI's `desktop` job runs. Electron downloads its binary on first launch. `npm --prefix tests/lab
+run lab -- desktop` (after `pnpm build`) drives the built app against a lab hub: auth, snapshot, events, calls, live,
+reconnect and pairing.
+
+`FLEETD_HUB_URL` + `FLEETD_AGENT_KEY` connect for one run without saving anything; `FLEETD_HOME` moves every file the
+app keeps (the saved key, the migration marker) and keeps it off the OS keychain; `FLEETD_FIXTURE=<name>` replaces the
+hub with `fixtures/<name>.json` (or an absolute path; `FLEETD_FIXTURE_DIR` moves the directory).
 
 - `src/main`: the Electron main process. It holds the one hub connection and the saved key; the renderer has no
   network (its CSP has `connect-src 'none'`).

@@ -21,7 +21,7 @@ export interface TruncateProps extends TextStyleProps {
    */
   expand?: "popover" | "inline" | "none";
   inline?: boolean;
-  className?: string;
+  className?: string | undefined;
 }
 
 /**

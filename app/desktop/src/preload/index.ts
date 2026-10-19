@@ -12,6 +12,7 @@ ipcRenderer.on(IPC.hubFrame, (_event: IpcRendererEvent, frame: HubFrame) => {
 
 const api: FleetdApi = {
   platform: process.platform === "darwin" || process.platform === "linux" || process.platform === "win32" ? process.platform : "other",
+  copy: (text) => ipcRenderer.invoke(IPC.copy, text) as Promise<void>,
   hub: {
     state: () => ipcRenderer.invoke(IPC.hubState) as Promise<HubState>,
     subscribe: (listener) => {

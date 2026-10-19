@@ -20,7 +20,7 @@ export interface SelectProps<V extends string> {
   disabled?: boolean;
   id?: string;
   "aria-label"?: string;
-  className?: string;
+  className?: string | undefined;
 }
 
 /** A field-like picker over a short list. Long lists belong in the command palette, not here. */

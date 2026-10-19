@@ -17,7 +17,7 @@ export interface IdChipProps extends TextStyleProps {
   kind?: string;
   /** Inside a clickable row: the label only tooltips, the row keeps the click. */
   inRow?: boolean;
-  className?: string;
+  className?: string | undefined;
 }
 
 /**
