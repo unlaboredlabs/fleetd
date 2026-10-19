@@ -1,6 +1,6 @@
 import { QueryObserver } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createDataLayer, type HubApi } from "./queries";
+import { boardRefreshAt, createDataLayer, DONE_HOLD_MS, type HubApi } from "./queries";
 import { ask, card, event, live, snapshot } from "./fixtures.test-util";
 import type { HubFrame } from "../../../shared/hub";
 
@@ -8,16 +8,18 @@ const fakeHub = () => {
   let listener: (frame: HubFrame) => void = () => undefined;
   const answers: ((output: unknown) => void)[] = [];
   const calls: string[] = [];
+  const inputs: unknown[] = [];
   const resyncs = vi.fn(() => Promise.resolve());
   const hub: HubApi = {
-    call: (tool) => {
+    call: (tool, input) => {
       calls.push(tool);
+      inputs.push(input);
       return new Promise((resolve) => answers.push((output) => resolve({ ok: true, output })));
     },
     subscribe: (l) => ((listener = l), () => undefined),
     resync: resyncs,
   };
-  return { hub, send: (f: HubFrame) => listener(f), answers, calls, resyncs };
+  return { hub, send: (f: HubFrame) => listener(f), answers, calls, inputs, resyncs };
 };
 
 const board = { at: "2026-10-19T10:00:00.000Z", orders: [card("W1")], trains: [] };
@@ -101,5 +103,48 @@ describe("data layer", () => {
     fake.send(event(4, "project.added"));
     expect(fake.resyncs).toHaveBeenCalledTimes(1);
     stop();
+  });
+
+  it("holds a finished order on the board for 10 minutes, then refetches once to drop it", async () => {
+    vi.useFakeTimers();
+    const t0 = Date.parse("2026-10-19T10:00:00.000Z");
+    vi.setSystemTime(t0);
+    const fake = fakeHub();
+    const layer = createDataLayer(fake.hub);
+    layer.start();
+    fake.send(live());
+    fake.send(snapshot(1));
+    const stop = new QueryObserver(layer.queryClient, layer.toolQuery("orders_board", {})).subscribe(() => undefined);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fake.inputs[0]).toEqual({ includeDoneSince: new Date(t0 - DONE_HOLD_MS).toISOString() });
+    // Finished 9 minutes ago: one minute of hold left.
+    const done = card("W1", { state: "done", phase: "done", updatedAt: new Date(t0 - 9 * 60_000).toISOString() });
+    fake.answers[0]?.({ ...board, orders: [done, card("W2")] });
+    await vi.advanceTimersByTimeAsync(59_000);
+    expect(fake.calls).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(fake.calls).toHaveLength(2);
+    expect(fake.inputs[1]).toEqual({ includeDoneSince: new Date(t0 + 61_000 - DONE_HOLD_MS).toISOString() });
+    fake.answers[1]?.({ ...board, orders: [card("W2")] });
+    await vi.advanceTimersByTimeAsync(20 * 60_000);
+    expect(fake.calls).toHaveLength(2);
+    expect(Object.keys(layer.store.getState().orders ?? {})).toEqual(["W2"]);
+    stop();
+  });
+});
+
+describe("board hold", () => {
+  const at = (iso: string) => Date.parse(iso);
+  it("is the earliest hold still running, ignoring open orders and holds already over", () => {
+    const now = at("2026-10-19T10:00:00.000Z");
+    const orders = {
+      W1: card("W1", { state: "done", updatedAt: "2026-10-19T09:55:00.000Z" }),
+      W2: card("W2", { state: "done", updatedAt: "2026-10-19T09:52:00.000Z" }),
+      W3: card("W3", { state: "done", updatedAt: "2026-10-19T09:40:00.000Z" }),
+      W4: card("W4", { state: "running", updatedAt: "2026-10-19T09:51:00.000Z" }),
+    };
+    expect(boardRefreshAt(orders, now)).toBe(at("2026-10-19T10:02:00.000Z"));
+    expect(boardRefreshAt({ W4: orders.W4 }, now)).toBeUndefined();
+    expect(boardRefreshAt(undefined, now)).toBeUndefined();
   });
 });
