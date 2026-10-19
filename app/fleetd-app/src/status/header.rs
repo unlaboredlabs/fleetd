@@ -6,7 +6,7 @@ use gpui::{AnyElement, Context, Div, SharedString, div, prelude::*, px};
 use super::number;
 use fleetd_contracts::status::{HeadlineSource, Marker, StatusDoc};
 
-use super::{span, stale_words, when};
+use super::{stale_words, when};
 use crate::shell::{Shell, clock};
 use crate::theme::{STRONG, Theme, radius, size, theme};
 use crate::ui;
