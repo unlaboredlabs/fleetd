@@ -1,4 +1,4 @@
-import { ipcMain, type IpcMainInvokeEvent } from "electron";
+import { clipboard, ipcMain, type IpcMainInvokeEvent } from "electron";
 import { IPC, type InvokeChannel } from "../shared/channels";
 import { parseRequest, type RequestArgs } from "../shared/ipc";
 import type { HubService } from "./hub/service";
@@ -35,6 +35,7 @@ export const registerIpc = (hub: HubService, shell: { opener: Opener; notifier: 
   handle(IPC.hubResync, () => hub.resync());
   handle(IPC.hubConnect, (_event, request) => hub.connect(request));
   handle(IPC.hubForget, () => hub.forget());
+  handle(IPC.copy, (_event, text) => clipboard.writeText(text));
   handle(IPC.appReady, () => shell.opener.ready());
   handle(IPC.appNotify, (_event, request) => shell.notifier.show(request));
 };

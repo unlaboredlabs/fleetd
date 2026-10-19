@@ -42,6 +42,12 @@ describe("parseRequest", () => {
     expect(parseRequest(IPC.hubConnect, [{ url: "http://hub", key: "   " }]).ok).toBe(false);
   });
 
+  it("copies only text", () => {
+    expect(parseRequest(IPC.copy, ["fld_abc"]).ok).toBe(true);
+    expect(parseRequest(IPC.copy, [{ text: "x" }]).ok).toBe(false);
+    expect(parseRequest(IPC.copy, ["x".repeat(1_000_001)]).ok).toBe(false);
+  });
+
   it("gives argument-less channels no arguments", () => {
     expect(parseRequest(IPC.hubState, []).ok).toBe(true);
     expect(parseRequest(IPC.hubState, [1]).ok).toBe(false);

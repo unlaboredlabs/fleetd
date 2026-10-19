@@ -5,6 +5,8 @@ import type { LiveScope } from "../shared/ipc";
 /** `window.fleetd`: everything the renderer can ask of main. There is no other bridge. */
 export interface FleetdApi {
   readonly platform: "darwin" | "linux" | "win32" | "other";
+  /** Writes text to the clipboard (the page has no clipboard permission of its own). */
+  copy(text: string): Promise<void>;
   readonly hub: {
     state(): Promise<HubState>;
     /**

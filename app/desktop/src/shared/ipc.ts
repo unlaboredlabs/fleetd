@@ -39,6 +39,7 @@ export const REQUESTS = {
   [IPC.hubResync]: none,
   [IPC.hubConnect]: z.tuple([ConnectRequest]),
   [IPC.hubForget]: none,
+  [IPC.copy]: z.tuple([z.string().max(1_000_000)]),
   [IPC.appReady]: none,
   [IPC.appNotify]: z.tuple([NotifyRequest]),
 } as const satisfies Record<InvokeChannel, z.ZodType>;
