@@ -38,6 +38,8 @@ export interface Drafts {
   set(key: string, next: (now: Draft) => Draft): void;
   /** Uploads each file (attachment_put); a refused one says why. */
   attach(key: string, files: readonly File[]): void;
+  /** A message that didn't go, back in the box: its words after any already there, and its files, already uploaded. */
+  restore(key: string, text: string, files: readonly AttachmentRef[]): void;
 }
 
 const isEmpty = (d: Draft) => d.text === "" && d.attached.length === 0 && d.offline !== true && d.error === undefined;
@@ -59,6 +61,12 @@ export function createDrafts(layer: Pick<DataLayer, "call">): Drafts {
   return {
     store,
     set,
+    restore: (key, text, files) =>
+      set(key, (d) => ({
+        ...d,
+        text: d.text.trim() === "" ? text : `${d.text}\n\n${text}`,
+        attached: [...d.attached, ...files.map((ref): Attached => ({ local: nextLocal++, name: ref.name, bytes: ref.bytes, upload: { ok: true, ref } }))],
+      })),
     attach: (key, files) => {
       let count = (store.getState()[key] ?? emptyDraft).attached.length;
       for (const file of files) {

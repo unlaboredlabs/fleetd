@@ -86,6 +86,16 @@ describe("a project's draft", () => {
     expect(draft?.error).toMatch(/blob.bin: only images, text and PDF/);
   });
 
+  it("takes back a message that didn't go with its files, after words already in the box", () => {
+    const d = createDrafts(layer(() => Promise.resolve({ ok: true, output: {} })));
+    d.set("devbox/api", (x) => ({ ...x, text: "and also" }));
+    const ref = { attachmentId: "F1", name: "shot.png", mime: "image/png", bytes: 68 } as const;
+    d.restore("devbox/api", "see this", [ref]);
+    const draft = d.store.getState()["devbox/api"];
+    expect(draft?.text).toBe("and also\n\nsee this");
+    expect(draft?.attached.map((a) => [a.name, a.bytes, a.upload])).toEqual([["shot.png", 68, { ok: true, ref }]]);
+  });
+
   it("counts a file the hub refused as not uploaded", async () => {
     const d = createDrafts(layer(() => Promise.resolve({ ok: false, error: { code: "invalid", message: "too large" } })));
     d.attach("devbox/api", [new File(["hi"], "notes.txt", { type: "text/plain" })]);

@@ -9,7 +9,7 @@ interface ProjectRef {
 }
 
 import { Paperclip, X } from "lucide-react";
-import { useRef, type ClipboardEvent, type DragEvent, type KeyboardEvent } from "react";
+import { useEffect, useRef, type ClipboardEvent, type KeyboardEvent } from "react";
 import type { AttachmentRef } from "../../../shared/contracts";
 import type { ChatItem } from "../../src/data/chat";
 import { useData, useDataLayer } from "../../src/data/react";
@@ -19,8 +19,14 @@ import { Button, cx, IdChip, Text, Truncate } from "../../ui";
 import { useCommands } from "../palette";
 import { fmtBytes, PASTE_AS_FILE, pastedName } from "./attachments";
 import { ACT_LABEL, checkMessage, KEY_HINT, placeholder, receiptFor, sendsOn, type Act } from "./composerModel";
-import { useDraft } from "./drafts";
+import { useDraft, useDrafts } from "./drafts";
 import c from "./composer.module.css";
+
+const IN_CHAT = '[data-screen="chat"], [data-screen^="chat."]';
+
+/** A folder among the dropped items: that's a project to add, not a file for the lead. */
+const hasFolder = (data: DataTransfer): boolean =>
+  [...data.items].some((i) => i.kind === "file" && i.webkitGetAsEntry()?.isDirectory === true);
 
 export interface ChatComposerProps {
   project: ProjectRef;
@@ -101,15 +107,41 @@ export function ChatComposer({ project, onSent, autoFocus }: ChatComposerProps) 
     }
   };
 
-  const onDrop = (e: DragEvent) => {
-    if (e.dataTransfer.files.length === 0) return;
-    e.preventDefault();
-    attach([...e.dataTransfer.files]);
-  };
+  // A file dropped anywhere on the chat attaches here; a link, or a drop outside the chat, is ProjectsHost's (it
+  // listens on the window and leaves a drop alone once it is defaultPrevented). Listened on the document, which the
+  // event reaches before the window.
+  useEffect(() => {
+    const files = (e: DragEvent) =>
+      e.dataTransfer?.types.includes("Files") === true && e.target instanceof Element && e.target.closest(IN_CHAT) !== null;
+    const claim = (e: DragEvent) => {
+      if (!files(e)) return;
+      // Nor ProjectsHost's "add it as a project" overlay: here a file is for the lead.
+      e.stopPropagation();
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+    };
+    const drop = (e: DragEvent) => {
+      const data = e.dataTransfer;
+      if (data === null || !files(e) || hasFolder(data)) return;
+      e.preventDefault();
+      drafts.attach(projectKey, [...data.files]);
+      box.current?.focus();
+    };
+    document.addEventListener("dragenter", claim);
+    document.addEventListener("dragover", claim);
+    document.addEventListener("drop", drop);
+    return () => {
+      document.removeEventListener("dragenter", claim);
+      document.removeEventListener("dragover", claim);
+      document.removeEventListener("drop", drop);
+    };
+  }, [drafts, projectKey]);
+
+
 
   const note = draft.error ?? (draft.offline === true ? "Not connected to the hub, so this wasn’t sent. Send it again once the hub is back." : undefined);
   return (
-    <div className={c.composer} data-composer data-screen="chat.composer" onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
+    <div className={c.composer} data-composer data-screen="chat.composer">
       <textarea
         ref={box}
         className={c.input}
@@ -183,7 +215,7 @@ export function ChatComposer({ project, onSent, autoFocus }: ChatComposerProps) 
 export function MessageReceipt({ project, item, latest = false }: { project: ProjectRef; item: ChatItem; latest?: boolean }) {
   const projectKey = keyOf(project);
   const { chat } = useDataLayer();
-  const [, setDraft] = useDraft(projectKey);
+  const drafts = useDrafts();
   const r = receiptFor(
     {
       state: item.state,
@@ -198,10 +230,8 @@ export function MessageReceipt({ project, item, latest = false }: { project: Pro
   const act = (a: Act) => {
     if (crid === undefined) return;
     if (a === "resend") return void chat.retry(projectKey, crid);
-    if (a === "edit") {
-      // The words go back in the box (after any already there); the message goes.
-      setDraft((d) => ({ ...d, text: d.text.trim() === "" ? item.text : `${d.text}\n\n${item.text}` }));
-    }
+    // The words and files go back in the box (after any already there); the message goes.
+    if (a === "edit") drafts.restore(projectKey, item.text, item.attachments);
     chat.discard(projectKey, crid);
   };
   return (
