@@ -10,13 +10,14 @@
 // - gated:   a gated command is an inline chat item; nothing runs, and its state stays open, until a human Approve.
 // - build:   bug (a): a research result that offers a build, then "build it", starts a writer; the research order does
 //            not just close.
-// - fixes:   bug (b), W1/T4: claim_done is refused while review-fix work is open, and a claim that passes while a fix
-//            is open keeps the workstream open; the fix is never cancelled by the hub.
+// - fixes:   bug (b), W1/T4: claim_done is refused while a fix hasn't landed, and a claim that passes while a fix is
+//            open keeps the workstream open; only a deliberate close-over (which names what it drops) cancels a fix.
 // - cap1:    at max agents 1, the review that gates a merge gets the slot before a queued agent; the train merges.
 // - tools:   no session (lead, writer, reviewer, reader) has an ask tool, and the hub has no inbox tools.
 // - plain:   the lead's chat messages carry no internal ids.
 // On a local repo on lab-b (packages/a and packages/b, no `areas`), no CI:
-// - history: an order placed the old way (intake_submit) shows up in the project's chat_history as history.
+// - history: an order and a note placed through a pre-chat build show up as history in the project's chat once the
+//            build under test opens that hub's home (FLEETD_LAB_PRECHAT_BIN; its own small hub, no node).
 // - areas:   bug (c): areas are inferred from the workspace, and two writers in them run at the same time.
 // - cap:     max agents 2 with six agents never runs more than 2 and all finish; 12 → 3 mid-run kills nothing and new
 //            spawns wait; 3 → 12 starts the queue at once, says so in one chat line, and tells the lead.
@@ -28,7 +29,8 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import sodium from "libsodium-wrappers";
-import { type Body, callToolWith, cli, fleetdCommand, LAB, type Lab, MODEL, nodeHome, nodeSock, requireGhLogin, scrubbedEnv, sessionText, userMessages } from "./harness.ts";
+import { DatabaseSync } from "node:sqlite";
+import { type Body, callToolWith, cli, fleetdCommand, LAB, type Lab, MODEL, nodeHome, nodeSock, requireGhLogin, scrubbedEnv, sessionText, slotPort, userMessages } from "./harness.ts";
 import { BASE, checkClone, CLONE, NAMESPACE, onBase, prepareCheckout, REPO, removeLabRepoProject, resetNamespace } from "./m7Train.ts";
 
 const LEAD_MACHINE = "lab-a";
@@ -43,6 +45,8 @@ const DEFAULTS = `defaults:\n  model: ${MODEL}\n  effort: low\n`;
 // The lab repo names its one area, so its parts don't hang on inference; the local repo has no `areas` (bug (c)).
 const LAB_REPO_POLICY = `areas:\n  all: ["**"]\n${DEFAULTS}`;
 const LOCAL_REPO = path.join(LAB, "repo-chat");
+/** The history part's own hub; 4782 differs mod 20 from the other lab ports (harness.ts SLOT). */
+const HISTORY_PORT = slotPort(4782);
 /** For orders the harness drives itself: the lead stays out of the way. */
 const QUIET = "Lab run: the harness does everything for this order. Reply to each wake about it with one short line; run no commands and start no agents for it.";
 const PARTS = ["work", "terse", "secret", "gated", "build", "fixes", "cap1", "tools", "plain", "history", "areas", "cap"] as const;
@@ -168,12 +172,26 @@ const nextTask = async (lab: Lab, ref: Ref, cursor: number, what: string, ms: nu
   }
 };
 
-/** A workstream for an order the harness drives, its brief frozen from the shell as a lead would. */
-const quietOrder = async (lab: Lab, ref: Ref, fleetd: Shell, title: string, doneWhen: ReadonlyArray<Body>) => {
-  const intake = await lab.callTool("intake_submit", { ...ref, text: `${QUIET} ${title}`, clientRequestId: randomUUID() });
+/**
+ * A workstream the harness opens from the project's shell, as its lead would with workstream_open. Builds before the
+ * chat backend (#243) have no `workstream open` (exit 2): there it is an order through intake_submit.
+ */
+const openOrder = async (lab: Lab, ref: Ref, fleetd: Shell, text: string) => {
+  const opened = fleetd("workstream", "open", "--text", text);
+  if (opened.code !== 2) {
+    const w = /\bW\d+\b/u.exec(opened.stdout)?.[0];
+    lab.check(opened.code === 0 && w, `workstream open: ${JSON.stringify(opened)}`);
+    return w!;
+  }
+  const intake = await lab.callTool("intake_submit", { ...ref, text, clientRequestId: randomUUID() });
   lab.check(!intake.isError, `intake_submit: ${JSON.stringify(intake.body)}`);
-  const w = intake.body.workstreamId as string;
-  const brief = { goal: title, why: "the chat lab scenario", pointers: [], constraints: [], tier: "S", doneWhen };
+  return intake.body.workstreamId as string;
+};
+
+/** A workstream for an order the harness drives, its brief frozen from the shell as a lead would. */
+const quietOrder = async (lab: Lab, ref: Ref, fleetd: Shell, title: string, doneWhen: ReadonlyArray<Body>, tier: "S" | "M" = "S") => {
+  const w = await openOrder(lab, ref, fleetd, `${QUIET} ${title}`);
+  const brief = { goal: title, why: "the chat lab scenario", pointers: [], constraints: [], tier, doneWhen };
   const frozen = fleetd("brief", "create", "--workstream", w, "--json", JSON.stringify(brief));
   lab.check(frozen.code === 0, `brief create ${w}: ${JSON.stringify(frozen)}`);
   return w;
@@ -378,7 +396,7 @@ export async function chatLead(lab: Lab) {
       const projectId = await lab.addProject(WORK_MACHINE, LOCAL_REPO, "repo-chat");
       const ref = { machineId: WORK_MACHINE, projectId };
       const chat = chatOf(lab, human.callTool, ref, need);
-      await part("history", () => historyPart(lab, chat, ref));
+      await part("history", () => historyPart(lab));
       await part("areas", () => areasPart(lab, ref));
       await part("cap", () => capPart(lab, chat, ref, need));
     }
@@ -560,8 +578,7 @@ async function fixesPart(lab: Lab, chat: Chat, ref: Ref, fleetd: Shell) {
       ),
       `spawn the fix "${title}"`,
     );
-  const workstreamState = async (w: string) =>
-    (((await lab.callTool("workstream_list", { ...ref, limit: 50 })).body.workstreams as Array<Body>) ?? []).find((x) => x.workstreamId === w)?.state;
+  const workstreamState = async (w: string) => (await lab.callTool("workstream_get", { workstreamId: w })).body.workstream?.state as string | undefined;
 
   // A. A claim while a fix is open is refused, and the fix keeps running.
   const wa = await quietOrder(lab, ref, fleetd, "chat lab: a claim with a fix open", slow);
@@ -569,26 +586,41 @@ async function fixesPart(lab: Lab, chat: Chat, ref: Ref, fleetd: Shell) {
   const ta = spawnFix(wa, "share link goes stale");
   const refused = fleetd("claim", "done", "--workstream", wa);
   const said = `${refused.stdout}${refused.stderr}`;
-  check(refused.code !== 0 && said.includes(`has review fixes still open: ${ta} "`) && said.includes("It is done only once they land."), `claim_done refused while ${ta} is open: ${JSON.stringify(refused)}`);
+  check(
+    refused.code !== 0 &&
+      said.includes(`${wa} has write work that hasn't landed: "share link goes stale"`) &&
+      said.includes(`(ids, for tools only: ${ta})`) &&
+      said.includes("It is done only once that lands."),
+    `claim_done refused while ${ta} is open: ${JSON.stringify(refused)}`,
+  );
   check((await workstreamState(wa)) === "running", `the workstream stays running: ${await workstreamState(wa)}`);
+  check((await eventsSince(lab, from, ["task.cancelled"])).every((e) => e.data?.taskId !== ta), `${ta} is not cancelled by the refusal`);
   ok(`A. claim_done refused: ${said.trim().split("\n")[0]}`);
-  check(fleetd("task", "cancel", ta).code === 0, `a visible, intentional drop of ${ta}`);
-  const cancelledA = (await eventsSince(lab, from, ["task.cancelled"])).filter((e) => e.data?.taskId === ta);
-  check(cancelledA.length === 1, `${ta} was cancelled only by the explicit call: ${cancelledA.length}`);
+  // The one deliberate way out: closing over the fix, which says what it drops.
+  from = await lab.cursor();
+  const over = await shellAsync(ref.machineId, CLONE, "claim", "done", "--workstream", wa, "--close-over", "lab: the fix is not needed");
+  const closed = await lab.waitEvent(`${wa} closed on purpose`, 120_000, { cursor: from, types: ["workstream.done"], match: (e) => e.data?.workstreamId === wa });
+  check(String(closed.event.data.reason).startsWith("closed on purpose: lab: the fix is not needed") && String(closed.event.data.reason).includes('"share link goes stale"'), `the close names what it drops: ${JSON.stringify(closed.event.data)}`);
+  const dropped = await lab.waitEvent(`${ta} cancelled by the close`, 30_000, { cursor: from, types: ["task.cancelled"], match: (e) => e.data?.taskId === ta });
+  check(/^Cancelled: .* was closed on purpose/u.test(String(dropped.event.data?.reason ?? dropped.event.summary)), `the cancel says why: ${JSON.stringify(dropped.event)}`);
+  ok(`A. closed on purpose (${over.text.trim().split("\n")[0]}); ${ta} cancelled with the reason`);
 
   // B. The claim is already verifying when the fix is filed: it passes, but the workstream stays open.
   const wb = await quietOrder(lab, ref, fleetd, "chat lab: a fix filed during the claim", slow);
   from = await lab.cursor();
   const claiming = shellAsync(ref.machineId, CLONE, "claim", "done", "--workstream", wb);
-  await lab.waitEvent(`${wb}'s claim starts verifying`, 60_000, { cursor: from, match: (e) => e.data?.workstreamId === wb && /claim/u.test(e.type) }).catch(() => undefined);
+  // The check sleeps 20 s; the fix is filed while it runs.
+  await lab.until(`${wb} verifying its claim`, 15_000, async () =>
+    (await workstreamState(wb)) === "verifying" ? true : (await new Promise((r) => setTimeout(r, 250)), undefined),
+  );
   const tb = spawnFix(wb, "flag unpriced tokens");
   const stays = await lab.waitEvent(`${wb} stays open with ${tb} open`, 120_000, {
     cursor: from,
     types: ["workstream.state"],
-    match: (e) => e.data?.workstreamId === wb && e.data?.state === "running" && /review fixes still open/u.test(String(e.data?.reason)),
+    match: (e) => e.data?.workstreamId === wb && e.data?.state === "running" && /work that hasn't landed is still open/u.test(String(e.data?.reason)),
   });
   await claiming;
-  check(String(stays.event.data.reason).includes(tb), `the reason names ${tb}: ${stays.event.data.reason}`);
+  check(String(stays.event.data.reason).includes('"flag unpriced tokens"') && String(stays.event.summary).startsWith(`${wb} stays open:`), `the hold names the fix: ${JSON.stringify(stays.event)}`);
   const between = await eventsSince(lab, from, ["workstream.done", "claim.passed", "task.cancelled"]);
   const swallowed = between.filter((e) => (e.data?.workstreamId === wb && e.type !== "task.cancelled") || e.data?.taskId === tb);
   check(swallowed.length === 0, `no workstream.done, claim.passed or cancel of ${tb}: ${JSON.stringify(swallowed.map((e) => e.summary))}`);
@@ -620,7 +652,9 @@ async function cap1Part(lab: Lab, ref: Ref, fleetd: Shell, need: (t: string) => 
     check(!set.isError, `cap_set ${n}: ${JSON.stringify(set.body)}`);
   };
   const file = `${DIR}/cap1.md`;
-  const w = await quietOrder(lab, ref, fleetd, `chat lab: add ${file} at max agents 1`, [{ type: "cmd", machineId: ref.machineId, argv: ["gh", "api", onBase(file), "--silent"], expectExit: 0 }]);
+  // Tier M: its PR needs a review before the train merges it, so the review is what gates the merge.
+  const onMain = { type: "cmd", machineId: ref.machineId, argv: ["gh", "api", onBase(file), "--silent"], expectExit: 0 };
+  const w = await quietOrder(lab, ref, fleetd, `chat lab: add ${file} at max agents 1`, [onMain], "M");
   await setMax(1);
   try {
     const from = await lab.cursor();
@@ -675,34 +709,108 @@ async function toolsPart(lab: Lab, chat: Chat, hubTools: ReadonlySet<string>) {
   ok(`${read.length} sessions (${[...new Set(read.map((s) => s.what))].join(", ")}): no ask tool; the hub has none of ${GONE_HUB_TOOLS.join(", ")}; lead prompt ${promptRef}`);
 }
 
-// ---- history: an order from before the chat reads back as history ----
-async function historyPart(lab: Lab, chat: Chat, ref: Ref) {
+// ---- history: orders from before the chat read back as history ----
+/**
+ * A pre-chat build (FLEETD_LAB_PRECHAT_BIN) runs a hub on a home of its own, with one project seeded as `project_add`
+ * caches it (no node, no turns): a person places an order and adds a note. Then the build under test opens the same
+ * home, as it would Wynn's live hub, and the project's chat must show them as history.
+ */
+async function historyPart(lab: Lab) {
   const { check, ok } = lab;
-  const text = `chat lab: an order placed the old way (${STAMP})`;
-  const placed = await lab.callTool("intake_submit", { ...ref, text, clientRequestId: randomUUID() });
-  check(!placed.isError, `intake_submit: ${JSON.stringify(placed.body)}`);
-  const history = (await chat.history()).filter((m) => m.history !== undefined);
-  const order = history.find((m) => m.history === "order" && m.text.includes(text));
-  check(order, `the order shows up as history: ${JSON.stringify(history.map((m) => [m.history, m.text.slice(0, 80)]))}`);
-  const leaky = history.filter((m) => INTERNAL_ID.test(m.text));
-  check(leaky.length === 0, `history messages carry no internal ids: ${JSON.stringify(leaky.map((m) => m.text.slice(0, 120)))}`);
-  ok(`chat_history: the order as history (${order!.author}, seq ${order!.seq}); ${history.length} history messages, no ids`);
+  const prechat = process.env.FLEETD_LAB_PRECHAT_BIN;
+  check(
+    prechat !== undefined && fs.existsSync(prechat),
+    `set FLEETD_LAB_PRECHAT_BIN to a fleetd built before the chat (e.g. git worktree add /tmp/prechat 60067987 && cargo build --release there); got ${prechat}`,
+  );
+  const home = path.join(lab.dir, "history-hub");
+  const url = `http://127.0.0.1:${HISTORY_PORT}`;
+  const ref = { machineId: "lab-history", projectId: "history" };
+  fs.rmSync(home, { recursive: true, force: true });
+  const withHub = async <A>(bin: string | undefined, fn: (call: Lab["callTool"]) => Promise<A>) => {
+    const own = process.env.FLEETD_HUB_BIN;
+    if (bin !== undefined) process.env.FLEETD_HUB_BIN = bin;
+    try {
+      lab.startCli("hub-history", ["hub", "start", "--home", home, "--listen", `127.0.0.1:${HISTORY_PORT}`]);
+    } finally {
+      if (own === undefined) delete process.env.FLEETD_HUB_BIN;
+      else process.env.FLEETD_HUB_BIN = own;
+    }
+    try {
+      await lab.until("the history hub's /healthz", 30_000, async () => {
+        const up = await fetch(`${url}/healthz`).then((r) => r.ok, () => false);
+        if (!up) await new Promise((r) => setTimeout(r, 250));
+        return up ? true : undefined;
+      });
+      const { client, callTool } = await mcpWith(url, key);
+      try {
+        return await fn(callTool);
+      } finally {
+        await client.close().catch(() => undefined);
+      }
+    } finally {
+      await lab.stopCli("hub-history");
+    }
+  };
+
+  // The pre-chat build makes the home (its key creates and migrates the db), then the project row is seeded.
+  process.env.FLEETD_HUB_BIN = prechat;
+  let key: string;
+  try {
+    const made = /fld_[a-z2-7]{20,}/u.exec(cli("hub", "key", "create", "--home", home, "--human", "--name", "history"))?.[0];
+    check(made, "the pre-chat build created a human key");
+    key = made!;
+  } finally {
+    delete process.env.FLEETD_HUB_BIN;
+  }
+  const db = new DatabaseSync(path.join(home, "hub.sqlite"));
+  try {
+    const at = new Date().toISOString();
+    const row = { ...ref, title: "history", workspaceRoot: path.join(lab.dir, "history-ws"), threads: { running: 0, waiting: 0, idle: 0, failed: 0 }, lastActivityAt: at };
+    db.prepare("INSERT INTO projects (machine_id, project_id, search, last_activity_at, data) VALUES (?, ?, ?, ?, ?)").run(ref.machineId, ref.projectId, "history", at, JSON.stringify(row));
+  } finally {
+    db.close();
+  }
+
+  const orderText = `Add a dark mode toggle to settings (${STAMP})`;
+  const noteText = `Also keep the current theme as the default (${STAMP})`;
+  await withHub(prechat, async (call) => {
+    const placed = await call("intake_submit", { ...ref, text: orderText, clientRequestId: randomUUID() });
+    check(!placed.isError, `the pre-chat build takes the order: ${JSON.stringify(placed.body)}`);
+    const noted = await call("order_note", { workstreamId: placed.body.workstreamId, text: noteText });
+    check(!noted.isError, `the pre-chat build takes the note: ${JSON.stringify(noted.body)}`);
+  });
+  ok("pre-chat hub: an order and a note placed by a person");
+
+  await withHub(undefined, async (call) => {
+    const page = await call("chat_history", { projectRef: ref, limit: 100 });
+    check(!page.isError, `chat_history on the migrated home: ${JSON.stringify(page.body)}`);
+    const history = (page.body.messages as Array<ChatMessage>).filter((m) => m.history !== undefined);
+    const order = history.find((m) => m.history === "order" && m.author === "human" && m.text.includes(orderText));
+    const note = history.find((m) => ["note", "steer"].includes(String(m.history)) && m.text.includes(noteText));
+    check(order && note, `the order and its note read back as history: ${JSON.stringify(history.map((m) => [m.history, m.author, m.text.slice(0, 80)]))}`);
+    check(order!.seq < note!.seq, `in time order: order ${order!.seq}, note ${note!.seq}`);
+    const leaky = history.filter((m) => INTERNAL_ID.test(m.text));
+    check(leaky.length === 0, `history carries no internal ids: ${JSON.stringify(leaky.map((m) => m.text.slice(0, 120)))}`);
+    // Read again: nothing is added twice.
+    const again = ((await call("chat_history", { projectRef: ref, limit: 100 })).body.messages as Array<ChatMessage>).filter((m) => m.history !== undefined);
+    check(again.length === history.length, `a second read adds nothing (${history.length} then ${again.length})`);
+    ok(`chat_history on the migrated home: order (seq ${order!.seq}) and ${note!.history} (seq ${note!.seq}) as history, no ids, stable`);
+  });
 }
 
 // ---- areas: bug (c), inferred areas let two writers run at once ----
 async function areasPart(lab: Lab, ref: Ref) {
   const { check, ok } = lab;
-  const inspected = await lab.callTool("project_inspect", { machineId: ref.machineId, path: LOCAL_REPO });
-  check(!inspected.isError, `project_inspect: ${JSON.stringify(inspected.body)}`);
-  const inspect = (inspected.body.inspect ?? inspected.body) as Body;
+  // project_add of the same directory answers with its project and the inspect the add read.
+  const added = await lab.callTool("project_add", { machineId: ref.machineId, path: LOCAL_REPO });
+  check(!added.isError && added.body.projectId === ref.projectId, `project_add again: ${JSON.stringify(added.body)}`);
+  const inspect = (added.body.inspect ?? {}) as Body;
   const areas = (inspect.areas as Array<string> | undefined) ?? [];
   check(inspect.areasInferred === true && ["a", "b", "all"].every((a) => areas.includes(a)), `areas inferred from the workspace: ${JSON.stringify({ areas, areasInferred: inspect.areasInferred })}`);
   ok(`inferred areas: ${areas.join(", ")}`);
 
   const fleetd = shellIn(ref.machineId, LOCAL_REPO);
-  const intake = await lab.callTool("intake_submit", { ...ref, text: `${QUIET} Two packages at once.`, clientRequestId: randomUUID() });
-  check(!intake.isError, `intake_submit: ${JSON.stringify(intake.body)}`);
-  const w = intake.body.workstreamId as string;
+  const w = await openOrder(lab, ref, fleetd, `${QUIET} Two packages at once.`);
   const from = await lab.cursor();
   const writer = (area: string) =>
     spawned(
@@ -742,8 +850,7 @@ async function capPart(lab: Lab, chat: Chat, ref: Ref, need: (t: string) => void
     lab.log(`max agents → ${n}: ${changed.event.summary}`);
     return changed;
   };
-  const w = (await lab.callTool("intake_submit", { ...ref, text: `${QUIET} Max agents.`, clientRequestId: randomUUID() })).body.workstreamId as string;
-  check(w, "intake_submit gave a workstream");
+  const w = await openOrder(lab, ref, fleetd, `${QUIET} Max agents.`);
   const running = async (ids: ReadonlySet<string>) => (await tasksOf(lab, ref)).filter((t) => ids.has(t.taskId) && t.state === "running").length;
   const until = (what: string, ms: number, cond: () => Promise<boolean>) =>
     lab.until(what, ms, async () => ((await cond()) ? true : (await new Promise((r) => setTimeout(r, 1_000)), undefined)));
