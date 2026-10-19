@@ -8,11 +8,11 @@ use std::time::Duration;
 
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{ProjectRef, ThreadRef};
-use fleetd_contracts::ledger::WorkstreamId;
+use fleetd_contracts::ledger::{AskAnswerKind, AskState, WorkstreamId};
 
 use super::digest::{DigestInput, WorkstreamFacts, render_lead_digest};
 use super::error::LeadError;
-use super::events::{Event, frame};
+use super::events::{Event, Settled, frame};
 use super::hooks::BoxFuture;
 use super::ports::{Answer, followed_up};
 use super::records::{LeadRecords, WorkstreamFilter};
@@ -34,6 +34,8 @@ pub enum LineKind {
     ResearchVerdict,
     /// A person added to an order (`order_note`).
     Human,
+    /// The lead ended a turn with an order frozen and nothing under way (`orders::idle`).
+    Idle,
     /// A slot is free and approved work is runnable (`orders::filler`).
     Runnable,
 }
@@ -48,7 +50,7 @@ pub enum Trigger {
         workstream_id: WorkstreamId,
         text: String,
     },
-    /// An answered ask only wakes the lead: it gets no event line, since the chat replaces asks.
+    /// A settled ask: an answer, or the outcome of an approval, secret or checked step.
     Answer(Answer),
     /// A task ended, a claim failed or passed late, a task waits on input, a train event, a research verdict: the area
     /// that raises it renders its own "why" line(s).
@@ -84,6 +86,7 @@ impl Trigger {
                 LineKind::Train => "train",
                 LineKind::ResearchVerdict => "research_verdict",
                 LineKind::Human => "human",
+                LineKind::Idle => "idle",
                 LineKind::Runnable => "runnable",
             },
         }
@@ -94,21 +97,61 @@ impl Trigger {
 pub fn trigger_lines(triggers: &[Trigger]) -> Vec<String> {
     triggers
         .iter()
-        .filter_map(|t| match t {
+        .map(|t| match t {
             Trigger::Intent {
                 workstream_id,
                 text,
-            } => Some(
-                Event::Order {
-                    workstream: workstream_id.as_str(),
-                    text,
-                }
-                .render(),
-            ),
-            Trigger::Line { text, .. } => Some(text.clone()),
-            Trigger::Answer(_) => None,
+            } => Event::Order {
+                workstream: workstream_id.as_str(),
+                text,
+            }
+            .render(),
+            Trigger::Line { text, .. } => text.clone(),
+            Trigger::Answer(a) => answer_line(a),
         })
         .collect()
+}
+
+fn answer_line(answer: &Answer) -> String {
+    let ask = &answer.ask;
+    let value = answer
+        .value
+        .as_deref()
+        .or(answer.decision.as_ref().map(|d| d.value.as_ref()))
+        .unwrap_or("");
+    // The human reads labels; the lead gets the key it filed plus the label the human picked.
+    let value = match ask
+        .options
+        .iter()
+        .flatten()
+        .find(|o| o.key.as_str() == value)
+        .and_then(|o| o.label.as_ref())
+    {
+        Some(label) => format!("{value} (\"{label}\")"),
+        None => value.to_owned(),
+    };
+    let settled = if answer.withdrawn {
+        Settled::Withdrawn
+    } else if ask.state == AskState::Defaulted {
+        Settled::Skipped
+    } else if ask
+        .answer
+        .as_ref()
+        .is_some_and(|a| a.kind == Some(AskAnswerKind::Text))
+    {
+        Settled::OwnWords
+    } else {
+        Settled::Answered
+    };
+    Event::Answered {
+        ask: ask.ask_id.as_str(),
+        key: ask.key.as_str(),
+        settled,
+        value: &value,
+        decision: answer.decision.as_ref().map(|d| d.decision_id.as_str()),
+        evidence: ask.evidence.as_ref().map(|e| e.as_ref()),
+    }
+    .render()
 }
 
 pub fn render_wake(digest: &str, triggers: &[Trigger]) -> String {

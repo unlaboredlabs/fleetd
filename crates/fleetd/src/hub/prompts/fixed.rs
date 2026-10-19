@@ -185,30 +185,30 @@ mod tests {
         );
         assert_eq!(
             denied(&DenyReason::Human {
-                by: "wynn",
+                by: "ada-lovelace",
                 ask: "A3",
                 said: Some("not on prod")
             }),
-            "Denied: wynn said no (A3): not on prod."
+            "Denied: ada-lovelace said no (A3): not on prod."
         );
         assert_eq!(
             denied(&DenyReason::Human {
-                by: "wynn",
+                by: "ada-lovelace",
                 ask: "A3",
                 said: None
             }),
-            "Denied: wynn said no (A3)."
+            "Denied: ada-lovelace said no (A3)."
         );
         assert_eq!(
             denied(&DenyReason::Withdrawn {
-                by: "wynn",
+                by: "ada-lovelace",
                 ask: "A3"
             }),
-            "Denied: wynn withdrew A3 before anyone answered it. Don't retry this call; ask for another way."
+            "Denied: ada-lovelace withdrew A3 before anyone answered it. Don't retry this call; ask for another way."
         );
         assert_eq!(
-            denied(&DenyReason::Answer { by: "wynn" }),
-            "Denied: wynn with thread_answer."
+            denied(&DenyReason::Answer { by: "ada-lovelace" }),
+            "Denied: ada-lovelace with thread_answer."
         );
     }
 

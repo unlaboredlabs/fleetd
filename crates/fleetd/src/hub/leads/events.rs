@@ -19,6 +19,17 @@ pub enum Ended {
     Cancelled,
 }
 
+/// How the human settled one of the lead's asks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Settled {
+    Answered,
+    /// They wrote their own answer instead of picking an option.
+    OwnWords,
+    /// Skipped for now: the lead carries on with its recommendation.
+    Skipped,
+    Withdrawn,
+}
+
 /// The project's agents against its cap, the second line of every state block.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AgentsLine {
@@ -129,6 +140,21 @@ pub enum Event<'a> {
     Runnable {
         items: &'a str,
         room: i64,
+    },
+    /// An ask settled: an answer, a gated command that ran, a saved secret, a checked step. `value` carries the
+    /// option's label when it has one; `evidence` is what the hub observed.
+    Answered {
+        ask: &'a str,
+        key: &'a str,
+        settled: Settled,
+        value: &'a str,
+        decision: Option<&'a str>,
+        evidence: Option<&'a str>,
+    },
+    /// The lead ended a turn with an approved order and nothing under way: nothing else would wake it for it.
+    OrderIdle {
+        workstream: &'a str,
+        title: &'a str,
     },
 }
 
@@ -310,6 +336,43 @@ impl Event<'_> {
                     vec![],
                 )
             }
+            Event::Answered {
+                ask,
+                key,
+                settled,
+                value,
+                decision,
+                evidence,
+            } => {
+                let value = one_line(value, 300);
+                let head = match settled {
+                    Settled::Withdrawn => format!("- {ask} {key} withdrawn by the human: drop it"),
+                    Settled::Skipped => format!(
+                        "- {ask} {key} skipped for now: carry on with your recommendation ({value}); no decision was recorded"
+                    ),
+                    Settled::Answered | Settled::OwnWords => format!(
+                        "- {ask} {key} answered{}: {value}{}",
+                        if *settled == Settled::OwnWords {
+                            " in the human's own words"
+                        } else {
+                            ""
+                        },
+                        decision.map(|d| format!(" ({d})")).unwrap_or_default()
+                    ),
+                };
+                let rest = evidence
+                    .filter(|e| !e.trim().is_empty())
+                    .map(|e| body(&one_line(e, 600)))
+                    .unwrap_or_default();
+                (head, rest)
+            }
+            Event::OrderIdle { workstream, title } => (
+                format!(
+                    "- {workstream} idle: {}; no agent running, nothing asked, and nothing else will wake you for it",
+                    one_line(title, 80)
+                ),
+                vec![],
+            ),
             Event::Runnable { items, room } => (
                 format!(
                     "- {room} slot{} free; approved work can start: {items}",
@@ -536,6 +599,47 @@ mod tests {
                 room: 2
             }),
             "- 2 slots free; approved work can start: P3 docs; and 2 more"
+        );
+    }
+
+    #[test]
+    fn answer_events() {
+        let a = |settled, decision, evidence| {
+            r(Event::Answered {
+                ask: "A3",
+                key: "deploy.prod",
+                settled,
+                value: "go (\"Ship it\")",
+                decision,
+                evidence,
+            })
+        };
+        assert_eq!(
+            a(Settled::Answered, Some("D4"), Some("exit 0\nall green")),
+            "- A3 deploy.prod answered: go (\"Ship it\") (D4)\n  > exit 0 all green"
+        );
+        assert_eq!(
+            a(Settled::OwnWords, None, None),
+            "- A3 deploy.prod answered in the human's own words: go (\"Ship it\")"
+        );
+        assert_eq!(
+            a(Settled::Skipped, None, None),
+            "- A3 deploy.prod skipped for now: carry on with your recommendation (go (\"Ship it\")); no decision was recorded"
+        );
+        assert_eq!(
+            a(Settled::Withdrawn, None, Some("")),
+            "- A3 deploy.prod withdrawn by the human: drop it"
+        );
+    }
+
+    #[test]
+    fn idle_order_event() {
+        assert_eq!(
+            r(Event::OrderIdle {
+                workstream: "W4",
+                title: "schedules"
+            }),
+            "- W4 idle: schedules; no agent running, nothing asked, and nothing else will wake you for it"
         );
     }
 
