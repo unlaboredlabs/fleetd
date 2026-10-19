@@ -7,8 +7,7 @@ import { Dot, Truncate, cx, toast } from "../../ui";
 import type { MachineLive, PrChip, SlotState, TrainLive } from "./contracts";
 import { peekNow, useNow } from "./clock";
 import { useData } from "../../src/data/react";
-import { selectBoardData } from "../../src/data/selectors";
-import { EXIT_MS, MERGED_HOLD_MS, type SlotUse, hubNow, machinesNow, needsClock, slotUse } from "./live";
+import { EXIT_MS, MERGED_HOLD_MS, type SlotUse, selectStrips } from "./live";
 import { useBoardPalette } from "./commands";
 import { Track } from "./parts";
 import { STAGE_WORD, type Tone, machineParts, slotsText, stageTone } from "./words";
@@ -177,7 +176,7 @@ export const noteMerged = (
  */
 export function BoardStrips({ onOpenMachines }: { onOpenMachines: () => void }) {
   useBoardPalette();
-  const d = useData(selectBoardData);
+  const d = useData(selectStrips);
   const [mergedAt, setMergedAt] = useState<ReadonlyMap<string, number> | undefined>(undefined);
   const chips = (d.trains ?? []).flatMap((t) => t.chips);
   const chipKey = chips.map((c) => `${c.changeId}:${c.state}`).join(",");
@@ -190,15 +189,15 @@ export function BoardStrips({ onOpenMachines }: { onOpenMachines: () => void }) 
     // chipKey stands for the chips.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chipKey, loaded]);
+  // The strips tick only while a merged chip waits to leave.
   const peek = peekNow();
-  const holding = [...(mergedAt ?? new Map<string, number>()).values()].some((at) => peek < at + MERGED_HOLD_MS + EXIT_MS);
-  const local = useNow(holding || needsClock(d, hubNow(d, peek)));
+  const local = useNow([...(mergedAt ?? new Map<string, number>()).values()].some((at) => peek < at + MERGED_HOLD_MS + EXIT_MS));
   const openPr = (url: string) => {
     void window.fleetd.openExternal(url).then((o) => {
       if (!o.ok) toast({ title: "Couldn't open the PR", description: o.message, tone: "danger" });
     });
   };
-  const machines = machinesNow(d);
+  const machines = d.machines;
   return (
     <>
       {d.trains !== undefined && mergedAt !== undefined ? (
@@ -209,7 +208,7 @@ export function BoardStrips({ onOpenMachines }: { onOpenMachines: () => void }) 
           <span className={s.skeleton} />
         </div>
       ) : (
-        <MachineStrip machines={machines} slots={d.slots} use={slotUse(d)} now={hubNow(d, local)} onOpen={onOpenMachines} />
+        <MachineStrip machines={machines} slots={d.slots} use={d.use} now={local + d.skewMs} onOpen={onOpenMachines} />
       )}
     </>
   );

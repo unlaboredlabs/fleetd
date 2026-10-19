@@ -255,16 +255,27 @@ export const applyLive = (live: LiveState, frame: LiveFrame, nowMs: number): Liv
   const seen = Number.isNaN(at) ? undefined : at - nowMs;
   const skewMs =
     seen === undefined ? live.skewMs : !frame.full && live.skewMs !== undefined ? Math.max(live.skewMs, seen) : seen;
-  const lanes: Record<string, LiveLane> = frame.full ? {} : { ...live.lanes };
-  for (const lane of frame.lanes) {
-    const spark = lane.spark ?? live.lanes[lane.laneId]?.spark;
-    lanes[lane.laneId] = spark === undefined ? lane : { ...lane, spark };
+  // A delta that names no lane (streamed text, a machine) leaves the lanes as they were, identity included, so
+  // nothing that reads only lanes recomputes.
+  const keepLanes = !frame.full && frame.lanes.length === 0;
+  const lanes: Record<string, LiveLane> = keepLanes ? live.lanes : frame.full ? {} : { ...live.lanes };
+  if (!keepLanes) {
+    for (const lane of frame.lanes) {
+      const spark = lane.spark ?? live.lanes[lane.laneId]?.spark;
+      lanes[lane.laneId] = spark === undefined ? lane : { ...lane, spark };
+    }
   }
-  // Kept for lanes still in scope; a lane's first finished frame sets it.
-  const ended: Record<string, string> = {};
-  for (const [id, lane] of Object.entries(lanes)) {
-    const at = live.ended[id] ?? (FINAL.has(lane.status) ? frame.at : undefined);
-    if (at !== undefined) ended[id] = at;
+  // Kept for lanes still in scope; a lane's first finished frame sets it. Unchanged entries keep the old object.
+  let ended = live.ended;
+  if (!keepLanes) {
+    const next: Record<string, string> = {};
+    for (const [id, lane] of Object.entries(lanes)) {
+      const at = live.ended[id] ?? (FINAL.has(lane.status) ? frame.at : undefined);
+      if (at !== undefined) next[id] = at;
+    }
+    const was = Object.keys(live.ended);
+    const same = was.length === Object.keys(next).length && was.every((id) => next[id] === live.ended[id]);
+    if (!same) ended = next;
   }
   const text: Record<string, { messageId: string; text: string }> = frame.full ? {} : { ...live.text };
   for (const t of frame.text ?? []) {

@@ -8,7 +8,7 @@ import { changedChars, checkText, mentionAt, projectPrefix, resolveTarget, templ
 import type { AgentLane, LaneStatus, LiveFrame, LiveLane, OrderCard, PrRef, TrainLive } from "./contracts";
 import { finishHeadline, finished, fleet, groupLabel, hold, phaseLabel, reviewProgress, stagePick, writtenIn } from "./fleet";
 import { fmtElapsed, fmtTokens, middleEllipsis, shortModel } from "./format";
-import { machinesNow, needsClock, seenLanes, slotUse } from "./live";
+import { machinesNow, needsClock, seenLanes, selectStrips, slotUse } from "./live";
 import { type BoardModel, itemKey, listItems, stableOrder, stageItems, stagedOrder } from "./model";
 import { heldLanes } from "./presence";
 import { noteMerged, visibleChips } from "./Strips";
@@ -403,5 +403,35 @@ group("review #188 regressions", () => {
     // W2 needs you: that change re-sorts, and it rises.
     const third = stableOrder(listItems(model({ orders: [w1(at(9)), w2(at(20))], asks: [askOf("A1", "W2")] }), ms(30)), second.held);
     expect(order(third)).toEqual(["card:W2", "card:W1"]);
+  });
+});
+
+group("redraws (#188 data port)", () => {
+  const base = () => {
+    let s = initialState();
+    [s] = frameIn(s, { t: "state", state: { phase: "live", hub: "devbox:4710", protocol: 1 } }, 0);
+    [s] = frameIn(s, { t: "snapshot", snapshot: snapshotOf("one") }, 0);
+    s = ingest(s, { tool: "orders_board", input: {}, output: { orders: [card("W1", [lane("T1", "working")])], trains: [], at: T0 } });
+    s = ingest(s, { tool: "asks_list", input: { state: "open" }, output: { batches: [], asks: [] } });
+    [s] = frameIn(s, { t: "live", frame: frame(1, true, [live("T1", "working")]) }, ms(1));
+    return s;
+  };
+
+  it("a frame that names no lane (streamed text) keeps the board's data, so nothing redraws", () => {
+    const s1 = base();
+    const before = selectBoardData(s1);
+    const [s2] = frameIn(s1, { t: "live", frame: frame(2, false, [], { text: [{ laneId: "T1", messageId: "m1", append: "hi" }] }) }, ms(2));
+    expect(s2.live.lanes).toBe(s1.live.lanes);
+    expect(s2.live.ended).toBe(s1.live.ended);
+    expect(selectBoardData(s2)).toBe(before);
+  });
+
+  it("the strips keep their data while only a lane's activity changes", () => {
+    const s1 = base();
+    const strips = selectStrips(s1);
+    const activity = { activity: { kind: "edit" as const, path: "src/a.ts" }, since: at(3) };
+    const [s2] = frameIn(s1, { t: "live", frame: frame(3, false, [live("T1", "working", { activity })]) }, ms(3));
+    expect(selectBoardData(s2)).not.toBe(selectBoardData(s1));
+    expect(selectStrips(s2)).toBe(strips);
   });
 });

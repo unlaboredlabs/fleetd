@@ -1,9 +1,10 @@
 // What the board derives from the data layer's view of live work (src/data, selectBoardData): every lane an order
 // has had, each machine's running agents and the slots they hold, and whether anything changes with time alone.
 // Pure; the data layer owns the hub data.
-import type { BoardData, OrderView } from "../../src/data/selectors";
+import { type BoardData, type OrderView, selectBoardData } from "../../src/data/selectors";
+import type { DataState } from "../../src/data/store";
 import { projectKey as key, type ProjectKey as Key } from "../../src/data/store";
-import type { AgentLane, LiveLane, MachineLive } from "./contracts";
+import type { AgentLane, LiveLane, MachineLive, SlotState, TrainLive } from "./contracts";
 import { parseMs } from "./format";
 import { isFinal, isRunning } from "./words";
 
@@ -82,3 +83,35 @@ export const needsClock = (d: BoardData, hubNowMs: number): boolean =>
 export const leadLane = (live: LiveLane): AgentLane => ({ laneId: live.laneId, role: "lead", title: "lead", status: live.status, live });
 
 export { leadLaneId } from "../../src/data/selectors";
+
+/** What the bottom strips draw: no lanes, only what the lanes add up to. */
+export interface StripData {
+  readonly machines: readonly MachineLive[] | undefined;
+  readonly trains: readonly TrainLive[] | undefined;
+  readonly slots: SlotState | undefined;
+  readonly use: SlotUse;
+  readonly skewMs: number;
+}
+
+const sameStrip = (a: StripData, b: StripData): boolean =>
+  a.trains === b.trains &&
+  a.slots === b.slots &&
+  a.skewMs === b.skewMs &&
+  a.use.agents === b.use.agents &&
+  a.use.leads === b.use.leads &&
+  a.use.queued === b.use.queued &&
+  JSON.stringify(a.machines) === JSON.stringify(b.machines);
+
+let lastStrip: StripData | undefined;
+
+/**
+ * The strips' data, the same object until something they draw changes: the strips sit under every screen, and a
+ * lane's every activity change must not redraw them.
+ */
+export const selectStrips = (s: DataState): StripData => {
+  const d = selectBoardData(s);
+  const next: StripData = { machines: machinesNow(d), trains: d.trains, slots: d.slots, use: slotUse(d), skewMs: d.skewMs };
+  if (lastStrip !== undefined && sameStrip(lastStrip, next)) return lastStrip;
+  lastStrip = next;
+  return next;
+};

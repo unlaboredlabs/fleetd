@@ -1,10 +1,10 @@
 // The board's part in the palette and the shortcut map (F11): New order and Focus composer while the board is up,
 // the "New order: <text>" action and the orders/projects source from anywhere (the frame's strips hold them).
-import { useEffect, useMemo, useRef, useSyncExternalStore, type RefObject } from "react";
+import { useEffect, useMemo, useSyncExternalStore, type RefObject } from "react";
 import { registerTextAction, useCommands, useSource, type Command } from "../palette";
 import type { ComposerHandle } from "./Composer";
 import { PHASE_WORD } from "./words";
-import { useData } from "../../src/data/react";
+import { useDataLayer } from "../../src/data/react";
 import { selectBoardData } from "../../src/data/selectors";
 import { projectsOf } from "./model";
 
@@ -47,17 +47,13 @@ export const useBoardCommands = (composer: RefObject<ComposerHandle | null>): vo
 /** From anywhere: the palette's "New order: <text>", and every order and project on the board as items. */
 export const useBoardPalette = (): void => {
   useEffect(() => registerTextAction({ title: (text) => `New order: ${text}`, run: askForOrder }), []);
-  const data = useData(selectBoardData);
-  // The source reads the latest state when the palette opens; its identity stays put so it registers once.
-  const latest = useRef(data);
-  useEffect(() => {
-    latest.current = data;
-  });
+  // Read when the palette opens, straight from the data layer: nothing here subscribes, so nothing redraws.
+  const layer = useDataLayer();
   const source = useMemo(
     () => ({
       id: "board",
       items: (): Command[] => {
-        const d = latest.current;
+        const d = selectBoardData(layer.store.getState());
         const orders = (d.orders ?? []).map(
           ({ card: o, phase }): Command => ({
             id: `order:${o.workstreamId}`,
@@ -79,7 +75,7 @@ export const useBoardPalette = (): void => {
         return [...orders, ...projectItems];
       },
     }),
-    [],
+    [layer],
   );
   useSource(source);
 };
