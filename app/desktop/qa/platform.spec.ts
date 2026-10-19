@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
-import { launch, resultsDir, scale, setView, settle, show } from "./harness.ts";
+import { launch, resultsDir, scale, setView, type Shot, settle, show } from "./harness.ts";
 import { platformChecks, themes } from "./registry.ts";
 
 test.describe.configure({ mode: "parallel" });
@@ -71,7 +71,7 @@ test("the macOS window, traffic lights included, for the contact sheet", async (
         // Without the Screen Recording permission this is an extra picture lost, not a QA failure.
         test.skip(true, `screencapture failed: ${String(error)}`);
       }
-      const shot = { screen: "window", fixture: "typical", size: "medium", theme, scale, platform: "darwin", png, findings: [] };
+      const shot: Shot = { screen: "window", fixture: "typical", size: "medium", theme, scale, platform: "darwin", png, scrolled: [], findings: [] };
       writeFileSync(path.join(resultsDir, "shots", `${name}.json`), JSON.stringify(shot, null, 2));
     }
   } finally {

@@ -16,7 +16,7 @@ const pages = {
     <div class="case scroller">${Array.from({ length: 12 }, (_, i) => `<div>Row ${i + 1} in a list that scrolls</div>`).join("")}</div>
     <p class="case">A dialog title<span class="sr-only">read aloud to screen readers only, far longer than its one pixel box</span></p>
     <p class="case">Close<span class="sr-only-inset">a second hidden label, clipped with clip-path instead</span></p>
-    <div class="case scroller"><div class="sticky-head">Opaque sticky header</div>${Array.from({ length: 12 }, (_, i) => `<div>Row ${i + 1} scrolls under the header</div>`).join("")}</div>
+    <div class="case scroller"><div class="sticky-head">Opaque sticky header</div>${Array.from({ length: 12 }, (_, i) => `<div>Row ${i + 1} scrolls under the header <button>Open</button></div>`).join("")}</div>
     <div class="case w200" style="overflow-x: auto"><span class="nowrap">A wide line that scrolls sideways inside its own scroller</span></div>
   </div>`,
   // Every marked element must be reported, and nothing else.

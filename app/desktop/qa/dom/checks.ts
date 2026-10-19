@@ -199,29 +199,29 @@ export function runChecks(opts: CheckOptions): Finding[] {
     const s = style(el);
     return (s.position === "sticky" || s.position === "fixed") && opaque(s) && !hidden(el);
   });
-  if (occluders.length > 0) {
-    for (const run of runs) {
-      for (const occ of occluders) {
-        if (occ.contains(run.el)) continue;
-        const o = rectOf(occ.getBoundingClientRect());
-        const hit = intersect(run.visible, o);
-        if (empty(hit)) continue;
-        const top = document.elementFromPoint((hit.left + hit.right) / 2, (hit.top + hit.bottom) / 2);
-        if (!top || !occ.contains(top)) continue;
-        const v = run.visible;
-        if (o.left <= v.left + SLOP && o.right >= v.right - SLOP) {
-          // A full-width bar covers the run's top or bottom part.
-          if (o.top <= v.top) v.top = Math.min(v.bottom, o.bottom);
-          else v.bottom = Math.max(v.top, o.top);
-        } else {
-          v.right = v.left;
-        }
+  // Cuts the parts of `v` (the visible rect of `el`) that an occluder is drawn over.
+  const uncover = (el: Element, v: Rect) => {
+    for (const occ of occluders) {
+      if (occ.contains(el)) continue;
+      const o = rectOf(occ.getBoundingClientRect());
+      const hit = intersect(v, o);
+      if (empty(hit)) continue;
+      const top = document.elementFromPoint((hit.left + hit.right) / 2, (hit.top + hit.bottom) / 2);
+      if (!top || !occ.contains(top)) continue;
+      if (o.left <= v.left + SLOP && o.right >= v.right - SLOP) {
+        // A full-width bar covers the top or bottom part.
+        if (o.top <= v.top) v.top = Math.min(v.bottom, o.bottom);
+        else v.bottom = Math.max(v.top, o.top);
+      } else {
+        v.right = v.left;
       }
     }
-    for (let i = runs.length - 1; i >= 0; i--) {
-      const run = runs[i];
-      if (run && empty(run.visible)) runs.splice(i, 1);
-    }
+  };
+  for (let i = runs.length - 1; i >= 0; i--) {
+    const run = runs[i];
+    if (!run) continue;
+    uncover(run.el, run.visible);
+    if (empty(run.visible)) runs.splice(i, 1);
   }
 
   // 1. Overflow: a text run outside the box that holds it, unless that box scrolls on that axis or truncates with an
@@ -383,6 +383,7 @@ export function runChecks(opts: CheckOptions): Finding[] {
     if (hidden(el) || screenReaderOnly(el)) continue;
     const rect = rectOf(el.getBoundingClientRect());
     const visible = intersect(rect, clipOf(el.parentElement ?? el));
+    uncover(el, visible);
     if (!empty(visible)) edgeTargets.push({ el, rect, visible, text: el.textContent || el.getAttribute("aria-label") || "" });
   }
   // Inside a box that scrolls on an axis, content passes the window edge on that axis while scrolling; only the
