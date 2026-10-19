@@ -1,17 +1,36 @@
-//! Writes the JSON Schemas to `crates/fleetd-contracts/schema/`, or to the directory given as the first argument.
+//! Writes the JSON Schemas to `crates/fleetd-contracts/schema/` and the desktop app's TypeScript to
+//! `app/desktop/src/shared/contracts/generated/`. `--check` writes nothing and fails on any difference, including a
+//! hand edit to a generated file.
 
-use std::path::PathBuf;
+use fleetd_contracts::schema;
 
 fn main() -> std::io::Result<()> {
-    let dir = std::env::args_os()
-        .nth(1)
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("schema"));
-    std::fs::create_dir_all(&dir)?;
-    let schemas = fleetd_contracts::schema::render_json_schemas();
-    for (file, text) in &schemas {
-        std::fs::write(dir.join(file), text)?;
+    if std::env::args().nth(1).as_deref() == Some("--check") {
+        let drift = schema::drift();
+        if drift.is_empty() {
+            println!("generated contracts are current");
+            return Ok(());
+        }
+        for file in &drift {
+            eprintln!("out of date: {file}");
+        }
+        eprintln!("fix: cargo run -p fleetd-contracts --bin fleetd-schema, then commit the result");
+        std::process::exit(1);
     }
-    println!("wrote {} schemas to {}", schemas.len(), dir.display());
+    let root = schema::repo_root();
+    let sets = [
+        (
+            root.join("crates/fleetd-contracts/schema"),
+            schema::render_json_schemas(),
+        ),
+        (root.join(fleetd_contracts::ts::TS_DIR), schema::render_ts()),
+    ];
+    for (dir, files) in sets {
+        std::fs::create_dir_all(&dir)?;
+        for (file, text) in &files {
+            std::fs::write(dir.join(file), text)?;
+        }
+        println!("wrote {} files to {}", files.len(), dir.display());
+    }
     Ok(())
 }

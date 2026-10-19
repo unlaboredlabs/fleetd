@@ -8,12 +8,23 @@ use schemars::generate::SchemaSettings;
 use serde_json::{Map, Value};
 
 use crate::app::{AppClientMessage, AppServerMessage};
-use crate::events::HubEvent;
+use crate::events::{
+    AskEventData, ClaimEventData, HubEvent, HubEventType, MachineSleptData, PromptChangedData,
+    ThreadEventData, TrainEventData, WorkstreamEventData, WorkstreamNoteData,
+};
 use crate::ledger::{Ask, Batch, Decision, Lead, Workstream};
 use crate::mcp::McpToolName;
 use crate::model::{Machine, ProjectOutcome, ProjectSummary, ThreadSummary};
+use crate::projects::{CloneProgressData, ProjectAddFailedData, ProjectAddedData};
+use crate::status::{
+    ChangeStateData, CiMainData, GithubDriftData, PlanChangedData, PlanVerifiedData,
+    SourceFreshData, SourceStaleData,
+};
+use crate::steer::SteerEventData;
+use crate::tasks::TaskEventData;
 use crate::tasks::{SlotState, Task};
 use crate::train::{Change, TrainState};
+use crate::usage::UsageEventData;
 use crate::verification::{Claim, Incident};
 
 pub const META_SCHEMA: &str = "https://json-schema.org/draft/2020-12/schema";
@@ -33,6 +44,47 @@ pub fn mcp_tools_document() -> Value {
             let output = tool.output_schema(generator).to_value();
             properties.insert(format!("{}.output", tool.as_str()), output);
         }
+        let required: Vec<Value> = properties.keys().cloned().map(Value::String).collect();
+        schemars::json_schema!({ "type": "object", "properties": properties, "required": required })
+    })
+}
+
+/// `HubEvent.data` by event type, keyed by the wire name, for the event types whose data has a declared shape.
+pub fn hub_event_data_document() -> Value {
+    use HubEventType as E;
+    document_with("HubEventData", |generator| {
+        let mut properties = Map::new();
+        let mut add = |types: &[HubEventType], schema: schemars::Schema| {
+            for t in types {
+                properties.insert(t.as_str().to_owned(), schema.clone().to_value());
+            }
+        };
+        macro_rules! data {
+            ($ty:ty: $($event:ident),+ $(,)?) => { add(&[$(E::$event),+], generator.subschema_for::<$ty>()) };
+        }
+        data!(ThreadEventData: ThreadStarted, ThreadCompleted, ThreadFailed, ThreadInterrupted, ThreadWaiting, ThreadStalled);
+        data!(UsageEventData: ThreadUsageLimited, UsageBreaker, UsageResumed);
+        data!(MachineSleptData: MachineSlept);
+        data!(ProjectAddedData: ProjectAdded);
+        data!(CloneProgressData: ProjectCloneProgress);
+        data!(ProjectAddFailedData: ProjectAddFailed);
+        data!(WorkstreamEventData: WorkstreamCreated, WorkstreamRunning, WorkstreamState, WorkstreamDone);
+        data!(WorkstreamNoteData: WorkstreamNote);
+        data!(AskEventData: AskCreated, AskAuto, AskAnswered, AskUndone, AskDelivered);
+        data!(TaskEventData: TaskQueued, TaskStarted, TaskCompleted, TaskFailed, TaskCancelled, TaskOutOfArea);
+        data!(ClaimEventData: ClaimPassed, ClaimFailed);
+        data!(TrainEventData: ChangeQueued, ChangeReady, ChangeNeedsRebase, ChangeCiFailed, ChangeRefused, PrMerged,
+            TrainFrozen, TrainResumed, TrainBlocked);
+        data!(ChangeStateData: ChangeState);
+        data!(CiMainData: CiMain);
+        data!(GithubDriftData: GithubDrift);
+        data!(SourceStaleData: SourceStale);
+        data!(SourceFreshData: SourceFresh);
+        data!(PlanChangedData: PlanChanged);
+        data!(PlanVerifiedData: PlanVerified);
+        data!(PromptChangedData: PromptChanged);
+        data!(SteerEventData: SteerQueued, SteerDelivered, SteerAcknowledged, SteerUnacknowledged, SteerWithdrawn,
+            SteerFailed);
         let required: Vec<Value> = properties.keys().cloned().map(Value::String).collect();
         schemars::json_schema!({ "type": "object", "properties": properties, "required": required })
     })
@@ -148,6 +200,7 @@ pub fn json_schemas() -> BTreeMap<&'static str, Value> {
         TrainState,
     );
     out.insert("McpTools", mcp_tools_document());
+    out.insert("HubEventData", hub_event_data_document());
     out
 }
 
@@ -164,17 +217,59 @@ pub fn render_json_schemas() -> BTreeMap<String, String> {
         .collect()
 }
 
+/// The generated TypeScript: file name -> contents, for `ts::TS_DIR`.
+pub fn render_ts() -> BTreeMap<String, String> {
+    BTreeMap::from([(
+        crate::ts::TS_FILE.to_owned(),
+        crate::ts::render(&json_schemas()),
+    )])
+}
+
+/// The repo root, from this crate's manifest directory.
+pub fn repo_root() -> std::path::PathBuf {
+    let crate_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    crate_dir
+        .ancestors()
+        .nth(2)
+        .unwrap_or(crate_dir)
+        .to_path_buf()
+}
+
+/// Every generated file that differs from what is checked in, or that is checked in and no longer generated.
+pub fn drift() -> Vec<String> {
+    let mut stale = Vec::new();
+    let sets = [
+        (
+            repo_root().join("crates/fleetd-contracts/schema"),
+            render_json_schemas(),
+            "json",
+        ),
+        (repo_root().join(crate::ts::TS_DIR), render_ts(), "ts"),
+    ];
+    for (dir, files, ext) in sets {
+        for (file, text) in &files {
+            if std::fs::read_to_string(dir.join(file)).ok().as_deref() != Some(text.as_str()) {
+                stale.push(dir.join(file).display().to_string());
+            }
+        }
+        for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.ends_with(ext) && !files.contains_key(&name) {
+                stale.push(format!("{} (no longer generated)", entry.path().display()));
+            }
+        }
+    }
+    stale
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
-    fn checked_in_schemas_are_current() {
-        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("schema");
-        for (file, text) in super::render_json_schemas() {
-            let on_disk = std::fs::read_to_string(dir.join(&file)).unwrap_or_default();
-            assert!(
-                on_disk == text,
-                "{file} is out of date: run `cargo run -p fleetd-contracts --bin fleetd-schema`"
-            );
-        }
+    fn generated_contracts_are_current() {
+        let drift = super::drift();
+        assert!(
+            drift.is_empty(),
+            "out of date: {drift:?}: run `cargo run -p fleetd-contracts --bin fleetd-schema`"
+        );
     }
 }

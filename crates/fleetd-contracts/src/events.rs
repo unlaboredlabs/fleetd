@@ -2,12 +2,22 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
 
-use crate::ids::{EventSeq, MachineId, ProjectId, ThreadId, Timestamp};
-use crate::prim::Text;
+use crate::ids::{EventSeq, MachineId, ProjectId, ProjectRef, ThreadId, Timestamp};
+use crate::ledger::{
+    AskClass, AskId, AskKind, BatchId, BriefHash, DecisionId, DecisionKey, WorkstreamId,
+    WorkstreamState,
+};
+use crate::prim::{Count, Positive, Text};
+use crate::prompts::PromptScope;
+use crate::steer::SteerId;
+use crate::train::{ChangeId, GitHubRepo};
+use crate::verification::ClaimId;
 
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
 )]
+// Open in the app's TypeScript: a newer hub adds event types, and the app must show them generically, not choke.
+#[schemars(extend("x-open" = true))]
 pub enum HubEventType {
     #[serde(rename = "machine.online")]
     MachineOnline,
@@ -381,4 +391,118 @@ pub struct ThreadEventData {
     /// The run ended while the hub was down and this event was emitted on its return.
     pub late: Option<bool>,
     pub reason: Option<ThreadEventReason>,
+}
+
+// The `HubEvent.data` shapes below are what the hub's emitters write (each names its event types). Fields the hub
+// adds only on some paths are optional; any `data` over 2 KB arrives as `{ "truncated": true }` instead.
+
+/// `workstream.created`, `workstream.running`, `workstream.state`, `workstream.done`.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkstreamEventData {
+    pub workstream_id: WorkstreamId,
+    /// workstream.state: the new state.
+    pub state: Option<WorkstreamState>,
+    /// workstream.running: the frozen brief.
+    pub brief_hash: Option<BriefHash>,
+    /// workstream.state (verifying) and workstream.done: the claim that moved it.
+    pub claim_id: Option<ClaimId>,
+    /// workstream.state (stopped): why, and who.
+    pub reason: Option<String>,
+    pub by: Option<String>,
+}
+
+/// `ask.created`, `ask.auto`, `ask.answered`, `ask.undone`, `ask.delivered`.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AskEventData {
+    pub ask_id: AskId,
+    pub key: Option<DecisionKey>,
+    pub class: Option<AskClass>,
+    pub kind: Option<AskKind>,
+    pub batch_id: Option<BatchId>,
+    pub number: Option<Positive>,
+    /// ask.created: a closed ask opened again (a failed verify, an undone answer).
+    pub reopened: Option<bool>,
+    /// ask.auto and ask.delivered: the decision that answered it (absent on a delivered skip).
+    pub decision_id: Option<DecisionId>,
+    /// ask.answered: until then `inbox_undo` takes the answer back.
+    pub undo_until: Option<Timestamp>,
+    /// ask.delivered: when the lead was woken with the answer.
+    pub delivered_at: Option<Timestamp>,
+}
+
+/// `claim.passed`, `claim.failed`.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaimEventData {
+    pub claim_id: ClaimId,
+    pub workstream_id: WorkstreamId,
+    /// claim.failed: the done-when indexes that did not pass.
+    pub failing: Option<Vec<Count>>,
+}
+
+/// The merge train's events: `change.queued`, `change.ready`, `change.needs_rebase`, `change.ci_failed`,
+/// `change.refused`, `pr.merged`, `train.frozen`, `train.resumed`, `train.blocked`. Which fields each carries is in
+/// `HubEventType`'s docs.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TrainEventData {
+    pub change_id: Option<ChangeId>,
+    pub workstream_id: Option<WorkstreamId>,
+    pub repo: Option<GitHubRepo>,
+    pub pr_number: Option<Count>,
+    pub pr_url: Option<String>,
+    pub merged_sha: Option<String>,
+    /// pr.merged on a repo with no CI: what fleetd checked instead.
+    pub ci: Option<String>,
+    /// change.needs_rebase: the conflicting paths.
+    pub paths: Option<Vec<String>>,
+    /// change.ci_failed: the failing check names.
+    pub checks: Option<Vec<String>>,
+    pub log_url: Option<String>,
+    pub reason: Option<String>,
+    pub fix: Option<String>,
+    /// train.blocked: what a person has to move.
+    pub error: Option<String>,
+}
+
+/// `workstream.note`.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkstreamNoteData {
+    pub workstream_id: WorkstreamId,
+    pub client_request_id: Option<String>,
+    pub urgent: Option<bool>,
+    /// The first 200 characters.
+    pub text: Option<String>,
+    /// The steer the note became.
+    pub steer_id: Option<SteerId>,
+}
+
+/// `prompt.changed`.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PromptChangedData {
+    pub id: String,
+    pub scope: PromptScope,
+    pub project_ref: Option<ProjectRef>,
+    /// Absent on a reset.
+    pub r#ref: Option<String>,
+    /// The warnings' codes.
+    pub warnings: Option<Vec<String>>,
+}
+
+/// `machine.slept`: epoch milliseconds.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct MachineSleptData {
+    pub from_ms: i64,
+    pub to_ms: i64,
 }
