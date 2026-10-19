@@ -414,15 +414,30 @@ impl Train {
         self.positioned(vec![change]).remove(0)
     }
 
+    /// The project the repo's train runs in: the one it was created for, or `fallback` once that one is removed (the
+    /// repo re-added under a new id), so the train follows the repo instead of failing on a dead project forever.
+    fn train_project(&self, repo: &str, fallback: &ProjectRef) -> ProjectRef {
+        match self.records.train(repo) {
+            Some(t)
+                if t.project_ref == *fallback
+                    || self.host.project_root(&t.project_ref).is_some() =>
+            {
+                t.project_ref
+            }
+            Some(_) if self.host.project_root(fallback).is_some() => {
+                self.records.rebind_train(repo, fallback);
+                fallback.clone()
+            }
+            Some(t) => t.project_ref,
+            None => fallback.clone(),
+        }
+    }
+
     fn git_for(
         &self,
         change: &Change,
     ) -> Result<(TrainGit<'_>, Arc<tokio::sync::Mutex<()>>), GitError> {
-        let project_ref = self
-            .records
-            .train(&change.repo)
-            .map(|t| t.project_ref)
-            .unwrap_or_else(|| change.project_ref.clone());
+        let project_ref = self.train_project(&change.repo, &change.project_ref);
         let root = self.host.project_root(&project_ref).ok_or_else(|| {
             GitError(format!(
                 "no project {} on {} to run git in",
@@ -1803,6 +1818,7 @@ impl Train {
         };
 
         self.records.ensure_train(&repo, project_ref, self.now_ms());
+        self.train_project(&repo, project_ref);
         let at = self.now_iso();
         let change = self.records.create(Change {
             tier,
