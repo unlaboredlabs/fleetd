@@ -2,7 +2,7 @@
 // its PR), unfolding to the lanes grouped by PR and a link to the time view. Nothing is drawn when nothing runs.
 // Folded, it redraws only when a line's words change; unfolded, its clocks tick once a second while agents run.
 import { ChevronRight } from "lucide-react";
-import { useId, useState, type CSSProperties } from "react";
+import { useId, useSyncExternalStore, type CSSProperties } from "react";
 import { useData } from "../../src/data/react";
 import { selectBoardData } from "../../src/data/selectors";
 import { Button, RoleTag, Text, Truncate, cx, roleTint, toast } from "../../ui";
@@ -35,9 +35,25 @@ export interface LiveStripProps {
   readonly onTold?: ((lane: AgentLane) => void) | undefined;
 }
 
+// Whether each project's strip is unfolded, kept outside the component: the chat's virtual list remounts its rows
+// (a resize, a scroll away and back), and an unfolded strip must stay unfolded.
+const unfolded = new Set<string>();
+const listeners = new Set<() => void>();
+const subscribe = (l: () => void) => {
+  listeners.add(l);
+  return () => listeners.delete(l);
+};
+const setUnfolded = (key: string, open: boolean) => {
+  if (open) unfolded.add(key);
+  else unfolded.delete(key);
+  for (const l of listeners) l();
+};
+
 export function LiveStrip({ project, onTold }: LiveStripProps) {
   const strip = useData(selectStrip(project));
-  const [open, setOpen] = useState(false);
+  const key = projectKey(project);
+  const open = useSyncExternalStore(subscribe, () => unfolded.has(key));
+  const setOpen = (next: boolean) => setUnfolded(key, next);
   const body = useId();
   if (strip === undefined || strip.lines.length === 0) return null;
   const headline = stripHeadline(strip);
