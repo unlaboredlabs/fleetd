@@ -4,7 +4,7 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { useMemo } from "react";
 import { InlineCode, Markdown, Text, type TextProps } from "../../ui";
 import { codeRuns, machineCode } from "./format";
-import s from "./chat.module.css";
+import s from "./view.module.css";
 
 /** A message in markdown, with its machine tokens set as code; parsed once per text. */
 export function Message({ text }: { text: string }) {

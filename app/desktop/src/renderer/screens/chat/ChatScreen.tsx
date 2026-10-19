@@ -8,10 +8,12 @@ import { StatusChip, Text, Truncate, type StatusTone } from "../../ui";
 import { ChatList } from "./ChatList";
 import { useChatData } from "./data";
 import { chatRows, rowIndexOf } from "./model";
-import { AgentsCapControl, ChatComposer, type ProjectRef } from "./slots";
+import { ChatComposer } from "./Composer";
+import { AgentsCapControl, type ProjectRef } from "./slots";
+import { projectKey } from "../../src/data/store";
 import { roleWords, type ToldWho } from "./told";
 import { ToldPanel } from "./ToldPanel";
-import s from "./chat.module.css";
+import s from "./view.module.css";
 
 function stateWord(needsYou: boolean | undefined, working: boolean | undefined): { word: string; tone: StatusTone } | undefined {
   if (needsYou === true) return { word: "waiting on you", tone: "needs-you" };
@@ -74,7 +76,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
         <ChatList rows={rows} project={project} onLoadOlder={onLoadOlder} onTold={onTold} openAt={openAt} sent={sent} />
       )}
       <div className={s.composer}>
-        <ChatComposer project={project} onSent={() => setSent((n) => n + 1)} />
+        <ChatComposer projectKey={projectKey(project)} onSent={() => setSent((n) => n + 1)} />
       </div>
       <ToldPanel open={told} projectRef={project} onClose={() => setTold(undefined)} />
     </div>

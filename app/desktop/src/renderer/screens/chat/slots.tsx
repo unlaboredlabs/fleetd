@@ -23,20 +23,6 @@ export function InlineChatItem({ item }: { item: ChatItem; project: ProjectRef }
   );
 }
 
-/** F4 (A3): `import { ChatComposer } from "./Composer"`. */
-export function ChatComposer(_props: { project: ProjectRef; onSent: () => void }) {
-  return null;
-}
-
-/** F4 (A3): the receipt under a message of yours that is still sending, or wasn't sent (Retry / Discard). */
-export function PendingReceipt({ item }: { item: ChatItem; project: ProjectRef }) {
-  return (
-    <Text size="xs" tone={item.state === "failed" ? "danger" : "quiet"}>
-      {item.state === "failed" ? "Not sent." : "Sending…"}
-    </Text>
-  );
-}
-
 /** F9: `import { AgentsCapControl } from "../settings"`: "agents 6 / 12", the project's agent cap in place. */
 export function AgentsCapControl(_props: { projectRef: ProjectRef }) {
   return null;

@@ -4,7 +4,8 @@
 // list keeps its place while they arrive above.
 import type { Virtualizer } from "@tanstack/react-virtual";
 import { FileText, Image } from "lucide-react";
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { projectKey } from "../../src/data/store";
 import type { AgentLane } from "../../../shared/contracts";
 import { Button, cx, Text, Truncate, VirtualList } from "../../ui";
 import type { ChatItem } from "../../src/data/chat";
@@ -12,9 +13,10 @@ import type { ChatItem } from "../../src/data/chat";
 type ChatAttachment = ChatItem["attachments"][number];
 import { shortClock } from "./format";
 import { systemHeadline, type Row } from "./model";
-import { InlineChatItem, LiveStrip, PendingReceipt, type ProjectRef } from "./slots";
+import { MessageReceipt } from "./Composer";
+import { InlineChatItem, LiveStrip, type ProjectRef } from "./slots";
 import { Disclosure, InlineText, Message } from "./text";
-import s from "./chat.module.css";
+import s from "./view.module.css";
 
 const sizeWords = (n: number): string => (n < 1024 ? `${String(n)} B` : n < 1024 * 1024 ? `${String(Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
 
@@ -81,6 +83,8 @@ const AUTHOR = { human: "You", lead: "Lead", system: "fleetd" } as const;
 const RowView = memo(function RowView(props: {
   row: Row;
   project: ProjectRef;
+  /** This is the person's newest message: its receipt shows even once sent. */
+  mineLatest: boolean;
   onLoadOlder: () => void;
   onTold: (lane: AgentLane) => void;
 }) {
@@ -144,7 +148,15 @@ const RowView = memo(function RowView(props: {
               Still writing…
             </Text>
           ) : null}
-          {i.author === "human" && i.state !== "sent" ? <PendingReceipt item={i} project={project} /> : null}
+          {i.author === "human" ? (
+            <MessageReceipt
+              projectKey={projectKey(project)}
+              clientRequestId={i.clientRequestId}
+              text={i.text}
+              message={{ state: i.state, error: i.error ? { ...i.error, offline: i.offline === true } : undefined }}
+              latest={props.mineLatest}
+            />
+          ) : null}
         </div>
       );
     }
@@ -163,6 +175,7 @@ export function ChatList(props: {
 }) {
   const { rows, openAt, sent } = props;
   const virtualizer = useRef<Virtualizer<HTMLDivElement, Element> | null>(null);
+  const mineLatest = useMemo(() => rows.findLast((r) => r.kind === "message" && r.item.author === "human")?.key, [rows]);
 
   // Open at the newest row and keep the end in view as rows measure and stream, until the reader scrolls or a
   // link opens the chat at a message.
@@ -214,7 +227,9 @@ export function ChatList(props: {
         startAtEnd
         virtualizerRef={virtualizer}
         aria-label="Conversation with the lead"
-        renderItem={(r) => <RowView row={r} project={props.project} onLoadOlder={props.onLoadOlder} onTold={props.onTold} />}
+        renderItem={(r) => (
+          <RowView row={r} project={props.project} mineLatest={r.key === mineLatest} onLoadOlder={props.onLoadOlder} onTold={props.onTold} />
+        )}
       />
     </div>
   );

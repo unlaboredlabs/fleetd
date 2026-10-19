@@ -8,7 +8,7 @@ import { Button, Code, Dialog, IdChip, Text, Tooltip } from "../../ui";
 import { Message } from "./text";
 import type { PromptSummary, SessionPrompt, ThreadRef } from "../../../shared/contracts";
 import { toldView, type ToldGroup, type ToldWho } from "./told";
-import s from "./chat.module.css";
+import s from "./view.module.css";
 
 const noPrompts: readonly PromptSummary[] = [];
 
