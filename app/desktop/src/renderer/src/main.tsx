@@ -3,6 +3,8 @@ import { createRoot } from "react-dom/client";
 import { applyMotion } from "../screens/settings/prefs";
 import { applyTheme, UiProvider } from "../ui";
 import { App } from "./App";
+import { createDataLayer } from "./data/queries";
+import { DataProvider } from "./data/react";
 import "./styles.css";
 
 document.documentElement.dataset["platform"] = window.fleetd.platform;
@@ -10,12 +12,16 @@ document.documentElement.dataset["platform"] = window.fleetd.platform;
 applyTheme();
 applyMotion();
 
+const data = createDataLayer(window.fleetd.hub);
+
 const root = document.getElementById("root");
 if (root === null) throw new Error("index.html has no #root");
 createRoot(root).render(
   <StrictMode>
-    <UiProvider>
-      <App />
-    </UiProvider>
+    <DataProvider layer={data}>
+      <UiProvider>
+        <App />
+      </UiProvider>
+    </DataProvider>
   </StrictMode>,
 );
