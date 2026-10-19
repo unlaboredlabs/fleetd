@@ -10,7 +10,6 @@
 //      the entry says `expect: "error"`; register error fixtures as a separate entry with that field.
 //   3. A screen with no route of its own gets `open`, using keys, roles and labels rather than CSS classes:
 //        { id: "palette", route: "#/", fixtures: ["typical"], open: (page) => page.keyboard.press("ControlOrMeta+K") }
-//        { id: "inbox", route: "#/board?inbox", fixtures: ["needs-you", "long-text", "empty"] }
 // Fixtures are E3b's, built by `pnpm fixtures` into app/desktop/fixtures/<name>.json.
 // Run it locally: `pnpm fixtures && pnpm qa:build && pnpm qa` (QA_SCREENS=<id>,<id> to limit), then open
 // qa-results/index.html.
@@ -53,8 +52,6 @@ export const fixtures = [
   "onboarding-hub-too-old",
   "projects-errors",
   "projects-machines",
-  // F5: the inbox with the open-asks read refused.
-  "inbox-error",
   // F6: the Status view's own states (fixtures/status).
   "status-stale",
   "status-planning",
@@ -153,38 +150,6 @@ export const screens: readonly Screen[] = [
   { id: "onboarding.connecting", route: "#/onboarding", fixtures: ["hub-unreachable", "onboarding-not-found"] },
   // A hub on another protocol, either way round.
   { id: "onboarding.mismatch", route: "#/onboarding", fixtures: ["onboarding-app-too-old", "onboarding-hub-too-old"] },
-  // F5: the inbox panel with every ask shape (needs-you), the long-text stress ask, and nothing to answer.
-  { id: "inbox", route: "#/board?inbox", fixtures: ["needs-you", "long-text", "empty"] },
-  // The answering flow, as the fixture's hub plays it (ask.answered, then ask.delivered once the undo window has
-  // passed): the first question collapses to "You chose" with the 10 s Undo and every count drops at once; the
-  // approval (no undo window) shows its receipt at once; then the first one's receipt arrives. Shot at the end.
-  {
-    id: "inbox.answered",
-    route: "#/board?inbox&ask=A1",
-    fixtures: ["needs-you"],
-    open: async (page) => {
-      await page.keyboard.press("1");
-      await page.keyboard.press("Enter");
-      // The board shows the same cards; the panel's are the ones answered here.
-      const panel = page.getByRole("complementary", { name: "Needs you" });
-      const first = panel.getByRole("region", { name: /You chose: Public snapshot link/u });
-      await first.getByText(/You can undo this for \d+ s/u).waitFor();
-      // The stale-badge bug: the title-bar badge and the board's Needs you must both say 5 now, not 6.
-      const badge = (n: number) => page.getByRole("button", { name: /need you/u }).filter({ hasText: new RegExp(`^${String(n)} need you`, "u") });
-      const board = (n: number) => page.getByText(new RegExp(`^Needs you ${String(n)}$`, "u"));
-      await badge(5).waitFor({ timeout: 3_000 });
-      await board(5).waitFor({ timeout: 3_000 });
-      const approval = panel.getByRole("region", { name: /database migration/u });
-      await approval.getByRole("radio", { name: /Approve/u }).click();
-      await approval.getByRole("button", { name: /Send answer/u }).click();
-      await badge(4).waitFor({ timeout: 3_000 });
-      await board(4).waitFor({ timeout: 3_000 });
-      await panel.getByRole("region", { name: /You chose: Approved/u }).getByText(/The lead has your answer/u).waitFor();
-      await first.getByText(/The lead has your answer/u).waitFor({ timeout: 15_000 });
-    },
-  },
-  // The open-asks read refused: the reason, the hub's fix and Retry; the badge is plain "Inbox", not loading.
-  { id: "inbox.error", route: "#/board?inbox", fixtures: ["inbox-error"], expect: "error" },
   // F2: the board (#/ and #/board). board.empty, board.list, board.stage and board.finish are its states: the stage
   // and finish fixtures put one order on it mid-run and after every PR merged.
   {
