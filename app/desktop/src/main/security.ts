@@ -1,5 +1,6 @@
 import { pathToFileURL } from "node:url";
 import { app, protocol, session, shell, type WebContents } from "electron";
+import { externalUrl } from "./external";
 import { APP_INDEX, APP_ORIGIN, APP_SCHEME, assetPath, originOf } from "./origin";
 
 /** The dev server while developing an unpackaged build; never in a packaged app. */
@@ -27,14 +28,17 @@ const isDevSocket = (url: string): boolean => {
 
 /**
  * Defence in depth around the CSP: the renderer gets no network (hub traffic goes through main), no permissions, no
- * new windows and no navigation away from the app. https links open in the user's browser. Run before app ready.
+ * new windows and no navigation away from the app. GitHub and fleetd.sh links open in the user's browser. Run before
+ * app ready.
  */
 export const harden = (): void => {
   protocol.registerSchemesAsPrivileged([{ scheme: APP_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
   app.enableSandbox();
   app.on("web-contents-created", (_event, contents: WebContents) => {
+    // A plain <a target=_blank> follows the same rule as window.fleetd.openExternal.
     contents.setWindowOpenHandler(({ url }) => {
-      if (url.startsWith("https://")) void shell.openExternal(url);
+      const checked = externalUrl(url);
+      if (checked.ok) void shell.openExternal(checked.url);
       return { action: "deny" };
     });
     // Covers links, location changes and files dropped on the window.
