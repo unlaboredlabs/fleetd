@@ -1,5 +1,5 @@
 // `npm run lab -- [scenario…]` (in tests/lab): the M1-M9 "done when" scenarios, end to end, against the disposable lab
-// (never in CI); M7 and M9 also use the GitHub testbed unlaboredlabs/fleetd-testbed. One hub and two nodes (lab-a,
+// (never in CI); M7 and M9 also use the GitHub lab repo unlaboredlabs/fleetd-lab, in the slot's branch namespace. One hub and two nodes (lab-a,
 // lab-b), each node running the real `claude` itself under its own HOME, driven only through a real MCP client.
 // Each scenario is a file exporting one function over the shared `Lab`; name some to run only those (setup always
 // runs). Costs a handful of tiny claude-haiku-5-5 turns. Every process this starts is stopped by its spawn PID.
@@ -55,6 +55,7 @@ import { m6Verify } from "./m6Verify.ts";
 import { m7Train } from "./m7Train.ts";
 import { m8Desktop } from "./m8Desktop.ts";
 import { m9Playbooks } from "./m9Playbooks.ts";
+import { noCiTrain } from "./noCiTrain.ts";
 import { noSubagents } from "./noSubagents.ts";
 import { offlineQueue } from "./offlineQueue.ts";
 import { scenarioPush } from "./scenarioPush.ts";
@@ -81,23 +82,25 @@ const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab)
   { name: "m5", run: m5Tasks },
   // After m5: it reuses the lead when there is one.
   { name: "m6", run: m6Verify },
-  // It adds the testbed as a second project on lab-a for its run, and removes it.
+  // It adds the lab repo as a second project on lab-a for its run, and removes it.
   { name: "m7", run: m7Train },
   // After m7, whose train row it reads: kills lab-b's node and cuts GitHub, then restarts the hub as it was.
   { name: "status", run: statusFresh },
   // It reuses the lead when there is one, and waits for the wake it causes to end.
   { name: "m8", run: m8Desktop },
-  // After m7, which leaves no testbed project: its router must choose among the lab projects only.
+  // After m7, which leaves no lab repo project: its router must choose among the lab projects only.
   { name: "m9", run: m9Playbooks },
-  // One order on the testbed through the train, with a human-approved gated run: its timeline must add up. After m9,
-  // whose router must not see the testbed project.
+  // One order on the lab repo through the train, with a human-approved gated run: its timeline must add up. After m9,
+  // whose router must not see the lab repo project.
   { name: "time", run: timeInspector },
   // Claude's own subagents are refused and an MCP spawn is a fleetd task with its lane. Restarts lab-a's lead, so only
   // when named.
   { name: "nosub", run: noSubagents, only: true },
   // A real lead writes its own labelled ask; the answer goes through the undo window. Only when named.
   { name: "ask", run: askCard, only: true },
-  // The app demo: one order fanned out to writers, reviewers and verifiers on the testbed. Only when named.
+  // One PR through the train into a base CI never runs for. Only when named, with FLEETD_LAB_NAMESPACE=noci/<n>.
+  { name: "noci", run: noCiTrain, only: true },
+  // The app demo: one order fanned out to writers, reviewers and verifiers on the lab repo. Only when named.
   { name: "demo", run: demoFanout, only: true },
   { name: "desktop", run: desktopShell, only: true },
   // The native runner's failure scenarios (tests/lab/failure): they restart lab-b and add a machine, so they go last.
@@ -244,7 +247,7 @@ async function main() {
     } satisfies Omit<Lab, "dir">;
 
     // Each machine's test repo is its project, registered the way a user would. The node runs `cmd` checks only under
-    // its roots, so once enrolled it gets the lab dir (repos, testbed) as its root and restarts. The hub may still show
+    // its roots, so once enrolled it gets the lab dir (repos, lab repo) as its root and restarts. The hub may still show
     // it online from before, so project_add is retried until the relinked node takes it.
     for (const m of MACHINES) {
       await online(m.id);

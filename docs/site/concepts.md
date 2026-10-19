@@ -43,8 +43,9 @@ than words: approving an exact command, ticking off steps, or entering a secret.
 ## Merge train
 
 Only fleetd merges. Each writer's PR goes on its repo's train, one serial queue per repo. The train rebases each
-ready change onto its base, waits for CI on that exact head and squash-merges it. A repo with no CI at all (no
-workflows, no required checks) merges on fleetd's own checks, and the merge says so. A change's tier sets its reviews:
+ready change onto its base, waits for CI on that exact head and squash-merges it. A head with no CI (the base requires
+no check but `fleetd/train`, and no workflow's `on:` can run for the PR) merges on fleetd's own checks, and the merge
+says so. A change's tier sets its reviews:
 S needs none, M one clean review, L two plus a verifier, each bound to the current patch. A PR body needs a
 `Source:` line naming what it serves. You can freeze a repo's train with `train_freeze`.
 

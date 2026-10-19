@@ -82,8 +82,9 @@ than words: approving an exact command, ticking off steps, or entering a secret.
 <a href="/docs/approvals-and-secrets">Approvals &amp; secrets</a>.</p>
 <h2 id="merge-train">Merge train<a class="anchor" href="#merge-train" aria-label="Link to this section">#</a></h2>
 <p>Only fleetd merges. Each writer's PR goes on its repo's train, one serial queue per repo. The train rebases each
-ready change onto its base, waits for CI on that exact head and squash-merges it. A repo with no CI at all (no
-workflows, no required checks) merges on fleetd's own checks, and the merge says so. A change's tier sets its reviews:
+ready change onto its base, waits for CI on that exact head and squash-merges it. A head with no CI (the base requires
+no check but <code>fleetd/train</code>, and no workflow's <code>on:</code> can run for the PR) merges on fleetd's own checks, and the merge
+says so. A change's tier sets its reviews:
 S needs none, M one clean review, L two plus a verifier, each bound to the current patch. A PR body needs a
 <code>Source:</code> line naming what it serves. You can freeze a repo's train with <code>train_freeze</code>.</p>
 <h2 id="done-checked">Done, checked<a class="anchor" href="#done-checked" aria-label="Link to this section">#</a></h2>
