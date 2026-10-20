@@ -114,6 +114,24 @@ pub fn claim_passed_line(
     )
 }
 
+pub fn claim_held_line(
+    set: &PromptSet,
+    claim_id: &ClaimId,
+    workstream_id: &WorkstreamId,
+    work: &[crate::hub::orders::open_work::OpenWork],
+) -> String {
+    use crate::hub::orders::open_work::{ids, listed};
+    set.render(
+        "wake.claim_held",
+        &[
+            ("claimId", claim_id),
+            ("workstreamId", workstream_id),
+            ("work", &listed(work)),
+            ("ids", &ids(work)),
+        ],
+    )
+}
+
 /// One evidence line per failed claim, for the false-claim incident.
 pub fn failed_claim_evidence(claim_id: &ClaimId, results: &[CheckResult]) -> String {
     let parts: Vec<String> = results

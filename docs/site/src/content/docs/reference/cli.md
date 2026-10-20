@@ -486,7 +486,7 @@ fleetd task cancel <T> [--reason <r>]
 ### fleetd claim done {#claim-done}
 
 ```text
-fleetd claim done --workstream <W>
+fleetd claim done --workstream <W> [--close-over "<why>"]
 ```
 
 fleetd runs the workstream's done-when checks itself; only all of them passing makes it done (exit 1 when a check did not pass)

@@ -215,6 +215,8 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 |---|---|---|
 | `wake.claim_failed` | per failed done claim |  |
 | `wake.claim_passed` | per claim that passed late |  |
+| `wake.claim_held` | per claim that passed while write work of the order had not landed |  |
+| `wake.order_done_work_kept` | per order that became done, not through a claim, while some of its write work had not landed |  |
 | `wake.research_verdict.go` | per research claim that went GO |  |
 | `wake.research_verdict.stop` | per research claim that went STOP | STOP is a success (prompt only) |
 | `wake.research_verdict.inconclusive` | per research claim that was inconclusive |  |
