@@ -1,5 +1,50 @@
 {
   "$defs": {
+    "AgentsCapData": {
+      "description": "`agents.cap` data: a project's max agents or the fleet cap changed. The event's summary is the one quiet line its\nchat shows.",
+      "properties": {
+        "from": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "paused": {
+          "description": "Agents told to push their work and wait (`pauseExtras`).",
+          "items": {
+            "$ref": "#/$defs/TaskId"
+          },
+          "maxItems": 1000,
+          "type": "array"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "Absent for the fleet cap."
+        },
+        "queued": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "running": {
+          "description": "The project's agents (or, for the fleet cap, every slot) running and queued just after the change.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "to": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "running",
+        "queued"
+      ],
+      "type": "object"
+    },
     "AskClass": {
       "enum": [
         "product",
@@ -810,6 +855,9 @@
     },
     "HubEventData": {
       "properties": {
+        "agents.cap": {
+          "$ref": "#/$defs/AgentsCapData"
+        },
         "ask.answered": {
           "$ref": "#/$defs/AskEventData"
         },
@@ -983,6 +1031,7 @@
         }
       },
       "required": [
+        "agents.cap",
         "ask.answered",
         "ask.auto",
         "ask.closed",

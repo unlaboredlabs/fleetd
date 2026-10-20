@@ -1,1 +1,0 @@
-- A slot is free and approved work can start: {{items}}. Slots free for your tasks: {{room}}. Spawn it now with `spawn_agent` and its `item`, in parallel where areas don't collide; you decide, and every review, CI and approval gate still applies. End a turn only to wait on your agents or when nothing approved can run. You hear about this work again only when it changes.

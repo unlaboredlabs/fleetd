@@ -1,4 +1,4 @@
-//! The slot board: a global cap on running turns, per-project shares, and a FIFO queue within priority.
+//! The slot board: a fleet cap on running turns, each project's max agents, and a FIFO queue within priority.
 //! A slot is held while a lead's or task's thread is running, read from the executor's thread events, and
 //! from a grant until that thread first runs. Threads that belong to no lead or task are not counted.
 pub mod board;
@@ -62,8 +62,16 @@ pub struct SlotsOptions {
 pub struct CapInput {
     /// 1..1000.
     pub cap: Option<i64>,
-    /// A project's share, 0..1000.
-    pub share: Option<(ProjectRef, i64)>,
+    /// A project's max agents, 1 up to the cap.
+    pub max_agents: Option<(ProjectRef, i64)>,
+}
+
+/// A project's agents as its lead is told them: "agents: 7 running of 12, 2 queued".
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Agents {
+    pub running: i64,
+    pub max_agents: i64,
+    pub queued: i64,
 }
 
 pub struct SlotRequest<'a> {
@@ -123,7 +131,8 @@ fn persist(db: &HubDb, ops: Vec<Op>) -> Result<(), StoreError> {
                     db.prepare_cached("INSERT INTO slot_settings (key, value) VALUES ('cap', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value")?
                         .execute([cap])?;
                 }
-                Op::Share(r, share) => {
+                // The table keeps its name from when this was a project's share, so an older hub's database opens.
+                Op::MaxAgents(r, share) => {
                     db.prepare_cached(
                         "INSERT INTO slot_shares (machine_id, project_id, share) VALUES (?, ?, ?)
                          ON CONFLICT (machine_id, project_id) DO UPDATE SET share = excluded.share",
@@ -136,7 +145,7 @@ fn persist(db: &HubDb, ops: Vec<Op>) -> Result<(), StoreError> {
     })
 }
 
-/// The persisted board: cap, shares and claims as the last hub left them.
+/// The persisted board: cap, max agents and claims as the last hub left them.
 fn load(db: &HubDb, default_cap: i64) -> Result<Board, StoreError> {
     db.with(|db| {
         let cap: Option<i64> = db.query_row("SELECT value FROM slot_settings WHERE key = 'cap'", [], |r| r.get(0)).optional()?;
@@ -173,7 +182,9 @@ fn slot_state(s: BoardState) -> SlotState {
                 .into_iter()
                 .map(|row| SlotStatePerProject {
                     project_ref: row.project_ref,
-                    share: count(row.share),
+                    max_agents: count(row.max_agents),
+                    running: count(row.running),
+                    queued: count(row.queued),
                     used: count(row.used),
                 })
                 .collect(),
@@ -413,13 +424,38 @@ impl Slots {
         Ok(())
     }
 
-    /// `cap_set`: the global cap, a project's share, or both. Persisted; applies at once.
+    /// `cap_set`: the fleet cap, a project's max agents, or both. Persisted; applies at once, starting queued
+    /// agents that now fit before it returns.
     pub fn set_cap(&self, input: CapInput) -> Result<SlotState, StoreError> {
         self.locked(|b| {
-            b.set_cap(input.cap, input.share);
+            b.set_cap(input.cap, input.max_agents);
             ((), true)
         })?;
         Ok(self.state())
+    }
+
+    pub fn agents(&self, r: &ProjectRef) -> Agents {
+        let board = self.board();
+        let (running, queued) = board.agents(r);
+        Agents {
+            running,
+            max_agents: board.max_agents_of(r),
+            queued,
+        }
+    }
+
+    /// The queued holder's place in line, from 1 ([`Board::position`]).
+    pub fn position(&self, holder: &str) -> Option<i64> {
+        self.board().position(holder)
+    }
+
+    /// The project's running writers and readers above its max agents, newest first ([`Board::extras`]).
+    pub fn extras(&self, r: &ProjectRef) -> Vec<String> {
+        self.board().extras(r)
+    }
+
+    pub fn cap(&self) -> i64 {
+        self.board().cap()
     }
 
     /// Slots the project's tasks could take now ([`Board::room`]).
@@ -429,5 +465,70 @@ impl Slots {
 
     pub fn state(&self) -> SlotState {
         slot_state(self.board().state())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Barrier;
+
+    use fleetd_contracts::ids::{MachineId, ProjectId};
+
+    use super::*;
+    use crate::hub::store::test_clock::ManualClock;
+
+    /// Spawns racing from many lead calls at once take the board's lock one at a time: never past max agents.
+    #[test]
+    fn concurrent_spawns_never_overshoot_max_agents() {
+        let db = HubDb::open_memory().unwrap();
+        let store = HubStore::new(db.clone());
+        let events = EventLog::new(db.clone(), ManualClock::at(1_792_000_000_000)).unwrap();
+        let slots = Slots::new(
+            db,
+            &store,
+            &events,
+            Arc::new(|_, _| None),
+            SlotsOptions::default(),
+        )
+        .unwrap();
+        let r = ProjectRef {
+            machine_id: MachineId::unchecked("lab-a"),
+            project_id: ProjectId::unchecked("p1"),
+        };
+        slots
+            .set_cap(CapInput {
+                cap: None,
+                max_agents: Some((r.clone(), 2)),
+            })
+            .unwrap();
+        let n = 24;
+        let start = Arc::new(Barrier::new(n));
+        let granted: usize = std::thread::scope(|s| {
+            let handles: Vec<_> = (1..=n)
+                .map(|i| {
+                    let (slots, r, start) = (&slots, &r, start.clone());
+                    s.spawn(move || {
+                        start.wait();
+                        let holder = format!("T{i}");
+                        let grant = slots.acquire(SlotRequest {
+                            holder: &holder,
+                            project_ref: r,
+                            priority: SlotPriority::Work,
+                        });
+                        usize::from(grant.unwrap().granted())
+                    })
+                })
+                .collect();
+            handles.into_iter().map(|h| h.join().unwrap()).sum()
+        });
+        assert_eq!(granted, 2);
+        assert_eq!(
+            slots.agents(&r),
+            Agents {
+                running: 2,
+                max_agents: 2,
+                queued: n as i64 - 2
+            }
+        );
     }
 }

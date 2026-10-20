@@ -378,20 +378,10 @@ impl Wakes {
         }
 
         let n = fired + 1;
-        let message = if after_hold || late {
-            // The prefix is in the target thread's own texts.
-            let set = self
-                .db
-                .prompts()
-                .for_thread(&wake.target.machine_id, wake.target.thread_id.as_str());
-            set.render(
-                if after_hold {
-                    "wake.scheduled_held"
-                } else {
-                    "wake.scheduled_late"
-                },
-                &[("minutes", &late_min), ("message", &wake.message)],
-            )
+        let message = if after_hold {
+            format!("(held {late_min} min by a usage pause) {}", wake.message)
+        } else if late {
+            format!("(late by {late_min} min) {}", wake.message)
         } else {
             wake.message.to_string()
         };

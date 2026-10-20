@@ -1,4 +1,4 @@
-//! `fleetd project add|list|remove`: the hub's add-a-project service (project_discover, project_inspect,
+//! `fleetd project add|list|remove|set`: the hub's add-a-project service (project_discover, project_inspect,
 //! project_add) from a terminal, one question at a time like `fleetd init`, or flags only without one.
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -23,6 +23,12 @@ pub const PROJECT_USAGE: &str =
   project list [--machine <id>] [--home <dir>] [--hub <url>]
   project remove <machine>/<project> [--yes] [--home <dir>] [--hub <url>]
              stop its agents and forget it; its files, branches and worktrees stay
+  project set <machine>/<project> --max-agents <n> [--pause-extras] [--home <dir>] [--hub <url>]
+  project set --fleet-cap <n> [--home <dir>] [--hub <url>]
+             the most agents the project runs at once (its lead not counted), or the
+             fleet's cap on running turns (admin key); more wait queued and start as
+             slots free. Lowering stops nothing; --pause-extras has the newest agents
+             above the new max push their work and wait
 ";
 
 const SPEC: Spec = Spec {
@@ -34,6 +40,9 @@ const SPEC: Spec = Spec {
         ("yes", Kind::Bool),
         ("home", Kind::Str),
         ("hub", Kind::Str),
+        ("max-agents", Kind::Str),
+        ("pause-extras", Kind::Bool),
+        ("fleet-cap", Kind::Str),
     ],
     positionals: true,
 };
@@ -243,6 +252,7 @@ pub async fn project_command(argv: &[String]) -> u8 {
         "add" => add(&mut client, &out, &v, &home).await,
         "list" => list(&mut client, &v).await,
         "remove" => remove(&mut client, &out, &v).await,
+        "set" => set(&mut client, &out, &v).await,
         other => return usage(&format!("unknown project command '{other}'")),
     };
     match result {
@@ -280,6 +290,35 @@ async fn list(client: &mut McpClient, v: &args::Parsed) -> Result<(), Stop> {
 }
 
 async fn remove(client: &mut McpClient, out: &Out, v: &args::Parsed) -> Result<(), Stop> {
+    let (machine, project) = find_project(client, v).await?;
+    let machine = machine.as_str();
+    let project = &project;
+    let title = s(project, "/title").to_owned();
+    if out.tty {
+        let sure = cliclack::confirm(format!(
+            "Remove {title} on {machine}? Its agents stop; its files stay."
+        ))
+        .initial_value(false)
+        .interact()
+        .unwrap_or(false);
+        if !sure {
+            return Ok(());
+        }
+    }
+    call(
+        client,
+        "project_remove",
+        json!({ "machineId": machine, "projectId": s(project, "/projectId") }),
+    )
+    .await?;
+    out.success(&format!(
+        "{title} removed from {machine}; its files, branches and worktrees stay"
+    ));
+    Ok(())
+}
+
+/// The project the first argument names, `<machine>/<project id or title>`: its machine and its summary.
+async fn find_project(client: &mut McpClient, v: &args::Parsed) -> Result<(String, Value), Stop> {
     let Some(target) = v.positionals.first() else {
         return Err(Stop(
             2,
@@ -310,7 +349,7 @@ async fn remove(client: &mut McpClient, out: &Out, v: &args::Parsed) -> Result<(
                 .collect();
             (by_title.len() == 1).then(|| by_title[0])
         });
-    let Some(project) = found else {
+    let Some(project) = found.cloned() else {
         return Err(Stop(
             3,
             format!("no single project '{which}' on {machine}"),
@@ -319,27 +358,61 @@ async fn remove(client: &mut McpClient, out: &Out, v: &args::Parsed) -> Result<(
             )),
         ));
     };
-    let title = s(project, "/title").to_owned();
-    if out.tty {
-        let sure = cliclack::confirm(format!(
-            "Remove {title} on {machine}? Its agents stop; its files stay."
-        ))
-        .initial_value(false)
-        .interact()
-        .unwrap_or(false);
-        if !sure {
-            return Ok(());
-        }
+    Ok((machine.to_owned(), project))
+}
+
+fn count_of(v: &args::Parsed, name: &str) -> Result<Option<u32>, Stop> {
+    v.str(name)
+        .map(|n| {
+            n.parse::<u32>()
+                .ok()
+                .filter(|n| (1..=1000).contains(n))
+                .ok_or_else(|| Stop(2, format!("--{name} takes a number from 1 to 1000"), None))
+        })
+        .transpose()
+}
+
+async fn set(client: &mut McpClient, out: &Out, v: &args::Parsed) -> Result<(), Stop> {
+    let max_agents = count_of(v, "max-agents")?;
+    let fleet_cap = count_of(v, "fleet-cap")?;
+    let mut input = json!({});
+    if let Some(cap) = fleet_cap {
+        input["cap"] = json!(cap);
     }
-    call(
-        client,
-        "project_remove",
-        json!({ "machineId": machine, "projectId": s(project, "/projectId") }),
-    )
-    .await?;
-    out.success(&format!(
-        "{title} removed from {machine}; its files, branches and worktrees stay"
-    ));
+    match (v.positionals.first(), max_agents) {
+        (Some(_), Some(n)) => {
+            let (machine, project) = find_project(client, v).await?;
+            input["project"] = json!({
+                "projectRef": { "machineId": machine, "projectId": s(&project, "/projectId") },
+                "maxAgents": n,
+                "pauseExtras": v.flag("pause-extras"),
+            });
+        }
+        (Some(_), None) => {
+            return Err(Stop(
+                2,
+                "give --max-agents <n> for the project".into(),
+                None,
+            ));
+        }
+        (None, Some(_)) => {
+            return Err(Stop(
+                2,
+                "--max-agents needs the project as <machine>/<project>".into(),
+                None,
+            ));
+        }
+        (None, None) if fleet_cap.is_none() => {
+            return Err(Stop(
+                2,
+                "give --max-agents <n> with a project, or --fleet-cap <n>".into(),
+                None,
+            ));
+        }
+        (None, None) => {}
+    }
+    let body = call(client, "cap_set", input).await?;
+    out.success(body.get("next").and_then(Value::as_str).unwrap_or("Set."));
     Ok(())
 }
 

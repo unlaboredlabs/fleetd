@@ -201,11 +201,13 @@ export function runChecks(opts: CheckOptions): Finding[] {
     }
   }
 
-  // Content scrolls under an opaque sticky or fixed bar (a list's header, the top bar) by design. Where such a bar is
-  // the topmost thing over a run, that part of the run is hidden, not overlapping, and is cut from its visible rect.
+  // Content scrolls under an opaque sticky or fixed bar (a list's header, the top bar) by design, and a popover or
+  // menu (an opaque surface in a fixed positioner, as Radix draws them) opens over it. Where such a surface is the
+  // topmost thing over a run, that part of the run is hidden, not overlapping, and is cut from its visible rect.
+  const fixedParent = (el: Element) => el.parentElement !== null && style(el.parentElement).position === "fixed";
   const occluders = [...document.body.querySelectorAll("*")].filter((el) => {
     const s = style(el);
-    return (s.position === "sticky" || s.position === "fixed") && opaque(s) && !hidden(el);
+    return (s.position === "sticky" || s.position === "fixed" || fixedParent(el)) && opaque(s) && !hidden(el);
   });
   // Cuts the parts of `v` (the visible rect of `el`) that an occluder is drawn over.
   const uncover = (el: Element, v: Rect) => {

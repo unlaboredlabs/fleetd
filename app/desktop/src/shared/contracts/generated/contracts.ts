@@ -122,6 +122,22 @@ export type AgentLane = {
 
 export type AgentRole = "lead" | "implementer" | "reader" | "reviewer" | "verifier" | "qa";
 
+/**
+ * `agents.cap` data: a project's max agents or the fleet cap changed. The event's summary is the one quiet line its
+ * chat shows.
+ */
+export type AgentsCapData = {
+  from: number;
+  /** Agents told to push their work and wait (`pauseExtras`). */
+  paused?: TaskId[];
+  /** Absent for the fleet cap. */
+  projectRef?: ProjectRef;
+  queued: number;
+  /** The project's agents (or, for the fleet cap, every slot) running and queued just after the change. */
+  running: number;
+  to: number;
+};
+
 export type AppClientMessage = {
   key: string;
   t: "auth";
@@ -427,19 +443,28 @@ export type BriefBudget = {
 export type BriefHash = string;
 
 export type CapSetInput = {
+  /** The fleet cap on running turns, leads' included. Needs an admin key. */
   cap?: number;
-  share?: CapSetShare;
+  project?: CapSetProject;
 };
 
 export type CapSetOutput = {
   next?: string;
+  /** The agents `pauseExtras` paused. */
+  paused?: TaskId[];
   slots: SlotState;
   truncated?: boolean;
 };
 
-export type CapSetShare = {
+export type CapSetProject = {
+  /** 1 up to the fleet cap. */
+  maxAgents: number;
+  /**
+   * Lowering: tell the agents above the new max to push their work in progress and wait; they resume when a slot
+   * frees. Without it they finish their current work.
+   */
+  pauseExtras?: boolean;
   projectRef: ProjectRef;
-  share: number;
 };
 
 /** Which color a span gets in every view, and which breakdown row it adds to. */
@@ -1228,9 +1253,9 @@ export type GithubWebhookSetOutput = {
 
 export type Headline = {
   at: Timestamp;
-  /** The prompt version that wrote a generated line, `status.headline@<sha10>`. */
+  /** The prompt version that wrote a generated line, from older hubs. */
   promptRef?: PromptRef;
-  /** Why the template shows: "facts changed, rewriting", "claude unavailable: …", "daily limit". */
+  /** Why the template shows, from older hubs that also generated lines. */
   reason?: string;
   source: HeadlineSource;
   /** Starts with "Not live: …" when a source the scope depends on is stale; the hub writes that clause. */
@@ -1353,6 +1378,7 @@ export type KnownHubEventType =
   | "digest.ready"
   | "task.queued"
   | "task.out_of_area"
+  | "agents.cap"
   | "lease.stale"
   | "claim.failed"
   | "workstream.done"
@@ -1602,11 +1628,12 @@ export type InsightRule = KnownInsightRule | (string & {});
 
 export type IntakeChannel = "app" | "mcp" | "lead";
 
-/** Where an intent went and why, whether the router, a prefix, `@<project>` or the caller decided it. */
+/** Where an intent went and why: the caller's project, `@<project>`, or the only project. */
 export type IntakeEcho = {
   projectRef: ProjectRef;
   reason: string;
-  template: PlaybookName;
+  /** The playbook the caller gave; absent means the project's lead decides how to run it. */
+  template?: PlaybookName;
 };
 
 export type IntakePreviewInput = {
@@ -1614,7 +1641,7 @@ export type IntakePreviewInput = {
 };
 
 export type IntakePreviewOutput = {
-  /** Absent: the router could not place it (intake_submit would ask the human). */
+  /** Absent: the text names no project and there is more than one (intake_submit would refuse it). */
   echo?: IntakeEcho;
   next?: string;
   truncated?: boolean;
@@ -1639,11 +1666,11 @@ export type IntakeSubmitInput = {
   /** From attachment_put; delivered to the project under `.fleetd/attachments/<W>/` when the order is placed. */
   attachments?: AttachmentId[];
   clientRequestId: string;
-  /** With projectId, or neither: then the router picks the project unless the text starts with `@<project>`. */
+  /** With projectId, or neither: then a leading `@<project>` picks the project, else the only one the caller may use. */
   machineId?: MachineId;
   projectId?: ProjectId;
   refs?: IntakeRef[];
-  /** Skips the router for the template, like a `fix:` or `research:` prefix. */
+  /** The playbook the order's workstream pins; none when absent. */
   template?: PlaybookName;
   text: string;
 };
@@ -1707,6 +1734,16 @@ export type LaneStatus =
   | "cancelled"
   | "waiting"
   | "parked";
+
+/** The project's latest merge, as the train recorded it. */
+export type LastMerged = {
+  /** When the train merged it. */
+  at: Timestamp;
+  prNumber?: number;
+  prUrl?: string;
+  /** The work's own title (its writer task's), not the PR's branch. */
+  title: string;
+};
 
 export type Lead = {
   lastWakeAt?: Timestamp;
@@ -2521,6 +2558,31 @@ export type ProjectRemoveOutput = {
   truncated?: boolean;
 };
 
+/** What a project is doing, in one word. */
+export type KnownProjectRowState = "working" | "waiting_on_you" | "blocked" | "idle";
+/** KnownProjectRowState, or a value from a newer hub. */
+export type ProjectRowState = KnownProjectRowState | (string & {});
+
+/** One project on the Status screen: a state word, the two-tone bar, agents running and the last merge. No ETA. */
+export type ProjectStatusRow = {
+  /** Its lead and task sessions holding a slot now. */
+  agentsRunning: number;
+  asOf: Timestamp;
+  /** Blocked only: why, in one line, for the expanded row. */
+  blockedReason?: string;
+  lastMerged?: LastMerged;
+  /**
+   * The project's progress estimate (verified, in flight, planning), without its series. Absent when the project
+   * has nothing to count.
+   */
+  progress?: ProgressEstimate;
+  projectRef: ProjectRef;
+  /** Set when a source the row reads (its machine, its repo on GitHub) went quiet. */
+  stale?: StaleMark;
+  state: ProjectRowState;
+  title: string;
+};
+
 export type ProjectStopInput = {
   projectRef: ProjectRef;
   reason?: string;
@@ -2598,20 +2660,13 @@ export type PromptGetOutput = {
 };
 
 /** Where the app lists it. */
-export type PromptGroup =
-  | "lead"
-  | "tasks"
-  | "reviews_and_checks"
-  | "wakes_and_messages"
-  | "one_shots"
-  | "playbooks"
-  | "instructions";
+export type PromptGroup = "lead" | "tasks" | "reviews_and_checks" | "messages" | "one_shots" | "instructions";
 
 /** Prompt registry id, dotted lowercase words */
 export type PromptId = string;
 
 /** How the text reaches the model. */
-export type PromptKind = "start" | "wake" | "msg" | "oneshot" | "playbook" | "instructions";
+export type PromptKind = "start" | "msg" | "oneshot" | "instructions";
 
 /** A human's override: its text and the default it was edited from (absent for a hand-made file). */
 export type PromptOverride = {
@@ -2701,6 +2756,8 @@ export type PromptsListInput = {
 
 export type PromptsListOutput = {
   next?: string;
+  /** Your edits to prompts a release retired: hub-wide ones, and the asked project's. */
+  orphans: RetiredPromptOverride[];
   prompts: PromptSummary[];
   truncated?: boolean;
 };
@@ -2737,6 +2794,24 @@ export type ResearchVerdict = {
   outcome: ResearchOutcome;
   /** The brief's frozen rule. */
   rule: DecisionRule;
+};
+
+/**
+ * An override of a prompt a release retired (merged into another, or replaced by fixed text), kept so the human can
+ * carry what they wrote into a prompt that still exists. Its file stays until `prompt_reset` on its id.
+ */
+export type RetiredPromptOverride = {
+  /** The retired id. */
+  id: PromptId;
+  projectRef?: ProjectRef;
+  /** `global` or `project`. */
+  scope: PromptScope;
+  /** The prompt that now covers what this one said, when one does. fleetd never copies the text over itself. */
+  suggestedTarget?: PromptId;
+  text: string;
+  title: string;
+  /** What replaced it, in one line. */
+  why: string;
 };
 
 export type RetroMetric = {
@@ -3059,8 +3134,17 @@ export type SlotState = {
 };
 
 export type SlotStatePerProject = {
+  /**
+   * The most of the project's agents (its tasks: writers, readers, reviewers) that run at once; its lead's own
+   * turns don't count. The fleet `cap` until set.
+   */
+  maxAgents: number;
   projectRef: ProjectRef;
-  share: number;
+  /** Its agents waiting for a slot, paused ones included. */
+  queued: number;
+  /** Its agents running now. Above `maxAgents` right after the cap was lowered: nothing is stopped for it. */
+  running: number;
+  /** Every slot it holds, its lead's turns included. */
   used: number;
 };
 
@@ -3319,6 +3403,15 @@ export type StatusGetInput = {
 export type StatusGetOutput = {
   doc: StatusDoc;
   next?: string;
+  truncated?: boolean;
+};
+
+export type StatusProjectsInput = { [key: string]: unknown };
+
+export type StatusProjectsOutput = {
+  next?: string;
+  /** By title. */
+  rows: ProjectStatusRow[];
   truncated?: boolean;
 };
 
@@ -4413,6 +4506,7 @@ export interface ToolMap {
   secret_submit: { input: SecretSubmitInput; output: SecretSubmitOutput };
   session_prompt_get: { input: SessionPromptGetInput; output: SessionPromptGetOutput };
   status_get: { input: StatusGetInput; output: StatusGetOutput };
+  status_projects: { input: StatusProjectsInput; output: StatusProjectsOutput };
   status_seen: { input: StatusSeenInput; output: StatusSeenOutput };
   status_wait: { input: StatusWaitInput; output: StatusWaitOutput };
   steer_send: { input: SteerSendInput; output: SteerSendOutput };
@@ -4447,6 +4541,7 @@ export interface ToolMap {
 
 /** `HubEvent.data` by event type, for the types whose data has a declared shape. */
 export interface HubEventDataMap {
+  "agents.cap": AgentsCapData;
   "ask.answered": AskEventData;
   "ask.auto": AskEventData;
   "ask.closed": AskEventData;

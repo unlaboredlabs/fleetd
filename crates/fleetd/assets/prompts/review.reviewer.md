@@ -4,7 +4,7 @@ Read the change yourself: `gh pr diff {{prNumber}} --repo {{repo}}`, and files a
 
 Rules for tier {{tier}}:
 - Blocking means the change is wrong, unsafe, or fails the done-when it serves ({{serves}}). Style, naming, polish and nice-to-haves are non-blocking.
-- It serves {{serves}} only: the other done-when checks are other PRs' work, never a finding here.
+- It serves {{serves}} only: other done-when checks are other PRs' work, never a finding here.
 - One round: report everything you find now. A verdict with 0 blocking ends review for this patch.
 - Do not change, commit or push anything.
 Finish by calling the `report` tool once, filled in:

@@ -143,6 +143,20 @@ fleetd project remove <machine>/<project> [--yes] [--home <dir>] [--hub <url>]
 
 stop its agents and forget it; its files, branches and worktrees stay
 
+### fleetd project set {#project-set}
+
+```text
+fleetd project set <machine>/<project> --max-agents <n> [--pause-extras] [--home <dir>] [--hub <url>]
+```
+
+### fleetd project set {#project-set-fleet-cap}
+
+```text
+fleetd project set --fleet-cap <n> [--home <dir>] [--hub <url>]
+```
+
+the most agents the project runs at once (its lead not counted), or the fleet's cap on running turns (admin key); more wait queued and start as slots free. Lowering stops nothing; `--pause-extras` has the newest agents above the new max push their work and wait
+
 
 ## Running by hand {#running-by-hand}
 
@@ -153,7 +167,7 @@ Run `fleetd init --no-service` before `fleetd hub start`: it writes the setup th
 ### fleetd hub start {#hub-start}
 
 ```text
-fleetd hub start [--home <dir>] [--listen <host:port>] [--queue-ttl <seconds>] [--router-model <model>]
+fleetd hub start [--home <dir>] [--listen <host:port>] [--queue-ttl <seconds>] [--retro-model <model>]
 ```
 
 run the hub (default home `~/.fleetd/hub`, listen 127.0.0.1:4790, writes to an offline machine wait 24 h, intents without a project are routed by the claude CLI with claude-haiku-5-5)

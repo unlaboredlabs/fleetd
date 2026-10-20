@@ -137,7 +137,7 @@ pub struct RetroProposal {
     pub note: Option<String>,
 }
 
-/// A `claude -p` one-shot the hub ran for itself, counted as orchestrator usage (intake's `RouterRun`).
+/// A `claude -p` one-shot the hub ran for itself, counted as orchestrator usage (`OneShotRun`).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrchestratorRun {

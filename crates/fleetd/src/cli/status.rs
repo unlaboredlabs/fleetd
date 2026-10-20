@@ -1279,7 +1279,7 @@ mod against_a_hub {
             listen: Listen::default(),
             url: None,
             queue_ttl_sec: None,
-            router_model: None,
+            retro_model: None,
         };
         let hub = crate::hub::serve::build_on(
             HubDb::open_memory().unwrap(),

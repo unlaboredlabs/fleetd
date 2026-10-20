@@ -1,7 +1,7 @@
 //! Where prompt texts live and which one a message gets.
 //!
 //! Overrides are files under `<hub home>/prompts` (`<id>.md`, `projects/<key>/<id>.md`, `<key>` a hash of the project ref), each with a
-//! `base:` frontmatter naming the default it was edited from; playbooks keep `<hub home>/playbooks/<name>.md`. Files
+//! `base:` frontmatter naming the default it was edited from. Files
 //! are read on every resolve, so an edit (a tool call, the CLI, or by hand) reaches the next session at once. Every
 //! text a session was given is kept in `prompt_versions`, and `session_prompts` pins each session to its refs: every
 //! later message to that thread renders from the text it started with.
@@ -12,14 +12,15 @@ use std::sync::{Arc, LazyLock};
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, ThreadId, Timestamp};
 use fleetd_contracts::prompts::{
     PromptDetail, PromptId, PromptOverride, PromptRef, PromptScope, PromptSummary, PromptVersion,
-    PromptWarning, SessionPrompt, SessionPromptRef, StalePrompt,
+    PromptWarning, RetiredPromptOverride, SessionPrompt, SessionPromptRef, StalePrompt,
 };
 use rusqlite::{OptionalExtension, params};
 use sha2::{Digest, Sha256};
 
 use super::registry::{self, Audience, ENTRIES, Entry, INSTRUCTIONS};
 use super::render::{self, merge, ref_of, rule_present, same_words, warnings};
-use crate::hub::playbooks::load::{git_blob_sha, parse_playbook};
+use super::retired::{self, Retired};
+use crate::hub::playbooks::load::git_blob_sha;
 use crate::hub::store::{HubDb, StoreError};
 
 /// One resolved text.
@@ -185,20 +186,17 @@ pub fn entry(id: &str) -> Result<&'static Entry, PromptError> {
 
 impl Prompts<'_> {
     fn file(&self, e: &Entry, project: Option<&ProjectRef>) -> Option<PathBuf> {
+        self.file_of(e.id, project)
+    }
+
+    fn file_of(&self, id: &str, project: Option<&ProjectRef>) -> Option<PathBuf> {
         let dir = self.db.prompts_dir()?;
-        if let Some(name) = e.playbook() {
-            return Some(
-                dir.parent()?
-                    .join("playbooks")
-                    .join(format!("{}.md", name.as_str())),
-            );
-        }
         let file = match project {
-            None => dir.join(format!("{}.md", e.id)),
+            None => dir.join(format!("{id}.md")),
             Some(p) => dir
                 .join("projects")
                 .join(project_key(p))
-                .join(format!("{}.md", e.id)),
+                .join(format!("{id}.md")),
         };
         // Ids are registry constants and the key is hex, so this holds; checked anyway, since the file is written.
         file.starts_with(dir).then_some(file)
@@ -210,14 +208,7 @@ impl Prompts<'_> {
             return None;
         }
         let raw = std::fs::read_to_string(self.file(e, project)?).ok()?;
-        Some(if e.playbook().is_some() {
-            Override {
-                text: raw,
-                base: None,
-            }
-        } else {
-            parse_file(&raw)
-        })
+        Some(parse_file(&raw))
     }
 
     fn effective_override(
@@ -486,14 +477,8 @@ impl Prompts<'_> {
         let file = self.file(e, level).ok_or_else(|| {
             PromptError::Invalid("This hub keeps no prompt files (an in-memory database).".into())
         })?;
-        if let Some(name) = e.playbook() {
-            parse_playbook(text, &file.display().to_string(), Some(name))
-                .map_err(|err| PromptError::Invalid(err.message))?;
-            write_atomic(&file, text)?;
-        } else {
-            let base = base.map_or_else(|| ref_of(e.id, e.default), str::to_owned);
-            write_atomic(&file, &format!("---\nbase: {base}\n---\n{text}"))?;
-        }
+        let base = base.map_or_else(|| ref_of(e.id, e.default), str::to_owned);
+        write_atomic(&file, &format!("---\nbase: {base}\n---\n{text}"))?;
         let r = ref_of(e.id, text);
         self.keep(&[(r.clone(), text)])?;
         Ok(r)
@@ -563,7 +548,7 @@ impl Prompts<'_> {
     }
 
     fn stale_of(&self, e: &Entry, scope: PromptScope, o: &Override) -> Option<StalePrompt> {
-        if e.playbook().is_some() || self.base_current(e, o.base.as_deref()) {
+        if self.base_current(e, o.base.as_deref()) {
             return None;
         }
         let current = ref_of(e.id, e.default);
@@ -664,6 +649,27 @@ impl Prompts<'_> {
 
     /// Every override edited from an older default than the one shipped now.
     pub fn stale(&self) -> Vec<StaleOverride> {
+        let mut out = Vec::new();
+        for project in self.levels() {
+            for e in ENTRIES {
+                if let Some(o) = self.override_of(e, project.as_ref())
+                    && !self.base_current(e, o.base.as_deref())
+                {
+                    out.push(StaleOverride {
+                        entry: e,
+                        project: project.clone(),
+                        base: o.base,
+                    });
+                }
+            }
+        }
+        out
+    }
+}
+
+impl Prompts<'_> {
+    /// Hub-wide, then every project the hub knows.
+    fn levels(&self) -> Vec<Option<ProjectRef>> {
         let mut levels: Vec<Option<ProjectRef>> = vec![None];
         let known: Result<Vec<(String, String)>, StoreError> = self.db.with(|c| {
             let mut rows = c.prepare("SELECT machine_id, project_id FROM projects")?;
@@ -680,21 +686,97 @@ impl Prompts<'_> {
                 }));
             }
         }
+        levels
+    }
+
+    fn retired_file(&self, r: &Retired, project: Option<&ProjectRef>) -> Option<PathBuf> {
+        match (r.playbook(), project) {
+            (Some(name), None) => Some(
+                self.db
+                    .prompts_dir()?
+                    .parent()?
+                    .join("playbooks")
+                    .join(format!("{name}.md")),
+            ),
+            (Some(_), Some(_)) => None,
+            (None, _) => self.file_of(r.id, project),
+        }
+    }
+
+    /// Edits to retired prompts: hub-wide ones, and `project`'s when given.
+    pub fn orphans(&self, project: Option<&ProjectRef>) -> Vec<RetiredPromptOverride> {
+        let mut levels = vec![None];
+        levels.extend(project.cloned().map(Some));
         let mut out = Vec::new();
-        for project in levels {
-            for e in ENTRIES.iter().filter(|e| e.playbook().is_none()) {
-                if let Some(o) = self.override_of(e, project.as_ref())
-                    && !self.base_current(e, o.base.as_deref())
-                {
-                    out.push(StaleOverride {
-                        entry: e,
-                        project: project.clone(),
-                        base: o.base,
-                    });
-                }
+        for level in levels {
+            for r in retired::RETIRED {
+                let Some(raw) = self
+                    .retired_file(r, level.as_ref())
+                    .and_then(|f| std::fs::read_to_string(f).ok())
+                else {
+                    continue;
+                };
+                out.push(RetiredPromptOverride {
+                    id: PromptId::unchecked(r.id),
+                    title: r.title.into(),
+                    scope: if level.is_some() {
+                        PromptScope::Project
+                    } else {
+                        PromptScope::Global
+                    },
+                    project_ref: level.clone(),
+                    text: if r.playbook().is_some() {
+                        raw
+                    } else {
+                        parse_file(&raw).text
+                    },
+                    suggested_target: r.target.map(PromptId::unchecked),
+                    why: r.why.into(),
+                });
             }
         }
         out
+    }
+
+    /// Every edit to a retired prompt the hub keeps, at any level.
+    pub fn all_orphans(&self) -> Vec<RetiredPromptOverride> {
+        let mut out = self.orphans(None);
+        for p in self.levels().into_iter().flatten() {
+            out.extend(
+                self.orphans(Some(&p))
+                    .into_iter()
+                    .filter(|o| o.scope == PromptScope::Project),
+            );
+        }
+        out
+    }
+
+    /// Deletes an edit to a retired prompt. A playbook's file goes too, so its bundled rules apply again.
+    pub fn reset_retired(
+        &self,
+        r: &Retired,
+        scope: PromptScope,
+        project: Option<&ProjectRef>,
+    ) -> Result<(), PromptError> {
+        let level = match scope {
+            PromptScope::Default => {
+                return Err(PromptError::Invalid(
+                    "A retired prompt has no shipped text to reset; give scope global or project."
+                        .into(),
+                ));
+            }
+            PromptScope::Global => None,
+            PromptScope::Project => Some(project.ok_or_else(|| {
+                PromptError::Invalid("A project override needs projectRef.".into())
+            })?),
+        };
+        if let Some(file) = self.retired_file(r, level) {
+            match std::fs::remove_file(file) {
+                Err(err) if err.kind() != std::io::ErrorKind::NotFound => return Err(err.into()),
+                _ => {}
+            }
+        }
+        Ok(())
     }
 }
 

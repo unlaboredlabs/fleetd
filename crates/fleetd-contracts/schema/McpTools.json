@@ -1040,12 +1040,13 @@
     "CapSetInput": {
       "properties": {
         "cap": {
+          "description": "The fleet cap on running turns, leads' included. Needs an admin key.",
           "maximum": 1000,
           "minimum": 1,
           "type": "integer"
         },
-        "share": {
-          "$ref": "#/$defs/CapSetShare"
+        "project": {
+          "$ref": "#/$defs/CapSetProject"
         }
       },
       "type": "object"
@@ -1054,6 +1055,14 @@
       "properties": {
         "next": {
           "type": "string"
+        },
+        "paused": {
+          "description": "The agents `pauseExtras` paused.",
+          "items": {
+            "$ref": "#/$defs/TaskId"
+          },
+          "maxItems": 1000,
+          "type": "array"
         },
         "slots": {
           "$ref": "#/$defs/SlotState"
@@ -1067,20 +1076,25 @@
       ],
       "type": "object"
     },
-    "CapSetShare": {
+    "CapSetProject": {
       "properties": {
+        "maxAgents": {
+          "description": "1 up to the fleet cap.",
+          "maximum": 1000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "pauseExtras": {
+          "description": "Lowering: tell the agents above the new max to push their work in progress and wait; they resume when a slot\nfrees. Without it they finish their current work.",
+          "type": "boolean"
+        },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
-        },
-        "share": {
-          "maximum": 1000,
-          "minimum": 0,
-          "type": "integer"
         }
       },
       "required": [
         "projectRef",
-        "share"
+        "maxAgents"
       ],
       "type": "object"
     },
@@ -3459,10 +3473,10 @@
         },
         "promptRef": {
           "$ref": "#/$defs/PromptRef",
-          "description": "The prompt version that wrote a generated line, `status.headline@<sha10>`."
+          "description": "The prompt version that wrote a generated line, from older hubs."
         },
         "reason": {
-          "description": "Why the template shows: \"facts changed, rewriting\", \"claude unavailable: …\", \"daily limit\".",
+          "description": "Why the template shows, from older hubs that also generated lines.",
           "maxLength": 200,
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",
@@ -3490,12 +3504,12 @@
       "oneOf": [
         {
           "const": "generated",
-          "description": "Phrased by the `status.headline` prompt from the current facts.",
+          "description": "Phrased by a model from the facts. Only older hubs wrote these.",
           "type": "string"
         },
         {
           "const": "template",
-          "description": "The deterministic template: the facts changed, claude was unavailable, or the daily limit was hit. Also what a\nsource this build doesn't know decodes as.",
+          "description": "The deterministic template, the only source this hub writes. Also what a source this build doesn't know decodes\nas.",
           "type": "string"
         }
       ],
@@ -3854,6 +3868,11 @@
         {
           "const": "task.out_of_area",
           "description": "A write task's diff touched files outside its leased areas; `data.paths`.",
+          "type": "string"
+        },
+        {
+          "const": "agents.cap",
+          "description": "A project's max agents or the fleet cap changed; `data` is `tasks::AgentsCapData`, `summary` the chat's line.",
           "type": "string"
         },
         {
@@ -4583,7 +4602,7 @@
         },
         {
           "const": "queue_wait",
-          "description": "Serial waits: work that waited while capacity existed. A task queued for a slot while the fleet had free\nones (a project share, the lead band), or a PR that waited out another PR's train cycle.",
+          "description": "Serial waits: work that waited while capacity existed. A task queued for a slot while the fleet had free\nones (a project's max agents, the lead band), or a PR that waited out another PR's train cycle.",
           "type": "string"
         },
         {
@@ -4613,7 +4632,7 @@
       "type": "string"
     },
     "IntakeEcho": {
-      "description": "Where an intent went and why, whether the router, a prefix, `@<project>` or the caller decided it.",
+      "description": "Where an intent went and why: the caller's project, `@<project>`, or the only project.",
       "properties": {
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
@@ -4625,12 +4644,12 @@
           "type": "string"
         },
         "template": {
-          "$ref": "#/$defs/PlaybookName"
+          "$ref": "#/$defs/PlaybookName",
+          "description": "The playbook the caller gave; absent means the project's lead decides how to run it."
         }
       },
       "required": [
         "projectRef",
-        "template",
         "reason"
       ],
       "type": "object"
@@ -4652,7 +4671,7 @@
       "properties": {
         "echo": {
           "$ref": "#/$defs/IntakeEcho",
-          "description": "Absent: the router could not place it (intake_submit would ask the human)."
+          "description": "Absent: the text names no project and there is more than one (intake_submit would refuse it)."
         },
         "next": {
           "type": "string"
@@ -4736,7 +4755,7 @@
         },
         "machineId": {
           "$ref": "#/$defs/MachineId",
-          "description": "With projectId, or neither: then the router picks the project unless the text starts with `@<project>`."
+          "description": "With projectId, or neither: then a leading `@<project>` picks the project, else the only one the caller may use."
         },
         "projectId": {
           "$ref": "#/$defs/ProjectId"
@@ -4750,7 +4769,7 @@
         },
         "template": {
           "$ref": "#/$defs/PlaybookName",
-          "description": "Skips the router for the template, like a `fix:` or `research:` prefix."
+          "description": "The playbook the order's workstream pins; none when absent."
         },
         "text": {
           "maxLength": 4000,
@@ -4904,6 +4923,37 @@
           "type": "string"
         }
       ]
+    },
+    "LastMerged": {
+      "description": "The project's latest merge, as the train recorded it.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When the train merged it."
+        },
+        "prNumber": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "prUrl": {
+          "maxLength": 300,
+          "minLength": 1,
+          "type": "string"
+        },
+        "title": {
+          "description": "The work's own title (its writer task's), not the PR's branch.",
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "at"
+      ],
+      "type": "object"
     },
     "Lead": {
       "properties": {
@@ -5505,6 +5555,12 @@
         "status_get.output": {
           "$ref": "#/$defs/StatusGetOutput"
         },
+        "status_projects.input": {
+          "$ref": "#/$defs/StatusProjectsInput"
+        },
+        "status_projects.output": {
+          "$ref": "#/$defs/StatusProjectsOutput"
+        },
         "status_seen.input": {
           "$ref": "#/$defs/StatusSeenInput"
         },
@@ -5785,6 +5841,8 @@
         "session_prompt_get.output",
         "status_get.input",
         "status_get.output",
+        "status_projects.input",
+        "status_projects.output",
         "status_seen.input",
         "status_seen.output",
         "status_wait.input",
@@ -7749,6 +7807,84 @@
       ],
       "type": "object"
     },
+    "ProjectRowState": {
+      "description": "What a project is doing, in one word.",
+      "oneOf": [
+        {
+          "const": "working",
+          "description": "Agents are running, or its PRs are in review, CI or the train.",
+          "type": "string"
+        },
+        {
+          "const": "waiting_on_you",
+          "description": "The lead is waiting for your reply.",
+          "type": "string"
+        },
+        {
+          "const": "blocked",
+          "description": "Something outside the work stops it: its machine is offline or at its usage limit, or main CI is red.",
+          "type": "string"
+        },
+        {
+          "const": "idle",
+          "description": "Nothing running and nothing waiting.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "ProjectStatusRow": {
+      "description": "One project on the Status screen: a state word, the two-tone bar, agents running and the last merge. No ETA.",
+      "properties": {
+        "agentsRunning": {
+          "description": "Its lead and task sessions holding a slot now.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "asOf": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "blockedReason": {
+          "description": "Blocked only: why, in one line, for the expanded row.",
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "lastMerged": {
+          "$ref": "#/$defs/LastMerged"
+        },
+        "progress": {
+          "$ref": "#/$defs/ProgressEstimate",
+          "description": "The project's progress estimate (verified, in flight, planning), without its series. Absent when the project\nhas nothing to count."
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "stale": {
+          "$ref": "#/$defs/StaleMark",
+          "description": "Set when a source the row reads (its machine, its repo on GitHub) went quiet."
+        },
+        "state": {
+          "$ref": "#/$defs/ProjectRowState"
+        },
+        "title": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "projectRef",
+        "title",
+        "state",
+        "agentsRunning",
+        "asOf"
+      ],
+      "type": "object"
+    },
     "ProjectStopInput": {
       "properties": {
         "projectRef": {
@@ -7962,9 +8098,8 @@
         "lead",
         "tasks",
         "reviews_and_checks",
-        "wakes_and_messages",
+        "messages",
         "one_shots",
-        "playbooks",
         "instructions"
       ],
       "type": "string"
@@ -7983,23 +8118,13 @@
           "type": "string"
         },
         {
-          "const": "wake",
-          "description": "A piece of a lead wake (or of the digest every wake starts with).",
-          "type": "string"
-        },
-        {
           "const": "msg",
-          "description": "A later message into a running session, or a tool result it reads back.",
+          "description": "A later message into a running session.",
           "type": "string"
         },
         {
           "const": "oneshot",
-          "description": "The input of a tool-less one-shot `claude -p` (router, retro).",
-          "type": "string"
-        },
-        {
-          "const": "playbook",
-          "description": "A playbook file; its `leadInstructions` go into the digest and intake wakes.",
+          "description": "The input of a tool-less one-shot `claude -p` (the retro).",
           "type": "string"
         },
         {
@@ -8249,6 +8374,13 @@
         "next": {
           "type": "string"
         },
+        "orphans": {
+          "description": "Your edits to prompts a release retired: hub-wide ones, and the asked project's.",
+          "items": {
+            "$ref": "#/$defs/RetiredPromptOverride"
+          },
+          "type": "array"
+        },
         "prompts": {
           "items": {
             "$ref": "#/$defs/PromptSummary"
@@ -8260,7 +8392,8 @@
         }
       },
       "required": [
-        "prompts"
+        "prompts",
+        "orphans"
       ],
       "type": "object"
     },
@@ -8374,6 +8507,44 @@
         "metricValues",
         "rule",
         "computedAt"
+      ],
+      "type": "object"
+    },
+    "RetiredPromptOverride": {
+      "description": "An override of a prompt a release retired (merged into another, or replaced by fixed text), kept so the human can\ncarry what they wrote into a prompt that still exists. Its file stays until `prompt_reset` on its id.",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/PromptId",
+          "description": "The retired id."
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "scope": {
+          "$ref": "#/$defs/PromptScope",
+          "description": "`global` or `project`."
+        },
+        "suggestedTarget": {
+          "$ref": "#/$defs/PromptId",
+          "description": "The prompt that now covers what this one said, when one does. fleetd never copies the text over itself."
+        },
+        "text": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "why": {
+          "description": "What replaced it, in one line.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "scope",
+        "text",
+        "why"
       ],
       "type": "object"
     },
@@ -9300,15 +9471,29 @@
     },
     "SlotStatePerProject": {
       "properties": {
+        "maxAgents": {
+          "description": "The most of the project's agents (its tasks: writers, readers, reviewers) that run at once; its lead's own\nturns don't count. The fleet `cap` until set.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
         },
-        "share": {
+        "queued": {
+          "description": "Its agents waiting for a slot, paused ones included.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "running": {
+          "description": "Its agents running now. Above `maxAgents` right after the cap was lowered: nothing is stopped for it.",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
         },
         "used": {
+          "description": "Every slot it holds, its lead's turns included.",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
@@ -9316,7 +9501,9 @@
       },
       "required": [
         "projectRef",
-        "share",
+        "maxAgents",
+        "running",
+        "queued",
         "used"
       ],
       "type": "object"
@@ -9705,7 +9892,7 @@
         },
         {
           "const": "intake.route",
-          "description": "The intake router, from submit to routed.",
+          "description": "Intake, from submit to placed.",
           "type": "string"
         },
         {
@@ -10050,6 +10237,31 @@
       },
       "required": [
         "doc"
+      ],
+      "type": "object"
+    },
+    "StatusProjectsInput": {
+      "type": "object"
+    },
+    "StatusProjectsOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "rows": {
+          "description": "By title.",
+          "items": {
+            "$ref": "#/$defs/ProjectStatusRow"
+          },
+          "maxItems": 200,
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "rows"
       ],
       "type": "object"
     },

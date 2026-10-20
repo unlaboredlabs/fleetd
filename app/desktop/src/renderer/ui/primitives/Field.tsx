@@ -2,7 +2,6 @@ import { Checkbox as CheckboxPrimitive, RadioGroup as RadioPrimitive, Switch as 
 import { Check, Minus } from "lucide-react";
 import { createContext, useContext, useId, type ComponentProps, type ReactNode } from "react";
 import { cx } from "../lib/cx";
-import { Kbd } from "./Button";
 import s from "./Field.module.css";
 
 interface FieldIds {
@@ -155,45 +154,5 @@ export function Radio({
       </RadioPrimitive.Item>
       <CheckText label={label} description={description} disabled={rest.disabled} />
     </label>
-  );
-}
-
-export interface RadioCardProps extends Omit<ComponentProps<typeof RadioPrimitive.Item>, "children"> {
-  /** A short human label for the choice. Never a key or slug. */
-  label: ReactNode;
-  /** One line: what happens if you pick this. */
-  detail?: ReactNode;
-  /** A tag set inside the card next to the label ("Recommended"). */
-  tag?: ReactNode;
-  /** Why it is tagged (the lead's one-line reason). */
-  reason?: ReactNode;
-  /** The key that picks it ("1"); shown as a hint, the caller binds it. */
-  shortcut?: string;
-}
-
-/**
- * A full-width, clickable choice card. Everything inside wraps; nothing truncates. Lives in a <RadioGroup>, which
- * gives arrow-key movement; the caller adds number keys and Enter where the screen wants them.
- */
-export function RadioCard({ label, detail, tag, reason, shortcut, className, ...rest }: RadioCardProps) {
-  return (
-    <RadioPrimitive.Item className={cx(s.card, className)} {...rest}>
-      <span className={s.radio} aria-hidden>
-        <RadioPrimitive.Indicator className={s.radioDot} />
-      </span>
-      <span className={s.cardBody} data-text="wrap">
-        <span className={s.cardHead}>
-          <span className={s.cardLabel}>{label}</span>
-          {tag ? <span className={s.cardTag}>{tag}</span> : null}
-        </span>
-        {reason ? <span className={s.cardReason}>{reason}</span> : null}
-        {detail ? <span className={s.cardDetail}>{detail}</span> : null}
-      </span>
-      {shortcut ? (
-        <span className={s.cardKey}>
-          <Kbd>{shortcut}</Kbd>
-        </span>
-      ) : null}
-    </RadioPrimitive.Item>
   );
 }

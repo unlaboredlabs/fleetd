@@ -71,9 +71,24 @@ impl Ports for HubPorts {
         stored.workstream = workstream.clone();
         logged(records.workstream_put(&stored), "storing a workstream");
     }
+    fn put_workstream_if(&self, workstream: &Workstream, expect: &Workstream) -> bool {
+        let Some(hub) = self.hub() else { return false };
+        let records = &hub.leads.records;
+        let Some(Some(mut stored)) = logged(
+            records.workstream_get(&workstream.workstream_id),
+            "reading a workstream",
+        ) else {
+            return false;
+        };
+        stored.workstream = workstream.clone();
+        logged(
+            records.workstream_put_if(&stored, expect),
+            "storing a workstream",
+        )
+        .unwrap_or(false)
+    }
     fn wake(&self, project: &ProjectRef, wake: ClaimWake) {
         let Some(hub) = self.hub() else { return };
-        let set = hub.db.prompts().for_lead(project);
         let trigger = match wake {
             ClaimWake::Failed {
                 claim_id,
@@ -81,14 +96,14 @@ impl Ports for HubPorts {
                 failures,
             } => Trigger::Line {
                 kind: LineKind::ClaimFailed,
-                text: render::claim_failed_lines(&set, &claim_id, &workstream_id, &failures),
+                text: render::claim_failed_lines(&claim_id, &workstream_id, &failures),
             },
             ClaimWake::Passed {
                 claim_id,
                 workstream_id,
             } => Trigger::Line {
                 kind: LineKind::ClaimPassed,
-                text: render::claim_passed_line(&set, &claim_id, &workstream_id),
+                text: render::claim_passed_line(&claim_id, &workstream_id),
             },
             ClaimWake::Held {
                 claim_id,
@@ -96,7 +111,7 @@ impl Ports for HubPorts {
                 work,
             } => Trigger::Line {
                 kind: LineKind::ClaimPassed,
-                text: render::claim_held_line(&set, &claim_id, &workstream_id, &work),
+                text: render::claim_held_line(&claim_id, &workstream_id, &work),
             },
         };
         hub.leads.wakes.trigger(project, trigger);

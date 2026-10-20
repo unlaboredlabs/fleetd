@@ -1,5 +1,5 @@
-//! The lead's first message: the `lead.start` prompt, the project's areas (`lead.areas`), the digest, then the
-//! human's custom instructions.
+//! The lead's first message: the `lead.start` prompt, the project's areas (a fixed line fleetd fills), the digest,
+//! then the human's custom instructions.
 use fleetd_contracts::ids::ProjectRef;
 
 use crate::hub::prompts::PromptSet;
@@ -25,15 +25,14 @@ pub fn render_lead_start(
         .filter(|(names, _)| !names.is_empty())
         .map(|(names, inferred)| {
             let source = if inferred {
-                "inferred from the repo"
+                "inferred"
             } else {
                 "from .fleetd/policy.yaml"
             };
-            let line = set.render(
-                "lead.areas",
-                &[("areas", &names.join(", ")), ("source", &source)],
-            );
-            format!("\n\n{}", line.trim_end())
+            format!(
+                "\n\nWriter areas in this project ({source}): {}.",
+                names.join(", ")
+            )
         })
         .unwrap_or_default();
     set.with_instructions(format!("{}{areas}\n\n{digest}", start.trim_end()))
@@ -54,7 +53,7 @@ mod tests {
         let set = PromptSet::defaults();
         let areas = Some((vec!["all".into(), "docs".into(), "hub".into()], true));
         let text = render_lead_start(set, &r, "storefront", areas, "DIGEST");
-        let line = "Writer areas in this project (inferred from the repo): all, docs, hub.";
+        let line = "Writer areas in this project (inferred): all, docs, hub.";
         let (at, digest) = (text.find(line).unwrap(), text.find("DIGEST").unwrap());
         assert!(
             text.find("storefront").unwrap() < at && at < digest,

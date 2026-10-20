@@ -260,6 +260,7 @@ impl TaskPorts for HubTaskPorts {
         let kind = match kind {
             WakeKind::TaskResult => LineKind::TaskResult,
             WakeKind::TaskWaiting => LineKind::TaskWaiting,
+            WakeKind::CapRaised => LineKind::CapRaised,
         };
         hub.leads
             .wakes
@@ -440,9 +441,11 @@ impl TasksHook for TasksForLeads {
         project_ref: &ProjectRef,
         since: Option<&Timestamp>,
         limit: usize,
-        prompts: &crate::hub::prompts::PromptSet,
     ) -> Vec<String> {
-        self.0.digest_lines(project_ref, since, limit, prompts)
+        self.0.digest_lines(project_ref, since, limit)
+    }
+    fn agents(&self, project_ref: &ProjectRef) -> crate::hub::leads::events::AgentsLine {
+        self.0.agents(project_ref)
     }
     fn live(&self, project_ref: Option<&ProjectRef>) -> Vec<(TaskId, ProjectRef)> {
         self.0.live(project_ref)

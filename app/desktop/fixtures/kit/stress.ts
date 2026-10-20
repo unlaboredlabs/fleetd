@@ -54,7 +54,7 @@ const LONG: Record<string, (i: number) => string> = {
     "S1: keeping the literal headline (no prorated variant) and the public snapshot route at /share/<id>.png, then rerunning the receipt tests for every locale before I ask for review again",
 };
 /** Free text gets long only where it is prose (asks, messages, steers), never where it is a key or a command. */
-const isProse = (o: JsonObject) => typeof o["askId"] === "string" || o["role"] === "assistant" || o["role"] === "user" || typeof o["stage"] === "string";
+const isProse = (o: JsonObject) => typeof o["messageId"] === "string" || typeof o["askId"] === "string" || o["role"] === "assistant" || o["role"] === "user" || typeof o["stage"] === "string";
 
 /** Long titles, criteria, branches and prose everywhere they appear; a judge done-when on every brief. */
 export const longText = (f: Fixture): Fixture => {
@@ -84,7 +84,7 @@ export const manyPrompts = (f: Fixture, total = 72): Fixture => {
   const prompts = arr(obj(f.output("prompts_list", {}))["prompts"]).filter(isObject);
   const template = obj(f.answers("prompt_get")[0]?.output);
   if (prompts.length === 0 || Object.keys(template).length === 0) throw new Error("manyPrompts needs a recorded prompts_list {} and a prompt_get");
-  const groups = ["lead", "tasks", "reviews_and_checks", "wakes_and_messages", "one_shots", "playbooks", "instructions"];
+  const groups = ["lead", "tasks", "reviews_and_checks", "messages", "one_shots", "instructions"];
   for (let n = 0; prompts.length < total; n++) {
     const group = groups[n % groups.length] ?? "lead";
     const id = `${group}.${LONG_PROMPT_KEY.split(".").slice(1, 2 + (n % 5)).join(".")}.v${n}`;
@@ -143,6 +143,38 @@ const ACTIVITIES: Array<JsonObject> = [
   { kind: "retrying", attempt: 2, of: 5, reason: "API overloaded" },
 ];
 
+/** Agent `i` of an order as order_get shows it (T<i+1>), with its live lane; started `i` × 70 s after `start`. */
+export const agentLane = (f: Fixture, i: number, finished: boolean, machineId: string, start: string): JsonObject => {
+  const taskId = `T${i + 1}`;
+  const role = ROLES[i % ROLES.length] ?? "implementer";
+  const area = AREAS[i % AREAS.length] ?? "receipt-dates";
+  const status = finished ? (i % 7 === 3 ? "failed" : i % 11 === 5 ? "cancelled" : "done") : (LIVE_STATUSES[i % LIVE_STATUSES.length] ?? "working");
+  const startedAt = at(start, i * 70_000);
+  const verb = { implementer: "Write", reviewer: "Review", verifier: "Verify", qa: "Test", reader: "Read" }[role];
+  return {
+    laneId: taskId,
+    taskId,
+    role,
+    status,
+    title: `${verb} ${area.replaceAll("-", " ")} (${taskId})`,
+    model: i % 4 === 0 ? "claude-sonnet-5-5" : "claude-haiku-5-5",
+    effort: (["low", "medium", "high"] as const)[i % 3] ?? "low",
+    startedAt,
+    ...(finished ? { endedAt: at(startedAt, 9 * 60_000) } : {}),
+    branch: `fleetd/${taskId}-${area}`,
+    threadRef: { machineId, threadId: uuid(`lane thread ${i}`) },
+    receipts: { toolCalls: 12 + i, commands: 4 + (i % 5), commandsFailed: i % 3 === 0 ? 1 : 0, filesChanged: 1 + (i % 4) },
+    ...(i % 7 === 2 ? { statusReason: "waiting for a free slot on devbox" } : {}),
+    live: {
+      laneId: taskId,
+      status,
+      spark: { endAt: at(f.now, -1000), samples: Array.from({ length: 30 }, (_, s) => (finished ? 0 : Math.floor(rand(`${taskId} ${s}`) * 9))) },
+      tokens: { input: 1200 + i * 37, output: 800 + i * 91, cacheRead: 40_000 + i * 1300, live: !finished && status === "working" },
+      ...(finished ? {} : { activity: { activity: clone(ACTIVITIES[i % ACTIVITIES.length] ?? { kind: "thinking" }), since: at(f.now, -(i % 5) * 4000) } }),
+    },
+  };
+};
+
 /** One order with `active` lanes (the hub's cap is 12) and `done` finished ones, in order_get, the board and live. */
 export const manyAgents = (f: Fixture, active = 12, done = 14): Fixture => {
   const busiest = busiestOrder(f);
@@ -151,36 +183,7 @@ export const manyAgents = (f: Fixture, active = 12, done = 14): Fixture => {
   const order = obj(output["order"]);
   const machineId = asText(obj(order["projectRef"])["machineId"], "devbox");
   const start = at(f.now, -40 * 60_000);
-  const lane = (i: number, finished: boolean): JsonObject => {
-    const taskId = `T${i + 1}`;
-    const role = ROLES[i % ROLES.length] ?? "implementer";
-    const area = AREAS[i % AREAS.length] ?? "receipt-dates";
-    const status = finished ? (i % 7 === 3 ? "failed" : i % 11 === 5 ? "cancelled" : "done") : (LIVE_STATUSES[i % LIVE_STATUSES.length] ?? "working");
-    const startedAt = at(start, i * 70_000);
-    const verb = { implementer: "Write", reviewer: "Review", verifier: "Verify", qa: "Test", reader: "Read" }[role];
-    return {
-      laneId: taskId,
-      taskId,
-      role,
-      status,
-      title: `${verb} ${area.replaceAll("-", " ")} (${taskId})`,
-      model: i % 4 === 0 ? "claude-sonnet-5-5" : "claude-haiku-5-5",
-      effort: (["low", "medium", "high"] as const)[i % 3] ?? "low",
-      startedAt,
-      ...(finished ? { endedAt: at(startedAt, 9 * 60_000) } : {}),
-      branch: `fleetd/${taskId}-${area}`,
-      threadRef: { machineId, threadId: uuid(`lane thread ${i}`) },
-      receipts: { toolCalls: 12 + i, commands: 4 + (i % 5), commandsFailed: i % 3 === 0 ? 1 : 0, filesChanged: 1 + (i % 4) },
-      ...(i % 7 === 2 ? { statusReason: "waiting for a free slot on devbox" } : {}),
-      live: {
-        laneId: taskId,
-        status,
-        spark: { endAt: at(f.now, -1000), samples: Array.from({ length: 30 }, (_, s) => (finished ? 0 : Math.floor(rand(`${taskId} ${s}`) * 9))) },
-        tokens: { input: 1200 + i * 37, output: 800 + i * 91, cacheRead: 40_000 + i * 1300, live: !finished && status === "working" },
-        ...(finished ? {} : { activity: { activity: clone(ACTIVITIES[i % ACTIVITIES.length] ?? { kind: "thinking" }), since: at(f.now, -(i % 5) * 4000) } }),
-      },
-    };
-  };
+  const lane = (i: number, finished: boolean) => agentLane(f, i, finished, machineId, start);
   const lanes = Array.from({ length: active }, (_, i) => lane(i, false));
   const doneLanes = Array.from({ length: done }, (_, i) => lane(active + i, true));
   Object.assign(order, { lanes, total: active + done, settled: done, phase: "working" });

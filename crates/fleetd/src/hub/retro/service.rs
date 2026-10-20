@@ -43,7 +43,7 @@ pub struct RetroRefused {
     pub fix: String,
 }
 
-/// The one `claude -p` turn of a run: the intake router's one-shot runner (the user's login, its environment
+/// The one `claude -p` turn of a run: the hub's one-shot runner (the user's login, its environment
 /// allowlist and model) with RUN_TIMEOUT_MS.
 pub trait RetroRunner: Send + Sync {
     /// The answer text, absent when the run failed (`run.error` says why), and the run as orchestrator usage.

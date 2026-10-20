@@ -12,7 +12,7 @@ use std::sync::{Arc, OnceLock, Weak};
 pub struct OpsPorts {
     hub: OnceLock<Weak<Hub>>,
     /// The retro's claude runner, built on first use (it needs the hub's home and router model).
-    pub(super) retro_runner: OnceLock<crate::hub::intake::router::OneShot>,
+    pub(super) retro_runner: OnceLock<crate::hub::intake::oneshot::OneShot>,
 }
 
 impl OpsPorts {
@@ -109,13 +109,6 @@ impl UsageQueue for OpsPorts {
         let (message, id) = (message.to_owned(), id.to_owned());
         Box::pin(async move {
             let target = target.ok_or("not a thread ref")?;
-            // `message` is a prompt id (the continue message): the thread gets the text its session started with.
-            let message = self
-                .hub()
-                .db
-                .prompts()
-                .for_thread(&target.machine_id, target.thread_id.as_str())
-                .render(&message, &[]);
             self.hub()
                 .queue
                 .send(&target, &message, &id, None)

@@ -1,26 +1,16 @@
-// The frame's view data as a hook, shared by the frame and the order view (its ⌘[ / ⌘] step through the sidebar).
+// The sidebar's projects, from the data layer's project list (needs-you from each chat's state, agents at work).
 import { useMemo } from "react";
 import { useData } from "../../src/data/react";
-import { leadLaneId, selectBoard, selectInbox, selectMachines, selectProjects } from "../../src/data/selectors";
-import { toShellData, type ShellData } from "./model";
+import { selectMachines, selectProjectList } from "../../src/data/selectors";
+import { toSidebar, type SidebarProject } from "./model";
 
-/** The frame's view data, from the data layer: recomputed only when one of its inputs changed. */
-export const useShellData = (): ShellData => {
-  const projects = useData(selectProjects);
-  const board = useData(selectBoard);
-  const inbox = useData(selectInbox);
-  const machines = useData(selectMachines);
-  const lanes = useData((s) => s.live.lanes);
-  return useMemo(
-    () =>
-      toShellData(
-        { projects, board, inbox, machines, leadStatus: (key) => lanes[leadLaneId(key)]?.status },
-        // A finished order drops off when the data next changes, not on a timer, so nothing repaints while idle;
-        // the clock is read once per data change, which is the point of the memo.
-        // eslint-disable-next-line react-hooks/purity
-        Date.now(),
-      ),
-    [projects, board, inbox, machines, lanes],
-  );
+export const useSidebarProjects = (): ReadonlyArray<SidebarProject> | undefined => {
+  const rows = useData(selectProjectList);
+  return useMemo(() => toSidebar(rows), [rows]);
 };
 
+/** Machines not online, for the sidebar's Machines entry; undefined until known. */
+export const useMachinesDown = (): number | undefined => {
+  const machines = useData(selectMachines);
+  return useMemo(() => machines?.filter((m) => m.machine.status !== "online").length, [machines]);
+};
