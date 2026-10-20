@@ -101,22 +101,43 @@ fn map_tightens(before: &Map<String, Value>, after: &Map<String, Value>) -> bool
         .all(|k| match (before.get(k), after.get(k)) {
             (a, b) if a == b => true,
             _ if WORDING_FIELDS.contains(&k.as_str()) => true,
+            (Some(Value::String(x)), Some(Value::String(y))) if k == "tierDefault" => {
+                larger_size_is_no_looser(after, x, y)
+            }
             (Some(a), Some(b)) => value_tightens(k, a, b),
             _ => false,
         })
 }
 
+/// A larger default size tightens only when the larger size's review rules are at least as strict on every field as
+/// the old size's.
+fn larger_size_is_no_looser(after: &Map<String, Value>, from: &str, to: &str) -> bool {
+    let rank = |t: &str| TIERS.iter().position(|r| *r == t);
+    let (Some(i), Some(j)) = (rank(from), rank(to)) else {
+        return false;
+    };
+    let rules = |t: &str| {
+        after
+            .get("reviewRules")
+            .and_then(|r| r.get(t))
+            .and_then(Value::as_object)
+    };
+    j > i
+        && match (rules(from), rules(to)) {
+            (Some(old), Some(new)) => map_tightens(old, new),
+            _ => false,
+        }
+}
+
 fn value_tightens(key: &str, a: &Value, b: &Value) -> bool {
     match (a, b) {
         (Value::Object(x), Value::Object(y)) => map_tightens(x, y),
+        // More choices for one check makes it easier to meet.
+        (Value::Array(_), Value::Array(_)) if key == "anyOf" => false,
         (Value::Array(x), Value::Array(y)) => y.len() > x.len() && y.starts_with(x),
         (Value::Bool(false), Value::Bool(true)) => STRICTER_WHEN_TRUE.contains(&key),
         (Value::Number(x), Value::Number(y)) => {
             STRICTER_WHEN_MORE.contains(&key) && y.as_f64() > x.as_f64()
-        }
-        (Value::String(x), Value::String(y)) if key == "tierDefault" => {
-            let rank = |t: &str| TIERS.iter().position(|r| *r == t);
-            matches!((rank(x), rank(y)), (Some(i), Some(j)) if j > i)
         }
         _ => false,
     }
@@ -141,6 +162,7 @@ pub fn describe_changes(
                 }
             }
             (a, b) if a == b => {}
+            (a, b) if path == ["requiredChecks"] => checks_changed(a, b, out),
             (a, b) => out.push(plain_change(path, a, b)),
         }
     }
@@ -173,6 +195,79 @@ fn tier_name(t: &str) -> Option<&'static str> {
     }
 }
 
+/// What a check kind proves, as a person reads it.
+fn check_kind(kind: &str) -> String {
+    match kind {
+        "test" => "a test".into(),
+        "cmd" => "a command".into(),
+        "http" => "an HTTP check".into(),
+        "judge" => "a judge".into(),
+        "human" => "the human's yes".into(),
+        "pr_merged" => "a merged PR".into(),
+        "ci_green" => "green CI".into(),
+        other => words(other),
+    }
+}
+
+fn check_kinds(check: &Value) -> String {
+    let kinds: Vec<String> = check["anyOf"]
+        .as_array()
+        .map(|k| k.iter().filter_map(Value::as_str).map(check_kind).collect())
+        .unwrap_or_default();
+    if kinds.is_empty() {
+        "any check".into()
+    } else {
+        kinds.join(" or ")
+    }
+}
+
+/// "the failing repro check", from its label "a failing repro check".
+fn check_name(check: &Value) -> String {
+    let label = check["label"].as_str().unwrap_or("required check").trim();
+    let label = label
+        .strip_prefix("a ")
+        .or_else(|| label.strip_prefix("an "))
+        .or_else(|| label.strip_prefix("the "))
+        .unwrap_or(label);
+    if label.ends_with("check") {
+        format!("the {label}")
+    } else {
+        format!("the {label} check")
+    }
+}
+
+/// Each required done-when check that changed, by name: what it accepts now, its new name, or that it was added or
+/// removed.
+fn checks_changed(a: Option<&Value>, b: Option<&Value>, out: &mut Vec<String>) {
+    let empty = Vec::new();
+    let before = a.and_then(Value::as_array).unwrap_or(&empty);
+    let after = b.and_then(Value::as_array).unwrap_or(&empty);
+    for i in 0..before.len().max(after.len()) {
+        match (before.get(i), after.get(i)) {
+            (Some(x), Some(y)) if x == y => {}
+            (Some(x), Some(y)) => {
+                let (kx, ky) = (check_kinds(x), check_kinds(y));
+                if kx != ky {
+                    out.push(format!("{}: {kx} → {ky}", check_name(x)));
+                }
+                if x["label"] != y["label"] {
+                    out.push(format!("{} is now called {}", check_name(x), check_name(y)));
+                }
+                if kx == ky && x["label"] == y["label"] {
+                    out.push(format!("{}: its other settings change", check_name(x)));
+                }
+            }
+            (Some(x), None) => out.push(format!("{} is no longer required", check_name(x))),
+            (None, Some(y)) => out.push(format!(
+                "a new required check: {} ({})",
+                check_name(y),
+                check_kinds(y)
+            )),
+            (None, None) => {}
+        }
+    }
+}
+
 /// One changed field as a person reads it.
 fn plain_change(path: &[&str], a: Option<&Value>, b: Option<&Value>) -> String {
     let shown = |v: Option<&Value>| match v {
@@ -196,11 +291,15 @@ fn plain_change(path: &[&str], a: Option<&Value>, b: Option<&Value>) -> String {
         }
         ["valueBar", "maxReviewRounds"] => "review rounds before it stops".into(),
         ["valueBar", "requireSource"] => "each PR says what it serves".into(),
-        ["requiredChecks"] => "required done-when checks".into(),
         ["tierDefault"] => "default size".into(),
         _ => path.iter().map(|p| words(p)).collect::<Vec<_>>().join(", "),
     };
-    format!("{what} {} → {}", shown(a), shown(b))
+    let (from, to) = (shown(a), shown(b));
+    // A change that would read as "N → N" names what changed instead.
+    if from == to {
+        return format!("{what}: its settings change");
+    }
+    format!("{what} {from} → {to}")
 }
 
 /// `maxReviewRounds` → "max review rounds".
@@ -563,7 +662,7 @@ mod tests {
     fn only_a_provable_tightening_skips_the_approval() {
         let m = |v: serde_json::Value| v.as_object().unwrap().clone();
         let base = m(
-            serde_json::json!({ "reviewRules": { "M": { "reviewers": 1, "verifier": false } },
+            serde_json::json!({ "reviewRules": { "S": { "reviewers": 0, "verifier": false }, "M": { "reviewers": 1, "verifier": false } },
             "requiredChecks": [{ "anyOf": ["test"] }], "tierDefault": "S", "estimatePrior": 5 }),
         );
         let with = |f: &dyn Fn(&mut serde_json::Value)| {
@@ -601,7 +700,50 @@ mod tests {
         );
         assert_eq!(
             describe_changes("feature", &base, &check_removed, true),
-            "Features, required done-when checks 1 → 0; its instructions to agents change"
+            "Features, the required check is no longer required; its instructions to agents change"
+        );
+        let repro = |kinds: serde_json::Value, label: &str| {
+            m(serde_json::json!({ "requiredChecks": [{ "anyOf": kinds, "label": label }] }))
+        };
+        let test_only = repro(serde_json::json!(["test"]), "a failing repro check");
+        let test_or_cmd = repro(serde_json::json!(["test", "cmd"]), "a failing repro check");
+        let renamed = repro(serde_json::json!(["test"]), "a regression check");
+        assert!(
+            !tightens_only(&test_only, &test_or_cmd, false),
+            "more ways to meet a check loosen it"
+        );
+        assert_eq!(
+            describe_changes("bugfix", &test_only, &test_or_cmd, false),
+            "Bugfixes, the failing repro check: a test → a test or a command"
+        );
+        assert_eq!(
+            describe_changes("bugfix", &test_only, &renamed, false),
+            "Bugfixes, the failing repro check is now called the regression check"
+        );
+        // No change ever reads as the same thing before and after.
+        let same = regex::Regex::new(r"(\S+) → (\S+)").unwrap();
+        for text in [
+            describe_changes("bugfix", &base, &fewer, false),
+            describe_changes("bugfix", &test_only, &test_or_cmd, false),
+            describe_changes("bugfix", &test_only, &renamed, false),
+            describe_changes("bugfix", &base, &check_removed, false),
+        ] {
+            assert!(same.captures_iter(&text).all(|c| c[1] != c[2]), "{text}");
+        }
+
+        // A larger default size tightens only when that size's rules are no looser than the old size's.
+        let sized = |m_reviewers: i64| {
+            m(serde_json::json!({ "tierDefault": "S", "reviewRules": {
+                "S": { "reviewers": 1, "verifier": false }, "M": { "reviewers": m_reviewers, "verifier": false } } }))
+        };
+        let up = |mut v: Map<String, Value>| {
+            v.insert("tierDefault".into(), "M".into());
+            v
+        };
+        assert!(tightens_only(&sized(2), &up(sized(2)), false));
+        assert!(
+            !tightens_only(&sized(0), &up(sized(0)), false),
+            "M has fewer reviewers than S here"
         );
     }
 }

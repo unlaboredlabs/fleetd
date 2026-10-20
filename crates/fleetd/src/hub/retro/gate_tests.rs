@@ -33,6 +33,14 @@ const TIGHTEN: &str = "@@ -9,1 +9,1 @@\n-  M: { reviewers: 1, verifier: false, p
 /// A hub with one pending gate change to the bugfix playbook, proposed a minute ago; returns its decision key. A
 /// relaxing one has its approval open in the project's chat, as the retro opens it.
 async fn hub(diff: &str, relaxes: bool) -> (Arc<Hub>, tempfile::TempDir, String) {
+    hub_on(diff, relaxes, HubDb::open_memory().unwrap()).await
+}
+
+async fn hub_on(
+    diff: &str,
+    relaxes: bool,
+    db: Arc<HubDb>,
+) -> (Arc<Hub>, tempfile::TempDir, String) {
     let home = tempfile::tempdir().unwrap();
     let config = HubConfig {
         home: home.path().to_path_buf(),
@@ -41,12 +49,7 @@ async fn hub(diff: &str, relaxes: bool) -> (Arc<Hub>, tempfile::TempDir, String)
         queue_ttl_sec: None,
         retro_model: None,
     };
-    let hub = crate::hub::serve::build_on(
-        HubDb::open_memory().unwrap(),
-        config,
-        ManualClock::at(T as u64),
-    )
-    .unwrap();
+    let hub = crate::hub::serve::build_on(db, config, ManualClock::at(T as u64)).unwrap();
     // The retro reads playbooks and decisions through the ops ports, which `start_loops` binds on a serving hub.
     hub.ops.bind(&hub);
     let mut proposal = RetroProposal {
@@ -163,6 +166,8 @@ async fn a_relaxing_change_applies_on_a_persons_approve() {
         "Bugfixes, medium-size work: reviewers 1 → 0"
     );
     answer(&hub, true).await;
+    // The answer only records the approve; settling is the retro's, off the answer's path.
+    hub.retro.on_gate_answered().await;
     assert_eq!(state(&hub), "applied");
 }
 
@@ -170,6 +175,7 @@ async fn a_relaxing_change_applies_on_a_persons_approve() {
 async fn a_relaxing_change_never_applies_on_a_deny() {
     let (hub, _home, _) = hub(RELAX, true).await;
     answer(&hub, false).await;
+    hub.retro.on_gate_answered().await;
     assert_eq!(state(&hub), "rejected");
 }
 
@@ -217,4 +223,58 @@ async fn a_persons_global_decision_applies_either_kind() {
         hub.retro.settle_gates().await;
         assert_eq!(state(&hub), "applied", "relaxes: {relaxes}");
     }
+}
+
+/// A retro run holds its lock for a whole claude turn: the person's answer is stored at once all the same, and the
+/// change applies once the lock is free.
+#[tokio::test]
+async fn an_answer_never_waits_on_a_running_retro() {
+    let (hub, _home, _) = hub(RELAX, true).await;
+    let running = hub.retro.lock.lock().await;
+    // Not awaited on the lock: if the answer waited for it, this would never return.
+    answer(&hub, true).await;
+    assert_eq!(
+        hub.approvals.get("Q1").unwrap().state,
+        fleetd_contracts::ledger::RequestState::Approved
+    );
+    assert_eq!(state(&hub), "pending", "applied only once the run is done");
+    drop(running);
+    hub.retro.on_gate_answered().await;
+    assert_eq!(state(&hub), "applied");
+}
+
+/// The person approved, then the hub stopped before the change applied: the restarted hub applies it when its retro
+/// starts, not at the next weekly run.
+#[tokio::test]
+async fn an_approved_change_applies_when_the_restarted_hub_starts() {
+    let dir = tempfile::tempdir().unwrap();
+    {
+        let (hub, _home, _) = hub_on(RELAX, true, HubDb::open(dir.path()).unwrap()).await;
+        // The approve is stored; the hub stops before its settle runs.
+        crate::hub::approvals::store::Requests::new(hub.db.clone())
+            .update_from(
+                &fleetd_contracts::chat::ChatRequestId::unchecked("Q1"),
+                fleetd_contracts::ledger::RequestState::Open,
+                |r| r.state = fleetd_contracts::ledger::RequestState::Approved,
+            )
+            .unwrap();
+        assert_eq!(state(&hub), "pending");
+    }
+    let home = tempfile::tempdir().unwrap();
+    let config = HubConfig {
+        home: home.path().to_path_buf(),
+        listen: Listen::default(),
+        url: None,
+        queue_ttl_sec: None,
+        retro_model: None,
+    };
+    let restarted = crate::hub::serve::build_on(
+        HubDb::open(dir.path()).unwrap(),
+        config,
+        ManualClock::at(T as u64),
+    )
+    .unwrap();
+    restarted.ops.bind(&restarted);
+    restarted.retro.settle_on_start().await;
+    assert_eq!(state(&restarted), "applied");
 }

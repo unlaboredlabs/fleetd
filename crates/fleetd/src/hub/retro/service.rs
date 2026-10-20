@@ -113,7 +113,8 @@ pub struct RunInput {
 
 pub struct Retro {
     deps: RetroDeps,
-    lock: tokio::sync::Mutex<()>,
+    /// Held by a run (a whole claude turn) and by settling gate changes.
+    pub(super) lock: tokio::sync::Mutex<()>,
     /// Threshold checks one at a time, so two incidents landing together start one run, not two.
     threshold_lock: tokio::sync::Mutex<()>,
 }
@@ -420,6 +421,14 @@ impl Retro {
         }
         self.records().put(&p, None);
         p
+    }
+
+    /// Once when the hub starts: a gate change approved or decided while the hub was down, or whose settle never ran
+    /// before it stopped, applies now rather than at the next weekly run. After the event cursor is taken, so nothing
+    /// decided meanwhile is missed.
+    pub async fn settle_on_start(&self) {
+        let _lock = self.lock.lock().await;
+        self.settle_gates().await;
     }
 
     /// A person approved or denied a relaxing gate change's request.
@@ -865,6 +874,7 @@ impl Retro {
     pub async fn serve(self: Arc<Self>) {
         tokio::spawn(self.clone().schedule());
         let mut cursor = self.deps.events.head().await;
+        self.settle_on_start().await;
         loop {
             let page = self
                 .deps
