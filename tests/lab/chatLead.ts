@@ -30,7 +30,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import sodium from "libsodium-wrappers";
 import { DatabaseSync } from "node:sqlite";
-import { type Body, callToolWith, cli, fleetdCommand, LAB, type Lab, MODEL, nodeHome, nodeSock, requireGhLogin, scrubbedEnv, sessionText, slotPort, userMessages } from "./harness.ts";
+import { type Body, callToolWith, cli, fleetdCommand, openWorkstream, LAB, type Lab, MODEL, nodeHome, nodeSock, requireGhLogin, scrubbedEnv, sessionText, slotPort, userMessages } from "./harness.ts";
 import { BASE, checkClone, CLONE, NAMESPACE, onBase, prepareCheckout, REPO, removeLabRepoProject, resetNamespace } from "./m7Train.ts";
 
 const LEAD_MACHINE = "lab-a";
@@ -47,7 +47,7 @@ const LAB_REPO_POLICY = `areas:\n  all: ["**"]\n${DEFAULTS}`;
 const LOCAL_REPO = path.join(LAB, "repo-chat");
 /** The history part's own hub; 4782 differs mod 20 from the other lab ports (harness.ts SLOT). */
 const HISTORY_PORT = slotPort(4782);
-/** For orders the harness drives itself: the lead stays out of the way. */
+/** For a lead the harness keeps out of the way. */
 const QUIET = "Lab run: the harness does everything for this order. Reply to each wake about it with one short line; run no commands and start no agents for it.";
 const PARTS = ["work", "terse", "secret", "gated", "build", "fixes", "cap1", "tools", "plain", "history", "areas", "cap"] as const;
 type Part = (typeof PARTS)[number];
@@ -172,25 +172,9 @@ const nextTask = async (lab: Lab, ref: Ref, cursor: number, what: string, ms: nu
   }
 };
 
-/**
- * A workstream the harness opens from the project's shell, as its lead would with workstream_open. Builds before the
- * chat backend (#243) have no `workstream open` (exit 2): there it is an order through intake_submit.
- */
-const openOrder = async (lab: Lab, ref: Ref, fleetd: Shell, text: string) => {
-  const opened = fleetd("workstream", "open", "--text", text);
-  if (opened.code !== 2) {
-    const w = /\bW\d+\b/u.exec(opened.stdout)?.[0];
-    lab.check(opened.code === 0 && w, `workstream open: ${JSON.stringify(opened)}`);
-    return w!;
-  }
-  const intake = await lab.callTool("intake_submit", { ...ref, text, clientRequestId: randomUUID() });
-  lab.check(!intake.isError, `intake_submit: ${JSON.stringify(intake.body)}`);
-  return intake.body.workstreamId as string;
-};
-
 /** A workstream for an order the harness drives, its brief frozen from the shell as a lead would. */
 const quietOrder = async (lab: Lab, ref: Ref, fleetd: Shell, title: string, doneWhen: ReadonlyArray<Body>, tier: "S" | "M" = "S") => {
-  const w = await openOrder(lab, ref, fleetd, `${QUIET} ${title}`);
+  const w = openWorkstream(lab.check, fleetd, title);
   const brief = { goal: title, why: "the chat lab scenario", pointers: [], constraints: [], tier, doneWhen };
   const frozen = fleetd("brief", "create", "--workstream", w, "--json", JSON.stringify(brief));
   lab.check(frozen.code === 0, `brief create ${w}: ${JSON.stringify(frozen)}`);
@@ -330,11 +314,6 @@ export async function chatLead(lab: Lab) {
   })());
   const need = (tool: string) => check(hubTools.has(tool), `this build has no ${tool} (${TOOL_FROM[tool] ?? "a hub slice"} brings it)`);
 
-  // A person's key, as the desktop app pairs one: chat messages, secrets and approvals come from it.
-  const humanKey = /fld_[a-z2-7]{20,}/u.exec(cli("hub", "key", "create", "--home", lab.hubHome, "--human", "--name", "chat-lab"))?.[0];
-  check(humanKey, "hub key create --human printed a key");
-  const human = await mcpWith(lab.hubUrl, humanKey!);
-
   const failures: Array<string> = [];
   /** Runs one part; a failure is recorded and the next part still runs, so one run reports every broken piece. */
   const part = async (name: Part, fn: () => Promise<void>) => {
@@ -363,13 +342,13 @@ export async function chatLead(lab: Lab) {
       log(`train_freeze false: ${thaw.isError ? JSON.stringify(thaw.body) : "ok"}`);
       const projectId = await lab.addProject(LEAD_MACHINE, CLONE, "fleetd-lab");
       const ref = { machineId: LEAD_MACHINE, projectId };
-      const chat = chatOf(lab, human.callTool, ref, need);
+      const chat = chatOf(lab, lab.humanCall, ref, need);
       const fleetd = shellIn(LEAD_MACHINE, CLONE);
 
       await part("work", () => workPart(lab, chat, ref));
       await part("terse", () => tersePart(lab, chat, ref));
-      await part("secret", () => secretPart(lab, chat, ref, human.callTool, need));
-      await part("gated", () => gatedPart(lab, chat, ref, human.callTool, need));
+      await part("secret", () => secretPart(lab, chat, ref, lab.humanCall, need));
+      await part("gated", () => gatedPart(lab, chat, ref, lab.humanCall, need));
       await part("build", () => buildPart(lab, chat, ref));
       await part("fixes", () => fixesPart(lab, chat, ref, fleetd));
       await part("cap1", () => cap1Part(lab, ref, fleetd, need));
@@ -395,14 +374,13 @@ export async function chatLead(lab: Lab) {
       seedLocalRepo();
       const projectId = await lab.addProject(WORK_MACHINE, LOCAL_REPO, "repo-chat");
       const ref = { machineId: WORK_MACHINE, projectId };
-      const chat = chatOf(lab, human.callTool, ref, need);
+      const chat = chatOf(lab, lab.humanCall, ref, need);
       await part("history", () => historyPart(lab));
       await part("areas", () => areasPart(lab, ref));
       await part("cap", () => capPart(lab, chat, ref, need));
     }
     check(failures.length === 0, `${failures.length} chat part(s) failed:\n  ${failures.join("\n  ")}`);
   } finally {
-    await human.client.close().catch(() => undefined);
     if (labRepo) {
       // Only this slot's namespace, never the repo's main.
       resetNamespace();
@@ -823,7 +801,7 @@ async function areasPart(lab: Lab, ref: Ref) {
   ok(`inferred areas: ${areas.join(", ")}`);
 
   const fleetd = shellIn(ref.machineId, LOCAL_REPO);
-  const w = await openOrder(lab, ref, fleetd, `${QUIET} Two packages at once.`);
+  const w = openWorkstream(check, fleetd, "Two packages at once.");
   const from = await lab.cursor();
   const writer = (area: string) =>
     spawned(
@@ -867,7 +845,7 @@ async function capPart(lab: Lab, chat: Chat, ref: Ref, need: (t: string) => void
     lab.log(`max agents → ${n}: ${changed.event.summary}`);
     return changed;
   };
-  const w = await openOrder(lab, ref, fleetd, `${QUIET} Max agents.`);
+  const w = openWorkstream(check, fleetd, "Max agents.");
   const running = async (ids: ReadonlySet<string>) => (await tasksOf(lab, ref)).filter((t) => ids.has(t.taskId) && t.state === "running").length;
   const until = (what: string, ms: number, cond: () => Promise<boolean>) =>
     lab.until(what, ms, async () => ((await cond()) ? true : (await new Promise((r) => setTimeout(r, 1_000)), undefined)));
