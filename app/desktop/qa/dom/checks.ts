@@ -209,29 +209,35 @@ export function runChecks(opts: CheckOptions): Finding[] {
     const s = style(el);
     return (s.position === "sticky" || s.position === "fixed" || fixedParent(el)) && opaque(s) && !hidden(el);
   });
-  // Cuts the parts of `v` (the visible rect of `el`) that an occluder is drawn over.
-  const uncover = (el: Element, v: Rect) => {
+  // `v` minus `hit` (a rect inside it): what is left above, below, and beside it, at most four pieces.
+  const minus = (v: Rect, hit: Rect): Rect[] =>
+    [
+      { left: v.left, right: v.right, top: v.top, bottom: hit.top },
+      { left: v.left, right: v.right, top: hit.bottom, bottom: v.bottom },
+      { left: v.left, right: hit.left, top: hit.top, bottom: hit.bottom },
+      { left: hit.right, right: v.right, top: hit.top, bottom: hit.bottom },
+    ].filter((p) => !empty(p));
+  // The parts of `v` (the visible rect of `el`) that no occluder is drawn over. A run an occluder covers only in part
+  // keeps its uncovered part, which is still checked: a popover over one end of a line must not hide an overlap at
+  // the other.
+  const uncover = (el: Element, v: Rect): Rect[] => {
+    let pieces = [v];
     for (const occ of occluders) {
       if (occ.contains(el)) continue;
       const o = rectOf(occ.getBoundingClientRect());
-      const hit = intersect(v, o);
-      if (empty(hit)) continue;
-      const top = document.elementFromPoint((hit.left + hit.right) / 2, (hit.top + hit.bottom) / 2);
-      if (!top || !occ.contains(top)) continue;
-      if (o.left <= v.left + SLOP && o.right >= v.right - SLOP) {
-        // A full-width bar covers the top or bottom part.
-        if (o.top <= v.top) v.top = Math.min(v.bottom, o.bottom);
-        else v.bottom = Math.max(v.top, o.top);
-      } else {
-        v.right = v.left;
-      }
+      pieces = pieces.flatMap((p) => {
+        const hit = intersect(p, o);
+        if (empty(hit)) return [p];
+        const top = document.elementFromPoint((hit.left + hit.right) / 2, (hit.top + hit.bottom) / 2);
+        return top && occ.contains(top) ? minus(p, hit) : [p];
+      });
     }
+    return pieces;
   };
   for (let i = runs.length - 1; i >= 0; i--) {
     const run = runs[i];
     if (!run) continue;
-    uncover(run.el, run.visible);
-    if (empty(run.visible)) runs.splice(i, 1);
+    runs.splice(i, 1, ...uncover(run.el, run.visible).map((visible) => ({ ...run, visible })));
   }
 
   // 1. Overflow: a text run outside the box that holds it. A box that scrolls, ellipsizes (sideways) or clamps
