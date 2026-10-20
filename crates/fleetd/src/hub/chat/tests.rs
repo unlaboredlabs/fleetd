@@ -317,18 +317,18 @@ async fn past_reads_in(keep_as_legacy: bool) {
                 "text": "Public link or image only?", "createdAt": "2026-10-19T08:10:00.000Z",
                 "answer": { "value": "link", "raw": "1 go", "at": "2026-10-19T08:20:00.000Z" } });
             c.execute(
-                "INSERT INTO asks (project_key, key, state, filed_by, created_ms, data)
+                "INSERT INTO legacy_asks (project_key, key, state, filed_by, created_ms, data)
                  VALUES ('devbox/app', 'share.link', 'answered', 'lead', 0, ?1)",
                 [ask.to_string()],
             )?;
             Ok(())
         })
         .unwrap();
-    if keep_as_legacy {
-        // What the questions tool's removal does: every ask kept, row for row, under its new name.
+    if !keep_as_legacy {
+        // A store from before the questions tool's removal kept them as `asks`; the migration renames them.
         hub.db
             .with(|c| {
-                c.execute_batch("ALTER TABLE asks RENAME TO legacy_asks;")?;
+                c.execute_batch("ALTER TABLE legacy_asks RENAME TO asks;")?;
                 Ok(())
             })
             .unwrap();
