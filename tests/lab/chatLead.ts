@@ -63,8 +63,8 @@ const TOOL_FROM: Readonly<Record<string, string>> = {
   secret_submit: "H2, NS",
   cap_set: "CAP",
 };
-/** H2 removes these from the hub; none may be listed. */
-const GONE_HUB_TOOLS = ["asks_list", "inbox_reply", "inbox_undo", "digest_get"];
+/** H2 removes these from the hub; none may be listed. (digest_get stays: it now lists the chats' open requests.) */
+const GONE_HUB_TOOLS = ["asks_list", "inbox_reply", "inbox_undo"];
 /** An ask tool in a session's init list: fleetd's own (lead) or Claude's. The worker's ask_lead (to its lead) stays. */
 const ASK_TOOL = /^(mcp__fleetd__ask|mcp__fleetd__ask_withdraw|AskUserQuestion)$/u;
 /** Internal ids a lead message must not carry: workstream, task, plan, milestone, claim, request and other hub ids. */
@@ -143,7 +143,14 @@ const eventsSince = async (lab: Lab, cursor: number, types?: ReadonlyArray<strin
 const initToolsOf = (machineId: string, threadId: string): Array<string> => {
   const file = path.join(nodeHome(machineId), "transcripts", `${threadId}.jsonl`);
   if (!fs.existsSync(file)) return [];
-  const init = fs.readFileSync(file, "utf8").split("\n").filter((l) => l.startsWith("{")).map((l) => JSON.parse(l) as Body).find((m) => m.type === "system" && m.subtype === "init");
+  // Newer nodes wrap each line as {dir, ms, msg}; older ones write the message itself.
+  const init = fs
+    .readFileSync(file, "utf8")
+    .split("\n")
+    .filter((l) => l.startsWith("{"))
+    .map((l) => JSON.parse(l) as Body)
+    .map((l) => (l.msg ?? l) as Body)
+    .find((m) => m.type === "system" && m.subtype === "init");
   return (init?.tools as Array<string> | undefined) ?? [];
 };
 
@@ -508,7 +515,7 @@ async function gatedPart(lab: Lab, chat: Chat, ref: Ref, humanCall: Lab["callToo
   );
   const msg = await chat.item(sent.seq, sent.cursor, "the inline gated command", TURN_MS, (i) => i.kind === "command_approval");
   const item = msg.item!;
-  check(JSON.stringify(item.argv) === JSON.stringify(argv) && item.state === "open", `the item shows the exact command, open: ${JSON.stringify(item)}`);
+  check(JSON.stringify(item.gated?.argv) === JSON.stringify(argv) && item.state === "open", `the item shows the exact command, open: ${JSON.stringify(item)}`);
   await chat.reply(sent, "the gated request").catch(() => undefined);
 
   // Held: nothing runs while nobody approves, and an agent key cannot approve.
