@@ -47,6 +47,7 @@ const shared = (f: Fixture) => basics(f);
  */
 function agents(from: Fixture): Fixture {
   const f = Fixture.from(from, "settings-agents", "A fleet cap of 16; one project under its max, one at it, one with no limit of its own");
+  f.agentsFromSlots = true;
   const projects = isObject(f.snapshot) && Array.isArray(f.snapshot["projects"]) ? f.snapshot["projects"].filter(isObject) : [];
   const ref = (p: JsonObject): JsonObject => ({ machineId: asText(p["machineId"]), projectId: asText(p["projectId"]) });
   const rows: JsonObject[] = [];

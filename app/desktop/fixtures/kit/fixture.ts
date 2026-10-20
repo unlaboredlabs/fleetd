@@ -84,6 +84,8 @@ export class Fixture {
   errors: Array<HubErrorJson> = [];
   /** Tools whose answers follow a contract change still on its branch; skipped by validation until it merges. */
   pendingContracts = new Map<string, string>();
+  /** The slot state is this fixture's point: lanes are made to match it, rather than it to the lanes (kit/agents.ts). */
+  agentsFromSlots = false;
   /** Frames that arrive `ms` after the app subscribes, for progress over time; see later(). */
   timeline: Array<{ ms: number; kind: TimedKind; payload: JsonObject }> = [];
   /** When the screen is final, for the QA harness to screenshot; defaults to the last timed frame. */
@@ -112,6 +114,7 @@ export class Fixture {
     f.live = clone(base.live);
     f.errors = base.errors.map((e) => ({ ...e }));
     f.pendingContracts = new Map(base.pendingContracts);
+    f.agentsFromSlots = base.agentsFromSlots;
     f.timeline = base.timeline.map((t) => ({ ...t, payload: clone(t.payload) }));
     f.settleMs = base.settleMs;
     f.calls = base.calls.map((c) => ({ ...c, ...(c.input === undefined ? {} : { input: clone(c.input) }), ...(c.output === undefined ? {} : { output: clone(c.output) }) }));
