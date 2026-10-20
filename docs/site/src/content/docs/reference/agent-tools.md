@@ -33,7 +33,9 @@ The hub checks these on every fleetd call a session makes, through its MCP tools
 |---|---|
 | Who can start agents | A lead, with `spawn_agent`, `workstream_spawn`. A task's agent can't. |
 | Depth | 1. A lead is depth 0 and its tasks depth 1; nothing goes deeper. |
-| Open tasks per lead | 32 (queued, running or idle). Slots cap what runs at once. |
+| Open tasks per lead | 32 (queued, running or idle). |
+| Agents running at once, per project | The project's max agents, which a person sets (`cap_set`, the chat's Max agents); unset, the fleet cap. A spawn over it queues and starts by itself. The lead's own turns don't count. |
+| Agents running at once, fleet-wide | The fleet cap, 40 by default. 4 slots of it are kept for lead turns. |
 | Calls a task's agent may make | `report`, `ask_lead`, `claim_done`. Every other call is refused. |
 | Finish-all children open at once | 5 by default; the policy file's `finishAll.maxChildren` changes it. |
 | What a child workstream may serve | `issue`, `defect`, `done`. Never invented work. |
