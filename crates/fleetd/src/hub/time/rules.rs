@@ -452,10 +452,10 @@ fn ci_check_critical(input: &RuleInput, out: &mut Vec<Candidate>) {
             key: name.clone(),
             fired: ms >= CI_CRITICAL_MIN_EXCESS && orders.len() >= CI_CRITICAL_MIN_ORDERS,
             message: format!(
-                "CI check `{}` adds {} on the critical path of {} pieces of work (median {} per run)",
+                "CI check `{}` adds {} on the critical path of {} (median {} per run)",
                 short(&name),
                 fmt_dur(ms),
-                orders.len(),
+                pieces_of_work(orders.len()),
                 fmt_dur(p50)
             ),
             numbers: vec![
@@ -738,8 +738,9 @@ fn review_share(input: &RuleInput, out: &mut Vec<Candidate>) {
         key: String::new(),
         fired: share >= REVIEW_SHARE_MIN_PCT && input.paths.len() >= REVIEW_SHARE_MIN_ORDERS,
         message: format!(
-            "reviews were {share}% of the critical path; median round {}; {k} pieces of work needed 2+ rounds",
-            fmt_dur(p50)
+            "reviews were {share}% of the critical path; median round {}; {} needed 2+ rounds",
+            fmt_dur(p50),
+            pieces_of_work(k)
         ),
         numbers: vec![
             ("pct", share),
@@ -1149,4 +1150,13 @@ pub fn rule_spans(input: &RuleInput, rule: InsightRule) -> Vec<i64> {
     all.sort_unstable();
     all.dedup();
     all.into_iter().map(|(_, id)| id).collect()
+}
+
+/// "1 piece of work", "3 pieces of work": the user-facing name for workstreams.
+fn pieces_of_work(n: usize) -> String {
+    if n == 1 {
+        "1 piece of work".into()
+    } else {
+        format!("{n} pieces of work")
+    }
 }
