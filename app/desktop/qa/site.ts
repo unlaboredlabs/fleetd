@@ -13,9 +13,19 @@ export interface SiteShot {
   screen: string;
   // A fixture the registry shoots that screen on, so the QA gate already vouches for it.
   fixture: string;
+  // The registry entry's variant, when the screen has several on that fixture.
+  variant?: string;
 }
 
 export const siteShots: readonly SiteShot[] = [
+  // The landing page's hero: storefront's chat while its lead works, the live strip under its reply, and billing
+  // waiting on you in the sidebar.
+  { file: "site/chat-hero.png", screen: "chat", variant: "strip", fixture: "live-3" },
+  { file: "docs/site/public/img/chat.png", screen: "chat", variant: "strip", fixture: "live-3" },
+  { file: "docs/site/public/img/status.png", screen: "status.fleet", fixture: "typical" },
+  { file: "docs/site/public/img/max-agents.png", screen: "chat", variant: "max-agents", fixture: "settings-agents" },
+  { file: "docs/site/public/img/chat-command.png", screen: "chat", variant: "inline-chat", fixture: "chat-gated" },
+  { file: "docs/site/public/img/chat-secret.png", screen: "chat", variant: "inline-chat", fixture: "chat-secret" },
   { file: "docs/site/public/img/add-project.png", screen: "projects.add.cloning", fixture: "projects-cloning" },
   { file: "docs/site/public/img/time.png", screen: "time.timeline", fixture: "typical" },
 ];
