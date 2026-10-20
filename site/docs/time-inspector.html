@@ -229,7 +229,7 @@ it sooner.</li>
 </tr>
 <tr>
 <td><code dir="auto">idle_lead</code></td>
-<td>A <a href="/docs/glossary#lead">lead</a> sat idle while a plan item of its order was ready to start and slots were free.</td>
+<td>A <a href="/docs/glossary#lead">lead</a> sat idle while one of its plan items was ready to start and slots were free.</td>
 <td>The lead should start ready items before its turn ends.</td>
 </tr>
 <tr>
@@ -239,8 +239,8 @@ it sooner.</li>
 </tr>
 </tbody>
 </table>
-<p>A plan item counts as ready while its order runs (not stopped, failed, idle or being verified) and every item it comes
-after is done, until its lead starts a task for it. An ask that blocks the order pauses it. None of these count:</p>
+<p>A plan item counts as ready while its work runs (not stopped, failed, idle or being verified) and every item it comes
+after is done, until its lead starts a task for it. A question to you that blocks the work pauses it. None of these count:</p>
 <ul>
 <li>time with no free slot;</li>
 <li>time when the machine is parked on its usage limit or offline;</li>
