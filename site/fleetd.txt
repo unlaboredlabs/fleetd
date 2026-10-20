@@ -11,87 +11,70 @@ fleetd's merge train: reviewed, rebased onto main, merged only on green CI.
 Install
   curl -fsSL https://fleetd.sh | sh
   Installs and sets up fleetd: about a minute later the hub runs, the app is
-  paired, and you type your first order. You need macOS or Linux x64, the
-  claude CLI logged in (your own claude setup, proxy included), git and gh.
-  MIT.
+  paired, and you send the lead your first message. You need macOS or Linux
+  x64, the claude CLI logged in (your own claude setup, proxy included), git
+  and gh. MIT.
 
 Docs:   https://fleetd.sh/docs
 GitHub: https://github.com/unlaboredlabs/fleetd
 
 
-ONE ORDER, ITS FLEET
-Recorded from a lab hub: three writers opened a PR each, and every PR now has
-two reviewers and a verifier on it. Each row is an agent at work, grouped under
-the PR it checks. Image: fleet-board.png
+TALK TO THE LEAD
+Each project has one chat with its lead. Say what you want; the lead splits it
+up and runs the agents. Under its reply, each agent at work and what it is doing
+now. A dot in the sidebar marks a project waiting on you. Image: chat-hero.png
 
 
-FIG. 1  THE INBOX
-The fleetd desktop app on a live hub. The lead filed three asks for the
-storefront project: two product, one money. Image: capture-inbox.png
+FIG. 1  APPROVE WHAT CAN'T BE UNDONE
+The lead runs almost everything itself. A command that can't be undone, costs
+money or needs a credential waits in the chat, exactly as it will run, until you
+approve it. Image: chat-approve.png
 
-  Needs you 3                                                       ×
-  1  storefront
-     Pricing page headline: the copy review left two variants in site/pricing.md. Ship A?
-     ( ) Pay for machines, not seats   Recommended
-         Why: A is shorter and names the pricing model in five words
-     ( ) One price per machine. Every agent included.
-     ( ) Something else...
-  2  storefront
-     Drop the moment dependency and format invoice and receipt dates with the built-in Intl API instead?
-     ( ) Drop moment   Recommended
-  > Reply by number: "1 go", "2: your words", "3 skip"
+  Lead: This writes to the production database. Approve to run it exactly as below.
+  Command                                                     Can't be undone
+  Adds the share snapshots table to the production database.
+    pnpm --filter storefront db:migrate --env production
+  on devbox in /home/dev/src/storefront · stops after 10 min
+  DATABASE_URL gets the secret storefront.database_url
+  [Approve]  [Deny]
 
-  10  The inbox panel (Ctrl+I): every ask that needs you, numbered, wherever you
-      are in the app.
-  12  Ask 1, filed by the lead with `fleetd ask`, and the project it came from.
-  14  The board shows the first ask too; the rest wait in the inbox, here the
-      money ask on the Team plan launch.
-  16  Each ask leads with the lead's recommendation and why, then the other
-      options with what each does, and Something else.
-  18  The whole reply is one line. "1 go 2 nvm 3 b": ship the headline, drop the
-      moment change, take the second option, 14 days.
+  10  The lead says what it wants to run and why, in a line.
+  12  Why it waits for you: this one can't be undone. Commands that cost money
+      or need a credential wait too.
+  14  The exact command, the machine and folder it runs in, and the secret it
+      gets. It runs as shown or not at all.
+  16  Approve runs it on that machine; Deny tells the lead, which carries on
+      without it.
 
 
-FIG. 2  ENTER. EACH ANSWER BECOMES A DECISION.
-The same inbox right after the reply "1 go 2 nvm 3 b" went in.
-Image: capture-reply.png
+FIG. 2  SECRETS STAY OUT OF THE CHAT
+When the lead needs a key, you type it into a masked field. It is sealed to the
+machine that uses it; the chat and the hub never see it. Image: chat-secret.png
 
-  Needs you
-  Nothing needs you.
-  Logged: 1 → Pay for machines, not seats (undo for 10 s), 2 → dropped, 3 → 14 days (undo for 10 s)
+  Lead: Need the Stripe test key for that. It goes to devbox only and never into this chat.
+  Secret                                                      stripe.test_key
+  The checkout tests charge a test card; they need the Stripe test key.
+  It is saved as STRIPE_TEST_KEY in /home/dev/src/storefront/.env.test on devbox.
+  [Paste or type the value]  [Save secret]
+  Sealed on this computer to devbox's key. The hub only passes it on; fleetd never shows it again.
 
-  20  Nothing needs you: leads decide everything that isn't a product, money,
-      credential or irreversible call.
-  22  What the reply did, as the app logs it: answers 1 and 3 are logged, ask 2
-      is dropped, and each answer can be taken back for 10 seconds.
-
-
-YOUR REPLY REACHES THE LEAD AS A WAKE FROM THE HUB
-The wake, verbatim:
-
-  ## Answers since your last wake
-  - A2 deps.moment: dropped by the human; do not pursue it
-
-  ## Why you are woken
-  - The human settled 1 of your asks; see "Answers since your last wake" above.
+  20  The lead asks for the key in the chat, and says where it goes.
+  22  Paste it here. It never enters the transcript.
+  24  Sealed on your computer to that machine's key; the hub only passes it on.
+  26  A saved secret shows only its fingerprint.
 
 
 WHAT THE LEAD DOES WITHOUT ASKING YOU
-01  The lead decides everything that isn't a product, money, credential or irreversible call.
-02  The lead files the rest with `fleetd ask`, each with a class, a recommendation
-    and what it blocks, and carries on without waiting.
-03  The lead hands workstreams and tasks to Claude Code agents on your machines.
-04  The lead starts every wake from the hub's digest: answers, open workstreams,
-    tasks, open asks, decisions.
-05  The lead doesn't re-ask a key that's already decided.
-06  The lead keeps your answer when it overrides its own recommendation.
-07  The lead gets an incident, I1 misfiled_ask, when you drop an ask it could
-    have decided itself.
-
-What you get at 09:00 and 18:00 when that's all there is:
-  fleetd digest · Mon 19 Oct, 15:47
-  Nothing needs you · 0 running · 0 done
-  Decided without you (1): deps.moment=Dropped by the human; do not pursue rem… (D3) · reply "forget D3" to undo one
+How each project's lead works, in its chat.
+01  The lead decides everything that isn't a product, money, credential or
+    irreversible call.
+02  It asks the rest in the chat: numbered, each with its recommendation. "1 go,
+    2 rec" or "do it" is a whole reply.
+03  It hands the work to Claude Code agents on your machines, never more at once
+    than the project's Max agents.
+04  It logs each answer as a decision, so it never asks the same thing twice.
+05  It keeps your answer when you overrule its recommendation.
+06  No time estimates. It says what is done and what is next.
 
 
 "DONE" IS CHECKED BY FLEETD
