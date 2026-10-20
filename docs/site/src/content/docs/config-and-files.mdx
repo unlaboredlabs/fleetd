@@ -153,7 +153,7 @@ Without `areas`, each workspace member is an area, named after its directory:
 | Cargo `[workspace] members`, package.json `workspaces`, pnpm-workspace.yaml `packages` | One area per member. |
 | Each directory under a top-level `apps/`, `crates/`, `packages/` or `services/` | One area per directory. |
 | A top-level `docs/` | The area `docs`. |
-| Always | `all`, the whole repo, for work that spans members. |
+| Always | `all`, the whole repo, for work that spans members. A task on `all` waits for every other area, and they for it. |
 
 Areas never nest: a folder that holds a member is left out, so its members run side by side. `fleetd project add` and
 `fleetd doctor` show a project's areas. Set `areas` to choose your own; then only those count.
