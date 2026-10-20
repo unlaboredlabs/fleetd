@@ -452,7 +452,7 @@ fn ci_check_critical_sums_the_last_checks_excess_over_orders() {
     let found = fired(&make(90_000), InsightRule::CiCheckCritical);
     assert_eq!(
         found[0].message.as_str(),
-        "CI check `rust (macos)` adds 3m on the critical path of 2 orders (median 6m30s per run)"
+        "CI check `rust (macos)` adds 3m on the critical path of 2 pieces of work (median 6m30s per run)"
     );
     assert!(fired(&make(89_000), InsightRule::CiCheckCritical).is_empty());
 }
@@ -627,7 +627,7 @@ fn review_share_needs_three_orders_and_thirty_percent() {
     let found = fired(&make(3, 3 * MIN), InsightRule::ReviewShare);
     assert_eq!(
         found[0].message.as_str(),
-        "reviews were 30% of the critical path; median round 3m; 0 orders needed 2+ rounds"
+        "reviews were 30% of the critical path; median round 3m; 0 pieces of work needed 2+ rounds"
     );
     assert!(fired(&make(2, 3 * MIN), InsightRule::ReviewShare).is_empty());
     assert!(fired(&make(3, 3 * MIN - 1000), InsightRule::ReviewShare).is_empty());

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { orderRoute, timeRoute, timeRouteFor } from "./route";
+import { chatRoute, timeRoute, timeRouteFor } from "./route";
 
 describe("routes", () => {
   it("open the inspector on the order you're looking at, else on the fleet", () => {
@@ -11,8 +11,8 @@ describe("routes", () => {
     expect(timeRoute()).toBe("#/time");
   });
 
-  it("jump to a transcript item in the order view", () => {
-    expect(orderRoute("W8", { threadId: "s-21", itemId: "toolu_1" })).toBe("#/order/W8?thread=s-21&item=toolu_1");
-    expect(orderRoute("W8")).toBe("#/order/W8");
+  it("goes from one piece of work to its project's chat", () => {
+    expect(chatRoute({ machineId: "devbox", projectId: "storefront" })).toBe("#/project/devbox/storefront");
+    expect(chatRoute(undefined)).toBe("#/");
   });
 });

@@ -17,7 +17,7 @@ import { linkedKeeps, useLinked, useNames, useTimeData, useWindow, type Linked }
 import { loadFilters, queryOf, saveFilters, type Filters } from "./filters";
 import { ROLE_WORD, fmtDur, isMissingEmpty, missing, missingSentence } from "./format";
 import { barsFor, buildModel } from "./model";
-import { orderRoute } from "./route";
+import { chatRoute } from "./route";
 import type { Category, Span } from "./types";
 import s from "./Time.module.css";
 
@@ -26,7 +26,7 @@ type TabId = "timeline" | "breakdown" | "insights";
 export interface TimeScreenProps {
   /** The order to open on (its timeline); none opens the fleet's breakdown. */
   readonly order?: string | undefined;
-  /** Opens the order view, at a thread item when one is given. Defaults to the route (#/order/<id>?thread=&item=). */
+  /** Opens where the work lives, given its thread item when there is one. Defaults to its project's chat. */
   readonly onOpenOrder?: (order: string, at?: { readonly threadId: string; readonly itemId: string }) => void;
   /** Opens a CI check's page in the browser. Without one, the link is copied: the renderer opens nothing itself. */
   readonly onOpenUrl?: (url: string) => void;
@@ -36,8 +36,9 @@ export interface TimeScreenProps {
   readonly initialFilters?: Filters;
 }
 
-const routeToOrder = (order: string, at?: { readonly threadId: string; readonly itemId: string }) => {
-  window.location.hash = orderRoute(order, at);
+
+const navigateTo = (hash: string) => {
+  window.location.hash = hash;
 };
 
 const copyLink = (url: string) => {
@@ -53,7 +54,8 @@ interface Highlight {
 }
 
 export function TimeScreen(props: TimeScreenProps) {
-  const openOrder = props.onOpenOrder ?? routeToOrder;
+  // Going back from one piece of work goes to its project's chat.
+  const openOrder = props.onOpenOrder ?? ((o: string) => navigateTo(chatRoute(names.orders.get(o)?.ref)));
   const openUrl = props.onOpenUrl ?? copyLink;
   const [order, setOrder] = useState(props.order);
   const [filters, setFilters] = useState<Filters>(() => props.initialFilters ?? loadFilters());
@@ -166,7 +168,7 @@ export function TimeScreen(props: TimeScreenProps) {
       { id: "time:timeline", title: "Time: timeline", group: "actions", enabled: () => order !== undefined, run: () => setTab("timeline") },
       { id: "time:breakdown", title: "Time: breakdown", group: "actions", run: () => setTab("breakdown") },
       { id: "time:insights", title: "Time: insights", group: "actions", run: () => setTab("insights") },
-      { id: "time:whole", title: "Time: show the whole order", detail: "Undo the zoom", group: "actions", enabled: () => view !== undefined, run: () => setView(undefined) },
+      { id: "time:whole", title: "Time: show it start to finish", detail: "Undo the zoom", group: "actions", enabled: () => view !== undefined, run: () => setView(undefined) },
       { id: "time:clear", title: "Time: clear the lit spans", group: "actions", enabled: () => highlight !== undefined, run: () => setHighlight(undefined) },
       {
         id: "time:compare",
@@ -187,8 +189,8 @@ export function TimeScreen(props: TimeScreenProps) {
     ? offline
     : (data.spansError ??
       (data.spansDone
-        ? "No spans for this order yet. Spans start when its first agent starts; a machine running an older fleetd records none."
-        : "Loading this order's spans…"));
+        ? "No spans for this work yet. Spans start when its first agent starts; a machine running an older fleetd records none."
+        : "Loading its spans…"));
 
   // Esc closes the innermost thing: the sheets, menus and the palette close themselves, then the highlight, then the
   // zoom. On the document, not the screen: after a tab switch or a click on a sheet's row, focus sits on <body>.
@@ -209,10 +211,10 @@ export function TimeScreen(props: TimeScreenProps) {
   }, [hasHighlight, zoomed, sheetOpen]);
 
   const orderInfo = order === undefined ? undefined : names.orders.get(order);
-  const title = order === undefined ? "Where the time went" : (orderInfo?.title ?? `Order ${order}`);
+  const title = order === undefined ? "Where the time went" : (orderInfo?.title ?? "This work");
   const figures: string[] = [];
   if (breakdown !== undefined) {
-    figures.push(`${order !== undefined ? "wall" : "wall of orders"} ${fmtDur(breakdown.wallMs)}`);
+    figures.push(`${order !== undefined ? "wall" : "wall of all work"} ${fmtDur(breakdown.wallMs)}`);
     const p = breakdown.criticalPath;
     if (p !== undefined) figures.push(`path ${fmtDur(p.endMs - p.startMs)}`);
     figures.push(`agents ${fmtDur(breakdown.agentMs)}`);
@@ -235,7 +237,7 @@ export function TimeScreen(props: TimeScreenProps) {
       <header className={cx(s.head)}>
         {order !== undefined ? (
           <Button variant="ghost" onClick={() => openOrder(order)}>
-            ‹ Order
+            ‹ Chat
           </Button>
         ) : null}
         {orderInfo !== undefined ? (
@@ -262,7 +264,7 @@ export function TimeScreen(props: TimeScreenProps) {
       <FilterBar filters={filters} order={order} names={names} nowMs={nowMs} onFilters={changeFilters} onOrder={changeOrder} />
       <Tabs value={tab} onValueChange={(v) => setTab(v as TabId)} className={cx(s.tabs)}>
         <TabList className={cx(s.tabList)} aria-label="Views">
-          <Tab value="timeline" disabled={order === undefined} title={order === undefined ? "Pick an order to see its timeline" : undefined}>
+          <Tab value="timeline" disabled={order === undefined} title={order === undefined ? "Pick one piece of work to see its timeline" : undefined}>
             Timeline
           </Tab>
           <Tab value="breakdown">Breakdown</Tab>

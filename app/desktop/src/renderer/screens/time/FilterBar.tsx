@@ -1,5 +1,5 @@
 // The filter bar over all three tabs: range, project, order, machine and role, plus compare with the period before.
-// On an order the range is the order's own, so range, project and compare step aside.
+// On one piece of work the range is its own, start to finish, so range, project and compare step aside.
 import { ChevronDown } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Button, Dialog, Field, Input, Menu, MenuContent, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuTrigger, Text } from "../../ui";
@@ -41,12 +41,12 @@ export function FilterBar({ filters: f, order, names, nowMs, onFilters, onOrder 
     .filter(([, o]) => f.project === undefined || o.project === projectTitle)
     .sort((a, b) => Number(b[0].replace(/\D/gu, "")) - Number(a[0].replace(/\D/gu, "")))
     .slice(0, 40);
-  const orderTitle = order === undefined ? "All orders" : (names.orders.get(order)?.title ?? `Order ${order}`);
+  const orderTitle = order === undefined ? "All work" : (names.orders.get(order)?.title ?? "This work");
   const [since, until] = period(f, nowMs);
 
   return (
     <div className={s.filters} role="toolbar" aria-label="Filters">
-      <Chip label={order !== undefined ? "Whole order" : RANGE_LABEL[f.range]} disabled={order !== undefined}>
+      <Chip label={order !== undefined ? "Start to finish" : RANGE_LABEL[f.range]} disabled={order !== undefined}>
         <MenuRadioGroup
           value={f.range}
           onValueChange={(v) => {
@@ -80,7 +80,7 @@ export function FilterBar({ filters: f, order, names, nowMs, onFilters, onOrder 
       </Chip>
       <Chip label={orderTitle}>
         <MenuRadioGroup value={order ?? ALL} onValueChange={(v) => onOrder(v === ALL ? undefined : v)}>
-          <MenuRadioItem value={ALL}>All orders (totals)</MenuRadioItem>
+          <MenuRadioItem value={ALL}>All work (totals)</MenuRadioItem>
           <MenuSeparator />
           {orders.map(([id, o]) => (
             <MenuRadioItem key={id} value={id} hint={o.project}>

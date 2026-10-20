@@ -11,7 +11,7 @@ export interface TranscriptSheetProps {
   readonly who: string;
   readonly answer: Answer<ThreadWindowOutput> | undefined;
   readonly onClose: () => void;
-  /** Opens the order view at this item; absent when the screen has no order to go to. */
+  /** Opens the project's chat; absent when the screen has no work to go from. */
   readonly onOpenInOrder: (() => void) | undefined;
 }
 
@@ -76,7 +76,7 @@ export function TranscriptSheet({ open, who, answer, onClose, onOpenInOrder }: T
       footer={
         onOpenInOrder !== undefined ? (
           <Button variant="secondary" onClick={onOpenInOrder}>
-            Open in the order view
+            Open the chat
           </Button>
         ) : undefined
       }

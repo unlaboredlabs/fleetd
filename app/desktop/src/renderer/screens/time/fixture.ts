@@ -501,7 +501,7 @@ const findingsOf = (d: Data, fleet: boolean): Finding[] => {
   if (fleet && orders.size >= 2 && excess >= 3 * MIN) {
     out.push({
       rule: "ci_check_critical",
-      message: `CI check \`e2e (webkit)\` adds ${fmtDur(excess)} on the critical path of ${orders.size} orders (median ${fmtDur(median(e2e.map(dur)))} per run)`,
+      message: `CI check \`e2e (webkit)\` adds ${fmtDur(excess)} on the critical path of ${orders.size} pieces of work (median ${fmtDur(median(e2e.map(dur)))} per run)`,
       numbers: [{ name: "excessMs", value: excess }, { name: "orders", value: orders.size }],
       spanIds: e2e.map((s) => s.id),
     });
@@ -626,7 +626,7 @@ export const fixtureNames = (): Names => {
     threads,
     leads: new Set(specs.map((s) => `lead-${s.project}`)),
     changes: new Map(specs.map((s) => [s.change, s.pr])),
-    orders: new Map(specs.map((s) => [s.id, { title: s.title, project: s.project }])),
+    orders: new Map(specs.map((s) => [s.id, { title: s.title, project: s.project, ref: { machineId: s.machine, projectId: s.project } }])),
     projects: [...new Set(specs.map((s) => `${s.machine}/${s.project}`))].map((k) => {
       const [machineId = "", projectId = ""] = k.split("/");
       return { machineId, projectId, title: projectId };

@@ -296,7 +296,7 @@ function Summary({ b, order }: { b: TimeBreakdownOutput; order: boolean }) {
     <div className={cx(s.summary)}>
       <div className={cx(s.summaryLine)}>
         <Text tabular>
-          {order ? "wall" : "wall of orders"} {fmtDur(b.wallMs)} · agent time {fmtDur(b.agentMs)}
+          {order ? "wall" : "wall of all work"} {fmtDur(b.wallMs)} · agent time {fmtDur(b.agentMs)}
           {b.wallMs > 0 ? ` · parallelism ${(b.agentMs / b.wallMs).toFixed(1)}×` : ""}
         </Text>
         <Text tone={n === 0 ? "quiet" : "warning"}>{n === 0 ? "no gaps in the data" : `coverage: ${n} gap${n === 1 ? "" : "s"}`}</Text>
@@ -318,7 +318,7 @@ function Notes({ b, missing }: { b: TimeBreakdownOutput; missing: Missing | unde
   lines.push(
     "≈ First token includes claude's own work before the request, the network, API queueing and prefill; they can't be told apart. Thinking and output are split as streamed; each message's total is exact.",
     "≤ When several tools ran from one message, each call's own time is an upper bound; the group's time is exact.",
-    "split: a lead turn serves every order it woke for, so its time is split equally across them. That is a rule, not a measurement.",
+    "split: a lead turn serves all the work it woke for, so its time is split equally across it. That is a rule, not a measurement.",
     "±1 s: CI checks use GitHub's start and end, in whole seconds. Lanes on different machines line up to within the link's latency.",
     "Waiting on you runs from when an ask was published to your answer; when you first saw it isn't known.",
   );
