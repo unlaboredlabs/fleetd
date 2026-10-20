@@ -6,13 +6,13 @@ use std::time::Duration;
 
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, ThreadId, ThreadRef, Timestamp};
-use fleetd_contracts::ledger::{Ask, AskId, Decision, IntakeChannel, WorkstreamId};
+use fleetd_contracts::ledger::{Decision, HumanRequest, IntakeChannel, WorkstreamId};
 use fleetd_contracts::mcp::{ErrorCode, ThreadLaunchInput};
 use fleetd_contracts::model::{ProjectSummary, ThreadCounts};
 
 use super::SubmitInput;
 use crate::hub::leads::hooks::{BoxFuture, PolicyHook};
-use crate::hub::leads::ports::{CmdOutcome, LeadPorts, RouteAsk};
+use crate::hub::leads::ports::{CmdOutcome, LeadPorts};
 use crate::hub::leads::wakes::WAKE_DEBOUNCE;
 use crate::hub::leads::{Area, AreaOptions, Ctx, LeadError};
 use crate::hub::store::test_clock::ManualClock;
@@ -62,22 +62,12 @@ impl LeadPorts for Ports {
     ) -> BoxFuture<Result<CmdOutcome, String>> {
         Box::pin(async { Err("no commands here".to_string()) })
     }
-    fn open_asks(
+    fn open_requests(
         &self,
         _: Option<&ProjectRef>,
-        _: Option<&WorkstreamId>,
         _: usize,
-    ) -> Result<Vec<Ask>, LeadError> {
+    ) -> Result<Vec<HumanRequest>, LeadError> {
         Ok(Vec::new())
-    }
-    fn ask(&self, _: &AskId) -> Result<Option<Ask>, LeadError> {
-        Ok(None)
-    }
-    fn create_route_ask(&self, _: RouteAsk, _: &str) -> Result<AskId, LeadError> {
-        unreachable!("every order here names its project")
-    }
-    fn withdraw_ask(&self, _: &AskId, _: &str) -> Result<(), LeadError> {
-        Ok(())
     }
     fn decisions_in_project(&self, _: &ProjectRef, _: usize) -> Result<Vec<Decision>, LeadError> {
         Ok(Vec::new())

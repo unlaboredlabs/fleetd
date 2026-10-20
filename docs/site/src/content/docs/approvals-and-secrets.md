@@ -1,35 +1,36 @@
 ---
 title: Approvals & secrets
-description: "The asks only a person can answer: commands to approve, tool prompts, checklists and secrets."
+description: "The two things a lead can't ask in chat: a command to approve and a secret to enter."
 ---
 
-You'll answer the asks that only a person can answer: approve a command, tick off a checklist, or enter a secret.
+A lead asks its questions in the project's chat, and you answer in your own words. Two things can't go through chat
+safely, so they show up in it as their own items: a command to approve, and a secret to enter.
 
-These asks arrive in the inbox like any other. Only a person's device answers them, using a
-[human key](/docs/glossary#human-key) that the desktop app holds. An agent key can't, and a bulk reply such as
-`recs fine` or `all go` skips them.
+Only a person's device answers them, using a [human key](/docs/glossary#human-key) that the desktop app holds. An agent
+key can't.
 
-| Ask | You see | You reply |
+| In the chat | You see | You do |
 |---|---|---|
-| [Approve a command](#approve) | The exact command, the reason, and where it runs | `<n> go` or `<n> no` |
-| [Tool permission prompt](#tool-prompts) | The tool call claude wants to make | `<n> go` or `<n> no` |
-| [Checklist](#checklists) | Steps only you can do | `<n> done` |
-| [Secret](#secrets) | The machine and where the value goes | Type the value in the app |
+| [Approve a command](#approve) | The exact command, the reason, and where it runs | Approve or Deny |
+| [Tool permission prompt](#tool-prompts) | The tool call claude wants to make | Approve or Deny |
+| [Secret](#secrets) | The machine and where the value goes | Type the value into the masked field |
 
 ## Approve a command {#approve}
 
-When a lead needs an irreversible step, one that costs money, or one that uses a credential, it files the exact command
-as a [gated command](/docs/glossary#gated-command), with the `gated_run` tool.
+When a lead needs an irreversible step, one that costs money, or one that uses a credential, it asks to run the exact
+command as a [gated command](/docs/glossary#gated-command), with the `gated_run` tool.
 
-1. The ask shows the command, the reason and the machine.
-2. Reply `<n> go` to run it, or `<n> no` to refuse.
+1. The chat shows the command, the reason and the machine.
+2. Approve runs it; Deny refuses it, with an optional note to the lead.
 3. The node runs exactly the stored command, in the project's workspace.
 4. The exit code and output go back to the lead.
+
+If the machine was offline, nothing ran: the item opens again so you can approve it once the machine is back.
 
 ## Tool permission prompts {#tool-prompts}
 
 Leads and tasks run with claude's permission prompts off. A session started with `thread_launch` and
-`runtimeMode: approval-required` sends each prompt to you as an ask instead. A prompt that stays open is raised again
+`runtimeMode: approval-required` sends each prompt to you in the project's chat instead. A prompt that stays open is raised again
 after 10 minutes, then every 30.
 
 A project can answer prompts itself with rules in claude's own syntax, in `.fleetd/policy.yaml`:
@@ -43,21 +44,12 @@ tools:
 A deny rule wins over an allow rule. The rules apply to every session in the project. See
 [Config & files](/docs/config-and-files#policy).
 
-## Checklists {#checklists}
-
-Some steps only you can do, such as clicking through a provider's console. The lead files them as a checklist
-ask.
-
-1. Do the steps.
-2. Reply `<n> done`.
-3. If the ask has a check, the hub runs it. A failure reopens the ask with the evidence.
-
 ## Secrets {#secrets}
 
-When a lead needs an API key or a password, it files a secret ask. The ask names the machine and where the value goes:
-a line in an env file, or a file.
+When a lead needs an API key or a password, it asks for it with `request_secret`. The chat names the machine and where
+the value goes: a line in an env file, or a file.
 
-1. Type the value in the app.
+1. Type the value into the masked field. It never enters the chat's history.
 2. The app seals it to that machine's key (a libsodium sealed box) and wipes what you typed.
 3. The hub passes the sealed value on without storing it.
 4. The node writes it with mode `0600`.
@@ -68,3 +60,5 @@ The target machine must be online when you enter the secret. Nothing is queued.
 :::
 
 A gated command can use a stored secret as an environment variable. The node reads it from its own files.
+
+If you don't want to give a secret, say so in the chat; the lead takes the request back.

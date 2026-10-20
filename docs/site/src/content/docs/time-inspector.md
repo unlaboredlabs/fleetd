@@ -4,7 +4,7 @@ description: See what your agents spent their time on and what they waited for, 
 ---
 
 You'll find what made an [order](/docs/glossary#order) slow: the test suite an agent ran many times, the CI check that
-finished last, or the [ask](/docs/glossary#ask) that waited on your answer.
+finished last, or the [approval](/docs/approvals-and-secrets) that waited on you.
 
 ```console
 $ fleetd time W41

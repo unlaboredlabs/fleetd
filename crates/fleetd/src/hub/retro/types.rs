@@ -7,20 +7,18 @@ use std::sync::LazyLock;
 pub const PLAYBOOK_NAMES: [&str; 4] = ["bugfix", "feature", "research", "finish-all"];
 
 /// The fixed metric list, defined in code: incident counts per class, and agent-minutes per done workstream.
-pub const METRIC_CLASSES: [&str; 9] = [
+pub const METRIC_CLASSES: [&str; 7] = [
     "false_claim",
     "polish_loop",
-    "misfiled_ask",
     "out_of_area",
     "stall",
     "policy_bypass",
-    "re_ask",
     "override",
     "agent_minutes_per_done",
 ];
 
-/// `playbook.`: hub-wide asks about playbooks.
-pub const PLAYBOOK_ASK_PREFIX: &str = "playbook.";
+/// `playbook.`: the global decisions that settle gate changes.
+pub const PLAYBOOK_KEY_PREFIX: &str = "playbook.";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -117,10 +115,8 @@ pub struct RetroProposal {
     pub fixes_incidents: Vec<String>,
     pub metric: RetroMetric,
     pub expected: String,
-    /// suggested, pending, asked, measuring, kept, reverted, applied, rejected or stale.
+    /// suggested, pending, measuring, kept, reverted, applied, rejected or stale.
     pub state: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ask_id: Option<String>,
     #[serde(rename = "ref", skip_serializing_if = "Option::is_none")]
     pub reference: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

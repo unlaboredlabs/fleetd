@@ -3,8 +3,9 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use chrono_tz::Tz;
+use fleetd_contracts::chat::ChatRequestId;
 use fleetd_contracts::ids::{MachineId, Timestamp};
-use fleetd_contracts::ledger::{Ask, AskId, Tier, Workstream, WorkstreamId, WorkstreamState};
+use fleetd_contracts::ledger::{HumanRequest, Tier, Workstream, WorkstreamId, WorkstreamState};
 use fleetd_contracts::live::OrderCard;
 use fleetd_contracts::model::{Machine, MachineStatus};
 use fleetd_contracts::node_link::NodeLoad;
@@ -72,7 +73,8 @@ pub struct World {
     pub slots: SlotState,
     /// The board's last hour.
     pub slot_use: crate::hub::slots::usage::Utilization,
-    pub asks: Vec<Ask>,
+    /// Open secret and approval requests: what waits on the person.
+    pub requests: Vec<HumanRequest>,
     pub estimates: Vec<EstRow>,
     /// The last day's events of the types risks and health read: (type, stored JSON).
     pub recent: Vec<(String, Value)>,
@@ -258,11 +260,11 @@ impl World {
             .iter()
             .filter_map(|m| Some((m.machine_id.to_string(), hub.link.load(&m.machine_id)?)))
             .collect();
-        let asks = hub
+        let requests = hub
             .leads
             .ctx
             .ports()
-            .open_asks(None, None, 500)
+            .open_requests(None, 500)
             .unwrap_or_default();
         let titles = hub
             .store
@@ -310,7 +312,7 @@ impl World {
             loads,
             slots: hub.slots.state(),
             slot_use: hub.slots.utilization(),
-            asks,
+            requests,
             estimates,
             recent,
             titles,
@@ -1252,20 +1254,23 @@ pub fn render(
     gates.sort_by_key(|g| (!g.serial, g.kind != GateKind::Plan));
     gates.truncate(3);
 
-    // Needs you: open asks in scope, blocking first.
-    let mut asks: Vec<&Ask> = w
-        .asks
+    // Needs you: open requests in scope, oldest first.
+    let mut requests: Vec<&HumanRequest> = w
+        .requests
         .iter()
         .filter(|a| match scope {
             StatusScope::Fleet => true,
-            StatusScope::Project { project_ref } => a.project_ref.as_ref() == Some(project_ref),
+            StatusScope::Project { project_ref } => &a.project_ref == project_ref,
             StatusScope::Order { workstream_id } => a.workstream_id.as_ref() == Some(workstream_id),
         })
         .collect();
-    asks.sort_by_key(|a| a.blocks.as_str() == "nothing");
+    requests.sort_by_key(|a| a.created_at.as_str().to_owned());
     let needs_you = NeedsYou {
-        count: Count::unchecked(asks.len() as i64),
-        ask_ids: capped::<AskId, 10>(asks.iter().map(|a| a.ask_id.clone()).collect()).0,
+        count: Count::unchecked(requests.len() as i64),
+        request_ids: capped::<ChatRequestId, 10>(
+            requests.iter().map(|a| a.request_id.clone()).collect(),
+        )
+        .0,
     };
 
     // Risks.
@@ -1290,7 +1295,7 @@ pub fn render(
             wake.at(e.started_ms + risks::NO_PLAN_MS);
         }
     }
-    for a in &asks {
+    for a in &requests {
         if let Some(c) = parse_ms(a.created_at.as_str()) {
             wake.at(c + risks::BLOCKED_MS);
         }
@@ -1357,16 +1362,20 @@ pub fn render(
                 )
             })
             .collect(),
-        blocked_asks: asks
+        blocked_requests: requests
             .iter()
-            .filter(|a| a.blocks.as_str() != "nothing" && !a.proceeded_on_rec)
             .map(|a| {
                 let ws = a
                     .workstream_id
                     .as_ref()
                     .map_or_else(|| "the project".to_owned(), |w| w.to_string());
+                let what = match (&a.secret, &a.gated) {
+                    (Some(secret), _) => format!("the secret `{}`", secret.key),
+                    (_, Some(_)) => "a command to approve".to_owned(),
+                    _ => "a tool prompt to approve".to_owned(),
+                };
                 (
-                    a.key.to_string(),
+                    what,
                     ws,
                     now - parse_ms(a.created_at.as_str()).unwrap_or(now),
                 )
@@ -1560,8 +1569,7 @@ pub fn render(
         scope_change: markers.first().map(|m| m.text.to_string()),
         doing,
         waiting_on: gates.iter().take(2).map(|g| g.label.to_string()).collect(),
-        needs_you: asks.len() as i64,
-        first_ask: asks.first().map(|a| a.key.to_string()),
+        needs_you: requests.len() as i64,
         risks: risk_list
             .iter()
             .take(2)
@@ -1722,12 +1730,12 @@ mod tests {
             "scope": { "kind": "fleet" }, "title": "Fleet", "version": 1, "seq": 1, "now": "2026-10-18T10:00:00.000Z",
             "progress": progress, "markers": [], "eta": { "samples": 0, "basis": "none" }, "gates": [],
             "headline": { "text": long(400), "source": "template", "at": "2026-10-18T10:00:00.000Z" },
-            "since": { "merged": 0, "verified": 0, "started": 0, "failed": 0, "asked": 0, "scopeItems": 0 },
+            "since": { "merged": 0, "verified": 0, "started": 0, "failed": 0, "scopeItems": 0 },
             "parts": vec![json!({ "title": long(120), "progress": progress }); 20],
             "done": vec![json!({ "title": long(120), "doneAt": "2026-10-18T10:00:00.000Z", "evidence": long(200) }); 10],
             "inProgress": vec![row; 20],
             "next": vec![json!({ "itemId": "P2", "title": long(120), "after": [] }); 10],
-            "needsYou": { "count": 0, "askIds": [] },
+            "needsYou": { "count": 0, "requestIds": [] },
             "risks": vec![json!({ "rule": "no_plan", "level": "warning", "message": long(200) }); 5],
             "health": {
                 "ci": vec![json!({ "repo": "acme/storefront", "state": "red", "failing": vec![long(120); 10], "stale": stale }); 10],

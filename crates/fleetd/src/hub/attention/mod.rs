@@ -4,7 +4,7 @@
 use chrono::{TimeZone, Timelike};
 use chrono_tz::Tz;
 use fleetd_contracts::events::Attention;
-use fleetd_contracts::ledger::{Ask, AskClass, AskKind, AskState};
+use fleetd_contracts::ledger::{GatedClass, HumanRequest, RequestState};
 use regex::Regex;
 use std::sync::LazyLock;
 
@@ -16,27 +16,18 @@ pub const POLICY_TZ_KEY: &str = "policy.tz";
 /// DESIGN §4: the hours that apply while no `policy.quiet_hours` decision exists.
 pub const DEFAULT_QUIET_HOURS: &str = "23:00-08:00";
 
-/// A money, credential or irreversible ask that blocks a step needs the human (gated runs of class irreversible or
-/// money block the lead's step by construction), and so does any approval put back in front of them because it never
-/// ran or its result is unknown. Money and irreversible ones are urgent: they break through quiet hours. Product calls
-/// and non-blocking asks wait for the inbox and the digest.
-pub fn ask_attention(ask: &Ask, reopened: bool) -> Option<Attention> {
-    let blocking = ask.class != AskClass::Product && ask.blocks.as_str() != "nothing";
-    let unrun_approval = reopened && ask.kind == AskKind::Approve;
-    if ask.state != AskState::Open || !(blocking || unrun_approval) {
+/// An open request always needs the person: the lead waits on it. A money or irreversible command is urgent and
+/// breaks through quiet hours; a secret, a credential command and a session's tool prompt are loud.
+pub fn request_attention(r: &HumanRequest) -> Option<Attention> {
+    if r.state != RequestState::Open {
         return None;
     }
-    // A tool prompt holds a run until someone answers: loud, but not through quiet hours.
-    if ask.permission.is_some() {
-        return Some(Attention::Loud);
-    }
-    Some(
-        if matches!(ask.class, AskClass::Money | AskClass::Irreversible) {
+    Some(match &r.gated {
+        Some(g) if matches!(g.class, GatedClass::Money | GatedClass::Irreversible) => {
             Attention::Urgent
-        } else {
-            Attention::Loud
-        },
-    )
+        }
+        _ => Attention::Loud,
+    })
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

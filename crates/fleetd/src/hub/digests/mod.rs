@@ -11,16 +11,15 @@ use chrono_tz::Tz;
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectRef, Timestamp};
 use fleetd_contracts::ledger::{
-    AskState, DecisionScope, DecisionSource, Workstream, WorkstreamState,
+    DecisionScope, DecisionSource, RequestState, Workstream, WorkstreamState,
 };
 use serde_json::json;
 
 use crate::clock::Clock;
+use crate::hub::approvals::store::{RequestFilter, Requests};
 use crate::hub::attention::{POLICY_TZ_KEY, hub_zone, zone};
 use crate::hub::ledger::digest_text::{DigestInput, WorkstreamFacts, render_human_digest};
-use crate::hub::ledger::{
-    AskFilter, Asks, DecisionFilter, Decisions, LedgerError, iso_at, project_key,
-};
+use crate::hub::ledger::{DecisionFilter, Decisions, LedgerError, iso_at, project_key};
 use crate::hub::store::{EventLog, HubStore, NewEvent, now_ms};
 
 const SLOT_HOURS: [u32; 2] = [9, 18];
@@ -107,7 +106,7 @@ pub struct Digest {
 }
 
 pub struct HumanDigests {
-    asks: Arc<Asks>,
+    requests: Arc<Requests>,
     decisions: Arc<Decisions>,
     store: Arc<HubStore>,
     events: Arc<EventLog>,
@@ -117,14 +116,14 @@ pub struct HumanDigests {
 
 impl HumanDigests {
     pub fn new(
-        asks: Arc<Asks>,
+        requests: Arc<Requests>,
         decisions: Arc<Decisions>,
         store: Arc<HubStore>,
         events: Arc<EventLog>,
         clock: Arc<dyn Clock>,
     ) -> Self {
         Self {
-            asks,
+            requests,
             decisions,
             store,
             events,
@@ -205,15 +204,15 @@ impl HumanDigests {
                 !closed || recent(w)
             })
             .collect();
-        let asks = self
-            .asks
-            .list(&AskFilter {
-                state: Some(AskState::Open),
-                limit: Some(LIST_LIMIT),
+        let requests = self
+            .requests
+            .list(&RequestFilter {
+                states: Some(vec![RequestState::Open]),
+                limit: LIST_LIMIT,
                 ..Default::default()
             })?
             .into_iter()
-            .filter(|a| a.project_ref.as_ref().is_none_or(shown))
+            .filter(|r| shown(&r.project_ref))
             .collect();
         let project_names = self
             .store
@@ -232,7 +231,7 @@ impl HumanDigests {
         let text = render_human_digest(&DigestInput {
             now_ms: now,
             tz: Some(tz),
-            asks,
+            requests,
             facts: feeds.facts.as_ref().map(|f| f(&listed)).unwrap_or_default(),
             workstreams: listed,
             decided_without_you,

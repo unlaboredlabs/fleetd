@@ -97,7 +97,7 @@ fn command_words(synopsis: &str) -> Vec<&str> {
 }
 
 /// The command words joined by `-`; a repeated command adds its first option and that option's literal value:
-/// `ask`, `ask-kind-do`, `ask-kind-secret`, `pair-worker`, `hub-key-create-human`.
+/// `request-secret`, `pair-worker`, `hub-key-create-human`.
 fn assign_ids(groups: &mut [Group]) {
     let mut seen = std::collections::HashSet::new();
     for entry in groups.iter_mut().flat_map(|g| g.entries.iter_mut()) {
@@ -305,7 +305,8 @@ mod tests {
             "machine-add",
             "pair-worker",
             "hub-key-create-human",
-            "ask-kind-do",
+            "request-secret",
+            "request-withdraw",
             "change-enqueue",
         ] {
             assert!(ids.contains(&id), "{id} in {ids:?}");

@@ -6,12 +6,9 @@ use std::collections::HashMap;
 use chrono::TimeZone;
 use chrono_tz::Tz;
 use fleetd_contracts::ids::ProjectRef;
-use fleetd_contracts::ledger::{Ask, AskKind, AskState, Decision, Workstream, WorkstreamState};
+use fleetd_contracts::ledger::{Decision, HumanRequest, RequestState, Workstream, WorkstreamState};
 
-use super::repo::batch_n;
 use super::{js_prefix, project_key};
-
-const PLAYBOOK_ASK_PREFIX: &str = "playbook.";
 /// Same text as `playbooks::finish_all_rules::FINISH_ALL_IDLE`.
 pub const FINISH_ALL_IDLE: &str = "finish-all: nothing left with a value source";
 
@@ -28,8 +25,8 @@ pub struct DigestInput {
     pub now_ms: i64,
     /// IANA zone from `policy.tz`; `None` (an unknown zone) renders in UTC.
     pub tz: Option<Tz>,
-    /// Open asks.
-    pub asks: Vec<Ask>,
+    /// Open secret and approval requests: what needs a person in a project's chat.
+    pub requests: Vec<HumanRequest>,
     /// Workstreams worth a line: live ones, plus those that finished or failed since the last digest.
     pub workstreams: Vec<Workstream>,
     /// Lead decisions since the last digest, newest first.
@@ -92,13 +89,13 @@ fn is_finish_all(w: &Workstream) -> bool {
         .is_some_and(|p| p.starts_with("finish-all@"))
 }
 
-fn kind_or_class(ask: &Ask) -> String {
-    if ask.kind == AskKind::Do {
-        return "do".into();
-    }
-    match serde_json::to_value(ask.class) {
-        Ok(serde_json::Value::String(s)) => s,
-        _ => String::new(),
+/// What a request waits for, in a few words.
+fn waits_for(r: &HumanRequest) -> String {
+    match (&r.secret, &r.gated, &r.permission) {
+        (Some(secret), _, _) => format!("enter secret {}", secret.key),
+        (_, Some(gated), _) => format!("approve or deny: {}", clip(&gated.reason, 80)),
+        (_, _, Some(p)) => format!("approve or deny: {} {}", p.tool_name, clip(&p.summary, 60)),
+        _ => clip(&r.text, TEXT_MAX),
     }
 }
 
@@ -111,25 +108,11 @@ pub fn render_human_digest(input: &DigestInput) -> String {
             .cloned()
             .unwrap_or_else(|| r.project_id.to_string()),
     };
-    let ask_project = |ask: &Ask| {
-        if ask.project_ref.is_none() && ask.key.starts_with(PLAYBOOK_ASK_PREFIX) {
-            "playbooks".to_string()
-        } else {
-            project(ask.project_ref.as_ref())
-        }
-    };
-    let batch_of = |ask: &Ask| ask.batch_id.as_deref().and_then(batch_n);
-    let open: Vec<&Ask> = input
-        .asks
+    let open: Vec<&HumanRequest> = input
+        .requests
         .iter()
-        .filter(|a| a.state == AskState::Open)
+        .filter(|r| r.state == RequestState::Open)
         .collect();
-    let latest = open
-        .iter()
-        .filter_map(|a| batch_of(a))
-        .max()
-        .unwrap_or(0)
-        .max(0);
     let running: Vec<&Workstream> = input
         .workstreams
         .iter()
@@ -150,15 +133,7 @@ pub fn render_human_digest(input: &DigestInput) -> String {
     let mut head = vec![if open.is_empty() {
         "Nothing needs you".to_string()
     } else {
-        format!(
-            "{}{} need you",
-            if latest > 0 {
-                format!("B{latest} · ")
-            } else {
-                String::new()
-            },
-            open.len()
-        )
+        format!("{} need you", open.len())
     }];
     head.push(format!("{} running", running.len()));
     head.push(format!("{} done", done.len()));
@@ -167,57 +142,13 @@ pub fn render_human_digest(input: &DigestInput) -> String {
     }
     lines.push(head.join(" · "));
 
-    let mut ordered = open.clone();
-    ordered.sort_by_key(|a| {
-        (
-            batch_of(a).unwrap_or(i64::MAX),
-            a.number.map(|n| n.get()).unwrap_or(0),
-        )
-    });
-    for ask in ordered {
-        let number = ask.number.map(|n| n.get().to_string());
-        let label = match batch_of(ask) {
-            None => ask.ask_id.to_string(),
-            Some(n) if n == latest => number.clone().unwrap_or_default(),
-            Some(n) => format!("#B{n} {}", number.clone().unwrap_or_default()),
-        };
-        let mut line = format!(
-            "{label} [{}] {}: {}",
-            kind_or_class(ask),
-            ask_project(ask),
-            clip(&ask.text, TEXT_MAX)
-        );
-        if ask.kind == AskKind::Do {
-            let steps = ask.steps.as_ref().map_or(0, |s| s.len());
-            line += &format!(
-                " ({steps} step{}; reply \"{} done\" when finished)",
-                if steps == 1 { "" } else { "s" },
-                number.unwrap_or_else(|| ask.ask_id.to_string())
-            );
-        } else {
-            if let Some(options) = ask.options.as_ref().filter(|o| !o.is_empty()) {
-                let shown: Vec<String> = options
-                    .iter()
-                    .enumerate()
-                    .map(|(i, o)| {
-                        format!("{}) {}", &"abcdef"[i..i + 1], clip(&o.display_label(), 40))
-                    })
-                    .collect();
-                line += &format!(" {}", shown.join(" "));
-            }
-            if let Some(rec) = &ask.recommendation {
-                line += &format!(" rec: {}", clip(rec, 60));
-            }
-            if ask.proceeded_on_rec {
-                line += " (proceeded) — override?";
-            }
-        }
-        if ask.blocks.as_str() != "nothing" {
-            line += &format!("   (blocks: {})", clip(&ask.blocks, 60));
-        }
-        lines.push(line);
+    for r in &open {
+        lines.push(format!(
+            "{}: {} (in its chat)",
+            project(Some(&r.project_ref)),
+            waits_for(r)
+        ));
     }
-
     let status = |w: &Workstream| {
         let title = if w.title.is_empty() {
             w.source.text.to_string()

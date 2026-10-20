@@ -1,11 +1,7 @@
 //! Synchronous SQL over the ledger tables. Callers compose these inside one write transaction
 //! and emit events after the commit; nothing here opens a transaction itself.
 use fleetd_contracts::ids::{ProjectRef, Timestamp};
-use fleetd_contracts::ledger::{
-    Ask, AskId, AskState, Batch, BatchId, BatchItem, BatchState, Decision, DecisionId, DecisionKey,
-    DecisionScope, DecisionState, WorkstreamId,
-};
-use fleetd_contracts::prim::Positive;
+use fleetd_contracts::ledger::{Decision, DecisionId, DecisionKey, DecisionScope, DecisionState};
 use rusqlite::{Connection, OptionalExtension, named_params, params};
 
 use super::{Actor, Chain, Fail, LedgerError, iso_at, project_key};
@@ -20,12 +16,6 @@ fn serial(prefix: char, id: &str) -> Option<i64> {
 }
 pub fn decision_n(id: &str) -> Option<i64> {
     serial('D', id)
-}
-pub fn ask_n(id: &str) -> Option<i64> {
-    serial('A', id)
-}
-pub fn batch_n(id: &str) -> Option<i64> {
-    serial('B', id)
 }
 
 const STOPWORDS: &[&str] = &[
@@ -61,26 +51,11 @@ fn scope_columns(scope: &DecisionScope) -> (&'static str, String) {
     }
 }
 
-/// An ask's project column: "" for an unrouted ask, which has no project yet.
-pub fn ask_project_key(project_ref: Option<&ProjectRef>) -> String {
-    project_ref.map(project_key).unwrap_or_default()
-}
-
 pub(super) fn decision_state_text(state: &DecisionState) -> &'static str {
     match state {
         DecisionState::Active => "active",
         DecisionState::Superseded => "superseded",
         DecisionState::Retired => "retired",
-    }
-}
-
-pub(super) fn ask_state_text(state: &AskState) -> &'static str {
-    match state {
-        AskState::Open => "open",
-        AskState::Auto => "auto",
-        AskState::Answered => "answered",
-        AskState::Defaulted => "defaulted",
-        AskState::Withdrawn => "withdrawn",
     }
 }
 
@@ -99,7 +74,6 @@ pub struct RecordInput {
     pub scope: DecisionScope,
     pub value: String,
     pub why: Option<String>,
-    pub ask_id: Option<AskId>,
     /// The project a workstream-scoped decision belongs to, so project-wide lookups find it.
     pub project_ref: Option<ProjectRef>,
 }
@@ -111,7 +85,6 @@ impl RecordInput {
             scope,
             value: value.into(),
             why: None,
-            ask_id: None,
             project_ref: None,
         }
     }
@@ -127,28 +100,6 @@ pub struct DecisionFilter {
     /// Recorded at or after this time (ms).
     pub since_ms: Option<i64>,
     pub limit: Option<i64>,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct AskFilter {
-    pub state: Option<AskState>,
-    pub project_ref: Option<ProjectRef>,
-    pub workstream_id: Option<WorkstreamId>,
-    pub batch_id: Option<BatchId>,
-    pub limit: Option<i64>,
-}
-
-#[derive(Clone, Debug)]
-pub struct StoredBatch {
-    pub batch: Batch,
-    pub n: i64,
-    pub last_add_ms: Option<i64>,
-    pub published_ms: Option<i64>,
-}
-
-pub struct AskRow {
-    pub ask: Ask,
-    pub filed_by: String,
 }
 
 pub fn get_decision(db: &Connection, id: &str) -> Result<Option<Decision>, Fail> {
@@ -218,7 +169,6 @@ pub fn record_decision(
         why: input.why.as_deref().map(super::text),
         source: actor.source,
         by: Some(actor.by.clone()),
-        ask_id: input.ask_id.clone(),
         supersedes,
         state: DecisionState::Active,
         at: Timestamp(iso_at(now_ms)),
@@ -338,299 +288,4 @@ pub fn list_decisions(db: &Connection, filter: &DecisionFilter) -> Result<Vec<De
         |r| r.get::<_, String>(0),
     )?;
     rows.map(|row| decode(row?)).collect()
-}
-
-pub fn get_ask_row(db: &Connection, id: &str) -> Result<Option<AskRow>, Fail> {
-    let Some(n) = ask_n(id) else { return Ok(None) };
-    let row: Option<(String, String)> = db
-        .query_row("SELECT data, filed_by FROM asks WHERE n = ?", [n], |r| {
-            Ok((r.get(0)?, r.get(1)?))
-        })
-        .optional()?;
-    row.map(|(data, filed_by)| {
-        Ok(AskRow {
-            ask: decode(data)?,
-            filed_by,
-        })
-    })
-    .transpose()
-}
-
-pub fn get_ask(db: &Connection, id: &str) -> Result<Option<Ask>, Fail> {
-    Ok(get_ask_row(db, id)?.map(|row| row.ask))
-}
-
-pub fn put_ask(db: &Connection, ask: &Ask) -> Result<(), Fail> {
-    db.execute(
-        "UPDATE asks SET data = ?, state = ?, batch_n = ? WHERE n = ?",
-        params![
-            encode(ask),
-            ask_state_text(&ask.state),
-            ask.batch_id.as_deref().and_then(batch_n),
-            ask_n(&ask.ask_id).expect("minted ask id"),
-        ],
-    )?;
-    Ok(())
-}
-
-/// Inserts an ask; `build` receives the new id and returns the record to store. The key column follows the built
-/// ask's key, for asks whose key names their own id (`gated.a7`).
-pub fn insert_ask(
-    db: &Connection,
-    project_ref: Option<&ProjectRef>,
-    key: &str,
-    workstream_id: Option<&WorkstreamId>,
-    filed_by: &str,
-    now_ms: i64,
-    build: impl FnOnce(AskId) -> Ask,
-) -> Result<Ask, Fail> {
-    let n: i64 = db.query_row(
-        "INSERT INTO asks (project_key, workstream_id, key, state, filed_by, batch_n, created_ms, data)
-         VALUES (?, ?, ?, ?, ?, NULL, ?, '') RETURNING n",
-        params![ask_project_key(project_ref), workstream_id.map(|w| w.as_str()), key, "open", filed_by, now_ms],
-        |r| r.get(0),
-    )?;
-    let ask = build(AskId::unchecked(format!("A{n}")));
-    if ask.key.as_str() != key {
-        db.execute(
-            "UPDATE asks SET key = ? WHERE n = ?",
-            params![ask.key.as_str(), n],
-        )?;
-    }
-    put_ask(db, &ask)?;
-    Ok(ask)
-}
-
-pub fn open_ask_with_key(
-    db: &Connection,
-    project_ref: Option<&ProjectRef>,
-    key: &str,
-) -> Result<Option<Ask>, Fail> {
-    let data: Option<String> = db
-        .query_row(
-            "SELECT data FROM asks WHERE project_key = ? AND key = ? AND state = 'open' LIMIT 1",
-            params![ask_project_key(project_ref), key],
-            |r| r.get(0),
-        )
-        .optional()?;
-    data.map(decode).transpose()
-}
-
-pub fn list_asks(db: &Connection, filter: &AskFilter) -> Result<Vec<Ask>, Fail> {
-    let mut stmt = db.prepare_cached(
-        "SELECT data FROM asks
-         WHERE (:state IS NULL OR state = :state) AND (:project IS NULL OR project_key = :project)
-           AND (:ws IS NULL OR workstream_id = :ws) AND (:batch IS NULL OR batch_n = :batch)
-         ORDER BY batch_n IS NULL, batch_n, json_extract(data, '$.number'), n LIMIT :limit",
-    )?;
-    let rows = stmt.query_map(
-        named_params! {
-            ":state": filter.state.as_ref().map(ask_state_text),
-            ":project": filter.project_ref.as_ref().map(project_key),
-            ":ws": filter.workstream_id.as_ref().map(|w| w.as_str()),
-            ":batch": filter.batch_id.as_ref().map(|b| batch_n(b).unwrap_or(-1)),
-            ":limit": filter.limit.unwrap_or(100),
-        },
-        |r| r.get::<_, String>(0),
-    )?;
-    rows.map(|row| decode(row?)).collect()
-}
-
-pub fn get_batch(db: &Connection, n: i64) -> Result<Option<StoredBatch>, Fail> {
-    let row: Option<(String, i64, Option<i64>, Option<i64>)> = db
-        .query_row(
-            "SELECT state, created_ms, last_add_ms, published_ms FROM batches WHERE n = ?",
-            [n],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
-        )
-        .optional()?;
-    let Some((state, created_ms, last_add_ms, published_ms)) = row else {
-        return Ok(None);
-    };
-    let mut stmt = db.prepare_cached(
-        "SELECT number, ask_n FROM batch_items WHERE batch_n = ? ORDER BY number",
-    )?;
-    let items = stmt
-        .query_map([n], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))?
-        .map(|row| {
-            let (number, ask) = row?;
-            Ok(BatchItem {
-                number: Positive::unchecked(number),
-                ask_id: AskId::unchecked(format!("A{ask}")),
-            })
-        })
-        .collect::<Result<Vec<_>, Fail>>()?;
-    Ok(Some(StoredBatch {
-        n,
-        batch: Batch {
-            batch_id: BatchId::unchecked(format!("B{n}")),
-            created_at: Timestamp(iso_at(created_ms)),
-            items,
-            state: if state == "closed" {
-                BatchState::Closed
-            } else {
-                BatchState::Open
-            },
-        },
-        last_add_ms,
-        published_ms,
-    }))
-}
-
-fn batch_by(db: &Connection, sql: &str) -> Result<Option<StoredBatch>, Fail> {
-    let n: Option<i64> = db.query_row(sql, [], |r| r.get(0)).optional()?;
-    match n {
-        Some(n) => get_batch(db, n),
-        None => Ok(None),
-    }
-}
-
-/// The batch new asks join: open and not yet published.
-pub fn collecting_batch(db: &Connection) -> Result<Option<StoredBatch>, Fail> {
-    batch_by(
-        db,
-        "SELECT n FROM batches WHERE state = 'open' AND published_ms IS NULL ORDER BY n DESC LIMIT 1",
-    )
-}
-
-/// Gives `ask` the next number in batch `n`; `quiet` (a new ask) restarts the batch's quiet window.
-fn place_in(
-    db: &Connection,
-    n: i64,
-    ask: &Ask,
-    now_ms: i64,
-    quiet: bool,
-) -> Result<(Ask, StoredBatch), Fail> {
-    let number: i64 = db.query_row(
-        "SELECT COALESCE(MAX(number), 0) + 1 FROM batch_items WHERE batch_n = ?",
-        [n],
-        |r| r.get(0),
-    )?;
-    db.execute(
-        "INSERT INTO batch_items (batch_n, number, ask_n) VALUES (?, ?, ?)",
-        params![n, number, ask_n(&ask.ask_id).expect("minted ask id")],
-    )?;
-    if quiet {
-        db.execute(
-            "UPDATE batches SET last_add_ms = ? WHERE n = ?",
-            params![now_ms, n],
-        )?;
-    }
-    let mut placed = ask.clone();
-    placed.batch_id = Some(BatchId::unchecked(format!("B{n}")));
-    placed.number = Some(Positive::unchecked(number));
-    put_ask(db, &placed)?;
-    let batch = get_batch(db, n)?.expect("just placed into it");
-    Ok((placed, batch))
-}
-
-fn new_batch(db: &Connection, now_ms: i64) -> Result<i64, Fail> {
-    Ok(db.query_row(
-        "INSERT INTO batches (state, created_ms, last_add_ms, published_ms) VALUES ('open', ?, NULL, NULL) RETURNING n",
-        [now_ms],
-        |r| r.get(0),
-    )?)
-}
-
-/// A new ask joins the collecting batch, creating it if needed.
-pub fn add_to_collecting(
-    db: &Connection,
-    ask: &Ask,
-    now_ms: i64,
-) -> Result<(Ask, StoredBatch), Fail> {
-    let n = match collecting_batch(db)? {
-        Some(stored) => stored.n,
-        None => new_batch(db, now_ms)?,
-    };
-    place_in(db, n, ask, now_ms, true)
-}
-
-/// "later": the ask leaves `from_batch` (whose item list keeps it, numbers never change) for the collecting batch.
-/// It does not start the quiet window, so it is shown again with the next new ask rather than 30 s from now.
-pub fn move_to_later_batch(
-    db: &Connection,
-    ask: &Ask,
-    from_batch: i64,
-    now_ms: i64,
-) -> Result<Ask, Fail> {
-    let n = match collecting_batch(db)? {
-        Some(stored) if stored.n != from_batch => stored.n,
-        _ => new_batch(db, now_ms)?,
-    };
-    Ok(place_in(db, n, ask, now_ms, false)?.0)
-}
-
-/// True when it was still unpublished.
-pub fn publish_batch(db: &Connection, n: i64, now_ms: i64) -> Result<bool, Fail> {
-    Ok(db.execute(
-        "UPDATE batches SET published_ms = ? WHERE n = ? AND published_ms IS NULL",
-        params![now_ms, n],
-    )? > 0)
-}
-
-/// Closes the batch once no item is still open in it (answered, withdrawn, or moved to a later batch).
-pub fn close_if_done(db: &Connection, n: i64) -> Result<bool, Fail> {
-    let Some(stored) = get_batch(db, n)? else {
-        return Ok(false);
-    };
-    if stored.batch.state == BatchState::Closed {
-        return Ok(false);
-    }
-    for item in &stored.batch.items {
-        if let Some(ask) = get_ask(db, &item.ask_id)?
-            && ask.state == AskState::Open
-            && ask.batch_id.as_ref() == Some(&stored.batch.batch_id)
-        {
-            return Ok(false);
-        }
-    }
-    db.execute("UPDATE batches SET state = 'closed' WHERE n = ?", [n])?;
-    Ok(true)
-}
-
-/// An undone answer's batch takes its item back.
-pub fn reopen_batch(db: &Connection, n: i64) -> Result<(), Fail> {
-    db.execute("UPDATE batches SET state = 'open' WHERE n = ?", [n])?;
-    Ok(())
-}
-
-/// Decide answers marked with an undo window and not yet delivered to their lead.
-pub fn held_answers(db: &Connection) -> Result<Vec<Ask>, Fail> {
-    let mut stmt = db.prepare_cached(
-        "SELECT data FROM asks WHERE state IN ('answered', 'defaulted')
-           AND json_extract(data, '$.answer.undoUntil') IS NOT NULL
-           AND json_extract(data, '$.answer.deliveredAt') IS NULL
-         ORDER BY n",
-    )?;
-    let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
-    rows.map(|row| decode(row?)).collect()
-}
-
-/// Latest open batch the human has been shown; the collecting one only when none was published.
-pub fn latest_open_batch(db: &Connection) -> Result<Option<StoredBatch>, Fail> {
-    batch_by(
-        db,
-        "SELECT n FROM batches WHERE state = 'open' ORDER BY published_ms IS NULL, n DESC LIMIT 1",
-    )
-}
-
-pub fn list_batches(
-    db: &Connection,
-    state: Option<BatchState>,
-    limit: Option<i64>,
-) -> Result<Vec<StoredBatch>, Fail> {
-    let mut stmt =
-        db.prepare_cached("SELECT n FROM batches WHERE (:state IS NULL OR state = :state) ORDER BY n DESC LIMIT :limit")?;
-    let ns = stmt
-        .query_map(
-            named_params! {
-                ":state": state.map(|s| if s == BatchState::Closed { "closed" } else { "open" }),
-                ":limit": limit.unwrap_or(20),
-            },
-            |r| r.get::<_, i64>(0),
-        )?
-        .collect::<Result<Vec<_>, _>>()?;
-    ns.into_iter()
-        .map(|n| Ok(get_batch(db, n)?.expect("listed")))
-        .collect()
 }

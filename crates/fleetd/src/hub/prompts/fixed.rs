@@ -109,11 +109,11 @@ pub enum DenyReason<'a> {
     /// A person said no; `said` is what they wrote, if anything.
     Human {
         by: &'a str,
-        ask: &'a str,
+        request: &'a str,
         said: Option<&'a str>,
     },
     /// The approval was withdrawn before anyone answered it.
-    Withdrawn { by: &'a str, ask: &'a str },
+    Withdrawn { by: &'a str, request: &'a str },
     /// Denied with thread_answer, no words.
     Answer { by: &'a str },
 }
@@ -122,12 +122,12 @@ pub enum DenyReason<'a> {
 pub fn denied(reason: &DenyReason<'_>) -> String {
     let reason = match reason {
         DenyReason::Policy { rule, file } => format!("the tools.deny rule `{rule}` in {file}"),
-        DenyReason::Human { by, ask, said } => format!(
-            "{by} said no ({ask}){}",
+        DenyReason::Human { by, request, said } => format!(
+            "{by} said no ({request}){}",
             said.map(|s| format!(": {s}")).unwrap_or_default()
         ),
-        DenyReason::Withdrawn { by, ask } => format!(
-            "{by} withdrew {ask} before anyone answered it. Don't retry this call; ask for another way"
+        DenyReason::Withdrawn { by, request } => format!(
+            "{by} withdrew {request} before anyone answered it. Don't retry this call; ask for another way"
         ),
         DenyReason::Answer { by } => format!("{by} with thread_answer"),
     };
@@ -193,25 +193,25 @@ mod tests {
         assert_eq!(
             denied(&DenyReason::Human {
                 by: "ada-lovelace",
-                ask: "A3",
+                request: "Q3",
                 said: Some("not on prod")
             }),
-            "Denied: ada-lovelace said no (A3): not on prod."
+            "Denied: ada-lovelace said no (Q3): not on prod."
         );
         assert_eq!(
             denied(&DenyReason::Human {
                 by: "ada-lovelace",
-                ask: "A3",
+                request: "Q3",
                 said: None
             }),
-            "Denied: ada-lovelace said no (A3)."
+            "Denied: ada-lovelace said no (Q3)."
         );
         assert_eq!(
             denied(&DenyReason::Withdrawn {
                 by: "ada-lovelace",
-                ask: "A3"
+                request: "Q3"
             }),
-            "Denied: ada-lovelace withdrew A3 before anyone answered it. Don't retry this call; ask for another way."
+            "Denied: ada-lovelace withdrew Q3 before anyone answered it. Don't retry this call; ask for another way."
         );
         assert_eq!(
             denied(&DenyReason::Answer { by: "ada-lovelace" }),

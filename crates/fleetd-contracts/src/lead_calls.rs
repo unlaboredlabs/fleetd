@@ -7,15 +7,15 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
 
+use crate::chat::ChatRequestId;
 use crate::checked;
 use crate::effort::Effort;
 use crate::ids::ThreadId;
 use crate::ledger::{
-    AskBlocks, AskContext, AskId, AskKind, AskOptions, AskRecommendationWhy, AskState, AskSteps,
-    AskText, BriefDraft, BriefHash, CheckSpec, Decision, DecisionId, DecisionKey, DecisionValue,
-    DecisionWhy, EnvName, GATED_MAX_TIMEOUT_SEC, GatedArgv, GatedClass, GatedCwd, GatedTimeoutSec,
-    IntakeText, PlaybookName, PlaybookRef, SecretEnv, Serves, Tier, WorkstreamId, WorkstreamState,
-    ask_blocks_nothing, ask_kind_rule,
+    BriefDraft, BriefHash, Decision, DecisionKey, DecisionValue, DecisionWhy, EnvName,
+    GATED_MAX_TIMEOUT_SEC, GatedArgv, GatedClass, GatedCwd, GatedTimeoutSec, IntakeText,
+    PlaybookName, PlaybookRef, RequestState, SecretEnv, Serves, Tier, WorkstreamId,
+    WorkstreamState,
 };
 use crate::mcp::McpToolError;
 use crate::plan::{
@@ -44,83 +44,46 @@ pub const NODE_SOCKET_PATH: &str = ".fleetd/node/node.sock";
 pub struct BriefCreateCall {
     pub workstream_id: WorkstreamId,
     pub brief: BriefDraft,
-    /// `--amend`: the human-answered ask that approved changing an already frozen brief.
-    pub amend: Option<AskId>,
+    /// The key of the decision the lead logged after the human approved changing an already frozen brief in chat.
+    pub amend: Option<DecisionKey>,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum AskCallKind {
-    #[default]
-    Decide,
-    Do,
-    Secret,
-}
-
-impl From<AskCallKind> for AskKind {
-    fn from(kind: AskCallKind) -> Self {
-        match kind {
-            AskCallKind::Decide => AskKind::Decide,
-            AskCallKind::Do => AskKind::Do,
-            AskCallKind::Secret => AskKind::Secret,
-        }
-    }
-}
-
-/// `fleetd ask [--kind decide|do|secret] --key k --class c --text "<short question>" [--context "<1-2 lines>"]
-/// --option 'key|Label|what happens if picked' (2-6 times) --rec <option key> --why "<one line>" [--steps '<json>']
-/// [--verify '<CheckSpec>'] [--sink env:<machine>:<path> [--env-name N]] [--blocks "step"] [--proceeded]
-/// [--workstream W12]`. A decide ask needs labelled options with consequences and a recommendation among them; the
-/// hub refuses one without, saying what to send. Approve asks come only from `fleetd gated run`, so the command they run is stored with them.
+/// `request_secret`: the human enters a secret in a masked field in the app; it is sealed to the sink's machine and
+/// written there (0600). The lead only ever sees its fingerprint, in a later wake.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(remote = "Self", rename_all = "camelCase")]
-pub struct AskCall {
-    #[serde(default)]
-    pub kind: AskCallKind,
+pub struct RequestSecretCall {
+    /// The secret's name, a dotted slug such as "stripe.test_key".
     pub key: DecisionKey,
-    /// Any string: the hub refuses classes outside AskClass with the "decide this yourself" fix text.
-    pub class: NonEmpty,
-    /// The question, one short line.
-    pub text: AskText,
-    pub context: Option<AskContext>,
-    /// The key of one of `options`.
-    pub recommendation: Option<DecisionValue>,
-    pub recommendation_why: Option<AskRecommendationWhy>,
-    pub options: Option<AskOptions>,
-    pub steps: Option<AskSteps>,
-    /// do only.
-    pub verify: Option<CheckSpec>,
-    /// Required for secret; the ask's key names the secret.
-    pub sink: Option<SecretSink>,
-    /// `--env-name`: an env: sink's variable, when the key's own name (`secret_env_name`) is not wanted or valid.
+    pub sink: SecretSink,
+    /// One line on why it is needed.
+    pub text: Text<1, 500>,
+    /// An env: sink's variable, when not the one the key names.
     pub env_name: Option<EnvName>,
-    #[serde(default = "ask_blocks_nothing")]
-    pub blocks: AskBlocks,
-    #[serde(default)]
-    pub proceeded_on_rec: bool,
     pub workstream_id: Option<WorkstreamId>,
 }
-checked!(AskCall, |call| ask_kind_rule(
-    call.kind.into(),
-    Some(call.class.as_str()),
-    call.recommendation.is_some(),
-    call.steps.as_ref().map(|steps| steps.len()),
-    call.sink.as_deref(),
-    call.env_name.is_some(),
-    false,
-    None,
-    false,
-    call.verify.is_some(),
-));
+checked!(RequestSecretCall, |call| {
+    if call.env_name.is_some() && !call.sink.starts_with("env:") {
+        return Err("only an env: sink has an env name".into());
+    }
+    Ok(())
+});
 
 fn gated_max_timeout() -> GatedTimeoutSec {
     GatedTimeoutSec::unchecked(GATED_MAX_TIMEOUT_SEC)
 }
 
-/// `fleetd gated run --class irreversible|money|credential --argv '<json array>' --reason r [--cwd /abs]
-/// [--secret-env NAME=<secret key>]... [--timeout <sec>] [--workstream W12]`. Creates an approve ask storing exactly
-/// this command; the project's node runs it after a human answers "go", and the result arrives in a wake.
+/// `request_withdraw`: the lead takes back a secret request it no longer needs (the human said so in chat), or a
+/// command approval nobody answered.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RequestWithdrawCall {
+    pub request_id: ChatRequestId,
+}
+
+/// `gated_run`: a request storing exactly this command, shown in chat with Approve / Deny; the project's node runs it
+/// once a human approves, and the result arrives in a wake.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -128,21 +91,11 @@ pub struct GatedRunCall {
     pub argv: GatedArgv,
     pub cwd: Option<GatedCwd>,
     pub class: GatedClass,
-    pub reason: AskText,
+    pub reason: Text<1, 500>,
     pub secret_env: Option<SecretEnv>,
     #[serde(default = "gated_max_timeout")]
     pub timeout_sec: GatedTimeoutSec,
     pub workstream_id: Option<WorkstreamId>,
-}
-
-/// `fleetd ask withdraw A7 [--use D3]`.
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct AskWithdrawCall {
-    pub ask_id: AskId,
-    /// The existing decision that answers it.
-    pub r#use: Option<DecisionId>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
@@ -340,8 +293,8 @@ pub struct InventoryCall {}
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum LeadCall {
     BriefCreate(BriefCreateCall),
-    Ask(AskCall),
-    AskWithdraw(AskWithdrawCall),
+    RequestSecret(RequestSecretCall),
+    RequestWithdraw(RequestWithdrawCall),
     Decide(DecideCall),
     StatusSet(StatusSetCall),
     DecisionsSearch(DecisionsSearchCall),
@@ -380,27 +333,13 @@ pub struct BriefCreateResult {
     pub next: Option<String>,
 }
 
+/// A secret or approval request, open until a human answers it in chat.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct AskResult {
-    /// "auto": answered from the log, see `decision`. "open": a new ask, or an existing one with the same key
-    /// (`attached`).
-    pub state: AskState,
-    pub ask_id: AskId,
-    pub decision: Option<Decision>,
-    pub attached: Option<bool>,
-    /// Decisions that may already answer it; withdraw with `--use` if one does.
-    pub candidates: Option<List<Decision, 0, 5>>,
-    pub next: Option<String>,
-}
-
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct AskWithdrawResult {
-    pub ask_id: AskId,
-    pub state: AskState,
+pub struct RequestResult {
+    pub request_id: ChatRequestId,
+    pub state: RequestState,
     pub next: Option<String>,
 }
 
@@ -472,16 +411,6 @@ pub struct ChangeResult {
     pub next: Option<String>,
 }
 
-/// The approve ask, open until a human answers it.
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct GatedRunResult {
-    pub ask_id: AskId,
-    pub state: AskState,
-    pub next: Option<String>,
-}
-
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -517,8 +446,8 @@ pub struct AskLeadResult {
 #[allow(clippy::large_enum_variant)]
 pub enum LeadCallResult {
     BriefCreate(BriefCreateResult),
-    Ask(AskResult),
-    AskWithdraw(AskWithdrawResult),
+    RequestSecret(RequestResult),
+    RequestWithdraw(RequestResult),
     Decide(DecideResult),
     StatusSet(StatusSetResult),
     DecisionsSearch(DecisionsSearchResult),
@@ -531,7 +460,7 @@ pub enum LeadCallResult {
     ReviewVerdict(ReviewVerdictResult),
     ChangeEnqueue(ChangeResult),
     ChangeStatus(ChangeResult),
-    GatedRun(GatedRunResult),
+    GatedRun(RequestResult),
     WorkstreamSpawn(WorkstreamSpawnResult),
     Inventory(InventoryResult),
     PlanMilestone(PlanMilestoneResult),
@@ -592,20 +521,8 @@ mod tests {
     }
 
     #[test]
-    fn ask_call_applies_decode_defaults() {
-        let LeadCall::Ask(ask) =
-            call(serde_json::json!({ "op": "ask", "key": "api.path", "class": "product", "text": "Which path?", "recommendation": "/health" })).unwrap()
-        else {
-            panic!("not an ask");
-        };
-        assert_eq!(ask.kind, AskCallKind::Decide);
-        assert_eq!(ask.blocks.as_str(), "nothing");
-        assert!(!ask.proceeded_on_rec);
-    }
-
-    #[test]
-    fn ask_call_runs_the_kind_rule() {
-        let base = serde_json::json!({ "op": "ask", "key": "stripe.test_key", "class": "credential", "text": "Need the key", "kind": "secret" });
+    fn a_secret_request_names_a_sink_and_only_an_env_sink_has_an_env_name() {
+        let base = serde_json::json!({ "op": "request_secret", "key": "stripe.test_key", "text": "Need the key" });
         let with = |extra: serde_json::Value| {
             let mut value = base.clone();
             value
@@ -626,7 +543,12 @@ mod tests {
             ))
             .is_err()
         );
-        assert!(call(base.clone()).is_err(), "a secret ask needs a sink");
+        assert!(call(base.clone()).is_err(), "a secret request needs a sink");
+        assert!(
+            call(serde_json::json!({ "op": "ask", "key": "a.b", "class": "product", "text": "?" }))
+                .is_err(),
+            "there is no ask call"
+        );
     }
 
     #[test]

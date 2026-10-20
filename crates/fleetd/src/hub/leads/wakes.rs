@@ -8,13 +8,12 @@ use std::time::Duration;
 
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{ProjectRef, ThreadRef};
-use fleetd_contracts::ledger::{AskAnswerKind, AskState, WorkstreamId};
+use fleetd_contracts::ledger::WorkstreamId;
 
 use super::digest::{DigestInput, WorkstreamFacts, render_lead_digest};
 use super::error::LeadError;
-use super::events::{Event, Settled, frame};
+use super::events::{Event, frame};
 use super::hooks::BoxFuture;
-use super::ports::{Answer, followed_up};
 use super::records::{LeadRecords, WorkstreamFilter};
 use super::{Ctx, now_iso};
 use crate::clock::Clock;
@@ -40,6 +39,8 @@ pub enum LineKind {
     Runnable,
     /// A person raised the project's max agents (`tasks::cap`).
     CapRaised,
+    /// A secret or approval request settled, or came back open (`approvals`).
+    Request,
 }
 
 #[derive(Debug, Clone)]
@@ -52,8 +53,6 @@ pub enum Trigger {
         workstream_id: WorkstreamId,
         text: String,
     },
-    /// A settled ask: an answer, or the outcome of an approval, secret or checked step.
-    Answer(Answer),
     /// A task ended, a claim failed or passed late, a task waits on input, a train event, a research verdict: the area
     /// that raises it renders its own "why" line(s).
     Line { kind: LineKind, text: String },
@@ -79,7 +78,6 @@ impl Trigger {
     pub fn kind(&self) -> &'static str {
         match self {
             Trigger::Intent { .. } => "intent",
-            Trigger::Answer(_) => "answer",
             Trigger::Line { kind, .. } => match kind {
                 LineKind::TaskResult => "task_result",
                 LineKind::ClaimFailed => "claim_failed",
@@ -91,6 +89,7 @@ impl Trigger {
                 LineKind::Idle => "idle",
                 LineKind::Runnable => "runnable",
                 LineKind::CapRaised => "cap_raised",
+                LineKind::Request => "request",
             },
         }
     }
@@ -110,51 +109,8 @@ pub fn trigger_lines(triggers: &[Trigger]) -> Vec<String> {
             }
             .render(),
             Trigger::Line { text, .. } => text.clone(),
-            Trigger::Answer(a) => answer_line(a),
         })
         .collect()
-}
-
-fn answer_line(answer: &Answer) -> String {
-    let ask = &answer.ask;
-    let value = answer
-        .value
-        .as_deref()
-        .or(answer.decision.as_ref().map(|d| d.value.as_ref()))
-        .unwrap_or("");
-    // The human reads labels; the lead gets the key it filed plus the label the human picked.
-    let value = match ask
-        .options
-        .iter()
-        .flatten()
-        .find(|o| o.key.as_str() == value)
-        .and_then(|o| o.label.as_ref())
-    {
-        Some(label) => format!("{value} (\"{label}\")"),
-        None => value.to_owned(),
-    };
-    let settled = if answer.withdrawn {
-        Settled::Withdrawn
-    } else if ask.state == AskState::Defaulted {
-        Settled::Skipped
-    } else if ask
-        .answer
-        .as_ref()
-        .is_some_and(|a| a.kind == Some(AskAnswerKind::Text))
-    {
-        Settled::OwnWords
-    } else {
-        Settled::Answered
-    };
-    Event::Answered {
-        ask: ask.ask_id.as_str(),
-        key: ask.key.as_str(),
-        settled,
-        value: &value,
-        decision: answer.decision.as_ref().map(|d| d.decision_id.as_str()),
-        evidence: ask.evidence.as_ref().map(|e| e.as_ref()),
-    }
-    .render()
 }
 
 pub fn render_wake(digest: &str, triggers: &[Trigger]) -> String {
@@ -257,7 +213,7 @@ impl<K: Clone + Eq + Hash + Send + 'static, T: Send + 'static> Debouncer<K, T> {
     }
 }
 
-/// The orders a wake serves: an intent's, an answered ask's, and any `W<n>` a line names or whose task `T<n>` it
+/// The orders a wake serves: an intent's, and any `W<n>` a line names or whose task `T<n>` it
 /// names. The time inspector splits the lead's turn equally over them.
 fn trigger_workstreams(
     triggers: &[Trigger],
@@ -269,7 +225,6 @@ fn trigger_workstreams(
     for t in triggers {
         let found: Vec<String> = match t {
             Trigger::Intent { workstream_id, .. } => vec![workstream_id.to_string()],
-            Trigger::Answer(a) => a.ask.workstream_id.iter().map(|w| w.to_string()).collect(),
             Trigger::Line { text, .. } => re
                 .find_iter(text)
                 .filter_map(|m| match m.as_str() {
@@ -349,7 +304,7 @@ impl LeadWakes {
             ..Default::default()
         })?;
         let since = self.records.lead_get(r)?.and_then(|l| l.last_wake_at);
-        let open_asks = ctx.ports().open_asks(Some(r), None, 50)?;
+        let open_requests = ctx.ports().open_requests(Some(r), 50)?;
         // Global, project and every workstream-scoped decision in the project; the digest ranks them.
         let decisions = ctx.ports().decisions_in_project(r, 500)?;
         let tasks = ctx
@@ -372,7 +327,7 @@ impl LeadWakes {
                 .map_or(r.project_id.as_str(), |p| p.title.as_str()),
             at: &at,
             workstreams: &workstreams,
-            open_asks: &open_asks,
+            open_requests: &open_requests,
             decisions: &decisions,
             agents,
             tasks,
@@ -550,16 +505,6 @@ impl LeadWakes {
             attention: None,
         })?;
         Ok(())
-    }
-
-    /// The ledger's AnswerSink (`wiring`) calls this. Each applied answer becomes a trigger for its project's lead. An approved command or a
-    /// checklist with a verify check reaches the lead later, from the approvals follow-up, with its outcome.
-    pub fn on_answered(self: &Arc<Self>, r: &ProjectRef, answers: &[Answer]) {
-        for answer in answers {
-            if !followed_up(answer) {
-                self.trigger(r, Trigger::Answer(answer.clone()));
-            }
-        }
     }
 }
 

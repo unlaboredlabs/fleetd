@@ -15,11 +15,6 @@ A key that lets an MCP client or script call the hub, with a role (`read`, `oper
 A named set of paths in a project, such as `docs: ["docs/**"]`. A writer task may only touch the areas it leases.
 Set them in the [policy file](/docs/config-and-files#policy).
 
-## Ask {#ask}
-
-A question a lead sends you, numbered in the inbox. Asks cover product calls, money, credentials and irreversible
-steps only. See [Inbox and replies](/docs/desktop-app#reply).
-
 ## Brief {#brief}
 
 The plan a lead writes for an order before any work starts: what to build, and the done-when checks that prove it.
@@ -35,7 +30,7 @@ The chain of work that decides when an order finishes. Shortening it makes the o
 
 ## Decision {#decision}
 
-Your answer to an ask, kept in a searchable log. A later ask that a decision already answers is answered at once.
+Your answer to a lead's question in chat, which the lead logs in a searchable log so it never asks it again.
 
 ## Done-when check {#done-when-check}
 
@@ -55,10 +50,6 @@ secrets or steer.
 ## Hub {#hub}
 
 The coordinator of a fleet. It runs on one always-on machine and stores all state. See [Concepts](/docs/concepts).
-
-## Inbox {#inbox}
-
-Where asks wait for you in the desktop app. Open it with ⌘I (Ctrl+I on Linux).
 
 ## Lead {#lead}
 

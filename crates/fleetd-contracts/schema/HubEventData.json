@@ -45,92 +45,6 @@
       ],
       "type": "object"
     },
-    "AskClass": {
-      "enum": [
-        "product",
-        "money",
-        "credential",
-        "irreversible"
-      ],
-      "type": "string"
-    },
-    "AskEventData": {
-      "description": "`ask.created`, `ask.auto`, `ask.closed`, `ask.answered`, `ask.undone`, `ask.delivered`.",
-      "properties": {
-        "askId": {
-          "$ref": "#/$defs/AskId"
-        },
-        "batchId": {
-          "$ref": "#/$defs/BatchId"
-        },
-        "class": {
-          "$ref": "#/$defs/AskClass"
-        },
-        "decisionId": {
-          "$ref": "#/$defs/DecisionId",
-          "description": "ask.auto and ask.delivered: the decision that answered it (absent on a delivered skip)."
-        },
-        "deliveredAt": {
-          "$ref": "#/$defs/Timestamp",
-          "description": "ask.delivered: when the lead was woken with the answer."
-        },
-        "key": {
-          "$ref": "#/$defs/DecisionKey"
-        },
-        "kind": {
-          "$ref": "#/$defs/AskKind"
-        },
-        "number": {
-          "maximum": 9007199254740991,
-          "minimum": 1,
-          "type": "integer"
-        },
-        "reopened": {
-          "description": "ask.created: a closed ask opened again (a failed verify, an undone answer).",
-          "type": "boolean"
-        },
-        "state": {
-          "$ref": "#/$defs/AskState",
-          "description": "ask.closed: the state it closed in."
-        },
-        "undoUntil": {
-          "$ref": "#/$defs/Timestamp",
-          "description": "ask.answered: until then `inbox_undo` takes the answer back."
-        },
-        "workstreamId": {
-          "$ref": "#/$defs/WorkstreamId",
-          "description": "The order it is about, when it is about one (ask.closed always says)."
-        }
-      },
-      "required": [
-        "askId"
-      ],
-      "type": "object"
-    },
-    "AskId": {
-      "pattern": "^A[1-9][0-9]*$",
-      "type": "string"
-    },
-    "AskKind": {
-      "description": "decide: a product call. do: hand steps for the human, optionally re-checked by `verify`. secret: a value the\ndesktop app seals to the sink's node. approve: a stored command the node runs after a human approves it.",
-      "enum": [
-        "decide",
-        "do",
-        "secret",
-        "approve"
-      ],
-      "type": "string"
-    },
-    "AskState": {
-      "enum": [
-        "open",
-        "auto",
-        "answered",
-        "defaulted",
-        "withdrawn"
-      ],
-      "type": "string"
-    },
     "AttachmentId": {
       "pattern": "^F[1-9][0-9]*$",
       "type": "string"
@@ -174,10 +88,6 @@
         "bytes"
       ],
       "type": "object"
-    },
-    "BatchId": {
-      "pattern": "^B[1-9][0-9]*$",
-      "type": "string"
     },
     "BriefHash": {
       "pattern": "^[0-9a-f]{64}$",
@@ -717,10 +627,6 @@
       ],
       "x-open": true
     },
-    "DecisionId": {
-      "pattern": "^D[1-9][0-9]*$",
-      "type": "string"
-    },
     "DecisionKey": {
       "description": "Lowercase dotted slug, [a-z0-9]+(.[a-z0-9_-]+)*, at most 80",
       "pattern": "^[a-z0-9]+(\\.[a-z0-9_-]+)*$",
@@ -778,7 +684,7 @@
       "type": "string"
     },
     "GatedRunSpec": {
-      "description": "Stored with the approve ask and never changed: the human approves exactly these bytes.",
+      "description": "Stored with the approval and never changed: the human approves exactly these bytes.",
       "properties": {
         "argv": {
           "items": {
@@ -858,24 +764,6 @@
         "agents.cap": {
           "$ref": "#/$defs/AgentsCapData"
         },
-        "ask.answered": {
-          "$ref": "#/$defs/AskEventData"
-        },
-        "ask.auto": {
-          "$ref": "#/$defs/AskEventData"
-        },
-        "ask.closed": {
-          "$ref": "#/$defs/AskEventData"
-        },
-        "ask.created": {
-          "$ref": "#/$defs/AskEventData"
-        },
-        "ask.delivered": {
-          "$ref": "#/$defs/AskEventData"
-        },
-        "ask.undone": {
-          "$ref": "#/$defs/AskEventData"
-        },
         "change.ci_failed": {
           "$ref": "#/$defs/TrainEventData"
         },
@@ -935,6 +823,12 @@
         },
         "prompt.changed": {
           "$ref": "#/$defs/PromptChangedData"
+        },
+        "request.opened": {
+          "$ref": "#/$defs/RequestEventData"
+        },
+        "request.updated": {
+          "$ref": "#/$defs/RequestEventData"
         },
         "source.fresh": {
           "$ref": "#/$defs/SourceFreshData"
@@ -1032,12 +926,6 @@
       },
       "required": [
         "agents.cap",
-        "ask.answered",
-        "ask.auto",
-        "ask.closed",
-        "ask.created",
-        "ask.delivered",
-        "ask.undone",
         "change.ci_failed",
         "change.needs_rebase",
         "change.queued",
@@ -1058,6 +946,8 @@
         "project.added",
         "project.clone_progress",
         "prompt.changed",
+        "request.opened",
+        "request.updated",
         "source.fresh",
         "source.stale",
         "steer.acknowledged",
@@ -1548,6 +1438,55 @@
       ],
       "type": "string"
     },
+    "RequestEventData": {
+      "description": "`request.opened`, `request.updated`.",
+      "properties": {
+        "by": {
+          "description": "Who answered it (\"human:<device>\"), once someone did.",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/RequestKind"
+        },
+        "requestId": {
+          "$ref": "#/$defs/ChatRequestId"
+        },
+        "state": {
+          "$ref": "#/$defs/RequestState"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId",
+          "description": "The order it is about, when it is about one."
+        }
+      },
+      "required": [
+        "requestId",
+        "kind",
+        "state"
+      ],
+      "type": "object"
+    },
+    "RequestKind": {
+      "description": "What a lead needs a person for that chat can't carry safely: a secret value (entered in a masked field and sealed to\nthe sink's node, never in a transcript), or an approval of a risky command (a gated run, or a session's tool\nprompt). The lead asks everything else in chat.",
+      "enum": [
+        "secret",
+        "approval"
+      ],
+      "type": "string"
+    },
+    "RequestState": {
+      "description": "The state names of the chat items that show it (`SecretRequestState`, `CommandApprovalState`). secret: open →\nstored | withdrawn. approval: open → approved → ran | failed, or open → denied; an approval the node could not run\ngoes back to open with the reason in `evidence`.",
+      "enum": [
+        "open",
+        "stored",
+        "withdrawn",
+        "approved",
+        "denied",
+        "ran",
+        "failed"
+      ],
+      "type": "string"
+    },
     "SecretEnvEntry": {
       "properties": {
         "name": {
@@ -1883,7 +1822,7 @@
       "type": "string"
     },
     "ToolPermission": {
-      "description": "An approve ask raised by a session's tool permission prompt (`tool_permission`) instead of a gated command: answering\nit answers the prompt on the project's node. Its machine is the ask's project's.",
+      "description": "An approval raised by a session's tool permission prompt instead of a gated command: answering it answers the prompt\non the project's node. Its machine is the request's project's.",
       "properties": {
         "requestId": {
           "minLength": 1,

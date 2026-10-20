@@ -87,7 +87,8 @@ pub fn spawn_refusal(
 pub enum ItemKind {
     FailingCheck,
     Issue,
-    Ask,
+    /// A secret or command approval waiting on the person in chat.
+    Request,
     Todo,
 }
 
@@ -96,7 +97,7 @@ impl ItemKind {
         match self {
             ItemKind::FailingCheck => 0,
             ItemKind::Issue => 1,
-            ItemKind::Ask => 2,
+            ItemKind::Request => 2,
             ItemKind::Todo => 3,
         }
     }
@@ -104,7 +105,7 @@ impl ItemKind {
         match self {
             ItemKind::FailingCheck => "failing check",
             ItemKind::Issue => "open issue",
-            ItemKind::Ask => "open ask",
+            ItemKind::Request => "waiting on the person",
             ItemKind::Todo => "TODO markers",
         }
     }
