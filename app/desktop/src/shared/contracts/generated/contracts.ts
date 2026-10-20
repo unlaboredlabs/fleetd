@@ -2092,7 +2092,10 @@ export type PlaybookGateChange = {
   playbook: string;
   /** The retro proposal, R<n>. */
   proposalId: string;
-  /** The change in plain words, e.g. "M-tier reviewers 1 → 0". */
+  /**
+   * The change in plain words, rendered by the hub for the person: "Bugfixes, medium-size work: reviewers 1 → 0".
+   * The app shows it as the item's label; `diff` only behind expand or copy.
+   */
   summary: string;
 };
 

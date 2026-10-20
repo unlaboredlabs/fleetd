@@ -399,10 +399,10 @@ impl Retro {
             ..p
         };
         if relaxes {
-            let summary = super::validate::describe_changes(&b, &a, body);
+            let summary = super::validate::describe_changes(&p.playbook, &b, &a, body);
             let change = serde_json::from_value(json!({
                 "proposalId": p.proposal_id, "playbook": p.playbook,
-                "summary": clip(if summary.is_empty() { &p.expected } else { &summary }, 500),
+                "summary": clip(&summary, 500),
                 "diff": clip(&p.diff, 8000),
             }));
             if let (Some(project), Ok(change)) = (projects.into_iter().next(), change) {

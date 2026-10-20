@@ -654,7 +654,8 @@ pub struct PlaybookGateChange {
     /// The retro proposal, R<n>.
     pub proposal_id: Line<1, 20>,
     pub playbook: Line<1, 40>,
-    /// The change in plain words, e.g. "M-tier reviewers 1 → 0".
+    /// The change in plain words, rendered by the hub for the person: "Bugfixes, medium-size work: reviewers 1 → 0".
+    /// The app shows it as the item's label; `diff` only behind expand or copy.
     pub summary: Text<1, 500>,
     /// The exact unified diff that applies on approve.
     pub diff: Text<1, 8000>,

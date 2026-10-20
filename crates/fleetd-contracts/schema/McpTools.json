@@ -6581,7 +6581,7 @@
           "type": "string"
         },
         "summary": {
-          "description": "The change in plain words, e.g. \"M-tier reviewers 1 → 0\".",
+          "description": "The change in plain words, rendered by the hub for the person: \"Bugfixes, medium-size work: reviewers 1 → 0\".\nThe app shows it as the item's label; `diff` only behind expand or copy.",
           "maxLength": 500,
           "minLength": 1,
           "type": "string"
