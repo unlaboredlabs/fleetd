@@ -40,7 +40,6 @@ The hub checks these on every fleetd call a session makes, through its MCP tools
 | Finish-all children open at once | 5 by default; the policy file's `finishAll.maxChildren` changes it. |
 | What a child workstream may serve | `issue`, `defect`, `done`. Never invented work. |
 | Gated commands (`gated_run`) | Classes `irreversible`, `money`, `credential`. Run only after a human approves; at most 1800 s. |
-| What a lead asks the human | Product, money and irreversible calls, in its chat; it logs each answer with `decide` and decides everything else itself. Secrets come only through `request_secret`. |
 
 These limits cover calls to fleetd, not what the agent's own shell can do. A task runs with full Bash, so `gated_run` is not the only way it could run a command. A process that leaves its session's process tree (for example with `setsid`) and scrubs its environment counts as you, with no limits: see "Known limit" on the Security page. Run agents you don't trust as a different OS user.
 
@@ -56,7 +55,7 @@ Every lead gets these, the finish-all lead included.
 | [`list_agents`](#list_agents) | The project's tasks, newest first, optionally by state or workstream. | No |
 | [`stop_agent`](#stop_agent) | Stop a task: interrupts its thread and releases its slot and leases. | No |
 | [`brief`](#brief) | Freeze a draft workstream's brief (goal, why, pointers, constraints, doneWhen checks, tier, estimate) and start it. | Changing a frozen brief (amend) needs the human's yes in chat, logged with decide. |
-| [`request_secret`](#request_secret) | Ask the human for a secret (a key, a token, a password). | No |
+| [`request_secret`](#request_secret) | Ask the human for a secret (a key, a token, a password). | The human enters the value in chat; you see only its fingerprint. |
 | [`request_withdraw`](#request_withdraw) | Take back a secret request or a command approval you no longer need (the human said so in chat). | No |
 | [`decide`](#decide) | Log a decision: one you made yourself, or the human's answer to a question you asked in chat (so you never ask it twice). | No |
 | [`claim_done`](#claim_done) | Claim a workstream done: fleetd runs its frozen done-when checks itself, and only all of them passing makes it done. | No |
@@ -258,11 +257,11 @@ Ask the human for a secret (a key, a token, a password). The app shows a masked 
 |---|---|---|---|
 | `envName` | string | no | An env: sink's variable, when not the one the key names. |
 | `key` | string | yes | The secret's name, a dotted slug such as "stripe.test_key". |
-| `sink` | string | yes |  |
+| `sink` | string | yes | Where the value is written: env:&lt;machine>:&lt;file> (one NAME=value line) or file:&lt;machine>:&lt;path>. |
 | `text` | string | yes | One line on why it is needed. At most 500 characters. |
 | `workstreamId` | string | no | `W<n>`, e.g. `W1`. |
 
-**Who may call:** a lead, checked by the hub. **Needs a human:** no.
+**Who may call:** a lead, checked by the hub. **Needs a human:** The human enters the value in chat; you see only its fingerprint.
 
 ```json
 {

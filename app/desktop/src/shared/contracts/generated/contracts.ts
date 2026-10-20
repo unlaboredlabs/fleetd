@@ -1425,7 +1425,6 @@ export type KnownInsightRule =
   | "ci_reaction"
   | "slots_full"
   | "human_wait"
-  | "batching_delay"
   | "approval_rule"
   | "usage_parks"
   | "retries"
@@ -1656,7 +1655,7 @@ export type LoginLimit = {
 };
 
 export type LongestWait = {
-  /** The ask's key, or the tool for a permission prompt. */
+  /** The secret's key, or the tool for a permission prompt. */
   label?: string;
   ms: number;
   spanId: number;
@@ -3041,7 +3040,7 @@ export type Span = {
   itemId?: string;
   kind: SpanKind;
   label?: string;
-  /** `thread:<machine>/<thread>`, `change:<id>`, `asks:<order>`, `train:<repo>`, `fleet`, `order:<id>`. */
+  /** `thread:<machine>/<thread>`, `change:<id>`, `requests:<order>`, `train:<repo>`, `fleet`, `order:<id>`. */
   lane: string;
   machineId?: MachineId;
   outBytes?: number;
@@ -3073,7 +3072,7 @@ export type SpanExtra = {
   durationMs?: number;
   /** `wait.retry.api`: the HTTP status claude retried on. */
   httpStatus?: number;
-  /** `wait.ask`: the ask's decision key. */
+  /** `wait.request`: the secret's key. */
   key?: string;
   /** The node's own start stamp, kept when the clock offset was above 100 ms. */
   nodeStartMs?: number;
@@ -3082,7 +3081,7 @@ export type SpanExtra = {
   peakQueued?: number;
   /** Free text from the source, e.g. a queue reason or a stop reason. */
   reason?: string;
-  /** `wait.permission`: the node's request id, joined to the hub ask. */
+  /** `wait.permission`: the node's request id, joined to the hub's approval request. */
   requestId?: string;
   /** `wait.retry.*`: the delay claude or the node announced. The span is the real wait. */
   statedDelayMs?: number;
@@ -3133,9 +3132,7 @@ export type SpanKind =
   | "run.queued"
   | "slots.full"
   | "wait.permission"
-  | "wait.ask"
-  | "ask.batching"
-  | "ask.info"
+  | "wait.request"
   | "change.queue"
   | "ci.check"
   | "ci.queue"

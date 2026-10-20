@@ -438,5 +438,7 @@ pub(crate) const MIGRATIONS: &[&str] = &[
     WHERE state = 'asked';
   UPDATE retro_proposals SET data = json_remove(data, '$.askId') WHERE json_valid(data);
   ALTER TABLE retro_proposals DROP COLUMN ask_id;
+  -- The ask batching and info spans: nothing records them any more, and their kinds no longer exist.
+  DELETE FROM time_spans WHERE kind IN (42, 43);
   "#,
 ];

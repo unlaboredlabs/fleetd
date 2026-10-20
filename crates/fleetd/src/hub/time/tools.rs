@@ -565,7 +565,7 @@ fn human_wait(rows: &[Row]) -> HumanWait {
     let waits: Vec<&Row> = rows
         .iter()
         .filter(|r| {
-            r.kind == SpanKind::WaitAsk
+            r.kind == SpanKind::WaitRequest
                 || (r.kind == SpanKind::WaitPermission
                     && r.extra.decided_by == Some(DecidedBy::Human))
         })
