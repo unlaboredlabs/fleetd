@@ -69,7 +69,7 @@ writing.
 ```markdown
 ---
 title: Quick start
-description: Set up the hub, pair the desktop app and send your first order.
+description: Install fleetd, open a project and chat with its lead.
 ---
 ```
 
