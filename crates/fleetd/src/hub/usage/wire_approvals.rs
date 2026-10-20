@@ -183,6 +183,10 @@ impl ApprovalHub for OpsPorts {
         })
     }
 
+    fn gate_answered(&self, _: &HumanRequest) -> BoxFut<'_, ()> {
+        Box::pin(async move { self.hub().retro.on_gate_answered().await })
+    }
+
     fn tool_rules(&self, project: &ports::ProjectRef) -> BoxFut<'_, Result<ToolRules, String>> {
         let r: Option<fleetd_contracts::ids::ProjectRef> = convert(project);
         Box::pin(async move {
@@ -235,7 +239,14 @@ pub fn request_outcome(r: &HumanRequest) -> (String, String) {
             )
         ),
         (_, _, Some(p)) => format!("tool prompt {} {}", p.tool_name, clip(&p.summary, 120)),
-        _ => "request".into(),
+        _ => match &r.playbook {
+            Some(c) => format!(
+                "playbook change ({} playbook: {})",
+                c.playbook,
+                clip(&c.summary, 160)
+            ),
+            None => "request".into(),
+        },
     };
     let evidence = r.evidence.as_ref().map_or("", |e| e.as_str());
     let outcome = match r.state {

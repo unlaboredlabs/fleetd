@@ -187,6 +187,7 @@ impl Fake {
                     serde_json::from_value(json!({ "threadId": thread, "requestId": request, "toolName": "Bash", "summary": "ls" }))
                         .unwrap()
                 }),
+                playbook: None,
                 at: fleetd_contracts::ids::Timestamp("2026-10-18T10:00:00.000Z".into()),
                 at_ms: 0,
             })
@@ -272,6 +273,9 @@ impl ApprovalHub for Fake {
             .unwrap()
             .push(format!("{} {}", r.request_id, r.state.as_str()));
         self.woke.notify_one();
+        Box::pin(async {})
+    }
+    fn gate_answered(&self, _: &HumanRequest) -> BoxFut<'_, ()> {
         Box::pin(async {})
     }
     fn tool_rules(&self, _: &ProjectRef) -> BoxFut<'_, Result<ToolRules, String>> {
