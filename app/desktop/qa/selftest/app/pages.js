@@ -22,6 +22,23 @@ const pages = {
     <div class="case drag-bar"><button class="no-drag">Close</button></div>
     <div class="case drag-stack"><div class="drag-bar"></div><div class="over-bar no-drag"><button>Close</button></div></div>
   </div>`,
+  // A popover (an opaque surface in a fixed positioner, as Radix draws them) over the start of a line: the covered
+  // part is hidden, not overlapping, and the rest of the line touches nothing. No finding.
+  "#/popover": `<div class="page" data-screen="popover"><div class="stage">
+    <p class="at" style="top: 0">A line of chat text the open popover covers at its start, and that nothing else touches at all</p>
+    <div class="positioner" style="top: 14px; left: 34px"><div class="popover"><p>Max agents</p><p>6 of 12 running</p></div></div>
+  </div></div>`,
+  // What the popover rule must still report: text seen through a see-through popover, text overlapping inside a
+  // popover, and an overlap on the uncovered end of a line a popover covers in part. That line is in flow and the
+  // label over it is not, so only the text-run check (not the sibling-box one) can see their overlap.
+  "#/popover-bad": `<div class="page" data-screen="popover-bad"><div class="stage">
+    <p class="at" style="top: 0" data-testid="exp-overlap-clear-a">A line the see-through popover is drawn over</p>
+    <div class="positioner" style="top: 26px; left: 34px"><div class="popover-clear"><p data-testid="exp-overlap-clear-b">Max agents</p></div></div>
+    <div class="positioner" style="top: 104px; left: 34px"><div class="popover"><p data-testid="exp-overlap-inside-a">First line in the popover</p><p style="margin-top: -20px" data-testid="exp-overlap-inside-b">drawn over by the second</p></div></div>
+    <p class="flow" style="margin-top: 200px" data-testid="exp-overlap-partial-a">A long line whose start the popover covers and whose end another label is drawn over</p>
+    <span class="at" style="top: 202px; left: 520px" data-testid="exp-overlap-partial-b">badge</span>
+    <div class="positioner" style="top: 216px; left: 24px"><div class="popover narrow"><p>Covers the start</p></div></div>
+  </div></div>`,
   // A route to an order the fixture doesn't have.
   "#/order/W2": `<div class="page" data-screen="order.not-found"><p>This order doesn't exist.</p></div>`,
   // Every marked element must be reported, and nothing else.
