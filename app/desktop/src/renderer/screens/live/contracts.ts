@@ -3,7 +3,6 @@ export type {
   Activity,
   AgentLane,
   AgentRole,
-  Ask,
   ChangeState,
   IntakeRef,
   LaneStatus,

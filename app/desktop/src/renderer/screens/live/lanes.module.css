@@ -124,8 +124,11 @@
   font-family: var(--font-mono);
   font-size: var(--text-sm);
 }
+/* The step's time sits at the end of the activity column, in line down the lanes, whatever the words before it. */
 .step {
   flex: none;
+  margin-left: auto;
+  padding-left: var(--space-2);
   font-family: var(--font-mono);
   font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;

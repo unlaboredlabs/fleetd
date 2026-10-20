@@ -1,7 +1,7 @@
 import { describe as group, expect, it } from "vitest";
 import type { FleetStatus, OrderCard } from "../../../shared/contracts";
 import { selectBoardData } from "../../src/data/selectors";
-import { applyFrame as frameIn, ingest, initialState } from "../../src/data/store";
+import { applyFrame as frameIn, failRead, ingest, initialState } from "../../src/data/store";
 import { bars, unlived } from "./bars";
 import type { AgentLane, LaneStatus, LiveFrame, LiveLane, PrRef } from "./contracts";
 import { fleet, groupLabel, reviewProgress, writtenIn } from "./fleet";
@@ -58,7 +58,8 @@ const loaded = (orders: OrderCard[]) => {
   [s] = frameIn(s, { t: "state", state: { phase: "live", hub: "devbox:4710", protocol: 1 } }, 0);
   [s] = frameIn(s, { t: "snapshot", snapshot }, 0);
   s = ingest(s, { tool: "orders_board", input: {}, output: { orders, trains: [], at: T0 } });
-  return ingest(s, { tool: "asks_list", input: { state: "open" }, output: { batches: [], asks: [] } });
+  // The hub has no asks any more: the open-asks read fails, and the board stops waiting on it.
+  return failRead(s, "asks_list", { state: "open" }, { code: "not_found", message: "no such tool" });
 };
 
 group("formatters", () => {

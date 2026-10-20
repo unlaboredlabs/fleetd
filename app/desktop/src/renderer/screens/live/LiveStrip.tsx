@@ -3,7 +3,7 @@
 // Folded, it redraws only when a line's words change; unfolded, its clocks tick once a second while agents run.
 import { ChevronRight } from "lucide-react";
 import { useId, useSyncExternalStore, type CSSProperties } from "react";
-import { useData } from "../../src/data/react";
+import { useData, useToolQuery } from "../../src/data/react";
 import { selectBoardData } from "../../src/data/selectors";
 import { Button, RoleTag, Text, Truncate, cx, roleTint, toast } from "../../ui";
 import { useNow } from "./clock";
@@ -108,6 +108,15 @@ function PrLink({ pr }: { pr: NonNullable<StripLine["pr"]> }) {
   );
 }
 
+/**
+ * Loads an order's detail while the strip is unfolded: the agents its card leaves out (writers that finished, done
+ * reviews), so a PR group can name what it's for and count its reviews. Draws nothing.
+ */
+function OrderDetail({ workstreamId }: { workstreamId: string }) {
+  useToolQuery("order_get", { workstreamId });
+  return null;
+}
+
 /** Unfolded: the agents as lanes, writers first, then each PR with its checkers; and where the time went. */
 function Lanes({ project, onTold }: LiveStripProps) {
   const d = useData(selectBoardData);
@@ -122,6 +131,9 @@ function Lanes({ project, onTold }: LiveStripProps) {
   const one = orders.length === 1 ? orders[0] : undefined;
   return (
     <div className={s.lanes}>
+      {orders.map((o) => (
+        <OrderDetail key={o.card.workstreamId} workstreamId={o.card.workstreamId} />
+      ))}
       {f.writers.map((l) => row(l, false))}
       {f.groups
         .filter((g) => g.rows.length > 0 || lanes.some((l) => l.laneId === g.writer?.laneId))
@@ -132,11 +144,9 @@ function Lanes({ project, onTold }: LiveStripProps) {
             <div key={g.pr.changeId}>
               <div className={s.group}>
                 <span className={s.prNumber}>#{g.pr.number}</span>
-                {g.writer ? (
-                  <Truncate expand="none" size="sm">
-                    {g.writer.title}
-                  </Truncate>
-                ) : null}
+                <Truncate expand="none" size="sm" tone={g.writer ? "default" : "quiet"}>
+                  {g.writer?.title ?? "pull request"}
+                </Truncate>
                 <Track state={g.pr.state} review={reviewProgress(g)} />
                 <span className={cx(s.groupLabel, stageTone(g.pr.state) === "success" ? s.success : s.quiet)}>{groupLabel(g)}</span>
                 {written ? (

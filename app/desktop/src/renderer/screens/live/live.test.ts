@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChatMessage, FleetStatus, LiveFrame, OrderCard } from "../../../shared/contracts";
-import { applyFrame, ingest, initialState } from "../../src/data/store";
+import { applyFrame, failRead, ingest, initialState } from "../../src/data/store";
 import type { AgentLane, LaneStatus } from "./contracts";
 import { isEventLine } from "./EventLine";
 import { groupLabel } from "./fleet";
@@ -47,7 +47,8 @@ const state = (orders: OrderCard[] | undefined, frames: LiveFrame[] = []) => {
   [s] = applyFrame(s, { t: "state", state: { phase: "live", hub: "devbox:4710", protocol: 1 } }, 0);
   [s] = applyFrame(s, { t: "snapshot", snapshot }, 0);
   if (orders !== undefined) s = ingest(s, { tool: "orders_board", input: {}, output: { orders, trains: [], at: T0 } });
-  s = ingest(s, { tool: "asks_list", input: { state: "open" }, output: { batches: [], asks: [] } });
+  // The hub has no asks any more: the open-asks read fails, and the board stops waiting on it.
+  s = failRead(s, "asks_list", { state: "open" }, { code: "not_found", message: "no such tool" });
   for (const f of frames) [s] = applyFrame(s, { t: "live", frame: f }, Date.parse(f.at));
   return s;
 };
@@ -112,7 +113,7 @@ describe("review counts (#232 blocker)", () => {
     const order = { ...card("W1", lanes), prs: [pr(221, 1), pr(222, 0)] };
     let s = state([order]);
     // One reviewer of #222 already finished: only the order's detail still lists it.
-    s = ingest(s, { tool: "order_get", input: { workstreamId: "W1" }, output: { order, doneLanes: [on("R0", "reviewer", 222, "done")], asks: [] } });
+    s = ingest(s, { tool: "order_get", input: { workstreamId: "W1" }, output: { order, doneLanes: [on("R0", "reviewer", 222, "done")], requests: [] } });
     const folded = new Map((selectStrip(project)(s)?.lines ?? []).flatMap((l) => (l.pr ? [[l.pr.number, l.pr.label] as const] : [])));
     const unfolded = new Map(projectFleet(selectBoardData(s), project).fleet.groups.map((g) => [g.pr.number, groupLabel(g)] as const));
     expect(folded).toEqual(unfolded);
