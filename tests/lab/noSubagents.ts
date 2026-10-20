@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { type Body, chatOrder, fleetdCommand, initTools, type Lab, MODEL, nodeHome, nodeSock, scrubbedEnv } from "./harness.ts";
+import { type Body, chatOrder, fleetdCommand, type Lab, MODEL, nodeHome, nodeSock, scrubbedEnv } from "./harness.ts";
 import { prepareRepo } from "./m5Tasks.ts";
 
 const MACHINE = "lab-a";
@@ -17,17 +17,34 @@ const ENDED = ["thread.completed", "thread.failed", "thread.interrupted"];
 const AGENT_TOOLS = ["Task", "Agent", "Workflow", "ListAgents", "SendMessage", "TaskStop", "TaskOutput", "TeamCreate", "TeamDelete"];
 const KNOB_AGENTS = ["claude", "Explore", "Plan"];
 
-/** claude's stdout as the node recorded it for a session. */
-const transcript = (threadId: string): Array<Body> => {
-  const file = path.join(nodeHome(MACHINE), "transcripts", `${threadId}.jsonl`);
-  if (!fs.existsSync(file)) return [];
-  return fs
-    .readFileSync(file, "utf8")
+/**
+ * claude's stdout from a node transcript: each line is `{dir, ms, msg}` (claude's own lines are `dir: "out"`), or, from
+ * older nodes, claude's message itself.
+ */
+export const parseTranscript = (text: string): Array<Body> =>
+  text
     .split("\n")
     .filter((l) => l.startsWith("{"))
     .map((l) => JSON.parse(l) as Body)
-    .filter((r) => r.dir === "out")
-    .map((r) => r.msg as Body);
+    .flatMap((r) => (r.msg === undefined ? [r] : r.dir === "out" ? [r.msg as Body] : []));
+
+/** claude's stdout as the node recorded it for a session. */
+const transcript = (threadId: string): Array<Body> => {
+  const file = path.join(nodeHome(MACHINE), "transcripts", `${threadId}.jsonl`);
+  return fs.existsSync(file) ? parseTranscript(fs.readFileSync(file, "utf8")) : [];
+};
+
+/**
+ * A session's init tool list, checked: it must exist (a session whose init can't be read fails, never passes for having
+ * no tools to look at) and hold none of Claude's own agent tools.
+ */
+export const checkedInitTools = (msgs: ReadonlyArray<Body>, what: string): Array<string> => {
+  const init = msgs.find((m) => m.type === "system" && m.subtype === "init");
+  if (!Array.isArray(init?.tools)) throw new Error(`check failed: ${what}'s init line with its tool list is in its transcript`);
+  const tools = init.tools as Array<string>;
+  const agentTools = AGENT_TOOLS.filter((t) => tools.includes(t));
+  if (agentTools.length > 0) throw new Error(`check failed: ${what}'s init has no agent tool: ${agentTools.join(", ")}`);
+  return tools;
 };
 
 const initOf = (threadId: string) => transcript(threadId).find((m) => m.type === "system" && m.subtype === "init");
@@ -103,9 +120,8 @@ export async function noSubagents(lab: Lab) {
   }
 
   const leadInit = initOf(leadThread);
-  const leadTools = (leadInit?.tools as Array<string> | undefined) ?? initTools(MACHINE, leadThread) ?? [];
+  const leadTools = checkedInitTools(transcript(leadThread), `lead ${leadThread}`);
   check(leadTools.includes("mcp__fleetd__spawn_agent"), `the lead has fleetd's spawn_agent: ${JSON.stringify(leadTools)}`);
-  check(!AGENT_TOOLS.some((t) => leadTools.includes(t)), `the lead's init has no agent tool: ${JSON.stringify(leadTools)}`);
   check(!KNOB_AGENTS.some((a) => (leadInit?.agents ?? []).includes(a)), `no Explore, Plan or claude agent: ${JSON.stringify(leadInit?.agents)}`);
   ok(`lead ${leadThread}: init has mcp__fleetd__spawn_agent, no agent tool; agents ${JSON.stringify(leadInit?.agents)}`);
 
@@ -153,13 +169,12 @@ export async function noSubagents(lab: Lab) {
   // The task's agent: only the worker's tools, no agent tool, and the hub refuses its spawns from its shell too.
   const taskThread = task.threadRef.threadId as string;
   await lab.waitEvent(`${taskId} ends`, TURN_MS, { cursor: started.cursor, types: ["task.completed", "task.failed"], match: (e) => e.data?.taskId === taskId });
-  const taskTools = (initOf(taskThread)?.tools as Array<string> | undefined) ?? [];
+  const taskTools = checkedInitTools(transcript(taskThread), `${taskId}'s session`);
   const fleetdTools = taskTools.filter((t) => t.startsWith("mcp__fleetd__")).sort();
   check(
     JSON.stringify(fleetdTools) === JSON.stringify(["mcp__fleetd__ask_lead", "mcp__fleetd__claim_done", "mcp__fleetd__report"]),
     `the task gets the worker's tools only: ${JSON.stringify(fleetdTools)}`,
   );
-  check(!AGENT_TOOLS.some((t) => taskTools.includes(t)), `the task's init has no agent tool: ${JSON.stringify(taskTools)}`);
   check(subagentStarts(taskThread).length === 0, "no subagent started in the task");
   ok(`${taskId}'s init: ${fleetdTools.join(", ")}; no agent tool; no subagent started`);
 
