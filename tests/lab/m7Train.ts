@@ -333,9 +333,17 @@ export async function m7Train(lab: Lab) {
     // together on the batch's head).
     const batched = m2.data.mergedSha === m1.data.mergedSha;
     check(batched || (merged2.headSha !== secondHeadBefore && parents.includes(m1.data.mergedSha)), `${second!.changeId} was rebased onto ${m1.data.mergedSha} or batched with ${first!.changeId}: head ${merged2.headSha} (was ${secondHeadBefore}), parents ${parents}, merged as ${m2.data.mergedSha}`);
-    // A batch carries fleetd/train on the batch's head; a rebased pair on each member's own head.
-    for (const m of batched ? [] : [m1, m2]) {
-      const head = (await change(m.data.changeId)).headSha as string;
+    // The train's pass gates every merge: on the batch PR's head when they landed together, else on each member's head.
+    const heads: Array<string> = [];
+    if (batched) {
+      const batch = ghJson<Array<Body>>("pr", "list", "-R", REPO, "--state", "merged", "--head", `${BRANCH_PREFIX}train/batch`, "--json", "number,headRefOid,mergeCommit")
+        .find((p) => p.mergeCommit?.oid === m1.data.mergedSha);
+      check(batch, `the batch PR merged as ${m1.data.mergedSha} on ${BRANCH_PREFIX}train/batch`);
+      heads.push(batch!.headRefOid as string);
+    } else {
+      for (const m of [m1, m2]) heads.push((await change(m.data.changeId)).headSha as string);
+    }
+    for (const head of heads) {
       const statuses = ghJson<Array<Body>>("api", `repos/${REPO}/commits/${head}/statuses`);
       check(statuses.some((s) => s.context === "fleetd/train" && s.state === "success"), `fleetd/train on ${head}: ${JSON.stringify(statuses)}`);
     }
