@@ -134,7 +134,7 @@ Changing it while work runs:
 | You | What happens | The line in the chat |
 |---|---|---|
 | Lower the cap | Running agents finish their current work; new ones wait. Nothing is killed. | Max agents 6 → 3: 6 running finish their work; new agents wait. |
-| Lower it and tick "Pause the extras now" | Agents over the cap push their work in progress and wait. Each resumes when a slot frees. | Max agents 6 → 3: 3 agents push their work and wait; 3 keep running. |
+| Lower it and tick "Pause the 3 extras now" ("Pause the extra one now" for one) | Agents over the cap push their work in progress and wait. Each resumes when a slot frees. | Max agents 6 → 3: 3 agents push their work and wait; 3 keep running. |
 | Raise the cap | Queued agents start at once, and the lead is told how many slots are free. | Max agents 3 → 6: 2 queued agents start now, 1 slot free. |
 
 The lead plans to the cap: at most that many slices at once, the rest queued by value, each slot filled as it frees.
