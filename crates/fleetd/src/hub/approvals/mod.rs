@@ -1,4 +1,4 @@
-//! Requests (`R<n>`): what a lead needs a person for that a chat can't carry safely, shown inline in the project's chat.
+//! Requests (`Q<n>`): what a lead needs a person for that a chat can't carry safely, shown inline in the project's chat.
 //! - secret (`request_secret`): the desktop app seals the value to the sink machine's box key; the hub relays the
 //!   ciphertext to that node without storing it and keeps only the fingerprint the node reports.
 //! - approval of a command (`gated_run`): the exact command is stored; once a person approves it, the project's node
@@ -186,8 +186,10 @@ pub trait ApprovalHub: Send + Sync {
     fn box_key(&self, machine_id: &str) -> BoxFut<'_, Option<Option<String>>>;
     /// The project's workspace root; `None` when the hub has no record of it.
     fn workspace_root(&self, project: &ProjectRef) -> BoxFut<'_, Option<String>>;
-    /// Wakes the project's lead with a request's outcome (`wake.request_done`).
+    /// Wakes the project's lead with a request's outcome (an event line).
     fn wake_request(&self, request: &HumanRequest) -> BoxFut<'_, ()>;
+    /// A person approved or denied a playbook change: the retro applies or drops it.
+    fn gate_answered(&self, request: &HumanRequest) -> BoxFut<'_, ()>;
     /// The project policy's `tools` rules (empty without a policy file); the error says why it could not be read.
     fn tool_rules(&self, project: &ProjectRef) -> BoxFut<'_, Result<ToolRules, String>>;
     /// The project's current lead thread.
@@ -235,6 +237,11 @@ fn store_refusal(e: RequestStoreError) -> ApprovalRefused {
             Some("Use a requestId from the chat or requests_list."),
         ),
         RequestStoreError::Invalid(why) => refuse("invalid", why, None),
+        RequestStoreError::Moved { id, now } => refuse(
+            "invalid",
+            format!("{id} is already {}.", now.as_str()),
+            Some("Nothing to do: someone settled it first."),
+        ),
         RequestStoreError::Store(error) => {
             tracing::error!(%error, "approvals: request store failed");
             refuse(
@@ -295,6 +302,7 @@ pub fn chat_item(r: &HumanRequest) -> ChatItem {
             machine_id: r.project_ref.machine_id.clone(),
             gated: r.gated.clone(),
             permission: r.permission.clone(),
+            playbook: r.playbook.clone().map(Box::new),
             state: match r.state {
                 RequestState::Approved => CommandApprovalState::Approved,
                 RequestState::Denied => CommandApprovalState::Denied,
@@ -376,7 +384,11 @@ impl Approvals {
             (Some(s), _, _) => format!("secret {}", s.key),
             (_, Some(g), _) => shown_argv(&g.argv.iter().cloned().collect::<Vec<_>>()),
             (_, _, Some(p)) => format!("{} {}", p.tool_name, p.summary),
-            _ => String::new(),
+            _ => r
+                .playbook
+                .as_ref()
+                .map(|c| format!("{} playbook: {}", c.playbook, c.summary))
+                .unwrap_or_default(),
         };
         self.deps
             .events
@@ -424,10 +436,27 @@ impl Approvals {
         Ok(r)
     }
 
-    /// Back to open, with why: nothing ran, or what happened must be checked before it is approved again.
+    /// As `change`, only while the request is still `from`: the one write that moves it wins, any other is refused.
+    async fn change_from(
+        &self,
+        id: &ChatRequestId,
+        from: RequestState,
+        f: impl FnOnce(&mut HumanRequest),
+    ) -> Result<HumanRequest, ApprovalRefused> {
+        let r = self
+            .deps
+            .requests
+            .update_from(id, from, f)
+            .map_err(store_refusal)?;
+        self.announce("request.updated", &r).await;
+        Ok(r)
+    }
+
+    /// An approved request back to open, with why: nothing ran, or what happened must be checked before it is
+    /// approved again.
     async fn reopen(&self, id: &ChatRequestId, why: &str) -> Result<HumanRequest, ApprovalRefused> {
         let why = clip(why, EVIDENCE_MAX);
-        self.change(id, |r| {
+        self.change_from(id, RequestState::Approved, |r| {
             r.state = RequestState::Open;
             r.evidence = Some(fleetd_contracts::prim::Text::unchecked(why));
             r.answered_at = None;
@@ -483,6 +512,7 @@ impl Approvals {
             }),
             gated: None,
             permission: None,
+            playbook: None,
             at: fleetd_contracts::ids::Timestamp(iso(now)),
             at_ms: now,
         })
@@ -589,7 +619,7 @@ impl Approvals {
             tracing::warn!(request = %id, "approvals: the node's fingerprint is not 8 hex characters; kept in evidence only");
         }
         let saved = self
-            .change(&id, |r| {
+            .change_from(&id, RequestState::Open, |r| {
                 r.state = RequestState::Stored;
                 if let Some(s) = r.secret.as_mut() {
                     s.fingerprint = parsed;
@@ -658,6 +688,36 @@ impl Approvals {
             secret: None,
             gated: Some(gated),
             permission: None,
+            playbook: None,
+            at: fleetd_contracts::ids::Timestamp(iso(now)),
+            at_ms: now,
+        })
+        .await
+    }
+
+    /// Opens the approval of a retro playbook change that relaxes a gate, in `project`'s chat. Only a person's approve
+    /// applies it.
+    pub async fn playbook_change(
+        &self,
+        project: &ProjectRef,
+        change: fleetd_contracts::ledger::PlaybookGateChange,
+    ) -> Result<HumanRequest, ApprovalRefused> {
+        let now = system_ms(self.deps.clock.now());
+        self.create(NewRequest {
+            project_ref: contract_project(project),
+            workstream_id: None,
+            kind: RequestKind::Approval,
+            text: clip(
+                &format!(
+                    "Relax the {} playbook's gates: {} (retro {}). It applies to every project only if you approve.",
+                    change.playbook, change.summary, change.proposal_id
+                ),
+                500,
+            ),
+            secret: None,
+            gated: None,
+            permission: None,
+            playbook: Some(change),
             at: fleetd_contracts::ids::Timestamp(iso(now)),
             at_ms: now,
         })
@@ -704,8 +764,9 @@ impl Approvals {
         let by = format!("human:{}", caller.name);
         let at = self.now();
         let reason = message.filter(|m| !approve && !m.trim().is_empty());
+        // Guarded on open: of two answers at once only one moves it, so a command runs at most once per approval.
         let answered = self
-            .change(&r.request_id, |r| {
+            .change_from(&r.request_id, RequestState::Open, |r| {
                 r.state = if approve {
                     RequestState::Approved
                 } else {
@@ -723,6 +784,10 @@ impl Approvals {
             .await?;
         if answered.permission.is_some() {
             self.answer_prompt(&answered, reason.as_deref()).await;
+        } else if answered.playbook.is_some() {
+            // The retro applies or drops the change; the lead hears the outcome.
+            self.deps.hub.gate_answered(&answered).await;
+            self.deps.hub.wake_request(&answered).await;
         } else if approve {
             let me = self.clone();
             let running = answered.clone();
@@ -758,7 +823,7 @@ impl Approvals {
         let at = self.now();
         let by = by.to_string();
         let done = self
-            .change(&r.request_id, |r| {
+            .change_from(&r.request_id, RequestState::Open, |r| {
                 r.state = match r.kind {
                     RequestKind::Secret => RequestState::Withdrawn,
                     RequestKind::Approval => RequestState::Denied,
@@ -795,7 +860,7 @@ impl Approvals {
             let at = self.now();
             let why = why.to_string();
             let closed = self
-                .change(&r.request_id, |r| {
+                .change_from(&r.request_id, RequestState::Open, |r| {
                     r.state = match r.kind {
                         RequestKind::Secret => RequestState::Withdrawn,
                         RequestKind::Approval => RequestState::Denied,
@@ -900,7 +965,7 @@ impl Approvals {
                 error: Some(err), ..
             }) => {
                 let why = format!("not run on {machine}: {err}");
-                self.change(&id, |r| {
+                self.change_from(&id, RequestState::Approved, |r| {
                     r.state = RequestState::Failed;
                     r.evidence = Some(fleetd_contracts::prim::Text::unchecked(clip(
                         &why,
@@ -919,7 +984,7 @@ impl Approvals {
                     format!("exit {code} on {machine}, approved by {by}")
                 };
                 let tail = clip(o.output_tail.trim_end(), EVIDENCE_MAX);
-                self.change(&id, |r| {
+                self.change_from(&id, RequestState::Approved, |r| {
                     r.state = RequestState::Ran;
                     r.evidence = Some(fleetd_contracts::prim::Text::unchecked(head));
                     r.exit_code = o.exit_code;

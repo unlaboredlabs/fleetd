@@ -19,6 +19,7 @@ pub struct NewRequest {
     pub secret: Option<fleetd_contracts::ledger::SecretRequest>,
     pub gated: Option<fleetd_contracts::ledger::GatedRunSpec>,
     pub permission: Option<fleetd_contracts::ledger::ToolPermission>,
+    pub playbook: Option<fleetd_contracts::ledger::PlaybookGateChange>,
     pub at: Timestamp,
     pub at_ms: i64,
 }
@@ -30,6 +31,9 @@ pub enum RequestStoreError {
     NotFound(String),
     #[error("{0}")]
     Invalid(String),
+    /// The request was no longer in the state the change expected: someone else changed it first.
+    #[error("{id} is already {}", .now.as_str())]
+    Moved { id: String, now: RequestState },
     #[error(transparent)]
     Store(#[from] StoreError),
 }
@@ -75,6 +79,7 @@ impl Requests {
                 "secret": new.secret,
                 "gated": new.gated,
                 "permission": new.permission,
+                "playbook": new.playbook,
                 "createdAt": new.at,
             }))
         };
@@ -140,23 +145,77 @@ impl Requests {
         id: &ChatRequestId,
         change: impl FnOnce(&mut HumanRequest),
     ) -> Result<HumanRequest, RequestStoreError> {
-        let Some(mut request) = self.get(id.as_str())? else {
+        self.write(id, None, change)
+    }
+
+    /// As `update`, only while the request is still `from`: of two answers at once exactly one moves it, and the
+    /// other gets `Moved`. Read and write share one immediate transaction, and the write is guarded by the state.
+    pub fn update_from(
+        &self,
+        id: &ChatRequestId,
+        from: RequestState,
+        change: impl FnOnce(&mut HumanRequest),
+    ) -> Result<HumanRequest, RequestStoreError> {
+        self.write(id, Some(from), change)
+    }
+
+    fn write(
+        &self,
+        id: &ChatRequestId,
+        from: Option<RequestState>,
+        change: impl FnOnce(&mut HumanRequest),
+    ) -> Result<HumanRequest, RequestStoreError> {
+        let Some(n) = n_of(id.as_str()) else {
             return Err(RequestStoreError::NotFound(id.to_string()));
         };
-        change(&mut request);
-        // Round-trip through the checked decoder, so a write can never store a request no reader accepts.
-        let text = serde_json::to_string(&request).expect("a request serializes");
-        let request: HumanRequest =
-            serde_json::from_str(&text).map_err(|e| RequestStoreError::Invalid(e.to_string()))?;
-        let n = n_of(id.as_str()).expect("a stored id parses");
-        self.db.with(|c| {
-            c.execute(
-                "UPDATE requests SET state = ?, data = ? WHERE n = ?",
-                params![request.state.as_str(), text, n],
+        let mut failed: Option<RequestStoreError> = None;
+        let written = self.db.transaction(|c| {
+            let Some(data) = c
+                .query_row("SELECT data FROM requests WHERE n = ?", [n], |r| {
+                    r.get::<_, String>(0)
+                })
+                .optional()?
+            else {
+                failed = Some(RequestStoreError::NotFound(id.to_string()));
+                return Ok(None);
+            };
+            let mut request: HumanRequest = serde_json::from_str(&data)?;
+            if let Some(from) = from
+                && request.state != from
+            {
+                failed = Some(RequestStoreError::Moved {
+                    id: id.to_string(),
+                    now: request.state,
+                });
+                return Ok(None);
+            }
+            let was = request.state;
+            change(&mut request);
+            // Round-trip through the checked decoder, so a write can never store a request no reader accepts.
+            let text = serde_json::to_string(&request).expect("a request serializes");
+            let request: HumanRequest = match serde_json::from_str(&text) {
+                Ok(r) => r,
+                Err(e) => {
+                    failed = Some(RequestStoreError::Invalid(e.to_string()));
+                    return Ok(None);
+                }
+            };
+            let changed = c.execute(
+                "UPDATE requests SET state = ?, data = ? WHERE n = ? AND state = ?",
+                params![request.state.as_str(), text, n, was.as_str()],
             )?;
-            Ok(())
+            Ok((changed == 1).then_some(request))
         })?;
-        Ok(request)
+        match (written, failed) {
+            (Some(r), _) => Ok(r),
+            (None, Some(e)) => Err(e),
+            (None, None) => Err(RequestStoreError::Moved {
+                id: id.to_string(),
+                now: self
+                    .get(id.as_str())?
+                    .map_or(RequestState::Open, |r| r.state),
+            }),
+        }
     }
 }
 

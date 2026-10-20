@@ -131,6 +131,13 @@ pub struct RetroProposal {
     pub measured: Option<RetroSnapshot>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// A gate change that may relax a gate (fewer reviewers, a weaker or removed check, a looser rule, any body
+    /// change): it applies only on a person's approve. Absent on older rows, which count as relaxing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub relaxes: Option<bool>,
+    /// The approval request (Q<n>) a relaxing change waits on.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
 }
 
 /// A `claude -p` one-shot the hub ran for itself, counted as orchestrator usage (`OneShotRun`).

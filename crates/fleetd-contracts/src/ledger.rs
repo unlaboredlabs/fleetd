@@ -646,6 +646,20 @@ brand!(
     pattern = r"^/"
 );
 
+/// A retro playbook change that relaxes a gate (fewer reviewers, a weaker or removed check, a looser rule): it applies
+/// only once a person approves it. Stored with the approval and never changed.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaybookGateChange {
+    /// The retro proposal, R<n>.
+    pub proposal_id: Line<1, 20>,
+    pub playbook: Line<1, 40>,
+    /// The change in plain words, e.g. "M-tier reviewers 1 → 0".
+    pub summary: Text<1, 500>,
+    /// The exact unified diff that applies on approve.
+    pub diff: Text<1, 8000>,
+}
+
 /// Stored with the approval and never changed: the human approves exactly these bytes.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -748,6 +762,8 @@ pub struct HumanRequest {
     pub gated: Option<GatedRunSpec>,
     /// approval of a session's tool prompt, instead of a gated run.
     pub permission: Option<ToolPermission>,
+    /// approval of a retro playbook change that relaxes a gate, instead of a gated run or a tool prompt.
+    pub playbook: Option<PlaybookGateChange>,
     /// What happened, in one line: "fingerprint ab12cd34", "exit 0 on devbox, approved by human:desk", or why it did
     /// not run (and so is open again).
     pub evidence: Option<Text<0, 2000>>,
@@ -762,11 +778,16 @@ pub struct HumanRequest {
 }
 checked!(HumanRequest, |r| request_kind_rule(r));
 
-/// Each kind carries its own fields only: a secret its `secret`; an approval exactly one of `gated` and `permission`.
+/// Each kind carries its own fields only: a secret its `secret`; an approval exactly one of `gated`, `permission` and
+/// `playbook`.
 pub fn request_kind_rule(r: &HumanRequest) -> Result<(), String> {
     match r.kind {
         RequestKind::Secret => {
-            if r.secret.is_none() || r.gated.is_some() || r.permission.is_some() {
+            if r.secret.is_none()
+                || r.gated.is_some()
+                || r.permission.is_some()
+                || r.playbook.is_some()
+            {
                 return Err("a secret request has a secret and nothing else".into());
             }
             if let Some(secret) = &r.secret
@@ -777,8 +798,13 @@ pub fn request_kind_rule(r: &HumanRequest) -> Result<(), String> {
             }
         }
         RequestKind::Approval => {
-            if r.secret.is_some() || r.gated.is_some() == r.permission.is_some() {
-                return Err("an approval has its gated run or a tool prompt, not both".into());
+            let subjects = [
+                r.gated.is_some(),
+                r.permission.is_some(),
+                r.playbook.is_some(),
+            ];
+            if r.secret.is_some() || subjects.iter().filter(|s| **s).count() != 1 {
+                return Err("an approval has exactly one of a gated run, a tool prompt or a playbook change".into());
             }
         }
     }
