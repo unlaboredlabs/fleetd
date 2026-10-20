@@ -6857,7 +6857,6 @@
    "outcome": {
     "ok": true,
     "output": {
-     "asks": [],
      "doneLanes": [
       {
        "effort": "low",
@@ -7895,7 +7894,8 @@
       "total": 12,
       "updatedAt": "2026-10-19T09:02:17.552Z",
       "workstreamId": "W1"
-     }
+     },
+     "requests": []
     }
    }
   },
@@ -12731,8 +12731,8 @@
        "stale": 0
       },
       "needsYou": {
-       "askIds": [],
-       "count": 0
+       "count": 0,
+       "requestIds": []
       },
       "next": [],
       "now": "2026-10-19T09:02:51.557Z",
@@ -12755,7 +12755,6 @@
       },
       "seq": 70,
       "since": {
-       "asked": 0,
        "failed": 0,
        "merged": 0,
        "scopeItems": 0,
@@ -12826,8 +12825,8 @@
        "stale": 0
       },
       "needsYou": {
-       "askIds": [],
-       "count": 0
+       "count": 0,
+       "requestIds": []
       },
       "next": [],
       "now": "2026-10-19T09:02:51.557Z",
@@ -12850,7 +12849,6 @@
       },
       "seq": 70,
       "since": {
-       "asked": 0,
        "failed": 0,
        "merged": 0,
        "scopeItems": 0,
@@ -12985,8 +12983,8 @@
        "stale": 0
       },
       "needsYou": {
-       "askIds": [],
-       "count": 0
+       "count": 0,
+       "requestIds": []
       },
       "next": [],
       "now": "2026-10-19T09:02:51.557Z",
@@ -13033,7 +13031,6 @@
       },
       "seq": 70,
       "since": {
-       "asked": 0,
        "failed": 0,
        "merged": 0,
        "scopeItems": 0,
@@ -13165,8 +13162,8 @@
        "stale": 0
       },
       "needsYou": {
-       "askIds": [],
-       "count": 0
+       "count": 0,
+       "requestIds": []
       },
       "next": [],
       "now": "2026-10-19T09:02:51.557Z",
@@ -13210,7 +13207,6 @@
       },
       "seq": 70,
       "since": {
-       "asked": 0,
        "failed": 0,
        "merged": 0,
        "scopeItems": 0,
@@ -13347,8 +13343,8 @@
        "stale": 0
       },
       "needsYou": {
-       "askIds": [],
-       "count": 0
+       "count": 0,
+       "requestIds": []
       },
       "next": [],
       "now": "2026-10-19T09:02:51.557Z",
@@ -13402,7 +13398,6 @@
       },
       "seq": 70,
       "since": {
-       "asked": 0,
        "failed": 0,
        "merged": 0,
        "scopeItems": 0,

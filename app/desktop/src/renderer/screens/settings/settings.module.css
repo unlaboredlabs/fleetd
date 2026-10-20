@@ -473,6 +473,10 @@ h1.navTitle {
   gap: var(--space-3);
   min-width: 0;
 }
+/* The number never gives way to a long project name, which wraps beside it instead. */
+.agentsHead > :last-child {
+  flex: none;
+}
 .slider {
   position: relative;
   display: flex;

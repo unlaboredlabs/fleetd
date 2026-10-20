@@ -211,6 +211,26 @@ export const screens: readonly Screen[] = [
     route: CHAT,
     fixtures: ["chat-long", "chat-streaming", "chat-attachments", "chat-waiting", "chat-empty", "typical", "long-text", "hub-unreachable"],
   },
+  // The top of a long chat: scrolled back through every page to the past orders the migration reads back ("From
+  // before this chat"), so that history is rendered and checked too, not only the newest page.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["chat-long"],
+    variant: "history",
+    open: async (page) => {
+      const log = page.getByLabel("Conversation with the lead");
+      const start = page.getByText("This is the start of the conversation.");
+      for (let i = 0; i < 30 && !(await start.isVisible()); i++) {
+        // A wheel releases the chat's pin to the newest message; then each top reached loads the page before it.
+        await log.hover();
+        await page.mouse.wheel(0, -50_000);
+        await log.evaluate((el) => el.scrollTo({ top: 0 }));
+        await page.getByText("Loading earlier messages…").waitFor({ state: "hidden", timeout: 5_000 });
+      }
+      await page.getByText("From before this chat").waitFor({ timeout: 10_000 });
+    },
+  },
   // A link to a project the hub doesn't have (here, a hub with none): says so, rather than loading forever.
   { id: "chat", route: CHAT, fixtures: ["empty"], variant: "missing", expect: "error" },
   // A5 (F5): the two inline items, every state: the masked secret field (and saved, withdrawn), the exact command
