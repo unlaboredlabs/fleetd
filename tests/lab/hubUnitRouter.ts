@@ -12,7 +12,7 @@ import { randomUUID } from "node:crypto";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import { type Body, callToolWith, check, cleanupMachineHomes, cli, joinNode, LAB, machineHome, MACHINES, ok, seedRepo, slotPort, SLOT, stopAll, until, writeFleetdWrapper } from "./harness.ts";
+import { type Body, callToolWith, check, cleanupMachineHomes, cli, joinNode, LAB, machineHome, MACHINES, nodeEnv, nodeHome, ok, seedRepo, setCmdRoots, slotPort, SLOT, startCli, stopAll, stopCli, until, writeFleetdWrapper } from "./harness.ts";
 
 const PORT = slotPort(4784);
 const URL_ = `http://127.0.0.1:${PORT}`;
@@ -59,8 +59,17 @@ const main = async () => {
         await callTool("events_wait", { cursor: s.cursor, timeoutSec: 3 });
         return undefined;
       });
-      const added = await callTool("project_add", { machineId: m.id, path: m.repo, title: path.basename(m.repo) });
-      check(!added.isError, `project_add ${m.id}: ${JSON.stringify(added.body)}`);
+      // A node takes projects only under its cmdRoots (its HOME by default, here the lab's machine home): restart it
+      // with the lab dir as its root, then add once the relinked node takes it.
+      await stopCli(`node-${m.id}`);
+      setCmdRoots(m.id, [LAB]);
+      startCli(`node-${m.id}`, ["node", "run", "--home", nodeHome(m.id)], {}, nodeEnv(m.id));
+      await until(`project_add on ${m.id}`, 60_000, async () => {
+        const added = await callTool("project_add", { machineId: m.id, path: m.repo, title: path.basename(m.repo) });
+        if (!added.isError) return true;
+        await callTool("events_wait", { cursor: (await callTool("fleetd_status")).body.cursor, timeoutSec: 2 });
+        return undefined;
+      });
     }
     const projects = await until("both lab projects listed", 120_000, async () => {
       const s = (await callTool("fleetd_status")).body;

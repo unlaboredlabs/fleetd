@@ -329,13 +329,17 @@ export async function m7Train(lab: Lab) {
     check(m1.seq < m2.seq, `pr.merged in train order: ${m1.seq} < ${m2.seq}`);
     const merged2 = await change(second!.changeId);
     const parents = ghJson("api", `repos/${REPO}/commits/${merged2.headSha}`).parents.map((p: Body) => p.sha);
-    check(merged2.headSha !== secondHeadBefore && parents.includes(m1.data.mergedSha), `${second!.changeId} was rebased onto ${m1.data.mergedSha}: head ${merged2.headSha} (was ${secondHeadBefore}), parents ${parents}`);
-    for (const m of [m1, m2]) {
+    // Either the second was rebased onto the first's merge, or the train merged both as one batch (one squash, tested
+    // together on the batch's head).
+    const batched = m2.data.mergedSha === m1.data.mergedSha;
+    check(batched || (merged2.headSha !== secondHeadBefore && parents.includes(m1.data.mergedSha)), `${second!.changeId} was rebased onto ${m1.data.mergedSha} or batched with ${first!.changeId}: head ${merged2.headSha} (was ${secondHeadBefore}), parents ${parents}, merged as ${m2.data.mergedSha}`);
+    // A batch carries fleetd/train on the batch's head; a rebased pair on each member's own head.
+    for (const m of batched ? [] : [m1, m2]) {
       const head = (await change(m.data.changeId)).headSha as string;
       const statuses = ghJson<Array<Body>>("api", `repos/${REPO}/commits/${head}/statuses`);
       check(statuses.some((s) => s.context === "fleetd/train" && s.state === "success"), `fleetd/train on ${head}: ${JSON.stringify(statuses)}`);
     }
-    ok(`1. pr.merged ${first!.changeId} (#${m1.data.prNumber} as ${m1.data.mergedSha.slice(0, 12)}) then ${second!.changeId} (#${m2.data.prNumber}); ${second!.changeId} was rebased to ${merged2.headSha.slice(0, 12)} on top of ${m1.data.mergedSha.slice(0, 12)}; both heads carry fleetd/train=success`);
+    ok(`1. pr.merged ${first!.changeId} (#${m1.data.prNumber} as ${m1.data.mergedSha.slice(0, 12)}) then ${second!.changeId} (#${m2.data.prNumber}); ${batched ? "merged together as one batch" : `${second!.changeId} rebased to ${merged2.headSha.slice(0, 12)} on top of ${m1.data.mergedSha.slice(0, 12)}`}`);
 
     // 2. The conflict goes back to its author with the paths; the train moves on.
     const conflict = await lab.waitEvent(`change.needs_rebase for ${cc.changeId}`, CI_MS, { cursor, types: ["change.needs_rebase"], match: (e) => e.data?.changeId === cc.changeId });

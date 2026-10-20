@@ -55,11 +55,11 @@ export async function m3Loop(lab: Lab) {
   );
   ok(`lead.started ${promptRef}, first message ${textSha?.slice(0, 12)}… kept (session_prompt_get)`);
   cursor = await turnDone(threadId, cursor, "start");
-  // thread_tail keeps a long message's end: the prompt's last command line, then the digest.
+  // thread_tail keeps a long message's end: the prompt's last tool line, then the digest.
   const firstTail = (await callTool("thread_tail", { machineId: MACHINE, threadId, n: 10, kinds: ["message"] })).body;
   check(
     (firstTail.items as Array<Body> | undefined)?.some(
-      (i) => i.role === "user" && i.text.includes("`fleetd decisions search") && i.text.includes("# fleetd digest:"),
+      (i) => i.role === "user" && i.text.includes("`decisions_search`") && i.text.includes("# fleetd digest:"),
     ),
     `the lead's first message is the lead.start prompt plus the digest: ${JSON.stringify(firstTail).slice(0, 500)}`,
   );
@@ -146,8 +146,9 @@ export async function m3Loop(lab: Lab) {
   check(open.length === 0, `the repeat never reached a batch: ${JSON.stringify(open)}`);
   ok(`second fleetd ask answered from the log: ${auto.event.summary}`);
   const actions = (await callTool("actions_list", { machineId: MACHINE, threadId, limit: 50 })).body.actions as Array<Body>;
-  const naming = actions.find((a) => a.kind === "command" && a.summary.includes("--class naming"));
-  check(naming?.outputTail?.includes("decide this yourself"), `the naming ask was refused: ${JSON.stringify(naming)}`);
-  ok(`fleetd ask --class naming refused: "${naming!.outputTail.split("\n").find((l: string) => l.includes("decide this yourself")).trim()}"`);
+  // The lead may ask from its shell or with its ask tool; either way the hub refuses a naming question.
+  const naming = actions.find((a) => /--class naming|api\.health\.name/u.test(JSON.stringify(a)) && JSON.stringify(a).includes("decide this yourself"));
+  check(naming, `the naming ask was refused: ${JSON.stringify(actions.filter((a) => /naming|api\.health\.name/u.test(JSON.stringify(a))))}`);
+  ok(`the naming ask was refused: "${/[^"\\]*decide this yourself[^"\\.]*/u.exec(JSON.stringify(naming))?.[0]?.trim()}"`);
   ok(`M3 loop used ${turns} lead turns (${MODEL}, effort low)`);
 }
