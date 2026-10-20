@@ -22,7 +22,7 @@ use fleetd::node::runner::claude::{
 };
 use fleetd::node::runner::{conformance, version::TESTED};
 use fleetd_contracts::lead_calls::GatedRunCall;
-use fleetd_contracts::ledger::{AskClass, GatedClass};
+use fleetd_contracts::ledger::GatedClass;
 use fleetd_contracts::live::AgentRole;
 use fleetd_contracts::schema::inline_schema;
 use fleetd_contracts::sessions::SessionRole;
@@ -344,7 +344,6 @@ fn limits(lead: &[&Tool], task: &[&Tool]) -> Result<String, String> {
         .as_u64()
         .ok_or("agent tools: gated_run's timeoutSec has no maximum")?;
     let gated_classes = enum_values(&inline_schema::<GatedClass>());
-    let ask_classes = enum_values(&inline_schema::<AskClass>());
     let mut md = String::from(
         "## Hub limits\n\nThe hub checks these on every fleetd call a session makes, through its MCP tools or a \
          `fleetd` command in its shell. A refusal says why and what to do instead.\n\n| Limit | Value |\n|---|---|\n",
@@ -398,10 +397,7 @@ fn limits(lead: &[&Tool], task: &[&Tool]) -> Result<String, String> {
         "| Gated commands (`gated_run`) | Classes {}. Run only after a human approves; at most {timeout} s. |\n",
         code_list(gated_classes.iter().map(String::as_str))
     ));
-    md.push_str(&format!(
-        "| What a lead may ask the human (`ask`) | Classes {}. Anything else it decides itself (`decide`). |\n\n",
-        code_list(ask_classes.iter().map(String::as_str))
-    ));
+    md.push('\n');
     md.push_str(
         "These limits cover calls to fleetd, not what the agent's own shell can do. A task runs with full Bash, so \
          `gated_run` is not the only way it could run a command. A process that leaves its session's process tree \
@@ -710,19 +706,13 @@ fn example(role: Role, tool: &str) -> Option<Value> {
                 "tier": "S",
             },
         }),
-        (Role::Lead, "ask") => json!({
-            "key": "billing.provider",
-            "class": "money",
-            "text": "Which payment provider should checkout use?",
-            "options": [
-                { "key": "stripe", "label": "Stripe", "consequence": "2.9% + 30c a charge; live this week." },
-                { "key": "paddle", "label": "Paddle", "consequence": "5% + 50c; handles sales tax for you." },
-            ],
-            "recommendation": "stripe",
-            "recommendationWhy": "Cheaper at our volume, and the team knows it.",
-            "proceededOnRec": true,
+        (Role::Lead, "request_secret") => json!({
+            "key": "stripe.test_key",
+            "sink": "env:shop-box:/srv/shop/.env",
+            "text": "The Stripe test key for checkout",
+            "workstreamId": "W3",
         }),
-        (Role::Lead, "ask_withdraw") => json!({ "askId": "A4", "use": "D12" }),
+        (Role::Lead, "request_withdraw") => json!({ "requestId": "Q4" }),
         (Role::Lead, "decide") => json!({
             "key": "api.pagination",
             "value": "cursor",

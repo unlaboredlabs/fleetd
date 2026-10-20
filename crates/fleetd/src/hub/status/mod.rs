@@ -46,14 +46,9 @@ const FOLLOWED: &[HubEventType] = &[
     HubEventType::WorkstreamRunning,
     HubEventType::WorkstreamState,
     HubEventType::WorkstreamDone,
-    HubEventType::AskCreated,
-    HubEventType::AskAuto,
-    HubEventType::AskClosed,
-    // A held answer takes its ask out of "needs you" at once, an undo puts it back, and the commit closes it.
-    HubEventType::AskAnswered,
-    HubEventType::AskUndone,
-    HubEventType::AskDelivered,
-    HubEventType::BatchReady,
+    // An open request is "needs you" until it settles.
+    HubEventType::RequestOpened,
+    HubEventType::RequestUpdated,
     HubEventType::DecisionRecorded,
     HubEventType::TaskQueued,
     HubEventType::TaskStarted,
@@ -428,14 +423,15 @@ impl Status {
             .lock()
             .unwrap()
             .as_ref()
-            .filter(|(h, at, _)| *h == head && now - at < COALESCE_MS)
+            .filter(|(h, at, _)| rows::reusable(*h, *at, head, now))
             .map(|(_, _, r)| r.clone());
         let all = match cached {
             Some(r) => r,
             None => {
                 let queued = self.state.lock().unwrap().slots_queued_since;
                 let world = render::World::read(hub, now, queued, self.calibration())?;
-                let r = rows::rows(hub, &world);
+                let (merges, in_flight) = hub.db.with(|c| Ok(rows::read_changes(c)?))?;
+                let r = rows::rows(hub, &world, &rows::Changes { merges, in_flight });
                 *self.rows.lock().unwrap() = Some((head, now, r.clone()));
                 r
             }

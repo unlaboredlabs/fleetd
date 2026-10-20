@@ -415,15 +415,14 @@ impl FinishAll {
             }
         }
 
-        let asks = self.ctx.ports().open_asks(Some(r), None, 20)?;
-        for ask in asks {
+        let requests = self.ctx.ports().open_requests(Some(r), 20)?;
+        for request in requests {
             items.push(InventoryItem {
-                kind: ItemKind::Ask,
+                kind: ItemKind::Request,
                 text: format!(
-                    "{} open ask {}: {} (the human answers it)",
-                    ask.ask_id,
-                    ask.key,
-                    one_line(ask.text.as_ref(), 120)
+                    "{}: {} (the person answers it in chat)",
+                    request.request_id,
+                    one_line(request.text.as_ref(), 120)
                 ),
                 serves: None,
                 served_by: None,

@@ -399,7 +399,7 @@ mod tests {
         assert!(task_areas_rule(TaskKind::Read, 0).is_ok());
         let err = task_spawn_rule(TaskKind::Write, false, None, false).unwrap_err();
         assert!(err.contains(
-            "say what this serves: --serves done:<n> | issue:<ref> | defect:<text> | ask:<id>"
+            "say what this serves: serves done:<n> | issue:<ref> | defect:<text> | decision:<key>"
         ));
         assert!(task_spawn_rule(TaskKind::Review, false, Some(true), true).is_ok());
         assert!(task_spawn_rule(TaskKind::Review, false, None, false).is_err());

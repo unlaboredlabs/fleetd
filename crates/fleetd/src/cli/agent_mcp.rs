@@ -8,10 +8,10 @@ use std::path::Path;
 use std::time::Duration;
 
 use fleetd_contracts::lead_calls::{
-    AskCall, AskLeadCall, AskWithdrawCall, BriefCreateCall, ChangeEnqueueCall, ChangeStatusCall,
-    ClaimDoneCall, DecideCall, DecisionsSearchCall, GatedRunCall, InventoryCall, LeadCall,
-    SliceReadyCall, StatusSetCall, TaskCancelCall, TaskListCall, TaskMessageCall, TaskSpawnCall,
-    TaskStatusCall, WorkstreamOpenCall, WorkstreamSpawnCall,
+    AskLeadCall, BriefCreateCall, ChangeEnqueueCall, ChangeStatusCall, ClaimDoneCall, DecideCall,
+    DecisionsSearchCall, GatedRunCall, InventoryCall, LeadCall, RequestSecretCall,
+    RequestWithdrawCall, SliceReadyCall, StatusSetCall, TaskCancelCall, TaskListCall,
+    TaskMessageCall, TaskSpawnCall, TaskStatusCall, WorkstreamOpenCall, WorkstreamSpawnCall,
 };
 use fleetd_contracts::plan::{
     PlanAddCall, PlanDropCall, PlanEditCall, PlanMilestoneCall, PlanShowCall,
@@ -85,7 +85,7 @@ static TOOLS: &[Tool] = &[
         "spawn_agent",
         "task_spawn",
         "Start a fleetd agent (a task) with its own session, slot and lane. kind write|read|review; a writer needs \
-         areas from the project's policy and serves (done:<n>, issue:<ref>, defect:<text> or ask:<id>) and gets its own \
+         areas from the project's policy and serves (done:<n>, issue:<ref>, defect:<text> or decision:<key>) and gets its own \
          worktree and branch; a review task needs pr. model and effort are optional. A busy area or a full slot board \
          queues it and it starts by itself. Its result arrives in a later wake: end your turn instead of waiting.",
         inline_schema::<TaskSpawnCall>,
@@ -119,29 +119,31 @@ static TOOLS: &[Tool] = &[
         "brief",
         "brief_create",
         "Freeze a draft workstream's brief (goal, why, pointers, constraints, doneWhen checks, tier, estimate) and \
-         start it. A frozen brief changes only with amend: an ask the human answered approving it.",
+         start it. A frozen brief changes only with amend: the key of the decision you logged after the human approved the \
+         change in chat.",
         inline_schema::<BriefCreateCall>,
     )
-    .needs("Changing a frozen brief (amend) needs an ask the human approved."),
+    .needs("Changing a frozen brief (amend) needs the human's yes in chat, logged with decide."),
     lead(
-        "ask",
-        "ask",
-        "Ask the human about product, money, credentials or irreversible actions only, with a dotted decision key \
-         and your recommendation. kind do: steps a human performs; kind secret: a value sealed to a machine (you only \
-         see its fingerprint). Never block on it: carry on (proceededOnRec) or with other work. The answer arrives in \
-         a later wake.",
-        inline_schema::<AskCall>,
-    ),
+        "request_secret",
+        "request_secret",
+        "Ask the human for a secret (a key, a token, a password). The app shows a masked field in the chat; the value \
+         is sealed to the sink's machine and written there, and never enters a transcript. Only its fingerprint \
+         arrives, in a later wake.",
+        inline_schema::<RequestSecretCall>,
+    )
+    .needs("The human enters the value in chat; you see only its fingerprint."),
     lead(
-        "ask_withdraw",
-        "ask_withdraw",
-        "Withdraw an ask, naming the existing decision that answers it (use).",
-        inline_schema::<AskWithdrawCall>,
+        "request_withdraw",
+        "request_withdraw",
+        "Take back a secret request or a command approval you no longer need (the human said so in chat).",
+        inline_schema::<RequestWithdrawCall>,
     ),
     lead(
         "decide",
         "decide",
-        "Log a decision you made yourself (anything that is not product, money, credentials or irreversible).",
+        "Log a decision: one you made yourself, or the human's answer to a question you asked in chat (so you never \
+         ask it twice).",
         inline_schema::<DecideCall>,
     ),
     lead(
@@ -154,11 +156,12 @@ static TOOLS: &[Tool] = &[
     lead(
         "gated_run",
         "gated_run",
-        "A prod write, spend, delete or credential use: the node runs exactly this argv only after a human approves \
-         it; secrets come from the node's own sinks. The exit code and output tail arrive in a later wake.",
+        "A prod write, spend, delete or credential use: the chat shows the human exactly this argv with Approve / \
+         Deny, and the node runs it only once approved; secrets come from the node's own sinks. The exit code and \
+         output tail arrive in a later wake.",
         inline_schema::<GatedRunCall>,
     )
-    .needs("A human approves the exact command (an approve ask) before the node runs it."),
+    .needs("A human approves the exact command in chat before the node runs it."),
     lead(
         "plan_milestone",
         "plan_milestone",
@@ -453,7 +456,7 @@ mod tests {
             "agent_status",
             "list_agents",
             "stop_agent",
-            "ask",
+            "request_secret",
             "decide",
             "brief",
             "claim_done",

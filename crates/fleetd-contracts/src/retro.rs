@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
 
 use crate::ids::Timestamp;
-use crate::ledger::{AskId, PlaybookName, PlaybookRef};
+use crate::ledger::{DecisionKey, PlaybookName, PlaybookRef};
 use crate::prim::{Count, Finite, Int, List, MAX_SAFE_INT, Text};
 use crate::verification::IncidentId;
 use crate::{brand, literal};
@@ -80,15 +80,16 @@ brand!(
     pattern = r"^R[1-9][0-9]*$"
 );
 
-/// suggested: advise-only, nothing applies. pending: a gate change waiting for the weekly Ask; asked: in it.
+/// suggested: advise-only, nothing applies. pending: a gate change waiting for a person to record its decision.
 /// measuring: a wording change applied, its window running; then kept or reverted. applied: a gate change a person
 /// approved. rejected: a person said no. stale: the playbook changed under it, so its diff no longer applies.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum RetroProposalState {
     Suggested,
+    /// "asked": rows from before the questions tool went.
+    #[serde(alias = "asked")]
     Pending,
-    Asked,
     Measuring,
     Kept,
     Reverted,
@@ -117,8 +118,8 @@ pub struct RetroProposal {
     pub metric: RetroMetric,
     pub expected: Text<1, 300>,
     pub state: RetroProposalState,
-    /// The gate Ask, key `playbook.<name>.<hash>`.
-    pub ask_id: Option<AskId>,
+    /// A gate change: the global decision a person records to settle it, `playbook.<name>.<hash>` = apply | reject.
+    pub decision_key: Option<DecisionKey>,
     /// The version it applied and the one it replaced.
     pub r#ref: Option<PlaybookRef>,
     pub previous_ref: Option<PlaybookRef>,

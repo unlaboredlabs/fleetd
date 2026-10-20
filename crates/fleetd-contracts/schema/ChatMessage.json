@@ -343,7 +343,7 @@
       "type": "string"
     },
     "GatedRunSpec": {
-      "description": "Stored with the approve ask and never changed: the human approves exactly these bytes.",
+      "description": "Stored with the approval and never changed: the human approves exactly these bytes.",
       "properties": {
         "argv": {
           "items": {
@@ -510,7 +510,7 @@
       "type": "string"
     },
     "ToolPermission": {
-      "description": "An approve ask raised by a session's tool permission prompt (`tool_permission`) instead of a gated command: answering\nit answers the prompt on the project's node. Its machine is the ask's project's.",
+      "description": "An approval raised by a session's tool permission prompt instead of a gated command: answering it answers the prompt\non the project's node. Its machine is the request's project's.",
       "properties": {
         "requestId": {
           "minLength": 1,

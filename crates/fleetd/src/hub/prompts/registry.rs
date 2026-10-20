@@ -211,7 +211,7 @@ pub const ENTRIES: &[Entry] = &[
             ),
             (
                 "amend",
-                "a frozen brief changes only with `amend`",
+                "a frozen brief changes only with `amend` and the human's logged yes",
                 r"`amend`",
                 Code
             ),

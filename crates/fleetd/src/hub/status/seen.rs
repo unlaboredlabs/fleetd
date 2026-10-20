@@ -39,18 +39,17 @@ pub fn in_scope(scope: &StatusScope, event: &Value) -> bool {
     }
 }
 
-const COUNTED: [&str; 8] = [
+const COUNTED: [&str; 7] = [
     "pr.merged",
     "plan.verified",
     "workstream.running",
     "task.failed",
     "claim.failed",
     "change.ci_failed",
-    "batch.ready",
     "plan.changed",
 ];
 
-/// Counts since `after` (the key's mark) in the scope. `asked` counts batch items whose ask is in the scope.
+/// Counts since `after` (the key's mark) in the scope.
 pub fn since(
     c: &Connection,
     scope: &StatusScope,
@@ -84,18 +83,16 @@ pub fn since_from(
             out.verified = counted.verified;
             out.started = counted.started;
             out.failed = counted.failed;
-            out.asked = counted.asked;
             out.scope_items = counted.scope_items;
             to
         }
         _ => after,
     };
-    let (mut merged, mut verified, mut started, mut failed, mut asked, mut scope_items) = (
+    let (mut merged, mut verified, mut started, mut failed, mut scope_items) = (
         out.merged.get(),
         out.verified.get(),
         out.started.get(),
         out.failed.get(),
-        out.asked.get(),
         out.scope_items.get(),
     );
     let mut stmt = c.prepare_cached(
@@ -106,22 +103,6 @@ pub fn since_from(
             let Ok(event) = serde_json::from_str::<Value>(&row?) else {
                 continue;
             };
-            if t == "batch.ready" {
-                let items = event
-                    .pointer("/data/items")
-                    .and_then(Value::as_array)
-                    .cloned()
-                    .unwrap_or_default();
-                for item in items {
-                    let Some(ask) = item.get("askId").and_then(Value::as_str) else {
-                        continue;
-                    };
-                    if ask_in_scope(c, scope, ask)? {
-                        asked += 1;
-                    }
-                }
-                continue;
-            }
             if !in_scope(scope, &event) {
                 continue;
             }
@@ -146,27 +127,8 @@ pub fn since_from(
     out.verified = Count::unchecked(verified);
     out.started = Count::unchecked(started);
     out.failed = Count::unchecked(failed);
-    out.asked = Count::unchecked(asked);
     out.scope_items = Int::unchecked(scope_items);
     Ok((out, head))
-}
-
-fn ask_in_scope(c: &Connection, scope: &StatusScope, ask: &str) -> rusqlite::Result<bool> {
-    if *scope == StatusScope::Fleet {
-        return Ok(true);
-    }
-    let n: i64 = ask.get(1..).and_then(|n| n.parse().ok()).unwrap_or(0);
-    let row: Option<(String, Option<String>)> = c
-        .prepare_cached("SELECT project_key, workstream_id FROM asks WHERE n = ?")?
-        .query_row([n], |r| Ok((r.get(0)?, r.get(1)?)))
-        .optional()?;
-    Ok(match (scope, row) {
-        (StatusScope::Project { project_ref }, Some((key, _))) => {
-            key == format!("{}/{}", project_ref.machine_id, project_ref.project_id)
-        }
-        (StatusScope::Order { workstream_id }, Some((_, Some(ws)))) => ws == workstream_id.as_str(),
-        _ => false,
-    })
 }
 
 #[cfg(test)]

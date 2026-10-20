@@ -26,8 +26,7 @@ struct Piece {
 
 /// Rows the walk may step on: leaves, plus `run` envelopes whose uncovered time is `claude.other`.
 fn steps_on(row: &Row) -> bool {
-    row.kind == SpanKind::Run
-        || !(is_detail(row.kind) || matches!(row.kind, SpanKind::Idle | SpanKind::AskInfo))
+    row.kind == SpanKind::Run || !(is_detail(row.kind) || row.kind == SpanKind::Idle)
 }
 
 /// Cuts one lane's rows into exclusive pieces, oldest first. A run envelope ranks below every leaf, so it owns

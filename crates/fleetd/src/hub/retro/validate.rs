@@ -47,7 +47,7 @@ pub struct Context<'a> {
     pub incidents: HashSet<String>,
     /// Each playbook's current file text.
     pub playbooks: HashMap<String, String>,
-    /// Playbooks that may not change now, with why (a change still being measured, a gate ask still open).
+    /// Playbooks that may not change now, with why (a change still being measured, a gate change still pending).
     pub busy: HashMap<String, String>,
     pub parser: &'a dyn PlaybookParser,
 }

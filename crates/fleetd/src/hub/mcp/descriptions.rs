@@ -94,7 +94,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "lead_start",
-        "Start the project's lead: one thread that turns intents into briefs, asks only product/money/credential/irreversible questions, and never writes code. Returns the existing lead if there is one. A project's first order starts its lead by itself; call this to start it earlier or with another model. model and effort, when given, are saved for the project (default claude-opus-5-5, high).",
+        "Start the project's lead: one thread that turns intents into briefs, asks the human in chat only about product, money, credential and irreversible calls, and never writes code. Returns the existing lead if there is one. A project's first order starts its lead by itself; call this to start it earlier or with another model. model and effort, when given, are saved for the project (default claude-opus-5-5, high).",
     ),
     (
         "lead_restart",
@@ -110,7 +110,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "workstream_get",
-        "One workstream with its frozen brief and headline (the lead's own words), its open asks, the decisions scoped to it, and its last 20 claims with each check's result. Only a claim whose checks all passed makes it done.",
+        "One workstream with its frozen brief and headline (the lead's own words), its open secret and approval requests, the decisions scoped to it, and its last 20 claims with each check's result. Only a claim whose checks all passed makes it done.",
     ),
     (
         "workstream_spawn",
@@ -118,23 +118,19 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "inventory",
-        "A project's open work, ranked as plain text: failing done-when checks first, then open GitHub issues (oldest first), then open asks and TODO/FIXME counts, which never become children. Each item with a value source shows its serves value and the child already working on it, if any. spawnable counts the unserved ones. When the finish-all workstream has no open child and nothing left to start, it goes idle (idle: true) and this says so.",
-    ),
-    (
-        "asks_list",
-        "The questions waiting for the human, grouped in numbered batches (state defaults to open; batchId picks one batch). Item numbers are fixed per batch: answer them with inbox_reply.",
-    ),
-    (
-        "inbox_reply",
-        "Answer a batch tersely: \"1 go 2 nvm 3 b\", \"1-3 go\", \"recs fine\" (accept every recommendation), \"2: free text\", \"3 skip\" (skip for now: the lead keeps its recommendation, no decision), \"4 later\", \"pref: <standing preference>\", \"forget D12\". Binds to the latest open batch unless it starts with \"#B<n>\". Letters pick the options in the order listed. A decide answer can be taken back with inbox_undo for 10 s; then it becomes a Decision and wakes its lead. Other answers become a Decision at once. Unparseable text changes nothing and returns a hint. Approve asks take only \"<n> go\" (the node runs the stored command) or \"<n> no\"; secret, approve and do asks take answers from human keys only.",
-    ),
-    (
-        "inbox_undo",
-        "Take back a decide answer within 10 s of inbox_reply (its applied item's undoUntil): the ask is open again and its lead never hears of the answer. Refused once the window passed; record a new decision instead.",
+        "A project's open work, ranked as plain text: failing done-when checks first, then open GitHub issues (oldest first), then open secret and approval requests and TODO/FIXME counts, which never become children. Each item with a value source shows its serves value and the child already working on it, if any. spawnable counts the unserved ones. When the finish-all workstream has no open child and nothing left to start, it goes idle (idle: true) and this says so.",
     ),
     (
         "secret_submit",
-        "Human keys only. Enter a secret ask's value sealed on the client (the desktop app) with libsodium's crypto_box_seal to the sink machine's boxPubKey (fleetd_status machines). The hub relays it to that node, which writes the sink (0600) and returns the sha256 fingerprint prefix; the ask closes with it. Refused with machine_offline when the node is down: nothing is queued.",
+        "Human keys only. Enter the value of an open secret request (requestId, Q<n>) sealed on the client (the desktop app) with libsodium's crypto_box_seal to the sink machine's boxPubKey (fleetd_status machines). The hub relays it to that node, which writes the sink (0600) and returns the sha256 fingerprint prefix; the request is stored with it and its lead hears the fingerprint, never the value. Refused with machine_offline when the node is down: nothing is queued.",
+    ),
+    (
+        "approval_answer",
+        "Human keys with an operate grant only. Approve or deny an open approval request (requestId, Q<n>): a gated command the lead asked to run, or a tool prompt a run waits on. approve runs the command exactly as stored on the project's node (its exit code and output tail reach the lead) or allows the tool; deny never runs it, and message, when given, goes to the lead or the run with the denial. Returns the request.",
+    ),
+    (
+        "requests_list",
+        "Secret and approval requests, newest first: each with its kind, text, state (open, stored, withdrawn, approved, denied, ran, failed) and, for a command, the exact argv and cwd. Filter by projectRef and state. A secret's value is never in it, only its fingerprint.",
     ),
     (
         "decisions_search",
@@ -146,7 +142,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "digest_get",
-        "The human digest now, as plain text: what needs you (numbered asks), what is running and done, and what leads decided without you. Limited to this key's machines. The hub emits digest.ready at 09:00 and 18:00 in policy.tz as the cue to call this; the event itself carries no project content.",
+        "The human digest now, as plain text: what needs you (secrets to enter and commands to approve, in their project's chat), what is running and done, and what leads decided without you. Limited to this key's machines. The hub emits digest.ready at 09:00 and 18:00 in policy.tz as the cue to call this; the event itself carries no project content.",
     ),
     (
         "tasks_list",
@@ -174,11 +170,11 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "incidents_list",
-        "Incidents the hub detected (false_claim, polish_loop, misfiled_ask, out_of_area, stall, policy_bypass, re_ask, override, playbook_reverted), newest first, with evidence lines, plus per-class counts over the last windowDays (default 7). Filter by projectRef, workstreamId or class.",
+        "Incidents the hub detected (false_claim, polish_loop, out_of_area, stall, policy_bypass, override, playbook_reverted), newest first, with evidence lines, plus per-class counts over the last windowDays (default 7). Filter by projectRef, workstreamId or class.",
     ),
     (
         "retro_proposals",
-        "The retro's playbook change proposals, newest first, with their diff, the incidents each fixes, its metric and state (suggested, pending, asked, measuring, kept, reverted, applied, rejected, stale). apply says whether policy.retro.apply lets them apply; until then they are only suggested.",
+        "The retro's playbook change proposals, newest first, with their diff, the incidents each fixes, its metric and state (suggested, pending, measuring, kept, reverted, applied, rejected, stale). apply says whether policy.retro.apply lets them apply; until then they are only suggested.",
     ),
     (
         "retro_run",
@@ -210,11 +206,11 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "orders_board",
-        "Open orders (workstreams) joined with their agents: each card has its phase (needs you, working, reviewing, merging, ...), active lanes (role, model, status, branch, PR), PRs with review counts, open asks and the lead's headline; plus the merge trains of their repos. Filter by projectRef; includeDoneSince adds orders done since then.",
+        "Open orders (workstreams) joined with their agents: each card has its phase (needs you, working, reviewing, merging, ...), active lanes (role, model, status, branch, PR), PRs with review counts, open requests and the lead's headline; plus the merge trains of their repos. Filter by projectRef; includeDoneSince adds orders done since then.",
     ),
     (
         "order_get",
-        "One order as orders_board shows it, plus its project's lead, its finished agents with their receipts, its open asks and its claims.",
+        "One order as orders_board shows it, plus its project's lead, its finished agents with their receipts, its open requests and its claims.",
     ),
     (
         "order_note",

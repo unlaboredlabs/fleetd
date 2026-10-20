@@ -259,8 +259,8 @@ mod tests {
                 None,
             ),
             (
-                "an ask",
-                write(Some("ask:A4")),
+                "a decision the human made in chat",
+                write(Some("decision:deploy.region")),
                 workstream("running", true),
                 None,
             ),

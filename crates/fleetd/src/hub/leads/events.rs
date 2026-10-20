@@ -19,17 +19,6 @@ pub enum Ended {
     Cancelled,
 }
 
-/// How the human settled one of the lead's asks.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Settled {
-    Answered,
-    /// They wrote their own answer instead of picking an option.
-    OwnWords,
-    /// Skipped for now: the lead carries on with its recommendation.
-    Skipped,
-    Withdrawn,
-}
-
 /// The project's agents against its cap, the second line of every state block.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AgentsLine {
@@ -154,15 +143,13 @@ pub enum Event<'a> {
         items: &'a str,
         room: i64,
     },
-    /// An ask settled: an answer, a gated command that ran, a saved secret, a checked step. `value` carries the
-    /// option's label when it has one; `evidence` is what the hub observed.
-    Answered {
-        ask: &'a str,
-        key: &'a str,
-        settled: Settled,
-        value: &'a str,
-        decision: Option<&'a str>,
-        evidence: Option<&'a str>,
+    /// A secret or approval request settled, or came back open. `what` is the secret, command or tool prompt; `outcome`
+    /// what became of it; `tail` a command's output tail.
+    Request {
+        request: &'a str,
+        what: &'a str,
+        outcome: &'a str,
+        tail: Option<&'a str>,
     },
     /// The lead ended a turn with an approved order and nothing under way: nothing else would wake it for it.
     OrderIdle {
@@ -375,36 +362,17 @@ impl Event<'_> {
                     vec![],
                 )
             }
-            Event::Answered {
-                ask,
-                key,
-                settled,
-                value,
-                decision,
-                evidence,
-            } => {
-                let value = one_line(value, 300);
-                let head = match settled {
-                    Settled::Withdrawn => format!("- {ask} {key} withdrawn by the human: drop it"),
-                    Settled::Skipped => format!(
-                        "- {ask} {key} skipped for now: carry on with your recommendation ({value}); no decision was recorded"
-                    ),
-                    Settled::Answered | Settled::OwnWords => format!(
-                        "- {ask} {key} answered{}: {value}{}",
-                        if *settled == Settled::OwnWords {
-                            " in the human's own words"
-                        } else {
-                            ""
-                        },
-                        decision.map(|d| format!(" ({d})")).unwrap_or_default()
-                    ),
-                };
-                let rest = evidence
-                    .filter(|e| !e.trim().is_empty())
-                    .map(|e| body(&one_line(e, 600)))
-                    .unwrap_or_default();
-                (head, rest)
-            }
+            Event::Request {
+                request,
+                what,
+                outcome,
+                tail,
+            } => (
+                format!("- {request} {what}: {outcome}"),
+                tail.filter(|t| !t.trim().is_empty())
+                    .map(body)
+                    .unwrap_or_default(),
+            ),
             Event::OrderIdle { workstream, title } => (
                 format!(
                     "- {workstream} idle: {}; no agent running, nothing asked, and nothing else will wake you for it",
@@ -666,32 +634,33 @@ mod tests {
     }
 
     #[test]
-    fn answer_events() {
-        let a = |settled, decision, evidence| {
-            r(Event::Answered {
-                ask: "A3",
-                key: "deploy.prod",
-                settled,
-                value: "go (\"Ship it\")",
-                decision,
-                evidence,
-            })
-        };
+    fn request_events() {
         assert_eq!(
-            a(Settled::Answered, Some("D4"), Some("exit 0\nall green")),
-            "- A3 deploy.prod answered: go (\"Ship it\") (D4)\n  > exit 0 all green"
+            r(Event::Request {
+                request: "Q3",
+                what: "your command `sh -c \"make migrate\"`",
+                outcome: "ran: exit 0 on lab-a, approved by human:desk",
+                tail: Some("migrated 3 tables\nok"),
+            }),
+            "- Q3 your command `sh -c \"make migrate\"`: ran: exit 0 on lab-a, approved by human:desk\n  > migrated 3 tables\n  > ok"
         );
         assert_eq!(
-            a(Settled::OwnWords, None, None),
-            "- A3 deploy.prod answered in the human's own words: go (\"Ship it\")"
+            r(Event::Request {
+                request: "Q4",
+                what: "secret stripe.test_key",
+                outcome: "stored on lab-a (fingerprint ab12cd34); use it from its sink, you never see the value",
+                tail: None,
+            }),
+            "- Q4 secret stripe.test_key: stored on lab-a (fingerprint ab12cd34); use it from its sink, you never see the value"
         );
         assert_eq!(
-            a(Settled::Skipped, None, None),
-            "- A3 deploy.prod skipped for now: carry on with your recommendation (go (\"Ship it\")); no decision was recorded"
-        );
-        assert_eq!(
-            a(Settled::Withdrawn, None, Some("")),
-            "- A3 deploy.prod withdrawn by the human: drop it"
+            r(Event::Request {
+                request: "Q5",
+                what: "your command `./deploy.sh prod`",
+                outcome: "denied by human:desk: not on a Friday; don't run it, say in the chat what you do instead",
+                tail: Some(""),
+            }),
+            "- Q5 your command `./deploy.sh prod`: denied by human:desk: not on a Friday; don't run it, say in the chat what you do instead"
         );
     }
 

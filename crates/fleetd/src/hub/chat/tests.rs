@@ -307,7 +307,7 @@ async fn a_projects_past_reads_in_once_in_time_order_without_ids() {
                 "text": "Public link or image only?", "createdAt": "2026-10-19T08:10:00.000Z",
                 "answer": { "value": "link", "raw": "1 go", "at": "2026-10-19T08:20:00.000Z" } });
             c.execute(
-                "INSERT INTO asks (project_key, key, state, filed_by, created_ms, data)
+                "INSERT INTO legacy_asks (project_key, key, state, filed_by, created_ms, data)
                  VALUES ('devbox/app', 'share.link', 'answered', 'lead', 0, ?1)",
                 [ask.to_string()],
             )?;
