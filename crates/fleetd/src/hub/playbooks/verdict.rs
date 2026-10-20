@@ -1,8 +1,8 @@
-//! The research verdict as one plain line. Pure. The outcome itself is `ledger::research_outcome` (contracts).
+//! The research verdict as the lead's event line. Pure. The outcome itself is `ledger::research_outcome` (contracts).
 use fleetd_contracts::ledger::{DecisionRule, DecisionRuleBetter, MetricValues, ResearchOutcome};
 
 use crate::hub::leads::brief::js_f64;
-use crate::hub::prompts::PromptSet;
+use crate::hub::leads::events::Event;
 
 fn sign(rule: &DecisionRule) -> f64 {
     match rule.better {
@@ -24,9 +24,9 @@ fn num(n: f64) -> String {
     js_f64(rounded)
 }
 
-/// What the verdict rests on, and for INCONCLUSIVE what evidence would change it.
+/// The verdict as the lead's event line: what it rests on, and the go and stop lines that would change it.
 pub fn verdict_text(
-    set: &PromptSet,
+    workstream_id: &str,
     outcome: ResearchOutcome,
     rule: &DecisionRule,
     values: &MetricValues,
@@ -42,13 +42,14 @@ pub fn verdict_text(
         better_text(rule),
         num(improvement)
     );
-    let (go, stop) = (num(rule.go_at_least.get()), num(rule.stop_below.get()));
-    let id = match outcome {
-        ResearchOutcome::Go => "wake.research_verdict.go",
-        ResearchOutcome::Stop => "wake.research_verdict.stop",
-        ResearchOutcome::Inconclusive => "wake.research_verdict.inconclusive",
-    };
-    set.render(id, &[("measured", &measured), ("go", &go), ("stop", &stop)])
+    Event::ResearchVerdict {
+        workstream: workstream_id,
+        verdict: outcome,
+        measured: &measured,
+        go: &num(rule.go_at_least.get()),
+        stop: &num(rule.stop_below.get()),
+    }
+    .render()
 }
 
 #[cfg(test)]
@@ -120,24 +121,24 @@ mod tests {
         let higher = rule(DecisionRuleBetter::Higher, 0.1, 0.1);
         assert_eq!(
             verdict_text(
-                PromptSet::defaults(),
+                "W2",
                 ResearchOutcome::Go,
                 &higher,
                 &v(0.5, 0.6),
                 Some("hit rate")
             ),
-            "GO: candidate 0.6 vs baseline 0.5 on hit rate (higher is better): improvement 0.1, at least the go line 0.1."
+            "- W2 research verdict GO: candidate 0.6 vs baseline 0.5 on hit rate (higher is better): improvement 0.1 (go line 0.1, stop line 0.1)"
         );
         let lower = rule(DecisionRuleBetter::Lower, 50.0, 20.0);
         assert_eq!(
             verdict_text(
-                PromptSet::defaults(),
+                "W2",
                 ResearchOutcome::Inconclusive,
                 &lower,
                 &v(400.0, 370.0),
                 None
             ),
-            "INCONCLUSIVE: candidate 370 vs baseline 400 (lower is better): improvement 30, between the stop line 20 and the go line 50. An improvement of at least 50 would make it GO; one below 20 would make it STOP."
+            "- W2 research verdict INCONCLUSIVE: candidate 370 vs baseline 400 (lower is better): improvement 30 (go line 50, stop line 20)"
         );
     }
 }

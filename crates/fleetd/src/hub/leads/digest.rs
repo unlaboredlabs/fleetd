@@ -1,15 +1,15 @@
-//! The lead digest: the code-rendered project state at the top of every wake. It is the lead's real memory, so it
-//! must stay small (DIGEST_MAX_TOKENS) and say plainly what was left out.
+//! The lead digest: the code-rendered project state at the top of a lead's first message and every wake (the event
+//! lines follow it, `events`). It is the lead's real memory, so it must stay small (DIGEST_MAX_TOKENS) and say plainly
+//! what was left out. A fixed format, not a prompt.
 use std::collections::{HashMap, HashSet};
 
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::ledger::{
-    CheckSpec, Decision, DecisionScope, HumanRequest, PlaybookRef, Workstream, WorkstreamId,
-    WorkstreamState,
+    CheckSpec, Decision, DecisionScope, HumanRequest, Workstream, WorkstreamId, WorkstreamState,
 };
 
+use super::events::AgentsLine;
 use crate::hub::playbooks::finish_all_rules::is_finish_all;
-use crate::hub::prompts::PromptSet;
 
 pub const DIGEST_MAX_TOKENS: usize = 1500;
 /// Decisions listed by full value; the rest only appear by key under "do not re-ask".
@@ -26,13 +26,6 @@ pub fn utf16_len(text: &str) -> usize {
     text.chars().map(char::len_utf16).sum()
 }
 
-/// What a lead digest renders a playbook with: its name and instructions.
-#[derive(Debug, Clone)]
-pub struct DigestPlaybook {
-    pub name: String,
-    pub lead_instructions: String,
-}
-
 /// What backs a workstream's status beyond the lead's word: the checks its latest claim passed and its ETA.
 #[derive(Debug, Clone, Default)]
 pub struct WorkstreamFacts {
@@ -45,8 +38,6 @@ pub struct WorkstreamFacts {
 }
 
 pub struct DigestInput<'a> {
-    /// The texts the digest's words come from.
-    pub prompts: &'a PromptSet,
     pub project_ref: &'a ProjectRef,
     pub title: &'a str,
     pub at: &'a str,
@@ -56,13 +47,13 @@ pub struct DigestInput<'a> {
     pub open_requests: &'a [HumanRequest],
     /// Active decisions along the project's scope chain, any order.
     pub decisions: &'a [Decision],
+    /// The agents line; None leaves it out.
+    pub agents: Option<AgentsLine>,
     /// Lines from the tasks area; None leaves the section out.
     pub tasks: Option<Vec<String>>,
     /// Lines from the merge train; None leaves the section out.
     pub train: Option<Vec<String>>,
     pub facts: &'a HashMap<WorkstreamId, WorkstreamFacts>,
-    /// The pinned playbooks of open workstreams; their instructions are listed once each.
-    pub playbooks: &'a HashMap<PlaybookRef, DigestPlaybook>,
 }
 
 /// Whitespace runs collapsed, trimmed, and cut to `max` with "…".
@@ -177,12 +168,12 @@ pub fn done_when_text(checks: &[CheckSpec], passed: Option<&HashSet<usize>>, max
         .join("; ")
 }
 
-fn workstream_lines(
-    set: &PromptSet,
-    w: &Workstream,
-    facts: Option<&WorkstreamFacts>,
-    playbook: Option<&DigestPlaybook>,
-) -> String {
+fn workstream_lines(w: &Workstream, facts: Option<&WorkstreamFacts>) -> String {
+    let playbook = w.playbook.as_ref().map(|p| {
+        p.as_str()
+            .split_once('@')
+            .map_or(p.as_str(), |(name, _)| name)
+    });
     let child = w
         .parent
         .as_ref()
@@ -197,10 +188,7 @@ fn workstream_lines(
     let tag = if playbook.is_none() && child.is_empty() {
         String::new()
     } else {
-        format!(
-            " ({}{child})",
-            playbook.map_or("no playbook", |p| p.name.as_str())
-        )
+        format!(" ({}{child})", playbook.unwrap_or("no playbook"))
     };
     let head = format!(
         "- {} {}{tag}: {}",
@@ -209,15 +197,14 @@ fn workstream_lines(
         one_line(&w.title, 120)
     );
     if w.state == WorkstreamState::Idle && is_finish_all(w) {
-        return format!("{head}\n  {}", set.render("digest.finish_all_idle", &[]));
+        return format!(
+            "{head}\n  finish-all: nothing left with a value source; `inventory` again only when something new comes in"
+        );
     }
     let Some(brief) = &w.brief else {
         return format!(
-            "{head}\n  {}",
-            set.render(
-                "digest.workstream.no_brief",
-                &[("workstreamId", &w.workstream_id)]
-            )
+            "{head}\n  no brief yet: register it with `brief` {{workstreamId: \"{}\"}}",
+            w.workstream_id
         );
     };
     let status = w
@@ -256,7 +243,11 @@ fn request_line(r: &HumanRequest) -> String {
     let what = match (&r.secret, &r.gated, &r.permission) {
         (Some(s), _, _) => format!("secret {} to enter", s.key),
         (_, Some(g), _) => format!("approve your command: {}", one_line(g.reason.as_str(), 120)),
-        (_, _, Some(p)) => format!("approve a tool prompt: {} {}", p.tool_name, one_line(p.summary.as_str(), 120)),
+        (_, _, Some(p)) => format!(
+            "approve a tool prompt: {} {}",
+            p.tool_name,
+            one_line(p.summary.as_str(), 120)
+        ),
         _ => one_line(r.text.as_str(), 120),
     };
     let again = r
@@ -278,7 +269,7 @@ fn decision_line(d: &Decision) -> String {
     )
 }
 
-/// A unit enum's wire name, e.g. `AskClass::Product` → "product".
+/// A unit enum's wire name, e.g. `WorkstreamState::Running` → "running".
 pub fn serde_plain<T: serde::Serialize>(value: &T) -> String {
     match serde_json::to_value(value) {
         Ok(serde_json::Value::String(s)) => s,
@@ -337,12 +328,11 @@ impl Section {
 
 // Section indexes, in render order.
 const WORKSTREAMS: usize = 0;
-const PLAYBOOKS: usize = 1;
-const TASKS: usize = 2;
-const TRAIN: usize = 3;
-const REQUESTS: usize = 4;
-const DECISIONS: usize = 5;
-const DO_NOT_RE_ASK: usize = 6;
+const TASKS: usize = 1;
+const TRAIN: usize = 2;
+const REQUESTS: usize = 3;
+const DECISIONS: usize = 4;
+const DO_NOT_RE_ASK: usize = 5;
 
 pub fn render_lead_digest(input: &DigestInput) -> String {
     let open: HashSet<&WorkstreamId> = input.workstreams.iter().map(|w| &w.workstream_id).collect();
@@ -357,70 +347,38 @@ pub fn render_lead_digest(input: &DigestInput) -> String {
         }
     }
 
-    let title = one_line(input.title, 80);
-    let project_ref = format!(
-        "{}/{}",
-        input.project_ref.machine_id, input.project_ref.project_id
+    let mut head = format!(
+        "# project {} ({}/{}), {}",
+        one_line(input.title, 80),
+        input.project_ref.machine_id,
+        input.project_ref.project_id,
+        input.at
     );
-
-    let playbook_of = |w: &Workstream| w.playbook.as_ref().and_then(|p| input.playbooks.get(p));
-    // Insertion-ordered: first workstream to name a playbook places it.
-    let mut following: Vec<(&PlaybookRef, &DigestPlaybook, Vec<String>)> = Vec::new();
-    for w in input.workstreams {
-        let (Some(r), Some(p)) = (&w.playbook, playbook_of(w)) else {
-            continue;
-        };
-        match following.iter_mut().find(|(fr, _, _)| *fr == r) {
-            Some(entry) => entry.2.push(w.workstream_id.to_string()),
-            None => following.push((r, p, vec![w.workstream_id.to_string()])),
-        }
+    if let Some(agents) = input.agents {
+        head.push_str(&format!("\n{agents}"));
     }
 
     let mut sections = vec![
         Section::new(
-            "Open workstreams",
+            "Work",
             input
                 .workstreams
                 .iter()
-                .map(|w| {
-                    workstream_lines(
-                        input.prompts,
-                        w,
-                        input.facts.get(&w.workstream_id),
-                        playbook_of(w),
-                    )
-                })
+                .map(|w| workstream_lines(w, input.facts.get(&w.workstream_id)))
                 .collect(),
             20,
             "older ones not shown",
             "\n",
         ),
         Section::new(
-            "Playbooks: follow these for their workstreams",
-            following
-                .iter()
-                .map(|(_, p, ids)| {
-                    format!(
-                        "- {} ({}): {}",
-                        p.name,
-                        ids.join(", "),
-                        one_line(&p.lead_instructions, 600)
-                    )
-                })
-                .collect(),
-            4,
-            "older versions not shown",
-            "\n",
-        ),
-        Section::new(
-            "Tasks",
+            "Agents",
             input.tasks.clone().unwrap_or_default(),
             20,
             "`list_agents`",
             "\n",
         ),
         Section::new(
-            "Merge train (only it merges)",
+            "Merge train",
             input.train.clone().unwrap_or_default(),
             12,
             "`change_status`",
@@ -434,14 +392,14 @@ pub fn render_lead_digest(input: &DigestInput) -> String {
             "\n",
         ),
         Section::new(
-            "Decisions (most relevant)",
+            "Decisions",
             ranked.iter().map(|d| decision_line(d)).collect(),
             DIGEST_DECISIONS,
             "`decisions_search`",
             "\n",
         ),
         Section::new(
-            "Do not re-ask: keys already decided",
+            "Decided already: never ask again",
             keys,
             200,
             "check with `decisions_search`",
@@ -450,9 +408,6 @@ pub fn render_lead_digest(input: &DigestInput) -> String {
     ];
 
     let mut shown: Vec<usize> = vec![WORKSTREAMS];
-    if !following.is_empty() {
-        shown.push(PLAYBOOKS);
-    }
     if input.tasks.is_some() {
         shown.push(TASKS);
     }
@@ -463,23 +418,14 @@ pub fn render_lead_digest(input: &DigestInput) -> String {
 
     let render = |sections: &[Section]| {
         let parts: Vec<String> = shown.iter().map(|&i| sections[i].render()).collect();
-        input.prompts.render(
-            "lead.digest",
-            &[
-                ("project", &title),
-                ("projectRef", &project_ref),
-                ("at", &input.at),
-                ("sections", &parts.join("\n\n")),
-            ],
-        )
+        format!("{head}\n\n{}", parts.join("\n\n"))
     };
-    // Lowest value first: the key list, then decisions, requests, and workstreams last. The first pass keeps a
-    // few of each so no section vanishes while another is long; the second trims to nothing if it must.
-    let drop_order: [(usize, usize); 7] = [
+    // Lowest value first: the key list, then decisions, requests, agents, the train, and the work last. The first pass
+    // keeps a few of each so no section vanishes while another is long; the second trims to nothing if it must.
+    let drop_order: [(usize, usize); 6] = [
         (DO_NOT_RE_ASK, 30),
         (DECISIONS, 3),
         (REQUESTS, 5),
-        (PLAYBOOKS, 1),
         (TASKS, 5),
         (TRAIN, 4),
         (WORKSTREAMS, 5),

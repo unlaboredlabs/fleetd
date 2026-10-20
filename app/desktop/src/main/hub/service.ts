@@ -1,7 +1,7 @@
 import type { WebContents } from "electron";
 import { IPC } from "../../shared/channels";
 import type { CallOutcome, ConnectOutcome, HubFrame, HubState } from "../../shared/hub";
-import type { CallRequest, ConnectRequest, LiveScope } from "../../shared/ipc";
+import type { CallRequest, ChatScope, ConnectRequest, LiveScope } from "../../shared/ipc";
 import { HubClient } from "./client";
 import { clearCredentials, fromEnv, loadCredentials, saveCredentials, type CredentialEnv } from "./credentials";
 import { FixtureSource, type FixtureFile } from "./fixture";
@@ -25,6 +25,8 @@ export class HubService {
   #unpaired: HubState = { phase: "unpaired" };
   /** The renderer's live scope, kept here so a client made later (a first pairing, a re-pair) starts with it. */
   #live: LiveScope | null = null;
+  /** The chat on screen, kept like #live so a client made later starts with it. */
+  #chat: ChatScope | null = null;
 
   constructor(mode: HubMode) {
     this.#mode = mode;
@@ -68,6 +70,11 @@ export class HubService {
   live(scope: LiveScope | null): void {
     this.#live = scope;
     this.#source?.live(scope);
+  }
+
+  chat(project: ChatScope | null): void {
+    this.#chat = project;
+    this.#source?.chat(project);
   }
 
   resync(): void {
@@ -117,6 +124,7 @@ export class HubService {
     const client = new HubClient({ hub, key, transport: this.#mode.transport, emit: (frame) => this.#broadcast(frame) });
     this.#source = client;
     client.live(this.#live);
+    client.chat(this.#chat);
     client.start();
   }
 

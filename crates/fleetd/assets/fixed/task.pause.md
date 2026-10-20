@@ -1,0 +1,1 @@
+Your project's max agents was lowered to {{maxAgents}}, so you pause now. Commit and push your work in progress to your branch, say in one line where you stopped, then end your turn. fleetd continues you in this thread when a slot frees.

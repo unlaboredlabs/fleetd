@@ -193,8 +193,6 @@ pub trait ApprovalHub: Send + Sync {
     /// The project's current lead thread.
     fn lead_thread(&self, project: &ProjectRef) -> BoxFut<'_, Option<String>>;
     fn thread_project(&self, machine_id: &str, thread_id: &str) -> BoxFut<'_, Option<ProjectRef>>;
-    /// The texts a message to this thread renders from: the ones its session started with.
-    fn prompts(&self, machine_id: &str, thread_id: &str) -> crate::hub::prompts::PromptSet;
 }
 
 pub struct ApprovalsDeps {

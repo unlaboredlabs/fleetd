@@ -2,7 +2,7 @@
 
 import { expect, test } from "@playwright/test";
 import { assertExpectedState, describeFindings, launch, reservedRegions, type Shot, setView, settle, shoot, show } from "./harness.ts";
-import { screens, sizes, themes } from "./registry.ts";
+import { label, screens, sizes, themes } from "./registry.ts";
 
 test.describe.configure({ mode: "parallel" });
 
@@ -11,7 +11,7 @@ const only = process.env.QA_SCREENS?.split(",").filter(Boolean);
 for (const screen of screens) {
   if (only && !only.includes(screen.id)) continue;
   for (const fixture of screen.fixtures) {
-    test(`${screen.id} · ${fixture}`, async () => {
+    test(`${label(screen)} · ${fixture}`, async () => {
       test.fixme(screen.pending !== undefined, screen.pending);
       const { app, page, settled, close } = await launch(fixture);
       try {
@@ -26,7 +26,7 @@ for (const screen of screens) {
             await setView(app, page, size, theme);
             await settle(page);
             // Scrolling doesn't depend on the theme, so the steps run once per size.
-            const meta = { screen: screen.id, fixture, size, theme };
+            const meta = { screen: label(screen), fixture, size, theme };
             shots.push(await shoot(page, reserved, meta, { scroll: theme === themes[0] }));
           }
         }

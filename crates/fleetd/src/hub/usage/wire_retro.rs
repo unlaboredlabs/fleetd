@@ -4,7 +4,7 @@ use super::service::UsageOwners;
 use super::state::{Owner, ParkedKind, ParkedThread};
 use super::wire::{OpsPorts, convert};
 use crate::hub::incidents::{IncidentFilter, IncidentInput};
-use crate::hub::intake::router::OneShot;
+use crate::hub::intake::oneshot::OneShot;
 use crate::hub::leads::records::WorkstreamFilter;
 use crate::hub::ledger::DecisionFilter;
 use crate::hub::retro::metrics::RetroWork;
@@ -85,11 +85,11 @@ impl OpsPorts {
         let env = std::env::vars().collect();
         let runner = OneShot::new(
             &hub.config.home,
-            hub.config.router_model.clone(),
+            hub.config.retro_model.clone(),
             &env,
             Some(Duration::from_millis(RUN_TIMEOUT_MS)),
         )
-        .map_err(|e| format!("cannot create the router's directory: {e}"))?;
+        .map_err(|e| format!("cannot create the one-shot runner's directory: {e}"))?;
         Ok(self.retro_runner.get_or_init(|| runner))
     }
 }
@@ -103,7 +103,7 @@ impl RetroRunner for OpsPorts {
                     let model = self
                         .hub()
                         .config
-                        .router_model
+                        .retro_model
                         .clone()
                         .unwrap_or_else(|| "claude-haiku-5-5".into());
                     let run = OrchestratorRun {

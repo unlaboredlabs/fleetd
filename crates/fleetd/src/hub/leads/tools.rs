@@ -12,7 +12,7 @@ use super::Area;
 use super::error::LeadError;
 use super::records::{LeadSettings, WorkstreamFilter};
 use crate::hub::api::{Caller, Hub, Registry, ToolError, allows, require, unknown_project};
-use crate::hub::intake::{SubmitInput, SubmitResult};
+use crate::hub::intake::SubmitInput;
 use crate::hub::playbooks::finish_all::Caller as FinishAllCaller;
 
 const WORKSTREAM_ASKS: usize = 50;
@@ -137,7 +137,7 @@ impl Area {
             }),
             _ => None,
         };
-        let result = self
+        let placed = self
             .intake
             .submit(SubmitInput {
                 text: input.text.to_string(),
@@ -150,17 +150,11 @@ impl Area {
             })
             .await
             .map_err(refusal)?;
-        let SubmitResult::Placed {
-            workstream_id,
-            echo,
-            next,
-            lead_waiting,
-        } = result;
         Ok(IntakeSubmitOutput {
-            workstream_id,
-            echo: Some(echo),
-            lead_waiting,
-            next,
+            workstream_id: placed.workstream_id,
+            echo: Some(placed.echo),
+            lead_waiting: placed.lead_waiting,
+            next: placed.next,
             truncated: None,
         })
     }

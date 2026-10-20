@@ -23,6 +23,8 @@ use super::rules::{Refusal, check_source, check_tier, freeze_key, is_frozen_valu
 use super::time::{iso, millis, parse_iso};
 use super::triggers;
 use crate::clock::Clock;
+use crate::hub::leads::events::Event;
+use crate::hub::prompts::fixed::{FixPr, fix_your_pr};
 use crate::hub::status::fresh::{self, Fresh};
 use fleetd_contracts::ledger::WorkstreamId;
 use fleetd_contracts::prim::Text;
@@ -355,21 +357,6 @@ impl Train {
     }
 
     /// The texts of the project's lead, or of the change's author task, for a message to it.
-    fn lead_prompts(&self, project_ref: &ProjectRef) -> crate::hub::prompts::PromptSet {
-        self.records.db().prompts().for_lead(project_ref)
-    }
-
-    pub(super) fn author_prompts(&self, change: &Change) -> crate::hub::prompts::PromptSet {
-        match &change.task_id {
-            Some(task_id) => self
-                .records
-                .db()
-                .prompts()
-                .for_task(&change.project_ref, task_id.as_str()),
-            None => self.lead_prompts(&change.project_ref),
-        }
-    }
-
     /// Applies `next` to the stored Change if it is still in one of `from` (any state when None); else does nothing.
     pub(super) fn update(
         &self,
@@ -541,14 +528,12 @@ impl Train {
                 }
             }
         }
-        let line = self.lead_prompts(&change.project_ref).render(
-            "wake.train.line",
-            &[
-                ("changeId", &change.change_id),
-                ("prUrl", &change.pr_url),
-                ("text", &text),
-            ],
-        );
+        let line = Event::PrNote {
+            change: change.change_id.as_str(),
+            pr_url: change.pr_url.as_str(),
+            text: &text,
+        }
+        .render();
         self.wake_lead(&change.project_ref, line).await;
     }
 
@@ -628,6 +613,7 @@ impl Train {
         project_ref: &ProjectRef,
         workstream_id: &WorkstreamId,
         why: &str,
+        keep: &[ChangeId],
     ) -> Vec<Change> {
         let changes = self.list(&ListFilter {
             project_ref: Some(project_ref.clone()),
@@ -635,7 +621,10 @@ impl Train {
             ..Default::default()
         });
         let mut closed = Vec::new();
-        for change in leftovers(&changes, workstream_id) {
+        for change in leftovers(&changes, workstream_id)
+            .into_iter()
+            .filter(|c| !keep.contains(&c.change_id))
+        {
             let Some(left) = self.update(&change.change_id, Some(&[change.state]), |mut c| {
                 c.state = ChangeState::Abandoned;
                 c.last_error = Some(last_error(why));
@@ -663,14 +652,12 @@ impl Train {
             c
         });
         if done.is_some() {
-            let line = self.lead_prompts(&change.project_ref).render(
-                "wake.train.left",
-                &[
-                    ("changeId", &change.change_id),
-                    ("prUrl", &change.pr_url),
-                    ("why", &why),
-                ],
-            );
+            let line = Event::PrLeft {
+                change: change.change_id.as_str(),
+                pr_url: change.pr_url.as_str(),
+                why,
+            }
+            .render();
             self.wake_lead(&change.project_ref, line).await;
         }
     }
@@ -724,22 +711,15 @@ impl Train {
             ),
             data,
         );
-        let by = merged
-            .task_id
-            .as_ref()
-            .map(|t| format!(", by {t}"))
-            .unwrap_or_default();
-        let line = self.lead_prompts(&merged.project_ref).render(
-            "wake.train.merged",
-            &[
-                ("changeId", &merged.change_id),
-                ("prUrl", &merged.pr_url),
-                ("sha", &as_sha),
-                ("tier", &tier_str(merged.tier)),
-                ("serves", &merged.serves),
-                ("by", &by),
-            ],
-        );
+        let line = Event::PrMerged {
+            change: merged.change_id.as_str(),
+            pr_url: merged.pr_url.as_str(),
+            sha: &as_sha,
+            tier: tier_str(merged.tier),
+            serves: merged.serves.as_str(),
+            by: merged.task_id.as_ref().map(|t| t.as_str()),
+        }
+        .render();
         self.wake_lead(&merged.project_ref, line).await;
     }
 
@@ -772,15 +752,11 @@ impl Train {
             format!("{} needs a rebase: {why}", change.change_id),
             json!({ "changeId": change.change_id, "workstreamId": change.workstream_id, "paths": paths.iter().take(50).collect::<Vec<_>>() }),
         );
-        let text = self.author_prompts(&parked).render(
-            "task.train_rebase",
-            &[
-                ("prUrl", &change.pr_url),
-                ("changeId", &change.change_id),
-                ("why", &why),
-                ("branch", &change.branch),
-                ("base", &base),
-            ],
+        let text = fix_your_pr(
+            change.pr_url.as_str(),
+            Some(change.change_id.as_str()),
+            change.branch.as_str(),
+            &FixPr::Rebase { why: &why, base },
         );
         self.tell_author(&parked, text).await;
     }
@@ -838,14 +814,11 @@ impl Train {
             format!("{} {why}", change.change_id),
             data,
         );
-        let text = self.author_prompts(&parked).render(
-            "task.train_ci_failed",
-            &[
-                ("prUrl", &change.pr_url),
-                ("changeId", &change.change_id),
-                ("why", &why),
-                ("branch", &change.branch),
-            ],
+        let text = fix_your_pr(
+            change.pr_url.as_str(),
+            Some(change.change_id.as_str()),
+            change.branch.as_str(),
+            &FixPr::Ci { why: &why },
         );
         self.tell_author(&parked, text).await;
     }
@@ -1301,15 +1274,13 @@ impl Train {
             )));
             c
         });
-        let line = self.lead_prompts(&change.project_ref).render(
-            "wake.train.gave_up",
-            &[
-                ("changeId", &change.change_id),
-                ("prUrl", &change.pr_url),
-                ("why", &why),
-                ("tries", &refusals),
-            ],
-        );
+        let line = Event::PrGaveUp {
+            change: change.change_id.as_str(),
+            pr_url: change.pr_url.as_str(),
+            why: &why,
+            tries: refusals as i64,
+        }
+        .render();
         self.wake_lead(&change.project_ref, line).await;
         Ok(())
     }
@@ -1409,20 +1380,13 @@ impl Train {
                     tracing::info!(change_id = %change.change_id, %pr_url, "train: a draft marked ready is a slice")
                 }
                 Err(e) => {
-                    let fix = e
-                        .fix
-                        .as_ref()
-                        .map(|f| format!(" Fix: {f}."))
-                        .unwrap_or_default();
-                    let line = self.lead_prompts(project_ref).render(
-                        "wake.train.refused",
-                        &[
-                            ("prUrl", &pr_url),
-                            ("taskId", task_id),
-                            ("message", &e.message),
-                            ("fix", &fix),
-                        ],
-                    );
+                    let line = Event::PrRefused {
+                        pr_url: &pr_url,
+                        task: task_id.as_str(),
+                        message: &e.message,
+                        fix: e.fix.as_deref(),
+                    }
+                    .render();
                     self.wake_lead(project_ref, line).await;
                 }
             }
@@ -2161,20 +2125,13 @@ impl Train {
             item: None,
         };
         if let Err(e) = self.enqueue(&task.project_ref, input).await {
-            let fix = e
-                .fix
-                .as_ref()
-                .map(|f| format!(" Fix: {f}."))
-                .unwrap_or_default();
-            let line = self.lead_prompts(&task.project_ref).render(
-                "wake.train.refused",
-                &[
-                    ("prUrl", &pr_url),
-                    ("taskId", &task.task_id),
-                    ("message", &e.message),
-                    ("fix", &fix),
-                ],
-            );
+            let line = Event::PrRefused {
+                pr_url: &pr_url,
+                task: task.task_id.as_str(),
+                message: &e.message,
+                fix: e.fix.as_deref(),
+            }
+            .render();
             self.wake_lead(&task.project_ref, line).await;
         }
     }

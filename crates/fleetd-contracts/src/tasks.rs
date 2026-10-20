@@ -188,7 +188,14 @@ pub struct Lease {
 #[serde(rename_all = "camelCase")]
 pub struct SlotStatePerProject {
     pub project_ref: ProjectRef,
-    pub share: Count,
+    /// The most of the project's agents (its tasks: writers, readers, reviewers) that run at once; its lead's own
+    /// turns don't count. The fleet `cap` until set.
+    pub max_agents: Count,
+    /// Its agents running now. Above `maxAgents` right after the cap was lowered: nothing is stopped for it.
+    pub running: Count,
+    /// Its agents waiting for a slot, paused ones included.
+    pub queued: Count,
+    /// Every slot it holds, its lead's turns included.
     pub used: Count,
 }
 
@@ -215,6 +222,23 @@ pub struct TaskEventData {
     pub branch: Option<String>,
     /// task.out_of_area: the first 20 paths outside the leased globs.
     pub paths: Option<List<String, 0, 20>>,
+}
+
+/// `agents.cap` data: a project's max agents or the fleet cap changed. The event's summary is the one quiet line its
+/// chat shows.
+#[serde_with::skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentsCapData {
+    /// Absent for the fleet cap.
+    pub project_ref: Option<ProjectRef>,
+    pub from: Count,
+    pub to: Count,
+    /// The project's agents (or, for the fleet cap, every slot) running and queued just after the change.
+    pub running: Count,
+    pub queued: Count,
+    /// Agents told to push their work and wait (`pauseExtras`).
+    pub paused: Option<List<TaskId, 0, 1000>>,
 }
 
 /// Repo-relative.

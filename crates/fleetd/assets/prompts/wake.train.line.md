@@ -1,1 +1,0 @@
-{{changeId}} ({{prUrl}}): {{text}}

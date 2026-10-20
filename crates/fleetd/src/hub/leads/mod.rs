@@ -6,6 +6,7 @@ pub mod brief;
 pub mod calls;
 pub mod digest;
 pub mod error;
+pub mod events;
 pub mod hooks;
 pub mod lead;
 pub mod ports;
@@ -17,7 +18,6 @@ pub mod wakes;
 pub mod wiring;
 pub mod workstreams;
 
-use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
@@ -31,7 +31,6 @@ pub use self::wakes::{LeadWakes, Trigger};
 pub use self::workstreams::Workstreams;
 use crate::clock::Clock;
 use crate::hub::intake::Intake;
-use crate::hub::intake::router::{IntakeRouter, OneShot};
 use crate::hub::playbooks::{FinishAll, PlaybookError, Playbooks, Research};
 use crate::hub::store::{EventLog, HubDb, HubStore, iso_ms, now_ms};
 
@@ -83,21 +82,15 @@ pub fn now_iso(ctx: &Ctx) -> String {
 }
 
 pub struct AreaOptions<'a> {
-    /// The hub home: `<home>/playbooks` holds overrides, `<home>/claude-router` is the router's empty cwd.
+    /// The hub home: `<home>/playbooks` holds overrides.
     pub home: &'a Path,
     pub leads: LeadsOptions,
-    /// `--router-model`; also the retro's model.
-    pub router_model: Option<String>,
-    /// Where the router's login variables and PATH come from: the hub's own environment.
-    pub env: HashMap<String, String>,
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum AreaError {
     #[error(transparent)]
     Playbook(#[from] PlaybookError),
-    #[error("cannot create the router's directory: {0}")]
-    Io(#[from] std::io::Error),
 }
 
 pub struct Area {
@@ -109,8 +102,6 @@ pub struct Area {
     pub workstreams: Arc<Workstreams>,
     pub research: Arc<Research>,
     pub finish_all: Arc<FinishAll>,
-    /// The `claude -p` runner the router uses; the retro shares it.
-    pub one_shot: Arc<OneShot>,
     pub intake: Arc<Intake>,
     pub removals: Arc<removals::ProjectRemovals>,
 }
@@ -121,11 +112,7 @@ impl Area {
         let ctx = Arc::new(ctx);
         let records = LeadRecords::new(Arc::clone(&ctx.db));
         let playbooks = Playbooks::new(Arc::clone(&ctx.db), Some(options.home.join("playbooks")))?;
-        let wakes = LeadWakes::new(
-            Arc::clone(&ctx),
-            Arc::clone(&records),
-            Arc::clone(&playbooks),
-        );
+        let wakes = LeadWakes::new(Arc::clone(&ctx), Arc::clone(&records));
         let leads = Leads::new(
             Arc::clone(&ctx),
             Arc::clone(&records),
@@ -144,17 +131,10 @@ impl Area {
             Arc::clone(&records),
             Arc::clone(&workstreams),
         );
-        let one_shot = Arc::new(OneShot::new(
-            options.home,
-            options.router_model,
-            &options.env,
-            None,
-        )?);
         let intake = Intake::new(
             Arc::clone(&ctx),
             Arc::clone(&workstreams),
             Arc::clone(&leads),
-            IntakeRouter::new(Arc::clone(&one_shot)),
         );
         let removals = removals::ProjectRemovals::new(Arc::clone(&ctx), Arc::clone(&records));
         Ok(Arc::new(Self {
@@ -166,19 +146,16 @@ impl Area {
             workstreams,
             research,
             finish_all,
-            one_shot,
             intake,
             removals,
         }))
     }
 
 
-    /// The area's loops: decision wakes, project removals (with their catch-up), routing answers, and the leads of
-    /// orders that wait for their machine. They run until
-    /// aborted; `hub/serve` keeps the handles.
+    /// The area's loops: project removals (with their catch-up), and the leads of orders that wait
+    /// for their machine. They run until aborted; `hub/serve` keeps the handles.
     pub fn run(self: &Arc<Self>) -> Vec<tokio::task::JoinHandle<()>> {
         vec![
-            tokio::spawn(Arc::clone(&self.wakes).run_decision_wakes()),
             tokio::spawn(Arc::clone(&self.removals).run()),
             tokio::spawn(Arc::clone(&self.leads).run_waiting()),
         ]

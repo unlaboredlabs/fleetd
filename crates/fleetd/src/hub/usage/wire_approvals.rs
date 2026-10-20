@@ -161,16 +161,20 @@ impl ApprovalHub for OpsPorts {
     }
 
     fn wake_request(&self, request: &HumanRequest) -> BoxFut<'_, ()> {
-        let request = request.clone();
+        let (what, outcome) = request_outcome(request);
+        let text = crate::hub::leads::events::Event::Request {
+            request: request.request_id.as_str(),
+            what: &what,
+            outcome: &outcome,
+            tail: (request.state == RequestState::Ran)
+                .then(|| request.output_tail.as_ref().map(|t| t.as_str()))
+                .flatten(),
+        }
+        .render();
+        let project = request.project_ref.clone();
         Box::pin(async move {
-            let set = self.hub().db.prompts().for_lead(&request.project_ref);
-            let (what, outcome) = request_outcome(&request);
-            let text = set.render(
-                "wake.request_done",
-                &[("requestId", &request.request_id.as_str()), ("what", &what.as_str()), ("outcome", &outcome.as_str())],
-            );
             self.hub().leads.wakes.trigger(
-                &request.project_ref,
+                &project,
                 crate::hub::leads::wakes::Trigger::Line {
                     kind: crate::hub::leads::wakes::LineKind::Request,
                     text,
@@ -214,51 +218,37 @@ impl ApprovalHub for OpsPorts {
             })
         })
     }
-    fn prompts(&self, m: &str, t: &str) -> crate::hub::prompts::PromptSet {
-        match fleetd_contracts::ids::MachineId::new(m) {
-            Ok(m) => self.hub().db.prompts().for_thread(&m, t),
-            Err(_) => crate::hub::prompts::PromptSet::defaults().clone(),
-        }
-    }
 }
 
 /// What a request was and what became of it, in the lead's words for its wake.
+/// What a settled request was and what became of it, for its line in the lead's wake. A command's output tail goes
+/// on the line's body, not here.
 pub fn request_outcome(r: &HumanRequest) -> (String, String) {
     let machine = r.project_ref.machine_id.as_str();
     let what = match (&r.secret, &r.gated, &r.permission) {
-        (Some(s), _, _) => format!("The secret {}", s.key),
+        (Some(s), _, _) => format!("secret {}", s.key),
         (_, Some(g), _) => format!(
-            "Your command `{}`",
+            "your command `{}`",
             clip(&shown_argv(&g.argv.iter().cloned().collect::<Vec<_>>()), 200)
         ),
-        (_, _, Some(p)) => format!("The tool prompt {} {}", p.tool_name, clip(&p.summary, 120)),
-        _ => "The request".into(),
+        (_, _, Some(p)) => format!("tool prompt {} {}", p.tool_name, clip(&p.summary, 120)),
+        _ => "request".into(),
     };
     let evidence = r.evidence.as_ref().map_or("", |e| e.as_str());
     let outcome = match r.state {
         RequestState::Stored => format!(
-            "is stored on {machine} ({evidence}). Use it from its sink; you never see the value."
+            "stored on {machine} ({evidence}); use it from its sink, you never see the value"
         ),
-        RequestState::Withdrawn => "was withdrawn.".into(),
+        RequestState::Withdrawn => "withdrawn".into(),
         RequestState::Denied => format!(
-            "was denied{}{}. Do not run it; say in chat what you do instead.",
+            "denied{}{}; don't run it, say in the chat what you do instead",
             r.answered_by.as_deref().map_or(String::new(), |b| format!(" by {b}")),
             if evidence.is_empty() { String::new() } else { format!(": {evidence}") }
         ),
-        RequestState::Approved => format!("was approved ({evidence})."),
-        RequestState::Ran => {
-            let tail = r.output_tail.as_ref().map_or("", |t| t.as_str()).trim_end();
-            if tail.is_empty() {
-                format!("ran: {evidence}.")
-            } else {
-                format!(
-                    "ran: {evidence}. Output tail:\n{}",
-                    tail.lines().map(|l| format!("  > {l}")).collect::<Vec<_>>().join("\n")
-                )
-            }
-        }
-        RequestState::Failed => format!("did not run: {evidence}."),
-        RequestState::Open => format!("is open again: {evidence}."),
+        RequestState::Approved => format!("approved ({evidence})"),
+        RequestState::Ran => format!("ran: {evidence}"),
+        RequestState::Failed => format!("did not run: {evidence}"),
+        RequestState::Open => format!("open again: {evidence}"),
     };
     (what, outcome)
 }

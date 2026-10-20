@@ -91,6 +91,17 @@ const keyOf = (r: ProjectRef | undefined) => (r ? `${r.machineId}/${r.projectId}
 
 export type Answer = { ok: true; output: unknown } | { ok: false; error: { code: string; message: string; fix?: string } };
 
+/** prompts_list's `orphans` entry (PT's RetiredPromptOverride). */
+export interface Orphan {
+  id: string;
+  title: string;
+  scope: Scope;
+  projectRef?: ProjectRef;
+  text: string;
+  suggestedTarget?: string;
+  why: string;
+}
+
 export class PromptHub {
   readonly prompts: Prompt[];
   retentionDays = 30;
@@ -99,6 +110,9 @@ export class PromptHub {
   offline = false;
 
   /** `edits: false` is a hub nobody has edited a prompt on. */
+  /** Edits of prompts this hub no longer has (prompt trim): listed under prompts_list's `orphans`, deleted by reset. */
+  orphans: Orphan[] = [];
+
   constructor(registry: ReadonlyArray<RegistryEntry>, { edits = true } = {}) {
     this.prompts = registry.map((e) => ({ ...e, global: null, projects: new Map() }));
     this.prompts.push({
@@ -115,18 +129,40 @@ export class PromptHub {
       projects: new Map([["devbox/storefront", { text: "Use pnpm, not npm. The staging site is https://staging.storefront.test.\n", base: "" }]]),
     });
 
+    if (edits) {
+      this.orphans = [
+        {
+          id: "wake.task_result",
+          title: "Wake: task finished",
+          scope: "global",
+          text: "- {{taskId}} {{verb}}: {{title}}{{where}}\n  Before you spawn a follow-up, read the result in full and say in one line what it changes for the plan.\n",
+          suggestedTarget: "lead.start",
+          why: "wakes are now a fixed event format",
+        },
+        {
+          id: "router",
+          title: "Order router",
+          scope: "project",
+          projectRef: { machineId: "devbox", projectId: "storefront" },
+          text: "Route anything about checkout or payments to storefront, never to docs-site.",
+          why: "orders are now written to a project's lead in its chat, so nothing routes them",
+        },
+      ];
+    }
     if (!edits) {
       const own = this.get(INSTRUCTIONS);
       own.global = null;
       own.projects.clear();
       return;
     }
-    // The release before this one shipped the lead prompt without its status line; the human edited that text.
+    // The release before this one shipped the lead prompt without its last paragraph; the human edited that text,
+    // adding a line after its first paragraph.
     const lead = this.get("lead.start");
-    const statusLine = lead.text.split("\n").find((l) => l.includes("fleetd status set")) ?? "";
-    const older = lead.text.replace(`${statusLine}\n`, "");
+    const paragraphs = lead.text.trimEnd().split("\n\n");
+    const older = `${paragraphs.slice(0, -1).join("\n\n")}\n`;
+    const [first = "", ...rest] = older.split("\n\n");
     lead.global = {
-      text: older.replace("How you work:\n", "How you work:\n- Prefer one writer per pull request; split anything bigger into several tasks.\n"),
+      text: [first, "Prefer one writer per pull request; split anything bigger into several tasks.", ...rest].join("\n\n"),
       base: older,
     };
     // storefront's own writer brief, and a hub-wide reviewer edit.
@@ -150,8 +186,10 @@ export class PromptHub {
     switch (tool) {
       case "projects_list":
         return { ok: true, output: { projects: PROJECTS } };
-      case "prompts_list":
-        return { ok: true, output: { prompts: this.prompts.map((p) => this.summary(p, key)) } };
+      case "prompts_list": {
+        const orphans = this.orphans.filter((o) => o.scope !== "project" || (o.projectRef !== undefined && keyOf(o.projectRef) === key));
+        return { ok: true, output: { prompts: this.prompts.map((p) => this.summary(p, key)), orphans } };
+      }
       case "prompt_get": {
         const p = find();
         return p ? { ok: true, output: this.detail(p, key) } : notFound(input["id"]);
@@ -172,6 +210,11 @@ export class PromptHub {
         return { ok: true, output: { ref: refOf(p.id, text), warnings } };
       }
       case "prompt_reset": {
+        const gone = this.orphans.findIndex((o) => o.id === input["id"] && o.scope === input["scope"]);
+        if (gone >= 0) {
+          this.orphans.splice(gone, 1);
+          return { ok: true, output: { effective: { ref: `${String(input["id"])}@0000000000`, text: "" }, scope: "default" } };
+        }
         const p = find();
         if (!p) return notFound(input["id"]);
         if (input["scope"] === "project" && key) p.projects.delete(key);

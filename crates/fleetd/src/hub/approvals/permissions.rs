@@ -5,6 +5,7 @@
 //! approval-required run never waits silently.
 use super::store::{NewRequest, RequestFilter};
 use super::{ApprovalRefused, Approvals, Caller, NodeCommandError, contract_project, project_of, refuse};
+use crate::hub::prompts::fixed::{DenyReason, denied};
 use crate::hub::usage::ports::{HubEvent, NewEvent, ProjectRef, WaitInput};
 use crate::hub::usage::time::{clip, iso, parse_ms, system_ms};
 use fleetd_contracts::chat::ChatRequestId;
@@ -465,14 +466,10 @@ impl Approvals {
                 }),
                 Verdict::Deny(rule) => Some(PermissionDecision::Deny {
                     message: fleetd_contracts::prim::Text::unchecked(clip(
-                        &self
-                            .deps
-                            .hub
-                            .prompts(&project.machine_id, thread_id)
-                            .render(
-                                "permission.denied.policy",
-                                &[("rule", &rule), ("policyFile", &POLICY_FILE_PATH)],
-                            ),
+                        &denied(&DenyReason::Policy {
+                            rule,
+                            file: POLICY_FILE_PATH,
+                        }),
                         2000,
                     )),
                 }),
@@ -702,34 +699,19 @@ impl Approvals {
         let by = r.answered_by.clone().unwrap_or_else(|| "a person".into());
         let machine = &open.project.machine_id;
         let allow = r.state == RequestState::Approved;
-        let texts = self.deps.hub.prompts(machine, &open.thread_id);
         let decision = if allow {
             PermissionDecision::Allow {
                 updated_input: None,
             }
-        } else if by.starts_with("lead") {
-            PermissionDecision::Deny {
-                message: fleetd_contracts::prim::Text::unchecked(clip(
-                    &texts.render(
-                        "permission.denied.withdrawn",
-                        &[("requestId", &open.id.as_str()), ("by", &by.as_str())],
-                    ),
-                    2000,
-                )),
-            }
         } else {
+            let request = open.id.as_str();
+            let reason = if by.starts_with("lead") {
+                DenyReason::Withdrawn { by: &by, request }
+            } else {
+                DenyReason::Human { by: &by, request, said }
+            };
             PermissionDecision::Deny {
-                message: fleetd_contracts::prim::Text::unchecked(clip(
-                    &texts.render(
-                        "permission.denied.human",
-                        &[
-                            ("by", &by.as_str()),
-                            ("requestId", &open.id.as_str()),
-                            ("said", &said.map_or(String::new(), |s| format!(": {s}")).as_str()),
-                        ],
-                    ),
-                    2000,
-                )),
+                message: fleetd_contracts::prim::Text::unchecked(clip(&denied(&reason), 2000)),
             }
         };
         let sent = self
@@ -837,12 +819,9 @@ impl Approvals {
                 updated_input: None,
             }
         } else {
-            let message = input.message.unwrap_or_else(|| {
-                self.deps
-                    .hub
-                    .prompts(m, t)
-                    .render("permission.denied.answer", &[("by", &by)])
-            });
+            let message = input
+                .message
+                .unwrap_or_else(|| denied(&DenyReason::Answer { by: &by }));
             PermissionDecision::Deny {
                 message: fleetd_contracts::prim::Text::unchecked(clip(&message, 2000)),
             }

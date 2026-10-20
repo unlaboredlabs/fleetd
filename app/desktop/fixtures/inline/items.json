@@ -1,0 +1,14 @@
+{
+  "note": "The two inline chat items (ChatItem, feat/chat-contracts) in every state, for the chat fixtures and the inline item tests. acme/storefront on devbox; no personal data.",
+  "items": [
+    { "kind": "secret_request", "requestId": "Q1", "name": "stripe.test_key", "text": "The Stripe test key for the staging box", "sink": "env:devbox:/srv/storefront/.env", "envName": "STRIPE_SECRET_KEY", "state": "open" },
+    { "kind": "secret_request", "requestId": "Q2", "name": "cdn.token", "text": "The deploy token for the CDN", "sink": "file:devbox:/srv/storefront/.cdn-token", "state": "stored", "fingerprint": "ab12cd34", "answeredAt": "2026-10-19T10:22:00.000Z" },
+    { "kind": "secret_request", "requestId": "Q3", "name": "analytics.key", "text": "A key for the old analytics service", "sink": "env:devbox:/srv/storefront/.env", "state": "withdrawn", "note": "You said in the chat to skip it." },
+    { "kind": "command_approval", "requestId": "Q4", "machineId": "devbox", "gated": { "argv": ["pnpm", "run", "migrate", "--env", "staging"], "class": "irreversible", "cwd": "/srv/storefront", "reason": "Run the database migration on the staging box: it adds the `share_snapshots` table", "secretEnv": [{ "name": "DATABASE_URL", "secretKey": "staging.db_url" }], "timeoutSec": 600 }, "state": "open" },
+    { "kind": "command_approval", "requestId": "Q5", "machineId": "devbox", "gated": { "argv": ["./scripts/purge-cdn.sh", "--all"], "class": "money", "reason": "Clear the staging CDN cache; each purge is billed", "timeoutSec": 120 }, "state": "ran", "exitCode": 0, "outputTail": "purged 412 objects\ndone in 3.1s", "answeredAt": "2026-10-19T10:25:30.000Z" },
+    { "kind": "command_approval", "requestId": "Q6", "machineId": "devbox", "gated": { "argv": ["./scripts/rotate-db-password.sh", "staging"], "class": "credential", "reason": "Rotate the staging database password; the old one leaked into a log", "timeoutSec": 300 }, "state": "failed", "exitCode": 1, "outputTail": "error: the staging database refused the connection" },
+    { "kind": "command_approval", "requestId": "Q7", "machineId": "devbox", "gated": { "argv": ["git", "push", "origin", "v2.4.0"], "class": "irreversible", "reason": "Push the release tag the order asked for", "timeoutSec": 60 }, "state": "open", "note": "Not run: devbox's node was offline when you approved. Approve again once it is online." },
+    { "kind": "command_approval", "requestId": "Q8", "machineId": "devbox", "permission": { "threadId": "t-writer-2", "requestId": "perm-1", "toolName": "Bash", "summary": "rm -rf fixtures/generated" }, "state": "denied" },
+    { "kind": "command_approval", "requestId": "Q9", "machineId": "buildbox", "gated": { "argv": ["pnpm", "run", "e2e", "--", "--env", "staging", "--workers", "8"], "class": "money", "reason": "Run the full end-to-end suite against staging; it uses paid browser minutes", "timeoutSec": 1800 }, "state": "approved" }
+  ]
+}

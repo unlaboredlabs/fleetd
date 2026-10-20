@@ -1,5 +1,6 @@
-//! Every prompt fleetd sends a model, as the human sees and edits it: the registry entries, their default, global and
-//! per-project texts, the warnings an edit gets, and the exact first message a session was sent.
+//! The prompts a person can edit, as the human sees them: the registry entries, their default, global and per-project
+//! texts, the warnings an edit gets, the exact first message a session was sent, and edits to prompts a release
+//! retired.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -9,7 +10,7 @@ use crate::brand;
 use crate::ids::{MachineId, ProjectRef, ThreadId, Timestamp};
 
 brand!(
-    /// A registry id: `lead.start`, `task.brief.write`, `wake.intent`, `playbook.bugfix`, `instructions`.
+    /// A registry id: `lead.start`, `task.brief.write`, `instructions`. A retired one keeps its id (`wake.intent`).
     PromptId,
     name = "PromptId",
     pattern = r"^[a-z][a-z0-9_-]*(?:\.[a-z0-9_-]+)*$",
@@ -29,14 +30,10 @@ brand!(
 pub enum PromptKind {
     /// The first message of a session.
     Start,
-    /// A piece of a lead wake (or of the digest every wake starts with).
-    Wake,
-    /// A later message into a running session, or a tool result it reads back.
+    /// A later message into a running session.
     Msg,
-    /// The input of a tool-less one-shot `claude -p` (router, retro).
+    /// The input of a tool-less one-shot `claude -p` (the retro).
     Oneshot,
-    /// A playbook file; its `leadInstructions` go into the digest and intake wakes.
-    Playbook,
     /// The human's custom instructions, appended to every lead and task first message.
     Instructions,
 }
@@ -48,9 +45,8 @@ pub enum PromptGroup {
     Lead,
     Tasks,
     ReviewsAndChecks,
-    WakesAndMessages,
+    Messages,
     OneShots,
-    Playbooks,
     Instructions,
 }
 
@@ -222,4 +218,23 @@ pub struct SessionPrompt {
     pub refs: Vec<SessionPromptRef>,
     /// Tools the claude runner never offers a fleetd session.
     pub disallowed_tools: Vec<String>,
+}
+
+/// An override of a prompt a release retired (merged into another, or replaced by fixed text), kept so the human can
+/// carry what they wrote into a prompt that still exists. Its file stays until `prompt_reset` on its id.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RetiredPromptOverride {
+    /// The retired id.
+    pub id: PromptId,
+    pub title: String,
+    /// `global` or `project`.
+    pub scope: PromptScope,
+    pub project_ref: Option<ProjectRef>,
+    pub text: String,
+    /// The prompt that now covers what this one said, when one does. fleetd never copies the text over itself.
+    pub suggested_target: Option<PromptId>,
+    /// What replaced it, in one line.
+    pub why: String,
 }

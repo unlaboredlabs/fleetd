@@ -78,6 +78,7 @@ pub struct CmdOutput {
 pub enum WakeKind {
     TaskResult,
     TaskWaiting,
+    CapRaised,
 }
 
 pub trait TaskPorts: Send + Sync {

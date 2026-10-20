@@ -567,6 +567,11 @@
           "type": "string"
         },
         {
+          "const": "agents.cap",
+          "description": "A project's max agents or the fleet cap changed; `data` is `tasks::AgentsCapData`, `summary` the chat's line.",
+          "type": "string"
+        },
+        {
           "const": "lease.stale",
           "description": "A lease held for over 4 h; flagged once, never released by the hub. `data.taskId`, `data.area`.",
           "type": "string"
@@ -1214,15 +1219,29 @@
     },
     "SlotStatePerProject": {
       "properties": {
+        "maxAgents": {
+          "description": "The most of the project's agents (its tasks: writers, readers, reviewers) that run at once; its lead's own\nturns don't count. The fleet `cap` until set.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
         },
-        "share": {
+        "queued": {
+          "description": "Its agents waiting for a slot, paused ones included.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "running": {
+          "description": "Its agents running now. Above `maxAgents` right after the cap was lowered: nothing is stopped for it.",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
         },
         "used": {
+          "description": "Every slot it holds, its lead's turns included.",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
@@ -1230,7 +1249,9 @@
       },
       "required": [
         "projectRef",
-        "share",
+        "maxAgents",
+        "running",
+        "queued",
         "used"
       ],
       "type": "object"

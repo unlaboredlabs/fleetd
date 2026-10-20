@@ -128,14 +128,14 @@
 <td>No</td>
 </tr>
 <tr>
-<td>Router</td>
-<td>One <code dir="auto">claude -p</code> on the hub that reads each new order; not a session</td>
+<td>Retro</td>
+<td>One <code dir="auto">claude -p</code> on the hub that proposes playbook changes from incidents; not a session</td>
 <td>None, no MCP servers</td>
 <td>No</td>
 </tr>
 </tbody>
 </table>
-<p>The router’s Claude Code tools: none. fleetd starts it with <code dir="auto">--tools ""</code>, <code dir="auto">--strict-mcp-config</code> and <code dir="auto">--safe-mode</code>.</p>
+<p>The retro’s Claude Code tools: none. fleetd starts it with <code dir="auto">--tools ""</code>, <code dir="auto">--strict-mcp-config</code> and <code dir="auto">--safe-mode</code>.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="hub-limits">Hub limits</h2><a class="sl-anchor-link" href="#hub-limits"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Hub limits”</span></a></div>
 <p>The hub checks these on every fleetd call a session makes, through its MCP tools or a <code dir="auto">fleetd</code> command in its shell. A refusal says why and what to do instead.</p>
 <table>
@@ -887,6 +887,12 @@
 </thead>
 <tbody>
 <tr>
+<td><code dir="auto">closeOver</code></td>
+<td>string</td>
+<td>no</td>
+<td>At most 300 characters.</td>
+</tr>
+<tr>
 <td><code dir="auto">workstreamId</code></td>
 <td>string</td>
 <td>yes</td>
@@ -1528,6 +1534,12 @@
 </thead>
 <tbody>
 <tr>
+<td><code dir="auto">closeOver</code></td>
+<td>string</td>
+<td>no</td>
+<td>At most 300 characters.</td>
+</tr>
+<tr>
 <td><code dir="auto">workstreamId</code></td>
 <td>string</td>
 <td>yes</td>
@@ -1538,7 +1550,7 @@
 <p><strong>Who may call:</strong> a lead, a task’s agent, checked by the hub. <strong>Needs a human:</strong> no.</p>
 <div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="json"><code><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"name"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"claim_done"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"arguments"</span><span style="--0:#E1E4E8;--1:#24292E">: {</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"workstreamId"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"W3"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">  </span></span><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="{  &quot;name&quot;: &quot;claim_done&quot;,  &quot;arguments&quot;: {    &quot;workstreamId&quot;: &quot;W3&quot;  }}"><div></div></button></div></figure></div>
 <div class="sl-heading-wrapper level-h2"><h2 id="claude-code-tools">Claude Code tools</h2><a class="sl-anchor-link" href="#claude-code-tools"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Claude Code tools”</span></a></div>
-<p>The same for every session. The router gets none. Listed for Claude Code 2.1.302, the version fleetd is tested with.</p>
+<p>The same for every session. The retro gets none. Listed for Claude Code 2.1.302, the version fleetd is tested with.</p>
 <p><strong>Allowed:</strong> <code dir="auto">Bash</code>, <code dir="auto">DesignSync</code>, <code dir="auto">Edit</code>, <code dir="auto">NotebookEdit</code>, <code dir="auto">Read</code>, <code dir="auto">ReportFindings</code>, <code dir="auto">Skill</code>, <code dir="auto">ToolSearch</code>, <code dir="auto">WebFetch</code>, <code dir="auto">WebSearch</code>, <code dir="auto">Write</code>.</p>
 <p>A project’s policy file can deny more with <code dir="auto">tools.deny</code>. In a run started approval-required, Claude Code asks before it uses a tool and the question comes to you; <code dir="auto">tools.allow</code> answers it ahead of time.</p>
 <p><strong>Blocked</strong>, in <code dir="auto">--disallowedTools</code> and in the <code dir="auto">permissions.deny</code> of fleetd’s settings, so your own settings can’t turn them back on:</p>
@@ -1659,7 +1671,7 @@
 </tbody>
 </table>
 <div class="sl-heading-wrapper level-h2"><h2 id="what-your-own-setup-adds">What your own setup adds</h2><a class="sl-anchor-link" href="#what-your-own-setup-adds"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “What your own setup adds”</span></a></div>
-<p>fleetd starts sessions with your own Claude Code setup underneath. The router is the exception: it runs in safe mode with none of it (see <a href="#roles">Roles</a>).</p>
+<p>fleetd starts sessions with your own Claude Code setup underneath. The retro is the exception: it runs in safe mode with none of it (see <a href="#roles">Roles</a>).</p>
 <table>
 <thead>
 <tr>

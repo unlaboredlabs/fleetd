@@ -96,7 +96,9 @@ const payloads = (f: Fixture, problems: Array<string>): Array<Payload> => {
         ? validator("HubEvent.json", "#/$defs/HubEvent")
         : t.kind === "live"
           ? validator("AppServerMessage.json", "#/$defs/LiveFrame")
-          : validator("McpTools.json", "#/$defs/McpTools/properties/fleetd_status.output");
+          : t.kind === "chat_delta"
+            ? validator("AppServerMessage.json", "#/$defs/ChatDelta")
+            : validator("McpTools.json", "#/$defs/McpTools/properties/fleetd_status.output");
     out.push({ what: `${t.kind} at ${t.ms} ms`, fn, value: t.payload });
   }
   for (const c of f.calls) {

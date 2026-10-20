@@ -1,6 +1,5 @@
 //! An order for a project without a lead: the lead starts and gets it, or the order waits with the reason, and the
 //! lead starts once the machine comes online with a usable runner.
-use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -11,7 +10,7 @@ use fleetd_contracts::ledger::{Decision, HumanRequest, IntakeChannel, Workstream
 use fleetd_contracts::mcp::{ErrorCode, ThreadLaunchInput};
 use fleetd_contracts::model::{ProjectSummary, ThreadCounts};
 
-use super::{SubmitInput, SubmitResult};
+use super::SubmitInput;
 use crate::hub::leads::hooks::{BoxFuture, PolicyHook};
 use crate::hub::leads::ports::{CmdOutcome, LeadPorts};
 use crate::hub::leads::wakes::WAKE_DEBOUNCE;
@@ -140,8 +139,6 @@ pub(crate) fn hub(runner_usable: bool, auto_start: bool) -> Hub {
         AreaOptions {
             home: home.path(),
             leads: Default::default(),
-            router_model: None,
-            env: HashMap::new(),
         },
     )
     .unwrap();
@@ -180,13 +177,11 @@ impl Hub {
             })
             .await
             .unwrap();
-        let SubmitResult::Placed {
-            workstream_id,
-            next,
-            lead_waiting,
-            ..
-        } = placed;
-        (workstream_id, next.unwrap(), lead_waiting)
+        (
+            placed.workstream_id,
+            placed.next.unwrap(),
+            placed.lead_waiting,
+        )
     }
 
     pub(crate) fn launched_prompts(&self) -> Vec<String> {
@@ -254,12 +249,12 @@ async fn an_order_for_a_project_without_a_lead_starts_it_and_the_lead_gets_the_o
     let sends = hub.node.sends.lock().unwrap().clone();
     assert_eq!(sends.len(), 1);
     assert!(
-        sends[0].contains(&format!("New intent {w2}")),
+        sends[0].contains(&format!("new order {w2}")),
         "{}",
         sends[0]
     );
     assert!(
-        !sends[0].contains(&format!("New intent {w1}")),
+        !sends[0].contains(&format!("new order {w1}")),
         "{}",
         sends[0]
     );

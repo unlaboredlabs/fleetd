@@ -28,11 +28,11 @@ use crate::prim::{
 use crate::projects::{AddId, CloneTarget, GitHubRepos, MachineRepos, ProjectInspect};
 use crate::prompts::{
     PromptDetail, PromptId, PromptRef, PromptScope, PromptSummary, PromptVersion, PromptWarning,
-    SessionPrompt,
+    RetiredPromptOverride, SessionPrompt,
 };
 use crate::retro::{RetroProposal, RetroProposalState, RetroRun};
 use crate::secrets::{SealedSecret, SecretFingerprint};
-use crate::status::{StatusDoc, StatusScope};
+use crate::status::{ProjectStatusRow, StatusDoc, StatusScope};
 use crate::steer::{Steer, SteerId, SteerMode, SteerTarget};
 use crate::subscriptions::{Subscription, SubscriptionMachines, SubscriptionTypes, WebhookUrl};
 use crate::tasks::{SlotState, Task, TaskId, TaskState};
@@ -349,11 +349,11 @@ pub type IntakeRefs = List<IntakeRef, 0, 20>;
 input!(
     #[serde(remote = "Self")]
     IntakeSubmitInput {
-        /// With projectId, or neither: then the router picks the project unless the text starts with `@<project>`.
+        /// With projectId, or neither: then a leading `@<project>` picks the project, else the only one the caller may use.
         machine_id: Option<MachineId>,
         project_id: Option<ProjectId>,
         text: IntakeText,
-        /// Skips the router for the template, like a `fix:` or `research:` prefix.
+        /// The playbook the order's workstream pins; none when absent.
         template: Option<PlaybookName>,
         /// From attachment_put; delivered to the project under `.fleetd/attachments/<W>/` when the order is placed.
         attachments: Option<Attachments>,
@@ -374,11 +374,11 @@ output!(IntakeSubmitOutput {
     lead_waiting: Option<String>,
 });
 
-// intake_preview: where intake_submit would send this text (the `@project` and prefix rules, then the router), without
-// creating anything. Cached by text for 10 minutes.
+// intake_preview: where intake_submit would send this text (a leading `@project`, or the only project), without
+// creating anything.
 input!(IntakePreviewInput { text: IntakeText });
 output!(IntakePreviewOutput {
-    /// Absent: the router could not place it (intake_submit refuses it: name the project).
+    /// Absent: the text names no project and there is more than one (intake_submit would refuse it).
     echo: Option<IntakeEcho>,
 });
 
@@ -713,19 +713,34 @@ output!(TasksListOutput {
 input!(TaskGetInput { task_id: TaskId });
 output!(TaskGetOutput { task: Task });
 
-// cap_set: the global cap, a project's share, or both.
-input!(CapSetShare { project_ref: ProjectRef, share: Int<0, 1000> });
+// cap_set: the fleet cap, a project's max agents, or both. Lowering stops nothing; raising starts queued agents at once.
+input!(CapSetProject {
+    project_ref: ProjectRef,
+    /// 1 up to the fleet cap.
+    max_agents: Int<1, 1000>,
+    /// Lowering: tell the agents above the new max to push their work in progress and wait; they resume when a slot
+    /// frees. Without it they finish their current work.
+    pause_extras: Option<bool>,
+});
 input!(
     #[serde(remote = "Self")]
-    CapSetInput { cap: Option<Int<1, 1000>>, share: Option<CapSetShare> }
+    CapSetInput {
+        /// The fleet cap on running turns, leads' included. Needs an admin key.
+        cap: Option<Int<1, 1000>>,
+        project: Option<CapSetProject>,
+    }
 );
 checked!(CapSetInput, |input| {
-    if input.cap.is_none() && input.share.is_none() {
-        return Err("expected cap, share or both".into());
+    if input.cap.is_none() && input.project.is_none() {
+        return Err("expected cap, project or both".into());
     }
     Ok(())
 });
-output!(CapSetOutput { slots: SlotState });
+output!(CapSetOutput {
+    slots: SlotState,
+    /// The agents `pauseExtras` paused.
+    paused: Option<List<TaskId, 0, 1000>>,
+});
 
 // claims_list
 input!(ClaimsListInput {
@@ -1026,7 +1041,11 @@ input!(PromptsListInput {
     /// The texts in effect for this project; absent: hub-wide.
     project_ref: Option<ProjectRef>,
 });
-output!(PromptsListOutput { prompts: Vec<PromptSummary> });
+output!(PromptsListOutput {
+    prompts: Vec<PromptSummary>,
+    /// Your edits to prompts a release retired: hub-wide ones, and the asked project's.
+    orphans: Vec<RetiredPromptOverride>
+});
 input!(PromptGetInput { id: PromptId, project_ref: Option<ProjectRef> });
 output!(PromptGetOutput {
     #[serde(flatten)]
@@ -1084,6 +1103,12 @@ output!(StatusWaitOutput {
     doc: Option<StatusDoc>,
     unchanged: Option<bool>,
     version: Count,
+});
+// status_projects: one row per project the key reads, for the Status screen.
+input!(StatusProjectsInput {});
+output!(StatusProjectsOutput {
+    /// By title.
+    rows: List<ProjectStatusRow, 0, 200>,
 });
 input!(StatusSeenInput {
     scope: StatusScope,
@@ -1255,7 +1280,7 @@ tools! {
     digest_get => DigestGet, Read, DigestGetInput, DigestGetOutput;
     tasks_list => TasksList, Read, TasksListInput, TasksListOutput;
     task_get => TaskGet, Read, TaskGetInput, TaskGetOutput;
-    cap_set => CapSet, Admin, CapSetInput, CapSetOutput;
+    cap_set => CapSet, Operate, CapSetInput, CapSetOutput;
     usage_status => UsageStatus, Read, UsageStatusInput, UsageStatusOutput;
     usage_resume => UsageResume, Operate, UsageResumeInput, UsageResumeOutput;
     claims_list => ClaimsList, Read, ClaimsListInput, ClaimsListOutput;
@@ -1296,6 +1321,7 @@ tools! {
     status_get => StatusGet, Read, StatusGetInput, StatusGetOutput;
     status_wait => StatusWait, Read, StatusWaitInput, StatusWaitOutput;
     status_seen => StatusSeen, Read, StatusSeenInput, StatusSeenOutput;
+    status_projects => StatusProjects, Read, StatusProjectsInput, StatusProjectsOutput;
     plan_get => PlanGet, Read, PlanGetInput, PlanGetOutput;
     github_webhook_set => GithubWebhookSet, Admin, GithubWebhookSetInput, GithubWebhookSetOutput;
     // Human keys only (the handler checks); the lead steers its tasks with `fleetd task message`.
@@ -1440,7 +1466,7 @@ mod tests {
             assert_eq!(McpToolName::parse(tool.as_str()), Some(*tool));
             assert_eq!(serde_json::to_value(tool).unwrap(), tool.as_str());
         }
-        assert_eq!(McpToolName::CapSet.scope(), Role::Admin);
+        assert_eq!(McpToolName::CapSet.scope(), Role::Operate);
         assert_eq!(McpToolName::RetroRun.scope(), Role::Admin);
         assert_eq!(McpToolName::DoctorFix.scope(), Role::Operate);
         assert_eq!(McpToolName::FleetdStatus.scope(), Role::Read);

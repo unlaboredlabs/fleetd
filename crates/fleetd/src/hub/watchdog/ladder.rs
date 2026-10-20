@@ -29,7 +29,7 @@ pub const DEFAULT_CONFIG: WatchdogConfig = WatchdogConfig {
 };
 
 /// The prompt id of the stall nudge; the hub renders it from the thread's own texts when it sends it.
-pub const NUDGE: &str = "watchdog.nudge";
+pub const NUDGE: &str = crate::hub::prompts::fixed::WATCHDOG_NUDGE;
 
 /// Thresholds from `FLEETD_STALL_*` / `FLEETD_WATCHDOG_EVERY_SEC` (seconds); unset or invalid keeps the default.
 pub fn config_from_env(get: impl Fn(&str) -> Option<String>) -> WatchdogConfig {

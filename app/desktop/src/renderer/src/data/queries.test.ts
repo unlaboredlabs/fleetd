@@ -21,6 +21,7 @@ const fakeHub = () => {
     subscribe: (l) => ((listener = l), () => undefined),
     resync: resyncs,
     live: lives,
+    chat: () => Promise.resolve(),
   };
   return { hub, send: (f: HubFrame) => listener(f), answers, calls, inputs, resyncs, lives };
 };
@@ -165,6 +166,20 @@ describe("the person's own answers", () => {
     // The hub's own event afterwards changes nothing.
     fake.send(event(2, "ask.answered", { askId: "A1", workstreamId: "W1" }));
     expect(selectNeedsYouCount(layer.store.getState())).toBe(1);
+    stop();
+  });
+
+  it("shows a saved max agents at once, over the last live frame's slots", async () => {
+    const { fake, layer, stop } = await loaded();
+    const ref = { machineId: "devbox", projectId: "storefront" };
+    const before = { cap: 16, used: 6, queued: 0, reservedBand: 2, perProject: [{ projectRef: ref, maxAgents: 12, running: 6, queued: 0, used: 7 }] };
+    fake.send({ t: "live", frame: { at: "2026-10-19T10:00:00.000Z", full: true, lanes: [], slots: before } });
+    const out = layer.call("cap_set", { project: { projectRef: ref, maxAgents: 4 } });
+    const after = { ...before, perProject: [{ ...before.perProject[0], maxAgents: 4 }] };
+    fake.answers.at(-1)?.({ slots: after });
+    await out;
+    expect(layer.store.getState().live.slots?.perProject[0]?.maxAgents).toBe(4);
+    expect(layer.store.getState().slots?.perProject[0]?.maxAgents).toBe(4);
     stop();
   });
 

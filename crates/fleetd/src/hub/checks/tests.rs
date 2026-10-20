@@ -7,11 +7,12 @@ use super::*;
 use crate::clock::{Clock, SystemClock};
 use crate::hub::estimates::Estimates;
 use crate::hub::incidents::{IncidentFilter, Incidents};
-use crate::hub::store::{EventLog, HubDb, WaitInput};
+use crate::hub::orders::open_work::{Item, OpenWork};
+use crate::hub::store::{EventLog, HubDb, NewEvent, WaitInput};
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef};
 use fleetd_contracts::ledger::{
-    MetricValues, PlaybookRef, Workstream, WorkstreamId, WorkstreamState,
+    BriefHash, MetricValues, PlaybookRef, Workstream, WorkstreamId, WorkstreamState,
 };
 use fleetd_contracts::mcp::ErrorCode;
 use fleetd_contracts::model::ActionItem;
@@ -64,6 +65,14 @@ struct Fake {
     confirmations: Mutex<HashMap<String, HumanConfirmation>>,
     /// When the brief was last frozen or amended.
     frozen_ms: Mutex<Option<i64>>,
+    /// Stored when a check runs a command: an amend landing while the claim's checks run.
+    amend_on_check: Mutex<Option<Workstream>>,
+    /// Stored just before the next `put_workstream_if` compares: a write that lands between a read and that write.
+    lands_first: Mutex<Option<Workstream>>,
+    /// The unlanded write work every workstream has.
+    open_work: Mutex<Vec<OpenWork>>,
+    /// Write work that starts when a check runs a command, as a review's fix spawned while the workstream verifies.
+    fix_on_check: Mutex<Option<OpenWork>>,
 }
 
 impl Ports for Fake {
@@ -75,6 +84,18 @@ impl Ports for Fake {
             .lock()
             .unwrap()
             .insert(w.workstream_id.clone(), w.clone());
+    }
+    fn put_workstream_if(&self, w: &Workstream, expect: &Workstream) -> bool {
+        if let Some(first) = self.lands_first.lock().unwrap().take() {
+            self.put_workstream(&first);
+        }
+        let mut all = self.workstreams.lock().unwrap();
+        let now = all.get(&w.workstream_id).unwrap();
+        if now.state != expect.state || now.brief_hash != expect.brief_hash {
+            return false;
+        }
+        all.insert(w.workstream_id.clone(), w.clone());
+        true
     }
     fn wake(&self, _: &ProjectRef, wake: ClaimWake) {
         self.wakes.lock().unwrap().push(wake);
@@ -89,6 +110,12 @@ impl Ports for Fake {
             .lock()
             .unwrap()
             .push(json!({ "machineId": machine, "cwd": cwd, "argv": argv }));
+        if let Some(fix) = self.fix_on_check.lock().unwrap().take() {
+            self.open_work.lock().unwrap().push(fix);
+        }
+        if let Some(amended) = self.amend_on_check.lock().unwrap().take() {
+            self.put_workstream(&amended);
+        }
         let (code, tail) = self.node.lock().unwrap().clone();
         Box::pin(async move {
             Ok(CommandRun {
@@ -116,6 +143,9 @@ impl Ports for Fake {
     }
     fn tasks_of(&self, _: &ProjectRef, _: &WorkstreamId, _: usize) -> Vec<Task> {
         vec![]
+    }
+    fn open_work(&self, _: &Workstream) -> Vec<OpenWork> {
+        self.open_work.lock().unwrap().clone()
     }
     fn spawn_judge(&self, _: JudgeSpawn) -> BoxFuture<'_, Result<Task, Refusal>> {
         Box::pin(async { Err(super::ports::invalid("no judges here", None)) })
@@ -234,7 +264,11 @@ async fn fails_while_the_file_is_missing_then_passes_and_marks_the_workstream_do
     let k = kit(vec![workstream("W1", Some(vec![doc_check()]))]);
     k.set_node(1, "checked /w/p1\n");
 
-    let failed = k.claims.claim_done(&w1(), LEAD_BY, None).await.unwrap();
+    let failed = k
+        .claims
+        .claim_done(&w1(), LEAD_BY, None, None)
+        .await
+        .unwrap();
     assert_eq!(
         (failed.claim_id.as_str(), failed.state),
         ("C1", WorkstreamState::Verifying)
@@ -289,24 +323,22 @@ async fn fails_while_the_file_is_missing_then_passes_and_marks_the_workstream_do
         panic!("one claim_failed wake: {wakes:?}")
     };
     assert_eq!(
-        claim_failed_lines(
-            crate::hub::prompts::PromptSet::defaults(),
-            claim_id,
-            workstream_id,
-            failures,
-        ),
+        claim_failed_lines(claim_id, workstream_id, failures),
         [
-            "- Claim C1 on W1 failed; W1 stays verifying. Checks that did not pass:",
+            "- claim C1 on W1 failed: W1 stays verifying",
             "  done:0 (on lab-a: `test -f docs/x.md` exits 0): fail, exit 1",
             "    > `test -f docs/x.md` in /w/p1 exited 1 (expected 0)",
             "    > checked /w/p1",
-            "  next: fix what failed (e.g. a task with serves done:0), then `claim_done` {workstreamId: \"W1\"} again.",
         ]
         .join("\n")
     );
 
     k.set_node(0, "");
-    let passed = k.claims.claim_done(&w1(), LEAD_BY, None).await.unwrap();
+    let passed = k
+        .claims
+        .claim_done(&w1(), LEAD_BY, None, None)
+        .await
+        .unwrap();
     assert_eq!(
         (passed.claim_id.as_str(), passed.state),
         ("C2", WorkstreamState::Done)
@@ -349,7 +381,11 @@ async fn fails_while_the_file_is_missing_then_passes_and_marks_the_workstream_do
             ("C1".into(), ClaimOutcome::Fail)
         ]
     );
-    let again = k.claims.claim_done(&w1(), LEAD_BY, None).await.unwrap_err();
+    let again = k
+        .claims
+        .claim_done(&w1(), LEAD_BY, None, None)
+        .await
+        .unwrap_err();
     assert_eq!(
         (again.code, again.message.as_str()),
         (ErrorCode::Invalid, "W1 is already done.")
@@ -362,10 +398,16 @@ async fn records_one_false_claim_incident_at_the_third_failed_claim() {
     k.set_node(1, "");
     let incidents = || k.incidents.list(&IncidentFilter::default(), 10).unwrap();
     for _ in 0..2 {
-        k.claims.claim_done(&w1(), LEAD_BY, None).await.unwrap();
+        k.claims
+            .claim_done(&w1(), LEAD_BY, None, None)
+            .await
+            .unwrap();
     }
     assert!(incidents().is_empty());
-    k.claims.claim_done(&w1(), LEAD_BY, None).await.unwrap();
+    k.claims
+        .claim_done(&w1(), LEAD_BY, None, None)
+        .await
+        .unwrap();
     let recorded = incidents();
     assert_eq!(recorded.len(), 1);
     let i = &recorded[0];
@@ -387,7 +429,10 @@ async fn records_one_false_claim_incident_at_the_third_failed_claim() {
             .collect::<Vec<_>>(),
         expected
     );
-    k.claims.claim_done(&w1(), LEAD_BY, None).await.unwrap();
+    k.claims
+        .claim_done(&w1(), LEAD_BY, None, None)
+        .await
+        .unwrap();
     assert_eq!(incidents().len(), 1);
     assert_eq!(k.state(), WorkstreamState::Verifying);
 }
@@ -403,7 +448,11 @@ async fn asks_no_one_once_an_automatic_check_failed() {
     )]);
     k.set_node(1, "");
     k.confirm("done.1", "yes", 2_000);
-    let skipped = k.claims.claim_done(&w1(), LEAD_BY, None).await.unwrap();
+    let skipped = k
+        .claims
+        .claim_done(&w1(), LEAD_BY, None, None)
+        .await
+        .unwrap();
     let r = &skipped.claim.unwrap().results[1];
     assert_eq!(
         (r.result, r.ran_by),
@@ -413,69 +462,6 @@ async fn asks_no_one_once_an_automatic_check_failed() {
         r.evidence.as_str(),
         "not run: a judge or the human is asked only once every earlier check passes"
     );
-}
-
-/// A human check is a question the lead asks in chat; it passes only on a yes logged for the brief as it stands now.
-#[tokio::test]
-async fn a_human_check_passes_on_a_yes_logged_after_the_brief_froze() {
-    let k = kit(vec![workstream(
-        "W1",
-        Some(vec![
-            doc_check(),
-            json!({ "type": "human", "question": "Looks good on your end?" }),
-        ]),
-    )]);
-    k.set_node(0, "");
-    k.freeze_at(1_000);
-    let result = |c: &fleetd_contracts::verification::Claim| c.results[1].clone();
-
-    let missing = k.claims.claim_done(&w1(), LEAD_BY, None).await.unwrap();
-    let r = result(missing.claim.as_ref().unwrap());
-    assert_eq!((r.result, r.ran_by), (CheckOutcome::Fail, CheckResultRanBy::Human));
-    assert_eq!(
-        r.evidence.as_str(),
-        "not confirmed yet: ask the human in chat: \"Looks good on your end?\", then log their answer with decide {key: \"done.1\", value: \"yes\" or \"no\", workstreamId: \"W1\"}"
-    );
-
-    k.confirm("done.1", "no", 2_000);
-    let no = k.claims.claim_done(&w1(), LEAD_BY, None).await.unwrap();
-    let r = result(no.claim.as_ref().unwrap());
-    assert_eq!(r.result, CheckOutcome::Fail);
-    assert_eq!(r.evidence.as_str(), "the human said \"no\" in chat (D1)");
-
-    k.confirm("done.1", "yes", 3_000);
-    let yes = k.claims.claim_done(&w1(), LEAD_BY, None).await.unwrap();
-    let claim = yes.claim.unwrap();
-    assert_eq!(claim.outcome, ClaimOutcome::Pass);
-    assert_eq!(result(&claim).evidence.as_str(), "the human said yes in chat (D2)");
-}
-
-/// The research's `done.0 = yes` must not pass the amended build's check at the same index: an answer logged before
-/// the brief's latest freeze or amend is about a brief that no longer stands.
-#[tokio::test]
-async fn a_yes_logged_before_an_amend_never_passes_the_amended_brief() {
-    let k = kit(vec![workstream(
-        "W1",
-        Some(vec![json!({ "type": "human", "question": "Ship the build?" })]),
-    )]);
-    k.confirm("done.0", "yes", 1_000);
-    k.freeze_at(5_000);
-    let stale = k.claims.claim_done(&w1(), LEAD_BY, None).await.unwrap();
-    let claim = stale.claim.unwrap();
-    assert_eq!(claim.outcome, ClaimOutcome::Fail);
-    assert!(
-        claim.results[0]
-            .evidence
-            .as_str()
-            .starts_with("the answer in D1 predates the brief's latest version: ask the human in chat"),
-        "{}",
-        claim.results[0].evidence.as_str()
-    );
-    assert_ne!(k.state(), WorkstreamState::Done);
-
-    k.confirm("done.0", "yes", 6_000);
-    let fresh = k.claims.claim_done(&w1(), LEAD_BY, None).await.unwrap();
-    assert_eq!(fresh.claim.unwrap().outcome, ClaimOutcome::Pass);
 }
 
 #[tokio::test]
@@ -493,7 +479,7 @@ async fn refuses_drafts_other_projects_and_unknown_workstreams() {
     ]);
     let draft = k
         .claims
-        .claim_done(&WorkstreamId::unchecked("W2"), LEAD_BY, None)
+        .claim_done(&WorkstreamId::unchecked("W2"), LEAD_BY, None, None)
         .await
         .unwrap_err();
     assert_eq!(
@@ -507,7 +493,7 @@ async fn refuses_drafts_other_projects_and_unknown_workstreams() {
         serde_json::from_value(json!({ "machineId": "lab-b", "projectId": "p9" })).unwrap();
     assert_eq!(
         k.claims
-            .claim_done(&w1(), "lead:lab-b/p9", Some(&other))
+            .claim_done(&w1(), "lead:lab-b/p9", Some(&other), None)
             .await
             .unwrap_err()
             .code,
@@ -515,7 +501,7 @@ async fn refuses_drafts_other_projects_and_unknown_workstreams() {
     );
     assert_eq!(
         k.claims
-            .claim_done(&WorkstreamId::unchecked("W99"), LEAD_BY, None)
+            .claim_done(&WorkstreamId::unchecked("W99"), LEAD_BY, None, None)
             .await
             .unwrap_err()
             .code,
@@ -523,7 +509,7 @@ async fn refuses_drafts_other_projects_and_unknown_workstreams() {
     );
     let idle = k
         .claims
-        .claim_done(&WorkstreamId::unchecked("W3"), LEAD_BY, None)
+        .claim_done(&WorkstreamId::unchecked("W3"), LEAD_BY, None, None)
         .await
         .unwrap_err();
     assert_eq!(
@@ -531,4 +517,351 @@ async fn refuses_drafts_other_projects_and_unknown_workstreams() {
         "W3 is idle: finish-all: nothing left with a value source. A finish-all run ends idle, not done."
     );
     assert!(k.commands.lock().unwrap().is_empty());
+}
+
+/// The build brief of W4's amend, as `brief_create` writes it: a verifying workstream is running again. Its check 0 is a
+/// human one too, so the research's `done.0` answer would pass it if an old answer counted.
+fn build_brief(mut w: Workstream) -> Workstream {
+    w.brief = Some(
+        serde_json::from_value(
+            json!({ "goal": "build schedules", "why": "the human chose to build", "pointers": [],
+            "constraints": [], "tier": "L", "doneWhen": [
+                { "type": "human", "question": "Schedules are live in the app: looks good on your end?" },
+                doc_check(),
+            ] }),
+        )
+        .unwrap(),
+    );
+    w.brief_hash = Some(BriefHash::unchecked("b".repeat(64)));
+    w.state = WorkstreamState::Running;
+    w
+}
+
+/// A research workstream with one human check ("did this answer your question?"), under brief hash a…, frozen at 1 s.
+fn research_kit() -> Kit {
+    let research = vec![
+        json!({ "type": "human", "question": "Did the answer on scheduled work answer your question?" }),
+    ];
+    let k = kit(vec![workstream("W1", Some(research))]);
+    let mut w = k.ports.workstream(&w1()).unwrap();
+    w.brief_hash = Some(BriefHash::unchecked("a".repeat(64)));
+    k.ports.put_workstream(&w);
+    k.freeze_at(1_000);
+    k
+}
+
+impl Kit {
+    /// The lead amends W1 to the build at `at_ms`, as `brief_create` does: the new brief, its freeze, the old claim voided.
+    fn amend_to_build(&self, at_ms: i64) {
+        self.ports
+            .put_workstream(&build_brief(self.ports.workstream(&w1()).unwrap()));
+        self.freeze_at(at_ms);
+        self.claims.void(&w1()).unwrap();
+    }
+    async fn closed(&self) -> bool {
+        !self
+            .events_of(&[HubEventType::WorkstreamDone, HubEventType::ClaimPassed])
+            .await
+            .is_empty()
+    }
+}
+
+/// W4 on a real hub: a research order's answer-only brief had one human check. The human said it answered the
+/// question and chose to build; the lead logged done.0 = yes and amended the brief to the build. That yes, logged for
+/// the research brief, must never pass the build brief's own check 0: only an answer logged after the amend counts.
+#[tokio::test]
+async fn w4_a_claim_on_the_old_brief_never_closes_the_amended_build() {
+    let k = research_kit();
+    k.confirm("done.0", "yes", 2_000);
+    k.amend_to_build(3_000);
+    k.set_node(0, "");
+    let stale = k.claims.claim_done(&w1(), LEAD_BY, None, None).await.unwrap();
+    assert_eq!(stale.state, WorkstreamState::Running, "{}", stale.next);
+    let claim = stale.claim.unwrap();
+    assert_eq!(claim.outcome, ClaimOutcome::Fail);
+    assert!(
+        claim.results[0]
+            .evidence
+            .as_str()
+            .starts_with("the answer in D1 predates the brief's latest version: ask the human in chat"),
+        "{}",
+        claim.results[0].evidence.as_str()
+    );
+    assert!(!k.closed().await);
+
+    // The human tries the build and says yes in chat; the lead logs it: now it is done.
+    k.confirm("done.0", "yes", 4_000);
+    let passed = k.claims.claim_done(&w1(), LEAD_BY, None, None).await.unwrap();
+    assert_eq!(passed.state, WorkstreamState::Done);
+}
+
+/// The amend lands while the old brief's claim runs its checks: that claim never counts, and the build brief stays.
+#[tokio::test]
+async fn a_claim_finishing_after_the_amend_never_counts() {
+    let k = kit(vec![workstream("W1", Some(vec![doc_check()]))]);
+    let mut w = k.ports.workstream(&w1()).unwrap();
+    w.brief_hash = Some(BriefHash::unchecked("a".repeat(64)));
+    k.ports.put_workstream(&w);
+    k.set_node(0, "");
+    *k.ports.amend_on_check.lock().unwrap() = Some(build_brief(w));
+    k.claims.claim_done(&w1(), LEAD_BY, None, None).await.unwrap();
+    assert!(!k.closed().await);
+    let w = k.ports.workstream(&w1()).unwrap();
+    assert_eq!(
+        (w.state, w.brief_hash.unwrap().as_str().starts_with('b')),
+        (WorkstreamState::Running, true)
+    );
+    assert!(
+        k.claims
+            .list(&ClaimFilter {
+                workstream_id: Some(w1()),
+                limit: 5,
+                ..Default::default()
+            })
+            .unwrap()
+            .is_empty(),
+        "a claim that never counts is never recorded"
+    );
+}
+
+/// An amend lands between the claim's read and its verifying write: the claim is refused, and the build brief stays.
+#[tokio::test]
+async fn an_amend_racing_the_claim_start_wins() {
+    let k = research_kit();
+    let amended = build_brief(k.ports.workstream(&w1()).unwrap());
+    *k.ports.lands_first.lock().unwrap() = Some(amended);
+    let refused = k
+        .claims
+        .claim_done(&w1(), LEAD_BY, None, None)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        (refused.code, refused.message.as_str()),
+        (ErrorCode::Invalid, "W1 changed while you claimed it.")
+    );
+    let w = k.ports.workstream(&w1()).unwrap();
+    assert_eq!(
+        (w.state, w.brief_hash.unwrap().as_str().starts_with('b')),
+        (WorkstreamState::Running, true)
+    );
+}
+
+/// A human check is a question the lead asks in chat; it passes only on a yes logged for the brief as it stands now.
+#[tokio::test]
+async fn a_human_check_passes_on_a_yes_logged_after_the_brief_froze() {
+    let k = kit(vec![workstream(
+        "W1",
+        Some(vec![
+            doc_check(),
+            json!({ "type": "human", "question": "Looks good on your end?" }),
+        ]),
+    )]);
+    k.set_node(0, "");
+    k.freeze_at(1_000);
+    let result = |c: &fleetd_contracts::verification::Claim| c.results[1].clone();
+
+    let missing = k.claims.claim_done(&w1(), LEAD_BY, None, None).await.unwrap();
+    let r = result(missing.claim.as_ref().unwrap());
+    assert_eq!((r.result, r.ran_by), (CheckOutcome::Fail, CheckResultRanBy::Human));
+    assert_eq!(
+        r.evidence.as_str(),
+        "not confirmed yet: ask the human in chat: \"Looks good on your end?\", then log their answer with decide {key: \"done.1\", value: \"yes\" or \"no\", workstreamId: \"W1\"}"
+    );
+
+    k.confirm("done.1", "no", 2_000);
+    let no = k.claims.claim_done(&w1(), LEAD_BY, None, None).await.unwrap();
+    let r = result(no.claim.as_ref().unwrap());
+    assert_eq!(r.result, CheckOutcome::Fail);
+    assert_eq!(r.evidence.as_str(), "the human said \"no\" in chat (D1)");
+
+    k.confirm("done.1", "yes", 3_000);
+    let yes = k.claims.claim_done(&w1(), LEAD_BY, None, None).await.unwrap();
+    let claim = yes.claim.unwrap();
+    assert_eq!(claim.outcome, ClaimOutcome::Pass);
+    assert_eq!(result(&claim).evidence.as_str(), "the human said yes in chat (D2)");
+}
+
+/// The review fix of a live hub's W1, T4, spawned from its PR's review findings while W1 verified.
+fn t4() -> OpenWork {
+    OpenWork {
+        item: Item::Task(TaskId::new("T4").unwrap()),
+        line:
+            "\"Share card: fresh link after changes, flag unpriced tokens, uncap counts\" (running)"
+                .into(),
+    }
+}
+
+#[tokio::test]
+async fn a_review_fix_spawned_while_the_order_verifies_keeps_it_open_and_the_lead_is_told() {
+    // W1/T4: the claim started with nothing open; the fix was spawned while its checks ran; the checks passed.
+    let k = kit(vec![workstream("W1", Some(vec![doc_check()]))]);
+    k.set_node(0, "");
+    *k.ports.fix_on_check.lock().unwrap() = Some(t4());
+
+    let held = k
+        .claims
+        .claim_done(&w1(), LEAD_BY, None, None)
+        .await
+        .unwrap();
+    assert_eq!(
+        held.claim.as_ref().map(|c| c.outcome),
+        Some(ClaimOutcome::Pass),
+        "the checks themselves passed"
+    );
+    assert_eq!(
+        (held.state, k.state()),
+        (WorkstreamState::Running, WorkstreamState::Running)
+    );
+    assert!(held.next.contains("stays open"), "{}", held.next);
+    assert!(
+        k.events_of(&[HubEventType::WorkstreamDone, HubEventType::ClaimPassed])
+            .await
+            .is_empty(),
+        "never done over the fix, so nothing cancels it"
+    );
+    let states = k.events_of(&[HubEventType::WorkstreamState]).await;
+    let (_, summary, data) = states.last().unwrap();
+    assert_eq!(data["state"], "running");
+    assert_eq!(
+        data["reason"],
+        format!("work that hasn't landed is still open: {}", t4().line)
+    );
+    assert!(summary.starts_with("W1 stays open: C1 passed"), "{summary}");
+    let wakes = k.ports.wakes.lock().unwrap().clone();
+    assert!(
+        matches!(wakes.last(), Some(ClaimWake::Held { work, .. }) if work == &[t4()]),
+        "{wakes:?}"
+    );
+
+    // The fix landed: the next claim makes it done.
+    k.ports.open_work.lock().unwrap().clear();
+    let done = k
+        .claims
+        .claim_done(&w1(), LEAD_BY, None, None)
+        .await
+        .unwrap();
+    assert_eq!(
+        (done.state, k.state()),
+        (WorkstreamState::Done, WorkstreamState::Done)
+    );
+}
+
+#[tokio::test]
+async fn claim_done_refuses_over_unlanded_work_in_plain_words_until_closed_over_on_purpose() {
+    let k = kit(vec![workstream("W1", Some(vec![doc_check()]))]);
+    k.set_node(0, "");
+    let pr = OpenWork {
+        item: Item::Pr(fleetd_contracts::train::ChangeId::new("X3").unwrap()),
+        line: "the pull request for \"Uncap counts\" (in review)".into(),
+    };
+    k.ports.open_work.lock().unwrap().extend([t4(), pr.clone()]);
+
+    let refused = k
+        .claims
+        .claim_done(&w1(), LEAD_BY, None, None)
+        .await
+        .unwrap_err();
+    assert!(
+        refused.message.starts_with(&format!(
+            "W1 has write work that hasn't landed: {}; {} (ids, for tools only: T4, X3).",
+            t4().line,
+            pr.line
+        )),
+        "{}",
+        refused.message
+    );
+    assert!(
+        refused
+            .fix
+            .as_deref()
+            .unwrap()
+            .contains("plain words, no ids")
+    );
+    assert_eq!(k.state(), WorkstreamState::Running);
+    assert!(k.commands.lock().unwrap().is_empty(), "no check ran");
+
+    // On purpose, with why: done, and the record says what was dropped and why.
+    let closed = k
+        .claims
+        .claim_done(
+            &w1(),
+            LEAD_BY,
+            None,
+            Some("the PR's author left; redone in the next order"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(closed.state, WorkstreamState::Done);
+    assert!(
+        closed.next.contains(&format!(
+            "closed on purpose over {}; {}, which is dropped",
+            t4().line,
+            pr.line
+        )),
+        "the reply names what is dropped, for the chat line: {}",
+        closed.next
+    );
+    let done = k.events_of(&[HubEventType::WorkstreamDone]).await;
+    let (_, summary, data) = done.last().unwrap();
+    let reason = format!(
+        "closed on purpose: the PR's author left; redone in the next order (dropping {}; {})",
+        t4().line,
+        pr.line
+    );
+    assert_eq!(data["reason"], reason);
+    assert!(
+        summary.starts_with("W1 is done, closed on purpose: the PR's author left"),
+        "{summary}"
+    );
+}
+
+#[tokio::test]
+async fn closing_over_work_on_purpose_never_drops_work_spawned_after_the_claim() {
+    // The W1/T4 timing with closeOver: the lead closed over an old PR, and a review's fix appeared while the checks ran.
+    let k = kit(vec![workstream("W1", Some(vec![doc_check()]))]);
+    k.set_node(0, "");
+    let old_pr = OpenWork {
+        item: Item::Pr(fleetd_contracts::train::ChangeId::new("X2").unwrap()),
+        line: "a pull request in o/testbed (needs a rebase)".into(),
+    };
+    k.ports.open_work.lock().unwrap().push(old_pr);
+    *k.ports.fix_on_check.lock().unwrap() = Some(t4());
+
+    let held = k
+        .claims
+        .claim_done(
+            &w1(),
+            LEAD_BY,
+            None,
+            Some("the old PR was redone elsewhere"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        (held.state, k.state()),
+        (WorkstreamState::Running, WorkstreamState::Running)
+    );
+    assert!(
+        k.events_of(&[HubEventType::WorkstreamDone])
+            .await
+            .is_empty()
+    );
+    let wakes = k.ports.wakes.lock().unwrap().clone();
+    assert!(
+        matches!(wakes.last(), Some(ClaimWake::Held { work, .. }) if work == &[t4()]),
+        "held over the work the lead never saw: {wakes:?}"
+    );
+
+    // Shown it now, the lead may close over both on purpose.
+    let done = k
+        .claims
+        .claim_done(
+            &w1(),
+            LEAD_BY,
+            None,
+            Some("both are redone in the next order"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(done.state, WorkstreamState::Done);
 }

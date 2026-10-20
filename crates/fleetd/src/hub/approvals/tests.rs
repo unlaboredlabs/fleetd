@@ -274,9 +274,6 @@ impl ApprovalHub for Fake {
         };
         Box::pin(async move { Some(p) })
     }
-    fn prompts(&self, _: &str, _: &str) -> crate::hub::prompts::PromptSet {
-        crate::hub::prompts::PromptSet::defaults().clone()
-    }
 }
 
 impl EventLog for Fake {
@@ -432,7 +429,7 @@ async fn deny_never_runs_the_command_and_an_offline_node_puts_it_back_to_the_per
     assert!(fake.runs.lock().unwrap().is_empty());
     assert_eq!(fake.woken.lock().unwrap().as_slice(), ["Q1 denied"]);
     let (_, outcome) = crate::hub::usage::wire_approvals::request_outcome(&denied);
-    assert_eq!(outcome, "was denied by human:desk: not on a Friday. Do not run it; say in chat what you do instead.");
+    assert_eq!(outcome, "denied by human:desk: not on a Friday; don't run it, say in the chat what you do instead");
 
     a.gated_run(&p1(), migration()).await.unwrap();
     *fake.gated_reply.lock().unwrap() = Err(NodeCommandError {
@@ -561,7 +558,7 @@ async fn deny_gives_the_run_the_persons_words_and_an_undelivered_approve_goes_ba
     assert_eq!(
         decision,
         PermissionDecision::Deny {
-            message: fleetd_contracts::prim::Text::unchecked("Denied by human:desk (Q1): use make clean instead")
+            message: fleetd_contracts::prim::Text::unchecked("Denied: human:desk said no (Q1): use make clean instead.")
         }
     );
     assert!(fake.woken.lock().unwrap().is_empty(), "the run itself hears the no");
@@ -598,7 +595,7 @@ async fn rules_answer_without_a_request_and_a_broken_policy_asks_a_person() {
         answers[1].3,
         PermissionDecision::Deny {
             message: fleetd_contracts::prim::Text::unchecked(
-                "Denied by the tools.deny rule `Bash(rm:*)` in .fleetd/policy.yaml."
+                "Denied: the tools.deny rule `Bash(rm:*)` in .fleetd/policy.yaml."
             )
         }
     );
@@ -698,7 +695,7 @@ async fn a_lead_answers_its_tasks_prompts_but_never_its_own() {
     assert_eq!(
         fake.answers.lock().unwrap()[0].3,
         PermissionDecision::Deny {
-            message: fleetd_contracts::prim::Text::unchecked("Denied by agent:lead-key with thread_answer.")
+            message: fleetd_contracts::prim::Text::unchecked("Denied: agent:lead-key with thread_answer.")
         }
     );
     let r = fake.request("Q1");
@@ -746,7 +743,7 @@ async fn a_withdrawn_approval_denies_its_prompt_and_reminders_go_on_until_it_lan
         panic!("a withdrawn approval never allows")
     };
     assert!(
-        message.as_str().starts_with("Not approved: Q1 was withdrawn by lead:lab-a/p1"),
+        message.as_str().starts_with("Denied: lead:lab-a/p1 withdrew Q1 before anyone answered it"),
         "{}",
         message.as_str()
     );

@@ -15,6 +15,7 @@ use super::tools::unknown_order;
 use crate::hub::api::{Caller, Hub, ToolError, allows, is_human, require};
 use crate::hub::executor::shell_mapper::js_take;
 use crate::hub::intake::attachments;
+use crate::hub::leads::events::Event;
 use crate::hub::leads::records::{StoredWorkstream, is_closed};
 use crate::hub::leads::wakes::{LineKind, Trigger};
 use crate::hub::store::{NewEvent, iso_ms, now_ms};
@@ -220,13 +221,11 @@ pub async fn with_intent(
     };
     let w = stored.workstream;
     let attached = attachments::deliver(hub, caller, files, &w.project_ref, id).await?;
-    let line = hub.db.prompts().for_lead(&w.project_ref).render(
-        "wake.order_refs",
-        &[
-            ("workstreamId", id),
-            ("references", &references(refs, &attached)),
-        ],
-    );
+    let line = Event::OrderRefs {
+        workstream: id.as_str(),
+        references: &references(refs, &attached),
+    }
+    .render();
     hub.leads.wakes.trigger(
         &w.project_ref,
         Trigger::Line {
@@ -322,15 +321,13 @@ pub async fn stop(
         &r,
         Trigger::Line {
             kind: LineKind::Human,
-            text: hub.db.prompts().for_lead(&r).render(
-                "wake.order_stopped",
-                &[
-                    ("workstreamId", &id),
-                    ("title", &one_line(&stored.workstream.title, 80)),
-                    ("why", &why),
-                    ("cancelled", &cancelled),
-                ],
-            ),
+            text: Event::OrderStopped {
+                workstream: id.as_str(),
+                title: &stored.workstream.title,
+                why,
+                cancelled,
+            }
+            .render(),
         },
     );
     Ok(OrderStopOutput {

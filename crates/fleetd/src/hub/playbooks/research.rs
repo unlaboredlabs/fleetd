@@ -54,20 +54,17 @@ impl Research {
             .as_ref()
             .and_then(|b| b.metric.as_ref())
             .map(|m| m.to_string());
-        let set = self.ctx.db.prompts().for_lead(&w.project_ref);
-        let text_of = |v: &ResearchVerdict| {
-            format!(
-                "{} research verdict {}",
-                w.workstream_id,
-                verdict_text(
-                    &set,
-                    v.outcome,
-                    &v.rule,
-                    &v.metric_values,
-                    metric.as_deref()
-                )
+        let line_of = |v: &ResearchVerdict| {
+            verdict_text(
+                w.workstream_id.as_str(),
+                v.outcome,
+                &v.rule,
+                &v.metric_values,
+                metric.as_deref(),
             )
         };
+        // The tool result is the event line without its list marker.
+        let text_of = |v: &ResearchVerdict| line_of(v).trim_start_matches("- ").to_owned();
         if let Some(v) = &w.verdict {
             return Ok((w.clone(), text_of(v)));
         }
@@ -148,8 +145,10 @@ impl Research {
                 estimates.record_done(workstream_id);
             }
         }
-        self.wakes
-            .trigger(&w.project_ref, Trigger::research_verdict(&text));
+        self.wakes.trigger(
+            &w.project_ref,
+            Trigger::research_verdict(&format!("- {text}")),
+        );
         Ok((done, text))
     }
 }

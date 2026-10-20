@@ -187,7 +187,7 @@ enum TrainLimit {
     Full,
 }
 
-/// Tasks queued for a slot while the fleet had free ones (a project share or the lead band held them).
+/// Tasks queued for a slot while the fleet had free ones (a project's max agents or the lead band held them).
 fn slot_waits(input: &RuleInput, out: &mut Vec<Candidate>) {
     let full = merge(input.serial.slots_full.clone());
     let mut by_project: BTreeMap<String, Vec<(&Row, i64)>> = BTreeMap::new();
@@ -205,11 +205,11 @@ fn slot_waits(input: &RuleInput, out: &mut Vec<Candidate>) {
             .collect();
         let why = waits.iter().map(|(r, _)| reason(r)).find(|r| !r.is_empty());
         let fix = match why {
-            Some(w) if w.contains("project share") => "raise the project's slot share with cap_set",
+            Some(w) if w.starts_with("agents: ") => "raise the project's max agents with cap_set",
             Some(w) if w.contains("reserved") => {
                 "raise the cap with cap_set: the last slots of the cap are kept for lead turns"
             }
-            _ => "check the cap and the project's share with cap_set",
+            _ => "check the cap and the project's max agents with cap_set",
         };
         out.push(Candidate {
             rule: InsightRule::QueueWait,
@@ -1070,7 +1070,7 @@ mod tests {
     /// A slot wait counts only while the fleet had a free slot: inside a `slots.full` spell it is the cap's.
     #[test]
     fn a_slot_wait_with_free_slots_names_the_share() {
-        let why = "slots: project share 3/3 in use";
+        let why = "agents: 3/3 running";
         let full = Serial {
             slots_full: vec![(0, 4 * MIN)],
             ..Serial::default()
@@ -1085,7 +1085,7 @@ mod tests {
         let found = fired(&input(rows, full), InsightRule::QueueWait);
         assert_eq!(
             found[0].message.as_str(),
-            "2 tasks in storefront waited 6m for a slot while the fleet had free ones (slots: project share 3/3 in use): raise the project's slot share with cap_set"
+            "2 tasks in storefront waited 6m for a slot while the fleet had free ones (agents: 3/3 running): raise the project's max agents with cap_set"
         );
         assert_eq!(num(&found[0], "total_ms"), 6 * MIN);
     }

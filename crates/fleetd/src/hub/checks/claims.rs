@@ -9,11 +9,12 @@ use super::runner::{CheckContext, CheckRunner, ran_by_of};
 use crate::clock::Clock;
 use crate::hub::estimates::Estimates;
 use crate::hub::incidents::{IncidentInput, Incidents};
+use crate::hub::orders::open_work::{CLOSED_ON_PURPOSE, Item, OpenWork, ids, listed};
 use crate::hub::store::{EventLog, NewEvent, StoreError};
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::ids::Timestamp;
-use fleetd_contracts::ledger::{CheckSpec, Workstream, WorkstreamId, WorkstreamState};
+use fleetd_contracts::ledger::{BriefHash, CheckSpec, Workstream, WorkstreamId, WorkstreamState};
 use fleetd_contracts::prim::{Count, List, Text};
 use fleetd_contracts::verification::{
     CheckOutcome, CheckResult, Claim, ClaimId, ClaimOutcome, IncidentClass,
@@ -58,6 +59,12 @@ fn state_name(s: WorkstreamState) -> String {
         .unwrap_or_default()
 }
 
+/// A claim that closes over unlanded work on purpose: why, and the work the lead was shown when it claimed.
+struct CloseOver {
+    why: String,
+    seen: Vec<Item>,
+}
+
 pub struct Claims {
     records: Arc<ClaimRecords>,
     runner: Arc<CheckRunner>,
@@ -68,7 +75,7 @@ pub struct Claims {
     clock: Arc<dyn Clock>,
     inline_wait: Duration,
     /// The claim running per workstream; a new claim aborts it.
-    running: Mutex<HashMap<WorkstreamId, AbortHandle>>,
+    running: Mutex<HashMap<WorkstreamId, (ClaimId, AbortHandle)>>,
     // Workstream state changes go through this, so a claim's start and another's end never interleave.
     lock: tokio::sync::Mutex<()>,
 }
@@ -177,40 +184,75 @@ impl Claims {
 
     /// Stores the claim and acts on it. The workstream is re-read: it may have been stopped while checks ran. Runs with
     /// the lock held and nothing awaited, so a superseding claim cannot cut it off halfway.
-    fn conclude(&self, claim: &Claim) -> Result<(), StoreError> {
-        self.records.finish(claim)?;
+    fn conclude(
+        &self,
+        claim: &Claim,
+        checked: Option<&BriefHash>,
+        close_over: Option<&CloseOver>,
+    ) -> Result<(), StoreError> {
         let Some(w) = self.ports.workstream(&claim.workstream_id) else {
-            return Ok(());
+            return self.records.finish(claim);
         };
+        // The brief changed while the checks ran (W4: the human asked for a build and the lead amended the brief, then
+        // confirmed the old answer-only check). The claim checked done-when that no longer exist, so it never counts;
+        // the amend voided it and said so.
+        if w.brief_hash.as_ref() != checked {
+            return Ok(());
+        }
         // A research judge's numbers already made it done, with its verdict.
         if w.state == WorkstreamState::Done {
-            return Ok(());
+            return self.records.finish(claim);
         }
         let label = format!("{} on {}", claim.claim_id, w.workstream_id);
         if claim.outcome == ClaimOutcome::Pass {
             if w.state != WorkstreamState::Verifying {
-                return Ok(());
+                return self.records.finish(claim);
+            }
+            // Write work spawned while it verified (a review's fixes) would be dropped once it is done: it stays open.
+            // Closing over work on purpose covers only the work the lead was shown when it claimed.
+            let work = self.ports.open_work(&w);
+            let unseen: Vec<OpenWork> = match close_over {
+                Some(c) => work
+                    .iter()
+                    .filter(|o| !c.seen.contains(&o.item))
+                    .cloned()
+                    .collect(),
+                None => work.clone(),
+            };
+            if !unseen.is_empty() {
+                return self.hold(&w, claim, checked, unseen);
             }
             let done = Workstream {
                 state: WorkstreamState::Done,
                 updated_at: now_ts(self.clock.as_ref()),
                 ..w.clone()
             };
-            self.ports.put_workstream(&done);
+            // Only over the workstream as read: an amend landing since then wins, and this claim never counts.
+            if !self.ports.put_workstream_if(&done, &w) {
+                return self.lost_to(&w, claim, checked);
+            }
+            self.records.finish(claim)?;
             self.emit(
                 &w,
                 HubEventType::ClaimPassed,
                 format!("{label} passed: all {} checks", claim.results.len()),
                 serde_json::json!({ "claimId": claim.claim_id, "workstreamId": w.workstream_id }),
             )?;
-            self.emit(
-                &w,
-                HubEventType::WorkstreamDone,
-                format!("{} is done: {}", w.workstream_id, w.title),
-                serde_json::json!({ "workstreamId": w.workstream_id, "claimId": claim.claim_id }),
-            )?;
+            let mut data =
+                serde_json::json!({ "workstreamId": w.workstream_id, "claimId": claim.claim_id });
+            let mut summary = format!("{} is done: {}", w.workstream_id, w.title);
+            if let Some(why) = close_over
+                .map(|c| c.why.as_str())
+                .filter(|_| !work.is_empty())
+            {
+                let reason = format!("{CLOSED_ON_PURPOSE}{why} (dropping {})", listed(&work));
+                summary = format!("{} is done, {reason}", w.workstream_id);
+                data["reason"] = serde_json::json!(reason);
+            }
+            self.emit(&w, HubEventType::WorkstreamDone, summary, data)?;
             return self.estimates.record_done(&w.workstream_id);
         }
+        self.records.finish(claim)?;
         let failures: Vec<CheckResult> = claim
             .results
             .iter()
@@ -261,12 +303,75 @@ impl Claims {
         Ok(())
     }
 
+    /// Every check passed while write work has not landed: back to running, recorded with why, and the lead is told.
+    /// The workstream changed between the claim's read and its write. An amend means the claim never counts; anything
+    /// else (it was stopped) leaves the claim recorded as it ran.
+    fn lost_to(
+        &self,
+        w: &Workstream,
+        claim: &Claim,
+        checked: Option<&BriefHash>,
+    ) -> Result<(), StoreError> {
+        let amended = self
+            .ports
+            .workstream(&w.workstream_id)
+            .is_some_and(|now| now.brief_hash.as_ref() != checked);
+        if amended {
+            Ok(())
+        } else {
+            self.records.finish(claim)
+        }
+    }
+
+    fn hold(
+        &self,
+        w: &Workstream,
+        claim: &Claim,
+        checked: Option<&BriefHash>,
+        work: Vec<OpenWork>,
+    ) -> Result<(), StoreError> {
+        let running = Workstream {
+            state: WorkstreamState::Running,
+            updated_at: now_ts(self.clock.as_ref()),
+            ..w.clone()
+        };
+        if !self.ports.put_workstream_if(&running, w) {
+            return self.lost_to(w, claim, checked);
+        }
+        self.records.finish(claim)?;
+        let reason = format!("work that hasn't landed is still open: {}", listed(&work));
+        self.emit(
+            w,
+            HubEventType::WorkstreamState,
+            format!(
+                "{} stays open: {} passed, but {reason}",
+                w.workstream_id, claim.claim_id
+            ),
+            serde_json::json!({
+                "workstreamId": w.workstream_id,
+                "state": "running",
+                "claimId": claim.claim_id,
+                "reason": reason,
+            }),
+        )?;
+        self.ports.wake(
+            &w.project_ref,
+            ClaimWake::Held {
+                claim_id: claim.claim_id.clone(),
+                workstream_id: w.workstream_id.clone(),
+                work,
+            },
+        );
+        Ok(())
+    }
+
     async fn run_claim(
         self: Arc<Self>,
         w: Workstream,
         claim_id: ClaimId,
         by: String,
         at: Timestamp,
+        close_over: Option<CloseOver>,
     ) -> Claim {
         let results = self.run_checks(&w, &claim_id).await;
         let outcome = if results.iter().all(|r| r.result == CheckOutcome::Pass) {
@@ -284,7 +389,7 @@ impl Claims {
         };
         // Waiting for the lock stays abortable, so a superseded claim gives way; once it holds it, it finishes.
         let _held = self.lock.lock().await;
-        if let Err(error) = self.conclude(&claim) {
+        if let Err(error) = self.conclude(&claim, w.brief_hash.as_ref(), close_over.as_ref()) {
             tracing::warn!(claim_id = %claim.claim_id, %error, "claim not concluded");
         }
         claim
@@ -295,7 +400,8 @@ impl Claims {
         workstream_id: &WorkstreamId,
         by: &str,
         project_ref: Option<&ProjectRef>,
-    ) -> Result<(ClaimId, JoinHandle<Claim>), Refusal> {
+        close_over: Option<&str>,
+    ) -> Result<(ClaimId, JoinHandle<Claim>, Vec<OpenWork>), Refusal> {
         let _held = self.lock.lock().await;
         let not_found = || {
             not_found(
@@ -339,6 +445,19 @@ impl Claims {
             }
             _ => {}
         }
+        let work = self.ports.open_work(&w);
+        if close_over.is_none() && !work.is_empty() {
+            return Err(invalid(
+                format!(
+                    "{workstream_id} has write work that hasn't landed: {} (ids, for tools only: {}). It is done only once that lands.",
+                    listed(&work),
+                    ids(&work)
+                ),
+                Some(
+                    "Say so in chat in one line, in plain words, no ids. Let it land, then claim again. If some of it is truly not needed or failed for good, claim with closeOver set to why, and say why in chat.",
+                ),
+            ));
+        }
         if w.brief.is_none() {
             return Err(invalid(
                 format!(
@@ -360,7 +479,15 @@ impl Claims {
             ..w.clone()
         };
         if w.state != WorkstreamState::Verifying {
-            self.ports.put_workstream(&verifying);
+            // Only over the workstream as read: an amend landing meanwhile must not be reverted to the old brief.
+            if !self.ports.put_workstream_if(&verifying, &w) {
+                return Err(invalid(
+                    format!("{workstream_id} changed while you claimed it."),
+                    Some(
+                        "Read it in your next wake, then claim again if its done-when checks hold.",
+                    ),
+                ));
+            }
             self.emit(
                 &w,
                 HubEventType::WorkstreamState,
@@ -369,32 +496,50 @@ impl Claims {
             )
             .map_err(store_refusal)?;
         }
-        let handle =
-            tokio::spawn(
-                self.clone()
-                    .run_claim(verifying, claim_id.clone(), by.to_owned(), at),
-            );
+        let handle = tokio::spawn(self.clone().run_claim(
+            verifying,
+            claim_id.clone(),
+            by.to_owned(),
+            at,
+            close_over.map(|why| CloseOver {
+                why: why.to_owned(),
+                seen: work.iter().map(|o| o.item.clone()).collect(),
+            }),
+        ));
         // This claim supersedes one still running on the same workstream.
         if let Some(previous) = self
             .running
             .lock()
             .unwrap_or_else(|p| p.into_inner())
-            .insert(workstream_id.clone(), handle.abort_handle())
+            .insert(
+                workstream_id.clone(),
+                (claim_id.clone(), handle.abort_handle()),
+            )
         {
-            previous.abort();
+            previous.1.abort();
         }
-        Ok((claim_id, handle))
+        // What a closeOver claim may drop: the work the lead was shown.
+        let shown = if close_over.is_some() {
+            work
+        } else {
+            Vec::new()
+        };
+        Ok((claim_id, handle, shown))
     }
 
     /// Starts a claim on the workstream and waits up to the inline wait for its checks. With `project_ref`, refuses
     /// another project's workstream. A new claim supersedes one still running on the same workstream.
+    /// With `close_over`, the workstream may close over its unlanded write work, which is then dropped with that why.
     pub async fn claim_done(
         self: &Arc<Self>,
         workstream_id: &WorkstreamId,
         by: &str,
         project_ref: Option<&ProjectRef>,
+        close_over: Option<&str>,
     ) -> Result<ClaimDoneOutcome, Refusal> {
-        let (claim_id, mut handle) = self.start(workstream_id, by, project_ref).await?;
+        let (claim_id, mut handle, closing_over) = self
+            .start(workstream_id, by, project_ref, close_over)
+            .await?;
         let inline = tokio::select! {
             joined = &mut handle => Some(joined),
             () = self.clock.sleep(self.inline_wait) => None,
@@ -407,7 +552,21 @@ impl Claims {
                     .ports
                     .workstream(workstream_id)
                     .map_or(WorkstreamState::Verifying, |w| w.state);
-                let next = if claim.outcome == ClaimOutcome::Pass {
+                let next = if claim.outcome == ClaimOutcome::Pass
+                    && state == WorkstreamState::Running
+                {
+                    format!(
+                        "Every check passed, but {workstream_id} stays open: write work of it hasn't landed (see the wake). Say so in chat in plain words; claim again once it lands."
+                    )
+                } else if claim.outcome == ClaimOutcome::Pass
+                    && state == WorkstreamState::Done
+                    && !closing_over.is_empty()
+                {
+                    format!(
+                        "{workstream_id} is done: every check passed, and it closed on purpose over {}, which is dropped. Say in chat, in plain words, what was dropped and why. Spawn nothing more for it.",
+                        listed(&closing_over)
+                    )
+                } else if claim.outcome == ClaimOutcome::Pass {
                     format!(
                         "{workstream_id} is {}: every check passed. Spawn nothing more for it.",
                         state_name(state)
@@ -434,10 +593,15 @@ impl Claims {
             }
             // Superseded by a newer claim before it finished.
             Some(Err(_)) => Ok(ClaimDoneOutcome {
-                next: format!("{claim_id} was superseded by a newer claim on {workstream_id}."),
+                next: format!(
+                    "{claim_id} was superseded by a newer claim or a change to the brief of {workstream_id}."
+                ),
                 claim_id,
                 workstream_id: workstream_id.clone(),
-                state: WorkstreamState::Verifying,
+                state: self
+                    .ports
+                    .workstream(workstream_id)
+                    .map_or(WorkstreamState::Verifying, |w| w.state),
                 claim: None,
             }),
             None => {
@@ -474,11 +638,56 @@ impl Claims {
         }
     }
 
+    /// The workstream's brief changed: a claim still running checked the old done-when, so it stops and never counts,
+    /// and a verifying workstream is running again. The lead claims afresh once the new done-when holds.
+    pub fn void(&self, workstream_id: &WorkstreamId) -> Result<(), StoreError> {
+        let running = self
+            .running
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(workstream_id);
+        let Some((claim_id, handle)) = running else {
+            return Ok(());
+        };
+        handle.abort();
+        match self.ports.workstream(workstream_id) {
+            Some(w)
+                if matches!(
+                    w.state,
+                    WorkstreamState::Verifying | WorkstreamState::Running
+                ) =>
+            {
+                self.void_with(&w, &claim_id)
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn void_with(&self, w: &Workstream, claim_id: &ClaimId) -> Result<(), StoreError> {
+        if w.state == WorkstreamState::Verifying {
+            let running = Workstream {
+                state: WorkstreamState::Running,
+                updated_at: now_ts(self.clock.as_ref()),
+                ..w.clone()
+            };
+            self.ports.put_workstream_if(&running, w);
+        }
+        self.emit(
+            w,
+            HubEventType::WorkstreamState,
+            format!(
+                "{claim_id} on {} no longer counts: its brief changed",
+                w.workstream_id
+            ),
+            serde_json::json!({ "workstreamId": w.workstream_id, "state": "running", "claimId": claim_id }),
+        )
+    }
+
     fn forget_running(&self, workstream_id: &WorkstreamId, handle: &JoinHandle<Claim>) {
         let mut running = self.running.lock().unwrap_or_else(|p| p.into_inner());
         if running
             .get(workstream_id)
-            .is_some_and(|h| h.id() == handle.id())
+            .is_some_and(|(_, h)| h.id() == handle.id())
         {
             running.remove(workstream_id);
         }

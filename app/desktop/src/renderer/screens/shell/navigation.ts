@@ -1,21 +1,21 @@
 import { useMemo, useSyncExternalStore } from "react";
-import { parseHash, toHash, type Route } from "./routes";
+import { parseHash, toHash, type Screen } from "./routes";
 
 const subscribe = (onChange: () => void): (() => void) => {
   window.addEventListener("hashchange", onChange);
   return () => window.removeEventListener("hashchange", onChange);
 };
 
-export const useRoute = (): Route => {
+export const useRoute = (): Screen => {
   const hash = useSyncExternalStore(subscribe, () => window.location.hash);
   return useMemo(() => parseHash(hash), [hash]);
 };
 
-export const currentRoute = (): Route => parseHash(window.location.hash);
+export const currentRoute = (): Screen => parseHash(window.location.hash);
 
-/** `replace` for moves Back shouldn't return to (closing the inbox, a redirect). */
-export const navigate = (route: Route, options?: { replace?: boolean }): void => {
-  const hash = toHash(route);
+/** `replace` for moves Back shouldn't return to (resolving home to a project, a redirect). */
+export const navigate = (screen: Screen, options?: { replace?: boolean }): void => {
+  const hash = toHash(screen);
   if (hash === window.location.hash) return;
   if (options?.replace === true) window.location.replace(hash);
   else window.location.hash = hash;

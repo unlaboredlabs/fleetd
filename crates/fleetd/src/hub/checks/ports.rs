@@ -24,6 +24,12 @@ pub enum ClaimWake {
         claim_id: ClaimId,
         workstream_id: WorkstreamId,
     },
+    /// Every check passed, but write work of it has not landed, so the workstream stays open.
+    Held {
+        claim_id: ClaimId,
+        workstream_id: WorkstreamId,
+        work: Vec<crate::hub::orders::open_work::OpenWork>,
+    },
 }
 
 /// The pinned playbook's numbers the value bar and estimates read.
@@ -87,6 +93,8 @@ pub trait Ports: Send + Sync + 'static {
     fn workstream(&self, id: &WorkstreamId) -> Option<Workstream>;
     /// Replaces the stored workstream, keeping its amends.
     fn put_workstream(&self, workstream: &Workstream);
+    /// `put_workstream` only while the stored one still has `expect`'s state and brief hash; false when it changed.
+    fn put_workstream_if(&self, workstream: &Workstream, expect: &Workstream) -> bool;
     // leads: LeadWakes.trigger
     fn wake(&self, project: &ProjectRef, wake: ClaimWake);
     // link: NodeCommands.run (default 120 s timeout); the error is NodeCommandError's message.
@@ -110,6 +118,8 @@ pub trait Ports: Send + Sync + 'static {
     fn task(&self, id: &TaskId) -> Option<Task>;
     /// The workstream's tasks, newest first.
     fn tasks_of(&self, project: &ProjectRef, workstream: &WorkstreamId, limit: usize) -> Vec<Task>;
+    /// Its write work that has not landed (`orders::open_work`): a workstream never closes over it by accident.
+    fn open_work(&self, workstream: &Workstream) -> Vec<crate::hub::orders::open_work::OpenWork>;
     fn spawn_judge(&self, spawn: JudgeSpawn) -> BoxFuture<'_, Result<Task, Refusal>>;
     // ledger: the decision a `human` check reads, and when the brief it checks was last frozen
     fn human_confirmation(&self, workstream: &WorkstreamId, key: &str) -> Option<HumanConfirmation>;

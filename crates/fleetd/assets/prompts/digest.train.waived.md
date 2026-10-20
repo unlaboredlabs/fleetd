@@ -1,1 +1,0 @@
-- {{changeId}} {{pr}} ({{state}}): {{reason}}

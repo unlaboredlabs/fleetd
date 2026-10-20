@@ -21,9 +21,9 @@ The app shows each agent's role on its lane. The role decides the fleetd tools; 
 | Reviewer | `spawn_agent` with kind `review` | [Task tools](#task-tools) | No |
 | Verifier | A review task the review gate starts as the verifier | [Task tools](#task-tools) | No |
 | QA | `spawn_agent` with kind `review` and `qa: true` | [Task tools](#task-tools) | No |
-| Router | One `claude -p` on the hub that reads each new order; not a session | None, no MCP servers | No |
+| Retro | One `claude -p` on the hub that proposes playbook changes from incidents; not a session | None, no MCP servers | No |
 
-The router's Claude Code tools: none. fleetd starts it with `--tools ""`, `--strict-mcp-config` and `--safe-mode`.
+The retro's Claude Code tools: none. fleetd starts it with `--tools ""`, `--strict-mcp-config` and `--safe-mode`.
 
 ## Hub limits
 
@@ -356,6 +356,7 @@ Claim a workstream done: fleetd runs its frozen done-when checks itself, and onl
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
+| `closeOver` | string | no | At most 300 characters. |
 | `workstreamId` | string | yes | `W<n>`, e.g. `W1`. |
 
 **Who may call:** a lead, a task's agent, checked by the hub. **Needs a human:** no.
@@ -716,6 +717,7 @@ Claim your workstream done: fleetd runs its done-when checks itself.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
+| `closeOver` | string | no | At most 300 characters. |
 | `workstreamId` | string | yes | `W<n>`, e.g. `W1`. |
 
 **Who may call:** a lead, a task's agent, checked by the hub. **Needs a human:** no.
@@ -731,7 +733,7 @@ Claim your workstream done: fleetd runs its done-when checks itself.
 
 ## Claude Code tools
 
-The same for every session. The router gets none. Listed for Claude Code 2.1.302, the version fleetd is tested with.
+The same for every session. The retro gets none. Listed for Claude Code 2.1.302, the version fleetd is tested with.
 
 **Allowed:** `Bash`, `DesignSync`, `Edit`, `NotebookEdit`, `Read`, `ReportFindings`, `Skill`, `ToolSearch`, `WebFetch`, `WebSearch`, `Write`.
 
@@ -768,7 +770,7 @@ Set in the claude process's environment. "In settings" marks the ones also in fl
 
 ## What your own setup adds
 
-fleetd starts sessions with your own Claude Code setup underneath. The router is the exception: it runs in safe mode with none of it (see [Roles](#roles)).
+fleetd starts sessions with your own Claude Code setup underneath. The retro is the exception: it runs in safe mode with none of it (see [Roles](#roles)).
 
 | Your setup | In a session |
 |---|---|

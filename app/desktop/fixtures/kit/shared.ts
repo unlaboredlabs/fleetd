@@ -6,88 +6,19 @@ import type { FixtureFile } from "../../src/main/hub/fixture.ts";
 import { Fixture, HUB, PROTOCOL } from "./fixture.ts";
 import type { SharedName } from "./group.ts";
 import { at } from "./ids.ts";
-import { clone, isObject, type JsonObject, asText } from "./json.ts";
+import { isObject, type JsonObject, asText } from "./json.ts";
 import { arr, busiestOrder, longText, manyAgents, manyPrompts, NODE_TOO_OLD, obj, streamedLines, timeSpans } from "./stress.ts";
 import { explainLoss } from "../../src/main/hub/explain.ts";
+import { agentsAt, answerRows, commandApproval, LOG, SCREENSHOT, type Draft, firstProject, fromLines, liveStrip, migrated, type Ref, secretRequest, statusRow, streamReply, writeChat } from "./chat.ts";
+import { longChat, QUESTION, STREAMING_REST, STREAMING_SO_FAR, TERSE } from "./chatText.ts";
+import { uuid } from "./ids.ts";
+import { LONG_TITLES, ofLength } from "./text.ts";
 
 const RECORDED = path.join(import.meta.dirname, "../recorded");
 
 /** A recorded lab moment (recorded/<name>.json), as written by sanitize.ts. */
 export const recorded = (name: string): Fixture =>
   Fixture.fromFile(JSON.parse(fs.readFileSync(path.join(RECORDED, `${name}.json`), "utf8")) as FixtureFile);
-
-/** The ask-labels contract (feat/ask-labels) isn't on main yet; asks_list and order_get answers use it already. */
-const ASK_LABELS = "labelled ask options (feat/ask-labels) not merged yet";
-
-// ---- Needs you: the two questions from needs-you-clipped-20261019.jpg, rewritten with labels ----
-
-const ask = (n: number, f: Fixture, workstreamId: string, projectRef: JsonObject, q: { key: string; blocks: string; text: string; context: string; options: Array<JsonObject>; why: string }): JsonObject => ({
-  askId: `A${n}`,
-  number: n,
-  batchId: "B1",
-  kind: "decide",
-  class: "product",
-  state: "open",
-  key: q.key,
-  blocks: q.blocks,
-  text: q.text,
-  context: q.context,
-  options: q.options,
-  recommendation: asText(q.options[0]?.["key"]),
-  recommendationWhy: q.why,
-  proceededOnRec: false,
-  createdAt: at(f.now, -(14 - n) * 60_000),
-  projectRef,
-  workstreamId,
-});
-
-export const needsYouAsks = (f: Fixture, workstreamId: string, projectRef: JsonObject): Array<JsonObject> => [
-  ask(1, f, workstreamId, projectRef, {
-    key: "share.public_link",
-    blocks: "the Copy link button",
-    text: "Should Copy link publish a public snapshot of the share card?",
-    context:
-      "Copy link needs a URL people can open without your console's key. Clicking it would save the card's PNG on the console and serve it at /share/<random id>.png with no login: only that frozen image, with account names masked unless you turned them on. It only works for viewers who can reach your console's address.",
-    options: [
-      { key: "public-snapshot", label: "Public snapshot link", consequence: "Copy link saves a frozen PNG and copies an unguessable URL that anyone who can reach the console can open." },
-      { key: "image-only", label: "Copy the image only", consequence: "No link and nothing served: Copy puts the PNG on the clipboard." },
-    ],
-    why: "It is what the order asked for, and only the frozen image is exposed, never the console itself.",
-  }),
-  ask(2, f, workstreamId, projectRef, {
-    key: "share.pay_comparison",
-    blocks: "the card's headline wording",
-    text: "Which headline should the share card use?",
-    context:
-      "The console doesn't know what your plan costs, so you type your monthly total once (for example 200). The card covers the last 7 days.",
-    options: [
-      { key: "monthly-vs-week", label: "Monthly plan against this week", consequence: "The headline reads \"$200/mo plan → $1,840 of usage this week\", as in your example." },
-      { key: "prorated", label: "Prorate the plan to the week", consequence: "The headline reads \"$46 of plan → $1,840 of usage, 40×\"." },
-    ],
-    why: "It matches the wording in the order; prorating changes the number people see.",
-  }),
-];
-
-const withNeedsYou = (f: Fixture): Fixture => {
-  const order = busiestOrder(f);
-  const projectRef = obj(obj(order?.output["order"])["projectRef"]);
-  const workstreamId = order?.workstreamId ?? "W1";
-  const asks = needsYouAsks(f, workstreamId, projectRef);
-  const batches = [{ batchId: "B1", createdAt: at(f.now, -12 * 60_000), state: "open", items: asks.map((a) => ({ askId: a["askId"] ?? "", number: a["number"] ?? 0 })) }];
-  f.answer("asks_list", {}, { asks, batches });
-  f.answer("asks_list", { state: "open" }, { asks, batches });
-  if (order !== undefined) {
-    order.output["asks"] = clone(asks);
-    Object.assign(obj(order.output["order"]), { needsYou: asks.length, phase: "waiting_on_you", phaseDetail: "2 questions for you" });
-  }
-  f.update("orders_board", (board) => ({
-    ...obj(board),
-    orders: arr(obj(board)["orders"]).map((o) => (isObject(o) && o["workstreamId"] === workstreamId ? { ...o, needsYou: asks.length, phase: "waiting_on_you" } : o)),
-  }));
-  f.pendingContracts.set("asks_list", ASK_LABELS);
-  f.pendingContracts.set("order_get", ASK_LABELS);
-  return f;
-};
 
 // ---- The conversation from order-conversation-20261019.jpg ----
 
@@ -166,17 +97,157 @@ const withConversation = (f: Fixture): Fixture => {
   return f;
 };
 
+// ---- The lead chat ----
+
+/**
+ * Every other snapshot project gets a chat and a status row too, so no sidebar entry spins and the dot agrees with
+ * the row. They cycle working / waiting on you / blocked / idle by position, as fixtures/status cycles its rows.
+ */
+const withProjectRows = (f: Fixture, first: { needsYou?: boolean; leadWorking?: boolean }): Fixture => {
+  const projects = arr(f.snapshot?.["projects"]).filter(isObject);
+  const rows = projects.map((p, i) => {
+    const ref = { machineId: asText(p["machineId"]), projectId: asText(p["projectId"]) };
+    const title = asText(p["title"]);
+    if (i === 0) {
+      const state = first.needsYou === true ? "waiting_on_you" : first.leadWorking === true ? "working" : "idle";
+      return statusRow(f, ref, title, state, state === "working" ? { agents: 3, pct: [40, 25], merged: "Receipt dates use Intl" } : {});
+    }
+    switch (i % 4) {
+      case 0:
+        writeChat(f, ref, [{ author: "human", text: "keep going on the export" }, { author: "lead", text: "On it. Two agents working." }], { leadWorking: true });
+        return statusRow(f, ref, title, "working", { agents: 2, pct: [30, 20] });
+      case 1:
+        writeChat(f, ref, fromLines(QUESTION).slice(0, 1), { needsYou: true });
+        return statusRow(f, ref, title, "waiting_on_you", { pct: [50, 0], merged: "Nightly export resumes after a crash" });
+      case 2:
+        writeChat(f, ref, [{ author: "lead", text: "Stuck: main CI is red, so nothing can merge. Fixing CI first." }]);
+        return statusRow(f, ref, title, "blocked", { blocked: "main CI is red", pct: [20, 0] });
+      default:
+        writeChat(f, ref, []);
+        return statusRow(f, ref, title, "idle");
+    }
+  });
+  return answerRows(f, rows);
+};
+
+/** The first project's chat: the lead's numbered question with its recommendations, and terse replies. */
+const withChat = (f: Fixture, drafts: ReadonlyArray<Draft> = [...fromLines(QUESTION), ...fromLines(TERSE)], opts: { needsYou?: boolean; leadWorking?: boolean } = {}): Fixture => {
+  writeChat(f, firstProject(f), drafts, opts);
+  return withProjectRows(f, opts);
+};
+
+const LONG = 520;
+const longDrafts = (): Array<Draft> => [...migrated(), ...fromLines(longChat(LONG)), ...fromLines(QUESTION), ...fromLines(TERSE)];
+
+/** The sidebar and Status mix: projects needing you, running, both and neither, each row state, long names. */
+const PROJECTS: ReadonlyArray<{ title: string; machine: string; needsYou: boolean; working: boolean; row: Parameters<typeof statusRow>[3]; extra: Parameters<typeof statusRow>[4] }> = [
+  { title: "storefront", machine: "devbox", needsYou: false, working: true, row: "working", extra: { agents: 4, pct: [45, 30], merged: "Receipt dates use Intl" } },
+  { title: "billing", machine: "buildbox", needsYou: true, working: false, row: "waiting_on_you", extra: { agents: 0, pct: [60, 0], merged: "Nightly export resumes after a crash" } },
+  { title: "checkout", machine: "devbox", needsYou: false, working: false, row: "blocked", extra: { blocked: "main CI is red on acme/checkout", pct: [20, 10] } },
+  { title: "docs", machine: "devbox", needsYou: false, working: false, row: "idle", extra: { merged: "Quick start opens a project's chat" } },
+  { title: "inventory", machine: "buildbox", needsYou: true, working: true, row: "waiting_on_you", extra: { agents: 2, pct: [10, 15], planning: true } },
+  { title: "search", machine: "buildbox", needsYou: false, working: false, row: "blocked", extra: { blocked: "buildbox is offline", stale: "buildbox stopped answering" } },
+  { title: ofLength(LONG_TITLES[1], 118), machine: "devbox", needsYou: false, working: true, row: "working", extra: { agents: 12, pct: [5, 70] } },
+  { title: "mobile", machine: "devbox", needsYou: false, working: false, row: "idle", extra: {} },
+];
+
+const withProjectsMix = (f: Fixture): Fixture => {
+  if (f.snapshot === undefined) throw new Error("status-rows needs a snapshot");
+  // storefront keeps the id every chat fixture uses, so one registry route opens it in all of them.
+  const storefront = firstProject(f);
+  const id = (title: string) => (title === "storefront" ? storefront.projectId : uuid(`project ${title}`));
+  f.snapshot["projects"] = PROJECTS.map((p, i) => ({
+    machineId: p.machine,
+    projectId: id(p.title),
+    title: p.title,
+    workspaceRoot: `/home/dev/src/${i === 6 ? "pricing-copy" : p.title}`,
+    lastActivityAt: at(f.now, -i * 600_000),
+    threads: { running: p.working ? 1 : 0, waiting: p.needsYou ? 1 : 0, idle: 2, failed: p.row === "blocked" ? 1 : 0 },
+  }));
+  f.snapshot["chats"] = [];
+  const rows = PROJECTS.map((p) => {
+    const ref: Ref = { machineId: p.machine, projectId: id(p.title) };
+    // Every project has a chat, so opening any of them (the frame opens the first) shows it rather than an error.
+    const drafts: Array<Draft> =
+      p.title === "mobile"
+        ? []
+        : p.needsYou
+          ? fromLines(QUESTION).slice(0, 1)
+          : p.row === "blocked"
+            ? [{ author: "lead", text: `Stuck: ${p.extra?.blocked ?? "blocked"}. I'll pick it up as soon as that clears.` }]
+            : [{ author: "human", text: "how's it going" }, { author: "lead", text: p.working ? "Agents are on it. Nothing needs you." : "All done. Nothing running." }];
+    writeChat(f, ref, drafts, { needsYou: p.needsYou, leadWorking: p.working });
+    return statusRow(f, ref, p.title, p.row, p.extra);
+  });
+  // The sidebar counts a project's running agents from its live lanes: give each the agents its row says.
+  agentsAt(
+    f,
+    PROJECTS.flatMap((p) => ((p.extra?.agents ?? 0) > 0 ? [{ ref: { machineId: p.machine, projectId: id(p.title) }, n: p.extra?.agents ?? 0 }] : [])),
+    true,
+  );
+  return answerRows(f, rows);
+};
+
+const chatFixtures = (copy: (name: SharedName, note: string) => Fixture): Array<Fixture> => {
+  const strip = (f: Fixture, n: number) => liveStrip(f, firstProject(f), n);
+  return [
+    withChat(copy("chat-long", `${String(LONG)}+ messages in the first project's chat, paged 50 at a time: migrated past orders first, Markdown, code, lists, the lead's numbered question and terse replies.`), longDrafts()),
+    (() => {
+      const f = strip(
+        withChat(
+          copy("chat-streaming", "The lead mid-reply: its message streams in over the live chat feed, still unfinished, while 3 agents work under it."),
+          [...fromLines(QUESTION), { author: "lead", text: STREAMING_SO_FAR, state: "streaming" }],
+          { leadWorking: true },
+        ),
+        3,
+      );
+      return streamReply(f, firstProject(f), STREAMING_REST);
+    })(),
+    withChat(copy("chat-attachments", "A screenshot and a log file sent to the lead, and its reply."), [
+      ...fromLines(QUESTION),
+      { author: "human", text: "the receipt looks off on mobile, see screenshot + log", attachments: [SCREENSHOT, LOG] },
+      { author: "human", text: "", attachments: [SCREENSHOT] },
+      { author: "lead", text: "Got both. The date wraps under the total on narrow screens; a writer is fixing the layout." },
+    ]),
+    withChat(
+      copy("chat-secret", "The lead needs a secret: an open masked entry inline, and an earlier one already stored."),
+      [
+        { author: "lead", text: "Stored earlier for the receipt tests." },
+        { author: "lead", text: "", item: secretRequest("stored", copy("empty", "")) },
+        { author: "human", text: "run the checkout tests against Stripe test mode" },
+        { author: "lead", text: "Need the Stripe test key for that. It goes to devbox only and never into this chat." },
+        { author: "lead", text: "", item: secretRequest("open", copy("empty", "")) },
+      ],
+      { needsYou: true },
+    ),
+    withChat(
+      copy("chat-gated", "A risky command waits for Approve / Deny: the exact command inline; an earlier one ran, one was denied, and an agent's permission prompt."),
+      [
+        { author: "lead", text: "Last week's migration ran:" },
+        { author: "lead", text: "", item: commandApproval("ran", copy("empty", "")) },
+        { author: "lead", text: "", item: commandApproval("denied", copy("empty", ""), true) },
+        { author: "human", text: "ship the share snapshots table" },
+        { author: "lead", text: "This writes to the production database. Approve to run it exactly as below." },
+        { author: "lead", text: "", item: commandApproval("open", copy("empty", "")) },
+      ],
+      { needsYou: true },
+    ),
+    strip(withChat(copy("chat-waiting", "The lead asked its numbered question and waits on you: the needs-you dot, no agents running."), fromLines(QUESTION).slice(0, 1), { needsYou: true }), 0),
+    withChat(copy("chat-empty", "A project whose chat has no messages yet."), []),
+    withProjectsMix(copy("status-rows", "Eight projects: rows in all four states (one planning, one stale, one with a ~120-character name), and the sidebar's needs-you and running mix.")),
+  ];
+};
+
 /** Every shared fixture, by name, freshly built. */
 export const buildShared = (): Map<SharedName, Fixture> => {
-  const typical = Fixture.from(recorded("lab-demo"), "typical", "A real lab hub mid-order: one order fanned out to writers, reviewers and verifiers, three PRs in the train, live lanes, prompts and time.");
+  const typical = withChat(Fixture.from(recorded("lab-demo"), "typical", "A real lab hub mid-order: one order fanned out to writers, reviewers and verifiers, three PRs in the train, live lanes, prompts and time."), undefined, { leadWorking: true });
   const copy = (name: SharedName, note: string) => Fixture.from(typical, name, note);
   const shared: Array<Fixture> = [
-    Fixture.from(recorded("lab-start"), "empty", "A real lab hub before anything happened: machines online, no projects, orders, asks or time."),
+    answerRows(Fixture.from(recorded("lab-start"), "empty", "A real lab hub before anything happened: machines online, no projects, orders, chats or time."), []),
     typical,
     longText(copy("long-text", "Every title ~120 characters, a ~250-character judge criterion, long branches, paths, prose and prompt keys.")),
     manyPrompts(copy("many-prompts", "72 prompts with long dotted ids, every other one overridden for the project.")),
     manyAgents(copy("many-agents", "One order with 12 working and 14 finished agents (26 lanes), and a board of six orders.")),
-    withNeedsYou(copy("needs-you", "The two questions from needs-you-clipped-20261019.jpg, with labelled options, consequences and the recommendation's reason.")),
     withConversation(copy("conversation", "The lead conversation from order-conversation-20261019.jpg: a markdown wake prompt, a human steer to T1 and a lead steer to T2, both acknowledged.")),
     (() => {
       const f = new Fixture("hub-unreachable", "The saved hub doesn't answer; the app retries.");
@@ -202,6 +273,7 @@ export const buildShared = (): Map<SharedName, Fixture> => {
       return f;
     })(),
     timeSpans(copy("time-heavy", "15,000 time spans over the past week, paged 500 at a time.")),
+    ...chatFixtures(copy),
   ];
   const conversation = shared.find((f) => f.name === "conversation");
   if (conversation === undefined) throw new Error("conversation is built above");

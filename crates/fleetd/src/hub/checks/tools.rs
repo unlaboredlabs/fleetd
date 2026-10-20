@@ -129,10 +129,16 @@ pub async fn lead_claim_done(
     hub: &Hub,
     caller: &LeadCaller,
     workstream_id: &WorkstreamId,
+    close_over: Option<&str>,
 ) -> Result<ClaimDoneResult, Refusal> {
     let outcome = hub
         .claims
-        .claim_done(workstream_id, &caller.by, Some(&caller.project_ref))
+        .claim_done(
+            workstream_id,
+            &caller.by,
+            Some(&caller.project_ref),
+            close_over,
+        )
         .await?;
     Ok(ClaimDoneResult {
         claim_id: outcome.claim_id,
