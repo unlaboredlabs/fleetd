@@ -16,7 +16,7 @@ export interface HubErrorJson {
 
 type TimedKind = "event" | "live" | "snapshot" | "chat_delta";
 
-/** Rows of `tool`'s answers under `field` matching `where`, e.g. asks_list's asks with askId A1. */
+/** Rows of `tool`'s answers under `field` matching `where`, e.g. requests_list's requests with requestId Q1. */
 export interface Rows {
   readonly tool: string;
   readonly field: string;

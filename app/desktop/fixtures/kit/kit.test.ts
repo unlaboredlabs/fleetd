@@ -23,10 +23,10 @@ describe("Fixture answers", () => {
   });
 
   it("replaces an earlier answer to the same input, and fail() replaces it too", () => {
-    const f = new Fixture("t", "").answer("asks_list", {}, { n: 1 }).answer("asks_list", {}, { n: 2 });
-    expect(f.answers("asks_list")).toHaveLength(1);
-    f.fail("asks_list", {}, { code: "failed", message: "no" });
-    expect(answer(f, "asks_list", {})).toEqual({ ok: false, error: { code: "failed", message: "no" } });
+    const f = new Fixture("t", "").answer("requests_list", {}, { n: 1 }).answer("requests_list", {}, { n: 2 });
+    expect(f.answers("requests_list")).toHaveLength(1);
+    f.fail("requests_list", {}, { code: "failed", message: "no" });
+    expect(answer(f, "requests_list", {})).toEqual({ ok: false, error: { code: "failed", message: "no" } });
   });
 
   it("turns timed frames into main's afterMs steps, settling at the last one unless told otherwise", () => {
@@ -149,7 +149,7 @@ describe("sanitize", () => {
 
 describe("schema", () => {
   it("cuts a string the rename made too long back to the schema's limit", () => {
-    const f = new Fixture("t", "").answer("asks_list", {}, { asks: [], batches: [], next: "x" });
+    const f = new Fixture("t", "").answer("requests_list", {}, { requests: [], next: "x" });
     const summary = "s".repeat(250);
     f.events.push({ seq: 1, at: "2026-10-19T10:00:00.000Z", type: "machine.online", summary });
     expect(validateFixture(f)).not.toEqual([]);

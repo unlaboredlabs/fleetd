@@ -1,6 +1,27 @@
 // What the two inline chat items say, as pure functions: where a secret lands and whether it can be sealed now, the
 // exact command an approval runs, and the one result line under it.
-import type { CommandApprovalItem, GatedClass, GatedRunSpec, Machine, SecretRequestItem } from "../../../shared/contracts";
+import type { ChatItem, CommandApprovalItem, GatedClass, GatedRunSpec, HumanRequest, Machine, SecretRequestItem } from "../../../shared/contracts";
+
+/**
+ * The item as the hub's request says it is now. A request's changes arrive as request.updated events (and a fresh
+ * requests_list), not as a new chat message, so the request wins over the item it was posted as: its state, the
+ * secret's fingerprint, an approval's exit code, output and the one-line evidence (why it is open again, or failed).
+ */
+export const withRequest = (item: ChatItem, request: HumanRequest | undefined): ChatItem => {
+  if (request === undefined || request.requestId !== item.requestId) return item;
+  const note = request.evidence === undefined ? {} : { note: request.evidence };
+  if (item.kind === "secret_request") {
+    const fingerprint = request.secret?.fingerprint;
+    return { ...item, state: request.state, ...note, ...(fingerprint === undefined ? {} : { fingerprint }) };
+  }
+  return {
+    ...item,
+    state: request.state,
+    ...note,
+    ...(request.exitCode === undefined ? {} : { exitCode: request.exitCode }),
+    ...(request.outputTail === undefined ? {} : { outputTail: request.outputTail }),
+  };
+};
 
 export type SecretTarget =
   | { readonly ok: true; readonly machine: string; readonly boxPubKey: string; readonly where: string }

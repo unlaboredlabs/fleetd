@@ -16,9 +16,38 @@ import { LONG_TITLES, ofLength } from "./text.ts";
 
 const RECORDED = path.join(import.meta.dirname, "../recorded");
 
-/** A recorded lab moment (recorded/<name>.json), as written by sanitize.ts. */
+/**
+ * Recorded answers from hubs before the questions tool was removed (H2) listed asks: a status doc's needs-you by
+ * `askIds` (and an "asked" count), an order by its open `asks`. Today's hub lists requests instead, and recorded lab runs had none open.
+ */
+const withoutAsks = (f: Fixture): Fixture => {
+  f.update("status_get", (output) => {
+    if (!isObject(output) || !isObject(output["doc"])) return output;
+    let doc = output["doc"];
+    const needsYou = doc["needsYou"];
+    if (isObject(needsYou) && "askIds" in needsYou) {
+      const { askIds: _asks, ...rest } = needsYou;
+      doc = { ...doc, needsYou: { ...rest, requestIds: [], count: 0 } };
+    }
+    // The "asked" count went with the asks.
+    const since = doc["since"];
+    if (isObject(since) && "asked" in since) {
+      const { asked: _asked, ...rest } = since;
+      doc = { ...doc, since: rest };
+    }
+    return { ...output, doc };
+  });
+  f.update("order_get", (output) => {
+    if (!isObject(output) || !("asks" in output)) return output;
+    const { asks: _asks, ...rest } = output;
+    return { ...rest, requests: [] };
+  });
+  return f;
+};
+
+/** A recorded lab moment (recorded/<name>.json), as written by sanitize.ts, in today's contract. */
 export const recorded = (name: string): Fixture =>
-  Fixture.fromFile(JSON.parse(fs.readFileSync(path.join(RECORDED, `${name}.json`), "utf8")) as FixtureFile);
+  withoutAsks(Fixture.fromFile(JSON.parse(fs.readFileSync(path.join(RECORDED, `${name}.json`), "utf8")) as FixtureFile));
 
 // ---- The conversation from order-conversation-20261019.jpg ----
 

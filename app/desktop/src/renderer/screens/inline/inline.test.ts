@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import data from "../../../../fixtures/inline/items.json";
-import type { ChatItem, CommandApprovalItem, Machine, SecretRequestItem } from "../../../shared/contracts";
-import { approvalOutcome, secretEnvLines, secretOutcome, secretTarget, shellLine } from "./request";
+import type { ChatItem, CommandApprovalItem, HumanRequest, Machine, SecretRequestItem } from "../../../shared/contracts";
+import { approvalOutcome, secretEnvLines, secretOutcome, secretTarget, shellLine, withRequest } from "./request";
 
 const items = data.items as unknown as ChatItem[];
 const secret = (id: string): SecretRequestItem => {
@@ -75,5 +75,32 @@ describe("a command approval", () => {
     // A state from a newer hub never shows as a raw word.
     expect(approvalOutcome({ ...approval("Q4"), state: "queued_on_node" })?.text).toBe("Changed on the hub. Update the app to see how.");
     expect(secretOutcome({ ...secret("Q1"), state: "sealed_pending" })?.text).toBe("Changed on the hub. Update the app to see how.");
+  });
+});
+
+describe("the item as the request says it is now", () => {
+  const posted = (id: string): ChatItem => {
+    const it = items.find((x) => x.requestId === id);
+    if (it === undefined) throw new Error(`no item ${id}`);
+    return it;
+  };
+  const request = (r: Partial<HumanRequest> & Pick<HumanRequest, "requestId" | "kind" | "state">): HumanRequest => ({
+    projectRef: { machineId: "devbox", projectId: "storefront" },
+    text: "",
+    createdAt: "2026-10-20T10:00:00.000Z",
+    ...r,
+  });
+
+  it("takes the request's state, fingerprint and run result over the item it was posted as", () => {
+    const stored = withRequest(posted("Q1"), request({ requestId: "Q1", kind: "secret", state: "stored", secret: { key: "stripe.test_key", sink: "env:devbox:/srv/storefront/.env", fingerprint: "0a1b2c3d" } }));
+    expect(stored).toMatchObject({ state: "stored", fingerprint: "0a1b2c3d" });
+    const ran = withRequest(posted("Q4"), request({ requestId: "Q4", kind: "approval", state: "failed", exitCode: 2, outputTail: "boom", evidence: "exit 2 on devbox" }));
+    expect(ran).toMatchObject({ state: "failed", exitCode: 2, outputTail: "boom", note: "exit 2 on devbox" });
+    expect(approvalOutcome(ran as CommandApprovalItem)).toEqual({ tone: "danger", text: "Failed · exit 2" });
+  });
+
+  it("leaves the item alone without a matching request", () => {
+    expect(withRequest(posted("Q4"), undefined)).toEqual(posted("Q4"));
+    expect(withRequest(posted("Q4"), request({ requestId: "Q9", kind: "approval", state: "ran" }))).toEqual(posted("Q4"));
   });
 });

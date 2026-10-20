@@ -6,9 +6,9 @@ import { useMemo, useRef, useState } from "react";
 import type { ChatItem, CommandApprovalItem, Machine, SecretRequestItem } from "../../../shared/contracts";
 import type { HubError } from "../../../shared/hub";
 import { Button, Code, cx, InlineCode, Input, Text } from "../../ui";
-import { useData, useDataLayer } from "../../src/data/react";
+import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { prose } from "./prose";
-import { approvalOutcome, classWords, secretEnvLines, secretOutcome, secretTarget, shellLine, type Outcome } from "./request";
+import { approvalOutcome, classWords, secretEnvLines, secretOutcome, secretTarget, shellLine, withRequest, type Outcome } from "./request";
 import s from "./InlineChatItem.module.css";
 
 const errorText = (e: HubError): string => (e.fix === undefined ? e.message : `${e.message} ${e.fix}`);
@@ -52,7 +52,12 @@ const useSent = <T extends { readonly state: string }>(item: T) => {
   return { shown, busy, error, run };
 };
 
-export function InlineChatItem({ item }: { item: ChatItem }) {
+/** Every request the hub holds, newest first; one read shared by all the items, refetched on request.* events. */
+const REQUESTS = { limit: 100 } as const;
+
+export function InlineChatItem({ item: posted }: { item: ChatItem }) {
+  const requests = useToolQuery("requests_list", REQUESTS);
+  const item = withRequest(posted, requests.data?.requests.find((r) => r.requestId === posted.requestId));
   return item.kind === "secret_request" ? <SecretItem item={item} /> : <ApprovalItem item={item} />;
 }
 

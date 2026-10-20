@@ -54,7 +54,7 @@ const LONG: Record<string, (i: number) => string> = {
     "S1: keeping the literal headline (no prorated variant) and the public snapshot route at /share/<id>.png, then rerunning the receipt tests for every locale before I ask for review again",
 };
 /** Free text gets long only where it is prose (asks, messages, steers), never where it is a key or a command. */
-const isProse = (o: JsonObject) => typeof o["messageId"] === "string" || typeof o["askId"] === "string" || o["role"] === "assistant" || o["role"] === "user" || typeof o["stage"] === "string";
+const isProse = (o: JsonObject) => typeof o["messageId"] === "string" || o["role"] === "assistant" || o["role"] === "user" || typeof o["stage"] === "string";
 
 /** Long titles, criteria, branches and prose everywhere they appear; a judge done-when on every brief. */
 export const longText = (f: Fixture): Fixture => {
