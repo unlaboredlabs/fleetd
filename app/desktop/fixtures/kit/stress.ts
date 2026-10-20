@@ -219,7 +219,7 @@ const SPAN_KINDS: Array<readonly [string, string]> = [
   ["tool.edit", "tools"],
   ["git", "tools"],
   ["queue.slot", "queue"],
-  ["wait.ask", "human"],
+  ["wait.request", "human"],
   ["change.review", "pipeline"],
   ["change.ci", "pipeline"],
   ["ci.check", "pipeline"],
@@ -249,7 +249,7 @@ export const timeSpans = (f: Fixture, n = 15_000): Fixture => {
       taskId: `T${task}`,
       workstreamId: `W${1 + (task % 12)}`,
       label: kind === "tool.bash" ? "pnpm test --filter storefront-checkout" : kind === "tool.edit" ? LONG_PATH : kind === "ci.check" ? "ci / test (ubuntu-latest, node 24)" : kind,
-      ...(kind === "wait.ask" ? { extra: { key: "pricing.headline", answeredBy: "you" } } : {}),
+      ...(kind === "wait.request" ? { extra: { key: "stripe.test_key", answeredBy: "you" } } : {}),
       ...(kind === "tool.bash" ? { exitCode: i % 53 === 0 ? 1 : 0 } : {}),
     };
   });

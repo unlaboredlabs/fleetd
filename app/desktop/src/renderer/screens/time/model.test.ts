@@ -128,7 +128,7 @@ describe("buildModel", () => {
     const kinds = m.rows.map((r) => r.kind);
     expect(kinds[0]).toBe("lead");
     expect(kinds.indexOf("change")).toBeLessThan(kinds.indexOf("check"));
-    expect(kinds.lastIndexOf("check")).toBeLessThan(kinds.indexOf("asks"));
+    expect(kinds.lastIndexOf("check")).toBeLessThan(kinds.indexOf("requests"));
     expect(m.rows.filter((r) => r.kind === "check").map((r) => r.name)).toEqual(["lint", "build", "e2e (webkit)"]);
     expect(m.rows.find((r) => r.kind === "agent")?.taskId).toBe("T21");
     // Parallel calls are drawn as their group; envelopes and message parents are not drawn.

@@ -118,9 +118,7 @@ export const KIND_WORD: Record<SpanKind, string> = {
   "park.usage": "usage parks",
   "slots.full": "slots full",
   "wait.permission": "approvals",
-  "wait.ask": "asks",
-  "ask.batching": "batching",
-  "ask.info": "info asks",
+  "wait.request": "requests",
   "change.review": "review",
   "change.queue": "train line",
   "change.rebase": "rebase",
@@ -175,7 +173,7 @@ export const inexact = (span: Span, names: Names, parallel: boolean): Inexact | 
   }
   if (parallel) return { mark: "≤", why: WHY.parallel };
   if (span.kind === "ci.check") return { mark: "±1 s", why: WHY.ciCheck };
-  if (span.kind === "wait.ask" || span.kind === "ask.batching") return { mark: "", why: WHY.human };
+  if (span.kind === "wait.request") return { mark: "", why: WHY.human };
   if (span.threadId !== undefined && names.leads.has(span.threadId)) return { mark: "split", why: WHY.lead };
   return undefined;
 };
@@ -196,7 +194,7 @@ export const spanMs = (span: Span, nowMs: number): number => (span.endMs ?? nowM
  */
 export const spanTitle = (span: Span, humanize: (key: string) => string = (k) => k): string => {
   if (span.extra?.check !== undefined) return span.extra.check;
-  if (span.extra?.key !== undefined) return `ask: ${humanize(span.extra.key)}`;
+  if (span.extra?.key !== undefined) return `secret: ${humanize(span.extra.key)}`;
   if (span.label !== undefined && span.label !== "") return span.label;
   return KIND_WORD[span.kind];
 };
@@ -205,7 +203,7 @@ export const spanTitle = (span: Span, humanize: (key: string) => string = (k) =>
 export const titleIsMachineText = (span: Span): boolean =>
   span.extra?.check !== undefined || (span.label !== undefined && span.label !== "");
 
-/** "implementer T31", "lead", "PR #212", "asks". */
+/** "implementer T31", "lead", "PR #212", "requests". */
 export const laneName = (names: Names, span: Span): string => {
   const thread = span.threadId;
   if (thread !== undefined) {

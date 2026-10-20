@@ -6,7 +6,7 @@ import type { FixtureFile } from "../../src/main/hub/fixture.ts";
 import { Fixture, HUB, PROTOCOL } from "./fixture.ts";
 import type { SharedName } from "./group.ts";
 import { at } from "./ids.ts";
-import { isObject, type JsonObject, asText } from "./json.ts";
+import { isObject, type JsonObject, type JsonValue, asText } from "./json.ts";
 import { arr, busiestOrder, longText, manyAgents, manyPrompts, NODE_TOO_OLD, obj, streamedLines, timeSpans } from "./stress.ts";
 import { explainLoss } from "../../src/main/hub/explain.ts";
 import { agentsAt, answerRows, commandApproval, LOG, SCREENSHOT, type Draft, firstProject, fromLines, liveStrip, migrated, type Ref, secretRequest, statusRow, streamReply, writeChat } from "./chat.ts";
@@ -42,6 +42,20 @@ const withoutAsks = (f: Fixture): Fixture => {
     const { asks: _asks, ...rest } = output;
     return { ...rest, requests: [] };
   });
+  // Time: an ask's wait is a request's wait now, on a requests: lane; the batching and info-ask spans are gone.
+  const OLD = new Set(["ask.batching", "ask.info"]);
+  const renamed = (v: JsonValue): JsonValue => {
+    if (Array.isArray(v)) return v.filter((x) => !(isObject(x) && OLD.has(asText(x["kind"])))).map(renamed);
+    if (!isObject(v)) return v;
+    const out: JsonObject = {};
+    for (const [k, x] of Object.entries(v)) {
+      if (k === "kind" && x === "wait.ask") out[k] = "wait.request";
+      else if (k === "lane" && typeof x === "string" && x.startsWith("asks:")) out[k] = `requests:${x.slice("asks:".length)}`;
+      else out[k] = renamed(x);
+    }
+    return out;
+  };
+  for (const tool of ["time_spans", "time_breakdown", "time_insights"]) f.update(tool, renamed);
   return f;
 };
 
