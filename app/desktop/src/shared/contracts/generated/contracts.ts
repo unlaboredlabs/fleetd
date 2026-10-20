@@ -2272,6 +2272,10 @@ export type ProjectId = string;
 
 /** What `project_inspect` found: the default branch, CI and merge rules, and one line on what the lead will need. */
 export type ProjectInspect = {
+  /** The areas writers lease: the policy file's, else inferred from the repo's layout. Empty when unknown. */
+  areas?: string[];
+  /** true: `areas` were inferred from the repo, not set in .fleetd/policy.yaml. */
+  areasInferred?: boolean;
   ci: CiInfo;
   defaultBranch?: string;
   /** One line for a person, e.g. "no CI found: the merge train will only use local checks". */
@@ -2292,6 +2296,10 @@ export type ProjectInspectInput = {
 
 /** What `project_inspect` found: the default branch, CI and merge rules, and one line on what the lead will need. */
 export type ProjectInspectOutput = {
+  /** The areas writers lease: the policy file's, else inferred from the repo's layout. Empty when unknown. */
+  areas?: string[];
+  /** true: `areas` were inferred from the repo, not set in .fleetd/policy.yaml. */
+  areasInferred?: boolean;
   ci: CiInfo;
   /** With `url` and a machine (given, or the best one): where `project_add` would clone it. */
   clone?: CloneTarget;

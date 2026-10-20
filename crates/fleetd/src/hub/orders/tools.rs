@@ -1,12 +1,11 @@
-//! orders_board, order_get, order_note and order_stop.
+//! orders_board, order_get, attachment_put, attachment_get and project_files.
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::mcp::{
-    AttachmentPutInput, AttachmentPutOutput, ErrorCode, IntakePreviewInput, IntakePreviewOutput,
-    OrderGetInput, OrderGetOutput, OrderNoteInput, OrderNoteOutput, OrderStopInput,
-    OrderStopOutput, OrdersBoardInput, OrdersBoardOutput, ProjectFilesInput, ProjectFilesOutput,
+    AttachmentPutInput, AttachmentPutOutput, ErrorCode, OrderGetInput, OrderGetOutput,
+    OrdersBoardInput, OrdersBoardOutput, ProjectFilesInput, ProjectFilesOutput,
 };
 use fleetd_contracts::prim::{List, Text};
 
@@ -23,9 +22,6 @@ const BOARD_MAX_BYTES: usize = 64 * 1024;
 pub fn register(tools: &mut Registry) {
     tools.add("orders_board", orders_board);
     tools.add("order_get", order_get);
-    tools.add("order_note", order_note);
-    tools.add("order_stop", order_stop);
-    tools.add("intake_preview", intake_preview);
     tools.add("attachment_put", attachment_put);
     tools.add("attachment_get", attachment_get);
     tools.add("project_files", project_files);
@@ -141,48 +137,10 @@ async fn order_get(
         done_lanes: List::unchecked(joined.done),
         requests: List::unchecked(requests),
         claims: claims.map(List::unchecked),
-        next: Some("Add to it with order_note; stop it with order_stop.".into()),
+        next: Some(
+            "Talk to its lead with chat_send; stop the project's work with project_stop.".into(),
+        ),
         truncated: truncated.then_some(true),
-    })
-}
-
-async fn order_note(
-    hub: Arc<Hub>,
-    caller: Caller,
-    input: OrderNoteInput,
-) -> Result<OrderNoteOutput, ToolError> {
-    super::notes::note(&hub, &caller, input).await
-}
-
-async fn order_stop(
-    hub: Arc<Hub>,
-    caller: Caller,
-    input: OrderStopInput,
-) -> Result<OrderStopOutput, ToolError> {
-    super::notes::stop(&hub, &caller, input).await
-}
-
-async fn intake_preview(
-    hub: Arc<Hub>,
-    caller: Caller,
-    input: IntakePreviewInput,
-) -> Result<IntakePreviewOutput, ToolError> {
-    let gate = caller.clone();
-    let allows = move |m: &fleetd_contracts::ids::MachineId| allows(&gate, Role::Operate, Some(m));
-    let echo = hub
-        .leads
-        .intake
-        .preview(&input.text, &allows)
-        .map_err(ToolError::from)?;
-    Ok(IntakePreviewOutput {
-        next: Some(match &echo {
-            Some(_) => "intake_submit would place it there.".into(),
-            None => {
-                "intake_submit would refuse it: start the text with @<project>, or pass the project.".into()
-            }
-        }),
-        echo,
-        truncated: None,
     })
 }
 

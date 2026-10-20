@@ -93,6 +93,9 @@ pub struct World {
     pub steers: Vec<fleetd_contracts::steer::Steer>,
     /// What the progress model reads beyond this.
     pub model: super::estimate::ModelData,
+    /// Per project: its latest merge, and how many of its PRs are in review, CI or the train now.
+    pub merges: HashMap<String, super::rows::Merged>,
+    pub in_flight: HashMap<String, i64>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -296,6 +299,7 @@ impl World {
             .filter(|c| hub.reviews.reviews_needed(c) == 0)
             .map(|c| c.change_id.to_string())
             .collect();
+        let (merges, in_flight) = hub.db.with(|c| Ok(super::rows::read_changes(c)?))?;
         Ok(World {
             now,
             tz: crate::hub::attention::hub_zone(),
@@ -319,6 +323,8 @@ impl World {
             placeholders,
             steers,
             model,
+            merges,
+            in_flight,
         })
     }
 }
@@ -405,11 +411,11 @@ fn hours(ms: i64) -> String {
     }
 }
 
-fn ts(ms: i64) -> Timestamp {
+pub(super) fn ts(ms: i64) -> Timestamp {
     Timestamp(iso_ms(ms))
 }
 
-fn line<const N: usize>(s: &str) -> Line<1, N> {
+pub(super) fn line<const N: usize>(s: &str) -> Line<1, N> {
     let s = clip(s, N);
     Line::unchecked(if s.is_empty() { "—".to_owned() } else { s })
 }
@@ -583,7 +589,7 @@ fn retired_eta() -> StatusEta {
     }
 }
 
-fn machine_stale(m: &Machine, now: i64, tz: Tz) -> Option<StaleMark> {
+pub(super) fn machine_stale(m: &Machine, now: i64, tz: Tz) -> Option<StaleMark> {
     if m.status != MachineStatus::Offline {
         return None;
     }
@@ -702,6 +708,41 @@ impl Wake {
             self.0 = Some(self.0.map_or(t, |w| w.min(t)));
         }
     }
+}
+
+/// A project's title and figure as the fleet shows it: its bar under the same drop rule as its own doc (the same
+/// stored series), so it never falls without a marker, but with no sparkline of its own. None when it has nothing
+/// to count.
+pub(super) fn project_progress(hub: &Hub, w: &World, pk: &str) -> Option<(String, Progress)> {
+    let child = StatusScope::Project {
+        project_ref: plan::store::project_ref(pk),
+    };
+    let cs = scope_of(w, &child)?;
+    let cf = figure(w, &cs, &virtual_orders(w, &cs));
+    if cf.must_total + cf.polish_total == 0 {
+        return None;
+    }
+    let marker = w.markers.iter().find(|m| m.pkey == pk).map(marker_of);
+    let mut progress = progress_of(&cf, w.now, marker);
+    let cmo = super::estimate::compute(w, &child, &cs);
+    let ccauses = super::estimate::causes(w, &child, &cs);
+    let ckey = child.key();
+    let cseries = hub
+        .db
+        .with(|c| {
+            Ok(super::estimate::series(
+                c,
+                &ckey,
+                cmo.estimate,
+                &ccauses,
+                w.now,
+            )?)
+        })
+        .ok();
+    let mut estimate = super::estimate::estimate_of(&cmo, cseries.as_deref());
+    estimate.series = None;
+    progress.estimate = Some(estimate);
+    Some((cs.title, progress))
 }
 
 pub fn render(
@@ -1440,41 +1481,14 @@ pub fn render(
             let mut pks: Vec<&String> = s.pkeys.iter().collect();
             pks.sort();
             for pk in pks {
-                let child = StatusScope::Project {
-                    project_ref: plan::store::project_ref(pk),
-                };
-                let Some(cs) = scope_of(w, &child) else {
+                let Some((title, progress)) = project_progress(hub, w, pk) else {
                     continue;
                 };
-                let cf = figure(w, &cs, &virtual_orders(w, &cs));
-                if cf.must_total + cf.polish_total == 0 {
-                    continue;
-                }
-                let marker = w.markers.iter().find(|m| &m.pkey == pk).map(marker_of);
-                let mut progress = progress_of(&cf, now, marker);
-                // The project's bar under the same drop rule as its own doc (the same stored series), so it never
-                // falls without a marker; a part carries no sparkline of its own.
-                let cmo = super::estimate::compute(w, &child, &cs);
-                let ccauses = super::estimate::causes(w, &child, &cs);
-                let ckey = child.key();
-                let cseries = hub
-                    .db
-                    .with(|c| {
-                        Ok(super::estimate::series(
-                            c,
-                            &ckey,
-                            cmo.estimate,
-                            &ccauses,
-                            now,
-                        )?)
-                    })
-                    .ok();
-                let mut estimate = super::estimate::estimate_of(&cmo, cseries.as_deref());
-                estimate.series = None;
-                progress.estimate = Some(estimate);
                 parts.push(ScopePart {
-                    title: line(&cs.title),
-                    scope: Some(child),
+                    title: line(&title),
+                    scope: Some(StatusScope::Project {
+                        project_ref: plan::store::project_ref(pk),
+                    }),
                     milestone_id: None,
                     progress,
                     eta: None,

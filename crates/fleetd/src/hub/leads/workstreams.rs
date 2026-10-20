@@ -129,6 +129,15 @@ impl Workstreams {
 
     /// Creates a draft workstream for the intent and wakes the lead. Idempotent per client_request_id.
     pub fn intake(&self, input: IntakeInput) -> Result<IntakeOutcome, LeadError> {
+        self.create(input, true)
+    }
+
+    /// The lead's own `workstream_open`: the same draft, with no intent wake, since the lead that opens it knows.
+    pub fn open(&self, input: IntakeInput) -> Result<IntakeOutcome, LeadError> {
+        self.create(input, false)
+    }
+
+    fn create(&self, input: IntakeInput, wake: bool) -> Result<IntakeOutcome, LeadError> {
         if self.ctx.store.project_get(&input.project_ref)?.is_none() {
             return Err(LeadError::no_project(&input.project_ref));
         }
@@ -152,6 +161,8 @@ impl Workstreams {
                 format!("New intent {id}: {}", workstream.title),
                 Some(serde_json::json!({ "workstreamId": id })),
             )?;
+        }
+        if created && wake {
             self.wakes.trigger(
                 &input.project_ref,
                 Trigger::Intent {

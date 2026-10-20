@@ -119,7 +119,7 @@
    "kind": "msg",
    "group": "messages",
    "title": "Steer",
-   "sentWhen": "per steer (steer_send, order_note, task message), straight to the agent, at its next tool boundary or now",
+   "sentWhen": "per steer (steer_send, task message), straight to the agent, at its next tool boundary or now",
    "placeholders": [
     {
      "name": "id",

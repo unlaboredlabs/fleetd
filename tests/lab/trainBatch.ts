@@ -7,10 +7,9 @@
 //    file b adds, so together they are red; the train drops c, merges a and b, and c alone is red and never merges;
 // 3. a PR stacked on another is green on it (`fleetd/stack`) before the parent lands, and merges after it.
 import { spawnSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { type Body, fleetdCommand, type Lab, MODEL, nodeSock, requireGhLogin, scrubbedEnv } from "./harness.ts";
+import { type Body, openWorkstream, fleetdCommand, type Lab, MODEL, nodeSock, requireGhLogin, scrubbedEnv } from "./harness.ts";
 import { BASE, BRANCH_PREFIX, checkClone, CLONE, git, NAMESPACE, prepareCheckout, REPO, removeLabRepoProject, resetNamespace } from "./m7Train.ts";
 
 const MACHINE = "lab-a";
@@ -99,13 +98,7 @@ export async function trainBatch(lab: Lab) {
     check(!started.isError, `lead_start: ${JSON.stringify(started.body)}`);
     const leadThread = started.body.threadId as string;
     await lab.waitEvent("lead start turn", TURN_MS, { cursor: scenarioStart, machineId: MACHINE, match: (e) => e.threadId === leadThread && ENDED.includes(e.type) });
-    const intake = await callTool("intake_submit", {
-      ...ref,
-      text: "Lab run: the harness pushes and enqueues every PR itself; reply to each wake with one short line, run no commands.",
-      clientRequestId: randomUUID(),
-    });
-    check(!intake.isError, `intake_submit: ${JSON.stringify(intake.body)}`);
-    const w = intake.body.workstreamId as string;
+    const w = openWorkstream(check, fleetd, "PRs through the train's batches and stacks. The harness pushes and enqueues every PR itself.");
     const brief = {
       goal: "PRs through the train's batches and stacks",
       why: "the train batch lab scenario",

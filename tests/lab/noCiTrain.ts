@@ -3,10 +3,9 @@
 // `fleetd/train` status). Its PR gets no workflow run, so once the train's no-CI grace passes it merges on fleetd's own
 // checks into noci/<n>/main, and `pr.merged` says so. About 3 haiku turns.
 import { spawnSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { type Body, fleetdCommand, type Lab, MODEL, nodeSock, requireGhLogin, scrubbedEnv, SLOT } from "./harness.ts";
+import { type Body, openWorkstream, fleetdCommand, type Lab, MODEL, nodeSock, requireGhLogin, scrubbedEnv, SLOT } from "./harness.ts";
 import { BASE, checkClone, CLONE, NAMESPACE, onBase, prepareCheckout, REPO, removeLabRepoProject, resetNamespace } from "./m7Train.ts";
 
 const MACHINE = "lab-a";
@@ -53,13 +52,7 @@ export async function noCiTrain(lab: Lab) {
     const leadThread = started.body.threadId as string;
     await lab.waitEvent("lead start turn", TURN_MS, { cursor: scenarioStart, machineId: MACHINE, match: (e) => e.threadId === leadThread && ENDED.includes(e.type) });
 
-    const intake = await callTool("intake_submit", {
-      ...ref,
-      text: `Lab run: add ${FILE}. The harness spawns the task; reply to each wake with one short line, run no commands.`,
-      clientRequestId: randomUUID(),
-    });
-    check(!intake.isError, `intake_submit: ${JSON.stringify(intake.body)}`);
-    const w = intake.body.workstreamId as string;
+    const w = openWorkstream(check, fleetd, `Add ${FILE}.`);
     const brief = {
       goal: `add ${FILE}`,
       why: "the no-CI train lab scenario",

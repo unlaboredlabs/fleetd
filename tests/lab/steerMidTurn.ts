@@ -9,7 +9,7 @@ import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import { type Body, callToolWith, cli, fleetdCommand, HUB_URL, type Lab, MODEL, nodeHome, scrubbedEnv } from "./harness.ts";
+import { type Body, callToolWith, chatOrder, cli, fleetdCommand, HUB_URL, type Lab, MODEL, nodeHome, scrubbedEnv } from "./harness.ts";
 
 const MACHINE = "lab-a";
 const TURN_MS = 240_000;
@@ -127,15 +127,9 @@ export async function steerMidTurn(lab: Lab) {
   const tail = new Tail(path.join(nodeHome(MACHINE), "transcripts", `${threadId}.jsonl`));
   // A lead m3 left running is already idle; a new one has its start turn to finish.
   if (started.body.state !== "idle") cursor = await turnDone(threadId, cursor, "start");
-  const intake = await callTool("intake_submit", {
-    ...ref,
-    text: "lab steering: register a one-line brief, then wait for my notes; spawn no tasks",
-    clientRequestId: randomUUID(),
-  });
-  check(!intake.isError, `intake_submit: ${JSON.stringify(intake.body)}`);
-  const workstreamId = intake.body.workstreamId as string;
+  const { workstreamId } = await chatOrder(lab, ref, "lab steering: open its workstream with workstream_open, register a one-line brief, then wait for my notes; spawn no tasks");
   await lab.waitEvent(`workstream.running for ${workstreamId}`, TURN_MS, { cursor, machineId: MACHINE, types: ["workstream.running"], match: (e) => e.data?.workstreamId === workstreamId });
-  cursor = await turnDone(threadId, cursor, "intent wake");
+  cursor = await turnDone(threadId, cursor, "the chat turn");
   ok(`${workstreamId} running; lead ${threadId} idle`);
 
   /** Has the idle lead start the slow loop, and returns once it has been running for 2 s. */
