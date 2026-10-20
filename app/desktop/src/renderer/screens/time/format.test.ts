@@ -55,9 +55,9 @@ describe("what isn't exact", () => {
     expect(markedDur(48_000, "±1 s")).toBe("48s ±1 s");
   });
 
-  it("titles a span by its check, its ask, its command, or its kind", () => {
+  it("titles a span by its check, its secret, its command, or its kind", () => {
     expect(spanTitle(span("ci.check", { extra: { check: "lint" } }))).toBe("lint");
-    expect(spanTitle(span("wait.ask", { extra: { key: "deploy.region" } }), (k) => k.toUpperCase())).toBe("ask: DEPLOY.REGION");
+    expect(spanTitle(span("wait.request", { extra: { key: "stripe.test_key" } }), (k) => k.toUpperCase())).toBe("secret: STRIPE.TEST_KEY");
     expect(spanTitle(span("tool.bash", { label: "cargo test" }))).toBe("cargo test");
     expect(spanTitle(span("run.startup"))).toBe("startup");
   });

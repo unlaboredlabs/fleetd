@@ -1,5 +1,5 @@
 // What the screens read. Everything that can go stale is derived here from the entities the store holds now: an
-// order's phase and "needs you" come from its open asks and its lanes' live statuses, never from a count the board
+// order's phase comes from its lanes' live statuses and a project's needs-you from the hub's chat state, never from a count the board
 // cached when it was fetched.
 //
 // Every selector of hub data is undefined while the connection is not fresh (a skeleton, never the last connection's
@@ -7,7 +7,7 @@
 //
 // Selectors are memoized on the slices they read, so a component re-renders only when its inputs changed, and
 // useSyncExternalStore sees a stable value between changes.
-import type { AgentLane, Ask, Batch, LiveLane, Machine, MachineLive, OrderCard, ProjectSummary, TrainLive } from "../../../shared/contracts";
+import type { AgentLane, LiveLane, Machine, MachineLive, OrderCard, ProjectSummary, TrainLive } from "../../../shared/contracts";
 import type { HubError } from "../../../shared/hub";
 import { chatItems, type ChatItem, type ChatSend } from "./chat";
 import { orderPhase, PHASE_RANK, settled, type Phase } from "./phase";
@@ -72,55 +72,6 @@ export const selectConnection = memo(
   },
 );
 
-// Asks.
-
-const isOpen = (a: Ask): boolean => a.state === "open";
-
-/** Open asks per order, recounted from the asks the store holds now. */
-export const selectOpenAsksByOrder = memo(
-  (s) => [s.asks],
-  (asks): Readonly<Record<string, readonly Ask[]>> => {
-    const out: Record<string, Ask[]> = {};
-    for (const ask of Object.values(asks ?? {})) {
-      if (!isOpen(ask) || ask.workstreamId === undefined) continue;
-      (out[ask.workstreamId] ??= []).push(ask);
-    }
-    return out;
-  },
-);
-
-export interface InboxItem {
-  readonly ask: Ask;
-  readonly batch?: Batch | undefined;
-}
-
-/** Open asks, newest batch first, then by number; undefined until this connection's asks have loaded. */
-export const selectInbox = memo(
-  (s) => [s.fresh, s.asks, s.batches],
-  (fresh, asks, batches): readonly InboxItem[] | undefined => {
-    if (!fresh || asks === undefined) return undefined;
-    const items = Object.values(asks)
-      .filter(isOpen)
-      .map((ask) => ({ ask, batch: ask.batchId === undefined ? undefined : batches[ask.batchId] }))
-      .filter((i) => i.batch?.state !== "closed");
-    return items.sort(
-      (a, b) =>
-        (b.batch?.createdAt ?? "").localeCompare(a.batch?.createdAt ?? "") ||
-        (a.ask.number ?? 0) - (b.ask.number ?? 0) ||
-        a.ask.createdAt.localeCompare(b.ask.createdAt),
-    );
-  },
-);
-
-/** Why the open asks couldn't be read, while they can't: the inbox shows it; the board draws without needs-you marks. */
-export const selectAsksError = (s: DataState) => (s.fresh ? s.asksError : undefined);
-
-/** Undefined until the asks loaded (or when their read failed): "0" would claim nothing needs you. */
-export const selectNeedsYouCount = memo(
-  (s) => [selectInbox(s)],
-  (inbox): number | undefined => inbox?.length,
-);
-
 // Lanes and orders.
 
 /** The lane id of a project's lead, as the hub cuts it (80 UTF-16 units, whole characters). */
@@ -144,21 +95,15 @@ export const mergeLane = (lane: AgentLane, live: LiveLane | undefined, endedAt?:
 export interface OrderView {
   readonly card: OrderCard;
   readonly phase: Phase;
-  /** Open asks about this order, now. */
-  readonly asks: readonly Ask[];
-  /** False when the asks couldn't be read: `asks` is empty and the phase uses the board's cached count instead. */
-  readonly asksKnown: boolean;
   /** The card's lanes (active ones), live. */
   readonly lanes: readonly AgentLane[];
 }
 
 const orderView = (
   card: OrderCard,
-  openAsks: readonly Ask[],
   liveLanes: Readonly<Record<string, LiveLane>>,
   detail: OrderDetail | undefined,
   ended: Readonly<Record<string, string>> = {},
-  asksKnown = true,
 ): OrderView => {
   const lanes = card.lanes.map((l) => mergeLane(l, liveLanes[l.laneId], ended[l.laneId]));
   const lead = liveLanes[leadLaneId(card.projectRef)];
@@ -168,30 +113,25 @@ const orderView = (
   const phase = orderPhase({
     state: card.state,
     headline: card.next,
-    // Asks unreadable: fall back to the hub's count from the board, so an order waiting on you still says so.
-    openAsks: asksKnown ? openAsks.length : card.needsYou,
+    // The hub's count of what waits on you for this order (its requests), refetched on every order event.
+    openAsks: card.needsYou,
     lanes: [...lanes, ...(detail?.doneLanes ?? [])],
     hasTasks: card.total > 0,
     prs: card.prs,
     leadWorking,
   });
-  return { card, phase, asks: openAsks, asksKnown, lanes };
+  return { card, phase, lanes };
 };
 
-const noAsks: readonly Ask[] = [];
-
-const asksState = (s: DataState): "loading" | "loaded" | "failed" =>
-  s.asks !== undefined ? "loaded" : s.asksError !== undefined ? "failed" : "loading";
 
 /** The board: every order with its live phase, by phase then most recently updated; undefined until loaded. */
 export const selectBoard = memo(
-  (s) => [s.fresh, s.orders, asksState(s), selectOpenAsksByOrder(s), s.live.lanes, s.details, s.live.ended],
-  (fresh, orders, asksAre, asks, liveLanes, details, ended): readonly OrderView[] | undefined => {
-    // Phases count open asks, so the board waits for them, but not on a read that failed.
-    if (!fresh || orders === undefined || asksAre === "loading") return undefined;
+  (s) => [s.fresh, s.orders, s.live.lanes, s.details, s.live.ended],
+  (fresh, orders, liveLanes, details, ended): readonly OrderView[] | undefined => {
+    if (!fresh || orders === undefined) return undefined;
     return Object.values(orders)
       .map((card) =>
-        orderView(card, asks[card.workstreamId] ?? noAsks, liveLanes, details[card.workstreamId], ended, asksAre === "loaded"),
+        orderView(card, liveLanes, details[card.workstreamId], ended),
       )
       .sort(
         (a, b) =>
@@ -214,16 +154,14 @@ export const selectOrder = perKey((workstreamId) =>
   memo(
     (s) =>
       [
-        s.fresh && asksState(s) !== "loading" ? s.orders?.[workstreamId] : undefined,
-        selectOpenAsksByOrder(s)[workstreamId] ?? noAsks,
+        s.fresh ? s.orders?.[workstreamId] : undefined,
         s.live.lanes,
         s.details[workstreamId],
-        asksState(s) === "loaded",
       ],
-    (card, asks, liveLanes, detail, asksKnown): OrderPage | undefined => {
+    (card, liveLanes, detail): OrderPage | undefined => {
       if (card === undefined) return undefined;
       const lead = detail?.lead === undefined ? undefined : mergeLane(detail.lead, liveLanes[detail.lead.laneId]);
-      return { ...orderView(card, asks, liveLanes, detail, {}, asksKnown), detail, lead };
+      return { ...orderView(card, liveLanes, detail), detail, lead };
     },
   ),
 );

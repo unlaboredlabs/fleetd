@@ -11,7 +11,7 @@ const event = (type: string, data?: unknown): HubEvent => ({
 
 describe("hub events", () => {
   it("narrows by type and reads the declared data", () => {
-    const e = event("request.updated", { requestId: "Q3", kind: "secret", state: "answered" });
+    const e = event("request.updated", { requestId: "Q3", kind: "secret", state: "stored", workstreamId: "W1" });
     expect(isEvent(e, "request.opened", "request.updated") && eventData(e)?.requestId).toBe("Q3");
     expect(isEvent(e, "task.started")).toBe(false);
   });

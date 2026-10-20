@@ -54,7 +54,7 @@ const LONG: Record<string, (i: number) => string> = {
     "S1: keeping the literal headline (no prorated variant) and the public snapshot route at /share/<id>.png, then rerunning the receipt tests for every locale before I ask for review again",
 };
 /** Free text gets long only where it is prose (asks, messages, steers), never where it is a key or a command. */
-const isProse = (o: JsonObject) => typeof o["messageId"] === "string" || typeof o["askId"] === "string" || o["role"] === "assistant" || o["role"] === "user" || typeof o["stage"] === "string";
+const isProse = (o: JsonObject) => typeof o["messageId"] === "string" || o["role"] === "assistant" || o["role"] === "user" || typeof o["stage"] === "string";
 
 /** Long titles, criteria, branches and prose everywhere they appear; a judge done-when on every brief. */
 export const longText = (f: Fixture): Fixture => {
@@ -219,7 +219,7 @@ const SPAN_KINDS: Array<readonly [string, string]> = [
   ["tool.edit", "tools"],
   ["git", "tools"],
   ["queue.slot", "queue"],
-  ["wait.ask", "human"],
+  ["wait.request", "human"],
   ["change.review", "pipeline"],
   ["change.ci", "pipeline"],
   ["ci.check", "pipeline"],
@@ -249,7 +249,7 @@ export const timeSpans = (f: Fixture, n = 15_000): Fixture => {
       taskId: `T${task}`,
       workstreamId: `W${1 + (task % 12)}`,
       label: kind === "tool.bash" ? "pnpm test --filter storefront-checkout" : kind === "tool.edit" ? LONG_PATH : kind === "ci.check" ? "ci / test (ubuntu-latest, node 24)" : kind,
-      ...(kind === "wait.ask" ? { extra: { key: "pricing.headline", answeredBy: "you" } } : {}),
+      ...(kind === "wait.request" ? { extra: { key: "stripe.test_key", answeredBy: "you" } } : {}),
       ...(kind === "tool.bash" ? { exitCode: i % 53 === 0 ? 1 : 0 } : {}),
     };
   });

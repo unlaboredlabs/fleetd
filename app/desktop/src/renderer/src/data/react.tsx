@@ -20,13 +20,11 @@ export const DataProvider = ({ layer, children }: { layer: DataLayer; children: 
   );
 };
 
-const openAsks = { state: "open" } as const;
 const wholeBoard = {};
 
-/** The reads every screen's counts depend on (the board, the inbox), kept loaded whatever screen is open. */
+/** The read the live strips and agent counts depend on (the board), kept loaded whatever screen is open. */
 const AlwaysOn = () => {
   useToolQuery("orders_board", wholeBoard);
-  useToolQuery("asks_list", openAsks);
   return null;
 };
 

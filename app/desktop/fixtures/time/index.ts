@@ -65,7 +65,7 @@ const addOrder = (f: Fixture, opts: FixtureOptions) => {
   f.answer("order_get", { workstreamId: FIXTURE_ORDER }, {
     ...clone(template),
     order: card,
-    asks: [],
+    requests: [],
     claims: [],
     doneLanes,
     ...(lead === undefined ? {} : { lead: lane(lead.threadId, "lead", "lead") }),

@@ -112,8 +112,7 @@ pub fn render(docs: &BTreeMap<&'static str, Value>) -> String {
     }
     let mut out = String::from(
         "// Generated from crates/fleetd-contracts by `cargo run -p fleetd-contracts --bin fleetd-schema`.\n\
-         // Do not edit: CI regenerates it and fails on any difference.\n\
-         /* eslint-disable -- generated; the schemas are what they are (a machine id or \"browser\" is just a string). */\n\n",
+         // Do not edit: CI regenerates it and fails on any difference.\n\n",
     );
     for (name, doc, value) in constants() {
         writeln!(out, "/** {doc} */\nexport const {name} = {value};\n").unwrap();

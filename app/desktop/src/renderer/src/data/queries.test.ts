@@ -1,9 +1,8 @@
 import { QueryObserver } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { boardRefreshAt, createDataLayer, DONE_HOLD_MS, type HubApi } from "./queries";
-import { ask, card, event, live, snapshot } from "./fixtures.test-util";
+import { card, event, live, snapshot } from "./fixtures.test-util";
 import type { HubFrame } from "../../../shared/hub";
-import { selectNeedsYouCount } from "./selectors";
 
 const fakeHub = () => {
   let listener: (frame: HubFrame) => void = () => undefined;
@@ -51,19 +50,19 @@ describe("data layer", () => {
     layer.start();
     fake.send(live());
     fake.send(snapshot(1));
-    const stop = new QueryObserver(layer.queryClient, layer.toolQuery("asks_list", { state: "open" })).subscribe(() => undefined);
+    const stop = new QueryObserver(layer.queryClient, layer.toolQuery("orders_board", {})).subscribe(() => undefined);
     await vi.advanceTimersByTimeAsync(0);
-    // The ask is answered while the first list is on its way; that list still has it open.
-    fake.send(event(2, "ask.answered", { askId: "A1", workstreamId: "W1" }));
+    // The order fails while the first board is on its way; that board still has it running.
+    fake.send(event(2, "workstream.state", { workstreamId: "W1", state: "failed" }));
     await vi.advanceTimersByTimeAsync(150);
-    expect(fake.calls).toEqual(["asks_list"]);
-    fake.answers[0]?.({ asks: [ask("A1", "W1")], batches: [] });
+    expect(fake.calls).toEqual(["orders_board"]);
+    fake.answers[0]?.(board);
     await vi.advanceTimersByTimeAsync(0);
-    expect(layer.store.getState().asks).toBeUndefined();
-    expect(fake.calls).toEqual(["asks_list", "asks_list"]);
-    fake.answers[1]?.({ asks: [], batches: [] });
+    expect(layer.store.getState().orders).toBeUndefined();
+    expect(fake.calls).toEqual(["orders_board", "orders_board"]);
+    fake.answers[1]?.({ ...board, orders: [card("W1", { state: "failed" })] });
     await vi.advanceTimersByTimeAsync(0);
-    expect(layer.store.getState().asks).toEqual({});
+    expect(layer.store.getState().orders?.["W1"]?.state).toBe("failed");
     stop();
   });
 
@@ -137,40 +136,18 @@ describe("data layer", () => {
   });
 });
 
-describe("the person's own answers", () => {
-  const reply = { parsed: true, applied: [{ askId: "A1", outcome: "answered", label: "Image only", undoUntil: "2026-10-19T10:00:10.000Z" }] };
-
-  const loaded = async () => {
-    vi.useFakeTimers();
+describe("writes", () => {
+  const connected = () => {
     const fake = fakeHub();
     const layer = createDataLayer(fake.hub);
     layer.start();
     fake.send(live());
     fake.send(snapshot(1));
-    const stop = new QueryObserver(layer.queryClient, layer.toolQuery("asks_list", { state: "open" })).subscribe(() => undefined);
-    await vi.advanceTimersByTimeAsync(0);
-    fake.answers[0]?.({ asks: [ask("A1", "W1"), ask("A2", "W1", { number: 2 })], batches: [] });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(selectNeedsYouCount(layer.store.getState())).toBe(2);
-    return { fake, layer, stop };
+    return { fake, layer };
   };
 
-  it("drops an answered ask from the counts the moment the hub confirms, and refetches the asks", async () => {
-    const { fake, layer, stop } = await loaded();
-    const out = layer.call("inbox_reply", { raw: "1 a" });
-    fake.answers.at(-1)?.(reply);
-    await out;
-    expect(selectNeedsYouCount(layer.store.getState())).toBe(1);
-    await vi.advanceTimersByTimeAsync(0);
-    expect(fake.calls.slice(-1)).toEqual(["asks_list"]);
-    // The hub's own event afterwards changes nothing.
-    fake.send(event(2, "ask.answered", { askId: "A1", workstreamId: "W1" }));
-    expect(selectNeedsYouCount(layer.store.getState())).toBe(1);
-    stop();
-  });
-
   it("shows a saved max agents at once, over the last live frame's slots", async () => {
-    const { fake, layer, stop } = await loaded();
+    const { fake, layer } = connected();
     const ref = { machineId: "devbox", projectId: "storefront" };
     const before = { cap: 16, used: 6, queued: 0, reservedBand: 2, perProject: [{ projectRef: ref, maxAgents: 12, running: 6, queued: 0, used: 7 }] };
     fake.send({ t: "live", frame: { at: "2026-10-19T10:00:00.000Z", full: true, lanes: [], slots: before } });
@@ -180,81 +157,7 @@ describe("the person's own answers", () => {
     await out;
     expect(layer.store.getState().live.slots?.perProject[0]?.maxAgents).toBe(4);
     expect(layer.store.getState().slots?.perProject[0]?.maxAgents).toBe(4);
-    stop();
-  });
-
-  it("a list read that raced the reply never brings the ask back", async () => {
-    const { fake, layer, stop } = await loaded();
-    // A refetch is in flight (it left before the reply) when the reply lands.
-    void layer.queryClient.invalidateQueries({ queryKey: ["call", "asks_list"] });
-    await vi.advanceTimersByTimeAsync(0);
-    const racing = fake.answers.length - 1;
-    const out = layer.call("inbox_reply", { raw: "1 a" });
-    fake.answers.at(-1)?.(reply);
-    await out;
-    fake.answers[racing]?.({ asks: [ask("A1", "W1"), ask("A2", "W1", { number: 2 })], batches: [] });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(selectNeedsYouCount(layer.store.getState())).toBe(1);
-    // It reruns, and the fresh list agrees.
-    fake.answers.at(-1)?.({ asks: [ask("A2", "W1", { number: 2 })], batches: [] });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(selectNeedsYouCount(layer.store.getState())).toBe(1);
-    stop();
-  });
-
-  it("an order read in flight across an undo doesn't remove the restored ask", async () => {
-    const { fake, layer, stop } = await loaded();
-    const out = layer.call("inbox_reply", { raw: "1 a" });
-    fake.answers.at(-1)?.(reply);
-    await out;
-    await vi.advanceTimersByTimeAsync(0);
-    // The post-answer list drops A1 from the store, so only the undo's own ask names its order.
-    const list = fake.calls.lastIndexOf("asks_list");
-    fake.answers[list]?.({ asks: [ask("A2", "W1", { number: 2 })], batches: [] });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(layer.store.getState().asks?.["A1"]).toBeUndefined();
-    // The order view opens: its read leaves before the undo.
-    const order = new QueryObserver(layer.queryClient, layer.toolQuery("order_get", { workstreamId: "W1" })).subscribe(() => undefined);
-    await vi.advanceTimersByTimeAsync(0);
-    const orderCall = fake.answers.length - 1;
-    const undo = layer.call("inbox_undo", { askId: "A1" });
-    fake.answers.at(-1)?.({ ask: ask("A1", "W1") });
-    await undo;
-    // The order read that left before the undo answers with the order's asks as they were then: A2 only.
-    fake.answers[orderCall]?.({ order: card("W1"), asks: [ask("A2", "W1", { number: 2 })], doneLanes: [] });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(selectNeedsYouCount(layer.store.getState())).toBe(2);
-    order();
-    stop();
-  });
-
-  it("undo puts the ask back at once", async () => {
-    const { fake, layer, stop } = await loaded();
-    const out = layer.call("inbox_reply", { raw: "1 a" });
-    fake.answers.at(-1)?.(reply);
-    await out;
-    const undo = layer.call("inbox_undo", { askId: "A1" });
-    fake.answers.at(-1)?.({ ask: ask("A1", "W1") });
-    await undo;
-    expect(selectNeedsYouCount(layer.store.getState())).toBe(2);
-    fake.send(event(3, "ask.undone", { askId: "A1" }));
-    expect(selectNeedsYouCount(layer.store.getState())).toBe(2);
-    stop();
-  });
-});
-
-describe("asks read failure", () => {
-  it("records a final asks_list error in the store", async () => {
-    const fake = fakeHub();
-    fake.hub = { ...fake.hub, call: () => Promise.resolve({ ok: false, error: { code: "forbidden", message: "no grant" } }) };
-    const layer = createDataLayer(fake.hub);
-    layer.start();
-    fake.send(live());
-    fake.send(snapshot(1));
-    await expect(layer.queryClient.query(layer.toolQuery("asks_list", { state: "open" }))).rejects.toThrow("no grant");
-    expect(layer.store.getState().asksError).toEqual({ code: "forbidden", message: "no grant" });
-  });
-});
+  });});
 
 describe("live scope", () => {
   it("sends only changes, and stops when nothing wants live values", () => {
