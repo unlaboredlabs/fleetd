@@ -21,7 +21,7 @@ This page shows how fleetd's parts fit together and what happens to a piece of w
 <path d="M470 64 380 126" marker-end="url(#fleet-arrow)" marker-start="url(#fleet-arrow)"/>
 <rect x="190" y="128" width="300" height="64" rx="6" stroke-width="2"/>
 <text x="340" y="156" text-anchor="middle" fill="currentColor" stroke="none" font-weight="600">Hub</text>
-<text x="340" y="178" text-anchor="middle" fill="currentColor" stroke="none" font-size="12">projects · orders · asks · merge train</text>
+<text x="340" y="178" text-anchor="middle" fill="currentColor" stroke="none" font-size="12">projects · orders · decisions · merge train</text>
 <path d="M175 260 290 194" marker-end="url(#fleet-arrow)"/>
 <path d="M505 260 390 194" marker-end="url(#fleet-arrow)"/>
 <text x="205" y="222" text-anchor="end" fill="currentColor" stroke="none" font-size="12">dials out</text>
@@ -68,13 +68,13 @@ The hub keeps its data in one SQLite file, `~/.fleetd/hub/hub.sqlite`. See [Conf
 6. The lead claims the order is done (`claim_done`). The hub runs the done-when checks itself, and only all of
    them passing makes it done.
 
-When the lead needs a decision, it sends you an **ask**. You can redirect any agent while it works with a **steer**.
+When the lead needs a decision, it asks you in the chat. You can redirect any agent while it works with a **steer**.
 
 ## The terms
 
 ### Hub {#hub}
 
-One per fleet. It holds projects, leads, briefs, tasks, asks and decisions, the merge trains and checks. Start it
+One per fleet. It holds projects, leads, briefs, tasks, decisions, the merge trains and checks. Start it
 with `fleetd init`, which runs it as a service. It listens on port 4790 by default.
 
 ### Node and worker {#nodes}
@@ -94,11 +94,12 @@ code. A project's first order starts it. It runs on `claude-opus-5-5` by default
 One line of intent, sent from the app, the CLI or MCP (`intake_submit`). A leading `@project` names the project;
 otherwise the hub picks one or asks you. Inside fleetd an order is a **workstream**, with an id such as `W41`.
 
-### Ask and decision {#asks}
+### Questions and decisions {#asks}
 
-A lead asks you only about product calls, money, credentials and irreversible steps. Asks arrive numbered in the
-inbox, and you answer in one line (`1 go 2 nvm 3 b`). Each answer becomes a **decision** in a searchable log, so the
-same question is never asked twice. See [Approvals & secrets](/docs/approvals-and-secrets) for commands and secrets.
+A lead asks you only about product calls, money and irreversible steps, in the project's chat: numbered questions,
+each with its recommendation. You answer tersely (`1 go, 2 rec`). The lead logs each answer as a **decision** in a
+searchable log, so the same question is never asked twice. See [Approvals & secrets](/docs/approvals-and-secrets) for
+commands and secrets.
 
 ### Merge train {#merge-train}
 
