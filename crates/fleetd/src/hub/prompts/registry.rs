@@ -152,9 +152,9 @@ pub const ENTRIES: &[Entry] = &[
                 Prompt
             ),
             (
-                "secrets-via-ask",
-                "secrets only through `ask` with kind secret",
-                r"kind secret",
+                "secrets-via-request",
+                "secrets only through `request_secret`",
+                r"request_secret",
                 Code
             ),
             (
@@ -165,8 +165,8 @@ pub const ENTRIES: &[Entry] = &[
             ),
             (
                 "never-block",
-                "never blocks on a question (`proceededOnRec`)",
-                r"proceededOnRec",
+                "never blocks on a question",
+                r"Carry on with your recommendation",
                 Prompt
             ),
             (
@@ -195,7 +195,7 @@ pub const ENTRIES: &[Entry] = &[
             ),
             (
                 "amend",
-                "a frozen brief changes only with `amend`",
+                "a frozen brief changes only with `amend` and the human's logged yes",
                 r"`amend`",
                 Code
             ),
@@ -240,26 +240,6 @@ pub const ENTRIES: &[Entry] = &[
         "Digest: finish-all is idle",
         "each digest, per idle finish-all order",
         "",
-        &[]
-    ),
-    entry!(
-        "digest.answer.withdrawn",
-        Wake,
-        WakesAndMessages,
-        Lead,
-        "Digest: an ask the human dropped",
-        "each digest, per dropped ask",
-        "askId!=the ask, A<n>; key!=its decision key",
-        &[]
-    ),
-    entry!(
-        "digest.answer.skipped",
-        Wake,
-        WakesAndMessages,
-        Lead,
-        "Digest: an ask the human skipped for now",
-        "each digest, per skipped ask",
-        "askId!=the ask, A<n>; key!=its decision key; value!=your recommendation, with its label",
         &[]
     ),
     entry!(
@@ -393,13 +373,13 @@ pub const ENTRIES: &[Entry] = &[
         &[]
     ),
     entry!(
-        "wake.answers",
+        "wake.request_done",
         Wake,
         WakesAndMessages,
         Lead,
-        "Wake: answers",
-        "per batch of answers",
-        "count!=how many asks were settled",
+        "Wake: a secret or approval settled",
+        "per secret stored or withdrawn, and per command or tool approval approved, denied, run or failed",
+        "requestId!=the request, Q<n>; what!=the secret, command or tool prompt; outcome!=what became of it",
         &[]
     ),
     entry!(
@@ -867,9 +847,9 @@ pub const ENTRIES: &[Entry] = &[
         Msg,
         WakesAndMessages,
         Any,
-        "Tool ask withdrawn",
-        "per tool ask withdrawn before an answer (tool result)",
-        "askId!=A<n>; by!=who withdrew it",
+        "Tool approval withdrawn",
+        "per tool approval withdrawn before an answer (tool result)",
+        "requestId!=Q<n>; by!=who withdrew it",
         &[(
             "no-retry",
             "does not retry the call",
@@ -883,8 +863,8 @@ pub const ENTRIES: &[Entry] = &[
         WakesAndMessages,
         Any,
         "Tool denied by the human",
-        "per tool ask the human denied (tool result)",
-        "by!=who; askId!=A<n>; said=`: ` and what they said, or nothing",
+        "per tool approval the human denied (tool result)",
+        "by!=who; requestId!=Q<n>; said=`: ` and what they said, or nothing",
         &[]
     ),
     entry!(

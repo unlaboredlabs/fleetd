@@ -488,7 +488,7 @@ impl CheckRunner {
                 .workstream_id
                 .as_ref()
                 .map(|w| w.to_string())
-                .unwrap_or_else(|| "this ask's workstream".into());
+                .unwrap_or_else(|| "the workstream".into());
             return verdict(
                 CheckOutcome::Error,
                 format!(
@@ -720,17 +720,6 @@ impl CheckRunner {
             exit_code: outcome.exit_code,
             ran_by: ran_by_of(spec),
             at: super::now_ts(self.clock.as_ref()),
-        }
-    }
-
-    /// A do ask's `verify` check, once the human ticked it done. `judge` and `human` specs are refused with `error`.
-    pub async fn verify(&self, scope: &CheckScope, spec: &CheckSpec) -> (CheckOutcome, String) {
-        match self.own(scope, spec).await {
-            Some(v) => (v.result, utf16_prefix(&v.evidence, EVIDENCE_MAX).to_owned()),
-            None => (
-                CheckOutcome::Error,
-                "a verify check is one fleetd runs itself, not a judge or a human".into(),
-            ),
         }
     }
 }

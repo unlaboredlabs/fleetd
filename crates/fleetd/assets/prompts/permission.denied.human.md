@@ -1,1 +1,1 @@
-Denied by {{by}} ({{askId}}){{said}}
+Denied by {{by}} ({{requestId}}){{said}}

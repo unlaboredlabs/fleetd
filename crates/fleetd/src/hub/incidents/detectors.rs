@@ -1,6 +1,6 @@
 //! Incident detectors that read the event log: stalls, writes outside a task's areas, and a human replacing a lead's
 //! decision (override). The
-//! other classes are recorded where the hub sees them happen (claims, estimates, the value bar, the train, the inbox).
+//! other classes are recorded where the hub sees them happen (claims, estimates, the value bar, the train).
 //! Events from the hub's start on; nothing here reads a model.
 use super::{IncidentInput, Incidents};
 use crate::hub::store::{EventLog, StoreError, WaitInput};

@@ -181,7 +181,7 @@ async fn intake_preview(
                 "Pass that project to intake_submit so the router does not run again.".into()
             }
             None => {
-                "The router could not place it; intake_submit would ask you for the project.".into()
+                "The router could not place it; name the project with @<project> in intake_submit.".into()
             }
         }),
         echo,

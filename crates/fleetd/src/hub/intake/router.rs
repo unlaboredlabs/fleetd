@@ -94,9 +94,9 @@ pub struct RouterRun {
 
 #[derive(Debug, Clone)]
 pub struct RouteOutcome {
-    /// None when the router could not place the intent: the caller asks the human.
+    /// None when the router could not place the intent: intake refuses it and says to name the project.
     pub result: Option<RouterResult>,
-    /// Why there is no result, for the fallback ask.
+    /// Why there is no result, for the refusal.
     pub why: Option<String>,
     pub runs: Vec<RouterRun>,
 }

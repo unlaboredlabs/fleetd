@@ -1,7 +1,6 @@
 //! The claim flow on a real in-memory database and event log, with a fake node and fake other areas.
 use super::ports::{
-    BoxFuture, ClaimWake, CommandRun, HumanAsk, HumanAskFiled, JudgeSpawn, PlaybookLimits, Ports,
-    Refusal,
+    BoxFuture, ClaimWake, CommandRun, HumanConfirmation, JudgeSpawn, PlaybookLimits, Ports, Refusal,
 };
 use super::render::claim_failed_lines;
 use super::*;
@@ -12,7 +11,7 @@ use crate::hub::store::{EventLog, HubDb, WaitInput};
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef};
 use fleetd_contracts::ledger::{
-    AskId, MetricValues, PlaybookRef, Workstream, WorkstreamId, WorkstreamState,
+    MetricValues, PlaybookRef, Workstream, WorkstreamId, WorkstreamState,
 };
 use fleetd_contracts::mcp::ErrorCode;
 use fleetd_contracts::model::ActionItem;
@@ -61,6 +60,10 @@ struct Fake {
     node: Arc<Mutex<(i64, String)>>,
     /// Each command run: machine, cwd and argv.
     commands: Arc<Mutex<Vec<Value>>>,
+    /// The `done.<n>` decisions the lead logged from the human's answers in chat, by key.
+    confirmations: Mutex<HashMap<String, HumanConfirmation>>,
+    /// When the brief was last frozen or amended.
+    frozen_ms: Mutex<Option<i64>>,
 }
 
 impl Ports for Fake {
@@ -117,11 +120,11 @@ impl Ports for Fake {
     fn spawn_judge(&self, _: JudgeSpawn) -> BoxFuture<'_, Result<Task, Refusal>> {
         Box::pin(async { Err(super::ports::invalid("no judges here", None)) })
     }
-    fn file_human_ask(&self, _: HumanAsk) -> BoxFuture<'_, Result<HumanAskFiled, Refusal>> {
-        Box::pin(async { panic!("no human is asked in these tests") })
+    fn human_confirmation(&self, _: &WorkstreamId, key: &str) -> Option<HumanConfirmation> {
+        self.confirmations.lock().unwrap().get(key).cloned()
     }
-    fn ask_answer(&self, _: &AskId) -> Option<String> {
-        None
+    fn brief_frozen_ms(&self, _: &WorkstreamId) -> Option<i64> {
+        *self.frozen_ms.lock().unwrap()
     }
     fn thread_actions<'a>(
         &'a self,
@@ -182,6 +185,20 @@ fn kit(workstreams: Vec<Workstream>) -> Kit {
 }
 
 impl Kit {
+    fn confirm(&self, key: &str, value: &str, at_ms: i64) {
+        let n = self.ports.confirmations.lock().unwrap().len() + 1;
+        self.ports.confirmations.lock().unwrap().insert(
+            key.into(),
+            HumanConfirmation {
+                value: value.into(),
+                decision_id: format!("D{n}"),
+                at_ms,
+            },
+        );
+    }
+    fn freeze_at(&self, ms: i64) {
+        *self.ports.frozen_ms.lock().unwrap() = Some(ms);
+    }
     fn set_node(&self, code: i64, tail: &str) {
         *self.node.lock().unwrap() = (code, tail.into());
     }
@@ -385,7 +402,7 @@ async fn asks_no_one_once_an_automatic_check_failed() {
         ]),
     )]);
     k.set_node(1, "");
-    // The fake panics if a human ask is filed.
+    k.confirm("done.1", "yes", 2_000);
     let skipped = k.claims.claim_done(&w1(), LEAD_BY, None).await.unwrap();
     let r = &skipped.claim.unwrap().results[1];
     assert_eq!(
@@ -396,6 +413,69 @@ async fn asks_no_one_once_an_automatic_check_failed() {
         r.evidence.as_str(),
         "not run: a judge or the human is asked only once every earlier check passes"
     );
+}
+
+/// A human check is a question the lead asks in chat; it passes only on a yes logged for the brief as it stands now.
+#[tokio::test]
+async fn a_human_check_passes_on_a_yes_logged_after_the_brief_froze() {
+    let k = kit(vec![workstream(
+        "W1",
+        Some(vec![
+            doc_check(),
+            json!({ "type": "human", "question": "Looks good on your end?" }),
+        ]),
+    )]);
+    k.set_node(0, "");
+    k.freeze_at(1_000);
+    let result = |c: &fleetd_contracts::verification::Claim| c.results[1].clone();
+
+    let missing = k.claims.claim_done(&w1(), LEAD_BY, None).await.unwrap();
+    let r = result(missing.claim.as_ref().unwrap());
+    assert_eq!((r.result, r.ran_by), (CheckOutcome::Fail, CheckResultRanBy::Human));
+    assert_eq!(
+        r.evidence.as_str(),
+        "not confirmed yet: ask the human in chat: \"Looks good on your end?\", then log their answer with decide {key: \"done.1\", value: \"yes\" or \"no\", workstreamId: \"W1\"}"
+    );
+
+    k.confirm("done.1", "no", 2_000);
+    let no = k.claims.claim_done(&w1(), LEAD_BY, None).await.unwrap();
+    let r = result(no.claim.as_ref().unwrap());
+    assert_eq!(r.result, CheckOutcome::Fail);
+    assert_eq!(r.evidence.as_str(), "the human said \"no\" in chat (D1)");
+
+    k.confirm("done.1", "yes", 3_000);
+    let yes = k.claims.claim_done(&w1(), LEAD_BY, None).await.unwrap();
+    let claim = yes.claim.unwrap();
+    assert_eq!(claim.outcome, ClaimOutcome::Pass);
+    assert_eq!(result(&claim).evidence.as_str(), "the human said yes in chat (D2)");
+}
+
+/// The research's `done.0 = yes` must not pass the amended build's check at the same index: an answer logged before
+/// the brief's latest freeze or amend is about a brief that no longer stands.
+#[tokio::test]
+async fn a_yes_logged_before_an_amend_never_passes_the_amended_brief() {
+    let k = kit(vec![workstream(
+        "W1",
+        Some(vec![json!({ "type": "human", "question": "Ship the build?" })]),
+    )]);
+    k.confirm("done.0", "yes", 1_000);
+    k.freeze_at(5_000);
+    let stale = k.claims.claim_done(&w1(), LEAD_BY, None).await.unwrap();
+    let claim = stale.claim.unwrap();
+    assert_eq!(claim.outcome, ClaimOutcome::Fail);
+    assert!(
+        claim.results[0]
+            .evidence
+            .as_str()
+            .starts_with("the answer in D1 predates the brief's latest version: ask the human in chat"),
+        "{}",
+        claim.results[0].evidence.as_str()
+    );
+    assert_ne!(k.state(), WorkstreamState::Done);
+
+    k.confirm("done.0", "yes", 6_000);
+    let fresh = k.claims.claim_done(&w1(), LEAD_BY, None).await.unwrap();
+    assert_eq!(fresh.claim.unwrap().outcome, ClaimOutcome::Pass);
 }
 
 #[tokio::test]

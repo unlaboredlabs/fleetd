@@ -15,7 +15,7 @@ use super::args::{self, Kind, Spec};
 /// Under the fleetd dir.
 pub const NODE_SOCKET_PATH: &str = "node/node.sock";
 const SERVES_FIX: &str =
-    "say what this serves: --serves done:<n> | issue:<ref> | defect:<text> | ask:<id>";
+    "say what this serves: --serves done:<n> | issue:<ref> | defect:<text> | decision:<key>";
 
 pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>' | --file <path>) [--amend <decision key>]
              freeze the brief of a draft workstream and start it; --amend changes a frozen brief once the
@@ -75,7 +75,7 @@ pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>
              Changing scope after a milestone's first 10 minutes needs --why, and the status
              view shows it as a marker. --steer S<n> says the human's steer asked for it: it
              stands in for --why and acknowledges the steer
-  inventory  the project's open work ranked: failing checks, open issues (gh), open asks and
+  inventory  the project's open work ranked: failing checks, open issues (gh), open requests and
              TODO/FIXME markers; with nothing left that has a value source and no open child, the
              project's finish-all workstream goes idle
   workstream spawn --text "<intent>" --serves issue:<#n|url>|defect:<text>|done:<n>
@@ -1673,7 +1673,7 @@ mod tests {
                     "--prompt",
                     "y",
                 ],
-                "a write task needs --serves: say what this serves: --serves done:<n> | issue:<ref> | defect:<text> | ask:<id>",
+                "a write task needs --serves: say what this serves: --serves done:<n> | issue:<ref> | defect:<text> | decision:<key>",
             ),
             (
                 &["task", "run"],

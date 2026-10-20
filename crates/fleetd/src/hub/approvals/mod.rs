@@ -12,7 +12,7 @@ pub mod store;
 pub mod tools;
 
 #[cfg(test)]
-mod permissions_tests;
+mod tests;
 
 use crate::clock::Clock;
 use crate::hub::usage::ports::{BoxFut, EventLog, NewEvent, ProjectRef, WaitInput};
@@ -54,9 +54,6 @@ fn refuse(code: &str, message: impl Into<String>, fix: Option<&str>) -> Approval
 const EVIDENCE_MAX: usize = 2000;
 /// Evidence while an approved command runs; replaced by its result.
 const RUNNING: &str = "running on";
-/// How a recorded outcome starts: exit code, timeout, or the node's refusal.
-static FINISHED: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^(exit |killed after |not run on )").unwrap());
 static SINK: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(env|file):([a-z0-9-]{1,32}):(/.*)$").unwrap());
 static PLAIN_WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[\w./:=@%+-]+$").unwrap());
@@ -114,20 +111,16 @@ pub fn shown_argv(argv: &[String]) -> String {
         .join(" ")
 }
 
-/// Why an approval approved before a hub restart goes back to the person, or `None` when it finished.
-pub fn restart_reopen_reason(evidence: Option<&str>, machine_id: &str) -> Option<String> {
-    let evidence = evidence.unwrap_or("");
-    if FINISHED.is_match(evidence) {
-        return None;
-    }
-    // Anything else is evidence from before this "go" (an earlier reopen) or none: it never started.
-    Some(if evidence.starts_with(RUNNING) {
+/// Why an approved command the hub never saw finish goes back to the person after a restart: it never started, or it
+/// was running and its result is unknown.
+pub fn restart_reopen_reason(evidence: Option<&str>, machine_id: &str) -> String {
+    if evidence.is_some_and(|e| e.starts_with(RUNNING)) {
         format!(
             "result unknown: the hub restarted while it ran on {machine_id}; check on {machine_id} whether it ran before approving it again"
         )
     } else {
         NOT_RUN_AFTER_RESTART.to_string()
-    })
+    }
 }
 
 /// A node command's failure.
@@ -346,11 +339,8 @@ impl Approvals {
                 continue;
             }
             let machine = r.project_ref.machine_id.to_string();
-            if let Some(why) =
-                restart_reopen_reason(r.evidence.as_ref().map(|e| e.as_str()), &machine)
-            {
-                let _ = approvals.reopen(&r.request_id, &why).await;
-            }
+            let why = restart_reopen_reason(r.evidence.as_ref().map(|e| e.as_str()), &machine);
+            let _ = approvals.reopen(&r.request_id, &why).await;
         }
         tokio::join!(
             approvals.clone().follow_threads(),

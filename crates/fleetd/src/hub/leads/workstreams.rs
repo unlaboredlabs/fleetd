@@ -1,5 +1,5 @@
 //! Intake, brief freeze and status lines. A workstream's brief is frozen by hash when the lead registers it, and
-//! changes only with an ask the human answered.
+//! changes only with an amend that cites the decision logged when the human said yes in chat.
 use std::sync::Arc;
 
 use fleetd_contracts::events::HubEventType;

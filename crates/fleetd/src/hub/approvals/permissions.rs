@@ -384,7 +384,7 @@ impl Approvals {
         }
     }
 
-    /// Follows thread events from the head: files or auto-answers new prompts and closes asks whose prompt is gone.
+    /// Follows thread events from the head: files or auto-answers new prompts and closes requests whose prompt is gone.
     pub(super) async fn follow_threads(self: Arc<Self>) {
         let mut cursor = self.deps.events.head().await;
         loop {
@@ -712,7 +712,7 @@ impl Approvals {
                 message: fleetd_contracts::prim::Text::unchecked(clip(
                     &texts.render(
                         "permission.denied.withdrawn",
-                        &[("askId", &open.id.as_str()), ("by", &by.as_str())],
+                        &[("requestId", &open.id.as_str()), ("by", &by.as_str())],
                     ),
                     2000,
                 )),
@@ -724,7 +724,7 @@ impl Approvals {
                         "permission.denied.human",
                         &[
                             ("by", &by.as_str()),
-                            ("askId", &open.id.as_str()),
+                            ("requestId", &open.id.as_str()),
                             ("said", &said.map_or(String::new(), |s| format!(": {s}")).as_str()),
                         ],
                     ),

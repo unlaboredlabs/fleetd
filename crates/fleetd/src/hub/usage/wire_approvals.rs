@@ -241,8 +241,9 @@ pub fn request_outcome(r: &HumanRequest) -> (String, String) {
         ),
         RequestState::Withdrawn => "was withdrawn.".into(),
         RequestState::Denied => format!(
-            "was denied{}. Do not run it; say in chat what you do instead.",
-            r.answered_by.as_deref().map_or(String::new(), |b| format!(" by {b}"))
+            "was denied{}{}. Do not run it; say in chat what you do instead.",
+            r.answered_by.as_deref().map_or(String::new(), |b| format!(" by {b}")),
+            if evidence.is_empty() { String::new() } else { format!(": {evidence}") }
         ),
         RequestState::Approved => format!("was approved ({evidence})."),
         RequestState::Ran => {

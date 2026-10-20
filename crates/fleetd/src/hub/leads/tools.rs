@@ -111,7 +111,7 @@ impl Area {
             )
         } else {
             format!(
-                "Lead thread {} is {}. Submit work with intake_submit; watch it with project_get or events_wait (lead.woken, ask.created, batch.ready).",
+                "Lead thread {} is {}. Submit work with intake_submit; watch it with project_get or events_wait (lead.woken, request.opened).",
                 lead.thread_id,
                 super::digest::serde_plain(&lead.state)
             )

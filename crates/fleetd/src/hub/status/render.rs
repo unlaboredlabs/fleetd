@@ -1214,7 +1214,7 @@ pub fn render(
     gates.truncate(3);
 
     // Needs you: open requests in scope, oldest first.
-    let mut asks: Vec<&HumanRequest> = w
+    let mut requests: Vec<&HumanRequest> = w
         .requests
         .iter()
         .filter(|a| match scope {
@@ -1223,10 +1223,10 @@ pub fn render(
             StatusScope::Order { workstream_id } => a.workstream_id.as_ref() == Some(workstream_id),
         })
         .collect();
-    asks.sort_by_key(|a| a.created_at.as_str().to_owned());
+    requests.sort_by_key(|a| a.created_at.as_str().to_owned());
     let needs_you = NeedsYou {
-        count: Count::unchecked(asks.len() as i64),
-        request_ids: capped::<ChatRequestId, 10>(asks.iter().map(|a| a.request_id.clone()).collect()).0,
+        count: Count::unchecked(requests.len() as i64),
+        request_ids: capped::<ChatRequestId, 10>(requests.iter().map(|a| a.request_id.clone()).collect()).0,
     };
 
     // Risks.
@@ -1251,7 +1251,7 @@ pub fn render(
             wake.at(e.started_ms + risks::NO_PLAN_MS);
         }
     }
-    for a in &asks {
+    for a in &requests {
         if let Some(c) = parse_ms(a.created_at.as_str()) {
             wake.at(c + risks::BLOCKED_MS);
         }
@@ -1318,7 +1318,7 @@ pub fn render(
                 )
             })
             .collect(),
-        blocked_requests: asks
+        blocked_requests: requests
             .iter()
             .map(|a| {
                 let ws = a
@@ -1552,7 +1552,7 @@ pub fn render(
         scope_change: markers.first().map(|m| m.text.to_string()),
         doing,
         waiting_on: gates.iter().take(2).map(|g| g.label.to_string()).collect(),
-        needs_you: asks.len() as i64,
+        needs_you: requests.len() as i64,
         risks: risk_list
             .iter()
             .take(2)
@@ -1718,7 +1718,7 @@ mod tests {
             "done": vec![json!({ "title": long(120), "doneAt": "2026-10-18T10:00:00.000Z", "evidence": long(200) }); 10],
             "inProgress": vec![row; 20],
             "next": vec![json!({ "itemId": "P2", "title": long(120), "after": [] }); 10],
-            "needsYou": { "count": 0, "askIds": [] },
+            "needsYou": { "count": 0, "requestIds": [] },
             "risks": vec![json!({ "rule": "no_plan", "level": "warning", "message": long(200) }); 5],
             "health": {
                 "ci": vec![json!({ "repo": "acme/storefront", "state": "red", "failing": vec![long(120); 10], "stale": stale }); 10],

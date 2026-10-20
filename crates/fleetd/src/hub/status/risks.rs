@@ -3,7 +3,7 @@
 use fleetd_contracts::prim::Line;
 use fleetd_contracts::status::{Risk, RiskLevel, RiskRule};
 
-/// A blocking ask is a risk after this long.
+/// An open request is a risk after this long.
 pub const BLOCKED_MS: i64 = 3_600_000;
 /// Slots are a risk when something has queued this long.
 pub const SLOTS_FULL_MS: i64 = 10 * 60_000;
@@ -19,7 +19,7 @@ pub struct RiskFacts {
     pub ci_red: Vec<(String, Vec<String>, String)>,
     /// (machine, "offline"/"degraded", age text, tasks waiting)
     pub machines_down: Vec<(String, String, String, i64)>,
-    /// (ask key, order, open for ms)
+    /// (what it waits on, order, open for ms)
     /// (what waits on the person, its order, open for ms) of every open request.
     pub blocked_requests: Vec<(String, String, i64)>,
     /// (item, title, size letter, failed attempts) of every open must item, plan order.
@@ -276,7 +276,7 @@ mod tests {
             "8 beats 3×2 and 1×4"
         );
         assert_eq!(all[3].message.as_str(), "claude wk at 93%, resets Thu");
-        f.blocked_asks[0].2 = BLOCKED_MS;
+        f.blocked_requests[0].2 = BLOCKED_MS;
         f.machines_down[0].3 = 2;
         let rules: Vec<RiskRule> = risks(&f).iter().map(|r| r.rule).take(3).collect();
         assert_eq!(

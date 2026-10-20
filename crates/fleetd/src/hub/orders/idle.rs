@@ -1,6 +1,6 @@
 //! Order lifecycle follow-ups the hub runs off the event log. When an order is done, its leftover PRs and tasks
 //! are closed (`on_done`). And a safety net for a lead that ends its turn with an order frozen and nothing under way: no task running or queued,
-//! no PR in the train, no open ask and no wake coming. Nothing would ever wake it again, so the hub wakes it once per
+//! no PR in the train, no open request and no wake coming. Nothing would ever wake it again, so the hub wakes it once per
 //! order with a plain line. Bounded: a second idle turn on the same order gets no second nudge.
 use crate::hub::prompts::PromptSet;
 use std::collections::HashSet;
@@ -27,7 +27,7 @@ pub struct OrderFacts {
     pub state: WorkstreamState,
     pub brief_frozen: bool,
     pub live_tasks: usize,
-    pub open_asks: usize,
+    pub open_requests: usize,
     pub open_changes: usize,
 }
 
@@ -47,7 +47,7 @@ pub fn to_nudge(
             o.state == WorkstreamState::Running
                 && o.brief_frozen
                 && o.live_tasks == 0
-                && o.open_asks == 0
+                && o.open_requests == 0
                 && o.open_changes == 0
                 && !nudged.contains(&o.workstream_id)
         })
@@ -62,7 +62,7 @@ pub fn forget_settled(nudged: &mut HashSet<WorkstreamId>, orders: &[OrderFacts])
             &o.workstream_id == id
                 && o.state == WorkstreamState::Running
                 && o.live_tasks == 0
-                && o.open_asks == 0
+                && o.open_requests == 0
                 && o.open_changes == 0
         })
     });
@@ -86,7 +86,7 @@ fn facts(hub: &Hub, r: &ProjectRef) -> Vec<OrderFacts> {
             ..Default::default()
         })
         .unwrap_or_default();
-    let asks = super::open_requests_by_order(hub);
+    let requests = super::open_requests_by_order(hub);
     let changes = super::project_changes(hub, r);
     open.into_iter()
         .map(|w| {
@@ -101,7 +101,7 @@ fn facts(hub: &Hub, r: &ProjectRef) -> Vec<OrderFacts> {
                         )
                     })
                     .count(),
-                open_asks: asks.get(&id).copied().unwrap_or(0),
+                open_requests: requests.get(&id).copied().unwrap_or(0),
                 open_changes: changes
                     .iter()
                     .filter(|c| c.workstream_id == id)
@@ -254,7 +254,7 @@ mod tests {
             state: WorkstreamState::Running,
             brief_frozen: true,
             live_tasks: 0,
-            open_asks: 0,
+            open_requests: 0,
             open_changes: 0,
         }
     }
@@ -304,7 +304,7 @@ mod tests {
                 ..order("W1")
             },
             OrderFacts {
-                open_asks: 1,
+                open_requests: 1,
                 ..order("W2")
             },
             OrderFacts {

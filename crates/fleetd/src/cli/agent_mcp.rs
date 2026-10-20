@@ -86,7 +86,7 @@ static TOOLS: &[Tool] = &[
         "spawn_agent",
         "task_spawn",
         "Start a fleetd agent (a task) with its own session, slot and lane. kind write|read|review; a writer needs \
-         areas from the project's policy and serves (done:<n>, issue:<ref>, defect:<text> or ask:<id>) and gets its own \
+         areas from the project's policy and serves (done:<n>, issue:<ref>, defect:<text> or decision:<key>) and gets its own \
          worktree and branch; a review task needs pr. model and effort are optional. A busy area or a full slot board \
          queues it and it starts by itself. Its result arrives in a later wake: end your turn instead of waiting.",
         inline_schema::<TaskSpawnCall>,
