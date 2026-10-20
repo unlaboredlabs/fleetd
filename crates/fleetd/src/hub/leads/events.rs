@@ -205,7 +205,7 @@ impl Event<'_> {
                 cancelled,
             } => (
                 format!(
-                    "- {workstream} stopped by the human ({why}): {}; {cancelled} agents cancelled, merged PRs stay",
+                    "- {workstream} stopped by the human ({why}): {}; {cancelled} agents cancelled, merged PRs stay; do no more work on it",
                     one_line(title, 80)
                 ),
                 vec![],
@@ -448,7 +448,7 @@ mod tests {
                 why: "not needed",
                 cancelled: 2
             }),
-            "- W3 stopped by the human (not needed): dark mode; 2 agents cancelled, merged PRs stay"
+            "- W3 stopped by the human (not needed): dark mode; 2 agents cancelled, merged PRs stay; do no more work on it"
         );
     }
 

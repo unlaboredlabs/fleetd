@@ -174,6 +174,12 @@ pub const ENTRIES: &[Entry] = &[
                 Code
             ),
             (
+                "stop-work",
+                "does no more work on an order the human stopped",
+                r"Work the human stopped stays stopped",
+                Prompt
+            ),
+            (
                 "train-only-merges",
                 "only the merge train merges",
                 r"never merge",
