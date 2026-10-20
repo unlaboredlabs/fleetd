@@ -1073,3 +1073,85 @@ async fn a_prompt_whose_run_ended_while_the_hub_was_down_closes_quietly() {
         "nothing is sent to the node"
     );
 }
+
+/// Two people answer the same approval at once: exactly one answer counts, and the command runs once.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn two_answers_at_once_run_the_command_once() {
+    for _ in 0..20 {
+        let fake = Arc::new(Fake::default());
+        let a = approvals(&fake);
+        a.gated_run(&p1(), migration()).await.unwrap();
+        let (one, two) = tokio::join!(
+            {
+                let a = a.clone();
+                tokio::spawn(async move { a.answer(&person(), "Q1", true, None).await })
+            },
+            {
+                let a = a.clone();
+                tokio::spawn(async move { a.answer(&person(), "Q1", true, None).await })
+            },
+        );
+        let results = [one.unwrap(), two.unwrap()];
+        assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 1, "one answer counts");
+        let refused = results.iter().find_map(|r| r.as_ref().err()).unwrap();
+        assert_eq!(refused.code, "invalid");
+        fake.woken_times(1).await;
+        assert_eq!(fake.runs.lock().unwrap().len(), 1, "the command runs once");
+        assert_eq!(fake.request("Q1").state, RequestState::Ran);
+    }
+}
+
+/// An approve racing a deny: whichever lands first decides, and a denied command never ran.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn an_approve_racing_a_deny_never_ends_denied_after_running() {
+    for _ in 0..20 {
+        let fake = Arc::new(Fake::default());
+        let a = approvals(&fake);
+        a.gated_run(&p1(), migration()).await.unwrap();
+        let (go, no) = tokio::join!(
+            {
+                let a = a.clone();
+                tokio::spawn(async move { a.answer(&person(), "Q1", true, None).await })
+            },
+            {
+                let a = a.clone();
+                tokio::spawn(async move { a.answer(&person(), "Q1", false, None).await })
+            },
+        );
+        let (go, no) = (go.unwrap(), no.unwrap());
+        assert!(go.is_ok() != no.is_ok(), "exactly one answer counts");
+        fake.woken_times(1).await;
+        let r = fake.request("Q1");
+        if go.is_ok() {
+            assert_eq!((r.state, fake.runs.lock().unwrap().len()), (RequestState::Ran, 1));
+        } else {
+            assert_eq!((r.state, fake.runs.lock().unwrap().len()), (RequestState::Denied, 0));
+        }
+    }
+}
+
+/// The store's guard itself: of many writers moving one open request, exactly one wins.
+#[test]
+fn only_one_guarded_write_moves_a_request() {
+    let fake = Fake::default();
+    let r = fake.stored(Some(("t1", "q1")), RequestState::Open, None);
+    let requests = fake.requests.clone();
+    let won: usize = std::thread::scope(|s| {
+        let handles: Vec<_> = (0..8)
+            .map(|_| {
+                let (requests, id) = (requests.clone(), r.request_id.clone());
+                s.spawn(move || {
+                    requests
+                        .update_from(&id, RequestState::Open, |r| r.state = RequestState::Approved)
+                        .is_ok() as usize
+                })
+            })
+            .collect();
+        handles.into_iter().map(|h| h.join().unwrap()).sum()
+    });
+    assert_eq!(won, 1);
+    let moved = requests
+        .update_from(&r.request_id, RequestState::Open, |r| r.state = RequestState::Denied)
+        .unwrap_err();
+    assert_eq!(moved.to_string(), "Q1 is already approved");
+}

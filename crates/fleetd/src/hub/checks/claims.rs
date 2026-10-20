@@ -627,7 +627,7 @@ impl Claims {
                 });
                 Ok(ClaimDoneOutcome {
                     next: format!(
-                        "{claim_id} is still running its checks (a judge, the human, or a slow command); its outcome arrives in a wake. Carry on with other work."
+                        "{claim_id} is still running its checks (a judge or a slow command); its outcome arrives in a wake. Carry on with other work."
                     ),
                     claim_id,
                     workstream_id: workstream_id.clone(),
