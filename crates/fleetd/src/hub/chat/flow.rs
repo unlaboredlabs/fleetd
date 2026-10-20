@@ -357,6 +357,17 @@ pub(super) async fn cap_line(hub: &Hub, seq: i64, data: Option<&serde_json::Valu
 }
 
 /// Requests still open when the hub starts (opened while it was down, or asks the migration kept as requests).
+/// The start of the follower: takes the event cursor, then shows every open request and brings every chat item that
+/// still reads open or approved in line with its request. Returns the cursor to follow from.
+pub(super) async fn startup(hub: &Hub) -> i64 {
+    let cursor = hub.events.head();
+    show_open_requests(hub).await;
+    for id in hub.chat.unsettled_requests().unwrap_or_default() {
+        show_request(hub, &id).await;
+    }
+    cursor
+}
+
 async fn show_open_requests(hub: &Hub) {
     let open = hub
         .approvals
@@ -578,7 +589,9 @@ pub async fn run(hub: Arc<Hub>) {
             }
         })
     };
-    show_open_requests(&hub).await;
+    // The cursor first: a request that moves while the start shows the open ones (the approvals service reopens
+    // unfinished commands at the same time) is an event after it, followed below. Showing is safe to repeat.
+    let mut cursor = startup(&hub).await;
     // Leads that ended a turn while the hub was down: their replies land now.
     if let Ok(leads) = hub.leads.records.leads_list() {
         for lead in leads {
@@ -616,7 +629,6 @@ pub async fn run(hub: Arc<Hub>) {
         HubEventType::RequestUpdated,
         HubEventType::AgentsCap,
     ];
-    let mut cursor = hub.events.head();
     loop {
         let page = match hub
             .events

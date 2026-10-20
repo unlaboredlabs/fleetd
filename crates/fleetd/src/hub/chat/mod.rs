@@ -397,6 +397,19 @@ impl Chat {
         })
     }
 
+    /// The requests whose inline item still reads open or approved: the ones a missed event could leave stale.
+    pub fn unsettled_requests(&self) -> Result<Vec<String>, StoreError> {
+        self.db.with(|c| {
+            Ok(c.prepare_cached(
+                "SELECT DISTINCT json_extract(data, '$.item.requestId') FROM chat_messages
+                     WHERE json_extract(data, '$.item.state') IN ('open', 'approved')",
+            )?
+            .query_map([], |row| row.get::<_, Option<String>>(0))?
+            .filter_map(|r| r.ok().flatten())
+            .collect())
+        })
+    }
+
     /// The projects with a held message.
     pub fn held_projects(&self) -> Result<Vec<ProjectRef>, StoreError> {
         self.db.with(|c| {
