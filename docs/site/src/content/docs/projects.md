@@ -153,12 +153,10 @@ For example, to try fleetd cheaply on a test project:
 1. Before your first message to it, call
    `lead_start {"machineId":"devbox","projectId":"<id>","model":"claude-haiku-5-5","effort":"low"}`. `fleetd project
    list` shows the ids.
-2. Commit this `.fleetd/policy.yaml` to the default branch. `areas` is required in every policy file; `all` lets
-   writers touch the whole repo.
+2. Commit this `.fleetd/policy.yaml` to the default branch. Without `areas`, the project keeps the areas fleetd
+   [infers from the repo](/docs/config-and-files#inferred-areas).
 
    ```yaml
-   areas:
-     all: ["**"]
    defaults:
      model: claude-haiku-5-5
      effort: low

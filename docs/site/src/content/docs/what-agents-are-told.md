@@ -191,9 +191,16 @@ Your version stays in use.
 ## When fleetd retires a prompt you edited {#retired}
 
 A release can fold a prompt into another one or replace it with fixed text. Your edit to it then stops applying, but
-fleetd keeps it. Settings → Prompts lists it with the prompt that covers it now: copy what you still want into that
-one, then delete the old edit. From an MCP client, `prompts_list` returns these under `orphans`, and `prompt_reset`
-with the old id deletes one.
+fleetd keeps it and never moves it for you.
+
+1. Open Settings → Prompts. Under "Edits that no longer apply", each one says, for example, "Your edit to Wake: task
+   finished (hub-wide) no longer applies", why, and which prompt to copy it into.
+2. "Show your text" shows your old edit; "Copy your text" copies it.
+3. Paste what you still want into the prompt it names. If none takes its place, use your
+   [instructions](#instructions).
+4. Delete the old edit.
+
+From an MCP client, `prompts_list` returns these under `orphans`, and `prompt_reset` with the old id deletes one.
 
 An edited playbook file is listed the same way. Its review and check rules still apply, but its instructions no longer
 reach the lead: the lead prompt has a section for each kind of work.

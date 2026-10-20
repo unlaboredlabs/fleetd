@@ -22,8 +22,9 @@ An item in the chat that shows a [gated command](#gated-command) with Approve an
 
 ## Area {#area}
 
-A named set of paths in a project, such as `docs: ["docs/**"]`. A writer task may only touch the areas it leases.
-Set them in the [policy file](/docs/config-and-files#policy).
+A named set of paths in a project, such as `docs: ["docs/**"]`. A writer task may only touch the areas it leases, and
+writers in different areas run at the same time. fleetd [infers them from the repo](/docs/config-and-files#inferred-areas)
+unless the [policy file](/docs/config-and-files#policy) sets them.
 
 ## Brief {#brief}
 
