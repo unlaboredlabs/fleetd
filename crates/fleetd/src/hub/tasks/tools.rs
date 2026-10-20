@@ -93,25 +93,24 @@ pub fn register(tools: &mut Registry) {
                     return Err(unknown_project(&p.project_ref));
                 }
             }
-            let outcome = super::cap::apply(
-                &hub,
-                CapChange {
+            let outcome = hub
+                .tasks
+                .set_caps(CapChange {
                     cap: input.cap.map(|c| c.get()),
                     project: input.project.map(|p| ProjectCap {
                         project_ref: p.project_ref,
                         max_agents: p.max_agents.get(),
                         pause_extras: p.pause_extras.unwrap_or(false),
                     }),
-                },
-            )
-            .await
-            .map_err(|e| {
-                let error = ToolError::new(e.code, e.message);
-                match e.fix {
-                    Some(fix) => error.with_fix(fix),
-                    None => error,
-                }
-            })?;
+                })
+                .await
+                .map_err(|e| {
+                    let error = ToolError::new(e.code, e.message);
+                    match e.fix {
+                        Some(fix) => error.with_fix(fix),
+                        None => error,
+                    }
+                })?;
             Ok::<Value, ToolError>(json!({
                 "slots": outcome.slots,
                 "paused": (!outcome.paused.is_empty()).then_some(outcome.paused),
