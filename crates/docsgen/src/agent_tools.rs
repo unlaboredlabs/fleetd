@@ -11,6 +11,8 @@ use fleetd::cli::agent_mcp::{self, Role, SERVER_NAME, Tool};
 use fleetd::hub::orders::phase;
 use fleetd::hub::playbooks::finish_all_rules::{CHILD_SOURCES, DEFAULT_MAX_CHILDREN};
 use fleetd::hub::reviews::rules::ReviewRole;
+use fleetd::hub::slots::board::BoardView;
+use fleetd::hub::slots::{DEFAULT_CAP, SlotPriority, blocker, reserved_band};
 use fleetd::hub::tasks::policy::{
     self, CallerAgent, MAX_DEPTH, MAX_OPEN_TASKS, SPAWN_OPS, WORKER_OPS,
 };
@@ -355,7 +357,30 @@ fn limits(lead: &[&Tool], task: &[&Tool]) -> Result<String, String> {
         "| Depth | {MAX_DEPTH}. A lead is depth 0 and its tasks depth {MAX_DEPTH}; nothing goes deeper. |\n"
     ));
     md.push_str(&format!(
-        "| Open tasks per lead | {MAX_OPEN_TASKS} (queued, running or idle). Slots cap what runs at once. |\n"
+        "| Open tasks per lead | {MAX_OPEN_TASKS} (queued, running or idle). |\n"
+    ));
+    // The slot board queues a task at its project's max agents; it never refuses one.
+    let at_max = BoardView {
+        cap: DEFAULT_CAP,
+        used: 0,
+        project_running: 1,
+        max_agents: 1,
+    };
+    if blocker(at_max, SlotPriority::Work).is_none() {
+        return Err(
+            "agent tools: the slot board no longer holds a task at max agents; update the limits"
+                .into(),
+        );
+    }
+    md.push_str(
+        "| Agents running at once, per project | The project's max agents, which a person sets (`cap_set`, the \
+         chat's Max agents); unset, the fleet cap. A spawn over it queues and starts by itself. The lead's own \
+         turns don't count. |\n",
+    );
+    md.push_str(&format!(
+        "| Agents running at once, fleet-wide | The fleet cap, {DEFAULT_CAP} by default. {} slots of it are kept \
+         for lead turns. |\n",
+        reserved_band(DEFAULT_CAP)
     ));
     md.push_str(&format!(
         "| Calls a task's agent may make | {}. Every other call is refused. |\n",
@@ -1007,6 +1032,7 @@ mod tests {
         assert!(page.contains("| Implementer | `spawn_agent` with kind `write`. Gets its own worktree and branch | [Task tools](#task-tools) | No |"));
         assert!(page.contains("| QA | `spawn_agent` with kind `review` and `qa: true` |"));
         assert!(page.contains(&format!("| Open tasks per lead | {MAX_OPEN_TASKS} ")));
+        assert!(page.contains(&format!("The fleet cap, {DEFAULT_CAP} by default.")));
     }
 
     #[test]
