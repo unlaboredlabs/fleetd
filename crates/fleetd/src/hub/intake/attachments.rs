@@ -9,8 +9,8 @@ use fleetd_contracts::auth::Role;
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::ledger::WorkstreamId;
 use fleetd_contracts::mcp::{
-    ATTACHMENT_MAX_BYTES, AttachmentId, AttachmentMime, AttachmentPutInput, AttachmentPutOutput,
-    ErrorCode,
+    ATTACHMENT_MAX_BYTES, AttachmentGetInput, AttachmentGetOutput, AttachmentId, AttachmentMime,
+    AttachmentPutInput, AttachmentPutOutput, ErrorCode,
 };
 use fleetd_contracts::prim::{Count, Text};
 use rusqlite::{OptionalExtension, params};
@@ -156,6 +156,70 @@ pub async fn put(
     })
 }
 
+/// Whether attachment `n` was placed in an order of `project`.
+fn in_project(hub: &Hub, n: i64, project: &ProjectRef) -> Result<bool, ToolError> {
+    Ok(hub.db.with(|c| {
+        Ok(c.query_row(
+            "SELECT 1 FROM attachments a JOIN workstreams w ON w.n = CAST(substr(a.workstream_id, 2) AS INTEGER)
+             WHERE a.n = ?1 AND w.machine_id = ?2 AND w.project_id = ?3",
+            params![n, project.machine_id.as_str(), project.project_id.as_str()],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some())
+    })?)
+}
+
+/// `attachment_get`: a file of the project, for a caller who reads its machine.
+pub async fn get(
+    hub: &Hub,
+    caller: &Caller,
+    input: AttachmentGetInput,
+) -> Result<AttachmentGetOutput, ToolError> {
+    let project = &input.project_ref;
+    if !crate::hub::api::allows(caller, Role::Read, Some(&project.machine_id)) {
+        return Err(crate::hub::api::forbidden(
+            Role::Read,
+            Some(&project.machine_id),
+        ));
+    }
+    let id = input.attachment_id;
+    let gone = || {
+        ToolError::new(
+            ErrorCode::NotFound,
+            format!("No attachment {id} in this project."),
+        )
+        .with_fix("Unused uploads expire after 24 h; attach the file again.")
+    };
+    let n: i64 = id.as_str()[1..].parse().unwrap_or(0);
+    let Some(r) = row(hub, &id)? else {
+        return Err(gone());
+    };
+    if r.by != caller.key_id.as_str() && !in_project(hub, n, project)? {
+        return Err(gone());
+    }
+    let path = dir(hub).join(&r.sha256);
+    let bytes = tokio::task::spawn_blocking(move || std::fs::read(path))
+        .await
+        .map_err(|_| crate::hub::api::internal_error())?
+        .map_err(|_| gone())?;
+    if bytes.len() > ATTACHMENT_MAX_BYTES {
+        return Err(gone());
+    }
+    let mime = serde_json::from_value::<AttachmentMime>(serde_json::Value::String(r.mime))
+        .map_err(|_| crate::hub::api::internal_error())?;
+    Ok(AttachmentGetOutput {
+        attachment_id: id.clone(),
+        name: fleetd_contracts::prim::Line::new(r.name.as_str())
+            .unwrap_or_else(|_| fleetd_contracts::prim::Line::unchecked("file")),
+        mime,
+        bytes: Count::unchecked(r.bytes),
+        data_b64: B64.encode(bytes),
+        next: None,
+        truncated: None,
+    })
+}
+
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
@@ -248,7 +312,85 @@ pub async fn deliver(
 
 #[cfg(test)]
 mod tests {
-    use super::safe_name;
+    use super::*;
+    use crate::hub::api::{HubConfig, Listen};
+    use crate::hub::store::HubDb;
+    use crate::hub::store::test_clock::ManualClock;
+    use fleetd_contracts::auth::KeyKind;
+    use serde_json::json;
+
+    fn caller(key: &str, human: bool, role: &str) -> Caller {
+        let c = serde_json::from_value::<Caller>(json!({
+            "keyId": key, "name": key, "prefix": "fld_abcdef", "createdAt": "2026-10-19T10:00:00.000Z",
+            "grants": [{ "role": role, "machines": ["devbox"] }],
+        }))
+        .unwrap();
+        Caller {
+            kind: human.then_some(KeyKind::Human),
+            ..c
+        }
+    }
+
+    fn project(p: &str) -> ProjectRef {
+        serde_json::from_value(json!({ "machineId": "devbox", "projectId": p })).unwrap()
+    }
+
+    /// A chat shows an image its sender attached: the uploader reads it back, a reader of another project's file
+    /// does not, and no key reads a machine it has no grant on.
+    #[tokio::test]
+    async fn attachment_get_reads_a_file_of_the_project_only() {
+        let home = tempfile::tempdir().unwrap();
+        let config = HubConfig {
+            home: home.path().to_path_buf(),
+            listen: Listen::default(),
+            url: None,
+            queue_ttl_sec: None,
+            router_model: None,
+        };
+        let hub = crate::hub::serve::build_on(
+            HubDb::open_memory().unwrap(),
+            config,
+            ManualClock::at(1_792_000_000_000),
+        )
+        .unwrap();
+        let me = caller("k1", true, "operate");
+        let put_input: AttachmentPutInput = serde_json::from_value(json!({
+            "name": "shot.png", "mime": "image/png", "dataB64": B64.encode(b"png bytes"),
+        }))
+        .unwrap();
+        let id = put(&hub, &me, put_input).await.unwrap().attachment_id;
+        let get_input = |p: &str| AttachmentGetInput {
+            project_ref: project(p),
+            attachment_id: id.clone(),
+        };
+        let got = get(&hub, &me, get_input("app")).await.unwrap();
+        assert_eq!(
+            (
+                got.name.as_str(),
+                got.mime,
+                got.bytes.get(),
+                B64.decode(&got.data_b64).unwrap()
+            ),
+            ("shot.png", AttachmentMime::Png, 9, b"png bytes".to_vec())
+        );
+        // Another key, and the file belongs to no order of the project: not found.
+        let other = caller("k2", true, "read");
+        assert_eq!(
+            get(&hub, &other, get_input("app")).await.unwrap_err().code,
+            ErrorCode::NotFound
+        );
+        let elsewhere = AttachmentGetInput {
+            project_ref: serde_json::from_value(
+                json!({ "machineId": "laptop", "projectId": "app" }),
+            )
+            .unwrap(),
+            attachment_id: id.clone(),
+        };
+        assert_eq!(
+            get(&hub, &me, elsewhere).await.unwrap_err().code,
+            ErrorCode::Forbidden
+        );
+    }
 
     #[test]
     fn names_cannot_leave_the_attachments_directory() {

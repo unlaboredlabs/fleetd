@@ -478,6 +478,26 @@ pub const ENTRIES: &[Entry] = &[
         &[]
     ),
     entry!(
+        "wake.claim_held",
+        Wake,
+        ReviewsAndChecks,
+        Lead,
+        "Wake: claim passed, work still open",
+        "per claim that passed while write work of the order had not landed",
+        "claimId!=C<n>; workstreamId!=W<n>; work!=the unlanded write work in plain words; ids!=its ids, for tools",
+        &[]
+    ),
+    entry!(
+        "wake.order_done_work_kept",
+        Wake,
+        ReviewsAndChecks,
+        Lead,
+        "Wake: order done, open work kept",
+        "per order that became done, not through a claim, while some of its write work had not landed",
+        "workstreamId!=W<n>; work!=the unlanded write work in plain words; ids!=its ids, for tools",
+        &[]
+    ),
+    entry!(
         "wake.train.line",
         Wake,
         WakesAndMessages,

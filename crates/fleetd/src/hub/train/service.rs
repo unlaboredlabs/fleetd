@@ -628,6 +628,7 @@ impl Train {
         project_ref: &ProjectRef,
         workstream_id: &WorkstreamId,
         why: &str,
+        keep: &[ChangeId],
     ) -> Vec<Change> {
         let changes = self.list(&ListFilter {
             project_ref: Some(project_ref.clone()),
@@ -635,7 +636,10 @@ impl Train {
             ..Default::default()
         });
         let mut closed = Vec::new();
-        for change in leftovers(&changes, workstream_id) {
+        for change in leftovers(&changes, workstream_id)
+            .into_iter()
+            .filter(|c| !keep.contains(&c.change_id))
+        {
             let Some(left) = self.update(&change.change_id, Some(&[change.state]), |mut c| {
                 c.state = ChangeState::Abandoned;
                 c.last_error = Some(last_error(why));

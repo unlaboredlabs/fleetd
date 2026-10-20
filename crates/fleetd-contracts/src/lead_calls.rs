@@ -253,11 +253,16 @@ pub struct TaskCancelCall {
     pub reason: Option<Text<1, 200>>,
 }
 
-/// `fleetd claim done --workstream W1`. Moves the workstream to verifying and runs its frozen done-when checks.
+/// `fleetd claim done --workstream W1 [--close-over "<why>"]`. Moves the workstream to verifying and runs its frozen
+/// done-when checks. It is refused, or the workstream stays open, while write work of it has not landed, unless
+/// `close_over` says why closing over that work is meant; that work is then dropped with this why.
+#[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ClaimDoneCall {
     pub workstream_id: WorkstreamId,
+    #[serde(default)]
+    pub close_over: Option<Text<1, 300>>,
 }
 
 /// `fleetd change enqueue <PR URL> [--task T1] [--workstream W1] [--serves s] [--tier S|M|L]`. Absent fields come
@@ -290,6 +295,26 @@ pub struct WorkstreamSpawnCall {
     pub text: IntakeText,
     pub serves: Serves,
     pub template: Option<PlaybookName>,
+}
+
+/// A lead opens its own workstream for work it took from the chat (`workstream_open`): a draft it then freezes with
+/// `brief`. `template` picks the playbook (feature, bugfix, research, finish-all).
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkstreamOpenCall {
+    pub text: IntakeText,
+    pub template: Option<PlaybookName>,
+    pub serves: Option<Serves>,
+}
+
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkstreamOpenResult {
+    pub workstream_id: WorkstreamId,
+    pub playbook: Option<PlaybookRef>,
+    pub next: Option<String>,
 }
 
 /// A worker's question for its lead (the `ask_lead` MCP tool). The lead is woken with it and answers with
@@ -341,6 +366,7 @@ pub enum LeadCall {
     PlanShow(PlanShowCall),
     AskLead(AskLeadCall),
     SliceReady(SliceReadyCall),
+    WorkstreamOpen(WorkstreamOpenCall),
 }
 
 #[skip_serializing_none]
@@ -515,6 +541,7 @@ pub enum LeadCallResult {
     PlanShow(PlanShowResult),
     AskLead(AskLeadResult),
     SliceReady(ChangeResult),
+    WorkstreamOpen(WorkstreamOpenResult),
 }
 
 /// CLI -> node on the local socket, and node -> hub on the link.
