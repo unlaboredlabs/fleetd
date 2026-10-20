@@ -232,6 +232,11 @@ as stopping a project, answering an approval or entering a secret, need one.</p>
 <td>operate, human key</td>
 </tr>
 <tr>
+<td><code dir="auto">requests_list {projectRef?, state?}</code></td>
+<td>Secret and approval requests, newest first, with their state. A secret’s value is never in it, only its fingerprint.</td>
+<td>read</td>
+</tr>
+<tr>
 <td><code dir="auto">project_stop {projectRef, reason?}</code></td>
 <td>Stop every running and queued agent of the project and tell the lead in its chat. Merged PRs, the lead and the chat stay.</td>
 <td>operate, human key</td>
