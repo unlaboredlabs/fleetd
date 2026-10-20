@@ -428,14 +428,15 @@ impl Status {
             .lock()
             .unwrap()
             .as_ref()
-            .filter(|(h, at, _)| *h == head && now - at < COALESCE_MS)
+            .filter(|(h, at, _)| rows::reusable(*h, *at, head, now))
             .map(|(_, _, r)| r.clone());
         let all = match cached {
             Some(r) => r,
             None => {
                 let queued = self.state.lock().unwrap().slots_queued_since;
                 let world = render::World::read(hub, now, queued, self.calibration())?;
-                let r = rows::rows(hub, &world);
+                let (merges, in_flight) = hub.db.with(|c| Ok(rows::read_changes(c)?))?;
+                let r = rows::rows(hub, &world, &rows::Changes { merges, in_flight });
                 *self.rows.lock().unwrap() = Some((head, now, r.clone()));
                 r
             }
