@@ -30,7 +30,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import sodium from "libsodium-wrappers";
 import { DatabaseSync } from "node:sqlite";
-import { type Body, callToolWith, cli, fleetdCommand, openWorkstream, LAB, type Lab, MODEL, nodeHome, nodeSock, requireGhLogin, scrubbedEnv, sessionText, slotPort, userMessages } from "./harness.ts";
+import { type Body, callToolWith, cli, fleetdCommand, machineHome, openWorkstream, RUN, LAB, type Lab, MODEL, nodeHome, nodeSock, requireGhLogin, scrubbedEnv, sessionText, slotPort, userMessages } from "./harness.ts";
 import { BASE, checkClone, CLONE, NAMESPACE, onBase, prepareCheckout, REPO, removeLabRepoProject, resetNamespace } from "./m7Train.ts";
 
 const LEAD_MACHINE = "lab-a";
@@ -473,8 +473,12 @@ async function secretPart(lab: Lab, chat: Chat, ref: Ref, humanCall: Lab["callTo
   const fingerprint = createHash("sha256").update(value).digest("hex").slice(0, 8);
   check(String(stored.item!.fingerprint ?? "").includes(fingerprint), `the item shows only the fingerprint: ${JSON.stringify(stored.item)}`);
   check(fs.readFileSync(sink, "utf8").includes(`LAB_API_KEY=${value}`), "the sink holds the value");
-  // The lead hears the outcome in a wake; let it answer before searching its transcript.
+  // The lead hears the outcome in its next wake ("- Q<n> secret lab.api_key: stored on …"); its answer settles first.
   await chat.reply({ cursor, seq: stored.seq }, "the secret stored wake").catch(() => undefined);
+  const leadId = await chat.leadThread();
+  const wake = userMessages(ref.machineId, leadId ?? "").flatMap((t) => t.split("\n")).find((l) => l.startsWith(`- ${item.requestId} secret lab.api_key: stored`));
+  check(wake, `the lead's wake carries the outcome: ${JSON.stringify(userMessages(ref.machineId, leadId ?? "").at(-1)?.slice(-400))}`);
+  ok(`the lead's wake: ${wake}`);
 
   const hist = JSON.stringify(await chat.history());
   check(!hist.includes(value) && !hist.includes(sealed), "the value is in no chat message");
@@ -482,9 +486,12 @@ async function secretPart(lab: Lab, chat: Chat, ref: Ref, humanCall: Lab["callTo
   check(!events.includes(value) && !events.includes(sealed), "the value is in no event");
   const threadId = await chat.leadThread();
   check(threadId === undefined || !sessionText(ref.machineId, threadId).includes(value), "the value is in no lead transcript");
-  const hits = filesUnder(lab.hubHome).filter(([, text]) => text.includes(value) || text.includes(sealed)).map(([f]) => f);
-  check(hits.length === 0, `the value is in no hub file: ${hits.join(", ")}`);
-  ok("stored through the inline item; the value is in no chat message, event, lead transcript or hub file");
+  // Every file the run wrote but the sink: hub home, node homes (transcripts, claude session files), every process log.
+  const places = [...filesUnder(lab.hubHome), ...filesUnder(path.join(RUN, "logs")), ...lab.machines.flatMap((m) => filesUnder(machineHome(m.id)))].filter(([f]) => f !== sink);
+  const hits = places.filter(([, text]) => text.includes(value) || text.includes(sealed)).map(([f]) => f);
+  check(hits.length === 0, `the value is in no file but its sink: ${hits.join(", ")}`);
+  check((await chat.state()).needsYou !== true, "needs-you is off once the secret is stored");
+  ok(`stored through the inline item; the value is in no chat message, event or wake, and in none of ${places.length} files (hub, nodes, logs)`);
 }
 
 // ---- gated: nothing runs before Approve ----
@@ -494,7 +501,8 @@ async function gatedPart(lab: Lab, chat: Chat, ref: Ref, humanCall: Lab["callToo
   fs.mkdirSync(lab.dir, { recursive: true });
   const marker = path.join(lab.dir, "gated.txt");
   fs.rmSync(marker, { force: true });
-  const argv = ["sh", "-c", `echo gated > ${marker}`];
+  // Appends, so a second run would show.
+  const argv = ["sh", "-c", `echo gated >> ${marker}`];
   const sent = await chat.send(
     `Run this exact command as a gated command (gated_run, class irreversible, reason "chat lab"): ${JSON.stringify(argv)}. Wait for my approval; don't run it any other way.`,
   );
@@ -518,7 +526,16 @@ async function gatedPart(lab: Lab, chat: Chat, ref: Ref, humanCall: Lab["callToo
   const ran = await chat.item(sent.seq, cursor, "the approved command ran", 60_000, (i) => i.requestId === item.requestId && ["ran", "failed"].includes(i.state));
   check(ran.item!.state === "ran" && ran.item!.exitCode === 0 && fs.readFileSync(marker, "utf8") === "gated\n", `ran once approved: ${JSON.stringify(ran.item)}`);
   ok(`approved by a person: ${item.requestId} ran, exit 0`);
+  // A second approve is refused (one answer counts), and the command ran exactly once.
+  const again = await humanCall("approval_answer", { requestId: item.requestId, decision: "approve" });
+  check(again.isError, `a second approve is refused: ${JSON.stringify(again.body)}`);
   await chat.reply({ cursor, seq: ran.seq }, "the gated result wake").catch(() => undefined);
+  check(fs.readFileSync(marker, "utf8") === "gated\n", `the command ran exactly once: ${JSON.stringify(fs.readFileSync(marker, "utf8"))}`);
+  const leadId = await chat.leadThread();
+  const wake = userMessages(ref.machineId, leadId ?? "").flatMap((t) => t.split("\n")).find((l) => l.startsWith(`- ${item.requestId} your command`));
+  check(wake, `the lead's next wake carries the outcome: ${JSON.stringify(userMessages(ref.machineId, leadId ?? "").at(-1)?.slice(-400))}`);
+  check((await chat.state()).needsYou !== true, "needs-you is off once the command ran");
+  ok(`ran exactly once; the lead's wake: ${wake}; needs-you off`);
 }
 
 // ---- build: bug (a), a research result that offers a build, then "build it" ----
