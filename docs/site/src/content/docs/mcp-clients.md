@@ -70,13 +70,13 @@ post -H "Mcp-Session-Id: $SID" -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"to
 Then call a tool:
 
 ```sh
-FLEETD_HUB=http://hub.your-tailnet.ts.net:4790 FLEETD_KEY_FILE=~/.fleetd/agent.key sh mcp.sh orders_board '{}'
+FLEETD_HUB=http://hub.your-tailnet.ts.net:4790 FLEETD_KEY_FILE=~/.fleetd/agent.key sh mcp.sh status_projects '{}'
 ```
 
-Expected output starts like this:
+On a new hub with no projects yet, the output starts like this:
 
 ```text
-{"id":1,"jsonrpc":"2.0","result":{"content":[{"text":"{\"at\":\"2026-10-19T12:40:58.878Z\",\"next\":\"Open one with order_get; …
+{"id":1,"jsonrpc":"2.0","result":{"content":[{"text":"{\"next\":\"status_get with a project scope for the detail behind a row\",\"rows\":[]}", …
 ```
 
 ## Use a key from the CLI {#key-file}
