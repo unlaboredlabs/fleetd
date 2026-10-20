@@ -106,11 +106,11 @@ Some findings point at work that waited while the fleet had room for more. Each 
 |---|---|---|
 | `queue_wait` | A task waited for a slot while the fleet had free ones (its project's max agents, or the slots kept for lead turns). Or a ready PR waited out a CI run it couldn't join, because the [batch](/docs/merge-train#batches) was full or batching was off. | Raise the project's max agents or the fleet cap (`fleetd project set`). Raise `FLEETD_TRAIN_BATCH_MAX`, or fix why batching turned off for the repo. |
 | `contention` | Tasks waited one after another for one area lease, or for one machine's claude usage. | Define narrower areas in `.fleetd/policy.yaml` (without them, every write task takes the one area `all`). For usage: a larger plan, or another machine. |
-| `idle_lead` | A [lead](/docs/glossary#lead) sat idle while a plan item of its order was ready to start and slots were free. | The lead should start ready items before its turn ends. |
+| `idle_lead` | A [lead](/docs/glossary#lead) sat idle while one of its plan items was ready to start and slots were free. | The lead should start ready items before its turn ends. |
 | `slots_underused` | Two or more ready plan items waited at the same time while slots were free. | Start ready items together. |
 
-A plan item counts as ready while its order runs (not stopped, failed, idle or being verified) and every item it comes
-after is done, until its lead starts a task for it. An ask that blocks the order pauses it. None of these count:
+A plan item counts as ready while its work runs (not stopped, failed, idle or being verified) and every item it comes
+after is done, until its lead starts a task for it. A question to you that blocks the work pauses it. None of these count:
 
 - time with no free slot;
 - time when the machine is parked on its usage limit or offline;

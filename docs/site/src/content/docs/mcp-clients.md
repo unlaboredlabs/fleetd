@@ -91,8 +91,8 @@ fleetd steers --key-file ~/.fleetd/human.key
 
 | Role | Can |
 |---|---|
-| `read` | Read orders, status, time and prompts. |
-| `operate` | Also send orders, add notes and manage projects. |
+| `read` | Read chats, status, time and prompts. |
+| `operate` | Also write to leads, set a project's max agents, and manage projects. |
 | `admin` | Also change hub settings, such as timeline retention and GitHub webhooks. |
 
 `--machines '*'` gives the role on every machine; `--machines devbox,laptop` limits it to those.
@@ -103,7 +103,7 @@ fleetd steers --key-file ~/.fleetd/human.key
 | `fleetd hub key revoke <keyId>` | Ends a key at once, also on a running hub. |
 
 A [human key](/docs/glossary#human-key) (`fleetd hub key create --human`) is for a person's device. Some tools, such
-as stopping an order or steering, need one.
+as stopping a project, answering an approval or entering a secret, need one.
 
 ## Tools for the chat {#tools}
 
