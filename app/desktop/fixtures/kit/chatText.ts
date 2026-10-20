@@ -59,7 +59,7 @@ export const longChat = (n: number): Array<Line> => {
       from: "lead",
       text:
         i % 4 === 0
-          ? `Looking. ${topic[0]?.toUpperCase() ?? ""}${topic.slice(1)} touches \`${file}\`; one writer, one reviewer.`
+          ? `Looking at ${topic}: the change is in \`${file}\`; one writer, one reviewer.`
           : i % 4 === 1
             ? `Writer started on ${topic}.\n\n- tests first\n- then the change\n- review when the PR is up`
             : i % 4 === 2
