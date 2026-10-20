@@ -9,7 +9,11 @@ import type { ChatItem, CommandApprovalItem, GatedClass, GatedRunSpec, HumanRequ
  */
 export const withRequest = (item: ChatItem, request: HumanRequest | undefined): ChatItem => {
   if (request === undefined || request.requestId !== item.requestId) return item;
-  const note = request.evidence === undefined ? {} : { note: request.evidence };
+  // As the hub's own item (approvals::chat_item): the evidence is a note only while it explains why the request is
+  // open again or failed. Otherwise it is bookkeeping, a fingerprint or "exit 0 …", which the item already says.
+  const explains = request.state === "open" || request.state === "failed";
+  const firstLine = request.evidence?.split("\n")[0]?.trim();
+  const note = explains && firstLine !== undefined && firstLine !== "" ? { note: firstLine } : {};
   if (item.kind === "secret_request") {
     const fingerprint = request.secret?.fingerprint;
     return { ...item, state: request.state, ...note, ...(fingerprint === undefined ? {} : { fingerprint }) };
@@ -89,9 +93,8 @@ export const approvalOutcome = (item: CommandApprovalItem): Outcome | undefined 
 
 /** The line under a secret once it is answered, or undefined while it waits. */
 export const secretOutcome = (item: SecretRequestItem): Outcome | undefined => {
-  if (item.state === "stored") {
-    return { tone: "success", text: item.fingerprint === undefined ? "Secret saved" : `Secret saved · fingerprint \`${item.fingerprint}\`` };
-  }
+  // The fingerprint stays in the data: a raw hash is never UI text.
+  if (item.state === "stored") return { tone: "success", text: "Secret saved" };
   if (item.state === "withdrawn") return { tone: "quiet", text: "The lead doesn't need it any more." };
   if (item.state === "open") return undefined;
   return NEWER;

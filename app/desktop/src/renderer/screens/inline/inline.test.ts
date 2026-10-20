@@ -44,9 +44,9 @@ describe("a secret request", () => {
     }
   });
 
-  it("afterwards says it was saved (with the node's fingerprint, as code) or withdrawn, and never the value", () => {
+  it("afterwards says it was saved or withdrawn, and never the value or its fingerprint", () => {
     expect(secretOutcome(secret("Q1"))).toBeUndefined();
-    expect(secretOutcome(secret("Q2"))).toEqual({ tone: "success", text: "Secret saved · fingerprint `ab12cd34`" });
+    expect(secretOutcome(secret("Q2"))).toEqual({ tone: "success", text: "Secret saved" });
     expect(secretOutcome(secret("Q3"))?.text).toBe("The lead doesn't need it any more.");
   });
 });
@@ -92,8 +92,10 @@ describe("the item as the request says it is now", () => {
   });
 
   it("takes the request's state, fingerprint and run result over the item it was posted as", () => {
-    const stored = withRequest(posted("Q1"), request({ requestId: "Q1", kind: "secret", state: "stored", secret: { key: "stripe.test_key", sink: "env:devbox:/srv/storefront/.env", fingerprint: "0a1b2c3d" } }));
+    const stored = withRequest(posted("Q1"), request({ requestId: "Q1", kind: "secret", state: "stored", evidence: "fingerprint 0a1b2c3d", secret: { key: "stripe.test_key", sink: "env:devbox:/srv/storefront/.env", fingerprint: "0a1b2c3d" } }));
     expect(stored).toMatchObject({ state: "stored", fingerprint: "0a1b2c3d" });
+    // Evidence that only records the outcome (here a hash) never becomes the item's note.
+    expect("note" in stored).toBe(false);
     const ran = withRequest(posted("Q4"), request({ requestId: "Q4", kind: "approval", state: "failed", exitCode: 2, outputTail: "boom", evidence: "exit 2 on devbox" }));
     expect(ran).toMatchObject({ state: "failed", exitCode: 2, outputTail: "boom", note: "exit 2 on devbox" });
     expect(approvalOutcome(ran as CommandApprovalItem)).toEqual({ tone: "danger", text: "Failed · exit 2" });
