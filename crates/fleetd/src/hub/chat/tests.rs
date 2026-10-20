@@ -278,6 +278,16 @@ fn an_open_inline_item_waits_on_you_until_its_state_moves() {
 
 #[tokio::test]
 async fn a_projects_past_reads_in_once_in_time_order_without_ids() {
+    past_reads_in(false).await;
+}
+
+/// After the questions tool's removal the asks live in `legacy_asks`: they still read in, the same way.
+#[tokio::test]
+async fn the_retired_asks_read_in_from_legacy_asks_too() {
+    past_reads_in(true).await;
+}
+
+async fn past_reads_in(keep_as_legacy: bool) {
     let (hub, _home) = hub();
     let r = project();
     let (w, _) = hub
@@ -314,6 +324,15 @@ async fn a_projects_past_reads_in_once_in_time_order_without_ids() {
             Ok(())
         })
         .unwrap();
+    if keep_as_legacy {
+        // What the questions tool's removal does: every ask kept, row for row, under its new name.
+        hub.db
+            .with(|c| {
+                c.execute_batch("ALTER TABLE asks RENAME TO legacy_asks;")?;
+                Ok(())
+            })
+            .unwrap();
+    }
     flow::ensure(&hub, &r).await.unwrap();
     flow::ensure(&hub, &r).await.unwrap();
     let (page, _, _) = hub.chat.page(&r, None, None, 50).unwrap();
@@ -505,6 +524,15 @@ async fn reads_a_real_hubs_past() {
         }
     }
     let (hub, _home) = hub_on(HubDb::open(dir.path()).unwrap());
+    // FLEETD_CHAT_LEGACY=1: as after the questions tool's removal, the asks under their new name.
+    if std::env::var("FLEETD_CHAT_LEGACY").is_ok() {
+        hub.db
+            .with(|c| {
+                c.execute_batch("ALTER TABLE asks RENAME TO legacy_asks;")?;
+                Ok(())
+            })
+            .unwrap();
+    }
     let ids = regex::Regex::new(r"\b[WAT][0-9]+\b").unwrap();
     for p in hub.store.projects_list(None, None).unwrap() {
         let r = ProjectRef {
