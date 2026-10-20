@@ -93,8 +93,9 @@ export async function m6Verify(lab: Lab) {
     wakeText.includes(`Claim ${firstClaim} on ${w} failed`) && wakeText.includes(`done:0 (on ${MACHINE}: \`test -f ${FILE}\` exits 0): fail, exit 1`) && wakeText.includes(`exited 1 (expected 0)`),
     `the wake carries the failing check's exit code and output: ${wakeText.slice(wakeText.lastIndexOf(`Claim ${firstClaim}`), wakeText.lastIndexOf(`Claim ${firstClaim}`) + 400)}`,
   );
-  check(wakeText.includes("(raw 1m × 5, prior"), "the lead digest shows the calibrated ETA");
-  ok(`1. the lead's wake (triggers ${JSON.stringify(woken.event.data?.triggers)}) carried the evidence inline, and its digest the ETA`);
+  // Agents never see a time estimate (#190): the digest names no ETA.
+  check(!wakeText.includes("(raw 1m × "), "the lead's digest shows no ETA");
+  ok(`1. the lead's wake (triggers ${JSON.stringify(woken.event.data?.triggers)}) carried the evidence inline, and no ETA`);
 
   // 3. A writer without --serves is refused with the fix text.
   const unserved = fleetd("task", "spawn", "--workstream", w, "--title", "x", "--areas", "docs", "--prompt", "y");
