@@ -34,7 +34,21 @@ const fromBase = (base: Fixture, agents: number): Fixture => {
     reviewsNeeded: 3,
     taskId,
   });
-  const prs = [pr(221, "reviewing", "T1"), pr(222, "reviewing", "T2")];
+  // Each PR's writer finished before the reviews began: the cards leave them out; the order's detail lists them.
+  const prs = [pr(221, "reviewing", "T90"), pr(222, "reviewing", "T91")];
+  const writer = (id: string, title: string, n: number, ago: number): JsonObject => ({
+    laneId: id,
+    role: "implementer",
+    taskId: id,
+    threadRef: { machineId: projectRef.machineId, threadId: `s-${id}` },
+    title,
+    model: "claude-haiku-5-5",
+    status: "done",
+    startedAt: iso(now - ago - 140_000),
+    endedAt: iso(now - ago),
+    pr: pr(n, "reviewing", id),
+  });
+  const done = agents === 0 ? [] : [writer("T90", "round in cart/total.ts", 221, 300_000), writer("T91", "use it in discounts", 222, 280_000)];
   const lanes: JsonObject[] = [];
   const live: JsonObject[] = [];
   for (let i = 0; i < agents; i++) {
@@ -81,6 +95,9 @@ const fromBase = (base: Fixture, agents: number): Fixture => {
       createdAt: iso(now - 600_000),
       updatedAt: iso(now - 2000 - k),
     });
+  }
+  for (const [k, o] of orders.entries()) {
+    f.answer("order_get", { workstreamId: `W${14 + k}` }, { order: o, doneLanes: k === 0 ? done : [], requests: [] });
   }
   for (const { input } of f.answers("orders_board")) f.drop("orders_board", input);
   f.answer("orders_board", {}, { orders, trains: [], at: iso(now) });

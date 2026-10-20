@@ -139,7 +139,9 @@ describe("names from the store", () => {
 
   it("names lanes, the lead, PRs and orders from the board and order_get", () => {
     const n = namesOf(state);
-    expect(n.orders.get("W8")).toEqual({ title: "Add three short pages", project: "storefront" });
+    expect(n.orders.get("W8")).toMatchObject({ title: "Add three short pages", project: "storefront" });
+    // Its project, so going back from its timeline opens that project's chat.
+    expect(n.orders.get("W8")?.ref).toEqual(expect.objectContaining({ machineId: expect.any(String) as unknown, projectId: expect.any(String) as unknown }));
     expect(n.threads.get("s-21")).toEqual({ role: "implementer", taskId: "T21", title: "about page" });
     expect(n.threads.get("s-25")?.role).toBe("reviewer");
     expect(n.leads.has("lead-storefront")).toBe(true);

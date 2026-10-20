@@ -1,6 +1,31 @@
 // What the two inline chat items say, as pure functions: where a secret lands and whether it can be sealed now, the
 // exact command an approval runs, and the one result line under it.
-import type { CommandApprovalItem, GatedClass, GatedRunSpec, Machine, SecretRequestItem } from "../../../shared/contracts";
+import type { ChatItem, CommandApprovalItem, GatedClass, GatedRunSpec, HumanRequest, Machine, SecretRequestItem } from "../../../shared/contracts";
+
+/**
+ * The item as the hub's request says it is now. A request's changes arrive as request.updated events (and a fresh
+ * requests_list), not as a new chat message, so the request wins over the item it was posted as: its state, the
+ * secret's fingerprint, an approval's exit code, output and the one-line evidence (why it is open again, or failed).
+ */
+export const withRequest = (item: ChatItem, request: HumanRequest | undefined): ChatItem => {
+  if (request === undefined || request.requestId !== item.requestId) return item;
+  // As the hub's own item (approvals::chat_item): the evidence is a note only while it explains why the request is
+  // open again or failed. Otherwise it is bookkeeping, a fingerprint or "exit 0 …", which the item already says.
+  const explains = request.state === "open" || request.state === "failed";
+  const firstLine = request.evidence?.split("\n")[0]?.trim();
+  const note = explains && firstLine !== undefined && firstLine !== "" ? { note: firstLine } : {};
+  if (item.kind === "secret_request") {
+    const fingerprint = request.secret?.fingerprint;
+    return { ...item, state: request.state, ...note, ...(fingerprint === undefined ? {} : { fingerprint }) };
+  }
+  return {
+    ...item,
+    state: request.state,
+    ...note,
+    ...(request.exitCode === undefined ? {} : { exitCode: request.exitCode }),
+    ...(request.outputTail === undefined ? {} : { outputTail: request.outputTail }),
+  };
+};
 
 export type SecretTarget =
   | { readonly ok: true; readonly machine: string; readonly boxPubKey: string; readonly where: string }
@@ -68,10 +93,13 @@ export const approvalOutcome = (item: CommandApprovalItem): Outcome | undefined 
 
 /** The line under a secret once it is answered, or undefined while it waits. */
 export const secretOutcome = (item: SecretRequestItem): Outcome | undefined => {
-  if (item.state === "stored") {
-    return { tone: "success", text: item.fingerprint === undefined ? "Secret saved" : `Secret saved · fingerprint \`${item.fingerprint}\`` };
-  }
+  // The fingerprint stays in the data: a raw hash is never UI text.
+  if (item.state === "stored") return { tone: "success", text: "Secret saved" };
   if (item.state === "withdrawn") return { tone: "quiet", text: "The lead doesn't need it any more." };
   if (item.state === "open") return undefined;
   return NEWER;
 };
+
+/** What an approval approves: a gated command, a session's tool prompt, or a retro change that relaxes a playbook. */
+export const approvalKind = (item: CommandApprovalItem): "command" | "permission" | "playbook" =>
+  item.playbook !== undefined ? "playbook" : item.gated !== undefined ? "command" : "permission";

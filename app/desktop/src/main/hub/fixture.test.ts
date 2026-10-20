@@ -120,49 +120,49 @@ describe("FixtureSource", () => {
 });
 
 describe("what answering a call changes", () => {
-  const asks = [{ askId: "A1" }, { askId: "A2" }];
+  const requests = [{ requestId: "Q1" }, { requestId: "Q2" }];
   const file: FixtureFile = {
     ...base,
     frames: [],
     calls: [
       {
-        tool: "inbox_reply",
-        input: { raw: "1 go" },
-        outcome: { ok: true, output: { parsed: true } },
+        tool: "approval_answer",
+        input: { requestId: "Q1", decision: "approve" },
+        outcome: { ok: true, output: { request: { requestId: "Q1", state: "approved" } } },
         then: {
           frames: [
-            { t: "event", event: { seq: 7, type: "ask.answered" }, afterMs: 50 },
-            { t: "event", event: { seq: 8, type: "ask.delivered" }, afterMs: 10_000 },
+            { t: "event", event: { seq: 7, type: "request.updated" }, afterMs: 50 },
+            { t: "event", event: { seq: 8, type: "request.updated" }, afterMs: 10_000 },
           ],
-          hide: [{ tool: "asks_list", field: "asks", where: { askId: "A1" } }],
+          hide: [{ tool: "requests_list", field: "requests", where: { requestId: "Q1" } }],
         },
       },
       {
-        tool: "inbox_undo",
+        tool: "approval_answer",
         outcome: { ok: true, output: {} },
-        then: { show: [{ tool: "asks_list", field: "asks", where: { askId: "A1" } }] },
+        then: { show: [{ tool: "requests_list", field: "requests", where: { requestId: "Q1" } }] },
       },
-      { tool: "asks_list", outcome: { ok: true, output: { asks } } },
+      { tool: "requests_list", outcome: { ok: true, output: { requests } } },
     ],
   };
 
-  it("emits the call's frames after it and leaves the rows it answered out of later reads, until undone", async () => {
+  it("emits the call's frames after it and leaves the rows it answered out of later reads, until shown again", async () => {
     const frames: HubFrame[] = [];
     const source = new FixtureSource(file, (f) => frames.push(f));
     const ids = async () => {
-      const out = await source.call({ tool: "asks_list", input: {} });
-      return out.ok ? (out.output as { asks: Array<{ askId: string }> }).asks.map((a) => a.askId) : [];
+      const out = await source.call({ tool: "requests_list", input: {} });
+      return out.ok ? (out.output as { requests: Array<{ requestId: string }> }).requests.map((r) => r.requestId) : [];
     };
-    expect(await ids()).toEqual(["A1", "A2"]);
-    await source.call({ tool: "inbox_reply", input: { raw: "1 go" } });
-    expect(await ids()).toEqual(["A2"]);
+    expect(await ids()).toEqual(["Q1", "Q2"]);
+    await source.call({ tool: "approval_answer", input: { requestId: "Q1", decision: "approve" } });
+    expect(await ids()).toEqual(["Q2"]);
     vi.advanceTimersByTime(50);
-    expect(frames.map((f) => (f.t === "event" ? f.event.type : f.t))).toEqual(["ask.answered"]);
+    expect(frames.map((f) => (f.t === "event" ? f.event.type : f.t))).toEqual(["request.updated"]);
     vi.advanceTimersByTime(10_000);
-    expect(frames.map((f) => (f.t === "event" ? f.event.type : f.t))).toEqual(["ask.answered", "ask.delivered"]);
+    expect(frames).toHaveLength(2);
     // Numbered in the order they were sent, whatever the file said, so the app never drops one as already seen.
     expect(frames.map((f) => (f.t === "event" ? f.event.seq : 0))).toEqual([1, 2]);
-    await source.call({ tool: "inbox_undo", input: { askId: "A1" } });
-    expect(await ids()).toEqual(["A1", "A2"]);
+    await source.call({ tool: "approval_answer", input: { requestId: "Q1", decision: "deny" } });
+    expect(await ids()).toEqual(["Q1", "Q2"]);
   });
 });

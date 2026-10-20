@@ -68,6 +68,27 @@ for (const route of ["#/", "#/good"]) {
   });
 }
 
+test("an opaque popover hides the text it covers, rather than overlapping it", async () => {
+  const { app, page } = launched;
+  await setView(app, page, "medium", "light");
+  await show(page, "popover", "#/popover");
+  expect(await check(page, [])).toEqual([]);
+});
+
+test("a popover still lets through what it must not hide: see-through, overlaps inside it, and beside it", async () => {
+  const { app, page } = launched;
+  await setView(app, page, "medium", "light");
+  await show(page, "popover-bad", "#/popover-bad");
+  const findings = await check(page, []);
+  for (const id of ["exp-overlap-clear", "exp-overlap-inside", "exp-overlap-partial"]) {
+    expect(
+      findings.some((f) => f.check === "overlap" && f.where.includes(`data-testid=${id}`)),
+      `${id} should be reported; got:\n${JSON.stringify(findings, null, 1)}`,
+    ).toBe(true);
+  }
+  expect(findings.filter((f) => !f.where.includes("data-testid=exp-")), "findings on elements that were not planted").toEqual([]);
+});
+
 test("a screen brought up by an interaction is shown and checked", async () => {
   const { app, page } = launched;
   await setView(app, page, "small", "dark");

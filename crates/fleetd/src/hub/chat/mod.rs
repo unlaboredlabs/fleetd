@@ -276,6 +276,18 @@ impl Chat {
     }
 
     /// One author=system line, for fleetd's own events in a project's chat.
+    /// When the human last wrote in the project's chat (not counting history read in from before the chat).
+    pub fn last_human_ms(&self, r: &ProjectRef) -> Result<Option<i64>, StoreError> {
+        self.db.with(|c| {
+            Ok(c.query_row(
+                "SELECT max(created_ms) FROM chat_messages WHERE machine_id = ?1 AND project_id = ?2
+                   AND json_extract(data, '$.author') = 'human' AND json_extract(data, '$.history') IS NULL",
+                rusqlite::params![r.machine_id.as_str(), r.project_id.as_str()],
+                |row| row.get(0),
+            )?)
+        })
+    }
+
     pub fn system_line(&self, r: &ProjectRef, text: &str) -> Result<ChatMessage, StoreError> {
         Ok(self
             .add(
@@ -315,6 +327,9 @@ impl Chat {
         let Some(mut message) = self.by_source_anywhere(&source)? else {
             return Ok(None);
         };
+        if message.item.as_ref() == Some(&item) {
+            return Ok(Some(message));
+        }
         message.item = Some(item);
         message.updated_at = Some(self.now_ts());
         self.put(&message)?;
@@ -391,6 +406,19 @@ impl Chat {
                 })
                 .optional()?;
             Ok(data.map(|d| serde_json::from_str(&d)).transpose()?)
+        })
+    }
+
+    /// The requests whose inline item still reads open or approved: the ones a missed event could leave stale.
+    pub fn unsettled_requests(&self) -> Result<Vec<String>, StoreError> {
+        self.db.with(|c| {
+            Ok(c.prepare_cached(
+                "SELECT DISTINCT json_extract(data, '$.item.requestId') FROM chat_messages
+                     WHERE json_extract(data, '$.item.state') IN ('open', 'approved')",
+            )?
+            .query_map([], |row| row.get::<_, Option<String>>(0))?
+            .filter_map(|r| r.ok().flatten())
+            .collect())
         })
     }
 

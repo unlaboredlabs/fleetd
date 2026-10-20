@@ -6,6 +6,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { Fixture } from "./kit/fixture.ts";
 import { type FixtureGroup, SHARED, type SharedName } from "./kit/group.ts";
+import { syncAgents } from "./kit/agents.ts";
 import { findLeaks } from "./kit/leaks.ts";
 import { validateFixture } from "./kit/schema.ts";
 import { loadFixture } from "../src/main/hub/fixture.ts";
@@ -45,6 +46,9 @@ for (const [group, { fixtures }] of groups) {
   }
 }
 
+// Last, after every group: one count of agents per project, whatever shows it (kit/agents.ts).
+for (const f of all) syncAgents(f);
+
 const names = new Set<string>();
 const problems: Array<string> = [];
 const files = new Map<string, string>();
@@ -62,7 +66,7 @@ for (const file of fs.readdirSync(RECORDED).filter((x) => x.endsWith(".json"))) 
   problems.push(...findLeaks(fs.readFileSync(path.join(RECORDED, file), "utf8")).map((leak) => `recorded/${file} leaks ${leak}`));
 }
 if (problems.length > 0) {
-  for (const p of problems.slice(0, 40)) console.error(p);
+  for (const p of problems.slice(0, Number(process.env["FIXTURES_SHOW"] ?? 40))) console.error(p);
   console.error(`${problems.length} problems; no fixture written.`);
   process.exit(1);
 }

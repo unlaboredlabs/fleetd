@@ -174,6 +174,12 @@ pub const ENTRIES: &[Entry] = &[
                 Code
             ),
             (
+                "stop-work",
+                "does no more work on an order the human stopped",
+                r"Work the human stopped stays stopped",
+                Prompt
+            ),
+            (
                 "train-only-merges",
                 "only the merge train merges",
                 r"never merge",
@@ -205,7 +211,7 @@ pub const ENTRIES: &[Entry] = &[
             ),
             (
                 "amend",
-                "a frozen brief changes only with `amend`",
+                "a frozen brief changes only with `amend` and the human's logged yes",
                 r"`amend`",
                 Code
             ),

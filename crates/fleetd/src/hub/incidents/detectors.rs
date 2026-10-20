@@ -1,13 +1,13 @@
-//! Incident detectors that read the event log: stalls, writes outside a task's areas, and the two ledger smells, a
-//! human asked about a key that was already decided (re_ask) and a human replacing a lead's decision (override). The
-//! other classes are recorded where the hub sees them happen (claims, estimates, the value bar, the train, the inbox).
+//! Incident detectors that read the event log: stalls, writes outside a task's areas, and a human replacing a lead's
+//! decision (override). The
+//! other classes are recorded where the hub sees them happen (claims, estimates, the value bar, the train).
 //! Events from the hub's start on; nothing here reads a model.
 use super::{IncidentInput, Incidents};
 use crate::hub::store::{EventLog, StoreError, WaitInput};
 use fleetd_contracts::events::{HubEvent, HubEventType};
 use fleetd_contracts::ids::{ProjectRef, ThreadRef};
 use fleetd_contracts::ledger::{
-    Ask, AskId, Decision, DecisionId, DecisionKey, DecisionScope, DecisionSource, WorkstreamId,
+    Decision, DecisionId, DecisionKey, DecisionScope, DecisionSource, WorkstreamId,
 };
 use fleetd_contracts::tasks::{Task, TaskId};
 use fleetd_contracts::verification::IncidentClass;
@@ -20,7 +20,6 @@ pub trait DetectorPorts: Send + Sync + 'static {
     fn decision(&self, id: &DecisionId) -> Option<Decision>;
     /// Active decisions on `key` that apply in the project (its own, its workstreams', global).
     fn decisions_active_on_key(&self, key: &DecisionKey, project: &ProjectRef) -> Vec<Decision>;
-    fn ask(&self, id: &AskId) -> Option<Ask>;
 }
 
 const TYPES: [HubEventType; 4] = [
@@ -57,25 +56,10 @@ fn short(value: &str) -> String {
     }
 }
 
-fn decision_n(id: &DecisionId) -> i64 {
-    id.as_str()
-        .get(1..)
-        .and_then(|n| n.parse().ok())
-        .unwrap_or(0)
-}
-
 fn workstream_of(d: &Decision) -> Option<WorkstreamId> {
     match &d.scope {
         DecisionScope::Workstream { workstream_id } => Some(workstream_id.clone()),
         _ => None,
-    }
-}
-
-fn source_name(s: DecisionSource) -> &'static str {
-    match s {
-        DecisionSource::Human => "human",
-        DecisionSource::Lead => "lead",
-        DecisionSource::Agent => "agent",
     }
 }
 
@@ -193,39 +177,7 @@ impl Detectors {
                 )],
             )?;
         }
-        // An answer to an ask whose key was already decided. Asks the lead filed after proceeding on its
-        // recommendation exist to be confirmed, so those are not re-asks.
-        let Some(ask_id) = &decision.ask_id else {
-            return Ok(());
-        };
-        if before.is_empty() {
-            return Ok(());
-        }
-        let Some(ask) = self.ports.ask(ask_id) else {
-            return Ok(());
-        };
-        if ask.proceeded_on_rec {
-            return Ok(());
-        }
-        let Some(prior) = before.iter().max_by_key(|d| decision_n(&d.decision_id)) else {
-            return Ok(());
-        };
-        self.record(
-            IncidentClass::ReAsk,
-            r,
-            ask.workstream_id.clone().or_else(|| workstream_of(prior)),
-            None,
-            vec![format!(
-                "{} asked the human about {}, already decided by {} ({}) = \"{}\"; answered {} = \"{}\"",
-                ask.ask_id,
-                decision.key,
-                prior.decision_id,
-                source_name(prior.source),
-                short(prior.value.as_str()),
-                decision.decision_id,
-                short(value)
-            )],
-        )
+        Ok(())
     }
 
     pub fn on_event(&self, event: &HubEvent) -> Result<(), StoreError> {

@@ -1,0 +1,314 @@
+{
+  "$defs": {
+    "ChatRequestId": {
+      "pattern": "^Q[1-9][0-9]*$",
+      "type": "string"
+    },
+    "DecisionKey": {
+      "description": "Lowercase dotted slug, [a-z0-9]+(.[a-z0-9_-]+)*, at most 80",
+      "pattern": "^[a-z0-9]+(\\.[a-z0-9_-]+)*$",
+      "type": "string"
+    },
+    "EnvName": {
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$",
+      "type": "string"
+    },
+    "GatedClass": {
+      "enum": [
+        "irreversible",
+        "money",
+        "credential"
+      ],
+      "type": "string"
+    },
+    "GatedRunSpec": {
+      "description": "Stored with the approval and never changed: the human approves exactly these bytes.",
+      "properties": {
+        "argv": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 64,
+          "minItems": 1,
+          "type": "array"
+        },
+        "class": {
+          "$ref": "#/$defs/GatedClass"
+        },
+        "cwd": {
+          "pattern": "^/",
+          "type": "string"
+        },
+        "reason": {
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        },
+        "secretEnv": {
+          "items": {
+            "$ref": "#/$defs/SecretEnvEntry"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "timeoutSec": {
+          "maximum": 1800,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "argv",
+        "class",
+        "reason",
+        "timeoutSec"
+      ],
+      "type": "object"
+    },
+    "HumanRequest": {
+      "description": "One human request, as stored and as every client shows it.",
+      "properties": {
+        "answeredAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "answeredBy": {
+          "description": "\"human:<device>\".",
+          "type": "string"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "evidence": {
+          "description": "What happened, in one line: \"fingerprint ab12cd34\", \"exit 0 on devbox, approved by human:desk\", or why it did\nnot run (and so is open again).",
+          "maxLength": 2000,
+          "type": "string"
+        },
+        "exitCode": {
+          "description": "An approval that ran: its exit code (absent when a signal or the timeout ended it) and the end of its output,\nwith every injected secret value scrubbed.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "gated": {
+          "$ref": "#/$defs/GatedRunSpec",
+          "description": "approval of a gated run: exactly the bytes the node runs."
+        },
+        "kind": {
+          "$ref": "#/$defs/RequestKind"
+        },
+        "outputTail": {
+          "maxLength": 2000,
+          "type": "string"
+        },
+        "permission": {
+          "$ref": "#/$defs/ToolPermission",
+          "description": "approval of a session's tool prompt, instead of a gated run."
+        },
+        "playbook": {
+          "$ref": "#/$defs/PlaybookGateChange",
+          "description": "approval of a retro playbook change that relaxes a gate, instead of a gated run or a tool prompt."
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "requestId": {
+          "$ref": "#/$defs/ChatRequestId"
+        },
+        "secret": {
+          "$ref": "#/$defs/SecretRequest",
+          "description": "secret only."
+        },
+        "state": {
+          "$ref": "#/$defs/RequestState"
+        },
+        "text": {
+          "description": "One line on why the lead needs it.",
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "requestId",
+        "projectRef",
+        "kind",
+        "text",
+        "state",
+        "createdAt"
+      ],
+      "type": "object"
+    },
+    "MachineId": {
+      "description": "Machine slug, [a-z0-9-]{1,32}",
+      "pattern": "^[a-z0-9-]{1,32}$",
+      "type": "string"
+    },
+    "PlaybookGateChange": {
+      "description": "A retro playbook change that relaxes a gate (fewer reviewers, a weaker or removed check, a looser rule): it applies\nonly once a person approves it. Stored with the approval and never changed.",
+      "properties": {
+        "diff": {
+          "description": "The exact unified diff that applies on approve.",
+          "maxLength": 8000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "playbook": {
+          "maxLength": 40,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "proposalId": {
+          "description": "The retro proposal, R<n>.",
+          "maxLength": 20,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "summary": {
+          "description": "The change in plain words, rendered by the hub for the person: \"Bugfixes, medium-size work: reviewers 1 → 0\".\nThe app shows it as the item's label; `diff` only behind expand or copy.",
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "proposalId",
+        "playbook",
+        "summary",
+        "diff"
+      ],
+      "type": "object"
+    },
+    "ProjectId": {
+      "type": "string"
+    },
+    "ProjectRef": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId"
+      ],
+      "type": "object"
+    },
+    "RequestKind": {
+      "description": "What a lead needs a person for that chat can't carry safely: a secret value (entered in a masked field and sealed to\nthe sink's node, never in a transcript), or an approval of a risky command (a gated run, or a session's tool\nprompt). The lead asks everything else in chat.",
+      "enum": [
+        "secret",
+        "approval"
+      ],
+      "type": "string"
+    },
+    "RequestState": {
+      "description": "The state names of the chat items that show it (`SecretRequestState`, `CommandApprovalState`). secret: open →\nstored | withdrawn. approval: open → approved → ran | failed, or open → denied; an approval the node could not run\ngoes back to open with the reason in `evidence`.",
+      "enum": [
+        "open",
+        "stored",
+        "withdrawn",
+        "approved",
+        "denied",
+        "ran",
+        "failed"
+      ],
+      "type": "string"
+    },
+    "SecretEnvEntry": {
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/EnvName"
+        },
+        "secretKey": {
+          "$ref": "#/$defs/DecisionKey"
+        }
+      },
+      "required": [
+        "name",
+        "secretKey"
+      ],
+      "type": "object"
+    },
+    "SecretFingerprint": {
+      "description": "8 lowercase hex characters: the sha256 prefix of the plaintext",
+      "pattern": "^[0-9a-f]{8}$",
+      "type": "string"
+    },
+    "SecretRequest": {
+      "description": "A secret request: the secret's name and where the node writes it.",
+      "properties": {
+        "envName": {
+          "$ref": "#/$defs/EnvName",
+          "description": "An env: sink's variable, when not the one the key names (`secret_env_name`)."
+        },
+        "fingerprint": {
+          "$ref": "#/$defs/SecretFingerprint",
+          "description": "Set once the node has written the sink; the value itself never reaches the hub in plain text."
+        },
+        "key": {
+          "$ref": "#/$defs/DecisionKey",
+          "description": "The secret's name, a dotted slug such as \"stripe.test_key\"."
+        },
+        "sink": {
+          "$ref": "#/$defs/SecretSink"
+        }
+      },
+      "required": [
+        "key",
+        "sink"
+      ],
+      "type": "object"
+    },
+    "SecretSink": {
+      "type": "string"
+    },
+    "ThreadId": {
+      "type": "string"
+    },
+    "Timestamp": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "ToolPermission": {
+      "description": "An approval raised by a session's tool permission prompt instead of a gated command: answering it answers the prompt\non the project's node. Its machine is the request's project's.",
+      "properties": {
+        "requestId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "summary": {
+          "description": "The command, the path, or the tool's own description.",
+          "maxLength": 2000,
+          "type": "string"
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId"
+        },
+        "toolName": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "threadId",
+        "requestId",
+        "toolName",
+        "summary"
+      ],
+      "type": "object"
+    },
+    "WorkstreamId": {
+      "pattern": "^W[1-9][0-9]*$",
+      "type": "string"
+    }
+  },
+  "$ref": "#/$defs/HumanRequest",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

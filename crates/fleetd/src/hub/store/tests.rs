@@ -470,3 +470,158 @@ fn drops_events_older_than_30_days_without_reusing_their_seq_even_across_a_resta
         5
     );
 }
+
+/// A hub from before the questions tool went: its open secret and approve asks carry on as open requests under the
+/// same number, an approved command that never ran goes back to the person, every ask is kept in `legacy_asks`, and
+/// the ask events, batches and the retro's asked state are gone.
+#[test]
+fn asks_on_an_older_hub_become_requests_and_history() {
+    use super::migrations::MIGRATIONS;
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    let last = MIGRATIONS.len() - 1;
+    assert!(
+        MIGRATIONS[last].contains("legacy_asks"),
+        "the ask migration is the last one"
+    );
+    for m in &MIGRATIONS[..last] {
+        conn.execute_batch(m).unwrap();
+    }
+    let p = r#""projectRef":{"machineId":"lab-a","projectId":"p1"}"#;
+    let asks = [
+        (
+            1,
+            "open",
+            format!(
+                r#"{{{p},"kind":"secret","key":"stripe.test_key","sink":"env:lab-a:/srv/.env","text":"The test key","createdAt":"2026-10-18T10:00:00.000Z"}}"#
+            ),
+        ),
+        (
+            2,
+            "open",
+            format!(
+                r#"{{{p},"kind":"approve","text":"lab-a/t1: Bash ls","permission":{{"threadId":"t1","requestId":"q1","toolName":"Bash","summary":"ls"}},"createdAt":"2026-10-18T10:00:00.000Z"}}"#
+            ),
+        ),
+        (
+            3,
+            "answered",
+            format!(
+                r#"{{{p},"kind":"approve","text":"Run make migrate","gated":{{"argv":["make","migrate"],"cwd":"/w/p1","class":"irreversible","reason":"schema","timeoutSec":600}},"answer":{{"value":"go"}},"createdAt":"2026-10-18T10:00:00.000Z"}}"#
+            ),
+        ),
+        (
+            4,
+            "answered",
+            format!(
+                r#"{{{p},"kind":"approve","text":"Run make seed","gated":{{"argv":["make","seed"],"cwd":"/w/p1","class":"irreversible","reason":"seed","timeoutSec":600}},"answer":{{"value":"go"}},"evidence":"exit 0 on lab-a","createdAt":"2026-10-18T10:00:00.000Z"}}"#
+            ),
+        ),
+        (
+            5,
+            "open",
+            format!(
+                r#"{{{p},"kind":"decide","key":"share.link","text":"What should a link show?","createdAt":"2026-10-18T10:00:00.000Z"}}"#
+            ),
+        ),
+        (6, "open", r#"{"kind":"secret"#.to_string()),
+    ];
+    for (n, state, data) in &asks {
+        conn.execute(
+            "INSERT INTO asks (n, project_key, key, state, filed_by, created_ms, data) VALUES (?1, 'lab-a/p1', 'k', ?2, 'lead', 0, ?3)",
+            rusqlite::params![n, state, data],
+        )
+        .unwrap();
+    }
+    conn.execute_batch(
+        r#"INSERT INTO batches (state, created_ms) VALUES ('published', 0);
+        INSERT INTO events (created_ms, type, data) VALUES (0, 'ask.created', '{"askId":"A5"}'), (0, 'batch.ready', '{}'),
+          (0, 'workstream.running', '{"workstreamId":"W1"}');
+        INSERT INTO retro_proposals (run_n, playbook, state, ask_id, machines, data)
+          VALUES (1, 'bugfix', 'asked', 'A9', '[]', '{"proposalId":"R1","state":"asked","askId":"A9"}');"#,
+    )
+    .unwrap();
+    conn.execute_batch(MIGRATIONS[last]).unwrap();
+
+    let ids: Vec<(i64, String)> = conn
+        .prepare("SELECT n, json_extract(data, '$.evidence') FROM requests ORDER BY n")
+        .unwrap()
+        .query_map([], |r| {
+            Ok((
+                r.get(0)?,
+                r.get::<_, Option<String>>(1)?.unwrap_or_default(),
+            ))
+        })
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(
+        ids,
+        [
+            (1, String::new()),
+            (2, String::new()),
+            (
+                3,
+                "not run: the hub was updated before it ran; approve again to run it".to_string()
+            ),
+        ],
+        "open secret and approve asks, and the approved command that never ran; no decide, finished or broken ask"
+    );
+    let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
+    assert_eq!(
+        count("SELECT count(*) FROM legacy_asks"),
+        6,
+        "every ask is kept for the chat's history"
+    );
+    assert_eq!(
+        count("SELECT count(*) FROM events WHERE type IN ('ask.created', 'batch.ready')"),
+        0
+    );
+    assert_eq!(count("SELECT count(*) FROM events"), 1);
+    assert_eq!(
+        count(
+            "SELECT count(*) FROM sqlite_master WHERE name IN ('batches', 'batch_items', 'ask_incidents', 'asks')"
+        ),
+        0
+    );
+    let retro: (String, String) = conn
+        .query_row("SELECT state, data FROM retro_proposals", [], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
+        .unwrap();
+    assert_eq!(
+        retro,
+        (
+            "pending".into(),
+            r#"{"proposalId":"R1","state":"pending"}"#.into()
+        )
+    );
+
+    // Every carried-over request decodes as the store reads it.
+    let rows: Vec<String> = conn
+        .prepare("SELECT data FROM requests ORDER BY n")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    let decoded: Vec<fleetd_contracts::ledger::HumanRequest> = rows
+        .iter()
+        .map(|d| serde_json::from_str(d).unwrap())
+        .collect();
+    assert_eq!(
+        decoded
+            .iter()
+            .map(|r| (r.request_id.as_str(), r.state))
+            .collect::<Vec<_>>(),
+        [
+            ("Q1", fleetd_contracts::ledger::RequestState::Open),
+            ("Q2", fleetd_contracts::ledger::RequestState::Open),
+            ("Q3", fleetd_contracts::ledger::RequestState::Open),
+        ]
+    );
+    assert!(
+        decoded[0].secret.is_some()
+            && decoded[1].permission.is_some()
+            && decoded[2].gated.is_some()
+    );
+}

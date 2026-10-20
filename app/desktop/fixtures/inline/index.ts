@@ -50,6 +50,27 @@ const inlineItems = (base: Fixture): Fixture => {
       state: "final",
     })),
   ];
+  // The same requests as the hub holds them (requests_list), which the items read their current state from.
+  const requests = items.map((item, i): JsonObject => {
+    const secret = item["kind"] === "secret_request";
+    const opt = (key: string, value: JsonValue | undefined): JsonObject => (value === undefined ? {} : { [key]: value });
+    return {
+      requestId: item["requestId"] ?? "",
+      kind: secret ? "secret" : "approval",
+      projectRef,
+      state: item["state"] ?? "open",
+      text: text(
+        item["text"],
+        text((item["gated"] as JsonObject | undefined)?.["reason"], text((item["permission"] as JsonObject | undefined)?.["summary"], text((item["playbook"] as JsonObject | undefined)?.["summary"], "A tool prompt"))),
+      ),
+      createdAt: at(i + 2),
+      ...opt("evidence", item["note"]),
+      ...(secret
+        ? { secret: { key: item["name"] ?? "", sink: item["sink"] ?? "", ...opt("envName", item["envName"]), ...opt("fingerprint", item["fingerprint"]) } }
+        : { ...opt("gated", item["gated"]), ...opt("permission", item["permission"]), ...opt("playbook", item["playbook"]), ...opt("exitCode", item["exitCode"]), ...opt("outputTail", item["outputTail"]) }),
+    };
+  });
+  f.answer("requests_list", { limit: 100 }, { requests });
   f.answer("chat_history", { projectRef }, {
     messages,
     moreBefore: false,

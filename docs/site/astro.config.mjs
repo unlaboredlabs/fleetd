@@ -35,7 +35,8 @@ export default defineConfig({
           label: "Use fleetd",
           items: [
             "machines",
-            "projects-and-orders",
+            "projects",
+            "chat",
             "merge-train",
             "steering",
             "approvals-and-secrets",

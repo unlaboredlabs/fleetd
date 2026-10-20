@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::ledger::{
-    Ask, CheckSpec, Decision, DecisionScope, Workstream, WorkstreamId, WorkstreamState,
+    CheckSpec, Decision, DecisionScope, HumanRequest, Workstream, WorkstreamId, WorkstreamState,
 };
 
 use super::events::AgentsLine;
@@ -43,7 +43,8 @@ pub struct DigestInput<'a> {
     pub at: &'a str,
     /// Open workstreams, newest first.
     pub workstreams: &'a [Workstream],
-    pub open_asks: &'a [Ask],
+    /// The project's open secret and approval requests: what waits on the person in chat.
+    pub open_requests: &'a [HumanRequest],
     /// Active decisions along the project's scope chain, any order.
     pub decisions: &'a [Decision],
     /// The agents line; None leaves it out.
@@ -238,28 +239,23 @@ pub fn state_text(state: WorkstreamState) -> &'static str {
     }
 }
 
-fn ask_line(a: &Ask) -> String {
-    let place = match &a.batch_id {
-        None => "not batched yet".to_string(),
-        Some(batch) => format!("#{} in {batch}", a.number.unwrap_or_default()),
+fn request_line(r: &HumanRequest) -> String {
+    let what = match (&r.secret, &r.gated, &r.permission) {
+        (Some(s), _, _) => format!("secret {} to enter", s.key),
+        (_, Some(g), _) => format!("approve your command: {}", one_line(g.reason.as_str(), 120)),
+        (_, _, Some(p)) => format!(
+            "approve a tool prompt: {} {}",
+            p.tool_name,
+            one_line(p.summary.as_str(), 120)
+        ),
+        _ => one_line(r.text.as_str(), 120),
     };
-    let rec = a
-        .recommendation
+    let again = r
+        .evidence
         .as_ref()
-        .map(|r| format!("; rec {}", one_line(r.as_ref(), 80)))
+        .map(|e| format!(" (open again: {})", one_line(e.as_str(), 160)))
         .unwrap_or_default();
-    let proceeded = if a.proceeded_on_rec {
-        "; you proceeded on the rec"
-    } else {
-        ""
-    };
-    format!(
-        "- {} ({place}) [{}] {}: {}{rec}{proceeded}",
-        a.ask_id,
-        serde_plain(&a.class),
-        a.key,
-        one_line(a.text.as_ref(), 200)
-    )
+    format!("- {} {what}{again}", r.request_id)
 }
 
 fn decision_line(d: &Decision) -> String {
@@ -273,7 +269,7 @@ fn decision_line(d: &Decision) -> String {
     )
 }
 
-/// A unit enum's wire name, e.g. `AskClass::Product` → "product".
+/// A unit enum's wire name, e.g. `WorkstreamState::Running` → "running".
 pub fn serde_plain<T: serde::Serialize>(value: &T) -> String {
     match serde_json::to_value(value) {
         Ok(serde_json::Value::String(s)) => s,
@@ -334,7 +330,7 @@ impl Section {
 const WORKSTREAMS: usize = 0;
 const TASKS: usize = 1;
 const TRAIN: usize = 2;
-const ASKS: usize = 3;
+const REQUESTS: usize = 3;
 const DECISIONS: usize = 4;
 const DO_NOT_RE_ASK: usize = 5;
 
@@ -342,11 +338,7 @@ pub fn render_lead_digest(input: &DigestInput) -> String {
     let open: HashSet<&WorkstreamId> = input.workstreams.iter().map(|w| &w.workstream_id).collect();
     let ranked = rank_decisions(input.decisions, &open);
     let mut keys: Vec<String> = Vec::new();
-    for key in ranked
-        .iter()
-        .map(|d| d.key.to_string())
-        .chain(input.open_asks.iter().map(|a| a.key.to_string()))
-    {
+    for key in ranked.iter().map(|d| d.key.to_string()) {
         if !keys.contains(&key) {
             keys.push(key);
         }
@@ -390,8 +382,8 @@ pub fn render_lead_digest(input: &DigestInput) -> String {
             "\n",
         ),
         Section::new(
-            "Your open asks",
-            input.open_asks.iter().map(ask_line).collect(),
+            "Waiting on the person (in chat)",
+            input.open_requests.iter().map(request_line).collect(),
             20,
             "older ones not shown",
             "\n",
@@ -404,7 +396,7 @@ pub fn render_lead_digest(input: &DigestInput) -> String {
             "\n",
         ),
         Section::new(
-            "Decided or asked already: never ask again",
+            "Decided already: never ask again",
             keys,
             200,
             "check with `decisions_search`",
@@ -419,18 +411,18 @@ pub fn render_lead_digest(input: &DigestInput) -> String {
     if input.train.is_some() {
         shown.push(TRAIN);
     }
-    shown.extend([ASKS, DECISIONS, DO_NOT_RE_ASK]);
+    shown.extend([REQUESTS, DECISIONS, DO_NOT_RE_ASK]);
 
     let render = |sections: &[Section]| {
         let parts: Vec<String> = shown.iter().map(|&i| sections[i].render()).collect();
         format!("{head}\n\n{}", parts.join("\n\n"))
     };
-    // Lowest value first: the key list, then decisions, asks, agents, the train, and the work last. The first pass
+    // Lowest value first: the key list, then decisions, requests, agents, the train, and the work last. The first pass
     // keeps a few of each so no section vanishes while another is long; the second trims to nothing if it must.
     let drop_order: [(usize, usize); 6] = [
         (DO_NOT_RE_ASK, 30),
         (DECISIONS, 3),
-        (ASKS, 5),
+        (REQUESTS, 5),
         (TASKS, 5),
         (TRAIN, 4),
         (WORKSTREAMS, 5),

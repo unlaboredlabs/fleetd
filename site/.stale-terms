@@ -36,3 +36,12 @@ CLAUDE_CONFIG_DIR=~/\.fleetd
 
 # A project's slot share is now its max agents.
 project's (slot )?share\b
+
+# Leads ask in the project's chat now (lead-chat): no ask tool, no inbox replies, no question cards, no fleetd answer.
+question card
+\bfleetd answer\b
+# `answer` written as a command (`answer`, `answer --key-file …`), with or without fleetd.
+`answer[` ]
+\binbox_reply\b
+\basks_list\b
+recs fine

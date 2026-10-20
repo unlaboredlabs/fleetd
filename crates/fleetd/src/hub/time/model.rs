@@ -12,7 +12,7 @@ pub struct Row {
     pub start_ms: i64,
     pub end_ms: i64,
     /// Exclusive time. 0 on envelopes (`run`, `model.message` when its phases tile it) and on detail spans that sit
-    /// beside the lane's tiling (`ci.check`, `ci.queue`, `slots.full`, `ask.info`, `gap`).
+    /// beside the lane's tiling (`ci.check`, `ci.queue`, `slots.full`, `gap`).
     pub excl_ms: i64,
     pub lane: String,
     pub parent_id: Option<i64>,
@@ -56,7 +56,7 @@ pub fn rank(kind: SpanKind) -> u8 {
         // whatever the node measured in the run.
         WakeDebounce | RunQueued | RunStartup | ParkUsage | WaitOffline | WaitRetryNode => 1,
         ModelMessage => 3,
-        Run | Gap | CiCheck | CiQueue | SlotsFull | AskInfo => 0,
+        Run | Gap | CiCheck | CiQueue | SlotsFull => 0,
         _ => 5,
     }
 }
@@ -66,12 +66,7 @@ pub fn rank(kind: SpanKind) -> u8 {
 pub fn is_detail(kind: SpanKind) -> bool {
     matches!(
         kind,
-        SpanKind::Run
-            | SpanKind::CiCheck
-            | SpanKind::CiQueue
-            | SpanKind::SlotsFull
-            | SpanKind::AskInfo
-            | SpanKind::Gap
+        SpanKind::Run | SpanKind::CiCheck | SpanKind::CiQueue | SpanKind::SlotsFull | SpanKind::Gap
     )
 }
 
@@ -107,7 +102,7 @@ pub struct RuleInput {
 }
 
 /// A plan item of a running order that could have started: open, every `after` item done, no task spawned for it
-/// and no blocking ask open on its order. One per stretch, clipped to the period.
+/// and no secret or approval request open on its order. One per stretch, clipped to the period.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Ready {
     /// `<machine>/<project>`.

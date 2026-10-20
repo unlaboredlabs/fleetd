@@ -111,8 +111,8 @@ The `env` in your `~/.claude/settings.json` outranks it, as it does for your own
 
 ## .fleetd/policy.yaml {#policy}
 
-An optional file in a project's repo. Commit it to the default branch; changes apply within a minute. Without it,
-writers may touch the whole repo.
+An optional file in a project's repo. Commit it to the default branch; changes apply within a minute. Without
+`areas`, fleetd infers them from the repo (see below).
 
 ```yaml
 areas:
@@ -135,14 +135,28 @@ branchPrefix: team-a/
 
 | Key | Default | Does |
 |---|---|---|
-| `areas` | the whole repo | What a writer task may touch. A task leases one or more areas. Names are lowercase slugs. |
+| `areas` | inferred | What a writer task may touch. A task leases one or more areas, and writers in different areas run at the same time. Names are lowercase slugs. |
 | `defaults.model` | `claude-opus-5-5` | The project's task model. |
 | `defaults.effort` | `high` | `low`, `medium`, `high` or `max`. |
-| `finishAll.maxChildren` | `5` | The most child orders one `finish:` run starts, 1 to 50. |
+| `finishAll.maxChildren` | `5` | The most pieces of work one finish-all run starts at once, 1 to 50. |
 | `tools.allow`, `tools.deny` | none | Claude permission rules for every session. Deny wins. |
-| `lead.autoStart` | `true` | `false`: orders wait for `lead_start` instead of starting the lead. |
+| `lead.autoStart` | `true` | `false`: your messages wait for `lead_start` instead of starting the lead. |
 | `claude.autoMemory` | `false` | `true`: sessions keep claude's own auto memory. |
 | `branchPrefix` | `fleetd/` | What writer and train branches start with. Must end in `/`. |
+
+### Inferred areas {#inferred-areas}
+
+Without `areas`, each workspace member is an area, named after its directory:
+
+| Found in the repo | Becomes |
+|---|---|
+| Cargo `[workspace] members`, package.json `workspaces`, pnpm-workspace.yaml `packages` | One area per member. |
+| Each directory under a top-level `apps/`, `crates/`, `packages/` or `services/` | One area per directory. |
+| A top-level `docs/` | The area `docs`. |
+| Always | `all`, the whole repo, for work that spans members. A task on `all` waits for every other area, and they for it. |
+
+Areas never nest: a folder that holds a member is left out, so its members run side by side. `fleetd project add` and
+`fleetd doctor` show a project's areas. Set `areas` to choose your own; then only those count.
 
 A broken file is refused with the exact problem, never ignored, so a typo can't widen what a writer may touch.
 
@@ -215,11 +229,11 @@ Stop the hub and node with Ctrl+C. Delete `$FLEETD_HOME` to remove the test flee
 
 | | Where |
 |---|---|
-| The hub's home: `init`, `doctor`, `uninstall`, `machine`, `pair`, `project`, `hub`, `prompts`, `instructions`, and `status`, `time`, `answer`, `steer`, `steers` without `--hub` | `$FLEETD_HOME/hub` |
+| The hub's home: `init`, `doctor`, `uninstall`, `machine`, `pair`, `project`, `hub`, `prompts`, `instructions`, and `status`, `time`, `steer`, `steers` without `--hub` | `$FLEETD_HOME/hub` |
 | The node's home: `node join`, `node run` | `$FLEETD_HOME/node` |
 | The app's hand-off from `init` and `pair` | `$FLEETD_HOME/app-pair.json`. Start the desktop app with the same `FLEETD_HOME` to pair with it. |
 | Lead-side commands (`claim`, `change`, `plan`, …) | `FLEETD_NODE_SOCK`, else `$FLEETD_HOME/node/node.sock`. Sessions get it set. |
-| `listen`, `retro` | `--hub` and `--key-file`, always. |
+| `listen`, `retro` | No home: they always take `--hub` and `--key-file`. |
 
 `--home <dir>` names one hub's or node's folder. Without `FLEETD_HOME`, that command keeps everything else in the
 folder above it, so `--home $T/hub` works like `FLEETD_HOME=$T`. `FLEETD_HOME` wins when both are given.
@@ -243,7 +257,7 @@ one agent's work or wait, such as a tool call or a CI check.
 | Data | Kept |
 |---|---|
 | Spans | 30 days (1 to 365 with `fleetd time --retention <days>`) |
-| Daily totals and each order's critical path | 400 days |
+| Daily totals and each piece of work's critical path | 400 days |
 
 Each node holds timings it hasn't sent yet in `sessions.sqlite`. While the hub is away, it keeps up to 7 days or
 500,000 of them, then drops the oldest; the timeline shows the gap.

@@ -22,8 +22,8 @@ What fleetd trusts and why. fleetd is built for one person or a small team runni
 | [Human key](/docs/glossary#human-key) | Held by a person's device. The desktop app encrypts it with the OS keychain or keyring; without one, it is a file only you can read (`0600`). |
 | Node key | `~/.fleetd/node/node-key.pem` on each worker. |
 
-Each key has `read`, `operate` or `admin` rights, on every machine or a named list. Only human keys answer secret,
-approve and checklist asks, so no agent can approve itself.
+Each key has `read`, `operate` or `admin` rights, on every machine or a named list. Only human keys enter secrets
+and approve commands, so no agent can approve itself.
 
 ### The node socket {#node-socket}
 

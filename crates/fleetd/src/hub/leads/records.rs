@@ -4,8 +4,8 @@ use std::sync::Arc;
 use fleetd_contracts::effort::Effort;
 use fleetd_contracts::ids::{ProjectRef, Timestamp};
 use fleetd_contracts::ledger::{
-    AskId, IntakeChannel, PlaybookRef, Workstream, WorkstreamId, WorkstreamParent,
-    WorkstreamSource, WorkstreamState,
+    IntakeChannel, PlaybookRef, Workstream, WorkstreamId, WorkstreamParent, WorkstreamSource,
+    WorkstreamState,
 };
 use rusqlite::{OptionalExtension, named_params, params};
 use serde::{Deserialize, Serialize};
@@ -33,8 +33,9 @@ pub struct LeadSettings {
 #[derive(Debug, Clone)]
 pub struct StoredWorkstream {
     pub workstream: Workstream,
-    /// Human-answered asks already used to amend its brief; each authorizes one change.
-    pub amends: Vec<AskId>,
+    /// The decisions already used to amend its brief (decision ids; ask ids on rows from before the questions tool
+    /// went); each authorizes one change.
+    pub amends: Vec<String>,
 }
 
 pub const CLOSED_STATES: [WorkstreamState; 3] = [

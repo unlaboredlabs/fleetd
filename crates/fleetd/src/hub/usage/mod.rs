@@ -7,7 +7,7 @@ pub mod state;
 pub mod time;
 pub mod tools;
 pub mod wire;
-mod wire_approvals;
+pub(crate) mod wire_approvals;
 pub mod wire_retro;
 
 pub use service::{Usage, UsageDeps, UsageStatus};

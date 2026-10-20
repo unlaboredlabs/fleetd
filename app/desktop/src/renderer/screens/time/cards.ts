@@ -130,7 +130,7 @@ export const laneCard = (m: Model, row: number): Card => {
     mono: r.kind === "check",
     lines,
     warnings,
-    ...(r.kind === "lead" ? { note: `${WHY.lead} This lane shows this order's share.` } : {}),
+    ...(r.kind === "lead" ? { note: `${WHY.lead} This lane shows this work's share.` } : {}),
     hint: r.to > r.from ? "Click to zoom to this lane." : "No spans to zoom to.",
   };
 };
@@ -156,7 +156,7 @@ export const pathCard = (m: Model, seg: number): Card => {
     mono: s.label !== undefined,
     tag: CAT_LABEL[s.cat],
     lines: [`${who}${when}`],
-    note: "On the critical path: the order's wall time is these steps end to end.",
+    note: "On the critical path: the work's wall time is these steps end to end.",
     hint: "Click to open it.",
   };
 };

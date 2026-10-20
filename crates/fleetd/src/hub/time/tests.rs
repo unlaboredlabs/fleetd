@@ -152,10 +152,10 @@ fn ties_break_on_causal_edge_then_category_then_id() {
         10,
         vec![
             row(5, SpanKind::ModelOutput, "a", 0, 10),
-            row(6, SpanKind::WaitAsk, "b", 0, 10),
+            row(6, SpanKind::WaitRequest, "b", 0, 10),
         ],
     );
-    assert_eq!(segs(&p)[0].1, SpanKind::WaitAsk);
+    assert_eq!(segs(&p)[0].1, SpanKind::WaitRequest);
     // Same category: the lower span id.
     let p = path(
         0,
@@ -169,7 +169,7 @@ fn ties_break_on_causal_edge_then_category_then_id() {
     // The lane the current segment waits on wins over a better category.
     let rows = vec![
         row(1, SpanKind::ModelOutput, "lead", 0, 10),
-        row(2, SpanKind::WaitAsk, "other", 0, 10),
+        row(2, SpanKind::WaitRequest, "other", 0, 10),
         row(3, SpanKind::ToolBash, "task", 10, 20),
     ];
     let mut waits_on = HashMap::new();
@@ -452,7 +452,7 @@ fn ci_check_critical_sums_the_last_checks_excess_over_orders() {
     let found = fired(&make(90_000), InsightRule::CiCheckCritical);
     assert_eq!(
         found[0].message.as_str(),
-        "CI check `rust (macos)` adds 3m on the critical path of 2 orders (median 6m30s per run)"
+        "CI check `rust (macos)` adds 3m on the critical path of 2 pieces of work (median 6m30s per run)"
     );
     assert!(fired(&make(89_000), InsightRule::CiCheckCritical).is_empty());
 }
@@ -498,8 +498,8 @@ fn ask(id: i64, dur: i64, key: &str) -> Row {
         },
         ..row(
             id,
-            SpanKind::WaitAsk,
-            "asks:W1",
+            SpanKind::WaitRequest,
+            "requests:W1",
             id * 100 * MIN,
             id * 100 * MIN + dur,
         )
@@ -525,7 +525,7 @@ fn prompt(id: i64, dur: i64, by: DecidedBy) -> Row {
 }
 
 #[test]
-fn human_wait_adds_asks_and_human_prompts() {
+fn human_wait_adds_requests_and_human_prompts() {
     let rows = vec![
         ask(1, 6 * MIN, "deploy.region"),
         prompt(2, 4 * MIN, DecidedBy::Human),
@@ -533,29 +533,13 @@ fn human_wait_adds_asks_and_human_prompts() {
     let found = fired(&input(rows), InsightRule::HumanWait);
     assert_eq!(
         found[0].message.as_str(),
-        "waited 10m on your answers (2 asks); longest: `deploy.region` 6m"
+        "waited 10m on you (2 requests); longest: `deploy.region` 6m"
     );
     let rows = vec![
         ask(1, 6 * MIN, "deploy.region"),
         prompt(2, 4 * MIN, DecidedBy::Policy),
     ];
     assert!(fired(&input(rows), InsightRule::HumanWait).is_empty());
-}
-
-#[test]
-fn batching_delay_reads_the_paths() {
-    let make = |dur: i64| {
-        let rows = vec![row(1, SpanKind::AskBatching, "asks:W1", 0, dur)];
-        let mut i = input(rows.clone());
-        i.paths.push(("W1".into(), path(0, dur, rows)));
-        i
-    };
-    let found = fired(&make(5 * MIN), InsightRule::BatchingDelay);
-    assert_eq!(
-        found[0].message.as_str(),
-        "asks sat 5m in batches before they were sent to you"
-    );
-    assert!(fired(&make(5 * MIN - 1000), InsightRule::BatchingDelay).is_empty());
 }
 
 #[test]
@@ -643,7 +627,7 @@ fn review_share_needs_three_orders_and_thirty_percent() {
     let found = fired(&make(3, 3 * MIN), InsightRule::ReviewShare);
     assert_eq!(
         found[0].message.as_str(),
-        "reviews were 30% of the critical path; median round 3m; 0 orders needed 2+ rounds"
+        "reviews were 30% of the critical path; median round 3m; 0 pieces of work needed 2+ rounds"
     );
     assert!(fired(&make(2, 3 * MIN), InsightRule::ReviewShare).is_empty());
     assert!(fired(&make(3, 3 * MIN - 1000), InsightRule::ReviewShare).is_empty());

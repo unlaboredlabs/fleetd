@@ -307,7 +307,7 @@ async fn a_projects_past_reads_in_once_in_time_order_without_ids() {
                 "text": "Public link or image only?", "createdAt": "2026-10-19T08:10:00.000Z",
                 "answer": { "value": "link", "raw": "1 go", "at": "2026-10-19T08:20:00.000Z" } });
             c.execute(
-                "INSERT INTO asks (project_key, key, state, filed_by, created_ms, data)
+                "INSERT INTO legacy_asks (project_key, key, state, filed_by, created_ms, data)
                  VALUES ('devbox/app', 'share.link', 'answered', 'lead', 0, ?1)",
                 [ask.to_string()],
             )?;
@@ -655,4 +655,249 @@ async fn a_messages_attachments_are_the_projects() {
         .await
         .unwrap();
     assert_eq!(got["bytes"], 3);
+}
+
+/// A stop reaches the lead as a line that says the order is over: no more work on it.
+#[tokio::test(flavor = "current_thread")]
+async fn a_stopped_order_tells_its_lead_to_do_no_more_work_on_it() {
+    let clock = ManualClock::at(1_792_000_000_000);
+    let home = tempfile::tempdir().unwrap();
+    let config = HubConfig {
+        home: home.path().to_path_buf(),
+        listen: Listen::default(),
+        url: None,
+        queue_ttl_sec: None,
+        retro_model: None,
+    };
+    let hub =
+        crate::hub::serve::build_on(HubDb::open_memory().unwrap(), config, clock.clone()).unwrap();
+    hub.store
+        .projects_upsert_many(
+            &project().machine_id,
+            &[serde_json::from_value(json!({
+                "machineId": "devbox", "projectId": "app", "title": "app", "workspaceRoot": "/work/app",
+                "threads": { "running": 0, "waiting": 0, "idle": 0, "failed": 0 }, "lastActivityAt": AT,
+            }))
+            .unwrap()],
+        )
+        .unwrap();
+    give_lead(&hub);
+    let r = project();
+    hub.leads
+        .records
+        .workstream_create(NewWorkstream {
+            project_ref: r.clone(),
+            title: "Dark mode".into(),
+            text: "add dark mode".into(),
+            channel: IntakeChannel::App,
+            by: "human".into(),
+            at: AT.into(),
+            client_request_id: None,
+            playbook: None,
+            parent: None,
+        })
+        .unwrap();
+    crate::hub::api::registry()
+        .call(
+            &hub,
+            &person(),
+            "project_stop",
+            json!({ "projectRef": { "machineId": "devbox", "projectId": "app" }, "reason": "not needed" }),
+        )
+        .await
+        .unwrap();
+    assert!(hub.leads.wakes.pending(&r));
+    clock.advance(crate::hub::leads::wakes::WAKE_DEBOUNCE);
+    for _ in 0..50 {
+        tokio::task::yield_now().await;
+    }
+    // The lead's machine is away, so the wake waits in the offline queue.
+    let wake: String = hub
+        .db
+        .with(|c| Ok(c.query_row("SELECT message FROM queued_writes", [], |r| r.get(0))?))
+        .unwrap();
+    assert!(
+        wake.contains(
+            "- W1 stopped by the human (not needed): Dark mode; 0 agents cancelled, merged PRs stay; do no more work on it"
+        ),
+        "{wake}"
+    );
+}
+
+/// Every request event the chat follows, handled as the follower handles it.
+async fn follow_requests(hub: &Hub) {
+    for t in [HubEventType::RequestOpened, HubEventType::RequestUpdated] {
+        for data in events_of(hub, t) {
+            flow::show_request(hub, data["requestId"].as_str().unwrap()).await;
+        }
+    }
+}
+
+fn items(hub: &Hub) -> Vec<(fleetd_contracts::chat::ChatMessageId, ChatItem)> {
+    hub.chat
+        .page(&project(), None, None, 50)
+        .unwrap()
+        .0
+        .into_iter()
+        .filter_map(|m| m.item.map(|i| (m.message_id, i)))
+        .collect()
+}
+
+/// End to end for a gated command: the lead's gated_run shows as its inline item and the chat waits on you; the
+/// person denies it with approval_answer, the same item says so, the lead is woken with the outcome, and the wait
+/// is over. Following the same events again changes nothing.
+#[tokio::test]
+async fn a_gated_command_is_an_inline_item_from_request_to_answer() {
+    let (hub, _home) = hub();
+    hub.ops.bind(&hub);
+    give_lead(&hub);
+    let r = project();
+    let p: crate::hub::usage::ports::ProjectRef =
+        serde_json::from_value(json!({ "machineId": "devbox", "projectId": "app" })).unwrap();
+    let input = crate::hub::approvals::GatedRunInput {
+        argv: vec!["./deploy.sh".into(), "prod".into()],
+        cwd: None,
+        class: "irreversible".into(),
+        reason: "prod deploy".into(),
+        secret_env: None,
+        timeout_sec: 600,
+        workstream_id: None,
+    };
+    let open = hub.approvals.gated_run(&p, input).await.unwrap();
+    follow_requests(&hub).await;
+    follow_requests(&hub).await;
+    let shown = items(&hub);
+    assert_eq!(shown.len(), 1, "once per request");
+    let ChatItem::CommandApproval(item) = &shown[0].1 else {
+        panic!("not an approval")
+    };
+    assert_eq!(
+        (item.state, item.gated.as_ref().map(|g| g.argv.len())),
+        (CommandApprovalState::Open, Some(2))
+    );
+    assert!(
+        hub.chat.state(&r, true).unwrap().needs_you,
+        "an open request waits on you, even mid-turn"
+    );
+    let tools = crate::hub::api::registry();
+    tools
+        .call(
+            &hub,
+            &person(),
+            "approval_answer",
+            json!({ "requestId": open.request_id, "decision": "deny",
+            "message": "not today" }),
+        )
+        .await
+        .unwrap();
+    follow_requests(&hub).await;
+    let after = items(&hub);
+    assert_eq!(after.len(), 1);
+    assert_eq!(after[0].0, shown[0].0, "updated in place");
+    let ChatItem::CommandApproval(item) = &after[0].1 else {
+        panic!("not an approval")
+    };
+    assert_eq!(item.state, CommandApprovalState::Denied);
+    assert!(hub.leads.wakes.pending(&r), "the lead hears the outcome");
+    assert!(!hub.chat.state(&r, false).unwrap().needs_you);
+}
+
+/// A secret request's item carries where the value goes and, once stored, its fingerprint: never the value.
+#[test]
+fn a_secret_request_item_never_carries_the_value() {
+    let (hub, _home) = hub();
+    let request: fleetd_contracts::ledger::HumanRequest = serde_json::from_value(json!({
+        "requestId": "Q7", "projectRef": { "machineId": "devbox", "projectId": "app" }, "kind": "secret",
+        "text": "Need the Stripe test key", "state": "stored", "createdAt": AT, "answeredAt": AT,
+        "secret": { "key": "stripe.test_key", "sink": "env:devbox:/work/app/.env", "fingerprint": "ab12cd34" },
+    }))
+    .unwrap();
+    let item = crate::hub::approvals::chat_item(&request);
+    let message = hub.chat.item(&project(), item).unwrap();
+    let text = serde_json::to_string(&message).unwrap();
+    assert!(text.contains("ab12cd34") && text.contains("stripe.test_key"));
+    for leak in ["\"value\"", "sealed", "sk_test"] {
+        assert!(!text.contains(leak), "{leak} in {text}");
+    }
+    assert!(
+        !hub.chat.state(&project(), false).unwrap().needs_you,
+        "a stored secret waits on no one"
+    );
+}
+
+/// A project's max-agents change is one quiet line in its chat, once per event; a fleet-wide one is in no chat.
+#[tokio::test]
+async fn a_max_agents_change_is_one_quiet_line() {
+    let (hub, _home) = hub();
+    let data =
+        json!({ "projectRef": { "machineId": "devbox", "projectId": "app" }, "from": 3, "to": 12 });
+    let line = "Max agents 3 → 12: 3 queued agents start now.";
+    flow::cap_line(&hub, 41, Some(&data), line).await;
+    flow::cap_line(&hub, 41, Some(&data), line).await;
+    flow::cap_line(
+        &hub,
+        42,
+        Some(&json!({ "from": 40, "to": 20 })),
+        "Fleet cap 40 → 20.",
+    )
+    .await;
+    let page = hub.chat.page(&project(), None, None, 10).unwrap().0;
+    assert_eq!(
+        page.iter()
+            .map(|m| (m.author, m.text.as_str()))
+            .collect::<Vec<_>>(),
+        [(ChatAuthor::System, line)]
+    );
+}
+
+/// The approvals service may reopen an approved command while the chat's follower starts. The follower takes its
+/// cursor before it shows anything, and the start brings every item still reading open or approved in line with its
+/// request: a reopen it never saw as an event still shows as open, with the dot.
+#[tokio::test]
+async fn a_request_reopened_while_the_follower_starts_shows_open() {
+    let (hub, _home) = hub();
+    hub.ops.bind(&hub);
+    give_lead(&hub);
+    let r = project();
+    let p: crate::hub::usage::ports::ProjectRef =
+        serde_json::from_value(json!({ "machineId": "devbox", "projectId": "app" })).unwrap();
+    let input = crate::hub::approvals::GatedRunInput {
+        argv: vec!["./deploy.sh".into(), "prod".into()],
+        cwd: None,
+        class: "irreversible".into(),
+        reason: "prod deploy".into(),
+        secret_env: None,
+        timeout_sec: 600,
+        workstream_id: None,
+    };
+    let open = hub.approvals.gated_run(&p, input).await.unwrap();
+    let n: i64 = open.request_id.as_str()[1..].parse().unwrap();
+    // As the approvals service's own writes do, with no event the chat reads.
+    let set = |state: &str| {
+        hub.db
+            .with(|c| {
+                c.execute(
+                    "UPDATE requests SET state = ?1, data = json_set(data, '$.state', ?1) WHERE n = ?2",
+                    rusqlite::params![state, n],
+                )?;
+                Ok(())
+            })
+            .unwrap();
+    };
+    set("approved");
+    flow::show_request(&hub, open.request_id.as_str()).await;
+    let state_of = || match &items(&hub)[0].1 {
+        ChatItem::CommandApproval(item) => item.state,
+        _ => panic!("not an approval"),
+    };
+    assert_eq!(state_of(), CommandApprovalState::Approved);
+    assert!(!hub.chat.state(&r, false).unwrap().needs_you);
+    // Reopened with no event the follower reads: the start repairs it, and follows from before it began.
+    set("open");
+    let head = hub.events.head();
+    let cursor = flow::startup(&hub).await;
+    assert_eq!(cursor, head, "the cursor is taken before anything is shown");
+    assert_eq!(state_of(), CommandApprovalState::Open);
+    assert!(hub.chat.state(&r, false).unwrap().needs_you);
+    assert_eq!(items(&hub).len(), 1, "the same item, in place");
 }

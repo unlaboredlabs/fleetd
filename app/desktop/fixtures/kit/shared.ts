@@ -6,7 +6,7 @@ import type { FixtureFile } from "../../src/main/hub/fixture.ts";
 import { Fixture, HUB, PROTOCOL } from "./fixture.ts";
 import type { SharedName } from "./group.ts";
 import { at } from "./ids.ts";
-import { isObject, type JsonObject, asText } from "./json.ts";
+import { isObject, type JsonObject, type JsonValue, asText } from "./json.ts";
 import { arr, busiestOrder, longText, manyAgents, manyPrompts, NODE_TOO_OLD, obj, streamedLines, timeSpans } from "./stress.ts";
 import { explainLoss } from "../../src/main/hub/explain.ts";
 import { agentsAt, answerRows, commandApproval, LOG, SCREENSHOT, type Draft, firstProject, fromLines, liveStrip, migrated, type Ref, secretRequest, statusRow, streamReply, writeChat } from "./chat.ts";
@@ -16,9 +16,52 @@ import { LONG_TITLES, ofLength } from "./text.ts";
 
 const RECORDED = path.join(import.meta.dirname, "../recorded");
 
-/** A recorded lab moment (recorded/<name>.json), as written by sanitize.ts. */
+/**
+ * Recorded answers from hubs before the questions tool was removed (H2) listed asks: a status doc's needs-you by
+ * `askIds` (and an "asked" count), an order by its open `asks`. Today's hub lists requests instead, and recorded lab runs had none open.
+ */
+const withoutAsks = (f: Fixture): Fixture => {
+  f.update("status_get", (output) => {
+    if (!isObject(output) || !isObject(output["doc"])) return output;
+    let doc = output["doc"];
+    const needsYou = doc["needsYou"];
+    if (isObject(needsYou) && "askIds" in needsYou) {
+      const { askIds: _asks, ...rest } = needsYou;
+      doc = { ...doc, needsYou: { ...rest, requestIds: [], count: 0 } };
+    }
+    // The "asked" count went with the asks.
+    const since = doc["since"];
+    if (isObject(since) && "asked" in since) {
+      const { asked: _asked, ...rest } = since;
+      doc = { ...doc, since: rest };
+    }
+    return { ...output, doc };
+  });
+  f.update("order_get", (output) => {
+    if (!isObject(output) || !("asks" in output)) return output;
+    const { asks: _asks, ...rest } = output;
+    return { ...rest, requests: [] };
+  });
+  // Time: an ask's wait is a request's wait now, on a requests: lane; the batching and info-ask spans are gone.
+  const OLD = new Set(["ask.batching", "ask.info"]);
+  const renamed = (v: JsonValue): JsonValue => {
+    if (Array.isArray(v)) return v.filter((x) => !(isObject(x) && OLD.has(asText(x["kind"])))).map(renamed);
+    if (!isObject(v)) return v;
+    const out: JsonObject = {};
+    for (const [k, x] of Object.entries(v)) {
+      if (k === "kind" && x === "wait.ask") out[k] = "wait.request";
+      else if (k === "lane" && typeof x === "string" && x.startsWith("asks:")) out[k] = `requests:${x.slice("asks:".length)}`;
+      else out[k] = renamed(x);
+    }
+    return out;
+  };
+  for (const tool of ["time_spans", "time_breakdown", "time_insights"]) f.update(tool, renamed);
+  return f;
+};
+
+/** A recorded lab moment (recorded/<name>.json), as written by sanitize.ts, in today's contract. */
 export const recorded = (name: string): Fixture =>
-  Fixture.fromFile(JSON.parse(fs.readFileSync(path.join(RECORDED, `${name}.json`), "utf8")) as FixtureFile);
+  withoutAsks(Fixture.fromFile(JSON.parse(fs.readFileSync(path.join(RECORDED, `${name}.json`), "utf8")) as FixtureFile));
 
 // ---- The conversation from order-conversation-20261019.jpg ----
 
@@ -241,6 +284,9 @@ const chatFixtures = (copy: (name: SharedName, note: string) => Fixture): Array<
 /** Every shared fixture, by name, freshly built. */
 export const buildShared = (): Map<SharedName, Fixture> => {
   const typical = withChat(Fixture.from(recorded("lab-demo"), "typical", "A real lab hub mid-order: one order fanned out to writers, reviewers and verifiers, three PRs in the train, live lanes, prompts and time."), undefined, { leadWorking: true });
+  // The recording's later live frames settle lanes its board answer (read a moment earlier) still shows working; the
+  // app would refetch the board, a fixture can't. Its full frame alone agrees with the board.
+  typical.live = typical.live.filter((frame) => frame["full"] === true);
   const copy = (name: SharedName, note: string) => Fixture.from(typical, name, note);
   const shared: Array<Fixture> = [
     answerRows(Fixture.from(recorded("lab-start"), "empty", "A real lab hub before anything happened: machines online, no projects, orders, chats or time."), []),

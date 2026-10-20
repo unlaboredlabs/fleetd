@@ -557,7 +557,6 @@
    "outcome": {
     "ok": true,
     "output": {
-     "asks": [],
      "doneLanes": [],
      "lead": {
       "effort": "low",
@@ -637,7 +636,8 @@
       "total": 0,
       "updatedAt": "2026-10-19T08:43:16.081Z",
       "workstreamId": "W1"
-     }
+     },
+     "requests": []
     }
    }
   },
@@ -649,7 +649,6 @@
    "outcome": {
     "ok": true,
     "output": {
-     "asks": [],
      "doneLanes": [
       {
        "effort": "low",
@@ -1056,7 +1055,8 @@
       "total": 4,
       "updatedAt": "2026-10-19T08:48:51.885Z",
       "workstreamId": "W2"
-     }
+     },
+     "requests": []
     }
    }
   },
@@ -1068,7 +1068,6 @@
    "outcome": {
     "ok": true,
     "output": {
-     "asks": [],
      "doneLanes": [
       {
        "branch": "fleetd/T5-add-gamma-line",
@@ -1323,7 +1322,8 @@
       "total": 2,
       "updatedAt": "2026-10-19T08:48:51.884Z",
       "workstreamId": "W3"
-     }
+     },
+     "requests": []
     }
    }
   },
@@ -1335,7 +1335,6 @@
    "outcome": {
     "ok": true,
     "output": {
-     "asks": [],
      "doneLanes": [
       {
        "branch": "fleetd/T7-add-time-md",
@@ -1505,7 +1504,8 @@
       "total": 1,
       "updatedAt": "2026-10-19T08:50:33.310Z",
       "workstreamId": "W4"
-     }
+     },
+     "requests": []
     }
    }
   },
@@ -5512,8 +5512,8 @@
        "stale": 0
       },
       "needsYou": {
-       "askIds": [],
-       "count": 0
+       "count": 0,
+       "requestIds": []
       },
       "next": [],
       "now": "2026-10-19T09:00:00.810Z",
@@ -5536,7 +5536,6 @@
       },
       "seq": 221,
       "since": {
-       "asked": 0,
        "failed": 0,
        "merged": 0,
        "scopeItems": 0,
@@ -5648,8 +5647,8 @@
        "stale": 0
       },
       "needsYou": {
-       "askIds": [],
-       "count": 0
+       "count": 0,
+       "requestIds": []
       },
       "next": [],
       "now": "2026-10-19T09:00:00.769Z",
@@ -5677,7 +5676,6 @@
       },
       "seq": 221,
       "since": {
-       "asked": 0,
        "failed": 0,
        "merged": 0,
        "scopeItems": 0,
@@ -5773,8 +5771,8 @@
        "stale": 0
       },
       "needsYou": {
-       "askIds": [],
-       "count": 0
+       "count": 0,
+       "requestIds": []
       },
       "next": [],
       "now": "2026-10-19T09:00:00.768Z",
@@ -5802,7 +5800,6 @@
       },
       "seq": 221,
       "since": {
-       "asked": 0,
        "failed": 0,
        "merged": 0,
        "scopeItems": 0,
@@ -5896,8 +5893,8 @@
        "stale": 0
       },
       "needsYou": {
-       "askIds": [],
-       "count": 0
+       "count": 0,
+       "requestIds": []
       },
       "next": [],
       "now": "2026-10-19T09:00:00.810Z",
@@ -5925,7 +5922,6 @@
       },
       "seq": 221,
       "since": {
-       "asked": 0,
        "failed": 0,
        "merged": 0,
        "scopeItems": 0,
@@ -6034,8 +6030,8 @@
        "stale": 0
       },
       "needsYou": {
-       "askIds": [],
-       "count": 0
+       "count": 0,
+       "requestIds": []
       },
       "next": [],
       "now": "2026-10-19T09:00:00.856Z",
@@ -6060,7 +6056,6 @@
       },
       "seq": 221,
       "since": {
-       "asked": 0,
        "failed": 0,
        "merged": 0,
        "scopeItems": 0,
@@ -6186,8 +6181,8 @@
        "stale": 0
       },
       "needsYou": {
-       "askIds": [],
-       "count": 0
+       "count": 0,
+       "requestIds": []
       },
       "next": [],
       "now": "2026-10-19T09:00:00.857Z",
@@ -6212,7 +6207,6 @@
       },
       "seq": 221,
       "since": {
-       "asked": 0,
        "failed": 0,
        "merged": 0,
        "scopeItems": 0,
@@ -6356,8 +6350,8 @@
        "stale": 0
       },
       "needsYou": {
-       "askIds": [],
-       "count": 0
+       "count": 0,
+       "requestIds": []
       },
       "next": [],
       "now": "2026-10-19T09:00:00.724Z",
@@ -6428,7 +6422,6 @@
       },
       "seq": 221,
       "since": {
-       "asked": 0,
        "failed": 0,
        "merged": 0,
        "scopeItems": 0,
@@ -9747,12 +9740,12 @@
        "cat": "human",
        "kinds": [
         {
-         "kind": "wait.ask",
+         "kind": "wait.request",
          "ms": 15009,
          "n": 1
         },
         {
-         "kind": "ask.batching",
+         "kind": "wait.request",
          "ms": 0,
          "n": 1
         }
@@ -13537,12 +13530,12 @@
        "cat": "human",
        "kinds": [
         {
-         "kind": "wait.ask",
+         "kind": "wait.request",
          "ms": 15009,
          "n": 1
         },
         {
-         "kind": "ask.batching",
+         "kind": "wait.request",
          "ms": 0,
          "n": 1
         }
@@ -13589,7 +13582,7 @@
        {
         "cat": "human",
         "endMs": 1792399844433,
-        "kind": "wait.ask",
+        "kind": "wait.request",
         "lane": "asks:W4",
         "spanId": 443,
         "startMs": 1792399833377
@@ -13709,7 +13702,7 @@
         "cat": "human",
         "kinds": [
          {
-          "kind": "wait.ask",
+          "kind": "wait.request",
           "ms": 11056,
           "n": 1
          }
@@ -14221,12 +14214,12 @@
        "cat": "human",
        "kinds": [
         {
-         "kind": "wait.ask",
+         "kind": "wait.request",
          "ms": 15009,
          "n": 1
         },
         {
-         "kind": "ask.batching",
+         "kind": "wait.request",
          "ms": 0,
          "n": 1
         }
@@ -21041,7 +21034,7 @@
         "key": "gated.a1"
        },
        "id": 442,
-       "kind": "ask.batching",
+       "kind": "wait.request",
        "lane": "asks:W4",
        "machineId": "devbox",
        "projectId": "b720b5c7-a16a-4a11-9dad-fa32726355c1",
@@ -21059,7 +21052,7 @@
         "key": "gated.a1"
        },
        "id": 443,
-       "kind": "wait.ask",
+       "kind": "wait.request",
        "lane": "asks:W4",
        "machineId": "devbox",
        "projectId": "b720b5c7-a16a-4a11-9dad-fa32726355c1",
@@ -29380,7 +29373,7 @@
         "key": "gated.a1"
        },
        "id": 442,
-       "kind": "ask.batching",
+       "kind": "wait.request",
        "lane": "asks:W4",
        "machineId": "devbox",
        "projectId": "b720b5c7-a16a-4a11-9dad-fa32726355c1",
@@ -29398,7 +29391,7 @@
         "key": "gated.a1"
        },
        "id": 443,
-       "kind": "wait.ask",
+       "kind": "wait.request",
        "lane": "asks:W4",
        "machineId": "devbox",
        "projectId": "b720b5c7-a16a-4a11-9dad-fa32726355c1",

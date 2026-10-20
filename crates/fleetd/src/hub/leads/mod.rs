@@ -21,12 +21,10 @@ pub mod workstreams;
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
-use fleetd_contracts::ids::ProjectRef;
-
 pub use self::error::LeadError;
 pub use self::hooks::LeadHooks;
 pub use self::lead::{Leads, LeadsOptions};
-pub use self::ports::{Answer, LeadPorts};
+pub use self::ports::LeadPorts;
 pub use self::records::LeadRecords;
 pub use self::wakes::{LeadWakes, Trigger};
 pub use self::workstreams::Workstreams;
@@ -150,11 +148,6 @@ impl Area {
             intake,
             removals,
         }))
-    }
-
-    /// The ledger's AnswerSink: each applied answer wakes its project's lead.
-    pub fn on_answered(&self, project_ref: &ProjectRef, answers: &[Answer]) {
-        self.wakes.on_answered(project_ref, answers);
     }
 
     /// The area's loops: project removals (with their catch-up), and the leads of orders that wait
