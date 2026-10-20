@@ -521,12 +521,12 @@ function ReadyFooter({ ready }: { ready: Ready }) {
   return (
     <div className={s.footer}>
       <Text size="sm" tone="quiet">
-        Its lead starts with the first order you send it.
+        Open its chat and tell the lead what you want.
       </Text>
       <div className={s.actions}>
         <Button onClick={addAnother}>Add another</Button>
         <Button variant="primary" onClick={() => openProject(ready.project.machineId, ready.project.projectId)}>
-          Open project
+          Open chat
         </Button>
       </div>
     </div>
