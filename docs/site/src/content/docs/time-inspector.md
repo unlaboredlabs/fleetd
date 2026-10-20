@@ -34,8 +34,6 @@ slowest commands           n  total  median  failed
 findings
   1. agents ran the full test suite `cargo test --workspace` 22× (51 min); 14 runs followed no edit
      fleetd time W41 --spans full_suite_repeat
-  2. CI check `rust (macos)` adds 6 min on the critical path of this order
-     fleetd time W41 --spans ci_check_critical
 ```
 
 These are measured durations of work that already happened, not estimates. fleetd records them from the `claude`
@@ -57,6 +55,10 @@ stream on each machine and the hub's own events, with no extra model calls.
 | `--json` | Print JSON. |
 
 See the [CLI reference](/docs/reference/cli#time).
+
+In the app, the filter bar picks the work: "All work" for totals, or one piece of work by its title. One piece of
+work shows "Start to finish" as its range, and "‹ Chat" goes back to the project's chat. The figures read "wall" for
+one piece of work, "wall of all work" for the totals.
 
 ## The groups {#groups}
 
@@ -131,7 +133,7 @@ Where a number is a bound rather than a measurement, the views say so.
 | Exit codes | Exact for failed Bash commands. Other tools show only ok or failed. |
 | Across machines | Each machine's clock is aligned to the hub's. Lanes from two machines can be off by the network delay. |
 | CI queueing | Shown only when fleetd knows when the commit was pushed. |
-| The [lead](/docs/glossary#lead)'s time | Split equally between the pieces of work its wake was about, marked "split". |
+| The [lead](/docs/glossary#lead)'s time | A lead turn serves all the work it woke for, so its time is split equally across it. Its lane says "split across its work". |
 | Waiting on you | From when the lead asked in the chat to your reply. |
 
 The coverage line says "incomplete" when data is missing, for example from a machine running an older fleetd, or from
