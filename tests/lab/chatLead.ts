@@ -539,11 +539,13 @@ async function buildPart(lab: Lab, chat: Chat, ref: Ref) {
   const answered = await chat.send("build it");
   const writer = await nextTask(lab, ref, answered.cursor, `a writer starts for ${file} after "build it"`, TURN_MS * 2, (t) => t.kind === "write");
   await chat.reply(answered, "the build answer");
-  // The research order did not swallow the answer by closing with no build under it.
-  const closed = (await eventsSince(lab, sent.cursor, ["workstream.done"])).filter((e) => e.data?.workstreamId === workstreamId && e.seq < writer.seq);
-  check(closed.length === 0, `the research order closed before the build started: ${JSON.stringify(closed.map((e) => e.summary))}`);
-  const how = writer.task.workstreamId === workstreamId ? "on the same order (brief amended)" : "as a new order";
-  ok(`research agent → offer → "build it" → writer "${writer.task.title}" ${how}; the research order did not close first`);
+  // The answer was not swallowed: the order the build runs in (the research one amended, or a new one) closes only
+  // after the build's writer started. The research order may close on its own verdict before the offer.
+  const buildOrder = writer.task.workstreamId as string;
+  const early = (await eventsSince(lab, answered.cursor, ["workstream.done"])).filter((e) => e.data?.workstreamId === buildOrder && e.seq < writer.seq);
+  check(early.length === 0, `${buildOrder} closed before its build started: ${JSON.stringify(early.map((e) => e.summary))}`);
+  const how = buildOrder === workstreamId ? "on the research order (brief amended)" : "as a new order";
+  ok(`research agent → offer → "build it" → writer "${writer.task.title}" ${how}, which stays open until the build ran`);
 }
 
 // ---- fixes: bug (b), W1/T4: review fixes survive a workstream closing ----
@@ -613,14 +615,15 @@ async function fixesPart(lab: Lab, chat: Chat, ref: Ref, fleetd: Shell) {
   ok(`B. ${stays.event.summary}`);
   // The lead hears it and should say so in chat: its own words, so only logged.
   try {
-    const told = await chat.reply({ cursor: stays.cursor, seq: (await chat.state()).lastSeq as number }, "the lead on the open fix");
+    const told = await chat.reply({ cursor: stays.cursor, seq: (await chat.state()).lastSeq as number }, "the lead on the open fix", 60_000);
     lab.log(`${told.some((m) => /fix/iu.test(m.text)) ? "the lead said" : "note: the lead did not mention the fix"}: ${told.map((m) => m.text).join(" ").slice(0, 200)}`);
   } catch (error) {
     lab.log(`note: no lead chat line on the open fix: ${error instanceof Error ? error.message.slice(0, 200) : String(error)}`);
   }
 
   // Then the fix is dropped on purpose, and the next claim closes the workstream.
-  check(fleetd("task", "cancel", tb).code === 0, `a visible, intentional drop of ${tb}`);
+  // Dropped on purpose if it still runs; one that finished has landed nothing to drop.
+  if (["queued", "running", "idle"].includes((await taskGet(lab, tb)).state)) check(fleetd("task", "cancel", tb).code === 0, `a visible, intentional drop of ${tb}`);
   from = await lab.cursor();
   const again = await shellAsync(ref.machineId, CLONE, "claim", "done", "--workstream", wb);
   lab.log(`claim again: ${again.text.trim().split("\n")[0]}`);
@@ -914,12 +917,13 @@ async function capPart(lab: Lab, chat: Chat, ref: Ref, need: (t: string) => void
   const raised = await setMax(12);
   for (const id of six2) await lab.waitEvent(`${id} running after the raise`, 15_000, { cursor: from, types: ["task.started"], match: (e) => e.data?.taskId === id });
   ok(`3. 3 → 12: all six running ${((Date.now() - raisedAt) / 1000).toFixed(1)} s after the raise`);
-  const line = (await chat.history()).filter((m) => m.author === "system" && m.text === raised.event.summary);
-  check(line.length === 1, `one quiet chat line for the change: ${JSON.stringify(raised.event.summary)}`);
   const woke = await lab.waitEvent("the lead wakes on the raise", 60_000, { cursor: raised.cursor, types: ["lead.woken"], match: (e) => leadThread === undefined || e.threadId === leadThread });
   await chat.reply({ cursor: woke.cursor, seq: (await chat.state()).lastSeq as number }, "the raise wake").catch(() => undefined);
   const wake = userMessages(ref.machineId, leadThread ?? "").filter((t) => /cap raised to 12/iu.test(t)).at(-1);
   check(wake, `the lead's wake says the cap was raised: ${JSON.stringify(userMessages(ref.machineId, leadThread ?? "").at(-1)?.slice(-400))}`);
   ok(`the lead's wake: ${wake!.split("\n").find((l) => /cap raised/iu.test(l))?.trim()}`);
   await allComplete(six2, from, TURN_MS * 2);
+  const line = (await chat.history()).filter((m) => m.author === "system" && m.text === raised.event.summary);
+  check(line.length === 1, `one quiet chat line for the change: ${JSON.stringify(raised.event.summary)}`);
+  ok(`the chat's line: ${line[0]!.text}`);
 }
