@@ -8,6 +8,7 @@ import type { DataState } from "../../src/data/store";
 import { toast } from "../../ui";
 import type { Machine } from "./contracts";
 import type { Request } from "./discovery";
+import { toHash } from "../shell/routes";
 import { hubMessages, initialAdd, step, type AddMsg, type AddState, type Call, type HubView } from "./flow";
 import { machineIdFromHost, omit } from "./source";
 
@@ -34,7 +35,7 @@ export interface AddUi {
 let ui: AddUi = { add: initialAdd, text: "", open: false };
 const listeners = new Set<() => void>();
 /** Where the sheet goes back to when closed. */
-let returnTo = "#/board";
+let returnTo = "#/";
 
 const set = (next: AddUi) => {
   ui = next;
@@ -119,7 +120,7 @@ export const useAddUi = (): AddUi => {
 };
 
 /**
- * Opens Add project from anywhere: the sidebar's + Add, the palette, the empty board, the File menu, a drop. A
+ * Opens Add project from anywhere: the sidebar's + Add, the palette, the File menu, a drop on the window. A
  * `prefill` (a pasted or dropped URL or path) replaces what is typed unless an add is running.
  */
 /** The machine a prefill goes to: the one it names (a removed project's), else this computer for a path. */
@@ -127,7 +128,7 @@ export const prefillMachine = (text: string, given: string | undefined, local: s
   given ?? (/^[/~.]/u.test(text.trim()) ? local : undefined);
 
 export const openAddProject = (prefill?: { text: string; note?: Note; machine?: string }): void => {
-  if (window.location.hash !== ADD_ROUTE) returnTo = window.location.hash || "#/board";
+  if (window.location.hash !== ADD_ROUTE) returnTo = window.location.hash || "#/";
   const working = ui.add.phase.kind === "working";
   if (prefill && !working) {
     const machine = prefillMachine(prefill.text, prefill.machine, localMachine()?.machineId);
@@ -155,7 +156,7 @@ export const sheetHidden = (): void => {
 };
 
 export const closeAddProject = (): void => {
-  window.location.hash = returnTo === ADD_ROUTE ? "#/board" : returnTo;
+  window.location.hash = returnTo === ADD_ROUTE ? "#/" : returnTo;
 };
 
 export const setText = (text: string): void => {
@@ -188,6 +189,7 @@ export const localMachine = (): Machine | undefined => {
   return Object.values(hubState()?.machines ?? {}).find((m) => m.name.toLowerCase() === host.toLowerCase() || m.machineId === id);
 };
 
+/** A project opens as its lead chat. */
 export const openProject = (machineId: string, projectId: string): void => {
-  window.location.hash = `#/board/${encodeURIComponent(machineId)}/${encodeURIComponent(projectId)}`;
+  window.location.hash = toHash({ id: "project", project: { machineId, projectId }, message: null });
 };
