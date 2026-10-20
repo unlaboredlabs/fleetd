@@ -34,7 +34,14 @@ You'll connect an MCP client, such as Claude Code on your laptop, to the hub so 
      --header "Authorization: Bearer $(cat ~/.fleetd/agent.key)"
    ```
 
-4. In Claude Code, ask it to tell a project's lead something. It calls `chat_send`.
+4. In Claude Code, ask it how a project is doing. It reads the chat with `chat_history` and the status with
+   `fleetd_status`.
+
+:::note[Writing to a lead]
+`chat_send` takes only a [human key](/docs/glossary#human-key), because the lead reads the message as yours. To let
+Claude Code write to leads for you, create the key with `--human` in step 1:
+`fleetd hub key create --human --name laptop`.
+:::
 
 `claude mcp add` writes to your Claude config. `--scope` picks where:
 
@@ -109,7 +116,7 @@ as stopping a project, answering an approval or entering a secret, need one.
 
 | Tool | Does | Role |
 |---|---|---|
-| `chat_send {projectRef, text, attachments?, clientRequestId}` | Write to a project's lead. It starts a turn when the lead is idle, steers it when it works, or waits while it starts. | operate |
+| `chat_send {projectRef, text, attachments?, clientRequestId}` | Write to a project's lead. It starts a turn when the lead is idle, steers it when it works, or waits while it starts. The lead reads it as your words. | operate, human key |
 | `chat_history {projectRef, before?, after?, limit?}` | A page of a project's chat, oldest first; up to 100 messages. Without `before` or `after`, the newest. | read |
 | `approval_answer {requestId, decision, message?}` | Approve or deny an approval item: `decision` is `approve` or `deny`; `message` is a denial's reason for the lead. | operate, human key |
 | `secret_submit {requestId, sealed}` | Answer a secret item with a value sealed to the target machine. | operate, human key |

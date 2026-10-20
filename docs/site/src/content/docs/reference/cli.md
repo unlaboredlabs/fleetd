@@ -135,6 +135,14 @@ add a project: a checkout on a machine (this one by default), or a GitHub repo c
 fleetd project list [--machine <id>] [--home <dir>] [--hub <url>]
 ```
 
+### fleetd project stop {#project-stop}
+
+```text
+fleetd project stop <machine>/<project> [--yes] [--home <dir>] [--hub <url>]
+```
+
+stop everything running in it: its agents are cancelled, the lead and its chat stay, and the chat says so
+
 ### fleetd project remove {#project-remove}
 
 ```text
@@ -563,6 +571,14 @@ fleetd inventory
 ```
 
 the project's open work ranked: failing checks, open issues (gh), open asks and TODO/FIXME markers; with nothing left that has a value source and no open child, the project's finish-all workstream goes idle
+
+### fleetd workstream open {#workstream-open}
+
+```text
+fleetd workstream open --text "<intent>" [--template bugfix|feature|research|finish-all] [--serves <s>]
+```
+
+open a workstream for work taken from the chat: a draft to brief
 
 ### fleetd workstream spawn {#workstream-spawn}
 

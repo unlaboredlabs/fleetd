@@ -11,7 +11,7 @@ use fleetd_contracts::lead_calls::{
     AskCall, AskLeadCall, AskWithdrawCall, BriefCreateCall, ChangeEnqueueCall, ChangeStatusCall,
     ClaimDoneCall, DecideCall, DecisionsSearchCall, GatedRunCall, InventoryCall, LeadCall,
     SliceReadyCall, StatusSetCall, TaskCancelCall, TaskListCall, TaskMessageCall, TaskSpawnCall,
-    TaskStatusCall, WorkstreamSpawnCall,
+    TaskStatusCall, WorkstreamOpenCall, WorkstreamSpawnCall,
 };
 use fleetd_contracts::plan::{
     PlanAddCall, PlanDropCall, PlanEditCall, PlanMilestoneCall, PlanShowCall,
@@ -213,6 +213,13 @@ static TOOLS: &[Tool] = &[
         "change_status",
         "A merge-train change as stored.",
         inline_schema::<ChangeStatusCall>,
+    ),
+    lead(
+        "workstream_open",
+        "workstream_open",
+        "Open a workstream for work you took from the chat: a draft you then freeze with brief. template picks the \
+         playbook (feature, bugfix, research, finish-all); serves is optional.",
+        inline_schema::<WorkstreamOpenCall>,
     ),
     lead(
         "workstream_spawn",

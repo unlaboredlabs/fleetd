@@ -60,7 +60,9 @@ A message reaches the lead at once. How depends on what the lead is doing:
 |---|---|
 | Idle | Starts its next turn. |
 | Working | Is a steer: it reads it at its next step, after the tool it is running. The box says so while you type. |
-| Starting, or its machine is away | Waits, and goes in as soon as it can. The chat says why it waits. |
+| Starting, or its machine is away | Is held, and goes in as soon as it can. The chat says why it waits. |
+
+A message is never lost: if it can't be delivered, it stays held, the chat says why, and fleetd keeps trying.
 
 A small receipt under your message shows when it was taken in. See [Steering](/docs/steering).
 
@@ -78,8 +80,13 @@ For a project's progress at a glance, see [Status](/docs/status). For where the 
 
 ## Stop everything {#stop}
 
-To stop all of a project's work at once, say "stop" in the chat. From an MCP client, call `project_stop`. Every running
-and queued agent is stopped, and the lead says so in the chat. Merged pull requests stay, and so do the lead and the
+To stop all of a project's work at once, say "stop" in the chat, or run:
+
+```sh
+fleetd project stop devbox/storefront
+```
+
+From an MCP client, call `project_stop`. Every running and queued agent is stopped, and the lead says so in the chat. Merged pull requests stay, and so do the lead and the
 chat: write again to start new work.
 
 ## Secrets and risky commands {#inline}

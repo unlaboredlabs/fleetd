@@ -640,7 +640,7 @@ pub async fn add(
             register(&hub, &m, path, title.as_deref(), inspect.clone(), None).await?;
         return Ok(ProjectAddOutput {
             next: Some(format!(
-                "{}. Send it an order with intake_submit; its lead starts with the first one.",
+                "{}. Write to its lead with chat_send; the lead starts with the first message.",
                 inspect.lead_needs
             )),
             machine_id: m,

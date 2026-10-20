@@ -65,8 +65,8 @@ The coordinator of a fleet. It runs on one always-on machine and stores all stat
 
 ## Human key {#human-key}
 
-A key that belongs to a person's device, such as the desktop app. Only a human key can approve commands, enter
-secrets or steer.
+A key that belongs to a person's device, such as the desktop app. Only a human key can write to a lead, approve
+commands, enter secrets or steer: what it sends counts as yours.
 
 ## Lead {#lead}
 
