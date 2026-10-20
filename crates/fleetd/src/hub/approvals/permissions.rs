@@ -375,7 +375,7 @@ impl Approvals {
         let at = self.now();
         let why = why.to_string();
         if let Err(e) = self
-            .change(id, |r| {
+            .change_from(id, RequestState::Open, |r| {
                 r.state = RequestState::Denied;
                 r.evidence = Some(fleetd_contracts::prim::Text::unchecked(why));
                 r.answered_at = Some(fleetd_contracts::ids::Timestamp(at));
@@ -856,7 +856,7 @@ impl Approvals {
             );
             let allow = input.allow;
             if let Err(e) = self
-                .change(id, |r| {
+                .change_from(id, RequestState::Open, |r| {
                     r.state = if allow {
                         RequestState::Approved
                     } else {
