@@ -212,11 +212,11 @@ fn queue_kind(kind: Option<&str>, reason: Option<&str>) -> SpanKind {
     }
 }
 
-fn asks_lane(ids: &Ids) -> String {
+fn requests_lane(ids: &Ids) -> String {
     match (&ids.workstream_id, &ids.machine_id, &ids.project_id) {
-        (Some(w), _, _) => format!("asks:{w}"),
-        (None, Some(m), Some(p)) => format!("asks:{m}/{p}"),
-        _ => "asks:fleet".into(),
+        (Some(w), _, _) => format!("requests:{w}"),
+        (None, Some(m), Some(p)) => format!("requests:{m}/{p}"),
+        _ => "requests:fleet".into(),
     }
 }
 
@@ -336,8 +336,8 @@ fn apply(c: &Connection, e: &HubEvent) -> Result<(), StoreError> {
                         .and_then(|s| fleetd_contracts::prim::Text::new(s.key.to_string()).ok()),
                     ..SpanExtra::default()
                 };
-                let lane = asks_lane(&ids);
-                return open(c, key, SpanKind::WaitAsk, at, ids, lane, extra);
+                let lane = requests_lane(&ids);
+                return open(c, key, SpanKind::WaitRequest, at, ids, lane, extra);
             }
             let start: Option<i64> = c
                 .query_row("SELECT start_ms FROM time_spans WHERE src = 'h' AND src_key = ?1 AND end_ms IS NULL", [&key], |r| r.get(0))

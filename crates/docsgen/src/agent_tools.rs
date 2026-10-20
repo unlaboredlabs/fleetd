@@ -397,10 +397,7 @@ fn limits(lead: &[&Tool], task: &[&Tool]) -> Result<String, String> {
         "| Gated commands (`gated_run`) | Classes {}. Run only after a human approves; at most {timeout} s. |\n",
         code_list(gated_classes.iter().map(String::as_str))
     ));
-    md.push_str(
-        "| What a lead asks the human | Product, money and irreversible calls, in its chat; it logs each answer with \
-         `decide` and decides everything else itself. Secrets come only through `request_secret`. |\n\n",
-    );
+    md.push('\n');
     md.push_str(
         "These limits cover calls to fleetd, not what the agent's own shell can do. A task runs with full Bash, so \
          `gated_run` is not the only way it could run a command. A process that leaves its session's process tree \

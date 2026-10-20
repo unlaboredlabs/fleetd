@@ -767,15 +767,21 @@ fn spawned(c: &Connection, ws: &str) -> Result<HashMap<String, i64>, StoreError>
     Ok(out)
 }
 
-/// An order's blocking asks over the period, merged: read once per order.
-fn blocking_asks(c: &Connection, ws: &str, since: i64, until: i64) -> Result<Vec<Iv>, StoreError> {
+/// An order's open requests over the period, merged: read once per order.
+fn blocking_requests(
+    c: &Connection,
+    ws: &str,
+    since: i64,
+    until: i64,
+) -> Result<Vec<Iv>, StoreError> {
     let mut stmt = c.prepare_cached(
         "SELECT start_ms, COALESCE(end_ms, ?3) FROM time_spans
          WHERE workstream_id = ?1 AND start_ms < ?3 AND kind = ?4 AND COALESCE(end_ms, ?3) > ?2",
     )?;
-    let rows = stmt.query_map(params![ws, since, until, SpanKind::WaitAsk.code()], |r| {
-        Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))
-    })?;
+    let rows = stmt.query_map(
+        params![ws, since, until, SpanKind::WaitRequest.code()],
+        |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)),
+    )?;
     Ok(merge(rows.collect::<Result<_, _>>()?))
 }
 
@@ -856,7 +862,7 @@ fn ready(
             continue;
         }
         if !asks.contains_key(ws) {
-            asks.insert(ws.to_owned(), blocking_asks(c, ws, since, until)?);
+            asks.insert(ws.to_owned(), blocking_requests(c, ws, since, until)?);
         }
         let running: Vec<Iv> = clip(ran, from, to).collect();
         for (s, e) in minus(&running, &asks[ws]) {
@@ -1409,7 +1415,7 @@ mod tests {
                 workstream_id: Some("W1".into()),
                 ..Ids::default()
             };
-            write(c, &span("ask/A1", SpanKind::WaitAsk, 12 * MIN, 15 * MIN, ask, "asks:W1"), &[])?;
+            write(c, &span("request/Q1", SpanKind::WaitRequest, 12 * MIN, 15 * MIN, ask, "requests:W1"), &[])?;
             c.execute(
                 "INSERT INTO leads (machine_id, project_id, thread_id, started_at, session_generation) VALUES ('devbox', 'p1', 'lead-1', '', 0)",
                 [],

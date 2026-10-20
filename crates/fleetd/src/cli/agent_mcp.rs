@@ -131,7 +131,8 @@ static TOOLS: &[Tool] = &[
          is sealed to the sink's machine and written there, and never enters a transcript. Only its fingerprint \
          arrives, in a later wake.",
         inline_schema::<RequestSecretCall>,
-    ),
+    )
+    .needs("The human enters the value in chat; you see only its fingerprint."),
     lead(
         "request_withdraw",
         "request_withdraw",

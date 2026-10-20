@@ -1,6 +1,6 @@
 //! The insight rules (spec §6): deterministic aggregates over a period's spans, never a model. Thresholds are the
 //! constants below, and every finding carries the numbers it was built from.
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 
 use fleetd_contracts::prim::{AnyInt, Count, Line, List, Text, js_len};
 use fleetd_contracts::time::{
@@ -23,7 +23,6 @@ pub const CI_CRITICAL_MIN_ORDERS: usize = 2;
 pub const CI_REACTION_MIN_P50: i64 = 30 * SEC;
 pub const SLOTS_MIN_PEAK: i64 = 1;
 pub const HUMAN_WAIT_MIN: i64 = 10 * MIN;
-pub const BATCHING_MIN: i64 = 5 * MIN;
 pub const APPROVAL_MIN_PROMPTS: usize = 5;
 pub const USAGE_PARKS_MIN: i64 = 15 * MIN;
 pub const RETRIES_MIN: i64 = 5 * MIN;
@@ -570,7 +569,7 @@ fn human_wait(input: &RuleInput, out: &mut Vec<Candidate>) {
     let waits: Vec<&Row> = input
         .rows
         .iter()
-        .filter(|r| r.kind == SpanKind::WaitAsk || human_permission(r))
+        .filter(|r| r.kind == SpanKind::WaitRequest || human_permission(r))
         .collect();
     let Some(longest) = waits.iter().max_by_key(|r| (r.dur(), -r.id)) else {
         return;
@@ -581,7 +580,7 @@ fn human_wait(input: &RuleInput, out: &mut Vec<Candidate>) {
         key: String::new(),
         fired: sum >= HUMAN_WAIT_MIN,
         message: format!(
-            "waited {} on your answers ({} asks); longest: `{}` {}",
+            "waited {} on you ({} requests); longest: `{}` {}",
             fmt_dur(sum),
             waits.len(),
             short(&wait_key(longest)),
@@ -593,37 +592,6 @@ fn human_wait(input: &RuleInput, out: &mut Vec<Candidate>) {
             ("max_ms", longest.dur()),
         ],
         spans: spans(waits.iter().copied()),
-        weight: sum,
-    });
-}
-
-fn batching_delay(input: &RuleInput, out: &mut Vec<Candidate>) {
-    let segs = path_segments(input, SpanKind::AskBatching);
-    if segs.is_empty() {
-        return;
-    }
-    let sum: i64 = segs
-        .iter()
-        .map(|(_, s)| s.end_ms.get() - s.start_ms.get())
-        .sum();
-    let ids: HashMap<i64, i64> = input.rows.iter().map(|r| (r.id, r.start_ms)).collect();
-    let mut sp: Vec<(i64, i64)> = segs
-        .iter()
-        .filter_map(|(_, s)| s.span_id.map(Count::get))
-        .map(|id| (ids.get(&id).copied().unwrap_or(0), id))
-        .collect();
-    sp.sort_unstable();
-    sp.dedup();
-    out.push(Candidate {
-        rule: InsightRule::BatchingDelay,
-        key: String::new(),
-        fired: sum >= BATCHING_MIN,
-        message: format!(
-            "asks sat {} in batches before they were sent to you",
-            fmt_dur(sum)
-        ),
-        numbers: vec![("total_ms", sum), ("segments", segs.len() as i64)],
-        spans: sp,
         weight: sum,
     });
 }
@@ -1017,7 +985,6 @@ fn candidates(input: &RuleInput) -> Vec<Candidate> {
     ci_reaction(input, &mut out);
     slots_full(input, &mut out);
     human_wait(input, &mut out);
-    batching_delay(input, &mut out);
     approval_rule(input, &mut out);
     usage_parks(input, &mut out);
     retries(input, &mut out);

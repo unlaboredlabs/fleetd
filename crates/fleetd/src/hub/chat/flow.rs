@@ -90,24 +90,11 @@ async fn past(hub: &Hub, r: &ProjectRef) -> Vec<NewMessage> {
                 steers.push((n, data));
             }
         }
-        // The retired questions tool's rows, under the name they had or the one they were kept as.
+        // The retired questions tool's rows, kept as they were (store migration 29).
         let mut asks = Vec::new();
-        for table in ["legacy_asks", "asks"] {
-            let exists: bool = c
-                .query_row(
-                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1",
-                    [table],
-                    |_| Ok(()),
-                )
-                .is_ok();
-            if !exists {
-                continue;
-            }
-            let mut stmt = c.prepare(&format!("SELECT data FROM {table}"))?;
-            for data in stmt.query_map([], |row| row.get::<_, String>(0))? {
-                asks.push(data?);
-            }
-            break;
+        let mut stmt = c.prepare("SELECT data FROM legacy_asks")?;
+        for data in stmt.query_map([], |row| row.get::<_, String>(0))? {
+            asks.push(data?);
         }
         Ok((steers, asks))
     });

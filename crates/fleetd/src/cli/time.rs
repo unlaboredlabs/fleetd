@@ -238,8 +238,7 @@ fn kind_word(kind: SpanKind) -> &'static str {
         K::RunQueued => "behind a run",
         K::WakeDebounce => "debounce",
         K::WaitPermission => "approvals",
-        K::WaitAsk | K::AskInfo => "asks",
-        K::AskBatching => "batching",
+        K::WaitRequest => "requests",
         K::ChangeReview => "review",
         K::ChangeQueue => "train line",
         K::ChangeRebase => "rebase",
@@ -857,7 +856,7 @@ mod tests {
                 "segments": [
                     seg(Some(1), "model", "model.output", None, 0, 9),
                     seg(None, "idle", "gap", None, 9, 10),
-                    seg(Some(2), "human", "wait.ask", Some("deploy.region"), 10, 40),
+                    seg(Some(2), "human", "wait.request", Some("deploy.region"), 10, 40),
                     seg(Some(4), "pipeline", "change.merge", None, 55, 60),
                 ],
             },
@@ -865,7 +864,7 @@ mod tests {
                 { "cat": "tools", "ms": 30 * min, "n": 52, "kinds": [
                     { "kind": "tool.bash", "ms": 25 * min, "n": 12 },
                     { "kind": "tool.read", "ms": 5 * min, "n": 40 } ] },
-                { "cat": "human", "ms": 30 * min, "n": 1, "kinds": [{ "kind": "wait.ask", "ms": 30 * min, "n": 1 }] },
+                { "cat": "human", "ms": 30 * min, "n": 1, "kinds": [{ "kind": "wait.request", "ms": 30 * min, "n": 1 }] },
             ],
             "topCommands": [{ "label": "cargo test --workspace", "family": "cargo test", "n": 3,
                               "totalMs": 390_000, "p50Ms": 130_000, "maxMs": 140_000, "failed": 1 }],
@@ -876,7 +875,7 @@ mod tests {
         }))
         .unwrap();
         let insights: TimeInsightsOutput = serde_json::from_value(json!({ "insights": [{
-            "rule": "human_wait", "message": "waited 30m on your answers (1 ask)", "numbers": [], "spanIds": [2] }] }))
+            "rule": "human_wait", "message": "waited 30m on you (1 request)", "numbers": [], "spanIds": [2] }] }))
         .unwrap();
         let order = json!({ "title": "Add three short pages", "state": "done" });
         let text = render(Some(&order), &args, &breakdown, &insights, Tz::UTC);
@@ -900,7 +899,7 @@ slowest commands          n  total  median  failed
   cargo test --workspace  3  6m30s   2m10s  1
 
 findings
-  1. waited 30m on your answers (1 ask)
+  1. waited 30m on you (1 request)
      fleetd time W41 --spans human_wait";
         assert_eq!(text, expected);
     }
