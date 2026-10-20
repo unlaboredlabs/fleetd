@@ -14,11 +14,13 @@ const e = (type: string, data?: Record<string, unknown>, extra: Partial<HubEvent
 const tools = (event: HubEvent) => effectsOf(event).invalidate.map((i) => i.tool);
 
 describe("event effects", () => {
-  it("an ask closing refetches the inbox, its order card and detail, and the status", () => {
-    const fx = effectsOf(e("ask.closed", { askId: "A1", workstreamId: "W1" }));
+  it("a request changing refetches its order card and detail, and the status", () => {
+    const fx = effectsOf(e("request.updated", { requestId: "Q1", kind: "secret", state: "stored", workstreamId: "W1" }));
+    expect(fx.invalidate.map((i) => i.tool)).not.toContain("asks_list");
+    expect(fx.invalidate).toContainEqual({ tool: "requests_list" });
+    expect(effectsOf(e("request.opened", { requestId: "Q2", kind: "approval", state: "open" })).invalidate).toContainEqual({ tool: "requests_list" });
     expect(fx.invalidate).toEqual(
       expect.arrayContaining([
-        { tool: "asks_list" },
         { tool: "orders_board" },
         { tool: "order_get", where: { workstreamId: "W1" } },
         { tool: "status_get" },

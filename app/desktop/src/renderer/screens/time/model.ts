@@ -8,7 +8,7 @@
 import { CAT_LABEL, KIND_WORD, ROLE_WORD, fmtDur, laneName, type Names } from "./format";
 import { CATEGORIES, type AgentRole, type Category, type Coverage, type CriticalPath, type GapWhy, type Span, type SpanKind } from "./types";
 
-export type RowKind = "lead" | "agent" | "change" | "check" | "asks" | "other";
+export type RowKind = "lead" | "agent" | "change" | "check" | "requests" | "other";
 
 export interface Row {
   readonly key: string;
@@ -74,21 +74,19 @@ export interface Model {
 
 const rowKey = (s: Span): string => {
   if (s.kind === "ci.check" && s.extra?.check !== undefined) return `${s.lane}#ci#${s.extra.check}`;
-  // Asks that blocked nothing overlap the blocking ones; they get their own row.
-  if (s.kind === "ask.info") return `${s.lane}#info`;
   return s.lane;
 };
 
 const rowKindOf = (s: Span, names: Names): RowKind => {
   if (s.kind === "ci.check") return "check";
   if (s.lane.startsWith("change:")) return "change";
-  if (s.lane.startsWith("asks:")) return "asks";
+  if (s.lane.startsWith("requests:")) return "requests";
   if (s.threadId !== undefined && names.leads.has(s.threadId)) return "lead";
   if (s.lane.startsWith("thread:")) return "agent";
   return "other";
 };
 
-const RANK: Record<RowKind, number> = { lead: 0, agent: 1, change: 2, check: 2, asks: 3, other: 4 };
+const RANK: Record<RowKind, number> = { lead: 0, agent: 1, change: 2, check: 2, requests: 3, other: 4 };
 
 export const buildModel = (
   spans: readonly Span[],
@@ -153,7 +151,7 @@ export const buildModel = (
 
   // Lead, agents by start, then each PR with its checks under it, then the asks and the rest.
   const keys = [...groups.entries()].sort(([ka, a], [kb, b]) => {
-    const sub = (k: string, g: { kind: RowKind }) => (g.kind === "change" || g.kind === "check" ? (k.split("#ci#")[0] ?? k) : g.kind === "asks" ? k : "");
+    const sub = (k: string, g: { kind: RowKind }) => (g.kind === "change" || g.kind === "check" ? (k.split("#ci#")[0] ?? k) : g.kind === "requests" ? k : "");
     return (
       RANK[a.kind] - RANK[b.kind] ||
       sub(ka, a).localeCompare(sub(kb, b)) ||
@@ -219,8 +217,6 @@ export const buildModel = (
       role = lane?.role;
     } else if (g.kind === "check") {
       name = key.split("#ci#")[1] ?? "check";
-    } else if (g.kind === "asks" && key.endsWith("#info")) {
-      name = "asks that blocked nothing";
     } else {
       name = laneName(names, first);
     }

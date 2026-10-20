@@ -57,8 +57,7 @@ const loaded = (orders: OrderCard[]) => {
   let s = initialState();
   [s] = frameIn(s, { t: "state", state: { phase: "live", hub: "devbox:4710", protocol: 1 } }, 0);
   [s] = frameIn(s, { t: "snapshot", snapshot }, 0);
-  s = ingest(s, { tool: "orders_board", input: {}, output: { orders, trains: [], at: T0 } });
-  return ingest(s, { tool: "asks_list", input: { state: "open" }, output: { batches: [], asks: [] } });
+  return ingest(s, { tool: "orders_board", input: {}, output: { orders, trains: [], at: T0 } });
 };
 
 group("formatters", () => {

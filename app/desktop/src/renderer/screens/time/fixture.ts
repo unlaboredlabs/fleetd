@@ -275,7 +275,7 @@ const buildOrder = (spec: OrderSpec, dense: number, shape: Shape = {}): Built =>
   const [w0, w1, w2] = w as [Lane, Lane, Lane];
   const rev = thread(task(5), `s-${spec.tasks + 5}`, "reviewer");
   const other = (lane: string, machine?: string): Lane => ({ lane, project: spec.project, order: spec.id, ...(machine === undefined ? {} : { machine }) });
-  const asks = other(`asks:${spec.id}`);
+  const requests = other(`requests:${spec.id}`);
   const change = other(`change:${spec.change}`);
   const train = other(`train:acme/${spec.project}`, spec.machine);
   const path: [Draft, number, number][] = [];
@@ -297,11 +297,8 @@ const buildOrder = (spec: OrderSpec, dense: number, shape: Shape = {}): Built =>
   onPath(g.work(w2, m(54), m(71), spec.suiteEvery, PAGES[2]));
   g.span(w1, "wait.retry.api", m(48), m(48.75), (s) => (s.extra = { httpStatus: 529, statedDelayMs: 30_000, attempt: 1 }));
 
-  const b = g.span(asks, "ask.batching", m(20), m(26), (s) => (s.extra = { key: "deploy.region" }));
-  path.push([b, m(20), m(26)]);
-  const wa = g.span(asks, "wait.ask", m(26), m(54), (s) => (s.extra = { key: "deploy.region", decidedBy: "human", answeredBy: "you" }));
-  path.push([wa, m(26), m(54)]);
-  g.span(asks, "ask.info", m(31), m(32), (s) => (s.extra = { key: "copy.tone" }));
+  const wa = g.span(requests, "wait.request", m(20), m(54), (s) => (s.extra = { key: "stripe.test_key", answeredBy: "you" }));
+  path.push([wa, m(20), m(54)]);
 
   g.work(rev, m(71), m(80), 99, PAGES[0]);
   // More writers, off the critical path, for the many-agents fixture.
@@ -456,7 +453,7 @@ const breakdownOf = (d: Data): TimeBreakdownOutput => {
   const ciChecks = [...checks.entries()]
     .map(([name, c]) => ({ name, n: c.d.length, totalMs: c.d.reduce((a, b) => a + b, 0), p50Ms: median(c.d), maxMs: Math.max(...c.d), criticalExcessMs: c.excess }))
     .sort((a, b) => b.totalMs - a.totalMs);
-  const waits = d.spans.filter((s) => s.kind === "wait.ask");
+  const waits = d.spans.filter((s) => s.kind === "wait.request");
   const longest = waits.reduce<Span | undefined>((best, s) => (best === undefined || dur(s) > dur(best) ? s : best), undefined);
   return {
     wallMs: d.wall,
@@ -509,22 +506,16 @@ const findingsOf = (d: Data, fleet: boolean): Finding[] => {
       spanIds: e2e.map((s) => s.id),
     });
   }
-  const waits = d.spans.filter((s) => s.kind === "wait.ask");
+  const waits = d.spans.filter((s) => s.kind === "wait.request");
   const waitTotal = waits.reduce((n, s) => n + dur(s), 0);
   const longest = waits.reduce<Span | undefined>((b, s) => (b === undefined || dur(s) > dur(b) ? s : b), undefined);
   if (waitTotal >= 10 * MIN && longest !== undefined) {
     out.push({
       rule: "human_wait",
-      message: `waited ${fmtDur(waitTotal)} on your answers (${waits.length} ask${waits.length === 1 ? "" : "s"}); longest: \`${longest.extra?.key ?? "an ask"}\` ${fmtDur(dur(longest))}`,
-      numbers: [{ name: "totalMs", value: waitTotal }, { name: "asks", value: waits.length }],
+      message: `waited ${fmtDur(waitTotal)} on you (${waits.length} request${waits.length === 1 ? "" : "s"}); longest: \`${longest.extra?.key ?? "an approval"}\` ${fmtDur(dur(longest))}`,
+      numbers: [{ name: "totalMs", value: waitTotal }, { name: "requests", value: waits.length }],
       spanIds: waits.map((s) => s.id),
     });
-  }
-  const pathIds = new Set(d.paths.flatMap((p) => p.segments.map((s) => s.spanId)));
-  const batching = d.spans.filter((s) => s.kind === "ask.batching" && pathIds.has(s.id));
-  const bt = batching.reduce((n, s) => n + dur(s), 0);
-  if (bt >= 5 * MIN) {
-    out.push({ rule: "batching_delay", message: `asks sat ${fmtDur(bt)} in batches before you saw them`, numbers: [{ name: "totalMs", value: bt }], spanIds: batching.map((s) => s.id) });
   }
   const full = d.spans.filter((s) => s.kind === "slots.full");
   if (full.length > 0) {
@@ -785,7 +776,7 @@ export interface FixtureCall {
   readonly outcome: { readonly ok: true; readonly output: unknown };
 }
 
-const RULES: readonly InsightRule[] = ["full_suite_repeat", "ci_check_critical", "human_wait", "batching_delay", "slots_full", "slow_commands", "startup", "coverage"];
+const RULES: readonly InsightRule[] = ["full_suite_repeat", "ci_check_critical", "human_wait", "slots_full", "slow_commands", "startup", "coverage"];
 
 /**
  * The time inspector's answers for a hub fixture (E3b's kit puts them in a fixture's `calls`): W8's timeline (paged,

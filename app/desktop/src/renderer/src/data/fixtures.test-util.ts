@@ -1,5 +1,5 @@
 // Small builders for the data layer's tests (acme/storefront on devbox; no personal data).
-import type { AgentLane, Ask, FleetStatus, HubEvent, LiveLane, OrderCard } from "../../../shared/contracts";
+import type { AgentLane, FleetStatus, HubEvent, LiveLane, OrderCard } from "../../../shared/contracts";
 import type { HubFrame } from "../../../shared/hub";
 
 export const AT = "2026-10-19T10:00:00.000Z";
@@ -51,25 +51,6 @@ export const card = (workstreamId: string, patch: Partial<OrderCard> = {}): Orde
   prs: [],
   createdAt: AT,
   updatedAt: AT,
-  ...patch,
-});
-
-export const ask = (askId: string, workstreamId: string, patch: Partial<Ask> = {}): Ask => ({
-  askId,
-  projectRef: project,
-  workstreamId,
-  kind: "decide",
-  key: "share.link",
-  class: "product",
-  text: "What does the share link show?",
-  options: [{ key: "image-only", label: "Image only" }],
-  recommendation: "image-only",
-  blocks: "nothing",
-  proceededOnRec: false,
-  state: "open",
-  createdAt: AT,
-  batchId: "B1",
-  number: 1,
   ...patch,
 });
 

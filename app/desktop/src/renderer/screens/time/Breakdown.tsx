@@ -268,7 +268,7 @@ export function Breakdown({ data: b, order, missing, pathIds, onLinked }: Breakd
         <Section title="Waiting on you" detail="blocking asks and approvals, from publish to your answer">
           <RowButton
             className={cx(s.humanRow)}
-            onClick={() => onLinked({ title: "Time waiting on you", rule: "human_wait", kinds: ["wait.ask", "wait.permission"] })}
+            onClick={() => onLinked({ title: "Time waiting on you", rule: "human_wait", kinds: ["wait.request", "wait.permission"] })}
             label="Show the waits on you"
           >
             <Swatch cat="human" />
