@@ -99,3 +99,7 @@ export const secretOutcome = (item: SecretRequestItem): Outcome | undefined => {
   if (item.state === "open") return undefined;
   return NEWER;
 };
+
+/** What an approval approves: a gated command, a session's tool prompt, or a retro change that relaxes a playbook. */
+export const approvalKind = (item: CommandApprovalItem): "command" | "permission" | "playbook" =>
+  item.playbook !== undefined ? "playbook" : item.gated !== undefined ? "command" : "permission";

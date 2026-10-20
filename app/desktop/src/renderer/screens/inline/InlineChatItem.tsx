@@ -8,7 +8,7 @@ import type { HubError } from "../../../shared/hub";
 import { Button, Code, cx, InlineCode, Input, Text } from "../../ui";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { prose } from "./prose";
-import { approvalOutcome, classWords, secretEnvLines, secretOutcome, secretTarget, shellLine, withRequest, type Outcome } from "./request";
+import { approvalKind, approvalOutcome, classWords, secretEnvLines, secretOutcome, secretTarget, shellLine, withRequest, type Outcome } from "./request";
 import s from "./InlineChatItem.module.css";
 
 const errorText = (e: HubError): string => (e.fix === undefined ? e.message : `${e.message} ${e.fix}`);
@@ -169,7 +169,9 @@ function ApprovalItem({ item }: { item: CommandApprovalItem }) {
   const { call } = useDataLayer();
   const { shown, busy, error, run } = useSent(item);
   const outcome = approvalOutcome(shown);
-  const { gated, permission } = item;
+  const { gated, permission, playbook } = item;
+  const kind = approvalKind(item);
+  const [showDiff, setShowDiff] = useState(false);
   const answer = (decision: "approve" | "deny"): void =>
     run(async () => {
       const out = await call("approval_answer", { requestId: item.requestId, decision });
@@ -179,8 +181,13 @@ function ApprovalItem({ item }: { item: CommandApprovalItem }) {
     <section className={s.item} data-request={item.requestId} aria-label="Command to approve">
       <div className={s.head}>
         <Text size="xs" tone="quiet" strong>
-          {gated === undefined ? "Permission" : "Command"}
+          {kind === "playbook" ? "Playbook change" : kind === "command" ? "Command" : "Permission"}
         </Text>
+        {kind === "playbook" ? (
+          <Text size="xs" tone="warning" strong>
+            Relaxes a gate
+          </Text>
+        ) : null}
         {gated === undefined ? null : (
           <Text size="xs" tone={gated.class === "credential" ? "warning" : "danger"} strong>
             {classWords(gated.class)}
@@ -188,33 +195,50 @@ function ApprovalItem({ item }: { item: CommandApprovalItem }) {
         )}
       </div>
       <Text as="p" strong className={cx(s.title)}>
-        {gated !== undefined
+        {playbook !== undefined
+          ? playbook.summary
+          : gated !== undefined
           ? prose(gated.reason)
           : permission !== undefined
             ? `An agent wants to use ${permission.toolName}`
             : "An agent needs your OK"}
       </Text>
-      <div className={s.detail}>
-        {gated !== undefined ? <Code code={shellLine(gated.argv)} lang="sh" bare /> : null}
-        {gated === undefined && permission !== undefined ? <Code code={permission.summary} bare /> : null}
-        <Text size="xs" tone="quiet">
-          on {item.machineId}
-          {gated?.cwd === undefined ? null : (
-            <>
-              {" "}
-              in <InlineCode>{gated.cwd}</InlineCode>
-            </>
-          )}
-          {gated === undefined ? null : ` · stops after ${String(Math.ceil(gated.timeoutSec / 60))} min`}
-        </Text>
-        {gated === undefined
-          ? null
-          : secretEnvLines(gated).map((line) => (
-              <Text key={line} size="xs" tone="quiet">
-                {prose(line)}
-              </Text>
-            ))}
-      </div>
+      {playbook === undefined ? null : (
+        <div className={s.detail}>
+          <div>
+            <Button variant="quiet" aria-expanded={showDiff} onClick={() => setShowDiff((v) => !v)}>
+              {showDiff ? "Hide the change" : "Show the change"}
+            </Button>
+          </div>
+          {showDiff ? <Code code={playbook.diff} lang="diff" bare /> : null}
+          <Text size="xs" tone="quiet">
+            This loosens a gate for every project. It applies only if you approve.
+          </Text>
+        </div>
+      )}
+      {playbook !== undefined ? null : (
+        <div className={s.detail}>
+          {gated !== undefined ? <Code code={shellLine(gated.argv)} lang="sh" bare /> : null}
+          {gated === undefined && permission !== undefined ? <Code code={permission.summary} bare /> : null}
+          <Text size="xs" tone="quiet">
+            on {item.machineId}
+            {gated?.cwd === undefined ? null : (
+              <>
+                {" "}
+                in <InlineCode>{gated.cwd}</InlineCode>
+              </>
+            )}
+            {gated === undefined ? null : ` · stops after ${String(Math.ceil(gated.timeoutSec / 60))} min`}
+          </Text>
+          {gated === undefined
+            ? null
+            : secretEnvLines(gated).map((line) => (
+                <Text key={line} size="xs" tone="quiet">
+                  {prose(line)}
+                </Text>
+              ))}
+        </div>
+      )}
       {/* Why it is open again (approved while the node was offline) or why it failed. */}
       {item.note === undefined || item.note.trim() === "" ? null : (
         <p className={s.outcome}>
