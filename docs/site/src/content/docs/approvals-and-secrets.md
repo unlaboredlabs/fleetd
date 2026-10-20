@@ -25,7 +25,7 @@ command as a [gated command](/docs/glossary#gated-command).
 ![An approval item in storefront's chat: the lead says the command writes to the production database; the Command card, marked "Can't be undone", shows the migration command on devbox with the secret it gets, and Approve and Deny. Above it, an earlier run that exited 0 and a denied permission request.](/docs/img/chat-command.png)
 
 1. The item shows the command, the reason and the machine.
-2. Click Approve to run it, or Deny to refuse.
+2. Click Approve to run it, or Deny to refuse. A denial can carry a note for the lead.
 3. The node runs exactly the stored command, in the project's workspace.
 4. The exit code and output go back to the lead, and the item shows them.
 
@@ -34,8 +34,8 @@ back.
 
 ## Enter a secret {#secrets}
 
-When a lead needs an API key or a password, the item names the machine and where the value goes: a line in an env
-file, or a file.
+When a lead needs an API key or a password, it asks with `request_secret`, and the item names the machine and where
+the value goes: a line in an env file, or a file.
 
 ![A secret item in storefront's chat: the lead needs the Stripe test key, which goes to devbox only. The card names where it is saved, with a masked field and Save secret. Above it, a secret already saved, with its fingerprint.](/docs/img/chat-secret.png)
 
@@ -49,10 +49,13 @@ file, or a file.
 The target machine must be online when you enter the secret. Nothing is queued.
 :::
 
+If you don't want to give a secret, or a command isn't needed after all, say so in the chat; the lead takes the request
+back.
+
 A gated command can use a stored secret as an environment variable. The node reads it from its own files.
 
 From an MCP client, a secret is entered with `secret_submit` and an item is answered with `approval_answer`. Both
-take only a human key.
+take only a human key. `requests_list` lists every secret and approval request with its state.
 
 ## Tool permission rules {#tool-rules}
 
