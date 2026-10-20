@@ -194,7 +194,7 @@ impl Fake {
         self.requests
             .update(&r.request_id, |r| {
                 r.state = state;
-                r.evidence = evidence.map(|e| fleetd_contracts::prim::Text::unchecked(e));
+                r.evidence = evidence.map(fleetd_contracts::prim::Text::unchecked);
                 if state != RequestState::Open {
                     r.answered_by = Some("human:desk".into());
                 }
