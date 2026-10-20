@@ -93,9 +93,6 @@ pub struct World {
     pub steers: Vec<fleetd_contracts::steer::Steer>,
     /// What the progress model reads beyond this.
     pub model: super::estimate::ModelData,
-    /// Per project: its latest merge, and how many of its PRs are in review, CI or the train now.
-    pub merges: HashMap<String, super::rows::Merged>,
-    pub in_flight: HashMap<String, i64>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -299,7 +296,6 @@ impl World {
             .filter(|c| hub.reviews.reviews_needed(c) == 0)
             .map(|c| c.change_id.to_string())
             .collect();
-        let (merges, in_flight) = hub.db.with(|c| Ok(super::rows::read_changes(c)?))?;
         Ok(World {
             now,
             tz: crate::hub::attention::hub_zone(),
@@ -323,8 +319,6 @@ impl World {
             placeholders,
             steers,
             model,
-            merges,
-            in_flight,
         })
     }
 }

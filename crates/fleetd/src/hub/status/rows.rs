@@ -104,6 +104,14 @@ pub fn read_changes(
     Ok((merges, in_flight))
 }
 
+/// The rows read at `at` with the log at `read_head` still answer at `now` with the log at `head`: until an event,
+/// and then for up to [`REREAD_MS`] more, so a burst of events costs one read.
+pub fn reusable(read_head: i64, at: i64, head: i64, now: i64) -> bool {
+    read_head == head || now - at < REREAD_MS
+}
+
+pub const REREAD_MS: i64 = 250;
+
 /// What decides a row's state word.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Facts {
@@ -114,6 +122,8 @@ pub struct Facts {
     pub agents: i64,
     /// PRs in review, CI or the train.
     pub in_flight: i64,
+    /// The lead is mid-turn.
+    pub lead_working: bool,
 }
 
 /// Waiting on you first (only you can move it), then blocked, then working; idle when nothing runs or waits.
@@ -122,15 +132,22 @@ pub fn state_of(f: &Facts) -> ProjectRowState {
         ProjectRowState::WaitingOnYou
     } else if f.blocked.is_some() {
         ProjectRowState::Blocked
-    } else if f.agents > 0 || f.in_flight > 0 {
+    } else if f.agents > 0 || f.in_flight > 0 || f.lead_working {
         ProjectRowState::Working
     } else {
         ProjectRowState::Idle
     }
 }
 
+/// Per project: its latest merge, and its PRs in review, CI or the train. Read only for the rows, never on a doc's
+/// render.
+pub struct Changes {
+    pub merges: HashMap<String, Merged>,
+    pub in_flight: HashMap<String, i64>,
+}
+
 /// Every project, by title.
-pub fn rows(hub: &Hub, w: &World) -> Vec<ProjectStatusRow> {
+pub fn rows(hub: &Hub, w: &World, changes: &Changes) -> Vec<ProjectStatusRow> {
     let mut projects: Vec<(&String, &String)> = w.titles.iter().collect();
     projects.sort_by(|a, b| {
         a.1.to_lowercase()
@@ -165,17 +182,19 @@ pub fn rows(hub: &Hub, w: &World) -> Vec<ProjectStatusRow> {
             _ if usage_hit => Some(format!("claude usage limit reached on {mname}")),
             _ => red.map(|repo| format!("main CI is red on {repo}")),
         };
+        // The lead chat's own rule, so the row and the chat's needs-you dot never disagree; the side-effect-free
+        // read, since a status read must not announce chat state.
+        let chat = hub
+            .chat
+            .state(&r, crate::hub::chat::flow::lead_working(hub, &r))
+            .ok();
         let facts = Facts {
-            // The lead chat's own rule, so the row and the chat's needs-you dot never disagree.
-            needs_you: crate::hub::chat::flow::state(hub, &r).is_ok_and(|c| c.needs_you),
+            needs_you: chat.as_ref().is_some_and(|c| c.needs_you),
             blocked,
-            agents: w
-                .slots
-                .per_project
-                .iter()
-                .find(|p| p.project_ref == r)
-                .map_or(0, |p| p.used.get()),
-            in_flight: w.in_flight.get(pk).copied().unwrap_or(0),
+            // The agents the chat header and the max-agents cap count: the lead's own turn is not one.
+            agents: hub.slots.agents(&r).running,
+            in_flight: changes.in_flight.get(pk).copied().unwrap_or(0),
+            lead_working: chat.as_ref().is_some_and(|c| c.lead_working),
         };
         let stale: Option<StaleMark> = machine.and_then(|m| machine_stale(m, w.now, w.tz));
         out.push(ProjectStatusRow {
@@ -185,7 +204,7 @@ pub fn rows(hub: &Hub, w: &World) -> Vec<ProjectStatusRow> {
             blocked_reason: facts.blocked.as_deref().map(line),
             progress: project_progress(hub, w, pk).and_then(|(_, p)| p.estimate),
             agents_running: Count::unchecked(facts.agents.max(0)),
-            last_merged: w.merges.get(pk).map(|m| LastMerged {
+            last_merged: changes.merges.get(pk).map(|m| LastMerged {
                 title: line(&m.title),
                 pr_number: (m.pr_number > 0).then(|| Count::unchecked(m.pr_number)),
                 pr_url: m.pr_url.as_deref().and_then(|u| Text::new(u).ok()),
@@ -210,6 +229,7 @@ mod tests {
             blocked: blocked.map(str::to_owned),
             agents,
             in_flight,
+            lead_working: false,
         };
         assert_eq!(
             state_of(&f(true, Some("devbox is offline"), 3, 0)),
@@ -226,16 +246,37 @@ mod tests {
             "a PR in CI is work with no agent running"
         );
         assert_eq!(state_of(&f(false, None, 0, 0)), ProjectRowState::Idle);
+        assert_eq!(
+            state_of(&Facts {
+                lead_working: true,
+                ..f(false, None, 0, 0)
+            }),
+            ProjectRowState::Working,
+            "a lead-only turn is work, though it is no agent"
+        );
     }
 
-    /// "Waiting on you" is the chat's needs-you: a lead question the person hasn't answered, gone once they reply.
+    /// Unchanged until an event; after one, a read within 250 ms of the last still answers.
     #[test]
-    fn waiting_on_you_is_the_lead_chats_needs_you() {
-        use fleetd_contracts::chat::ChatAuthor;
+    fn rows_are_read_again_after_an_event_at_most_every_250_ms() {
+        assert!(
+            reusable(7, 0, 7, 60_000),
+            "no event: still current a minute on"
+        );
+        assert!(
+            reusable(7, 1_000, 8, 1_249),
+            "an event within the window waits for it"
+        );
+        assert!(
+            !reusable(7, 1_000, 8, 1_250),
+            "an event and the window passed: read again"
+        );
+    }
+
+    fn test_hub() -> (std::sync::Arc<Hub>, tempfile::TempDir, ProjectRef) {
         use fleetd_contracts::ids::{MachineId, ProjectId};
 
         use crate::hub::api::{HubConfig, Listen};
-        use crate::hub::chat::NewMessage;
         use crate::hub::store::test_clock::ManualClock;
 
         let home = tempfile::tempdir().unwrap();
@@ -267,11 +308,77 @@ mod tests {
             machine_id: MachineId::unchecked("devbox"),
             project_id: ProjectId::unchecked("app"),
         };
-        let row = || {
-            let world = World::read(&hub, 1_792_000_000_000, None, Default::default()).unwrap();
-            rows(&hub, &world).remove(0)
+        (hub, home, r)
+    }
+
+    fn row_of(hub: &Hub) -> ProjectStatusRow {
+        let world = World::read(hub, 1_792_000_000_000, None, Default::default()).unwrap();
+        let changes = Changes {
+            merges: HashMap::new(),
+            in_flight: HashMap::new(),
         };
-        assert_eq!(row().state, ProjectRowState::Idle);
+        rows(hub, &world, &changes).remove(0)
+    }
+
+    /// The chat header's count: task agents holding a slot, never the lead's own turn.
+    #[test]
+    fn agents_running_counts_task_agents_not_the_lead_s_turn() {
+        use crate::hub::slots::{SlotPriority, SlotRequest, lead_holder};
+
+        let (hub, _home, r) = test_hub();
+        for (holder, priority) in [
+            (lead_holder(&r), SlotPriority::Lead),
+            ("T1".to_owned(), SlotPriority::Work),
+            ("T2".to_owned(), SlotPriority::Review),
+        ] {
+            let grant = hub
+                .slots
+                .acquire(SlotRequest {
+                    holder: &holder,
+                    project_ref: &r,
+                    priority,
+                })
+                .unwrap();
+            assert!(grant.granted());
+        }
+        assert_eq!(hub.slots.agents(&r).running, 2);
+        let row = row_of(&hub);
+        assert_eq!(row.agents_running.get(), 2);
+        assert_eq!(row.state, ProjectRowState::Working);
+    }
+
+    /// Reading the rows only reads: the chat's needs-you is not announced from here.
+    #[test]
+    fn a_status_read_writes_no_events() {
+        use fleetd_contracts::chat::ChatAuthor;
+
+        use crate::hub::chat::NewMessage;
+
+        let (hub, _home, r) = test_hub();
+        hub.chat
+            .add(
+                &r,
+                NewMessage {
+                    author: Some(ChatAuthor::Lead),
+                    text: "1. Public link or image only? I'd pick the link.".into(),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let head = hub.events.head();
+        assert_eq!(row_of(&hub).state, ProjectRowState::WaitingOnYou);
+        assert_eq!(hub.events.head(), head);
+    }
+
+    /// "Waiting on you" is the chat's needs-you: a lead question the person hasn't answered, gone once they reply.
+    #[test]
+    fn waiting_on_you_is_the_lead_chats_needs_you() {
+        use fleetd_contracts::chat::ChatAuthor;
+
+        use crate::hub::chat::NewMessage;
+
+        let (hub, _home, r) = test_hub();
+        assert_eq!(row_of(&hub).state, ProjectRowState::Idle);
         let say = |author, text: &str| {
             hub.chat
                 .add(
@@ -288,10 +395,10 @@ mod tests {
             ChatAuthor::Lead,
             "1. Public link or image only? I'd pick the link.",
         );
-        assert!(crate::hub::chat::flow::state(&hub, &r).unwrap().needs_you);
-        assert_eq!(row().state, ProjectRowState::WaitingOnYou);
+        assert!(hub.chat.state(&r, false).unwrap().needs_you);
+        assert_eq!(row_of(&hub).state, ProjectRowState::WaitingOnYou);
         say(ChatAuthor::Human, "1 rec");
-        assert_eq!(row().state, ProjectRowState::Idle);
+        assert_eq!(row_of(&hub).state, ProjectRowState::Idle);
     }
 
     /// The latest merge per project, titled by its writer task (else its order), and PRs in flight per project.
