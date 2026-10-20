@@ -124,6 +124,7 @@ as stopping a project, answering an approval or entering a secret, need one.
 | `attachment_put {name, mime, dataB64}` | Upload a file (image, text or PDF, at most 5 MiB) for a message. | operate |
 | `attachment_get {projectRef, attachmentId}` | Read a file attached to a project's chat. | read |
 | `project_files {machineId, projectId, query}` | A project's files, for `@`-mentions. | read |
+| `status_projects` | One row per project: its state word, verified and in-flight progress, agents running and the last merge. | read |
 | `workstream_list`, `workstream_get`, `thread_tail`, `fleetd_status` | Lower-level views of the lead's work. | read |
 
 `projectRef` is `{"machineId": "devbox", "projectId": "<id>"}`; `fleetd project list` prints both, as
