@@ -33,8 +33,6 @@ pub struct CapOutcome {
     pub slots: SlotState,
     pub paused: Vec<TaskId>,
     pub next: String,
-    /// The project's one quiet chat line, when its max agents changed. A fleet cap change has none.
-    pub chat_line: Option<(ProjectRef, String)>,
 }
 
 fn plural(n: i64, one: &str, many: &str) -> String {
@@ -80,7 +78,6 @@ impl Tasks {
 
         let mut paused = Vec::new();
         let mut lines = Vec::new();
-        let mut chat_line = None;
         if cap != cap_before {
             let after = slots.state();
             let line = if cap > cap_before {
@@ -140,7 +137,6 @@ impl Tasks {
                     &line,
                 )
                 .map_err(store_error)?;
-                chat_line = Some((r.clone(), line.clone()));
                 lines.push(line);
             }
             if to > from {
@@ -161,7 +157,6 @@ impl Tasks {
             slots: slots.state(),
             paused,
             next,
-            chat_line,
         })
     }
 
