@@ -77,6 +77,14 @@ Everything shows up in the chat, quietly:
 For a project's progress at a glance, see [Status](/docs/status). For where the time went, see
 [Where time went](/docs/time-inspector).
 
+## Earlier work {#history}
+
+Work from before the chat existed shows at the top of each project's chat, under "From before this chat": what you
+asked for, the lead's replies, and how each piece of work ended, such as "Done: 2 PRs merged." or "Stopped by you; kept
+for later." Nothing was moved or deleted. Scroll up to read it.
+
+![The top of storefront's chat under "From before this chat": your earlier requests as messages, the lead's replies, and one-line outcomes such as "Done: 2 PRs merged." and "Stopped by you; kept for later."](/docs/img/chat-history.png)
+
 ## Stop everything {#stop}
 
 To stop all of a project's work at once, say "stop" in the chat, or run:
