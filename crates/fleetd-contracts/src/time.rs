@@ -160,7 +160,7 @@ span_kinds! {
     ChangeMerge = 56, "change.merge", Pipeline;
     /// needs_rebase or ci_failed until the next head.
     ChangeBlocked = 57, "change.blocked", Pipeline;
-    /// The intake router, from submit to routed.
+    /// Intake, from submit to placed.
     IntakeRoute = 58, "intake.route", Pipeline;
     Idle = 60, "idle", Idle;
     /// Lost data: spans the node dropped or the hub could not take. `extra.count` says how many.
@@ -542,7 +542,7 @@ pub enum InsightRule {
     Offline,
     Coverage,
     /// Serial waits: work that waited while capacity existed. A task queued for a slot while the fleet had free
-    /// ones (a project share, the lead band), or a PR that waited out another PR's train cycle.
+    /// ones (a project's max agents, the lead band), or a PR that waited out another PR's train cycle.
     QueueWait,
     /// Tasks serialized on one shared resource: an area lease, or one machine's usage limit.
     Contention,

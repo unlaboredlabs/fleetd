@@ -104,7 +104,7 @@ Some findings point at work that waited while the fleet had room for more. Each 
 
 | Finding | Means | Fix |
 |---|---|---|
-| `queue_wait` | A task waited for a slot while the fleet had free ones (its project's share, or the slots kept for lead turns). Or a ready PR waited out a CI run it couldn't join, because the [batch](/docs/merge-train#batches) was full or batching was off. | Raise the share or the cap with `cap_set`. Raise `FLEETD_TRAIN_BATCH_MAX`, or fix why batching turned off for the repo. |
+| `queue_wait` | A task waited for a slot while the fleet had free ones (its project's max agents, or the slots kept for lead turns). Or a ready PR waited out a CI run it couldn't join, because the [batch](/docs/merge-train#batches) was full or batching was off. | Raise the project's max agents or the fleet cap (`fleetd project set`). Raise `FLEETD_TRAIN_BATCH_MAX`, or fix why batching turned off for the repo. |
 | `contention` | Tasks waited one after another for one area lease, or for one machine's claude usage. | Define narrower areas in `.fleetd/policy.yaml` (without them, every write task takes the one area `all`). For usage: a larger plan, or another machine. |
 | `idle_lead` | A [lead](/docs/glossary#lead) sat idle while a plan item of its order was ready to start and slots were free. | The lead should start ready items before its turn ends. |
 | `slots_underused` | Two or more ready plan items waited at the same time while slots were free. | Start ready items together. |

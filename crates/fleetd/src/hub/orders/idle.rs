@@ -2,7 +2,6 @@
 //! are closed (`on_done`), except its unlanded write work, which keeps going and the lead is told. And a safety net for a lead that ends its turn with an order frozen and nothing under way: no task running or queued,
 //! no PR in the train, no open ask and no wake coming. Nothing would ever wake it again, so the hub wakes it once per
 //! order with a plain line. Bounded: a second idle turn on the same order gets no second nudge.
-use crate::hub::prompts::PromptSet;
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -15,6 +14,7 @@ use fleetd_contracts::train::ChangeState;
 
 use super::open_work::{self, CLOSED_ON_PURPOSE, ids, listed, sweep};
 use crate::hub::api::Hub;
+use crate::hub::leads::events::Event;
 use crate::hub::leads::records::WorkstreamFilter;
 use crate::hub::leads::wakes::{LineKind, Trigger};
 use crate::hub::store::WaitInput;
@@ -69,11 +69,12 @@ pub fn forget_settled(nudged: &mut HashSet<WorkstreamId>, orders: &[OrderFacts])
     });
 }
 
-pub fn nudge_line(set: &PromptSet, id: &WorkstreamId, title: &str) -> String {
-    set.render(
-        "wake.order_idle",
-        &[("workstreamId", id), ("title", &title)],
-    )
+pub fn nudge_line(id: &WorkstreamId, title: &str) -> String {
+    Event::OrderIdle {
+        workstream: id.as_str(),
+        title,
+    }
+    .render()
 }
 
 fn facts(hub: &Hub, r: &ProjectRef) -> Vec<OrderFacts> {
@@ -197,7 +198,7 @@ pub async fn run(hub: Arc<Hub>) {
                     &r,
                     Trigger::Line {
                         kind: LineKind::Idle,
-                        text: nudge_line(&hub.db.prompts().for_lead(&r), &id, title),
+                        text: nudge_line(&id, title),
                     },
                 );
                 nudged.lock().unwrap().insert(id);
@@ -255,14 +256,12 @@ async fn on_done(hub: &Hub, event: &fleetd_contracts::events::HubEvent) {
     }
     if !plan.kept.is_empty() {
         tracing::info!(workstream = %id, work = %listed(&plan.kept), "order done: unlanded write work kept");
-        let text = hub.db.prompts().for_lead(&r).render(
-            "wake.order_done_work_kept",
-            &[
-                ("workstreamId", &id),
-                ("work", &listed(&plan.kept)),
-                ("ids", &ids(&plan.kept)),
-            ],
-        );
+        let text = Event::OrderDoneWorkKept {
+            workstream: id.as_str(),
+            work: &listed(&plan.kept),
+            ids: &ids(&plan.kept),
+        }
+        .render();
         hub.leads.wakes.trigger(
             &r,
             Trigger::Line {

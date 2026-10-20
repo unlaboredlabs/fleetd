@@ -4,6 +4,9 @@
 //! The thread's status transitions, read off the event log, end the task: the result goes into the record and,
 //! inline, into one lead wake; the slot and leases are released and the queue is tried again.
 pub mod branch_diff;
+pub mod cap;
+#[cfg(test)]
+mod cap_tests;
 pub mod glob;
 pub mod hooks;
 pub mod policy;
@@ -212,6 +215,10 @@ pub struct Tasks {
     lock: tokio::sync::Mutex<()>,
     /// Machines a queued task waits on; one waiter each.
     awaiting: Mutex<HashSet<MachineId>>,
+    /// Tasks whose `ask_lead` question their lead hasn't answered yet (any message to the task answers it). Such a
+    /// task is never paused, and a paused one that asks isn't continued until the answer is in its resume. Not kept
+    /// across a hub restart: then the answer still reaches the task, only maybe after its resume.
+    asking: Mutex<HashSet<TaskId>>,
     /// Set once in `hub/serve` (`wire::wire`) to usage, the value bar and receipts; unset passes through.
     pub hooks: TaskHooks,
     cursor: i64,
@@ -234,6 +241,7 @@ impl Tasks {
             d: deps,
             lock: tokio::sync::Mutex::new(()),
             awaiting: Mutex::new(HashSet::new()),
+            asking: Mutex::new(HashSet::new()),
             hooks: TaskHooks::default(),
             cursor,
             applied: std::sync::atomic::AtomicI64::new(cursor),
@@ -301,6 +309,7 @@ impl Tasks {
     }
 
     fn release_all(&self, task: &Task) -> Result<(), StoreError> {
+        self.asking.lock().unwrap().remove(&task.task_id);
         self.d.slots.release(task.task_id.as_str())?;
         self.d.leases.release(&task.task_id)?;
         Ok(())
@@ -308,9 +317,7 @@ impl Tasks {
 
     fn wake_result(&self, task: &Task, result: &TaskResult) {
         let receipts = self.hooks.receipts.get().and_then(|r| r.line(result));
-        let set = self.d.db.prompts().for_lead(&task.project_ref);
         let text = render::task_result_lines(
-            &set,
             task.task_id.as_str(),
             task.title.as_str(),
             result,
@@ -460,12 +467,7 @@ impl Tasks {
         let result = TaskResult {
             status: TaskResultStatus::Failed,
             tail: Text::unchecked(tail_of(
-                &self
-                    .d
-                    .db
-                    .prompts()
-                    .for_lead(&task.project_ref)
-                    .render("wake.task_start_failed", &[("message", &message)]),
+                &format!("fleetd could not start the task: {message}"),
                 render::TAIL_MAX,
             )),
             branch: task.branch.clone(),
@@ -603,6 +605,21 @@ impl Tasks {
         }
 
         let continuing = task.thread_ref.is_some() && stored.pending_message.is_some();
+        // A paused agent's thread is still pushing its work: it continues once that turn ended, when its stop frees
+        // the slot and runs the queue again. One that asked its lead meanwhile continues with the answer.
+        if continuing && self.asking.lock().unwrap().contains(&task.task_id) {
+            return Ok(task.clone());
+        }
+        if continuing
+            && let Some(thread) = &task.thread_ref
+            && self
+                .d
+                .store
+                .thread_get(thread)?
+                .is_some_and(|t| t.thread.status == fleetd_contracts::model::ThreadStatus::Running)
+        {
+            return Ok(task.clone());
+        }
         let started = if continuing {
             let thread = task.thread_ref.as_ref().expect("continuing has a thread");
             let message = stored
@@ -931,9 +948,7 @@ impl Tasks {
                             thread_ref.thread_id.as_str()
                         )
                     });
-                let set = self.d.db.prompts().for_lead(&task.project_ref);
                 let text = render::task_waiting_lines(
-                    &set,
                     task.task_id.as_str(),
                     task.title.as_str(),
                     &question,
@@ -1204,9 +1219,14 @@ impl Tasks {
                     pending_message: Some(pending),
                 })
                 .map_err(store_error)?;
+                if self.asking.lock().unwrap().remove(task_id) {
+                    // A paused agent held back for this answer can continue now, if a slot is free.
+                    self.retry_later();
+                }
                 Ok(task)
             }
             TaskState::Running => {
+                self.asking.lock().unwrap().remove(task_id);
                 let thread = task
                     .thread_ref
                     .as_ref()
@@ -1220,6 +1240,7 @@ impl Tasks {
                 Ok(task)
             }
             _ => {
+                self.asking.lock().unwrap().remove(task_id);
                 let mut next = task;
                 next.attempt = Int::unchecked(next.attempt.get() + 1);
                 Ok(self
@@ -1364,9 +1385,8 @@ impl Tasks {
                 None,
             ));
         };
-        let set = self.d.db.prompts().for_lead(&task.project_ref);
-        let text =
-            render::task_waiting_lines(&set, task_id.as_str(), task.title.as_str(), question);
+        self.asking.lock().unwrap().insert(task_id.clone());
+        let text = render::task_waiting_lines(task_id.as_str(), task.title.as_str(), question);
         self.d
             .ports
             .wake(&task.project_ref, WakeKind::TaskWaiting, text);
@@ -1385,20 +1405,46 @@ const SCAN_LIMIT: usize = 10_000;
 /// What leads read from tasks: digest lines, live tasks and cancels for removed projects (leads' TasksHook, set in
 /// `wire`).
 impl Tasks {
+    /// A line per task; the agents line is `agents`, at the top of the state block.
     pub fn digest_lines(
         &self,
         project_ref: &ProjectRef,
         since: Option<&Timestamp>,
         limit: usize,
-        prompts: &crate::hub::prompts::PromptSet,
     ) -> Vec<String> {
         let since = since.map(Timestamp::as_str);
         match self.db(|c| TaskRecords::for_digest(c, project_ref, since, limit)) {
-            Ok(tasks) => render::task_digest_lines(prompts, &tasks, since),
+            Ok(tasks) => render::task_digest_lines(&tasks, since),
             Err(error) => {
                 tracing::warn!(%error, "tasks: digest lines not read");
                 Vec::new()
             }
+        }
+    }
+
+    /// A task waiting for a slot, as its spawn answers: "queued: 12/12 running, starts when a slot frees, position 3".
+    pub fn queued_next(&self, task: &Task) -> Option<String> {
+        if task.state != TaskState::Queued {
+            return None;
+        }
+        let position = self.d.slots.position(task.task_id.as_str())?;
+        let reason = task.queued_reason.as_ref()?.as_str();
+        let why = reason
+            .strip_prefix("agents: ")
+            .or_else(|| reason.strip_prefix("slots: "))
+            .unwrap_or(reason);
+        Some(format!(
+            "queued: {why}, starts when a slot frees, position {position}. fleetd starts it by itself; don't spawn it again."
+        ))
+    }
+
+    /// The project's agents against its max agents, from the slot board: the lead's own turns are not agents.
+    pub fn agents(&self, project_ref: &ProjectRef) -> crate::hub::leads::events::AgentsLine {
+        let agents = self.d.slots.agents(project_ref);
+        crate::hub::leads::events::AgentsLine {
+            running: agents.running,
+            cap: agents.max_agents,
+            queued: agents.queued,
         }
     }
 

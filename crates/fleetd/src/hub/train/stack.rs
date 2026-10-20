@@ -421,14 +421,11 @@ impl Train {
                 names.join(", "),
                 parent.pr_number
             );
-            let text = self.author_prompts(child).render(
-                "task.train_ci_failed",
-                &[
-                    ("prUrl", &child.pr_url),
-                    ("changeId", &child.change_id),
-                    ("why", &why),
-                    ("branch", &child.branch),
-                ],
+            let text = crate::hub::prompts::fixed::fix_your_pr(
+                child.pr_url.as_str(),
+                Some(child.change_id.as_str()),
+                child.branch.as_str(),
+                &crate::hub::prompts::fixed::FixPr::Ci { why: &why },
             );
             self.tell_author(child, text).await;
         }

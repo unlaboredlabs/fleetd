@@ -6,6 +6,7 @@ import { Fixture } from "./fixture.ts";
 import { assertClean, findLeaks } from "./leaks.ts";
 import { makeSanitizer } from "./sanitize.ts";
 import { buildShared, recorded } from "./shared.ts";
+import { LOG, SCREENSHOT, streamReply, writeChat } from "./chat.ts";
 import { fitStrings, validateFixture } from "./schema.ts";
 
 describe("Fixture answers", () => {
@@ -194,5 +195,93 @@ describe("shared fixtures", () => {
   it.each(shared.map((f) => [f.name, f] as const))("%s leaks nothing and is traffic a hub could send", (_name, f) => {
     expect(findLeaks(JSON.stringify(f.toFile()))).toEqual([]);
     expect(validateFixture(f)).toEqual([]);
+  });
+});
+
+describe("chat pages", () => {
+  // As the app pages back: the newest page, then `before` the first seq it holds, until moreBefore is false.
+  it("hands every message out once, oldest to newest, however long the chat", () => {
+    const f = new Fixture("t", "");
+    f.snapshot = { cursor: 0, machines: [], projects: [], attention: [] };
+    const ref = { machineId: "devbox", projectId: "p1" };
+    writeChat(f, ref, Array.from({ length: 123 }, (_, i) => ({ author: i % 2 === 0 ? "human" : "lead", text: `m${String(i)}` }) as const));
+    const page = (input: Record<string, unknown>) => {
+      const out = f.toFile().calls.find((c) => c.tool === "chat_history" && c.input !== undefined && matches(c.input, { projectRef: ref, limit: 50, ...input }))?.outcome;
+      return (out?.ok === true ? out.output : {}) as { messages: Array<{ seq: number }>; moreBefore: boolean };
+    };
+    const seen: number[] = [];
+    let p = page({});
+    for (;;) {
+      seen.unshift(...p.messages.map((m) => m.seq));
+      if (!p.moreBefore) break;
+      p = page({ before: p.messages[0]?.seq });
+    }
+    expect(seen).toEqual(Array.from({ length: 123 }, (_, i) => i + 1));
+    expect(page({ after: 123 }).messages).toEqual([]);
+  });
+});
+
+describe("streaming", () => {
+  it("streams a reply as chat_delta frames at the offsets the text reaches, and settles on the last", () => {
+    const f = new Fixture("t", "");
+    f.snapshot = { cursor: 0, machines: [], projects: [], attention: [] };
+    const ref = { machineId: "devbox", projectId: "p1" };
+    writeChat(f, ref, [{ author: "lead", text: "Both reviews", state: "streaming" }]);
+    streamReply(f, ref, [" are in.", " Merging."]);
+    const file = f.toFile();
+    const deltas = file.frames.flatMap((fr) => (fr.t === "chat_delta" ? [fr] : []));
+    expect(deltas.map((d) => [d.afterMs, d.delta.offset, d.delta.append])).toEqual([
+      [400, 12, " are in."],
+      [400, 20, " Merging."],
+    ]);
+    expect(file.settleMs).toBe(800);
+  });
+});
+
+describe("attachments", () => {
+  // Base64 hides a token from a scan of the JSON text, so the bytes are decoded and checked too.
+  const withFile = (mime: string, data: Buffer) => {
+    const f = new Fixture("t", "");
+    f.snapshot = { cursor: 0, machines: [], projects: [], attention: [] };
+    writeChat(f, { machineId: "devbox", projectId: "p1" }, [{ author: "human", text: "see attached", attachments: [{ name: "a", mime: mime as "text/plain", data }] }]);
+    return findLeaks(JSON.stringify(f.toFile()));
+  };
+  const png = (extra: Array<[string, Buffer]>) => {
+    const chunk = (type: string, body: Buffer) => {
+      const len = Buffer.alloc(4);
+      len.writeUInt32BE(body.length);
+      return Buffer.concat([len, Buffer.from(type, "latin1"), body, Buffer.alloc(4)]);
+    };
+    return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk("IHDR", Buffer.alloc(13)), ...extra.map(([t, b]) => chunk(t, b)), chunk("IEND", Buffer.alloc(0))]);
+  };
+
+  it("finds a token, a home path or the lab inside an attached text file", () => {
+    expect(withFile("text/plain", Buffer.from(`token ghp_${"a1B2".repeat(9)}`)).join()).toMatch(/GitHub token in attachment/u);
+    expect(withFile("text/plain", Buffer.from("/home/someone/src/x"))).not.toEqual([]);
+    expect(withFile("text/plain", Buffer.from("cloned unlaboredlabs/fleetd-lab"))).not.toEqual([]);
+    expect(withFile("text/plain", Buffer.from("all tests passed"))).toEqual([]);
+    const token = `ghp_${"a1B2".repeat(9)}`;
+    expect(withFile("text/plain", Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(token, "utf16le")]))).not.toEqual([]);
+    expect(withFile("text/plain", Buffer.concat([Buffer.from([0xfe, 0xff]), Buffer.from(token, "utf16le").swap16()]))).not.toEqual([]);
+  });
+
+  it("decodes data: URLs inside message text", () => {
+    const url = (mime: string, body: Buffer) => `see data:${mime};base64,${body.toString("base64")} here`;
+    expect(findLeaks(JSON.stringify({ text: url("text/plain", Buffer.from("/home/someone/src")) }))).not.toEqual([]);
+    expect(findLeaks(JSON.stringify({ text: url("image/png", png([["tEXt", Buffer.from("x")]])) })).join()).toMatch(/PNG metadata/u);
+    expect(findLeaks(JSON.stringify({ text: url("image/png", png([])) }))).toEqual([]);
+  });
+
+  it("allows a PNG with pixels only, and refuses text chunks or files it can't read", () => {
+    expect(withFile("image/png", png([]))).toEqual([]);
+    expect(withFile("image/png", png([["tEXt", Buffer.from("Author\0someone")]])).join()).toMatch(/PNG metadata \(tEXt\)/u);
+    expect(withFile("image/png", png([["eXIf", Buffer.alloc(4)]]))).not.toEqual([]);
+    expect(withFile("image/jpeg", Buffer.from([0xff, 0xd8]))).not.toEqual([]);
+  });
+
+  it("fails `pnpm fixtures` on a planted token: every shared fixture is checked this way", () => {
+    expect(SCREENSHOT.data.length).toBeGreaterThan(0);
+    expect(withFile(LOG.mime, LOG.data)).toEqual([]);
+    expect(withFile(LOG.mime, Buffer.concat([LOG.data, Buffer.from(`sk-ant-api03-${"x1Y2".repeat(6)}`)]))).not.toEqual([]);
   });
 });

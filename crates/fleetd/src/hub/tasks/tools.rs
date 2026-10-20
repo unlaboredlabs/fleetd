@@ -9,12 +9,13 @@ use fleetd_contracts::prim::List;
 use fleetd_contracts::tasks::Task;
 use serde_json::{Value, json};
 
+use super::cap::{CapChange, ProjectCap};
 use super::ports::TaskError;
 use super::{TaskCaller, TaskFilter, Tasks};
 use crate::hub::api::{
-    Hub, Registry, ToolError, allows, cap, internal_error, require, unknown_project,
+    Hub, Registry, ToolError, allows, allows_everywhere, cap, forbidden, internal_error, require,
+    unknown_project,
 };
-use crate::hub::slots::CapInput;
 use crate::hub::store::StoreError;
 
 const TASK_LIST_LIMIT: usize = 50;
@@ -80,18 +81,43 @@ pub fn register(tools: &mut Registry) {
         },
     );
 
-    tools.add("cap_set", |hub: Arc<Hub>, _caller, input: CapSetInput| async move {
-        if let Some(share) = &input.share
-            && hub.store.project_get(&share.project_ref)?.is_none()
-        {
-            return Err(unknown_project(&share.project_ref));
-        }
-        let board = hub.slots.set_cap(CapInput {
-            cap: input.cap.map(|c| c.get()),
-            share: input.share.map(|s| (s.project_ref, s.share.get())),
-        })?;
-        Ok::<Value, ToolError>(json!({ "slots": board, "next": "Applied now: queued tasks start as soon as they fit. fleetd_status shows the board." }))
-    });
+    tools.add(
+        "cap_set",
+        |hub: Arc<Hub>, caller, input: CapSetInput| async move {
+            if input.cap.is_some() && !allows_everywhere(&caller, Role::Admin) {
+                return Err(forbidden(Role::Admin, None));
+            }
+            if let Some(p) = &input.project {
+                require(&caller, Role::Operate, Some(&p.project_ref.machine_id))?;
+                if hub.store.project_get(&p.project_ref)?.is_none() {
+                    return Err(unknown_project(&p.project_ref));
+                }
+            }
+            let outcome = hub
+                .tasks
+                .set_caps(CapChange {
+                    cap: input.cap.map(|c| c.get()),
+                    project: input.project.map(|p| ProjectCap {
+                        project_ref: p.project_ref,
+                        max_agents: p.max_agents.get(),
+                        pause_extras: p.pause_extras.unwrap_or(false),
+                    }),
+                })
+                .await
+                .map_err(|e| {
+                    let error = ToolError::new(e.code, e.message);
+                    match e.fix {
+                        Some(fix) => error.with_fix(fix),
+                        None => error,
+                    }
+                })?;
+            Ok::<Value, ToolError>(json!({
+                "slots": outcome.slots,
+                "paused": (!outcome.paused.is_empty()).then_some(outcome.paused),
+                "next": outcome.next,
+            }))
+        },
+    );
 }
 
 fn frame(task: Task) -> TaskResultFrame {
@@ -116,9 +142,14 @@ pub async fn lead_call(
 ) -> Result<LeadCallResult, TaskError> {
     let r = &caller.project_ref;
     match call {
-        LeadCall::TaskSpawn(input) => Ok(LeadCallResult::TaskSpawn(frame(
-            tasks.spawn(caller, input).await?,
-        ))),
+        LeadCall::TaskSpawn(input) => {
+            let task = tasks.spawn(caller, input).await?;
+            let next = tasks.queued_next(&task);
+            Ok(LeadCallResult::TaskSpawn(TaskResultFrame {
+                next,
+                ..frame(task)
+            }))
+        }
         LeadCall::TaskList(c) => {
             let filter = TaskFilter {
                 project_ref: Some(r.clone()),

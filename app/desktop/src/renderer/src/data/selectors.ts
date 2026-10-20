@@ -7,9 +7,11 @@
 //
 // Selectors are memoized on the slices they read, so a component re-renders only when its inputs changed, and
 // useSyncExternalStore sees a stable value between changes.
-import type { AgentLane, Ask, Batch, LiveLane, Machine, MachineLive, OrderCard, TrainLive } from "../../../shared/contracts";
+import type { AgentLane, Ask, Batch, LiveLane, Machine, MachineLive, OrderCard, ProjectSummary, TrainLive } from "../../../shared/contracts";
+import type { HubError } from "../../../shared/hub";
+import { chatItems, type ChatItem, type ChatSend } from "./chat";
 import { orderPhase, PHASE_RANK, settled, type Phase } from "./phase";
-import type { DataState, OrderDetail } from "./store";
+import { projectKey, type DataState, type OrderDetail, type ProjectKey } from "./store";
 
 /** Recomputes only when one of `inputs(state)` changed (by identity). */
 const memo = <const I extends unknown[], R>(inputs: (s: DataState) => I, compute: (...args: NoInfer<I>) => R) => {
@@ -325,4 +327,155 @@ export const selectBoardData = memo(
     skewMs,
     stale,
   }),
+);
+
+// The lead chats (A7).
+
+const active = (status: AgentLane["status"]): boolean => status === "working" || status === "starting";
+const noProjectLanes: readonly AgentLane[] = [];
+
+const byActiveFirst = (a: AgentLane, b: AgentLane): number =>
+  Number(active(b.status)) - Number(active(a.status)) || (b.startedAt ?? "").localeCompare(a.startedAt ?? "");
+
+/** Every project's agents, live-merged, active first; undefined until the board loaded. */
+const selectAgentsByProject = memo(
+  (s) => [s.fresh, s.orders, s.live.lanes, s.live.ended],
+  (fresh, orders, liveLanes, ended): Readonly<Record<ProjectKey, readonly AgentLane[]>> | undefined => {
+    if (!fresh || orders === undefined) return undefined;
+    const out: Record<ProjectKey, AgentLane[]> = {};
+    for (const card of Object.values(orders)) {
+      const lanes = card.lanes.map((l) => mergeLane(l, liveLanes[l.laneId], ended[l.laneId]));
+      (out[projectKey(card.projectRef)] ??= []).push(...lanes);
+    }
+    for (const lanes of Object.values(out)) lanes.sort(byActiveFirst);
+    return out;
+  },
+);
+
+/** One project's agents for the chat's live strip: live-merged, active first. */
+export const selectProjectAgents = perKey((key) =>
+  memo(
+    (s) => [selectAgentsByProject(s)],
+    (byProject): readonly AgentLane[] | undefined => (byProject === undefined ? undefined : (byProject[key] ?? noProjectLanes)),
+  ),
+);
+
+/** A project's state word: the sidebar dot, the chat header and the Status row all show this one. */
+export type ProjectStateWord = "waiting_on_you" | "blocked" | "working" | "idle";
+
+/**
+ * The state word. Whether the lead waits on you comes only from the hub's chat state (ProjectChatState.needsYou),
+ * so no two places can disagree on it. `rowState` is the Status row's own word (status_projects): it adds
+ * "blocked" (a cause outside the work) and a "working" the agents count can't see (PRs in review, CI or the
+ * train), and its "waiting on you" never counts on its own.
+ */
+export const projectStateWord = (needsYou: boolean, working: boolean, rowState?: string): ProjectStateWord => {
+  if (needsYou) return "waiting_on_you";
+  if (rowState === "blocked") return "blocked";
+  return working || rowState === "working" ? "working" : "idle";
+};
+
+export interface ProjectRow {
+  readonly key: ProjectKey;
+  readonly project: ProjectSummary;
+  /** The lead is waiting for the person's reply: the hub's chat state, the one source for it. */
+  readonly needsYou: boolean;
+  /** The state word without the Status row's own causes; the Status screen passes its row to projectStateWord. */
+  readonly state: ProjectStateWord;
+  /** The lead or any of the project's agents is at work. */
+  readonly working: boolean;
+  /** Agents at work, the lead not counted. */
+  readonly running: number;
+}
+
+const leadActive = (lanes: DataState["live"]["lanes"], key: ProjectKey): boolean => {
+  const at = key.indexOf("/");
+  const lead = lanes[leadLaneId({ machineId: key.slice(0, at), projectId: key.slice(at + 1) })];
+  return lead !== undefined && active(lead.status);
+};
+
+/** The sidebar's and status's projects, by title; undefined until loaded. */
+const sameRow = (a: ProjectRow, b: ProjectRow): boolean =>
+  a.project === b.project && a.needsYou === b.needsYou && a.running === b.running && a.working === b.working && a.state === b.state;
+
+// The rows last handed out: a lane frame (4 Hz on the strip) that changes no row's fields hands back the same rows
+// and the same list, so the sidebar and the chat header don't re-render for it.
+let lastRows: readonly ProjectRow[] | undefined;
+
+export const selectProjectList = memo(
+  (s) => [s.fresh, s.projects, s.chatStates, selectAgentsByProject(s), s.live.lanes],
+  (fresh, projects, chats, agents, liveLanes): readonly ProjectRow[] | undefined => {
+    if (!fresh || agents === undefined) return (lastRows = undefined);
+    const before = new Map((lastRows ?? []).map((r) => [r.key, r]));
+    const rows = Object.entries(projects)
+      .map(([key, project]): ProjectRow => {
+        const running = (agents[key] ?? noProjectLanes).filter((l) => l.role !== "lead" && active(l.status)).length;
+        const chat = chats[key];
+        const leadWorking = chat?.leadWorking ?? leadActive(liveLanes, key);
+        const needsYou = chat?.needsYou === true;
+        const working = running > 0 || leadWorking;
+        const row = { key, project, needsYou, running, working, state: projectStateWord(needsYou, working) };
+        const prior = before.get(key);
+        return prior !== undefined && sameRow(prior, row) ? prior : row;
+      })
+      // A stable order (by title): rows must not move under the pointer, and ⌘1–9 keep their targets.
+      .sort((a, b) => a.project.title.localeCompare(b.project.title) || a.key.localeCompare(b.key));
+    const unchanged = lastRows?.length === rows.length && rows.every((r, i) => r === lastRows?.[i]);
+    if (!unchanged) lastRows = rows;
+    return lastRows;
+  },
+);
+
+/** One project's row: what the sidebar dot, the chat header and the Status row read. */
+export const selectProjectRow = perKey((key) =>
+  memo(
+    (s) => [selectProjectList(s)],
+    (rows): ProjectRow | undefined => rows?.find((r) => r.key === key),
+  ),
+);
+
+/** How many projects' leads wait on the person (dock badge, window title). */
+export const selectNeedsYouTotal = memo(
+  (s) => [selectProjectList(s)],
+  (rows): number | undefined => rows?.filter((r) => r.needsYou).length,
+);
+
+export const selectNeedsYou = perKey((key) => (s: DataState): boolean | undefined =>
+  s.fresh && key in s.projects ? s.chatStates[key]?.needsYou === true : undefined,
+);
+
+/** Whether the project's lead is at work now: typing then steers it rather than starting a turn. */
+export const selectLeadWorking = perKey((key) => (s: DataState): boolean | undefined =>
+  s.fresh ? (s.chatStates[key]?.leadWorking ?? leadActive(s.live.lanes, key)) : undefined,
+);
+
+export interface ChatView {
+  /** Oldest first. The lead's streaming message is the last hub item; the person's unsettled sends follow it. */
+  readonly items: readonly ChatItem[];
+  readonly hasOlder: boolean;
+  readonly loadingOlder: boolean;
+  /** Paged above the latest (past what a chat keeps): loadNewer pages back down; live messages wait for it. */
+  readonly hasNewer: boolean;
+  readonly loadingNewer: boolean;
+  readonly error?: HubError | undefined;
+}
+
+const noSends: readonly ChatSend[] = [];
+
+/** A project's chat for the message list; undefined until its latest page loaded on this connection. */
+export const selectChat = perKey((key) =>
+  memo(
+    (s) => [s.fresh, s.chats[key], s.chatSends[key] ?? noSends],
+    (fresh, chat, sends): ChatView | undefined => {
+      if (!fresh || chat?.loaded !== true) return undefined;
+      return {
+        items: chatItems(chat, sends),
+        hasOlder: chat.hasOlder,
+        loadingOlder: chat.loadingOlder,
+        hasNewer: chat.hasNewer,
+        loadingNewer: chat.loadingNewer,
+        error: chat.error,
+      };
+    },
+  ),
 );

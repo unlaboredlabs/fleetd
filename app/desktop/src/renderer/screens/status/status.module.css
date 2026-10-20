@@ -1,5 +1,4 @@
-/* The Status view. Hierarchy from weight, grey and space; stale parts get the warning outline; nothing animates
- * except the figure's one 400 ms move on a real change (hooks.ts useTween). */
+/* Status: one row per project, in columns so the eye can run down states, bars and counts. Nothing animates. */
 
 .screen {
   flex: 1;
@@ -21,407 +20,102 @@
   border-bottom: 1px solid var(--hairline);
   flex: none;
 }
-.crumbs {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-1) var(--space-2);
-  min-width: 0;
-}
-.crumb {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
-}
-.crumbText,
-.crumbLink {
-  min-width: 0;
-  max-width: 32ch;
-}
-.crumbLink {
-  border: 0;
-  background: none;
-  font: inherit;
-  padding: 0 var(--space-1);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-}
-.crumbLink:hover {
-  background: var(--hover);
-}
-.crumbLink:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
 .liveness {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  flex: none;
-}
-.faint {
-  color: var(--faint);
 }
 
 .body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-}
-/* Wide enough for a row with its stage and ETA, narrow enough to scan. */
-.measure {
-  max-width: 1040px;
   padding: var(--space-4) var(--space-6) var(--space-8);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
 }
 
-.banner,
-.bannerWarn {
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-width: 1040px;
+}
+
+/* title · state · bar and % · agents · last merged */
+.row {
+  display: grid;
+  /* The title takes the slack first; the bar shrinks before it does. */
+  grid-template-columns: minmax(16ch, 3fr) 13ch minmax(80px, 2fr) 9ch 17ch;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--row);
+  padding: var(--space-2) var(--space-2);
+  margin: 0 calc(-1 * var(--space-2));
+  border-radius: var(--radius-sm);
+  color: inherit;
+  text-decoration: none;
+}
+.row:hover {
+  background: var(--hover);
+}
+
+.title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+/* The mark stays whole; the title gives way to it. */
+.stale {
+  flex: none;
+  white-space: nowrap;
+}
+.stale,
+.word,
+.progress,
+.merged {
+  min-width: 0;
+  border-radius: var(--radius-sm);
+}
+
+.progress {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--hairline);
 }
-.bannerWarn {
-  border-color: var(--warning);
-}
-.grow {
+.bar {
   flex: 1;
-}
-
-.staleList {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--warning);
-  border-radius: var(--radius-md);
-}
-.staleRow {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  align-items: baseline;
-}
-
-.hero,
-.heroStale {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-/* Inside the measure, so it lines up with the strip and the sections below it. */
-.heroStale {
-  border: 1px solid var(--warning);
-  border-radius: var(--radius-md);
-  padding: var(--space-3);
-}
-.figureRow {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: var(--space-2) var(--space-6);
-}
-.figureMeta {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 0 var(--space-3);
-}
-.numberLine {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-1) var(--space-3);
-}
-.number {
-  min-width: 3.2ch;
-}
-
-.bar,
-.barSmall,
-.planningBar {
-  display: flex;
-  height: 8px;
-  border-radius: 4px;
+  height: 6px;
+  border-radius: 3px;
   background: var(--hairline);
   overflow: hidden;
-}
-.barSmall {
-  height: 4px;
-  border-radius: 2px;
-}
-.planningBar {
-  height: 4px;
-  max-width: 240px;
 }
 .barVerified {
   background: var(--success);
 }
-/* The lighter tone: in-flight credit reads as part of the same bar, not as done. No CSS transition: the tween
- * drives the width, and only on a real change. */
+/* The lighter tone: in-flight credit reads as part of the same bar, not as done. */
 .barInFlight {
   background: color-mix(in srgb, var(--success) 38%, transparent);
 }
 
-.markers {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-}
-.markerRow {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  align-items: baseline;
+.agents {
+  text-align: right;
 }
 
-.spark {
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-.sparkSvg {
-  width: 100%;
-  height: 56px;
-  overflow: visible;
-}
-.sparkEstimate,
-.sparkVerified {
-  fill: none;
-  stroke-width: 1.5;
-  stroke-linejoin: round;
-}
-.sparkEstimate {
-  stroke: color-mix(in srgb, var(--success) 45%, transparent);
-}
-.sparkVerified {
-  stroke: var(--success);
-}
-.sparkDrop {
-  fill: var(--bg);
-  stroke: var(--warning);
-  stroke-width: 1.5;
-}
 .drops {
   display: flex;
   flex-direction: column;
-}
-.dropDot {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  border: 1.5px solid var(--warning);
-}
-
-.headline {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-3);
-}
-.tag {
-  flex: none;
-  padding: 0 var(--space-1-5);
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-sm);
-  background: none;
-  font: inherit;
-  cursor: pointer;
-}
-.tag:hover {
-  background: var(--hover);
-}
-.tag:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-
-.quietSpan {
-  color: var(--quiet);
-  font-weight: var(--weight-regular);
-}
-.stateBlock {
-  display: flex;
-  flex-direction: column;
   gap: var(--space-1);
-}
-.inline {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-1) var(--space-3);
-}
-
-.health {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  padding: var(--space-3) 0;
-  border-top: 1px solid var(--hairline);
-  border-bottom: 1px solid var(--hairline);
-}
-.healthLine {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-1) var(--space-3);
-}
-.part,
-.partStale {
-  background: none;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-1-5);
-  min-width: 0;
-  padding: 0 var(--space-1);
-  border-radius: var(--radius-sm);
-  border: 1px solid transparent;
-}
-.partStale {
-  border-color: var(--warning);
-}
-.part:hover,
-.partStale:hover {
-  background: var(--hover);
-}
-.part:focus-visible,
-.partStale:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-
-.sections {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-6);
-}
-.section {
-  display: flex;
-  flex-direction: column;
-}
-.sectionHead {
-  margin: 0 0 var(--space-1);
-  font-size: inherit;
-}
-.row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-1) var(--space-3);
-  min-height: var(--row);
-  padding: var(--space-1) var(--space-2);
-  margin: 0 calc(-1 * var(--space-2));
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: none;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  width: calc(100% + 2 * var(--space-2));
-  min-width: 0;
-}
-button.row {
-  cursor: pointer;
-}
-button.row:hover {
-  background: var(--hover);
-}
-button.row:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-.rowMain {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: var(--space-1) var(--space-2);
-  flex: 1 1 320px;
-  min-width: 0;
-}
-.rowMeta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1) var(--space-3);
-  justify-content: flex-end;
-  min-width: 0;
-}
-.rowFull {
-  flex-basis: 100%;
-}
-/* Parts line up in columns: title, figure, bar; a marker or stale mark takes its own line under them. */
-.partRow {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 9ch minmax(80px, 240px);
-  align-items: baseline;
-}
-.partRow > :nth-child(n + 4) {
-  grid-column: 1 / -1;
-}
-.partPct {
-  text-align: right;
-}
-.partBar {
-  align-self: center;
-}
-/* A row's agents sit under it, indented to its text. */
-.rowLanes {
-  display: flex;
-  flex-direction: column;
-  padding-left: var(--space-6);
-  margin-bottom: var(--space-1);
-}
-.asks {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  align-items: flex-start;
-}
-.ask {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-3);
 }
 
 .skeleton {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-2);
+  max-width: 1040px;
 }
-.skelNumber,
-.skelBar,
-.skelLine {
+.skelRow {
+  height: var(--row);
   border: 1px solid var(--hairline);
   border-radius: var(--radius-sm);
-}
-.skelNumber {
-  width: 96px;
-  height: var(--leading-display);
-}
-.skelBar {
-  height: 8px;
-}
-.skelLine {
-  height: var(--leading-md);
-  max-width: 60%;
-}
-.skelSection {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  margin-top: var(--space-3);
 }

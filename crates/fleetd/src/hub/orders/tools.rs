@@ -170,15 +170,12 @@ async fn intake_preview(
         .leads
         .intake
         .preview(&input.text, &allows)
-        .await
         .map_err(ToolError::from)?;
     Ok(IntakePreviewOutput {
         next: Some(match &echo {
-            Some(_) => {
-                "Pass that project to intake_submit so the router does not run again.".into()
-            }
+            Some(_) => "intake_submit would place it there.".into(),
             None => {
-                "The router could not place it; intake_submit would ask you for the project.".into()
+                "intake_submit would refuse it: start the text with @<project>, or pass the project.".into()
             }
         }),
         echo,

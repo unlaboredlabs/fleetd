@@ -1,4 +1,4 @@
-//! M9: playbook frontmatter, the research brief floor, and the intake router's answer.
+//! M9: playbook frontmatter, the research brief floor, and where intake placed an order.
 
 use std::borrow::Cow;
 
@@ -138,33 +138,15 @@ impl JsonSchema for ResearchBrief {
     }
 }
 
-/// The router's `claude -p` answer, which the hub then checks against the project list.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct RouterResult {
-    pub project_ref: ProjectRef,
-    pub template: PlaybookName,
-    /// Shown to the human in the intake echo.
-    pub reason: Line<1, 200>,
-}
-
-/// Where an intent went and why, whether the router, a prefix, `@<project>` or the caller decided it.
+/// Where an intent went and why: the caller's project, `@<project>`, or the only project.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct IntakeEcho {
     pub project_ref: ProjectRef,
-    pub template: PlaybookName,
+    /// The playbook the caller gave; absent means the project's lead decides how to run it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub template: Option<PlaybookName>,
     pub reason: Line<1, 200>,
-}
-
-impl From<RouterResult> for IntakeEcho {
-    fn from(result: RouterResult) -> Self {
-        Self {
-            project_ref: result.project_ref,
-            template: result.template,
-            reason: result.reason,
-        }
-    }
 }
 
 #[cfg(test)]

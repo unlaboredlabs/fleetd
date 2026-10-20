@@ -109,6 +109,14 @@ both; the lead plans to them.
 
 The header shows "· 2 waiting" when agents are queued. Before you save, the slider says what the change will do.
 
+From a terminal:
+
+```sh
+fleetd project set devbox/storefront --max-agents 3
+fleetd project set devbox/storefront --max-agents 2 --pause-extras
+fleetd project set --fleet-cap 20        # needs an admin key
+```
+
 From an [MCP client](/docs/mcp-clients): `cap_set {project: {projectRef, maxAgents, pauseExtras?}}` with an operate
 key, or `cap_set {cap}` for the fleet cap with an admin key.
 

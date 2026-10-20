@@ -126,11 +126,11 @@ async fn run_cmd(cmd: &str, args: &[&str], env: Option<HashMap<String, String>>)
     }
 }
 
-/// The intake router's environment allowlist: the hub's own `CLAUDE*` variables never
+/// The hub's one-shot environment allowlist: the hub's own `CLAUDE*` variables never
 /// reach the child, and without `CLAUDE_CONFIG_DIR` claude reads the user's login from `$HOME/.claude`.
 pub fn router_env() -> HashMap<String, String> {
     let own: HashMap<String, String> = std::env::vars().collect();
-    crate::hub::intake::router::router_env(&own)
+    crate::hub::intake::oneshot::one_shot_env(&own)
         .into_iter()
         .collect()
 }

@@ -248,7 +248,8 @@ every project.
 
 These are short notices, the same everywhere: the brief of a read-only or review task, a reviewer's note on what
 changed since its last review, "fix your PR" (a rebase, red CI or blocking review findings), a denied tool call with
-its reason, the plan's sizing warning, the watchdog's nudge and the note after a usage limit resets.
+its reason, the plan's sizing warning, the pause and resume an agent gets when the max agents drops below it, the
+watchdog's nudge and the note after a usage limit resets.
 
 ### Tool texts {#tool-texts}
 
@@ -266,100 +267,33 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 
 | Id | Sent | Safety rules |
 |---|---|---|
-| `lead.start` | lead start and every lead\_restart, followed by the digest | the lead never writes code (prompt only); delegates only with \`spawn\_agent\`, no other agents; asks the human only about product, money, credentials, irreversible (prompt only); secrets only through \`ask\` with kind secret; prod writes, spends and deletes only through \`gated\_run\`; never blocks on a question (\`proceededOnRec\`) (prompt only); done only through \`claim\_done\`; every write says what it serves; only the merge train merges; never re-asks a key the digest lists (prompt only); a frozen brief changes only with \`amend\`; never relaxes a review, CI, train, done-when or approval gate for speed |
-| `lead.digest` | the top of the lead's first message and of every wake | the digest is the truth, over the lead's memory (prompt only) |
-| `plan.granularity` | when \`plan\_add\` (or \`plan\_edit\` with a size) gets an item with no size or one bigger than m |  |
+| `lead.start` | lead start and every lead\_restart, followed by the state block | the lead never writes code (prompt only); delegates only with \`spawn\_agent\`, no other agents; asks the human only for product, money or irreversible calls, in the chat, each with a recommendation (prompt only); secrets only through \`request\_secret\`; prod writes, spends and deletes only through \`gated\_run\`; never waits idle on an answer (prompt only); done only through \`claim\_done\`; every write says what it serves; only the merge train merges; never asks the same question twice; logs every answer with \`decide\` (prompt only); a reply that asks for work starts it before anything closes (prompt only); plans to the agent cap and never works around it (prompt only); never estimates time (prompt only); a frozen brief changes only with \`amend\`; never relaxes a review, CI, train, done-when or approval gate for speed |
 
 ### Tasks
 
 | Id | Sent | Safety rules |
 |---|---|---|
 | `task.brief.write` | every write task attempt | changes only its areas; never merges; the train does; the PR body carries \`Source:\`; does the task itself, no subagents |
-| `task.brief.read` | every read task attempt | changes no files (prompt only); does the task itself, no subagents |
-| `task.brief.review` | every review, verifier and judge task attempt | changes no files (prompt only); does the task itself, no subagents; ends with one review verdict (the \`report\` tool) |
-| `task.train_rebase` | per PR the train could not rebase |  |
-| `task.train_ci_failed` | per PR whose CI failed or timed out |  |
 
 ### Reviews and checks
 
 | Id | Sent | Safety rules |
 |---|---|---|
-| `wake.claim_failed` | per failed done claim |  |
-| `wake.claim_passed` | per claim that passed late |  |
-| `wake.claim_held` | per claim that passed while write work of the order had not landed |  |
-| `wake.order_done_work_kept` | per order that became done, not through a claim, while some of its write work had not landed |  |
-| `wake.research_verdict.go` | per research claim that went GO |  |
-| `wake.research_verdict.stop` | per research claim that went STOP | STOP is a success (prompt only) |
-| `wake.research_verdict.inconclusive` | per research claim that was inconclusive |  |
 | `review.reviewer` | per PR head per review round, by the tier's rules; Claude or Codex | does not read the PR description or comments (prompt only); changes no files (prompt only); ends with one review verdict (the \`report\` tool) |
-| `review.delta` | after the reviewer's or verifier's text, when the PR was reviewed at an earlier head |  |
 | `review.verifier` | tier L, per PR head | works in a detached temporary worktree (prompt only); does not read the PR description or comments (prompt only); changes no files (prompt only); ends with one review verdict (the \`report\` tool) |
 | `judge` | per \`judge\` done-when check of each claim | trusts no claim in the artifacts (prompt only); ends with one review verdict (the \`report\` tool) |
 | `judge.research` | per \`judge\` check of a research claim | trusts no claim in the artifacts (prompt only); ends with one review verdict (the \`report\` tool) |
-| `task.review_findings` | per blocking review verdict | never merges; the train does |
 
-### Wakes and messages
+### Messages
 
 | Id | Sent | Safety rules |
 |---|---|---|
-| `digest.workstream.no_brief` | each digest, per draft order |  |
-| `digest.finish_all_idle` | each digest, per idle finish-all order |  |
-| `digest.answer.withdrawn` | each digest, per dropped ask |  |
-| `digest.answer.skipped` | each digest, per skipped ask |  |
-| `digest.tasks.running` | each digest, per running task |  |
-| `digest.tasks.idle` | each digest, per idle task |  |
-| `digest.tasks.queued` | each digest, per queued task |  |
-| `digest.tasks.ended` | each digest, per task ended since the last wake |  |
-| `digest.train.repo` | each digest, per train |  |
-| `digest.train.merged` | each digest, per merge since the last wake |  |
-| `digest.train.parked` | each digest, per PR needing a rebase or red CI |  |
-| `digest.train.waived` | each digest, per waived PR |  |
-| `wake.frame` | every wake |  |
-| `wake.intent` | per new order |  |
-| `wake.intent.playbook` | per new order with a playbook the digest does not show |  |
-| `wake.intent.playbook_listed` | per new order with a playbook the digest shows |  |
-| `wake.decision` | per decision the human recorded in the project |  |
-| `wake.answers` | per batch of answers |  |
-| `wake.task_result` | per task that completed or failed |  |
-| `wake.task_cancelled` | per cancelled task |  |
-| `wake.task_waiting` | per task waiting on input | asks the human only about product, money, credentials, irreversible (prompt only) |
-| `wake.task_start_failed` | per queued task that failed to start (its result) |  |
-| `wake.train.line` | when the train could not reach a PR's author task |  |
-| `wake.train.left` | per PR the train abandoned |  |
-| `wake.train.merged` | per merge |  |
-| `wake.train.gave_up` | per PR GitHub refused to merge too often |  |
-| `wake.train.refused` | per task PR the train would not take |  |
 | `steer.message` | per steer (steer\_send, order\_note, task message), straight to the agent, at its next tool boundary or now | asks the agent to name the steer first, so its receipt can say it was acknowledged (prompt only) |
-| `wake.agent_steer` | per steer\_send to a task, at the lead's next wake (debounced, never an interrupt) |  |
-| `wake.order_refs` | per new order with references or attachments |  |
-| `wake.order_stopped` | per order\_stop | does no more work on a stopped order (prompt only) |
-| `wake.runnable` | when a slot frees, the lead is idle and approved, unblocked work no task has taken waits; once per change in that work | the lead decides what to start; the hub never spawns (prompt only) |
-| `wake.order_idle` | when the lead ends a turn with a frozen order and nothing under way |  |
-| `wake.scheduled_late` | a wake\_set message that fired late |  |
-| `wake.scheduled_held` | a wake\_set message held by a usage pause |  |
-| `watchdog.nudge` | once per stalled run |  |
-| `usage.continue` | per parked thread when the usage limit resets |  |
-| `permission.denied.policy` | per tool call a tools.deny rule refuses (tool result) |  |
-| `permission.denied.withdrawn` | per tool ask withdrawn before an answer (tool result) | does not retry the call (prompt only) |
-| `permission.denied.human` | per tool ask the human denied (tool result) |  |
-| `permission.denied.answer` | per tool call denied with thread\_answer and no message (tool result) |  |
 
 ### One-shots
 
 | Id | Sent | Safety rules |
 |---|---|---|
-| `router` | each order without @project or a template prefix | uses no tools; replies with JSON only (prompt only) |
-| `status.headline` | when a viewed status scope's facts change | uses no tools; replies with one line of at most 160 characters; uses only numbers from the facts; never estimates time |
-| `router.retry` | once per order, after an unusable first answer |  |
 | `retro` | each retro run (at most 2 a day) | uses no tools; at most 3 changes |
-
-### Playbooks
-
-| Id | Sent | Safety rules |
-|---|---|---|
-| `playbook.bugfix` | in the digest and the intake wake, while an order follows it | never merges; the train does |
-| `playbook.feature` | in the digest and the intake wake, while an order follows it | never merges; the train does |
-| `playbook.research` | in the digest and the intake wake, while an order follows it | STOP is a success (prompt only) |
-| `playbook.finish-all` | in the digest and the intake wake, while an order follows it |  |
 
 <!-- /prompt-table -->

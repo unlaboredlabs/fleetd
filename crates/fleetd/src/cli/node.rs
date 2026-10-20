@@ -6,7 +6,7 @@ use super::args::{self, Kind, Spec};
 
 pub use crate::node::NODE_USAGE;
 
-pub const HUB_START_USAGE: &str = r#"  hub start [--home <dir>] [--listen <host:port>] [--queue-ttl <seconds>] [--router-model <model>]
+pub const HUB_START_USAGE: &str = r#"  hub start [--home <dir>] [--listen <host:port>] [--queue-ttl <seconds>] [--retro-model <model>]
              run the hub (default home ~/.fleetd/hub, listen 127.0.0.1:4790,
              writes to an offline machine wait 24 h, intents without a project
              are routed by the claude CLI with claude-haiku-5-5)

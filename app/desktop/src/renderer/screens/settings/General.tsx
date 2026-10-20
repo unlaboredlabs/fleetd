@@ -1,10 +1,10 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Button, Dialog, Dot, InlineCode, Radio, RadioGroup, Select, Separator, Switch, Text, THEME_MODES, Truncate, textClass, useTheme } from "../../ui";
+import { Button, Dialog, Dot, InlineCode, Radio, RadioGroup, Select, Separator, Text, THEME_MODES, Truncate, textClass, useTheme } from "../../ui";
 import type { LinkHandlerStatus } from "../../../shared/app";
 import type { HubState } from "../../../shared/hub";
 import { useData } from "../../src/data/react";
 import { errorText, useHubCall, useLive, useRead, useRefetch } from "./hub";
-import { MOTION_PREFS, parseMotion, setDigest, setMotion, useDigest, useMotion } from "./prefs";
+import { MOTION_PREFS, parseMotion, setMotion, useMotion } from "./prefs";
 import s from "./settings.module.css";
 import { keyStoreLine } from "../../../shared/pairing";
 import { useKeyStore } from "../onboarding";
@@ -16,7 +16,6 @@ const RETENTION = [7, 30, 90, 365] as const;
 export function General() {
   const { mode, setMode } = useTheme();
   const motion = useMotion();
-  const digest = useDigest();
   return (
     <div className={s.scroll} data-screen="settings.general">
       <div className={s.column}>
@@ -36,14 +35,6 @@ export function General() {
               <Radio key={m.value} value={m.value} label={m.label} />
             ))}
           </RadioGroup>
-        </Setting>
-        <Setting label="Status digest" help="A notification at 09:00 and 18:00, the hub's digest times.">
-          <Switch
-            checked={digest}
-            onCheckedChange={setDigest}
-            label="Notify me with the fleet's status"
-            description="Its progress and headline, what changed since the previous digest, and what needs you."
-          />
         </Setting>
         <Separator />
         <HubSetting />

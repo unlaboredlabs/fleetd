@@ -267,12 +267,7 @@ impl Leads {
         // Taken before the digest is read: every intent made before it is in the first message (`LeadWakes::flush`).
         let at = now_iso(&self.ctx);
         let set = self.ctx.db.prompts().current(Some(r));
-        let prompt = render_lead_start(
-            &set,
-            r,
-            &project.title,
-            &self.wakes.digest(r, &[], &set).await?,
-        );
+        let prompt = render_lead_start(&set, r, &project.title, &self.wakes.digest(r).await?);
         let launched_ms = now_ms(self.ctx.clock.as_ref());
         let title: String = format!("fleetd lead: {}", project.title)
             .chars()
