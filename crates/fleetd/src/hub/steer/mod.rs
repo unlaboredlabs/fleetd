@@ -100,7 +100,7 @@ fn resolve(hub: &Hub, by: &By, target: &SteerTarget) -> Result<Resolved, ToolErr
                 return Err(invalid(format!(
                     "{workstream_id} has ended; its lead no longer works on it."
                 ))
-                .with_fix("Give it as a new order with intake_submit."));
+                .with_fix("Tell the project's lead in its chat (chat_send)."));
             }
             let lead = hub.leads.records.lead_get(r)?.ok_or_else(|| {
                 invalid(format!(

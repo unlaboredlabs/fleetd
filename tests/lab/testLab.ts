@@ -147,6 +147,7 @@ async function main() {
   handleInterrupts();
 
   let client: Client | undefined;
+  let human: Client | undefined;
   try {
     // A fresh run dir: a new hub and new machine homes (node stores, Claude config dirs). The test repos persist.
     fs.rmSync(RUN, { recursive: true, force: true });
@@ -158,15 +159,18 @@ async function main() {
     const key = /fld_[a-z2-7]{20,}/u.exec(cli("hub", "key", "create", "--home", hubHome, "--name", "lab", "--role", "operate", "--machines", "*"))?.[0];
     if (key === undefined) throw new Error("hub key create printed no key");
     for (const m of MACHINES) joinNode(HUB_URL, hubHome, m.id);
+    const humanKey = /fld_[a-z2-7]{20,}/u.exec(cli("hub", "key", "create", "--home", hubHome, "--human", "--name", "lab-person"))?.[0];
+    if (humanKey === undefined) throw new Error("hub key create --human printed no key");
 
     client = await connectClient(key);
+    human = await connectClient(humanKey);
     // FLEETD_LAB_APP_HANDOFF=<file>: a human key, as the desktop app pairs one, for an /app client watching the run
     // (app/desktop/fixtures/kit/record.ts records the run's frames and call results into fixtures).
     const handoff = process.env.FLEETD_LAB_APP_HANDOFF;
     if (handoff !== undefined) {
-      const human = /fld_[a-z2-7]{20,}/u.exec(cli("hub", "key", "create", "--home", hubHome, "--human", "--name", "recorder"))?.[0];
-      if (human === undefined) throw new Error("hub key create --human printed no key");
-      fs.writeFileSync(handoff, `${JSON.stringify({ hubUrl: HUB_URL, key: human })}\n`, { mode: 0o600 });
+      const recorder = /fld_[a-z2-7]{20,}/u.exec(cli("hub", "key", "create", "--home", hubHome, "--human", "--name", "recorder"))?.[0];
+      if (recorder === undefined) throw new Error("hub key create --human printed no key");
+      fs.writeFileSync(handoff, `${JSON.stringify({ hubUrl: HUB_URL, key: recorder })}\n`, { mode: 0o600 });
       ok(`app handoff written to ${handoff}`);
     }
     const callTool = callToolWith(() => client!);
@@ -207,6 +211,7 @@ async function main() {
       hubUrl: HUB_URL,
       hubHome,
       key,
+      humanCall: callToolWith(() => human!),
       callTool,
       log,
       ok,
@@ -226,13 +231,16 @@ async function main() {
       machines: MACHINES,
       stopHub: async () => {
         await client?.close().catch(() => undefined);
+        await human?.close().catch(() => undefined);
         await stopCli("hub");
       },
       startHub: async (env = {}) => {
         await client?.close().catch(() => undefined);
+        await human?.close().catch(() => undefined);
         await stopCli("hub");
         await startHubProcess(env);
         client = await connectClient(key);
+        human = await connectClient(humanKey);
         // The store still says online from before; wait until running nodes have relinked.
         for (const m of MACHINES) if (pidOf(`node-${m.id}`) !== undefined) await waitLive(m.id);
         ok(`hub (re)started${Object.keys(env).length > 0 ? ` with ${Object.keys(env).join(", ")}` : ""}`);
@@ -284,6 +292,7 @@ async function main() {
     // Before the client closes and the hub stops: a scenario's cleanup may still need them.
     await runCleanups();
     await client?.close().catch(() => undefined);
+    await human?.close().catch(() => undefined);
     await stopAll();
     cleanupMachineHomes();
   }

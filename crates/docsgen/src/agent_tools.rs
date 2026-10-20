@@ -738,6 +738,10 @@ fn example(role: Role, tool: &str) -> Option<Value> {
             "workstreamId": "W3",
         }),
         (Role::Lead, "change_status") => json!({ "changeId": "X12" }),
+        (Role::Lead, "workstream_open") => json!({
+            "text": "Build the schedules page",
+            "template": "feature",
+        }),
         (Role::Lead, "workstream_spawn") => json!({
             "text": "Fix the flaky upload test",
             "serves": "issue:#88",
