@@ -1,8 +1,8 @@
 # fleetd.sh
 
 The static site behind `curl -fsSL https://fleetd.sh | sh`. `vercel.json` serves `install.sh` at `/` to curl, Wget and
-fetch user agents and `home.html` to everyone else. `install.sh` is also at `/install.sh` for reading first. `home.html` is the landing page; its app captures
-(`capture-*.png`) and transcripts are real fleetd output, `fleetd.txt` is its plain-text twin (not `index.txt`: Vercel would serve that at `/` and break the curl rewrite) for agents, and `fonts/`
+fetch user agents and `home.html` to everyone else. `install.sh` is also at `/install.sh` for reading first. `home.html` is the landing page; its app screenshots
+(`chat-*.png`) and transcripts are real fleetd output, `fleetd.txt` is its plain-text twin (not `index.txt`: Vercel would serve that at `/` and break the curl rewrite) for agents, and `fonts/`
 holds the self-hosted IBM Plex Sans and Lilex (both SIL OFL, licences alongside).
 
 There is deliberately no `index.html` at the root: Vercel serves files before applying rewrites, so an `index.html`
@@ -11,33 +11,27 @@ would win over the user-agent rewrite at `/`. `docs/index.html` is `/docs` and f
 
 ## Refreshing the captures
 
-The screenshots, the `<!-- capture:NAME -->` blocks in `home.html` and the same blocks in `fleetd.txt` (found there by
-the shape of fleetd's output, so the twin carries no markers) come from one command, run from the repo root on a
-machine with the lab set up (see "Lab suite" in `docs/CONTRIBUTING.md`):
+The app screenshots (`chat-hero.png` at the top of the page, `chat-approve.png` and `chat-secret.png` in Fig. 1 and 2)
+and the app shots in the docs (`docs/site/public/img/`) are the app's screens on E3b's fixtures, which are sanitized
+lab hub traffic (`app/desktop/fixtures`), at 1400x900@2x in the light theme, without the sample-data banner.
+`app/desktop/qa/site.ts` lists them; `pnpm fixtures && pnpm qa:build && pnpm site:shots` in `app/desktop` writes them in
+place. Re-shoot them when what those screens show changes, keep the captions and alt texts true to the picture, and
+re-aim the figures' callouts (`--x`, `--y` in `home.html`) if the layout moved.
+
+The `<!-- capture:NAME -->` blocks in `home.html` and the same blocks in `fleetd.txt` (found there by the shape of
+fleetd's output, so the twin carries no markers) come from one command, run from the repo root:
 
 ```sh
 cargo build --release --locked -p fleetd && npm ci --prefix tests/lab
-(cd app/desktop && pnpm install && pnpm qa:build)
-FLEETD_LAB_SLOT=8 node tests/lab/site-capture.ts
+node tests/lab/site-capture.ts
 ```
 
-It stands up a hub and a node on that lab slot, has a haiku lead file three numbered asks (three tiny turns), runs the
-desktop app through its QA harness (`app/desktop/qa`) at the page's image size, shoots the inbox, types the reply,
-shoots the inbox again
-(it publishes the shots `home.html` shows); then it runs the `fleetd init --yes --no-service`
-wizard and `fleetd machine add builder-1 --dry-run` in a throwaway HOME that has the lab's claude and gh logins, and
-reads the merge train from the newest lab m7 run, if there is one: the whole path of its first two merged changes and
-the first of each refusal, freeze, red CI and conflict, at most 16 lines. This machine's tailnet name and addresses
-become `hub.your-tailnet.ts.net` and `<tailnet-ip>`, the gh login `demo`, and it refuses to write text that still
-names this machine, its home or lab paths, a non-loopback address or a key. Review the result with `git diff site/`.
-The callout positions (`--x`, `--y`) and the hand-written callout text are not generated: the script lists quotes and
-ids on the page that its run didn't produce, and you re-aim the callouts if the app's layout moved.
-
-`chat-hero.png`, the lead chat at the top of the page, and the app shots in the docs (`docs/site/public/img/`) are the app's
-screens on E3b's fixtures, which are sanitized lab hub traffic (`app/desktop/fixtures`), at 1400x900@2x in the light
-theme, without the sample-data banner. `app/desktop/qa/site.ts` lists them; `pnpm fixtures && pnpm qa:build && pnpm
-site:shots` in `app/desktop` writes them in place. Re-shoot them when what those screens show changes, and keep
-the captions and alt texts true to the picture.
+It runs the `fleetd init --yes --no-service` wizard and `fleetd machine add builder-1 --dry-run` in a throwaway HOME
+with your claude and gh logins copied in, and reads the merge train from the newest lab m7 run, if there is one: the
+whole path of its first two merged changes and the first of each refusal, freeze, red CI and conflict, at most 16
+lines. This machine's tailnet name and addresses become `hub.your-tailnet.ts.net` and `<tailnet-ip>`, the gh login
+`demo`, and it refuses to write text that still names this machine, its home or lab paths, a non-loopback address or
+a key. Review the result with `git diff site/`.
 
 ## Docs (fleetd.sh/docs)
 

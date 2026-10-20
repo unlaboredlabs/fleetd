@@ -1,154 +1,21 @@
-// `FLEETD_LAB_SLOT=<n> node tests/lab/site-capture.ts`: re-shoots the fleetd.sh landing page from the real product.
-// `node tests/lab/site-capture.ts --docs` only recaptures the docs' ```console capture=NAME blocks (no lab, no claude).
-// A lab hub and node, a haiku lead that files three numbered asks, the desktop app (app/desktop, launched by its QA
-// harness, so `pnpm install && pnpm qa:build` there first) answering them, and the setup CLI in a throwaway HOME. Writes site/capture-*.png and rewrites the `<!-- capture:NAME -->`
-// blocks in site/home.html and the same blocks in site/fleetd.txt. Costs three tiny claude-haiku turns. Every process
-// it starts is stopped by the PID captured at spawn; it never touches a hub or node it didn't start.
-//
-// Everything that knows how the lab lays out a machine is in stageLab(); the rest drives only the fleetd CLI, MCP
-// tools and the app.
-import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
+// `node tests/lab/site-capture.ts`: rewrites the landing page's real-output blocks from the product.
+// `node tests/lab/site-capture.ts --docs` only recaptures the docs' ```console capture=NAME blocks.
+// The setup CLI in a throwaway HOME (`fleetd init` and `fleetd machine add --dry-run`, with your claude and gh logins
+// copied in, sanitized) fills the `<!-- capture:NAME -->` blocks in site/home.html and the same blocks in
+// site/fleetd.txt; the merge train's lines come from the newest lab m7 run, when there is one. No hub, node or claude
+// turn. The page's app screenshots come from app/desktop's fixtures instead (app/desktop/qa/site.ts).
+import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import {
-  type Body,
-  callToolWith,
-  claudeLoginEnv,
-  check,
-  cli,
-  fleetdCommand,
-  HUB_PORT,
-  HUB_URL,
-  cleanupMachineHomes,
-  LAB,
-  log,
-  MODEL,
-  nodeEnv,
-  nodeHome,
-  prepareMachineHome,
-  REPO,
-  SLOT,
-  scrubbedEnv,
-  takeLabLock,
-  until,
-  waitEventWith,
-  writeFleetdWrapper,
-} from "./harness.ts";
+import { type Body, claudeLoginEnv, check, fleetdCommand, LAB, log, REPO, SLOT, scrubbedEnv } from "./harness.ts";
 
 const DOCS_ONLY = process.argv.includes("--docs");
-if (process.env.FLEETD_LAB_SLOT === undefined && !DOCS_ONLY) throw new Error("set FLEETD_LAB_SLOT (1-9) to the lab slot this run may use");
-
 const SITE = path.join(REPO, "site");
-const RUN = path.join(LAB, "site-capture");
-const MACHINE = "builder-1";
-const TURN_MS = 240_000;
-const ENDED = ["thread.completed", "thread.failed", "thread.interrupted"];
 
-/** The app's window (the QA harness's medium size), in logical pixels; the captures are this at the page's scale. */
-const APP_WINDOW = { width: 1400, height: 900 };
-const REPLY = "1 go 2 nvm 3 b";
-
-/** What the lead is told to run: the asks are arranged, the filing, batching and answering are real. */
-const ASK_MESSAGE = `Run these three commands in your shell, one after the other, exactly as written, then stop:
-fleetd ask --key site.pricing.headline --class product --text "Pricing page headline: the copy review left two variants in site/pricing.md. Ship A?" --context "Both variants are in site/pricing.md; the Team plan launch uses the one picked." --option 'a|Pay for machines, not seats|the page leads with A' --option 'b|One price per machine. Every agent included.|the page leads with B' --rec a --why "A is shorter and names the pricing model in five words"
-fleetd ask --key deps.moment --class product --text "Drop the moment dependency and format invoice and receipt dates with the built-in Intl API instead?" --context "moment is only used in src/dates.js, for two formats." --option 'drop|Drop moment|dates format through Intl; one dependency fewer' --option 'keep|Keep moment|nothing changes' --rec drop --why "Intl covers both formats and moment is in maintenance mode"
-fleetd ask --key billing.team.trial --class money --text "Free trial length for the Team plan?" --option '7|7 days|trials end after a week' --option '14|14 days|trials end after two weeks' --option '30|30 days|trials end after a month' --rec 7 --why "a week is enough to try it on one repo" --blocks "the Team plan launch"`;
-
-/** The demo project the lead works in. */
-const STOREFRONT: Record<string, string> = {
-  "README.md": "# storefront\n\nMarketing site and checkout for the Team plan.\n\n- `site/pricing.md`: the pricing page copy\n- `src/dates.js`: date formatting for invoices and receipts\n",
-  "site/pricing.md": '# Pricing\n\n<!-- headline: two variants from the copy review, pick one before launch -->\n<!-- A: "Pay for machines, not seats" -->\n<!-- B: "One price per machine. Every agent included." -->\n\n## Team\n\nPer machine, billed monthly. Free trial included.\n',
-  "package.json": '{\n  "name": "storefront",\n  "private": true,\n  "type": "module",\n  "dependencies": {\n    "moment": "2.30.1"\n  }\n}\n',
-  "src/dates.js": 'import moment from "moment";\n\nexport const invoiceDate = (d) => moment(d).format("D MMM YYYY");\nexport const receiptTime = (d) => moment(d).format("D MMM YYYY, HH:mm");\n',
-};
-
-/** Undone last to first in `finally`: processes by their spawn PID, lab state put back. */
+/** Undone last to first in `finally`. */
 const cleanups: Array<() => Promise<void> | void> = [];
-
-const spawnTracked = (name: string, [cmd, args]: [string, Array<string>], env: Record<string, string>) => {
-  fs.mkdirSync(path.join(RUN, "logs"), { recursive: true });
-  const out = fs.openSync(path.join(RUN, "logs", `${name}.log`), "a");
-  const child = spawn(cmd, args, { env, stdio: ["ignore", out, out] });
-  log(`started ${name} pid=${child.pid}`);
-  cleanups.push(async () => {
-    if (child.exitCode !== null || child.signalCode !== null) return;
-    const exited = new Promise((r) => child.once("exit", r));
-    child.kill("SIGTERM");
-    const timer = setTimeout(() => child.kill("SIGKILL"), 10_000);
-    await exited;
-    clearTimeout(timer);
-    log(`stopped ${name} pid=${child.pid}`);
-  });
-  return child;
-};
-
-const pause = (ms: number) => new Promise<undefined>((r) => setTimeout(() => r(undefined), ms));
-
-// ---- The lab: a hub and node builder-1 (its own HOME, so its own ~/.fleetd and Claude config dir). ----
-
-async function stageLab() {
-  takeLabLock();
-
-  const workspace = path.join(LAB, "storefront");
-  fs.rmSync(workspace, { recursive: true, force: true });
-  for (const [file, text] of Object.entries(STOREFRONT)) {
-    fs.mkdirSync(path.dirname(path.join(workspace, file)), { recursive: true });
-    fs.writeFileSync(path.join(workspace, file), text);
-  }
-  const gitEnv = { ...scrubbedEnv(), GIT_AUTHOR_NAME: "lab", GIT_AUTHOR_EMAIL: "lab@localhost", GIT_COMMITTER_NAME: "lab", GIT_COMMITTER_EMAIL: "lab@localhost" };
-  for (const args of [["init", "-q", "-b", "main"], ["add", "."], ["commit", "-q", "-m", "storefront: pricing page draft and invoice dates"]]) {
-    execFileSync("git", args, { cwd: workspace, env: gitEnv, stdio: "ignore" });
-  }
-
-  // The lead's shell gets `fleetd` (the build under test) on the node's PATH; the node sets FLEETD_NODE_SOCK itself.
-  writeFleetdWrapper();
-  prepareMachineHome(MACHINE);
-  cleanups.push(() => cleanupMachineHomes());
-
-  const hubHome = path.join(RUN, "hub");
-  spawnTracked("hub", fleetdCommand(["hub", "start", "--home", hubHome, "--listen", `127.0.0.1:${HUB_PORT}`]), scrubbedEnv());
-  await until("hub /healthz", 30_000, async () => (await fetch(`${HUB_URL}/healthz`).then((r) => r.ok, () => false)) || (await pause(250)));
-  const keyOf = (out: string) => {
-    const key = /fld_[a-z2-7]{20,}/u.exec(out)?.[0];
-    check(key, "hub key create printed a key");
-    return key!;
-  };
-  const operateKey = keyOf(cli("hub", "key", "create", "--home", hubHome, "--name", "site-capture", "--role", "operate", "--machines", "*"));
-  const humanKey = keyOf(cli("hub", "key", "create", "--home", hubHome, "--human", "--name", "laptop"));
-  const token = /^\S{16,}$/mu.exec(cli("hub", "token", "create", "--home", hubHome, "--machine", MACHINE))?.[0];
-  check(token, "hub token create printed a token");
-  spawnTracked(
-    "node",
-    fleetdCommand([
-      "node", "join", "--hub", HUB_URL, "--token", token!, "--machine", MACHINE, "--home", nodeHome(MACHINE),
-    ]),
-    nodeEnv(MACHINE),
-  );
-  return { operateKey, humanKey, workspace };
-}
-
-// ---- The app, through app/desktop's QA harness: the release main bundle on the lab hub with the human key. ----
-
-async function startApp(scale: number, humanKey: string) {
-  // The harness reads its scale when it loads.
-  process.env.QA_SCALE = String(scale);
-  const qa = await import("../../app/desktop/qa/harness.ts");
-  const { app, page, close } = await qa.launch(undefined, undefined, { url: HUB_URL, key: humanKey });
-  cleanups.push(close);
-  await qa.setView(app, page, "medium", "light");
-  return {
-    page,
-    show: (screen: string, route: string) => qa.show(page, screen, route),
-    settle: () => qa.settle(page),
-    png: (out: string) => page.screenshot({ path: out, animations: "disabled", caret: "hide" }),
-  };
-}
 
 // ---- Setup transcripts and train lines ----
 
@@ -258,7 +125,7 @@ const reindent = (body: string, indent: string) => body.replace(/^(?=.)/gmu, ind
 
 /** Each block's `$ ` commands run in a fresh throwaway HOME where the standard `fleetd init` already ran (unless the
  * block's first command is `fleetd init`), each followed by its output; `[exit N]` only when N isn't 0. Blocks named
- * in `given` (output only the lab run has, like the digest) take that text instead; without it they're left alone. */
+ * in `given` (output only a lab run has) take that text instead; without it they're left alone. */
 export function docsBlocks(given: Record<string, string>) {
   const blocks = new Map<string, { file: string; body: string }>();
   const names = fs.readdirSync(DOCS, { recursive: true, encoding: "utf8" }).filter((n) => /\.mdx?$/u.test(n)).sort();
@@ -422,9 +289,6 @@ function fill(file: string, blocks: Blocks) {
 const TWIN: Record<string, RegExp> = {
   init: /^\$ fleetd init .*\n(?:.*\n)*?\[exit \d+\]$/gmu,
   "machine-add": /^\$ fleetd machine add .*\n(?:.*\n)*?\[exit \d+\]$/gmu,
-  digest: /^ {2}fleetd digest · .*(?:\n {2}\S.*)*/gmu,
-  // From the first "## " heading through the indented and blank lines after it.
-  wake: /^ {2}## .*(?:\n(?: {2}.*)?)*/gmu,
   train: /^\d\d:\d\d:\d\d {2}.*(?:\n\d\d:\d\d:\d\d {2}.*)*/gmu,
 };
 
@@ -463,131 +327,15 @@ function assertPublishable(name: string, text: string) {
   }
 }
 
-/** All string values in a JSON value. */
-const strings = (v: unknown): Array<string> =>
-  typeof v === "string" ? [v] : Array.isArray(v) ? v.flatMap(strings) : v !== null && typeof v === "object" ? Object.values(v).flatMap(strings) : [];
-
-/** Hand-written callouts that quote the product, and ids on the page, that this run's output no longer contains. */
-function staleQuotes(haystack: string) {
-  const norm = (s: string) => s.replaceAll("**", "").replaceAll("’", "'").replace(/\s+/gu, " ").trim();
-  const hay = norm(haystack);
-  const html = fs.readFileSync(path.join(SITE, "home.html"), "utf8");
-  const txt = fs.readFileSync(path.join(SITE, "fleetd.txt"), "utf8");
-  const quotes = [...html.matchAll(/<code class="q">([\s\S]*?)<\/code>|<q>([\s\S]*?)<\/q>/gu)].map((m) =>
-    norm((m[1] ?? m[2] ?? "").replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&")),
-  );
-  const ids = [...new Set([...(html + txt).matchAll(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gu)].map((m) => m[0]))];
-  // "blocks: the Team plan launch" is the app's label around the ask's own text.
-  return [...quotes, ...ids].filter((q) => !hay.includes(q) && !hay.includes(q.replace(/^[a-z]+: /u, "")));
-}
-
 // ---- The run ----
 
 async function main() {
-  const html = fs.readFileSync(path.join(SITE, "home.html"), "utf8");
-  const size = /<img src="\/capture-inbox\.png" width="(\d+)" height="(\d+)"/u.exec(html);
-  check(size, "home.html sizes capture-inbox.png");
-  const scale = Number(size![1]) / APP_WINDOW.width;
-  check(Number(size![2]) === APP_WINDOW.height * scale, `home.html's capture-inbox.png is the app window at one scale`);
   check(fs.existsSync(fleetdCommand([])[0]), `${fleetdCommand([])[0]} is built (cargo build --release --locked -p fleetd)`);
-  fs.rmSync(RUN, { recursive: true, force: true });
-  const shots = path.join(RUN, "shots");
-  fs.mkdirSync(shots, { recursive: true });
-
-  const { operateKey, humanKey, workspace } = await stageLab();
-  const client = new Client({ name: "fleetd-site-capture", version: "0" });
-  await client.connect(new StreamableHTTPClientTransport(new URL(`${HUB_URL}/mcp`), { requestInit: { headers: { authorization: `Bearer ${operateKey}` } } }) as Transport);
-  cleanups.push(() => client.close().catch(() => undefined));
-  const callTool = callToolWith(() => client);
-  const waitEvent = waitEventWith(callTool);
-  const cursor = async () => (await callTool("fleetd_status")).body.cursor as number;
-  const ok = (r: { isError: boolean; body: Body }, what: string) => {
-    check(!r.isError, `${what}: ${JSON.stringify(r.body)}`);
-    return r.body;
-  };
-
-  await until(`${MACHINE} online`, 120_000, async () => {
-    const s = (await callTool("fleetd_status")).body;
-    if (s.machines.some((m: Body) => m.machineId === MACHINE && m.status === "online")) return true;
-    await callTool("events_wait", { cursor: s.cursor, timeoutSec: 5 });
-    return undefined;
-  });
-  ok(await callTool("project_add", { machineId: MACHINE, path: workspace, title: "storefront" }), "project_add storefront");
-  const projectId = await until(`${MACHINE} online with the storefront project`, 120_000, async () => {
-    const s = (await callTool("fleetd_status")).body;
-    const p = s.projects.find((p: Body) => p.machineId === MACHINE && p.workspaceRoot === workspace);
-    const online = s.machines.some((m: Body) => m.machineId === MACHINE && m.status === "online");
-    if (online && p && (await callTool("project_get", { machineId: MACHINE, projectId: p.projectId })).body.stale === false) return p.projectId as string;
-    await callTool("events_wait", { cursor: s.cursor, timeoutSec: 5 });
-    return undefined;
-  });
-  const turn = async (what: string, from: number, threadId: string) => {
-    const { event } = await waitEvent(what, TURN_MS, { cursor: from, machineId: MACHINE, match: (e) => e.threadId === threadId && ENDED.includes(e.type) });
-    check(event.type === "thread.completed", `${what}: ${event.type}`);
-  };
-
-  // Turn 1: the lead starts. The app comes up meanwhile, with an empty inbox.
-  let from = await cursor();
-  const lead = ok(await callTool("lead_start", { machineId: MACHINE, projectId, model: MODEL, effort: "low" }), "lead_start").threadId as string;
-  const screen = await startApp(scale, humanKey);
-  await turn("lead start", from, lead);
-  await screen.show("board", "#/board");
-  log(`lead ${lead} started; app up`);
-
-  // Turn 2: the lead files the asks from its shell; the hub batches them; the app shows the batch.
-  from = await cursor();
-  ok(await callTool("thread_send", { machineId: MACHINE, threadId: lead, message: ASK_MESSAGE, clientRequestId: randomUUID() }), "thread_send");
-  await turn("the lead filing its asks", from, lead);
-  await waitEvent("batch.ready", 120_000, { cursor: from, types: ["batch.ready"] });
-  const open = ok(await callTool("asks_list", { state: "open" }), "asks_list");
-  check(open.asks.length === 3, `the lead filed 3 asks, found ${open.asks.length}`);
-  // The inbox panel holds the whole batch and the reply field; the board's strip shows only the first two asks.
-  await screen.show("inbox", "#/board?inbox");
-  const panel = screen.page.locator('[data-screen="inbox"]');
-  for (const ask of open.asks as Array<Body>) await panel.getByText(String(ask.text)).first().waitFor({ timeout: 30_000 });
-  await screen.settle();
-  await screen.png(path.join(shots, "capture-inbox.png"));
-  log("captured the inbox");
-
-  // The reply, typed into the inbox panel's reply field; Enter sends it as the human. Turn 3: the hub wakes the lead with the answers.
-  from = await cursor();
-  const reply = panel.getByRole("textbox", { name: "Reply" });
-  await reply.fill(REPLY);
-  await reply.press("Enter");
-  // Shot once the answers are delivered: inside its 10 s undo window an answered ask still shows as needing a look.
-  const woken = await waitEvent("the lead woken with the answers", 120_000, { cursor: from, types: ["lead.woken"], match: (e) => e.threadId === lead });
-  for (const ask of open.asks as Array<Body>) await panel.getByText(String(ask.text)).first().waitFor({ state: "detached", timeout: 30_000 });
-  await screen.settle();
-  await screen.png(path.join(shots, "capture-reply.png"));
-  log("captured the inbox after the reply");
-  await turn("the lead's wake", woken.cursor, lead);
-
-  const tail = ok(await callTool("thread_tail", { machineId: MACHINE, threadId: lead, n: 50 }), "thread_tail");
-  const messages = (tail.items as Array<Body>).filter((i) => i.kind === "message");
-  const wake = String(messages.find((m) => m.role === "user")?.text ?? "");
-  check(wake.includes("## Why you are woken"), "the newest user message is the wake");
-  const digest = String(ok(await callTool("digest_get"), "digest_get").text).trim();
-  const answered = ok(await callTool("asks_list", { state: "answered" }), "asks_list answered");
-
   const { init, add } = setupTranscripts();
   const train = trainLines();
   log(train === undefined ? "train: no lab run has merged a PR; the train blocks stay as they are" : `train: ${train.lines.length} lines from ${train.from}`);
-
-  // The wake without its header (project id, timestamp) and without the sections that say "none".
-  const sections = wake.slice(wake.indexOf("## ")).split(/\n(?=## )/u).filter((s) => s.split("\n").slice(1).join("\n").trim() !== "none");
-  const wakeText = sections.map((s) => s.trimEnd()).join("\n\n");
-  const [digestHead = "", ...digestRest] = digest.split("\n");
-  const htmlBlocks: Blocks = {
-    init: transcriptBlocks(init).html,
-    "machine-add": transcriptBlocks(add).html,
-    digest: (indent) => `${indent}<pre class="lines"><span class="c">${esc(digestHead)}</span>${digestRest.length === 0 ? "" : `\n<span class="o">${esc(digestRest.join("\n"))}</span>`}</pre>`,
-  };
-  const txtBlocks: Blocks = {
-    init: transcriptBlocks(init).txt,
-    "machine-add": transcriptBlocks(add).txt,
-    digest: () => indentAll(digest, "  "),
-    wake: () => indentAll(wakeText, "  "),
-  };
+  const htmlBlocks: Blocks = { init: transcriptBlocks(init).html, "machine-add": transcriptBlocks(add).html };
+  const txtBlocks: Blocks = { init: transcriptBlocks(init).txt, "machine-add": transcriptBlocks(add).txt };
   if (train !== undefined) {
     htmlBlocks.train = trainBlocks(train.lines).html;
     txtBlocks.train = trainBlocks(train.lines).txt;
@@ -595,17 +343,10 @@ async function main() {
   for (const [name, make] of [...Object.entries(htmlBlocks), ...Object.entries(txtBlocks)]) assertPublishable(`capture:${name}`, make(""));
 
   // Everything checked: now the site changes.
-  // Every capture the page shows, and only those.
-  const published = fs.readdirSync(shots).filter((shot) => html.includes(`/${shot}`));
-  for (const shot of html.matchAll(/\/(capture-[\w-]+\.png)/gu)) check(published.includes(shot[1]!), `the run shot ${shot[1]}, which home.html shows`);
-  for (const shot of published) fs.copyFileSync(path.join(shots, shot), path.join(SITE, shot));
   fill(path.join(SITE, "home.html"), htmlBlocks);
   fs.writeFileSync(path.join(SITE, "fleetd.txt"), fillTwin(fs.readFileSync(path.join(SITE, "fleetd.txt"), "utf8"), txtBlocks));
-  const stale = staleQuotes([...strings(tail), ...strings(answered), wake, digest, init.out, add.out].join("\n"));
-  log(`wrote ${published.map((s) => `site/${s}`).join(", ")} and the capture blocks in site/home.html and site/fleetd.txt`);
-  fillDocs(docsBlocks({ ...landingTranscripts({ init, add }), digest }));
-  if (stale.length > 0) log(`check by hand: the page says these, this run's output doesn't:\n${stale.map((s) => `  - ${s}`).join("\n")}`);
-  log("callouts are placed by hand: if the app's layout moved, re-aim --x/--y in home.html (see the comment above Fig. 1)");
+  log("wrote the capture blocks in site/home.html and site/fleetd.txt");
+  fillDocs(docsBlocks(landingTranscripts({ init, add })));
 }
 
 /** Docs blocks named `init` and `machine-add` show exactly the landing page's transcripts (the dry-run plan without
@@ -623,7 +364,6 @@ async function docsOnly() {
 if (import.meta.main) (DOCS_ONLY ? docsOnly() : main())
   .catch((error: unknown) => {
     log(`FAIL ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
-    log(`logs: ${path.join(RUN, "logs")}`);
     process.exitCode = 1;
   })
   .finally(async () => {
