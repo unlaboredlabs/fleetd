@@ -209,7 +209,9 @@ impl Requests {
             (None, Some(e)) => Err(e),
             (None, None) => Err(RequestStoreError::Moved {
                 id: id.to_string(),
-                now: self.get(id.as_str())?.map_or(RequestState::Open, |r| r.state),
+                now: self
+                    .get(id.as_str())?
+                    .map_or(RequestState::Open, |r| r.state),
             }),
         }
     }

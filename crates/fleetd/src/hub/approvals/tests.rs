@@ -1092,7 +1092,11 @@ async fn two_answers_at_once_run_the_command_once() {
             },
         );
         let results = [one.unwrap(), two.unwrap()];
-        assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 1, "one answer counts");
+        assert_eq!(
+            results.iter().filter(|r| r.is_ok()).count(),
+            1,
+            "one answer counts"
+        );
         let refused = results.iter().find_map(|r| r.as_ref().err()).unwrap();
         assert_eq!(refused.code, "invalid");
         fake.woken_times(1).await;
@@ -1123,9 +1127,15 @@ async fn an_approve_racing_a_deny_never_ends_denied_after_running() {
         fake.woken_times(1).await;
         let r = fake.request("Q1");
         if go.is_ok() {
-            assert_eq!((r.state, fake.runs.lock().unwrap().len()), (RequestState::Ran, 1));
+            assert_eq!(
+                (r.state, fake.runs.lock().unwrap().len()),
+                (RequestState::Ran, 1)
+            );
         } else {
-            assert_eq!((r.state, fake.runs.lock().unwrap().len()), (RequestState::Denied, 0));
+            assert_eq!(
+                (r.state, fake.runs.lock().unwrap().len()),
+                (RequestState::Denied, 0)
+            );
         }
     }
 }
@@ -1142,7 +1152,9 @@ fn only_one_guarded_write_moves_a_request() {
                 let (requests, id) = (requests.clone(), r.request_id.clone());
                 s.spawn(move || {
                     requests
-                        .update_from(&id, RequestState::Open, |r| r.state = RequestState::Approved)
+                        .update_from(&id, RequestState::Open, |r| {
+                            r.state = RequestState::Approved
+                        })
                         .is_ok() as usize
                 })
             })
@@ -1151,7 +1163,9 @@ fn only_one_guarded_write_moves_a_request() {
     });
     assert_eq!(won, 1);
     let moved = requests
-        .update_from(&r.request_id, RequestState::Open, |r| r.state = RequestState::Denied)
+        .update_from(&r.request_id, RequestState::Open, |r| {
+            r.state = RequestState::Denied
+        })
         .unwrap_err();
     assert_eq!(moved.to_string(), "Q1 is already approved");
 }

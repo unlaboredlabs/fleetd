@@ -225,6 +225,37 @@ impl RetroLedger for OpsPorts {
                 .map(|d| d.value.as_str().trim().to_string())
         })
     }
+    fn decision_by_key(&self, key: &str) -> BoxFut<'_, Option<String>> {
+        let key = key.to_owned();
+        Box::pin(async move {
+            let all = logged(
+                self.hub().decisions.list(&DecisionFilter {
+                    limit: Some(2000),
+                    ..Default::default()
+                }),
+                "listing decisions",
+            )?;
+            all.into_iter()
+                .find(|d| d.key.as_str() == key)
+                .map(|d| d.value.as_str().trim().to_string())
+        })
+    }
+    fn tell_leads(&self, projects: Vec<Value>, line: String) -> BoxFut<'_, ()> {
+        Box::pin(async move {
+            for p in projects {
+                let Some(r) = convert::<_, fleetd_contracts::ids::ProjectRef>(&p) else {
+                    continue;
+                };
+                self.hub().leads.wakes.trigger(
+                    &r,
+                    crate::hub::leads::wakes::Trigger::Line {
+                        kind: crate::hub::leads::wakes::LineKind::Retro,
+                        text: line.clone(),
+                    },
+                );
+            }
+        })
+    }
     fn decision_value(&self, decision_id: &str) -> BoxFut<'_, Option<String>> {
         let id = decision_id.to_owned();
         Box::pin(async move {

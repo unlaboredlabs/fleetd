@@ -2,7 +2,8 @@
 //! window's incidents and the current playbooks and proposes changes; the hub validates each and classifies it by
 //! the fields it touches. Wording changes apply as a new override file and are measured over their window against
 //! the window before: kept when their metric went down and no guarded metric went up, reverted otherwise. A gate
-//! change waits, pending, until a person records the global Decision [`gate_key`] as apply or reject. Nothing applies
+//! change waits, pending, until a person decides [`gate_key`] as apply or reject: the leads whose incidents it fixes
+//! ask in their chat and log the answer, or a person records it globally. Nothing applies
 //! until the global Decision `policy.retro.apply` is true; until then every proposal is only "suggested".
 use super::diff::apply_unified_diff;
 use super::metrics::{DAY_MS, RetroWork, judge, snapshot};
@@ -66,6 +67,11 @@ pub trait RetroPlaybooks: Send + Sync {
 pub trait RetroLedger: Send + Sync {
     /// A global decision's trimmed value.
     fn global_value(&self, key: &str) -> BoxFut<'_, Option<String>>;
+    /// The active decision with this key in any scope, newest first: a gate change's apply or reject, which a project's
+    /// lead logs once the human answered it in chat (or a person records globally).
+    fn decision_by_key(&self, key: &str) -> BoxFut<'_, Option<String>>;
+    /// Puts one event line in the wake of each listed project's lead.
+    fn tell_leads(&self, projects: Vec<Value>, line: String) -> BoxFut<'_, ()>;
     /// A decision's value by id.
     fn decision_value(&self, decision_id: &str) -> BoxFut<'_, Option<String>>;
     fn incident(&self, incident_id: &str) -> BoxFut<'_, Option<Value>>;
@@ -150,8 +156,7 @@ pub fn render_retro_prompt(
     )
 }
 
-/// `playbook.<name>.<sha256(diff)[..10]>`: the global Decision a person records (apply or reject) to settle a gate
-/// change.
+/// `playbook.<name>.<sha256(diff)[..10]>`: the Decision (apply or reject) that settles a gate change.
 pub fn gate_key(proposal: &RetroProposal) -> String {
     let hash = Sha256::digest(proposal.diff.as_bytes());
     let hex: String = hash.iter().map(|b| format!("{b:02x}")).collect();
@@ -332,7 +337,7 @@ impl Retro {
             .collect();
         pending.reverse();
         for StoredProposal { proposal, .. } in pending {
-            if let Some(decision) = self.deps.ledger.global_value(&gate_key(&proposal)).await {
+            if let Some(decision) = self.deps.ledger.decision_by_key(&gate_key(&proposal)).await {
                 out.push(self.on_gate_decision(proposal, &decision).await);
             }
         }
@@ -460,6 +465,15 @@ impl Retro {
         let mut proposals = Vec::new();
         for a in accepted {
             let mut machines: Vec<String> = Vec::new();
+            let mut projects: Vec<Value> = Vec::new();
+            for id in &a.change.fixes_incidents {
+                if let Some(p) = by_id.get(id).and_then(|i| i.get("projectRef"))
+                    && !p.is_null()
+                    && !projects.contains(p)
+                {
+                    projects.push(p.clone());
+                }
+            }
             for id in &a.change.fixes_incidents {
                 if let Some(m) = by_id
                     .get(id)
@@ -502,6 +516,18 @@ impl Retro {
                 },
                 &machines,
             );
+            if inserted.state == "pending" && inserted.kind == "gate" {
+                // Nothing applies a gate change but a person: the leads whose incidents it fixes ask in their chat.
+                let key = gate_key(&inserted);
+                let line = crate::hub::leads::events::Event::GateChange {
+                    proposal: &inserted.proposal_id,
+                    playbook: &inserted.playbook,
+                    expected: &inserted.expected,
+                    key: &key,
+                }
+                .render();
+                self.deps.ledger.tell_leads(projects, line).await;
+            }
             proposals.push(if !advise && a.kind == "wording" {
                 self.apply_text(inserted, &a.after, now).await
             } else {
@@ -641,7 +667,7 @@ impl Retro {
         out
     }
 
-    /// A global decision recorded for one of the retro's gate changes.
+    /// A decision recorded for one of the retro's gate changes.
     async fn on_decision(&self, event: &HubEvent) {
         let data = event.data.clone().unwrap_or(Value::Null);
         if !data["key"]
