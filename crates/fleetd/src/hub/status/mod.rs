@@ -10,6 +10,7 @@ pub mod model;
 pub mod progress;
 pub mod render;
 pub mod risks;
+pub mod rows;
 pub mod seen;
 pub mod timeline;
 pub mod tools;
@@ -126,6 +127,8 @@ pub struct Status {
     since_cache: Mutex<HashMap<String, (i64, i64, fleetd_contracts::status::Since)>>,
     /// Stage weights and durations the progress model measures against; built-in until the nightly recompute.
     calibration: Mutex<Arc<model::Calibration>>,
+    /// The Status screen's rows as last read: the event head and time they were read at.
+    rows: Mutex<Option<(i64, i64, Vec<fleetd_contracts::status::ProjectStatusRow>)>>,
 }
 
 fn content_of(doc: &StatusDoc) -> String {
@@ -162,6 +165,7 @@ impl Status {
             wake: Notify::new(),
             since_cache: Mutex::default(),
             calibration: Mutex::default(),
+            rows: Mutex::default(),
         })
     }
 
@@ -408,6 +412,38 @@ impl Status {
             _ => true,
         });
         doc
+    }
+
+    /// One row per project the caller reads, by title. Read again only after an event, at most every 250 ms, as
+    /// docs are.
+    pub fn project_rows(
+        &self,
+        hub: &Hub,
+        caller: &Caller,
+    ) -> anyhow::Result<Vec<fleetd_contracts::status::ProjectStatusRow>> {
+        let now = now_ms(hub.clock.as_ref());
+        let head = hub.events.head();
+        let cached = self
+            .rows
+            .lock()
+            .unwrap()
+            .as_ref()
+            .filter(|(h, at, _)| *h == head && now - at < COALESCE_MS)
+            .map(|(_, _, r)| r.clone());
+        let all = match cached {
+            Some(r) => r,
+            None => {
+                let queued = self.state.lock().unwrap().slots_queued_since;
+                let world = render::World::read(hub, now, queued, self.calibration())?;
+                let r = rows::rows(hub, &world);
+                *self.rows.lock().unwrap() = Some((head, now, r.clone()));
+                r
+            }
+        };
+        Ok(all
+            .into_iter()
+            .filter(|r| readable(caller, &r.project_ref.machine_id))
+            .collect())
     }
 
     /// A plan view with its progress estimate (the project's, or the order's).

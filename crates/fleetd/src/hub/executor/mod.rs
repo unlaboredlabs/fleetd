@@ -1553,6 +1553,21 @@ impl Executors {
         })
     }
 
+    /// The session's messages as its view holds them, oldest first (the lead chat mirrors the lead's replies).
+    pub async fn messages(
+        self: &Arc<Self>,
+        r: &ThreadRef,
+    ) -> Result<Vec<fleetd_contracts::sessions::ThreadMessage>, ExecutorError> {
+        self.summary_of(r)?;
+        let w = self.view(r).await?;
+        let state = w.state.lock().unwrap();
+        let mut messages: Vec<_> = state.view.messages.values().cloned().collect();
+        messages.sort_by(|a, b| {
+            (a.created_at.as_str(), a.id.as_str()).cmp(&(b.created_at.as_str(), b.id.as_str()))
+        });
+        Ok(messages)
+    }
+
     /// Newest first.
     pub async fn actions(
         self: &Arc<Self>,

@@ -34,7 +34,14 @@ You'll connect an MCP client, such as Claude Code on your laptop, to the hub so 
      --header "Authorization: Bearer $(cat ~/.fleetd/agent.key)"
    ```
 
-4. In Claude Code, ask it to tell a project's lead something. It calls `chat_send`.
+4. In Claude Code, ask it how a project is doing. It reads the chat with `chat_history` and the status with
+   `fleetd_status`.
+
+:::note[Writing to a lead]
+`chat_send` takes only a [human key](/docs/glossary#human-key), because the lead reads the message as yours. To let
+Claude Code write to leads for you, create the key with `--human` in step 1:
+`fleetd hub key create --human --name laptop`.
+:::
 
 `claude mcp add` writes to your Claude config. `--scope` picks where:
 
@@ -63,13 +70,13 @@ post -H "Mcp-Session-Id: $SID" -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"to
 Then call a tool:
 
 ```sh
-FLEETD_HUB=http://hub.your-tailnet.ts.net:4790 FLEETD_KEY_FILE=~/.fleetd/agent.key sh mcp.sh orders_board '{}'
+FLEETD_HUB=http://hub.your-tailnet.ts.net:4790 FLEETD_KEY_FILE=~/.fleetd/agent.key sh mcp.sh status_projects '{}'
 ```
 
-Expected output starts like this:
+On a new hub with no projects yet, the output starts like this:
 
 ```text
-{"id":1,"jsonrpc":"2.0","result":{"content":[{"text":"{\"at\":\"2026-10-19T12:40:58.878Z\",\"next\":\"Open one with order_get; …
+{"id":1,"jsonrpc":"2.0","result":{"content":[{"text":"{\"next\":\"status_get with a project scope for the detail behind a row\",\"rows\":[]}", …
 ```
 
 ## Use a key from the CLI {#key-file}
@@ -109,7 +116,7 @@ as stopping a project, answering an approval or entering a secret, need one.
 
 | Tool | Does | Role |
 |---|---|---|
-| `chat_send {projectRef, text, attachments?, clientRequestId}` | Write to a project's lead. It starts a turn when the lead is idle, steers it when it works, or waits while it starts. | operate |
+| `chat_send {projectRef, text, attachments?, clientRequestId}` | Write to a project's lead. It starts a turn when the lead is idle, steers it when it works, or waits while it starts. The lead reads it as your words. | operate, human key |
 | `chat_history {projectRef, before?, after?, limit?}` | A page of a project's chat, oldest first; up to 100 messages. Without `before` or `after`, the newest. | read |
 | `approval_answer {requestId, decision, message?}` | Approve or deny an approval item: `decision` is `approve` or `deny`; `message` is a denial's reason for the lead. | operate, human key |
 | `secret_submit {requestId, sealed}` | Answer a secret item with a value sealed to the target machine. | operate, human key |
@@ -117,6 +124,7 @@ as stopping a project, answering an approval or entering a secret, need one.
 | `attachment_put {name, mime, dataB64}` | Upload a file (image, text or PDF, at most 5 MiB) for a message. | operate |
 | `attachment_get {projectRef, attachmentId}` | Read a file attached to a project's chat. | read |
 | `project_files {machineId, projectId, query}` | A project's files, for `@`-mentions. | read |
+| `status_projects` | One row per project: its state word, verified and in-flight progress, agents running and the last merge. | read |
 | `workstream_list`, `workstream_get`, `thread_tail`, `fleetd_status` | Lower-level views of the lead's work. | read |
 
 `projectRef` is `{"machineId": "devbox", "projectId": "<id>"}`; `fleetd project list` prints both, as

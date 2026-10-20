@@ -257,15 +257,18 @@ export async function demoFanout(lab: Lab) {
       await lab.waitEvent("the app's order", 600_000, { cursor: orderCursor, types: ["workstream.created"], match: (e) => e.projectId === projectId });
       workstreamId = ((await callTool("workstream_list", { ...ref, limit: 1 })).body.workstreams as Array<Body>)[0]!.workstreamId as string;
     } else {
-      const placed = await app.call("intake_submit", { ...ref, text: ORDER, template: "feature", clientRequestId: `demo-${Date.now()}` });
-      workstreamId = placed.workstreamId as string;
+      // The person's chat message to the lead, as the app sends it; the lead opens the order's workstream itself.
+      const sent = await app.call("chat_send", { projectRef: ref, text: ORDER, clientRequestId: `demo-${Date.now()}` });
+      check(sent.message?.author === "human", `chat_send: ${JSON.stringify(sent)}`);
+      const opened = await lab.waitEvent("the lead opens the order", TURN_MS, { cursor: orderCursor, types: ["workstream.created"], match: (e) => e.projectId === projectId });
+      workstreamId = opened.event.data.workstreamId as string;
     }
     mark("order sent", { workstreamId });
     app.live(true, workstreamId);
 
-    // The lead's wake (10 s debounce), then its brief and three writers. Only observed.
-    await lab.waitEvent("the lead's wake", 60_000, { cursor: orderCursor, types: ["lead.woken"], match: (e) => e.threadId === leadThread });
-    mark("lead woken");
+    // The chat message starts the lead's turn: its brief and three writers. Only observed.
+    await lab.waitEvent("the lead's turn on the order", 60_000, { cursor: orderCursor, types: ["thread.started"], match: (e) => e.threadId === leadThread });
+    mark("lead working");
     const writers = new Map<string, Body>();
     const startedAt = new Map<string, number>();
     let cursor = orderCursor;

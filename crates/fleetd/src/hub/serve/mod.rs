@@ -350,6 +350,7 @@ pub fn build_on(
         tracing::warn!(error = %e, "projects: interrupted clones not closed");
     }
     let plans = crate::hub::plan::Plans::new(db.clone(), events.clone(), clock.clone());
+    let chat = crate::hub::chat::Chat::new(db.clone(), events.clone(), clock.clone());
     let hub = Arc::new(Hub {
         config,
         clock,
@@ -392,6 +393,7 @@ pub fn build_on(
         time,
         status: crate::hub::status::Status::new(fresh),
         plans,
+        chat,
     });
     crate::hub::train::hooks::restore(&hub);
     checks.ports.bind(&hub);
@@ -406,6 +408,7 @@ pub fn build_on(
     crate::hub::approvals::tools::register_lead_calls(&hub);
     crate::hub::plan::calls::register_lead_calls(&hub);
     crate::hub::steer::wire(&hub);
+    crate::hub::chat::tools::register_lead_calls(&hub);
     Ok(hub)
 }
 
@@ -426,6 +429,7 @@ pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>>
     hub.link.start();
     loops.push(hub.watchdog.start());
     loops.push(tokio::spawn(crate::hub::orders::idle::run(hub.clone())));
+    loops.push(tokio::spawn(crate::hub::chat::flow::run(hub.clone())));
     loops.push(tokio::spawn(crate::hub::orders::filler::run(hub.clone())));
     loops.push(tokio::spawn(crate::hub::steer::run_sweep(hub.clone())));
     loops.push(hub.sweep.start(crate::hub::sweep::SWEEP_EVERY_MS));

@@ -154,10 +154,11 @@ shows a dot in the sidebar while the lead’s last message waits for your reply,
 </tr>
 <tr>
 <td>Starting, or its machine is away</td>
-<td>Waits, and goes in as soon as it can. The chat says why it waits.</td>
+<td>Is held, and goes in as soon as it can. The chat says why it waits.</td>
 </tr>
 </tbody>
 </table>
+<p>A message is never lost: if it can’t be delivered, it stays held, the chat says why, and fleetd keeps trying.</p>
 <p>A small receipt under your message shows when it was taken in. See <a href="/docs/steering">Steering</a>.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="follow">Follow the work</h2><a class="sl-anchor-link" href="#follow"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Follow the work”</span></a></div>
 <p>Everything shows up in the chat, quietly:</p>
@@ -182,8 +183,9 @@ shows a dot in the sidebar while the lead’s last message waits for your reply,
 <p>For a project’s progress at a glance, see <a href="/docs/status">Status</a>. For where the time went, see
 <a href="/docs/time-inspector">Where time went</a>.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="stop">Stop everything</h2><a class="sl-anchor-link" href="#stop"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Stop everything”</span></a></div>
-<p>To stop all of a project’s work at once, say “stop” in the chat. From an MCP client, call <code dir="auto">project_stop</code>. Every running
-and queued agent is stopped, and the lead says so in the chat. Merged pull requests stay, and so do the lead and the
+<p>To stop all of a project’s work at once, say “stop” in the chat, or run:</p>
+<div class="expressive-code"><figure class="frame is-terminal not-content"><figcaption class="header"><span class="title"></span><span class="sr-only">Terminal window</span></figcaption><pre data-language="sh"><code><div class="ec-line"><div class="code"><span style="--0:#B392F0;--1:#6F42C1">fleetd</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">project</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">stop</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">devbox/storefront</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="fleetd project stop devbox/storefront"><div></div></button></div></figure></div>
+<p>From an MCP client, call <code dir="auto">project_stop</code>. Every running and queued agent is stopped, and the lead says so in the chat. Merged pull requests stay, and so do the lead and the
 chat: write again to start new work.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="inline">Secrets and risky commands</h2><a class="sl-anchor-link" href="#inline"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Secrets and risky commands”</span></a></div>
 <p>Two things never go through plain chat text:</p>

@@ -18,6 +18,7 @@ Status has one row per project:
 
 Rows needing you come first, then blocked, working and idle. Click a row to open that project's chat. Hover it for
 detail: why it is blocked, the verified and in-flight shares, the latest drops, and a source that has gone quiet.
+An MCP client reads the same rows with `status_projects`.
 Open Status with ⌘. (Ctrl+. on Linux), or from the sidebar.
 
 Status never shows a finish time or an ETA. It shows state instead.
