@@ -315,6 +315,9 @@ impl Chat {
         let Some(mut message) = self.by_source_anywhere(&source)? else {
             return Ok(None);
         };
+        if message.item.as_ref() == Some(&item) {
+            return Ok(Some(message));
+        }
         message.item = Some(item);
         message.updated_at = Some(self.now_ts());
         self.put(&message)?;

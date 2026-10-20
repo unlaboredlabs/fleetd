@@ -311,6 +311,66 @@ pub(super) async fn send_held(hub: &Arc<Hub>, r: &ProjectRef) {
     }
 }
 
+/// A person's request (a secret to enter, a command to approve) as its inline item in the project's chat: added
+/// when it opens, updated in place as it is answered, withdrawn or expires. The item carries no secret value; only
+/// the request's own fields, through `approvals::chat_item`.
+pub(super) async fn show_request(hub: &Hub, id: &str) {
+    let Some(request) = hub.approvals.get(id) else {
+        return;
+    };
+    let r = request.project_ref.clone();
+    if let Err(error) = ensure(hub, &r).await {
+        return tracing::warn!(%error, "chat: history not read");
+    }
+    let item = crate::hub::approvals::chat_item(&request);
+    let shown = match hub.chat.update_item(&request.request_id, item.clone()) {
+        Ok(Some(_)) => Ok(()),
+        Ok(None) => hub.chat.item(&r, item).map(|_| ()),
+        Err(e) => Err(e),
+    };
+    if let Err(error) = shown.and_then(|()| state(hub, &r).map(|_| ())) {
+        tracing::warn!(%error, request = id, "chat: request not shown");
+    }
+}
+
+/// A project's max-agents change is one quiet line in its chat, its event's summary; a fleet-wide change says nothing
+/// in any one chat.
+pub(super) async fn cap_line(hub: &Hub, seq: i64, data: Option<&serde_json::Value>, summary: &str) {
+    let Some(r) = data
+        .and_then(|d| d.get("projectRef"))
+        .and_then(|p| serde_json::from_value::<ProjectRef>(p.clone()).ok())
+    else {
+        return;
+    };
+    if let Err(error) = ensure(hub, &r).await {
+        return tracing::warn!(%error, "chat: history not read");
+    }
+    let line = NewMessage {
+        author: Some(ChatAuthor::System),
+        text: summary.to_owned(),
+        source: Some(format!("cap:{seq}")),
+        ..Default::default()
+    };
+    if let Err(error) = hub.chat.add(&r, line) {
+        tracing::warn!(%error, "chat: max agents line not added");
+    }
+}
+
+/// Requests still open when the hub starts (opened while it was down, or asks the migration kept as requests).
+async fn show_open_requests(hub: &Hub) {
+    let open = hub
+        .approvals
+        .list(&crate::hub::approvals::store::RequestFilter {
+            project_ref: None,
+            states: Some(vec![fleetd_contracts::ledger::RequestState::Open]),
+            kind: None,
+            limit: 500,
+        });
+    for request in open.unwrap_or_default() {
+        show_request(hub, request.request_id.as_str()).await;
+    }
+}
+
 /// A message the offline queue gave up on is held again, to go when it can.
 pub(super) fn expired(hub: &Hub, data: &serde_json::Value) {
     let Some(id) = data["clientRequestId"]
@@ -518,6 +578,7 @@ pub async fn run(hub: Arc<Hub>) {
             }
         })
     };
+    show_open_requests(&hub).await;
     // Leads that ended a turn while the hub was down: their replies land now.
     if let Ok(leads) = hub.leads.records.leads_list() {
         for lead in leads {
@@ -551,6 +612,9 @@ pub async fn run(hub: Arc<Hub>) {
         HubEventType::LeadStarted,
         HubEventType::MachineOnline,
         HubEventType::WriteExpired,
+        HubEventType::RequestOpened,
+        HubEventType::RequestUpdated,
+        HubEventType::AgentsCap,
     ];
     let mut cursor = hub.events.head();
     loop {
@@ -574,6 +638,22 @@ pub async fn run(hub: Arc<Hub>) {
         cursor = page.cursor;
         for event in page.events {
             match event.r#type {
+                HubEventType::AgentsCap => {
+                    cap_line(
+                        &hub,
+                        event.seq.get(),
+                        event.data.as_ref(),
+                        event.summary.as_str(),
+                    )
+                    .await;
+                    continue;
+                }
+                HubEventType::RequestOpened | HubEventType::RequestUpdated => {
+                    if let Some(id) = event.data.as_ref().and_then(|d| d["requestId"].as_str()) {
+                        show_request(&hub, id).await;
+                    }
+                    continue;
+                }
                 HubEventType::WriteExpired => {
                     if let Some(data) = &event.data {
                         expired(&hub, data);
