@@ -319,8 +319,8 @@
        "stale": 0
       },
       "needsYou": {
-       "askIds": [],
-       "count": 0
+       "count": 0,
+       "requestIds": []
       },
       "next": [],
       "now": "2026-10-19T08:42:35.904Z",
@@ -339,7 +339,6 @@
       },
       "seq": 0,
       "since": {
-       "asked": 0,
        "failed": 0,
        "merged": 0,
        "scopeItems": 0,

@@ -218,7 +218,7 @@ export const agentsAt = (f: Fixture, projects: ReadonlyArray<{ ref: Ref; n: numb
     f.answer("orders_board", { projectRef: { ...ref } }, { orders: own, trains: [], at: f.now });
   }
   f.drop("order_get");
-  for (const order of orders) f.answer("order_get", { workstreamId: order["workstreamId"] ?? "W1" }, { order, doneLanes: [], asks: [] });
+  for (const order of orders) f.answer("order_get", { workstreamId: order["workstreamId"] ?? "W1" }, { order, doneLanes: [], requests: [] });
   const machines = arr(obj(f.live.findLast((l) => l["full"] === true))["machines"]);
   f.live = [{ at: f.now, full: true, lanes: live, text: [], ...(machines.length > 0 ? { machines } : {}) }];
   return f;
