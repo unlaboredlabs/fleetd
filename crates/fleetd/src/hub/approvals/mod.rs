@@ -188,7 +188,8 @@ pub trait ApprovalHub: Send + Sync {
     fn workspace_root(&self, project: &ProjectRef) -> BoxFut<'_, Option<String>>;
     /// Wakes the project's lead with a request's outcome (an event line).
     fn wake_request(&self, request: &HumanRequest) -> BoxFut<'_, ()>;
-    /// A person approved or denied a playbook change: the retro applies or drops it.
+    /// A person approved or denied a playbook change, already stored on the request: the retro applies or drops it
+    /// later, without holding up the answer.
     fn gate_answered(&self, request: &HumanRequest) -> BoxFut<'_, ()>;
     /// The project policy's `tools` rules (empty without a policy file); the error says why it could not be read.
     fn tool_rules(&self, project: &ProjectRef) -> BoxFut<'_, Result<ToolRules, String>>;
@@ -785,7 +786,7 @@ impl Approvals {
         if answered.permission.is_some() {
             self.answer_prompt(&answered, reason.as_deref()).await;
         } else if answered.playbook.is_some() {
-            // The retro applies or drops the change; the lead hears the outcome.
+            // The retro applies or drops the change once it is free; the lead hears the answer now.
             self.deps.hub.gate_answered(&answered).await;
             self.deps.hub.wake_request(&answered).await;
         } else if approve {

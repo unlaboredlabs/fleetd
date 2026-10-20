@@ -184,7 +184,11 @@ impl ApprovalHub for OpsPorts {
     }
 
     fn gate_answered(&self, _: &HumanRequest) -> BoxFut<'_, ()> {
-        Box::pin(async move { self.hub().retro.on_gate_answered().await })
+        // The answer is already stored on the request; the retro applies it once its lock is free (a run may hold it
+        // for a whole claude turn), so the person's Approve never waits on that.
+        let retro = self.hub().retro.clone();
+        tokio::spawn(async move { retro.on_gate_answered().await });
+        Box::pin(async {})
     }
 
     fn tool_rules(&self, project: &ports::ProjectRef) -> BoxFut<'_, Result<ToolRules, String>> {
