@@ -33,6 +33,14 @@ const TIGHTEN: &str = "@@ -9,1 +9,1 @@\n-  M: { reviewers: 1, verifier: false, p
 /// A hub with one pending gate change to the bugfix playbook, proposed a minute ago; returns its decision key. A
 /// relaxing one has its approval open in the project's chat, as the retro opens it.
 async fn hub(diff: &str, relaxes: bool) -> (Arc<Hub>, tempfile::TempDir, String) {
+    hub_on(diff, relaxes, HubDb::open_memory().unwrap()).await
+}
+
+async fn hub_on(
+    diff: &str,
+    relaxes: bool,
+    db: Arc<HubDb>,
+) -> (Arc<Hub>, tempfile::TempDir, String) {
     let home = tempfile::tempdir().unwrap();
     let config = HubConfig {
         home: home.path().to_path_buf(),
@@ -41,12 +49,7 @@ async fn hub(diff: &str, relaxes: bool) -> (Arc<Hub>, tempfile::TempDir, String)
         queue_ttl_sec: None,
         retro_model: None,
     };
-    let hub = crate::hub::serve::build_on(
-        HubDb::open_memory().unwrap(),
-        config,
-        ManualClock::at(T as u64),
-    )
-    .unwrap();
+    let hub = crate::hub::serve::build_on(db, config, ManualClock::at(T as u64)).unwrap();
     // The retro reads playbooks and decisions through the ops ports, which `start_loops` binds on a serving hub.
     hub.ops.bind(&hub);
     let mut proposal = RetroProposal {
@@ -238,4 +241,40 @@ async fn an_answer_never_waits_on_a_running_retro() {
     drop(running);
     hub.retro.on_gate_answered().await;
     assert_eq!(state(&hub), "applied");
+}
+
+/// The person approved, then the hub stopped before the change applied: the restarted hub applies it when its retro
+/// starts, not at the next weekly run.
+#[tokio::test]
+async fn an_approved_change_applies_when_the_restarted_hub_starts() {
+    let dir = tempfile::tempdir().unwrap();
+    {
+        let (hub, _home, _) = hub_on(RELAX, true, HubDb::open(dir.path()).unwrap()).await;
+        // The approve is stored; the hub stops before its settle runs.
+        crate::hub::approvals::store::Requests::new(hub.db.clone())
+            .update_from(
+                &fleetd_contracts::chat::ChatRequestId::unchecked("Q1"),
+                fleetd_contracts::ledger::RequestState::Open,
+                |r| r.state = fleetd_contracts::ledger::RequestState::Approved,
+            )
+            .unwrap();
+        assert_eq!(state(&hub), "pending");
+    }
+    let home = tempfile::tempdir().unwrap();
+    let config = HubConfig {
+        home: home.path().to_path_buf(),
+        listen: Listen::default(),
+        url: None,
+        queue_ttl_sec: None,
+        retro_model: None,
+    };
+    let restarted = crate::hub::serve::build_on(
+        HubDb::open(dir.path()).unwrap(),
+        config,
+        ManualClock::at(T as u64),
+    )
+    .unwrap();
+    restarted.ops.bind(&restarted);
+    restarted.retro.settle_on_start().await;
+    assert_eq!(state(&restarted), "applied");
 }
