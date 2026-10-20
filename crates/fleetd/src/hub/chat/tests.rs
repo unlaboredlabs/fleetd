@@ -723,3 +723,129 @@ async fn a_stopped_order_tells_its_lead_to_do_no_more_work_on_it() {
         "{wake}"
     );
 }
+
+/// Every request event the chat follows, handled as the follower handles it.
+async fn follow_requests(hub: &Hub) {
+    for t in [HubEventType::RequestOpened, HubEventType::RequestUpdated] {
+        for data in events_of(hub, t) {
+            flow::show_request(hub, data["requestId"].as_str().unwrap()).await;
+        }
+    }
+}
+
+fn items(hub: &Hub) -> Vec<(fleetd_contracts::chat::ChatMessageId, ChatItem)> {
+    hub.chat
+        .page(&project(), None, None, 50)
+        .unwrap()
+        .0
+        .into_iter()
+        .filter_map(|m| m.item.map(|i| (m.message_id, i)))
+        .collect()
+}
+
+/// End to end for a gated command: the lead's gated_run shows as its inline item and the chat waits on you; the
+/// person denies it with approval_answer, the same item says so, the lead is woken with the outcome, and the wait
+/// is over. Following the same events again changes nothing.
+#[tokio::test]
+async fn a_gated_command_is_an_inline_item_from_request_to_answer() {
+    let (hub, _home) = hub();
+    hub.ops.bind(&hub);
+    give_lead(&hub);
+    let r = project();
+    let p: crate::hub::usage::ports::ProjectRef =
+        serde_json::from_value(json!({ "machineId": "devbox", "projectId": "app" })).unwrap();
+    let input = crate::hub::approvals::GatedRunInput {
+        argv: vec!["./deploy.sh".into(), "prod".into()],
+        cwd: None,
+        class: "irreversible".into(),
+        reason: "prod deploy".into(),
+        secret_env: None,
+        timeout_sec: 600,
+        workstream_id: None,
+    };
+    let open = hub.approvals.gated_run(&p, input).await.unwrap();
+    follow_requests(&hub).await;
+    follow_requests(&hub).await;
+    let shown = items(&hub);
+    assert_eq!(shown.len(), 1, "once per request");
+    let ChatItem::CommandApproval(item) = &shown[0].1 else {
+        panic!("not an approval")
+    };
+    assert_eq!(
+        (item.state, item.gated.as_ref().map(|g| g.argv.len())),
+        (CommandApprovalState::Open, Some(2))
+    );
+    assert!(
+        hub.chat.state(&r, true).unwrap().needs_you,
+        "an open request waits on you, even mid-turn"
+    );
+    let tools = crate::hub::api::registry();
+    tools
+        .call(
+            &hub,
+            &person(),
+            "approval_answer",
+            json!({ "requestId": open.request_id, "decision": "deny",
+            "message": "not today" }),
+        )
+        .await
+        .unwrap();
+    follow_requests(&hub).await;
+    let after = items(&hub);
+    assert_eq!(after.len(), 1);
+    assert_eq!(after[0].0, shown[0].0, "updated in place");
+    let ChatItem::CommandApproval(item) = &after[0].1 else {
+        panic!("not an approval")
+    };
+    assert_eq!(item.state, CommandApprovalState::Denied);
+    assert!(hub.leads.wakes.pending(&r), "the lead hears the outcome");
+    assert!(!hub.chat.state(&r, false).unwrap().needs_you);
+}
+
+/// A secret request's item carries where the value goes and, once stored, its fingerprint: never the value.
+#[test]
+fn a_secret_request_item_never_carries_the_value() {
+    let (hub, _home) = hub();
+    let request: fleetd_contracts::ledger::HumanRequest = serde_json::from_value(json!({
+        "requestId": "Q7", "projectRef": { "machineId": "devbox", "projectId": "app" }, "kind": "secret",
+        "text": "Need the Stripe test key", "state": "stored", "createdAt": AT, "answeredAt": AT,
+        "secret": { "key": "stripe.test_key", "sink": "env:devbox:/work/app/.env", "fingerprint": "ab12cd34" },
+    }))
+    .unwrap();
+    let item = crate::hub::approvals::chat_item(&request);
+    let message = hub.chat.item(&project(), item).unwrap();
+    let text = serde_json::to_string(&message).unwrap();
+    assert!(text.contains("ab12cd34") && text.contains("stripe.test_key"));
+    for leak in ["\"value\"", "sealed", "sk_test"] {
+        assert!(!text.contains(leak), "{leak} in {text}");
+    }
+    assert!(
+        !hub.chat.state(&project(), false).unwrap().needs_you,
+        "a stored secret waits on no one"
+    );
+}
+
+/// A project's max-agents change is one quiet line in its chat, once per event; a fleet-wide one is in no chat.
+#[tokio::test]
+async fn a_max_agents_change_is_one_quiet_line() {
+    let (hub, _home) = hub();
+    let data =
+        json!({ "projectRef": { "machineId": "devbox", "projectId": "app" }, "from": 3, "to": 12 });
+    let line = "Max agents 3 → 12: 3 queued agents start now.";
+    flow::cap_line(&hub, 41, Some(&data), line).await;
+    flow::cap_line(&hub, 41, Some(&data), line).await;
+    flow::cap_line(
+        &hub,
+        42,
+        Some(&json!({ "from": 40, "to": 20 })),
+        "Fleet cap 40 → 20.",
+    )
+    .await;
+    let page = hub.chat.page(&project(), None, None, 10).unwrap().0;
+    assert_eq!(
+        page.iter()
+            .map(|m| (m.author, m.text.as_str()))
+            .collect::<Vec<_>>(),
+        [(ChatAuthor::System, line)]
+    );
+}
