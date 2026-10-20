@@ -15,8 +15,8 @@
 // - cap1:    at max agents 1, the review that gates a merge gets the slot before a queued agent; the train merges.
 // - tools:   no session (lead, writer, reviewer, reader) has an ask tool, and the hub has no inbox tools.
 // - plain:   the lead's chat messages carry no internal ids.
-// On a local repo on lab-b (packages/a and packages/b, no `areas`), no CI:
-// - history: an order and a note placed through a pre-chat build show up as history in the project's chat once the
+// Off the lab repo, no CI (areas on a local repo on lab-b with packages/a and packages/b and no `areas`; cap on its own):
+// - history: an order placed through a pre-chat build shows up as history in the project's chat once the
 //            build under test opens that hub's home (FLEETD_LAB_PRECHAT_BIN; its own small hub, no node).
 // - areas:   bug (c): areas are inferred from the workspace, and two writers in them run at the same time.
 // - cap:     max agents 2 with six agents never runs more than 2 and all finish; 12 → 3 mid-run kills nothing and new
@@ -45,6 +45,8 @@ const DEFAULTS = `defaults:\n  model: ${MODEL}\n  effort: low\n`;
 // The lab repo names its one area, so its parts don't hang on inference; the local repo has no `areas` (bug (c)).
 const LAB_REPO_POLICY = `areas:\n  all: ["**"]\n${DEFAULTS}`;
 const LOCAL_REPO = path.join(LAB, "repo-chat");
+/** The cap part's repo: its own project, with its one area named, so the cap is all it tests. */
+const CAP_REPO = path.join(LAB, "repo-cap");
 /** The history part's own hub; 4782 differs mod 20 from the other lab ports (harness.ts SLOT). */
 const HISTORY_PORT = slotPort(4782);
 /** For a lead the harness keeps out of the way. */
@@ -52,7 +54,6 @@ const QUIET = "Lab run: the harness does everything for this order. Reply to eac
 const PARTS = ["work", "terse", "secret", "gated", "build", "fixes", "cap1", "tools", "plain", "history", "areas", "cap"] as const;
 type Part = (typeof PARTS)[number];
 const LAB_REPO_PARTS: ReadonlyArray<Part> = ["work", "terse", "secret", "gated", "build", "fixes", "cap1", "tools", "plain"];
-const LOCAL_PARTS: ReadonlyArray<Part> = ["history", "areas", "cap"];
 
 /** The hub tools the chat model brings, with the slice that brings each. */
 const TOOL_FROM: Readonly<Record<string, string>> = {
@@ -113,19 +114,19 @@ const git = (cwd: string, ...args: Array<string>) =>
     env: { ...scrubbedEnv(), GIT_AUTHOR_NAME: "lab", GIT_AUTHOR_EMAIL: "lab@localhost", GIT_COMMITTER_NAME: "lab", GIT_COMMITTER_EMAIL: "lab@localhost" },
   });
 
-/** A fresh local repo with two workspace packages and a policy without `areas`. */
-const seedLocalRepo = () => {
-  fs.rmSync(LOCAL_REPO, { recursive: true, force: true });
+/** A fresh local repo with two workspace packages and `policy`. */
+const seedLocalRepo = (dir: string, policy: string) => {
+  fs.rmSync(dir, { recursive: true, force: true });
   for (const p of ["a", "b"]) {
-    fs.mkdirSync(path.join(LOCAL_REPO, "packages", p), { recursive: true });
-    fs.writeFileSync(path.join(LOCAL_REPO, "packages", p, "README.md"), `# package ${p}\n`);
+    fs.mkdirSync(path.join(dir, "packages", p), { recursive: true });
+    fs.writeFileSync(path.join(dir, "packages", p, "README.md"), `# package ${p}\n`);
   }
-  fs.writeFileSync(path.join(LOCAL_REPO, "package.json"), `${JSON.stringify({ name: "chat-lab", private: true, workspaces: ["packages/*"] }, null, 2)}\n`);
-  fs.mkdirSync(path.join(LOCAL_REPO, ".fleetd"), { recursive: true });
-  fs.writeFileSync(path.join(LOCAL_REPO, ".fleetd/policy.yaml"), DEFAULTS);
-  git(LOCAL_REPO, "init", "-q", "-b", "main");
-  git(LOCAL_REPO, "add", ".");
-  git(LOCAL_REPO, "commit", "-q", "-m", "chat lab: two workspace packages");
+  fs.writeFileSync(path.join(dir, "package.json"), `${JSON.stringify({ name: path.basename(dir), private: true, workspaces: ["packages/*"] }, null, 2)}\n`);
+  fs.mkdirSync(path.join(dir, ".fleetd"), { recursive: true });
+  fs.writeFileSync(path.join(dir, ".fleetd/policy.yaml"), policy);
+  git(dir, "init", "-q", "-b", "main");
+  git(dir, "add", ".");
+  git(dir, "commit", "-q", "-m", "chat lab: two workspace packages");
 };
 
 /** Every event since `cursor` (optionally of `types`), paged to the end. */
@@ -370,14 +371,17 @@ export async function chatLead(lab: Lab) {
         ok(`${lead.length} lead messages, none with an internal id`);
       });
     }
-    if (LOCAL_PARTS.some(on)) {
-      seedLocalRepo();
+    await part("history", () => historyPart(lab));
+    if (on("areas")) {
+      seedLocalRepo(LOCAL_REPO, DEFAULTS);
       const projectId = await lab.addProject(WORK_MACHINE, LOCAL_REPO, "repo-chat");
+      await part("areas", () => areasPart(lab, { machineId: WORK_MACHINE, projectId }));
+    }
+    if (on("cap")) {
+      seedLocalRepo(CAP_REPO, LAB_REPO_POLICY);
+      const projectId = await lab.addProject(WORK_MACHINE, CAP_REPO, "repo-cap");
       const ref = { machineId: WORK_MACHINE, projectId };
-      const chat = chatOf(lab, lab.humanCall, ref, need);
-      await part("history", () => historyPart(lab));
-      await part("areas", () => areasPart(lab, ref));
-      await part("cap", () => capPart(lab, chat, ref, need));
+      await part("cap", () => capPart(lab, chatOf(lab, lab.humanCall, ref, need), ref, need));
     }
     check(failures.length === 0, `${failures.length} chat part(s) failed:\n  ${failures.join("\n  ")}`);
   } finally {
@@ -582,7 +586,8 @@ async function fixesPart(lab: Lab, chat: Chat, ref: Ref, fleetd: Shell) {
   const closed = await lab.waitEvent(`${wa} closed on purpose`, 60_000, { cursor: from, types: ["workstream.done"], match: (e) => e.data?.workstreamId === wa });
   check(String(closed.event.data.reason).startsWith("closed on purpose: lab: the fix is not needed") && String(closed.event.data.reason).includes('"share link goes stale"'), `the close names what it drops: ${JSON.stringify(closed.event.data)}`);
   const dropped = await lab.waitEvent(`${ta} cancelled by the close`, 30_000, { cursor: from, types: ["task.cancelled"], match: (e) => e.data?.taskId === ta });
-  check(/^Cancelled: .* was closed on purpose/u.test(String(dropped.event.data?.reason ?? dropped.event.summary)), `the cancel says why: ${JSON.stringify(dropped.event)}`);
+  const why = String((await taskGet(lab, ta)).result?.tail ?? "");
+  check(dropped.event.seq > closed.event.seq && /^Cancelled: .* was closed on purpose/u.test(why), `the cancel came with the close and says why: ${why}`);
   ok(`A. closed on purpose (${over.text.trim().split("\n")[0]}); ${ta} cancelled with the reason`);
 
   // B. The claim is already verifying when the fix is filed: it passes, but the workstream stays open.
@@ -635,6 +640,10 @@ async function cap1Part(lab: Lab, ref: Ref, fleetd: Shell, need: (t: string) => 
   // Tier M: its PR needs a review before the train merges it, so the review is what gates the merge.
   const onMain = { type: "cmd", machineId: ref.machineId, argv: ["gh", "api", onBase(file), "--silent"], expectExit: 0 };
   const w = await quietOrder(lab, ref, fleetd, `chat lab: add ${file} at max agents 1`, [onMain], "M");
+  // Earlier parts' agents (the lead's own work) finish first, so nothing but this part's agents holds a slot or a lease.
+  await lab.until("the project's earlier agents finish", TURN_MS * 3, async () =>
+    (await tasksOf(lab, ref)).some((t) => ["queued", "running"].includes(t.state)) ? (await new Promise((r) => setTimeout(r, 2_000)), undefined) : true,
+  );
   await setMax(1);
   try {
     const from = await lab.cursor();
@@ -649,7 +658,8 @@ async function cap1Part(lab: Lab, ref: Ref, fleetd: Shell, need: (t: string) => 
       ),
       "spawn the writer",
     );
-    // Queued before the review exists: plain order would start it first when the writer's slot frees.
+    // Queued while the writer runs and before the review exists: plain order would start it first when the slot frees.
+    await lab.waitEvent(`${writer} starts`, TURN_MS, { cursor: from, types: ["task.started"], match: (e) => e.data?.taskId === writer });
     const [waiter] = spawnSleepers(lab, fleetd, w, "waits at cap 1", 1, 5);
     check((await taskGet(lab, waiter!.taskId)).state === "queued", `${waiter!.taskId} waits behind ${writer} at max agents 1`);
     const writerEnd = await lab.waitEvent(`${writer} ends`, TURN_MS * 2, { cursor: from, types: TASK_ENDS, match: (e) => e.data?.taskId === writer });
@@ -763,29 +773,24 @@ async function historyPart(lab: Lab) {
   }
 
   const orderText = `Add a dark mode toggle to settings (${STAMP})`;
-  const noteText = `Also keep the current theme as the default (${STAMP})`;
   await withHub(prechat, async (call) => {
     const placed = await call("intake_submit", { ...ref, text: orderText, clientRequestId: randomUUID() });
     check(!placed.isError, `the pre-chat build takes the order: ${JSON.stringify(placed.body)}`);
-    const noted = await call("order_note", { workstreamId: placed.body.workstreamId, text: noteText, clientRequestId: randomUUID() });
-    check(!noted.isError, `the pre-chat build takes the note: ${JSON.stringify(noted.body)}`);
   });
-  ok("pre-chat hub: an order and a note placed by a person");
+  ok("pre-chat hub: an order placed by a person (a note would need a running lead, and this hub has no node)");
 
   await withHub(undefined, async (call) => {
     const page = await call("chat_history", { projectRef: ref, limit: 100 });
     check(!page.isError, `chat_history on the migrated home: ${JSON.stringify(page.body)}`);
     const history = (page.body.messages as Array<ChatMessage>).filter((m) => m.history !== undefined);
     const order = history.find((m) => m.history === "order" && m.author === "human" && m.text.includes(orderText));
-    const note = history.find((m) => ["note", "steer"].includes(String(m.history)) && m.text.includes(noteText));
-    check(order && note, `the order and its note read back as history: ${JSON.stringify(history.map((m) => [m.history, m.author, m.text.slice(0, 80)]))}`);
-    check(order!.seq < note!.seq, `in time order: order ${order!.seq}, note ${note!.seq}`);
+    check(order, `the order reads back as history, the person's words: ${JSON.stringify(history.map((m) => [m.history, m.author, m.text.slice(0, 80)]))}`);
     const leaky = history.filter((m) => INTERNAL_ID.test(m.text));
     check(leaky.length === 0, `history carries no internal ids: ${JSON.stringify(leaky.map((m) => m.text.slice(0, 120)))}`);
     // Read again: nothing is added twice.
     const again = ((await call("chat_history", { projectRef: ref, limit: 100 })).body.messages as Array<ChatMessage>).filter((m) => m.history !== undefined);
     check(again.length === history.length, `a second read adds nothing (${history.length} then ${again.length})`);
-    ok(`chat_history on the migrated home: order (seq ${order!.seq}) and ${note!.history} (seq ${note!.seq}) as history, no ids, stable`);
+    ok(`chat_history on the migrated home: the order as history (seq ${order!.seq}), no ids, stable on a second read`);
   });
 }
 
@@ -832,7 +837,7 @@ async function areasPart(lab: Lab, ref: Ref) {
 async function capPart(lab: Lab, chat: Chat, ref: Ref, need: (t: string) => void) {
   const { check, ok } = lab;
   need("cap_set");
-  const fleetd = shellIn(ref.machineId, LOCAL_REPO);
+  const fleetd = shellIn(ref.machineId, CAP_REPO);
   let current: number | undefined;
   /** Sets the project's max agents; each change is one agents.cap event (setting the same value is none). */
   const setMax = async (n: number) => {
