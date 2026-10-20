@@ -10,8 +10,8 @@ export interface Names {
   readonly leads: ReadonlySet<string>;
   /** change id → PR number. */
   readonly changes: ReadonlyMap<string, number>;
-  /** order id → its title and project title. */
-  readonly orders: ReadonlyMap<string, { readonly title: string; readonly project: string }>;
+  /** workstream id → its title, its project's title, and the project (its chat is where it is opened). */
+  readonly orders: ReadonlyMap<string, { readonly title: string; readonly project: string; readonly ref: { readonly machineId: string; readonly projectId: string } }>;
   readonly projects: readonly { readonly machineId: string; readonly projectId: string; readonly title: string }[];
   readonly machines: readonly string[];
 }
@@ -157,7 +157,7 @@ export const WHY = {
     "Ran alongside other tools from the same message, so this call's own time is an upper bound. The group's time is exact.",
   ciCheck: "GitHub's own start and end, which are whole seconds.",
   human: "From when the ask was published to your answer; when you first saw it isn't known.",
-  lead: "One lead turn serves every order it woke for; its time is split equally across them.",
+  lead: "One lead turn serves all the work it woke for; its time is split equally across it.",
 } as const;
 
 /** What a span's figure can't say exactly (spec §2f): the mark beside the number and the sentence behind it. */

@@ -452,7 +452,7 @@ fn ci_check_critical(input: &RuleInput, out: &mut Vec<Candidate>) {
             key: name.clone(),
             fired: ms >= CI_CRITICAL_MIN_EXCESS && orders.len() >= CI_CRITICAL_MIN_ORDERS,
             message: format!(
-                "CI check `{}` adds {} on the critical path of {} orders (median {} per run)",
+                "CI check `{}` adds {} on the critical path of {} pieces of work (median {} per run)",
                 short(&name),
                 fmt_dur(ms),
                 orders.len(),
@@ -738,7 +738,7 @@ fn review_share(input: &RuleInput, out: &mut Vec<Candidate>) {
         key: String::new(),
         fired: share >= REVIEW_SHARE_MIN_PCT && input.paths.len() >= REVIEW_SHARE_MIN_ORDERS,
         message: format!(
-            "reviews were {share}% of the critical path; median round {}; {k} orders needed 2+ rounds",
+            "reviews were {share}% of the critical path; median round {}; {k} pieces of work needed 2+ rounds",
             fmt_dur(p50)
         ),
         numbers: vec![

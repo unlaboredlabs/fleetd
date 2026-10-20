@@ -92,10 +92,7 @@ fn check(c: &Connection, caller: &Caller, scope: &TimeScope) -> Result<(), ToolE
                 .with_fix("Ask for a machine, project or order scope instead."))
             }
         }
-        None => Err(ToolError::new(
-            ErrorCode::NotFound,
-            "No such order or task.",
-        )),
+        None => Err(ToolError::new(ErrorCode::NotFound, "No such work or task.")),
     }
 }
 

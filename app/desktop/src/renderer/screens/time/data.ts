@@ -226,7 +226,7 @@ export const namesOf = (s: NamesInput): Names => {
   const threads = new Map<string, { role: AgentRole; taskId?: string; title: string }>();
   const leads = new Set<string>();
   const changes = new Map<string, number>();
-  const orders = new Map<string, { title: string; project: string }>();
+  const orders = new Map<string, { title: string; project: string; ref: { machineId: string; projectId: string } }>();
   const lane = (l: { role: AgentRole; taskId?: string | undefined; title: string; threadRef?: { threadId: string } | undefined }) => {
     if (l.threadRef === undefined) return;
     threads.set(l.threadRef.threadId, { role: l.role, title: l.title, ...(l.taskId === undefined ? {} : { taskId: l.taskId }) });
@@ -236,7 +236,7 @@ export const namesOf = (s: NamesInput): Names => {
   const titleOf = (r: { machineId: string; projectId: string }) =>
     projects.find((p) => p.machineId === r.machineId && p.projectId === r.projectId)?.title ?? r.projectId;
   for (const card of Object.values(s.orders ?? {})) {
-    orders.set(card.workstreamId, { title: card.title, project: titleOf(card.projectRef) });
+    orders.set(card.workstreamId, { title: card.title, project: titleOf(card.projectRef), ref: card.projectRef });
     card.lanes.forEach(lane);
     for (const pr of card.prs) changes.set(pr.changeId, pr.number);
   }
