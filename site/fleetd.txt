@@ -22,7 +22,7 @@ GitHub: https://github.com/unlaboredlabs/fleetd
 ONE ORDER, ITS FLEET
 Recorded from a lab hub: three writers opened a PR each, and every PR now has
 two reviewers and a verifier on it. Each row is an agent at work, grouped under
-the PR it checks. Image: fleet-board.png
+the PR it checks. Image: chat-hero.png
 
 
 FIG. 1  THE INBOX
