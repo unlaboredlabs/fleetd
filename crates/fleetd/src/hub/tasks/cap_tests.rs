@@ -135,6 +135,11 @@ async fn lowering_stops_no_agent_and_raising_starts_queued_ones_at_once() {
         raised.next,
         "Max agents 1 → 5: 1 queued agent starts now, 1 slot free."
     );
+    assert_eq!(
+        raised.chat_line,
+        Some((r.clone(), raised.next.clone())),
+        "the project's chat gets the same line"
+    );
 
     let lines: Vec<String> = cap_events(&hub).into_iter().map(|(s, _)| s).collect();
     assert_eq!(
@@ -147,6 +152,7 @@ async fn lowering_stops_no_agent_and_raising_starts_queued_ones_at_once() {
     );
     let set_again = hub.tasks.set_caps(set(5, false)).await.unwrap();
     assert_eq!(set_again.next, "Nothing changed.");
+    assert!(set_again.chat_line.is_none());
     assert_eq!(cap_events(&hub).len(), 2);
 }
 
@@ -189,6 +195,11 @@ async fn max_agents_stays_within_the_fleet_cap() {
         "Fleet cap 40 → 60: queued turns start as slots allow."
     );
     assert!(fleet.1.project_ref.is_none());
+    assert_eq!(
+        outcome.chat_line.map(|(_, line)| line).as_deref(),
+        Some("Max agents 40 → 41: 0 queued agents start now, 41 slots free."),
+        "only the project's change goes to its chat"
+    );
 }
 
 #[tokio::test]
@@ -427,5 +438,37 @@ async fn a_question_to_the_lead_outlives_a_pause() {
     assert!(
         text.starts_with("A slot is free again") && text.ends_with("yes, keep it"),
         "{text}"
+    );
+}
+
+/// The quiet line lands in the project's chat as one system message, the same text as the `agents.cap` event.
+#[tokio::test]
+async fn a_change_is_one_system_line_in_the_projects_chat() {
+    let (hub, _home) = hub();
+    let r = project();
+    super::cap::apply(&hub, set(3, false)).await.unwrap();
+    super::cap::apply(&hub, set(3, false)).await.unwrap();
+    super::cap::apply(
+        &hub,
+        CapChange {
+            cap: Some(50),
+            project: None,
+        },
+    )
+    .await
+    .unwrap();
+    let (messages, _, _) = hub.chat.page(&r, None, None, 50).unwrap();
+    let lines: Vec<(fleetd_contracts::chat::ChatAuthor, &str)> = messages
+        .iter()
+        .map(|m| (m.author, m.text.as_str()))
+        .collect();
+    let events: Vec<String> = cap_events(&hub).into_iter().map(|(s, _)| s).collect();
+    assert_eq!(
+        lines,
+        [(
+            fleetd_contracts::chat::ChatAuthor::System,
+            events[0].as_str()
+        )],
+        "one line for the change, none for a repeat or the fleet cap"
     );
 }

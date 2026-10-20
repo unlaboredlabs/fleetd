@@ -33,6 +33,8 @@ pub struct CapOutcome {
     pub slots: SlotState,
     pub paused: Vec<TaskId>,
     pub next: String,
+    /// The project's one quiet chat line, when its max agents changed. A fleet cap change has none.
+    pub chat_line: Option<(ProjectRef, String)>,
 }
 
 fn plural(n: i64, one: &str, many: &str) -> String {
@@ -42,6 +44,17 @@ fn plural(n: i64, one: &str, many: &str) -> String {
 /// A paused agent's reason, as its task shows it while it waits.
 pub fn paused_reason(max_agents: i64) -> String {
     format!("paused: max agents lowered to {max_agents}; resumes when a slot frees")
+}
+
+/// `cap_set`: the change, then its line in the project's chat. A line that can't be written leaves the change made.
+pub async fn apply(hub: &crate::hub::api::Hub, change: CapChange) -> Result<CapOutcome, TaskError> {
+    let outcome = hub.tasks.set_caps(change).await?;
+    if let Some((r, line)) = &outcome.chat_line
+        && let Err(error) = hub.chat.system_line(r, line)
+    {
+        tracing::warn!(%error, "max agents: chat line not written");
+    }
+    Ok(outcome)
 }
 
 impl Tasks {
@@ -78,6 +91,7 @@ impl Tasks {
 
         let mut paused = Vec::new();
         let mut lines = Vec::new();
+        let mut chat_line = None;
         if cap != cap_before {
             let after = slots.state();
             let line = if cap > cap_before {
@@ -137,6 +151,7 @@ impl Tasks {
                     &line,
                 )
                 .map_err(store_error)?;
+                chat_line = Some((r.clone(), line.clone()));
                 lines.push(line);
             }
             if to > from {
@@ -157,6 +172,7 @@ impl Tasks {
             slots: slots.state(),
             paused,
             next,
+            chat_line,
         })
     }
 
