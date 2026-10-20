@@ -240,6 +240,48 @@ impl RetroLedger for OpsPorts {
                 .map(|d| d.value.as_str().trim().to_string())
         })
     }
+    fn human_global_value(&self, key: &str) -> BoxFut<'_, Option<String>> {
+        let key = key.to_owned();
+        Box::pin(async move {
+            let all = logged(
+                self.hub().decisions.list(&DecisionFilter {
+                    scope: Some(DecisionScope::Global),
+                    source: Some(fleetd_contracts::ledger::DecisionSource::Human),
+                    limit: Some(500),
+                    ..Default::default()
+                }),
+                "listing a person's global decisions",
+            )?;
+            all.into_iter()
+                .find(|d| d.key.as_str() == key)
+                .map(|d| d.value.as_str().trim().to_string())
+        })
+    }
+    fn open_gate_approval(
+        &self,
+        project: Value,
+        change: fleetd_contracts::ledger::PlaybookGateChange,
+    ) -> BoxFut<'_, Option<String>> {
+        Box::pin(async move {
+            let r = convert::<_, crate::hub::usage::ports::ProjectRef>(&project)?;
+            match self.hub().approvals.playbook_change(&r, change).await {
+                Ok(req) => Some(req.request_id.to_string()),
+                Err(e) => {
+                    tracing::warn!(error = e.message, "retro: gate change approval not opened");
+                    None
+                }
+            }
+        })
+    }
+    fn request_state(&self, request_id: &str) -> BoxFut<'_, Option<String>> {
+        let id = request_id.to_owned();
+        Box::pin(async move {
+            self.hub()
+                .approvals
+                .get(&id)
+                .map(|r| r.state.as_str().to_string())
+        })
+    }
     fn tell_leads(&self, projects: Vec<Value>, line: String) -> BoxFut<'_, ()> {
         Box::pin(async move {
             for p in projects {
