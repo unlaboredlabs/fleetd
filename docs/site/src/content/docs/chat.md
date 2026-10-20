@@ -14,8 +14,7 @@ Lead:  Fixed in "Align the checkout button on Safari", merged.
 
 Each project has one lead and one ongoing chat. Click the project in the sidebar to open it.
 
-<!-- TODO(screenshot): chat.png, a lead's reply with the agents strip, and secret and approval items, captured by the
-cutover pipeline (app/desktop/qa/site.ts) once the chat screens are registered. -->
+![The storefront project's chat: you asked to round the cart totals once, the lead replied that writers are splitting the change into three PRs, and under its message the strip shows three agents working. In the sidebar, billing has the needs-you dot.](/docs/img/chat.png)
 
 ## Send a message {#send}
 

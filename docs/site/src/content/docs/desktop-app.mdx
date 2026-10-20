@@ -36,7 +36,7 @@ To change hubs, open Settings (⌘,) → General → Hub.
 
 | Part | Shows |
 |---|---|
-| Sidebar | Your projects. A dot means the lead is waiting for your reply; a running indicator means agents are at work. Above them: Status, Time and Machines. |
+| Sidebar | Your projects. A dot means the lead is waiting for your reply; a count means agents are at work. Below them: Status, Time, Machines and Settings. |
 | The chat | The selected project's conversation with its lead. |
 
 Click a project to open its chat. To add a project, click "Add" next to Projects, then paste a GitHub URL or
@@ -56,14 +56,13 @@ on a chat attach to your message. See [Add a project](/docs/projects#add-a-proje
 | Secret and approval items | A masked field with "Save secret", or a command (or a tool's permission request) with Approve and Deny. See [Secrets & approvals](/docs/approvals-and-secrets). |
 | The header | The project, its state word (as in [Status](#status)), and its [Max agents](/docs/projects#max-agents) control ("agents 6 / 12"). |
 
-{/* TODO(screenshot): chat.png, a project's chat with the agents strip and a one-line event. Captured by the cutover
-pipeline (app/desktop/qa/site.ts) once the chat screens are registered. */}
+![The storefront project's chat: you asked to round the cart totals once, the lead replied that writers are splitting the change into three PRs, and under its message the strip shows three agents working. In the sidebar, billing has the needs-you dot.](/docs/img/chat.png)
 
 How to work with the lead: [Chat with the lead](/docs/chat).
 
 ## Status {#status}
 
-{/* TODO(screenshot): status.png, the one-row-per-project Status view, from the same pipeline. */}
+![Status with one row per project: billing waiting on you at 64%, checkout blocked at 31%, storefront working at 78% with three agents, each with its last merge.](/docs/img/status.png)
 
 Status shows one row per project: a state word (waiting on you, blocked, working or idle), its two-tone progress bar,
 the agents running, and what merged last. Click a row to open that project's chat; hover it for detail.

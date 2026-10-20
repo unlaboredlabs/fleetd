@@ -109,6 +109,8 @@ both; the lead plans to them.
 
 The header shows "· 2 waiting" when agents are queued. Before you save, the slider says what the change will do.
 
+![The Max agents control open in storefront's chat header: a slider set to 12, from 1 up to 16 (the fleet's limit), with "6 agents running now" and Save.](/docs/img/max-agents.png)
+
 From a terminal:
 
 ```sh

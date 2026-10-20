@@ -22,6 +22,8 @@ Everything else the lead needs from you is a plain question in the chat. See
 When a lead needs an irreversible step, one that costs money, or one that uses a credential, it files the exact
 command as a [gated command](/docs/glossary#gated-command).
 
+![An approval item in storefront's chat: the lead says the command writes to the production database; the Command card, marked "Can't be undone", shows the migration command on devbox with the secret it gets, and Approve and Deny. Above it, an earlier run that exited 0 and a denied permission request.](/docs/img/chat-command.png)
+
 1. The item shows the command, the reason and the machine.
 2. Click Approve to run it, or Deny to refuse.
 3. The node runs exactly the stored command, in the project's workspace.
@@ -34,6 +36,8 @@ back.
 
 When a lead needs an API key or a password, the item names the machine and where the value goes: a line in an env
 file, or a file.
+
+![A secret item in storefront's chat: the lead needs the Stripe test key, which goes to devbox only. The card names where it is saved, with a masked field and Save secret. Above it, a secret already saved, with its fingerprint.](/docs/img/chat-secret.png)
 
 1. Type the value in the masked field.
 2. The app seals it to that machine's key (a libsodium sealed box) and wipes what you typed.
