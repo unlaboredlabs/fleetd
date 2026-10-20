@@ -5,7 +5,7 @@ description: Every fleetd doctor finding, what causes it, and the command that f
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-Find the problem `fleetd doctor` reported, or why an order is stuck, and fix it. `fleetd doctor` checks the
+Find the problem `fleetd doctor` reported, or why work is stuck, and fix it. `fleetd doctor` checks the
 [hub](/docs/glossary#hub) and every [worker](/docs/glossary#worker).
 
 ## Run the doctor {#doctor}
@@ -105,12 +105,12 @@ fixed. fleetd turns claude's auto-updater off for its own sessions.
 | "Commits on laptop use … ; the hub's identity is …" `[commit_identity]` | The machine's git config differs from the hub's. | Same as above. |
 | "… free under ~ on laptop; fleetd needs at least 5.0 GB" `[disk]` | Low disk. Each writer gets its own git worktree. | Free space under the named path. `df -h <path>` shows what is left. |
 | "The node on laptop won't run commands in … (outside its cmdRoots)" `[cmd-roots]` | A project's checkout is outside the node's `cmdRoots`, so the merge train can't merge its PRs. | Move the checkout into your home directory, or add its folder to `cmdRoots` in [`node.json`](/docs/config-and-files#node-json) and restart the node. |
-| "laptop sleeps after 15 min idle on AC power" `[sleep]` | The machine sleeps between orders and drops off the fleet. | Turn off sleep on AC power (below). |
+| "laptop sleeps after 15 min idle on AC power" `[sleep]` | The machine sleeps between jobs and drops off the fleet. | Turn off sleep on AC power (below). |
 | "New turns on laptop are paused by the usage breaker" `[usage_breaker]` | Its Claude login hit a plan or rate limit. | Wait for the reset (the finding says when), or, once it has capacity, call `usage_resume` from an [MCP client](/docs/mcp-clients). |
 
 ### Keep a machine awake {#sleep}
 
-While agents run, the node keeps its machine awake. Between orders nothing does. Sleep on battery only is fine.
+While agents run, the node keeps its machine awake. Between jobs nothing does. Sleep on battery only is fine.
 
 | Desktop | Fix |
 |---|---|
@@ -148,9 +148,10 @@ systemctl --user restart fleetd-node.service    # a node, on that machine
 | Hub | `~/.fleetd/hub/hub.log`. Run by hand: the terminal. |
 | Node | `~/.fleetd/logs/node.log`. Run by hand: the terminal. |
 
-## An order is stuck {#stuck}
+## Work is stuck {#stuck}
 
-Start with what the order waits on:
+Ask the lead in the chat what it is waiting on. For the full view, run `fleetd status` with the project or the
+work's id:
 
 ```sh
 fleetd status W41
@@ -158,10 +159,10 @@ fleetd status W41
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| "W41 is a draft: waiting for the lead's brief" | The lead hasn't written the order's [brief](/docs/glossary#brief) yet. | `fleetd status W41 --watch` shows it once the brief exists. If the lead never starts, see [Its lead](/docs/projects-and-orders#its-lead). |
+| "W41 is a draft: waiting for the lead's brief" | The lead hasn't written the work's [brief](/docs/glossary#brief) yet. | `fleetd status W41 --watch` shows it once the brief exists. If the lead never starts, see [Its lead](/docs/projects#its-lead). |
 | A pull request stays queued on the [merge train](/docs/glossary#merge-train) | The train can't work in the checkout, or CI or a review is pending. | `fleetd status` lists a PR the train can't move under risks, with the train's error. For more, run `fleetd change status X<n>` in the project's checkout on its worker. The change id `X<n>` is listed by the `train_get` tool. |
 | A risk says "#212 can't merge: its checkout on laptop is outside the node's cmdRoots" | The checkout is outside the node's `cmdRoots` (default: your home directory). | Add its folder to `cmdRoots` in [`node.json`](/docs/config-and-files#node-json) and restart the node. |
-| The order waits and the app says why | The lead can't start: `claude` logged out, out of range, or the worker offline. | See [Claude](#claude) and [Machines](#machines). |
+| Your message waits and the chat says why | The lead can't start: `claude` logged out, out of range, or the worker offline. | See [Claude](#claude) and [Machines](#machines). |
 
 "Waiting on" lists the stages left for the item in fleetd's pipeline, in order, leaving out review when the PR's tier
 needs none. See [What it waits on](/docs/status#waits).
@@ -169,4 +170,4 @@ needs none. See [What it waits on](/docs/status#waits).
 `fleetd change status` is a lead-side command: run it inside the project's checkout on the worker. If that node uses
 a non-default home, set `FLEETD_HOME` as it has, or `FLEETD_NODE_SOCK=<node home>/node.sock`.
 
-Then check the logs (above) for the hub and the order's worker.
+Then check the logs (above) for the hub and the project's worker.

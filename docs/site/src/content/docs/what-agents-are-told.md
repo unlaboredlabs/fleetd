@@ -66,7 +66,7 @@ In place of a clock, leads are told to work for throughput:
 
 ### The agent cap {#cap}
 
-Each project has a cap on how many agents run at once. Every wake tells the lead the live count, such as "agents: 7
+Each project has a cap on how many agents run at once, its [Max agents](/docs/projects#max-agents). Every wake tells the lead the live count, such as "agents: 7
 running of 12, 2 queued". The lead is told to:
 
 - Plan to the cap: at most that many slices at once, the rest queued by value, each started as a slot frees.
@@ -81,7 +81,7 @@ Lowering the cap stops nothing that is running; raising it starts queued agents 
 
 Leads are also told that no gate relaxes for speed: reviews, CI, the train, done-when checks and your approvals stay
 exactly as they are, and no filler work is made up to fill a slot. fleetd backs this up with two wakes, never with a
-task of its own. See [How the lead schedules work](/docs/projects-and-orders#scheduling).
+task of its own. See [How the lead schedules work](/docs/projects#scheduling).
 
 ### Claude's auto memory is off {#auto-memory}
 
@@ -191,9 +191,16 @@ Your version stays in use.
 ## When fleetd retires a prompt you edited {#retired}
 
 A release can fold a prompt into another one or replace it with fixed text. Your edit to it then stops applying, but
-fleetd keeps it. Settings → Prompts lists it with the prompt that covers it now: copy what you still want into that
-one, then delete the old edit. From an MCP client, `prompts_list` returns these under `orphans`, and `prompt_reset`
-with the old id deletes one.
+fleetd keeps it and never moves it for you.
+
+1. Open Settings → Prompts. Under "Edits that no longer apply", each one says, for example, "Your edit to Wake: task
+   finished (hub-wide) no longer applies", why, and which prompt to copy it into.
+2. "Show your text" shows your old edit; "Copy your text" copies it.
+3. Paste what you still want into the prompt it names. If none takes its place, use your
+   [instructions](#instructions).
+4. Delete the old edit.
+
+From an MCP client, `prompts_list` returns these under `orphans`, and `prompt_reset` with the old id deletes one.
 
 An edited playbook file is listed the same way. Its review and check rules still apply, but its instructions no longer
 reach the lead: the lead prompt has a section for each kind of work.
@@ -206,8 +213,8 @@ attempt, a lead at its next start. To give a running lead your edit now, restart
 
 ## See exactly what an agent was told {#told}
 
-In an order, click "What the lead was told", or open an agent's sheet. It shows the exact first message, which version
-of each prompt it used, and the tools it never gets.
+In a project's chat, open "What the lead was told", or open an agent from the agents strip. It shows the exact first
+message, which version of each prompt it used, and the tools it never gets.
 
 On the hub machine:
 

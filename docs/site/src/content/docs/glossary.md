@@ -10,64 +10,87 @@ Every fleetd term, A to Z. Each one links to the page that uses it most.
 A key that lets an MCP client or script call the hub, with a role (`read`, `operate` or `admin`). It starts with
 `fld_` and is shown once. See [MCP clients](/docs/mcp-clients).
 
+## Agents strip {#agents-strip}
+
+The compact line under the lead's message in a chat: how many agents are working, one line each. It expands to their
+lanes and time.
+
+## Approval {#approval}
+
+An item in the chat that shows a [gated command](#gated-command) with Approve and Deny. See
+[Secrets & approvals](/docs/approvals-and-secrets#approve).
+
 ## Area {#area}
 
-A named set of paths in a project, such as `docs: ["docs/**"]`. A writer task may only touch the areas it leases.
-Set them in the [policy file](/docs/config-and-files#policy).
+A named set of paths in a project, such as `docs: ["docs/**"]`. A writer task may only touch the areas it leases, and
+writers in different areas run at the same time. fleetd [infers them from the repo](/docs/config-and-files#inferred-areas)
+unless the [policy file](/docs/config-and-files#policy) sets them.
 
 ## Brief {#brief}
 
-The plan a lead writes for an order before any work starts: what to build, and the done-when checks that prove it.
+The plan a lead writes for a piece of work before it starts: what to build, and the done-when checks that prove it.
+
+## Chat {#chat}
+
+The one ongoing conversation with a project's lead. You give work and answer the lead there. See
+[Chat with the lead](/docs/chat).
 
 ## Claim {#claim}
 
-A lead saying an order is done (the `claim_done` tool). The hub then runs the done-when checks itself.
+A lead saying the work is done (the `claim_done` tool). The hub then runs the done-when checks itself.
 
 ## Critical path {#critical-path}
 
-The chain of work that decides when an order finishes. Shortening it makes the order finish sooner. See
+The chain of work that decides when a piece of work finishes. Shortening it makes it finish sooner. See
 [Where time went](/docs/time-inspector#critical-path).
 
 ## Decision {#decision}
 
-Your answer to a lead's question in chat, which the lead logs in a searchable log so it never asks it again.
+Your answer to a lead's question, logged by the lead with `decide` in a searchable log. A later question that a
+decision already answers is never asked again.
 
 ## Done-when check {#done-when-check}
 
-A check in a brief that proves the order is finished: a PR merged, CI green, a command on a machine, an HTTP check,
-a judge, or a person.
+A check in a brief that proves the work is finished: a PR merged, CI green, a command on a machine, an HTTP check, a
+judge, or you, asked in one line in the chat.
 
 ## Gated command {#gated-command}
 
 A command a lead wants to run that is irreversible, costs money or uses a credential. It runs only after you approve
-it. See [Approvals & secrets](/docs/approvals-and-secrets).
-
-## Human key {#human-key}
-
-A key that belongs to a person's device, such as the desktop app. Only a human key can approve commands, enter
-secrets or steer.
+it in the chat. See [Secrets & approvals](/docs/approvals-and-secrets).
 
 ## Hub {#hub}
 
 The coordinator of a fleet. It runs on one always-on machine and stores all state. See [Concepts](/docs/concepts).
 
+## Human key {#human-key}
+
+A key that belongs to a person's device, such as the desktop app. Only a human key can write to a lead, approve
+commands, enter secrets or steer: what it sends counts as yours.
+
 ## Lead {#lead}
 
-The long-running Claude session that plans a project's orders and runs its tasks. Each project has one. It never
-writes code.
+The long-running Claude session that plans a project's work and runs its agents. Each project has one, and one chat
+with you. It never writes code.
+
+## Max agents {#max-agents}
+
+The cap on how many agents run at once, per project and across the fleet. Agents over it queue. See
+[Max agents](/docs/projects#max-agents).
 
 ## Merge train {#merge-train}
 
 The queue that merges a repo's pull requests after CI passes on the exact commit, in batches when they touch
 different files. Only the train merges. See [Merge train](/docs/merge-train).
 
+## Needs-you dot {#needs-you}
+
+The dot on a project in the sidebar: the lead's last message waits for your reply, or a secret or approval item is
+open.
+
 ## Node {#node}
 
 The fleetd process on a worker. It connects out to the hub and starts the Claude sessions.
-
-## Order {#order}
-
-One line that says what you want done, such as `fix the typo in the README`. Inside fleetd it is a workstream.
 
 ## Pairing code {#pairing-code}
 
@@ -80,8 +103,7 @@ items.
 
 ## Playbook {#playbook}
 
-The instructions for a kind of order: a feature, a fix (`fix:`), research (`research:`) or finishing open work
-(`finish:`).
+The instructions a lead follows for a kind of work: a feature, a fix, research, or finishing open work.
 
 ## Policy file {#policy-file}
 
@@ -90,16 +112,21 @@ The instructions for a kind of order: a feature, a fix (`fix:`), research (`rese
 
 ## Project {#project}
 
-A git repo on a worker that fleetd works on. See [Projects & orders](/docs/projects-and-orders).
+A git repo on a worker that fleetd works on, with one lead and one chat. See [Projects](/docs/projects).
 
 ## Receipt {#receipt}
 
-The status of a steer: queued, delivered, acknowledged, not acknowledged, withdrawn or failed. See
-[Steering](/docs/steering#receipts).
+The small mark under a message you sent while the lead was working: whether it was queued, taken in, or acknowledged.
+See [Steering](/docs/steering#receipts).
 
 ## Reviewer {#reviewer}
 
 A Claude session that reviews a pull request. Reviewers don't read the PR description; they judge the change.
+
+## Secret {#secret}
+
+An item in the chat with a masked field. The value is sealed to one machine and never enters the transcript. See
+[Secrets & approvals](/docs/approvals-and-secrets#secrets).
 
 ## Session {#session}
 
@@ -111,11 +138,12 @@ Room for one running session. The hub caps how many sessions run at once.
 
 ## Steer {#steer}
 
-A short message to an agent that is already working, such as "skip the docs page". See [Steering](/docs/steering).
+A message to an agent that is already working, such as "skip the docs page". In a chat, typing while the lead works
+steers it. See [Steering](/docs/steering).
 
 ## Task {#task}
 
-One job a lead hands to a session: write code, review a PR, or research. Task ids look like `T88`.
+One job a lead hands to a session: write code, review a PR, or research.
 
 ## Tier {#tier}
 
@@ -128,7 +156,7 @@ A session that checks that a large (`L`) change works, in addition to its two re
 
 ## Wake {#wake}
 
-A message that restarts a lead's work: a new order, a task result, an answer from you.
+A message that restarts a lead's work: your chat message, a task result, a free slot.
 
 ## Worker {#worker}
 
@@ -136,7 +164,7 @@ A machine that runs agents: any machine with a node. See [Machines](/docs/machin
 
 ## Workstream {#workstream}
 
-fleetd's record of an order, with an id such as `W41`.
+fleetd's record of one piece of the lead's work, with an id such as `W41`. The lead keeps them; you never file one.
 
 ## Writer {#writer}
 
