@@ -31,7 +31,7 @@ pub enum LineKind {
     TaskWaiting,
     Train,
     ResearchVerdict,
-    /// A person added to an order (`order_note`).
+    /// A person's words for the lead about an order (a steer, a stop).
     Human,
     /// The lead ended a turn with an order frozen and nothing under way (`orders::idle`).
     Idle,

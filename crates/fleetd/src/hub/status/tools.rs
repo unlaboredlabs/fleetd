@@ -3,10 +3,10 @@ use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::mcp::{
-    ErrorCode, StatusGetInput, StatusGetOutput, StatusSeenInput, StatusSeenOutput, StatusWaitInput,
-    StatusWaitOutput,
+    ErrorCode, StatusGetInput, StatusGetOutput, StatusProjectsInput, StatusProjectsOutput,
+    StatusSeenInput, StatusSeenOutput, StatusWaitInput, StatusWaitOutput,
 };
-use fleetd_contracts::prim::Count;
+use fleetd_contracts::prim::{Count, List};
 use fleetd_contracts::status::StatusScope;
 
 use crate::hub::api::{Caller, Hub, Registry, ToolError, require};
@@ -15,6 +15,7 @@ pub fn register(tools: &mut Registry) {
     tools.add("status_get", status_get);
     tools.add("status_wait", status_wait);
     tools.add("status_seen", status_seen);
+    tools.add("status_projects", status_projects);
 }
 
 /// A project or order scope needs read on its machine; the fleet is filtered to what the key reads.
@@ -103,6 +104,26 @@ async fn status_wait(
         version: Count::unchecked(version),
         next: None,
         truncated: None,
+    })
+}
+
+async fn status_projects(
+    hub: Arc<Hub>,
+    caller: Caller,
+    _input: StatusProjectsInput,
+) -> Result<StatusProjectsOutput, ToolError> {
+    let mut rows = hub.status.project_rows(&hub, &caller).map_err(|e| {
+        ToolError::new(
+            ErrorCode::Failed,
+            format!("The status rows were not read: {e}"),
+        )
+    })?;
+    let truncated = (rows.len() > 200).then_some(true);
+    rows.truncate(200);
+    Ok(StatusProjectsOutput {
+        rows: List::unchecked(rows),
+        next: Some("status_get with a project scope for the detail behind a row".into()),
+        truncated,
     })
 }
 

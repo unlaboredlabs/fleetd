@@ -1553,6 +1553,21 @@ impl Executors {
         })
     }
 
+    /// The session's messages as its view holds them, oldest first (the lead chat mirrors the lead's replies).
+    pub async fn messages(
+        self: &Arc<Self>,
+        r: &ThreadRef,
+    ) -> Result<Vec<fleetd_contracts::sessions::ThreadMessage>, ExecutorError> {
+        self.summary_of(r)?;
+        let w = self.view(r).await?;
+        let state = w.state.lock().unwrap();
+        let mut messages: Vec<_> = state.view.messages.values().cloned().collect();
+        messages.sort_by(|a, b| {
+            (a.created_at.as_str(), a.id.as_str()).cmp(&(b.created_at.as_str(), b.id.as_str()))
+        });
+        Ok(messages)
+    }
+
     /// Newest first.
     pub async fn actions(
         self: &Arc<Self>,
@@ -1851,9 +1866,22 @@ impl Executors {
         cwd: &str,
         relative_path: &str,
     ) -> Result<Option<String>, ExecutorError> {
+        let project_id = self.project_for_root(machine_id, cwd)?;
+        self.read_project_file(machine_id, &project_id, relative_path)
+            .await
+    }
+
+    /// A file of the project by its id, which the node knows as soon as `project_upsert` returns. None when the
+    /// file does not exist.
+    pub async fn read_project_file(
+        &self,
+        machine_id: &MachineId,
+        project_id: &ProjectId,
+        relative_path: &str,
+    ) -> Result<Option<String>, ExecutorError> {
         let op = NodeOperation::Read;
         let call = SessionCall::ReadFile {
-            project_id: self.project_for_root(machine_id, cwd)?,
+            project_id: project_id.clone(),
             path: non_empty(machine_id, op, "path", relative_path)?,
         };
         match self.call(machine_id, op, call, READ_TIMEOUT).await? {

@@ -33,12 +33,13 @@ The hub checks these on every fleetd call a session makes, through its MCP tools
 |---|---|
 | Who can start agents | A lead, with `spawn_agent`, `workstream_spawn`. A task's agent can't. |
 | Depth | 1. A lead is depth 0 and its tasks depth 1; nothing goes deeper. |
-| Open tasks per lead | 32 (queued, running or idle). Slots cap what runs at once. |
+| Open tasks per lead | 32 (queued, running or idle). |
+| Agents running at once, per project | The project's max agents, which a person sets (`cap_set`, the chat's Max agents); unset, the fleet cap. A spawn over it queues and starts by itself. The lead's own turns don't count. |
+| Agents running at once, fleet-wide | The fleet cap, 40 by default. 4 slots of it are kept for lead turns. |
 | Calls a task's agent may make | `report`, `ask_lead`, `claim_done`. Every other call is refused. |
 | Finish-all children open at once | 5 by default; the policy file's `finishAll.maxChildren` changes it. |
 | What a child workstream may serve | `issue`, `defect`, `done`. Never invented work. |
 | Gated commands (`gated_run`) | Classes `irreversible`, `money`, `credential`. Run only after a human approves; at most 1800 s. |
-| What a lead asks the human | Product, money and irreversible calls, in its chat; it logs each answer with `decide` and decides everything else itself. Secrets come only through `request_secret`. |
 
 These limits cover calls to fleetd, not what the agent's own shell can do. A task runs with full Bash, so `gated_run` is not the only way it could run a command. A process that leaves its session's process tree (for example with `setsid`) and scrubs its environment counts as you, with no limits: see "Known limit" on the Security page. Run agents you don't trust as a different OS user.
 
@@ -54,7 +55,7 @@ Every lead gets these, the finish-all lead included.
 | [`list_agents`](#list_agents) | The project's tasks, newest first, optionally by state or workstream. | No |
 | [`stop_agent`](#stop_agent) | Stop a task: interrupts its thread and releases its slot and leases. | No |
 | [`brief`](#brief) | Freeze a draft workstream's brief (goal, why, pointers, constraints, doneWhen checks, tier, estimate) and start it. | Changing a frozen brief (amend) needs the human's yes in chat, logged with decide. |
-| [`request_secret`](#request_secret) | Ask the human for a secret (a key, a token, a password). | No |
+| [`request_secret`](#request_secret) | Ask the human for a secret (a key, a token, a password). | The human enters the value in chat; you see only its fingerprint. |
 | [`request_withdraw`](#request_withdraw) | Take back a secret request or a command approval you no longer need (the human said so in chat). | No |
 | [`decide`](#decide) | Log a decision: one you made yourself, or the human's answer to a question you asked in chat (so you never ask it twice). | No |
 | [`claim_done`](#claim_done) | Claim a workstream done: fleetd runs its frozen done-when checks itself, and only all of them passing makes it done. | No |
@@ -68,6 +69,7 @@ Every lead gets these, the finish-all lead included.
 | [`decisions_search`](#decisions_search) | Search the decision log. | No |
 | [`change_enqueue`](#change_enqueue) | Put a PR no task's result put there on its repo's merge train; only the train merges. | No |
 | [`change_status`](#change_status) | A merge-train change as stored. | No |
+| [`workstream_open`](#workstream_open) | Open a workstream for work you took from the chat: a draft you then freeze with brief. | No |
 | [`workstream_spawn`](#workstream_spawn) | A finish-all lead starts a child workstream for one item with a value source. | No |
 | [`inventory`](#inventory) | The project's open work, ranked. | No |
 
@@ -255,11 +257,11 @@ Ask the human for a secret (a key, a token, a password). The app shows a masked 
 |---|---|---|---|
 | `envName` | string | no | An env: sink's variable, when not the one the key names. |
 | `key` | string | yes | The secret's name, a dotted slug such as "stripe.test_key". |
-| `sink` | string | yes |  |
+| `sink` | string | yes | Where the value is written: env:&lt;machine>:&lt;file> (one NAME=value line) or file:&lt;machine>:&lt;path>. |
 | `text` | string | yes | One line on why it is needed. At most 500 characters. |
 | `workstreamId` | string | no | `W<n>`, e.g. `W1`. |
 
-**Who may call:** a lead, checked by the hub. **Needs a human:** no.
+**Who may call:** a lead, checked by the hub. **Needs a human:** The human enters the value in chat; you see only its fingerprint.
 
 ```json
 {
@@ -576,6 +578,28 @@ A merge-train change as stored.
   "name": "change_status",
   "arguments": {
     "changeId": "X12"
+  }
+}
+```
+
+### workstream_open
+
+Open a workstream for work you took from the chat: a draft you then freeze with brief. template picks the playbook (feature, bugfix, research, finish-all); serves is optional.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `serves` | string | no |  |
+| `template` | string | no | The prefixes `bug:`/`fix:`, `research:` and `finish:` pick bugfix, research and finish-all. One of `bugfix`, `feature`, `research`, `finish-all`. |
+| `text` | string | yes | At most 4000 characters. |
+
+**Who may call:** a lead, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "workstream_open",
+  "arguments": {
+    "template": "feature",
+    "text": "Build the schedules page"
   }
 }
 ```

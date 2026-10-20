@@ -492,6 +492,8 @@ export interface Lab {
   readonly hubHome: string;
   /** An operate key on every machine. */
   readonly key: string;
+  /** Calls with a person's key, as the desktop app pairs one: chat_send and the other human-only tools. */
+  readonly humanCall: (name: string, args?: Record<string, unknown>) => Promise<{ readonly isError: boolean; readonly body: Body }>;
   /** Scratch directory for one scenario; it may not exist yet. */
   readonly dir: string;
   readonly callTool: (name: string, args?: Record<string, unknown>) => Promise<{ readonly isError: boolean; readonly body: Body }>;
@@ -566,6 +568,46 @@ export const waitEventWith =
     });
     return { event, cursor };
   };
+
+/**
+ * An order as a person gives one: a chat message to the project's lead (chat_send, a person's key), which opens the
+ * order's workstream with workstream_open. Resolves with that workstream, the chat_send result, and the event cursor
+ * from before the message.
+ */
+export const chatOrder = async (
+  lab: Pick<Lab, "humanCall" | "check" | "waitEvent" | "cursor">,
+  projectRef: { readonly machineId: string; readonly projectId: string },
+  text: string,
+  ms = 240_000,
+) => {
+  const cursor = await lab.cursor();
+  const sent = await lab.humanCall("chat_send", { projectRef, text, clientRequestId: randomUUID() });
+  lab.check(!sent.isError, `chat_send: ${JSON.stringify(sent.body)}`);
+  const { event } = await lab.waitEvent("the lead opens the order's workstream (workstream.created)", ms, {
+    cursor,
+    types: ["workstream.created"],
+    match: (e) => e.machineId === projectRef.machineId && e.projectId === projectRef.projectId,
+  });
+  const workstreamId = (event.data?.workstreamId as string | undefined) ?? /\bW\d+\b/u.exec(String(event.summary))?.[0];
+  lab.check(workstreamId, `workstream.created names its workstream: ${JSON.stringify(event)}`);
+  return { workstreamId: workstreamId!, sent: sent.body, cursor };
+};
+
+/**
+ * A workstream opened from the project's shell as its lead would (`fleetd workstream open`), for an order whose brief
+ * and agents the harness sets up itself. No lead turn: the opener already knows.
+ */
+export const openWorkstream = (
+  check: Lab["check"],
+  fleetd: (...args: Array<string>) => { readonly code: number | null; readonly stdout: string; readonly stderr: string },
+  text: string,
+  template?: string,
+) => {
+  const out = fleetd("workstream", "open", "--text", text, ...(template === undefined ? [] : ["--template", template]));
+  const w = /\bOpened (W\d+)/u.exec(out.stdout)?.[1];
+  check(out.code === 0 && w, `fleetd workstream open: ${JSON.stringify(out)}`);
+  return w!;
+};
 
 /** Launches one tiny haiku turn ("reply OK") and returns its thread id. */
 export const launchTiny = async (lab: Pick<Lab, "callTool" | "check">, machineId: string, projectId: string, title: string) => {

@@ -1,19 +1,17 @@
-// M9 "done when" on lab-a and the public lab repo: (a) an intent with a `fix:` prefix and no project goes through one
-// router run (claude -p, haiku, on the hub) to lab-a's project with the bugfix playbook pinned; (b) a bugfix brief
+// M9 "done when" on lab-a and the public lab repo: (a) a workstream opened with the bugfix playbook pins it; (b) a
+// bugfix brief
 // without a repro check is refused; (c) a research workstream's claim spawns the hub's judge, whose verdict the
 // harness reports from the shell with baseline and candidate, and the hub computes STOP from the frozen rule; (d) a
 // finish-all workstream on the lab repo (no open issues) goes idle with the digest line once its lead, or the harness,
 // calls `inventory`. The harness's `fleetd` calls run in the project's workspace and cost no turns.
 import { spawn, spawnSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { type Body, FINISH_ALL_IDLE, fleetdCommand, LAB, type Lab, MODEL, nodeSock, requireGhLogin, scrubbedEnv } from "./harness.ts";
+import { type Body, chatOrder, FINISH_ALL_IDLE, openWorkstream, fleetdCommand, LAB, type Lab, MODEL, nodeSock, requireGhLogin, scrubbedEnv } from "./harness.ts";
 import { CLONE, REPO, removeLabRepoProject } from "./m7Train.ts";
 
 const MACHINE = "lab-a";
 const TURN_MS = 240_000;
 const ENDED = ["thread.completed", "thread.failed", "thread.interrupted"];
-const QUIET = "Lab run: the harness does the work for this intent; reply to each wake with one short line and run no commands.";
 
 const shell = (cwd: string) => {
   const env = { ...scrubbedEnv(), PWD: cwd, FLEETD_NODE_SOCK: nodeSock(MACHINE) };
@@ -60,18 +58,11 @@ export async function m9Playbooks(lab: Lab) {
   }
   const leads = [leadThread];
 
-  // (a) No project given: the `fix:` prefix picks bugfix, one router run picks the project.
-  const routedText = `fix: the repo-a README has a typo. ${QUIET}`;
-  const a = await callTool("intake_submit", { text: routedText, clientRequestId: randomUUID() });
-  check(!a.isError && a.body.workstreamId !== undefined, `intake_submit without a project: ${JSON.stringify(a.body)}`);
-  const wa = a.body.workstreamId as string;
-  check(a.body.echo?.projectRef?.machineId === MACHINE && a.body.echo.projectRef.projectId === projectId && a.body.echo.template === "bugfix", `echo: ${JSON.stringify(a.body.echo)}`);
-  const routed = await lab.waitEvent("intake.routed", 10_000, { cursor: scenarioStart, types: ["intake.routed"], match: (e) => e.data?.workstreamId === wa });
-  const routerRuns = (routed.event.data.usage as Array<Body> | undefined) ?? [];
-  check(routerRuns.length === 1 && routerRuns[0]!.kind === "orchestrator" && routerRuns[0]!.ok === true, `one orchestrator router run: ${JSON.stringify(routerRuns)}`);
+  // (a) A fix opened with the bugfix playbook, from the shell as the lead would.
+  const wa = openWorkstream(check, fleetd, "fix: the repo-a README has a typo.", "bugfix");
   const pinnedA = (await callTool("workstream_get", { workstreamId: wa })).body.workstream.playbook as string;
   check(/^bugfix@[0-9a-f]{40}$/u.test(pinnedA), `${wa} pins bugfix: ${pinnedA}`);
-  ok(`(a) ${wa} → ${MACHINE}/${projectId} (bugfix), 1 router run (${routerRuns[0]!.model}, ${routerRuns[0]!.durationMs} ms); echo: ${a.body.echo.reason}; playbook ${pinnedA.slice(0, 19)}…`);
+  ok(`(a) ${wa} in ${MACHINE}/${projectId}; playbook ${pinnedA.slice(0, 19)}…`);
 
   // (b) A bugfix brief without a test or cmd repro check is refused at freeze.
   const briefBase = { pointers: [], constraints: [], estimate: { rawMinutes: 5, gates: [] } };
@@ -80,9 +71,9 @@ export async function m9Playbooks(lab: Lab) {
   ok(`(b) brief create ${wa} refused (exit 3): ${noRepro.stderr.trim().split("\n")[0]}`);
 
   // (c) A research workstream: the brief pre-registers baseline, metric and rule; the judge's numbers decide.
-  const r = await callTool("intake_submit", { ...ref, text: `research: would a shorter README read faster? ${QUIET}`, clientRequestId: randomUUID() });
-  check(!r.isError && r.body.echo?.template === "research", `research intake: ${JSON.stringify(r.body)}`);
-  const wr = r.body.workstreamId as string;
+  const wr = openWorkstream(check, fleetd, "research: would a shorter README read faster?", "research");
+  const pinnedR = (await callTool("workstream_get", { workstreamId: wr })).body.workstream.playbook as string;
+  check(/^research@[0-9a-f]{40}$/u.test(pinnedR), `${wr} pins research: ${pinnedR}`);
   const research = {
     ...briefBase,
     goal: "find out whether a shorter README reads faster",
@@ -132,11 +123,11 @@ export async function m9Playbooks(lab: Lab) {
     check(!started.isError, `lead_start on the lab repo: ${JSON.stringify(started.body)}`);
     leads.push(started.body.threadId);
     cursor = (await leadTurnEnds(started.body.threadId, cursor)).cursor;
-    const f = await callTool("intake_submit", { ...tbRef, text: "finish: everything still open", clientRequestId: randomUUID() });
-    check(!f.isError && f.body.echo?.template === "finish-all" && f.body.echo.projectRef.projectId === tb, `finish-all intake: ${JSON.stringify(f.body)}`);
-    wf = f.body.workstreamId as string;
-    const woken = await lab.waitEvent("the lab repo lead woken with the order", 60_000, { cursor, types: ["lead.woken"], match: (e) => e.threadId === started.body.threadId });
-    await leadTurnEnds(started.body.threadId, woken.event.seq);
+    const f = await chatOrder(lab, tbRef, "finish: everything still open. Open it with workstream_open, template finish-all.");
+    wf = f.workstreamId;
+    const pinnedF = (await callTool("workstream_get", { workstreamId: wf })).body.workstream.playbook as string;
+    check(/^finish-all@[0-9a-f]{40}$/u.test(pinnedF), `${wf} pins finish-all: ${pinnedF}`);
+    await leadTurnEnds(started.body.threadId, f.cursor);
     let state = (await callTool("workstream_get", { workstreamId: wf })).body.workstream.state as string;
     if (state === "idle") {
       ok(`(d) the lab repo lead called inventory itself when the order woke it; ${wf} is idle`);
@@ -175,7 +166,7 @@ export async function m9Playbooks(lab: Lab) {
     tasks.push(...((await callTool("tasks_list", { projectRef, limit: 100 })).body.tasks as Array<Body>).filter((t) => ours.includes(t.workstreamId)));
   }
   const taskTurns = tasks.reduce((n, t) => n + (t.attempt as number), 0);
-  const total = routerRuns.length + leadTurns + taskTurns;
-  ok(`M9 used ${routerRuns.length} router run + ${leadTurns} lead turns + ${taskTurns} task turns (${tasks.map((t) => `${t.taskId} ${t.kind}×${t.attempt}`).join(", ")}) = ${total} claude turns (${MODEL})`);
+  const total = leadTurns + taskTurns;
+  ok(`M9 used ${leadTurns} lead turns + ${taskTurns} task turns (${tasks.map((t) => `${t.taskId} ${t.kind}×${t.attempt}`).join(", ")}) = ${total} claude turns (${MODEL})`);
   check(total <= 10, `M9 stays within 10 claude turns (${total})`);
 }

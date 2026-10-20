@@ -174,6 +174,12 @@ pub const ENTRIES: &[Entry] = &[
                 Code
             ),
             (
+                "stop-work",
+                "does no more work on an order the human stopped",
+                r"Work the human stopped stays stopped",
+                Prompt
+            ),
+            (
                 "train-only-merges",
                 "only the merge train merges",
                 r"never merge",
@@ -223,7 +229,7 @@ pub const ENTRIES: &[Entry] = &[
         Messages,
         Any,
         "Steer",
-        "per steer (steer_send, order_note, task message), straight to the agent, at its next tool boundary or now",
+        "per steer (steer_send, task message), straight to the agent, at its next tool boundary or now",
         "id!=the steer, S<n>; who!=the human or your lead; scope!=the order (W<n> 'title') or the task (T<n> (kind) for W<n>); text!=the words; references=references and attachments, or nothing",
         &[(
             "names-steer",

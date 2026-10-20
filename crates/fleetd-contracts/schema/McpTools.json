@@ -4148,7 +4148,6 @@
             "ci_reaction",
             "slots_full",
             "human_wait",
-            "batching_delay",
             "approval_rule",
             "usage_parks",
             "retries",
@@ -4672,7 +4671,7 @@
     "LongestWait": {
       "properties": {
         "label": {
-          "description": "The ask's key, or the tool for a permission prompt.",
+          "description": "The secret's key, or the tool for a permission prompt.",
           "maxLength": 200,
           "type": "string"
         },
@@ -7036,6 +7035,17 @@
     "ProjectInspect": {
       "description": "What `project_inspect` found: the default branch, CI and merge rules, and one line on what the lead will need.",
       "properties": {
+        "areas": {
+          "description": "The areas writers lease: the policy file's, else inferred from the repo's layout. Empty when unknown.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "areasInferred": {
+          "description": "true: `areas` were inferred from the repo, not set in .fleetd/policy.yaml.",
+          "type": "boolean"
+        },
         "ci": {
           "$ref": "#/$defs/CiInfo"
         },
@@ -7092,6 +7102,17 @@
     "ProjectInspectOutput": {
       "description": "What `project_inspect` found: the default branch, CI and merge rules, and one line on what the lead will need.",
       "properties": {
+        "areas": {
+          "description": "The areas writers lease: the policy file's, else inferred from the repo's layout. Empty when unknown.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "areasInferred": {
+          "description": "true: `areas` were inferred from the repo, not set in .fleetd/policy.yaml.",
+          "type": "boolean"
+        },
         "ci": {
           "$ref": "#/$defs/CiInfo"
         },
@@ -9190,7 +9211,7 @@
           "type": "string"
         },
         "lane": {
-          "description": "`thread:<machine>/<thread>`, `change:<id>`, `asks:<order>`, `train:<repo>`, `fleet`, `order:<id>`.",
+          "description": "`thread:<machine>/<thread>`, `change:<id>`, `requests:<order>`, `train:<repo>`, `fleet`, `order:<id>`.",
           "maxLength": 300,
           "minLength": 1,
           "type": "string"
@@ -9302,7 +9323,7 @@
           "type": "integer"
         },
         "key": {
-          "description": "`wait.ask`: the ask's decision key.",
+          "description": "`wait.request`: the secret's key.",
           "maxLength": 200,
           "minLength": 1,
           "type": "string"
@@ -9330,7 +9351,7 @@
           "type": "string"
         },
         "requestId": {
-          "description": "`wait.permission`: the node's request id, joined to the hub ask.",
+          "description": "`wait.permission`: the node's request id, joined to the hub's approval request.",
           "maxLength": 120,
           "minLength": 1,
           "type": "string"
@@ -9459,18 +9480,8 @@
           "type": "string"
         },
         {
-          "const": "wait.ask",
-          "description": "A blocking ask, published to answered.",
-          "type": "string"
-        },
-        {
-          "const": "ask.batching",
-          "description": "An ask filed to its batch being published.",
-          "type": "string"
-        },
-        {
-          "const": "ask.info",
-          "description": "An ask that blocked nothing. On the asks lane only, never on a critical path.",
+          "const": "wait.request",
+          "description": "A secret or approval request, opened to settled.",
           "type": "string"
         },
         {

@@ -1,4 +1,4 @@
-//! MCP tools this area serves: lead_start, lead_restart, intake_submit, workstream_list, workstream_get,
+//! MCP tools this area serves: lead_start, lead_restart, workstream_list, workstream_get,
 //! workstream_spawn, inventory. Same grant checks, limits and `next` texts as older hubs.
 use std::sync::Arc;
 
@@ -12,7 +12,7 @@ use super::Area;
 use super::error::LeadError;
 use super::records::{LeadSettings, WorkstreamFilter};
 use crate::hub::api::{Caller, Hub, Registry, ToolError, allows, require, unknown_project};
-use crate::hub::intake::SubmitInput;
+
 use crate::hub::playbooks::finish_all::Caller as FinishAllCaller;
 
 const WORKSTREAM_ASKS: usize = 50;
@@ -25,31 +25,6 @@ pub fn register(tools: &mut Registry) {
     tools.add::<LeadRestartInput, LeadRestartOutput, _, _>("lead_restart", |hub: Arc<Hub>, caller, input| async move {
         hub.leads.lead_start(&caller, input, true).await
     });
-    tools.add::<IntakeSubmitInput, IntakeSubmitOutput, _, _>(
-        "intake_submit",
-        |hub: Arc<Hub>, caller, input| async move {
-            // References and attachments are checked before anything is placed, and reach the lead with the intent.
-            let refs = crate::hub::orders::notes::render_refs(
-                &hub,
-                &caller,
-                input.refs.as_ref().map_or(&[][..], |r| r.as_slice()),
-            )?;
-            let files: Vec<AttachmentId> = input.attachments.iter().flatten().cloned().collect();
-            crate::hub::intake::attachments::check(&hub, &caller, &files)?;
-            let out = hub.leads.intake_submit(&caller, input).await?;
-            if !refs.is_empty() || !files.is_empty() {
-                crate::hub::orders::notes::with_intent(
-                    &hub,
-                    &caller,
-                    &out.workstream_id,
-                    &refs,
-                    &files,
-                )
-                .await?;
-            }
-            Ok(out)
-        },
-    );
     tools.add::<WorkstreamListInput, WorkstreamListOutput, _, _>(
         "workstream_list",
         |hub: Arc<Hub>, caller, input| async move { hub.leads.workstream_list(&caller, input) },
@@ -118,7 +93,7 @@ impl Area {
             )
         } else {
             format!(
-                "Lead thread {} is {}. Submit work with intake_submit; watch it with project_get or events_wait (lead.woken, request.opened).",
+                "Lead thread {} is {}. Write to it with chat_send; watch it with project_get or events_wait (lead.woken, request.opened).",
                 lead.thread_id,
                 super::digest::serde_plain(&lead.state)
             )
@@ -126,42 +101,6 @@ impl Area {
         Ok(LeadStartOutput {
             lead,
             next: Some(next),
-            truncated: None,
-        })
-    }
-
-    pub(crate) async fn intake_submit(
-        &self,
-        caller: &Caller,
-        input: IntakeSubmitInput,
-    ) -> Result<IntakeSubmitOutput, ToolError> {
-        require(caller, Role::Operate, input.machine_id.as_ref())?;
-        let gate = caller.clone();
-        let project_ref = match (input.machine_id, input.project_id) {
-            (Some(machine_id), Some(project_id)) => Some(ProjectRef {
-                machine_id,
-                project_id,
-            }),
-            _ => None,
-        };
-        let placed = self
-            .intake
-            .submit(SubmitInput {
-                text: input.text.to_string(),
-                template: input.template,
-                project_ref,
-                client_request_id: input.client_request_id.to_string(),
-                channel: IntakeChannel::Mcp,
-                by: caller.key_id.to_string(),
-                allows: Box::new(move |m| allows(&gate, Role::Operate, Some(m))),
-            })
-            .await
-            .map_err(refusal)?;
-        Ok(IntakeSubmitOutput {
-            workstream_id: placed.workstream_id,
-            echo: Some(placed.echo),
-            lead_waiting: placed.lead_waiting,
-            next: placed.next,
             truncated: None,
         })
     }
@@ -335,7 +274,7 @@ impl Area {
         let next = if listed.idle {
             "Nothing is left with a value source: the finish-all workstream is idle."
         } else if listed.spawnable > 0 {
-            "Start a child for an unserved item with workstream_spawn, passing its serves value; that needs the project's open finish-all workstream (intake_submit \"finish: ...\" starts one)."
+            "Start a child for an unserved item with workstream_spawn, passing its serves value; that needs the project's open finish-all workstream (the lead opens one with workstream_open, template finish-all)."
         } else {
             "Every item with a value source is in progress; wait for workstream.done with events_wait."
         };

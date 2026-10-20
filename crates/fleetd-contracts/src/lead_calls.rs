@@ -56,6 +56,7 @@ pub struct BriefCreateCall {
 pub struct RequestSecretCall {
     /// The secret's name, a dotted slug such as "stripe.test_key".
     pub key: DecisionKey,
+    /// Where the value is written: env:<machine>:<file> (one NAME=value line) or file:<machine>:<path>.
     pub sink: SecretSink,
     /// One line on why it is needed.
     pub text: Text<1, 500>,

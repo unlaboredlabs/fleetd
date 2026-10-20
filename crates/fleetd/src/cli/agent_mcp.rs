@@ -11,7 +11,7 @@ use fleetd_contracts::lead_calls::{
     AskLeadCall, BriefCreateCall, ChangeEnqueueCall, ChangeStatusCall, ClaimDoneCall, DecideCall,
     DecisionsSearchCall, GatedRunCall, InventoryCall, LeadCall, RequestSecretCall,
     RequestWithdrawCall, SliceReadyCall, StatusSetCall, TaskCancelCall, TaskListCall,
-    TaskMessageCall, TaskSpawnCall, TaskStatusCall, WorkstreamSpawnCall,
+    TaskMessageCall, TaskSpawnCall, TaskStatusCall, WorkstreamOpenCall, WorkstreamSpawnCall,
 };
 use fleetd_contracts::plan::{
     PlanAddCall, PlanDropCall, PlanEditCall, PlanMilestoneCall, PlanShowCall,
@@ -131,7 +131,8 @@ static TOOLS: &[Tool] = &[
          is sealed to the sink's machine and written there, and never enters a transcript. Only its fingerprint \
          arrives, in a later wake.",
         inline_schema::<RequestSecretCall>,
-    ),
+    )
+    .needs("The human enters the value in chat; you see only its fingerprint."),
     lead(
         "request_withdraw",
         "request_withdraw",
@@ -215,6 +216,13 @@ static TOOLS: &[Tool] = &[
         "change_status",
         "A merge-train change as stored.",
         inline_schema::<ChangeStatusCall>,
+    ),
+    lead(
+        "workstream_open",
+        "workstream_open",
+        "Open a workstream for work you took from the chat: a draft you then freeze with brief. template picks the \
+         playbook (feature, bugfix, research, finish-all); serves is optional.",
+        inline_schema::<WorkstreamOpenCall>,
     ),
     lead(
         "workstream_spawn",

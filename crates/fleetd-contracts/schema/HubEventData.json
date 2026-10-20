@@ -1283,6 +1283,17 @@
     "ProjectInspect": {
       "description": "What `project_inspect` found: the default branch, CI and merge rules, and one line on what the lead will need.",
       "properties": {
+        "areas": {
+          "description": "The areas writers lease: the policy file's, else inferred from the repo's layout. Empty when unknown.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "areasInferred": {
+          "description": "true: `areas` were inferred from the repo, not set in .fleetd/policy.yaml.",
+          "type": "boolean"
+        },
         "ci": {
           "$ref": "#/$defs/CiInfo"
         },

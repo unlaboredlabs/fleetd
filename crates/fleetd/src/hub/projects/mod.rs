@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::events::HubEventType;
-use fleetd_contracts::ids::{MachineId, ProjectId};
+use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef};
 use fleetd_contracts::mcp::{
     ErrorCode, ProjectAddInput, ProjectAddOutput, ProjectDiscoverInput, ProjectDiscoverOutput,
     ProjectInspectInput, ProjectInspectOutput,
@@ -245,6 +245,21 @@ async fn read_github(
         answers.rulesets = sets.ok();
     }
     Ok(inspect::build(Some(repo), &answers, local, notes, gh_ok))
+}
+
+/// The inspect with the project's areas: its policy file's, else the ones inferred from its layout. The node reads
+/// files by project, so this runs once the project is registered with it.
+async fn with_areas(
+    hub: &Hub,
+    project_ref: &ProjectRef,
+    root: &str,
+    mut inspect: ProjectInspect,
+) -> ProjectInspect {
+    if let Ok(resolved) = hub.policies.resolve_new(project_ref, root).await {
+        inspect.areas = resolved.policy.areas.into_keys().collect();
+        inspect.areas_inferred = Some(resolved.inferred);
+    }
+    inspect
 }
 
 /// A checkout's inspect: GitHub's view when its remote is on GitHub, else what the checkout itself shows.
@@ -577,7 +592,7 @@ pub async fn inspect(
 }
 
 /// Registers `path` on `m` (the same directory again is the same project; a title renames it) and emits
-/// `project.added`.
+/// `project.added` with the inspect and the project's areas. Returns the inspect it emitted.
 async fn register(
     hub: &Hub,
     m: &MachineId,
@@ -585,7 +600,7 @@ async fn register(
     title: Option<&str>,
     inspect: ProjectInspect,
     add_id: Option<AddId>,
-) -> Result<(ProjectId, bool), ToolError> {
+) -> Result<(ProjectId, bool, ProjectInspect), ToolError> {
     let path = path.strip_suffix('/').unwrap_or(path);
     let name = path.rsplit('/').next().unwrap_or(path);
     let existing = hub.executors.project_at(m, path);
@@ -599,6 +614,11 @@ async fn register(
             .await
             .map_err(crate::hub::executor::tools::from_executor)?;
     }
+    let project_ref = ProjectRef {
+        machine_id: m.clone(),
+        project_id: project_id.clone(),
+    };
+    let inspect = with_areas(hub, &project_ref, path, inspect).await;
     let summary = format!("{title} added on {m}: {}", inspect.lead_needs);
     // The event log keeps at most 2 KB of data; project_inspect has the whole inspect.
     let data = inspect::fit_added(ProjectAddedData {
@@ -606,7 +626,7 @@ async fn register(
         title,
         path: path.to_owned(),
         created,
-        inspect,
+        inspect: inspect.clone(),
     });
     hub.events.append(NewEvent {
         at: now(hub),
@@ -618,7 +638,7 @@ async fn register(
         data: serde_json::to_value(&data).ok(),
         attention: None,
     })?;
-    Ok((project_id, created))
+    Ok((project_id, created, inspect))
 }
 
 pub async fn add(
@@ -636,11 +656,11 @@ pub async fn add(
         let path = path.as_str().strip_suffix('/').unwrap_or(path.as_str());
         let facts = checkout(&hub, &m, path).await?;
         let inspect = inspect_checkout(&facts).await?;
-        let (project_id, created) =
-            register(&hub, &m, path, title.as_deref(), inspect.clone(), None).await?;
+        let (project_id, created, inspect) =
+            register(&hub, &m, path, title.as_deref(), inspect, None).await?;
         return Ok(ProjectAddOutput {
             next: Some(format!(
-                "{}. Send it an order with intake_submit; its lead starts with the first one.",
+                "{}. Write to its lead with chat_send; the lead starts with the first message.",
                 inspect.lead_needs
             )),
             machine_id: m,
@@ -661,15 +681,8 @@ pub async fn add(
         if target.same_remote && input.use_existing == Some(true) {
             let facts = checkout(&hub, &m, &target.path).await?;
             let inspect = inspect_checkout(&facts).await?;
-            let (project_id, created) = register(
-                &hub,
-                &m,
-                &target.path,
-                title.as_deref(),
-                inspect.clone(),
-                None,
-            )
-            .await?;
+            let (project_id, created, inspect) =
+                register(&hub, &m, &target.path, title.as_deref(), inspect, None).await?;
             return Ok(ProjectAddOutput {
                 next: Some(inspect.lead_needs.to_string()),
                 machine_id: m,
