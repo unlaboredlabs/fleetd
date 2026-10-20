@@ -338,10 +338,7 @@ pub fn render_lead_digest(input: &DigestInput) -> String {
     let open: HashSet<&WorkstreamId> = input.workstreams.iter().map(|w| &w.workstream_id).collect();
     let ranked = rank_decisions(input.decisions, &open);
     let mut keys: Vec<String> = Vec::new();
-    for key in ranked
-        .iter()
-        .map(|d| d.key.to_string())
-    {
+    for key in ranked.iter().map(|d| d.key.to_string()) {
         if !keys.contains(&key) {
             keys.push(key);
         }

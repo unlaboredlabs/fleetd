@@ -236,7 +236,11 @@ mod tests {
                 "13:40".into(),
             )],
             machines_down: vec![("buildbox".into(), "offline".into(), "4m".into(), 0)],
-            blocked_requests: vec![("the secret `stripe.key`".into(), "W41".into(), BLOCKED_MS - 1)],
+            blocked_requests: vec![(
+                "the secret `stripe.key`".into(),
+                "W41".into(),
+                BLOCKED_MS - 1,
+            )],
             flaky: vec![("devbox".into(), 2, "11:02".into(), "11m".into())],
             usage: vec![
                 ("5h".into(), 0.58, false, "14:00".into()),

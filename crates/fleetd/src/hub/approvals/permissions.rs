@@ -4,7 +4,9 @@
 //! `thread_answer` answers it directly. A prompt that stays open is raised again as attention, so an
 //! approval-required run never waits silently.
 use super::store::{NewRequest, RequestFilter};
-use super::{ApprovalRefused, Approvals, Caller, NodeCommandError, contract_project, project_of, refuse};
+use super::{
+    ApprovalRefused, Approvals, Caller, NodeCommandError, contract_project, project_of, refuse,
+};
 use crate::hub::prompts::fixed::{DenyReason, denied};
 use crate::hub::usage::ports::{HubEvent, NewEvent, ProjectRef, WaitInput};
 use crate::hub::usage::time::{clip, iso, parse_ms, system_ms};
@@ -536,7 +538,10 @@ impl Approvals {
         });
         if let Err(e) = created {
             // The run still waits: say so loudly rather than leave it silent.
-            tracing::error!(error = e.message, "approvals: tool prompt request not opened");
+            tracing::error!(
+                error = e.message,
+                "approvals: tool prompt request not opened"
+            );
             let summary = format!(
                 "{machine}/{thread_id} waits for permission to run {tool} {summary}, and the hub could not open its request ({}): answer it with thread_answer",
                 e.message
@@ -630,10 +635,9 @@ impl Approvals {
             }
             self.prompts.reminded(&t, now);
             let minutes = (now - t.since_ms) / 60_000;
-            let ask_part = t
-                .id
-                .as_ref()
-                .map_or_else(|| "no request".to_string(), ChatRequestId::to_string);
+            let ask_part =
+                t.id.as_ref()
+                    .map_or_else(|| "no request".to_string(), ChatRequestId::to_string);
             let how = if state == Some(RequestState::Open) {
                 "approve or deny it in the project's chat"
             } else {
@@ -708,7 +712,11 @@ impl Approvals {
             let reason = if by.starts_with("lead") {
                 DenyReason::Withdrawn { by: &by, request }
             } else {
-                DenyReason::Human { by: &by, request, said }
+                DenyReason::Human {
+                    by: &by,
+                    request,
+                    said,
+                }
             };
             PermissionDecision::Deny {
                 message: fleetd_contracts::prim::Text::unchecked(clip(&denied(&reason), 2000)),
@@ -842,11 +850,18 @@ impl Approvals {
             .map(|o| o.id);
         if let Some(id) = &request {
             let at = self.now();
-            let (by, evidence) = (by.clone(), format!("{verb} on {m} with thread_answer by {by}"));
+            let (by, evidence) = (
+                by.clone(),
+                format!("{verb} on {m} with thread_answer by {by}"),
+            );
             let allow = input.allow;
             if let Err(e) = self
                 .change(id, |r| {
-                    r.state = if allow { RequestState::Approved } else { RequestState::Denied };
+                    r.state = if allow {
+                        RequestState::Approved
+                    } else {
+                        RequestState::Denied
+                    };
                     r.evidence = Some(fleetd_contracts::prim::Text::unchecked(evidence));
                     r.answered_at = Some(fleetd_contracts::ids::Timestamp(at));
                     r.answered_by = Some(by);

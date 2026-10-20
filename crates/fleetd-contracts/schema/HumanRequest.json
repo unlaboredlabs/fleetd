@@ -79,9 +79,14 @@
           "$ref": "#/$defs/Timestamp"
         },
         "evidence": {
-          "description": "What happened: \"fingerprint ab12cd34\", \"exit 0\" and the output tail, or why it did not run.",
+          "description": "What happened, in one line: \"fingerprint ab12cd34\", \"exit 0 on devbox, approved by human:desk\", or why it did\nnot run (and so is open again).",
           "maxLength": 2000,
           "type": "string"
+        },
+        "exitCode": {
+          "description": "An approval that ran: its exit code (absent when a signal or the timeout ended it) and the end of its output,\nwith every injected secret value scrubbed.",
+          "format": "int64",
+          "type": "integer"
         },
         "gated": {
           "$ref": "#/$defs/GatedRunSpec",
@@ -89,6 +94,10 @@
         },
         "kind": {
           "$ref": "#/$defs/RequestKind"
+        },
+        "outputTail": {
+          "maxLength": 2000,
+          "type": "string"
         },
         "permission": {
           "$ref": "#/$defs/ToolPermission",

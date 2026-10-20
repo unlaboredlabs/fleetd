@@ -226,7 +226,11 @@ impl Ports for HubPorts {
             hub.tasks.spawn(&caller, input).await
         })
     }
-    fn human_confirmation(&self, workstream: &WorkstreamId, key: &str) -> Option<HumanConfirmation> {
+    fn human_confirmation(
+        &self,
+        workstream: &WorkstreamId,
+        key: &str,
+    ) -> Option<HumanConfirmation> {
         let hub = self.hub()?;
         let scope = DecisionScope::Workstream {
             workstream_id: workstream.clone(),

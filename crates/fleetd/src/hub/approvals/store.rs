@@ -100,10 +100,12 @@ impl Requests {
             return Ok(None);
         };
         self.db.with(|c| {
-            Ok(c.query_row("SELECT data FROM requests WHERE n = ?", [n], |r| {
-                decode(&r.get::<_, String>(0)?)
-            })
-            .optional()?)
+            Ok(
+                c.query_row("SELECT data FROM requests WHERE n = ?", [n], |r| {
+                    decode(&r.get::<_, String>(0)?)
+                })
+                .optional()?,
+            )
         })
     }
 
@@ -124,10 +126,10 @@ impl Requests {
                    AND (?3 IS NULL OR kind = ?3)
                  ORDER BY n DESC LIMIT ?4",
             )?;
-            let rows = stmt.query_map(
-                params![project, states, kind, filter.limit.max(1)],
-                |r| decode(&r.get::<_, String>(0)?),
-            )?;
+            let rows = stmt
+                .query_map(params![project, states, kind, filter.limit.max(1)], |r| {
+                    decode(&r.get::<_, String>(0)?)
+                })?;
             Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
         })
     }

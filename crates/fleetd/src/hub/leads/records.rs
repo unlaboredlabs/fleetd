@@ -4,8 +4,8 @@ use std::sync::Arc;
 use fleetd_contracts::effort::Effort;
 use fleetd_contracts::ids::{ProjectRef, Timestamp};
 use fleetd_contracts::ledger::{
-    IntakeChannel, PlaybookRef, Workstream, WorkstreamId, WorkstreamParent,
-    WorkstreamSource, WorkstreamState,
+    IntakeChannel, PlaybookRef, Workstream, WorkstreamId, WorkstreamParent, WorkstreamSource,
+    WorkstreamState,
 };
 use rusqlite::{OptionalExtension, named_params, params};
 use serde::{Deserialize, Serialize};

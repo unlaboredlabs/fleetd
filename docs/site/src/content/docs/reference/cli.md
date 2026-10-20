@@ -352,71 +352,27 @@ fleetd steers [W|T] --key-file <human key> [--hub <url> | --home <dir>]
 
 recent steers and their receipts
 
-### fleetd answer {#answer}
-
-```text
-fleetd answer --key-file <human key> [--hub <url> | --home <dir>]
-```
-
-the open questions: each choice's label, what happens if you pick it, and the lead's recommendation
-
-### fleetd answer {#answer-key-file}
-
-```text
-fleetd answer "<reply>" --key-file <human key> [--hub <url> | --home <dir>]
-```
-
-answer them: "1 a", "1-3 go" (take the recommendation), "2: your own answer", "3 skip" (skip for now: the lead keeps its recommendation), "4 later", "\#B4 1 b". A question's answer can be taken back for 10 s
-
-### fleetd answer undo {#answer-undo}
-
-```text
-fleetd answer undo A<n> --key-file <human key> [--hub <url> | --home <dir>]
-```
-
-take an answer back within 10 s; the question is open again
-
 
 ## Lead-side commands {#lead-side-commands}
 
-Run by a lead or task inside a project workspace.
+A lead uses its fleetd tools; these are for you, inside a project workspace.
 
 ### fleetd brief create {#brief-create}
 
 ```text
-fleetd brief create --workstream <W> (--json '<Brief>' | --file <path>) [--amend <A>]
+fleetd brief create --workstream <W> (--json '<Brief>' | --file <path>) [--amend <decision key>]
 ```
 
-freeze the brief of a draft workstream and start it
+freeze the brief of a draft workstream and start it; `--amend` changes a frozen brief once the human said yes in chat and you logged it with decide
 
-### fleetd ask {#ask}
+### fleetd request secret {#request-secret}
 
 ```text
-fleetd ask --key <k> --class <product|money|credential|irreversible> --text "<short question>"
-    [--context "<1-2 lines of background>"] --option '<key>|<Label>|<what happens if picked>'
-    --option '...' (2 to 6) --rec <option key> --why "<one line: why you recommend it>"
-    [--blocks "<step>"] [--proceeded] [--workstream <W>]
+fleetd request secret --key <k> --sink env:<machine>:<path>|file:<machine>:<path> [--env-name <N>]
+    --text <t> [--workstream <W>]
 ```
 
-the human sees the labels and consequences as choices; keys are only recorded
-
-### fleetd ask {#ask-kind-do}
-
-```text
-fleetd ask --kind do --key <k> --class <c> --text <t> --step '<json>' [--step '<json>' ...]
-    [--verify '<check json>']
-```
-
-a step is \{"text","where":"\<machine\>\|browser","command"?,"expect"?\}; `--verify` is a cmd or http check fleetd runs once the human ticks it done (a failure reopens it) ask the human; answers already in the decision log come back at once
-
-### fleetd ask {#ask-kind-secret}
-
-```text
-fleetd ask --kind secret --key <k> --sink env:<machine>:<path>|file:<machine>:<path> [--env-name <N>]
-    --text <t> [--class credential]
-```
-
-the human enters it in the desktop app, sealed to that machine; an env: sink writes the line \<N\>=\<value\> (N defaults to the key uppercased, . and - as \_). You get its fingerprint, never the value
+the human enters it in a masked field in the project's chat, sealed to that machine; an env: sink writes the line \<N\>=\<value\> (N defaults to the key uppercased, . and - as \_). You get its fingerprint in a wake, never the value
 
 ### fleetd gated run {#gated-run}
 
@@ -425,13 +381,15 @@ fleetd gated run --class irreversible|money|credential --argv '<json array>' --r
     [--secret-env NAME=<secret key> ...] [--timeout <sec>] [--workstream <W>]
 ```
 
-a command the node runs exactly as stored, in the project workspace by default, only after a human approves it; secrets come from the node's own sinks. The result arrives in a wake
+a command the node runs exactly as stored, in the project workspace by default, only after a human approves it in the project's chat; secrets come from the node's own sinks. The result arrives in a wake
 
-### fleetd ask withdraw {#ask-withdraw}
+### fleetd request withdraw {#request-withdraw}
 
 ```text
-fleetd ask withdraw <A> [--use <D>]
+fleetd request withdraw <Q>
 ```
+
+take back a secret request or a command approval the human said in chat is not needed
 
 ### fleetd decide {#decide}
 
@@ -458,7 +416,7 @@ fleetd decisions search "<query>"
 ```text
 fleetd task spawn --workstream <W> --title <t> --prompt <p> [--kind write|read|review] [--areas a,b]
     [--model <m>] [--effort low|medium|high|max] [--tier S|M|L]
-    [--serves done:<n>|issue:<ref>|defect:<text>|ask:<A>] [--pr <url>] [--qa] [--item P<n>]
+    [--serves done:<n>|issue:<ref>|defect:<text>|decision:<key>] [--pr <url>] [--qa] [--item P<n>]
 ```
 
 delegate work to a subagent; writers need `--areas` and `--serves` and get their own branch; a review task needs `--pr`, and `--qa` marks it a QA run; `--item` links it to that plan item
@@ -562,7 +520,7 @@ keep the project's plan: milestones of must or polish items sized s, m or l (rel
 fleetd inventory
 ```
 
-the project's open work ranked: failing checks, open issues (gh), open asks and TODO/FIXME markers; with nothing left that has a value source and no open child, the project's finish-all workstream goes idle
+the project's open work ranked: failing checks, open issues (gh), open requests and TODO/FIXME markers; with nothing left that has a value source and no open child, the project's finish-all workstream goes idle
 
 ### fleetd workstream spawn {#workstream-spawn}
 

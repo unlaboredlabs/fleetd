@@ -1459,7 +1459,7 @@ mod tests {
 
     #[test]
     fn the_tool_table_matches_ts_names_and_scopes() {
-        assert_eq!(McpToolName::ALL.len(), 77);
+        assert_eq!(McpToolName::ALL.len(), 78);
         assert_eq!(McpToolName::parse("inbox_reply"), None);
         assert_eq!(McpToolName::parse("asks_list"), None);
         for tool in McpToolName::ALL {

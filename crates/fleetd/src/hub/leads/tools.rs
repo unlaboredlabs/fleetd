@@ -38,7 +38,14 @@ pub fn register(tools: &mut Registry) {
             crate::hub::intake::attachments::check(&hub, &caller, &files)?;
             let out = hub.leads.intake_submit(&caller, input).await?;
             if !refs.is_empty() || !files.is_empty() {
-                crate::hub::orders::notes::with_intent(&hub, &caller, &out.workstream_id, &refs, &files).await?;
+                crate::hub::orders::notes::with_intent(
+                    &hub,
+                    &caller,
+                    &out.workstream_id,
+                    &refs,
+                    &files,
+                )
+                .await?;
             }
             Ok(out)
         },

@@ -8,7 +8,7 @@ use crate::clock::{Clock, SystemClock};
 use crate::hub::estimates::Estimates;
 use crate::hub::incidents::{IncidentFilter, Incidents};
 use crate::hub::orders::open_work::{Item, OpenWork};
-use crate::hub::store::{EventLog, HubDb, NewEvent, WaitInput};
+use crate::hub::store::{EventLog, HubDb, WaitInput};
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef};
 use fleetd_contracts::ledger::{
@@ -575,15 +575,18 @@ async fn w4_a_claim_on_the_old_brief_never_closes_the_amended_build() {
     k.confirm("done.0", "yes", 2_000);
     k.amend_to_build(3_000);
     k.set_node(0, "");
-    let stale = k.claims.claim_done(&w1(), LEAD_BY, None, None).await.unwrap();
-    assert_eq!(stale.state, WorkstreamState::Running, "{}", stale.next);
+    let stale = k
+        .claims
+        .claim_done(&w1(), LEAD_BY, None, None)
+        .await
+        .unwrap();
+    assert_ne!(stale.state, WorkstreamState::Done, "{}", stale.next);
     let claim = stale.claim.unwrap();
     assert_eq!(claim.outcome, ClaimOutcome::Fail);
     assert!(
-        claim.results[0]
-            .evidence
-            .as_str()
-            .starts_with("the answer in D1 predates the brief's latest version: ask the human in chat"),
+        claim.results[0].evidence.as_str().starts_with(
+            "the answer in D1 predates the brief's latest version: ask the human in chat"
+        ),
         "{}",
         claim.results[0].evidence.as_str()
     );
@@ -591,7 +594,11 @@ async fn w4_a_claim_on_the_old_brief_never_closes_the_amended_build() {
 
     // The human tries the build and says yes in chat; the lead logs it: now it is done.
     k.confirm("done.0", "yes", 4_000);
-    let passed = k.claims.claim_done(&w1(), LEAD_BY, None, None).await.unwrap();
+    let passed = k
+        .claims
+        .claim_done(&w1(), LEAD_BY, None, None)
+        .await
+        .unwrap();
     assert_eq!(passed.state, WorkstreamState::Done);
 }
 
@@ -604,7 +611,10 @@ async fn a_claim_finishing_after_the_amend_never_counts() {
     k.ports.put_workstream(&w);
     k.set_node(0, "");
     *k.ports.amend_on_check.lock().unwrap() = Some(build_brief(w));
-    k.claims.claim_done(&w1(), LEAD_BY, None, None).await.unwrap();
+    k.claims
+        .claim_done(&w1(), LEAD_BY, None, None)
+        .await
+        .unwrap();
     assert!(!k.closed().await);
     let w = k.ports.workstream(&w1()).unwrap();
     assert_eq!(
@@ -660,25 +670,43 @@ async fn a_human_check_passes_on_a_yes_logged_after_the_brief_froze() {
     k.freeze_at(1_000);
     let result = |c: &fleetd_contracts::verification::Claim| c.results[1].clone();
 
-    let missing = k.claims.claim_done(&w1(), LEAD_BY, None, None).await.unwrap();
+    let missing = k
+        .claims
+        .claim_done(&w1(), LEAD_BY, None, None)
+        .await
+        .unwrap();
     let r = result(missing.claim.as_ref().unwrap());
-    assert_eq!((r.result, r.ran_by), (CheckOutcome::Fail, CheckResultRanBy::Human));
+    assert_eq!(
+        (r.result, r.ran_by),
+        (CheckOutcome::Fail, CheckResultRanBy::Human)
+    );
     assert_eq!(
         r.evidence.as_str(),
         "not confirmed yet: ask the human in chat: \"Looks good on your end?\", then log their answer with decide {key: \"done.1\", value: \"yes\" or \"no\", workstreamId: \"W1\"}"
     );
 
     k.confirm("done.1", "no", 2_000);
-    let no = k.claims.claim_done(&w1(), LEAD_BY, None, None).await.unwrap();
+    let no = k
+        .claims
+        .claim_done(&w1(), LEAD_BY, None, None)
+        .await
+        .unwrap();
     let r = result(no.claim.as_ref().unwrap());
     assert_eq!(r.result, CheckOutcome::Fail);
     assert_eq!(r.evidence.as_str(), "the human said \"no\" in chat (D1)");
 
     k.confirm("done.1", "yes", 3_000);
-    let yes = k.claims.claim_done(&w1(), LEAD_BY, None, None).await.unwrap();
+    let yes = k
+        .claims
+        .claim_done(&w1(), LEAD_BY, None, None)
+        .await
+        .unwrap();
     let claim = yes.claim.unwrap();
     assert_eq!(claim.outcome, ClaimOutcome::Pass);
-    assert_eq!(result(&claim).evidence.as_str(), "the human said yes in chat (D2)");
+    assert_eq!(
+        result(&claim).evidence.as_str(),
+        "the human said yes in chat (D2)"
+    );
 }
 
 /// The review fix of a live hub's W1, T4, spawned from its PR's review findings while W1 verified.

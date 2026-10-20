@@ -6,11 +6,9 @@ use crate::hub::api::{Caller, Hub, Registry, ToolError, allows, is_human};
 use crate::hub::usage::wire::convert;
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::ids::MachineId;
-use fleetd_contracts::ledger::HumanRequest;
 use fleetd_contracts::lead_calls::RequestResult;
-use fleetd_contracts::mcp::{
-    ApprovalAnswerInput, ErrorCode, RequestsListInput, SecretSubmitInput,
-};
+use fleetd_contracts::ledger::HumanRequest;
+use fleetd_contracts::mcp::{ApprovalAnswerInput, ErrorCode, RequestsListInput, SecretSubmitInput};
 use serde_json::{Value, json};
 use std::sync::Arc;
 
@@ -188,7 +186,11 @@ pub fn register_lead_calls(hub: &Arc<Hub>) {
                     LeadCall::RequestWithdraw(call) => {
                         let r = hub
                             .approvals
-                            .withdraw(&local(&caller.project_ref), &caller.by, call.request_id.as_str())
+                            .withdraw(
+                                &local(&caller.project_ref),
+                                &caller.by,
+                                call.request_id.as_str(),
+                            )
                             .await
                             .map_err(refusal)?;
                         Ok(LeadCallResult::RequestWithdraw(result_of(&r, "withdrawn.")))

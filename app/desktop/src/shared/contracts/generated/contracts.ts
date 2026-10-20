@@ -26,12 +26,6 @@ export const SECRET_MAX_BYTES = 8192;
 /** Largest attachment attachment_put takes. */
 export const ATTACHMENT_MAX_BYTES = 5242880;
 
-/** A question line the card shows bold on its own. */
-export const ASK_QUESTION_MAX = 160;
-
-/** How long after an answer inbox_undo can take it back. */
-export const ASK_UNDO_WINDOW_MS = 10000;
-
 /** How long a machine's sleep stays shown. */
 export const SLEPT_SHOWN_MS = 3600000;
 
@@ -196,8 +190,8 @@ export type ApprovalAnswerInput = {
 };
 
 export type ApprovalAnswerOutput = {
-  message: ChatMessage;
   next?: string;
+  request: HumanRequest;
   truncated?: boolean;
 };
 
@@ -206,133 +200,6 @@ export type ApprovalDecision = "approve" | "deny";
 
 /** Lowercase slug, [a-z0-9][a-z0-9_-]*, at most 40 */
 export type AreaName = string;
-
-export type Ask = {
-  answer?: AskAnswer;
-  askId: AskId;
-  batchId?: BatchId;
-  blocks: string;
-  class: AskClass;
-  /** One or two lines of background, shown under the question. */
-  context?: string;
-  createdAt: Timestamp;
-  decisionId?: DecisionId;
-  /** secret with an env: sink: the variable it writes, when not the one its key names (`secretEnvName`). */
-  envName?: EnvName;
-  /** What closed or reopened it: "fingerprint ab12cd34", a gated run's exit code and output tail, a failed verify. */
-  evidence?: string;
-  /** secret: set when the node has written the sink. */
-  fingerprint?: SecretFingerprint;
-  /** Required for approve; immutable once the ask exists. */
-  gated?: GatedRunSpec;
-  key: DecisionKey;
-  kind: AskKind;
-  /** Fixed within its batch; never renumbered. */
-  number?: number;
-  options?: AskOption[];
-  /** approve: the session prompt it answers, instead of `gated`. */
-  permission?: ToolPermission;
-  /** The lead carried on with the recommendation; the answer confirms or overrides it. */
-  proceededOnRec: boolean;
-  /** Absent only on an `intake.route.*` ask: the human picks the project by answering it. */
-  projectRef?: ProjectRef;
-  /** Required for decide. On asks filed since labels, the key of one of `options`. */
-  recommendation?: string;
-  /** The lead's one-line reason for its recommendation. */
-  recommendationWhy?: string;
-  /** Required for secret. */
-  sink?: SecretSink;
-  state: AskState;
-  /** Required for do. */
-  steps?: Step[];
-  /** The question. On asks filed since labels, one short line; the background is in `context`. */
-  text: string;
-  /** do: the check the hub runs once the human ticks it done; a failure reopens the ask with the evidence. */
-  verify?: CheckSpec;
-  workstreamId?: WorkstreamId;
-};
-
-export type AskAnswer = {
-  at: Timestamp;
-  by: string;
-  /** The receipt: when the lead was woken with this answer. Absent while the undo window runs. */
-  deliveredAt?: Timestamp;
-  kind?: AskAnswerKind;
-  /** The reply's note ("1 a: because …"), kept for the decision's why. */
-  note?: string;
-  /** The reply text it was parsed from. */
-  raw: string;
-  /** Who the decision will be recorded as, once the undo window passes. */
-  source?: DecisionSource;
-  /** Until then `inbox_undo` reopens the ask and the lead never hears of the answer. */
-  undoUntil?: Timestamp;
-  value: string;
-};
-
-/**
- * option: one of the ask's options (`value` is its key). text: the human's own words ("Something else…"). skip:
- * "Skip for now", the lead carries on with its recommendation (`value`) and no decision is recorded. Absent on
- * answers recorded before kinds, and for approve, do and secret answers ("go", "done", "no").
- */
-export type AskAnswerKind = "option" | "text" | "skip";
-
-export type AskClass = "product" | "money" | "credential" | "irreversible";
-
-/** `ask.created`, `ask.auto`, `ask.closed`, `ask.answered`, `ask.undone`, `ask.delivered`. */
-export type AskEventData = {
-  askId: AskId;
-  batchId?: BatchId;
-  class?: AskClass;
-  /** ask.auto and ask.delivered: the decision that answered it (absent on a delivered skip). */
-  decisionId?: DecisionId;
-  /** ask.delivered: when the lead was woken with the answer. */
-  deliveredAt?: Timestamp;
-  key?: DecisionKey;
-  kind?: AskKind;
-  number?: number;
-  /** ask.created: a closed ask opened again (a failed verify, an undone answer). */
-  reopened?: boolean;
-  /** ask.closed: the state it closed in. */
-  state?: AskState;
-  /** ask.answered: until then `inbox_undo` takes the answer back. */
-  undoUntil?: Timestamp;
-  /** The order it is about, when it is about one (ask.closed always says). */
-  workstreamId?: WorkstreamId;
-};
-
-export type AskId = string;
-
-/**
- * decide: a product call. do: hand steps for the human, optionally re-checked by `verify`. secret: a value the
- * desktop app seals to the sink's node. approve: a stored command the node runs after a human approves it.
- */
-export type AskKind = "decide" | "do" | "secret" | "approve";
-
-/** One choice of a decide ask. The human reads `label` and `consequence`; `key` is internal and is what gets recorded. */
-export type AskOption = {
-  /** One line, what happens if the human picks it. Absent only on asks stored before labels. */
-  consequence?: string;
-  /** The decision value recorded when the human picks it, e.g. "public-snapshot". */
-  key: string;
-  /** A few words, e.g. "Public snapshot". Absent only on asks stored before labels: show [`humanize_key`]. */
-  label?: string;
-};
-
-export type AskState = "open" | "auto" | "answered" | "defaulted" | "withdrawn";
-
-export type AsksListInput = {
-  batchId?: BatchId;
-  state?: AskState;
-};
-
-export type AsksListOutput = {
-  /** The asks in those batches, by batch then number. */
-  asks: Ask[];
-  /** Newest first. */
-  batches: Batch[];
-  next?: string;
-  truncated?: boolean;
-};
 
 export type AttachmentGetInput = {
   attachmentId: AttachmentId;
@@ -394,22 +261,6 @@ export type AttentionPolicyOutput = {
   quiet: QuietWindow[];
   truncated?: boolean;
 };
-
-export type Batch = {
-  batchId: BatchId;
-  createdAt: Timestamp;
-  items: BatchItem[];
-  state: BatchState;
-};
-
-export type BatchId = string;
-
-export type BatchItem = {
-  askId: AskId;
-  number: number;
-};
-
-export type BatchState = "open" | "closed";
 
 export type BoxPublicKey = string;
 
@@ -902,8 +753,6 @@ export type CriticalPath = {
 export type DecidedBy = "lead" | "human" | "policy" | "hub_rule";
 
 export type Decision = {
-  /** The ask this answers, when it came from one. */
-  askId?: AskId;
   at: Timestamp;
   /** Who recorded it: the agent key name, "lead:<machineId>/<projectId>" or "human:<device>". */
   by?: string;
@@ -1189,7 +1038,7 @@ export type GateKind = KnownGateKind | (string & {});
 
 export type GatedClass = "irreversible" | "money" | "credential";
 
-/** Stored with the approve ask and never changed: the human approves exactly these bytes. */
+/** Stored with the approval and never changed: the human approves exactly these bytes. */
 export type GatedRunSpec = {
   argv: string[];
   class: GatedClass;
@@ -1347,8 +1196,6 @@ export type KnownHubEventType =
   | "wake.fired"
   | "workstream.created"
   | "workstream.state"
-  | "ask.created"
-  | "batch.ready"
   | "decision.recorded"
   | "lead.started"
   | "lead.woken"
@@ -1370,11 +1217,8 @@ export type KnownHubEventType =
   | "write.expired"
   | "webhook.failing"
   | "workstream.running"
-  | "ask.auto"
-  | "ask.closed"
-  | "ask.answered"
-  | "ask.undone"
-  | "ask.delivered"
+  | "request.opened"
+  | "request.updated"
   | "digest.ready"
   | "task.queued"
   | "task.out_of_area"
@@ -1397,8 +1241,6 @@ export type KnownHubEventType =
   | "research.verdict"
   | "usage.breaker"
   | "usage.resumed"
-  | "ask.secret_saved"
-  | "gated.ran"
   | "doctor.changed"
   | "retro.ran"
   | "playbook.changed"
@@ -1424,6 +1266,38 @@ export type KnownHubEventType =
   | "chat.waiting";
 /** KnownHubEventType, or a value from a newer hub. */
 export type HubEventType = KnownHubEventType | (string & {});
+
+/** One human request, as stored and as every client shows it. */
+export type HumanRequest = {
+  answeredAt?: Timestamp;
+  /** "human:<device>". */
+  answeredBy?: string;
+  createdAt: Timestamp;
+  /**
+   * What happened, in one line: "fingerprint ab12cd34", "exit 0 on devbox, approved by human:desk", or why it did
+   * not run (and so is open again).
+   */
+  evidence?: string;
+  /**
+   * An approval that ran: its exit code (absent when a signal or the timeout ended it) and the end of its output,
+   * with every injected secret value scrubbed.
+   */
+  exitCode?: number;
+  /** approval of a gated run: exactly the bytes the node runs. */
+  gated?: GatedRunSpec;
+  kind: RequestKind;
+  outputTail?: string;
+  /** approval of a session's tool prompt, instead of a gated run. */
+  permission?: ToolPermission;
+  projectRef: ProjectRef;
+  requestId: ChatRequestId;
+  /** secret only. */
+  secret?: SecretRequest;
+  state: RequestState;
+  /** One line on why the lead needs it. */
+  text: string;
+  workstreamId?: WorkstreamId;
+};
 
 export type HumanWait = {
   longest?: LongestWait;
@@ -1463,63 +1337,6 @@ export type InProgressRow = {
   workstreamId: WorkstreamId;
 };
 
-export type InboxReplyApplied = {
-  askId?: AskId;
-  by?: string;
-  /** Absent while a decide answer's undo window runs. */
-  decisionId?: DecisionId;
-  /** option, text or skip, for a decide ask. */
-  kind?: AskAnswerKind;
-  /** What the human sees: the picked option's label, the free text, or the kept recommendation's label. */
-  label?: string;
-  /** The batch item number; absent for "pref:" and "forget". */
-  number?: number;
-  outcome: InboxReplyOutcome;
-  /** The written decision's source and by, filled by the hub from the caller (human device or agent key). */
-  source?: DecisionSource;
-  /** Until then `inbox_undo` takes the answer back. */
-  undoUntil?: Timestamp;
-  value?: string;
-};
-
-export type InboxReplyInput = {
-  /** Absent: the latest open batch. */
-  batchId?: BatchId;
-  /** Terse reply such as "1 go 2 nvm 3 recs fine"; a leading "#B<n>" picks the batch. */
-  raw: string;
-};
-
-/**
- * answered: the ask is answered (a decide ask's decision is written once `undoUntil` passes). skipped: "skip",
- * the lead keeps its recommendation and no decision is written. later: moved to the next batch. retired: "forget
- * Dn". pref: "pref:" recorded.
- */
-export type InboxReplyOutcome = "answered" | "skipped" | "withdrawn" | "later" | "retired" | "pref";
-
-export type InboxReplyOutput = {
-  applied: InboxReplyApplied[];
-  batchId?: BatchId;
-  /** E.g. "Logged: 1 → go (D12), 2 → dropped". */
-  echo?: string;
-  /** How to fix an unparseable reply. */
-  hint?: string;
-  next?: string;
-  /** False: nothing changed; see `hint`. */
-  parsed: boolean;
-  truncated?: boolean;
-};
-
-export type InboxUndoInput = {
-  askId: AskId;
-};
-
-export type InboxUndoOutput = {
-  /** The ask, open again in its batch. */
-  ask: Ask;
-  next?: string;
-  truncated?: boolean;
-};
-
 /** Recorded by the hub, never by an agent. */
 export type Incident = {
   at: Timestamp;
@@ -1533,21 +1350,21 @@ export type Incident = {
 };
 
 /**
- * `policy_bypass`: a PR on a watched repo was merged by something other than the train. M12: `re_ask`, a human was
- * asked about a key that already had an active Decision; `override`, a human replaced a lead's Decision with another
- * value; `playbook_reverted`, a retro wording change missed its metric and was rolled back.
+ * `policy_bypass`: a PR on a watched repo was merged by something other than the train. M12: `override`, a human
+ * replaced a lead's Decision with another value; `playbook_reverted`, a retro wording change missed its metric and was
+ * rolled back.
  */
 export type IncidentClass =
   | "false_claim"
   | "polish_loop"
-  | "misfiled_ask"
   | "out_of_area"
   | "stall"
   | "policy_bypass"
-  | "re_ask"
   | "override"
   | "playbook_reverted"
-  | "estimate_miss";
+  | "estimate_miss"
+  | "misfiled_ask"
+  | "re_ask";
 
 export type IncidentCount = {
   class: IncidentClass;
@@ -1676,15 +1493,12 @@ export type IntakeSubmitInput = {
 };
 
 export type IntakeSubmitOutput = {
-  /** The router could not place the intent: the human picks the project by answering this ask. */
-  askId?: AskId;
-  /** Present with workstreamId. */
   echo?: IntakeEcho;
   /** Why no lead has the order yet, with the fix; absent when the project's lead has it or is starting. */
   leadWaiting?: string;
   next?: string;
   truncated?: boolean;
-  workstreamId?: WorkstreamId;
+  workstreamId: WorkstreamId;
 };
 
 export type InventoryInput = {
@@ -1966,9 +1780,9 @@ export type MoreCounts = {
 };
 
 export type NeedsYou = {
-  /** Render with the inbox's one-tap answers. */
-  askIds: AskId[];
   count: number;
+  /** Open secret and approval requests, shown inline in the project's chat. */
+  requestIds: ChatRequestId[];
 };
 
 export type NextRow = {
@@ -2036,7 +1850,6 @@ export type OrderGetInput = {
 };
 
 export type OrderGetOutput = {
-  asks: Ask[];
   /** Newest first. */
   claims?: Claim[];
   /** Newest first. */
@@ -2045,6 +1858,8 @@ export type OrderGetOutput = {
   lead?: AgentLane;
   next?: string;
   order: OrderCard;
+  /** Its open secret and approval requests. */
+  requests: HumanRequest[];
   truncated?: boolean;
 };
 
@@ -2776,6 +2591,44 @@ export type RepeatStat = {
   totalMs: number;
 };
 
+/** `request.opened`, `request.updated`. */
+export type RequestEventData = {
+  /** Who answered it ("human:<device>"), once someone did. */
+  by?: string;
+  kind: RequestKind;
+  requestId: ChatRequestId;
+  state: RequestState;
+  /** The order it is about, when it is about one. */
+  workstreamId?: WorkstreamId;
+};
+
+/**
+ * What a lead needs a person for that chat can't carry safely: a secret value (entered in a masked field and sealed to
+ * the sink's node, never in a transcript), or an approval of a risky command (a gated run, or a session's tool
+ * prompt). The lead asks everything else in chat.
+ */
+export type RequestKind = "secret" | "approval";
+
+/**
+ * The state names of the chat items that show it (`SecretRequestState`, `CommandApprovalState`). secret: open →
+ * stored | withdrawn. approval: open → approved → ran | failed, or open → denied; an approval the node could not run
+ * goes back to open with the reason in `evidence`.
+ */
+export type RequestState = "open" | "stored" | "withdrawn" | "approved" | "denied" | "ran" | "failed";
+
+export type RequestsListInput = {
+  limit?: number;
+  projectRef?: ProjectRef;
+  /** Absent: every state. */
+  state?: RequestState;
+};
+
+export type RequestsListOutput = {
+  next?: string;
+  requests: HumanRequest[];
+  truncated?: boolean;
+};
+
 /** STOP is a success: the question was answered. */
 export type ResearchOutcome = "go" | "stop" | "inconclusive";
 
@@ -2831,13 +2684,13 @@ export type RetroMetricClass =
 
 export type RetroProposal = {
   appliedAt?: Timestamp;
-  /** The gate Ask, key `playbook.<name>.<hash>`. */
-  askId?: AskId;
   at: Timestamp;
   /** The window before it applied; `measured` is the window after. */
   baseline?: RetroSnapshot;
   /** What the model said it was. */
   claimedKind: PlaybookChangeKind;
+  /** A gate change: the global decision a person records to settle it, `playbook.<name>.<hash>` = apply | reject. */
+  decisionKey?: DecisionKey;
   diff: string;
   /** When a wording change's window ends and its metric is computed. */
   dueAt?: Timestamp;
@@ -2863,20 +2716,11 @@ export type RetroProposal = {
 export type RetroProposalId = string;
 
 /**
- * suggested: advise-only, nothing applies. pending: a gate change waiting for the weekly Ask; asked: in it.
+ * suggested: advise-only, nothing applies. pending: a gate change waiting for a person to record its decision.
  * measuring: a wording change applied, its window running; then kept or reverted. applied: a gate change a person
  * approved. rejected: a person said no. stale: the playbook changed under it, so its diff no longer applies.
  */
-export type RetroProposalState =
-  | "suggested"
-  | "pending"
-  | "asked"
-  | "measuring"
-  | "kept"
-  | "reverted"
-  | "applied"
-  | "rejected"
-  | "stale";
+export type RetroProposalState = "suggested" | "measuring" | "kept" | "reverted" | "applied" | "rejected" | "stale" | "pending";
 
 export type RetroProposalsInput = {
   limit?: number;
@@ -2884,7 +2728,7 @@ export type RetroProposalsInput = {
 };
 
 export type RetroProposalsOutput = {
-  /** The global Decision policy.retro.apply is true: wording changes apply on their own and gate changes are asked. */
+  /** The global Decision policy.retro.apply is true: wording changes apply on their own and gate changes wait for a person's decision. */
   apply: boolean;
   lastRun?: RetroRun;
   next?: string;
@@ -3004,6 +2848,17 @@ export type SecretEnvEntry = {
 /** 8 lowercase hex characters: the sha256 prefix of the plaintext */
 export type SecretFingerprint = string;
 
+/** A secret request: the secret's name and where the node writes it. */
+export type SecretRequest = {
+  /** An env: sink's variable, when not the one the key names (`secret_env_name`). */
+  envName?: EnvName;
+  /** Set once the node has written the sink; the value itself never reaches the hub in plain text. */
+  fingerprint?: SecretFingerprint;
+  /** The secret's name, a dotted slug such as "stripe.test_key". */
+  key: DecisionKey;
+  sink: SecretSink;
+};
+
 /**
  * The lead needs a secret. The app shows a masked field; the value never enters the transcript: it is sealed to the
  * sink's machine and answered with `secret_submit`, naming `requestId`. Only its fingerprint comes back.
@@ -3034,19 +2889,15 @@ export type SecretRequestState = KnownSecretRequestState | (string & {});
 export type SecretSink = string;
 
 export type SecretSubmitInput = {
-  /** A secret ask (the questions tool). Exactly one of askId and requestId. */
-  askId?: AskId;
-  /** A chat's `secret_request` item. */
-  requestId?: ChatRequestId;
+  requestId: ChatRequestId;
   /** Sealed in the desktop app to the sink machine's `box_pub_key` (see Machine). */
   sealed: SealedSecret;
 };
 
 export type SecretSubmitOutput = {
-  askId?: AskId;
   fingerprint: SecretFingerprint;
   next?: string;
-  requestId?: ChatRequestId;
+  requestId: ChatRequestId;
   truncated?: boolean;
 };
 
@@ -3087,7 +2938,6 @@ export type SessionPromptRef = {
 
 /** Counts since the reading key last looked at this scope. Zero counts are hidden by clients. */
 export type Since = {
-  asked: number;
   failed: number;
   merged: number;
   /** The mark is older than the event log keeps ("since more than 30 days"). */
@@ -3622,19 +3472,6 @@ export type SteersListOutput = {
   truncated?: boolean;
 };
 
-export type Step = {
-  command?: string;
-  /** What the human should see when the step worked. */
-  expect?: string;
-  text: string;
-  where: StepWhere;
-};
-
-export type StepPlace = "browser";
-
-/** A machineId or "browser". */
-export type StepWhere = StepPlace | MachineId;
-
 /** A webhook push target. Its signing secret is shown once by subscription_set and never returned again. */
 export type Subscription = {
   /** keyId of the agent key that created it. */
@@ -3824,9 +3661,9 @@ export type ThreadAnswerInput = {
 };
 
 export type ThreadAnswerOutput = {
-  /** The tool_permission ask this answer closed, if one was open. */
-  askId?: AskId;
   decision: PermissionAnswer;
+  /** The approval request this answer closed, if one was open. */
+  humanRequestId?: ChatRequestId;
   next?: string;
   requestId: string;
   truncated?: boolean;
@@ -4074,8 +3911,8 @@ export type Tokens = {
 };
 
 /**
- * An approve ask raised by a session's tool permission prompt (`tool_permission`) instead of a gated command: answering
- * it answers the prompt on the project's node. Its machine is the ask's project's.
+ * An approval raised by a session's tool permission prompt instead of a gated command: answering it answers the prompt
+ * on the project's node. Its machine is the request's project's.
  */
 export type ToolPermission = {
   requestId: string;
@@ -4375,8 +4212,6 @@ export type WorkstreamGetInput = {
 };
 
 export type WorkstreamGetOutput = {
-  /** Its open asks. */
-  asks: Ask[];
   /** Its claims, newest first. */
   claims?: Claim[];
   /** Active decisions scoped to it. */
@@ -4384,6 +4219,8 @@ export type WorkstreamGetOutput = {
   /** Absent without a raw estimate in the brief. */
   eta?: Eta;
   next?: string;
+  /** Its open secret and approval requests. */
+  requests: HumanRequest[];
   truncated?: boolean;
   workstream: Workstream;
 };
@@ -4451,7 +4288,6 @@ export type WorkstreamState = "draft" | "running" | "converging" | "verifying" |
 export interface ToolMap {
   actions_list: { input: ActionsListInput; output: ActionsListOutput };
   approval_answer: { input: ApprovalAnswerInput; output: ApprovalAnswerOutput };
-  asks_list: { input: AsksListInput; output: AsksListOutput };
   attachment_get: { input: AttachmentGetInput; output: AttachmentGetOutput };
   attachment_put: { input: AttachmentPutInput; output: AttachmentPutOutput };
   attention_policy: { input: AttentionPolicyInput; output: AttentionPolicyOutput };
@@ -4468,8 +4304,6 @@ export interface ToolMap {
   events_wait: { input: EventsWaitInput; output: EventsWaitOutput };
   fleetd_status: { input: FleetdStatusInput; output: FleetdStatusOutput };
   github_webhook_set: { input: GithubWebhookSetInput; output: GithubWebhookSetOutput };
-  inbox_reply: { input: InboxReplyInput; output: InboxReplyOutput };
-  inbox_undo: { input: InboxUndoInput; output: InboxUndoOutput };
   incidents_list: { input: IncidentsListInput; output: IncidentsListOutput };
   intake_preview: { input: IntakePreviewInput; output: IntakePreviewOutput };
   intake_submit: { input: IntakeSubmitInput; output: IntakeSubmitOutput };
@@ -4493,6 +4327,7 @@ export interface ToolMap {
   prompt_reset: { input: PromptResetInput; output: PromptResetOutput };
   prompt_set: { input: PromptSetInput; output: PromptSetOutput };
   prompts_list: { input: PromptsListInput; output: PromptsListOutput };
+  requests_list: { input: RequestsListInput; output: RequestsListOutput };
   retro_proposals: { input: RetroProposalsInput; output: RetroProposalsOutput };
   retro_run: { input: RetroRunInput; output: RetroRunOutput };
   secret_submit: { input: SecretSubmitInput; output: SecretSubmitOutput };
@@ -4534,12 +4369,6 @@ export interface ToolMap {
 /** `HubEvent.data` by event type, for the types whose data has a declared shape. */
 export interface HubEventDataMap {
   "agents.cap": AgentsCapData;
-  "ask.answered": AskEventData;
-  "ask.auto": AskEventData;
-  "ask.closed": AskEventData;
-  "ask.created": AskEventData;
-  "ask.delivered": AskEventData;
-  "ask.undone": AskEventData;
   "change.ci_failed": TrainEventData;
   "change.needs_rebase": TrainEventData;
   "change.queued": TrainEventData;
@@ -4560,6 +4389,8 @@ export interface HubEventDataMap {
   "project.added": ProjectAddedData;
   "project.clone_progress": CloneProgressData;
   "prompt.changed": PromptChangedData;
+  "request.opened": RequestEventData;
+  "request.updated": RequestEventData;
   "source.fresh": SourceFreshData;
   "source.stale": SourceStaleData;
   "steer.acknowledged": SteerEventData;

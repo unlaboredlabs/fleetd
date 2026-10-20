@@ -229,7 +229,10 @@ pub fn request_outcome(r: &HumanRequest) -> (String, String) {
         (Some(s), _, _) => format!("secret {}", s.key),
         (_, Some(g), _) => format!(
             "your command `{}`",
-            clip(&shown_argv(&g.argv.iter().cloned().collect::<Vec<_>>()), 200)
+            clip(
+                &shown_argv(&g.argv.iter().cloned().collect::<Vec<_>>()),
+                200
+            )
         ),
         (_, _, Some(p)) => format!("tool prompt {} {}", p.tool_name, clip(&p.summary, 120)),
         _ => "request".into(),
@@ -242,8 +245,14 @@ pub fn request_outcome(r: &HumanRequest) -> (String, String) {
         RequestState::Withdrawn => "withdrawn".into(),
         RequestState::Denied => format!(
             "denied{}{}; don't run it, say in the chat what you do instead",
-            r.answered_by.as_deref().map_or(String::new(), |b| format!(" by {b}")),
-            if evidence.is_empty() { String::new() } else { format!(": {evidence}") }
+            r.answered_by
+                .as_deref()
+                .map_or(String::new(), |b| format!(" by {b}")),
+            if evidence.is_empty() {
+                String::new()
+            } else {
+                format!(": {evidence}")
+            }
         ),
         RequestState::Approved => format!("approved ({evidence})"),
         RequestState::Ran => format!("ran: {evidence}"),

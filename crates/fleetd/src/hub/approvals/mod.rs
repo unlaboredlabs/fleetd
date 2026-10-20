@@ -17,22 +17,22 @@ mod tests;
 use crate::clock::Clock;
 use crate::hub::usage::ports::{BoxFut, EventLog, NewEvent, ProjectRef, WaitInput};
 use crate::hub::usage::time::{clip, iso, system_ms};
-use fleetd_contracts::sessions::{PendingPermission, PermissionDecision};
-pub use permissions::{ThreadAnswer, ToolRules};
-use regex::Regex;
-use serde::Serialize;
 use fleetd_contracts::chat::{
     ChatItem, ChatRequestId, CommandApprovalItem, CommandApprovalState, SecretRequestItem,
     SecretRequestState,
 };
+use fleetd_contracts::lead_calls::RequestSecretCall;
 use fleetd_contracts::ledger::{
     GatedRunSpec, HumanRequest, RequestKind, RequestState, SecretRequest,
 };
-use fleetd_contracts::lead_calls::RequestSecretCall;
+use fleetd_contracts::sessions::{PendingPermission, PermissionDecision};
+pub use permissions::{ThreadAnswer, ToolRules};
+use regex::Regex;
+use serde::Serialize;
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
-use store::{NewRequest, RequestFilter, RequestStoreError, Requests};
 use std::sync::{Arc, LazyLock};
+use store::{NewRequest, RequestFilter, RequestStoreError, Requests};
 
 /// A refusal in the tools' `{ code, message, fix }` shape.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -237,7 +237,11 @@ fn store_refusal(e: RequestStoreError) -> ApprovalRefused {
         RequestStoreError::Invalid(why) => refuse("invalid", why, None),
         RequestStoreError::Store(error) => {
             tracing::error!(%error, "approvals: request store failed");
-            refuse("failed", "The hub failed while saving the request.", Some("Try again shortly."))
+            refuse(
+                "failed",
+                "The hub failed while saving the request.",
+                Some("Try again shortly."),
+            )
         }
     }
 }
@@ -321,30 +325,34 @@ impl Approvals {
         })
     }
 
-    /// Runs until the hub stops: approvals the hub accepted but never finished before it stopped go back to the person
-    /// (never run late, never silently lost); then the threads' follower and the prompt reminders.
+    /// Runs until the hub stops: first the approved commands a stopped hub never finished go back to the person, then
+    /// the threads' follower, the removed-projects follower and the prompt reminders.
     pub async fn serve(self: Arc<Self>) {
-        let approvals = self;
-        let approved = approvals.deps.requests.list(&RequestFilter {
+        self.reopen_unfinished().await;
+        tokio::join!(
+            self.clone().follow_threads(),
+            self.clone().follow_removals(),
+            self.watch_prompts(),
+        );
+    }
+
+    /// Approved commands the hub never saw finish go back to the person: never run late, never silently lost. A tool
+    /// prompt's answer is delivered or put back by the prompt sweep instead.
+    async fn reopen_unfinished(&self) {
+        let approved = self.deps.requests.list(&RequestFilter {
             states: Some(vec![RequestState::Approved]),
             kind: Some(RequestKind::Approval),
             limit: i64::MAX,
             ..Default::default()
         });
         for r in approved.unwrap_or_default() {
-            // A tool prompt's answer is delivered or put back by the prompt sweep itself, never re-run.
             if r.gated.is_none() {
                 continue;
             }
             let machine = r.project_ref.machine_id.to_string();
             let why = restart_reopen_reason(r.evidence.as_ref().map(|e| e.as_str()), &machine);
-            let _ = approvals.reopen(&r.request_id, &why).await;
+            let _ = self.reopen(&r.request_id, &why).await;
         }
-        tokio::join!(
-            approvals.clone().follow_threads(),
-            approvals.clone().follow_removals(),
-            approvals.watch_prompts(),
-        );
     }
 
     fn now(&self) -> String {
@@ -377,7 +385,10 @@ impl Approvals {
                 kind: kind.into(),
                 machine_id: Some(project.machine_id),
                 project_id: Some(project.project_id),
-                summary: clip(&format!("{} {}: {what}", r.request_id, r.state.as_str()), 200),
+                summary: clip(
+                    &format!("{} {}: {what}", r.request_id, r.state.as_str()),
+                    200,
+                ),
                 data: Some(json!({
                     "requestId": r.request_id,
                     "kind": r.kind,
@@ -426,7 +437,11 @@ impl Approvals {
     }
 
     /// Records `evidence` on a request.
-    async fn note(&self, id: &ChatRequestId, evidence: &str) -> Result<HumanRequest, ApprovalRefused> {
+    async fn note(
+        &self,
+        id: &ChatRequestId,
+        evidence: &str,
+    ) -> Result<HumanRequest, ApprovalRefused> {
         let evidence = clip(evidence, EVIDENCE_MAX);
         self.change(id, |r| {
             r.evidence = Some(fleetd_contracts::prim::Text::unchecked(evidence));
@@ -495,9 +510,10 @@ impl Approvals {
             return Err(not_found(request_id));
         };
         let sink = parse_secret_sink(secret.sink.as_str()).ok_or_else(|| not_found(request_id))?;
-        let machines: BTreeSet<&str> = [sink.machine_id.as_str(), r.project_ref.machine_id.as_str()]
-            .into_iter()
-            .collect();
+        let machines: BTreeSet<&str> =
+            [sink.machine_id.as_str(), r.project_ref.machine_id.as_str()]
+                .into_iter()
+                .collect();
         for m in machines {
             if !(caller.allows_operate)(m) {
                 return Err(refuse(
@@ -551,6 +567,7 @@ impl Approvals {
                     Some(&format!("Try again when {m} is online.")),
                 )
             })?;
+        // The node writes the sink before it answers: a fingerprint that doesn't parse still means it was saved.
         let Some(fingerprint) = delivered.fingerprint else {
             return Err(refuse(
                 "invalid",
@@ -566,11 +583,16 @@ impl Approvals {
         let by = format!("human:{}", caller.name);
         let at = self.now();
         let print = fingerprint.clone();
+        let parsed: Option<fleetd_contracts::secrets::SecretFingerprint> =
+            serde_json::from_value(json!(print)).ok();
+        if parsed.is_none() {
+            tracing::warn!(request = %id, "approvals: the node's fingerprint is not 8 hex characters; kept in evidence only");
+        }
         let saved = self
             .change(&id, |r| {
                 r.state = RequestState::Stored;
                 if let Some(s) = r.secret.as_mut() {
-                    s.fingerprint = serde_json::from_value(json!(print)).ok();
+                    s.fingerprint = parsed;
                 }
                 r.evidence = Some(fleetd_contracts::prim::Text::unchecked(format!(
                     "fingerprint {print}"
@@ -609,8 +631,13 @@ impl Approvals {
         if let Some(env) = &call.secret_env {
             gated["secretEnv"] = env.clone();
         }
-        let gated: GatedRunSpec = serde_json::from_value(gated)
-            .map_err(|e| refuse("invalid", format!("The command is not one fleetd can store: {e}."), None))?;
+        let gated: GatedRunSpec = serde_json::from_value(gated).map_err(|e| {
+            refuse(
+                "invalid",
+                format!("The command is not one fleetd can store: {e}."),
+                None,
+            )
+        })?;
         let now = system_ms(self.deps.clock.now());
         self.create(NewRequest {
             project_ref: contract_project(project),
@@ -736,9 +763,12 @@ impl Approvals {
                     RequestKind::Secret => RequestState::Withdrawn,
                     RequestKind::Approval => RequestState::Denied,
                 };
-                r.evidence = Some(fleetd_contracts::prim::Text::unchecked(
-                    "withdrawn by the lead".to_string(),
-                ));
+                // A tool prompt's evidence is written once its deny reached the node: until then the sweep redelivers.
+                if r.permission.is_none() {
+                    r.evidence = Some(fleetd_contracts::prim::Text::unchecked(
+                        "withdrawn by the lead".to_string(),
+                    ));
+                }
                 r.answered_at = Some(fleetd_contracts::ids::Timestamp(at));
                 r.answered_by = Some(by);
             })
@@ -770,7 +800,9 @@ impl Approvals {
                         RequestKind::Secret => RequestState::Withdrawn,
                         RequestKind::Approval => RequestState::Denied,
                     };
-                    r.evidence = Some(fleetd_contracts::prim::Text::unchecked(why));
+                    if r.permission.is_none() {
+                        r.evidence = Some(fleetd_contracts::prim::Text::unchecked(why));
+                    }
                     r.answered_at = Some(fleetd_contracts::ids::Timestamp(at));
                     r.answered_by = Some("hub".into());
                 })
@@ -804,7 +836,8 @@ impl Approvals {
                         machine_id,
                         project_id,
                     };
-                    self.close_open(&project, None, "the project was removed").await;
+                    self.close_open(&project, None, "the project was removed")
+                        .await;
                 }
             }
         }

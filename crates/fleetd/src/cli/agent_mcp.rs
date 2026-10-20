@@ -8,11 +8,10 @@ use std::path::Path;
 use std::time::Duration;
 
 use fleetd_contracts::lead_calls::{
-    AskLeadCall, BriefCreateCall, ChangeEnqueueCall, ChangeStatusCall,
-    ClaimDoneCall, DecideCall, DecisionsSearchCall, GatedRunCall, InventoryCall, LeadCall,
-    RequestSecretCall, RequestWithdrawCall,
-    SliceReadyCall, StatusSetCall, TaskCancelCall, TaskListCall, TaskMessageCall, TaskSpawnCall,
-    TaskStatusCall, WorkstreamSpawnCall,
+    AskLeadCall, BriefCreateCall, ChangeEnqueueCall, ChangeStatusCall, ClaimDoneCall, DecideCall,
+    DecisionsSearchCall, GatedRunCall, InventoryCall, LeadCall, RequestSecretCall,
+    RequestWithdrawCall, SliceReadyCall, StatusSetCall, TaskCancelCall, TaskListCall,
+    TaskMessageCall, TaskSpawnCall, TaskStatusCall, WorkstreamSpawnCall,
 };
 use fleetd_contracts::plan::{
     PlanAddCall, PlanDropCall, PlanEditCall, PlanMilestoneCall, PlanShowCall,

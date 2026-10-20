@@ -6,8 +6,8 @@ use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::lead_calls::{BriefCreateResult, StatusSetResult};
 use fleetd_contracts::ledger::{
-    BriefDraft, BriefHash, Decision, DecisionKey, IntakeChannel, PlaybookName,
-    PlaybookRef, Workstream, WorkstreamId, WorkstreamParent, WorkstreamState,
+    BriefDraft, BriefHash, Decision, DecisionKey, IntakeChannel, PlaybookName, PlaybookRef,
+    Workstream, WorkstreamId, WorkstreamParent, WorkstreamState,
 };
 use fleetd_contracts::mcp::ErrorCode;
 
@@ -196,7 +196,11 @@ impl Workstreams {
                 w.workstream_id
             )));
         };
-        if stored.amends.iter().any(|used| used == decision.decision_id.as_str()) {
+        if stored
+            .amends
+            .iter()
+            .any(|used| used == decision.decision_id.as_str())
+        {
             return Err(refuse(format!(
                 "{key} ({}) was already used to amend {}; a new change needs a new yes.",
                 decision.decision_id, w.workstream_id

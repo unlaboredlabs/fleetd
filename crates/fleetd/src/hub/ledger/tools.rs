@@ -16,8 +16,7 @@ use fleetd_contracts::prim::List;
 
 use super::{Actor, DecisionFilter, LedgerCode, LedgerError, RecordInput};
 use crate::hub::api::{
-    Caller, Hub, Registry, ToolError, allows, allows_everywhere, is_human, require,
-    unknown_project,
+    Caller, Hub, Registry, ToolError, allows, allows_everywhere, is_human, require, unknown_project,
 };
 
 const SEARCH_LIMIT: i64 = 20;

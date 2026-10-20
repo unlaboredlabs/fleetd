@@ -1630,7 +1630,7 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(secret["op"], "request_secret");
-        assert_eq!(secret["sink"]["kind"], "env");
+        assert_eq!(secret["sink"], "env:lab-a:/srv/app/.env");
         assert_eq!(
             parse(&["request", "withdraw", "Q3"]).unwrap(),
             json!({ "op": "request_withdraw", "requestId": "Q3" })
@@ -1663,8 +1663,11 @@ mod tests {
                 "--sink is required",
             ),
             (
-                &["request", "secret", "--key", "a.b", "--sink", "env:m:/e", "--text", "t", "--value", "v"],
-                "--value does not apply to fleetd request",
+                &[
+                    "request", "secret", "--key", "a.b", "--sink", "env:m:/e", "--text", "t",
+                    "--value", "v",
+                ],
+                "--value does not apply to fleetd request secret",
             ),
             (
                 &["request", "withdraw"],
@@ -1967,7 +1970,8 @@ mod tests {
             refused,
             CliResult::err(
                 3,
-                "Refused: no machine lab-a\nNext: name a sink on a machine of this project\n".into()
+                "Refused: no machine lab-a\nNext: name a sink on a machine of this project\n"
+                    .into()
             )
         );
         let offline = command(&ask, Ok(json!({ "error": { "code": "machine_offline", "message": "fleetd hub unreachable" } }))).0;

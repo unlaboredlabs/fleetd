@@ -149,6 +149,12 @@ impl Default for Fake {
 }
 
 impl Fake {
+    /// Waits until the lead was woken `n` times in all.
+    async fn woken_times(&self, n: usize) {
+        while self.woken.lock().unwrap().len() < n {
+            self.woke.notified().await;
+        }
+    }
     fn request(&self, id: &str) -> HumanRequest {
         self.requests.get(id).unwrap().unwrap()
     }
@@ -162,7 +168,12 @@ impl Fake {
             .collect()
     }
     /// Stores a request in `state` as an earlier hub left it.
-    fn stored(&self, permission: Option<(&str, &str)>, state: RequestState, evidence: Option<&str>) -> HumanRequest {
+    fn stored(
+        &self,
+        permission: Option<(&str, &str)>,
+        state: RequestState,
+        evidence: Option<&str>,
+    ) -> HumanRequest {
         let r = self
             .requests
             .create(NewRequest {
@@ -201,12 +212,16 @@ impl ApprovalNodes for Fake {
         self.secrets.lock().unwrap().push((m.into(), input));
         Box::pin(async {
             Ok(SecretOutcome {
-                fingerprint: Some("sha256:ab12cd34".into()),
+                fingerprint: Some("ab12cd34".into()),
                 error: None,
             })
         })
     }
-    fn run_gated(&self, m: &str, input: Value) -> BoxFut<'_, Result<GatedOutcome, NodeCommandError>> {
+    fn run_gated(
+        &self,
+        m: &str,
+        input: Value,
+    ) -> BoxFut<'_, Result<GatedOutcome, NodeCommandError>> {
         self.runs.lock().unwrap().push((m.into(), input));
         let reply = self.gated_reply.lock().unwrap().clone();
         Box::pin(async move { reply })
@@ -382,35 +397,83 @@ async fn approve_runs_the_stored_command_and_wakes_the_lead_with_its_outcome() {
     let fake = Arc::new(Fake::default());
     let a = approvals(&fake);
     let open = a.gated_run(&p1(), migration()).await.unwrap();
-    assert_eq!((open.request_id.as_str(), open.state), ("Q1", RequestState::Open));
-    assert_eq!(open.text.as_str(), "Run sh -c \"make migrate\" on lab-a in /w/p1: apply the schema change");
+    assert_eq!(
+        (open.request_id.as_str(), open.state),
+        ("Q1", RequestState::Open)
+    );
+    assert_eq!(
+        open.text.as_str(),
+        "Run sh -c \"make migrate\" on lab-a in /w/p1: apply the schema change"
+    );
     let item = serde_json::to_value(chat_item(&open)).unwrap();
-    assert_eq!((item["kind"].as_str(), item["state"].as_str()), (Some("command_approval"), Some("open")));
-    assert!(fake.runs.lock().unwrap().is_empty(), "nothing runs before a person approves it");
+    assert_eq!(
+        (item["kind"].as_str(), item["state"].as_str()),
+        (Some("command_approval"), Some("open"))
+    );
+    assert!(
+        fake.runs.lock().unwrap().is_empty(),
+        "nothing runs before a person approves it"
+    );
 
     let refused = a.answer(&agent(), "Q1", true, None).await.unwrap_err();
     assert_eq!(refused.code, "forbidden", "an agent key never approves");
-    let ungranted = Caller { allows_operate: NOWHERE, ..person() };
-    assert_eq!(a.answer(&ungranted, "Q1", true, None).await.unwrap_err().code, "forbidden");
-    assert_eq!(a.answer(&person(), "Q9", true, None).await.unwrap_err().code, "not_found");
+    let ungranted = Caller {
+        allows_operate: NOWHERE,
+        ..person()
+    };
+    assert_eq!(
+        a.answer(&ungranted, "Q1", true, None)
+            .await
+            .unwrap_err()
+            .code,
+        "forbidden"
+    );
+    assert_eq!(
+        a.answer(&person(), "Q9", true, None)
+            .await
+            .unwrap_err()
+            .code,
+        "not_found"
+    );
 
     let approved = a.answer(&person(), "Q1", true, None).await.unwrap();
     assert_eq!(approved.answered_by.as_deref(), Some("human:desk"));
-    fake.woke.notified().await;
+    fake.woken_times(1).await;
     assert_eq!(
         fake.runs.lock().unwrap().as_slice(),
-        [("lab-a".to_string(), json!({ "argv": ["sh", "-c", "make migrate"], "cwd": "/w/p1", "timeoutSec": 600 }))]
+        [(
+            "lab-a".to_string(),
+            json!({ "argv": ["sh", "-c", "make migrate"], "cwd": "/w/p1", "timeoutSec": 600 })
+        )]
     );
     let ran = fake.request("Q1");
     assert_eq!(
-        (ran.state, ran.exit_code, ran.evidence.as_ref().map(|e| e.as_str())),
-        (RequestState::Ran, Some(0), Some("exit 0 on lab-a, approved by human:desk"))
+        (
+            ran.state,
+            ran.exit_code,
+            ran.evidence.as_ref().map(|e| e.as_str())
+        ),
+        (
+            RequestState::Ran,
+            Some(0),
+            Some("exit 0 on lab-a, approved by human:desk")
+        )
     );
-    assert_eq!(ran.output_tail.as_ref().map(|t| t.as_str()), Some("migrated 3 tables"));
+    assert_eq!(
+        ran.output_tail.as_ref().map(|t| t.as_str()),
+        Some("migrated 3 tables")
+    );
     assert_eq!(fake.woken.lock().unwrap().as_slice(), ["Q1 ran"]);
     let again = a.answer(&person(), "Q1", true, None).await.unwrap_err();
-    assert_eq!((again.code.as_str(), again.message.as_str()), ("invalid", "Q1 is already ran."));
-    assert_eq!(fake.runs.lock().unwrap().len(), 1, "a command runs once per approval");
+    assert_eq!(
+        (again.code.as_str(), again.message.as_str()),
+        ("invalid", "Q1 is already ran.")
+    );
+    assert_eq!(
+        fake.runs.lock().unwrap().len(),
+        1,
+        "a command runs once per approval"
+    );
 }
 
 #[tokio::test]
@@ -429,7 +492,10 @@ async fn deny_never_runs_the_command_and_an_offline_node_puts_it_back_to_the_per
     assert!(fake.runs.lock().unwrap().is_empty());
     assert_eq!(fake.woken.lock().unwrap().as_slice(), ["Q1 denied"]);
     let (_, outcome) = crate::hub::usage::wire_approvals::request_outcome(&denied);
-    assert_eq!(outcome, "denied by human:desk: not on a Friday; don't run it, say in the chat what you do instead");
+    assert_eq!(
+        outcome,
+        "denied by human:desk: not on a Friday; don't run it, say in the chat what you do instead"
+    );
 
     a.gated_run(&p1(), migration()).await.unwrap();
     *fake.gated_reply.lock().unwrap() = Err(NodeCommandError {
@@ -438,12 +504,20 @@ async fn deny_never_runs_the_command_and_an_offline_node_puts_it_back_to_the_per
         fix: None,
     });
     a.answer(&person(), "Q2", true, None).await.unwrap();
-    fake.woke.notified().await;
+    fake.woken_times(2).await;
     let back = fake.request("Q2");
-    assert_eq!(back.state, RequestState::Open, "nothing ran, so the person approves it again");
+    assert_eq!(
+        back.state,
+        RequestState::Open,
+        "nothing ran, so the person approves it again"
+    );
     assert!(back.answered_by.is_none());
     assert!(
-        back.evidence.as_ref().unwrap().as_str().starts_with("not run: lab-a's node was offline when human:desk approved it"),
+        back.evidence
+            .as_ref()
+            .unwrap()
+            .as_str()
+            .starts_with("not run: lab-a's node was offline when human:desk approved it"),
         "{:?}",
         back.evidence
     );
@@ -459,24 +533,60 @@ async fn a_secret_is_entered_by_request_id_and_only_its_fingerprint_is_kept() {
     .unwrap();
     let open = a.request_secret(&p1(), call).await.unwrap();
     let item = serde_json::to_value(chat_item(&open)).unwrap();
-    assert_eq!((item["kind"].as_str(), item["requestId"].as_str()), (Some("secret_request"), Some("Q1")));
+    assert_eq!(
+        (item["kind"].as_str(), item["requestId"].as_str()),
+        (Some("secret_request"), Some("Q1"))
+    );
 
-    let refused = a.submit_secret(&agent(), "Q1", "sealed-bytes").await.unwrap_err();
-    assert_eq!(refused.code, "forbidden", "agent keys never handle secret values");
-    let saved = a.submit_secret(&person(), "Q1", "sealed-bytes").await.unwrap();
-    assert_eq!(saved["fingerprint"], "sha256:ab12cd34");
+    let refused = a
+        .submit_secret(&agent(), "Q1", "sealed-bytes")
+        .await
+        .unwrap_err();
+    assert_eq!(
+        refused.code, "forbidden",
+        "agent keys never handle secret values"
+    );
+    let saved = a
+        .submit_secret(&person(), "Q1", "sealed-bytes")
+        .await
+        .unwrap();
+    assert_eq!(saved["fingerprint"], "ab12cd34");
     assert_eq!(
         fake.secrets.lock().unwrap().as_slice(),
-        [("lab-a".to_string(), json!({ "sink": "env:lab-a:/srv/app/.env", "sealed": "sealed-bytes", "secretKey": "stripe.test_key" }))]
+        [(
+            "lab-a".to_string(),
+            json!({ "sink": "env:lab-a:/srv/app/.env", "sealed": "sealed-bytes", "secretKey": "stripe.test_key" })
+        )]
     );
     let stored = fake.request("Q1");
     assert_eq!(stored.state, RequestState::Stored);
-    assert_eq!(stored.secret.unwrap().fingerprint.unwrap().as_str(), "sha256:ab12cd34");
+    assert_eq!(
+        stored.secret.unwrap().fingerprint.unwrap().as_str(),
+        "ab12cd34"
+    );
     assert_eq!(fake.woken.lock().unwrap().as_slice(), ["Q1 stored"]);
     let stored_text = serde_json::to_string(&fake.request("Q1")).unwrap();
-    let events = serde_json::to_string(&*fake.events.lock().unwrap().iter().map(|e| (e.summary.clone(), e.data.clone())).collect::<Vec<_>>()).unwrap();
-    assert!(!stored_text.contains("sealed-bytes") && !events.contains("sealed-bytes"), "the ciphertext is never kept");
-    assert_eq!(a.submit_secret(&person(), "Q1", "again").await.unwrap_err().code, "invalid");
+    let events = serde_json::to_string(
+        &*fake
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|e| (e.summary.clone(), e.data.clone()))
+            .collect::<Vec<_>>(),
+    )
+    .unwrap();
+    assert!(
+        !stored_text.contains("sealed-bytes") && !events.contains("sealed-bytes"),
+        "the ciphertext is never kept"
+    );
+    assert_eq!(
+        a.submit_secret(&person(), "Q1", "again")
+            .await
+            .unwrap_err()
+            .code,
+        "invalid"
+    );
 }
 
 #[tokio::test]
@@ -484,11 +594,26 @@ async fn a_lead_withdraws_its_own_projects_requests_only() {
     let fake = Arc::new(Fake::default());
     let a = approvals(&fake);
     a.gated_run(&p1(), migration()).await.unwrap();
-    let other = ProjectRef { machine_id: "lab-a".into(), project_id: "p2".into() };
-    assert_eq!(a.withdraw(&other, "lead:lab-a/p2", "Q1").await.unwrap_err().code, "not_found");
+    let other = ProjectRef {
+        machine_id: "lab-a".into(),
+        project_id: "p2".into(),
+    };
+    assert_eq!(
+        a.withdraw(&other, "lead:lab-a/p2", "Q1")
+            .await
+            .unwrap_err()
+            .code,
+        "not_found"
+    );
     let done = a.withdraw(&p1(), "lead:lab-a/p1", "Q1").await.unwrap();
     assert_eq!(done.state, RequestState::Denied);
-    assert_eq!(a.answer(&person(), "Q1", true, None).await.unwrap_err().code, "invalid");
+    assert_eq!(
+        a.answer(&person(), "Q1", true, None)
+            .await
+            .unwrap_err()
+            .code,
+        "invalid"
+    );
     assert!(fake.runs.lock().unwrap().is_empty());
 }
 
@@ -498,7 +623,10 @@ async fn after_a_restart_an_approved_command_goes_back_to_the_person_and_never_r
     let a = approvals(&fake);
     a.gated_run(&p1(), migration()).await.unwrap();
     a.gated_run(&p1(), migration()).await.unwrap();
-    for (id, evidence) in [("Q1", None), ("Q2", Some("running on lab-a, approved by human:desk"))] {
+    for (id, evidence) in [
+        ("Q1", None),
+        ("Q2", Some("running on lab-a, approved by human:desk")),
+    ] {
         fake.requests
             .update(&ChatRequestId::unchecked(id), |r| {
                 r.state = RequestState::Approved;
@@ -506,12 +634,19 @@ async fn after_a_restart_an_approved_command_goes_back_to_the_person_and_never_r
             })
             .unwrap();
     }
-    let serving = tokio::spawn(a.clone().serve());
-    tokio::task::yield_now().await;
-    serving.abort();
+    a.reopen_unfinished().await;
     assert_eq!(fake.request("Q1").state, RequestState::Open);
-    assert_eq!(fake.request("Q1").evidence.unwrap().as_str(), NOT_RUN_AFTER_RESTART);
-    assert!(fake.request("Q2").evidence.unwrap().as_str().starts_with("result unknown: the hub restarted while it ran on lab-a"));
+    assert_eq!(
+        fake.request("Q1").evidence.unwrap().as_str(),
+        NOT_RUN_AFTER_RESTART
+    );
+    assert!(
+        fake.request("Q2")
+            .evidence
+            .unwrap()
+            .as_str()
+            .starts_with("result unknown: the hub restarted while it ran on lab-a")
+    );
     assert!(fake.runs.lock().unwrap().is_empty());
 }
 
@@ -522,49 +657,91 @@ async fn a_prompt_no_rule_covers_becomes_one_approval_and_approve_allows_it_on_t
     let waiting = event("thread.waiting", Some(prompt("q1", "Bash", "rm -rf build")));
     a.on_thread_event(&waiting).await;
     a.on_thread_event(&waiting).await;
-    let open = fake.requests.list(&RequestFilter { limit: 10, ..Default::default() }).unwrap();
+    let open = fake
+        .requests
+        .list(&RequestFilter {
+            limit: 10,
+            ..Default::default()
+        })
+        .unwrap();
     assert_eq!(open.len(), 1, "the same prompt is filed once");
     let r = &open[0];
-    assert_eq!((r.kind, r.text.as_str()), (RequestKind::Approval, "lab-a/t1: Bash rm -rf build"));
+    assert_eq!(
+        (r.kind, r.text.as_str()),
+        (RequestKind::Approval, "lab-a/t1: Bash rm -rf build")
+    );
     assert_eq!(
         serde_json::to_value(&r.permission).unwrap(),
         json!({ "threadId": "t1", "requestId": "q1", "toolName": "Bash", "summary": "rm -rf build" })
     );
-    assert!(fake.answers.lock().unwrap().is_empty(), "nothing is answered for the person");
+    assert!(
+        fake.answers.lock().unwrap().is_empty(),
+        "nothing is answered for the person"
+    );
 
     a.answer(&person(), "Q1", true, None).await.unwrap();
     assert_eq!(
         fake.answers.lock().unwrap().as_slice(),
-        [("lab-a".into(), "t1".into(), "q1".into(), PermissionDecision::Allow { updated_input: None })]
+        [(
+            "lab-a".into(),
+            "t1".into(),
+            "q1".into(),
+            PermissionDecision::Allow {
+                updated_input: None
+            }
+        )]
     );
     assert_eq!(
         fake.request("Q1").evidence.unwrap().as_str(),
         "allowed on lab-a, answered by human:desk"
     );
-    assert_eq!(fake.woken.lock().unwrap().as_slice(), ["Q1 approved"], "the approval reaches the lead");
-    assert!(fake.runs.lock().unwrap().is_empty(), "a tool prompt never runs a gated command");
+    assert_eq!(
+        fake.woken.lock().unwrap().as_slice(),
+        ["Q1 approved"],
+        "the approval reaches the lead"
+    );
+    assert!(
+        fake.runs.lock().unwrap().is_empty(),
+        "a tool prompt never runs a gated command"
+    );
 }
 
 #[tokio::test]
 async fn deny_gives_the_run_the_persons_words_and_an_undelivered_approve_goes_back_to_the_person() {
     let fake = Arc::new(Fake::default());
     let a = approvals(&fake);
-    a.on_thread_event(&event("thread.waiting", Some(prompt("q1", "Bash", "rm -rf build"))))
-        .await;
-    a.answer(&person(), "Q1", false, Some("use make clean instead".into()))
-        .await
-        .unwrap();
+    a.on_thread_event(&event(
+        "thread.waiting",
+        Some(prompt("q1", "Bash", "rm -rf build")),
+    ))
+    .await;
+    a.answer(
+        &person(),
+        "Q1",
+        false,
+        Some("use make clean instead".into()),
+    )
+    .await
+    .unwrap();
     let (_, _, _, decision) = fake.answers.lock().unwrap()[0].clone();
     assert_eq!(
         decision,
         PermissionDecision::Deny {
-            message: fleetd_contracts::prim::Text::unchecked("Denied: human:desk said no (Q1): use make clean instead.")
+            message: fleetd_contracts::prim::Text::unchecked(
+                "Denied: human:desk said no (Q1): use make clean instead."
+            )
         }
     );
-    assert!(fake.woken.lock().unwrap().is_empty(), "the run itself hears the no");
+    assert!(
+        fake.woken.lock().unwrap().is_empty(),
+        "the run itself hears the no"
+    );
 
-    a.on_thread_event(&event("thread.waiting", Some(prompt("q2", "Bash", "rm -rf dist"))))
-        .await;
+    a.on_thread_event(&event(
+        "thread.waiting",
+        Some(prompt("q2", "Bash", "rm -rf dist")),
+    ))
+    .await;
     // The node is offline while the run still waits: nothing is lost, the person approves again.
     *fake.answer_fails.lock().unwrap() = Some(NodeCommandError {
         reason: "offline".into(),
@@ -574,7 +751,12 @@ async fn deny_gives_the_run_the_persons_words_and_an_undelivered_approve_goes_ba
     a.answer(&person(), "Q2", true, None).await.unwrap();
     let back = fake.request("Q2");
     assert_eq!(back.state, RequestState::Open);
-    assert!(back.evidence.unwrap().as_str().starts_with("not delivered: lab-a's node is not linked"));
+    assert!(
+        back.evidence
+            .unwrap()
+            .as_str()
+            .starts_with("not delivered: lab-a's node is not linked")
+    );
 }
 
 #[tokio::test]
@@ -584,13 +766,32 @@ async fn rules_answer_without_a_request_and_a_broken_policy_asks_a_person() {
         ..Default::default()
     });
     let a = approvals(&fake);
-    let filed = || fake.requests.list(&RequestFilter { limit: 10, ..Default::default() }).unwrap().len();
-    a.on_thread_event(&event("thread.waiting", Some(prompt("q1", "Bash", "npm test"))))
-        .await;
-    a.on_thread_event(&event("thread.waiting", Some(prompt("q2", "Bash", "rm -rf build"))))
-        .await;
+    let filed = || {
+        fake.requests
+            .list(&RequestFilter {
+                limit: 10,
+                ..Default::default()
+            })
+            .unwrap()
+            .len()
+    };
+    a.on_thread_event(&event(
+        "thread.waiting",
+        Some(prompt("q1", "Bash", "npm test")),
+    ))
+    .await;
+    a.on_thread_event(&event(
+        "thread.waiting",
+        Some(prompt("q2", "Bash", "rm -rf build")),
+    ))
+    .await;
     let answers = fake.answers.lock().unwrap().clone();
-    assert_eq!(answers[0].3, PermissionDecision::Allow { updated_input: None });
+    assert_eq!(
+        answers[0].3,
+        PermissionDecision::Allow {
+            updated_input: None
+        }
+    );
     assert_eq!(
         answers[1].3,
         PermissionDecision::Deny {
@@ -602,8 +803,11 @@ async fn rules_answer_without_a_request_and_a_broken_policy_asks_a_person() {
     assert_eq!(filed(), 0);
 
     *fake.rules.lock().unwrap() = Err(".fleetd/policy.yaml is invalid".into());
-    a.on_thread_event(&event("thread.waiting", Some(prompt("q3", "Bash", "npm test"))))
-        .await;
+    a.on_thread_event(&event(
+        "thread.waiting",
+        Some(prompt("q3", "Bash", "npm test")),
+    ))
+    .await;
     assert_eq!(filed(), 1, "a broken policy never answers for a person");
 
     // A rule answer the node refuses still reaches a person.
@@ -638,7 +842,10 @@ async fn an_approval_closes_when_its_prompt_is_gone() {
     assert_eq!(
         states,
         [
-            (RequestState::Denied, "closed: the prompt was answered elsewhere".to_string()),
+            (
+                RequestState::Denied,
+                "closed: the prompt was answered elsewhere".to_string()
+            ),
             (RequestState::Denied, "expired: the run ended".to_string()),
         ]
     );
@@ -653,8 +860,11 @@ async fn an_approval_closes_when_its_prompt_is_gone() {
 async fn a_lead_answers_its_tasks_prompts_but_never_its_own() {
     let fake = Arc::new(Fake::default());
     let a = approvals(&fake);
-    a.on_thread_event(&event("thread.waiting", Some(prompt("q1", "Bash", "rm -rf build"))))
-        .await;
+    a.on_thread_event(&event(
+        "thread.waiting",
+        Some(prompt("q1", "Bash", "rm -rf build")),
+    ))
+    .await;
     *fake.pending.lock().unwrap() = Some(pending("q1"));
     let lead = agent();
     let input = |request_id: Option<&str>, allow: bool| ThreadAnswer {
@@ -668,7 +878,10 @@ async fn a_lead_answers_its_tasks_prompts_but_never_its_own() {
     *fake.lead_thread.lock().unwrap() = Some("t1".into());
     let refused = a.answer_thread(&lead, input(None, true)).await.unwrap_err();
     assert_eq!(refused.code, "forbidden", "no self-approval");
-    assert!(a.answer_thread(&person(), input(None, true)).await.is_ok(), "a person may");
+    assert!(
+        a.answer_thread(&person(), input(None, true)).await.is_ok(),
+        "a person may"
+    );
     fake.answers.lock().unwrap().clear();
     fake.requests
         .update(&ChatRequestId::unchecked("Q1"), |r| {
@@ -679,15 +892,23 @@ async fn a_lead_answers_its_tasks_prompts_but_never_its_own() {
         .unwrap();
 
     *fake.lead_thread.lock().unwrap() = Some("lead-thread".into());
-    let stale = a.answer_thread(&lead, input(Some("q0"), true)).await.unwrap_err();
+    let stale = a
+        .answer_thread(&lead, input(Some("q0"), true))
+        .await
+        .unwrap_err();
     assert_eq!(stale.code, "not_found");
     assert!(
-        stale.message.contains("it waits on q1 (Bash rm -rf build) now"),
+        stale
+            .message
+            .contains("it waits on q1 (Bash rm -rf build) now"),
         "{}",
         stale.message
     );
 
-    let out = a.answer_thread(&lead, input(Some("q1"), false)).await.unwrap();
+    let out = a
+        .answer_thread(&lead, input(Some("q1"), false))
+        .await
+        .unwrap();
     assert_eq!(
         (out["decision"].as_str(), out["humanRequestId"].as_str()),
         (Some("deny"), Some("Q1"))
@@ -695,19 +916,39 @@ async fn a_lead_answers_its_tasks_prompts_but_never_its_own() {
     assert_eq!(
         fake.answers.lock().unwrap()[0].3,
         PermissionDecision::Deny {
-            message: fleetd_contracts::prim::Text::unchecked("Denied: agent:lead-key with thread_answer.")
+            message: fleetd_contracts::prim::Text::unchecked(
+                "Denied: agent:lead-key with thread_answer."
+            )
         }
     );
     let r = fake.request("Q1");
     assert_eq!(
         (r.state, r.evidence.unwrap().as_str()),
-        (RequestState::Denied, "denied on lab-a with thread_answer by agent:lead-key")
+        (
+            RequestState::Denied,
+            "denied on lab-a with thread_answer by agent:lead-key"
+        )
     );
 
-    let ungranted = Caller { allows_operate: NOWHERE, ..person() };
-    assert_eq!(a.answer_thread(&ungranted, input(None, true)).await.unwrap_err().code, "forbidden");
+    let ungranted = Caller {
+        allows_operate: NOWHERE,
+        ..person()
+    };
+    assert_eq!(
+        a.answer_thread(&ungranted, input(None, true))
+            .await
+            .unwrap_err()
+            .code,
+        "forbidden"
+    );
     *fake.pending.lock().unwrap() = None;
-    assert_eq!(a.answer_thread(&person(), input(None, true)).await.unwrap_err().code, "not_found");
+    assert_eq!(
+        a.answer_thread(&person(), input(None, true))
+            .await
+            .unwrap_err()
+            .code,
+        "not_found"
+    );
 }
 
 fn now_ms() -> i64 {
@@ -718,8 +959,11 @@ fn now_ms() -> i64 {
 async fn a_withdrawn_approval_denies_its_prompt_and_reminders_go_on_until_it_lands() {
     let fake = Arc::new(Fake::default());
     let a = approvals(&fake);
-    a.on_thread_event(&event("thread.waiting", Some(prompt("q1", "Bash", "rm -rf build"))))
-        .await;
+    a.on_thread_event(&event(
+        "thread.waiting",
+        Some(prompt("q1", "Bash", "rm -rf build")),
+    ))
+    .await;
     *fake.pending.lock().unwrap() = Some(pending("q1"));
     *fake.answer_fails.lock().unwrap() = Some(NodeCommandError {
         reason: "offline".into(),
@@ -729,7 +973,11 @@ async fn a_withdrawn_approval_denies_its_prompt_and_reminders_go_on_until_it_lan
     a.withdraw(&p1(), "lead:lab-a/p1", "Q1").await.unwrap();
     let t0 = now_ms();
     a.sweep_prompts(t0).await;
-    assert_eq!(a.prompts.len(), 1, "an undelivered deny keeps the prompt watched");
+    assert_eq!(
+        a.prompts.len(),
+        1,
+        "an undelivered deny keeps the prompt watched"
+    );
     a.sweep_prompts(t0 + REMIND_AFTER_MS + 1000).await;
     let reminders = fake.reminders();
     assert_eq!(reminders.len(), 1);
@@ -743,7 +991,9 @@ async fn a_withdrawn_approval_denies_its_prompt_and_reminders_go_on_until_it_lan
         panic!("a withdrawn approval never allows")
     };
     assert!(
-        message.as_str().starts_with("Denied: lead:lab-a/p1 withdrew Q1 before anyone answered it"),
+        message
+            .as_str()
+            .starts_with("Denied: lead:lab-a/p1 withdrew Q1 before anyone answered it"),
         "{}",
         message.as_str()
     );
@@ -773,7 +1023,12 @@ async fn after_a_restart_an_answer_with_no_delivery_record_is_delivered() {
     assert_eq!(answers.len(), 1, "a delivered answer is never sent twice");
     assert_eq!(
         (answers[0].2.as_str(), &answers[0].3),
-        ("q1", &PermissionDecision::Allow { updated_input: None })
+        (
+            "q1",
+            &PermissionDecision::Allow {
+                updated_input: None
+            }
+        )
     );
     assert_eq!(
         fake.request("Q1").evidence.unwrap().as_str(),
@@ -803,8 +1058,18 @@ async fn a_prompt_whose_run_ended_while_the_hub_was_down_closes_quietly() {
     let r = fake.request("Q1");
     assert_eq!(
         (r.state, r.evidence.unwrap().as_str()),
-        (RequestState::Denied, "expired: the run ended while the hub was down")
+        (
+            RequestState::Denied,
+            "expired: the run ended while the hub was down"
+        )
     );
-    assert_eq!(fake.reminders().len(), 1, "closed quietly: no further reminder");
-    assert!(fake.answers.lock().unwrap().is_empty(), "nothing is sent to the node");
+    assert_eq!(
+        fake.reminders().len(),
+        1,
+        "closed quietly: no further reminder"
+    );
+    assert!(
+        fake.answers.lock().unwrap().is_empty(),
+        "nothing is sent to the node"
+    );
 }

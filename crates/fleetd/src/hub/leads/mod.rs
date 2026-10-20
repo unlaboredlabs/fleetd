@@ -21,7 +21,6 @@ pub mod workstreams;
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
-
 pub use self::error::LeadError;
 pub use self::hooks::LeadHooks;
 pub use self::lead::{Leads, LeadsOptions};
@@ -150,7 +149,6 @@ impl Area {
             removals,
         }))
     }
-
 
     /// The area's loops: project removals (with their catch-up), and the leads of orders that wait
     /// for their machine. They run until aborted; `hub/serve` keeps the handles.

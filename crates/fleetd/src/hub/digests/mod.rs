@@ -16,12 +16,10 @@ use fleetd_contracts::ledger::{
 use serde_json::json;
 
 use crate::clock::Clock;
+use crate::hub::approvals::store::{RequestFilter, Requests};
 use crate::hub::attention::{POLICY_TZ_KEY, hub_zone, zone};
 use crate::hub::ledger::digest_text::{DigestInput, WorkstreamFacts, render_human_digest};
-use crate::hub::ledger::{
-    DecisionFilter, Decisions, LedgerError, iso_at, project_key,
-};
-use crate::hub::approvals::store::{RequestFilter, Requests};
+use crate::hub::ledger::{DecisionFilter, Decisions, LedgerError, iso_at, project_key};
 use crate::hub::store::{EventLog, HubStore, NewEvent, now_ms};
 
 const SLOT_HOURS: [u32; 2] = [9, 18];

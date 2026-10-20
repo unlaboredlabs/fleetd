@@ -51,7 +51,6 @@ fn scope_columns(scope: &DecisionScope) -> (&'static str, String) {
     }
 }
 
-
 pub(super) fn decision_state_text(state: &DecisionState) -> &'static str {
     match state {
         DecisionState::Active => "active",
@@ -59,7 +58,6 @@ pub(super) fn decision_state_text(state: &DecisionState) -> &'static str {
         DecisionState::Retired => "retired",
     }
 }
-
 
 fn decode<T: serde::de::DeserializeOwned>(data: String) -> Result<T, Fail> {
     serde_json::from_str(&data)

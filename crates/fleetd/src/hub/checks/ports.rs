@@ -122,7 +122,8 @@ pub trait Ports: Send + Sync + 'static {
     fn open_work(&self, workstream: &Workstream) -> Vec<crate::hub::orders::open_work::OpenWork>;
     fn spawn_judge(&self, spawn: JudgeSpawn) -> BoxFuture<'_, Result<Task, Refusal>>;
     // ledger: the decision a `human` check reads, and when the brief it checks was last frozen
-    fn human_confirmation(&self, workstream: &WorkstreamId, key: &str) -> Option<HumanConfirmation>;
+    fn human_confirmation(&self, workstream: &WorkstreamId, key: &str)
+    -> Option<HumanConfirmation>;
     /// When the workstream's brief was last frozen or amended (its latest `workstream.running`, or a
     /// `workstream.state` that amended it).
     fn brief_frozen_ms(&self, workstream: &WorkstreamId) -> Option<i64>;

@@ -635,7 +635,10 @@ impl CheckRunner {
             return verdict(
                 CheckOutcome::Fail,
                 utf16_prefix(
-                    &format!("the answer in {} predates the brief's latest version: {ask_again}", answer.decision_id),
+                    &format!(
+                        "the answer in {} predates the brief's latest version: {ask_again}",
+                        answer.decision_id
+                    ),
                     EVIDENCE_MAX,
                 ),
             );
@@ -650,7 +653,10 @@ impl CheckRunner {
             verdict(
                 CheckOutcome::Fail,
                 utf16_prefix(
-                    &format!("the human said \"{}\" in chat ({})", answer.value, answer.decision_id),
+                    &format!(
+                        "the human said \"{}\" in chat ({})",
+                        answer.value, answer.decision_id
+                    ),
                     EVIDENCE_MAX,
                 ),
             )

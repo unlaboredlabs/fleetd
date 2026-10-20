@@ -512,11 +512,13 @@ const BUSY_LOOKBACK_MS: i64 = 6 * 3600 * 1000;
 /// Read on the projector's own connection: another reader would wait for the lock this transaction holds.
 fn get_request(c: &Connection, id: &str) -> Option<fleetd_contracts::ledger::HumanRequest> {
     let n: i64 = id.strip_prefix('Q')?.parse().ok()?;
-    c.query_row("SELECT data FROM requests WHERE n = ?1", [n], |r| r.get::<_, String>(0))
-        .optional()
-        .ok()
-        .flatten()
-        .and_then(|data| serde_json::from_str(&data).ok())
+    c.query_row("SELECT data FROM requests WHERE n = ?1", [n], |r| {
+        r.get::<_, String>(0)
+    })
+    .optional()
+    .ok()
+    .flatten()
+    .and_then(|data| serde_json::from_str(&data).ok())
 }
 
 fn workstream_from_summary(e: &HubEvent) -> Option<String> {

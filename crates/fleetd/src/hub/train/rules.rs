@@ -80,7 +80,7 @@ pub fn check_source(
         return Err(Refusal::new(
             format!("'Source: {source}' is not a valid serves form."),
             format!(
-                "{} (done:<n>, issue:<#n|url>, defect:<text> or ask:A<n>)",
+                "{} (done:<n>, issue:<#n|url>, defect:<text> or decision:<key>)",
                 add_line(example)
             ),
         ));
@@ -183,8 +183,8 @@ mod tests {
             Ok("done:2".into())
         );
         assert_eq!(
-            check_source(Some("Source: ask:A3"), None, W, 3, true),
-            Ok("ask:A3".into())
+            check_source(Some("Source: decision:deploy.region"), None, W, 3, true),
+            Ok("decision:deploy.region".into())
         );
         assert_eq!(
             check_source(Some("nothing"), Some("done:2"), W, 3, true)

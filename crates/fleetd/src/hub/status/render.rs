@@ -3,8 +3,8 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use chrono_tz::Tz;
-use fleetd_contracts::ids::{MachineId, Timestamp};
 use fleetd_contracts::chat::ChatRequestId;
+use fleetd_contracts::ids::{MachineId, Timestamp};
 use fleetd_contracts::ledger::{HumanRequest, Tier, Workstream, WorkstreamId, WorkstreamState};
 use fleetd_contracts::live::OrderCard;
 use fleetd_contracts::model::{Machine, MachineStatus};
@@ -1226,7 +1226,10 @@ pub fn render(
     requests.sort_by_key(|a| a.created_at.as_str().to_owned());
     let needs_you = NeedsYou {
         count: Count::unchecked(requests.len() as i64),
-        request_ids: capped::<ChatRequestId, 10>(requests.iter().map(|a| a.request_id.clone()).collect()).0,
+        request_ids: capped::<ChatRequestId, 10>(
+            requests.iter().map(|a| a.request_id.clone()).collect(),
+        )
+        .0,
     };
 
     // Risks.
