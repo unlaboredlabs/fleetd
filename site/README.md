@@ -33,7 +33,7 @@ names this machine, its home or lab paths, a non-loopback address or a key. Revi
 The callout positions (`--x`, `--y`) and the hand-written callout text are not generated: the script lists quotes and
 ids on the page that its run didn't produce, and you re-aim the callouts if the app's layout moved.
 
-`fleet-board.png`, the board at the top of the page, and the app shots in the docs (`docs/site/public/img/`) are the app's
+`chat-hero.png`, the lead chat at the top of the page, and the app shots in the docs (`docs/site/public/img/`) are the app's
 screens on E3b's fixtures, which are sanitized lab hub traffic (`app/desktop/fixtures`), at 1400x900@2x in the light
 theme, without the sample-data banner. `app/desktop/qa/site.ts` lists them; `pnpm fixtures && pnpm qa:build && pnpm
 site:shots` in `app/desktop` writes them in place. Re-shoot them when what those screens show changes, and keep
