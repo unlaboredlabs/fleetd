@@ -1,17 +1,20 @@
 //! The repo policy file `.fleetd/policy.yaml`, read from the project's workspace through the node. Cached
-//! per project for 60 s; `invalidate` drops an entry at once (say, after a merge that touched the file). No file
-//! means DEFAULT_POLICY, one area "all" = ["**"]. A broken file is an error with a fix, never a silent fallback, so
-//! a typo can't widen what a writer may touch.
-use std::collections::HashMap;
+//! per project for 60 s; `invalidate` drops an entry at once (say, after a merge that touched the file). No file is
+//! the default policy, and a file without `areas` gets the areas inferred from the repo's layout (`areas.rs`), always
+//! with "all" = ["**"]. A broken file is an error with a fix, never a silent fallback, so a typo can't widen what a
+//! writer may touch.
+use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
 use std::time::UNIX_EPOCH;
 
-use fleetd_contracts::ids::ProjectRef;
-use fleetd_contracts::tasks::{POLICY_FILE_PATH, PolicyFile, default_policy};
+use fleetd_contracts::ids::{MachineId, ProjectRef};
+use fleetd_contracts::prim::List;
+use fleetd_contracts::tasks::{AreaGlob, POLICY_FILE_PATH, PolicyFile, default_policy};
 use serde_yaml_ng::Value;
 
 use fleetd_contracts::mcp::ErrorCode;
 
+use super::areas;
 use crate::clock::Clock;
 use crate::hub::tasks::ports::{BoxFut, TaskError as LeadError, TaskPorts};
 
@@ -48,11 +51,11 @@ fn check_shape(value: &Value) -> Result<(), String> {
     let Value::Mapping(root) = value else {
         return Err("Expected object".into());
     };
-    let Some(areas) = root.get("areas") else {
-        return Err(format!("Missing key at {}", key("areas")));
-    };
-    let Value::Mapping(areas) = areas else {
-        return Err(format!("Expected object at {}", key("areas")));
+    let none = serde_yaml_ng::Mapping::new();
+    let areas = match root.get("areas") {
+        None => &none,
+        Some(Value::Mapping(areas)) => areas,
+        Some(_) => return Err(format!("Expected object at {}", key("areas"))),
     };
     for (name, globs) in areas {
         let name = match name {
@@ -204,66 +207,174 @@ pub fn parse_policy(text: &str) -> Result<PolicyFile, LeadError> {
             )));
         }
     };
-    if value.is_null() {
-        return Err(invalid("the file is empty; it needs an `areas:` map"));
-    }
+    // An empty file sets nothing, like no file.
+    let value = if value.is_null() {
+        Value::Mapping(serde_yaml_ng::Mapping::new())
+    } else {
+        value
+    };
     check_shape(&value).map_err(|m| invalid(&m))?;
-    let json = serde_json::to_value(&value).map_err(|e| invalid(&e.to_string()))?;
+    let mut json = serde_json::to_value(&value).map_err(|e| invalid(&e.to_string()))?;
+    if json.get("areas").is_none() {
+        json["areas"] = serde_json::to_value(default_policy().areas).unwrap_or_default();
+    }
     serde_json::from_value(json).map_err(|e| invalid(&e.to_string()))
 }
 
-/// Where the policy text comes from: `None` when the project has no policy file. The hub's source reads it through
-/// the machine's node (`Executors::read_file`); tests use a fake.
+/// Whether the file's text sets `areas` itself; a file that doesn't gets the inferred ones.
+fn sets_areas(text: &str) -> bool {
+    serde_yaml_ng::from_str::<Value>(text).is_ok_and(|v| v.get("areas").is_some())
+}
+
+/// Where a project's files come from. The hub's source asks the machine's node (`Executors::read_project_file`, and
+/// one `git ls-tree` for the layout); tests use a fake.
 pub trait PolicySource: Send + Sync {
+    /// The project's workspace root.
+    fn root(&self, project_ref: &ProjectRef) -> Result<String, LeadError>;
+    /// A repo-relative file of the project: `None` when it does not exist.
     fn read<'a>(
         &'a self,
         project_ref: &'a ProjectRef,
+        path: &'a str,
     ) -> BoxFut<'a, Result<Option<String>, LeadError>>;
+    /// The committed directories at the top of `root` and one level under each of `parents` (`parent/child`);
+    /// `None` when the node can't say in full.
+    fn dirs<'a>(
+        &'a self,
+        machine_id: &'a MachineId,
+        root: &'a str,
+        parents: Vec<String>,
+    ) -> BoxFut<'a, Option<Vec<String>>>;
 }
 
-/// Reads the file from the project's workspace root through the machine's node.
+/// Reads the files from the project's workspace through the machine's node.
 pub struct NodePolicySource {
     pub store: Arc<crate::hub::store::HubStore>,
-    /// WorkspaceFiles.read, over the executor.
+    /// WorkspaceFiles.read, by project id, so a project just added reads before the hub's view of the node has it.
+    pub executors: Arc<crate::hub::executor::Executors>,
+    /// NodeCommands.run, over the executor.
     pub ports: Arc<dyn TaskPorts>,
 }
 
+// The listings name positional arguments only, never interpolated, and read committed directories, so build output
+// and node_modules never count. Each is cut short to fit the node's 2000-character output: a folder's children stop at
+// one more than areas.rs takes before it falls back to one area per folder, which is all inference needs to know.
+const TOP_SCRIPT: &str = "git -c core.quotePath=false ls-tree -d --name-only HEAD";
+const EXISTS_SCRIPT: &str =
+    "for d in \"$@\"; do if git cat-file -e \"HEAD:$d\" 2>/dev/null; then echo \"$d\"; fi; done";
+const CHILDREN_SCRIPT: &str =
+    "git -c core.quotePath=false ls-tree -d --name-only \"HEAD:$1\" 2>/dev/null | head -n 41";
+/// What the node keeps of a command's output; a listing that fills it may have lost its first lines.
+const OUTPUT_MAX: usize = 2000;
+
+/// The listing's lines, when the command ran and its output is whole.
+fn listed(out: Option<crate::hub::tasks::ports::CmdOutput>) -> Option<Vec<String>> {
+    let out = out?;
+    (out.exit_code == Some(0) && js_len(&out.output_tail) < OUTPUT_MAX).then(|| {
+        out.output_tail
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .map(str::to_owned)
+            .collect()
+    })
+}
+
+impl NodePolicySource {
+    async fn sh(
+        &self,
+        m: &MachineId,
+        root: &str,
+        script: &str,
+        args: &[String],
+    ) -> Option<Vec<String>> {
+        let argv = ["sh", "-c", script, "fleetd-dirs"]
+            .into_iter()
+            .map(str::to_owned)
+            .chain(args.iter().cloned())
+            .collect();
+        listed(self.ports.run_command(m, root, argv, 30).await)
+    }
+}
+
 impl PolicySource for NodePolicySource {
+    fn root(&self, project_ref: &ProjectRef) -> Result<String, LeadError> {
+        let project = self.store.project_get(project_ref).map_err(|e| {
+            tracing::error!(error = %e, "policy: project not read");
+            LeadError::new(ErrorCode::Failed, "The hub failed to answer that request.")
+        })?;
+        let Some(project) = project else {
+            return Err(LeadError::new(
+                ErrorCode::NotFound,
+                format!(
+                    "Project {} on {} is not known to the hub.",
+                    project_ref.project_id.as_str(),
+                    project_ref.machine_id.as_str()
+                ),
+            )
+            .with_fix(
+                "Check the project with project_get; its machine may not have reported it yet.",
+            ));
+        };
+        Ok(project.workspace_root)
+    }
+
     fn read<'a>(
         &'a self,
         project_ref: &'a ProjectRef,
+        path: &'a str,
     ) -> BoxFut<'a, Result<Option<String>, LeadError>> {
         Box::pin(async move {
-            let project = self.store.project_get(project_ref).map_err(|e| {
-                tracing::error!(error = %e, "policy: project not read");
-                LeadError::new(ErrorCode::Failed, "The hub failed to answer that request.")
-            })?;
-            let Some(project) = project else {
-                return Err(LeadError::new(
-                    ErrorCode::NotFound,
-                    format!(
-                        "Project {} on {} is not known to the hub.",
-                        project_ref.project_id.as_str(),
-                        project_ref.machine_id.as_str()
-                    ),
-                )
-                .with_fix(
-                    "Check the project with project_get; its machine may not have reported it yet.",
-                ));
-            };
-            self.ports
-                .read_file(
-                    &project_ref.machine_id,
-                    &project.workspace_root,
-                    POLICY_FILE_PATH,
-                )
+            self.executors
+                .read_project_file(&project_ref.machine_id, &project_ref.project_id, path)
                 .await
-                .map_err(|e| e.to_task_error(&project_ref.machine_id))
+                .map_err(|e| {
+                    crate::hub::tasks::wire::port_error(e).to_task_error(&project_ref.machine_id)
+                })
+        })
+    }
+
+    fn dirs<'a>(
+        &'a self,
+        machine_id: &'a MachineId,
+        root: &'a str,
+        parents: Vec<String>,
+    ) -> BoxFut<'a, Option<Vec<String>>> {
+        Box::pin(async move {
+            // The whole top level when it fits, else just the folders inference looks for.
+            let top = match self.sh(machine_id, root, TOP_SCRIPT, &[]).await {
+                Some(top) => top,
+                None => {
+                    let wanted: Vec<String> = std::iter::once("docs".to_owned())
+                        .chain(parents.iter().cloned())
+                        .collect();
+                    self.sh(machine_id, root, EXISTS_SCRIPT, &wanted).await?
+                }
+            };
+            let present: Vec<String> = parents.into_iter().filter(|p| top.contains(p)).collect();
+            let children = futures_util::future::join_all(
+                present
+                    .iter()
+                    .map(|p| self.sh(machine_id, root, CHILDREN_SCRIPT, std::slice::from_ref(p))),
+            )
+            .await;
+            let mut dirs = top;
+            for (parent, kids) in present.iter().zip(children) {
+                dirs.extend(kids?.into_iter().map(|k| format!("{parent}/{k}")));
+            }
+            Some(dirs)
         })
     }
 }
 
-type Cached = (u128, Result<PolicyFile, LeadError>);
+/// A project's policy, and whether its areas were inferred from the repo rather than set in the file.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Resolved {
+    pub policy: PolicyFile,
+    pub inferred: bool,
+}
+
+type Cached = (u128, Result<Resolved, LeadError>);
 
 pub struct Policies {
     source: Arc<dyn PolicySource>,
@@ -289,25 +400,117 @@ impl Policies {
             .unwrap_or(0)
     }
 
-    /// The project's policy: from its file, cached up to 60 s, or DEFAULT_POLICY when it has none.
+    /// The project's policy: from its file, cached up to 60 s, with the inferred areas when the file sets none.
     pub async fn get(&self, project_ref: &ProjectRef) -> Result<PolicyFile, LeadError> {
+        self.resolve(project_ref).await.map(|r| r.policy)
+    }
+
+    pub async fn resolve(&self, project_ref: &ProjectRef) -> Result<Resolved, LeadError> {
         let now = self.now_ms();
         if let Some((at, result)) = self.cache.lock().unwrap().get(project_ref)
             && now.saturating_sub(*at) < POLICY_TTL_MS
         {
             return result.clone();
         }
-        // A read failure (machine offline) is not cached.
-        let text = self.source.read(project_ref).await?;
-        let result = match text {
-            None => Ok(default_policy()),
-            Some(text) => parse_policy(&text),
-        };
-        self.cache
-            .lock()
-            .unwrap()
-            .insert(project_ref.clone(), (now, result.clone()));
+        let root = self.source.root(project_ref)?;
+        self.load_and_cache(project_ref, &root, now).await
+    }
+
+    /// Reads the project's policy afresh, for a project just registered at `root`: the hub may not list it yet.
+    pub async fn resolve_new(
+        &self,
+        project_ref: &ProjectRef,
+        root: &str,
+    ) -> Result<Resolved, LeadError> {
+        let now = self.now_ms();
+        self.load_and_cache(project_ref, root, now).await
+    }
+
+    async fn load_and_cache(
+        &self,
+        project_ref: &ProjectRef,
+        root: &str,
+        now: u128,
+    ) -> Result<Resolved, LeadError> {
+        // A read failure (machine offline) is not cached, nor a layout the node couldn't list.
+        let (result, settled) = self.load(project_ref, root).await?;
+        if settled {
+            self.cache
+                .lock()
+                .unwrap()
+                .insert(project_ref.clone(), (now, result.clone()));
+        }
         result
+    }
+
+    /// Outer error: the file could not be read. Inner: what the file says, a broken file included, and whether the
+    /// answer is settled (false when inference couldn't list the layout and fell back to "all").
+    async fn load(
+        &self,
+        project_ref: &ProjectRef,
+        root: &str,
+    ) -> Result<(Result<Resolved, LeadError>, bool), LeadError> {
+        let text = self.source.read(project_ref, POLICY_FILE_PATH).await?;
+        let policy = match text.as_deref() {
+            None => default_policy(),
+            Some(text) => match parse_policy(text) {
+                Ok(policy) if sets_areas(text) => {
+                    let resolved = Resolved {
+                        policy,
+                        inferred: false,
+                    };
+                    return Ok((Ok(resolved), true));
+                }
+                Ok(policy) => policy,
+                Err(e) => return Ok((Err(e), true)),
+            },
+        };
+        let mut policy = policy;
+        let inferred = self.infer(project_ref, root).await;
+        let settled = inferred.is_some();
+        if let Some(areas) = inferred {
+            policy.areas = areas;
+        }
+        let resolved = Resolved {
+            policy,
+            inferred: true,
+        };
+        Ok((Ok(resolved), settled))
+    }
+
+    /// The areas the repo's layout suggests; `None` when the node can't list it, which leaves "all".
+    async fn infer(
+        &self,
+        project_ref: &ProjectRef,
+        root: &str,
+    ) -> Option<BTreeMap<String, List<AreaGlob, 1, 50>>> {
+        let read = |path: &'static str| async move {
+            self.source.read(project_ref, path).await.ok().flatten()
+        };
+        let manifests = areas::Manifests {
+            cargo_toml: read("Cargo.toml").await,
+            package_json: read("package.json").await,
+            pnpm_workspace: read("pnpm-workspace.yaml").await,
+        };
+        let dirs = self
+            .source
+            .dirs(
+                &project_ref.machine_id,
+                root,
+                areas::dirs_to_list(&manifests),
+            )
+            .await?;
+        Some(
+            areas::infer(&manifests, &dirs)
+                .into_iter()
+                .map(|(name, globs)| {
+                    (
+                        name,
+                        List::unchecked(globs.into_iter().map(AreaGlob::unchecked).collect()),
+                    )
+                })
+                .collect(),
+        )
     }
 
     /// Forgets the cached policy, so the next `get` reads the file again.
@@ -345,10 +548,9 @@ mod tests {
         let cases = [
             ("areas: {docs: [docs/**]\n", "is invalid: YAML: "),
             (
-                "",
-                "is invalid: the file is empty; it needs an `areas:` map",
+                "areas: [docs/**]\n",
+                "is invalid: Expected object at [\"areas\"]",
             ),
-            ("owners: [ada]\n", "is invalid: Missing key at [\"areas\"]"),
             (
                 "areas:\n  Docs: [docs/**]\n",
                 "is invalid: Expected a string matching the RegExp ^[a-z0-9][a-z0-9_-]*$ at [\"areas\"][\"Docs\"]",
@@ -400,21 +602,46 @@ mod tests {
     #[derive(Default)]
     struct Fake {
         text: Mutex<Option<String>>,
+        files: Mutex<HashMap<String, String>>,
+        dirs: Mutex<Option<Vec<String>>>,
+        /// Reads of the policy file.
         reads: AtomicUsize,
         offline: AtomicBool,
     }
 
     impl PolicySource for Fake {
-        fn read<'a>(&'a self, _: &'a ProjectRef) -> BoxFut<'a, Result<Option<String>, LeadError>> {
+        fn root(&self, _: &ProjectRef) -> Result<String, LeadError> {
+            Ok("/repo".into())
+        }
+
+        fn read<'a>(
+            &'a self,
+            _: &'a ProjectRef,
+            path: &'a str,
+        ) -> BoxFut<'a, Result<Option<String>, LeadError>> {
             Box::pin(async move {
-                self.reads.fetch_add(1, Ordering::SeqCst);
+                if path == POLICY_FILE_PATH {
+                    self.reads.fetch_add(1, Ordering::SeqCst);
+                }
                 if self.offline.load(Ordering::SeqCst) {
                     return Err(
                         LeadError::new(ErrorCode::MachineOffline, "offline").with_fix("wait")
                     );
                 }
+                if path != POLICY_FILE_PATH {
+                    return Ok(self.files.lock().unwrap().get(path).cloned());
+                }
                 Ok(self.text.lock().unwrap().clone())
             })
+        }
+
+        fn dirs<'a>(
+            &'a self,
+            _: &'a MachineId,
+            _: &'a str,
+            _: Vec<String>,
+        ) -> BoxFut<'a, Option<Vec<String>>> {
+            Box::pin(async move { self.dirs.lock().unwrap().clone() })
         }
     }
 
@@ -440,6 +667,8 @@ mod tests {
     #[tokio::test]
     async fn uses_the_default_policy_when_absent_and_caches_for_60_s() {
         let (fake, clock, policies, a) = setup();
+        // A layout with no members: inference settles on the one area.
+        *fake.dirs.lock().unwrap() = Some(Vec::new());
         assert_eq!(policies.get(&a).await.unwrap(), default_policy());
         *fake.text.lock().unwrap() = Some("areas:\n  docs: [docs/**]\n".into());
         clock.advance(Duration::from_secs(59));
@@ -478,5 +707,51 @@ mod tests {
             docs_only()
         );
         assert_eq!(fake.reads.load(Ordering::SeqCst), 4);
+    }
+
+    /// A cargo workspace with two crates and docs, no policy file.
+    fn workspace(fake: &Fake) {
+        fake.files.lock().unwrap().insert(
+            "Cargo.toml".into(),
+            "[workspace]\nmembers = [\"crates/*\"]\n".into(),
+        );
+        *fake.dirs.lock().unwrap() = Some(
+            ["crates", "docs", "crates/hub", "crates/cli"]
+                .map(String::from)
+                .to_vec(),
+        );
+    }
+
+    #[tokio::test]
+    async fn infers_areas_without_a_file_or_without_areas_in_it_and_a_file_with_areas_wins() {
+        let (fake, _clock, policies, a) = setup();
+        workspace(&fake);
+        let resolved = policies.resolve(&a).await.unwrap();
+        assert!(resolved.inferred);
+        assert_eq!(
+            resolved.policy.areas.keys().collect::<Vec<_>>(),
+            ["all", "cli", "docs", "hub"]
+        );
+        // A file that sets other things but not areas keeps the inferred ones.
+        *fake.text.lock().unwrap() =
+            Some("defaults:\n  effort: high\nbranchPrefix: team/\n".into());
+        policies.invalidate(&a);
+        let resolved = policies.resolve(&a).await.unwrap();
+        assert!(resolved.inferred);
+        assert_eq!(resolved.policy.areas.len(), 4);
+        assert_eq!(resolved.policy.branch_prefix.unwrap().as_str(), "team/");
+        // Explicit areas win.
+        *fake.text.lock().unwrap() = Some("areas:\n  docs: [docs/**]\n".into());
+        policies.invalidate(&a);
+        let resolved = policies.resolve(&a).await.unwrap();
+        assert!(!resolved.inferred);
+        assert_eq!(serde_json::to_value(resolved.policy).unwrap(), docs_only());
+        // A layout the node can't list leaves the one area, and is asked again on the next read, not in 60 s.
+        *fake.text.lock().unwrap() = None;
+        *fake.dirs.lock().unwrap() = None;
+        policies.invalidate(&a);
+        assert_eq!(policies.get(&a).await.unwrap(), default_policy());
+        workspace(&fake);
+        assert_eq!(policies.get(&a).await.unwrap().areas.len(), 4);
     }
 }

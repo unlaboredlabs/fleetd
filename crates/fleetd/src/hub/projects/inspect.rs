@@ -166,6 +166,8 @@ pub fn build(
         merge,
         lead_needs: Text::unchecked("ready"),
         notes,
+        areas: Vec::new(),
+        areas_inferred: None,
     };
     let line = lead_needs(&inspect, gh_ok, &gh.unread);
     inspect.lead_needs = Text::unchecked(crate::hub::executor::shell_mapper::js_take(&line, 300));
@@ -227,6 +229,7 @@ pub fn compact(mut i: ProjectInspect, budget: usize) -> ProjectInspect {
             &mut i.ci.required_checks,
             &mut i.merge.rulesets,
             &mut i.notes,
+            &mut i.areas,
         ];
         let Some(longest) = lists
             .into_iter()
