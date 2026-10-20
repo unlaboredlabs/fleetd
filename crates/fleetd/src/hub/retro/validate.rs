@@ -122,43 +122,99 @@ fn value_tightens(key: &str, a: &Value, b: &Value) -> bool {
     }
 }
 
-/// The changed gate fields in plain words, e.g. "reviewRules.M.reviewers 1 → 0; the body".
+/// The changed gate fields in plain words for the person approving them, e.g. "Bugfixes, medium-size work:
+/// reviewers 1 → 0". Never a raw key path: the exact diff is shown apart from it.
 pub fn describe_changes(
+    playbook: &str,
     before: &Map<String, Value>,
     after: &Map<String, Value>,
     body_changed: bool,
 ) -> String {
-    fn walk(path: &str, a: Option<&Value>, b: Option<&Value>, out: &mut Vec<String>) {
+    fn walk(path: &[&str], a: Option<&Value>, b: Option<&Value>, out: &mut Vec<String>) {
         match (a, b) {
             (Some(Value::Object(x)), Some(Value::Object(y))) => {
                 let keys: BTreeSet<&String> = x.keys().chain(y.keys()).collect();
                 for k in keys {
-                    walk(&format!("{path}.{k}"), x.get(k), y.get(k), out);
+                    let mut p = path.to_vec();
+                    p.push(k);
+                    walk(&p, x.get(k), y.get(k), out);
                 }
             }
             (a, b) if a == b => {}
-            (a, b) => {
-                let shown = |v: Option<&Value>| v.map_or("(none)".to_string(), |v| v.to_string());
-                out.push(format!(
-                    "{} {} → {}",
-                    path.trim_start_matches('.'),
-                    shown(a),
-                    shown(b)
-                ));
-            }
+            (a, b) => out.push(plain_change(path, a, b)),
         }
     }
     let mut out = Vec::new();
     let keys: BTreeSet<&String> = before.keys().chain(after.keys()).collect();
     for k in keys {
         if !WORDING_FIELDS.contains(&k.as_str()) {
-            walk(k, before.get(k), after.get(k), &mut out);
+            walk(&[k.as_str()], before.get(k), after.get(k), &mut out);
         }
     }
     if body_changed {
-        out.push("the playbook's text".into());
+        out.push("its instructions to agents change".into());
     }
-    out.join("; ")
+    let name = match playbook {
+        "bugfix" => "Bugfixes",
+        "feature" => "Features",
+        "research" => "Research",
+        "finish-all" => "Finish-all",
+        other => other,
+    };
+    format!("{name}, {}", out.join("; "))
+}
+
+fn tier_name(t: &str) -> Option<&'static str> {
+    match t {
+        "S" => Some("small"),
+        "M" => Some("medium-size"),
+        "L" => Some("large"),
+        _ => None,
+    }
+}
+
+/// One changed field as a person reads it.
+fn plain_change(path: &[&str], a: Option<&Value>, b: Option<&Value>) -> String {
+    let shown = |v: Option<&Value>| match v {
+        None => "none".to_string(),
+        Some(Value::Bool(true)) => "on".into(),
+        Some(Value::Bool(false)) => "off".into(),
+        Some(Value::String(t)) => tier_name(t).map_or_else(|| t.clone(), str::to_string),
+        Some(Value::Array(items)) => format!("{}", items.len()),
+        Some(v) => v.to_string(),
+    };
+    let what = match path {
+        ["reviewRules", tier, field] => {
+            let tier = tier_name(tier).unwrap_or(tier);
+            let field = match *field {
+                "reviewers" => "reviewers",
+                "verifier" => "verifier",
+                "planFirst" => "plan first",
+                other => other,
+            };
+            format!("{tier} work: {field}")
+        }
+        ["valueBar", "maxReviewRounds"] => "review rounds before it stops".into(),
+        ["valueBar", "requireSource"] => "each PR says what it serves".into(),
+        ["requiredChecks"] => "required done-when checks".into(),
+        ["tierDefault"] => "default size".into(),
+        _ => path.iter().map(|p| words(p)).collect::<Vec<_>>().join(", "),
+    };
+    format!("{what} {} → {}", shown(a), shown(b))
+}
+
+/// `maxReviewRounds` → "max review rounds".
+fn words(key: &str) -> String {
+    let mut out = String::new();
+    for c in key.chars() {
+        if c.is_ascii_uppercase() {
+            out.push(' ');
+            out.push(c.to_ascii_lowercase());
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 /// `String(value)` as JS prints it in these messages.
@@ -540,8 +596,12 @@ mod tests {
             "a body change may relax a rule in words"
         );
         assert_eq!(
-            describe_changes(&base, &fewer, false),
-            "reviewRules.M.reviewers 1 → 0"
+            describe_changes("bugfix", &base, &fewer, false),
+            "Bugfixes, medium-size work: reviewers 1 → 0"
+        );
+        assert_eq!(
+            describe_changes("feature", &base, &check_removed, true),
+            "Features, required done-when checks 1 → 0; its instructions to agents change"
         );
     }
 }

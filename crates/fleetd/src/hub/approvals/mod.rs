@@ -709,8 +709,8 @@ impl Approvals {
             kind: RequestKind::Approval,
             text: clip(
                 &format!(
-                    "Relax the {} playbook's gates: {} (retro {}). It applies to every project only if you approve.",
-                    change.playbook, change.summary, change.proposal_id
+                    "{}. This loosens a gate for every project; it applies only if you approve.",
+                    change.summary
                 ),
                 500,
             ),
