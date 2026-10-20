@@ -277,6 +277,10 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "Where a scope's time went since a time: wall time, agent time (exclusive, adds up over parallel agents), totals per category and kind, slowest commands, repeated runs, CI checks, waits on a person and, for an order, its critical path. compare gives a second period; filters narrow by project, machine or role. Also the retention and stored size.",
     ),
     (
+        "status_projects",
+        "One row per project you can read, by title: a state word (working, waiting_on_you, blocked with a one-line reason, idle), the two-tone progress (verified and in flight, no ETA), agents running now and the last merge. status_get with a project scope gives the detail.",
+    ),
+    (
         "time_insights",
         "Deterministic findings over a scope's time since a time (no model): repeated full test suites, failing repeats, slow commands, CI checks on the critical path, full slots, waits on your answers, approval prompts a rule would answer, usage parks, retries, review share, train line, rebase loops, slow first tokens and starts, offline waits, missing data, and serial waits behind free capacity (queue waits, shared-resource contention, idle leads with ready plan items, ready items left side by side), each with its fix. Each carries its numbers and span ids; compare gives both periods.",
     ),
