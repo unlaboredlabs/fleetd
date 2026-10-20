@@ -69,6 +69,8 @@ const GONE_HUB_TOOLS = ["asks_list", "inbox_reply", "inbox_undo"];
 const ASK_TOOL = /^(mcp__fleetd__ask|mcp__fleetd__ask_withdraw|AskUserQuestion)$/u;
 /** Internal ids a lead message must not carry: workstream, task, plan, milestone, claim, request and other hub ids. */
 const INTERNAL_ID = /\b[WTPMCRHX]\d+\b/u;
+/** A recommendation in a numbered question, in the lead's words. */
+const RECOMMENDS = /\b(rec|recommend|suggest|i'd (go with|pick|choose|lean)|my pick)/iu;
 /** main's lead prompt before the chat rewrite (H3); the lead must start on a newer one. */
 const OLD_LEAD_PROMPT = "lead.start@82105e96e9";
 
@@ -304,6 +306,14 @@ const chatOf = (lab: Lab, humanCall: Lab["callTool"], ref: Ref, need: (tool: str
 };
 type Chat = ReturnType<typeof chatOf>;
 
+/** Once an inline item closes, needs-you is off, unless the lead's newest message is itself a question to the person. */
+const needsYouOnlyForAQuestion = async (lab: Lab, chat: Chat, after: string) => {
+  if ((await chat.state()).needsYou !== true) return;
+  const last = (await chat.history()).filter((m) => m.author === "lead" && m.text !== "").at(-1)?.text ?? "";
+  lab.check(/\?\s*$|^\s*1[.)]\s/mu.test(last), `needs-you is off once ${after}, or the lead's newest message asks something: ${JSON.stringify(last.slice(-300))}`);
+  lab.log(`needs-you stays on after ${after}: the lead asked "${last.trim().split("\n").at(-1)?.slice(0, 160)}"`);
+};
+
 export async function chatLead(lab: Lab) {
   const { callTool, check, ok, log } = lab;
   const parts = wanted();
@@ -425,8 +435,9 @@ async function tersePart(lab: Lab, chat: Chat, ref: Ref) {
   const asking = said.find((m) => /^\s*1[.)]\s/mu.test(m.text));
   check(asking, `the lead asks as numbered items: ${JSON.stringify(said.map((m) => m.text))}`);
   const items = asking!.text.split("\n").filter((l) => /^\s*\d+[.)]\s/u.test(l));
-  const bare = items.filter((l) => !/\brec/iu.test(l));
-  check(bare.length === 0, `every numbered question carries a Rec: ${JSON.stringify(bare)}`);
+  // A recommendation in the item's own line, in the lead's words ("Rec: …", "I'd suggest …", "I recommend …").
+  const bare = items.filter((l) => !RECOMMENDS.test(l));
+  check(bare.length === 0, `every numbered question carries a recommendation: ${JSON.stringify(bare)}`);
   check((await chat.state()).needsYou === true, "needs-you is on while the lead waits for the answer");
   const noWrite = (await tasksOf(lab, ref)).filter((t) => t.kind === "write" && ["queued", "running"].includes(t.state) && String(t.title).toLowerCase().includes("digest"));
   check(noWrite.length === 0, `nothing built before the answer: ${JSON.stringify(noWrite.map((t) => t.title))}`);
@@ -497,7 +508,7 @@ async function secretPart(lab: Lab, chat: Chat, ref: Ref, humanCall: Lab["callTo
   const places = [...filesUnder(lab.hubHome), ...filesUnder(path.join(RUN, "logs")), ...lab.machines.flatMap((m) => filesUnder(machineHome(m.id)))].filter(([f]) => f !== sink);
   const hits = places.filter(([, text]) => text.includes(value) || text.includes(sealed)).map(([f]) => f);
   check(hits.length === 0, `the value is in no file but its sink: ${hits.join(", ")}`);
-  check((await chat.state()).needsYou !== true, "needs-you is off once the secret is stored");
+  await needsYouOnlyForAQuestion(lab, chat, "the secret is stored");
   ok(`stored through the inline item; the value is in no chat message, event or wake, and in none of ${places.length} files (hub, nodes, logs)`);
 }
 
@@ -541,7 +552,7 @@ async function gatedPart(lab: Lab, chat: Chat, ref: Ref, humanCall: Lab["callToo
   const leadId = await chat.leadThread();
   const wake = userMessages(ref.machineId, leadId ?? "").flatMap((t) => t.split("\n")).find((l) => l.startsWith(`- ${item.requestId} your command`));
   check(wake, `the lead's next wake carries the outcome: ${JSON.stringify(userMessages(ref.machineId, leadId ?? "").at(-1)?.slice(-400))}`);
-  check((await chat.state()).needsYou !== true, "needs-you is off once the command ran");
+  await needsYouOnlyForAQuestion(lab, chat, "the command ran");
   ok(`ran exactly once; the lead's wake: ${wake}; needs-you off`);
 }
 
