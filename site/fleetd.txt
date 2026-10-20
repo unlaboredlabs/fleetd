@@ -42,8 +42,7 @@ approve it. Image: chat-approve.png
   12  Why it waits for you: this one can't be undone. Commands that cost money
       or need a credential wait too.
   14  The exact command, the machine and folder it runs in, and the secret it
-      gets. It runs as shown or not at all.
-  16  Approve runs it on that machine; Deny tells the lead, which carries on
+      gets. Approve runs it as shown; Deny tells the lead, which carries on
       without it.
 
 
@@ -58,10 +57,10 @@ machine that uses it; the chat and the hub never see it. Image: chat-secret.png
   [Paste or type the value]  [Save secret]
   Sealed on this computer to devbox's key. The hub only passes it on; fleetd never shows it again.
 
-  20  The lead asks for the key in the chat, and says where it goes.
-  22  Paste it here. It never enters the transcript.
-  24  Sealed on your computer to that machine's key; the hub only passes it on.
-  26  A saved secret shows only its fingerprint.
+  20  A saved secret shows only its fingerprint.
+  22  The lead asks for the key in the chat, and says where it goes.
+  24  Paste it here. It never enters the transcript.
+  26  Sealed on your computer to that machine's key; the hub only passes it on.
 
 
 WHAT THE LEAD DOES WITHOUT ASKING YOU
