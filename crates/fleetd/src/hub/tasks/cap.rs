@@ -46,6 +46,17 @@ pub fn paused_reason(max_agents: i64) -> String {
     format!("paused: max agents lowered to {max_agents}; resumes when a slot frees")
 }
 
+/// `cap_set`: the change, then its line in the project's chat. A line that can't be written leaves the change made.
+pub async fn apply(hub: &crate::hub::api::Hub, change: CapChange) -> Result<CapOutcome, TaskError> {
+    let outcome = hub.tasks.set_caps(change).await?;
+    if let Some((r, line)) = &outcome.chat_line
+        && let Err(error) = hub.chat.system_line(r, line)
+    {
+        tracing::warn!(%error, "max agents: chat line not written");
+    }
+    Ok(outcome)
+}
+
 impl Tasks {
     pub async fn set_caps(self: &Arc<Self>, change: CapChange) -> Result<CapOutcome, TaskError> {
         let slots = &self.d.slots;
