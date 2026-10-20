@@ -31,6 +31,7 @@ money or needs a credential waits in the chat, exactly as it will run, until you
 approve it. Image: chat-approve.png
 
   Lead: This writes to the production database. Approve to run it exactly as below.
+  ▸ 5 agents working
   Command                                                     Can't be undone
   Adds the share snapshots table to the production database.
     pnpm --filter storefront db:migrate --env production
@@ -51,13 +52,14 @@ When the lead needs a key, you type it into a masked field. It is sealed to the
 machine that uses it; the chat and the hub never see it. Image: chat-secret.png
 
   Lead: Need the Stripe test key for that. It goes to devbox only and never into this chat.
+  ▸ 5 agents working
   Secret                                                      stripe.test_key
   The checkout tests charge a test card; they need the Stripe test key.
   It is saved as STRIPE_TEST_KEY in /home/dev/src/storefront/.env.test on devbox.
   [Paste or type the value]  [Save secret]
   Sealed on this computer to devbox's key. The hub only passes it on; fleetd never shows it again.
 
-  20  A saved secret shows only its fingerprint.
+  20  A secret saved earlier shows only that it was saved, never its value.
   22  The lead asks for the key in the chat, and says where it goes.
   24  Paste it here. It never enters the transcript.
   26  Sealed on your computer to that machine's key; the hub only passes it on.

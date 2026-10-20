@@ -37,7 +37,7 @@ back.
 When a lead needs an API key or a password, it asks with `request_secret`, and the item names the machine and where
 the value goes: a line in an env file, or a file.
 
-![A secret item in storefront's chat: the lead needs the Stripe test key, which goes to devbox only. The card names where it is saved, with a masked field and Save secret. Above it, a secret already saved, with its fingerprint.](/docs/img/chat-secret.png)
+![A secret item in storefront's chat: the lead needs the Stripe test key, which goes to devbox only. The card names where it is saved, with a masked field and Save secret. Above it, a secret already saved, and the agents at work.](/docs/img/chat-secret.png)
 
 1. Type the value in the masked field.
 2. The app seals it to that machine's key (a libsodium sealed box) and wipes what you typed.
