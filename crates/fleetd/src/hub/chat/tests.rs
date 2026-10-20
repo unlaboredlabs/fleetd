@@ -656,3 +656,70 @@ async fn a_messages_attachments_are_the_projects() {
         .unwrap();
     assert_eq!(got["bytes"], 3);
 }
+
+/// A stop reaches the lead as a line that says the order is over: no more work on it.
+#[tokio::test(flavor = "current_thread")]
+async fn a_stopped_order_tells_its_lead_to_do_no_more_work_on_it() {
+    let clock = ManualClock::at(1_792_000_000_000);
+    let home = tempfile::tempdir().unwrap();
+    let config = HubConfig {
+        home: home.path().to_path_buf(),
+        listen: Listen::default(),
+        url: None,
+        queue_ttl_sec: None,
+        retro_model: None,
+    };
+    let hub =
+        crate::hub::serve::build_on(HubDb::open_memory().unwrap(), config, clock.clone()).unwrap();
+    hub.store
+        .projects_upsert_many(
+            &project().machine_id,
+            &[serde_json::from_value(json!({
+                "machineId": "devbox", "projectId": "app", "title": "app", "workspaceRoot": "/work/app",
+                "threads": { "running": 0, "waiting": 0, "idle": 0, "failed": 0 }, "lastActivityAt": AT,
+            }))
+            .unwrap()],
+        )
+        .unwrap();
+    give_lead(&hub);
+    let r = project();
+    hub.leads
+        .records
+        .workstream_create(NewWorkstream {
+            project_ref: r.clone(),
+            title: "Dark mode".into(),
+            text: "add dark mode".into(),
+            channel: IntakeChannel::App,
+            by: "human".into(),
+            at: AT.into(),
+            client_request_id: None,
+            playbook: None,
+            parent: None,
+        })
+        .unwrap();
+    crate::hub::api::registry()
+        .call(
+            &hub,
+            &person(),
+            "project_stop",
+            json!({ "projectRef": { "machineId": "devbox", "projectId": "app" }, "reason": "not needed" }),
+        )
+        .await
+        .unwrap();
+    assert!(hub.leads.wakes.pending(&r));
+    clock.advance(crate::hub::leads::wakes::WAKE_DEBOUNCE);
+    for _ in 0..50 {
+        tokio::task::yield_now().await;
+    }
+    // The lead's machine is away, so the wake waits in the offline queue.
+    let wake: String = hub
+        .db
+        .with(|c| Ok(c.query_row("SELECT message FROM queued_writes", [], |r| r.get(0))?))
+        .unwrap();
+    assert!(
+        wake.contains(
+            "- W1 stopped by the human (not needed): Dark mode; 0 agents cancelled, merged PRs stay; do no more work on it"
+        ),
+        "{wake}"
+    );
+}
