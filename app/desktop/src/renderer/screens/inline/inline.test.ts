@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import data from "../../../../fixtures/inline/items.json";
 import type { ChatItem, CommandApprovalItem, HumanRequest, Machine, SecretRequestItem } from "../../../shared/contracts";
-import { approvalOutcome, secretEnvLines, secretOutcome, secretTarget, shellLine, withRequest } from "./request";
+import { approvalKind, approvalOutcome, secretEnvLines, secretOutcome, secretTarget, shellLine, withRequest } from "./request";
 
 const items = data.items as unknown as ChatItem[];
 const secret = (id: string): SecretRequestItem => {
@@ -62,6 +62,11 @@ describe("a command approval", () => {
     expect(shellLine(gated("Q4").argv)).toBe("pnpm run migrate --env staging");
     expect(secretEnvLines(gated("Q4"))).toEqual(["`DATABASE_URL` gets the secret `staging.db_url`"]);
     expect(secretEnvLines(gated("Q5"))).toEqual([]);
+  });
+
+  it("tells a command, a tool prompt and a playbook gate change apart", () => {
+    expect(["Q4", "Q8", "Q10"].map((id) => approvalKind(approval(id)))).toEqual(["command", "permission", "playbook"]);
+    expect(approvalOutcome(approval("Q10"))).toBeUndefined();
   });
 
   it("waits for Approve / Deny, then says one result line", () => {
