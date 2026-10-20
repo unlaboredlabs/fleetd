@@ -423,6 +423,14 @@ impl Retro {
         p
     }
 
+    /// Once when the hub starts: a gate change approved or decided while the hub was down, or whose settle never ran
+    /// before it stopped, applies now rather than at the next weekly run. After the event cursor is taken, so nothing
+    /// decided meanwhile is missed.
+    pub async fn settle_on_start(&self) {
+        let _lock = self.lock.lock().await;
+        self.settle_gates().await;
+    }
+
     /// A person approved or denied a relaxing gate change's request.
     pub async fn on_gate_answered(&self) {
         let _lock = self.lock.lock().await;
@@ -866,6 +874,7 @@ impl Retro {
     pub async fn serve(self: Arc<Self>) {
         tokio::spawn(self.clone().schedule());
         let mut cursor = self.deps.events.head().await;
+        self.settle_on_start().await;
         loop {
             let page = self
                 .deps
