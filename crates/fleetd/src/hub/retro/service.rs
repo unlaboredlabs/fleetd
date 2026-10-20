@@ -113,7 +113,8 @@ pub struct RunInput {
 
 pub struct Retro {
     deps: RetroDeps,
-    lock: tokio::sync::Mutex<()>,
+    /// Held by a run (a whole claude turn) and by settling gate changes.
+    pub(super) lock: tokio::sync::Mutex<()>,
     /// Threshold checks one at a time, so two incidents landing together start one run, not two.
     threshold_lock: tokio::sync::Mutex<()>,
 }

@@ -163,6 +163,8 @@ async fn a_relaxing_change_applies_on_a_persons_approve() {
         "Bugfixes, medium-size work: reviewers 1 → 0"
     );
     answer(&hub, true).await;
+    // The answer only records the approve; settling is the retro's, off the answer's path.
+    hub.retro.on_gate_answered().await;
     assert_eq!(state(&hub), "applied");
 }
 
@@ -170,6 +172,7 @@ async fn a_relaxing_change_applies_on_a_persons_approve() {
 async fn a_relaxing_change_never_applies_on_a_deny() {
     let (hub, _home, _) = hub(RELAX, true).await;
     answer(&hub, false).await;
+    hub.retro.on_gate_answered().await;
     assert_eq!(state(&hub), "rejected");
 }
 
@@ -217,4 +220,22 @@ async fn a_persons_global_decision_applies_either_kind() {
         hub.retro.settle_gates().await;
         assert_eq!(state(&hub), "applied", "relaxes: {relaxes}");
     }
+}
+
+/// A retro run holds its lock for a whole claude turn: the person's answer is stored at once all the same, and the
+/// change applies once the lock is free.
+#[tokio::test]
+async fn an_answer_never_waits_on_a_running_retro() {
+    let (hub, _home, _) = hub(RELAX, true).await;
+    let running = hub.retro.lock.lock().await;
+    // Not awaited on the lock: if the answer waited for it, this would never return.
+    answer(&hub, true).await;
+    assert_eq!(
+        hub.approvals.get("Q1").unwrap().state,
+        fleetd_contracts::ledger::RequestState::Approved
+    );
+    assert_eq!(state(&hub), "pending", "applied only once the run is done");
+    drop(running);
+    hub.retro.on_gate_answered().await;
+    assert_eq!(state(&hub), "applied");
 }
