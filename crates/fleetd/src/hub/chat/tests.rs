@@ -849,3 +849,55 @@ async fn a_max_agents_change_is_one_quiet_line() {
         [(ChatAuthor::System, line)]
     );
 }
+
+/// The approvals service may reopen an approved command while the chat's follower starts. The follower takes its
+/// cursor before it shows anything, and the start brings every item still reading open or approved in line with its
+/// request: a reopen it never saw as an event still shows as open, with the dot.
+#[tokio::test]
+async fn a_request_reopened_while_the_follower_starts_shows_open() {
+    let (hub, _home) = hub();
+    hub.ops.bind(&hub);
+    give_lead(&hub);
+    let r = project();
+    let p: crate::hub::usage::ports::ProjectRef =
+        serde_json::from_value(json!({ "machineId": "devbox", "projectId": "app" })).unwrap();
+    let input = crate::hub::approvals::GatedRunInput {
+        argv: vec!["./deploy.sh".into(), "prod".into()],
+        cwd: None,
+        class: "irreversible".into(),
+        reason: "prod deploy".into(),
+        secret_env: None,
+        timeout_sec: 600,
+        workstream_id: None,
+    };
+    let open = hub.approvals.gated_run(&p, input).await.unwrap();
+    let n: i64 = open.request_id.as_str()[1..].parse().unwrap();
+    // As the approvals service's own writes do, with no event the chat reads.
+    let set = |state: &str| {
+        hub.db
+            .with(|c| {
+                c.execute(
+                    "UPDATE requests SET state = ?1, data = json_set(data, '$.state', ?1) WHERE n = ?2",
+                    rusqlite::params![state, n],
+                )?;
+                Ok(())
+            })
+            .unwrap();
+    };
+    set("approved");
+    flow::show_request(&hub, open.request_id.as_str()).await;
+    let state_of = || match &items(&hub)[0].1 {
+        ChatItem::CommandApproval(item) => item.state,
+        _ => panic!("not an approval"),
+    };
+    assert_eq!(state_of(), CommandApprovalState::Approved);
+    assert!(!hub.chat.state(&r, false).unwrap().needs_you);
+    // Reopened with no event the follower reads: the start repairs it, and follows from before it began.
+    set("open");
+    let head = hub.events.head();
+    let cursor = flow::startup(&hub).await;
+    assert_eq!(cursor, head, "the cursor is taken before anything is shown");
+    assert_eq!(state_of(), CommandApprovalState::Open);
+    assert!(hub.chat.state(&r, false).unwrap().needs_you);
+    assert_eq!(items(&hub).len(), 1, "the same item, in place");
+}
