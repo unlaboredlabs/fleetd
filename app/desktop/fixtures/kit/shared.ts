@@ -241,6 +241,9 @@ const chatFixtures = (copy: (name: SharedName, note: string) => Fixture): Array<
 /** Every shared fixture, by name, freshly built. */
 export const buildShared = (): Map<SharedName, Fixture> => {
   const typical = withChat(Fixture.from(recorded("lab-demo"), "typical", "A real lab hub mid-order: one order fanned out to writers, reviewers and verifiers, three PRs in the train, live lanes, prompts and time."), undefined, { leadWorking: true });
+  // The recording's later live frames settle lanes its board answer (read a moment earlier) still shows working; the
+  // app would refetch the board, a fixture can't. Its full frame alone agrees with the board.
+  typical.live = typical.live.filter((frame) => frame["full"] === true);
   const copy = (name: SharedName, note: string) => Fixture.from(typical, name, note);
   const shared: Array<Fixture> = [
     answerRows(Fixture.from(recorded("lab-start"), "empty", "A real lab hub before anything happened: machines online, no projects, orders, chats or time."), []),

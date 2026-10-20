@@ -69,7 +69,8 @@ export const syncAgents = (f: Fixture): void => {
     const ref = refOf(p);
     const { running, queued } = counts(ref);
     const row = before.get(keyOf(ref));
-    const kept = typeof row?.["maxAgents"] === "number" && row["maxAgents"] >= running ? row["maxAgents"] : plausibleMax(running);
+    // A recording's max (the lab runs 40) reads as no setting at all: only a fixture about the slot state keeps its own.
+    const kept = f.agentsFromSlots && typeof row?.["maxAgents"] === "number" && row["maxAgents"] >= running ? row["maxAgents"] : plausibleMax(running);
     const waiting = f.agentsFromSlots && typeof row?.["queued"] === "number" ? row["queued"] : queued;
     return { projectRef: ref, maxAgents: kept, running, queued: waiting, used: running };
   });
