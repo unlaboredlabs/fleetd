@@ -700,6 +700,8 @@ export type CommandApprovalItem = {
   outputTail?: string;
   /** A session's permission prompt: the tool and what it would do. */
   permission?: ToolPermission;
+  /** A retro playbook change that relaxes a gate: what changes, in plain words, and the exact diff. */
+  playbook?: PlaybookGateChange;
   requestId: ChatRequestId;
   state: CommandApprovalState;
 };
@@ -1288,6 +1290,8 @@ export type HumanRequest = {
   outputTail?: string;
   /** approval of a session's tool prompt, instead of a gated run. */
   permission?: ToolPermission;
+  /** approval of a retro playbook change that relaxes a gate, instead of a gated run or a tool prompt. */
+  playbook?: PlaybookGateChange;
   projectRef: ProjectRef;
   requestId: ChatRequestId;
   /** secret only. */
@@ -2077,6 +2081,20 @@ export type PlanningState = {
 };
 
 export type PlaybookChangeKind = "wording" | "gate";
+
+/**
+ * A retro playbook change that relaxes a gate (fewer reviewers, a weaker or removed check, a looser rule): it applies
+ * only once a person approves it. Stored with the approval and never changed.
+ */
+export type PlaybookGateChange = {
+  /** The exact unified diff that applies on approve. */
+  diff: string;
+  playbook: string;
+  /** The retro proposal, R<n>. */
+  proposalId: string;
+  /** The change in plain words, e.g. "M-tier reviewers 1 → 0". */
+  summary: string;
+};
 
 /** The prefixes `bug:`/`fix:`, `research:` and `finish:` pick bugfix, research and finish-all. */
 export type PlaybookName = "bugfix" | "feature" | "research" | "finish-all";

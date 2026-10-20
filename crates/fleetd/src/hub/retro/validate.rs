@@ -80,6 +80,87 @@ pub fn changed_fields(
     Ok(fields)
 }
 
+/// Gate fields where more, or true, is stricter.
+const STRICTER_WHEN_MORE: [&str; 1] = ["reviewers"];
+const STRICTER_WHEN_TRUE: [&str; 3] = ["verifier", "planFirst", "requireSource"];
+const TIERS: [&str; 3] = ["S", "M", "L"];
+
+/// True only when every changed gate field provably tightens: more reviewers, a check turned on, a list that only
+/// grows at its end, a larger default tier. Anything else, and any body change, may relax a gate.
+pub fn tightens_only(
+    before: &Map<String, Value>,
+    after: &Map<String, Value>,
+    body_changed: bool,
+) -> bool {
+    !body_changed && map_tightens(before, after)
+}
+
+fn map_tightens(before: &Map<String, Value>, after: &Map<String, Value>) -> bool {
+    let keys: BTreeSet<&String> = before.keys().chain(after.keys()).collect();
+    keys.into_iter()
+        .all(|k| match (before.get(k), after.get(k)) {
+            (a, b) if a == b => true,
+            _ if WORDING_FIELDS.contains(&k.as_str()) => true,
+            (Some(a), Some(b)) => value_tightens(k, a, b),
+            _ => false,
+        })
+}
+
+fn value_tightens(key: &str, a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::Object(x), Value::Object(y)) => map_tightens(x, y),
+        (Value::Array(x), Value::Array(y)) => y.len() > x.len() && y.starts_with(x),
+        (Value::Bool(false), Value::Bool(true)) => STRICTER_WHEN_TRUE.contains(&key),
+        (Value::Number(x), Value::Number(y)) => {
+            STRICTER_WHEN_MORE.contains(&key) && y.as_f64() > x.as_f64()
+        }
+        (Value::String(x), Value::String(y)) if key == "tierDefault" => {
+            let rank = |t: &str| TIERS.iter().position(|r| *r == t);
+            matches!((rank(x), rank(y)), (Some(i), Some(j)) if j > i)
+        }
+        _ => false,
+    }
+}
+
+/// The changed gate fields in plain words, e.g. "reviewRules.M.reviewers 1 → 0; the body".
+pub fn describe_changes(
+    before: &Map<String, Value>,
+    after: &Map<String, Value>,
+    body_changed: bool,
+) -> String {
+    fn walk(path: &str, a: Option<&Value>, b: Option<&Value>, out: &mut Vec<String>) {
+        match (a, b) {
+            (Some(Value::Object(x)), Some(Value::Object(y))) => {
+                let keys: BTreeSet<&String> = x.keys().chain(y.keys()).collect();
+                for k in keys {
+                    walk(&format!("{path}.{k}"), x.get(k), y.get(k), out);
+                }
+            }
+            (a, b) if a == b => {}
+            (a, b) => {
+                let shown = |v: Option<&Value>| v.map_or("(none)".to_string(), |v| v.to_string());
+                out.push(format!(
+                    "{} {} → {}",
+                    path.trim_start_matches('.'),
+                    shown(a),
+                    shown(b)
+                ));
+            }
+        }
+    }
+    let mut out = Vec::new();
+    let keys: BTreeSet<&String> = before.keys().chain(after.keys()).collect();
+    for k in keys {
+        if !WORDING_FIELDS.contains(&k.as_str()) {
+            walk(k, before.get(k), after.get(k), &mut out);
+        }
+    }
+    if body_changed {
+        out.push("the playbook's text".into());
+    }
+    out.join("; ")
+}
+
 /// `String(value)` as JS prints it in these messages.
 fn js_string(v: Option<&Value>) -> String {
     match v {
@@ -419,6 +500,48 @@ mod tests {
         assert_eq!(
             (accepted.len(), dropped[0].reason.as_str()),
             (1, "a second change to bugfix in one run")
+        );
+    }
+
+    #[test]
+    fn only_a_provable_tightening_skips_the_approval() {
+        let m = |v: serde_json::Value| v.as_object().unwrap().clone();
+        let base = m(
+            serde_json::json!({ "reviewRules": { "M": { "reviewers": 1, "verifier": false } },
+            "requiredChecks": [{ "anyOf": ["test"] }], "tierDefault": "S", "estimatePrior": 5 }),
+        );
+        let with = |f: &dyn Fn(&mut serde_json::Value)| {
+            let mut v = serde_json::Value::Object(base.clone());
+            f(&mut v);
+            v.as_object().unwrap().clone()
+        };
+        let more = with(&|v| v["reviewRules"]["M"]["reviewers"] = 2.into());
+        let fewer = with(&|v| v["reviewRules"]["M"]["reviewers"] = 0.into());
+        let verifier_on = with(&|v| v["reviewRules"]["M"]["verifier"] = true.into());
+        let check_added = with(&|v| {
+            v["requiredChecks"]
+                .as_array_mut()
+                .unwrap()
+                .push(serde_json::json!({ "anyOf": ["cmd"] }))
+        });
+        let check_removed = with(&|v| v["requiredChecks"] = serde_json::json!([]));
+        let tier_up = with(&|v| v["tierDefault"] = "M".into());
+        let field_dropped = with(&|v| {
+            v.as_object_mut().unwrap().remove("tierDefault");
+        });
+        for tighter in [&more, &verifier_on, &check_added, &tier_up] {
+            assert!(tightens_only(&base, tighter, false), "{tighter:?}");
+        }
+        for looser in [&fewer, &check_removed, &field_dropped] {
+            assert!(!tightens_only(&base, looser, false), "{looser:?}");
+        }
+        assert!(
+            !tightens_only(&base, &more, true),
+            "a body change may relax a rule in words"
+        );
+        assert_eq!(
+            describe_changes(&base, &fewer, false),
+            "reviewRules.M.reviewers 1 → 0"
         );
     }
 }

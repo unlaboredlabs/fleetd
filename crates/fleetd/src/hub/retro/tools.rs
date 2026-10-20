@@ -37,7 +37,7 @@ async fn retro_proposals(
         "proposals": shown.items,
         "apply": apply,
         "next": if apply {
-            "Wording changes apply on their own and revert when their metric does not improve; a gate change waits until a person decides: the leads whose incidents it fixes ask in their chat and log playbook.<name>.<hash> as apply or reject (or record it with decisions_record).".to_string()
+            "Wording changes apply on their own and revert when their metric does not improve; a gate change waits on a person: one that relaxes a gate is an approval in a project's chat; one that only tightens is asked in chat by the leads it helps, who log playbook.<name>.<hash> as apply or reject. A person's global decision settles either.".to_string()
         } else {
             format!("Advise-only: nothing applies until the global decision {APPLY_KEY} = true (decisions_record).")
         },
