@@ -3,11 +3,11 @@
 // delivered to the lead inline, the same key is then answered from the log, and a naming question is refused.
 // Five lead turns, each tiny: start, the intent wake, one ask, the answer wake, the re-ask plus refusal.
 import { randomUUID } from "node:crypto";
-import { type Body, type Lab, MODEL } from "./harness.ts";
+import { type Body, chatOrder, type Lab, MODEL } from "./harness.ts";
 
 const MACHINE = "lab-a";
 // The v1 prompt has the lead delegate at once; m5 decides when tasks run, so this lead registers the brief only.
-const INTENT = "add a /health endpoint (lab run: register the brief, then stop; spawn no tasks until told)";
+const INTENT = "add a /health endpoint (lab run: open its workstream with workstream_open and register the brief, then stop; spawn no tasks until told)";
 const ASK = `fleetd ask --key api.health.path --class product --text "Path?" --option '/healthz|/healthz|Matches the probe default.' --option '/health|/health|The probe config changes too.' --rec /healthz --why "The probe expects it." --proceeded`;
 const TURN_MS = 240_000;
 
@@ -67,16 +67,14 @@ export async function m3Loop(lab: Lab) {
   check(outcome.lead?.threadId === threadId && outcome.lead.state === "idle", `project_get lead: ${JSON.stringify(outcome.lead)}`);
   ok(`project_get: lead {threadId: ${outcome.lead.threadId}, state: ${outcome.lead.state}}`);
 
-  // 2. intake_submit makes a draft and wakes the lead, which runs `fleetd brief create`: running, frozen hash.
-  const intake = await callTool("intake_submit", { ...ref, text: INTENT, clientRequestId: randomUUID() });
-  check(!intake.isError, `intake_submit: ${JSON.stringify(intake.body)}`);
-  const workstreamId = intake.body.workstreamId as string;
-  const draft = (await callTool("workstream_get", { workstreamId })).body;
-  check(draft.workstream.state === "draft", `${workstreamId} starts as a draft: ${JSON.stringify(draft.workstream)}`);
-  ok(`intake_submit -> ${workstreamId} (draft)`);
-  const woken = await lab.waitEvent("lead.woken with the intent", 60_000, { cursor, machineId: MACHINE, types: ["lead.woken"] });
+  // 2. A chat message: the lead opens a draft with workstream_open and runs `fleetd brief create`: running, frozen hash.
+  const order = await chatOrder(lab, ref, INTENT);
+  const workstreamId = order.workstreamId;
   const running = await lab.waitEvent(`workstream.running for ${workstreamId}`, TURN_MS, { cursor, machineId: MACHINE, types: ["workstream.running"] });
-  cursor = await turnDone(threadId, woken.event.seq, "intent wake");
+  const created = await lab.waitEvent(`workstream.created for ${workstreamId}`, 10_000, { cursor, types: ["workstream.created"], match: (e) => e.data?.workstreamId === workstreamId });
+  check(created.event.seq < running.event.seq, `${workstreamId} starts as a draft: created (seq ${created.event.seq}) before running (seq ${running.event.seq})`);
+  ok(`chat_send -> the lead opened ${workstreamId} (a draft)`);
+  cursor = await turnDone(threadId, order.cursor, "the chat turn");
   const registered = (await callTool("workstream_get", { workstreamId })).body.workstream;
   check(registered.state === "running" && /^[0-9a-f]{64}$/u.test(registered.briefHash ?? ""), `brief frozen: ${JSON.stringify(registered)}`);
   ok(`the lead ran fleetd brief create: ${workstreamId} running, briefHash ${registered.briefHash.slice(0, 12)}… (event seq ${running.event.seq})`);

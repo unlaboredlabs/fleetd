@@ -10,7 +10,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { type Body, fleetdCommand, LAB, type Lab, MODEL, nodeSock, requireGhLogin, scrubbedEnv, sessionText, SLOT } from "./harness.ts";
+import { type Body, openWorkstream, fleetdCommand, LAB, type Lab, MODEL, nodeSock, requireGhLogin, scrubbedEnv, sessionText, SLOT } from "./harness.ts";
 
 const MACHINE = "lab-a";
 // One lab repo for every slot; each slot runs the train in parallel in its own branch namespace: its base
@@ -206,26 +206,23 @@ export async function m7Train(lab: Lab) {
     await lab.waitEvent("lead start turn", TURN_MS, { cursor: scenarioStart, machineId: MACHINE, match: (e) => e.threadId === leadThread && ENDED.includes(e.type) });
     ok(`lead ${leadThread} started`);
 
-    // Two workstreams, briefs registered from the shell as the lead would, before the intent wakes fire.
+    // Two workstreams, opened and their briefs registered from the shell as the lead would.
     const workstream = async (text: string, brief: Body) => {
-      const intake = await callTool("intake_submit", { ...ref, text, clientRequestId: randomUUID() });
-      check(!intake.isError, `intake_submit: ${JSON.stringify(intake.body)}`);
-      const w = intake.body.workstreamId as string;
+      const w = openWorkstream(check, fleetd, text);
       const frozen = fleetd("brief", "create", "--workstream", w, "--json", JSON.stringify({ pointers: [], constraints: [], estimate: { rawMinutes: 5, gates: [] }, ...brief }));
       check(frozen.code === 0, `brief create ${w}: ${JSON.stringify(frozen)}`);
       return w;
     };
-    const quiet = "Lab run: the harness spawns every task; reply to each wake with one short line, run no commands.";
     // One check per PR, so each reviewer judges its PR against its own check. Node-run checks: a claim costs no turns.
     const onMain = (file: string) => ["gh", "api", onBase(file), "--silent"];
     const cmd = (argv: Array<string>) => ({ type: "cmd", machineId: MACHINE, argv, expectExit: 0 });
-    const wm = await workstream(`${quiet} Add alpha.md and beta.md in two PRs.`, {
+    const wm = await workstream("Add alpha.md and beta.md in two PRs.", {
       goal: `two independent PRs: one adds ${ALPHA}, the other adds ${BETA}`,
       why: "the M7 lab scenario",
       doneWhen: [cmd(onMain(ALPHA)), cmd(onMain(BETA))],
       tier: "M",
     });
-    const ws = await workstream(`${quiet} Train edge cases.`, {
+    const ws = await workstream("Train edge cases.", {
       goal: `one PR that adds the line gamma to ${ALPHA}, and one that adds FAIL and so must never merge`,
       why: "the M7 lab scenario",
       doneWhen: [

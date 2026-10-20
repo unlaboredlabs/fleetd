@@ -1,7 +1,8 @@
-// Lab check: an intent without a project is routed by a hub installed the way users get it (`fleetd init`'s systemd
-// user unit, so only HOME, PATH and LANG in its environment), proving the router reaches Claude through the user's own
-// `claude` login. Lab only: its own hub home, port (FLEETD_LAB_SLOT shifts it) and unit suffix, and the two lab machines
-// with their test repos as projects. One haiku router run; a policy file keeps the order from starting a lead.
+// Lab check: a hub installed the way users get it (`fleetd init`'s systemd user unit, so only HOME, PATH and LANG in its
+// environment) reaches Claude through the user's own `claude` login (doctor hub/claude_login), and an order sent to a
+// project's chat waits for lead_start when its policy says the lead starts only by hand. Orders name their project in
+// the chat, so there is no router run to watch. Lab only: its own hub home, port (FLEETD_LAB_SLOT shifts it) and unit
+// suffix, and the two lab machines with their test repos as projects. No claude turns.
 //
 //   node tests/lab/hubUnitRouter.ts
 import { execFileSync } from "node:child_process";
@@ -11,7 +12,7 @@ import { randomUUID } from "node:crypto";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import { type Body, callToolWith, check, cleanupMachineHomes, cli, joinNode, LAB, machineHome, MACHINES, ok, seedRepo, slotPort, SLOT, stopAll, until, waitEventWith, writeFleetdWrapper } from "./harness.ts";
+import { type Body, callToolWith, check, cleanupMachineHomes, cli, joinNode, LAB, machineHome, MACHINES, ok, seedRepo, slotPort, SLOT, stopAll, until, writeFleetdWrapper } from "./harness.ts";
 
 const PORT = slotPort(4784);
 const URL_ = `http://127.0.0.1:${PORT}`;
@@ -24,6 +25,7 @@ const POLICY = 'areas:\n  all: ["**"]\nlead:\n  autoStart: false\n';
 const main = async () => {
   if (fs.existsSync(path.join(LAB, "test-lab.lock"))) throw new Error("another test:lab run holds the lab lock");
   let client: Client | undefined;
+  let human: Client | undefined;
   // Each repo's own policy file, if it had one, put back afterwards.
   const policies = new Map<string, string | undefined>();
   try {
@@ -71,16 +73,19 @@ const main = async () => {
     check(doctor?.status === "ok", `doctor hub/claude_login ok: ${JSON.stringify(doctor)}`);
     ok(`doctor: ${doctor.message}`);
 
-    const cursor = (await callTool("fleetd_status")).body.cursor as number;
-    const text = `fix: in the ${target.title} project on lab-b, a README line has a typo`;
-    const submitted = await callTool("intake_submit", { text, clientRequestId: randomUUID() });
-    check(!submitted.isError, `intake_submit: ${JSON.stringify(submitted.body)}`);
-    const { event } = await waitEventWith(callTool)("intake.routed", 120_000, { cursor, types: ["intake.routed"] });
-    const runs = (event.data?.usage as Array<Body> | undefined) ?? [];
-    check(runs.length >= 1 && runs.every((r) => r.ok === true), `router runs ok: ${JSON.stringify(runs)}`);
-    check(submitted.body.workstreamId !== undefined && event.projectId === target.projectId, `routed to lab-b's project: ${JSON.stringify({ event, body: submitted.body })}`);
-    ok(`routed "${text}" → lab-b/${target.title} (${runs.map((r) => `${r.model} ${r.durationMs} ms`).join(", ")}); echo: ${submitted.body.echo?.reason}`);
+    // A person's key, as the desktop app pairs one: only people write in a project's chat.
+    const humanKey = /fld_[a-z2-7]{20,}/u.exec(cli("hub", "key", "create", "--home", HOME, "--human", "--name", "lab-person"))?.[0];
+    check(humanKey !== undefined, "a human key");
+    human = new Client({ name: "lab-hub-unit-person", version: "0" });
+    await human.connect(new StreamableHTTPClientTransport(new URL(`${URL_}/mcp`), { requestInit: { headers: { authorization: `Bearer ${humanKey}` } } }) as Transport);
+    const text = "fix: a README line has a typo";
+    const projectRef = { machineId: target.machineId as string, projectId: target.projectId as string };
+    const submitted = await callToolWith(() => human!)("chat_send", { projectRef, text, clientRequestId: randomUUID() });
+    check(!submitted.isError && submitted.body.message?.author === "human", `chat_send to lab-b/${target.title}: ${JSON.stringify(submitted.body)}`);
+    ok(`chat_send "${text}" → lab-b/${target.title} (delivery ${submitted.body.message.delivery})`);
     check(String(submitted.body.leadWaiting ?? "").includes("lead.autoStart: false"), `the order waits for lead_start, as the policy says: ${JSON.stringify(submitted.body)}`);
+    const project = (await callTool("project_get", projectRef)).body;
+    check(project.lead === undefined, `no lead started: ${JSON.stringify(project.lead)}`);
     ok(`no lead started: ${submitted.body.leadWaiting}`);
     ok("PASS hub-unit router");
   } finally {
@@ -89,6 +94,7 @@ const main = async () => {
       else fs.writeFileSync(file, text);
     }
     await client?.close().catch(() => {});
+    await human?.close().catch(() => {});
     await stopAll();
     try {
       cli("uninstall", "--home", HOME, "--purge");

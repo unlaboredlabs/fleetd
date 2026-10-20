@@ -7,10 +7,9 @@
 // lab repo. The harness's `fleetd` calls run in the project's workspace, as the lead's shell would, so they cost no
 // turns; wakes and tasks are haiku at low effort.
 import { spawnSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { type Body, fleetdCommand, type Lab, MODEL, nodeSock, scrubbedEnv, sessionText } from "./harness.ts";
+import { type Body, openWorkstream, fleetdCommand, type Lab, MODEL, nodeSock, scrubbedEnv, sessionText } from "./harness.ts";
 import { git, prepareRepo } from "./m5Tasks.ts";
 
 const MACHINE = "lab-a";
@@ -58,15 +57,9 @@ export async function m6Verify(lab: Lab) {
   const leadTurnEnds = (cursor: number) =>
     lab.waitEvent("a lead turn to end", TURN_MS, { cursor, machineId: MACHINE, match: (e) => e.threadId === leadThread && ENDED.includes(e.type) });
 
-  // A workstream with one node-run check, registered from the shell as the lead would, before the intent wake fires.
+  // A workstream with one node-run check, opened and registered from the shell as the lead would.
   let cursor = await lab.cursor();
-  const intake = await callTool("intake_submit", {
-    ...ref,
-    text: "M6 lab run: add docs/x.md. Its brief is already registered; keep every reply to one short line.",
-    clientRequestId: randomUUID(),
-  });
-  check(!intake.isError, `intake_submit: ${JSON.stringify(intake.body)}`);
-  const w = intake.body.workstreamId as string;
+  const w = openWorkstream(check, fleetd, "M6 lab run: add docs/x.md.");
   const brief = {
     goal: `add ${FILE}`,
     why: "the M6 lab scenario",

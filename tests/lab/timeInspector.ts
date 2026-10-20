@@ -5,10 +5,9 @@
 // GitHub's own interval inside `change.ci`, the approval wait is a `wait.ask` span of the right length, coverage is
 // complete, and `fleetd time <W>` prints it. About 6 haiku turns. It resets only its own namespace, before and after.
 import { spawnSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { type Body, cli, fleetdCommand, HUB_PORT, type Lab, MODEL, nodeSock, requireGhLogin, scrubbedEnv } from "./harness.ts";
+import { type Body, openWorkstream, cli, fleetdCommand, HUB_PORT, type Lab, MODEL, nodeSock, requireGhLogin, scrubbedEnv } from "./harness.ts";
 import { BASE, checkClone, CLONE, NAMESPACE, onBase, prepareCheckout, REPO, removeLabRepoProject, resetNamespace } from "./m7Train.ts";
 
 const MACHINE = "lab-a";
@@ -92,15 +91,9 @@ export async function timeInspector(lab: Lab) {
     const leadThread = started.body.threadId as string;
     await lab.waitEvent("lead start turn", TURN_MS, { cursor: scenarioStart, machineId: MACHINE, match: (e) => e.threadId === leadThread && ENDED.includes(e.type) });
 
-    // The order, its brief registered from the shell as the lead would, so the lead has nothing to plan.
+    // The order, opened and its brief registered from the shell as the lead would, so the lead has nothing to plan.
     const submitAt = Date.now();
-    const intake = await callTool("intake_submit", {
-      ...ref,
-      text: `Lab run: add ${FILE}. The harness spawns the task and claims done; reply to each wake with one short line, run no commands.`,
-      clientRequestId: randomUUID(),
-    });
-    check(!intake.isError, `intake_submit: ${JSON.stringify(intake.body)}`);
-    const w = intake.body.workstreamId as string;
+    const w = openWorkstream(check, fleetd, `Add ${FILE}. The harness spawns the task and claims done.`);
     const brief = {
       goal: `add ${FILE}`,
       why: "the time inspector lab scenario",
