@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { applyFrame, applyLive, applyStreams, failRead, ingest, initialState, type DataState } from "./store";
-import { projectStateWord, selectNeedsYou, selectProjectList, selectProjectRow, selectAsksError, selectBoard, selectConnection, selectInbox, selectNeedsYouCount, selectOrder } from "./selectors";
-import { ask, card, event, lane, live, liveLane, project, snapshot } from "./fixtures.test-util";
+import { applyFrame, applyLive, applyStreams, ingest, initialState, type DataState } from "./store";
+import { projectStateWord, selectBoard, selectConnection, selectNeedsYou, selectOrder, selectProjectList, selectProjectRow } from "./selectors";
+import { card, event, lane, live, liveLane, project, snapshot } from "./fixtures.test-util";
 import type { HubFrame } from "../../../shared/hub";
 
 const run = (frames: readonly HubFrame[], from: DataState = initialState()): DataState =>
@@ -10,18 +10,11 @@ const run = (frames: readonly HubFrame[], from: DataState = initialState()): Dat
 const withBoard = (s: DataState, cards = [card("W1")]): DataState =>
   ingest(s, { tool: "orders_board", input: {}, output: { at: "2026-10-19T10:00:00.000Z", orders: cards, trains: [] } });
 
-const withAsks = (s: DataState, asks = [ask("A1", "W1")]): DataState =>
-  ingest(s, {
-    tool: "asks_list",
-    input: { state: "open" },
-    output: { asks, batches: [{ batchId: "B1", state: "open", createdAt: "2026-10-19T10:00:00.000Z", items: [] }] },
-  });
-
 describe("connection", () => {
   it("shows skeletons until a snapshot lands after every (re)connect, and drops the old connection's call data", () => {
     let s = run([live()]);
     expect(selectConnection(s).view).toBe("skeleton");
-    s = withAsks(withBoard(run([snapshot(10)], s)));
+    s = withBoard(run([snapshot(10)], s));
     expect(selectConnection(s).view).toBe("live");
     expect(selectBoard(s)).toHaveLength(1);
 
@@ -31,7 +24,6 @@ describe("connection", () => {
     s = run([snapshot(12)], s);
     expect(selectConnection(s).view).toBe("live");
     expect(selectBoard(s)).toBeUndefined();
-    expect(selectInbox(s)).toBeUndefined();
   });
 
   it("ignores an event it already applied", () => {
@@ -41,44 +33,31 @@ describe("connection", () => {
   });
 });
 
-describe("needs you", () => {
-  const start = () => withAsks(withBoard(run([live(), snapshot(10)]), [card("W1", { phase: "waiting_on_you", needsYou: 1 })]));
+describe("an order's phase", () => {
+  const start = () => withBoard(run([live(), snapshot(10)]), [card("W1", { phase: "waiting_on_you", needsYou: 1 })]);
 
-  it("comes from the open asks now, not the count the board cached", () => {
+  it("counts what the hub says waits on you for it, and a lane waiting on a permission from the live feed", () => {
     let s = start();
     expect(selectBoard(s)?.[0]?.phase).toEqual({ phase: "waiting_on_you", detail: "1 question" });
-    s = run([event(11, "ask.closed", { askId: "A1", workstreamId: "W1", state: "answered" })], s);
-    // The card still says needsYou 1 until its refetch; the phase already moved on.
-    expect(s.orders?.["W1"]?.needsYou).toBe(1);
+    s = withBoard(s, [card("W1")]);
     expect(selectBoard(s)?.[0]?.phase.phase).toBe("working");
-    expect(selectInbox(s)).toEqual([]);
-    s = run([event(12, "ask.undone", { askId: "A1" })], s);
-    expect(selectInbox(s)?.map((i) => i.ask.askId)).toEqual(["A1"]);
-  });
-
-  it("drops an open ask a fresh list or order no longer has", () => {
-    let s = withAsks(start(), []);
-    expect(selectOrder("W1")(s)?.asks).toEqual([]);
-    s = withAsks(s, [ask("A2", "W1")]);
-    s = ingest(s, {
-      tool: "order_get",
-      input: { workstreamId: "W1" },
-      output: { order: card("W1"), asks: [], doneLanes: [lane("T0", "done")] },
-    });
-    expect(selectOrder("W1")(s)?.asks).toEqual([]);
-    expect(selectOrder("W1")(s)?.detail?.doneLanes).toHaveLength(1);
-  });
-
-  it("counts a lane waiting on a permission, from the live feed", () => {
-    let s = withAsks(start(), []);
     s = run([{ t: "live", frame: { at: "2026-10-19T10:00:01.000Z", full: true, lanes: [liveLane("T1", "waiting")] } }], s);
     expect(selectBoard(s)?.[0]?.phase).toEqual({ phase: "waiting_on_you", detail: "1 approval" });
+  });
+
+  it("an order's detail holds its finished lanes", () => {
+    const s = ingest(start(), {
+      tool: "order_get",
+      input: { workstreamId: "W1" },
+      output: { order: card("W1"), requests: [], doneLanes: [lane("T0", "done")] },
+    });
+    expect(selectOrder("W1")(s)?.detail?.doneLanes).toHaveLength(1);
   });
 });
 
 describe("events patch what they change", () => {
   it("moves an order's state and resorts the board", () => {
-    let s = withAsks(withBoard(run([live(), snapshot(1)]), [card("W1"), card("W2", { updatedAt: "2026-10-19T09:00:00.000Z" })]), []);
+    let s = withBoard(run([live(), snapshot(1)]), [card("W1"), card("W2", { updatedAt: "2026-10-19T09:00:00.000Z" })]);
     expect(selectBoard(s)?.map((o) => o.card.workstreamId)).toEqual(["W1", "W2"]);
     s = run([event(2, "workstream.state", { workstreamId: "W2", state: "failed" })], s);
     expect(selectBoard(s)?.map((o) => [o.card.workstreamId, o.phase.phase])).toEqual([
@@ -105,57 +84,17 @@ describe("events patch what they change", () => {
   });
 });
 
-describe("a failed asks read", () => {
-  it("doesn't hold the board: orders show without needs-you marks, the error is readable, and a later list clears it", () => {
-    let s = withBoard(run([live(), snapshot(1)]), [card("W1", { phase: "waiting_on_you", needsYou: 1 })]);
-    expect(selectBoard(s)).toBeUndefined();
-    s = failRead(s, "asks_list", { state: "open" }, { code: "failed", message: "node offline" });
-    // The board's own count stands in: an order waiting on you still says so, and sorts first.
-    expect(selectBoard(s)?.map((o) => [o.card.workstreamId, o.phase.phase, o.asksKnown])).toEqual([["W1", "waiting_on_you", false]]);
-    expect(selectOrder("W1")(s)?.asksKnown).toBe(false);
-    expect(selectAsksError(s)?.message).toBe("node offline");
-    expect(selectNeedsYouCount(s)).toBeUndefined();
-    s = withAsks(s);
-    expect(selectAsksError(s)).toBeUndefined();
-    expect(selectBoard(s)?.[0]?.asksKnown).toBe(true);
-    expect(selectBoard(s)?.[0]?.phase.phase).toBe("waiting_on_you");
-  });
-
-  it("falls back to the board's needsYou, which sorts the order above working ones", () => {
-    let s = withBoard(run([live(), snapshot(1)]), [card("W1"), card("W2", { needsYou: 2, updatedAt: "2026-10-19T09:00:00.000Z" })]);
-    s = failRead(s, "asks_list", { state: "open" }, { code: "failed", message: "x" });
-    expect(selectBoard(s)?.map((o) => [o.card.workstreamId, o.phase.phase, o.phase.detail])).toEqual([
-      ["W2", "waiting_on_you", "2 questions"],
-      ["W1", "working", "1 working"],
-    ]);
-  });
-
-  it("only the open-asks read counts, and a snapshot forgets the failure", () => {
-    let s = withBoard(run([live(), snapshot(1)]));
-    expect(failRead(s, "asks_list", { state: "answered" }, { code: "failed", message: "x" })).toBe(s);
-    expect(failRead(s, "status_get", {}, { code: "failed", message: "x" })).toBe(s);
-    s = run([snapshot(2)], failRead(s, "asks_list", { state: "open" }, { code: "failed", message: "x" }));
-    expect(s.asksError).toBeUndefined();
-  });
-});
-
 describe("bounds and freshness", () => {
-  it("serves nothing while the link is down, and no needs-you count before the asks load", () => {
+  it("serves nothing while the link is down", () => {
     let s = withBoard(run([live(), snapshot(1)]));
-    expect(selectNeedsYouCount(s)).toBeUndefined();
-    expect(selectBoard(s)).toBeUndefined();
-    s = withAsks(s);
-    expect(selectNeedsYouCount(s)).toBe(1);
+    expect(selectBoard(s)).toHaveLength(1);
     s = run([{ t: "state", state: { phase: "connecting", hub: "devbox:4710", attempt: 1 } }], s);
     expect(selectBoard(s)).toBeUndefined();
-    expect(selectNeedsYouCount(s)).toBeUndefined();
+    expect(selectProjectList(s)).toBeUndefined();
   });
 
-  it("keeps closed asks only until the next list, and event lines for the 100 most recent orders", () => {
-    let s = withAsks(withBoard(run([live(), snapshot(1)])));
-    s = run([event(2, "ask.closed", { askId: "A1", workstreamId: "W1" })], s);
-    s = withAsks(s, []);
-    expect(s.asks).toEqual({});
+  it("keeps event lines for the 100 most recent orders", () => {
+    let s = withBoard(run([live(), snapshot(1)]));
     const frames = Array.from({ length: 120 }, (_, i) => event(10 + i, "task.started", { workstreamId: `W${i}` }));
     s = run(frames, s);
     expect(Object.keys(s.orderEvents)).toHaveLength(100);

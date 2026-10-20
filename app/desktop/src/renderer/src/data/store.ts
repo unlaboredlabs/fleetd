@@ -9,8 +9,6 @@ import {
   eventData,
   type HubEventOf,
   type AgentLane,
-  type Ask,
-  type Batch,
   type Claim,
   type HubEvent,
   type LiveFrame,
@@ -84,11 +82,6 @@ export interface DataState {
   readonly orders?: Readonly<Record<string, OrderCard>> | undefined;
   readonly details: Readonly<Record<string, OrderDetail>>;
   readonly trains: Readonly<Record<string, TrainLive>>;
-  /** Open asks (and any ask an event closed since), by askId; undefined until this generation's asks landed. */
-  readonly asks?: Readonly<Record<string, Ask>> | undefined;
-  /** The open-asks read failed this generation (after its retries): asks are unknown, not loading. */
-  readonly asksError?: HubError | undefined;
-  readonly batches: Readonly<Record<string, Batch>>;
   /** The latest events, oldest first. */
   readonly events: readonly HubEvent[];
   /** The latest events naming each order, oldest first: the order view's merged event lines. */
@@ -148,7 +141,6 @@ export const initialState = (): DataState => ({
   attention: [],
   details: {},
   trains: {},
-  batches: {},
   events: [],
   orderEvents: {},
   live: emptyLive,
@@ -200,9 +192,6 @@ export const applyFrame = (s: DataState, frame: HubFrame, nowMs: number): [DataS
           orders: undefined,
           details: {},
           trains: {},
-          asks: undefined,
-          asksError: undefined,
-          batches: {},
           chats: {},
           chatStates: byId(snap.chats ?? [], (c) => projectKey(c.projectRef)),
         },
@@ -265,12 +254,6 @@ export const applyChatDelta = (s: DataState, d: ChatDelta): DataState => {
 /** A chat's state, created on first touch. */
 export const chatOf = (s: DataState, key: ProjectKey): Chat => s.chats[key] ?? emptyChat;
 
-const patchAsk = (s: DataState, askId: string | undefined, patch: Partial<Ask>): DataState => {
-  const ask = askId === undefined ? undefined : s.asks?.[askId];
-  if (ask === undefined || askId === undefined) return s;
-  return { ...s, asks: { ...s.asks, [askId]: { ...ask, ...patch } } };
-};
-
 const patchOrder = (s: DataState, workstreamId: string | undefined, patch: Partial<OrderCard>): DataState => {
   const card = workstreamId === undefined ? undefined : s.orders?.[workstreamId];
   if (card === undefined || workstreamId === undefined) return s;
@@ -304,23 +287,7 @@ export const applyEvent = (s: DataState, event: HubEvent): DataState => {
     // Every order the event names: a lead woken for several orders lists them in data.workstreamIds.
     orderEvents: ordersNamed(event).reduce((rings, id) => withOrderEvent(rings, id, event), s.orderEvents),
   };
-  const askId = dataField(event, "askId");
   switch (event.type) {
-    case "ask.answered":
-      next = patchAsk(next, askId, { state: "answered" });
-      break;
-    case "ask.auto":
-      next = patchAsk(next, askId, { state: "auto" });
-      break;
-    case "ask.undone":
-      next = patchAsk(next, askId, { state: "open" });
-      break;
-    case "ask.closed": {
-      const state = dataField(event, "state");
-      const closed = state === "auto" || state === "defaulted" || state === "withdrawn" ? state : "answered";
-      next = patchAsk(next, askId, { state: closed });
-      break;
-    }
     case "workstream.state": {
       const state = dataField(event, "state");
       if (state !== undefined) next = patchOrder(next, workstreamId, { state: state as OrderCard["state"] });
@@ -423,29 +390,12 @@ export const ingest = (s: DataState, call: Ingest): DataState => {
       return { ...s, orders: byId([...kept, ...call.output.orders], (o) => o.workstreamId), trains };
     }
     case "order_get": {
-      const { order, asks, lead, doneLanes, claims, truncated } = call.output;
+      const { order, lead, doneLanes, claims } = call.output;
       const id = order.workstreamId;
-      // order_get lists the order's open asks: one it no longer lists was closed. Closed asks are only kept until
-      // the next list, so the store holds what is open.
-      const others = Object.values(s.asks ?? {}).filter(
-        (a) => a.state === "open" && (truncated === true || a.workstreamId !== id),
-      );
       return {
         ...s,
         orders: s.orders === undefined ? undefined : { ...s.orders, [id]: order },
         details: { ...s.details, [id]: { lead, doneLanes, claims: claims ?? [] } },
-        asks: s.asks === undefined ? undefined : byId([...others, ...asks], (a) => a.askId),
-      };
-    }
-    case "asks_list": {
-      if (call.input.state !== "open" || call.input.batchId !== undefined) return s;
-      // Every open ask, unless truncated: an ask the list leaves out was closed (or is closed already) and goes.
-      const kept = call.output.truncated === true ? Object.values(s.asks ?? {}).filter((a) => a.state === "open") : [];
-      return {
-        ...s,
-        asksError: undefined,
-        asks: byId([...kept, ...call.output.asks], (a) => a.askId),
-        batches: byId(call.output.batches, (b) => b.batchId),
       };
     }
     default:
@@ -455,26 +405,3 @@ export const ingest = (s: DataState, call: Ingest): DataState => {
 
 export const createDataStore = () => createStore<DataState>()(initialState);
 export type DataStore = ReturnType<typeof createDataStore>;
-
-/** A read failed for good. Only the open-asks read is the store's business: the board stops waiting on it. */
-export const failRead = (s: DataState, tool: unknown, input: unknown, error: HubError): DataState => {
-  const asks = input as Partial<ToolInput<"asks_list">> | undefined;
-  if (tool !== "asks_list" || asks?.state !== "open" || asks.batchId !== undefined) return s;
-  return { ...s, asksError: error };
-};
-
-const CLOSES: ReadonlySet<string> = new Set(["answered", "skipped", "withdrawn", "retired"]);
-
-/**
- * The person's own reply, applied the moment the hub confirms it rather than when its event arrives: every ask it
- * closed leaves the open asks, so counts drop at once. The refetch that follows (and any event) agrees.
- */
-export const applyReply = (s: DataState, output: ToolOutput<"inbox_reply">): DataState =>
-  output.applied.reduce(
-    (next, a) => (a.askId !== undefined && CLOSES.has(a.outcome) ? patchAsk(next, a.askId, { state: "answered" }) : next),
-    s,
-  );
-
-/** An undone answer: the hub returns the ask, open again. */
-export const applyUndo = (s: DataState, output: ToolOutput<"inbox_undo">): DataState =>
-  s.asks === undefined ? s : { ...s, asks: { ...s.asks, [output.ask.askId]: output.ask } };
