@@ -78,7 +78,7 @@ async fn hub(diff: &str, relaxes: bool) -> (Arc<Hub>, tempfile::TempDir, String)
     };
     if relaxes {
         let change = serde_json::from_value(json!({ "proposalId": "R1", "playbook": "bugfix",
-            "summary": "reviewRules.M.reviewers 1 → 0", "diff": diff }))
+            "summary": "Bugfixes, medium-size work: reviewers 1 → 0", "diff": diff }))
         .unwrap();
         let r = crate::hub::usage::ports::ProjectRef {
             machine_id: "devbox".into(),
@@ -158,7 +158,10 @@ async fn a_relaxing_change_applies_on_a_persons_approve() {
         &hub.approvals.get("Q1").unwrap(),
     ))
     .unwrap();
-    assert_eq!(item["playbook"]["summary"], "reviewRules.M.reviewers 1 → 0");
+    assert_eq!(
+        item["playbook"]["summary"],
+        "Bugfixes, medium-size work: reviewers 1 → 0"
+    );
     answer(&hub, true).await;
     assert_eq!(state(&hub), "applied");
 }
