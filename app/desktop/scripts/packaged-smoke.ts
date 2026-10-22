@@ -141,6 +141,13 @@ try {
     if (message.type() === "error") consoleErrors.push(message.text());
   });
   await page.reload();
+  // `#/` set again just as the home redirect replaces it with a project, before React reads the hash: the app must
+  // still show the project's chat (it once stayed blank; macOS runners hit that timing on their own).
+  await page.evaluate(`navigation.addEventListener("navigate", function reset(e) {
+    if (!e.destination.url.includes("#/project/")) return;
+    navigation.removeEventListener("navigate", reset);
+    queueMicrotask(() => { location.hash = "#/"; });
+  })`);
   try {
     for (const screen of SCREENS) {
       await show(page, screen);

@@ -2,7 +2,7 @@
 // and the screen the route names: a project's lead chat, or Status, Time or Settings. Navigation is the hash
 // (routes.ts); `#/` opens the project you last had open.
 import { PanelLeft, Search } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { display } from "../../../shared/shortcuts";
 import { AppFrame, Button, EmptyState, TopBar } from "../../ui";
 import { openPalette, PaletteHost, useCommands, type Command } from "../palette";
@@ -34,7 +34,7 @@ const readLast = (): string | null => {
 };
 
 export function Shell() {
-  const screen = useRoute();
+  const route = useRoute();
   // The live feed: the board's lanes, which the chat's agent strip reads. The layer is the only caller of hub.live
   // and sends only changes.
   const layer = useDataLayer();
@@ -50,6 +50,15 @@ export function Shell() {
   useMainProcess();
   useMenuState();
   useNotifications(hub?.phase === "live");
+
+  // `#/` is the last project once the projects are known: shown as that project at once, and the URL follows (replace,
+  // so Back doesn't return to the bare `#/`). It is shown from `home`, not from the replaced URL: a hash set back to
+  // `#/` before React reads the replace leaves the hash snapshot unchanged, so nothing would render or redirect again.
+  const home = route.id === "home" && projects !== undefined ? homeProject(projects, readLast()) : null;
+  const screen: Screen = useMemo(() => (home === null ? route : { id: "project", project: home, message: null }), [route, home]);
+  useEffect(() => {
+    if (home !== null) navigate({ id: "project", project: home, message: null }, { replace: true });
+  }, [home]);
 
   const open = screen.id === "project" ? screen.project : null;
   // One chat streams at a time: the one on screen.
@@ -70,11 +79,6 @@ export function Shell() {
     }
   }, [open]);
 
-  // `#/` becomes the last project once the projects are known; Back doesn't return to the bare `#/`.
-  const home = screen.id === "home" && projects !== undefined ? homeProject(projects, readLast()) : null;
-  useEffect(() => {
-    if (home !== null) navigate({ id: "project", project: home, message: null }, { replace: true });
-  }, [home]);
 
   // Before pairing, after a refused key, or on a hub of another protocol there is nothing to navigate; the
   // onboarding screen has the window to itself.
