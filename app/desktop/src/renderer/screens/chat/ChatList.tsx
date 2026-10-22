@@ -235,10 +235,12 @@ export function ChatList(props: {
   onTold: (lane: AgentLane) => void;
   /** A message to open at (a notification's link): scrolled to once it is loaded. */
   openAt?: number | undefined;
+  /** Bumped to scroll to `openAt` again (Show, pressed twice). */
+  openSeq?: number | undefined;
   /** Bumped when the reader sends: back to the end. */
   sent?: number;
 }) {
-  const { rows, openAt, sent } = props;
+  const { rows, openAt, openSeq, sent } = props;
   const virtualizer = useRef<Virtualizer<HTMLDivElement, Element> | null>(null);
   const mineLatest = useMemo(() => rows.findLast((r) => r.kind === "message" && r.item.author === "human")?.key, [rows]);
 
@@ -272,7 +274,7 @@ export function ChatList(props: {
 
   useEffect(() => {
     if (openAt !== undefined) virtualizer.current?.scrollToIndex(openAt, { align: "center" });
-  }, [openAt]);
+  }, [openAt, openSeq]);
 
   useEffect(() => {
     const v = virtualizer.current;

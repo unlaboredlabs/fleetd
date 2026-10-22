@@ -249,3 +249,42 @@
 .toldFirst {
   margin-top: var(--space-1);
 }
+
+/* The line above the box while the lead waits on you. */
+.attention {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 0 var(--space-1) var(--space-1-5);
+}
+.attention > :first-child {
+  flex: none;
+  align-self: center;
+}
+
+/* An empty chat: what to ask, just above the box. */
+.empty {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  overflow-y: auto;
+  padding-bottom: var(--space-4);
+}
+.emptyBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  box-sizing: border-box;
+  width: 100%;
+  max-width: calc(var(--measure) + 2 * var(--pad));
+  margin: 0 auto;
+  padding: 0 var(--pad);
+}
+.starters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
