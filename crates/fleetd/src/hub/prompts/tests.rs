@@ -405,8 +405,8 @@ fn edits_to_retired_prompts_are_listed_until_reset() {
     assert_eq!(left, vec!["wake.intent"]);
 }
 
-/// The lead asks once and lets the chat's waiting state carry the question: its own examples never nag, and the one
-/// allowed reminder says what the lead does next.
+/// The lead asks once and lets the chat's waiting state carry the question: its own examples never nag, and bring the
+/// question up again only once.
 #[test]
 fn the_lead_asks_once_and_never_nags() {
     let lead = super::store::entry("lead.start").unwrap().default;
@@ -422,5 +422,12 @@ fn the_lead_asks_once_and_never_nags() {
             "the lead nags in its own example: {line}"
         );
     }
-    assert!(examples.contains("unless you say otherwise"), "{examples}");
+    let reminders = examples
+        .lines()
+        .filter(|l| l.contains("digest day"))
+        .count();
+    assert_eq!(
+        reminders, 1,
+        "the open question comes up again once: {examples}"
+    );
 }
