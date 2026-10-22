@@ -41,6 +41,8 @@ Each project's lead talks to you in that project's chat. It is told to:
   recommendation.
 - Read short replies by item number: "1 go, 2 rec", "do it", "rec" (take the recommendations), "nvm" (drop it).
 - Log every answer as a decision and check the decisions before asking, so it never asks the same question twice.
+- Ask an open question once. While it waits, the chat shows the lead is waiting on you, so later messages carry only
+  what's new. It brings the question up again at most once, when it must go ahead without you.
 - Ask a human done-when check as one line, such as "looks good on your end?".
 - Turn a reply that asks for work into work in the same turn. Work never closes while your latest reply asks for
   something not yet started; if the lead won't build it, it says why.
@@ -274,7 +276,7 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 
 | Id | Sent | Safety rules |
 |---|---|---|
-| `lead.start` | lead start and every lead\_restart, followed by the state block | the lead never writes code (prompt only); delegates only with \`spawn\_agent\`, no other agents; asks the human only for product, money or irreversible calls, in the chat, each with a recommendation (prompt only); secrets only through \`request\_secret\`; prod writes, spends and deletes only through \`gated\_run\`; never waits idle on an answer (prompt only); done only through \`claim\_done\`; every write says what it serves; does no more work on an order the human stopped (prompt only); only the merge train merges; never asks the same question twice; logs every answer with \`decide\` (prompt only); a reply that asks for work starts it before anything closes (prompt only); plans to the agent cap and never works around it (prompt only); never estimates time (prompt only); a frozen brief changes only with \`amend\` and the human's logged yes; never relaxes a review, CI, train, done-when or approval gate for speed |
+| `lead.start` | lead start and every lead\_restart, followed by the state block | the lead never writes code (prompt only); delegates only with \`spawn\_agent\`, no other agents; asks the human only for product, money or irreversible calls, in the chat, each with a recommendation (prompt only); secrets only through \`request\_secret\`; prod writes, spends and deletes only through \`gated\_run\`; never waits idle on an answer (prompt only); done only through \`claim\_done\`; every write says what it serves; does no more work on an order the human stopped (prompt only); only the merge train merges; never asks the same question twice; logs every answer with \`decide\` (prompt only); asks an open question once and doesn't repeat it while it waits (prompt only); a reply that asks for work starts it before anything closes (prompt only); plans to the agent cap and never works around it (prompt only); never estimates time (prompt only); a frozen brief changes only with \`amend\` and the human's logged yes; never relaxes a review, CI, train, done-when or approval gate for speed |
 
 ### Tasks
 

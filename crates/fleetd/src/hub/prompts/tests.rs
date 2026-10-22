@@ -404,3 +404,23 @@ fn edits_to_retired_prompts_are_listed_until_reset() {
         .collect();
     assert_eq!(left, vec!["wake.intent"]);
 }
+
+/// The lead asks once and lets the chat's waiting state carry the question: its own examples never nag, and the one
+/// allowed reminder says what the lead does next.
+#[test]
+fn the_lead_asks_once_and_never_nags() {
+    let lead = super::store::entry("lead.start").unwrap().default;
+    assert!(lead.contains("Ask once, then let it be"), "{lead}");
+    let nag =
+        regex::Regex::new(r"(?i)still waiting|waiting on you|reminder:|as I asked|haven't heard")
+            .unwrap();
+    let examples = lead.split("## Examples of the tone").nth(1).unwrap();
+    let examples = examples.split("\n## ").next().unwrap();
+    for line in examples.lines().filter(|l| l.starts_with("You:")) {
+        assert!(
+            !nag.is_match(line),
+            "the lead nags in its own example: {line}"
+        );
+    }
+    assert!(examples.contains("unless you say otherwise"), "{examples}");
+}
