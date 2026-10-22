@@ -132,7 +132,7 @@ export async function m5Tasks(lab: Lab) {
     outcome = (await callTool("project_get", ref)).body;
     let workstreamId = (outcome.workstreams as Array<Body> | undefined)?.find((w) => w.state === "running")?.workstreamId as string | undefined;
     if (workstreamId === undefined) {
-      const order = await chatOrder(lab, ref, "add a docs page (lab run: open its workstream with workstream_open and register the brief, then stop; spawn no tasks until told)");
+      const order = await chatOrder(lab, ref, "add a docs page (lab run: open its workstream with workstream_open and freeze its brief with `fleetd brief create` so it is running, then stop; spawn no tasks until told)");
       workstreamId = order.workstreamId;
       await lab.waitEvent(`workstream.running for ${workstreamId}`, TURN_MS, { cursor, machineId: MACHINE, types: ["workstream.running"] });
       cursor = await leadTurnDone(cursor, "the chat turn");

@@ -5,7 +5,7 @@ import { type Body, chatOrder, type Lab, MODEL } from "./harness.ts";
 
 const MACHINE = "lab-a";
 // The v1 prompt has the lead delegate at once; m5 decides when tasks run, so this lead registers the brief only.
-const INTENT = "add a /health endpoint (lab run: open its workstream with workstream_open and register the brief, then stop; spawn no tasks until told)";
+const INTENT = "add a /health endpoint (lab run: open its workstream with workstream_open and freeze its brief with `fleetd brief create` so it is running, then stop; spawn no tasks until told)";
 const TURN_MS = 240_000;
 
 export async function m3Loop(lab: Lab) {

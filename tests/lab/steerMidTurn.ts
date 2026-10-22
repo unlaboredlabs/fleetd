@@ -134,7 +134,7 @@ export async function steerMidTurn(lab: Lab) {
   const tail = new Tail(path.join(nodeHome(MACHINE), "transcripts", `${threadId}.jsonl`));
   // A lead m3 left running is already idle; a new one has its start turn to finish.
   if (started.body.state !== "idle") cursor = await turnDone(threadId, cursor, "start");
-  const { workstreamId } = await chatOrder(lab, ref, "lab steering: open its workstream with workstream_open, register a one-line brief, then wait for my notes; spawn no tasks");
+  const { workstreamId } = await chatOrder(lab, ref, "lab steering: open its workstream with workstream_open, freeze a one-line brief with `fleetd brief create` so it is running, then wait for my notes; spawn no tasks");
   await lab.waitEvent(`workstream.running for ${workstreamId}`, TURN_MS, { cursor, machineId: MACHINE, types: ["workstream.running"], match: (e) => e.data?.workstreamId === workstreamId });
   cursor = await turnDone(threadId, cursor, "the chat turn");
   ok(`${workstreamId} running; lead ${threadId} idle`);
