@@ -1,6 +1,8 @@
 // The per-project lead chat, end to end (`npm run lab -- chat`, only when named, so it gets a hub of its own). A person
 // talks to a project's lead in plain chat messages (chat_send with a human key) and the lead does the work: no
-// questions tool, no cards. Haiku/low throughout. Parts, in run order (FLEETD_LAB_CHAT_PARTS=a,b picks some):
+// questions tool, no cards. The lead runs on the shipped model (SHIPPED; a new project's lead starts on the hub
+// default, which is that model), since how it talks is what these parts check; agents the harness spawns are
+// haiku/low. Parts, in run order (FLEETD_LAB_CHAT_PARTS=a,b picks some):
 // On the lab repo (this slot's namespace of unlaboredlabs/fleetd-lab, reset before and after), one lead:
 // - work:    a plain chat message becomes a PR the train merges.
 // - terse:   the lead asks in chat as numbered items with a recommendation each (needs-you on); "1 go" is logged as a
@@ -30,7 +32,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import sodium from "libsodium-wrappers";
 import { DatabaseSync } from "node:sqlite";
-import { type Body, callToolWith, cli, fleetdCommand, machineHome, openWorkstream, RUN, LAB, type Lab, MODEL, nodeHome, nodeSock, requireGhLogin, scrubbedEnv, sessionText, slotPort, userMessages } from "./harness.ts";
+import { type Body, callToolWith, cli, fleetdCommand, machineHome, openWorkstream, RUN, LAB, type Lab, MODEL, nodeHome, SHIPPED, nodeSock, requireGhLogin, scrubbedEnv, sessionText, slotPort, userMessages } from "./harness.ts";
 import { BASE, checkClone, CLONE, NAMESPACE, onBase, prepareCheckout, REPO, removeLabRepoProject, resetNamespace } from "./m7Train.ts";
 
 const LEAD_MACHINE = "lab-a";
@@ -382,7 +384,7 @@ export async function chatLead(lab: Lab) {
         // Run alone, no part has talked to the lead yet: start it, so its session's tools can be read.
         if ((await chat.leadThread()) === undefined) {
           const from = await lab.cursor();
-          const started = await callTool("lead_start", { ...ref, model: MODEL, effort: "low" });
+          const started = await callTool("lead_start", { ...ref, ...SHIPPED });
           check(!started.isError, `lead_start: ${JSON.stringify(started.body)}`);
           await lab.waitEvent("the lead's start turn", TURN_MS, { cursor: from, machineId: LEAD_MACHINE, match: (e) => e.threadId === started.body.threadId && ENDED.includes(e.type) });
         }

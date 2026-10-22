@@ -42,7 +42,14 @@ export const fleetdCommand = (args: ReadonlyArray<string>): [string, Array<strin
   const bin = given.includes("/") ? path.resolve(given) : given;
   return /\.[cm]?[jt]s$/u.test(bin) ? [process.execPath, [bin, ...args]] : [bin, [...args]];
 };
+/** Mechanics scenarios run on haiku at low effort: cheap, and what they check doesn't depend on the model. */
 export const MODEL = "claude-haiku-5-5";
+/**
+ * Behaviour scenarios (how the lead talks and acts, what an agent does with its prompt) run on the model fleetd ships
+ * as the lead default (`hub/leads/lead.rs` DEFAULT_LEAD_MODEL and DEFAULT_LEAD_EFFORT), since the prompts are written
+ * for it.
+ */
+export const SHIPPED = { model: "claude-opus-5-5", effort: "high" } as const;
 
 // Texts the binary emits that scenarios match on; each mirrors a constant in crates/fleetd.
 /** `hub/playbooks/finish_all_rules.rs` FINISH_ALL_IDLE. */
