@@ -1,5 +1,5 @@
 // Claude Code's own subagents are off and agents start only through fleetd (FLEETD_LAB_SLOT=6 `npm run lab nosub`).
-// The doctor says so for lab-a. A haiku lead told to start a subagent with Agent/Task can't: its init has no agent
+// The doctor says so for lab-a. A mechanics lead told to start a subagent with Agent/Task can't: its init has no agent
 // tool, any call it makes is refused, and no subagent starts. Its MCP `spawn_agent` starts a fleetd task that shows as
 // a lane on the order and ran through the slot board. A task's agent gets only report/ask_lead/claim_done, and its own
 // shell can't spawn either, with FLEETD_THREAD_ID unset or forged as the lead's. A few tiny lead turns, two task turns.
@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { type Body, chatOrder, fleetdCommand, type Lab, MODEL, nodeHome, nodeSock, scrubbedEnv } from "./harness.ts";
+import { type Body, chatOrder, fleetdCommand, type Lab, MECHANICS, nodeHome, nodeSock, scrubbedEnv } from "./harness.ts";
 import { prepareRepo } from "./m5Tasks.ts";
 
 const MACHINE = "lab-a";
@@ -101,11 +101,11 @@ export async function noSubagents(lab: Lab) {
   let cursor = await lab.cursor();
   let outcome = (await callTool("project_get", ref)).body;
   if (outcome.lead !== undefined) {
-    const restarted = await callTool("lead_restart", { ...ref, model: MODEL, effort: "low" });
+    const restarted = await callTool("lead_restart", { ...ref, ...MECHANICS });
     check(!restarted.isError, `lead_restart: ${JSON.stringify(restarted.body)}`);
     leadThread = restarted.body.threadId;
   } else {
-    const started = await callTool("lead_start", { ...ref, model: MODEL, effort: "low" });
+    const started = await callTool("lead_start", { ...ref, ...MECHANICS });
     check(!started.isError, `lead_start: ${JSON.stringify(started.body)}`);
     leadThread = started.body.threadId;
   }
@@ -126,7 +126,7 @@ export async function noSubagents(lab: Lab) {
   ok(`lead ${leadThread}: init has mcp__fleetd__spawn_agent, no agent tool; agents ${JSON.stringify(leadInit?.agents)}`);
 
   // The lead tries Claude's own subagent, then spawns through fleetd.
-  const spawnArgs = { workstreamId, title: "say ok", kind: "read", prompt: "Reply with the single word OK.", model: MODEL, effort: "low" };
+  const spawnArgs = { workstreamId, title: "say ok", kind: "read", prompt: "Reply with the single word OK.", ...MECHANICS };
   const sent = await callTool("thread_send", {
     ...ref,
     threadId: leadThread,
@@ -199,7 +199,7 @@ export async function noSubagents(lab: Lab) {
   const commands = [`env -u FLEETD_THREAD_ID ${nested("nested-unset")}`, `env FLEETD_THREAD_ID=${leadThread} ${nested("nested-forged")}`];
   const bypass = shell(
     {},
-    "task", "spawn", "--workstream", workstreamId, "--title", "try nested spawns", "--kind", "read", "--model", MODEL, "--effort", "low",
+    "task", "spawn", "--workstream", workstreamId, "--title", "try nested spawns", "--kind", "read", "--model", MECHANICS.model, "--effort", MECHANICS.effort,
     "--prompt",
     `This is a lab test of fleetd's refusals. Run these two shell commands exactly as written, one at a time, then reply with one line per command: its exit code and first line of output.\n1. ${commands[0]}\n2. ${commands[1]}`,
   );
@@ -234,5 +234,5 @@ export async function noSubagents(lab: Lab) {
   // Let the result wake run out, so the next scenario finds the lead idle.
   const woken = await lab.waitEvent("the lead's wake with the result", 90_000, { cursor: started.cursor, machineId: MACHINE, types: ["lead.woken"] }).catch(() => undefined);
   if (woken !== undefined) await leadTurnDone(woken.event.seq, "result wake");
-  ok(`nosub used ${leadTurns} lead turns + 2 task turns (${MODEL}, effort low)`);
+  ok(`nosub used ${leadTurns} lead turns + 2 task turns (${MECHANICS.model}, effort ${MECHANICS.effort})`);
 }

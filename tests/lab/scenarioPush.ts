@@ -1,5 +1,5 @@
 // M2 lab scenario 3, "push to a listener" (docs: M2 spec). Run by the lab harness once the hub and
-// both lab nodes are up; costs two tiny claude-haiku-5-5 turns on lab-b.
+// both lab nodes are up; costs two tiny mechanics turns on lab-b.
 //   - Webhook: a local receiver answers the first delivery 500, then 200. The signature verifies and the
 //     redelivery succeeds.
 //   - `fleetd listen --exec 'cat >> out.jsonl'`: each thread.completed lands exactly once across a listener restart,
@@ -8,7 +8,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
-import { verifySignature } from "./harness.ts";
+import { MECHANICS, verifySignature } from "./harness.ts";
 
 type Body = Record<string, any>;
 
@@ -26,7 +26,6 @@ export interface PushLabContext {
   readonly check: (cond: unknown, what: string) => void;
 }
 
-const MODEL = "claude-haiku-5-5";
 const MACHINE = "lab-b";
 
 interface Received {
@@ -128,8 +127,8 @@ export async function scenarioPush(ctx: PushLabContext): Promise<void> {
       machineId: MACHINE,
       projectId: project.projectId,
       prompt: "Reply with the single word OK and nothing else.",
-      model: MODEL,
-      effort: "low",
+      model: MECHANICS.model,
+      effort: MECHANICS.effort,
       title: "fleetd test:lab push",
       clientRequestId: randomUUID(),
     });

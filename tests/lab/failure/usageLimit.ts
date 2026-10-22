@@ -5,7 +5,7 @@
 // runs. The parker only parks lead and task threads, so the limited thread is lab-b's lead; the lead prompt never
 // reaches claude (the shim answers it), so the continue is the first message it sees.
 import path from "node:path";
-import { type Body, type Lab, MODEL, userMessages } from "../harness.ts";
+import { type Body, type Lab, MECHANICS, userMessages } from "../harness.ts";
 import { installShim, MACHINE, projectOf, runEnd, withNode } from "./kit.ts";
 
 const RESETS_IN_SEC = 90;
@@ -23,7 +23,7 @@ export async function usageLimit(lab: Lab) {
     const projectId = await projectOf(lab, MACHINE);
     const from = await lab.cursor();
     const launchedAt = Date.now();
-    const started = await lab.callTool("lead_start", { machineId: MACHINE, projectId, model: MODEL, effort: "low" });
+    const started = await lab.callTool("lead_start", { machineId: MACHINE, projectId, ...MECHANICS });
     check(!started.isError, `lead_start on ${MACHINE}: ${JSON.stringify(started.body)}`);
     const threadId = started.body.threadId as string;
 

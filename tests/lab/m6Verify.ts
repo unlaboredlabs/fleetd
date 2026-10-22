@@ -5,11 +5,11 @@
 // the lead as unverified; a writer without --serves and a verdict from a non-review task are refused. The same-SHA
 // review rule needs a real PR head from GitHub, so a unit test covers it (tasks/LeadTaskCalls.test.ts) until M7's
 // lab repo. The harness's `fleetd` calls run in the project's workspace, as the lead's shell would, so they cost no
-// turns; wakes and tasks are haiku at low effort.
+// turns; wakes and tasks are on MECHANICS.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { type Body, openWorkstream, fleetdCommand, type Lab, MODEL, nodeSock, scrubbedEnv, sessionText } from "./harness.ts";
+import { type Body, openWorkstream, fleetdCommand, type Lab, MECHANICS, nodeSock, scrubbedEnv, sessionText } from "./harness.ts";
 import { git, prepareRepo } from "./m5Tasks.ts";
 
 const MACHINE = "lab-a";
@@ -47,7 +47,7 @@ export async function m6Verify(lab: Lab) {
   // The lead: m3's or m5's when they ran first, else a fresh one.
   let leadThread: string;
   if (outcome.lead === undefined) {
-    const started = await callTool("lead_start", { ...ref, model: MODEL, effort: "low" });
+    const started = await callTool("lead_start", { ...ref, ...MECHANICS });
     check(!started.isError, `lead_start: ${JSON.stringify(started.body)}`);
     leadThread = started.body.threadId;
     await lab.waitEvent("lead start turn", TURN_MS, { cursor: scenarioStart, machineId: MACHINE, match: (e) => e.threadId === leadThread && ENDED.includes(e.type) });
@@ -106,7 +106,7 @@ export async function m6Verify(lab: Lab) {
 
   // The fix: a lead given the failing evidence spawns a `--serves done:0` writer itself; if it did not, the harness does.
   const spawn = (args: Array<string>) => {
-    const out = fleetd("task", "spawn", "--workstream", w, "--model", MODEL, "--effort", "low", ...args);
+    const out = fleetd("task", "spawn", "--workstream", w, "--model", MECHANICS.model, "--effort", MECHANICS.effort, ...args);
     const taskId = /^Spawned (T\d+)/mu.exec(out.stdout)?.[1];
     check(out.code === 0 && taskId, `task spawn ${args.join(" ")}: ${JSON.stringify(out)}`);
     return taskId!;
@@ -199,6 +199,6 @@ export async function m6Verify(lab: Lab) {
     if (!page.more) break;
     c = page.cursor;
   }
-  ok(`M6 used ${turns} lead turns + ${taskTurns} task turns (${tasks.map((t) => t.taskId).join(", ")}) = ${turns + taskTurns} claude turns (${MODEL}, effort low)`);
+  ok(`M6 used ${turns} lead turns + ${taskTurns} task turns (${tasks.map((t) => t.taskId).join(", ")}) = ${turns + taskTurns} claude turns (${MECHANICS.model}, effort ${MECHANICS.effort})`);
   check(turns + taskTurns <= 12, `M6 stays within 12 claude turns (${turns + taskTurns})`);
 }

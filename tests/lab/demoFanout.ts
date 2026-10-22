@@ -1,6 +1,6 @@
 // The app demo: one order, a fleet. On lab-a against the public lab repo unlaboredlabs/fleetd-lab (as M7), a person
 // gives one tier-L order through the app's /app protocol with a human key: three short pages, one writer each. The
-// lead (a real haiku turn) freezes the brief and spawns the writers; each PR gets two reviewers and a verifier; the
+// lead (a real mechanics turn) freezes the brief and spawns the writers; each PR gets two reviewers and a verifier; the
 // train merges them. The harness only observes: it never spawns a task, so everything the recording shows is work the
 // fleet did. It also subscribes to the live feed as the app does and checks what came over it: lanes with literal
 // activity, tokens and sparklines, inside the feed's bounds.
@@ -10,7 +10,7 @@
 //
 // With FLEETD_DEMO_ORDER=app it writes RUN/demo/app.json ({ hubUrl, key, projectId, order }) as soon as the hub has a
 // human key, then waits up to 10 minutes for that order to arrive from the app. Either way RUN/demo/timeline.jsonl
-// gets one line per milestone with its wall-clock time, for cutting the recording. Costs about 15-25 haiku turns.
+// gets one line per milestone with its wall-clock time, for cutting the recording. Costs about 15-25 mechanics turns.
 //
 // FLEETD_DEMO_APP=<app executable> also starts the desktop app on the hub with the human key, recording its own window
 // into FLEETD_DEMO_RECORD (default RUN/demo/rec; FLEETD_RECORD). The app types the order into its composer and sends
@@ -24,7 +24,7 @@
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { type Body, cli, detached, HUB_PORT, LAB, type Lab, MODEL, onCleanup, recordPid, requireGhLogin, scrubbedEnv, sleep } from "./harness.ts";
+import { type Body, cli, detached, HUB_PORT, LAB, type Lab, MECHANICS, onCleanup, recordPid, requireGhLogin, scrubbedEnv, sleep } from "./harness.ts";
 import { BASE, BRANCH_PREFIX, checkClone, CLONE, git, prepareCheckout, REPO, removeLabRepoProject } from "./m7Train.ts";
 
 const MACHINE = "lab-a";
@@ -39,8 +39,8 @@ const APP_HOLD_MS = 6_000;
 const POLICY = `areas:
 ${PAGES.map((p) => `  ${p}: ["${DIR}/${p}.md"]`).join("\n")}
 defaults:
-  model: ${MODEL}
-  effort: low
+  model: ${MECHANICS.model}
+  effort: ${MECHANICS.effort}
 `;
 export const ORDER = `Tier L. Add three short pages, ${DIR}/alpha.md, beta.md and gamma.md, each one paragraph on what fleetd's merge train does. One writer per page, all three in parallel. Give each page its own done-when check and its own PR.`;
 
@@ -231,7 +231,7 @@ export async function demoFanout(lab: Lab) {
     const thaw = await callTool("train_freeze", { repo: REPO, frozen: false });
     lab.log(`train_freeze false: ${thaw.isError ? JSON.stringify(thaw.body) : "ok"}`);
 
-    const started = await callTool("lead_start", { ...ref, model: MODEL, effort: "low" });
+    const started = await callTool("lead_start", { ...ref, ...MECHANICS });
     check(!started.isError, `lead_start: ${JSON.stringify(started.body)}`);
     const leadThread = started.body.threadId as string;
     await lab.waitEvent("lead start turn", TURN_MS, { cursor: scenarioStart, machineId: MACHINE, match: (e) => e.threadId === leadThread && ENDED.includes(e.type) });
