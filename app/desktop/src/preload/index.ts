@@ -3,6 +3,7 @@ import type { LinkHandlerStatus, OpenTarget } from "../shared/app";
 import { IPC } from "../shared/channels";
 import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, HubState, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { KeyStore, PairOutcome, PairStart, Probe, SetupOutcome } from "../shared/pairing";
+import type { UpdatesState } from "../shared/updates";
 import type { FleetdApi } from "./api";
 
 const listeners = new Set<(frame: HubFrame) => void>();
@@ -22,6 +23,11 @@ ipcRenderer.on(IPC.menuCommand, (_event: IpcRendererEvent, id: string) => {
 ipcRenderer.on(IPC.appOpen, (_event: IpcRendererEvent, target: OpenTarget) => {
   for (const listener of openListeners) listener(target);
 });
+const updateListeners = new Set<(state: UpdatesState) => void>();
+ipcRenderer.on(IPC.updatesChanged, (_event: IpcRendererEvent, state: UpdatesState) => {
+  for (const listener of updateListeners) listener(state);
+});
+
 const arg = (name: string): string | null => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? null;
 const fixture = arg("fleetd-fixture");
 const vibrancy = process.argv.includes("--fleetd-vibrancy");
@@ -78,6 +84,17 @@ const api: FleetdApi = {
       const path = webUtils.getPathForFile(file);
       return path === "" ? Promise.resolve<DropInfo>({ kind: "other" }) : (ipcRenderer.invoke(IPC.projectsReadDrop, path) as Promise<DropInfo>);
     },
+  },
+  updates: {
+    state: () => ipcRenderer.invoke(IPC.updatesState) as Promise<UpdatesState>,
+    subscribe: (listener) => {
+      updateListeners.add(listener);
+      return () => updateListeners.delete(listener);
+    },
+    check: () => ipcRenderer.invoke(IPC.updatesCheck) as Promise<void>,
+    install: () => ipcRenderer.invoke(IPC.updatesInstall) as Promise<void>,
+    keep: () => ipcRenderer.invoke(IPC.updatesKeep) as Promise<void>,
+    hubTerminal: () => ipcRenderer.invoke(IPC.updatesHubTerminal) as Promise<SetupOutcome>,
   },
   app: {
     onMenuCommand: (listener) => {

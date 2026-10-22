@@ -17,7 +17,7 @@ export type ClientMessage =
 const cursor = z.int().min(0);
 
 export const ServerFrame = z.discriminatedUnion("t", [
-  z.object({ t: z.literal("ready"), protocol: z.int() }),
+  z.object({ t: z.literal("ready"), protocol: z.int(), version: z.string().max(200).optional() }),
   z.looseObject({ t: z.literal("snapshot"), cursor }),
   z.looseObject({ t: z.literal("event"), seq: cursor, type: z.string() }),
   z.object({ t: z.literal("result"), id: z.string(), output: z.unknown() }),

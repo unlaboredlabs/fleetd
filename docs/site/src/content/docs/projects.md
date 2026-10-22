@@ -151,18 +151,18 @@ By default the lead and every task run on `claude-opus-5-5` at high effort.
 | The lead's model and effort | Call `lead_start {machineId, projectId, model, effort}` from an [MCP client](/docs/mcp-clients) before your first message to the project. They are saved for the project. |
 | The tasks' model and effort | Set `defaults.model` and `defaults.effort` in the project's [policy file](/docs/config-and-files#policy), committed to the default branch. |
 
-For example, to try fleetd cheaply on a test project:
+For example, to run a test project at medium effort:
 
 1. Before your first message to it, call
-   `lead_start {"machineId":"devbox","projectId":"<id>","model":"claude-haiku-5-5","effort":"low"}`. `fleetd project
+   `lead_start {"machineId":"devbox","projectId":"<id>","model":"claude-opus-5-5","effort":"medium"}`. `fleetd project
    list` shows the ids.
 2. Commit this `.fleetd/policy.yaml` to the default branch. Without `areas`, the project keeps the areas fleetd
    [infers from the repo](/docs/config-and-files#inferred-areas).
 
    ```yaml
    defaults:
-     model: claude-haiku-5-5
-     effort: low
+     model: claude-opus-5-5
+     effort: medium
    ```
 
 ## How the lead schedules work {#scheduling}

@@ -1,12 +1,12 @@
 // Default areas (`npm run lab -- areas`), on lab-a in this slot's namespace of the lab repo, whose seed has
 // packages/alpha and packages/beta. The policy file sets no `areas`, so the hub infers `alpha`, `beta` and `all` from
 // the repo: project_add shows them as inferred, `fleetd doctor` lists them, and two writers, one per package, run
-// at the same time instead of queueing on one area. Costs a lead start turn, its wakes and two haiku writer turns.
+// at the same time instead of queueing on one area. Costs a lead start turn, its wakes and two mechanics writer turns.
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { type Body, fleetdCommand, type Lab, MODEL, nodeSock, requireGhLogin, scrubbedEnv } from "./harness.ts";
+import { type Body, fleetdCommand, type Lab, MECHANICS, nodeSock, requireGhLogin, scrubbedEnv } from "./harness.ts";
 import { checkClone, CLONE, NAMESPACE, prepareCheckout, removeLabRepoProject, resetNamespace } from "./m7Train.ts";
 
 const MACHINE = "lab-a";
@@ -14,8 +14,8 @@ const TURN_MS = 240_000;
 const ENDED = ["thread.completed", "thread.failed", "thread.interrupted"];
 // No `areas`: the inferred ones apply.
 const POLICY = `defaults:
-  model: ${MODEL}
-  effort: low
+  model: ${MECHANICS.model}
+  effort: ${MECHANICS.effort}
 `;
 
 export async function areasParallel(lab: Lab) {
@@ -49,7 +49,7 @@ export async function areasParallel(lab: Lab) {
       });
       return { code: out.status, stdout: out.stdout, stderr: out.stderr };
     };
-    const started = await callTool("lead_start", { ...ref, model: MODEL, effort: "low" });
+    const started = await callTool("lead_start", { ...ref, ...MECHANICS });
     check(!started.isError, `lead_start: ${JSON.stringify(started.body)}`);
     const leadThread = started.body.threadId as string;
     await lab.waitEvent("lead start turn", TURN_MS, { cursor: scenarioStart, machineId: MACHINE, match: (e) => e.threadId === leadThread && ENDED.includes(e.type) });
@@ -68,7 +68,7 @@ export async function areasParallel(lab: Lab) {
     const cursor = await lab.cursor();
     const spawn = (area: string) => {
       const out = fleetd(
-        "task", "spawn", "--workstream", w, "--title", `wait in ${area}`, "--areas", area, "--serves", "done:0", "--model", MODEL, "--effort", "low",
+        "task", "spawn", "--workstream", w, "--title", `wait in ${area}`, "--areas", area, "--serves", "done:0", "--model", MECHANICS.model, "--effort", MECHANICS.effort,
         "--prompt", "Run the shell command `sleep 30`, then reply with one word: ok. Change, commit and push nothing.",
       );
       const taskId = /^Spawned (T\d+)/mu.exec(out.stdout)?.[1];

@@ -1,10 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-const { showMessageBox } = vi.hoisted(() => ({ showMessageBox: vi.fn(() => Promise.resolve({ response: 1 })) }));
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("electron", () => ({
-  app: { isPackaged: true, getVersion: () => "0.4.0" },
-  dialog: { showMessageBox },
+  app: { isPackaged: true, getVersion: () => "0.5.0" },
   shell: { openExternal: vi.fn() },
 }));
 vi.mock("./build", () => ({ RELEASE_BUILD: true }));
@@ -21,31 +18,27 @@ const flush = async (): Promise<void> => {
 };
 
 describe("updates() when electron-updater fails to load", () => {
-  const unhandled: unknown[] = [];
-  const onUnhandled = (reason: unknown): void => {
-    unhandled.push(reason);
-  };
-  beforeEach(() => {
-    process.on("unhandledRejection", onUnhandled);
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
-  });
   afterEach(() => {
-    process.off("unhandledRejection", onUnhandled);
     vi.restoreAllMocks();
   });
 
-  it("logs it, rejects nothing, and Check for Updates… says it couldn't check", async () => {
-    const handle = updates();
-    expect(handle).not.toBeNull();
-    handle?.start();
-    await flush();
-    expect(console.error).toHaveBeenCalledWith("couldn't load the updater:", expect.any(String));
-
-    await handle?.checkNow();
-    await flush();
-    expect(showMessageBox).toHaveBeenCalledWith(
-      expect.objectContaining({ message: "Couldn't check for updates", type: "warning" }),
-    );
-    expect(unhandled).toEqual([]);
+  it("logs it, rejects nothing, and an asked-for check says so", async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => void unhandled.push(reason);
+    process.on("unhandledRejection", onUnhandled);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const handle = updates(null);
+      handle.start();
+      await flush();
+      expect(console.error).toHaveBeenCalledWith("couldn't load the updater:", expect.any(String));
+      expect(handle.state().app).toEqual({ kind: "idle" });
+      handle.check();
+      await flush();
+      expect(handle.state().app).toEqual({ kind: "failed", during: "check", reason: "The updater didn't load. Reinstall fleetd to get updates again." });
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
   });
 });

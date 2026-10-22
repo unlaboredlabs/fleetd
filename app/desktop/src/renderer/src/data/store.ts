@@ -425,6 +425,7 @@ type Ingest = {
   [T in ToolName]: { readonly tool: T; readonly input: ToolInput<T>; readonly output: ToolOutput<T> };
 }[ToolName];
 
+
 /**
  * cap_set's answer: the hub's slot state with the new cap or max agents, applied at once. It replaces the live
  * frame's copy too, which would otherwise keep showing the old value until the next frame (none comes without a

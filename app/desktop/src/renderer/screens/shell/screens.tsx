@@ -13,6 +13,7 @@ const AddProjectScreen = lazy(() => import("../projects/AddProjectScreen").then(
 const MachinesScreen = lazy(() => import("../projects/MachinesScreen").then((m) => ({ default: m.MachinesScreen })));
 const AgentsScreen = lazy(() => import("../agents/AgentsScreen").then((m) => ({ default: m.AgentsScreen })));
 const StatusScreen = lazy(() => import("../status/StatusScreen").then((m) => ({ default: m.StatusScreen })));
+const PrsScreen = lazy(() => import("../prs/PrsScreen").then((m) => ({ default: m.PrsScreen })));
 const TimeScreen = lazy(() => import("../time/TimeScreen").then((m) => ({ default: m.TimeScreen })));
 
 /** Holds a screen's place, busy (which the QA gate waits out), while its chunk loads. */
@@ -36,6 +37,8 @@ export const screenPart = (screen: Screen): { key: string; words: string } => {
       return { key: "status", words: "Status" };
     case "agents":
       return { key: "agents", words: "Agents" };
+    case "prs":
+      return { key: `prs:${screen.project.machineId}/${screen.project.projectId}`, words: "Pull requests" };
     case "time":
       return { key: "time", words: "Time" };
     case "settings":
@@ -69,6 +72,8 @@ function screenFor(screen: Screen): ReactNode {
           {...(screen.message !== null ? { message: screen.message } : {})}
         />
       );
+    case "prs":
+      return <PrsScreen key={`${screen.project.machineId}/${screen.project.projectId}`} project={screen.project} pr={screen.pr} />;
     case "status":
       return <StatusScreen />;
     case "agents":

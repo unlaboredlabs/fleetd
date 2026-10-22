@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findFleetd, openSetup, type TerminalDeps } from "./terminal";
+import { findFleetd, openSetup, openUpdate, type TerminalDeps } from "./terminal";
 
 const fake = (over: Partial<TerminalDeps> & { files?: ReadonlyArray<string> } = {}) => {
   const ran: Array<{ how: "exec" | "launch"; file: string; args: ReadonlyArray<string> }> = [];
@@ -18,9 +18,9 @@ const fake = (over: Partial<TerminalDeps> & { files?: ReadonlyArray<string> } = 
       ran.push({ how: "launch", file, args });
       return Promise.resolve(true);
     },
-    writeScript: (text) => {
+    writeScript: (text, name) => {
       scripts.push(text);
-      return "/tmp/fleetd-setup-x/fleetd-init.command";
+      return `/tmp/fleetd-x/${name}`;
     },
     ...over,
   };
@@ -44,7 +44,7 @@ describe("opening setup", () => {
     const { deps, ran, scripts } = fake({ home: "/Users/o'neil", files: ["/Users/o'neil/.local/bin/fleetd"] });
     expect(await openSetup(deps)).toEqual({ ok: true, terminal: "Terminal" });
     expect(scripts).toEqual(["#!/bin/sh\nexec '/Users/o'\\''neil/.local/bin/fleetd' init\n"]);
-    expect(ran).toEqual([{ how: "exec", file: "/usr/bin/open", args: ["-a", "Terminal", "/tmp/fleetd-setup-x/fleetd-init.command"] }]);
+    expect(ran).toEqual([{ how: "exec", file: "/usr/bin/open", args: ["-a", "Terminal", "/tmp/fleetd-x/fleetd-init.command"] }]);
   });
 
   it("on Linux starts the first terminal found, with fleetd init as its command", async () => {
@@ -61,5 +61,17 @@ describe("opening setup", () => {
     const missing = fake();
     expect(await openSetup(missing.deps)).toMatchObject({ ok: false, command: "fleetd init" });
     expect(missing.ran).toEqual([]);
+  });
+
+  it("opens fleetd update, with no arguments, for a hub on this computer, and keeps the window open after it", async () => {
+    const held = "'/bin/fleetd' update\necho\nprintf 'Press Return to close. '\nread -r _\n";
+    const mac = fake({ files: ["/bin/fleetd"] });
+    expect(await openUpdate(mac.deps)).toEqual({ ok: true, terminal: "Terminal" });
+    expect(mac.scripts).toEqual([`#!/bin/sh\n${held}`]);
+    expect(mac.ran).toEqual([{ how: "exec", file: "/usr/bin/open", args: ["-a", "Terminal", "/tmp/fleetd-x/fleetd-update.command"] }]);
+    const linux = fake({ platform: "linux", files: ["/bin/fleetd", "/usr/bin/xterm"] });
+    expect(await openUpdate(linux.deps)).toEqual({ ok: true, terminal: "a terminal" });
+    expect(linux.ran).toEqual([{ how: "launch", file: "/usr/bin/xterm", args: ["-e", "/bin/sh", "-c", held] }]);
+    expect(await openUpdate(fake().deps)).toMatchObject({ ok: false, command: "fleetd update" });
   });
 });

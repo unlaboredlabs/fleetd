@@ -32,8 +32,8 @@ export { toast, type ToastInput, type ToastTone } from "./primitives/Toast";
 export { Dot, StatusChip, RoleTag, roleTint, Separator, type StatusTone } from "./primitives/Chips";
 export { ROLE_WORD, type AgentRole } from "./primitives/roles";
 
-export { Code, InlineCode, type CodeProps } from "./markdown/Code";
-export { resolveLang, langForPath, type CodeLang } from "./markdown/highlighter";
+export { Code, InlineCode, renderTokens, type CodeProps } from "./markdown/Code";
+export { resolveLang, langForPath, highlight, type CodeLang, type Tokens } from "./markdown/highlighter";
 export { Markdown, type MarkdownProps } from "./markdown/Markdown";
 export { VirtualList, type VirtualListProps } from "./list/VirtualList";
 export {

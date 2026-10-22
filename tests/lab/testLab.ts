@@ -2,7 +2,7 @@
 // (never in CI); M7 and M9 also use the GitHub lab repo unlaboredlabs/fleetd-lab, in the slot's branch namespace. One hub and two nodes (lab-a,
 // lab-b), each node running the real `claude` itself under its own HOME, driven only through a real MCP client.
 // Each scenario is a file exporting one function over the shared `Lab`; name some to run only those (setup always
-// runs). Costs a handful of tiny claude-haiku-5-5 turns. Every process this starts is stopped by its spawn PID.
+// runs). Costs a handful of tiny mechanics turns. Every process this starts is stopped by its spawn PID.
 import fs from "node:fs";
 import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";

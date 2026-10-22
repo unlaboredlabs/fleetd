@@ -1,6 +1,8 @@
 // The per-project lead chat, end to end (`npm run lab -- chat`, only when named, so it gets a hub of its own). A person
 // talks to a project's lead in plain chat messages (chat_send with a human key) and the lead does the work: no
-// questions tool, no cards. Haiku/low throughout. Parts, in run order (FLEETD_LAB_CHAT_PARTS=a,b picks some):
+// questions tool, no cards. The lead runs on the shipped model (SHIPPED; a new project's lead starts on the hub
+// default, which is that model), since how it talks is what these parts check; agents the harness spawns are
+// on MECHANICS. Parts, in run order (FLEETD_LAB_CHAT_PARTS=a,b picks some):
 // On the lab repo (this slot's namespace of unlaboredlabs/fleetd-lab, reset before and after), one lead:
 // - work:    a plain chat message becomes a PR the train merges.
 // - terse:   the lead asks in chat as numbered items with a recommendation each (needs-you on); "1 go" is logged as a
@@ -30,7 +32,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import sodium from "libsodium-wrappers";
 import { DatabaseSync } from "node:sqlite";
-import { type Body, callToolWith, cli, fleetdCommand, machineHome, openWorkstream, RUN, LAB, type Lab, MODEL, nodeHome, nodeSock, requireGhLogin, scrubbedEnv, sessionText, slotPort, userMessages } from "./harness.ts";
+import { type Body, callToolWith, cli, fleetdCommand, machineHome, openWorkstream, RUN, LAB, type Lab, MECHANICS, nodeHome, SHIPPED, nodeSock, requireGhLogin, scrubbedEnv, sessionText, slotPort, userMessages } from "./harness.ts";
 import { BASE, checkClone, CLONE, NAMESPACE, onBase, prepareCheckout, REPO, removeLabRepoProject, resetNamespace } from "./m7Train.ts";
 
 const LEAD_MACHINE = "lab-a";
@@ -41,7 +43,7 @@ const ENDED = ["thread.completed", "thread.failed", "thread.interrupted"];
 const TASK_ENDS = ["task.completed", "task.failed", "task.cancelled"];
 const STAMP = new Date().toISOString().slice(0, 19).replace(/\D/gu, "");
 const DIR = `lab/chat-${STAMP}`;
-const DEFAULTS = `defaults:\n  model: ${MODEL}\n  effort: low\n`;
+const DEFAULTS = `defaults:\n  model: ${MECHANICS.model}\n  effort: ${MECHANICS.effort}\n`;
 // The lab repo names its one area, so its parts don't hang on inference; the local repo has no `areas` (bug (c)).
 const LAB_REPO_POLICY = `areas:\n  all: ["**"]\n${DEFAULTS}`;
 const LOCAL_REPO = path.join(LAB, "repo-chat");
@@ -203,7 +205,7 @@ const spawned = (lab: Lab, out: { code: number | null; stdout: string; stderr: s
 const spawnSleepers = (lab: Lab, fleetd: Shell, workstreamId: string, label: string, n: number, sec: number) =>
   Array.from({ length: n }, (_, i) => {
     const out = fleetd(
-      "task", "spawn", "--workstream", workstreamId, "--title", `${label} ${i + 1}`, "--kind", "read", "--model", MODEL, "--effort", "low",
+      "task", "spawn", "--workstream", workstreamId, "--title", `${label} ${i + 1}`, "--kind", "read", "--model", MECHANICS.model, "--effort", MECHANICS.effort,
       "--prompt", `Run the shell command \`sleep ${sec}\` once, then reply with the single word OK.`,
     );
     return { taskId: spawned(lab, out, `task spawn ${label} ${i + 1}`), stdout: out.stdout };
@@ -382,7 +384,7 @@ export async function chatLead(lab: Lab) {
         // Run alone, no part has talked to the lead yet: start it, so its session's tools can be read.
         if ((await chat.leadThread()) === undefined) {
           const from = await lab.cursor();
-          const started = await callTool("lead_start", { ...ref, model: MODEL, effort: "low" });
+          const started = await callTool("lead_start", { ...ref, ...SHIPPED });
           check(!started.isError, `lead_start: ${JSON.stringify(started.body)}`);
           await lab.waitEvent("the lead's start turn", TURN_MS, { cursor: from, machineId: LEAD_MACHINE, match: (e) => e.threadId === started.body.threadId && ENDED.includes(e.type) });
         }
@@ -631,7 +633,7 @@ async function fixesPart(lab: Lab, chat: Chat, ref: Ref, fleetd: Shell) {
     spawned(
       lab,
       fleetd(
-        "task", "spawn", "--workstream", w, "--title", title, "--kind", "write", "--serves", `defect: ${title}`, "--areas", "all", "--model", MODEL, "--effort", "low",
+        "task", "spawn", "--workstream", w, "--title", title, "--kind", "write", "--serves", `defect: ${title}`, "--areas", "all", "--model", MECHANICS.model, "--effort", MECHANICS.effort,
         "--prompt", "Your first tool call must be your Bash tool running exactly `sleep 90`; wait the full 90 seconds for it to finish. Then reply with the single word OK. Change no files.",
       ),
       `spawn the fix "${title}"`,
@@ -727,7 +729,7 @@ async function cap1Part(lab: Lab, ref: Ref, fleetd: Shell, need: (t: string) => 
     const writer = spawned(
       lab,
       fleetd(
-        "task", "spawn", "--workstream", w, "--title", "add cap1.md", "--areas", "all", "--serves", "done:0", "--model", MODEL, "--effort", "low",
+        "task", "spawn", "--workstream", w, "--title", "add cap1.md", "--areas", "all", "--serves", "done:0", "--model", MECHANICS.model, "--effort", MECHANICS.effort,
         "--prompt",
         `Do these steps in order. 1. Create the file ${file} (from the repo root) containing exactly one line: cap one. Commit it with the message "add ${file}". ` +
           `2. Push your branch and open the pull request as your rules say, with the title "add ${file}" and the body exactly "Source: done:0". ` +
@@ -889,7 +891,7 @@ async function areasPart(lab: Lab, ref: Ref) {
     spawned(
       lab,
       fleetd(
-        "task", "spawn", "--workstream", w, "--title", `note in ${area}`, "--areas", area, "--serves", `defect: package ${area} has no lab note`, "--model", MODEL, "--effort", "low",
+        "task", "spawn", "--workstream", w, "--title", `note in ${area}`, "--areas", area, "--serves", `defect: package ${area} has no lab note`, "--model", MECHANICS.model, "--effort", MECHANICS.effort,
         "--prompt", `Run \`sleep 10\`, then append the line "chat lab" to packages/${area}/README.md and commit it with the message "chat lab: ${area}". Reply with the commit hash.`,
       ),
       `task spawn --areas ${area}`,

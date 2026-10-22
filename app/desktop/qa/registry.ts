@@ -15,7 +15,7 @@
 // Run it locally: `pnpm fixtures && pnpm qa:build && pnpm qa` (QA_SCREENS=<id>,<id> to limit), then open
 // qa-results/index.html.
 
-import { type ElectronApplication, expect, type Page } from "@playwright/test";
+import { type ElectronApplication, expect, type Locator, type Page } from "@playwright/test";
 import { AGENT_ROUTE } from "../fixtures/agents/route.ts";
 import { CHAT_SENDS } from "../fixtures/composer/sends.ts";
 import { OFFLINE_SENDS } from "../fixtures/offline/sends.ts";
@@ -99,6 +99,14 @@ export const fixtures = [
   "inline-items",
   "inline-failures",
   "inline-reopened",
+  // UX-1 A3: the PR list and PR view (fixtures/prs): no PRs, the reads on their way, GitHub out of reach, GitHub's
+  // rate limit reached, a PR that fails to load, and a PR of 240 files with a 3,000-line file.
+  "prs-none",
+  "prs-loading",
+  "prs-no-github",
+  "prs-rate-limited",
+  "prs-error",
+  "prs-heavy",
   // UX-1: the sidebar's reasons and a new reply (fixtures/sidebar); one agent's live work (fixtures/agents).
   "sidebar-reasons",
   "agents-work",
@@ -114,6 +122,27 @@ export const fixtures = [
   "resilience-burst",
   "resilience-hub-restart",
   "resilience-reconnect-streaming",
+  // C1: the app's own update and the hub's (fixtures/updates).
+  "updates-idle",
+  "updates-checking",
+  "updates-unsupported",
+  "updates-current",
+  "updates-available",
+  "updates-downloading",
+  "updates-ready",
+  "updates-deb",
+  "updates-failed",
+  "updates-download-failed",
+  "updates-hub-current",
+  "updates-hub-unknown",
+  "updates-hub-available",
+  "updates-hub-behind",
+  "updates-hub-behind-local",
+  "updates-hub-behind-local-channel",
+  "updates-hub-info-failed",
+  "updates-terminal-not-local",
+  "updates-terminal-not-found",
+  "updates-terminal-no-terminal",
 ] as const;
 export type FixtureName = (typeof fixtures)[number];
 
@@ -183,6 +212,31 @@ const CHAT = "#/project/devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22";
 /** Makes a part throw while rendering, in the QA build (src/renderer/src/Boundary.tsx), so its error card shows. */
 const crash = (part: string) => async (page: Page) => {
   await page.evaluate((p) => window.dispatchEvent(new CustomEvent("fleetd:qa-crash", { detail: p })), part);
+};
+
+/** The updates sheet, as the palette's "Check for updates" opens it (the app menu runs the same command). */
+const openUpdates = async (page: Page) => {
+  await page.keyboard.press("ControlOrMeta+K");
+  await page.getByRole("combobox", { name: "Search" }).fill("Check for updates");
+  await page.keyboard.press("Enter");
+};
+
+// storefront's PRs (fixtures/prs): the list alone, and #11 (in review, its reviewers at work), #10 (checks failed), #8
+// (merged), #14 (a person's, review asked for) and #13 (240 files) open.
+const PRS = CHAT.replace("#/project/", "#/prs/");
+const PR = (n: number) => `${PRS}/acme/storefront/${String(n)}`;
+const openChanges = (page: Page) => page.getByRole("tab", { name: /^Changes/u }).click();
+/**
+ * The PR reads still on their way (prs-loading never answers them). The gate waits out busy regions before it
+ * shoots, so the entry reaches the screen from a settled one, waits for the placeholder and then lifts its busy flag:
+ * the shot is what you see while the hub answers.
+ */
+const whileLoading = (go: (page: Page) => Promise<void>, shown: (page: Page) => Locator) => async (page: Page) => {
+  await go(page);
+  await shown(page).first().waitFor({ timeout: 10_000 });
+  await page.evaluate(() => {
+    for (const el of document.querySelectorAll("[aria-busy='true']")) el.removeAttribute("aria-busy");
+  });
 };
 
 /** An entry's name in test titles, shot files and the contact sheet. */
@@ -566,6 +620,136 @@ export const screens: readonly Screen[] = [
     open: (page) => page.getByRole("button", { name: /^Max agents: \d+ running of \d+/u }).click(),
     variant: "max-agents",
   },
+  // C1: updates. The sidebar's line above the connection for each state that has one, and the sheet the palette's
+  // "Check for updates" opens, for every state of this app (not checked yet, checking, a build that doesn't update,
+  // up to date, found, downloading to restart, ready, the deb's command, a failed check, a failed download) and of the
+  // hub (up to date, version unknown, a newer build on the channel, older than this app, there or on this computer).
+  {
+    id: "shell",
+    route: "#/",
+    fixtures: ["updates-available", "updates-downloading", "updates-ready", "updates-hub-behind"],
+    variant: "updates",
+  },
+  {
+    id: "updates",
+    route: "#/",
+    fixtures: [
+      "updates-idle",
+      "updates-checking",
+      "updates-unsupported",
+      "updates-current",
+      "updates-available",
+      "updates-downloading",
+      "updates-ready",
+      "updates-deb",
+      "updates-failed",
+      "updates-download-failed",
+      "updates-hub-current",
+      "updates-hub-unknown",
+      "updates-hub-available",
+      "updates-hub-behind",
+      "updates-hub-behind-local",
+    ],
+    open: openUpdates,
+  },
+  // Update the hub on devbox: what runs there (hub_info) and the command, saying when it restarts the hub. And on this
+  // computer when the command needs --channel, which Run in Terminal can't run: Copy only.
+  {
+    id: "updates",
+    route: "#/",
+    fixtures: ["updates-hub-behind", "updates-hub-behind-local-channel"],
+    variant: "update-the-hub",
+    open: async (page) => {
+      await openUpdates(page);
+      await page.getByRole("button", { name: "Update the hub" }).click();
+      await page.getByText("Running on the hub now, so it waits for these:").waitFor();
+    },
+  },
+  // Update the hub on this computer, idle: Run in Terminal opens fleetd update (a fixture opens nothing).
+  {
+    id: "updates",
+    route: "#/",
+    fixtures: ["updates-hub-behind-local"],
+    variant: "run-in-terminal",
+    open: async (page) => {
+      await openUpdates(page);
+      await page.getByRole("button", { name: "Update the hub" }).click();
+      await page.getByRole("button", { name: "Run in Terminal" }).click();
+      await page.getByText("fleetd update is running in Terminal.").waitFor();
+    },
+  },
+  // Update the hub when the hub can't say what runs on it.
+  {
+    id: "updates",
+    route: "#/",
+    fixtures: ["updates-hub-info-failed"],
+    variant: "update-the-hub",
+    open: async (page) => {
+      await openUpdates(page);
+      await page.getByRole("button", { name: "Update the hub" }).click();
+      await page.getByText(/^The hub couldn't say what's running/u).waitFor();
+    },
+  },
+  // Run in Terminal's failures: the hub isn't here, no fleetd command, no terminal; each with the command instead.
+  {
+    id: "updates",
+    route: "#/",
+    fixtures: ["updates-terminal-not-local", "updates-terminal-not-found", "updates-terminal-no-terminal"],
+    variant: "run-in-terminal",
+    open: async (page) => {
+      await openUpdates(page);
+      await page.getByRole("button", { name: "Update the hub" }).click();
+      await page.getByRole("button", { name: "Run in Terminal" }).click();
+      await page.getByRole("alert").waitFor();
+    },
+  },
+  // UX-1 A3: a project's PRs. The list (open first, then merged or closed lately), with nothing picked; none at all;
+  // GitHub out of reach; and a link to a project the hub doesn't have.
+  { id: "prs", route: PRS, fixtures: ["typical", "long-text", "many-agents", "prs-none", "prs-no-github", "prs-rate-limited", "hub-unreachable"] },
+  { id: "prs", route: PRS, fixtures: ["empty"], variant: "missing", expect: "error" },
+  {
+    id: "prs",
+    route: CHAT,
+    fixtures: ["prs-loading"],
+    variant: "loading",
+    open: whileLoading(
+      (page) => page.getByRole("button", { name: "Pull requests" }).click({ timeout: 10_000 }),
+      (page) => page.getByLabel("Loading the pull requests"),
+    ),
+  },
+  // One PR beside the list: its facts, description, checks, reviews with their findings, and its way to main so far.
+  // #10's checks failed after three approvals and an outdated review; a chat line's link names only the number.
+  { id: "prs.detail", route: PR(11), fixtures: ["typical", "long-text", "prs-no-github", "prs-rate-limited"] },
+  { id: "prs.detail", route: PR(10), fixtures: ["typical"], variant: "failed" },
+  { id: "prs.detail", route: PR(8), fixtures: ["typical"], variant: "merged" },
+  { id: "prs.detail", route: PR(14), fixtures: ["typical"], variant: "review-requested" },
+  {
+    id: "prs.detail",
+    route: CHAT,
+    fixtures: ["prs-loading"],
+    variant: "loading",
+    open: whileLoading(async (page) => {
+      await page.evaluate((r) => {
+        window.location.hash = r;
+      }, PR(11));
+    }, (page) => page.getByText(/^Loading #11/u)),
+  },
+  { id: "prs.detail", route: `${PRS}/11`, fixtures: ["typical"], variant: "by-number", sizes: ["small"] },
+  { id: "prs.detail", route: PR(11), fixtures: ["prs-error"], expect: "error" },
+  // Its changes: the files beside a diff drawn a screen at a time, one column or side by side, and a PR too big to
+  // load at once.
+  { id: "prs.detail", route: PR(11), fixtures: ["typical", "long-text", "prs-no-github"], variant: "changes", open: openChanges },
+  {
+    id: "prs.detail",
+    route: PR(11),
+    fixtures: ["typical"],
+    variant: "split",
+    open: async (page) => {
+      await openChanges(page);
+      await page.getByRole("button", { name: "Show side by side" }).click();
+    },
+  },
+  { id: "prs.detail", route: PR(13), fixtures: ["prs-heavy"], variant: "changes", open: openChanges },
   // ...lowered from the header, applied once the keys rest, with Undo.
   {
     id: "chat",

@@ -282,9 +282,10 @@ describe("projects", () => {
   it("offers the project's other pages as actions, scoped to it", () => {
     const opened: string[] = [];
     const [project] = projectItems(state([live(), snapshot(1)]), (hash) => opened.push(hash));
-    expect(project?.actions?.map((a) => a.title)).toEqual(["Instructions for this project", "Prompts for this project", "Max agents for this project"]);
+    expect(project?.actions?.map((a) => a.title)).toEqual(["Pull requests in this project", "Instructions for this project", "Prompts for this project", "Max agents for this project"]);
     for (const action of project?.actions ?? []) action.run();
     expect(opened).toEqual([
+      "#/prs/devbox/storefront",
       "#/settings/instructions?for=devbox/storefront",
       "#/settings/prompts?for=devbox/storefront",
       "#/settings/agents?for=devbox/storefront",
@@ -294,6 +295,7 @@ describe("projects", () => {
   it("knows the project on screen, so the palette opens on it", () => {
     expect(currentProjectItem("#/project/devbox/storefront")).toBe("project:devbox/storefront");
     expect(currentProjectItem("#/project/dev%20box/a%2Fb?message=m1")).toBe("project:dev box/a/b");
+    expect(currentProjectItem("#/prs/devbox/storefront/acme/storefront/11")).toBe("project:devbox/storefront");
     expect(currentProjectItem("#/status")).toBeUndefined();
   });
 

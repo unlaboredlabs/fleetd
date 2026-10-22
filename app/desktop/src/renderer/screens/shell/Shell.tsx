@@ -16,6 +16,7 @@ import { useAgentsWorking, useMachinesDown, useSidebarProjects } from "./data";
 import { navigate, useRoute } from "./navigation";
 import { HOME, type Screen } from "./routes";
 import { ConnectionBanner, GetStarted, needsOnboarding } from "../onboarding";
+import { UpdatesHost } from "../updates";
 import { Boundary } from "../../src/Boundary";
 import { ScreenHost, screenPart } from "./screens";
 import { Sidebar } from "./Sidebar";
@@ -77,6 +78,10 @@ export function Shell() {
   const back = useSettingsBack(screen.id === "settings");
 
   const open = screen.id === "project" ? screen.project : null;
+  // The project on screen, its chat or its PRs.
+  const here = screen.id === "project" || screen.id === "prs" ? screen.project : null;
+  // The sidebar's and the palette's Pull requests: the project on screen, else the one `#/` opens.
+  const prsProject = here ?? (projects === undefined ? null : homeProject(projects, readLast()));
   // One chat streams at a time: the one on screen.
   const openKey = open === null ? null : projectId(open);
   useEffect(() => {
@@ -133,6 +138,17 @@ export function Shell() {
         keywords: ["live", "work", "running"],
         enabled: () => chrome,
         run: () => go({ id: "agents", agent: null }),
+      },
+      {
+        id: "go:prs",
+        title: "Pull requests",
+        detail: "A project’s PRs: checks, reviews and changes",
+        group: "go-to",
+        keywords: ["pr", "prs", "pull", "diff", "changes", "review"],
+        enabled: () => chrome && prsProject !== null,
+        run: () => {
+          if (prsProject !== null) go({ id: "prs", project: prsProject, pr: null });
+        },
       },
       ...JUMPS.map(
         (n): Command => ({
@@ -200,7 +216,7 @@ export function Shell() {
             </Boundary>
           ) : showSidebar ? (
             <Boundary key="sidebar" part="the sidebar">
-              <Sidebar projects={projects} agentsWorking={agentsWorking} machinesDown={machinesDown} screen={screen} hub={hub} jumpHints={modHeld} go={go} />
+              <Sidebar projects={projects} agentsWorking={agentsWorking} prsProject={prsProject} machinesDown={machinesDown} screen={screen} hub={hub} jumpHints={modHeld} go={go} />
             </Boundary>
           ) : undefined
         }
@@ -229,6 +245,7 @@ export function Shell() {
       </AppFrame>
       <PaletteHost />
       <ProjectsHost />
+      <UpdatesHost />
     </div>
   );
 }

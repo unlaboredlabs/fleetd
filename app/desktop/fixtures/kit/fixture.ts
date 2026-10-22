@@ -83,7 +83,7 @@ export class Fixture {
   events: Array<JsonObject> = [];
   live: Array<JsonObject> = [];
   errors: Array<HubErrorJson> = [];
-  /** Tools whose answers follow a contract change still on its branch; skipped by validation until it merges. */
+  /** Tools and event types that follow a contract change still on its branch; skipped by validation until it merges. */
   pendingContracts = new Map<string, string>();
   /** The slot state is this fixture's point: lanes are made to match it, rather than it to the lanes (kit/agents.ts). */
   agentsFromSlots = false;
@@ -97,6 +97,11 @@ export class Fixture {
    * /pair answers, and where the key would be kept. Absent: no file, no hub answers, the OS store.
    */
   pair: JsonObject | undefined;
+  /**
+   * The app's own update instead of the release feed (src/main/updater.ts): `{ current, app, release }`, an UpdatesState.
+   * Absent: up to date.
+   */
+  appUpdate: JsonObject | undefined;
   /**
    * The disk cache an earlier launch left (src/renderer/src/data/cache.ts's HubCache), which main hands the window at
    * start; main never writes a fixture's. Absent: no cache, as on a first launch.
@@ -115,6 +120,7 @@ export class Fixture {
     f.state = { ...base.state };
     f.connect = base.connect;
     f.pair = base.pair === undefined ? undefined : clone(base.pair);
+    f.appUpdate = base.appUpdate === undefined ? undefined : clone(base.appUpdate);
     f.cache = base.cache === undefined ? undefined : clone(base.cache);
     f.snapshot = base.snapshot === undefined ? undefined : clone(base.snapshot);
     f.events = clone(base.events);
@@ -231,7 +237,7 @@ export class Fixture {
   }
 
   /** The file main loads. Within a tool, more specific inputs come first, since main takes the first match. */
-  toFile(): FixtureFile & { settleMs?: number; pair?: JsonObject } {
+  toFile(): FixtureFile & { settleMs?: number; pair?: JsonObject; update?: JsonObject } {
     const frames: Array<FixtureFrame> = [];
     const num = (v: JsonValue | undefined) => (typeof v === "number" ? v : 0);
     if (this.snapshot !== undefined) frames.push({ t: "snapshot", snapshot: { ...this.snapshot, cursor: num(this.snapshot["cursor"]) } });
@@ -270,6 +276,7 @@ export class Fixture {
       ...(this.connect === undefined ? {} : { connect: this.connect }),
       ...(settleMs === undefined ? {} : { settleMs }),
       ...(this.pair === undefined ? {} : { pair: this.pair }),
+      ...(this.appUpdate === undefined ? {} : { update: this.appUpdate }),
       ...(this.cache === undefined ? {} : { cache: this.cache }),
     };
   }
