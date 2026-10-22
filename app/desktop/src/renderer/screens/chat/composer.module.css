@@ -1,14 +1,24 @@
-/* On the conversation's reading measure, inset from the window's edges like its rows (the chat screen's --pad). */
+/* The box sits on the messages' own column: the chat screen's wrapper gives the measure and the inset. */
 .composer {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1-5);
-  box-sizing: border-box;
-  width: 100%;
+  gap: var(--space-1);
   min-width: 0;
-  max-width: calc(var(--measure) + 2 * var(--pad, var(--space-4)));
-  margin: 0 auto;
-  padding: var(--space-2) var(--pad, var(--space-4)) var(--space-4);
+}
+
+/* One bordered box: the words, then the files, then the clip, Stop and Send inside it. */
+.box {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--raised);
+}
+.box:has(> .input:focus-visible) {
+  border-color: var(--accent);
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
 }
 
 .input {
@@ -19,28 +29,28 @@
   field-sizing: content;
   min-height: 36px;
   max-height: calc(12 * var(--leading-md) + 16px);
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-3) 0;
   resize: none;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--raised);
+  border: none;
+  background: transparent;
   color: var(--text);
   font: inherit;
   font-size: var(--text-md);
   line-height: var(--leading-md);
   overflow-wrap: anywhere;
 }
+.input:focus-visible {
+  outline: none;
+}
 .input::placeholder {
   color: var(--faint);
-}
-.input:focus {
-  border-color: var(--accent);
 }
 
 .chips {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-1-5);
+  padding: var(--space-1-5) var(--space-3) 0;
 }
 .chip {
   display: inline-flex;
@@ -77,24 +87,22 @@
   stroke-width: 2;
 }
 
-.how {
+.tools {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
+  gap: var(--space-1-5);
+  padding: var(--space-1) var(--space-1-5) var(--space-1-5) var(--space-2);
 }
 .spacer {
   flex: 1;
 }
-/* The key hint, or why the last message or file didn't go: wraps rather than pushing Send off the row. */
+/* Why the last message, file or stop didn't go, under the box: only when there is something to say. */
 .note {
-  flex: 0 1 auto;
   min-width: 0;
-  text-align: right;
+  padding: 0 var(--space-1);
 }
-.keys {
-  font-size: var(--text-xs);
-  color: var(--quiet);
+.note:empty {
+  display: none;
 }
 
 /* The line under one of your messages. */

@@ -3,7 +3,7 @@ import type { HubError, HubFrame } from "../../../shared/hub";
 import type { ChatMessage } from "./chat-contract";
 import { live, snapshot } from "./fixtures.test-util";
 import { createDataLayer, type HubApi } from "./queries";
-import { selectChat, selectLeadWorking, selectNeedsYou } from "./selectors";
+import { selectCanStop, selectChat, selectLeadWorking, selectNeedsYou } from "./selectors";
 
 type Answer = { ok: true; output: unknown } | { ok: false; error: HubError };
 
@@ -234,5 +234,69 @@ describe("sending", () => {
     expect(items(layer)?.some(([id]) => id === "c2")).toBe(false);
     fake.send({ t: "state", state: { phase: "connecting", hub: "devbox:4790", attempt: 1 } });
     expect(await layer.chat.send(KEY, { text: "later" }, "c3")).toBe("offline");
+  });
+});
+
+describe("stopping the lead", () => {
+  it("asks once per connection whether the hub can, with an input that runs nothing", async () => {
+    const { fake, layer } = await connected();
+    layer.chat.probeStop();
+    layer.chat.probeStop();
+    expect(fake.of("chat_stop").map((c) => c.input)).toEqual([{}]);
+    fake.of("chat_stop")[0]?.answer(err("invalid"));
+    await vi.waitFor(() => expect(selectCanStop(layer.store.getState())).toBe(true));
+    layer.chat.probeStop();
+    expect(fake.of("chat_stop")).toHaveLength(1);
+    // A new connection may be a different hub: it asks again.
+    fake.send(snapshot(9));
+    expect(selectCanStop(layer.store.getState())).toBe(false);
+    layer.chat.probeStop();
+    expect(fake.of("chat_stop")).toHaveLength(2);
+  });
+
+  it("has no Stop on a hub without the tool, or for a key that may not stop leads", async () => {
+    for (const code of ["not_found", "forbidden"]) {
+      const { fake, layer } = await connected();
+      layer.chat.probeStop();
+      fake.of("chat_stop")[0]?.answer(err(code));
+      await vi.waitFor(() => expect(layer.store.getState().chatStop).toBe(false));
+    }
+  });
+
+  it("a dropped link leaves it unknown until the next connection", async () => {
+    const { fake, layer } = await connected();
+    layer.chat.probeStop();
+    fake.of("chat_stop")[0]?.answer(err("disconnected"));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(layer.store.getState().chatStop).toBeUndefined();
+    layer.chat.probeStop();
+    expect(fake.of("chat_stop")).toHaveLength(1);
+  });
+
+  it("stops the lead's turn, and its line shows once though the event carries it too", async () => {
+    const { fake, layer } = await connected();
+    const out = layer.chat.stop(KEY);
+    const call = fake.of("chat_stop")[0];
+    expect(call?.input).toMatchObject({ projectRef: ref, clientRequestId: expect.any(String) as unknown });
+    const line = msg(3, { author: "system", text: "Stopped the lead." });
+    call?.answer({ ok: true, output: { stopped: true, message: line } });
+    expect(await out).toEqual({ t: "stopped" });
+    fake.send(messageEvent(2, line));
+    expect(items(layer)).toEqual([["m1", "sent"], ["m2", "sent"], ["m3", "sent"]]);
+  });
+
+  it("says when the lead wasn't working, when the hub can't, and why it failed", async () => {
+    const { fake, layer } = await connected();
+    const idle = layer.chat.stop(KEY);
+    fake.of("chat_stop")[0]?.answer({ ok: true, output: { stopped: false, message: msg(3, { author: "system", text: "The lead wasn't working; nothing to stop." }) } });
+    expect(await idle).toEqual({ t: "idle" });
+    const none = layer.chat.stop(KEY);
+    fake.of("chat_stop")[1]?.answer(err("not_found"));
+    expect(await none).toEqual({ t: "unsupported" });
+    expect(layer.store.getState().chatStop).toBe(false);
+    const failed = layer.chat.stop(KEY);
+    fake.of("chat_stop")[2]?.answer(err("timeout"));
+    expect(await failed).toEqual({ t: "failed", error: { code: "timeout", message: "timeout" } });
   });
 });

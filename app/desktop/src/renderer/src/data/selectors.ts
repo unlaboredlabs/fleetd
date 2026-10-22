@@ -387,6 +387,9 @@ export const selectLeadWorking = perKey((key) => (s: DataState): boolean | undef
   s.fresh ? (s.chatStates[key]?.leadWorking ?? leadActive(s.live.lanes, key)) : undefined,
 );
 
+/** The hub can stop a lead mid-turn: false until it said so on this connection. */
+export const selectCanStop = (s: DataState): boolean => s.fresh && s.chatStop === true;
+
 export interface ChatView {
   /** Oldest first. The lead's streaming message is the last hub item; the person's unsettled sends follow it. */
   readonly items: readonly ChatItem[];

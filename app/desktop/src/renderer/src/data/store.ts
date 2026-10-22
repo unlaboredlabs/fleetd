@@ -93,6 +93,8 @@ export interface DataState {
   readonly chatSends: Readonly<Record<ProjectKey, readonly ChatSend[]>>;
   /** Per project: whether its lead waits on the person, and whether it works. */
   readonly chatStates: Readonly<Record<ProjectKey, ProjectChatState>>;
+  /** Whether this hub can stop a lead mid-turn (chat_stop); undefined until asked, again on each connection. */
+  readonly chatStop?: boolean | undefined;
 }
 
 const RECENT_EVENTS = 200;
@@ -194,6 +196,7 @@ export const applyFrame = (s: DataState, frame: HubFrame, nowMs: number): [DataS
           trains: {},
           chats: {},
           chatStates: byId(snap.chats ?? [], (c) => projectKey(c.projectRef)),
+          chatStop: undefined,
         },
         { refetchAll: true },
       ];

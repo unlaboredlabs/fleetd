@@ -1,7 +1,8 @@
 // The chat's calls: history pages, single messages an event was too small to carry, and the person's sends with
 // the steer resend rules (chat.ts). Answers for an older generation (a reconnect happened meanwhile) are dropped,
 // and the reconnect reads every opened chat again.
-import type { Call } from "../../../shared/contracts";
+import type { Call, RawCall } from "../../../shared/contracts";
+import type { HubError } from "../../../shared/hub";
 import {
   afterCall,
   applyHistory,
@@ -14,12 +15,15 @@ import {
   type Chat,
   type ChatSend,
 } from "./chat";
-import type { AttachmentRef, ChatHistoryOutput, ChatSendInput } from "./chat-contract";
+import type { AttachmentRef, ChatHistoryOutput, ChatSendInput, ChatStopInput, ChatStopOutput } from "./chat-contract";
 import { chatOf, type DataState, type DataStore, type ProjectKey } from "./store";
 
 /** "sent": the hub has it. "pending": cut off, resent when the link is back. "failed": not sent, its row says why.
  *  "offline": not sent and no row: the words stay in the composer, which says there's no hub. */
 export type SendOutcome = "sent" | "pending" | "failed" | "offline";
+
+/** "stopped": the lead's turn is ending. "idle": it wasn't mid-turn. "unsupported": this hub can't stop a lead. */
+export type StopOutcome = { readonly t: "stopped" | "idle" | "unsupported" } | { readonly t: "failed"; readonly error: HubError };
 
 export interface ChatActions {
   /**
@@ -44,7 +48,15 @@ export interface ChatActions {
   /** Sends a row again under its own id. */
   retry(key: ProjectKey, clientRequestId: string): Promise<SendOutcome | undefined>;
   discard(key: ProjectKey, clientRequestId: string): void;
+  /** Asks once per connection whether the hub can stop a lead (DataState.chatStop). */
+  probeStop(): void;
+  /** Stops the lead's turn now; the chat's own events then say it stopped. */
+  stop(key: ProjectKey): Promise<StopOutcome>;
 }
+
+/** The hub's answer to a tool it doesn't have (hub/app_ws: "No tool <name>."). A fixture without an answer says not_found too. */
+const lacksTool = (e: HubError) => e.code === "not_found";
+const TRANSIENT = new Set(["timeout", "offline", "disconnected"]);
 
 export const refOf = (key: ProjectKey) => {
   const at = key.indexOf("/");
@@ -254,7 +266,46 @@ export const createChatActions = (
     }
   };
 
-  const actions: ChatActions = { open, close, loadOlder, loadNewer, jumpToLatest, send, retry, discard: dropRow };
+  // chat_stop isn't in the generated tool map until its hub slice lands; this is the one place it is called by name.
+  const stopCall = (input: ChatStopInput | Record<string, never>) =>
+    (call as unknown as RawCall)("chat_stop", input) as Promise<{ readonly ok: true; readonly output: ChatStopOutput } | { readonly ok: false; readonly error: HubError }>;
+
+  let probing: number | undefined;
+  const probeStop: ChatActions["probeStop"] = () => {
+    const s = store.getState();
+    if (!s.fresh || s.chatStop !== undefined || probing === s.generation) return;
+    const generation = s.generation;
+    probing = generation;
+    // An empty input runs nothing: a hub with the tool refuses it as invalid, one without says it has no such tool.
+    void stopCall({}).then((r) => {
+      if (store.getState().generation !== generation) return;
+      // A key that may not stop leads (forbidden) has no Stop either. A link that dropped asks again on the next
+      // connection, not before.
+      if (r.ok || r.error.code === "invalid") update(() => ({ chatStop: true }));
+      else if (!TRANSIENT.has(r.error.code)) update(() => ({ chatStop: false }));
+    });
+  };
+
+  const stop: ChatActions["stop"] = async (key) => {
+    const generation = store.getState().generation;
+    const r = await stopCall({ projectRef: refOf(key), clientRequestId: crypto.randomUUID() });
+    if (r.ok) {
+      // Its line shows now; the chat.message event carrying it again is the same message.
+      const { message } = r.output;
+      update((st) => {
+        const chat = st.chats[key];
+        return chat?.loaded === true && st.generation === generation ? { chats: { ...st.chats, [key]: mergeLive(chat, message) } } : {};
+      });
+      return { t: r.output.stopped ? "stopped" : "idle" };
+    }
+    if (lacksTool(r.error)) {
+      if (store.getState().generation === generation) update(() => ({ chatStop: false }));
+      return { t: "unsupported" };
+    }
+    return { t: "failed", error: r.error };
+  };
+
+  const actions: ChatActions = { open, close, loadOlder, loadNewer, jumpToLatest, send, retry, discard: dropRow, probeStop, stop };
   return { actions, onState };
 };
 

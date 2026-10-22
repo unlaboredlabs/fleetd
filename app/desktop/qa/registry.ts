@@ -181,6 +181,60 @@ export const screens: readonly Screen[] = [
       await expect(page.getByText(/the lead doesn’t have it yet/)).toBeVisible();
     },
   },
+  // Stop beside Send while the lead works, pressed: the hub's answer is still on its way.
+  {
+    id: "chat.composer",
+    route: CHAT,
+    fixtures: ["composer-sends"],
+    variant: "stopping",
+    open: async (page) => {
+      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      await page.getByRole("button", { name: "Stop the lead" }).click();
+      await expect(page.getByRole("button", { name: "Stopping the lead" })).toBeDisabled();
+      await expect(page.getByText("Stopping the lead…")).toBeVisible();
+    },
+  },
+  // ↑ in the empty box brings back your last message.
+  {
+    id: "chat.composer",
+    route: CHAT,
+    fixtures: ["composer-sends"],
+    variant: "recall",
+    open: async (page) => {
+      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      const box = page.getByRole("textbox", { name: "Message the lead" });
+      await expect(box).toBeFocused();
+      await box.press("ArrowUp");
+      await expect(box).toHaveValue("1 yes, 2 literal");
+    },
+  },
+  // The line above the box says what the lead waits on, and Show brings the open approval into view.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["chat-gated"],
+    variant: "show-waiting",
+    open: async (page) => {
+      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      await expect(page.getByText("1 command to approve")).toBeVisible();
+      await page.locator("[data-attention]").getByRole("button", { name: "Show" }).click();
+      await expect(page.getByRole("button", { name: "Approve", exact: true })).toBeInViewport();
+    },
+  },
+  // An empty chat's starter fills the box (never sends) and gives it the cursor.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["chat-empty"],
+    variant: "starter",
+    open: async (page) => {
+      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      await page.getByRole("button", { name: "Explain how this project is put together." }).click();
+      const box = page.getByRole("textbox", { name: "Message the lead" });
+      await expect(box).toHaveValue("Explain how this project is put together.");
+      await expect(box).toBeFocused();
+    },
+  },
   // ...and opened to its lanes.
   {
     id: "chat",
