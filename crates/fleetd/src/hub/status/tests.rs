@@ -1098,19 +1098,13 @@ async fn an_update_releases_a_figure_the_old_rule_left_stuck() {
         45,
         "held: nothing since that point explains a fall"
     );
+    let version = db.user_version().unwrap();
     db.with(|c| {
-        c.pragma_update(
-            None,
-            "user_version",
-            crate::hub::store::SCHEMA_VERSION as i64 - 1,
-        )?;
+        c.pragma_update(None, "user_version", version - 1)?;
         Ok(())
     })
     .unwrap();
     let updated = HubDb::open(home.path()).unwrap();
-    assert_eq!(
-        updated.user_version().unwrap(),
-        crate::hub::store::SCHEMA_VERSION as i64
-    );
+    assert_eq!(updated.user_version().unwrap(), version);
     assert_eq!(estimate_after(&hub, &clock, 1).0, 14);
 }
