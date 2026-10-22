@@ -173,7 +173,7 @@ function HubSection({ part }: { part: HubPart }) {
         <>
           <RunningNow running={running} />
           <Command command={update.command} note={update.note} />
-          {update.local ? (
+          {update.terminal ? (
             <div className={s.actions}>
               <Button variant="secondary" onClick={() => void window.fleetd.updates.hubTerminal().then(setOpened)}>
                 Run in Terminal
@@ -181,12 +181,17 @@ function HubSection({ part }: { part: HubPart }) {
             </div>
           ) : null}
           {opened === null ? null : opened.ok ? (
-            <Text size="sm" tone="quiet">{`fleetd update is running in ${opened.terminal}.`}</Text>
+            <Text size="sm" tone="quiet">
+              <Line
+                text={`fleetd update is running in ${opened.terminal}; its result shows there. If something is running on the hub, the hub keeps its version until you run \`fleetd update --restart-now\` or it next restarts.`}
+              />
+            </Text>
           ) : (
             <div role="alert">
               <Text size="sm" tone="danger">
                 {opened.message}
               </Text>
+              <Command command={opened.command} />
             </div>
           )}
         </>

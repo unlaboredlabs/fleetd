@@ -65,6 +65,10 @@ const FixtureSection = z.object({
       current: z.string().optional(),
       app: z.custom<AppUpdate>((v) => typeof v === "object" && v !== null && typeof (v as { kind?: unknown }).kind === "string"),
       release: z.custom<Release>((v) => typeof v === "object" && v !== null && Array.isArray((v as { changes?: unknown }).changes)).nullish(),
+      /** What Run in Terminal answers: opened, or why not. Absent: opened. */
+      hubTerminal: z
+        .union([z.object({ ok: z.literal(true), terminal: z.string() }), z.object({ ok: z.literal(false), message: z.string(), command: z.string() })])
+        .optional(),
     })
     .optional(),
 });
@@ -90,7 +94,7 @@ const fixtureUpdates = (file: string): Updates => {
     // A fixture never opens a real terminal.
     hubTerminal: () => {
       console.info("fixture update: fleetd update in a terminal");
-      return Promise.resolve({ ok: true, terminal: "Terminal" });
+      return Promise.resolve(section?.hubTerminal ?? { ok: true, terminal: "Terminal" });
     },
     onChange: (listener) => h.onChange((s) => listener(version === undefined ? s : { ...s, current: version })),
   };

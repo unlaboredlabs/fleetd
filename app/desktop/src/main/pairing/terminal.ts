@@ -56,6 +56,13 @@ export const findFleetd = (deps: TerminalDeps, run: FleetdCommand = "init"): { r
 
 const shQuote = (text: string): string => `'${text.replaceAll("'", `'\\''`)}'`;
 
+/**
+ * The fixed shell script a terminal runs. `fleetd update` exits 0 after saying it left a busy hub running and how to
+ * finish, and terminals close when their command exits, so update waits for Return to keep that message on screen.
+ */
+const script = (bin: string, run: FleetdCommand): string =>
+  run === "update" ? `${shQuote(bin)} update\necho\nprintf 'Press Return to close. '\nread -r _\n` : `exec ${shQuote(bin)} init\n`;
+
 const openFleetd = async (deps: TerminalDeps, run: FleetdCommand): Promise<SetupOutcome> => {
   const found = findFleetd(deps, run);
   if (found === null) {
@@ -63,13 +70,14 @@ const openFleetd = async (deps: TerminalDeps, run: FleetdCommand): Promise<Setup
   }
   const failed: SetupOutcome = { ok: false, message: "Couldn't open a terminal. Run this in one:", command: found.command };
   if (deps.platform === "darwin") {
-    const script = deps.writeScript(`#!/bin/sh\nexec ${shQuote(found.bin)} ${run}\n`, `fleetd-${run}.command`);
-    return (await deps.exec("/usr/bin/open", ["-a", "Terminal", script])) ? { ok: true, terminal: "Terminal" } : failed;
+    const file = deps.writeScript(`#!/bin/sh\n${script(found.bin, run)}`, `fleetd-${run}.command`);
+    return (await deps.exec("/usr/bin/open", ["-a", "Terminal", file])) ? { ok: true, terminal: "Terminal" } : failed;
   }
   if (deps.platform !== "linux") return failed;
   for (const terminal of LINUX_TERMINALS) {
     const bin = which(deps, terminal.bin);
-    if (bin !== null && (await deps.launch(bin, [...terminal.args, found.bin, run]))) return { ok: true, terminal: "a terminal" };
+    const command = run === "update" ? ["/bin/sh", "-c", script(found.bin, run)] : [found.bin, run];
+    if (bin !== null && (await deps.launch(bin, [...terminal.args, ...command]))) return { ok: true, terminal: "a terminal" };
   }
   return failed;
 };

@@ -78,15 +78,18 @@ describe("the hub", () => {
   it("warns when it is older than this app, with the command and when it restarts the hub", () => {
     const v = view(current, { version: OLDER });
     expect(v.line).toEqual({ tone: "warning", text: "Update the hub" });
-    expect(v.hub).toMatchObject({ title: "The hub runs an older fleetd than this app", update: { command: "fleetd update", local: false } });
+    expect(v.hub).toMatchObject({ title: "The hub runs an older fleetd than this app", update: { command: "fleetd update", terminal: false } });
     expect(v.hub?.update?.note).toMatch(/^Run this on devbox\. .*restarts the hub only if nothing is running there/u);
     expect(v.hub?.notes.lines).toEqual(["Status loads faster", "The hub says its version"]);
   });
 
-  it("can open the command in a terminal only for a hub on this computer", () => {
+  it("can open the command in a terminal only for a hub on this computer, and only the bare fleetd update", () => {
     const local = view(current, { version: OLDER, url: "http://127.0.0.1:4790" });
-    expect(local.hub?.update).toMatchObject({ local: true });
+    expect(local.hub?.update).toMatchObject({ terminal: true });
     expect(local.hub?.update?.note).toMatch(/^Run this in a terminal on this computer\./u);
+    // Another channel needs --channel, which the terminal can't run: Copy only.
+    const otherChannel = view(current, { version: "0.5.0", url: "http://127.0.0.1:4790" }, "0.6.0-nightly.202610221030+abc1234");
+    expect(otherChannel.hub?.update).toMatchObject({ command: "fleetd update --channel nightly", terminal: false });
   });
 
   it("names a newer hub on the channel in the sheet only, not the sidebar", () => {

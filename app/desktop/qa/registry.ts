@@ -112,6 +112,10 @@ export const fixtures = [
   "updates-hub-available",
   "updates-hub-behind",
   "updates-hub-behind-local",
+  "updates-hub-info-failed",
+  "updates-terminal-not-local",
+  "updates-terminal-not-found",
+  "updates-terminal-no-terminal",
 ] as const;
 export type FixtureName = (typeof fixtures)[number];
 
@@ -550,6 +554,31 @@ export const screens: readonly Screen[] = [
       await page.getByRole("button", { name: "Update the hub" }).click();
       await page.getByRole("button", { name: "Run in Terminal" }).click();
       await page.getByText("fleetd update is running in Terminal.").waitFor();
+    },
+  },
+  // Update the hub when the hub can't say what runs on it.
+  {
+    id: "updates",
+    route: "#/",
+    fixtures: ["updates-hub-info-failed"],
+    variant: "update-the-hub",
+    open: async (page) => {
+      await openUpdates(page);
+      await page.getByRole("button", { name: "Update the hub" }).click();
+      await page.getByText(/^The hub couldn't say what's running/u).waitFor();
+    },
+  },
+  // Run in Terminal's failures: the hub isn't here, no fleetd command, no terminal; each with the command instead.
+  {
+    id: "updates",
+    route: "#/",
+    fixtures: ["updates-terminal-not-local", "updates-terminal-not-found", "updates-terminal-no-terminal"],
+    variant: "run-in-terminal",
+    open: async (page) => {
+      await openUpdates(page);
+      await page.getByRole("button", { name: "Update the hub" }).click();
+      await page.getByRole("button", { name: "Run in Terminal" }).click();
+      await page.getByRole("alert").waitFor();
     },
   },
   // ...lowered from the header, applied once the keys rest, with Undo.

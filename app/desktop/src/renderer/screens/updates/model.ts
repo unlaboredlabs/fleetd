@@ -30,10 +30,11 @@ export interface HubPart {
   readonly detail?: string;
   readonly notes: Notes;
   /**
-   * Update the hub: the command to run, with Copy, and a note saying where and when it restarts the hub. `local`: the
-   * hub is on this computer, so the app can open the command in a terminal. The app never restarts the hub itself.
+   * Update the hub: the command to run, with Copy, and a note saying where and when it restarts the hub. `terminal`:
+   * the hub is on this computer and the command is the bare `fleetd update` main opens (updates:hubTerminal takes no
+   * arguments), so Run in Terminal runs exactly what's shown. The app never restarts the hub itself.
    */
-  readonly update?: { readonly command: string; readonly note: string; readonly local: boolean };
+  readonly update?: { readonly command: string; readonly note: string; readonly terminal: boolean };
 }
 
 export interface UpdatesView {
@@ -129,6 +130,9 @@ export interface HubInput {
   readonly version: string | undefined;
 }
 
+/** What updates:hubTerminal runs, always and only. */
+const HUB_TERMINAL_COMMAND = "fleetd update";
+
 /** The command that updates the hub, on this app's channel. */
 const updateCommand = (hubVersion: string, appVersion: string): string => {
   const channel = channelOf(appVersion);
@@ -149,15 +153,16 @@ const hubPart = (hub: HubInput, state: UpdatesState | null): HubPart | null => {
   const available = knownVersion(cli) && channelOf(cli) === channelOf(version) && compareVersions(version, cli) === -1;
   if (!behind && !available) return { title: "The hub is up to date", detail: `It runs ${has}.`, notes: NO_NOTES };
   const host = hubHost(hub.url);
+  const command = updateCommand(version, appVersion);
   return {
     title: behind ? "The hub runs an older fleetd than this app" : `fleetd ${versionLabel(cli ?? version)} is available for the hub`,
     detail: `It runs ${has}.`,
     notes: notesSince(state?.release?.changes ?? [], version, "hub"),
     update: {
-      command: updateCommand(version, appVersion),
+      command,
       // fleetd update (#287) restarts the hub only when hub_info says nothing runs; else it lists what does.
       note: `Run this ${host === null ? "in a terminal on this computer" : `on ${host}`}. It installs the update, then restarts the hub only if nothing is running there; if something is, it says what and leaves the hub running.`,
-      local: host === null,
+      terminal: host === null && command === HUB_TERMINAL_COMMAND,
     },
   };
 };

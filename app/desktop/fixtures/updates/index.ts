@@ -10,6 +10,7 @@ const MINE = "0.6.0-nightly.202610221030+4f1c2ab";
 const NEXT = "0.6.0-nightly.202610231030+9e07d31";
 const OLDER = "0.6.0-nightly.202610201030+1c0ffee";
 const AT = "2026-10-19T10:00:00.000Z";
+const LOCAL = "http://127.0.0.1:4790";
 
 const change = (commit: string, subject: string, areas: string[]) => ({ commit, date: AT, subject, areas });
 /** changes.json since MINE (4f1c2ab) and a little before it, newest first. */
@@ -52,12 +53,31 @@ export default defineGroup({
       return f;
     };
 
+    // Update the hub, and the hub can't say what runs on it.
+    const hubInfoFailed = withHub("hub-info-failed", "Update the hub, and hub_info fails: the hub couldn't say what's running.", OLDER);
+    hubInfoFailed.fail("hub_info", {}, { code: "timeout", message: "The hub didn't answer in time." });
+    /** The hub on this computer, behind, where Run in Terminal answers `outcome`. */
+    const terminal = (what: string, outcome: JsonObject): Fixture => {
+      const f = withHub(`terminal-${what}`, `Run in Terminal fails: ${what}.`, OLDER, { busy: [], url: LOCAL });
+      f.appUpdate = { ...f.appUpdate, hubTerminal: outcome };
+      return f;
+    };
+
     return [
       withHub("hub-current", "The hub runs this app's build, the newest on the channel.", MINE),
       withHub("hub-unknown", "The hub reports 0.0.0 (a local build): its version is unknown, and nothing is flagged.", "0.0.0"),
       withHub("hub-available", "The channel has a newer hub than the one running: in the sheet only.", MINE, { release: { ...RELEASE, cli: NEXT } }),
       withHub("hub-behind", "The hub on devbox runs an older nightly than this app: a warning; Update the hub lists what runs and the command.", OLDER),
-      withHub("hub-behind-local", "The hub on this computer is behind and idle: Update the hub offers Run in Terminal.", OLDER, { busy: [], url: "http://127.0.0.1:4790" }),
+      withHub("hub-behind-local", "The hub on this computer is behind and idle: Update the hub offers Run in Terminal.", OLDER, { busy: [], url: LOCAL }),
+      hubInfoFailed,
+      // Run in Terminal's three failures (main's answers), each with the command to run instead.
+      terminal("not-local", { ok: false, message: "The hub isn't on this computer. Run this on the hub's machine:", command: "fleetd update" }),
+      terminal("not-found", {
+        ok: false,
+        message: "Couldn't find the fleetd command on this computer. Once fleetd is installed, run this in a terminal:",
+        command: "fleetd update",
+      }),
+      terminal("no-terminal", { ok: false, message: "Couldn't open a terminal. Run this in one:", command: "~/.local/bin/fleetd update" }),
       make("idle", "Not checked yet (just started).", { kind: "idle" }, null),
       make("checking", "A check someone asked for, under way.", { kind: "checking" }, null),
       make("unsupported", "A development or test build, which doesn't update itself.", { kind: "unsupported" }, null),
