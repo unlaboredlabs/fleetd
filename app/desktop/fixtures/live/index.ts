@@ -56,7 +56,8 @@ const fromBase = (base: Fixture, agents: number): Fixture => {
     const id = `T${i + 1}`;
     const role: Role = i < Math.ceil(agents / 3) ? "implementer" : i % 2 === 0 ? "reviewer" : "verifier";
     const onPr = role === "implementer" ? undefined : prs[i % 2];
-    // At 20: one waits on you, one is paused at a usage limit (on hold), and the last waits for a free slot.
+    // At 20: one waits on you, one is paused at a usage limit (on hold), and the last waits for a free slot (a long
+    // reason, cut with an ellipsis).
     const status = i === 4 ? "waiting" : i === 5 && agents > 3 ? "parked" : i === agents - 1 && agents > 3 ? "queued" : "working";
     lanes.push({
       laneId: id,
@@ -66,7 +67,13 @@ const fromBase = (base: Fixture, agents: number): Fixture => {
       title: role === "implementer" ? `write part ${i + 1} of the rounding change` : `${role === "reviewer" ? "review" : "verify"} #${i % 2 === 0 ? 221 : 222}`,
       model: "claude-haiku-5-5",
       status,
-      ...(status === "waiting" ? { statusReason: "approve npm install" } : status === "parked" ? { statusReason: "usage limit: resumes 14:05" } : {}),
+      ...(status === "waiting"
+        ? { statusReason: "approve npm install" }
+        : status === "parked"
+          ? { statusReason: "usage limit: resumes 14:05" }
+          : status === "queued"
+            ? { statusReason: "waiting for a free slot: every one is held by work on #221 and #222, so this starts as soon as one of their reviews finishes" }
+            : {}),
       startedAt: iso(now - (20 + i * 7) * 1000),
       ...(onPr ? { pr: onPr } : {}),
     });

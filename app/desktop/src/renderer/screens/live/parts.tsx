@@ -1,6 +1,6 @@
 // The strip's small pieces: an agent's row, its machine text cut in the middle, and the status mark.
 import { useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
-import { RoleTag, Tooltip, cx, roleTint } from "../../ui";
+import { RoleTag, Tooltip, Truncate, cx, roleTint } from "../../ui";
 import { fmtElapsed, middleEllipsis, parseMs } from "./format";
 import type { AgentRow } from "./strip";
 import { type Tone, isWorking } from "./words";
@@ -109,8 +109,19 @@ export function AgentLine({ row, now, stale, onOpen }: AgentLineProps) {
         {row.roleWord}
       </RoleTag>
       <span className={cx(s.activity, TONE_CLASS[row.tone] ?? s.quietText, stale && s.stale)}>
-        <span className={s.words}>{row.words}</span>
-        {row.machine !== undefined ? <MiddleCut text={row.machine} /> : null}
+        {row.machine !== undefined ? (
+          <>
+            <span className={s.words}>{row.words}</span>
+            <MiddleCut text={row.machine} />
+          </>
+        ) : (
+          // Words alone can be long (a queued or usage-limit reason): they take the room and end in an ellipsis.
+          <span className={s.wordsFill}>
+            <Truncate expand="none" size="xs" tone="inherit">
+              {row.words}
+            </Truncate>
+          </span>
+        )}
       </span>
       <span className={cx(s.clock, isWorking(status) ? s.loud : s.quietText)} aria-label={clock === "" ? undefined : `for ${clock}`}>
         {clock}

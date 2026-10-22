@@ -92,6 +92,10 @@
 .words {
   flex: none;
 }
+.wordsFill {
+  flex: 1 1 auto;
+  min-width: 0;
+}
 /* Takes the line's room so it has a width to cut to; a cut command keeps its program and its target. */
 .machine {
   flex: 1 1 0;

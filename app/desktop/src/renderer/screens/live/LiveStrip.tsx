@@ -119,12 +119,17 @@ function Opened({ id, projectKey: key, strip, onTold }: { id: string; projectKey
     const top = scrolled.get(key);
     if (top !== undefined) list.current?.scrollToOffset(top);
     if (reveal !== key) return;
+    // Opened by a click: an agent waiting on you is in view, even when it is below the box's fold.
+    const waiting = strip.rows.findIndex((r) => r.kind === "agent" && r.lane.status === "waiting");
+    if (waiting !== -1) list.current?.scrollToIndex(waiting, { align: "auto" });
     // A frame later, once the chat's list has measured the strip's new height.
     const frame = requestAnimationFrame(() => {
       reveal = undefined;
       box.current?.closest("section")?.scrollIntoView({ block: "nearest" });
     });
     return () => cancelAnimationFrame(frame);
+    // Only on mount: later frames must not move the box under the reader.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
   const onScreen = useOnScreen(box);
   const running = strip.rows.some((r) => r.kind === "agent" && isRunning(r.lane.status));
@@ -148,12 +153,14 @@ function Opened({ id, projectKey: key, strip, onTold }: { id: string; projectKey
       );
     }
     const lane = r.lane;
+    const told = onTold && lane.threadRef ? () => onTold(lane) : undefined;
+    // Waiting on you: jump to the field it waits on; with no such command running, show what it was told.
     const onOpen =
       lane.status === "waiting"
-        ? () => runCommand(SHOW_WAITING)
-        : onTold && lane.threadRef
-          ? () => onTold(lane)
-          : undefined;
+        ? () => {
+            if (!runCommand(SHOW_WAITING)) told?.();
+          }
+        : told;
     return <AgentLine row={r} now={now} stale={strip.stale} onOpen={onOpen} />;
   };
   return (

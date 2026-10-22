@@ -203,7 +203,7 @@ export const screens: readonly Screen[] = [
       await strip.getByRole("button", { name: /agents? working/u, expanded: false }).click();
       const list = strip.getByRole("list", { name: "Agents" });
       await list.evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
-      await expect(strip.getByText("queued", { exact: true })).toBeVisible();
+      await expect(strip.getByText(/^queued · waiting for a free slot/u)).toBeVisible();
     },
     variant: "strip-scrolled",
   },
