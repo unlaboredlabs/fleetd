@@ -127,11 +127,12 @@ export const protocolFit = (hubProtocol: number): ProtocolFit =>
   hubProtocol === APP_PROTOCOL ? "ok" : hubProtocol < APP_PROTOCOL ? "hub-older" : "app-older";
 
 /**
- * Orders dotted versions numerically (`0.10.0` after `0.9.3`); a pre-release suffix sorts before its release.
- * Null when either isn't a version, so nothing is flagged on a guess.
+ * Orders versions as semver does: dotted numbers (`0.10.0` after `0.9.3`), a pre-release before its release, and
+ * pre-releases by their dot-separated parts, numbers numerically, so a later nightly (`-nightly.202610221030`) is
+ * newer. Build metadata (`+abc1234`) doesn't count. Null when either isn't a version, so nothing is flagged on a guess.
  */
 export const compareVersions = (a: string, b: string): number | null => {
-  const parse = (v: string) => /^v?(\d+)\.(\d+)\.(\d+)(-[\w.]+)?/u.exec(v.trim());
+  const parse = (v: string) => /^v?(\d+)\.(\d+)\.(\d+)(?:-([\w.-]+))?(?:\+[\w.-]*)?$/u.exec(v.trim());
   const x = parse(a);
   const y = parse(b);
   if (x === null || y === null) return null;
@@ -139,8 +140,21 @@ export const compareVersions = (a: string, b: string): number | null => {
     const d = Number(x[i]) - Number(y[i]);
     if (d !== 0) return Math.sign(d);
   }
-  if (x[4] === y[4]) return 0;
-  return x[4] === undefined ? 1 : y[4] === undefined ? -1 : 0;
+  const [px, py] = [x[4], y[4]];
+  if (px === py) return 0;
+  if (px === undefined) return 1;
+  if (py === undefined) return -1;
+  const xs = px.split(".");
+  const ys = py.split(".");
+  for (let i = 0; i < Math.max(xs.length, ys.length); i++) {
+    const [p, q] = [xs[i], ys[i]];
+    if (p === undefined) return -1;
+    if (q === undefined) return 1;
+    const [np, nq] = [/^\d+$/u.test(p), /^\d+$/u.test(q)];
+    const d = np && nq ? Math.sign(Number(p) - Number(q)) : np ? -1 : nq ? 1 : p < q ? -1 : p > q ? 1 : 0;
+    if (d !== 0) return d;
+  }
+  return 0;
 };
 
 /** Machines whose node runs an older fleetd than the hub, by name. A node reporting 0.0.0 hasn't said its version. */

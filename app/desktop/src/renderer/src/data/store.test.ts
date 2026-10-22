@@ -191,3 +191,21 @@ describe("the project list", () => {
     expect(order()).toEqual([["acme", false], ["storefront", true]]);
   });
 });
+
+describe("the hub's version", () => {
+  const hub = { version: "0.5.0", channel: "nightly", updateAvailable: true, latest: "0.6.0", notes: [] } as const;
+
+  it("comes with the snapshot and is replaced by each hub.update", () => {
+    const first = snapshot(10);
+    if (first.t !== "snapshot") throw new Error("a snapshot frame");
+    let s = run([live(), { t: "snapshot", snapshot: { ...first.snapshot, hub } as typeof first.snapshot }]);
+    expect(s.hubVersion).toEqual(hub);
+    const waiting = { ...hub, update: { state: "waiting", to: "0.6.0", text: "Updates once work finishes", at: "2026-10-19T10:00:00.000Z" } };
+    s = run([event(11, "hub.update", waiting)], s);
+    expect(s.hubVersion?.update?.state).toBe("waiting");
+  });
+
+  it("is unknown for a hub from before it", () => {
+    expect(run([live(), snapshot(10)]).hubVersion).toBeUndefined();
+  });
+});

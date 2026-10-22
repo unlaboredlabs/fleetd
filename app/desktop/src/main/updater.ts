@@ -1,157 +1,165 @@
-import { app, dialog, shell } from "electron";
+import { readFileSync } from "node:fs";
+import { app, shell } from "electron";
 import type { AppImageUpdater, DebUpdater, MacUpdater } from "electron-updater";
+import { z } from "zod";
+import { DEB, type AppUpdate, type UpdatesState } from "../shared/updates";
 import { RELEASE_BUILD } from "./build";
 import { feedUrl } from "./update-feed";
-import { DEB, updateMessage, type UpdateOutcome } from "./update-messages";
+import { failureReason } from "./update-messages";
+import { fetchNotes } from "./update-notes";
+import { step, type UpdateEffect, type UpdateInput } from "./update-state";
 
 const CHECK_EVERY_MS = 4 * 60 * 60 * 1000;
 
+/** The app's own update, for the page (IPC.updates*) and the app menu. */
 export interface Updates {
-  /** Loads electron-updater and starts the periodic checks. Call once the window is up (the module costs ~20 ms). */
+  /** Loads electron-updater and starts the checks: now, then every few hours. Call once the window is up. */
   readonly start: () => void;
-  /**
-   * "Check for Updates…": checks now and always answers, in a dialog. Settles once the answer is out and, when it
-   * starts a download, once that ends; a click meanwhile joins it rather than asking again.
-   */
-  readonly checkNow: () => Promise<void>;
+  readonly state: () => UpdatesState;
+  /** A check someone asked for: "Checking…", then its answer, failure included. */
+  readonly check: () => void;
+  /** "Update and restart": restarts now when the update is in, or as soon as it is; the deb opens its download. */
+  readonly install: () => void;
+  /** Takes back "Update and restart" while the download runs. */
+  readonly keep: () => void;
+  readonly onChange: (listener: (state: UpdatesState) => void) => void;
 }
 
-interface Check {
-  /** The periodic check: quiet, its downloads install on quit. */
-  readonly background: () => void;
-  /** The menu's check: always answers. */
-  readonly manual: () => Promise<void>;
-}
+/** The state, its listeners, and the machine's steps; `act` runs what a step asks of main. */
+const holder = (initial: AppUpdate, deb: boolean, act: (effect: UpdateEffect) => void) => {
+  let current: AppUpdate = initial;
+  const listeners = new Set<(state: UpdatesState) => void>();
+  const state = (): UpdatesState => ({ current: app.getVersion(), app: current });
+  return {
+    state,
+    get: () => current,
+    onChange: (listener: (state: UpdatesState) => void) => void listeners.add(listener),
+    send: (input: UpdateInput) => {
+      const [next, effect] = step({ app: current, deb }, input);
+      if (next !== current) {
+        current = next;
+        const s = state();
+        for (const listener of listeners) listener(s);
+      }
+      act(effect);
+    },
+  };
+};
 
-const show = (outcome: UpdateOutcome, act: () => void): void => {
-  const { buttons, ...text } = updateMessage(outcome, app.getVersion());
-  void dialog.showMessageBox({ ...text, buttons: [...buttons], defaultId: 0, cancelId: buttons.length - 1 }).then(({ response }) => {
-    if (response === 0) act();
+/** Under FLEETD_FIXTURE: the fixture's `update` section, so the QA gate shoots every state without a release feed. */
+const FixtureSection = z.object({
+  update: z
+    .object({
+      current: z.string().optional(),
+      app: z.custom<AppUpdate>((v) => typeof v === "object" && v !== null && typeof (v as { kind?: unknown }).kind === "string"),
+    })
+    .optional(),
+});
+
+const fixtureUpdates = (file: string): Updates => {
+  const section = FixtureSection.parse(JSON.parse(readFileSync(file, "utf8"))).update;
+  const h = holder(section?.app ?? { kind: "current" }, false, (effect) => {
+    if (effect !== null) console.info(`fixture update: ${effect}`);
   });
+  const version = section?.current;
+  return {
+    start: () => undefined,
+    state: () => (version === undefined ? h.state() : { ...h.state(), current: version }),
+    // A fixture's answer is the state it starts in.
+    check: () => undefined,
+    install: () => h.send({ type: "install" }),
+    keep: () => h.send({ type: "keep" }),
+    onChange: (listener) => h.onChange((s) => listener(version === undefined ? s : { ...s, current: version })),
+  };
+};
+
+const unsupported = (): Updates => {
+  const h = holder({ kind: "unsupported" }, false, () => undefined);
+  return { start: () => undefined, state: h.state, check: () => undefined, install: () => undefined, keep: () => undefined, onChange: h.onChange };
 };
 
 /**
- * Checks the release feed at launch and every few hours. The packaged macOS app and the AppImage download the update
- * and install it when the app quits (Squirrel.Mac requires it signed by the same team). Any other Linux install is
- * the deb (the installer only installs the AppImage), which can't update itself because dpkg needs root: it only
- * checks, and tells the user once per version where to get the new .deb and how to install it. Release builds on
- * macOS and Linux only: dev and test builds have nothing to update to, so they get null and no menu item.
+ * Checks the release feed at launch and every few hours. The packaged macOS app and the AppImage download an update
+ * in the background; the page offers "Update and restart", and the next quit installs it anyway (Squirrel.Mac
+ * requires it signed by the same team). Any other Linux install is the deb (the installer only installs the
+ * AppImage), which can't update itself because dpkg needs root: it only checks, and the page offers the download and
+ * the command. Dev and test builds have nothing to update to; a fixture (`fixtureFile`) stands in for the feed.
  */
-export const updates = (): Updates | null => {
-  if (!RELEASE_BUILD || !app.isPackaged || (process.platform !== "darwin" && process.platform !== "linux")) return null;
+export const updates = (fixtureFile: string | null): Updates => {
+  if (fixtureFile !== null) return fixtureUpdates(fixtureFile);
+  if (!RELEASE_BUILD || !app.isPackaged || (process.platform !== "darwin" && process.platform !== "linux")) return unsupported();
   const url = feedUrl(app.getVersion(), process.env["FLEETD_BASE_URL"]);
   const deb = process.platform === "linux" && process.env["APPIMAGE"] === undefined;
-  let loading: Promise<Check | null> | null = null;
+  let updater: MacUpdater | AppImageUpdater | DebUpdater | null = null;
+  const h = holder({ kind: "idle" }, deb, (effect) => {
+    if (effect === "quit-and-install") updater?.quitAndInstall();
+    if (effect === "open-download") void shell.openExternal(`${url}/${DEB}`);
+  });
 
-  const load = async (): Promise<Check> => {
+  let loading: Promise<boolean> | null = null;
+  const load = async (): Promise<boolean> => {
     const { AppImageUpdater, DebUpdater, MacUpdater } = await import("electron-updater");
     const options = { provider: "generic" as const, url };
-    const updater: MacUpdater | AppImageUpdater | DebUpdater =
-      process.platform === "darwin" ? new MacUpdater(options) : deb ? new DebUpdater(options) : new AppImageUpdater(options);
+    const u = process.platform === "darwin" ? new MacUpdater(options) : deb ? new DebUpdater(options) : new AppImageUpdater(options);
     // The staple-later flow replaces a published zip, so blockmaps aren't published; always download the whole file.
-    updater.disableDifferentialDownload = true;
-    updater.autoDownload = !deb;
-    updater.autoInstallOnAppQuit = !deb;
-    const tell = (outcome: UpdateOutcome): void => {
-      show(outcome, () => {
-        if (outcome.kind === "ready") updater.quitAndInstall();
-        if (outcome.kind === "deb") void shell.openExternal(`${url}/${DEB}`);
-      });
-    };
-
-    let ready: string | null = null;
-    // A manual check whose download is still running: its end (ready or failed) gets a dialog too, then settles it.
-    let downloadEnded: (() => void) | null = null;
-    let toldDeb: string | null = null;
-    updater.on("update-downloaded", ({ version }) => {
-      ready = version;
-      if (downloadEnded === null) return;
-      tell({ kind: "ready", version });
-      downloadEnded();
-      downloadEnded = null;
+    u.disableDifferentialDownload = true;
+    u.autoDownload = !deb;
+    u.autoInstallOnAppQuit = !deb;
+    let notesFor: string | null = null;
+    u.on("update-available", ({ version }) => {
+      // The deb's update check (desktop-update-check.sh) waits for this line.
+      if (deb) console.info(`update notice: fleetd ${version} is available as ${DEB}`);
+      h.send({ type: "available", version });
+      if (notesFor === version) return;
+      notesFor = version;
+      void fetchNotes(url, app.getVersion()).then((notes) => h.send({ type: "notes", notes }));
     });
-    updater.on("error", (error) => {
-      if (downloadEnded === null) return;
-      tell({ kind: "failed", error });
-      downloadEnded();
-      downloadEnded = null;
+    u.on("update-not-available", () => h.send({ type: "none" }));
+    // electron-updater reports every chunk; the page's percent changes at most once a second.
+    let progressAt = 0;
+    u.on("download-progress", ({ percent }) => {
+      const now = Date.now();
+      if (now - progressAt < 1000) return;
+      progressAt = now;
+      h.send({ type: "progress", percent });
     });
-    if (deb) {
-      updater.on("update-available", ({ version }) => {
-        if (toldDeb === version) return;
-        toldDeb = version;
-        console.info(`update notice: fleetd ${version} is available as ${DEB}`);
-        tell({ kind: "deb", version });
-      });
-    }
-
-    return {
-      background: () => {
-        updater.checkForUpdates().catch((error: unknown) => {
-          console.warn("update check failed:", error instanceof Error ? error.message : error);
-        });
-      },
-      manual: () =>
-        new Promise<void>((done) => {
-          if (ready !== null) {
-            tell({ kind: "ready", version: ready });
-            done();
-            return;
-          }
-          // The update-available handler shows a deb notice for a version it hasn't told yet; this answers the rest.
-          const toldBefore = toldDeb;
-          updater.checkForUpdates().then(
-            (result) => {
-              const version = result?.updateInfo.version;
-              if (result === null || !result.isUpdateAvailable || version === undefined) {
-                tell({ kind: "current", version: app.getVersion() });
-              } else if (deb) {
-                if (toldBefore === version) tell({ kind: "deb", version });
-              } else if (ready === null) {
-                tell({ kind: "downloading", version });
-                downloadEnded = done;
-                return;
-              } else {
-                // The download finished before this check answered (update-downloaded came first): say so now.
-                tell({ kind: "ready", version: ready });
-              }
-              done();
-            },
-            (error: unknown) => {
-              tell({ kind: "failed", error });
-              done();
-            },
-          );
-        }),
-    };
+    u.on("update-downloaded", ({ version }) => h.send({ type: "downloaded", version }));
+    u.on("error", (error) => h.send({ type: "error", reason: failureReason(error) }));
+    updater = u;
+    return true;
   };
-
-  let loadError: unknown = null;
-  const loaded = (): Promise<Check | null> =>
+  const loaded = (): Promise<boolean> =>
     (loading ??= load().catch((error: unknown) => {
-      // Never an unhandled rejection: the app runs on without updates, and the menu says why.
-      loadError = error;
+      // Never an unhandled rejection: the app runs on without updates, and an asked-for check says why.
       console.error("couldn't load the updater:", error instanceof Error ? error.message : error);
-      return null;
+      return false;
     }));
 
-  let inFlight: Promise<void> | null = null;
+  const run = (manual: boolean): void => {
+    h.send({ type: "check", manual });
+    void loaded().then((ok) => {
+      if (!ok) {
+        if (manual) h.send({ type: "error", reason: "The updater didn't load. Reinstall fleetd to get updates again." });
+        return;
+      }
+      // A ready update needs no check; the restart installs it.
+      if (h.get().kind === "ready") return;
+      updater?.checkForUpdates().catch((error: unknown) => {
+        console.warn("update check failed:", error instanceof Error ? error.message : error);
+        h.send({ type: "error", reason: failureReason(error) });
+      });
+    });
+  };
+
   return {
     start: () => {
-      void loaded().then((check) => {
-        if (check === null) return;
-        check.background();
-        setInterval(check.background, CHECK_EVERY_MS).unref();
-      });
+      run(false);
+      setInterval(() => run(false), CHECK_EVERY_MS).unref();
     },
-    checkNow: () =>
-      (inFlight ??= loaded()
-        .then((check) => {
-          if (check === null) show({ kind: "failed", error: loadError }, () => undefined);
-          else return check.manual();
-        })
-        .finally(() => {
-          inFlight = null;
-        })),
+    state: h.state,
+    check: () => run(true),
+    install: () => h.send({ type: "install" }),
+    keep: () => h.send({ type: "keep" }),
+    onChange: h.onChange,
   };
 };

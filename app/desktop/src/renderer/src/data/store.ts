@@ -27,6 +27,7 @@ import type { HubError, HubFrame, HubState } from "../../../shared/hub";
 import { applyDelta, emptyChat, mergeLive, settleSends, type Chat, type ChatSend } from "./chat";
 import { CHAT_EVENTS, type ChatDelta, type ProjectChatState } from "./chat-contract";
 import { ordersNamed } from "./effects";
+import { eventHub, snapshotHub, type HubVersion } from "./hub-version-contract";
 import { settled } from "./phase";
 
 /** "machineId/projectId". */
@@ -93,6 +94,8 @@ export interface DataState {
   readonly chatSends: Readonly<Record<ProjectKey, readonly ChatSend[]>>;
   /** Per project: whether its lead waits on the person, and whether it works. */
   readonly chatStates: Readonly<Record<ProjectKey, ProjectChatState>>;
+  /** The hub's version and update, from the snapshot and each `hub.update`; absent from hubs before it. */
+  readonly hubVersion?: HubVersion | undefined;
 }
 
 const RECENT_EVENTS = 200;
@@ -194,6 +197,7 @@ export const applyFrame = (s: DataState, frame: HubFrame, nowMs: number): [DataS
           trains: {},
           chats: {},
           chatStates: byId(snap.chats ?? [], (c) => projectKey(c.projectRef)),
+          hubVersion: snapshotHub(snap),
         },
         { refetchAll: true },
       ];
@@ -296,6 +300,11 @@ export const applyEvent = (s: DataState, event: HubEvent): DataState => {
     case "workstream.done":
       next = patchOrder(next, workstreamId, { state: "done" });
       break;
+    case "hub.update": {
+      const hub = eventHub(event);
+      if (hub !== undefined) next = applyHubVersion(next, hub);
+      break;
+    }
     case "machine.online":
     case "machine.offline":
     case "machine.degraded": {
@@ -366,6 +375,9 @@ export const applyLive = (live: LiveState, frame: LiveFrame, nowMs: number): Liv
 type Ingest = {
   [T in ToolName]: { readonly tool: T; readonly input: ToolInput<T>; readonly output: ToolOutput<T> };
 }[ToolName];
+
+/** The hub's version as an event or hub_update's answer reports it. */
+export const applyHubVersion = (s: DataState, hubVersion: HubVersion): DataState => ({ ...s, hubVersion });
 
 /**
  * cap_set's answer: the hub's slot state with the new cap or max agents, applied at once. It replaces the live

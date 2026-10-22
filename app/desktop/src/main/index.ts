@@ -113,8 +113,10 @@ void app.whenReady().then(() => {
   let mode: HubMode;
   let pairing: PairingService;
   let hub: HubService;
+  let fixtureFile: string | null;
   try {
     const chosen = hubMode();
+    fixtureFile = chosen.fixtureFile;
     mode = chosen.mode;
     const service = new HubService(mode);
     hub = service;
@@ -130,9 +132,9 @@ void app.whenReady().then(() => {
     app.exit(2);
     return;
   }
-  registerIpc(hub, { opener, notifier: new Notifier(opener) }, pairing);
-  const updater = updates();
-  installMenu(opener, updater?.checkNow ?? null);
+  const updater = updates(fixtureFile);
+  registerIpc(hub, { opener, notifier: new Notifier(opener), updates: updater }, pairing);
+  installMenu(opener);
   claimOnFirstRun();
   app.on("browser-window-focus", () => hub.windowFocused());
   powerMonitor.on("resume", () => hub.systemResumed());
@@ -144,7 +146,7 @@ void app.whenReady().then(() => {
     },
   });
   createWindow(mode);
-  updater?.start();
+  updater.start();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow(mode);
   });

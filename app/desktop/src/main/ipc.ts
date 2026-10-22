@@ -1,4 +1,4 @@
-import { clipboard, ipcMain, Menu, shell, type IpcMainInvokeEvent } from "electron";
+import { BrowserWindow, clipboard, ipcMain, Menu, shell, type IpcMainInvokeEvent } from "electron";
 import { IPC, type InvokeChannel } from "../shared/channels";
 import { parseRequest, type RequestArgs } from "../shared/ipc";
 import type { OpenOutcome } from "../shared/hub";
@@ -12,6 +12,7 @@ import type { Notifier } from "./notify";
 import type { Opener } from "./opener";
 import { hostName, pickFolder, readDrop } from "./projects";
 import { isOwnPage } from "./security";
+import type { Updates } from "./updater";
 
 /** Only our own top-level page may call main: not a subframe, not a local file, not a page navigated elsewhere. */
 const trustedSender = (event: IpcMainInvokeEvent): boolean => {
@@ -31,7 +32,11 @@ const handle = <C extends InvokeChannel>(
   });
 };
 
-export const registerIpc = (hub: HubService, frame: { opener: Opener; notifier: Notifier }, pairing: PairingService): void => {
+export const registerIpc = (
+  hub: HubService,
+  frame: { opener: Opener; notifier: Notifier; updates: Updates },
+  pairing: PairingService,
+): void => {
   handle(IPC.hubState, () => hub.state());
   handle(IPC.hubSubscribe, (event) => hub.subscribe(event.sender));
   handle(IPC.hubUnsubscribe, (event) => hub.unsubscribe(event.sender));
@@ -65,4 +70,11 @@ export const registerIpc = (hub: HubService, frame: { opener: Opener; notifier: 
   handle(IPC.appNotify, (_event, request) => frame.notifier.show(request));
   handle(IPC.appLinkHandler, (_event, claim) => (claim === null ? linkHandlerStatus() : claimLinkHandler(claim)));
   handle(IPC.appMenuState, (_event, enabled) => applyMenuState(Menu.getApplicationMenu(), enabled));
+  handle(IPC.updatesState, () => frame.updates.state());
+  handle(IPC.updatesCheck, () => frame.updates.check());
+  handle(IPC.updatesInstall, () => frame.updates.install());
+  handle(IPC.updatesKeep, () => frame.updates.keep());
+  frame.updates.onChange((state) => {
+    for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send(IPC.updatesChanged, state);
+  });
 };

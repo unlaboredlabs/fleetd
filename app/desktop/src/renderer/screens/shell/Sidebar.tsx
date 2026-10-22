@@ -1,11 +1,12 @@
 // The sidebar: the projects first (alphabetical, so none moves), each opening its lead chat, with an amber dot when
 // the lead is waiting for your reply and the number of agents working; then Status, Time, Machines and Settings;
-// then the connection. Holding ⌘ (Ctrl)
+// then any update to make, and the connection. Holding ⌘ (Ctrl)
 // shows jump numbers on the first nine projects, which ⌘1..9 open.
 import { Activity, Clock, Plus, Server, Settings } from "lucide-react";
 import type { ReactNode } from "react";
 import { display, type ShortcutId } from "../../../shared/shortcuts";
 import { Button, Dot, Kbd, Sidebar as Frame, SidebarItem, SidebarSection, Text, Truncate } from "../../ui";
+import { UpdatesLine } from "../updates";
 import { connLine, type SidebarProject } from "./model";
 import { sameProject, type Screen } from "./routes";
 import s from "./shell.module.css";
@@ -100,12 +101,15 @@ export function Sidebar({ projects, machinesDown, screen, hub, jumpHints, go }: 
         {nav("Settings", <Settings />, { id: "settings", tab: "general" }, screen.id === "settings", kbd("settings.open"))}
       </SidebarSection>
 
-      <button type="button" className={s.conn} onClick={() => go({ id: "settings", tab: "general" })}>
-        <Dot color={TONE[conn.tone]} />
-        <Truncate size="xs" tone="quiet" expand="none">
-          {conn.label}
-        </Truncate>
-      </button>
+      <div className={s.footer}>
+        <UpdatesLine />
+        <button type="button" className={s.conn} onClick={() => go({ id: "settings", tab: "general" })}>
+          <Dot color={TONE[conn.tone]} />
+          <Truncate size="xs" tone="quiet" expand="none">
+            {conn.label}
+          </Truncate>
+        </button>
+      </div>
     </Frame>
   );
 }
