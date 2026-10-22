@@ -138,10 +138,10 @@ fleetd project list [--machine <id>] [--home <dir>] [--hub <url>]
 ### fleetd project stop {#project-stop}
 
 ```text
-fleetd project stop <machine>/<project> [--yes] [--home <dir>] [--hub <url>]
+fleetd project stop <machine>/<project> --key-file <human key> [--yes] [--home <dir>] [--hub <url>]
 ```
 
-stop its lead's turn and its agents, as you (this machine's owner); the lead and its chat stay, and the chat says what stopped
+stop its lead's turn and its agents, as you; the lead and its chat stay, and the chat says what stopped
 
 ### fleetd project remove {#project-remove}
 
@@ -183,15 +183,15 @@ run the hub (default home `~/.fleetd/hub`, listen 127.0.0.1:4790, writes to an o
 ### fleetd hub key create {#hub-key-create}
 
 ```text
-fleetd hub key create --name <name> --role <read|operate|admin> --machines <'*'|id,id> [--home <dir>]
+fleetd hub key create --name <name> --role <read|operate|admin> --machines <'*'|id,id> [--out <file>] [--home <dir>]
 ```
 
-create an agent key for the MCP endpoint; prints the key once
+create an agent key for the MCP endpoint; prints the key once, or with `--out` writes it to a new file (0600) and prints the file's path
 
 ### fleetd hub key create {#hub-key-create-human}
 
 ```text
-fleetd hub key create --human --name <device> [--role <role>] [--machines <'*'|id,id>] [--home <dir>]
+fleetd hub key create --human --name <device> [--role <role>] [--machines <'*'|id,id>] [--out <file>] [--home <dir>]
 ```
 
 a key for a person's device (the desktop app): what it answers is recorded as the human's; role defaults to operate on every machine
@@ -339,15 +339,15 @@ progress (verified plus work in flight), why it fell, the critical path it waits
 ### fleetd steer {#steer}
 
 ```text
-fleetd steer <W|T> "<text>" [--now] [--wait] [--key-file <human key>] [--hub <url> | --home <dir>]
+fleetd steer <W|T> "<text>" [--now] [--wait] --key-file <human key> [--hub <url> | --home <dir>]
 ```
 
-steer an order's lead (W41) or one agent (T88) mid-run. Plain: it lands at the agent's next step, after the tool it is running returns. `--now` stops that step and delivers at once. `--wait` follows the receipt: exit 0 acknowledged, 1 not acknowledged, withdrawn or failed. Without `--hub` it uses the hub on this machine; without `--key-file`, as its owner
+steer an order's lead (W41) or one agent (T88) mid-run. Plain: it lands at the agent's next step, after the tool it is running returns. `--now` stops that step and delivers at once. `--wait` follows the receipt: exit 0 acknowledged, 1 not acknowledged, withdrawn or failed. Without `--hub` it uses the hub on this machine
 
 ### fleetd steer withdraw {#steer-withdraw}
 
 ```text
-fleetd steer withdraw S<n> [--key-file <human key>] [--hub <url> | --home <dir>]
+fleetd steer withdraw S<n> --key-file <human key> [--hub <url> | --home <dir>]
 ```
 
 take back a steer the agent has not taken in yet
@@ -355,7 +355,7 @@ take back a steer the agent has not taken in yet
 ### fleetd steers {#steers}
 
 ```text
-fleetd steers [W|T] [--key-file <human key>] [--hub <url> | --home <dir>]
+fleetd steers [W|T] --key-file <human key> [--hub <url> | --home <dir>]
 ```
 
 recent steers and their receipts

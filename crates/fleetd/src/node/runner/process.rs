@@ -150,39 +150,6 @@ fn marker_of(pid: i32) -> Option<String> {
         .map(|v| String::from_utf8_lossy(v).into_owned())
 }
 
-/// Whether this process runs inside a fleetd session: its own environment or, on Linux, an ancestor's carries a
-/// session's marker or thread id. Reading the ancestors means unsetting the variables in a session's shell doesn't hide
-/// it; a session's claude is always an ancestor of its tools' commands.
-pub fn inside_session() -> bool {
-    std::env::var_os(SESSION_MARKER).is_some()
-        || std::env::var_os("FLEETD_THREAD_ID").is_some()
-        || session_ancestor(getpid().as_raw())
-}
-
-/// `pid` or one of its ancestors carries a session's marker or thread id in its environment (Linux; false elsewhere).
-fn session_ancestor(pid: i32) -> bool {
-    let marked = |env: &[u8]| {
-        env.split(|b| *b == 0).any(|var| {
-            var.starts_with(format!("{SESSION_MARKER}=").as_bytes())
-                || var.starts_with(b"FLEETD_THREAD_ID=")
-        })
-    };
-    let (mut at, mut seen) = (pid, HashSet::new());
-    while cfg!(target_os = "linux") && at > 1 && seen.insert(at) {
-        if std::fs::read(format!("/proc/{at}/environ")).is_ok_and(|env| marked(&env)) {
-            return true;
-        }
-        let Some(parent) = std::fs::read_to_string(format!("/proc/{at}/stat"))
-            .ok()
-            .and_then(|stat| parse_stat(at, &stat))
-        else {
-            break;
-        };
-        at = parent.ppid;
-    }
-    false
-}
-
 /// Where a process calling the node's socket runs, as the kernel's process tree and its environment say; never what
 /// the caller claims.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -465,49 +432,6 @@ mod tests {
             sid: 8,
             ..proc(8, 100, 8)
         }));
-    }
-
-    /// Agents never act as the person: a command in a session's shell is inside the session even after it unsets the
-    /// session's variables, because a marked ancestor still says so.
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn a_session_hides_from_no_command_by_unsetting_its_variables() {
-        use std::io::BufRead;
-        // The marked shell runs a command without the variables, which prints its pid and becomes `sleep`.
-        let mut shell = std::process::Command::new("sh")
-            .args([
-                "-c",
-                "env -u FLEETD_RUNNER_SESSION -u FLEETD_THREAD_ID sh -c 'echo $$; exec sleep 30'; :",
-            ])
-            .env(SESSION_MARKER, "s1.test")
-            .stdout(std::process::Stdio::piped())
-            .spawn()
-            .unwrap();
-        let plain = std::process::Command::new("sleep")
-            .arg("30")
-            .spawn()
-            .unwrap();
-        let mut line = String::new();
-        std::io::BufReader::new(shell.stdout.take().unwrap())
-            .read_line(&mut line)
-            .unwrap();
-        let child: i32 = line.trim().parse().unwrap();
-        assert!(
-            !std::fs::read(format!("/proc/{child}/environ"))
-                .unwrap()
-                .windows(SESSION_MARKER.len())
-                .any(|w| w == SESSION_MARKER.as_bytes())
-        );
-        assert!(session_ancestor(child));
-        // Only meaningful outside a session: inside one (fleetd building itself), every process here is marked.
-        if !session_ancestor(getpid().as_raw()) {
-            assert!(!session_ancestor(plain.id() as i32));
-        }
-        let _ = kill(Pid::from_raw(child), Signal::SIGKILL);
-        for mut p in [shell, plain] {
-            let _ = p.kill();
-            let _ = p.wait();
-        }
     }
 }
 

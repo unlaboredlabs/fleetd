@@ -21,9 +21,9 @@
 // - areas:   bug (c): areas are inferred from the workspace, and two writers in them run at the same time.
 // - cap:     max agents 2 with six agents never runs more than 2 and all finish; 12 → 3 mid-run kills nothing and new
 //            spawns wait; 3 → 12 starts the queue at once, says so in one chat line, and tells the lead.
-// - stop:    an agent key can't stop; the hub machine's owner steers from a terminal without a key file, never from
-//            inside a session; Stop interrupts the lead mid-turn and stops its 2 agents, and says so (dogfood: "nothing
-//            was running"); the owner's `fleetd project stop` then says nothing was running.
+// - stop:    an agent key can't stop; a terminal steers only with a human key file (`hub key create --human --out`),
+//            never without one; Stop interrupts the lead mid-turn and stops its 2 agents, and says so (dogfood:
+//            "nothing was running"); `fleetd project stop --key-file` then says nothing was running.
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -1020,7 +1020,7 @@ async function capPart(lab: Lab, chat: Chat, ref: Ref, need: (t: string) => void
   ok(`${changes.length} cap changes, ${lines.length} chat lines, one each`);
 }
 
-// ---- stop: Stop stops the lead and its agents; only the person stops; the owner from the hub machine's terminal ----
+// ---- stop: Stop stops the lead and its agents; only the person stops, from a terminal with their human key file ----
 async function stopPart(lab: Lab, chat: Chat, ref: Ref, need: (tool: string) => void) {
   const { check, ok } = lab;
   need("chat_stop");
@@ -1045,13 +1045,17 @@ async function stopPart(lab: Lab, chat: Chat, ref: Ref, need: (tool: string) => 
   check((await running(two)) === 2, "both agents still run after an agent key tried to stop");
   ok("an agent key can't stop (chat_stop, project_stop: forbidden)");
 
-  const owner = (env: Record<string, string>, ...args: Array<string>) =>
-    spawnSync(...fleetdCommand([...args, "--hub", lab.hubUrl, "--home", lab.hubHome]), { encoding: "utf8", env: { ...scrubbedEnv(), ...env } });
-  const inside = owner({ FLEETD_THREAD_ID: leadThread }, "steer", two[0]!, "carry on");
-  check(inside.status === 3 && /agents never act as you/u.test(inside.stderr), `the owner's key is refused in a session: ${JSON.stringify(inside)}`);
-  const steer = owner({}, "steer", two[0]!, "carry on");
-  check(steer.status === 0, `fleetd steer as the owner: ${JSON.stringify(steer)}`);
-  ok(`the owner steers ${two[0]} with no key file ("${steer.stdout.trim().split("\n")[0]}"); inside a session it is refused`);
+  const terminal = (...args: Array<string>) =>
+    spawnSync(...fleetdCommand([...args, "--hub", lab.hubUrl, "--home", lab.hubHome]), { encoding: "utf8", env: scrubbedEnv() });
+  check(!fs.existsSync(path.join(lab.hubHome, "owner.key")), "the hub home holds no owner key");
+  const keyFile = path.join(LAB, `stop-human-${randomUUID()}.key`);
+  const made = spawnSync(...fleetdCommand(["hub", "key", "create", "--home", lab.hubHome, "--human", "--name", "lab-terminal", "--out", keyFile]), { encoding: "utf8", env: scrubbedEnv() });
+  check(made.status === 0 && made.stdout.trim() === keyFile && (fs.statSync(keyFile).mode & 0o777) === 0o600, `hub key create --human --out: ${JSON.stringify(made)}`);
+  const keyless = terminal("steer", two[0]!, "carry on");
+  check(keyless.status === 2 && /--key-file is required/u.test(keyless.stderr), `a steer without a key file is refused: ${JSON.stringify(keyless)}`);
+  const steer = terminal("steer", two[0]!, "carry on", "--key-file", keyFile);
+  check(steer.status === 0, `fleetd steer --key-file: ${JSON.stringify(steer)}`);
+  ok(`a terminal steers ${two[0]} with the person's key file ("${steer.stdout.trim().split("\n")[0]}"); without one it is refused`);
 
   /** Stop, then the lead's turn ends as interrupted, the chat stops saying it works, and no agent runs. */
   const stopNow = async (what: string, line: string) => {
@@ -1073,7 +1077,8 @@ async function stopPart(lab: Lab, chat: Chat, ref: Ref, need: (tool: string) => 
   await poll("the lead is working", TURN_MS, async () => ((await chat.state()).leadWorking === true ? true : undefined));
   await stopNow("as the turn starts", "Stopped the lead.");
 
-  const idle = owner({}, "project", "stop", `${ref.machineId}/${ref.projectId}`, "--yes");
-  check(idle.status === 0 && /Nothing was running\./u.test(idle.stdout + idle.stderr), `fleetd project stop as the owner: ${JSON.stringify(idle)}`);
+  const idle = terminal("project", "stop", `${ref.machineId}/${ref.projectId}`, "--yes", "--key-file", keyFile);
+  fs.rmSync(keyFile, { force: true });
+  check(idle.status === 0 && /Nothing was running\./u.test(idle.stdout + idle.stderr), `fleetd project stop --key-file: ${JSON.stringify(idle)}`);
   ok(`Stop from the terminal with nothing running: "${(idle.stdout + idle.stderr).trim()}"`);
 }

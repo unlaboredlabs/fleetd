@@ -1,6 +1,6 @@
 //! `fleetd steer`: a person redirects an order's lead or one of its agents mid-run, over the hub's MCP endpoint
-//! (steer_send, steer_withdraw, steers_list). A steer speaks for the human, so it needs a human key: `--key-file`, or
-//! on the hub machine the owner's own key. `--wait` follows the receipt the hub records from claude's own frames, through events_wait.
+//! (steer_send, steer_withdraw, steers_list). A steer speaks for the human, so it needs a human key the person made
+//! ([`human_key_required`]). `--wait` follows the receipt the hub records from claude's own frames, through events_wait.
 
 use std::time::Duration;
 
@@ -10,21 +10,29 @@ use serde_json::{Value, json};
 use super::args::{self, Kind, Spec};
 use super::mcp_client::{McpClient, McpError};
 
-pub const STEER_USAGE: &str = r#"  steer <W|T> "<text>" [--now] [--wait] [--key-file <human key>] [--hub <url> | --home <dir>]
+pub const STEER_USAGE: &str = r#"  steer <W|T> "<text>" [--now] [--wait] --key-file <human key> [--hub <url> | --home <dir>]
              steer an order's lead (W41) or one agent (T88) mid-run. Plain: it lands at the
              agent's next step, after the tool it is running returns. --now stops that step and
              delivers at once. --wait follows the receipt: exit 0 acknowledged, 1 not
-             acknowledged, withdrawn or failed. Without --hub it uses the hub on this machine;
-             without --key-file, as its owner
-  steer withdraw S<n> [--key-file <human key>] [--hub <url> | --home <dir>]
+             acknowledged, withdrawn or failed. Without --hub it uses the hub on this machine
+  steer withdraw S<n> --key-file <human key> [--hub <url> | --home <dir>]
              take back a steer the agent has not taken in yet
-  steers [W|T] [--key-file <human key>] [--hub <url> | --home <dir>]
+  steers [W|T] --key-file <human key> [--hub <url> | --home <dir>]
              recent steers and their receipts
 "#;
 
 const CALL_TIMEOUT: Duration = Duration::from_secs(30);
 /// The longest events_wait the hub takes.
 const WAIT_SEC: u64 = 50;
+
+/// Why a command that speaks for the person (`what`) refuses to run without `--key-file`, and how to make the key. There
+/// is no implicit key: agents run as the same OS user, so any key the CLI found on its own, an agent could find too.
+pub fn human_key_required(what: &str) -> String {
+    format!(
+        "--key-file is required: {what} speaks for you, so it needs your human key. Make one once: \
+         fleetd hub key create --human --name <device> --out <file>"
+    )
+}
 
 #[derive(Debug, PartialEq)]
 pub enum SteerCommand {
@@ -48,8 +56,7 @@ pub struct SteerArgs {
     pub hub: Option<String>,
     /// The hub on this machine's home, when it isn't the default.
     pub home: Option<String>,
-    /// Absent: the owner's key of the hub on this machine.
-    pub key_file: Option<String>,
+    pub key_file: String,
 }
 
 fn is_numbered(id: &str, prefix: char) -> bool {
@@ -87,7 +94,9 @@ pub fn parse_steer_args(argv: &[String], list: bool) -> Result<SteerArgs, String
             positionals: true,
         },
     )?;
-    let key_file = v.string("key-file").filter(|s| !s.is_empty());
+    let Some(key_file) = v.string("key-file").filter(|s| !s.is_empty()) else {
+        return Err(human_key_required("a steer"));
+    };
     let hub = v.string("hub").filter(|s| !s.is_empty());
     let p = &v.positionals;
     let no_send_flags = |what: &str| {
@@ -372,17 +381,9 @@ async fn follow(
 }
 
 async fn run(args: SteerArgs) -> Result<u8, Failure> {
-    let key = match &args.key_file {
-        Some(file) => std::fs::read_to_string(file)
-            .map(|k| k.trim().to_owned())
-            .map_err(|error| Failure::Refused(format!("cannot read --key-file: {error}")))?,
-        None => {
-            let home =
-                super::hub_key::resolve_home(args.home.as_deref()).map_err(Failure::Unreachable)?;
-            super::setup::doctor::owner_key(&home)
-                .map_err(|f| Failure::Refused(format!("{}; {}", f.message, f.fix)))?
-        }
-    };
+    let key = std::fs::read_to_string(&args.key_file)
+        .map(|k| k.trim().to_owned())
+        .map_err(|error| Failure::Refused(format!("cannot read --key-file: {error}")))?;
     let url = hub_url(args.hub, args.home.as_deref()).map_err(Failure::Unreachable)?;
     let mut client =
         McpClient::connect(&url, &key, "fleetd-steer", Duration::from_secs(15)).await?;
@@ -515,12 +516,7 @@ mod tests {
     #[test]
     fn bad_steers_are_refused_before_the_hub() {
         let err = |a: &[&str], list| parse_steer_args(&argv(a), list).unwrap_err();
-        assert_eq!(
-            parse_steer_args(&argv(&["W41", "x"]), false)
-                .unwrap()
-                .key_file,
-            None
-        );
+        assert!(err(&["W41", "x"], false).contains("--key-file is required"));
         assert!(err(&["W41", "--key-file", "k"], false).starts_with("expected"));
         assert!(err(&["P3", "x", "--key-file", "k"], false).contains("not an order"));
         assert!(err(&["W0", "x", "--key-file", "k"], false).contains("not an order"));

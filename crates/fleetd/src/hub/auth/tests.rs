@@ -250,3 +250,36 @@ fn enrollment_tokens_only_enroll_their_machine_and_survive_a_wrong_machine_attem
         Some("pub")
     );
 }
+
+/// Agents run as the hub's OS user, so the owner key pre-release CLIs kept in the hub home was theirs to read too.
+/// Retiring revokes the key in owner.key, whatever its name, and every other key minted as the owner's (a human key
+/// named "owner", admin on every machine), and deletes the file. Every other key stays.
+#[test]
+fn retiring_revokes_the_owner_keys_and_deletes_their_file() {
+    let (auth, _, _) = setup();
+    let home = tempfile::tempdir().unwrap();
+    let file = home.path().join(RETIRED_OWNER_KEY_FILE);
+    let admin_all = vec![Grant {
+        role: Role::Admin,
+        machines: GrantMachines::All(Star::Value),
+    }];
+    let mint = |name: &str, grants: &[Grant], kind| auth.create_key(name, grants, kind).unwrap();
+    let in_file = mint("renamed", &operate_all(), KeyKind::Human);
+    let earlier = mint("owner", &admin_all, KeyKind::Human);
+    let device = mint("owner", &operate_all(), KeyKind::Human);
+    let agent = mint("owner", &admin_all, KeyKind::Agent);
+    let cli = mint("fleetd-cli", &admin_all, KeyKind::Agent);
+    std::fs::write(&file, format!("{}\n", in_file.key)).unwrap();
+
+    assert_eq!(auth.retire_owner_keys(home.path()).unwrap(), 2);
+    assert!(!file.exists());
+    for revoked in [&in_file, &earlier] {
+        assert!(auth.verify(&revoked.key).is_err(), "{}", revoked.info.name);
+    }
+    for kept in [&device, &agent, &cli] {
+        assert!(auth.verify(&kept.key).is_ok(), "{}", kept.info.name);
+    }
+    // Every start runs it; with nothing left to retire it changes nothing.
+    assert_eq!(auth.retire_owner_keys(home.path()).unwrap(), 0);
+    assert!(auth.verify(&device.key).is_ok());
+}

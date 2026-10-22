@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use super::args::{self, Kind, Spec};
 use super::hub_key::resolve_home;
 use super::mcp_client::McpClient;
-use super::setup::doctor::{connect_owner, connect_to};
+use super::setup::doctor::{connect_to, connect_with};
 use super::setup::machine::{local_host_name, machine_id_from_host};
 use super::setup::state::read_setup;
 
@@ -21,9 +21,9 @@ pub const PROJECT_USAGE: &str =
              repo cloned onto one (the least busy worker by default), with progress;
              then its CI, merge rules and what the lead will need. No argument: pick one
   project list [--machine <id>] [--home <dir>] [--hub <url>]
-  project stop <machine>/<project> [--yes] [--home <dir>] [--hub <url>]
-             stop its lead's turn and its agents, as you (this machine's owner); the
-             lead and its chat stay, and the chat says what stopped
+  project stop <machine>/<project> --key-file <human key> [--yes] [--home <dir>] [--hub <url>]
+             stop its lead's turn and its agents, as you; the lead and its chat stay,
+             and the chat says what stopped
   project remove <machine>/<project> [--yes] [--home <dir>] [--hub <url>]
              stop its agents and forget it; its files, branches and worktrees stay
   project set <machine>/<project> --max-agents <n> [--pause-extras] [--home <dir>] [--hub <url>]
@@ -46,6 +46,7 @@ const SPEC: Spec = Spec {
         ("max-agents", Kind::Str),
         ("pause-extras", Kind::Bool),
         ("fleet-cap", Kind::Str),
+        ("key-file", Kind::Str),
     ],
     positionals: true,
 };
@@ -247,11 +248,17 @@ pub async fn project_command(argv: &[String]) -> u8 {
     };
     let tty = std::io::stdin().is_terminal() && std::io::stdout().is_terminal() && !v.flag("yes");
     let out = Out { tty };
-    // A stop speaks for the person, so it goes as the machine's owner.
-    let connected = if verb == "stop" {
-        connect_owner(&home, v.str("hub"), "fleetd-project").await
-    } else {
-        connect_to(&home, v.str("hub"), "fleetd-project").await
+    // A stop speaks for the person, so it goes with their human key.
+    let connected = match (verb, v.str("key-file").filter(|f| !f.is_empty())) {
+        ("stop", None) => return usage(&super::steer::human_key_required("a stop")),
+        ("stop", Some(file)) => match std::fs::read_to_string(file) {
+            Ok(key) => connect_with(&home, v.str("hub"), "fleetd-project", key.trim()).await,
+            Err(error) => {
+                return out.fail(&Stop(3, format!("cannot read --key-file: {error}"), None));
+            }
+        },
+        (_, Some(_)) => return usage("--key-file is for project stop"),
+        (_, None) => connect_to(&home, v.str("hub"), "fleetd-project").await,
     };
     let mut client = match connected {
         Ok(c) => c,
