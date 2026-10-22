@@ -16,7 +16,8 @@ import { useAgentsWorking, useMachinesDown, useSidebarProjects } from "./data";
 import { navigate, useRoute } from "./navigation";
 import { HOME, type Screen } from "./routes";
 import { ConnectionBanner, GetStarted, needsOnboarding } from "../onboarding";
-import { ScreenHost } from "./screens";
+import { Boundary } from "../../src/Boundary";
+import { ScreenHost, screenPart } from "./screens";
 import { Sidebar } from "./Sidebar";
 import { useSidebar } from "./sidebarState";
 import s from "./shell.module.css";
@@ -187,16 +188,20 @@ export function Shell() {
         sidebarTop={settings ? undefined : toggle}
         sidebar={
           !chrome ? undefined : settings ? (
-            <Suspense fallback={null}>
-              <SettingsSidebar
-                onBack={() => {
-                  back();
-                  go(away.current);
-                }}
-              />
-            </Suspense>
+            <Boundary key="settings" part="the sidebar">
+              <Suspense fallback={null}>
+                <SettingsSidebar
+                  onBack={() => {
+                    back();
+                    go(away.current);
+                  }}
+                />
+              </Suspense>
+            </Boundary>
           ) : showSidebar ? (
-            <Sidebar projects={projects} agentsWorking={agentsWorking} machinesDown={machinesDown} screen={screen} hub={hub} jumpHints={modHeld} go={go} />
+            <Boundary key="sidebar" part="the sidebar">
+              <Sidebar projects={projects} agentsWorking={agentsWorking} machinesDown={machinesDown} screen={screen} hub={hub} jumpHints={modHeld} go={go} />
+            </Boundary>
           ) : undefined
         }
       >
@@ -214,7 +219,10 @@ export function Shell() {
                 <GetStarted onAddProject={() => go({ id: "projects.add" })} />
               </div>
             ) : (
-              <ScreenHost screen={shown} />
+              // Keyed by the screen, so going elsewhere after an error opens that screen, not the card.
+              <Boundary key={screenPart(shown).key} part={screenPart(shown).words}>
+                <ScreenHost screen={shown} />
+              </Boundary>
             )}
           </div>
         </div>

@@ -24,7 +24,7 @@ use std::time::Duration;
 use fleetd_contracts::effort::Effort;
 use fleetd_contracts::model::RuntimeMode;
 use fleetd_contracts::sessions::{
-    PermissionDecision, RunFailure, RunUsage, RunnerInfo, RunnerKind, SendMode, SendNow, ThreadItem,
+    PermissionDecision, RunFailure, RunUsage, RunnerInfo, SendMode, SendNow, ThreadItem,
 };
 use tokio::sync::mpsc;
 
@@ -228,7 +228,6 @@ pub enum RunnerError {
 
 /// One agent runtime. Claude now; Codex later as its own adapter.
 pub trait Runner: Send + Sync + 'static {
-    fn kind(&self) -> RunnerKind;
     /// Version, login and a zero-cost conformance check (an `initialize` control request, no model call).
     /// `env` is the environment a session would get now (the user's own setup, plus `claude.env`): the login it reports
     /// depends on exactly that, and the node re-reads it per spawn.

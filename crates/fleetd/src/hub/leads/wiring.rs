@@ -200,10 +200,6 @@ impl LeadPorts for HubPorts {
             ..Default::default()
         })?)
     }
-
-    fn decision(&self, decision_id: &str) -> Result<Option<Decision>, LeadError> {
-        Ok(self.decisions.get(decision_id)?)
-    }
 }
 
 struct Lookup(Arc<LeadRecords>);

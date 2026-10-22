@@ -265,6 +265,8 @@ pub struct LiveParts {
     pub tokens: Option<fleetd_contracts::live::Tokens>,
     pub spark: fleetd_contracts::live::Spark,
     pub text: Option<activity::StreamText>,
+    /// The active run's complete text messages: the chat lands these whole, whatever deltas it missed.
+    pub done: Vec<activity::DoneText>,
     pub run_active: bool,
 }
 
@@ -1737,6 +1739,7 @@ impl Executors {
             tokens: s.activity.tokens(),
             spark: s.activity.spark(now),
             text: s.activity.text().cloned(),
+            done: s.activity.done().to_vec(),
             run_active: s.activity.run_active(),
         })
     }
@@ -1857,18 +1860,6 @@ impl Executors {
                 format!("no project on {machine_id} has its workspace root at {cwd}"),
             )
         })
-    }
-
-    /// None when the file does not exist. `cwd` must be a project's workspace root.
-    pub async fn read_file(
-        &self,
-        machine_id: &MachineId,
-        cwd: &str,
-        relative_path: &str,
-    ) -> Result<Option<String>, ExecutorError> {
-        let project_id = self.project_for_root(machine_id, cwd)?;
-        self.read_project_file(machine_id, &project_id, relative_path)
-            .await
     }
 
     /// A file of the project by its id, which the node knows as soon as `project_upsert` returns. None when the

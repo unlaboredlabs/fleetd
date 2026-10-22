@@ -1,6 +1,7 @@
 //! The lead chat over a real in-memory hub: messages in order and deduped, paging, streamed text with offsets, the
 //! needs-you rule, inline items, the history read, a human's message reaching a project without a lead, the moved
 //! tools, project_stop and the lead's workstream_open.
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use fleetd_contracts::auth::KeyKind;
@@ -459,8 +460,6 @@ async fn a_lead_opens_its_own_workstream_as_a_draft_with_no_intent_wake() {
     let caller = crate::hub::link::LeadCaller {
         project_ref: r.clone(),
         by: "lead:devbox/app".into(),
-        cwd: "/work/app".into(),
-        thread: None,
         agent: crate::hub::link::lead_calls::CallerAgent::Lead,
     };
     let Ok(LeadCallResult::WorkstreamOpen(opened)) = handler.handle(caller, call).await else {
@@ -488,56 +487,6 @@ async fn a_lead_opens_its_own_workstream_as_a_draft_with_no_intent_wake() {
     // A lead's own order is not a human's words in the chat's history.
     flow::ensure(&hub, &r).await.unwrap();
     assert!(hub.chat.page(&r, None, None, 10).unwrap().0.is_empty());
-}
-
-/// Run by hand against a copy of a real hub's database: `FLEETD_CHAT_DB=/tmp/copy/hub.sqlite cargo test -p fleetd
-/// --lib chat::tests::reads_a_real_hubs_past -- --ignored --nocapture`. The copy is copied again into a temp dir, so
-/// the given file is never written either.
-#[tokio::test]
-#[ignore = "needs FLEETD_CHAT_DB, a copy of a real hub database"]
-async fn reads_a_real_hubs_past() {
-    let path = std::env::var("FLEETD_CHAT_DB").expect("FLEETD_CHAT_DB");
-    let dir = tempfile::tempdir().unwrap();
-    // Copied by content: the copy is writable even when the given file is read-only.
-    for side in ["", "-wal"] {
-        if let Ok(bytes) = std::fs::read(format!("{path}{side}")) {
-            std::fs::write(dir.path().join(format!("hub.sqlite{side}")), bytes).unwrap();
-        }
-    }
-    let (hub, _home) = hub_on(HubDb::open(dir.path()).unwrap());
-    let ids = regex::Regex::new(r"\b[WAT][0-9]+\b").unwrap();
-    for p in hub.store.projects_list(None, None).unwrap() {
-        let r = ProjectRef {
-            machine_id: p.machine_id.clone(),
-            project_id: p.project_id.clone(),
-        };
-        flow::ensure(&hub, &r).await.unwrap();
-        let (page, more, _) = hub.chat.page(&r, None, None, 100).unwrap();
-        let by = |s: ChatHistorySource| page.iter().filter(|m| m.history == Some(s)).count();
-        println!(
-            "{}: {} messages{} (orders {}, outcomes {}, steers {}, questions {}, lead {})",
-            p.title,
-            page.len(),
-            if more { "+" } else { "" },
-            by(ChatHistorySource::Order),
-            by(ChatHistorySource::OrderOutcome),
-            by(ChatHistorySource::Steer),
-            by(ChatHistorySource::Question),
-            by(ChatHistorySource::LeadMessage),
-        );
-        assert!(
-            page.windows(2)
-                .all(|w| w[0].created_at.as_str() <= w[1].created_at.as_str())
-        );
-        assert!(page.iter().all(|m| m.history.is_some()));
-        for m in &page {
-            assert!(
-                !ids.is_match(&m.text) || m.history == Some(ChatHistorySource::Order),
-                "an id in: {}",
-                m.text
-            );
-        }
-    }
 }
 
 #[tokio::test]
@@ -991,4 +940,194 @@ fn a_state_read_skips_imported_history() {
         ["Shipped the fix."]
     );
     assert!(!hub.chat.state(&r, false).unwrap().needs_you);
+}
+
+/// What a lead's session looks like to the streamer: its current text and the replies it stored complete.
+fn lead_parts(
+    text: Option<(&str, &str)>,
+    done: &[(&str, &str)],
+) -> crate::hub::executor::LiveParts {
+    use crate::hub::executor::activity::{DoneText, StreamText};
+    crate::hub::executor::LiveParts {
+        activity: None,
+        tokens: None,
+        spark: serde_json::from_value(json!({ "endAt": AT, "samples": [] })).unwrap(),
+        text: text.map(|(id, tail)| StreamText {
+            message_id: id.into(),
+            tail: tail.into(),
+            total: tail.chars().count() as u64,
+        }),
+        done: done
+            .iter()
+            .map(|(id, text)| DoneText {
+                message_id: (*id).into(),
+                text: (*text).into(),
+            })
+            .collect(),
+        run_active: true,
+    }
+}
+
+/// The dogfood bug: the node drops a delta still pending when its complete message lands, so a reply's last words
+/// never stream. The chat lands the complete reply, final, as soon as the session has it (not when the turn ends,
+/// minutes later), and a reply none of whose words streamed lands too, in its place.
+#[tokio::test]
+async fn a_reply_lands_whole_and_final_even_when_its_last_delta_never_came() {
+    let (hub, _home) = hub();
+    give_lead(&hub);
+    let r = project();
+    hub.chat
+        .read_history(&r, || async { Vec::new() })
+        .await
+        .unwrap();
+    let full = "Reading the proposal and the current app code so I can slice all 25 items plus A–C into parallel PRs.";
+    let mut sent = HashMap::new();
+    let mut deltas = hub.chat.subscribe();
+    let tick = |sent: &mut HashMap<String, u64>, parts: crate::hub::executor::LiveParts| {
+        flow::stream_pass_with(&hub, sent, |_| Some(parts.clone()));
+    };
+    let latest = || hub.chat.page(&r, None, None, 10).unwrap().0;
+
+    tick(
+        &mut sent,
+        lead_parts(Some(("m1", "Reading the proposal and the")), &[]),
+    );
+    assert_eq!(
+        deltas.try_recv().unwrap().append.as_str(),
+        "Reading the proposal and the"
+    );
+    assert_eq!(latest()[0].state, ChatMessageState::Streaming);
+
+    // The rest of the words were in the dropped delta; the complete message came instead.
+    let parts = lead_parts(
+        Some(("m1", "Reading the proposal and the")),
+        &[("m1", full)],
+    );
+    tick(&mut sent, parts.clone());
+    let m = &latest()[0];
+    assert_eq!((m.text.as_str(), m.state), (full, ChatMessageState::Final));
+    let last = events_of(&hub, HubEventType::ChatMessage).pop().unwrap();
+    assert_eq!(
+        (last["state"].as_str(), last["message"]["text"].as_str()),
+        (Some("final"), Some(full))
+    );
+    // Landed once: the next ticks announce nothing more.
+    let announced = events_of(&hub, HubEventType::ChatMessage).len();
+    tick(&mut sent, parts);
+    assert_eq!(events_of(&hub, HubEventType::ChatMessage).len(), announced);
+
+    // A short reply sent in one dropped delta, then the next reply already streaming: both, in order.
+    tick(
+        &mut sent,
+        lead_parts(
+            Some(("m3", "Now the A/C")),
+            &[("m1", full), ("m2", "Opening the workstream.")],
+        ),
+    );
+    let texts: Vec<_> = latest()
+        .iter()
+        .map(|m| (m.text.as_str().to_owned(), m.state))
+        .collect();
+    assert_eq!(
+        texts,
+        [
+            (full.to_owned(), ChatMessageState::Final),
+            (
+                "Opening the workstream.".to_owned(),
+                ChatMessageState::Final
+            ),
+            ("Now the A/C".to_owned(), ChatMessageState::Streaming),
+        ]
+    );
+}
+
+/// A reply cut off mid-text (the run stopped, interrupted or crashed before the session stored it complete) is
+/// finished with what streamed once the run is over, so it never says it is still writing. Not while the run goes on.
+#[tokio::test]
+async fn a_reply_cut_off_mid_text_lands_final_once_its_run_is_over() {
+    let (hub, _home) = hub();
+    give_lead(&hub);
+    let r = project();
+    hub.chat
+        .read_history(&r, || async { Vec::new() })
+        .await
+        .unwrap();
+    let thread_ref = fleetd_contracts::ids::ThreadRef {
+        machine_id: r.machine_id.clone(),
+        thread_id: fleetd_contracts::ids::ThreadId::unchecked("lead-thread"),
+    };
+    let thread = |status: &str| {
+        crate::hub::store::StoredThread {
+        thread: serde_json::from_value(json!({
+            "machineId": "devbox", "threadId": "lead-thread", "projectId": "app", "title": "lead", "status": status,
+            "headline": "", "latestMessageTail": "", "lastProgressAt": AT, "stale": false, "asOf": AT,
+        }))
+        .unwrap(),
+        last_sequence: None,
+        last_run_id: None,
+        last_run_status: None,
+    }
+    };
+    let mut sent = HashMap::new();
+    let parts = lead_parts(Some(("m1", "Reading the proposal and ")), &[]);
+    flow::stream_pass_with(&hub, &mut sent, |_| Some(parts.clone()));
+    let latest = || hub.chat.page(&r, None, None, 10).unwrap().0;
+    assert_eq!(latest()[0].state, ChatMessageState::Streaming);
+
+    // Paused on a request, the run resumes: the reply may still go on.
+    for status in ["running", "waiting"] {
+        hub.store.thread_upsert(&thread(status)).unwrap();
+        flow::mirror(&hub, &r, &thread_ref).await;
+        assert_eq!(latest()[0].state, ChatMessageState::Streaming, "{status}");
+    }
+
+    // Stopped mid-text: no complete message ever comes.
+    hub.store.thread_upsert(&thread("interrupted")).unwrap();
+    flow::mirror(&hub, &r, &thread_ref).await;
+    let m = &latest()[0];
+    assert_eq!(
+        (m.text.as_str(), m.state),
+        ("Reading the proposal and", ChatMessageState::Final)
+    );
+    let last = events_of(&hub, HubEventType::ChatMessage).pop().unwrap();
+    assert_eq!(
+        (last["state"].as_str(), last["message"]["text"].as_str()),
+        (Some("final"), Some("Reading the proposal and"))
+    );
+    let announced = events_of(&hub, HubEventType::ChatMessage).len();
+    flow::mirror(&hub, &r, &thread_ref).await;
+    assert_eq!(events_of(&hub, HubEventType::ChatMessage).len(), announced);
+}
+
+/// The chat says what a working lead is doing from its lane, so the board scope carries a working lead's lane before
+/// its turn opens any order, and not an idle one's.
+#[test]
+fn a_working_lead_has_a_live_lane_before_it_opens_an_order() {
+    let (hub, _home) = hub();
+    give_lead(&hub);
+    let lead_lane = || {
+        crate::hub::app_ws::live::board_lanes(&hub, &person())
+            .iter()
+            .map(|l| l.lane.lane_id.as_str().to_owned())
+            .collect::<Vec<_>>()
+    };
+    let thread = |status: &str| {
+        crate::hub::store::StoredThread {
+        thread: serde_json::from_value(json!({
+            "machineId": "devbox", "threadId": "lead-thread", "projectId": "app", "title": "lead", "status": status,
+            "headline": "", "latestMessageTail": "", "lastProgressAt": AT, "stale": false, "asOf": AT,
+        }))
+        .unwrap(),
+        last_sequence: None,
+        last_run_id: None,
+        last_run_status: None,
+    }
+    };
+    hub.store.thread_upsert(&thread("completed")).unwrap();
+    assert!(
+        lead_lane().is_empty(),
+        "an idle lead with no order has no lane"
+    );
+    hub.store.thread_upsert(&thread("running")).unwrap();
+    assert_eq!(lead_lane(), ["lead:devbox/app"]);
 }

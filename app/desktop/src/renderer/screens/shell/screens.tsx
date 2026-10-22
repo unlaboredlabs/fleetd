@@ -27,6 +27,31 @@ function Pending({ id, title }: { id: string; title: string }) {
   );
 }
 
+/** A screen in words, for its error card and the log, and its identity: a new key opens it afresh. */
+export const screenPart = (screen: Screen): { key: string; words: string } => {
+  switch (screen.id) {
+    case "project":
+      return { key: `project:${screen.project.machineId}/${screen.project.projectId}`, words: "the chat" };
+    case "status":
+      return { key: "status", words: "Status" };
+    case "agents":
+      return { key: "agents", words: "Agents" };
+    case "time":
+      return { key: "time", words: "Time" };
+    case "settings":
+      return { key: "settings", words: "Settings" };
+    case "machines":
+      return { key: "machines", words: "Machines" };
+    case "projects.add":
+      return { key: "projects.add", words: "Add project" };
+    case "onboarding":
+      return { key: "onboarding", words: "the connect screen" };
+    case "home":
+    case "gallery":
+      return { key: screen.id, words: screen.id === "home" ? "the home screen" : "the gallery" };
+  }
+};
+
 export function ScreenHost({ screen }: { screen: Screen }) {
   return <Loading>{screenFor(screen)}</Loading>;
 }

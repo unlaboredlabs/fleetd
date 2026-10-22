@@ -53,11 +53,12 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
             held: view.held,
             offline: view.offline,
             strip,
+            activity: data.leadWorking === true,
             // "Today" is read against the clock when the chat changes; nothing ticks while it's idle.
             // eslint-disable-next-line react-hooks/purity
             nowMs: Date.now(),
           }),
-    [view, strip],
+    [view, strip, data.leadWorking],
   );
   const items = view?.items;
   const waiting = useMemo(

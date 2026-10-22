@@ -7,7 +7,7 @@ export type Range = (typeof RANGES)[number];
 
 export const RANGE_LABEL: Record<Range, string> = {
   hour: "Last hour",
-  today: "Today (UTC)",
+  today: "Today",
   week: "Last 7 days",
   month: "Last 30 days",
   custom: "Custom",
@@ -35,8 +35,11 @@ export const period = (f: Pick<Filters, "range" | "custom">, nowMs: number): [nu
   switch (f.range) {
     case "hour":
       return [nowMs - 3_600_000, undefined];
-    case "today":
-      return [nowMs - (((nowMs % DAY) + DAY) % DAY), undefined];
+    case "today": {
+      // Since midnight where the viewer is.
+      const d = new Date(nowMs);
+      return [new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(), undefined];
+    }
     case "week":
       return [nowMs - 7 * DAY, undefined];
     case "month":
@@ -46,23 +49,26 @@ export const period = (f: Pick<Filters, "range" | "custom">, nowMs: number): [nu
   }
 };
 
-/** "2026-10-12" or "2026-10-12 09:30" (UTC) → hub ms. Anything else is undefined. */
+/** "2026-10-12" or "2026-10-12 09:30", in the viewer's zone → hub ms. Anything else is undefined. */
 export const parseWhen = (text: string): number | undefined => {
-  const t = text.trim();
-  const iso = /^\d{4}-\d{2}-\d{2}$/u.test(t)
-    ? `${t}T00:00:00.000Z`
-    : /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}$/u.test(t)
-      ? `${t.slice(0, 10)}T${t.slice(11)}:00.000Z`
-      : undefined;
-  if (iso === undefined) return undefined;
-  const ms = Date.parse(iso);
-  return Number.isFinite(ms) ? ms : undefined;
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?$/u.exec(text.trim());
+  if (m === null) return undefined;
+  const [y, mo, d, h, mi] = [m[1], m[2], m[3], m[4] ?? "0", m[5] ?? "0"].map(Number) as [number, number, number, number, number];
+  const at = new Date(y, mo - 1, d, h, mi);
+  // Date rolls "2026-02-31" over into March; a date that isn't on the calendar is not read.
+  if (at.getFullYear() !== y || at.getMonth() !== mo - 1 || at.getDate() !== d || at.getHours() !== h || at.getMinutes() !== mi) return undefined;
+  return at.getTime();
 };
 
 export const isoOf = (ms: number): string => new Date(ms).toISOString();
 
-/** "2026-10-12 09:30" (UTC). */
-export const shortWhen = (ms: number): string => isoOf(ms).slice(0, 16).replace("T", " ");
+const two = (n: number): string => String(n).padStart(2, "0");
+
+/** "2026-10-12 09:30" in the viewer's zone: what the custom range's fields hold, and what parseWhen reads back. */
+export const fieldWhen = (ms: number): string => {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}`;
+};
 
 /** The lookback for an order's own spans: everything the hub can still have. */
 const ORDER_LOOKBACK_MS = 365 * DAY;

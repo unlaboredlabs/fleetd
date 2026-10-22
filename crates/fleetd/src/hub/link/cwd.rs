@@ -102,57 +102,39 @@ mod tests {
         ("nested", "/a/b/tools/sub"),
     ];
 
-    #[test]
-    fn matches_the_root_and_anything_under_it() {
-        assert_eq!(resolve(&PROJECTS, "/a/b"), Some("ab"));
-        assert_eq!(resolve(&PROJECTS, "/a/b/src"), Some("ab"));
-        assert_eq!(
-            resolve(&PROJECTS, "/a/b/.fleetd/worktrees/w12/apps"),
-            Some("ab")
-        );
-    }
+    type Roots<'a> = &'a [(&'a str, &'a str)];
 
     #[test]
-    fn a_sibling_sharing_a_name_prefix_is_not_inside() {
-        assert_eq!(resolve(&PROJECTS, "/a/bc"), Some("abc"));
-        assert_eq!(resolve(&PROJECTS, "/a/bcd"), None);
-        assert_eq!(resolve(&[("ab", "/a/b")], "/a/bc/x"), None);
-    }
-
-    #[test]
-    fn refuses_parents_and_unrelated_paths() {
-        assert_eq!(resolve(&PROJECTS, "/a"), None);
-        assert_eq!(resolve(&PROJECTS, "/"), None);
-        assert_eq!(resolve(&PROJECTS, "/elsewhere"), None);
-    }
-
-    #[test]
-    fn prefers_the_deepest_nested_root() {
-        assert_eq!(resolve(&PROJECTS, "/a/b/tools/sub/x"), Some("nested"));
-        assert_eq!(resolve(&PROJECTS, "/a/b/tools"), Some("ab"));
-    }
-
-    #[test]
-    fn compares_lexically_normalized_paths() {
-        assert_eq!(resolve(&[("ab", "/a/b/")], "/a/b"), Some("ab"));
-        assert_eq!(resolve(&PROJECTS, "/a/b/src/"), Some("ab"));
-        assert_eq!(resolve(&PROJECTS, "/a//b/./src"), Some("ab"));
-        // `..` cannot climb out of a root and still match it.
-        assert_eq!(resolve(&PROJECTS, "/a/b/../bc/x"), Some("abc"));
-        assert_eq!(resolve(&PROJECTS, "/a/b/../x"), None);
-    }
-
-    #[test]
-    fn keeps_symlinked_roots_as_written() {
+    fn resolves_a_cwd_to_the_deepest_root_it_is_inside() {
         let linked = [("link", "/home/me/proj")];
-        assert_eq!(resolve(&linked, "/home/me/proj/src"), Some("link"));
-        assert_eq!(resolve(&linked, "/data/proj/src"), None);
-    }
-
-    #[test]
-    fn ignores_relative_roots_and_lets_slash_hold_everything() {
-        assert_eq!(resolve(&[("rel", "a/b")], "/a/b"), None);
-        assert_eq!(resolve(&[("root", "/")], "/anything/here"), Some("root"));
+        let cases: &[(Roots, &str, Option<&str>)] = &[
+            (&PROJECTS, "/a/b", Some("ab")),
+            (&PROJECTS, "/a/b/src", Some("ab")),
+            (&PROJECTS, "/a/b/.fleetd/worktrees/w12/apps", Some("ab")),
+            // A sibling sharing a name prefix is not inside.
+            (&PROJECTS, "/a/bc", Some("abc")),
+            (&PROJECTS, "/a/bcd", None),
+            (&[("ab", "/a/b")], "/a/bc/x", None),
+            (&PROJECTS, "/a", None),
+            (&PROJECTS, "/", None),
+            (&PROJECTS, "/elsewhere", None),
+            (&PROJECTS, "/a/b/tools/sub/x", Some("nested")),
+            (&PROJECTS, "/a/b/tools", Some("ab")),
+            // Lexically normalized; `..` cannot climb out of a root and still match it.
+            (&[("ab", "/a/b/")], "/a/b", Some("ab")),
+            (&PROJECTS, "/a/b/src/", Some("ab")),
+            (&PROJECTS, "/a//b/./src", Some("ab")),
+            (&PROJECTS, "/a/b/../bc/x", Some("abc")),
+            (&PROJECTS, "/a/b/../x", None),
+            // Symlinked roots are kept as written.
+            (&linked, "/home/me/proj/src", Some("link")),
+            (&linked, "/data/proj/src", None),
+            (&[("rel", "a/b")], "/a/b", None),
+            (&[("root", "/")], "/anything/here", Some("root")),
+        ];
+        for (projects, cwd, want) in cases {
+            assert_eq!(resolve(projects, cwd), *want, "{cwd}");
+        }
     }
 
     #[test]

@@ -89,9 +89,6 @@ pub struct NodeCommands {
     state: Arc<Mutex<State>>,
 }
 
-/// The doctor's node actions, over the same links.
-pub type NodeActions = NodeCommands;
-
 /// Held by the link server while a link is welcomed. Dropping it detaches the link; commands in flight on it fail as
 /// lost.
 pub struct AttachedLink {

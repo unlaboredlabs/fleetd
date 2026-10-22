@@ -12,12 +12,13 @@ Status has one row per project:
 | Column | Shows |
 |---|---|
 | State | `waiting on you`, `blocked`, `working` or `idle`. |
-| Progress | The two-tone bar: solid is verified work, lighter is credit for work in flight. No bar when nothing can be counted yet. |
+| Progress | The two-tone bar: solid is verified work, lighter is credit for work in flight. "no progress yet" while the lead plans or nothing can be counted. |
 | Agents | How many agents are running. |
-| Last merged | The latest pull request the train merged. |
+| Last merged | When the latest pull request merged, with its day: "today 09:46", "yesterday 16:40", "Fri 15:12", "Oct 7". |
 
-Rows needing you come first, then blocked, working and idle. Click a row to open that project's chat. Hover it for
-detail: why it is blocked, the verified and in-flight shares, the latest drops, and a source that has gone quiet.
+Rows needing you come first, then blocked, working and idle. Click a row to open that project's chat, or PRs at its
+end for the project's pull requests. Hover it for detail: why it is blocked, the verified and in-flight shares, the
+latest drops, and a source that has gone quiet ("out of date").
 An MCP client reads the same rows with `status_projects`.
 Open Status with ⌘. (Ctrl+. on Linux), or from the sidebar.
 

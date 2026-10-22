@@ -1048,16 +1048,4 @@ mod tests {
         assert!(accepts::<SecretEnv>(json!([entry("A"), entry("B")])));
         assert!(!accepts::<SecretEnv>(json!([entry("A"), entry("A")])));
     }
-
-    #[test]
-    fn records_from_the_phone_app_still_decode() {
-        assert_eq!(
-            serde_json::from_value::<IntakeChannel>(json!("phone")).unwrap(),
-            IntakeChannel::App
-        );
-        assert_eq!(
-            serde_json::to_value(IntakeChannel::App).unwrap(),
-            json!("app")
-        );
-    }
 }

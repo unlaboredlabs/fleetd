@@ -239,7 +239,7 @@ export const applyFrame = (s: DataState, frame: HubFrame, nowMs: number): [DataS
     case "event":
       return [applyEvent(s, frame.event), {}];
     case "chat_delta":
-      return [applyChatDelta(s, frame.delta), {}];
+      return [applyChatDelta(s, frame.delta, nowMs + (s.live.skewMs ?? 0)), {}];
     case "live":
       return [{ ...s, live: { ...applyLive(s.live, frame.frame, nowMs), streams: applyStreams(s.live.streams, frame.frame) } }, {}];
     case "error":
@@ -278,14 +278,15 @@ const applyChatEvent = (s: DataState, event: HubEvent): DataState => {
       if (message === undefined) {
         // Too big for the event: read it by seq, unless the chat already has this copy or a newer one.
         const held = chat?.messages.find((m) => m.messageId === data.messageId);
-        if (chat?.loaded !== true || (held !== undefined && held.state === data.state)) return base;
+        if (chat === undefined || (held !== undefined && held.state === data.state)) return base;
         return chat.missing.includes(data.seq) ? base : { ...base, chats: { ...base.chats, [key]: { ...chat, missing: [...chat.missing, data.seq] } } };
       }
       const sends = base.chatSends[key];
       const settled = sends === undefined ? undefined : settleSends(sends, [message]);
       return {
         ...base,
-        chats: chat?.loaded === true ? { ...base.chats, [key]: mergeLive(chat, message) } : base.chats,
+        // Into a chat that is open, its latest page landed or on its way.
+        chats: chat !== undefined ? { ...base.chats, [key]: mergeLive(chat, message) } : base.chats,
         chatSends: settled === undefined || settled === sends ? base.chatSends : { ...base.chatSends, [key]: settled },
       };
     }
@@ -300,11 +301,11 @@ const applyChatEvent = (s: DataState, event: HubEvent): DataState => {
 };
 
 /** A streamed frame of the subscribed chat. */
-export const applyChatDelta = (s: DataState, d: ChatDelta): DataState => {
+export const applyChatDelta = (s: DataState, d: ChatDelta, hubNowMs: number): DataState => {
   const key = projectKey(d.projectRef);
   const chat = s.chats[key];
-  if (chat?.loaded !== true) return s;
-  const next = applyDelta(chat, d);
+  if (chat === undefined) return s;
+  const next = applyDelta(chat, d, hubNowMs);
   return next === chat ? s : { ...s, chats: { ...s.chats, [key]: next } };
 };
 

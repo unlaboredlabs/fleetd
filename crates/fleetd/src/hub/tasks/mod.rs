@@ -291,6 +291,7 @@ impl Tasks {
         let mut data = Map::new();
         data.insert("taskId".into(), json!(task.task_id));
         data.insert("workstreamId".into(), json!(task.workstream_id));
+        data.insert("createdAt".into(), json!(task.created_at));
         if let Some(branch) = &task.branch {
             data.insert("branch".into(), json!(branch));
         }

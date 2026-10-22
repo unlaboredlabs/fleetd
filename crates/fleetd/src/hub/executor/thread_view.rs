@@ -113,14 +113,6 @@ pub fn latest_assistant_text(view: &ThreadView) -> Option<String> {
     best.map(|m| m.text.clone())
 }
 
-pub fn active_run_id(view: &ThreadView) -> Option<String> {
-    view.runs
-        .values()
-        .filter(|r| r.status.is_active())
-        .max_by_key(|r| r.ordinal)
-        .map(|r| r.id.to_string())
-}
-
 fn item_status(s: ItemStatus) -> &'static str {
     match s {
         ItemStatus::Completed => "completed",

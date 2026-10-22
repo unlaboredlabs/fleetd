@@ -4,7 +4,7 @@
 import type { ReactNode } from "react";
 import { Text, Truncate, cx, humanizeKey } from "../../ui";
 import type { Linked } from "./data";
-import { CAT_LABEL, KIND_WORD, SHOWN, delta, fmtBytes, fmtDur, gapText, pct, type Missing, categoryKinds } from "./format";
+import { CAT_LABEL, KIND_WORD, SHOWN, agentName, delta, fmtBytes, fmtDur, gapText, pct, type Missing, type Names, categoryKinds } from "./format";
 import type { Category, CategoryTotal, TimeBreakdownOutput } from "./types";
 import s from "./Time.module.css";
 
@@ -15,7 +15,16 @@ export interface BreakdownProps {
   /** Span ids per category on the critical path, when the order's spans are loaded. */
   readonly pathIds: ReadonlyMap<Category, readonly number[]> | undefined;
   readonly onLinked: (linked: Linked, ids?: readonly number[]) => void;
+  /** Who ran a repeated command: the agent by what it worked on. */
+  readonly names: Names;
 }
+
+/** Who ran it, by what it worked on; undefined when this app hasn't seen that agent (another piece of work). */
+const agentOf = (names: Names, threadId: string): string | undefined => {
+  if (names.leads.has(threadId)) return "lead";
+  const lane = names.threads.get(threadId);
+  return lane === undefined ? undefined : agentName(lane);
+};
 
 /** "Bash 49m (67) · Read 49s (77)": the biggest kinds in a category; first token carries its ≈. */
 export const kindsText = (c: CategoryTotal): string =>
@@ -64,7 +73,7 @@ const Num = ({ children, tone }: { children: string; tone?: "quiet" | "danger" |
   </Text>
 );
 
-export function Breakdown({ data: b, order, missing, pathIds, onLinked }: BreakdownProps) {
+export function Breakdown({ data: b, order, missing, pathIds, onLinked, names }: BreakdownProps) {
   const agent = b.agentMs;
   if (agent === 0) {
     return (
@@ -205,33 +214,7 @@ export function Breakdown({ data: b, order, missing, pathIds, onLinked }: Breakd
       ) : null}
 
       {b.repeated.length > 0 ? (
-        <Section title="Repeated commands" detail="the same command in one session with nothing edited between runs">
-          <div className={cx(s.table, s.repTable)} role="table" aria-label="Repeated commands">
-            <div className={cx(s.tableHead)} role="row">
-              {["Ran again with no edit between", "in", "runs", "total"].map((h, i) => (
-                <Text key={h} size="xs" tone="quiet" className={cx(i > 0 && s.num)}>
-                  {h}
-                </Text>
-              ))}
-            </div>
-            {b.repeated.map((r, i) => (
-              <RowButton
-                key={`${r.label}-${i}`}
-                onClick={() => onLinked({ title: `${r.label} repeated with no edit`, rule: "repeat_no_change", label: r.label })}
-                label={`${r.label}: ${r.n} runs in a row. Show these spans.`}
-              >
-                <Truncate expand="none" mono size="sm">
-                  {r.label}
-                </Truncate>
-                <Text size="xs" tone="quiet" className={cx(s.num)}>
-                  {r.taskId ?? "a session"}
-                </Text>
-                <Num>{`${r.n}×`}</Num>
-                <Num>{fmtDur(r.totalMs)}</Num>
-              </RowButton>
-            ))}
-          </div>
-        </Section>
+        <Repeated b={b} names={names} onLinked={onLinked} />
       ) : null}
 
       {b.ciChecks.length > 0 ? (
@@ -287,6 +270,42 @@ export function Breakdown({ data: b, order, missing, pathIds, onLinked }: Breakd
 
       <Notes b={b} missing={missing} />
     </div>
+  );
+}
+
+/** Commands run again with nothing edited between; the agent column only when this app knows one of their agents. */
+function Repeated({ b, names, onLinked }: { b: TimeBreakdownOutput; names: Names; onLinked: BreakdownProps["onLinked"] }) {
+  const byAgent = b.repeated.some((r) => agentOf(names, r.threadId) !== undefined);
+  return (
+    <Section title="Repeated commands" detail="the same command in one session with nothing edited between runs">
+      <div className={cx(s.table, byAgent ? s.repTable : s.repTableNoAgent)} role="table" aria-label="Repeated commands">
+        <div className={cx(s.tableHead)} role="row">
+          {["Ran again with no edit between", ...(byAgent ? ["agent"] : []), "runs", "total"].map((h, i) => (
+            <Text key={h} size="xs" tone="quiet" className={cx(i > 0 && s.num)}>
+              {h}
+            </Text>
+          ))}
+        </div>
+        {b.repeated.map((r, i) => (
+          <RowButton
+            key={`${r.label}-${i}`}
+            onClick={() => onLinked({ title: `${r.label} repeated with no edit`, rule: "repeat_no_change", label: r.label })}
+            label={`${r.label}: ${r.n} runs in a row. Show these spans.`}
+          >
+            <Truncate expand="none" mono size="sm">
+              {r.label}
+            </Truncate>
+            {byAgent ? (
+              <Truncate expand="none" size="xs" tone="quiet" className={cx(s.num)}>
+                {agentOf(names, r.threadId) ?? "–"}
+              </Truncate>
+            ) : null}
+            <Num>{`${r.n}×`}</Num>
+            <Num>{fmtDur(r.totalMs)}</Num>
+          </RowButton>
+        ))}
+      </div>
+    </Section>
   );
 }
 

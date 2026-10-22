@@ -10,7 +10,17 @@ import type { HubSource } from "./source";
 const delay = z.int().min(0).max(600_000).optional();
 const hubError = z.object({ code: z.string(), message: z.string(), fix: z.string().optional() });
 
+const State = z.discriminatedUnion("phase", [
+  z.object({ phase: z.literal("unpaired"), note: z.string().optional() }),
+  z.object({ phase: z.literal("connecting"), hub: z.string(), attempt: z.int().min(0) }),
+  z.object({ phase: z.literal("live"), hub: z.string(), protocol: z.int() }),
+  z.object({ phase: z.literal("retrying"), hub: z.string(), reason: z.string(), fix: z.string().optional(), retryAt: z.number() }),
+  z.object({ phase: z.literal("refused"), hub: z.string(), message: z.string() }),
+]);
+
 const Frame = z.discriminatedUnion("t", [
+  // The connection changing mid-run, as a hub restart does: retrying, then live again and a fresh snapshot.
+  z.object({ t: z.literal("state"), state: State, afterMs: delay }),
   z.object({ t: z.literal("snapshot"), snapshot: z.looseObject({ cursor: z.int().min(0) }), afterMs: delay }),
   z.object({ t: z.literal("event"), event: z.looseObject({ seq: z.int().min(0), type: z.string() }), afterMs: delay }),
   z.object({ t: z.literal("live"), frame: z.looseObject({ full: z.boolean() }), afterMs: delay }),
@@ -42,13 +52,7 @@ const FixtureFile = z.object({
   name: z.string(),
   note: z.string(),
   now: z.iso.datetime({ offset: true }),
-  state: z.discriminatedUnion("phase", [
-    z.object({ phase: z.literal("unpaired"), note: z.string().optional() }),
-    z.object({ phase: z.literal("connecting"), hub: z.string(), attempt: z.int().min(0) }),
-    z.object({ phase: z.literal("live"), hub: z.string(), protocol: z.int() }),
-    z.object({ phase: z.literal("retrying"), hub: z.string(), reason: z.string(), fix: z.string().optional(), retryAt: z.number() }),
-    z.object({ phase: z.literal("refused"), hub: z.string(), message: z.string() }),
-  ]),
+  state: State,
   frames: z.array(Frame),
   calls: z.array(
     z.object({
@@ -124,12 +128,14 @@ export class FixtureSource implements HubSource {
   #hidden: Array<z.infer<typeof Rows>> = [];
   /** The last event number sent: a call's events are numbered as they happen, after everything sent before. */
   #seq = 0;
+  /** The connection as the replay left it; a window subscribing later starts from it. */
   #state: HubState;
 
   constructor(file: FixtureFile, emit: (frame: HubFrame) => void) {
     this.#file = file;
     this.#state = file.state;
     this.#emit = (frame) => {
+      if (frame.t === "state") this.#state = frame.state;
       if (frame.t === "event") this.#seq = Math.max(this.#seq, frame.event.seq);
       if (frame.t === "snapshot") this.#seq = Math.max(this.#seq, frame.snapshot.cursor);
       emit(frame);
@@ -153,6 +159,7 @@ export class FixtureSource implements HubSource {
   /** Every frame in order, each `afterMs` after the one before; a new replay cancels one still running. */
   resync(): void {
     this.#cancelReplay();
+    this.#state = this.#file.state;
     if (this.#file.state.phase !== "live") return;
     let at = 0;
     for (const { afterMs, ...checked } of this.#file.frames) {

@@ -606,32 +606,6 @@ fn a_rate_limit_without_a_reset_waits_five_minutes() {
 }
 
 #[test]
-fn proxy_unknown_provider_is_pool_exhausted() {
-    let proxy = updated(
-        11,
-        d_failed(json!({
-            "class": "pool_exhausted",
-            "message": "API Error: 400 unknown provider for model claude-opus-5-5",
-            "apiStatus": 400,
-        })),
-    );
-    let mut state = before_turns();
-    assert_eq!(
-        feed(&proxy, &mut state, &HashMap::new(), false),
-        ev(&[("thread.usage_limited", "d")])
-    );
-    assert_eq!(feed(&proxy, &mut state, &HashMap::new(), false), vec![]);
-    let event = limited(&state);
-    assert_eq!(
-        event.summary,
-        r#""fixtures: d" on lab-b hit the usage limit: your proxy has no account available for claude-opus-5-5"#
-    );
-    let data = event.data.unwrap();
-    assert_eq!(data["usageClass"], "pool_exhausted");
-    assert_eq!(data["model"], "claude-opus-5-5");
-}
-
-#[test]
 fn an_auth_failure_is_a_failure_not_a_limit() {
     let mut state = before_turns();
     let auth = d_failed(json!({ "class": "auth", "message": "Not logged in · Please run /login" }));

@@ -13,9 +13,6 @@ pub enum StoreError {
     Io(#[from] std::io::Error),
 }
 
-/// The `user_version` of a fully migrated database.
-pub const SCHEMA_VERSION: usize = MIGRATIONS.len();
-
 /// The hub's SQLite database. HubStore, EventLog, Auth and the areas with tables share this one connection.
 pub struct HubDb {
     conn: Mutex<Connection>,
@@ -39,6 +36,7 @@ impl HubDb {
     }
 
     /// A private in-memory database, for tests.
+    #[cfg(test)]
     pub fn open_memory() -> Result<Arc<Self>, StoreError> {
         Self::from_connection(Connection::open_in_memory()?, None)
     }

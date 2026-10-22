@@ -1,7 +1,7 @@
 // One test per registered screen × fixture: every size and theme, screenshots kept, any DOM finding fails it.
 
 import { expect, test } from "@playwright/test";
-import { assertExpectedState, describeFindings, launch, reservedRegions, type Shot, setView, settle, shoot, show } from "./harness.ts";
+import { assertAlive, assertExpectedState, describeFindings, launch, reservedRegions, type Shot, setView, settle, shoot, show } from "./harness.ts";
 import { defaultSizes, label, screens, themes } from "./registry.ts";
 
 test.describe.configure({ mode: "parallel" });
@@ -13,7 +13,7 @@ for (const screen of screens) {
   for (const fixture of screen.fixtures) {
     test(`${label(screen)} · ${fixture}`, async () => {
       test.fixme(screen.pending !== undefined, screen.pending);
-      const { app, page, settled, close } = await launch(fixture);
+      const { app, page, settled, replay, errors, close } = await launch(fixture, undefined, undefined, { realClock: screen.realClock === true });
       try {
         const reserved = await reservedRegions(app);
         const shots: Shot[] = [];
@@ -23,7 +23,19 @@ for (const screen of screens) {
         await settled();
         await setView(app, page, shotSizes[0] ?? "small", themes[0]);
         const { open } = screen;
-        await show(page, screen.id, screen.route, open && ((p) => open(p, app)));
+        // A blank window never shows the screen, so say that rather than time out waiting for it.
+        const up = async () => {
+          await show(page, screen.id, screen.route, open && ((p) => open(p, app))).catch(async (error: unknown) => {
+            await assertAlive(page, screen, errors);
+            throw error;
+          });
+          await assertAlive(page, screen, errors);
+        };
+        await up();
+        if (screen.replay) {
+          await replay();
+          await up();
+        }
         await assertExpectedState(page, screen);
         for (const size of shotSizes) {
           for (const theme of themes) {
