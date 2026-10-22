@@ -897,6 +897,7 @@ async function capPart(lab: Lab, chat: Chat, ref: Ref, need: (t: string) => void
     return changed;
   };
   const w = openWorkstream(check, fleetd, "Max agents.");
+  const capFrom = await lab.cursor();
   const running = async (ids: ReadonlySet<string>) => (await tasksOf(lab, ref)).filter((t) => ids.has(t.taskId) && t.state === "running").length;
   const until = (what: string, ms: number, cond: () => Promise<boolean>) =>
     lab.until(what, ms, async () => ((await cond()) ? true : (await new Promise((r) => setTimeout(r, 1_000)), undefined)));
@@ -966,7 +967,13 @@ async function capPart(lab: Lab, chat: Chat, ref: Ref, need: (t: string) => void
   check(wake, `the lead's wake says the cap was raised: ${JSON.stringify(userMessages(ref.machineId, leadThread ?? "").at(-1)?.slice(-400))}`);
   ok(`the lead's wake: ${wake!.split("\n").find((l) => /cap raised/iu.test(l))?.trim()}`);
   await allComplete(six2, from, TURN_MS * 2);
-  const line = (await chat.history()).filter((m) => m.author === "system" && m.text === raised.event.summary);
+  const history = await chat.history();
+  const line = history.filter((m) => m.author === "system" && m.text === raised.event.summary);
   check(line.length === 1, `one quiet chat line for the change: ${JSON.stringify(raised.event.summary)}`);
   ok(`the chat's line: ${line[0]!.text}`);
+  // Every change of the part, not just the raise: one agents.cap event each, and exactly one chat line per event.
+  const changes = (await eventsSince(lab, capFrom, ["agents.cap"])).filter((e) => sameProject(e.data?.projectRef, ref)).map((e) => String(e.summary));
+  const lines = history.filter((m) => m.author === "system" && /^Max agents\b/u.test(m.text)).map((m) => m.text);
+  check(changes.length === 4 && JSON.stringify(lines) === JSON.stringify(changes), `one chat line per cap change, in order: events ${JSON.stringify(changes)}, chat ${JSON.stringify(lines)}`);
+  ok(`${changes.length} cap changes, ${lines.length} chat lines, one each`);
 }
