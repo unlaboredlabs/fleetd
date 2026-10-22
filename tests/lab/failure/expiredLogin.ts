@@ -18,7 +18,7 @@ export async function expiredLogin(lab: Lab) {
   const { check, ok, callTool } = lab;
   const repo = path.join(lab.dir, "repo");
   seedRepo(repo, MACHINE);
-  lab.joinNode(MACHINE, { login: false });
+  await lab.joinNode(MACHINE, { login: false });
   try {
     const machine = await lab.until(`${MACHINE} degraded by its runner probe`, 120_000, async () => {
       const s = (await callTool("fleetd_status")).body;

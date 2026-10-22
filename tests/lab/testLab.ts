@@ -24,6 +24,7 @@ import {
   cli,
   HUB_PORT,
   HUB_URL,
+  enrollNode,
   handleInterrupts,
   interrupted,
   joinNode,
@@ -234,7 +235,20 @@ async function main() {
       startNode: (machineId: string, opts: NodeOptions = {}) =>
         void startCli(`node-${machineId}`, ["node", "run", "--home", nodeHome(machineId)], {}, nodeEnv(machineId, opts)),
       nodePid: (machineId: string) => pidOf(`node-${machineId}`),
-      joinNode: (machineId: string, opts: NodeOptions & MachineHomeOptions = {}) => void joinNode(HUB_URL, hubHome, machineId, opts),
+      // Like the standing machines, an added one runs `cmd` checks (and takes projects) under the lab dir. `node join`
+      // writes a fresh node.json, so it enrolls first, gets the roots, and runs once the hub saw the enrolling link go.
+      joinNode: async (machineId: string, opts: NodeOptions & MachineHomeOptions = {}) => {
+        enrollNode(HUB_URL, hubHome, machineId, opts);
+        setCmdRoots(machineId, [LAB]);
+        await until(`${machineId}'s enrolling link closed`, 60_000, async () => {
+          const s = (await callTool("fleetd_status")).body;
+          const m = (s.machines as Array<Body>).find((x) => x.machineId === machineId);
+          if (m === undefined || m.status === "offline") return true;
+          await callTool("events_wait", { cursor: s.cursor, timeoutSec: 2 });
+          return undefined;
+        });
+        startCli(`node-${machineId}`, ["node", "run", "--home", nodeHome(machineId)], {}, nodeEnv(machineId, opts));
+      },
       machines: MACHINES,
       stopHub: async () => {
         await client?.close().catch(() => undefined);

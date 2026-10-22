@@ -469,12 +469,19 @@ export const stopAll = async () => {
 };
 
 /** `node join` for a machine on `hubHome`'s hub: an enrollment token, the machine's HOME, then the node itself. */
-export const joinNode = (hubUrl: string, hubHome: string, id: string, opts: NodeOptions & MachineHomeOptions = {}) => {
+const joinArgs = (hubUrl: string, hubHome: string, id: string, opts: MachineHomeOptions) => {
   prepareMachineHome(id, opts);
   const token = /^\S{16,}$/mu.exec(cli("hub", "token", "create", "--home", hubHome, "--machine", id))?.[0];
   if (token === undefined) throw new Error(`no enrollment token for ${id}`);
-  return startCli(`node-${id}`, ["node", "join", "--hub", hubUrl, "--token", token, "--machine", id, "--home", nodeHome(id)], {}, nodeEnv(id, opts));
+  return ["node", "join", "--hub", hubUrl, "--token", token, "--machine", id, "--home", nodeHome(id)];
 };
+
+export const joinNode = (hubUrl: string, hubHome: string, id: string, opts: NodeOptions & MachineHomeOptions = {}) =>
+  startCli(`node-${id}`, joinArgs(hubUrl, hubHome, id, opts), {}, nodeEnv(id, opts));
+
+/** `node join --enroll-only`: the machine's home and key, enrolled, and no node left running. */
+export const enrollNode = (hubUrl: string, hubHome: string, id: string, opts: NodeOptions & MachineHomeOptions = {}) =>
+  void execFileSync(...fleetdCommand([...joinArgs(hubUrl, hubHome, id, opts), "--enroll-only"]), { env: nodeEnv(id, opts), stdio: "ignore", timeout: 60_000 });
 
 /**
  * Lets the node run the hub's `cmd` checks under `roots`. A node defaults to its HOME, which in the lab is the
@@ -510,7 +517,7 @@ export interface Lab {
   /** The live node's PID, captured at spawn. */
   readonly nodePid: (machineId: string) => number | undefined;
   /** Joins a new machine to the hub (its own HOME under the run dir) and starts its node. */
-  readonly joinNode: (machineId: string, opts?: NodeOptions & MachineHomeOptions) => void;
+  readonly joinNode: (machineId: string, opts?: NodeOptions & MachineHomeOptions) => Promise<void>;
   /** Registers a directory as a project on a machine with `project_add`; returns its project id once listed. */
   readonly addProject: (machineId: string, dir: string, title: string) => Promise<string>;
   /** (Re)starts the hub on the same home and port with `env` added, waits for /healthz and reconnects the MCP client. */
