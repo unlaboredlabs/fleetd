@@ -134,7 +134,8 @@ The [table below](#prompts) marks prompt-only rules.
 
 ## Edit a prompt {#edit}
 
-In the app: Settings → Prompts. Pick hub-wide or one project, open a prompt, edit it and Save. "Compare with default"
+In the app: Settings → Prompts. Pick hub-wide or one project, open a prompt from the list under Prompts in the sidebar,
+edit it and Save. "Compare with default"
 shows your changes; "Reset to default" drops them.
 
 On the hub machine:
@@ -186,7 +187,7 @@ warnings and asks `Save? [Y/n]` on the terminal. In a script, `</dev/null` takes
 
 Your version stays in use.
 
-- In Settings → Prompts, the prompt gets a warning dot. "Review the update" shows both changes, and you pick Save
+- In Settings → Prompts, the prompt is marked `update`. "Review the update" shows both changes, and you pick Save
   merged, Keep mine, or Use the new default.
 - On the hub, `fleetd prompts list` marks it `update`, and `fleetd prompts diff <id>` shows both changes.
 

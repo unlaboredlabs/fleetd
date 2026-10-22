@@ -1,17 +1,29 @@
 // Max agents in the app: the chat header's "agents 6 / 12" control (it opens the slider in place), the same slider
 // per project in Settings → Agents, and the fleet-wide cap above them. Reads the hub's slot state from the data
-// layer's store; writes are cap_set calls through the layer, and the hub's next slot state confirms them.
+// layer's store; a slider applies when you let go (a cap_set call through the layer), with Undo, and the hub's next
+// slot state confirms it.
 import { Slider } from "radix-ui";
-import { useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ProjectRef, SlotState } from "../../../shared/contracts";
 import { useData } from "../../src/data/react";
-import { Button, Checkbox, Input, Popover, PopoverContent, PopoverTrigger, Separator, Text, textClass } from "../../ui";
-import { agentsLabel, changeLine, clampMax, extrasOver, pauseLine, projectAgents, serialNote, type ProjectAgents } from "./agentsModel";
+import { Button, Popover, PopoverContent, PopoverTrigger, Separator, Text, textClass } from "../../ui";
+import {
+  agentsLabel,
+  appliedLine,
+  changeLine,
+  clampMax,
+  extrasLine,
+  extrasOver,
+  fleetTop,
+  fleetWarning,
+  pauseLine,
+  projectAgents,
+  serialNote,
+} from "./agentsModel";
 import { errorText, useHubCall, useLive } from "./hub";
-import { scopeName, useProjects } from "./parts";
+import { PageHead, scopeName, useProjects } from "./parts";
+import { useReveal } from "./search";
 import s from "./settings.module.css";
-
-type Echo = { ok: boolean; text: string };
 
 /** The hub's slot state for this connection; undefined until it is fresh (never the last connection's numbers). */
 const useSlots = (): SlotState | undefined => useData((st) => (st.fresh ? (st.live.slots ?? st.slots) : undefined));
@@ -31,54 +43,177 @@ export function AgentsCapControl({ projectRef }: { projectRef: ProjectRef }) {
       </PopoverTrigger>
       <PopoverContent align="end">
         <div className={s.agentsPopover}>
-          <AgentsPanel projectRef={projectRef} slots={slots} title="Max agents for this project" />
+          <AgentsPanel projectRef={projectRef} slots={slots} title="Max agents for this project" scale />
         </div>
       </PopoverContent>
     </Popover>
   );
 }
 
-/** One project's Max agents: the slider, what the change will do, and Save. */
-export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; title?: string }) {
-  const live = useLive();
-  const call = useHubCall();
-  const a: ProjectAgents = projectAgents(props.slots, props.projectRef);
-  // The draft follows the hub until it is moved; after a save it holds the saved value until the hub's slot state
-  // shows it, so the slider doesn't jump back for a moment.
+/** A change applied: from what, to what, and how many agents it paused. */
+type Done = { from: number; to: number; paused: number };
+type Attempt = { to: number; from: number; pause: boolean; undo: boolean };
+
+/** A keyboard change applies once the keys rest, so arrowing 6 → 3 is one change (and one line in the chat). */
+const KEYS_REST_MS = 600;
+
+/**
+ * A slider that applies when you let go. `hub` is the value in effect; `write` sets one and answers how many agents
+ * it paused. The value moved to stays on screen until the hub's slot state shows it, so the thumb doesn't jump back.
+ */
+function useApplySlider(hub: number, write: (to: number, pause: boolean) => Promise<number>) {
   const [draft, setDraft] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
-  const [echo, setEcho] = useState<Echo | null>(null);
-  const [pause, setPause] = useState(false);
-  const value = clampMax(draft ?? a.max, a.cap);
-  const over = extrasOver(a.running, value);
-  if (draft !== null && !busy && echo?.ok === true && draft === a.max) setDraft(null);
-  const changed = value !== a.max;
-  const id = `agents-${props.projectRef.machineId}-${props.projectRef.projectId}`;
-  const serial = changed ? serialNote(value) : null;
+  const [done, setDone] = useState<Done | null>(null);
+  const [failed, setFailed] = useState<{ text: string; attempt: Attempt } | null>(null);
+  if (draft !== null && !busy && draft === hub) setDraft(null);
+  const value = draft ?? hub;
 
-  const save = () => {
+  const run = (attempt: Attempt) => {
     setBusy(true);
-    setEcho(null);
-    const pauseExtras = pause && over > 0;
-    call("cap_set", { project: { projectRef: props.projectRef, maxAgents: value, ...(pauseExtras ? { pauseExtras: true } : {}) } }).then(
-      (o) => {
+    setFailed(null);
+    write(attempt.to, attempt.pause).then(
+      (paused) => {
         setBusy(false);
-        setPause(false);
-        const paused = o.paused?.length ?? 0;
-        setEcho({
-          ok: true,
-          text:
-            paused > 0
-              ? `Saved: at most ${value} at once. ${paused === 1 ? "1 agent is" : `${paused} agents are`} saving work and waiting for a slot.`
-              : `Saved: at most ${value} at once.`,
-        });
+        setDone(attempt.undo ? null : { from: attempt.from, to: attempt.to, paused });
       },
       (e: unknown) => {
         setBusy(false);
-        setEcho({ ok: false, text: errorText(e) });
+        setDraft(null);
+        setFailed({ text: errorText(e), attempt });
       },
     );
   };
+  const commit = (to: number) => {
+    if (to === hub) return setDraft(null);
+    run({ to, from: hub, pause: false, undo: false });
+  };
+
+  // A keyboard change waiting for the keys to rest; it still applies if the popover closes first.
+  const pending = useRef<{ timer: number; apply: () => void } | null>(null);
+  const keyed = useRef(false);
+  useEffect(
+    () => () => {
+      const p = pending.current;
+      if (p === null) return;
+      window.clearTimeout(p.timer);
+      p.apply();
+    },
+    [],
+  );
+
+  const sliderProps = {
+    value: [value],
+    onValueChange: ([v]: number[]) => {
+      if (v === undefined) return;
+      setDraft(v);
+      setDone(null);
+      setFailed(null);
+    },
+    onValueCommit: ([v]: number[]) => {
+      if (v === undefined) return;
+      if (pending.current !== null) window.clearTimeout(pending.current.timer);
+      if (!keyed.current) {
+        pending.current = null;
+        return commit(v);
+      }
+      const apply = () => {
+        pending.current = null;
+        commit(v);
+      };
+      pending.current = { timer: window.setTimeout(apply, KEYS_REST_MS), apply };
+    },
+    onKeyDown: () => {
+      keyed.current = true;
+    },
+    onPointerDown: () => {
+      keyed.current = false;
+    },
+  };
+
+  return {
+    value,
+    busy,
+    done,
+    failed,
+    sliderProps,
+    undo: (d: Done) => {
+      setDraft(d.from);
+      run({ to: d.from, from: d.to, pause: false, undo: true });
+    },
+    pause: (d: Done) => run({ to: d.to, from: d.from, pause: true, undo: false }),
+    retry: () => {
+      if (failed === null) return;
+      setDraft(failed.attempt.to);
+      run(failed.attempt);
+    },
+  };
+}
+
+type SliderState = ReturnType<typeof useApplySlider>;
+
+function CapSlider(props: { id: string; min?: number; max: number; disabled: boolean; state: SliderState }) {
+  return (
+    <Slider.Root className={s.slider} min={props.min ?? 1} max={props.max} step={1} disabled={props.disabled} {...props.state.sliderProps}>
+      <Slider.Track className={s.sliderTrack}>
+        <Slider.Range className={s.sliderRange} />
+      </Slider.Track>
+      <Slider.Thumb className={s.sliderThumb} aria-labelledby={`${props.id}-label`} aria-describedby={`${props.id}-line`} />
+    </Slider.Root>
+  );
+}
+
+/** Under a slider: what letting go will do, what was done (with Undo), or why it wasn't. */
+function ResultLine(props: { id: string; state: SliderState; idle: string; done: (d: Done) => string; actions?: (d: Done) => ReactNode }) {
+  const { state } = props;
+  if (state.failed) {
+    return (
+      <div className={s.result} role="alert" id={`${props.id}-line`}>
+        <Text size="xs" tone="danger">{`Not changed. ${state.failed.text}`}</Text>
+        <div className={s.actions}>
+          <Button disabled={state.busy} onClick={state.retry}>
+            Try again
+          </Button>
+        </div>
+      </div>
+    );
+  }
+  const d = state.done;
+  if (d && state.value === d.to) {
+    return (
+      <div className={s.result} role="status" id={`${props.id}-line`}>
+        <Text size="xs" tone="quiet">
+          {props.done(d)}
+        </Text>
+        <div className={s.actions}>
+          {props.actions?.(d)}
+          <Button disabled={state.busy} onClick={() => state.undo(d)}>
+            Undo
+          </Button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div role="status" id={`${props.id}-line`}>
+      <Text size="xs" tone="quiet">
+        {props.idle}
+      </Text>
+    </div>
+  );
+}
+
+/** One project's Max agents: the slider, which applies when you let go, and what the change does. */
+export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; title?: string; scale?: boolean }) {
+  const live = useLive();
+  const call = useHubCall();
+  const a = projectAgents(props.slots, props.projectRef);
+  const state = useApplySlider(a.max, (maxAgents, pauseExtras) =>
+    call("cap_set", { project: { projectRef: props.projectRef, maxAgents, ...(pauseExtras ? { pauseExtras: true } : {}) } }).then((o) => o.paused?.length ?? 0),
+  );
+  const value = clampMax(state.value, a.cap);
+  const id = `agents-${props.projectRef.machineId}-${props.projectRef.projectId}`;
+  const serial = serialNote(value);
 
   return (
     <div className={s.agentsPanel}>
@@ -88,61 +223,33 @@ export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; t
         </span>
         <Text tabular strong>{`${value}`}</Text>
       </div>
-      <Slider.Root
-        className={s.slider}
-        min={1}
-        max={Math.max(1, a.cap)}
-        step={1}
-        value={[value]}
-        disabled={!live || busy || a.cap <= 1}
-        onValueChange={([v]) => {
-          if (v !== undefined) setDraft(v);
-          setEcho(null);
+      <CapSlider id={id} max={Math.max(1, a.cap)} disabled={!live || a.cap <= 1} state={state} />
+      {props.scale ? (
+        <div className={s.agentsScale}>
+          <Text size="xs" tone="quiet" tabular>
+            1
+          </Text>
+          <Text size="xs" tone="quiet" tabular>{`${a.cap}, the fleet's limit`}</Text>
+        </div>
+      ) : null}
+      <ResultLine
+        id={id}
+        state={state}
+        idle={changeLine(a, value)}
+        done={(d) => [appliedLine("Max agents", d.from, d.to), extrasLine(extrasOver(a.running, d.to), d.paused)].filter(Boolean).join(" ")}
+        actions={(d) => {
+          const over = extrasOver(a.running, d.to);
+          return d.to < d.from && d.paused === 0 && over > 0 ? (
+            <Button disabled={state.busy} onClick={() => state.pause(d)}>
+              {pauseLine(over)}
+            </Button>
+          ) : null;
         }}
-      >
-        <Slider.Track className={s.sliderTrack}>
-          <Slider.Range className={s.sliderRange} />
-        </Slider.Track>
-        <Slider.Thumb className={s.sliderThumb} aria-labelledby={`${id}-label`} aria-describedby={`${id}-change`} />
-      </Slider.Root>
-      <div className={s.agentsScale}>
-        <Text size="xs" tone="quiet" tabular>
-          1
-        </Text>
-        <Text size="xs" tone="quiet" tabular>{`${a.cap}, the fleet's limit`}</Text>
-      </div>
-      <Text size="xs" tone="quiet" id={`${id}-change`}>
-        {changeLine(a, value)}
-      </Text>
-      {over > 0 ? <Checkbox checked={pause} onCheckedChange={(c) => setPause(c === true)} label={pauseLine(over)} /> : null}
+      />
       {serial ? (
         <Text size="xs" tone="quiet">
           {serial}
         </Text>
-      ) : null}
-      <div className={s.actions}>
-        <Button variant="primary" disabled={!live || !changed || busy} onClick={save}>
-          {busy ? "Saving…" : "Save"}
-        </Button>
-        {changed ? (
-          <Button
-            variant="ghost"
-            disabled={busy}
-            onClick={() => {
-              setDraft(null);
-              setPause(false);
-            }}
-          >
-            Discard changes
-          </Button>
-        ) : null}
-      </div>
-      {echo ? (
-        <div role="status">
-          <Text size="xs" tone={echo.ok ? "quiet" : "danger"}>
-            {echo.text}
-          </Text>
-        </div>
       ) : null}
     </div>
   );
@@ -153,33 +260,39 @@ export function AgentsSettings() {
   const slots = useSlots();
   const projects = useProjects();
   const live = useLive();
+  const perProject = useReveal<HTMLElement>("agents.project");
   return (
     <div className={s.scroll} data-screen="settings.agents">
       <div className={s.column}>
-        <Text tone="quiet">
-          How many agents may run at once. fleetd holds to it: an agent past the limit waits, and starts the moment one
-          finishes. Reviews that gate a merge go first, so a low limit never stalls the merge train.
-        </Text>
+        <PageHead title="Agents">
+          How many agents may run at once. Past the limit, an agent waits and starts the moment one finishes. Reviews that gate a merge
+          go first, so a low limit never holds up a merge.
+        </PageHead>
         {!live || !slots ? (
           <Text tone="quiet">{live ? "Loading…" : "Connect to a hub to see and change this."}</Text>
         ) : (
           <>
             <FleetCap slots={slots} />
             <Separator />
-            {projects === undefined ? (
-              <Text tone="quiet">Loading…</Text>
-            ) : projects.length === 0 ? (
-              <Text tone="quiet">No projects yet. Each project you add gets its own max here.</Text>
-            ) : (
-              projects.map((p) => {
-                const ref = { machineId: p.machineId, projectId: p.projectId };
-                return (
-                  <section key={`${p.machineId}/${p.projectId}`} className={s.agentsRow} aria-label={p.title}>
-                    <AgentsPanel projectRef={ref} slots={slots} title={scopeName({ kind: "project", ref }, projects)} />
-                  </section>
-                );
-              })
-            )}
+            <section ref={perProject} className={s.agentsList} aria-labelledby="agents-per-project" tabIndex={-1}>
+              <Text strong id="agents-per-project">
+                Max agents per project
+              </Text>
+              {projects === undefined ? (
+                <Text tone="quiet">Loading…</Text>
+              ) : projects.length === 0 ? (
+                <Text tone="quiet">No projects yet. Each project you add gets its own max here.</Text>
+              ) : (
+                projects.map((p) => {
+                  const ref = { machineId: p.machineId, projectId: p.projectId };
+                  return (
+                    <section key={`${p.machineId}/${p.projectId}`} className={s.agentsRow} aria-label={p.title}>
+                      <AgentsPanel projectRef={ref} slots={slots} title={scopeName({ kind: "project", ref }, projects)} />
+                    </section>
+                  );
+                })
+              )}
+            </section>
           </>
         )}
       </div>
@@ -190,67 +303,37 @@ export function AgentsSettings() {
 /** The fleet-wide cap: every project's agents together, across every machine. */
 function FleetCap({ slots }: { slots: SlotState }) {
   const call = useHubCall();
-  const [draft, setDraft] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [echo, setEcho] = useState<Echo | null>(null);
-  const text = draft ?? String(slots.cap);
-  const n = Number(text);
-  const valid = Number.isInteger(n) && n >= 1 && n <= 1000;
-  const changed = valid && n !== slots.cap;
-  const save = () => {
-    setBusy(true);
-    setEcho(null);
-    call("cap_set", { cap: n }).then(
-      (o) => {
-        setBusy(false);
-        setDraft(null);
-        setEcho({ ok: true, text: `Saved: at most ${o.slots.cap} agents at once across the fleet.` });
-      },
-      (e: unknown) => {
-        setBusy(false);
-        setEcho({ ok: false, text: errorText(e) });
-      },
-    );
-  };
+  const projects = useProjects();
+  const live = useLive();
+  const state = useApplySlider(slots.cap, (cap) => call("cap_set", { cap }).then(() => 0));
+  const ref = useReveal<HTMLElement>("agents.fleet");
+  const warning = fleetWarning(slots, state.value, (r) => scopeName({ kind: "project", ref: r }, projects));
+  const id = "agents-fleet";
   return (
-    <div className={s.setting}>
-      <div className={s.settingLabel}>
-        <Text strong>Whole fleet</Text>
-        <Text size="xs" tone="quiet">
-          {`Every project's agents and leads together, on every machine. ${slots.used} running now${slots.queued > 0 ? `, ${slots.queued} waiting` : ""}. Changing it needs an admin key.`}
-        </Text>
-      </div>
-      <div className={s.stack}>
-        <div className={s.inline}>
-          <div className={s.capField}>
-            <Input
-              aria-label="Most agents at once across the fleet"
-              inputMode="numeric"
-              value={text}
-              aria-invalid={!valid}
-              onChange={(e) => {
-                setDraft(e.target.value);
-                setEcho(null);
-              }}
-            />
-          </div>
-          <Button variant="primary" disabled={!changed || busy} onClick={save}>
-            {busy ? "Saving…" : "Save"}
-          </Button>
+    <section ref={ref} className={s.agentsRow} aria-labelledby={`${id}-label`} tabIndex={-1}>
+      <div className={s.agentsPanel}>
+        <div className={s.agentsHead}>
+          <span id={`${id}-label`} className={textClass({ strong: true })}>
+            Whole fleet
+          </span>
+          <Text tabular strong>{`${state.value}`}</Text>
         </div>
-        {!valid ? (
-          <Text size="xs" tone="danger">
-            A whole number from 1 to 1000.
+        <Text size="xs" tone="quiet">
+          Every project's agents and leads together, on every machine. Changing it needs an admin key.
+        </Text>
+        <CapSlider id={id} max={fleetTop(slots.cap)} disabled={!live} state={state} />
+        {warning ? (
+          <Text size="xs" tone="warning">
+            {warning}
           </Text>
         ) : null}
-        {echo ? (
-          <div role="status">
-            <Text size="xs" tone={echo.ok ? "quiet" : "danger"}>
-              {echo.text}
-            </Text>
-          </div>
-        ) : null}
+        <ResultLine
+          id={id}
+          state={state}
+          idle={`${slots.used} running now${slots.queued > 0 ? `, ${slots.queued} waiting` : ""}.`}
+          done={(d) => appliedLine("Whole fleet", d.from, d.to)}
+        />
       </div>
-    </div>
+    </section>
   );
 }

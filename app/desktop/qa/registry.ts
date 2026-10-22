@@ -252,6 +252,19 @@ export const screens: readonly Screen[] = [
     open: (page) => page.getByRole("button", { name: /^Max agents: \d+ running of \d+/u }).click(),
     variant: "max-agents",
   },
+  // ...lowered from the header, applied once the keys rest, with Undo.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["settings-agents"],
+    variant: "max-agents-applied",
+    open: async (page) => {
+      await page.getByRole("button", { name: /^Max agents: \d+ running of \d+/u }).click();
+      await page.getByRole("slider").focus();
+      for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowLeft");
+      await page.getByRole("button", { name: "Undo" }).waitFor();
+    },
+  },
   // F1: the frame (top bar, sidebar of projects) around #/, which opens the last project's chat (the first one on a
   // fresh install), and the connection states it shows. With no projects, #/ offers to add one (home.empty).
   {
@@ -362,6 +375,48 @@ export const screens: readonly Screen[] = [
   // keys and titles; settings-prompts is the real registry with edits. Compare and Update are deep links.
   // Max agents: the fleet cap and each project's slider.
   { id: "settings.agents", route: "#/settings/agents", fixtures: ["settings-agents", "long-text", "empty", "hub-unreachable"] },
+  // A slider applies when you let go (keys: once they rest): a project lowered under its running agents, with the
+  // pause and Undo; and the whole fleet moved below a project's own max, which warns.
+  {
+    id: "settings.agents",
+    route: "#/settings/agents",
+    fixtures: ["settings-agents"],
+    variant: "applied",
+    open: async (page) => {
+      // storefront: 6 running under a max of 12, lowered to 4.
+      await page.getByRole("slider", { name: "storefront" }).focus();
+      for (let i = 0; i < 8; i++) await page.keyboard.press("ArrowLeft");
+      await page.getByRole("button", { name: "Undo" }).waitFor();
+    },
+  },
+  {
+    id: "settings.agents",
+    route: "#/settings/agents",
+    fixtures: ["settings-agents"],
+    variant: "fleet-below",
+    open: async (page) => {
+      await page.getByRole("slider").first().focus();
+      for (let i = 0; i < 8; i++) await page.keyboard.press("ArrowLeft");
+      await page.getByRole("button", { name: "Undo" }).waitFor();
+    },
+  },
+  // Settings search: an option found by its name, and by nothing.
+  {
+    id: "settings.general",
+    route: "#/settings/general",
+    fixtures: ["typical"],
+    variant: "search",
+    open: (page) => page.getByRole("searchbox", { name: "Search settings" }).fill("max agents"),
+  },
+  {
+    id: "settings.general",
+    route: "#/settings/general",
+    fixtures: ["typical"],
+    variant: "search-none",
+    open: (page) => page.getByRole("searchbox", { name: "Search settings" }).fill("zebra"),
+  },
+  // Prompts before one is picked.
+  { id: "settings.prompts", route: "#/settings/prompts", fixtures: ["settings-prompts"], variant: "none" },
   { id: "settings.general", route: "#/settings/general", fixtures: ["typical", "empty", "hub-unreachable"] },
   {
     id: "settings.prompts",

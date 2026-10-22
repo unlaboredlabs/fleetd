@@ -2,7 +2,7 @@
 // and the screen the route names: a project's lead chat, or Status, Time or Settings. Navigation is the hash
 // (routes.ts); `#/` opens the project you last had open.
 import { PanelLeft, Search } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { display } from "../../../shared/shortcuts";
 import { AppFrame, Button, EmptyState, TopBar } from "../../ui";
 import { openPalette, PaletteHost, useCommands, type Command } from "../palette";
@@ -13,7 +13,7 @@ import { useDataLayer } from "../../src/data/react";
 import { homeProject, projectId, stepProject } from "./model";
 import { useMachinesDown, useSidebarProjects } from "./data";
 import { navigate, useRoute } from "./navigation";
-import type { Screen } from "./routes";
+import { HOME, type Screen } from "./routes";
 import { ConnectionBanner, needsOnboarding } from "../onboarding";
 import { ScreenHost } from "./screens";
 import { Sidebar } from "./Sidebar";
@@ -22,6 +22,9 @@ import s from "./shell.module.css";
 const platform = window.fleetd.platform;
 
 const JUMPS = [1, 2, 3, 4, 5, 6, 7, 8, 9] as const;
+
+// Settings' own sidebar takes the projects' place while Settings is open; it ships in Settings' chunk.
+const SettingsSidebar = lazy(() => import("../settings/SettingsScreen").then((m) => ({ default: m.SettingsSidebar })));
 
 /** The project `#/` opens, kept across launches: the app opens where you left it. */
 const LAST_PROJECT = "fleetd.lastProject";
@@ -59,6 +62,12 @@ export function Shell() {
   useEffect(() => {
     if (home !== null) navigate({ id: "project", project: home, message: null }, { replace: true });
   }, [home]);
+
+  // Where Settings' Back returns: the last screen before Settings.
+  const away = useRef<Screen>(HOME);
+  useEffect(() => {
+    if (screen.id !== "settings" && screen.id !== "onboarding") away.current = screen;
+  }, [screen]);
 
   const open = screen.id === "project" ? screen.project : null;
   // One chat streams at a time: the one on screen.
@@ -118,7 +127,7 @@ export function Shell() {
   const top = (
     <TopBar
       leading={
-        chrome ? (
+        chrome && shown.id !== "settings" ? (
           <Button
             variant="quiet"
             iconOnly
@@ -145,7 +154,16 @@ export function Shell() {
     <div className={s.root} data-screen="shell">
       <AppFrame
         topBar={top}
-        sidebar={chrome && !sidebarHidden ? <Sidebar projects={projects} machinesDown={machinesDown} screen={screen} hub={hub} jumpHints={modHeld} go={go} /> : undefined}
+        sidebar={
+          !chrome ? undefined : shown.id === "settings" ? (
+            // Settings' pages are in it, so it stays while Settings is open.
+            <Suspense fallback={null}>
+              <SettingsSidebar onBack={() => go(away.current)} />
+            </Suspense>
+          ) : sidebarHidden ? undefined : (
+            <Sidebar projects={projects} machinesDown={machinesDown} screen={screen} hub={hub} jumpHints={modHeld} go={go} />
+          )
+        }
       >
         <div className={s.column}>
           {/* Fixture data must never pass for a live hub. */}

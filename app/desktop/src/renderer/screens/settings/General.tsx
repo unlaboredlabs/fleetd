@@ -5,6 +5,8 @@ import type { HubState } from "../../../shared/hub";
 import { useData } from "../../src/data/react";
 import { errorText, useHubCall, useLive, useRead, useRefetch } from "./hub";
 import { MOTION_PREFS, parseMotion, setMotion, useMotion } from "./prefs";
+import { PageHead } from "./parts";
+import { useReveal } from "./search";
 import s from "./settings.module.css";
 import { keyStoreLine } from "../../../shared/pairing";
 import { useKeyStore } from "../onboarding";
@@ -19,7 +21,8 @@ export function General() {
   return (
     <div className={s.scroll} data-screen="settings.general">
       <div className={s.column}>
-        <Setting label="Appearance" help="Match system follows the OS as it changes.">
+        <PageHead title="General" />
+        <Setting reveal="general.appearance" label="Appearance" help="Match system follows the OS as it changes.">
           <RadioGroup className={s.radios} value={mode} onValueChange={(v) => {
               const m = THEME_MODES.find((x) => x.value === v);
               if (m) setMode(m.value);
@@ -29,7 +32,7 @@ export function General() {
             ))}
           </RadioGroup>
         </Setting>
-        <Setting label="Motion" help="Cards, lanes and panels move briefly when they change. Reduced turns that off; Match system follows the OS's reduce motion setting.">
+        <Setting reveal="general.motion" label="Motion" help="Cards, lanes and panels move briefly when they change. Reduced turns that off; Match system follows the OS's reduce motion setting.">
           <RadioGroup className={s.radios} value={motion} onValueChange={(v) => setMotion(parseMotion(v))} aria-label="Motion">
             {MOTION_PREFS.map((m) => (
               <Radio key={m.value} value={m.value} label={m.label} />
@@ -43,6 +46,7 @@ export function General() {
         <RetentionSetting />
         <Separator />
         <Setting
+          reveal="general.memory"
           label="Claude auto memory"
           help="Claude's own notes, kept per folder between sessions. Read-only here: a project's repository decides."
         >
@@ -61,9 +65,10 @@ export function General() {
   );
 }
 
-function Setting(props: { label: string; help: string; children: ReactNode }) {
+function Setting(props: { reveal: string; label: string; help: string; children: ReactNode }) {
+  const ref = useReveal<HTMLElement>(props.reveal);
   return (
-    <section className={s.setting} aria-label={props.label}>
+    <section ref={ref} className={s.setting} aria-label={props.label} tabIndex={-1}>
       <div className={s.settingLabel}>
         <Text strong>{props.label}</Text>
         <Text size="xs" tone="quiet">
@@ -99,7 +104,7 @@ function HubSetting() {
   const hub = state.phase === "unpaired" ? null : state.hub;
   const line = phaseLine(state);
   return (
-    <Setting label="Hub" help={`This app acts as you on this hub. ${store === null ? "" : keyStoreLine(store).replaceAll("`", "")}`}>
+    <Setting reveal="general.hub" label="Hub" help={`This app acts as you on this hub. ${store === null ? "" : keyStoreLine(store).replaceAll("`", "")}`}>
       {hub ? (
         <Truncate mono size="sm">
           {hub}
@@ -187,7 +192,7 @@ function LinkHandlerSetting() {
     );
   };
   return (
-    <Setting label="Pairing links" help="Open fleetd:// links (pairing links) in this app.">
+    <Setting reveal="general.links" label="Pairing links" help="Open fleetd:// links (pairing links) in this app.">
       {failed ? (
         <div className={s.stack}>
           <Text tone="danger">{failed.text}</Text>
@@ -246,14 +251,14 @@ function RetentionSetting() {
   const help = "How long the hub keeps the time inspector's detailed spans. Daily totals and critical paths stay 400 days.";
   if (!live) {
     return (
-      <Setting label="Time data" help={help}>
+      <Setting reveal="general.retention" label="Time data" help={help}>
         <Text tone="quiet">Connect to a hub to see and change this.</Text>
       </Setting>
     );
   }
   if (store.state !== "ready") {
     return (
-      <Setting label="Time data" help={help}>
+      <Setting reveal="general.retention" label="Time data" help={help}>
         {store.state === "loading" ? (
           <Text tone="quiet">Asking the hub…</Text>
         ) : (
@@ -268,7 +273,7 @@ function RetentionSetting() {
   const days = saving ?? store.value.retentionDays;
   const options = (RETENTION as ReadonlyArray<number>).includes(days) ? RETENTION : [...RETENTION, days].sort((a, b) => a - b);
   return (
-    <Setting label="Time data" help={help}>
+    <Setting reveal="general.retention" label="Time data" help={help}>
       <div className={s.inline}>
         <label htmlFor="retention" className={textClass({})}>
           Keep spans for
