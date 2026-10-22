@@ -14,8 +14,7 @@ import type { HubError, HubFrame } from "../../../shared/hub";
 import type { ChatScope, LiveScope } from "../../../shared/ipc";
 import { createChatActions, refOf, type ChatActions } from "./chat-layer";
 import { effectsOf, matches, type Invalidation } from "./effects";
-import { answerProgress, HUB_UPDATE_TOOL } from "./hub-update-contract";
-import { applyFrame, applyHubUpdate, applySlots, createDataStore, ingest, type DataStore } from "./store";
+import { applyFrame, applySlots, createDataStore, ingest, type DataStore } from "./store";
 
 export class CallError extends Error {
   constructor(readonly error: HubError) {
@@ -179,8 +178,6 @@ export const createDataLayer = (hub: HubApi, now: () => number = Date.now): Data
   // A saved max agents shows at once, before the next live frame's slots; a hub update's progress before its event.
   const afterWrite = (tool: ToolName, output: unknown): void => {
     if (tool === "cap_set") store.setState(applySlots(store.getState(), (output as ToolOutput<"cap_set">).slots));
-    const progress = (tool as string) === HUB_UPDATE_TOOL ? answerProgress(output) : undefined;
-    if (progress !== undefined) store.setState(applyHubUpdate(store.getState(), progress));
   };
 
   const call: Call = async (tool, input, options) => {

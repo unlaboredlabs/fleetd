@@ -263,18 +263,3 @@ describe("the live agents", () => {
     expect(selectLiveAgents(run([snapshot(2)], s))).toBeUndefined();
   });
 });
-
-describe("the hub's own update", () => {
-  const progress = { state: "waiting", to: "0.0.0-nightly.202610231030+def5678", text: "Updates once the lead finishes", at: "2026-10-19T10:00:00.000Z" } as const;
-
-  it("follows hub.update, and outlives the snapshot of the connection the update restarts", () => {
-    let s = run([live(), snapshot(10), event(11, "hub.update", { hub: { version: "0.0.0-nightly.202610221030+abc1234", update: progress } })]);
-    expect(s.hubUpdate).toEqual(progress);
-    s = run([snapshot(12)], s);
-    expect(s.hubUpdate).toEqual(progress);
-  });
-
-  it("is absent from a hub that never sent one", () => {
-    expect(run([live(), snapshot(10)]).hubUpdate).toBeUndefined();
-  });
-});

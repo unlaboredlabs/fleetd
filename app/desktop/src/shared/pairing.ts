@@ -43,8 +43,9 @@ export interface PairStart {
 }
 
 /**
- * "Set up fleetd on this Mac": `fleetd init` opened in the system terminal (`terminal` says which, for the line
- * after), or why it couldn't be, with the command to run instead.
+ * A fleetd command opened in the system terminal: `fleetd init` ("Set up fleetd on this Mac") or `fleetd update`
+ * (the hub on this computer). `terminal` says which, for the line after; or why it couldn't be, with the command to
+ * run instead.
  */
 export type SetupOutcome =
   | { readonly ok: true; readonly terminal: string }

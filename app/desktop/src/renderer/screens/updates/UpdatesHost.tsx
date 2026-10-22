@@ -3,15 +3,13 @@
 import { useState, type ReactNode } from "react";
 import { Button, copyText, Dialog, InlineCode, Text } from "../../ui";
 import { useDataLayer } from "../../src/data/react";
-import { hubUpdate, restartStops, type HubUpdateWhen } from "../../src/data/hub-update-contract";
 import { useCommands } from "../palette";
 import { useUpdatesView } from "./hooks";
+import type { SetupOutcome } from "../../../shared/pairing";
 import type { Notes as NotesOf } from "../../../shared/updates";
-import type { AppAction, AppPart, HubAction, HubPart } from "./model";
+import type { AppAction, AppPart, HubPart } from "./model";
 import { appUpdate, setUpdatesOpen, useAppUpdate, useUpdatesOpen } from "./state";
 import s from "./updates.module.css";
-
-const UNKNOWN_WORK = "Whatever is running on the hub: it couldn't say what that is right now";
 
 const runApp = (action: AppAction): void => {
   if (action === "check") void window.fleetd.updates.check();
@@ -113,90 +111,86 @@ function AppSection({ part }: { part: AppPart }) {
   );
 }
 
+/** What runs on the hub now (hub_info), asked when the person chooses Update the hub. */
+type Running = { readonly kind: "asking" } | { readonly kind: "known"; readonly items: readonly string[] } | { readonly kind: "unknown"; readonly reason: string };
+
+function RunningNow({ running }: { running: Running }) {
+  if (running.kind === "asking") {
+    return (
+      <Text size="sm" tone="quiet">
+        Asking the hub what's running…
+      </Text>
+    );
+  }
+  if (running.kind === "unknown") {
+    return (
+      <Text size="sm" tone="warning">
+        {`The hub couldn't say what's running: ${running.reason}`}
+      </Text>
+    );
+  }
+  if (running.items.length === 0) return <Text size="sm">Nothing is running on the hub, so it restarts as soon as the update is in.</Text>;
+  return (
+    <div className={s.confirm}>
+      <Text size="sm" strong>
+        Running on the hub now, so it waits for these:
+      </Text>
+      <ul className={s.notes}>
+        {running.items.map((line, i) => (
+          <li key={i}>
+            <Text size="sm">
+              <Line text={line} />
+            </Text>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function HubSection({ part }: { part: HubPart }) {
   const { call } = useDataLayer();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  // "Restart the hub now" asks first, naming what a restart would stop, from the hub's own answer.
-  const [stopping, setStopping] = useState<readonly string[] | null>(null);
+  const [running, setRunning] = useState<Running | null>(null);
+  const [opened, setOpened] = useState<SetupOutcome | null>(null);
+  const { update } = part;
 
-  const send = async (when: HubUpdateWhen): Promise<boolean> => {
-    setBusy(true);
-    setError(null);
-    const outcome = await hubUpdate(call, when);
-    setBusy(false);
-    if (!outcome.ok) setError(outcome.error.message);
-    return outcome.ok;
-  };
-  const askNow = async () => {
-    setBusy(true);
-    setError(null);
-    const stops = await restartStops(call);
-    setBusy(false);
-    // A hub that can't say what runs still gets asked: the restart would stop whatever does.
-    if (!stops.ok) setStopping([UNKNOWN_WORK]);
-    else if (stops.value.length > 0) setStopping(stops.value);
-    else await send("now");
-  };
-  const run = async (action: HubAction) => {
-    if (action === "cancel") {
-      setStopping(null);
-      await send("cancel");
-    } else if (action === "now") await askNow();
-    else await send("idle");
+  const reveal = async () => {
+    setRunning({ kind: "asking" });
+    const outcome = await call("hub_info", {});
+    setRunning(outcome.ok ? { kind: "known", items: outcome.output.busy.map((item) => item.text) } : { kind: "unknown", reason: outcome.error.message });
   };
 
   return (
     <section className={s.part} aria-label="The hub" data-updates-part="hub">
       <Head title={part.title} detail={part.detail}>
-        {part.actions.length === 0 || stopping !== null
-          ? undefined
-          : part.actions.map((a) => (
-              <Button key={a.run} variant={a.primary ? "primary" : "secondary"} disabled={busy || part.working} onClick={() => void run(a.run)}>
-                {a.label}
-              </Button>
-            ))}
+        {update === undefined || running !== null ? undefined : (
+          <Button variant="primary" onClick={() => void reveal()}>
+            Update the hub
+          </Button>
+        )}
       </Head>
-      {stopping === null ? null : (
-        <div className={s.confirm} role="alert">
-          <Text size="sm" strong>
-            Restarting the hub now stops:
-          </Text>
-          <ul className={s.notes}>
-            {stopping.map((line, i) => (
-              <li key={i}>
-                <Text size="sm">
-                  <Line text={line} />
-                </Text>
-              </li>
-            ))}
-          </ul>
-          <div className={s.actions}>
-            <Button variant="secondary" disabled={busy} onClick={() => setStopping(null)}>
-              Keep waiting
-            </Button>
-            <Button
-              variant="danger"
-              disabled={busy}
-              onClick={() =>
-                void send("now").then((ok) => {
-                  if (ok) setStopping(null);
-                })
-              }
-            >
-              Restart the hub now
-            </Button>
-          </div>
-        </div>
+      {update === undefined || running === null ? null : (
+        <>
+          <RunningNow running={running} />
+          <Command command={update.command} note={update.note} />
+          {update.local ? (
+            <div className={s.actions}>
+              <Button variant="secondary" onClick={() => void window.fleetd.updates.hubTerminal().then(setOpened)}>
+                Run in Terminal
+              </Button>
+            </div>
+          ) : null}
+          {opened === null ? null : opened.ok ? (
+            <Text size="sm" tone="quiet">{`fleetd update is running in ${opened.terminal}.`}</Text>
+          ) : (
+            <div role="alert">
+              <Text size="sm" tone="danger">
+                {opened.message}
+              </Text>
+            </div>
+          )}
+        </>
       )}
-      {error === null ? null : (
-        <div role="alert">
-          <Text size="sm" tone="danger">
-            <Line text={error} />
-          </Text>
-        </div>
-      )}
-      {part.command === undefined || (part.actions.length > 0 && error === null) ? null : <Command command={part.command.text} note={part.command.note} />}
       <Notes notes={part.notes} />
     </section>
   );

@@ -88,10 +88,7 @@ interface Payload {
 const payloads = (f: Fixture, problems: Array<string>): Array<Payload> => {
   const out: Array<Payload> = [];
   if (f.snapshot !== undefined) out.push({ what: "snapshot", fn: validator("McpTools.json", "#/$defs/McpTools/properties/fleetd_status.output"), value: f.snapshot });
-  // An event type agreed with its hub slice but not in the contracts yet is listed in pendingContracts too.
-  f.events.forEach((e, i) => {
-    if (!f.pendingContracts.has(asText(e["type"]))) out.push({ what: `event ${i} (${asText(e["type"])})`, fn: validator("HubEvent.json", "#/$defs/HubEvent"), value: e });
-  });
+  f.events.forEach((e, i) => out.push({ what: `event ${i} (${asText(e["type"])})`, fn: validator("HubEvent.json", "#/$defs/HubEvent"), value: e }));
   f.live.forEach((frame, i) => out.push({ what: `live ${i}`, fn: validator("AppServerMessage.json", "#/$defs/LiveFrame"), value: frame }));
   for (const t of f.timeline) {
     const fn =

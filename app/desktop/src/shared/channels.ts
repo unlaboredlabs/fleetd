@@ -60,6 +60,11 @@ export const IPC = {
   updatesInstall: "updates:install",
   /** invoke() → void. Takes back "Update and restart" while the download runs. */
   updatesKeep: "updates:keep",
+  /**
+   * invoke() → SetupOutcome. `fleetd update` in the system terminal, for a hub on this computer only; the one
+   * command, with no arguments. The CLI restarts the hub only when the hub says nothing runs.
+   */
+  updatesHubTerminal: "updates:hubTerminal",
   /** main → renderer: UpdatesState, on every change. */
   updatesChanged: "updates:changed",
   /** main → renderer: a command id (shared/shortcuts.ts or the palette registry), from a click in the app menu. */

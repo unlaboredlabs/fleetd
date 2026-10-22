@@ -3,7 +3,9 @@ import { app, shell } from "electron";
 import type { AppImageUpdater, DebUpdater, MacUpdater } from "electron-updater";
 import { z } from "zod";
 import { DEB, type AppUpdate, type Release, type UpdatesState } from "../shared/updates";
+import type { SetupOutcome } from "../shared/pairing";
 import { RELEASE_BUILD } from "./build";
+import { openUpdate, realTerminalDeps } from "./pairing/terminal";
 import { feedUrl } from "./update-feed";
 import { failureReason } from "./update-messages";
 import { fetchRelease } from "./update-release";
@@ -22,6 +24,8 @@ export interface Updates {
   readonly install: () => void;
   /** Takes back "Update and restart" while the download runs. */
   readonly keep: () => void;
+  /** `fleetd update` in the system terminal (main checks first that the hub is on this computer). */
+  readonly hubTerminal: () => Promise<SetupOutcome>;
   readonly onChange: (listener: (state: UpdatesState) => void) => void;
 }
 
@@ -83,13 +87,26 @@ const fixtureUpdates = (file: string): Updates => {
     check: () => undefined,
     install: () => h.send({ type: "install" }),
     keep: () => h.send({ type: "keep" }),
+    // A fixture never opens a real terminal.
+    hubTerminal: () => {
+      console.info("fixture update: fleetd update in a terminal");
+      return Promise.resolve({ ok: true, terminal: "Terminal" });
+    },
     onChange: (listener) => h.onChange((s) => listener(version === undefined ? s : { ...s, current: version })),
   };
 };
 
 const unsupported = (): Updates => {
   const h = holder({ kind: "unsupported" }, false, () => undefined);
-  return { start: () => undefined, state: h.state, check: () => undefined, install: () => undefined, keep: () => undefined, onChange: h.onChange };
+  return {
+    start: () => undefined,
+    state: h.state,
+    check: () => undefined,
+    install: () => undefined,
+    keep: () => undefined,
+    hubTerminal: () => openUpdate(realTerminalDeps()),
+    onChange: h.onChange,
+  };
 };
 
 /**
@@ -172,6 +189,7 @@ export const updates = (fixtureFile: string | null): Updates => {
     check: () => run(true),
     install: () => h.send({ type: "install" }),
     keep: () => h.send({ type: "keep" }),
+    hubTerminal: () => openUpdate(realTerminalDeps()),
     onChange: h.onChange,
   };
 };

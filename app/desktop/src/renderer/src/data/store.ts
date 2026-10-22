@@ -28,7 +28,6 @@ import { applyDelta, emptyChat, mergeLive, settleSends, type Chat, type ChatSend
 import type { AgentRow } from "./agents-contract";
 import { CHAT_EVENTS, type ChatDelta, type ProjectChatState } from "./chat-contract";
 import { ordersNamed } from "./effects";
-import { eventProgress, type HubUpdateProgress } from "./hub-update-contract";
 import { settled } from "./phase";
 
 /** "machineId/projectId". */
@@ -97,11 +96,6 @@ export interface DataState {
   readonly chatSends: Readonly<Record<ProjectKey, readonly ChatSend[]>>;
   /** Per project: whether its lead waits on the person, and whether it works. */
   readonly chatStates: Readonly<Record<ProjectKey, ProjectChatState>>;
-  /**
-   * The hub's own update under way, or how the last one ended: from each `hub.update` and hub_update's answer. Kept
-   * across snapshots, since the update outlives the connection it restarts.
-   */
-  readonly hubUpdate?: HubUpdateProgress | undefined;
   /** Whether this hub can stop a lead mid-turn (chat_stop); undefined until asked, again on each connection. */
   readonly chatStop?: boolean | undefined;
 }
@@ -319,11 +313,6 @@ export const applyEvent = (s: DataState, event: HubEvent): DataState => {
     case "workstream.done":
       next = patchOrder(next, workstreamId, { state: "done" });
       break;
-    case "hub.update": {
-      const progress = eventProgress(event);
-      if (progress !== undefined) next = applyHubUpdate(next, progress);
-      break;
-    }
     case "machine.online":
     case "machine.offline":
     case "machine.degraded": {
@@ -395,7 +384,6 @@ type Ingest = {
   [T in ToolName]: { readonly tool: T; readonly input: ToolInput<T>; readonly output: ToolOutput<T> };
 }[ToolName];
 
-export const applyHubUpdate = (s: DataState, hubUpdate: HubUpdateProgress): DataState => ({ ...s, hubUpdate });
 
 /**
  * cap_set's answer: the hub's slot state with the new cap or max agents, applied at once. It replaces the live

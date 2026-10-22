@@ -1,6 +1,6 @@
 // C1: the app's own update and the hub's, one fixture per state, around typical's data so the sidebar line and the
 // sheet are shot in a full window. Main's fixture updater reads each one's `update` section in place of the release
-// feed; the hub's version comes in the ready frame (the fixture's live state), its update as `hub.update` events.
+// feed; the hub's version comes in the ready frame (the fixture's live state), what runs on it from hub_info.
 import type { Release, UpdatesState } from "../../src/shared/updates.ts";
 import { defineGroup } from "../kit/group.ts";
 import { Fixture } from "../kit/fixture.ts";
@@ -28,21 +28,12 @@ const RELEASE: Release = {
 
 const state = (app: UpdatesState["app"], release: Release | null = RELEASE): JsonObject => ({ current: MINE, app, release }) as unknown as JsonObject;
 
-/** C2's hub_update and its hub.update event are still on their branch; hub_info and the ready frame's version are main's. */
-const PENDING = "C2: hub_update and its hub.update event, on feat/safe-update";
 const BUSY = [
   { kind: "lead", text: "The storefront lead's reply" },
   { kind: "agent", text: "T19 writing the checkout page in storefront (12 m)", machineId: "devbox" },
   { kind: "agent", text: "T21 testing the cart in storefront (4 m)", machineId: "devbox" },
   { kind: "train", text: "Merging PR #251 into acme/storefront" },
 ];
-
-type Progress = { readonly state: string; readonly to: string; readonly text: string; readonly at: string };
-const progress = (s: string, text: string): Progress => ({ state: s, to: NEXT, text, at: AT });
-
-/** The seq after the snapshot's cursor and every event the fixture has. */
-const nextSeq = (f: Fixture): number =>
-  Math.max(typeof f.snapshot?.["cursor"] === "number" ? f.snapshot["cursor"] : 0, ...f.events.map((e) => (typeof e["seq"] === "number" ? e["seq"] : 0))) + 1;
 
 export default defineGroup({
   fixtures: (base) => {
@@ -53,38 +44,20 @@ export default defineGroup({
       if (f.state.phase === "live") f.state = { ...f.state, version: MINE };
       return f;
     };
-    /** The hub running `version` (its ready frame), and, when given, an update of it under way. */
-    const withHub = (what: string, note: string, version: string, update?: Progress, release: Release = RELEASE): Fixture => {
-      const f = make(what, note, { kind: "current" }, release);
-      if (f.state.phase === "live") f.state = { ...f.state, version };
-      f.pendingContracts.set("hub_update", PENDING);
-      f.pendingContracts.set("hub.update", PENDING);
-      if (update !== undefined) f.events.push({ seq: nextSeq(f), at: AT, type: "hub.update", summary: update.text, data: { version, update: { ...update } } });
-      f.answer("hub_info", {}, { version, protocol: 1, channel: "nightly", startedAt: AT, busy: BUSY });
+    /** The hub at `url` running `version` (its ready frame), with `busy` running on it (hub_info). */
+    const withHub = (what: string, note: string, version: string, opts: { release?: Release; busy?: JsonObject[]; url?: string } = {}): Fixture => {
+      const f = make(what, note, { kind: "current" }, opts.release ?? RELEASE);
+      if (f.state.phase === "live") f.state = { ...f.state, version, ...(opts.url === undefined ? {} : { hub: opts.url }) };
+      f.answer("hub_info", {}, { version, protocol: 1, channel: "nightly", startedAt: AT, busy: opts.busy ?? BUSY });
       return f;
     };
 
-    // Update the hub, on a newer CLI than the hub's: it waits for the work there (the event), with Restart the hub now.
-    const available = withHub("hub-available", "The channel has a newer hub than the one running, which can update itself.", MINE, undefined, { ...RELEASE, cli: NEXT });
-    const waiting = progress("waiting", "Updates once the storefront lead and 2 agents finish");
-    available.answer("hub_update", { when: "idle" }, { hub: { version: MINE, update: { ...waiting } } });
-    available.then("hub_update", { when: "idle" }, {
-      frames: [{ ms: 200, kind: "event", payload: { seq: nextSeq(available), at: AT, type: "hub.update", summary: waiting.text, data: { version: MINE, update: { ...waiting } } } }],
-    });
-
-    // The hub is older than this app; Update the hub is refused (an app key, not a person's), so the command shows.
-    const behind = withHub("hub-behind", "The hub runs an older nightly than this app: a warning, and Update the hub.", OLDER);
-    behind.fail("hub_update", { when: "idle" }, { code: "forbidden", message: "Only a person's key can update the hub." });
-
     return [
-      available,
-      behind,
-      withHub("hub-waiting", "An update of the hub waits for its work; Restart the hub now asks first, naming what it stops.", MINE, waiting),
-      withHub("hub-installing", "The hub installs the update.", MINE, progress("installing", "Downloading and checking the new build")),
-      withHub("hub-restarting", "The hub restarts into the update; the connection drops for a moment.", MINE, progress("restarting", "Restarting into the new build")),
-      withHub("hub-failed", "The hub couldn't update.", MINE, progress("failed", "The download was damaged, so nothing changed. Try again.")),
       withHub("hub-current", "The hub runs this app's build, the newest on the channel.", MINE),
       withHub("hub-unknown", "The hub reports 0.0.0 (a local build): its version is unknown, and nothing is flagged.", "0.0.0"),
+      withHub("hub-available", "The channel has a newer hub than the one running: in the sheet only.", MINE, { release: { ...RELEASE, cli: NEXT } }),
+      withHub("hub-behind", "The hub on devbox runs an older nightly than this app: a warning; Update the hub lists what runs and the command.", OLDER),
+      withHub("hub-behind-local", "The hub on this computer is behind and idle: Update the hub offers Run in Terminal.", OLDER, { busy: [], url: "http://127.0.0.1:4790" }),
       make("idle", "Not checked yet (just started).", { kind: "idle" }, null),
       make("checking", "A check someone asked for, under way.", { kind: "checking" }, null),
       make("unsupported", "A development or test build, which doesn't update itself.", { kind: "unsupported" }, null),

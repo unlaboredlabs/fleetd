@@ -115,6 +115,11 @@ export const notesSince = (changes: readonly Change[], mine: string, area: strin
 export const knownVersion = (version: string | null | undefined): version is string =>
   version !== null && version !== undefined && (compareVersions(version, "0.0.0") ?? 0) !== 0;
 
+const LOOPBACK = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
+
+/** A hub on this computer: its URL's host is loopback. Only such a hub gets "Run in Terminal". */
+export const localHub = (hubUrl: string): boolean => URL.canParse(hubUrl) && LOOPBACK.has(new URL(hubUrl).hostname);
+
 const withoutBuild = (version: string): string => version.trim().replace(/^v/u, "").split("+", 1)[0] ?? "";
 
 const NIGHTLY = /^(\d+\.\d+\.\d+)-nightly\.(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})$/u;

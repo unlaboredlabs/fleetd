@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCommit, knownVersion, MAX_NOTES, notesSince, subjectLines, versionLabel, type Change } from "./updates";
+import { buildCommit, knownVersion, localHub, MAX_NOTES, notesSince, subjectLines, versionLabel, type Change } from "./updates";
 
 const change = (commit: string, subject: string, areas: string[] = ["app"]): Change => ({ commit, date: "2026-10-22T10:30:00Z", subject, areas });
 
@@ -59,5 +59,15 @@ describe("versions", () => {
     expect(versionLabel("0.6.0-nightly.202610221030+abc1234", "UTC")).toBe("0.6.0 nightly (Oct 22, 10:30)");
     expect(versionLabel("v0.6.0")).toBe("0.6.0");
     expect(versionLabel("0.6.0-rc.1+abc1234")).toBe("0.6.0-rc.1");
+  });
+});
+
+describe("localHub", () => {
+  it("is a hub on this computer only", () => {
+    expect(localHub("http://127.0.0.1:4790")).toBe(true);
+    expect(localHub("http://localhost:4790")).toBe(true);
+    expect(localHub("http://[::1]:4790")).toBe(true);
+    expect(localHub("https://devbox.example.ts.net")).toBe(false);
+    expect(localHub("not a url")).toBe(false);
   });
 });

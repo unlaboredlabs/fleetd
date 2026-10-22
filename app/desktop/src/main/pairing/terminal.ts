@@ -1,6 +1,7 @@
-// "Set up fleetd on this Mac": `fleetd init` in the system terminal. The wizard asks for logins and installs a
-// background service, so it runs where the person can answer it, never hidden in the app. This is the only command
-// main runs for the page, and the page can't change it: the request carries no arguments.
+// "Set up fleetd on this Mac": `fleetd init` in the system terminal; "Run in Terminal" for a hub on this computer:
+// `fleetd update`. Both run where the person sees and answers them, never hidden in the app (the wizard asks for
+// logins; update says what runs on the hub and restarts it only when nothing does). These are the only commands main
+// runs for the page, and the page can't change them: each request carries no arguments, and main picks the command.
 import { execFile, spawn } from "node:child_process";
 import { accessSync, constants, mkdtempSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -17,8 +18,8 @@ export interface TerminalDeps {
   readonly exec: (file: string, args: ReadonlyArray<string>) => Promise<boolean>;
   /** Starts a program that outlives the call; true once it started. */
   readonly launch: (file: string, args: ReadonlyArray<string>) => Promise<boolean>;
-  /** Writes a script Terminal can open (a `.command` file) and returns its path. */
-  readonly writeScript: (text: string) => string;
+  /** Writes a script Terminal can open (a `.command` file named `name`) and returns its path. */
+  readonly writeScript: (text: string, name: string) => string;
 }
 
 /** Linux terminals, most general first, with what comes before the command to run. */
@@ -42,33 +43,40 @@ const which = (deps: TerminalDeps, name: string): string | null => {
   return null;
 };
 
+/** The two fleetd commands main opens, each with no arguments. */
+export type FleetdCommand = "init" | "update";
+
 /** The fleetd CLI, and the command a person would type for it: on PATH, else where the installer puts it. */
-export const findFleetd = (deps: TerminalDeps): { readonly bin: string; readonly command: string } | null => {
+export const findFleetd = (deps: TerminalDeps, run: FleetdCommand = "init"): { readonly bin: string; readonly command: string } | null => {
   const onPath = which(deps, "fleetd");
-  if (onPath !== null) return { bin: onPath, command: "fleetd init" };
+  if (onPath !== null) return { bin: onPath, command: `fleetd ${run}` };
   const installed = join(deps.home, ".local", "bin", "fleetd");
-  return deps.executable(installed) ? { bin: installed, command: "~/.local/bin/fleetd init" } : null;
+  return deps.executable(installed) ? { bin: installed, command: `~/.local/bin/fleetd ${run}` } : null;
 };
 
 const shQuote = (text: string): string => `'${text.replaceAll("'", `'\\''`)}'`;
 
-export const openSetup = async (deps: TerminalDeps): Promise<SetupOutcome> => {
-  const found = findFleetd(deps);
+const openFleetd = async (deps: TerminalDeps, run: FleetdCommand): Promise<SetupOutcome> => {
+  const found = findFleetd(deps, run);
   if (found === null) {
-    return { ok: false, message: "Couldn't find the fleetd command on this computer. Once fleetd is installed, run this in a terminal:", command: "fleetd init" };
+    return { ok: false, message: "Couldn't find the fleetd command on this computer. Once fleetd is installed, run this in a terminal:", command: `fleetd ${run}` };
   }
   const failed: SetupOutcome = { ok: false, message: "Couldn't open a terminal. Run this in one:", command: found.command };
   if (deps.platform === "darwin") {
-    const script = deps.writeScript(`#!/bin/sh\nexec ${shQuote(found.bin)} init\n`);
+    const script = deps.writeScript(`#!/bin/sh\nexec ${shQuote(found.bin)} ${run}\n`, `fleetd-${run}.command`);
     return (await deps.exec("/usr/bin/open", ["-a", "Terminal", script])) ? { ok: true, terminal: "Terminal" } : failed;
   }
   if (deps.platform !== "linux") return failed;
   for (const terminal of LINUX_TERMINALS) {
     const bin = which(deps, terminal.bin);
-    if (bin !== null && (await deps.launch(bin, [...terminal.args, found.bin, "init"]))) return { ok: true, terminal: "a terminal" };
+    if (bin !== null && (await deps.launch(bin, [...terminal.args, found.bin, run]))) return { ok: true, terminal: "a terminal" };
   }
   return failed;
 };
+
+export const openSetup = (deps: TerminalDeps): Promise<SetupOutcome> => openFleetd(deps, "init");
+/** `fleetd update` with no arguments: it installs, and restarts the hub here only when the hub says nothing runs. */
+export const openUpdate = (deps: TerminalDeps): Promise<SetupOutcome> => openFleetd(deps, "update");
 
 const executable = (file: string): boolean => {
   try {
@@ -94,8 +102,8 @@ export const realTerminalDeps = (): TerminalDeps => ({
       });
       child.once("error", () => done(false));
     }),
-  writeScript: (text) => {
-    const file = join(mkdtempSync(join(tmpdir(), "fleetd-setup-")), "fleetd-init.command");
+  writeScript: (text, name) => {
+    const file = join(mkdtempSync(join(tmpdir(), "fleetd-")), name);
     writeFileSync(file, text, { mode: 0o700 });
     return file;
   },

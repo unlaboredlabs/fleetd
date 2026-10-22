@@ -1,8 +1,7 @@
 // What the updates surfaces say: the sidebar's one line and the sheet's two parts, this app and the hub. Pure, so
 // every state is unit-tested; the components only lay it out.
 import { compareVersions } from "../../../shared/pairing";
-import { DEB_INSTALL, knownVersion, notesSince, versionLabel, type AppUpdate, type Notes, type UpdatesState } from "../../../shared/updates";
-import type { HubUpdateProgress } from "../../src/data/hub-update-contract";
+import { DEB_INSTALL, knownVersion, localHub, notesSince, versionLabel, type AppUpdate, type Notes, type UpdatesState } from "../../../shared/updates";
 
 export type Tone = "accent" | "warning" | "danger" | "quiet";
 
@@ -26,21 +25,15 @@ export interface AppPart {
   readonly busy?: boolean;
 }
 
-/** `update`: once nothing runs; `now`: asks first, with what a restart stops; `retry` is `update` again. */
-export type HubAction = "update" | "now" | "cancel" | "retry";
-
 export interface HubPart {
   readonly title: string;
   readonly detail?: string;
   readonly notes: Notes;
   /**
-   * The command that updates it by hand, with Copy, and a note saying where to run it and that it restarts the hub.
-   * Shown when there's no action, or once the action failed.
+   * Update the hub: the command to run, with Copy, and a note saying where and when it restarts the hub. `local`: the
+   * hub is on this computer, so the app can open the command in a terminal. The app never restarts the hub itself.
    */
-  readonly command?: { readonly text: string; readonly note: string };
-  readonly actions: readonly { readonly label: string; readonly run: HubAction; readonly primary: boolean }[];
-  /** Installing or restarting: the connection drops for a moment, and there is nothing to click. */
-  readonly working: boolean;
+  readonly update?: { readonly command: string; readonly note: string; readonly local: boolean };
 }
 
 export interface UpdatesView {
@@ -50,13 +43,10 @@ export interface UpdatesView {
   readonly hub: HubPart | null;
 }
 
-const LOOPBACK = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
-
 /** The hub's machine as people call it, for "Run this on devbox"; null for a hub on this computer. */
 export const hubHost = (hubUrl: string): string | null => {
-  if (!URL.canParse(hubUrl)) return null;
+  if (!URL.canParse(hubUrl) || localHub(hubUrl)) return null;
   const host = new URL(hubUrl).hostname;
-  if (LOOPBACK.has(host)) return null;
   if (/^\d+(\.\d+){3}$/u.test(host) || host.startsWith("[")) return host;
   return host.split(".", 1)[0] ?? host;
 };
@@ -137,16 +127,9 @@ export interface HubInput {
   readonly url: string | null;
   /** Its fleetd version, from the ready frame; undefined from a hub before it. */
   readonly version: string | undefined;
-  /** It can update itself (hub_update); otherwise only the command updates it. */
-  readonly updatesItself: boolean;
-  readonly progress: HubUpdateProgress | undefined;
 }
 
-/** An update that installed or restarted into the version the hub now runs is over, whatever its last event said. */
-const landed = (progress: HubUpdateProgress, version: string | undefined): boolean =>
-  version !== undefined && (progress.state === "installing" || progress.state === "restarting") && compareVersions(progress.to, version) === 0;
-
-/** The command that updates the hub by hand, on this app's channel. */
+/** The command that updates the hub, on this app's channel. */
 const updateCommand = (hubVersion: string, appVersion: string): string => {
   const channel = channelOf(appVersion);
   return !knownVersion(appVersion) || channelOf(hubVersion) === channel ? "fleetd update" : `fleetd update --channel ${channel}`;
@@ -154,71 +137,34 @@ const updateCommand = (hubVersion: string, appVersion: string): string => {
 
 const hubPart = (hub: HubInput, state: UpdatesState | null): HubPart | null => {
   if (hub.url === null) return null;
-  const { version, progress } = hub;
-  const appVersion = state?.current ?? "0.0.0";
-  const changes = state?.release?.changes ?? [];
-  const hubNotes = version === undefined ? NO_NOTES : notesSince(changes, version, "hub");
-
-  if (progress !== undefined && progress.state !== "done" && !landed(progress, version)) {
-    switch (progress.state) {
-      case "waiting":
-        return {
-          title: "The hub updates once its work is done",
-          detail: progress.text,
-          notes: hubNotes,
-          actions: [
-            { label: "Restart the hub now", run: "now", primary: false },
-            { label: "Cancel update", run: "cancel", primary: false },
-          ],
-          working: false,
-        };
-      case "installing":
-        return { title: `Updating the hub to ${versionLabel(progress.to)}…`, detail: progress.text, notes: NO_NOTES, actions: [], working: true };
-      case "restarting":
-        return { title: "Restarting the hub…", detail: progress.text, notes: NO_NOTES, actions: [], working: true };
-      case "failed":
-        return { title: "Couldn't update the hub", detail: progress.text, notes: NO_NOTES, actions: [{ label: "Try again", run: "retry", primary: false }], working: false };
-    }
-  }
-
+  const { version } = hub;
   if (!knownVersion(version)) {
     // A local build's 0.0.0, or a hub from before it said its version: whether it's behind is a guess, so no warning.
-    return { title: "The hub's version is unknown", detail: "It doesn't say which fleetd it runs, so the app can't tell whether it's up to date.", notes: NO_NOTES, actions: [], working: false };
+    return { title: "The hub's version is unknown", detail: "It doesn't say which fleetd it runs, so the app can't tell whether it's up to date.", notes: NO_NOTES };
   }
-
+  const appVersion = state?.current ?? "0.0.0";
   const has = versionLabel(version);
   const behind = knownVersion(appVersion) && compareVersions(version, appVersion) === -1;
   const cli = state?.release?.cli ?? null;
   const available = knownVersion(cli) && channelOf(cli) === channelOf(version) && compareVersions(version, cli) === -1;
-  if (behind || available) {
-    const title = behind ? "The hub runs an older fleetd than this app" : `fleetd ${versionLabel(cli ?? version)} is available for the hub`;
-    // Today's `fleetd update` restarts the hub and its nodes at once, so the note says what that stops.
-    const host = hubHost(hub.url);
-    const command = {
-      text: updateCommand(version, appVersion),
-      note: `Run this ${host === null ? "in a terminal on this computer" : `on ${host}`}. It restarts the hub, which stops its running agents and the lead's replies, so run it when they're done:`,
-    };
-    return hub.updatesItself
-      ? {
-          title,
-          detail: `It runs ${has}. Updating restarts the hub once nothing runs there; nothing stops without asking.`,
-          notes: hubNotes,
-          command,
-          actions: [{ label: "Update the hub", run: "update", primary: true }],
-          working: false,
-        }
-      : { title, detail: `It runs ${has}.`, notes: hubNotes, command, actions: [], working: false };
-  }
-  return { title: "The hub is up to date", detail: `It runs ${has}.`, notes: NO_NOTES, actions: [], working: false };
+  if (!behind && !available) return { title: "The hub is up to date", detail: `It runs ${has}.`, notes: NO_NOTES };
+  const host = hubHost(hub.url);
+  return {
+    title: behind ? "The hub runs an older fleetd than this app" : `fleetd ${versionLabel(cli ?? version)} is available for the hub`,
+    detail: `It runs ${has}.`,
+    notes: notesSince(state?.release?.changes ?? [], version, "hub"),
+    update: {
+      command: updateCommand(version, appVersion),
+      // fleetd update (#287) restarts the hub only when hub_info says nothing runs; else it lists what does.
+      note: `Run this ${host === null ? "in a terminal on this computer" : `on ${host}`}. It installs the update, then restarts the hub only if nothing is running there; if something is, it says what and leaves the hub running.`,
+      local: host === null,
+    },
+  };
 };
 
-const hubLine = (part: HubPart | null, hub: HubInput, appVersion: string): Line | null => {
-  if (part === null) return null;
-  if (part.working) return { tone: "quiet", text: "Updating the hub…" };
-  if (part.actions.some((a) => a.run === "now")) return { tone: "quiet", text: "The hub updates when idle" };
-  if (part.actions.some((a) => a.run === "retry")) return { tone: "danger", text: "Couldn't update the hub" };
+const hubLine = (hub: HubInput, appVersion: string): Line | null => {
   // Only falling behind this app is worth the sidebar; a newer hub on the channel (many a day) waits in the sheet.
-  const behind = knownVersion(hub.version) && knownVersion(appVersion) && compareVersions(hub.version, appVersion) === -1;
+  const behind = hub.url !== null && knownVersion(hub.version) && knownVersion(appVersion) && compareVersions(hub.version, appVersion) === -1;
   return behind ? { tone: "warning", text: "Update the hub" } : null;
 };
 
@@ -228,16 +174,12 @@ export interface UpdatesInput {
 }
 
 /**
- * Both parts and the one line. The line names the most pressing: a hub update under way, then this app's restart
- * or download, then the hub falling behind, then this app's update found.
+ * Both parts and the one line. The line names the most pressing: this app's restart or download, then the hub
+ * falling behind, then this app's update found.
  */
 export const updatesView = ({ app, hub }: UpdatesInput): UpdatesView => {
-  const own = app === null ? null : appPart(app);
-  const remote = hubPart(hub, app);
   const ofApp = app === null ? null : appLine(app.app);
-  const ofHub = hubLine(remote, hub, app?.current ?? "0.0.0");
-  const underWay = remote !== null && (remote.working || remote.actions.some((a) => a.run === "now"));
+  const ofHub = hubLine(hub, app?.current ?? "0.0.0");
   const pressing = app?.app.kind === "ready" || (app?.app.kind === "available" && app.app.restart);
-  const line = underWay ? ofHub : pressing ? ofApp : (ofHub ?? ofApp);
-  return { line, app: own, hub: remote };
+  return { line: pressing ? ofApp : (ofHub ?? ofApp), app: app === null ? null : appPart(app), hub: hubPart(hub, app) };
 };

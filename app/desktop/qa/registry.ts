@@ -100,10 +100,7 @@ export const fixtures = [
   "updates-hub-unknown",
   "updates-hub-available",
   "updates-hub-behind",
-  "updates-hub-waiting",
-  "updates-hub-installing",
-  "updates-hub-restarting",
-  "updates-hub-failed",
+  "updates-hub-behind-local",
 ] as const;
 export type FixtureName = (typeof fixtures)[number];
 
@@ -359,12 +356,11 @@ export const screens: readonly Screen[] = [
   // C1: updates. The sidebar's line above the connection for each state that has one, and the sheet the palette's
   // "Check for updates" opens, for every state of this app (not checked yet, checking, a build that doesn't update,
   // up to date, found, downloading to restart, ready, the deb's command, a failed check, a failed download) and of the
-  // hub (up to date, version unknown, a newer build on the channel, older than this app, waiting for its work,
-  // installing, restarting, failed).
+  // hub (up to date, version unknown, a newer build on the channel, older than this app, there or on this computer).
   {
     id: "shell",
     route: "#/",
-    fixtures: ["updates-available", "updates-downloading", "updates-ready", "updates-hub-behind", "updates-hub-waiting", "updates-hub-restarting", "updates-hub-failed"],
+    fixtures: ["updates-available", "updates-downloading", "updates-ready", "updates-hub-behind"],
     variant: "updates",
   },
   {
@@ -385,36 +381,33 @@ export const screens: readonly Screen[] = [
       "updates-hub-unknown",
       "updates-hub-available",
       "updates-hub-behind",
-      "updates-hub-waiting",
-      "updates-hub-installing",
-      "updates-hub-restarting",
-      "updates-hub-failed",
+      "updates-hub-behind-local",
     ],
     open: openUpdates,
   },
-  // Update the hub: it waits for the work there; Restart the hub now asks first, naming what a restart would stop.
-  {
-    id: "updates",
-    route: "#/",
-    fixtures: ["updates-hub-available"],
-    variant: "restart-now",
-    open: async (page) => {
-      await openUpdates(page);
-      await page.getByRole("button", { name: "Update the hub" }).click();
-      await page.getByRole("button", { name: "Restart the hub now" }).click();
-      await page.getByRole("button", { name: "Keep waiting" }).waitFor();
-    },
-  },
-  // Update the hub refused: the error, then the command, saying it restarts the hub and what that stops.
+  // Update the hub on devbox: what runs there (hub_info) and the command, saying when it restarts the hub.
   {
     id: "updates",
     route: "#/",
     fixtures: ["updates-hub-behind"],
-    variant: "command",
+    variant: "update-the-hub",
     open: async (page) => {
       await openUpdates(page);
       await page.getByRole("button", { name: "Update the hub" }).click();
-      await page.getByText("fleetd update", { exact: true }).waitFor();
+      await page.getByText("Running on the hub now, so it waits for these:").waitFor();
+    },
+  },
+  // Update the hub on this computer, idle: Run in Terminal opens fleetd update (a fixture opens nothing).
+  {
+    id: "updates",
+    route: "#/",
+    fixtures: ["updates-hub-behind-local"],
+    variant: "run-in-terminal",
+    open: async (page) => {
+      await openUpdates(page);
+      await page.getByRole("button", { name: "Update the hub" }).click();
+      await page.getByRole("button", { name: "Run in Terminal" }).click();
+      await page.getByText("fleetd update is running in Terminal.").waitFor();
     },
   },
   // ...lowered from the header, applied once the keys rest, with Undo.
