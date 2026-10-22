@@ -11,7 +11,7 @@ import type { Command, Source } from "./registry";
 const itemId = (p: { readonly machineId: string; readonly projectId: string }): string => `project:${projectKey(p)}`;
 
 /** A settings page scoped to one project, in the form Settings' own links use (`for=<machine>/<project>`). */
-const settingsFor = (tab: "prompts" | "instructions", p: { readonly machineId: string; readonly projectId: string }): string =>
+const settingsFor = (tab: "agents" | "prompts" | "instructions", p: { readonly machineId: string; readonly projectId: string }): string =>
   `#/settings/${tab}?${new URLSearchParams({ for: projectKey(p) }).toString().replaceAll("%2F", "/")}`;
 
 /** One row per project. The machine name tells two checkouts of the same repo apart. */
@@ -30,7 +30,7 @@ export const projectItems = (state: DataState, go: (hash: string) => void): Comm
       actions: [
         { title: "Instructions for this project", run: () => go(settingsFor("instructions", p)) },
         { title: "Prompts for this project", run: () => go(settingsFor("prompts", p)) },
-        { title: "Max agents", run: () => go("#/settings/agents") },
+        { title: "Max agents for this project", run: () => go(settingsFor("agents", p)) },
       ],
     };
   });

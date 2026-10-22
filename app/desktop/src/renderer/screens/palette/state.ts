@@ -61,6 +61,8 @@ export const readFrecency = (now = Date.now()): Frecency =>
 export const noteRun = (id: string, now = Date.now()): void => {
   try {
     localStorage.setItem(USE_KEY, JSON.stringify(noteUse(readUses(), id, now)));
+    // The five recents this list replaced: cleared on the first run after the update.
+    localStorage.removeItem("fleetd.palette.recent");
   } catch {
     // Storage can be full or off; ranking by use is a convenience.
   }

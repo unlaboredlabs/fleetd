@@ -102,6 +102,14 @@ describe("frecency", () => {
     expect(Object.keys(uses)).toHaveLength(50);
     expect(uses["a"]?.count).toBe(2);
   });
+
+  it("never drops the item just run, even once fifty more used ones fill the list", () => {
+    let uses: Record<string, { count: number; last: number }> = {};
+    for (let i = 0; i < 50; i += 1) uses = { ...uses, [`old${String(i)}`]: { count: 9, last: 0 } };
+    uses = noteUse(uses, "new", 1);
+    expect(uses["new"]).toEqual({ count: 1, last: 1 });
+    expect(Object.keys(uses)).toHaveLength(50);
+  });
 });
 
 describe("match highlighting", () => {
@@ -274,9 +282,13 @@ describe("projects", () => {
   it("offers the project's other pages as actions, scoped to it", () => {
     const opened: string[] = [];
     const [project] = projectItems(state([live(), snapshot(1)]), (hash) => opened.push(hash));
-    expect(project?.actions?.map((a) => a.title)).toEqual(["Instructions for this project", "Prompts for this project", "Max agents"]);
+    expect(project?.actions?.map((a) => a.title)).toEqual(["Instructions for this project", "Prompts for this project", "Max agents for this project"]);
     for (const action of project?.actions ?? []) action.run();
-    expect(opened).toEqual(["#/settings/instructions?for=devbox/storefront", "#/settings/prompts?for=devbox/storefront", "#/settings/agents"]);
+    expect(opened).toEqual([
+      "#/settings/instructions?for=devbox/storefront",
+      "#/settings/prompts?for=devbox/storefront",
+      "#/settings/agents?for=devbox/storefront",
+    ]);
   });
 
   it("knows the project on screen, so the palette opens on it", () => {

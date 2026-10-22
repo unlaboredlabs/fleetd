@@ -395,6 +395,14 @@ export const screens: readonly Screen[] = [
   // keys and titles; settings-prompts is the real registry with edits. Compare and Update are deep links.
   // Max agents: the fleet cap and each project's slider.
   { id: "settings.agents", route: "#/settings/agents", fixtures: ["settings-agents", "long-text", "empty", "hub-unreachable"] },
+  // The palette's "Max agents for this project": that project's slider scrolled to and focused.
+  {
+    id: "settings.agents",
+    variant: "for-project",
+    route: "#/settings/agents?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
+    fixtures: ["settings-agents"],
+    open: (page) => expect(page.getByRole("slider", { name: "storefront" })).toBeFocused(),
+  },
   { id: "settings.general", route: "#/settings/general", fixtures: ["typical", "empty", "hub-unreachable"] },
   {
     id: "settings.prompts",

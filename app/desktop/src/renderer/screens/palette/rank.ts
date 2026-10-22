@@ -139,11 +139,13 @@ export const frecency = (use: Use, now: number): number => {
 /** At most this many ids are remembered; the least used go first. */
 const KEEP = 50;
 
-/** Records a run of `id` at `now`, keeping the `KEEP` ids with the highest frecency. */
+/**
+ * Records a run of `id` at `now`, keeping `id` and the `KEEP - 1` other ids with the highest frecency: a new item
+ * must not be dropped the moment it is first run, or it could never rise.
+ */
 export const noteUse = (uses: Readonly<Record<string, Use>>, id: string, now: number): Record<string, Use> => {
-  const next: Record<string, Use> = { ...uses, [id]: { count: (uses[id]?.count ?? 0) + 1, last: now } };
-  const ids = Object.keys(next);
-  if (ids.length <= KEEP) return next;
-  const keep = ids.sort((a, b) => frecency(next[b] as Use, now) - frecency(next[a] as Use, now)).slice(0, KEEP);
-  return Object.fromEntries(keep.map((k) => [k, next[k] as Use]));
+  const ran: Use = { count: (uses[id]?.count ?? 0) + 1, last: now };
+  const others = Object.entries(uses).filter(([k]) => k !== id);
+  const kept = others.length < KEEP ? others : others.sort(([, a], [, b]) => frecency(b, now) - frecency(a, now)).slice(0, KEEP - 1);
+  return Object.fromEntries([[id, ran], ...kept]);
 };
