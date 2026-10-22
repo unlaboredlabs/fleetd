@@ -446,4 +446,10 @@ pub(crate) const MIGRATIONS: &[&str] = &[
   DROP TABLE subscriptions;
   DELETE FROM events WHERE type = 'webhook.failing';
   "#,
+    // In-stage progress counts only while work is in flight. A figure stored under the old rule, which credited every
+    // minute in a stage, can only fall with an observed cause, so it would stay held at the old height: every scope's
+    // series restarts at its next render.
+    r#"
+  DELETE FROM status_series;
+  "#,
 ];

@@ -2540,6 +2540,11 @@
           "const": "reopened",
           "description": "A done item reopened when a later check failed.",
           "type": "string"
+        },
+        {
+          "const": "work_stopped",
+          "description": "An agent ended with nothing else in flight for its item: the item's in-stage credit is taken back.",
+          "type": "string"
         }
       ],
       "x-open": true

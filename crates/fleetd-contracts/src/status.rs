@@ -165,6 +165,8 @@ pub enum DropReason {
     CiFailed,
     /// A done item reopened when a later check failed.
     Reopened,
+    /// An agent ended with nothing else in flight for its item: the item's in-stage credit is taken back.
+    WorkStopped,
     /// A reason this build doesn't know (a newer hub): show the drop's text. Never sent.
     #[serde(other)]
     #[schemars(skip)]

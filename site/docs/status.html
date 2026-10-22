@@ -182,9 +182,10 @@ risks.</p>
 <li><strong>Verified</strong> means the item’s PRs were merged by the merge train, and its done-when checks passed. A PR merged by
 hand doesn’t count. A lead saying “done” moves nothing.</li>
 <li><strong>In flight</strong> credit comes from stages fleetd observed itself: task started, PR open, review passed, CI green,
-merged.</li>
+merged. Time spent inside a stage adds a little more, but only while an agent or the merge train is working on it.</li>
 <li><strong>It reaches 100%</strong> only when every required item is verified.</li>
-<li><strong>When it falls</strong>, a <code dir="auto">↓</code> line says why: work added, a review blocked, CI failed, or a done item reopened.</li>
+<li><strong>When it falls</strong>, a <code dir="auto">↓</code> line says why: work added, a review blocked, CI failed, a done item reopened, or work
+stopped because an agent finished, failed or was cancelled with nothing else running for its item.</li>
 </ul>
 <p>Items are <strong>must</strong> or <strong>polish</strong>. Polish shows beside the number (“polish 2/5”) and never holds it back.</p>
 <table>
