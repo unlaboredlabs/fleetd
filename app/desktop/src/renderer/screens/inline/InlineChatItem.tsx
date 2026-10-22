@@ -115,9 +115,11 @@ const REQUESTS = { limit: 100 } as const;
 
 export function InlineChatItem({ item: posted }: { item: ChatItem }) {
   const requests = useToolQuery("requests_list", REQUESTS);
+  const listed = requests.data?.requests.find((r) => r.requestId === posted.requestId);
+  const item = withRequest(posted, listed);
+  // A read says something about this request only if it lists it (it holds the hub's newest 100).
   const read = useReadOf("requests_list", REQUESTS);
-  const item = withRequest(posted, requests.data?.requests.find((r) => r.requestId === posted.requestId));
-  return item.kind === "secret_request" ? <SecretItem item={item} read={read} /> : <ApprovalItem item={item} read={read} />;
+  return item.kind === "secret_request" ? <SecretItem item={item} read={listed === undefined ? undefined : read} /> : <ApprovalItem item={item} read={listed === undefined ? undefined : read} />;
 }
 
 /** An answered item's one line: what happened, then what it was about; a click opens the whole card. */

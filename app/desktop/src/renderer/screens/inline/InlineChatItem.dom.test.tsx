@@ -395,6 +395,21 @@ describe("a request the hub reopens", () => {
     expect(has("Approve")).toBe(false);
   });
 
+  it("keeps the answer when the requests read doesn't list the request (past the newest 100)", async () => {
+    vi.useFakeTimers();
+    seq = 1;
+    const hub = await render("Q10");
+    await click(button("Approve"));
+    await settle();
+    expect(host.textContent).toContain("Approved, running…");
+    act(() => {
+      hub.send(updated("Q10", "approved"));
+    });
+    await refetched();
+    expect(host.textContent).toContain("Approved, running…");
+    expect(has("Approve")).toBe(false);
+  });
+
   it("drops a failed answer's line once the hub's view moves on", async () => {
     vi.useFakeTimers();
     seq = 1;
