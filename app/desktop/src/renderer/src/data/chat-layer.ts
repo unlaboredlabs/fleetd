@@ -8,6 +8,7 @@ import {
   applyHistory,
   CHAT_PAGE,
   mergeLive,
+  mergeOwn,
   queued,
   settleSends,
   toResend,
@@ -91,14 +92,18 @@ export const createChatActions = (
     const generation = store.getState().generation;
     if (loading.get(key) === generation) return;
     loading.set(key, generation);
-    // Asked again (Retry): the last failure no longer stands while this read is out.
-    if (store.getState().chats[key]?.error !== undefined) update((s) => ({ chats: { ...s.chats, [key]: { ...chatOf(s, key), error: undefined } } }));
+    // The chat is there from now: what streams and lands while the page is out is kept, and the page merges with
+    // it (newer copy wins), so a reply finished meanwhile never goes back to the page's older streaming copy. Asked
+    // again (Retry): the last failure no longer stands while this read is out.
+    const held = store.getState().chats[key];
+    if (held === undefined || held.error !== undefined) update((s) => ({ chats: { ...s.chats, [key]: { ...chatOf(s, key), error: undefined } } }));
     const r = await call("chat_history", { projectRef: refOf(key), limit: CHAT_PAGE });
     if (loading.get(key) === generation) loading.delete(key);
     // An answer for a connection that's gone: the new one's own read replaces it (onState started it).
     if (store.getState().generation !== generation) return;
     if (r.ok) fold(key, r.output, "latest");
-    else update((s) => ({ chats: { ...s.chats, [key]: { ...chatOf(s, key), error: r.error } } }));
+    // Not a gap any more either: the next one reads again.
+    else update((s) => ({ chats: { ...s.chats, [key]: { ...chatOf(s, key), error: r.error, gap: false } } }));
   };
 
   /** One message an event named without carrying it. */
@@ -201,11 +206,9 @@ export const createChatActions = (
         const { message, leadWaiting } = r.output;
         update((s) => {
           const chat = s.chats[key];
-          // A held chat (connected, not read again yet) shows the person's message too: their words never vanish
-          // into a chat that can't place them; its next read starts it over.
           const next =
             chat !== undefined && (chat.loaded || chat.cached === true)
-              ? mergeLive(
+              ? mergeOwn(
                   leadWaiting === undefined ? chat : { ...chat, leadWaiting: { ...chat.leadWaiting, [message.messageId]: leadWaiting } },
                   message,
                 )
@@ -299,9 +302,8 @@ export const createChatActions = (
       const { message } = r.output;
       update((st) => {
         const chat = st.chats[key];
-        // A held chat shows it too, as it does the person's own messages (sendRow).
         return chat !== undefined && (chat.loaded || chat.cached === true) && st.generation === generation
-          ? { chats: { ...st.chats, [key]: mergeLive(chat, message) } }
+          ? { chats: { ...st.chats, [key]: mergeOwn(chat, message) } }
           : {};
       });
       return { t: r.output.stopped ? "stopped" : "idle" };

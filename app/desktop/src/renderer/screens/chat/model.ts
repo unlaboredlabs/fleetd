@@ -18,6 +18,8 @@ export type Row =
   | { readonly kind: "event"; readonly key: string; readonly item: ChatItem }
   | { readonly kind: "inline"; readonly key: string; readonly item: ChatItem }
   | { readonly kind: "strip"; readonly key: "strip" }
+  /** What the lead is doing while its turn runs: under its reply, or at the end when it hasn't replied yet. */
+  | { readonly kind: "activity"; readonly key: "activity" }
   /** Paged above the newest messages: more below, and the way back to the latest. */
   | { readonly kind: "bottom"; readonly key: "bottom"; readonly state: "more" | "loading" };
 
@@ -73,6 +75,8 @@ export interface RowsInput {
   readonly offline?: boolean;
   /** Show the live strip (the project has agents at work, or the strip has something to say). */
   readonly strip: boolean;
+  /** The lead's turn runs: its activity line shows after the newest item. */
+  readonly activity?: boolean;
   readonly nowMs: number;
   readonly timeZone?: string;
 }
@@ -97,6 +101,9 @@ export function chatRows(i: RowsInput): Row[] {
     else if (kind !== "event") break;
   }
   let inHistory = false;
+  // Not on a window paged above the latest (the turn happens below it), nor under a reply still streaming, which
+  // says "Still writing" itself.
+  const activity = i.activity === true && i.hasNewer !== true && i.items.at(-1)?.state !== "streaming";
   i.items.forEach((item, n) => {
     const history = isHistory(item);
     if (history && !inHistory) out.push({ kind: "history", key: `history:${item.id}` });
@@ -119,8 +126,10 @@ export function chatRows(i: RowsInput): Row[] {
       out.push({ kind: "message", key: item.id, item, head, history: false });
     }
     prev = item;
+    if (activity && n === i.items.length - 1) out.push({ kind: "activity", key: "activity" });
     if (i.strip && n === leadLast) out.push({ kind: "strip", key: "strip" });
   });
+  if (activity && i.items.length === 0) out.push({ kind: "activity", key: "activity" });
   if (i.strip && leadLast === -1) out.push({ kind: "strip", key: "strip" });
   if (i.hasNewer === true) out.push({ kind: "bottom", key: "bottom", state: i.loadingNewer === true ? "loading" : "more" });
   return out;

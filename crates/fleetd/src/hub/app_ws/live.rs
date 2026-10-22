@@ -362,7 +362,7 @@ pub fn focus_lanes(hub: &Hub, caller: &Caller, id: &WorkstreamId) -> Vec<LaneNow
 }
 
 /// Every live task of the open orders the key may read, those that ended in the last few seconds, and those
-/// projects' leads.
+/// projects' leads, with every working lead the key may read.
 pub fn board_lanes(hub: &Hub, caller: &Caller) -> Vec<LaneNow> {
     let mut projects = HashSet::new();
     let open = hub
@@ -420,6 +420,15 @@ pub fn board_lanes(hub: &Hub, caller: &Caller) -> Vec<LaneNow> {
                 })
                 .map(|t| task_lane(hub, t, false)),
         );
+    }
+    // A working lead too before its turn opens an order: the chat says what it is doing from its lane.
+    for lead in hub.leads.records.leads_list().unwrap_or_default() {
+        let r = lead.project_ref;
+        if allows(caller, Role::Read, Some(&r.machine_id))
+            && crate::hub::chat::flow::lead_working(hub, &r)
+        {
+            projects.insert(r);
+        }
     }
     lanes.extend(lead_lanes(hub, &projects, false));
     lanes

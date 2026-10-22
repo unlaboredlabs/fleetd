@@ -125,13 +125,22 @@ const HELD_MAX = 500;
 
 /**
  * A live message: folded in, or, while the window is paged above the latest and doesn't hold it, kept aside until
- * the window gets back there (a history page read before it happened won't have it).
+ * the window gets back there (a history page read before it happened won't have it). A held chat (kept past its
+ * connection, or from the disk cache) keeps every live message aside: the latest page starts it over, and they join
+ * that page, newer copy winning, so a reply finished while the page was out isn't lost to the page's older copy.
  */
 export const mergeLive = (chat: Chat, message: ChatMessage): Chat => {
-  if (!chat.hasNewer || chat.messages.some((m) => m.messageId === message.messageId)) return mergeMessages(chat, [message]);
+  if (chat.cached !== true && (!chat.hasNewer || chat.messages.some((m) => m.messageId === message.messageId))) return mergeMessages(chat, [message]);
   const held = [...chat.held.filter((m) => m.messageId !== message.messageId || !newer(message, m)), message];
   return { ...chat, held: held.length > HELD_MAX ? held.slice(held.length - HELD_MAX) : held };
 };
+
+/**
+ * The person's own line (a send, a Stop): a held chat shows it at once, so their words never vanish into a chat that
+ * can't place them, and keeps it aside too, for the latest page that starts the chat over.
+ */
+export const mergeOwn = (chat: Chat, message: ChatMessage): Chat =>
+  chat.cached === true ? mergeMessages(mergeLive(chat, message), [message]) : mergeLive(chat, message);
 
 /** Back at the latest: the held live messages go in. */
 const foldHeld = (chat: Chat): Chat =>

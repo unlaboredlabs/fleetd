@@ -72,6 +72,16 @@ describe("the chat's rows", () => {
       { strip: true },
     );
     expect(replied.map((x) => x.kind)).toEqual(["top", "day", "message", "inline", "strip", "message", "inline"]);
+    // The lead's activity goes after the newest item: under its reply, ahead of the strip there.
+    const lead = [item("a", "human", at(19, 9)), item("b", "lead", at(19, 9, 1))];
+    expect(rows(lead, { strip: true, activity: true }).slice(-3).map((x) => x.kind)).toEqual(["message", "activity", "strip"]);
+    // Asked again: under the person's message, the strip staying under the lead's reply.
+    const asked = [...lead, item("c", "human", at(19, 9, 2))];
+    expect(rows(asked, { strip: true, activity: true }).slice(-4).map((x) => x.kind)).toEqual(["message", "strip", "message", "activity"]);
+    expect(rows([], { activity: true }).map((x) => x.kind)).toEqual(["top", "activity"]);
+    expect(rows(lead, { activity: true, hasNewer: true }).some((x) => x.kind === "activity")).toBe(false);
+    const streaming = [item("a", "human", at(19, 9)), item("b", "lead", at(19, 9, 1), { state: "streaming" })];
+    expect(rows(streaming, { activity: true }).some((x) => x.kind === "activity")).toBe(false);
     expect(rowIndexOf(r, "nope")).toBeUndefined();
   });
 
