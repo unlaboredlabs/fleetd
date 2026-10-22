@@ -306,13 +306,6 @@ const chatOf = (lab: Lab, humanCall: Lab["callTool"], ref: Ref, need: (tool: str
 };
 type Chat = ReturnType<typeof chatOf>;
 
-/** Once an inline item closes, needs-you is off, unless the lead's newest message is itself a question to the person. */
-const needsYouOnlyForAQuestion = async (lab: Lab, chat: Chat, after: string) => {
-  if ((await chat.state()).needsYou !== true) return;
-  const last = (await chat.history()).filter((m) => m.author === "lead" && m.text !== "").at(-1)?.text ?? "";
-  lab.check(/\?\s*$|^\s*1[.)]\s/mu.test(last), `needs-you is off once ${after}, or the lead's newest message asks something: ${JSON.stringify(last.slice(-300))}`);
-  lab.log(`needs-you stays on after ${after}: the lead asked "${last.trim().split("\n").at(-1)?.slice(0, 160)}"`);
-};
 
 export async function chatLead(lab: Lab) {
   const { callTool, check, ok, log } = lab;
@@ -431,6 +424,19 @@ async function tersePart(lab: Lab, chat: Chat, ref: Ref) {
   const sent = await chat.send(
     `Next, add ${file}: one line saying which day the weekly usage digest email goes out. I haven't picked the day and it's my call, so ask me before you build it.`,
   );
+  // The person answers whatever the checks below find, so no part after this one inherits an open question.
+  let answered: Awaited<ReturnType<typeof chat.send>> | undefined;
+  const answer = async () => (answered ??= await chat.send("1 go"));
+  try {
+    await askedPart(lab, chat, ref, sent);
+  } finally {
+    await answer();
+  }
+  await answeredPart(lab, chat, ref, answered!, file);
+}
+
+async function askedPart(lab: Lab, chat: Chat, ref: Ref, sent: { cursor: number; seq: number }) {
+  const { check, ok } = lab;
   const said = await chat.reply(sent, "the digest question");
   const asking = said.find((m) => /^\s*1[.)]\s/mu.test(m.text));
   check(asking, `the lead asks as numbered items: ${JSON.stringify(said.map((m) => m.text))}`);
@@ -441,9 +447,11 @@ async function tersePart(lab: Lab, chat: Chat, ref: Ref) {
   check((await chat.state()).needsYou === true, "needs-you is on while the lead waits for the answer");
   const noWrite = (await tasksOf(lab, ref)).filter((t) => t.kind === "write" && ["queued", "running"].includes(t.state) && String(t.title).toLowerCase().includes("digest"));
   check(noWrite.length === 0, `nothing built before the answer: ${JSON.stringify(noWrite.map((t) => t.title))}`);
-  ok(`${items.length} numbered question(s) with a rec; needs-you on`);
+  ok(`${items.length} numbered question(s) with a recommendation; needs-you on`);
+}
 
-  const answered = await chat.send("1 go");
+async function answeredPart(lab: Lab, chat: Chat, ref: Ref, answered: { cursor: number; seq: number }, file: string) {
+  const { check, ok } = lab;
   const writer = await nextTask(lab, ref, answered.cursor, `a writer for ${file} after "1 go"`, TURN_MS * 2, (t) => t.kind === "write");
   await chat.reply(answered, "the terse answer");
   check((await chat.state()).needsYou !== true, "needs-you is off once the person answered");
@@ -508,7 +516,7 @@ async function secretPart(lab: Lab, chat: Chat, ref: Ref, humanCall: Lab["callTo
   const places = [...filesUnder(lab.hubHome), ...filesUnder(path.join(RUN, "logs")), ...lab.machines.flatMap((m) => filesUnder(machineHome(m.id)))].filter(([f]) => f !== sink);
   const hits = places.filter(([, text]) => text.includes(value) || text.includes(sealed)).map(([f]) => f);
   check(hits.length === 0, `the value is in no file but its sink: ${hits.join(", ")}`);
-  await needsYouOnlyForAQuestion(lab, chat, "the secret is stored");
+  check((await chat.state()).needsYou !== true, "needs-you is off once the secret is stored");
   ok(`stored through the inline item; the value is in no chat message, event or wake, and in none of ${places.length} files (hub, nodes, logs)`);
 }
 
@@ -552,7 +560,7 @@ async function gatedPart(lab: Lab, chat: Chat, ref: Ref, humanCall: Lab["callToo
   const leadId = await chat.leadThread();
   const wake = userMessages(ref.machineId, leadId ?? "").flatMap((t) => t.split("\n")).find((l) => l.startsWith(`- ${item.requestId} your command`));
   check(wake, `the lead's next wake carries the outcome: ${JSON.stringify(userMessages(ref.machineId, leadId ?? "").at(-1)?.slice(-400))}`);
-  await needsYouOnlyForAQuestion(lab, chat, "the command ran");
+  check((await chat.state()).needsYou !== true, "needs-you is off once the command ran");
   ok(`ran exactly once; the lead's wake: ${wake}; needs-you off`);
 }
 
