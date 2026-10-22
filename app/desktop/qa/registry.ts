@@ -78,6 +78,18 @@ export const fixtures = [
   "chat-empty",
   // F5 (A5): a chat with every state of the two inline items (fixtures/inline).
   "inline-items",
+  // C1: the app's own update and the hub machine's (fixtures/updates).
+  "updates-current",
+  "updates-available",
+  "updates-downloading",
+  "updates-ready",
+  "updates-deb",
+  "updates-failed",
+  "updates-hub-behind",
+  "updates-hub-waiting",
+  "updates-hub-installing",
+  "updates-hub-failed",
+  "updates-hub-older",
 ] as const;
 export type FixtureName = (typeof fixtures)[number];
 
@@ -130,6 +142,13 @@ const gallerySections = [
 // The fixtures' storefront project, a real hub project from the sanitized recording, so its id is a UUID; it shows
 // only in the route, never as text.
 const CHAT = "#/project/devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22";
+
+/** The updates sheet, as the palette's "Check for updates" opens it (the app menu runs the same command). */
+const openUpdates = async (page: Page) => {
+  await page.keyboard.press("ControlOrMeta+K");
+  await page.getByRole("combobox", { name: "Search" }).fill("Check for updates");
+  await page.keyboard.press("Enter");
+};
 
 /** An entry's name in test titles, shot files and the contact sheet. */
 export const label = (s: Pick<Screen, "id" | "variant">) => (s.variant === undefined ? s.id : `${s.id}~${s.variant}`);
@@ -251,6 +270,47 @@ export const screens: readonly Screen[] = [
     // The header control's accessible name is "Max agents: <running> running of <max>[, <n> waiting]".
     open: (page) => page.getByRole("button", { name: /^Max agents: \d+ running of \d+/u }).click(),
     variant: "max-agents",
+  },
+  // C1: updates. The sidebar's line above the connection for each state that has one, and the sheet the palette's
+  // "Check for updates" opens: up to date, found and downloading, restarting once in, ready, the deb's command, a
+  // failed check; the hub's machine behind its channel, waiting for its work, installing, failed, and on an older
+  // channel than this app.
+  {
+    id: "shell",
+    route: "#/",
+    fixtures: ["updates-available", "updates-downloading", "updates-ready", "updates-hub-behind", "updates-hub-waiting", "updates-hub-failed"],
+    variant: "updates",
+  },
+  {
+    id: "updates",
+    route: "#/",
+    fixtures: [
+      "updates-current",
+      "updates-available",
+      "updates-downloading",
+      "updates-ready",
+      "updates-deb",
+      "updates-failed",
+      "updates-hub-behind",
+      "updates-hub-waiting",
+      "updates-hub-installing",
+      "updates-hub-failed",
+      "updates-hub-older",
+    ],
+    open: openUpdates,
+  },
+  // Update devbox while work runs there: it waits, and Update now asks first, naming what a restart would stop.
+  {
+    id: "updates",
+    route: "#/",
+    fixtures: ["updates-hub-behind"],
+    variant: "stop-and-update",
+    open: async (page) => {
+      await openUpdates(page);
+      await page.getByRole("button", { name: "Update devbox" }).click();
+      await page.getByRole("button", { name: "Update now" }).click();
+      await page.getByRole("button", { name: "Stop and update" }).waitFor();
+    },
   },
   // F1: the frame (top bar, sidebar of projects) around #/, which opens the last project's chat (the first one on a
   // fresh install), and the connection states it shows. With no projects, #/ offers to add one (home.empty).

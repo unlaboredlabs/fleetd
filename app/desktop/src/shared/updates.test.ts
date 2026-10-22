@@ -30,7 +30,7 @@ describe("notesSince", () => {
 
 describe("versionLabel", () => {
   it("drops the build hash and reads a nightly by its date", () => {
-    expect(versionLabel("0.6.0-nightly.202610221030+abc1234", "UTC")).toBe("0.6.0 nightly, Oct 22, 10:30");
+    expect(versionLabel("0.6.0-nightly.202610221030+abc1234", "UTC")).toBe("0.6.0 nightly (Oct 22, 10:30)");
     expect(versionLabel("v0.6.0")).toBe("0.6.0");
     expect(versionLabel("0.6.0-rc.1+abc1234")).toBe("0.6.0-rc.1");
   });

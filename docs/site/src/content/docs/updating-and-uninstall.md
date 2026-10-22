@@ -34,7 +34,15 @@ Keep fleetd up to date, or remove it.
 
 ### The desktop app {#app}
 
-The app also updates itself from the same release, and installs the update when you quit it.
+The app checks for updates when it opens and every few hours, and downloads them in the background. When one is
+found, the sidebar says **Update available**: click it to see what's new, then **Update and restart**. A message you
+were typing is still there after the restart. An update you don't install now installs the next time you quit.
+
+- **Check for Updates…** is in the fleetd menu on macOS, in Help on Linux, and in the command palette.
+- The same window shows fleetd on the hub's machine. When a newer build is out, **Update** installs it there and
+  restarts the hub once the lead and agents finish; **Update now** stops them first, after saying what stops. When
+  the hub's machine can't update this way, it shows the command to run there, with **Copy**.
+- The `.deb` install can't update itself: the app offers the download and the `sudo apt install` command.
 
 - An earlier fleetd app is replaced by the current one, which keeps its pairing.
 - On macOS 11 the earlier app stays as it is: the current app needs macOS 12.

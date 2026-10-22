@@ -60,7 +60,7 @@ export const notesSince = (changes: readonly Change[], mine: string): string[] =
 const NIGHTLY = /^(\d+\.\d+\.\d+)-nightly\.(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})$/u;
 
 /**
- * A version as people read it: no build hash, and a nightly by its date ("0.6.0 nightly, Oct 22, 10:30"), since its
+ * A version as people read it: no build hash, and a nightly by its date ("0.6.0 nightly (Oct 22, 10:30)"), since its
  * minute stamp is what tells two nightlies apart. `timeZone` is for tests; the app shows local time.
  */
 export const versionLabel = (version: string, timeZone?: string): string => {
@@ -71,5 +71,5 @@ export const versionLabel = (version: string, timeZone?: string): string => {
   const at = new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi)));
   if (Number.isNaN(at.getTime())) return bare;
   const when = at.toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone });
-  return `${base ?? bare} nightly, ${when}`;
+  return `${base ?? bare} nightly (${when})`;
 };

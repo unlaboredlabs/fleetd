@@ -87,7 +87,8 @@ interface Payload {
 
 const payloads = (f: Fixture, problems: Array<string>): Array<Payload> => {
   const out: Array<Payload> = [];
-  if (f.snapshot !== undefined) out.push({ what: "snapshot", fn: validator("McpTools.json", "#/$defs/McpTools/properties/fleetd_status.output"), value: f.snapshot });
+  // A snapshot is fleetd_status's answer, so a pending fleetd_status contract leaves it unchecked too.
+  if (f.snapshot !== undefined && !f.pendingContracts.has("fleetd_status")) out.push({ what: "snapshot", fn: validator("McpTools.json", "#/$defs/McpTools/properties/fleetd_status.output"), value: f.snapshot });
   f.events.forEach((e, i) => out.push({ what: `event ${i} (${asText(e["type"])})`, fn: validator("HubEvent.json", "#/$defs/HubEvent"), value: e }));
   f.live.forEach((frame, i) => out.push({ what: `live ${i}`, fn: validator("AppServerMessage.json", "#/$defs/LiveFrame"), value: frame }));
   for (const t of f.timeline) {
@@ -103,7 +104,8 @@ const payloads = (f: Fixture, problems: Array<string>): Array<Payload> => {
   }
   for (const c of f.calls) {
     if (tools.properties[`${c.tool}.output`] === undefined) {
-      problems.push(`${f.name}: ${c.tool} is not a hub tool`);
+      // A new tool still on its contract's branch isn't in these schemas yet.
+      if (!f.pendingContracts.has(c.tool)) problems.push(`${f.name}: ${c.tool} is not a hub tool`);
       continue;
     }
     // A misspelled input key would never match the screen's call, so the screen shows not_found and still "passes".

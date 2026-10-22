@@ -1,7 +1,7 @@
 // What the updates surfaces say: the sidebar's one line and the sheet's two parts, this app and the hub's machine.
 // Pure, so every state is unit-tested; the components only lay it out.
 import { compareVersions } from "../../../shared/pairing";
-import { DEB, DEB_INSTALL, versionLabel, type AppUpdate, type UpdatesState } from "../../../shared/updates";
+import { DEB_INSTALL, versionLabel, type AppUpdate, type UpdatesState } from "../../../shared/updates";
 import type { HubVersion } from "../../src/data/hub-version-contract";
 
 export type Tone = "accent" | "warning" | "danger" | "quiet";
@@ -96,7 +96,7 @@ const appPart = (state: UpdatesState): AppPart => {
     case "manual":
       return {
         title: `fleetd ${versionLabel(app.version)} is available`,
-        detail: `Download ${DEB}, then install it:`,
+        detail: "Download the package, then install it from the folder it downloaded to:",
         notes: app.notes,
         command: DEB_INSTALL,
         action: { label: "Download", run: "install", primary: true },
