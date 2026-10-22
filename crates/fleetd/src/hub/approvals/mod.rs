@@ -70,9 +70,8 @@ pub struct Caller<'a> {
     pub allows_operate: &'a (dyn Fn(&str) -> bool + Sync),
 }
 
-/// The sink's kind and machine.
+/// The sink's machine.
 pub struct ParsedSink {
-    pub kind: String,
     pub machine_id: String,
 }
 
@@ -92,7 +91,6 @@ pub fn parse_secret_sink(sink: &str) -> Option<ParsedSink> {
         return None;
     }
     Some(ParsedSink {
-        kind: c[1].to_string(),
         machine_id: c[2].to_string(),
     })
 }
@@ -899,8 +897,8 @@ impl Approvals {
             for event in page.events {
                 if let (Some(machine_id), Some(project_id)) = (event.machine_id, event.project_id) {
                     let project = ProjectRef {
-                        machine_id,
-                        project_id,
+                        machine_id: machine_id.into_inner(),
+                        project_id: project_id.into_inner(),
                     };
                     self.close_open(&project, None, "the project was removed")
                         .await;

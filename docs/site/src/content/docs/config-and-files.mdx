@@ -270,6 +270,7 @@ Each node holds timings it hasn't sent yet in `sessions.sqlite`. While the hub i
 | Pairing hand-off from `fleetd init` or `fleetd pair` | `~/.config/fleetd/app-pair.json` (macOS: `~/Library/Application Support/fleetd/app-pair.json`), or `$FLEETD_HOME/app-pair.json` for a [second fleet](#second-fleet) |
 | Its hub address and key | `desktop-hub.bin` in the same folder, encrypted with the OS keychain or keyring. Without one (no keyring on Linux, or an unsigned or ad-hoc signed Mac build): `desktop-hub.json`, mode `0600`. |
 | Its own browser state | `desktop/` in the same folder. |
+| Its log | `~/Library/Logs/fleetd/app.log` on macOS, `~/.local/state/fleetd/app.log` on Linux (`$XDG_STATE_HOME/fleetd`), or `$FLEETD_HOME/logs`. Errors only, without keys or message text; crash dumps go in `crashes/` beside it. Help → Reveal Logs opens it. |
 
 ## Hub environment {#env}
 

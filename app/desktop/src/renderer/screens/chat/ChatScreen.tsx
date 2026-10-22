@@ -36,11 +36,12 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
             hasNewer: view.hasNewer,
             loadingNewer: view.loadingNewer,
             strip,
+            activity: data.leadWorking === true,
             // "Today" is read against the clock when the chat changes; nothing ticks while it's idle.
             // eslint-disable-next-line react-hooks/purity
             nowMs: Date.now(),
           }),
-    [view, strip],
+    [view, strip, data.leadWorking],
   );
   const openAt = message === undefined || rows === undefined ? undefined : rowIndexOf(rows, message);
   const state = data.state;

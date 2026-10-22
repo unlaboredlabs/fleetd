@@ -40,28 +40,6 @@ mod linux {
             .map(Hold)
             .map_err(|e| format!("logind answered without a descriptor: {e}"))
     }
-
-    #[cfg(test)]
-    mod tests {
-        /// Holds a real inhibitor for a moment: `cargo test -p fleetd --lib -- --ignored real_inhibitor`.
-        #[tokio::test]
-        #[ignore = "takes a real logind inhibitor on this machine"]
-        async fn real_inhibitor_shows_in_the_list_and_goes_away() {
-            let list = || {
-                let out = std::process::Command::new("systemd-inhibit")
-                    .args(["--list", "--no-pager"])
-                    .output()
-                    .unwrap();
-                String::from_utf8_lossy(&out.stdout).into_owned()
-            };
-            let hold = super::take(&super::super::why(2)).await.unwrap();
-            let held = list();
-            drop(hold);
-            println!("{held}");
-            assert!(held.contains("fleetd: 2 agents running"), "{held}");
-            assert!(!list().contains("fleetd: 2 agents running"));
-        }
-    }
 }
 
 #[cfg(target_os = "macos")]

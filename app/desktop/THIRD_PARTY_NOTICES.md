@@ -5,14 +5,9 @@ Code adapted from other projects into app/desktop, with its license. npm depende
 
 ## T3 Code (pingdotgg/t3code), MIT
 
-Used in `src/renderer/ui/diff/` (the diff parser's shapes and its raw-text fallback, the per-file diff blocks with
-an "N unchanged lines" separator, add/delete tints mixed over the code surface), adapted from
-`apps/web/src/lib/diffRendering.ts` and the diff panel.
-
-Also in `src/renderer/screens/order/`: the follow-up composer's key resolution and its primary/secondary send
-actions (`packages/client-runtime/src/state/composerDispatch.ts`, `apps/web/src/components/chat/ComposerPrimaryActions.tsx`
-→ `composer.ts`, `Composer.tsx`); the work log's folding of tool-call runs and the timeline's follow-at-end rule
-(`apps/web/src/components/chat/MessagesTimeline.logic.ts` → `conversation.ts`, `Conversation.tsx`).
+Used in `src/renderer/screens/chat/`: the chat list's follow-at-end rule
+(`apps/web/src/components/chat/MessagesTimeline.logic.ts` → `ChatList.tsx`) and the large-paste rule
+(`attachments.ts`).
 
 ```
 MIT License

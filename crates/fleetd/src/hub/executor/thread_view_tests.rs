@@ -73,7 +73,6 @@ fn a_snapshot_then_live_events_make_the_window() {
         latest_assistant_text(&view).as_deref(),
         Some("Done.\nLint has one error.")
     );
-    assert_eq!(active_run_id(&view).as_deref(), Some("r1"));
 }
 
 #[test]

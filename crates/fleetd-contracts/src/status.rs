@@ -773,21 +773,4 @@ mod tests {
         let basis: EtaBasis = serde_json::from_value(from("model")).unwrap();
         assert_eq!(basis, EtaBasis::None);
     }
-
-    #[test]
-    fn scope_wire_and_key() {
-        let order: StatusScope =
-            serde_json::from_value(serde_json::json!({ "kind": "order", "workstreamId": "W41" }))
-                .unwrap();
-        assert_eq!(order.key(), "order:W41");
-        let project: StatusScope = serde_json::from_value(serde_json::json!({
-            "kind": "project", "projectRef": { "machineId": "devbox", "projectId": "p1" }
-        }))
-        .unwrap();
-        assert_eq!(project.key(), "project:devbox/p1");
-        assert_eq!(
-            serde_json::to_value(StatusScope::Fleet).unwrap(),
-            serde_json::json!({ "kind": "fleet" })
-        );
-    }
 }

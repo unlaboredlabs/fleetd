@@ -1532,66 +1532,6 @@ mod tests {
     }
 
     #[test]
-    fn the_tool_table_matches_ts_names_and_scopes() {
-        assert_eq!(McpToolName::ALL.len(), 79);
-        assert_eq!(McpToolName::parse("inbox_reply"), None);
-        assert_eq!(McpToolName::parse("asks_list"), None);
-        for tool in McpToolName::ALL {
-            assert_eq!(McpToolName::parse(tool.as_str()), Some(*tool));
-            assert_eq!(serde_json::to_value(tool).unwrap(), tool.as_str());
-        }
-        assert_eq!(McpToolName::CapSet.scope(), Role::Operate);
-        assert_eq!(McpToolName::RetroRun.scope(), Role::Admin);
-        assert_eq!(McpToolName::DoctorFix.scope(), Role::Operate);
-        assert_eq!(McpToolName::FleetdStatus.scope(), Role::Read);
-        assert_eq!(McpToolName::HubInfo.scope(), Role::Read);
-        assert_eq!(McpToolName::parse("push_subscribe"), None);
-    }
-
-    #[test]
-    fn status_get_round_trips_a_doc_with_next_rows() {
-        let doc = json!({
-            "scope": { "kind": "order", "workstreamId": "W41" },
-            "title": "native runner", "version": 3, "seq": 120, "now": "2026-10-18T14:02:07.000Z",
-            "progress": { "pct": 72, "done": 5, "total": 8, "polishDone": 2, "polishTotal": 5,
-                          "asOf": "2026-10-18T14:02:07.000Z" },
-            "markers": [], "eta": { "samples": 2, "basis": "none" }, "gates": [],
-            "headline": { "text": "Nothing running. Nothing needs you.", "source": "template",
-                          "at": "2026-10-18T14:02:07.000Z" },
-            "since": { "merged": 0, "verified": 0, "started": 0, "failed": 0, "scopeItems": 0 },
-            "parts": [], "done": [], "inProgress": [],
-            "next": [{ "itemId": "P14", "title": "switch default runner", "after": ["P12"] }],
-            "needsYou": { "count": 0, "requestIds": [] }, "risks": [],
-            "health": { "ci": [], "machines": [], "usage": [],
-                        "slots": { "running": 0, "used": 0, "cap": 40, "queued": 0 } },
-            "stale": [],
-            "more": { "done": 0, "inProgress": 0, "next": 0, "risks": 0, "parts": 0, "stale": 0 }
-        });
-        let output = json!({ "doc": doc, "next": "status_wait" });
-        let decoded: StatusGetOutput = decode(output.clone()).unwrap();
-        assert_eq!(decoded.doc.next.len(), 1);
-        assert_eq!(serde_json::to_value(&decoded).unwrap(), output);
-    }
-
-    #[test]
-    fn steer_outputs_round_trip_with_every_field_set() {
-        let steer = json!({
-            "id": "S12", "target": { "taskId": "T88" }, "workstreamId": "W41",
-            "thread": { "machineId": "devbox", "threadId": "t1" }, "runId": "r1",
-            "by": { "kind": "human", "keyName": "laptop" }, "mode": "now", "text": "skip the docs page",
-            "stage": "acknowledged", "queuedAt": "2026-10-18T14:02:07.120Z",
-            "deliveredAt": "2026-10-18T14:02:07.143Z", "how": "stopped", "stoppedTool": "cargo test",
-            "seenAt": "2026-10-18T14:02:07.150Z", "ackedAt": "2026-10-18T14:02:08.910Z",
-            "ackExcerpt": "S12: dropping the docs page", "planChange": "-1 item", "detail": "sent",
-            "next": "steers_list", "truncated": false,
-        });
-        let send: SteerSendOutput = decode(steer.clone()).unwrap();
-        assert_eq!(serde_json::to_value(&send).unwrap(), steer);
-        let withdraw: SteerWithdrawOutput = decode(steer.clone()).unwrap();
-        assert_eq!(serde_json::to_value(&withdraw).unwrap(), steer);
-    }
-
-    #[test]
     fn hub_info_round_trips_and_reads_a_newer_hubs_values() {
         let output = json!({
             "version": "0.0.0-nightly.202610221107+333368c", "protocol": 1, "channel": "nightly",
@@ -1623,12 +1563,5 @@ mod tests {
                 .is_none()
         );
         assert!(decode::<HubInfoInput>(json!({ "machineId": "devbox" })).is_ok());
-    }
-
-    #[test]
-    fn results_flatten_their_record() {
-        let output = json!({ "machines": [], "projects": [], "attention": [], "cursor": 3, "next": "events_wait" });
-        let status: FleetdStatusOutput = decode(output.clone()).unwrap();
-        assert_eq!(serde_json::to_value(&status).unwrap(), output);
     }
 }

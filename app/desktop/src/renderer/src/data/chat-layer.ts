@@ -77,12 +77,16 @@ export const createChatActions = (
     const generation = store.getState().generation;
     if (loading.get(key) === generation) return;
     loading.set(key, generation);
+    // The chat is there from now: what streams and lands while the page is out is kept, and the page merges with
+    // it (newer copy wins), so a reply finished meanwhile never goes back to the page's older streaming copy.
+    if (store.getState().chats[key] === undefined) update((s) => ({ chats: { ...s.chats, [key]: chatOf(s, key) } }));
     const r = await call("chat_history", { projectRef: refOf(key), limit: CHAT_PAGE });
     if (loading.get(key) === generation) loading.delete(key);
     // An answer for a connection that's gone: the new one's own read replaces it (onState started it).
     if (store.getState().generation !== generation) return;
     if (r.ok) fold(key, r.output, "latest");
-    else update((s) => ({ chats: { ...s.chats, [key]: { ...chatOf(s, key), error: r.error } } }));
+    // Not a gap any more either: the next one reads again.
+    else update((s) => ({ chats: { ...s.chats, [key]: { ...chatOf(s, key), error: r.error, gap: false } } }));
   };
 
   /** One message an event named without carrying it. */

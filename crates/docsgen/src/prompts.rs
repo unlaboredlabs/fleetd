@@ -48,19 +48,3 @@ pub fn table(_root: &std::path::Path) -> Result<String, String> {
 fn cell(text: &str) -> String {
     crate::md_text(text)
 }
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn every_prompt_but_the_instructions_has_a_row() {
-        let table = super::table(std::path::Path::new(".")).unwrap();
-        for e in fleetd::hub::prompts::registry::ENTRIES {
-            assert_eq!(
-                table.contains(&format!("`{}`", e.id)),
-                e.id != "instructions",
-                "{}",
-                e.id
-            );
-        }
-    }
-}

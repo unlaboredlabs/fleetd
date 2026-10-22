@@ -39,11 +39,13 @@ function Body({ prompt, registry, who }: { prompt: SessionPrompt; registry: read
   const [defaultsOpen, setDefaultsOpen] = useState(false);
   const [raw, setRaw] = useState(false);
   const Chevron = defaultsOpen ? ChevronDown : ChevronRight;
-  const started = new Date(prompt.startedAt).toLocaleString();
+  // An unparseable time would read "Invalid Date"; leave it out instead.
+  const startedMs = Date.parse(prompt.startedAt);
+  const started = Number.isNaN(startedMs) ? "" : ` · started ${new Date(startedMs).toLocaleString()}`;
   return (
     <div className={s.told} data-screen="order.told">
       <div className={s.receipt}>
-        <Text size="xs" tone="quiet">{`${view.context} · started ${started}`}</Text>
+        <Text size="xs" tone="quiet">{`${view.context}${started}`}</Text>
         <IdChip label="Session id" id={`${prompt.machineId}/${prompt.threadId}`} kind="thread" size="xs" tone="quiet" />
         <IdChip label="Text version" id={prompt.textSha} kind="text hash" size="xs" tone="quiet" />
       </div>

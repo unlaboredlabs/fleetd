@@ -1,6 +1,7 @@
 // Mounted once by the shell: the keymap, the default commands, the project list, and whichever overlay is up.
 
 import { useEffect, useMemo } from "react";
+import { Boundary } from "../../src/Boundary";
 import { useDataLayer } from "../../src/data/react";
 import { defaultCommands } from "./defaults";
 import { installKeymap } from "./keymap";
@@ -29,7 +30,12 @@ export function PaletteHost() {
     };
   }, []);
 
-  if (overlay.kind === "palette") return <Palette key={overlay.seq} initialQuery={overlay.query} />;
-  if (overlay.kind === "shortcuts") return <ShortcutsSheet />;
-  return null;
+  const body =
+    overlay.kind === "palette" ? <Palette key={overlay.seq} initialQuery={overlay.query} /> : overlay.kind === "shortcuts" ? <ShortcutsSheet /> : null;
+  // The keymap above stays up whatever the overlay does; an overlay that throws closes, and a toast says so.
+  return body === null ? null : (
+    <Boundary part={overlay.kind === "palette" ? "the command palette" : "the shortcuts sheet"} overlay={{ onError: closeOverlay }}>
+      {body}
+    </Boundary>
+  );
 }
