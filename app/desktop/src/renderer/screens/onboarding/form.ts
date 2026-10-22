@@ -9,8 +9,10 @@ export interface Form {
   readonly key: string;
   readonly useKey: boolean;
   readonly busy: boolean;
-  /** A plain line above the fields: what was found, or what is happening. */
+  /** A plain line above the fields: what was found. It stays put while a code is tried, so the form doesn't jump. */
   readonly status: string | null;
+  /** First run with no hub answering on this computer: the welcome offers to set fleetd up here. */
+  readonly setupHere: boolean;
   readonly error: PairFailure | null;
   /** Why there is no key, when main knows (a saved key it couldn't read). */
   readonly notice: string | null;
@@ -24,13 +26,15 @@ export interface Form {
   readonly linkNote: string | null;
   /** Ask main to pair from app-pair.json (set by `started`; main reads the code, this page never sees it). */
   readonly autoPending: boolean;
+  /** app-pair.json was already tried: a used code is never sent again when the window is refocused. */
+  readonly autoTried: boolean;
 }
 
 export type Action =
   | { type: "started"; start: PairStart }
   | { type: "edit"; field: "hub" | "code" | "key"; value: string }
   | { type: "toggleKey" }
-  | { type: "submitting"; hub: string }
+  | { type: "submitting" }
   | { type: "failed"; failure: PairFailure }
   | { type: "paired"; hubName: string }
   | { type: "linkChecked"; before: LinkHandlerStatus; after: LinkHandlerStatus };
@@ -50,6 +54,7 @@ export const initialForm = (
     useKey: link.useKey === true && link.code === undefined,
     busy: false,
     status: linked ? "Check this is your hub, then connect." : null,
+    setupHere: false,
     error:
       state.phase === "refused"
         ? { code: "", message: state.message, fix: "Pair again with a code from `fleetd pair` on the hub, or use another key." }
@@ -60,6 +65,7 @@ export const initialForm = (
     linkCode: linked ? (link.code ?? null) : null,
     linkNote: null,
     autoPending: false,
+    autoTried: false,
   };
 };
 
@@ -70,8 +76,8 @@ export const reduce = (form: Form, action: Action): Form => {
       // A link or something typed already says what to do.
       if (form.code !== "" || form.busy || form.useKey || form.hubFromLink) return form;
       // `fleetd init` left a fresh code here for this app: pair with no typing, on first run only.
-      if (appPair !== null && !appPair.expired && form.firstRun) {
-        return { ...form, hub: appPair.hub, autoPending: true };
+      if (appPair !== null && !appPair.expired && form.firstRun && !form.autoTried) {
+        return { ...form, hub: appPair.hub, autoPending: true, autoTried: true };
       }
       const hub = appPair?.hub ?? form.hub;
       const error = form.error ?? problem;
@@ -87,6 +93,8 @@ export const reduce = (form: Form, action: Action): Form => {
       const origin = hubOrigin(hub);
       if (!origin.ok || origin.origin !== probe.hub) return { ...form, hub, error };
       if (!probe.answers) {
+        // The welcome says how to set fleetd up here, and the form below it is for a hub elsewhere.
+        if (form.firstRun) return { ...form, hub, error, setupHere: true };
         return {
           ...form,
           hub,
@@ -96,13 +104,13 @@ export const reduce = (form: Form, action: Action): Form => {
         };
       }
       const fit = protocolFit(probe.protocol);
-      if (fit !== "ok") return { ...form, hub, error: mismatchFailure(fit, probe.hub) };
-      return { ...form, hub, error, status: `Found your hub at ${probe.hub}. Enter the code from \`fleetd pair\` to connect.` };
+      if (fit !== "ok") return { ...form, hub, setupHere: false, error: mismatchFailure(fit, probe.hub) };
+      return { ...form, hub, error, setupHere: false, status: `Found your hub at ${probe.hub}. Enter the code from \`fleetd pair\` to connect.` };
     }
     case "edit":
       return {
         ...form,
-        [action.field]: action.value,
+        [action.field]: action.field === "code" ? formatCode(action.value) : action.value,
         hubFromLink: action.field === "hub" ? false : form.hubFromLink,
         linkCode: action.field === "code" ? null : form.linkCode,
       };
@@ -113,15 +121,25 @@ export const reduce = (form: Form, action: Action): Form => {
       return { ...form, useKey, error: null, ...(clearHub ? { hub: "", hubFromLink: false, status: null } : {}) };
     }
     case "submitting":
-      return { ...form, busy: true, error: null, linkNote: null, autoPending: false, status: `Pairing with ${action.hub}…` };
+      // The button says it's connecting; the lines around the fields stay as they were, so nothing moves.
+      return { ...form, busy: true, error: null, linkNote: null, autoPending: false };
     case "failed":
-      return { ...form, busy: false, status: null, error: action.failure };
+      return { ...form, busy: false, error: action.failure };
     case "linkChecked":
       // A late answer about an earlier attempt says nothing about the one now running.
       return form.busy ? form : { ...form, linkNote: linkNote(action.before, action.after) };
     case "paired":
       return { ...form, busy: false, code: "", key: "", error: null, status: `Paired with ${action.hubName}. Connecting…` };
   }
+};
+
+/**
+ * A code as it is typed: upper case, and the dash put in after the fourth character, so `abcd2345` shows as
+ * `ABCD-2345`. Main still normalizes what is sent (`normalizeCode`), look-alikes included.
+ */
+export const formatCode = (input: string): string => {
+  const raw = input.replace(/[\s-]/gu, "").toUpperCase();
+  return raw.length > 4 ? `${raw.slice(0, 4)}-${raw.slice(4)}` : raw;
 };
 
 /** A hub this app can't talk to, in words, with the side that needs updating. */

@@ -12,7 +12,12 @@ use Ctrl.
 
 ## Pair it with the hub {#pair}
 
-On the hub machine, the app pairs by itself when it opens. On another computer:
+The first time it opens, the app says what fleetd is and shows three steps that tick themselves as you go: connect to
+your hub, add a project, say hi to its lead.
+
+With no hub on this computer yet, it shows the one command that installs fleetd and sets it up here. Paste it in a
+terminal; when setup finishes, come back to the app and it pairs by itself. On the hub machine, the app pairs by itself
+when it opens. On another computer:
 
 1. On the hub, print a pairing code:
 
@@ -26,9 +31,10 @@ On the hub machine, the app pairs by itself when it opens. On another computer:
    app and enter the code and hub address above, or open the link there.
    ```
 
-2. In the app, on "Connect to your fleetd hub", enter the hub address and the code. Or open the `fleetd://pair` link.
+2. In the app, under "Or connect to a hub on another computer", enter the hub address and the code. Or open the
+   `fleetd://pair` link.
 
-The code works once, for 15 minutes. To connect with a key instead, click "Use a key instead".
+The code works once, for 15 minutes. Capitals and the dash are optional: `abcd2345` works as `ABCD-2345`. To connect with a key instead, click "Use a key instead".
 
 To change hubs, open Settings (⌘,) → General → Hub.
 
