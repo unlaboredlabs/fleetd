@@ -316,6 +316,7 @@ pub fn chat_item(r: &HumanRequest) -> ChatItem {
             note,
             answered_at: r.answered_at.clone(),
             by,
+            finished_at: r.finished_at.clone(),
         }),
     }
 }
@@ -966,8 +967,10 @@ impl Approvals {
                 error: Some(err), ..
             }) => {
                 let why = format!("not run on {machine}: {err}");
+                let at = self.now();
                 self.change_from(&id, RequestState::Approved, |r| {
                     r.state = RequestState::Failed;
+                    r.finished_at = Some(fleetd_contracts::ids::Timestamp(at));
                     r.evidence = Some(fleetd_contracts::prim::Text::unchecked(clip(
                         &why,
                         EVIDENCE_MAX,
@@ -985,8 +988,10 @@ impl Approvals {
                     format!("exit {code} on {machine}, approved by {by}")
                 };
                 let tail = clip(o.output_tail.trim_end(), EVIDENCE_MAX);
+                let at = self.now();
                 self.change_from(&id, RequestState::Approved, |r| {
                     r.state = RequestState::Ran;
+                    r.finished_at = Some(fleetd_contracts::ids::Timestamp(at));
                     r.evidence = Some(fleetd_contracts::prim::Text::unchecked(head));
                     r.exit_code = o.exit_code;
                     r.output_tail = Some(fleetd_contracts::prim::Text::unchecked(tail));

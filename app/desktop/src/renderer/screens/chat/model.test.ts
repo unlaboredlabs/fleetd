@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChatItem } from "../../src/data/chat";
-import { chatRows, dayLabel, rowIndexOf, systemHeadline } from "./model";
+import { chatRows, dayLabel, heldLabel, rowIndexOf, systemHeadline } from "./model";
 
 const at = (d: number, h: number, m = 0) => new Date(Date.UTC(2026, 9, d, h, m)).toISOString();
 const NOW = Date.parse(at(19, 18));
@@ -41,6 +41,15 @@ describe("the chat's rows", () => {
     expect(rows([])[0]).toEqual({ kind: "top", key: "top", state: "start" });
     expect(rows([], { hasOlder: true })[0]).toMatchObject({ state: "more" });
     expect(rows([], { hasOlder: true, loadingOlder: true })[0]).toMatchObject({ state: "loading" });
+  });
+
+  it("never show a held chat as current: offline, or connected before it is read again", () => {
+    expect(rows([], { hasOlder: true, held: true, offline: true })[0]).toMatchObject({ state: "held" });
+    // Connected, not read yet (or the read failed): never "once you're connected" while connected.
+    expect(rows([], { hasOlder: true, held: true, offline: false })[0]).toMatchObject({ state: "reread" });
+    expect(heldLabel(true, "as of 09:02")).toBe("Offline, as of 09:02");
+    expect(heldLabel(false, "as of 09:02")).toBe("Last known, as of 09:02");
+    expect(heldLabel(false, undefined)).toBe("Last known");
   });
 
   it("put the live strip under the lead's newest message and after the field that answers it, never between them", () => {

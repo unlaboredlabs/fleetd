@@ -116,7 +116,7 @@ function HubSetting() {
         open={confirm}
         onOpenChange={setConfirm}
         title="Disconnect and forget the key?"
-        description="This app stops showing the hub's work until you pair it again with a code from fleetd pair. Agents keep running."
+        description="This app stops showing the hub's work until you pair it again with a code from fleetd pair, and drops messages still waiting to send. Agents keep running."
         footer={
           <>
             <Button onClick={() => setConfirm(false)}>Cancel</Button>

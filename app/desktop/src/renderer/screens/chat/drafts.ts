@@ -24,8 +24,6 @@ export interface Attached {
 export interface Draft {
   readonly text: string;
   readonly attached: readonly Attached[];
-  /** The last send found no hub: said under the box until the words change or go. */
-  readonly offline?: boolean;
   /** Why the last attach or send didn't go, in a sentence. */
   readonly error?: string;
 }
@@ -43,7 +41,7 @@ export interface Drafts {
   restore(key: string, text: string, files: readonly AttachmentRef[]): void;
 }
 
-const isEmpty = (d: Draft) => d.text === "" && d.attached.length === 0 && d.offline !== true && d.error === undefined;
+const isEmpty = (d: Draft) => d.text === "" && d.attached.length === 0 && d.error === undefined;
 
 export function createDrafts(layer: Pick<DataLayer, "call">, saved: Readonly<Record<string, string>> = {}): Drafts {
   const store = createStore<State>(() => Object.fromEntries(Object.entries(saved).map(([k, text]) => [k, { text, attached: [] }])));

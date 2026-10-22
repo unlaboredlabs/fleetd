@@ -50,6 +50,11 @@ const api: FleetdApi = {
     live: (scope) => ipcRenderer.invoke(IPC.hubLive, scope) as Promise<void>,
     chat: (project) => ipcRenderer.invoke(IPC.hubChat, project) as Promise<void>,
     resync: () => ipcRenderer.invoke(IPC.hubResync) as Promise<void>,
+    retryNow: () => ipcRenderer.invoke(IPC.hubRetryNow) as Promise<void>,
+    cache: {
+      read: () => ipcRenderer.invoke(IPC.hubCacheRead) as Promise<string | null>,
+      write: (text) => ipcRenderer.invoke(IPC.hubCacheWrite, text) as Promise<void>,
+    },
     connect: (url, key) => ipcRenderer.invoke(IPC.hubConnect, { url, key }) as Promise<ConnectOutcome>,
     forget: () => ipcRenderer.invoke(IPC.hubForget) as Promise<void>,
   },

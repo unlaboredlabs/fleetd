@@ -2,7 +2,7 @@
 // The palette and the live strip's "waiting on you" row reach the same Show through the chat.showWaiting command.
 import { Button, Dot, Text } from "../../ui";
 import { useCommands } from "../palette";
-import type { Waiting } from "./attention";
+import type { Waiting } from "./attentionModel";
 import s from "./view.module.css";
 
 export function AttentionLine({ waiting, onShow }: { waiting: Waiting | undefined; onShow: () => void }) {

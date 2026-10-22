@@ -36,6 +36,16 @@ export interface FleetdApi {
     /** The chat whose streamed text arrives as `chat_delta` frames, or null to stop. Kept across reconnects. */
     chat(project: ChatScope | null): Promise<void>;
     resync(): Promise<void>;
+    /** Dials the hub now instead of at the next retry (Retry now while offline). */
+    retryNow(): Promise<void>;
+    /**
+     * The last hub data the app saw, as the renderer wrote it (src/renderer/src/data/cache.ts). Main keeps it in
+     * userData for the paired hub only; reading gives null for any other hub, and Forget deletes it.
+     */
+    readonly cache: {
+      read(): Promise<string | null>;
+      write(text: string): Promise<void>;
+    };
     connect(url: string, key: string): Promise<ConnectOutcome>;
     forget(): Promise<void>;
   };

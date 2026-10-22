@@ -2,6 +2,7 @@ import type { WebContents } from "electron";
 import { IPC } from "../../shared/channels";
 import type { CallOutcome, ConnectOutcome, HubFrame, HubState } from "../../shared/hub";
 import type { CallRequest, ChatScope, ConnectRequest, LiveScope } from "../../shared/ipc";
+import type { HubCacheFile } from "./cache";
 import { HubClient } from "./client";
 import { clearCredentials, fromEnv, loadCredentials, saveCredentials, type CredentialEnv } from "./credentials";
 import { FixtureSource, type FixtureFile } from "./fixture";
@@ -10,7 +11,14 @@ import type { HubSource } from "./source";
 import type { Transport } from "./transport";
 
 export type HubMode =
-  | { readonly kind: "hub"; readonly credentials: CredentialEnv; readonly vars: NodeJS.ProcessEnv; readonly transport: Transport }
+  | {
+      readonly kind: "hub";
+      readonly credentials: CredentialEnv;
+      readonly vars: NodeJS.ProcessEnv;
+      readonly transport: Transport;
+      /** The renderer's offline cache (main/hub/cache.ts). */
+      readonly cache: HubCacheFile;
+    }
   | { readonly kind: "fixture"; readonly fixture: FixtureFile };
 
 /** The hub as main offers it to windows: one source (a connection or a fixture), fanned out to every subscriber. */
@@ -81,6 +89,30 @@ export class HubService {
     this.#source?.resync();
   }
 
+  /** The offline banner's Retry now: dial at once rather than at the next retry. */
+  retryNow(): void {
+    this.#source?.reconnectNow();
+  }
+
+  /** The disk cache for the hub this app is paired with; a fixture's own, which it never overwrites. */
+  cacheRead(): string | null {
+    if (this.#mode.kind === "fixture") return this.#mode.fixture.cache === undefined ? null : JSON.stringify(this.#mode.fixture.cache);
+    const hub = this.#hub();
+    return hub === null ? null : this.#mode.cache.read(hub);
+  }
+
+  cacheWrite(text: string): void {
+    if (this.#mode.kind !== "hub") return;
+    const hub = this.#hub();
+    if (hub !== null) this.#mode.cache.write(text, hub);
+  }
+
+  /** The paired hub's address as the state names it; null while unpaired. */
+  #hub(): string | null {
+    const state = this.state();
+    return state.phase === "unpaired" ? null : state.hub;
+  }
+
   windowFocused(): void {
     this.#source?.refreshLive();
   }
@@ -110,6 +142,7 @@ export class HubService {
     this.#source?.stop();
     this.#source = null;
     if (!this.#ephemeral) clearCredentials(this.#mode.credentials);
+    this.#mode.cache.clear();
     this.#unpaired = { phase: "unpaired" };
     this.#broadcast({ t: "state", state: this.#unpaired });
   }
