@@ -60,8 +60,6 @@ pub trait LeadPorts: Send + Sync {
         workstream_id: &WorkstreamId,
         limit: usize,
     ) -> Result<Vec<Decision>, LeadError>;
-    /// `Decisions.get(decisionId)`.
-    fn decision(&self, decision_id: &str) -> Result<Option<Decision>, LeadError>;
 }
 
 /// The stand-in until the integration slice wires the real areas.
@@ -112,8 +110,5 @@ impl LeadPorts for Unwired {
         _: usize,
     ) -> Result<Vec<Decision>, LeadError> {
         Ok(Vec::new())
-    }
-    fn decision(&self, _: &str) -> Result<Option<Decision>, LeadError> {
-        Ok(None)
     }
 }

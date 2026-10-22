@@ -1,7 +1,7 @@
 import type { LinkHandlerClaim, LinkHandlerStatus, NotifyRequest, OpenTarget } from "../shared/app";
 import type { MenuCommand } from "../shared/menu";
 import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, HubState, OpenOutcome, SecretOutcome } from "../shared/hub";
-import type { ChatScope, LiveScope, SecretRequest } from "../shared/ipc";
+import type { ChatScope, ErrorReport, LiveScope, SecretRequest } from "../shared/ipc";
 import type { KeyStore, PairOutcome, PairRequest, PairStart, Probe } from "../shared/pairing";
 
 /** `window.fleetd`: everything the renderer can ask of main. There is no other bridge. */
@@ -9,6 +9,8 @@ export interface FleetdApi {
   readonly platform: "darwin" | "linux" | "win32" | "other";
   /** The fixture standing in for the hub (FLEETD_FIXTURE), or null. The shell shows a banner while it's set. */
   readonly fixture: string | null;
+  /** The app's version, for an error card's Copy details. */
+  readonly version: string;
   /** Writes text to the clipboard (the page has no clipboard permission of its own). */
   copy(text: string): Promise<void>;
   readonly secret: {
@@ -75,6 +77,8 @@ export interface FleetdApi {
     linkHandler(claim: LinkHandlerClaim | null): Promise<LinkHandlerStatus>;
     /** The menu commands enabled now; main greys out the other menu items. */
     setMenuState(enabled: ReadonlyArray<MenuCommand>): Promise<void>;
+    /** Logs an error the page caught to the app log (main scrubs it). Never rejects. */
+    logError(report: ErrorReport): Promise<void>;
   };
 }
 

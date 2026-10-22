@@ -109,12 +109,6 @@ pub trait TaskPorts: Send + Sync {
     ) -> BoxFut<'a, Result<(), PortError>> {
         self.send(thread, message, client_request_id)
     }
-    /// Executors.interrupt.
-    fn interrupt<'a>(
-        &'a self,
-        thread: &'a ThreadRef,
-        client_request_id: &'a str,
-    ) -> BoxFut<'a, Result<(), PortError>>;
     /// Executors.stop(ref): ends the thread's claude process; `Ok` only once the node saw it exit.
     fn stop<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Result<(), PortError>>;
     /// Executors.actions(ref, limit): each action's summary and output tail, newest first; empty when unreadable.
@@ -133,13 +127,6 @@ pub trait TaskPorts: Send + Sync {
     fn changes<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Option<ThreadChanges>>;
     /// ThreadWorkspace.pendingQuestion; `None` when there is none or the node could not say.
     fn pending_question<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Option<String>>;
-    /// WorkspaceFiles.read: `None` when the file does not exist.
-    fn read_file<'a>(
-        &'a self,
-        machine_id: &'a MachineId,
-        cwd: &'a str,
-        path: &'a str,
-    ) -> BoxFut<'a, Result<Option<String>, PortError>>;
     /// NodeCommands.run (cmd_check); `None` when the node could not run it.
     fn run_command<'a>(
         &'a self,

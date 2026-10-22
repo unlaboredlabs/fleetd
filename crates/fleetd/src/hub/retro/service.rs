@@ -16,10 +16,11 @@ use super::types::{
 use super::validate::{Context, PlaybookParser, Validated, validate_answer};
 use crate::clock::Clock;
 use crate::hub::attention::{POLICY_TZ_KEY, hub_zone, zone};
-use crate::hub::usage::ports::{BoxFut, EventLog, HubEvent, NewEvent, WaitInput};
+use crate::hub::usage::ports::{BoxFut, EventLog, NewEvent, WaitInput};
 use crate::hub::usage::time::{clip, iso, parse_ms, system_ms};
 use chrono::{Datelike, TimeZone, Weekday};
 use chrono_tz::Tz;
+use fleetd_contracts::events::{HubEvent, HubEventType};
 use serde::Serialize;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -888,7 +889,7 @@ impl Retro {
                 .await;
             cursor = page.cursor;
             for event in page.events {
-                if event.kind == "decision.recorded" {
+                if event.r#type == HubEventType::DecisionRecorded {
                     self.on_decision(&event).await;
                 } else {
                     // A run takes a claude turn; it must not hold up the answers behind it.

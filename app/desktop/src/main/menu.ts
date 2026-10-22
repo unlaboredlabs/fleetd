@@ -29,7 +29,11 @@ const item = (opener: Opener, id: MenuCommand, label: string): MenuItemConstruct
  * The full app menu. Edit uses Chromium's own roles, so Undo/Cut/Copy/Paste/Select All act on whichever text field
  * has focus, and macOS adds its dictation and emoji items to it.
  */
-export const installMenu = (opener: Opener, checkForUpdates: (() => Promise<void>) | null): void => {
+export const installMenu = (
+  opener: Opener,
+  checkForUpdates: (() => Promise<void>) | null,
+  help: { readonly revealLogs: () => void; readonly copyDiagnostics: () => void },
+): void => {
   const mac = process.platform === "darwin";
   const separator = { type: "separator" } as const;
   // Only a release build has an updater (dev and test builds get null), so they don't show the item at all.
@@ -119,6 +123,10 @@ export const installMenu = (opener: Opener, checkForUpdates: (() => Promise<void
       submenu: [
         { label: "fleetd on GitHub", click: () => void shell.openExternal(REPO_URL) },
         { label: "Docs", click: () => void shell.openExternal(DOCS_URL) },
+        separator,
+        // For a bug report: the app log (main/applog.ts) and the version, OS, connection and recent log lines.
+        { label: "Reveal Logs", click: help.revealLogs },
+        { label: "Copy Diagnostics", click: help.copyDiagnostics },
         ...(mac ? [] : [separator, ...updates, { role: "about" } as const]),
       ],
     },

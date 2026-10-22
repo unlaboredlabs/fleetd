@@ -79,9 +79,6 @@ impl LeadPorts for Ports {
     ) -> Result<Vec<Decision>, LeadError> {
         Ok(Vec::new())
     }
-    fn decision(&self, _: &str) -> Result<Option<Decision>, LeadError> {
-        Ok(None)
-    }
 }
 
 /// `lead.autoStart` from the project's policy file. Reading it goes through the node, which takes a few ms.

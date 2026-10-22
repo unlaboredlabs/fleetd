@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex};
 
 use fleetd_contracts::effort::Effort;
 use fleetd_contracts::model::RuntimeMode;
-use fleetd_contracts::sessions::{RunnerInfo, RunnerKind};
+use fleetd_contracts::sessions::RunnerInfo;
 
 use super::{
     BoxFut, ExitInfo, Runner, RunnerError, SessionHandle, SessionSpec, claude_setup, conformance,
@@ -254,10 +254,6 @@ impl ClaudeRunner {
 }
 
 impl Runner for ClaudeRunner {
-    fn kind(&self) -> RunnerKind {
-        RunnerKind::Claude
-    }
-
     fn probe<'a>(&'a self, env: &'a [(String, String)]) -> BoxFut<'a, RunnerInfo> {
         Box::pin(async move {
             let info = conformance::probe(&self.binary, env).await;

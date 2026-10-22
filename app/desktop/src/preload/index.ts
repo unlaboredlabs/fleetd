@@ -22,11 +22,12 @@ ipcRenderer.on(IPC.menuCommand, (_event: IpcRendererEvent, id: string) => {
 ipcRenderer.on(IPC.appOpen, (_event: IpcRendererEvent, target: OpenTarget) => {
   for (const listener of openListeners) listener(target);
 });
-const FIXTURE_ARG = "--fleetd-fixture=";
-const fixture = process.argv.find((arg) => arg.startsWith(FIXTURE_ARG))?.slice(FIXTURE_ARG.length) ?? null;
+const arg = (name: string): string | null => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? null;
+const fixture = arg("fleetd-fixture");
 
 const api: FleetdApi = {
   fixture,
+  version: arg("fleetd-version") ?? "unknown",
   platform: process.platform === "darwin" || process.platform === "linux" || process.platform === "win32" ? process.platform : "other",
   copy: (text) => ipcRenderer.invoke(IPC.copy, text) as Promise<void>,
   secret: {
@@ -87,6 +88,7 @@ const api: FleetdApi = {
     notify: (request) => ipcRenderer.invoke(IPC.appNotify, request) as Promise<void>,
     linkHandler: (claim) => ipcRenderer.invoke(IPC.appLinkHandler, claim) as Promise<LinkHandlerStatus>,
     setMenuState: (enabled) => ipcRenderer.invoke(IPC.appMenuState, enabled) as Promise<void>,
+    logError: (report) => (ipcRenderer.invoke(IPC.appLog, report) as Promise<void>).catch(() => undefined),
   },
 };
 
