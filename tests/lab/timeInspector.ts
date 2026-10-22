@@ -136,7 +136,13 @@ export async function timeInspector(lab: Lab) {
     check(approved !== undefined, "Approve");
     const answeredAt = Date.now();
     await lab.waitEvent(`${askId} ran`, 60_000, { cursor: ranFrom, types: ["request.updated"], match: (e) => e.data?.requestId === askId && ["ran", "failed"].includes(e.data?.state) });
-    const ran = await itemOf();
+    // The chat shows the request's change from its request.updated, just after.
+    const ran = await lab.until(`${askId}'s chat item ran`, 30_000, async () => {
+      const item = await itemOf();
+      if (item?.state === "ran" || item?.state === "failed") return item;
+      await new Promise((r) => setTimeout(r, 250));
+      return undefined;
+    });
     check(ran?.state === "ran" && ran.exitCode === 0, `${askId} ran: ${JSON.stringify(ran)}`);
     ok(`${askId} approved by the human key after ${((answeredAt - filedAt) / 1000).toFixed(1)} s; it ran`);
 

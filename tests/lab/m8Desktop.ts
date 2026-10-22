@@ -101,6 +101,14 @@ export async function m8Desktop(lab: Lab) {
     /** The project's chat item for request `id`, as the app reads it. */
     const itemOf = async (id: string) =>
       ((await app.call("chat_history", { projectRef: ref, limit: 100 })).messages as Array<Body>).find((m) => m.item?.requestId === id)?.item as Body | undefined;
+    /** The chat item once it reaches `state`: the chat shows a request's change from its request.updated, just after. */
+    const itemIn = (id: string, state: string) =>
+      lab.until(`${id}'s chat item ${state}`, 30_000, async () => {
+        const item = await itemOf(id);
+        if (item?.state === state) return item;
+        await new Promise((r) => setTimeout(r, 250));
+        return undefined;
+      });
 
     // 1. A secret request, sealed client side to the node's box key.
     const sinkDir = path.join(lab.dir, "secrets");
@@ -122,7 +130,7 @@ export async function m8Desktop(lab: Lab) {
     check(saved.fingerprint === fingerprint, `secret_submit answered fingerprint ${saved.fingerprint}`);
     const sink = fs.readFileSync(sinkPath, "utf8");
     check(sink === `OTHER=1\nSTRIPE_TEST_KEY=${VALUE}\n` && (fs.statSync(sinkPath).mode & 0o777) === 0o600, "the node wrote STRIPE_TEST_KEY into the env sink, mode 0600");
-    const stored = await itemOf(secretAsk!);
+    const stored = await itemIn(secretAsk!, "stored");
     check(stored?.state === "stored" && stored.fingerprint === fingerprint, `${secretAsk} stored with its fingerprint: ${JSON.stringify(stored)}`);
     ok(`1. secret ${secretAsk}: sealed client side, saved on ${MACHINE}; fingerprint ${fingerprint}`);
     // (3., the checklist ask with a verify check, went with the questions tool: a human check is a chat line now.)
@@ -158,7 +166,7 @@ export async function m8Desktop(lab: Lab) {
     cursor = await lab.cursor();
     await app.call("approval_answer", { requestId: gatedAsk, decision: "approve" });
     const ran = await lab.waitEvent(`${gatedAsk} ran`, 60_000, { cursor, types: ["request.updated"], match: (e) => e.data?.requestId === gatedAsk && ["ran", "failed"].includes(e.data?.state) });
-    const done = await itemOf(gatedAsk!);
+    const done = ran.event.data.state === "ran" ? await itemIn(gatedAsk!, "ran") : await itemOf(gatedAsk!);
     check(ran.event.data.state === "ran" && ran.event.data.by === "human:lab-desktop" && done?.exitCode === 0, `ran, approved by the person: ${JSON.stringify({ event: ran.event.data, item: done })}`);
     check(fs.readFileSync(gatedFile, "utf8") === "deployed\n", "the node ran the stored argv");
     const woken = await lab.waitEvent("the lead woken with the result", 120_000, {
