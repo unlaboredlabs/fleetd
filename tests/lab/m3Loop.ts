@@ -1,7 +1,7 @@
-// M3 "done when" 1-2, end to end: a haiku lead on lab-a starts on the current prompt with its state block, and a chat
+// M3 "done when" 1-2, end to end: a mechanics lead on lab-a starts on the current prompt with its state block, and a chat
 // message becomes a draft workstream whose brief the lead freezes from its own shell (`fleetd` on its PATH, reaching
 // the hub through lab-a's node socket). Two lead turns, each tiny: start and the chat turn.
-import { type Body, chatOrder, type Lab, MODEL } from "./harness.ts";
+import { type Body, chatOrder, type Lab, MECHANICS } from "./harness.ts";
 
 const MACHINE = "lab-a";
 // The v1 prompt has the lead delegate at once; m5 decides when tasks run, so this lead registers the brief only.
@@ -31,10 +31,10 @@ export async function m3Loop(lab: Lab) {
 
   // 1. lead_start launches the lead with the current prompt; project_get shows it idle once its first turn ends.
   let cursor = await lab.cursor();
-  const started = await callTool("lead_start", { ...ref, model: MODEL, effort: "low" });
+  const started = await callTool("lead_start", { ...ref, ...MECHANICS });
   check(!started.isError, `lead_start: ${JSON.stringify(started.body)}`);
   const threadId = started.body.threadId as string;
-  ok(`lead_start ${MACHINE}/${projectId} (${MODEL}, low) -> thread ${threadId}, state ${started.body.state}`);
+  ok(`lead_start ${MACHINE}/${projectId} (${MECHANICS.model}, ${MECHANICS.effort}) -> thread ${threadId}, state ${started.body.state}`);
   const again = (await callTool("lead_start", ref)).body;
   check(again.threadId === threadId, `a second lead_start returns the same lead: ${JSON.stringify(again)}`);
   const leadStarted = await lab.waitEvent("lead.started", 10_000, { cursor, machineId: MACHINE, types: ["lead.started"] });
@@ -75,5 +75,5 @@ export async function m3Loop(lab: Lab) {
   // 3-4 (an ask from the lead's shell, the terse inbox reply as a decision, the re-ask answered from the log, a naming
   // ask refused) went with the questions tool; the lead now asks in chat, and `chat` terse checks the answer is logged
   // with decide and never asked again.
-  ok(`M3 loop used ${turns} lead turns (${MODEL}, effort low)`);
+  ok(`M3 loop used ${turns} lead turns (${MECHANICS.model}, effort ${MECHANICS.effort})`);
 }

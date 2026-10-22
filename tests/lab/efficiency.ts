@@ -5,11 +5,11 @@
 //    `report` (kind slice_ready); the first PR's reviewer starts before the second PR reaches the train, while the
 //    writer still runs. Gates hold: neither PR is ready without its review. B's lead and writer run on the shipped
 //    model (SHIPPED): what the writer does with its prompt is the behaviour checked.
-// Costs a few haiku/low lead turns, one tiny read task, one shipped-model writer and its reviewers.
+// Costs a few mechanics lead turns, one tiny read task, one shipped-model writer and its reviewers.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { type Body, openWorkstream, fleetdCommand, type Lab, MODEL, nodeSock, requireGhLogin, scrubbedEnv, SHIPPED, userMessages } from "./harness.ts";
+import { type Body, openWorkstream, fleetdCommand, type Lab, MECHANICS, nodeSock, requireGhLogin, scrubbedEnv, SHIPPED, userMessages } from "./harness.ts";
 import { prepareRepo } from "./m5Tasks.ts";
 import { BASE, BRANCH_PREFIX, CLONE, checkClone, NAMESPACE, onBase, prepareCheckout, REPO, removeLabRepoProject, resetNamespace } from "./m7Train.ts";
 
@@ -58,8 +58,8 @@ async function slotFiller(lab: Lab) {
   let cursor = await lab.cursor();
   const project = (await callTool("project_get", ref)).body;
   const started = project.lead === undefined
-    ? await callTool("lead_start", { ...ref, model: MODEL, effort: "low" })
-    : await callTool("lead_restart", { ...ref, model: MODEL, effort: "low" });
+    ? await callTool("lead_start", { ...ref, ...MECHANICS })
+    : await callTool("lead_restart", { ...ref, ...MECHANICS });
   check(!started.isError, `lead start: ${JSON.stringify(started.body)}`);
   const leadThread = started.body.threadId as string;
   const leadTurn = async (from: number, what: string) => {
@@ -83,7 +83,7 @@ async function slotFiller(lab: Lab) {
   ok(`${w} running on a frozen brief; ${item} open in ${m}, no task linked; lead ${leadThread} idle`);
 
   // A tiny task takes a slot and frees it. The first lead wake after that names the item.
-  const spawned = fleetd("task", "spawn", "--workstream", w, "--title", "say ok", "--kind", "read", "--model", MODEL, "--effort", "low", "--prompt", "Reply with the single word OK.");
+  const spawned = fleetd("task", "spawn", "--workstream", w, "--title", "say ok", "--kind", "read", "--model", MECHANICS.model, "--effort", MECHANICS.effort, "--prompt", "Reply with the single word OK.");
   const taskId = /^Spawned (T\d+)/mu.exec(spawned.stdout)?.[1];
   check(spawned.code === 0 && taskId, `task spawn: ${JSON.stringify(spawned)}`);
   const freed = await lab.waitEvent(`${taskId} ends`, TURN_MS, { cursor, types: ["task.completed", "task.failed"], match: (e) => e.data?.taskId === taskId });
@@ -111,7 +111,7 @@ async function sliceReviews(lab: Lab) {
   checkClone(check);
   resetNamespace();
   const dir = `lab/eff-${new Date().toISOString().slice(0, 19).replace(/\D/gu, "")}`;
-  prepareCheckout(`areas:\n  eff: ["${dir}/**"]\ndefaults:\n  model: ${MODEL}\n  effort: low\n`);
+  prepareCheckout(`areas:\n  eff: ["${dir}/**"]\ndefaults:\n  model: ${MECHANICS.model}\n  effort: ${MECHANICS.effort}\n`);
   try {
     const projectId = await lab.addProject(MACHINE, CLONE, "fleetd-lab");
     const ref = { machineId: MACHINE, projectId };

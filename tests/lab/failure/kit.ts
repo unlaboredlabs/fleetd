@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { type Body, descendants, type Lab, MODEL, type NodeOptions, type ProcInfo, REPO, realClaude, sleep, stillRuns } from "../harness.ts";
+import { type Body, descendants, type Lab, MECHANICS, type NodeOptions, type ProcInfo, REPO, realClaude, sleep, stillRuns } from "../harness.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const FIXTURES = path.join(REPO, "crates/fleetd/src/node/runner/fixtures");
@@ -70,7 +70,7 @@ export const killSurvivors = (procs: ReadonlyArray<ProcInfo>) => {
 
 /** Launches a thread with `prompt` on the tiny model and returns its id. */
 export const launch = async (lab: Pick<Lab, "callTool" | "check">, machineId: string, projectId: string, title: string, prompt: string) => {
-  const launched = await lab.callTool("thread_launch", { machineId, projectId, prompt, model: MODEL, effort: "low", title, clientRequestId: randomUUID() });
+  const launched = await lab.callTool("thread_launch", { machineId, projectId, prompt, ...MECHANICS, title, clientRequestId: randomUUID() });
   lab.check(!launched.isError, `thread_launch on ${machineId}: ${JSON.stringify(launched.body)}`);
   return launched.body.threadId as string;
 };

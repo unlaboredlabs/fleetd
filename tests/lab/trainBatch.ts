@@ -9,7 +9,7 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { type Body, openWorkstream, fleetdCommand, type Lab, MODEL, nodeSock, requireGhLogin, scrubbedEnv } from "./harness.ts";
+import { type Body, openWorkstream, fleetdCommand, type Lab, MECHANICS, nodeSock, requireGhLogin, scrubbedEnv } from "./harness.ts";
 import { BASE, BRANCH_PREFIX, checkClone, CLONE, git, NAMESPACE, prepareCheckout, REPO, removeLabRepoProject, resetNamespace } from "./m7Train.ts";
 
 const MACHINE = "lab-a";
@@ -22,8 +22,8 @@ const PAIR = `${DIR}/pair`;
 const POLICY = `areas:
   lab: ["${DIR}/**"]
 defaults:
-  model: ${MODEL}
-  effort: low
+  model: ${MECHANICS.model}
+  effort: ${MECHANICS.effort}
 `;
 // The seed's workflow plus one step that fails on the file b adds: c is green alone and red next to b.
 const STRICT_CI = `name: ci
@@ -94,7 +94,7 @@ export async function trainBatch(lab: Lab) {
       });
       return { code: out.status, stdout: out.stdout, stderr: out.stderr };
     };
-    const started = await callTool("lead_start", { ...ref, model: MODEL, effort: "low" });
+    const started = await callTool("lead_start", { ...ref, ...MECHANICS });
     check(!started.isError, `lead_start: ${JSON.stringify(started.body)}`);
     const leadThread = started.body.threadId as string;
     await lab.waitEvent("lead start turn", TURN_MS, { cursor: scenarioStart, machineId: MACHINE, match: (e) => e.threadId === leadThread && ENDED.includes(e.type) });

@@ -1,5 +1,5 @@
 // Re-records the runner's stream-json fixtures (crates/fleetd/src/node/runner/fixtures) from the installed `claude`,
-// for a maintainer bumping TESTED in node/runner/version.rs. Never in CI. About 11 tiny haiku turns through the
+// for a maintainer bumping TESTED in node/runner/version.rs. Never in CI. About 11 tiny mechanics turns through the
 // user's own claude login; the error scenarios instead point claude at a local stub that answers every request with
 // a fixed error and forwards nothing. The documented usage-limit fixture is built from the Agent SDK's types and is
 // not re-recorded.
@@ -15,7 +15,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
-import { claudeLoginEnv, descendants, LAB, log, type ProcInfo, scrubbedEnv } from "../harness.ts";
+import { claudeLoginEnv, descendants, LAB, log, MECHANICS, type ProcInfo, scrubbedEnv } from "../harness.ts";
 import { FIXTURES, killSurvivors } from "./kit.ts";
 
 type Msg = Record<string, any>;
@@ -185,8 +185,8 @@ async function main() {
       sessions.set(s.session, sid);
       const args = [
         "-p", "--output-format", "stream-json", "--verbose", "--input-format", "stream-json", "--include-partial-messages",
-        "--thinking", "adaptive", "--thinking-display", "summarized", "--effort", "low", "--strict-mcp-config", "--setting-sources", "",
-        "--model", s.model ?? "claude-haiku-5-5", s.start === "resume" ? "--resume" : "--session-id", sid, ...(s.extra ?? []),
+        "--thinking", "adaptive", "--thinking-display", "summarized", "--effort", MECHANICS.effort, "--strict-mcp-config", "--setting-sources", "",
+        "--model", s.model ?? MECHANICS.model, s.start === "resume" ? "--resume" : "--session-id", sid, ...(s.extra ?? []),
       ];
       let env: Record<string, string> = { ...base, ...login, CLAUDE_CONFIG_DIR: config.login };
       if (s.login === "empty") env = { ...base, CLAUDE_CONFIG_DIR: config.empty };

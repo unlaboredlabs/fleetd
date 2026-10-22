@@ -2,7 +2,7 @@
 // gets its result inline in one wake; with the cap at 1 a second spawn queues until that turn ends; a second writer
 // on the same area queues on the lease; a writer that touches a file outside its area is flagged; and the instance
 // keeps Claude's native Task, Workflow and AskUserQuestion tools from every thread. Further spawns run `fleetd` from the harness in
-// the project's workspace, exactly as a lead's shell would, so they cost no lead turns. Every turn is tiny haiku/low.
+// the project's workspace, exactly as a lead's shell would, so they cost no lead turns. Every turn is a tiny mechanics turn.
 import { execFileSync, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -10,7 +10,7 @@ import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import { type Body, callToolWith, chatOrder, cli, fleetdCommand, initTools, type Lab, MODEL, nodeSock, scrubbedEnv, userMessages } from "./harness.ts";
+import { type Body, callToolWith, chatOrder, cli, fleetdCommand, initTools, type Lab, MECHANICS, nodeSock, scrubbedEnv, userMessages } from "./harness.ts";
 
 const MACHINE = "lab-a";
 const TURN_MS = 240_000;
@@ -18,8 +18,8 @@ const POLICY = `areas:
   docs: ["docs/**"]
   api: ["api/**"]
 defaults:
-  model: ${MODEL}
-  effort: low
+  model: ${MECHANICS.model}
+  effort: ${MECHANICS.effort}
 `;
 const ENDED = ["thread.completed", "thread.failed", "thread.interrupted"];
 
@@ -122,7 +122,7 @@ export async function m5Tasks(lab: Lab) {
     let cursor = await lab.cursor();
     let outcome = (await callTool("project_get", ref)).body;
     if (outcome.lead === undefined) {
-      const started = await callTool("lead_start", { ...ref, model: MODEL, effort: "low" });
+      const started = await callTool("lead_start", { ...ref, ...MECHANICS });
       check(!started.isError, `lead_start: ${JSON.stringify(started.body)}`);
       leadThread = started.body.threadId;
       cursor = await leadTurnDone(cursor, "start");
@@ -141,7 +141,7 @@ export async function m5Tasks(lab: Lab) {
 
     // 1. The lead spawns T1 from its shell: a thread in a new worktree on fleetd/T1-add-file, explicit model and effort.
     const spawn1 =
-      `fleetd task spawn --workstream ${workstreamId} --title "add file" --areas docs --serves done:0 --model ${MODEL} --effort low ` +
+      `fleetd task spawn --workstream ${workstreamId} --title "add file" --areas docs --serves done:0 --model ${MECHANICS.model} --effort ${MECHANICS.effort} ` +
       `--prompt "create docs/x.md with one line 'hi', commit it on your branch"`;
     const sent = await callTool("thread_send", {
       ...ref,
@@ -156,7 +156,7 @@ export async function m5Tasks(lab: Lab) {
     const t1Started = await taskEvent("task.started T1", cursor, "task.started", "T1");
     const t1 = await task("T1");
     check(
-      t1.state === "running" && t1.branch === "fleetd/T1-add-file" && t1.model === MODEL && t1.effort === "low" && t1.threadRef?.threadId,
+      t1.state === "running" && t1.branch === "fleetd/T1-add-file" && t1.model === MECHANICS.model && t1.effort === MECHANICS.effort && t1.threadRef?.threadId,
       `T1 runs on its branch with explicit model and effort: ${JSON.stringify(t1)}`,
     );
     ok(`1. the lead ran fleetd task spawn: T1 started (${t1Started.event.summary}), thread ${t1.threadRef.threadId} on ${t1.branch}`);
@@ -262,7 +262,7 @@ export async function m5Tasks(lab: Lab) {
     ok("5. lead and task threads start without Task, Workflow or AskUserQuestion");
 
     const total = await countLeadTurns();
-    ok(`M5 used ${total} lead turns + 4 task turns = ${total + 4} claude turns (${MODEL}, effort low)`);
+    ok(`M5 used ${total} lead turns + 4 task turns = ${total + 4} claude turns (${MECHANICS.model}, effort ${MECHANICS.effort})`);
   } finally {
     await admin("cap_set", { cap: 40 }).catch(() => undefined);
     await adminClient.close().catch(() => undefined);

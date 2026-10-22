@@ -72,7 +72,7 @@ The lab runs the release binary end to end: a hub and two nodes, driven through 
 which its sessions use as a real machine's sessions use the user's. The lab copies your `claude` login material into
 it (the login variables and `apiKeyHelper` from `~/.claude/settings.json`, and `.credentials.json` if you have one),
 deletes the copies when the run ends, and never writes under your real `~/.claude` or `~/.fleetd`. It isn't run in CI. Mechanics
-scenarios run small `claude` haiku turns at low effort. Behaviour scenarios run the lead (and, in `eff`, the writer)
+scenarios run small `claude` turns on `claude-opus-5-5` at medium effort. Behaviour scenarios run the lead (and, in `eff`, the writer)
 on the model fleetd ships, `claude-opus-5-5` at high effort, because the prompts are written for it: the `chat` lead,
 `steer`, and `eff`'s slices. The lab needs Node 24 or newer to run its TypeScript. The m7, m9, time, noci and
 demo scenarios also use your `gh` login and the public lab repository `unlaboredlabs/fleetd-lab`.
