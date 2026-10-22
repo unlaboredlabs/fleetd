@@ -11,6 +11,22 @@ const appPair = (hub: string, expiresAt = FRESH): JsonObject => ({ hub, code: "A
 const refuse = (status: number, code: string, message: string, fix: string): JsonObject => ({ status, body: { code, message, fix } });
 const NEW_CODE = "Run `fleetd pair` on the hub for a new code.";
 
+/** Every chat state in `value` reads as a chat with no messages that waits on nobody. */
+const emptyChats = (value: unknown): void => {
+  if (Array.isArray(value)) {
+    for (const item of value) emptyChats(item);
+    return;
+  }
+  if (typeof value !== "object" || value === null) return;
+  const o = value as Record<string, unknown>;
+  if (typeof o["lastSeq"] === "number" && "projectRef" in o) {
+    o["lastSeq"] = 0;
+    o["needsYou"] = false;
+    delete o["lastMessageAt"];
+  }
+  for (const v of Object.values(o)) emptyChats(v);
+};
+
 const unpaired = (name: string, note: string, pair?: JsonObject, stateNote?: string): Fixture => {
   const f = new Fixture(`onboarding-${name}`, note);
   f.state = stateNote === undefined ? { phase: "unpaired" } : { phase: "unpaired", note: stateNote };
@@ -25,7 +41,13 @@ export default defineGroup({
       f.pair = { healthz: healthz() };
     },
   },
-  fixtures: () => [
+  fixtures: (base) => [
+    (() => {
+      // Every chat is still empty, so the checklist's last step, say hi to its lead, is the current one.
+      const f = Fixture.from(base("chat-empty"), "onboarding-first-chat", "Just set up: no messages in any chat yet.");
+      emptyChats([f.snapshot, f.events, f.timeline, f.calls]);
+      return f;
+    })(),
     unpaired("first-run", "First launch, no hub on this computer: the form with the no-hub line."),
     unpaired("code-refused", "First launch, no hub on this computer; a hub elsewhere refuses the typed code.", {
       redeem: refuse(401, "pair_code_invalid", "That pairing code is unknown or was already used.", NEW_CODE),

@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { Button, Text } from "../../ui";
 import { projectKey } from "../../src/data/store";
+import { SetupChecklist } from "../onboarding";
 import { runCommand } from "../palette";
 import { useDraft } from "./drafts";
 import type { ProjectRef } from "./slots";
@@ -19,6 +20,7 @@ export function EmptyChat({ project, title, children }: { project: ProjectRef; t
   return (
     <div className={s.empty} data-entry="empty">
       <div className={s.emptyBody}>
+        <SetupChecklist />
         <Text as="h2" size="lg" strong>
           {title === "" ? "What should the lead do?" : `What should the lead do in ${title}?`}
         </Text>
