@@ -220,7 +220,7 @@ fn agent_facing_texts_name_tools_not_fleetd_commands() {
         r"fleetd (task (spawn|list|status|message|cancel)|request (secret|withdraw)|decide\b|brief create|claim done|plan (add|edit|drop|show|milestone)|gated run|status set|change (enqueue|status)|review verdict|decisions search|inventory|workstream spawn)",
     )
     .unwrap();
-    let flag = regex::Regex::new(r#""[^"]*--(workstream|amend|proceeded|serves|item|steer|milestone|rec|why|context|option|sink|env-name|class|scope|task)\b"#).unwrap();
+    let flag = regex::Regex::new(r#""[^"]*--(workstream|proceeded|serves|item|steer|milestone|rec|why|context|option|sink|env-name|class|scope|task)\b"#).unwrap();
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut found = Vec::new();
     let texts = super::registry::ENTRIES

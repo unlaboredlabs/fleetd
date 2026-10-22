@@ -30,14 +30,6 @@ pub struct LeadSettings {
     pub effort: Option<Effort>,
 }
 
-#[derive(Debug, Clone)]
-pub struct StoredWorkstream {
-    pub workstream: Workstream,
-    /// The decisions already used to amend its brief (decision ids; ask ids on rows from before the questions tool
-    /// went); each authorizes one change.
-    pub amends: Vec<String>,
-}
-
 pub const CLOSED_STATES: [WorkstreamState; 3] = [
     WorkstreamState::Done,
     WorkstreamState::Stopped,
@@ -230,44 +222,24 @@ impl LeadRecords {
                 "updatedAt": input.at,
             }))?;
             c.execute(
-                "UPDATE workstreams SET state = ?, amends = ?, data = ? WHERE n = ?",
-                params![state_str(workstream.state), "[]", serde_json::to_string(&workstream)?, n],
+                "UPDATE workstreams SET state = ?, data = ? WHERE n = ?",
+                params![state_str(workstream.state), serde_json::to_string(&workstream)?, n],
             )?;
             Ok((workstream, true))
         })
     }
 
-    pub fn workstream_get(
-        &self,
-        id: &WorkstreamId,
-    ) -> Result<Option<StoredWorkstream>, StoreError> {
-        let row: Option<(String, String)> = self.db.with(|c| {
-            Ok(c.query_row(
-                "SELECT data, amends FROM workstreams WHERE n = ?",
-                params![workstream_number(id)],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .optional()?)
-        })?;
-        row.map(|(data, amends)| {
-            Ok(StoredWorkstream {
-                workstream: serde_json::from_str(&data)?,
-                amends: serde_json::from_str(&amends)?,
-            })
-        })
-        .transpose()
+    pub fn workstream_get(&self, id: &WorkstreamId) -> Result<Option<Workstream>, StoreError> {
+        self.db.with(|c| read_workstream(c, id))
     }
 
-    pub fn workstream_put(&self, stored: &StoredWorkstream) -> Result<(), StoreError> {
-        let w = &stored.workstream;
+    pub fn workstream_put(&self, w: &Workstream) -> Result<(), StoreError> {
         let data = serde_json::to_string(w)?;
-        let amends = serde_json::to_string(&stored.amends)?;
         self.db.with(|c| {
             c.execute(
-                "UPDATE workstreams SET state = ?, amends = ?, data = ? WHERE n = ?",
+                "UPDATE workstreams SET state = ?, data = ? WHERE n = ?",
                 params![
                     state_str(w.state),
-                    amends,
                     data,
                     workstream_number(&w.workstream_id)
                 ],
@@ -276,30 +248,28 @@ impl LeadRecords {
         })
     }
 
-    /// Like `workstream_put`, but only while the stored workstream still has `expect`'s state and brief hash: a claim
-    /// concluding and a brief being amended can't overwrite each other. False when it changed meanwhile.
+    /// Like `workstream_put`, but only while the stored workstream still has `expect`'s state and brief: a concluding
+    /// claim never overwrites a brief edited meanwhile. False when it changed.
     pub fn workstream_put_if(
         &self,
-        stored: &StoredWorkstream,
+        w: &Workstream,
         expect: &Workstream,
     ) -> Result<bool, StoreError> {
-        let w = &stored.workstream;
         let data = serde_json::to_string(w)?;
-        let amends = serde_json::to_string(&stored.amends)?;
-        self.db.with(|c| {
-            let changed = c.execute(
-                "UPDATE workstreams SET state = ?, amends = ?, data = ?
-                 WHERE n = ? AND state = ? AND json_extract(data, '$.briefHash') IS ?",
-                params![
-                    state_str(w.state),
-                    amends,
-                    data,
-                    workstream_number(&w.workstream_id),
-                    state_str(expect.state),
-                    expect.brief_hash.as_ref().map(|h| h.as_str()),
-                ],
-            )?;
-            Ok(changed == 1)
+        self.db.transaction(|c| {
+            let unchanged = read_workstream(c, &w.workstream_id)?
+                .is_some_and(|now| now.state == expect.state && now.brief == expect.brief);
+            if unchanged {
+                c.execute(
+                    "UPDATE workstreams SET state = ?, data = ? WHERE n = ?",
+                    params![
+                        state_str(w.state),
+                        data,
+                        workstream_number(&w.workstream_id)
+                    ],
+                )?;
+            }
+            Ok(unchanged)
         })
     }
 
@@ -344,7 +314,7 @@ impl LeadRecords {
         self.workstream_get(workstream_id)
             .ok()
             .flatten()
-            .map(|s| s.workstream.project_ref)
+            .map(|w| w.project_ref)
     }
 
     pub fn open_in(&self, project_ref: &ProjectRef, limit: usize) -> Vec<WorkstreamId> {
@@ -359,12 +329,34 @@ impl LeadRecords {
     }
 }
 
+fn read_workstream(
+    c: &rusqlite::Connection,
+    id: &WorkstreamId,
+) -> Result<Option<Workstream>, StoreError> {
+    let data: Option<String> = c
+        .query_row(
+            "SELECT data FROM workstreams WHERE n = ?",
+            params![workstream_number(id)],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(data.map(|d| serde_json::from_str(&d)).transpose()?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fleetd_contracts::ledger::BriefHash;
+    use fleetd_contracts::ledger::Brief;
 
-    /// A concluding claim and an amend each write only over the workstream they read: the second writer loses.
+    fn brief(goal: &str) -> Option<Brief> {
+        serde_json::from_value(serde_json::json!({
+            "goal": goal, "why": "w", "pointers": [], "constraints": [], "tier": "S",
+            "doneWhen": [{ "type": "human", "question": "good?" }],
+        }))
+        .unwrap()
+    }
+
+    /// A concluding claim writes only over the workstream it read: a brief edited meanwhile wins.
     #[test]
     fn a_conditional_put_loses_once_the_state_or_brief_changed() {
         let records = LeadRecords::new(HubDb::open_memory().unwrap());
@@ -385,25 +377,17 @@ mod tests {
             })
             .unwrap();
         let put = |next: &Workstream, expect: &Workstream| {
-            records
-                .workstream_put_if(
-                    &StoredWorkstream {
-                        workstream: next.clone(),
-                        amends: vec![],
-                    },
-                    expect,
-                )
-                .unwrap()
+            records.workstream_put_if(next, expect).unwrap()
         };
         let research = Workstream {
             state: WorkstreamState::Verifying,
-            brief_hash: Some(BriefHash::unchecked("a".repeat(64))),
+            brief: brief("answer the question"),
             ..w.clone()
         };
         assert!(put(&research, &w));
         let build = Workstream {
             state: WorkstreamState::Running,
-            brief_hash: Some(BriefHash::unchecked("b".repeat(64))),
+            brief: brief("build it"),
             ..research.clone()
         };
         assert!(put(&build, &research));
@@ -413,6 +397,6 @@ mod tests {
         };
         assert!(!put(&done, &research), "the stale claim's write loses");
         let stored = records.workstream_get(&w.workstream_id).unwrap().unwrap();
-        assert_eq!(stored.workstream, build);
+        assert_eq!(stored, build);
     }
 }

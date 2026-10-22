@@ -12,10 +12,9 @@ use crate::checked;
 use crate::effort::Effort;
 use crate::ids::ThreadId;
 use crate::ledger::{
-    BriefDraft, BriefHash, Decision, DecisionKey, DecisionValue, DecisionWhy, EnvName,
-    GATED_MAX_TIMEOUT_SEC, GatedArgv, GatedClass, GatedCwd, GatedTimeoutSec, IntakeText,
-    PlaybookName, PlaybookRef, RequestState, SecretEnv, Serves, Tier, WorkstreamId,
-    WorkstreamState,
+    BriefDraft, Decision, DecisionKey, DecisionValue, DecisionWhy, EnvName, GATED_MAX_TIMEOUT_SEC,
+    GatedArgv, GatedClass, GatedCwd, GatedTimeoutSec, IntakeText, PlaybookName, PlaybookRef,
+    RequestState, SecretEnv, Serves, Tier, WorkstreamId, WorkstreamState,
 };
 use crate::mcp::McpToolError;
 use crate::plan::{
@@ -35,7 +34,7 @@ use crate::verification::{Claim, ClaimId, ReviewVerdict};
 /// Under the node user's home directory; mode 0600.
 pub const NODE_SOCKET_PATH: &str = ".fleetd/node/node.sock";
 
-/// `fleetd brief create --workstream W12 --json '<Brief>'`. Freezes the brief and moves a draft to running. `tier`
+/// `fleetd brief create --workstream W12 --json '<Brief>'`. Sets or edits the brief; a draft moves to running. `tier`
 /// may be left out: the workstream's pinned playbook fills its `tierDefault`, and the hub refuses it when there is
 /// none.
 #[skip_serializing_none]
@@ -44,8 +43,6 @@ pub const NODE_SOCKET_PATH: &str = ".fleetd/node/node.sock";
 pub struct BriefCreateCall {
     pub workstream_id: WorkstreamId,
     pub brief: BriefDraft,
-    /// The key of the decision the lead logged after the human approved changing an already frozen brief in chat.
-    pub amend: Option<DecisionKey>,
 }
 
 /// `request_secret`: the human enters a secret in a masked field in the app; it is sealed to the sink's machine and
@@ -207,7 +204,7 @@ pub struct TaskCancelCall {
     pub reason: Option<Text<1, 200>>,
 }
 
-/// `fleetd claim done --workstream W1 [--close-over "<why>"]`. Moves the workstream to verifying and runs its frozen
+/// `fleetd claim done --workstream W1 [--close-over "<why>"]`. Moves the workstream to verifying and runs its
 /// done-when checks. It is refused, or the workstream stays open, while write work of it has not landed, unless
 /// `close_over` says why closing over that work is meant; that work is then dropped with this why.
 #[skip_serializing_none]
@@ -251,7 +248,7 @@ pub struct WorkstreamSpawnCall {
     pub template: Option<PlaybookName>,
 }
 
-/// A lead opens its own workstream for work it took from the chat (`workstream_open`): a draft it then freezes with
+/// A lead opens its own workstream for work it took from the chat (`workstream_open`): a draft it then briefs with
 /// `brief`. `template` picks the playbook (feature, bugfix, research, finish-all).
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -328,7 +325,6 @@ pub enum LeadCall {
 #[serde(rename_all = "camelCase")]
 pub struct BriefCreateResult {
     pub workstream_id: WorkstreamId,
-    pub brief_hash: BriefHash,
     pub state: WorkstreamState,
     /// Hint for the lead's next step; the CLI prints it after the result.
     pub next: Option<String>,

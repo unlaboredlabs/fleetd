@@ -328,9 +328,9 @@ export type Brief = {
   baseline?: string;
   budget?: BriefBudget;
   constraints: string[];
-  /** Research: frozen with the brief, so the verdict can't move the goalposts. */
+  /** Research: the rule the verdict is computed from. */
   decisionRule?: DecisionRule;
-  /** At least one; frozen with the brief. */
+  /** At least one. */
   doneWhen: CheckSpec[];
   estimate?: Estimate;
   goal: string;
@@ -347,8 +347,6 @@ export type BriefBudget = {
   /** How big a research spend the lead allows, relative like plan sizes; never a time guess. */
   size?: Tier;
 };
-
-export type BriefHash = string;
 
 export type CapSetInput = {
   /** The fleet cap on running turns, leads' included. Needs an admin key. */
@@ -3005,7 +3003,7 @@ export type ResearchVerdict = {
   computedAt: Timestamp;
   metricValues: MetricValues;
   outcome: ResearchOutcome;
-  /** The brief's frozen rule. */
+  /** The brief's rule. */
   rule: DecisionRule;
 };
 
@@ -4516,7 +4514,6 @@ export type WorkStep = WorkMessage & {
 export type Workstream = {
   /** Absent while draft. */
   brief?: Brief;
-  briefHash?: BriefHash;
   createdAt: Timestamp;
   /** Hub-filled, outside the frozen brief. Set when it starts running with a raw estimate. */
   estimateActual?: WorkstreamEstimateActual;
@@ -4526,7 +4523,7 @@ export type Workstream = {
   outcome?: ResearchOutcome;
   /** M9 finish-all: the finish-all workstream that spawned this one, and the value source it was spawned for. */
   parent?: WorkstreamParent;
-  /** Pinned at creation; the brief freeze validates against this version. Absent on workstreams from before M9. */
+  /** Pinned at creation; the brief validates against this version. Absent on workstreams from before M9. */
   playbook?: PlaybookRef;
   projectRef: ProjectRef;
   source: WorkstreamSource;
@@ -4546,8 +4543,8 @@ export type WorkstreamEstimateActual = {
 
 /** `workstream.created`, `workstream.running`, `workstream.state`, `workstream.done`. */
 export type WorkstreamEventData = {
-  /** workstream.running: the frozen brief. */
-  briefHash?: BriefHash;
+  /** workstream.state: the brief was set or edited. */
+  briefEdited?: boolean;
   by?: string;
   /** workstream.state (verifying) and workstream.done: the claim that moved it. */
   claimId?: ClaimId;

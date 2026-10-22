@@ -118,7 +118,7 @@ export async function m5Tasks(lab: Lab) {
   };
 
   try {
-    // The lead: m3's when it ran first, else a fresh one. A workstream to spawn under: an open one, else a new intent.
+    // The lead: steer's when it ran first, else a fresh one. A workstream to spawn under: an open one, else a new intent.
     let cursor = await lab.cursor();
     let outcome = (await callTool("project_get", ref)).body;
     if (outcome.lead === undefined) {

@@ -397,7 +397,7 @@ impl LeadWakes {
                     .workstream_get(workstream_id)
                     .ok()
                     .flatten()
-                    .is_none_or(|w| w.workstream.created_at.as_str() >= lead.started_at.as_str()),
+                    .is_none_or(|w| w.created_at.as_str() >= lead.started_at.as_str()),
                 _ => true,
             })
             .collect();

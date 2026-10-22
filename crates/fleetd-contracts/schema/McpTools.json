@@ -794,10 +794,10 @@
         },
         "decisionRule": {
           "$ref": "#/$defs/DecisionRule",
-          "description": "Research: frozen with the brief, so the verdict can't move the goalposts."
+          "description": "Research: the rule the verdict is computed from."
         },
         "doneWhen": {
-          "description": "At least one; frozen with the brief.",
+          "description": "At least one.",
           "items": {
             "$ref": "#/$defs/CheckSpec"
           },
@@ -861,10 +861,6 @@
         }
       },
       "type": "object"
-    },
-    "BriefHash": {
-      "pattern": "^[0-9a-f]{64}$",
-      "type": "string"
     },
     "CapSetInput": {
       "properties": {
@@ -3832,7 +3828,7 @@
         },
         {
           "const": "workstream.running",
-          "description": "The brief was frozen; `data.briefHash`.",
+          "description": "The brief was set and the work started.",
           "type": "string"
         },
         {
@@ -9204,7 +9200,7 @@
         },
         "rule": {
           "$ref": "#/$defs/DecisionRule",
-          "description": "The brief's frozen rule."
+          "description": "The brief's rule."
         }
       },
       "required": [
@@ -13679,9 +13675,6 @@
           "$ref": "#/$defs/Brief",
           "description": "Absent while draft."
         },
-        "briefHash": {
-          "$ref": "#/$defs/BriefHash"
-        },
         "createdAt": {
           "$ref": "#/$defs/Timestamp"
         },
@@ -13707,7 +13700,7 @@
         },
         "playbook": {
           "$ref": "#/$defs/PlaybookRef",
-          "description": "Pinned at creation; the brief freeze validates against this version. Absent on workstreams from before M9."
+          "description": "Pinned at creation; the brief validates against this version. Absent on workstreams from before M9."
         },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"

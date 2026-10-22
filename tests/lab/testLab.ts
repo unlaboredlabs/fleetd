@@ -52,7 +52,6 @@ import {
   writeFleetdWrapper,
 } from "./harness.ts";
 import { m1Fleet } from "./m1Fleet.ts";
-import { m3Loop } from "./m3Loop.ts";
 import { m5Tasks } from "./m5Tasks.ts";
 import { m6Verify } from "./m6Verify.ts";
 import { m7Train } from "./m7Train.ts";
@@ -76,11 +75,10 @@ const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab)
   { name: "missed", run: (lab) => missedCompletion(lab) },
   { name: "degraded", run: degradedMachine },
   { name: "queue", run: offlineQueue },
-  // Last: its lead thread on lab-a would otherwise be picked as an idle thread by the scenarios above.
-  { name: "m3", run: m3Loop },
-  // After m3: it reuses m3's lead (or starts one) and adds its own order; m5 spawns under either.
+  // Last: its lead thread on lab-a would otherwise be picked as an idle thread by the scenarios above. It starts a lead
+  // and adds its own order; m5 spawns under either.
   { name: "steer", run: steerMidTurn },
-  // After m3: it reuses m3's lead and workstream when they exist.
+  // After steer: it reuses its lead and workstream when they exist.
   { name: "m5", run: m5Tasks },
   // After m5: it reuses the lead when there is one.
   { name: "m6", run: m6Verify },

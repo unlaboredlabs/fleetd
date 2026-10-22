@@ -54,7 +54,7 @@ Every lead gets these, the finish-all lead included.
 | [`agent_status`](#agent_status) | One task as stored: state, queued reason, thread, result. | No |
 | [`list_agents`](#list_agents) | The project's tasks, newest first, optionally by state or workstream. | No |
 | [`stop_agent`](#stop_agent) | Stop a task: interrupts its thread and releases its slot and leases. | No |
-| [`brief`](#brief) | Freeze a draft workstream's brief (goal, why, pointers, constraints, doneWhen checks, tier, estimate) and start it. | Changing a frozen brief (amend) needs the human's yes in chat, logged with decide. |
+| [`brief`](#brief) | Set a draft workstream's brief (goal, why, pointers, constraints, doneWhen checks, tier, estimate) and start it, or edit it later. | No |
 | [`request_secret`](#request_secret) | Ask the human for a secret (a key, a token, a password). | The human enters the value in chat; you see only its fingerprint. |
 | [`request_withdraw`](#request_withdraw) | Take back a secret request or a command approval you no longer need (the human said so in chat). | No |
 | [`decide`](#decide) | Log a decision: one you made yourself, or the human's answer to a question you asked in chat (so you never ask it twice). | No |
@@ -69,7 +69,7 @@ Every lead gets these, the finish-all lead included.
 | [`decisions_search`](#decisions_search) | Search the decision log. | No |
 | [`change_enqueue`](#change_enqueue) | Put a PR no task's result put there on its repo's merge train; only the train merges. | No |
 | [`change_status`](#change_status) | A merge-train change as stored. | No |
-| [`workstream_open`](#workstream_open) | Open a workstream for work you took from the chat: a draft you then freeze with brief. | No |
+| [`workstream_open`](#workstream_open) | Open a workstream for work you took from the chat: a draft you then brief. | No |
 | [`workstream_spawn`](#workstream_spawn) | A finish-all lead starts a child workstream for one item with a value source. | No |
 | [`inventory`](#inventory) | The project's open work, ranked. | No |
 
@@ -195,11 +195,10 @@ Stop a task: interrupts its thread and releases its slot and leases.
 
 ### brief
 
-Freeze a draft workstream's brief (goal, why, pointers, constraints, doneWhen checks, tier, estimate) and start it. A frozen brief changes only with amend: the key of the decision you logged after the human approved the change in chat.
+Set a draft workstream's brief (goal, why, pointers, constraints, doneWhen checks, tier, estimate) and start it, or edit it later.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `amend` | string | no | The key of the decision the lead logged after the human approved changing an already frozen brief in chat. |
 | `brief` | object | yes | A `Brief` whose `tier` may be left out, as `fleetd brief create` takes it; the playbook's `tierDefault` fills it. |
 | `brief.baseline` | string | no | At most 1000 characters. |
 | `brief.budget` | object | no |  |
@@ -221,7 +220,7 @@ Freeze a draft workstream's brief (goal, why, pointers, constraints, doneWhen ch
 | `brief.why` | string | yes | At most 2000 characters. |
 | `workstreamId` | string | yes | `W<n>`, e.g. `W1`. |
 
-**Who may call:** a lead, checked by the hub. **Needs a human:** Changing a frozen brief (amend) needs the human's yes in chat, logged with decide.
+**Who may call:** a lead, checked by the hub. **Needs a human:** no.
 
 ```json
 {
@@ -584,7 +583,7 @@ A merge-train change as stored.
 
 ### workstream_open
 
-Open a workstream for work you took from the chat: a draft you then freeze with brief. template picks the playbook (feature, bugfix, research, finish-all); serves is optional.
+Open a workstream for work you took from the chat: a draft you then brief. template picks the playbook (feature, bugfix, research, finish-all); serves is optional.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|

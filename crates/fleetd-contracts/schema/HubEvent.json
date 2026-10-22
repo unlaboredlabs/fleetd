@@ -138,7 +138,7 @@
         },
         {
           "const": "workstream.running",
-          "description": "The brief was frozen; `data.briefHash`.",
+          "description": "The brief was set and the work started.",
           "type": "string"
         },
         {

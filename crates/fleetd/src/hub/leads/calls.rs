@@ -34,7 +34,7 @@ impl Area {
         Ok(match call {
             LeadCall::BriefCreate(c) => LeadCallResult::BriefCreate(
                 self.workstreams
-                    .brief_create(r, &c.workstream_id, c.brief, c.amend.as_ref())?,
+                    .brief_create(r, &c.workstream_id, c.brief)?,
             ),
             LeadCall::StatusSet(c) => LeadCallResult::StatusSet(self.workstreams.status_set(
                 r,

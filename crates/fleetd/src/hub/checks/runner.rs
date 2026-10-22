@@ -616,7 +616,7 @@ impl CheckRunner {
 
     /// A `human` check: the lead asks the question in chat and logs the person's answer as the decision
     /// `done.<index>` on the workstream. Only an answer given for the brief as it stands counts: one logged before its
-    /// latest freeze or amend may be about another check under the same index.
+    /// latest edit may be about another check under the same index.
     fn human(&self, ctx: &CheckContext<'_>, index: u32, question: &str) -> Verdict {
         let w = ctx.workstream;
         let key = human_check_key(index);
@@ -624,7 +624,7 @@ impl CheckRunner {
             "ask the human in chat: \"{question}\", then log their answer with decide {{key: \"{key}\", value: \"yes\" or \"no\", workstreamId: \"{}\"}}",
             w.workstream_id
         );
-        let frozen = self.ports.brief_frozen_ms(&w.workstream_id);
+        let frozen = self.ports.brief_set_ms(&w.workstream_id);
         let Some(answer) = self.ports.human_confirmation(&w.workstream_id, &key) else {
             return verdict(
                 CheckOutcome::Fail,

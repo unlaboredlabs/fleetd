@@ -61,8 +61,7 @@ async fn steer_send(
             .leads
             .records
             .workstream_get(&workstream_id)?
-            .ok_or_else(|| crate::hub::orders::tools::unknown_order(workstream_id.as_str()))?
-            .workstream;
+            .ok_or_else(|| crate::hub::orders::tools::unknown_order(workstream_id.as_str()))?;
         attachments::deliver(
             &hub,
             &caller,

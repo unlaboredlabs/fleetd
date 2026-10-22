@@ -201,7 +201,7 @@ impl TrainHost for HubHost {
                 return None;
             }
         };
-        let w = stored.workstream;
+        let w = stored;
         Some(WorkstreamView {
             workstream_id: w.workstream_id.clone(),
             project_ref: w.project_ref.clone(),

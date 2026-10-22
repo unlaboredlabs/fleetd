@@ -118,12 +118,10 @@ static TOOLS: &[Tool] = &[
     lead(
         "brief",
         "brief_create",
-        "Freeze a draft workstream's brief (goal, why, pointers, constraints, doneWhen checks, tier, estimate) and \
-         start it. A frozen brief changes only with amend: the key of the decision you logged after the human approved the \
-         change in chat.",
+        "Set a draft workstream's brief (goal, why, pointers, constraints, doneWhen checks, tier, estimate) and \
+         start it, or edit it later.",
         inline_schema::<BriefCreateCall>,
-    )
-    .needs("Changing a frozen brief (amend) needs the human's yes in chat, logged with decide."),
+    ),
     lead(
         "request_secret",
         "request_secret",
@@ -220,7 +218,7 @@ static TOOLS: &[Tool] = &[
     lead(
         "workstream_open",
         "workstream_open",
-        "Open a workstream for work you took from the chat: a draft you then freeze with brief. template picks the \
+        "Open a workstream for work you took from the chat: a draft you then brief. template picks the \
          playbook (feature, bugfix, research, finish-all); serves is optional.",
         inline_schema::<WorkstreamOpenCall>,
     ),

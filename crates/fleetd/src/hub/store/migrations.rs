@@ -452,4 +452,9 @@ pub(crate) const MIGRATIONS: &[&str] = &[
     r#"
   DELETE FROM status_series;
   "#,
+    // A brief is a plain record: no freeze hash, no amends.
+    r#"
+  ALTER TABLE workstreams DROP COLUMN amends;
+  UPDATE workstreams SET data = json_remove(data, '$.briefHash') WHERE json_valid(data);
+  "#,
 ];

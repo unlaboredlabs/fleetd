@@ -375,7 +375,7 @@ impl RetroWork for OpsPorts {
                 "reading a workstream",
             )
             .flatten()?;
-            stored.workstream.playbook.map(|p| p.to_string())
+            stored.playbook.map(|p| p.to_string())
         })
     }
     fn done_workstreams(&self, limit: usize) -> BoxFut<'_, Vec<(String, Option<String>, String)>> {

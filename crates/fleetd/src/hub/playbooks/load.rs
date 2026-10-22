@@ -58,7 +58,12 @@ pub fn git_blob_sha(content: &[u8]) -> String {
     let mut sha = Sha1::new();
     sha.update(format!("blob {}\0", content.len()).as_bytes());
     sha.update(content);
-    crate::hub::leads::brief::hex(&sha.finalize())
+    hex(&sha.finalize())
+}
+
+/// Lowercase hex.
+pub fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 static FRONTMATTER: LazyLock<Regex> =

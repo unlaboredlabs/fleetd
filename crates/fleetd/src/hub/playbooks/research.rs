@@ -12,7 +12,7 @@ use tokio::sync::Mutex;
 use super::verdict::verdict_text;
 use crate::hub::leads::digest::state_text;
 use crate::hub::leads::error::LeadError;
-use crate::hub::leads::records::{LeadRecords, StoredWorkstream};
+use crate::hub::leads::records::LeadRecords;
 use crate::hub::leads::wakes::{LeadWakes, Trigger};
 use crate::hub::leads::{Ctx, now_iso};
 use crate::hub::store::NewEvent;
@@ -48,7 +48,7 @@ impl Research {
                 format!("There is no workstream {workstream_id}."),
             ));
         };
-        let w = &stored.workstream;
+        let w = &stored;
         let metric = w
             .brief
             .as_ref()
@@ -112,10 +112,7 @@ impl Research {
             ..w.clone()
         };
         let text = text_of(&verdict);
-        self.records.workstream_put(&StoredWorkstream {
-            workstream: done.clone(),
-            amends: stored.amends.clone(),
-        })?;
+        self.records.workstream_put(&done)?;
         let event = |r#type, summary: String, data| NewEvent {
             at: at.clone().into(),
             r#type,
