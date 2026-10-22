@@ -1,6 +1,6 @@
 // The one 1 Hz clock for every elapsed label: they all change on the same frame, once a second, and only while
 // something with a running clock is mounted and the window is visible. Nothing ticks when idle.
-import { useSyncExternalStore } from "react";
+import { type RefObject, useEffect, useState, useSyncExternalStore } from "react";
 
 const listeners = new Set<() => void>();
 let now = Date.now();
@@ -59,3 +59,16 @@ const reader = (stepMs: number | undefined): (() => number) => {
  * re-renders on its own.
  */
 export const useNow = (running: boolean, stepMs?: number): number => useSyncExternalStore(running ? subscribe : noop, reader(stepMs));
+
+/** Whether `ref` is in the viewport: a clock stops once its label scrolls out of view. */
+export const useOnScreen = (ref: RefObject<Element | null>): boolean => {
+  const [on, setOn] = useState(true);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const io = new IntersectionObserver((entries) => setOn(entries.some((e) => e.isIntersecting)));
+    io.observe(el);
+    return () => io.disconnect();
+  }, [ref]);
+  return on;
+};

@@ -82,6 +82,7 @@ Everything shows up in the chat, quietly:
 | In the chat | Shows |
 |---|---|
 | The agents strip, under the lead's message | One line: how many agents are working, and on which PRs. Expand it to see each agent's role, what it's doing and for how long. Click an agent waiting on you to jump to what it needs. |
+| A quiet line under the lead's reply | While the lead works: how long it has been working, what it's doing now, and the orders and agents it started. When it's done: how long it worked, such as "Worked for 3m 40s". |
 | One-line events | A pull request opened, merged, or sent back. |
 
 For a project's progress at a glance, see [Status](/docs/status). For where the time went, see

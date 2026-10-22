@@ -43,9 +43,12 @@ export const fixtures = [
   // F4: the chat composer's sends (fixtures/composer).
   "composer-sends",
   "composer-waiting",
-  // The lead mid-turn: the quiet line under its reply says what it does now and what the turn did (fixtures/lead).
+  // The lead mid-turn: the quiet line under its reply counts up and says what it does now and what the turn did; and
+  // once it's over, how long it worked (fixtures/lead).
   "lead-planning",
   "lead-long",
+  "lead-counting",
+  "lead-worked",
   // Group fixtures (fixtures/<group>/index.ts), named <group>-<what>.
   "projects-cloning",
   // F10: the connect screen's states (fixtures/onboarding).
@@ -299,8 +302,9 @@ export const screens: readonly Screen[] = [
       await expect(box).toHaveValue("1 yes, 2 literal");
     },
   },
-  // The lead at work: under its reply, what it is doing now and what its turn did so far; lead-long wraps.
-  { id: "chat", route: CHAT, fixtures: ["lead-planning", "lead-long"], variant: "activity" },
+  // The lead at work: under its reply, how long it has worked, what it is doing now and what its turn did so far;
+  // lead-long wraps, lead-counting only counts; lead-worked: the turn is over, and the line says how long it took.
+  { id: "chat", route: CHAT, fixtures: ["lead-planning", "lead-long", "lead-counting", "lead-worked"], variant: "activity" },
   // The line above the box says what the lead waits on, and Show brings the open approval into view.
   {
     id: "chat",

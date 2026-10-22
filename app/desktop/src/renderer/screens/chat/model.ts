@@ -18,7 +18,10 @@ export type Row =
   | { readonly kind: "event"; readonly key: string; readonly item: ChatItem }
   | { readonly kind: "inline"; readonly key: string; readonly item: ChatItem }
   | { readonly kind: "strip"; readonly key: "strip" }
-  /** What the lead is doing while its turn runs: under its reply, or at the end when it hasn't replied yet. */
+  /**
+   * What the lead is doing while its turn runs (under the newest item), and once it is over how long it worked
+   * (under the reply it ended with).
+   */
   | { readonly kind: "activity"; readonly key: "activity" }
   /** Paged above the newest messages: more below, and the way back to the latest. */
   | { readonly kind: "bottom"; readonly key: "bottom"; readonly state: "more" | "loading" };
@@ -77,6 +80,11 @@ export interface RowsInput {
   readonly strip: boolean;
   /** The lead's turn runs: its activity line shows after the newest item. */
   readonly activity?: boolean;
+  /**
+   * The lead's last turn is over and began at this time (epoch ms): "Worked for" shows after its reply, the lead's
+   * newest message when it was written during that turn.
+   */
+  readonly workedSince?: number | undefined;
   readonly nowMs: number;
   readonly timeZone?: string;
 }
@@ -104,6 +112,15 @@ export function chatRows(i: RowsInput): Row[] {
   // Not on a window paged above the latest (the turn happens below it), nor under a reply still streaming, which
   // says "Still writing" itself.
   const activity = i.activity === true && i.hasNewer !== true && i.items.at(-1)?.state !== "streaming";
+  const reply = i.items.findLastIndex((item) => item.author === "lead" && item.kind === "message");
+  const replyAt = i.items[reply];
+  const worked =
+    i.activity !== true &&
+    i.workedSince !== undefined &&
+    i.hasNewer !== true &&
+    replyAt !== undefined &&
+    replyAt.state !== "streaming" &&
+    Date.parse(replyAt.at) >= i.workedSince;
   i.items.forEach((item, n) => {
     const history = isHistory(item);
     if (history && !inHistory) out.push({ kind: "history", key: `history:${item.id}` });
@@ -126,7 +143,7 @@ export function chatRows(i: RowsInput): Row[] {
       out.push({ kind: "message", key: item.id, item, head, history: false });
     }
     prev = item;
-    if (activity && n === i.items.length - 1) out.push({ kind: "activity", key: "activity" });
+    if ((activity && n === i.items.length - 1) || (worked && n === reply)) out.push({ kind: "activity", key: "activity" });
     if (i.strip && n === leadLast) out.push({ kind: "strip", key: "strip" });
   });
   if (activity && i.items.length === 0) out.push({ kind: "activity", key: "activity" });

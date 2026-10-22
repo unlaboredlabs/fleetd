@@ -2,3 +2,4 @@
 export { LiveStrip, type LiveStripProps } from "./LiveStrip";
 export { EventLine, isEventLine } from "./EventLine";
 export { selectStrip, stripHeadline, type ProjectRef, type Strip, type StripRow } from "./strip";
+export { useNow, useOnScreen } from "./clock";

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { HubEvent } from "../../../shared/contracts";
 import { createDataStore, type DataState } from "../../src/data/store";
 import { leadLaneId } from "../../src/data/selectors";
-import { doingWords, leadActivity, turnTally } from "./activity";
+import { doingWords, leadActivity, leadTurnSince, leadTurnUntil, turnLine, turnTally, workedFor } from "./activity";
 
 const AT = "2026-10-19T10:00:00.000Z";
 const ref = { machineId: "devbox", projectId: "storefront" };
@@ -84,5 +84,36 @@ describe("the lead's activity line", () => {
     expect(doingWords({ kind: "tool", name: "mcp__fleetd__workstream_spawn" })).toBe("starting agents");
     expect(doingWords({ kind: "tool", name: "mcp__fleetd__something_new" })).toBe("asking fleetd");
     expect(doingWords({ kind: "tool", name: "mcp__other__x" })).toBe("working");
+  });
+
+  it("times the turn from its first working to its idle, and the turn before once a new one hasn't begun", () => {
+    const t = (m: number, sec = 0) => `2026-10-19T10:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}.000Z`;
+    const ms = (iso: string) => Date.parse(iso);
+    const events = [
+      ev(1, "chat.waiting", working(false), ref.projectId, t(0)),
+      ev(2, "chat.waiting", working(true), ref.projectId, t(1)),
+      // Said again mid-turn, and another project's idle: neither ends or restarts the turn.
+      ev(3, "chat.waiting", { ...working(true), needsYou: true }, ref.projectId, t(2)),
+      ev(4, "chat.waiting", working(false), "elsewhere", t(3)),
+    ];
+    const running = state({ chatStates: { [KEY]: working(true) }, events });
+    expect([leadTurnSince(running, KEY), leadTurnUntil(running, KEY)]).toEqual([ms(t(1)), undefined]);
+    const over = state({ events: [...events, ev(5, "chat.waiting", working(false), ref.projectId, t(4, 40))] });
+    expect([leadTurnSince(over, KEY), leadTurnUntil(over, KEY)]).toEqual([ms(t(1)), ms(t(4, 40))]);
+    // Without the idle before it, the first "working" may be mid-turn: no time rather than a short one.
+    const cut = state({ events: [...events.slice(1), ev(5, "chat.waiting", working(false), ref.projectId, t(4, 40))] });
+    expect([leadTurnSince(cut, KEY), leadTurnUntil(cut, KEY)]).toEqual([undefined, undefined]);
+  });
+
+  it("counts up while the lead works and says how long it worked once it's done, elapsed only", () => {
+    const since = Date.parse(AT);
+    expect(turnLine({ since }, "planning · started 3 agents", since + 72_000)).toEqual({ count: "Working for 1m 12s", words: "planning · started 3 agents" });
+    // The hub's bare "working" adds nothing to the count.
+    expect(turnLine({ since }, "working", since + 9_000)).toEqual({ count: "Working for 9s" });
+    // A start no longer among the events: the words alone, never a guessed time.
+    expect(turnLine({}, "planning", since)).toEqual({ words: "planning" });
+    expect(turnLine({ since, until: since + 220_000 }, undefined, since + 999_000)).toEqual({ words: "Worked for 3m 40s" });
+    expect(turnLine({}, undefined, since)).toBeUndefined();
+    expect([workedFor(-5), workedFor(59_999), workedFor(60_000), workedFor(4_330_000)]).toEqual(["0s", "59s", "1m 0s", "1h 12m"]);
   });
 });
