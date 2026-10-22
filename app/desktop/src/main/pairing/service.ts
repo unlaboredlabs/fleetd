@@ -13,10 +13,12 @@ import {
   type PairRequest,
   type PairStart,
   type Probe,
+  type SetupOutcome,
 } from "../../shared/pairing";
 import { privateHubOrigin, readAppPairFile, removeAppPairFile, type FileRead } from "./appPairFile";
 import { probe, redeem, type Fetch } from "./hubHttp";
 import { trustSystemCAs } from "../trust";
+import { openSetup, realTerminalDeps } from "./terminal";
 
 /** The startup probe only decides a hint, so it gives up quickly. */
 const PROBE_TIMEOUT_MS = 2_000;
@@ -34,6 +36,8 @@ export interface PairingDeps {
   readonly deviceName: () => string;
   /** Where the hub service keeps the key it is given. */
   readonly keyStore: KeyStore;
+  /** `fleetd init` in the system terminal (terminal.ts). */
+  readonly openSetup: () => Promise<SetupOutcome>;
 }
 
 /** Names the new key on the hub: this computer's name. */
@@ -62,6 +66,7 @@ export const realPairingDeps = (
   remove: removeAppPairFile,
   now: Date.now,
   deviceName,
+  openSetup: () => openSetup(realTerminalDeps()),
 });
 
 type Loaded = { kind: "none" } | { kind: "untrusted"; failure: PairFailure } | { kind: "found"; pair: AppPair & { origin: string } };
@@ -87,6 +92,11 @@ export class PairingService {
 
   store(): KeyStore {
     return this.#deps.keyStore;
+  }
+
+  /** Opens `fleetd init` in a terminal; once it has paired this app's code, the connect screen picks it up. */
+  setup(): Promise<SetupOutcome> {
+    return this.#deps.openSetup();
   }
 
   async probe(hub: string): Promise<Probe> {

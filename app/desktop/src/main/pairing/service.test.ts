@@ -44,6 +44,7 @@ const setup = (
     now: () => NOW,
     deviceName: () => "devbox",
     keyStore: { kind: "os", where: "the macOS Keychain" },
+    openSetup: () => Promise.resolve({ ok: true, terminal: "Terminal" }),
   };
   return { service: new PairingService(deps), seen };
 };
