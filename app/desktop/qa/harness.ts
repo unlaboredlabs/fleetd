@@ -134,7 +134,11 @@ export async function launch(
     },
     errors,
     close: async () => {
-      await app.close();
+      // A window stuck on a dead page can hold app.close() forever, and the test's timeout then hides its own error.
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const stuck = new Promise<boolean>((done) => (timer = setTimeout(() => done(true), 15_000)));
+      if (await Promise.race([app.close().then(() => false, () => false), stuck])) app.process().kill("SIGKILL");
+      clearTimeout(timer);
       rmSync(userData, { recursive: true, force: true });
     },
   };
