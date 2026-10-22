@@ -192,6 +192,12 @@ pub const ENTRIES: &[Entry] = &[
                 Prompt
             ),
             (
+                "ask-once",
+                "asks an open question once and doesn't repeat it while it waits",
+                r"Ask once, then let it be",
+                Prompt
+            ),
+            (
                 "reply-becomes-work",
                 "a reply that asks for work starts it before anything closes",
                 r"A reply that asks for work becomes work",

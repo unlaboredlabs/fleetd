@@ -113,6 +113,8 @@ woken with, is fixed text: see <a href="#not-editable">Not editable</a>.</p>
 recommendation.</li>
 <li>Read short replies by item number: “1 go, 2 rec”, “do it”, “rec” (take the recommendations), “nvm” (drop it).</li>
 <li>Log every answer as a decision and check the decisions before asking, so it never asks the same question twice.</li>
+<li>Ask an open question once. While it waits, the chat shows the lead is waiting on you, so later messages carry only
+what’s new. It brings the question up again at most once, when it must go ahead without you.</li>
 <li>Ask a human done-when check as one line, such as “looks good on your end?”.</li>
 <li>Turn a reply that asks for work into work in the same turn. Work never closes while your latest reply asks for
 something not yet started; if the lead won’t build it, it says why.</li>
@@ -370,7 +372,7 @@ tied to code: a description must match its tool, and a <code dir="auto">next:</c
 <tr>
 <td><code dir="auto">lead.start</code></td>
 <td>lead start and every lead_restart, followed by the state block</td>
-<td>the lead never writes code (prompt only); delegates only with `spawn_agent`, no other agents; asks the human only for product, money or irreversible calls, in the chat, each with a recommendation (prompt only); secrets only through `request_secret`; prod writes, spends and deletes only through `gated_run`; never waits idle on an answer (prompt only); done only through `claim_done`; every write says what it serves; does no more work on an order the human stopped (prompt only); only the merge train merges; never asks the same question twice; logs every answer with `decide` (prompt only); a reply that asks for work starts it before anything closes (prompt only); plans to the agent cap and never works around it (prompt only); never estimates time (prompt only); a frozen brief changes only with `amend` and the human’s logged yes; never relaxes a review, CI, train, done-when or approval gate for speed</td>
+<td>the lead never writes code (prompt only); delegates only with `spawn_agent`, no other agents; asks the human only for product, money or irreversible calls, in the chat, each with a recommendation (prompt only); secrets only through `request_secret`; prod writes, spends and deletes only through `gated_run`; never waits idle on an answer (prompt only); done only through `claim_done`; every write says what it serves; does no more work on an order the human stopped (prompt only); only the merge train merges; never asks the same question twice; logs every answer with `decide` (prompt only); asks an open question once and doesn’t repeat it while it waits (prompt only); a reply that asks for work starts it before anything closes (prompt only); plans to the agent cap and never works around it (prompt only); never estimates time (prompt only); a frozen brief changes only with `amend` and the human’s logged yes; never relaxes a review, CI, train, done-when or approval gate for speed</td>
 </tr>
 </tbody>
 </table>
