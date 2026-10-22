@@ -385,8 +385,10 @@ pub struct ItemProgress {
     pub slower: bool,
 }
 
-/// Stage credit plus in-stage smoothing: `cum[k] + weight(k+1) × min(elapsed / usual, 0.9)`.
-pub fn item_progress(f: &ItemFacts, now: i64, r: &Resolved) -> ItemProgress {
+/// Stage credit plus in-stage smoothing: `cum[k] + weight(k+1) × min(elapsed / usual, 0.9)`. The smoothing stands
+/// for work under way, so it applies only while something for the unit is `in_flight`; otherwise the unit holds its
+/// stage's credit, however long it sits there.
+pub fn item_progress(f: &ItemFacts, now: i64, r: &Resolved, in_flight: bool) -> ItemProgress {
     let (stage, entered) = f.current();
     let k = stage.index();
     if stage == ItemStage::Verified {
@@ -399,7 +401,11 @@ pub fn item_progress(f: &ItemFacts, now: i64, r: &Resolved) -> ItemProgress {
     }
     let elapsed = (now - entered).max(0);
     let usual = r.usual_ms(k);
-    let frac = (elapsed as f64 / usual as f64).min(IN_STAGE_CAP);
+    let frac = if in_flight {
+        (elapsed as f64 / usual as f64).min(IN_STAGE_CAP)
+    } else {
+        0.0
+    };
     ItemProgress {
         stage,
         credit: r.weights.cum[k] + r.weights.weight(k + 1) * frac,
@@ -571,6 +577,19 @@ pub fn cause_of(event_type: &str, data: &Value, at_ms: i64) -> Option<Cause> {
             _ => (DropReason::ScopeChange, str_of("note")?.to_owned()),
         },
         "change.ci_failed" => (DropReason::CiFailed, format!("CI failed on {}", pr())),
+        // An agent's run ended, so its item may have nothing in flight any more and lose its in-stage credit.
+        "task.completed" => (
+            DropReason::WorkStopped,
+            "work stopped: an agent finished".into(),
+        ),
+        "task.failed" => (
+            DropReason::WorkStopped,
+            "work stopped: an agent failed".into(),
+        ),
+        "task.cancelled" => (
+            DropReason::WorkStopped,
+            "work stopped: an agent was cancelled".into(),
+        ),
         "review.verdict" if data.get("blocking").and_then(Value::as_i64).unwrap_or(0) > 0 => {
             let n = data.get("blocking").and_then(Value::as_i64).unwrap_or(0);
             let on = str_of("pr")
@@ -695,14 +714,14 @@ mod tests {
             (ItemStage::BriefFrozen, 0),
             (ItemStage::PrOpen, 10 * M),
         ]);
-        let p = item_progress(&at, 10 * M, &r);
+        let p = item_progress(&at, 10 * M, &r, true);
         assert_eq!(p.stage, ItemStage::PrOpen);
         assert!(
             (p.credit - r.weights.cum[ItemStage::PrOpen.index()]).abs() < 1e-9,
             "no time in the stage yet"
         );
         let done = facts(&[(ItemStage::PrOpen, 0), (ItemStage::Verified, 5 * M)]);
-        let p = item_progress(&done, 6 * M, &r);
+        let p = item_progress(&done, 6 * M, &r, true);
         assert!(p.verified && p.credit == 1.0);
     }
 
@@ -712,12 +731,12 @@ mod tests {
         let k = ItemStage::TaskStarted.index();
         let usual = r.durations.p50[k];
         let f = facts(&[(ItemStage::TaskStarted, 0)]);
-        let half = item_progress(&f, usual / 2, &r).credit;
+        let half = item_progress(&f, usual / 2, &r, true).credit;
         let expect = r.weights.cum[k] + r.weights.weight(k + 1) * 0.5;
         assert!((half - expect).abs() < 1e-6, "{half} vs {expect}");
         let mut last = 0.0;
         for t in [0, usual / 4, usual / 2, usual, 3 * usual, 100 * usual] {
-            let c = item_progress(&f, t, &r).credit;
+            let c = item_progress(&f, t, &r, true).credit;
             assert!(c >= last, "never falls with time");
             assert!(
                 c < r.weights.cum[k + 1],
@@ -727,6 +746,11 @@ mod tests {
         }
         let capped = r.weights.cum[k] + r.weights.weight(k + 1) * IN_STAGE_CAP;
         assert!((last - capped).abs() < 1e-9, "the 0.9 cap");
+        assert_eq!(
+            item_progress(&f, 100 * usual, &r, false).credit,
+            r.weights.cum[k],
+            "with nothing in flight, time in the stage earns nothing"
+        );
     }
 
     #[test]
@@ -735,17 +759,17 @@ mod tests {
         let f = facts(&[(ItemStage::PrOpen, 0)]);
         let mut r = resolved();
         assert!(
-            !item_progress(&f, 100 * r.usual_ms(k), &r).slower,
+            !item_progress(&f, 100 * r.usual_ms(k), &r, true).slower,
             "the built-in times never call anything slow"
         );
         r.durations.p50[k] = 20 * M;
         r.durations.stage_samples[k] = SLOW_MIN_SAMPLES;
-        assert!(!item_progress(&f, 30 * M, &r).slower);
-        let late = item_progress(&f, 30 * M + 1, &r);
+        assert!(!item_progress(&f, 30 * M, &r, true).slower);
+        let late = item_progress(&f, 30 * M + 1, &r, true);
         assert!(late.slower, "past 1.5× a measured 20 minutes");
         assert_eq!(
             late.credit,
-            item_progress(&f, 300 * M, &r).credit,
+            item_progress(&f, 300 * M, &r, true).credit,
             "flagged, never inflated"
         );
     }
@@ -821,7 +845,7 @@ mod tests {
         let r = resolved();
         let unit = |stage: ItemStage, pts: f64| Unit {
             points: pts,
-            progress: item_progress(&facts(&[(stage, 0)]), 0, &r),
+            progress: item_progress(&facts(&[(stage, 0)]), 0, &r, true),
         };
         let planning_now = planning(0, None, 5 * M, 0.1, 10 * M);
         assert!(planning_now.active && (planning_now.credit - 0.5).abs() < 1e-9);
@@ -953,6 +977,19 @@ mod tests {
         );
         assert_eq!(c.unwrap().text, "review found 2 blocking issues on #9");
         assert!(cause_of("review.verdict", &json!({ "blocking": 0 }), 5).is_none());
+        let c = cause_of(
+            "task.failed",
+            &json!({ "taskId": "T12", "workstreamId": "W1" }),
+            5,
+        );
+        assert_eq!(
+            c.map(|c| (c.reason, c.text)),
+            Some((
+                DropReason::WorkStopped,
+                "work stopped: an agent failed".into()
+            )),
+            "plain words, no task id"
+        );
     }
 
     #[test]

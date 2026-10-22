@@ -911,7 +911,7 @@ export type DoneRow = {
 
 export type DriftKind = "outside_fleetd" | "missed_webhook";
 
-export type KnownDropReason = "scope_change" | "review_failed" | "ci_failed" | "reopened";
+export type KnownDropReason = "scope_change" | "review_failed" | "ci_failed" | "reopened" | "work_stopped";
 /** KnownDropReason, or a value from a newer hub. */
 export type DropReason = KnownDropReason | (string & {});
 

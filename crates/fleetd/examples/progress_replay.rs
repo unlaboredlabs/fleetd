@@ -85,7 +85,15 @@ impl Order<'_> {
         let planned: Vec<&&Timeline> = self.live_units().filter(|u| u.start_ms <= t).collect();
         let progress: Vec<ItemProgress> = planned
             .iter()
-            .map(|u| item_progress(&u.facts_at(t), t, &cal.resolve(&u.pkey, u.kind, u.size)))
+            // History doesn't say what ran when, so the replay keeps in-stage smoothing on throughout.
+            .map(|u| {
+                item_progress(
+                    &u.facts_at(t),
+                    t,
+                    &cal.resolve(&u.pkey, u.kind, u.size),
+                    true,
+                )
+            })
             .collect();
         let units = planned
             .iter()

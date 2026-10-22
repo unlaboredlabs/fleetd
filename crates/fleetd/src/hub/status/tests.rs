@@ -908,3 +908,130 @@ async fn a_draft_order_is_waiting_for_its_brief() {
     );
     assert!(missing.message.starts_with("Nothing to show"));
 }
+
+/// Puts the item's writer T1 in `state`, and appends its `task.*` event when it ended.
+fn set_writer(hub: &Hub, state: &str) {
+    let now = crate::hub::store::now_ms(hub.clock.as_ref());
+    let at = iso_ms_of(now);
+    let task = json!({
+        "taskId": "T1", "projectRef": { "machineId": "devbox", "projectId": "storefront" }, "workstreamId": "W1",
+        "title": "cart page", "kind": "write", "prompt": "Build the cart page.", "areas": ["web"],
+        "model": "claude-opus-5-5", "effort": "high", "itemId": "P1", "state": state, "attempt": 1,
+        "createdAt": iso_ms_of(T0 as i64), "startedAt": iso_ms_of(T0 as i64),
+    });
+    hub.db
+        .with(|c| {
+            c.execute("DELETE FROM tasks", [])?;
+            c.execute(
+                "INSERT INTO tasks (machine_id, project_id, workstream_id, state, data)
+                 VALUES ('devbox', 'storefront', 'W1', ?, ?)",
+                params![state, task.to_string()],
+            )?;
+            c.execute(
+                "UPDATE plan_items SET started_ms = ?, data = json_set(data, '$.links.tasks', json('[\"T1\"]'))",
+                [T0 as i64],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    let r#type = match state {
+        "failed" => fleetd_contracts::events::HubEventType::TaskFailed,
+        "done" => fleetd_contracts::events::HubEventType::TaskCompleted,
+        _ => return,
+    };
+    hub.events
+        .append(crate::hub::store::NewEvent {
+            at: fleetd_contracts::ids::Timestamp(at),
+            r#type,
+            machine_id: Some(MachineId::unchecked("devbox")),
+            project_id: Some(ProjectId::unchecked("storefront")),
+            thread_id: None,
+            summary: format!("T1 {state}: cart page"),
+            data: Some(json!({ "taskId": "T1", "workstreamId": "W1" })),
+            attention: None,
+        })
+        .unwrap();
+}
+
+/// The order's one m item, "cart page", and a reader of its estimate: (pct, the last point's drop) after `secs`.
+fn one_item(clock: &Arc<ManualClock>) -> (Arc<Hub>, tempfile::TempDir) {
+    let (hub, home) = hub(clock.clone());
+    let (r, by) = (project(), "lead:devbox/storefront");
+    hub.plans
+        .milestone(
+            &r,
+            serde_json::from_value::<PlanMilestoneCall>(json!({ "title": "Checkout" })).unwrap(),
+        )
+        .unwrap();
+    hub.plans
+        .add(
+            &r,
+            by,
+            add("cart page", json!({ "workstreamId": "W1", "size": "m" })),
+        )
+        .unwrap();
+    (hub, home)
+}
+
+fn estimate_after(
+    hub: &Hub,
+    clock: &ManualClock,
+    secs: u64,
+) -> (i64, Option<fleetd_contracts::status::ProgressDrop>) {
+    clock.advance(Duration::from_secs(secs));
+    let scope = StatusScope::Order {
+        workstream_id: WorkstreamId::unchecked("W1"),
+    };
+    let e = hub
+        .status
+        .get(hub, &person(), &scope, None)
+        .unwrap()
+        .progress
+        .estimate
+        .unwrap();
+    (e.pct.get(), e.series.unwrap().last().unwrap().drop.clone())
+}
+
+/// The bug: an item whose writer had ended still earned in-stage credit for every minute since it started, so the bar
+/// sat near half its share with nothing being built. In-stage credit is for work in flight only.
+#[tokio::test]
+async fn an_item_with_nothing_in_flight_holds_its_stage_credit() {
+    let clock = ManualClock::at(T0);
+    let (hub, _home) = one_item(&clock);
+    // Its writer finished without a PR (a research item, say): nothing else will happen until the lead acts.
+    set_writer(&hub, "done");
+    let (pct, _) = estimate_after(&hub, &clock, 2 * 3600);
+    assert_eq!(
+        pct, 14,
+        "two hours on: planning plus the \"being written\" stage, no time in it (45 before the fix)"
+    );
+}
+
+#[tokio::test]
+async fn in_stage_credit_moves_while_its_writer_runs_and_is_taken_back_with_a_marker_when_it_stops()
+{
+    use fleetd_contracts::status::DropReason;
+    let clock = ManualClock::at(T0);
+    let (hub, _home) = one_item(&clock);
+    set_writer(&hub, "running");
+    let (running, _) = estimate_after(&hub, &clock, 1);
+    let (later, _) = estimate_after(&hub, &clock, 30 * 60);
+    assert!(later > running, "in flight: {later} > {running}");
+    set_writer(&hub, "failed");
+    let (stopped, drop) = estimate_after(&hub, &clock, 1);
+    assert_eq!(stopped, 14, "the in-stage credit is taken back");
+    let drop = drop.expect("never a silent drop");
+    assert_eq!(
+        (drop.reason, drop.from_pct.get(), drop.text.as_str()),
+        (
+            DropReason::WorkStopped,
+            later,
+            "work stopped: an agent failed"
+        )
+    );
+    assert_eq!(
+        estimate_after(&hub, &clock, 3 * 3600).0,
+        stopped,
+        "and it doesn't creep back"
+    );
+}

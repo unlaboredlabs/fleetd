@@ -73,9 +73,10 @@ The number is **verified** work plus credit for work **in flight**, as a share o
 - **Verified** means the item's PRs were merged by the merge train, and its done-when checks passed. A PR merged by
   hand doesn't count. A lead saying "done" moves nothing.
 - **In flight** credit comes from stages fleetd observed itself: task started, PR open, review passed, CI green,
-  merged.
+  merged. Time spent inside a stage adds a little more, but only while an agent or the merge train is working on it.
 - **It reaches 100%** only when every required item is verified.
-- **When it falls**, a `↓` line says why: work added, a review blocked, CI failed, or a done item reopened.
+- **When it falls**, a `↓` line says why: work added, a review blocked, CI failed, a done item reopened, or work
+  stopped because an agent finished, failed or was cancelled with nothing else running for its item.
 
 Items are **must** or **polish**. Polish shows beside the number ("polish 2/5") and never holds it back.
 

@@ -151,7 +151,7 @@ fn estimate_rows(c: &Connection, from_ms: i64) -> rusqlite::Result<Vec<EstRow>> 
     .collect()
 }
 
-const RECENT_TYPES: [&str; 9] = [
+const RECENT_TYPES: [&str; 11] = [
     "machine.offline",
     "machine.slept",
     "change.ci_failed",
@@ -162,6 +162,8 @@ const RECENT_TYPES: [&str; 9] = [
     "change.state",
     "plan.changed",
     "review.verdict",
+    "task.completed",
+    "task.cancelled",
 ];
 
 fn recent_events(c: &Connection, from_ms: i64) -> rusqlite::Result<Vec<(String, Value)>> {

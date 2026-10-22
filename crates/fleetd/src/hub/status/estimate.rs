@@ -38,6 +38,9 @@ pub struct ModelData {
     pub order_push: HashMap<String, i64>,
     /// Order → planning share fixed when its plan appeared, and when.
     pub planning: HashMap<String, (f64, i64)>,
+    /// Live tasks (running, or idle until an answer or a usage reset) of the orders in view: task → (its order, the
+    /// Change it reviews when it is a reviewer).
+    pub live_tasks: HashMap<String, (String, Option<String>)>,
     /// Changes before review whose tier asks for none: their steps skip it. Filled by the caller, which has the
     /// review rules.
     pub reviewless: HashSet<String>,
@@ -150,6 +153,19 @@ impl ModelData {
                 ))
             })?
             .collect::<rusqlite::Result<_>>()?;
+        let live_tasks = c
+            .prepare_cached(
+                "SELECT json_extract(t.data, '$.taskId'), t.workstream_id, r.change_id FROM tasks t
+                 LEFT JOIN review_tasks r ON r.task_id = json_extract(t.data, '$.taskId')
+                 WHERE t.state IN ('running', 'idle') AND t.workstream_id IN (SELECT value FROM json_each(?))",
+            )?
+            .query_map([&ids], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    (r.get::<_, String>(1)?, r.get::<_, Option<String>>(2)?),
+                ))
+            })?
+            .collect::<rusqlite::Result<_>>()?;
         Ok(Self {
             calibration,
             drafts,
@@ -158,6 +174,7 @@ impl ModelData {
             task_push,
             order_push,
             planning,
+            live_tasks,
             reviewless: HashSet::new(),
         })
     }
@@ -478,6 +495,57 @@ pub fn compute(w: &World, scope: &StatusScope, s: &Scope<'_>) -> ModelOut {
     let pr_of = change_units;
     let facts = model::observe(&obs, now);
 
+    // What is in flight for each unit: a live task of its own, or a Change of its moving on the train (one the train
+    // holds, or one in review with no reviewer running, is not). Only then does time in a stage earn credit.
+    let live = |t: &str| md.live_tasks.contains_key(t);
+    let moving = |ch: &Change| {
+        ch.task_id.as_ref().is_some_and(|t| live(t.as_str()))
+            || match ch.state {
+                ChangeState::Queued | ChangeState::Ready => {
+                    ch.last_error.as_ref().is_none_or(|e| e.is_empty())
+                }
+                ChangeState::Reviewing => md
+                    .live_tasks
+                    .values()
+                    .any(|(_, c)| c.as_deref() == Some(ch.change_id.as_str())),
+                ChangeState::Rebasing | ChangeState::Ci | ChangeState::Merging => true,
+                _ => false,
+            }
+    };
+    let mut in_flight: HashSet<UnitKey> = pr_of
+        .iter()
+        .filter(|(_, ch)| moving(ch))
+        .map(|(k, _)| k.clone())
+        .collect();
+    in_flight.extend(
+        counted
+            .iter()
+            .filter(|i| i.data.links.tasks.iter().any(|t| live(t.as_str())))
+            .map(|i| UnitKey::Item(i.n)),
+    );
+    let live_orders: HashSet<&str> = md.live_tasks.values().map(|(ws, _)| ws.as_str()).collect();
+    in_flight.extend(
+        virtual_orders
+            .iter()
+            .map(|o| o.w.workstream_id.as_str())
+            .filter(|ws| live_orders.contains(ws))
+            .map(|ws| UnitKey::Order(ws.to_owned())),
+    );
+    // A merged unit's done-when checks run while its order is verifying.
+    let verifying: HashSet<&str> = s
+        .orders
+        .iter()
+        .filter(|o| o.w.state == WorkstreamState::Verifying)
+        .map(|o| o.w.workstream_id.as_str())
+        .collect();
+    let order_of = |key: &UnitKey| match key {
+        UnitKey::Item(n) => counted
+            .iter()
+            .find(|i| i.n == *n)
+            .and_then(|i| i.workstream_id.clone()),
+        UnitKey::Order(ws) => Some(ws.clone()),
+    };
+
     // Each unit's progress against its calibration.
     let mut units: HashMap<UnitKey, ItemProgress> = HashMap::new();
     let mut bases: Vec<WeightsBasis> = Vec::new();
@@ -492,12 +560,15 @@ pub fn compute(w: &World, scope: &StatusScope, s: &Scope<'_>) -> ModelOut {
         let r = cal.resolve(pkey, kind, size);
         bases.push(r.basis);
         let f = facts.get(&key).cloned().unwrap_or_default();
-        let p = model::item_progress(&f, now, &r);
         let (stage, entered) = f.current();
+        let moving = in_flight.contains(&key)
+            || (stage == ItemStage::Merged
+                && order_of(&key).is_some_and(|ws| verifying.contains(ws.as_str())));
+        let p = model::item_progress(&f, now, &r, moving);
         if !p.verified {
             let k = stage.index();
             let capped_at = entered + (r.usual_ms(k) as f64 * model::IN_STAGE_CAP) as i64;
-            if capped_at > now {
+            if moving && capped_at > now {
                 wake_at(now + TICK_MS);
             }
             if let Some(slow) = r.slow_at(k) {
