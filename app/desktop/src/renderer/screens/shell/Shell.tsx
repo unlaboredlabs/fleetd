@@ -68,6 +68,7 @@ export function Shell() {
   useEffect(() => {
     if (screen.id !== "settings" && screen.id !== "onboarding") away.current = screen;
   }, [screen]);
+  const back = useSettingsBack(screen.id === "settings");
 
   const open = screen.id === "project" ? screen.project : null;
   // One chat streams at a time: the one on screen.
@@ -158,7 +159,12 @@ export function Shell() {
           !chrome ? undefined : shown.id === "settings" ? (
             // Settings' pages are in it, so it stays while Settings is open.
             <Suspense fallback={null}>
-              <SettingsSidebar onBack={() => go(away.current)} />
+              <SettingsSidebar
+                onBack={() => {
+                  back();
+                  go(away.current);
+                }}
+              />
             </Suspense>
           ) : sidebarHidden ? undefined : (
             <Sidebar projects={projects} machinesDown={machinesDown} screen={screen} hub={hub} jumpHints={modHeld} go={go} />
@@ -198,3 +204,43 @@ export function Shell() {
     </div>
   );
 }
+
+/**
+ * Focus after Settings' Back: the sidebar control that opened Settings, if that is how it was opened; else the page
+ * title, unless the screen gave focus to something itself (the chat's message box). Returns what Back calls first.
+ */
+function useSettingsBack(inSettings: boolean): () => void {
+  // The last element that had focus: by the time Settings shows, its opener has left the DOM.
+  const last = useRef<Element | null>(null);
+  useEffect(() => {
+    const on = (e: FocusEvent) => {
+      last.current = e.target instanceof Element ? e.target : null;
+    };
+    document.addEventListener("focusin", on);
+    return () => document.removeEventListener("focusin", on);
+  }, []);
+  const fromSidebar = useRef(false);
+  const returning = useRef(false);
+  useEffect(() => {
+    if (inSettings) {
+      fromSidebar.current = last.current?.closest('[data-opens="settings"]') != null;
+      return;
+    }
+    if (!returning.current) return;
+    returning.current = false;
+    const frame = requestAnimationFrame(() => {
+      const opener = fromSidebar.current ? document.querySelector<HTMLElement>('[data-opens="settings"]') : null;
+      if (opener) return opener.focus();
+      if (document.activeElement !== null && document.activeElement !== document.body) return;
+      const title = document.querySelector<HTMLElement>("main h1, main h2");
+      if (title === null) return;
+      title.tabIndex = -1;
+      title.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [inSettings]);
+  return () => {
+    returning.current = true;
+  };
+}
+

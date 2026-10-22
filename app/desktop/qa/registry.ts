@@ -273,6 +273,19 @@ export const screens: readonly Screen[] = [
     fixtures: ["empty", "typical", "many-agents", "long-text", "hub-unreachable", "pairing-failed", "node-too-old"],
   },
   { id: "home.empty", route: "#/", fixtures: ["empty"] },
+  // Settings opened from the sidebar takes its place; Back returns, with focus on the control that opened it.
+  {
+    id: "shell",
+    route: "#/",
+    fixtures: ["typical"],
+    variant: "settings-back",
+    open: async (page) => {
+      await page.getByRole("navigation", { name: "Sidebar" }).getByRole("button", { name: /^Settings/u }).click();
+      await page.getByRole("searchbox", { name: "Search settings" }).waitFor();
+      await page.getByRole("button", { name: "Back" }).click();
+      await expect(page.getByRole("navigation", { name: "Sidebar" }).getByRole("button", { name: /^Settings/u })).toBeFocused();
+    },
+  },
   // F10: connecting to a hub, one fixture per state (fixtures/onboarding). The form: no hub here, a hub found, a
   // refused key, app-pair.json used up / expired / untrusted, a rate limit, an unreadable saved key and a key that
   // would be kept in a file. #/onboarding?key opens on the key path; a fleetd://pair link lands with ?hub=&code=.

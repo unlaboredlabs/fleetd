@@ -3,7 +3,7 @@
 // reveal is a one-shot "focus this option" that the page showing it takes up when it renders.
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { ENTRIES } from "./catalog";
-import { formatRoute, tabHref, type Tab } from "./route";
+import { promptHref, tabHref, type Tab } from "./route";
 
 export interface SettingsOption {
   /** Unique; also the reveal key the page's option registers with useReveal. */
@@ -64,8 +64,8 @@ export function searchSettings(query: string, options: ReadonlyArray<SettingsOpt
     .map((x) => x.o);
 }
 
-export const optionHref = (o: SettingsOption): string =>
-  o.prompt !== undefined ? formatRoute({ tab: "prompts", prompt: o.prompt }) : tabHref(o.tab);
+/** A prompt opens in the project the Prompts page was last showing: dropping it would make Save write hub-wide. */
+export const optionHref = (o: SettingsOption): string => (o.prompt !== undefined ? promptHref(o.prompt) : tabHref(o.tab));
 
 // The option to reveal once its page shows it.
 let wanted: string | null = null;

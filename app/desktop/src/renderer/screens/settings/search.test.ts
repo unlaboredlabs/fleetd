@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { OPTIONS, searchSettings } from "./search";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { parseRoute, replaceRoute } from "./route";
+import { OPTIONS, optionHref, searchSettings } from "./search";
 
 const labels = (q: string) => searchSettings(q).map((o) => o.label);
 
@@ -29,4 +30,16 @@ describe("settings search", () => {
   it("gives every option a unique key", () => {
     expect(new Set(OPTIONS.map((o) => o.key)).size).toBe(OPTIONS.length);
   });
+
+  it("opens a prompt in the project Prompts was showing, so a save never lands hub-wide by surprise", () => {
+    vi.stubGlobal("window", { location: { hash: "" }, history: { state: null, replaceState: () => undefined } });
+    replaceRoute({ tab: "prompts", prompt: "lead.start", for: "devbox/storefront" });
+    const [reviewer] = searchSettings("reviewer");
+    if (reviewer === undefined) throw new Error("no reviewer");
+    expect(parseRoute(optionHref(reviewer))).toMatchObject({ tab: "prompts", prompt: "review.reviewer", for: "devbox/storefront" });
+  });
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });

@@ -196,8 +196,8 @@ Your version stays in use.
 A release can fold a prompt into another one or replace it with fixed text. Your edit to it then stops applying, but
 fleetd keeps it and never moves it for you.
 
-1. Open Settings → Prompts. Under "Edits that no longer apply", each one says, for example, "Your edit to Wake: task
-   finished (hub-wide) no longer applies", why, and which prompt to copy it into.
+1. Open Settings → Prompts. Under "Edits that no longer apply", each one says, for example, "Your edit to the lead's
+   "task finished" note (hub-wide) no longer applies", why, and which prompt to copy it into.
 2. "Show your text" shows your old edit; "Copy your text" copies it.
 3. Paste what you still want into the prompt it names. If none takes its place, use your
    [instructions](#instructions).

@@ -38,7 +38,7 @@ import {
 } from "./editor";
 import { errorText, useHubCall, useLive, useRead, useRefetch } from "./hub";
 import { ConfirmDiscard, PageHead, ScopeSelect, scopeName, useProjects } from "./parts";
-import { orphanAdvice, orphanHeadline, targetName, whyLine } from "./orphans";
+import { oldPromptName, orphanAdvice, orphanHeadline, targetName, whyLine } from "./orphans";
 import { replaceRoute, type SettingsRoute, type View } from "./route";
 import s from "./settings.module.css";
 
@@ -373,7 +373,7 @@ function Orphans(props: {
     setEcho(null);
     hubCall("prompt_reset", { id: o.id, scope: o.scope, ...(o.scope === "project" && o.projectRef ? { projectRef: o.projectRef } : {}) }).then(
       () => {
-        setEcho({ ok: true, text: `Deleted your edit to ${o.title}.` });
+        setEcho({ ok: true, text: `Deleted your edit to ${oldPromptName(o)}.` });
         props.onDeleted();
       },
       (e: unknown) => setEcho({ ok: false, text: errorText(e) }),
@@ -432,7 +432,7 @@ function Orphans(props: {
       <Dialog
         open={confirm !== null}
         onOpenChange={(o) => !o && setConfirm(null)}
-        title={confirm ? `Delete your edit to ${confirm.title}?` : ""}
+        title={confirm ? `Delete your edit to ${oldPromptName(confirm)}?` : ""}
         description="fleetd doesn't send this prompt any more, so deleting it changes nothing agents are told. Copy the text first if you want to keep it."
         footer={
           <>
