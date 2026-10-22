@@ -966,3 +966,29 @@ fn a_question_stays_open_until_the_human_replies() {
     }
     assert!(hub.chat.state(&r, false).unwrap().needs_you);
 }
+
+/// The state read loads only the lead's live messages since the human's last one, never the imported past.
+#[test]
+fn a_state_read_skips_imported_history() {
+    let (hub, _home) = hub();
+    let r = project();
+    for i in 0..30 {
+        hub.chat
+            .add(
+                &r,
+                NewMessage {
+                    history: Some(ChatHistorySource::LeadMessage),
+                    source: Some(format!("lead:old:{i}")),
+                    ..lead_says("Which one? (from before the chat)")
+                },
+            )
+            .unwrap();
+    }
+    hub.chat.add(&r, lead_says("Shipped the fix.")).unwrap();
+    let read = hub.chat.since_human(&r).unwrap();
+    assert_eq!(
+        read.iter().map(|m| m.text.as_str()).collect::<Vec<_>>(),
+        ["Shipped the fix."]
+    );
+    assert!(!hub.chat.state(&r, false).unwrap().needs_you);
+}
