@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NO_NAMES, clockMs, delta, fmtBytes, fmtDur, inexact, markedDur, missing, pct, spanTitle } from "./format";
+import { NO_NAMES, clockMs, delta, rangeText, fmtBytes, fmtDur, inexact, markedDur, missing, pct, spanTitle } from "./format";
 import { compareLine, pieces } from "./insightText";
 import type { Coverage, Span } from "./types";
 
@@ -23,6 +23,9 @@ describe("figures", () => {
     expect(fmtBytes(1_258_291)).toBe("1.2 MB");
     expect(fmtBytes(118 * 1024 * 1024)).toBe("118 MB");
     expect(clockMs(Date.parse("2026-10-18T10:21:04.500Z"))).toBe("10:21:04");
+    // A range says its day: data gaps and lists can be days back.
+    expect(rangeText(Date.parse("2026-10-16T16:20:00.000Z"), Date.parse("2026-10-16T18:02:00.000Z"))).toBe("Oct 16, 16:20 to 18:02");
+    expect(rangeText(Date.parse("2026-10-16T23:40:00.000Z"), Date.parse("2026-10-17T00:10:00.000Z"))).toBe("Oct 16, 23:40 to Oct 17, 00:10");
     expect(pct(39, 100)).toBe("39%");
     expect(pct(1, 1000)).toBe("<1%");
     expect(pct(0, 100)).toBe("0%");

@@ -271,7 +271,11 @@ export const missing = (c: Coverage, from: number | undefined): Missing => {
   };
 };
 
-/** One coverage gap in words: "a machine runs a fleetd too old to record tool time (buildbox), 16:20:00 to 18:02:00". */
+/** "Oct 16, 16:20 to 18:02", or "Oct 16, 23:40 to Oct 17, 00:10" across midnight: a gap can be days back. */
+export const rangeText = (fromMs: number, toMs: number): string =>
+  `${stampMs(fromMs)} to ${dayMs(fromMs) === dayMs(toMs) ? stampMs(toMs).slice(-5) : stampMs(toMs)}`;
+
+/** One coverage gap in words: "a machine runs a fleetd too old to record tool time (buildbox), Oct 16, 16:20 to 18:02". */
 export const gapText = (g: Gap): string => {
   const count = g.count === undefined ? "" : `${g.count} `;
   const what: Record<Gap["why"], string> = {
@@ -282,7 +286,7 @@ export const gapText = (g: Gap): string => {
     nothing_running: "the critical path found time with nothing running",
   };
   const on = g.machineId === undefined ? "" : ` (${g.machineId})`;
-  return `${what[g.why]}${on}, ${clockMs(g.fromMs)} to ${clockMs(g.toMs)}`;
+  return `${what[g.why]}${on}, ${rangeText(g.fromMs, g.toMs)}`;
 };
 
 export const gapWord = (why: Gap["why"]): string => {

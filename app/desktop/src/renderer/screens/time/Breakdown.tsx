@@ -19,10 +19,11 @@ export interface BreakdownProps {
   readonly names: Names;
 }
 
-const agentOf = (names: Names, threadId: string): string => {
+/** Who ran it, by what it worked on; undefined when this app hasn't seen that agent (another piece of work). */
+const agentOf = (names: Names, threadId: string): string | undefined => {
   if (names.leads.has(threadId)) return "lead";
   const lane = names.threads.get(threadId);
-  return lane === undefined ? "an agent" : agentName(lane);
+  return lane === undefined ? undefined : agentName(lane);
 };
 
 /** "Bash 49m (67) · Read 49s (77)": the biggest kinds in a category; first token carries its ≈. */
@@ -213,33 +214,7 @@ export function Breakdown({ data: b, order, missing, pathIds, onLinked, names }:
       ) : null}
 
       {b.repeated.length > 0 ? (
-        <Section title="Repeated commands" detail="the same command in one session with nothing edited between runs">
-          <div className={cx(s.table, s.repTable)} role="table" aria-label="Repeated commands">
-            <div className={cx(s.tableHead)} role="row">
-              {["Ran again with no edit between", "agent", "runs", "total"].map((h, i) => (
-                <Text key={h} size="xs" tone="quiet" className={cx(i > 0 && s.num)}>
-                  {h}
-                </Text>
-              ))}
-            </div>
-            {b.repeated.map((r, i) => (
-              <RowButton
-                key={`${r.label}-${i}`}
-                onClick={() => onLinked({ title: `${r.label} repeated with no edit`, rule: "repeat_no_change", label: r.label })}
-                label={`${r.label}: ${r.n} runs in a row. Show these spans.`}
-              >
-                <Truncate expand="none" mono size="sm">
-                  {r.label}
-                </Truncate>
-                <Truncate expand="none" size="xs" tone="quiet" className={cx(s.num)}>
-                  {agentOf(names, r.threadId)}
-                </Truncate>
-                <Num>{`${r.n}×`}</Num>
-                <Num>{fmtDur(r.totalMs)}</Num>
-              </RowButton>
-            ))}
-          </div>
-        </Section>
+        <Repeated b={b} names={names} onLinked={onLinked} />
       ) : null}
 
       {b.ciChecks.length > 0 ? (
@@ -298,6 +273,42 @@ export function Breakdown({ data: b, order, missing, pathIds, onLinked, names }:
   );
 }
 
+/** Commands run again with nothing edited between; the agent column only when this app knows one of their agents. */
+function Repeated({ b, names, onLinked }: { b: TimeBreakdownOutput; names: Names; onLinked: BreakdownProps["onLinked"] }) {
+  const byAgent = b.repeated.some((r) => agentOf(names, r.threadId) !== undefined);
+  return (
+    <Section title="Repeated commands" detail="the same command in one session with nothing edited between runs">
+      <div className={cx(s.table, byAgent ? s.repTable : s.repTableNoAgent)} role="table" aria-label="Repeated commands">
+        <div className={cx(s.tableHead)} role="row">
+          {["Ran again with no edit between", ...(byAgent ? ["agent"] : []), "runs", "total"].map((h, i) => (
+            <Text key={h} size="xs" tone="quiet" className={cx(i > 0 && s.num)}>
+              {h}
+            </Text>
+          ))}
+        </div>
+        {b.repeated.map((r, i) => (
+          <RowButton
+            key={`${r.label}-${i}`}
+            onClick={() => onLinked({ title: `${r.label} repeated with no edit`, rule: "repeat_no_change", label: r.label })}
+            label={`${r.label}: ${r.n} runs in a row. Show these spans.`}
+          >
+            <Truncate expand="none" mono size="sm">
+              {r.label}
+            </Truncate>
+            {byAgent ? (
+              <Truncate expand="none" size="xs" tone="quiet" className={cx(s.num)}>
+                {agentOf(names, r.threadId) ?? "–"}
+              </Truncate>
+            ) : null}
+            <Num>{`${r.n}×`}</Num>
+            <Num>{fmtDur(r.totalMs)}</Num>
+          </RowButton>
+        ))}
+      </div>
+    </Section>
+  );
+}
+
 function Summary({ b, order }: { b: TimeBreakdownOutput; order: boolean }) {
   const n = b.coverage.gaps.length;
   return (
@@ -341,7 +352,7 @@ function Notes({ b, missing }: { b: TimeBreakdownOutput; missing: Missing | unde
         </Text>
       ))}
       <Text as="p" size="xs" tone="quiet">
-        Spans are kept {b.retentionDays} days; they take {fmtBytes(b.storedBytes)} on the hub.
+        Spans are kept {b.retentionDays} days and take {fmtBytes(b.storedBytes)}.
       </Text>
     </section>
   );

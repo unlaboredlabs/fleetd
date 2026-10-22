@@ -34,7 +34,7 @@ function LaneMeta({ row }: { row: Row }) {
   const parts = [row.model === undefined ? undefined : shortModel(row.model), tokens > 0 ? fmtTokens(tokens) : undefined].filter((x) => x !== undefined);
   if (parts.length === 0) return null;
   return (
-    <Text size="xs" tone="quiet" tabular className={cx(s.noShrink)}>
+    <Text size="xs" tone="quiet" tabular className={cx(s.laneMeta)}>
       {parts.join(" · ")}
     </Text>
   );

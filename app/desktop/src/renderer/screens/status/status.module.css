@@ -39,7 +39,7 @@
   padding: 0;
   max-width: 1040px;
   /* The title takes the slack first; the bar shrinks before it does. */
-  --status-cols: minmax(16ch, 3fr) 13ch minmax(80px, 2fr) 7ch 17ch;
+  --status-cols: minmax(16ch, 3fr) 13ch minmax(80px, 2fr) 9ch 17ch;
   --status-prs: 5ch;
 }
 
@@ -128,8 +128,10 @@
   background: color-mix(in srgb, var(--success) 38%, transparent);
 }
 
+/* Room before Last merged, so two empty cells don't read as one mark. */
 .agents {
   text-align: right;
+  padding-right: var(--space-4);
 }
 
 .drops {

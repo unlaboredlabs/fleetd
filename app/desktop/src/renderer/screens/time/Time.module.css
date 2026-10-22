@@ -198,6 +198,11 @@
 .label:hover {
   background: var(--hover);
 }
+/* Model and tokens line up at the label's end, a column the eye can run down. */
+.laneMeta {
+  flex: none;
+  margin-left: auto;
+}
 .labelCheck {
   padding-left: 28px;
 }
@@ -393,6 +398,9 @@
 }
 .repTable {
   grid-template-columns: minmax(0, 1fr) 160px 64px 72px;
+}
+.repTableNoAgent {
+  grid-template-columns: minmax(0, 1fr) 64px 72px;
 }
 .humanRow {
   display: flex;
