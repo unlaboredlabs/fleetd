@@ -1,15 +1,12 @@
-// A project's agents as structure, not a log: the writers still writing, then one group per PR with the checkers on
-// it. Pure, so every count the strip shows comes from one place: the lanes and the PRs.
+// A project's agents as structure, not a log: the writers without a PR, then one group per PR, then anyone else.
+// Pure, so every count the strip shows comes from one place: the lanes and the PRs.
 import type { AgentLane, ChangeState, PrRef } from "./contracts";
-import { fmtElapsed, parseMs } from "./format";
 import { STAGE_WORD, isChecker, isFinal } from "./words";
 
 export interface Group {
   readonly pr: PrRef;
-  /** The writer that opened it, once known (it leaves the rows when it finishes). */
+  /** The writer that opened it, once known (finished, it names the PR without being drawn). */
   readonly writer?: AgentLane;
-  /** Its checkers still drawn (working, or holding their check before they fold away). */
-  readonly rows: readonly AgentLane[];
   readonly checksDone: number;
   readonly checksNeeded: number;
 }
@@ -25,11 +22,7 @@ export interface Fleet {
 const pastReview = (s: ChangeState): boolean =>
   s === "ready" || s === "rebasing" || s === "ci" || s === "merging" || s === "merged";
 
-/** The review segment's fill, 0..1, from the checks the rows under it show. */
-export const reviewProgress = (g: Group): number =>
-  g.checksNeeded === 0 ? (pastReview(g.pr.state) ? 1 : 0) : g.checksDone / g.checksNeeded;
-
-/** "review 1/3", "ready · 2/3 checks", "reviewed", "CI", "merged": the same numbers the track draws. */
+/** "review 1/3", "ready · 2/3 checks", "reviewed", "CI", "merged". */
 export const groupLabel = (g: Group): string => {
   const all = g.checksDone >= g.checksNeeded;
   switch (g.pr.state) {
@@ -41,15 +34,6 @@ export const groupLabel = (g: Group): string => {
     default:
       return STAGE_WORD[g.pr.state];
   }
-};
-
-/** "written in 0:18" once the PR's writer finished; nothing before. */
-export const writtenIn = (g: Group): string | undefined => {
-  const w = g.writer;
-  if (w?.status !== "done") return undefined;
-  const a = parseMs(w.startedAt);
-  const b = parseMs(w.endedAt);
-  return a !== undefined && b !== undefined ? `written in ${fmtElapsed(b - a)}` : undefined;
 };
 
 /**
@@ -78,7 +62,6 @@ export const fleet = (rows: readonly AgentLane[], seen: readonly AgentLane[], pr
       return {
         pr,
         ...(writer ? { writer } : {}),
-        rows: rows.filter((l) => isChecker(l.role) && prOf(l) === pr.number),
         checksDone,
         checksNeeded: needed,
       };
