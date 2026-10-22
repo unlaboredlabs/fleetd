@@ -459,8 +459,6 @@ async fn a_lead_opens_its_own_workstream_as_a_draft_with_no_intent_wake() {
     let caller = crate::hub::link::LeadCaller {
         project_ref: r.clone(),
         by: "lead:devbox/app".into(),
-        cwd: "/work/app".into(),
-        thread: None,
         agent: crate::hub::link::lead_calls::CallerAgent::Lead,
     };
     let Ok(LeadCallResult::WorkstreamOpen(opened)) = handler.handle(caller, call).await else {

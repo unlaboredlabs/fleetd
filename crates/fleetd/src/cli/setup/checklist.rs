@@ -74,6 +74,7 @@ impl Checklist {
         }
     }
 
+    #[cfg(test)]
     pub fn plain() -> Self {
         let mut list = Self::new();
         list.rich = false;

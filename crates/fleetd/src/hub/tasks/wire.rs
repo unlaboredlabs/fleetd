@@ -141,19 +141,6 @@ impl TaskPorts for HubTaskPorts {
         })
     }
 
-    fn interrupt<'a>(
-        &'a self,
-        thread: &'a ThreadRef,
-        client_request_id: &'a str,
-    ) -> BoxFut<'a, Result<(), PortError>> {
-        Box::pin(async move {
-            self.executors
-                .interrupt(thread, client_request_id)
-                .await
-                .map_err(port_error)
-        })
-    }
-
     fn stop<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Result<(), PortError>> {
         Box::pin(async move { self.executors.stop(thread).await.map_err(port_error) })
     }
@@ -204,20 +191,6 @@ impl TaskPorts for HubTaskPorts {
 
     fn pending_question<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Option<String>> {
         Box::pin(async move { self.executors.pending_question(thread).await.ok().flatten() })
-    }
-
-    fn read_file<'a>(
-        &'a self,
-        machine_id: &'a MachineId,
-        cwd: &'a str,
-        path: &'a str,
-    ) -> BoxFut<'a, Result<Option<String>, PortError>> {
-        Box::pin(async move {
-            self.executors
-                .read_file(machine_id, cwd, path)
-                .await
-                .map_err(port_error)
-        })
     }
 
     fn run_command<'a>(

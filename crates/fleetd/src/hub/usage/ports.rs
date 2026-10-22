@@ -7,27 +7,7 @@ use std::pin::Pin;
 
 pub type BoxFut<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
-/// `HubEvent` on the wire. Swapped for `fleetd_contracts`' type once it lands.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HubEvent {
-    pub seq: u64,
-    pub at: String,
-    #[serde(rename = "type")]
-    pub kind: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub machine_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub project_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub thread_id: Option<String>,
-    pub summary: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub data: Option<Value>,
-    /// "loud" or "urgent": the human is notified.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub attention: Option<String>,
-}
+use fleetd_contracts::events::HubEvent;
 
 /// An event to append: everything but `seq`.
 #[derive(Clone, Debug, Default, PartialEq)]

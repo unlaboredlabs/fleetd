@@ -35,7 +35,6 @@ pub struct DoctorResults {
 /// What a node action answered (node-link `NodeActionResult`).
 #[derive(Clone, Debug)]
 pub struct ActionOutcome {
-    pub ok: bool,
     pub message: String,
     pub probe: Option<HostProbe>,
 }
@@ -53,7 +52,7 @@ pub trait DoctorFleet: Send + Sync {
     fn machines(&self) -> BoxFut<'_, Vec<MachineView>>;
     /// Usage::status with the machine's UsageSource reading.
     fn usage(&self, machine_id: &str) -> BoxFut<'_, UsageStatus>;
-    /// NodeActions::run: `probe`; `Err` is the link's message.
+    /// NodeCommands::run_action: `probe`; `Err` is the link's message.
     fn node_action(
         &self,
         machine_id: &str,

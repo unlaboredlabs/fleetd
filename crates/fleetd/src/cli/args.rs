@@ -55,9 +55,6 @@ impl Parsed {
             })
             .unwrap_or_default()
     }
-    pub fn has(&self, name: &str) -> bool {
-        self.values.iter().any(|(key, _)| key == name)
-    }
     pub fn keys(&self) -> impl Iterator<Item = &str> {
         self.values.iter().map(|(key, _)| key.as_str())
     }

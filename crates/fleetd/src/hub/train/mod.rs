@@ -22,4 +22,4 @@ pub mod triggers;
 #[cfg(test)]
 mod tests;
 
-pub use service::{ReviewGate, TRAIN_BY, Train, TrainError, TrainOptions, Verdict};
+pub use service::{Train, TrainOptions};
