@@ -14,6 +14,12 @@ export const IPC = {
   hubChat: "hub:chat",
   /** invoke() → void. A fresh snapshot, then events from its cursor. */
   hubResync: "hub:resync",
+  /** invoke() → void. Dials the hub now instead of at the next retry. */
+  hubRetryNow: "hub:retry-now",
+  /** invoke() → string | null. The disk cache (renderer src/data/cache.ts) for the paired hub, or null. */
+  hubCacheRead: "hub:cache-read",
+  /** invoke(string) → void. Keeps the disk cache when it is for the paired hub; a fixture keeps nothing. */
+  hubCacheWrite: "hub:cache-write",
   /** invoke(ConnectRequest) → ConnectOutcome. Saves the hub URL and key, then connects. */
   hubConnect: "hub:connect",
   /** invoke() → void. Disconnects and deletes the saved key. */

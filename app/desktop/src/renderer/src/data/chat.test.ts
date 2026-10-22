@@ -136,11 +136,11 @@ describe("chat messages", () => {
 });
 
 describe("the person's sends", () => {
-  it("a cut-off is never 'not sent'; a timeout is unanswered; a refusal fails; offline fails only if never reached", () => {
+  it("a cut-off is never 'not sent'; a timeout is unanswered; a refusal fails; no hub queues it", () => {
     expect(afterCall(row("c1"), { ok: false, error: { code: "disconnected", message: "" } })?.state).toEqual({ t: "reconnecting" });
     expect(afterCall(row("c1"), { ok: false, error: { code: "timeout", message: "" } })?.state).toEqual({ t: "unanswered" });
     expect(afterCall(row("c1"), { ok: false, error: { code: "invalid", message: "too long" } })?.state.t).toBe("failed");
-    expect(afterCall(row("c1"), { ok: false, error: { code: "offline", message: "" } })?.state).toMatchObject({ t: "failed", offline: true });
+    expect(afterCall(row("c1"), { ok: false, error: { code: "offline", message: "" } })?.state).toEqual({ t: "queued" });
     expect(afterCall(row("c1", { reached: true }), { ok: false, error: { code: "offline", message: "" } })?.state).toEqual({ t: "reconnecting" });
     expect(afterCall(row("c1"), { ok: true, message: msg(5, { author: "human" }) })).toBeUndefined();
   });

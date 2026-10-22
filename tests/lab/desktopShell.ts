@@ -22,7 +22,7 @@ const MAIN = path.join(DESKTOP, "out/main/index.js");
 const DEVTOOLS = [4788, 4789] as const;
 const MACHINE = "lab-b";
 
-interface Page {
+export interface Page {
   readonly eval: <A>(expression: string) => Promise<A>;
   /** Resolves once the app (when launched here) has exited. */
   readonly close: () => Promise<void>;
@@ -59,7 +59,7 @@ const connectPage = async (port: number): Promise<Page> => {
 };
 
 /** Launches the built app, with the hub and key for this run only or (null) its saved ones; stopped by its PID. */
-const launch = async (lab: Lab, name: string, port: number, hub: { url: string; key: string } | null, fresh = true): Promise<Page> => {
+export const launch = async (lab: Lab, name: string, port: number, hub: { url: string; key: string } | null, fresh = true): Promise<Page> => {
   // Electron fetches its binary on first use and prints its progress to stdout, so the path comes after a marker.
   const out = execFileSync(process.execPath, ["-e", "process.stdout.write('\\n@electron=' + require('electron') + '\\n')"], { cwd: DESKTOP, encoding: "utf8" });
   const electron = /^@electron=(.+)$/mu.exec(out)?.[1];

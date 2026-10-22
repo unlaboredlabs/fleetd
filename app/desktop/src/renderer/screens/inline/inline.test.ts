@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import data from "../../../../fixtures/inline/items.json";
 import type { ChatItem, CommandApprovalItem, HumanRequest, Machine, SecretRequestItem } from "../../../shared/contracts";
-import { approvalKind, approvalOutcome, secretEnvLines, secretOutcome, secretTarget, shellLine, withRequest } from "./request";
+import { approvalKind, approvalOffline, approvalOutcome, OFFLINE_LINE, secretEnvLines, secretOutcome, secretTarget, shellLine, withRequest } from "./request";
 
 const items = data.items as unknown as ChatItem[];
 const secret = (id: string): SecretRequestItem => {
@@ -40,8 +40,18 @@ describe("a secret request", () => {
     for (const [machines, item, fix] of cases) {
       const t = secretTarget(machines, item);
       expect(t.ok).toBe(false);
-      if (!t.ok) expect(t.fix).toContain(fix);
+      if (!t.ok && !("offline" in t)) expect(t.fix).toContain(fix);
+      else throw new Error(`expected a fix for ${item.requestId}`);
     }
+  });
+
+  it("offline, checks no machine: a launch from the disk cache holds none, and the hub may well know it", () => {
+    // No machines at all, as at a cold launch from the cache: never "The hub doesn't know the machine".
+    expect(secretTarget({}, secret("Q1"), false)).toEqual({ ok: false, offline: true });
+    expect(secretTarget(devbox({ status: "offline", boxPubKey: key }), secret("Q1"), false)).toEqual({ ok: false, offline: true });
+    expect(OFFLINE_LINE.secret).toBe("Offline: save it once the hub is back.");
+    // A request that names no destination says so either way: that is the request, not the connection.
+    expect(secretTarget({}, { ...secret("Q1"), sink: "env:devbox:relative" }, false)).toMatchObject({ ok: false, fix: expect.stringContaining("a destination") as unknown });
   });
 
   it("afterwards says it was saved or withdrawn, and never the value or its fingerprint", () => {
@@ -67,6 +77,12 @@ describe("a command approval", () => {
   it("tells a command, a tool prompt and a playbook gate change apart", () => {
     expect(["Q4", "Q8", "Q10"].map((id) => approvalKind(approval(id)))).toEqual(["command", "permission", "playbook"]);
     expect(approvalOutcome(approval("Q10"))).toBeUndefined();
+  });
+
+  it("offline, an open one says why it can't be answered; an answered one says nothing more", () => {
+    expect(approvalOffline("open", false)).toBe("Offline: approve once the hub is back.");
+    expect(approvalOffline("open", true)).toBeUndefined();
+    expect(approvalOffline("approved", false)).toBeUndefined();
   });
 
   it("waits for Approve / Deny, then says one result line", () => {

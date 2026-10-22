@@ -2,7 +2,8 @@
 // decides (chat_send) and the box only says which to expect. Enter sends, Shift+Enter is a new line, ↑ in an empty
 // box brings back your last message. Files attach by the box's clip, drop or paste (images included); a long paste
 // becomes a file. While the lead works, Stop beside Send ends its turn now. The words, the files and an unsent
-// message's "not connected" note stay per project across navigation, and the words across quitting (drafts.ts).
+// message's error stay per project across navigation, and the words across quitting (drafts.ts). Sent with no hub,
+// a message is queued and goes when the link is back.
 
 interface ProjectRef {
   readonly machineId: string;
@@ -15,7 +16,7 @@ import type { AttachmentRef } from "../../../shared/contracts";
 import type { ChatItem } from "../../src/data/chat";
 import { useData, useDataLayer } from "../../src/data/react";
 import { projectKey as keyOf } from "../../src/data/store";
-import { selectCanStop, selectLeadWorking } from "../../src/data/selectors";
+import { selectCanStop, selectHeldLeadWorking, selectLeadWorking } from "../../src/data/selectors";
 import { Button, cx, IdChip, Text, Tooltip, Truncate } from "../../ui";
 import { useCommands } from "../palette";
 import { fmtBytes, PASTE_AS_FILE, pastedName } from "./attachments";
@@ -50,7 +51,9 @@ export function ChatComposer({ project, onSent, autoFocus, recall }: ChatCompose
   // Asked for until the lead's turn ends (or the call says it can't): Stop stays pressed meanwhile.
   const [stopping, setStopping] = useState(false);
   const [stopError, setStopError] = useState<string>();
-  const showStop = working === true && canStop;
+  // Offline, a lead last known to be working keeps its Stop, disabled, with why under the box.
+  const stopOffline = useData(selectHeldLeadWorking(projectKey));
+  const showStop = (working === true && canStop) || stopOffline;
 
   // The turn ended: a new one starts with Stop unpressed.
   const [wasWorking, setWasWorking] = useState(working);
@@ -80,7 +83,7 @@ export function ChatComposer({ project, onSent, autoFocus, recall }: ChatCompose
     [
       { id: "composer.focus", title: "Focus the composer", group: "actions", run: () => box.current?.focus() },
       { id: "composer.attach", title: "Attach a file", group: "actions", run: () => fileInput.current?.click() },
-      { id: "lead.stop", title: "Stop the lead", group: "actions", detail: "Ends its turn now; agents keep working", enabled: () => showStop && !stopping, run: stop },
+      { id: "lead.stop", title: "Stop the lead", group: "actions", detail: "Ends its turn now; agents keep working", enabled: () => showStop && !stopOffline && !stopping, run: stop },
     ],
     [],
   );
@@ -102,15 +105,10 @@ export function ChatComposer({ project, onSent, autoFocus, recall }: ChatCompose
       if (!up.ok) return setDraft((d) => ({ ...d, error: `${a.name} didn’t upload: ${up.message} Remove it to send.` }));
       files.push(up.ref);
     }
-    const sent = { text: draft.text, attached: draft.attached };
-    // The words leave the box at once; the layer's item holds them (and offers Edit if they don't go).
+    // The words leave the box at once; the layer's item holds them (queued when offline, with Edit to take back).
     setDraft(() => ({ text: "", attached: [] }));
     onSent?.();
-    void chat.send(projectKey, { text: checked.text, ...(files.length > 0 ? { attachments: files } : {}) }).then((outcome) => {
-      // No hub: nothing was sent and no item holds the words, so they come back, unless new ones were typed.
-      if (outcome !== "offline") return;
-      setDraft((d) => (d.text === "" && d.attached.length === 0 ? { ...sent, offline: true } : d));
-    });
+    void chat.send(projectKey, { text: checked.text, ...(files.length > 0 ? { attachments: files } : {}) });
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -178,7 +176,7 @@ export function ChatComposer({ project, onSent, autoFocus, recall }: ChatCompose
 
 
 
-  const note = draft.error ?? (draft.offline === true ? "Not connected to the hub, so this wasn’t sent. Send it again once the hub is back." : undefined);
+  const note = draft.error;
   const said = note ?? stopError;
   return (
     <div className={c.composer} data-composer data-screen="chat.composer">
@@ -194,7 +192,7 @@ export function ChatComposer({ project, onSent, autoFocus, recall }: ChatCompose
           onChange={(e) => {
             const text = e.target.value;
             setDraft((d) => {
-              const { offline: _o, error: _e, ...rest } = d;
+              const { error: _e, ...rest } = d;
               return { ...rest, text };
             });
           }}
@@ -239,7 +237,7 @@ export function ChatComposer({ project, onSent, autoFocus, recall }: ChatCompose
           <span className={c.spacer} />
           {showStop ? (
             <Tooltip content={stopping ? "Stopping the lead…" : "Stop the lead now"}>
-              <Button variant="secondary" size="md" iconOnly round aria-label={stopping ? "Stopping the lead" : "Stop the lead"} disabled={stopping} onClick={stop}>
+              <Button variant="secondary" size="md" iconOnly round aria-label={stopping ? "Stopping the lead" : "Stop the lead"} disabled={stopping || stopOffline} onClick={stop}>
                 <Square />
               </Button>
             </Tooltip>
@@ -260,6 +258,10 @@ export function ChatComposer({ project, onSent, autoFocus, recall }: ChatCompose
           <Text size="xs" tone="quiet">
             Stopping the lead…
           </Text>
+        ) : stopOffline ? (
+          <Text size="xs" tone="quiet">
+            Offline: stop the lead once the hub is back.
+          </Text>
         ) : null}
       </div>
     </div>
@@ -274,7 +276,7 @@ export function MessageReceipt({ project, item, latest = false }: { project: Pro
   const r = receiptFor(
     {
       state: item.state,
-      error: item.error === undefined ? undefined : { ...item.error, ...(item.offline === true ? { offline: true } : {}) },
+      error: item.error,
       delivery: item.delivery,
       leadWaiting: item.leadWaiting,
     },
@@ -295,7 +297,7 @@ export function MessageReceipt({ project, item, latest = false }: { project: Pro
         {r.line}
       </Text>
       {r.kind === "bad" && r.detail ? <IdChip label="Details" id={r.detail} kind="error" size="xs" tone="quiet" /> : null}
-      {r.kind !== "quiet" && crid !== undefined
+      {r.acts !== undefined && crid !== undefined
         ? r.acts.map((a) => (
             <button key={a} type="button" className={c.linkButton} onClick={() => act(a)}>
               {ACT_LABEL[a]}

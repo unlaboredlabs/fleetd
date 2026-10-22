@@ -1,11 +1,12 @@
 // The inline chat items' fixture: the typical lab hub, whose first project's chat holds one message for each state
 // of the two items (fixtures/inline/items.json: the secret field, saved, withdrawn; a command waiting, ran, failed,
 // open again after the node was offline, a denied tool permission, approved and running). devbox gets a real box key
-// so the secret field can seal.
+// so the secret field can seal. inline-offline is that chat from the disk cache with no hub.
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import type { JsonObject, JsonValue } from "../kit/json.ts";
 import { arr } from "../kit/stress.ts";
+import { heldCache } from "../offline/held.ts";
 import data from "./items.json" with { type: "json" };
 
 /** A real X25519 public key (the Rust seal sample's), so sealing works in a fixture run. */
@@ -80,6 +81,20 @@ const inlineItems = (base: Fixture): Fixture => {
   return f;
 };
 
+/**
+ * The same chat from the disk cache with the hub out of reach: the open items say they can't be answered now, and
+ * the secret's field checks no machine (none are held offline).
+ */
+const inlineOffline = (items: Fixture, down: Fixture["state"]): Fixture => {
+  const f = Fixture.from(items, "inline-offline", "The inline items' chat from the disk cache, the hub out of reach: nothing can be answered now.");
+  f.state = down.phase === "retrying" ? { ...down, retryAt: Date.parse(f.now) + 8000 } : down;
+  f.cache = heldCache(f, f.state.phase === "retrying" ? f.state.hub : "", false);
+  return f;
+};
+
 export default defineGroup({
-  fixtures: (base) => [inlineItems(base("typical"))],
+  fixtures: (base) => {
+    const items = inlineItems(base("typical"));
+    return [items, inlineOffline(items, base("hub-unreachable").state)];
+  },
 });

@@ -35,7 +35,7 @@ export function checkMessage(text: string, attachments: number): { ok: true; tex
 
 /** What a sent message's line says, quietly: where it is, or why it isn't there. */
 export type Receipt =
-  | { readonly kind: "quiet"; readonly line: string }
+  | { readonly kind: "quiet"; readonly line: string; readonly acts?: readonly Act[] }
   | { readonly kind: "warn"; readonly line: string; readonly acts: readonly Act[] }
   | { readonly kind: "bad"; readonly line: string; readonly detail?: string; readonly acts: readonly Act[] };
 
@@ -45,8 +45,8 @@ export const ACT_LABEL: Readonly<Record<Act, string>> = { resend: "Resend", edit
 
 /** A message of yours as the layer holds it (selectChat's item). */
 export interface Sendable {
-  readonly state: "sent" | "streaming" | "pending" | "reconnecting" | "unanswered" | "failed";
-  readonly error?: (HubError & { readonly offline?: boolean }) | undefined;
+  readonly state: "sent" | "streaming" | "pending" | "queued" | "reconnecting" | "unanswered" | "failed";
+  readonly error?: HubError | undefined;
   /** How it reached the lead (ChatMessage.delivery): it started a turn, joined the running one, or waits for one. */
   readonly delivery?: ChatDelivery | undefined;
   /** chat_send's word on why the lead doesn't have it yet, with the fix. */
@@ -61,15 +61,16 @@ export function receiptFor(m: Sendable, latest: boolean): Receipt | undefined {
   switch (m.state) {
     case "pending":
       return { kind: "quiet", line: "sending…" };
+    case "queued":
+      // Written offline: it goes by itself, under its own id, when the link is back. Until then it can be taken back.
+      return { kind: "quiet", line: "queued; sends when the connection is back", acts: ["edit", "dismiss"] };
     case "reconnecting":
       return { kind: "quiet", line: "sending… the link to the hub dropped; it goes again when the link is back" };
     case "unanswered":
       // Safe to send again: the hub keeps one message per id.
       return { kind: "warn", line: "no answer from the hub yet; it may have it", acts: ["resend", "dismiss"] };
     case "failed":
-      return m.error?.offline === true
-        ? { kind: "bad", line: "not sent: not connected to the hub", acts: ["resend", "edit", "dismiss"] }
-        : { kind: "bad", line: "not sent: the hub refused it", ...(m.error ? { detail: m.error.message } : {}), acts: ["resend", "edit", "dismiss"] };
+      return { kind: "bad", line: "not sent: the hub refused it", ...(m.error ? { detail: m.error.message } : {}), acts: ["resend", "edit", "dismiss"] };
     case "sent":
     case "streaming":
       if (m.leadWaiting !== undefined && latest) return { kind: "warn", line: `sent; the lead doesn’t have it yet: ${m.leadWaiting}`, acts: [] };

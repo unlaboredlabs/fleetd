@@ -28,7 +28,8 @@ fleetd is one Cargo workspace and the desktop app. The shipped `fleetd` is one s
 `pnpm dev` (hot reload), `pnpm build` and `pnpm start` (the built app), and `pnpm typecheck`, `pnpm lint` and
 `pnpm test`, which CI's `desktop` job runs. Electron downloads its binary on first launch. `npm --prefix tests/lab
 run lab -- desktop` (after `pnpm build:test`) drives the built app against a lab hub: auth, snapshot, events, calls, live,
-liveness, reconnect and pairing.
+liveness, reconnect and pairing. `run lab -- desktop-offline` drives its window through a hub stop, a quit and a restart: the
+chat kept on screen, a message queued offline and sent once.
 
 `FLEETD_HUB_URL` + `FLEETD_AGENT_KEY` connect for one run without saving anything; `FLEETD_HOME` moves every file the
 app keeps (the saved key, the migration marker) and keeps it off the OS keychain; `FLEETD_FIXTURE=<name>` replaces the

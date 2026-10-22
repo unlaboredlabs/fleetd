@@ -60,6 +60,8 @@ const FixtureFile = z.object({
     }),
   ),
   connect: z.union([z.object({ ok: z.literal(true) }), z.object({ ok: z.literal(false), message: z.string() })]).optional(),
+  /** The renderer's disk cache as an earlier launch left it (src/renderer/src/data/cache.ts); never written over. */
+  cache: z.json().optional(),
 });
 export type FixtureFile = z.infer<typeof FixtureFile>;
 
@@ -122,9 +124,11 @@ export class FixtureSource implements HubSource {
   #hidden: Array<z.infer<typeof Rows>> = [];
   /** The last event number sent: a call's events are numbered as they happen, after everything sent before. */
   #seq = 0;
+  #state: HubState;
 
   constructor(file: FixtureFile, emit: (frame: HubFrame) => void) {
     this.#file = file;
+    this.#state = file.state;
     this.#emit = (frame) => {
       if (frame.t === "event") this.#seq = Math.max(this.#seq, frame.event.seq);
       if (frame.t === "snapshot") this.#seq = Math.max(this.#seq, frame.snapshot.cursor);
@@ -133,7 +137,7 @@ export class FixtureSource implements HubSource {
   }
 
   get state(): HubState {
-    return this.#file.state;
+    return this.#state;
   }
 
   get connectAnswer(): ConnectOutcome {
@@ -206,7 +210,13 @@ export class FixtureSource implements HubSource {
 
   refreshLive(): void {}
 
-  reconnectNow(): void {}
+  // Retry now while waiting out a retry: the attempt starts and, with no hub behind a fixture, keeps running.
+  reconnectNow(): void {
+    const s = this.#state;
+    if (s.phase !== "retrying") return;
+    this.#state = { phase: "connecting", hub: s.hub, attempt: 1 };
+    this.#emit({ t: "state", state: this.#state });
+  }
 
   #cancelReplay(): void {
     for (const timer of this.#replay) clearTimeout(timer);
