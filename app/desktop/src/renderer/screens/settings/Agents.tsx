@@ -8,6 +8,7 @@ import { useData } from "../../src/data/react";
 import { Button, Checkbox, Input, Popover, PopoverContent, PopoverTrigger, Separator, Text, textClass } from "../../ui";
 import { agentsLabel, changeLine, clampMax, extrasOver, pauseLine, projectAgents, serialNote, type ProjectAgents } from "./agentsModel";
 import { errorText, useHubCall, useLive } from "./hub";
+import { useFocusProjectSlider } from "./focusProject";
 import { scopeName, useProjects } from "./parts";
 import s from "./settings.module.css";
 
@@ -153,6 +154,7 @@ export function AgentsSettings() {
   const slots = useSlots();
   const projects = useProjects();
   const live = useLive();
+  useFocusProjectSlider(live && slots !== undefined && projects !== undefined);
   return (
     <div className={s.scroll} data-screen="settings.agents">
       <div className={s.column}>

@@ -359,8 +359,8 @@ export const screens: readonly Screen[] = [
     },
   },
   { id: "machines", route: "#/machines", fixtures: ["typical", "empty", "long-text", "many-agents", "hub-unreachable", "projects-machines"] },
-  // F11: the command palette (projects first, then go-tos), a typed search, and the shortcuts sheet. status-rows
-  // has eight projects, one with a ~120-character name.
+  // F11: the command palette (opening on the project on screen, then go-tos), a typed search, and the shortcuts
+  // sheet. status-rows has eight projects, one with a ~120-character name.
   {
     id: "palette",
     route: "#/",
@@ -376,11 +376,52 @@ export const screens: readonly Screen[] = [
       await page.getByRole("combobox", { name: "Search" }).fill("st");
     },
   },
+  // Opened over a chat that isn't the first project: the selection starts on that project.
+  { id: "palette", variant: "on-project", route: CHAT, fixtures: ["typical"], open: (page) => page.keyboard.press("ControlOrMeta+K") },
+  // Settings by their own names, and the theme switch "dark" offers; matched letters are highlighted.
+  {
+    id: "palette.search",
+    variant: "setting",
+    route: "#/",
+    fixtures: ["typical"],
+    open: async (page) => {
+      await page.keyboard.press("ControlOrMeta+K");
+      await page.getByRole("combobox", { name: "Search" }).fill("max agents");
+    },
+  },
+  {
+    id: "palette.search",
+    variant: "theme",
+    route: "#/",
+    fixtures: ["typical"],
+    open: async (page) => {
+      await page.keyboard.press("ControlOrMeta+K");
+      await page.getByRole("combobox", { name: "Search" }).fill("dark");
+    },
+  },
+  // ⌘K inside the palette: the actions of the selected row, here the project on screen.
+  {
+    id: "palette.actions",
+    route: "#/",
+    fixtures: ["typical", "long-text", "status-rows"],
+    open: async (page) => {
+      await page.keyboard.press("ControlOrMeta+K");
+      await page.keyboard.press("ControlOrMeta+K");
+    },
+  },
   { id: "shortcuts", route: "#/", fixtures: ["typical"], open: (page) => page.keyboard.press("ControlOrMeta+Slash") },
   // F9: Settings. Prompts opens on the lead's first message, the longest text; many-prompts lists 72 with long
   // keys and titles; settings-prompts is the real registry with edits. Compare and Update are deep links.
   // Max agents: the fleet cap and each project's slider.
   { id: "settings.agents", route: "#/settings/agents", fixtures: ["settings-agents", "long-text", "empty", "hub-unreachable"] },
+  // The palette's "Max agents for this project": that project's slider scrolled to and focused.
+  {
+    id: "settings.agents",
+    variant: "for-project",
+    route: "#/settings/agents?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
+    fixtures: ["settings-agents"],
+    open: (page) => expect(page.getByRole("slider", { name: "storefront" })).toBeFocused(),
+  },
   { id: "settings.general", route: "#/settings/general", fixtures: ["typical", "empty", "hub-unreachable"] },
   {
     id: "settings.prompts",
