@@ -17,11 +17,12 @@ import { waitingOn } from "./attentionModel";
 import { ChatList } from "./ChatList";
 import { useChatData } from "./data";
 import { EmptyChat } from "./EmptyChat";
-import { chatRows, rowIndexOf } from "./model";
+import { chatRows, heldLabel, rowIndexOf } from "./model";
 import { ChatComposer } from "./Composer";
 import { AgentsCapControl } from "../settings";
 import type { ProjectRef } from "./slots";
 import { roleWords, type ToldWho } from "./told";
+import { useAsOfWords } from "../shell/offline";
 import { ToldPanel } from "./ToldPanel";
 import s from "./view.module.css";
 
@@ -29,12 +30,15 @@ const TONE: Readonly<Record<ProjectStateWord, StatusTone>> = { waiting_on_you: "
 
 export function ChatScreen({ project, message }: { project: ProjectRef; message?: string }) {
   const data = useChatData(project);
+  // Out of reach, between attempts or during one after a failure (not the first connect, which is loading).
+  const offline = useData((d) => d.hub.phase === "retrying" || (d.hub.phase === "connecting" && d.hub.attempt > 0));
   const [sent, setSent] = useState(0);
   const [told, setTold] = useState<{ thread: ThreadRef; who: ToldWho; name: string }>();
   /** Show: the item the lead waits on, brought into view (again on each press). */
   const [shown, setShown] = useState<{ id: string; n: number }>();
   const needsYou = useData(selectNeedsYou(projectKey(project)));
   const view = data.view;
+  const asOf = useAsOfWords(view?.asOf);
   const strip = (data.agents?.length ?? 0) > 0;
   const rows = useMemo(
     () =>
@@ -46,6 +50,8 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
             loadingOlder: view.loadingOlder,
             hasNewer: view.hasNewer,
             loadingNewer: view.loadingNewer,
+            held: view.held,
+            offline: view.offline,
             strip,
             // "Today" is read against the clock when the chat changes; nothing ticks while it's idle.
             // eslint-disable-next-line react-hooks/purity
@@ -83,16 +89,39 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   );
 
   return (
-    <div className={s.screen} data-screen={data.missing ? "chat.missing" : view !== undefined ? "chat" : data.loadError !== undefined ? "chat.error" : "chat.loading"}>
+    <div
+      className={s.screen}
+      data-screen={
+        data.missing ? "chat.missing" : view !== undefined ? "chat" : data.loadError !== undefined ? "chat.error" : offline ? "chat.offline" : "chat.loading"
+      }
+    >
       <header className={s.header}>
         <span className={s.title}>{title ? <Truncate strong>{title}</Truncate> : null}</span>
-        {state ? (
+        {view?.held === true ? (
+          // A held chat is as it was then, connected or not, until this connection's newest page lands; what the
+          // lead is doing now isn't known from it.
+          <span className={s.flexNone}>
+            <StatusChip tone="quiet">{heldLabel(view.offline, asOf)}</StatusChip>
+          </span>
+        ) : state ? (
           <span className={s.flexNone}>
             <StatusChip tone={TONE[state]}>{STATE_WORDS[state]}</StatusChip>
           </span>
         ) : null}
         {data.missing ? null : <AgentsCapControl projectRef={project} />}
       </header>
+      {view?.held === true && !view.offline && data.loadError !== undefined ? (
+        // Connected, but this chat's newest page couldn't be read: it stays marked as last known, with why.
+        <div className={s.notice} role="alert">
+          <Text size="sm" tone="danger">
+            Couldn’t load the newest messages.
+          </Text>
+          <IdChip label="Details" id={data.loadError.message} kind="error" size="xs" tone="quiet" />
+          <Button variant="secondary" onClick={data.retry}>
+            Retry
+          </Button>
+        </div>
+      ) : null}
       {data.missing ? (
         <div className={s.loading} role="status">
           <Text tone="quiet">This project isn’t on the hub. It may have been removed.</Text>
@@ -104,6 +133,10 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
           <Button variant="secondary" onClick={data.retry}>
             Retry
           </Button>
+        </div>
+      ) : rows === undefined && offline ? (
+        <div className={s.loading} role="status">
+          <Text tone="quiet">Offline. The conversation shows once you’re connected.</Text>
         </div>
       ) : rows === undefined ? (
         <div className={s.loading}>

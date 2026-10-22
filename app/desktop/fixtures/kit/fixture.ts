@@ -96,6 +96,11 @@ export class Fixture {
    * /pair answers, and where the key would be kept. Absent: no file, no hub answers, the OS store.
    */
   pair: JsonObject | undefined;
+  /**
+   * The disk cache an earlier launch left (src/renderer/src/data/cache.ts's HubCache), which main hands the window at
+   * start; main never writes a fixture's. Absent: no cache, as on a first launch.
+   */
+  cache: JsonObject | undefined;
 
   constructor(name: string, note: string) {
     this.name = name;
@@ -109,6 +114,7 @@ export class Fixture {
     f.state = { ...base.state };
     f.connect = base.connect;
     f.pair = base.pair === undefined ? undefined : clone(base.pair);
+    f.cache = base.cache === undefined ? undefined : clone(base.cache);
     f.snapshot = base.snapshot === undefined ? undefined : clone(base.snapshot);
     f.events = clone(base.events);
     f.live = clone(base.live);
@@ -127,6 +133,7 @@ export class Fixture {
     f.now = file.now;
     f.state = file.state;
     f.connect = file.connect;
+    if (file.cache !== undefined) f.cache = clone(file.cache as JsonObject);
     const settle = (file as { settleMs?: unknown }).settleMs;
     if (typeof settle === "number") f.settleMs = settle;
     let ms = 0;
@@ -254,6 +261,7 @@ export class Fixture {
       ...(this.connect === undefined ? {} : { connect: this.connect }),
       ...(settleMs === undefined ? {} : { settleMs }),
       ...(this.pair === undefined ? {} : { pair: this.pair }),
+      ...(this.cache === undefined ? {} : { cache: this.cache }),
     };
   }
 }

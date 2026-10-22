@@ -125,9 +125,10 @@ Two things never go through plain chat text:
 | Item | What you see | What you do |
 |---|---|---|
 | A secret the lead needs | A masked field naming the machine and where the value goes | Paste or type the value and click "Save secret". It never enters the chat. |
-| A risky command | The exact command, why, and where it runs | Approve or Deny. |
+| A risky command | The exact command, why, and where it runs | Approve or Deny. One that can't be undone asks once more. |
 
-See [Secrets & approvals](/docs/approvals-and-secrets).
+Once answered, each folds to one line that opens back up on a click. See
+[Secrets & approvals](/docs/approvals-and-secrets).
 
 ## Done, checked {#done}
 

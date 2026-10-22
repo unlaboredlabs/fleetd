@@ -81,8 +81,8 @@ describe("receipts", () => {
     expect(receiptFor(m({ state: "pending" }), false)).toEqual({ kind: "quiet", line: "sending…" });
     expect(receiptFor(m({ state: "reconnecting" }), false)?.line).toMatch(/link to the hub dropped/);
     expect(receiptFor(m({ state: "unanswered" }), false)).toMatchObject({ kind: "warn", acts: ["resend", "dismiss"] });
-    const offline = receiptFor(m({ state: "failed", error: { code: "offline", message: "Not connected to the hub.", offline: true } }), false);
-    expect(offline).toEqual({ kind: "bad", line: "not sent: not connected to the hub", acts: ["resend", "edit", "dismiss"] });
+    // Written offline: it waits quietly and goes by itself, and can still be taken back.
+    expect(receiptFor(m({ state: "queued" }), false)).toEqual({ kind: "quiet", line: "queued; sends when the connection is back", acts: ["edit", "dismiss"] });
     const refused = receiptFor(m({ state: "failed", error: { code: "forbidden", message: "This key can't send." } }), false);
     expect(refused).toEqual({ kind: "bad", line: "not sent: the hub refused it", detail: "This key can't send.", acts: ["resend", "edit", "dismiss"] });
   });

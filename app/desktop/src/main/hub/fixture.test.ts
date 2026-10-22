@@ -99,6 +99,18 @@ describe("FixtureSource", () => {
     expect(frames).toEqual([]);
   });
 
+  it("Retry now while offline starts an attempt that keeps running; anywhere else it does nothing", () => {
+    const frames: Array<HubFrame> = [];
+    const down = new FixtureSource({ ...base, state: { phase: "retrying", hub: "http://devbox:4790", reason: "closed", retryAt: 1 } }, (f) => frames.push(f));
+    down.reconnectNow();
+    const attempt = { phase: "connecting", hub: "http://devbox:4790", attempt: 1 };
+    expect(frames).toEqual([{ t: "state", state: attempt }]);
+    expect(down.state).toEqual(attempt);
+    down.reconnectNow();
+    new FixtureSource(base, (f) => frames.push(f)).reconnectNow();
+    expect(frames).toHaveLength(1);
+  });
+
   it("answers a call from the first entry whose input matches, after its delay", async () => {
     const source = new FixtureSource(base, () => undefined);
     await expect(source.call({ tool: "order_get", input: { workstreamId: "ws-1", full: true } })).resolves.toMatchObject({ ok: true });

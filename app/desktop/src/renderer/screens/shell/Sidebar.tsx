@@ -8,6 +8,7 @@ import type { ReactNode } from "react";
 import { display, type ShortcutId } from "../../../shared/shortcuts";
 import { Button, Dot, Kbd, Sidebar as Frame, SidebarItem, SidebarSection, Text, Tooltip, Truncate } from "../../ui";
 import { connLine, type SidebarProject } from "./model";
+import { useOfflineAsOf } from "./offline";
 import { sameProject, type ProjectKey, type Screen } from "./routes";
 import s from "./shell.module.css";
 
@@ -62,13 +63,15 @@ const mark = (p: SidebarProject): { readonly node: ReactNode; readonly tip: stri
   return null;
 };
 
-const trailing = (p: SidebarProject, jump: number | null): ReactNode => {
+/** Offline the marks are the last known ones, and their words say since when (`asOf`, "as of 09:02"). */
+const trailing = (p: SidebarProject, jump: number | null, asOf: string | undefined): ReactNode => {
   const m = mark(p);
+  const tip = m === null || asOf === undefined ? m?.tip : `${m.tip}, ${asOf}`;
   return (
     <>
       {m === null ? null : (
-        <Tooltip content={m.tip}>
-          <span className={s.mark} aria-label={m.tip}>
+        <Tooltip content={tip}>
+          <span className={s.mark} aria-label={tip}>
             {m.node}
           </span>
         </Tooltip>
@@ -79,7 +82,8 @@ const trailing = (p: SidebarProject, jump: number | null): ReactNode => {
 };
 
 export function Sidebar({ projects, agentsWorking, prsProject, machinesDown, screen, hub, jumpHints, go }: SidebarProps) {
-  const conn = connLine(hub, window.fleetd.fixture !== null);
+  const asOf = useOfflineAsOf();
+  const conn = connLine(hub, window.fleetd.fixture !== null, asOf);
   const nav = (label: string, icon: ReactNode, target: Screen, current: boolean, trailing?: ReactNode) => (
     <SidebarItem label={label} icon={icon} current={current} trailing={trailing} onClick={() => go(target)} />
   );
@@ -88,7 +92,7 @@ export function Sidebar({ projects, agentsWorking, prsProject, machinesDown, scr
   return (
     <Frame aria-label="Sidebar">
       <SidebarSection
-        title="Projects"
+        title={asOf === undefined ? "Projects" : `Projects, ${asOf}`}
         action={
           <Button variant="quiet" size="sm" icon={<Plus />} onClick={() => go({ id: "projects.add" })}>
             Add
@@ -114,7 +118,7 @@ export function Sidebar({ projects, agentsWorking, prsProject, machinesDown, scr
               label={p.title}
               current={sameProject(open, p.key)}
               emphasis={p.unread}
-              trailing={trailing(p, jumpHints && i < 9 ? i + 1 : null)}
+              trailing={trailing(p, jumpHints && i < 9 ? i + 1 : null, asOf)}
               onClick={() => go({ id: "project", project: p.key, message: null })}
             />
           ))

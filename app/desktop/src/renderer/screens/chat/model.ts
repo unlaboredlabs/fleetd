@@ -4,7 +4,11 @@
 import type { ChatItem } from "../../src/data/chat";
 
 export type Row =
-  | { readonly kind: "top"; readonly key: "top"; readonly state: "more" | "loading" | "start" }
+  /**
+   * `held`: older messages exist, but the chat shown is from before this connection, so none load yet: offline, or
+   * `reread` once connected, until this connection's latest page lands.
+   */
+  | { readonly kind: "top"; readonly key: "top"; readonly state: TopState }
   | { readonly kind: "day"; readonly key: string; readonly label: string }
   /** `history`: written before the chat existed (an old order, a note, a steer), shown as the conversation it was. */
   | { readonly kind: "message"; readonly key: string; readonly item: ChatItem; readonly head: boolean; readonly history: boolean }
@@ -16,6 +20,14 @@ export type Row =
   | { readonly kind: "strip"; readonly key: "strip" }
   /** Paged above the newest messages: more below, and the way back to the latest. */
   | { readonly kind: "bottom"; readonly key: "bottom"; readonly state: "more" | "loading" };
+
+export type TopState = "more" | "loading" | "start" | "held" | "reread";
+
+/** The header's chip on a held chat: it is never shown as current, connected or not. */
+export const heldLabel = (offline: boolean, asOf: string | undefined): string => {
+  const state = offline ? "Offline" : "Last known";
+  return asOf === undefined ? state : `${state}, ${asOf}`;
+};
 
 /** Messages from one author this close together read as one turn: the name and time show once. */
 const GROUP_MS = 5 * 60_000;
@@ -46,6 +58,10 @@ export interface RowsInput {
   readonly loadingOlder: boolean;
   readonly hasNewer?: boolean;
   readonly loadingNewer?: boolean;
+  /** The chat is held from before this connection (ChatView.held). */
+  readonly held?: boolean;
+  /** No fresh connection (ChatView.offline). */
+  readonly offline?: boolean;
   /** Show the live strip (the project has agents at work, or the strip has something to say). */
   readonly strip: boolean;
   readonly nowMs: number;
@@ -56,7 +72,8 @@ export interface RowsInput {
 const isHistory = (item: ChatItem): boolean => item.message?.history !== undefined;
 
 export function chatRows(i: RowsInput): Row[] {
-  const out: Row[] = [{ kind: "top", key: "top", state: i.loadingOlder ? "loading" : i.hasOlder ? "more" : "start" }];
+  const top: TopState = i.loadingOlder ? "loading" : !i.hasOlder ? "start" : i.held !== true ? "more" : i.offline === false ? "reread" : "held";
+  const out: Row[] = [{ kind: "top", key: "top", state: top }];
   let lastDay: string | undefined;
   let prev: ChatItem | undefined;
   // The strip goes under the lead's newest message, or at the end when the lead hasn't said anything yet. A secret
