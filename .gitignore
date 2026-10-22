@@ -13,3 +13,5 @@ GEMINI.md
 .windsurfrules
 .clinerules
 .github/copilot-instructions.md
+.vercel
+.env*
