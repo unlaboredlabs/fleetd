@@ -2,7 +2,8 @@
 // of the two items (fixtures/inline/items.json: the secret field, saved, withdrawn; a command waiting, ran, ran with
 // an error, not run, open again after the node was offline, a denied tool permission, approved and running). devbox
 // gets a real box key so the secret field can seal. inline-items answers Approve and Deny as a hub does;
-// inline-failures fails them and the secret save, for the one-line failure with Retry.
+// inline-failures fails them and the secret save, for the one-line failure with Retry; inline-reopened reopens two
+// approvals after Approve, as a hub does when the node is offline.
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import type { JsonObject, JsonValue } from "../kit/json.ts";
@@ -99,6 +100,51 @@ const inlineFailures = (base: Fixture): Fixture => {
   return f;
 };
 
+/**
+ * Approved here, then reopened by the hub, as when the node is offline: the migration (Q4) comes back with why (its
+ * evidence), and the release tag (Q7), already open again for that reason, comes back saying the same, with its
+ * approval and reopen in one refetch.
+ */
+const inlineReopened = (base: Fixture): Fixture => {
+  const f = inlineItems(base, "inline-reopened", "Two approvals the hub reopens after Approve because the node is offline: one gains why, one says the same as before.");
+  const list = f.output("requests_list", { limit: 100 }) as { requests: JsonObject[] };
+  const q4 = list.requests.find((r) => r["requestId"] === "Q4");
+  const q7 = list.requests.find((r) => r["requestId"] === "Q7");
+  if (q4 === undefined || q7 === undefined) throw new Error("inline-reopened: no Q4 or Q7 in inline-items");
+  const projectRef = q4["projectRef"] as JsonObject;
+  // Q4 reopened, after Q4 as asked: only the hide below tells the two apart (by createdAt, which no card shows), so
+  // the list answers the reopened one once Approve went through.
+  const asked = typeof q4["createdAt"] === "string" ? q4["createdAt"] : f.now;
+  const reopenedAt = new Date(Date.parse(asked) + 1).toISOString();
+  const reopened = { ...q4, createdAt: reopenedAt, evidence: "Not run: devbox's node was offline when you approved. Approve again once it is online." };
+  f.update("requests_list", () => ({ requests: [...list.requests, reopened] }));
+  // The hub's next seq when it emits it (main renumbers a call's frames); here only so the frame checks.
+  const cursor = typeof f.snapshot?.["cursor"] === "number" ? f.snapshot["cursor"] : 0;
+  const updated = (r: JsonObject, state: string): JsonObject => ({
+    seq: cursor + 1,
+    type: "request.updated",
+    at: f.now,
+    machineId: projectRef["machineId"] ?? "devbox",
+    projectId: projectRef["projectId"] ?? "storefront",
+    summary: `${state === "open" ? "Open again" : "Approved"}: ${typeof r["text"] === "string" ? r["text"] : "a command"}`,
+    data: { requestId: r["requestId"] ?? "", kind: "approval", state, by: "human:desk" },
+  });
+  f.then("approval_answer", { requestId: "Q4", decision: "approve" }, {
+    hide: [{ tool: "requests_list", field: "requests", where: { requestId: "Q4", createdAt: asked } }],
+    frames: [
+      { ms: 0, kind: "event", payload: updated(q4, "approved") },
+      { ms: 400, kind: "event", payload: updated(q4, "open") },
+    ],
+  });
+  f.then("approval_answer", { requestId: "Q7", decision: "approve" }, {
+    frames: [
+      { ms: 0, kind: "event", payload: updated(q7, "approved") },
+      { ms: 20, kind: "event", payload: updated(q7, "open") },
+    ],
+  });
+  return f;
+};
+
 export default defineGroup({
-  fixtures: (base) => [inlineItems(base("typical")), inlineFailures(base("typical"))],
+  fixtures: (base) => [inlineItems(base("typical")), inlineFailures(base("typical")), inlineReopened(base("typical"))],
 });

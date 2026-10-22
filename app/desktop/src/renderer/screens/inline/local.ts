@@ -8,9 +8,16 @@ import type { Action, Failure } from "./request";
 
 export type Failed = { readonly action: Action; readonly failure: Failure };
 
+/**
+ * The hub's view of the item when the person last acted on it: what it said (state, evidence, answeredAt) and the
+ * hub's event cursor. What the person did describes that view only; once the hub's moves on, it goes.
+ */
+export type Basis = { readonly view: string; readonly cursor: number };
+
 export interface Local {
-  /** The answer the hub accepted, shown until its own update says the same. */
+  /** The answer the hub accepted, shown until the hub's own view of the item changes. */
   readonly sent: Readonly<Record<string, unknown>> | null;
+  readonly basis: Basis | null;
   readonly busy: boolean;
   readonly failed: Failed | null;
   /** A command that can't be undone, waiting for "Yes, run it". */
@@ -23,7 +30,7 @@ export interface Local {
   readonly draft: string;
 }
 
-const EMPTY: Local = { sent: null, busy: false, failed: null, confirming: false, open: false, refocus: false, draft: "" };
+const EMPTY: Local = { sent: null, basis: null, busy: false, failed: null, confirming: false, open: false, refocus: false, draft: "" };
 const states = new Map<string, Local>();
 const listeners = new Map<string, Set<() => void>>();
 

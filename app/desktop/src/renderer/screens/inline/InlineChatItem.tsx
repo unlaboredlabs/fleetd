@@ -1,15 +1,15 @@
 // The only two things in a lead chat that aren't messages, because a message can't carry them safely: a secret the
 // person types (it never enters the transcript) and a risky command the person approves or denies. F3's chat list
 // renders this for a message with an `item`. The item comes from E1's layer, which re-reads it when the hub
-// re-emits its chat.message; the only state here is what the person just did, until that update says the same.
+// re-emits its chat.message; the only state here is what the person just did, until the hub's view of it changes.
 // Once answered, an item folds to one line that opens back up to the whole card.
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
-import type { ChatItem, CommandApprovalItem, Machine, SecretRequestItem } from "../../../shared/contracts";
+import { dataField, type ChatItem, type CommandApprovalItem, type Machine, type SecretRequestItem } from "../../../shared/contracts";
 import type { HubError } from "../../../shared/hub";
 import { Button, Code, cx, InlineCode, Input, Text, Truncate } from "../../ui";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
-import { patchLocal, useLocal, type Failed } from "./local";
+import { patchLocal, useLocal, type Basis, type Failed } from "./local";
 import { prose } from "./prose";
 import {
   approvalKind,
@@ -67,18 +67,42 @@ const settled = <T,>(work: () => Promise<Answer<T>>): Promise<Answer<T>> => {
 /** Where this item's local state lives: per hub, since request ids count from Q1 on every hub. */
 const useKey = (requestId: string): string => useData((d) => `${d.hub.phase === "unpaired" ? "" : d.hub.hub}/${requestId}`);
 
+type Viewed = { readonly requestId: string; readonly state: string; readonly note?: string | undefined; readonly answeredAt?: string | undefined };
+
+/** What the hub says about an item that its updates change: a request reopened has new evidence and no answeredAt. */
+const viewOf = (item: Viewed): string => JSON.stringify([item.state, item.note ?? null, item.answeredAt ?? null]);
+
 /**
- * What the person did, shown while the item the layer holds is still `open`: the hub's own update (any other state)
- * wins as soon as it arrives. A failure is one plain line, and only while the item is still open.
+ * The last event that said this request is open (request.opened, or request.updated back to open), or 0. A reopen
+ * can say exactly what the item said before it was answered (the same node still offline), and the refetch after
+ * the approval and the reopen can land as one; only the event says the hub moved on.
+ */
+const useOpenedAt = (requestId: string): number =>
+  useData((d) => d.events.findLast((e) => e.type.startsWith("request.") && dataField(e, "requestId") === requestId && dataField(e, "state") === "open")?.seq ?? 0);
+
+/**
+ * What the person did (an answer the hub accepted, a failed one, an Approve waiting for its second key) describes the
+ * hub's view of the item when they did it. It shows only while that view holds: once the hub's view changes (its
+ * state, evidence or answeredAt) or the hub reopens it, it is dropped, so the card says what the hub says now. A
+ * failure is one plain line, and only while the item is open.
  *
  * The controls are disabled while an answer is on its way, which drops keyboard focus; `refocus` says it was in the
  * card, so the folded line (or Retry) takes it back once the answer lands, and `focused` clears it.
  */
-const useSent = <T extends { readonly state: string }>(key: string, item: T, machine: string, section: RefObject<HTMLElement | null>) => {
+const useSent = <T extends Viewed>(key: string, item: T, machine: string, section: RefObject<HTMLElement | null>) => {
+  const { store } = useDataLayer();
   const local = useLocal(key);
-  const shown: T = local.sent !== null && item.state === "open" ? { ...item, ...(local.sent as Partial<T>) } : item;
+  const view = viewOf(item);
+  const openedAt = useOpenedAt(item.requestId);
+  const stale = local.basis !== null && (local.basis.view !== view || openedAt > local.basis.cursor);
+  useEffect(() => {
+    if (stale) patchLocal(key, { basis: null, sent: null, failed: null, confirming: false });
+  }, [stale, key]);
+  const kept = local.basis !== null && !stale;
+  const shown: T = kept && local.sent !== null ? { ...item, ...(local.sent as Partial<T>) } : item;
+  const acted = (): Basis => ({ view, cursor: store.getState().cursor ?? 0 });
   const run = (action: Action, work: () => Promise<Answer<T>>): void => {
-    patchLocal(key, { refocus: section.current?.contains(document.activeElement) ?? false, busy: true, failed: null });
+    patchLocal(key, { refocus: section.current?.contains(document.activeElement) ?? false, busy: true, failed: null, sent: null, basis: acted() });
     void settled(work).then((out) => {
       patchLocal(key, out.ok ? { busy: false, sent: out.sent } : { busy: false, failed: { action, failure: failureLine(action, out.error, machine) } });
     });
@@ -86,7 +110,17 @@ const useSent = <T extends { readonly state: string }>(key: string, item: T, mac
   const focused = (): void => patchLocal(key, { refocus: false });
   // Focus belongs to this row only while it is on screen: a row scrolled back into view never takes it.
   useEffect(() => () => patchLocal(key, { refocus: false }), [key]);
-  return { local, shown, busy: local.busy, failed: shown.state === "open" ? local.failed : null, run, refocus: local.refocus && !local.busy, focused };
+  return {
+    local,
+    shown,
+    busy: local.busy,
+    failed: kept && shown.state === "open" ? local.failed : null,
+    confirming: kept && local.confirming,
+    acted,
+    run,
+    refocus: local.refocus && !local.busy,
+    focused,
+  };
 };
 
 /** Every request the hub holds, newest first; one read shared by all the items, refetched on request.* events. */
@@ -277,13 +311,12 @@ function ApprovalItem({ item }: { item: CommandApprovalItem }) {
   const machine = machines[item.machineId]?.name ?? item.machineId;
   const section = useRef<HTMLElement>(null);
   const key = useKey(item.requestId);
-  const { local, shown, busy, failed, run, refocus, focused } = useSent(key, item, machine, section);
+  const { local, shown, busy, failed, confirming, acted, run, refocus, focused } = useSent(key, item, machine, section);
   const outcome = approvalOutcome(shown);
   const { gated, permission, playbook } = item;
   const kind = approvalKind(item);
   const [showDiff, setShowDiff] = useState(false);
-  const { confirming } = local;
-  const setConfirming = (on: boolean): void => patchLocal(key, { confirming: on });
+  const setConfirming = (on: boolean): void => patchLocal(key, on ? { confirming: true, basis: acted() } : { confirming: false });
   const confirm = useRef<HTMLDivElement>(null);
   const approveButton = useRef<HTMLButtonElement>(null);
   const canAnswer = live && !busy && shown.state === "open";

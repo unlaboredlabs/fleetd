@@ -30,13 +30,14 @@ const snapshot: HubFrame = {
   },
 };
 
-/** A hub whose approval_answer does what `approve` says; every read answers empty. */
+/** A hub whose approval_answer does what `answer` says; requests_list answers `requests`, every other read empty. */
 const mount = (answer: (input: unknown) => Promise<CallOutcome>) => {
   let listener: (frame: HubFrame) => void = () => undefined;
   const answers: unknown[] = [];
+  const requests: { current: Record<string, unknown>[] } = { current: [] };
   const hub: HubApi = {
     call: (tool, input) => {
-      if (tool !== "approval_answer") return Promise.resolve({ ok: true, output: tool === "requests_list" ? { requests: [] } : {} });
+      if (tool !== "approval_answer") return Promise.resolve({ ok: true, output: tool === "requests_list" ? { requests: requests.current } : {} });
       answers.push(input);
       return answer(input);
     },
@@ -46,7 +47,7 @@ const mount = (answer: (input: unknown) => Promise<CallOutcome>) => {
     chat: () => Promise.resolve(),
   };
   const layer = createDataLayer(hub);
-  return { layer, answers, send: (f: HubFrame) => listener(f) };
+  return { layer, answers, requests, send: (f: HubFrame) => listener(f) };
 };
 
 let hubs = 0;
@@ -267,5 +268,108 @@ describe("an answered item", () => {
     await click(fold);
     expect(fold.getAttribute("aria-expanded")).toBe("true");
     expect(host.textContent).toContain("purged 412 objects");
+  });
+});
+
+describe("a request the hub reopens", () => {
+  // As requests_list holds it: the item's state, and its evidence (why it is open again) as the note.
+  const request = (requestId: string, state: string, evidence?: string, answeredAt?: string) => ({
+    requestId,
+    kind: "approval",
+    state,
+    ...(evidence === undefined ? {} : { evidence }),
+    ...(answeredAt === undefined ? {} : { answeredAt }),
+  });
+  let seq = 1;
+  const updated = (requestId: string, state: string): HubFrame => {
+    seq += 1;
+    return { t: "event", event: { seq, at: "2026-10-19T10:31:00.000Z", type: "request.updated", summary: "", data: { requestId, kind: "approval", state } } };
+  };
+  // What a request.* event sets off: the batched refetch of requests_list, and its answer.
+  const refetched = () =>
+    act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+  const OFFLINE = "Not run: devbox's node was offline when you approved. Approve again once it is online.";
+
+  it("shows it open again with why, never the approval it no longer has", async () => {
+    vi.useFakeTimers();
+    seq = 1;
+    const hub = await render("Q10");
+    hub.requests.current = [request("Q10", "open")];
+    act(() => {
+      hub.send(updated("Q10", "open"));
+    });
+    await refetched();
+    await click(button("Approve"));
+    await settle();
+    expect(host.textContent).toContain("Approved, running…");
+
+    // The hub approved it, then reopened it: new evidence, no answeredAt.
+    hub.requests.current = [request("Q10", "approved", undefined, "2026-10-19T10:31:00.000Z")];
+    act(() => {
+      hub.send(updated("Q10", "approved"));
+    });
+    await refetched();
+    hub.requests.current = [request("Q10", "open", OFFLINE)];
+    act(() => {
+      hub.send(updated("Q10", "open"));
+    });
+    await refetched();
+    expect(host.textContent).not.toContain("Approved, running…");
+    expect(host.textContent).toContain(OFFLINE);
+    expect(button("Approve again").disabled).toBe(false);
+  });
+
+  it("shows it open again when the reopen says what it said before, and both land in one refetch", async () => {
+    vi.useFakeTimers();
+    seq = 1;
+    const hub = await render("Q7");
+    hub.requests.current = [request("Q7", "open", OFFLINE)];
+    act(() => {
+      hub.send(updated("Q7", "open"));
+    });
+    await refetched();
+    await click(button("Approve again"));
+    await click(button("Yes, run it"));
+    await settle();
+    expect(host.textContent).toContain("Approved, running…");
+
+    // The node is still offline: approved and reopened with the same evidence, and the list reads the same as before.
+    act(() => {
+      hub.send(updated("Q7", "approved"));
+      hub.send(updated("Q7", "open"));
+    });
+    await refetched();
+    expect(host.textContent).not.toContain("Approved, running…");
+    expect(button("Approve again").disabled).toBe(false);
+  });
+
+  it("drops a failed answer's line once the hub's view moves on", async () => {
+    vi.useFakeTimers();
+    seq = 1;
+    const hub = await render("Q10", () => Promise.resolve({ ok: false, error: { code: "machine_offline", message: "node not connected" } }));
+    hub.requests.current = [request("Q10", "open")];
+    act(() => {
+      hub.send(updated("Q10", "open"));
+    });
+    await refetched();
+    await click(button("Approve"));
+    await settle();
+    expect(host.querySelector("[role=alert]")?.textContent).toBe("Not approved: devbox is offline.Retry");
+
+    // Approved on another computer, then reopened: the old failure is not this card's news.
+    hub.requests.current = [request("Q10", "approved", undefined, "2026-10-19T10:31:00.000Z")];
+    act(() => {
+      hub.send(updated("Q10", "approved"));
+    });
+    await refetched();
+    hub.requests.current = [request("Q10", "open", OFFLINE)];
+    act(() => {
+      hub.send(updated("Q10", "open"));
+    });
+    await refetched();
+    expect(host.querySelector("[role=alert]")).toBeNull();
+    expect(button("Approve again").disabled).toBe(false);
   });
 });
