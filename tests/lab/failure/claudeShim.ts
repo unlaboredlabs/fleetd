@@ -53,6 +53,12 @@ if (resumeId !== undefined && configDir !== undefined) {
   if (!filed) args[args.indexOf("--resume")] = "--session-id";
 }
 
+/**
+ * The node's own discovery run (node/runner/conformance.rs: one "fleetd probe" user message at start, to read the
+ * session's tool list) goes to the real claude: replaying it would spend the budget on no session and fail the probe.
+ */
+const isProbe = (msg: Msg) => msg.message?.content === "fleetd probe";
+
 /** Takes one replay from the shared budget, or returns false when it is spent. */
 const takeReplay = () => {
   const done = Number(fs.readFileSync(config.state, "utf8").trim());
@@ -111,7 +117,7 @@ input.on("line", (line) => {
     } catch {
       msg = undefined;
     }
-    if (msg?.type === "user" && takeReplay()) return replay(typeof msg.uuid === "string" ? msg.uuid : randomUUID());
+    if (msg?.type === "user" && !isProbe(msg) && takeReplay()) return replay(typeof msg.uuid === "string" ? msg.uuid : randomUUID());
     child.stdin!.write(`${line}\n`);
   });
 });

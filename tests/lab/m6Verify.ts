@@ -90,8 +90,8 @@ export async function m6Verify(lab: Lab) {
   cursor = (await leadTurnEnds(woken.event.seq)).cursor;
   const wakeText = sessionText(MACHINE, leadThread);
   check(
-    wakeText.includes(`Claim ${firstClaim} on ${w} failed`) && wakeText.includes(`done:0 (on ${MACHINE}: \`test -f ${FILE}\` exits 0): fail, exit 1`) && wakeText.includes(`exited 1 (expected 0)`),
-    `the wake carries the failing check's exit code and output: ${wakeText.slice(wakeText.lastIndexOf(`Claim ${firstClaim}`), wakeText.lastIndexOf(`Claim ${firstClaim}`) + 400)}`,
+    wakeText.includes(`- claim ${firstClaim} on ${w} failed`) && wakeText.includes(`done:0 (on ${MACHINE}: \`test -f ${FILE}\` exits 0): fail, exit 1`) && wakeText.includes(`exited 1 (expected 0)`),
+    `the wake carries the failing check's exit code and output: ${wakeText.slice(wakeText.lastIndexOf(`claim ${firstClaim}`), wakeText.lastIndexOf(`claim ${firstClaim}`) + 400)}`,
   );
   // Agents never see a time estimate (#190): the digest names no ETA.
   check(!wakeText.includes("(raw 1m × "), "the lead's digest shows no ETA");
@@ -101,7 +101,7 @@ export async function m6Verify(lab: Lab) {
   const unserved = fleetd("task", "spawn", "--workstream", w, "--title", "x", "--areas", "docs", "--prompt", "y");
   // The CLI refuses it before the hub would (exit 2, usage); the hub's own refusal is unit-tested in LeadTaskCalls.test.ts.
   const refusal = unserved.stderr.split("\n")[0]!;
-  check(unserved.code === 2 && refusal === "fleetd: a write task needs --serves: say what this serves: --serves done:<n> | issue:<ref> | defect:<text> | ask:<id>", `spawn without --serves: ${JSON.stringify(unserved)}`);
+  check(unserved.code === 2 && refusal === "fleetd: a write task needs --serves: say what this serves: --serves done:<n> | issue:<ref> | defect:<text> | decision:<key>", `spawn without --serves: ${JSON.stringify(unserved)}`);
   ok(`3. task spawn (kind write) without --serves refused (exit ${unserved.code}): ${refusal}`);
 
   // The fix: a lead given the failing evidence spawns a `--serves done:0` writer itself; if it did not, the harness does.
@@ -143,7 +143,7 @@ export async function m6Verify(lab: Lab) {
     if (wake === undefined) break;
     after = (await leadTurnEnds(wake.event.seq)).cursor;
     const text = sessionText(MACHINE, leadThread);
-    const at = text.indexOf(`- ${reader} completed`);
+    const at = text.indexOf(`- ${reader} finished`);
     unverifiedDelivered ||= at >= 0 && text.slice(at, at + 300).includes("receipts: 0 commands run — claims unverified");
   }
   check(unverifiedDelivered, `the lead got ${reader} with "receipts: 0 commands run — claims unverified"`);

@@ -2,7 +2,7 @@
 // slot's namespace (the M7 setup and its `ci` check). A tier-S order with one writer goes through the merge train while the lead's gated run
 // waits 15 s for a human key's Approve. Then the order's timeline must add up: the critical path covers the order's
 // wall time exactly and the wall matches submit-to-done, every run is tiled by its spans, the `ci` check span is
-// GitHub's own interval inside `change.ci`, the approval wait is a `wait.ask` span of the right length, coverage is
+// GitHub's own interval inside `change.ci`, the approval wait is a `wait.request` span of the right length, coverage is
 // complete, and `fleetd time <W>` prints it. About 6 haiku turns. It resets only its own namespace, before and after.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -122,17 +122,28 @@ export async function timeInspector(lab: Lab) {
     check(humanKey, "hub key create --human printed a key");
     app = await appSession(humanKey!);
     const gatedOut = fleetd("gated", "run", "--class", "irreversible", "--argv", JSON.stringify(["true"]), "--reason", "time lab approval", "--workstream", w);
-    const askId = /\bA\d+\b/u.exec(gatedOut.stdout)?.[0];
+    // The command is a request (Q<n>), shown in the project's chat with Approve / Deny.
+    const askId = /\bQ\d+\b/u.exec(gatedOut.stdout)?.[0];
     check(gatedOut.code === 0 && askId, `gated run: ${JSON.stringify(gatedOut)}`);
+    const itemOf = async () =>
+      ((await app!.call("chat_history", { projectRef: ref, limit: 100 })).messages as Array<Body>).find((m) => m.item?.requestId === askId)?.item as Body | undefined;
     const filedAt = Date.now();
     await new Promise((r) => setTimeout(r, APPROVAL_WAIT_MS));
-    const open = ((await app.call("asks_list", { state: "open" })).asks as Array<Body>).find((a) => a.askId === askId);
-    check(open, `${askId} is open`);
+    const open = await itemOf();
+    check(open?.kind === "command_approval" && open.state === "open", `${askId} is open in the chat: ${JSON.stringify(open)}`);
     const ranFrom = await lab.cursor();
-    check((await app.call("inbox_reply", { raw: `${open!.number} go`, batchId: open!.batchId })).parsed === true, "Approve");
+    const approved = await app.call("approval_answer", { requestId: askId, decision: "approve" });
+    check(approved !== undefined, "Approve");
     const answeredAt = Date.now();
-    const ran = await lab.waitEvent("gated.ran", 60_000, { cursor: ranFrom, types: ["gated.ran"], match: (e) => e.data?.askId === askId });
-    check(ran.event.data.exitCode === 0, `gated.ran: ${JSON.stringify(ran.event.data)}`);
+    await lab.waitEvent(`${askId} ran`, 60_000, { cursor: ranFrom, types: ["request.updated"], match: (e) => e.data?.requestId === askId && ["ran", "failed"].includes(e.data?.state) });
+    // The chat shows the request's change from its request.updated, just after.
+    const ran = await lab.until(`${askId}'s chat item ran`, 30_000, async () => {
+      const item = await itemOf();
+      if (item?.state === "ran" || item?.state === "failed") return item;
+      await new Promise((r) => setTimeout(r, 250));
+      return undefined;
+    });
+    check(ran?.state === "ran" && ran.exitCode === 0, `${askId} ran: ${JSON.stringify(ran)}`);
     ok(`${askId} approved by the human key after ${((answeredAt - filedAt) / 1000).toFixed(1)} s; it ran`);
 
     // The writer's PR, through review (none for tier S), the train and CI, to main.
@@ -246,13 +257,14 @@ export async function timeInspector(lab: Lab) {
     check(ciSpan!.endMs <= ciStage.endMs + 1000 && ciSpan!.startMs >= p.startMs - 1000, `the ci check ${ciSpan!.startMs}-${ciSpan!.endMs} ends by change.ci's end ${ciStage.endMs}, within the order`);
     ok(`3. ${stages.map((s) => `${s.kind.slice(7)} ${(dur(s) / 1000).toFixed(0)}s`).join(" → ")}; ci check ${(dur(ciSpan!) / 1000).toFixed(0)} s matches GitHub; the train noticed ${((ciStage.endMs - ghEnd) / 1000).toFixed(0)} s after`);
 
-    // 4. The approval wait (decision keys are stored lowercase): the gated ask's wait.ask span, from filing to the Approve, counted as waiting on you.
-    const approval = spans.find((s) => s.kind === "wait.ask" && s.extra?.key === `gated.${askId}`.toLowerCase());
-    check(approval, `a wait.ask span for gated.${askId}: ${JSON.stringify(spans.filter((s) => (s.kind as string).includes("ask")))}`);
+    // 4. The approval wait: the gated command's wait.request span (the order's only request), from filing to the Approve, counted as waiting on you.
+    const requests = spans.filter((s) => s.kind === "wait.request");
+    check(requests.length === 1, `one wait.request span, for ${askId}: ${JSON.stringify(spans.filter((s) => /ask|request/u.test(s.kind as string)))}`);
+    const approval = requests[0];
     check(dur(approval!) >= APPROVAL_WAIT_MS && dur(approval!) <= answeredAt - filedAt + 1000, `approval wait ${dur(approval!)} ms within [${APPROVAL_WAIT_MS}, ${answeredAt - filedAt + 1000}]`);
     const human = (breakdown.byCategory as Array<Body>).find((c) => c.cat === "human");
     check(human?.ms >= dur(approval!) && breakdown.humanWait.totalMs >= dur(approval!), `human time ${human?.ms} ms and humanWait ${breakdown.humanWait.totalMs} ms count it`);
-    ok(`4. ${askId}: wait.ask ${(dur(approval!) / 1000).toFixed(1)} s on the asks lane; you: ${(human!.ms / 1000).toFixed(1)} s of agent time`);
+    ok(`4. ${askId}: wait.request ${(dur(approval!) / 1000).toFixed(1)} s on the requests lane; you: ${(human!.ms / 1000).toFixed(1)} s of agent time`);
 
     // 5. The CLI prints it.
     const keyFile = path.join(lab.dir, "lab.key");

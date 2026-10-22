@@ -75,7 +75,14 @@ class Tail {
 }
 
 const json = (m: Body) => JSON.stringify(m);
-const toolUseOf = (marker: string) => (s: Seen) => s.dir === "out" && s.msg.type === "assistant" && json(s.msg).includes("tool_use") && json(s.msg).includes(marker);
+/**
+ * An assistant line with a tool call in it. Claude streams each content block as its own line, and every line of a
+ * message carries its `stop_reason`, so a text or thinking block of a message that ends in a tool call says
+ * "tool_use" too: only the content block counts.
+ */
+const toolUses = (s: Seen): Array<Body> =>
+  s.dir === "out" && s.msg.type === "assistant" ? ((s.msg.message?.content ?? []) as Array<Body>).filter((b) => b.type === "tool_use") : [];
+const toolUseOf = (marker: string) => (s: Seen) => toolUses(s).some((b) => json(b).includes(marker));
 const toolResultAfter = (s: Seen) => s.dir === "out" && s.msg.type === "user" && json(s.msg).includes("tool_result");
 
 export async function steerMidTurn(lab: Lab) {
@@ -127,7 +134,7 @@ export async function steerMidTurn(lab: Lab) {
   const tail = new Tail(path.join(nodeHome(MACHINE), "transcripts", `${threadId}.jsonl`));
   // A lead m3 left running is already idle; a new one has its start turn to finish.
   if (started.body.state !== "idle") cursor = await turnDone(threadId, cursor, "start");
-  const { workstreamId } = await chatOrder(lab, ref, "lab steering: open its workstream with workstream_open, register a one-line brief, then wait for my notes; spawn no tasks");
+  const { workstreamId } = await chatOrder(lab, ref, "lab steering: open its workstream with workstream_open, freeze a one-line brief with `fleetd brief create` so it is running, then wait for my notes; spawn no tasks");
   await lab.waitEvent(`workstream.running for ${workstreamId}`, TURN_MS, { cursor, machineId: MACHINE, types: ["workstream.running"], match: (e) => e.data?.workstreamId === workstreamId });
   cursor = await turnDone(threadId, cursor, "the chat turn");
   ok(`${workstreamId} running; lead ${threadId} idle`);
@@ -156,8 +163,9 @@ export async function steerMidTurn(lab: Lab) {
     const listed = ((await humanCall("steers_list", { workstreamId })).body.steers as Array<Body>).find((s) => s.id === steer.id);
     check(listed?.how === "stopped" && /slow-done|seq 25|sleep/u.test(listed.stoppedTool ?? ""), `${steer.id} delivered by stopping the loop: ${JSON.stringify(listed)}`);
     check(deliveredMs <= 3000, `${steer.id} delivered ${deliveredMs} ms after the send (≤ 3 s)`);
-    const firstTool = await tail.waitFor("the lead's first tool call after the steer", t0, (s) => s.dir === "out" && s.msg.type === "assistant" && json(s.msg).includes("tool_use"), 60_000);
-    check(json(firstTool.msg).includes(marker), `the lead's next tool call is the redirect: ${json(firstTool.msg).slice(0, 400)}`);
+    const firstTool = await tail.waitFor("the lead's first tool call after the steer", t0, (s) => toolUses(s).length > 0, 60_000);
+    const calls = toolUses(firstTool).map((b) => ({ tool: b.name, input: b.input }));
+    check(json(calls).includes(marker), `the lead's next tool call is the redirect: ${json(calls).slice(0, 600)}`);
     const acked = (await steerEvent(`${steer.id} acknowledged`, c, steer.id, "steer.acknowledged", 30_000 - (Date.now() - t0))).event;
     check(acked.type === "steer.acknowledged" && /^S[1-9][0-9]*:/u.test(acked.data?.excerpt ?? ""), `${steer.id} acknowledged with "S<n>:": ${JSON.stringify(acked.data)}`);
     const ackMs = Date.parse(acked.at) - t0;
@@ -167,7 +175,9 @@ export async function steerMidTurn(lab: Lab) {
     check(!(interrupted.body.events as Array<Body>).some((e) => e.threadId === threadId), `no thread.interrupted for the superseded run: ${JSON.stringify(interrupted.body.events)}`);
     const actions = await actionsSince(threadId, new Date(toolUse.at - 1000).toISOString());
     const loop = actions.find((a) => a.summary.includes("slow-done"));
-    const after = actions.filter((a) => Date.parse(a.at) >= Date.parse(delivered.at));
+    // The node lists the lead's thinking as actions too ("Thinking: …", node/runner/claude/mapper.rs); the next thing
+    // the lead does is its next tool run.
+    const after = actions.filter((a) => Date.parse(a.at) >= Date.parse(delivered.at) && !String(a.summary).startsWith("Thinking: "));
     check(loop?.status === "failed" && after[0]?.summary.includes(`echo ${marker}`), `the loop was cut and the next action is the redirect: ${JSON.stringify(actions)}`);
     ok(`⌘Enter: ${steer.id} stopped "${listed!.stoppedTool}" ${deliveredMs} ms after the send; next action \`echo ${marker}\`; acknowledged "${acked.data.excerpt}"`);
     return { done, row: { mode: "now", sent_ms: sentMs, delivered_ms: deliveredMs, next_tool_call_ms: firstTool.at - t0, acknowledged_ms: ackMs, into_tool_ms: t0 - toolUse.at } };

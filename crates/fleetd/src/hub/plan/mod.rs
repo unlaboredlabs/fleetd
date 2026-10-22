@@ -924,11 +924,7 @@ impl Plans {
             delta_size: 0,
             pct_before: None,
             pct_after: None,
-            note: if done {
-                format!("M{milestone} {} done ({n_done} items)", m.title)
-            } else {
-                format!("M{milestone} {} reopened", m.title)
-            },
+            note: milestone_note(milestone, &m.title, n_done, done),
         };
         store::change_insert(c, &row)?;
         pending.changes.push(row);
@@ -1583,4 +1579,33 @@ pub fn plan_text(view: &PlanView) -> String {
         ));
     }
     out
+}
+
+/// A milestone's marker: "M4 FAQ page done (1 item)", or reopened.
+fn milestone_note(milestone: i64, title: &str, n_done: i64, done: bool) -> String {
+    if done {
+        let items = if n_done == 1 { "item" } else { "items" };
+        format!("M{milestone} {title} done ({n_done} {items})")
+    } else {
+        format!("M{milestone} {title} reopened")
+    }
+}
+
+#[cfg(test)]
+mod note_tests {
+    #[test]
+    fn a_milestone_of_one_item_says_item() {
+        assert_eq!(
+            super::milestone_note(4, "FAQ page", 1, true),
+            "M4 FAQ page done (1 item)"
+        );
+        assert_eq!(
+            super::milestone_note(4, "FAQ page", 3, true),
+            "M4 FAQ page done (3 items)"
+        );
+        assert_eq!(
+            super::milestone_note(4, "FAQ page", 1, false),
+            "M4 FAQ page reopened"
+        );
+    }
 }

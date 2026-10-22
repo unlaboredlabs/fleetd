@@ -118,7 +118,8 @@ export async function stallNudgeFail(ctx: LabContext, machineId = "lab-a") {
   ctx.log(`ok  thread.failed seq=${failed.seq} reason=${failed.data.reason} "${failed.summary}"`);
 
   const tail = (await ctx.callTool("thread_tail", { machineId, threadId, n: 50, kinds: ["message"] })).body;
-  const nudges = (tail.items as Array<Body>).filter((i) => i.role === "user" && i.text === NUDGE);
+  // The hub's nudge is a fixed asset file now, so it arrives with the file's trailing newline; the words are exact.
+  const nudges = (tail.items as Array<Body>).filter((i) => i.role === "user" && String(i.text).trimEnd() === NUDGE);
   check(nudges.length === 1, `exactly one nudge in the thread: ${nudges.length}`);
   ctx.log(`ok  thread_tail: one "continue" nudge`);
 }
