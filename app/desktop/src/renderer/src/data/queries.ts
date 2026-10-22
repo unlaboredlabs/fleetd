@@ -1,6 +1,6 @@
 // Call-based reads through TanStack Query, wired to the store: main's frames feed the store, events invalidate the
 // reads they make stale, and results the store holds by entity (board, order) are folded into it.
-import { QueryClient, type Query, type QueryKey } from "@tanstack/react-query";
+import { hashKey, QueryClient, type Query, type QueryKey } from "@tanstack/react-query";
 import {
   typedCall,
   type Call,
@@ -84,6 +84,13 @@ export interface DataLayer {
     input: ToolInput<T>,
   ): { queryKey: QueryKey; queryFn: () => Promise<ToolOutput<T>> };
   /**
+   * Reads are numbered as they go out: `readsStarted()` is the last number handed out, and `readOf(tool, input)` the
+   * number of the read whose answer the cache holds. A read numbered above a mark taken after a write landed went
+   * out after the hub took the write, so what it says includes it.
+   */
+  readonly readsStarted: () => number;
+  readonly readOf: <T extends ToolName>(tool: T, input: ToolInput<T>) => number | undefined;
+  /**
    * The live subscription, set from the route; the only caller of `hub.live`. An unchanged scope sends nothing.
    * Main keeps the scope and re-sends it on every reconnect and on window focus, so the layer sends only changes.
    */
@@ -124,14 +131,24 @@ export const createDataLayer = (hub: HubApi, now: () => number = Date.now): Data
     return { ...board, includeDoneSince: new Date(hubNowMs() - DONE_HOLD_MS).toISOString() };
   };
 
-  const toolQuery = <T extends ToolName>(tool: T, input: ToolInput<T>) => ({
-    queryKey: callKey(tool, input),
-    queryFn: async (): Promise<ToolOutput<T>> => {
-      const outcome = await call(tool, withDoneHold(tool, input));
-      if (!outcome.ok) throw new CallError(outcome.error);
-      return outcome.output;
-    },
-  });
+  let reads = 0;
+  /** By query hash: the newest read that answered. A read a reset made moot can land after; it never wins. */
+  const answeredBy = new Map<string, number>();
+  const toolQuery = <T extends ToolName>(tool: T, input: ToolInput<T>) => {
+    const queryKey = callKey(tool, input);
+    return {
+      queryKey,
+      queryFn: async (): Promise<ToolOutput<T>> => {
+        const read = ++reads;
+        const outcome = await call(tool, withDoneHold(tool, input));
+        if (!outcome.ok) throw new CallError(outcome.error);
+        const hash = hashKey(queryKey);
+        answeredBy.set(hash, Math.max(answeredBy.get(hash) ?? 0, read));
+        return outcome.output;
+      },
+    };
+  };
+  const readOf = <T extends ToolName>(tool: T, input: ToolInput<T>): number | undefined => answeredBy.get(hashKey(callKey(tool, input)));
 
   // Queries an event made stale while their call was in flight. That answer predates the event, so it is not folded
   // into the store, and the query runs once more when it lands: at most one call per read in flight, none cancelled
@@ -229,6 +246,8 @@ export const createDataLayer = (hub: HubApi, now: () => number = Date.now): Data
     queryClient,
     call,
     toolQuery,
+    readsStarted: () => reads,
+    readOf,
     setLive,
     chat: chat.actions,
     retryNow: () => void hub.retryNow?.(),

@@ -81,8 +81,11 @@ export const fixtures = [
   "chat-gated",
   "chat-waiting",
   "chat-empty",
-  // F5 (A5): a chat with every state of the two inline items (fixtures/inline).
+  // F5 (A5): a chat with every state of the two inline items (fixtures/inline), with every answer failing, and with
+  // two approvals the hub reopens after Approve.
   "inline-items",
+  "inline-failures",
+  "inline-reopened",
   // UX-1: the sidebar's reasons and a new reply (fixtures/sidebar); one agent's live work (fixtures/agents).
   "sidebar-reasons",
   "agents-work",
@@ -376,8 +379,9 @@ export const screens: readonly Screen[] = [
   { id: "chat", route: CHAT, fixtures: ["onboarding-first-chat"], variant: "first-chat" },
   // A link to a project the hub doesn't have (here, a hub with none): says so, rather than loading forever.
   { id: "chat", route: CHAT, fixtures: ["empty"], variant: "missing", expect: "error" },
-  // A5 (F5): the two inline items, every state: the masked secret field (and saved, withdrawn), the exact command
-  // with Approve / Deny (and ran, failed, open again after the node was offline, a denied tool permission, running).
+  // A5 (F5): the two inline items, every state: the masked secret field, the exact command with Approve / Deny, open
+  // again after the node was offline; answered ones folded to one line (saved, not needed, ran, ran with an error,
+  // not run, denied, running).
   { id: "chat", route: CHAT, fixtures: ["inline-items"], variant: "inline" },
   // The same chat offline from the disk cache: an open item says it can't be answered now, and a secret never claims
   // the hub doesn't know its machine.
@@ -391,6 +395,65 @@ export const screens: readonly Screen[] = [
       await expect(page.getByText("Offline: approve once the hub is back.").first()).toBeAttached();
       await expect(page.getByText("Offline: save it once the hub is back.").first()).toBeAttached();
       await expect(page.getByText(/doesn't know the machine/u)).toHaveCount(0);
+    },
+  },
+  // Approve on a command that can't be undone asks once more, in the card.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["inline-items"],
+    variant: "inline-confirm",
+    open: async (page) => {
+      const card = page.getByRole("region", { name: "Command to approve" }).filter({ hasText: "database migration" });
+      await card.getByRole("button", { name: "Approve", exact: true }).click();
+      await card.getByText("It can't be undone.").waitFor();
+    },
+  },
+  // A folded answer opened back up to its whole card.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["inline-items"],
+    variant: "inline-opened",
+    open: async (page) => {
+      const fold = page.getByRole("button", { name: /^Approved, ran in 12s/u });
+      await fold.click();
+      await page.getByText("purged 412 objects").waitFor();
+    },
+  },
+  // Every answer fails: one plain line with Retry, and the typed secret stays in its field.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["inline-failures"],
+    variant: "inline-failed",
+    open: async (page) => {
+      await page.getByRole("textbox", { name: "Secret value" }).fill("sk_test_51Hx");
+      await page.getByRole("button", { name: "Save secret" }).click();
+      await page.getByText("Not saved: no answer in time.").waitFor();
+      const card = page.getByRole("region", { name: "Command to approve" }).filter({ hasText: "reviewers 1" });
+      await card.getByRole("button", { name: "Approve", exact: true }).click();
+      await page.getByText("Not approved: something went wrong.").waitFor();
+    },
+  },
+  // Approved, then reopened by the hub (the node is offline): both cards are open again with why, never "Approved,
+  // running…". One gains its evidence; the other says what it said before, its approval and reopen in one refetch.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["inline-reopened"],
+    variant: "inline-reopened",
+    open: async (page) => {
+      const card = (text: string) => page.getByRole("region", { name: "Command to approve" }).filter({ hasText: text });
+      // Each answer disables the card until it lands, then the card folds until the reopen's refetch: an enabled
+      // Approve again is the card open again.
+      const again = (c: ReturnType<typeof card>) => c.getByRole("button", { name: "Approve again", exact: true }).and(page.locator(":enabled"));
+      for (const text of ["database migration", "release tag"]) {
+        const c = card(text);
+        await c.getByRole("button", { name: /^Approve( again)?$/u }).click();
+        await c.getByRole("button", { name: "Yes, run it" }).click();
+        await again(c).waitFor();
+      }
     },
   },
   // ...and E3b's own chat fixtures with an item in a longer conversation.
