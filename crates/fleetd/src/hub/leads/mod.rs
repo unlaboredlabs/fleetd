@@ -23,7 +23,7 @@ use std::sync::{Arc, OnceLock};
 
 pub use self::error::LeadError;
 pub use self::hooks::LeadHooks;
-pub use self::lead::{Leads, LeadsOptions};
+pub use self::lead::Leads;
 pub use self::ports::LeadPorts;
 pub use self::records::LeadRecords;
 pub use self::wakes::{LeadWakes, Trigger};
@@ -83,7 +83,6 @@ pub fn now_iso(ctx: &Ctx) -> String {
 pub struct AreaOptions<'a> {
     /// The hub home: `<home>/playbooks` holds overrides.
     pub home: &'a Path,
-    pub leads: LeadsOptions,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -116,7 +115,6 @@ impl Area {
             Arc::clone(&ctx),
             Arc::clone(&records),
             Arc::clone(&wakes),
-            options.leads,
         );
         let workstreams = Workstreams::new(
             Arc::clone(&ctx),

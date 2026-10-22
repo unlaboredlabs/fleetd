@@ -441,4 +441,6 @@ pub(crate) const MIGRATIONS: &[&str] = &[
   -- The ask batching and info spans: nothing records them any more, and their kinds no longer exist.
   DELETE FROM time_spans WHERE kind IN (42, 43);
   "#,
+    // One model and effort per project, for its lead and every agent: what was the lead's setting.
+    "ALTER TABLE lead_settings RENAME TO project_settings;",
 ];

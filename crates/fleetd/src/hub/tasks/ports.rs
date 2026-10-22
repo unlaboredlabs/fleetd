@@ -150,8 +150,8 @@ pub trait TaskPorts: Send + Sync {
     ) -> BoxFut<'a, Option<CmdOutput>>;
     /// LeadRecords.workstreams.get.
     fn workstream(&self, workstream_id: &WorkstreamId) -> Option<Workstream>;
-    /// LeadRecords.settings.get: the project's lead model and effort.
-    fn lead_settings(&self, project_ref: &ProjectRef) -> Option<ModelEffort>;
+    /// Leads.settings: the project's model and effort (empty when unread).
+    fn project_settings<'a>(&'a self, project_ref: &'a ProjectRef) -> BoxFut<'a, ModelEffort>;
     /// LeadWakes.trigger with the entry's rendered lines.
     fn wake(&self, project_ref: &ProjectRef, kind: WakeKind, text: String);
     /// LeadRecords.leads.list: the project whose lead runs in this thread now (the slot board counts it).

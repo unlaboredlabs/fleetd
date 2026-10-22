@@ -281,6 +281,7 @@ brand!(
     expected = "a branch prefix ending in /, such as fleetd/ (letters, digits, . _ - between the slashes)"
 );
 
+/// Read once, for a project with no model and effort saved yet; `project_set` changes them after that.
 #[serde_with::skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]

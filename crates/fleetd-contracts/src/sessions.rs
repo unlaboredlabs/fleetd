@@ -160,6 +160,14 @@ pub enum SessionCall {
         run_id: Option<NonEmpty>,
         reason: Option<String>,
     },
+    /// The model and effort for the session's next turns. An idle process ends at the next send, which resumes the
+    /// session on them; a turn already running finishes on the old ones.
+    #[serde(rename_all = "camelCase")]
+    Configure {
+        session_id: ThreadId,
+        model: NonEmpty,
+        effort: Effort,
+    },
     /// End the session's process; the session stays resumable. `removeWorktree` also deletes its worktree.
     #[serde(rename_all = "camelCase")]
     Stop {

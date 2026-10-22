@@ -2,6 +2,7 @@
 //! call.
 //! `wiring::HubPorts` implements it over those areas; `Unwired` answers until `Ctx::set_ports` runs, so the area's
 //! logic builds and tests without them.
+use fleetd_contracts::effort::Effort;
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadId, ThreadRef};
 use fleetd_contracts::ledger::{Decision, HumanRequest, WorkstreamId};
 use fleetd_contracts::mcp::{ErrorCode, ThreadLaunchInput};
@@ -33,6 +34,13 @@ pub trait LeadPorts: Send + Sync {
         message: String,
         client_request_id: String,
     ) -> BoxFuture<Result<bool, LeadError>>;
+    /// `Executors.configure(thread, model, effort)`: the thread's next turns run on them.
+    fn configure(
+        &self,
+        thread: ThreadRef,
+        model: String,
+        effort: Effort,
+    ) -> BoxFuture<Result<(), LeadError>>;
     /// `NodeCommands.run(machineId, {cwd, argv, timeoutSec})`; `Err` is the command error's message.
     fn run_command(
         &self,
@@ -84,6 +92,9 @@ impl LeadPorts for Unwired {
     }
     fn send(&self, _: ThreadRef, _: String, _: String) -> BoxFuture<Result<bool, LeadError>> {
         Box::pin(async { Err(unwired("Sending to a lead thread")) })
+    }
+    fn configure(&self, _: ThreadRef, _: String, _: Effort) -> BoxFuture<Result<(), LeadError>> {
+        Box::pin(async { Err(unwired("Configuring a lead thread")) })
     }
     fn run_command(
         &self,

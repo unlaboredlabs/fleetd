@@ -1,32 +1,24 @@
-//! Model and effort for a spawn.
+//! The model and effort a claude fleetd starts runs on: the lead and every agent of a project.
 use fleetd_contracts::effort::Effort;
 
-pub const DEFAULT_TASK_MODEL: &str = "claude-opus-5-5";
-pub const DEFAULT_TASK_EFFORT: Effort = Effort::High;
+pub const DEFAULT_MODEL: &str = "claude-opus-5-5";
+pub const DEFAULT_EFFORT: Effort = Effort::High;
 
-#[derive(Clone, Debug, Default)]
+/// A model and effort, each optional: a project's saved setting, or one spawn's override.
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct ModelEffort {
     pub model: Option<String>,
     pub effort: Option<Effort>,
 }
 
-/// Each of model and effort independently: the spawn flag, then the policy file's defaults, then the project's
-/// settings, then claude-opus-5-5 / high. Medium only ever comes from one of those saying so.
-pub fn resolve_model_effort(
-    flag: &ModelEffort,
-    policy: Option<&ModelEffort>,
-    project: Option<&ModelEffort>,
-) -> (String, Effort) {
-    let empty = ModelEffort::default();
-    let order = [flag, policy.unwrap_or(&empty), project.unwrap_or(&empty)];
-    let model = order
-        .iter()
-        .find_map(|l| l.model.clone())
-        .unwrap_or_else(|| DEFAULT_TASK_MODEL.to_owned());
-    let effort = order
-        .iter()
-        .find_map(|l| l.effort)
-        .unwrap_or(DEFAULT_TASK_EFFORT);
+/// Each of model and effort on its own: the spawn's override, then the project's setting, then the default.
+pub fn resolve_model_effort(spawn: &ModelEffort, project: &ModelEffort) -> (String, Effort) {
+    let model = spawn
+        .model
+        .clone()
+        .or_else(|| project.model.clone())
+        .unwrap_or_else(|| DEFAULT_MODEL.to_owned());
+    let effort = spawn.effort.or(project.effort).unwrap_or(DEFAULT_EFFORT);
     (model, effort)
 }
 
@@ -42,32 +34,27 @@ mod tests {
     }
 
     #[test]
-    fn flag_then_policy_then_project_then_opus_high() {
+    fn the_spawn_override_then_the_project_setting_then_opus_high() {
         let none = me(None, None);
         assert_eq!(
-            resolve_model_effort(&none, None, None),
+            resolve_model_effort(&none, &none),
             ("claude-opus-5-5".into(), Effort::High)
         );
-        let policy = me(Some("claude-sonnet-5-5"), None);
-        let project = me(Some("claude-haiku-5-5"), Some(Effort::Medium));
-        // Each field on its own: the model from the policy, the effort from the project.
+        let project = me(Some("claude-sonnet-5-5"), Some(Effort::Medium));
         assert_eq!(
-            resolve_model_effort(&none, Some(&policy), Some(&project)),
+            resolve_model_effort(&none, &project),
             ("claude-sonnet-5-5".into(), Effort::Medium)
         );
+        // Each field on its own: the spawn names the model only, the effort stays the project's.
+        let spawn = me(Some("claude-haiku-5-5"), None);
         assert_eq!(
-            resolve_model_effort(&none, None, Some(&project)),
+            resolve_model_effort(&spawn, &project),
             ("claude-haiku-5-5".into(), Effort::Medium)
         );
-        let flag = me(Some("claude-haiku-5-5"), Some(Effort::Low));
+        // A project that saved only its effort keeps the default model.
         assert_eq!(
-            resolve_model_effort(&flag, Some(&policy), Some(&project)),
-            ("claude-haiku-5-5".into(), Effort::Low)
-        );
-        // Never medium by default.
-        assert_eq!(
-            resolve_model_effort(&none, Some(&policy), None).1,
-            Effort::High
+            resolve_model_effort(&none, &me(None, Some(Effort::Low))),
+            ("claude-opus-5-5".into(), Effort::Low)
         );
     }
 }

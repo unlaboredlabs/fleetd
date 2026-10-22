@@ -283,10 +283,6 @@ output!(SubscriptionDeleteOutput { ok: True });
 input!(LeadStartInput {
     machine_id: MachineId,
     project_id: ProjectId,
-    /// Saved as the project's lead model and effort for this and later (re)starts; absent keeps the saved or hub
-    /// default.
-    model: Option<NonEmpty>,
-    effort: Option<Effort>,
 });
 output!(LeadStartOutput {
     #[serde(flatten)]
@@ -294,6 +290,29 @@ output!(LeadStartOutput {
 });
 pub type LeadRestartInput = LeadStartInput;
 pub type LeadRestartOutput = LeadStartOutput;
+
+// project_set: the model and effort of the project's lead and of every agent it starts without its own.
+input!(
+    #[serde(remote = "Self")]
+    ProjectSetInput {
+        machine_id: MachineId,
+        project_id: ProjectId,
+        /// Absent keeps the saved model.
+        model: Option<NonEmpty>,
+        /// Absent keeps the saved effort.
+        effort: Option<Effort>,
+    }
+);
+checked!(ProjectSetInput, |input| {
+    if input.model.is_none() && input.effort.is_none() {
+        return Err("expected model, effort or both".into());
+    }
+    Ok(())
+});
+output!(ProjectSetOutput {
+    model: NonEmpty,
+    effort: Effort,
+});
 
 brand!(
     /// "F" plus a positive integer, unique per hub: a file uploaded with attachment_put.
@@ -1269,6 +1288,7 @@ tools! {
     subscription_delete => SubscriptionDelete, Operate, SubscriptionDeleteInput, SubscriptionDeleteOutput;
     lead_start => LeadStart, Operate, LeadStartInput, LeadStartOutput;
     lead_restart => LeadRestart, Operate, LeadRestartInput, LeadRestartOutput;
+    project_set => ProjectSet, Operate, ProjectSetInput, ProjectSetOutput;
     intake_submit => IntakeSubmit, Operate, IntakeSubmitInput, IntakeSubmitOutput;
     workstream_list => WorkstreamList, Read, WorkstreamListInput, WorkstreamListOutput;
     workstream_get => WorkstreamGet, Read, WorkstreamGetInput, WorkstreamGetOutput;

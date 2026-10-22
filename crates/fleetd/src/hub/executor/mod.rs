@@ -1431,6 +1431,23 @@ impl Executors {
         Ok(())
     }
 
+    /// The thread's next turns run on `model` and `effort`.
+    pub async fn configure(
+        &self,
+        r: &ThreadRef,
+        model: &str,
+        effort: fleetd_contracts::effort::Effort,
+    ) -> Result<(), ExecutorError> {
+        let op = NodeOperation::Send;
+        let call = SessionCall::Configure {
+            session_id: r.thread_id.clone(),
+            model: non_empty(&r.machine_id, op, "model", model)?,
+            effort,
+        };
+        self.call(&r.machine_id, op, call, READ_TIMEOUT).await?;
+        Ok(())
+    }
+
     /// Ends the thread's claude process; `Ok` only once the node saw it exit (it escalates to SIGKILL).
     pub async fn stop(&self, r: &ThreadRef) -> Result<(), ExecutorError> {
         let call = SessionCall::Stop {

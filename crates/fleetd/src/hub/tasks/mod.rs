@@ -1134,16 +1134,12 @@ impl Tasks {
                 )),
             ));
         }
-        let flag = ModelEffort {
+        let spawn = ModelEffort {
             model: input.model.as_ref().map(|m| m.as_str().to_owned()),
             effort: input.effort,
         };
-        let defaults = policy.defaults.as_ref().map(|d| ModelEffort {
-            model: d.model.as_ref().map(|m| m.as_str().to_owned()),
-            effort: d.effort,
-        });
-        let settings = self.d.ports.lead_settings(r);
-        let (model, effort) = resolve_model_effort(&flag, defaults.as_ref(), settings.as_ref());
+        let project = self.d.ports.project_settings(r).await;
+        let (model, effort) = resolve_model_effort(&spawn, &project);
         let task = Task {
             task_id: TaskId::unchecked("T0"),
             project_ref: r.clone(),

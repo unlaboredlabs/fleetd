@@ -23,6 +23,7 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
+use fleetd_contracts::effort::Effort;
 use fleetd_contracts::ids::{ProjectId, ThreadId, Timestamp};
 use fleetd_contracts::prim::{NonEmpty, Text};
 use fleetd_contracts::sessions::{
@@ -363,6 +364,8 @@ struct Live {
     /// The run the node interrupted because claude said nothing after the machine woke: it ends as a network
     /// failure, so the node's retry resumes it.
     slept: Option<String>,
+    /// Started on a model or effort `configure` has changed since: the next turn restarts it.
+    reconfigured: bool,
 }
 
 #[derive(Default)]
@@ -691,6 +694,11 @@ impl SessionService {
                 run_id,
                 reason,
             } => self.interrupt(&session_id, run_id.as_deref(), reason).await,
+            SessionCall::Configure {
+                session_id,
+                model,
+                effort,
+            } => self.configure(&session_id, model.to_string(), effort),
             SessionCall::Stop {
                 session_id,
                 remove_worktree,
@@ -1145,6 +1153,7 @@ impl SessionService {
         mode: SendMode,
         steer: Option<SteerTag>,
     ) -> Result<bool, SessionError> {
+        self.restart_reconfigured(id).await;
         let recorded = self.update(id, |c| {
             if let Some(run) = c.runs.iter().find(|r| r.id == *run_id) {
                 return Err(run.status == RunStatus::Queued);
@@ -1202,6 +1211,43 @@ impl SessionService {
             return Err(e);
         }
         Ok(queued)
+    }
+
+    /// Stores the session's model and effort; a process running on others restarts at the next turn.
+    fn configure(&self, id: &str, model: String, effort: Effort) -> Reply {
+        let changed = self.update(id, |c| {
+            let changed = c.row.summary.model != model || c.row.summary.effort != effort;
+            c.row.summary.model = model;
+            c.row.summary.effort = effort;
+            changed
+        })?;
+        if changed && let Some(live) = self.st().live.get_mut(id) {
+            live.reconfigured = true;
+        }
+        Ok(SessionOutput::Done)
+    }
+
+    /// Before a turn on an idle session `configure` changed: its process ends, so the send resumes the session on the
+    /// new model and effort. A busy one keeps its process until a send finds it idle.
+    async fn restart_reconfigured(&self, id: &str) {
+        let target = {
+            let mut st = self.st();
+            let busy = st.active.contains(id);
+            st.live
+                .get_mut(id)
+                .filter(|l| l.reconfigured && !l.closing && !busy)
+                .map(|l| {
+                    l.closing = true;
+                    (l.commands.clone(), l.exited.clone())
+                })
+        };
+        if let Some((commands, mut exited)) = target {
+            tracing::info!(session_id = id, "restarting claude on the session's new model and effort");
+            let _ = commands
+                .send(SessionCommand::Shutdown { grace: REAP_GRACE })
+                .await;
+            let _ = tokio::time::timeout(EXIT_WAIT, exited.wait_for(|e| *e)).await;
+        }
     }
 
     fn fail_run(&self, id: &str, run_id: &str, class: FailureClass, message: &str) {
@@ -1333,6 +1379,7 @@ impl SessionService {
                     aliases: HashMap::new(),
                     exited: exited_rx,
                     slept: None,
+                    reconfigured: false,
                 },
             );
             generation

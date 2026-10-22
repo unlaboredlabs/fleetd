@@ -325,7 +325,6 @@ pub fn build_on(
         crate::hub::leads::Ctx::new(db.clone(), store.clone(), events.clone(), clock.clone()),
         crate::hub::leads::AreaOptions {
             home: &config.home,
-            leads: Default::default(),
         },
     )?;
     crate::hub::leads::wiring::wire_area(

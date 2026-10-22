@@ -478,11 +478,10 @@ fn drops_events_older_than_30_days_without_reusing_their_seq_even_across_a_resta
 fn asks_on_an_older_hub_become_requests_and_history() {
     use super::migrations::MIGRATIONS;
     let conn = rusqlite::Connection::open_in_memory().unwrap();
-    let last = MIGRATIONS.len() - 1;
-    assert!(
-        MIGRATIONS[last].contains("legacy_asks"),
-        "the ask migration is the last one"
-    );
+    let last = MIGRATIONS
+        .iter()
+        .position(|m| m.contains("legacy_asks"))
+        .unwrap();
     for m in &MIGRATIONS[..last] {
         conn.execute_batch(m).unwrap();
     }

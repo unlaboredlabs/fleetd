@@ -24,6 +24,7 @@ use crate::hub::link::commands::CommandInput;
 use crate::hub::link::lead_calls::LeadCallFuture;
 use crate::hub::link::{LeadCallHandler, LeadCaller, LeadCalls, NodeCommands};
 use crate::hub::queue::WriteQueue;
+use crate::hub::tasks::resolve::{ModelEffort, resolve_model_effort};
 
 impl From<LedgerError> for LeadError {
     fn from(e: LedgerError) -> Self {
@@ -123,6 +124,21 @@ impl LeadPorts for HubPorts {
                     },
                     other => LeadError::failed(other.to_string()),
                 })
+        })
+    }
+
+    fn configure(
+        &self,
+        thread: ThreadRef,
+        model: String,
+        effort: fleetd_contracts::effort::Effort,
+    ) -> BoxFuture<Result<(), LeadError>> {
+        let executors = Arc::clone(&self.executors);
+        Box::pin(async move {
+            executors
+                .configure(&thread, &model, effort)
+                .await
+                .map_err(from_executor)
         })
     }
 
@@ -282,7 +298,7 @@ const OUTCOME_WORKSTREAMS: usize = 20;
 
 /// Called once in `serve::build_on`, after the areas below leads are built.
 pub fn wire_area(area: &Arc<Area>, links: Links<'_>) {
-    // project_get shows the project's lead and its open workstreams.
+    // project_get shows the project's lead, its model and effort, and its open workstreams.
     let outcome = Arc::clone(area);
     links
         .executors
@@ -298,6 +314,13 @@ pub fn wire_area(area: &Arc<Area>, links: Links<'_>) {
                         serde_json::to_value(lead).unwrap_or_default(),
                     );
                 }
+                let settings = area.leads.settings(&project_ref).await.map_err(internal)?;
+                let (model, effort) = resolve_model_effort(&ModelEffort::default(), &settings);
+                extra.fields.insert("model".into(), model.into());
+                extra.fields.insert(
+                    "effort".into(),
+                    serde_json::to_value(effort).unwrap_or_default(),
+                );
                 let mut open = area
                     .workstreams
                     .list(&WorkstreamFilter {

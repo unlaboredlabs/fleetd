@@ -140,8 +140,8 @@ fn default_task_kind() -> TaskKind {
 }
 
 /// `fleetd task spawn --workstream W1 --title t --prompt p [--kind write|read|review] [--areas a,b] [--model m]
-/// [--effort e] [--tier S|M|L] [--serves s] [--pr <url>] [--qa]`. Absent model and effort resolve
-/// from the policy file, then the project, then claude-opus-5-5/high. A write task needs `--serves`, a review task
+/// [--effort e] [--tier S|M|L] [--serves s] [--pr <url>] [--qa]`. Absent model and effort are the
+/// project's (`project_set`), else claude-opus-5-5/high. A write task needs `--serves`, a review task
 /// `--pr`; `--qa` marks a review task as a QA run.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]

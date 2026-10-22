@@ -4,7 +4,8 @@ use serde_with::skip_serializing_none;
 
 use crate::ids::{MachineId, ProjectId, ThreadId, Timestamp};
 use crate::ledger::{Lead, Workstream};
-use crate::prim::{AnyInt, Count, List, Text};
+use crate::effort::Effort;
+use crate::prim::{AnyInt, Count, List, NonEmpty, Text};
 use crate::secrets::BoxPublicKey;
 use crate::tasks::Task;
 use crate::train::TrainState;
@@ -165,6 +166,9 @@ pub struct ProjectOutcome {
     pub threads: List<ThreadSummary, 0, 20>,
     /// Absent until lead_start.
     pub lead: Option<Lead>,
+    /// What the lead and every agent run on unless a spawn names its own (`project_set`).
+    pub model: Option<NonEmpty>,
+    pub effort: Option<Effort>,
     /// Open workstreams (not done, stopped or failed), newest first.
     pub workstreams: Option<List<Workstream, 0, 20>>,
     /// Absent until the project has a task.

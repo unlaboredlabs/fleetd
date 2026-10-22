@@ -11,20 +11,21 @@ use tokio::sync::Mutex;
 
 use super::error::LeadError;
 use super::prompt::render_lead_start;
-use super::records::{LeadRecords, LeadSettings, StoredLead, WorkstreamFilter};
+use super::records::{LeadRecords, StoredLead, WorkstreamFilter};
 use super::wakes::LeadWakes;
 use super::{Ctx, now_iso};
 use crate::hub::prompts::Audience;
 use crate::hub::store::{NewEvent, WaitInput, now_ms};
+use crate::hub::tasks::resolve::{ModelEffort, resolve_model_effort};
 
-pub const DEFAULT_LEAD_MODEL: &str = "claude-opus-5-5";
-pub const DEFAULT_LEAD_EFFORT: Effort = Effort::High;
-
-#[derive(Debug, Clone, Default)]
-pub struct LeadsOptions {
-    /// Hub-wide default model and effort; per-project settings override them.
-    pub model: Option<String>,
-    pub effort: Option<Effort>,
+/// What a project runs on after `Leads::configure`.
+#[derive(Debug)]
+pub struct Configured {
+    pub model: String,
+    pub effort: Effort,
+    /// The running lead's node took the change (it applies from the lead's next turn), or why not; none without a
+    /// lead.
+    pub lead: Option<Result<(), LeadError>>,
 }
 
 /// What an order for a project without a lead did about the lead.
@@ -58,7 +59,6 @@ pub struct Leads {
     ctx: Arc<Ctx>,
     records: Arc<LeadRecords>,
     wakes: Arc<LeadWakes>,
-    options: LeadsOptions,
     /// Serializes start and restart, so two concurrent calls for one project launch one thread.
     lock: Mutex<()>,
 }
@@ -68,13 +68,11 @@ impl Leads {
         ctx: Arc<Ctx>,
         records: Arc<LeadRecords>,
         wakes: Arc<LeadWakes>,
-        options: LeadsOptions,
     ) -> Arc<Self> {
         Arc::new(Self {
             ctx,
             records,
             wakes,
-            options,
             lock: Mutex::new(()),
         })
     }
@@ -198,9 +196,61 @@ impl Leads {
             .transpose()
     }
 
-    /// Per-project model and effort for the next start or restart.
-    pub fn configure(&self, r: &ProjectRef, settings: &LeadSettings) -> Result<(), LeadError> {
-        Ok(self.records.settings_set(r, settings)?)
+    /// The project's saved model and effort. A project with none saved yet takes its policy file's `defaults` once,
+    /// so a file committed later never outranks what the person chose.
+    pub async fn settings(&self, r: &ProjectRef) -> Result<ModelEffort, LeadError> {
+        if let Some(saved) = self.records.settings_get(r)? {
+            return Ok(saved);
+        }
+        let policy = match self.ctx.hooks.policy.get() {
+            Some(policy) => policy.defaults(r).await,
+            None => None,
+        };
+        // An unreadable policy file seeds nothing: the next read tries again.
+        let Some(seed) = policy else {
+            return Ok(ModelEffort::default());
+        };
+        self.records.settings_set(r, &seed)?;
+        if seed != ModelEffort::default() {
+            tracing::info!(project = %r.project_id, ?seed, "model and effort seeded from the policy file's defaults");
+        }
+        Ok(seed)
+    }
+
+    /// Saves the fields `change` has as the project's model and effort. New agents take them at once, a running lead
+    /// from its next turn; an agent already running keeps its own.
+    pub async fn configure(
+        &self,
+        r: &ProjectRef,
+        change: &ModelEffort,
+    ) -> Result<Configured, LeadError> {
+        // After a launch in flight, so a lead that starts now is either launched on the change or told it.
+        let _guard = self.lock.lock().await;
+        // Seeded first, so a field `change` leaves out keeps the policy file's value rather than the default.
+        self.settings(r).await?;
+        self.records.settings_set(r, change)?;
+        let (model, effort) =
+            resolve_model_effort(&ModelEffort::default(), &self.settings(r).await?);
+        let lead = match self.records.lead_get(r)? {
+            Some(lead) => {
+                let thread = ThreadRef {
+                    machine_id: r.machine_id.clone(),
+                    thread_id: lead.thread_id,
+                };
+                Some(
+                    self.ctx
+                        .ports()
+                        .configure(thread, model.clone(), effort)
+                        .await,
+                )
+            }
+            None => None,
+        };
+        Ok(Configured {
+            model,
+            effort,
+            lead,
+        })
     }
 
     fn with_state(&self, lead: StoredLead) -> Result<Lead, LeadError> {
@@ -255,15 +305,7 @@ impl Leads {
                 "Wait for the reset, or run usage_resume once the login has capacity again.",
             ));
         }
-        let settings = self.records.settings_get(r)?;
-        let model = settings
-            .model
-            .or_else(|| self.options.model.clone())
-            .unwrap_or_else(|| DEFAULT_LEAD_MODEL.into());
-        let effort = settings
-            .effort
-            .or(self.options.effort)
-            .unwrap_or(DEFAULT_LEAD_EFFORT);
+        let (model, effort) = resolve_model_effort(&ModelEffort::default(), &self.settings(r).await?);
         // Taken before the digest is read: every intent made before it is in the first message (`LeadWakes::flush`).
         let at = now_iso(&self.ctx);
         let set = self.ctx.db.prompts().current(Some(r));

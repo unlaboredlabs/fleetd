@@ -247,11 +247,19 @@ impl TaskPorts for HubTaskPorts {
         Some(stored.workstream)
     }
 
-    fn lead_settings(&self, project_ref: &ProjectRef) -> Option<ModelEffort> {
-        let settings = self.hub()?.leads.records.settings_get(project_ref).ok()?;
-        Some(ModelEffort {
-            model: settings.model,
-            effort: settings.effort,
+    fn project_settings<'a>(&'a self, project_ref: &'a ProjectRef) -> BoxFut<'a, ModelEffort> {
+        Box::pin(async move {
+            let Some(hub) = self.hub() else {
+                return ModelEffort::default();
+            };
+            hub.leads
+                .leads
+                .settings(project_ref)
+                .await
+                .unwrap_or_else(|error| {
+                    tracing::warn!(message = %error.message, "the project's model and effort were not read");
+                    ModelEffort::default()
+                })
         })
     }
 
@@ -500,6 +508,17 @@ impl PolicyHook for PolicyFromLeases {
                         fix: e.fix,
                     })?;
             Ok(policy.lead.is_none_or(|l| l.auto_start))
+        })
+    }
+
+    fn defaults(&self, project_ref: &ProjectRef) -> BoxFuture<Option<ModelEffort>> {
+        let (policies, r) = (Arc::clone(&self.0), project_ref.clone());
+        Box::pin(async move {
+            let defaults = policies.get(&r).await.ok()?.defaults;
+            Some(defaults.map_or_else(ModelEffort::default, |d| ModelEffort {
+                model: d.model.map(|m| m.to_string()),
+                effort: d.effort,
+            }))
         })
     }
 

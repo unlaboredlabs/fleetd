@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use fleetd_contracts::effort::Effort;
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, ThreadId, ThreadRef, Timestamp};
 use fleetd_contracts::ledger::{Decision, HumanRequest, IntakeChannel, WorkstreamId};
@@ -17,6 +18,7 @@ use crate::hub::leads::wakes::WAKE_DEBOUNCE;
 use crate::hub::leads::{Area, AreaOptions, Ctx, LeadError};
 use crate::hub::store::test_clock::ManualClock;
 use crate::hub::store::{EventLog, HubDb, HubStore, NewEvent, iso_ms};
+use crate::hub::tasks::resolve::ModelEffort;
 
 const T0_MS: u64 = 1_792_231_200_000;
 const MACHINE: &str = "lab-a";
@@ -29,6 +31,8 @@ pub(crate) struct Node {
     runner_usable: AtomicBool,
     pub(crate) launches: Mutex<Vec<ThreadLaunchInput>>,
     pub(crate) sends: Mutex<Vec<String>>,
+    /// Each `configure`: the thread and the model and effort it runs on from its next turn.
+    pub(crate) configures: Mutex<Vec<(String, String, Effort)>>,
 }
 
 struct Ports(Arc<Node>);
@@ -52,6 +56,19 @@ impl LeadPorts for Ports {
     fn send(&self, _: ThreadRef, message: String, _: String) -> BoxFuture<Result<bool, LeadError>> {
         self.0.sends.lock().unwrap().push(message);
         Box::pin(async { Ok(false) })
+    }
+    fn configure(
+        &self,
+        thread: ThreadRef,
+        model: String,
+        effort: Effort,
+    ) -> BoxFuture<Result<(), LeadError>> {
+        self.0
+            .configures
+            .lock()
+            .unwrap()
+            .push((thread.thread_id.to_string(), model, effort));
+        Box::pin(async { Ok(()) })
     }
     fn run_command(
         &self,
@@ -84,10 +101,12 @@ impl LeadPorts for Ports {
     }
 }
 
-/// `lead.autoStart` from the project's policy file. Reading it goes through the node, which takes a few ms.
+/// `lead.autoStart` and `defaults` from the project's policy file. Reading it goes through the node, which takes a
+/// few ms.
 struct Policy {
     auto_start: bool,
     clock: Arc<ManualClock>,
+    defaults: Arc<Mutex<ModelEffort>>,
 }
 
 impl PolicyHook for Policy {
@@ -99,11 +118,17 @@ impl PolicyHook for Policy {
         let on = self.auto_start;
         Box::pin(async move { Ok(on) })
     }
+    fn defaults(&self, _: &ProjectRef) -> BoxFuture<Option<ModelEffort>> {
+        let defaults = self.defaults.lock().unwrap().clone();
+        Box::pin(async move { Some(defaults) })
+    }
 }
 
 pub(crate) struct Hub {
     pub(crate) area: Arc<Area>,
     pub(crate) node: Arc<Node>,
+    /// What the project's policy file says under `defaults`.
+    pub(crate) policy_defaults: Arc<Mutex<ModelEffort>>,
     clock: Arc<ManualClock>,
     events: Arc<EventLog>,
     pub(crate) project: ProjectRef,
@@ -138,7 +163,6 @@ pub(crate) fn hub(runner_usable: bool, auto_start: bool) -> Hub {
         Ctx::new(db, store, events.clone(), clock.clone()),
         AreaOptions {
             home: home.path(),
-            leads: Default::default(),
         },
     )
     .unwrap();
@@ -147,13 +171,16 @@ pub(crate) fn hub(runner_usable: bool, auto_start: bool) -> Hub {
         ..Default::default()
     });
     area.ctx.set_ports(Arc::new(Ports(node.clone())));
+    let policy_defaults = Arc::new(Mutex::new(ModelEffort::default()));
     let _ = area.ctx.hooks.policy.set(Arc::new(Policy {
         auto_start,
         clock: clock.clone(),
+        defaults: policy_defaults.clone(),
     }));
     Hub {
         area,
         node,
+        policy_defaults,
         clock,
         events,
         project,

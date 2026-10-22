@@ -1,7 +1,6 @@
-//! Leads, lead settings and workstreams as stored (tables `leads`, `lead_settings`, `workstreams`).
+//! Leads, project settings and workstreams as stored (tables `leads`, `project_settings`, `workstreams`).
 use std::sync::Arc;
 
-use fleetd_contracts::effort::Effort;
 use fleetd_contracts::ids::{ProjectRef, Timestamp};
 use fleetd_contracts::ledger::{
     IntakeChannel, PlaybookRef, Workstream, WorkstreamId, WorkstreamParent, WorkstreamSource,
@@ -11,6 +10,7 @@ use rusqlite::{OptionalExtension, named_params, params};
 use serde::{Deserialize, Serialize};
 
 use crate::hub::store::{HubDb, StoreError};
+use crate::hub::tasks::resolve::ModelEffort;
 
 /// A lead as stored; its `state` (and M4 `parked`) is derived from the lead thread when read.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -22,12 +22,6 @@ pub struct StoredLead {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_wake_at: Option<Timestamp>,
     pub session_generation: i64,
-}
-
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct LeadSettings {
-    pub model: Option<String>,
-    pub effort: Option<Effort>,
 }
 
 #[derive(Debug, Clone)]
@@ -155,35 +149,37 @@ impl LeadRecords {
         rows.into_iter().map(decode_lead).collect()
     }
 
-    pub fn settings_get(&self, r: &ProjectRef) -> Result<LeadSettings, StoreError> {
+    /// The project's saved model and effort; `None` until the first save (or the seed from its policy file).
+    pub fn settings_get(&self, r: &ProjectRef) -> Result<Option<ModelEffort>, StoreError> {
         let row: Option<(Option<String>, Option<String>)> = self.db.with(|c| {
             Ok(c.query_row(
-                "SELECT model, effort FROM lead_settings WHERE machine_id = ? AND project_id = ?",
+                "SELECT model, effort FROM project_settings WHERE machine_id = ? AND project_id = ?",
                 params![r.machine_id.as_str(), r.project_id.as_str()],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .optional()?)
         })?;
         let Some((model, effort)) = row else {
-            return Ok(LeadSettings::default());
+            return Ok(None);
         };
         let effort = effort
             .map(|e| serde_json::from_value(serde_json::Value::String(e)))
             .transpose()?;
-        Ok(LeadSettings { model, effort })
+        Ok(Some(ModelEffort { model, effort }))
     }
 
-    /// Absent fields fall back to the hub default.
-    pub fn settings_set(&self, r: &ProjectRef, settings: &LeadSettings) -> Result<(), StoreError> {
-        let effort = settings
+    /// Saves the fields `change` has; an absent one keeps what was saved.
+    pub fn settings_set(&self, r: &ProjectRef, change: &ModelEffort) -> Result<(), StoreError> {
+        let effort = change
             .effort
             .as_ref()
             .map(crate::hub::leads::digest::serde_plain);
         self.db.with(|c| {
             c.execute(
-                "INSERT INTO lead_settings (machine_id, project_id, model, effort) VALUES (?, ?, ?, ?)
-                 ON CONFLICT (machine_id, project_id) DO UPDATE SET model = excluded.model, effort = excluded.effort",
-                params![r.machine_id.as_str(), r.project_id.as_str(), settings.model, effort],
+                "INSERT INTO project_settings (machine_id, project_id, model, effort) VALUES (?, ?, ?, ?)
+                 ON CONFLICT (machine_id, project_id) DO UPDATE SET
+                   model = coalesce(excluded.model, model), effort = coalesce(excluded.effort, effort)",
+                params![r.machine_id.as_str(), r.project_id.as_str(), change.model, effort],
             )?;
             Ok(())
         })
@@ -414,5 +410,40 @@ mod tests {
         assert!(!put(&done, &research), "the stale claim's write loses");
         let stored = records.workstream_get(&w.workstream_id).unwrap().unwrap();
         assert_eq!(stored.workstream, build);
+    }
+
+    /// Bug (b): saving only the model kept the saved effort blank, and the other way round.
+    #[test]
+    fn saving_one_field_keeps_the_other() {
+        use fleetd_contracts::effort::Effort;
+        let records = LeadRecords::new(HubDb::open_memory().unwrap());
+        let r: ProjectRef =
+            serde_json::from_value(serde_json::json!({ "machineId": "lab-a", "projectId": "p1" }))
+                .unwrap();
+        assert_eq!(records.settings_get(&r).unwrap(), None);
+        let set = |model: Option<&str>, effort: Option<Effort>| {
+            records
+                .settings_set(
+                    &r,
+                    &ModelEffort {
+                        model: model.map(str::to_owned),
+                        effort,
+                    },
+                )
+                .unwrap();
+            records.settings_get(&r).unwrap().unwrap()
+        };
+        let low = set(None, Some(Effort::Low));
+        assert_eq!((low.model, low.effort), (None, Some(Effort::Low)));
+        let sonnet = set(Some("claude-sonnet-5-5"), None);
+        assert_eq!(
+            (sonnet.model.as_deref(), sonnet.effort),
+            (Some("claude-sonnet-5-5"), Some(Effort::Low))
+        );
+        let max = set(None, Some(Effort::Max));
+        assert_eq!(
+            (max.model.as_deref(), max.effort),
+            (Some("claude-sonnet-5-5"), Some(Effort::Max))
+        );
     }
 }
