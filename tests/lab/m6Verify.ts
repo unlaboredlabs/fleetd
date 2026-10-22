@@ -143,7 +143,7 @@ export async function m6Verify(lab: Lab) {
     if (wake === undefined) break;
     after = (await leadTurnEnds(wake.event.seq)).cursor;
     const text = sessionText(MACHINE, leadThread);
-    const at = text.indexOf(`- ${reader} completed`);
+    const at = text.indexOf(`- ${reader} finished`);
     unverifiedDelivered ||= at >= 0 && text.slice(at, at + 300).includes("receipts: 0 commands run — claims unverified");
   }
   check(unverifiedDelivered, `the lead got ${reader} with "receipts: 0 commands run — claims unverified"`);
