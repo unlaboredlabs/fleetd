@@ -476,7 +476,7 @@ impl NodeLinkServer {
                 Err(AuthError::Unauthorized(e)) => refuse(
                     close::UNAUTHORIZED,
                     format!(
-                        "{}: run fleetd hub token create --machine {machine_id}",
+                        "{}: run fleetd pair --worker {machine_id} on the hub",
                         e.message
                     ),
                 ),
@@ -493,7 +493,7 @@ impl NodeLinkServer {
             Ok(None) => refuse(
                 close::UNAUTHORIZED,
                 format!(
-                    "{machine_id} is not enrolled: run fleetd hub token create --machine {machine_id}, then fleetd node join"
+                    "{machine_id} is not enrolled: run fleetd pair --worker {machine_id} on the hub"
                 ),
             ),
             Ok(Some(key)) if key != hello.pub_key.as_str() => refuse(

@@ -379,7 +379,7 @@ impl Auth {
             code: ErrorCode::Forbidden,
             message: why,
             fix: Some(format!(
-                "on the hub, run `fleetd hub token create --machine {}` and join again within 15 minutes",
+                "on the hub, run `fleetd pair --worker {}` and run the command it prints within 15 minutes",
                 machine_id.as_str()
             )),
         }

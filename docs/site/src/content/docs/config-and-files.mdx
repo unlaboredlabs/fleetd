@@ -210,8 +210,8 @@ Every command then keeps all its state there and never reads or writes `~/.fleet
 3. In another terminal, add this machine as a worker of the test hub:
 
    ```sh
-   fleetd hub token create --machine test-1
-   fleetd node join --hub http://127.0.0.1:4797 --token <token> --machine test-1
+   fleetd pair --worker test-1    # its output has a one-time --code
+   fleetd node join --hub http://127.0.0.1:4797 --token <code> --machine test-1
    ```
 
 4. Use the test fleet as you would your own:
