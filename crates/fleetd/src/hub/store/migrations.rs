@@ -441,4 +441,9 @@ pub(crate) const MIGRATIONS: &[&str] = &[
   -- The ask batching and info spans: nothing records them any more, and their kinds no longer exist.
   DELETE FROM time_spans WHERE kind IN (42, 43);
   "#,
+    // Outbound webhooks went: external clients long-poll events_wait.
+    r#"
+  DROP TABLE subscriptions;
+  DELETE FROM events WHERE type = 'webhook.failing';
+  "#,
 ];

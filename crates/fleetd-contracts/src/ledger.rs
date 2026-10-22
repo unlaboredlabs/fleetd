@@ -10,10 +10,10 @@ use serde_with::skip_serializing_none;
 
 use crate::ids::{MachineId, ProjectRef, ThreadId, Timestamp};
 use crate::prim::{
-    Count, Finite, Int, Line, List, NonEmpty, NonNegative, Positive, PositiveNumber, Text, js_len,
+    Count, Finite, Int, Line, List, NonEmpty, NonNegative, Positive, PositiveNumber, Text,
+    is_http_url, js_len,
 };
 use crate::secrets::{SecretFingerprint, SecretSink};
-use crate::subscriptions::is_http_url;
 use crate::usage::UsageParked;
 use crate::{brand, checked};
 

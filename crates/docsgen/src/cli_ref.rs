@@ -157,7 +157,6 @@ Every `fleetd` command, from `fleetd help` in the binary this site was built wit
 | 2 | usage error |
 | 3 | refused |
 | 4 | the hub or the node is unreachable |
-| 78 | `listen` only: the hub refused the key |
 ",
     );
     let mut seen = std::collections::HashSet::new();

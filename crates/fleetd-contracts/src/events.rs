@@ -66,9 +66,6 @@ pub enum HubEventType {
     /// A queued write outlived its TTL and was dropped.
     #[serde(rename = "write.expired")]
     WriteExpired,
-    /// A webhook subscription has been failing for over an hour.
-    #[serde(rename = "webhook.failing")]
-    WebhookFailing,
     #[serde(rename = "workstream.created")]
     WorkstreamCreated,
     /// The brief was frozen; `data.briefHash`.
@@ -271,7 +268,6 @@ impl HubEventType {
             Self::WakeMissed => "wake.missed",
             Self::WriteDelivered => "write.delivered",
             Self::WriteExpired => "write.expired",
-            Self::WebhookFailing => "webhook.failing",
             Self::WorkstreamCreated => "workstream.created",
             Self::WorkstreamRunning => "workstream.running",
             Self::WorkstreamState => "workstream.state",
