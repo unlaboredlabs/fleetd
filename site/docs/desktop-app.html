@@ -79,8 +79,9 @@ use Ctrl.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="pair">Pair it with the hub</h2><a class="sl-anchor-link" href="#pair"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Pair it with the hub”</span></a></div>
 <p>The first time it opens, the app says what fleetd is and shows three steps that tick themselves as you go: connect to
 your hub, add a project, say hi to its lead.</p>
-<p>With no hub on this computer yet, it shows the one command that installs fleetd and sets it up here. Paste it in a
-terminal; when setup finishes, come back to the app and it pairs by itself. On the hub machine, the app pairs by itself
+<p>With no hub on this computer yet, click “Set up fleetd on this Mac”: it opens <code dir="auto">fleetd init</code> in Terminal (on Linux, your
+terminal). When setup finishes, come back to the app and it pairs by itself. If no terminal opens, the app shows the
+command to copy. On the hub machine, the app pairs by itself
 when it opens. On another computer:</p>
 <ol>
 <li>
@@ -145,7 +146,7 @@ on a chat attach to your message. See <a href="/docs/projects#add-a-project">Add
 </tr>
 <tr>
 <td>The agents strip</td>
-<td>Under the lead’s message: how many agents are working, one line each. Expand it for lanes and time, and “What T88 was told” for each agent.</td>
+<td>Under the lead’s message, after any approval or secret it asks for: how many agents are working, and on which PRs. Expand it to see each agent, and click one to read what it was told. “Where the time went” opens <a href="#time">Time</a>, with each agent’s model, tokens and activity.</td>
 </tr>
 <tr>
 <td>One-line events</td>

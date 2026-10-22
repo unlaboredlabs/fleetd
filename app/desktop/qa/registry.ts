@@ -47,6 +47,8 @@ export const fixtures = [
   // F10: the connect screen's states (fixtures/onboarding).
   "onboarding-first-run",
   "onboarding-code-refused",
+  "onboarding-setup-terminal",
+  "onboarding-first-chat",
   "onboarding-local-hub",
   "onboarding-link",
   "onboarding-app-pair",
@@ -239,17 +241,32 @@ export const screens: readonly Screen[] = [
       await expect(box).toBeFocused();
     },
   },
-  // ...and opened to its lanes.
+  // The agents strip, opened to its rows.
   {
     id: "chat",
     route: CHAT,
-    // The expand control is the strip's header button, named by its headline ("18 agents working · 1 needs you ·
-    // 1 queued"); scoped to the strip, since the sidebar's project button also says "3 agents working". long-text has
+    // The expand control is the strip's header button, named by its headline ("17 agents working · 1 needs you ·
+    // 1 on hold · 1 queued"); scoped to the strip, since the sidebar's project button also says "3 agents working". long-text has
     // no agent at work in this project, so it has no strip; live-20 carries the long commands and paths.
     fixtures: ["live-3", "live-20"],
     open: (page) =>
       page.getByRole("region", { name: /agents? working/u }).getByRole("button", { name: /agents? working/u, expanded: false }).click(),
     variant: "strip-open",
+  },
+  // ...and scrolled to its last agent: twenty fill more than the third of the window the opened strip may take, so
+  // its box scrolls and draws only the rows in view.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["live-20"],
+    open: async (page) => {
+      const strip = page.getByRole("region", { name: /agents? working/u });
+      await strip.getByRole("button", { name: /agents? working/u, expanded: false }).click();
+      const list = strip.getByRole("list", { name: "Agents" });
+      await list.evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+      await expect(strip.getByText(/^queued · waiting for a free slot/u)).toBeVisible();
+    },
+    variant: "strip-scrolled",
   },
   // The lead chat (lead-chat-spec.md), registered ahead of its slices, each pending until its writer lands it and
   // deletes `pending` (check the id, route and open step then).
@@ -292,6 +309,8 @@ export const screens: readonly Screen[] = [
       await page.getByText("From before this chat").waitFor({ timeout: 10_000 });
     },
   },
+  // UX-1 [10]: just set up, no chat has a message yet: the empty chat shows the checklist on its last step.
+  { id: "chat", route: CHAT, fixtures: ["onboarding-first-chat"], variant: "first-chat" },
   // A link to a project the hub doesn't have (here, a hub with none): says so, rather than loading forever.
   { id: "chat", route: CHAT, fixtures: ["empty"], variant: "missing", expect: "error" },
   // A5 (F5): the two inline items, every state: the masked secret field (and saved, withdrawn), the exact command
@@ -373,6 +392,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["onboarding-code-refused"],
     variant: "refused",
     open: async (page) => {
+      await page.getByRole("textbox", { name: "Hub address" }).fill("http://buildbox:4790");
       const code = page.getByRole("textbox", { name: "Pairing code" });
       await code.fill("wxyz6789");
       await expect(code).toHaveValue("WXYZ-6789");
@@ -381,6 +401,18 @@ export const screens: readonly Screen[] = [
       await code.press("Enter");
       await page.getByRole("alert").getByText("unknown or was already used").waitFor({ timeout: 10_000 });
       expect(await connect.boundingBox()).toEqual(before);
+    },
+  },
+  // UX-1 [10]: "Set up fleetd on this Mac" opens `fleetd init` in a terminal, or, where none opens, shows the command
+  // with Copy. Under a fixture main never runs anything; the fixture says which answer it gives.
+  {
+    id: "onboarding",
+    route: "#/onboarding",
+    fixtures: ["onboarding-setup-terminal", "onboarding-first-run"],
+    variant: "setup",
+    open: async (page) => {
+      await page.getByRole("button", { name: /^Set up fleetd on this/u }).click();
+      await page.getByText(/^Opened Terminal with|^Couldn't open a terminal/u).waitFor({ timeout: 10_000 });
     },
   },
   { id: "onboarding.key", route: "#/onboarding?key", fixtures: ["pairing-failed", "onboarding-file-store"] },

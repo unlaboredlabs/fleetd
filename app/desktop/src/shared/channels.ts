@@ -28,6 +28,8 @@ export const IPC = {
   pairAuto: "pair:auto",
   /** invoke() → KeyStore. Where the hub key is kept (the OS store, or a 0600 file and why). */
   pairStore: "pair:store",
+  /** invoke() → SetupOutcome. Opens `fleetd init` in the system terminal; the one command, with no arguments. */
+  pairSetup: "pair:setup",
   /** invoke() → string. This computer's host name, to tell whether it is one of the hub's machines. */
   systemHostName: "system:host-name",
   /** invoke() → string | null. A native folder picker; null when cancelled. */

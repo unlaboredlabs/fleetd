@@ -42,6 +42,14 @@ export interface PairStart {
   readonly probe: Probe;
 }
 
+/**
+ * "Set up fleetd on this Mac": `fleetd init` opened in the system terminal (`terminal` says which, for the line
+ * after), or why it couldn't be, with the command to run instead.
+ */
+export type SetupOutcome =
+  | { readonly ok: true; readonly terminal: string }
+  | { readonly ok: false; readonly message: string; readonly command: string };
+
 /** Where this app keeps its hub key, so the screens never claim more than is true. */
 export type KeyStore =
   | { readonly kind: "os"; readonly where: string }

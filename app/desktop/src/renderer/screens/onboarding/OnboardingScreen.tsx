@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useReducer, useRef, useSyncExternalStore, type ReactNode, type SyntheticEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, useSyncExternalStore, type ReactNode, type SyntheticEvent } from "react";
 import type { HubState } from "../../../shared/hub";
-import { keyStoreLine, protocolFit, type PairFailure, type PairOutcome } from "../../../shared/pairing";
+import { keyStoreLine, LOCAL_HUB, protocolFit, type PairFailure, type PairOutcome, type SetupOutcome } from "../../../shared/pairing";
 import { Button, Field, Input, Text } from "../../ui";
-import { initialForm, KEY_CREATE, mismatchFailure, reduce, type Reaching } from "./form";
+import { formatCodeAt, initialForm, KEY_CREATE, mismatchFailure, reduce, type Reaching } from "./form";
 import { useHubState, useKeyStore, useReaching, useSecondsUntil } from "./hooks";
 import { CommandLine, Failure, Prose } from "./Prose";
-import { SETUP_COMMAND, TAGLINE } from "./setup";
+import { TAGLINE } from "./setup";
 import { SetupChecklist } from "./SetupChecklist";
 import s from "./onboarding.module.css";
 
@@ -86,12 +86,12 @@ function Welcome({ id, children }: { id: string; children: ReactNode }) {
   );
 }
 
-/** The app's icon, drawn here so the welcome has the product's face without loading an image. */
+/** The app's icon in the theme's colours, drawn here so the welcome has the product's face without loading an image. */
 function Mark() {
   return (
     <svg className={s.mark} viewBox="100 100 824 824" aria-hidden>
-      <rect className={s.markTile} x="100" y="100" width="824" height="824" rx="185" fill="#1b1c1f" />
-      <g fill="none" stroke="#6ea8fe" strokeWidth="72" strokeLinecap="round" strokeLinejoin="round">
+      <rect className={s.markTile} x="100" y="100" width="824" height="824" rx="185" />
+      <g className={s.markChevrons} fill="none" strokeWidth="72" strokeLinecap="round" strokeLinejoin="round">
         <path d="M255 362 405 512 255 662" opacity=".4" />
         <path d="M437 362 587 512 437 662" opacity=".7" />
         <path d="M619 362 769 512 619 662" />
@@ -101,22 +101,35 @@ function Mark() {
 }
 
 /**
- * Setting fleetd up here is the installer in a terminal. The app can't run it for you: it doesn't ship the CLI, and
- * `fleetd init` asks for logins and installs a background service, which wants a terminal. When it finishes, it
- * leaves a code for this app, and the form picks it up when the window is next focused.
+ * "Set up fleetd on this Mac" opens `fleetd init` in the system terminal: the wizard asks for logins and installs a
+ * background service, so it runs where the person can answer it. When it has paired this app's code, the form picks
+ * that up the next time the window is focused. Where no terminal opens, the command is there to copy.
  */
 function SetupHere() {
-  const here = window.fleetd.platform === "darwin" ? "this Mac" : "this computer";
-  const terminal = window.fleetd.platform === "darwin" ? "Terminal" : "a terminal";
+  const mac = window.fleetd.platform === "darwin";
+  const [outcome, setOutcome] = useState<SetupOutcome | "opening" | null>(null);
+  const open = () => {
+    setOutcome("opening");
+    void window.fleetd.pair.setup().then(setOutcome);
+  };
   return (
-    <section className={s.section} aria-labelledby="setup-here">
-      <Text as="h2" id="setup-here" size="md" strong>
-        {`Set up fleetd on ${here}`}
-      </Text>
+    <section className={s.section} aria-label="Set up fleetd here">
       <Text as="p" tone="quiet">
-        {`Paste this in ${terminal}. It installs fleetd and walks you through setup, then this window connects by itself.`}
+        New to fleetd? Setup runs in a terminal and asks a few questions, then this window connects by itself.
       </Text>
-      <CommandLine command={SETUP_COMMAND} />
+      <div className={s.actions}>
+        <Button variant="primary" size="md" disabled={outcome === "opening"} onClick={open}>
+          {outcome === "opening" ? "Opening a terminal…" : `Set up fleetd on ${mac ? "this Mac" : "this computer"}`}
+        </Button>
+      </div>
+      {outcome === null || outcome === "opening" ? null : outcome.ok ? (
+        <Prose text={`Opened ${outcome.terminal} with \`fleetd init\`. Finish setup there; this window connects when it's done.`} tone="quiet" />
+      ) : (
+        <div className={s.hint} role="status">
+          <Text tone="quiet">{outcome.message}</Text>
+          <CommandLine command={outcome.command} />
+        </div>
+      )}
     </section>
   );
 }
@@ -125,6 +138,13 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
   const [form, dispatch] = useReducer(reduce, undefined, () => initialForm(state, link));
   const codeField = useRef<HTMLInputElement>(null);
   const keyField = useRef<HTMLInputElement>(null);
+  // Formatting a code mid-edit would send the caret to the end; it goes back after the same characters.
+  const caret = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    if (caret.current === null) return;
+    codeField.current?.setSelectionRange(caret.current, caret.current);
+    caret.current = null;
+  });
 
   const done = () => {
     // Drop a link's code from the route, so the screen follows the connection from here.
@@ -210,7 +230,7 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
             mono
             value={form.hub}
             onChange={(e) => dispatch({ type: "edit", field: "hub", value: e.target.value })}
-            placeholder="http://127.0.0.1:4790"
+            placeholder={form.setupHere ? "http://your-hub:4790" : LOCAL_HUB}
             autoComplete="off"
           />
         </Field>
@@ -233,7 +253,11 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
               ref={codeField}
               mono
               value={form.code}
-              onChange={(e) => dispatch({ type: "edit", field: "code", value: e.target.value })}
+              onChange={(e) => {
+                const next = formatCodeAt(e.target.value, e.target.selectionStart ?? e.target.value.length);
+                caret.current = next.caret;
+                dispatch({ type: "edit", field: "code", value: next.value });
+              }}
               placeholder="ABCD-2345"
               autoComplete="off"
               autoCapitalize="characters"
@@ -243,7 +267,7 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
           </Field>
         )}
         <div className={s.actions}>
-          <Button type="submit" variant="primary" size="md" disabled={form.busy}>
+          <Button type="submit" variant={form.setupHere ? "secondary" : "primary"} size="md" disabled={form.busy}>
             {form.busy ? "Connecting…" : form.useKey ? "Connect with key" : "Connect"}
           </Button>
         </div>
