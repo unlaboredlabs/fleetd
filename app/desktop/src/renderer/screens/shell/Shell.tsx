@@ -10,8 +10,8 @@ import { ProjectsHost } from "../projects";
 import { useMainProcess, useMenuState, useModHeld, useNotifications } from "./effects";
 import { useHubState } from "./hubFeed";
 import { useDataLayer } from "../../src/data/react";
-import { homeProject, projectId, stepProject } from "./model";
-import { useMachinesDown, useSidebarProjects } from "./data";
+import { homeProject, nextWanting, projectId, stepProject } from "./model";
+import { useAgentsWorking, useMachinesDown, useSidebarProjects } from "./data";
 import { navigate, useRoute } from "./navigation";
 import { HOME, type Screen } from "./routes";
 import { ConnectionBanner, GetStarted, needsOnboarding } from "../onboarding";
@@ -45,7 +45,9 @@ export function Shell() {
     layer.setLive({ board: true });
   }, [layer]);
   const hub = useHubState();
-  const projects = useSidebarProjects();
+  // The route's project, not the resolved home: `#/` becomes a project's own route at once.
+  const projects = useSidebarProjects(route.id === "project" ? route.project : null);
+  const agentsWorking = useAgentsWorking();
   const machinesDown = useMachinesDown();
   const [sidebarHidden, setSidebarHidden] = useState(false);
   const modHeld = useModHeld();
@@ -108,6 +110,26 @@ export function Shell() {
       { id: "sidebar.toggle", title: "Toggle sidebar", group: "actions", enabled: () => chrome, run: () => setSidebarHidden((h) => !h) },
       { id: "project.previous", title: "Previous project", group: "projects", searchOnly: true, enabled: () => chrome && (projects?.length ?? 0) > 0, run: () => step(-1) },
       { id: "project.next", title: "Next project", group: "projects", searchOnly: true, enabled: () => chrome && (projects?.length ?? 0) > 0, run: () => step(1) },
+      {
+        id: "project.nextNeedsYou",
+        title: "Next project that needs you",
+        group: "projects",
+        keywords: ["waiting", "reply", "approve", "secret", "blocked"],
+        enabled: () => chrome && projects !== undefined && nextWanting(projects, open) !== null,
+        run: () => {
+          const next = projects === undefined ? null : nextWanting(projects, open);
+          if (next !== null) go({ id: "project", project: next, message: null });
+        },
+      },
+      {
+        id: "go:agents",
+        title: "Agents",
+        detail: "Every agent working now",
+        group: "go-to",
+        keywords: ["live", "work", "running"],
+        enabled: () => chrome,
+        run: () => go({ id: "agents", agent: null }),
+      },
       ...JUMPS.map(
         (n): Command => ({
           id: `project.open.${String(n)}`,
@@ -167,7 +189,7 @@ export function Shell() {
               />
             </Suspense>
           ) : sidebarHidden ? undefined : (
-            <Sidebar projects={projects} machinesDown={machinesDown} screen={screen} hub={hub} jumpHints={modHeld} go={go} />
+            <Sidebar projects={projects} agentsWorking={agentsWorking} machinesDown={machinesDown} screen={screen} hub={hub} jumpHints={modHeld} go={go} />
           )
         }
       >

@@ -14,7 +14,7 @@ Lead:  Fixed in "Align the checkout button on Safari", merged.
 
 Each project has one lead and one ongoing chat. Click the project in the sidebar to open it.
 
-![The storefront project's chat: you asked to round the cart totals once, the lead replied that writers are splitting the change into three PRs, and under its message the strip shows three agents working. In the sidebar, billing has the needs-you dot.](/docs/img/chat.png)
+![The storefront project's chat: you asked to round the cart totals once, the lead replied that writers are splitting the change into three PRs, and under its message the strip shows three agents working. In the sidebar, billing says reply and checkout says blocked.](/docs/img/chat.png)
 
 ## Send a message {#send}
 
@@ -52,10 +52,11 @@ Reply in plain words, or tersely:
 | `nvm` | Drop it. |
 | `2: keep it for two releases` | Answer an item in your own words. |
 
-The lead logs each answer as a [decision](/docs/glossary#decision), so it never asks the same thing twice. A project
-shows a dot in the sidebar while the lead's last message waits for your reply, or a secret or approval item is open.
-In the chat, a line above the box says what it waits on, such as "2 questions, asked at 09:02" or "1 command to
-approve". Click Show to scroll to it.
+The lead logs each answer as a [decision](/docs/glossary#decision), so it never asks the same thing twice. In the
+sidebar, a project says "reply" while the lead's last message waits for your answer, "secret" or "approve" while an
+item is open, and "blocked" when something outside the work holds it up. ⌥⌘A jumps to the next one. In the chat, a
+line above the box says what it waits on, such as "2 questions, asked at 09:02" or "1 command to approve". Click Show
+to scroll to it.
 
 ## Steer while it works {#steer}
 

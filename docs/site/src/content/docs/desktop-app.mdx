@@ -42,10 +42,10 @@ To change hubs, open Settings (⌘,) → General → Hub.
 
 | Part | Shows |
 |---|---|
-| Sidebar | Your projects. A dot means the lead is waiting for your reply; a count means agents are at work. Below them: Status, Time, Machines and Settings. |
+| Sidebar | Your projects, each saying why it wants you: "reply", "approve", "secret" or "blocked". Otherwise it says how many agents are working. A project in bold has a new message from its lead. Below them: Agents, Status, Time, Machines and Settings. |
 | The chat | The selected project's conversation with its lead. |
 
-Click a project to open its chat. To add a project, click "Add" next to Projects, then paste a GitHub URL or
+Click a project to open its chat. ⌥⌘A jumps to the next project that wants you. To add a project, click "Add" next to Projects, then paste a GitHub URL or
 `owner/repo`. You can also drop a folder or a GitHub link anywhere on the window, a chat included. Other files dropped
 on a chat attach to your message. See [Add a project](/docs/projects#add-a-project).
 
@@ -64,9 +64,15 @@ on a chat attach to your message. See [Add a project](/docs/projects#add-a-proje
 | Secret and approval items | A masked field with "Save secret", or a command (or a tool's permission request) with Approve and Deny. See [Secrets & approvals](/docs/approvals-and-secrets). |
 | The header | The project, its state word (as in [Status](#status)), and its [Max agents](/docs/projects#max-agents) control ("agents 6 / 12"). |
 
-![The storefront project's chat: you asked to round the cart totals once, the lead replied that writers are splitting the change into three PRs, and under its message the strip shows three agents working. In the sidebar, billing has the needs-you dot.](/docs/img/chat.png)
+![The storefront project's chat: you asked to round the cart totals once, the lead replied that writers are splitting the change into three PRs, and under its message the strip shows three agents working. In the sidebar, billing says reply and checkout says blocked.](/docs/img/chat.png)
 
 How to work with the lead: [Chat with the lead](/docs/chat).
+
+## Agents {#agents}
+
+Agents lists every agent working now, across all your projects: its role, its task, what it's doing and for how long.
+Click one to watch its work as it happens: what it was told, the commands it ran, the files it edited and what it's
+writing. Watching doesn't interrupt it. To change what it does, tell its lead in the chat.
 
 ## Status {#status}
 
@@ -116,6 +122,7 @@ The command palette (⌘K) opens on the project you're in. Type a setting's own 
 | ⌘B | Toggle the sidebar |
 | ⌘1 to ⌘9 | Open that project in the sidebar |
 | ⌘[ / ⌘] | Previous / next project |
+| ⌥⌘A | Next project that wants you |
 | ⌘. | Status |
 | ⌘, | Settings |
 | ⌘⇧A | Attach a file |
