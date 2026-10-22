@@ -1,9 +1,9 @@
 // M2 lab scenario 5, "offline queue": with lab-a's node stopped, reads are stale, launch and interrupt are refused,
 // and thread_send returns {queued: true}. A send queued past the hub's TTL (shortened by the harness) emits
 // write.expired; one queued just before the node comes back is delivered and emits write.delivered.
-// Costs up to two tiny haiku turns on lab-a (an idle thread if none exists, and the delivered message).
+// Costs up to two tiny mechanics turns on lab-a (an idle thread if none exists, and the delivered message).
 import { randomUUID } from "node:crypto";
-import { type Body, type Lab, MODEL, QUEUE_TTL_SEC } from "./harness.ts";
+import { type Body, type Lab, MECHANICS, QUEUE_TTL_SEC } from "./harness.ts";
 
 const MACHINE = "lab-a";
 
@@ -25,8 +25,8 @@ export async function offlineQueue(lab: Lab) {
     machineId: MACHINE,
     projectId,
     prompt: "Reply OK.",
-    model: MODEL,
-    effort: "low",
+    model: MECHANICS.model,
+    effort: MECHANICS.effort,
     clientRequestId: randomUUID(),
   });
   check(launch.isError && launch.body.code === "machine_offline", `launch refused: ${JSON.stringify(launch.body)}`);
