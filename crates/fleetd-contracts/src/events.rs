@@ -185,8 +185,6 @@ pub enum HubEventType {
     /// A device redeemed a pairing code from `fleetd pair` and got a human key; `data.keyId`, `data.deviceName`.
     #[serde(rename = "key.paired")]
     KeyPaired,
-    /// A person added to an order for its lead: `data.workstreamId`, `data.noteId`, `data.urgent`, `data.text` (first
-    /// 200 characters).
     /// A prompt override was saved or reset: `data.id`, `data.scope`, `data.projectRef`, `data.ref` (absent on reset),
     /// `data.warnings` (their codes). The text is not in the event; prompt_get reads it.
     #[serde(rename = "prompt.changed")]

@@ -320,8 +320,9 @@ fn drops_events_older_than_30_days_without_reusing_their_seq_even_across_a_resta
 fn unused_tables_and_events_go_on_an_older_hub() {
     use super::migrations::MIGRATIONS;
     let conn = rusqlite::Connection::open_in_memory().unwrap();
-    let last = MIGRATIONS.len() - 1;
-    for m in &MIGRATIONS[..last] {
+    // Found by content, not as the last migration, so later migrations don't break this test.
+    let drop = MIGRATIONS.iter().position(|m| m.contains("DROP TABLE status_eta")).unwrap();
+    for m in &MIGRATIONS[..drop] {
         conn.execute_batch(m).unwrap();
     }
     conn.execute_batch(
@@ -330,7 +331,7 @@ fn unused_tables_and_events_go_on_an_older_hub() {
           (0, 'workstream.running', '{"workstreamId":"W1"}');"#,
     )
     .unwrap();
-    conn.execute_batch(MIGRATIONS[last]).unwrap();
+    conn.execute_batch(MIGRATIONS[drop]).unwrap();
 
     let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
     assert_eq!(
