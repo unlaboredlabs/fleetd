@@ -43,7 +43,7 @@ describe("the chat's rows", () => {
     expect(rows([], { hasOlder: true, loadingOlder: true })[0]).toMatchObject({ state: "loading" });
   });
 
-  it("put the live strip under the lead's newest message, and events and inline items in their place", () => {
+  it("put the live strip under the lead's newest message and after the field that answers it, never between them", () => {
     const r = rows(
       [
         item("a", "lead", at(19, 9)),
@@ -54,9 +54,15 @@ describe("the chat's rows", () => {
       ],
       { strip: true },
     );
-    expect(r.map((x) => x.kind)).toEqual(["top", "day", "message", "message", "message", "strip", "event", "inline"]);
+    expect(r.map((x) => x.kind)).toEqual(["top", "day", "message", "message", "message", "event", "inline", "strip"]);
     expect(rows([item("a", "human", at(19, 9))], { strip: true }).at(-1)?.kind).toBe("strip");
-    expect(rowIndexOf(r, "d")).toBe(6);
+    expect(rowIndexOf(r, "d")).toBe(5);
+    // A reply after the field: the strip stays under the lead's message, before the reply.
+    const replied = rows(
+      [item("a", "lead", at(19, 9)), item("b", "lead", at(19, 9, 1), { kind: "gated" }), item("c", "human", at(19, 9, 2)), item("d", "lead", at(19, 9, 3), { kind: "secret" })],
+      { strip: true },
+    );
+    expect(replied.map((x) => x.kind)).toEqual(["top", "day", "message", "inline", "strip", "message", "inline"]);
     expect(rowIndexOf(r, "nope")).toBeUndefined();
   });
 

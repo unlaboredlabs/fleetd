@@ -2,9 +2,8 @@ import { describe as group, expect, it } from "vitest";
 import type { FleetStatus, OrderCard } from "../../../shared/contracts";
 import { selectBoardData } from "../../src/data/selectors";
 import { applyFrame as frameIn, ingest, initialState } from "../../src/data/store";
-import { bars, unlived } from "./bars";
 import type { AgentLane, LaneStatus, LiveFrame, LiveLane, PrRef } from "./contracts";
-import { fleet, groupLabel, reviewProgress, writtenIn } from "./fleet";
+import { fleet, groupLabel } from "./fleet";
 import { fmtElapsed, fmtTokens, middleEllipsis, shortModel } from "./format";
 import { describe } from "./words";
 
@@ -97,17 +96,17 @@ group("agents grouped by PR", () => {
   const checker = (id: string, n: number, status: LaneStatus, role: AgentLane["role"] = "reviewer") =>
     lane(id, status, { role, pr: pr(n, "reviewing"), startedAt: at(16), ...(status === "done" ? { endedAt: at(24) } : {}) });
 
-  it("puts each PR's checkers under it; reviews are the PR's, done counted from finished reviewers", () => {
+  it("groups by PR; reviews are the PR's, done counted from finished reviewers", () => {
     const seen = [writer("T1", 221), writer("T2", 222, "working"), checker("R1", 221, "done"), checker("R2", 221, "working"), checker("V1", 221, "working", "verifier")];
     const rows = seen.filter((l) => l.status !== "done");
     const f = fleet(rows, seen, [pr(222, "reviewing", { taskId: "T2" }), pr(221, "reviewing", { taskId: "T1" })]);
     expect(f.groups.map((g) => g.pr.number)).toEqual([221, 222]);
     const g221 = f.groups[0];
-    expect(g221?.rows.map((l) => l.laneId)).toEqual(["R2", "V1"]);
     // One reviewer of the three needed finished; the verifier is not a review.
     expect(g221 && groupLabel(g221)).toBe("review 1/3");
-    expect(g221 && writtenIn(g221)).toBe("written in 0:15");
-    expect(f.writers).toEqual([]);
+    // The finished writer still names the PR.
+    expect(g221?.writer?.laneId).toBe("T1");
+    expect([f.writers, f.others]).toEqual([[], []]);
   });
 
   it("takes the hub's count when it is ahead of the lanes seen", () => {
@@ -115,10 +114,9 @@ group("agents grouped by PR", () => {
     expect(g && groupLabel(g)).toBe("review 2/3");
   });
 
-  it("a ready PR's track and words agree", () => {
+  it("a ready PR with every review in reads reviewed", () => {
     const g = fleet([], [checker("R1", 117, "done")], [pr(117, "ready", { reviewsDone: 1 })]).groups[0];
     expect(g && groupLabel(g)).toBe("reviewed");
-    expect(g && reviewProgress(g)).toBe(1);
   });
 });
 
@@ -139,15 +137,5 @@ group("live lanes in the data layer", () => {
     expect(s2.live.lanes).toBe(s1.live.lanes);
     expect(s2.live.ended).toBe(s1.live.ended);
     expect(selectBoardData(s2)).toBe(before);
-  });
-});
-
-group("activity bars", () => {
-  it("draw only the lane's own life, at one fixed scale", () => {
-    const b = bars({ endAt: at(10), samples: [0, 64, 128] }, ms(4));
-    expect(b.slots).toBe(15);
-    expect(b.heights.slice(-3)).toEqual([0, 1, 1]);
-    expect(b.heights.filter((h) => h < 0)).toHaveLength(12);
-    expect(unlived(ms(60), undefined)).toBe(0);
   });
 });

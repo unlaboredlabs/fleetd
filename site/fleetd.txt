@@ -21,8 +21,9 @@ GitHub: https://github.com/unlaboredlabs/fleetd
 
 TALK TO THE LEAD
 Each project has one chat with its lead. Say what you want; the lead splits it
-up and runs the agents. Under its reply, each agent at work and what it is doing
-now. A dot in the sidebar marks a project waiting on you. Image: chat-hero.png
+up and runs the agents. Under its reply, one line counts the agents at work and
+names their PRs; open it to see what each is doing now. A dot in the sidebar
+marks a project waiting on you. Image: chat-hero.png
 
 
 FIG. 1  APPROVE WHAT CAN'T BE UNDONE

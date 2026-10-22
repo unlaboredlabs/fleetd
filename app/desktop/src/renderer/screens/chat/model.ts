@@ -1,6 +1,6 @@
 // The chat as rows: day dividers, messages grouped by author (a run from one author within a few minutes shows its
 // name and time once), fleetd's own messages folded to one quiet line, event one-liners, inline items, the live
-// strip under the lead's newest message, and the top of the history (older pages, or its start).
+// strip under the lead's newest message (and the field that answers it), and the top of the history.
 import type { ChatItem } from "../../src/data/chat";
 
 export type Row =
@@ -59,11 +59,17 @@ export function chatRows(i: RowsInput): Row[] {
   const out: Row[] = [{ kind: "top", key: "top", state: i.loadingOlder ? "loading" : i.hasOlder ? "more" : "start" }];
   let lastDay: string | undefined;
   let prev: ChatItem | undefined;
-  // The strip goes under the lead's newest message, or at the end when the lead hasn't said anything yet.
+  // The strip goes under the lead's newest message, or at the end when the lead hasn't said anything yet. A secret
+  // or command field right after that message answers it, so the strip goes after the field, never between them.
   let leadLast = -1;
   i.items.forEach((item, n) => {
     if (item.author === "lead" && item.kind === "message") leadLast = n;
   });
+  for (let n = leadLast + 1; leadLast !== -1 && n < i.items.length; n++) {
+    const kind = i.items[n]?.kind;
+    if (kind === "secret" || kind === "gated") leadLast = n;
+    else if (kind !== "event") break;
+  }
   let inHistory = false;
   i.items.forEach((item, n) => {
     const history = isHistory(item);

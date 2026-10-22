@@ -18,10 +18,5 @@ export type {
   PrRef,
   ProjectRef,
   SlotState,
-  Spark,
   TrainLive,
 } from "../../../shared/contracts";
-
-/** fleetd_contracts::live::SPARK_BUCKET_SECS / SPARK_BUCKETS. */
-export const SPARK_BUCKET_SECS = 2;
-export const SPARK_BUCKETS = 30;

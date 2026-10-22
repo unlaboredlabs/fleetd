@@ -180,17 +180,32 @@ export const screens: readonly Screen[] = [
       await expect(page.getByText(/the lead doesn’t have it yet/)).toBeVisible();
     },
   },
-  // ...and opened to its lanes.
+  // ...and opened to its rows.
   {
     id: "chat",
     route: CHAT,
-    // The expand control is the strip's header button, named by its headline ("18 agents working · 1 needs you ·
-    // 1 queued"); scoped to the strip, since the sidebar's project button also says "3 agents working". long-text has
+    // The expand control is the strip's header button, named by its headline ("17 agents working · 1 needs you ·
+    // 1 on hold · 1 queued"); scoped to the strip, since the sidebar's project button also says "3 agents working". long-text has
     // no agent at work in this project, so it has no strip; live-20 carries the long commands and paths.
     fixtures: ["live-3", "live-20"],
     open: (page) =>
       page.getByRole("region", { name: /agents? working/u }).getByRole("button", { name: /agents? working/u, expanded: false }).click(),
     variant: "strip-open",
+  },
+  // ...and scrolled to its last agent: twenty fill more than the third of the window the opened strip may take, so
+  // its box scrolls and draws only the rows in view.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["live-20"],
+    open: async (page) => {
+      const strip = page.getByRole("region", { name: /agents? working/u });
+      await strip.getByRole("button", { name: /agents? working/u, expanded: false }).click();
+      const list = strip.getByRole("list", { name: "Agents" });
+      await list.evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+      await expect(strip.getByText("queued", { exact: true })).toBeVisible();
+    },
+    variant: "strip-scrolled",
   },
   // The lead chat (lead-chat-spec.md), registered ahead of its slices, each pending until its writer lands it and
   // deletes `pending` (check the id, route and open step then).
