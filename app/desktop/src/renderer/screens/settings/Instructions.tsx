@@ -68,7 +68,7 @@ export function Instructions({ route }: { route: SettingsRoute }) {
       () => {
         setBusy(null);
         const whose = scope === "project" && project ? `for ${scopeName(project, projects)}` : "for every project";
-        setEcho({ ok: true, text: `Saved ${whose}. New sessions get them; a lead gets them at its next restart.` });
+        setEcho({ ok: true, text: `Saved ${whose}. New agents get them; a lead gets them at its next restart.` });
         if (scope === "global") setGlobal({ from: text, text });
         else setOwn({ key, draft: { from: text, text } });
         refetch(["prompt_get"]);
@@ -97,9 +97,7 @@ export function Instructions({ route }: { route: SettingsRoute }) {
     <div className={s.scroll} data-screen="settings.instructions">
       <div className={s.column}>
         <PageHead title="Instructions">
-          Added to the first message of every lead and task, workers, reviewers and judges included, under "Custom instructions from the human":
-          these first, then the project's own. A running session keeps the instructions it started with; a lead gets new ones at its next
-          restart.
+          Added to every agent's first message, the lead's too: these first, then the project's own.
         </PageHead>
         {load.state === "failed" ? (
           <div className={s.inline}>

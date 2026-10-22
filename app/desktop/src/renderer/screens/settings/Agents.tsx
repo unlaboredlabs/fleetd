@@ -38,7 +38,7 @@ export function AgentsCapControl({ projectRef }: { projectRef: ProjectRef }) {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button size="sm" variant="ghost" aria-label={`Max agents: ${a.running} running of ${a.max}${a.queued > 0 ? `, ${a.queued} waiting` : ""}`}>
+        <Button size="sm" variant="ghost" aria-label={`Max agents: ${a.running} running of ${a.max}${a.queued > 0 ? `, ${a.queued} queued` : ""}`}>
           <span className={textClass({ size: "xs", tabular: true })}>{agentsLabel(a)}</span>
         </Button>
       </PopoverTrigger>
@@ -267,8 +267,7 @@ export function AgentsSettings() {
     <div className={s.scroll} data-screen="settings.agents">
       <div className={s.column}>
         <PageHead title="Agents">
-          How many agents may run at once. Past the limit, an agent waits and starts the moment one finishes. Reviews that gate a merge
-          go first, so a low limit never holds up a merge.
+          How many agents run at once. Past the limit, the next one waits its turn; merge reviews go first.
         </PageHead>
         {!live || !slots ? (
           <Text tone="quiet">{live ? "Loading…" : "Connect to a hub to see and change this."}</Text>
@@ -321,7 +320,7 @@ function FleetCap({ slots }: { slots: SlotState }) {
           <Text tabular strong>{`${state.value}`}</Text>
         </div>
         <Text size="xs" tone="quiet">
-          Every project's agents and leads together, on every machine. Changing it needs an admin key.
+          All projects together, leads included. Changing it needs an admin key.
         </Text>
         <CapSlider id={id} max={fleetTop(slots.cap)} disabled={!live} state={state} />
         {warning ? (
@@ -332,7 +331,7 @@ function FleetCap({ slots }: { slots: SlotState }) {
         <ResultLine
           id={id}
           state={state}
-          idle={`${slots.used} running now${slots.queued > 0 ? `, ${slots.queued} waiting` : ""}.`}
+          idle={`${slots.used} ${slots.used === 1 ? "agent" : "agents"} running now${slots.queued > 0 ? `, ${slots.queued} queued` : ""}.`}
           done={(d) => appliedLine("Whole fleet", d.from, d.to)}
         />
       </div>

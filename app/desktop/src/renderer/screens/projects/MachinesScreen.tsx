@@ -111,7 +111,7 @@ function MachineCard(props: {
           ))}
         </span>
         <Text size="xs" tone="faint">
-          {`node ${m.nodeVersion}${m.tags.length > 0 ? ` · ${m.tags.join(", ")}` : ""}`}
+          {`fleetd ${m.nodeVersion}${m.tags.length > 0 ? ` · ${m.tags.join(", ")}` : ""}`}
         </Text>
       </div>
       {m.status === "degraded" && m.degradedReason ? (
