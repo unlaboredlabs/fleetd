@@ -109,11 +109,17 @@ when it opens. On another computer:</p>
 <td>Your projects, each saying why it wants you: “reply”, “approve”, “secret” or “blocked”. Otherwise it says how many agents are working. A project in bold has a new message from its lead. Below them: Agents, Status, Time, Machines and Settings.</td>
 </tr>
 <tr>
+<td>The top row</td>
+<td>The open project’s name, its state word and its <a href="/docs/projects#max-agents">Max agents</a> control, then Commands.</td>
+</tr>
+<tr>
 <td>The chat</td>
 <td>The selected project’s conversation with its lead.</td>
 </tr>
 </tbody>
 </table>
+<p>In a window narrower than about 1000 px the sidebar hides itself; ⌘B shows it again. On macOS the Dock icon shows how
+many projects need you.</p>
 <p>Click a project to open its chat. ⌥⌘A jumps to the next project that wants you. To add a project, click “Add” next to Projects, then paste a GitHub URL or
 <code dir="auto">owner/repo</code>. You can also drop a folder or a GitHub link anywhere on the window, a chat included. Other files dropped
 on a chat attach to your message. See <a href="/docs/projects#add-a-project">Add a project</a>.</p>
@@ -156,7 +162,7 @@ on a chat attach to your message. See <a href="/docs/projects#add-a-project">Add
 <td>A masked field with “Save secret”, or a command (or a tool’s permission request) with Approve and Deny. See <a href="/docs/approvals-and-secrets">Secrets &amp; approvals</a>.</td>
 </tr>
 <tr>
-<td>The header</td>
+<td>The top row</td>
 <td>The project, its state word (as in <a href="#status">Status</a>), and its <a href="/docs/projects#max-agents">Max agents</a> control (“agents 6 / 12”).</td>
 </tr>
 </tbody>
@@ -212,6 +218,10 @@ an option or a prompt by name, and press Enter to open the first match.</p>
 <tr>
 <td>General</td>
 <td>Appearance (light, dark, match system), motion, the hub connection, whether <code dir="auto">fleetd://</code> pairing links open in this app, Claude auto memory, and how long time data is kept.</td>
+</tr>
+<tr>
+<td>Notifications</td>
+<td>Which alerts show (the lead asks you something, a command or secret waits, the lead finishes what you asked, a machine problem, anything else), whether they play a sound, the Dock badge, and a test. There is never an alert for the chat in front of you, and in quiet hours only urgent ones show. Clicking one opens what it’s about.</td>
 </tr>
 <tr>
 <td>Agents</td>
