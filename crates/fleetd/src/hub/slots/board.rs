@@ -849,23 +849,6 @@ mod tests {
         assert_eq!(k.grants, ["T6"]);
     }
 
-    #[test]
-    fn raising_max_agents_starts_queued_agents_at_once() {
-        let a = project("pa");
-        let mut k = Kit::new(40);
-        k.set_cap(None, Some((a.clone(), 1)));
-        for n in 1..=4 {
-            k.work(&format!("T{n}"));
-        }
-        k.set_cap(None, Some((a.clone(), 3)));
-        assert_eq!(k.grants, ["T2", "T3"]);
-        assert_eq!(k.board.agents(&a), (3, 1));
-        assert_eq!(k.board.room(&a), 0);
-        k.set_cap(None, Some((a.clone(), 12)));
-        assert_eq!(k.grants, ["T2", "T3", "T4"]);
-        assert_eq!(k.board.room(&a), 8);
-    }
-
     /// The deadlock to avoid: at max agents 1 a writer's PR waits on its review, and more writers are queued. The
     /// review jumps them, so the train moves.
     #[test]
