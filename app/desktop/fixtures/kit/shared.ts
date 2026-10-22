@@ -276,7 +276,7 @@ const chatFixtures = (copy: (name: SharedName, note: string) => Fixture): Array<
       { needsYou: true },
     ),
     strip(withChat(copy("chat-waiting", "The lead asked its numbered question and waits on you: the needs-you dot, no agents running."), fromLines(QUESTION).slice(0, 1), { needsYou: true }), 0),
-    withChat(copy("chat-empty", "A project whose chat has no messages yet."), []),
+    strip(withChat(copy("chat-empty", "A project whose chat has no messages yet, and no agents at work."), []), 0),
     withProjectsMix(copy("status-rows", "Eight projects: rows in all four states (one planning, one stale, one with a ~120-character name), and the sidebar's needs-you and running mix.")),
   ];
 };

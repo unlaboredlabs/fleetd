@@ -244,20 +244,31 @@ export function ChatList(props: {
   const virtualizer = useRef<Virtualizer<HTMLDivElement, Element> | null>(null);
   const mineLatest = useMemo(() => rows.findLast((r) => r.kind === "message" && r.item.author === "human")?.key, [rows]);
 
-  // Open at the newest row and keep the end in view as rows measure and stream, until the reader scrolls or a
-  // link opens the chat at a message.
-  const jumping = openAt !== undefined;
+  // Open at the newest row and keep the end in view as rows measure and stream, until the reader scrolls. A link
+  // (a notification's, or Show) opens the chat at a message instead, and keeps that message in view the same way:
+  // through rows measuring and the window resizing, until the reader scrolls. Keyed by the message, not its index,
+  // so older pages loading above it don't pin it again.
+  const openKey = openAt === undefined ? undefined : rows[openAt]?.key;
+  const openIndex = useRef(openAt);
   useEffect(() => {
-    const el = virtualizer.current?.scrollElement;
+    openIndex.current = openAt;
+  });
+  useEffect(() => {
+    const v = virtualizer.current;
+    const el = v?.scrollElement;
     const inner = el?.firstElementChild;
-    if (jumping || !el || !inner) return;
+    if (!v || !el || !inner) return;
     let pinned = true;
     const release = () => {
       pinned = false;
     };
     const pin = () => {
-      if (pinned) el.scrollTop = el.scrollHeight;
+      if (!pinned) return;
+      const at = openIndex.current;
+      if (openKey === undefined || at === undefined) el.scrollTop = el.scrollHeight;
+      else v.scrollToIndex(at, { align: "center" });
     };
+    if (openKey !== undefined) pin();
     el.addEventListener("wheel", release, { passive: true });
     el.addEventListener("pointerdown", release);
     el.addEventListener("keydown", release);
@@ -270,11 +281,7 @@ export function ChatList(props: {
       el.removeEventListener("pointerdown", release);
       el.removeEventListener("keydown", release);
     };
-  }, [jumping]);
-
-  useEffect(() => {
-    if (openAt !== undefined) virtualizer.current?.scrollToIndex(openAt, { align: "center" });
-  }, [openAt, openSeq]);
+  }, [openKey, openSeq]);
 
   useEffect(() => {
     const v = virtualizer.current;
@@ -292,6 +299,7 @@ export function ChatList(props: {
         estimateSize={56}
         followOutput
         startAtEnd
+        className={s.scroller}
         virtualizerRef={virtualizer}
         aria-label="Conversation with the lead"
         renderItem={(r) => (
