@@ -78,6 +78,12 @@ export const fixtures = [
   "chat-empty",
   // F5 (A5): a chat with every state of the two inline items (fixtures/inline).
   "inline-items",
+  // UX-1 A3: the PR list and PR view (fixtures/prs): no PRs, GitHub out of reach, a PR that fails to load, and a
+  // PR of 240 files with a 3,000-line file.
+  "prs-none",
+  "prs-no-github",
+  "prs-error",
+  "prs-heavy",
 ] as const;
 export type FixtureName = (typeof fixtures)[number];
 
@@ -130,6 +136,11 @@ const gallerySections = [
 // The fixtures' storefront project, a real hub project from the sanitized recording, so its id is a UUID; it shows
 // only in the route, never as text.
 const CHAT = "#/project/devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22";
+
+// storefront's PRs (fixtures/prs): the list alone, and #11 (in review), #10 (checks failed) and #13 (240 files) open.
+const PRS = `${CHAT}/prs`;
+const PR = (n: number) => `${PRS}/acme/storefront/${String(n)}`;
+const openChanges = (page: Page) => page.getByRole("tab", { name: /^Changes/u }).click();
 
 /** An entry's name in test titles, shot files and the contact sheet. */
 export const label = (s: Pick<Screen, "id" | "variant">) => (s.variant === undefined ? s.id : `${s.id}~${s.variant}`);
@@ -252,6 +263,30 @@ export const screens: readonly Screen[] = [
     open: (page) => page.getByRole("button", { name: /^Max agents: \d+ running of \d+/u }).click(),
     variant: "max-agents",
   },
+  // UX-1 A3: a project's PRs. The list (open first, then merged or closed lately), with nothing picked; none at all;
+  // GitHub out of reach; and a link to a project the hub doesn't have.
+  { id: "prs", route: PRS, fixtures: ["typical", "long-text", "many-agents", "prs-none", "prs-no-github", "hub-unreachable"] },
+  { id: "prs", route: PRS, fixtures: ["empty"], variant: "missing", expect: "error" },
+  // One PR beside the list: its facts, description, checks, reviews with their findings, and its way to main so far.
+  // #10's checks failed after three approvals and an outdated review; a chat line's link names only the number.
+  { id: "prs.detail", route: PR(11), fixtures: ["typical", "long-text", "prs-no-github"] },
+  { id: "prs.detail", route: PR(10), fixtures: ["typical"], variant: "failed" },
+  { id: "prs.detail", route: `${PRS}/11`, fixtures: ["typical"], variant: "by-number", sizes: ["small"] },
+  { id: "prs.detail", route: PR(11), fixtures: ["prs-error"], expect: "error" },
+  // Its changes: the files beside a diff drawn a screen at a time, one column or side by side, and a PR too big to
+  // load at once.
+  { id: "prs.detail", route: PR(11), fixtures: ["typical", "long-text"], variant: "changes", open: openChanges },
+  {
+    id: "prs.detail",
+    route: PR(11),
+    fixtures: ["typical"],
+    variant: "split",
+    open: async (page) => {
+      await openChanges(page);
+      await page.getByRole("button", { name: "Show side by side" }).click();
+    },
+  },
+  { id: "prs.detail", route: PR(13), fixtures: ["prs-heavy"], variant: "changes", open: openChanges },
   // F1: the frame (top bar, sidebar of projects) around #/, which opens the last project's chat (the first one on a
   // fresh install), and the connection states it shows. With no projects, #/ offers to add one (home.empty).
   {

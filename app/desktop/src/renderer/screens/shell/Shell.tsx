@@ -61,6 +61,8 @@ export function Shell() {
   }, [home]);
 
   const open = screen.id === "project" ? screen.project : null;
+  // The project on screen, its chat or its PRs.
+  const here = screen.id === "project" || screen.id === "prs" ? screen.project : null;
   // One chat streams at a time: the one on screen.
   const openKey = open === null ? null : projectId(open);
   useEffect(() => {
@@ -97,6 +99,17 @@ export function Shell() {
     [
       { id: "sidebar.toggle", title: "Toggle sidebar", group: "actions", enabled: () => chrome, run: () => setSidebarHidden((h) => !h) },
       { id: "project.previous", title: "Previous project", group: "projects", searchOnly: true, enabled: () => chrome && (projects?.length ?? 0) > 0, run: () => step(-1) },
+      {
+        id: "go:prs",
+        title: "Pull requests",
+        detail: "This project's PRs: checks, reviews and changes",
+        group: "go-to",
+        keywords: ["pr", "prs", "pull", "diff", "changes", "review"],
+        enabled: () => chrome && here !== null,
+        run: () => {
+          if (here !== null) go({ id: "prs", project: here, pr: null });
+        },
+      },
       { id: "project.next", title: "Next project", group: "projects", searchOnly: true, enabled: () => chrome && (projects?.length ?? 0) > 0, run: () => step(1) },
       ...JUMPS.map(
         (n): Command => ({

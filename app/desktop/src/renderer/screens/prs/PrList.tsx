@@ -73,15 +73,24 @@ export function PrList({ rows, project, selected, nowMs }: { rows: readonly PrRo
 
 function Row({ row, project, current, nowMs }: { row: PrRow; project: ProjectRef; current: boolean; nowMs: number }) {
   const state = stateLine(row);
-  const checks = row.checks === undefined ? undefined : checksWord(row.checks);
-  const reviews = reviewsWord(row.review);
+  // The state word already says the checks failed or are running for the merge; a closed PR's checks don't matter.
+  const checksSaid = row.queue?.state === "ci_failed" || row.queue?.state === "ci";
+  const checks = row.checks === undefined || checksSaid || !isOpen(row) ? undefined : checksWord(row.checks);
+  const reviews = isOpen(row) ? reviewsWord(row.review) : undefined;
   const at = row.mergedAt ?? row.updatedAt;
   return (
     <a className={cx(s.row, current && s.rowCurrent)} href={prHref(project, row)} data-pr={row.number} aria-current={current ? "page" : undefined}>
-      <span className={s.rowTitle}>
-        <Truncate lines={2} expand="none">
-          {row.title === "" ? `#${row.number}` : row.title}
-        </Truncate>
+      <span className={s.rowTop}>
+        <span className={s.rowTitle}>
+          <Truncate lines={2} expand="none">
+            {row.title === "" ? `#${row.number}` : row.title}
+          </Truncate>
+        </span>
+        <span className={s.rowWhen}>
+          <Text size="xs" tone="faint" tabular>
+            {when(at, nowMs || Date.parse(at))}
+          </Text>
+        </span>
       </span>
       <span className={s.rowMeta}>
         <Text size="xs" tone="quiet" tabular>
@@ -90,20 +99,15 @@ function Row({ row, project, current, nowMs }: { row: PrRow; project: ProjectRef
         <StatusChip tone={state.tone} inRow>
           {state.word}
         </StatusChip>
-        {checks !== undefined && state.word !== "merged" ? (
+        {checks !== undefined ? (
           <Text size="xs" tone={checks.tone === "failed" ? "danger" : "quiet"}>
             {checks.text}
           </Text>
-        ) : reviews !== undefined && isOpen(row) ? (
+        ) : reviews !== undefined ? (
           <Text size="xs" tone={reviews.tone === "failed" ? "danger" : "quiet"}>
             {reviews.text}
           </Text>
         ) : null}
-        <span className={s.rowWhen}>
-          <Text size="xs" tone="faint" tabular>
-            {when(at, nowMs || Date.parse(at))}
-          </Text>
-        </span>
       </span>
     </a>
   );

@@ -1,14 +1,14 @@
 // A project's pull requests (#/project/<machine>/<project>/prs): the list on the left, open PRs first, and the one
 // picked on the right with its description, checks, reviews, where it is on its way to main, the agent that wrote
 // it, and its changes. Everything is read through the data layer and refetched on the hub's events; nothing polls.
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { ProjectRef } from "../../../shared/contracts";
 import { useData, useToolQuery } from "../../src/data/react";
 import type { PrRow } from "../../src/data/pr-contract";
 import { Breadcrumb, Button, EmptyState, Text } from "../../ui";
 import { navigate } from "../shell/navigation";
 import type { PrKey } from "../shell/routes";
-import { PrDetail } from "./PrDetail";
+import { PrDetail, WithCode, type PrTab } from "./PrDetail";
 import { PrList } from "./PrList";
 import s from "./prs.module.css";
 
@@ -21,24 +21,52 @@ export const resolvePr = (key: PrKey | null, rows: readonly PrRow[] | undefined)
   return row === undefined ? "unknown" : { repo: row.repo, number: row.number };
 };
 
+// The tab is the reader's, kept while the app runs: reading diffs one PR after another stays on Changes.
+let lastTab: PrTab = "overview";
+
 export function PrsScreen({ project, pr }: { project: ProjectRef; pr: PrKey | null }) {
   const key = `${project.machineId}/${project.projectId}`;
   const title = useData((st) => st.projects[key]?.title);
   const fresh = useData((st) => st.fresh);
-  const list = useToolQuery("pr_list", { projectRef: project });
+  // A link to a project the hub doesn't have (removed, or another hub's) says so instead of asking for its PRs.
+  const missing = fresh && title === undefined;
+  const list = useToolQuery("pr_list", { projectRef: project }, { enabled: !missing });
   const rows = list.data?.prs;
   const picked = resolvePr(pr, rows);
   const selected = picked === undefined || picked === "unknown" ? undefined : picked;
   const row = useMemo(() => (selected === undefined ? undefined : rows?.find((r) => r.repo === selected.repo && r.number === selected.number)), [rows, selected]);
   const hubNow = list.data === undefined ? undefined : Date.parse(list.data.at);
 
+  // Reading changes, the PR takes the list's room too; Overview or the breadcrumb brings the list back.
+  const [tab, setTab] = useState<PrTab>(lastTab);
+  const pickTab = (next: PrTab) => {
+    lastTab = next;
+    setTab(next);
+  };
+  const wide = tab === "changes" && selected !== undefined;
   const toChat = () => navigate({ id: "project", project, message: null });
   const state = list.data !== undefined ? "prs" : list.isError ? "prs.error" : "prs.loading";
+
+  if (missing) {
+    return (
+      <div className={s.screen} data-screen="prs.missing">
+        <EmptyState title="This project isn’t on the hub">It may have been removed.</EmptyState>
+      </div>
+    );
+  }
 
   return (
     <div className={s.screen} data-screen={state}>
       <header className={s.header}>
-        <Breadcrumb items={[{ label: title ?? "Project", onClick: toChat }, { label: "Pull requests" }]} />
+        <div className={s.crumbs}>
+          <Breadcrumb
+            items={[
+              { label: title ?? "Project", onClick: toChat },
+              wide ? { label: "Pull requests", onClick: () => pickTab("overview") } : { label: "Pull requests" },
+              ...(wide ? [{ label: `#${selected.number}` }] : []),
+            ]}
+          />
+        </div>
       </header>
       {list.data?.githubError !== undefined ? (
         <div className={s.banner} role="status">
@@ -46,12 +74,12 @@ export function PrsScreen({ project, pr }: { project: ProjectRef; pr: PrKey | nu
             GitHub couldn’t be reached, so these are only the PRs fleetd made, without checks.
           </Text>
           <Text size="xs" tone="quiet">
-            {list.data.githubError}
+            <WithCode text={list.data.githubError} />
           </Text>
         </div>
       ) : null}
       <div className={s.body}>
-        <aside className={s.list} aria-label="Pull requests">
+        <aside className={s.list} aria-label="Pull requests" hidden={wide}>
           {rows !== undefined ? (
             <PrList rows={rows} project={project} selected={selected} nowMs={hubNow ?? 0} />
           ) : list.isError ? (
@@ -67,7 +95,7 @@ export function PrsScreen({ project, pr }: { project: ProjectRef; pr: PrKey | nu
         </aside>
         <main className={s.detail}>
           {selected !== undefined ? (
-            <PrDetail key={`${selected.repo}#${selected.number}`} repo={selected.repo} number={selected.number} row={row} nowMs={hubNow} />
+            <PrDetail key={`${selected.repo}#${selected.number}`} repo={selected.repo} number={selected.number} row={row} nowMs={hubNow} tab={tab} onTab={pickTab} />
           ) : picked === "unknown" ? (
             <div data-screen="prs.detail.missing" className={s.detailEmpty}>
               <EmptyState title={`#${pr?.number ?? ""} isn’t in this project`}>It may be in another project, or closed more than a week ago.</EmptyState>

@@ -4,7 +4,8 @@ import { ExternalLink } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useToolQuery } from "../../src/data/react";
 import type { PrCheck, PrGetOutput, PrReviewEntry, PrRow } from "../../src/data/pr-contract";
-import { Button, Markdown, StatusChip, Tab, TabList, TabPanel, Tabs, Text, Truncate, cx, toast } from "../../ui";
+import { codeRuns, machineCode } from "../chat/format";
+import { Button, InlineCode, Markdown, StatusChip, Tab, TabList, TabPanel, Tabs, Text, Truncate, cx, toast } from "../../ui";
 import { DiffPane } from "./DiffPane";
 import {
   authorWords,
@@ -25,9 +26,7 @@ import {
 } from "./words";
 import s from "./prs.module.css";
 
-type TabId = "overview" | "changes";
-// The tab is the reader's, kept while the app runs: reading diffs one PR after another stays on Changes.
-let lastTab: TabId = "overview";
+export type PrTab = "overview" | "changes";
 
 export const openExternal = (url: string): void => {
   void window.fleetd.openExternal(url).then((o) => {
@@ -39,9 +38,17 @@ export const openExternal = (url: string): void => {
 const PASSED_SHOWN = 5;
 const HISTORY_SHOWN = 4;
 
-export function PrDetail({ repo, number, row, nowMs }: { repo: string; number: number; row: PrRow | undefined; nowMs: number | undefined }) {
+interface PrDetailProps {
+  readonly repo: string;
+  readonly number: number;
+  readonly row: PrRow | undefined;
+  readonly nowMs: number | undefined;
+  readonly tab: PrTab;
+  readonly onTab: (tab: PrTab) => void;
+}
+
+export function PrDetail({ repo, number, row, nowMs, tab, onTab }: PrDetailProps) {
   const query = useToolQuery("pr_get", { repo, number });
-  const [tab, setTab] = useState<TabId>(lastTab);
   const data = query.data;
   const pr = data?.pr ?? row;
 
@@ -68,12 +75,8 @@ export function PrDetail({ repo, number, row, nowMs }: { repo: string; number: n
     <Tabs
       className={s.pr}
       value={tab}
-      onValueChange={(v) => {
-        const next = v === "changes" ? "changes" : "overview";
-        lastTab = next;
-        setTab(next);
-      }}
-      data-screen={data === undefined ? "prs.detail.loading" : "prs.detail"}
+      onValueChange={(v) => onTab(v === "changes" ? "changes" : "overview")}
+      data-screen={data !== undefined ? "prs.detail" : query.isError ? "prs.detail.error" : "prs.detail.loading"}
     >
       <div className={s.prHead}>
         <div className={s.prTitleRow}>
@@ -92,7 +95,7 @@ export function PrDetail({ repo, number, row, nowMs }: { repo: string; number: n
             #{pr.number} in {pr.repo}
           </Text>
           {pr.branch !== undefined ? (
-            <span className={s.branch}>
+            <span className={s.branch} data-text="code">
               <Truncate mono size="xs" tone="quiet">
                 {data?.baseBranch === undefined ? pr.branch : `${pr.branch} → ${data.baseBranch}`}
               </Truncate>
@@ -148,7 +151,7 @@ function Overview({ data, now }: { data: PrGetOutput; now: number }) {
             GitHub couldn’t be reached, so the description, checks and files may be missing.
           </Text>
           <Text size="xs" tone="quiet">
-            {data.githubError}
+            <WithCode text={data.githubError} />
           </Text>
         </div>
       ) : null}
@@ -157,7 +160,7 @@ function Overview({ data, now }: { data: PrGetOutput; now: number }) {
           <Text size="sm">{state.sentence}</Text>
           {pr.queue?.reason !== undefined && pr.queue.reason !== "" ? (
             <Text size="xs" tone="quiet" preserveLines>
-              {pr.queue.reason}
+              <WithCode text={pr.queue.reason} />
             </Text>
           ) : null}
         </Fact>
@@ -201,7 +204,7 @@ function Overview({ data, now }: { data: PrGetOutput; now: number }) {
             No description.
           </Text>
         ) : (
-          <Markdown source={data.body} />
+          <Markdown source={machineCode(data.body)} />
         )}
       </Section>
 
@@ -229,6 +232,15 @@ function Overview({ data, now }: { data: PrGetOutput; now: number }) {
         </Section>
       ) : null}
     </div>
+  );
+}
+
+/** The hub's words, with ids, keys and `code` set as code. */
+export function WithCode({ text }: { text: string }) {
+  return (
+    <>
+      {codeRuns(machineCode(text)).map((run, i) => (run.code ? <InlineCode key={i}>{run.text}</InlineCode> : run.text))}
+    </>
   );
 }
 
@@ -287,7 +299,7 @@ function Checks({ checks }: { checks: readonly PrCheck[] }) {
               <span className={s.checkWord}>
                 <StatusChip tone={word.tone}>{word.text}</StatusChip>
               </span>
-              <span className={s.checkName}>
+              <span className={s.checkName} data-text="code">
                 <Truncate size="sm">{c.name}</Truncate>
               </span>
               {took !== undefined ? (
@@ -305,9 +317,11 @@ function Checks({ checks }: { checks: readonly PrCheck[] }) {
         })}
       </ul>
       {sorted.length > shown.length ? (
-        <Button variant="quiet" onClick={() => setAll(true)}>
-          {`Show ${sorted.length - shown.length} more`}
-        </Button>
+        <div className={s.moreRow}>
+          <Button variant="quiet" onClick={() => setAll(true)}>
+            {`Show ${sorted.length - shown.length} more`}
+          </Button>
+        </div>
       ) : null}
     </>
   );
@@ -334,7 +348,7 @@ function Review({ review, now }: { review: PrReviewEntry; now: number }) {
           </Text>
         </span>
       </div>
-      {review.text.trim() !== "" ? <Markdown source={review.text} /> : null}
+      {review.text.trim() !== "" ? <Markdown source={machineCode(review.text)} /> : null}
     </li>
   );
 }
@@ -361,9 +375,11 @@ function History({ steps, now }: { steps: PrGetOutput["history"]; now: number })
         ))}
       </ol>
       {known.length > shown.length ? (
-        <Button variant="quiet" onClick={() => setAll(true)}>
-          {`Show ${known.length - shown.length} earlier`}
-        </Button>
+        <div className={s.moreRow}>
+          <Button variant="quiet" onClick={() => setAll(true)}>
+            {`Show ${known.length - shown.length} earlier`}
+          </Button>
+        </div>
       ) : null}
     </>
   );

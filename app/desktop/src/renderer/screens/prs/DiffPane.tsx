@@ -158,7 +158,7 @@ export function DiffPane({ repo, number, additions, deletions }: DiffPaneProps) 
         </Button>
       </div>
       <div className={s.changesBody}>
-        <nav className={s.fileList} aria-label="Changed files">
+        <nav className={s.fileList} aria-label="Changed files" data-text="code">
           <VirtualList
             items={files}
             getKey={(f, i) => `${i}\u0000${f.path}`}
@@ -167,7 +167,7 @@ export function DiffPane({ repo, number, additions, deletions }: DiffPaneProps) 
             aria-label="Changed files"
           />
         </nav>
-        <div className={s.diff} aria-busy={results.some((r) => r.isPending && r.fetchStatus === "fetching") ? "true" : undefined}>
+        <div className={s.diff} data-text="code" aria-busy={results.some((r) => r.isPending && r.fetchStatus === "fetching") ? "true" : undefined}>
           <VirtualList
             items={rows}
             getKey={(r) => r.key}
