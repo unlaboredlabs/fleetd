@@ -321,7 +321,10 @@ fn unused_tables_and_events_go_on_an_older_hub() {
     use super::migrations::MIGRATIONS;
     let conn = rusqlite::Connection::open_in_memory().unwrap();
     // Found by content, not as the last migration, so later migrations don't break this test.
-    let drop = MIGRATIONS.iter().position(|m| m.contains("DROP TABLE status_eta")).unwrap();
+    let drop = MIGRATIONS
+        .iter()
+        .position(|m| m.contains("DROP TABLE status_eta"))
+        .unwrap();
     for m in &MIGRATIONS[..drop] {
         conn.execute_batch(m).unwrap();
     }
