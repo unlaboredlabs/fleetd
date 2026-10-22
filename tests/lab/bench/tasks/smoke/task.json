@@ -1,0 +1,7 @@
+{
+  "title": "Harness smoke test: one file, one PR",
+  "kind": "smoke (not part of the measured set)",
+  "codebase": "tinyhttp (MIT), snapshot of 781bfbc",
+  "base": "bench/smoke/base",
+  "timeoutMin": 40
+}

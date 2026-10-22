@@ -1,0 +1,6 @@
+#!/bin/sh
+# Head-to-head speed bench: one contender on one bench task. See docs/build/BENCH.md.
+#   scripts/bench-vs --task <task> --contender <claude-p|fleetd|t3|reference> [options]
+#   scripts/bench-vs --list
+# Needs `npm ci --prefix tests/lab` once.
+exec node "$(dirname "$0")/../tests/lab/bench/benchVs.ts" "$@"
