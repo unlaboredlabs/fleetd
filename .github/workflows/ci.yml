@@ -232,6 +232,14 @@ jobs:
         # The release build refuses --remote-debugging-port, which the perf and recording runs drive the app with.
         if: steps.scope.outputs.run == 'true'
         run: pnpm build:test
+      - name: Packaged smoke (Linux)
+        # The nightly's smoke (build-release.yml) on that test build, packed as the nightly packs it: otherwise a PR
+        # that renames or removes a screen breaks only the nightly. Headless, so no virtual display.
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          pnpm fixtures
+          pnpm exec electron-builder --linux --dir --publish never -c.directories.output=dist-test
+          node scripts/packaged-smoke.ts dist-test/linux-unpacked/fleetd-desktop --no-sandbox --ozone-platform=headless
       - name: Budgets (Linux)
         # Measured on this runner, not the budget machine (an M-series Mac: scripts/perf-mac.sh), so this fails on a
         # regression from perf/baseline-linux.json and only reports the budgets. The numbers go to the job summary.

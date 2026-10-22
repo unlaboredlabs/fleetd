@@ -15,11 +15,16 @@ import { chromium, type Page } from "@playwright/test";
 const ROOT = path.resolve(import.meta.dirname, "..");
 const PORT = 9335;
 const START_MS = 30_000;
-/** The shell, the board, and an order view (markdown and code highlighting) on the typical fixture. */
-const SCREENS: ReadonlyArray<{ id: string; route: string }> = [
-  { id: "shell", route: "#/" },
-  { id: "board", route: "#/board" },
-  { id: "order", route: "#/order/W1" },
+/**
+ * On the typical fixture: the project lead chat the app opens on, then Status, Time and Settings, each a chunk of its
+ * own loaded from the asar when first opened. Ids are the QA registry's (qa/registry.ts). `ready` is the screen's
+ * loaded state, so a screen stuck on a sub-state (chat.loading, Status's skeleton) fails; it defaults to the exact id.
+ */
+const SCREENS: ReadonlyArray<{ id: string; route: string; ready?: string }> = [
+  { id: "chat", route: "#/" },
+  { id: "status.fleet", route: "#/status", ready: '[data-screen="status.fleet"][data-phase="live"]' },
+  { id: "time.breakdown", route: "#/time" },
+  { id: "settings.general", route: "#/settings/general" },
 ];
 
 const [binary, ...extra] = process.argv.slice(2);
@@ -40,10 +45,10 @@ const launchSpec = (home: string) => ({
   },
 });
 
-/** Opens a route and waits for its screen (or a sub-state of it, "board.empty") and for nothing to be busy. */
-const show = async (page: Page, id: string, route: string): Promise<void> => {
+/** Opens a route and waits for its screen's loaded state and for nothing to be busy. */
+const show = async (page: Page, { id, route, ready }: (typeof SCREENS)[number]): Promise<void> => {
   await page.evaluate(`window.location.hash = ${JSON.stringify(route)}`);
-  await page.locator(`[data-screen="${id}"], [data-screen^="${id}."]`).first().waitFor({ state: "visible", timeout: 15_000 });
+  await page.locator(ready ?? `[data-screen="${id}"]`).first().waitFor({ state: "visible", timeout: 15_000 });
   // Polled with page.evaluate (CDP's Runtime.evaluate): waitForFunction evaluates its predicate with eval in the page,
   // which the app's CSP (no 'unsafe-eval') refuses.
   const until = Date.now() + 15_000;
@@ -100,7 +105,7 @@ try {
   page.on("pageerror", (error) => errors.push(error.message));
   await page.reload();
   for (const screen of SCREENS) {
-    await show(page, screen.id, screen.route);
+    await show(page, screen);
     const states = await page.evaluate<string[]>(`[...document.querySelectorAll("[data-screen]")].map((e) => e.getAttribute("data-screen") ?? "")`);
     const broken = states.filter((s) => /\.(error|failed|missing|not-?found)$/u.test(s));
     if (broken.length > 0) throw new Error(`${screen.id} shows ${broken.join(", ")}`);
