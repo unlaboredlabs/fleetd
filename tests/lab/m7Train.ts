@@ -10,7 +10,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { type Body, openWorkstream, fleetdCommand, LAB, type Lab, MODEL, nodeSock, requireGhLogin, scrubbedEnv, sessionText, SLOT } from "./harness.ts";
+import { type Body, openWorkstream, fleetdCommand, LAB, type Lab, MODEL, nodeSock, requireGhLogin, scrubbedEnv, sessionText, SLOT, userMessages } from "./harness.ts";
 
 const MACHINE = "lab-a";
 // One lab repo for every slot; each slot runs the train in parallel in its own branch namespace: its base
@@ -366,9 +366,10 @@ export async function m7Train(lab: Lab) {
         return undefined;
       });
     };
-    await told(c, ["The merge train could not rebase your PR", ALPHA]);
+    // The one "fix your PR" message (hub/prompts/fixed.rs fix_your_pr), with the reason and what to do.
+    await told(c, ["Fix your PR", "the merge train could not rebase it", ALPHA, "rebase onto origin/"]);
     ok(`2. ${c} got the task message naming ${ALPHA}`);
-    await told(d, ["The merge train did not merge your PR", "ci (failure)"]);
+    await told(d, ["Fix your PR", "the merge train did not merge it", "ci (failure)"]);
     ok(`3. ${d} was woken with the failing check name: ci (failure)`);
 
     // 2. The author resolved and pushed; the train merges the new head.
@@ -386,13 +387,15 @@ export async function m7Train(lab: Lab) {
     ok(`3. ${cd.changeId} stayed ${(await change(cd.changeId)).state}; ${cd.prUrl} closed unmerged`);
 
     // What the lead, project_get and the human digest show.
-    const leadText = sessionText(MACHINE, leadThread);
-    check(leadText.includes(`${first!.changeId} merged by the train`), `the lead was woken with ${first!.changeId}'s merge inline`);
+    // The fixed event line (hub/leads/events.rs): "- PR #12 merged as abc1234: <url> (X1, tier S, serves done:0, by T4)".
+    const mergedLine = new RegExp(`^- PR #${m1.data.prNumber} merged as [0-9a-f]+: \\S+ \\(${first!.changeId}, `, "mu");
+    const wakes = userMessages(MACHINE, leadThread).join("\n");
+    check(mergedLine.test(wakes), `the lead was woken with ${first!.changeId}'s merge inline`);
     const outcome = (await callTool("project_get", ref)).body;
     check((outcome.trains as Array<Body> | undefined)?.some((t) => t.repo === REPO && t.frozen === false), `project_get trains: ${JSON.stringify(outcome.trains)}`);
     const digest = (await callTool("digest_get")).body.text as string;
     check(digest.includes(`Merged: ${REPO}#${m1.data.prNumber} (${first!.changeId}`), `the human digest lists the merges: ${digest}`);
-    ok(`lead woken with "${first!.changeId} merged by the train …"; project_get trains ${JSON.stringify(outcome.trains)}; digest: ${digest.split("\n").filter((l) => l.startsWith("Merged:")).join(" | ")}`);
+    ok(`lead woken with "${mergedLine.exec(wakes)?.[0]}…"; project_get trains ${JSON.stringify(outcome.trains)}; digest: ${digest.split("\n").filter((l) => l.startsWith("Merged:")).join(" | ")}`);
     const incidents = (await callTool("incidents_list", { projectRef: ref, class: "policy_bypass" })).body.incidents as Array<Body>;
     check(incidents.length === 0, `no policy_bypass incidents: ${JSON.stringify(incidents)}`);
 

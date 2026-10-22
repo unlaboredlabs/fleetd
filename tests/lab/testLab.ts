@@ -9,7 +9,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { areasParallel } from "./areasParallel.ts";
-import { askCard } from "./askCard.ts";
+import { chatLead } from "./chatLead.ts";
 import { degradedMachine } from "./degradedMachine.ts";
 import { demoFanout } from "./demoFanout.ts";
 import { desktopShell } from "./desktopShell.ts";
@@ -23,6 +23,7 @@ import {
   cli,
   HUB_PORT,
   HUB_URL,
+  enrollNode,
   handleInterrupts,
   interrupted,
   joinNode,
@@ -102,8 +103,6 @@ const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab)
   // A freed slot offers the next approved item; a slice gets its reviewer before the next slice. Restarts lab-a's lead
   // and adds the lab repo project for its run, so only when named.
   { name: "eff", run: efficiency, only: true },
-  // A real lead writes its own labelled ask; the answer goes through the undo window. Only when named.
-  { name: "ask", run: askCard, only: true },
   // One PR through the train into a base CI never runs for. Only when named, with FLEETD_LAB_NAMESPACE=noci/<n>.
   { name: "noci", run: noCiTrain, only: true },
   // Two writers in two inferred areas at once (the seed's packages/alpha and packages/beta). Only when named.
@@ -114,6 +113,9 @@ const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab)
   // The app demo: one order fanned out to writers, reviewers and verifiers on the lab repo. Only when named.
   { name: "demo", run: demoFanout, only: true },
   { name: "desktop", run: desktopShell, only: true },
+  // The per-project lead chat end to end (and the max agents cap): on the lab repo in this slot's namespace and a
+  // local repo on lab-b. Only when named, so it gets a hub of its own; FLEETD_LAB_CHAT_PARTS picks parts.
+  { name: "chat", run: chatLead, only: true },
   // The native runner's failure scenarios (tests/lab/failure): they restart lab-b and add a machine, so they go last.
   ...FAILURE_SCENARIOS,
 ];
@@ -230,7 +232,20 @@ async function main() {
       startNode: (machineId: string, opts: NodeOptions = {}) =>
         void startCli(`node-${machineId}`, ["node", "run", "--home", nodeHome(machineId)], {}, nodeEnv(machineId, opts)),
       nodePid: (machineId: string) => pidOf(`node-${machineId}`),
-      joinNode: (machineId: string, opts: NodeOptions & MachineHomeOptions = {}) => void joinNode(HUB_URL, hubHome, machineId, opts),
+      // Like the standing machines, an added one runs `cmd` checks (and takes projects) under the lab dir. `node join`
+      // writes a fresh node.json, so it enrolls first, gets the roots, and runs once the hub saw the enrolling link go.
+      joinNode: async (machineId: string, opts: NodeOptions & MachineHomeOptions = {}) => {
+        enrollNode(HUB_URL, hubHome, machineId, opts);
+        setCmdRoots(machineId, [LAB]);
+        await until(`${machineId}'s enrolling link closed`, 60_000, async () => {
+          const s = (await callTool("fleetd_status")).body;
+          const m = (s.machines as Array<Body>).find((x) => x.machineId === machineId);
+          if (m === undefined || m.status === "offline") return true;
+          await callTool("events_wait", { cursor: s.cursor, timeoutSec: 2 });
+          return undefined;
+        });
+        startCli(`node-${machineId}`, ["node", "run", "--home", nodeHome(machineId)], {}, nodeEnv(machineId, opts));
+      },
       machines: MACHINES,
       stopHub: async () => {
         await client?.close().catch(() => undefined);

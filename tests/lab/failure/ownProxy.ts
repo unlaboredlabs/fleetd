@@ -69,7 +69,7 @@ export async function ownProxy(lab: Lab) {
   const repo = path.join(lab.dir, "repo");
   seedRepo(repo, MACHINE);
   const proxy = await startStubProxy();
-  lab.joinNode(MACHINE, {
+  await lab.joinNode(MACHINE, {
     claudeSettings: { env: { ANTHROPIC_BASE_URL: proxy.url, ANTHROPIC_AUTH_TOKEN: TOKEN, CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1" } },
   });
   try {

@@ -15,7 +15,7 @@ const LAB_ROOT = process.env.FLEETD_LAB ?? path.join(os.homedir(), "src/fleetd-l
 /**
  * FLEETD_LAB_SLOT=<n> (0-9, default 0) is an independent lab that can run beside the others. Slot 0 is the lab root
  * itself, slot n lives in <root>/slot-<n> (test repos, run dirs, machine homes, lock), and every lab port is the
- * slot-0 port + 20 * n. The slot-0 ports, 4781 (cmd check), 4783 (m8 secrets), 4784 (hub unit), 4795 (hub), 4796
+ * slot-0 port + 20 * n. The slot-0 ports, 4781 (cmd check), 4782 (chat history), 4795 (hub), 4796
  * (watchdog hub) and 4797 (m12), all differ mod 20, so slots 0-9 never collide and stay within 4781-4977.
  */
 export const SLOT = Number(process.env.FLEETD_LAB_SLOT ?? 0);
@@ -47,7 +47,7 @@ export const MODEL = "claude-haiku-5-5";
 // Texts the binary emits that scenarios match on; each mirrors a constant in crates/fleetd.
 /** `hub/playbooks/finish_all_rules.rs` FINISH_ALL_IDLE. */
 export const FINISH_ALL_IDLE = "finish-all: nothing left with a value source";
-/** `hub/watchdog/ladder.rs` NUDGE. */
+/** `hub/watchdog/ladder.rs` NUDGE (`assets/fixed/watchdog.nudge.md`, less its trailing newline). */
 export const NUDGE = "You seem stalled; continue the task from where you stopped.";
 
 /** Receiver-side Standard Webhooks check: a `v1` HMAC-SHA256 over `id.timestamp.body`, timestamp within 5 min. */
@@ -469,12 +469,19 @@ export const stopAll = async () => {
 };
 
 /** `node join` for a machine on `hubHome`'s hub: an enrollment token, the machine's HOME, then the node itself. */
-export const joinNode = (hubUrl: string, hubHome: string, id: string, opts: NodeOptions & MachineHomeOptions = {}) => {
+const joinArgs = (hubUrl: string, hubHome: string, id: string, opts: MachineHomeOptions) => {
   prepareMachineHome(id, opts);
   const token = /^\S{16,}$/mu.exec(cli("hub", "token", "create", "--home", hubHome, "--machine", id))?.[0];
   if (token === undefined) throw new Error(`no enrollment token for ${id}`);
-  return startCli(`node-${id}`, ["node", "join", "--hub", hubUrl, "--token", token, "--machine", id, "--home", nodeHome(id)], {}, nodeEnv(id, opts));
+  return ["node", "join", "--hub", hubUrl, "--token", token, "--machine", id, "--home", nodeHome(id)];
 };
+
+export const joinNode = (hubUrl: string, hubHome: string, id: string, opts: NodeOptions & MachineHomeOptions = {}) =>
+  startCli(`node-${id}`, joinArgs(hubUrl, hubHome, id, opts), {}, nodeEnv(id, opts));
+
+/** `node join --enroll-only`: the machine's home and key, enrolled, and no node left running. */
+export const enrollNode = (hubUrl: string, hubHome: string, id: string, opts: NodeOptions & MachineHomeOptions = {}) =>
+  void execFileSync(...fleetdCommand([...joinArgs(hubUrl, hubHome, id, opts), "--enroll-only"]), { env: nodeEnv(id, opts), stdio: "ignore", timeout: 60_000 });
 
 /**
  * Lets the node run the hub's `cmd` checks under `roots`. A node defaults to its HOME, which in the lab is the
@@ -510,7 +517,7 @@ export interface Lab {
   /** The live node's PID, captured at spawn. */
   readonly nodePid: (machineId: string) => number | undefined;
   /** Joins a new machine to the hub (its own HOME under the run dir) and starts its node. */
-  readonly joinNode: (machineId: string, opts?: NodeOptions & MachineHomeOptions) => void;
+  readonly joinNode: (machineId: string, opts?: NodeOptions & MachineHomeOptions) => Promise<void>;
   /** Registers a directory as a project on a machine with `project_add`; returns its project id once listed. */
   readonly addProject: (machineId: string, dir: string, title: string) => Promise<string>;
   /** (Re)starts the hub on the same home and port with `env` added, waits for /healthz and reconnects the MCP client. */
