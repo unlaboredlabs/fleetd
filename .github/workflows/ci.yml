@@ -309,13 +309,10 @@ jobs:
           retention-days: 14
 
   desktop-macos-repro:
-    # TEMPORARY (removed before merge): what differs between the nightly's mac smoke and this PR's.
-    strategy:
-      fail-fast: false
-      matrix:
-        variant: [plain, occluded, after-release-app]
+    # TEMPORARY (removed before merge): the nightly's mac job up to its smoke, signed as it is (no notarization, nothing
+    # published), so Squirrel.Mac really stages the update before the smoke runs.
     runs-on: macos-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     defaults:
       run:
         working-directory: app/desktop
@@ -329,33 +326,51 @@ jobs:
           node-version: 24
           cache: pnpm
           cache-dependency-path: app/desktop/pnpm-lock.yaml
-      - run: pnpm install --frozen-lockfile
-      - name: Release app launched and killed first, as the nightly's update check does
-        if: matrix.variant == 'after-release-app'
-        run: |
+      - run: |
+          pnpm install --frozen-lockfile
           pnpm build
-          CSC_IDENTITY_AUTO_DISCOVERY=false pnpm exec electron-builder --mac --dir --arm64 --publish never -c.mac.identity=- -c.mac.hardenedRuntime=false
-          ditto -c -k --keepParent --norsrc dist/mac-arm64/fleetd.app "$RUNNER_TEMP/fleetd.zip"
-          mkdir -p "$RUNNER_TEMP/launch" && ditto dist/mac-arm64/fleetd.app "$RUNNER_TEMP/launch/fleetd.app"
-          CHECK_WAIT=20 ../../.github/release/desktop-update-check.sh "$RUNNER_TEMP/fleetd.zip" "$RUNNER_TEMP/launch/fleetd.app/Contents/MacOS/fleetd" || echo "update check: $?"
-          ps -axo pid,command | grep -i fleetd | grep -v grep || true
+      - name: Signing keychain
+        working-directory: .
+        env:
+          MACOS_CERT_P12_BASE64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: .github/release/macos-sign.sh keychain
+      - name: Package a signed universal fleetd.app
+        env:
+          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+        run: |
+          export CSC_NAME="${MACOS_SIGN_IDENTITY#Developer ID Application: }"
+          pnpm exec electron-builder --mac --publish never -c.extraMetadata.version=0.0.0-nightly.202610220936+5c4cc17 -c.buildVersion=0.0.0 -c.mac.bundleShortVersion=0.0.0
+          mkdir -p ../../dist && mv dist/mac-universal/fleetd.app ../../dist/fleetd.app
+      - name: Remove the signing keychain
+        if: always()
+        working-directory: .
+        run: .github/release/macos-sign.sh cleanup
+      - name: Launch the signed app and update it from a local feed
+        working-directory: .
+        run: |
+          ditto -c -k --keepParent --norsrc dist/fleetd.app dist/fleetd-desktop-macos-universal.zip
+          mkdir -p "$RUNNER_TEMP/launch"
+          ditto dist/fleetd.app "$RUNNER_TEMP/launch/fleetd.app"
+          .github/release/desktop-update-check.sh dist/fleetd-desktop-macos-universal.zip "$RUNNER_TEMP/launch/fleetd.app/Contents/MacOS/fleetd"
       - name: Packaged smoke
         run: |
           pnpm fixtures
           pnpm build:test
           CSC_IDENTITY_AUTO_DISCOVERY=false pnpm exec electron-builder --mac --dir --arm64 --publish never -c.directories.output=dist-test \
             -c.mac.identity=- -c.mac.hardenedRuntime=false -c.extraMetadata.version=0.0.0-nightly.202610220936+5c4cc17
-          if [ "${{ matrix.variant }}" = occluded ]; then
-            ( sleep 4; osascript -e 'tell application "TextEdit" to activate' -e 'tell application "TextEdit" to make new document' \
-              -e 'tell application "System Events" to tell process "TextEdit" to set position of front window to {0, 0}' \
-              -e 'tell application "System Events" to tell process "TextEdit" to set size of front window to {3000, 2000}' || true ) &
-          fi
-          ps -axo pid,command | grep -i fleetd | grep -v grep || true
+          ps -axo pid,etime,command | grep -iE 'fleetd|ShipIt' | grep -v grep || true
           node scripts/packaged-smoke.ts dist-test/mac-arm64/fleetd.app/Contents/MacOS/fleetd
+      - if: always()
+        name: What else was running
+        run: |
+          ps -axo pid,etime,%cpu,command | grep -iE 'fleetd|ShipIt|syspolicy|XProtect' | grep -v grep || true
+          ls -la ~/Library/Caches/sh.fleetd.app.ShipIt 2>/dev/null || true
+          cat ~/Library/Caches/sh.fleetd.app.ShipIt/ShipIt_stderr.log 2>/dev/null | tail -30 || true
       - if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: repro-${{ matrix.variant }}
+          name: repro-signed
           path: app/desktop/smoke-results/
           if-no-files-found: ignore
           retention-days: 7
