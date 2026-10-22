@@ -60,6 +60,18 @@ describe("the chat's rows", () => {
     expect(rowIndexOf(r, "nope")).toBeUndefined();
   });
 
+  it("place a row whose time doesn't parse under today, rather than throwing", () => {
+    // Intl throws a RangeError on an invalid date; a reply streaming ahead of its message once had "".
+    const r = rows([item("a", "lead", at(18, 9)), item("s", "lead", "", { state: "streaming" })]);
+    expect(r.map((x) => (x.kind === "day" ? `day:${x.label}` : x.kind === "message" ? `message:${x.item.id}` : x.kind))).toEqual([
+      "top",
+      "day:Yesterday",
+      "message:a",
+      "day:Today",
+      "message:s",
+    ]);
+  });
+
   it("show history from before the chat as the conversation it was, under one divider, and a way back down", () => {
     const old = (id: string, author: ChatItem["author"], time: string): ChatItem =>
       item(id, author, time, { kind: "event", message: { history: "order" } as ChatItem["message"] });

@@ -15,7 +15,8 @@ import { useMachinesDown, useSidebarProjects } from "./data";
 import { navigate, useRoute } from "./navigation";
 import type { Screen } from "./routes";
 import { ConnectionBanner, needsOnboarding } from "../onboarding";
-import { ScreenHost } from "./screens";
+import { Boundary } from "../../src/Boundary";
+import { ScreenHost, screenPart } from "./screens";
 import { Sidebar } from "./Sidebar";
 import s from "./shell.module.css";
 
@@ -145,7 +146,13 @@ export function Shell() {
     <div className={s.root} data-screen="shell">
       <AppFrame
         topBar={top}
-        sidebar={chrome && !sidebarHidden ? <Sidebar projects={projects} machinesDown={machinesDown} screen={screen} hub={hub} jumpHints={modHeld} go={go} /> : undefined}
+        sidebar={
+          chrome && !sidebarHidden ? (
+            <Boundary part="the sidebar">
+              <Sidebar projects={projects} machinesDown={machinesDown} screen={screen} hub={hub} jumpHints={modHeld} go={go} />
+            </Boundary>
+          ) : undefined
+        }
       >
         <div className={s.column}>
           {/* Fixture data must never pass for a live hub. */}
@@ -170,7 +177,10 @@ export function Shell() {
                 </EmptyState>
               </div>
             ) : (
-              <ScreenHost screen={shown} />
+              // Keyed by the screen, so going elsewhere after an error opens that screen, not the card.
+              <Boundary key={screenPart(shown).key} part={screenPart(shown).words}>
+                <ScreenHost screen={shown} />
+              </Boundary>
             )}
           </div>
         </div>

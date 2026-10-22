@@ -20,15 +20,24 @@ export type Row =
 /** Messages from one author this close together read as one turn: the name and time show once. */
 const GROUP_MS = 5 * 60_000;
 
-const dayKey = (iso: string, timeZone?: string): string =>
-  new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit", ...(timeZone ? { timeZone } : {}) }).format(Date.parse(iso));
+/**
+ * `iso` in ms, or `nowMs` when it doesn't parse. Intl throws a RangeError on an invalid date, and one row without a
+ * time (a reply streaming ahead of its message once had "") took the whole window down; the newest row is the likeliest.
+ */
+const msOf = (iso: string, nowMs: number): number => {
+  const ms = Date.parse(iso);
+  return Number.isNaN(ms) ? nowMs : ms;
+};
+
+const dayKey = (iso: string, nowMs: number, timeZone?: string): string =>
+  new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit", ...(timeZone ? { timeZone } : {}) }).format(msOf(iso, nowMs));
 
 /** "Today", "Yesterday", or "Mon 19 Oct" (with the year when it isn't this year's). */
 export function dayLabel(iso: string, nowMs: number, timeZone?: string): string {
-  const day = dayKey(iso, timeZone);
-  if (day === dayKey(new Date(nowMs).toISOString(), timeZone)) return "Today";
-  if (day === dayKey(new Date(nowMs - 86_400_000).toISOString(), timeZone)) return "Yesterday";
-  const sameYear = day.slice(0, 4) === dayKey(new Date(nowMs).toISOString(), timeZone).slice(0, 4);
+  const day = dayKey(iso, nowMs, timeZone);
+  if (day === dayKey(new Date(nowMs).toISOString(), nowMs, timeZone)) return "Today";
+  if (day === dayKey(new Date(nowMs - 86_400_000).toISOString(), nowMs, timeZone)) return "Yesterday";
+  const sameYear = day.slice(0, 4) === dayKey(new Date(nowMs).toISOString(), nowMs, timeZone).slice(0, 4);
   return new Intl.DateTimeFormat("en-GB", {
     weekday: "short",
     day: "numeric",
@@ -36,7 +45,7 @@ export function dayLabel(iso: string, nowMs: number, timeZone?: string): string 
     ...(sameYear ? {} : { year: "numeric" }),
     ...(timeZone ? { timeZone } : {}),
   })
-    .format(Date.parse(iso))
+    .format(msOf(iso, nowMs))
     .replace(",", "");
 }
 
@@ -69,7 +78,7 @@ export function chatRows(i: RowsInput): Row[] {
     const history = isHistory(item);
     if (history && !inHistory) out.push({ kind: "history", key: `history:${item.id}` });
     inHistory = history;
-    const day = dayKey(item.at, i.timeZone);
+    const day = dayKey(item.at, i.nowMs, i.timeZone);
     if (day !== lastDay) {
       out.push({ kind: "day", key: `day:${day}`, label: dayLabel(item.at, i.nowMs, i.timeZone) });
       lastDay = day;
