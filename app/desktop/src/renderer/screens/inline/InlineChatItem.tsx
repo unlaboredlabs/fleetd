@@ -205,7 +205,7 @@ function ApprovalItem({ item }: { item: CommandApprovalItem }) {
       </Text>
       {playbook === undefined ? null : (
         <div className={s.detail}>
-          <div>
+          <div className={s.flush}>
             <Button variant="quiet" aria-expanded={showDiff} onClick={() => setShowDiff((v) => !v)}>
               {showDiff ? "Hide the change" : "Show the change"}
             </Button>

@@ -98,10 +98,10 @@
           "git",
           "push",
           "origin",
-          "v2.4.0"
+          "v1.4.0"
         ],
         "class": "irreversible",
-        "reason": "Push the release tag the order asked for",
+        "reason": "Push the release tag for 1.4",
         "timeoutSec": 60
       },
       "state": "open",
