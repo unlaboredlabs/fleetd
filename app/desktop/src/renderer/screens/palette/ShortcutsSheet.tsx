@@ -69,7 +69,7 @@ export function ShortcutsSheet() {
                       </dt>
                       <dd>
                         {row.keys.map((k) => (
-                          <Kbd key={k}>{k}</Kbd>
+                          <Kbd key={k}>{k.includes("+") ? displayKeys(k, platform) : k}</Kbd>
                         ))}
                       </dd>
                     </div>

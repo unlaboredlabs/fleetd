@@ -14,17 +14,21 @@ Lead:  Fixed in "Align the checkout button on Safari", merged.
 
 Each project has one lead and one ongoing chat. Click the project in the sidebar to open it.
 
-![The storefront project's chat: you asked to round the cart totals once, the lead replied that writers are splitting the change into three PRs, and under its message the strip shows three agents working. In the sidebar, billing has the needs-you dot.](/docs/img/chat.png)
+![The storefront project's chat: you asked to round the cart totals once, the lead replied that writers are splitting the change into three PRs, and under its message the strip shows three agents working. In the sidebar, billing says reply and checkout says blocked.](/docs/img/chat.png)
 
 ## Send a message {#send}
 
-Type in the box at the bottom of the chat and press Enter. Shift+Enter adds a new line.
+Type in the box at the bottom of the chat and press Enter. Shift+Enter adds a new line. The box has the cursor
+as soon as a chat opens. A new chat asks what the lead should do, with a few starters that fill the box for you to edit.
 
 | You can | How |
 |---|---|
 | Describe work | In your own words. The lead turns it into tasks itself. |
 | Attach files | Paste, drop, or attach images, text or PDF. The lead gets them with your message. |
 | Paste a screenshot | Paste it into the box. |
+| Send it again | Press ↑ in the empty box to bring back your last message. |
+
+Words you haven't sent stay in each project's box, even after you quit the app.
 
 The lead keeps its own plan and bookkeeping. You never file tasks or orders yourself.
 
@@ -48,8 +52,11 @@ Reply in plain words, or tersely:
 | `nvm` | Drop it. |
 | `2: keep it for two releases` | Answer an item in your own words. |
 
-The lead logs each answer as a [decision](/docs/glossary#decision), so it never asks the same thing twice. A project
-shows a dot in the sidebar while the lead's last message waits for your reply, or a secret or approval item is open.
+The lead logs each answer as a [decision](/docs/glossary#decision), so it never asks the same thing twice. In the
+sidebar, a project says "reply" while the lead's last message waits for your answer, "secret" or "approve" while an
+item is open, and "blocked" when something outside the work holds it up. ⌥⌘A jumps to the next one. In the chat, a
+line above the box says what it waits on, such as "2 questions, asked at 09:02" or "1 command to approve". Click Show
+to scroll to it.
 
 ## Steer while it works {#steer}
 
@@ -60,6 +67,9 @@ A message reaches the lead at once. How depends on what the lead is doing:
 | Idle | Starts its next turn. |
 | Working | Is a steer: it reads it at its next step, after the tool it is running. The box says so while you type. |
 | Starting, or its machine is away | Is held, and goes in as soon as it can. The chat says why it waits. |
+
+To stop the lead's current turn, click Stop beside Send (or "Stop the lead" in the command palette). The lead
+stops now rather than at its next step, and its agents keep working. Then tell it what to do instead.
 
 A message is never lost: if it can't be delivered, it stays held, the chat says why, and fleetd keeps trying.
 

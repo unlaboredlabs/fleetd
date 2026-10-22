@@ -31,11 +31,11 @@ export const agentsLabel = (a: ProjectAgents): string => `agents ${a.running} / 
 /** How many running agents a new max leaves over it: they finish their work, and no new one starts until under. */
 export const extrasOver = (running: number, next: number): number => Math.max(0, running - next);
 
-/** What saving `next` will do, in one line, before it is saved. */
+/** What letting go at `next` will do, in one line, while the slider moves. */
 export function changeLine(a: ProjectAgents, next: number): string {
   if (next === a.max) {
     const running = a.running === 1 ? "1 agent running now" : `${a.running} agents running now`;
-    return a.queued > 0 ? `${running}, ${a.queued} waiting for a slot.` : `${running}.`;
+    return a.queued > 0 ? `${running}, ${a.queued} waiting.` : `${running}.`;
   }
   const over = extrasOver(a.running, next);
   if (over > 0) {
@@ -50,11 +50,37 @@ export function changeLine(a: ProjectAgents, next: number): string {
 /** What the lead hears about its own cap at 1: it works one agent at a time. */
 export const serialNote = (next: number): string | null => (next === 1 ? "One agent at a time: the lead works through its tasks in order." : null);
 
-/** The pause option's words, for `over` agents above the new max. */
+/** The pause button's words, for `over` agents above the new max. */
 export const pauseLine = (over: number): string =>
   over === 1
-    ? "Pause the extra one now: it saves its work in progress and waits, and resumes when a slot frees."
-    : `Pause the ${over} extras now: they save their work in progress and wait, and resume when a slot frees.`;
+    ? "Pause the extra one now"
+    : `Pause the ${over} extras now`;
 
 /** A slider value kept within 1 … cap. */
 export const clampMax = (value: number, cap: number): number => Math.min(Math.max(1, Math.round(value)), Math.max(1, cap));
+
+/** A change once applied, state first: "Max agents: 3, was 6." */
+export const appliedLine = (what: string, from: number, to: number): string => `${what}: ${to}, was ${from}.`;
+
+/** What the agents above a lowered max do; paused ones first, when the pause was asked for. */
+export function extrasLine(over: number, paused: number): string | null {
+  if (paused > 0) return paused === 1 ? "1 agent saved its work and waits for room." : `${paused} agents saved their work and wait for room.`;
+  if (over <= 0) return null;
+  return over === 1 ? "1 agent over it finishes its current work first." : `${over} agents over it finish their current work first.`;
+}
+
+/** The fleet slider's top: room to raise it, and never below a cap already set higher (by the CLI). */
+export const fleetTop = (cap: number): number => Math.max(64, cap);
+
+/**
+ * A fleet cap below a project's own max holds that project to the fleet cap; said while the slider moves, and after.
+ * `name` gives a project's title.
+ */
+export function fleetWarning(slots: SlotState, cap: number, name: (r: ProjectRef) => string): string | null {
+  const over = slots.perProject.filter((p) => p.maxAgents > cap);
+  const [first] = over;
+  if (first === undefined) return null;
+  if (over.length === 1) return `Below ${name(first.projectRef)}'s max of ${first.maxAgents}: it runs at most ${cap} until you raise this.`;
+  const who = over.length === 2 ? over.map((p) => name(p.projectRef)).join(" and ") : `${over.length} projects`;
+  return `Below the max of ${who}: they run at most ${cap} until you raise this.`;
+}

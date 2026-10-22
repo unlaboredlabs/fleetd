@@ -1,10 +1,11 @@
 // The chat composer's rules: Enter sends and Shift+Enter doesn't, a terse reply is a message like any other, the
-// receipts stay quiet unless something needs you, and a project's draft and files outlive the view.
+// receipts stay quiet unless something needs you, ↑ brings back your last message, and a project's draft and files
+// outlive the view (its words outlive the app).
 import { describe, expect, it, vi } from "vitest";
 import type { DataLayer } from "../../src/data/queries";
 import { pastedName } from "./attachments";
-import { checkMessage, placeholder, receiptFor, sendsOn, type Sendable } from "./composerModel";
-import { createDrafts, emptyDraft } from "./drafts";
+import { checkMessage, placeholder, receiptFor, recallsOn, sendsOn, stopFailed, type Sendable } from "./composerModel";
+import { createDrafts, emptyDraft, persistDrafts, readSaved } from "./drafts";
 
 const key = (k: string, over: Partial<Parameters<typeof sendsOn>[0]> = {}) => ({ key: k, shiftKey: false, altKey: false, isComposing: false, ...over });
 
@@ -32,10 +33,32 @@ describe("the box", () => {
     expect(placeholder(undefined)).toBe("Message the lead");
   });
 
+  it("brings back your last message on ↑, only into an empty box and never mid-text", () => {
+    const up = (over: Partial<Parameters<typeof recallsOn>[0]> = {}) => ({ ...key("ArrowUp"), metaKey: false, ctrlKey: false, ...over });
+    const empty = { text: "", attached: [] };
+    expect(recallsOn(up(), empty)).toBe(true);
+    expect(recallsOn(up(), { text: "half", attached: [] })).toBe(false);
+    expect(recallsOn(up(), { text: "", attached: [{}] })).toBe(false);
+    expect(recallsOn(up({ shiftKey: true }), empty)).toBe(false);
+    expect(recallsOn(up({ metaKey: true }), empty)).toBe(false);
+    expect(recallsOn(up({ isComposing: true }), empty)).toBe(false);
+    expect(recallsOn({ ...up(), key: "ArrowDown" }, empty)).toBe(false);
+  });
+
   it("names pasted images so two read apart", () => {
     expect(pastedName("image/png", 1)).toBe("pasted-1.png");
     expect(pastedName("image/jpeg", 2)).toBe("pasted-2.jpg");
     expect(pastedName("text/plain", 3)).toBe("pasted-3.txt");
+  });
+});
+
+describe("a stop that didn't stop", () => {
+  it("says why in one plain sentence, never the hub's words", () => {
+    expect(stopFailed("forbidden")).toBe("This computer’s key can’t stop the lead.");
+    expect(stopFailed("offline")).toMatch(/^Not connected/);
+    expect(stopFailed("disconnected")).toBe(stopFailed("offline"));
+    expect(stopFailed("timeout")).toMatch(/may still be working/);
+    expect(stopFailed("failed")).toBe("Couldn’t stop the lead. Try Stop again.");
   });
 });
 
@@ -110,5 +133,53 @@ describe("a project's draft", () => {
     const d = createDrafts(layer(() => Promise.resolve({ ok: false, error: { code: "invalid", message: "too large" } })));
     d.attach("devbox/api", [new File(["hi"], "notes.txt", { type: "text/plain" })]);
     await vi.waitFor(() => expect(d.store.getState()["devbox/api"]?.attached[0]?.upload).toEqual({ ok: false, message: "too large" }));
+  });
+});
+
+describe("a draft after quitting", () => {
+  const layer = { call: vi.fn() as unknown as DataLayer["call"] };
+  const memory = () => {
+    const kept = new Map<string, string>();
+    return {
+      kept,
+      getItem: (k: string) => kept.get(k) ?? null,
+      setItem: vi.fn((k: string, v: string) => void kept.set(k, v)),
+      removeItem: (k: string) => void kept.delete(k),
+    };
+  };
+
+  it("keeps each project's words, once typing pauses, and brings them back on the next start", () => {
+    vi.useFakeTimers();
+    const storage = memory();
+    const d = createDrafts(layer);
+    persistDrafts(d, storage);
+    d.set("devbox/api", (x) => ({ ...x, text: "half a" }));
+    d.set("devbox/api", (x) => ({ ...x, text: "half a thought" }));
+    expect(storage.setItem).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(300);
+    expect(storage.setItem).toHaveBeenCalledTimes(1);
+    const next = createDrafts(layer, readSaved(storage));
+    expect(next.store.getState()["devbox/api"]).toEqual({ text: "half a thought", attached: [] });
+    vi.useRealTimers();
+  });
+
+  it("writes the last keystrokes at once when the app quits or restarts", () => {
+    vi.useFakeTimers();
+    const storage = memory();
+    const d = createDrafts(layer);
+    const flush = persistDrafts(d, storage);
+    d.set("devbox/api", (x) => ({ ...x, text: "typed just now" }));
+    flush();
+    expect(readSaved(storage)).toEqual({ "devbox/api": "typed just now" });
+    d.set("devbox/api", () => emptyDraft);
+    flush();
+    vi.advanceTimersByTime(300);
+    expect(readSaved(storage)).toEqual({});
+    vi.useRealTimers();
+  });
+
+  it("reads nothing from a damaged store", () => {
+    expect(readSaved({ getItem: () => "{not json" })).toEqual({});
+    expect(readSaved({ getItem: () => JSON.stringify({ "devbox/api": 3, "devbox/web": "ok" }) })).toEqual({ "devbox/web": "ok" });
   });
 });

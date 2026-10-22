@@ -134,7 +134,8 @@ The [table below](#prompts) marks prompt-only rules.
 
 ## Edit a prompt {#edit}
 
-In the app: Settings → Prompts. Pick hub-wide or one project, open a prompt, edit it and Save. "Compare with default"
+In the app: Settings → Prompts. Pick hub-wide or one project, open a prompt from the list under Prompts in the sidebar,
+edit it and Save. "Compare with default"
 shows your changes; "Reset to default" drops them.
 
 On the hub machine:
@@ -186,7 +187,7 @@ warnings and asks `Save? [Y/n]` on the terminal. In a script, `</dev/null` takes
 
 Your version stays in use.
 
-- In Settings → Prompts, the prompt gets a warning dot. "Review the update" shows both changes, and you pick Save
+- In Settings → Prompts, the prompt is marked `update`. "Review the update" shows both changes, and you pick Save
   merged, Keep mine, or Use the new default.
 - On the hub, `fleetd prompts list` marks it `update`, and `fleetd prompts diff <id>` shows both changes.
 
@@ -195,8 +196,8 @@ Your version stays in use.
 A release can fold a prompt into another one or replace it with fixed text. Your edit to it then stops applying, but
 fleetd keeps it and never moves it for you.
 
-1. Open Settings → Prompts. Under "Edits that no longer apply", each one says, for example, "Your edit to Wake: task
-   finished (hub-wide) no longer applies", why, and which prompt to copy it into.
+1. Open Settings → Prompts. Under "Edits that no longer apply", each one says, for example, "Your edit to the lead's
+   "task finished" note (hub-wide) no longer applies", why, and which prompt to copy it into.
 2. "Show your text" shows your old edit; "Copy your text" copies it.
 3. Paste what you still want into the prompt it names. If none takes its place, use your
    [instructions](#instructions).

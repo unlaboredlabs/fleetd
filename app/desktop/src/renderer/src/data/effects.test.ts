@@ -36,6 +36,16 @@ describe("event effects", () => {
     expect(thread.invalidate).toContainEqual({ tool: "project_get", where: { machineId: "devbox", projectId: "storefront" } });
   });
 
+  it("the agents view: its list on what starts or ends an agent, one agent's work on its thread's events", () => {
+    expect(tools(e("task.started", { workstreamId: "W1" }))).toContain("agents_list");
+    expect(tools(e("lead.woken"))).toContain("agents_list");
+    expect(tools(e("pr.merged", { workstreamId: "W1" }))).toContain("agents_list");
+    expect(tools(e("machine.offline", undefined, { machineId: "devbox" }))).not.toContain("agents_list");
+    const thread = effectsOf(e("thread.progress", undefined, { threadId: "t1" }));
+    expect(thread.invalidate).toContainEqual({ tool: "agent_work", where: { threadId: "t1" } });
+    expect(thread.invalidate.map((i) => i.tool)).not.toContain("agents_list");
+  });
+
   it("a machine or project coming or going resyncs; an unknown type does nothing", () => {
     expect(effectsOf(e("project.added")).resync).toBe(true);
     // Add project's list marks the repos that are projects, so it is read again too.

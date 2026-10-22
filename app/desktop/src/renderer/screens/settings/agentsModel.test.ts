@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SlotState } from "../../../shared/contracts";
-import { agentsLabel, changeLine, clampMax, extrasOver, pauseLine, projectAgents, serialNote } from "./agentsModel";
+import { agentsLabel, appliedLine, changeLine, clampMax, extrasLine, extrasOver, fleetTop, fleetWarning, pauseLine, projectAgents, serialNote } from "./agentsModel";
 
 const storefront = { machineId: "devbox", projectId: "storefront" };
 const billing = { machineId: "devbox", projectId: "billing" };
@@ -34,8 +34,9 @@ describe("max agents", () => {
     expect(changeLine(a, 1)).toMatch(/new agents wait until none is running\.$/u);
     expect(changeLine(a, 9)).toBe("Up to 9 at once. 2 of the 2 waiting can start now.");
     expect(changeLine(projectAgents(slots, billing), 6)).toBe("Up to 6 at once. New agents wait while 6 run.");
-    expect(pauseLine(2)).toMatch(/^Pause the 2 extras now/u);
-    expect(changeLine(a, 6)).toBe("6 agents running now, 2 waiting for a slot.");
+    expect(pauseLine(2)).toBe("Pause the 2 extras now");
+    expect(pauseLine(1)).toBe("Pause the extra one now");
+    expect(changeLine(a, 6)).toBe("6 agents running now, 2 waiting.");
     expect(changeLine(projectAgents(slots, billing), 12)).toBe("2 agents running now.");
     expect(serialNote(1)).toMatch(/One agent at a time/u);
     expect(serialNote(2)).toBeNull();
@@ -46,5 +47,28 @@ describe("max agents", () => {
     expect(clampMax(40, 12)).toBe(12);
     expect(clampMax(3.6, 12)).toBe(4);
     expect(clampMax(5, 0)).toBe(1);
+  });
+
+  it("says what an applied change did, and what the agents over a lowered max do", () => {
+    expect(appliedLine("Max agents", 6, 3)).toBe("Max agents: 3, was 6.");
+    expect(extrasLine(2, 0)).toBe("2 agents over it finish their current work first.");
+    expect(extrasLine(1, 0)).toBe("1 agent over it finishes its current work first.");
+    expect(extrasLine(0, 0)).toBeNull();
+    // Once paused, the paused count is what matters, even as the running count catches up.
+    expect(extrasLine(0, 2)).toBe("2 agents saved their work and wait for room.");
+  });
+
+  it("warns when the fleet cap is below a project's own max", () => {
+    const name = (r: { projectId: string }) => r.projectId;
+    expect(fleetWarning(slots, 12, name)).toBeNull();
+    expect(fleetWarning(slots, 8, name)).toBe("Below billing's max of 12: it runs at most 8 until you raise this.");
+    expect(fleetWarning(slots, 4, name)).toBe("Below the max of storefront and billing: they run at most 4 until you raise this.");
+    const three = { ...slots, perProject: [...slots.perProject, { projectRef: { machineId: "m", projectId: "docs" }, maxAgents: 9, running: 0, queued: 0, used: 0 }] };
+    expect(fleetWarning(three, 4, name)).toBe("Below the max of 3 projects: they run at most 4 until you raise this.");
+  });
+
+  it("lets the fleet slider reach well past today's cap, and any cap set higher", () => {
+    expect(fleetTop(12)).toBe(64);
+    expect(fleetTop(200)).toBe(200);
   });
 });

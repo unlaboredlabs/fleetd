@@ -25,10 +25,12 @@
   padding: var(--space-1) var(--space-2);
 }
 
-.strong {
-  font-weight: var(--weight-strong);
+/* A project's mark: why it wants you, a new message, or its agents at work. */
+.mark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
 }
-
 .jump {
   min-width: 1ch;
   color: var(--accent);
@@ -87,11 +89,4 @@
 }
 .sidebarSkeleton > span:nth-child(3) {
   width: 55%;
-}
-
-/* The lead is working: a still mark beside the project, sized like the counts. */
-.working {
-  width: 12px;
-  height: 12px;
-  color: var(--quiet);
 }

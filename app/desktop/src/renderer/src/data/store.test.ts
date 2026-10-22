@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { applyFrame, applyLive, applyStreams, ingest, initialState, type DataState } from "./store";
-import { projectStateWord, selectBoard, selectConnection, selectNeedsYou, selectOrder, selectProjectList, selectProjectRow } from "./selectors";
+import { projectStateWord, selectBoard, selectConnection, selectLiveAgents, selectNeedsYou, selectOrder, selectProjectList, selectProjectRow } from "./selectors";
+import type { AgentRow } from "./agents-contract";
 import { card, event, lane, live, liveLane, project, snapshot } from "./fixtures.test-util";
 import type { HubFrame } from "../../../shared/hub";
 
@@ -180,6 +181,11 @@ describe("the project list", () => {
     expect(selectProjectRow("devbox/storefront")(idle)?.running).toBe(0);
   });
 
+  it("counts a lane two cards list once", () => {
+    const s = withBoard(run([live(), snapshot(1)]), [card("W1"), card("W2")]);
+    expect(selectProjectRow("devbox/storefront")(s)?.running).toBe(1);
+  });
+
   it("keeps a stable order by title, whatever needs you or works", () => {
     let s = withBoard(run([live(), snapshot(1)]), []);
     const storefront = s.projects["devbox/storefront"];
@@ -189,5 +195,71 @@ describe("the project list", () => {
     expect(order()).toEqual([["acme", false], ["storefront", false]]);
     s = run([{ t: "event", event: { seq: 2, at: "2026-10-19T10:00:00.000Z", type: "chat.waiting", summary: "", data: { projectRef: project, needsYou: true, leadWorking: true, lastSeq: 4 } } }], s);
     expect(order()).toEqual([["acme", false], ["storefront", true]]);
+  });
+});
+
+describe("unread chats", () => {
+  const waiting = (seq: number, lastSeq: number): HubFrame => ({
+    t: "event",
+    event: { seq, at: "2026-10-19T10:00:00.000Z", type: "chat.waiting", summary: "", data: { projectRef: project, needsYou: false, leadWorking: true, lastSeq } },
+  });
+  const message = (seq: number, chatSeq: number): HubFrame => ({
+    t: "event",
+    event: { seq, at: "2026-10-19T10:00:00.000Z", type: "chat.message", summary: "", data: { projectRef: project, messageId: `m${chatSeq}`, seq: chatSeq, author: "lead", state: "final" } },
+  });
+
+  it("follows each project's newest message, opened or not, and never moves back", () => {
+    let s = withBoard(run([live(), snapshot(1), waiting(2, 4)]), []);
+    expect(selectProjectRow("devbox/storefront")(s)?.lastSeq).toBe(4);
+    s = run([message(3, 5)], s);
+    expect(selectProjectRow("devbox/storefront")(s)?.lastSeq).toBe(5);
+    // An older message read again (a gap filled) leaves it.
+    s = run([message(4, 3)], s);
+    expect(selectProjectRow("devbox/storefront")(s)?.lastSeq).toBe(5);
+  });
+});
+
+describe("the live agents", () => {
+  const row = (laneId: string, patch: Partial<AgentRow> = {}): AgentRow => ({
+    laneId,
+    role: "implementer",
+    status: "working",
+    title: `Lane ${laneId}`,
+    projectRef: project,
+    projectTitle: "storefront",
+    startedAt: "2026-10-19T09:00:00.000Z",
+    ...patch,
+  });
+  const listed = (s: DataState, agents: AgentRow[]): DataState =>
+    ingest(s, { tool: "agents_list", input: {}, output: { agents, at: "2026-10-19T10:00:00.000Z" } });
+  const frame = (lanes: ReturnType<typeof liveLane>[]): HubFrame => ({ t: "live", frame: { at: "2026-10-19T10:00:02.000Z", full: false, lanes } });
+
+  it("lists working agents by project, the lead first and then oldest first, and never a finished one or an idle lead", () => {
+    const s = listed(run([live(), snapshot(1)]), [
+      row("T2", { startedAt: "2026-10-19T09:30:00.000Z" }),
+      row("T1"),
+      row("T3", { status: "done" }),
+      row("lead:devbox/storefront", { role: "lead" }),
+      row("lead:devbox/acme", { role: "lead", status: "idle", projectRef: { machineId: "devbox", projectId: "acme" }, projectTitle: "acme" }),
+      row("T9", { projectRef: { machineId: "devbox", projectId: "acme" }, projectTitle: "acme", status: "queued" }),
+    ]);
+    expect(selectLiveAgents(s)?.map((a) => a.id)).toEqual(["devbox/acme/T9", "devbox/storefront/lead:devbox/storefront", "devbox/storefront/T1", "devbox/storefront/T2"]);
+  });
+
+  it("takes status and activity from the live feed, and keeps the list while a frame changes nothing it shows", () => {
+    const s = listed(run([live(), snapshot(1)]), [row("T1"), row("T2")]);
+    const list = selectLiveAgents(s);
+    const spark = run([frame([liveLane("T1", "working", { spark: { endAt: "2026-10-19T10:00:02.000Z", samples: [3] } })])], s);
+    expect(selectLiveAgents(spark)).toBe(list);
+    const moved = run([frame([liveLane("T1", "working", { activity: { activity: { kind: "edit", path: "src/a.ts" }, since: "2026-10-19T10:00:01.000Z" } })])], spark);
+    expect(selectLiveAgents(moved)?.[0]?.row.live?.activity?.activity).toEqual({ kind: "edit", path: "src/a.ts" });
+    expect(selectLiveAgents(moved)?.[1]).toBe(list?.[1]);
+    const finished = run([frame([liveLane("T1", "done")])], moved);
+    expect(selectLiveAgents(finished)?.map((a) => a.row.laneId)).toEqual(["T2"]);
+  });
+
+  it("is undefined until this connection's list landed", () => {
+    const s = listed(run([live(), snapshot(1)]), [row("T1")]);
+    expect(selectLiveAgents(run([snapshot(2)], s))).toBeUndefined();
   });
 });

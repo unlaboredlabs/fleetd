@@ -57,13 +57,20 @@ function agents(from: Fixture): Fixture {
   const slots: JsonObject = { cap: 16, used: 9, queued: 2, reservedBand: 2, perProject: rows };
   if (f.snapshot) f.snapshot["slots"] = clone(slots);
   for (const frame of f.live) if (frame["slots"] !== undefined) frame["slots"] = clone(slots);
-  // A save answers with the slot state it asked for, as the hub does: every max each project can take, and every
-  // fleet cap a person might type, so the shots show the saved value read back.
-  for (const row of rows) {
-    const projectRef = row["projectRef"] as JsonObject;
+  // A change answers with the slot state it asked for, as the hub does: every max each project can take (and the
+  // pause of the agents over it, which Undo's neighbour offers), and every fleet cap the slider reaches.
+  for (const p of projects) {
+    const projectRef = ref(p);
+    const row = rows.find((r) => r["projectRef"] && asText((r["projectRef"] as JsonObject)["projectId"]) === projectRef["projectId"]);
+    const running = typeof row?.["running"] === "number" ? row["running"] : 0;
     for (let n = 1; n <= 16; n++) {
-      const perProject = rows.map((r) => (r === row ? { ...clone(r), maxAgents: n } : clone(r)));
-      f.answer("cap_set", { project: { projectRef: clone(projectRef), maxAgents: n } }, { slots: { ...clone(slots), perProject } });
+      const own = { projectRef: clone(projectRef), maxAgents: n, running, queued: row?.["queued"] ?? 0, used: row?.["used"] ?? 0 };
+      const perProject = [...rows.filter((r) => r !== row).map(clone), own];
+      const out = { slots: { ...clone(slots), perProject } };
+      f.answer("cap_set", { project: { projectRef: clone(projectRef), maxAgents: n } }, out);
+      const over = Math.max(0, running - n);
+      const paused = Array.from({ length: over }, (_, i) => `T${String(90 + i)}`);
+      f.answer("cap_set", { project: { projectRef: clone(projectRef), maxAgents: n, pauseExtras: true } }, { ...out, paused });
     }
   }
   for (let n = 1; n <= 64; n++) f.answer("cap_set", { cap: n }, { slots: { ...clone(slots), cap: n } });
