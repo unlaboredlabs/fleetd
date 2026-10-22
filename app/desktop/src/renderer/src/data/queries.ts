@@ -199,7 +199,7 @@ export const createDataLayer = (hub: HubApi, now: () => number = Date.now): Data
     void queryClient.invalidateQueries({ predicate: (q) => stale(q) && !inFlight(q) });
   }
 
-  // A saved max agents shows at once, before the next live frame's slots.
+  // A saved max agents shows at once, before the next live frame's slots; a hub update's progress before its event.
   const afterWrite = (tool: ToolName, output: unknown): void => {
     if (tool === "cap_set") store.setState(applySlots(store.getState(), (output as ToolOutput<"cap_set">).slots));
   };

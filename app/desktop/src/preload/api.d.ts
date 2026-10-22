@@ -3,6 +3,7 @@ import type { MenuCommand } from "../shared/menu";
 import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, HubState, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { ChatScope, ErrorReport, LiveScope, SecretRequest } from "../shared/ipc";
 import type { KeyStore, PairOutcome, PairRequest, PairStart, Probe, SetupOutcome } from "../shared/pairing";
+import type { UpdatesState } from "../shared/updates";
 
 /** `window.fleetd`: everything the renderer can ask of main. There is no other bridge. */
 export interface FleetdApi {
@@ -72,6 +73,20 @@ export interface FleetdApi {
     pickFolder(): Promise<string | null>;
     /** What a dropped folder or link file holds for Add project; `other` for anything else (or a File with no path). */
     readDrop(file: File): Promise<DropInfo>;
+  };
+  /** The app's own update. */
+  readonly updates: {
+    state(): Promise<UpdatesState>;
+    /** Every change after the first `state()`. Returns the unsubscribe. */
+    subscribe(listener: (state: UpdatesState) => void): () => void;
+    /** Checks now; "Checking…", then the answer, arrive through `subscribe`. */
+    check(): Promise<void>;
+    /** Restarts into the downloaded update, or once it's downloaded; the deb opens its download. */
+    install(): Promise<void>;
+    /** Takes back an `install()` whose download still runs. */
+    keep(): Promise<void>;
+    /** Opens `fleetd update` in the system terminal, for a hub on this computer; or why not, with the command. */
+    hubTerminal(): Promise<SetupOutcome>;
   };
   readonly app: {
     /** Command ids clicked in the app menu (an accelerator runs in the renderer's keymap instead). Returns the unsubscribe. */

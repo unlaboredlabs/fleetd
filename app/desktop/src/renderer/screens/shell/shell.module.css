@@ -38,15 +38,21 @@
 }
 
 /* The connection line sits at the bottom of the sidebar, and stays there while the projects scroll. */
-.conn {
+/* Pinned to the sidebar's foot: the update line (screens/updates), if any, then the connection. */
+.footer {
   position: sticky;
   bottom: 0;
+  display: flex;
+  flex-direction: column;
+  margin-top: auto;
+}
+
+.conn {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
   min-height: var(--row);
-  margin-top: auto;
   padding: var(--space-1) var(--space-2);
   border: none;
   border-top: 1px solid var(--hairline);

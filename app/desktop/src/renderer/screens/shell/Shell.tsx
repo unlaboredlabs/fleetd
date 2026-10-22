@@ -15,6 +15,7 @@ import { useAgentsWorking, useMachinesDown, useSidebarProjects } from "./data";
 import { navigate, useRoute } from "./navigation";
 import { HOME, type Screen } from "./routes";
 import { ConnectionBanner, GetStarted, needsOnboarding } from "../onboarding";
+import { UpdatesHost } from "../updates";
 import { Boundary } from "../../src/Boundary";
 import { ScreenHost, screenPart } from "./screens";
 import { Sidebar } from "./Sidebar";
@@ -222,6 +223,7 @@ export function Shell() {
       </AppFrame>
       <PaletteHost />
       <ProjectsHost />
+      <UpdatesHost />
     </div>
   );
 }

@@ -104,6 +104,27 @@ export const fixtures = [
   "resilience-burst",
   "resilience-hub-restart",
   "resilience-reconnect-streaming",
+  // C1: the app's own update and the hub's (fixtures/updates).
+  "updates-idle",
+  "updates-checking",
+  "updates-unsupported",
+  "updates-current",
+  "updates-available",
+  "updates-downloading",
+  "updates-ready",
+  "updates-deb",
+  "updates-failed",
+  "updates-download-failed",
+  "updates-hub-current",
+  "updates-hub-unknown",
+  "updates-hub-available",
+  "updates-hub-behind",
+  "updates-hub-behind-local",
+  "updates-hub-behind-local-channel",
+  "updates-hub-info-failed",
+  "updates-terminal-not-local",
+  "updates-terminal-not-found",
+  "updates-terminal-no-terminal",
 ] as const;
 export type FixtureName = (typeof fixtures)[number];
 
@@ -165,6 +186,13 @@ const CHAT = "#/project/devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22";
 /** Makes a part throw while rendering, in the QA build (src/renderer/src/Boundary.tsx), so its error card shows. */
 const crash = (part: string) => async (page: Page) => {
   await page.evaluate((p) => window.dispatchEvent(new CustomEvent("fleetd:qa-crash", { detail: p })), part);
+};
+
+/** The updates sheet, as the palette's "Check for updates" opens it (the app menu runs the same command). */
+const openUpdates = async (page: Page) => {
+  await page.keyboard.press("ControlOrMeta+K");
+  await page.getByRole("combobox", { name: "Search" }).fill("Check for updates");
+  await page.keyboard.press("Enter");
 };
 
 /** An entry's name in test titles, shot files and the contact sheet. */
@@ -522,6 +550,89 @@ export const screens: readonly Screen[] = [
     // The header control's accessible name is "Max agents: <running> running of <max>[, <n> waiting]".
     open: (page) => page.getByRole("button", { name: /^Max agents: \d+ running of \d+/u }).click(),
     variant: "max-agents",
+  },
+  // C1: updates. The sidebar's line above the connection for each state that has one, and the sheet the palette's
+  // "Check for updates" opens, for every state of this app (not checked yet, checking, a build that doesn't update,
+  // up to date, found, downloading to restart, ready, the deb's command, a failed check, a failed download) and of the
+  // hub (up to date, version unknown, a newer build on the channel, older than this app, there or on this computer).
+  {
+    id: "shell",
+    route: "#/",
+    fixtures: ["updates-available", "updates-downloading", "updates-ready", "updates-hub-behind"],
+    variant: "updates",
+  },
+  {
+    id: "updates",
+    route: "#/",
+    fixtures: [
+      "updates-idle",
+      "updates-checking",
+      "updates-unsupported",
+      "updates-current",
+      "updates-available",
+      "updates-downloading",
+      "updates-ready",
+      "updates-deb",
+      "updates-failed",
+      "updates-download-failed",
+      "updates-hub-current",
+      "updates-hub-unknown",
+      "updates-hub-available",
+      "updates-hub-behind",
+      "updates-hub-behind-local",
+    ],
+    open: openUpdates,
+  },
+  // Update the hub on devbox: what runs there (hub_info) and the command, saying when it restarts the hub. And on this
+  // computer when the command needs --channel, which Run in Terminal can't run: Copy only.
+  {
+    id: "updates",
+    route: "#/",
+    fixtures: ["updates-hub-behind", "updates-hub-behind-local-channel"],
+    variant: "update-the-hub",
+    open: async (page) => {
+      await openUpdates(page);
+      await page.getByRole("button", { name: "Update the hub" }).click();
+      await page.getByText("Running on the hub now, so it waits for these:").waitFor();
+    },
+  },
+  // Update the hub on this computer, idle: Run in Terminal opens fleetd update (a fixture opens nothing).
+  {
+    id: "updates",
+    route: "#/",
+    fixtures: ["updates-hub-behind-local"],
+    variant: "run-in-terminal",
+    open: async (page) => {
+      await openUpdates(page);
+      await page.getByRole("button", { name: "Update the hub" }).click();
+      await page.getByRole("button", { name: "Run in Terminal" }).click();
+      await page.getByText("fleetd update is running in Terminal.").waitFor();
+    },
+  },
+  // Update the hub when the hub can't say what runs on it.
+  {
+    id: "updates",
+    route: "#/",
+    fixtures: ["updates-hub-info-failed"],
+    variant: "update-the-hub",
+    open: async (page) => {
+      await openUpdates(page);
+      await page.getByRole("button", { name: "Update the hub" }).click();
+      await page.getByText(/^The hub couldn't say what's running/u).waitFor();
+    },
+  },
+  // Run in Terminal's failures: the hub isn't here, no fleetd command, no terminal; each with the command instead.
+  {
+    id: "updates",
+    route: "#/",
+    fixtures: ["updates-terminal-not-local", "updates-terminal-not-found", "updates-terminal-no-terminal"],
+    variant: "run-in-terminal",
+    open: async (page) => {
+      await openUpdates(page);
+      await page.getByRole("button", { name: "Update the hub" }).click();
+      await page.getByRole("button", { name: "Run in Terminal" }).click();
+      await page.getByRole("alert").waitFor();
+    },
   },
   // ...lowered from the header, applied once the keys rest, with Undo.
   {

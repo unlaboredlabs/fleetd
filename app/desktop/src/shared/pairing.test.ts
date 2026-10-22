@@ -63,6 +63,14 @@ describe("versions", () => {
     expect(compareVersions("dev", "0.5.0")).toBeNull();
   });
 
+  it("orders nightlies by their stamp and ignores the build hash", () => {
+    expect(compareVersions("0.5.0-nightly.202610231030+0abc123", "0.5.0-nightly.202610221030+fff0000")).toBe(1);
+    expect(compareVersions("0.5.0-nightly.202610221030+0abc123", "0.5.0-nightly.202610221030+fff0000")).toBe(0);
+    expect(compareVersions("0.5.0-nightly.9", "0.5.0-nightly.10")).toBe(-1);
+    expect(compareVersions("0.5.0-nightly", "0.5.0-nightly.1")).toBe(-1);
+    expect(compareVersions("0.5.0-rc.1", "0.5.0-nightly.1")).toBe(1);
+  });
+
   it("names the machines whose node is older than the hub", () => {
     const machines = [
       { name: "devbox", nodeVersion: "0.5.0" },
