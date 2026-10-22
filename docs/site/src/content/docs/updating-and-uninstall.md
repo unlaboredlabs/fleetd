@@ -29,13 +29,16 @@ Keep fleetd up to date, or remove it.
    against the release's `SHA256SUMS`. Then it restarts the hub and node services that run this binary, but only when
    nothing runs on them.
 
-   While a lead or agents are working, or a merge, an approved command or a clone is under way, it doesn't restart.
-   It lists what runs, and the hub and node keep the version they run until their next restart. To restart them
-   anyway, or to finish the update later, run:
+   While a lead or agents are working, or a merge the hub is doing, an approved command or a clone is under way, it
+   doesn't restart. It lists what runs, and the hub and node keep the version they run until their next restart. To
+   restart them anyway, or to finish the update later, run:
 
    ```sh
    fleetd update --restart-now
    ```
+
+   An install from before this check still restarts the hub and node unconditionally when it updates, because its
+   own `fleetd update` does the restart. Run that one update while nothing runs.
 
 3. Update each worker. Workers don't update themselves. Either:
    - run `fleetd update` on the worker, then `fleetd update --restart-now` once its agents are done (a worker can't

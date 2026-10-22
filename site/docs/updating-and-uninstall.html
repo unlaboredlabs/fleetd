@@ -86,10 +86,12 @@
 <p>It replaces the CLI, and the desktop app when the installer put it in its usual place. Every file is checked
 against the release’s <code dir="auto">SHA256SUMS</code>. Then it restarts the hub and node services that run this binary, but only when
 nothing runs on them.</p>
-<p>While a lead or agents are working, or a merge, an approved command or a clone is under way, it doesn’t restart.
-It lists what runs, and the hub and node keep the version they run until their next restart. To restart them
-anyway, or to finish the update later, run:</p>
+<p>While a lead or agents are working, or a merge the hub is doing, an approved command or a clone is under way, it
+doesn’t restart. It lists what runs, and the hub and node keep the version they run until their next restart. To
+restart them anyway, or to finish the update later, run:</p>
 <div class="expressive-code"><figure class="frame is-terminal not-content"><figcaption class="header"><span class="title"></span><span class="sr-only">Terminal window</span></figcaption><pre data-language="sh"><code><div class="ec-line"><div class="code"><span style="--0:#B392F0;--1:#6F42C1">fleetd</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">update</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#79B8FF;--1:#005CC5">--restart-now</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="fleetd update --restart-now"><div></div></button></div></figure></div>
+<p>An install from before this check still restarts the hub and node unconditionally when it updates, because its
+own <code dir="auto">fleetd update</code> does the restart. Run that one update while nothing runs.</p>
 </li>
 <li>
 <p>Update each worker. Workers don’t update themselves. Either:</p>

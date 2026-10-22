@@ -7,6 +7,7 @@ use fleetd_contracts::ledger::{LeadState, RequestKind, RequestState};
 use fleetd_contracts::mcp::{HubBusyItem, HubBusyKind, HubChannel, HubInfoInput, HubInfoOutput};
 use fleetd_contracts::prim::{List, Text};
 use fleetd_contracts::tasks::TaskState;
+use fleetd_contracts::train::{Change, ChangeState};
 
 use crate::hub::api::{Caller, Hub, Registry, ToolError, readable};
 use crate::hub::approvals::store::RequestFilter;
@@ -111,20 +112,19 @@ pub fn busy(hub: &Hub) -> Result<Vec<HubBusyItem>, ToolError> {
         ));
     }
     for (repo, r) in hub.train.repos() {
-        let Some(change) = hub
+        let head = hub
             .train
             .state(&repo)
             .head
-            .and_then(|id| hub.train.get(&id))
-        else {
-            continue;
-        };
-        out.push(item(
-            HubBusyKind::Train,
-            format!("merging PR #{} into {repo}", change.pr_number),
-            &r,
-            Some(change.updated_at),
-        ));
+            .and_then(|id| hub.train.get(&id));
+        if let Some(text) = head.as_ref().and_then(hub_step) {
+            out.push(item(
+                HubBusyKind::Train,
+                text,
+                &r,
+                head.map(|c| c.updated_at),
+            ));
+        }
     }
     let approved = hub
         .approvals
@@ -169,6 +169,22 @@ pub fn busy(hub: &Hub) -> Result<Vec<HubBusyItem>, ToolError> {
         });
     }
     Ok(out)
+}
+
+/// What the hub itself is doing to the change at the head of its repo's queue, when a restart would cut it off: a
+/// rebase and push, or the merge. Waiting on CI is not: CI runs on GitHub and the hub picks it up again after a restart.
+pub fn hub_step(change: &Change) -> Option<String> {
+    match change.state {
+        ChangeState::Rebasing => Some(format!(
+            "updating PR #{} in {} before it merges",
+            change.pr_number, change.repo
+        )),
+        ChangeState::Merging => Some(format!(
+            "merging PR #{} into {}",
+            change.pr_number, change.repo
+        )),
+        _ => None,
+    }
 }
 
 fn item(

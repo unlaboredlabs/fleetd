@@ -179,3 +179,28 @@ async fn a_working_lead_running_agents_and_a_clone_are_busy() {
     assert_eq!(on.busy.len(), 1);
     assert_eq!(on.busy[0].kind, HubBusyKind::Clone);
 }
+
+#[test]
+fn a_merge_counts_only_while_the_hub_rebases_or_merges_it() {
+    let change = |state: &str| -> fleetd_contracts::train::Change {
+        serde_json::from_value(json!({
+            "changeId": "X1", "projectRef": { "machineId": "devbox", "projectId": "p1" }, "repo": "acme/shop",
+            "prNumber": 251, "prUrl": "https://github.com/acme/shop/pull/251", "branch": "fleetd/T1-checkout",
+            "workstreamId": "W1", "serves": "done:0", "tier": "M",
+            "headSha": "0123456789abcdef0123456789abcdef01234567", "state": state, "reviews": [],
+            "createdAt": AT, "updatedAt": AT,
+        }))
+        .unwrap()
+    };
+    assert_eq!(
+        super::hub_step(&change("merging")).as_deref(),
+        Some("merging PR #251 into acme/shop")
+    );
+    assert_eq!(
+        super::hub_step(&change("rebasing")).as_deref(),
+        Some("updating PR #251 in acme/shop before it merges")
+    );
+    // CI runs on GitHub and outlives a hub restart.
+    assert_eq!(super::hub_step(&change("ci")), None);
+    assert_eq!(super::hub_step(&change("ready")), None);
+}
