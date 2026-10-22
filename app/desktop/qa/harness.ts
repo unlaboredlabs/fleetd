@@ -312,7 +312,11 @@ export async function settle(page: Page) {
 // shows the real material.
 async function backdrop(page: Page) {
   if (process.platform !== "darwin") return;
-  const hex = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--sidebar").trim());
+  // Only the app's own page leaves its sidebar clear (the self-test's stand-in page doesn't).
+  const hex = await page.evaluate(() =>
+    document.documentElement.hasAttribute("data-vibrancy") ? getComputedStyle(document.documentElement).getPropertyValue("--sidebar").trim() : null,
+  );
+  if (hex === null) return;
   const byte = (i: number) => parseInt(hex.slice(i, i + 2), 16);
   if (!/^#[0-9a-f]{6}$/iu.test(hex)) throw new Error(`--sidebar is "${hex}", not a #rrggbb colour`);
   await (await cdp(page)).send("Emulation.setDefaultBackgroundColorOverride", { color: { r: byte(1), g: byte(3), b: byte(5), a: 1 } });
