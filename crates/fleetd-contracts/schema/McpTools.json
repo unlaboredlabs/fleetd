@@ -1232,7 +1232,7 @@
           "$ref": "#/$defs/ChatAuthor"
         },
         "by": {
-          "description": "A human message: the key name of the person who wrote it. An agent message: its key's name, or the task that\nsent it.",
+          "description": "The name of the key that wrote it: a person's device for a human message, the agent for an agent's.",
           "maxLength": 120,
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",
@@ -1344,7 +1344,7 @@
         },
         "session": {
           "$ref": "#/$defs/ThreadId",
-          "description": "An agent inside a fleetd session: its FLEETD_THREAD_ID. The project's own lead and tasks are refused (they\nuse their fleetd tools); another project's task is named by its task id."
+          "description": "Sent from inside a fleetd session: its thread id (FLEETD_THREAD_ID). The project's own lead and tasks are refused\n(they use their fleetd tools), and so is a human key: a session never writes as the human."
         },
         "text": {
           "maxLength": 20000,

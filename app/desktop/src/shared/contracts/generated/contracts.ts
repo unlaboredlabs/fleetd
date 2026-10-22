@@ -477,10 +477,7 @@ export type ChatItem = SecretRequestItem & {
 export type ChatMessage = {
   attachments?: AttachmentRef[];
   author: ChatAuthor;
-  /**
-   * A human message: the key name of the person who wrote it. An agent message: its key's name, or the task that
-   * sent it.
-   */
+  /** The name of the key that wrote it: a person's device for a human message, the agent for an agent's. */
   by?: string;
   /** A human message: where it was written. */
   client?: ChatClient;
@@ -532,8 +529,8 @@ export type ChatSendInput = {
   clientRequestId: string;
   projectRef: ProjectRef;
   /**
-   * An agent inside a fleetd session: its FLEETD_THREAD_ID. The project's own lead and tasks are refused (they
-   * use their fleetd tools); another project's task is named by its task id.
+   * Sent from inside a fleetd session: its thread id (FLEETD_THREAD_ID). The project's own lead and tasks are refused
+   * (they use their fleetd tools), and so is a human key: a session never writes as the human.
    */
   session?: ThreadId;
   text: string;

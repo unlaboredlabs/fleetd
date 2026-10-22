@@ -150,6 +150,37 @@ fn marker_of(pid: i32) -> Option<String> {
         .map(|v| String::from_utf8_lossy(v).into_owned())
 }
 
+/// Whether this process runs inside a fleetd session: its own environment or, on Linux, an ancestor's carries a
+/// session's marker or thread id. Reading the ancestors means unsetting the variables in a session's shell doesn't hide
+/// it; a session's claude is always an ancestor of its tools' commands.
+pub fn inside_session() -> bool {
+    let marked = |env: &[u8]| {
+        env.split(|b| *b == 0).any(|var| {
+            var.starts_with(format!("{SESSION_MARKER}=").as_bytes())
+                || var.starts_with(b"FLEETD_THREAD_ID=")
+        })
+    };
+    if std::env::var_os(SESSION_MARKER).is_some() || std::env::var_os("FLEETD_THREAD_ID").is_some()
+    {
+        return true;
+    }
+    let mut at = getpid().as_raw();
+    let mut seen = HashSet::new();
+    while cfg!(target_os = "linux") && at > 1 && seen.insert(at) {
+        if std::fs::read(format!("/proc/{at}/environ")).is_ok_and(|env| marked(&env)) {
+            return true;
+        }
+        let Some(parent) = std::fs::read_to_string(format!("/proc/{at}/stat"))
+            .ok()
+            .and_then(|stat| parse_stat(at, &stat))
+        else {
+            break;
+        };
+        at = parent.ppid;
+    }
+    false
+}
+
 /// Where a process calling the node's socket runs, as the kernel's process tree and its environment say; never what
 /// the caller claims.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -363,6 +394,39 @@ pub(crate) fn reap_adopted() {
     }
     // Forget orphans that are gone some other way (a sweep reaped them).
     known.retain(|key| children.iter().any(|p| (p.pid, p.start) == *key));
+}
+
+/// The thread id of the fleetd session this process runs in: its own `FLEETD_THREAD_ID` or, on Linux, the nearest
+/// ancestor's as it was started (`/proc/<pid>/environ`), so unsetting it in a session's shell doesn't hide it.
+pub fn session_thread_id() -> Option<String> {
+    const VAR: &[u8] = b"FLEETD_THREAD_ID=";
+    let of = |env: &[u8]| {
+        env.split(|b| *b == 0)
+            .find_map(|var| var.strip_prefix(VAR))
+            .filter(|id| !id.is_empty())
+            .map(|id| String::from_utf8_lossy(id).into_owned())
+    };
+    if let Some(id) = std::env::var("FLEETD_THREAD_ID")
+        .ok()
+        .filter(|id| !id.is_empty())
+    {
+        return Some(id);
+    }
+    let mut at = getpid().as_raw();
+    let mut seen = HashSet::new();
+    while cfg!(target_os = "linux") && at > 1 && seen.insert(at) {
+        if let Some(id) = std::fs::read(format!("/proc/{at}/environ"))
+            .ok()
+            .and_then(|env| of(&env))
+        {
+            return Some(id);
+        }
+        at = std::fs::read_to_string(format!("/proc/{at}/stat"))
+            .ok()
+            .and_then(|stat| parse_stat(at, &stat))?
+            .ppid;
+    }
+    None
 }
 
 #[cfg(test)]

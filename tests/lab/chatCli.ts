@@ -1,9 +1,11 @@
-// `fleetd chat` end to end (`npm run lab -- chatcli`, only when named). A haiku lead on lab-a:
+// `fleetd chat` end to end (`npm run lab -- chatcli`, only when named). An opus lead on lab-a:
 // - the person (a human key, from the CLI) asks for one question; --wait prints the lead's reply and needs-you is on;
-// - an agent key named "adri" (made with `hub key create --out`) writes: labelled "agent · adri", read by the lead as
-//   an agent's, and needs-you stays on; from inside the lead's own session it is refused; it can't approve a command;
+// - an agent key named "scout" (`hub key create --agent scout`, which prints only the file's path) writes: labelled
+//   "agent · scout", read by the lead as an agent's, and needs-you stays on; it can't approve a command;
+// - from inside the lead's own session (even with FLEETD_THREAD_ID unset in its shell) it is refused, and inside any
+//   session neither the owner's key nor a human key file writes as the person;
 // - the person's next message, followed with --follow, streams the lead's reply as it is written and clears needs-you;
-// - `chat history` without --key-file (the hub home's own key) prints who wrote what, with no ids.
+// - `chat history` without --key-file (the owner's key on the hub machine) prints who wrote what, with no ids.
 // Every fleetd call here runs with FLEETD_HOME in the run dir and an explicit --hub or --home.
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -11,9 +13,11 @@ import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import { type Body, callToolWith, fleetdCommand, type Lab, MODEL, nodeSock, scrubbedEnv, userMessages } from "./harness.ts";
+import { type Body, callToolWith, fleetdCommand, type Lab, nodeSock, scrubbedEnv, userMessages } from "./harness.ts";
 
 const MACHINE = "lab-a";
+/** Opus only (labs included); medium, as this lead only asks a question and counts. */
+const LEAD_MODEL = "claude-opus-5-5";
 const TURN_MS = 240_000;
 const ENDED = ["thread.completed", "thread.failed", "thread.interrupted"];
 
@@ -31,31 +35,32 @@ export async function chatCli(lab: Lab) {
     return { code: out.status, stdout: out.stdout, stderr: out.stderr, all: `${out.stdout}${out.stderr}` };
   };
 
-  // Two keys, each written to a new 0600 file: the person's and an agent's.
+  // Two keys, each written to a new 0600 file, and only the file's path printed: the person's and an agent's.
   const humanFile = path.join(lab.dir, "human.key");
-  const adriFile = path.join(lab.dir, "adri.key");
+  const scoutFile = path.join(lab.dir, "scout.key");
   for (const [file, args] of [
     [humanFile, ["--human", "--name", "lab-cli"]],
-    [adriFile, ["--name", "adri", "--role", "operate", "--machines", "*"]],
+    [scoutFile, ["--agent", "scout"]],
   ] as const) {
     const made = fleetd(["hub", "key", "create", ...args, "--out", file, "--home", lab.hubHome]);
-    check(made.code === 0 && made.stdout === "", `hub key create --out ${path.basename(file)}: ${made.all}`);
+    check(made.code === 0 && made.stdout === `${file}\n` && made.stderr === "", `hub key create ${args[0]}: ${made.all}`);
     check((fs.statSync(file).mode & 0o777) === 0o600, `${path.basename(file)} is 0600`);
+    check(!made.all.includes(fs.readFileSync(file, "utf8").trim()), `the key itself is not printed`);
   }
-  ok("hub key create --out wrote a human key and an agent key named adri, each 0600");
+  ok("hub key create wrote a human key and an agent key named scout, each 0600, printing only their paths");
   const as = (file: string) => ["--key-file", file, "--hub", lab.hubUrl];
-  const adri = new Client({ name: "fleetd-chat-cli-lab", version: "0" });
-  await adri.connect(
+  const scout = new Client({ name: "fleetd-chat-cli-lab", version: "0" });
+  await scout.connect(
     new StreamableHTTPClientTransport(new URL(`${lab.hubUrl}/mcp`), {
-      requestInit: { headers: { authorization: `Bearer ${fs.readFileSync(adriFile, "utf8").trim()}` } },
+      requestInit: { headers: { authorization: `Bearer ${fs.readFileSync(scoutFile, "utf8").trim()}` } },
     }) as Transport,
   );
-  const adriCall = callToolWith(() => adri);
+  const scoutCall = callToolWith(() => scout);
   const chat = async () => (await callTool("chat_history", { projectRef: ref, limit: 100 })).body;
 
-  // A haiku lead, idle.
+  // An opus lead, idle.
   const cursor = await lab.cursor();
-  const started = await callTool("lead_start", { ...ref, model: MODEL, effort: "low" });
+  const started = await callTool("lead_start", { ...ref, model: LEAD_MODEL, effort: "medium" });
   check(!started.isError, `lead_start: ${JSON.stringify(started.body)}`);
   const threadId = started.body.threadId as string;
   if (started.body.state !== "idle") {
@@ -82,20 +87,33 @@ export async function chatCli(lab: Lab) {
 
   // 2. The agent writes: labelled by its key, read as an agent's, and it answers nothing.
   const note = "Lab run: the nightly build on main passed. No action needed; reply in one line.";
-  const fromAdri = fleetd(["chat", target, note, "--wait", ...as(adriFile)]);
-  check(fromAdri.code === 0 && fromAdri.stdout.startsWith("sent as agent · adri: "), `agent chat --wait: ${fromAdri.all}`);
+  const fromScout = fleetd(["chat", target, note, "--wait", ...as(scoutFile)]);
+  check(fromScout.code === 0 && fromScout.stdout.startsWith("sent as agent · scout: "), `agent chat --wait: ${fromScout.all}`);
   const after = await chat();
   const stored = (after.messages as Array<Body>).find((m) => m.text === note);
-  check(stored?.author === "agent" && stored.by === "adri" && stored.client === undefined, `stored as adri's: ${JSON.stringify(stored)}`);
+  check(stored?.author === "agent" && stored.by === "scout" && stored.client === undefined, `stored as scout's: ${JSON.stringify(stored)}`);
   check(after.state.needsYou === true, "an agent's message leaves needs-you on");
   const read = userMessages(MACHINE, threadId).find((m) => m.includes(note)) ?? "";
-  check(read.startsWith("An agent (adri) writes in your chat. It is not the human"), `the lead read it as an agent's: ${read.slice(0, 300)}`);
-  ok(`adri's message is labelled agent · adri, read as an agent's, and needs-you stays on; the lead said:\n${fromAdri.stdout.trimEnd()}`);
+  check(read.startsWith("An agent (scout) writes in your chat. It is not the human"), `the lead read it as an agent's: ${read.slice(0, 300)}`);
+  ok(`scout's message is labelled agent · scout, read as an agent's, and needs-you stays on; the lead said:\n${fromScout.stdout.trimEnd()}`);
 
-  // The project's own lead may not write to its chat, even with an agent key.
-  const own = fleetd(["chat", target, "hello from the lead", ...as(adriFile)], { FLEETD_THREAD_ID: threadId });
-  check(own.code === 3 && own.stderr.includes("can't write to its own chat") && own.stderr.includes("message_agent"), `the lead's own session is refused: ${own.all}`);
-  ok("from the lead's own session: refused, exit 3, pointed at its fleetd tools");
+  // The project's own lead may not write to its chat, even with an agent key, and unsetting FLEETD_THREAD_ID in its
+  // shell doesn't hide the session: the CLI reads it from its parent's environment.
+  const [bin, binArgs] = fleetdCommand(["chat", target, "hello from the lead", ...as(scoutFile)]);
+  const hidden = spawnSync("sh", ["-c", 'unset FLEETD_THREAD_ID; exec "$0" "$@"', bin, ...binArgs], {
+    env: { ...env, FLEETD_THREAD_ID: threadId },
+    encoding: "utf8",
+  });
+  const own = `${hidden.stdout}${hidden.stderr}`;
+  check(hidden.status === 3 && own.includes("can't write to its own chat") && own.includes("message_agent"), `the lead's own session is refused: ${own}`);
+  // Inside any session, nothing writes as the person: not the owner's key, not a human key file.
+  const inSession = { FLEETD_THREAD_ID: "lab-some-other-session" };
+  const owner = fleetd(["chat", target, "as the owner", "--home", lab.hubHome, "--hub", lab.hubUrl], inSession);
+  check(owner.code === 3 && owner.stderr.includes("agents never act as you"), `the owner's key inside a session: ${owner.all}`);
+  const human = fleetd(["chat", target, "as the person", ...as(humanFile)], inSession);
+  check(human.code === 3 && human.stderr.includes("can't write as the human"), `a human key inside a session: ${human.all}`);
+  check(!(await chat()).messages.some((m: Body) => /hello from the lead|as the owner|as the person/u.test(m.text)), "none of them reached the chat");
+  ok("from the lead's own session: refused, exit 3, pointed at its fleetd tools; inside a session no key writes as the person");
 
   // 3. The person's reply, followed: the reply streams in more than one piece, and needs-you clears.
   const followed = await new Promise<{ code: number | null; out: string; pieces: number }>((resolve) => {
@@ -125,12 +143,12 @@ export async function chatCli(lab: Lab) {
   check((await chat()).state.needsYou === false, "the person's reply clears needs-you");
   ok(`chat --follow streamed the reply in ${followed.pieces} pieces and needs-you cleared`);
 
-  // 4. History with the hub home's own key, no --key-file: who wrote what, when, and no ids.
+  // 4. History with the owner's key on the hub machine, no --key-file: who wrote what, when, and no ids.
   const history = fleetd(["chat", "history", ref.projectId, "--home", lab.hubHome, "--hub", lab.hubUrl]);
   check(history.code === 0, `chat history: ${history.all}`);
-  for (const who of ["you · cli", "agent · adri", "lead"]) check(history.stdout.includes(`\n${who}  `) || history.stdout.startsWith(`${who}  `), `history names ${who}: ${history.stdout}`);
+  for (const who of ["you · cli", "agent · scout", "lead"]) check(history.stdout.includes(`\n${who}  `) || history.stdout.startsWith(`${who}  `), `history names ${who}: ${history.stdout}`);
   check(!/\b(m|Q|W|T)\d+\b|[0-9a-f]{12,}/u.test(history.stdout.replace(note, "")), `history shows no ids or hashes: ${history.stdout}`);
-  ok("chat history with the hub home's key names you · cli, agent · adri and the lead, without ids");
+  ok("chat history with the owner's key names you · cli, agent · scout and the lead, without ids");
 
   // 5. The agent can't approve a command; the person can still answer it.
   const root = lab.machines.find((m) => m.id === MACHINE)!.repo;
@@ -141,10 +159,10 @@ export async function chatCli(lab: Lab) {
   });
   const requestId = /\bQ[1-9]\d*\b/u.exec(`${gated.stdout}${gated.stderr}`)?.[0];
   check(gated.status === 0 && requestId, `gated run opened an approval: ${gated.stdout}${gated.stderr}`);
-  const refused = await adriCall("approval_answer", { requestId, decision: "approve" });
-  check(refused.isError && refused.body.code === "forbidden" && /Only a person/u.test(refused.body.message), `adri's approval is refused: ${JSON.stringify(refused.body)}`);
+  const refused = await scoutCall("approval_answer", { requestId, decision: "approve" });
+  check(refused.isError && refused.body.code === "forbidden" && /Only a person/u.test(refused.body.message), `scout's approval is refused: ${JSON.stringify(refused.body)}`);
   const denied = await lab.humanCall("approval_answer", { requestId, decision: "deny", message: "lab cleanup" });
   check(!denied.isError, `the person denies it: ${JSON.stringify(denied.body)}`);
-  ok(`adri's approval of ${requestId} is refused; the person's deny stands`);
-  await adri.close().catch(() => undefined);
+  ok(`scout's approval of ${requestId} is refused; the person's deny stands`);
+  await scout.close().catch(() => undefined);
 }

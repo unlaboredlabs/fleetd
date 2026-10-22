@@ -186,7 +186,15 @@ run the hub (default home `~/.fleetd/hub`, listen 127.0.0.1:4790, writes to an o
 fleetd hub key create --name <name> --role <read|operate|admin> --machines <'*'|id,id> [--out <file>] [--home <dir>]
 ```
 
-create an agent key for the MCP endpoint, or for an agent or integration that writes in a chat (operate); prints the key once, or writes it to a new file (0600) with `--out`
+create an agent key for the MCP endpoint; prints the key once, or with `--out` writes it to a new file (0600) and prints the file's path
+
+### fleetd hub key create {#hub-key-create-agent}
+
+```text
+fleetd hub key create --agent <name> [--machines <'*'|id,id>] [--out <file>] [--home <dir>]
+```
+
+a named agent's key, to write in a project's chat (`fleetd chat --key-file`): its messages show as that agent's, never yours. Operate on every machine unless `--machines`. Written to a new file (0600), \<hub home\>/keys/\<name\>.key unless `--out`; prints only the file's path
 
 ### fleetd hub key create {#hub-key-create-human}
 
@@ -366,7 +374,7 @@ recent steers and their receipts
 fleetd chat <machine>/<project> "<text>" [--wait | --follow] [--key-file <key>] [--hub <url> | --home <dir>]
 ```
 
-write to a project's lead, as the app does: it starts the lead's next turn, or lands at its next step while it works. `--wait` prints the lead's reply when its turn ends; `--follow` streams it as it is written. Exit 0 it replied, 1 its turn ended without a reply. A human key writes as you; any other key as an agent, by its name. Without `--key-file` it uses the hub on this machine and the CLI's own key there, an agent key
+write to a project's lead, as the app does: it starts the lead's next turn, or lands at its next step while it works. `--wait` prints the lead's reply when its turn ends; `--follow` streams it as it is written. Exit 0 it replied, 1 its turn ended without a reply. A human key writes as you; an agent key as that agent, by its name. Without `--key-file`, as you, the owner of the hub on this machine
 
 ### fleetd chat history {#chat-history}
 

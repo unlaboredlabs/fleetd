@@ -286,7 +286,7 @@
           "$ref": "#/$defs/ChatAuthor"
         },
         "by": {
-          "description": "A human message: the key name of the person who wrote it. An agent message: its key's name, or the task that\nsent it.",
+          "description": "The name of the key that wrote it: a person's device for a human message, the agent for an agent's.",
           "maxLength": 120,
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",

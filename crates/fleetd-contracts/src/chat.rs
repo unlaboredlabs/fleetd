@@ -213,8 +213,7 @@ pub struct ChatMessage {
     pub client_request_id: Option<RequestId>,
     /// A human message: how it reached the lead.
     pub delivery: Option<ChatDelivery>,
-    /// A human message: the key name of the person who wrote it. An agent message: its key's name, or the task that
-    /// sent it.
+    /// The name of the key that wrote it: a person's device for a human message, the agent for an agent's.
     pub by: Option<Line<1, 120>>,
     /// A human message: where it was written.
     pub client: Option<ChatClient>,

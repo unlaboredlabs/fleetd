@@ -8,7 +8,8 @@ Every fleetd term, A to Z. Each one links to the page that uses it most.
 ## Agent key {#agent-key}
 
 A key that lets an MCP client or script call the hub, with a role (`read`, `operate` or `admin`). It starts with
-`fld_` and is shown once. See [MCP clients](/docs/mcp-clients).
+`fld_` and is shown once, or written to a file only you can read. What it writes in a chat shows as that agent's,
+never yours. See [MCP clients](/docs/mcp-clients).
 
 ## Agents strip {#agents-strip}
 

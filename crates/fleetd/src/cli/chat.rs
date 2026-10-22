@@ -1,7 +1,7 @@
 //! `fleetd chat`: write to a project's lead from a terminal and read its chat. It talks to the hub over the app
 //! socket, exactly as the desktop app does: the same chat_send, chat_history, events and streamed `chat_delta`
 //! frames. A human key writes as you; any other key writes as an agent, by its name, and the hub never takes an
-//! agent's message as the human's.
+//! agent's message as the human's. Without `--key-file` it is the owner's key of the hub on this machine.
 
 use std::collections::VecDeque;
 use std::time::Duration;
@@ -18,8 +18,8 @@ pub const CHAT_USAGE: &str = r#"  chat <machine>/<project> "<text>" [--wait | --
              write to a project's lead, as the app does: it starts the lead's next turn, or lands at
              its next step while it works. --wait prints the lead's reply when its turn ends; --follow
              streams it as it is written. Exit 0 it replied, 1 its turn ended without a reply. A
-             human key writes as you; any other key as an agent, by its name. Without --key-file
-             it uses the hub on this machine and the CLI's own key there, an agent key
+             human key writes as you; an agent key as that agent, by its name. Without
+             --key-file, as you, the owner of the hub on this machine
   chat history <project> [--page <n>] [--key-file <key>] [--hub <url> | --home <dir>]
              the project's chat: who wrote each message, when, and what; the newest page, older
              ones with --page
@@ -122,7 +122,7 @@ fn st<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
         .filter(|s| !s.is_empty())
 }
 
-/// Who wrote a message, as the app's header says it: `you · cli`, `agent · <key or task>`, `lead`, `fleetd`.
+/// Who wrote a message, as the app's header says it: `you · cli`, `agent · <its key's name>`, `lead`, `fleetd`.
 pub fn author_label(message: &Value) -> String {
     match st(message, "author") {
         Some("human") => format!("you · {}", st(message, "client").unwrap_or("app")),
@@ -382,8 +382,8 @@ fn client_request_id() -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// The hub and the key: `--key-file` (at `--hub`, or the hub on this machine), else the hub on this machine with the
-/// CLI's own key there, as `fleetd status` finds it.
+/// The hub and the key: `--key-file` (at `--hub`, or the hub on this machine), else the hub on this machine with its
+/// owner's key, which an agent's session is refused.
 fn hub_and_key(args: &ChatArgs) -> Result<(String, String), Failure> {
     let url = hub_url(args.hub.clone(), args.home.as_deref()).map_err(Failure::Unreachable)?;
     let key = match &args.key_file {
@@ -393,11 +393,8 @@ fn hub_and_key(args: &ChatArgs) -> Result<(String, String), Failure> {
         None => {
             let home =
                 super::hub_key::resolve_home(args.home.as_deref()).map_err(Failure::Unreachable)?;
-            super::setup::doctor::cli_key(&home).map_err(|error| {
-                Failure::Refused(format!(
-                    "{error}\n  fix: run it on the hub machine, or pass --key-file <key>"
-                ))
-            })?
+            super::setup::doctor::owner_key(&home)
+                .map_err(|f| Failure::Refused(format!("{}\n  fix: {}", f.message, f.fix)))?
         }
     };
     Ok((url, key))
@@ -427,11 +424,9 @@ async fn send(
     let mut input = json!({
         "projectRef": project, "text": text, "clientRequestId": client_request_id(), "client": "cli",
     });
-    // A fleetd session's own lead and tasks may not write to their lead's chat; the hub tells them so.
-    if let Some(session) = std::env::var("FLEETD_THREAD_ID")
-        .ok()
-        .filter(|s| !s.is_empty())
-    {
+    // From inside a fleetd session (its process tree says so, not only its environment) the hub writes it as an
+    // agent's at most, and refuses the project's own lead and tasks.
+    if let Some(session) = crate::node::runner::process::session_thread_id() {
         input["session"] = json!(session);
     }
     let sent = socket.call("chat_send", input).await?;
@@ -640,7 +635,7 @@ mod tests {
         );
         assert_eq!(
             sent.key_file, None,
-            "no key file: the hub machine's own key"
+            "no key file: the owner's key on the hub machine"
         );
         let history =
             parse_chat_args(&argv(&["history", "app", "--page", "2", "--key-file", "k"])).unwrap();
@@ -663,10 +658,10 @@ mod tests {
         let at = "2026-10-22T14:02:00.000Z";
         let cli = json!({ "author": "human", "client": "cli", "by": "desk", "text": "fix the login", "createdAt": at });
         let app = json!({ "author": "human", "by": "desk", "text": "hi", "createdAt": at });
-        let agent = json!({ "author": "agent", "by": "adri", "text": "build failed on main", "createdAt": at });
+        let agent = json!({ "author": "agent", "by": "scout", "text": "build failed on main", "createdAt": at });
         assert_eq!(author_label(&cli), "you · cli");
         assert_eq!(author_label(&app), "you · app");
-        assert_eq!(author_label(&agent), "agent · adri");
+        assert_eq!(author_label(&agent), "agent · scout");
         assert_eq!(author_label(&json!({ "author": "lead" })), "lead");
         assert_eq!(author_label(&json!({ "author": "system" })), "fleetd");
         let shown = render_message(
@@ -696,10 +691,10 @@ mod tests {
             "sent as you · cli: it starts the lead's next turn"
         );
         assert!(sent_line(&msg("steer")).contains("reads it at its next step"));
-        let held = json!({ "message": { "author": "agent", "by": "adri" }, "leadWaiting": "The lead's machine is away." });
+        let held = json!({ "message": { "author": "agent", "by": "scout" }, "leadWaiting": "The lead's machine is away." });
         assert_eq!(
             sent_line(&held),
-            "held, as agent · adri: The lead's machine is away."
+            "held, as agent · scout: The lead's machine is away."
         );
     }
 

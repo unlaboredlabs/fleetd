@@ -17,7 +17,9 @@ Where fleetd keeps everything, and the settings you can change. The [hub](/docs/
     hub.sqlite           everything the hub knows, timelines included
     setup.json           what fleetd init and machine add set up: address, commit identity, machines
     hub.log              the hub service's log
-    cli.key              the admin key the CLI on this machine uses
+    cli.key              the admin key the CLI on this machine uses (an agent key)
+    owner.key            your human key on this machine: fleetd chat
+    keys/<name>.key      agent keys made with fleetd hub key create --agent
     webhook.key          seals webhook secrets
     playbooks/<name>.md  your version of a playbook; delete it to use fleetd's
     prompts/<id>.md      your version of a prompt, hub-wide

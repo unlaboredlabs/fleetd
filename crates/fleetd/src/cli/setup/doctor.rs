@@ -17,11 +17,12 @@ use super::{Failure, write_private};
 use crate::hub::doctor::checks::{DoctorCheck, DoctorStatus};
 
 const KEY_FILE: &str = "cli.key";
+const OWNER_KEY_FILE: &str = "owner.key";
 
-/// The CLI's own key, kept 0600 in the hub home beside the database it was minted from (so it grants nothing that
-/// reading the home doesn't), and minted again only when it is gone or revoked.
-pub(crate) fn cli_key(home: &Path) -> Result<String, String> {
-    let file = home.join(KEY_FILE);
+/// A key kept 0600 in the hub home beside the database it was minted from (so it grants nothing that reading the home
+/// doesn't), and minted again only when it is gone or revoked.
+fn stored_key(home: &Path, file: &str, name: &str, kind: KeyKind) -> Result<String, String> {
+    let file = home.join(file);
     let hub = open_hub(home)?;
     if let Ok(key) = std::fs::read_to_string(&file)
         && hub.auth.verify(key.trim()).is_ok()
@@ -31,16 +32,34 @@ pub(crate) fn cli_key(home: &Path) -> Result<String, String> {
     let created = hub
         .auth
         .create_key(
-            "fleetd-cli",
+            name,
             &[Grant {
                 role: Role::Admin,
                 machines: GrantMachines::All(Star::Value),
             }],
-            KeyKind::Agent,
+            kind,
         )
         .map_err(|error| error.to_string())?;
     write_private(&file, &format!("{}\n", created.key))?;
     Ok(created.key)
+}
+
+/// The CLI's own admin key: an agent key, so it never speaks for the person.
+fn cli_key(home: &Path) -> Result<String, String> {
+    stored_key(home, KEY_FILE, "fleetd-cli", KeyKind::Agent)
+}
+
+/// The machine owner's human key, so a terminal on the hub machine can steer, write in a chat and stop as the person.
+/// Refused inside an agent's session (its process tree says so, whatever its environment claims): agents never act
+/// as the person.
+pub(crate) fn owner_key(home: &Path) -> Result<String, Failure> {
+    if crate::node::runner::process::inside_session() {
+        return Err(Failure {
+            message: "this runs inside an agent's session, and agents never act as you".into(),
+            fix: "run it from your own terminal on this machine".into(),
+        });
+    }
+    stored_key(home, OWNER_KEY_FILE, "owner", KeyKind::Human).map_err(again)
 }
 
 /// The hub on this machine, with the CLI's own admin key. `fleetd time` without `--hub` uses it too.
@@ -60,10 +79,33 @@ pub async fn connect_to(
     hub: Option<&str>,
     client: &str,
 ) -> Result<McpClient, Failure> {
-    let again = |message: String| Failure {
+    let key = cli_key(home).map_err(again)?;
+    connect_with(home, hub, client, &key).await
+}
+
+/// [`connect_to`] as the machine's owner ([`owner_key`]), for what speaks for the person.
+pub async fn connect_owner(
+    home: &Path,
+    hub: Option<&str>,
+    client: &str,
+) -> Result<McpClient, Failure> {
+    let key = owner_key(home)?;
+    connect_with(home, hub, client, &key).await
+}
+
+fn again(message: String) -> Failure {
+    Failure {
         message,
         fix: "fleetd init (it starts the hub and repairs its setup)".into(),
-    };
+    }
+}
+
+async fn connect_with(
+    home: &Path,
+    hub: Option<&str>,
+    client: &str,
+    key: &str,
+) -> Result<McpClient, Failure> {
     let listen = match hub {
         Some(url) => url.trim_end_matches('/').to_owned(),
         None => {
@@ -74,14 +116,12 @@ pub async fn connect_to(
             format!("http://{}", state.listen)
         }
     };
-    let state_listen = listen.clone();
-    let key = cli_key(home).map_err(again)?;
-    McpClient::connect(&listen, &key, client, Duration::from_secs(15))
+    McpClient::connect(&listen, key, client, Duration::from_secs(15))
         .await
         .map_err(|error| {
             again(format!(
                 "the hub does not answer at {}: {}",
-                state_listen,
+                listen,
                 error.message()
             ))
         })
@@ -265,5 +305,33 @@ pub async fn doctor_command(argv: &[String]) -> u8 {
             list.failed("doctor", &failure.message, &failure.fix);
             4
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::os::unix::fs::PermissionsExt;
+
+    use super::*;
+
+    #[test]
+    fn the_owners_key_is_a_private_human_key_kept_until_revoked() {
+        let home = tempfile::tempdir().unwrap();
+        let key = stored_key(home.path(), OWNER_KEY_FILE, "owner", KeyKind::Human).unwrap();
+        let file = home.path().join(OWNER_KEY_FILE);
+        assert_eq!(
+            std::fs::metadata(&file).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        let hub = open_hub(home.path()).unwrap();
+        let info = hub.auth.verify(&key).unwrap();
+        assert_eq!(info.kind, Some(KeyKind::Human));
+        assert_eq!(
+            stored_key(home.path(), OWNER_KEY_FILE, "owner", KeyKind::Human).unwrap(),
+            key
+        );
+        // The CLI's own key stays an agent key beside it.
+        let cli = cli_key(home.path()).unwrap();
+        assert_eq!(hub.auth.verify(&cli).unwrap().kind, None);
     }
 }

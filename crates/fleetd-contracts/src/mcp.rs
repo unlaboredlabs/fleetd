@@ -1166,8 +1166,8 @@ input!(ChatSendInput {
     client_request_id: RequestId,
     /// A human key: where it is written. Absent means the app.
     client: Option<crate::chat::ChatClient>,
-    /// An agent inside a fleetd session: its FLEETD_THREAD_ID. The project's own lead and tasks are refused (they
-    /// use their fleetd tools); another project's task is named by its task id.
+    /// Sent from inside a fleetd session: its thread id (FLEETD_THREAD_ID). The project's own lead and tasks are refused
+    /// (they use their fleetd tools), and so is a human key: a session never writes as the human.
     session: Option<ThreadId>,
 });
 output!(ChatSendOutput {

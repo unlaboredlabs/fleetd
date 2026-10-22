@@ -153,19 +153,12 @@ fn refused(message: &str, fix: &str) -> ToolError {
     ToolError::new(ErrorCode::Forbidden, message).with_fix(fix)
 }
 
-/// A human key writes as the human, from the app unless it says otherwise. Any other key writes as an agent, named
-/// by the key, or by its task when it runs in another project's task session; the project's own lead and tasks are
-/// refused, so they talk through their fleetd tools and never wake their lead through its chat.
+/// The author is the key's: a human key writes as the human, from the app unless it says otherwise; any other key as
+/// an agent, by the key's name. A message sent from inside a fleetd session (`session`, which `fleetd chat` reads
+/// from its process tree) is an agent's whatever key it holds, and the project's own lead and tasks are refused, so
+/// they talk through their fleetd tools and never wake their lead through its chat.
 fn writer(hub: &Hub, caller: &Caller, input: &ChatSendInput) -> Result<Writer, ToolError> {
-    if crate::hub::api::is_human(caller) {
-        return Ok(Writer {
-            author: ChatAuthor::Human,
-            by: caller.name.to_string(),
-            client: Some(input.client.unwrap_or(ChatClient::App)),
-        });
-    }
     let r = &input.project_ref;
-    let mut by = caller.name.to_string();
     if let Some(session) = &input.session {
         if lead_thread(hub, r).is_some_and(|t| t.thread_id == *session) {
             return Err(refused(
@@ -177,20 +170,31 @@ fn writer(hub: &Hub, caller: &Caller, input: &ChatSendInput) -> Result<Writer, T
             .db
             .with(|c| Ok(TaskRecords::by_thread_id(c, session.as_str())?))
             .map_err(store_error)?;
-        if let Some(stored) = task {
-            if stored.task.project_ref == *r {
-                return Err(refused(
-                    "A task can't write to its own lead's chat.",
-                    "Tell your lead through your fleetd tools: report, or ask_lead.",
-                ));
-            }
-            by = stored.task.task_id.to_string();
+        if task.is_some_and(|stored| stored.task.project_ref == *r) {
+            return Err(refused(
+                "A task can't write to its own lead's chat.",
+                "Tell your lead through your fleetd tools: report, or ask_lead.",
+            ));
+        }
+        if crate::hub::api::is_human(caller) {
+            return Err(refused(
+                "An agent's session can't write as the human.",
+                "Write with an agent key of your own: fleetd hub key create --agent <name>.",
+            ));
         }
     }
-    Ok(Writer {
-        author: ChatAuthor::Agent,
-        by,
-        client: None,
+    Ok(if crate::hub::api::is_human(caller) {
+        Writer {
+            author: ChatAuthor::Human,
+            by: caller.name.to_string(),
+            client: Some(input.client.unwrap_or(ChatClient::App)),
+        }
+    } else {
+        Writer {
+            author: ChatAuthor::Agent,
+            by: caller.name.to_string(),
+            client: None,
+        }
     })
 }
 
