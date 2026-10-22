@@ -36,6 +36,3 @@ export const setupSteps = (progress: SetupProgress): ReadonlyArray<SetupStep> =>
 
 /** The one-line answer to "what is fleetd?", the welcome's and the empty home's. */
 export const TAGLINE = "Each project gets a lead that runs Claude agents for you and asks only what it needs.";
-
-/** What sets fleetd up on this computer: the installer, which runs `fleetd init` when it's done. */
-export const SETUP_COMMAND = "curl -fsSL https://fleetd.sh | sh";

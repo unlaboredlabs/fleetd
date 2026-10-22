@@ -107,7 +107,7 @@ both; the lead plans to them.
 | Per project: Max agents | The project's agents: writers, readers, reviewers, verifiers. Not the lead's own turns. | The fleet cap | Click "agents 6 / 12" in the project's chat header, or use Settings → Agents. From 1 up to the fleet cap. |
 | Fleet-wide | Every running turn, leads included. | | Settings → Agents → Whole fleet. Needs an admin key. |
 
-The header shows "· 2 waiting" when agents are queued. While you move the slider it says what the change will do; it
+The header shows "· 2 queued" when agents wait their turn. While you move the slider it says what the change will do; it
 applies when you let go, with Undo. A fleet cap below a project's own max gets a warning.
 
 ![The Max agents control open in storefront's chat header: a slider set to 12, from 1 up to 16 (the fleet's limit), with "6 agents running now".](/docs/img/max-agents.png)

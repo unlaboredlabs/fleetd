@@ -31,10 +31,12 @@
   margin-bottom: var(--space-1);
 }
 
-/* The icon's tile is near the dark theme's background; a hairline keeps its edge. */
 .markTile {
-  stroke: var(--hairline);
-  stroke-width: 24px;
+  fill: var(--accent-fill);
+}
+
+.markChevrons {
+  stroke: var(--on-accent);
 }
 
 /* One way in: its heading, its words, its command or fields. */

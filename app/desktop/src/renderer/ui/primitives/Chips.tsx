@@ -2,6 +2,7 @@ import type { CSSProperties } from "react";
 import { cx } from "../lib/cx";
 import { Truncate } from "../text/Truncate";
 import s from "./Misc.module.css";
+import { ROLE_WORD, type AgentRole } from "./roles";
 
 /**
  * The status vocabulary (live/chips.rs): amber means "needs you", danger only on failure words, and everything
@@ -45,7 +46,6 @@ export function StatusChip({ tone, children, inRow }: { tone: StatusTone; childr
   );
 }
 
-export type AgentRole = "lead" | "implementer" | "reader" | "reviewer" | "verifier" | "qa";
 
 /** One tint per role: workers (implementers, readers), reviewers, verifiers (and QA), the lead. */
 export function roleTint(role: AgentRole): string {
@@ -69,7 +69,7 @@ export function RoleTag({ role, width, children, inRow }: { role: AgentRole; wid
   return (
     <span className={s.chip} style={style}>
       <Truncate expand={inRow ? "none" : "popover"} size="xs" tone="inherit">
-        {children ?? role}
+        {children ?? ROLE_WORD[role]}
       </Truncate>
     </span>
   );

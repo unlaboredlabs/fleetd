@@ -25,8 +25,8 @@ export function projectAgents(slots: SlotState, project: ProjectRef): ProjectAge
   return { running: row?.running ?? 0, queued: row?.queued ?? 0, max, cap: slots.cap, own: max < slots.cap };
 }
 
-/** The header control's words: "agents 6 / 12", and "· 2 waiting" when some are. */
-export const agentsLabel = (a: ProjectAgents): string => `agents ${a.running} / ${a.max}${a.queued > 0 ? ` · ${a.queued} waiting` : ""}`;
+/** The header control's words: "agents 6 / 12", and "· 2 queued" when some wait their turn. */
+export const agentsLabel = (a: ProjectAgents): string => `agents ${a.running} / ${a.max}${a.queued > 0 ? ` · ${a.queued} queued` : ""}`;
 
 /** How many running agents a new max leaves over it: they finish their work, and no new one starts until under. */
 export const extrasOver = (running: number, next: number): number => Math.max(0, running - next);
@@ -35,15 +35,15 @@ export const extrasOver = (running: number, next: number): number => Math.max(0,
 export function changeLine(a: ProjectAgents, next: number): string {
   if (next === a.max) {
     const running = a.running === 1 ? "1 agent running now" : `${a.running} agents running now`;
-    return a.queued > 0 ? `${running}, ${a.queued} waiting.` : `${running}.`;
+    return a.queued > 0 ? `${running}, ${a.queued} queued.` : `${running}.`;
   }
   const over = extrasOver(a.running, next);
   if (over > 0) {
     const until = next === 1 ? "until none is running" : `until fewer than ${next} run`;
     return `${a.running} running now, ${over} over the new max: they finish their current work, and new agents wait ${until}.`;
   }
-  if (a.queued > 0 && next > a.max) return `Up to ${next} at once. ${Math.min(a.queued, next - a.max)} of the ${a.queued} waiting can start now.`;
-  if (next > a.max) return `Up to ${next} at once. Waiting agents start as soon as there is room.`;
+  if (a.queued > 0 && next > a.max) return `Up to ${next} at once. ${Math.min(a.queued, next - a.max)} of the ${a.queued} queued can start now.`;
+  if (next > a.max) return `Up to ${next} at once. Queued agents start as soon as there is room.`;
   return `Up to ${next} at once. New agents wait while ${next} run.`;
 }
 

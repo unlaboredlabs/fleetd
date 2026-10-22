@@ -12,6 +12,8 @@ const PairSection = z.object({
   healthz: z.json().optional(),
   /** /pair's answer; absent: the hub can't be reached. */
   redeem: z.object({ status: z.int().min(100).max(599), body: z.json() }).optional(),
+  /** The terminal "Set up fleetd" opens; absent: none could be opened. Nothing is ever run. */
+  terminal: z.string().optional(),
   /** Where the key would be kept; absent: the OS store. */
   store: z
     .union([
@@ -47,5 +49,11 @@ export const fixturePairingDeps = (file: string, connect: PairingDeps["connect"]
     now: Date.now,
     deviceName: () => "devbox",
     keyStore: pair.store ?? { kind: "os", where: "the OS keychain" },
+    openSetup: () =>
+      Promise.resolve(
+        pair.terminal === undefined
+          ? { ok: false, message: "Couldn't open a terminal. Run this in one:", command: "fleetd init" }
+          : { ok: true, terminal: pair.terminal },
+      ),
   };
 };

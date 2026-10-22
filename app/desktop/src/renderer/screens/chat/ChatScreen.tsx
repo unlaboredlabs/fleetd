@@ -2,10 +2,10 @@
 // fleet activity quietly inside it (the live strip under the lead's newest message, PR and merge one-liners), the
 // two inline items chat can't carry (a secret, a gated command), and the composer, which has the cursor as soon as
 // the chat opens. Above the box, a line says what the lead waits on you for; an empty chat asks what to do.
-// "What T<n> was told" opens from the strip's lanes.
+// "What the writer was told" opens from the strip's rows.
 import { useCallback, useMemo, useState } from "react";
 import type { AgentLane, ThreadRef } from "../../../shared/contracts";
-import { Button, IdChip, StatusChip, Text, Truncate, type StatusTone } from "../../ui";
+import { Button, IdChip, ROLE_WORD, StatusChip, Text, Truncate, type StatusTone } from "../../ui";
 import { STATE_WORDS } from "../status/rows";
 import type { ProjectStateWord } from "../../src/data/selectors";
 import { useData } from "../../src/data/react";
@@ -77,8 +77,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   const onTold = useCallback(
     (lane: AgentLane) => {
       if (!lane.threadRef) return;
-      const name = lane.taskId ?? "the agent";
-      setTold({ thread: lane.threadRef, name, who: { project: title, role: roleWords(lane.role, lane.taskId) } });
+      setTold({ thread: lane.threadRef, name: roleWords(lane.role), who: { project: title, role: ROLE_WORD[lane.role] } });
     },
     [title],
   );

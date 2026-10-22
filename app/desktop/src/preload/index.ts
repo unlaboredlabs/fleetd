@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from "ele
 import type { LinkHandlerStatus, OpenTarget } from "../shared/app";
 import { IPC } from "../shared/channels";
 import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, HubState, OpenOutcome, SecretOutcome } from "../shared/hub";
-import type { KeyStore, PairOutcome, PairStart, Probe } from "../shared/pairing";
+import type { KeyStore, PairOutcome, PairStart, Probe, SetupOutcome } from "../shared/pairing";
 import type { FleetdApi } from "./api";
 
 const listeners = new Set<(frame: HubFrame) => void>();
@@ -57,6 +57,7 @@ const api: FleetdApi = {
     redeem: (request) => ipcRenderer.invoke(IPC.pairRedeem, request) as Promise<PairOutcome>,
     auto: () => ipcRenderer.invoke(IPC.pairAuto) as Promise<PairOutcome>,
     store: () => ipcRenderer.invoke(IPC.pairStore) as Promise<KeyStore>,
+    setup: () => ipcRenderer.invoke(IPC.pairSetup) as Promise<SetupOutcome>,
   },
   system: {
     hostName: () => ipcRenderer.invoke(IPC.systemHostName) as Promise<string>,

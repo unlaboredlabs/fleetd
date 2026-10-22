@@ -4,6 +4,7 @@
 import type { AgentRole, ChangeState } from "../../../shared/contracts";
 import type { ChecksSummary, PrAuthor, PrCheck, PrReviewEntry, PrRow } from "../../src/data/pr-contract";
 import { shortModel } from "../live/format";
+import { ROLE_WORD } from "../../ui/primitives/roles";
 
 /** A state word's colour: the ui kit's status tones. */
 export type Tone = "needs-you" | "failed" | "working" | "quiet" | "idle" | "done";
@@ -135,13 +136,14 @@ export const reviewsWord = (r: PrRow["review"]): { readonly text: string; readon
   return undefined;
 };
 
+// The app's one word per role (ui ROLE_WORD), with the article a line starts with.
 const ROLE: Readonly<Partial<Record<string, string>>> = {
-  lead: "The lead",
-  implementer: "An implementer",
-  reader: "A reader",
-  reviewer: "A reviewer",
-  verifier: "A verifier",
-  qa: "A QA agent",
+  lead: `The ${ROLE_WORD.lead}`,
+  implementer: `A ${ROLE_WORD.implementer}`,
+  reader: `A ${ROLE_WORD.reader}`,
+  reviewer: `A ${ROLE_WORD.reviewer}`,
+  verifier: `A ${ROLE_WORD.verifier}`,
+  qa: `A ${ROLE_WORD.qa} agent`,
 } satisfies Record<AgentRole, string>;
 
 const agentWords = (a: PrAuthor): string | undefined => {
@@ -150,7 +152,7 @@ const agentWords = (a: PrAuthor): string | undefined => {
   return a.model === undefined ? who : `${who} (${shortModel(a.model)})`;
 };
 
-/** To start a line: "An implementer (opus)", or a login as GitHub spells it, "sam on GitHub"; undefined when the hub knows neither. */
+/** To start a line: "A writer (opus)", or a login as GitHub spells it, "sam on GitHub"; undefined when the hub knows neither. */
 export const authorWords = (a: PrAuthor): string | undefined => agentWords(a) ?? (a.login === undefined ? undefined : `${a.login} on GitHub`);
 
 /** To start a line: "A reviewer (opus)", "sam on GitHub", "Someone on GitHub". */

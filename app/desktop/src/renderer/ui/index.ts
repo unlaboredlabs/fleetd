@@ -23,39 +23,19 @@ export {
   type CheckboxProps,
 } from "./primitives/Field";
 export { Select, type SelectProps, type SelectOption } from "./primitives/Select";
-export {
-  Menu,
-  MenuTrigger,
-  MenuContent,
-  MenuItem,
-  MenuCheckboxItem,
-  MenuRadioGroup,
-  MenuRadioItem,
-  MenuLabel,
-  MenuGroup,
-  MenuSeparator,
-  MenuSub,
-  MenuSubTrigger,
-  MenuSubContent,
-  ContextMenu,
-  ContextMenuTrigger,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
-} from "./primitives/Menu";
-export { Dialog, Sheet, DialogClose, type DialogProps } from "./primitives/Dialog";
+export { Menu, MenuTrigger, MenuContent, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator } from "./primitives/Menu";
+export { Dialog, Sheet, type DialogProps } from "./primitives/Dialog";
 export { Tooltip, type TooltipProps } from "./primitives/Tooltip";
-export { Popover, PopoverTrigger, PopoverContent, PopoverClose, PopoverAnchor } from "./primitives/Popover";
+export { Popover, PopoverTrigger, PopoverContent } from "./primitives/Popover";
 export { Tabs, TabList, Tab, TabPanel } from "./primitives/Tabs";
 export { toast, type ToastInput, type ToastTone } from "./primitives/Toast";
-export { ScrollArea, type ScrollAreaProps } from "./primitives/ScrollArea";
-export { Dot, StatusChip, RoleTag, roleTint, Separator, type StatusTone, type AgentRole } from "./primitives/Chips";
+export { Dot, StatusChip, RoleTag, roleTint, Separator, type StatusTone } from "./primitives/Chips";
+export { ROLE_WORD, type AgentRole } from "./primitives/roles";
 
 export { Code, InlineCode, renderTokens, type CodeProps } from "./markdown/Code";
 export { resolveLang, langForPath, highlight, type CodeLang, type Tokens } from "./markdown/highlighter";
 export { Markdown, type MarkdownProps } from "./markdown/Markdown";
 export { VirtualList, type VirtualListProps } from "./list/VirtualList";
-export { DataTable, type DataTableProps, type Column } from "./list/DataTable";
 export {
   AppFrame,
   TopBar,
@@ -71,6 +51,4 @@ export {
   type Crumb,
   type SidebarItemProps,
 } from "./layout/Layout";
-export { DiffView, type DiffViewProps, type DiffMode } from "./diff/DiffView";
-export { parsePatch, toSplitRows, type ParsedPatch, type DiffFile, type DiffHunk, type DiffLine } from "./diff/parsePatch";
 export { GalleryScreen } from "./gallery";

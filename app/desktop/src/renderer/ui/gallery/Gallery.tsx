@@ -1,4 +1,4 @@
-import { Archive, ArrowUp, Bell, Copy, FolderPlus, MessageSquare, Plus, Settings, Square } from "lucide-react";
+import { ArrowUp, Bell, Copy, FolderPlus, MessageSquare, Plus, Settings, Square } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   AppFrame,
@@ -6,14 +6,7 @@ import {
   Button,
   Checkbox,
   Code,
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
-  ContextMenuTrigger,
-  DataTable,
   Dialog,
-  DiffView,
   Dot,
   EmptyState,
   Field,
@@ -22,10 +15,8 @@ import {
   Kbd,
   Markdown,
   Menu,
-  MenuCheckboxItem,
   MenuContent,
   MenuItem,
-  MenuLabel,
   MenuSeparator,
   MenuTrigger,
   Panel,
@@ -62,7 +53,7 @@ import {
   type AgentRole,
   type StatusTone,
 } from "..";
-import { CODE_LONG_LINE, CODE_TS, LOG_LINES, LONG, MARKDOWN, ORDER_ID, PATCH, PROMPTS, SHORT, UNBROKEN } from "./samples";
+import { CODE_LONG_LINE, CODE_TS, LOG_LINES, LONG, MARKDOWN, ORDER_ID, SHORT, UNBROKEN } from "./samples";
 import s from "./gallery.module.css";
 
 const SECTIONS = [
@@ -76,8 +67,6 @@ const SECTIONS = [
   ["status", "Status"],
   ["markdown", "Markdown"],
   ["code", "Code"],
-  ["diff", "Diff"],
-  ["table", "Table"],
   ["list", "Long list"],
   ["layout", "Layout"],
 ] as const;
@@ -153,8 +142,6 @@ export default function Gallery() {
         {show("status") && <StatusSection />}
         {show("markdown") && <MarkdownSection />}
         {show("code") && <CodeSection />}
-        {show("diff") && <DiffSection />}
-        {show("table") && <TableSection />}
         {show("list") && <ListSection />}
         {show("layout") && <LayoutSection />}
       </div>
@@ -398,7 +385,6 @@ function ChoicesSection() {
 
 function OverlaysSection() {
   const [open, setOpen] = useState(false);
-  const [showAll, setShowAll] = useState(true);
   return (
     <Section id="overlays" title="Menus and dialogs">
       <div className={s.row}>
@@ -407,15 +393,11 @@ function OverlaysSection() {
             <Button>Order menu</Button>
           </MenuTrigger>
           <MenuContent>
-            <MenuLabel>Order</MenuLabel>
             <MenuItem icon={<MessageSquare />} hint="⌘L">
               Open the project chat
             </MenuItem>
             <MenuItem icon={<Copy />}>Copy order link</MenuItem>
             <MenuItem>{LONG}</MenuItem>
-            <MenuCheckboxItem checked={showAll} onCheckedChange={setShowAll}>
-              Show finished lanes
-            </MenuCheckboxItem>
             <MenuItem disabled>Retry (nothing failed)</MenuItem>
             <MenuSeparator />
             <MenuItem icon={<Square />} danger hint="⌘.">
@@ -423,19 +405,6 @@ function OverlaysSection() {
             </MenuItem>
           </MenuContent>
         </Menu>
-        <ContextMenu>
-          <ContextMenuTrigger asChild>
-            <div className={s.box}>
-              <Text tone="quiet">Right-click here</Text>
-            </div>
-          </ContextMenuTrigger>
-          <ContextMenuContent>
-            <ContextMenuItem icon={<Copy />}>Copy</ContextMenuItem>
-            <ContextMenuItem icon={<Archive />}>Archive</ContextMenuItem>
-            <ContextMenuSeparator />
-            <ContextMenuItem danger>Remove</ContextMenuItem>
-          </ContextMenuContent>
-        </ContextMenu>
         <Dialog
           trigger={<Button>Confirm dialog</Button>}
           title="Stop this order?"
@@ -596,45 +565,6 @@ function CodeSection() {
       <Code code={CODE_LONG_LINE} lang="sh" />
       <Code code={CODE_LONG_LINE} lang="sh" wrap={false} title="Not wrapped: scrolls sideways" />
       <Code code={"plain text with no language"} />
-    </Section>
-  );
-}
-
-function DiffSection() {
-  return (
-    <Section id="diff" title="Diff">
-      <DiffView patch={PATCH} />
-      <Case label="Side by side">
-        <DiffView patch={PATCH} mode="split" bare />
-      </Case>
-      <Case label="Not a diff">
-        <DiffView patch="Nothing here parses as a patch." />
-      </Case>
-      <Case label="Empty">
-        <DiffView patch="" />
-      </Case>
-    </Section>
-  );
-}
-
-function TableSection() {
-  const [selected, setSelected] = useState<string | null>("p2");
-  return (
-    <Section id="table" title="Table">
-      <DataTable
-        aria-label="Prompts"
-        rows={PROMPTS}
-        getKey={(p) => p.id}
-        selectedKey={selected}
-        onRowClick={(p) => setSelected(p.id)}
-        columns={[
-          { key: "name", header: "Prompt", width: "minmax(0, 1fr)", text: (p) => p.name, mode: "truncate", style: { strong: true } },
-          { key: "desc", header: "What it's for", width: "minmax(0, 2fr)", text: (p) => p.description || "No description yet.", style: { tone: "quiet" } },
-          { key: "machine", header: "Machine", width: "96px", text: (p) => p.machine, mode: "truncate" },
-          { key: "updated", header: "Changed", width: "88px", align: "end", text: (p) => p.updated, mode: "truncate", style: { size: "xs", tone: "quiet" } },
-        ]}
-      />
-      <DataTable aria-label="Empty table" rows={[]} getKey={(p: (typeof PROMPTS)[number]) => p.id} columns={[{ key: "name", header: "Prompt", text: (p) => p.name }]} empty="No prompts match that search." />
     </Section>
   );
 }
