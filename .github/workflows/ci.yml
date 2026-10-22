@@ -307,3 +307,55 @@ jobs:
           path: app/desktop/smoke-results/
           if-no-files-found: ignore
           retention-days: 14
+
+  desktop-macos-repro:
+    # TEMPORARY (removed before merge): what differs between the nightly's mac smoke and this PR's.
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [plain, occluded, after-release-app]
+    runs-on: macos-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: app/desktop
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: app/desktop/package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: app/desktop/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: Release app launched and killed first, as the nightly's update check does
+        if: matrix.variant == 'after-release-app'
+        run: |
+          pnpm build
+          CSC_IDENTITY_AUTO_DISCOVERY=false pnpm exec electron-builder --mac --dir --arm64 --publish never -c.mac.identity=- -c.mac.hardenedRuntime=false
+          ditto -c -k --keepParent --norsrc dist/mac-arm64/fleetd.app "$RUNNER_TEMP/fleetd.zip"
+          mkdir -p "$RUNNER_TEMP/launch" && ditto dist/mac-arm64/fleetd.app "$RUNNER_TEMP/launch/fleetd.app"
+          CHECK_WAIT=20 ../../.github/release/desktop-update-check.sh "$RUNNER_TEMP/fleetd.zip" "$RUNNER_TEMP/launch/fleetd.app/Contents/MacOS/fleetd" || echo "update check: $?"
+          ps -axo pid,command | grep -i fleetd | grep -v grep || true
+      - name: Packaged smoke
+        run: |
+          pnpm fixtures
+          pnpm build:test
+          CSC_IDENTITY_AUTO_DISCOVERY=false pnpm exec electron-builder --mac --dir --arm64 --publish never -c.directories.output=dist-test \
+            -c.mac.identity=- -c.mac.hardenedRuntime=false -c.extraMetadata.version=0.0.0-nightly.202610220936+5c4cc17
+          if [ "${{ matrix.variant }}" = occluded ]; then
+            ( sleep 4; osascript -e 'tell application "TextEdit" to activate' -e 'tell application "TextEdit" to make new document' \
+              -e 'tell application "System Events" to tell process "TextEdit" to set position of front window to {0, 0}' \
+              -e 'tell application "System Events" to tell process "TextEdit" to set size of front window to {3000, 2000}' || true ) &
+          fi
+          ps -axo pid,command | grep -i fleetd | grep -v grep || true
+          node scripts/packaged-smoke.ts dist-test/mac-arm64/fleetd.app/Contents/MacOS/fleetd
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: repro-${{ matrix.variant }}
+          path: app/desktop/smoke-results/
+          if-no-files-found: ignore
+          retention-days: 7
