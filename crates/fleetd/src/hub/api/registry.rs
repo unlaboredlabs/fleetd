@@ -93,6 +93,7 @@ impl Registry {
 
     /// Registers `name` with a handler that takes the raw JSON input and decodes it itself; the role check from the
     /// contracts table still runs first.
+    #[cfg(test)]
     pub fn add_raw<F, Fut>(&mut self, name: &'static str, handler: F)
     where
         F: Fn(Arc<Hub>, Caller, Value) -> Fut + Send + Sync + 'static,

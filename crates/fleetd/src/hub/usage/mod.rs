@@ -10,4 +10,4 @@ pub mod wire;
 pub(crate) mod wire_approvals;
 pub mod wire_retro;
 
-pub use service::{Usage, UsageDeps, UsageStatus};
+pub use service::{Usage, UsageDeps};

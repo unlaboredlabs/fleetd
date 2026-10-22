@@ -3,9 +3,9 @@
 //! a failure, and the usage layer to park and pace. fleetd never asks a usage API.
 //! The text rules are the node's (`node::runner::failure::classify_text`); this module puts the node's own class
 //! first and adds what the usage layer reads off the event log.
-use super::ports::HubEvent;
 use super::time::{iso, parse_ms};
 use crate::node::runner::failure::classify_text;
+use fleetd_contracts::events::{HubEvent, HubEventType};
 use fleetd_contracts::sessions::FailureClass;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -109,24 +109,6 @@ fn plus(at: &str, ms: i64) -> String {
     iso(parse_ms(at).unwrap_or(0) + ms)
 }
 
-/// A failed thread's limit, read off the fields of its summary (`limitOfSummary`).
-pub fn limit_of_failure(
-    status: &str,
-    last_error: Option<(&str, &str)>,
-    last_progress_at: &str,
-    usage_limit_reset_at: Option<&str>,
-    model: Option<&str>,
-) -> Option<Limit> {
-    let (class, message) = last_error.filter(|_| status == "failed")?;
-    classify_limit(&LimitInput {
-        error_class: Some(class),
-        message,
-        reset_at: usage_limit_reset_at,
-        at: last_progress_at,
-        model,
-    })
-}
-
 fn str_at<'a>(data: &'a Value, path: &[&str]) -> Option<&'a str> {
     let mut v = data;
     for key in path {
@@ -137,7 +119,7 @@ fn str_at<'a>(data: &'a Value, path: &[&str]) -> Option<&'a str> {
 
 /// A thread.usage_limited event's limit: what the executor stamped on it, else classified again from its error.
 pub fn limit_of_event(event: &HubEvent) -> Option<Limit> {
-    if event.kind != "thread.usage_limited" {
+    if event.r#type != HubEventType::ThreadUsageLimited {
         return None;
     }
     let data = event.data.clone().unwrap_or(Value::Null);
@@ -156,13 +138,13 @@ pub fn limit_of_event(event: &HubEvent) -> Option<Limit> {
         error_class: Some(str_at(&data, &["error", "class"]).unwrap_or("usage_limit")),
         message: str_at(&data, &["error", "message"]).unwrap_or(""),
         reset_at: str_at(&data, &["usageLimitResetAt"]),
-        at: &event.at,
+        at: event.at.as_str(),
         model: None,
     })
     .or_else(|| {
         Some(Limit {
             class: UsageClass::UsageLimit,
-            resume_at: Some(plus(&event.at, FALLBACK_USAGE_LIMIT_MS)),
+            resume_at: Some(plus(event.at.as_str(), FALLBACK_USAGE_LIMIT_MS)),
             model: None,
         })
     })
@@ -182,7 +164,7 @@ pub fn parked_of(event: &HubEvent) -> Option<UsageParked> {
     let limit = limit_of_event(event)?;
     Some(UsageParked {
         class: limit.class,
-        since: event.at.clone(),
+        since: event.at.to_string(),
         resume_at: limit.resume_at,
     })
 }

@@ -1,10 +1,11 @@
 //! The ops areas' ports over the real hub: one `OpsPorts` per hub, built empty in `serve::build_on` (before the
 //! `Hub` exists) and bound to it in `serve::start_loops`. Every method reads the other areas through `Hub`.
-use super::ports::{self, BoxFut, HubEvent, NewEvent, ThreadRef, WaitInput, WaitPage};
+use super::ports::{self, BoxFut, NewEvent, ThreadRef, WaitInput, WaitPage};
 use super::service::UsageQueue;
 use super::source::{UsageReading, UsageSource};
 use crate::hub::api::Hub;
 use crate::hub::store;
+use fleetd_contracts::events::HubEvent;
 use serde_json::Value;
 use std::sync::{Arc, OnceLock, Weak};
 
@@ -51,12 +52,10 @@ impl ports::EventLog for OpsPorts {
             }
             let typed: store::NewEvent =
                 serde_json::from_value(json).expect("ops events use contract event types");
-            let appended = self
-                .hub()
+            self.hub()
                 .events
                 .append(typed)
-                .expect("the event log appends");
-            convert(&appended).expect("a hub event reads back")
+                .expect("the event log appends")
         })
     }
 
@@ -86,7 +85,7 @@ impl ports::EventLog for OpsPorts {
                 .await
             {
                 Ok(page) => WaitPage {
-                    events: page.events.iter().filter_map(convert).collect(),
+                    events: page.events,
                     cursor: page.cursor.max(0) as u64,
                     more: page.more,
                 },
@@ -259,7 +258,6 @@ impl DoctorFleet for OpsPorts {
                 .await
                 .map_err(|e| e.message)?;
             Ok(ActionOutcome {
-                ok: result.ok,
                 message: result.message.to_string(),
                 probe: result.probe.as_ref().and_then(convert),
             })

@@ -415,8 +415,6 @@ impl NodeLinkServer {
             let caller = LeadCaller {
                 by: lead_by(&project_ref),
                 project_ref,
-                cwd: cwd.to_owned(),
-                thread,
                 agent,
             };
             handler.handle(caller, frame.call).await
