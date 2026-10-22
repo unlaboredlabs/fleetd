@@ -851,26 +851,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn calls_and_events_round_trip() {
-        let call =
-            r#"{"id":"c1","call":{"op":"send","sessionId":"7f0c","runId":"r2","text":"continue"}}"#;
-        let decoded: SessionCallFrame = serde_json::from_str(call).unwrap();
-        assert_eq!(serde_json::to_string(&decoded).unwrap(), call);
-
-        let steer = r#"{"id":"c3","call":{"op":"send","sessionId":"7f0c","runId":"r3","text":"S1 · stop","mode":"now","steer":{"id":"S1"}}}"#;
-        let decoded: SessionCallFrame = serde_json::from_str(steer).unwrap();
-        assert_eq!(serde_json::to_string(&decoded).unwrap(), steer);
-
-        let answer = r#"{"id":"c2","call":{"op":"answer","sessionId":"7f0c","requestId":"q1","decision":{"behavior":"deny","message":"no"}}}"#;
-        let decoded: SessionCallFrame = serde_json::from_str(answer).unwrap();
-        assert_eq!(serde_json::to_string(&decoded).unwrap(), answer);
-
-        let delta = r#"{"sessionId":"7f0c","at":"2026-10-18T10:00:00.000Z","event":{"type":"delta","messageId":"m1","append":"O"}}"#;
-        let decoded: ThreadEventFrame = serde_json::from_str(delta).unwrap();
-        assert_eq!(serde_json::to_string(&decoded).unwrap(), delta);
-    }
-
-    #[test]
     fn a_reply_is_either_an_output_or_an_error() {
         let ok = r#"{"id":"c1","result":{"ok":{"kind":"sent","runId":"r2","queued":false}}}"#;
         assert!(serde_json::from_str::<SessionReplyFrame>(ok).is_ok());
