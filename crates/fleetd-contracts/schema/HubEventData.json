@@ -1804,6 +1804,10 @@
         "branch": {
           "type": "string"
         },
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When the task was spawned: a `task.started` for a task spawned before a turn is not that turn's start."
+        },
         "paths": {
           "description": "task.out_of_area: the first 20 paths outside the leased globs.",
           "items": {

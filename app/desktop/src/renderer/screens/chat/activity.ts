@@ -1,7 +1,7 @@
 // What the lead is doing right now, as one quiet line under its reply while its turn runs: its open tool call (from
 // its live lane) and what the turn did so far (from the hub's events). Only real state: no line once the turn ends,
 // and "working" when the hub says it works but nothing more is known.
-import type { Activity, HubEvent } from "../../../shared/contracts";
+import { eventData, isEvent, type Activity, type HubEvent, type ProjectRef } from "../../../shared/contracts";
 import { leadLaneId, selectLeadWorking } from "../../src/data/selectors";
 import type { DataState, ProjectKey } from "../../src/data/store";
 
@@ -58,27 +58,34 @@ export const doingWords = (a: Activity): string => {
 
 const count = (n: number, one: string, many: string): string => `${String(n)} ${n === 1 ? one : many}`;
 
-/** What the turn did so far, from the project's events after the one that said the lead started working. */
-export const turnTally = (events: readonly HubEvent[], projectId: string): string[] => {
-  let started = -1;
-  for (let i = events.length - 1; i >= 0; i--) {
-    const e = events[i];
-    if (e?.type === "chat.waiting" && e.projectId === projectId) {
-      started = (e.data as { leadWorking?: boolean } | undefined)?.leadWorking === true ? i : events.length;
-      break;
-    }
-  }
-  if (started === -1) return [];
-  let agents = 0;
+/**
+ * What the turn did so far: the orders it opened and the agents it spawned that started. The turn began at the
+ * project's first "working" after its last "idle": the hub says "working" again mid-turn (a needs-you change, a
+ * person's message, its restart), and that is no new turn. Nothing when that start is no longer among the events,
+ * rather than part of the turn. An agent spawned before the turn (queued from an earlier order) is not counted, and an
+ * agent is counted once however often it continues.
+ */
+export const turnTally = (events: readonly HubEvent[], ref: ProjectRef): string[] => {
+  const ours = (e: HubEvent) => e.machineId === ref.machineId && e.projectId === ref.projectId;
+  const idle = events.findLastIndex((e) => isEvent(e, "chat.waiting") && ours(e) && eventData(e)?.leadWorking !== true);
+  // Past the last idle, every "working" is the same turn; its first is where the turn began.
+  const start = idle === -1 ? -1 : events.findIndex((e, i) => i > idle && isEvent(e, "chat.waiting") && ours(e));
+  const began = events[start];
+  if (began === undefined) return [];
+  const since = Date.parse(began.at);
   let orders = 0;
-  for (const e of events.slice(started + 1)) {
-    if (e.projectId !== projectId) continue;
-    if (e.type === "task.started") agents++;
-    else if (e.type === "workstream.created") orders++;
+  const agents = new Set<string>();
+  for (const e of events.slice(start + 1)) {
+    if (!ours(e)) continue;
+    if (e.type === "workstream.created") orders++;
+    else if (isEvent(e, "task.started")) {
+      const data = eventData(e);
+      if (data?.createdAt !== undefined && Date.parse(data.createdAt) >= since) agents.add(data.taskId);
+    }
   }
   return [
     ...(orders > 0 ? [orders === 1 ? "opened an order" : `opened ${String(orders)} orders`] : []),
-    ...(agents > 0 ? [`started ${count(agents, "agent", "agents")}`] : []),
+    ...(agents.size > 0 ? [`started ${count(agents.size, "agent", "agents")}`] : []),
   ];
 };
 
@@ -88,6 +95,6 @@ export const leadActivity = (s: DataState, key: ProjectKey): string | undefined 
   const at = key.indexOf("/");
   const ref = { machineId: key.slice(0, at), projectId: key.slice(at + 1) };
   const now = s.live.lanes[leadLaneId(ref)]?.activity?.activity;
-  const parts = [...(now === undefined ? [] : [doingWords(now)]), ...turnTally(s.events, ref.projectId)];
+  const parts = [...(now === undefined ? [] : [doingWords(now)]), ...turnTally(s.events, ref)];
   return parts.length === 0 ? "working" : parts.join(" · ");
 };

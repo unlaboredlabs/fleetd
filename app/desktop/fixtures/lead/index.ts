@@ -58,13 +58,14 @@ function leadAtWork(f: Fixture, turn: Turn): Fixture {
     summary,
     data,
   });
+  f.events.push(event("chat.waiting", 600, "The lead is idle", { ...state, leadWorking: false }));
   f.events.push(event("chat.waiting", 240, "The lead is working", { ...state }));
   for (let i = 0; i < turn.orders; i++) {
     f.events.push(event("workstream.created", 120 - i, `New intent W${20 + i}`, { workstreamId: `W${20 + i}` }));
   }
   for (let i = 0; i < turn.agents; i++) {
     const taskId = `T${40 + i}`;
-    f.events.push(event("task.started", 60 - i, `${taskId} started`, { taskId, workstreamId: "W20" }));
+    f.events.push(event("task.started", 60 - i, `${taskId} started`, { taskId, workstreamId: "W20", createdAt: t(90 - i) }));
   }
   return f;
 }
