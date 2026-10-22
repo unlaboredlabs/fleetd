@@ -102,7 +102,7 @@ export async function chatCli(lab: Lab) {
     const [bin, args] = fleetdCommand([
       "chat",
       target,
-      "1 rec. Then write the numbers 1 to 40, one per line, and ask nothing.",
+      "1 rec. Then write the numbers 1 to 200, one per line, and ask nothing.",
       "--follow",
       ...as(humanFile),
     ]);
@@ -120,7 +120,7 @@ export async function chatCli(lab: Lab) {
       resolve({ code, out, pieces });
     });
   });
-  check(followed.code === 0 && /\nlead\n/u.test(followed.out) && /^40$/mu.test(followed.out), `chat --follow: ${followed.out}`);
+  check(followed.code === 0 && /\nlead\n/u.test(followed.out) && /^200$/mu.test(followed.out), `chat --follow: ${followed.out}`);
   check(followed.pieces >= 2, `the reply streamed in ${followed.pieces} pieces: ${followed.out}`);
   check((await chat()).state.needsYou === false, "the person's reply clears needs-you");
   ok(`chat --follow streamed the reply in ${followed.pieces} pieces and needs-you cleared`);
