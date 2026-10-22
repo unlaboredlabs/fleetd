@@ -1,6 +1,7 @@
 // Commands that need nothing but the route table (notes/electron-routes.md): the palette itself, the shortcuts
 // sheet, and plain navigation. A screen that does better registers the same id and wins while it is mounted.
 
+import type { ThemeMode } from "../../ui";
 import type { Command } from "./registry";
 import { togglePalette, toggleShortcuts } from "./state";
 
@@ -44,3 +45,23 @@ export const defaultCommands = (): Command[] => [
   { id: "go:settings.instructions", title: "Instructions", detail: "Settings", group: "settings", run: () => go("#/settings/instructions") },
   { id: "go:onboarding", title: "Connect to a hub…", detail: "Pair this app with a fleetd hub", group: "actions", keywords: ["pair"], run: () => go("#/onboarding") },
 ];
+
+/** The appearance switches, each hidden while it is the current choice; "dark" finds one. */
+export const themeCommands = (mode: ThemeMode, setMode: (mode: ThemeMode) => void): Command[] =>
+  (
+    [
+      ["dark", "Switch to dark theme", ["dark mode", "appearance"]],
+      ["light", "Switch to light theme", ["light mode", "appearance"]],
+      ["system", "Match the system theme", ["auto", "appearance"]],
+    ] as const
+  ).map(
+    ([value, title, keywords]): Command => ({
+      id: `theme:${value}`,
+      title,
+      group: "actions",
+      keywords,
+      searchOnly: true,
+      enabled: () => mode !== value,
+      run: () => setMode(value),
+    }),
+  );

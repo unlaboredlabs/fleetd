@@ -16,13 +16,14 @@ import type { ShortcutId } from "../../../shared/shortcuts";
  * Listed in this order when nothing is typed; also the tie-break when two items score the same. Projects first:
  * opening a lead's chat is what the palette is mostly for.
  */
-export const GROUPS = ["projects", "go-to", "actions", "machines", "settings", "prompts"] as const;
+export const GROUPS = ["projects", "go-to", "actions", "prs", "machines", "settings", "prompts"] as const;
 export type Group = (typeof GROUPS)[number];
 
 export const GROUP_LABELS: Readonly<Record<Group, string>> = {
   actions: "Actions",
   "go-to": "Go to",
   projects: "Projects",
+  prs: "Pull requests",
   machines: "Machines",
   settings: "Settings",
   prompts: "Prompts",
@@ -42,6 +43,14 @@ export interface Command {
   readonly searchOnly?: boolean;
   /** Read when the palette opens and when the key is pressed; false hides it and lets the key fall through. */
   readonly enabled?: () => boolean;
+  readonly run: () => void;
+  /** More things to do with this item, after `run`: the palette lists them on ⌘K, as Raycast does. */
+  readonly actions?: readonly Action[];
+}
+
+export interface Action {
+  /** A verb first, short: "Open in Settings", "Copy link". */
+  readonly title: string;
   readonly run: () => void;
 }
 
@@ -164,7 +173,7 @@ export const subscribeSources = (onChange: () => void): (() => void) => {
 };
 
 /**
- * Stable registrations for useCommands: each runs, and is enabled by, the latest closure with its id. An id gone
+ * Stable registrations for useCommands: each runs (its actions too), and is enabled by, the latest closure with its id. An id gone
  * from the latest list is disabled.
  */
 export const bindLatest = (latest: { readonly current: readonly Command[] }): Command[] => {
@@ -177,6 +186,9 @@ export const bindLatest = (latest: { readonly current: readonly Command[] }): Co
         return now !== undefined && (now.enabled?.() ?? true);
       },
       run: () => current(command.id)?.run(),
+      ...(command.actions === undefined
+        ? {}
+        : { actions: command.actions.map((action, i): Action => ({ title: action.title, run: () => current(command.id)?.actions?.[i]?.run() })) }),
     }),
   );
 };

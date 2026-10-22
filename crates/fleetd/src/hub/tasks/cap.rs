@@ -112,16 +112,22 @@ impl Tasks {
         if let (Some(p), Some(before)) = (&change.project, before) {
             let r = &p.project_ref;
             let (from, to) = (before.max_agents, p.max_agents);
-            if to < from && p.pause_extras {
+            // At the same max too: the app applies a lower max first and offers the pause after it.
+            if to <= from && p.pause_extras {
                 paused = self.pause_extras(r, to).await;
             }
             let after = slots.agents(r);
             let free = slots.room(r);
             let line = if to > from {
                 raised_line(from, to, (after.running - before.running).max(0), free)
-            } else if to < from && !paused.is_empty() {
+            } else if !paused.is_empty() {
+                let change = if to < from {
+                    format!("{from} → {to}")
+                } else {
+                    to.to_string()
+                };
                 format!(
-                    "Max agents {from} → {to}: {} push their work and wait; {} keep running.",
+                    "Max agents {change}: {} push their work and wait; {} keep running.",
                     plural(paused.len() as i64, "agent", "agents"),
                     (after.running - paused.len() as i64).max(0)
                 )
@@ -133,7 +139,7 @@ impl Tasks {
             } else {
                 format!("Max agents {from} → {to}.")
             };
-            if to != from {
+            if to != from || !paused.is_empty() {
                 self.cap_event(
                     Some(r),
                     from,

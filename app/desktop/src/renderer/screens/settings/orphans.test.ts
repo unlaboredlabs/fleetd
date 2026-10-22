@@ -22,7 +22,7 @@ const router: RetiredPromptOverride = {
 
 describe("edits that no longer apply", () => {
   it("says whose edit it was, that it no longer applies, and where its intent could go", () => {
-    expect(orphanHeadline(wake, projects)).toBe("Your edit to Wake: task finished (hub-wide) no longer applies.");
+    expect(orphanHeadline(wake, projects)).toBe('Your edit to the lead\'s "task finished" note (hub-wide) no longer applies.');
     expect(orphanHeadline(router, projects)).toBe("Your edit to Order router (for acme/storefront) no longer applies.");
     expect(targetName(wake)).toBe("Lead's role, rules and playbooks");
     expect(orphanAdvice(wake)).toBe("fleetd doesn't send it any more. If you still want what it said, copy it into Lead's role, rules and playbooks.");
@@ -30,7 +30,7 @@ describe("edits that no longer apply", () => {
   });
 
   it("ends the hub's reason with one full stop, and names an unknown project by its id", () => {
-    expect(whyLine(wake)).toBe("Wakes are now a fixed event format.");
+    expect(whyLine(wake)).toBe("Notes to the lead are now fixed event lines that fleetd writes.");
     expect(whyLine(router)).toBe("Orders now go to a project's lead in its chat.");
     expect(editScopeWords(router, undefined)).toBe("for storefront");
   });

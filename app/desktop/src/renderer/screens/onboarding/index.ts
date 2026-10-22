@@ -3,3 +3,6 @@ export { OnboardingScreen, type OnboardingProps } from "./OnboardingScreen";
 export { ConnectionBanner } from "./ConnectionBanner";
 export { needsOnboarding } from "./form";
 export { useHubProbe, useKeyStore } from "./hooks";
+export { GetStarted } from "./GetStarted";
+/** The first-run checklist; it renders nothing once every step is done. */
+export { SetupChecklist } from "./SetupChecklist";

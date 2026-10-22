@@ -9,6 +9,7 @@ export {
   runCommand,
   useCommands,
   useSource,
+  type Action,
   type Command,
   type Group,
   type Source,

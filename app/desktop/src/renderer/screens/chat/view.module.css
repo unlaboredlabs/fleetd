@@ -39,13 +39,22 @@
   flex: 1;
   min-height: 0;
 }
-/* The composer (F4's) sits on the rows' measure, inset from the window's edges. */
+/*
+ * The conversation always keeps its scrollbar's room (base.css draws scrollbars 10 px wide, on every platform), so
+ * its column doesn't shift as it starts to scroll; the composer keeps the same room on its right, so the box's
+ * edges line up with the messages' text at every width.
+ */
+.scroller {
+  scrollbar-gutter: stable;
+}
 .composer {
+  --gutter: 10px;
   flex: none;
+  box-sizing: border-box;
   width: 100%;
-  max-width: calc(var(--measure) + 2 * var(--pad));
+  max-width: calc(var(--measure) + 2 * var(--pad) + var(--gutter));
   margin: 0 auto;
-  padding: var(--space-2) var(--pad) var(--space-3);
+  padding: var(--space-2) calc(var(--pad) + var(--gutter)) var(--space-3) var(--pad);
 }
 .composer:empty {
   display: none;
@@ -248,4 +257,44 @@
 }
 .toldFirst {
   margin-top: var(--space-1);
+}
+
+/* The line above the box while the lead waits on you. */
+.attention {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 0 var(--space-1) var(--space-1-5);
+}
+.attention > :first-child {
+  flex: none;
+  align-self: center;
+}
+
+/* An empty chat: what to ask, just above the box. */
+.empty {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  padding-bottom: var(--space-4);
+}
+.emptyBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  box-sizing: border-box;
+  width: 100%;
+  max-width: calc(var(--measure) + 2 * var(--pad));
+  margin: 0 auto;
+  padding: 0 var(--pad);
+}
+.starters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
 }

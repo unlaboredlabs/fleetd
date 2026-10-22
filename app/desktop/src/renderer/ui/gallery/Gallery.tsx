@@ -1,4 +1,4 @@
-import { Archive, Bell, Copy, FolderPlus, MessageSquare, Plus, Settings, Square } from "lucide-react";
+import { Archive, ArrowUp, Bell, Copy, FolderPlus, MessageSquare, Plus, Settings, Square } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   AppFrame,
@@ -300,6 +300,12 @@ function ButtonsSection() {
           </Button>
           <Button variant="quiet" iconOnly aria-label="Copy" disabled={disabled}>
             <Copy />
+          </Button>
+          <Button variant="primary" iconOnly round aria-label="Send" disabled={disabled}>
+            <ArrowUp />
+          </Button>
+          <Button variant="link" disabled={disabled}>
+            Show
           </Button>
           <Text size="xs" tone="quiet">
             {disabled ? "disabled" : "enabled"}
