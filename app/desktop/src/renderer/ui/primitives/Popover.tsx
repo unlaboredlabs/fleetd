@@ -5,7 +5,6 @@ import s from "./Overlay.module.css";
 
 export const Popover = P.Root;
 export const PopoverTrigger = P.Trigger;
-export const PopoverClose = P.Close;
 export const PopoverAnchor = P.Anchor;
 
 export function PopoverContent({ className, children, ...rest }: ComponentProps<typeof P.Content> & { children: ReactNode }) {
