@@ -1,8 +1,10 @@
-import { Button, Dialog, Select } from "../../ui";
+import type { ReactNode } from "react";
+import { Button, Dialog, Select, Text } from "../../ui";
 import { selectProjects } from "../../src/data/selectors";
 import { useData } from "../../src/data/react";
 import type { ProjectSummary } from "./contracts";
 import { HUB, scopeKey, type Scope } from "./editor";
+import s from "./settings.module.css";
 
 /** The hub's projects, for the pickers: the snapshot's, kept current by the data layer. Undefined until the
  * connection is fresh (not an empty list: an empty hub and one still loading must not look alike). */
@@ -73,5 +75,20 @@ export function ConfirmDiscard(props: { open: boolean; what: string; why: string
         </>
       }
     />
+  );
+}
+
+/** Every Settings page's one title, with its one-line description and, beside it, a control for the whole page. */
+export function PageHead(props: { title: string; children?: ReactNode; aside?: ReactNode }) {
+  return (
+    <header className={s.pageHead}>
+      <div className={s.pageTitles}>
+        <Text as="h1" size="xl" strong>
+          {props.title}
+        </Text>
+        {props.children ? <Text tone="quiet">{props.children}</Text> : null}
+      </div>
+      {props.aside}
+    </header>
   );
 }

@@ -97,7 +97,15 @@ export function Sidebar({ projects, machinesDown, screen, hub, jumpHints, go }: 
           screen.id === "machines",
           machinesDown !== undefined && machinesDown > 0 ? <Text size="xs" tone="warning">{`${String(machinesDown)} down`}</Text> : undefined,
         )}
-        {nav("Settings", <Settings />, { id: "settings", tab: "general" }, screen.id === "settings", kbd("settings.open"))}
+        {/* Settings' Back returns focus here when this opened it. */}
+        <SidebarItem
+          label="Settings"
+          icon={<Settings />}
+          current={screen.id === "settings"}
+          trailing={kbd("settings.open")}
+          data-opens="settings"
+          onClick={() => go({ id: "settings", tab: "general" })}
+        />
       </SidebarSection>
 
       <button type="button" className={s.conn} onClick={() => go({ id: "settings", tab: "general" })}>
