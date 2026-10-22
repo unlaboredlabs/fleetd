@@ -429,3 +429,17 @@ async fn a_question_to_the_lead_outlives_a_pause() {
         "{text}"
     );
 }
+
+#[test]
+fn a_raise_with_nothing_queued_says_only_the_new_cap() {
+    use super::cap::raised_line;
+    assert_eq!(raised_line(1, 12, 0, 12), "Max agents 1 → 12.");
+    assert_eq!(
+        raised_line(1, 5, 1, 1),
+        "Max agents 1 → 5: 1 queued agent starts now, 1 slot free."
+    );
+    assert_eq!(
+        raised_line(3, 12, 3, 6),
+        "Max agents 3 → 12: 3 queued agents start now, 6 slots free."
+    );
+}

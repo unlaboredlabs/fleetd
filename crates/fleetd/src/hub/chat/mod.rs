@@ -86,23 +86,26 @@ fn item_open(item: &ChatItem) -> bool {
     }
 }
 
-/// The needs-you rule: the lead is not mid-turn, and its last word (past fleetd's own lines) asks the human, or an
-/// inline item waits for an answer.
-pub fn needs_you(messages: &[ChatMessage], lead_working: bool) -> bool {
+/// The needs-you rule: an inline item waits for an answer, or any lead message since the human last wrote asks
+/// something. A question stays asked through the lead's later status lines and fleetd's own lines, and while the lead
+/// works; only the human's reply clears it. History and a reply still streaming don't count.
+pub fn needs_you(messages: &[ChatMessage]) -> bool {
     if messages
         .iter()
         .any(|m| m.item.as_ref().is_some_and(item_open))
     {
         return true;
     }
-    if lead_working {
-        return false;
-    }
-    messages
+    let since = messages
         .iter()
-        .rev()
-        .find(|m| m.author != ChatAuthor::System && m.history.is_none())
-        .is_some_and(|m| m.author == ChatAuthor::Lead && asks_question(&m.text))
+        .rposition(|m| m.author == ChatAuthor::Human && m.history.is_none())
+        .map_or(0, |i| i + 1);
+    messages[since..].iter().any(|m| {
+        m.author == ChatAuthor::Lead
+            && m.history.is_none()
+            && m.state == ChatMessageState::Final
+            && asks_question(&m.text)
+    })
 }
 
 pub struct Chat {
@@ -639,30 +642,41 @@ impl Chat {
         r: &ProjectRef,
         lead_working: bool,
     ) -> Result<ProjectChatState, StoreError> {
-        let (recent, _, _) = self.page(r, None, None, 20)?;
-        let open_items = self.db.with(|c| {
-            Ok(c.query_row(
-                "SELECT COUNT(*) FROM chat_messages WHERE machine_id = ?1 AND project_id = ?2
-                 AND json_extract(data, '$.item.state') = 'open'",
-                params![r.machine_id.as_str(), r.project_id.as_str()],
-                |row| row.get::<_, i64>(0),
-            )?)
-        })?;
-        let mut considered = recent.clone();
-        if open_items > 0
-            && !considered
-                .iter()
-                .any(|m| m.item.as_ref().is_some_and(item_open))
-        {
-            considered.extend(self.open_items(r)?);
-        }
+        let (recent, _, _) = self.page(r, None, None, 1)?;
+        // Everything since the human's last message (however many status lines followed), and every open item.
+        let mut considered = self.since_human(r)?;
+        considered.extend(self.open_items(r)?);
         let last = recent.last();
         Ok(ProjectChatState {
             project_ref: r.clone(),
-            needs_you: needs_you(&considered, lead_working),
+            needs_you: needs_you(&considered),
             lead_working,
             last_seq: last.map_or_else(Count::default, |m| m.seq),
             last_message_at: last.map(|m| m.created_at.clone()),
+        })
+    }
+
+    /// The lead's messages after the human's last one written in the chat (not history), oldest first.
+    fn since_human(&self, r: &ProjectRef) -> Result<Vec<ChatMessage>, StoreError> {
+        self.db.with(|c| {
+            let (m, p) = (r.machine_id.as_str(), r.project_id.as_str());
+            let after: i64 = c.query_row(
+                "SELECT COALESCE(MAX(seq), 0) FROM chat_messages WHERE machine_id = ?1 AND project_id = ?2
+                 AND json_extract(data, '$.author') = 'human' AND json_extract(data, '$.history') IS NULL",
+                params![m, p],
+                |row| row.get(0),
+            )?;
+            let rows: Vec<String> = c
+                .prepare_cached(
+                    "SELECT data FROM chat_messages WHERE machine_id = ?1 AND project_id = ?2 AND seq > ?3
+                     AND json_extract(data, '$.author') = 'lead' ORDER BY seq",
+                )?
+                .query_map(params![m, p, after], |row| row.get(0))?
+                .collect::<rusqlite::Result<_>>()?;
+            Ok(rows
+                .into_iter()
+                .filter_map(|d| serde_json::from_str(&d).ok())
+                .collect())
         })
     }
 

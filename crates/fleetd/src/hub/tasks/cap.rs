@@ -39,6 +39,18 @@ fn plural(n: i64, one: &str, many: &str) -> String {
     format!("{n} {}", if n == 1 { one } else { many })
 }
 
+/// The chat line for a raised project cap: what started, if anything did.
+pub fn raised_line(from: i64, to: i64, started: i64, free: i64) -> String {
+    if started == 0 {
+        return format!("Max agents {from} → {to}.");
+    }
+    format!(
+        "Max agents {from} → {to}: {} now, {} free.",
+        plural(started, "queued agent starts", "queued agents start"),
+        plural(free, "slot", "slots")
+    )
+}
+
 /// A paused agent's reason, as its task shows it while it waits.
 pub fn paused_reason(max_agents: i64) -> String {
     format!("paused: max agents lowered to {max_agents}; resumes when a slot frees")
@@ -106,12 +118,7 @@ impl Tasks {
             let after = slots.agents(r);
             let free = slots.room(r);
             let line = if to > from {
-                let started = (after.running - before.running).max(0);
-                format!(
-                    "Max agents {from} → {to}: {} now, {} free.",
-                    plural(started, "queued agent starts", "queued agents start"),
-                    plural(free, "slot", "slots")
-                )
+                raised_line(from, to, (after.running - before.running).max(0), free)
             } else if to < from && !paused.is_empty() {
                 format!(
                     "Max agents {from} → {to}: {} push their work and wait; {} keep running.",
