@@ -2,7 +2,7 @@
 // its native traffic lights (a page screenshot leaves them out).
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
 import { launch, pngSize, resultsDir, setNativeView, type Shot, settle, show } from "./harness.ts";
@@ -119,27 +119,33 @@ test("the macOS window, traffic lights included, for the contact sheet", async (
   }
 });
 
-test("a window whose page dies reloads at its route, logs why, and leaves a crash dump", async () => {
+test("a window whose page dies reloads at its route and logs why; crash dumps go beside the log", async () => {
   const { app, page, close } = await launch("typical");
   try {
     await show(page, "status.fleet", "#/status");
     const { logs, dumps } = await app.evaluate(({ app: a }) => ({ logs: a.getPath("logs"), dumps: a.getPath("crashDumps") }));
-    // Playwright's page stays on the dead renderer, so the reloaded one is read through main.
+    // Playwright's page stays on the dead renderer, so the reloaded one is read through main. A MutationObserver,
+    // not requestAnimationFrame, which a window in the background may never run.
     const screen = await app.evaluate(async ({ BrowserWindow }) => {
       const page = BrowserWindow.getAllWindows()[0]?.webContents;
       if (!page) throw new Error("the app opened no window");
+      const within = <T,>(what: string, p: Promise<T>) =>
+        Promise.race([p, new Promise<never>((_, fail) => setTimeout(() => fail(new Error(`no ${what} within 20 s`)), 20_000))]);
       const reloaded = new Promise((done) => page.once("did-finish-load", () => done(null)));
       page.forcefullyCrashRenderer();
-      await reloaded;
-      return (await page.executeJavaScript(
-        `new Promise((done) => { const look = () => { const el = document.querySelector('[data-screen="status.fleet"]'); if (el) done(el.getAttribute("data-screen")); else requestAnimationFrame(look); }; look(); })`,
-      )) as string;
+      await within("reload", reloaded);
+      return within(
+        "status screen",
+        page.executeJavaScript(
+          `new Promise((done) => { const found = () => document.querySelector('[data-screen="status.fleet"]'); if (found()) return done("status.fleet"); new MutationObserver((_, o) => { if (found()) { o.disconnect(); done("status.fleet"); } }).observe(document, { subtree: true, childList: true, attributes: true }); })`,
+        ) as Promise<string>,
+      );
     });
     expect(screen).toBe("status.fleet");
-    expect(readFileSync(path.join(logs, "app.log"), "utf8")).toMatch(/main v\S+ #\/status: The window's page died \(crashed, exit code \d+\); reloading it/u);
-    // Crashpad writes the dump from its own process, which may finish after the reload.
-    const dumped = () => existsSync(dumps) && readdirSync(dumps, { recursive: true }).some((f) => String(f).endsWith(".dmp"));
-    await expect.poll(dumped, { timeout: 15_000 }).toBe(true);
+    expect(readFileSync(path.join(logs, "app.log"), "utf8")).toMatch(/main v\S+ #\/status: The window's page died \((?:crashed|killed), exit code -?\d+\); reloading it/u);
+    // crashReporter is on, with its database beside the log (a killed renderer, as macOS reports this one, leaves no dump).
+    expect(dumps).toBe(path.join(logs, "crashes"));
+    expect(existsSync(path.join(dumps, "settings.dat"))).toBe(true);
   } finally {
     await close();
   }
