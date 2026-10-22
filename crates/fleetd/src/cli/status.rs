@@ -16,8 +16,8 @@ use fleetd_contracts::mcp::{StatusGetOutput, StatusWaitOutput};
 use fleetd_contracts::model::MachineStatus;
 use fleetd_contracts::plan::PlanItemId;
 use fleetd_contracts::status::{
-    CiState, HeadlineSource, Health, InProgressRow, Marker, Progress, RiskLevel, Since, StaleMark,
-    StatusDoc, StatusScope,
+    CiState, Health, InProgressRow, Marker, Progress, RiskLevel, Since, StaleMark, StatusDoc,
+    StatusScope,
 };
 use serde_json::{Value, json};
 
@@ -199,7 +199,8 @@ fn since_line(since: &Since, c: &Clock) -> String {
     .map(|(n, word)| format!("{} {word}", n.get()))
     .collect();
     if since.scope_items.get() != 0 {
-        counts.push(format!("{:+} items", since.scope_items.get()));
+        let n = since.scope_items.get();
+        counts.push(format!("{n:+} {}", noun(n, "item", "items")));
     }
     let from = match (&since.seen_at, since.pruned) {
         (_, Some(true)) => "you last looked here, more than 30 days ago".to_owned(),
@@ -246,7 +247,11 @@ fn health_line(health: &Health, c: &Clock) -> String {
             .iter()
             .filter(|m| m.status == MachineStatus::Online && m.stale.is_none())
             .count();
-        parts.push(format!("{online} of {} machines online", machines.len()));
+        let all = machines.len() as i64;
+        parts.push(format!(
+            "{online} of {all} {} online",
+            noun(all, "machine", "machines")
+        ));
     }
     for m in machines.iter() {
         let id = m.machine_id.as_str();
@@ -412,9 +417,10 @@ pub fn render(doc: &StatusDoc, zone: Tz) -> String {
         ));
     }
     out.push(format!(
-        "  {} of {} required items verified{tier}{}",
+        "  {} of {} required {} verified{tier}{}",
         p.done.get(),
         p.total.get(),
+        noun(p.total.get(), "item", "items"),
         p.stale
             .as_ref()
             .map(|s| format!(" ({})", c.stale(s)))
@@ -460,12 +466,9 @@ pub fn render(doc: &StatusDoc, zone: Tz) -> String {
             }
         }
     }
-    let tag = match (doc.headline.source, &doc.headline.reason) {
-        (HeadlineSource::Generated, _) => "[generated]".to_owned(),
-        (HeadlineSource::Template, Some(reason)) => format!("[template: {reason}]"),
-        (HeadlineSource::Template, None) => "[template]".to_owned(),
-    };
-    out.push(format!("  {}   {tag}", doc.headline.text));
+    // Who wrote the headline (the model or the template) and why is the hub's bookkeeping, not the person's: only the
+    // line itself is shown. `--json` keeps both.
+    out.push(format!("  {}", doc.headline.text));
     if let Some(line) = waiting_line(doc) {
         out.push(format!("  {line}"));
     }
@@ -584,17 +587,21 @@ pub fn render(doc: &StatusDoc, zone: Tz) -> String {
         .collect();
     section(&mut out, "done", &done);
     let m = &doc.more;
+    let part = match doc.scope {
+        StatusScope::Fleet => "project",
+        _ => "milestone",
+    };
     let hidden: Vec<String> = [
-        (m.done, "done"),
-        (m.in_progress, "in progress"),
-        (m.next, "next"),
-        (m.risks, "risks"),
-        (m.parts, parts_label),
-        (m.stale, "stale"),
+        (m.done, "done", "done"),
+        (m.in_progress, "in progress", "in progress"),
+        (m.next, "next", "next"),
+        (m.risks, "risk", "risks"),
+        (m.parts, part, parts_label),
+        (m.stale, "stale", "stale"),
     ]
     .iter()
-    .filter(|(n, _)| n.get() > 0)
-    .map(|(n, what)| format!("{} more {what}", n.get()))
+    .filter(|(n, _, _)| n.get() > 0)
+    .map(|(n, one, many)| format!("{} more {}", n.get(), noun(n.get(), one, many)))
     .collect();
     if !hidden.is_empty() {
         out.push(format!("({}; --json has the doc)", hidden.join(", ")));
@@ -1092,6 +1099,11 @@ pub async fn github_webhook_command(argv: &[String]) -> u8 {
     }
 }
 
+/// `one` for 1 and −1, `many` otherwise.
+fn noun<'a>(n: i64, one: &'a str, many: &'a str) -> &'a str {
+    if n.abs() == 1 { one } else { many }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1176,6 +1188,59 @@ mod tests {
         assert!(
             !text.contains("eta") && !text.contains("Thu 14:00"),
             "no time estimate is ever printed"
+        );
+    }
+
+    /// One of each counts in the singular, and the headline prints without the hub's own source tag.
+    #[test]
+    fn counts_of_one_are_singular_and_no_internal_tag_shows() {
+        let mut d = doc(json!([]));
+        d.progress = serde_json::from_value(json!({
+            "pct": 0, "done": 0, "total": 1, "polishDone": 0, "polishTotal": 0, "asOf": "2026-10-18T14:02:07Z"
+        }))
+        .unwrap();
+        d.since = serde_json::from_value(json!({
+            "seenAt": "2026-10-18T09:12:00Z", "merged": 1, "verified": 0, "started": 0, "failed": 0, "scopeItems": 1
+        }))
+        .unwrap();
+        d.health.machines = serde_json::from_value(json!([
+            { "machineId": "devbox", "status": "online", "lastSeenAt": "2026-10-18T14:02:00Z", "dropsToday": 0 }
+        ]))
+        .unwrap();
+        for source in [
+            json!({ "text": "Writing the FAQ page.", "source": "template", "at": "2026-10-18T14:02:00Z" }),
+            json!({ "text": "Writing the FAQ page.", "source": "template", "reason": "facts changed, rewriting", "at": "2026-10-18T14:02:00Z" }),
+            json!({ "text": "Writing the FAQ page.", "source": "generated", "at": "2026-10-18T14:02:00Z" }),
+        ] {
+            d.headline = serde_json::from_value(source).unwrap();
+            let text = render(&d, chrono_tz::UTC);
+            for want in [
+                "  0 of 1 required item verified",
+                "  Writing the FAQ page.\n",
+                "1 merged, +1 item",
+                "1 of 1 machine online",
+            ] {
+                assert!(text.contains(want), "missing {want:?} in\n{text}");
+            }
+            for internal in ["[template", "[generated]", "rewriting"] {
+                assert!(!text.contains(internal), "{internal:?} shown in\n{text}");
+            }
+        }
+        d.more = serde_json::from_value(json!({
+            "done": 0, "inProgress": 0, "next": 0, "risks": 1, "parts": 1, "stale": 0
+        }))
+        .unwrap();
+        let text = render(&d, chrono_tz::UTC);
+        assert!(
+            text.ends_with("(1 more risk, 1 more milestone; --json has the doc)"),
+            "{text}"
+        );
+        d.scope = serde_json::from_value(json!({ "kind": "fleet" })).unwrap();
+        d.more.risks = fleetd_contracts::prim::Count::unchecked(2);
+        let text = render(&d, chrono_tz::UTC);
+        assert!(
+            text.ends_with("(2 more risks, 1 more project; --json has the doc)"),
+            "{text}"
         );
     }
 
