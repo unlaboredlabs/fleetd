@@ -204,6 +204,10 @@
             "t": {
               "const": "ready",
               "type": "string"
+            },
+            "version": {
+              "description": "The hub's fleetd version, as hub_info reports it. Absent from older hubs.",
+              "type": "string"
             }
           },
           "required": [

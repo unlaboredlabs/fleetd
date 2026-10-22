@@ -4,7 +4,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { DataLayer } from "../../src/data/queries";
 import { pastedName } from "./attachments";
-import { checkMessage, placeholder, receiptFor, recallsOn, sendsOn, type Sendable } from "./composerModel";
+import { checkMessage, placeholder, receiptFor, recallsOn, sendsOn, stopFailed, type Sendable } from "./composerModel";
 import { createDrafts, emptyDraft, persistDrafts, readSaved } from "./drafts";
 
 const key = (k: string, over: Partial<Parameters<typeof sendsOn>[0]> = {}) => ({ key: k, shiftKey: false, altKey: false, isComposing: false, ...over });
@@ -49,6 +49,16 @@ describe("the box", () => {
     expect(pastedName("image/png", 1)).toBe("pasted-1.png");
     expect(pastedName("image/jpeg", 2)).toBe("pasted-2.jpg");
     expect(pastedName("text/plain", 3)).toBe("pasted-3.txt");
+  });
+});
+
+describe("a stop that didn't stop", () => {
+  it("says why in one plain sentence, never the hub's words", () => {
+    expect(stopFailed("forbidden")).toBe("This computer’s key can’t stop the lead.");
+    expect(stopFailed("offline")).toMatch(/^Not connected/);
+    expect(stopFailed("disconnected")).toBe(stopFailed("offline"));
+    expect(stopFailed("timeout")).toMatch(/may still be working/);
+    expect(stopFailed("failed")).toBe("Couldn’t stop the lead. Try Stop again.");
   });
 });
 

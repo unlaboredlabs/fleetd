@@ -16,6 +16,7 @@
 // qa-results/index.html.
 
 import { expect, type Page } from "@playwright/test";
+import { AGENT_ROUTE } from "../fixtures/agents/route.ts";
 import { CHAT_SENDS } from "../fixtures/composer/sends.ts";
 
 /** A 1×1 PNG, for the composer's attach step. */
@@ -79,6 +80,9 @@ export const fixtures = [
   "chat-empty",
   // F5 (A5): a chat with every state of the two inline items (fixtures/inline).
   "inline-items",
+  // UX-1: the sidebar's reasons and a new reply (fixtures/sidebar); one agent's live work (fixtures/agents).
+  "sidebar-reasons",
+  "agents-work",
 ] as const;
 export type FixtureName = (typeof fixtures)[number];
 
@@ -265,7 +269,9 @@ export const screens: readonly Screen[] = [
     fixtures: ["chat-waiting", "live-20", "chat-empty"],
     variant: "chat",
   },
-  { id: "shell", route: "#/status", fixtures: ["status-rows"], variant: "sidebar" },
+  // UX-1 [5]: each row says why it wants you (reply, approve · 2, secret, blocked), and docs' reply that arrives
+  // after the app opened is bold.
+  { id: "shell", route: "#/status", fixtures: ["status-rows", "sidebar-reasons"], variant: "sidebar" },
   // The smallest window: the sidebar has hidden itself, its toggle and the chat's title share the top row.
   { id: "shell", route: "#/", fixtures: ["chat-waiting", "long-text"], variant: "narrow", sizes: ["narrow"] },
   // ...and shown again with the toggle at that width, the chat beside it.
@@ -332,6 +338,19 @@ export const screens: readonly Screen[] = [
     open: (page) => page.getByRole("button", { name: /^Max agents: \d+ running of \d+/u }).click(),
     variant: "max-agents",
   },
+  // ...lowered from the header, applied once the keys rest, with Undo.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["settings-agents"],
+    variant: "max-agents-applied",
+    open: async (page) => {
+      await page.getByRole("button", { name: /^Max agents: \d+ running of \d+/u }).click();
+      await page.getByRole("slider").focus();
+      for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowLeft");
+      await page.getByRole("button", { name: "Undo" }).waitFor();
+    },
+  },
   // F1: the frame (top bar, sidebar of projects) around #/, which opens the last project's chat (the first one on a
   // fresh install), and the connection states it shows. With no projects, #/ offers to add one (home.empty).
   {
@@ -340,6 +359,19 @@ export const screens: readonly Screen[] = [
     fixtures: ["empty", "typical", "many-agents", "long-text", "hub-unreachable", "pairing-failed", "node-too-old"],
   },
   { id: "home.empty", route: "#/", fixtures: ["empty"] },
+  // Settings opened from the sidebar takes its place; Back returns, with focus on the control that opened it.
+  {
+    id: "shell",
+    route: "#/",
+    fixtures: ["typical"],
+    variant: "settings-back",
+    open: async (page) => {
+      await page.getByRole("navigation", { name: "Sidebar" }).getByRole("button", { name: /^Settings/u }).click();
+      await page.getByRole("searchbox", { name: "Search settings" }).waitFor();
+      await page.getByRole("button", { name: "Back" }).click();
+      await expect(page.getByRole("navigation", { name: "Sidebar" }).getByRole("button", { name: /^Settings/u })).toBeFocused();
+    },
+  },
   // F10: connecting to a hub, one fixture per state (fixtures/onboarding). The form: no hub here, a hub found, a
   // refused key, app-pair.json used up / expired / untrusted, a rate limit, an unreadable saved key and a key that
   // would be kept in a file. #/onboarding?key opens on the key path; a fleetd://pair link lands with ?hub=&code=.
@@ -437,6 +469,16 @@ export const screens: readonly Screen[] = [
       await page.keyboard.press("Enter");
     },
   },
+  // UX-1 A2: every agent across the projects, by project (none, many, long titles and commands, the link down), and
+  // one agent's live work beside the list: told, ran, edited, a failed command, a message streaming in. An agent
+  // that isn't running any more says so.
+  {
+    id: "agents",
+    route: "#/agents",
+    fixtures: ["typical", "many-agents", "long-text", "empty", "hub-unreachable", "live-20", "agents-work"],
+  },
+  { id: "agents.work", route: AGENT_ROUTE, fixtures: ["agents-work"] },
+  { id: "agents.work", route: "#/agents/devbox/storefront/T99", fixtures: ["typical"], variant: "finished" },
   { id: "machines", route: "#/machines", fixtures: ["typical", "empty", "long-text", "many-agents", "hub-unreachable", "projects-machines"] },
   // F11: the command palette (opening on the project on screen, then go-tos), a typed search, and the shortcuts
   // sheet. status-rows has eight projects, one with a ~120-character name.
@@ -501,6 +543,48 @@ export const screens: readonly Screen[] = [
     fixtures: ["settings-agents"],
     open: (page) => expect(page.getByRole("slider", { name: "storefront" })).toBeFocused(),
   },
+  // A slider applies when you let go (keys: once they rest): a project lowered under its running agents, with the
+  // pause and Undo; and the whole fleet moved below a project's own max, which warns.
+  {
+    id: "settings.agents",
+    route: "#/settings/agents",
+    fixtures: ["settings-agents"],
+    variant: "applied",
+    open: async (page) => {
+      // storefront: 6 running under a max of 12, lowered to 4.
+      await page.getByRole("slider", { name: "storefront" }).focus();
+      for (let i = 0; i < 8; i++) await page.keyboard.press("ArrowLeft");
+      await page.getByRole("button", { name: "Undo" }).waitFor();
+    },
+  },
+  {
+    id: "settings.agents",
+    route: "#/settings/agents",
+    fixtures: ["settings-agents"],
+    variant: "fleet-below",
+    open: async (page) => {
+      await page.getByRole("slider").first().focus();
+      for (let i = 0; i < 8; i++) await page.keyboard.press("ArrowLeft");
+      await page.getByRole("button", { name: "Undo" }).waitFor();
+    },
+  },
+  // Settings search: an option found by its name, and by nothing.
+  {
+    id: "settings.general",
+    route: "#/settings/general",
+    fixtures: ["typical"],
+    variant: "search",
+    open: (page) => page.getByRole("searchbox", { name: "Search settings" }).fill("max agents"),
+  },
+  {
+    id: "settings.general",
+    route: "#/settings/general",
+    fixtures: ["typical"],
+    variant: "search-none",
+    open: (page) => page.getByRole("searchbox", { name: "Search settings" }).fill("zebra"),
+  },
+  // Prompts before one is picked.
+  { id: "settings.prompts", route: "#/settings/prompts", fixtures: ["settings-prompts"], variant: "none" },
   { id: "settings.general", route: "#/settings/general", fixtures: ["typical", "empty", "hub-unreachable"] },
   // Notifications: the kinds, sound, the Dock badge, and the line after a test was sent.
   { id: "settings.notifications", route: "#/settings/notifications", fixtures: ["typical"] },

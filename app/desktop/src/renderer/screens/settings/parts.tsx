@@ -1,8 +1,11 @@
-import { Button, Dialog, Select } from "../../ui";
+import type { ReactNode } from "react";
+import { Button, Dialog, Select, Text } from "../../ui";
 import { selectProjects } from "../../src/data/selectors";
 import { useData } from "../../src/data/react";
 import type { ProjectSummary } from "./contracts";
 import { HUB, scopeKey, type Scope } from "./editor";
+import { useReveal } from "./search";
+import s from "./settings.module.css";
 
 /** The hub's projects, for the pickers: the snapshot's, kept current by the data layer. Undefined until the
  * connection is fresh (not an empty list: an empty hub and one still loading must not look alike). */
@@ -73,5 +76,36 @@ export function ConfirmDiscard(props: { open: boolean; what: string; why: string
         </>
       }
     />
+  );
+}
+
+/** Every Settings page's one title, with its one-line description and, beside it, a control for the whole page. */
+export function PageHead(props: { title: string; children?: ReactNode; aside?: ReactNode }) {
+  return (
+    <header className={s.pageHead}>
+      <div className={s.pageTitles}>
+        <Text as="h1" size="xl" strong>
+          {props.title}
+        </Text>
+        {props.children ? <Text tone="quiet">{props.children}</Text> : null}
+      </div>
+      {props.aside}
+    </header>
+  );
+}
+
+/** One option: its name and a line of help, then its controls. A settings search for `reveal` lands on it. */
+export function Setting(props: { reveal: string; label: string; help: string; children: ReactNode }) {
+  const ref = useReveal<HTMLElement>(props.reveal);
+  return (
+    <section ref={ref} className={s.setting} aria-label={props.label} tabIndex={-1}>
+      <div className={s.settingLabel}>
+        <Text strong>{props.label}</Text>
+        <Text size="xs" tone="quiet">
+          {props.help}
+        </Text>
+      </div>
+      <div className={s.stack}>{props.children}</div>
+    </section>
   );
 }

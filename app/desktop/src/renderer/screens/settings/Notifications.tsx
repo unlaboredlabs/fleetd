@@ -1,9 +1,10 @@
 // Settings → Notifications: which kinds alert you, with a sound or not, the Dock badge, and a test. The shell reads
 // these when it posts (shell/effects.ts); nothing here talks to the fleet.
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { Button, Separator, Switch, Text } from "../../ui";
 import { setNotificationPrefs, useNotificationPrefs, type NotificationPrefs } from "../shell/notificationPrefs";
 import type { NotifyKind } from "../shell/notifier";
+import { PageHead, Setting } from "./parts";
 import s from "./settings.module.css";
 
 const mac = window.fleetd.platform === "darwin";
@@ -11,26 +12,12 @@ const mac = window.fleetd.platform === "darwin";
 const KINDS: ReadonlyArray<{ kind: NotifyKind; label: string }> = [
   { kind: "reply", label: "The lead asks you something" },
   { kind: "approval", label: "A command or secret waits for you" },
+  { kind: "done", label: "The lead finishes what you asked" },
   { kind: "machine", label: "A machine goes offline or hits a limit" },
   { kind: "other", label: "Anything else that needs you" },
 ];
 
 type Test = "idle" | "sent" | "unsupported";
-
-/** One option: its name and a line of help, then its controls. The same layout as General's options. */
-function Setting(props: { label: string; help: string; children: ReactNode }) {
-  return (
-    <section className={s.setting} aria-label={props.label}>
-      <div className={s.settingLabel}>
-        <Text strong>{props.label}</Text>
-        <Text size="xs" tone="quiet">
-          {props.help}
-        </Text>
-      </div>
-      <div className={s.stack}>{props.children}</div>
-    </section>
-  );
-}
 
 export function Notifications() {
   const prefs = useNotificationPrefs();
@@ -49,24 +36,24 @@ export function Notifications() {
   return (
     <div className={s.scroll} data-screen="settings.notifications">
       <div className={s.column}>
-        <Setting label="Notify me when" help="Never for the chat you have in front of you. In quiet hours, only urgent ones.">
+        <PageHead title="Notifications" />
+        <Setting reveal="notifications.kinds" label="Notify me when" help="Never for the chat in front of you. In quiet hours, only urgent ones.">
           {KINDS.map(({ kind, label }) => (
-            <Switch
-              key={kind}
-              label={label}
-              checked={prefs.kinds[kind]}
-              onCheckedChange={(on) => set({ kinds: { ...prefs.kinds, [kind]: on } })}
-            />
+            <Switch key={kind} label={label} checked={prefs.kinds[kind]} onCheckedChange={(on) => set({ kinds: { ...prefs.kinds, [kind]: on } })} />
           ))}
         </Setting>
-        <Setting label="Sound" help="The system's notification sound.">
+        <Setting reveal="notifications.sound" label="Sound" help="The system's notification sound.">
           <Switch label="Play a sound" checked={prefs.sound} onCheckedChange={(on) => set({ sound: on })} />
         </Setting>
-        <Setting label={mac ? "Dock badge" : "App icon badge"} help={mac ? "On the fleetd icon in the Dock." : "Where your desktop shows app badges."}>
+        <Setting
+          reveal="notifications.badge"
+          label={mac ? "Dock badge" : "App icon badge"}
+          help={mac ? "On the fleetd icon in the Dock." : "Where your desktop shows app badges."}
+        >
           <Switch label="Count the projects that need you" checked={prefs.badge} onCheckedChange={(on) => set({ badge: on })} />
         </Setting>
         <Separator />
-        <Setting label="Test" help="Shows one now, whatever the settings above.">
+        <Setting reveal="notifications.test" label="Test" help="Shows one now, whatever the settings above.">
           <div className={s.inline}>
             <Button variant="secondary" onClick={() => void sendTest()}>
               Send a test notification

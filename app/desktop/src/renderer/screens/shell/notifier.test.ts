@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { attentionEvent, FALLBACK_POLICY, Notifier, policyFrom, policyStale, quietAt, type AttentionEvent, type Policy } from "./notifier";
+import { attentionEvent, FALLBACK_POLICY, Notifier, policyFrom, policyStale, quietAt, Requests, type AttentionEvent, type Policy } from "./notifier";
 
 const MIN = 60_000;
 const T0 = Date.parse("2026-10-17T10:00:00.000Z");
@@ -59,7 +59,7 @@ describe("Notifier", () => {
 
   it("drops a project you answered meanwhile", () => {
     const n = new Notifier();
-    n.push(event("storefront asks", "loud", { project: storefront }));
+    n.push(event("Q4 opened: secret STRIPE_KEY", "loud", { type: "request.opened", project: storefront }));
     expect(n.due(T0, FALLBACK_POLICY, { stillNeeded: (p) => p.projectId !== "storefront" })).toBeNull();
   });
 
@@ -91,6 +91,17 @@ describe("Notifier", () => {
     expect(n.due(T0, FALLBACK_POLICY, { ...needed, nameOf })).toMatchObject({ title: "Storefront", body: "Q4 opened: secret STRIPE_KEY" });
     n.push(waiting);
     expect(n.due(T0 + 20 * MIN, FALLBACK_POLICY, { ...needed, nameOf })).toMatchObject({ title: "Storefront", body: "The lead is waiting for your reply" });
+  });
+
+  it("tells you a request finished even though nothing waits on you, but not about a chat you look at", () => {
+    const n = new Notifier();
+    const done = event("The lead finished what you asked", "loud", { type: "chat.finished", project: storefront });
+    n.push(done);
+    expect(n.due(T0, FALLBACK_POLICY, { ...needed, stillNeeded: () => false })?.target).toEqual({ kind: "chat", machineId: "devbox", projectId: "storefront" });
+    n.push(done);
+    expect(n.due(T0 + 20 * MIN, FALLBACK_POLICY, { ...needed, looking: () => true })).toBeNull();
+    n.push(done);
+    expect(n.due(T0 + 40 * MIN, FALLBACK_POLICY, { ...needed, enabled: (k) => k !== "done" })).toBeNull();
   });
 
   it("cuts long summaries to one line", () => {
@@ -129,5 +140,39 @@ describe("policy", () => {
     expect(attentionEvent({ seq: 2, type: "thread.failed", summary: "x" })).toBeNull();
     expect(attentionEvent({ seq: 6, type: "chat.waiting", summary: "The lead is working", data: { projectRef: storefront, needsYou: false } })).toBeNull();
     expect(attentionEvent({ seq: 3, type: "usage.breaker", summary: "x", attention: "loud" })?.project).toBeNull();
+  });
+});
+
+describe("Requests", () => {
+  const message = (author: string) => ({ seq: 1, type: "chat.message", summary: "", data: { projectRef: storefront, author } });
+  const waiting = (leadWorking: boolean, needsYou = false) => ({ seq: 2, type: "chat.waiting", summary: "", data: { projectRef: storefront, needsYou, leadWorking } });
+  const idle = () => false;
+
+  it("finishes when the lead worked on your message and went idle without asking", () => {
+    const r = new Requests();
+    expect(r.see(message("human"), idle)).toBeNull();
+    // Your send cleared an earlier question before the lead took it up: not finished yet.
+    expect(r.see(waiting(false), idle)).toBeNull();
+    expect(r.see(waiting(true), idle)).toBeNull();
+    expect(r.see(waiting(false), idle)).toMatchObject({ type: "chat.finished", attention: "loud", project: storefront });
+    // Once.
+    expect(r.see(waiting(false), idle)).toBeNull();
+  });
+
+  it("counts a message sent mid-turn, and leaves an ask to the reply notification", () => {
+    const r = new Requests();
+    r.see(message("human"), () => true);
+    expect(r.see(waiting(false), idle)?.type).toBe("chat.finished");
+    r.see(message("human"), idle);
+    r.see(waiting(true), idle);
+    expect(r.see(waiting(false, true), idle)).toBeNull();
+    expect(r.see(waiting(false), idle)).toBeNull();
+  });
+
+  it("never alerts for the lead's own wakes or its messages", () => {
+    const r = new Requests();
+    expect(r.see(message("lead"), idle)).toBeNull();
+    expect(r.see(waiting(true), idle)).toBeNull();
+    expect(r.see(waiting(false), idle)).toBeNull();
   });
 });

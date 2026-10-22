@@ -25,6 +25,7 @@ import {
 } from "../../../shared/contracts";
 import type { HubError, HubFrame, HubState } from "../../../shared/hub";
 import { applyDelta, emptyChat, mergeLive, settleSends, type Chat, type ChatSend } from "./chat";
+import type { AgentRow } from "./agents-contract";
 import { CHAT_EVENTS, type ChatDelta, type ProjectChatState } from "./chat-contract";
 import { ordersNamed } from "./effects";
 import { settled } from "./phase";
@@ -81,6 +82,8 @@ export interface DataState {
   /** Every order the board lists, by workstreamId; undefined until this generation's board landed. */
   readonly orders?: Readonly<Record<string, OrderCard>> | undefined;
   readonly details: Readonly<Record<string, OrderDetail>>;
+  /** Every agent across the projects (agents_list), as last read; undefined until this generation's read landed. */
+  readonly agents?: readonly AgentRow[] | undefined;
   readonly trains: Readonly<Record<string, TrainLive>>;
   /** The latest events, oldest first. */
   readonly events: readonly HubEvent[];
@@ -192,6 +195,7 @@ export const applyFrame = (s: DataState, frame: HubFrame, nowMs: number): [DataS
           attention: snap.attention,
           slots: snap.slots,
           orders: undefined,
+          agents: undefined,
           details: {},
           trains: {},
           chats: {},
@@ -212,6 +216,12 @@ export const applyFrame = (s: DataState, frame: HubFrame, nowMs: number): [DataS
   }
 };
 
+/** The chat states with `key`'s newest seq raised to `seq`; the same object when it is not newer or unknown. */
+const newerSeq = (states: DataState["chatStates"], key: ProjectKey, seq: number): DataState["chatStates"] => {
+  const state = states[key];
+  return state === undefined || seq <= state.lastSeq ? states : { ...states, [key]: { ...state, lastSeq: seq } };
+};
+
 /** The chat events: messages into an opened chat, the person's sends settled, the lead's waiting/working state. */
 const applyChatEvent = (s: DataState, event: HubEvent): DataState => {
   switch (event.type) {
@@ -219,20 +229,24 @@ const applyChatEvent = (s: DataState, event: HubEvent): DataState => {
       const data = eventData<"chat.message">(event as HubEventOf<"chat.message">);
       if (data === undefined) return s;
       const key = projectKey(data.projectRef);
-      const chat = s.chats[key];
+      // Every project's newest seq follows its messages, opened or not: the sidebar's unread mark compares it with
+      // the seq last looked at.
+      const states = newerSeq(s.chatStates, key, data.seq);
+      const base = states === s.chatStates ? s : { ...s, chatStates: states };
+      const chat = base.chats[key];
       const message = data.message;
       if (message === undefined) {
         // Too big for the event: read it by seq, unless the chat already has this copy or a newer one.
         const held = chat?.messages.find((m) => m.messageId === data.messageId);
-        if (chat?.loaded !== true || (held !== undefined && held.state === data.state)) return s;
-        return chat.missing.includes(data.seq) ? s : { ...s, chats: { ...s.chats, [key]: { ...chat, missing: [...chat.missing, data.seq] } } };
+        if (chat?.loaded !== true || (held !== undefined && held.state === data.state)) return base;
+        return chat.missing.includes(data.seq) ? base : { ...base, chats: { ...base.chats, [key]: { ...chat, missing: [...chat.missing, data.seq] } } };
       }
-      const sends = s.chatSends[key];
+      const sends = base.chatSends[key];
       const settled = sends === undefined ? undefined : settleSends(sends, [message]);
       return {
-        ...s,
-        chats: chat?.loaded === true ? { ...s.chats, [key]: mergeLive(chat, message) } : s.chats,
-        chatSends: settled === undefined || settled === sends ? s.chatSends : { ...s.chatSends, [key]: settled },
+        ...base,
+        chats: chat?.loaded === true ? { ...base.chats, [key]: mergeLive(chat, message) } : base.chats,
+        chatSends: settled === undefined || settled === sends ? base.chatSends : { ...base.chatSends, [key]: settled },
       };
     }
     case CHAT_EVENTS.waiting: {
@@ -401,6 +415,9 @@ export const ingest = (s: DataState, call: Ingest): DataState => {
         details: { ...s.details, [id]: { lead, doneLanes, claims: claims ?? [] } },
       };
     }
+    case "agents_list":
+      // Whole-fleet reads only: a project's own list would drop every other project's agents.
+      return call.input.projectRef === undefined ? { ...s, agents: call.output.agents } : s;
     default:
       return s;
   }

@@ -12,7 +12,7 @@ import { useData } from "../../src/data/react";
 import { selectNeedsYou } from "../../src/data/selectors";
 import { projectKey } from "../../src/data/store";
 import { LiveStrip } from "../live";
-import { AttentionLine } from "./Attention";
+import { AttentionLine } from "./AttentionLine";
 import { waitingOn } from "./attention";
 import { ChatList } from "./ChatList";
 import { useChatData } from "./data";

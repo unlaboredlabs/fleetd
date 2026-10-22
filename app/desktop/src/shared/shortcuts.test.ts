@@ -37,6 +37,13 @@ describe("shortcut map", () => {
     expect(shortcutFor(key("1", "Numpad1", { ctrlKey: true }), "linux")).toBe("project.open.1");
   });
 
+  it("matches ⌥⌘A though Option types another letter on macOS", () => {
+    expect(shortcutFor(key("å", "KeyA", { metaKey: true, altKey: true }), "darwin")).toBe("project.nextNeedsYou");
+    expect(shortcutFor(key("a", "KeyA", { ctrlKey: true, altKey: true }), "linux")).toBe("project.nextNeedsYou");
+    expect(shortcutFor(key("å", "KeyA", { metaKey: true }), "darwin")).toBeUndefined();
+    expect(display("project.nextNeedsYou", "darwin")).toBe("⌥⌘A");
+  });
+
   it("writes keys as each platform reads them, and as Electron's accelerators", () => {
     expect(display("composer.attach", "darwin")).toBe("⇧⌘A");
     expect(display("composer.attach", "linux")).toBe("Ctrl+Shift+A");

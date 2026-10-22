@@ -299,4 +299,15 @@ describe("stopping the lead", () => {
     fake.of("chat_stop")[2]?.answer(err("timeout"));
     expect(await failed).toEqual({ t: "failed", error: { code: "timeout", message: "timeout" } });
   });
+
+  it("takes Stop away from a key the hub won't let stop the lead", async () => {
+    const { fake, layer } = await connected();
+    layer.chat.probeStop();
+    fake.of("chat_stop")[0]?.answer(err("invalid"));
+    await vi.waitFor(() => expect(selectCanStop(layer.store.getState())).toBe(true));
+    const refused = layer.chat.stop(KEY);
+    fake.of("chat_stop")[1]?.answer(err("forbidden"));
+    expect(await refused).toMatchObject({ t: "failed" });
+    expect(selectCanStop(layer.store.getState())).toBe(false);
+  });
 });

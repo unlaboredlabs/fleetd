@@ -8,10 +8,10 @@ import { closeOverlay, commandFor, runCommand } from "../palette";
 import { subscribeRegistry } from "../palette/registry";
 import type { HubEvent } from "../../../shared/hub";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
-import { selectNeedsYou, selectNeedsYouTotal } from "../../src/data/selectors";
+import { selectLeadWorking, selectNeedsYou, selectNeedsYouTotal } from "../../src/data/selectors";
 import { useHubEvents } from "./hubFeed";
 import { currentRoute, navigate } from "./navigation";
-import { attentionEvent, FALLBACK_POLICY, Notifier, policyFrom, policyStale, type DueContext, type Policy } from "./notifier";
+import { attentionEvent, FALLBACK_POLICY, Notifier, policyFrom, policyStale, Requests, type DueContext, type Policy } from "./notifier";
 import { notificationPrefs, useNotificationPrefs } from "./notificationPrefs";
 import { projectId } from "./model";
 import { sameProject, type ProjectKey, type Screen } from "./routes";
@@ -97,7 +97,8 @@ const CHECK_EVERY_MS = 15_000;
 let policy: Policy = FALLBACK_POLICY;
 
 /**
- * Posts the "needs you" notification the hub's attention rules and policy allow, at most one per coalescing window.
+ * Posts the notification the hub's attention rules and policy allow (needs you, a request finished, a machine down),
+ * at most one per coalescing window.
  * The check is a plain timer: it renders nothing, so an idle window doesn't repaint.
  */
 export const useNotifications = (live: boolean): void => {
@@ -116,8 +117,10 @@ export const useNotifications = (live: boolean): void => {
     const due = notifier.due(now, policy, context);
     if (due !== null) void window.fleetd.app.notify({ tag: "needs-you", ...due, silent: !prefs.sound });
   });
+  const [requests] = useState(() => new Requests());
   const [onEvent] = useState(() => (event: HubEvent) => {
-    const attention = attentionEvent(event);
+    const finished = requests.see(event, (p) => selectLeadWorking(projectId(p))(store.getState()) === true);
+    const attention = finished ?? attentionEvent(event);
     if (attention === null) return;
     notifier.push(attention);
     check();

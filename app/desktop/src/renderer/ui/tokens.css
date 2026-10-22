@@ -156,8 +156,6 @@
 
 :root[data-platform="darwin"] {
   --traffic-lights-inset: 78px;
-  /* The Mac's own face (SF) reads native there; the bundled Plex stays the face everywhere else. */
-  --font-sans: system-ui, -apple-system, sans-serif;
 }
 
 @media (prefers-reduced-motion: reduce) {

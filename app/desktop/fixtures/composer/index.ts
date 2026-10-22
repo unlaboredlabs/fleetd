@@ -53,6 +53,7 @@ function composerSends(f: Fixture): void {
   f.answer("chat_send", { text: CHAT_SENDS.sending }, { message: sent(6, CHAT_SENDS.sending) }, 600_000);
   // This hub can stop a lead: the app's empty-input check is refused as invalid. A real stop is still on its way
   // when the shot is taken, so Stop shows pressed.
+  // Delete this line once the hub's chat_stop is in crates/fleetd-contracts: the answers below are then checked.
   f.pendingContracts.set("chat_stop", "agreed with the hub's stop slice, not in the contracts yet");
   f.fail("chat_stop", undefined, { code: "invalid", message: "chat_stop: missing field `projectRef`." });
   f.answer("chat_stop", { projectRef: STOREFRONT }, { stopped: true, message: msg(7, "lead", "Stopped the lead.", 0, { author: "system" }) }, 600_000);

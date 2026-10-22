@@ -10,7 +10,7 @@ export interface NotificationPrefs {
 }
 
 export const DEFAULT_PREFS: NotificationPrefs = {
-  kinds: { reply: true, approval: true, machine: true, other: true },
+  kinds: { reply: true, approval: true, done: true, machine: true, other: true },
   sound: true,
   badge: true,
 };
@@ -34,6 +34,7 @@ export const parsePrefs = (raw: string | null): NotificationPrefs => {
     kinds: {
       reply: flag(kinds["reply"], d.kinds.reply),
       approval: flag(kinds["approval"], d.kinds.approval),
+      done: flag(kinds["done"], d.kinds.done),
       machine: flag(kinds["machine"], d.kinds.machine),
       other: flag(kinds["other"], d.kinds.other),
     },

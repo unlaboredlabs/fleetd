@@ -7,6 +7,11 @@ export interface ProjectKey {
   readonly projectId: string;
 }
 
+/** One agent: its project and its lane. */
+export interface AgentKey extends ProjectKey {
+  readonly laneId: string;
+}
+
 export const SETTINGS_TABS = ["general", "notifications", "agents", "prompts", "instructions"] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
 
@@ -16,6 +21,8 @@ export type Screen =
   /** A project's lead chat; `message` scrolls to one message (a clicked notification). */
   | { readonly id: "project"; readonly project: ProjectKey; readonly message: string | null }
   | { readonly id: "status" }
+  /** Every agent across the projects; `agent` opens one's live work beside the list. */
+  | { readonly id: "agents"; readonly agent: AgentKey | null }
   | { readonly id: "machines" }
   /** The time inspector, for one order or (null) the fleet. */
   | { readonly id: "time"; readonly orderId: string | null }
@@ -39,12 +46,14 @@ const decode = (segment: string): string | null => {
 };
 
 const screenOf = (parts: ReadonlyArray<string>, query: URLSearchParams): Screen => {
-  const [head, a, b] = parts;
+  const [head, a, b, c] = parts;
   switch (head) {
     case "project":
       return a === undefined || b === undefined ? HOME : { id: "project", project: { machineId: a, projectId: b }, message: query.get("message") || null };
     case "status":
       return { id: "status" };
+    case "agents":
+      return { id: "agents", agent: a === undefined || b === undefined || c === undefined ? null : { machineId: a, projectId: b, laneId: c } };
     case "time":
       return { id: "time", orderId: a === "order" && b !== undefined ? b : null };
     case "machines":
@@ -84,6 +93,8 @@ const path = (screen: Screen): Array<string> => {
       return [];
     case "project":
       return ["project", screen.project.machineId, screen.project.projectId];
+    case "agents":
+      return screen.agent === null ? ["agents"] : ["agents", screen.agent.machineId, screen.agent.projectId, screen.agent.laneId];
     case "time":
       return screen.orderId === null ? ["time"] : ["time", "order", screen.orderId];
     case "projects.add":
@@ -108,6 +119,9 @@ export const toHash = (screen: Screen): string => {
   const q = query.toString();
   return `#/${path(screen).map(encodeURIComponent).join("/")}${q === "" ? "" : `?${q}`}`;
 };
+
+/** An agent's key as the data layer's live agents name it: "machineId/projectId/laneId". */
+export const agentId = (key: AgentKey): string => `${key.machineId}/${key.projectId}/${key.laneId}`;
 
 export const sameProject = (a: ProjectKey | null, b: ProjectKey | null): boolean =>
   a === b || (a !== null && b !== null && a.machineId === b.machineId && a.projectId === b.projectId);

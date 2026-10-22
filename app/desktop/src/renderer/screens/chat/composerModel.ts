@@ -86,3 +86,18 @@ export function receiptFor(m: Sendable, latest: boolean): Receipt | undefined {
       }
   }
 }
+
+/** Why Stop didn't stop the lead, in one plain sentence; never the hub's own words. */
+export function stopFailed(code: string): string {
+  switch (code) {
+    case "forbidden":
+      return "This computer’s key can’t stop the lead.";
+    case "offline":
+    case "disconnected":
+      return "Not connected to the hub, so the lead wasn’t stopped.";
+    case "timeout":
+      return "The hub didn’t answer, so the lead may still be working. Try Stop again.";
+    default:
+      return "Couldn’t stop the lead. Try Stop again.";
+  }
+}
