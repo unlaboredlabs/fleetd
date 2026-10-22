@@ -776,6 +776,8 @@ pub struct HumanRequest {
     pub answered_at: Option<Timestamp>,
     /// "human:<device>".
     pub answered_by: Option<String>,
+    /// An approved command: when its result came back (ran or failed), so a client can say how long it took.
+    pub finished_at: Option<Timestamp>,
 }
 checked!(HumanRequest, |r| request_kind_rule(r));
 

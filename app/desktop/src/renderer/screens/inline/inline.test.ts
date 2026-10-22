@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import data from "../../../../fixtures/inline/items.json";
 import type { ChatItem, CommandApprovalItem, HumanRequest, Machine, SecretRequestItem } from "../../../shared/contracts";
-import { approvalKind, approvalOutcome, secretEnvLines, secretOutcome, secretTarget, shellLine, withRequest } from "./request";
+import { approvalKind, approvalOffline, approvalOutcome, approvalTitle, failureLine, needsConfirm, OFFLINE_LINE, secretEnvLines, secretOutcome, secretTarget, secretTitle, shellLine, withRequest } from "./request";
 
 const items = data.items as unknown as ChatItem[];
 const secret = (id: string): SecretRequestItem => {
@@ -40,14 +40,26 @@ describe("a secret request", () => {
     for (const [machines, item, fix] of cases) {
       const t = secretTarget(machines, item);
       expect(t.ok).toBe(false);
-      if (!t.ok) expect(t.fix).toContain(fix);
+      if (!t.ok && !("offline" in t)) expect(t.fix).toContain(fix);
+      else throw new Error(`expected a fix for ${item.requestId}`);
     }
   });
 
-  it("afterwards says it was saved or withdrawn, and never the value or its fingerprint", () => {
+  it("offline, checks no machine: a launch from the disk cache holds none, and the hub may well know it", () => {
+    // No machines at all, as at a cold launch from the cache: never "The hub doesn't know the machine".
+    expect(secretTarget({}, secret("Q1"), false)).toEqual({ ok: false, offline: true });
+    expect(secretTarget(devbox({ status: "offline", boxPubKey: key }), secret("Q1"), false)).toEqual({ ok: false, offline: true });
+    expect(OFFLINE_LINE.secret).toBe("Offline: save it once the hub is back.");
+    // A request that names no destination says so either way: that is the request, not the connection.
+    expect(secretTarget({}, { ...secret("Q1"), sink: "env:devbox:relative" }, false)).toMatchObject({ ok: false, fix: expect.stringContaining("a destination") as unknown });
+  });
+
+  it("afterwards folds to saved or not needed, and never the value or its fingerprint", () => {
     expect(secretOutcome(secret("Q1"))).toBeUndefined();
     expect(secretOutcome(secret("Q2"))).toEqual({ tone: "success", text: "Secret saved" });
-    expect(secretOutcome(secret("Q3"))?.text).toBe("The lead doesn't need it any more.");
+    expect(secretOutcome(secret("Q3"))?.text).toBe("Not needed any more");
+    // The folded row names it in the lead's words, not by its key.
+    expect(secretTitle(secret("Q2"))).toBe("The deploy token for the CDN");
   });
 });
 
@@ -69,17 +81,56 @@ describe("a command approval", () => {
     expect(approvalOutcome(approval("Q10"))).toBeUndefined();
   });
 
-  it("waits for Approve / Deny, then says one result line", () => {
+  it("offline, an open one says why it can't be answered; an answered one says nothing more", () => {
+    expect(approvalOffline("open", false)).toBe("Offline: approve once the hub is back.");
+    expect(approvalOffline("open", true)).toBeUndefined();
+    expect(approvalOffline("approved", false)).toBeUndefined();
+  });
+
+  it("waits for Approve / Deny, then folds to one line that says how long it ran", () => {
     expect(approvalOutcome(approval("Q4"))).toBeUndefined();
-    expect(approvalOutcome(approval("Q5"))).toEqual({ tone: "success", text: "Ran · exit 0" });
-    expect(approvalOutcome(approval("Q6"))).toEqual({ tone: "danger", text: "Failed · exit 1" });
-    expect(approvalOutcome(approval("Q8"))?.text).toBe("Denied. Nothing ran.");
-    expect(approvalOutcome(approval("Q9"))?.text).toBe("Approved. Running…");
+    expect(approvalOutcome(approval("Q5"))).toEqual({ tone: "success", text: "Approved, ran in 12s" });
+    expect(approvalOutcome(approval("Q6"))).toEqual({ tone: "danger", text: "Approved, ran in 4s · exit 1" });
+    expect(approvalOutcome(approval("Q11"))).toEqual({ tone: "danger", text: "Approved, didn't run" });
+    expect(approvalOutcome(approval("Q8"))?.text).toBe("Denied, nothing ran");
+    expect(approvalOutcome(approval("Q9"))?.text).toBe("Approved, running…");
+    // An older hub records no finish time: no duration rather than a wrong one.
+    const { finishedAt: _, ...unfinished } = approval("Q5");
+    expect(approvalOutcome(unfinished)?.text).toBe("Approved and ran");
+    // A signal or the timeout ended it: no exit code.
+    const { exitCode: __, ...stopped } = approval("Q5");
+    expect(approvalOutcome(stopped)).toEqual({ tone: "warning", text: "Approved, stopped after 12s" });
     // Approved while the node was offline: open again; the item shows the hub's note and asks again.
     expect(approvalOutcome(approval("Q7"))).toBeUndefined();
     // A state from a newer hub never shows as a raw word.
-    expect(approvalOutcome({ ...approval("Q4"), state: "queued_on_node" })?.text).toBe("Changed on the hub. Update the app to see how.");
-    expect(secretOutcome({ ...secret("Q1"), state: "sealed_pending" })?.text).toBe("Changed on the hub. Update the app to see how.");
+    expect(approvalOutcome({ ...approval("Q4"), state: "queued_on_node" })?.text).toBe("Changed in a newer fleetd. Update the app to see it.");
+    expect(secretOutcome({ ...secret("Q1"), state: "sealed_pending" })?.text).toBe("Changed in a newer fleetd. Update the app to see it.");
+  });
+
+  it("asks once more only for a command that can't be undone", () => {
+    expect(["Q4", "Q5", "Q6", "Q7", "Q8", "Q10"].filter((id) => needsConfirm(approval(id)))).toEqual(["Q4", "Q7"]);
+  });
+
+  it("folds to what it was about, as plain text", () => {
+    expect(approvalTitle(approval("Q4"))).toBe("Run the database migration on the staging box: it adds the share_snapshots table");
+    expect(approvalTitle(approval("Q8"))).toBe("An agent wanted to use Bash");
+    expect(approvalTitle(approval("Q10"))).toBe("Features, medium-size work: reviewers 1 → 0");
+  });
+});
+
+describe("a failed answer", () => {
+  it("is one plain sentence by the error's code, never the hub's message", () => {
+    expect(failureLine("approve", { code: "failed" }, "devbox")).toEqual({ text: "Not approved: something went wrong.", retry: true });
+    expect(failureLine("save", { code: "timeout" }, "devbox")).toEqual({ text: "Not saved: no answer in time.", retry: true });
+    expect(failureLine("deny", { code: "disconnected" }, "devbox")).toEqual({ text: "Not denied: you're offline.", retry: true });
+    expect(failureLine("save", { code: "machine_offline" }, "devbox")).toEqual({ text: "Not saved: devbox is offline.", retry: true });
+    expect(failureLine("save", { code: "invalid" }, "devbox").retry).toBe(true);
+    // Trying again can't help: no Retry.
+    expect(failureLine("approve", { code: "forbidden" }, "devbox")).toEqual({ text: "Not approved: this computer can't answer for devbox.", retry: false });
+    expect(failureLine("approve", { code: "invalid" }, "devbox")).toEqual({ text: "Not approved: it was already answered.", retry: false });
+    expect(failureLine("deny", { code: "not_found" }, "devbox").retry).toBe(false);
+    // A code from a newer hub still reads as a sentence.
+    expect(failureLine("approve", { code: "rate_limited" }, "devbox").text).toBe("Not approved: something went wrong.");
   });
 });
 
@@ -101,9 +152,14 @@ describe("the item as the request says it is now", () => {
     expect(stored).toMatchObject({ state: "stored", fingerprint: "0a1b2c3d" });
     // Evidence that only records the outcome (here a hash) never becomes the item's note.
     expect("note" in stored).toBe(false);
-    const ran = withRequest(posted("Q4"), request({ requestId: "Q4", kind: "approval", state: "failed", exitCode: 2, outputTail: "boom", evidence: "exit 2 on devbox" }));
-    expect(ran).toMatchObject({ state: "failed", exitCode: 2, outputTail: "boom", note: "exit 2 on devbox" });
-    expect(approvalOutcome(ran as CommandApprovalItem)).toEqual({ tone: "danger", text: "Failed · exit 2" });
+    const ran = withRequest(
+      posted("Q4"),
+      request({ requestId: "Q4", kind: "approval", state: "ran", exitCode: 2, outputTail: "boom", evidence: "exit 2 on devbox", answeredAt: "2026-10-20T10:00:00.000Z", finishedAt: "2026-10-20T10:01:05.000Z" }),
+    );
+    expect(ran).toMatchObject({ state: "ran", exitCode: 2, outputTail: "boom" });
+    expect(approvalOutcome(ran as CommandApprovalItem)).toEqual({ tone: "danger", text: "Approved, ran in 1m05s · exit 2" });
+    const failed = withRequest(posted("Q4"), request({ requestId: "Q4", kind: "approval", state: "failed", evidence: "not run on devbox: no workspace" }));
+    expect(failed).toMatchObject({ state: "failed", note: "not run on devbox: no workspace" });
   });
 
   it("leaves the item alone without a matching request", () => {

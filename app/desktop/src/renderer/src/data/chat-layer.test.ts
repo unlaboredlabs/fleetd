@@ -97,18 +97,65 @@ describe("chat history", () => {
     ]);
   });
 
-  it("a reconnect shows the skeleton, reads the chat again and drops the old connection's late answer", async () => {
+  it("a drop keeps the chat on screen, marked offline; the reconnect reads it again and drops the old connection's late answer", async () => {
     const { fake, layer } = await connected();
     layer.chat.loadOlder(KEY);
-    fake.send({ t: "state", state: { phase: "retrying", hub: "devbox:4790", reason: "closed", retryAt: 1 } });
-    expect(selectChat(KEY)(layer.store.getState())).toBeUndefined();
+    fake.send({ t: "state", state: { phase: "retrying", hub: "devbox:4710", reason: "closed", retryAt: 1 } });
+    const offline = selectChat(KEY)(layer.store.getState());
+    expect(offline).toMatchObject({ held: true, asOf: expect.any(Number) as unknown });
+    expect(items(layer)).toEqual([["m1", "sent"], ["m2", "sent"]]);
     fake.send(live());
     fake.send(snapshot(5));
+    // Connected again, not yet read back: the same messages, no longer offline but still marked as of the drop,
+    // never a blank chat.
+    expect(selectChat(KEY)(layer.store.getState())).toMatchObject({ held: true, offline: false, asOf: expect.any(Number) as unknown });
+    expect(items(layer)).toEqual([["m1", "sent"], ["m2", "sent"]]);
     fake.of("chat_history")[1]?.answer(page([msg(0)]));
     await Promise.resolve();
     expect(fake.of("chat_history")).toHaveLength(3);
+    fake.of("chat_history")[2]?.answer(page([msg(2), msg(3)]));
+    // The page replaces what was held; it doesn't join up with it.
+    await vi.waitFor(() => expect(items(layer)).toEqual([["m2", "sent"], ["m3", "sent"]]));
+    expect(selectChat(KEY)(layer.store.getState())?.held).toBe(false);
+  });
+
+  it("after a reconnect, a failed read keeps the chat marked as last known, with the error; Retry catches it up", async () => {
+    const { fake, layer } = await connected();
+    fake.send({ t: "state", state: { phase: "retrying", hub: "devbox:4710", reason: "closed", retryAt: 1 } });
+    fake.send(live());
+    fake.send(snapshot(5));
+    await Promise.resolve();
+    fake.of("chat_history")[1]?.answer(err("timeout"));
+    await vi.waitFor(() => expect(selectChat(KEY)(layer.store.getState())?.error?.code).toBe("timeout"));
+    // Never shown as current: held, marked as of the drop, with the error to retry from.
+    expect(selectChat(KEY)(layer.store.getState())).toMatchObject({ held: true, offline: false, asOf: expect.any(Number) as unknown });
+    // The lead goes on meanwhile; the held chat can't place it, so the next read brings it.
+    fake.send(messageEvent(6, msg(3)));
+    expect(items(layer)).toEqual([["m1", "sent"], ["m2", "sent"]]);
+    layer.chat.open(KEY);
+    expect(fake.of("chat_history")).toHaveLength(3);
+    // Retrying: the last failure doesn't stand while the read is out.
+    expect(selectChat(KEY)(layer.store.getState())?.error).toBeUndefined();
     fake.of("chat_history")[2]?.answer(page([msg(1), msg(2), msg(3)]));
-    await vi.waitFor(() => expect(items(layer)).toEqual([["m1", "sent"], ["m2", "sent"], ["m3", "sent"]]));
+    await vi.waitFor(() => expect(selectChat(KEY)(layer.store.getState())?.held).toBe(false));
+    expect(items(layer)).toEqual([["m1", "sent"], ["m2", "sent"], ["m3", "sent"]]);
+    expect(selectChat(KEY)(layer.store.getState())?.asOf).toBeUndefined();
+    // Read: new lines join it as they come.
+    fake.send(messageEvent(7, msg(4)));
+    expect(items(layer)?.at(-1)).toEqual(["m4", "sent"]);
+  });
+
+  it("a message the hub takes while the chat is held shows in it, not nowhere", async () => {
+    const { fake, layer } = await connected();
+    fake.send({ t: "state", state: { phase: "retrying", hub: "devbox:4710", reason: "closed", retryAt: 1 } });
+    fake.send(live());
+    fake.send(snapshot(5));
+    const out = layer.chat.send(KEY, { text: "ship it" }, "c1");
+    const mine = msg(3, { author: "human", text: "ship it", clientRequestId: "c1" });
+    fake.of("chat_send")[0]?.answer({ ok: true, output: { message: mine } });
+    expect(await out).toBe("sent");
+    expect(selectChat(KEY)(layer.store.getState())?.held).toBe(true);
+    expect(items(layer)).toEqual([["m1", "sent"], ["m2", "sent"], ["m3", "sent"]]);
   });
 
   it("a resync while the latest page is loading reads it again, and the chat doesn't stay on its skeleton", async () => {
@@ -184,7 +231,7 @@ describe("sending", () => {
     fake.of("chat_send")[1]?.answer(err("timeout"));
     expect(await out).toBe("pending");
     expect(items(layer)?.at(-1)).toEqual(["c1", "unanswered"]);
-    fake.send({ t: "state", state: { phase: "connecting", hub: "devbox:4790", attempt: 1 } });
+    fake.send({ t: "state", state: { phase: "connecting", hub: "devbox:4710", attempt: 1 } });
     fake.send(live());
     fake.send(snapshot(9));
     await vi.waitFor(() => expect(fake.of("chat_send")).toHaveLength(3));
@@ -220,20 +267,48 @@ describe("sending", () => {
     expect(fake.of("chat_send")).toHaveLength(1);
   });
 
-  it("no hub on a first try leaves no row; a refusal fails and keeps its row until discarded", async () => {
+  it("offline, a message is queued under its own id and goes, once, when the link is back", async () => {
     const { fake, layer } = await connected();
-    const offline = layer.chat.send(KEY, { text: "hello" }, "c1");
+    fake.send({ t: "state", state: { phase: "retrying", hub: "devbox:4710", reason: "closed", retryAt: 1 } });
+    expect(await layer.chat.send(KEY, { text: "hold the release" }, "c1")).toBe("pending");
+    expect(fake.of("chat_send")).toHaveLength(0);
+    expect(items(layer)?.at(-1)).toEqual(["c1", "queued"]);
+    // A resend by hand while still offline only keeps it queued.
+    await layer.chat.retry(KEY, "c1");
+    expect(fake.of("chat_send")).toHaveLength(0);
+    fake.send({ t: "state", state: { phase: "connecting", hub: "devbox:4710", attempt: 1 } });
+    fake.send(live());
+    fake.send(snapshot(9));
+    await vi.waitFor(() => expect(fake.of("chat_send")).toHaveLength(1));
+    expect(fake.of("chat_send")[0]?.input).toMatchObject({ clientRequestId: "c1", text: "hold the release" });
+    const mine = msg(3, { author: "human", text: "hold the release", clientRequestId: "c1" });
+    fake.of("chat_send")[0]?.answer({ ok: true, output: { message: mine } });
+    await vi.waitFor(() => expect(items(layer)?.some(([id]) => id === "c1")).toBe(false));
+    // A later snapshot has nothing left to send.
+    fake.send(snapshot(10));
+    await Promise.resolve();
+    expect(fake.of("chat_send")).toHaveLength(1);
+  });
+
+  it("a call that finds no hub queues the message, and the next snapshot sends it even with no drop seen", async () => {
+    const { fake, layer } = await connected();
+    const out = layer.chat.send(KEY, { text: "hello" }, "c1");
     fake.of("chat_send")[0]?.answer(err("offline"));
-    expect(await offline).toBe("offline");
-    expect(items(layer)?.some(([id]) => id === "c1")).toBe(false);
+    expect(await out).toBe("pending");
+    expect(items(layer)?.at(-1)).toEqual(["c1", "queued"]);
+    fake.send(snapshot(9));
+    await vi.waitFor(() => expect(fake.of("chat_send")).toHaveLength(2));
+    expect(fake.of("chat_send")[1]?.input["clientRequestId"]).toBe("c1");
+  });
+
+  it("a refusal fails and keeps its row until discarded", async () => {
+    const { fake, layer } = await connected();
     const refused = layer.chat.send(KEY, { text: "x".repeat(10) }, "c2");
-    fake.of("chat_send")[1]?.answer(err("invalid"));
+    fake.of("chat_send")[0]?.answer(err("invalid"));
     expect(await refused).toBe("failed");
     expect(items(layer)?.at(-1)).toEqual(["c2", "failed"]);
     layer.chat.discard(KEY, "c2");
     expect(items(layer)?.some(([id]) => id === "c2")).toBe(false);
-    fake.send({ t: "state", state: { phase: "connecting", hub: "devbox:4790", attempt: 1 } });
-    expect(await layer.chat.send(KEY, { text: "later" }, "c3")).toBe("offline");
   });
 });
 

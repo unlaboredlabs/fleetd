@@ -16,18 +16,28 @@ export const useReaching = (state: HubState | null): Reaching | null => {
   return reaching(state, last);
 };
 
-/** Seconds until `at` (epoch ms), ticking once a second only while there is a deadline. */
+/**
+ * Seconds until `at` (epoch ms), ticking once a second only while there is a deadline and the window is visible:
+ * a hidden window has nobody to count for, and catches up when it shows.
+ */
 export const useSecondsUntil = (at: number | null): number | null => {
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
     if (at === null) return;
     const tick = () => setNow(Date.now());
-    // `now` may date from long before this deadline was set.
-    const first = window.setTimeout(tick, 0);
-    const timer = window.setInterval(tick, 1000);
+    let timer: number | undefined;
+    const run = () => {
+      window.clearInterval(timer);
+      timer = document.hidden ? undefined : window.setInterval(tick, 1000);
+      // `now` may date from long before this deadline was set, or from before the window was hidden.
+      if (!document.hidden) tick();
+    };
+    const first = window.setTimeout(run, 0);
+    document.addEventListener("visibilitychange", run);
     return () => {
       window.clearTimeout(first);
       window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", run);
     };
   }, [at]);
   return at === null ? null : Math.max(0, Math.ceil((at - now) / 1000));

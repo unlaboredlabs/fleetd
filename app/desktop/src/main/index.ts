@@ -7,6 +7,7 @@ import { fixtureRequest, loadFixture } from "./hub/fixture";
 import { fromEnv } from "./hub/credentials";
 import { osCredentialEnv } from "./hub/os";
 import type { KeyStore } from "../shared/pairing";
+import { HubCacheFile } from "./hub/cache";
 import { HubService, type HubMode } from "./hub/service";
 import { webSocketTransport } from "./hub/transport";
 import { instrument } from "./instrument";
@@ -58,7 +59,13 @@ const hubMode = (): { mode: HubMode; fixtureFile: string | null; keyStore: KeySt
   if (request.kind !== "fixture") {
     const credentials = osCredentialEnv(FLEETD_DIR, fleetdHome !== undefined);
     return {
-      mode: { kind: "hub", credentials, vars: process.env, transport: webSocketTransport },
+      mode: {
+        kind: "hub",
+        credentials,
+        vars: process.env,
+        transport: webSocketTransport,
+        cache: new HubCacheFile(join(app.getPath("userData"), "hub-cache.json")),
+      },
       fixtureFile: null,
       keyStore: fromEnv(process.env) === null ? credentials.store : { kind: "env" },
     };

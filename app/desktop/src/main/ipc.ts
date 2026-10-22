@@ -46,6 +46,9 @@ export const registerIpc = (
   handle(IPC.hubLive, (_event, scope) => hub.live(scope));
   handle(IPC.hubChat, (_event, project) => hub.chat(project));
   handle(IPC.hubResync, () => hub.resync());
+  handle(IPC.hubRetryNow, () => hub.retryNow());
+  handle(IPC.hubCacheRead, () => hub.cacheRead());
+  handle(IPC.hubCacheWrite, (_event, text) => hub.cacheWrite(text));
   handle(IPC.hubConnect, (_event, request) => hub.connect(request));
   handle(IPC.hubForget, () => hub.forget());
   handle(IPC.secretSubmit, (_event, request) => submitSecret(request, (tool, input) => hub.call({ tool, input })));

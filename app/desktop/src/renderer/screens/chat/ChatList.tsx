@@ -12,7 +12,7 @@ import { fmtBytes } from "./attachments";
 import type { ChatItem } from "../../src/data/chat";
 
 import { shortClock } from "./format";
-import { systemHeadline, type Row } from "./model";
+import { systemHeadline, type Row, type TopState } from "./model";
 import { MessageReceipt } from "./Composer";
 import { LiveStrip } from "../live";
 import type { ChatItem as InlineItem } from "../../../shared/contracts";
@@ -61,7 +61,7 @@ function Attachment({ project, file }: { project: ProjectRef; file: AttachmentRe
   return file.mime.startsWith("image/") ? <ImageAttachment project={project} file={file} /> : <FileChip file={file} />;
 }
 
-function Top({ state, onLoadOlder }: { state: "more" | "loading" | "start"; onLoadOlder: () => void }) {
+function Top({ state, onLoadOlder }: { state: TopState; onLoadOlder: () => void }) {
   // Reaching the top of what is loaded asks for the page before it.
   useEffect(() => {
     if (state === "more") onLoadOlder();
@@ -76,6 +76,14 @@ function Top({ state, onLoadOlder }: { state: "more" | "loading" | "start"; onLo
         <Button variant="ghost" onClick={onLoadOlder}>
           Load earlier messages
         </Button>
+      ) : state === "held" ? (
+        <Text size="xs" tone="quiet">
+          Earlier messages load once you’re connected.
+        </Text>
+      ) : state === "reread" ? (
+        <Text size="xs" tone="quiet">
+          Earlier messages load once the newest are read.
+        </Text>
       ) : (
         <Text size="xs" tone="quiet">
           This is the start of the conversation.

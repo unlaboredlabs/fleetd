@@ -129,6 +129,18 @@
   min-width: 0;
 }
 
+.bannerLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+}
+
+.bannerAction {
+  flex: none;
+  margin-inline-start: auto;
+}
+
 .banner[data-tone="warning"] {
   color: var(--warning);
 }

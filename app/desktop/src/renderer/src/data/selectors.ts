@@ -3,7 +3,8 @@
 // cached when it was fetched.
 //
 // Every selector of hub data is undefined while the connection is not fresh (a skeleton, never the last connection's
-// data shown as live) and until the reads it depends on loaded.
+// data shown as live) and until the reads it depends on loaded. The exceptions are the sidebar's projects and the
+// chats (selectShownProjects, selectChat): they keep what was last seen on screen, and say since when.
 //
 // Selectors are memoized on the slices they read, so a component re-renders only when its inputs changed, and
 // useSyncExternalStore sees a stable value between changes.
@@ -345,6 +346,8 @@ const sameRow = (a: ProjectRow, b: ProjectRow): boolean =>
 // The rows last handed out: a lane frame (4 Hz on the strip) that changes no row's fields hands back the same rows
 // and the same list, so the sidebar and the chat header don't re-render for it.
 let lastRows: readonly ProjectRow[] | undefined;
+/** The last rows of a fresh connection, for the moment after a reconnect before the board is read again. */
+let lastLive: ReadonlyMap<ProjectKey, ProjectRow> = new Map();
 
 export const selectProjectList = memo(
   (s) => [s.fresh, s.projects, s.chatStates, selectAgentsByProject(s), s.live.lanes],
@@ -365,10 +368,40 @@ export const selectProjectList = memo(
       // A stable order (by title): rows must not move under the pointer, and ⌘1–9 keep their targets.
       .sort((a, b) => a.project.title.localeCompare(b.project.title) || a.key.localeCompare(b.key));
     const unchanged = lastRows?.length === rows.length && rows.every((r, i) => r === lastRows?.[i]);
-    if (!unchanged) lastRows = rows;
+    if (!unchanged) {
+      lastRows = rows;
+      lastLive = new Map(rows.map((r) => [r.key, r]));
+    }
     return lastRows;
   },
 );
+
+/**
+ * The sidebar's projects: the live rows, else the projects held from before (a drop, a reconnect not yet read
+ * back, or the disk cache at launch). Held rows keep whether the lead waits on you and its newest message (for
+ * unread); whether agents work they keep only while connected, since offline nobody knows. Undefined while nothing
+ * is held.
+ */
+export const selectShownProjects = memo(
+  (s) => [selectProjectList(s), s.fresh, s.projects, s.chatStates],
+  (live, fresh, projects, chats): readonly ProjectRow[] | undefined => {
+    if (live !== undefined) return live;
+    const held = Object.entries(projects);
+    if (held.length === 0) return undefined;
+    return held
+      .map(([key, project]): ProjectRow => {
+        const needsYou = chats[key]?.needsYou === true;
+        const before = fresh ? lastLive.get(key) : undefined;
+        const running = before?.running ?? 0;
+        const working = before?.working ?? false;
+        return { key, project, needsYou, running, working, state: projectStateWord(needsYou, working), lastSeq: chats[key]?.lastSeq };
+      })
+      .sort((a, b) => a.project.title.localeCompare(b.project.title) || a.key.localeCompare(b.key));
+  },
+);
+
+/** When what is held was last current, while there is no fresh connection; undefined when live or nothing is held. */
+export const selectOfflineAsOf = (s: DataState): number | undefined => (s.fresh ? undefined : s.asOf);
 
 /** One project's row: what the sidebar dot, the chat header and the Status row read. */
 export const selectProjectRow = perKey((key) =>
@@ -393,6 +426,9 @@ export const selectLeadWorking = perKey((key) => (s: DataState): boolean | undef
   s.fresh ? (s.chatStates[key]?.leadWorking ?? leadActive(s.live.lanes, key)) : undefined,
 );
 
+/** Offline, the lead was working when last known: Stop shows, disabled, with why. */
+export const selectHeldLeadWorking = perKey((key) => (s: DataState): boolean => !s.fresh && s.chatStates[key]?.leadWorking === true);
+
 /** The hub can stop a lead mid-turn: false until it said so on this connection. */
 export const selectCanStop = (s: DataState): boolean => s.fresh && s.chatStop === true;
 
@@ -405,16 +441,29 @@ export interface ChatView {
   readonly hasNewer: boolean;
   readonly loadingNewer: boolean;
   readonly error?: HubError | undefined;
+  /**
+   * Shown from before this connection (a drop, a reconnect not yet read back, the disk cache): nothing pages, and it
+   * is never shown as current, even once connected, until this connection's latest page lands.
+   */
+  readonly held: boolean;
+  /** No fresh connection: nothing can be sent or answered now. */
+  readonly offline: boolean;
+  /** While held: when what is shown was last current. */
+  readonly asOf?: number | undefined;
 }
 
 const noSends: readonly ChatSend[] = [];
 
-/** A project's chat for the message list; undefined until its latest page loaded on this connection. */
+/**
+ * A project's chat for the message list: this connection's once its latest page loaded, else what it last showed
+ * (held). Undefined while there is neither.
+ */
 export const selectChat = perKey((key) =>
   memo(
-    (s) => [s.fresh, s.chats[key], s.chatSends[key] ?? noSends],
-    (fresh, chat, sends): ChatView | undefined => {
-      if (!fresh || chat?.loaded !== true) return undefined;
+    (s) => [s.fresh, s.chats[key], s.chatSends[key] ?? noSends, s.asOf],
+    (fresh, chat, sends, asOf): ChatView | undefined => {
+      if (chat === undefined || (!chat.loaded && chat.cached !== true)) return undefined;
+      const held = !fresh || !chat.loaded;
       return {
         items: chatItems(chat, sends),
         hasOlder: chat.hasOlder,
@@ -422,6 +471,9 @@ export const selectChat = perKey((key) =>
         hasNewer: chat.hasNewer,
         loadingNewer: chat.loadingNewer,
         error: chat.error,
+        held,
+        offline: !fresh,
+        asOf: held ? asOf : undefined,
       };
     },
   ),
