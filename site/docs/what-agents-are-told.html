@@ -231,7 +231,8 @@ anyway, that machine starts no new sessions until it is fixed: see <a href="/doc
 </table>
 <p>The <a href="#prompts">table below</a> marks prompt-only rules.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="edit">Edit a prompt</h2><a class="sl-anchor-link" href="#edit"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Edit a prompt”</span></a></div>
-<p>In the app: Settings → Prompts. Pick hub-wide or one project, open a prompt, edit it and Save. “Compare with default”
+<p>In the app: Settings → Prompts. Pick hub-wide or one project, open a prompt from the list under Prompts in the sidebar,
+edit it and Save. “Compare with default”
 shows your changes; “Reset to default” drops them.</p>
 <p>On the hub machine:</p>
 <table>
@@ -310,7 +311,7 @@ warnings and asks <code dir="auto">Save? [Y/n]</code> on the terminal. In a scri
 <div class="sl-heading-wrapper level-h2"><h2 id="updates">When fleetd changes a default you edited</h2><a class="sl-anchor-link" href="#updates"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “When fleetd changes a default you edited”</span></a></div>
 <p>Your version stays in use.</p>
 <ul>
-<li>In Settings → Prompts, the prompt gets a warning dot. “Review the update” shows both changes, and you pick Save
+<li>In Settings → Prompts, the prompt is marked <code dir="auto">update</code>. “Review the update” shows both changes, and you pick Save
 merged, Keep mine, or Use the new default.</li>
 <li>On the hub, <code dir="auto">fleetd prompts list</code> marks it <code dir="auto">update</code>, and <code dir="auto">fleetd prompts diff &lt;id&gt;</code> shows both changes.</li>
 </ul>
@@ -318,8 +319,8 @@ merged, Keep mine, or Use the new default.</li>
 <p>A release can fold a prompt into another one or replace it with fixed text. Your edit to it then stops applying, but
 fleetd keeps it and never moves it for you.</p>
 <ol>
-<li>Open Settings → Prompts. Under “Edits that no longer apply”, each one says, for example, “Your edit to Wake: task
-finished (hub-wide) no longer applies”, why, and which prompt to copy it into.</li>
+<li>Open Settings → Prompts. Under “Edits that no longer apply”, each one says, for example, “Your edit to the lead’s
+“task finished” note (hub-wide) no longer applies”, why, and which prompt to copy it into.</li>
 <li>“Show your text” shows your old edit; “Copy your text” copies it.</li>
 <li>Paste what you still want into the prompt it names. If none takes its place, use your
 <a href="#instructions">instructions</a>.</li>
