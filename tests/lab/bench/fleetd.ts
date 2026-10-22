@@ -44,7 +44,7 @@ export async function runFleetd(opts: FleetdRun) {
   h.requireGhLogin();
   h.takeLabLock();
   const lease = leaseSlot(slot);
-  const runStamp = runId.slice(-15);
+  const runStamp = /\d{14}$/u.exec(runId)?.[0] ?? String(Date.now());
   const runBranch = `bench/${task.name}/run-${runStamp}/main`;
   const branchPrefix = `bench/${task.name}/run-${runStamp}/fleetd/`;
   const work = path.join(runDir, "work");
@@ -53,6 +53,7 @@ export async function runFleetd(opts: FleetdRun) {
   const shimLog = path.join(runDir, "shim.log");
   const settings = pinnedSettings(opts.proxyUrl);
   const clients: Array<Client> = [];
+  let sent = false;
   try {
     // The run branch: the frozen base, copied. PRs merge here; the base never moves.
     const baseSha = gh("api", `repos/${LAB_REPO}/commits/${encodeURIComponent(task.base)}`, "--jq", ".sha");
@@ -83,8 +84,19 @@ export async function runFleetd(opts: FleetdRun) {
         return undefined;
       }
     });
-    const key = /fld_[a-z2-7]{20,}/u.exec(h.cli("hub", "key", "create", "--home", hubHome, "--name", "bench", "--role", "operate", "--machines", "*"))?.[0];
-    const humanKey = /fld_[a-z2-7]{20,}/u.exec(h.cli("hub", "key", "create", "--home", hubHome, "--human", "--name", "bench-person"))?.[0];
+    // The hub may still hold its store's write lock while it starts up.
+    const cliRetry = async (...args: Array<string>) => {
+      for (let i = 0; ; i++) {
+        try {
+          return h.cli(...args);
+        } catch (error) {
+          if (i >= 20 || !/database is locked/u.test(String((error as { stderr?: unknown }).stderr ?? error))) throw error;
+          await h.sleep(500);
+        }
+      }
+    };
+    const key = /fld_[a-z2-7]{20,}/u.exec(await cliRetry("hub", "key", "create", "--home", hubHome, "--name", "bench", "--role", "operate", "--machines", "*"))?.[0];
+    const humanKey = /fld_[a-z2-7]{20,}/u.exec(await cliRetry("hub", "key", "create", "--home", hubHome, "--human", "--name", "bench-person"))?.[0];
     if (key === undefined || humanKey === undefined) throw new Error("hub key create printed no key");
     const connect = async (k: string) => {
       const client = new Client({ name: "fleetd-bench", version: "0" });
@@ -134,6 +146,7 @@ export async function runFleetd(opts: FleetdRun) {
     const started = Date.now();
     info.startedAt = new Date(started).toISOString();
     await ok("chat_send", { projectRef, text: task.text, clientRequestId: randomUUID() }, human);
+    sent = true;
     log("task sent to the lead");
 
     let doneSince: number | undefined;
@@ -239,6 +252,10 @@ export async function runFleetd(opts: FleetdRun) {
         },
       },
     };
+  } catch (error) {
+    // A run that never reached the lead leaves no branch behind.
+    if (!sent) spawnSync("gh", ["api", "-X", "DELETE", `repos/${LAB_REPO}/git/refs/heads/${runBranch}`], { encoding: "utf8" });
+    throw error;
   } finally {
     for (const c of clients) await c.close().catch(() => undefined);
     await h.stopAll();
