@@ -13,7 +13,7 @@ import { selectNeedsYou } from "../../src/data/selectors";
 import { projectKey } from "../../src/data/store";
 import { LiveStrip } from "../live";
 import { AttentionLine } from "./Attention";
-import { waitingOn } from "./attention";
+import { waitingOn } from "./attentionModel";
 import { ChatList } from "./ChatList";
 import { useChatData } from "./data";
 import { EmptyChat } from "./EmptyChat";
