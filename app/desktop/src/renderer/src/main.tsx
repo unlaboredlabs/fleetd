@@ -26,7 +26,7 @@ if (root === null) throw new Error("index.html has no #root");
 createRoot(root).render(
   <StrictMode>
     {/* The last line of defence: a card, never a blank window. The shell has a boundary per part inside it. */}
-    <Boundary part="the app">
+    <Boundary part="the app" root>
       <DataProvider layer={data}>
         <UiProvider>
           <App />

@@ -25,28 +25,32 @@ export const reportError = (what: string, error: unknown): void => {
   });
 };
 
-const copyDetails = (part: string, error: unknown) =>
-  void copyText(errorDetails(part, error)).then((ok) =>
-    toast({ key: "error-details", title: ok ? "Copied the details" : "Couldn’t copy the details", tone: ok ? "neutral" : "warning" }),
-  );
+const copiedTitle = (ok: boolean) => (ok ? "Copied the details" : "Couldn’t copy the details");
 
-function Card({ part, error, onReload }: { part: string; error: unknown; onReload: () => void }) {
+const copyDetails = (part: string, error: unknown) =>
+  void copyText(errorDetails(part, error)).then((ok) => toast({ key: "error-details", title: copiedTitle(ok), tone: ok ? "neutral" : "warning" }));
+
+function Card({ part, error, root, onReload }: { part: string; error: unknown; root: boolean; onReload: () => void }) {
+  // The whole app's card has no rest of the app to point at, and no toasts: their host is inside it. It says so
+  // itself, and confirms a copy in its own text.
+  const [copied, setCopied] = useState<boolean | null>(null);
+  const copy = () => (root ? void copyText(errorDetails(part, error)).then(setCopied) : copyDetails(part, error));
   return (
     <div data-crashed={part} role="status" style={{ display: "contents" }}>
       <EmptyState
-        title="This part hit an error"
+        title={root ? "fleetd hit an error" : "This part hit an error"}
         actions={
           <>
             <Button variant="secondary" onClick={onReload}>
               Reload
             </Button>
-            <Button variant="quiet" onClick={() => copyDetails(part, error)}>
+            <Button variant="quiet" onClick={copy}>
               Copy details
             </Button>
           </>
         }
       >
-        The rest of the app still works.
+        {root ? `Reload to start it again.${copied === null ? "" : ` ${copiedTitle(copied)}.`}` : "The rest of the app still works."}
       </EmptyState>
     </div>
   );
@@ -60,6 +64,8 @@ interface Props {
    * details. Opening it again mounts it afresh.
    */
   readonly overlay?: { readonly onError: () => void } | undefined;
+  /** The boundary around the whole app (main.tsx): nothing else is left up, toasts included. */
+  readonly root?: true | undefined;
   readonly children: ReactNode;
 }
 
@@ -94,7 +100,7 @@ export class Boundary extends Component<Props, State> {
 
   override render(): ReactNode {
     const { failed, error, mount } = this.state;
-    if (failed) return this.props.overlay === undefined ? <Card part={this.props.part} error={error} onReload={this.#reload} /> : null;
+    if (failed) return this.props.overlay === undefined ? <Card part={this.props.part} error={error} root={this.props.root === true} onReload={this.#reload} /> : null;
     return (
       <Fragment key={mount}>
         {QA_PROBE ? <Probe part={this.props.part} /> : null}
