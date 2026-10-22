@@ -61,7 +61,7 @@ export function General() {
   );
 }
 
-function Setting(props: { label: string; help: string; children: ReactNode }) {
+export function Setting(props: { label: string; help: string; children: ReactNode }) {
   return (
     <section className={s.setting} aria-label={props.label}>
       <div className={s.settingLabel}>

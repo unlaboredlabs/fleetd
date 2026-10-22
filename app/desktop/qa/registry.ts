@@ -85,8 +85,12 @@ export const sizes = {
   small: { width: 1024, height: 700 },
   medium: { width: 1400, height: 900 },
   large: { width: 1920, height: 1200 },
+  // The smallest window (main/index.ts): the sidebar has hidden itself. Shot only where an entry asks for it.
+  narrow: { width: 900, height: 600 },
 } as const;
 export type SizeName = keyof typeof sizes;
+/** What an entry without `sizes` is shot at. */
+export const defaultSizes: readonly SizeName[] = ["small", "medium", "large"];
 
 export const themes = ["light", "dark"] as const;
 export type Theme = (typeof themes)[number];
@@ -204,6 +208,24 @@ export const screens: readonly Screen[] = [
     variant: "chat",
   },
   { id: "shell", route: "#/status", fixtures: ["status-rows"], variant: "sidebar" },
+  // The smallest window: the sidebar has hidden itself, its toggle and the chat's title share the top row.
+  { id: "shell", route: "#/", fixtures: ["chat-waiting", "long-text"], variant: "narrow", sizes: ["narrow"] },
+  // ...and shown again with the toggle at that width, the chat beside it.
+  {
+    id: "shell",
+    route: "#/",
+    fixtures: ["chat-waiting", "long-text"],
+    variant: "narrow-open",
+    sizes: ["narrow"],
+    open: async (page) => {
+      // The toggle shows it for the width it is pressed at, so narrow the page first (the size the suite sets next).
+      const session = await page.context().newCDPSession(page);
+      const deviceScaleFactor = await page.evaluate(() => window.devicePixelRatio);
+      await session.send("Emulation.setDeviceMetricsOverride", { ...sizes.narrow, deviceScaleFactor, mobile: false });
+      await page.getByRole("button", { name: "Show the sidebar" }).click();
+      await page.getByRole("navigation", { name: "Sidebar" }).waitFor();
+    },
+  },
   // A2/A3 (F3, F4): the conversation and its composer: Markdown, paging through a long history with the migrated
   // orders, a reply streaming in, attachments, the lead waiting on you, a first message, and the link down.
   {
@@ -363,6 +385,18 @@ export const screens: readonly Screen[] = [
   // Max agents: the fleet cap and each project's slider.
   { id: "settings.agents", route: "#/settings/agents", fixtures: ["settings-agents", "long-text", "empty", "hub-unreachable"] },
   { id: "settings.general", route: "#/settings/general", fixtures: ["typical", "empty", "hub-unreachable"] },
+  // Notifications: the kinds, sound, the Dock badge, and the line after a test was sent.
+  { id: "settings.notifications", route: "#/settings/notifications", fixtures: ["typical"] },
+  {
+    id: "settings.notifications",
+    route: "#/settings/notifications",
+    fixtures: ["typical"],
+    variant: "test-sent",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Send a test notification" }).click();
+      await page.getByRole("status").filter({ hasText: /Sent|doesn’t show/u }).waitFor();
+    },
+  },
   {
     id: "settings.prompts",
     route: "#/settings/prompts?prompt=lead.start",

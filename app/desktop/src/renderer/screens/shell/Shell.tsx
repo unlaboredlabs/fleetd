@@ -1,13 +1,14 @@
-// The app frame: the top bar (the window's drag region, the traffic lights inset on macOS), the sidebar of projects,
-// and the screen the route names: a project's lead chat, or Status, Time or Settings. Navigation is the hash
-// (routes.ts); `#/` opens the project you last had open.
+// The app frame: the sidebar of projects down the left (the macOS traffic lights sit in its top row, over the window's
+// translucent material), the top row beside it (the window's drag region, where a chat puts its title), and the
+// screen the route names: a project's lead chat, or Status, Time or Settings. Navigation is the hash (routes.ts);
+// `#/` opens the project you last had open.
 import { PanelLeft, Search } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { display } from "../../../shared/shortcuts";
 import { AppFrame, Button, EmptyState, TopBar } from "../../ui";
 import { openPalette, PaletteHost, useCommands, type Command } from "../palette";
 import { ProjectsHost } from "../projects";
-import { useMainProcess, useMenuState, useModHeld, useNotifications } from "./effects";
+import { useDockBadge, useMainProcess, useMenuState, useModHeld, useNotifications } from "./effects";
 import { useHubState } from "./hubFeed";
 import { useDataLayer } from "../../src/data/react";
 import { homeProject, projectId, stepProject } from "./model";
@@ -17,6 +18,7 @@ import type { Screen } from "./routes";
 import { ConnectionBanner, needsOnboarding } from "../onboarding";
 import { ScreenHost } from "./screens";
 import { Sidebar } from "./Sidebar";
+import { useSidebar } from "./sidebarState";
 import s from "./shell.module.css";
 
 const platform = window.fleetd.platform;
@@ -44,12 +46,13 @@ export function Shell() {
   const hub = useHubState();
   const projects = useSidebarProjects();
   const machinesDown = useMachinesDown();
-  const [sidebarHidden, setSidebarHidden] = useState(false);
+  const sidebar = useSidebar();
   const modHeld = useModHeld();
 
   useMainProcess();
   useMenuState();
   useNotifications(hub?.phase === "live");
+  useDockBadge();
 
   // `#/` is the last project once the projects are known: shown as that project at once, and the URL follows (replace,
   // so Back doesn't return to the bare `#/`). It is shown from `home`, not from the replaced URL: a hash set back to
@@ -95,7 +98,7 @@ export function Shell() {
 
   useCommands(
     [
-      { id: "sidebar.toggle", title: "Toggle sidebar", group: "actions", enabled: () => chrome, run: () => setSidebarHidden((h) => !h) },
+      { id: "sidebar.toggle", title: "Toggle sidebar", group: "actions", enabled: () => chrome, run: sidebar.toggle },
       { id: "project.previous", title: "Previous project", group: "projects", searchOnly: true, enabled: () => chrome && (projects?.length ?? 0) > 0, run: () => step(-1) },
       { id: "project.next", title: "Next project", group: "projects", searchOnly: true, enabled: () => chrome && (projects?.length ?? 0) > 0, run: () => step(1) },
       ...JUMPS.map(
@@ -115,22 +118,23 @@ export function Shell() {
     [],
   );
 
+  const toggle = (
+    <Button
+      variant="quiet"
+      iconOnly
+      aria-label={sidebar.hidden ? "Show the sidebar" : "Hide the sidebar"}
+      title={`${sidebar.hidden ? "Show" : "Hide"} the sidebar (${display("sidebar.toggle", platform)})`}
+      aria-pressed={!sidebar.hidden}
+      onClick={sidebar.toggle}
+    >
+      <PanelLeft />
+    </Button>
+  );
+  const showSidebar = chrome && !sidebar.hidden;
+
   const top = (
     <TopBar
-      leading={
-        chrome ? (
-          <Button
-            variant="quiet"
-            iconOnly
-            aria-label={sidebarHidden ? "Show the sidebar" : "Hide the sidebar"}
-            title={`${sidebarHidden ? "Show" : "Hide"} the sidebar (${display("sidebar.toggle", platform)})`}
-            aria-pressed={!sidebarHidden}
-            onClick={() => setSidebarHidden((h) => !h)}
-          >
-            <PanelLeft />
-          </Button>
-        ) : undefined
-      }
+      leading={chrome && !showSidebar ? toggle : undefined}
       trailing={
         chrome ? (
           <Button variant="quiet" icon={<Search />} shortcut={display("palette.toggle", platform)} onClick={() => openPalette()}>
@@ -144,8 +148,10 @@ export function Shell() {
   return (
     <div className={s.root} data-screen="shell">
       <AppFrame
+        translucent
         topBar={top}
-        sidebar={chrome && !sidebarHidden ? <Sidebar projects={projects} machinesDown={machinesDown} screen={screen} hub={hub} jumpHints={modHeld} go={go} /> : undefined}
+        sidebarTop={toggle}
+        sidebar={showSidebar ? <Sidebar projects={projects} machinesDown={machinesDown} screen={screen} hub={hub} jumpHints={modHeld} go={go} /> : undefined}
       >
         <div className={s.column}>
           {/* Fixture data must never pass for a live hub. */}

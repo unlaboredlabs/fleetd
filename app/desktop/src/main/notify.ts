@@ -15,10 +15,11 @@ export class Notifier {
     this.#opener = opener;
   }
 
-  show(request: NotifyRequest): void {
-    if (!Notification.isSupported()) return;
+  /** False when this system shows no notifications, so Settings' test can say so. */
+  show(request: NotifyRequest): boolean {
+    if (!Notification.isSupported()) return false;
     this.#shown.get(request.tag)?.close();
-    const notification = new Notification({ title: request.title, body: request.body });
+    const notification = new Notification({ title: request.title, body: request.body, silent: request.silent === true });
     notification.on("click", () => {
       this.#opener.open(request.target);
       this.#forget(request.tag, notification);
@@ -26,6 +27,7 @@ export class Notifier {
     notification.on("close", () => this.#forget(request.tag, notification));
     this.#shown.set(request.tag, notification);
     notification.show();
+    return true;
   }
 
   #forget(tag: string, notification: Notification): void {

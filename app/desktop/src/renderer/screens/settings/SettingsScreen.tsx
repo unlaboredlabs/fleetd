@@ -1,15 +1,17 @@
-// Settings (⌘, or the app menu): General, Agents (Max agents), Prompts and Instructions. The route picks the tab
+// Settings (⌘, or the app menu): General, Notifications, Agents (Max agents), Prompts and Instructions. The route picks the tab
 // (#/settings/<tab>); see route.ts for the links into one prompt.
 import { Text } from "../../ui";
 import { AgentsSettings } from "./Agents";
 import { General } from "./General";
 import { Instructions } from "./Instructions";
+import { Notifications } from "./Notifications";
 import { Prompts } from "./Prompts";
 import { parseRoute, tabHref, useHash, type Tab } from "./route";
 import s from "./settings.module.css";
 
 const NAV: ReadonlyArray<{ tab: Tab; label: string; help: string }> = [
   { tab: "general", label: "General", help: "Appearance, motion, the hub, data" },
+  { tab: "notifications", label: "Notifications", help: "What alerts you, sound, the Dock badge" },
   { tab: "agents", label: "Agents", help: "How many run at once, per project and in all" },
   { tab: "prompts", label: "Prompts", help: "Everything fleetd tells its agents" },
   { tab: "instructions", label: "Instructions", help: "Your own, added to every agent's first message" },
@@ -34,6 +36,8 @@ export function SettingsScreen() {
       </nav>
       {route.tab === "general" ? (
         <General />
+      ) : route.tab === "notifications" ? (
+        <Notifications />
       ) : route.tab === "agents" ? (
         <AgentsSettings />
       ) : route.tab === "prompts" ? <Prompts route={route} /> : <Instructions route={route} />}

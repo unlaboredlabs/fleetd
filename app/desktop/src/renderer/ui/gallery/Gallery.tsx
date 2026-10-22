@@ -1,4 +1,4 @@
-import { Archive, Bell, Copy, FolderPlus, MessageSquare, Plus, Settings, Square } from "lucide-react";
+import { Archive, Bell, Copy, FolderPlus, MessageSquare, PanelLeft, Plus, Settings, Square } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   AppFrame,
@@ -55,6 +55,7 @@ import {
   toast,
   Tooltip,
   TopBar,
+  FrameTitle,
   Truncate,
   useTheme,
   VirtualList,
@@ -672,9 +673,12 @@ function LayoutSection() {
                   </Button>
                 </>
               }
-            >
-              <Breadcrumb items={[{ label: "storefront", onClick: () => undefined }, { label: LONG }]} />
-            </TopBar>
+            />
+          }
+          sidebarTop={
+            <Button variant="quiet" iconOnly aria-label="Hide the sidebar">
+              <PanelLeft />
+            </Button>
           }
           sidebar={
             <Sidebar>
@@ -694,6 +698,9 @@ function LayoutSection() {
             </Sidebar>
           }
         >
+          <FrameTitle>
+            <Breadcrumb items={[{ label: "storefront", onClick: () => undefined }, { label: LONG }]} />
+          </FrameTitle>
           <Panel
             fill
             header={

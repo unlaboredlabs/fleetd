@@ -163,6 +163,8 @@ export async function setNativeView(app: ElectronApplication, page: Page, size: 
   const { width, height } = sizes[size];
   views.delete(page);
   await (await cdp(page)).send("Emulation.clearDeviceMetricsOverride");
+  // The real window: its own translucent sidebar, not the tone page shots stand in for it (backdrop()).
+  if (process.platform === "darwin") await (await cdp(page)).send("Emulation.setDefaultBackgroundColorOverride", {});
   const real = await app.evaluate(
     async ({ BrowserWindow, nativeTheme }, v) => {
       nativeTheme.themeSource = v.theme;
@@ -304,6 +306,18 @@ export async function settle(page: Page) {
   });
 }
 
+// On macOS the sidebar is the window's own vibrancy under a clear page (main/index.ts), which a page screenshot
+// can't see: it would come out empty. Page shots fill what the page leaves clear with the theme's --sidebar tone,
+// which is how the sidebar looks with Reduce transparency and on Linux. The native window shot (platform.spec.ts)
+// shows the real material.
+async function backdrop(page: Page) {
+  if (process.platform !== "darwin") return;
+  const hex = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--sidebar").trim());
+  const byte = (i: number) => parseInt(hex.slice(i, i + 2), 16);
+  if (!/^#[0-9a-f]{6}$/iu.test(hex)) throw new Error(`--sidebar is "${hex}", not a #rrggbb colour`);
+  await (await cdp(page)).send("Emulation.setDefaultBackgroundColorOverride", { color: { r: byte(1), g: byte(3), b: byte(5), a: 1 } });
+}
+
 // macOS draws the traffic lights over the page; nothing of ours may sit under them.
 export async function reservedRegions(app: ElectronApplication): Promise<Box[]> {
   if (process.platform !== "darwin") return [];
@@ -366,6 +380,7 @@ export async function shoot(
   mkdirSync(path.join(resultsDir, "png"), { recursive: true });
   mkdirSync(path.join(resultsDir, "shots"), { recursive: true });
   await holdView(page);
+  await backdrop(page);
   const findings = await check(page, reserved);
   const png = path.join("png", `${name}.png`);
   await capture(page, png, []);

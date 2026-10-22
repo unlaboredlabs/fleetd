@@ -49,6 +49,12 @@ body {
   cursor: default;
 }
 
+/* macOS: the window's own translucent material shows where the page paints nothing, which is only the sidebar
+   (AppFrame's translucent frame, layout.module.css). */
+:root[data-vibrancy] body {
+  background: transparent;
+}
+
 /* Text people read or copy stays selectable; chrome does not. */
 input,
 textarea,

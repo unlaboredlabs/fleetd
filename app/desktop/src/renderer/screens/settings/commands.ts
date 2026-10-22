@@ -1,4 +1,4 @@
-// Settings in the command palette: its three pages, and every prompt by its plain name (typed, not listed: there
+// Settings in the command palette: its pages, and every prompt by its plain name (typed, not listed: there
 // are 60 of them), each opening in Settings → Prompts. main.tsx registers them once, with the app's data layer.
 import { registerCommands, registerSource, type Command } from "../palette";
 import { GROUPS, describe, groupOf } from "./catalog";
@@ -19,6 +19,14 @@ const pages: Command[] = [
     group: "settings",
     keywords: ["preferences", "dark mode", "theme", "retention", "digest", "disconnect"],
     run: () => go(tabHref("general")),
+  },
+  {
+    id: "go:settings.notifications",
+    title: "Notifications",
+    detail: "What alerts you, sound, the Dock badge",
+    group: "settings",
+    keywords: ["alerts", "sound", "badge", "dock", "mute"],
+    run: () => go(tabHref("notifications")),
   },
   {
     id: "go:settings.prompts",

@@ -4,7 +4,7 @@
 // the strip's lanes.
 import { useCallback, useMemo, useState } from "react";
 import type { AgentLane, ThreadRef } from "../../../shared/contracts";
-import { Button, IdChip, StatusChip, Text, Truncate, type StatusTone } from "../../ui";
+import { Button, FrameTitle, IdChip, StatusChip, Text, Truncate, type StatusTone } from "../../ui";
 import { STATE_WORDS } from "../status/rows";
 import type { ProjectStateWord } from "../../src/data/selectors";
 import { ChatList } from "./ChatList";
@@ -59,7 +59,8 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
 
   return (
     <div className={s.screen} data-screen={data.missing ? "chat.missing" : view !== undefined ? "chat" : data.loadError !== undefined ? "chat.error" : "chat.loading"}>
-      <header className={s.header}>
+      {/* In the window's top row: one header, not two. */}
+      <FrameTitle>
         <span className={s.title}>{title ? <Truncate strong>{title}</Truncate> : null}</span>
         {state ? (
           <span className={s.flexNone}>
@@ -67,7 +68,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
           </span>
         ) : null}
         {data.missing ? null : <AgentsCapControl projectRef={project} />}
-      </header>
+      </FrameTitle>
       {data.missing ? (
         <div className={s.loading} role="status">
           <Text tone="quiet">This project isn’t on the hub. It may have been removed.</Text>

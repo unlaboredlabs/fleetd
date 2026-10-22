@@ -47,7 +47,17 @@ export function Sidebar({ projects, machinesDown, screen, hub, jumpHints, go }: 
   const open = screen.id === "project" ? screen.project : null;
 
   return (
-    <Frame aria-label="Sidebar">
+    <Frame
+      aria-label="Sidebar"
+      footer={
+        <button type="button" className={s.conn} onClick={() => go({ id: "settings", tab: "general" })}>
+          <Dot color={TONE[conn.tone]} />
+          <Truncate size="xs" tone="quiet" expand="none">
+            {conn.label}
+          </Truncate>
+        </button>
+      }
+    >
       <SidebarSection
         title="Projects"
         action={
@@ -99,13 +109,6 @@ export function Sidebar({ projects, machinesDown, screen, hub, jumpHints, go }: 
         )}
         {nav("Settings", <Settings />, { id: "settings", tab: "general" }, screen.id === "settings", kbd("settings.open"))}
       </SidebarSection>
-
-      <button type="button" className={s.conn} onClick={() => go({ id: "settings", tab: "general" })}>
-        <Dot color={TONE[conn.tone]} />
-        <Truncate size="xs" tone="quiet" expand="none">
-          {conn.label}
-        </Truncate>
-      </button>
     </Frame>
   );
 }

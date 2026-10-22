@@ -35,20 +35,20 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* The connection line sits at the bottom of the sidebar, and stays there while the projects scroll. */
+/* The connection line: the sidebar's footer, below the rows that scroll. No background of its own, so the
+   translucent sidebar shows through it too. */
 .conn {
-  position: sticky;
-  bottom: 0;
+  flex: none;
   display: flex;
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
   min-height: var(--row);
-  margin-top: auto;
+  margin: 0 var(--space-2);
   padding: var(--space-1) var(--space-2);
   border: none;
   border-top: 1px solid var(--hairline);
-  background: var(--sidebar);
+  background: none;
   color: var(--quiet);
   text-align: left;
 }

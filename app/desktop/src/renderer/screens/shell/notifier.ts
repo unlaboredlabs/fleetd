@@ -53,19 +53,37 @@ export interface AttentionEvent {
   readonly messageId: string | null;
 }
 
+/** The kinds Settings → Notifications turns on and off. */
+export type NotifyKind = "reply" | "approval" | "machine" | "other";
+
+const MACHINE_TYPES = ["machine.", "doctor.", "usage."];
+
+/** Which kind a hub event is: the lead asking you, a command or secret to answer, a machine, or anything else. */
+export const kindOf = (type: string): NotifyKind =>
+  type === "chat.waiting"
+    ? "reply"
+    : type.startsWith("request.") || type.startsWith("thread.")
+      ? "approval"
+      : MACHINE_TYPES.some((p) => type.startsWith(p))
+        ? "machine"
+        : "other";
+
 /** Reads a hub event (the /app protocol's HubEvent) defensively: anything off-shape is not for attention. */
 export const attentionEvent = (event: Readonly<Record<string, unknown>>): AttentionEvent | null => {
-  const attention = event["attention"];
+  const data = record(event["data"]);
+  // The hub leaves chat.waiting unmarked (agents reading the fleet's attention items don't need their own lead's
+  // asks), but the person does: the lead now waits on their reply.
+  const asks = event["type"] === "chat.waiting" && data?.["needsYou"] === true;
+  const attention = asks ? "loud" : event["attention"];
   if (attention !== "loud" && attention !== "urgent") return null;
   // chat.message and chat.waiting name the project in `data.projectRef`; other events at the top level.
-  const data = record(event["data"]);
   const ref = record(data?.["projectRef"]);
   const machineId = ref?.["machineId"] ?? event["machineId"];
   const projectId = ref?.["projectId"] ?? event["projectId"];
   const messageId = data?.["messageId"];
   return {
     type: typeof event["type"] === "string" ? event["type"] : "",
-    summary: typeof event["summary"] === "string" ? event["summary"] : "",
+    summary: asks ? "The lead is waiting for your reply" : typeof event["summary"] === "string" ? event["summary"] : "",
     attention,
     project: typeof machineId === "string" && typeof projectId === "string" ? { machineId, projectId } : null,
     messageId: typeof messageId === "string" ? messageId : null,
@@ -83,8 +101,20 @@ interface Pending {
   readonly urgent: boolean;
   readonly project: ProjectKey | null;
   readonly messageId: string | null;
-  /** About a machine or its setup (machine.*, doctor.*, usage.*), so Machines explains it. */
-  readonly machine: boolean;
+  /** A machine's (machine.*, doctor.*, usage.*) opens Machines, which explains it. */
+  readonly kind: NotifyKind;
+}
+
+/** What `due` asks of the app beyond the policy. Left out: nobody is looking, every kind is on, no names. */
+export interface DueContext {
+  /** False for a project whose lead no longer waits for you (you answered meanwhile); true while that isn't known. */
+  readonly stillNeeded: (project: ProjectKey) => boolean;
+  /** You have that project's chat in front of you (the window focused on it): no alert for what you can see. */
+  readonly looking?: (project: ProjectKey) => boolean;
+  /** Settings → Notifications has this kind on. */
+  readonly enabled?: (kind: NotifyKind) => boolean;
+  /** The project's name, for the title of a notification about one project. */
+  readonly nameOf?: (project: ProjectKey) => string | undefined;
 }
 
 const oneLine = (text: string, max: number): string => {
@@ -103,21 +133,27 @@ export class Notifier {
 
   push(event: AttentionEvent): void {
     if (event.attention === null) return;
+    const kind = kindOf(event.type);
+    // An open secret or command also makes the lead wait on you: one item for it, the one that says what it is.
+    const about = (p: Pending) => sameKey(p.project, event.project);
+    if (kind === "reply" && this.#pending.some(about)) return;
+    if (kind !== "reply") this.#pending = this.#pending.filter((p) => p.kind !== "reply" || !about(p));
     this.#pending.push({
       line: oneLine(event.summary, 140),
       urgent: event.attention === "urgent",
       project: event.project,
       messageId: event.messageId,
-      machine: ["machine.", "doctor.", "usage."].some((p) => event.type.startsWith(p)),
+      kind,
     });
   }
 
-  /**
-   * What to show now, if anything. `stillNeeded(project)` drops items about a project you have answered meanwhile
-   * (its lead no longer waits for you); it returns true while that isn't known.
-   */
-  due(now: number, policy: Policy, stillNeeded: (project: ProjectKey) => boolean): Notification | null {
-    this.#pending = this.#pending.filter((p) => p.project === null || p.machine || stillNeeded(p.project));
+  /** What to show now, if anything. Items the context rules out are dropped for good. */
+  due(now: number, policy: Policy, ctx: DueContext): Notification | null {
+    this.#pending = this.#pending.filter(
+      (p) =>
+        (ctx.enabled?.(p.kind) ?? true) &&
+        (p.project === null || p.kind === "machine" || (ctx.stillNeeded(p.project) && !(ctx.looking?.(p.project) ?? false))),
+    );
     const quiet = quietAt(policy, now);
     const sendable = (p: Pending) => !quiet || p.urgent;
     if (!this.#pending.some(sendable)) return null;
@@ -129,8 +165,9 @@ export class Notifier {
     if (first === undefined) return null;
     const body = rest.length === 0 ? first.line : `${first.line} (+${rest.length} more)`;
     const one = first.project !== null && send.every((p) => sameKey(p.project, first.project)) ? first.project : null;
+    const machine = first.kind === "machine";
     const target: NotifyTarget =
-      one !== null && !first.machine
+      one !== null && !machine
         ? {
             kind: "chat",
             machineId: one.machineId,
@@ -138,10 +175,11 @@ export class Notifier {
             // The message only when it is the one thing this notification is about.
             ...(rest.length === 0 && first.messageId !== null ? { messageId: first.messageId } : {}),
           }
-        : send.every((p) => p.machine)
+        : send.every((p) => p.kind === "machine")
           ? { kind: "machines" }
           : // Several projects: Status lists which need you.
             { kind: "status" };
-    return { title: "fleetd needs you", body, target };
+    const name = one !== null && !machine ? ctx.nameOf?.(one) : undefined;
+    return { title: name ?? "fleetd needs you", body, target };
   }
 }

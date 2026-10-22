@@ -22,7 +22,8 @@ export function isThemeMode(value: unknown): value is ThemeMode {
 const STORAGE_KEY = "fleetd.theme";
 const darkQuery = () => window.matchMedia("(prefers-color-scheme: dark)");
 
-function storedMode(): ThemeMode {
+/** The saved choice; `system` when there is none. */
+export function storedMode(): ThemeMode {
   try {
     const v = window.localStorage.getItem(STORAGE_KEY);
     return isThemeMode(v) ? v : "system";
