@@ -103,7 +103,8 @@ const payloads = (f: Fixture, problems: Array<string>): Array<Payload> => {
   }
   for (const c of f.calls) {
     if (tools.properties[`${c.tool}.output`] === undefined) {
-      problems.push(`${f.name}: ${c.tool} is not a hub tool`);
+      // A tool agreed with its hub slice but not in the contracts yet is listed in pendingContracts, with why.
+      if (!f.pendingContracts.has(c.tool)) problems.push(`${f.name}: ${c.tool} is not a hub tool`);
       continue;
     }
     // A misspelled input key would never match the screen's call, so the screen shows not_found and still "passes".

@@ -1,24 +1,25 @@
 // The lead chat's composer (A3): one box. Typing while the lead works is a steer, otherwise a new message; the hub
-// decides (chat_send) and the box only says which to expect. Enter sends, Shift+Enter is a new line. Files attach
-// by button, drop or paste (images included); a long paste becomes a file. The words, the files and an unsent
-// message's "not connected" note stay per project across navigation (drafts.ts).
+// decides (chat_send) and the box only says which to expect. Enter sends, Shift+Enter is a new line, ↑ in an empty
+// box brings back your last message. Files attach by the box's clip, drop or paste (images included); a long paste
+// becomes a file. While the lead works, Stop beside Send ends its turn now. The words, the files and an unsent
+// message's "not connected" note stay per project across navigation, and the words across quitting (drafts.ts).
 
 interface ProjectRef {
   readonly machineId: string;
   readonly projectId: string;
 }
 
-import { Paperclip, X } from "lucide-react";
-import { useEffect, useRef, type ClipboardEvent, type KeyboardEvent } from "react";
+import { ArrowUp, Paperclip, Square, X } from "lucide-react";
+import { useEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent } from "react";
 import type { AttachmentRef } from "../../../shared/contracts";
 import type { ChatItem } from "../../src/data/chat";
 import { useData, useDataLayer } from "../../src/data/react";
 import { projectKey as keyOf } from "../../src/data/store";
-import { selectLeadWorking } from "../../src/data/selectors";
-import { Button, cx, IdChip, Text, Truncate } from "../../ui";
+import { selectCanStop, selectLeadWorking } from "../../src/data/selectors";
+import { Button, cx, IdChip, Text, Tooltip, Truncate } from "../../ui";
 import { useCommands } from "../palette";
 import { fmtBytes, PASTE_AS_FILE, pastedName } from "./attachments";
-import { ACT_LABEL, checkMessage, KEY_HINT, placeholder, receiptFor, sendsOn, type Act } from "./composerModel";
+import { ACT_LABEL, checkMessage, placeholder, receiptFor, recallsOn, sendsOn, type Act } from "./composerModel";
 import { useDraft, useDrafts } from "./drafts";
 import c from "./composer.module.css";
 
@@ -33,9 +34,11 @@ export interface ChatComposerProps {
   /** After a message leaves the box: the list scrolls to it. */
   onSent?: () => void;
   autoFocus?: boolean;
+  /** Your newest message's words, which ↑ brings back into an empty box. */
+  recall?: string | undefined;
 }
 
-export function ChatComposer({ project, onSent, autoFocus }: ChatComposerProps) {
+export function ChatComposer({ project, onSent, autoFocus, recall }: ChatComposerProps) {
   const projectKey = keyOf(project);
   const [draft, setDraft, drafts] = useDraft(projectKey);
   const working = useData(selectLeadWorking(projectKey));
@@ -43,11 +46,38 @@ export function ChatComposer({ project, onSent, autoFocus }: ChatComposerProps) 
   const box = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const pastes = useRef(0);
+  const canStop = useData(selectCanStop);
+  // Asked for until the lead's turn ends (or the call says it can't): Stop stays pressed meanwhile.
+  const [stopping, setStopping] = useState(false);
+  const [stopError, setStopError] = useState<string>();
+  const showStop = working === true && canStop;
+
+  // The turn ended: a new one starts with Stop unpressed.
+  const [wasWorking, setWasWorking] = useState(working);
+  if (working !== wasWorking) {
+    setWasWorking(working);
+    if (working !== true) setStopping(false);
+  }
+  useEffect(() => {
+    if (working === true) chat.probeStop();
+  }, [working, chat]);
+
+  const stop = () => {
+    if (stopping) return;
+    setStopping(true);
+    setStopError(undefined);
+    void chat.stop(projectKey).then((o) => {
+      if (o.t === "stopped") return;
+      setStopping(false);
+      if (o.t === "failed") setStopError(`Couldn’t stop the lead: ${o.error.message}`);
+    });
+  };
 
   useCommands(
     [
       { id: "composer.focus", title: "Focus the composer", group: "actions", run: () => box.current?.focus() },
       { id: "composer.attach", title: "Attach a file", group: "actions", run: () => fileInput.current?.click() },
+      { id: "lead.stop", title: "Stop the lead", group: "actions", detail: "Ends its turn now; agents keep working", enabled: () => showStop && !stopping, run: stop },
     ],
     [],
   );
@@ -81,7 +111,13 @@ export function ChatComposer({ project, onSent, autoFocus }: ChatComposerProps) 
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (!sendsOn({ ...e, isComposing: e.nativeEvent.isComposing })) return;
+    const key = { ...e, isComposing: e.nativeEvent.isComposing };
+    if (recall !== undefined && recallsOn(key, draft)) {
+      e.preventDefault();
+      setDraft((d) => ({ ...d, text: recall }));
+      return;
+    }
+    if (!sendsOn(key)) return;
     e.preventDefault();
     send();
   };
@@ -140,72 +176,88 @@ export function ChatComposer({ project, onSent, autoFocus }: ChatComposerProps) 
 
 
   const note = draft.error ?? (draft.offline === true ? "Not connected to the hub, so this wasn’t sent. Send it again once the hub is back." : undefined);
+  const said = note ?? stopError;
   return (
     <div className={c.composer} data-composer data-screen="chat.composer">
-      <textarea
-        ref={box}
-        className={c.input}
-        aria-label="Message the lead"
-        placeholder={placeholder(working)}
-        rows={1}
-        value={draft.text}
-        autoFocus={autoFocus}
-        onChange={(e) => {
-          const text = e.target.value;
-          setDraft((d) => {
-            const { offline: _o, error: _e, ...rest } = d;
-            return { ...rest, text };
-          });
-        }}
-        onKeyDown={onKeyDown}
-        onPaste={onPaste}
-      />
-      {draft.attached.length > 0 ? (
-        <div className={c.chips}>
-          {draft.attached.map((a) => (
-            <span key={a.local} className={cx(c.chip, a.upload && !a.upload.ok && c.failed)}>
-              <Truncate expand="none" size="xs" tone="inherit">
-                {`${a.name} · ${a.upload ? (a.upload.ok ? fmtBytes(a.bytes) : "didn’t upload") : "uploading…"}`}
-              </Truncate>
-              <button
-                type="button"
-                className={c.remove}
-                aria-label={`Remove ${a.name}`}
-                onClick={() => setDraft((d) => ({ ...d, attached: d.attached.filter((x) => x.local !== a.local) }))}
-              >
-                <X className={c.removeIcon} aria-hidden />
-              </button>
-            </span>
-          ))}
-        </div>
-      ) : null}
-      <div className={c.how}>
-        <Button variant="quiet" icon={<Paperclip />} onClick={() => fileInput.current?.click()}>
-          Attach
-        </Button>
-        <input
-          ref={fileInput}
-          type="file"
-          multiple
-          hidden
+      <div className={c.box}>
+        <textarea
+          ref={box}
+          className={c.input}
+          aria-label="Message the lead"
+          placeholder={placeholder(working)}
+          rows={1}
+          value={draft.text}
+          autoFocus={autoFocus}
           onChange={(e) => {
-            attach([...(e.target.files ?? [])]);
-            e.target.value = "";
+            const text = e.target.value;
+            setDraft((d) => {
+              const { offline: _o, error: _e, ...rest } = d;
+              return { ...rest, text };
+            });
           }}
+          onKeyDown={onKeyDown}
+          onPaste={onPaste}
         />
-        <span className={c.spacer} />
-        <span role="status" className={c.note}>
-          {note ? (
-            <Text size="xs" tone="danger">
-              {note}
-            </Text>
-          ) : (
-            <span className={c.keys}>{KEY_HINT}</span>
-          )}
-        </span>
-        <Button variant="primary" disabled={!sendable} onClick={send}>
-          Send
-        </Button>
+        {draft.attached.length > 0 ? (
+          <div className={c.chips}>
+            {draft.attached.map((a) => (
+              <span key={a.local} className={cx(c.chip, a.upload && !a.upload.ok && c.failed)}>
+                <Truncate expand="none" size="xs" tone="inherit">
+                  {`${a.name} · ${a.upload ? (a.upload.ok ? fmtBytes(a.bytes) : "didn’t upload") : "uploading…"}`}
+                </Truncate>
+                <button
+                  type="button"
+                  className={c.remove}
+                  aria-label={`Remove ${a.name}`}
+                  onClick={() => setDraft((d) => ({ ...d, attached: d.attached.filter((x) => x.local !== a.local) }))}
+                >
+                  <X className={c.removeIcon} aria-hidden />
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : null}
+        <div className={c.tools}>
+          <Tooltip content="Attach a file">
+            <Button variant="quiet" iconOnly aria-label="Attach a file" onClick={() => fileInput.current?.click()}>
+              <Paperclip />
+            </Button>
+          </Tooltip>
+          <input
+            ref={fileInput}
+            type="file"
+            multiple
+            hidden
+            onChange={(e) => {
+              attach([...(e.target.files ?? [])]);
+              e.target.value = "";
+            }}
+          />
+          <span className={c.spacer} />
+          {showStop ? (
+            <Tooltip content={stopping ? "Stopping the lead…" : "Stop the lead now"}>
+              <Button variant="secondary" size="md" iconOnly round aria-label={stopping ? "Stopping the lead" : "Stop the lead"} disabled={stopping} onClick={stop}>
+                <Square />
+              </Button>
+            </Tooltip>
+          ) : null}
+          <Tooltip content="Send">
+            <Button variant="primary" size="md" iconOnly round aria-label="Send" disabled={!sendable} onClick={send}>
+              <ArrowUp />
+            </Button>
+          </Tooltip>
+        </div>
+      </div>
+      <div role="status" className={c.note}>
+        {said !== undefined ? (
+          <Text size="xs" tone="danger">
+            {said}
+          </Text>
+        ) : stopping ? (
+          <Text size="xs" tone="quiet">
+            Stopping the lead…
+          </Text>
+        ) : null}
       </div>
     </div>
   );

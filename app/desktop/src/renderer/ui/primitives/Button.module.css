@@ -45,6 +45,9 @@
 .md.icon {
   width: var(--field);
 }
+.round {
+  border-radius: 50%;
+}
 
 .primary {
   background: var(--accent-fill);
@@ -87,6 +90,22 @@
   background: color-mix(in srgb, var(--danger) 88%, black);
 }
 
+/* An action inside a line of text ("… asked at 09:02 Show"): the accent's words, at the line's own size. */
+.link {
+  height: auto;
+  padding: 0;
+  font-size: inherit;
+  line-height: inherit;
+  color: var(--accent);
+}
+.link:hover:not(:disabled) {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.link:active:not(:disabled) {
+  box-shadow: none;
+}
+
 .button:active:not(:disabled) {
   box-shadow: inset 0 0 0 100px var(--selected);
 }
@@ -97,7 +116,8 @@
   font-weight: inherit;
 }
 .ghost:disabled,
-.quiet:disabled {
+.quiet:disabled,
+.link:disabled {
   border-color: transparent;
 }
 

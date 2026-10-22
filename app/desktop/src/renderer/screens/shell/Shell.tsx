@@ -5,7 +5,7 @@
 import { PanelLeft, Search } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import { display } from "../../../shared/shortcuts";
-import { AppFrame, Button, EmptyState, TopBar } from "../../ui";
+import { AppFrame, Button, TopBar } from "../../ui";
 import { openPalette, PaletteHost, useCommands, type Command } from "../palette";
 import { ProjectsHost } from "../projects";
 import { useDockBadge, useMainProcess, useMenuState, useModHeld, useNotifications } from "./effects";
@@ -15,7 +15,7 @@ import { homeProject, projectId, stepProject } from "./model";
 import { useMachinesDown, useSidebarProjects } from "./data";
 import { navigate, useRoute } from "./navigation";
 import type { Screen } from "./routes";
-import { ConnectionBanner, needsOnboarding } from "../onboarding";
+import { ConnectionBanner, GetStarted, needsOnboarding } from "../onboarding";
 import { ScreenHost } from "./screens";
 import { Sidebar } from "./Sidebar";
 import { useSidebar } from "./sidebarState";
@@ -164,16 +164,7 @@ export function Shell() {
           <div className={s.screen}>
             {shown.id === "home" && projects !== undefined && projects.length === 0 ? (
               <div data-screen="home.empty" style={{ display: "contents" }}>
-                <EmptyState
-                  title="Add a project to chat with its lead"
-                  actions={
-                    <Button variant="primary" onClick={() => go({ id: "projects.add" })}>
-                      Add a project
-                    </Button>
-                  }
-                >
-                  Each project has a lead. Tell it what you want; it runs the agents and asks you only what it needs.
-                </EmptyState>
+                <GetStarted onAddProject={() => go({ id: "projects.add" })} />
               </div>
             ) : (
               <ScreenHost screen={shown} />
