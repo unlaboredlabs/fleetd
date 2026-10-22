@@ -165,6 +165,8 @@ export type AppError = {
 export type AppServerMessage = {
   protocol: number;
   t: "ready";
+  /** The hub's fleetd version, as hub_info reports it. Absent from older hubs. */
+  version?: string;
 } | FleetStatus & {
   t: "snapshot";
 } | HubEvent & {
@@ -1170,6 +1172,27 @@ export type HealthUsage = {
   utilization?: number;
 };
 
+/** One thing in flight on the hub. */
+export type HubBusyItem = {
+  kind: HubBusyKind;
+  /** Where it runs, when on one machine. */
+  machineId?: MachineId;
+  projectRef?: ProjectRef;
+  /** When it started. */
+  since?: Timestamp;
+  /** What it is, for a person: "T19 writing app-main in fleetd (12 m)". */
+  text: string;
+};
+
+export type KnownHubBusyKind = "agent" | "lead" | "train" | "approval" | "clone";
+/** KnownHubBusyKind, or a value from a newer hub. */
+export type HubBusyKind = KnownHubBusyKind | (string & {});
+
+/** The release channel a hub's build follows: nightly when its version contains "-nightly.", stable otherwise. */
+export type KnownHubChannel = "nightly" | "stable";
+/** KnownHubChannel, or a value from a newer hub. */
+export type HubChannel = KnownHubChannel | (string & {});
+
 export type HubEvent = {
   at: Timestamp;
   attention?: Attention;
@@ -1267,6 +1290,24 @@ export type KnownHubEventType =
   | "chat.waiting";
 /** KnownHubEventType, or a value from a newer hub. */
 export type HubEventType = KnownHubEventType | (string & {});
+
+export type HubInfoInput = {
+  /** Only what runs on this machine (before restarting its node); absent: everything. */
+  machineId?: MachineId;
+};
+
+export type HubInfoOutput = {
+  /** Empty when nothing is in flight. A restart interrupts each item. */
+  busy: HubBusyItem[];
+  /** Absent for a local build. */
+  channel?: HubChannel;
+  next?: string;
+  protocol: number;
+  startedAt?: Timestamp;
+  truncated?: boolean;
+  /** The hub's fleetd version, as `fleetd --version` prints it. "0.0.0" for a local build. */
+  version: string;
+};
 
 /** One human request, as stored and as every client shows it. */
 export type HumanRequest = {
@@ -4329,6 +4370,7 @@ export interface ToolMap {
   events_wait: { input: EventsWaitInput; output: EventsWaitOutput };
   fleetd_status: { input: FleetdStatusInput; output: FleetdStatusOutput };
   github_webhook_set: { input: GithubWebhookSetInput; output: GithubWebhookSetOutput };
+  hub_info: { input: HubInfoInput; output: HubInfoOutput };
   incidents_list: { input: IncidentsListInput; output: IncidentsListOutput };
   intake_preview: { input: IntakePreviewInput; output: IntakePreviewOutput };
   intake_submit: { input: IntakeSubmitInput; output: IntakeSubmitOutput };
