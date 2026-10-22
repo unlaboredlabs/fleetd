@@ -12,7 +12,7 @@ use fleetd_contracts::live::{
 };
 use fleetd_contracts::prim::{List, Text};
 use fleetd_contracts::sessions::{
-    ItemKind, ItemStatus, RunInfo, RunUsage, ThreadEvent, ThreadItem,
+    ItemKind, ItemStatus, MessageRole, RunInfo, RunUsage, ThreadEvent, ThreadItem, ThreadMessage,
 };
 
 use super::shell_mapper::js_take;
@@ -26,6 +26,8 @@ pub const TEXT_TAIL_CHARS: usize = 2000;
 const BUCKET_MS: i64 = SPARK_BUCKET_SECS as i64 * 1000;
 /// Roughly, for English and code: how many streamed characters one output token is.
 const CHARS_PER_TOKEN: u64 = 4;
+/// The active run's complete text messages kept per thread. The chat folds each in within a tick, so a few will do.
+const DONE_KEPT: usize = 8;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Open {
@@ -69,6 +71,14 @@ impl StreamText {
     }
 }
 
+/// A text message of the active run as the node stored it, complete. Deltas aren't: the node drops one still pending
+/// when its complete message lands, so a reader that only follows deltas can miss a message's last words.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DoneText {
+    pub message_id: String,
+    pub text: String,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct ActivityTracker {
     /// The session's worktree or workspace root: paths under it are shown repo-relative.
@@ -81,6 +91,8 @@ pub struct ActivityTracker {
     last_delta_ms: Option<i64>,
     retry: Option<(Activity, i64)>,
     text: Option<StreamText>,
+    /// The active run's complete assistant messages, oldest first, at most `DONE_KEPT`.
+    done: Vec<DoneText>,
     /// Final usage per run, from `run` events (and the snapshot's runs).
     run_usage: HashMap<String, RunUsage>,
     /// The active run's usage so far.
@@ -108,6 +120,16 @@ impl ActivityTracker {
                 for run in &snap.runs {
                     self.run(run, now_ms);
                 }
+                // A follow (again) mid-run: what the run already said complete.
+                if let Some(active) = self.active_run.clone() {
+                    for m in snap
+                        .messages
+                        .iter()
+                        .filter(|m| m.run_id.as_ref().is_some_and(|r| r.as_str() == active))
+                    {
+                        self.message(m);
+                    }
+                }
                 for item in snap
                     .items
                     .iter()
@@ -119,7 +141,11 @@ impl ActivityTracker {
                     self.open_item(item, started);
                 }
             }
-            ThreadEvent::Message(_) => {}
+            ThreadEvent::Message(m) => {
+                if self.active_run.is_some() {
+                    self.message(m);
+                }
+            }
             ThreadEvent::Item(item) => {
                 self.retry = None;
                 if item.status == ItemStatus::Running {
@@ -196,6 +222,7 @@ impl ActivityTracker {
             if self.active_run.as_deref() != Some(id) {
                 self.active_run = Some(id.to_owned());
                 self.quiet_since_ms = now_ms;
+                self.done.clear();
             }
             return;
         }
@@ -211,6 +238,21 @@ impl ActivityTracker {
             self.retry = None;
             self.last_delta_ms = None;
             self.writing_since_ms = None;
+            self.done.clear();
+        }
+    }
+
+    fn message(&mut self, m: &ThreadMessage) {
+        if m.role != MessageRole::Assistant || m.text.trim().is_empty() {
+            return;
+        }
+        self.done.retain(|d| d.message_id != m.id.as_str());
+        self.done.push(DoneText {
+            message_id: m.id.to_string(),
+            text: m.text.clone(),
+        });
+        if self.done.len() > DONE_KEPT {
+            self.done.remove(0);
         }
     }
 
@@ -324,6 +366,10 @@ impl ActivityTracker {
 
     pub fn text(&self) -> Option<&StreamText> {
         self.text.as_ref()
+    }
+
+    pub fn done(&self) -> &[DoneText] {
+        &self.done
     }
 }
 
@@ -476,6 +522,65 @@ mod tests {
     }
 
     const T0: i64 = 1_760_000_000_000;
+
+    fn message(id: &str, text: &str) -> ThreadEvent {
+        event(
+            json!({ "type": "message", "id": id, "runId": "r1", "role": "assistant", "text": text,
+                      "createdAt": "2026-10-18T10:00:00.000Z" }),
+        )
+    }
+
+    /// The node drops a delta still pending when its complete message lands: the complete text is kept for the run,
+    /// so a reader can still land the words no delta carried. A new run starts over.
+    #[test]
+    fn keeps_the_runs_complete_messages_whatever_deltas_went_missing() {
+        let mut t = ActivityTracker::default();
+        t.apply(&message("m0", "before any run"), T0);
+        t.apply(&run("running"), T0);
+        t.apply(&delta("Reading the proposal and the"), T0 + 10);
+        t.apply(
+            &message("m1", "Reading the proposal and the current app code."),
+            T0 + 20,
+        );
+        assert_eq!(
+            t.text().unwrap().total,
+            28,
+            "the missing tail never streamed"
+        );
+        assert_eq!(
+            t.done(),
+            [DoneText {
+                message_id: "m1".into(),
+                text: "Reading the proposal and the current app code.".into()
+            }]
+        );
+        for n in 0..10 {
+            t.apply(&message(&format!("n{n}"), "more"), T0 + 30);
+        }
+        assert_eq!(t.done().len(), DONE_KEPT);
+        assert_eq!(t.done().last().unwrap().message_id, "n9");
+        t.apply(&run("completed"), T0 + 40);
+        assert!(t.done().is_empty());
+        // Followed mid-run: what the active run already said counts, an earlier run's doesn't.
+        let said = |id: &str, run: &str| json!({ "id": id, "runId": run, "role": "assistant", "text": id, "createdAt": "2026-10-18T10:00:00.000Z" });
+        t.apply(
+            &event(json!({
+                "type": "snapshot",
+                "summary": {
+                    "sessionId": "s1", "projectId": "p1", "title": "t", "status": "running", "model": "claude-haiku-5-5",
+                    "effort": "low", "runtimeMode": "full-access", "activeRunId": "r2",
+                    "createdAt": "2026-10-18T10:00:00.000Z", "updatedAt": "2026-10-18T10:00:00.000Z",
+                },
+                "messages": [said("old", "r1"), said("new", "r2")],
+                "items": [],
+                "runs": [{ "id": "r1", "status": "completed", "ordinal": 1 }, { "id": "r2", "status": "running", "ordinal": 2 }],
+                "truncated": false,
+            })),
+            T0 + 50,
+        );
+        let ids: Vec<&str> = t.done().iter().map(|d| d.message_id.as_str()).collect();
+        assert_eq!(ids, ["new"]);
+    }
 
     #[test]
     fn says_what_the_thread_is_doing_now() {

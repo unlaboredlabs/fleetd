@@ -265,6 +265,8 @@ pub struct LiveParts {
     pub tokens: Option<fleetd_contracts::live::Tokens>,
     pub spark: fleetd_contracts::live::Spark,
     pub text: Option<activity::StreamText>,
+    /// The active run's complete text messages: the chat lands these whole, whatever deltas it missed.
+    pub done: Vec<activity::DoneText>,
     pub run_active: bool,
 }
 
@@ -1737,6 +1739,7 @@ impl Executors {
             tokens: s.activity.tokens(),
             spark: s.activity.spark(now),
             text: s.activity.text().cloned(),
+            done: s.activity.done().to_vec(),
             run_active: s.activity.run_active(),
         })
     }
