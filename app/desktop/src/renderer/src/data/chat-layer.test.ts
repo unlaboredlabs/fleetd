@@ -144,6 +144,47 @@ describe("chat history", () => {
     expect(fake.chats).toEqual([ref, null]);
   });
 
+  it("after a reconnect a streaming reply is read again and goes on from the hub's text", async () => {
+    const { fake, layer } = await connected();
+    fake.send(messageEvent(2, msg(3, { state: "streaming", text: "" })));
+    fake.send(delta("m3", 0, "Reading the"));
+    fake.send({ t: "state", state: { phase: "retrying", hub: "devbox:4790", reason: "closed", retryAt: 1 } });
+    // Words streamed while the link was down are in the hub's copy, not in any delta the app will see.
+    fake.send(live());
+    fake.send(snapshot(5));
+    await Promise.resolve();
+    fake.of("chat_history")[1]?.answer(page([msg(2), msg(3, { state: "streaming", text: "Reading the proposal", updatedAt: "2026-10-19T10:01:00.000Z" })]));
+    await vi.waitFor(() => expect(selectChat(KEY)(layer.store.getState())?.items.at(-1)).toMatchObject({ text: "Reading the proposal" }));
+    fake.send(delta("m3", 20, " and the code."));
+    expect(selectChat(KEY)(layer.store.getState())?.items.at(-1)).toMatchObject({ text: "Reading the proposal and the code.", state: "streaming" });
+  });
+
+  it("a reply that lands final while the latest page loads isn't lost to the page's older streaming copy", async () => {
+    const { fake, layer } = await connected();
+    fake.send({ t: "state", state: { phase: "retrying", hub: "devbox:4790", reason: "closed", retryAt: 1 } });
+    fake.send(live());
+    fake.send(snapshot(5));
+    await Promise.resolve();
+    const full = "Reading the proposal and the current app code.";
+    // The hub read the page just before the reply finished, and the final event overtook the answer.
+    fake.send(messageEvent(6, msg(3, { text: full, updatedAt: "2026-10-19T10:02:00.000Z" })));
+    fake.of("chat_history")[1]?.answer(page([msg(2), msg(3, { state: "streaming", text: "Reading the", updatedAt: "2026-10-19T10:01:00.000Z" })]));
+    await vi.waitFor(() => expect(items(layer)).toEqual([["m2", "sent"], ["m3", "sent"]]));
+    expect(selectChat(KEY)(layer.store.getState())?.items.at(-1)?.text).toBe(full);
+  });
+
+  it("a gap whose read fails reads again at the next gap", async () => {
+    const { fake, layer } = await connected();
+    fake.send(messageEvent(2, msg(3, { state: "streaming", text: "" })));
+    fake.send(delta("m3", 9, "lost"));
+    await Promise.resolve();
+    fake.of("chat_history")[1]?.answer(err("timeout"));
+    await vi.waitFor(() => expect(layer.store.getState().chats[KEY]?.gap).toBe(false));
+    fake.send(delta("m3", 20, "lost again"));
+    await Promise.resolve();
+    expect(fake.of("chat_history")).toHaveLength(3);
+  });
+
   it("a message too big for its event is read by seq", async () => {
     const { fake, layer } = await connected();
     fake.send(messageEvent(2, msg(3, { text: "x".repeat(3000) }), false));

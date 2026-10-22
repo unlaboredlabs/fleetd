@@ -221,14 +221,15 @@ const applyChatEvent = (s: DataState, event: HubEvent): DataState => {
       if (message === undefined) {
         // Too big for the event: read it by seq, unless the chat already has this copy or a newer one.
         const held = chat?.messages.find((m) => m.messageId === data.messageId);
-        if (chat?.loaded !== true || (held !== undefined && held.state === data.state)) return s;
+        if (chat === undefined || (held !== undefined && held.state === data.state)) return s;
         return chat.missing.includes(data.seq) ? s : { ...s, chats: { ...s.chats, [key]: { ...chat, missing: [...chat.missing, data.seq] } } };
       }
       const sends = s.chatSends[key];
       const settled = sends === undefined ? undefined : settleSends(sends, [message]);
       return {
         ...s,
-        chats: chat?.loaded === true ? { ...s.chats, [key]: mergeLive(chat, message) } : s.chats,
+        // Into a chat that is open, its latest page landed or on its way.
+        chats: chat !== undefined ? { ...s.chats, [key]: mergeLive(chat, message) } : s.chats,
         chatSends: settled === undefined || settled === sends ? s.chatSends : { ...s.chatSends, [key]: settled },
       };
     }
@@ -246,7 +247,7 @@ const applyChatEvent = (s: DataState, event: HubEvent): DataState => {
 export const applyChatDelta = (s: DataState, d: ChatDelta, hubNowMs: number): DataState => {
   const key = projectKey(d.projectRef);
   const chat = s.chats[key];
-  if (chat?.loaded !== true) return s;
+  if (chat === undefined) return s;
   const next = applyDelta(chat, d, hubNowMs);
   return next === chat ? s : { ...s, chats: { ...s.chats, [key]: next } };
 };

@@ -41,6 +41,9 @@ export const fixtures = [
   // F4: the chat composer's sends (fixtures/composer).
   "composer-sends",
   "composer-waiting",
+  // The lead mid-turn: the quiet line under its reply says what it does now and what the turn did (fixtures/lead).
+  "lead-planning",
+  "lead-long",
   // Group fixtures (fixtures/<group>/index.ts), named <group>-<what>.
   "projects-cloning",
   // F10: the connect screen's states (fixtures/onboarding).
@@ -195,6 +198,8 @@ export const screens: readonly Screen[] = [
       await expect(page.getByText(/the lead doesn’t have it yet/)).toBeVisible();
     },
   },
+  // The lead at work: under its reply, what it is doing now and what its turn did so far; lead-long wraps.
+  { id: "chat", route: CHAT, fixtures: ["lead-planning", "lead-long"], variant: "activity" },
   // ...and opened to its lanes.
   {
     id: "chat",
