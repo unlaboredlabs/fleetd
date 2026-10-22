@@ -8,7 +8,9 @@
 import { useMemo } from "react";
 import type { ProjectStatusRow } from "../../../shared/contracts";
 import { useData, useToolQuery } from "../../src/data/react";
+import { useNow } from "../live/clock";
 import { selectProjectList } from "../../src/data/selectors";
+import type { DataState } from "../../src/data/store";
 import { Button, cx, Dot, Text, Tooltip, Truncate } from "../../ui";
 import { asGetOutput } from "./contracts";
 import { barOf, orderRows, STATE_WORDS, type StateWord } from "./rows";
@@ -16,6 +18,8 @@ import { dropLines, fullWhen, staleWords, when } from "./view";
 import s from "./status.module.css";
 
 const ALL = {} as const;
+const MINUTE = 60_000;
+const selectSkew = (st: DataState): number => st.live.skewMs ?? 0;
 
 /** A project's chat (F1's route table). */
 export const projectHref = (ref: ProjectStatusRow["projectRef"]): string =>
@@ -32,8 +36,9 @@ export function StatusScreen() {
   const query = useToolQuery("status_projects", ALL);
   const projects = useData(selectProjectList);
   const rows = useMemo(() => (query.data === undefined ? undefined : orderRows(query.data.rows, projects)), [query.data, projects]);
-  // The hub's clock for "merged 14:02": the newest as-of any row carries.
-  const now = rows?.reduce((max, r) => Math.max(max, Date.parse(r.row.asOf) || 0), 0);
+  // The hub's clock for "today 14:02" and "out of date for 11m". Not the rows' as-of: an idle fleet sends no events,
+  // so nothing refetches them, and a day word or an age read from them would stop. Minutes are the finest unit shown.
+  const now = useNow(true, MINUTE) + useData(selectSkew);
 
   return (
     <div className={cx(s.screen)} data-screen="status.fleet" data-phase={rows === undefined ? "skeleton" : "live"}>
@@ -70,7 +75,7 @@ export function StatusScreen() {
               ))}
             </li>
             {rows.map(({ row, word }) => (
-              <Row key={`${row.projectRef.machineId}/${row.projectRef.projectId}`} row={row} state={word} now={now ?? 0} />
+              <Row key={`${row.projectRef.machineId}/${row.projectRef.projectId}`} row={row} state={word} now={now} />
             ))}
           </ul>
         )}
@@ -84,9 +89,10 @@ const TONE = { waiting_on_you: "warning", blocked: "danger", working: "default",
 function Row({ row, state, now }: { row: ProjectStatusRow; state: StateWord; now: number }) {
   const { bar, planning } = barOf(row);
   const merged = row.lastMerged;
-  const mergedAt = merged === undefined ? "" : when(merged.at, now || Date.parse(merged.at));
+  const mergedAt = merged === undefined ? "" : when(merged.at, now);
   const label = [
     `${row.title}: ${STATE_WORDS[state]}`,
+    ...(row.stale ? [staleWords(row.stale, now)] : []),
     bar === null ? NO_PROGRESS : `${bar.pct}% done`,
     row.agentsRunning === 1 ? "1 agent running" : `${row.agentsRunning} agents running`,
     merged === undefined ? "nothing merged yet" : `last merged ${mergedAt}`,
