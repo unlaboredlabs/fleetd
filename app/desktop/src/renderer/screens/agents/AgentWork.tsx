@@ -59,7 +59,7 @@ export function AgentWork({ id }: { id: string }) {
             </Button>
           </span>
         </span>
-        <ActivityLine line={describe(row)} working={row.status === "working" || row.status === "starting"} />
+        <ActivityLine line={describe(row)} />
       </div>
       <div className={s.feed}>
         {!work.hasThread ? (
