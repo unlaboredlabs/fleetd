@@ -130,42 +130,6 @@
   flex: none;
 }
 
-/* ScrollArea */
-.scrollRoot {
-  position: relative;
-  overflow: hidden;
-  min-height: 0;
-  min-width: 0;
-}
-.scrollViewport {
-  width: 100%;
-  height: 100%;
-  border-radius: inherit;
-}
-.scrollbar {
-  display: flex;
-  touch-action: none;
-  user-select: none;
-  padding: 2px;
-  transition: background-color var(--dur-fast) var(--ease-out);
-}
-.scrollbar[data-orientation="vertical"] {
-  width: 10px;
-}
-.scrollbar[data-orientation="horizontal"] {
-  flex-direction: column;
-  height: 10px;
-}
-.scrollThumb {
-  flex: 1;
-  position: relative;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--text) 20%, transparent);
-}
-.scrollThumb:hover {
-  background: color-mix(in srgb, var(--text) 32%, transparent);
-}
-
 /* Status dot and chips */
 .dot {
   flex: none;

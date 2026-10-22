@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import type { ChatItem } from "../../src/data/chat";
 import type { ChatMessage } from "../../../shared/contracts";
-import { countQuestions, waitingOn } from "./attention";
+import { countQuestions, waitingOn } from "./attentionModel";
 
 const at = (d: number, h: number, m = 0) => new Date(Date.UTC(2026, 9, d, h, m)).toISOString();
 const NOW = Date.parse(at(19, 18));

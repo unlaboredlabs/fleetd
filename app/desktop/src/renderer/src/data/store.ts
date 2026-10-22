@@ -2,7 +2,9 @@
 // keyed by entity. Every change goes through the pure reducers here, so they are unit-tested without a hub.
 //
 // Freshness: a snapshot starts a new generation and drops everything calls filled in, so a (re)connect shows
-// skeletons until the refetches land, never the previous connection's data as if it were live.
+// skeletons until the refetches land, never the previous connection's data as if it were live. The project list and
+// the chats are the exception: they stay on screen through a drop and a reconnect, marked offline (as of `asOf`)
+// while there is no link, until the new connection's own copies replace them.
 import { createStore } from "zustand/vanilla";
 import {
   dataField,
@@ -16,7 +18,9 @@ import {
   type Machine,
   type MachineLive,
   type OrderCard,
+  type ProjectRef,
   type ProjectSummary,
+  type RequestKind,
   type SlotState,
   type ToolInput,
   type ToolName,
@@ -24,7 +28,7 @@ import {
   type TrainLive,
 } from "../../../shared/contracts";
 import type { HubError, HubFrame, HubState } from "../../../shared/hub";
-import { applyDelta, emptyChat, mergeLive, settleSends, type Chat, type ChatSend } from "./chat";
+import { applyDelta, emptyChat, heldChat, mergeLive, settleSends, type Chat, type ChatSend } from "./chat";
 import type { AgentRow } from "./agents-contract";
 import { CHAT_EVENTS, type ChatDelta, type ProjectChatState } from "./chat-contract";
 import { ordersNamed } from "./effects";
@@ -72,6 +76,11 @@ export interface DataState {
   readonly fresh: boolean;
   /** Bumped by every snapshot; call results from an older generation are dropped. */
   readonly generation: number;
+  /**
+   * When the projects and chats held were last current (epoch ms, this computer's clock): when the link dropped, or
+   * the disk cache's time. Meaningless while fresh.
+   */
+  readonly asOf?: number | undefined;
   readonly sessionError?: HubError | undefined;
   /** The last event applied; older or repeated ones are ignored. */
   readonly cursor?: number | undefined;
@@ -90,7 +99,7 @@ export interface DataState {
   /** The latest events naming each order, oldest first: the order view's merged event lines. */
   readonly orderEvents: Readonly<Record<string, readonly HubEvent[]>>;
   readonly live: LiveState;
-  /** Each opened project's lead chat; dropped by a snapshot, so a reconnect shows its skeleton until reread. */
+  /** Each opened project's lead chat; a snapshot keeps what it showed (`cached`) until it is reread. */
   readonly chats: Readonly<Record<ProjectKey, Chat>>;
   /** The person's messages not yet settled by the hub. Theirs, not the hub's: kept across reconnects. */
   readonly chatSends: Readonly<Record<ProjectKey, readonly ChatSend[]>>;
@@ -98,6 +107,17 @@ export interface DataState {
   readonly chatStates: Readonly<Record<ProjectKey, ProjectChatState>>;
   /** Whether this hub can stop a lead mid-turn (chat_stop); undefined until asked, again on each connection. */
   readonly chatStop?: boolean | undefined;
+  /**
+   * The open requests as last read (the whole fleet's requests_list), only what the sidebar's marks count. Kept
+   * across drops, reconnects and in the disk cache, like the projects: held rows show their marks as last known.
+   */
+  readonly openRequests?: readonly OpenRequest[] | undefined;
+}
+
+export interface OpenRequest {
+  readonly projectRef: ProjectRef;
+  readonly kind: RequestKind;
+  readonly state: "open";
 }
 
 const RECENT_EVENTS = 200;
@@ -175,11 +195,22 @@ const tail = (text: string, max: number): string => {
   return text.slice(from);
 };
 
+/** The app was unpaired, or now dials another hub; the window's first state (no hub yet) changes nothing. */
+const pairingChanged = (before: HubState, after: HubState): boolean =>
+  after.phase === "unpaired" || (before.phase !== "unpaired" && before.hub !== "" && before.hub !== after.hub);
+
 export const applyFrame = (s: DataState, frame: HubFrame, nowMs: number): [DataState, Effects] => {
   switch (frame.t) {
     case "state": {
+      // Forget, or another hub paired: everything held was the old pairing's, the person's queued messages included.
+      // None of it may show beside, be written as, or be sent to another hub (a new generation drops calls in flight).
+      if (pairingChanged(s.hub, frame.state)) return [{ ...initialState(), hub: frame.state, generation: s.generation + 1 }, {}];
       const live = frame.state.phase === "live";
-      return [{ ...s, hub: frame.state, fresh: live && s.fresh, live: live ? s.live : { ...s.live, stale: true } }, {}];
+      const fresh = live && s.fresh;
+      return [
+        { ...s, hub: frame.state, fresh, asOf: s.fresh && !fresh ? nowMs : s.asOf, live: live ? s.live : { ...s.live, stale: true } },
+        {},
+      ];
     }
     case "snapshot": {
       const snap = frame.snapshot;
@@ -198,7 +229,7 @@ export const applyFrame = (s: DataState, frame: HubFrame, nowMs: number): [DataS
           agents: undefined,
           details: {},
           trains: {},
-          chats: {},
+          chats: heldChats(s.chats),
           chatStates: byId(snap.chats ?? [], (c) => projectKey(c.projectRef)),
           chatStop: undefined,
         },
@@ -220,6 +251,15 @@ export const applyFrame = (s: DataState, frame: HubFrame, nowMs: number): [DataS
 const newerSeq = (states: DataState["chatStates"], key: ProjectKey, seq: number): DataState["chatStates"] => {
   const state = states[key];
   return state === undefined || seq <= state.lastSeq ? states : { ...states, [key]: { ...state, lastSeq: seq } };
+};
+
+const heldChats = (chats: DataState["chats"]): DataState["chats"] => {
+  const out: Record<ProjectKey, Chat> = {};
+  for (const [key, chat] of Object.entries(chats)) {
+    const held = heldChat(chat);
+    if (held !== undefined) out[key] = held;
+  }
+  return out;
 };
 
 /** The chat events: messages into an opened chat, the person's sends settled, the lead's waiting/working state. */
@@ -414,6 +454,11 @@ export const ingest = (s: DataState, call: Ingest): DataState => {
         orders: s.orders === undefined ? undefined : { ...s.orders, [id]: order },
         details: { ...s.details, [id]: { lead, doneLanes, claims: claims ?? [] } },
       };
+    }
+    case "requests_list": {
+      if (call.input.state !== "open" || call.input.projectRef !== undefined) return s;
+      const openRequests = call.output.requests.map((r): OpenRequest => ({ projectRef: r.projectRef, kind: r.kind, state: "open" }));
+      return { ...s, openRequests };
     }
     case "agents_list":
       // Whole-fleet reads only: a project's own list would drop every other project's agents.

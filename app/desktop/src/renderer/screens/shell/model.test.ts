@@ -98,12 +98,11 @@ describe("sidebar projects", () => {
 });
 
 describe("connLine", () => {
-  it("names the hub by its host and shows main's reason as it comes", () => {
+  it("names the hub by its host, and offline marks the projects with when they were last current", () => {
     expect(connLine({ phase: "live", hub: "http://100.64.0.1:4790/", protocol: 1 })).toEqual({ label: "Connected to 100.64.0.1:4790", tone: "success" });
-    expect(connLine({ phase: "retrying", hub: "http://hub:4790", reason: "Nothing is listening at hub:4790", retryAt: 0 })).toEqual({
-      label: "Reconnecting: Nothing is listening at hub:4790",
-      tone: "warning",
-    });
+    const down = { phase: "retrying", hub: "http://hub:4790", reason: "Nothing is listening at hub:4790", retryAt: 0 } as const;
+    expect(connLine(down, false, "as of 09:02")).toEqual({ label: "Offline, as of 09:02", tone: "warning" });
+    expect(connLine(down).label).toBe("Offline");
     expect(connLine({ phase: "refused", hub: "http://hub:4790", message: "bad key" }).tone).toBe("danger");
     expect(connLine(null).label).toBe("Starting…");
   });

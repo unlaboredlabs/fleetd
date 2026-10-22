@@ -266,8 +266,8 @@ export function Prompts({ route }: { route: SettingsRoute }) {
           }
         >
           {scope.kind === "hub"
-            ? "Hub-wide texts go to every project without an edit of its own. Running sessions keep the text they started with."
-            : `${here}'s own texts; prompts it hasn't edited use the hub-wide text. Running sessions keep the text they started with.`}
+            ? "Hub-wide texts go to every project without an edit of its own."
+            : `${here}'s own texts; the prompts it hasn't edited use the hub-wide text.`}
         </PageHead>
         {orphans.length > 0 ? (
           <Orphans orphans={orphans} projects={projects} onOpen={(id) => request({ scope, id })} onDeleted={refetchPrompts} />
@@ -331,8 +331,8 @@ export function Prompts({ route }: { route: SettingsRoute }) {
         title={confirmReset === "update" ? `Use fleetd's new default for ${name}?` : `Reset ${name} to fleetd's default?`}
         description={
           resetScope === "project"
-            ? `Your edit for ${here} is deleted; ${here} gets the hub-wide text again. New sessions get it; running ones keep theirs.`
-            : "Your hub-wide edit is deleted. Projects with their own edit keep it. New sessions get the default; running ones keep theirs."
+            ? `Your edit for ${here} is deleted; ${here} gets the hub-wide text again. New agents get it; running ones keep theirs.`
+            : "Your hub-wide edit is deleted. Projects with their own edit keep it. New agents get the default; running ones keep theirs."
         }
         footer={
           <>

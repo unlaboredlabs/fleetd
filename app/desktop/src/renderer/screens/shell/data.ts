@@ -1,9 +1,10 @@
 // The sidebar's projects, from the data layer: the project list (needs-you and agents at work), the open requests
-// (what a lead waits on you for), Status's rows (what is blocked) and what you last saw in each chat.
+// (what a lead waits on you for), Status's rows (what is blocked) and what you last saw in each chat. Offline, the
+// projects held from before, with their marks as last known (the open requests the store keeps).
 import { useEffect, useMemo } from "react";
 import { useData, useToolQuery } from "../../src/data/react";
 import { markSeen, useSeen } from "../../src/data/seen";
-import { selectMachines, selectProjectList } from "../../src/data/selectors";
+import { selectMachines, selectProjectList, selectShownProjects } from "../../src/data/selectors";
 import { projectId, toSidebar, type SidebarProject } from "./model";
 import type { ProjectKey } from "./routes";
 
@@ -11,8 +12,11 @@ const OPEN_REQUESTS = { state: "open", limit: 100 } as const;
 const ALL = {} as const;
 
 export const useSidebarProjects = (open: ProjectKey | null): ReadonlyArray<SidebarProject> | undefined => {
-  const rows = useData(selectProjectList);
-  const requests = useToolQuery("requests_list", OPEN_REQUESTS).data?.requests;
+  const rows = useData(selectShownProjects);
+  const read = useToolQuery("requests_list", OPEN_REQUESTS).data?.requests;
+  // Held rows count the requests as last read; a live row waits for this connection's own read.
+  const held = useData((s) => (s.fresh ? undefined : s.openRequests));
+  const requests = read ?? held;
   const status = useToolQuery("status_projects", ALL).data?.rows;
   const seen = useSeen();
   const blocked = useMemo(

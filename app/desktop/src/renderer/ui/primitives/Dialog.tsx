@@ -5,8 +5,6 @@ import { cx } from "../lib/cx";
 import { Button } from "./Button";
 import s from "./Overlay.module.css";
 
-export const DialogClose = D.Close;
-
 export interface DialogProps {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;

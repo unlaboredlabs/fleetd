@@ -32,7 +32,7 @@ export function General() {
             ))}
           </RadioGroup>
         </Setting>
-        <Setting reveal="general.motion" label="Motion" help="Cards, lanes and panels move briefly when they change. Reduced turns that off; Match system follows the OS's reduce motion setting.">
+        <Setting reveal="general.motion" label="Motion" help="Reduced turns off movement.">
           <RadioGroup className={s.radios} value={motion} onValueChange={(v) => setMotion(parseMotion(v))} aria-label="Motion">
             {MOTION_PREFS.map((m) => (
               <Radio key={m.value} value={m.value} label={m.label} />
@@ -48,15 +48,12 @@ export function General() {
         <Setting
           reveal="general.memory"
           label="Claude auto memory"
-          help="Claude's own notes, kept per folder between sessions. Read-only here: a project's repository decides."
+          help="Claude's own notes between runs."
         >
           <div className={s.stack}>
-            <Text>Off for every agent fleetd starts, unless a project turns it back on.</Text>
-            <Text tone="quiet">
-              Agents learn from their brief, your decisions and your instructions, never from notes another agent left in a worktree. To turn it on
-              for one project, add <InlineCode>claude: {"{ autoMemory: true }"}</InlineCode> to <InlineCode>.fleetd/policy.yaml</InlineCode> in its
-              repository and commit it; new sessions pick it up. <InlineCode>fleetd doctor</InlineCode> warns if a machine's claude keeps it on
-              anyway.
+            <Text>Off for every agent fleetd starts.</Text>
+            <Text size="xs" tone="quiet">
+              A project turns it on with <InlineCode>claude: {"{ autoMemory: true }"}</InlineCode> in its <InlineCode>.fleetd/policy.yaml</InlineCode>.
             </Text>
           </div>
         </Setting>
@@ -104,7 +101,7 @@ function HubSetting() {
   const hub = state.phase === "unpaired" ? null : state.hub;
   const line = phaseLine(state);
   return (
-    <Setting reveal="general.hub" label="Hub" help={`This app acts as you on this hub. ${store === null ? "" : keyStoreLine(store).replaceAll("`", "")}`}>
+    <Setting reveal="general.hub" label="Hub" help="This app acts as you on this hub.">
       {hub ? (
         <Truncate mono size="sm">
           {hub}
@@ -115,6 +112,7 @@ function HubSetting() {
         {/* The hub's fix may name a command in backticks: shown as code. */}
         <Prose tone="quiet" text={line.text} />
       </div>
+      {store === null ? null : <Prose size="xs" tone="quiet" text={keyStoreLine(store)} />}
       <div className={s.inline}>
         <Button
           variant={hub ? "secondary" : "primary"}
@@ -134,7 +132,7 @@ function HubSetting() {
         open={confirm}
         onOpenChange={setConfirm}
         title="Disconnect and forget the key?"
-        description="This app stops showing the hub's work until you pair it again with a code from fleetd pair. Agents keep running."
+        description="This app stops showing the hub's work until you pair it again with a code from fleetd pair, and drops messages still waiting to send. Agents keep running."
         footer={
           <>
             <Button onClick={() => setConfirm(false)}>Cancel</Button>
@@ -192,7 +190,7 @@ function LinkHandlerSetting() {
     );
   };
   return (
-    <Setting reveal="general.links" label="Pairing links" help="Open fleetd:// links (pairing links) in this app.">
+    <Setting reveal="general.links" label="Pairing links" help="Open pairing links in this app.">
       {failed ? (
         <div className={s.stack}>
           <Text tone="danger">{failed.text}</Text>
@@ -248,7 +246,7 @@ function RetentionSetting() {
   const refetch = useRefetch();
   const [saving, setSaving] = useState<number | null>(null);
   const [echo, setEcho] = useState<{ ok: boolean; text: string } | null>(null);
-  const help = "How long the hub keeps the time inspector's detailed spans. Daily totals and critical paths stay 400 days.";
+  const help = "How long the hub keeps Time's detail.";
   if (!live) {
     return (
       <Setting reveal="general.retention" label="Time data" help={help}>
@@ -302,8 +300,7 @@ function RetentionSetting() {
         />
       </div>
       <Text size="xs" tone="quiet">
-        Stored now: {formatBytes(store.value.storedBytes)} on the hub, about 20 MB a day of work. Only an admin key can change this; the CLI's{" "}
-        <InlineCode>fleetd time --retention &lt;days&gt;</InlineCode> does the same.
+        Stored now: {formatBytes(store.value.storedBytes)}, about 20 MB a day of work. Daily totals stay 400 days. Changing it needs an admin key.
       </Text>
       {echo ? (
         <Text size="xs" tone={echo.ok ? "quiet" : "danger"}>
