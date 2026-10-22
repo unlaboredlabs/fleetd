@@ -33,13 +33,14 @@ The lead keeps its own plan and bookkeeping. You never file tasks or orders your
 `fleetd chat` sends the same message as the box, and `fleetd chat history` reads the chat:
 
 ```sh
-fleetd chat devbox/storefront "fix the checkout button" --follow
-fleetd chat history storefront
+fleetd chat devbox/storefront "fix the checkout button" --follow --key-file ~/.fleetd/human.key
+fleetd chat history storefront --key-file ~/.fleetd/human.key
 ```
 
-`--wait` prints the lead's reply when its turn ends; `--follow` streams it as it is written. On the hub machine it
-writes as you, with no key to set up. From another machine, pass a human key with `--key-file`. Each message says
-where you wrote it: "You · app" or "You · cli".
+`--wait` prints the lead's reply when its turn ends; `--follow` streams it as it is written. The key says who writes:
+with your [human key](/docs/glossary#human-key) it writes as you. Make one once with
+`fleetd hub key create --human --name terminal --out ~/.fleetd/human.key`. Each message says where you wrote it:
+"You · app" or "You · cli".
 
 An agent or script can write too, with a key of its own:
 

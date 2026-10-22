@@ -11,9 +11,11 @@ use fleetd_contracts::auth::{AgentKeyInfo, AgentKeyPrefix, Grant, GrantMachines,
 use fleetd_contracts::ids::MachineId;
 use fleetd_contracts::mcp::ErrorCode;
 use fleetd_contracts::prim::Text;
+use fleetd_contracts::subscriptions::Star;
 use rusqlite::{OptionalExtension, named_params, params};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
+use std::path::Path;
 use std::sync::Arc;
 
 const CREATE_KEY_FIX: &str =
@@ -22,6 +24,8 @@ const KEY_PREFIX: &str = "fld_";
 const ENROLL_PREFIX: &str = "fle_";
 const LAST_USED_EVERY_MS: i64 = 60_000;
 const ENROLL_TTL_MS: i64 = 15 * 60_000;
+/// Where pre-release `fleetd steer`, `chat` and `project stop` kept the hub machine owner's human key ([`Auth::retire_owner_keys`]).
+pub const RETIRED_OWNER_KEY_FILE: &str = "owner.key";
 const BASE32: &[u8; 32] = b"abcdefghijklmnopqrstuvwxyz234567";
 
 /// Shaped like the MCP error result so transports can pass it through.
@@ -298,6 +302,37 @@ impl Auth {
             });
         }
         Ok(())
+    }
+
+    /// Retires the owner key pre-release CLIs minted on first use: a human key named "owner", admin on every machine,
+    /// kept in `<hub home>/owner.key`, where any process of the hub's OS user could read it, agents included. Revokes
+    /// the key in that file and every key minted that way, then deletes the file. Runs at each start, so a copy taken
+    /// before the upgrade stops working too. Returns how many keys it revoked.
+    pub fn retire_owner_keys(&self, home: &Path) -> Result<usize, StoreError> {
+        let file = home.join(RETIRED_OWNER_KEY_FILE);
+        let in_file = std::fs::read_to_string(&file)
+            .ok()
+            .map(|key| sha256(key.trim()));
+        let minted = serde_json::to_string(&[Grant {
+            role: Role::Admin,
+            machines: GrantMachines::All(Star::Value),
+        }])?;
+        let now = self.now();
+        let revoked = self.db.with(|conn| {
+            Ok(conn
+                .prepare_cached(
+                    "UPDATE agent_keys SET revoked_ms = ? WHERE revoked_ms IS NULL \
+                     AND (hash = ? OR (name = 'owner' AND kind = 'human' AND grants = ?))",
+                )?
+                .execute(params![now, in_file, minted])?)
+        })?;
+        match std::fs::remove_file(&file) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            // The key in it is revoked already; the next start tries again.
+            Err(error) => tracing::warn!("cannot delete {}: {error}", file.display()),
+        }
+        Ok(revoked)
     }
 
     pub fn list(&self) -> Result<Vec<AgentKeyInfo>, StoreError> {

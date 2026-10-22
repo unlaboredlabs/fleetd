@@ -439,4 +439,47 @@ mod tests {
         }
         assert_eq!(keys(), 2);
     }
+
+    /// The person's own key for `fleetd steer`, `chat` and `project stop`: `--human --out` writes it to a new 0600 file
+    /// and prints only the path. It never overwrites a file, and mints nothing when it can't write one.
+    #[test]
+    fn a_human_key_goes_to_a_new_private_file_and_only_its_path_is_printed() {
+        let home = tempfile::tempdir().unwrap();
+        let h = home.path().to_str().unwrap();
+        let file = home.path().join("mine/human.key");
+        let f = file.to_str().unwrap();
+        let made = create(&["--human", "--name", "laptop", "--out", f, "--home", h]);
+        assert_eq!(
+            (made.code, made.stdout.as_str(), made.stderr.as_str()),
+            (0, format!("{f}\n").as_str(), "")
+        );
+        assert_eq!(
+            std::fs::metadata(&file).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        let key = std::fs::read_to_string(&file).unwrap();
+        let keys = || open_hub(home.path()).unwrap().auth.list().unwrap();
+        let info = open_hub(home.path())
+            .unwrap()
+            .auth
+            .verify(key.trim())
+            .unwrap();
+        assert_eq!(
+            (info.name.as_str(), info.kind),
+            ("laptop", Some(KeyKind::Human))
+        );
+
+        let again = create(&["--human", "--name", "laptop", "--out", f, "--home", h]);
+        assert!(
+            again.code == 1 && again.stderr.contains("exists"),
+            "{}",
+            again.stderr
+        );
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            key,
+            "never overwritten"
+        );
+        assert_eq!(keys().len(), 1, "nothing minted for a file it can't write");
+    }
 }

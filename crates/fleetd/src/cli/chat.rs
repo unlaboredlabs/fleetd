@@ -1,7 +1,8 @@
 //! `fleetd chat`: write to a project's lead from a terminal and read its chat. It talks to the hub over the app
 //! socket, exactly as the desktop app does: the same chat_send, chat_history, events and streamed `chat_delta`
 //! frames. A human key writes as you; any other key writes as an agent, by its name, and the hub never takes an
-//! agent's message as the human's. Without `--key-file` it is the owner's key of the hub on this machine.
+//! agent's message as the human's. `--key-file` is always required: agents run as the same OS user, so any key the CLI
+//! found on its own, an agent could find too.
 
 use std::collections::VecDeque;
 use std::time::Duration;
@@ -14,13 +15,12 @@ use tokio_tungstenite::tungstenite::Message;
 use super::args::{self, Kind, Spec};
 use super::steer::{Failure, hub_url};
 
-pub const CHAT_USAGE: &str = r#"  chat <machine>/<project> "<text>" [--wait | --follow] [--key-file <key>] [--hub <url> | --home <dir>]
+pub const CHAT_USAGE: &str = r#"  chat <machine>/<project> "<text>" [--wait | --follow] --key-file <key> [--hub <url> | --home <dir>]
              write to a project's lead, as the app does: it starts the lead's next turn, or lands at
              its next step while it works. --wait prints the lead's reply when its turn ends; --follow
              streams it as it is written. Exit 0 it replied, 1 its turn ended without a reply. A
-             human key writes as you; an agent key as that agent, by its name. Without
-             --key-file, as you, the owner of the hub on this machine
-  chat history <project> [--page <n>] [--key-file <key>] [--hub <url> | --home <dir>]
+             human key writes as you; an agent key as that agent, by its name
+  chat history <project> [--page <n>] --key-file <key> [--hub <url> | --home <dir>]
              the project's chat: who wrote each message, when, and what; the newest page, older
              ones with --page
 "#;
@@ -48,7 +48,7 @@ pub struct ChatArgs {
     pub command: ChatCommand,
     pub hub: Option<String>,
     pub home: Option<String>,
-    pub key_file: Option<String>,
+    pub key_file: String,
 }
 
 pub fn parse_chat_args(argv: &[String]) -> Result<ChatArgs, String> {
@@ -105,11 +105,16 @@ pub fn parse_chat_args(argv: &[String]) -> Result<ChatArgs, String> {
             follow: v.flag("follow"),
         }
     };
+    let Some(key_file) = v.string("key-file").filter(|s| !s.is_empty()) else {
+        return Err("--key-file is required: the key says who writes, your human key as you and an agent key as that \
+                    agent. Make yours once: fleetd hub key create --human --name <device> --out <file>"
+            .into());
+    };
     Ok(ChatArgs {
         command,
         hub: v.string("hub").filter(|s| !s.is_empty()),
         home: v.string("home").filter(|s| !s.is_empty()),
-        key_file: v.string("key-file").filter(|s| !s.is_empty()),
+        key_file,
     })
 }
 
@@ -382,21 +387,12 @@ fn client_request_id() -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// The hub and the key: `--key-file` (at `--hub`, or the hub on this machine), else the hub on this machine with its
-/// owner's key, which an agent's session is refused.
+/// The hub (`--hub`, or the hub on this machine) and the key in `--key-file`.
 fn hub_and_key(args: &ChatArgs) -> Result<(String, String), Failure> {
     let url = hub_url(args.hub.clone(), args.home.as_deref()).map_err(Failure::Unreachable)?;
-    let key = match &args.key_file {
-        Some(file) => std::fs::read_to_string(file)
-            .map(|k| k.trim().to_owned())
-            .map_err(|error| Failure::Refused(format!("cannot read --key-file: {error}")))?,
-        None => {
-            let home =
-                super::hub_key::resolve_home(args.home.as_deref()).map_err(Failure::Unreachable)?;
-            super::setup::doctor::owner_key(&home)
-                .map_err(|f| Failure::Refused(format!("{}\n  fix: {}", f.message, f.fix)))?
-        }
-    };
+    let key = std::fs::read_to_string(&args.key_file)
+        .map(|k| k.trim().to_owned())
+        .map_err(|error| Failure::Refused(format!("cannot read --key-file: {error}")))?;
     Ok((url, key))
 }
 
@@ -424,8 +420,8 @@ async fn send(
     let mut input = json!({
         "projectRef": project, "text": text, "clientRequestId": client_request_id(), "client": "cli",
     });
-    // From inside a fleetd session (its process tree says so, not only its environment) the hub writes it as an
-    // agent's at most, and refuses the project's own lead and tasks.
+    // From inside a fleetd session the hub writes it as an agent's at most, and refuses the project's own lead and
+    // tasks: a guard against mistakes, not a boundary (session_thread_id).
     if let Some(session) = crate::node::runner::process::session_thread_id() {
         input["session"] = json!(session);
     }
@@ -623,7 +619,15 @@ mod tests {
 
     #[test]
     fn a_send_and_a_history_parse_and_mistakes_stop_before_the_hub() {
-        let sent = parse_chat_args(&argv(&["devbox/app", "ship", "it", "--follow"])).unwrap();
+        let sent = parse_chat_args(&argv(&[
+            "devbox/app",
+            "ship",
+            "it",
+            "--follow",
+            "--key-file",
+            "k",
+        ]))
+        .unwrap();
         assert_eq!(
             sent.command,
             ChatCommand::Send {
@@ -633,10 +637,7 @@ mod tests {
                 follow: true
             }
         );
-        assert_eq!(
-            sent.key_file, None,
-            "no key file: the owner's key on the hub machine"
-        );
+        assert_eq!(sent.key_file, "k");
         let history =
             parse_chat_args(&argv(&["history", "app", "--page", "2", "--key-file", "k"])).unwrap();
         assert_eq!(
@@ -647,6 +648,8 @@ mod tests {
             }
         );
         let err = |a: &[&str]| parse_chat_args(&argv(a)).unwrap_err();
+        assert!(err(&["devbox/app", "hi"]).contains("--key-file is required"));
+        assert!(err(&["history", "app"]).contains("--key-file is required"));
         assert!(err(&["devbox/app"]).starts_with("expected"));
         assert!(err(&["history", "app", "--wait"]).contains("not history"));
         assert!(err(&["history", "app", "--page", "0"]).contains("page number"));

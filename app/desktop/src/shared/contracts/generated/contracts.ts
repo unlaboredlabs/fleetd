@@ -529,8 +529,9 @@ export type ChatSendInput = {
   clientRequestId: string;
   projectRef: ProjectRef;
   /**
-   * Sent from inside a fleetd session: its thread id (FLEETD_THREAD_ID). The project's own lead and tasks are refused
-   * (they use their fleetd tools), and so is a human key: a session never writes as the human.
+   * Sent from inside a fleetd session: its thread id (FLEETD_THREAD_ID), as the caller reports it. The project's own
+   * lead and tasks are refused (they use their fleetd tools), and so is a human key. It catches mistakes; the key,
+   * not this field, carries authority.
    */
   session?: ThreadId;
   text: string;

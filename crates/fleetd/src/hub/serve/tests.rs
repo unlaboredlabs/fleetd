@@ -590,3 +590,34 @@ async fn status_projects_lists_one_row_per_readable_project() {
     assert_eq!(one.len(), 1);
     assert_eq!(one[0]["projectRef"]["machineId"], "devbox");
 }
+
+/// A hub home an earlier fleetd left an owner.key in: once the hub starts, the file is gone and its key no longer works.
+#[tokio::test]
+async fn a_starting_hub_revokes_the_owner_key_and_deletes_its_file() {
+    use fleetd_contracts::auth::{GrantMachines, Role};
+    use fleetd_contracts::subscriptions::Star;
+    let home = tempfile::tempdir().unwrap();
+    let file = home.path().join(crate::hub::auth::RETIRED_OWNER_KEY_FILE);
+    let owner =
+        crate::hub::auth::Auth::new(HubDb::open(home.path()).unwrap(), Arc::new(SystemClock))
+            .create_key(
+                "owner",
+                &[Grant {
+                    role: Role::Admin,
+                    machines: GrantMachines::All(Star::Value),
+                }],
+                KeyKind::Human,
+            )
+            .unwrap();
+    std::fs::write(&file, format!("{}\n", owner.key)).unwrap();
+    let config = HubConfig {
+        home: home.path().to_path_buf(),
+        listen: Listen::default(),
+        url: None,
+        queue_ttl_sec: None,
+        retro_model: None,
+    };
+    let hub = super::build(config, Arc::new(SystemClock)).unwrap();
+    assert!(!file.exists());
+    assert!(hub.auth.verify(&owner.key).is_err());
+}

@@ -205,6 +205,10 @@ async fn stop_signal() {
 /// Every service over the database in `config.home`. Areas add their construction here (see hub::api).
 pub fn build(config: HubConfig, clock: Arc<dyn Clock>) -> anyhow::Result<Arc<Hub>> {
     let db = HubDb::open(&config.home)?;
+    let retired = Auth::new(db.clone(), clock.clone()).retire_owner_keys(&config.home)?;
+    if retired > 0 {
+        tracing::info!("revoked {retired} owner key(s) an earlier fleetd kept in the hub home");
+    }
     build_on(db, config, clock)
 }
 

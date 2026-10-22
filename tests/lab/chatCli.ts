@@ -3,9 +3,9 @@
 // - an agent key named "scout" (`hub key create --agent scout`, which prints only the file's path) writes: labelled
 //   "agent · scout", read by the lead as an agent's, and needs-you stays on; it can't approve a command;
 // - from inside the lead's own session (even with FLEETD_THREAD_ID unset in its shell) it is refused, and inside any
-//   session neither the owner's key nor a human key file writes as the person;
+//   session a human key file doesn't write as the person; without --key-file nothing is sent;
 // - the person's next message, followed with --follow, streams the lead's reply as it is written and clears needs-you;
-// - `chat history` without --key-file (the owner's key on the hub machine) prints who wrote what, with no ids.
+// - `chat history` with the person's key file prints who wrote what, with no ids.
 // Every fleetd call here runs with FLEETD_HOME in the run dir and an explicit --hub or --home.
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -107,14 +107,15 @@ export async function chatCli(lab: Lab) {
   });
   const own = `${hidden.stdout}${hidden.stderr}`;
   check(hidden.status === 3 && own.includes("can't write to its own chat") && own.includes("message_agent"), `the lead's own session is refused: ${own}`);
-  // Inside any session, nothing writes as the person: not the owner's key, not a human key file.
-  const inSession = { FLEETD_THREAD_ID: "lab-some-other-session" };
-  const owner = fleetd(["chat", target, "as the owner", "--home", lab.hubHome, "--hub", lab.hubUrl], inSession);
-  check(owner.code === 3 && owner.stderr.includes("agents never act as you"), `the owner's key inside a session: ${owner.all}`);
-  const human = fleetd(["chat", target, "as the person", ...as(humanFile)], inSession);
+  // Without --key-file nothing is sent: there is no implicit key. Inside a session a human key file doesn't write as the
+  // person either (a guard against mistakes; the key is what carries authority).
+  const keyless = fleetd(["chat", target, "with no key", "--home", lab.hubHome, "--hub", lab.hubUrl]);
+  check(keyless.code === 2 && keyless.stderr.includes("--key-file is required"), `chat without --key-file: ${keyless.all}`);
+  check(!fs.existsSync(path.join(lab.hubHome, "owner.key")), "the hub home holds no owner key");
+  const human = fleetd(["chat", target, "as the person", ...as(humanFile)], { FLEETD_THREAD_ID: "lab-some-other-session" });
   check(human.code === 3 && human.stderr.includes("can't write as the human"), `a human key inside a session: ${human.all}`);
-  check(!(await chat()).messages.some((m: Body) => /hello from the lead|as the owner|as the person/u.test(m.text)), "none of them reached the chat");
-  ok("from the lead's own session: refused, exit 3, pointed at its fleetd tools; inside a session no key writes as the person");
+  check(!(await chat()).messages.some((m: Body) => /hello from the lead|with no key|as the person/u.test(m.text)), "none of them reached the chat");
+  ok("from the lead's own session: refused, exit 3, pointed at its fleetd tools; no key file, no message; inside a session a human key doesn't write as the person");
 
   // 3. The person's reply, followed: the reply streams in more than one piece, and needs-you clears.
   const followed = await new Promise<{ code: number | null; out: string; pieces: number }>((resolve) => {
@@ -144,12 +145,12 @@ export async function chatCli(lab: Lab) {
   check((await chat()).state.needsYou === false, "the person's reply clears needs-you");
   ok(`chat --follow streamed the reply in ${followed.pieces} pieces and needs-you cleared`);
 
-  // 4. History with the owner's key on the hub machine, no --key-file: who wrote what, when, and no ids.
-  const history = fleetd(["chat", "history", ref.projectId, "--home", lab.hubHome, "--hub", lab.hubUrl]);
+  // 4. History with the person's key file: who wrote what, when, and no ids.
+  const history = fleetd(["chat", "history", ref.projectId, ...as(humanFile)]);
   check(history.code === 0, `chat history: ${history.all}`);
   for (const who of ["you · cli", "agent · scout", "lead"]) check(history.stdout.includes(`\n${who}  `) || history.stdout.startsWith(`${who}  `), `history names ${who}: ${history.stdout}`);
   check(!/\b(m|Q|W|T)\d+\b|[0-9a-f]{12,}/u.test(history.stdout.replace(note, "")), `history shows no ids or hashes: ${history.stdout}`);
-  ok("chat history with the owner's key names you · cli, agent · scout and the lead, without ids");
+  ok("chat history names you · cli, agent · scout and the lead, without ids");
 
   // 5. The agent can't approve a command; the person can still answer it.
   const root = lab.machines.find((m) => m.id === MACHINE)!.repo;

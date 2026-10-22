@@ -156,7 +156,8 @@ fn refused(message: &str, fix: &str) -> ToolError {
 /// The author is the key's: a human key writes as the human, from the app unless it says otherwise; any other key as
 /// an agent, by the key's name. A message sent from inside a fleetd session (`session`, which `fleetd chat` reads
 /// from its process tree) is an agent's whatever key it holds, and the project's own lead and tasks are refused, so
-/// they talk through their fleetd tools and never wake their lead through its chat.
+/// they talk through their fleetd tools and never wake their lead through its chat. `session` is the caller's own
+/// report, so this catches mistakes and is no boundary: the key decides.
 fn writer(hub: &Hub, caller: &Caller, input: &ChatSendInput) -> Result<Writer, ToolError> {
     let r = &input.project_ref;
     if let Some(session) = &input.session {
