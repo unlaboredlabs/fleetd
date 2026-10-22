@@ -183,7 +183,7 @@ function HubSection({ part }: { part: HubPart }) {
           {opened === null ? null : opened.ok ? (
             <Text size="sm" tone="quiet">
               <Line
-                text={`fleetd update is running in ${opened.terminal}; its result shows there. If something is running on the hub, the hub keeps its version until you run \`fleetd update --restart-now\` or it next restarts.`}
+                text={`fleetd update is running in ${opened.terminal}. Its result shows there. If something is running on the hub, the hub keeps its old version until you run \`fleetd update --restart-now\` or it next restarts.`}
               />
             </Text>
           ) : (

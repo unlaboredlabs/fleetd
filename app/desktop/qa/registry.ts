@@ -112,6 +112,7 @@ export const fixtures = [
   "updates-hub-available",
   "updates-hub-behind",
   "updates-hub-behind-local",
+  "updates-hub-behind-local-channel",
   "updates-hub-info-failed",
   "updates-terminal-not-local",
   "updates-terminal-not-found",
@@ -531,11 +532,12 @@ export const screens: readonly Screen[] = [
     ],
     open: openUpdates,
   },
-  // Update the hub on devbox: what runs there (hub_info) and the command, saying when it restarts the hub.
+  // Update the hub on devbox: what runs there (hub_info) and the command, saying when it restarts the hub. And on this
+  // computer when the command needs --channel, which Run in Terminal can't run: Copy only.
   {
     id: "updates",
     route: "#/",
-    fixtures: ["updates-hub-behind"],
+    fixtures: ["updates-hub-behind", "updates-hub-behind-local-channel"],
     variant: "update-the-hub",
     open: async (page) => {
       await openUpdates(page);

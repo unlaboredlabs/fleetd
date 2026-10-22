@@ -69,6 +69,7 @@ export default defineGroup({
       withHub("hub-available", "The channel has a newer hub than the one running: in the sheet only.", MINE, { release: { ...RELEASE, cli: NEXT } }),
       withHub("hub-behind", "The hub on devbox runs an older nightly than this app: a warning; Update the hub lists what runs and the command.", OLDER),
       withHub("hub-behind-local", "The hub on this computer is behind and idle: Update the hub offers Run in Terminal.", OLDER, { busy: [], url: LOCAL }),
+      withHub("hub-behind-local-channel", "The hub on this computer runs stable, this app nightly: the command needs --channel, so Copy only.", "0.5.0", { url: LOCAL }),
       hubInfoFailed,
       // Run in Terminal's three failures (main's answers), each with the command to run instead.
       terminal("not-local", { ok: false, message: "The hub isn't on this computer. Run this on the hub's machine:", command: "fleetd update" }),
