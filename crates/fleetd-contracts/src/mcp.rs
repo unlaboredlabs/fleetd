@@ -10,6 +10,7 @@ use crate::chat::ChatRequestId;
 use crate::doctor::{DoctorCheck, DoctorCheckId};
 use crate::effort::Effort;
 use crate::events::{HubEvent, HubEventType};
+use crate::hello::ProtocolVersion;
 use crate::ids::{EventSeq, MachineId, ProjectId, ProjectRef, ThreadId, Timestamp};
 use crate::ledger::{
     Decision, DecisionKey, DecisionScope, DecisionValue, DecisionWhy, HumanRequest, IntakeText,
@@ -1188,6 +1189,71 @@ output!(ChatHistoryOutput {
     state: crate::chat::ProjectChatState,
 });
 
+// hub_info: the hub's own fleetd build and what is in flight, so an updater can ask before it restarts the hub or a
+// node.
+input!(HubInfoInput {
+    /// Only what runs on this machine (before restarting its node); absent: everything.
+    machine_id: Option<MachineId>,
+});
+output!(HubInfoOutput {
+    /// The hub's fleetd version, as `fleetd --version` prints it. "0.0.0" for a local build.
+    version: String,
+    protocol: ProtocolVersion,
+    /// Absent for a local build.
+    channel: Option<HubChannel>,
+    started_at: Option<Timestamp>,
+    /// Empty when nothing is in flight. A restart interrupts each item.
+    busy: List<HubBusyItem, 0, 50>,
+});
+
+/// The release channel a hub's build follows: nightly when its version contains "-nightly.", stable otherwise.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
+pub enum HubChannel {
+    Nightly,
+    Stable,
+    /// A channel this build doesn't know (a newer hub). Never sent.
+    #[serde(other)]
+    #[schemars(skip)]
+    Unknown,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
+pub enum HubBusyKind {
+    /// A running task.
+    Agent,
+    /// A lead turn in progress.
+    Lead,
+    /// A merge train step: a change at the head of its train.
+    Train,
+    /// An approval being answered.
+    Approval,
+    /// A project being cloned.
+    Clone,
+    /// A kind this build doesn't know (a newer hub): show the item's text. Never sent.
+    #[serde(other)]
+    #[schemars(skip)]
+    Unknown,
+}
+
+/// One thing in flight on the hub.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct HubBusyItem {
+    pub kind: HubBusyKind,
+    /// What it is, for a person: "T19 writing app-main in fleetd (12 m)".
+    pub text: Text<1, 280>,
+    /// Where it runs, when on one machine.
+    pub machine_id: Option<MachineId>,
+    pub project_ref: Option<ProjectRef>,
+    /// When it started.
+    pub since: Option<Timestamp>,
+}
+
 /// Declares the static tool table: `McpToolName` with each tool's minimum grant role and its input and output types.
 macro_rules! tools {
     ($($name:ident => $variant:ident, $scope:ident, $input:ty, $output:ty;)*) => {
@@ -1332,6 +1398,7 @@ tools! {
     chat_history => ChatHistory, Read, ChatHistoryInput, ChatHistoryOutput;
     // Human keys only (the handler checks).
     project_stop => ProjectStop, Operate, ProjectStopInput, ProjectStopOutput;
+    hub_info => HubInfo, Read, HubInfoInput, HubInfoOutput;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
@@ -1459,7 +1526,7 @@ mod tests {
 
     #[test]
     fn the_tool_table_matches_ts_names_and_scopes() {
-        assert_eq!(McpToolName::ALL.len(), 78);
+        assert_eq!(McpToolName::ALL.len(), 79);
         assert_eq!(McpToolName::parse("inbox_reply"), None);
         assert_eq!(McpToolName::parse("asks_list"), None);
         for tool in McpToolName::ALL {
@@ -1470,6 +1537,7 @@ mod tests {
         assert_eq!(McpToolName::RetroRun.scope(), Role::Admin);
         assert_eq!(McpToolName::DoctorFix.scope(), Role::Operate);
         assert_eq!(McpToolName::FleetdStatus.scope(), Role::Read);
+        assert_eq!(McpToolName::HubInfo.scope(), Role::Read);
         assert_eq!(McpToolName::parse("push_subscribe"), None);
     }
 
@@ -1514,6 +1582,40 @@ mod tests {
         assert_eq!(serde_json::to_value(&send).unwrap(), steer);
         let withdraw: SteerWithdrawOutput = decode(steer.clone()).unwrap();
         assert_eq!(serde_json::to_value(&withdraw).unwrap(), steer);
+    }
+
+    #[test]
+    fn hub_info_round_trips_and_reads_a_newer_hubs_values() {
+        let output = json!({
+            "version": "0.0.0-nightly.202610221107+333368c", "protocol": 1, "channel": "nightly",
+            "startedAt": "2026-10-22T11:07:00.000Z",
+            "busy": [
+                { "kind": "agent", "text": "T19 writing app-main in fleetd (12 m)", "machineId": "devbox",
+                  "projectRef": { "machineId": "devbox", "projectId": "p1" }, "since": "2026-10-22T11:10:00.000Z" },
+                { "kind": "train", "text": "PR #251 at the head of unlaboredlabs/fleetd's train" },
+            ],
+        });
+        let info: HubInfoOutput = decode(output.clone()).unwrap();
+        assert_eq!(info.busy[0].kind, HubBusyKind::Agent);
+        assert_eq!(serde_json::to_value(&info).unwrap(), output);
+
+        let minimal: HubInfoOutput =
+            decode(json!({ "version": "0.0.0", "protocol": 1, "busy": [] })).unwrap();
+        assert_eq!((minimal.channel, minimal.started_at), (None, None));
+        let newer: HubInfoOutput = decode(json!({
+            "version": "1.4.0", "protocol": 1, "channel": "beta", "uptimeSec": 4,
+            "busy": [{ "kind": "migration", "text": "migrating the ledger" }],
+        }))
+        .unwrap();
+        assert_eq!(newer.channel, Some(HubChannel::Unknown));
+        assert_eq!(newer.busy[0].kind, HubBusyKind::Unknown);
+        assert!(
+            decode::<HubInfoInput>(json!({}))
+                .unwrap()
+                .machine_id
+                .is_none()
+        );
+        assert!(decode::<HubInfoInput>(json!({ "machineId": "devbox" })).is_ok());
     }
 
     #[test]
