@@ -17,6 +17,7 @@ pub mod status;
 pub mod steer;
 pub mod time;
 pub mod update;
+pub mod versions;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -86,8 +87,10 @@ lead-side commands (a lead uses its fleetd tools; these are for you, inside a pr
     )
 }
 
-const UPDATE_USAGE: &str = "  update [--check] [--channel <c>]
-             replace this fleetd with the latest release
+const UPDATE_USAGE: &str = "  update [--check] [--channel <c>] [--restart-now]
+             replace this fleetd with the latest release, then restart its hub and node when
+             nothing runs on them; while something does, they keep the running version until
+             their next restart. --restart-now restarts them anyway
 ";
 
 /// `fleetd <command> … --help` (or `-h`): that command's usage, for stdout and exit 0. After `--` they are arguments.
@@ -199,10 +202,14 @@ async fn run_long_running(argv: &[String]) -> u8 {
     }
 }
 
-/// `fleetd update [--check] [--channel <c>]`.
+/// `fleetd update [--check] [--channel <c>] [--restart-now]`.
 async fn update_command(argv: &[String]) -> u8 {
     let spec = args::Spec {
-        options: &[("check", args::Kind::Bool), ("channel", args::Kind::Str)],
+        options: &[
+            ("check", args::Kind::Bool),
+            ("channel", args::Kind::Str),
+            ("restart-now", args::Kind::Bool),
+        ],
         positionals: false,
     };
     let v = match args::parse(argv, &spec) {
@@ -215,6 +222,7 @@ async fn update_command(argv: &[String]) -> u8 {
     match update::run(update::UpdateArgs {
         check: v.flag("check"),
         channel: v.string("channel"),
+        restart_now: v.flag("restart-now"),
     })
     .await
     {

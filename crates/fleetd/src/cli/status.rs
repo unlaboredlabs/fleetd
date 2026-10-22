@@ -964,6 +964,11 @@ pub async fn status_command(argv: &[String]) -> u8 {
         Err(error) => return fail("status", error),
     };
     printer.show(&doc);
+    if !args.json
+        && let Some(line) = super::versions::line(&mut client).await
+    {
+        println!("{line}");
+    }
     if args.watch {
         let mut stop = super::Stop::on_signals();
         'watch: loop {
