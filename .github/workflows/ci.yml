@@ -311,8 +311,12 @@ jobs:
   desktop-macos-repro:
     # TEMPORARY (removed before merge): the nightly's mac job up to its smoke, signed as it is (no notarization, nothing
     # published), so Squirrel.Mac really stages the update before the smoke runs.
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [signed, plain-1, plain-2]
     runs-on: macos-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     defaults:
       run:
         working-directory: app/desktop
@@ -330,12 +334,14 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm build
       - name: Signing keychain
+        if: matrix.variant == 'signed'
         working-directory: .
         env:
           MACOS_CERT_P12_BASE64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
           MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
         run: .github/release/macos-sign.sh keychain
       - name: Package a signed universal fleetd.app
+        if: matrix.variant == 'signed'
         env:
           MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
           CSC_FOR_PULL_REQUEST: "true"
@@ -344,10 +350,11 @@ jobs:
           pnpm exec electron-builder --mac --publish never -c.extraMetadata.version=0.0.0-nightly.202610220936+5c4cc17 -c.buildVersion=0.0.0 -c.mac.bundleShortVersion=0.0.0
           mkdir -p ../../dist && mv dist/mac-universal/fleetd.app ../../dist/fleetd.app
       - name: Remove the signing keychain
-        if: always()
+        if: always() && matrix.variant == 'signed'
         working-directory: .
         run: .github/release/macos-sign.sh cleanup
       - name: Launch the signed app and update it from a local feed
+        if: matrix.variant == 'signed'
         working-directory: .
         run: |
           ditto -c -k --keepParent --norsrc dist/fleetd.app dist/fleetd-desktop-macos-universal.zip
@@ -361,7 +368,18 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY=false pnpm exec electron-builder --mac --dir --arm64 --publish never -c.directories.output=dist-test \
             -c.mac.identity=- -c.mac.hardenedRuntime=false -c.extraMetadata.version=0.0.0-nightly.202610220936+5c4cc17
           ps -axo pid,etime,command | grep -iE 'fleetd|ShipIt' | grep -v grep || true
-          node scripts/packaged-smoke.ts dist-test/mac-arm64/fleetd.app/Contents/MacOS/fleetd
+          fails=0
+          for i in $(seq 10); do
+            if node scripts/packaged-smoke.ts dist-test/mac-arm64/fleetd.app/Contents/MacOS/fleetd > "$RUNNER_TEMP/smoke-$i.log" 2>&1; then
+              echo "run $i: ok"
+            else
+              fails=$((fails+1)); echo "run $i: FAILED"; grep -vE 'ERROR:|^ERR: ' "$RUNNER_TEMP/smoke-$i.log" | tail -40
+              [ -d smoke-results ] && mv smoke-results "smoke-results-$i"
+            fi
+          done
+          mkdir -p smoke-results && mv smoke-results-* smoke-results/ 2>/dev/null || true
+          echo "failed $fails of 10"
+          [ "$fails" = 0 ]
       - if: always()
         name: What else was running
         run: |
@@ -371,7 +389,7 @@ jobs:
       - if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: repro-signed
+          name: repro-${{ matrix.variant }}
           path: app/desktop/smoke-results/
           if-no-files-found: ignore
           retention-days: 7
