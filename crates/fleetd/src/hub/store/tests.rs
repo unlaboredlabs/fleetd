@@ -488,12 +488,11 @@ fn drops_events_older_than_30_days_without_reusing_their_seq_even_across_a_resta
 fn asks_on_an_older_hub_become_requests_and_history() {
     use super::migrations::MIGRATIONS;
     let conn = rusqlite::Connection::open_in_memory().unwrap();
-    let last = MIGRATIONS.len() - 1;
-    assert!(
-        MIGRATIONS[last].contains("legacy_asks"),
-        "the ask migration is the last one"
-    );
-    for m in &MIGRATIONS[..last] {
+    let ask = MIGRATIONS
+        .iter()
+        .position(|m| m.contains("ALTER TABLE asks RENAME TO legacy_asks"))
+        .expect("the ask migration");
+    for m in &MIGRATIONS[..ask] {
         conn.execute_batch(m).unwrap();
     }
     let p = r#""projectRef":{"machineId":"lab-a","projectId":"p1"}"#;
@@ -550,7 +549,7 @@ fn asks_on_an_older_hub_become_requests_and_history() {
           VALUES (1, 'bugfix', 'asked', 'A9', '[]', '{"proposalId":"R1","state":"asked","askId":"A9"}');"#,
     )
     .unwrap();
-    conn.execute_batch(MIGRATIONS[last]).unwrap();
+    conn.execute_batch(MIGRATIONS[ask]).unwrap();
 
     let ids: Vec<(i64, String)> = conn
         .prepare("SELECT n, json_extract(data, '$.evidence') FROM requests ORDER BY n")

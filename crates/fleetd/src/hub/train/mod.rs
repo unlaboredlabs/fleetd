@@ -13,6 +13,7 @@ pub mod hub_host;
 pub mod main_ci;
 pub mod records;
 pub mod rules;
+pub mod secret_box;
 pub mod service;
 pub mod stack;
 pub mod time;

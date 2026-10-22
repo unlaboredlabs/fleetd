@@ -1,4 +1,4 @@
-//! The little of an MCP Streamable HTTP client that `listen` and `retro run` need: initialize once, then call tools.
+//! The little of an MCP Streamable HTTP client the CLI needs: initialize once, then call tools.
 //! Answers may come as JSON or as an SSE stream; both are read to the matching response.
 
 use std::time::Duration;

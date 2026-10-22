@@ -17,6 +17,7 @@ use fleetd_contracts::train::GitHubRepo;
 
 use crate::hub::api::{Caller, Hub, ToolError, allows_everywhere};
 use crate::hub::store::StoreError;
+use crate::hub::train::secret_box::SecretBox;
 
 /// The sealed secret, beside the key that opens it (`webhook.key`).
 fn secret_file(hub: &Hub) -> PathBuf {
@@ -26,7 +27,10 @@ fn secret_file(hub: &Hub) -> PathBuf {
 /// The secret deliveries are signed with; absent while webhooks are off.
 pub fn secret(hub: &Hub) -> Option<String> {
     let sealed = std::fs::read_to_string(secret_file(hub)).ok()?;
-    hub.webhooks.secret_box().open(sealed.trim()).ok()
+    SecretBox::for_home(&hub.config.home)
+        .ok()?
+        .open(sealed.trim())
+        .ok()
 }
 
 /// At hub start: webhooks are on when hooks are recorded and their secret opens.
@@ -121,7 +125,9 @@ pub async fn github_webhook_set(
         });
     };
     let secret = new_secret();
-    let sealed = hub.webhooks.secret_box().seal(&secret);
+    let sealed = SecretBox::for_home(&hub.config.home)
+        .map_err(|e| failed(format!("the webhook secret could not be sealed: {e}")))?
+        .seal(&secret);
     let path = secret_file(&hub);
     let _ = std::fs::remove_file(&path);
     std::fs::OpenOptions::new()

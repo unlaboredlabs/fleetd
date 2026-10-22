@@ -25,6 +25,7 @@ use crate::plan::PlanView;
 use crate::playbooks::IntakeEcho;
 use crate::prim::{
     Count, Int, IntOr, Line, List, MAX_SAFE_INT, NonEmpty, Positive, Text, True, UniqueList,
+    WebhookUrl,
 };
 use crate::projects::{AddId, CloneTarget, GitHubRepos, MachineRepos, ProjectInspect};
 use crate::prompts::{
@@ -35,7 +36,6 @@ use crate::retro::{RetroProposal, RetroProposalState, RetroRun};
 use crate::secrets::{SealedSecret, SecretFingerprint};
 use crate::status::{ProjectStatusRow, StatusDoc, StatusScope};
 use crate::steer::{Steer, SteerId, SteerMode, SteerTarget};
-use crate::subscriptions::{Subscription, SubscriptionMachines, SubscriptionTypes, WebhookUrl};
 use crate::tasks::{SlotState, Task, TaskId, TaskState};
 use crate::time::{
     CategoryTotal, CiCheckStat, CommandStat, Coverage, CriticalPath, HumanWait, Insight,
@@ -254,31 +254,6 @@ output!(WakeListOutput { wakes: Vec<Wake> });
 // wake_cancel
 input!(WakeCancelInput { wake_id: NonEmpty });
 output!(WakeCancelOutput { ok: True });
-
-// subscription_set
-input!(SubscriptionSetInput {
-    url: WebhookUrl,
-    #[serde(default)]
-    types: SubscriptionTypes,
-    #[serde(default)]
-    machines: SubscriptionMachines,
-    client_request_id: RequestId,
-});
-output!(SubscriptionSetOutput {
-    subscription_id: NonEmpty,
-    /// The webhook signing secret. Shown only here; store it now.
-    secret: NonEmpty,
-});
-
-// subscription_list
-input!(SubscriptionListInput {});
-output!(SubscriptionListOutput { subscriptions: Vec<Subscription> });
-
-// subscription_delete
-input!(SubscriptionDeleteInput {
-    subscription_id: NonEmpty
-});
-output!(SubscriptionDeleteOutput { ok: True });
 
 // lead_start, lead_restart
 input!(LeadStartInput {
@@ -1330,9 +1305,6 @@ tools! {
     wake_set => WakeSet, Operate, WakeSetInput, WakeSetOutput;
     wake_list => WakeList, Read, WakeListInput, WakeListOutput;
     wake_cancel => WakeCancel, Operate, WakeCancelInput, WakeCancelOutput;
-    subscription_set => SubscriptionSet, Operate, SubscriptionSetInput, SubscriptionSetOutput;
-    subscription_list => SubscriptionList, Read, SubscriptionListInput, SubscriptionListOutput;
-    subscription_delete => SubscriptionDelete, Operate, SubscriptionDeleteInput, SubscriptionDeleteOutput;
     lead_start => LeadStart, Operate, LeadStartInput, LeadStartOutput;
     lead_restart => LeadRestart, Operate, LeadRestartInput, LeadRestartOutput;
     intake_submit => IntakeSubmit, Operate, IntakeSubmitInput, IntakeSubmitOutput;
@@ -1482,10 +1454,6 @@ mod tests {
         let wake: WakeSetInput = decode(wake).unwrap();
         assert!(wake.once);
         assert_eq!(wake.catch_up, WakeCatchUp::FireOnce);
-        let sub: SubscriptionSetInput =
-            decode(json!({ "url": "https://example.com", "clientRequestId": "r1" })).unwrap();
-        assert_eq!(serde_json::to_value(&sub).unwrap()["types"], "*");
-        assert_eq!(serde_json::to_value(&sub).unwrap()["machines"], "*");
         let decoded = McpToolName::IncidentsList.decode_input(json!({})).unwrap();
         assert_eq!(decoded, json!({ "limit": 20, "windowDays": 7 }));
     }
@@ -1497,12 +1465,6 @@ mod tests {
                 .is_err()
         );
         assert!(decode::<EventsWaitInput>(json!({ "timeoutSec": 51 })).is_err());
-        assert!(
-            decode::<SubscriptionSetInput>(
-                json!({ "url": "https://example.com", "types": ["nope"], "clientRequestId": "r1" })
-            )
-            .is_err()
-        );
         assert!(decode::<CapSetInput>(json!({})).is_err());
         assert!(decode::<CapSetInput>(json!({ "cap": 1001 })).is_err());
         assert!(decode::<CapSetInput>(json!({ "cap": 40 })).is_ok());

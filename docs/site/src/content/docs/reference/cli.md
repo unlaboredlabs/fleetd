@@ -16,7 +16,6 @@ Every `fleetd` command, from `fleetd help` in the binary this site was built wit
 | 2 | usage error |
 | 3 | refused |
 | 4 | the hub or the node is unreachable |
-| 78 | `listen` only: the hub refused the key |
 
 ## Commands {#commands}
 
@@ -242,15 +241,6 @@ fleetd node run [--home <dir>]
 ```
 
 keep the link up for a machine that has joined
-
-### fleetd listen {#listen}
-
-```text
-fleetd listen --hub <url> --key-file <path> (--exec '<cmd>' | --post <url>)
-    [--types a,b] [--machines a,b] [--name <name>]
-```
-
-deliver hub events, at least once and in order, to a command (one event's JSON on stdin) or a URL; the cursor lives in `~/.fleetd/listen/<name>.cursor` (name default "default"). Exits 78 when the hub refuses the key.
 
 ### fleetd retro run {#retro-run}
 
