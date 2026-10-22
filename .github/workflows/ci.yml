@@ -338,6 +338,7 @@ jobs:
       - name: Package a signed universal fleetd.app
         env:
           MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          CSC_FOR_PULL_REQUEST: "true"
         run: |
           export CSC_NAME="${MACOS_SIGN_IDENTITY#Developer ID Application: }"
           pnpm exec electron-builder --mac --publish never -c.extraMetadata.version=0.0.0-nightly.202610220936+5c4cc17 -c.buildVersion=0.0.0 -c.mac.bundleShortVersion=0.0.0
