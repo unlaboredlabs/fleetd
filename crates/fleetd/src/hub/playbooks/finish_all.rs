@@ -288,31 +288,6 @@ impl FinishAll {
         Ok(items)
     }
 
-    /// The project's running finish-all order with room for more children: its id, open children and the cap.
-    /// None when there is none, it is idle or verifying, or it is full.
-    pub async fn room(
-        &self,
-        r: &ProjectRef,
-    ) -> Result<Option<(WorkstreamId, usize, u32)>, LeadError> {
-        let open = self.open_in(r)?;
-        let Some(parent) = open
-            .iter()
-            .find(|w| is_finish_all(w) && w.state == WorkstreamState::Running)
-        else {
-            return Ok(None);
-        };
-        let children = open
-            .iter()
-            .filter(|w| {
-                w.parent
-                    .as_ref()
-                    .is_some_and(|p| p.workstream_id == parent.workstream_id)
-            })
-            .count();
-        let max = self.max_children(r).await?;
-        Ok((children < max as usize).then(|| (parent.workstream_id.clone(), children, max)))
-    }
-
     /// `fleetd inventory`: the ranked list, and the idle rule applied to the project's finish-all workstream.
     pub async fn inventory(&self, caller: &Caller) -> Result<Inventory, LeadError> {
         let r = &caller.project_ref;

@@ -138,11 +138,6 @@ pub enum Event<'a> {
         go: &'a str,
         stop: &'a str,
     },
-    /// Slots are free and approved work could start.
-    Runnable {
-        items: &'a str,
-        room: i64,
-    },
     /// A secret or approval request settled, or came back open. `what` is the secret, command or tool prompt; `outcome`
     /// what became of it; `tail` a command's output tail.
     Request {
@@ -157,11 +152,6 @@ pub enum Event<'a> {
         playbook: &'a str,
         expected: &'a str,
         key: &'a str,
-    },
-    /// The lead ended a turn with an approved order and nothing under way: nothing else would wake it for it.
-    OrderIdle {
-        workstream: &'a str,
-        title: &'a str,
     },
     /// A person raised the project's max agents; queued agents have already started.
     CapRaised {
@@ -392,24 +382,10 @@ impl Event<'_> {
                 ),
                 vec![],
             ),
-            Event::OrderIdle { workstream, title } => (
-                format!(
-                    "- {workstream} idle: {}; no agent running, nothing asked, and nothing else will wake you for it",
-                    one_line(title, 80)
-                ),
-                vec![],
-            ),
             Event::CapRaised { max_agents, free } => (
                 format!(
                     "- cap raised to {max_agents}: {free} slot{} free; queued agents already started",
                     if *free == 1 { "" } else { "s" }
-                ),
-                vec![],
-            ),
-            Event::Runnable { items, room } => (
-                format!(
-                    "- {room} slot{} free; approved work can start: {items}",
-                    if *room == 1 { "" } else { "s" }
                 ),
                 vec![],
             ),
@@ -642,17 +618,6 @@ mod tests {
     }
 
     #[test]
-    fn runnable_event() {
-        assert_eq!(
-            r(Event::Runnable {
-                items: "P3 docs; and 2 more",
-                room: 2
-            }),
-            "- 2 slots free; approved work can start: P3 docs; and 2 more"
-        );
-    }
-
-    #[test]
     fn request_events() {
         assert_eq!(
             r(Event::Request {
@@ -704,17 +669,6 @@ mod tests {
                 free: 9
             }),
             "- cap raised to 12: 9 slots free; queued agents already started"
-        );
-    }
-
-    #[test]
-    fn idle_order_event() {
-        assert_eq!(
-            r(Event::OrderIdle {
-                workstream: "W4",
-                title: "schedules"
-            }),
-            "- W4 idle: schedules; no agent running, nothing asked, and nothing else will wake you for it"
         );
     }
 

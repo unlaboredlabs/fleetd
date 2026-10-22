@@ -156,7 +156,7 @@ A session that checks that a large (`L`) change works, in addition to its two re
 
 ## Wake {#wake}
 
-A message that restarts a lead's work: your chat message, a task result, a free slot.
+A message that restarts a lead's work: your chat message, a task result, a merged PR.
 
 ## Worker {#worker}
 
