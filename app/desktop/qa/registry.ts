@@ -48,6 +48,7 @@ export const fixtures = [
   "onboarding-first-run",
   "onboarding-code-refused",
   "onboarding-setup-terminal",
+  "onboarding-first-chat",
   "onboarding-local-hub",
   "onboarding-link",
   "onboarding-app-pair",
@@ -308,6 +309,8 @@ export const screens: readonly Screen[] = [
       await page.getByText("From before this chat").waitFor({ timeout: 10_000 });
     },
   },
+  // UX-1 [10]: just set up, no chat has a message yet: the empty chat shows the checklist on its last step.
+  { id: "chat", route: CHAT, fixtures: ["onboarding-first-chat"], variant: "first-chat" },
   // A link to a project the hub doesn't have (here, a hub with none): says so, rather than loading forever.
   { id: "chat", route: CHAT, fixtures: ["empty"], variant: "missing", expect: "error" },
   // A5 (F5): the two inline items, every state: the masked secret field (and saved, withdrawn), the exact command
