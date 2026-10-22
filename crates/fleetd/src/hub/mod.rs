@@ -1,4 +1,5 @@
 //! The hub: one area per module, one owner per area.
+pub mod agents;
 pub mod api;
 pub mod app_ws;
 pub mod approvals;
@@ -24,8 +25,10 @@ pub mod plan;
 pub mod playbooks;
 pub mod projects;
 pub mod prompts;
+pub mod prs;
 pub mod queue;
 pub mod receipts;
+pub mod redact;
 pub mod retro;
 pub mod reviews;
 pub mod serve;
