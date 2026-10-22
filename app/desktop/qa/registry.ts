@@ -87,6 +87,9 @@ export const sizes = {
   large: { width: 1920, height: 1200 },
   // The smallest window (main/index.ts): the sidebar has hidden itself. Shot only where an entry asks for it.
   narrow: { width: 900, height: 600 },
+  // The macOS window shot: wide enough to keep the sidebar, short enough for the smallest runner's screen once the
+  // menu bar and the Dock are off it (1024×768 leaves 680 px).
+  window: { width: 1024, height: 640 },
 } as const;
 export type SizeName = keyof typeof sizes;
 /** What an entry without `sizes` is shot at. */
