@@ -15,7 +15,7 @@ const LAB_ROOT = process.env.FLEETD_LAB ?? path.join(os.homedir(), "src/fleetd-l
 /**
  * FLEETD_LAB_SLOT=<n> (0-9, default 0) is an independent lab that can run beside the others. Slot 0 is the lab root
  * itself, slot n lives in <root>/slot-<n> (test repos, run dirs, machine homes, lock), and every lab port is the
- * slot-0 port + 20 * n. The slot-0 ports, 4781 (cmd check), 4783 (m8 secrets), 4784 (hub unit), 4795 (hub), 4796
+ * slot-0 port + 20 * n. The slot-0 ports, 4781 (cmd check), 4782 (chat history), 4795 (hub), 4796
  * (watchdog hub) and 4797 (m12), all differ mod 20, so slots 0-9 never collide and stay within 4781-4977.
  */
 export const SLOT = Number(process.env.FLEETD_LAB_SLOT ?? 0);

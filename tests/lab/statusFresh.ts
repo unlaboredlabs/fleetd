@@ -81,9 +81,9 @@ export async function statusFresh(lab: Lab) {
     check(offline.status === "offline", `${MACHINE} offline in health: ${JSON.stringify(offline)}`);
     check(offline.lastSeenAt === undefined || Date.parse(offline.lastSeenAt) <= t0, `${MACHINE} last seen at or before the kill: ${offline.lastSeenAt}`);
     const headline = await docUntil("the headline says Not live and names lab-b", 15_000, (d) => notLive(d) && (d.headline.text as string).includes(MACHINE));
-    // HOME in the run dir: the CLI keeps its "since you last looked here" mark under ~/.fleetd/cli.
+    // The CLI keeps its "since you last looked here" mark in <fleetd dir>/cli, so its dir is in the run, never ~/.fleetd.
     const printed = execFileSync(...fleetdCommand(["status", "--hub", lab.hubUrl, "--key-file", keyFile]), {
-      env: { ...scrubbedEnv(), HOME: lab.dir },
+      env: { ...scrubbedEnv(), HOME: lab.dir, FLEETD_HOME: path.join(lab.dir, "fleetd") },
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
     });

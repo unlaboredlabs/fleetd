@@ -67,10 +67,12 @@ const TOOL_FROM: Readonly<Record<string, string>> = {
 const GONE_HUB_TOOLS = ["asks_list", "inbox_reply", "inbox_undo"];
 /** An ask tool in a session's init list: fleetd's own (lead) or Claude's. The worker's ask_lead (to its lead) stays. */
 const ASK_TOOL = /^(mcp__fleetd__ask|mcp__fleetd__ask_withdraw|AskUserQuestion)$/u;
-/** Internal ids a lead message must not carry: workstream, task, plan, milestone, claim, request and other hub ids. */
-const INTERNAL_ID = /\b[WTPMCRHX]\d+\b/u;
+/** Internal ids a lead message must not carry: workstream, task, plan, milestone, claim, request, decision and other hub ids. */
+const INTERNAL_ID = /\b[WTPMCRHXQD]\d+\b/u;
 /** A recommendation in a numbered question, in the lead's words. */
-const RECOMMENDS = /\b(rec|recommend|suggest|i'd (go with|pick|choose|lean)|my pick)/iu;
+const RECOMMENDS = /\b(rec(ommend\w*)?|suggest\w*|i'd (go with|pick|choose|lean)|my pick)\b/iu;
+/** How soon needs-you must clear after the person's reply. */
+const NEEDS_YOU_CLEARS_MS = 3_000;
 /** main's lead prompt before the chat rewrite (H3); the lead must start on a newer one. */
 const OLD_LEAD_PROMPT = "lead.start@82105e96e9";
 
@@ -210,11 +212,12 @@ const spawnSleepers = (lab: Lab, fleetd: Shell, workstreamId: string, label: str
 /** A session stopping frees its slot (hub/slots STOPPED). */
 const THREAD_STOPS = ["thread.completed", "thread.failed", "thread.interrupted", "thread.waiting", "thread.usage_limited"];
 /** The events maxConcurrent replays. */
-const RUN_EVENTS = ["task.started", ...TASK_ENDS, ...THREAD_STOPS];
+const RUN_EVENTS = ["task.started", "thread.started", ...TASK_ENDS, ...THREAD_STOPS];
 /**
  * The most agents of `tasks` running at once, replayed in hub order. An agent stops running when its session stops
  * (its thread's stop event, which frees the slot) or its task ends, whichever comes first: the task.completed that
  * books the result comes after the hub has read the thread's changes, so the next agent may already hold the slot.
+ * A later run of the task's thread (a message, a continue) takes a slot again, so its thread.started counts as live.
  */
 const maxConcurrent = (events: ReadonlyArray<Body>, tasks: ReadonlyArray<Body>) => {
   const ofThread = new Map(tasks.filter((t) => t.threadRef?.threadId).map((t) => [t.threadRef.threadId as string, t.taskId as string]));
@@ -224,7 +227,7 @@ const maxConcurrent = (events: ReadonlyArray<Body>, tasks: ReadonlyArray<Body>) 
   for (const e of events.toSorted((a, b) => a.seq - b.seq)) {
     const id = (e.data?.taskId as string | undefined) ?? (typeof e.threadId === "string" ? ofThread.get(e.threadId) : undefined);
     if (id === undefined || !ids.has(id)) continue;
-    if (e.type === "task.started") max = Math.max(max, live.add(id).size);
+    if (e.type === "task.started" || e.type === "thread.started") max = Math.max(max, live.add(id).size);
     else if (TASK_ENDS.includes(e.type) || THREAD_STOPS.includes(e.type)) live.delete(id);
   }
   return max;
@@ -441,7 +444,16 @@ async function tersePart(lab: Lab, chat: Chat, ref: Ref) {
   let asked: unknown;
   await askedPart(lab, chat, ref, sent).catch((error: unknown) => (asked = error));
   const answered = await chat.send("1 go");
+  // The reply clears needs-you at once: the person answered, whatever the lead does next.
+  const repliedAt = Date.now();
+  const cleared = await lab
+    .until("needs-you clears after the reply", NEEDS_YOU_CLEARS_MS, async () =>
+      (await chat.state()).needsYou !== true ? Date.now() - repliedAt : (await new Promise((r) => setTimeout(r, 100)), undefined),
+    )
+    .catch(() => undefined);
   try {
+    lab.check(cleared !== undefined, `needs-you cleared within ${NEEDS_YOU_CLEARS_MS} ms of the reply`);
+    lab.ok(`needs-you off ${cleared} ms after "1 go"`);
     await answeredPart(lab, chat, ref, answered, file);
   } catch (error) {
     if (asked === undefined) throw error;
@@ -470,11 +482,15 @@ async function answeredPart(lab: Lab, chat: Chat, ref: Ref, answered: { cursor: 
   const writer = await nextTask(lab, ref, answered.cursor, `a writer for ${file} after "1 go"`, TURN_MS * 2, (t) => t.kind === "write");
   await chat.reply(answered, "the terse answer");
   check((await chat.state()).needsYou !== true, "needs-you is off once the person answered");
-  const decisions = [
+  const go = (await chat.after(answered.seq)).find((m) => m.author === "human" && m.text === "1 go");
+  check(go, `the "1 go" message is in the chat`);
+  const found = [
     ...(((await lab.callTool("decisions_search", { query: "digest" })).body.decisions as Array<Body>) ?? []),
     ...(((await lab.callTool("decisions_search", { query: "day" })).body.decisions as Array<Body>) ?? []),
   ];
-  check(decisions.length > 0, "the lead logged the answer with decide");
+  // Logged from the answer: after the person's "1 go", not a guess made before it.
+  const decisions = found.filter((d) => Date.parse(d.at) >= Date.parse(go!.createdAt as string));
+  check(decisions.length > 0, `the lead logged the answer with decide after "1 go" (${go!.createdAt}): ${JSON.stringify(found.map((d) => [d.key, d.value, d.at]))}`);
   // Never the same question twice.
   const later = (await chat.after(answered.seq)).filter((m) => m.author === "lead" && /^\s*1[.)]\s/mu.test(m.text) && /digest|day/iu.test(m.text));
   check(later.length === 0, `the lead does not ask again: ${JSON.stringify(later.map((m) => m.text))}`);
@@ -775,7 +791,7 @@ async function toolsPart(lab: Lab, chat: Chat, hubTools: ReadonlySet<string>) {
 /**
  * A pre-chat build (FLEETD_LAB_PRECHAT_BIN) runs a hub on a home of its own, with one project seeded as `project_add`
  * caches it (no node, no turns): a person places an order and adds a note. Then the build under test opens the same
- * home, as it would Wynn's live hub, and the project's chat must show them as history.
+ * home, as it would a user's live hub, and the project's chat must show them as history.
  */
 async function historyPart(lab: Lab) {
   const { check, ok } = lab;

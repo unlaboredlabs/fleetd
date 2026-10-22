@@ -9,7 +9,6 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { areasParallel } from "./areasParallel.ts";
-import { askCard } from "./askCard.ts";
 import { chatLead } from "./chatLead.ts";
 import { degradedMachine } from "./degradedMachine.ts";
 import { demoFanout } from "./demoFanout.ts";
@@ -104,8 +103,6 @@ const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab)
   // A freed slot offers the next approved item; a slice gets its reviewer before the next slice. Restarts lab-a's lead
   // and adds the lab repo project for its run, so only when named.
   { name: "eff", run: efficiency, only: true },
-  // A real lead writes its own labelled ask; the answer goes through the undo window. Only when named.
-  { name: "ask", run: askCard, only: true },
   // One PR through the train into a base CI never runs for. Only when named, with FLEETD_LAB_NAMESPACE=noci/<n>.
   { name: "noci", run: noCiTrain, only: true },
   // Two writers in two inferred areas at once (the seed's packages/alpha and packages/beta). Only when named.
