@@ -302,6 +302,8 @@ export const createChatActions = (
       if (store.getState().generation === generation) update(() => ({ chatStop: false }));
       return { t: "unsupported" };
     }
+    // This key may not stop leads: Stop goes, and the composer says why once.
+    if (r.error.code === "forbidden" && store.getState().generation === generation) update(() => ({ chatStop: false }));
     return { t: "failed", error: r.error };
   };
 

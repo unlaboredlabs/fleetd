@@ -19,7 +19,7 @@ import { selectCanStop, selectLeadWorking } from "../../src/data/selectors";
 import { Button, cx, IdChip, Text, Tooltip, Truncate } from "../../ui";
 import { useCommands } from "../palette";
 import { fmtBytes, PASTE_AS_FILE, pastedName } from "./attachments";
-import { ACT_LABEL, checkMessage, placeholder, receiptFor, recallsOn, sendsOn, type Act } from "./composerModel";
+import { ACT_LABEL, checkMessage, placeholder, receiptFor, recallsOn, sendsOn, stopFailed, type Act } from "./composerModel";
 import { useDraft, useDrafts } from "./drafts";
 import c from "./composer.module.css";
 
@@ -56,7 +56,10 @@ export function ChatComposer({ project, onSent, autoFocus, recall }: ChatCompose
   const [wasWorking, setWasWorking] = useState(working);
   if (working !== wasWorking) {
     setWasWorking(working);
-    if (working !== true) setStopping(false);
+    if (working !== true) {
+      setStopping(false);
+      setStopError(undefined);
+    }
   }
   useEffect(() => {
     if (working === true) chat.probeStop();
@@ -69,7 +72,7 @@ export function ChatComposer({ project, onSent, autoFocus, recall }: ChatCompose
     void chat.stop(projectKey).then((o) => {
       if (o.t === "stopped") return;
       setStopping(false);
-      if (o.t === "failed") setStopError(`Couldn’t stop the lead: ${o.error.message}`);
+      if (o.t === "failed") setStopError(stopFailed(o.error.code));
     });
   };
 
