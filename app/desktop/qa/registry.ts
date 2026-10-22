@@ -135,8 +135,6 @@ const gallerySections = [
   "status",
   "markdown",
   "code",
-  "diff",
-  "table",
   "list",
   "layout",
 ] as const;

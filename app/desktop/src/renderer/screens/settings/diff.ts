@@ -1,6 +1,6 @@
 // A prose diff for prompts: by line (a prompt is one line per paragraph), then by word inside a paragraph that was
-// changed rather than added or removed, since a one-word edit should not paint the whole paragraph. Stands in until
-// E2's DiffView lands; it is LCS, which is plenty for prompts (a few hundred lines at most).
+// changed rather than added or removed, since a one-word edit should not paint the whole paragraph. It is LCS, which is
+// plenty for prompts (a few hundred lines at most).
 
 export type Op = "same" | "add" | "del";
 export interface Piece {

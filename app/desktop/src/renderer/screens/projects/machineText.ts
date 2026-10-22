@@ -69,8 +69,8 @@ export const machineParts = (m: Machine, live: MachineLive | undefined, nowMs: n
   return out;
 };
 
-/** "slots 8/40 · 1 queued". */
-export const slotsText = (s: SlotState): string => `slots ${s.used}/${s.cap}${s.queued > 0 ? ` · ${s.queued} queued` : ""}`;
+/** "agents 8 / 40 · 1 queued", the words the chat header's Max agents control uses. */
+export const slotsText = (s: SlotState): string => `agents ${s.used} / ${s.cap}${s.queued > 0 ? ` · ${s.queued} queued` : ""}`;
 
 /** Offline last, then by name. */
 export const machineOrder = (a: Machine, b: Machine): number =>

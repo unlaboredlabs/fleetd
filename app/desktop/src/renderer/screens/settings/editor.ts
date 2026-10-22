@@ -135,14 +135,14 @@ export function warningLine(w: PromptWarning): string {
 /** What a reset at `level` did, said plainly (resetting a project's level brings back the hub-wide text, if any). */
 export function resetLine(level: PromptScope, projectName: string): string {
   return level === "project"
-    ? `${projectName}'s own edit is gone; it uses the hub-wide text again. New sessions get it; running ones keep theirs.`
-    : "Your hub-wide edit is gone; fleetd's default applies to every project without its own edit. New sessions get it; running ones keep theirs.";
+    ? `${projectName}'s own edit is gone; it uses the hub-wide text again. New agents get it; running ones keep theirs.`
+    : "Your hub-wide edit is gone; fleetd's default applies to every project without its own edit. New agents get it; running ones keep theirs.";
 }
 
 export function savedLine(o: PromptSetOutput): string {
   const n = o.warnings.length;
   const warned = n === 0 ? "" : n === 1 ? " with 1 warning" : ` with ${n} warnings`;
-  return `Saved${warned}. New sessions get it; running ones keep the text they started with.`;
+  return `Saved${warned}. New agents get it; running ones keep the text they started with.`;
 }
 
 /** What the "In effect" line says, and where a save lands. */

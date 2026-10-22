@@ -37,7 +37,7 @@ export function Notifications() {
     <div className={s.scroll} data-screen="settings.notifications">
       <div className={s.column}>
         <PageHead title="Notifications" />
-        <Setting reveal="notifications.kinds" label="Notify me when" help="Never for the chat in front of you. In quiet hours, only urgent ones.">
+        <Setting reveal="notifications.kinds" label="Notify me when" help="Never for the chat in front of you.">
           {KINDS.map(({ kind, label }) => (
             <Switch key={kind} label={label} checked={prefs.kinds[kind]} onCheckedChange={(on) => set({ kinds: { ...prefs.kinds, [kind]: on } })} />
           ))}
@@ -48,12 +48,12 @@ export function Notifications() {
         <Setting
           reveal="notifications.badge"
           label={mac ? "Dock badge" : "App icon badge"}
-          help={mac ? "On the fleetd icon in the Dock." : "Where your desktop shows app badges."}
+          help={mac ? "On the fleetd icon in the Dock." : "Where your desktop shows badges."}
         >
           <Switch label="Count the projects that need you" checked={prefs.badge} onCheckedChange={(on) => set({ badge: on })} />
         </Setting>
         <Separator />
-        <Setting reveal="notifications.test" label="Test" help="Shows one now, whatever the settings above.">
+        <Setting reveal="notifications.test" label="Test" help="Shows one now, whatever is set above.">
           <div className={s.inline}>
             <Button variant="secondary" onClick={() => void sendTest()}>
               Send a test notification

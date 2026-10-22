@@ -319,7 +319,7 @@ function Empty({ d }: { d: Discovery }) {
     d.ghOn !== undefined
       ? `gh on ${d.ghOn} listed nothing for you or your orgs.`
       : d.problems.length === 0
-        ? "GitHub repos aren't listed: gh isn't logged in on the hub or a worker (run gh auth login there)."
+        ? "GitHub repos aren't listed: gh isn't logged in on the hub or a machine (run gh auth login there)."
         : "";
   return (
     <div className={s.empty}>

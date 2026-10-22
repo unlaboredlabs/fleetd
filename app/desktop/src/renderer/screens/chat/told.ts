@@ -3,6 +3,7 @@
 // and only the overrides spelled out; the hashes stay behind hover and copy.
 
 import type { PromptGroup, PromptScope, PromptSummary, SessionPrompt } from "../../../shared/contracts";
+import { ROLE_WORD, type AgentRole } from "../../ui";
 
 export interface ToldRow {
   readonly id: string;
@@ -171,9 +172,7 @@ export function toldView(sp: SessionPrompt, registry: readonly PromptSummary[], 
   };
 }
 
-/** "writer T1", "reviewer T4", "the lead". */
-export function roleWords(role: string, taskId?: string): string {
-  if (role === "lead" || taskId === undefined) return "the lead";
-  const word = role === "implementer" ? "writer" : role === "qa" ? "QA" : role;
-  return `${word} ${taskId}`;
+/** "the writer", "the reviewer", "the lead": the role's one name, never its task number. */
+export function roleWords(role: AgentRole): string {
+  return `the ${ROLE_WORD[role]}`;
 }
