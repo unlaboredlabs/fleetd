@@ -3781,6 +3781,11 @@
           "type": "string"
         },
         {
+          "const": "machine.guard",
+          "description": "The machine's disk or load stopped new agents there, or no longer does; `data.paused`, and the summary says\nwhy. Agents already running keep going.",
+          "type": "string"
+        },
+        {
           "const": "project.removed",
           "description": "The node no longer has the project: the hub dropped it from its cache, and its open workstreams stop. `data.title`.",
           "type": "string"
@@ -8462,7 +8467,7 @@
         },
         {
           "const": "blocked",
-          "description": "Something outside the work stops it: its machine is offline or at its usage limit, or main CI is red.",
+          "description": "Something outside the work stops it: its machine is offline, at its usage limit or short of disk or CPU for new\nagents, or main CI is red.",
           "type": "string"
         },
         {
