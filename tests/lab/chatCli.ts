@@ -98,9 +98,10 @@ export async function chatCli(lab: Lab) {
   ok(`scout's message is labelled agent · scout, read as an agent's, and needs-you stays on; the lead said:\n${fromScout.stdout.trimEnd()}`);
 
   // The project's own lead may not write to its chat, even with an agent key, and unsetting FLEETD_THREAD_ID in its
-  // shell doesn't hide the session: the CLI reads it from its parent's environment.
+  // shell doesn't hide the session: the CLI reads it from the shell's environment as it started, as a session's tool
+  // command runs under claude. (No `exec`: that would replace the shell rather than run under it.)
   const [bin, binArgs] = fleetdCommand(["chat", target, "hello from the lead", ...as(scoutFile)]);
-  const hidden = spawnSync("sh", ["-c", 'unset FLEETD_THREAD_ID; exec "$0" "$@"', bin, ...binArgs], {
+  const hidden = spawnSync("sh", ["-c", 'unset FLEETD_THREAD_ID; "$0" "$@"; exit $?', bin, ...binArgs], {
     env: { ...env, FLEETD_THREAD_ID: threadId },
     encoding: "utf8",
   });
@@ -120,7 +121,7 @@ export async function chatCli(lab: Lab) {
     const [bin, args] = fleetdCommand([
       "chat",
       target,
-      "1 rec. Then write the numbers 1 to 200, one per line, and ask nothing.",
+      "1: no, start nothing and run nothing. Reply with only the numbers 1 to 200, one per line, and ask nothing.",
       "--follow",
       ...as(humanFile),
     ]);
