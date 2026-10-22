@@ -4,11 +4,11 @@
 // time view, where the model, tokens and activity live. Nothing is drawn when no agent is shown.
 import { ChevronRight } from "lucide-react";
 import type { Virtualizer } from "@tanstack/react-virtual";
-import { useEffect, useId, useRef, useState, useSyncExternalStore, type CSSProperties, type RefObject } from "react";
+import { useEffect, useId, useRef, useSyncExternalStore, type CSSProperties } from "react";
 import { useData, useToolQuery } from "../../src/data/react";
 import { Text, Truncate, VirtualList, cx, toast } from "../../ui";
 import { runCommand } from "../palette";
-import { useNow } from "./clock";
+import { useNow, useOnScreen } from "./clock";
 import type { AgentLane } from "./contracts";
 import { projectKey } from "./lanes";
 import { AgentLine } from "./parts";
@@ -97,19 +97,6 @@ function OrderDetail({ workstreamId }: { workstreamId: string }) {
 
 /** Row heights, px, as lanes.module.css draws them: the box is sized to its rows up to a third of the window. */
 const ROW_PX = { agent: 24, pr: 28 } as const;
-
-/** Whether `ref` is in the viewport: the clocks stop once the strip scrolls out of the chat. */
-const useOnScreen = (ref: RefObject<Element | null>): boolean => {
-  const [on, setOn] = useState(true);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const io = new IntersectionObserver((entries) => setOn(entries.some((e) => e.isIntersecting)));
-    io.observe(el);
-    return () => io.disconnect();
-  }, [ref]);
-  return on;
-};
 
 function Opened({ id, projectKey: key, strip, onTold }: { id: string; projectKey: string; strip: Strip; onTold: LiveStripProps["onTold"] }) {
   const box = useRef<HTMLDivElement>(null);

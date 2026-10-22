@@ -14,6 +14,7 @@ import { projectKey } from "../../src/data/store";
 import { LiveStrip } from "../live";
 import { AttentionLine } from "./Attention";
 import { waitingOn } from "./attentionModel";
+import { leadTurnSince, leadTurnUntil } from "./activity";
 import { ChatList } from "./ChatList";
 import { useChatData } from "./data";
 import { EmptyChat } from "./EmptyChat";
@@ -40,6 +41,9 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   const view = data.view;
   const asOf = useAsOfWords(view?.asOf);
   const strip = (data.agents?.length ?? 0) > 0;
+  const turnSince = useData((d) => leadTurnSince(d, projectKey(project)));
+  const turnOver = useData((d) => leadTurnUntil(d, projectKey(project)) !== undefined);
+  const workedSince = data.leadWorking !== true && turnOver ? turnSince : undefined;
   const rows = useMemo(
     () =>
       view === undefined
@@ -54,11 +58,12 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
             offline: view.offline,
             strip,
             activity: data.leadWorking === true,
+            workedSince,
             // "Today" is read against the clock when the chat changes; nothing ticks while it's idle.
             // eslint-disable-next-line react-hooks/purity
             nowMs: Date.now(),
           }),
-    [view, strip, data.leadWorking],
+    [view, strip, data.leadWorking, workedSince],
   );
   const items = view?.items;
   const waiting = useMemo(

@@ -85,6 +85,18 @@ describe("the chat's rows", () => {
     expect(rowIndexOf(r, "nope")).toBeUndefined();
   });
 
+  it("put how long the lead worked under the reply its turn ended with", () => {
+    const turn = Date.parse(at(19, 9));
+    const lead = [item("a", "human", at(19, 9)), item("b", "lead", at(19, 9, 3)), item("c", "system", at(19, 9, 4), { kind: "event" })];
+    const kinds = (r: ReturnType<typeof rows>) => r.map((x) => (x.kind === "message" ? `message:${x.item.id}` : x.kind));
+    expect(kinds(rows(lead, { strip: true, workedSince: turn })).slice(-4)).toEqual(["message:b", "activity", "strip", "event"]);
+    // A person's message after it, waiting for the next turn: the line stays with the reply.
+    expect(kinds(rows([...lead, item("d", "human", at(19, 9, 5))], { workedSince: turn })).slice(3)).toEqual(["message:b", "activity", "event", "message:d"]);
+    // The lead's newest reply is older than the turn: it didn't write in it, so no line claims it.
+    expect(rows(lead, { workedSince: turn + 600_000 }).some((x) => x.kind === "activity")).toBe(false);
+    expect(rows(lead, { workedSince: turn, hasNewer: true }).some((x) => x.kind === "activity")).toBe(false);
+  });
+
   it("place a row whose time doesn't parse under today, rather than throwing", () => {
     // Intl throws a RangeError on an invalid date; a reply streaming ahead of its message once had "".
     const r = rows([item("a", "lead", at(18, 9)), item("s", "lead", "", { state: "streaming" })]);
