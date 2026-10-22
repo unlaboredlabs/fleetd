@@ -333,7 +333,7 @@ function Notes({ b, missing }: { b: TimeBreakdownOutput; missing: Missing | unde
   if (missing?.detailSince !== undefined) {
     lines.push(`Detail since ${missing.detailSince}: commands, CI checks and findings start there (retention); totals before that come from daily roll-ups.`);
   }
-  if (b.coverage.capped === true) lines.push("Capped: only the newest spans were read.");
+  if (b.coverage.capped === true) lines.push("Capped: the hub read only the newest spans.");
   lines.push(
     "≈ First token includes claude's own work before the request, the network, API queueing and prefill; they can't be told apart. Thinking and output are split as streamed; each message's total is exact.",
     "≤ When several tools ran from one message, each call's own time is an upper bound; the group's time is exact.",

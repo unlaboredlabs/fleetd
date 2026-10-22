@@ -350,7 +350,7 @@ export const gapWord = (why: Gap["why"]): string => {
 export const missingSentence = (m: Missing, c: Coverage): string | undefined => {
   if (isMissingEmpty(m)) return undefined;
   const reasons = c.gaps.map(gapText);
-  if (m.capped) reasons.push("capped: there are more spans than are read at once, so only the newest are drawn");
+  if (m.capped) reasons.push("capped: there are more spans than the hub reads at once, so only the newest are drawn");
   if (m.detailSince !== undefined) reasons.push(`detail since ${m.detailSince}; totals before that come from daily roll-ups`);
   return reasons.join("; ");
 };

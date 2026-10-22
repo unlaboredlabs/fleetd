@@ -103,7 +103,7 @@ export function LinkedSheet({ title, answer, names, nowMs, onClose, onSpan }: Li
   return (
     <Sheet open={title !== undefined} onOpenChange={(o) => !o && onClose()} title={title ?? ""}>
       {answer === undefined ? (
-        <Text tone="quiet">Loading these spans…</Text>
+        <Text tone="quiet">Asking the hub for these spans…</Text>
       ) : !answer.ok ? (
         <Text tone="danger">{answer.error}</Text>
       ) : spans.length === 0 ? (
