@@ -51,8 +51,8 @@ export { toast, type ToastInput, type ToastTone } from "./primitives/Toast";
 export { ScrollArea, type ScrollAreaProps } from "./primitives/ScrollArea";
 export { Dot, StatusChip, RoleTag, roleTint, Separator, type StatusTone, type AgentRole } from "./primitives/Chips";
 
-export { Code, InlineCode, type CodeProps } from "./markdown/Code";
-export { resolveLang, langForPath, type CodeLang } from "./markdown/highlighter";
+export { Code, InlineCode, renderTokens, type CodeProps } from "./markdown/Code";
+export { resolveLang, langForPath, highlight, type CodeLang, type Tokens } from "./markdown/highlighter";
 export { Markdown, type MarkdownProps } from "./markdown/Markdown";
 export { VirtualList, type VirtualListProps } from "./list/VirtualList";
 export { DataTable, type DataTableProps, type Column } from "./list/DataTable";

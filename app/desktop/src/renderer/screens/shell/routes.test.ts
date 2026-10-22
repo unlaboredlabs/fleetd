@@ -9,6 +9,9 @@ describe("routes", () => {
       HOME,
       { id: "project", project: storefront, message: null },
       { id: "project", project: storefront, message: "m-42" },
+      { id: "prs", project: storefront, pr: null },
+      { id: "prs", project: storefront, pr: { repo: null, number: 11 } },
+      { id: "prs", project: storefront, pr: { repo: "acme/storefront", number: 11 } },
       { id: "status" },
       { id: "machines" },
       { id: "time", orderId: null },
@@ -27,6 +30,8 @@ describe("routes", () => {
     expect(toHash({ id: "project", project: storefront, message: "m-42" })).toBe("#/project/devbox/storefront?message=m-42");
     expect(toHash({ id: "project", project: { machineId: "dev box", projectId: "a/b" }, message: null })).toBe("#/project/dev%20box/a%2Fb");
     expect(toHash({ id: "settings", tab: "general" })).toBe("#/settings/general");
+    expect(toHash({ id: "prs", project: storefront, pr: null })).toBe("#/project/devbox/storefront/prs");
+    expect(toHash({ id: "prs", project: storefront, pr: { repo: "acme/storefront", number: 11 } })).toBe("#/project/devbox/storefront/prs/acme/storefront/11");
   });
 
   it("sends the removed surfaces, unknown and malformed hashes home", () => {
@@ -35,5 +40,9 @@ describe("routes", () => {
     }
     expect(parseHash("#/status/project/devbox/storefront")).toEqual({ id: "status" });
     expect(parseHash("#/settings/nope")).toEqual({ id: "settings", tab: "general" });
+    // A PR path that isn't one opens the project's list.
+    for (const tail of ["prs/0", "prs/x", "prs/acme/11", "prs/acme/storefront/x/11"]) {
+      expect(parseHash(`#/project/devbox/storefront/${tail}`)).toEqual({ id: "prs", project: storefront, pr: null });
+    }
   });
 });

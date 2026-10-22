@@ -36,6 +36,15 @@ describe("event effects", () => {
     expect(thread.invalidate).toContainEqual({ tool: "project_get", where: { machineId: "devbox", projectId: "storefront" } });
   });
 
+  it("what moves a PR refetches the PR reads; only a new head its files and diff", () => {
+    for (const type of ["change.state", "pr.merged", "review.verdict", "train.frozen", "task.completed"]) {
+      expect(tools(e(type))).toEqual(expect.arrayContaining(["pr_list", "pr_get"]));
+    }
+    expect(tools(e("change.state"))).toEqual(expect.arrayContaining(["pr_files", "pr_diff"]));
+    expect(tools(e("task.completed"))).not.toContain("pr_diff");
+    expect(tools(e("chat.message"))).not.toContain("pr_list");
+  });
+
   it("a machine or project coming or going resyncs; an unknown type does nothing", () => {
     expect(effectsOf(e("project.added")).resync).toBe(true);
     // Add project's list marks the repos that are projects, so it is read again too.

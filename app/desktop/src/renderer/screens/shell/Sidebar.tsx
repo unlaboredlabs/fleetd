@@ -44,7 +44,7 @@ export function Sidebar({ projects, machinesDown, screen, hub, jumpHints, go }: 
   const nav = (label: string, icon: ReactNode, target: Screen, current: boolean, trailing?: ReactNode) => (
     <SidebarItem label={label} icon={icon} current={current} trailing={trailing} onClick={() => go(target)} />
   );
-  const open = screen.id === "project" ? screen.project : null;
+  const open = screen.id === "project" || screen.id === "prs" ? screen.project : null;
 
   return (
     <Frame aria-label="Sidebar">
