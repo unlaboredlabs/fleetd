@@ -7,7 +7,7 @@
 // see src/main/debug-switches.ts); Playwright's own Electron launcher needs Node's --inspect, which the packaged
 // fuses keep off in every build. Run `pnpm fixtures` first.
 import { spawn } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { chromium, type Page } from "@playwright/test";
@@ -97,21 +97,63 @@ const stop = (): void => {
   rmSync(home, { recursive: true, force: true });
 };
 
+/** Where a failed run leaves its screenshot; CI uploads the directory. */
+const RESULTS = path.join(ROOT, "smoke-results");
+
+/**
+ * What the page was showing when a check failed: each data-screen with its box (0x0 or hidden reads as not visible to
+ * the waits), the route, whether the page thinks it is visible, its console errors and page errors, and a screenshot.
+ */
+const diagnose = async (page: Page, consoleErrors: readonly string[], pageErrors: readonly string[]): Promise<void> => {
+  const state = await page
+    .evaluate<string>(
+      `JSON.stringify({
+        hash: location.hash,
+        visibility: document.visibilityState,
+        focused: document.hasFocus(),
+        viewport: innerWidth + "x" + innerHeight,
+        screens: [...document.querySelectorAll("[data-screen]")].map((e) => {
+          const r = e.getBoundingClientRect();
+          return e.getAttribute("data-screen") + " " + Math.round(r.width) + "x" + Math.round(r.height) + (e.checkVisibility() ? "" : " hidden");
+        }),
+      }, null, 2)`,
+    )
+    .catch((error: unknown) => `(the page didn't answer: ${String(error)})`);
+  console.error(`packaged smoke: the page at failure: ${state}`);
+  console.error(`packaged smoke: console errors: ${consoleErrors.length === 0 ? "none" : `\n  ${consoleErrors.join("\n  ")}`}`);
+  console.error(`packaged smoke: page errors: ${pageErrors.length === 0 ? "none" : `\n  ${pageErrors.join("\n  ")}`}`);
+  mkdirSync(RESULTS, { recursive: true });
+  const shot = path.join(RESULTS, "failure.png");
+  await page
+    .screenshot({ path: shot, timeout: 10_000 })
+    .then(() => console.error(`packaged smoke: screenshot at ${shot}`))
+    .catch((error: unknown) => console.error(`packaged smoke: no screenshot: ${String(error)}`));
+};
+
 try {
   await waitForEndpoint();
   const browser = await chromium.connectOverCDP(`http://127.0.0.1:${PORT}`);
   const page = await appPage(browser);
   const errors: string[] = [];
+  const consoleErrors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
   await page.reload();
-  for (const screen of SCREENS) {
-    await show(page, screen);
-    const states = await page.evaluate<string[]>(`[...document.querySelectorAll("[data-screen]")].map((e) => e.getAttribute("data-screen") ?? "")`);
-    const broken = states.filter((s) => /\.(error|failed|missing|not-?found)$/u.test(s));
-    if (broken.length > 0) throw new Error(`${screen.id} shows ${broken.join(", ")}`);
-    console.log(`packaged smoke: ${screen.id} is up (${states.join(", ")})`);
+  try {
+    for (const screen of SCREENS) {
+      await show(page, screen);
+      const states = await page.evaluate<string[]>(`[...document.querySelectorAll("[data-screen]")].map((e) => e.getAttribute("data-screen") ?? "")`);
+      const broken = states.filter((s) => /\.(error|failed|missing|not-?found)$/u.test(s));
+      if (broken.length > 0) throw new Error(`${screen.id} shows ${broken.join(", ")}`);
+      console.log(`packaged smoke: ${screen.id} is up (${states.join(", ")})`);
+    }
+    if (errors.length > 0) throw new Error(`uncaught page errors: ${errors.join("; ")}`);
+  } catch (error) {
+    await diagnose(page, consoleErrors, errors);
+    throw error;
   }
-  if (errors.length > 0) throw new Error(`uncaught page errors: ${errors.join("; ")}`);
   await browser.close();
   console.log("packaged smoke: ok");
 } finally {

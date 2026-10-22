@@ -240,6 +240,13 @@ jobs:
           pnpm fixtures
           pnpm exec electron-builder --linux --dir --publish never -c.directories.output=dist-test
           node scripts/packaged-smoke.ts dist-test/linux-unpacked/fleetd-desktop --no-sandbox --ozone-platform=headless
+      - if: failure() && steps.scope.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: packaged-smoke-linux
+          path: app/desktop/smoke-results/
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Budgets (Linux)
         # Measured on this runner, not the budget machine (an M-series Mac: scripts/perf-mac.sh), so this fails on a
         # regression from perf/baseline-linux.json and only reports the budgets. The numbers go to the job summary.
@@ -250,3 +257,53 @@ jobs:
         # SIGUSR1, and both MP4s must be H.264 with frames.
         if: steps.scope.outputs.run == 'true'
         run: xvfb-run -a -s "-screen 0 1920x1200x24" pnpm perf:record
+
+  desktop-macos:
+    # The nightly's macOS packaged smoke (build-release.yml, desktop-macos) on an ad-hoc signed arm64 test build, so a
+    # change that breaks the packed mac app fails here rather than only in the nightly. Same scope as desktop.
+    runs-on: macos-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: app/desktop
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+      - name: Scope
+        id: scope
+        working-directory: .
+        run: |
+          run=true
+          if git rev-parse -q --verify HEAD^1 >/dev/null && git diff --quiet HEAD^1 HEAD -- app/desktop .github/workflows/ci.yml; then
+            run=false
+            echo "app/desktop didn't change."
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+      - if: steps.scope.outputs.run == 'true'
+        uses: pnpm/action-setup@v6
+        with:
+          package_json_file: app/desktop/package.json
+      - if: steps.scope.outputs.run == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: app/desktop/pnpm-lock.yaml
+      - if: steps.scope.outputs.run == 'true'
+        run: pnpm install --frozen-lockfile
+      - name: Packaged smoke (macOS)
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          pnpm fixtures
+          pnpm build:test
+          CSC_IDENTITY_AUTO_DISCOVERY=false pnpm exec electron-builder --mac --dir --arm64 --publish never -c.directories.output=dist-test \
+            -c.mac.identity=- -c.mac.hardenedRuntime=false
+          node scripts/packaged-smoke.ts dist-test/mac-arm64/fleetd.app/Contents/MacOS/fleetd
+      - if: failure() && steps.scope.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: packaged-smoke-macos
+          path: app/desktop/smoke-results/
+          if-no-files-found: ignore
+          retention-days: 14
