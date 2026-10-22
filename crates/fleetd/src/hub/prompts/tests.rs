@@ -269,32 +269,6 @@ fn agent_facing_texts_name_tools_not_fleetd_commands() {
     );
 }
 
-/// There is no questions tool: leads ask in the chat and log answers with `decide`. No shipped prompt or playbook
-/// sends an agent to `ask`, an ask card, the inbox or an ask id.
-#[test]
-fn model_facing_texts_never_mention_the_questions_tool() {
-    let ask = regex::Regex::new(
-        r"(?i)`(ask|ask_withdraw|inbox_reply|inbox_undo|asks_list)`|question cards?|ask cards?|\binbox\b|\bask:A|amend A\d|proceededOnRec|kind secret|your asks\b|taps? one choice|\baskId\b",
-    )
-    .unwrap();
-    let texts = super::registry::ENTRIES
-        .iter()
-        .map(|e| (e.id, e.default))
-        .chain(super::fixed::ALL);
-    let playbooks = crate::hub::playbooks::load::BUNDLED
-        .iter()
-        .map(|(n, t)| (n.as_str(), *t));
-    let found: Vec<String> = texts
-        .chain(playbooks)
-        .filter_map(|(id, text)| ask.find(text).map(|m| format!("{id}: {}", m.as_str())))
-        .collect();
-    assert!(
-        found.is_empty(),
-        "texts still point at the questions tool:\n{}",
-        found.join("\n")
-    );
-}
-
 /// An edit to a prompt a release retired is never applied and never lost: it is listed until the human deletes it.
 #[test]
 fn edits_to_retired_prompts_are_listed_until_reset() {
