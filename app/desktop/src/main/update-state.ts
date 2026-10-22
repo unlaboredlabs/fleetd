@@ -10,7 +10,6 @@ export type UpdateInput =
   | { readonly type: "progress"; readonly percent: number }
   | { readonly type: "downloaded"; readonly version: string }
   | { readonly type: "error"; readonly reason: string }
-  | { readonly type: "notes"; readonly notes: readonly string[] }
   /** "Update and restart" (or "Restart to update", or the deb's Download). */
   | { readonly type: "install" }
   /** "Not now" after "Update and restart": the download goes on, without the restart. */
@@ -25,9 +24,6 @@ export interface Machine {
   readonly deb: boolean;
 }
 
-const notesOf = (app: AppUpdate): readonly string[] =>
-  app.kind === "available" || app.kind === "ready" || app.kind === "manual" ? app.notes : [];
-
 type Found = Extract<AppUpdate, { kind: "available" | "ready" | "manual" }>;
 const found = (app: AppUpdate): app is Found => app.kind === "available" || app.kind === "ready" || app.kind === "manual";
 
@@ -40,12 +36,11 @@ export const step = (m: Machine, input: UpdateInput): [AppUpdate, UpdateEffect] 
     case "available":
       // A newer build while one is ready: electron-updater downloads it, and the ready one stays offered until then.
       if (app.kind === "ready") return [app, null];
-      if (m.deb) return [{ kind: "manual", version: input.version, notes: notesOf(app) }, null];
+      if (m.deb) return [{ kind: "manual", version: input.version }, null];
       return [
         {
           kind: "available",
           version: input.version,
-          notes: notesOf(app),
           percent: app.kind === "available" && app.version === input.version ? app.percent : null,
           restart: app.kind === "available" && app.restart,
         },
@@ -56,13 +51,11 @@ export const step = (m: Machine, input: UpdateInput): [AppUpdate, UpdateEffect] 
     case "progress":
       return [app.kind === "available" ? { ...app, percent: Math.max(0, Math.min(100, Math.floor(input.percent))) } : app, null];
     case "downloaded":
-      return [{ kind: "ready", version: input.version, notes: notesOf(app) }, app.kind === "available" && app.restart ? "quit-and-install" : null];
+      return [{ kind: "ready", version: input.version }, app.kind === "available" && app.restart ? "quit-and-install" : null];
     case "error":
       // A background check that fails says nothing: the next one tries again. A download or an asked-for check does.
       if (app.kind === "available") return [{ kind: "failed", during: "download", reason: input.reason }, null];
       return [app.kind === "checking" ? { kind: "failed", during: "check", reason: input.reason } : app, null];
-    case "notes":
-      return [found(app) ? { ...app, notes: input.notes } : app, null];
     case "install":
       if (app.kind === "ready") return [app, "quit-and-install"];
       if (app.kind === "manual") return [app, "open-download"];

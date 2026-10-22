@@ -85,18 +85,25 @@ export const fixtures = [
   // UX-1: the sidebar's reasons and a new reply (fixtures/sidebar); one agent's live work (fixtures/agents).
   "sidebar-reasons",
   "agents-work",
-  // C1: the app's own update and the hub machine's (fixtures/updates).
+  // C1: the app's own update and the hub's (fixtures/updates).
+  "updates-idle",
+  "updates-checking",
+  "updates-unsupported",
   "updates-current",
   "updates-available",
   "updates-downloading",
   "updates-ready",
   "updates-deb",
   "updates-failed",
+  "updates-download-failed",
+  "updates-hub-current",
+  "updates-hub-unknown",
+  "updates-hub-available",
   "updates-hub-behind",
   "updates-hub-waiting",
   "updates-hub-installing",
+  "updates-hub-restarting",
   "updates-hub-failed",
-  "updates-hub-older",
 ] as const;
 export type FixtureName = (typeof fixtures)[number];
 
@@ -352,44 +359,64 @@ export const screens: readonly Screen[] = [
     variant: "max-agents",
   },
   // C1: updates. The sidebar's line above the connection for each state that has one, and the sheet the palette's
-  // "Check for updates" opens: up to date, found and downloading, restarting once in, ready, the deb's command, a
-  // failed check; the hub's machine behind its channel, waiting for its work, installing, failed, and on an older
-  // channel than this app.
+  // "Check for updates" opens, for every state of this app (not checked yet, checking, a build that doesn't update,
+  // up to date, found, downloading to restart, ready, the deb's command, a failed check, a failed download) and of the
+  // hub (up to date, version unknown, a newer build on the channel, older than this app, waiting for its work,
+  // installing, restarting, failed).
   {
     id: "shell",
     route: "#/",
-    fixtures: ["updates-available", "updates-downloading", "updates-ready", "updates-hub-behind", "updates-hub-waiting", "updates-hub-failed"],
+    fixtures: ["updates-available", "updates-downloading", "updates-ready", "updates-hub-behind", "updates-hub-waiting", "updates-hub-restarting", "updates-hub-failed"],
     variant: "updates",
   },
   {
     id: "updates",
     route: "#/",
     fixtures: [
+      "updates-idle",
+      "updates-checking",
+      "updates-unsupported",
       "updates-current",
       "updates-available",
       "updates-downloading",
       "updates-ready",
       "updates-deb",
       "updates-failed",
+      "updates-download-failed",
+      "updates-hub-current",
+      "updates-hub-unknown",
+      "updates-hub-available",
       "updates-hub-behind",
       "updates-hub-waiting",
       "updates-hub-installing",
+      "updates-hub-restarting",
       "updates-hub-failed",
-      "updates-hub-older",
     ],
     open: openUpdates,
   },
-  // Update devbox while work runs there: it waits, and Update now asks first, naming what a restart would stop.
+  // Update the hub: it waits for the work there; Restart the hub now asks first, naming what a restart would stop.
+  {
+    id: "updates",
+    route: "#/",
+    fixtures: ["updates-hub-available"],
+    variant: "restart-now",
+    open: async (page) => {
+      await openUpdates(page);
+      await page.getByRole("button", { name: "Update the hub" }).click();
+      await page.getByRole("button", { name: "Restart the hub now" }).click();
+      await page.getByRole("button", { name: "Keep waiting" }).waitFor();
+    },
+  },
+  // Update the hub refused: the error, then the command, saying it restarts the hub and what that stops.
   {
     id: "updates",
     route: "#/",
     fixtures: ["updates-hub-behind"],
-    variant: "stop-and-update",
+    variant: "command",
     open: async (page) => {
       await openUpdates(page);
-      await page.getByRole("button", { name: "Update devbox" }).click();
-      await page.getByRole("button", { name: "Update now" }).click();
-      await page.getByRole("button", { name: "Stop and update" }).waitFor();
+      await page.getByRole("button", { name: "Update the hub" }).click();
+      await page.getByText("fleetd update", { exact: true }).waitFor();
     },
   },
   // ...lowered from the header, applied once the keys rest, with Undo.

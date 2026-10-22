@@ -1,14 +1,17 @@
 // Mounted once by the shell: the updates sheet, and the commands that reach it (the palette, the app menu's
-// "Check for Updates…"). The sheet shows this app's update and the hub machine's, each with its one action.
+// "Check for Updates…"). The sheet shows this app's update and the hub's, each with its one action.
 import { useState, type ReactNode } from "react";
 import { Button, copyText, Dialog, InlineCode, Text } from "../../ui";
 import { useDataLayer } from "../../src/data/react";
-import { hubUpdate, type HubUpdateWhen } from "../../src/data/hub-version-contract";
+import { hubUpdate, restartStops, type HubUpdateWhen } from "../../src/data/hub-update-contract";
 import { useCommands } from "../palette";
 import { useUpdatesView } from "./hooks";
+import type { Notes as NotesOf } from "../../../shared/updates";
 import type { AppAction, AppPart, HubAction, HubPart } from "./model";
 import { appUpdate, setUpdatesOpen, useAppUpdate, useUpdatesOpen } from "./state";
 import s from "./updates.module.css";
+
+const UNKNOWN_WORK = "Whatever is running on the hub: it couldn't say what that is right now";
 
 const runApp = (action: AppAction): void => {
   if (action === "check") void window.fleetd.updates.check();
@@ -29,35 +32,49 @@ function Line({ text }: { text: string }) {
   return <>{parts.map((part, i) => (i % 2 === 1 && i < parts.length - 1 ? <InlineCode key={i}>{part}</InlineCode> : part))}</>;
 }
 
-function Command({ command }: { command: string }) {
+function Command({ command, note }: { command: string; note?: string | undefined }) {
   const [copied, setCopied] = useState(false);
   return (
-    <div className={s.command}>
-      <Text mono size="sm">
-        {command}
-      </Text>
-      <Button variant="ghost" onClick={() => void copyText(command).then(setCopied)} onBlur={() => setCopied(false)}>
-        {copied ? "Copied" : "Copy"}
-      </Button>
-    </div>
+    <>
+      {note === undefined ? null : (
+        <Text size="sm" tone="quiet">
+          {note}
+        </Text>
+      )}
+      <div className={s.command}>
+        <Text mono size="sm">
+          {command}
+        </Text>
+        <Button variant="ghost" onClick={() => void copyText(command).then(setCopied)} onBlur={() => setCopied(false)}>
+          {copied ? "Copied" : "Copy"}
+        </Button>
+      </div>
+    </>
   );
 }
 
-function Notes({ notes }: { notes: readonly string[] }) {
-  if (notes.length === 0) return null;
+function Notes({ notes }: { notes: NotesOf }) {
+  if (notes.lines.length === 0) return null;
   return (
     <>
       <Text size="xs" tone="quiet" strong>
         What’s new
       </Text>
       <ul className={s.notes}>
-        {notes.map((note, i) => (
+        {notes.lines.map((note, i) => (
           <li key={i}>
             <Text size="sm">
               <Line text={note} />
             </Text>
           </li>
         ))}
+        {notes.more ? (
+          <li>
+            <Text size="sm" tone="quiet">
+              And more
+            </Text>
+          </li>
+        ) : null}
       </ul>
     </>
   );
@@ -100,33 +117,37 @@ function HubSection({ part }: { part: HubPart }) {
   const { call } = useDataLayer();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // "Update now" asks first: what a restart would stop, from the hub's own answer.
+  // "Restart the hub now" asks first, naming what a restart would stop, from the hub's own answer.
   const [stopping, setStopping] = useState<readonly string[] | null>(null);
 
-  const send = async (when: HubUpdateWhen) => {
+  const send = async (when: HubUpdateWhen): Promise<boolean> => {
     setBusy(true);
     setError(null);
     const outcome = await hubUpdate(call, when);
     setBusy(false);
-    if (!outcome.ok) {
-      setError(outcome.error.message);
-      return null;
-    }
-    return outcome.output;
+    if (!outcome.ok) setError(outcome.error.message);
+    return outcome.ok;
+  };
+  const askNow = async () => {
+    setBusy(true);
+    setError(null);
+    const stops = await restartStops(call);
+    setBusy(false);
+    // A hub that can't say what runs still gets asked: the restart would stop whatever does.
+    if (!stops.ok) setStopping([UNKNOWN_WORK]);
+    else if (stops.value.length > 0) setStopping(stops.value);
+    else await send("now");
   };
   const run = async (action: HubAction) => {
     if (action === "cancel") {
       setStopping(null);
       await send("cancel");
-    } else if (action === "now") {
-      // Asking again with "idle" changes nothing for an update already waiting, and says what still runs.
-      const output = await send("idle");
-      if (output !== null && output.running.length > 0) setStopping(output.running);
-    } else await send("idle");
+    } else if (action === "now") await askNow();
+    else await send("idle");
   };
 
   return (
-    <section className={s.part} aria-label={`fleetd on ${part.machine}`} data-updates-part="hub">
+    <section className={s.part} aria-label="The hub" data-updates-part="hub">
       <Head title={part.title} detail={part.detail}>
         {part.actions.length === 0 || stopping !== null
           ? undefined
@@ -138,7 +159,9 @@ function HubSection({ part }: { part: HubPart }) {
       </Head>
       {stopping === null ? null : (
         <div className={s.confirm} role="alert">
-          <Text size="sm" strong>{`Updating now restarts fleetd on ${part.machine} and stops:`}</Text>
+          <Text size="sm" strong>
+            Restarting the hub now stops:
+          </Text>
           <ul className={s.notes}>
             {stopping.map((line, i) => (
               <li key={i}>
@@ -156,12 +179,12 @@ function HubSection({ part }: { part: HubPart }) {
               variant="danger"
               disabled={busy}
               onClick={() =>
-                void send("now").then((output) => {
-                  if (output !== null) setStopping(null);
+                void send("now").then((ok) => {
+                  if (ok) setStopping(null);
                 })
               }
             >
-              Stop and update
+              Restart the hub now
             </Button>
           </div>
         </div>
@@ -173,7 +196,7 @@ function HubSection({ part }: { part: HubPart }) {
           </Text>
         </div>
       )}
-      {part.command === undefined ? null : <Command command={part.command} />}
+      {part.command === undefined || (part.actions.length > 0 && error === null) ? null : <Command command={part.command.text} note={part.command.note} />}
       <Notes notes={part.notes} />
     </section>
   );
@@ -189,7 +212,7 @@ export function UpdatesHost() {
       {
         id: "app.checkForUpdates",
         title: "Check for updates",
-        detail: "This app and fleetd on the hub’s machine",
+        detail: "This app and the hub",
         group: "actions",
         keywords: ["update", "upgrade", "version", "what's new"],
         run: () => {

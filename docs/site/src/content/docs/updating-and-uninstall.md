@@ -39,9 +39,11 @@ found, the sidebar says **Update available**: click it to see what's new, then *
 were typing is still there after the restart. An update you don't install now installs the next time you quit.
 
 - **Check for Updates…** is in the fleetd menu on macOS, in Help on Linux, and in the command palette.
-- The same window shows fleetd on the hub's machine. When a newer build is out, **Update** installs it there and
-  restarts the hub once the lead and agents finish; **Update now** stops them first, after saying what stops. When
-  the hub's machine can't update this way, it shows the command to run there, with **Copy**.
+- The same window shows the hub's version. When the hub is older than the app, the sidebar says **Update the hub**.
+  **Update the hub** restarts the hub once its lead and agents finish; **Restart the hub now** asks first, naming
+  what a restart would stop. When the hub can't update itself, the window shows `fleetd update` to run on the hub's
+  machine, with **Copy**: it restarts the hub, so run it when nothing is working. The app's own restart never
+  restarts the hub.
 - The `.deb` install can't update itself: the app offers the download and the `sudo apt install` command.
 
 - An earlier fleetd app is replaced by the current one, which keeps its pairing.

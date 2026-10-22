@@ -20,17 +20,16 @@ describe("the app update", () => {
     expect(run([{ type: "check", manual: true }]).app).toEqual({ kind: "checking" });
   });
 
-  it("downloads, then offers the restart with what's new", () => {
+  it("downloads, then offers the restart", () => {
     const { app, effects } = run([
       { type: "check", manual: false },
       { type: "available", version: "0.6.0" },
-      { type: "notes", notes: ["Updates show in the app"] },
       { type: "progress", percent: 41.7 },
     ]);
-    expect(app).toEqual({ kind: "available", version: "0.6.0", notes: ["Updates show in the app"], percent: 41, restart: false });
+    expect(app).toEqual({ kind: "available", version: "0.6.0", percent: 41, restart: false });
     expect(effects).toEqual([]);
     expect(run([{ type: "downloaded", version: "0.6.0" }], false, app)).toEqual({
-      app: { kind: "ready", version: "0.6.0", notes: ["Updates show in the app"] },
+      app: { kind: "ready", version: "0.6.0" },
       effects: [],
     });
   });
@@ -44,9 +43,9 @@ describe("the app update", () => {
   });
 
   it("keeps a ready update offered while a newer one downloads", () => {
-    const ready: AppUpdate = { kind: "ready", version: "0.6.0", notes: [] };
+    const ready: AppUpdate = { kind: "ready", version: "0.6.0" };
     expect(run([{ type: "check", manual: true }, { type: "available", version: "0.7.0" }], false, ready).app).toBe(ready);
-    expect(run([{ type: "downloaded", version: "0.7.0" }], false, ready).app).toEqual({ kind: "ready", version: "0.7.0", notes: [] });
+    expect(run([{ type: "downloaded", version: "0.7.0" }], false, ready).app).toEqual({ kind: "ready", version: "0.7.0" });
   });
 
   it("says a failure only for a download or an asked-for check", () => {
@@ -54,12 +53,12 @@ describe("the app update", () => {
     expect(run([{ type: "check", manual: false }, { type: "error", reason }], false, { kind: "current" }).app).toEqual({ kind: "current" });
     expect(run([{ type: "check", manual: true }, { type: "error", reason }]).app).toEqual({ kind: "failed", during: "check", reason });
     expect(run([{ type: "available", version: "0.6.0" }, { type: "error", reason }]).app).toEqual({ kind: "failed", during: "download", reason });
-    expect(run([{ type: "error", reason }], false, { kind: "ready", version: "0.6.0", notes: [] }).app.kind).toBe("ready");
+    expect(run([{ type: "error", reason }], false, { kind: "ready", version: "0.6.0" }).app.kind).toBe("ready");
   });
 
   it("offers the deb's download instead of downloading it", () => {
     const { app, effects } = run([{ type: "available", version: "0.6.0" }, { type: "install" }], true);
-    expect(app).toEqual({ kind: "manual", version: "0.6.0", notes: [] });
+    expect(app).toEqual({ kind: "manual", version: "0.6.0" });
     expect(effects).toEqual(["open-download"]);
   });
 });

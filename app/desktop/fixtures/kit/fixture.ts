@@ -82,7 +82,7 @@ export class Fixture {
   events: Array<JsonObject> = [];
   live: Array<JsonObject> = [];
   errors: Array<HubErrorJson> = [];
-  /** Tools whose answers follow a contract change still on its branch; skipped by validation until it merges. */
+  /** Tools and event types that follow a contract change still on its branch; skipped by validation until it merges. */
   pendingContracts = new Map<string, string>();
   /** The slot state is this fixture's point: lanes are made to match it, rather than it to the lanes (kit/agents.ts). */
   agentsFromSlots = false;
@@ -97,7 +97,7 @@ export class Fixture {
    */
   pair: JsonObject | undefined;
   /**
-   * The app's own update instead of the release feed (src/main/updater.ts): `{ current, app }`, an UpdatesState.
+   * The app's own update instead of the release feed (src/main/updater.ts): `{ current, app, release }`, an UpdatesState.
    * Absent: up to date.
    */
   appUpdate: JsonObject | undefined;

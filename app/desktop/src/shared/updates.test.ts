@@ -1,34 +1,60 @@
 import { describe, expect, it } from "vitest";
-import { MAX_NOTES, notesSince, versionLabel } from "./updates";
+import { buildCommit, knownVersion, MAX_NOTES, notesSince, subjectLines, versionLabel, type Change } from "./updates";
+
+const change = (commit: string, subject: string, areas: string[] = ["app"]): Change => ({ commit, date: "2026-10-22T10:30:00Z", subject, areas });
 
 describe("notesSince", () => {
   const changes = [
-    { version: "0.6.0-nightly.202610231030+aaa1111", text: "Updates show in the app" },
-    { version: "0.6.0-nightly.202610231030+aaa1111", text: "The chat keeps your draft" },
-    { version: "0.6.0-nightly.202610221030+bbb2222", text: "Status loads faster" },
-    { version: "0.5.0", text: "First release" },
+    change("aaa1111aaaa", "feat(desktop): updates show in the app (#268)"),
+    change("ccc3333cccc", "fix(hub): the hub reports its version (#277)", ["hub"]),
+    change("ddd4444dddd", "batch: fix(desktop): the chat keeps your draft (#250); test(lab): the lead chat end to end (#226)", ["app", "other"]),
+    change("bbb2222bbbb", "feat(desktop): status loads faster (#240)"),
+    change("eee5555eeee", "feat: first release (#1)"),
   ];
 
-  it("lists what came after this version, newest first", () => {
-    expect(notesSince(changes, "0.6.0-nightly.202610221030+bbb2222")).toEqual(["Updates show in the app", "The chat keeps your draft"]);
+  it("lists what came after this version's commit in one area, a line per PR, newest first", () => {
+    expect(notesSince(changes, "0.6.0-nightly.202610221030+bbb2222", "app")).toEqual({
+      lines: ["Updates show in the app", "The chat keeps your draft", "The lead chat end to end"],
+      more: false,
+    });
+    expect(notesSince(changes, "0.6.0-nightly.202610221030+bbb2222", "hub")).toEqual({ lines: ["The hub reports its version"], more: false });
   });
 
-  it("matches the version without its build hash", () => {
-    expect(notesSince(changes, "0.6.0-nightly.202610221030+ccc3333")).toHaveLength(2);
+  it("has nothing new for the newest commit", () => {
+    expect(notesSince(changes, "0.6.0-nightly.202610231030+aaa1111", "app")).toEqual({ lines: [], more: false });
   });
 
-  it("lists everything for a version older than the list, at most MAX_NOTES", () => {
-    expect(notesSince(changes, "0.4.0")).toHaveLength(4);
-    const many = Array.from({ length: 30 }, (_, i) => ({ version: "0.9.0", text: `Change ${String(i)}` }));
-    expect(notesSince(many, "0.4.0")).toHaveLength(MAX_NOTES);
-  });
-
-  it("has nothing new for the newest version", () => {
-    expect(notesSince(changes, "0.6.0-nightly.202610231030+aaa1111")).toEqual([]);
+  it("gives the newest lines and says there is more for a version not in the list, or without a commit", () => {
+    expect(notesSince(changes, "0.4.0+fff6666", "app").more).toBe(true);
+    expect(notesSince(changes, "0.0.0", "app").lines[0]).toBe("Updates show in the app");
+    const many = Array.from({ length: 30 }, (_, i) => change(`f${String(i).padStart(6, "0")}`, `feat: change ${String(i)} (#${String(i)})`));
+    expect(notesSince(many, "0.4.0+abcdef0", "app")).toMatchObject({ more: true, lines: { length: MAX_NOTES } });
   });
 });
 
-describe("versionLabel", () => {
+describe("subjectLines", () => {
+  it("drops the conventional prefix and the PR number, and splits a batch", () => {
+    expect(subjectLines("fix(cli): fleetd status says \"1 item\" (#249)")).toEqual(['Fleetd status says "1 item"']);
+    expect(subjectLines("batch: a (#1); feat!: b (#2)")).toEqual(["A", "B"]);
+    expect(subjectLines("Merge branch 'main'")).toEqual([]);
+  });
+});
+
+describe("versions", () => {
+  it("reads the build commit", () => {
+    expect(buildCommit("0.6.0-nightly.202610221030+ABC1234")).toBe("abc1234");
+    expect(buildCommit("0.6.0")).toBeNull();
+  });
+
+  it("knows a released version, and not a local build's 0.0.0 or something that doesn't parse", () => {
+    expect(knownVersion("0.6.0-nightly.202610221030+abc1234")).toBe(true);
+    expect(knownVersion("0.0.0")).toBe(false);
+    expect(knownVersion("0.0.0+abc1234")).toBe(false);
+    expect(knownVersion("0.0.0-nightly.202610221030+abc1234")).toBe(true);
+    expect(knownVersion("devel")).toBe(false);
+    expect(knownVersion(undefined)).toBe(false);
+  });
+
   it("drops the build hash and reads a nightly by its date", () => {
     expect(versionLabel("0.6.0-nightly.202610221030+abc1234", "UTC")).toBe("0.6.0 nightly (Oct 22, 10:30)");
     expect(versionLabel("v0.6.0")).toBe("0.6.0");

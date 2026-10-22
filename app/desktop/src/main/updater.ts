@@ -2,11 +2,11 @@ import { readFileSync } from "node:fs";
 import { app, shell } from "electron";
 import type { AppImageUpdater, DebUpdater, MacUpdater } from "electron-updater";
 import { z } from "zod";
-import { DEB, type AppUpdate, type UpdatesState } from "../shared/updates";
+import { DEB, type AppUpdate, type Release, type UpdatesState } from "../shared/updates";
 import { RELEASE_BUILD } from "./build";
 import { feedUrl } from "./update-feed";
 import { failureReason } from "./update-messages";
-import { fetchNotes } from "./update-notes";
+import { fetchRelease } from "./update-release";
 import { step, type UpdateEffect, type UpdateInput } from "./update-state";
 
 const CHECK_EVERY_MS = 4 * 60 * 60 * 1000;
@@ -26,10 +26,15 @@ export interface Updates {
 }
 
 /** The state, its listeners, and the machine's steps; `act` runs what a step asks of main. */
-const holder = (initial: AppUpdate, deb: boolean, act: (effect: UpdateEffect) => void) => {
+const holder = (initial: AppUpdate, deb: boolean, act: (effect: UpdateEffect) => void, release: Release | null = null) => {
   let current: AppUpdate = initial;
+  let files = release;
   const listeners = new Set<(state: UpdatesState) => void>();
-  const state = (): UpdatesState => ({ current: app.getVersion(), app: current });
+  const state = (): UpdatesState => ({ current: app.getVersion(), app: current, release: files });
+  const changed = () => {
+    const s = state();
+    for (const listener of listeners) listener(s);
+  };
   return {
     state,
     get: () => current,
@@ -38,10 +43,13 @@ const holder = (initial: AppUpdate, deb: boolean, act: (effect: UpdateEffect) =>
       const [next, effect] = step({ app: current, deb }, input);
       if (next !== current) {
         current = next;
-        const s = state();
-        for (const listener of listeners) listener(s);
+        changed();
       }
       act(effect);
+    },
+    setRelease: (next: Release) => {
+      files = next;
+      changed();
     },
   };
 };
@@ -52,15 +60,21 @@ const FixtureSection = z.object({
     .object({
       current: z.string().optional(),
       app: z.custom<AppUpdate>((v) => typeof v === "object" && v !== null && typeof (v as { kind?: unknown }).kind === "string"),
+      release: z.custom<Release>((v) => typeof v === "object" && v !== null && Array.isArray((v as { changes?: unknown }).changes)).optional(),
     })
     .optional(),
 });
 
 const fixtureUpdates = (file: string): Updates => {
   const section = FixtureSection.parse(JSON.parse(readFileSync(file, "utf8"))).update;
-  const h = holder(section?.app ?? { kind: "current" }, false, (effect) => {
-    if (effect !== null) console.info(`fixture update: ${effect}`);
-  });
+  const h = holder(
+    section?.app ?? { kind: "current" },
+    false,
+    (effect) => {
+      if (effect !== null) console.info(`fixture update: ${effect}`);
+    },
+    section?.release ?? null,
+  );
   const version = section?.current;
   return {
     start: () => undefined,
@@ -105,14 +119,10 @@ export const updates = (fixtureFile: string | null): Updates => {
     u.disableDifferentialDownload = true;
     u.autoDownload = !deb;
     u.autoInstallOnAppQuit = !deb;
-    let notesFor: string | null = null;
     u.on("update-available", ({ version }) => {
       // The deb's update check (desktop-update-check.sh) waits for this line.
       if (deb) console.info(`update notice: fleetd ${version} is available as ${DEB}`);
       h.send({ type: "available", version });
-      if (notesFor === version) return;
-      notesFor = version;
-      void fetchNotes(url, app.getVersion()).then((notes) => h.send({ type: "notes", notes }));
     });
     u.on("update-not-available", () => h.send({ type: "none" }));
     // electron-updater reports every chunk; the page's percent changes at most once a second.
@@ -137,6 +147,8 @@ export const updates = (fixtureFile: string | null): Updates => {
 
   const run = (manual: boolean): void => {
     h.send({ type: "check", manual });
+    // What's new and the hub's newest build, read on every check: the hub can fall behind while this app is current.
+    void fetchRelease(url).then(h.setRelease);
     void loaded().then((ok) => {
       if (!ok) {
         if (manual) h.send({ type: "error", reason: "The updater didn't load. Reinstall fleetd to get updates again." });

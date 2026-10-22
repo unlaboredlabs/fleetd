@@ -13,7 +13,8 @@ vi.mock("electron", () => ({
   shell: { openExternal: vi.fn() },
 }));
 vi.mock("./build", () => ({ RELEASE_BUILD: true }));
-vi.mock("./update-notes", () => ({ fetchNotes: () => Promise.resolve(["Updates show in the app"]) }));
+const release = { changes: [{ commit: "aaa1111", date: "2026-10-22T10:30:00Z", subject: "feat(desktop): updates show in the app (#268)", areas: ["app"] }], cli: "0.6.0" };
+vi.mock("./update-release", () => ({ fetchRelease: () => Promise.resolve(release) }));
 vi.mock("electron-updater", async () => {
   const { EventEmitter } = await import("node:events");
   class FakeUpdater extends EventEmitter {
@@ -52,17 +53,18 @@ describe("updates()", () => {
     vi.restoreAllMocks();
   });
 
-  it("finds an update, adds what's new, and restarts once asked and downloaded", async () => {
+  it("finds an update, reads what's new, and restarts once asked and downloaded", async () => {
     const handle = updates(null);
     const seen: UpdatesState[] = [];
     handle.onChange((s) => seen.push(s));
     handle.check();
     await flush();
-    expect(handle.state().app).toEqual({ kind: "available", version: "0.6.0", notes: ["Updates show in the app"], percent: null, restart: false });
+    expect(handle.state().app).toEqual({ kind: "available", version: "0.6.0", percent: null, restart: false });
+    expect(handle.state().release).toEqual(release);
     handle.install();
     fake.last?.emit("update-downloaded", { version: "0.6.0" });
     expect(fake.last?.quitAndInstall).toHaveBeenCalledOnce();
-    expect(seen.map((s) => s.app.kind)).toEqual(["checking", "available", "available", "available", "ready"]);
+    expect(seen.map((s) => s.app.kind)).toEqual(["checking", "checking", "available", "available", "ready"]);
   });
 
 });
