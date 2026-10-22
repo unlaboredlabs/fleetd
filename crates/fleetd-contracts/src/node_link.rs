@@ -15,7 +15,7 @@ use crate::ids::{MachineId, Timestamp};
 use crate::lead_calls::{LeadCallFrame, LeadResultFrame};
 use crate::ledger::{DecisionKey, EnvName, GatedArgv, GatedCwd, GatedTimeoutSec, SecretEnv};
 use crate::model::SleptSpan;
-use crate::prim::{AnyInt, Count, Finite, Int, List, NonEmpty, NonNegative, Text};
+use crate::prim::{AnyInt, Count, Int, List, NonEmpty, NonNegative, Text};
 use crate::secrets::{BoxPublicKey, SealedSecret, SecretFingerprint, SecretSink};
 use crate::sessions::{
     CloneProgressFrame, MachineEventFrame, SessionCallFrame, SessionReplyFrame, ThreadEventFrame,
@@ -105,6 +105,20 @@ pub struct NodeLoad {
     /// which send none.
     #[serde(default)]
     pub limits: List<LoginLimit, 0, 4>,
+    /// The volume holding the node's worktrees and build cache; absent from older nodes and when it can't be read.
+    pub disk: Option<NodeDisk>,
+}
+
+/// Space on the volume holding a node's worktrees and build cache.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeDisk {
+    /// Free for the node's user.
+    pub free_bytes: Count,
+    pub total_bytes: Count,
+    /// Below this the hub starts no new agents there: node.json's `minFreeGb`, else 10% of the volume or 20 GB,
+    /// whichever is larger.
+    pub min_free_bytes: Count,
 }
 
 /// One claude.ai usage window, as claude's `rate_limit_event` last reported it.
@@ -246,8 +260,6 @@ pub struct NodeProbe {
     /// user.email`; absent when neither is set.
     pub git_email: Option<Text<0, 320>>,
     pub git_email_from: Option<GitEmailFrom>,
-    pub disk_path: String,
-    pub disk_free_bytes: Finite,
     /// Settings that make the machine sleep when idle on AC power; empty when none do. Absent from older nodes.
     pub idle_sleep: Option<List<IdleSleep, 0, 8>>,
 }

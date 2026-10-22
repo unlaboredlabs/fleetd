@@ -1442,10 +1442,11 @@ impl Executors {
     }
 
     /// Ends the thread's claude process; `Ok` only once the node saw it exit (it escalates to SIGKILL).
-    pub async fn stop(&self, r: &ThreadRef) -> Result<(), ExecutorError> {
+    /// `remove_worktree` then deletes its worktree, and its branch once merged.
+    pub async fn stop(&self, r: &ThreadRef, remove_worktree: bool) -> Result<(), ExecutorError> {
         let call = SessionCall::Stop {
             session_id: r.thread_id.clone(),
-            remove_worktree: false,
+            remove_worktree,
         };
         self.call(&r.machine_id, NodeOperation::Stop, call, STOP_TIMEOUT)
             .await?;

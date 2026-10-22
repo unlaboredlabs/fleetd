@@ -26,6 +26,10 @@ pub enum HubEventType {
     /// The machine's node woke from sleep; `data.fromMs`, `data.toMs` (epoch milliseconds).
     #[serde(rename = "machine.slept")]
     MachineSlept,
+    /// The machine's disk or load stopped new agents there, or no longer does; `data.paused`, and the summary says
+    /// why. Agents already running keep going.
+    #[serde(rename = "machine.guard")]
+    MachineGuard,
     /// The node no longer has the project: the hub dropped it from its cache, and its open workstreams stop. `data.title`.
     #[serde(rename = "project.removed")]
     ProjectRemoved,
@@ -253,6 +257,7 @@ impl HubEventType {
             Self::MachineOffline => "machine.offline",
             Self::MachineDegraded => "machine.degraded",
             Self::MachineSlept => "machine.slept",
+            Self::MachineGuard => "machine.guard",
             Self::ProjectRemoved => "project.removed",
             Self::ProjectAdded => "project.added",
             Self::ProjectCloneProgress => "project.clone_progress",
@@ -432,6 +437,8 @@ pub struct ClaimEventData {
 pub struct TrainEventData {
     pub change_id: Option<ChangeId>,
     pub workstream_id: Option<WorkstreamId>,
+    /// pr.merged: the writer task whose PR it was, when a task wrote it.
+    pub task_id: Option<crate::tasks::TaskId>,
     pub repo: Option<GitHubRepo>,
     pub pr_number: Option<Count>,
     pub pr_url: Option<String>,
@@ -475,6 +482,13 @@ pub struct PromptChangedData {
     pub r#ref: Option<String>,
     /// The warnings' codes.
     pub warnings: Option<Vec<String>>,
+}
+
+/// `machine.guard`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct MachineGuardData {
+    /// true: new agents wait; false: they start again.
+    pub paused: bool,
 }
 
 /// `machine.slept`: epoch milliseconds.

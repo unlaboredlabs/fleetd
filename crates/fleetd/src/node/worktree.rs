@@ -234,7 +234,10 @@ pub(crate) mod tests {
         run(&path, &["add", "."]);
         run(&path, &["commit", "-q", "-m", "b"]);
         run(&root, &["merge", "-q", "--ff-only", "fleetd/s1"]);
+        std::fs::create_dir_all(path.join("target/debug")).unwrap();
+        std::fs::write(path.join("target/debug/build-output"), "x").unwrap();
         assert!(remove(&root, &path, "fleetd/s1", "main").unwrap());
+        assert!(!path.exists(), "its build output goes with it");
         assert!(!branch_exists(&root, "fleetd/s1"));
     }
 

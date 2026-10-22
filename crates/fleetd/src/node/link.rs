@@ -307,8 +307,8 @@ async fn run_link_once(
         tasks.spawn(async move {
             loop {
                 tokio::time::sleep(HEARTBEAT_EVERY).await;
-                let limits = sessions.login_limits();
-                let load = tokio::task::spawn_blocking(move || super::load::read(limits))
+                let (limits, home) = (sessions.login_limits(), sessions.home());
+                let load = tokio::task::spawn_blocking(move || super::load::read(limits, &home))
                     .await
                     .ok()
                     .flatten();

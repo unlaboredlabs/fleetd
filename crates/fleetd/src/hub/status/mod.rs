@@ -41,6 +41,7 @@ const FOLLOWED: &[HubEventType] = &[
     HubEventType::MachineOnline,
     HubEventType::MachineOffline,
     HubEventType::MachineDegraded,
+    HubEventType::MachineGuard,
     HubEventType::ProjectRemoved,
     HubEventType::WorkstreamCreated,
     HubEventType::WorkstreamRunning,
