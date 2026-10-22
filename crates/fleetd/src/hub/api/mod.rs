@@ -69,8 +69,6 @@ pub struct HubConfig {
     pub url: Option<String>,
     /// How long a write to an offline machine waits in the queue; absent means 24 h.
     pub queue_ttl_sec: Option<u64>,
-    /// The retro's one-shot model; absent means claude-haiku-5-5.
-    pub retro_model: Option<String>,
 }
 
 impl HubConfig {
@@ -134,7 +132,6 @@ pub struct Hub {
     pub ops: Arc<crate::hub::usage::wire::OpsPorts>,
     pub usage: Arc<crate::hub::usage::Usage>,
     pub doctor: Arc<crate::hub::doctor::Doctor>,
-    pub retro: Arc<crate::hub::retro::Retro>,
     pub approvals: Arc<crate::hub::approvals::Approvals>,
     pub train: Arc<crate::hub::train::Train>,
     pub reviews: Arc<crate::hub::reviews::Reviews>,
@@ -161,7 +158,6 @@ pub fn registry() -> Registry {
     crate::hub::checks::tools::register(&mut tools);
     crate::hub::usage::tools::register(&mut tools);
     crate::hub::doctor::tools::register(&mut tools);
-    crate::hub::retro::tools::register(&mut tools);
     crate::hub::approvals::tools::register(&mut tools);
     crate::hub::sessions_tools::register(&mut tools);
     crate::hub::projects::tools::register(&mut tools);

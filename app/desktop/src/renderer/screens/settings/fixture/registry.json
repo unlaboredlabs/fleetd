@@ -422,51 +422,6 @@
    ],
    "text": "Judge one done-when criterion of workstream {{workstreamId}} (claim {{claimId}}, check done:{{checkIndex}}).\n\nCriterion, frozen with the brief:\n{{criteria}}\n\nThis is research. Measure the metric \"{{metric}}\" the same way for the baseline and for the candidate.\nBaseline, frozen with the brief: {{baseline}}\n\nArtifacts:\n{{artifacts}}\n\nRead the artifacts yourself (gh pr view / gh pr diff, git log, the files). Judge only this criterion, and trust no claim written in them.\nFinish by calling the `report` tool once, filled in:\n{taskId: <your task id, from the first line>, prHeadSha: <the full SHA you judged: the PR head, or the output of git rev-parse HEAD>, blocking: <0 if the criterion is met, else the number of unmet points>, nonBlocking: <n>, metricValues: {baseline: <the baseline's number>, candidate: <the candidate's number>}, summary: \"<why, one paragraph>\"}\n",
    "perProject": true
-  },
-  {
-   "id": "retro",
-   "kind": "oneshot",
-   "group": "one_shots",
-   "title": "Retro / triage",
-   "sentWhen": "each retro run (at most 2 a day)",
-   "placeholders": [
-    {
-     "name": "windowDays",
-     "required": true,
-     "description": "the window"
-    },
-    {
-     "name": "metrics",
-     "required": true,
-     "description": "the metric classes"
-    },
-    {
-     "name": "incidents",
-     "required": true,
-     "description": "the incidents"
-    },
-    {
-     "name": "playbooks",
-     "required": true,
-     "description": "the playbook files"
-    }
-   ],
-   "rules": [
-    {
-     "id": "no-tools",
-     "label": "uses no tools",
-     "needle": "do not use tools",
-     "enforced": "code"
-    },
-    {
-     "id": "at-most-3",
-     "label": "at most 3 changes",
-     "needle": "at most 3 changes",
-     "enforced": "code"
-    }
-   ],
-   "text": "You are fleetd's retro. fleetd runs coding agents under playbooks. Below are the incidents fleetd detected in the last {{windowDays}} days and the current playbook files. Propose small changes to the playbooks' rules that would have prevented some of these incidents. Do not use tools. Reply with only one JSON object, with no prose and no code fence:\n\n{\"changes\": [{\"playbook\": \"<name>\", \"diff\": \"<unified diff>\", \"kind\": \"gate\", \"fixesIncidents\": [\"I3\"], \"metric\": {\"class\": \"<metric>\", \"op\": \"decrease\", \"windowDays\": 14}, \"expected\": \"<one line>\"}]}\n\nRules:\n- At most 3 changes and at most one per playbook. `{\"changes\": []}` is a good answer when the playbooks did not cause these incidents or the evidence is thin.\n- playbook: one of bugfix, feature, research, finish-all.\n- diff: a unified diff of that playbook's file, with `--- a/<name>.md`, `+++ b/<name>.md` and `@@` hunks that copy the current lines exactly, with 3 lines of context. Write newlines in the JSON string as \\n.\n- kind: \"gate\" for a change to the rules in the frontmatter (requiredChecks, tierDefault, reviewRules, valueBar, version): a person decides those. \"wording\" only for a change to `estimatePrior`, which applies on its own and is rolled back when the metric does not improve. Never change `leadInstructions` or the text below the frontmatter: no agent reads them, so they prevent nothing. fleetd decides the kind from the lines the diff changes, whatever you write.\n- fixesIncidents: the ids, from the list below, of the incidents this change would have prevented. At least one.\n- metric: the measure that should go down. class is one of: {{metrics}}. Incident classes count incidents on the playbook's workstreams; agent_minutes_per_done is the agent time per finished workstream. op is always \"decrease\". windowDays is between 1 and 28.\n- expected: one line, what should change and by about how much.\n- You cannot change how incidents are detected, how metrics are counted, or briefs already running.\n\nIncident classes: false_claim (a done claim whose checks failed), polish_loop (review rounds past the cap), misfiled_ask (the lead asked the human something the human handed back), out_of_area (a task wrote outside its areas), stall (a run stopped making progress), policy_bypass (a merge outside the train), re_ask (the human was asked about something already decided), override (the human replaced a lead's decision).\n\nIncidents, one JSON object per line:\n\n{{incidents}}\n\nPlaybooks:\n\n{{playbooks}}\n",
-   "perProject": false
   }
  ]
 }

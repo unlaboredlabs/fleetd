@@ -1,4 +1,4 @@
-// How the Prompts list presents the hub's editable prompts (9; event lines are a fixed format, not prompts):
+// How the Prompts list presents the hub's editable prompts (8; event lines are a fixed format, not prompts):
 // a few groups by what a person is looking for, a plain name, and one line on what it is for. The hub's own title
 // and `sentWhen` stay the fallback, so a prompt a newer hub adds still shows up, in "Other", with the hub's words.
 import type { PromptSummary } from "./contracts";
@@ -37,7 +37,6 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   judge: e("reviews", "Judge", "Decides whether a done-when check of a claim passed."),
   "judge.research": e("reviews", "Research judge", "Decides whether a research claim's check passed."),
   "steer.message": e("messages", "Your steer, mid-run", "Your words (or the lead's) delivered straight to a running agent."),
-  retro: e("one-shots", "Retro and triage", "Reviews recent incidents and proposes changes, at most twice a day."),
 };
 
 const ORDER: ReadonlyMap<string, number> = new Map(Object.keys(ENTRIES).map((id, ix) => [id, ix]));

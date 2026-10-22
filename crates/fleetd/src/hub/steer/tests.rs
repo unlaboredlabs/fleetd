@@ -31,7 +31,6 @@ fn lab() -> Lab {
         listen: Default::default(),
         url: None,
         queue_ttl_sec: None,
-        retro_model: None,
     };
     let clock = ManualClock::at(1_792_000_000_000);
     let hub =

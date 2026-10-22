@@ -2,7 +2,6 @@
 //! work in. Each project has one lead, so an intent that names none of those is refused rather than guessed. The
 //! workstream pins a playbook only when the caller gives a template; otherwise its lead picks how to run it.
 pub mod attachments;
-pub mod oneshot;
 pub mod prefix;
 pub mod preview;
 

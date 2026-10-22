@@ -1,4 +1,4 @@
-//! What the ops areas (usage, doctor, retro, approvals) take from other hub areas, as narrow traits. The wiring in
+//! What the ops areas (usage, doctor, approvals) take from other hub areas, as narrow traits. The wiring in
 //! `hub/serve` implements them over the real services; tests implement them with fakes.
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

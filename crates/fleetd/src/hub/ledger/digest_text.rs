@@ -37,8 +37,6 @@ pub struct DigestInput {
     pub facts: HashMap<String, WorkstreamFacts>,
     /// Lines from the train area: merges since the last digest and the state of each train.
     pub train: Vec<String>,
-    /// M12: the retro's advise-only proposals.
-    pub suggested: Vec<String>,
 }
 
 const DECIDED_MAX: usize = 5;
@@ -212,6 +210,5 @@ pub fn render_human_digest(input: &DigestInput) -> String {
         lines.push(format!("Idle: {} · {FINISH_ALL_IDLE}", status(w)));
     }
     lines.extend(input.train.iter().cloned());
-    lines.extend(input.suggested.iter().cloned());
     lines.join("\n")
 }

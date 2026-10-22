@@ -174,10 +174,10 @@ Run `fleetd init --no-service` before `fleetd hub start`: it writes the setup th
 ### fleetd hub start {#hub-start}
 
 ```text
-fleetd hub start [--home <dir>] [--listen <host:port>] [--queue-ttl <seconds>] [--retro-model <model>]
+fleetd hub start [--home <dir>] [--listen <host:port>] [--queue-ttl <seconds>]
 ```
 
-run the hub (default home `~/.fleetd/hub`, listen 127.0.0.1:4790, writes to an offline machine wait 24 h, intents without a project are routed by the claude CLI with claude-haiku-5-5)
+run the hub (default home `~/.fleetd/hub`, listen 127.0.0.1:4790, writes to an offline machine wait 24 h)
 
 ### fleetd hub key create {#hub-key-create}
 
@@ -233,14 +233,6 @@ fleetd node run [--home <dir>]
 ```
 
 keep the link up for a machine that has joined
-
-### fleetd retro run {#retro-run}
-
-```text
-fleetd retro run --hub <url> --key-file <path> [--window 14d] [--advise]
-```
-
-run the retro now: one claude -p turn over the window's incidents (1-28 days) proposes playbook changes; `--advise` only suggests them
 
 ### fleetd prompts list {#prompts-list}
 

@@ -11,7 +11,7 @@ pub enum Audience {
     Task,
     /// Any thread: leads, tasks, and threads an outside agent launched.
     Any,
-    /// Resolved at each call (the retro).
+    /// Pinned by no session: the custom instructions, appended to the others.
     None,
 }
 
@@ -278,19 +278,6 @@ pub const ENTRIES: &[Entry] = &[
                 Prompt
             ),
             VERDICT
-        ]
-    ),
-    entry!(
-        "retro",
-        Oneshot,
-        OneShots,
-        Audience::None,
-        "Retro / triage",
-        "each retro run (at most 2 a day)",
-        "windowDays!=the window; metrics!=the metric classes; incidents!=the incidents; playbooks!=the playbook files",
-        &[
-            ("no-tools", "uses no tools", r"do not use tools", Code),
-            ("at-most-3", "at most 3 changes", r"at most 3 changes", Code),
         ]
     ),
     Entry {

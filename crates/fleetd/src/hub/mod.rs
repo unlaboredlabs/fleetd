@@ -30,7 +30,6 @@ pub mod prs;
 pub mod queue;
 pub mod receipts;
 pub mod redact;
-pub mod retro;
 pub mod reviews;
 pub mod serve;
 pub mod sessions_tools;

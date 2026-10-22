@@ -313,3 +313,64 @@ fn drops_events_older_than_30_days_without_reusing_their_seq_even_across_a_resta
         5
     );
 }
+
+/// A hub from before the retro went: its tables, events and incidents go, and a playbook change still open is denied,
+/// so every stored event, incident and request still decodes.
+#[test]
+fn the_retro_goes_on_an_older_hub() {
+    use super::migrations::MIGRATIONS;
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    let last = MIGRATIONS
+        .iter()
+        .position(|m| m.contains("DROP TABLE retro_runs"))
+        .unwrap();
+    for m in &MIGRATIONS[..last] {
+        conn.execute_batch(m).unwrap();
+    }
+    let p = r#""projectRef":{"machineId":"lab-a","projectId":"p1"}"#;
+    let change = r#""playbook":{"proposalId":"R1","playbook":"bugfix","summary":"reviewers 1 → 0","diff":"-a\n+b"}"#;
+    for (state, n) in [("open", 1), ("approved", 2)] {
+        conn.execute(
+            "INSERT INTO requests (n, project_key, kind, state, created_ms, data) VALUES (?1, 'lab-a/p1', 'approval', ?2, 0, ?3)",
+            rusqlite::params![
+                n,
+                state,
+                format!(
+                    r#"{{"requestId":"Q{n}",{p},"kind":"approval","text":"Loosen bugfix","state":"{state}",{change},"createdAt":"2026-10-18T10:00:00.000Z"}}"#
+                )
+            ],
+        )
+        .unwrap();
+    }
+    conn.execute_batch(
+        r#"INSERT INTO retro_runs (at_ms, trigger, data) VALUES (0, 'schedule', '{}');
+        INSERT INTO events (created_ms, type, data) VALUES (0, 'retro.ran', '{}'), (0, 'playbook.kept', '{}'),
+          (0, 'workstream.running', '{"workstreamId":"W1"}');
+        INSERT INTO incidents (class, machine_id, project_id, data) VALUES ('playbook_reverted', 'lab-a', 'p1', '{}'),
+          ('stall', 'lab-a', 'p1', '{}');"#,
+    )
+    .unwrap();
+    for m in &MIGRATIONS[last..] {
+        conn.execute_batch(m).unwrap();
+    }
+
+    let strings = |sql: &str| -> Vec<String> {
+        conn.prepare(sql)
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    };
+    assert!(strings("SELECT name FROM sqlite_master WHERE name LIKE 'retro_%'").is_empty());
+    assert_eq!(strings("SELECT type FROM events"), ["workstream.running"]);
+    assert_eq!(strings("SELECT class FROM incidents"), ["stall"]);
+    assert_eq!(
+        strings("SELECT state FROM requests ORDER BY n"),
+        ["denied", "approved"]
+    );
+    for data in strings("SELECT data FROM requests ORDER BY n") {
+        let request: fleetd_contracts::ledger::HumanRequest = serde_json::from_str(&data).unwrap();
+        assert!(request.playbook.is_some(), "an older approval still reads");
+    }
+}

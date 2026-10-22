@@ -31,7 +31,6 @@ async fn start() -> TestHub {
         listen: Listen::default(),
         url: None,
         queue_ttl_sec: None,
-        retro_model: None,
     };
     let hub = build_on(HubDb::open_memory().unwrap(), config, Arc::new(SystemClock)).unwrap();
     let mut tools: Registry = api::registry();

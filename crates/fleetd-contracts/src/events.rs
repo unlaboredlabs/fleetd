@@ -167,18 +167,6 @@ pub enum HubEventType {
     /// M11: doctor checks changed status; `data.changes` lists `{ id, from, to }` (from absent on the first run).
     #[serde(rename = "doctor.changed")]
     DoctorChanged,
-    /// M12: a retro run ended; `data.run`, `data.trigger`, `data.advise`, `data.proposals`, `data.dropped`, `data.usage` (orchestrator runs).
-    #[serde(rename = "retro.ran")]
-    RetroRan,
-    /// M12: a playbook file changed under a retro proposal; `data.proposalId`, `data.playbook`, `data.ref`, `data.previousRef`, `data.kind`, `data.baseline`, `data.dueAt`.
-    #[serde(rename = "playbook.changed")]
-    PlaybookChanged,
-    /// M12: a wording change missed its metric or regressed a guarded one and was rolled back; `data.proposalId`, `data.reason`.
-    #[serde(rename = "playbook.reverted")]
-    PlaybookReverted,
-    /// M12: a wording change met its metric; `data.proposalId`, `data.measured`.
-    #[serde(rename = "playbook.kept")]
-    PlaybookKept,
     /// A device redeemed a pairing code from `fleetd pair` and got a human key; `data.keyId`, `data.deviceName`.
     #[serde(rename = "key.paired")]
     KeyPaired,
@@ -304,10 +292,6 @@ impl HubEventType {
             Self::UsageBreaker => "usage.breaker",
             Self::UsageResumed => "usage.resumed",
             Self::DoctorChanged => "doctor.changed",
-            Self::RetroRan => "retro.ran",
-            Self::PlaybookChanged => "playbook.changed",
-            Self::PlaybookReverted => "playbook.reverted",
-            Self::PlaybookKept => "playbook.kept",
             Self::KeyPaired => "key.paired",
             Self::WorkstreamNote => "workstream.note",
             Self::PromptChanged => "prompt.changed",

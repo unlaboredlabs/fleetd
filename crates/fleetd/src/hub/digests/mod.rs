@@ -83,7 +83,6 @@ type Visible<'a> = &'a dyn Fn(&MachineId) -> bool;
 type WorkstreamsFeed = Box<dyn Fn(i64) -> Vec<Workstream> + Send + Sync>;
 type FactsFeed = Box<dyn Fn(&[Workstream]) -> HashMap<String, WorkstreamFacts> + Send + Sync>;
 type TrainFeed = Box<dyn Fn(&dyn Fn(&ProjectRef) -> bool, i64) -> Vec<String> + Send + Sync>;
-type SuggestedFeed = Box<dyn Fn(Visible<'_>) -> Vec<String> + Send + Sync>;
 
 /// What the digest reads from areas that merge after this one. The owning area sets each feed when it is built;
 /// a feed not set yet renders as nothing.
@@ -95,8 +94,6 @@ pub struct DigestFeeds {
     pub facts: Option<FactsFeed>,
     /// Train: `humanTrainLines(trainFacts(visible project), since_ms)`.
     pub train_lines: Option<TrainFeed>,
-    /// Retro: `suggestedLines` of suggested proposals whose machines are all visible.
-    pub suggested_lines: Option<SuggestedFeed>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -240,11 +237,6 @@ impl HumanDigests {
                 .train_lines
                 .as_ref()
                 .map(|f| f(&shown, since))
-                .unwrap_or_default(),
-            suggested: feeds
-                .suggested_lines
-                .as_ref()
-                .map(|f| f(visible))
                 .unwrap_or_default(),
         });
         Ok(Digest {

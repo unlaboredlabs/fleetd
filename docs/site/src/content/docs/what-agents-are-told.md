@@ -16,13 +16,12 @@ woken with, is fixed text: see [Not editable](#not-editable).
 
 ## How a session gets its instructions {#how}
 
-There is no hidden system prompt. fleetd's text reaches a model in one of three ways:
+There is no hidden system prompt. fleetd's text reaches a model in one of two ways:
 
 | Way | Used for |
 |---|---|
 | The first message of a session | Leads, tasks, reviewers, judges. |
 | A later message into a session | Wakes, review findings, train news, nudges, [steers](/docs/steering). |
-| The input of a one-shot `claude -p` with no tools | The retro. |
 
 Your own claude setup still applies underneath. See [Config & files](/docs/config-and-files#claude).
 
@@ -128,7 +127,6 @@ On the hub machine:
 | `fleetd prompts reset lead.start` | Go back to fleetd's text. |
 
 - A project's version beats the hub-wide one, which beats fleetd's.
-- One-shots have only the hub-wide level.
 - Your versions are files under `~/.fleetd/hub/prompts/`. Change them with `fleetd prompts edit`, not by hand.
 - From an MCP client: `prompts_list`, `prompt_get`, `prompt_set` (with `dryRun` to see the warnings only) and
   `prompt_reset`.
@@ -157,7 +155,7 @@ fleetd instructions show
 ```
 
 They are added to every lead's first message and every task brief (writers, reviewers and judges), hub-wide first,
-under "Custom instructions from the human". They are not added to the retro or wakes.
+under "Custom instructions from the human". They are not added to wakes.
 
 They are sized for about 500 characters; past that, `edit` warns. After your editor closes, `edit` prints any
 warnings and asks `Save? [Y/n]` on the terminal. In a script, `</dev/null` takes the default, Yes.
@@ -278,11 +276,5 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 | Id | Sent | Safety rules |
 |---|---|---|
 | `steer.message` | per steer (steer\_send, task message), straight to the agent, at its next tool boundary or now | asks the agent to name the steer first, so its receipt can say it was acknowledged (prompt only) |
-
-### One-shots
-
-| Id | Sent | Safety rules |
-|---|---|---|
-| `retro` | each retro run (at most 2 a day) | uses no tools; at most 3 changes |
 
 <!-- /prompt-table -->

@@ -162,15 +162,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "incidents_list",
-        "Incidents the hub detected (false_claim, polish_loop, out_of_area, stall, policy_bypass, override, playbook_reverted), newest first, with evidence lines, plus per-class counts over the last windowDays (default 7). Filter by projectRef, workstreamId or class.",
-    ),
-    (
-        "retro_proposals",
-        "The retro's playbook change proposals, newest first, with their diff, the incidents each fixes, its metric and state (suggested, pending, measuring, kept, reverted, applied, rejected, stale). apply says whether policy.retro.apply lets them apply; until then they are only suggested.",
-    ),
-    (
-        "retro_run",
-        "Admin on every machine: run the retro now. One claude -p turn reads the incidents of the last windowDays (default 14) and the current playbooks and proposes changes; the hub drops invalid ones and classifies each as wording or gate by the fields it touches. advise: true only suggests. At most 2 runs a day.",
+        "Incidents the hub detected (false_claim, polish_loop, out_of_area, stall, policy_bypass, override), newest first, with evidence lines, plus per-class counts over the last windowDays (default 7). Filter by projectRef, workstreamId or class.",
     ),
     (
         "changes_list",
@@ -238,7 +230,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "prompts_list",
-        "Every prompt and message fleetd sends a model (lead, tasks, reviewers, judges, wakes, router, retro, playbooks, custom instructions): id, kind, when it is sent, which text is in effect (default, global or project override) and whether a release changed the default of one you edited. projectRef: the texts in effect for that project.",
+        "Every prompt and message fleetd sends a model (lead, tasks, reviewers, judges, playbooks, custom instructions): id, kind, when it is sent, which text is in effect (default, global or project override) and whether a release changed the default of one you edited. projectRef: the texts in effect for that project.",
     ),
     (
         "prompt_get",

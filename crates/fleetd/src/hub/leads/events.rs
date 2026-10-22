@@ -151,13 +151,6 @@ pub enum Event<'a> {
         outcome: &'a str,
         tail: Option<&'a str>,
     },
-    /// The retro proposes a change to a playbook's gates; only the human's yes applies it.
-    GateChange {
-        proposal: &'a str,
-        playbook: &'a str,
-        expected: &'a str,
-        key: &'a str,
-    },
     /// The lead ended a turn with an approved order and nothing under way: nothing else would wake it for it.
     OrderIdle {
         workstream: &'a str,
@@ -379,18 +372,6 @@ impl Event<'_> {
                 tail.filter(|t| !t.trim().is_empty())
                     .map(body)
                     .unwrap_or_default(),
-            ),
-            Event::GateChange {
-                proposal,
-                playbook,
-                expected,
-                key,
-            } => (
-                format!(
-                    "- retro {proposal} proposes a change to the {playbook} playbook's gates: {}. Ask the human in the chat, as a numbered item with your recommendation; log their answer with `decide` {{key: \"{key}\", value: \"apply\" or \"reject\", scope: \"project\"}}",
-                    one_line(expected, 200)
-                ),
-                vec![],
             ),
             Event::OrderIdle { workstream, title } => (
                 format!(
@@ -680,19 +661,6 @@ mod tests {
                 tail: Some(""),
             }),
             "- Q5 your command `./deploy.sh prod`: denied by human:desk: not on a Friday; don't run it, say in the chat what you do instead"
-        );
-    }
-
-    #[test]
-    fn gate_change_event() {
-        assert_eq!(
-            r(Event::GateChange {
-                proposal: "R4",
-                playbook: "bugfix",
-                expected: "fewer false claims on flaky tests",
-                key: "playbook.bugfix.ab12cd34ef",
-            }),
-            "- retro R4 proposes a change to the bugfix playbook's gates: fewer false claims on flaky tests. Ask the human in the chat, as a numbered item with your recommendation; log their answer with `decide` {key: \"playbook.bugfix.ab12cd34ef\", value: \"apply\" or \"reject\", scope: \"project\"}"
         );
     }
 

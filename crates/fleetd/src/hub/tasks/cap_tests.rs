@@ -21,7 +21,6 @@ fn hub() -> (Arc<Hub>, tempfile::TempDir) {
         listen: Default::default(),
         url: None,
         queue_ttl_sec: None,
-        retro_model: None,
     };
     let clock = ManualClock::at(1_792_000_000_000);
     let hub = crate::hub::serve::build_on(HubDb::open_memory().unwrap(), config, clock).unwrap();
