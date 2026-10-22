@@ -1241,7 +1241,6 @@ export type KnownHubEventType =
   | "wake.missed"
   | "write.delivered"
   | "write.expired"
-  | "webhook.failing"
   | "workstream.running"
   | "request.opened"
   | "request.updated"
@@ -3251,9 +3250,6 @@ export type StaleSource = {
   source: string;
 };
 
-/** `"*"`: every event type or machine. */
-export type Star = "*";
-
 export type StatusDoc = {
   done: DoneRow[];
   eta: StatusEta;
@@ -3541,60 +3537,6 @@ export type SteersListOutput = {
   steers: Steer[];
   truncated?: boolean;
 };
-
-/** A webhook push target. Its signing secret is shown once by subscription_set and never returned again. */
-export type Subscription = {
-  /** keyId of the agent key that created it. */
-  createdBy: string;
-  /** When deliveries started failing; absent while healthy. */
-  failingSince?: Timestamp;
-  kind: WebhookKind;
-  lastDeliveredSeq?: EventSeq;
-  machines: SubscriptionMachines;
-  state: SubscriptionState;
-  subscriptionId: string;
-  types: SubscriptionTypes;
-  url: WebhookUrl;
-};
-
-export type SubscriptionDeleteInput = {
-  subscriptionId: string;
-};
-
-export type SubscriptionDeleteOutput = {
-  next?: string;
-  ok: true;
-  truncated?: boolean;
-};
-
-export type SubscriptionListInput = { [key: string]: unknown };
-
-export type SubscriptionListOutput = {
-  next?: string;
-  subscriptions: Subscription[];
-  truncated?: boolean;
-};
-
-export type SubscriptionMachines = Star | MachineId[];
-
-export type SubscriptionSetInput = {
-  clientRequestId: string;
-  machines?: SubscriptionMachines;
-  types?: SubscriptionTypes;
-  url: WebhookUrl;
-};
-
-export type SubscriptionSetOutput = {
-  next?: string;
-  /** The webhook signing secret. Shown only here; store it now. */
-  secret: string;
-  subscriptionId: string;
-  truncated?: boolean;
-};
-
-export type SubscriptionState = "active" | "disabled";
-
-export type SubscriptionTypes = Star | HubEventType[];
 
 export type TailAction = {
   action: ActionItem;
@@ -4224,8 +4166,6 @@ export type WakeTarget = {
   threadId: ThreadId;
 };
 
-export type WebhookKind = "webhook";
-
 export type WebhookUrl = string;
 
 export type Weight = "must" | "polish";
@@ -4412,9 +4352,6 @@ export interface ToolMap {
   steer_send: { input: SteerSendInput; output: SteerSendOutput };
   steer_withdraw: { input: SteerWithdrawInput; output: SteerWithdrawOutput };
   steers_list: { input: SteersListInput; output: SteersListOutput };
-  subscription_delete: { input: SubscriptionDeleteInput; output: SubscriptionDeleteOutput };
-  subscription_list: { input: SubscriptionListInput; output: SubscriptionListOutput };
-  subscription_set: { input: SubscriptionSetInput; output: SubscriptionSetOutput };
   task_get: { input: TaskGetInput; output: TaskGetOutput };
   tasks_list: { input: TasksListInput; output: TasksListOutput };
   thread_answer: { input: ThreadAnswerInput; output: ThreadAnswerOutput };

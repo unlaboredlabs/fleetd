@@ -595,17 +595,9 @@ impl WriteQueue {
     }
 }
 
-/// Starts the queue, wakes and webhooks loops and stops them when the hub shuts down.
+/// Starts the queue and wakes loops and stops them when the hub shuts down.
 pub fn start_loops(hub: &Arc<Hub>) -> JoinHandle<()> {
-    // Sweep order: its own built-in checks, then webhooks', then overdue wakes.
-    let webhooks = hub.webhooks.clone();
-    hub.sweep.register(SweepCheck {
-        name: "webhooks".into(),
-        run: Arc::new(move || {
-            webhooks.check_failing();
-            Box::pin(async { Ok(()) })
-        }),
-    });
+    // Sweep order: its own built-in checks, then overdue wakes.
     let wakes = hub.wakes.clone();
     hub.sweep.register(SweepCheck {
         name: "wakes".into(),
@@ -616,11 +608,9 @@ pub fn start_loops(hub: &Arc<Hub>) -> JoinHandle<()> {
     });
     hub.queue.start();
     hub.wakes.start();
-    hub.webhooks.start();
     let hub = hub.clone();
     tokio::spawn(async move {
         hub.shutdown.wait().await;
-        hub.webhooks.stop();
         hub.wakes.stop();
         hub.queue.stop();
     })

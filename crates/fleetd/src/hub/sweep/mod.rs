@@ -1,7 +1,7 @@
 //! The safety-net sweep: every 5 min, deterministic, no LLM. Built in: re-open streams for running threads that lost
 //! theirs, and report each machine that is offline with running threads (once per offline spell). Other areas add
-//! checks with `register` (webhooks' failing subscriptions, overdue wakes, leases, the doctor); each check is
-//! isolated, so one failing does not stop the rest.
+//! checks with `register` (overdue wakes, leases, the doctor); each check is isolated, so one failing does not stop
+//! the rest.
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;

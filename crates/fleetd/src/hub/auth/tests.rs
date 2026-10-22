@@ -1,6 +1,6 @@
 use super::*;
 use crate::hub::store::test_clock::ManualClock;
-use fleetd_contracts::subscriptions::Star;
+use fleetd_contracts::auth::Star;
 use std::time::Duration;
 
 fn m(id: &str) -> MachineId {

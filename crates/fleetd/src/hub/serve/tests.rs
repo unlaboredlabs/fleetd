@@ -462,7 +462,9 @@ async fn github_deliveries_need_webhooks_on_and_a_valid_signature_then_kick_the_
             Ok(())
         })
         .unwrap();
-    let sealed = t.hub.webhooks.secret_box().seal("s3cret");
+    let sealed = crate::hub::train::secret_box::SecretBox::for_home(&t.hub.config.home)
+        .unwrap()
+        .seal("s3cret");
     std::fs::write(t.hub.config.home.join("github-webhook.secret"), sealed).unwrap();
     t.hub.train.set_webhooks(true);
     assert_eq!(deliver(&t.url, "sha256=00", body).await, 401);

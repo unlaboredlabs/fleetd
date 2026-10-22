@@ -9,6 +9,19 @@ use std::ops::Deref;
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+/// WHATWG URL parsing.
+pub fn is_http_url(url: &str) -> bool {
+    url::Url::parse(url).is_ok_and(|parsed| matches!(parsed.scheme(), "http" | "https"))
+}
+
+crate::brand!(
+    /// Absolute http(s) URL; `file:` and every other scheme are refused.
+    WebhookUrl,
+    name = "WebhookUrl",
+    check = is_http_url,
+    expected = "an absolute http:// or https:// URL"
+);
+
 /// JavaScript's `Number.MAX_SAFE_INTEGER`, Effect's bound for `Schema.Int`.
 pub const MAX_SAFE_INT: i64 = 9_007_199_254_740_991;
 
@@ -670,6 +683,15 @@ macro_rules! checked {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_absolute_http_urls() {
+        assert!(is_http_url("https://example.com/hook"));
+        assert!(is_http_url("http://127.0.0.1:4710/x"));
+        assert!(!is_http_url("file:///etc/passwd"));
+        assert!(!is_http_url("/relative"));
+        assert!(!is_http_url("example.com"));
+    }
 
     #[test]
     fn lengths_count_utf16_units_like_javascript() {

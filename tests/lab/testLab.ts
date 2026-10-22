@@ -63,7 +63,6 @@ import { noCiTrain } from "./noCiTrain.ts";
 import { noSubagents } from "./noSubagents.ts";
 import { trainBatch } from "./trainBatch.ts";
 import { offlineQueue } from "./offlineQueue.ts";
-import { scenarioPush } from "./scenarioPush.ts";
 import { statusFresh } from "./statusFresh.ts";
 import { steerMidTurn } from "./steerMidTurn.ts";
 import { timeInspector } from "./timeInspector.ts";
@@ -74,7 +73,6 @@ import { missedCompletion, stallNudgeFail } from "./watchdogScenarios.ts";
 const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab) => Promise<void>; readonly only?: boolean }> = [
   { name: "m1", run: m1Fleet },
   { name: "wake", run: wakeOnTime },
-  { name: "push", run: scenarioPush },
   { name: "stall", run: (lab) => stallNudgeFail(lab) },
   { name: "missed", run: (lab) => missedCompletion(lab) },
   { name: "degraded", run: degradedMachine },

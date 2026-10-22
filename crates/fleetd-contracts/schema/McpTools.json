@@ -3551,11 +3551,6 @@
           "type": "string"
         },
         {
-          "const": "webhook.failing",
-          "description": "A webhook subscription has been failing for over an hour.",
-          "type": "string"
-        },
-        {
           "const": "workstream.running",
           "description": "The brief was frozen; `data.briefHash`.",
           "type": "string"
@@ -5282,24 +5277,6 @@
         "steers_list.output": {
           "$ref": "#/$defs/SteersListOutput"
         },
-        "subscription_delete.input": {
-          "$ref": "#/$defs/SubscriptionDeleteInput"
-        },
-        "subscription_delete.output": {
-          "$ref": "#/$defs/SubscriptionDeleteOutput"
-        },
-        "subscription_list.input": {
-          "$ref": "#/$defs/SubscriptionListInput"
-        },
-        "subscription_list.output": {
-          "$ref": "#/$defs/SubscriptionListOutput"
-        },
-        "subscription_set.input": {
-          "$ref": "#/$defs/SubscriptionSetInput"
-        },
-        "subscription_set.output": {
-          "$ref": "#/$defs/SubscriptionSetOutput"
-        },
         "task_get.input": {
           "$ref": "#/$defs/TaskGetInput"
         },
@@ -5542,12 +5519,6 @@
         "steer_withdraw.output",
         "steers_list.input",
         "steers_list.output",
-        "subscription_delete.input",
-        "subscription_delete.output",
-        "subscription_list.input",
-        "subscription_list.output",
-        "subscription_set.input",
-        "subscription_set.output",
         "task_get.input",
         "task_get.output",
         "tasks_list.input",
@@ -9819,13 +9790,6 @@
       ],
       "type": "object"
     },
-    "Star": {
-      "description": "`\"*\"`: every event type or machine.",
-      "enum": [
-        "*"
-      ],
-      "type": "string"
-    },
     "StatusDoc": {
       "properties": {
         "done": {
@@ -10716,187 +10680,6 @@
         "steers"
       ],
       "type": "object"
-    },
-    "Subscription": {
-      "description": "A webhook push target. Its signing secret is shown once by subscription_set and never returned again.",
-      "properties": {
-        "createdBy": {
-          "description": "keyId of the agent key that created it.",
-          "type": "string"
-        },
-        "failingSince": {
-          "$ref": "#/$defs/Timestamp",
-          "description": "When deliveries started failing; absent while healthy."
-        },
-        "kind": {
-          "$ref": "#/$defs/WebhookKind"
-        },
-        "lastDeliveredSeq": {
-          "$ref": "#/$defs/EventSeq"
-        },
-        "machines": {
-          "$ref": "#/$defs/SubscriptionMachines"
-        },
-        "state": {
-          "$ref": "#/$defs/SubscriptionState"
-        },
-        "subscriptionId": {
-          "minLength": 1,
-          "type": "string"
-        },
-        "types": {
-          "$ref": "#/$defs/SubscriptionTypes"
-        },
-        "url": {
-          "$ref": "#/$defs/WebhookUrl"
-        }
-      },
-      "required": [
-        "subscriptionId",
-        "kind",
-        "url",
-        "types",
-        "machines",
-        "createdBy",
-        "state"
-      ],
-      "type": "object"
-    },
-    "SubscriptionDeleteInput": {
-      "properties": {
-        "subscriptionId": {
-          "minLength": 1,
-          "type": "string"
-        }
-      },
-      "required": [
-        "subscriptionId"
-      ],
-      "type": "object"
-    },
-    "SubscriptionDeleteOutput": {
-      "properties": {
-        "next": {
-          "type": "string"
-        },
-        "ok": {
-          "enum": [
-            true
-          ],
-          "type": "boolean"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "ok"
-      ],
-      "type": "object"
-    },
-    "SubscriptionListInput": {
-      "type": "object"
-    },
-    "SubscriptionListOutput": {
-      "properties": {
-        "next": {
-          "type": "string"
-        },
-        "subscriptions": {
-          "items": {
-            "$ref": "#/$defs/Subscription"
-          },
-          "type": "array"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "subscriptions"
-      ],
-      "type": "object"
-    },
-    "SubscriptionMachines": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/Star"
-        },
-        {
-          "items": {
-            "$ref": "#/$defs/MachineId"
-          },
-          "type": "array"
-        }
-      ]
-    },
-    "SubscriptionSetInput": {
-      "properties": {
-        "clientRequestId": {
-          "minLength": 1,
-          "type": "string"
-        },
-        "machines": {
-          "$ref": "#/$defs/SubscriptionMachines",
-          "default": "*"
-        },
-        "types": {
-          "$ref": "#/$defs/SubscriptionTypes",
-          "default": "*"
-        },
-        "url": {
-          "$ref": "#/$defs/WebhookUrl"
-        }
-      },
-      "required": [
-        "url",
-        "clientRequestId"
-      ],
-      "type": "object"
-    },
-    "SubscriptionSetOutput": {
-      "properties": {
-        "next": {
-          "type": "string"
-        },
-        "secret": {
-          "description": "The webhook signing secret. Shown only here; store it now.",
-          "minLength": 1,
-          "type": "string"
-        },
-        "subscriptionId": {
-          "minLength": 1,
-          "type": "string"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "subscriptionId",
-        "secret"
-      ],
-      "type": "object"
-    },
-    "SubscriptionState": {
-      "enum": [
-        "active",
-        "disabled"
-      ],
-      "type": "string"
-    },
-    "SubscriptionTypes": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/Star"
-        },
-        {
-          "items": {
-            "$ref": "#/$defs/HubEventType"
-          },
-          "type": "array"
-        }
-      ]
     },
     "TailAction": {
       "properties": {
@@ -12768,12 +12551,6 @@
         "threadId"
       ],
       "type": "object"
-    },
-    "WebhookKind": {
-      "enum": [
-        "webhook"
-      ],
-      "type": "string"
     },
     "WebhookUrl": {
       "type": "string"

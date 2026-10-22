@@ -2,7 +2,7 @@
 // lab machines (each a `fleetd node` with its own HOME, so its own ~/.fleetd and Claude config dir), and helpers that
 // wait on hub events instead of sleeping. Never used in CI.
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
-import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -57,14 +57,6 @@ export const FINISH_ALL_IDLE = "finish-all: nothing left with a value source";
 /** `hub/watchdog/ladder.rs` NUDGE (`assets/fixed/watchdog.nudge.md`, less its trailing newline). */
 export const NUDGE = "You seem stalled; continue the task from where you stopped.";
 
-/** Receiver-side Standard Webhooks check: a `v1` HMAC-SHA256 over `id.timestamp.body`, timestamp within 5 min. */
-export const verifySignature = (secret: string, headers: Record<string, string>, body: string, nowSec: number): boolean => {
-  const timestamp = Number(headers["webhook-timestamp"]);
-  if (!Number.isInteger(timestamp) || Math.abs(nowSec - timestamp) > 300) return false;
-  const key = Buffer.from(secret.replace(/^whsec_/u, ""), "base64");
-  const expected = Buffer.from(`v1,${createHmac("sha256", key).update(`${headers["webhook-id"]}.${timestamp}.${body}`).digest("base64")}`);
-  return (headers["webhook-signature"] ?? "").split(" ").some((given) => given.length === expected.length && timingSafeEqual(Buffer.from(given), expected));
-};
 /** The hub's offline-queue TTL in lab runs, short enough for the expiry check to wait it out. */
 export const QUEUE_TTL_SEC = 40;
 /** The two standing lab machines, each with its own test repo (seeded on first use) as its project. */
