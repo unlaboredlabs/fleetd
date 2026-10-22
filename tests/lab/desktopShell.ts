@@ -137,8 +137,7 @@ export async function desktopShell(lab: Lab) {
   check(invalid.includes("invalid request"), `main refuses a malformed request: ${invalid}`);
   ok(`call: fleetd_status ok (${status.output.machines.length} machines); unknown tool -> ${unknown.error.code}; malformed request refused in main`);
 
-  // 3. live
-  await app.eval(`window.fleetd.hub.live({ board: true })`);
+  // 3. live: main subscribes on every ready
   const live = await until("a full live frame", 15_000, async () => (await frames()).find((f) => f.t === "live" && f.frame.full === true)?.frame);
   ok(`live: full frame with ${(live.lanes as Array<unknown>).length} lanes, ${(live.machines as Array<unknown> | undefined)?.length ?? 0} machines`);
 
@@ -157,12 +156,10 @@ export async function desktopShell(lab: Lab) {
   ok(`events: machine.offline #${offline.seq}, machine.online #${online.seq}, ${seqs.length} events in order after cursor ${snapshot.cursor}`);
 
   // 5. liveness
-  await app.eval(`window.fleetd.hub.live(null)`);
   const quietFrom = (await frames()).length;
   await new Promise((r) => setTimeout(r, 50_000));
   const quiet = (await frames()).slice(quietFrom);
   check(!quiet.some((f) => f.t === "state"), `a quiet link stays live: ${JSON.stringify(quiet.filter((f) => f.t === "state"))}`);
-  await app.eval(`window.fleetd.hub.live({ board: true })`);
   ok(`liveness: 50 s with ${quiet.length} frames and no state change`);
 
   // 6. reconnect
@@ -189,7 +186,9 @@ export async function desktopShell(lab: Lab) {
   // 7. pairing
   const pairPort = slotPort(DEVTOOLS[1]);
   let pairing = await launch(lab, "pairing", pairPort, null);
-  const phase = async () => (await pairing.eval<Body>("window.fleetd.hub.state()")).phase as string;
+  // Every subscriber starts from the current state, and main pushes each change.
+  const lastState = async () => (await pairing.eval<Array<Body>>("window.__frames")).findLast((f) => f.t === "state")?.state as Body;
+  const phase = async () => (await lastState()).phase as string;
   check((await phase()) === "unpaired", "a fresh home starts unpaired");
   const unpairedCall = await pairing.eval<Body>(`window.fleetd.hub.call("fleetd_status", {})`);
   check(unpairedCall.ok === false && unpairedCall.error.code === "offline", `a call while unpaired: ${JSON.stringify(unpairedCall)}`);
@@ -197,7 +196,7 @@ export async function desktopShell(lab: Lab) {
   check(badUrl.ok === false, `a bad URL is refused before anything is saved: ${JSON.stringify(badUrl)}`);
   await pairing.eval(`window.fleetd.hub.connect(${JSON.stringify(lab.hubUrl)}, "fld_${"a".repeat(26)}")`);
   const refused = await until("the refused state", 30_000, async () => {
-    const state = await pairing.eval<Body>("window.fleetd.hub.state()");
+    const state = await lastState();
     return state.phase === "refused" ? state : undefined;
   });
   ok(`refused key: "${refused.message}"`);

@@ -426,8 +426,7 @@ type Ingest = {
 
 /**
  * cap_set's answer: the hub's slot state with the new cap or max agents, applied at once. It replaces the live
- * frame's copy too, which would otherwise keep showing the old value until the next frame (none comes without a
- * live scope, as in Settings).
+ * frame's copy too, which would otherwise keep showing the old value until the next frame.
  */
 export const applySlots = (s: DataState, slots: SlotState): DataState => ({
   ...s,

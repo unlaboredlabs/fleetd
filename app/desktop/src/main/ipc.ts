@@ -32,12 +32,11 @@ const handle = <C extends InvokeChannel>(
 };
 
 export const registerIpc = (hub: HubService, frame: { opener: Opener; notifier: Notifier }, pairing: PairingService): void => {
-  handle(IPC.hubState, () => hub.state());
   handle(IPC.hubSubscribe, (event) => hub.subscribe(event.sender));
   handle(IPC.hubUnsubscribe, (event) => hub.unsubscribe(event.sender));
   handle(IPC.hubCall, (_event, request) => hub.call(request));
-  handle(IPC.hubLive, (_event, scope) => hub.live(scope));
   handle(IPC.hubChat, (_event, project) => hub.chat(project));
+  handle(IPC.hubFocus, (_event, workstreamId) => hub.focus(workstreamId));
   handle(IPC.hubResync, () => hub.resync());
   handle(IPC.hubRetryNow, () => hub.retryNow());
   handle(IPC.hubCacheRead, () => hub.cacheRead());

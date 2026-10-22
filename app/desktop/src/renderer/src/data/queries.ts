@@ -11,7 +11,7 @@ import {
   type ToolOutput,
 } from "../../../shared/contracts";
 import type { HubError, HubFrame } from "../../../shared/hub";
-import type { ChatScope, LiveScope } from "../../../shared/ipc";
+import type { ChatScope, OrderFocus } from "../../../shared/ipc";
 import { keepCache, type CacheIo } from "./cache";
 import { createChatActions, refOf, type ChatActions } from "./chat-layer";
 import { effectsOf, matches, type Invalidation } from "./effects";
@@ -34,18 +34,12 @@ export interface HubApi {
   readonly call: RawCall;
   subscribe(listener: (frame: HubFrame) => void): () => void;
   resync(): Promise<void>;
-  live(scope: LiveScope | null): Promise<void>;
   chat(project: ChatScope | null): Promise<void>;
+  focus(workstreamId: OrderFocus | null): Promise<void>;
   /** Dial the hub now instead of at the next retry. */
   retryNow?(): Promise<void>;
   /** The disk cache (cache.ts); without it the layer keeps only what this window saw. */
   readonly cache?: CacheIo;
-}
-
-/** What the open screen wants live: every open order's lanes (board, machines) and/or one order in focus. */
-export interface LiveWant {
-  readonly board?: boolean | undefined;
-  readonly focus?: string | undefined;
 }
 
 /** How long events coalesce before their refetches go out: a burst (a merge, a batch) costs one round. */
@@ -90,15 +84,12 @@ export interface DataLayer {
    */
   readonly readsStarted: () => number;
   readonly readOf: <T extends ToolName>(tool: T, input: ToolInput<T>) => number | undefined;
-  /**
-   * The live subscription, set from the route; the only caller of `hub.live`. An unchanged scope sends nothing.
-   * Main keeps the scope and re-sends it on every reconnect and on window focus, so the layer sends only changes.
-   */
-  setLive(want: LiveWant): void;
   /** The lead chats: history, and the person's messages (chat-layer.ts). */
   readonly chat: ChatActions;
   /** Reconnect now, not at the next retry (the offline banner's Retry now). */
   retryNow(): void;
+  /** The order whose lanes stream their text, or null. Main always subscribes to every open order's lanes. */
+  focus(workstreamId: OrderFocus | null): void;
   /** Start applying main's frames; returns the stop. */
   start(): () => void;
 }
@@ -230,17 +221,6 @@ export const createDataLayer = (hub: HubApi, now: () => number = Date.now): Data
     timer ??= setTimeout(flush, INVALIDATE_EVERY_MS);
   };
 
-  let liveSent: string | undefined;
-  const setLive = (want: LiveWant) => {
-    const board = want.board === true;
-    const scope: LiveScope | null =
-      !board && want.focus === undefined ? null : want.focus === undefined ? { board } : { board, focus: want.focus };
-    const key = JSON.stringify(scope);
-    if (key === liveSent) return;
-    liveSent = key;
-    void hub.live(scope);
-  };
-
   return {
     store,
     queryClient,
@@ -248,9 +228,9 @@ export const createDataLayer = (hub: HubApi, now: () => number = Date.now): Data
     toolQuery,
     readsStarted: () => reads,
     readOf,
-    setLive,
     chat: chat.actions,
     retryNow: () => void hub.retryNow?.(),
+    focus: (workstreamId) => void hub.focus(workstreamId),
     start: () => {
       const stopChat = store.subscribe((s, prev) => chat.onState(prev, s));
       const stopKeep = hub.cache === undefined ? () => undefined : keepCache(store, hub.cache, chat.focus, now);

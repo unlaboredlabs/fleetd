@@ -62,8 +62,8 @@ export const useAgentWork = (agent: LiveAgent | undefined) => {
   const workstreamId = agent?.row.workstreamId;
   useEffect(() => {
     if (workstreamId === undefined) return;
-    layer.setLive({ board: true, focus: workstreamId });
-    return () => layer.setLive({ board: true });
+    layer.focus(workstreamId);
+    return () => layer.focus(null);
   }, [layer, workstreamId]);
   const streaming = useData(selectLiveText(agent?.row.laneId ?? ""));
   return { steps: query.data?.steps, running: query.data?.running, streaming, error: query.error, hasThread: thread !== undefined };

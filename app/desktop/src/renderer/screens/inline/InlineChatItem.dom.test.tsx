@@ -43,7 +43,7 @@ const mount = (answer: (input: unknown) => Promise<CallOutcome>) => {
     },
     subscribe: (l) => ((listener = l), () => undefined),
     resync: () => Promise.resolve(),
-    live: () => Promise.resolve(),
+    focus: () => Promise.resolve(),
     chat: () => Promise.resolve(),
   };
   const layer = createDataLayer(hub);

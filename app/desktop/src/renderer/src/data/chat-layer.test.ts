@@ -16,11 +16,11 @@ const fakeHub = () => {
       new Promise((resolve) => calls.push({ tool, input: input as Record<string, unknown>, answer: resolve })),
     subscribe: (l) => ((listener = l), () => undefined),
     resync: () => Promise.resolve(),
-    live: () => Promise.resolve(),
     chat: (project) => {
       chats.push(project);
       return Promise.resolve();
     },
+    focus: () => Promise.resolve(),
   };
   const of = (tool: string) => calls.filter((c) => c.tool === tool);
   return { hub, send: (f: HubFrame) => listener(f), calls, of, chats };

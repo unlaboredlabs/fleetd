@@ -1,7 +1,7 @@
 import type { LinkHandlerClaim, LinkHandlerStatus, NotifyRequest, OpenTarget } from "../shared/app";
 import type { MenuCommand } from "../shared/menu";
-import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, HubState, OpenOutcome, SecretOutcome } from "../shared/hub";
-import type { ChatScope, LiveScope, SecretRequest } from "../shared/ipc";
+import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
+import type { ChatScope, OrderFocus, SecretRequest } from "../shared/ipc";
 import type { KeyStore, PairOutcome, PairRequest, PairStart, Probe, SetupOutcome } from "../shared/pairing";
 
 /** `window.fleetd`: everything the renderer can ask of main. There is no other bridge. */
@@ -21,7 +21,6 @@ export interface FleetdApi {
    */
   openExternal(url: string): Promise<OpenOutcome>;
   readonly hub: {
-    state(): Promise<HubState>;
     /**
      * Frames start with the current state; when connected, a fresh snapshot follows, then events and live frames.
      * Returns the unsubscribe.
@@ -29,10 +28,10 @@ export interface FleetdApi {
     subscribe(listener: (frame: HubFrame) => void): () => void;
     /** Any MCP tool, with the saved key. Never rejects: failures come back as `{ ok: false, error }`. */
     call(tool: string, input: unknown, options?: { timeoutMs?: number }): Promise<CallOutcome>;
-    /** The live subscription, or null to stop it. */
-    live(scope: LiveScope | null): Promise<void>;
     /** The chat whose streamed text arrives as `chat_delta` frames, or null to stop. Kept across reconnects. */
     chat(project: ChatScope | null): Promise<void>;
+    /** The order whose lanes stream their text in live frames, or null for none. Kept across reconnects. */
+    focus(workstreamId: OrderFocus | null): Promise<void>;
     resync(): Promise<void>;
     /** Dials the hub now instead of at the next retry (Retry now while offline). */
     retryNow(): Promise<void>;

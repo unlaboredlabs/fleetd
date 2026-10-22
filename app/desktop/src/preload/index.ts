@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from "electron";
 import type { LinkHandlerStatus, OpenTarget } from "../shared/app";
 import { IPC } from "../shared/channels";
-import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, HubState, OpenOutcome, SecretOutcome } from "../shared/hub";
+import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { KeyStore, PairOutcome, PairStart, Probe, SetupOutcome } from "../shared/pairing";
 import type { FleetdApi } from "./api";
 
@@ -34,7 +34,6 @@ const api: FleetdApi = {
   },
   openExternal: (url) => ipcRenderer.invoke(IPC.openExternal, url) as Promise<OpenOutcome>,
   hub: {
-    state: () => ipcRenderer.invoke(IPC.hubState) as Promise<HubState>,
     subscribe: (listener) => {
       listeners.add(listener);
       // Every subscriber starts from a state and (when live) a fresh snapshot; earlier ones just see a resync.
@@ -45,8 +44,8 @@ const api: FleetdApi = {
     },
     call: (tool, input, options) =>
       ipcRenderer.invoke(IPC.hubCall, { tool, input, ...(options?.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }) }) as Promise<CallOutcome>,
-    live: (scope) => ipcRenderer.invoke(IPC.hubLive, scope) as Promise<void>,
     chat: (project) => ipcRenderer.invoke(IPC.hubChat, project) as Promise<void>,
+    focus: (workstreamId) => ipcRenderer.invoke(IPC.hubFocus, workstreamId) as Promise<void>,
     resync: () => ipcRenderer.invoke(IPC.hubResync) as Promise<void>,
     retryNow: () => ipcRenderer.invoke(IPC.hubRetryNow) as Promise<void>,
     cache: {

@@ -83,11 +83,9 @@ export const ChatScope = z.strictObject({
 });
 export type ChatScope = z.infer<typeof ChatScope>;
 
-export const LiveScope = z.strictObject({
-  board: z.boolean(),
-  focus: z.string().min(1).max(64).optional(),
-});
-export type LiveScope = z.infer<typeof LiveScope>;
+/** The order whose lanes stream their text (a WorkstreamId). */
+export const OrderFocus = z.string().min(1).max(64);
+export type OrderFocus = z.infer<typeof OrderFocus>;
 
 export const ConnectRequest = z.strictObject({
   url: z.string().trim().min(1).max(2048),
@@ -121,12 +119,11 @@ const none = z.tuple([]);
 
 /** The argument list each invoke channel accepts. */
 export const REQUESTS = {
-  [IPC.hubState]: none,
   [IPC.hubSubscribe]: none,
   [IPC.hubUnsubscribe]: none,
   [IPC.hubCall]: z.tuple([CallRequest]),
-  [IPC.hubLive]: z.tuple([LiveScope.nullable()]),
   [IPC.hubChat]: z.tuple([ChatScope.nullable()]),
+  [IPC.hubFocus]: z.tuple([OrderFocus.nullable()]),
   [IPC.hubResync]: none,
   [IPC.hubRetryNow]: none,
   [IPC.hubCacheRead]: none,

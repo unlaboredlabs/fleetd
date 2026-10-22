@@ -204,9 +204,9 @@ export class FixtureSource implements HubSource {
     return { ok: true, output };
   }
 
-  live(): void {}
-
   chat(): void {}
+
+  focus(): void {}
 
   refreshLive(): void {}
 

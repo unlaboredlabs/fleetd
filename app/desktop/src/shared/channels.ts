@@ -1,17 +1,15 @@
 /** Every IPC channel. The preload exposes only these, and main validates each request against shared/ipc.ts. */
 export const IPC = {
-  /** invoke() → HubState */
-  hubState: "hub:state",
   /** invoke() → HubState. Main starts pushing `hubFrame` to this window and asks the hub for a fresh snapshot. */
   hubSubscribe: "hub:subscribe",
   /** invoke() → void. Stops the pushes to this window. */
   hubUnsubscribe: "hub:unsubscribe",
   /** invoke(CallRequest) → CallOutcome */
   hubCall: "hub:call",
-  /** invoke(LiveScope | null) → void. Kept across reconnects and re-sent when the window is focused. */
-  hubLive: "hub:live",
   /** invoke(ProjectRef | null) → void. The chat whose streamed text comes as `chat_delta` frames; kept across reconnects. */
   hubChat: "hub:chat",
+  /** invoke(workstreamId | null) → void. The order whose lanes stream their text in live frames; kept across reconnects. */
+  hubFocus: "hub:focus",
   /** invoke() → void. A fresh snapshot, then events from its cursor. */
   hubResync: "hub:resync",
   /** invoke() → void. Dials the hub now instead of at the next retry. */
