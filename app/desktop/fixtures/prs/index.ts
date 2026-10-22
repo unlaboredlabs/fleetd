@@ -9,7 +9,7 @@
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import { firstProject } from "../kit/chat.ts";
-import type { JsonObject } from "../kit/json.ts";
+import { isObject, type JsonObject } from "../kit/json.ts";
 import { LONG_BRANCH, LONG_PARAGRAPH, LONG_PATH, LONG_TITLES, ofLength } from "../kit/text.ts";
 
 const REPO = "acme/storefront";
@@ -606,7 +606,11 @@ export default defineGroup({
   extend: {
     typical: (f) => answerAll(f, specs(f)),
     "many-agents": (f) => answerAll(f, specs(f)),
-    "long-text": (f) => answerAll(f, longSpecs(f)),
+    // ...and the hub's list cut to its most recent.
+    "long-text": (f) => {
+      answerAll(f, longSpecs(f));
+      f.update("pr_list", (out) => (isObject(out) ? { ...out, truncated: true } : out));
+    },
   },
   fixtures: (base) => [
     (() => {

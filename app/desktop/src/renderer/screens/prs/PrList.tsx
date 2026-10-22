@@ -8,24 +8,37 @@ import { toHash } from "../shell/routes";
 import { checksWord, reviewsWord, stateLine, when } from "./words";
 import s from "./prs.module.css";
 
-type Item = { readonly kind: "group"; readonly label: string; readonly count: number } | { readonly kind: "pr"; readonly row: PrRow };
+type Item =
+  | { readonly kind: "group"; readonly label: string; readonly count: number }
+  | { readonly kind: "pr"; readonly row: PrRow }
+  | { readonly kind: "cut"; readonly count: number };
 
 const isOpen = (r: PrRow) => r.state === "open" || r.state === "draft";
 
-/** Open PRs, then the rest, each under its heading; the hub's order within each. */
-export const listItems = (rows: readonly PrRow[]): Item[] => {
+/** Open PRs, then the rest, each under its heading; the hub's order within each. `cut`: the hub sent only these. */
+export const listItems = (rows: readonly PrRow[], cut = false): Item[] => {
   const open = rows.filter(isOpen);
   const rest = rows.filter((r) => !isOpen(r));
   return [
     ...(open.length > 0 ? [{ kind: "group" as const, label: "Open", count: open.length }, ...open.map((row) => ({ kind: "pr" as const, row }))] : []),
     ...(rest.length > 0 ? [{ kind: "group" as const, label: "Merged or closed", count: rest.length }, ...rest.map((row) => ({ kind: "pr" as const, row }))] : []),
+    ...(cut ? [{ kind: "cut" as const, count: rows.length }] : []),
   ];
 };
 
 export const prHref = (project: ProjectRef, row: Pick<PrRow, "repo" | "number">): string => toHash({ id: "prs", project, pr: { repo: row.repo, number: row.number } });
 
-export function PrList({ rows, project, selected, nowMs }: { rows: readonly PrRow[]; project: ProjectRef; selected: { repo: string; number: number } | undefined; nowMs: number }) {
-  const items = useMemo(() => listItems(rows), [rows]);
+interface PrListProps {
+  readonly rows: readonly PrRow[];
+  /** The hub sent only the most recent. */
+  readonly cut: boolean;
+  readonly project: ProjectRef;
+  readonly selected: { repo: string; number: number } | undefined;
+  readonly nowMs: number;
+}
+
+export function PrList({ rows, cut, project, selected, nowMs }: PrListProps) {
+  const items = useMemo(() => listItems(rows, cut), [rows, cut]);
   if (rows.length === 0) {
     return (
       <div className={s.paneNote}>
@@ -49,7 +62,7 @@ export function PrList({ rows, project, selected, nowMs }: { rows: readonly PrRo
     <div className={s.listScroll} onKeyDown={onKeyDown}>
       <VirtualList
         items={items}
-        getKey={(it) => (it.kind === "group" ? `group:${it.label}` : `${it.row.repo}#${it.row.number}`)}
+        getKey={(it) => (it.kind === "group" ? `group:${it.label}` : it.kind === "cut" ? "cut" : `${it.row.repo}#${it.row.number}`)}
         estimateSize={56}
         aria-label="Pull requests"
         renderItem={(it) =>
@@ -61,6 +74,10 @@ export function PrList({ rows, project, selected, nowMs }: { rows: readonly PrRo
               <Text size="xs" tone="quiet" tabular>
                 {it.count}
               </Text>
+            </div>
+          ) : it.kind === "cut" ? (
+            <div className={s.group}>
+              <Text size="xs" tone="quiet">{`Only the ${it.count} most recent are here; the rest are on GitHub.`}</Text>
             </div>
           ) : (
             <Row row={it.row} project={project} current={selected?.repo === it.row.repo && selected.number === it.row.number} nowMs={nowMs} />

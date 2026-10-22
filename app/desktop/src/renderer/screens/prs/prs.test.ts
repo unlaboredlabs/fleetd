@@ -89,8 +89,14 @@ describe("checks and reviews", () => {
 describe("the list", () => {
   it("groups open PRs (drafts too) before merged and closed ones", () => {
     const items = listItems([row({ number: 8, state: "merged" }), row({ number: 11 }), row({ number: 12, state: "draft" }), row({ number: 7, state: "closed" })]);
-    expect(items.map((i) => (i.kind === "group" ? `${i.label} ${i.count}` : i.row.number))).toEqual(["Open 2", 11, 12, "Merged or closed 2", 8, 7]);
+    const words = (list: typeof items) => list.map((i) => (i.kind === "group" ? `${i.label} ${i.count}` : i.kind === "cut" ? `cut ${i.count}` : i.row.number));
+    expect(words(items)).toEqual(["Open 2", 11, 12, "Merged or closed 2", 8, 7]);
     expect(listItems([])).toEqual([]);
+  });
+
+  it("says so last when the hub sent only the most recent", () => {
+    const items = listItems([row({ number: 11 }), row({ number: 8, state: "merged" })], true);
+    expect(items.at(-1)).toEqual({ kind: "cut", count: 2 });
   });
 
   it("finds a PR a link names by number alone in the project's list", () => {

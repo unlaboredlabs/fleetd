@@ -81,7 +81,7 @@ export function PrsScreen({ project, pr }: { project: ProjectRef; pr: PrKey | nu
       <div className={s.body}>
         <aside className={s.list} aria-label="Pull requests" hidden={wide}>
           {rows !== undefined ? (
-            <PrList rows={rows} project={project} selected={selected} nowMs={hubNow ?? 0} />
+            <PrList rows={rows} cut={list.data?.truncated === true} project={project} selected={selected} nowMs={hubNow ?? 0} />
           ) : list.isError ? (
             <div className={s.paneNote} role="alert">
               <Text tone="quiet">Couldn’t load the pull requests.</Text>
