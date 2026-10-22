@@ -77,6 +77,18 @@ Everything shows up in the chat, quietly:
 For a project's progress at a glance, see [Status](/docs/status). For where the time went, see
 [Where time went](/docs/time-inspector).
 
+## Read a pull request {#prs}
+
+Click a PR in the chat, or choose **Pull requests** in the command palette (⌘K), to read the project's PRs in the
+app: open ones first, then those merged or closed in the last week.
+
+| A PR shows | |
+|---|---|
+| Overview | Where it is on its way to main, its checks, its reviews with their findings, the agent that wrote it, and its description. |
+| Changes | The changed files and their diff, in one column or side by side. Click a file to jump to it. |
+
+**Open on GitHub** is always there, for anything the app doesn't show.
+
 ## Earlier work {#history}
 
 Work from before the chat existed shows at the top of each project's chat, under "From before this chat": what you

@@ -552,7 +552,7 @@ const longSpecs = (f: Fixture): PrSpec[] =>
     branch: LONG_BRANCH,
     body: `${p.body}\n\n${LONG_PARAGRAPH}\n\n${LONG_PARAGRAPH}`,
     checkRuns: [check(f, ofLength("integration tests (ubuntu-latest, node 24, postgres 17, with the payments sandbox)", 190), "failing", 30, 932, "timed_out"), ...p.checkRuns],
-    reviews: p.reviews.map((r) => ({ ...r, text: ofLength(`${String(r["text"])} ${LONG_PARAGRAPH}`, 1900) })),
+    reviews: p.reviews.map((r) => ({ ...r, text: ofLength(`${typeof r["text"] === "string" ? r["text"] : ""} ${LONG_PARAGRAPH}`, 1900) })),
     files: [{ path: LONG_PATH, status: "renamed", previousPath: LONG_PATH.replace("receipt-line-items", "line-items"), patch: FORMAT_TEST }, ...p.files],
   }));
 
