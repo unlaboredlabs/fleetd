@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { fixtureNames, fixtureOrder } from "./fixture";
-import { NO_NAMES, categoryKinds, clockMs } from "./format";
+import { NO_NAMES, categoryKinds, clockMs, tickLabel } from "./format";
 import { CAT_CODE, bars, barsFor, buildModel, hit, ticks, type Model } from "./model";
 import type { Category, Coverage, Span, SpanKind } from "./types";
 import { KIND_CATEGORY } from "./types";
@@ -38,6 +38,10 @@ const row = (items: [number, number, Category][]): Model => {
 };
 
 const none = () => false;
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 describe("bars", () => {
   it("merges spans narrower than a pixel into one bar per column, coloured by the category with the most time", () => {
@@ -122,6 +126,18 @@ describe("buildModel", () => {
     expect(m.rows[1]?.to).toBe(m.rows[1]?.from);
   });
 
+  it("never shows two agent rows with one name: the same work gets its order of start", () => {
+    const names = { ...NO_NAMES, threads: new Map([["s-1", { role: "reviewer" as const, title: "review #113" }], ["s-2", { role: "reviewer" as const, title: "review #113" }]]) };
+    const spans = [
+      span(1, "tool.bash", 50_000, 60_000, { lane: "thread:m/s-2", threadId: "s-2" }),
+      span(2, "tool.bash", 10_000, 20_000, { lane: "thread:m/s-1", threadId: "s-1" }),
+      span(3, "tool.bash", 30_000, 40_000, { lane: "thread:m/s-3", threadId: "s-3" }),
+      span(4, "tool.bash", 70_000, 80_000, { lane: "thread:m/s-4", threadId: "s-4" }),
+    ];
+    const m = buildModel(spans, undefined, undefined, names, 100_000);
+    expect(m.rows.map((r) => r.name)).toEqual(["review #113 · 1st", "an agent · 1st", "review #113 · 2nd", "an agent · 2nd"]);
+  });
+
   it("lays out an order: lead, agents, the PR with its checks under it, then the asks", () => {
     const { spans, path } = fixtureOrder();
     const m = buildModel(spans, path, undefined, fixtureNames(), 0);
@@ -162,13 +178,19 @@ describe("buildModel", () => {
 });
 
 describe("ticks", () => {
-  it("land on round times", () => {
-    const v0 = 10 * 3_600_000 + 7 * 60_000;
+  it("land on round times on the viewer's clock, in a half-hour zone too, with the day at midnight", () => {
+    vi.stubEnv("TZ", "Asia/Kolkata");
+    const v0 = Date.parse("2026-10-18T04:37:00.000Z"); // 10:07 in Kolkata
     const t = ticks(v0, v0 + 102 * 60_000);
     expect(t.length).toBeGreaterThanOrEqual(4);
     expect(t.length).toBeLessThanOrEqual(8);
-    expect(t.every((x) => x % 900_000 === 0)).toBe(true);
+    expect(t.map((x) => clockMs(x).slice(3, 5)).every((mm) => ["00", "15", "30", "45"].includes(mm))).toBe(true);
     expect(clockMs(t[0] ?? 0)).toBe("10:15:00");
+    // Six-hour steps on 00, 06, 12, 18; daily ticks at local midnight, labelled with the day.
+    const six = ticks(v0, v0 + 40 * 3_600_000);
+    expect(six.map((x) => clockMs(x).slice(0, 5))).toEqual(["12:00", "18:00", "00:00", "06:00", "12:00", "18:00", "00:00"]);
+    const days = ticks(v0, v0 + 5 * 86_400_000);
+    expect(days.map((x) => tickLabel(x, v0, v0 + 5 * 86_400_000))).toEqual(["Oct 19", "Oct 20", "Oct 21", "Oct 22", "Oct 23"]);
   });
 });
 

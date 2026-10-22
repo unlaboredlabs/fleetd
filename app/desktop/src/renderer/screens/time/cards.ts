@@ -11,6 +11,7 @@ import {
   gapWord,
   inexact,
   markedDur,
+  rangeText,
   spanTitle,
   titleIsMachineText,
   type Names,
@@ -117,16 +118,16 @@ export const barCard = (m: Model, row: number, bar: Bar, names: Names, nowMs: nu
   };
 };
 
-/** `tokens`: the lane's live input and output while it runs, else its measured output (`Row.outputTokens`). */
+/** `tokens`: the lane's output tokens, live while it runs, else measured (`Row.outputTokens`). */
 export const laneCard = (m: Model, row: number, tokens: number): Card => {
   const r = m.rows[row];
   if (r === undefined) return { title: "", mono: false, lines: [], hint: "" };
   const title = r.kind === "lead" ? "The project's lead" : r.role !== undefined && r.kind !== "other" ? `${ROLE_WORD[r.role]}: ${r.name}` : r.name;
   const lines = [`${r.to - r.from} spans · ${fmtDur(r.agentMs)} of agent time`];
-  const who = [r.model === undefined ? undefined : shortModel(r.model), tokens > 0 ? `${fmtTokens(tokens)} tokens` : undefined].filter((x) => x !== undefined);
+  const who = [r.model === undefined ? undefined : shortModel(r.model), tokens > 0 ? `${fmtTokens(tokens)} output tokens` : undefined].filter((x) => x !== undefined);
   if (who.length > 0) lines.push(who.join(" · "));
   if (r.summary !== "") lines.push(r.summary);
-  const warnings = r.gaps.slice(0, 4).map(([a, b, why]) => `${gapWord(why)} ${clockMs(a)} to ${clockMs(b)}`);
+  const warnings = r.gaps.slice(0, 4).map(([a, b, why]) => `${gapWord(why)} ${rangeText(a, b)}`);
   return {
     title,
     mono: r.kind === "check",

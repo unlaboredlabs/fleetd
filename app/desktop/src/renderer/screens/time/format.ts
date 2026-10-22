@@ -7,10 +7,47 @@ export interface Lane {
   readonly title: string;
   readonly model?: string;
   readonly laneId?: string;
+  /** Its place by start among agents with the same role and title (two reviewers of one PR); absent when unique. */
+  readonly nth?: number;
 }
 
-/** An agent as the screen names it: what it worked on, else its role. Never a task number. */
-export const agentName = (lane: Pick<Lane, "role" | "title">): string => (lane.title.trim() !== "" ? lane.title : ROLE_WORD[lane.role]);
+/** "1st", "2nd", "3rd", "11th", "22nd". */
+export const ordinal = (n: number): string => {
+  const tens = n % 100;
+  const suffix = tens >= 11 && tens <= 13 ? "th" : (["th", "st", "nd", "rd"][n % 10] ?? "th");
+  return `${n}${suffix}`;
+};
+
+/**
+ * An agent as the screen names it: what it worked on, else its role, never a task number. Agents doing the same
+ * work (every reviewer of one PR is "review #113") are told apart by their order of start: "review #113 · 2nd".
+ */
+export const agentName = (lane: Pick<Lane, "role" | "title" | "nth">): string => {
+  const base = lane.title.trim() !== "" ? lane.title : ROLE_WORD[lane.role];
+  return lane.nth === undefined ? base : `${base} · ${ordinal(lane.nth)}`;
+};
+
+/** Numbers the lanes whose role and title collide, by start (then lane id), so every name on screen is its own. */
+export const numberCollisions = (lanes: ReadonlyMap<string, Lane & { readonly startedAt?: string }>): Map<string, Lane> => {
+  const groups = new Map<string, string[]>();
+  for (const [id, l] of lanes) {
+    const key = `${l.role}\u0000${agentName({ role: l.role, title: l.title })}`;
+    groups.set(key, [...(groups.get(key) ?? []), id]);
+  }
+  const out = new Map<string, Lane>();
+  for (const [id, { startedAt: _, ...l }] of lanes) out.set(id, l);
+  for (const ids of groups.values()) {
+    if (ids.length < 2) continue;
+    const start = (id: string) => lanes.get(id)?.startedAt ?? "";
+    ids
+      .sort((a, b) => start(a).localeCompare(start(b)) || (lanes.get(a)?.laneId ?? a).localeCompare(lanes.get(b)?.laneId ?? b))
+      .forEach((id, i) => {
+        const l = out.get(id);
+        if (l !== undefined) out.set(id, { ...l, nth: i + 1 });
+      });
+  }
+  return out;
+};
 
 /** What the hub's ids are called on screen. Built from the live store by whoever mounts the screen. */
 export interface Names {
@@ -86,6 +123,13 @@ export const stampMs = (ms: number): string => {
 };
 
 
+/** An axis tick: "10:15", "10:15:30" when zoomed under ten minutes, and the day ("Oct 18") at local midnight. */
+export const tickLabel = (t: number, v0: number, v1: number): string => {
+  const d = new Date(t);
+  if (v1 - v0 >= 3_600_000 && d.getHours() === 0 && d.getMinutes() === 0 && d.getSeconds() === 0) return dayMs(t);
+  return v1 - v0 < 10 * 60_000 ? clockMs(t) : clockMs(t).slice(0, 5);
+};
+
 /** "39%", or "<1%" for a sliver that is still there. */
 export const pct = (part: number, whole: number): string => {
   if (whole <= 0 || part <= 0) return "0%";
@@ -136,12 +180,12 @@ export const KIND_WORD: Record<SpanKind, string> = {
   "claude.other": "claude overhead",
   "wait.offline": "machine offline",
   "queue.slot": "agent limit",
-  "queue.lease": "leases",
+  "queue.lease": "waiting on another agent",
   "queue.usage": "usage limit",
   "queue.offline": "machine offline",
   "run.queued": "behind a run",
-  "wake.debounce": "wake debounce",
-  "park.usage": "usage parks",
+  "wake.debounce": "lead start delay",
+  "park.usage": "paused at usage limit",
   "slots.full": "at the agent limit",
   "wait.permission": "approvals",
   "wait.request": "requests",
@@ -281,7 +325,7 @@ export const gapText = (g: Gap): string => {
   const what: Record<Gap["why"], string> = {
     node_older: "a machine runs a fleetd too old to record tool time",
     node_dropped: `a machine dropped ${count}spans it couldn't send in time`,
-    hub_dropped: `fleetd was too busy to keep ${count}spans`,
+    hub_dropped: `the hub was too busy to keep ${count}spans`,
     no_node_spans: "a session has no tool timeline",
     nothing_running: "the critical path found time with nothing running",
   };

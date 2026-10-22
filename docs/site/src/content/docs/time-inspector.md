@@ -58,7 +58,7 @@ See the [CLI reference](/docs/reference/cli#time).
 
 In the app, the filter bar picks the work: "All work" for totals, or one piece of work by its title. One piece of
 work shows "Start to finish" as its range, and "‹ Chat" goes back to the project's chat. The figures read "wall" for
-one piece of work, "wall of all work" for the totals. Agents go by what they worked on, with their model and tokens,
+one piece of work, "wall of all work" for the totals. Agents go by what they worked on (with "2nd" when two did the same work), their model and output tokens,
 and every time is in your own time zone.
 
 ## The groups {#groups}

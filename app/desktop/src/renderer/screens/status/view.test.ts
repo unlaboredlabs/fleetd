@@ -1,8 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ProjectStatusRow } from "../../../shared/contracts";
 import type { ProjectRow } from "../../src/data/selectors";
 import { barOf, orderRows } from "./rows";
 import { age, dropLines, fullWhen, staleWords, when } from "./view";
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 const NOW = Date.parse("2026-10-19T10:07:12.000Z");
 
@@ -67,6 +71,8 @@ describe("words", () => {
   });
 
   it("always say which day a merge was, so an old one never passes for today", () => {
+    // Read in the viewer's zone; pinned so the words below hold on every machine.
+    vi.stubEnv("TZ", "UTC");
     expect(when("2026-10-19T08:18:00.000Z", NOW)).toBe("today 08:18");
     expect(when("2026-10-18T16:40:00.000Z", NOW)).toBe("yesterday 16:40");
     expect(when("2026-10-16T14:00:00.000Z", NOW)).toBe("Fri 14:00");

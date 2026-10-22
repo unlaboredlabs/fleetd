@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type PointerEvent, type RefObject } from "react";
 import { Button, RoleTag, Text, Truncate, cx } from "../../ui";
 import { barCard, laneCard, pathCard, type Card } from "./cards";
-import { CAT_LABEL, SHOWN, clockMs, fmtDur, type Names } from "./format";
+import { CAT_LABEL, SHOWN, clockMs, fmtDur, tickLabel, type Names } from "./format";
 import { hit, padded, rowRange, ticks, type Bar, type Model, type Row } from "./model";
 import { useData } from "../../src/data/react";
 import { fmtTokens, shortModel } from "../live/format";
@@ -15,23 +15,19 @@ import s from "./Time.module.css";
 const LABEL_W = 300;
 
 /**
- * A lane's tokens: its live input and output while a live frame carries them (the figure the chat's agents line
- * showed), else the output its model messages measured. One number from the store, so a label repaints only when it
- * changes.
+ * A lane's output tokens, one measure whether it runs or not: the live frame's count while it has one, else what its
+ * model messages measured. One number from the store, so a label repaints only when it changes.
  */
 const useLaneTokens = (row: Row | undefined): number => {
   const laneId = row?.laneId;
-  const live = useData((st) => {
-    const t = laneId === undefined ? undefined : st.live.lanes[laneId]?.tokens;
-    return t === undefined ? undefined : t.input + t.output;
-  });
+  const live = useData((st) => (laneId === undefined ? undefined : st.live.lanes[laneId]?.tokens?.output));
   return live ?? row?.outputTokens ?? 0;
 };
 
-/** "haiku · 41k": the lane's model and tokens, beside its name. */
+/** "haiku · 41k out": the lane's model and output tokens, beside its name. */
 function LaneMeta({ row }: { row: Row }) {
   const tokens = useLaneTokens(row);
-  const parts = [row.model === undefined ? undefined : shortModel(row.model), tokens > 0 ? fmtTokens(tokens) : undefined].filter((x) => x !== undefined);
+  const parts = [row.model === undefined ? undefined : shortModel(row.model), tokens > 0 ? `${fmtTokens(tokens)} out` : undefined].filter((x) => x !== undefined);
   if (parts.length === 0) return null;
   return (
     <Text size="xs" tone="quiet" tabular className={cx(s.laneMeta)}>
@@ -293,7 +289,7 @@ export function Timeline({ model: m, names, nowMs, view, onView, lit, onSpan }: 
         <div className={cx(s.axisTicks)}>
           {tickList.map((t) => (
             <span key={t} className={cx(s.tick)} style={{ left: ((t - v0) / (v1 - v0)) * size.width }}>
-              {v1 - v0 < 10 * 60_000 ? clockMs(t) : clockMs(t).slice(0, 5)}
+              {tickLabel(t, v0, v1)}
             </span>
           ))}
         </div>

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { changesSpans, errorText, linkedKeeps, litSpans, mergeSpans, namesOf, resumeAfter, type NamesInput } from "./data";
 import { fixtureAnswers } from "./fixture";
 import { DEFAULT_FILTERS, decodeFilters, fieldWhen, parseWhen, period, queryOf, spansInput } from "./filters";
@@ -54,10 +54,15 @@ describe("linked spans", () => {
 
 });
 
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
 describe("filters", () => {
   const now = Date.parse("2026-10-18T10:07:12.000Z");
 
   it("end ranges now, and today starts at the viewer's midnight", () => {
+    vi.stubEnv("TZ", "UTC");
     expect(period({ range: "hour" }, now)).toEqual([now - 3_600_000, undefined]);
     expect(period({ range: "today" }, now)[0]).toBe(Date.parse("2026-10-18T00:00:00.000Z"));
     expect(period({ range: "week" }, now)[0]).toBe(Date.parse("2026-10-11T10:07:12.000Z"));
@@ -67,16 +72,12 @@ describe("filters", () => {
 
   it("read and write custom dates in the viewer's zone, and refuse a day that isn't on the calendar", () => {
     vi.stubEnv("TZ", "Europe/Berlin");
-    try {
-      expect(period({ range: "today" }, now)[0]).toBe(Date.parse("2026-10-17T22:00:00.000Z"));
-      expect(parseWhen("2026-10-12")).toBe(Date.parse("2026-10-11T22:00:00.000Z"));
-      expect(parseWhen(" 2026-10-12 09:30 ")).toBe(Date.parse("2026-10-12T07:30:00.000Z"));
-      expect(fieldWhen(Date.parse("2026-10-12T07:30:00.000Z"))).toBe("2026-10-12 09:30");
-      expect(stampMs(Date.parse("2026-10-12T07:30:00.000Z"))).toBe("Oct 12, 09:30");
-      expect(clockMs(Date.parse("2026-10-12T07:30:05.000Z"))).toBe("09:30:05");
-    } finally {
-      vi.unstubAllEnvs();
-    }
+    expect(period({ range: "today" }, now)[0]).toBe(Date.parse("2026-10-17T22:00:00.000Z"));
+    expect(parseWhen("2026-10-12")).toBe(Date.parse("2026-10-11T22:00:00.000Z"));
+    expect(parseWhen(" 2026-10-12 09:30 ")).toBe(Date.parse("2026-10-12T07:30:00.000Z"));
+    expect(fieldWhen(Date.parse("2026-10-12T07:30:00.000Z"))).toBe("2026-10-12 09:30");
+    expect(stampMs(Date.parse("2026-10-12T07:30:00.000Z"))).toBe("Oct 12, 09:30");
+    expect(clockMs(Date.parse("2026-10-12T07:30:05.000Z"))).toBe("09:30:05");
     expect(parseWhen("2026-02-31")).toBeUndefined();
     expect(parseWhen("last tuesday")).toBeUndefined();
   });

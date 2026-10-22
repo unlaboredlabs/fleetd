@@ -352,7 +352,7 @@ function Notes({ b, missing }: { b: TimeBreakdownOutput; missing: Missing | unde
         </Text>
       ))}
       <Text as="p" size="xs" tone="quiet">
-        Spans are kept {b.retentionDays} days and take {fmtBytes(b.storedBytes)}.
+        Spans are kept {b.retentionDays} days; they take {fmtBytes(b.storedBytes)} on the hub.
       </Text>
     </section>
   );
