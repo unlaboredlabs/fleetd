@@ -90,8 +90,8 @@ export async function m6Verify(lab: Lab) {
   cursor = (await leadTurnEnds(woken.event.seq)).cursor;
   const wakeText = sessionText(MACHINE, leadThread);
   check(
-    wakeText.includes(`Claim ${firstClaim} on ${w} failed`) && wakeText.includes(`done:0 (on ${MACHINE}: \`test -f ${FILE}\` exits 0): fail, exit 1`) && wakeText.includes(`exited 1 (expected 0)`),
-    `the wake carries the failing check's exit code and output: ${wakeText.slice(wakeText.lastIndexOf(`Claim ${firstClaim}`), wakeText.lastIndexOf(`Claim ${firstClaim}`) + 400)}`,
+    wakeText.includes(`- claim ${firstClaim} on ${w} failed`) && wakeText.includes(`done:0 (on ${MACHINE}: \`test -f ${FILE}\` exits 0): fail, exit 1`) && wakeText.includes(`exited 1 (expected 0)`),
+    `the wake carries the failing check's exit code and output: ${wakeText.slice(wakeText.lastIndexOf(`claim ${firstClaim}`), wakeText.lastIndexOf(`claim ${firstClaim}`) + 400)}`,
   );
   // Agents never see a time estimate (#190): the digest names no ETA.
   check(!wakeText.includes("(raw 1m × "), "the lead's digest shows no ETA");

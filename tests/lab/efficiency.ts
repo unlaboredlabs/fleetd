@@ -16,7 +16,8 @@ const MACHINE = "lab-a";
 const TURN_MS = 240_000;
 const ENDED = ["thread.completed", "thread.failed", "thread.interrupted"];
 /** `assets/prompts/wake.runnable.md`'s opening. */
-const RUNNABLE = "A slot is free and approved work can start:";
+/** The slot-freed event line (hub/leads/events.rs): "- N slot(s) free; approved work can start: P3 docs". */
+const RUNNABLE = /^- \d+ slots? free; approved work can start: /mu;
 
 const shell = (root: string) => (...args: Array<string>) => {
   const out = spawnSync(...fleetdCommand(args), {
@@ -90,9 +91,10 @@ async function slotFiller(lab: Lab) {
   const between = (await eventsSince(lab, freed.cursor, ["task.queued", "task.started"])).filter((e) => e.seq < woke.event.seq);
   check(between.length === 0, `the hub started nothing before the lead woke: ${JSON.stringify(between.map((e) => e.summary))}`);
   cursor = await leadTurn(woke.cursor, "slot wake");
-  const wake = userMessages(MACHINE, leadThread).filter((t) => t.includes(`${taskId} completed`)).at(-1) ?? "";
-  check(wake.includes(RUNNABLE) && wake.includes(item!), `the wake after ${taskId}'s slot freed offers ${item}: ${wake.slice(-600)}`);
-  ok(`A. ${taskId}'s slot freed; the next lead wake (seq ${woke.event.seq}) offered ${item}: ${wake.split("\n").find((l) => l.includes(RUNNABLE))?.slice(0, 200)}`);
+  const wake = userMessages(MACHINE, leadThread).filter((t) => t.includes(`- ${taskId} finished`)).at(-1) ?? "";
+  const offer = wake.split("\n").find((l) => RUNNABLE.test(l));
+  check(offer?.includes(item!), `the wake after ${taskId}'s slot freed offers ${item}: ${wake.slice(-600)}`);
+  ok(`A. ${taskId}'s slot freed; the next lead wake (seq ${woke.event.seq}) offered ${item}: ${offer!.slice(0, 200)}`);
 
   // Whatever the lead started for the item is stopped, and the item dropped, so later scenarios start clean.
   for (const t of (await callTool("tasks_list", { projectRef: ref, limit: 50 })).body.tasks as Array<Body>) {

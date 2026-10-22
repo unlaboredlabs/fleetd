@@ -1,17 +1,16 @@
 // M8 "done when" on lab-a, through the desktop app's protocol: a human key from `fleetd hub key create --human` on
-// the hub's /app WebSocket, sending the same frames and tool calls the app sends. A secret ask is sealed client
-// side with libsodium's crypto_box_seal, as the app seals it, and lands
-// 0600 on the node, its value found nowhere in the hub's files, logs or events; a checklist ticked done fails its
-// verify check, reopens, then passes; a gated irreversible command is refused to an agent key and runs after Approve,
-// waking the lead with its exit code. The loud items carry the `attention` the app notifies from, and attention_policy
-// answers. The asks are filed from the project's shell as a lead would, so they cost no turns; a lead is started only
-// if none exists, just before the approval, so a run alone costs two haiku turns (lead start, the approval's wake).
+// the hub's /app WebSocket, sending the same frames and tool calls the app sends. A secret request is sealed client
+// side with libsodium's crypto_box_seal, as the app seals it, and lands 0600 on the node, its value found nowhere in
+// the hub's files, logs or events; a gated irreversible command is urgent, refused to an agent key, and runs after a
+// person's Approve, waking the lead with its exit code. The requests are filed from the project's shell as a lead
+// would, so they cost no turns; a lead is started only if none exists, just before the approval, so a run alone costs
+// two haiku turns (lead start, the approval's wake).
 import { spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import sodium from "libsodium-wrappers";
-import { type Body, cli, fleetdCommand, HUB_PORT, type Lab, MACHINES, MODEL, nodeHome, nodeSock, RUN, scrubbedEnv } from "./harness.ts";
+import { type Body, cli, fleetdCommand, HUB_PORT, type Lab, MACHINES, MODEL, nodeHome, nodeSock, RUN, scrubbedEnv, userMessages } from "./harness.ts";
 import { CLONE } from "./m7Train.ts";
 
 const MACHINE = "lab-a";
@@ -44,13 +43,7 @@ const appSession = async (key: string) => {
       waiting.set(id, { resolve, reject });
       ws.send(JSON.stringify({ t: "call", id, tool, input }));
     });
-  /** The inbox item for `askId`, and the terse reply for it, as the app sends it. */
-  const item = async (askId: string) => {
-    const open = await call("asks_list", { state: "open" });
-    const ask = (open.asks as Array<Body>).find((a) => a.askId === askId);
-    return ask === undefined ? undefined : { ask, raw: (word: string) => ({ raw: `${ask.number} ${word}`, batchId: ask.batchId }) };
-  };
-  return { call, item, close: () => ws.close() };
+  return { call, close: () => ws.close() };
 };
 
 const filesUnder = (dir: string): Array<[string, string]> =>
@@ -95,8 +88,6 @@ export async function m8Desktop(lab: Lab) {
       from = page.cursor as number;
     }
   };
-  const askOf = async (askId: string, state: "open" | "answered") =>
-    ((await callTool("asks_list", { state })).body.asks as Array<Body>).find((a) => a.askId === askId);
 
   // The desktop app's key: a person's, so its answers count as the human's.
   const key = /fld_[a-z2-7]{20,}/u.exec(cli("hub", "key", "create", "--home", lab.hubHome, "--human", "--name", "lab-desktop"))?.[0];
@@ -107,60 +98,36 @@ export async function m8Desktop(lab: Lab) {
     check(policy.coalesceSec === 1200 && Array.isArray(policy.quiet), `attention_policy: ${JSON.stringify(policy)}`);
     ok(`0. connected on /app with a --human key; attention_policy coalesces ${policy.coalesceSec} s, ${policy.quiet.length} quiet window(s) ahead`);
 
-    // 1. Secret ask, sealed client side to the node's box key.
+    /** The project's chat item for request `id`, as the app reads it. */
+    const itemOf = async (id: string) =>
+      ((await app.call("chat_history", { projectRef: ref, limit: 100 })).messages as Array<Body>).find((m) => m.item?.requestId === id)?.item as Body | undefined;
+
+    // 1. A secret request, sealed client side to the node's box key.
     const sinkDir = path.join(lab.dir, "secrets");
     fs.mkdirSync(sinkDir, { recursive: true });
     const sinkPath = path.join(sinkDir, ".env");
     fs.writeFileSync(sinkPath, "OTHER=1\n");
-    const secretAsk = /\bA\d+\b/u.exec(fleetd("ask", "--kind", "secret", "--key", "stripe.test_key", "--sink", `env:${MACHINE}:${sinkPath}`, "--text", "Need the Stripe test key"))?.[0];
-    check(secretAsk, "fleetd ask --kind secret filed an ask");
+    const secretAsk = /\bQ\d+\b/u.exec(fleetd("request", "secret", "--key", "stripe.test_key", "--sink", `env:${MACHINE}:${sinkPath}`, "--text", "Need the Stripe test key"))?.[0];
+    check(secretAsk, "fleetd request secret filed a request");
+    const asked = await itemOf(secretAsk!);
+    check(asked?.kind === "secret_request" && asked.state === "open" && asked.name === "stripe.test_key", `${secretAsk} is an open secret item in the chat: ${JSON.stringify(asked)}`);
     const machine = ((await app.call("fleetd_status")).machines as Array<Body>).find((m) => m.machineId === MACHINE);
     check(typeof machine?.boxPubKey === "string", `${MACHINE} has a box key`);
     await sodium.ready;
     const plaintext = sodium.from_string(VALUE);
     const sealed = sodium.to_base64(sodium.crypto_box_seal(plaintext, sodium.from_base64(machine!.boxPubKey, sodium.base64_variants.ORIGINAL)), sodium.base64_variants.ORIGINAL);
     sodium.memzero(plaintext);
-    const saved = await app.call("secret_submit", { askId: secretAsk, sealed });
+    const saved = await app.call("secret_submit", { requestId: secretAsk, sealed });
     const fingerprint = crypto.createHash("sha256").update(VALUE).digest("hex").slice(0, 8);
     check(saved.fingerprint === fingerprint, `secret_submit answered fingerprint ${saved.fingerprint}`);
     const sink = fs.readFileSync(sinkPath, "utf8");
     check(sink === `OTHER=1\nSTRIPE_TEST_KEY=${VALUE}\n` && (fs.statSync(sinkPath).mode & 0o777) === 0o600, "the node wrote STRIPE_TEST_KEY into the env sink, mode 0600");
-    check((await askOf(secretAsk!, "answered"))?.evidence === `fingerprint ${fingerprint}`, `${secretAsk} closed with its fingerprint`);
+    const stored = await itemOf(secretAsk!);
+    check(stored?.state === "stored" && stored.fingerprint === fingerprint, `${secretAsk} stored with its fingerprint: ${JSON.stringify(stored)}`);
     ok(`1. secret ${secretAsk}: sealed client side, saved on ${MACHINE}; fingerprint ${fingerprint}`);
+    // (3., the checklist ask with a verify check, went with the questions tool: a human check is a chat line now.)
 
-    // 3. Checklist with a verify check: ticked done before the step is done fails and reopens; after, it passes.
-    const flag = path.join(lab.dir, "flag");
-    let cursor = await lab.cursor();
-    const doAsk = /\bA\d+\b/u.exec(
-      fleetd(
-        "ask", "--kind", "do", "--key", "lab.m8.flag", "--class", "irreversible", "--text", "Create the M8 lab flag file", "--blocks", "the M8 lab check",
-        "--step", JSON.stringify({ text: "Create the flag file", where: MACHINE, command: `touch ${flag}` }),
-        "--verify", JSON.stringify({ type: "cmd", machineId: MACHINE, argv: ["test", "-f", flag], expectExit: 0 }),
-      ),
-    )?.[0];
-    check(doAsk, "fleetd ask --kind do filed an ask");
-    // It blocks an irreversible step: urgent, so the app notifies even in quiet hours.
-    const created = await lab.waitEvent(`${doAsk} created`, 30_000, { cursor, types: ["ask.created"], match: (e) => e.data?.askId === doAsk });
-    check(created.event.attention === "urgent", `${doAsk}'s ask.created carries attention "urgent": ${JSON.stringify(created.event.attention)}`);
-
-    cursor = await lab.cursor();
-    const tick = await app.item(doAsk!);
-    check(tick?.ask.steps?.[0]?.command === `touch ${flag}`, "the checklist shows its copyable command");
-    check((await app.call("inbox_reply", tick!.raw("done"))).parsed === true, "ticked done");
-    const reopened = await lab.waitEvent(`${doAsk} reopened`, 60_000, { cursor, types: ["ask.created"], match: (e) => e.data?.askId === doAsk && e.data?.reopened === true });
-    const evidence = String((await app.item(doAsk!))?.ask.evidence);
-    check(evidence.startsWith("ticked done, but its check failed") && reopened.event.attention === "urgent", `reopened, urgent, with the failing evidence: ${JSON.stringify(evidence)}`);
-    fs.writeFileSync(flag, "");
-    check((await app.call("inbox_reply", (await app.item(doAsk!))!.raw("done"))).parsed === true, "ticked done again");
-    const verified = await lab.until(`${doAsk} verified`, 60_000, async () => {
-      const ask = await askOf(doAsk!, "answered");
-      if (ask?.evidence?.startsWith("verified:")) return ask;
-      await callTool("events_wait", { cursor: await lab.cursor(), timeoutSec: 5 });
-      return undefined;
-    });
-    ok(`3. checklist ${doAsk}: urgent; the first tick reopened it ("${evidence.split("\n")[0]}"), the second passed: ${verified.evidence}`);
-
-    // 2. Approve ask. The lead: an earlier scenario's, else a fresh one now.
+    // 2. A gated command. The lead: an earlier scenario's, else a fresh one now.
     const outcome = (await callTool("project_get", ref)).body;
     let leadThread = outcome.lead?.threadId as string | undefined;
     let turns = 0;
@@ -175,26 +142,34 @@ export async function m8Desktop(lab: Lab) {
     }
     const gatedFile = path.join(lab.dir, "fleetd-gated-test");
     const argv = ["sh", "-c", `echo deployed > ${gatedFile}`];
-    const gatedAsk = /\bA\d+\b/u.exec(fleetd("gated", "run", "--class", "irreversible", "--argv", JSON.stringify(argv), "--reason", "prod deploy test"))?.[0];
-    check(gatedAsk, "fleetd gated run filed an approve ask");
-    const approve = await app.item(gatedAsk!);
-    check(JSON.stringify(approve?.ask.gated?.argv) === JSON.stringify(argv) && approve?.ask.gated?.cwd === root, `${gatedAsk} shows the exact argv and the workspace as cwd`);
-    const byAgent = await callTool("inbox_reply", approve!.raw("go"));
-    check(byAgent.isError && byAgent.body.code === "forbidden", `an agent key's "go" is refused: ${byAgent.body.message}`);
+    let cursor = await lab.cursor();
+    const gatedAsk = /\bQ\d+\b/u.exec(fleetd("gated", "run", "--class", "irreversible", "--argv", JSON.stringify(argv), "--reason", "prod deploy test"))?.[0];
+    check(gatedAsk, "fleetd gated run filed a request");
+    // It runs an irreversible command: urgent, so the app notifies even in quiet hours.
+    const opened = await lab.waitEvent(`${gatedAsk} opened`, 30_000, { cursor, types: ["request.opened"], match: (e) => e.data?.requestId === gatedAsk });
+    check(opened.event.attention === "urgent", `${gatedAsk}'s request.opened carries attention "urgent": ${JSON.stringify(opened.event.attention)}`);
+    const approve = await itemOf(gatedAsk!);
+    check(
+      approve?.kind === "command_approval" && approve.state === "open" && JSON.stringify(approve.gated?.argv) === JSON.stringify(argv) && approve.gated?.cwd === root,
+      `${gatedAsk} shows the exact argv and the workspace as cwd: ${JSON.stringify(approve)}`,
+    );
+    const byAgent = await callTool("approval_answer", { requestId: gatedAsk, decision: "approve" });
+    check(byAgent.isError && byAgent.body.code === "forbidden", `an agent key's approve is refused: ${JSON.stringify(byAgent.body)}`);
     cursor = await lab.cursor();
-    check((await app.call("inbox_reply", approve!.raw("go"))).parsed === true, "Approve");
-    const ran = await lab.waitEvent("gated.ran", 60_000, { cursor, types: ["gated.ran"], match: (e) => e.data?.askId === gatedAsk });
-    check(ran.event.data.exitCode === 0 && ran.event.data.by === "human:lab-desktop", `gated.ran: ${JSON.stringify(ran.event.data)}`);
+    await app.call("approval_answer", { requestId: gatedAsk, decision: "approve" });
+    const ran = await lab.waitEvent(`${gatedAsk} ran`, 60_000, { cursor, types: ["request.updated"], match: (e) => e.data?.requestId === gatedAsk && ["ran", "failed"].includes(e.data?.state) });
+    const done = await itemOf(gatedAsk!);
+    check(ran.event.data.state === "ran" && ran.event.data.by === "human:lab-desktop" && done?.exitCode === 0, `ran, approved by the person: ${JSON.stringify({ event: ran.event.data, item: done })}`);
     check(fs.readFileSync(gatedFile, "utf8") === "deployed\n", "the node ran the stored argv");
-    const done = await askOf(gatedAsk!, "answered");
-    check(String(done?.evidence).startsWith(`exit 0 on ${MACHINE}, approved by human:lab-desktop`), `evidence: ${JSON.stringify(done?.evidence)}`);
     const woken = await lab.waitEvent("the lead woken with the result", 120_000, {
       cursor: ran.cursor,
       types: ["lead.woken"],
-      match: (e) => e.threadId === leadThread && (e.data?.triggers as Array<string> | undefined)?.includes("answer") === true,
+      match: (e) => e.threadId === leadThread,
     });
     await lab.waitEvent("the lead's wake turn", TURN_MS, { cursor: woken.cursor, machineId: MACHINE, match: (e) => e.threadId === leadThread && ENDED.includes(e.type) });
-    ok(`2. approval ${gatedAsk}: refused to an agent, run after Approve (${done?.evidence?.split("\n")[0]}); ${woken.event.summary}`);
+    const line = userMessages(MACHINE, leadThread).flatMap((t) => t.split("\n")).find((l) => l.startsWith(`- ${gatedAsk} your command`));
+    check(line?.includes(`ran: exit 0 on ${MACHINE}, approved by human:lab-desktop`), `the lead's wake carries the result: ${JSON.stringify(line)}`);
+    ok(`2. approval ${gatedAsk}: refused to an agent, run after Approve; the lead's wake: ${line}`);
 
     // 1b. The value appears nowhere but the sink: hub DB files, hub and node logs, every event, the node homes.
     const events = await allEvents(0);

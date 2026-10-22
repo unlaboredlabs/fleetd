@@ -366,9 +366,10 @@ export async function m7Train(lab: Lab) {
         return undefined;
       });
     };
-    await told(c, ["The merge train could not rebase your PR", ALPHA]);
+    // The one "fix your PR" message (hub/prompts/fixed.rs fix_your_pr), with the reason and what to do.
+    await told(c, ["Fix your PR", "the merge train could not rebase it", ALPHA, "rebase onto origin/"]);
     ok(`2. ${c} got the task message naming ${ALPHA}`);
-    await told(d, ["The merge train did not merge your PR", "ci (failure)"]);
+    await told(d, ["Fix your PR", "the merge train did not merge it", "ci (failure)"]);
     ok(`3. ${d} was woken with the failing check name: ci (failure)`);
 
     // 2. The author resolved and pushed; the train merges the new head.
