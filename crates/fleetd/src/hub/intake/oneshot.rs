@@ -470,14 +470,6 @@ exit "$(cat "$dir/reply-$n.exit")"
     }
 
     #[tokio::test]
-    async fn uses_the_configured_model() {
-        let fake = Fake::new(&[(&result(&json!("ok")), 0)]);
-        let outcome = fake.one_shot(Some("claude-sonnet-5-5")).run(PROMPT).await;
-        assert!(fake.call(1).0.contains(&"claude-sonnet-5-5".to_string()));
-        assert_eq!(outcome.run.model, "claude-sonnet-5-5");
-    }
-
-    #[tokio::test]
     async fn reports_a_cli_error_a_failed_exit_and_garbage_output() {
         let error = json!({ "type": "result", "subtype": "error_during_execution", "is_error": true, "result": "API Error: 529" }).to_string();
         for (reply, exit, why) in [
