@@ -112,7 +112,7 @@ pub fn line(offers: &[Offer], total: usize, room: i64) -> String {
     .render()
 }
 
-/// The orders whose items are approved work: running on a frozen brief, so the human asked for them.
+/// The orders whose items are approved work: running on a brief, so the human asked for them.
 fn approved(hub: &Hub, r: &ProjectRef) -> HashSet<String> {
     hub.leads
         .records

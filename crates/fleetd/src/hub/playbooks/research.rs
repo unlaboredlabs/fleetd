@@ -1,4 +1,4 @@
-//! Research verdicts: the judge reports the metric for baseline and candidate, and the hub applies the brief's frozen
+//! Research verdicts: the judge reports the metric for baseline and candidate, and the hub applies the brief's
 //! decision rule. Every outcome ends the workstream as done; STOP and INCONCLUSIVE answer the question too.
 use std::sync::Arc;
 
@@ -83,9 +83,7 @@ impl Research {
         let Some(rule) = w.brief.as_ref().and_then(|b| b.decision_rule.clone()) else {
             return Err(LeadError::bare(
                 ErrorCode::Invalid,
-                format!(
-                    "{workstream_id} has no frozen decision rule, so its numbers decide nothing."
-                ),
+                format!("{workstream_id} has no decision rule, so its numbers decide nothing."),
             ));
         };
         if matches!(w.state, WorkstreamState::Stopped | WorkstreamState::Failed) {
