@@ -3,11 +3,11 @@
 // delivered to the lead inline, the same key is then answered from the log, and a naming question is refused.
 // Five lead turns, each tiny: start, the intent wake, one ask, the answer wake, the re-ask plus refusal.
 import { randomUUID } from "node:crypto";
-import { type Body, type Lab, MODEL } from "./harness.ts";
+import { type Body, chatOrder, type Lab, MODEL } from "./harness.ts";
 
 const MACHINE = "lab-a";
 // The v1 prompt has the lead delegate at once; m5 decides when tasks run, so this lead registers the brief only.
-const INTENT = "add a /health endpoint (lab run: register the brief, then stop; spawn no tasks until told)";
+const INTENT = "add a /health endpoint (lab run: open its workstream with workstream_open and register the brief, then stop; spawn no tasks until told)";
 const ASK = `fleetd ask --key api.health.path --class product --text "Path?" --option '/healthz|/healthz|Matches the probe default.' --option '/health|/health|The probe config changes too.' --rec /healthz --why "The probe expects it." --proceeded`;
 const TURN_MS = 240_000;
 
@@ -55,11 +55,11 @@ export async function m3Loop(lab: Lab) {
   );
   ok(`lead.started ${promptRef}, first message ${textSha?.slice(0, 12)}… kept (session_prompt_get)`);
   cursor = await turnDone(threadId, cursor, "start");
-  // thread_tail keeps a long message's end: the prompt's last command line, then the digest.
+  // thread_tail keeps a long message's end: the prompt's last tool line, then the digest.
   const firstTail = (await callTool("thread_tail", { machineId: MACHINE, threadId, n: 10, kinds: ["message"] })).body;
   check(
     (firstTail.items as Array<Body> | undefined)?.some(
-      (i) => i.role === "user" && i.text.includes("`fleetd decisions search") && i.text.includes("# fleetd digest:"),
+      (i) => i.role === "user" && i.text.includes("`decisions_search`") && i.text.includes("# fleetd digest:"),
     ),
     `the lead's first message is the lead.start prompt plus the digest: ${JSON.stringify(firstTail).slice(0, 500)}`,
   );
@@ -67,16 +67,14 @@ export async function m3Loop(lab: Lab) {
   check(outcome.lead?.threadId === threadId && outcome.lead.state === "idle", `project_get lead: ${JSON.stringify(outcome.lead)}`);
   ok(`project_get: lead {threadId: ${outcome.lead.threadId}, state: ${outcome.lead.state}}`);
 
-  // 2. intake_submit makes a draft and wakes the lead, which runs `fleetd brief create`: running, frozen hash.
-  const intake = await callTool("intake_submit", { ...ref, text: INTENT, clientRequestId: randomUUID() });
-  check(!intake.isError, `intake_submit: ${JSON.stringify(intake.body)}`);
-  const workstreamId = intake.body.workstreamId as string;
-  const draft = (await callTool("workstream_get", { workstreamId })).body;
-  check(draft.workstream.state === "draft", `${workstreamId} starts as a draft: ${JSON.stringify(draft.workstream)}`);
-  ok(`intake_submit -> ${workstreamId} (draft)`);
-  const woken = await lab.waitEvent("lead.woken with the intent", 60_000, { cursor, machineId: MACHINE, types: ["lead.woken"] });
+  // 2. A chat message: the lead opens a draft with workstream_open and runs `fleetd brief create`: running, frozen hash.
+  const order = await chatOrder(lab, ref, INTENT);
+  const workstreamId = order.workstreamId;
   const running = await lab.waitEvent(`workstream.running for ${workstreamId}`, TURN_MS, { cursor, machineId: MACHINE, types: ["workstream.running"] });
-  cursor = await turnDone(threadId, woken.event.seq, "intent wake");
+  const created = await lab.waitEvent(`workstream.created for ${workstreamId}`, 10_000, { cursor, types: ["workstream.created"], match: (e) => e.data?.workstreamId === workstreamId });
+  check(created.event.seq < running.event.seq, `${workstreamId} starts as a draft: created (seq ${created.event.seq}) before running (seq ${running.event.seq})`);
+  ok(`chat_send -> the lead opened ${workstreamId} (a draft)`);
+  cursor = await turnDone(threadId, order.cursor, "the chat turn");
   const registered = (await callTool("workstream_get", { workstreamId })).body.workstream;
   check(registered.state === "running" && /^[0-9a-f]{64}$/u.test(registered.briefHash ?? ""), `brief frozen: ${JSON.stringify(registered)}`);
   ok(`the lead ran fleetd brief create: ${workstreamId} running, briefHash ${registered.briefHash.slice(0, 12)}… (event seq ${running.event.seq})`);
@@ -148,8 +146,9 @@ export async function m3Loop(lab: Lab) {
   check(open.length === 0, `the repeat never reached a batch: ${JSON.stringify(open)}`);
   ok(`second fleetd ask answered from the log: ${auto.event.summary}`);
   const actions = (await callTool("actions_list", { machineId: MACHINE, threadId, limit: 50 })).body.actions as Array<Body>;
-  const naming = actions.find((a) => a.kind === "command" && a.summary.includes("--class naming"));
-  check(naming?.outputTail?.includes("decide this yourself"), `the naming ask was refused: ${JSON.stringify(naming)}`);
-  ok(`fleetd ask --class naming refused: "${naming!.outputTail.split("\n").find((l: string) => l.includes("decide this yourself")).trim()}"`);
+  // The lead may ask from its shell or with its ask tool; either way the hub refuses a naming question.
+  const naming = actions.find((a) => /--class naming|api\.health\.name/u.test(JSON.stringify(a)) && JSON.stringify(a).includes("decide this yourself"));
+  check(naming, `the naming ask was refused: ${JSON.stringify(actions.filter((a) => /naming|api\.health\.name/u.test(JSON.stringify(a))))}`);
+  ok(`the naming ask was refused: "${/[^"\\]*decide this yourself[^"\\.]*/u.exec(JSON.stringify(naming))?.[0]?.trim()}"`);
   ok(`M3 loop used ${turns} lead turns (${MODEL}, effort low)`);
 }

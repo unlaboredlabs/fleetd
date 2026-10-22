@@ -1,18 +1,18 @@
 //! Intake, brief freeze and status lines. A workstream's brief is frozen by hash when the lead registers it, and
-//! changes only with an ask the human answered.
+//! changes only with an amend that cites the decision logged when the human said yes in chat.
 use std::sync::Arc;
 
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::lead_calls::{BriefCreateResult, StatusSetResult};
 use fleetd_contracts::ledger::{
-    AskId, AskState, BriefDraft, BriefHash, DecisionSource, IntakeChannel, PlaybookName,
-    PlaybookRef, Workstream, WorkstreamId, WorkstreamParent, WorkstreamState,
+    BriefDraft, BriefHash, Decision, DecisionKey, IntakeChannel, PlaybookName, PlaybookRef,
+    Workstream, WorkstreamId, WorkstreamParent, WorkstreamState,
 };
 use fleetd_contracts::mcp::ErrorCode;
 
 use super::brief::brief_hash;
-use super::digest::{DigestPlaybook, clip_utf16, state_text};
+use super::digest::{clip_utf16, state_text};
 use super::error::LeadError;
 use super::records::{LeadRecords, NewWorkstream, StoredWorkstream, WorkstreamFilter, is_closed};
 use super::wakes::{LeadWakes, Trigger};
@@ -52,7 +52,8 @@ fn title_of(text: &str) -> String {
 
 fn amend_fix(id: &WorkstreamId) -> String {
     format!(
-        "File `ask` with class product, key {}.brief, the change and why as text, your proposal as recommendation and workstreamId {id}; call `brief` again with amend once the human answers it.",
+        "Ask the human in chat whether to change the brief of {id} and why; once they say yes, log it with `decide` (key {}.brief, workstreamId {id}) and call `brief` again with amend {}.brief.",
+        id.as_str().to_lowercase(),
         id.as_str().to_lowercase()
     )
 }
@@ -128,6 +129,15 @@ impl Workstreams {
 
     /// Creates a draft workstream for the intent and wakes the lead. Idempotent per client_request_id.
     pub fn intake(&self, input: IntakeInput) -> Result<IntakeOutcome, LeadError> {
+        self.create(input, true)
+    }
+
+    /// The lead's own `workstream_open`: the same draft, with no intent wake, since the lead that opens it knows.
+    pub fn open(&self, input: IntakeInput) -> Result<IntakeOutcome, LeadError> {
+        self.create(input, false)
+    }
+
+    fn create(&self, input: IntakeInput, wake: bool) -> Result<IntakeOutcome, LeadError> {
         if self.ctx.store.project_get(&input.project_ref)?.is_none() {
             return Err(LeadError::no_project(&input.project_ref));
         }
@@ -151,15 +161,13 @@ impl Workstreams {
                 format!("New intent {id}: {}", workstream.title),
                 Some(serde_json::json!({ "workstreamId": id })),
             )?;
+        }
+        if created && wake {
             self.wakes.trigger(
                 &input.project_ref,
                 Trigger::Intent {
                     workstream_id: id.clone(),
                     text: input.text,
-                    playbook: pinned.as_ref().map(|p| DigestPlaybook {
-                        name: p.playbook.name.as_str().into(),
-                        lead_instructions: p.playbook.lead_instructions.to_string(),
-                    }),
                 },
             );
         }
@@ -177,48 +185,39 @@ impl Workstreams {
         })
     }
 
-    /// The amend ask must be one the human answered, for this project (and this workstream, if it names one), used once.
-    fn check_amend(&self, stored: &StoredWorkstream, ask_id: &AskId) -> Result<(), LeadError> {
+    /// The amend names the decision the lead logged after the human approved the change in chat: active in this
+    /// workstream's chain (the workstream, its project, global), and never used for an earlier amend. Returns it.
+    fn check_amend(
+        &self,
+        stored: &StoredWorkstream,
+        key: &DecisionKey,
+    ) -> Result<Decision, LeadError> {
         let w = &stored.workstream;
         let refuse = |message: String| LeadError::invalid(message, amend_fix(&w.workstream_id));
-        let ask = self.ctx.ports().ask(ask_id)?;
-        let Some(ask) = ask.filter(|a| {
-            a.project_ref
-                .as_ref()
-                .is_some_and(|r| same_project(r, &w.project_ref))
-        }) else {
-            return Err(refuse(format!("There is no ask {ask_id} in this project.")));
+        let decision = self
+            .ctx
+            .ports()
+            .decisions_of_workstream(&w.workstream_id, 200)?
+            .into_iter()
+            .chain(self.ctx.ports().decisions_in_project(&w.project_ref, 500)?)
+            .find(|d| &d.key == key);
+        let Some(decision) = decision else {
+            return Err(refuse(format!(
+                "There is no decision {key} for {}: the human's yes to the change is not logged yet.",
+                w.workstream_id
+            )));
         };
-        if let Some(other) = ask
-            .workstream_id
-            .as_ref()
-            .filter(|id| **id != w.workstream_id)
+        if stored
+            .amends
+            .iter()
+            .any(|used| used == decision.decision_id.as_str())
         {
             return Err(refuse(format!(
-                "{ask_id} is about {other}, not {}.",
-                w.workstream_id
+                "{key} ({}) was already used to amend {}; a new change needs a new yes.",
+                decision.decision_id, w.workstream_id
             )));
         }
-        let decision = ask
-            .decision_id
-            .as_ref()
-            .map(|id| self.ctx.ports().decision(id.as_str()))
-            .transpose()?
-            .flatten();
-        if ask.state != AskState::Answered
-            || decision.map(|d| d.source) != Some(DecisionSource::Human)
-        {
-            return Err(refuse(format!(
-                "{ask_id} has no answer from the human yet."
-            )));
-        }
-        if stored.amends.contains(ask_id) {
-            return Err(refuse(format!(
-                "{ask_id} was already used to amend {}.",
-                w.workstream_id
-            )));
-        }
-        Ok(())
+        Ok(decision)
     }
 
     /// `fleetd brief create` from the lead of `caller`.
@@ -227,7 +226,7 @@ impl Workstreams {
         caller: &ProjectRef,
         workstream_id: &WorkstreamId,
         draft: BriefDraft,
-        amend: Option<&AskId>,
+        amend: Option<&DecisionKey>,
     ) -> Result<BriefCreateResult, LeadError> {
         let stored = self.own(caller, workstream_id)?;
         let w = &stored.workstream;
@@ -324,37 +323,66 @@ impl Workstreams {
         }
         let Some(amend) = amend else {
             return Err(LeadError::invalid(
-                format!(
-                    "The brief of {id} is frozen; changing it needs an ask the human answered."
-                ),
-                format!(
-                    "File `ask` with class product, key {}.brief, the change and why as text, your proposal as recommendation and workstreamId {id}; carry on meanwhile, and call `brief` again with amend <askId> once it is answered.",
-                    id.as_str().to_lowercase()
-                ),
+                format!("The brief of {id} is frozen; changing it needs the human's yes."),
+                amend_fix(id),
             ));
         };
-        self.check_amend(&stored, amend)?;
+        let approval = self.check_amend(&stored, amend)?;
+        // A claim made against the old brief must not close the workstream on the new one (W4): the amend reopens a
+        // verifying workstream and voids the claim still waiting on its checks.
+        let verifying = w.state == WorkstreamState::Verifying;
         let next = Workstream {
             brief: Some(brief),
             brief_hash: Some(hash.clone()),
+            state: if verifying {
+                WorkstreamState::Running
+            } else {
+                w.state
+            },
             updated_at: at.into(),
             ..w.clone()
         };
         let mut amends = stored.amends.clone();
-        amends.push(amend.clone());
-        self.records.workstream_put(&StoredWorkstream {
-            workstream: next.clone(),
-            amends,
-        })?;
+        amends.push(approval.decision_id.to_string());
+        // Only over the workstream as read, so a claim concluding meanwhile and this amend never overwrite each other.
+        let written = self.records.workstream_put_if(
+            &StoredWorkstream {
+                workstream: next.clone(),
+                amends,
+            },
+            w,
+        )?;
+        if !written {
+            let now = self.get(id)?.map_or(w.state, |w| w.state);
+            return Err(LeadError::invalid(
+                format!(
+                    "{id} changed while you amended it; it is {} now.",
+                    state_text(now)
+                ),
+                if is_closed(now) {
+                    "Start the change as new work instead.".to_owned()
+                } else {
+                    format!("Call `brief` for {id} again.")
+                },
+            ));
+        }
         self.event(
             &next,
             HubEventType::WorkstreamState,
-            format!("{id} brief amended under {amend}"),
+            format!("{id} brief amended under {amend} ({})", approval.decision_id),
             Some(serde_json::json!({ "workstreamId": id, "state": next.state, "briefHash": hash, "amend": amend })),
         )?;
+        let voided = if verifying {
+            if let Some(claims) = self.ctx.hooks.claims.get() {
+                claims.void(id);
+            }
+            " The claim you made before no longer counts; claim again once the new done-when checks hold."
+        } else {
+            ""
+        };
         Ok(result(
             next.state,
-            format!("Brief amended under {amend}. {running}"),
+            format!("Brief amended under {amend}.{voided} {running}"),
         ))
     }
 

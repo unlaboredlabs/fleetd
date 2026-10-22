@@ -37,7 +37,7 @@ async fn retro_proposals(
         "proposals": shown.items,
         "apply": apply,
         "next": if apply {
-            "Wording changes apply on their own and revert when their metric does not improve; gate changes come to you as asks each Monday.".to_string()
+            "Wording changes apply on their own and revert when their metric does not improve; a gate change waits on a person: one that relaxes a gate is an approval in a project's chat; one that only tightens is asked in chat by the leads it helps, who log playbook.<name>.<hash> as apply or reject. A person's global decision settles either.".to_string()
         } else {
             format!("Advise-only: nothing applies until the global decision {APPLY_KEY} = true (decisions_record).")
         },
@@ -79,7 +79,7 @@ async fn retro_run(
     } else if run.advise {
         "Suggested only; retro_proposals lists them and the digest shows them.".to_string()
     } else {
-        "Wording changes are applied and measured; gate changes wait for Monday's asks. retro_proposals tracks them.".to_string()
+        "Wording changes are applied and measured; gate changes wait for your playbook.<name>.<hash> decision (apply or reject). retro_proposals tracks them.".to_string()
     };
     Ok(json!({ "run": run, "proposals": proposals, "next": next }))
 }

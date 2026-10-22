@@ -10,6 +10,8 @@ export const IPC = {
   hubCall: "hub:call",
   /** invoke(LiveScope | null) → void. Kept across reconnects and re-sent when the window is focused. */
   hubLive: "hub:live",
+  /** invoke(ProjectRef | null) → void. The chat whose streamed text comes as `chat_delta` frames; kept across reconnects. */
+  hubChat: "hub:chat",
   /** invoke() → void. A fresh snapshot, then events from its cursor. */
   hubResync: "hub:resync",
   /** invoke(ConnectRequest) → ConnectOutcome. Saves the hub URL and key, then connects. */

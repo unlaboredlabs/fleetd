@@ -28,7 +28,7 @@ use crate::hub::link::commands::CommandInput;
 use crate::hub::link::lead_calls::{AgentDirectory, CallerAgent, LeadCallFuture};
 use crate::hub::link::{LeadCallHandler, LeadCaller, NodeCommands};
 
-fn port_error(error: ExecutorError) -> PortError {
+pub(crate) fn port_error(error: ExecutorError) -> PortError {
     match error {
         ExecutorError::MachineNotConnected { .. } => PortError::Offline,
         other => PortError::Failed(other.to_string()),
@@ -260,6 +260,7 @@ impl TaskPorts for HubTaskPorts {
         let kind = match kind {
             WakeKind::TaskResult => LineKind::TaskResult,
             WakeKind::TaskWaiting => LineKind::TaskWaiting,
+            WakeKind::CapRaised => LineKind::CapRaised,
         };
         hub.leads
             .wakes
@@ -440,9 +441,11 @@ impl TasksHook for TasksForLeads {
         project_ref: &ProjectRef,
         since: Option<&Timestamp>,
         limit: usize,
-        prompts: &crate::hub::prompts::PromptSet,
     ) -> Vec<String> {
-        self.0.digest_lines(project_ref, since, limit, prompts)
+        self.0.digest_lines(project_ref, since, limit)
+    }
+    fn agents(&self, project_ref: &ProjectRef) -> crate::hub::leads::events::AgentsLine {
+        self.0.agents(project_ref)
     }
     fn live(&self, project_ref: Option<&ProjectRef>) -> Vec<(TaskId, ProjectRef)> {
         self.0.live(project_ref)
@@ -497,6 +500,17 @@ impl PolicyHook for PolicyFromLeases {
                         fix: e.fix,
                     })?;
             Ok(policy.lead.is_none_or(|l| l.auto_start))
+        })
+    }
+
+    fn areas(&self, project_ref: &ProjectRef) -> BoxFuture<Option<(Vec<String>, bool)>> {
+        let (policies, r) = (Arc::clone(&self.0), project_ref.clone());
+        Box::pin(async move {
+            let resolved = policies.resolve(&r).await.ok()?;
+            Some((
+                resolved.policy.areas.into_keys().collect(),
+                resolved.inferred,
+            ))
         })
     }
 }

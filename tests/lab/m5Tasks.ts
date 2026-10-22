@@ -10,7 +10,7 @@ import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import { type Body, callToolWith, cli, fleetdCommand, initTools, type Lab, MODEL, nodeSock, scrubbedEnv, userMessages } from "./harness.ts";
+import { type Body, callToolWith, chatOrder, cli, fleetdCommand, initTools, type Lab, MODEL, nodeSock, scrubbedEnv, userMessages } from "./harness.ts";
 
 const MACHINE = "lab-a";
 const TURN_MS = 240_000;
@@ -132,14 +132,10 @@ export async function m5Tasks(lab: Lab) {
     outcome = (await callTool("project_get", ref)).body;
     let workstreamId = (outcome.workstreams as Array<Body> | undefined)?.find((w) => w.state === "running")?.workstreamId as string | undefined;
     if (workstreamId === undefined) {
-      const intake = await callTool("intake_submit", {
-        ...ref,
-        text: "add a docs page (lab run: register the brief, then stop; spawn no tasks until told)",
-        clientRequestId: randomUUID(),
-      });
-      workstreamId = intake.body.workstreamId as string;
+      const order = await chatOrder(lab, ref, "add a docs page (lab run: open its workstream with workstream_open and register the brief, then stop; spawn no tasks until told)");
+      workstreamId = order.workstreamId;
       await lab.waitEvent(`workstream.running for ${workstreamId}`, TURN_MS, { cursor, machineId: MACHINE, types: ["workstream.running"] });
-      cursor = await leadTurnDone(cursor, "intent wake");
+      cursor = await leadTurnDone(cursor, "the chat turn");
     }
     ok(`lead thread ${leadThread}, workstream ${workstreamId}`);
 

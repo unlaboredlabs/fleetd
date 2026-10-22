@@ -22,6 +22,7 @@ use fleetd_contracts::tasks::{Task, TaskState};
 use crate::hub::api::{Caller, Hub, ToolError, allows, require};
 use crate::hub::executor::Executors;
 use crate::hub::executor::shell_mapper::js_take;
+use crate::hub::leads::events::Event;
 use crate::hub::leads::records::is_closed;
 use crate::hub::queue::ports::SendOpts;
 use crate::hub::store::{NewEvent, iso_ms, now_ms};
@@ -99,7 +100,7 @@ fn resolve(hub: &Hub, by: &By, target: &SteerTarget) -> Result<Resolved, ToolErr
                 return Err(invalid(format!(
                     "{workstream_id} has ended; its lead no longer works on it."
                 ))
-                .with_fix("Give it as a new order with intake_submit."));
+                .with_fix("Tell the project's lead in its chat (chat_send)."));
             }
             let lead = hub.leads.records.lead_get(r)?.ok_or_else(|| {
                 invalid(format!(
@@ -324,15 +325,13 @@ pub async fn send(hub: &Hub, by: By<'_>, req: SteerRequest<'_>) -> Result<Steer,
 /// and its own messages to the task don't fork from it.
 fn tell_lead(hub: &Hub, steer: &Steer, task: &Task) {
     let r = &task.project_ref;
-    let line = hub.db.prompts().for_lead(r).render(
-        "wake.agent_steer",
-        &[
-            ("id", &steer.id),
-            ("taskId", &task.task_id),
-            ("kind", &kind_name(task)),
-            ("text", &one_line(&steer.text, 600)),
-        ],
-    );
+    let line = Event::AgentSteered {
+        task: task.task_id.as_str(),
+        kind: &kind_name(task),
+        steer: steer.id.as_str(),
+        text: &steer.text,
+    }
+    .render();
     hub.leads.wakes.trigger(
         r,
         crate::hub::leads::wakes::Trigger::Line {

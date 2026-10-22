@@ -199,7 +199,7 @@ pub fn gh_auth(outcome: &CmdOutcome) -> Entry {
 }
 
 /// The hub's claude login fix. Behind a proxy the proxy holds the login. Otherwise `claude auth login`, or a gateway's
-/// variables in `claude.env`, which the hub's service loads (the router passes only those variables on).
+/// variables in `claude.env`, which the hub's service loads (the one-shot runner passes only those variables on).
 pub fn claude_login_fix(proxy: Option<&str>) -> DoctorFix {
     match proxy {
         Some(proxy) => manual(
@@ -217,8 +217,8 @@ pub fn claude_login_fix(proxy: Option<&str>) -> DoctorFix {
     }
 }
 
-/// `claude auth status --json` as the router runs it (same environment, so the same login). The intake router and
-/// the retro reach a model only through this login; without it they can't run.
+/// `claude auth status --json` as the retro runs it (same environment, so the same login). The retro reaches a model
+/// only through this login; without it, it can't run.
 pub fn claude_login(outcome: &CmdOutcome) -> Entry {
     hub_claude_login(outcome, None)
 }
@@ -230,7 +230,7 @@ pub fn hub_claude_login(outcome: &CmdOutcome, proxy: Option<&str>) -> Entry {
             return hub_entry(
                 "claude_login",
                 Fail,
-                "Claude Code (claude) is not on the hub's PATH; the intake router and the retro can't run.",
+                "Claude Code (claude) is not on the hub's PATH; the retro can't run.",
                 Some(manual(
                     "Install Claude Code on the hub machine, then log in",
                     Some("claude auth login".into()),
@@ -264,7 +264,7 @@ pub fn hub_claude_login(outcome: &CmdOutcome, proxy: Option<&str>) -> Entry {
         return hub_entry(
             "claude_login",
             Fail,
-            "claude on the hub is not logged in; the intake router and the retro can't reach a model.",
+            "claude on the hub is not logged in; the retro can't reach a model.",
             Some(claude_login_fix(proxy)),
         );
     }
@@ -275,9 +275,7 @@ pub fn hub_claude_login(outcome: &CmdOutcome, proxy: Option<&str>) -> Entry {
     hub_entry(
         "claude_login",
         Pass,
-        &format!(
-            "claude on the hub is logged in{method}; the intake router and the retro can run."
-        ),
+        &format!("claude on the hub is logged in{method}; the retro can run."),
         None,
     )
 }
@@ -671,13 +669,13 @@ fn version_entry(
     }
 }
 
-/// The hub's own claude (the intake router and the retro run it): version and protocol, from the probe.
+/// The hub's own claude (the retro runs it): version and protocol, from the probe.
 pub fn hub_claude_version(info: &RunnerInfo) -> Entry {
     match &info.version {
         None => hub_entry(
             "claude_version",
             Fail,
-            "Claude Code (claude) is not on the hub's PATH; the intake router and the retro can't run.",
+            "Claude Code (claude) is not on the hub's PATH; the retro can't run.",
             Some(manual(
                 "Install Claude Code on the hub machine, then log in",
                 Some(CLAUDE_INSTALL.into()),
@@ -916,6 +914,32 @@ pub fn cmd_roots(machine_id: &str, refused: &[(String, String)]) -> Entry {
     )
 }
 
+/// Each project's writer areas, for reading: writers in different areas run at once, so a project with one area
+/// runs its writers one at a time, which the line says. Never a warning: one area suits a small repo.
+pub fn areas(machine_id: &str, projects: &[super::service::ProjectAreas]) -> Entry {
+    let line = |p: &super::service::ProjectAreas| {
+        let source = if p.inferred {
+            "inferred from the repo"
+        } else {
+            "from .fleetd/policy.yaml"
+        };
+        let one = if p.areas.len() <= 1 {
+            "; one area, so writers run one at a time"
+        } else {
+            ""
+        };
+        format!("{}: {} ({source}{one})", p.title, p.areas.join(", "))
+    };
+    let listed = projects.iter().map(line).collect::<Vec<_>>().join("; ");
+    machine_entry(
+        machine_id,
+        "areas",
+        Pass,
+        &format!("Writer areas: {listed}."),
+        None,
+    )
+}
+
 pub fn disk_space(machine_id: &str, probe: Result<&HostProbe, &str>) -> Entry {
     let probe = match probe {
         Err(why) => return machine_entry(machine_id, "disk", Unknown, why, None),
@@ -968,6 +992,27 @@ mod tests {
     use super::*;
 
     #[test]
+    fn areas_list_each_project_and_say_when_one_area_serializes_its_writers() {
+        use super::super::service::ProjectAreas;
+        let shop = ProjectAreas {
+            title: "storefront".into(),
+            areas: vec!["all".into(), "docs".into(), "web".into()],
+            inferred: true,
+        };
+        let one = ProjectAreas {
+            title: "billing".into(),
+            areas: vec!["all".into()],
+            inferred: false,
+        };
+        let check = areas("devbox", &[shop, one]).check;
+        assert_eq!((check.id.as_str(), check.status), ("devbox/areas", Pass));
+        assert_eq!(
+            check.message,
+            "Writer areas: storefront: all, docs, web (inferred from the repo); billing: all (from .fleetd/policy.yaml; one area, so writers run one at a time)."
+        );
+    }
+
+    #[test]
     fn a_project_outside_cmd_roots_fails_with_the_fix() {
         let ok = cmd_roots("fe7", &[]).check;
         assert_eq!((ok.id.as_str(), ok.status), ("fe7/cmd-roots", Pass));
@@ -1008,7 +1053,7 @@ mod tests {
         };
         assert_eq!(
             message("oauth_token"),
-            "claude on the hub is logged in with a long-lived login token; the intake router and the retro can run."
+            "claude on the hub is logged in with a long-lived login token; the retro can run."
         );
         assert!(message("claude.ai").contains("logged in with a Claude account;"));
         assert!(

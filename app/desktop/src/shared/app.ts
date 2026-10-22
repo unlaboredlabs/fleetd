@@ -2,7 +2,9 @@
 // notification, a fleetd:// link) and notifications to post. Menu commands are the palette registry's ids.
 import { z } from "zod";
 
-const askId = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/u);
+/** Ids from the hub, as they appear in a notification's target. */
+const machineId = z.string().regex(/^[a-z0-9-]{1,32}$/u);
+const hubId = z.string().regex(/^[A-Za-z0-9._:-]{1,128}$/u);
 
 /** A pairing code as typed or linked; the onboarding screen normalises it. */
 const pairCode = z.string().regex(/^[A-Za-z0-9-]{4,32}$/u);
@@ -19,8 +21,8 @@ const hubUrl = z
   }, "a http(s) hub address");
 
 const notifyTargets = [
-  z.strictObject({ kind: z.literal("ask"), askId }),
-  z.strictObject({ kind: z.literal("inbox") }),
+  /** A project's lead chat, at one message when the notification is about it. */
+  z.strictObject({ kind: z.literal("chat"), machineId, projectId: hubId, messageId: hubId.optional() }),
   z.strictObject({ kind: z.literal("machines") }),
   z.strictObject({ kind: z.literal("status") }),
 ] as const;

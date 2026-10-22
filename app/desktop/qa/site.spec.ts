@@ -19,8 +19,8 @@ const only = process.env["SITE_SHOTS"]?.split(",");
 
 for (const shot of siteShots.filter((s) => only === undefined || only.includes(s.file))) {
   test(shot.file, async () => {
-    const entry = screens.find((s) => s.id === shot.screen && s.fixtures.some((f) => f === shot.fixture));
-    if (!entry) throw new Error(`${shot.screen} × ${shot.fixture} isn't registered in qa/registry.ts`);
+    const entry = screens.find((s) => s.id === shot.screen && s.variant === shot.variant && s.fixtures.some((f) => f === shot.fixture));
+    if (!entry) throw new Error(`${shot.screen}${shot.variant === undefined ? "" : `~${shot.variant}`} × ${shot.fixture} isn't registered in qa/registry.ts`);
     const { app, page, settled, close } = await launch(shot.fixture as FixtureName);
     try {
       await setView(app, page, "medium", "light");

@@ -14,9 +14,9 @@ export interface HubErrorJson {
   readonly fix?: string | undefined;
 }
 
-type TimedKind = "event" | "live" | "snapshot";
+type TimedKind = "event" | "live" | "snapshot" | "chat_delta";
 
-/** Rows of `tool`'s answers under `field` matching `where`, e.g. asks_list's asks with askId A1. */
+/** Rows of `tool`'s answers under `field` matching `where`, e.g. requests_list's requests with requestId Q1. */
 export interface Rows {
   readonly tool: string;
   readonly field: string;
@@ -50,6 +50,10 @@ const timedFrame = (kind: TimedKind, payload: JsonObject, afterMs: number): Fixt
   const num = (v: JsonValue | undefined) => (typeof v === "number" ? v : 0);
   if (kind === "snapshot") return { t: "snapshot", snapshot: { ...payload, cursor: num(payload["cursor"]) }, afterMs };
   if (kind === "event") return { t: "event", event: { ...payload, seq: num(payload["seq"]), type: asText(payload["type"]) }, afterMs };
+  if (kind === "chat_delta") {
+    const delta = { ...payload, messageId: asText(payload["messageId"]), offset: num(payload["offset"]), append: asText(payload["append"]) };
+    return { t: "chat_delta", delta, afterMs };
+  }
   return { t: "live", frame: { ...payload, full: payload["full"] === true }, afterMs };
 };
 
@@ -80,6 +84,8 @@ export class Fixture {
   errors: Array<HubErrorJson> = [];
   /** Tools whose answers follow a contract change still on its branch; skipped by validation until it merges. */
   pendingContracts = new Map<string, string>();
+  /** The slot state is this fixture's point: lanes are made to match it, rather than it to the lanes (kit/agents.ts). */
+  agentsFromSlots = false;
   /** Frames that arrive `ms` after the app subscribes, for progress over time; see later(). */
   timeline: Array<{ ms: number; kind: TimedKind; payload: JsonObject }> = [];
   /** When the screen is final, for the QA harness to screenshot; defaults to the last timed frame. */
@@ -108,6 +114,7 @@ export class Fixture {
     f.live = clone(base.live);
     f.errors = base.errors.map((e) => ({ ...e }));
     f.pendingContracts = new Map(base.pendingContracts);
+    f.agentsFromSlots = base.agentsFromSlots;
     f.timeline = base.timeline.map((t) => ({ ...t, payload: clone(t.payload) }));
     f.settleMs = base.settleMs;
     f.calls = base.calls.map((c) => ({ ...c, ...(c.input === undefined ? {} : { input: clone(c.input) }), ...(c.output === undefined ? {} : { output: clone(c.output) }) }));
@@ -125,8 +132,10 @@ export class Fixture {
     let ms = 0;
     for (const frame of file.frames) {
       ms += frame.afterMs ?? 0;
-      if (ms > 0 && frame.t !== "error") {
-        const payload = frame.t === "snapshot" ? frame.snapshot : frame.t === "event" ? frame.event : frame.frame;
+      // A streamed chat frame only makes sense on the timeline, after the chat's first page.
+      if ((ms > 0 || frame.t === "chat_delta") && frame.t !== "error") {
+        const payload =
+          frame.t === "snapshot" ? frame.snapshot : frame.t === "event" ? frame.event : frame.t === "chat_delta" ? frame.delta : frame.frame;
         f.timeline.push({ ms, kind: frame.t, payload: clone(payload as JsonObject) });
       } else if (frame.t === "snapshot") f.snapshot = clone(frame.snapshot as JsonObject);
       else if (frame.t === "event") f.events.push(clone(frame.event as JsonObject));
@@ -219,9 +228,7 @@ export class Fixture {
       const afterMs = Math.max(0, Math.round(ms - previous));
       if (afterMs > MAX_AFTER_MS) throw new Error(`${this.name}: a frame ${afterMs} ms after the one before it; main allows ${MAX_AFTER_MS}`);
       previous = Math.max(previous, ms);
-      if (kind === "snapshot") frames.push({ t: "snapshot", snapshot: { ...payload, cursor: num(payload["cursor"]) }, afterMs });
-      else if (kind === "event") frames.push({ t: "event", event: { ...payload, seq: num(payload["seq"]), type: asText(payload["type"]) }, afterMs });
-      else frames.push({ t: "live", frame: { ...payload, full: payload["full"] === true }, afterMs });
+      frames.push(timedFrame(kind, payload, afterMs));
     }
     // A delayed answer is part of what the screen waits for, too.
     const slowest = Math.max(0, ...this.calls.map((c) => c.delayMs ?? 0));

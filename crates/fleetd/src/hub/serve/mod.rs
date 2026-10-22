@@ -5,7 +5,7 @@ use crate::hub::api::{self, Hub, HubConfig, Listen, Registry, Shutdown};
 use crate::hub::auth::Auth;
 use crate::hub::digests::HumanDigests;
 use crate::hub::http;
-use crate::hub::ledger::{Asks, Decisions, Inbox};
+use crate::hub::ledger::Decisions;
 use crate::hub::store::{EventLog, HubDb, HubStore, resolve_hub_home};
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -15,7 +15,7 @@ use tokio::task::JoinHandle;
 
 mod wire;
 
-pub const HUB_START_USAGE: &str = "  hub start [--home <dir>] [--listen <host:port>] [--queue-ttl <seconds>] [--router-model <model>]
+pub const HUB_START_USAGE: &str = "  hub start [--home <dir>] [--listen <host:port>] [--queue-ttl <seconds>] [--retro-model <model>]
              run the hub (default home ~/.fleetd/hub, listen 127.0.0.1:4790,
              writes to an offline machine wait 24 h, intents without a project
              are routed by the claude CLI with claude-haiku-5-5)
@@ -28,8 +28,8 @@ pub struct HubOptions {
     pub listen: Listen,
     /// How long a write to an offline machine waits in the queue; absent means 24 h.
     pub queue_ttl_sec: Option<u64>,
-    /// The intake router's model; absent means claude-haiku-5-5.
-    pub router_model: Option<String>,
+    /// The retro's one-shot model; absent means claude-haiku-5-5.
+    pub retro_model: Option<String>,
 }
 
 /// `host:port`, `:port` or `port`; IPv6 hosts in brackets, as in `[::1]:4790`.
@@ -62,7 +62,7 @@ pub fn parse_listen(value: &str) -> Option<Listen> {
 /// The flags of `hub start`, with node:util `parseArgs`'s strict rules and messages: `--flag value` or
 /// `--flag=value`, the last one wins, no positionals.
 pub fn parse_hub_args(argv: &[String]) -> Result<HubOptions, String> {
-    const FLAGS: [&str; 4] = ["home", "listen", "queue-ttl", "router-model"];
+    const FLAGS: [&str; 4] = ["home", "listen", "queue-ttl", "retro-model"];
     let mut values: [Option<String>; 4] = Default::default();
     let mut args = argv.iter();
     while let Some(arg) = args.next() {
@@ -100,7 +100,7 @@ pub fn parse_hub_args(argv: &[String]) -> Result<HubOptions, String> {
         };
         values[index] = Some(value);
     }
-    let [home, listen, ttl, router_model] = values;
+    let [home, listen, ttl, retro_model] = values;
     let listen = match listen {
         None => Listen::default(),
         Some(raw) => {
@@ -124,7 +124,7 @@ pub fn parse_hub_args(argv: &[String]) -> Result<HubOptions, String> {
         home,
         listen,
         queue_ttl_sec,
-        router_model,
+        retro_model,
     })
 }
 
@@ -167,7 +167,7 @@ pub async fn run(options: HubOptions) -> anyhow::Result<()> {
         listen: options.listen.clone(),
         url: None,
         queue_ttl_sec: options.queue_ttl_sec,
-        router_model: options.router_model.clone(),
+        retro_model: options.retro_model.clone(),
     };
     let hub = build(config, Arc::new(SystemClock))?;
     let tools = Arc::new(api::registry());
@@ -223,10 +223,9 @@ pub fn build_on(
     )?;
     let auth = Arc::new(Auth::new(db.clone(), clock.clone()));
     let decisions = Arc::new(Decisions::new(db.clone(), events.clone(), clock.clone()));
-    let asks = Arc::new(Asks::new(db.clone(), events.clone(), clock.clone()));
-    let inbox = Inbox::new(db.clone(), events.clone(), clock.clone());
+    let requests = crate::hub::approvals::store::Requests::new(db.clone());
     let digests = Arc::new(HumanDigests::new(
-        asks.clone(),
+        requests.clone(),
         decisions.clone(),
         store.clone(),
         events.clone(),
@@ -264,7 +263,7 @@ pub fn build_on(
     );
     let queue =
         crate::hub::queue::WriteQueue::from_config(&config, &db, &events, &clock, &executors);
-    let ops = crate::hub::usage::wire::build(&config, clock.clone());
+    let ops = crate::hub::usage::wire::build(&config, clock.clone(), requests.clone());
     let wakes = crate::hub::wakes::Wakes::new(
         db.clone(),
         queue.clone(),
@@ -307,6 +306,7 @@ pub fn build_on(
     let leases = crate::hub::leases::Leases::new(db.clone(), events.clone(), clock.clone());
     let source = crate::hub::leases::policy::NodePolicySource {
         store: store.clone(),
+        executors: executors.clone(),
         ports: task_ports.clone(),
     };
     let policies = crate::hub::leases::Policies::new(Arc::new(source), clock.clone());
@@ -326,8 +326,6 @@ pub fn build_on(
         crate::hub::leads::AreaOptions {
             home: &config.home,
             leads: Default::default(),
-            router_model: config.router_model.clone(),
-            env: std::env::vars().collect(),
         },
     )?;
     crate::hub::leads::wiring::wire_area(
@@ -336,9 +334,8 @@ pub fn build_on(
             executors: &executors,
             queue: &queue,
             commands: &node_commands,
-            asks: &asks,
+            requests: &requests,
             decisions: &decisions,
-            inbox: &inbox,
             lead_calls: &lead_calls,
             digests: &digests,
             claims: &checks.claims,
@@ -352,6 +349,7 @@ pub fn build_on(
         tracing::warn!(error = %e, "projects: interrupted clones not closed");
     }
     let plans = crate::hub::plan::Plans::new(db.clone(), events.clone(), clock.clone());
+    let chat = crate::hub::chat::Chat::new(db.clone(), events.clone(), clock.clone());
     let hub = Arc::new(Hub {
         config,
         clock,
@@ -361,8 +359,6 @@ pub fn build_on(
         events,
         auth,
         decisions,
-        asks,
-        inbox,
         digests,
         executors,
         node_commands,
@@ -394,6 +390,7 @@ pub fn build_on(
         time,
         status: crate::hub::status::Status::new(fresh),
         plans,
+        chat,
     });
     crate::hub::train::hooks::restore(&hub);
     checks.ports.bind(&hub);
@@ -402,12 +399,12 @@ pub fn build_on(
     hub.slots.set_time(hub.time.sink());
     hub.leads.intake.set_time(hub.time.sink());
     crate::hub::train::calls::register_lead_calls(&hub);
-    crate::hub::checks::hub_ports::wire_misfiled(&hub);
     crate::hub::tasks::wire::wire(&hub, &hub_task_ports);
     wire::wire(&hub);
     crate::hub::approvals::tools::register_lead_calls(&hub);
     crate::hub::plan::calls::register_lead_calls(&hub);
     crate::hub::steer::wire(&hub);
+    crate::hub::chat::tools::register_lead_calls(&hub);
     Ok(hub)
 }
 
@@ -416,9 +413,6 @@ pub fn build_on(
 pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>> {
     let _tools = tools;
     let mut loops = Vec::new();
-    if let Err(error) = hub.asks.start() {
-        tracing::error!(%error, "re-arming the collecting batch failed");
-    }
     let shutdown = hub.shutdown.clone();
     loops.push(tokio::spawn(
         hub.digests
@@ -428,6 +422,7 @@ pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>>
     hub.link.start();
     loops.push(hub.watchdog.start());
     loops.push(tokio::spawn(crate::hub::orders::idle::run(hub.clone())));
+    loops.push(tokio::spawn(crate::hub::chat::flow::run(hub.clone())));
     loops.push(tokio::spawn(crate::hub::orders::filler::run(hub.clone())));
     loops.push(tokio::spawn(crate::hub::steer::run_sweep(hub.clone())));
     loops.push(hub.sweep.start(crate::hub::sweep::SWEEP_EVERY_MS));

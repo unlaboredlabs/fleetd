@@ -24,7 +24,7 @@ pub trait UsageHook: Send + Sync {
     fn when_clear(&self, thread: &ThreadRef) -> BoxFuture<()>;
 }
 
-/// Tasks: digest lines, and listing and cancelling the tasks of removed projects.
+/// Tasks: digest lines, the agents line, and listing and cancelling the tasks of removed projects.
 pub trait TasksHook: Send + Sync {
     /// The digest's "Tasks" lines: `taskDigestLines(forDigest(ref, since, limit), since)`.
     fn digest_lines(
@@ -32,8 +32,9 @@ pub trait TasksHook: Send + Sync {
         project_ref: &ProjectRef,
         since: Option<&Timestamp>,
         limit: usize,
-        prompts: &crate::hub::prompts::PromptSet,
     ) -> Vec<String>;
+    /// The project's agents against its cap, for the state block.
+    fn agents(&self, project_ref: &ProjectRef) -> super::events::AgentsLine;
     /// Live (queued, running, idle) tasks, in one project or all.
     fn live(&self, project_ref: Option<&ProjectRef>) -> Vec<(TaskId, ProjectRef)>;
     /// `Tasks.cancel({projectRef, by: "hub"}, taskId, reason)`, errors ignored.
@@ -45,6 +46,8 @@ pub trait ClaimsHook: Send + Sync {
     fn latest(&self, workstream_id: &WorkstreamId) -> Option<Claim>;
     /// Newest first, at most `limit` (workstream_get shows 20).
     fn list(&self, workstream_id: &WorkstreamId, limit: usize) -> Vec<Claim>;
+    /// The brief changed: a claim still checking the old done-when stops and never counts.
+    fn void(&self, workstream_id: &WorkstreamId);
 }
 
 /// Estimates: ETAs and recording a done workstream.
@@ -60,7 +63,6 @@ pub trait TrainHook: Send + Sync {
         &self,
         project_ref: &ProjectRef,
         since: Option<&Timestamp>,
-        prompts: &crate::hub::prompts::PromptSet,
     ) -> Option<Vec<String>>;
 }
 
@@ -76,6 +78,10 @@ pub trait PolicyHook: Send + Sync {
         &self,
         project_ref: &ProjectRef,
     ) -> BoxFuture<Result<bool, super::error::LeadError>>;
+    /// The project's area names and whether they were inferred from the repo; `None` when the policy can't be read.
+    fn areas(&self, _project_ref: &ProjectRef) -> BoxFuture<Option<(Vec<String>, bool)>> {
+        Box::pin(async { None })
+    }
 }
 
 /// GitHub through `gh api`.

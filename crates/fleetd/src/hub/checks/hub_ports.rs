@@ -2,29 +2,26 @@
 //! `Hub`. Built before the `Hub` exists (the services that hold it go into the `Hub`), so it is bound right after.
 //! Before `bind` (or after the hub is dropped) each answers as if there were nothing.
 use super::ports::{
-    BoxFuture, ClaimWake, CommandRun, HumanAsk, HumanAskFiled, JudgeSpawn, PlaybookLimits, Ports,
+    BoxFuture, ClaimWake, CommandRun, HumanConfirmation, JudgeSpawn, PlaybookLimits, Ports,
     Refusal, invalid,
 };
-use super::{CLAIMS_BY, JUDGE_BY, render};
+use super::{JUDGE_BY, render};
 use crate::hub::api::Hub;
 use crate::hub::incidents::detectors::DetectorPorts;
-use crate::hub::incidents::{IncidentInput, Incidents};
-use crate::hub::leads::error::LeadError;
 use crate::hub::leads::wakes::{LineKind, Trigger};
-use crate::hub::ledger::{AskInput, MisfiledSink};
+use crate::hub::ledger::DecisionFilter;
 use crate::hub::link::commands::CommandInput;
 use crate::hub::tasks::records::TaskRecords;
 use crate::hub::tasks::{TaskCaller, TaskFilter};
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef};
 use fleetd_contracts::lead_calls::TaskSpawnCall;
 use fleetd_contracts::ledger::{
-    Ask, AskId, AskKind, Decision, DecisionId, DecisionKey, MetricValues, PlaybookRef, Workstream,
-    WorkstreamId,
+    Decision, DecisionId, DecisionKey, DecisionScope, DecisionState, MetricValues, PlaybookRef,
+    Workstream, WorkstreamId,
 };
 use fleetd_contracts::model::ActionItem;
 use fleetd_contracts::prim::{Line, Text};
 use fleetd_contracts::tasks::{Task, TaskId, TaskKind};
-use fleetd_contracts::verification::IncidentClass;
 use std::sync::{Arc, OnceLock, Weak};
 
 #[derive(Default)]
@@ -71,9 +68,24 @@ impl Ports for HubPorts {
         stored.workstream = workstream.clone();
         logged(records.workstream_put(&stored), "storing a workstream");
     }
+    fn put_workstream_if(&self, workstream: &Workstream, expect: &Workstream) -> bool {
+        let Some(hub) = self.hub() else { return false };
+        let records = &hub.leads.records;
+        let Some(Some(mut stored)) = logged(
+            records.workstream_get(&workstream.workstream_id),
+            "reading a workstream",
+        ) else {
+            return false;
+        };
+        stored.workstream = workstream.clone();
+        logged(
+            records.workstream_put_if(&stored, expect),
+            "storing a workstream",
+        )
+        .unwrap_or(false)
+    }
     fn wake(&self, project: &ProjectRef, wake: ClaimWake) {
         let Some(hub) = self.hub() else { return };
-        let set = hub.db.prompts().for_lead(project);
         let trigger = match wake {
             ClaimWake::Failed {
                 claim_id,
@@ -81,14 +93,14 @@ impl Ports for HubPorts {
                 failures,
             } => Trigger::Line {
                 kind: LineKind::ClaimFailed,
-                text: render::claim_failed_lines(&set, &claim_id, &workstream_id, &failures),
+                text: render::claim_failed_lines(&claim_id, &workstream_id, &failures),
             },
             ClaimWake::Passed {
                 claim_id,
                 workstream_id,
             } => Trigger::Line {
                 kind: LineKind::ClaimPassed,
-                text: render::claim_passed_line(&set, &claim_id, &workstream_id),
+                text: render::claim_passed_line(&claim_id, &workstream_id),
             },
             ClaimWake::Held {
                 claim_id,
@@ -96,7 +108,7 @@ impl Ports for HubPorts {
                 work,
             } => Trigger::Line {
                 kind: LineKind::ClaimPassed,
-                text: render::claim_held_line(&set, &claim_id, &workstream_id, &work),
+                text: render::claim_held_line(&claim_id, &workstream_id, &work),
             },
         };
         hub.leads.wakes.trigger(project, trigger);
@@ -214,51 +226,42 @@ impl Ports for HubPorts {
             hub.tasks.spawn(&caller, input).await
         })
     }
-    fn file_human_ask(&self, ask: HumanAsk) -> BoxFuture<'_, Result<HumanAskFiled, Refusal>> {
-        Box::pin(async move {
-            let Some(hub) = self.hub() else {
-                return Err(invalid("The hub cannot file asks yet.", None));
-            };
-            let step = serde_json::json!({
-                "text": ask.step_text,
-                "where": "browser",
-                "expect": ask.step_expect,
-            });
-            let input = AskInput {
-                project_ref: Some(ask.project_ref),
-                workstream_id: Some(ask.workstream_id),
-                kind: AskKind::Do,
-                key: wire(ask.key)?,
-                class: "product".into(),
-                text: wire(ask.text)?,
-                context: None,
-                recommendation: None,
-                recommendation_why: None,
-                options: None,
-                steps: Some(wire(vec![step])?),
-                verify: None,
-                sink: None,
-                env_name: None,
-                gated: None,
-                permission: None,
-                blocks: wire(ask.blocks)?,
-                proceeded_on_rec: false,
-            };
-            let outcome = hub
-                .asks
-                .create(&input, CLAIMS_BY)
-                .map_err(|e| Refusal::from(LeadError::from(e)))?;
-            // Only an ask answered at once from the log (state "auto") carries its decision.
-            let auto_value = outcome.decision.map(|d| d.value.to_string());
-            Ok(HumanAskFiled {
-                ask_id: outcome.ask.ask_id,
-                auto_value,
-            })
+    fn human_confirmation(
+        &self,
+        workstream: &WorkstreamId,
+        key: &str,
+    ) -> Option<HumanConfirmation> {
+        let hub = self.hub()?;
+        let scope = DecisionScope::Workstream {
+            workstream_id: workstream.clone(),
+        };
+        let found = hub.decisions.list(&DecisionFilter {
+            scope: Some(scope),
+            limit: Some(200),
+            ..Default::default()
+        });
+        let decision = logged(found, "reading a workstream's decisions")?
+            .into_iter()
+            .find(|d| d.key.as_str() == key && d.state == DecisionState::Active)?;
+        Some(HumanConfirmation {
+            value: decision.value.to_string(),
+            decision_id: decision.decision_id.to_string(),
+            at_ms: crate::hub::usage::time::parse_ms(decision.at.as_str()).unwrap_or(0),
         })
     }
-    fn ask_answer(&self, id: &AskId) -> Option<String> {
-        let ask = logged(self.hub()?.asks.get(id.as_str()), "reading an ask")??;
-        ask.answer.map(|a| a.value)
+    fn brief_frozen_ms(&self, workstream: &WorkstreamId) -> Option<i64> {
+        let hub = self.hub()?;
+        let at = hub.db.with(|c| {
+            Ok(c.query_row(
+                "SELECT max(created_ms) FROM events
+                 WHERE (type = 'workstream.running'
+                        OR (type = 'workstream.state' AND json_extract(data, '$.data.amend') IS NOT NULL))
+                   AND json_valid(data) AND json_extract(data, '$.data.workstreamId') = ?1",
+                [workstream.as_str()],
+                |r| r.get::<_, Option<i64>>(0),
+            )?)
+        });
+        logged(at, "reading when a brief was frozen").flatten()
     }
     fn thread_actions<'a>(
         &'a self,
@@ -309,43 +312,6 @@ impl DetectorPorts for HubPorts {
         )
         .unwrap_or_default()
     }
-    fn ask(&self, id: &AskId) -> Option<Ask> {
-        logged(self.hub()?.asks.get(id.as_str()), "reading an ask").flatten()
-    }
-}
-
-/// The ledger's misfiled sink (inbox_reply): a product ask the lead filed and the human dropped is a
-/// `misfiled_ask` incident.
-struct RecordMisfiled(Arc<Incidents>);
-
-impl MisfiledSink for RecordMisfiled {
-    fn misfiled(&self, ask: &Ask) {
-        let Some(project_ref) = ask.project_ref.clone() else {
-            return;
-        };
-        let class = serde_json::to_value(ask.class)
-            .ok()
-            .and_then(|v| v.as_str().map(str::to_owned))
-            .unwrap_or_default();
-        let evidence = format!(
-            "{} ({}, {class}) was filed by the lead and dropped by the human: \"{}\"",
-            ask.ask_id, ask.key, ask.text
-        );
-        let recorded = self.0.record(IncidentInput {
-            class: IncidentClass::MisfiledAsk,
-            project_ref,
-            workstream_id: ask.workstream_id.clone(),
-            task_id: None,
-            evidence: vec![evidence],
-        });
-        logged(recorded, "recording a misfiled ask");
-    }
-}
-
-/// Points the ledger inbox's misfiled asks at the incidents area. Called once by `hub::serve::build_on`.
-pub fn wire_misfiled(hub: &Hub) {
-    hub.inbox
-        .set_misfiled_sink(Arc::new(RecordMisfiled(hub.incidents.clone())));
 }
 
 /// A failed read or write is logged and answered as "nothing", as the stub did.

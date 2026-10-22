@@ -158,6 +158,8 @@ pub struct CommandApprovalItem {
     pub gated: Option<GatedRunSpec>,
     /// A session's permission prompt: the tool and what it would do.
     pub permission: Option<ToolPermission>,
+    /// A retro playbook change that relaxes a gate: what changes, in plain words, and the exact diff.
+    pub playbook: Option<Box<crate::ledger::PlaybookGateChange>>,
     pub state: CommandApprovalState,
     pub exit_code: Option<i64>,
     /// The end of the output, once it ran.

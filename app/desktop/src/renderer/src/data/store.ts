@@ -6,9 +6,9 @@
 import { createStore } from "zustand/vanilla";
 import {
   dataField,
+  eventData,
+  type HubEventOf,
   type AgentLane,
-  type Ask,
-  type Batch,
   type Claim,
   type HubEvent,
   type LiveFrame,
@@ -24,6 +24,8 @@ import {
   type TrainLive,
 } from "../../../shared/contracts";
 import type { HubError, HubFrame, HubState } from "../../../shared/hub";
+import { applyDelta, emptyChat, mergeLive, settleSends, type Chat, type ChatSend } from "./chat";
+import { CHAT_EVENTS, type ChatDelta, type ProjectChatState } from "./chat-contract";
 import { ordersNamed } from "./effects";
 import { settled } from "./phase";
 
@@ -80,16 +82,17 @@ export interface DataState {
   readonly orders?: Readonly<Record<string, OrderCard>> | undefined;
   readonly details: Readonly<Record<string, OrderDetail>>;
   readonly trains: Readonly<Record<string, TrainLive>>;
-  /** Open asks (and any ask an event closed since), by askId; undefined until this generation's asks landed. */
-  readonly asks?: Readonly<Record<string, Ask>> | undefined;
-  /** The open-asks read failed this generation (after its retries): asks are unknown, not loading. */
-  readonly asksError?: HubError | undefined;
-  readonly batches: Readonly<Record<string, Batch>>;
   /** The latest events, oldest first. */
   readonly events: readonly HubEvent[];
   /** The latest events naming each order, oldest first: the order view's merged event lines. */
   readonly orderEvents: Readonly<Record<string, readonly HubEvent[]>>;
   readonly live: LiveState;
+  /** Each opened project's lead chat; dropped by a snapshot, so a reconnect shows its skeleton until reread. */
+  readonly chats: Readonly<Record<ProjectKey, Chat>>;
+  /** The person's messages not yet settled by the hub. Theirs, not the hub's: kept across reconnects. */
+  readonly chatSends: Readonly<Record<ProjectKey, readonly ChatSend[]>>;
+  /** Per project: whether its lead waits on the person, and whether it works. */
+  readonly chatStates: Readonly<Record<ProjectKey, ProjectChatState>>;
 }
 
 const RECENT_EVENTS = 200;
@@ -138,10 +141,12 @@ export const initialState = (): DataState => ({
   attention: [],
   details: {},
   trains: {},
-  batches: {},
   events: [],
   orderEvents: {},
   live: emptyLive,
+  chats: {},
+  chatSends: {},
+  chatStates: {},
 });
 
 /** What a frame asks of the query layer besides the state change. */
@@ -187,15 +192,16 @@ export const applyFrame = (s: DataState, frame: HubFrame, nowMs: number): [DataS
           orders: undefined,
           details: {},
           trains: {},
-          asks: undefined,
-          asksError: undefined,
-          batches: {},
+          chats: {},
+          chatStates: byId(snap.chats ?? [], (c) => projectKey(c.projectRef)),
         },
         { refetchAll: true },
       ];
     }
     case "event":
       return [applyEvent(s, frame.event), {}];
+    case "chat_delta":
+      return [applyChatDelta(s, frame.delta), {}];
     case "live":
       return [{ ...s, live: { ...applyLive(s.live, frame.frame, nowMs), streams: applyStreams(s.live.streams, frame.frame) } }, {}];
     case "error":
@@ -203,11 +209,50 @@ export const applyFrame = (s: DataState, frame: HubFrame, nowMs: number): [DataS
   }
 };
 
-const patchAsk = (s: DataState, askId: string | undefined, patch: Partial<Ask>): DataState => {
-  const ask = askId === undefined ? undefined : s.asks?.[askId];
-  if (ask === undefined || askId === undefined) return s;
-  return { ...s, asks: { ...s.asks, [askId]: { ...ask, ...patch } } };
+/** The chat events: messages into an opened chat, the person's sends settled, the lead's waiting/working state. */
+const applyChatEvent = (s: DataState, event: HubEvent): DataState => {
+  switch (event.type) {
+    case CHAT_EVENTS.message: {
+      const data = eventData<"chat.message">(event as HubEventOf<"chat.message">);
+      if (data === undefined) return s;
+      const key = projectKey(data.projectRef);
+      const chat = s.chats[key];
+      const message = data.message;
+      if (message === undefined) {
+        // Too big for the event: read it by seq, unless the chat already has this copy or a newer one.
+        const held = chat?.messages.find((m) => m.messageId === data.messageId);
+        if (chat?.loaded !== true || (held !== undefined && held.state === data.state)) return s;
+        return chat.missing.includes(data.seq) ? s : { ...s, chats: { ...s.chats, [key]: { ...chat, missing: [...chat.missing, data.seq] } } };
+      }
+      const sends = s.chatSends[key];
+      const settled = sends === undefined ? undefined : settleSends(sends, [message]);
+      return {
+        ...s,
+        chats: chat?.loaded === true ? { ...s.chats, [key]: mergeLive(chat, message) } : s.chats,
+        chatSends: settled === undefined || settled === sends ? s.chatSends : { ...s.chatSends, [key]: settled },
+      };
+    }
+    case CHAT_EVENTS.waiting: {
+      const state = eventData<"chat.waiting">(event as HubEventOf<"chat.waiting">);
+      if (state === undefined) return s;
+      return { ...s, chatStates: { ...s.chatStates, [projectKey(state.projectRef)]: state } };
+    }
+    default:
+      return s;
+  }
 };
+
+/** A streamed frame of the subscribed chat. */
+export const applyChatDelta = (s: DataState, d: ChatDelta): DataState => {
+  const key = projectKey(d.projectRef);
+  const chat = s.chats[key];
+  if (chat?.loaded !== true) return s;
+  const next = applyDelta(chat, d);
+  return next === chat ? s : { ...s, chats: { ...s.chats, [key]: next } };
+};
+
+/** A chat's state, created on first touch. */
+export const chatOf = (s: DataState, key: ProjectKey): Chat => s.chats[key] ?? emptyChat;
 
 const patchOrder = (s: DataState, workstreamId: string | undefined, patch: Partial<OrderCard>): DataState => {
   const card = workstreamId === undefined ? undefined : s.orders?.[workstreamId];
@@ -242,23 +287,7 @@ export const applyEvent = (s: DataState, event: HubEvent): DataState => {
     // Every order the event names: a lead woken for several orders lists them in data.workstreamIds.
     orderEvents: ordersNamed(event).reduce((rings, id) => withOrderEvent(rings, id, event), s.orderEvents),
   };
-  const askId = dataField(event, "askId");
   switch (event.type) {
-    case "ask.answered":
-      next = patchAsk(next, askId, { state: "answered" });
-      break;
-    case "ask.auto":
-      next = patchAsk(next, askId, { state: "auto" });
-      break;
-    case "ask.undone":
-      next = patchAsk(next, askId, { state: "open" });
-      break;
-    case "ask.closed": {
-      const state = dataField(event, "state");
-      const closed = state === "auto" || state === "defaulted" || state === "withdrawn" ? state : "answered";
-      next = patchAsk(next, askId, { state: closed });
-      break;
-    }
     case "workstream.state": {
       const state = dataField(event, "state");
       if (state !== undefined) next = patchOrder(next, workstreamId, { state: state as OrderCard["state"] });
@@ -281,7 +310,7 @@ export const applyEvent = (s: DataState, event: HubEvent): DataState => {
     default:
       break;
   }
-  return next;
+  return applyChatEvent(next, event);
 };
 
 /**
@@ -338,6 +367,17 @@ type Ingest = {
   [T in ToolName]: { readonly tool: T; readonly input: ToolInput<T>; readonly output: ToolOutput<T> };
 }[ToolName];
 
+/**
+ * cap_set's answer: the hub's slot state with the new cap or max agents, applied at once. It replaces the live
+ * frame's copy too, which would otherwise keep showing the old value until the next frame (none comes without a
+ * live scope, as in Settings).
+ */
+export const applySlots = (s: DataState, slots: SlotState): DataState => ({
+  ...s,
+  slots,
+  live: s.live.slots === undefined ? s.live : { ...s.live, slots },
+});
+
 /** A call's result, folded into the entities it covers. Tools the store doesn't hold stay in the query cache. */
 export const ingest = (s: DataState, call: Ingest): DataState => {
   switch (call.tool) {
@@ -350,29 +390,12 @@ export const ingest = (s: DataState, call: Ingest): DataState => {
       return { ...s, orders: byId([...kept, ...call.output.orders], (o) => o.workstreamId), trains };
     }
     case "order_get": {
-      const { order, asks, lead, doneLanes, claims, truncated } = call.output;
+      const { order, lead, doneLanes, claims } = call.output;
       const id = order.workstreamId;
-      // order_get lists the order's open asks: one it no longer lists was closed. Closed asks are only kept until
-      // the next list, so the store holds what is open.
-      const others = Object.values(s.asks ?? {}).filter(
-        (a) => a.state === "open" && (truncated === true || a.workstreamId !== id),
-      );
       return {
         ...s,
         orders: s.orders === undefined ? undefined : { ...s.orders, [id]: order },
         details: { ...s.details, [id]: { lead, doneLanes, claims: claims ?? [] } },
-        asks: s.asks === undefined ? undefined : byId([...others, ...asks], (a) => a.askId),
-      };
-    }
-    case "asks_list": {
-      if (call.input.state !== "open" || call.input.batchId !== undefined) return s;
-      // Every open ask, unless truncated: an ask the list leaves out was closed (or is closed already) and goes.
-      const kept = call.output.truncated === true ? Object.values(s.asks ?? {}).filter((a) => a.state === "open") : [];
-      return {
-        ...s,
-        asksError: undefined,
-        asks: byId([...kept, ...call.output.asks], (a) => a.askId),
-        batches: byId(call.output.batches, (b) => b.batchId),
       };
     }
     default:
@@ -382,26 +405,3 @@ export const ingest = (s: DataState, call: Ingest): DataState => {
 
 export const createDataStore = () => createStore<DataState>()(initialState);
 export type DataStore = ReturnType<typeof createDataStore>;
-
-/** A read failed for good. Only the open-asks read is the store's business: the board stops waiting on it. */
-export const failRead = (s: DataState, tool: unknown, input: unknown, error: HubError): DataState => {
-  const asks = input as Partial<ToolInput<"asks_list">> | undefined;
-  if (tool !== "asks_list" || asks?.state !== "open" || asks.batchId !== undefined) return s;
-  return { ...s, asksError: error };
-};
-
-const CLOSES: ReadonlySet<string> = new Set(["answered", "skipped", "withdrawn", "retired"]);
-
-/**
- * The person's own reply, applied the moment the hub confirms it rather than when its event arrives: every ask it
- * closed leaves the open asks, so counts drop at once. The refetch that follows (and any event) agrees.
- */
-export const applyReply = (s: DataState, output: ToolOutput<"inbox_reply">): DataState =>
-  output.applied.reduce(
-    (next, a) => (a.askId !== undefined && CLOSES.has(a.outcome) ? patchAsk(next, a.askId, { state: "answered" }) : next),
-    s,
-  );
-
-/** An undone answer: the hub returns the ask, open again. */
-export const applyUndo = (s: DataState, output: ToolOutput<"inbox_undo">): DataState =>
-  s.asks === undefined ? s : { ...s, asks: { ...s.asks, [output.ask.askId]: output.ask } };

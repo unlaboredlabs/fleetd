@@ -21,9 +21,9 @@ The app shows each agent's role on its lane. The role decides the fleetd tools; 
 | Reviewer | `spawn_agent` with kind `review` | [Task tools](#task-tools) | No |
 | Verifier | A review task the review gate starts as the verifier | [Task tools](#task-tools) | No |
 | QA | `spawn_agent` with kind `review` and `qa: true` | [Task tools](#task-tools) | No |
-| Router | One `claude -p` on the hub that reads each new order; not a session | None, no MCP servers | No |
+| Retro | One `claude -p` on the hub that proposes playbook changes from incidents; not a session | None, no MCP servers | No |
 
-The router's Claude Code tools: none. fleetd starts it with `--tools ""`, `--strict-mcp-config` and `--safe-mode`.
+The retro's Claude Code tools: none. fleetd starts it with `--tools ""`, `--strict-mcp-config` and `--safe-mode`.
 
 ## Hub limits
 
@@ -33,12 +33,13 @@ The hub checks these on every fleetd call a session makes, through its MCP tools
 |---|---|
 | Who can start agents | A lead, with `spawn_agent`, `workstream_spawn`. A task's agent can't. |
 | Depth | 1. A lead is depth 0 and its tasks depth 1; nothing goes deeper. |
-| Open tasks per lead | 32 (queued, running or idle). Slots cap what runs at once. |
+| Open tasks per lead | 32 (queued, running or idle). |
+| Agents running at once, per project | The project's max agents, which a person sets (`cap_set`, the chat's Max agents); unset, the fleet cap. A spawn over it queues and starts by itself. The lead's own turns don't count. |
+| Agents running at once, fleet-wide | The fleet cap, 40 by default. 4 slots of it are kept for lead turns. |
 | Calls a task's agent may make | `report`, `ask_lead`, `claim_done`. Every other call is refused. |
 | Finish-all children open at once | 5 by default; the policy file's `finishAll.maxChildren` changes it. |
 | What a child workstream may serve | `issue`, `defect`, `done`. Never invented work. |
 | Gated commands (`gated_run`) | Classes `irreversible`, `money`, `credential`. Run only after a human approves; at most 1800 s. |
-| What a lead may ask the human (`ask`) | Classes `product`, `money`, `credential`, `irreversible`. Anything else it decides itself (`decide`). |
 
 These limits cover calls to fleetd, not what the agent's own shell can do. A task runs with full Bash, so `gated_run` is not the only way it could run a command. A process that leaves its session's process tree (for example with `setsid`) and scrubs its environment counts as you, with no limits: see "Known limit" on the Security page. Run agents you don't trust as a different OS user.
 
@@ -53,12 +54,12 @@ Every lead gets these, the finish-all lead included.
 | [`agent_status`](#agent_status) | One task as stored: state, queued reason, thread, result. | No |
 | [`list_agents`](#list_agents) | The project's tasks, newest first, optionally by state or workstream. | No |
 | [`stop_agent`](#stop_agent) | Stop a task: interrupts its thread and releases its slot and leases. | No |
-| [`brief`](#brief) | Freeze a draft workstream's brief (goal, why, pointers, constraints, doneWhen checks, tier, estimate) and start it. | Changing a frozen brief (amend) needs an ask the human approved. |
-| [`ask`](#ask) | Ask the human about product, money, credentials or irreversible actions only, with a dotted decision key and your recommendation. | No |
-| [`ask_withdraw`](#ask_withdraw) | Withdraw an ask, naming the existing decision that answers it (use). | No |
-| [`decide`](#decide) | Log a decision you made yourself (anything that is not product, money, credentials or irreversible). | No |
+| [`brief`](#brief) | Freeze a draft workstream's brief (goal, why, pointers, constraints, doneWhen checks, tier, estimate) and start it. | Changing a frozen brief (amend) needs the human's yes in chat, logged with decide. |
+| [`request_secret`](#request_secret) | Ask the human for a secret (a key, a token, a password). | The human enters the value in chat; you see only its fingerprint. |
+| [`request_withdraw`](#request_withdraw) | Take back a secret request or a command approval you no longer need (the human said so in chat). | No |
+| [`decide`](#decide) | Log a decision: one you made yourself, or the human's answer to a question you asked in chat (so you never ask it twice). | No |
 | [`claim_done`](#claim_done) | Claim a workstream done: fleetd runs its frozen done-when checks itself, and only all of them passing makes it done. | No |
-| [`gated_run`](#gated_run) | A prod write, spend, delete or credential use: the node runs exactly this argv only after a human approves it; secrets come from the node's own sinks. | A human approves the exact command (an approve ask) before the node runs it. |
+| [`gated_run`](#gated_run) | A prod write, spend, delete or credential use: the chat shows the human exactly this argv with Approve / Deny, and the node runs it only once approved; secrets come from the node's own sinks. | A human approves the exact command in chat before the node runs it. |
 | [`plan_milestone`](#plan_milestone) | Add a milestone to the project's plan. | No |
 | [`plan_add`](#plan_add) | Add a plan item (must or polish, size s\|m\|l, after other items). | No |
 | [`plan_edit`](#plan_edit) | Change a plan item. | No |
@@ -68,12 +69,13 @@ Every lead gets these, the finish-all lead included.
 | [`decisions_search`](#decisions_search) | Search the decision log. | No |
 | [`change_enqueue`](#change_enqueue) | Put a PR no task's result put there on its repo's merge train; only the train merges. | No |
 | [`change_status`](#change_status) | A merge-train change as stored. | No |
+| [`workstream_open`](#workstream_open) | Open a workstream for work you took from the chat: a draft you then freeze with brief. | No |
 | [`workstream_spawn`](#workstream_spawn) | A finish-all lead starts a child workstream for one item with a value source. | No |
 | [`inventory`](#inventory) | The project's open work, ranked. | No |
 
 ### spawn_agent
 
-Start a fleetd agent (a task) with its own session, slot and lane. kind write|read|review; a writer needs areas from the project's policy and serves (done:&lt;n>, issue:&lt;ref>, defect:&lt;text> or ask:&lt;id>) and gets its own worktree and branch; a review task needs pr. model and effort are optional. A busy area or a full slot board queues it and it starts by itself. Its result arrives in a later wake: end your turn instead of waiting.
+Start a fleetd agent (a task) with its own session, slot and lane. kind write|read|review; a writer needs areas from the project's policy and serves (done:&lt;n>, issue:&lt;ref>, defect:&lt;text> or decision:&lt;key>) and gets its own worktree and branch; a review task needs pr. model and effort are optional. A busy area or a full slot board queues it and it starts by itself. Its result arrives in a later wake: end your turn instead of waiting.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -193,11 +195,11 @@ Stop a task: interrupts its thread and releases its slot and leases.
 
 ### brief
 
-Freeze a draft workstream's brief (goal, why, pointers, constraints, doneWhen checks, tier, estimate) and start it. A frozen brief changes only with amend: an ask the human answered approving it.
+Freeze a draft workstream's brief (goal, why, pointers, constraints, doneWhen checks, tier, estimate) and start it. A frozen brief changes only with amend: the key of the decision you logged after the human approved the change in chat.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `amend` | string | no | The human-answered ask that approved changing an already frozen brief. |
+| `amend` | string | no | The key of the decision the lead logged after the human approved changing an already frozen brief in chat. |
 | `brief` | object | yes | A `Brief` whose `tier` may be left out, as `fleetd brief create` takes it; the playbook's `tierDefault` fills it. |
 | `brief.baseline` | string | no | At most 1000 characters. |
 | `brief.budget` | object | no |  |
@@ -219,7 +221,7 @@ Freeze a draft workstream's brief (goal, why, pointers, constraints, doneWhen ch
 | `brief.why` | string | yes | At most 2000 characters. |
 | `workstreamId` | string | yes | `W<n>`, e.g. `W1`. |
 
-**Who may call:** a lead, checked by the hub. **Needs a human:** Changing a frozen brief (amend) needs an ask the human approved.
+**Who may call:** a lead, checked by the hub. **Needs a human:** Changing a frozen brief (amend) needs the human's yes in chat, logged with decide.
 
 ```json
 {
@@ -247,87 +249,54 @@ Freeze a draft workstream's brief (goal, why, pointers, constraints, doneWhen ch
 }
 ```
 
-### ask
+### request_secret
 
-Ask the human about product, money, credentials or irreversible actions only, with a dotted decision key and your recommendation. kind do: steps a human performs; kind secret: a value sealed to a machine (you only see its fingerprint). Never block on it: carry on (proceededOnRec) or with other work. The answer arrives in a later wake.
+Ask the human for a secret (a key, a token, a password). The app shows a masked field in the chat; the value is sealed to the sink's machine and written there, and never enters a transcript. Only its fingerprint arrives, in a later wake.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `blocks` | string | no | At most 200 characters. Default `"nothing"`. |
-| `class` | string | yes | Any string: the hub refuses classes outside AskClass with the "decide this yourself" fix text. |
-| `context` | string | no | At most 400 characters. |
-| `envName` | string | no | An env: sink's variable, when the key's own name (`secret_env_name`) is not wanted or valid. |
-| `key` | string | yes | Lowercase dotted slug, [a-z0-9]+(.[a-z0-9_-]+)\*, at most 80. |
-| `kind` | string | no | One of `decide`, `do`, `secret`. Default `"decide"`. |
-| `options` | object[] | no | At most 6 items. |
-| `options[].consequence` | string | no | One line, what happens if the human picks it. Absent only on asks stored before labels. At most 200 characters. |
-| `options[].key` | string | yes | The decision value recorded when the human picks it, e.g. "public-snapshot". At most 2000 characters. |
-| `options[].label` | string | no | A few words, e.g. "Public snapshot". Absent only on asks stored before labels: show `humanize_key`. At most 80 characters. |
-| `proceededOnRec` | boolean | no | Default `false`. |
-| `recommendation` | string | no | The key of one of `options`. At most 2000 characters. |
-| `recommendationWhy` | string | no | One line. At most 200 characters. |
-| `sink` | string | no | Required for secret; the ask's key names the secret. |
-| `steps` | object[] | no | At most 20 items. |
-| `steps[].command` | string | no |  |
-| `steps[].expect` | string | no | What the human should see when the step worked. At most 500 characters. |
-| `steps[].text` | string | yes | At most 500 characters. |
-| `steps[].where` | string | yes | A machineId or "browser". |
-| `text` | string | yes | The question, one short line. At most 500 characters. |
-| `verify` | object | no | Do only. One of these shapes: {pr, repo, type}; {ref, repo, type}; {contains, status, type, url}; {argv, expectExit, machineId, type}; {repo, testId, type}; {criteria, type}; {question, type}. |
+| `envName` | string | no | An env: sink's variable, when not the one the key names. |
+| `key` | string | yes | The secret's name, a dotted slug such as "stripe.test_key". |
+| `sink` | string | yes | Where the value is written: env:&lt;machine>:&lt;file> (one NAME=value line) or file:&lt;machine>:&lt;path>. |
+| `text` | string | yes | One line on why it is needed. At most 500 characters. |
 | `workstreamId` | string | no | `W<n>`, e.g. `W1`. |
 
-**Who may call:** a lead, checked by the hub. **Needs a human:** no.
+**Who may call:** a lead, checked by the hub. **Needs a human:** The human enters the value in chat; you see only its fingerprint.
 
 ```json
 {
-  "name": "ask",
+  "name": "request_secret",
   "arguments": {
-    "class": "money",
-    "key": "billing.provider",
-    "options": [
-      {
-        "consequence": "2.9% + 30c a charge; live this week.",
-        "key": "stripe",
-        "label": "Stripe"
-      },
-      {
-        "consequence": "5% + 50c; handles sales tax for you.",
-        "key": "paddle",
-        "label": "Paddle"
-      }
-    ],
-    "proceededOnRec": true,
-    "recommendation": "stripe",
-    "recommendationWhy": "Cheaper at our volume, and the team knows it.",
-    "text": "Which payment provider should checkout use?"
+    "key": "stripe.test_key",
+    "sink": "env:shop-box:/srv/shop/.env",
+    "text": "The Stripe test key for checkout",
+    "workstreamId": "W3"
   }
 }
 ```
 
-### ask_withdraw
+### request_withdraw
 
-Withdraw an ask, naming the existing decision that answers it (use).
+Take back a secret request or a command approval you no longer need (the human said so in chat).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `askId` | string | yes | `A<n>`, e.g. `A1`. |
-| `use` | string | no | The existing decision that answers it. |
+| `requestId` | string | yes | `Q<n>`, e.g. `Q1`. |
 
 **Who may call:** a lead, checked by the hub. **Needs a human:** no.
 
 ```json
 {
-  "name": "ask_withdraw",
+  "name": "request_withdraw",
   "arguments": {
-    "askId": "A4",
-    "use": "D12"
+    "requestId": "Q4"
   }
 }
 ```
 
 ### decide
 
-Log a decision you made yourself (anything that is not product, money, credentials or irreversible).
+Log a decision: one you made yourself, or the human's answer to a question you asked in chat (so you never ask it twice).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -372,7 +341,7 @@ Claim a workstream done: fleetd runs its frozen done-when checks itself, and onl
 
 ### gated_run
 
-A prod write, spend, delete or credential use: the node runs exactly this argv only after a human approves it; secrets come from the node's own sinks. The exit code and output tail arrive in a later wake.
+A prod write, spend, delete or credential use: the chat shows the human exactly this argv with Approve / Deny, and the node runs it only once approved; secrets come from the node's own sinks. The exit code and output tail arrive in a later wake.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -386,7 +355,7 @@ A prod write, spend, delete or credential use: the node runs exactly this argv o
 | `timeoutSec` | integer | no | 1 to 1800. Default `1800`. |
 | `workstreamId` | string | no | `W<n>`, e.g. `W1`. |
 
-**Who may call:** a lead, checked by the hub. **Needs a human:** A human approves the exact command (an approve ask) before the node runs it.
+**Who may call:** a lead, checked by the hub. **Needs a human:** A human approves the exact command in chat before the node runs it.
 
 ```json
 {
@@ -613,6 +582,28 @@ A merge-train change as stored.
 }
 ```
 
+### workstream_open
+
+Open a workstream for work you took from the chat: a draft you then freeze with brief. template picks the playbook (feature, bugfix, research, finish-all); serves is optional.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `serves` | string | no |  |
+| `template` | string | no | The prefixes `bug:`/`fix:`, `research:` and `finish:` pick bugfix, research and finish-all. One of `bugfix`, `feature`, `research`, `finish-all`. |
+| `text` | string | yes | At most 4000 characters. |
+
+**Who may call:** a lead, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "workstream_open",
+  "arguments": {
+    "template": "feature",
+    "text": "Build the schedules page"
+  }
+}
+```
+
 ### workstream_spawn
 
 A finish-all lead starts a child workstream for one item with a value source.
@@ -733,7 +724,7 @@ Claim your workstream done: fleetd runs its done-when checks itself.
 
 ## Claude Code tools
 
-The same for every session. The router gets none. Listed for Claude Code 2.1.302, the version fleetd is tested with.
+The same for every session. The retro gets none. Listed for Claude Code 2.1.302, the version fleetd is tested with.
 
 **Allowed:** `Bash`, `DesignSync`, `Edit`, `NotebookEdit`, `Read`, `ReportFindings`, `Skill`, `ToolSearch`, `WebFetch`, `WebSearch`, `Write`.
 
@@ -770,7 +761,7 @@ Set in the claude process's environment. "In settings" marks the ones also in fl
 
 ## What your own setup adds
 
-fleetd starts sessions with your own Claude Code setup underneath. The router is the exception: it runs in safe mode with none of it (see [Roles](#roles)).
+fleetd starts sessions with your own Claude Code setup underneath. The retro is the exception: it runs in safe mode with none of it (see [Roles](#roles)).
 
 | Your setup | In a session |
 |---|---|

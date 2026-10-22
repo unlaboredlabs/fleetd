@@ -31,7 +31,7 @@ async fn start() -> TestHub {
         listen: Listen::default(),
         url: None,
         queue_ttl_sec: None,
-        router_model: None,
+        retro_model: None,
     };
     let hub = build_on(HubDb::open_memory().unwrap(), config, Arc::new(SystemClock)).unwrap();
     let mut tools: Registry = api::registry();
@@ -528,4 +528,65 @@ async fn a_new_status_wait_supersedes_the_connection_s_old_one_at_once() {
             .await
             .is_err()
     );
+}
+
+/// The Status screen's rows over the app socket: every project the key reads, idle with nothing to count, and
+/// none from a machine it can't read.
+#[tokio::test]
+async fn status_projects_lists_one_row_per_readable_project() {
+    let t = start().await;
+    for (m, p, title) in [("devbox", "p1", "storefront"), ("other", "p2", "billing")] {
+        t.hub
+            .store
+            .projects_upsert_many(
+                &fleetd_contracts::ids::MachineId::unchecked(m),
+                &[serde_json::from_value(json!({
+                    "machineId": m, "projectId": p, "title": title, "workspaceRoot": "/work/app",
+                    "threads": { "running": 0, "waiting": 0, "idle": 0, "failed": 0 },
+                    "lastActivityAt": "2026-10-19T10:00:00.000Z",
+                }))
+                .unwrap()],
+            )
+            .unwrap();
+    }
+    let rows_for = async |grants: Value| -> Vec<Value> {
+        let reader = key(&t.hub, grants);
+        let (mut app, _) = tokio_tungstenite::connect_async(format!("ws://{}/app", t.url))
+            .await
+            .unwrap();
+        app.send(Message::text(
+            json!({ "t": "auth", "key": reader }).to_string(),
+        ))
+        .await
+        .unwrap();
+        let mut read = async || -> Value {
+            serde_json::from_str(app.next().await.unwrap().unwrap().to_text().unwrap()).unwrap()
+        };
+        assert_eq!(read().await["t"], "ready");
+        app.send(Message::text(
+            json!({ "t": "call", "id": "p", "tool": "status_projects", "input": {} }).to_string(),
+        ))
+        .await
+        .unwrap();
+        let mut read = async || -> Value {
+            serde_json::from_str(app.next().await.unwrap().unwrap().to_text().unwrap()).unwrap()
+        };
+        let got = read().await;
+        got["output"]["rows"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+    };
+    let all = rows_for(json!([{ "role": "read", "machines": "*" }])).await;
+    let titles: Vec<&str> = all.iter().map(|r| r["title"].as_str().unwrap()).collect();
+    assert_eq!(titles, ["billing", "storefront"], "by title");
+    assert_eq!(all[1]["state"], "idle");
+    assert_eq!(all[1]["agentsRunning"], 0);
+    assert!(
+        all[1].get("progress").is_none(),
+        "nothing to count: no bar, not 0%"
+    );
+    let one = rows_for(json!([{ "role": "read", "machines": ["devbox"] }])).await;
+    assert_eq!(one.len(), 1);
+    assert_eq!(one[0]["projectRef"]["machineId"], "devbox");
 }

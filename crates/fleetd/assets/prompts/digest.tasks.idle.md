@@ -1,1 +1,0 @@
-- {{taskId}} idle, waiting for input ({{kind}}, {{model}}): {{title}}{{branch}}

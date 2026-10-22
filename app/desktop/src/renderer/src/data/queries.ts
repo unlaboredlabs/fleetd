@@ -1,5 +1,5 @@
 // Call-based reads through TanStack Query, wired to the store: main's frames feed the store, events invalidate the
-// reads they make stale, and results the store holds by entity (board, order, asks) are folded into it.
+// reads they make stale, and results the store holds by entity (board, order) are folded into it.
 import { QueryClient, type Query, type QueryKey } from "@tanstack/react-query";
 import {
   typedCall,
@@ -11,9 +11,10 @@ import {
   type ToolOutput,
 } from "../../../shared/contracts";
 import type { HubError, HubFrame } from "../../../shared/hub";
-import type { LiveScope } from "../../../shared/ipc";
+import type { ChatScope, LiveScope } from "../../../shared/ipc";
+import { createChatActions, refOf, type ChatActions } from "./chat-layer";
 import { effectsOf, matches, type Invalidation } from "./effects";
-import { applyFrame, applyReply, applyUndo, createDataStore, failRead, ingest, type DataStore } from "./store";
+import { applyFrame, applySlots, createDataStore, ingest, type DataStore } from "./store";
 
 export class CallError extends Error {
   constructor(readonly error: HubError) {
@@ -33,6 +34,7 @@ export interface HubApi {
   subscribe(listener: (frame: HubFrame) => void): () => void;
   resync(): Promise<void>;
   live(scope: LiveScope | null): Promise<void>;
+  chat(project: ChatScope | null): Promise<void>;
 }
 
 /** What the open screen wants live: every open order's lanes (board, machines) and/or one order in focus. */
@@ -81,6 +83,8 @@ export interface DataLayer {
    * Main keeps the scope and re-sends it on every reconnect and on window focus, so the layer sends only changes.
    */
   setLive(want: LiveWant): void;
+  /** The lead chats: history, and the person's messages (chat-layer.ts). */
+  readonly chat: ChatActions;
   /** Start applying main's frames; returns the stop. */
   start(): () => void;
 }
@@ -88,6 +92,7 @@ export interface DataLayer {
 export const createDataLayer = (hub: HubApi, now: () => number = Date.now): DataLayer => {
   const store = createDataStore();
   const typed = typedCall(hub.call);
+  const chat = createChatActions(store, typed, (key) => void hub.chat(key === null ? null : refOf(key)), now);
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -138,11 +143,6 @@ export const createDataLayer = (hub: HubApi, now: () => number = Date.now): Data
     const q = e.query as Query<unknown, Error, unknown>;
     if (e.action.type === "error") {
       dirty.delete(q.queryHash);
-      const [scope, tool, input] = q.queryKey;
-      const error = q.state.error;
-      const hubError =
-        error instanceof CallError ? error.error : { code: "failed", message: error?.message ?? "The read failed." };
-      if (scope === "call") store.setState((s) => failRead(s, tool, input, hubError));
       return;
     }
     if (e.action.type !== "success") return;
@@ -175,32 +175,9 @@ export const createDataLayer = (hub: HubApi, now: () => number = Date.now): Data
     void queryClient.invalidateQueries({ predicate: (q) => stale(q) && !inFlight(q) });
   }
 
-  // The person's own writes change the asks before any event says so. Apply them now and refetch now, not after the
-  // event batch window: a list read that raced the write must not land in between and bring an answered ask back.
+  // A saved max agents shows at once, before the next live frame's slots.
   const afterWrite = (tool: ToolName, output: unknown): void => {
-    if (tool !== "inbox_reply" && tool !== "inbox_undo") return;
-    const before = store.getState();
-    store.setState(
-      tool === "inbox_reply"
-        ? applyReply(before, output as ToolOutput<"inbox_reply">)
-        : applyUndo(before, output as ToolOutput<"inbox_undo">),
-    );
-    // The orders concerned. An undo's comes from the ask it returns: by then the list refetched after the answer has
-    // usually dropped the closed ask from the store, and a racing order_get must still be marked dirty.
-    const orders = new Set(
-      tool === "inbox_reply"
-        ? (output as ToolOutput<"inbox_reply">).applied.flatMap((a) => {
-            const w = a.askId === undefined ? undefined : before.asks?.[a.askId]?.workstreamId;
-            return w === undefined ? [] : [w];
-          })
-        : [(output as ToolOutput<"inbox_undo">).ask.workstreamId].filter((w) => w !== undefined),
-    );
-    invalidateNow([
-      { tool: "asks_list" },
-      { tool: "orders_board" },
-      { tool: "status_get" },
-      ...[...orders].map((workstreamId) => ({ tool: "order_get" as const, where: { workstreamId } })),
-    ]);
+    if (tool === "cap_set") store.setState(applySlots(store.getState(), (output as ToolOutput<"cap_set">).slots));
   };
 
   const call: Call = async (tool, input, options) => {
@@ -246,7 +223,9 @@ export const createDataLayer = (hub: HubApi, now: () => number = Date.now): Data
     call,
     toolQuery,
     setLive,
+    chat: chat.actions,
     start: () => {
+      const stopChat = store.subscribe((s, prev) => chat.onState(prev, s));
       const stopCache = queryClient.getQueryCache().subscribe(onCache);
       const stop = hub.subscribe(onFrame);
       // One timer, for the next hold to end: no polling, and none at all while nothing finished is held.
@@ -270,6 +249,7 @@ export const createDataLayer = (hub: HubApi, now: () => number = Date.now): Data
         if (s.orders !== prev.orders) scheduleHold();
       });
       return () => {
+        stopChat();
         stop();
         stopCache();
         stopHold();

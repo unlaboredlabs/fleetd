@@ -12,7 +12,7 @@ use std::sync::{Arc, OnceLock, Weak};
 pub struct OpsPorts {
     hub: OnceLock<Weak<Hub>>,
     /// The retro's claude runner, built on first use (it needs the hub's home and router model).
-    pub(super) retro_runner: OnceLock<crate::hub::intake::router::OneShot>,
+    pub(super) retro_runner: OnceLock<crate::hub::intake::oneshot::OneShot>,
 }
 
 impl OpsPorts {
@@ -109,13 +109,6 @@ impl UsageQueue for OpsPorts {
         let (message, id) = (message.to_owned(), id.to_owned());
         Box::pin(async move {
             let target = target.ok_or("not a thread ref")?;
-            // `message` is a prompt id (the continue message): the thread gets the text its session started with.
-            let message = self
-                .hub()
-                .db
-                .prompts()
-                .for_thread(&target.machine_id, target.thread_id.as_str())
-                .render(&message, &[]);
             self.hub()
                 .queue
                 .send(&target, &message, &id, None)
@@ -186,6 +179,32 @@ impl DoctorFleet for OpsPorts {
                 Some(info) => Some(info),
                 None => executors.runner_info(&m).await.ok(),
             }
+        })
+    }
+    fn project_areas(
+        &self,
+        machine_id: &str,
+    ) -> BoxFut<'_, Vec<crate::hub::doctor::service::ProjectAreas>> {
+        let m = machine(machine_id);
+        Box::pin(async move {
+            let Some(m) = m else { return Vec::new() };
+            let hub = self.hub();
+            let projects = hub.store.projects_list(Some(&m), None).unwrap_or_default();
+            let mut out = Vec::new();
+            for p in projects {
+                let r = fleetd_contracts::ids::ProjectRef {
+                    machine_id: p.machine_id,
+                    project_id: p.project_id,
+                };
+                if let Ok(resolved) = hub.policies.resolve(&r).await {
+                    out.push(crate::hub::doctor::service::ProjectAreas {
+                        title: p.title,
+                        areas: resolved.policy.areas.into_keys().collect(),
+                        inferred: resolved.inferred,
+                    });
+                }
+            }
+            out
         })
     }
     /// One `true` in each project's checkout: the node answers a refusal without running anything.
@@ -291,7 +310,11 @@ pub struct Ops {
     pub approvals: Arc<crate::hub::approvals::Approvals>,
 }
 
-pub fn build(config: &crate::hub::api::HubConfig, clock: Arc<dyn crate::clock::Clock>) -> Ops {
+pub fn build(
+    config: &crate::hub::api::HubConfig,
+    clock: Arc<dyn crate::clock::Clock>,
+    requests: Arc<crate::hub::approvals::store::Requests>,
+) -> Ops {
     let ports = Arc::new(OpsPorts::default());
     let usage = Arc::new(super::Usage::new(super::UsageDeps {
         events: ports.clone(),
@@ -317,7 +340,7 @@ pub fn build(config: &crate::hub::api::HubConfig, clock: Arc<dyn crate::clock::C
         clock: clock.clone(),
     });
     let approvals = crate::hub::approvals::Approvals::new(crate::hub::approvals::ApprovalsDeps {
-        asks: ports.clone(),
+        requests,
         nodes: ports.clone(),
         hub: ports.clone(),
         events: ports.clone(),

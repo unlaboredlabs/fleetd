@@ -3,6 +3,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::hub::prompts::PromptSet;
+use crate::hub::prompts::fixed::{self, FixPr, fix_your_pr};
 use crate::hub::train::contract::{Change, ReviewRule, Tier, tier_str};
 use crate::hub::train::host::{PlaybookView, TaskView};
 
@@ -246,8 +247,8 @@ pub fn review_prompt(
     );
     match reviewed.filter(|sha| *sha != change.head_sha.as_str()) {
         Some(sha) => {
-            let delta = set.render(
-                "review.delta",
+            let delta = fixed::render(
+                fixed::REVIEW_DELTA,
                 &[
                     ("reviewedSha", &sha),
                     ("headSha", &change.head_sha),
@@ -269,25 +270,18 @@ pub struct FindingsVerdict<'a> {
 }
 
 /// The message that sends blocking findings back to the task that wrote the code.
-pub fn findings_message(set: &PromptSet, change: &Change, v: &FindingsVerdict<'_>) -> String {
-    set.render(
-        "task.review_findings",
-        &[
-            ("reviewTaskId", &v.task_id),
-            ("prUrl", &change.pr_url),
-            ("headSha", &&v.pr_head_sha[..v.pr_head_sha.len().min(12)]),
-            (
-                "blocking",
-                &format!(
-                    "{} blocking finding{}",
-                    v.blocking,
-                    if v.blocking == 1 { "" } else { "s" }
-                ),
-            ),
-            ("nonBlocking", &v.non_blocking),
-            ("summary", &v.summary.trim()),
-            ("branch", &change.branch),
-        ],
+pub fn findings_message(change: &Change, v: &FindingsVerdict<'_>) -> String {
+    fix_your_pr(
+        change.pr_url.as_str(),
+        None,
+        change.branch.as_str(),
+        &FixPr::Review {
+            review_task: v.task_id,
+            head_sha: v.pr_head_sha,
+            blocking: v.blocking,
+            non_blocking: v.non_blocking,
+            summary: v.summary,
+        },
     )
 }
 

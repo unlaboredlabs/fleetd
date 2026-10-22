@@ -2,23 +2,24 @@
 // folder. Two ways in:
 //
 // - Commands: actions with a stable id. When the id is a ShortcutId (shared/shortcuts.ts), its key runs it and the
-//   palette shows the key. Register while the screen that handles it is mounted (useCommands), so "Stop order" only
-//   exists on the order view; when no registered command has an id, its key does nothing and falls through.
+//   palette shows the key. Register while the screen that handles it is mounted (useCommands), so "Attach a file" only
+//   exists while a chat composer is on screen; when no registered command has an id, its key does nothing and falls through.
 //   A screen's registration always outranks the built-in defaults (defaults.ts), whatever the mount order. Between
 //   two screens registering the same id, the later registration wins until it unmounts.
-// - Sources: data the palette searches (orders, projects, machines, prompts). `items` is read only while the
+// - Sources: data the palette searches (projects, machines, prompts). `items` is read only while the
 //   palette is open, so a large list costs nothing the rest of the time.
 
 import { useEffect, useRef } from "react";
 import type { ShortcutId } from "../../../shared/shortcuts";
 
-/** Listed in this order when nothing is typed; also the tie-break when two items score the same. */
-export const GROUPS = ["needs-you", "orders", "go-to", "actions", "projects", "machines", "settings", "prompts"] as const;
+/**
+ * Listed in this order when nothing is typed; also the tie-break when two items score the same. Projects first:
+ * opening a lead's chat is what the palette is mostly for.
+ */
+export const GROUPS = ["projects", "go-to", "actions", "machines", "settings", "prompts"] as const;
 export type Group = (typeof GROUPS)[number];
 
 export const GROUP_LABELS: Readonly<Record<Group, string>> = {
-  "needs-you": "Needs you",
-  orders: "Orders",
   actions: "Actions",
   "go-to": "Go to",
   projects: "Projects",
@@ -37,11 +38,8 @@ export interface Command {
   readonly detail?: string;
   /** Extra words that should find it ("preferences" for Settings). */
   readonly keywords?: readonly string[];
-  /** Shown only once something is typed: long lists (prompts) and per-item variants ("New order in api"). */
+  /** Shown only once something is typed: long lists such as prompts. */
   readonly searchOnly?: boolean;
-  /** Needs-you items: the ask's batch ("B4") and fixed number in it, so a typed reply ("1 go") shows exactly
-   *  the question the hub will answer. From Ask.batch_id and Ask.number. */
-  readonly ask?: { readonly batchId: string; readonly number: number };
   /** Read when the palette opens and when the key is pressed; false hides it and lets the key fall through. */
   readonly enabled?: () => boolean;
   readonly run: () => void;
@@ -52,12 +50,6 @@ export interface Source {
   /** Called when the palette opens, and again after `subscribe` reports a change while it is open. */
   readonly items: () => readonly Command[];
   readonly subscribe?: (onChange: () => void) => () => void;
-}
-
-/** What the palette offers for typed text that is not a reply, as its last row ("New order: <text>"). */
-export interface TextAction {
-  readonly title: (text: string) => string;
-  readonly run: (text: string) => void;
 }
 
 type Listener = () => void;
@@ -77,7 +69,6 @@ interface Entry {
 // Stacks, top last: by priority, then in registration order. An unmount restores the one below.
 const commands = new Map<string, Entry[]>();
 const sources = new Map<string, Source>();
-const textActions: TextAction[] = [];
 const listeners = new Set<Listener>();
 let version = 0;
 
@@ -126,16 +117,6 @@ export const registerSource = (source: Source): (() => void) => {
   };
 };
 
-export const registerTextAction = (action: TextAction): (() => void) => {
-  textActions.push(action);
-  changed();
-  return () => {
-    const at = textActions.lastIndexOf(action);
-    if (at >= 0) textActions.splice(at, 1);
-    changed();
-  };
-};
-
 const isEnabled = (command: Command): boolean => command.enabled?.() ?? true;
 
 /** The command a shortcut or a menu item runs right now, if one is registered and enabled. */
@@ -173,7 +154,6 @@ export const snapshotItems = (): Command[] => {
   return out;
 };
 
-export const currentTextAction = (): TextAction | undefined => textActions.at(-1);
 
 /** Calls `onChange` when any registered source reports new data. */
 export const subscribeSources = (onChange: () => void): (() => void) => {

@@ -10,6 +10,7 @@ pub mod model;
 pub mod progress;
 pub mod render;
 pub mod risks;
+pub mod rows;
 pub mod seen;
 pub mod timeline;
 pub mod tools;
@@ -23,7 +24,6 @@ use fleetd_contracts::ids::{ProjectRef, Timestamp};
 use fleetd_contracts::ledger::{WorkstreamId, WorkstreamState};
 use fleetd_contracts::plan::PlanView;
 use fleetd_contracts::prim::{Count, Line};
-use fleetd_contracts::prompts::PromptRef;
 use fleetd_contracts::status::{Headline, HeadlineSource, StatusDoc, StatusScope};
 use serde_json::Value;
 use tokio::sync::{Notify, watch};
@@ -33,6 +33,8 @@ use crate::hub::store::{NewEvent, iso_ms, now_ms};
 
 /// Renders of one scope are at least this far apart.
 const COALESCE_MS: i64 = 250;
+/// A scope is viewed for this long after its last status_get or status_wait.
+const VIEWED_MS: i64 = 10 * 60_000;
 
 /// Event types that can change a status doc. Others (thread chatter, prompts, keys) are skipped.
 const FOLLOWED: &[HubEventType] = &[
@@ -44,14 +46,9 @@ const FOLLOWED: &[HubEventType] = &[
     HubEventType::WorkstreamRunning,
     HubEventType::WorkstreamState,
     HubEventType::WorkstreamDone,
-    HubEventType::AskCreated,
-    HubEventType::AskAuto,
-    HubEventType::AskClosed,
-    // A held answer takes its ask out of "needs you" at once, an undo puts it back, and the commit closes it.
-    HubEventType::AskAnswered,
-    HubEventType::AskUndone,
-    HubEventType::AskDelivered,
-    HubEventType::BatchReady,
+    // An open request is "needs you" until it settles.
+    HubEventType::RequestOpened,
+    HubEventType::RequestUpdated,
     HubEventType::DecisionRecorded,
     HubEventType::TaskQueued,
     HubEventType::TaskStarted,
@@ -106,23 +103,11 @@ struct Cached {
     wake_at: Option<i64>,
 }
 
-/// The latest generated line per scope (also in `status_headlines`), and the latest failure.
-#[derive(Clone)]
-struct Generated {
-    hash: Vec<u8>,
-    text: String,
-    prompt_ref: Option<String>,
-    at_ms: i64,
-}
-
 #[derive(Default)]
 struct State {
     viewed: HashMap<String, (StatusScope, i64)>,
     docs: HashMap<String, Cached>,
     dirty: HashSet<String>,
-    generated: HashMap<String, Generated>,
-    /// Why the last run for a scope gave nothing, by the facts hash it ran on.
-    failed: HashMap<String, (Vec<u8>, String)>,
     slots_queued_since: Option<i64>,
     next_version: i64,
 }
@@ -132,12 +117,13 @@ pub struct Status {
     state: Mutex<State>,
     /// Bumped whenever any doc's version moves; waiters re-check their scope.
     versions: watch::Sender<i64>,
-    headlines: Mutex<headline::Scheduler>,
     wake: Notify,
     /// Since-you-looked counts per key, scope and mark, with the seq they run to.
     since_cache: Mutex<HashMap<String, (i64, i64, fleetd_contracts::status::Since)>>,
     /// Stage weights and durations the progress model measures against; built-in until the nightly recompute.
     calibration: Mutex<Arc<model::Calibration>>,
+    /// The Status screen's rows as last read: the event head and time they were read at.
+    rows: Mutex<Option<(i64, i64, Vec<fleetd_contracts::status::ProjectStatusRow>)>>,
 }
 
 fn content_of(doc: &StatusDoc) -> String {
@@ -171,10 +157,10 @@ impl Status {
                 ..Default::default()
             }),
             versions: watch::Sender::new(0),
-            headlines: Mutex::default(),
             wake: Notify::new(),
             since_cache: Mutex::default(),
             calibration: Mutex::default(),
+            rows: Mutex::default(),
         })
     }
 
@@ -237,19 +223,8 @@ impl Status {
                 continue;
             };
             let key = scope.key();
-            let facts = headline::canonical(&r.facts);
-            let facts_hash = headline::hash(&facts);
             let mut doc = r.doc;
-            self.attach_headline(
-                hub,
-                &key,
-                &mut doc,
-                &r.facts,
-                &facts,
-                &facts_hash,
-                world.tz,
-                now,
-            );
+            attach_headline(&mut doc, &r.facts, world.tz, now);
             render::fit(&mut doc);
             let content = content_of(&doc);
             let mut st = self.state.lock().unwrap();
@@ -277,181 +252,6 @@ impl Status {
             self.versions.send_modify(|v| *v += 1);
         }
         moved
-    }
-
-    /// The generated line while it was written from the current facts; the template otherwise, saying why.
-    #[allow(clippy::too_many_arguments)]
-    fn attach_headline(
-        &self,
-        hub: &Hub,
-        key: &str,
-        doc: &mut StatusDoc,
-        facts: &fleetd_contracts::status::HeadlineFacts,
-        canonical: &str,
-        hash: &[u8],
-        tz: chrono_tz::Tz,
-        now: i64,
-    ) {
-        let clause = render::stale_clause(doc, tz);
-        let generated = self.generated(hub, key);
-        let line = |s: String| Line::unchecked(plan_clip(&s));
-        if let Some(g) = generated.filter(|g| g.hash == hash) {
-            self.headlines.lock().unwrap().settled(key);
-            doc.headline = Headline {
-                text: line(format!("{clause}{}", g.text)),
-                source: HeadlineSource::Generated,
-                reason: None,
-                prompt_ref: g.prompt_ref.map(PromptRef::unchecked),
-                at: Timestamp(iso_ms(g.at_ms)),
-            };
-            return;
-        }
-        let mut sched = self.headlines.lock().unwrap();
-        let failed = self
-            .state
-            .lock()
-            .unwrap()
-            .failed
-            .get(key)
-            .filter(|(h, _)| h == hash)
-            .map(|(_, e)| e.clone());
-        let reason = if let Some(e) = failed {
-            format!("claude unavailable: {e}")
-        } else if sched.daily_limit_hit(now) {
-            "daily limit".into()
-        } else {
-            sched.want(key, canonical.to_owned(), hash.to_vec(), now);
-            "facts changed, rewriting".into()
-        };
-        doc.headline = Headline {
-            text: line(format!("{clause}{}", headline::template(facts))),
-            source: HeadlineSource::Template,
-            reason: Some(Line::unchecked(plan_clip(&reason))),
-            prompt_ref: None,
-            at: Timestamp(iso_ms(now)),
-        };
-    }
-
-    fn generated(&self, hub: &Hub, key: &str) -> Option<Generated> {
-        if let Some(g) = self.state.lock().unwrap().generated.get(key) {
-            return Some(g.clone());
-        }
-        let row = hub
-            .db
-            .with(|c| {
-                Ok(rusqlite::OptionalExtension::optional(c.query_row(
-                    "SELECT facts_hash, text, run, at_ms FROM status_headlines WHERE scope = ?",
-                    [key],
-                    |r| {
-                        Ok((
-                            r.get::<_, Vec<u8>>(0)?,
-                            r.get::<_, String>(1)?,
-                            r.get::<_, String>(2)?,
-                            r.get::<_, i64>(3)?,
-                        ))
-                    },
-                ))?)
-            })
-            .ok()
-            .flatten()?;
-        let prompt_ref = serde_json::from_str::<Value>(&row.2)
-            .ok()
-            .and_then(|v| v.get("promptRef")?.as_str().map(str::to_owned));
-        let g = Generated {
-            hash: row.0,
-            text: row.1,
-            prompt_ref,
-            at_ms: row.3,
-        };
-        self.state
-            .lock()
-            .unwrap()
-            .generated
-            .insert(key.to_owned(), g.clone());
-        Some(g)
-    }
-
-    /// Starts the next headline run that is due; returns when the next one could be.
-    fn run_headlines(self: &Arc<Self>, hub: &Arc<Hub>, now: i64) -> Option<i64> {
-        let due = self.headlines.lock().unwrap().next(now);
-        let (key, facts, hash) = match due {
-            headline::Due::Run { scope, facts, hash } => (scope, facts, hash),
-            headline::Due::At(t) => return Some(t),
-            headline::Due::Idle => return None,
-        };
-        let scope_text = self
-            .state
-            .lock()
-            .unwrap()
-            .docs
-            .get(&key)
-            .map_or_else(|| key.clone(), |c| c.doc.title.to_string());
-        let project = self
-            .state
-            .lock()
-            .unwrap()
-            .viewed
-            .get(&key)
-            .and_then(|(s, _)| match s {
-                StatusScope::Project { project_ref } => Some(project_ref.clone()),
-                _ => None,
-            });
-        let set = hub.db.prompts().current(project.as_ref());
-        let prompt = set.render(
-            "status.headline",
-            &[("facts", &facts), ("scope", &scope_text)],
-        );
-        let prompt_ref = set.get("status.headline").r#ref.clone();
-        let (this, hub) = (self.clone(), hub.clone());
-        tokio::spawn(async move {
-            let result = hub.leads.one_shot.run(&prompt).await;
-            let mut run = result.run;
-            run.kind = "status";
-            run.prompt_ref = Some(prompt_ref.clone());
-            let checked = match &result.text {
-                Some(t) => headline::check_reply(t, &facts).map_err(str::to_owned),
-                None => Err(run.error.clone().unwrap_or_else(|| "no answer".into())),
-            };
-            let now = now_ms(hub.clock.as_ref());
-            match checked {
-                Ok(text) => {
-                    let run_json = serde_json::to_string(&run).unwrap_or_default();
-                    let stored = hub.db.with(|c| {
-                        c.execute(
-                            "INSERT INTO status_headlines (scope, facts_hash, text, run, at_ms) VALUES (?, ?, ?, ?, ?)
-                             ON CONFLICT (scope) DO UPDATE SET facts_hash = excluded.facts_hash, text = excluded.text,
-                               run = excluded.run, at_ms = excluded.at_ms",
-                            rusqlite::params![key, hash, text, run_json, now],
-                        )?;
-                        Ok(())
-                    });
-                    if let Err(error) = stored {
-                        tracing::error!(%error, "status headline not stored");
-                    }
-                    let mut st = this.state.lock().unwrap();
-                    st.generated.insert(
-                        key.clone(),
-                        Generated {
-                            hash,
-                            text,
-                            prompt_ref: Some(prompt_ref),
-                            at_ms: now,
-                        },
-                    );
-                    st.failed.remove(&key);
-                    st.dirty.insert(key);
-                }
-                Err(e) => {
-                    tracing::info!(scope = %key, error = %e, "status headline: template stays");
-                    let mut st = this.state.lock().unwrap();
-                    st.failed.insert(key.clone(), (hash, plan_clip(&e)));
-                    st.dirty.insert(key);
-                }
-            }
-            this.headlines.lock().unwrap().in_flight = false;
-            this.wake.notify_one();
-        });
-        None
     }
 
     /// The doc for `scope` now, rendered fresh, with the caller's since-you-looked and filtered to what it reads.
@@ -609,6 +409,39 @@ impl Status {
         doc
     }
 
+    /// One row per project the caller reads, by title. Read again only after an event, at most every 250 ms, as
+    /// docs are.
+    pub fn project_rows(
+        &self,
+        hub: &Hub,
+        caller: &Caller,
+    ) -> anyhow::Result<Vec<fleetd_contracts::status::ProjectStatusRow>> {
+        let now = now_ms(hub.clock.as_ref());
+        let head = hub.events.head();
+        let cached = self
+            .rows
+            .lock()
+            .unwrap()
+            .as_ref()
+            .filter(|(h, at, _)| rows::reusable(*h, *at, head, now))
+            .map(|(_, _, r)| r.clone());
+        let all = match cached {
+            Some(r) => r,
+            None => {
+                let queued = self.state.lock().unwrap().slots_queued_since;
+                let world = render::World::read(hub, now, queued, self.calibration())?;
+                let (merges, in_flight) = hub.db.with(|c| Ok(rows::read_changes(c)?))?;
+                let r = rows::rows(hub, &world, &rows::Changes { merges, in_flight });
+                *self.rows.lock().unwrap() = Some((head, now, r.clone()));
+                r
+            }
+        };
+        Ok(all
+            .into_iter()
+            .filter(|r| readable(caller, &r.project_ref.machine_id))
+            .collect())
+    }
+
     /// A plan view with its progress estimate (the project's, or the order's).
     pub fn plan_view(
         &self,
@@ -762,7 +595,7 @@ impl Status {
                     dirty,
                     ..
                 } = &mut *guard;
-                viewed.retain(|_, (_, at)| now - *at <= headline::VIEWED_MS);
+                viewed.retain(|_, (_, at)| now - *at <= VIEWED_MS);
                 if touched {
                     dirty.extend(viewed.keys().cloned());
                 }
@@ -798,9 +631,6 @@ impl Status {
                     deadline = Some(deadline.map_or(t, |d| d.min(t)));
                 }
             }
-            if let Some(t) = self.run_headlines(&hub, now_ms(hub.clock.as_ref())) {
-                deadline = Some(deadline.map_or(t, |d| d.min(t)));
-            }
             let sleep_ms = deadline.map_or(3_600_000, |d| {
                 (d - now_ms(hub.clock.as_ref())).clamp(0, 3_600_000)
             });
@@ -814,6 +644,23 @@ impl Status {
             head.borrow_and_update();
         }
     }
+}
+
+/// The headline is the code template over the facts, after any "Not live" clause; no model phrases it.
+fn attach_headline(
+    doc: &mut StatusDoc,
+    facts: &fleetd_contracts::status::HeadlineFacts,
+    tz: chrono_tz::Tz,
+    now: i64,
+) {
+    let clause = render::stale_clause(doc, tz);
+    doc.headline = Headline {
+        text: Line::unchecked(plan_clip(&format!("{clause}{}", headline::template(facts)))),
+        source: HeadlineSource::Template,
+        reason: None,
+        prompt_ref: None,
+        at: Timestamp(iso_ms(now)),
+    };
 }
 
 fn plan_clip(s: &str) -> String {

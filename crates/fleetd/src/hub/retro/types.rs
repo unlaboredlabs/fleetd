@@ -7,20 +7,18 @@ use std::sync::LazyLock;
 pub const PLAYBOOK_NAMES: [&str; 4] = ["bugfix", "feature", "research", "finish-all"];
 
 /// The fixed metric list, defined in code: incident counts per class, and agent-minutes per done workstream.
-pub const METRIC_CLASSES: [&str; 9] = [
+pub const METRIC_CLASSES: [&str; 7] = [
     "false_claim",
     "polish_loop",
-    "misfiled_ask",
     "out_of_area",
     "stall",
     "policy_bypass",
-    "re_ask",
     "override",
     "agent_minutes_per_done",
 ];
 
-/// `playbook.`: hub-wide asks about playbooks.
-pub const PLAYBOOK_ASK_PREFIX: &str = "playbook.";
+/// `playbook.`: the global decisions that settle gate changes.
+pub const PLAYBOOK_KEY_PREFIX: &str = "playbook.";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -117,10 +115,8 @@ pub struct RetroProposal {
     pub fixes_incidents: Vec<String>,
     pub metric: RetroMetric,
     pub expected: String,
-    /// suggested, pending, asked, measuring, kept, reverted, applied, rejected or stale.
+    /// suggested, pending, measuring, kept, reverted, applied, rejected or stale.
     pub state: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ask_id: Option<String>,
     #[serde(rename = "ref", skip_serializing_if = "Option::is_none")]
     pub reference: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -135,9 +131,16 @@ pub struct RetroProposal {
     pub measured: Option<RetroSnapshot>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// A gate change that may relax a gate (fewer reviewers, a weaker or removed check, a looser rule, any body
+    /// change): it applies only on a person's approve. Absent on older rows, which count as relaxing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub relaxes: Option<bool>,
+    /// The approval request (Q<n>) a relaxing change waits on.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
 }
 
-/// A `claude -p` one-shot the hub ran for itself, counted as orchestrator usage (intake's `RouterRun`).
+/// A `claude -p` one-shot the hub ran for itself, counted as orchestrator usage (`OneShotRun`).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrchestratorRun {

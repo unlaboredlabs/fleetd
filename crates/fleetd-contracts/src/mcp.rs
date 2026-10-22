@@ -6,14 +6,15 @@ use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
 
 use crate::auth::Role;
+use crate::chat::ChatRequestId;
 use crate::doctor::{DoctorCheck, DoctorCheckId};
 use crate::effort::Effort;
 use crate::events::{HubEvent, HubEventType};
 use crate::ids::{EventSeq, MachineId, ProjectId, ProjectRef, ThreadId, Timestamp};
 use crate::ledger::{
-    Ask, AskAnswerKind, AskId, AskState, Batch, BatchId, Decision, DecisionId, DecisionKey,
-    DecisionScope, DecisionSource, DecisionValue, DecisionWhy, IntakeText, Lead, PlaybookName,
-    PlaybookRef, Serves, Workstream, WorkstreamId, WorkstreamState,
+    Decision, DecisionKey, DecisionScope, DecisionValue, DecisionWhy, HumanRequest, IntakeText,
+    Lead, PlaybookName, PlaybookRef, RequestState, Serves, Workstream, WorkstreamId,
+    WorkstreamState,
 };
 use crate::live::{AgentLane, OrderCard, TrainLive};
 use crate::model::{
@@ -27,11 +28,11 @@ use crate::prim::{
 use crate::projects::{AddId, CloneTarget, GitHubRepos, MachineRepos, ProjectInspect};
 use crate::prompts::{
     PromptDetail, PromptId, PromptRef, PromptScope, PromptSummary, PromptVersion, PromptWarning,
-    SessionPrompt,
+    RetiredPromptOverride, SessionPrompt,
 };
 use crate::retro::{RetroProposal, RetroProposalState, RetroRun};
 use crate::secrets::{SealedSecret, SecretFingerprint};
-use crate::status::{StatusDoc, StatusScope};
+use crate::status::{ProjectStatusRow, StatusDoc, StatusScope};
 use crate::steer::{Steer, SteerId, SteerMode, SteerTarget};
 use crate::subscriptions::{Subscription, SubscriptionMachines, SubscriptionTypes, WebhookUrl};
 use crate::tasks::{SlotState, Task, TaskId, TaskState};
@@ -348,11 +349,11 @@ pub type IntakeRefs = List<IntakeRef, 0, 20>;
 input!(
     #[serde(remote = "Self")]
     IntakeSubmitInput {
-        /// With projectId, or neither: then the router picks the project unless the text starts with `@<project>`.
+        /// With projectId, or neither: then a leading `@<project>` picks the project, else the only one the caller may use.
         machine_id: Option<MachineId>,
         project_id: Option<ProjectId>,
         text: IntakeText,
-        /// Skips the router for the template, like a `fix:` or `research:` prefix.
+        /// The playbook the order's workstream pins; none when absent.
         template: Option<PlaybookName>,
         /// From attachment_put; delivered to the project under `.fleetd/attachments/<W>/` when the order is placed.
         attachments: Option<Attachments>,
@@ -366,30 +367,18 @@ checked!(IntakeSubmitInput, |input| {
     }
     Ok(())
 });
-output!(
-    #[serde(remote = "Self")]
-    IntakeSubmitOutput {
-        workstream_id: Option<WorkstreamId>,
-        /// The router could not place the intent: the human picks the project by answering this ask.
-        ask_id: Option<AskId>,
-        /// Present with workstreamId.
-        echo: Option<IntakeEcho>,
-        /// Why no lead has the order yet, with the fix; absent when the project's lead has it or is starting.
-        lead_waiting: Option<String>,
-    }
-);
-checked!(IntakeSubmitOutput, |output| {
-    if output.workstream_id.is_none() == output.ask_id.is_none() {
-        return Err("exactly one of workstreamId and askId".into());
-    }
-    Ok(())
+output!(IntakeSubmitOutput {
+    workstream_id: WorkstreamId,
+    echo: Option<IntakeEcho>,
+    /// Why no lead has the order yet, with the fix; absent when the project's lead has it or is starting.
+    lead_waiting: Option<String>,
 });
 
-// intake_preview: where intake_submit would send this text (the `@project` and prefix rules, then the router), without
-// creating anything. Cached by text for 10 minutes.
+// intake_preview: where intake_submit would send this text (a leading `@project`, or the only project), without
+// creating anything.
 input!(IntakePreviewInput { text: IntakeText });
 output!(IntakePreviewOutput {
-    /// Absent: the router could not place it (intake_submit would ask the human).
+    /// Absent: the text names no project and there is more than one (intake_submit would refuse it).
     echo: Option<IntakeEcho>,
 });
 
@@ -445,7 +434,7 @@ output!(OrdersBoardOutput {
     at: Timestamp,
 });
 
-// order_get: one order with its finished agents, open asks and claims.
+// order_get: one order with its finished agents, open requests and claims.
 input!(OrderGetInput {
     workstream_id: WorkstreamId
 });
@@ -455,7 +444,8 @@ output!(OrderGetOutput {
     lead: Option<AgentLane>,
     /// Newest first.
     done_lanes: List<AgentLane, 0, 30>,
-    asks: List<Ask, 0, 20>,
+    /// Its open secret and approval requests.
+    requests: List<HumanRequest, 0, 20>,
     /// Newest first.
     claims: Option<List<Claim, 0, 20>>,
 });
@@ -632,8 +622,8 @@ input!(WorkstreamGetInput {
 });
 output!(WorkstreamGetOutput {
     workstream: Workstream,
-    /// Its open asks.
-    asks: List<Ask, 0, 50>,
+    /// Its open secret and approval requests.
+    requests: List<HumanRequest, 0, 50>,
     /// Active decisions scoped to it.
     decisions: List<Decision, 0, 50>,
     /// Absent without a raw estimate in the brief.
@@ -671,80 +661,16 @@ output!(InventoryOutput {
     idle: bool,
 });
 
-fn default_open() -> AskState {
-    AskState::Open
-}
-
-// asks_list
-input!(AsksListInput {
-    #[serde(default = "default_open")]
-    state: AskState,
-    batch_id: Option<BatchId>,
+// requests_list: secret and approval requests, newest first.
+input!(RequestsListInput {
+    project_ref: Option<ProjectRef>,
+    /// Absent: every state.
+    state: Option<RequestState>,
+    #[serde(default)]
+    limit: IntOr<1, 100, 50>,
 });
-output!(AsksListOutput {
-    /// Newest first.
-    batches: List<Batch, 0, 20>,
-    /// The asks in those batches, by batch then number.
-    asks: List<Ask, 0, 100>,
-});
-
-// inbox_reply
-input!(InboxReplyInput {
-    /// Terse reply such as "1 go 2 nvm 3 recs fine"; a leading "#B<n>" picks the batch.
-    raw: Text<1, 4000>,
-    /// Absent: the latest open batch.
-    batch_id: Option<BatchId>,
-});
-
-/// answered: the ask is answered (a decide ask's decision is written once `undoUntil` passes). skipped: "skip",
-/// the lead keeps its recommendation and no decision is written. later: moved to the next batch. retired: "forget
-/// Dn". pref: "pref:" recorded.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum InboxReplyOutcome {
-    Answered,
-    Skipped,
-    Withdrawn,
-    Later,
-    Retired,
-    Pref,
-}
-
-input!(InboxReplyApplied {
-    /// The batch item number; absent for "pref:" and "forget".
-    number: Option<Positive>,
-    ask_id: Option<AskId>,
-    outcome: InboxReplyOutcome,
-    value: Option<String>,
-    /// What the human sees: the picked option's label, the free text, or the kept recommendation's label.
-    label: Option<String>,
-    /// option, text or skip, for a decide ask.
-    kind: Option<AskAnswerKind>,
-    /// Absent while a decide answer's undo window runs.
-    decision_id: Option<DecisionId>,
-    /// Until then `inbox_undo` takes the answer back.
-    undo_until: Option<Timestamp>,
-    /// The written decision's source and by, filled by the hub from the caller (human device or agent key).
-    source: Option<DecisionSource>,
-    by: Option<String>,
-});
-output!(InboxReplyOutput {
-    /// False: nothing changed; see `hint`.
-    parsed: bool,
-    batch_id: Option<BatchId>,
-    /// E.g. "Logged: 1 → go (D12), 2 → dropped".
-    echo: Option<String>,
-    applied: Vec<InboxReplyApplied>,
-    /// How to fix an unparseable reply.
-    hint: Option<String>,
-});
-
-// inbox_undo: takes back a decide answer inside its undo window (`ASK_UNDO_WINDOW_MS`); the ask is open again and
-// the lead never hears of it. After the window it is refused: answer the ask again or record a new decision.
-input!(InboxUndoInput { ask_id: AskId });
-output!(InboxUndoOutput {
-    /// The ask, open again in its batch.
-    ask: Ask,
+output!(RequestsListOutput {
+    requests: List<HumanRequest, 0, 100>,
 });
 
 // decisions_search
@@ -787,19 +713,34 @@ output!(TasksListOutput {
 input!(TaskGetInput { task_id: TaskId });
 output!(TaskGetOutput { task: Task });
 
-// cap_set: the global cap, a project's share, or both.
-input!(CapSetShare { project_ref: ProjectRef, share: Int<0, 1000> });
+// cap_set: the fleet cap, a project's max agents, or both. Lowering stops nothing; raising starts queued agents at once.
+input!(CapSetProject {
+    project_ref: ProjectRef,
+    /// 1 up to the fleet cap.
+    max_agents: Int<1, 1000>,
+    /// Lowering: tell the agents above the new max to push their work in progress and wait; they resume when a slot
+    /// frees. Without it they finish their current work.
+    pause_extras: Option<bool>,
+});
 input!(
     #[serde(remote = "Self")]
-    CapSetInput { cap: Option<Int<1, 1000>>, share: Option<CapSetShare> }
+    CapSetInput {
+        /// The fleet cap on running turns, leads' included. Needs an admin key.
+        cap: Option<Int<1, 1000>>,
+        project: Option<CapSetProject>,
+    }
 );
 checked!(CapSetInput, |input| {
-    if input.cap.is_none() && input.share.is_none() {
-        return Err("expected cap, share or both".into());
+    if input.cap.is_none() && input.project.is_none() {
+        return Err("expected cap, project or both".into());
     }
     Ok(())
 });
-output!(CapSetOutput { slots: SlotState });
+output!(CapSetOutput {
+    slots: SlotState,
+    /// The agents `pauseExtras` paused.
+    paused: Option<List<TaskId, 0, 1000>>,
+});
 
 // claims_list
 input!(ClaimsListInput {
@@ -844,7 +785,7 @@ input!(RetroProposalsInput {
 output!(RetroProposalsOutput {
     /// Newest first.
     proposals: List<RetroProposal, 0, 100>,
-    /// The global Decision policy.retro.apply is true: wording changes apply on their own and gate changes are asked.
+    /// The global Decision policy.retro.apply is true: wording changes apply on their own and gate changes wait for a person's decision.
     apply: bool,
     last_run: Option<RetroRun>,
 });
@@ -892,31 +833,18 @@ output!(UsageResumeOutput {
 });
 
 // secret_submit: human keys only. The hub relays the sealed value to the sink's node and waits for its fingerprint.
-input!(
-    #[serde(remote = "Self")]
-    SecretSubmitInput {
-        /// A secret ask (the questions tool). Exactly one of askId and requestId.
-        ask_id: Option<AskId>,
-        /// A chat's `secret_request` item.
-        request_id: Option<crate::chat::ChatRequestId>,
-        /// Sealed in the desktop app to the sink machine's `box_pub_key` (see Machine).
-        sealed: SealedSecret,
-    }
-);
-checked!(SecretSubmitInput, |input| {
-    if input.ask_id.is_some() == input.request_id.is_some() {
-        return Err("give exactly one of askId and requestId".into());
-    }
-    Ok(())
+input!(SecretSubmitInput {
+    request_id: ChatRequestId,
+    /// Sealed in the desktop app to the sink machine's `box_pub_key` (see Machine).
+    sealed: SealedSecret,
 });
 output!(SecretSubmitOutput {
-    ask_id: Option<AskId>,
-    request_id: Option<crate::chat::ChatRequestId>,
+    request_id: ChatRequestId,
     fingerprint: SecretFingerprint
 });
 
 // approval_answer: the human approves or denies a chat's `command_approval` item. Human keys only (the handler
-// checks). The item's new state arrives as a `chat.message` event.
+// checks). Returns the request as answered; the item's new state arrives as a `chat.message` event.
 input!(ApprovalAnswerInput {
     request_id: crate::chat::ChatRequestId,
     decision: crate::chat::ApprovalDecision,
@@ -924,7 +852,7 @@ input!(ApprovalAnswerInput {
     message: Option<Text<1, 500>>,
 });
 output!(ApprovalAnswerOutput {
-    message: crate::chat::ChatMessage,
+    request: HumanRequest,
 });
 
 // doctor_list: the latest result of every check this key may read; rerun runs them all now first.
@@ -991,8 +919,8 @@ checked!(ThreadAnswerInput, |input| {
 output!(ThreadAnswerOutput {
     request_id: NonEmpty,
     decision: PermissionAnswer,
-    /// The tool_permission ask this answer closed, if one was open.
-    ask_id: Option<AskId>,
+    /// The approval request this answer closed, if one was open.
+    human_request_id: Option<ChatRequestId>,
 });
 
 brand!(
@@ -1113,7 +1041,11 @@ input!(PromptsListInput {
     /// The texts in effect for this project; absent: hub-wide.
     project_ref: Option<ProjectRef>,
 });
-output!(PromptsListOutput { prompts: Vec<PromptSummary> });
+output!(PromptsListOutput {
+    prompts: Vec<PromptSummary>,
+    /// Your edits to prompts a release retired: hub-wide ones, and the asked project's.
+    orphans: Vec<RetiredPromptOverride>
+});
 input!(PromptGetInput { id: PromptId, project_ref: Option<ProjectRef> });
 output!(PromptGetOutput {
     #[serde(flatten)]
@@ -1171,6 +1103,12 @@ output!(StatusWaitOutput {
     doc: Option<StatusDoc>,
     unchanged: Option<bool>,
     version: Count,
+});
+// status_projects: one row per project the key reads, for the Status screen.
+input!(StatusProjectsInput {});
+output!(StatusProjectsOutput {
+    /// By title.
+    rows: List<ProjectStatusRow, 0, 200>,
 });
 input!(StatusSeenInput {
     scope: StatusScope,
@@ -1336,15 +1274,13 @@ tools! {
     workstream_get => WorkstreamGet, Read, WorkstreamGetInput, WorkstreamGetOutput;
     workstream_spawn => WorkstreamSpawn, Operate, WorkstreamSpawnInput, WorkstreamSpawnOutput;
     inventory => Inventory, Read, InventoryInput, InventoryOutput;
-    asks_list => AsksList, Read, AsksListInput, AsksListOutput;
-    inbox_reply => InboxReply, Operate, InboxReplyInput, InboxReplyOutput;
-    inbox_undo => InboxUndo, Operate, InboxUndoInput, InboxUndoOutput;
+    requests_list => RequestsList, Read, RequestsListInput, RequestsListOutput;
     decisions_search => DecisionsSearch, Read, DecisionsSearchInput, DecisionsSearchOutput;
     decisions_record => DecisionsRecord, Operate, DecisionsRecordInput, DecisionsRecordOutput;
     digest_get => DigestGet, Read, DigestGetInput, DigestGetOutput;
     tasks_list => TasksList, Read, TasksListInput, TasksListOutput;
     task_get => TaskGet, Read, TaskGetInput, TaskGetOutput;
-    cap_set => CapSet, Admin, CapSetInput, CapSetOutput;
+    cap_set => CapSet, Operate, CapSetInput, CapSetOutput;
     usage_status => UsageStatus, Read, UsageStatusInput, UsageStatusOutput;
     usage_resume => UsageResume, Operate, UsageResumeInput, UsageResumeOutput;
     claims_list => ClaimsList, Read, ClaimsListInput, ClaimsListOutput;
@@ -1385,6 +1321,7 @@ tools! {
     status_get => StatusGet, Read, StatusGetInput, StatusGetOutput;
     status_wait => StatusWait, Read, StatusWaitInput, StatusWaitOutput;
     status_seen => StatusSeen, Read, StatusSeenInput, StatusSeenOutput;
+    status_projects => StatusProjects, Read, StatusProjectsInput, StatusProjectsOutput;
     plan_get => PlanGet, Read, PlanGetInput, PlanGetOutput;
     github_webhook_set => GithubWebhookSet, Admin, GithubWebhookSetInput, GithubWebhookSetOutput;
     // Human keys only (the handler checks); the lead steers its tasks with `fleetd task message`.
@@ -1482,10 +1419,6 @@ mod tests {
             decode(json!({ "url": "https://example.com", "clientRequestId": "r1" })).unwrap();
         assert_eq!(serde_json::to_value(&sub).unwrap()["types"], "*");
         assert_eq!(serde_json::to_value(&sub).unwrap()["machines"], "*");
-        assert_eq!(
-            decode::<AsksListInput>(json!({})).unwrap().state,
-            AskState::Open
-        );
         let decoded = McpToolName::IncidentsList.decode_input(json!({})).unwrap();
         assert_eq!(decoded, json!({ "limit": 20, "windowDays": 7 }));
     }
@@ -1526,12 +1459,14 @@ mod tests {
 
     #[test]
     fn the_tool_table_matches_ts_names_and_scopes() {
-        assert_eq!(McpToolName::ALL.len(), 79);
+        assert_eq!(McpToolName::ALL.len(), 78);
+        assert_eq!(McpToolName::parse("inbox_reply"), None);
+        assert_eq!(McpToolName::parse("asks_list"), None);
         for tool in McpToolName::ALL {
             assert_eq!(McpToolName::parse(tool.as_str()), Some(*tool));
             assert_eq!(serde_json::to_value(tool).unwrap(), tool.as_str());
         }
-        assert_eq!(McpToolName::CapSet.scope(), Role::Admin);
+        assert_eq!(McpToolName::CapSet.scope(), Role::Operate);
         assert_eq!(McpToolName::RetroRun.scope(), Role::Admin);
         assert_eq!(McpToolName::DoctorFix.scope(), Role::Operate);
         assert_eq!(McpToolName::FleetdStatus.scope(), Role::Read);
@@ -1548,10 +1483,10 @@ mod tests {
             "markers": [], "eta": { "samples": 2, "basis": "none" }, "gates": [],
             "headline": { "text": "Nothing running. Nothing needs you.", "source": "template",
                           "at": "2026-10-18T14:02:07.000Z" },
-            "since": { "merged": 0, "verified": 0, "started": 0, "failed": 0, "asked": 0, "scopeItems": 0 },
+            "since": { "merged": 0, "verified": 0, "started": 0, "failed": 0, "scopeItems": 0 },
             "parts": [], "done": [], "inProgress": [],
             "next": [{ "itemId": "P14", "title": "switch default runner", "after": ["P12"] }],
-            "needsYou": { "count": 0, "askIds": [] }, "risks": [],
+            "needsYou": { "count": 0, "requestIds": [] }, "risks": [],
             "health": { "ci": [], "machines": [], "usage": [],
                         "slots": { "running": 0, "used": 0, "cap": 40, "queued": 0 } },
             "stale": [],

@@ -11,6 +11,8 @@ use fleetd::cli::agent_mcp::{self, Role, SERVER_NAME, Tool};
 use fleetd::hub::orders::phase;
 use fleetd::hub::playbooks::finish_all_rules::{CHILD_SOURCES, DEFAULT_MAX_CHILDREN};
 use fleetd::hub::reviews::rules::ReviewRole;
+use fleetd::hub::slots::board::BoardView;
+use fleetd::hub::slots::{DEFAULT_CAP, SlotPriority, blocker, reserved_band};
 use fleetd::hub::tasks::policy::{
     self, CallerAgent, MAX_DEPTH, MAX_OPEN_TASKS, SPAWN_OPS, WORKER_OPS,
 };
@@ -20,7 +22,7 @@ use fleetd::node::runner::claude::{
 };
 use fleetd::node::runner::{conformance, version::TESTED};
 use fleetd_contracts::lead_calls::GatedRunCall;
-use fleetd_contracts::ledger::{AskClass, GatedClass};
+use fleetd_contracts::ledger::GatedClass;
 use fleetd_contracts::live::AgentRole;
 use fleetd_contracts::schema::inline_schema;
 use fleetd_contracts::sessions::SessionRole;
@@ -48,7 +50,7 @@ whatever the prompt says.
 
 const SETUP: &str = "## What your own setup adds
 
-fleetd starts sessions with your own Claude Code setup underneath. The router is the exception: it runs in safe \
+fleetd starts sessions with your own Claude Code setup underneath. The retro is the exception: it runs in safe \
 mode with none of it (see [Roles](#roles)).
 
 | Your setup | In a session |
@@ -78,8 +80,8 @@ pub fn page(root: &Path) -> Result<String, String> {
     let mut md = String::from(FRONT);
     md.push('\n');
     md.push_str(&INTRO.replace("{server}", SERVER_NAME));
-    let router = router()?;
-    md.push_str(&roles(&router));
+    let one_shot = one_shot()?;
+    md.push_str(&roles(&one_shot));
     md.push_str(&limits(&lead_tools, &task_tools)?);
     md.push_str(&tool_section(
         "Lead tools",
@@ -96,7 +98,7 @@ pub fn page(root: &Path) -> Result<String, String> {
         &task_tools,
         &lead_names,
     )?);
-    md.push_str(&builtins(root, &router)?);
+    md.push_str(&builtins(root, &one_shot)?);
     md.push_str(&switches()?);
     md.push_str(&SETUP.replace("{server}", SERVER_NAME));
     Ok(md)
@@ -198,19 +200,19 @@ fn started_as(role: AgentRole) -> Option<String> {
     None
 }
 
-/// What the router's one-shot gets, read from the argv fleetd starts it with. A flag change the page can't describe
+/// What the retro's one-shot gets, read from the argv fleetd starts it with. A flag change the page can't describe
 /// fails generation instead of leaving the page wrong.
-struct Router {
+struct OneShot {
     /// `--tools`: empty means none, Claude Code's included.
     tools: Vec<String>,
 }
 
-fn router() -> Result<Router, String> {
-    let args = fleetd::hub::intake::router::one_shot_args("m");
+fn one_shot() -> Result<OneShot, String> {
+    let args = fleetd::hub::intake::oneshot::one_shot_args("m");
     let has = |flag: &str| args.iter().any(|a| a == flag);
     let mismatch = |why: &str| {
         format!(
-            "agent tools: the router's one_shot_args changed ({why}); update the router's row in agent_tools.rs"
+            "agent tools: the retro's one_shot_args changed ({why}); update the retro's row in agent_tools.rs"
         )
     };
     let tools = args
@@ -223,7 +225,7 @@ fn router() -> Result<Router, String> {
             "the page says it runs in safe mode with no MCP servers",
         ));
     }
-    Ok(Router {
+    Ok(OneShot {
         tools: tools
             .split([',', ' '])
             .filter(|t| !t.is_empty())
@@ -232,7 +234,7 @@ fn router() -> Result<Router, String> {
     })
 }
 
-impl Router {
+impl OneShot {
     fn claude_tools(&self) -> String {
         if self.tools.is_empty() {
             "none".to_owned()
@@ -250,7 +252,7 @@ fn tool_set(session: SessionRole) -> &'static str {
     }
 }
 
-fn roles(router: &Router) -> String {
+fn roles(one_shot: &OneShot) -> String {
     let mut md = String::from(
         "## Roles\n\nThe app shows each agent's role on its lane. The role decides the fleetd tools; every session \
          gets the same [Claude Code tools](#claude-code-tools).\n\n| Role | How it starts | fleetd tools | Can start \
@@ -297,14 +299,15 @@ fn roles(router: &Router) -> String {
         }
     }
     md.push_str(
-        "| Router | One `claude -p` on the hub that reads each new order; not a session | None, no MCP servers | \
+        "| Retro | One `claude -p` on the hub that proposes playbook changes from incidents; not a session | \
+         None, no MCP servers | \
          No |\n\n",
     );
     md.push_str(&format!(
-        "The router's Claude Code tools: {}. fleetd starts it with `--tools \"{}\"`, `--strict-mcp-config` and \
+        "The retro's Claude Code tools: {}. fleetd starts it with `--tools \"{}\"`, `--strict-mcp-config` and \
          `--safe-mode`.\n\n",
-        router.claude_tools(),
-        router.tools.join(",")
+        one_shot.claude_tools(),
+        one_shot.tools.join(",")
     ));
     md
 }
@@ -341,7 +344,6 @@ fn limits(lead: &[&Tool], task: &[&Tool]) -> Result<String, String> {
         .as_u64()
         .ok_or("agent tools: gated_run's timeoutSec has no maximum")?;
     let gated_classes = enum_values(&inline_schema::<GatedClass>());
-    let ask_classes = enum_values(&inline_schema::<AskClass>());
     let mut md = String::from(
         "## Hub limits\n\nThe hub checks these on every fleetd call a session makes, through its MCP tools or a \
          `fleetd` command in its shell. A refusal says why and what to do instead.\n\n| Limit | Value |\n|---|---|\n",
@@ -354,7 +356,30 @@ fn limits(lead: &[&Tool], task: &[&Tool]) -> Result<String, String> {
         "| Depth | {MAX_DEPTH}. A lead is depth 0 and its tasks depth {MAX_DEPTH}; nothing goes deeper. |\n"
     ));
     md.push_str(&format!(
-        "| Open tasks per lead | {MAX_OPEN_TASKS} (queued, running or idle). Slots cap what runs at once. |\n"
+        "| Open tasks per lead | {MAX_OPEN_TASKS} (queued, running or idle). |\n"
+    ));
+    // The slot board queues a task at its project's max agents; it never refuses one.
+    let at_max = BoardView {
+        cap: DEFAULT_CAP,
+        used: 0,
+        project_running: 1,
+        max_agents: 1,
+    };
+    if blocker(at_max, SlotPriority::Work).is_none() {
+        return Err(
+            "agent tools: the slot board no longer holds a task at max agents; update the limits"
+                .into(),
+        );
+    }
+    md.push_str(
+        "| Agents running at once, per project | The project's max agents, which a person sets (`cap_set`, the \
+         chat's Max agents); unset, the fleet cap. A spawn over it queues and starts by itself. The lead's own \
+         turns don't count. |\n",
+    );
+    md.push_str(&format!(
+        "| Agents running at once, fleet-wide | The fleet cap, {DEFAULT_CAP} by default. {} slots of it are kept \
+         for lead turns. |\n",
+        reserved_band(DEFAULT_CAP)
     ));
     md.push_str(&format!(
         "| Calls a task's agent may make | {}. Every other call is refused. |\n",
@@ -372,10 +397,7 @@ fn limits(lead: &[&Tool], task: &[&Tool]) -> Result<String, String> {
         "| Gated commands (`gated_run`) | Classes {}. Run only after a human approves; at most {timeout} s. |\n",
         code_list(gated_classes.iter().map(String::as_str))
     ));
-    md.push_str(&format!(
-        "| What a lead may ask the human (`ask`) | Classes {}. Anything else it decides itself (`decide`). |\n\n",
-        code_list(ask_classes.iter().map(String::as_str))
-    ));
+    md.push('\n');
     md.push_str(
         "These limits cover calls to fleetd, not what the agent's own shell can do. A task runs with full Bash, so \
          `gated_run` is not the only way it could run a command. A process that leaves its session's process tree \
@@ -684,19 +706,13 @@ fn example(role: Role, tool: &str) -> Option<Value> {
                 "tier": "S",
             },
         }),
-        (Role::Lead, "ask") => json!({
-            "key": "billing.provider",
-            "class": "money",
-            "text": "Which payment provider should checkout use?",
-            "options": [
-                { "key": "stripe", "label": "Stripe", "consequence": "2.9% + 30c a charge; live this week." },
-                { "key": "paddle", "label": "Paddle", "consequence": "5% + 50c; handles sales tax for you." },
-            ],
-            "recommendation": "stripe",
-            "recommendationWhy": "Cheaper at our volume, and the team knows it.",
-            "proceededOnRec": true,
+        (Role::Lead, "request_secret") => json!({
+            "key": "stripe.test_key",
+            "sink": "env:shop-box:/srv/shop/.env",
+            "text": "The Stripe test key for checkout",
+            "workstreamId": "W3",
         }),
-        (Role::Lead, "ask_withdraw") => json!({ "askId": "A4", "use": "D12" }),
+        (Role::Lead, "request_withdraw") => json!({ "requestId": "Q4" }),
         (Role::Lead, "decide") => json!({
             "key": "api.pagination",
             "value": "cursor",
@@ -737,6 +753,10 @@ fn example(role: Role, tool: &str) -> Option<Value> {
             "workstreamId": "W3",
         }),
         (Role::Lead, "change_status") => json!({ "changeId": "X12" }),
+        (Role::Lead, "workstream_open") => json!({
+            "text": "Build the schedules page",
+            "template": "feature",
+        }),
         (Role::Lead, "workstream_spawn") => json!({
             "text": "Fix the flaky upload test",
             "serves": "issue:#88",
@@ -841,20 +861,20 @@ fn recorded_tools(root: &Path) -> Result<BTreeSet<String>, String> {
     Ok(tools)
 }
 
-fn builtins(root: &Path, router: &Router) -> Result<String, String> {
+fn builtins(root: &Path, one_shot: &OneShot) -> Result<String, String> {
     let blocked: Vec<&str> = DISALLOWED_WHY.iter().map(|(t, _)| *t).collect();
     let allowed: Vec<String> = recorded_tools(root)?
         .into_iter()
         .filter(|t| !blocked.contains(&t.as_str()) && !conformance::agent_like(t))
         .collect();
     let mut md = format!(
-        "## Claude Code tools\n\nThe same for every session. The router gets {}. Listed for Claude Code \
+        "## Claude Code tools\n\nThe same for every session. The retro gets {}. Listed for Claude Code \
          {TESTED}, the version fleetd is tested with.\n\n**Allowed:** {}.\n\nA project's policy file can deny more \
          with `tools.deny`. In a run started approval-required, Claude Code asks before it uses a tool and the \
          question comes to you; `tools.allow` answers it ahead of time.\n\n**Blocked**, in `--disallowedTools` and in the \
          `permissions.deny` of fleetd's settings, so your own settings can't turn them back on:\n\n| Tool | Why \
          |\n|---|---|\n",
-        router.claude_tools(),
+        one_shot.claude_tools(),
         code_list(allowed.iter().map(String::as_str))
     );
     for (tools, why) in grouped(
@@ -978,22 +998,22 @@ mod tests {
         assert!(allowed.contains("`Bash`") && allowed.contains("`Edit`"));
     }
 
-    /// "Every claude fleetd starts" on the page covers the router's one-shot too.
+    /// "Every claude fleetd starts" on the page covers the retro's one-shot too.
     #[test]
-    fn the_router_gets_the_same_deny_list_and_switches() {
-        use fleetd::hub::intake::router;
-        let args = router::one_shot_args("m");
+    fn the_retro_gets_the_same_deny_list_and_switches() {
+        use fleetd::hub::intake::oneshot;
+        let args = oneshot::one_shot_args("m");
         for (tool, _) in DISALLOWED_WHY {
             assert!(args.iter().any(|a| a == tool), "{tool}");
         }
-        let env = router::router_env(&Default::default());
+        let env = oneshot::one_shot_env(&Default::default());
         for ((name, value), _) in SUBAGENTS_OFF_ENV_WHY
             .iter()
             .chain([&(AUTO_MEMORY_OFF_ENV, "")])
         {
             assert!(env.iter().any(|(k, v)| k == name && v == value), "{name}");
         }
-        let settings: Value = serde_json::from_str(&router::one_shot_settings()).unwrap();
+        let settings: Value = serde_json::from_str(&oneshot::one_shot_settings()).unwrap();
         for (name, _) in SUBAGENTS_ON_ENV_WHY {
             assert_eq!(settings["env"][name], "", "{name}");
         }
@@ -1006,6 +1026,7 @@ mod tests {
         assert!(page.contains("| Implementer | `spawn_agent` with kind `write`. Gets its own worktree and branch | [Task tools](#task-tools) | No |"));
         assert!(page.contains("| QA | `spawn_agent` with kind `review` and `qa: true` |"));
         assert!(page.contains(&format!("| Open tasks per lead | {MAX_OPEN_TASKS} ")));
+        assert!(page.contains(&format!("The fleet cap, {DEFAULT_CAP} by default.")));
     }
 
     #[test]
@@ -1024,13 +1045,15 @@ mod tests {
     }
 
     #[test]
-    fn the_router_row_comes_from_its_flags() {
+    fn the_retro_row_comes_from_its_flags() {
         let page = page(&root()).unwrap();
-        assert!(router().unwrap().tools.is_empty());
-        assert!(page.contains(
-            "The router's Claude Code tools: none. fleetd starts it with `--tools \"\"`"
-        ));
-        assert!(page.contains("The router gets none."));
+        assert!(one_shot().unwrap().tools.is_empty());
+        assert!(
+            page.contains(
+                "The retro's Claude Code tools: none. fleetd starts it with `--tools \"\"`"
+            )
+        );
+        assert!(page.contains("The retro gets none."));
     }
 
     #[test]

@@ -1,9 +1,8 @@
-//! Every prompt and message fleetd sends a model, with its shipped text, the placeholders the code fills in and the
-//! safety rules the text carries. The shipped texts are `assets/prompts/<id>.md`; playbooks stay in `playbooks/`.
-use fleetd_contracts::ledger::PlaybookName;
+//! The prompts a person can edit: the real instructions fleetd gives a model, each with its shipped text, the
+//! placeholders the code fills in and the safety rules the text carries. The shipped texts are
+//! `assets/prompts/<id>.md`. Everything else fleetd tells agents is fixed: event lines (`leads::events`), the state
+//! block (`leads::digest`) and plain notices (`fixed`). Prompts a release retired are `retired`.
 use fleetd_contracts::prompts::{Enforcement, Placeholder, PromptGroup, PromptKind, SafetyRule};
-
-use crate::hub::playbooks::load::BUNDLED;
 
 /// Which sessions pin an entry at their start.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -12,7 +11,7 @@ pub enum Audience {
     Task,
     /// Any thread: leads, tasks, and threads an outside agent launched.
     Any,
-    /// Resolved at each call (router, retro) or pinned by its own loader (playbooks).
+    /// Resolved at each call (the retro).
     None,
 }
 
@@ -31,12 +30,7 @@ pub struct Entry {
 
 impl Entry {
     pub fn per_project(&self) -> bool {
-        !matches!(self.kind, PromptKind::Oneshot | PromptKind::Playbook)
-    }
-
-    pub fn playbook(&self) -> Option<PlaybookName> {
-        let name = self.id.strip_prefix("playbook.")?;
-        PlaybookName::ALL.into_iter().find(|n| n.as_str() == name)
+        !matches!(self.kind, PromptKind::Oneshot)
     }
 
     pub fn placeholders(&self) -> Vec<Placeholder> {
@@ -84,8 +78,6 @@ use Enforcement::{Code, Prompt};
 use PromptGroup as G;
 use PromptKind as K;
 
-const WS: &str = "workstreamId!=the order's workstream, W<n>";
-
 macro_rules! entry {
     ($id:literal, $kind:ident, $group:ident, $aud:expr, $title:literal, $when:literal, $ph:expr, $rules:expr) => {
         Entry {
@@ -129,8 +121,8 @@ pub const ENTRIES: &[Entry] = &[
         Start,
         Lead,
         Lead,
-        "Lead: first message",
-        "lead start and every lead_restart, followed by the digest",
+        "Lead",
+        "lead start and every lead_restart, followed by the state block",
         "project!=the project's title; projectRef!=<machineId>/<projectId>",
         &[
             (
@@ -146,15 +138,15 @@ pub const ENTRIES: &[Entry] = &[
                 Code
             ),
             (
-                "ask-four-classes",
-                "asks the human only about product, money, credentials, irreversible",
-                r"product, money, credential",
+                "ask-big-calls",
+                "asks the human only for product, money or irreversible calls, in the chat, each with a recommendation",
+                r"product, money or irreversible calls",
                 Prompt
             ),
             (
-                "secrets-via-ask",
-                "secrets only through `ask` with kind secret",
-                r"kind secret",
+                "secrets-via-request",
+                "secrets only through `request_secret`",
+                r"request_secret",
                 Code
             ),
             (
@@ -165,8 +157,8 @@ pub const ENTRIES: &[Entry] = &[
             ),
             (
                 "never-block",
-                "never blocks on a question (`proceededOnRec`)",
-                r"proceededOnRec",
+                "never waits idle on an answer",
+                r"Never wait idle on an answer",
                 Prompt
             ),
             (
@@ -182,6 +174,12 @@ pub const ENTRIES: &[Entry] = &[
                 Code
             ),
             (
+                "stop-work",
+                "does no more work on an order the human stopped",
+                r"Work the human stopped stays stopped",
+                Prompt
+            ),
+            (
                 "train-only-merges",
                 "only the merge train merges",
                 r"never merge",
@@ -189,13 +187,37 @@ pub const ENTRIES: &[Entry] = &[
             ),
             (
                 "no-re-ask",
-                "never re-asks a key the digest lists",
-                r"never re-ask",
+                "never asks the same question twice; logs every answer with `decide`",
+                r"Never ask the same question twice",
+                Prompt
+            ),
+            (
+                "ask-once",
+                "asks an open question once and doesn't repeat it while it waits",
+                r"Ask once, then let it be",
+                Prompt
+            ),
+            (
+                "reply-becomes-work",
+                "a reply that asks for work starts it before anything closes",
+                r"A reply that asks for work becomes work",
+                Prompt
+            ),
+            (
+                "agent-cap",
+                "plans to the agent cap and never works around it",
+                r"Never work around the cap",
+                Prompt
+            ),
+            (
+                "no-time",
+                "never estimates time",
+                r"Never estimate time",
                 Prompt
             ),
             (
                 "amend",
-                "a frozen brief changes only with `amend`",
+                "a frozen brief changes only with `amend` and the human's logged yes",
                 r"`amend`",
                 Code
             ),
@@ -208,377 +230,12 @@ pub const ENTRIES: &[Entry] = &[
         ]
     ),
     entry!(
-        "lead.digest",
-        Wake,
-        Lead,
-        Lead,
-        "Lead: project digest",
-        "the top of the lead's first message and of every wake",
-        "project!=the project's title; projectRef!=<machineId>/<projectId>; at!=now; sections!=the digest's sections, rendered by fleetd",
-        &[(
-            "digest-is-truth",
-            "the digest is the truth, over the lead's memory",
-            r"current truth",
-            Prompt
-        )]
-    ),
-    entry!(
-        "digest.workstream.no_brief",
-        Wake,
-        WakesAndMessages,
-        Lead,
-        "Digest: order without a brief",
-        "each digest, per draft order",
-        WS,
-        &[]
-    ),
-    entry!(
-        "digest.finish_all_idle",
-        Wake,
-        WakesAndMessages,
-        Lead,
-        "Digest: finish-all is idle",
-        "each digest, per idle finish-all order",
-        "",
-        &[]
-    ),
-    entry!(
-        "digest.answer.withdrawn",
-        Wake,
-        WakesAndMessages,
-        Lead,
-        "Digest: an ask the human dropped",
-        "each digest, per dropped ask",
-        "askId!=the ask, A<n>; key!=its decision key",
-        &[]
-    ),
-    entry!(
-        "digest.answer.skipped",
-        Wake,
-        WakesAndMessages,
-        Lead,
-        "Digest: an ask the human skipped for now",
-        "each digest, per skipped ask",
-        "askId!=the ask, A<n>; key!=its decision key; value!=your recommendation, with its label",
-        &[]
-    ),
-    entry!(
-        "digest.tasks.running",
-        Wake,
-        WakesAndMessages,
-        Lead,
-        "Digest: running task",
-        "each digest, per running task",
-        "taskId!=the task, T<n>; kind!=write, read or review; model!=model/effort; title!=its title; branch!=its branch in brackets, or nothing",
-        &[]
-    ),
-    entry!(
-        "digest.tasks.idle",
-        Wake,
-        WakesAndMessages,
-        Lead,
-        "Digest: task waiting for input",
-        "each digest, per idle task",
-        "taskId!=the task, T<n>; kind!=write, read or review; model!=model/effort; title!=its title; branch!=its branch in brackets, or nothing",
-        &[]
-    ),
-    entry!(
-        "digest.tasks.queued",
-        Wake,
-        WakesAndMessages,
-        Lead,
-        "Digest: queued task",
-        "each digest, per queued task",
-        "taskId!=the task, T<n>; kind!=write, read or review; title!=its title; reason!=why it waits",
-        &[]
-    ),
-    entry!(
-        "digest.tasks.ended",
-        Wake,
-        WakesAndMessages,
-        Lead,
-        "Digest: task ended",
-        "each digest, per task ended since the last wake",
-        "taskId!=the task, T<n>; state!=done, failed or cancelled; title!=its title; result!=` → ` and its result's first line, or nothing",
-        &[]
-    ),
-    entry!(
-        "digest.train.repo",
-        Wake,
-        WakesAndMessages,
-        Lead,
-        "Digest: a repo's merge train",
-        "each digest, per train",
-        "repo!=owner/name; state!=running or frozen, its head and queue",
-        &[]
-    ),
-    entry!(
-        "digest.train.merged",
-        Wake,
-        WakesAndMessages,
-        Lead,
-        "Digest: merged PR",
-        "each digest, per merge since the last wake",
-        "changeId!=the change, X<n>; since!=` since your last wake`, or nothing; pr!=the PR; sha!=the merge commit, or nothing; serves!=what it serves; by!=`, by T<n>`, or nothing",
-        &[]
-    ),
-    entry!(
-        "digest.train.parked",
-        Wake,
-        WakesAndMessages,
-        Lead,
-        "Digest: PR back with its author",
-        "each digest, per PR needing a rebase or red CI",
-        "changeId!=the change, X<n>; state!=its state; pr!=the PR; by!=`, by T<n>`, or nothing; error!=what went wrong",
-        &[]
-    ),
-    entry!(
-        "digest.train.waived",
-        Wake,
-        WakesAndMessages,
-        Lead,
-        "Digest: waived PR",
-        "each digest, per waived PR",
-        "changeId!=the change, X<n>; pr!=the PR; state!=its state; reason!=the waiver",
-        &[]
-    ),
-    entry!(
-        "wake.frame",
-        Wake,
-        WakesAndMessages,
-        Lead,
-        "Wake: frame",
-        "every wake",
-        "digest!=the digest; lines!=why the lead is woken, one entry per trigger",
-        &[]
-    ),
-    entry!(
-        "wake.intent",
-        Wake,
-        WakesAndMessages,
-        Lead,
-        "Wake: new order",
-        "per new order",
-        "workstreamId!=the order's workstream, W<n>; text!=the order's words",
-        &[]
-    ),
-    entry!(
-        "wake.intent.playbook",
-        Wake,
-        WakesAndMessages,
-        Lead,
-        "Wake: the order's playbook",
-        "per new order with a playbook the digest does not show",
-        "playbook!=its name; instructions!=its leadInstructions",
-        &[]
-    ),
-    entry!(
-        "wake.intent.playbook_listed",
-        Wake,
-        WakesAndMessages,
-        Lead,
-        "Wake: the order's playbook, listed above",
-        "per new order with a playbook the digest shows",
-        "playbook!=its name",
-        &[]
-    ),
-    entry!(
-        "wake.decision",
-        Wake,
-        WakesAndMessages,
-        Lead,
-        "Wake: a human decision",
-        "per decision the human recorded in the project",
-        "who!=who recorded it; decisionId!=D<n>; key!=its key; value!=its value; scope!=its scope",
-        &[]
-    ),
-    entry!(
-        "wake.answers",
-        Wake,
-        WakesAndMessages,
-        Lead,
-        "Wake: answers",
-        "per batch of answers",
-        "count!=how many asks were settled",
-        &[]
-    ),
-    entry!(
-        "wake.task_result",
-        Wake,
-        WakesAndMessages,
-        Lead,
-        "Wake: task finished",
-        "per task that completed or failed",
-        "taskId!=the task, T<n>; verb!=completed or failed; title!=its title; where!=its branch and PR, or nothing; receipts!=its receipts line, or nothing; result!=its final message, quoted",
-        &[]
-    ),
-    entry!(
-        "wake.task_cancelled",
-        Wake,
-        WakesAndMessages,
-        Lead,
-        "Wake: task cancelled",
-        "per cancelled task",
-        "taskId!=the task, T<n>; title!=its title; where!=its branch and PR, or nothing; receipts!=its receipts line, or nothing; result!=its final message, quoted",
-        &[]
-    ),
-    entry!(
-        "wake.task_waiting",
-        Wake,
-        WakesAndMessages,
-        Lead,
-        "Wake: task asks a question",
-        "per task waiting on input",
-        "taskId!=the task, T<n>; title!=its title; question!=its question, quoted",
-        &[(
-            "ask-four-classes",
-            "asks the human only about product, money, credentials, irreversible",
-            r"product, money, credential",
-            Prompt
-        )]
-    ),
-    entry!(
-        "wake.task_start_failed",
-        Msg,
-        WakesAndMessages,
-        Lead,
-        "Task could not start",
-        "per queued task that failed to start (its result)",
-        "message!=why",
-        &[]
-    ),
-    entry!(
-        "wake.claim_failed",
-        Wake,
-        ReviewsAndChecks,
-        Lead,
-        "Wake: claim failed",
-        "per failed done claim",
-        "claimId!=C<n>; workstreamId!=W<n>; failures!=the failed checks with evidence; firstCheck!=the first failed check's index",
-        &[]
-    ),
-    entry!(
-        "wake.claim_passed",
-        Wake,
-        ReviewsAndChecks,
-        Lead,
-        "Wake: claim passed",
-        "per claim that passed late",
-        "claimId!=C<n>; workstreamId!=W<n>",
-        &[]
-    ),
-    entry!(
-        "wake.claim_held",
-        Wake,
-        ReviewsAndChecks,
-        Lead,
-        "Wake: claim passed, work still open",
-        "per claim that passed while write work of the order had not landed",
-        "claimId!=C<n>; workstreamId!=W<n>; work!=the unlanded write work in plain words; ids!=its ids, for tools",
-        &[]
-    ),
-    entry!(
-        "wake.order_done_work_kept",
-        Wake,
-        ReviewsAndChecks,
-        Lead,
-        "Wake: order done, open work kept",
-        "per order that became done, not through a claim, while some of its write work had not landed",
-        "workstreamId!=W<n>; work!=the unlanded write work in plain words; ids!=its ids, for tools",
-        &[]
-    ),
-    entry!(
-        "wake.train.line",
-        Wake,
-        WakesAndMessages,
-        Lead,
-        "Wake: train message for the lead",
-        "when the train could not reach a PR's author task",
-        "changeId!=X<n>; prUrl!=the PR; text!=the message meant for the author",
-        &[]
-    ),
-    entry!(
-        "wake.train.left",
-        Wake,
-        WakesAndMessages,
-        Lead,
-        "Wake: PR left the train",
-        "per PR the train abandoned",
-        "changeId!=X<n>; prUrl!=the PR; why!=why",
-        &[]
-    ),
-    entry!(
-        "wake.train.merged",
-        Wake,
-        WakesAndMessages,
-        Lead,
-        "Wake: PR merged",
-        "per merge",
-        "changeId!=X<n>; prUrl!=the PR; sha!=` as <sha>`, or nothing; tier!=S, M or L; serves!=what it serves; by!=`, by T<n>`, or nothing",
-        &[]
-    ),
-    entry!(
-        "wake.train.gave_up",
-        Wake,
-        WakesAndMessages,
-        Lead,
-        "Wake: train gave up",
-        "per PR GitHub refused to merge too often",
-        "changeId!=X<n>; prUrl!=the PR; why!=GitHub's reason; tries!=how many tries",
-        &[]
-    ),
-    entry!(
-        "wake.train.refused",
-        Wake,
-        WakesAndMessages,
-        Lead,
-        "Wake: train refused a PR",
-        "per task PR the train would not take",
-        "prUrl!=the PR; taskId!=the task, T<n>; message!=why; fix!=` Fix: …`, or nothing",
-        &[]
-    ),
-    entry!(
-        "wake.research_verdict.go",
-        Wake,
-        ReviewsAndChecks,
-        Lead,
-        "Wake: research verdict GO",
-        "per research claim that went GO",
-        "measured!=the two numbers and the improvement; go!=the go line",
-        &[]
-    ),
-    entry!(
-        "wake.research_verdict.stop",
-        Wake,
-        ReviewsAndChecks,
-        Lead,
-        "Wake: research verdict STOP",
-        "per research claim that went STOP",
-        "measured!=the two numbers and the improvement; stop!=the stop line",
-        &[(
-            "stop-is-success",
-            "STOP is a success",
-            r"STOP is a success",
-            Prompt
-        )]
-    ),
-    entry!(
-        "wake.research_verdict.inconclusive",
-        Wake,
-        ReviewsAndChecks,
-        Lead,
-        "Wake: research verdict INCONCLUSIVE",
-        "per research claim that was inconclusive",
-        "measured!=the two numbers and the improvement; stop!=the stop line; go!=the go line",
-        &[]
-    ),
-    entry!(
         "steer.message",
         Msg,
-        WakesAndMessages,
+        Messages,
         Any,
-        "A steer: the human's (or the lead's) words mid-run",
-        "per steer (steer_send, order_note, task message), straight to the agent, at its next tool boundary or now",
+        "Steer",
+        "per steer (steer_send, task message), straight to the agent, at its next tool boundary or now",
         "id!=the steer, S<n>; who!=the human or your lead; scope!=the order (W<n> 'title') or the task (T<n> (kind) for W<n>); text!=the words; references=references and attachments, or nothing",
         &[(
             "names-steer",
@@ -588,91 +245,11 @@ pub const ENTRIES: &[Entry] = &[
         )]
     ),
     entry!(
-        "wake.agent_steer",
-        Wake,
-        WakesAndMessages,
-        Lead,
-        "Wake: the human steered one of your tasks directly",
-        "per steer_send to a task, at the lead's next wake (debounced, never an interrupt)",
-        "id!=the steer, S<n>; taskId!=T<n>; kind!=write, read or review; text!=the human's words",
-        &[]
-    ),
-    entry!(
-        "wake.order_refs",
-        Wake,
-        WakesAndMessages,
-        Lead,
-        "Wake: what came with a new order",
-        "per new order with references or attachments",
-        "workstreamId!=W<n>; references!=references and attachments",
-        &[]
-    ),
-    entry!(
-        "wake.order_stopped",
-        Wake,
-        WakesAndMessages,
-        Lead,
-        "Wake: the human stopped an order",
-        "per order_stop",
-        "workstreamId!=W<n>; title!=the order's title; why!=why; cancelled!=how many tasks were cancelled",
-        &[(
-            "stop-work",
-            "does no more work on a stopped order",
-            r"do no more work",
-            Prompt
-        )]
-    ),
-    entry!(
-        "wake.runnable",
-        Wake,
-        WakesAndMessages,
-        Lead,
-        "Wake: a free slot and approved work",
-        "when a slot frees, the lead is idle and approved, unblocked work no task has taken waits; once per change in that work",
-        "items!=the next items, by id, title, order and size; room!=slots the project's tasks could take now",
-        &[(
-            "lead-decides",
-            "the lead decides what to start; the hub never spawns",
-            r"you decide",
-            Prompt
-        )]
-    ),
-    entry!(
-        "wake.order_idle",
-        Wake,
-        WakesAndMessages,
-        Lead,
-        "Wake: an order nobody works on",
-        "when the lead ends a turn with a frozen order and nothing under way",
-        "workstreamId!=W<n>; title!=the order's title",
-        &[]
-    ),
-    entry!(
-        "wake.scheduled_late",
-        Msg,
-        WakesAndMessages,
-        Any,
-        "Scheduled wake, late",
-        "a wake_set message that fired late",
-        "minutes!=how late; message!=the scheduled message",
-        &[]
-    ),
-    entry!(
-        "wake.scheduled_held",
-        Msg,
-        WakesAndMessages,
-        Any,
-        "Scheduled wake, held by a usage pause",
-        "a wake_set message held by a usage pause",
-        "minutes!=how long it was held; message!=the scheduled message",
-        &[]
-    ),
-    entry!(
         "task.brief.write",
         Start,
         Tasks,
         Task,
-        "Write task: first message",
+        "Writer brief",
         "every write task attempt",
         "taskId!=T<n>; kind=write; workstreamId=W<n>; project=the project's title; title=the task's title; task!=the lead's task text; workstream=the order's goal, done-when and what this serves, or nothing; areas!=the leased areas and their globs; branch!=the task's branch; baseBranch=the default branch; serves!=what the task serves",
         &[
@@ -698,26 +275,6 @@ pub const ENTRIES: &[Entry] = &[
         ]
     ),
     entry!(
-        "task.brief.read",
-        Start,
-        Tasks,
-        Task,
-        "Read task: first message",
-        "every read task attempt",
-        "taskId!=T<n>; kind=read; workstreamId=W<n>; project=the project's title; title=the task's title; task!=the lead's task text; workstream=the order's goal, done-when and what this serves, or nothing",
-        &[READ_ONLY, NO_SUBAGENTS]
-    ),
-    entry!(
-        "task.brief.review",
-        Start,
-        Tasks,
-        Task,
-        "Review task: first message",
-        "every review, verifier and judge task attempt",
-        "taskId!=T<n>; kind=review; workstreamId=W<n>; project=the project's title; title=the task's title; task!=the review, verify or judge text; workstream=the order's goal, done-when and what this serves, or nothing",
-        &[READ_ONLY, NO_SUBAGENTS, VERDICT]
-    ),
-    entry!(
         "review.reviewer",
         Start,
         ReviewsAndChecks,
@@ -735,16 +292,6 @@ pub const ENTRIES: &[Entry] = &[
             READ_ONLY,
             VERDICT,
         ]
-    ),
-    entry!(
-        "review.delta",
-        Start,
-        ReviewsAndChecks,
-        Task,
-        "Reviewer: what changed since the last review",
-        "after the reviewer's or verifier's text, when the PR was reviewed at an earlier head",
-        "reviewedSha!=the head reviewed before; headSha!=the head reviewed now; serves=what the PR serves",
-        &[]
     ),
     entry!(
         "review.verifier",
@@ -794,7 +341,7 @@ pub const ENTRIES: &[Entry] = &[
         Start,
         ReviewsAndChecks,
         Task,
-        "Judge, research",
+        "Research judge",
         "per `judge` check of a research claim",
         "workstreamId!=W<n>; claimId=C<n>; checkIndex=the check's index; criteria!=the criterion; artifacts!=PRs and branches to read; metric!=the metric; baseline!=the baseline",
         &[
@@ -808,179 +355,11 @@ pub const ENTRIES: &[Entry] = &[
         ]
     ),
     entry!(
-        "task.review_findings",
-        Msg,
-        ReviewsAndChecks,
-        Task,
-        "Blocking findings to the author",
-        "per blocking review verdict",
-        "reviewTaskId!=the review task; prUrl!=the PR; headSha!=the head reviewed; blocking!=`<n> blocking finding(s)`; nonBlocking!=how many non-blocking; summary!=the findings; branch!=the PR's branch",
-        &[(
-            "train-only-merges",
-            "never merges; the train does",
-            r"do not merge it yourself",
-            Code
-        )]
-    ),
-    entry!(
-        "task.train_rebase",
-        Msg,
-        Tasks,
-        Task,
-        "PR needs a rebase",
-        "per PR the train could not rebase",
-        "prUrl!=the PR; changeId!=X<n>; why!=what failed; branch!=the PR's branch; base!=the base branch",
-        &[]
-    ),
-    entry!(
-        "task.train_ci_failed",
-        Msg,
-        Tasks,
-        Task,
-        "PR's CI is red",
-        "per PR whose CI failed or timed out",
-        "prUrl!=the PR; changeId!=X<n>; why!=what failed; branch!=the PR's branch",
-        &[]
-    ),
-    entry!(
-        "plan.granularity",
-        Msg,
-        Lead,
-        Lead,
-        "Plan item too big or unsized",
-        "when `plan_add` (or `plan_edit` with a size) gets an item with no size or one bigger than m",
-        "item!=P<n>; reason!=why, \"has no size (counted as m)\" or \"is size l\"",
-        &[]
-    ),
-    entry!(
-        "watchdog.nudge",
-        Msg,
-        WakesAndMessages,
-        Any,
-        "Stall nudge",
-        "once per stalled run",
-        "",
-        &[]
-    ),
-    entry!(
-        "usage.continue",
-        Msg,
-        WakesAndMessages,
-        Any,
-        "Continue after a usage limit",
-        "per parked thread when the usage limit resets",
-        "",
-        &[]
-    ),
-    entry!(
-        "permission.denied.policy",
-        Msg,
-        WakesAndMessages,
-        Any,
-        "Tool denied by policy",
-        "per tool call a tools.deny rule refuses (tool result)",
-        "rule!=the rule; policyFile!=the policy file",
-        &[]
-    ),
-    entry!(
-        "permission.denied.withdrawn",
-        Msg,
-        WakesAndMessages,
-        Any,
-        "Tool ask withdrawn",
-        "per tool ask withdrawn before an answer (tool result)",
-        "askId!=A<n>; by!=who withdrew it",
-        &[(
-            "no-retry",
-            "does not retry the call",
-            r"don't retry",
-            Prompt
-        )]
-    ),
-    entry!(
-        "permission.denied.human",
-        Msg,
-        WakesAndMessages,
-        Any,
-        "Tool denied by the human",
-        "per tool ask the human denied (tool result)",
-        "by!=who; askId!=A<n>; said=`: ` and what they said, or nothing",
-        &[]
-    ),
-    entry!(
-        "permission.denied.answer",
-        Msg,
-        WakesAndMessages,
-        Any,
-        "Tool denied with thread_answer",
-        "per tool call denied with thread_answer and no message (tool result)",
-        "by!=who",
-        &[]
-    ),
-    entry!(
-        "router",
-        Oneshot,
-        OneShots,
-        Audience::None,
-        "Order router",
-        "each order without @project or a template prefix",
-        "projects!=the projects, one JSON object per line; intent!=the order's words",
-        &[
-            ("no-tools", "uses no tools", r"do not use tools", Code),
-            (
-                "json-only",
-                "replies with JSON only",
-                r"only one JSON object",
-                Prompt
-            ),
-        ]
-    ),
-    entry!(
-        "status.headline",
-        Oneshot,
-        OneShots,
-        Audience::None,
-        "Status headline",
-        "when a viewed status scope's facts change",
-        "facts!=the fact list as JSON; scope!=fleet, a project or an order",
-        &[
-            ("no-tools", "uses no tools", r"do not use tools", Code),
-            (
-                "one-line",
-                "replies with one line of at most 160 characters",
-                r"one line",
-                Code
-            ),
-            (
-                "numbers-from-facts",
-                "uses only numbers from the facts",
-                r"only numbers that appear in the facts",
-                Code
-            ),
-            (
-                "no-time",
-                "never estimates time",
-                r"never estimate time",
-                Code
-            ),
-        ]
-    ),
-    entry!(
-        "router.retry",
-        Oneshot,
-        OneShots,
-        Audience::None,
-        "Order router, second try",
-        "once per order, after an unusable first answer",
-        "prompt!=the router prompt; error=what was wrong",
-        &[]
-    ),
-    entry!(
         "retro",
         Oneshot,
         OneShots,
         Audience::None,
-        "Retro",
+        "Retro / triage",
         "each retro run (at most 2 a day)",
         "windowDays!=the window; metrics!=the metric classes; incidents!=the incidents; playbooks!=the playbook files",
         &[
@@ -988,65 +367,6 @@ pub const ENTRIES: &[Entry] = &[
             ("at-most-3", "at most 3 changes", r"at most 3 changes", Code),
         ]
     ),
-    Entry {
-        id: "playbook.bugfix",
-        title: "Playbook: bugfix",
-        kind: K::Playbook,
-        group: G::Playbooks,
-        audience: Audience::None,
-        sent_when: "in the digest and the intake wake, while an order follows it",
-        default: BUNDLED[0].1,
-        placeholders: "",
-        rules: &[(
-            "train-only-merges",
-            "never merges; the train does",
-            r"never merge",
-            Code,
-        )],
-    },
-    Entry {
-        id: "playbook.feature",
-        title: "Playbook: feature",
-        kind: K::Playbook,
-        group: G::Playbooks,
-        audience: Audience::None,
-        sent_when: "in the digest and the intake wake, while an order follows it",
-        default: BUNDLED[1].1,
-        placeholders: "",
-        rules: &[(
-            "train-only-merges",
-            "never merges; the train does",
-            r"never merge",
-            Code,
-        )],
-    },
-    Entry {
-        id: "playbook.research",
-        title: "Playbook: research",
-        kind: K::Playbook,
-        group: G::Playbooks,
-        audience: Audience::None,
-        sent_when: "in the digest and the intake wake, while an order follows it",
-        default: BUNDLED[2].1,
-        placeholders: "",
-        rules: &[(
-            "stop-is-success",
-            "STOP is a success",
-            r"STOP is success|STOP is a success",
-            Prompt,
-        )],
-    },
-    Entry {
-        id: "playbook.finish-all",
-        title: "Playbook: finish-all",
-        kind: K::Playbook,
-        group: G::Playbooks,
-        audience: Audience::None,
-        sent_when: "in the digest and the intake wake, while an order follows it",
-        default: BUNDLED[3].1,
-        placeholders: "",
-        rules: &[],
-    },
     Entry {
         id: INSTRUCTIONS,
         title: "Custom instructions",

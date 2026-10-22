@@ -1,30 +1,25 @@
-//! The leads area's links into areas already on main: its ports over the executor, the write queue, node commands and
-//! the ledger; the ledger's AnswerSink and WorkstreamLookup; its lead calls; and the human digest's feeds.
+//! The leads area's links into areas already on main: its ports over the executor, the write queue, node commands, the
+//! ledger and the requests; the ledger's WorkstreamLookup; its lead calls; and the human digest's feeds.
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadId, ThreadRef};
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult};
-use fleetd_contracts::ledger::{
-    Ask, AskId, AskKind, AskState, Decision, DecisionScope, WorkstreamId,
-};
+use fleetd_contracts::ledger::{Decision, DecisionScope, HumanRequest, RequestState, WorkstreamId};
 use fleetd_contracts::mcp::{McpToolError, ThreadLaunchInput};
 use fleetd_contracts::verification::{Claim, Eta};
 
 use super::Area;
 use super::error::LeadError;
 use super::hooks::{BoxFuture, ClaimsHook, EstimatesHook};
-use super::ports::{Answer, CmdOutcome, LeadPorts, RouteAsk};
+use super::ports::{CmdOutcome, LeadPorts};
 use super::records::{LeadRecords, WorkstreamFilter};
-use super::wakes::LeadWakes;
+use crate::hub::approvals::store::{RequestFilter, Requests};
 use crate::hub::checks::{ClaimFilter, Claims};
 use crate::hub::digests::HumanDigests;
 use crate::hub::estimates::Estimates;
 use crate::hub::executor::{ExecutorError, Executors, LaunchInput, LaunchOptions};
-use crate::hub::ledger::{
-    self, AnswerOutcome, AskFilter, AskInput, Asks, Chain, DecisionFilter, Decisions, Inbox,
-    LedgerCode, LedgerError,
-};
+use crate::hub::ledger::{self, Chain, DecisionFilter, Decisions, LedgerCode, LedgerError};
 use crate::hub::link::commands::CommandInput;
 use crate::hub::link::lead_calls::LeadCallFuture;
 use crate::hub::link::{LeadCallHandler, LeadCaller, LeadCalls, NodeCommands};
@@ -62,16 +57,11 @@ fn from_executor(error: ExecutorError) -> LeadError {
     }
 }
 
-/// A checked contract value from plain JSON.
-fn wire<T: serde::de::DeserializeOwned>(value: impl serde::Serialize) -> Result<T, LeadError> {
-    Ok(serde_json::from_value(serde_json::to_value(value)?)?)
-}
-
 pub struct HubPorts {
     pub executors: Arc<Executors>,
     pub queue: Arc<WriteQueue>,
     pub commands: Arc<NodeCommands>,
-    pub asks: Arc<Asks>,
+    pub requests: Arc<Requests>,
     pub decisions: Arc<Decisions>,
 }
 
@@ -167,56 +157,19 @@ impl LeadPorts for HubPorts {
         })
     }
 
-    fn open_asks(
+    fn open_requests(
         &self,
         project_ref: Option<&ProjectRef>,
-        workstream_id: Option<&WorkstreamId>,
         limit: usize,
-    ) -> Result<Vec<Ask>, LeadError> {
-        Ok(self.asks.list(&AskFilter {
-            state: Some(AskState::Open),
-            project_ref: project_ref.cloned(),
-            workstream_id: workstream_id.cloned(),
-            batch_id: None,
-            limit: Some(limit as i64),
-        })?)
-    }
-
-    fn ask(&self, ask_id: &AskId) -> Result<Option<Ask>, LeadError> {
-        Ok(self.asks.get(ask_id.as_str())?)
-    }
-
-    fn create_route_ask(&self, input: RouteAsk, by: &str) -> Result<AskId, LeadError> {
-        let outcome = self.asks.create(
-            &AskInput {
-                project_ref: None,
-                workstream_id: None,
-                kind: AskKind::Decide,
-                key: input.key,
-                class: "product".into(),
-                text: wire(input.text)?,
-                context: None,
-                recommendation: Some(wire(input.recommendation)?),
-                recommendation_why: None,
-                options: Some(wire(input.options)?),
-                steps: None,
-                verify: None,
-                sink: None,
-                env_name: None,
-                gated: None,
-                permission: None,
-                blocks: wire(input.blocks)?,
-                proceeded_on_rec: false,
-            },
-            by,
-        )?;
-        Ok(outcome.ask.ask_id)
-    }
-
-    fn withdraw_ask(&self, ask_id: &AskId, reason: &str) -> Result<(), LeadError> {
-        self.asks
-            .withdraw(ask_id.as_str(), None, None, Some(reason))?;
-        Ok(())
+    ) -> Result<Vec<HumanRequest>, LeadError> {
+        self.requests
+            .list(&RequestFilter {
+                project_ref: project_ref.cloned(),
+                states: Some(vec![RequestState::Open]),
+                kind: None,
+                limit: limit as i64,
+            })
+            .map_err(|e| LeadError::failed(e.to_string()))
     }
 
     fn decisions_in_project(
@@ -253,24 +206,6 @@ impl LeadPorts for HubPorts {
     }
 }
 
-/// The ledger's AnswerSink: each applied answer wakes its project's lead.
-struct WakeOnAnswer(Arc<LeadWakes>);
-
-impl ledger::AnswerSink for WakeOnAnswer {
-    fn on_answered(&self, project_ref: &ProjectRef, answers: Vec<ledger::Answer>) {
-        let answers: Vec<Answer> = answers
-            .into_iter()
-            .map(|a| Answer {
-                withdrawn: a.outcome == AnswerOutcome::Withdrawn,
-                ask: a.ask,
-                value: a.value,
-                decision: a.decision,
-            })
-            .collect();
-        self.0.on_answered(project_ref, &answers);
-    }
-}
-
 struct Lookup(Arc<LeadRecords>);
 
 impl ledger::WorkstreamLookup for Lookup {
@@ -296,6 +231,11 @@ impl ClaimsHook for ClaimsFromChecks {
                 ..Default::default()
             })
             .unwrap_or_default()
+    }
+    fn void(&self, workstream_id: &WorkstreamId) {
+        if let Err(error) = self.0.void(workstream_id) {
+            tracing::warn!(%error, "claim not voided");
+        }
     }
 }
 
@@ -330,9 +270,8 @@ pub struct Links<'a> {
     pub executors: &'a Arc<Executors>,
     pub queue: &'a Arc<WriteQueue>,
     pub commands: &'a Arc<NodeCommands>,
-    pub asks: &'a Arc<Asks>,
+    pub requests: &'a Arc<Requests>,
     pub decisions: &'a Arc<Decisions>,
-    pub inbox: &'a Inbox,
     pub lead_calls: &'a LeadCalls,
     pub digests: &'a HumanDigests,
     pub claims: &'a Arc<Claims>,
@@ -385,7 +324,7 @@ pub fn wire_area(area: &Arc<Area>, links: Links<'_>) {
         executors: Arc::clone(links.executors),
         queue: Arc::clone(links.queue),
         commands: Arc::clone(links.commands),
-        asks: Arc::clone(links.asks),
+        requests: Arc::clone(links.requests),
         decisions: Arc::clone(links.decisions),
     }));
     let _ = area
@@ -398,9 +337,6 @@ pub fn wire_area(area: &Arc<Area>, links: Links<'_>) {
         .hooks
         .estimates
         .set(Arc::new(EstimatesFromArea(Arc::clone(links.estimates))));
-    links
-        .inbox
-        .set_answer_sink(Arc::new(WakeOnAnswer(Arc::clone(&area.wakes))));
     links
         .decisions
         .set_workstreams(Arc::new(Lookup(Arc::clone(&area.records))));

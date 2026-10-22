@@ -32,3 +32,12 @@ pre, code { font-family: monospace; }
 .drag-stack { position: relative; }
 .over-bar { position: absolute; top: 0; left: 40px; }
 .no-drag { -webkit-app-region: no-drag; }
+/* Popovers: a fixed positioner (transparent, as Radix's) with the surface inside it; the stage places what they cover. */
+.stage { position: relative; display: flow-root; height: 320px; }
+.at { position: absolute; left: 0; margin: 0; white-space: nowrap; }
+.flow { margin: 0; white-space: nowrap; }
+.positioner { position: fixed; z-index: 10; }
+.popover { padding: 8px 12px; background: #fff; border: 1px solid #ccc; }
+.popover p, .popover-clear p { margin: 0; }
+.popover.narrow { width: 120px; }
+@media (prefers-color-scheme: dark) { .popover { background: #111214; } }

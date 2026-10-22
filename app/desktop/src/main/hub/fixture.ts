@@ -15,15 +15,21 @@ const Frame = z.discriminatedUnion("t", [
   z.object({ t: z.literal("event"), event: z.looseObject({ seq: z.int().min(0), type: z.string() }), afterMs: delay }),
   z.object({ t: z.literal("live"), frame: z.looseObject({ full: z.boolean() }), afterMs: delay }),
   z.object({ t: z.literal("error"), error: hubError, afterMs: delay }),
+  // A streamed chat frame, replayed whatever chat is subscribed: a fixture streams the chat it shows.
+  z.object({
+    t: z.literal("chat_delta"),
+    delta: z.looseObject({ messageId: z.string(), offset: z.int().min(0), append: z.string() }),
+    afterMs: delay,
+  }),
 ]);
 
-/** Items of `tool`'s answers under `field` that match `where` (a deep subset), e.g. asks_list's asks with askId A1. */
+/** Items of `tool`'s answers under `field` that match `where` (a deep subset), e.g. requests_list's open Q1. */
 const Rows = z.object({ tool: z.string(), field: z.string(), where: z.json() });
 
 /**
- * What answering a call changes, as a hub would: frames it emits (each `afterMs` after the call, e.g. ask.answered,
- * then ask.delivered once the undo window has passed) and rows it hides from later answers or shows again (an
- * answered ask leaves asks_list; undo brings it back), so a refetch after the event agrees with it.
+ * What answering a call changes, as a hub would: frames it emits (each `afterMs` after the call, e.g. a request's
+ * request.updated as it runs) and rows it hides from later answers or shows again (an answered request leaves the
+ * open requests_list), so a refetch after the event agrees with it.
  */
 const Then = z.object({
   frames: z.array(Frame).optional(),
@@ -195,6 +201,8 @@ export class FixtureSource implements HubSource {
   }
 
   live(): void {}
+
+  chat(): void {}
 
   refreshLive(): void {}
 

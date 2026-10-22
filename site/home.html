@@ -119,8 +119,6 @@ p{margin:0}
 .list li{display:grid;grid-template-columns:2.2em minmax(0,1fr);padding:11px 0;border-bottom:1px solid var(--rule);counter-increment:l}
 .list li:first-child{border-top:1px solid var(--ink)}
 .list li::before{content:counter(l,decimal-leading-zero);color:var(--faint);font-variant-numeric:tabular-nums;font-size:14px;padding-top:2px}
-.digest{margin-top:26px}
-.digest .lines{margin-top:8px}
 
 .train{margin:0;padding:0;list-style:none;font:400 13.5px/1.55 var(--mono);font-variant-ligatures:none;border-top:1px solid var(--ink)}
 .train li{display:grid;grid-template-columns:5.6em 11.6em minmax(0,1fr);gap:0 1em;padding:6px 0;border-bottom:1px solid var(--rule)}
@@ -188,70 +186,61 @@ p{margin:0}
   </div>
   <div class="install">
     <div class="cmd"><code id="cmd">curl -fsSL https://fleetd.sh | sh</code><button class="copy" type="button" data-copy="cmd">Copy</button></div>
-    <p class="facts">Installs and sets up fleetd: about a minute later the hub runs, the app is paired, and you type your first order. You need macOS or Linux x64, the <code>claude</code> CLI logged in (your own claude setup, proxy included), <code>git</code> and <code>gh</code>. MIT.</p>
+    <p class="facts">Installs and sets up fleetd: about a minute later the hub runs, the app is paired, and you send the lead your first message. You need macOS or Linux x64, the <code>claude</code> CLI logged in (your own claude setup, proxy included), <code>git</code> and <code>gh</code>. MIT.</p>
   </div>
 </section>
 
 <figure class="w fig" style="--ar:.642857" aria-labelledby="f0">
-  <figcaption class="cap" id="f0"><b>One order, its fleet.</b>
-    <p>Recorded from a lab hub: three writers opened a PR each, and every PR now has two reviewers and a verifier on it. Each row is an agent at work, grouped under the PR it checks.</p></figcaption>
+  <figcaption class="cap" id="f0"><b>Talk to the lead.</b>
+    <p>Each project has one chat with its lead. Say what you want; the lead splits it up and runs the agents. Under its reply, each agent at work and what it is doing now. A dot in the sidebar marks a project waiting on you.</p></figcaption>
   <div class="frame">
-    <a class="shot" href="/fleet-board.png"><img src="/fleet-board.png" width="2800" height="1800" alt="The fleetd app’s board with one order on the stage: PRs #221, #222 and #223, each written by its own agent and each with two reviewers and a verifier under it, what each is doing now, how long, and a bar of its recent work."></a>
+    <a class="shot" href="/chat-hero.png"><img src="/chat-hero.png" width="2800" height="1800" alt="The fleetd app on storefront’s chat: you asked to round the cart totals once, in one place; the lead answered that writers are splitting the change into three PRs; under its reply, three agents at work: an implementer editing src/cart/total.ts, a verifier running the cart tests on #222 and a reviewer thinking on #221. In the sidebar, billing is waiting on you."></a>
   </div>
 </figure>
 
-<!-- Figures. To re-shoot: run tests/lab/site-capture.ts (site/README.md), then re-aim each callout: --x is percent
+<!-- Figures. To re-shoot: `pnpm site:shots` in app/desktop (site/README.md), then re-aim each callout: --x is percent
      of image width, --y percent of image height, at the point it marks. "up" hangs the note above its leader instead
      of below; "flip" puts the narrow-screen number on the pin's left. -->
 <figure class="w fig" style="--ar:.642857" aria-labelledby="f1">
-  <figcaption class="cap" id="f1"><b>Fig. 1 · The inbox.</b>
-    <p>The fleetd desktop app on a live hub. The lead filed three asks for the storefront project: two product, one money.</p></figcaption>
+  <figcaption class="cap" id="f1"><b>Fig. 1 · Approve what can’t be undone.</b>
+    <p>The lead runs almost everything itself. A command that can’t be undone, costs money or needs a credential waits in the chat, exactly as it will run, until you approve it.</p></figcaption>
   <div class="frame">
-    <a class="shot" href="/capture-inbox.png"><img src="/capture-inbox.png" width="2800" height="1800" alt="The fleetd app with its inbox panel open: three numbered asks, each with its recommendation as a button, and a reply field at the bottom."></a>
+    <a class="shot" href="/chat-approve.png"><img src="/chat-approve.png" width="2800" height="1800" alt="storefront’s chat in the fleetd app: the lead says the migration writes to the production database and asks you to approve it exactly as below; a card shows the command pnpm --filter storefront db:migrate --env production on devbox, marked Can’t be undone, with Approve and Deny. Between them, the strip of agents at work; above, an agent’s denied request to use Bash."></a>
     <ol class="notes">
-      <li class="flip" style="--x:72.6;--y:7.2"><span class="pin"><i>10</i></span><p class="note"><span class="n">10</span><span>The inbox panel (Ctrl+I): every ask that needs you, numbered, wherever you are in the app.</span></p></li>
-      <li class="flip" style="--x:72.5;--y:12.1"><span class="pin"><i>12</i></span><p class="note"><span class="n">12</span><span>Ask 1, filed by the lead with <code>fleetd ask</code>, and the project it came from.</span></p></li>
-      <li class="" style="--x:59;--y:23.1"><span class="pin"><i>14</i></span><p class="note"><span class="n">14</span><span>The board shows the first ask too; the rest wait in the inbox, here the money ask on the Team plan launch.</span></p></li>
-      <li class="flip" style="--x:78.6;--y:27.6"><span class="pin"><i>16</i></span><p class="note"><span class="n">16</span><span>Each ask leads with the lead’s recommendation and why, then the other options with what each does, and Something else.</span></p></li>
-      <li class="flip up" style="--x:82.3;--y:97.1"><span class="pin"><i>18</i></span><p class="note"><span class="n">18</span><span>The whole reply is one line. <code>1 go 2 nvm 3 b</code>: ship the headline, drop the moment change, take the second option, 14 days.</span></p></li>
+      <li class="up" style="--x:34.9;--y:44.9"><span class="pin"><i>10</i></span><p class="note"><span class="n">10</span><span>The lead says what it wants to run and why, in a line.</span></p></li>
+      <li class="flip" style="--x:78.6;--y:69.1"><span class="pin"><i>12</i></span><p class="note"><span class="n">12</span><span>Why it waits for you: this one can’t be undone. Commands that cost money or need a credential wait too.</span></p></li>
+      <li class="" style="--x:40;--y:76"><span class="pin"><i>14</i></span><p class="note"><span class="n">14</span><span>The exact command, the machine and folder it runs in, and the secret it gets. Approve runs it as shown; Deny tells the lead, which carries on without it.</span></p></li>
     </ol>
   </div>
 </figure>
 
 <figure class="w fig" style="--ar:.642857" aria-labelledby="f2">
-  <figcaption class="cap" id="f2"><b>Fig. 2 · Enter. Each answer becomes a decision.</b>
-    <p>The same inbox right after the reply <code>1 go 2 nvm 3 b</code> went in.</p></figcaption>
+  <figcaption class="cap" id="f2"><b>Fig. 2 · Secrets stay out of the chat.</b>
+    <p>When the lead needs a key, you type it into a masked field. It is sealed to the machine that uses it; the chat and the hub never see it.</p></figcaption>
   <div class="frame">
-    <a class="shot" href="/capture-reply.png"><img src="/capture-reply.png" width="2800" height="1800" loading="lazy" alt="The fleetd app’s inbox panel after the reply: empty, with a line at the bottom logging each answer as a decision."></a>
+    <a class="shot" href="/chat-secret.png"><img src="/chat-secret.png" width="2800" height="1800" loading="lazy" alt="storefront’s chat in the fleetd app: the lead needs the Stripe test key, which goes to devbox only; a card says it will be saved as STRIPE_TEST_KEY in the project’s .env.test on devbox, with a masked field and Save secret. Above it, the agents at work and the same key saved earlier, shown only as saved."></a>
     <ol class="notes">
-      <li class="flip" style="--x:73.8;--y:12.4"><span class="pin"><i>20</i></span><p class="note"><span class="n">20</span><span>Nothing needs you: leads decide everything that isn’t a product, money, credential or irreversible call.</span></p></li>
-      <li class="flip up" style="--x:84;--y:95.6"><span class="pin"><i>22</i></span><p class="note"><span class="n">22</span><span>What the reply did, as the app logs it: answers 1 and 3 are logged, ask 2 is dropped, and each answer can be taken back for 10 seconds.</span></p></li>
+      <li class="" style="--x:37.7;--y:34"><span class="pin"><i>20</i></span><p class="note"><span class="n">20</span><span>A secret saved earlier shows only that it was saved, never its value.</span></p></li>
+      <li class="" style="--x:50.8;--y:50"><span class="pin"><i>22</i></span><p class="note"><span class="n">22</span><span>The lead asks for the key in the chat, and says where it goes.</span></p></li>
+      <li class="flip" style="--x:55;--y:81.4"><span class="pin"><i>24</i></span><p class="note"><span class="n">24</span><span>Paste it here. It never enters the transcript.</span></p></li>
+      <li class="" style="--x:56.9;--y:84.8"><span class="pin"><i>26</i></span><p class="note"><span class="n">26</span><span>Sealed on your computer to that machine’s key; the hub only passes it on.</span></p></li>
     </ol>
   </div>
 </figure>
 <section class="w sec" aria-labelledby="own">
   <div>
     <h2 id="own">What the lead does without asking you.</h2>
-    <p class="lede">Taken from the same run: the lead’s commands, the hub’s events and the lead’s own replies.</p>
+    <p class="lede">How each project’s lead works, in its chat.</p>
   </div>
   <div>
     <ol class="list">
       <li><span>The lead decides everything that isn’t a product, money, credential or irreversible call.</span></li>
-      <li><span>The lead files the rest with <code>fleetd ask</code>, each with a class, a recommendation and what it blocks, and carries on without waiting.</span></li>
-      <li><span>The lead hands workstreams and tasks to Claude Code agents on your machines.</span></li>
-      <li><span>The lead starts every wake from the hub’s digest: answers, open workstreams, tasks, open asks, decisions.</span></li>
-      <li><span>The lead doesn’t re-ask a key that’s already decided.</span></li>
-      <li><span>The lead keeps your answer when it overrides its own recommendation.</span></li>
-      <li><span>The lead gets an incident, <code>I1 misfiled_ask</code>, when you drop an ask it could have decided itself.</span></li>
+      <li><span>It asks the rest in the chat: numbered, each with its recommendation. <code>1 go, 2 rec</code> or <code>do it</code> is a whole reply.</span></li>
+      <li><span>It hands the work to Claude Code agents on your machines, never more at once than the project’s Max agents.</span></li>
+      <li><span>It logs each answer as a decision, so it never asks the same thing twice.</span></li>
+      <li><span>It keeps your answer when you overrule its recommendation.</span></li>
+      <li><span>No time estimates. It says what is done and what is next.</span></li>
     </ol>
-    <div class="digest">
-      <p class="quote">And what you get at 09:00 and 18:00 when that’s all there is:</p>
-      <!-- capture:digest -->
-      <pre class="lines"><span class="c">fleetd digest · Mon 19 Oct, 15:47</span>
-<span class="o">Nothing needs you · 0 running · 0 done
-Decided without you (1): deps.moment=Dropped by the human; do not pursue rem… (D3) · reply "forget D3" to undo one</span></pre>
-      <!-- /capture:digest -->
-    </div>
   </div>
 </section>
 

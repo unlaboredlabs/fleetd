@@ -1,4 +1,4 @@
-//! `fleetd project add|list|remove`: the hub's add-a-project service (project_discover, project_inspect,
+//! `fleetd project add|list|stop|remove|set`: the hub's add-a-project service (project_discover, project_inspect,
 //! project_add) from a terminal, one question at a time like `fleetd init`, or flags only without one.
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -21,8 +21,17 @@ pub const PROJECT_USAGE: &str =
              repo cloned onto one (the least busy worker by default), with progress;
              then its CI, merge rules and what the lead will need. No argument: pick one
   project list [--machine <id>] [--home <dir>] [--hub <url>]
+  project stop <machine>/<project> [--yes] [--home <dir>] [--hub <url>]
+             stop everything running in it: its agents are cancelled, the lead and
+             its chat stay, and the chat says so
   project remove <machine>/<project> [--yes] [--home <dir>] [--hub <url>]
              stop its agents and forget it; its files, branches and worktrees stay
+  project set <machine>/<project> --max-agents <n> [--pause-extras] [--home <dir>] [--hub <url>]
+  project set --fleet-cap <n> [--home <dir>] [--hub <url>]
+             the most agents the project runs at once (its lead not counted), or the
+             fleet's cap on running turns (admin key); more wait queued and start as
+             slots free. Lowering stops nothing; --pause-extras has the newest agents
+             above the new max push their work and wait
 ";
 
 const SPEC: Spec = Spec {
@@ -34,6 +43,9 @@ const SPEC: Spec = Spec {
         ("yes", Kind::Bool),
         ("home", Kind::Str),
         ("hub", Kind::Str),
+        ("max-agents", Kind::Str),
+        ("pause-extras", Kind::Bool),
+        ("fleet-cap", Kind::Str),
     ],
     positionals: true,
 };
@@ -203,6 +215,13 @@ fn describe(inspect: &Value) -> String {
         .map(|r| format!(", rulesets: {r}"))
         .unwrap_or_default();
     lines.push(format!("Merge: {protected}, {squash}{rulesets}"));
+    if let Some(areas) = list("/areas") {
+        let source = match inspect.get("areasInferred").and_then(Value::as_bool) {
+            Some(true) => " (inferred from the repo)",
+            _ => " (from .fleetd/policy.yaml)",
+        };
+        lines.push(format!("Areas{source}: {areas}"));
+    }
     for note in inspect
         .get("notes")
         .and_then(Value::as_array)
@@ -236,6 +255,8 @@ pub async fn project_command(argv: &[String]) -> u8 {
         "add" => add(&mut client, &out, &v, &home).await,
         "list" => list(&mut client, &v).await,
         "remove" => remove(&mut client, &out, &v).await,
+        "stop" => stop(&mut client, &out, &v).await,
+        "set" => set(&mut client, &out, &v).await,
         other => return usage(&format!("unknown project command '{other}'")),
     };
     match result {
@@ -272,7 +293,33 @@ async fn list(client: &mut McpClient, v: &args::Parsed) -> Result<(), Stop> {
     Ok(())
 }
 
-async fn remove(client: &mut McpClient, out: &Out, v: &args::Parsed) -> Result<(), Stop> {
+/// `fleetd project stop <machine>/<project>`: the safety valve, every agent of the project stops.
+async fn stop(client: &mut McpClient, out: &Out, v: &args::Parsed) -> Result<(), Stop> {
+    let (machine, project) = find(client, v).await?;
+    let title = s(&project, "/title").to_owned();
+    if out.tty {
+        let sure = cliclack::confirm(format!(
+            "Stop everything in {title} on {machine}? Its agents are cancelled; the lead stays."
+        ))
+        .initial_value(false)
+        .interact()
+        .unwrap_or(false);
+        if !sure {
+            return Ok(());
+        }
+    }
+    let body = call(
+        client,
+        "project_stop",
+        json!({ "projectRef": { "machineId": machine, "projectId": s(&project, "/projectId") } }),
+    )
+    .await?;
+    out.success(&format!("{title}: {}", s(&body, "/message/text")));
+    Ok(())
+}
+
+/// The project a `<machine>/<project id or title>` argument names.
+async fn find(client: &mut McpClient, v: &args::Parsed) -> Result<(String, Value), Stop> {
     let Some(target) = v.positionals.first() else {
         return Err(Stop(
             2,
@@ -312,6 +359,13 @@ async fn remove(client: &mut McpClient, out: &Out, v: &args::Parsed) -> Result<(
             )),
         ));
     };
+    Ok((machine.to_owned(), project.clone()))
+}
+
+async fn remove(client: &mut McpClient, out: &Out, v: &args::Parsed) -> Result<(), Stop> {
+    let (machine, project) = find(client, v).await?;
+    let project = &project;
+    let machine = machine.as_str();
     let title = s(project, "/title").to_owned();
     if out.tty {
         let sure = cliclack::confirm(format!(
@@ -333,6 +387,61 @@ async fn remove(client: &mut McpClient, out: &Out, v: &args::Parsed) -> Result<(
     out.success(&format!(
         "{title} removed from {machine}; its files, branches and worktrees stay"
     ));
+    Ok(())
+}
+
+fn count_of(v: &args::Parsed, name: &str) -> Result<Option<u32>, Stop> {
+    v.str(name)
+        .map(|n| {
+            n.parse::<u32>()
+                .ok()
+                .filter(|n| (1..=1000).contains(n))
+                .ok_or_else(|| Stop(2, format!("--{name} takes a number from 1 to 1000"), None))
+        })
+        .transpose()
+}
+
+async fn set(client: &mut McpClient, out: &Out, v: &args::Parsed) -> Result<(), Stop> {
+    let max_agents = count_of(v, "max-agents")?;
+    let fleet_cap = count_of(v, "fleet-cap")?;
+    let mut input = json!({});
+    if let Some(cap) = fleet_cap {
+        input["cap"] = json!(cap);
+    }
+    match (v.positionals.first(), max_agents) {
+        (Some(_), Some(n)) => {
+            let (machine, project) = find(client, v).await?;
+            input["project"] = json!({
+                "projectRef": { "machineId": machine, "projectId": s(&project, "/projectId") },
+                "maxAgents": n,
+                "pauseExtras": v.flag("pause-extras"),
+            });
+        }
+        (Some(_), None) => {
+            return Err(Stop(
+                2,
+                "give --max-agents <n> for the project".into(),
+                None,
+            ));
+        }
+        (None, Some(_)) => {
+            return Err(Stop(
+                2,
+                "--max-agents needs the project as <machine>/<project>".into(),
+                None,
+            ));
+        }
+        (None, None) if fleet_cap.is_none() => {
+            return Err(Stop(
+                2,
+                "give --max-agents <n> with a project, or --fleet-cap <n>".into(),
+                None,
+            ));
+        }
+        (None, None) => {}
+    }
+    let body = call(client, "cap_set", input).await?;
+    out.success(body.get("next").and_then(Value::as_str).unwrap_or("Set."));
     Ok(())
 }
 
@@ -647,7 +756,7 @@ async fn add(client: &mut McpClient, out: &Out, v: &args::Parsed, home: &Path) -
 }
 
 fn finish(out: &Out) -> Result<(), Stop> {
-    let next = "Give it an order in the app's composer, or from any agent with intake_submit; its lead starts with the first one.";
+    let next = "Write to its lead in the app's chat, or from any agent with chat_send; the lead starts with the first message.";
     if out.tty {
         let _ = cliclack::outro(next);
     } else {
@@ -659,6 +768,20 @@ fn finish(out: &Out) -> Result<(), Stop> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn describe_names_the_areas_and_where_they_come_from() {
+        let inspect = serde_json::json!({
+            "leadNeeds": "ready",
+            "areas": ["all", "docs", "hub"],
+            "areasInferred": true,
+        });
+        assert!(describe(&inspect).ends_with("\nAreas (inferred from the repo): all, docs, hub"));
+        let set =
+            serde_json::json!({ "leadNeeds": "ready", "areas": ["docs"], "areasInferred": false });
+        assert!(describe(&set).ends_with("\nAreas (from .fleetd/policy.yaml): docs"));
+        assert!(!describe(&serde_json::json!({ "leadNeeds": "ready" })).contains("Areas"));
+    }
 
     #[test]
     fn paths_resolve_like_a_shell() {

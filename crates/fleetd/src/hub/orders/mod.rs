@@ -1,4 +1,4 @@
-//! The orders board: open workstreams joined with their agents (tasks and the project's lead), PRs, open asks and the
+//! The orders board: open workstreams joined with their agents (tasks and the project's lead), PRs, open requests and the
 //! trains of their repos, for the app's board and order view. Reads the existing stores; owns no table.
 pub mod filler;
 pub mod idle;
@@ -343,7 +343,7 @@ pub struct OrderParts<'a> {
     pub tasks: &'a [Task],
     /// Its PRs, newest first.
     pub changes: &'a [Change],
-    pub open_asks: usize,
+    pub open_requests: usize,
     pub lead_working: bool,
 }
 
@@ -382,7 +382,7 @@ pub fn card(p: &OrderParts<'_>, look: &dyn Lookups) -> Joined {
     let (phase, detail) = phase::phase(&PhaseInput {
         state: w.state,
         headline: w.headline.as_deref(),
-        open_asks: p.open_asks,
+        open_requests: p.open_requests,
         lanes: &phase_lanes,
         prs: &pr_states,
         lead_working: p.lead_working,
@@ -404,7 +404,7 @@ pub fn card(p: &OrderParts<'_>, look: &dyn Lookups) -> Joined {
         phase,
         phase_detail: detail.map(|d| text(&d)),
         next: w.headline.clone(),
-        needs_you: count(p.open_asks),
+        needs_you: count(p.open_requests),
         settled: count(settled),
         total: count(total),
         lanes: List::unchecked(active),
@@ -532,17 +532,17 @@ pub fn order_tasks(hub: &Hub, id: &WorkstreamId) -> Vec<Task> {
         .unwrap_or_default()
 }
 
-/// Every open ask, counted per workstream.
-pub fn open_asks_by_order(hub: &Hub) -> HashMap<WorkstreamId, usize> {
+/// Every open secret or approval request, counted per workstream.
+pub fn open_requests_by_order(hub: &Hub) -> HashMap<WorkstreamId, usize> {
     let mut out = HashMap::new();
-    let asks = hub
+    let requests = hub
         .leads
         .ctx
         .ports()
-        .open_asks(None, None, 500)
+        .open_requests(None, 500)
         .unwrap_or_default();
-    for ask in asks {
-        if let Some(w) = ask.workstream_id {
+    for request in requests {
+        if let Some(w) = request.workstream_id {
             *out.entry(w).or_insert(0) += 1;
         }
     }
@@ -567,7 +567,7 @@ fn lead_working(hub: &Hub, project: &ProjectRef) -> bool {
 }
 
 /// One order joined, for the board or order_get.
-pub fn join(hub: &Hub, w: &Workstream, changes: &[Change], open_asks: usize) -> Joined {
+pub fn join(hub: &Hub, w: &Workstream, changes: &[Change], open_requests: usize) -> Joined {
     let order_changes: Vec<Change> = changes
         .iter()
         .filter(|c| c.workstream_id == w.workstream_id)
@@ -579,7 +579,7 @@ pub fn join(hub: &Hub, w: &Workstream, changes: &[Change], open_asks: usize) -> 
             workstream: w,
             tasks: &tasks,
             changes: &order_changes,
-            open_asks,
+            open_requests,
             lead_working: lead_working(hub, &w.project_ref),
         },
         hub,
@@ -588,7 +588,7 @@ pub fn join(hub: &Hub, w: &Workstream, changes: &[Change], open_asks: usize) -> 
 
 /// Cards for these orders, sorted for the board, and the trains of their repos.
 pub fn board(hub: &Hub, orders: &[Workstream]) -> (Vec<OrderCard>, Vec<TrainLive>, bool) {
-    let asks = open_asks_by_order(hub);
+    let requests = open_requests_by_order(hub);
     let mut changes: HashMap<ProjectRef, Vec<Change>> = HashMap::new();
     let mut cards = Vec::new();
     let mut truncated = orders.len() > BOARD_ORDERS;
@@ -600,7 +600,7 @@ pub fn board(hub: &Hub, orders: &[Workstream]) -> (Vec<OrderCard>, Vec<TrainLive
             hub,
             w,
             project_changes,
-            asks.get(&w.workstream_id).copied().unwrap_or(0),
+            requests.get(&w.workstream_id).copied().unwrap_or(0),
         );
         truncated |= joined.truncated;
         cards.push(joined.card);

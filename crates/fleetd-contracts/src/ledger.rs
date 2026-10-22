@@ -22,14 +22,6 @@ brand!(
     WorkstreamId, name = "WorkstreamId", pattern = r"^W[1-9][0-9]*$"
 );
 brand!(
-    /// "A" plus a positive integer, unique per hub.
-    AskId, name = "AskId", pattern = r"^A[1-9][0-9]*$"
-);
-brand!(
-    /// "B" plus a positive integer, unique per hub.
-    BatchId, name = "BatchId", pattern = r"^B[1-9][0-9]*$"
-);
-brand!(
     /// "D" plus a positive integer, unique per hub.
     DecisionId, name = "DecisionId", pattern = r"^D[1-9][0-9]*$"
 );
@@ -168,11 +160,10 @@ impl CheckType {
 
 /// What a write task must serve, as `--serves` takes it.
 pub const SERVES_FIX: &str =
-    "say what this serves: --serves done:<n> | issue:<ref> | defect:<text> | ask:<id>";
+    "say what this serves: serves done:<n> | issue:<ref> | defect:<text> | decision:<key>";
 
 static SERVES_DONE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(?:0|[1-9][0-9]*)$").unwrap());
 static SERVES_ISSUE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^#[1-9][0-9]*$").unwrap());
-static SERVES_ASK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^A[1-9][0-9]*$").unwrap());
 
 pub fn is_serves(serves: &str) -> bool {
     let Some((kind, reference)) = serves.split_once(':') else {
@@ -186,14 +177,14 @@ pub fn is_serves(serves: &str) -> bool {
                 && !reference.trim().is_empty()
                 && !reference.contains(['\r', '\n'])
         }
-        "ask" => SERVES_ASK.is_match(reference),
+        "decision" => js_len(reference) <= 80 && DECISION_KEY.is_match(reference),
         _ => false,
     }
 }
 
 brand!(
     /// What a task works towards: `done:<n>` (0-based index into the brief's doneWhen, same as
-    /// CheckResult.checkIndex), `issue:<url|#n>`, `defect:<one line, at most 200>` or `ask:A<n>`.
+    /// CheckResult.checkIndex), `issue:<url|#n>`, `defect:<one line, at most 200>` or `decision:<key>` (a decision the lead logged after the human said so in chat).
     Serves, name = "Serves", check = is_serves, expected = SERVES_FIX
 );
 
@@ -553,8 +544,6 @@ pub struct Decision {
     pub source: DecisionSource,
     /// Who recorded it: the agent key name, "lead:<machineId>/<projectId>" or "human:<device>".
     pub by: Option<String>,
-    /// The ask this answers, when it came from one.
-    pub ask_id: Option<AskId>,
     /// The earlier active decision on the same key and scope that this one replaced.
     pub supersedes: Option<DecisionId>,
     pub state: DecisionState,
@@ -562,189 +551,6 @@ pub struct Decision {
 }
 
 // Asks
-
-/// decide: a product call. do: hand steps for the human, optionally re-checked by `verify`. secret: a value the
-/// desktop app seals to the sink's node. approve: a stored command the node runs after a human approves it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum AskKind {
-    Decide,
-    Do,
-    Secret,
-    Approve,
-}
-
-impl AskKind {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            AskKind::Decide => "decide",
-            AskKind::Do => "do",
-            AskKind::Secret => "secret",
-            AskKind::Approve => "approve",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum AskClass {
-    Product,
-    Money,
-    Credential,
-    Irreversible,
-}
-
-impl AskClass {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            AskClass::Product => "product",
-            AskClass::Money => "money",
-            AskClass::Credential => "credential",
-            AskClass::Irreversible => "irreversible",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum AskState {
-    Open,
-    Auto,
-    Answered,
-    Defaulted,
-    Withdrawn,
-}
-
-pub type AskText = Text<1, 500>;
-
-/// `<name>`-style placeholders: "<" and ">" with no space just inside, so `sort < a > b` passes.
-static PLACEHOLDER: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"<[^\s<>](?:[^<>]*[^\s<>])?>").unwrap());
-
-brand!(
-    /// A shell command a human runs verbatim; placeholders such as `<token>` are refused.
-    StepCommand,
-    check = |s| (1..=2000).contains(&js_len(s)) && !PLACEHOLDER.is_match(s),
-    expected = "an exact command with no <placeholders>; write the real value or make it a separate step"
-);
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum StepPlace {
-    Browser,
-}
-
-// A "phone" stored before the phone app's removal reads back as a machine id.
-/// A machineId or "browser".
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
-#[serde(untagged)]
-pub enum StepWhere {
-    Place(StepPlace),
-    Machine(MachineId),
-}
-
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct Step {
-    pub text: Text<1, 500>,
-    pub r#where: StepWhere,
-    pub command: Option<StepCommand>,
-    /// What the human should see when the step worked.
-    pub expect: Option<Text<1, 500>>,
-}
-
-/// "nothing", or the step the lead is holding back until this is answered.
-pub type AskBlocks = Text<1, 200>;
-
-pub fn ask_blocks_nothing() -> AskBlocks {
-    Text::unchecked("nothing")
-}
-
-/// One choice of a decide ask. The human reads `label` and `consequence`; `key` is internal and is what gets recorded.
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct AskOption {
-    /// The decision value recorded when the human picks it, e.g. "public-snapshot".
-    pub key: DecisionValue,
-    /// A few words, e.g. "Public snapshot". Absent only on asks stored before labels: show [`humanize_key`].
-    pub label: Option<AskOptionLabel>,
-    /// One line, what happens if the human picks it. Absent only on asks stored before labels.
-    pub consequence: Option<AskConsequence>,
-}
-
-pub type AskOptionLabel = Line<1, 80>;
-pub type AskConsequence = Line<1, 200>;
-
-impl AskOption {
-    /// An option stored before labels: its key alone.
-    pub fn bare(key: DecisionValue) -> Self {
-        Self {
-            key,
-            label: None,
-            consequence: None,
-        }
-    }
-
-    /// What to show the human: the label, or the humanized key on an old ask.
-    pub fn display_label(&self) -> String {
-        match &self.label {
-            Some(label) => label.to_string(),
-            None => humanize_key(&self.key),
-        }
-    }
-}
-
-// Asks stored before labels have their options as plain strings.
-impl<'de> Deserialize<'de> for AskOption {
-    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct Labelled {
-            key: DecisionValue,
-            label: Option<AskOptionLabel>,
-            consequence: Option<AskConsequence>,
-        }
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum Stored {
-            Bare(DecisionValue),
-            Labelled(Labelled),
-        }
-        Ok(match Stored::deserialize(d)? {
-            Stored::Bare(key) => AskOption::bare(key),
-            Stored::Labelled(o) => AskOption {
-                key: o.key,
-                label: o.label,
-                consequence: o.consequence,
-            },
-        })
-    }
-}
-
-/// "a-monthly-vs-week" -> "A monthly vs week": an old ask's slug as a readable label. Text that is not a slug
-/// (it has spaces or capitals already) is kept as it is.
-pub fn humanize_key(key: &str) -> String {
-    let slug = !key.is_empty()
-        && key
-            .chars()
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '-' | '_' | '.'));
-    if !slug {
-        return key.to_string();
-    }
-    let words = key.replace(['-', '_', '.'], " ");
-    let mut chars = words.trim().chars();
-    match chars.next() {
-        Some(first) => first.to_uppercase().chain(chars).collect(),
-        None => key.to_string(),
-    }
-}
-
-pub type AskOptions = List<AskOption, 0, 6>;
-pub type AskSteps = List<Step, 0, 20>;
-
-// Approve asks (M8): a command the node runs from these stored bytes, only after a human answers "go".
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
@@ -840,7 +646,22 @@ brand!(
     pattern = r"^/"
 );
 
-/// Stored with the approve ask and never changed: the human approves exactly these bytes.
+/// A retro playbook change that relaxes a gate (fewer reviewers, a weaker or removed check, a looser rule): it applies
+/// only once a person approves it. Stored with the approval and never changed.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaybookGateChange {
+    /// The retro proposal, R<n>.
+    pub proposal_id: Line<1, 20>,
+    pub playbook: Line<1, 40>,
+    /// The change in plain words, rendered by the hub for the person: "Bugfixes, medium-size work: reviewers 1 → 0".
+    /// The app shows it as the item's label; `diff` only behind expand or copy.
+    pub summary: Text<1, 500>,
+    /// The exact unified diff that applies on approve.
+    pub diff: Text<1, 8000>,
+}
+
+/// Stored with the approval and never changed: the human approves exactly these bytes.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -853,8 +674,8 @@ pub struct GatedRunSpec {
     pub timeout_sec: GatedTimeoutSec,
 }
 
-/// An approve ask raised by a session's tool permission prompt (`tool_permission`) instead of a gated command: answering
-/// it answers the prompt on the project's node. Its machine is the ask's project's.
+/// An approval raised by a session's tool permission prompt instead of a gated command: answering it answers the prompt
+/// on the project's node. Its machine is the request's project's.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -866,243 +687,150 @@ pub struct ToolPermission {
     pub summary: Text<0, 2000>,
 }
 
-/// Each kind's required field, and no field of another kind: decide needs a recommendation, do at least one step,
-/// secret a sink, approve its gated run with the ask's class (or a tool permission prompt instead). The bools say
-/// whether that field is present.
-#[allow(clippy::too_many_arguments)]
-pub fn ask_kind_rule(
-    kind: AskKind,
-    class: Option<&str>,
-    recommendation: bool,
-    steps_len: Option<usize>,
-    sink: Option<&str>,
-    env_name: bool,
-    fingerprint: bool,
-    gated: Option<&GatedRunSpec>,
-    permission: bool,
-    verify: bool,
-) -> Result<(), String> {
-    if kind == AskKind::Decide && !recommendation {
-        return Err("a decide ask needs a recommendation".into());
-    }
-    if kind == AskKind::Do && steps_len.unwrap_or(0) == 0 {
-        return Err("a do ask needs at least one step".into());
-    }
-    if kind == AskKind::Secret && sink.is_none() {
-        return Err("a secret ask needs a sink".into());
-    }
-    if kind == AskKind::Approve && gated.is_none() == !permission {
-        return Err(
-            "an approve ask needs its gated run or a tool permission prompt, not both".into(),
-        );
-    }
-    let only = [
-        ("sink", sink.is_some(), AskKind::Secret),
-        ("envName", env_name, AskKind::Secret),
-        ("fingerprint", fingerprint, AskKind::Secret),
-        ("gated", gated.is_some(), AskKind::Approve),
-        ("permission", permission, AskKind::Approve),
-        ("verify", verify, AskKind::Do),
-    ];
-    for (field, present, only_kind) in only {
-        if present && kind != only_kind {
-            return Err(format!("only a {} ask has {field}", only_kind.as_str()));
-        }
-    }
-    if env_name && sink.is_some_and(|sink| !sink.starts_with("env:")) {
-        return Err("only an env: sink has an env name".into());
-    }
-    if let (Some(gated), Some(class)) = (gated, class)
-        && gated.class.as_str() != class
-    {
-        return Err("an approve ask's class is its gated run's class".into());
-    }
-    Ok(())
-}
-
-/// Asks with this key prefix ask which project an intent belongs to, so they alone have no project.
-pub const UNROUTED_ASK_PREFIX: &str = "intake.route.";
-
-/// M12: the retro's gate-change asks, `playbook.<name>.<hash>`. Playbooks are hub-wide, so these have no project either.
-pub const PLAYBOOK_ASK_PREFIX: &str = "playbook.";
-
-/// Asks that may leave out their project: the router's fallback and the retro's gate changes.
-pub fn is_hub_ask_key(key: &str) -> bool {
-    key.starts_with(UNROUTED_ASK_PREFIX) || key.starts_with(PLAYBOOK_ASK_PREFIX)
-}
-
-/// Only the router's fallback ask and the retro's gate asks may leave out their project.
-pub fn ask_project_rule(project_ref: Option<&ProjectRef>, key: &str) -> Result<(), String> {
-    if project_ref.is_none() && !is_hub_ask_key(key) {
-        return Err(format!(
-            "only an {UNROUTED_ASK_PREFIX}* or {PLAYBOOK_ASK_PREFIX}* ask may leave out projectRef"
-        ));
-    }
-    Ok(())
-}
-
-/// A question line the card shows bold on its own; longer background goes in `context`.
-pub const ASK_QUESTION_MAX: usize = 160;
-pub type AskContext = Text<1, 400>;
-pub type AskRecommendationWhy = Line<1, 200>;
-
-/// How long after an answer `inbox_undo` can take it back. The lead hears of the answer only once this has passed.
-pub const ASK_UNDO_WINDOW_MS: i64 = 10_000;
-
-/// option: one of the ask's options (`value` is its key). text: the human's own words ("Something else…"). skip:
-/// "Skip for now", the lead carries on with its recommendation (`value`) and no decision is recorded. Absent on
-/// answers recorded before kinds, and for approve, do and secret answers ("go", "done", "no").
+/// What a lead needs a person for that chat can't carry safely: a secret value (entered in a masked field and sealed to
+/// the sink's node, never in a transcript), or an approval of a risky command (a gated run, or a session's tool
+/// prompt). The lead asks everything else in chat.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum AskAnswerKind {
-    Option,
-    Text,
-    Skip,
+#[serde(rename_all = "snake_case")]
+pub enum RequestKind {
+    Secret,
+    Approval,
 }
 
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct AskAnswer {
-    pub value: String,
-    pub by: String,
-    pub at: Timestamp,
-    /// The reply text it was parsed from.
-    pub raw: String,
-    pub kind: Option<AskAnswerKind>,
-    /// The reply's note ("1 a: because …"), kept for the decision's why.
-    pub note: Option<String>,
-    /// Who the decision will be recorded as, once the undo window passes.
-    pub source: Option<DecisionSource>,
-    /// Until then `inbox_undo` reopens the ask and the lead never hears of the answer.
-    pub undo_until: Option<Timestamp>,
-    /// The receipt: when the lead was woken with this answer. Absent while the undo window runs.
-    pub delivered_at: Option<Timestamp>,
+/// The state names of the chat items that show it (`SecretRequestState`, `CommandApprovalState`). secret: open →
+/// stored | withdrawn. approval: open → approved → ran | failed, or open → denied; an approval the node could not run
+/// goes back to open with the reason in `evidence`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RequestState {
+    Open,
+    Stored,
+    Withdrawn,
+    Approved,
+    Denied,
+    Ran,
+    Failed,
 }
 
-impl AskAnswer {
-    /// "You chose: <this>": the picked option's label, the human's own words, or the recommendation kept by a skip.
-    pub fn display(&self, ask: &Ask) -> String {
-        let label = |key: &str| {
-            ask.options
-                .iter()
-                .flatten()
-                .find(|o| o.key.as_str() == key)
-                .map_or_else(|| humanize_key(key), AskOption::display_label)
-        };
-        match self.kind {
-            Some(AskAnswerKind::Text) => self.value.clone(),
-            Some(AskAnswerKind::Skip) => {
-                format!("Skipped for now (lead keeps: {})", label(&self.value))
-            }
-            _ => label(&self.value),
+impl RequestState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RequestState::Open => "open",
+            RequestState::Stored => "stored",
+            RequestState::Withdrawn => "withdrawn",
+            RequestState::Approved => "approved",
+            RequestState::Denied => "denied",
+            RequestState::Ran => "ran",
+            RequestState::Failed => "failed",
         }
+    }
+
+    /// Nothing more happens to it.
+    pub fn is_final(self) -> bool {
+        !matches!(self, RequestState::Open | RequestState::Approved)
     }
 }
 
+/// A secret request: the secret's name and where the node writes it.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SecretRequest {
+    /// The secret's name, a dotted slug such as "stripe.test_key".
+    pub key: DecisionKey,
+    pub sink: SecretSink,
+    /// An env: sink's variable, when not the one the key names (`secret_env_name`).
+    pub env_name: Option<EnvName>,
+    /// Set once the node has written the sink; the value itself never reaches the hub in plain text.
+    pub fingerprint: Option<SecretFingerprint>,
+}
+
+/// One human request, as stored and as every client shows it.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(remote = "Self", rename_all = "camelCase")]
-pub struct Ask {
-    pub ask_id: AskId,
-    /// Absent only on an `intake.route.*` ask: the human picks the project by answering it.
-    pub project_ref: Option<ProjectRef>,
+pub struct HumanRequest {
+    pub request_id: crate::chat::ChatRequestId,
+    pub project_ref: ProjectRef,
     pub workstream_id: Option<WorkstreamId>,
-    pub kind: AskKind,
-    pub key: DecisionKey,
-    pub class: AskClass,
-    /// The question. On asks filed since labels, one short line; the background is in `context`.
-    pub text: AskText,
-    /// One or two lines of background, shown under the question.
-    pub context: Option<AskContext>,
-    pub options: Option<AskOptions>,
-    /// Required for decide. On asks filed since labels, the key of one of `options`.
-    pub recommendation: Option<DecisionValue>,
-    /// The lead's one-line reason for its recommendation.
-    pub recommendation_why: Option<AskRecommendationWhy>,
-    /// Required for do.
-    pub steps: Option<AskSteps>,
-    /// do: the check the hub runs once the human ticks it done; a failure reopens the ask with the evidence.
-    pub verify: Option<CheckSpec>,
-    /// Required for secret.
-    pub sink: Option<SecretSink>,
-    /// secret with an env: sink: the variable it writes, when not the one its key names (`secretEnvName`).
-    pub env_name: Option<EnvName>,
-    /// secret: set when the node has written the sink.
-    pub fingerprint: Option<SecretFingerprint>,
-    /// Required for approve; immutable once the ask exists.
+    pub kind: RequestKind,
+    /// One line on why the lead needs it.
+    pub text: Text<1, 500>,
+    pub state: RequestState,
+    /// secret only.
+    pub secret: Option<SecretRequest>,
+    /// approval of a gated run: exactly the bytes the node runs.
     pub gated: Option<GatedRunSpec>,
-    /// approve: the session prompt it answers, instead of `gated`.
+    /// approval of a session's tool prompt, instead of a gated run.
     pub permission: Option<ToolPermission>,
-    /// What closed or reopened it: "fingerprint ab12cd34", a gated run's exit code and output tail, a failed verify.
+    /// approval of a retro playbook change that relaxes a gate, instead of a gated run or a tool prompt.
+    pub playbook: Option<PlaybookGateChange>,
+    /// What happened, in one line: "fingerprint ab12cd34", "exit 0 on devbox, approved by human:desk", or why it did
+    /// not run (and so is open again).
     pub evidence: Option<Text<0, 2000>>,
-    pub blocks: AskBlocks,
-    /// The lead carried on with the recommendation; the answer confirms or overrides it.
-    pub proceeded_on_rec: bool,
-    pub state: AskState,
-    pub batch_id: Option<BatchId>,
-    /// Fixed within its batch; never renumbered.
-    pub number: Option<Positive>,
-    pub answer: Option<AskAnswer>,
-    pub decision_id: Option<DecisionId>,
+    /// An approval that ran: its exit code (absent when a signal or the timeout ended it) and the end of its output,
+    /// with every injected secret value scrubbed.
+    pub exit_code: Option<i64>,
+    pub output_tail: Option<Text<0, 2000>>,
     pub created_at: Timestamp,
+    pub answered_at: Option<Timestamp>,
+    /// "human:<device>".
+    pub answered_by: Option<String>,
 }
-impl Ask {
-    /// The options as the card lists them: the recommended one first, then the rest, never twice. An old ask whose
-    /// recommendation is free text and not one of its options gets it as a bare first option. Empty for asks
-    /// without options or a recommendation (do, secret, approve).
-    pub fn choices(&self) -> Vec<AskOption> {
-        let options: Vec<AskOption> = self.options.iter().flatten().cloned().collect();
-        let Some(rec) = &self.recommendation else {
-            return options;
-        };
-        let (recommended, rest): (Vec<_>, Vec<_>) =
-            options.into_iter().partition(|o| o.key == *rec);
-        let first = recommended
-            .into_iter()
-            .next()
-            .unwrap_or_else(|| AskOption::bare(rec.clone()));
-        std::iter::once(first).chain(rest).collect()
+checked!(HumanRequest, |r| request_kind_rule(r));
+
+/// Each kind carries its own fields only: a secret its `secret`; an approval exactly one of `gated`, `permission` and
+/// `playbook`.
+pub fn request_kind_rule(r: &HumanRequest) -> Result<(), String> {
+    match r.kind {
+        RequestKind::Secret => {
+            if r.secret.is_none()
+                || r.gated.is_some()
+                || r.permission.is_some()
+                || r.playbook.is_some()
+            {
+                return Err("a secret request has a secret and nothing else".into());
+            }
+            if let Some(secret) = &r.secret
+                && secret.env_name.is_some()
+                && !secret.sink.starts_with("env:")
+            {
+                return Err("only an env: sink has an env name".into());
+            }
+        }
+        RequestKind::Approval => {
+            let subjects = [
+                r.gated.is_some(),
+                r.permission.is_some(),
+                r.playbook.is_some(),
+            ];
+            if r.secret.is_some() || subjects.iter().filter(|s| **s).count() != 1 {
+                return Err("an approval has exactly one of a gated run, a tool prompt or a playbook change".into());
+            }
+        }
     }
-}
-
-checked!(Ask, |ask| {
-    ask_kind_rule(
-        ask.kind,
-        Some(ask.class.as_str()),
-        ask.recommendation.is_some(),
-        ask.steps.as_ref().map(|steps| steps.len()),
-        ask.sink.as_ref().map(|sink| sink.as_str()),
-        ask.env_name.is_some(),
-        ask.fingerprint.is_some(),
-        ask.gated.as_ref(),
-        ask.permission.is_some(),
-        ask.verify.is_some(),
-    )?;
-    ask_project_rule(ask.project_ref.as_ref(), ask.key.as_str())
-});
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum BatchState {
-    Open,
-    Closed,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct BatchItem {
-    pub number: Positive,
-    pub ask_id: AskId,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct Batch {
-    pub batch_id: BatchId,
-    pub created_at: Timestamp,
-    pub items: Vec<BatchItem>,
-    pub state: BatchState,
+    let allowed: &[RequestState] = match r.kind {
+        RequestKind::Secret => &[
+            RequestState::Open,
+            RequestState::Stored,
+            RequestState::Withdrawn,
+        ],
+        RequestKind::Approval => &[
+            RequestState::Open,
+            RequestState::Approved,
+            RequestState::Denied,
+            RequestState::Ran,
+            RequestState::Failed,
+        ],
+    };
+    if !allowed.contains(&r.state) {
+        return Err(format!(
+            "a {:?} request is never {}",
+            r.kind,
+            r.state.as_str()
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1151,86 +879,6 @@ mod tests {
     }
 
     #[test]
-    fn step_commands_refuse_placeholders_but_allow_redirects() {
-        let step =
-            |command: &str| json!({ "text": "run it", "where": "devbox", "command": command });
-        for command in [
-            "export TOKEN=<token>",
-            "curl <your api url>",
-            "gh secret set X -b <VALUE>",
-        ] {
-            assert!(!accepts::<Step>(step(command)), "{command}");
-        }
-        for command in [
-            "sort < in.txt > out.txt",
-            "echo hi 2>&1",
-            "diff <(ls a) <(ls b)",
-            "cat <<EOF > f",
-            "test 1 -lt 2",
-        ] {
-            assert!(accepts::<Step>(step(command)), "{command}");
-        }
-        assert!(accepts::<Step>(json!({ "text": "t", "where": "browser" })));
-        assert!(!accepts::<Step>(json!({ "text": "t", "where": "My Mac" })));
-    }
-
-    fn decide_ask(options: Value, rec: &str) -> Ask {
-        serde_json::from_value(json!({
-            "askId": "A1", "projectRef": { "machineId": "devbox", "projectId": "p" }, "kind": "decide",
-            "key": "share.link", "class": "product", "text": "What does the share link show?",
-            "options": options, "recommendation": rec, "blocks": "nothing", "proceededOnRec": false,
-            "state": "open", "createdAt": "2026-10-19T00:00:00.000Z"
-        }))
-        .unwrap()
-    }
-
-    #[test]
-    fn old_asks_with_bare_options_still_read_and_get_humanized_labels() {
-        let ask = decide_ask(json!(["public-snapshot", "image-only"]), "public-snapshot");
-        let choices = ask.choices();
-        assert_eq!(choices.len(), 2, "the recommendation is not listed twice");
-        assert_eq!(choices[0].display_label(), "Public snapshot");
-        assert_eq!(choices[0].consequence, None);
-        assert_eq!(choices[1].display_label(), "Image only");
-        // Stored text that is not a slug stays as it is; a free-text recommendation becomes the first choice.
-        assert_eq!(humanize_key("Keep the old URL"), "Keep the old URL");
-        let ask = decide_ask(json!(["a-monthly-vs-week"]), "a weekly plan, prorated");
-        let labels: Vec<String> = ask.choices().iter().map(AskOption::display_label).collect();
-        assert_eq!(labels, ["a weekly plan, prorated", "A monthly vs week"]);
-    }
-
-    #[test]
-    fn labelled_options_round_trip_and_the_recommendation_comes_first() {
-        let ask = decide_ask(
-            json!([
-                { "key": "image-only", "label": "Image only", "consequence": "The link shows a PNG, nothing else." },
-                { "key": "public-snapshot", "label": "Public snapshot", "consequence": "Anyone with the link sees a frozen copy." }
-            ]),
-            "public-snapshot",
-        );
-        let choices = ask.choices();
-        assert_eq!(choices[0].key.as_str(), "public-snapshot");
-        assert_eq!(choices[1].display_label(), "Image only");
-        let back: Ask = serde_json::from_value(serde_json::to_value(&ask).unwrap()).unwrap();
-        assert_eq!(back, ask);
-        let skip = AskAnswer {
-            value: "public-snapshot".into(),
-            by: "human:mac".into(),
-            at: Timestamp("2026-10-19T00:00:00.000Z".into()),
-            raw: "1 skip".into(),
-            kind: Some(AskAnswerKind::Skip),
-            note: None,
-            source: None,
-            undo_until: None,
-            delivered_at: None,
-        };
-        assert_eq!(
-            skip.display(&ask),
-            "Skipped for now (lead keeps: Public snapshot)"
-        );
-    }
-
-    #[test]
     fn serves_formats() {
         for ok in [
             "done:0",
@@ -1238,7 +886,7 @@ mod tests {
             "issue:#3",
             "issue:https://github.com/o/r/issues/3",
             "defect:login 500s",
-            "ask:A1",
+            "decision:share.link",
         ] {
             assert!(is_serves(ok), "{ok}");
         }
@@ -1250,7 +898,8 @@ mod tests {
             "defect:",
             "defect:   ",
             "defect:a\nb",
-            "ask:A0",
+            "ask:A1",
+            "decision:Not A Key",
             "nope:1",
             "done",
         ] {
@@ -1312,75 +961,54 @@ mod tests {
         ));
     }
 
-    fn ask() -> Value {
-        json!({
-            "askId": "A1",
-            "projectRef": { "machineId": "devbox", "projectId": "p1" },
-            "kind": "decide",
-            "key": "api.health.path",
-            "class": "product",
-            "text": "Path?",
-            "recommendation": "/healthz",
-            "blocks": "nothing",
-            "proceededOnRec": true,
-            "state": "open",
-            "createdAt": "2026-10-17T10:00:00.000Z",
-        })
+    fn with(mut value: Value, patch: Value) -> Value {
+        value
+            .as_object_mut()
+            .unwrap()
+            .extend(patch.as_object().unwrap().clone());
+        value
     }
 
-    fn with(mut value: Value, patch: Value) -> Value {
-        for (key, field) in patch.as_object().unwrap() {
-            if field.is_null() {
-                value.as_object_mut().unwrap().remove(key);
-            } else {
-                value[key] = field.clone();
-            }
-        }
+    fn request(kind: &str, extra: Value) -> Value {
+        let mut value = json!({
+            "requestId": "Q1", "projectRef": { "machineId": "devbox", "projectId": "p1" }, "kind": kind,
+            "text": "Need it to deploy", "state": "open", "createdAt": "2026-10-19T09:00:00.000Z",
+        });
+        value
+            .as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
         value
     }
 
     #[test]
-    fn ask_records_hold_the_kind_rule_and_a_closed_class_list() {
-        assert!(accepts::<Ask>(ask()));
-        let no_rec = with(ask(), json!({ "recommendation": null }));
-        assert!(!accepts::<Ask>(no_rec.clone()));
-        assert!(accepts::<Ask>(with(
-            no_rec.clone(),
-            json!({ "kind": "do", "steps": [{ "text": "Tick the box", "where": "browser" }] })
-        )));
-        assert!(!accepts::<Ask>(with(
-            no_rec,
-            json!({ "kind": "do", "steps": [] })
-        )));
-        assert!(!accepts::<Ask>(with(ask(), json!({ "class": "naming" }))));
-        // A sink only on a secret ask, and an env name only with an env: sink.
-        assert!(!accepts::<Ask>(with(
-            ask(),
-            json!({ "sink": "env:devbox:/srv/app/.env" })
-        )));
-        let secret = with(
-            ask(),
-            json!({ "kind": "secret", "recommendation": null, "sink": "file:devbox:/srv/app/key" }),
+    fn a_request_carries_its_own_kinds_fields_and_states_only() {
+        let secret =
+            json!({ "secret": { "key": "stripe.test_key", "sink": "env:devbox:/srv/app/.env" } });
+        let gated = json!({ "gated": { "argv": ["./deploy.sh"], "class": "irreversible", "reason": "prod deploy", "timeoutSec": 60 } });
+        assert!(accepts::<HumanRequest>(request("secret", secret.clone())));
+        assert!(accepts::<HumanRequest>(request("approval", gated.clone())));
+        assert!(
+            !accepts::<HumanRequest>(request("secret", gated.clone())),
+            "a secret has no command"
         );
-        assert!(accepts::<Ask>(secret.clone()));
-        assert!(!accepts::<Ask>(with(
-            secret,
-            json!({ "envName": "API_KEY" })
-        )));
-    }
-
-    #[test]
-    fn ask_records_leave_out_project_only_on_hub_keys() {
-        let unrouted = with(ask(), json!({ "projectRef": null }));
-        assert!(!accepts::<Ask>(unrouted.clone()));
-        assert!(accepts::<Ask>(with(
-            unrouted,
-            json!({ "key": "intake.route.tidy-the-docs-1a2b3c" })
-        )));
-        assert!(accepts::<Ask>(with(
-            ask(),
-            json!({ "key": "intake.route.tidy-the-docs-1a2b3c" })
-        )));
+        assert!(
+            !accepts::<HumanRequest>(request("approval", json!({}))),
+            "an approval names what it approves"
+        );
+        let mut stored = request("approval", gated);
+        stored["state"] = "stored".into();
+        assert!(
+            !accepts::<HumanRequest>(stored),
+            "an approval is never stored"
+        );
+        let mut file_env = request("secret", secret);
+        file_env["secret"]["sink"] = "file:devbox:/srv/key".into();
+        file_env["secret"]["envName"] = "KEY".into();
+        assert!(
+            !accepts::<HumanRequest>(file_env),
+            "only an env: sink has an env name"
+        );
     }
 
     #[test]
@@ -1429,6 +1057,5 @@ mod tests {
             serde_json::to_value(IntakeChannel::App).unwrap(),
             json!("app")
         );
-        assert!(accepts::<Step>(json!({ "text": "t", "where": "phone" })));
     }
 }

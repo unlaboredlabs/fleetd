@@ -209,7 +209,9 @@
           "machineId": "devbox",
           "projectId": "storefront"
         },
-        "share": 20,
+        "maxAgents": 20,
+        "running": 3,
+        "queued": 1,
         "used": 4
       }
     ]

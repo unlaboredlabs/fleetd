@@ -300,7 +300,7 @@ export function Timeline({ model: m, names, nowMs, view, onView, lit, onSpan }: 
                       </Text>
                     ) : null}
                     <Truncate expand="none" size={row.kind === "check" ? "sm" : "xs"} mono={row.kind === "check"} tone={row.to > row.from ? "default" : "quiet"}>
-                      {row.kind === "lead" ? "split across its orders" : row.name}
+                      {row.kind === "lead" ? "split across its work" : row.name}
                     </Truncate>
                   </button>
                 );
@@ -330,7 +330,7 @@ export function Timeline({ model: m, names, nowMs, view, onView, lit, onSpan }: 
             critical path
           </Text>
           <Text size="xs" tone="quiet">
-            {!m.hasPath ? "when the order is done" : m.pathTruncated ? `${fmtDur(total)} (part drawn)` : fmtDur(total)}
+            {!m.hasPath ? "when the work is done" : m.pathTruncated ? `${fmtDur(total)} (part drawn)` : fmtDur(total)}
           </Text>
         </div>
         <div

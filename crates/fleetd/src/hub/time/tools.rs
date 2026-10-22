@@ -92,10 +92,7 @@ fn check(c: &Connection, caller: &Caller, scope: &TimeScope) -> Result<(), ToolE
                 .with_fix("Ask for a machine, project or order scope instead."))
             }
         }
-        None => Err(ToolError::new(
-            ErrorCode::NotFound,
-            "No such order or task.",
-        )),
+        None => Err(ToolError::new(ErrorCode::NotFound, "No such work or task.")),
     }
 }
 
@@ -565,7 +562,7 @@ fn human_wait(rows: &[Row]) -> HumanWait {
     let waits: Vec<&Row> = rows
         .iter()
         .filter(|r| {
-            r.kind == SpanKind::WaitAsk
+            r.kind == SpanKind::WaitRequest
                 || (r.kind == SpanKind::WaitPermission
                     && r.extra.decided_by == Some(DecidedBy::Human))
         })

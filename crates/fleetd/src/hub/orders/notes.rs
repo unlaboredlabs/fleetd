@@ -1,21 +1,18 @@
-//! A person adding to an order (order_note) and stopping one (order_stop). A note is a steer to the order's lead
-//! (`queue`, or `now` when urgent); a stop reaches the lead as one wake line.
+//! Stopping an order, the part of project_stop that stops one: its agents cancelled, what waits on a person
+//! withdrawn, and one wake line for the lead. References are rendered here for the steers that carry them.
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ledger::{Headline, WorkstreamState};
-use fleetd_contracts::mcp::{
-    ErrorCode, IntakeRef, OrderNoteInput, OrderNoteOutput, OrderStopInput, OrderStopOutput,
-};
-use fleetd_contracts::prim::{Count, Text};
-use fleetd_contracts::steer::{SteerMode, SteerTarget};
+use fleetd_contracts::mcp::{ErrorCode, IntakeRef, OrderStopInput, OrderStopOutput};
+use fleetd_contracts::prim::Count;
 use fleetd_contracts::tasks::TaskState;
 use serde_json::json;
 
 use super::tools::unknown_order;
 use crate::hub::api::{Caller, Hub, ToolError, allows, is_human, require};
 use crate::hub::executor::shell_mapper::js_take;
-use crate::hub::intake::attachments;
-use crate::hub::leads::records::{StoredWorkstream, is_closed};
+use crate::hub::leads::events::Event;
+use crate::hub::leads::records::StoredWorkstream;
 use crate::hub::leads::wakes::{LineKind, Trigger};
 use crate::hub::store::{NewEvent, iso_ms, now_ms};
 use crate::hub::tasks::TaskCaller;
@@ -112,131 +109,6 @@ fn serde_plain<T: serde::Serialize>(v: &T) -> String {
         .unwrap_or_default()
 }
 
-/// The references and attachments under a wake line, or nothing.
-fn references(refs: &[String], attached: &[String]) -> String {
-    let mut out = String::new();
-    if !refs.is_empty() {
-        out.push_str("\n  References:\n");
-        out.push_str(&refs.join("\n"));
-    }
-    if !attached.is_empty() {
-        out.push_str("\n  Attached:\n");
-        out.push_str(&attached.join("\n"));
-    }
-    out
-}
-
-pub async fn note(
-    hub: &Hub,
-    caller: &Caller,
-    input: OrderNoteInput,
-) -> Result<OrderNoteOutput, ToolError> {
-    require_human(caller, "order_note")?;
-    let stored = readable_order(hub, caller, input.workstream_id.as_str())?;
-    let w = stored.workstream;
-    require(caller, Role::Operate, Some(&w.project_ref.machine_id))?;
-    if is_closed(w.state) {
-        return Err(ToolError::new(
-            ErrorCode::Invalid,
-            format!(
-                "{} is {}; its lead no longer works on it.",
-                w.workstream_id,
-                serde_plain(&w.state)
-            ),
-        )
-        .with_fix("Give it as a new order with intake_submit."));
-    }
-    let refs = render_refs(
-        hub,
-        caller,
-        input.refs.as_ref().map_or(&[][..], |r| r.as_slice()),
-    )?;
-    let ids: Vec<_> = input.attachments.iter().flatten().cloned().collect();
-    let attached =
-        attachments::deliver(hub, caller, &ids, &w.project_ref, &w.workstream_id).await?;
-    // A note is a steer to the order's lead: straight to its thread, no wake debounce, no digest.
-    let steer = crate::hub::steer::send(
-        hub,
-        crate::hub::steer::By::Human(caller),
-        crate::hub::steer::SteerRequest {
-            target: SteerTarget::Lead {
-                workstream_id: w.workstream_id.clone(),
-            },
-            text: &input.text,
-            mode: if input.urgent {
-                SteerMode::Now
-            } else {
-                SteerMode::Queue
-            },
-            refs,
-            attached,
-            client_request_id: &input.client_request_id,
-        },
-    )
-    .await?;
-    let now = now_ms(hub.clock.as_ref());
-    // Kept for one release, for clients that still watch workstream.note.
-    let event = hub.events.append(NewEvent {
-        at: iso_ms(now).into(),
-        r#type: HubEventType::WorkstreamNote,
-        machine_id: Some(w.project_ref.machine_id.clone()),
-        project_id: Some(w.project_ref.project_id.clone()),
-        thread_id: None,
-        summary: format!(
-            "You added to {}: {}",
-            w.workstream_id,
-            one_line(&input.text, 120)
-        ),
-        data: Some(json!({
-            "workstreamId": w.workstream_id,
-            "clientRequestId": input.client_request_id.as_str(),
-            "urgent": input.urgent,
-            "text": js_take(&input.text, 200),
-            "steerId": steer.id,
-        })),
-        attention: None,
-    })?;
-    Ok(OrderNoteOutput {
-        note_id: Text::unchecked(format!("N{}", event.seq.get())),
-        wakes_at: iso_ms(now).into(),
-        steer_id: Some(steer.id),
-        next: Some(
-            "Sent to the lead as a steer; watch for steer.delivered and steer.acknowledged.".into(),
-        ),
-        truncated: None,
-    })
-}
-
-/// What came with a new order: its references and attachments, as one wake line next to the intent.
-pub async fn with_intent(
-    hub: &Hub,
-    caller: &Caller,
-    id: &fleetd_contracts::ledger::WorkstreamId,
-    refs: &[String],
-    files: &[fleetd_contracts::mcp::AttachmentId],
-) -> Result<(), ToolError> {
-    let Some(stored) = hub.leads.records.workstream_get(id)? else {
-        return Ok(());
-    };
-    let w = stored.workstream;
-    let attached = attachments::deliver(hub, caller, files, &w.project_ref, id).await?;
-    let line = hub.db.prompts().for_lead(&w.project_ref).render(
-        "wake.order_refs",
-        &[
-            ("workstreamId", id),
-            ("references", &references(refs, &attached)),
-        ],
-    );
-    hub.leads.wakes.trigger(
-        &w.project_ref,
-        Trigger::Line {
-            kind: LineKind::Human,
-            text: line,
-        },
-    );
-    Ok(())
-}
-
 pub async fn stop(
     hub: &Hub,
     caller: &Caller,
@@ -295,19 +167,13 @@ pub async fn stop(
             Err(error) => tracing::warn!(task = %task.task_id, ?error, "order_stop: cancel failed"),
         }
     }
-    for ask in hub
-        .leads
-        .ctx
-        .ports()
-        .open_asks(None, Some(&id), 200)
-        .unwrap_or_default()
-    {
-        let _ = hub
-            .leads
-            .ctx
-            .ports()
-            .withdraw_ask(&ask.ask_id, &format!("{id} was stopped."));
-    }
+    let project = crate::hub::usage::ports::ProjectRef {
+        machine_id: stored.workstream.project_ref.machine_id.to_string(),
+        project_id: stored.workstream.project_ref.project_id.to_string(),
+    };
+    hub.approvals
+        .close_open(&project, Some(id.as_str()), &format!("{id} was stopped"))
+        .await;
     let at = iso_ms(now_ms(hub.clock.as_ref()));
     stored.workstream.state = WorkstreamState::Stopped;
     stored.workstream.headline = Some(Headline::unchecked("Stopped by you"));
@@ -328,21 +194,19 @@ pub async fn stop(
         &r,
         Trigger::Line {
             kind: LineKind::Human,
-            text: hub.db.prompts().for_lead(&r).render(
-                "wake.order_stopped",
-                &[
-                    ("workstreamId", &id),
-                    ("title", &one_line(&stored.workstream.title, 80)),
-                    ("why", &why),
-                    ("cancelled", &cancelled),
-                ],
-            ),
+            text: Event::OrderStopped {
+                workstream: id.as_str(),
+                title: &stored.workstream.title,
+                why,
+                cancelled,
+            }
+            .render(),
         },
     );
     Ok(OrderStopOutput {
         state: WorkstreamState::Stopped,
         cancelled: Count::unchecked(cancelled),
-        next: Some("To do it differently, give a new order with intake_submit.".into()),
+        next: Some("Tell the lead in the chat what to do instead (chat_send).".into()),
         truncated: None,
     })
 }

@@ -1,0 +1,47 @@
+/* One block in the lead's column: a hairline box, sized to its content, set apart from the messages around it. */
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.title,
+.line,
+.outcome {
+  margin: 0;
+}
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.field {
+  flex: 1 1 14em;
+  min-width: 0;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+/* A text-like quiet button: pulled left by its own padding and border, so its label lines up with the text above. */
+.flush {
+  margin-left: calc(-1 * (var(--space-2) + 1px));
+}

@@ -102,9 +102,9 @@ pub struct Eta {
     pub p80_minutes: Option<NonNegative>,
 }
 
-/// `policy_bypass`: a PR on a watched repo was merged by something other than the train. M12: `re_ask`, a human was
-/// asked about a key that already had an active Decision; `override`, a human replaced a lead's Decision with another
-/// value; `playbook_reverted`, a retro wording change missed its metric and was rolled back.
+/// `policy_bypass`: a PR on a watched repo was merged by something other than the train. M12: `override`, a human
+/// replaced a lead's Decision with another value; `playbook_reverted`, a retro wording change missed its metric and was
+/// rolled back.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum IncidentClass {
@@ -112,10 +112,12 @@ pub enum IncidentClass {
     /// Retired: fleetd no longer scores time estimates. Kept so older incidents still read.
     EstimateMiss,
     PolishLoop,
+    /// Retired with the questions tool. Kept so older incidents still read.
     MisfiledAsk,
     OutOfArea,
     Stall,
     PolicyBypass,
+    /// Retired with the questions tool. Kept so older incidents still read.
     ReAsk,
     Override,
     PlaybookReverted,

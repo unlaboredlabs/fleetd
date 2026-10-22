@@ -711,7 +711,7 @@ pub fn transition_event(t: &Transition, thread: &TrackedThread, machine_id: &str
     if let Some(r) = &s.usage_limit_reset_at {
         data.insert("usageLimitResetAt".into(), json!(r));
     }
-    // What the approvals area files an approve ask from.
+    // What the approvals area opens an approval request from.
     if let (EventType::Waiting, Some(p)) = (t.kind, &thread.pending) {
         data.insert(
             "permission".into(),

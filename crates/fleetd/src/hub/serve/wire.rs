@@ -32,7 +32,7 @@ pub fn wire(hub: &Arc<Hub>) {
         ))));
 }
 
-/// The ledger's lead calls: `ask`, `ask_withdraw`, `decide`, `decisions_search`.
+/// The ledger's lead calls: `decide`, `decisions_search`.
 struct LedgerCalls(Weak<Hub>);
 
 impl LeadCallHandler for LedgerCalls {
@@ -99,7 +99,7 @@ impl LeadCallHandler for CheckCalls {
 
 fn register_ledger_calls(hub: &Arc<Hub>) {
     let calls: Arc<dyn LeadCallHandler> = Arc::new(LedgerCalls(Arc::downgrade(hub)));
-    for op in ["ask", "ask_withdraw", "decide", "decisions_search"] {
+    for op in ["decide", "decisions_search"] {
         hub.lead_calls.register(op, Arc::clone(&calls));
     }
     let checks: Arc<dyn LeadCallHandler> = Arc::new(CheckCalls(Arc::downgrade(hub)));
@@ -172,7 +172,6 @@ impl TrainHook for TrainForLeads {
         &self,
         project_ref: &ProjectRef,
         since: Option<&Timestamp>,
-        prompts: &crate::hub::prompts::PromptSet,
     ) -> Option<Vec<String>> {
         let hub = self.0.upgrade()?;
         let facts = crate::hub::train::digest::train_facts(hub.train.records(), |r| {
@@ -182,7 +181,6 @@ impl TrainHook for TrainForLeads {
             return None;
         }
         Some(crate::hub::train::digest::lead_train_lines(
-            prompts,
             &facts,
             since.map(|s| s.0.as_str()),
         ))

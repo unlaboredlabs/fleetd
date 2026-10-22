@@ -193,7 +193,6 @@ fn since_line(since: &Since, c: &Clock) -> String {
         (since.verified, "verified"),
         (since.started, "started"),
         (since.failed, "failed"),
-        (since.asked, "asked"),
     ]
     .iter()
     .filter(|(n, _)| n.get() != 0)
@@ -479,15 +478,13 @@ pub fn render(doc: &StatusDoc, zone: Tz) -> String {
         .collect();
     section(&mut out, "stale", &stale);
     if doc.needs_you.count.get() > 0 {
-        let asks: Vec<&str> = doc.needs_you.ask_ids.iter().map(|a| a.as_str()).collect();
         let n = doc.needs_you.count.get();
         let verb = if n == 1 { "needs" } else { "need" };
         section(
             &mut out,
             "needs",
             &[format!(
-                "{n} {verb} you: {} (answer in the app's inbox)",
-                asks.join(", ")
+                "{n} {verb} you: a secret to enter or a command to approve (in the project's chat in the app)"
             )],
         );
     }
@@ -1128,12 +1125,12 @@ mod tests {
                      "rate": 4.1, "samples": 18, "basis": "order" },
             "gates": [{ "kind": "plan", "label": "P12 full lab run", "serial": true }, { "kind": "live", "label": "CI on #212", "serial": false }],
             "headline": { "text": "Not live: lab-b silent 4m. Switching to the new runner.", "source": "generated", "at": "2026-10-18T14:02:00Z" },
-            "since": { "seenAt": "2026-10-18T09:12:00Z", "merged": 7, "verified": 3, "started": 0, "failed": 1, "asked": 0, "scopeItems": 3 },
+            "since": { "seenAt": "2026-10-18T09:12:00Z", "merged": 7, "verified": 3, "started": 0, "failed": 1, "scopeItems": 3 },
             "parts": [],
             "done": [{ "itemId": "P9", "title": "node outbox", "doneAt": "2026-10-18T13:12:00Z", "evidence": "#208 merged by the train 13:12" }],
             "inProgress": [{ "itemId": "P12", "workstreamId": "W41", "title": "full lab run", "taskIds": ["T88"], "changeIds": [], "eta": "2026-10-18T14:40:00Z" }],
             "next": [{ "itemId": "P14", "title": "switch default runner", "after": ["P12"] }],
-            "needsYou": { "count": 0, "askIds": [] },
+            "needsYou": { "count": 0, "requestIds": [] },
             "risks": [{ "rule": "machine_offline", "level": "warning", "message": "lab-b offline (2 tasks waiting)" }],
             "health": {
                 "ci": [{ "repo": "acme/storefront", "state": "red", "failing": ["rust (macos)"], "asOf": "2026-10-18T14:01:50Z" }],
@@ -1279,7 +1276,7 @@ mod against_a_hub {
             listen: Listen::default(),
             url: None,
             queue_ttl_sec: None,
-            router_model: None,
+            retro_model: None,
         };
         let hub = crate::hub::serve::build_on(
             HubDb::open_memory().unwrap(),

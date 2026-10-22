@@ -9,7 +9,7 @@ registerCommands(
     {
       id: "go:time",
       title: "Open time inspector",
-      detail: "Where the time went: an order's timeline from its order, else the fleet",
+      detail: "Where the time went: all work, or one piece of work's timeline",
       group: "go-to",
       keywords: ["time", "timeline", "breakdown", "insights", "slow", "critical path"],
       run: () => {

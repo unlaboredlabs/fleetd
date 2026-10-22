@@ -69,8 +69,8 @@ pub struct HubConfig {
     pub url: Option<String>,
     /// How long a write to an offline machine waits in the queue; absent means 24 h.
     pub queue_ttl_sec: Option<u64>,
-    /// The intake router's model; absent means claude-haiku-5-5.
-    pub router_model: Option<String>,
+    /// The retro's one-shot model; absent means claude-haiku-5-5.
+    pub retro_model: Option<String>,
 }
 
 impl HubConfig {
@@ -116,8 +116,6 @@ pub struct Hub {
     pub events: Arc<EventLog>,
     pub auth: Arc<Auth>,
     pub decisions: Arc<crate::hub::ledger::Decisions>,
-    pub asks: Arc<crate::hub::ledger::Asks>,
-    pub inbox: Arc<crate::hub::ledger::Inbox>,
     pub digests: Arc<crate::hub::digests::HumanDigests>,
     pub executors: Arc<crate::hub::executor::Executors>,
     pub node_commands: Arc<crate::hub::link::NodeCommands>,
@@ -149,6 +147,7 @@ pub struct Hub {
     pub time: Arc<crate::hub::time::Time>,
     pub status: Arc<crate::hub::status::Status>,
     pub plans: Arc<crate::hub::plan::Plans>,
+    pub chat: Arc<crate::hub::chat::Chat>,
 }
 
 /// Every MCP tool the hub serves, from every area that registers. The one place that lists them.
@@ -177,5 +176,6 @@ pub fn registry() -> Registry {
     crate::hub::time::tools::register(&mut tools);
     crate::hub::plan::tools::register(&mut tools);
     crate::hub::status::tools::register(&mut tools);
+    crate::hub::chat::tools::register(&mut tools);
     tools
 }

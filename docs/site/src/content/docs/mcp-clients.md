@@ -1,9 +1,9 @@
 ---
 title: MCP clients
-description: Connect Claude Code or another MCP client to the hub, and the tools it can use for orders.
+description: Connect Claude Code or another MCP client to the hub, and the tools it can use to chat with leads.
 ---
 
-You'll connect an MCP client, such as Claude Code on your laptop, to the hub so it can send and follow orders.
+You'll connect an MCP client, such as Claude Code on your laptop, to the hub so it can chat with project leads.
 
 ## Connect Claude Code {#claude-code}
 
@@ -34,7 +34,14 @@ You'll connect an MCP client, such as Claude Code on your laptop, to the hub so 
      --header "Authorization: Bearer $(cat ~/.fleetd/agent.key)"
    ```
 
-4. In Claude Code, ask it to send an order. It calls `intake_submit`.
+4. In Claude Code, ask it how a project is doing. It reads the chat with `chat_history` and the status with
+   `fleetd_status`.
+
+:::note[Writing to a lead]
+`chat_send` takes only a [human key](/docs/glossary#human-key), because the lead reads the message as yours. To let
+Claude Code write to leads for you, create the key with `--human` in step 1:
+`fleetd hub key create --human --name laptop`.
+:::
 
 `claude mcp add` writes to your Claude config. `--scope` picks where:
 
@@ -63,13 +70,13 @@ post -H "Mcp-Session-Id: $SID" -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"to
 Then call a tool:
 
 ```sh
-FLEETD_HUB=http://hub.your-tailnet.ts.net:4790 FLEETD_KEY_FILE=~/.fleetd/agent.key sh mcp.sh orders_board '{}'
+FLEETD_HUB=http://hub.your-tailnet.ts.net:4790 FLEETD_KEY_FILE=~/.fleetd/agent.key sh mcp.sh status_projects '{}'
 ```
 
-Expected output starts like this:
+On a new hub with no projects yet, the output starts like this:
 
 ```text
-{"id":1,"jsonrpc":"2.0","result":{"content":[{"text":"{\"at\":\"2026-10-19T12:40:58.878Z\",\"next\":\"Open one with order_get; …
+{"id":1,"jsonrpc":"2.0","result":{"content":[{"text":"{\"next\":\"status_get with a project scope for the detail behind a row\",\"rows\":[]}", …
 ```
 
 ## Use a key from the CLI {#key-file}
@@ -77,22 +84,22 @@ Expected output starts like this:
 | Command | Needs |
 |---|---|
 | `fleetd status`, `fleetd time` | Nothing on the hub machine. Elsewhere, `--hub <url> --key-file <file>`. |
-| `fleetd answer`, `fleetd steer`, `fleetd steers` | Always `--key-file` with a [human key](/docs/glossary#human-key). `--hub <url>` off the hub machine. |
+| `fleetd steer`, `fleetd steers` | Always `--key-file` with a [human key](/docs/glossary#human-key). `--hub <url>` off the hub machine. |
 | `fleetd listen`, `fleetd retro` | Always `--hub <url>` and `--key-file <file>`. |
 
 To make a human key file on the hub:
 
 ```sh
 (umask 077; fleetd hub key create --human --name terminal > ~/.fleetd/human.key)
-fleetd answer --key-file ~/.fleetd/human.key
+fleetd steers --key-file ~/.fleetd/human.key
 ```
 
 ## Roles
 
 | Role | Can |
 |---|---|
-| `read` | Read orders, status, time and prompts. |
-| `operate` | Also send orders, add notes and manage projects. |
+| `read` | Read chats, status, time and prompts. |
+| `operate` | Also write to leads, set a project's max agents, and manage projects. |
 | `admin` | Also change hub settings, such as timeline retention and GitHub webhooks. |
 
 `--machines '*'` gives the role on every machine; `--machines devbox,laptop` limits it to those.
@@ -103,24 +110,33 @@ fleetd answer --key-file ~/.fleetd/human.key
 | `fleetd hub key revoke <keyId>` | Ends a key at once, also on a running hub. |
 
 A [human key](/docs/glossary#human-key) (`fleetd hub key create --human`) is for a person's device. Some tools, such
-as stopping an order or steering, need one.
+as stopping a project, answering an approval or entering a secret, need one.
 
-## Tools for orders {#tools}
+## Tools for the chat {#tools}
 
 | Tool | Does | Role |
 |---|---|---|
-| `intake_submit {text, clientRequestId}` | Send an order (optional `attachments`, `refs`). | operate |
-| `intake_preview {text}` | Say where an order would go, without sending it. | operate |
-| `attachment_put {name, mime, dataB64}` | Upload a file (image, text or PDF, at most 5 MiB) for an order or note. | operate |
+| `chat_send {projectRef, text, attachments?, clientRequestId}` | Write to a project's lead. It starts a turn when the lead is idle, steers it when it works, or waits while it starts. The lead reads it as your words. | operate, human key |
+| `chat_history {projectRef, before?, after?, limit?}` | A page of a project's chat, oldest first; up to 100 messages. Without `before` or `after`, the newest. | read |
+| `approval_answer {requestId, decision, message?}` | Approve or deny an approval item: `decision` is `approve` or `deny`; `message` is a denial's reason for the lead. | operate, human key |
+| `secret_submit {requestId, sealed}` | Answer a secret item with a value sealed to the target machine. | operate, human key |
+| `requests_list {projectRef?, state?}` | Secret and approval requests, newest first, with their state. A secret's value is never in it, only its fingerprint. | read |
+| `project_stop {projectRef, reason?}` | Stop every running and queued agent of the project and tell the lead in its chat. Merged PRs, the lead and the chat stay. | operate, human key |
+| `attachment_put {name, mime, dataB64}` | Upload a file (image, text or PDF, at most 5 MiB) for a message. | operate |
+| `attachment_get {projectRef, attachmentId}` | Read a file attached to a project's chat. | read |
 | `project_files {machineId, projectId, query}` | A project's files, for `@`-mentions. | read |
-| `orders_board {projectRef?}` | Open orders with their phase, agents, PRs, asks and trains. | read |
-| `order_get {workstreamId}` | One order, with its lead, finished agents and claims. | read |
-| `order_note {workstreamId, text, urgent?, clientRequestId}` | Add to an order; `urgent` wakes the lead now. | operate, human key |
-| `order_stop {workstreamId}` | Stop an order. | operate, human key |
-| `workstream_list`, `workstream_get`, `thread_tail`, `fleetd_status` | Lower-level views. | read |
+| `status_projects` | One row per project: its state word, verified and in-flight progress, agents running and the last merge. | read |
+| `workstream_list`, `workstream_get`, `thread_tail`, `fleetd_status` | Lower-level views of the lead's work. | read |
 
-`clientRequestId` is any unique string you choose per request. Retrying with the same one doesn't send the order or
-note twice. `events_wait` waits for changes, so a client doesn't need to poll.
+`projectRef` is `{"machineId": "devbox", "projectId": "<id>"}`; `fleetd project list` prints both, as
+`<machineId>/<projectId>`.
+
+`intake_submit` and the `order_*` tools are gone; for one release they answer with an error that points to
+`chat_send`.
+
+`clientRequestId` is any unique string you choose per request. Sending the same one again returns the same message
+instead of a second one. `events_wait` waits for changes, so a client doesn't need to poll: a new message is a
+`chat.message` event.
 
 Tools for projects: `project_discover`, `project_inspect`, `project_add {path | url}` and `project_remove`. A clone
 answers with an `addId`, then sends `project.clone_progress` events, then `project.added` or `project.add_failed`.

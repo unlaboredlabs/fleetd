@@ -3,7 +3,7 @@
 // registry from the fake prompt hub: every prompt's real text, a hub-wide edit made against an older default (the
 // 3-way Update view), a project's own edit, and the instructions at both levels.
 import fs from "node:fs";
-import { defineGroup } from "../kit/group.ts";
+import { defineGroup, SHARED } from "../kit/group.ts";
 import { Fixture } from "../kit/fixture.ts";
 import { asText, clone, isObject, type JsonObject, type JsonValue } from "../kit/json.ts";
 import { PROJECTS, PromptHub, type RegistryEntry } from "./promptHub.ts";
@@ -37,26 +37,42 @@ function basics(f: Fixture) {
   f.answer("prompt_set", { dryRun: true }, { ref: "lead.start@5e771ed000", warnings: [] });
 }
 
-/** A recorded prompt_get turned into one whose default changed since the human edited it (the Update view). */
-function staled(detail: JsonObject): JsonObject {
-  const d = clone(detail);
-  const def = isObject(d["default"]) ? d["default"] : { ref: "", text: "" };
-  const id = asText(d["id"]);
-  const text = asText(def["text"]);
-  const base = { ref: `${id}@0ba5e0ba5e`, text: text.replace(/[^\n]*\n?$/u, "") };
-  const note = "Keep each message under 200 words.";
-  const yours = { ref: `${id}@0f0f0f0f0f`, text: `${base.text}\n${note}\n` };
-  d["scope"] = "global";
-  d["global"] = { ...yours, base: base.ref };
-  d["effective"] = yours;
-  d["stale"] = { scope: "global", base, current: def, yours, merged: `${text}\n${note}\n`, conflicts: false };
-  return d;
+/** Every shared fixture: what Settings calls besides the recorded prompt reads. */
+const shared = (f: Fixture) => basics(f);
+
+/**
+ * Max agents: a fleet cap of 16 with each project at a different point. The first runs 6 under a max of 12, the
+ * second sits at its max of 3, and the third has no limit of its own. The slot state is set in the snapshot and in
+ * every live frame that carries one, since the live state wins.
+ */
+function agents(from: Fixture): Fixture {
+  const f = Fixture.from(from, "settings-agents", "A fleet cap of 16; one project under its max, one at it, one with no limit of its own");
+  f.agentsFromSlots = true;
+  const projects = isObject(f.snapshot) && Array.isArray(f.snapshot["projects"]) ? f.snapshot["projects"].filter(isObject) : [];
+  const ref = (p: JsonObject): JsonObject => ({ machineId: asText(p["machineId"]), projectId: asText(p["projectId"]) });
+  const rows: JsonObject[] = [];
+  const [first, second] = projects;
+  if (first) rows.push({ projectRef: ref(first), maxAgents: 12, running: 6, queued: 0, used: 7 });
+  if (second) rows.push({ projectRef: ref(second), maxAgents: 3, running: 3, queued: 2, used: 3 });
+  const slots: JsonObject = { cap: 16, used: 9, queued: 2, reservedBand: 2, perProject: rows };
+  if (f.snapshot) f.snapshot["slots"] = clone(slots);
+  for (const frame of f.live) if (frame["slots"] !== undefined) frame["slots"] = clone(slots);
+  // A save answers with the slot state it asked for, as the hub does: every max each project can take, and every
+  // fleet cap a person might type, so the shots show the saved value read back.
+  for (const row of rows) {
+    const projectRef = row["projectRef"] as JsonObject;
+    for (let n = 1; n <= 16; n++) {
+      const perProject = rows.map((r) => (r === row ? { ...clone(r), maxAgents: n } : clone(r)));
+      f.answer("cap_set", { project: { projectRef: clone(projectRef), maxAgents: n } }, { slots: { ...clone(slots), perProject } });
+    }
+  }
+  for (let n = 1; n <= 64; n++) f.answer("cap_set", { cap: n }, { slots: { ...clone(slots), cap: n } });
+  return f;
 }
 
 export default defineGroup({
   extend: {
-    typical: basics,
-    "long-text": basics,
+    ...Object.fromEntries(SHARED.map((name) => [name, shared])),
     empty: (f) => {
       basics(f);
       // An empty hub still has every prompt; the recording read none of them.
@@ -65,16 +81,6 @@ export default defineGroup({
         const got = hub.answer("prompt_get", { id });
         if (got.ok && f.output("prompt_get", { id }) === undefined) f.answer("prompt_get", { id }, json(got.output));
       }
-    },
-    "many-prompts": (f) => {
-      basics(f);
-      // The list marks some prompts stale; their reads carry a 3-way update to match.
-      const stale = new Set<string>();
-      for (const a of f.answers("prompts_list")) {
-        const prompts = isObject(a.output) ? a.output["prompts"] : undefined;
-        for (const p of Array.isArray(prompts) ? prompts : []) if (isObject(p) && p["stale"] === true) stale.add(asText(p["id"]));
-      }
-      f.update("prompt_get", (out) => (isObject(out) && stale.has(asText(out["id"])) ? staled(out) : out));
     },
   },
   fixtures: (base) => {
@@ -98,6 +104,6 @@ export default defineGroup({
         if (got.ok) f.answer("prompt_get", { id, ...scope }, json(got.output));
       }
     }
-    return [f];
+    return [f, agents(base("typical"))];
   },
 });

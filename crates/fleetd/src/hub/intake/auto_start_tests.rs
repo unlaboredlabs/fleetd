@@ -1,19 +1,18 @@
 //! An order for a project without a lead: the lead starts and gets it, or the order waits with the reason, and the
 //! lead starts once the machine comes online with a usable runner.
-use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, ThreadId, ThreadRef, Timestamp};
-use fleetd_contracts::ledger::{Ask, AskId, Decision, IntakeChannel, WorkstreamId};
+use fleetd_contracts::ledger::{Decision, HumanRequest, IntakeChannel, WorkstreamId};
 use fleetd_contracts::mcp::{ErrorCode, ThreadLaunchInput};
 use fleetd_contracts::model::{ProjectSummary, ThreadCounts};
 
-use super::{SubmitInput, SubmitResult};
+use super::SubmitInput;
 use crate::hub::leads::hooks::{BoxFuture, PolicyHook};
-use crate::hub::leads::ports::{CmdOutcome, LeadPorts, RouteAsk};
+use crate::hub::leads::ports::{CmdOutcome, LeadPorts};
 use crate::hub::leads::wakes::WAKE_DEBOUNCE;
 use crate::hub::leads::{Area, AreaOptions, Ctx, LeadError};
 use crate::hub::store::test_clock::ManualClock;
@@ -63,22 +62,12 @@ impl LeadPorts for Ports {
     ) -> BoxFuture<Result<CmdOutcome, String>> {
         Box::pin(async { Err("no commands here".to_string()) })
     }
-    fn open_asks(
+    fn open_requests(
         &self,
         _: Option<&ProjectRef>,
-        _: Option<&WorkstreamId>,
         _: usize,
-    ) -> Result<Vec<Ask>, LeadError> {
+    ) -> Result<Vec<HumanRequest>, LeadError> {
         Ok(Vec::new())
-    }
-    fn ask(&self, _: &AskId) -> Result<Option<Ask>, LeadError> {
-        Ok(None)
-    }
-    fn create_route_ask(&self, _: RouteAsk, _: &str) -> Result<AskId, LeadError> {
-        unreachable!("every order here names its project")
-    }
-    fn withdraw_ask(&self, _: &AskId, _: &str) -> Result<(), LeadError> {
-        Ok(())
     }
     fn decisions_in_project(&self, _: &ProjectRef, _: usize) -> Result<Vec<Decision>, LeadError> {
         Ok(Vec::new())
@@ -150,8 +139,6 @@ pub(crate) fn hub(runner_usable: bool, auto_start: bool) -> Hub {
         AreaOptions {
             home: home.path(),
             leads: Default::default(),
-            router_model: None,
-            env: HashMap::new(),
         },
     )
     .unwrap();
@@ -190,15 +177,11 @@ impl Hub {
             })
             .await
             .unwrap();
-        match placed {
-            SubmitResult::Placed {
-                workstream_id,
-                next,
-                lead_waiting,
-                ..
-            } => (workstream_id, next.unwrap(), lead_waiting),
-            SubmitResult::Asked { .. } => panic!("the order names its project"),
-        }
+        (
+            placed.workstream_id,
+            placed.next.unwrap(),
+            placed.lead_waiting,
+        )
     }
 
     pub(crate) fn launched_prompts(&self) -> Vec<String> {
@@ -266,12 +249,12 @@ async fn an_order_for_a_project_without_a_lead_starts_it_and_the_lead_gets_the_o
     let sends = hub.node.sends.lock().unwrap().clone();
     assert_eq!(sends.len(), 1);
     assert!(
-        sends[0].contains(&format!("New intent {w2}")),
+        sends[0].contains(&format!("new order {w2}")),
         "{}",
         sends[0]
     );
     assert!(
-        !sends[0].contains(&format!("New intent {w1}")),
+        !sends[0].contains(&format!("new order {w1}")),
         "{}",
         sends[0]
     );

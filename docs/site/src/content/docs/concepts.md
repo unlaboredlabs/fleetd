@@ -1,6 +1,6 @@
 ---
 title: Concepts
-description: The hub, nodes, Claude sessions and the clients that talk to them, and what happens to an order.
+description: The hub, nodes, Claude sessions and the clients that talk to them, and how work flows from a chat to a merge.
 ---
 
 This page shows how fleetd's parts fit together and what happens to a piece of work. Every term is also in the
@@ -21,7 +21,7 @@ This page shows how fleetd's parts fit together and what happens to a piece of w
 <path d="M470 64 380 126" marker-end="url(#fleet-arrow)" marker-start="url(#fleet-arrow)"/>
 <rect x="190" y="128" width="300" height="64" rx="6" stroke-width="2"/>
 <text x="340" y="156" text-anchor="middle" fill="currentColor" stroke="none" font-weight="600">Hub</text>
-<text x="340" y="178" text-anchor="middle" fill="currentColor" stroke="none" font-size="12">projects · orders · asks · merge train</text>
+<text x="340" y="178" text-anchor="middle" fill="currentColor" stroke="none" font-size="12">projects · lead chats · merge train</text>
 <path d="M175 260 290 194" marker-end="url(#fleet-arrow)"/>
 <path d="M505 260 390 194" marker-end="url(#fleet-arrow)"/>
 <text x="205" y="222" text-anchor="end" fill="currentColor" stroke="none" font-size="12">dials out</text>
@@ -53,28 +53,29 @@ This page shows how fleetd's parts fit together and what happens to a piece of w
 | **Node** | The fleetd process on a machine that runs agents. It connects out to the hub, so the machine opens no port. | One per worker. |
 | **Worker** | Any machine with a node. The hub machine is usually a worker too. | As many as you like. |
 | **Claude session** | One `claude` process doing one job: a lead, a writer, a reviewer. It uses your own `~/.claude` setup. | Many per node. |
-| **Desktop app** | Where you give work, follow it and answer questions. | Any number of devices. |
+| **Desktop app** | Where you chat with each project's lead and see the fleet's status. | Any number of devices. |
 | **CLI and MCP clients** | `fleetd` commands, and agents such as Claude Code connected to `<hub url>/mcp`. | Any number. |
 
 The hub keeps its data in one SQLite file, `~/.fleetd/hub/hub.sqlite`. See [Config & files](/docs/config-and-files).
 
-## What happens to an order
+## How work flows {#flow}
 
-1. You send an **order**: one line, such as `fix the typo in the README`.
-2. The hub picks the **project** (a git repo on a worker) and wakes its **lead**.
-3. The lead writes a **brief**: the plan, and the done-when checks that prove the work is finished.
-4. The lead starts **tasks**. Each writer gets its own git worktree and branch, and opens a pull request.
-5. Reviewers check each pull request. The **merge train** merges it once CI passes on the exact commit.
-6. The lead claims the order is done (`claim_done`). The hub runs the done-when checks itself, and only all of
-   them passing makes it done.
+1. You open a **project** (a git repo on a worker) and write to its **lead** in the chat, such as
+   `fix the typo in the README`.
+2. The lead plans the work: what to build, and the done-when checks that prove it is finished.
+3. The lead starts **tasks**. Each writer gets its own git worktree and branch, and opens a pull request.
+4. Reviewers check each pull request. The **merge train** merges it once CI passes on the exact commit.
+5. The lead claims the work is done (`claim_done`). The hub runs the done-when checks itself, and only all of them
+   passing makes it done.
+6. The lead tells you in the chat.
 
-When the lead needs a decision, it sends you an **ask**. You can redirect any agent while it works with a **steer**.
+When the lead needs a decision, it asks you in the chat. Typing while it works **steers** it.
 
 ## The terms
 
 ### Hub {#hub}
 
-One per fleet. It holds projects, leads, briefs, tasks, asks and decisions, the merge trains and checks. Start it
+One per fleet. It holds projects, the lead chats, plans, tasks, decisions, the merge trains and checks. Start it
 with `fleetd init`, which runs it as a service. It listens on port 4790 by default.
 
 ### Node and worker {#nodes}
@@ -83,22 +84,41 @@ Each worker runs one `fleetd node`. The node starts one `claude` process per liv
 worktree. Sessions use your claude setup on that machine: the same login, proxy and MCP servers as `claude` in your
 shell. See [Machines](/docs/machines).
 
-### Lead {#leads}
+### Lead and its chat {#leads}
 
-Each project has one lead: a long-running Claude session that turns orders into briefs and tasks. It never writes
-code. A project's first order starts it. It runs on `claude-opus-5-5` by default. Its tools are listed in
-[Agent tools](/docs/reference/agent-tools).
+Each project has one lead: a long-running Claude session that plans the work and runs the agents. It never writes
+code. You talk to it in one ongoing chat per project, in plain messages; it answers short, state first. Your first
+message starts it. It runs on `claude-opus-5-5` by default. See [Chat with the lead](/docs/chat).
 
-### Order {#orders}
+The lead keeps its own plan and bookkeeping. Inside fleetd a piece of work is a **workstream**; you never file one.
+Its tools are listed in [Agent tools](/docs/reference/agent-tools).
 
-One line of intent, sent from the app, the CLI or MCP (`intake_submit`). A leading `@project` names the project;
-otherwise the hub picks one or asks you. Inside fleetd an order is a **workstream**, with an id such as `W41`.
+### Decisions {#decide}
 
-### Ask and decision {#asks}
+A lead asks only about product calls, money and irreversible steps, in the chat, as numbered items with a
+recommendation each. You reply tersely (`1 go, 2 rec`) or in your own words. The lead logs each answer with `decide`,
+into a searchable decision log, so it never asks the same question twice.
 
-A lead asks you only about product calls, money, credentials and irreversible steps. Asks arrive numbered in the
-inbox, and you answer in one line (`1 go 2 nvm 3 b`). Each answer becomes a **decision** in a searchable log, so the
-same question is never asked twice. See [Approvals & secrets](/docs/approvals-and-secrets) for commands and secrets.
+### Secrets and approvals {#inline-items}
+
+Two things never travel as chat text. They show as items inside the chat:
+
+| Item | Shows | You |
+|---|---|---|
+| Secret | A masked field: the machine and where the value goes | Type the value. It is sealed to that machine and never enters the transcript. |
+| Approval | The exact command a lead wants to run, why, and where | Approve or Deny. |
+
+See [Secrets & approvals](/docs/approvals-and-secrets).
+
+### The agents strip {#strip}
+
+Fleet activity stays quiet inside the chat: a compact strip under the lead's message says how many agents are
+working, one line each, and expands to their lanes and time. Pull requests and merges show as one-line events.
+
+### Max agents {#max-agents}
+
+A per-project cap, and a fleet-wide one, on how many agents run at once. Agents over the cap queue rather than fail,
+and the lead plans its work to the cap. See [Max agents](/docs/projects#max-agents).
 
 ### Merge train {#merge-train}
 

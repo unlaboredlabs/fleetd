@@ -1,15 +1,19 @@
-// Mounted once by the shell: the keymap, the default commands, and whichever overlay is up.
+// Mounted once by the shell: the keymap, the default commands, the project list, and whichever overlay is up.
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
+import { useDataLayer } from "../../src/data/react";
 import { defaultCommands } from "./defaults";
 import { installKeymap } from "./keymap";
-import { registerCommands } from "./registry";
+import { projectSource } from "./projects";
+import { registerCommands, useSource } from "./registry";
 import { closeOverlay, paletteOpen, useOverlay } from "./state";
 import { Palette } from "./Palette";
 import { ShortcutsSheet } from "./ShortcutsSheet";
 
 export function PaletteHost() {
   const overlay = useOverlay();
+  const { store } = useDataLayer();
+  useSource(useMemo(() => projectSource(store), [store]));
 
   useEffect(() => {
     // The lowest priority: this effect runs after the screens' own and the screen modules' (time, settings), and a

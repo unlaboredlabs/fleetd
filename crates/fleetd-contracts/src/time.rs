@@ -142,12 +142,8 @@ span_kinds! {
     SlotsFull = 37, "slots.full", Queue;
     /// A permission prompt, inside its tool span; `extra.decidedBy` says who answered.
     WaitPermission = 40, "wait.permission", Human;
-    /// A blocking ask, published to answered.
-    WaitAsk = 41, "wait.ask", Human;
-    /// An ask filed to its batch being published.
-    AskBatching = 42, "ask.batching", Human;
-    /// An ask that blocked nothing. On the asks lane only, never on a critical path.
-    AskInfo = 43, "ask.info", Human;
+    /// A secret or approval request, opened to settled.
+    WaitRequest = 41, "wait.request", Human;
     ChangeReview = 50, "change.review", Pipeline;
     /// Waiting in the train's line.
     ChangeQueue = 51, "change.queue", Pipeline;
@@ -160,7 +156,7 @@ span_kinds! {
     ChangeMerge = 56, "change.merge", Pipeline;
     /// needs_rebase or ci_failed until the next head.
     ChangeBlocked = 57, "change.blocked", Pipeline;
-    /// The intake router, from submit to routed.
+    /// Intake, from submit to placed.
     IntakeRoute = 58, "intake.route", Pipeline;
     Idle = 60, "idle", Idle;
     /// Lost data: spans the node dropped or the hub could not take. `extra.count` says how many.
@@ -238,9 +234,9 @@ pub struct SpanExtra {
     pub cap: Option<Count>,
     /// `gap`: how many spans were lost.
     pub count: Option<Count>,
-    /// `wait.permission`: the node's request id, joined to the hub ask.
+    /// `wait.permission`: the node's request id, joined to the hub's approval request.
     pub request_id: Option<Text<1, 120>>,
-    /// `wait.ask`: the ask's decision key.
+    /// `wait.request`: the secret's key.
     pub key: Option<Text<1, 200>>,
     /// The tool's name, for tool and permission spans.
     pub tool: Option<Line<1, 120>>,
@@ -281,7 +277,7 @@ pub struct Span {
     pub id: Count,
     pub kind: SpanKind,
     pub cat: Category,
-    /// `thread:<machine>/<thread>`, `change:<id>`, `asks:<order>`, `train:<repo>`, `fleet`, `order:<id>`.
+    /// `thread:<machine>/<thread>`, `change:<id>`, `requests:<order>`, `train:<repo>`, `fleet`, `order:<id>`.
     pub lane: Text<1, 300>,
     pub start_ms: Count,
     /// Absent while open.
@@ -454,7 +450,7 @@ pub struct CiCheckStat {
 pub struct LongestWait {
     pub span_id: Count,
     pub ms: Count,
-    /// The ask's key, or the tool for a permission prompt.
+    /// The secret's key, or the tool for a permission prompt.
     pub label: Option<Text<0, 200>>,
 }
 
@@ -530,7 +526,6 @@ pub enum InsightRule {
     CiReaction,
     SlotsFull,
     HumanWait,
-    BatchingDelay,
     ApprovalRule,
     UsageParks,
     Retries,
@@ -542,7 +537,7 @@ pub enum InsightRule {
     Offline,
     Coverage,
     /// Serial waits: work that waited while capacity existed. A task queued for a slot while the fleet had free
-    /// ones (a project share, the lead band), or a PR that waited out another PR's train cycle.
+    /// ones (a project's max agents, the lead band), or a PR that waited out another PR's train cycle.
     QueueWait,
     /// Tasks serialized on one shared resource: an area lease, or one machine's usage limit.
     Contention,

@@ -1,4 +1,4 @@
-//! The board join: one order's tasks, PRs and asks become a card with roles, PR links, counts and a phase.
+//! The board join: one order's tasks, PRs and requests become a card with roles, PR links, counts and a phase.
 use std::collections::HashMap;
 
 use fleetd_contracts::ids::ThreadRef;
@@ -116,13 +116,13 @@ fn an_order_joins_its_agents_prs_and_asks() {
             workstream: &w,
             tasks: &tasks,
             changes: &changes,
-            open_asks: 0,
+            open_requests: 0,
             lead_working: true,
         },
         &fake,
     );
     let c = &joined.card;
-    // T3 waits on a permission: the order needs you even with nothing in the inbox.
+    // T3 waits on a permission: the order needs you even with no open request.
     assert_eq!(c.phase, OrderPhase::WaitingOnYou);
     assert_eq!(c.phase_detail.as_deref(), Some("1 approval"));
     assert_eq!((c.settled.get(), c.total.get()), (1, 5));

@@ -19,7 +19,7 @@ pub struct PrState {
 pub struct PhaseInput<'a> {
     pub state: WorkstreamState,
     pub headline: Option<&'a str>,
-    pub open_asks: usize,
+    pub open_requests: usize,
     pub lanes: &'a [(AgentRole, LaneStatus, Option<&'a str>)],
     pub prs: &'a [PrState],
     pub lead_working: bool,
@@ -37,16 +37,16 @@ fn active(status: LaneStatus) -> bool {
     matches!(status, LaneStatus::Starting | LaneStatus::Working)
 }
 
-/// The order's phase and its chip detail ("3 working", "#212 in CI", "1 question").
+/// The order's phase and its chip detail ("3 working", "#212 in CI", "1 request").
 pub fn phase(i: &PhaseInput<'_>) -> (OrderPhase, Option<String>) {
     let waiting = i
         .lanes
         .iter()
         .filter(|(_, s, _)| *s == LaneStatus::Waiting)
         .count();
-    if i.open_asks > 0 || waiting > 0 {
-        let detail = if i.open_asks > 0 {
-            plural(i.open_asks, "question", "questions")
+    if i.open_requests > 0 || waiting > 0 {
+        let detail = if i.open_requests > 0 {
+            plural(i.open_requests, "request", "requests")
         } else {
             plural(waiting, "approval", "approvals")
         };
@@ -201,7 +201,7 @@ mod tests {
         PhaseInput {
             state,
             headline: None,
-            open_asks: 0,
+            open_requests: 0,
             lanes,
             prs,
             lead_working: false,
@@ -223,12 +223,12 @@ mod tests {
             state: ChangeState::Ci,
             number: 208,
         }];
-        // A question beats everything.
-        let mut asked = input(W, &busy, &pr);
-        asked.open_asks = 1;
+        // An open secret or approval request beats everything.
+        let mut waiting = input(W, &busy, &pr);
+        waiting.open_requests = 1;
         assert_eq!(
-            phase(&asked),
-            (OrderPhase::WaitingOnYou, Some("1 question".into()))
+            phase(&waiting),
+            (OrderPhase::WaitingOnYou, Some("1 request".into()))
         );
         // A lane waiting on a permission is the same phase.
         let approve = [(Implementer, Waiting, None), (Implementer, Working, None)];

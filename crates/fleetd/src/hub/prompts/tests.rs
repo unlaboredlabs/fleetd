@@ -39,27 +39,25 @@ async fn a_running_lead_keeps_its_texts_and_an_edit_reaches_the_next_session() {
         warnings
             .iter()
             .any(|w| w.code == PromptWarningCode::SafetyRuleMissing
-                && w.rule.as_deref() == Some("secrets-via-ask"))
+                && w.rule.as_deref() == Some("secrets-via-request"))
     );
     prompts
         .set(
-            entry("wake.intent").unwrap(),
+            entry("steer.message").unwrap(),
             PromptScope::Global,
             None,
-            "EDITED intent {{workstreamId}}",
+            "EDITED steer {{id}}",
             None,
         )
         .unwrap();
 
-    // 3. A new order wakes the running lead in the words it started with, and what it was told is unchanged.
+    // 3. A new order wakes the running lead (an event line, no prompt), and what it was told is unchanged.
     let (w2, _, _) = hub.order("add a /ready endpoint").await;
     hub.after_debounce().await;
     let sends = hub.node.sends.lock().unwrap().clone();
     assert_eq!(sends.len(), 1);
     assert!(
-        sends[0].contains(&format!(
-            "- New intent {w2}: 'add a /ready endpoint'. Register it"
-        )),
+        sends[0].contains(&format!("- new order {w2}: \"add a /ready endpoint\"")),
         "{}",
         sends[0]
     );
@@ -83,8 +81,8 @@ async fn a_running_lead_keeps_its_texts_and_an_edit_reaches_the_next_session() {
         ref_of("lead.start", lead_start.default)
     );
     assert_eq!(
-        pinned("wake.intent"),
-        ref_of("wake.intent", entry("wake.intent").unwrap().default)
+        pinned("steer.message"),
+        ref_of("steer.message", entry("steer.message").unwrap().default)
     );
 
     // 4. A restarted lead is a new session: it starts with the edit, and its pins name the override.
@@ -189,7 +187,10 @@ fn a_reflowed_default_is_not_a_changed_default() {
 /// A long line that stops mid-sentence and goes on in the next line is a hard wrap.
 #[test]
 fn shipped_texts_are_not_hard_wrapped() {
-    let texts = super::registry::ENTRIES.iter().map(|e| (e.id, e.default));
+    let texts = super::registry::ENTRIES
+        .iter()
+        .map(|e| (e.id, e.default))
+        .chain(super::fixed::ALL);
     let playbooks = crate::hub::playbooks::load::BUNDLED
         .iter()
         .map(|(n, t)| (n.as_str(), *t));
@@ -216,15 +217,19 @@ fn shipped_texts_are_not_hard_wrapped() {
 #[test]
 fn agent_facing_texts_name_tools_not_fleetd_commands() {
     let command = regex::Regex::new(
-        r"fleetd (task (spawn|list|status|message|cancel)|ask\b|decide\b|brief create|claim done|plan (add|edit|drop|show|milestone)|gated run|status set|change (enqueue|status)|review verdict|decisions search|inventory|workstream spawn)",
+        r"fleetd (task (spawn|list|status|message|cancel)|request (secret|withdraw)|decide\b|brief create|claim done|plan (add|edit|drop|show|milestone)|gated run|status set|change (enqueue|status)|review verdict|decisions search|inventory|workstream spawn)",
     )
     .unwrap();
     let flag = regex::Regex::new(r#""[^"]*--(workstream|amend|proceeded|serves|item|steer|milestone|rec|why|context|option|sink|env-name|class|scope|task)\b"#).unwrap();
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut found = Vec::new();
-    for entry in super::registry::ENTRIES {
-        if let Some(m) = command.find(entry.default) {
-            found.push(format!("prompt {}: {}", entry.id, m.as_str()));
+    let texts = super::registry::ENTRIES
+        .iter()
+        .map(|e| (e.id, e.default))
+        .chain(super::fixed::ALL);
+    for (id, text) in texts {
+        if let Some(m) = command.find(text) {
+            found.push(format!("prompt {id}: {}", m.as_str()));
         }
     }
     let mut dirs = vec![root.join("src/hub")];
@@ -261,5 +266,168 @@ fn agent_facing_texts_name_tools_not_fleetd_commands() {
         found.is_empty(),
         "agent-facing texts name lead-side commands:\n{}",
         found.join("\n")
+    );
+}
+
+/// There is no questions tool: leads ask in the chat and log answers with `decide`. No shipped prompt or playbook
+/// sends an agent to `ask`, an ask card, the inbox or an ask id.
+#[test]
+fn model_facing_texts_never_mention_the_questions_tool() {
+    let ask = regex::Regex::new(
+        r"(?i)`(ask|ask_withdraw|inbox_reply|inbox_undo|asks_list)`|question cards?|ask cards?|\binbox\b|\bask:A|amend A\d|proceededOnRec|kind secret|your asks\b|taps? one choice|\baskId\b",
+    )
+    .unwrap();
+    let texts = super::registry::ENTRIES
+        .iter()
+        .map(|e| (e.id, e.default))
+        .chain(super::fixed::ALL);
+    let playbooks = crate::hub::playbooks::load::BUNDLED
+        .iter()
+        .map(|(n, t)| (n.as_str(), *t));
+    let found: Vec<String> = texts
+        .chain(playbooks)
+        .filter_map(|(id, text)| ask.find(text).map(|m| format!("{id}: {}", m.as_str())))
+        .collect();
+    assert!(
+        found.is_empty(),
+        "texts still point at the questions tool:\n{}",
+        found.join("\n")
+    );
+}
+
+/// An edit to a prompt a release retired is never applied and never lost: it is listed until the human deletes it.
+#[test]
+fn edits_to_retired_prompts_are_listed_until_reset() {
+    let home = tempfile::tempdir().unwrap();
+    let db = crate::hub::store::HubDb::open(home.path()).unwrap();
+    db.with(|c| {
+        c.execute(
+            "INSERT INTO projects (machine_id, project_id, search, last_activity_at, data) VALUES ('lab-a', 'p-a', '', '', '{}')",
+            [],
+        )?;
+        Ok(())
+    })
+    .unwrap();
+    let prompts = db.prompts();
+    let dir = db.prompts_dir().unwrap().to_owned();
+    let p = fleetd_contracts::ids::ProjectRef {
+        machine_id: fleetd_contracts::ids::MachineId::new("lab-a").unwrap(),
+        project_id: fleetd_contracts::ids::ProjectId::unchecked("p-a"),
+    };
+    // Written by an older release: frontmatter for prompts, a bare file for a playbook.
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("wake.intent.md"),
+        "---\nbase: wake.intent@0123456789\n---\nNew order {{workstreamId}}, mine",
+    )
+    .unwrap();
+    let playbooks = dir.parent().unwrap().join("playbooks");
+    std::fs::create_dir_all(&playbooks).unwrap();
+    std::fs::write(playbooks.join("bugfix.md"), "my bugfix playbook").unwrap();
+    prompts
+        .save(
+            entry("lead.start").unwrap(),
+            PromptScope::Project,
+            Some(&p),
+            "live",
+            None,
+        )
+        .unwrap();
+    let project_file = dir
+        .read_dir()
+        .unwrap()
+        .find(|e| e.as_ref().unwrap().file_name() == "projects")
+        .map(|_| {
+            let projects = dir.join("projects");
+            let key = projects.read_dir().unwrap().next().unwrap().unwrap().path();
+            key.join("permission.denied.human.md")
+        })
+        .unwrap();
+    std::fs::write(&project_file, "---\nbase: x@0123456789\n---\nNo: {{said}}").unwrap();
+
+    let hub_wide = prompts.orphans(None);
+    let ids: Vec<(&str, Option<&str>)> = hub_wide
+        .iter()
+        .map(|o| {
+            (
+                o.id.as_str(),
+                o.suggested_target.as_ref().map(|t| t.as_str()),
+            )
+        })
+        .collect();
+    assert_eq!(
+        ids,
+        vec![
+            ("wake.intent", Some("lead.start")),
+            ("playbook.bugfix", Some("lead.start"))
+        ]
+    );
+    assert_eq!(hub_wide[0].text, "New order {{workstreamId}}, mine");
+    assert_eq!(hub_wide[1].text, "my bugfix playbook");
+    assert!(hub_wide.iter().all(|o| o.scope == PromptScope::Global));
+
+    let with_project = prompts.orphans(Some(&p));
+    assert_eq!(with_project.len(), 3);
+    let mine = &with_project[2];
+    assert_eq!(
+        (mine.id.as_str(), mine.scope, mine.text.as_str()),
+        (
+            "permission.denied.human",
+            PromptScope::Project,
+            "No: {{said}}"
+        )
+    );
+    assert_eq!(mine.suggested_target, None);
+    assert_eq!(prompts.all_orphans().len(), 3);
+    // Nothing retired reaches a session: the live prompts are untouched.
+    assert_eq!(
+        prompts.current(Some(&p)).get("lead.start").text.as_ref(),
+        "live"
+    );
+
+    let retired = super::retired::get("permission.denied.human").unwrap();
+    prompts
+        .reset_retired(retired, PromptScope::Project, Some(&p))
+        .unwrap();
+    prompts
+        .reset_retired(
+            super::retired::get("playbook.bugfix").unwrap(),
+            PromptScope::Global,
+            None,
+        )
+        .unwrap();
+    assert!(!project_file.exists() && !playbooks.join("bugfix.md").exists());
+    let left: Vec<String> = prompts
+        .all_orphans()
+        .into_iter()
+        .map(|o| o.id.to_string())
+        .collect();
+    assert_eq!(left, vec!["wake.intent"]);
+}
+
+/// The lead asks once and lets the chat's waiting state carry the question: its own examples never nag, and bring the
+/// question up again only once.
+#[test]
+fn the_lead_asks_once_and_never_nags() {
+    let lead = super::store::entry("lead.start").unwrap().default;
+    assert!(lead.contains("Ask once, then let it be"), "{lead}");
+    let nag =
+        regex::Regex::new(r"(?i)still waiting|waiting on you|reminder:|as I asked|haven't heard")
+            .unwrap();
+    let examples = lead.split("## Examples of the tone").nth(1).unwrap();
+    let examples = examples.split("\n## ").next().unwrap();
+    for line in examples.lines().filter(|l| l.starts_with("You:")) {
+        assert!(
+            !nag.is_match(line),
+            "the lead nags in its own example: {line}"
+        );
+    }
+    let reminders = examples
+        .lines()
+        .filter(|l| l.contains("digest day"))
+        .count();
+    assert_eq!(
+        reminders, 1,
+        "the open question comes up again once: {examples}"
     );
 }

@@ -36,7 +36,7 @@ fn hub(clock: Arc<ManualClock>) -> (Arc<Hub>, tempfile::TempDir) {
         listen: Listen::default(),
         url: None,
         queue_ttl_sec: None,
-        router_model: None,
+        retro_model: None,
     };
     let hub = build_on(HubDb::open_memory().unwrap(), config, clock).unwrap();
     hub.db
@@ -711,19 +711,12 @@ async fn the_estimate_rises_with_observed_stages_and_falls_only_with_an_explaine
     );
 }
 
-/// Needs you counts open asks; every event that opens or closes one, including a held answer and its undo, must mark
-/// the status doc dirty or a live view keeps a skipped ask listed or an undone one missing.
+/// Needs you counts open requests; every event that opens or settles one must mark the status doc dirty, or a live
+/// view keeps a settled request listed.
 #[test]
-fn every_event_that_opens_or_closes_an_ask_is_followed() {
+fn every_event_that_opens_or_settles_a_request_is_followed() {
     use fleetd_contracts::events::HubEventType as E;
-    for t in [
-        E::AskCreated,
-        E::AskAuto,
-        E::AskClosed,
-        E::AskAnswered,
-        E::AskUndone,
-        E::AskDelivered,
-    ] {
+    for t in [E::RequestOpened, E::RequestUpdated] {
         assert!(super::FOLLOWED.contains(&t), "{}", t.as_str());
     }
 }
