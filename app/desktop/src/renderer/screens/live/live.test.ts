@@ -68,9 +68,9 @@ describe("the live strip", () => {
     ]);
     expect(stripHeadline(s)).toBe("1 agent working · 1 needs you · 1 on hold · 1 queued");
     expect(s.rows.map((r) => (r.kind === "agent" ? [r.roleWord, r.words, r.machine] : r.kind))).toEqual([
-      ["implementer", "editing", "src/a.ts"],
+      ["writer", "editing", "src/a.ts"],
       ["reviewer", "waiting on you: approve npm install", undefined],
-      ["implementer", "usage limit until 14:00", undefined],
+      ["writer", "usage limit until 14:00", undefined],
       ["verifier", "queued", undefined],
     ]);
   });

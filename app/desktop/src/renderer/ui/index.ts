@@ -49,7 +49,8 @@ export { Popover, PopoverTrigger, PopoverContent, PopoverClose, PopoverAnchor } 
 export { Tabs, TabList, Tab, TabPanel } from "./primitives/Tabs";
 export { toast, type ToastInput, type ToastTone } from "./primitives/Toast";
 export { ScrollArea, type ScrollAreaProps } from "./primitives/ScrollArea";
-export { Dot, StatusChip, RoleTag, roleTint, Separator, type StatusTone, type AgentRole } from "./primitives/Chips";
+export { Dot, StatusChip, RoleTag, roleTint, Separator, type StatusTone } from "./primitives/Chips";
+export { ROLE_WORD, type AgentRole } from "./primitives/roles";
 
 export { Code, InlineCode, type CodeProps } from "./markdown/Code";
 export { resolveLang, langForPath, type CodeLang } from "./markdown/highlighter";

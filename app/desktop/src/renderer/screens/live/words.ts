@@ -2,6 +2,7 @@
 // you", danger only on failure words, and everything that is just working stays quiet.
 import type { AgentLane, AgentRole, ChangeState, LaneStatus } from "./contracts";
 import { fmtElapsed, parseMs } from "./format";
+import { ROLE_WORD } from "../../ui";
 
 export type Tone = "quiet" | "loud" | "warning" | "danger" | "success";
 
@@ -15,14 +16,7 @@ export const isWorking = (s: LaneStatus): boolean => s === "starting" || s === "
 
 export const isChecker = (role: AgentRole): boolean => role === "reviewer" || role === "verifier" || role === "qa";
 
-export const ROLE_WORD: Record<AgentRole, string> = {
-  lead: "lead",
-  implementer: "implementer",
-  reader: "reader",
-  reviewer: "reviewer",
-  verifier: "verifier",
-  qa: "qa",
-};
+export { ROLE_WORD };
 
 /** The tint family: writers (implementers, readers), reviewers, verifiers (and QA), the lead. */
 export type Tint = "writer" | "reviewer" | "verifier" | "lead";

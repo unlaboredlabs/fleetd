@@ -1,6 +1,7 @@
 // Words and figures for the time inspector: durations read like the CLI's, and every figure that is a bound, a
 // split or an approximation says so (spec §2f) with the same mark everywhere.
 import { KIND_CATEGORY, SPAN_KINDS, type AgentRole, type Category, type Coverage, type Gap, type Span, type SpanKind } from "./types.ts";
+import { ROLE_WORD } from "../../ui/primitives/roles.ts";
 
 /** What the hub's ids are called on screen. Built from the live store by whoever mounts the screen. */
 export interface Names {
@@ -132,14 +133,7 @@ export const KIND_WORD: Record<SpanKind, string> = {
   gap: "missing data",
 };
 
-export const ROLE_WORD: Record<AgentRole, string> = {
-  lead: "lead",
-  implementer: "implementer",
-  reader: "reader",
-  reviewer: "reviewer",
-  verifier: "verifier",
-  qa: "QA",
-};
+export { ROLE_WORD };
 
 /** The marks a figure can carry: approximate, an upper bound, whole-second precision, or a rule-based split. */
 export type Mark = "≈" | "≤" | "±1 s" | "split" | "";

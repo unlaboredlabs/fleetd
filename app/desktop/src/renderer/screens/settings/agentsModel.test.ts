@@ -22,7 +22,7 @@ describe("max agents", () => {
     expect(projectAgents(slots, { machineId: "devbox", projectId: "new" })).toEqual({ running: 0, queued: 0, max: 12, cap: 12, own: false });
     // A share above a cap lowered later is held to the cap.
     expect(projectAgents({ ...slots, cap: 4 }, storefront).max).toBe(4);
-    expect(agentsLabel(projectAgents(slots, storefront))).toBe("agents 6 / 6 · 2 waiting");
+    expect(agentsLabel(projectAgents(slots, storefront))).toBe("agents 6 / 6 · 2 queued");
     expect(agentsLabel(projectAgents(slots, billing))).toBe("agents 2 / 12");
   });
 
@@ -32,11 +32,11 @@ describe("max agents", () => {
     expect(extrasOver(2, 4)).toBe(0);
     expect(changeLine(a, 4)).toBe("6 running now, 2 over the new max: they finish their current work, and new agents wait until fewer than 4 run.");
     expect(changeLine(a, 1)).toMatch(/new agents wait until none is running\.$/u);
-    expect(changeLine(a, 9)).toBe("Up to 9 at once. 2 of the 2 waiting can start now.");
+    expect(changeLine(a, 9)).toBe("Up to 9 at once. 2 of the 2 queued can start now.");
     expect(changeLine(projectAgents(slots, billing), 6)).toBe("Up to 6 at once. New agents wait while 6 run.");
     expect(pauseLine(2)).toBe("Pause the 2 extras now");
     expect(pauseLine(1)).toBe("Pause the extra one now");
-    expect(changeLine(a, 6)).toBe("6 agents running now, 2 waiting.");
+    expect(changeLine(a, 6)).toBe("6 agents running now, 2 queued.");
     expect(changeLine(projectAgents(slots, billing), 12)).toBe("2 agents running now.");
     expect(serialNote(1)).toMatch(/One agent at a time/u);
     expect(serialNote(2)).toBeNull();

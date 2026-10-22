@@ -23,7 +23,7 @@ export const listItems = (agents: readonly LiveAgent[]): readonly ListItem[] => 
 };
 
 /**
- * "18 working · 1 waiting on you · 1 queued", the leads not counted, so it agrees with the sidebar's count; empty
+ * "18 working · 1 needs you · 1 queued", the leads not counted, so it agrees with the sidebar's count; empty
  * when none of the three.
  */
 export const headline = (agents: readonly LiveAgent[]): string => {
@@ -36,7 +36,7 @@ export const headline = (agents: readonly LiveAgent[]): string => {
     else if (row.status === "waiting") waiting++;
     else if (row.status === "queued") queued++;
   }
-  return [working > 0 ? `${String(working)} working` : "", waiting > 0 ? `${String(waiting)} waiting on you` : "", queued > 0 ? `${String(queued)} queued` : ""]
+  return [working > 0 ? `${String(working)} working` : "", waiting > 0 ? `${String(waiting)} ${waiting === 1 ? "needs" : "need"} you` : "", queued > 0 ? `${String(queued)} queued` : ""]
     .filter((p) => p !== "")
     .join(" · ");
 };
