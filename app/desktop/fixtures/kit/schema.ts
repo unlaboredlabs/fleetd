@@ -91,6 +91,8 @@ const payloads = (f: Fixture, problems: Array<string>): Array<Payload> => {
   f.events.forEach((e, i) => out.push({ what: `event ${i} (${asText(e["type"])})`, fn: validator("HubEvent.json", "#/$defs/HubEvent"), value: e }));
   f.live.forEach((frame, i) => out.push({ what: `live ${i}`, fn: validator("AppServerMessage.json", "#/$defs/LiveFrame"), value: frame }));
   for (const t of f.timeline) {
+    // The connection's state is the app's own type (shared/hub.ts), which main's loader checks.
+    if (t.kind === "state") continue;
     const fn =
       t.kind === "event"
         ? validator("HubEvent.json", "#/$defs/HubEvent")

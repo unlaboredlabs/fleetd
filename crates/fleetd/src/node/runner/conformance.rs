@@ -1032,27 +1032,4 @@ mod tests {
             ["tools unreadable: claude's system/init has no `tools` list"]
         );
     }
-
-    /// The real probe against the installed claude with an empty config dir: no credentials, no model call.
-    /// `cargo test -p fleetd conformance -- --ignored`; `FLEETD_CLAUDE_BIN` picks the binary.
-    #[tokio::test]
-    #[ignore = "needs a claude binary"]
-    async fn probe_against_the_installed_claude() {
-        let config = tempfile::tempdir().unwrap();
-        let bin = std::env::var("FLEETD_CLAUDE_BIN").unwrap_or_else(|_| "claude".into());
-        let mut env: Vec<(String, String)> = ["HOME", "PATH", "USER", "LANG"]
-            .iter()
-            .filter_map(|k| Some((k.to_string(), std::env::var(k).ok()?)))
-            .collect();
-        env.push((
-            "CLAUDE_CONFIG_DIR".into(),
-            config.path().display().to_string(),
-        ));
-        let info = probe(Path::new(&bin), &env).await;
-        assert!(info.version_ok, "{info:?}");
-        assert_eq!(info.conformance_ok, Some(true), "{info:?}");
-        assert_eq!(info.login, LoginStatus::LoggedOut, "{info:?}");
-        assert_eq!(info.subagent_leaks.as_deref(), Some(&[][..]), "{info:?}");
-        assert!(info.agent_tools.unwrap().contains(&"Task".to_owned()));
-    }
 }

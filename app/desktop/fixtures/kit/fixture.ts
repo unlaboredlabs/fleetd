@@ -14,7 +14,7 @@ export interface HubErrorJson {
   readonly fix?: string | undefined;
 }
 
-type TimedKind = "event" | "live" | "snapshot" | "chat_delta";
+type TimedKind = "event" | "live" | "snapshot" | "chat_delta" | "state";
 
 /** Rows of `tool`'s answers under `field` matching `where`, e.g. requests_list's requests with requestId Q1. */
 export interface Rows {
@@ -50,6 +50,7 @@ const timedFrame = (kind: TimedKind, payload: JsonObject, afterMs: number): Fixt
   const num = (v: JsonValue | undefined) => (typeof v === "number" ? v : 0);
   if (kind === "snapshot") return { t: "snapshot", snapshot: { ...payload, cursor: num(payload["cursor"]) }, afterMs };
   if (kind === "event") return { t: "event", event: { ...payload, seq: num(payload["seq"]), type: asText(payload["type"]) }, afterMs };
+  if (kind === "state") return { t: "state", state: payload as unknown as HubState, afterMs };
   if (kind === "chat_delta") {
     const delta = { ...payload, messageId: asText(payload["messageId"]), offset: num(payload["offset"]), append: asText(payload["append"]) };
     return { t: "chat_delta", delta, afterMs };
@@ -139,10 +140,18 @@ export class Fixture {
     let ms = 0;
     for (const frame of file.frames) {
       ms += frame.afterMs ?? 0;
-      // A streamed chat frame only makes sense on the timeline, after the chat's first page.
-      if ((ms > 0 || frame.t === "chat_delta") && frame.t !== "error") {
+      // A streamed chat frame or a change of connection only makes sense on the timeline, after the first page.
+      if ((ms > 0 || frame.t === "chat_delta" || frame.t === "state") && frame.t !== "error") {
         const payload =
-          frame.t === "snapshot" ? frame.snapshot : frame.t === "event" ? frame.event : frame.t === "chat_delta" ? frame.delta : frame.frame;
+          frame.t === "snapshot"
+            ? frame.snapshot
+            : frame.t === "event"
+              ? frame.event
+              : frame.t === "chat_delta"
+                ? frame.delta
+                : frame.t === "state"
+                  ? frame.state
+                  : frame.frame;
         f.timeline.push({ ms, kind: frame.t, payload: clone(payload as JsonObject) });
       } else if (frame.t === "snapshot") f.snapshot = clone(frame.snapshot as JsonObject);
       else if (frame.t === "event") f.events.push(clone(frame.event as JsonObject));

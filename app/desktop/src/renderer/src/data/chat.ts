@@ -22,6 +22,8 @@ export const CHAT_PAGE = 50;
 /** A lead message's streamed text so far. */
 export interface Stream {
   readonly text: string;
+  /** When its first frame arrived, on the hub's clock: the row's time while its message isn't listed yet. */
+  readonly at: string;
 }
 
 export interface Chat {
@@ -164,15 +166,17 @@ export const applyHistory = (chat: Chat, page: ChatHistoryOutput, direction: "la
  * One streamed frame, placed by its offset (the text's UTF-16 length before it): it extends the text when it starts
  * at its end, a repeat (or the part already held) is skipped, and one starting past the end marks a gap (the latest
  * page is read again). A final message takes no more. A chat joined mid-message goes on from history's text.
+ * `hubNowMs` stamps a new stream with its arrival.
  */
-export const applyDelta = (chat: Chat, d: ChatDelta): Chat => {
+export const applyDelta = (chat: Chat, d: ChatDelta, hubNowMs: number): Chat => {
   const message = chat.messages.find((m) => m.messageId === d.messageId);
   if (message !== undefined && !streaming(message)) return chat;
   const text = chat.streams[d.messageId]?.text ?? message?.text ?? "";
   if (d.offset > text.length) return { ...chat, gap: true };
   if (d.offset + d.append.length <= text.length) return chat;
   const next = text + d.append.slice(text.length - d.offset);
-  return { ...chat, streams: { ...chat.streams, [d.messageId]: { text: next } } };
+  const at = chat.streams[d.messageId]?.at ?? new Date(hubNowMs).toISOString();
+  return { ...chat, streams: { ...chat.streams, [d.messageId]: { text: next, at } } };
 };
 
 // The person's messages on their way.
@@ -302,13 +306,16 @@ const sendItem = (r: ChatSend): ChatItem => ({
   clientRequestId: r.clientRequestId,
 });
 
-/** The rows, oldest first: the hub's messages, a stream with no message yet as the lead's, then the person's sends. */
+/**
+ * The rows, oldest first: the hub's messages, a stream with no message yet as the lead's (deltas are pushed at once,
+ * while its `chat.message` event can wait behind a burst of events or a reconnect's backlog), then the person's sends.
+ */
 export const chatItems = (chat: Chat, sends: readonly ChatSend[]): readonly ChatItem[] => {
   const items = chat.messages.map((m) => messageItem(m, chat));
   const known = new Set(chat.messages.map((m) => m.messageId));
   for (const [id, s] of Object.entries(chat.streams)) {
     if (known.has(id)) continue;
-    items.push({ id, author: "lead", kind: "message", text: s.text, at: "", attachments: noAttachments, state: "streaming" });
+    items.push({ id, author: "lead", kind: "message", text: s.text, at: s.at, attachments: noAttachments, state: "streaming" });
   }
   return [...items, ...sends.map(sendItem)];
 };

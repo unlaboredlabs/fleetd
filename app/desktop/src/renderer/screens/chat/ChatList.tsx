@@ -15,6 +15,7 @@ import { shortClock } from "./format";
 import { systemHeadline, type Row, type TopState } from "./model";
 import { MessageReceipt } from "./Composer";
 import { LiveStrip } from "../live";
+import { Boundary } from "../../src/Boundary";
 import type { ChatItem as InlineItem } from "../../../shared/contracts";
 import { InlineChatItem } from "../inline";
 import type { ProjectRef } from "./slots";
@@ -195,7 +196,9 @@ const RowView = memo(function RowView(props: {
     case "strip":
       return (
         <div className={s.strip}>
-          <LiveStrip project={project} onTold={props.onTold} />
+          <Boundary part="the live strip">
+            <LiveStrip project={project} onTold={props.onTold} />
+          </Boundary>
         </div>
       );
     case "message": {

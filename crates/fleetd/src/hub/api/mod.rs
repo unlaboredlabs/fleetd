@@ -27,7 +27,7 @@ mod m1;
 mod registry;
 
 pub use grants::*;
-pub use registry::{CallError, Caller, Registry, ToolError, ToolFuture};
+pub use registry::{CallError, Caller, Registry, ToolError};
 
 use crate::clock::Clock;
 use crate::hub::auth::Auth;

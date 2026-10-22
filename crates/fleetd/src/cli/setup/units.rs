@@ -7,15 +7,6 @@ pub enum Platform {
     Darwin,
 }
 
-impl Platform {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Platform::Linux => "linux",
-            Platform::Darwin => "darwin",
-        }
-    }
-}
-
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Role {
     Hub,

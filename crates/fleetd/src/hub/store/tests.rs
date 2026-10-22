@@ -1,3 +1,5 @@
+use super::event_log::WaitResult;
+use super::migrations::MIGRATIONS;
 use super::test_clock::ManualClock;
 use super::*;
 use crate::hub::auth::{Auth, AuthError};
@@ -62,7 +64,7 @@ async fn opens_a_database_written_by_the_ts_hub_unchanged() {
     std::fs::copy(fixture("ts-hub.sqlite"), home.0.join("hub.sqlite")).unwrap();
 
     let db = HubDb::open(&home.0).unwrap();
-    assert_eq!(db.user_version().unwrap(), SCHEMA_VERSION as i64);
+    assert_eq!(db.user_version().unwrap(), MIGRATIONS.len() as i64);
     assert_eq!(
         schema(&db),
         schema(&HubDb::open_memory().unwrap()),
@@ -141,8 +143,16 @@ async fn opens_a_database_written_by_the_ts_hub_unchanged() {
 
     let auth = Auth::new(db.clone(), clock.clone());
     let agent = auth.verify(secrets["agentKey"].as_str().unwrap()).unwrap();
-    assert!(auth.allows(&agent, Role::Operate, Some(&m("lab-a"))));
-    assert!(!auth.allows(&agent, Role::Operate, Some(&m("lab-b"))));
+    assert!(crate::hub::auth::allows(
+        &agent,
+        Role::Operate,
+        Some(&m("lab-a"))
+    ));
+    assert!(!crate::hub::auth::allows(
+        &agent,
+        Role::Operate,
+        Some(&m("lab-b"))
+    ));
     let human = auth
         .verify(&format!("Bearer {}", secrets["humanKey"].as_str().unwrap()))
         .unwrap();

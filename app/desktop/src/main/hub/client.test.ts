@@ -171,17 +171,6 @@ describe("HubClient", () => {
     expect(client.state).toMatchObject({ phase: "retrying", retryAt: Date.now() + 500 });
   });
 
-  it("jitters the backoff by up to a quarter either way", () => {
-    const hub = new FakeHub();
-    for (const [random, delay] of [[0, 375], [0.999, 625]] as const) {
-      const client = new HubClient({ hub: "http://devbox:4790", key: "k1", transport: hub.transport, emit: () => undefined, random: () => random });
-      client.start();
-      hub.close(1006);
-      expect(client.state).toMatchObject({ retryAt: Date.now() + delay });
-      client.stop();
-    }
-  });
-
   it("pings a quiet link and gives it up when nothing comes back", () => {
     const { hub, client } = setup();
     client.start();

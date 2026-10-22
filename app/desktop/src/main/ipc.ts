@@ -1,5 +1,6 @@
 import { clipboard, ipcMain, Menu, shell, type IpcMainInvokeEvent } from "electron";
 import { IPC, type InvokeChannel } from "../shared/channels";
+import type { AppLog } from "./applog";
 import { parseRequest, type RequestArgs } from "../shared/ipc";
 import type { OpenOutcome } from "../shared/hub";
 import { externalUrl } from "./external";
@@ -31,7 +32,11 @@ const handle = <C extends InvokeChannel>(
   });
 };
 
-export const registerIpc = (hub: HubService, frame: { opener: Opener; notifier: Notifier }, pairing: PairingService): void => {
+export const registerIpc = (
+  hub: HubService,
+  frame: { opener: Opener; notifier: Notifier; log: AppLog },
+  pairing: PairingService,
+): void => {
   handle(IPC.hubState, () => hub.state());
   handle(IPC.hubSubscribe, (event) => hub.subscribe(event.sender));
   handle(IPC.hubUnsubscribe, (event) => hub.unsubscribe(event.sender));
@@ -69,4 +74,7 @@ export const registerIpc = (hub: HubService, frame: { opener: Opener; notifier: 
   handle(IPC.appNotify, (_event, request) => frame.notifier.show(request));
   handle(IPC.appLinkHandler, (_event, claim) => (claim === null ? linkHandlerStatus() : claimLinkHandler(claim)));
   handle(IPC.appMenuState, (_event, enabled) => applyMenuState(Menu.getApplicationMenu(), enabled));
+  handle(IPC.appLog, (_event, { what, route, ...error }) => {
+    frame.log.write({ source: "window", what, route, error });
+  });
 };

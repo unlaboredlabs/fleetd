@@ -96,6 +96,11 @@ export const fixtures = [
   "offline-reread-failed",
   // ...and the inline items' chat from the cache, with no hub (fixtures/inline).
   "inline-offline",
+  // The sequences that blanked the window (fixtures/resilience): a hub restart mid-chat, a burst of plan items with
+  // a new reply streaming, and the link dropping mid-reply.
+  "resilience-burst",
+  "resilience-hub-restart",
+  "resilience-reconnect-streaming",
 ] as const;
 export type FixtureName = (typeof fixtures)[number];
 
@@ -124,8 +129,15 @@ export interface Screen {
   // the test title and the file names.
   variant?: string;
   // The route is meant to land on an error or not-found state ("<id>.error"). Without this, such a state fails the
-  // test: a route to a missing entity would otherwise check an empty error page and pass.
-  expect?: "error";
+  // test: a route to a missing entity would otherwise check an empty error page and pass. "card": an error card
+  // (src/renderer/src/Boundary.tsx) is the point; every other entry fails while one is up, or the window is blank.
+  expect?: "error" | "card";
+  // Once the screen is up, plays the fixture's timeline again with it open (the app opens on another project), and
+  // checks the screen after the last frame: for sequences such as a hub restart mid-chat (fixtures/resilience).
+  replay?: true;
+  // Runs on the real clock, not the fixture's fixed one. Playwright's fake clock formats an invalid date as now
+  // (Intl.DateTimeFormat#format(NaN)), where the real one throws: a crash that blanked the window hid behind it.
+  realClock?: true;
 }
 
 const gallerySections = [
@@ -146,6 +158,11 @@ const gallerySections = [
 // The fixtures' storefront project, a real hub project from the sanitized recording, so its id is a UUID; it shows
 // only in the route, never as text.
 const CHAT = "#/project/devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22";
+
+/** Makes a part throw while rendering, in the QA build (src/renderer/src/Boundary.tsx), so its error card shows. */
+const crash = (part: string) => async (page: Page) => {
+  await page.evaluate((p) => window.dispatchEvent(new CustomEvent("fleetd:qa-crash", { detail: p })), part);
+};
 
 /** An entry's name in test titles, shot files and the contact sheet. */
 export const label = (s: Pick<Screen, "id" | "variant">) => (s.variant === undefined ? s.id : `${s.id}~${s.variant}`);
@@ -377,6 +394,35 @@ export const screens: readonly Screen[] = [
   },
   // UX-1 [10]: just set up, no chat has a message yet: the empty chat shows the checklist on its last step.
   { id: "chat", route: CHAT, fixtures: ["onboarding-first-chat"], variant: "first-chat" },
+  // Sequences that once blanked the window, replayed to the end: the chat must still be up, with no error card.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["resilience-burst", "resilience-hub-restart", "resilience-reconnect-streaming"],
+    variant: "resilience",
+    replay: true,
+    realClock: true,
+  },
+  // The error card itself, in place of the chat (the frame around it still works) and of the sidebar (the chat still
+  // works). The QA build's probe makes the part throw.
+  { id: "shell", route: CHAT, fixtures: ["typical", "long-text"], variant: "chat-card", expect: "card", open: crash("the chat") },
+  { id: "chat", route: CHAT, fixtures: ["typical"], variant: "sidebar-card", expect: "card", open: crash("the sidebar") },
+  // `#/` set again while it is turning into the last project's chat (#251), here mid-stream.
+  {
+    id: "chat",
+    route: "#/",
+    fixtures: ["chat-streaming"],
+    variant: "home-reset",
+    realClock: true,
+    open: async (page) => {
+      for (let i = 0; i < 5; i++) {
+        await page.evaluate(() => {
+          window.location.hash = "#/";
+        });
+        await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => done(null))));
+      }
+    },
+  },
   // A link to a project the hub doesn't have (here, a hub with none): says so, rather than loading forever.
   { id: "chat", route: CHAT, fixtures: ["empty"], variant: "missing", expect: "error" },
   // A5 (F5): the two inline items, every state: the masked secret field, the exact command with Approve / Deny, open

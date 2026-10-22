@@ -239,7 +239,7 @@ export const applyFrame = (s: DataState, frame: HubFrame, nowMs: number): [DataS
     case "event":
       return [applyEvent(s, frame.event), {}];
     case "chat_delta":
-      return [applyChatDelta(s, frame.delta), {}];
+      return [applyChatDelta(s, frame.delta, nowMs + (s.live.skewMs ?? 0)), {}];
     case "live":
       return [{ ...s, live: { ...applyLive(s.live, frame.frame, nowMs), streams: applyStreams(s.live.streams, frame.frame) } }, {}];
     case "error":
@@ -300,11 +300,11 @@ const applyChatEvent = (s: DataState, event: HubEvent): DataState => {
 };
 
 /** A streamed frame of the subscribed chat. */
-export const applyChatDelta = (s: DataState, d: ChatDelta): DataState => {
+export const applyChatDelta = (s: DataState, d: ChatDelta, hubNowMs: number): DataState => {
   const key = projectKey(d.projectRef);
   const chat = s.chats[key];
   if (chat?.loaded !== true) return s;
-  const next = applyDelta(chat, d);
+  const next = applyDelta(chat, d, hubNowMs);
   return next === chat ? s : { ...s, chats: { ...s.chats, [key]: next } };
 };
 

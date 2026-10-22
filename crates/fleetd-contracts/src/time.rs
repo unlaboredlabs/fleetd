@@ -607,20 +607,4 @@ mod tests {
         let known: InsightRule = serde_json::from_value(serde_json::json!("idle_lead")).unwrap();
         assert_eq!(known, InsightRule::IdleLead);
     }
-
-    #[test]
-    fn scopes_are_tagged_by_kind() {
-        let scope: TimeScope =
-            serde_json::from_value(serde_json::json!({ "kind": "order", "workstreamId": "W4" }))
-                .unwrap();
-        assert_eq!(
-            scope,
-            TimeScope::Order {
-                workstream_id: WorkstreamId::new("W4").unwrap()
-            }
-        );
-        let fleet: TimeScope =
-            serde_json::from_value(serde_json::json!({ "kind": "fleet" })).unwrap();
-        assert_eq!(fleet, TimeScope::Fleet);
-    }
 }

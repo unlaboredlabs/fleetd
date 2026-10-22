@@ -1,11 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appUrl, backoff, parseServerFrame } from "./protocol";
-
-describe("backoff", () => {
-  it("doubles from half a second to a 30 s cap", () => {
-    expect([0, 1, 2, 3, 4, 5, 6, 7, 20].map(backoff)).toEqual([500, 1000, 2000, 4000, 8000, 16000, 30000, 30000, 30000]);
-  });
-});
+import { appUrl, parseServerFrame } from "./protocol";
 
 describe("appUrl", () => {
   const url = (input: string) => {

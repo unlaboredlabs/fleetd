@@ -31,7 +31,6 @@ const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 /// The hub refused this node in a way retrying cannot fix (bad key or token, protocol mismatch).
 #[derive(Debug)]
 pub struct LinkFatal {
-    pub code: u16,
     pub reason: String,
 }
 
@@ -210,7 +209,7 @@ async fn next_frame(
                     } else {
                         reason
                     };
-                    return Err(LinkEnd::Fatal(LinkFatal { code, reason }));
+                    return Err(LinkEnd::Fatal(LinkFatal { reason }));
                 }
                 return Err(LinkEnd::Lost(
                     format!("hub closed the link ({code} {reason})")
@@ -282,7 +281,6 @@ async fn run_link_once(
     let hub_id = match next_frame(&mut stream, HANDSHAKE_TIMEOUT, "welcome").await {
         Ok(HubToNode::Welcome(welcome)) if welcome.protocol.get() != PROTOCOL_VERSION => {
             return LinkEnd::Fatal(LinkFatal {
-                code: close::PROTOCOL_MISMATCH,
                 reason: format!(
                     "hub speaks protocol {}, node speaks {PROTOCOL_VERSION}: install matching fleetd versions",
                     welcome.protocol.get()

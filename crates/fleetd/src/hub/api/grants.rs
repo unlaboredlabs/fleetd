@@ -11,16 +11,11 @@ pub mod limits {
     pub const PROJECTS: usize = 50;
     pub const ATTENTION: usize = 10;
     pub const OUTCOME_THREADS: usize = 20;
-    pub const OUTCOME_WORKSTREAMS: usize = 20;
     pub const TAIL_TEXT: usize = 2000;
     pub const WAKES: usize = 200;
-    pub const WORKSTREAM_ASKS: usize = 50;
-    pub const BATCHES: usize = 20;
-    pub const ASKS: usize = 100;
     pub const OUTCOME_TASKS: usize = 20;
     /// Threads read to fill `OUTCOME_THREADS` once task threads are left out.
     pub const OUTCOME_THREAD_SCAN: usize = 200;
-    pub const WORKSTREAM_CLAIMS: usize = 20;
     pub const TRAINS: usize = 10;
 }
 

@@ -95,10 +95,6 @@ impl FakeRunner {
 }
 
 impl Runner for FakeRunner {
-    fn kind(&self) -> RunnerKind {
-        RunnerKind::Claude
-    }
-
     fn probe<'a>(&'a self, _env: &'a [(String, String)]) -> BoxFut<'a, RunnerInfo> {
         Box::pin(async {
             RunnerInfo {

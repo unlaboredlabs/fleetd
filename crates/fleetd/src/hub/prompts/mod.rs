@@ -15,7 +15,7 @@ use fleetd_contracts::events::HubEventType;
 use serde_json::json;
 
 pub use registry::Audience;
-pub use store::{PromptError, PromptSet, Prompts};
+pub use store::PromptSet;
 
 use crate::hub::store::{EventLog, HubDb, NewEvent, StoreError};
 

@@ -58,6 +58,8 @@ export const IPC = {
   appLinkHandler: "app:linkHandler",
   /** invoke(MenuCommand[]) → void. The menu commands enabled now; main greys out the rest. */
   appMenuState: "app:menuState",
+  /** invoke(ErrorReport) → void. An error the page caught (an error card, an uncaught error); main logs it, scrubbed. */
+  appLog: "app:log",
   /** main → renderer: a command id (shared/shortcuts.ts or the palette registry), from a click in the app menu. */
   menuCommand: "menu:command",
   /** main → renderer: OpenTarget, from a clicked notification or a fleetd:// link. */

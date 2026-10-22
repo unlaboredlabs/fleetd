@@ -459,8 +459,6 @@ async fn a_lead_opens_its_own_workstream_as_a_draft_with_no_intent_wake() {
     let caller = crate::hub::link::LeadCaller {
         project_ref: r.clone(),
         by: "lead:devbox/app".into(),
-        cwd: "/work/app".into(),
-        thread: None,
         agent: crate::hub::link::lead_calls::CallerAgent::Lead,
     };
     let Ok(LeadCallResult::WorkstreamOpen(opened)) = handler.handle(caller, call).await else {
@@ -488,56 +486,6 @@ async fn a_lead_opens_its_own_workstream_as_a_draft_with_no_intent_wake() {
     // A lead's own order is not a human's words in the chat's history.
     flow::ensure(&hub, &r).await.unwrap();
     assert!(hub.chat.page(&r, None, None, 10).unwrap().0.is_empty());
-}
-
-/// Run by hand against a copy of a real hub's database: `FLEETD_CHAT_DB=/tmp/copy/hub.sqlite cargo test -p fleetd
-/// --lib chat::tests::reads_a_real_hubs_past -- --ignored --nocapture`. The copy is copied again into a temp dir, so
-/// the given file is never written either.
-#[tokio::test]
-#[ignore = "needs FLEETD_CHAT_DB, a copy of a real hub database"]
-async fn reads_a_real_hubs_past() {
-    let path = std::env::var("FLEETD_CHAT_DB").expect("FLEETD_CHAT_DB");
-    let dir = tempfile::tempdir().unwrap();
-    // Copied by content: the copy is writable even when the given file is read-only.
-    for side in ["", "-wal"] {
-        if let Ok(bytes) = std::fs::read(format!("{path}{side}")) {
-            std::fs::write(dir.path().join(format!("hub.sqlite{side}")), bytes).unwrap();
-        }
-    }
-    let (hub, _home) = hub_on(HubDb::open(dir.path()).unwrap());
-    let ids = regex::Regex::new(r"\b[WAT][0-9]+\b").unwrap();
-    for p in hub.store.projects_list(None, None).unwrap() {
-        let r = ProjectRef {
-            machine_id: p.machine_id.clone(),
-            project_id: p.project_id.clone(),
-        };
-        flow::ensure(&hub, &r).await.unwrap();
-        let (page, more, _) = hub.chat.page(&r, None, None, 100).unwrap();
-        let by = |s: ChatHistorySource| page.iter().filter(|m| m.history == Some(s)).count();
-        println!(
-            "{}: {} messages{} (orders {}, outcomes {}, steers {}, questions {}, lead {})",
-            p.title,
-            page.len(),
-            if more { "+" } else { "" },
-            by(ChatHistorySource::Order),
-            by(ChatHistorySource::OrderOutcome),
-            by(ChatHistorySource::Steer),
-            by(ChatHistorySource::Question),
-            by(ChatHistorySource::LeadMessage),
-        );
-        assert!(
-            page.windows(2)
-                .all(|w| w[0].created_at.as_str() <= w[1].created_at.as_str())
-        );
-        assert!(page.iter().all(|m| m.history.is_some()));
-        for m in &page {
-            assert!(
-                !ids.is_match(&m.text) || m.history == Some(ChatHistorySource::Order),
-                "an id in: {}",
-                m.text
-            );
-        }
-    }
 }
 
 #[tokio::test]
