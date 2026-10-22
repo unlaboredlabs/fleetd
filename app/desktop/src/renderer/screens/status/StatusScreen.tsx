@@ -1,5 +1,6 @@
-// Status (⌘.): one row per project. A state word, the two-tone progress bar (solid = verified, lighter = in flight),
-// agents running, last merged. A row opens the project's chat. Detail lives in the hovers; nothing estimates time.
+// Status (⌘.): one row per project under one line of column names. A state word, the two-tone progress bar (solid =
+// verified, lighter = in flight), agents running, last merged. A row opens the project's chat; its PRs link opens the
+// project's PR list. Detail lives in the hovers; nothing estimates time.
 // It cannot be stale: the rows come from the data layer (status_projects, refetched on events), which drops every
 // answer on a reconnect, so the view is a skeleton until this connection has answered; a row whose source went
 // quiet says so.
@@ -7,26 +8,36 @@
 import { useMemo } from "react";
 import type { ProjectStatusRow } from "../../../shared/contracts";
 import { useData, useToolQuery } from "../../src/data/react";
+import { useNow } from "../live/clock";
+import { selectSkew } from "../live/strip";
 import { selectProjectList } from "../../src/data/selectors";
 import { Button, cx, Dot, Text, Tooltip, Truncate } from "../../ui";
 import { asGetOutput } from "./contracts";
 import { barOf, orderRows, STATE_WORDS, type StateWord } from "./rows";
-import { dropLines, staleWords, when } from "./view";
+import { dropLines, fullWhen, staleWords, when } from "./view";
 import s from "./status.module.css";
 
 const ALL = {} as const;
+const MINUTE = 60_000;
 
 /** A project's chat (F1's route table). */
 export const projectHref = (ref: ProjectStatusRow["projectRef"]): string =>
   `#/project/${encodeURIComponent(ref.machineId)}/${encodeURIComponent(ref.projectId)}`;
+
+/** A project's PR list: its chat's route plus /prs (the PR screen's route table). */
+export const prsHref = (ref: ProjectStatusRow["projectRef"]): string => `${projectHref(ref)}/prs`;
+
+/** One phrase wherever there is no bar yet: still planning, or nothing to count. */
+const NO_PROGRESS = "no progress yet";
 
 export function StatusScreen() {
   const fresh = useData((st) => st.fresh);
   const query = useToolQuery("status_projects", ALL);
   const projects = useData(selectProjectList);
   const rows = useMemo(() => (query.data === undefined ? undefined : orderRows(query.data.rows, projects)), [query.data, projects]);
-  // The hub's clock for "merged 14:02": the newest as-of any row carries.
-  const now = rows?.reduce((max, r) => Math.max(max, Date.parse(r.row.asOf) || 0), 0);
+  // The hub's clock for "today 14:02" and "out of date for 11m". Not the rows' as-of: an idle fleet sends no events,
+  // so nothing refetches them, and a day word or an age read from them would stop. Minutes are the finest unit shown.
+  const now = useNow(true, MINUTE) + useData(selectSkew);
 
   return (
     <div className={cx(s.screen)} data-screen="status.fleet" data-phase={rows === undefined ? "skeleton" : "live"}>
@@ -35,12 +46,12 @@ export function StatusScreen() {
         {!fresh ? (
           <span className={cx(s.liveness)} role="status">
             <Dot color="var(--warning)" />
-            <Text size="xs">not live: reconnecting</Text>
+            <Text size="xs">Reconnecting…</Text>
           </span>
         ) : query.isError ? (
           <span className={cx(s.liveness)} role="alert">
             <Dot color="var(--warning)" />
-            <Text size="xs">not live: the hub's answer failed</Text>
+            <Text size="xs">Couldn't refresh Status</Text>
             <Button variant="quiet" onClick={() => void query.refetch()}>
               Retry
             </Button>
@@ -54,8 +65,16 @@ export function StatusScreen() {
           <Text tone="quiet">No projects yet.</Text>
         ) : (
           <ul className={cx(s.rows)} aria-label="Projects">
+            {/* The column names, once; each row's link reads its cells as a sentence instead. */}
+            <li className={cx(s.columns)} aria-hidden>
+              {["Project", "State", "Progress", "Agents", "Last merged"].map((h) => (
+                <Text key={h} size="xs" tone="quiet" className={cx(h === "Agents" && s.agents)}>
+                  {h}
+                </Text>
+              ))}
+            </li>
             {rows.map(({ row, word }) => (
-              <Row key={`${row.projectRef.machineId}/${row.projectRef.projectId}`} row={row} state={word} now={now ?? 0} />
+              <Row key={`${row.projectRef.machineId}/${row.projectRef.projectId}`} row={row} state={word} now={now} />
             ))}
           </ul>
         )}
@@ -68,14 +87,23 @@ const TONE = { waiting_on_you: "warning", blocked: "danger", working: "default",
 
 function Row({ row, state, now }: { row: ProjectStatusRow; state: StateWord; now: number }) {
   const { bar, planning } = barOf(row);
+  const merged = row.lastMerged;
+  const mergedAt = merged === undefined ? "" : when(merged.at, now);
+  const label = [
+    `${row.title}: ${STATE_WORDS[state]}`,
+    ...(row.stale ? [staleWords(row.stale, now)] : []),
+    bar === null ? NO_PROGRESS : `${bar.pct}% done`,
+    row.agentsRunning === 1 ? "1 agent running" : `${row.agentsRunning} agents running`,
+    merged === undefined ? "nothing merged yet" : `last merged ${mergedAt}`,
+  ].join(", ");
   const word = (
     <Text size="sm" strong={state !== "idle"} tone={TONE[state]}>
       {STATE_WORDS[state]}
     </Text>
   );
   return (
-    <li>
-      <a className={cx(s.row)} href={projectHref(row.projectRef)}>
+    <li className={cx(s.item)}>
+      <a className={cx(s.row)} href={projectHref(row.projectRef)} aria-label={label}>
         <span className={cx(s.title)}>
           <Truncate expand="none" strong>
             {row.title}
@@ -84,7 +112,7 @@ function Row({ row, state, now }: { row: ProjectStatusRow; state: StateWord; now
             <Tooltip content={staleWords(row.stale, now)}>
               <span className={cx(s.stale)} tabIndex={0}>
                 <Text size="xs" strong tone="warning">
-                  stale
+                  out of date
                 </Text>
               </span>
             </Tooltip>
@@ -109,29 +137,42 @@ function Row({ row, state, now }: { row: ProjectStatusRow; state: StateWord; now
               <Text size="sm" tabular>{`${bar.pct}%`}</Text>
             </span>
           </Tooltip>
+        ) : planning ? (
+          <Tooltip content="The lead is still planning the work.">
+            <span className={cx(s.progress)} tabIndex={0}>
+              <Text size="xs" tone="quiet">
+                {NO_PROGRESS}
+              </Text>
+            </span>
+          </Tooltip>
         ) : (
           <span className={cx(s.progress)}>
             <Text size="xs" tone="quiet">
-              {planning ? "planning" : "nothing to count yet"}
+              {NO_PROGRESS}
             </Text>
           </span>
         )}
-        <Text size="xs" tone={row.agentsRunning > 0 ? "default" : "quiet"} tabular className={cx(s.agents)}>
-          {row.agentsRunning === 1 ? "1 agent" : `${row.agentsRunning} agents`}
+        <Text size="sm" tone={row.agentsRunning > 0 ? "default" : "quiet"} tabular className={cx(s.agents)}>
+          {row.agentsRunning > 0 ? String(row.agentsRunning) : "–"}
         </Text>
-        {row.lastMerged !== undefined ? (
-          <Tooltip content={row.lastMerged.prNumber === undefined ? row.lastMerged.title : `#${row.lastMerged.prNumber}: ${row.lastMerged.title}`}>
+        {merged !== undefined ? (
+          <Tooltip content={`${merged.prNumber === undefined ? merged.title : `#${merged.prNumber}: ${merged.title}`}, ${fullWhen(merged.at)}`}>
             <span className={cx(s.merged)} tabIndex={0}>
               <Text size="xs" tone="quiet" tabular>
-                merged {when(row.lastMerged.at, now || Date.parse(row.lastMerged.at))}
+                {mergedAt}
               </Text>
             </span>
           </Tooltip>
         ) : (
           <Text size="xs" tone="quiet" className={cx(s.merged)}>
-            nothing merged yet
+            –
           </Text>
         )}
+      </a>
+      <a className={cx(s.prs)} href={prsHref(row.projectRef)} aria-label={`${row.title}: pull requests`}>
+        <Text size="xs" tone="quiet">
+          PRs
+        </Text>
       </a>
     </li>
   );

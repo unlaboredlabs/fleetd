@@ -5,7 +5,7 @@
 // per row (`reach`), so the visible window of a row is two binary searches; spans narrower than a pixel at the
 // current zoom merge into one bar per pixel column coloured by the category with the most time in it. A 15k-span
 // order paints a few hundred rects per visible row at most, and only visible rows are painted.
-import { CAT_LABEL, KIND_WORD, ROLE_WORD, fmtDur, laneName, type Names } from "./format";
+import { CAT_LABEL, KIND_WORD, agentName, fmtDur, laneName, ordinal, type Names } from "./format";
 import { CATEGORIES, type AgentRole, type Category, type Coverage, type CriticalPath, type GapWhy, type Span, type SpanKind } from "./types";
 
 export type RowKind = "lead" | "agent" | "change" | "check" | "requests" | "other";
@@ -13,8 +13,12 @@ export type RowKind = "lead" | "agent" | "change" | "check" | "requests" | "othe
 export interface Row {
   readonly key: string;
   readonly name: string;
-  readonly taskId?: string;
   readonly role?: AgentRole;
+  /** The agent's model ("claude-sonnet-…") and the lane id its live frames carry, when the store knows the lane. */
+  readonly model?: string;
+  readonly laneId?: string;
+  /** Output tokens its model messages report, summed: what it measured, for a lane that is no longer live. */
+  readonly outputTokens: number;
   readonly kind: RowKind;
   /** Half-open range into the item arrays. */
   readonly from: number;
@@ -136,6 +140,12 @@ export const buildModel = (
     else if (s.parent !== undefined && parallel.has(s.id)) barOf.set(s.id, s.parent);
   }
 
+  const tokens = new Map<string, number>();
+  for (const s of spans) {
+    const out = s.kind === "model.message" ? s.extra?.outputTokens : undefined;
+    if (out !== undefined) tokens.set(rowKey(s), (tokens.get(rowKey(s)) ?? 0) + out);
+  }
+
   const groups = new Map<string, { first: number; kind: RowKind; items: number[] }>();
   spans.forEach((s, i) => {
     if (!drawn(s)) return;
@@ -206,14 +216,12 @@ export const buildModel = (
     if (first === undefined) continue;
     const lane = first.threadId === undefined ? undefined : names.threads.get(first.threadId);
     let name: string;
-    let taskId: string | undefined;
     let role: AgentRole | undefined;
     if (g.kind === "lead") {
       name = "lead";
       role = "lead";
     } else if (g.kind === "agent") {
-      name = lane?.title ?? "agent";
-      taskId = lane?.taskId ?? first.taskId;
+      name = lane === undefined ? "an agent" : agentName(lane);
       role = lane?.role;
     } else if (g.kind === "check") {
       name = key.split("#ci#")[1] ?? "check";
@@ -231,16 +239,43 @@ export const buildModel = (
       summary,
       agentMs,
       gaps: rowGaps,
-      ...(taskId === undefined ? {} : { taskId }),
+      outputTokens: tokens.get(key) ?? 0,
       ...(role === undefined ? {} : { role }),
+      ...(lane?.model === undefined ? {} : { model: lane.model }),
+      ...(lane?.laneId === undefined ? {} : { laneId: lane.laneId }),
     });
   }
   // Lanes the hub knows of but has no spans for.
   for (const [lane, g] of [...gaps.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
     const thread = lane.startsWith("thread:") ? lane.split("/")[1] : undefined;
     const known = thread === undefined ? undefined : names.threads.get(thread);
-    const name = known !== undefined ? `${ROLE_WORD[known.role]} ${known.taskId ?? ""} ${known.title}`.replace(/\s+/gu, " ").trim() : "a session with no spans";
-    rows.push({ key: lane, name, kind: "other", from: at, to: at, summary: "", agentMs: 0, gaps: g });
+    const name = known !== undefined ? agentName(known) : "an agent with no timeline";
+    rows.push({
+      key: lane,
+      name,
+      kind: "other",
+      from: at,
+      to: at,
+      summary: "",
+      agentMs: 0,
+      gaps: g,
+      outputTokens: 0,
+      ...(known === undefined ? {} : { role: known.role, ...(known.model === undefined ? {} : { model: known.model }) }),
+    });
+  }
+
+  // Names the store couldn't tell apart (agents it doesn't know, or the same work twice) get their order of start:
+  // agent rows are already in start order, and lanes with no spans come after them.
+  const byName = new Map<string, number[]>();
+  rows.forEach((r, i) => {
+    if (r.kind === "agent" || r.kind === "other") byName.set(r.name, [...(byName.get(r.name) ?? []), i]);
+  });
+  for (const [name, ix] of byName) {
+    if (ix.length < 2) continue;
+    ix.forEach((i, n) => {
+      const r = rows[i];
+      if (r !== undefined) rows[i] = { ...r, name: `${name} · ${ordinal(n + 1)}` };
+    });
   }
 
   const rowIndex = new Map(rows.map((r, i) => [r.key, i] as const));
@@ -410,9 +445,16 @@ const STEPS = [
 export const ticks = (v0: number, v1: number, most = 8): number[] => {
   const span = Math.max(1, v1 - v0);
   const step = STEPS.find((s) => span / s <= most) ?? 86_400_000;
-  const first = Math.ceil(v0 / step) * step;
+  // Round marks on the viewer's clock, not on UTC's: a half-hour zone or a 6h step would otherwise read 10:30 or
+  // 05:00. Stepping is in local time; each tick goes back to hub ms at its own offset, so a DST change stays round.
+  const offset = (t: number) => -new Date(t).getTimezoneOffset() * 60_000;
+  const off0 = offset(v0);
   const out: number[] = [];
-  for (let t = first; t < v1; t += step) out.push(t);
+  for (let local = Math.ceil((v0 + off0) / step) * step; ; local += step) {
+    const t = local - offset(local - off0);
+    if (t >= v1) break;
+    if (t >= v0 && t > (out.at(-1) ?? -Infinity)) out.push(t);
+  }
   return out;
 };
 

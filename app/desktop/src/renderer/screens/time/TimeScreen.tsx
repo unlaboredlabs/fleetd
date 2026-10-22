@@ -15,7 +15,7 @@ import { LinkedSheet, TranscriptSheet } from "./Sheets";
 import { Timeline } from "./Timeline";
 import { linkedKeeps, useLinked, useNames, useTimeData, useWindow, type Linked } from "./data";
 import { loadFilters, queryOf, saveFilters, type Filters } from "./filters";
-import { ROLE_WORD, fmtDur, isMissingEmpty, missing, missingSentence } from "./format";
+import { ROLE_WORD, agentName, fmtDur, isMissingEmpty, missing, missingSentence } from "./format";
 import { barsFor, buildModel } from "./model";
 import { chatRoute } from "./route";
 import type { Category, Span } from "./types";
@@ -229,7 +229,7 @@ export function TimeScreen(props: TimeScreenProps) {
   const coverageText = shown !== undefined && coverage !== undefined ? missingSentence(shown, coverage) : undefined;
 
   const lane = windowAt?.threadId === undefined ? undefined : names.threads.get(windowAt.threadId);
-  const who = lane === undefined ? (windowAt?.taskId ?? "agent") : `${ROLE_WORD[lane.role]} ${lane.taskId ?? ""}`.trim();
+  const who = lane === undefined ? "An agent" : `${ROLE_WORD[lane.role]}: ${agentName(lane)}`;
   const orderOf = windowAt?.workstreamId ?? order;
 
   return (
@@ -321,13 +321,13 @@ export function TimeScreen(props: TimeScreenProps) {
               <Text tone="quiet">{data.breakdown.error}</Text>
             </div>
           ) : (
-            <Breakdown data={data.breakdown.value} order={order !== undefined} missing={shown} pathIds={pathIds} onLinked={showLinked} />
+            <Breakdown data={data.breakdown.value} order={order !== undefined} missing={shown} pathIds={pathIds} onLinked={showLinked} names={names} />
           )}
         </TabPanel>
         <TabPanel value="insights" className={cx(s.panel)}>
           {data.insights === undefined ? (
             <div className={cx(s.empty)} {...(offline === undefined ? {} : { "data-screen": "time.insights.offline" })}>
-              <Text tone="quiet">{offline ?? "Running the hub's rules over this period…"}</Text>
+              <Text tone="quiet">{offline ?? "Asking the hub for findings in this period…"}</Text>
             </div>
           ) : !data.insights.ok ? (
             <div className={cx(s.empty)} data-screen="time.insights.error">

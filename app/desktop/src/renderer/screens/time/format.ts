@@ -3,10 +3,57 @@
 import { KIND_CATEGORY, SPAN_KINDS, type AgentRole, type Category, type Coverage, type Gap, type Span, type SpanKind } from "./types.ts";
 import { ROLE_WORD } from "../../ui/primitives/roles.ts";
 
+export interface Lane {
+  readonly role: AgentRole;
+  readonly title: string;
+  readonly model?: string;
+  readonly laneId?: string;
+  /** Its place by start among agents with the same role and title (two reviewers of one PR); absent when unique. */
+  readonly nth?: number;
+}
+
+/** "1st", "2nd", "3rd", "11th", "22nd". */
+export const ordinal = (n: number): string => {
+  const tens = n % 100;
+  const suffix = tens >= 11 && tens <= 13 ? "th" : (["th", "st", "nd", "rd"][n % 10] ?? "th");
+  return `${n}${suffix}`;
+};
+
+/**
+ * An agent as the screen names it: what it worked on, else its role, never a task number. Agents doing the same
+ * work (every reviewer of one PR is "review #113") are told apart by their order of start: "review #113 · 2nd".
+ */
+export const agentName = (lane: Pick<Lane, "role" | "title" | "nth">): string => {
+  const base = lane.title.trim() !== "" ? lane.title : ROLE_WORD[lane.role];
+  return lane.nth === undefined ? base : `${base} · ${ordinal(lane.nth)}`;
+};
+
+/** Numbers the lanes whose role and title collide, by start (then lane id), so every name on screen is its own. */
+export const numberCollisions = (lanes: ReadonlyMap<string, Lane & { readonly startedAt?: string }>): Map<string, Lane> => {
+  const groups = new Map<string, string[]>();
+  for (const [id, l] of lanes) {
+    const key = `${l.role}\u0000${agentName({ role: l.role, title: l.title })}`;
+    groups.set(key, [...(groups.get(key) ?? []), id]);
+  }
+  const out = new Map<string, Lane>();
+  for (const [id, { startedAt: _, ...l }] of lanes) out.set(id, l);
+  for (const ids of groups.values()) {
+    if (ids.length < 2) continue;
+    const start = (id: string) => lanes.get(id)?.startedAt ?? "";
+    ids
+      .sort((a, b) => start(a).localeCompare(start(b)) || (lanes.get(a)?.laneId ?? a).localeCompare(lanes.get(b)?.laneId ?? b))
+      .forEach((id, i) => {
+        const l = out.get(id);
+        if (l !== undefined) out.set(id, { ...l, nth: i + 1 });
+      });
+  }
+  return out;
+};
+
 /** What the hub's ids are called on screen. Built from the live store by whoever mounts the screen. */
 export interface Names {
-  /** thread id → its lane. */
-  readonly threads: ReadonlyMap<string, { readonly role: AgentRole; readonly taskId?: string; readonly title: string }>;
+  /** thread id → its lane: the agent's role, what it worked on, its model, and the lane id live frames use. */
+  readonly threads: ReadonlyMap<string, Lane>;
   /** The projects' lead threads. */
   readonly leads: ReadonlySet<string>;
   /** change id → PR number. */
@@ -55,10 +102,33 @@ export const fmtBytes = (raw: number): string => {
 
 const two = (n: number) => String(n).padStart(2, "0");
 
-/** "10:21:04" (UTC, as the filter bar's periods are) for a hub ms stamp. */
+// Every time the inspector shows is in the viewer's own zone, as a clock reads: no zone name, no ISO stamps.
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
+
+/** "10:21:04" for a hub ms stamp, local. */
 export const clockMs = (ms: number): string => {
   const d = new Date(ms);
-  return `${two(d.getUTCHours())}:${two(d.getUTCMinutes())}:${two(d.getUTCSeconds())}`;
+  return `${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`;
+};
+
+/** "Oct 12", local. */
+export const dayMs = (ms: number): string => {
+  const d = new Date(ms);
+  return `${MONTHS[d.getMonth()] ?? ""} ${d.getDate()}`;
+};
+
+/** "Oct 12, 09:30", local. */
+export const stampMs = (ms: number): string => {
+  const d = new Date(ms);
+  return `${dayMs(ms)}, ${two(d.getHours())}:${two(d.getMinutes())}`;
+};
+
+
+/** An axis tick: "10:15", "10:15:30" when zoomed under ten minutes, and the day ("Oct 18") at local midnight. */
+export const tickLabel = (t: number, v0: number, v1: number): string => {
+  const d = new Date(t);
+  if (v1 - v0 >= 3_600_000 && d.getHours() === 0 && d.getMinutes() === 0 && d.getSeconds() === 0) return dayMs(t);
+  return v1 - v0 < 10 * 60_000 ? clockMs(t) : clockMs(t).slice(0, 5);
 };
 
 /** "39%", or "<1%" for a sliver that is still there. */
@@ -82,7 +152,7 @@ export const CAT_LABEL: Record<Category, string> = {
   machine: "machine",
   queue: "queue",
   human: "you",
-  pipeline: "CI · review · train",
+  pipeline: "CI · review · merge",
   idle: "idle",
 };
 
@@ -110,18 +180,18 @@ export const KIND_WORD: Record<SpanKind, string> = {
   compaction: "compaction",
   "claude.other": "claude overhead",
   "wait.offline": "machine offline",
-  "queue.slot": "slots",
-  "queue.lease": "leases",
+  "queue.slot": "agent limit",
+  "queue.lease": "waiting on another agent",
   "queue.usage": "usage limit",
   "queue.offline": "machine offline",
   "run.queued": "behind a run",
-  "wake.debounce": "wake debounce",
-  "park.usage": "usage parks",
-  "slots.full": "slots full",
+  "wake.debounce": "lead start delay",
+  "park.usage": "paused at usage limit",
+  "slots.full": "at the agent limit",
   "wait.permission": "approvals",
   "wait.request": "requests",
   "change.review": "review",
-  "change.queue": "train line",
+  "change.queue": "merge queue",
   "change.rebase": "rebase",
   "change.ci": "CI",
   "ci.check": "CI check",
@@ -197,28 +267,32 @@ export const spanTitle = (span: Span, humanize: (key: string) => string = (k) =>
 export const titleIsMachineText = (span: Span): boolean =>
   span.extra?.check !== undefined || (span.label !== undefined && span.label !== "");
 
-/** "implementer T31", "lead", "PR #212", "requests". */
+/** The other lanes by what they are to the user. */
+const LANE_WORD: Readonly<Record<string, string>> = { train: "merge queue", requests: "requests", fleet: "all projects", order: "this work" };
+
+/** "about page", "lead", "PR #212", "requests". */
 export const laneName = (names: Names, span: Span): string => {
   const thread = span.threadId;
   if (thread !== undefined) {
     if (names.leads.has(thread)) return "lead";
     const lane = names.threads.get(thread);
-    if (lane !== undefined) return `${ROLE_WORD[lane.role]} ${lane.taskId ?? ""}`.trim();
-    return span.taskId ?? "agent";
+    if (lane !== undefined) return agentName(lane);
+    return "an agent";
   }
   const change = span.lane.startsWith("change:") ? span.lane.slice("change:".length) : undefined;
   if (change !== undefined) {
     const pr = names.changes.get(change);
     return pr === undefined ? "PR" : `PR #${pr}`;
   }
-  return span.lane.split(":")[0] ?? span.lane;
+  const kind = span.lane.split(":")[0] ?? span.lane;
+  return LANE_WORD[kind] ?? kind;
 };
 
 /** What to say is missing. `complete: false` alone says nothing: a long read past retention is the cutoff's business. */
 export interface Missing {
   readonly gaps: number;
   readonly capped: boolean;
-  /** "2026-10-12": the retention cutoff, when what is shown began before it. */
+  /** "Oct 12": the retention cutoff's day, when what is shown began before it. */
   readonly detailSince?: string;
 }
 
@@ -231,11 +305,15 @@ export const missing = (c: Coverage, from: number | undefined): Missing => {
   return {
     gaps: c.gaps.length,
     capped: c.capped === true,
-    ...(before && c.detailSince !== undefined ? { detailSince: c.detailSince.slice(0, 10) } : {}),
+    ...(before && c.detailSince !== undefined ? { detailSince: dayMs(cut) } : {}),
   };
 };
 
-/** One coverage gap in words: "a machine runs a fleetd too old to record tool time (buildbox), 16:20:00 to 18:02:00". */
+/** "Oct 16, 16:20 to 18:02", or "Oct 16, 23:40 to Oct 17, 00:10" across midnight: a gap can be days back. */
+export const rangeText = (fromMs: number, toMs: number): string =>
+  `${stampMs(fromMs)} to ${dayMs(fromMs) === dayMs(toMs) ? stampMs(toMs).slice(-5) : stampMs(toMs)}`;
+
+/** One coverage gap in words: "a machine runs a fleetd too old to record tool time (buildbox), Oct 16, 16:20 to 18:02". */
 export const gapText = (g: Gap): string => {
   const count = g.count === undefined ? "" : `${g.count} `;
   const what: Record<Gap["why"], string> = {
@@ -246,7 +324,7 @@ export const gapText = (g: Gap): string => {
     nothing_running: "the critical path found time with nothing running",
   };
   const on = g.machineId === undefined ? "" : ` (${g.machineId})`;
-  return `${what[g.why]}${on}, ${clockMs(g.fromMs)} to ${clockMs(g.toMs)}`;
+  return `${what[g.why]}${on}, ${rangeText(g.fromMs, g.toMs)}`;
 };
 
 export const gapWord = (why: Gap["why"]): string => {

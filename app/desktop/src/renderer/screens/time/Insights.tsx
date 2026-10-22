@@ -40,7 +40,7 @@ export function Insights({ insights, compare, onLinked }: InsightsProps) {
         <div className={cx(s.empty)}>
           <Text strong>Nothing stands out</Text>
           <Text tone="quiet">
-            None of the hub&apos;s rules fired for this period: no repeated test runs, slow checks on the critical path, long waits on you or full slots.
+            None of the hub&apos;s rules fired for this period: no repeated test runs, slow checks on the critical path, long waits on you or agents held at the agent limit.
           </Text>
         </div>
       </div>

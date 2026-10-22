@@ -3,7 +3,7 @@
 // week of the fleet is made of orders like it. The roll-ups here stand in for the hub's so the numbers on screen
 // agree with the bars; they are fixture data, not the hub's rules. Ported from the GPUI app's time/fixture.rs.
 // Value imports carry ".ts": `pnpm fixtures` runs this file under plain Node (fixtures/time/index.ts).
-import { NO_NAMES, KIND_WORD, SHOWN, categoryKinds, fmtDur, type Names } from "./format.ts";
+import { NO_NAMES, KIND_WORD, SHOWN, categoryKinds, fmtDur, type Lane as NamedLane, type Names } from "./format.ts";
 import {
   KIND_CATEGORY,
   type AgentRole,
@@ -301,8 +301,12 @@ const buildOrder = (spec: OrderSpec, dense: number, shape: Shape = {}): Built =>
   path.push([wa, m(20), m(54)]);
 
   g.work(rev, m(71), m(80), 99, PAGES[0]);
+  // With more agents, a second reviewer on the same PR: the hub titles both "review #205", so the screen numbers them.
+  const many = (shape.agents ?? 4) > 4;
+  const rev2 = many ? thread(task(6), `s-${spec.tasks + 6}`, "reviewer") : undefined;
+  if (rev2 !== undefined) g.work(rev2, m(72), m(79), 99, PAGES[1]);
   // More writers, off the critical path, for the many-agents fixture.
-  const extra = Array.from({ length: Math.max(0, (shape.agents ?? 4) - 4) }, (_, n) => thread(task(10 + n), `s-${spec.tasks + 10 + n}`, n % 4 === 3 ? "verifier" : "implementer"));
+  const extra = Array.from({ length: Math.max(0, (shape.agents ?? 4) - (many ? 5 : 4)) }, (_, n) => thread(task(10 + n), `s-${spec.tasks + 10 + n}`, n % 4 === 3 ? "verifier" : "implementer"));
   extra.forEach((l, n) => g.work(l, m(3 + (n % 7)), m(30 + ((n * 7) % 40)), spec.suiteEvery, PAGES[n % 3] ?? "about"));
   const label = (s: Draft) => (s.label = `#${spec.pr}`);
   for (const [kind, a, z] of [["change.review", 71, 80], ["change.queue", 80, 80.4], ["change.rebase", 80.4, 81]] as const) {
@@ -343,6 +347,7 @@ const buildOrder = (spec: OrderSpec, dense: number, shape: Shape = {}): Built =>
   roles.set(lead.thread ?? "", { role: "lead", title: "lead" });
   w.forEach((l, n) => roles.set(l.thread ?? "", { role: "implementer", task: l.task ?? "", title: `${PAGES[n] ?? "about"} page` }));
   roles.set(rev.thread ?? "", { role: "reviewer", task: rev.task ?? "", title: `review #${spec.pr}` });
+  if (rev2 !== undefined) roles.set(rev2.thread ?? "", { role: "reviewer", task: rev2.task ?? "", title: `review #${spec.pr}` });
   extra.forEach((l, n) => roles.set(l.thread ?? "", { role: l.role ?? "implementer", task: l.task ?? "", title: `${PAGES[n % 3] ?? "about"} page, part ${n + 2}` }));
   return {
     spans: g.out,
@@ -574,7 +579,7 @@ export interface FixtureOptions {
   dense?: boolean;
   /** A hub with missing data: a node dropped spans from writer b's run, and the reviewer's machine ran an older fleetd. */
   gaps?: boolean;
-  /** Agents in the order (default 4: three writers and a reviewer). */
+  /** Agents in the order (default 4: three writers and a reviewer; past 4, a second reviewer of the same PR). */
   agents?: number;
   /** A long full-suite command, for the long-text fixture. */
   long?: boolean;
@@ -619,8 +624,8 @@ const fleetLane = (d: Data) => {
 export const fixtureNames = (): Names => {
   const specs = week();
   const d = collect(specs, undefined, 1);
-  const threads = new Map<string, { role: AgentRole; taskId?: string; title: string }>();
-  for (const [id, r] of d.roles) threads.set(id, { role: r.role, title: r.title, ...(r.task === undefined ? {} : { taskId: r.task }) });
+  const threads = new Map<string, NamedLane>();
+  for (const [id, r] of d.roles) threads.set(id, { role: r.role, title: r.title, model: "claude-haiku-5-5", ...(r.task === undefined ? {} : { laneId: r.task }) });
   return {
     ...NO_NAMES,
     threads,

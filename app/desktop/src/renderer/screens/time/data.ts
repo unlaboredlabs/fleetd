@@ -8,7 +8,7 @@ import { selectOrderEvents } from "../../src/data/selectors";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import type { HubError, HubEvent } from "../../../shared/hub";
 import { spansInput, type TimeQuery } from "./filters";
-import { NO_NAMES, type Names } from "./format";
+import { NO_NAMES, numberCollisions, type Lane, type Names } from "./format";
 import type { DataState } from "../../src/data/store";
 import type { AgentRole, Coverage, InsightRule, Span, SpanKind, ThreadWindowOutput, TimeBreakdownOutput, TimeInsightsOutput } from "./types";
 
@@ -223,13 +223,19 @@ export type NamesInput = Pick<DataState, "fresh" | "orders" | "details" | "proje
 /** What ids are called on screen, from the store: lanes by role, task and title, PRs by number, orders by title. */
 export const namesOf = (s: NamesInput): Names => {
   if (!s.fresh) return NO_NAMES;
-  const threads = new Map<string, { role: AgentRole; taskId?: string; title: string }>();
+  const seen = new Map<string, Lane & { startedAt?: string }>();
   const leads = new Set<string>();
   const changes = new Map<string, number>();
   const orders = new Map<string, { title: string; project: string; ref: { machineId: string; projectId: string } }>();
-  const lane = (l: { role: AgentRole; taskId?: string | undefined; title: string; threadRef?: { threadId: string } | undefined }) => {
+  const lane = (l: { role: AgentRole; title: string; model?: string | undefined; laneId: string; startedAt?: string | undefined; threadRef?: { threadId: string } | undefined }) => {
     if (l.threadRef === undefined) return;
-    threads.set(l.threadRef.threadId, { role: l.role, title: l.title, ...(l.taskId === undefined ? {} : { taskId: l.taskId }) });
+    seen.set(l.threadRef.threadId, {
+      role: l.role,
+      title: l.title,
+      laneId: l.laneId,
+      ...(l.model === undefined ? {} : { model: l.model }),
+      ...(l.startedAt === undefined ? {} : { startedAt: l.startedAt }),
+    });
     if (l.role === "lead") leads.add(l.threadRef.threadId);
   };
   const projects = Object.values(s.projects);
@@ -245,7 +251,7 @@ export const namesOf = (s: NamesInput): Names => {
     if (d.lead !== undefined) lane(d.lead);
   }
   return {
-    threads,
+    threads: numberCollisions(seen),
     leads,
     changes,
     orders,

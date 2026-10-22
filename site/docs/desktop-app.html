@@ -178,7 +178,8 @@ writing. Watching doesn’t interrupt it. To change what it does, tell its lead 
 <div class="sl-heading-wrapper level-h2"><h2 id="status">Status</h2><a class="sl-anchor-link" href="#status"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Status”</span></a></div>
 <p><img src="/docs/img/status.png" alt="Status with one row per project: billing waiting on you at 64%, checkout blocked at 31%, storefront working at 78% with five agents, each with its last merge."></p>
 <p>Status shows one row per project: a state word (waiting on you, blocked, working or idle), its two-tone progress bar,
-the agents running, and what merged last. Click a row to open that project’s chat; hover it for detail.
+the agents running, and when the last pull request merged. Click a row to open that project’s chat, or PRs for its
+pull requests; hover it for detail.
 See <a href="/docs/status">Status</a>.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="time">Where time went</h2><a class="sl-anchor-link" href="#time"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Where time went”</span></a></div>
 <p>Open Time from the sidebar, the agents strip in a chat, or the command palette. It has three tabs:</p>
@@ -192,7 +193,7 @@ See <a href="/docs/status">Status</a>.</p>
 <tbody>
 <tr>
 <td>Timeline</td>
-<td>One piece of work: a lane per agent, PR and CI check, and the waits on you, with the <a href="/docs/glossary#critical-path">critical path</a> marked. Hover a bar for the command, its duration and exit code; a transcript’s “Open the chat” goes to the project’s chat.</td>
+<td>One piece of work: a lane per agent, PR and CI check, and the waits on you, with the <a href="/docs/glossary#critical-path">critical path</a> marked. Each agent’s lane shows its model and output tokens. Hover a bar for the command, its duration and exit code; a transcript’s “Open the chat” goes to the project’s chat.</td>
 </tr>
 <tr>
 <td>Breakdown</td>
@@ -205,7 +206,7 @@ See <a href="/docs/status">Status</a>.</p>
 </tbody>
 </table>
 <p><img src="/docs/img/time.png" alt="Where a piece of work’s time went: a lane per agent, PR and CI check, the waits on you, the critical path underlined, and the legend."></p>
-<p>How to read it: <a href="/docs/time-inspector">Where time went</a>.</p>
+<p>Times are in your own time zone. How to read it: <a href="/docs/time-inspector">Where time went</a>.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="settings">Settings</h2><a class="sl-anchor-link" href="#settings"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Settings”</span></a></div>
 <p>Open Settings with ⌘,. It takes the sidebar’s place; Back returns to where you were. Type in “Search settings” to find
 an option or a prompt by name, and press Enter to open the first match.</p>
