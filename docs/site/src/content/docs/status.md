@@ -29,33 +29,27 @@ Status never shows a finish time or an ETA. It shows state instead.
 risks.
 
 ```console
-$ fleetd status app
-app  90%    as of 08:52:31 (live)
-  [█████████████████▒░░] 83% verified + 7% in flight
-  3 of 4 required items verified
-  +1 item: W7 add docs/cap1.md at max agents 1 (no plan yet) (08:50)
-  M4 FAQ page done (1 items) (08:49)
-  +1 item: W6 a fix filed during the claim (no plan yet) (08:48)
-  Research whether a FAQ at docs/faq.md helps; recommend. Nothing needs you.   [template]
-  waiting on: P3 Research whether a FAQ at docs/faq.md helps; recommend: the writer's push → a PR → review → CI → merge → done-when checks
-  since your first look from here  nothing new
-health  main CI acme/app green as of 08:51:20 · 1 of 1 machines online · 2 running, slots 2/40, 2 queued
-risks   riskiest: P3 Research whether a FAQ at docs/faq.md he… (s, 0 failed attempts)
-milestones
-        M3 FAQ page research  0%
-doing   P3 Research whether a FAQ at docs/faq.md helps; recommend   critical path   waiting on the writer's push → a PR → review → CI → merge → done-when checks
-done    W7 add docs/cap1.md at max…   every done-when check passed
-        W6 a fix filed during the claim   every done-when check passed
-        W5 a claim with a fix open   every done-when check passed
+$ fleetd status storefront
+storefront  70%  polish 2/5    as of 14:02:07 (live)
+  [████████████▒▒░░░░░░] 61% verified + 9% in flight
+  11 of 18 required items verified
+  ↓ from 74% · +3 items: checkout redesign added (14:00)
+  ↓ from 66% · CI failed on #212 (13:20)
+  waiting on: P12 full test run: review of #212 → CI on #212 → merge   holds up P14, P16
+  since you last looked here 09:12  7 merged, 3 verified, 1 failed, +3 items
+health  main CI acme/storefront green as of 14:01:50 · 2 of 2 machines online · claude 58% 5h 41% wk · 8 running, slots 8/40
+risks   check `e2e (safari)` failed on 2 PRs today
+        P12 full test run is slower than usual in review (2h10m so far)
+doing   P12 full test run   T88   critical path   waiting on review of #212 → CI on #212 → merge   holds up P14, P16   SLOWER THAN USUAL
+        P15 provider cutover   T90   waiting on CI on #214
+next    P14 switch the default provider (after P12), P16 docs page
+done    P9 webhook outbox   #208 merged by the train 13:12 · check 2 passed C7
 ```
-
-The ids in it (`W7`, `P3`, `M4`) are the lead's own bookkeeping: work, plan items and milestones. The line marked
-`[template]` is a plain summary built from the facts above it.
 
 | Command | Shows |
 |---|---|
 | `fleetd status` | The whole fleet. |
-| `fleetd status app` | One project, by its title. |
+| `fleetd status storefront` | One project. |
 | `fleetd status W41` | One piece of the lead's work (a [workstream](/docs/glossary#workstream)). A new one says `W41 is a draft: waiting for the lead's brief` until the lead has planned it; `--watch` waits for it. |
 
 | Option | Does |
@@ -156,8 +150,8 @@ Status never shows old data as live. Each source has a normal rhythm, and the hu
 | A machine | a heartbeat every 15 s | 45 s of silence | "no heartbeat from devbox for 4m" |
 | Claude usage | each Claude reply | its reset time passes | "5h reading from 13:10, before the 14:00 reset" |
 | GitHub | every train pass (15 s) | 180 s without a good answer | "GitHub not reached for 4m: …" |
-| Main CI | read every 60 s | its period plus 180 s | "main CI of acme/app unread since 14:05" |
-| A merge train | every 15 s | 120 s | "the acme/app train hasn't run for 3m" |
+| Main CI | read every 60 s | its period plus 180 s | "main CI of acme/storefront unread since 14:05" |
+| A merge train | every 15 s | 120 s | "the acme/storefront train hasn't run for 3m" |
 
 A stale part keeps its last value, with its time and a warning. In the terminal, the first line says "NOT LIVE: 1 stale
 source". If the app loses the hub, the view greys out with "Not live: reconnecting".
