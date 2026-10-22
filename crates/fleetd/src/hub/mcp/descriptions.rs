@@ -10,7 +10,11 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "project_stop",
-        "Stop everything in a project: every open order stops, its agents are cancelled and what waits on you is withdrawn, one line in the chat says so and the lead hears it. The lead and the chat stay. A person's device (a human key) only.",
+        "Stop everything in a project: the lead's turn is interrupted, every open order stops, its agents are cancelled and what waits on you is withdrawn, one line in the chat says what stopped and what still runs, and the lead hears it. The lead and the chat stay. A person's device (a human key) only.",
+    ),
+    (
+        "chat_stop",
+        "Stop the lead's current turn now; the project's agents keep running (project_stop halts them). One line in the chat says what stopped and how many agents still work. stopped is false when the lead wasn't working. Idempotent per clientRequestId. A person's device (a human key) only.",
     ),
     (
         "attachment_get",

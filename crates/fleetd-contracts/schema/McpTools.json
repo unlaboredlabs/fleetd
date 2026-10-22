@@ -1347,6 +1347,45 @@
       ],
       "type": "object"
     },
+    "ChatStopInput": {
+      "properties": {
+        "clientRequestId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        }
+      },
+      "required": [
+        "projectRef",
+        "clientRequestId"
+      ],
+      "type": "object"
+    },
+    "ChatStopOutput": {
+      "properties": {
+        "message": {
+          "$ref": "#/$defs/ChatMessage",
+          "description": "The system line it wrote into the chat."
+        },
+        "next": {
+          "type": "string"
+        },
+        "stopped": {
+          "description": "The lead was working and its turn was interrupted.",
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "stopped",
+        "message"
+      ],
+      "type": "object"
+    },
     "CheckOutcome": {
       "description": "`error` (the check could not run) counts as not passing.",
       "enum": [
@@ -5004,6 +5043,12 @@
         "chat_send.output": {
           "$ref": "#/$defs/ChatSendOutput"
         },
+        "chat_stop.input": {
+          "$ref": "#/$defs/ChatStopInput"
+        },
+        "chat_stop.output": {
+          "$ref": "#/$defs/ChatStopOutput"
+        },
         "claims_list.input": {
           "$ref": "#/$defs/ClaimsListInput"
         },
@@ -5444,6 +5489,8 @@
         "chat_history.output",
         "chat_send.input",
         "chat_send.output",
+        "chat_stop.input",
+        "chat_stop.output",
         "claims_list.input",
         "claims_list.output",
         "decisions_record.input",

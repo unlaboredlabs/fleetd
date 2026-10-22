@@ -114,7 +114,7 @@
 </tr>
 <tr>
 <td><a href="/docs/glossary#human-key">Human key</a></td>
-<td>Held by a person’s device. The desktop app encrypts it with the OS keychain or keyring; without one, it is a file only you can read (<code dir="auto">0600</code>).</td>
+<td>Held by a person’s device. The desktop app encrypts it with the OS keychain or keyring; without one, it is a file only you can read (<code dir="auto">0600</code>). On the hub machine, the CLI keeps yours in <code dir="auto">~/.fleetd/hub/owner.key</code> (<code dir="auto">0600</code>) and refuses it inside an agent’s session, as the process tree tells.</td>
 </tr>
 <tr>
 <td>Node key</td>

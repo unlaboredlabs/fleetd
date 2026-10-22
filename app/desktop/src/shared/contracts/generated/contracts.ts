@@ -530,6 +530,20 @@ export type ChatSendOutput = {
   truncated?: boolean;
 };
 
+export type ChatStopInput = {
+  clientRequestId: string;
+  projectRef: ProjectRef;
+};
+
+export type ChatStopOutput = {
+  /** The system line it wrote into the chat. */
+  message: ChatMessage;
+  next?: string;
+  /** The lead was working and its turn was interrupted. */
+  stopped: boolean;
+  truncated?: boolean;
+};
+
 /** `error` (the check could not run) counts as not passing. */
 export type CheckOutcome = "pass" | "fail" | "error";
 
@@ -4361,6 +4375,7 @@ export interface ToolMap {
   changes_list: { input: ChangesListInput; output: ChangesListOutput };
   chat_history: { input: ChatHistoryInput; output: ChatHistoryOutput };
   chat_send: { input: ChatSendInput; output: ChatSendOutput };
+  chat_stop: { input: ChatStopInput; output: ChatStopOutput };
   claims_list: { input: ClaimsListInput; output: ClaimsListOutput };
   decisions_record: { input: DecisionsRecordInput; output: DecisionsRecordOutput };
   decisions_search: { input: DecisionsSearchInput; output: DecisionsSearchOutput };

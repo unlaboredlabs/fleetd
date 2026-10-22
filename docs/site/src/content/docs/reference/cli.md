@@ -141,7 +141,7 @@ fleetd project list [--machine <id>] [--home <dir>] [--hub <url>]
 fleetd project stop <machine>/<project> [--yes] [--home <dir>] [--hub <url>]
 ```
 
-stop everything running in it: its agents are cancelled, the lead and its chat stay, and the chat says so
+stop everything running in it, as you (the machine's owner): the lead's turn and its agents stop, the lead and its chat stay, and the chat says what stopped and what still runs
 
 ### fleetd project remove {#project-remove}
 
@@ -339,15 +339,15 @@ progress (verified plus work in flight), why it fell, the critical path it waits
 ### fleetd steer {#steer}
 
 ```text
-fleetd steer <W|T> "<text>" [--now] [--wait] --key-file <human key> [--hub <url> | --home <dir>]
+fleetd steer <W|T> "<text>" [--now] [--wait] [--key-file <human key>] [--hub <url> | --home <dir>]
 ```
 
-steer an order's lead (W41) or one agent (T88) mid-run. Plain: it lands at the agent's next step, after the tool it is running returns. `--now` stops that step and delivers at once. `--wait` follows the receipt: exit 0 acknowledged, 1 not acknowledged, withdrawn or failed. Without `--hub` it uses the hub on this machine
+steer an order's lead (W41) or one agent (T88) mid-run. Plain: it lands at the agent's next step, after the tool it is running returns. `--now` stops that step and delivers at once. `--wait` follows the receipt: exit 0 acknowledged, 1 not acknowledged, withdrawn or failed. Without `--hub` it uses the hub on this machine; without `--key-file`, as its owner
 
 ### fleetd steer withdraw {#steer-withdraw}
 
 ```text
-fleetd steer withdraw S<n> --key-file <human key> [--hub <url> | --home <dir>]
+fleetd steer withdraw S<n> [--key-file <human key>] [--hub <url> | --home <dir>]
 ```
 
 take back a steer the agent has not taken in yet
@@ -355,7 +355,7 @@ take back a steer the agent has not taken in yet
 ### fleetd steers {#steers}
 
 ```text
-fleetd steers [W|T] --key-file <human key> [--hub <url> | --home <dir>]
+fleetd steers [W|T] [--key-file <human key>] [--hub <url> | --home <dir>]
 ```
 
 recent steers and their receipts

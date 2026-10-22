@@ -85,16 +85,20 @@ for later." Nothing was moved or deleted. Scroll up to read it.
 
 ![The top of storefront's chat under "From before this chat": your earlier requests as messages, the lead's replies, and one-line outcomes such as "Done: 2 PRs merged." and "Stopped by you; kept for later."](/docs/img/chat-history.png)
 
-## Stop everything {#stop}
+## Stop {#stop}
 
-To stop all of a project's work at once, say "stop" in the chat, or run:
+Stop halts the lead's current reply at once (`chat_stop` from an MCP client). Its agents keep working, and the line in
+the chat says how many, such as "Stopped the lead. 2 agents are still working; Stop all to halt them."
+
+To stop all of a project's work at once, run:
 
 ```sh
 fleetd project stop devbox/storefront
 ```
 
-From an MCP client, call `project_stop`. Every running and queued agent is stopped, and the lead says so in the chat. Merged pull requests stay, and so do the lead and the
-chat: write again to start new work.
+From an MCP client, call `project_stop`. The lead's turn and every running and queued agent stop, and one line in the
+chat says what stopped and anything still running. Merged pull requests stay, and so do the lead and the chat: write
+again to start new work. On the hub machine the command acts as you, with no key to set up.
 
 ## Secrets and risky commands {#inline}
 

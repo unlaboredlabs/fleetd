@@ -1,6 +1,6 @@
 //! The lead chat over a real in-memory hub: messages in order and deduped, paging, streamed text with offsets, the
 //! needs-you rule, inline items, the history read, a human's message reaching a project without a lead, the moved
-//! tools, project_stop and the lead's workstream_open.
+//! tools, chat_stop, project_stop and the lead's workstream_open.
 use std::sync::Arc;
 
 use fleetd_contracts::auth::KeyKind;
@@ -434,7 +434,10 @@ async fn the_tools_the_chat_replaced_say_where_they_went() {
         (stop["stopped"].as_i64(), stop["message"]["author"].as_str()),
         (Some(0), Some("system"))
     );
-    assert_eq!(stop["message"]["text"], "Stop: nothing was running.");
+    assert_eq!(
+        stop["message"]["text"],
+        "Nothing was running: the lead was idle and no agents were working."
+    );
 }
 
 #[tokio::test]
@@ -991,4 +994,210 @@ fn a_state_read_skips_imported_history() {
         ["Shipped the fix."]
     );
     assert!(!hub.chat.state(&r, false).unwrap().needs_you);
+}
+
+/// A running lead thread and two running agents of the project, as the hub stores them.
+fn lead_and_two_agents(hub: &Hub) {
+    give_lead(hub);
+    let thread: crate::hub::store::StoredThread = serde_json::from_value(json!({
+        "machineId": "devbox", "threadId": "lead-thread", "projectId": "app", "title": "lead",
+        "status": "running", "headline": "", "latestMessageTail": "", "lastProgressAt": AT,
+        "stale": false, "asOf": AT,
+    }))
+    .unwrap();
+    hub.store.thread_upsert(&thread).unwrap();
+    for n in [1, 2] {
+        let task: fleetd_contracts::tasks::Task = serde_json::from_value(json!({
+            "taskId": format!("T{n}"), "projectRef": { "machineId": "devbox", "projectId": "app" },
+            "workstreamId": "W9", "title": "write it", "kind": "write", "prompt": "do it", "areas": ["api"],
+            "model": "claude-haiku-5-5", "effort": "low", "state": "running", "attempt": 1, "createdAt": AT,
+            "startedAt": AT, "threadRef": { "machineId": "devbox", "threadId": format!("task-{n}") },
+        }))
+        .unwrap();
+        hub.db
+            .with(|c| Ok(crate::hub::tasks::records::TaskRecords::create(c, task)?))
+            .unwrap();
+    }
+}
+
+/// Links a node for the project's machine that does whatever it is asked; returns the calls it got.
+async fn obliging_node(
+    hub: &Arc<Hub>,
+) -> Arc<std::sync::Mutex<Vec<fleetd_contracts::sessions::SessionCall>>> {
+    use fleetd_contracts::node_link::{HubToNode, NodeToHub};
+    use fleetd_contracts::sessions::SessionCall;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let machine = project().machine_id;
+    hub.executors
+        .attach(
+            &machine,
+            crate::hub::executor::NodeSessions {
+                link_id: 1,
+                send: tx,
+            },
+        )
+        .await;
+    let calls = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let (seen, executors) = (calls.clone(), hub.executors.clone());
+    tokio::spawn(async move {
+        while let Some(HubToNode::SessionCall(f)) = rx.recv().await {
+            let result = match f.call {
+                SessionCall::Follow { .. } => {
+                    json!({ "err": { "code": "not_found", "message": "-" } })
+                }
+                _ => json!({ "ok": { "kind": "done" } }),
+            };
+            seen.lock().unwrap().push(f.call);
+            let frame: NodeToHub = serde_json::from_value(
+                json!({ "t": "session_reply", "id": f.id, "result": result }),
+            )
+            .unwrap();
+            executors.handle_frame(&machine, frame);
+        }
+    });
+    calls
+}
+
+fn live_agents(hub: &Hub) -> usize {
+    hub.tasks.live(Some(&project())).len()
+}
+
+/// Dogfood: "Stop: nothing was running" while the lead and two agents ran. Stop all now stops all three and says so.
+#[tokio::test]
+async fn stop_all_stops_the_lead_and_its_agents_and_says_so() {
+    let (hub, _home) = hub();
+    lead_and_two_agents(&hub);
+    let calls = obliging_node(&hub).await;
+    let stop = crate::hub::api::registry()
+        .call(
+            &hub,
+            &person(),
+            "project_stop",
+            json!({ "projectRef": { "machineId": "devbox", "projectId": "app" } }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(stop["message"]["text"], "Stopped the lead and 2 agents.");
+    assert_eq!(stop["cancelled"], 2);
+    assert_eq!(live_agents(&hub), 0);
+    let calls = calls.lock().unwrap();
+    assert!(calls.iter().any(|c| matches!(c,
+        fleetd_contracts::sessions::SessionCall::Interrupt { session_id, .. } if session_id.as_str() == "lead-thread")));
+}
+
+/// With the machine away nothing can be stopped, and the line says what still runs instead of "nothing was running".
+#[tokio::test]
+async fn stop_all_says_what_it_could_not_stop() {
+    let (hub, _home) = hub();
+    lead_and_two_agents(&hub);
+    let stop = crate::hub::api::registry()
+        .call(
+            &hub,
+            &person(),
+            "project_stop",
+            json!({ "projectRef": { "machineId": "devbox", "projectId": "app" } }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        stop["message"]["text"],
+        "Nothing stopped. The lead's turn could not be stopped: its machine didn't answer. 2 agents could not be stopped and are still working."
+    );
+    assert_eq!(live_agents(&hub), 2);
+}
+
+#[tokio::test]
+async fn stop_stops_the_lead_and_leaves_its_agents_working() {
+    let (hub, _home) = hub();
+    lead_and_two_agents(&hub);
+    let calls = obliging_node(&hub).await;
+    let tools = crate::hub::api::registry();
+    let input = json!({ "projectRef": { "machineId": "devbox", "projectId": "app" }, "clientRequestId": "s1" });
+    let stop = tools
+        .call(&hub, &person(), "chat_stop", input.clone())
+        .await
+        .unwrap();
+    assert_eq!(stop["stopped"], true);
+    assert_eq!(
+        (
+            stop["message"]["author"].as_str(),
+            stop["message"]["text"].as_str()
+        ),
+        (
+            Some("system"),
+            Some("Stopped the lead. 2 agents are still working; Stop all to halt them.")
+        )
+    );
+    assert_eq!(live_agents(&hub), 2);
+    // A retry returns the same line and stops nothing again.
+    let again = tools
+        .call(&hub, &person(), "chat_stop", input)
+        .await
+        .unwrap();
+    assert_eq!(again["message"]["messageId"], stop["message"]["messageId"]);
+    assert_eq!(again["stopped"], true);
+    let interrupts = |calls: &[fleetd_contracts::sessions::SessionCall]| {
+        calls
+            .iter()
+            .filter(|c| matches!(c, fleetd_contracts::sessions::SessionCall::Interrupt { .. }))
+            .count()
+    };
+    assert_eq!(interrupts(&calls.lock().unwrap()), 1);
+    // An idle lead: nothing to stop, and the line still says what runs.
+    let mut thread = hub
+        .store
+        .thread_get(&fleetd_contracts::ids::ThreadRef {
+            machine_id: project().machine_id,
+            thread_id: fleetd_contracts::ids::ThreadId::unchecked("lead-thread"),
+        })
+        .unwrap()
+        .unwrap();
+    thread.thread.status = fleetd_contracts::model::ThreadStatus::Idle;
+    hub.store.thread_upsert(&thread).unwrap();
+    let idle = tools
+        .call(&hub, &person(), "chat_stop", json!({ "projectRef": { "machineId": "devbox", "projectId": "app" }, "clientRequestId": "s2" }))
+        .await
+        .unwrap();
+    assert_eq!(idle["stopped"], false);
+    assert_eq!(
+        idle["message"]["text"],
+        "The lead wasn't working. 2 agents are still working; Stop all to halt them."
+    );
+}
+
+/// Agents never carry the person's authority: an agent key, admin on every machine like the CLI's own, can't stop.
+#[tokio::test]
+async fn only_a_persons_key_stops() {
+    let (hub, _home) = hub();
+    lead_and_two_agents(&hub);
+    let admin_agent = Caller {
+        grants: serde_json::from_value(json!([{ "role": "admin", "machines": "*" }])).unwrap(),
+        ..agent_key()
+    };
+    let tools = crate::hub::api::registry();
+    let r = json!({ "machineId": "devbox", "projectId": "app" });
+    for (tool, input) in [
+        (
+            "chat_stop",
+            json!({ "projectRef": r, "clientRequestId": "s1" }),
+        ),
+        ("project_stop", json!({ "projectRef": r })),
+    ] {
+        let Err(crate::hub::api::CallError::Tool(e)) =
+            tools.call(&hub, &admin_agent, tool, input).await
+        else {
+            panic!("{tool} let an agent key stop");
+        };
+        assert_eq!(
+            e.code,
+            fleetd_contracts::mcp::ErrorCode::Forbidden,
+            "{tool}"
+        );
+    }
+    assert_eq!(live_agents(&hub), 2);
+    // The app's probe: an empty input is invalid before anything happens.
+    assert!(matches!(
+        tools.call(&hub, &person(), "chat_stop", json!({})).await,
+        Err(crate::hub::api::CallError::Invalid(_))
+    ));
 }

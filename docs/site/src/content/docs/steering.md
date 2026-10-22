@@ -90,26 +90,22 @@ acknowledged · −1 item".
 
 ## From the command line {#cli}
 
-`fleetd steer` speaks for you, so it needs a [human key](/docs/glossary#human-key).
+`fleetd steer` speaks for you, so it needs a [human key](/docs/glossary#human-key). On the hub machine it uses your
+own key there (`~/.fleetd/hub/owner.key`, made on first use); an agent's session can't. From another machine, pass a
+human key with `--key-file` (`fleetd hub key create --human` makes one).
 
-1. On the hub, create one and keep it in a file only you can read:
+1. Steer the lead working on `W41`, or one agent (`T88`):
 
    ```sh
-   (umask 077; fleetd hub key create --human --name terminal > ~/.fleetd/human.key)
+   fleetd steer W41 "skip the docs page; ship the API first"
+   fleetd steer T88 "stop: the schema changed, rebase first" --now --wait
    ```
 
-2. Steer the lead working on `W41`, or one agent (`T88`):
+2. List recent steers, or take one back:
 
    ```sh
-   fleetd steer W41 "skip the docs page; ship the API first" --key-file ~/.fleetd/human.key
-   fleetd steer T88 "stop: the schema changed, rebase first" --now --wait --key-file ~/.fleetd/human.key
-   ```
-
-3. List recent steers, or take one back:
-
-   ```sh
-   fleetd steers W41 --key-file ~/.fleetd/human.key
-   fleetd steer withdraw S12 --key-file ~/.fleetd/human.key
+   fleetd steers W41
+   fleetd steer withdraw S12
    ```
 
 | Option | Does |

@@ -514,8 +514,9 @@ output!(OrderStopOutput {
     cancelled: Count,
 });
 
-// project_stop: the safety valve. Stops every running and queued agent of the project and its open orders, withdraws
-// what waits on a person, and tells the lead in its chat. Merged PRs stay; the lead and the chat stay. Idempotent.
+// project_stop: the safety valve. Interrupts the lead's turn, stops every running and queued agent of the project and
+// its open orders, withdraws what waits on a person, and tells the lead in its chat. Merged PRs stay; the lead and the
+// chat stay. Idempotent.
 input!(ProjectStopInput {
     project_ref: ProjectRef,
     reason: Option<Text<1, 200>>,
@@ -525,6 +526,19 @@ output!(ProjectStopOutput {
     stopped: Count,
     /// Tasks this call cancelled.
     cancelled: Count,
+    /// The system line it wrote into the chat.
+    message: crate::chat::ChatMessage,
+});
+
+// chat_stop: the chat's Stop. Interrupts the lead's current turn now; the project's agents keep running (project_stop
+// halts them). One line in the chat says what stopped and what still runs. The same clientRequestId returns that line.
+input!(ChatStopInput {
+    project_ref: ProjectRef,
+    client_request_id: RequestId,
+});
+output!(ChatStopOutput {
+    /// The lead was working and its turn was interrupted.
+    stopped: bool,
     /// The system line it wrote into the chat.
     message: crate::chat::ChatMessage,
 });
@@ -1396,9 +1410,10 @@ tools! {
     steers_list => SteersList, Read, SteersListInput, SteersListOutput;
     chat_send => ChatSend, Operate, ChatSendInput, ChatSendOutput;
     chat_history => ChatHistory, Read, ChatHistoryInput, ChatHistoryOutput;
-    // Human keys only (the handler checks).
+    // Human keys only (the handlers check).
     project_stop => ProjectStop, Operate, ProjectStopInput, ProjectStopOutput;
     hub_info => HubInfo, Read, HubInfoInput, HubInfoOutput;
+    chat_stop => ChatStop, Operate, ChatStopInput, ChatStopOutput;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
@@ -1526,7 +1541,7 @@ mod tests {
 
     #[test]
     fn the_tool_table_matches_ts_names_and_scopes() {
-        assert_eq!(McpToolName::ALL.len(), 79);
+        assert_eq!(McpToolName::ALL.len(), 80);
         assert_eq!(McpToolName::parse("inbox_reply"), None);
         assert_eq!(McpToolName::parse("asks_list"), None);
         for tool in McpToolName::ALL {

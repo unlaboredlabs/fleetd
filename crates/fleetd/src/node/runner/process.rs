@@ -150,6 +150,37 @@ fn marker_of(pid: i32) -> Option<String> {
         .map(|v| String::from_utf8_lossy(v).into_owned())
 }
 
+/// Whether this process runs inside a fleetd session: its own environment or, on Linux, an ancestor's carries a
+/// session's marker or thread id. Reading the ancestors means unsetting the variables in a session's shell doesn't hide
+/// it; a session's claude is always an ancestor of its tools' commands.
+pub fn inside_session() -> bool {
+    let marked = |env: &[u8]| {
+        env.split(|b| *b == 0).any(|var| {
+            var.starts_with(format!("{SESSION_MARKER}=").as_bytes())
+                || var.starts_with(b"FLEETD_THREAD_ID=")
+        })
+    };
+    if std::env::var_os(SESSION_MARKER).is_some() || std::env::var_os("FLEETD_THREAD_ID").is_some()
+    {
+        return true;
+    }
+    let mut at = getpid().as_raw();
+    let mut seen = HashSet::new();
+    while cfg!(target_os = "linux") && at > 1 && seen.insert(at) {
+        if std::fs::read(format!("/proc/{at}/environ")).is_ok_and(|env| marked(&env)) {
+            return true;
+        }
+        let Some(parent) = std::fs::read_to_string(format!("/proc/{at}/stat"))
+            .ok()
+            .and_then(|stat| parse_stat(at, &stat))
+        else {
+            break;
+        };
+        at = parent.ppid;
+    }
+    false
+}
+
 /// Where a process calling the node's socket runs, as the kernel's process tree and its environment say; never what
 /// the caller claims.
 #[derive(Clone, Debug, PartialEq, Eq)]
