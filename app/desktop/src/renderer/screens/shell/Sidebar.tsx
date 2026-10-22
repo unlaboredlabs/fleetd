@@ -1,15 +1,16 @@
 // The sidebar: the projects first (alphabetical, so none moves), each opening its lead chat and saying why it wants
 // you ("reply", "approve", "secret", "blocked") or how many agents work; a chat with a message you haven't seen is
-// bold. Then Agents, Status, Time, Machines and Settings; then any update to make, and the connection. Holding ⌘ (Ctrl) shows jump numbers
+// bold. Then Agents, Pull requests (of the project on screen, else the last one opened), Status, Time, Machines and
+// Settings; then any update to make, and the connection. Holding ⌘ (Ctrl) shows jump numbers
 // on the first nine projects, which ⌘1..9 open.
-import { Activity, Bot, Clock, Plus, Server, Settings } from "lucide-react";
+import { Activity, Bot, Clock, GitPullRequest, Plus, Server, Settings } from "lucide-react";
 import type { ReactNode } from "react";
 import { display, type ShortcutId } from "../../../shared/shortcuts";
 import { Button, Dot, Kbd, Sidebar as Frame, SidebarItem, SidebarSection, Text, Tooltip, Truncate } from "../../ui";
 import { UpdatesLine } from "../updates";
 import { connLine, type SidebarProject } from "./model";
 import { useOfflineAsOf } from "./offline";
-import { sameProject, type Screen } from "./routes";
+import { sameProject, type ProjectKey, type Screen } from "./routes";
 import s from "./shell.module.css";
 
 const platform = window.fleetd.platform;
@@ -22,6 +23,8 @@ export interface SidebarProps {
   readonly projects: ReadonlyArray<SidebarProject> | undefined;
   /** Agents at work across the projects; undefined until known. */
   readonly agentsWorking: number | undefined;
+  /** The project Pull requests opens; null with no projects. */
+  readonly prsProject: ProjectKey | null;
   /** Machines not online; undefined until known. */
   readonly machinesDown: number | undefined;
   readonly screen: Screen;
@@ -79,7 +82,7 @@ const trailing = (p: SidebarProject, jump: number | null, asOf: string | undefin
   );
 };
 
-export function Sidebar({ projects, agentsWorking, machinesDown, screen, hub, jumpHints, go }: SidebarProps) {
+export function Sidebar({ projects, agentsWorking, prsProject, machinesDown, screen, hub, jumpHints, go }: SidebarProps) {
   const asOf = useOfflineAsOf();
   const conn = connLine(hub, window.fleetd.fixture !== null, asOf);
   const nav = (label: string, icon: ReactNode, target: Screen, current: boolean, trailing?: ReactNode) => (
@@ -131,6 +134,7 @@ export function Sidebar({ projects, agentsWorking, machinesDown, screen, hub, ju
           screen.id === "agents",
           agentsWorking !== undefined && agentsWorking > 0 ? `${String(agentsWorking)} working` : undefined,
         )}
+        {prsProject !== null ? nav("Pull requests", <GitPullRequest />, { id: "prs", project: prsProject, pr: null }, screen.id === "prs") : null}
         {nav("Status", <Activity />, { id: "status" }, screen.id === "status", kbd("status.toggle"))}
         {nav("Time", <Clock />, { id: "time", orderId: null }, screen.id === "time")}
         {nav(

@@ -4,7 +4,7 @@
 import type { DataState, DataStore } from "../../src/data/store";
 import { selectMachines, selectProjects } from "../../src/data/selectors";
 import { projectKey } from "../../src/data/store";
-import { parseHash } from "../shell/routes";
+import { parseHash, toHash } from "../shell/routes";
 import { chatRoute } from "./defaults";
 import type { Command, Source } from "./registry";
 
@@ -28,6 +28,7 @@ export const projectItems = (state: DataState, go: (hash: string) => void): Comm
       keywords: [p.projectId],
       run: () => go(chatRoute(p.machineId, p.projectId)),
       actions: [
+        { title: "Pull requests in this project", run: () => go(toHash({ id: "prs", project: { machineId: p.machineId, projectId: p.projectId }, pr: null })) },
         { title: "Instructions for this project", run: () => go(settingsFor("instructions", p)) },
         { title: "Prompts for this project", run: () => go(settingsFor("prompts", p)) },
         { title: "Max agents for this project", run: () => go(settingsFor("agents", p)) },
@@ -36,10 +37,10 @@ export const projectItems = (state: DataState, go: (hash: string) => void): Comm
   });
 };
 
-/** The palette row of the project on screen, if a project's chat is open. */
+/** The palette row of the project on screen, if a project's chat or its PRs are open. */
 export const currentProjectItem = (hash: string): string | undefined => {
   const screen = parseHash(hash);
-  return screen.id === "project" ? itemId(screen.project) : undefined;
+  return screen.id === "project" || screen.id === "prs" ? itemId(screen.project) : undefined;
 };
 
 export const projectSource = (store: DataStore): Source => ({

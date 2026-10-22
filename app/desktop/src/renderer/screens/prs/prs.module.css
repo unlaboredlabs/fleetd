@@ -1,0 +1,517 @@
+/*
+ * A project's PRs: the list on the left, the PR on the right. The PR reads like a document (facts, description,
+ * checks, reviews) on the reading measure; its changes take the pane's full width. Nothing animates.
+ */
+.screen {
+  --pad: var(--space-4);
+  --list-w: clamp(260px, 28%, 380px);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+}
+/* The bar as the agents view has it: the title and what it covers, and on the right whether it is live. */
+.header {
+  flex: none;
+  min-height: var(--bar);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 0 var(--pad);
+  border-bottom: 1px solid var(--hairline);
+}
+.title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.titleProject {
+  min-width: 0;
+}
+.liveness {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.banner {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--pad);
+  border-bottom: 1px solid var(--hairline);
+}
+.bannerText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+/* The list. */
+.list {
+  flex: none;
+  width: var(--list-w);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--hairline);
+}
+.list[hidden] {
+  display: none;
+}
+/* Row outlines while the list loads; nothing shimmers. */
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--pad);
+}
+.skeleton > span {
+  height: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--selected);
+}
+.skeleton > span:nth-child(2) {
+  width: 70%;
+}
+.skeleton > span:nth-child(3) {
+  width: 55%;
+}
+.listScroll {
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-2) 0;
+}
+.group {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--pad) var(--space-1);
+}
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 var(--space-2);
+  padding: var(--space-2) var(--space-2);
+  border-radius: var(--radius-sm);
+  color: inherit;
+  text-decoration: none;
+}
+.row:hover {
+  background: var(--hover);
+}
+.rowCurrent,
+.rowCurrent:hover {
+  background: var(--selected);
+}
+.rowTop {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.rowTitle {
+  flex: 1;
+  min-width: 0;
+}
+.rowMeta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  column-gap: var(--space-2);
+  row-gap: 2px;
+  min-width: 0;
+}
+.rowWhen {
+  flex: none;
+}
+
+/* The PR. */
+.detail {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.detailEmpty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-8) var(--pad);
+}
+.paneNote {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--pad);
+}
+.pr {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.prHead {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--pad) 0;
+}
+.prTitleRow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.prTitle {
+  flex: 1;
+  min-width: 0;
+}
+.prMeta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  column-gap: var(--space-3);
+  row-gap: var(--space-1);
+  min-width: 0;
+}
+.branch {
+  min-width: 0;
+  max-width: 100%;
+}
+.add {
+  color: var(--success);
+  font-variant-numeric: tabular-nums;
+}
+.del {
+  color: var(--danger);
+  font-variant-numeric: tabular-nums;
+}
+
+.overview {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-4) var(--pad) var(--space-8);
+}
+.measure {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  max-width: var(--measure);
+}
+.notice {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  column-gap: var(--space-6);
+  row-gap: var(--space-2);
+  margin: 0;
+}
+.fact {
+  display: contents;
+}
+.fact dt,
+.fact dd {
+  margin: 0;
+  min-width: 0;
+}
+.fact dd {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.atWork {
+  display: flex;
+  flex-direction: column;
+  margin: 0 calc(-1 * var(--space-2));
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.sectionHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding-bottom: var(--space-1);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.checks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--row);
+  min-width: 0;
+}
+.checkWord {
+  flex: none;
+  width: 13ch;
+  min-width: 0;
+}
+.checkName {
+  flex: 1;
+  min-width: 0;
+}
+
+.reviews {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.review {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+  min-width: 0;
+}
+.outdated {
+  opacity: 0.72;
+}
+.reviewHead {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  column-gap: var(--space-2);
+  row-gap: 2px;
+}
+.reviewWhen {
+  margin-left: auto;
+}
+
+.history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.history li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+.historyWhen {
+  flex: none;
+  width: 10ch;
+}
+
+/* Changes. */
+.changesPanel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.changesPanel[hidden] {
+  display: none;
+}
+.changes {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.changesBar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--pad);
+  border-bottom: 1px solid var(--hairline);
+}
+.changesBody {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.fileList {
+  flex: none;
+  width: clamp(180px, 24%, 280px);
+  min-height: 0;
+  padding: var(--space-1) 0;
+  border-right: 1px solid var(--hairline);
+}
+.fileItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-1) var(--space-3);
+  border: none;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+.fileItem:hover {
+  background: var(--hover);
+}
+.fileCurrent,
+.fileCurrent:hover {
+  background: var(--selected);
+}
+.fileName {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.fileStat {
+  flex: none;
+  display: flex;
+  gap: var(--space-1-5);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+}
+.diff {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg);
+}
+
+/* A file's header in the diff. */
+.fileHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+  min-height: var(--row);
+  padding: var(--space-1) var(--space-3);
+  border: none;
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+  background: var(--sidebar);
+  color: var(--text);
+  text-align: left;
+}
+.fileHead > svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--quiet);
+}
+.fileHead[aria-expanded="false"] > svg {
+  transform: rotate(-90deg);
+}
+.filePath {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.fileWords {
+  flex: 1;
+  min-width: 0;
+}
+
+/* A diff line: number columns, a mark, the code. Long lines wrap, so a row is as tall as its line. */
+.line {
+  display: grid;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+}
+.unified {
+  grid-template-columns: 6ch 6ch 2ch minmax(0, 1fr);
+}
+.split {
+  grid-template-columns: 6ch 2ch minmax(0, 1fr) 6ch 2ch minmax(0, 1fr);
+}
+.pending {
+  height: var(--leading-sm);
+}
+.num {
+  padding: 0 var(--space-2) 0 0;
+  color: var(--faint);
+  text-align: right;
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+}
+.mark {
+  color: var(--quiet);
+  text-align: center;
+  user-select: none;
+}
+.code {
+  min-width: 0;
+  padding-right: var(--space-3);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.splitLeft {
+  border-right: 1px solid var(--hairline);
+}
+.isAdd {
+  background: var(--diff-add);
+}
+.isDel {
+  background: var(--diff-del);
+}
+.isAdd.mark {
+  color: var(--success);
+}
+.isDel.mark {
+  color: var(--danger);
+}
+.empty {
+  background: var(--hover);
+}
+.cut {
+  color: var(--faint);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+}
+.hunk {
+  padding: 2px var(--space-3);
+  background: var(--sidebar);
+  min-width: 0;
+}
+.note {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+}
+
+/* "Show more" sits at the start of its list, not stretched across it. */
+.moreRow {
+  display: flex;
+}

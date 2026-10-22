@@ -15,7 +15,7 @@
 // Run it locally: `pnpm fixtures && pnpm qa:build && pnpm qa` (QA_SCREENS=<id>,<id> to limit), then open
 // qa-results/index.html.
 
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 import { AGENT_ROUTE } from "../fixtures/agents/route.ts";
 import { CHAT_SENDS } from "../fixtures/composer/sends.ts";
 import { OFFLINE_SENDS } from "../fixtures/offline/sends.ts";
@@ -89,6 +89,14 @@ export const fixtures = [
   "inline-items",
   "inline-failures",
   "inline-reopened",
+  // UX-1 A3: the PR list and PR view (fixtures/prs): no PRs, the reads on their way, GitHub out of reach, GitHub's
+  // rate limit reached, a PR that fails to load, and a PR of 240 files with a 3,000-line file.
+  "prs-none",
+  "prs-loading",
+  "prs-no-github",
+  "prs-rate-limited",
+  "prs-error",
+  "prs-heavy",
   // UX-1: the sidebar's reasons and a new reply (fixtures/sidebar); one agent's live work (fixtures/agents).
   "sidebar-reasons",
   "agents-work",
@@ -193,6 +201,24 @@ const openUpdates = async (page: Page) => {
   await page.keyboard.press("ControlOrMeta+K");
   await page.getByRole("combobox", { name: "Search" }).fill("Check for updates");
   await page.keyboard.press("Enter");
+};
+
+// storefront's PRs (fixtures/prs): the list alone, and #11 (in review, its reviewers at work), #10 (checks failed), #8
+// (merged), #14 (a person's, review asked for) and #13 (240 files) open.
+const PRS = CHAT.replace("#/project/", "#/prs/");
+const PR = (n: number) => `${PRS}/acme/storefront/${String(n)}`;
+const openChanges = (page: Page) => page.getByRole("tab", { name: /^Changes/u }).click();
+/**
+ * The PR reads still on their way (prs-loading never answers them). The gate waits out busy regions before it
+ * shoots, so the entry reaches the screen from a settled one, waits for the placeholder and then lifts its busy flag:
+ * the shot is what you see while the hub answers.
+ */
+const whileLoading = (go: (page: Page) => Promise<void>, shown: (page: Page) => Locator) => async (page: Page) => {
+  await go(page);
+  await shown(page).first().waitFor({ timeout: 10_000 });
+  await page.evaluate(() => {
+    for (const el of document.querySelectorAll("[aria-busy='true']")) el.removeAttribute("aria-busy");
+  });
 };
 
 /** An entry's name in test titles, shot files and the contact sheet. */
@@ -634,6 +660,53 @@ export const screens: readonly Screen[] = [
       await page.getByRole("alert").waitFor();
     },
   },
+  // UX-1 A3: a project's PRs. The list (open first, then merged or closed lately), with nothing picked; none at all;
+  // GitHub out of reach; and a link to a project the hub doesn't have.
+  { id: "prs", route: PRS, fixtures: ["typical", "long-text", "many-agents", "prs-none", "prs-no-github", "prs-rate-limited", "hub-unreachable"] },
+  { id: "prs", route: PRS, fixtures: ["empty"], variant: "missing", expect: "error" },
+  {
+    id: "prs",
+    route: CHAT,
+    fixtures: ["prs-loading"],
+    variant: "loading",
+    open: whileLoading(
+      (page) => page.getByRole("button", { name: "Pull requests" }).click({ timeout: 10_000 }),
+      (page) => page.getByLabel("Loading the pull requests"),
+    ),
+  },
+  // One PR beside the list: its facts, description, checks, reviews with their findings, and its way to main so far.
+  // #10's checks failed after three approvals and an outdated review; a chat line's link names only the number.
+  { id: "prs.detail", route: PR(11), fixtures: ["typical", "long-text", "prs-no-github", "prs-rate-limited"] },
+  { id: "prs.detail", route: PR(10), fixtures: ["typical"], variant: "failed" },
+  { id: "prs.detail", route: PR(8), fixtures: ["typical"], variant: "merged" },
+  { id: "prs.detail", route: PR(14), fixtures: ["typical"], variant: "review-requested" },
+  {
+    id: "prs.detail",
+    route: CHAT,
+    fixtures: ["prs-loading"],
+    variant: "loading",
+    open: whileLoading(async (page) => {
+      await page.evaluate((r) => {
+        window.location.hash = r;
+      }, PR(11));
+    }, (page) => page.getByText(/^Loading #11/u)),
+  },
+  { id: "prs.detail", route: `${PRS}/11`, fixtures: ["typical"], variant: "by-number", sizes: ["small"] },
+  { id: "prs.detail", route: PR(11), fixtures: ["prs-error"], expect: "error" },
+  // Its changes: the files beside a diff drawn a screen at a time, one column or side by side, and a PR too big to
+  // load at once.
+  { id: "prs.detail", route: PR(11), fixtures: ["typical", "long-text", "prs-no-github"], variant: "changes", open: openChanges },
+  {
+    id: "prs.detail",
+    route: PR(11),
+    fixtures: ["typical"],
+    variant: "split",
+    open: async (page) => {
+      await openChanges(page);
+      await page.getByRole("button", { name: "Show side by side" }).click();
+    },
+  },
+  { id: "prs.detail", route: PR(13), fixtures: ["prs-heavy"], variant: "changes", open: openChanges },
   // ...lowered from the header, applied once the keys rest, with Undo.
   {
     id: "chat",

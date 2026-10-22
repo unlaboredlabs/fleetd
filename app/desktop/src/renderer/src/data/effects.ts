@@ -24,6 +24,10 @@ const STATUS_PREFIXES = ["machine.", "usage."];
 // the spans it moves arrive with the task and change events that close them.
 const TIME_PREFIXES = ["task.", "change.", "request.", "workstream."];
 const TIME_TYPES = new Set(["lead.woken", "pr.merged"]);
+// What moves a PR as the PR screens show it (the hub's list in crates/fleetd-contracts/src/prs.rs): its merge-queue
+// state, a review, a merge, its writer's task. Only a new head changes its files and diff, and only the queue sees one.
+const PR_PREFIXES = ["change.", "pr.", "review.", "train.", "task."];
+const PR_DIFF_PREFIXES = ["change.", "pr."];
 
 /** The orders an event is about: `data.workstreamId`, plus `data.workstreamIds` (a lead woken for several). */
 export const ordersNamed = (event: HubEvent): readonly string[] => {
@@ -58,6 +62,9 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
       if (type.startsWith("workstream.") || type.startsWith("claim.")) out.push({ tool: "workstream_get", where: { workstreamId: id } });
     }
   }
+  // Only the PR screen on view has these reads mounted, so this refetches one list, one PR and its visible pages.
+  if (startsWithAny(type, PR_PREFIXES)) out.push({ tool: "pr_list" }, { tool: "pr_get" });
+  if (startsWithAny(type, PR_DIFF_PREFIXES)) out.push({ tool: "pr_files" }, { tool: "pr_diff" });
   if (type.startsWith("steer.")) {
     out.push(workstreamId === undefined ? { tool: "steers_list" } : { tool: "steers_list", where: { workstreamId } });
   }
