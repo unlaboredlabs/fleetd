@@ -656,8 +656,9 @@ impl Chat {
         })
     }
 
-    /// The lead's messages after the human's last one written in the chat (not history), oldest first.
-    fn since_human(&self, r: &ProjectRef) -> Result<Vec<ChatMessage>, StoreError> {
+    /// The lead's messages after the human's last one written in the chat, oldest first. History is left out: on a
+    /// migrated project the human has not written in yet, that would be the whole past on every state read.
+    pub(super) fn since_human(&self, r: &ProjectRef) -> Result<Vec<ChatMessage>, StoreError> {
         self.db.with(|c| {
             let (m, p) = (r.machine_id.as_str(), r.project_id.as_str());
             let after: i64 = c.query_row(
@@ -669,7 +670,8 @@ impl Chat {
             let rows: Vec<String> = c
                 .prepare_cached(
                     "SELECT data FROM chat_messages WHERE machine_id = ?1 AND project_id = ?2 AND seq > ?3
-                     AND json_extract(data, '$.author') = 'lead' ORDER BY seq",
+                     AND json_extract(data, '$.author') = 'lead' AND json_extract(data, '$.history') IS NULL
+                     ORDER BY seq",
                 )?
                 .query_map(params![m, p, after], |row| row.get(0))?
                 .collect::<rusqlite::Result<_>>()?;
