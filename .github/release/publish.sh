@@ -2,11 +2,12 @@
 # Publishes the assets in dist/ to a GitHub release: the rolling `nightly` prerelease (CHANNEL=nightly) or the
 # release of the pushed v* tag (CHANNEL=stable).
 #
-# Next to the assets it uploads SHA256SUMS (plain `sha256sum` output, one line per asset) and release.json
+# Next to the assets it uploads SHA256SUMS (plain `sha256sum` output, one line per asset), release.json
 # ({channel, version, commit, date, cliVersion, appVersion, appCommit}), which `fleetd update`, the app's update
-# notice and the next nightly's "did the app change" check read. A nightly that skipped the app (unchanged) or the
-# CLI keeps the previous run's assets, checksums and versions for it. Both files go up last, so a reader never sees
-# checksums for assets that are not there yet.
+# notice and the next nightly's "did the app change" check read, and changes.json, the channel's "what's new" since
+# the previous release's commit (changes.sh). A nightly that skipped the app (unchanged) or the CLI keeps the
+# previous run's assets, checksums and versions for it. These files go up last, so a reader never sees checksums for
+# assets that are not there yet.
 #
 # The GPUI app's macOS zip, retired, leaves the release and its checksums: a `fleetd update` from before the Electron
 # app then updates the CLI and stops, leaving the app alone (on macOS 11, where the Electron app can't run, it stays
@@ -19,6 +20,7 @@
 # Env: CHANNEL, VERSION, APP_BUILT, CLI_PUBLISH, GH_TOKEN, GITHUB_SHA, GITHUB_REF_NAME.
 set -euo pipefail
 : "${CHANNEL:?}" "${VERSION:?}" "${APP_BUILT:?}" "${CLI_PUBLISH:?}" "${GITHUB_SHA:?}"
+here="$(cd "$(dirname "$0")" && pwd)"
 cd dist
 if [ "$CLI_PUBLISH" != true ]; then rm -f fleetd-linux-* fleetd-darwin-*; fi
 shopt -s nullglob
@@ -37,9 +39,15 @@ upgrade="Updating a Mac from before the Electron app: run \`fleetd update\` twic
 
 prev="$(mktemp -d)"
 if [ "$CHANNEL" = nightly ]; then
-  gh release download nightly -p SHA256SUMS -p release.json -D "$prev" 2>/dev/null || echo "no previous nightly"
+  gh release download nightly -p SHA256SUMS -p release.json -p changes.json -D "$prev" 2>/dev/null || echo "no previous nightly"
+  since="$prev"
+else
+  # The latest stable release, before this one exists: what's new runs from its commit.
+  since="$(mktemp -d)"
+  gh release download -p release.json -p changes.json -D "$since" 2>/dev/null || echo "no previous release"
 fi
 [ -s "$prev/release.json" ] || echo '{}' > "$prev/release.json"
+"$here/changes.sh" "$since" "$GITHUB_SHA" > changes.json
 touch "$prev/SHA256SUMS"
 
 sha256sum "${assets[@]}" > "$prev/built"
@@ -57,6 +65,7 @@ jq -n --arg channel "$CHANNEL" --arg version "$VERSION" --arg commit "$GITHUB_SH
     appCommit: (if $app == "true" then $commit else $p.appCommit end)
   }' > release.json
 cat SHA256SUMS release.json
+jq -r '.changes[:20][] | "\(.commit[:7]) \(.areas | join(",")): \(.subject)"' changes.json
 
 if [ "$CHANNEL" = nightly ]; then
   notes="Rolling build of main at ${GITHUB_SHA} (${VERSION}). Install: curl -fsSL https://fleetd.sh | sh"
@@ -73,6 +82,6 @@ fi
 gh release upload "$tag" "${assets[@]}" --clobber
 feeds=(latest-*.yml)
 if [ ${#feeds[@]} -gt 0 ]; then gh release upload "$tag" "${feeds[@]}" --clobber; fi
-gh release upload "$tag" SHA256SUMS release.json --clobber
+gh release upload "$tag" SHA256SUMS release.json changes.json --clobber
 for name in "${retired[@]}"; do gh release delete-asset "$tag" "$name" -y 2>/dev/null || true; done
 echo "published https://github.com/${GITHUB_REPOSITORY:-unlaboredlabs/fleetd}/releases/tag/$tag"

@@ -71,6 +71,19 @@ jobs:
             echo "has-cli=$has_cli"
             echo "build-app=$build_app"
           } >> "$GITHUB_OUTPUT"
+      - name: What's new (dry run)
+        # The changes.json publish.sh would upload now, from the live nightly's, checked for the shape the app reads.
+        if: ${{ !inputs.publish }}
+        run: |
+          prev="$(mktemp -d)"
+          for name in release.json changes.json; do
+            curl -fsSL -o "$prev/$name" "https://github.com/$GITHUB_REPOSITORY/releases/download/nightly/$name" || rm -f "$prev/$name"
+          done
+          .github/release/changes.sh "$prev" "$GITHUB_SHA" > "$RUNNER_TEMP/changes.json"
+          jq -e '.changes | length > 0 and length <= 300 and all(.[];
+            (.commit | test("^[0-9a-f]{40}$")) and (.date | test("^[0-9-]{10}T[0-9:]{8}Z$")) and (.subject | type == "string") and
+            (.areas | length > 0 and all(.[]; . == "app" or . == "hub" or . == "other")))' "$RUNNER_TEMP/changes.json"
+          jq -r '.changes[:20][] | "\(.commit[:7]) \(.areas | join(",")): \(.subject)"' "$RUNNER_TEMP/changes.json"
 
   cli:
     needs: plan
@@ -446,6 +459,9 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v7
+        with:
+          # changes.sh reads the history since the previous release.
+          fetch-depth: 0
       - uses: actions/download-artifact@v8
         with:
           path: dist

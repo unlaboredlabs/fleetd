@@ -3355,6 +3355,79 @@
       ],
       "type": "object"
     },
+    "HubBusyItem": {
+      "description": "One thing in flight on the hub.",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/HubBusyKind"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId",
+          "description": "Where it runs, when on one machine."
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "since": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When it started."
+        },
+        "text": {
+          "description": "What it is, for a person: \"T19 writing app-main in fleetd (12 m)\".",
+          "maxLength": 280,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "text"
+      ],
+      "type": "object"
+    },
+    "HubBusyKind": {
+      "oneOf": [
+        {
+          "const": "agent",
+          "description": "A running task.",
+          "type": "string"
+        },
+        {
+          "const": "lead",
+          "description": "A lead turn in progress.",
+          "type": "string"
+        },
+        {
+          "const": "train",
+          "description": "A merge train step: a change at the head of its train.",
+          "type": "string"
+        },
+        {
+          "const": "approval",
+          "description": "An approval being answered.",
+          "type": "string"
+        },
+        {
+          "const": "clone",
+          "description": "A project being cloned.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "HubChannel": {
+      "description": "The release channel a hub's build follows: nightly when its version contains \"-nightly.\", stable otherwise.",
+      "oneOf": [
+        {
+          "enum": [
+            "nightly",
+            "stable"
+          ],
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
     "HubEvent": {
       "properties": {
         "at": {
@@ -3720,6 +3793,55 @@
         }
       ],
       "x-open": true
+    },
+    "HubInfoInput": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId",
+          "description": "Only what runs on this machine (before restarting its node); absent: everything."
+        }
+      },
+      "type": "object"
+    },
+    "HubInfoOutput": {
+      "properties": {
+        "busy": {
+          "description": "Empty when nothing is in flight. A restart interrupts each item.",
+          "items": {
+            "$ref": "#/$defs/HubBusyItem"
+          },
+          "maxItems": 50,
+          "type": "array"
+        },
+        "channel": {
+          "$ref": "#/$defs/HubChannel",
+          "description": "Absent for a local build."
+        },
+        "next": {
+          "type": "string"
+        },
+        "protocol": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "startedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "version": {
+          "description": "The hub's fleetd version, as `fleetd --version` prints it. \"0.0.0\" for a local build.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "version",
+        "protocol",
+        "busy"
+      ],
+      "type": "object"
     },
     "HumanRequest": {
       "description": "One human request, as stored and as every client shows it.",
@@ -4936,6 +5058,12 @@
         "github_webhook_set.output": {
           "$ref": "#/$defs/GithubWebhookSetOutput"
         },
+        "hub_info.input": {
+          "$ref": "#/$defs/HubInfoInput"
+        },
+        "hub_info.output": {
+          "$ref": "#/$defs/HubInfoOutput"
+        },
         "incidents_list.input": {
           "$ref": "#/$defs/IncidentsListInput"
         },
@@ -5334,6 +5462,8 @@
         "fleetd_status.output",
         "github_webhook_set.input",
         "github_webhook_set.output",
+        "hub_info.input",
+        "hub_info.output",
         "incidents_list.input",
         "incidents_list.output",
         "intake_preview.input",
