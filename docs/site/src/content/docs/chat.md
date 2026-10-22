@@ -81,7 +81,7 @@ Everything shows up in the chat, quietly:
 
 | In the chat | Shows |
 |---|---|
-| The agents strip, under the lead's message | How many agents are working, one line each. Expand it for their lanes and where time went. |
+| The agents strip, under the lead's message | One line: how many agents are working, and on which PRs. Expand it to see each agent's role, what it's doing and for how long. Click an agent waiting on you to jump to what it needs. |
 | One-line events | A pull request opened, merged, or sent back. |
 
 For a project's progress at a glance, see [Status](/docs/status). For where the time went, see
@@ -89,12 +89,12 @@ For a project's progress at a glance, see [Status](/docs/status). For where the 
 
 ## Read a pull request {#prs}
 
-Click a PR in the chat, or choose **Pull requests** in the command palette (⌘K), to read the project's PRs in the
+Choose **Pull requests** in the sidebar, or click a PR's number in the agents strip, to read the project's PRs in the
 app: open ones first, then those merged or closed in the last week.
 
 | A PR shows | |
 |---|---|
-| Overview | Where it is on its way to main, its checks, its reviews with their findings, the agent that wrote it, and its description. |
+| Overview | Where it is on its way to main, its checks, its reviews with their findings, the agent that wrote it, the agents at work on it now, and its description. |
 | Changes | The changed files and their diff, in one column or side by side. Click a file to jump to it. |
 
 **Open on GitHub** is always there, for anything the app doesn't show.

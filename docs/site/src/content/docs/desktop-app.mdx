@@ -42,7 +42,7 @@ To change hubs, open Settings (⌘,) → General → Hub.
 
 | Part | Shows |
 |---|---|
-| Sidebar | Your projects, each saying why it wants you: "reply", "approve", "secret" or "blocked". Otherwise it says how many agents are working. A project in bold has a new message from its lead. Below them: Agents, Status, Time, Machines and Settings. |
+| Sidebar | Your projects, each saying why it wants you: "reply", "approve", "secret" or "blocked". Otherwise it says how many agents are working. A project in bold has a new message from its lead. Below them: Agents, Pull requests (of the project you're in), Status, Time, Machines and Settings. |
 | The chat | The selected project's conversation with its lead. |
 
 Click a project to open its chat. ⌥⌘A jumps to the next project that wants you. To add a project, click "Add" next to Projects, then paste a GitHub URL or
@@ -59,8 +59,8 @@ on a chat attach to your message. See [Add a project](/docs/projects#add-a-proje
 | The box at the bottom | Your message ("Message the lead"), ready to type as soon as a chat opens. Enter sends; Shift+Enter adds a line; ↑ in an empty box brings back your last message; the clip or ⌘⇧A attaches a file. While the lead works, a message steers it, and Stop beside Send ends its turn now. Unsent words stay, even after you quit. |
 | The line above the box | While the lead waits on you, what for ("2 questions, asked at 09:02", "1 command to approve"). Show scrolls to it. |
 | An empty chat | Asks what the lead should do, with a few starters that fill the box for you to edit. |
-| The agents strip | Under the lead's message: how many agents are working, one line each. Expand it for lanes and time, and "What T88 was told" for each agent. |
-| One-line events | Pull requests opened, merged or sent back. Click one to read it in the app; see [Read a pull request](/docs/chat#prs). |
+| The agents strip | Under the lead's message, after any approval or secret it asks for: how many agents are working, and on which PRs. Expand it to see each agent, and click one to read what it was told. "Where the time went" opens [Time](#time), with each agent's model, tokens and activity. |
+| One-line events | Pull requests opened, merged or sent back. |
 | Secret and approval items | A masked field with "Save secret", or a command (or a tool's permission request) with Approve and Deny. See [Secrets & approvals](/docs/approvals-and-secrets). |
 | The header | The project, its state word (as in [Status](#status)), and its [Max agents](/docs/projects#max-agents) control ("agents 6 / 12"). |
 
@@ -72,7 +72,8 @@ How to work with the lead: [Chat with the lead](/docs/chat).
 
 Agents lists every agent working now, across all your projects: its role, its task, what it's doing and for how long.
 Click one to watch its work as it happens: what it was told, the commands it ran, the files it edited and what it's
-writing. Watching doesn't interrupt it. To change what it does, tell its lead in the chat.
+writing. Watching doesn't interrupt it. To change what it does, tell its lead in the chat. Its PR number opens
+[the PR](/docs/chat#prs).
 
 ## Status {#status}
 
