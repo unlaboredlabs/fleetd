@@ -49,6 +49,8 @@ export default defineGroup({
     const make = (what: string, note: string, app: UpdatesState["app"], release?: Release | null): Fixture => {
       const f = Fixture.from(base("typical"), `updates-${what}`, note);
       f.appUpdate = state(app, release);
+      // A hub on this app's build, so the app's own states show beside an up to date hub.
+      if (f.state.phase === "live") f.state = { ...f.state, version: MINE };
       return f;
     };
     /** The hub running `version` (its ready frame), and, when given, an update of it under way. */

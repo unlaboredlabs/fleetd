@@ -34,7 +34,7 @@ describe("notesSince", () => {
 
 describe("subjectLines", () => {
   it("drops the conventional prefix and the PR number, and splits a batch", () => {
-    expect(subjectLines("fix(cli): fleetd status says \"1 item\" (#249)")).toEqual(['Fleetd status says "1 item"']);
+    expect(subjectLines("fix(cli): fleetd status says \"1 item\" (#249)")).toEqual(['fleetd status says "1 item"']);
     expect(subjectLines("batch: a (#1); feat!: b (#2)")).toEqual(["A", "B"]);
     expect(subjectLines("Merge branch 'main'")).toEqual([]);
   });

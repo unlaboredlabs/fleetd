@@ -85,7 +85,8 @@ export const subjectLines = (subject: string): string[] => {
         .trim(),
     )
     .filter((line) => line !== "")
-    .map((line) => line.charAt(0).toUpperCase() + line.slice(1));
+    // "fleetd" stays lower case, as the product's name.
+    .map((line) => (/^fleetd\b/u.test(line) ? line : line.charAt(0).toUpperCase() + line.slice(1)));
 };
 
 /**

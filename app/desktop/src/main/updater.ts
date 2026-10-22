@@ -60,7 +60,7 @@ const FixtureSection = z.object({
     .object({
       current: z.string().optional(),
       app: z.custom<AppUpdate>((v) => typeof v === "object" && v !== null && typeof (v as { kind?: unknown }).kind === "string"),
-      release: z.custom<Release>((v) => typeof v === "object" && v !== null && Array.isArray((v as { changes?: unknown }).changes)).optional(),
+      release: z.custom<Release>((v) => typeof v === "object" && v !== null && Array.isArray((v as { changes?: unknown }).changes)).nullish(),
     })
     .optional(),
 });
