@@ -30,6 +30,10 @@ fn project() -> ProjectRef {
 }
 
 fn hub(clock: Arc<ManualClock>) -> (Arc<Hub>, tempfile::TempDir) {
+    hub_on(HubDb::open_memory().unwrap(), clock)
+}
+
+fn hub_on(db: Arc<HubDb>, clock: Arc<ManualClock>) -> (Arc<Hub>, tempfile::TempDir) {
     let home = tempfile::tempdir().unwrap();
     let config = HubConfig {
         home: home.path().to_path_buf(),
@@ -38,7 +42,7 @@ fn hub(clock: Arc<ManualClock>) -> (Arc<Hub>, tempfile::TempDir) {
         queue_ttl_sec: None,
         retro_model: None,
     };
-    let hub = build_on(HubDb::open_memory().unwrap(), config, clock).unwrap();
+    let hub = build_on(db, config, clock).unwrap();
     hub.db
         .with(|c| {
             let w = json!({
@@ -909,32 +913,37 @@ async fn a_draft_order_is_waiting_for_its_brief() {
     assert!(missing.message.starts_with("Nothing to show"));
 }
 
-/// Puts the item's writer T1 in `state`, and appends its `task.*` event when it ended.
-fn set_writer(hub: &Hub, state: &str) {
+/// Puts `task`, a writer linked to the item, in `state`, and appends its `task.*` event as the hub does.
+fn set_writer(hub: &Hub, task: &str, state: &str) {
     let now = crate::hub::store::now_ms(hub.clock.as_ref());
     let at = iso_ms_of(now);
-    let task = json!({
-        "taskId": "T1", "projectRef": { "machineId": "devbox", "projectId": "storefront" }, "workstreamId": "W1",
+    let row = json!({
+        "taskId": task, "projectRef": { "machineId": "devbox", "projectId": "storefront" }, "workstreamId": "W1",
         "title": "cart page", "kind": "write", "prompt": "Build the cart page.", "areas": ["web"],
         "model": "claude-opus-5-5", "effort": "high", "itemId": "P1", "state": state, "attempt": 1,
         "createdAt": iso_ms_of(T0 as i64), "startedAt": iso_ms_of(T0 as i64),
     });
     hub.db
         .with(|c| {
-            c.execute("DELETE FROM tasks", [])?;
+            c.execute(
+                "DELETE FROM tasks WHERE json_extract(data, '$.taskId') = ?",
+                [task],
+            )?;
             c.execute(
                 "INSERT INTO tasks (machine_id, project_id, workstream_id, state, data)
                  VALUES ('devbox', 'storefront', 'W1', ?, ?)",
-                params![state, task.to_string()],
+                params![state, row.to_string()],
             )?;
             c.execute(
-                "UPDATE plan_items SET started_ms = ?, data = json_set(data, '$.links.tasks', json('[\"T1\"]'))",
+                "UPDATE plan_items SET started_ms = ?, data = json_set(data, '$.links.tasks',
+                   (SELECT json_group_array(json_extract(data, '$.taskId')) FROM tasks))",
                 [T0 as i64],
             )?;
             Ok(())
         })
         .unwrap();
     let r#type = match state {
+        "running" => fleetd_contracts::events::HubEventType::TaskStarted,
         "failed" => fleetd_contracts::events::HubEventType::TaskFailed,
         "done" => fleetd_contracts::events::HubEventType::TaskCompleted,
         _ => return,
@@ -946,16 +955,20 @@ fn set_writer(hub: &Hub, state: &str) {
             machine_id: Some(MachineId::unchecked("devbox")),
             project_id: Some(ProjectId::unchecked("storefront")),
             thread_id: None,
-            summary: format!("T1 {state}: cart page"),
-            data: Some(json!({ "taskId": "T1", "workstreamId": "W1" })),
+            summary: format!("{task} {state}: cart page"),
+            data: Some(json!({ "taskId": task, "workstreamId": "W1" })),
             attention: None,
         })
         .unwrap();
 }
 
-/// The order's one m item, "cart page", and a reader of its estimate: (pct, the last point's drop) after `secs`.
+/// The order's one m item, "cart page".
 fn one_item(clock: &Arc<ManualClock>) -> (Arc<Hub>, tempfile::TempDir) {
-    let (hub, home) = hub(clock.clone());
+    one_item_on(HubDb::open_memory().unwrap(), clock)
+}
+
+fn one_item_on(db: Arc<HubDb>, clock: &Arc<ManualClock>) -> (Arc<Hub>, tempfile::TempDir) {
+    let (hub, home) = hub_on(db, clock.clone());
     let (r, by) = (project(), "lead:devbox/storefront");
     hub.plans
         .milestone(
@@ -973,6 +986,7 @@ fn one_item(clock: &Arc<ManualClock>) -> (Arc<Hub>, tempfile::TempDir) {
     (hub, home)
 }
 
+/// The order's estimate `secs` later: (pct, the last point's drop).
 fn estimate_after(
     hub: &Hub,
     clock: &ManualClock,
@@ -999,7 +1013,7 @@ async fn an_item_with_nothing_in_flight_holds_its_stage_credit() {
     let clock = ManualClock::at(T0);
     let (hub, _home) = one_item(&clock);
     // Its writer finished without a PR (a research item, say): nothing else will happen until the lead acts.
-    set_writer(&hub, "done");
+    set_writer(&hub, "T1", "done");
     let (pct, _) = estimate_after(&hub, &clock, 2 * 3600);
     assert_eq!(
         pct, 14,
@@ -1013,11 +1027,11 @@ async fn in_stage_credit_moves_while_its_writer_runs_and_is_taken_back_with_a_ma
     use fleetd_contracts::status::DropReason;
     let clock = ManualClock::at(T0);
     let (hub, _home) = one_item(&clock);
-    set_writer(&hub, "running");
+    set_writer(&hub, "T1", "running");
     let (running, _) = estimate_after(&hub, &clock, 1);
     let (later, _) = estimate_after(&hub, &clock, 30 * 60);
     assert!(later > running, "in flight: {later} > {running}");
-    set_writer(&hub, "failed");
+    set_writer(&hub, "T1", "failed");
     let (stopped, drop) = estimate_after(&hub, &clock, 1);
     assert_eq!(stopped, 14, "the in-stage credit is taken back");
     let drop = drop.expect("never a silent drop");
@@ -1034,4 +1048,69 @@ async fn in_stage_credit_moves_while_its_writer_runs_and_is_taken_back_with_a_ma
         stopped,
         "and it doesn't creep back"
     );
+}
+
+/// Work resumed after a gap earns in-stage credit from its own start: the hours nobody worked never count.
+#[tokio::test]
+async fn a_new_writer_after_a_gap_earns_from_its_own_start_not_from_the_stage_start() {
+    let clock = ManualClock::at(T0);
+    let (hub, _home) = one_item(&clock);
+    set_writer(&hub, "T1", "running");
+    let (ran, _) = estimate_after(&hub, &clock, 30 * 60);
+    set_writer(&hub, "T1", "failed");
+    assert_eq!(estimate_after(&hub, &clock, 1).0, 14);
+    clock.advance(Duration::from_secs(3 * 3600));
+    // The lead starts a new writer for the same item three hours later.
+    set_writer(&hub, "T2", "running");
+    assert_eq!(
+        estimate_after(&hub, &clock, 1).0,
+        14,
+        "three idle hours earn nothing at its start ({ran} counted from the stage's start)"
+    );
+    let (three_min, _) = estimate_after(&hub, &clock, 3 * 60);
+    assert!(
+        14 < three_min && three_min < ran,
+        "it moves with the new writer's own minutes: 14 < {three_min} < {ran}"
+    );
+    assert_eq!(estimate_after(&hub, &clock, 30 * 60).0, ran);
+}
+
+/// The live bug's leftover: a figure an older hub stored while it credited every minute in a stage. The drop rule
+/// holds a stored figure until an observed event explains a fall, so the update restarts each series.
+#[tokio::test]
+async fn an_update_releases_a_figure_the_old_rule_left_stuck() {
+    let clock = ManualClock::at(T0);
+    let home = tempfile::tempdir().unwrap();
+    let db = HubDb::open(home.path()).unwrap();
+    let (hub, _home) = one_item_on(db.clone(), &clock);
+    set_writer(&hub, "T1", "done");
+    // The old rule kept rising after the writer ended and stored 45 an hour later.
+    db.with(|c| {
+        c.execute(
+            "INSERT INTO status_series (scope, at_ms, pct, verified) VALUES ('order:W1', ?, 45, 0)",
+            [T0 as i64 + 3_600_000],
+        )?;
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(
+        estimate_after(&hub, &clock, 2 * 3600).0,
+        45,
+        "held: nothing since that point explains a fall"
+    );
+    db.with(|c| {
+        c.pragma_update(
+            None,
+            "user_version",
+            crate::hub::store::SCHEMA_VERSION as i64 - 1,
+        )?;
+        Ok(())
+    })
+    .unwrap();
+    let updated = HubDb::open(home.path()).unwrap();
+    assert_eq!(
+        updated.user_version().unwrap(),
+        crate::hub::store::SCHEMA_VERSION as i64
+    );
+    assert_eq!(estimate_after(&hub, &clock, 1).0, 14);
 }

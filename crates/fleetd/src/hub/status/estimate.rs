@@ -18,7 +18,7 @@ use super::model::{
     self, Calibration, Cause, Group, ItemProgress, Obs, Point, PointDrop, Unit, UnitKey, UnitKind,
     What,
 };
-use super::render::{Order, Scope, World};
+use super::render::{DAY_MS, Order, Scope, World};
 use crate::hub::plan::parse_ms;
 use crate::hub::plan::store::ItemRow;
 use crate::hub::store::iso_ms;
@@ -495,56 +495,75 @@ pub fn compute(w: &World, scope: &StatusScope, s: &Scope<'_>) -> ModelOut {
     let pr_of = change_units;
     let facts = model::observe(&obs, now);
 
-    // What is in flight for each unit: a live task of its own, or a Change of its moving on the train (one the train
-    // holds, or one in review with no reviewer running, is not). Only then does time in a stage earn credit.
-    let live = |t: &str| md.live_tasks.contains_key(t);
-    let moving = |ch: &Change| {
-        ch.task_id.as_ref().is_some_and(|t| live(t.as_str()))
-            || match ch.state {
-                ChangeState::Queued | ChangeState::Ready => {
-                    ch.last_error.as_ref().is_none_or(|e| e.is_empty())
-                }
-                ChangeState::Reviewing => md
-                    .live_tasks
-                    .values()
-                    .any(|(_, c)| c.as_deref() == Some(ch.change_id.as_str())),
-                ChangeState::Rebasing | ChangeState::Ci | ChangeState::Merging => true,
-                _ => false,
-            }
+    // What is in flight for each unit, and since when: a live task of its own, or a Change of its moving on the train
+    // (one the train holds, or one in review with no reviewer running, is not). Only time since then earns in-stage
+    // credit, so work resumed after a gap never claims the gap. A task's run began at its last start or end in the
+    // last day (a task live after an end was continued); with neither, it has run all day. A Change has been moving
+    // since its last update: a state move or a hold lifted. A start read later than the real one only under-counts,
+    // which the drop rule shows as a pause, never as a fall or a jump.
+    let mut run_start: HashMap<&str, i64> = HashMap::new();
+    for (t, e) in &w.recent {
+        if !matches!(
+            t.as_str(),
+            "task.started" | "task.completed" | "task.failed" | "task.cancelled"
+        ) {
+            continue;
+        }
+        let (Some(task), Some(at)) = (
+            e.pointer("/data/taskId").and_then(Value::as_str),
+            e.get("at").and_then(Value::as_str).and_then(parse_ms),
+        ) else {
+            continue;
+        };
+        let since = run_start.entry(task).or_insert(at);
+        *since = (*since).max(at);
+    }
+    let task_since = |t: &str| {
+        md.live_tasks
+            .contains_key(t)
+            .then(|| run_start.get(t).copied().unwrap_or(now - DAY_MS))
     };
-    let mut in_flight: HashSet<UnitKey> = pr_of
-        .iter()
-        .filter(|(_, ch)| moving(ch))
-        .map(|(k, _)| k.clone())
-        .collect();
-    in_flight.extend(
-        counted
-            .iter()
-            .filter(|i| i.data.links.tasks.iter().any(|t| live(t.as_str())))
-            .map(|i| UnitKey::Item(i.n)),
-    );
-    let live_orders: HashSet<&str> = md.live_tasks.values().map(|(ws, _)| ws.as_str()).collect();
-    in_flight.extend(
-        virtual_orders
-            .iter()
-            .map(|o| o.w.workstream_id.as_str())
-            .filter(|ws| live_orders.contains(ws))
-            .map(|ws| UnitKey::Order(ws.to_owned())),
-    );
-    // A merged unit's done-when checks run while its order is verifying.
-    let verifying: HashSet<&str> = s
-        .orders
-        .iter()
-        .filter(|o| o.w.state == WorkstreamState::Verifying)
-        .map(|o| o.w.workstream_id.as_str())
-        .collect();
-    let order_of = |key: &UnitKey| match key {
-        UnitKey::Item(n) => counted
-            .iter()
-            .find(|i| i.n == *n)
-            .and_then(|i| i.workstream_id.clone()),
-        UnitKey::Order(ws) => Some(ws.clone()),
+    let change_since = |ch: &Change| {
+        let updated = parse_ms(ch.updated_at.as_str()).unwrap_or(now);
+        let train = match ch.state {
+            ChangeState::Queued | ChangeState::Ready => ch
+                .last_error
+                .as_ref()
+                .is_none_or(|e| e.is_empty())
+                .then_some(updated),
+            ChangeState::Reviewing => md
+                .live_tasks
+                .iter()
+                .filter(|(_, (_, c))| c.as_deref() == Some(ch.change_id.as_str()))
+                .filter_map(|(t, _)| task_since(t))
+                .min(),
+            ChangeState::Rebasing | ChangeState::Ci | ChangeState::Merging => Some(updated),
+            _ => None,
+        };
+        let writer = ch.task_id.as_ref().and_then(|t| task_since(t.as_str()));
+        train.into_iter().chain(writer).min()
     };
+    let mut in_flight: HashMap<UnitKey, i64> = HashMap::new();
+    let mut flying = |key: &UnitKey, since: Option<i64>| {
+        if let Some(since) = since {
+            let at = in_flight.entry(key.clone()).or_insert(since);
+            *at = (*at).min(since);
+        }
+    };
+    for (key, ch) in &pr_of {
+        flying(key, change_since(ch));
+    }
+    for i in &counted {
+        for t in &i.data.links.tasks {
+            flying(&UnitKey::Item(i.n), task_since(t.as_str()));
+        }
+    }
+    for o in &virtual_orders {
+        let ws = o.w.workstream_id.as_str();
+        for (t, _) in md.live_tasks.iter().filter(|(_, (order, _))| order == ws) {
+            flying(&UnitKey::Order(ws.to_owned()), task_since(t));
+        }
+    }
 
     // Each unit's progress against its calibration.
     let mut units: HashMap<UnitKey, ItemProgress> = HashMap::new();
@@ -561,14 +580,12 @@ pub fn compute(w: &World, scope: &StatusScope, s: &Scope<'_>) -> ModelOut {
         bases.push(r.basis);
         let f = facts.get(&key).cloned().unwrap_or_default();
         let (stage, entered) = f.current();
-        let moving = in_flight.contains(&key)
-            || (stage == ItemStage::Merged
-                && order_of(&key).is_some_and(|ws| verifying.contains(ws.as_str())));
-        let p = model::item_progress(&f, now, &r, moving);
+        let since = in_flight.get(&key).copied();
+        let p = model::item_progress(&f, now, &r, since);
         if !p.verified {
             let k = stage.index();
-            let capped_at = entered + (r.usual_ms(k) as f64 * model::IN_STAGE_CAP) as i64;
-            if moving && capped_at > now {
+            let cap_ms = (r.usual_ms(k) as f64 * model::IN_STAGE_CAP) as i64;
+            if since.is_some_and(|since| entered.max(since) + cap_ms > now) {
                 wake_at(now + TICK_MS);
             }
             if let Some(slow) = r.slow_at(k) {

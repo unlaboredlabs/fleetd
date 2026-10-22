@@ -386,9 +386,15 @@ pub struct ItemProgress {
 }
 
 /// Stage credit plus in-stage smoothing: `cum[k] + weight(k+1) × min(elapsed / usual, 0.9)`. The smoothing stands
-/// for work under way, so it applies only while something for the unit is `in_flight`; otherwise the unit holds its
-/// stage's credit, however long it sits there.
-pub fn item_progress(f: &ItemFacts, now: i64, r: &Resolved, in_flight: bool) -> ItemProgress {
+/// for work under way, so `elapsed` counts only from when the unit's current run of in-flight work began
+/// (`in_flight_since`, or the stage's start if later). With nothing in flight the unit holds its stage's credit,
+/// however long it sits there, and time nobody worked never counts when work resumes.
+pub fn item_progress(
+    f: &ItemFacts,
+    now: i64,
+    r: &Resolved,
+    in_flight_since: Option<i64>,
+) -> ItemProgress {
     let (stage, entered) = f.current();
     let k = stage.index();
     if stage == ItemStage::Verified {
@@ -401,11 +407,9 @@ pub fn item_progress(f: &ItemFacts, now: i64, r: &Resolved, in_flight: bool) -> 
     }
     let elapsed = (now - entered).max(0);
     let usual = r.usual_ms(k);
-    let frac = if in_flight {
-        (elapsed as f64 / usual as f64).min(IN_STAGE_CAP)
-    } else {
-        0.0
-    };
+    let frac = in_flight_since.map_or(0.0, |since| {
+        ((now - entered.max(since)).max(0) as f64 / usual as f64).min(IN_STAGE_CAP)
+    });
     ItemProgress {
         stage,
         credit: r.weights.cum[k] + r.weights.weight(k + 1) * frac,
@@ -714,14 +718,14 @@ mod tests {
             (ItemStage::BriefFrozen, 0),
             (ItemStage::PrOpen, 10 * M),
         ]);
-        let p = item_progress(&at, 10 * M, &r, true);
+        let p = item_progress(&at, 10 * M, &r, Some(0));
         assert_eq!(p.stage, ItemStage::PrOpen);
         assert!(
             (p.credit - r.weights.cum[ItemStage::PrOpen.index()]).abs() < 1e-9,
             "no time in the stage yet"
         );
         let done = facts(&[(ItemStage::PrOpen, 0), (ItemStage::Verified, 5 * M)]);
-        let p = item_progress(&done, 6 * M, &r, true);
+        let p = item_progress(&done, 6 * M, &r, Some(0));
         assert!(p.verified && p.credit == 1.0);
     }
 
@@ -731,12 +735,12 @@ mod tests {
         let k = ItemStage::TaskStarted.index();
         let usual = r.durations.p50[k];
         let f = facts(&[(ItemStage::TaskStarted, 0)]);
-        let half = item_progress(&f, usual / 2, &r, true).credit;
+        let half = item_progress(&f, usual / 2, &r, Some(0)).credit;
         let expect = r.weights.cum[k] + r.weights.weight(k + 1) * 0.5;
         assert!((half - expect).abs() < 1e-6, "{half} vs {expect}");
         let mut last = 0.0;
         for t in [0, usual / 4, usual / 2, usual, 3 * usual, 100 * usual] {
-            let c = item_progress(&f, t, &r, true).credit;
+            let c = item_progress(&f, t, &r, Some(0)).credit;
             assert!(c >= last, "never falls with time");
             assert!(
                 c < r.weights.cum[k + 1],
@@ -747,9 +751,14 @@ mod tests {
         let capped = r.weights.cum[k] + r.weights.weight(k + 1) * IN_STAGE_CAP;
         assert!((last - capped).abs() < 1e-9, "the 0.9 cap");
         assert_eq!(
-            item_progress(&f, 100 * usual, &r, false).credit,
+            item_progress(&f, 100 * usual, &r, None).credit,
             r.weights.cum[k],
             "with nothing in flight, time in the stage earns nothing"
+        );
+        let resumed = item_progress(&f, 100 * usual + usual / 2, &r, Some(100 * usual)).credit;
+        assert!(
+            (resumed - expect).abs() < 1e-6,
+            "work resumed after a gap counts from its own start: {resumed} vs {expect}"
         );
     }
 
@@ -759,17 +768,17 @@ mod tests {
         let f = facts(&[(ItemStage::PrOpen, 0)]);
         let mut r = resolved();
         assert!(
-            !item_progress(&f, 100 * r.usual_ms(k), &r, true).slower,
+            !item_progress(&f, 100 * r.usual_ms(k), &r, Some(0)).slower,
             "the built-in times never call anything slow"
         );
         r.durations.p50[k] = 20 * M;
         r.durations.stage_samples[k] = SLOW_MIN_SAMPLES;
-        assert!(!item_progress(&f, 30 * M, &r, true).slower);
-        let late = item_progress(&f, 30 * M + 1, &r, true);
+        assert!(!item_progress(&f, 30 * M, &r, Some(0)).slower);
+        let late = item_progress(&f, 30 * M + 1, &r, Some(0));
         assert!(late.slower, "past 1.5× a measured 20 minutes");
         assert_eq!(
             late.credit,
-            item_progress(&f, 300 * M, &r, true).credit,
+            item_progress(&f, 300 * M, &r, Some(0)).credit,
             "flagged, never inflated"
         );
     }
@@ -845,7 +854,7 @@ mod tests {
         let r = resolved();
         let unit = |stage: ItemStage, pts: f64| Unit {
             points: pts,
-            progress: item_progress(&facts(&[(stage, 0)]), 0, &r, true),
+            progress: item_progress(&facts(&[(stage, 0)]), 0, &r, Some(0)),
         };
         let planning_now = planning(0, None, 5 * M, 0.1, 10 * M);
         assert!(planning_now.active && (planning_now.credit - 0.5).abs() < 1e-9);

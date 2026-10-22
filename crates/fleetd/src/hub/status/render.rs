@@ -30,7 +30,7 @@ use crate::hub::plan::store::{ChangeRow, ItemRow, MilestoneRow};
 use crate::hub::plan::{self, clip, figure_of, marker_of, parse_ms, progress_of};
 use crate::hub::store::iso_ms;
 
-const DAY_MS: i64 = 24 * 3_600_000;
+pub(super) const DAY_MS: i64 = 24 * 3_600_000;
 /// Done plan items and estimate rows are read this far back.
 const WINDOW_MS: i64 = 7 * DAY_MS;
 
@@ -151,7 +151,7 @@ fn estimate_rows(c: &Connection, from_ms: i64) -> rusqlite::Result<Vec<EstRow>> 
     .collect()
 }
 
-const RECENT_TYPES: [&str; 11] = [
+const RECENT_TYPES: [&str; 12] = [
     "machine.offline",
     "machine.slept",
     "change.ci_failed",
@@ -162,6 +162,8 @@ const RECENT_TYPES: [&str; 11] = [
     "change.state",
     "plan.changed",
     "review.verdict",
+    // Where each live task's current run began (in-stage credit counts from there).
+    "task.started",
     "task.completed",
     "task.cancelled",
 ];
