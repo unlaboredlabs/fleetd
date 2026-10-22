@@ -18,6 +18,7 @@
 import { expect, type Page } from "@playwright/test";
 import { AGENT_ROUTE } from "../fixtures/agents/route.ts";
 import { CHAT_SENDS } from "../fixtures/composer/sends.ts";
+import { OFFLINE_SENDS } from "../fixtures/offline/sends.ts";
 
 /** A 1×1 PNG, for the composer's attach step. */
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=", "base64");
@@ -85,6 +86,13 @@ export const fixtures = [
   // UX-1: the sidebar's reasons and a new reply (fixtures/sidebar); one agent's live work (fixtures/agents).
   "sidebar-reasons",
   "agents-work",
+  // UX [7]: no hub, and the last launch's disk cache on screen with a message queued; back online with that chat not
+  // read again yet, and with that read failed (fixtures/offline).
+  "offline-held",
+  "offline-reread",
+  "offline-reread-failed",
+  // ...and the inline items' chat from the cache, with no hub (fixtures/inline).
+  "inline-offline",
 ] as const;
 export type FixtureName = (typeof fixtures)[number];
 
@@ -149,7 +157,7 @@ export const screens: readonly Screen[] = [
   },
   // F4 (A3): the composer under storefront's chat while the lead works. Sent from the box: refused (Resend, Edit,
   // Dismiss), cut off by the link, unanswered (Resend, Dismiss), and one still sending; then a message that found no
-  // hub, back in the box with the reason, and a file attached beside it. composer-waiting: the hub stored the
+  // hub, queued to go when the link is back, and a file attached beside it. composer-waiting: the hub stored the
   // message, but the lead can't take it yet, and says why.
   { id: "chat", route: CHAT, fixtures: ["composer-sends"] },
   {
@@ -168,7 +176,7 @@ export const screens: readonly Screen[] = [
       await expect(page.locator('[data-receipt="unanswered"]')).toHaveCount(1);
       await box.fill(CHAT_SENDS.offline);
       await box.press("Enter");
-      await expect(page.getByText("Not connected to the hub, so this wasn’t sent.")).toBeVisible();
+      await expect(page.locator('[data-receipt="queued"]')).toHaveCount(1);
       await page.locator('[data-composer] input[type="file"]').setInputFiles({ name: "checkout-error.png", mimeType: "image/png", buffer: PNG });
       await expect(page.getByText(/checkout-error\.png · \d+ B/)).toBeVisible();
     },
@@ -237,6 +245,63 @@ export const screens: readonly Screen[] = [
       const box = page.getByRole("textbox", { name: "Message the lead" });
       await expect(box).toHaveValue("Explain how this project is put together.");
       await expect(box).toBeFocused();
+    },
+  },
+  // UX [7]: offline, the chat and the project list from the disk cache, marked offline as of the cache's time, with
+  // the banner's Retry now; then a message typed offline joins the one already queued, each with Edit and Dismiss.
+  { id: "chat", route: CHAT, fixtures: ["offline-held"], variant: "offline" },
+  {
+    id: "chat.composer",
+    route: CHAT,
+    fixtures: ["offline-held"],
+    variant: "offline-queued",
+    open: async (page) => {
+      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      await expect(page.locator('[data-receipt="queued"]')).toHaveCount(1);
+      const box = page.getByRole("textbox", { name: "Message the lead" });
+      await box.fill(OFFLINE_SENDS.typed);
+      await box.press("Enter");
+      await expect(box).toHaveValue("");
+      await expect(page.locator('[data-receipt="queued"]')).toHaveCount(2);
+    },
+  },
+  // ...and Retry now pressed: an attempt runs ("Reconnecting…", Retry now disabled) and the chat stays marked offline.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["offline-held"],
+    variant: "reconnecting",
+    open: async (page) => {
+      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      await page.getByRole("button", { name: "Retry now" }).click();
+      await expect(page.getByText(/Reconnecting…/u)).toBeVisible();
+      await expect(page.getByRole("button", { name: "Retry now" })).toBeDisabled();
+      await expect(page.locator("header").getByText(/^Offline, as of/u)).toBeVisible();
+    },
+  },
+  // Back online before the chat is read again: marked as last known, never as current; and when that read failed,
+  // why, with Retry.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["offline-reread"],
+    variant: "reread",
+    open: async (page) => {
+      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      await expect(page.locator("header").getByText(/^Last known, as of/u)).toBeVisible();
+      await expect(page.getByText("Earlier messages load once you’re connected.")).toHaveCount(0);
+    },
+  },
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["offline-reread-failed"],
+    variant: "reread-failed",
+    open: async (page) => {
+      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      await expect(page.getByText("Couldn’t load the newest messages.")).toBeVisible();
+      await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+      await expect(page.locator("header").getByText(/^Last known, as of/u)).toBeVisible();
     },
   },
   // The agents strip, opened to its rows.
@@ -314,6 +379,20 @@ export const screens: readonly Screen[] = [
   // A5 (F5): the two inline items, every state: the masked secret field (and saved, withdrawn), the exact command
   // with Approve / Deny (and ran, failed, open again after the node was offline, a denied tool permission, running).
   { id: "chat", route: CHAT, fixtures: ["inline-items"], variant: "inline" },
+  // The same chat offline from the disk cache: an open item says it can't be answered now, and a secret never claims
+  // the hub doesn't know its machine.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["inline-offline"],
+    variant: "inline-offline",
+    open: async (page) => {
+      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      await expect(page.getByText("Offline: approve once the hub is back.").first()).toBeAttached();
+      await expect(page.getByText("Offline: save it once the hub is back.").first()).toBeAttached();
+      await expect(page.getByText(/doesn't know the machine/u)).toHaveCount(0);
+    },
+  },
   // ...and E3b's own chat fixtures with an item in a longer conversation.
   {
     id: "chat",
@@ -348,7 +427,7 @@ export const screens: readonly Screen[] = [
   {
     id: "shell",
     route: "#/",
-    fixtures: ["empty", "typical", "many-agents", "long-text", "hub-unreachable", "pairing-failed", "node-too-old"],
+    fixtures: ["empty", "typical", "many-agents", "long-text", "hub-unreachable", "pairing-failed", "node-too-old", "offline-held"],
   },
   { id: "home.empty", route: "#/", fixtures: ["empty"] },
   // Settings opened from the sidebar takes its place; Back returns, with focus on the control that opened it.

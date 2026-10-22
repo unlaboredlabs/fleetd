@@ -29,17 +29,27 @@ export const withRequest = (item: ChatItem, request: HumanRequest | undefined): 
 
 export type SecretTarget =
   | { readonly ok: true; readonly machine: string; readonly boxPubKey: string; readonly where: string }
-  | { readonly ok: false; readonly message: string; readonly fix: string };
+  | { readonly ok: false; readonly message: string; readonly fix: string }
+  /** No fresh connection: the machines aren't known now (a launch from the disk cache holds none), so none is checked. */
+  | { readonly ok: false; readonly offline: true };
+
+/** The one line an open item says while there is no fresh connection: nothing can be answered now. */
+export const OFFLINE_LINE = { secret: "Offline: save it once the hub is back.", approval: "Offline: approve once the hub is back." } as const;
+
+/** Why an open approval can't be answered now, or undefined when it can. */
+export const approvalOffline = (state: string, live: boolean): string | undefined =>
+  state === "open" && !live ? OFFLINE_LINE.approval : undefined;
 
 /** secrets.rs parse_secret_sink, as far as the item needs it: the machine and the path. */
 const SINK = /^(env|file):([a-z0-9-]{1,32}):(\/[^\n\r]*)$/u;
 
 /** Where a secret goes and the key to seal it to, or why it can't be sent now and what to do. */
-export const secretTarget = (machines: Readonly<Record<string, Machine>>, item: SecretRequestItem): SecretTarget => {
+export const secretTarget = (machines: Readonly<Record<string, Machine>>, item: SecretRequestItem, live = true): SecretTarget => {
   const [, kind, machineId, path] = SINK.exec(item.sink) ?? [];
   if (kind === undefined || machineId === undefined || path === undefined) {
     return { ok: false, message: "The lead didn't say where this secret goes.", fix: "Tell the lead in the chat; it can ask again with a destination." };
   }
+  if (!live) return { ok: false, offline: true };
   const machine = machines[machineId];
   if (machine === undefined) {
     return { ok: false, message: `The hub doesn't know the machine ${machineId}.`, fix: "Add that machine first, or tell the lead in the chat." };

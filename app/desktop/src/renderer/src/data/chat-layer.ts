@@ -8,6 +8,7 @@ import {
   applyHistory,
   CHAT_PAGE,
   mergeLive,
+  queued,
   settleSends,
   toResend,
   upsertSend,
@@ -18,9 +19,9 @@ import {
 import type { AttachmentRef, ChatHistoryOutput, ChatSendInput, ChatStopInput, ChatStopOutput } from "./chat-contract";
 import { chatOf, type DataState, type DataStore, type ProjectKey } from "./store";
 
-/** "sent": the hub has it. "pending": cut off, resent when the link is back. "failed": not sent, its row says why.
- *  "offline": not sent and no row: the words stay in the composer, which says there's no hub. */
-export type SendOutcome = "sent" | "pending" | "failed" | "offline";
+/** "sent": the hub has it. "pending": queued or cut off, it goes when the link is back. "failed": the hub refused
+ *  it, its row says why. */
+export type SendOutcome = "sent" | "pending" | "failed";
 
 /** "stopped": the lead's turn is ending. "idle": it wasn't mid-turn. "unsupported": this hub can't stop a lead. */
 export type StopOutcome = { readonly t: "stopped" | "idle" | "unsupported" } | { readonly t: "failed"; readonly error: HubError };
@@ -41,7 +42,8 @@ export interface ChatActions {
   jumpToLatest(key: ProjectKey): void;
   /**
    * Sends the person's message. `clientRequestId` is the composed message's own (one per message, reused on every
-   * retry); minted when absent. Its row shows at once and settles on the hub's echo.
+   * retry); minted when absent. Its row shows at once and settles on the hub's echo. With no link it is queued, and
+   * goes under the same id when the link is back.
    */
   /** `attachments`: what attachment_put stored, so the pending row shows them before the hub's copy. */
   send(key: ProjectKey, input: { text: string; attachments?: readonly AttachmentRef[] }, clientRequestId?: string): Promise<SendOutcome>;
@@ -89,6 +91,8 @@ export const createChatActions = (
     const generation = store.getState().generation;
     if (loading.get(key) === generation) return;
     loading.set(key, generation);
+    // Asked again (Retry): the last failure no longer stands while this read is out.
+    if (store.getState().chats[key]?.error !== undefined) update((s) => ({ chats: { ...s.chats, [key]: { ...chatOf(s, key), error: undefined } } }));
     const r = await call("chat_history", { projectRef: refOf(key), limit: CHAT_PAGE });
     if (loading.get(key) === generation) loading.delete(key);
     // An answer for a connection that's gone: the new one's own read replaces it (onState started it).
@@ -171,6 +175,11 @@ export const createChatActions = (
 
   /** One chat_send for a row under its own id; a timeout is retried once before it is called unanswered. */
   const sendRow = async (key: ProjectKey, row: ChatSend): Promise<SendOutcome> => {
+    if (store.getState().hub.phase !== "live") {
+      // No link to send it on: it waits, and the next snapshot sends it (onState).
+      putRow(key, row.state.t === "reconnecting" || row.state.t === "unanswered" ? row : { ...row, state: { t: "queued" } });
+      return "pending";
+    }
     putRow(key, { ...row, state: { t: "sending" } });
     let generation = store.getState().generation;
     const input: ChatSendInput = {
@@ -192,8 +201,10 @@ export const createChatActions = (
         const { message, leadWaiting } = r.output;
         update((s) => {
           const chat = s.chats[key];
+          // A held chat (connected, not read again yet) shows the person's message too: their words never vanish
+          // into a chat that can't place them; its next read starts it over.
           const next =
-            chat?.loaded === true
+            chat !== undefined && (chat.loaded || chat.cached === true)
               ? mergeLive(
                   leadWaiting === undefined ? chat : { ...chat, leadWaiting: { ...chat.leadWaiting, [message.messageId]: leadWaiting } },
                   message,
@@ -219,8 +230,6 @@ export const createChatActions = (
   const send: ChatActions["send"] = async (key, input, clientRequestId) => {
     const id = clientRequestId ?? crypto.randomUUID();
     const prior = rowOf(key, id);
-    // A first try that finds no hub leaves no row: the words stay in the composer, which says why.
-    if (prior === undefined && store.getState().hub.phase !== "live") return "offline";
     const row: ChatSend = prior ?? {
       clientRequestId: id,
       text: input.text,
@@ -230,12 +239,7 @@ export const createChatActions = (
     };
     // Sending from a window paged above the latest: go back down, where the message will be.
     if (chatOf(store.getState(), key).hasNewer) jumpToLatest(key);
-    const outcome = await sendRow(key, row);
-    if (outcome !== "failed" || prior !== undefined) return outcome;
-    const failed = rowOf(key, id);
-    if (failed?.state.t !== "failed" || failed.state.offline !== true) return outcome;
-    dropRow(key, id);
-    return "offline";
+    return sendRow(key, row);
   };
 
   const retry: ChatActions["retry"] = async (key, id) => {
@@ -243,18 +247,19 @@ export const createChatActions = (
     return row !== undefined && row.state.t !== "sending" ? sendRow(key, row) : undefined;
   };
 
-  // After a real loss (a phase other than live), the first snapshot resends the cut-off rows under their own ids.
-  // Every snapshot reads the opened chats again (it dropped them). Gaps and messages too big for their event are
-  // read as they show up.
+  // Every snapshot sends the queued rows; after a real loss (a phase other than live), the cut-off ones too, all
+  // under their own ids. Every snapshot reads the opened chats again (what they hold is the last connection's).
+  // Gaps and messages too big for their event are read as they show up.
   let lost = false;
   const onState = (prev: DataState, next: DataState) => {
     if (next.hub.phase !== prev.hub.phase && next.hub.phase !== "live") lost = true;
     if (next.generation !== prev.generation) {
+      // Forget, or another hub paired: nothing held is left, and nothing is read or sent until its snapshot.
+      if (!next.fresh) return;
       for (const key of opened) void readLatest(key);
-      if (lost) {
-        lost = false;
-        for (const [key, rows] of Object.entries(next.chatSends)) for (const row of toResend(rows)) void sendRow(key, row);
-      }
+      const resend = lost ? toResend : queued;
+      lost = false;
+      for (const [key, rows] of Object.entries(next.chatSends)) for (const row of resend(rows)) void sendRow(key, row);
       return;
     }
     for (const key of opened) {
@@ -294,7 +299,10 @@ export const createChatActions = (
       const { message } = r.output;
       update((st) => {
         const chat = st.chats[key];
-        return chat?.loaded === true && st.generation === generation ? { chats: { ...st.chats, [key]: mergeLive(chat, message) } } : {};
+        // A held chat shows it too, as it does the person's own messages (sendRow).
+        return chat !== undefined && (chat.loaded || chat.cached === true) && st.generation === generation
+          ? { chats: { ...st.chats, [key]: mergeLive(chat, message) } }
+          : {};
       });
       return { t: r.output.stopped ? "stopped" : "idle" };
     }
@@ -308,6 +316,8 @@ export const createChatActions = (
   };
 
   const actions: ChatActions = { open, close, loadOlder, loadNewer, jumpToLatest, send, retry, discard: dropRow, probeStop, stop };
-  return { actions, onState };
+  /** The chat on screen, which the disk cache keeps first. */
+  const focus = (): ProjectKey | null => focused;
+  return { actions, onState, focus };
 };
 

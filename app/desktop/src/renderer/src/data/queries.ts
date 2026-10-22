@@ -12,6 +12,7 @@ import {
 } from "../../../shared/contracts";
 import type { HubError, HubFrame } from "../../../shared/hub";
 import type { ChatScope, LiveScope } from "../../../shared/ipc";
+import { keepCache, type CacheIo } from "./cache";
 import { createChatActions, refOf, type ChatActions } from "./chat-layer";
 import { effectsOf, matches, type Invalidation } from "./effects";
 import { applyFrame, applySlots, createDataStore, ingest, type DataStore } from "./store";
@@ -35,6 +36,10 @@ export interface HubApi {
   resync(): Promise<void>;
   live(scope: LiveScope | null): Promise<void>;
   chat(project: ChatScope | null): Promise<void>;
+  /** Dial the hub now instead of at the next retry. */
+  retryNow?(): Promise<void>;
+  /** The disk cache (cache.ts); without it the layer keeps only what this window saw. */
+  readonly cache?: CacheIo;
 }
 
 /** What the open screen wants live: every open order's lanes (board, machines) and/or one order in focus. */
@@ -85,6 +90,8 @@ export interface DataLayer {
   setLive(want: LiveWant): void;
   /** The lead chats: history, and the person's messages (chat-layer.ts). */
   readonly chat: ChatActions;
+  /** Reconnect now, not at the next retry (the offline banner's Retry now). */
+  retryNow(): void;
   /** Start applying main's frames; returns the stop. */
   start(): () => void;
 }
@@ -224,8 +231,10 @@ export const createDataLayer = (hub: HubApi, now: () => number = Date.now): Data
     toolQuery,
     setLive,
     chat: chat.actions,
+    retryNow: () => void hub.retryNow?.(),
     start: () => {
       const stopChat = store.subscribe((s, prev) => chat.onState(prev, s));
+      const stopKeep = hub.cache === undefined ? () => undefined : keepCache(store, hub.cache, chat.focus, now);
       const stopCache = queryClient.getQueryCache().subscribe(onCache);
       const stop = hub.subscribe(onFrame);
       // One timer, for the next hold to end: no polling, and none at all while nothing finished is held.
@@ -250,6 +259,7 @@ export const createDataLayer = (hub: HubApi, now: () => number = Date.now): Data
       });
       return () => {
         stopChat();
+        stopKeep();
         stop();
         stopCache();
         stopHold();

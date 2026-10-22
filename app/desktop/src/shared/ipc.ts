@@ -2,6 +2,7 @@
 // argument list here before any handler runs, and refuses anything else.
 import { z } from "zod";
 import { LinkHandlerClaim, NotifyRequest } from "./app";
+import { HUB_CACHE_MAX_BYTES } from "./cache";
 import { MENU_COMMANDS } from "./menu";
 import { IPC, type InvokeChannel } from "./channels";
 
@@ -127,6 +128,11 @@ export const REQUESTS = {
   [IPC.hubLive]: z.tuple([LiveScope.nullable()]),
   [IPC.hubChat]: z.tuple([ChatScope.nullable()]),
   [IPC.hubResync]: none,
+  [IPC.hubRetryNow]: none,
+  [IPC.hubCacheRead]: none,
+  // A string's UTF-16 length never exceeds its UTF-8 size, so this is a loose bound; main checks the bytes and the
+  // envelope (main/hub/cache.ts).
+  [IPC.hubCacheWrite]: z.tuple([z.string().max(HUB_CACHE_MAX_BYTES)]),
   [IPC.hubConnect]: z.tuple([ConnectRequest]),
   [IPC.hubForget]: none,
   [IPC.pairStart]: none,

@@ -9,6 +9,6 @@
     "allowImportingTsExtensions": true,
     "tsBuildInfoFile": "./node_modules/.cache/tsconfig.qa.tsbuildinfo"
   },
-  // The words the composer fixtures answer, which QA types, and the agent the agents fixture opens.
-  "include": ["qa/**/*", "fixtures/composer/sends.ts", "fixtures/agents/route.ts"]
+  // The words the composer and offline fixtures answer or hold, which QA types, and the agent the agents fixture opens.
+  "include": ["qa/**/*", "fixtures/composer/sends.ts", "fixtures/offline/sends.ts", "fixtures/agents/route.ts"]
 }

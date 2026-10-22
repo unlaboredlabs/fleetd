@@ -8,7 +8,19 @@ import type { HubError } from "../../../shared/hub";
 import { Button, Code, cx, InlineCode, Input, Text } from "../../ui";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { prose } from "./prose";
-import { approvalKind, approvalOutcome, classWords, secretEnvLines, secretOutcome, secretTarget, shellLine, withRequest, type Outcome } from "./request";
+import {
+  approvalKind,
+  approvalOffline,
+  approvalOutcome,
+  classWords,
+  OFFLINE_LINE,
+  secretEnvLines,
+  secretOutcome,
+  secretTarget,
+  shellLine,
+  withRequest,
+  type Outcome,
+} from "./request";
 import s from "./InlineChatItem.module.css";
 
 const errorText = (e: HubError): string => (e.fix === undefined ? e.message : `${e.message} ${e.fix}`);
@@ -71,6 +83,17 @@ function OutcomeLine({ outcome }: { outcome: Outcome }) {
   );
 }
 
+/** An open item while there is no fresh connection: what is shown may be stale, and nothing can be answered. */
+function OfflineLine({ text }: { text: string }) {
+  return (
+    <p className={s.outcome}>
+      <Text size="sm" tone="quiet">
+        {text}
+      </Text>
+    </p>
+  );
+}
+
 function ErrorLine({ text }: { text: string | null }) {
   return text === null ? null : (
     <p role="alert" className={s.outcome}>
@@ -88,7 +111,7 @@ function SecretItem({ item }: { item: SecretRequestItem }) {
   const field = useRef<HTMLInputElement>(null);
   const [typed, setTyped] = useState(false);
   const outcome = secretOutcome(shown);
-  const target = secretTarget(machines, item);
+  const target = secretTarget(machines, item, live);
 
   // The value goes from the field straight to main, which seals it; the field is emptied in the same step, and
   // nothing here keeps a copy.
@@ -123,6 +146,8 @@ function SecretItem({ item }: { item: SecretRequestItem }) {
       )}
       {outcome !== undefined ? (
         <OutcomeLine outcome={outcome} />
+      ) : "offline" in target ? (
+        <OfflineLine text={OFFLINE_LINE.secret} />
       ) : !target.ok ? (
         <p role="alert" className={s.outcome}>
           <Text size="sm" tone="warning">{`${target.message} ${target.fix}`}</Text>
@@ -169,6 +194,7 @@ function ApprovalItem({ item }: { item: CommandApprovalItem }) {
   const { call } = useDataLayer();
   const { shown, busy, error, run } = useSent(item);
   const outcome = approvalOutcome(shown);
+  const offline = approvalOffline(shown.state, live);
   const { gated, permission, playbook } = item;
   const kind = approvalKind(item);
   const [showDiff, setShowDiff] = useState(false);
@@ -249,6 +275,7 @@ function ApprovalItem({ item }: { item: CommandApprovalItem }) {
       )}
       {outcome === undefined ? null : <OutcomeLine outcome={outcome} />}
       {item.outputTail === undefined || item.outputTail.trim() === "" ? null : <Code code={item.outputTail} bare />}
+      {offline === undefined ? null : <OfflineLine text={offline} />}
       {shown.state === "open" ? (
         <div className={s.actions}>
           <Button variant={gated?.class === "irreversible" ? "danger" : "primary"} disabled={!live || busy} onClick={() => answer("approve")}>
