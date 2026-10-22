@@ -22,7 +22,8 @@ for (const screen of screens) {
         // screen opened by an interaction stays open, as it would for a user.
         await settled();
         await setView(app, page, shotSizes[0] ?? "small", themes[0]);
-        await show(page, screen.id, screen.route, screen.open);
+        const { open } = screen;
+        await show(page, screen.id, screen.route, open && ((p) => open(p, app)));
         await assertExpectedState(page, screen);
         for (const size of shotSizes) {
           for (const theme of themes) {

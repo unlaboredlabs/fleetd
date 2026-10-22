@@ -15,10 +15,20 @@
 // Run it locally: `pnpm fixtures && pnpm qa:build && pnpm qa` (QA_SCREENS=<id>,<id> to limit), then open
 // qa-results/index.html.
 
-import { expect, type Page } from "@playwright/test";
+import { type ElectronApplication, expect, type Page } from "@playwright/test";
 import { AGENT_ROUTE } from "../fixtures/agents/route.ts";
 import { CHAT_SENDS } from "../fixtures/composer/sends.ts";
 import { OFFLINE_SENDS } from "../fixtures/offline/sends.ts";
+
+/**
+ * What the system answers when the app posts a notification: shown, or not supported. Nothing reaches the screen of
+ * the machine running QA either way.
+ */
+const systemNotifications = (app: ElectronApplication, supported: boolean) =>
+  app.evaluate(({ Notification }, ok) => {
+    Notification.isSupported = () => ok;
+    Notification.prototype.show = () => undefined;
+  }, supported);
 
 /** A 1×1 PNG, for the composer's attach step. */
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=", "base64");
@@ -123,8 +133,9 @@ export interface Screen {
   fixtures: readonly FixtureName[];
   // Defaults to every size.
   sizes?: readonly SizeName[];
-  // Brings up a screen that has no route of its own; runs after the route has loaded.
-  open?: (page: Page) => Promise<void>;
+  // Brings up a screen that has no route of its own; runs after the route has loaded. `app` reaches the main process,
+  // for what only it decides (whether the system shows notifications).
+  open?: (page: Page, app: ElectronApplication) => Promise<void>;
   // Registered ahead of its PR: skipped, with this reason, until the owner deletes the field.
   pending?: string;
   // Tells apart two entries for one screen on the same fixture (say, a strip folded and opened): it joins the id in
@@ -355,6 +366,17 @@ export const screens: readonly Screen[] = [
   // UX-1 [5]: each row says why it wants you (reply, approve · 2, secret, blocked), and docs' reply that arrives
   // after the app opened is bold.
   { id: "shell", route: "#/status", fixtures: ["status-rows", "sidebar-reasons"], variant: "sidebar" },
+  // Hidden with its toggle in a wide window: the top row runs the full width, after the traffic lights.
+  {
+    id: "shell",
+    route: "#/",
+    fixtures: ["chat-waiting"],
+    variant: "sidebar-hidden",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Hide the sidebar" }).click();
+      await page.getByRole("navigation", { name: "Sidebar" }).waitFor({ state: "detached" });
+    },
+  },
   // The smallest window: the sidebar has hidden itself, its toggle and the chat's title share the top row.
   { id: "shell", route: "#/", fixtures: ["chat-waiting", "long-text"], variant: "narrow", sizes: ["narrow"] },
   // ...and shown again with the toggle at that width, the chat beside it.
@@ -754,16 +776,29 @@ export const screens: readonly Screen[] = [
   // Prompts before one is picked.
   { id: "settings.prompts", route: "#/settings/prompts", fixtures: ["settings-prompts"], variant: "none" },
   { id: "settings.general", route: "#/settings/general", fixtures: ["typical", "empty", "hub-unreachable"] },
-  // Notifications: the kinds, sound, the Dock badge, and the line after a test was sent.
+  // Notifications: the kinds, sound, the Dock badge, then the test's two answers: sent (with where to allow fleetd
+  // if nothing showed) and a system that shows none.
   { id: "settings.notifications", route: "#/settings/notifications", fixtures: ["typical"] },
   {
     id: "settings.notifications",
     route: "#/settings/notifications",
     fixtures: ["typical"],
     variant: "test-sent",
-    open: async (page) => {
+    open: async (page, app) => {
+      await systemNotifications(app, true);
       await page.getByRole("button", { name: "Send a test notification" }).click();
-      await page.getByRole("status").filter({ hasText: /Sent|doesn’t show/u }).waitFor();
+      await page.getByRole("status").filter({ hasText: /^Sent\./u }).waitFor();
+    },
+  },
+  {
+    id: "settings.notifications",
+    route: "#/settings/notifications",
+    fixtures: ["typical"],
+    variant: "test-unsupported",
+    open: async (page, app) => {
+      await systemNotifications(app, false);
+      await page.getByRole("button", { name: "Send a test notification" }).click();
+      await page.getByRole("status").filter({ hasText: "doesn’t show notifications" }).waitFor();
     },
   },
   {
