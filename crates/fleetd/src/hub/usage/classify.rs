@@ -211,123 +211,35 @@ mod tests {
         })
     }
 
-    // Error text shapes as stored in a thread's lastError: older adapter messages and the CLI's or CLIProxyAPI's raw
-    // text. No live limit was hit to get them.
+    // The text rules themselves are tested in node::runner::failure; these are what this module adds on top.
     #[test]
-    fn classifies_the_fixture_table() {
-        use UsageClass::*;
-        let fixtures: Vec<(&str, LimitInput, Option<Limit>)> = vec![
-            (
-                "usage_limit with its reset",
-                LimitInput {
-                    reset_at: Some("2026-10-20T09:00:00.000Z"),
-                    ..input(
-                        "usage_limit",
-                        "Claude usage limit reached. Send the message again once the limit resets.",
-                    )
-                },
-                limit(UsageLimit, Some("2026-10-20T09:00:00.000Z".into()), None),
-            ),
-            (
-                "blocking_limit without a reset",
-                input(
-                    "usage_limit",
-                    "Claude stopped: a usage limit blocked the request.",
-                ),
-                limit(UsageLimit, Some(at(FALLBACK_USAGE_LIMIT_MS)), None),
-            ),
-            (
-                "the CLI's usage limit with an epoch reset",
-                input("provider_error", "Claude AI usage limit reached|1792483200"),
-                limit(UsageLimit, Some("2026-10-20T08:00:00.000Z".into()), None),
-            ),
-            (
-                "a 429",
-                input(
-                    "usage_limit",
-                    "Claude API rate limit reached. Try again later.",
-                ),
-                limit(RateLimit, Some(at(FALLBACK_RATE_LIMIT_MS)), None),
-            ),
-            (
-                "a raw API 429",
-                input(
-                    "provider_error",
-                    r#"API Error: 429 {"type":"error","error":{"type":"rate_limit_error","message":"Number of request tokens has exceeded your per-minute rate limit"}}"#,
-                ),
-                limit(RateLimit, Some(at(FALLBACK_RATE_LIMIT_MS)), None),
-            ),
-            (
-                "a proxy 503 wrapping a 429, with its wait",
-                input(
-                    "provider_error",
-                    r#"API Error: 503 [claude] [429]: {"type":"error","error":{"type":"rate_limit_error","message":"rate limited"}} (reset after 1h30m)"#,
-                ),
-                limit(RateLimit, Some(at(90 * 60_000)), None),
-            ),
-            (
-                "CLIProxyAPI 400 unknown provider for model",
-                LimitInput {
-                    model: Some("claude-sonnet-5-5"),
-                    ..input(
-                        "provider_error",
-                        r#"API Error: 400 {"error":{"message":"unknown provider for model claude-opus-5-5","type":"invalid_request_error","code":"model_not_found","param":"model"}}"#,
-                    )
-                },
-                limit(PoolExhausted, None, Some("claude-opus-5-5")),
-            ),
-            (
-                "CLIProxyAPI 503 no auth available",
-                LimitInput {
-                    model: Some("claude-opus-5-5"),
-                    ..input(
-                        "provider_error",
-                        r#"API Error: 503 {"error":{"message":"no auth available","code":"auth_unavailable"}}"#,
-                    )
-                },
-                limit(PoolExhausted, None, Some("claude-opus-5-5")),
-            ),
-            (
-                "a proxy 503 no available account",
-                input(
-                    "provider_error",
-                    "API Error: 503 no available account for claude-opus-5-5",
-                ),
-                limit(PoolExhausted, None, None),
-            ),
-            (
-                "CLIProxyAPI model_cooldown with reset_seconds",
-                input(
-                    "provider_error",
-                    r#"API Error: 429 {"error":{"code":"model_cooldown","message":"All credentials for model claude-opus-5-5 are cooling down","model":"claude-opus-5-5","reset_time":"1h2m0s","reset_seconds":3720}}"#,
-                ),
-                limit(UsageLimit, Some(at(3_720_000)), None),
-            ),
-            (
-                "overloaded",
-                input(
-                    "provider_error",
-                    "Claude API is overloaded (529). Try again shortly.",
-                ),
-                None,
-            ),
-            (
-                "context window",
-                input(
-                    "provider_error",
-                    "Claude stopped: the prompt exceeds the model's context window.",
-                ),
-                None,
-            ),
-            (
-                "transport",
-                input("transport_error", "Claude API connection error."),
-                None,
-            ),
-        ];
-        for (name, input, expected) in fixtures {
-            assert_eq!(classify_limit(&input), expected, "{name}");
-        }
+    fn the_nodes_reset_and_the_runs_model_fill_in_what_the_text_lacks() {
+        let usage = LimitInput {
+            reset_at: Some("2026-10-20T09:00:00.000Z"),
+            ..input(
+                "usage_limit",
+                "Claude usage limit reached. Send the message again once the limit resets.",
+            )
+        };
+        assert_eq!(
+            classify_limit(&usage),
+            limit(
+                UsageClass::UsageLimit,
+                Some("2026-10-20T09:00:00.000Z".into()),
+                None
+            )
+        );
+        let pool = LimitInput {
+            model: Some("claude-opus-5-5"),
+            ..input(
+                "provider_error",
+                r#"API Error: 503 {"error":{"message":"no auth available","code":"auth_unavailable"}}"#,
+            )
+        };
+        assert_eq!(
+            classify_limit(&pool),
+            limit(UsageClass::PoolExhausted, None, Some("claude-opus-5-5"))
+        );
     }
 
     #[test]

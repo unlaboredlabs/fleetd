@@ -483,27 +483,15 @@ mod tests {
     }
 
     #[test]
-    fn knows_new_york_offset_either_side_of_dst() {
-        assert_eq!(
-            offset_ms(at("2026-01-15T12:00:00Z"), tz(NY)),
-            -5 * 3_600_000
-        );
-        assert_eq!(
-            offset_ms(at("2026-07-15T12:00:00Z"), tz(NY)),
-            -4 * 3_600_000
-        );
-    }
-
-    #[test]
-    fn moves_a_local_time_in_the_spring_forward_gap_forward_by_the_gap() {
+    fn new_york_local_times_across_dst() {
+        let hour = 3_600_000;
+        assert_eq!(offset_ms(at("2026-01-15T12:00:00Z"), tz(NY)), -5 * hour);
+        assert_eq!(offset_ms(at("2026-07-15T12:00:00Z"), tz(NY)), -4 * hour);
+        // In the spring-forward gap: moved forward by the gap. Repeated in autumn: the first one.
         assert_eq!(
             iso(zoned_to_utc(lt(2026, 3, 8, 2, 30), tz(NY))),
             "2026-03-08T07:30:00.000Z"
         );
-    }
-
-    #[test]
-    fn takes_the_first_of_a_repeated_local_time() {
         assert_eq!(
             iso(zoned_to_utc(lt(2026, 11, 1, 1, 30), tz(NY))),
             "2026-11-01T05:30:00.000Z"
@@ -575,47 +563,56 @@ mod tests {
     }
 
     #[test]
-    fn weekday_job_keeps_local_time_across_spring_dst() {
-        assert_eq!(
-            firings("0 9 * * 1-5", NY, "2026-03-05T15:00:00Z", 3),
-            some(&[
-                "2026-03-06T14:00:00.000Z",
-                "2026-03-09T13:00:00.000Z",
-                "2026-03-10T13:00:00.000Z"
-            ])
-        );
-    }
-
-    #[test]
-    fn daily_job_in_the_skipped_hour_runs_once_an_hour_later() {
-        assert_eq!(
-            firings("30 2 * * *", NY, "2026-03-07T12:00:00Z", 3),
-            some(&[
-                "2026-03-08T07:30:00.000Z",
-                "2026-03-09T06:30:00.000Z",
-                "2026-03-10T06:30:00.000Z"
-            ])
-        );
-    }
-
-    #[test]
-    fn daily_job_in_the_repeated_hour_runs_once() {
-        assert_eq!(
-            firings("30 1 * * *", NY, "2026-10-31T12:00:00Z", 2),
-            some(&["2026-11-01T05:30:00.000Z", "2026-11-02T06:30:00.000Z"])
-        );
-    }
-
-    #[test]
-    fn hourly_job_stays_on_the_hour_through_london_autumn_change() {
-        assert_eq!(
-            firings("0 * * * *", LONDON, "2026-10-24T23:30:00Z", 3),
-            some(&[
-                "2026-10-25T00:00:00.000Z",
-                "2026-10-25T02:00:00.000Z",
-                "2026-10-25T03:00:00.000Z"
-            ])
-        );
+    fn cron_jobs_keep_local_time_across_dst() {
+        let cases = [
+            // A weekday job keeps 09:00 local across the spring change.
+            (
+                "0 9 * * 1-5",
+                NY,
+                "2026-03-05T15:00:00Z",
+                &[
+                    "2026-03-06T14:00:00.000Z",
+                    "2026-03-09T13:00:00.000Z",
+                    "2026-03-10T13:00:00.000Z",
+                ][..],
+            ),
+            // In the skipped hour: once, an hour later.
+            (
+                "30 2 * * *",
+                NY,
+                "2026-03-07T12:00:00Z",
+                &[
+                    "2026-03-08T07:30:00.000Z",
+                    "2026-03-09T06:30:00.000Z",
+                    "2026-03-10T06:30:00.000Z",
+                ],
+            ),
+            // In the repeated hour: once.
+            (
+                "30 1 * * *",
+                NY,
+                "2026-10-31T12:00:00Z",
+                &["2026-11-01T05:30:00.000Z", "2026-11-02T06:30:00.000Z"],
+            ),
+            // Hourly stays on the hour through London's autumn change.
+            (
+                "0 * * * *",
+                LONDON,
+                "2026-10-24T23:30:00Z",
+                &[
+                    "2026-10-25T00:00:00.000Z",
+                    "2026-10-25T02:00:00.000Z",
+                    "2026-10-25T03:00:00.000Z",
+                ],
+            ),
+        ];
+        for (cron, zone, from, want) in cases {
+            assert_eq!(
+                firings(cron, zone, from, want.len()),
+                some(want),
+                "{cron} {zone}"
+            );
+        }
     }
 
     #[test]
