@@ -32,21 +32,22 @@ describe("routes", () => {
     expect(toHash({ id: "project", project: storefront, message: "m-42" })).toBe("#/project/devbox/storefront?message=m-42");
     expect(toHash({ id: "project", project: { machineId: "dev box", projectId: "a/b" }, message: null })).toBe("#/project/dev%20box/a%2Fb");
     expect(toHash({ id: "settings", tab: "general" })).toBe("#/settings/general");
-    expect(toHash({ id: "prs", project: storefront, pr: null })).toBe("#/project/devbox/storefront/prs");
-    expect(toHash({ id: "prs", project: storefront, pr: { repo: "acme/storefront", number: 11 } })).toBe("#/project/devbox/storefront/prs/acme/storefront/11");
+    expect(toHash({ id: "prs", project: storefront, pr: null })).toBe("#/prs/devbox/storefront");
+    expect(toHash({ id: "prs", project: storefront, pr: { repo: "acme/storefront", number: 11 } })).toBe("#/prs/devbox/storefront/acme/storefront/11");
+    expect(toHash({ id: "prs", project: storefront, pr: { repo: null, number: 11 } })).toBe("#/prs/devbox/storefront/11");
     expect(toHash({ id: "agents", agent: { ...storefront, laneId: "T1" } })).toBe("#/agents/devbox/storefront/T1");
     expect(parseHash("#/agents/devbox")).toEqual({ id: "agents", agent: null });
   });
 
   it("sends the removed surfaces, unknown and malformed hashes home", () => {
-    for (const hash of ["", "#/board", "#/board/devbox/storefront", "#/order/W14?inbox&ask=A1", "#/inbox", "#/project/devbox", "#/x", "#/project/%E0%A4%A/b"]) {
+    for (const hash of ["", "#/board", "#/board/devbox/storefront", "#/order/W14?inbox&ask=A1", "#/inbox", "#/project/devbox", "#/prs", "#/prs/devbox", "#/x", "#/project/%E0%A4%A/b"]) {
       expect(parseHash(hash)).toEqual(HOME);
     }
     expect(parseHash("#/status/project/devbox/storefront")).toEqual({ id: "status" });
     expect(parseHash("#/settings/nope")).toEqual({ id: "settings", tab: "general" });
     // A PR path that isn't one opens the project's list.
-    for (const tail of ["prs/0", "prs/x", "prs/acme/11", "prs/acme/storefront/x/11"]) {
-      expect(parseHash(`#/project/devbox/storefront/${tail}`)).toEqual({ id: "prs", project: storefront, pr: null });
+    for (const tail of ["/0", "/x", "/acme/11", "/acme/storefront/x/11", ""]) {
+      expect(parseHash(`#/prs/devbox/storefront${tail}`)).toEqual({ id: "prs", project: storefront, pr: null });
     }
   });
 });

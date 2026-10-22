@@ -16,6 +16,8 @@ import {
   checksDetail,
   checksWord,
   findingsWord,
+  githubLine,
+  isOpen,
   movedWords,
   reviewerWords,
   reviewsWord,
@@ -151,7 +153,7 @@ function Overview({ data, now, githubSaid }: { data: PrGetOutput; now: number; g
       {data.githubError !== undefined && !githubSaid ? (
         <div className={s.notice} role="status">
           <Text size="sm" tone="warning">
-            GitHub couldn’t be reached, so the description, checks and files may be missing.
+            {pr.checks !== undefined ? githubLine([pr]) : "GitHub couldn’t be reached, so the description, checks and files may be missing."}
           </Text>
           <Text size="xs" tone="quiet">
             <WithCode text={data.githubError} />
@@ -201,7 +203,7 @@ function Overview({ data, now, githubSaid }: { data: PrGetOutput; now: number; g
         </Fact>
       </dl>
 
-      {pr.state === "open" || pr.state === "draft" ? <AtWork repo={pr.repo} number={pr.number} /> : null}
+      {isOpen(pr) ? <AtWork repo={pr.repo} number={pr.number} /> : null}
 
       <Section title="Description">
         {data.body.trim() === "" ? (

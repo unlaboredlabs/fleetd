@@ -5,15 +5,13 @@ import type { ProjectRef } from "../../../shared/contracts";
 import type { PrRow } from "../../src/data/pr-contract";
 import { StatusChip, Text, Truncate, VirtualList, cx } from "../../ui";
 import { toHash } from "../shell/routes";
-import { checksWord, reviewsWord, stateLine, when } from "./words";
+import { checksWord, isOpen, reviewsWord, stateLine, when } from "./words";
 import s from "./prs.module.css";
 
 type Item =
   | { readonly kind: "group"; readonly label: string; readonly count: number }
   | { readonly kind: "pr"; readonly row: PrRow }
   | { readonly kind: "cut"; readonly count: number };
-
-const isOpen = (r: PrRow) => r.state === "open" || r.state === "draft";
 
 /** Open PRs, then the rest, each under its heading; the hub's order within each. `cut`: the hub sent only these. */
 export const listItems = (rows: readonly PrRow[], cut = false): Item[] => {

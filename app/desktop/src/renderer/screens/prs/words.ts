@@ -85,6 +85,19 @@ export const stateLine = (pr: Pick<PrRow, "state" | "queue">): StateLine => {
   return { word: known.word, sentence: `${queueSentence(q)}${paused}`, tone: known.tone };
 };
 
+export const isOpen = (r: Pick<PrRow, "state">): boolean => r.state === "open" || r.state === "draft";
+
+export const openCount = (rows: readonly Pick<PrRow, "state">[]): number => rows.filter(isOpen).length;
+
+/**
+ * What a list GitHub didn't answer is missing. Checks come only from GitHub, so a row with them means the hub kept
+ * an earlier answer (a rate limit, a blip): the list is GitHub's, maybe out of date. Without any, it is fleetd's own.
+ */
+export const githubLine = (rows: readonly Pick<PrRow, "checks">[]): string =>
+  rows.some((r) => r.checks !== undefined)
+    ? "GitHub didn’t answer just now, so checks and reviews may be out of date."
+    : "GitHub couldn’t be reached, so these are only the PRs fleetd made, without checks.";
+
 /** A history step, "Checks failed"; undefined for a state this build doesn't know. */
 export const movedWords = (to: string): string | undefined => QUEUE[to]?.moved;
 

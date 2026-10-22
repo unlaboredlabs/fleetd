@@ -11,28 +11,46 @@
   min-height: 0;
   min-width: 0;
 }
+/* The bar as the agents view has it: the title and what it covers, and on the right whether it is live. */
 .header {
   flex: none;
   min-height: var(--bar);
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: var(--space-3);
-  padding: var(--space-1) var(--pad);
+  padding: 0 var(--pad);
   border-bottom: 1px solid var(--hairline);
 }
-/* The breadcrumb takes the bar's width, so a short project name never truncates. */
-.crumbs {
-  flex: 1;
+.title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
   min-width: 0;
-  display: grid;
+}
+.titleProject {
+  min-width: 0;
+}
+.liveness {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 .banner {
   flex: none;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  gap: var(--space-3);
   padding: var(--space-2) var(--pad);
   border-bottom: 1px solid var(--hairline);
+}
+.bannerText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 .body {
   flex: 1;
@@ -51,6 +69,24 @@
 }
 .list[hidden] {
   display: none;
+}
+/* Row outlines while the list loads; nothing shimmers. */
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--pad);
+}
+.skeleton > span {
+  height: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--selected);
+}
+.skeleton > span:nth-child(2) {
+  width: 70%;
+}
+.skeleton > span:nth-child(3) {
+  width: 55%;
 }
 .listScroll {
   flex: 1;

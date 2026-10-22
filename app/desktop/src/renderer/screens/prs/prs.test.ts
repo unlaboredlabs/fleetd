@@ -3,7 +3,7 @@ import type { DiffLine, PrFile, PrReviewEntry, PrRow } from "../../src/data/pr-c
 import { DIFF_PAGE, diffRows, fileRowIndex, toPairs, type Page } from "./diffModel";
 import { listItems } from "./PrList";
 import { resolvePr } from "./PrsScreen";
-import { checksWord, findingsWord, movedWords, reviewsWord, sortChecks, stat, stateLine, when } from "./words";
+import { checksWord, findingsWord, githubLine, movedWords, openCount, reviewsWord, sortChecks, stat, stateLine, when } from "./words";
 
 const row = (over: Partial<PrRow> = {}): PrRow => ({
   repo: "acme/storefront",
@@ -92,6 +92,16 @@ describe("the list", () => {
     const words = (list: typeof items) => list.map((i) => (i.kind === "group" ? `${i.label} ${i.count}` : i.kind === "cut" ? `cut ${i.count}` : i.row.number));
     expect(words(items)).toEqual(["Open 2", 11, 12, "Merged or closed 2", 8, 7]);
     expect(listItems([])).toEqual([]);
+  });
+
+  it("counts drafts as open in the header", () => {
+    expect(openCount([row(), row({ state: "draft" }), row({ state: "merged" }), row({ state: "closed" })])).toBe(2);
+  });
+
+  it("says a list GitHub didn't answer is fleetd's own, or GitHub's last answer when the hub kept one", () => {
+    expect(githubLine([row(), row({ state: "merged" })])).toMatch(/^GitHub couldn’t be reached, so these are only the PRs fleetd made/u);
+    // A rate limit: the hub answers with what GitHub said last, checks included.
+    expect(githubLine([row(), row({ checks: { state: "passing", passed: 3, failed: 0, pending: 0 } })])).toMatch(/may be out of date\.$/u);
   });
 
   it("says so last when the hub sent only the most recent", () => {

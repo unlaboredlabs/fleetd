@@ -89,8 +89,13 @@ For a project's progress at a glance, see [Status](/docs/status). For where the 
 
 ## Read a pull request {#prs}
 
-Choose **Pull requests** in the sidebar, or click a PR's number in the agents strip, to read the project's PRs in the
-app: open ones first, then those merged or closed in the last week.
+Choose **Pull requests** in the sidebar, or click a PR's number in the agents strip or in [Agents](/docs/desktop-app#agents),
+to read the project's PRs in the app: open ones first, then those merged or closed in the last week. The sidebar opens
+the PRs of the project you're in. For another project's, open the command palette (⌘K), select the project, press ⌘K
+again and choose **Pull requests in this project**.
+
+If GitHub can't be reached or its rate limit is reached, the list says so: you see the PRs fleetd made, or GitHub's last
+answer, and **Retry** asks again.
 
 | A PR shows | |
 |---|---|

@@ -1,15 +1,17 @@
-// A project's pull requests (#/project/<machine>/<project>/prs): the list on the left, open PRs first, and the one
-// picked on the right with its description, checks, reviews, where it is on its way to main, the agent that wrote
-// it, and its changes. Everything is read through the data layer and refetched on the hub's events; nothing polls.
+// A project's pull requests (#/prs/<machine>/<project>, like the agents view's #/agents): the list on the left, open
+// PRs first, and the one picked on the right with its description, checks, reviews, where it is on its way to main,
+// the agent that wrote it, and its changes. Everything is read through the data layer and refetched on the hub's
+// events; nothing polls.
+import { PanelLeft } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { ProjectRef } from "../../../shared/contracts";
 import { useData, useToolQuery } from "../../src/data/react";
-import type { PrRow } from "../../src/data/pr-contract";
-import { Breadcrumb, Button, EmptyState, Text } from "../../ui";
-import { navigate } from "../shell/navigation";
+import type { PrListOutput, PrRow } from "../../src/data/pr-contract";
+import { Button, Dot, EmptyState, Text, Truncate } from "../../ui";
 import type { PrKey } from "../shell/routes";
 import { PrDetail, WithCode, type PrTab } from "./PrDetail";
 import { PrList } from "./PrList";
+import { githubLine, openCount } from "./words";
 import s from "./prs.module.css";
 
 /** The PR a route names: its own repo, else the project's PR with that number (a chat line knows only the number). */
@@ -37,14 +39,13 @@ export function PrsScreen({ project, pr }: { project: ProjectRef; pr: PrKey | nu
   const row = useMemo(() => (selected === undefined ? undefined : rows?.find((r) => r.repo === selected.repo && r.number === selected.number)), [rows, selected]);
   const hubNow = list.data === undefined ? undefined : Date.parse(list.data.at);
 
-  // Reading changes, the PR takes the list's room too; Overview or the breadcrumb brings the list back.
+  // Reading changes, the PR takes the list's room too; Overview or Show the list brings the list back.
   const [tab, setTab] = useState<PrTab>(lastTab);
   const pickTab = (next: PrTab) => {
     lastTab = next;
     setTab(next);
   };
   const wide = tab === "changes" && selected !== undefined;
-  const toChat = () => navigate({ id: "project", project, message: null });
   const state = list.data !== undefined ? "prs" : list.isError ? "prs.error" : "prs.loading";
 
   if (missing) {
@@ -55,42 +56,42 @@ export function PrsScreen({ project, pr }: { project: ProjectRef; pr: PrKey | nu
     );
   }
 
+  const open = rows === undefined ? 0 : openCount(rows);
   return (
     <div className={s.screen} data-screen={state}>
       <header className={s.header}>
-        <div className={s.crumbs}>
-          <Breadcrumb
-            items={[
-              { label: title ?? "Project", onClick: toChat },
-              wide ? { label: "Pull requests", onClick: () => pickTab("overview") } : { label: "Pull requests" },
-              ...(wide ? [{ label: `#${selected.number}` }] : []),
-            ]}
-          />
-        </div>
+        <span className={s.title}>
+          <Text strong>Pull requests</Text>
+          <span className={s.titleProject}>
+            <Truncate size="xs" tone="quiet" expand="none">
+              {open > 0 ? `${title ?? ""} · ${String(open)} open` : (title ?? "")}
+            </Truncate>
+          </span>
+        </span>
+        {!fresh ? (
+          <span className={s.liveness} role="status">
+            <Dot color="var(--warning)" />
+            <Text size="xs">Not live: reconnecting</Text>
+          </span>
+        ) : wide ? (
+          // Reading changes, the PR has the list's room; this brings the list back.
+          <Button variant="quiet" size="sm" icon={<PanelLeft aria-hidden />} onClick={() => pickTab("overview")}>
+            Show the list
+          </Button>
+        ) : null}
       </header>
-      {list.data?.githubError !== undefined ? (
-        <div className={s.banner} role="status">
-          <Text size="sm" tone="warning">
-            GitHub couldn’t be reached, so these are only the PRs fleetd made, without checks.
-          </Text>
-          <Text size="xs" tone="quiet">
-            <WithCode text={list.data.githubError} />
-          </Text>
-        </div>
-      ) : null}
+      {list.data?.githubError !== undefined ? <GitHubBanner list={list.data} onRetry={() => void list.refetch()} /> : null}
       <div className={s.body}>
         <aside className={s.list} aria-label="Pull requests" hidden={wide}>
           {rows !== undefined ? (
             <PrList rows={rows} cut={list.data?.truncated === true} project={project} selected={selected} nowMs={hubNow ?? 0} />
           ) : list.isError ? (
             <div className={s.paneNote} role="alert">
-              <Text tone="quiet">Couldn’t load the pull requests.</Text>
+              <Text tone="quiet">Couldn’t read the pull requests.</Text>
               <Button onClick={() => void list.refetch()}>Retry</Button>
             </div>
           ) : (
-            <div className={s.paneNote} aria-busy={fresh ? "true" : undefined}>
-              <Text tone="quiet">{fresh ? "Loading the pull requests…" : "Waiting for the connection…"}</Text>
-            </div>
+            <Skeleton busy={fresh} />
           )}
         </aside>
         <main className={s.detail}>
@@ -102,11 +103,41 @@ export function PrsScreen({ project, pr }: { project: ProjectRef; pr: PrKey | nu
             </div>
           ) : rows !== undefined && rows.length > 0 ? (
             <div className={s.detailEmpty}>
-              <Text tone="quiet">Pick a pull request to read it here.</Text>
+              <EmptyState title="Pick a pull request">Its checks, reviews and changes show here.</EmptyState>
             </div>
           ) : null}
         </main>
       </div>
+    </div>
+  );
+}
+
+/** GitHub didn't answer the hub: what the list is missing (or that it may be stale), the hub's reason, and Retry. */
+function GitHubBanner({ list, onRetry }: { list: PrListOutput; onRetry: () => void }) {
+  return (
+    <div className={s.banner} role="status">
+      <span className={s.bannerText}>
+        <Text size="sm" tone="warning">
+          {githubLine(list.prs)}
+        </Text>
+        <Text size="xs" tone="quiet">
+          <WithCode text={list.githubError ?? ""} />
+        </Text>
+      </span>
+      <Button variant="quiet" size="sm" onClick={onRetry}>
+        Retry
+      </Button>
+    </div>
+  );
+}
+
+/** Row outlines, no shimmer, as the agents view loads. Busy only while an answer is on its way. */
+function Skeleton({ busy }: { busy: boolean }) {
+  return (
+    <div className={s.skeleton} aria-busy={busy} aria-label="Loading the pull requests">
+      <span />
+      <span />
+      <span />
     </div>
   );
 }

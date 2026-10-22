@@ -2,7 +2,8 @@
 // state on their way to main (in review, checks failed, next in line, a draft, one fleetd doesn't merge), and one
 // merged and one closed lately, with descriptions, checks, agent and people's reviews, files and real-looking diffs.
 // Added to the shared fixtures; the group's own cover no PRs, the reads still on their way, GitHub out of reach, a PR
-// that fails to load, and a PR of 240 files with a 3,000-line file, paged as the hub pages them.
+// that fails to load, GitHub's rate limit reached with the hub's last answer kept, and a PR of 240 files with a
+// 3,000-line file, paged as the hub pages them.
 //
 // The tools' contract is still on its branch (src/renderer/src/data/pr-contract.ts), so their answers skip schema
 // validation until it lands here.
@@ -541,7 +542,8 @@ const answerFiles = (f: Fixture, number: number, files: readonly FileSpec[], hea
   }
 };
 
-const answerPr = (f: Fixture, p: PrSpec, githubError?: string): void => {
+/** `kept`: GitHub didn't answer, but the hub still holds its last answer (it says so in `githubError`). */
+const answerPr = (f: Fixture, p: PrSpec, githubError?: string, kept = false): void => {
   const files = p.files.map(fileOf);
   const additions = files.reduce((n, x) => n + Number(x["additions"]), 0);
   const deletions = files.reduce((n, x) => n + Number(x["deletions"]), 0);
@@ -552,7 +554,7 @@ const answerPr = (f: Fixture, p: PrSpec, githubError?: string): void => {
     baseBranch: "main",
     headSha,
     // Only GitHub knows the diff's size.
-    ...(githubError === undefined ? { additions, deletions, changedFiles: files.length } : {}),
+    ...(githubError === undefined || kept ? { additions, deletions, changedFiles: files.length } : {}),
     checks: p.checkRuns,
     reviews: p.reviews,
     history: p.history,
@@ -566,11 +568,11 @@ const pending = (f: Fixture): void => {
   for (const tool of TOOLS) f.pendingContracts.set(tool, "the PR reads land with the hub's PR view (crates/fleetd-contracts/src/prs.rs)");
 };
 
-const answerAll = (f: Fixture, list: readonly PrSpec[], opts: { githubError?: string } = {}): void => {
+const answerAll = (f: Fixture, list: readonly PrSpec[], opts: { githubError?: string; kept?: boolean } = {}): void => {
   pending(f);
   const projectRef = firstProject(f);
   f.answer("pr_list", { projectRef }, { at: f.now, prs: list.map((p) => rowOf(f, p)), ...(opts.githubError === undefined ? {} : { githubError: opts.githubError }) });
-  for (const p of list) answerPr(f, p, opts.githubError);
+  for (const p of list) answerPr(f, p, opts.githubError, opts.kept);
 };
 
 /** The long-text variant: titles, branch, paths, check names and review text at their limits. */
@@ -632,7 +634,13 @@ export default defineGroup({
       const list = specs(f)
         .filter((p) => p.queue !== undefined)
         .map((p) => ({ ...p, checks: undefined, body: "", checkRuns: [], files: [] }));
-      answerAll(f, list, { githubError: "GitHub didn't answer within 10 seconds. fleetd tries again on the next change; check this machine's network if it keeps failing." });
+      // The hub's own words (hub/prs/github.rs explain) for a signed-out gh.
+      answerAll(f, list, { githubError: "GitHub isn't signed in on the machine fleetd runs on: run `gh auth login` there." });
+      return f;
+    })(),
+    (() => {
+      const f = Fixture.from(base("typical"), "prs-rate-limited", "GitHub's rate limit is reached: the hub answers with what GitHub said last, and says so.");
+      answerAll(f, specs(f), { githubError: "GitHub's rate limit is reached; fleetd asks again in a minute.", kept: true });
       return f;
     })(),
     (() => {

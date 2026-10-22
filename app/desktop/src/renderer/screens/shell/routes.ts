@@ -26,7 +26,7 @@ export type Screen =
   | { readonly id: "home" }
   /** A project's lead chat; `message` scrolls to one message (a clicked notification). */
   | { readonly id: "project"; readonly project: ProjectKey; readonly message: string | null }
-  /** A project's pull requests, with one open beside the list. */
+  /** A project's pull requests; `pr` opens one beside the list. */
   | { readonly id: "prs"; readonly project: ProjectKey; readonly pr: PrKey | null }
   | { readonly id: "status" }
   /** Every agent across the projects; `agent` opens one's live work beside the list. */
@@ -56,7 +56,7 @@ const decode = (segment: string): string | null => {
 const prNumber = (segment: string | undefined): number | null =>
   segment !== undefined && /^[1-9][0-9]{0,9}$/u.test(segment) ? Number(segment) : null;
 
-/** `prs/12` or `prs/<owner>/<name>/12`; anything else opens the list alone. */
+/** `12` or `<owner>/<name>/12` after the project; anything else opens the list alone. */
 const prKey = (rest: ReadonlyArray<string>): PrKey | null => {
   const [a, b, c] = rest;
   if (rest.length === 1) {
@@ -72,8 +72,10 @@ const screenOf = (parts: ReadonlyArray<string>, query: URLSearchParams): Screen 
   switch (head) {
     case "project":
       if (a === undefined || b === undefined) return HOME;
-      if (c === "prs") return { id: "prs", project: { machineId: a, projectId: b }, pr: prKey(parts.slice(4)) };
       return { id: "project", project: { machineId: a, projectId: b }, message: query.get("message") || null };
+    case "prs":
+      // Like the agents view's `agents/<machine>/<project>/<lane>`; the hub lists PRs a project at a time.
+      return a === undefined || b === undefined ? HOME : { id: "prs", project: { machineId: a, projectId: b }, pr: prKey(parts.slice(3)) };
     case "status":
       return { id: "status" };
     case "agents":
@@ -119,10 +121,9 @@ const path = (screen: Screen): Array<string> => {
       return ["project", screen.project.machineId, screen.project.projectId];
     case "prs":
       return [
-        "project",
+        "prs",
         screen.project.machineId,
         screen.project.projectId,
-        "prs",
         ...(screen.pr === null ? [] : [...(screen.pr.repo === null ? [] : screen.pr.repo.split("/", 2)), String(screen.pr.number)]),
       ];
     case "agents":
