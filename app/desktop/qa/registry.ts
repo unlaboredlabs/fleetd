@@ -84,6 +84,8 @@ export const fixtures = [
   "chat-gated",
   "chat-waiting",
   "chat-empty",
+  // UX-1 [23]: a long lead reply streaming in, in small deltas (fixtures/stream).
+  "stream-long",
   // F5 (A5): a chat with every state of the two inline items (fixtures/inline), with every answer failing, and with
   // two approvals the hub reopens after Approve.
   "inline-items",
@@ -451,6 +453,8 @@ export const screens: readonly Screen[] = [
       await page.getByText("From before this chat").waitFor({ timeout: 10_000 });
     },
   },
+  // UX-1 [23]: a long reply streams in with the chat open, block by block; checked after its last delta.
+  { id: "chat", route: CHAT, fixtures: ["stream-long"], variant: "stream", replay: true },
   // UX-1 [10]: just set up, no chat has a message yet: the empty chat shows the checklist on its last step.
   { id: "chat", route: CHAT, fixtures: ["onboarding-first-chat"], variant: "first-chat" },
   // Sequences that once blanked the window, replayed to the end: the chat must still be up, with no error card.

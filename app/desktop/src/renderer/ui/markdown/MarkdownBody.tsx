@@ -1,9 +1,10 @@
 // The markdown parser (react-markdown, remark-gfm, micromark): about half the design system's code, so Markdown loads
 // it on first use rather than with the app.
-import type { ReactElement, ReactNode } from "react";
+import { memo, useMemo, type ReactElement, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { toast } from "../primitives/Toast";
+import { markdownBlocks } from "./blocks";
 import { Code, InlineCode } from "./Code";
 import s from "./Markdown.module.css";
 
@@ -58,10 +59,17 @@ const COMPONENTS: Components = {
   ),
 };
 
-export default function MarkdownBody({ source }: { source: string }) {
+const Block = memo(function Block({ source }: { source: string }) {
   return (
     <ReactMarkdown remarkPlugins={REMARK} components={COMPONENTS} skipHtml>
       {source}
     </ReactMarkdown>
   );
+});
+
+/** Block by block: a reply streaming in re-parses only its last block, the one still growing. */
+export default function MarkdownBody({ source }: { source: string }) {
+  const blocks = useMemo(() => markdownBlocks(source), [source]);
+  // By position: a streaming message only grows at its end, so every block before the last keeps its key and text.
+  return blocks.map((b, i) => <Block key={i} source={b} />);
 }
