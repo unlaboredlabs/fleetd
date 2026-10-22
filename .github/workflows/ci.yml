@@ -307,3 +307,38 @@ jobs:
           path: app/desktop/smoke-results/
           if-no-files-found: ignore
           retention-days: 14
+
+  desktop-macos-stress:
+    # TEMPORARY (reverted before merge): the mac smoke 10 times per job with the shell fix.
+    strategy:
+      fail-fast: false
+      matrix:
+        n: [1, 2]
+    runs-on: macos-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: app/desktop
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: app/desktop/package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: app/desktop/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: |
+          pnpm fixtures
+          pnpm build:test
+          CSC_IDENTITY_AUTO_DISCOVERY=false pnpm exec electron-builder --mac --dir --arm64 --publish never -c.directories.output=dist-test \
+            -c.mac.identity=- -c.mac.hardenedRuntime=false
+          fails=0
+          for i in $(seq 10); do
+            if node scripts/packaged-smoke.ts dist-test/mac-arm64/fleetd.app/Contents/MacOS/fleetd > "$RUNNER_TEMP/smoke-$i.log" 2>&1; then echo "run $i: ok"
+            else fails=$((fails+1)); echo "run $i: FAILED"; grep -vE 'ERROR:|^ERR: ' "$RUNNER_TEMP/smoke-$i.log" | tail -30; fi
+          done
+          echo "failed $fails of 10"
+          [ "$fails" = 0 ]
