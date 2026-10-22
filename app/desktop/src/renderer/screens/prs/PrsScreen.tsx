@@ -95,7 +95,7 @@ export function PrsScreen({ project, pr }: { project: ProjectRef; pr: PrKey | nu
         </aside>
         <main className={s.detail}>
           {selected !== undefined ? (
-            <PrDetail key={`${selected.repo}#${selected.number}`} repo={selected.repo} number={selected.number} row={row} nowMs={hubNow} tab={tab} onTab={pickTab} />
+            <PrDetail key={`${selected.repo}#${selected.number}`} repo={selected.repo} number={selected.number} row={row} nowMs={hubNow} tab={tab} onTab={pickTab} githubSaid={list.data?.githubError !== undefined} />
           ) : picked === "unknown" ? (
             <div data-screen="prs.detail.missing" className={s.detailEmpty}>
               <EmptyState title={`#${pr?.number ?? ""} isn’t in this project`}>It may be in another project, or closed more than a week ago.</EmptyState>

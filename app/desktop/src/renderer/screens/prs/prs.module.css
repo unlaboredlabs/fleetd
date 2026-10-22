@@ -180,15 +180,10 @@
   gap: var(--space-6);
   max-width: var(--measure);
 }
-.overview /* The breadcrumb takes the bar's width, so a short project name never truncates. */
-.crumbs {
-  flex: 1;
-  min-width: 0;
-  display: grid;
-}
-.banner {
-  padding: 0;
-  border: none;
+.notice {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .facts {

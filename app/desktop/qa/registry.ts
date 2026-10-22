@@ -275,7 +275,7 @@ export const screens: readonly Screen[] = [
   { id: "prs.detail", route: PR(11), fixtures: ["prs-error"], expect: "error" },
   // Its changes: the files beside a diff drawn a screen at a time, one column or side by side, and a PR too big to
   // load at once.
-  { id: "prs.detail", route: PR(11), fixtures: ["typical", "long-text"], variant: "changes", open: openChanges },
+  { id: "prs.detail", route: PR(11), fixtures: ["typical", "long-text", "prs-no-github"], variant: "changes", open: openChanges },
   {
     id: "prs.detail",
     route: PR(11),

@@ -45,9 +45,11 @@ interface PrDetailProps {
   readonly nowMs: number | undefined;
   readonly tab: PrTab;
   readonly onTab: (tab: PrTab) => void;
+  /** The screen already says GitHub wasn't reached. */
+  readonly githubSaid: boolean;
 }
 
-export function PrDetail({ repo, number, row, nowMs, tab, onTab }: PrDetailProps) {
+export function PrDetail({ repo, number, row, nowMs, tab, onTab, githubSaid }: PrDetailProps) {
   const query = useToolQuery("pr_get", { repo, number });
   const data = query.data;
   const pr = data?.pr ?? row;
@@ -81,9 +83,9 @@ export function PrDetail({ repo, number, row, nowMs, tab, onTab }: PrDetailProps
       <div className={s.prHead}>
         <div className={s.prTitleRow}>
           <span className={s.prTitle}>
-            <Text as="h2" size="lg" strong>
+            <Truncate as="h2" size="lg" strong lines={3} expand="inline">
               {pr.title === "" ? `#${pr.number}` : pr.title}
-            </Text>
+            </Truncate>
           </span>
           <Button variant="secondary" icon={<ExternalLink aria-hidden />} onClick={() => openExternal(pr.url)}>
             Open on GitHub
@@ -127,17 +129,17 @@ export function PrDetail({ repo, number, row, nowMs, tab, onTab }: PrDetailProps
             </div>
           )
         ) : (
-          <Overview data={data} now={now} />
+          <Overview data={data} now={now} githubSaid={githubSaid} />
         )}
       </TabPanel>
       <TabPanel value="changes" className={s.changesPanel}>
-        {tab === "changes" ? <DiffPane repo={repo} number={number} additions={additions} deletions={deletions} /> : null}
+        {tab === "changes" ? <DiffPane repo={repo} number={number} additions={additions} deletions={deletions} githubDown={data?.githubError !== undefined} /> : null}
       </TabPanel>
     </Tabs>
   );
 }
 
-function Overview({ data, now }: { data: PrGetOutput; now: number }) {
+function Overview({ data, now, githubSaid }: { data: PrGetOutput; now: number; githubSaid: boolean }) {
   const pr = data.pr;
   const state = stateLine(pr);
   const checks = pr.checks === undefined ? undefined : checksWord(pr.checks);
@@ -145,8 +147,8 @@ function Overview({ data, now }: { data: PrGetOutput; now: number }) {
   const author = authorWords(pr.author);
   return (
     <div className={s.measure}>
-      {data.githubError !== undefined ? (
-        <div className={s.banner} role="status">
+      {data.githubError !== undefined && !githubSaid ? (
+        <div className={s.notice} role="status">
           <Text size="sm" tone="warning">
             GitHub couldn’t be reached, so the description, checks and files may be missing.
           </Text>
@@ -209,7 +211,13 @@ function Overview({ data, now }: { data: PrGetOutput; now: number }) {
       </Section>
 
       <Section title="Checks" aside={pr.checks === undefined ? undefined : checksDetail(pr.checks)}>
-        <Checks checks={data.checks} />
+        {data.checks.length === 0 && pr.checks === undefined ? (
+          <Text size="sm" tone="quiet">
+            Not known: GitHub wasn’t reached.
+          </Text>
+        ) : (
+          <Checks checks={data.checks} />
+        )}
       </Section>
 
       <Section title="Reviews">

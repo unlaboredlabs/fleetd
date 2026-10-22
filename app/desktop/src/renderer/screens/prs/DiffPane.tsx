@@ -41,9 +41,11 @@ export interface DiffPaneProps {
   readonly number: number;
   readonly additions?: number | undefined;
   readonly deletions?: number | undefined;
+  /** GitHub wasn't reached, so an empty list means unknown rather than nothing changed. */
+  readonly githubDown?: boolean;
 }
 
-export function DiffPane({ repo, number, additions, deletions }: DiffPaneProps) {
+export function DiffPane({ repo, number, additions, deletions, githubDown = false }: DiffPaneProps) {
   const filesQuery = useToolPages("pr_files", { repo, number }, (page) => (page.nextOffset === undefined ? undefined : { offset: page.nextOffset }));
   const { fetchNextPage, hasNextPage, isFetchingNextPage } = filesQuery;
   const files = useMemo(() => filesQuery.data?.pages.flatMap((p) => p.files) ?? [], [filesQuery.data]);
@@ -136,7 +138,7 @@ export function DiffPane({ repo, number, additions, deletions }: DiffPaneProps) 
   if (total === 0) {
     return (
       <div className={s.paneNote}>
-        <Text tone="quiet">No files changed.</Text>
+        <Text tone="quiet">{githubDown ? "The changed files aren’t known: GitHub wasn’t reached." : "No files changed."}</Text>
       </div>
     );
   }

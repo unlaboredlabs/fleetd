@@ -521,9 +521,8 @@ const answerPr = (f: Fixture, p: PrSpec, githubError?: string): void => {
     body: p.body,
     baseBranch: "main",
     headSha,
-    additions,
-    deletions,
-    changedFiles: files.length,
+    // Only GitHub knows the diff's size.
+    ...(githubError === undefined ? { additions, deletions, changedFiles: files.length } : {}),
     checks: p.checkRuns,
     reviews: p.reviews,
     history: p.history,
