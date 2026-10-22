@@ -65,7 +65,7 @@ setting up (on the hub machine):
 projects:
 {}
 running by hand:
-{}{}{}{}{}{}{}{}{}{}
+{}{}{}{}{}{}{}{}{}
 lead-side commands (a lead uses its fleetd tools; these are for you, inside a project workspace):
 {}",
         UPDATE_USAGE,
