@@ -8,7 +8,6 @@ pub mod lead;
 pub mod mcp_client;
 pub mod node;
 pub mod pair;
-pub mod pending;
 pub mod project;
 pub mod prompts;
 pub mod retro;

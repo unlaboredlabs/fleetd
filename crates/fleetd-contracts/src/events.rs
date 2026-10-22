@@ -7,7 +7,6 @@ use crate::ids::{EventSeq, MachineId, ProjectId, ProjectRef, ThreadId, Timestamp
 use crate::ledger::{BriefHash, RequestKind, RequestState, WorkstreamId, WorkstreamState};
 use crate::prim::{Count, Text};
 use crate::prompts::PromptScope;
-use crate::steer::SteerId;
 use crate::train::{ChangeId, GitHubRepo};
 use crate::verification::ClaimId;
 
@@ -188,8 +187,6 @@ pub enum HubEventType {
     KeyPaired,
     /// A person added to an order for its lead: `data.workstreamId`, `data.noteId`, `data.urgent`, `data.text` (first
     /// 200 characters).
-    #[serde(rename = "workstream.note")]
-    WorkstreamNote,
     /// A prompt override was saved or reset: `data.id`, `data.scope`, `data.projectRef`, `data.ref` (absent on reset),
     /// `data.warnings` (their codes). The text is not in the event; prompt_get reads it.
     #[serde(rename = "prompt.changed")]
@@ -314,7 +311,6 @@ impl HubEventType {
             Self::PlaybookReverted => "playbook.reverted",
             Self::PlaybookKept => "playbook.kept",
             Self::KeyPaired => "key.paired",
-            Self::WorkstreamNote => "workstream.note",
             Self::PromptChanged => "prompt.changed",
             Self::PromptDefaultChanged => "prompt.default_changed",
             Self::SteerQueued => "steer.queued",
@@ -454,20 +450,6 @@ pub struct TrainEventData {
     pub fix: Option<String>,
     /// train.blocked: what a person has to move.
     pub error: Option<String>,
-}
-
-/// `workstream.note`.
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkstreamNoteData {
-    pub workstream_id: WorkstreamId,
-    pub client_request_id: Option<String>,
-    pub urgent: Option<bool>,
-    /// The first 200 characters.
-    pub text: Option<String>,
-    /// The steer the note became.
-    pub steer_id: Option<SteerId>,
 }
 
 /// `prompt.changed`.

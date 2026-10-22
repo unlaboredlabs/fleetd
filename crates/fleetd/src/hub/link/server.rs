@@ -15,7 +15,10 @@ use fleetd_contracts::ids::{MachineId, Timestamp};
 use fleetd_contracts::lead_calls::{LeadCallFrame, LeadResultFrame};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 use fleetd_contracts::model::{Machine, MachineStatus, SleptSpan, duration_text};
-use fleetd_contracts::node_link::{HubToNode, NodeHello, NodeLoad, NodeToHub, close};
+use fleetd_contracts::node_link::{
+    HEARTBEAT_INTERVAL_SECS, HEARTBEAT_TIMEOUT_SECS, HubToNode, NodeHello, NodeLoad, NodeToHub,
+    close,
+};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
 use tokio::sync::mpsc;
@@ -29,8 +32,8 @@ use crate::hub::executor::providers::runner_problem;
 use crate::hub::executor::{Executors, NodeSessions};
 use crate::hub::store::{EventLog, HubStore, NewEvent, iso_ms, now_ms};
 
-pub const HEARTBEAT_EVERY: Duration = Duration::from_secs(15);
-pub const SILENCE_TIMEOUT: Duration = Duration::from_secs(45);
+const HEARTBEAT_EVERY: Duration = Duration::from_secs(HEARTBEAT_INTERVAL_SECS);
+const SILENCE_TIMEOUT: Duration = Duration::from_secs(HEARTBEAT_TIMEOUT_SECS);
 pub const HELLO_TIMEOUT: Duration = Duration::from_secs(10);
 /// How many heartbeats apart the hub re-reads the runner's state, so a fixed or expired login shows within a minute.
 const RUNNER_CHECK_EVERY: u32 = 4;

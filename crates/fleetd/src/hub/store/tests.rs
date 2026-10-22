@@ -313,3 +313,38 @@ fn drops_events_older_than_30_days_without_reusing_their_seq_even_across_a_resta
         5
     );
 }
+
+/// A hub from before the unused tables went: they are dropped, and the events nothing emits any more are deleted so
+/// every stored event still decodes.
+#[test]
+fn unused_tables_and_events_go_on_an_older_hub() {
+    use super::migrations::MIGRATIONS;
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    let last = MIGRATIONS.len() - 1;
+    for m in &MIGRATIONS[..last] {
+        conn.execute_batch(m).unwrap();
+    }
+    conn.execute_batch(
+        r#"INSERT INTO intake_routes (client_request_id, data) VALUES ('c1', '{}');
+        INSERT INTO events (created_ms, type, data) VALUES (0, 'intake.routed', '{}'), (0, 'workstream.note', '{}'),
+          (0, 'workstream.running', '{"workstreamId":"W1"}');"#,
+    )
+    .unwrap();
+    conn.execute_batch(MIGRATIONS[last]).unwrap();
+
+    let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
+    assert_eq!(
+        count(
+            "SELECT count(*) FROM sqlite_master WHERE name IN ('intake_routes', 'status_eta', 'status_headlines')"
+        ),
+        0
+    );
+    let types: Vec<String> = conn
+        .prepare("SELECT type FROM events")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(types, ["workstream.running"]);
+}
