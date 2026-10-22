@@ -7,6 +7,7 @@ import { Paperclip } from "lucide-react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentLane, AttachmentRef } from "../../../shared/contracts";
 import { Button, cx, Text, Truncate, VirtualList } from "../../ui";
+import { Boundary } from "../../src/Boundary";
 import { useToolQuery } from "../../src/data/react";
 import { fmtBytes } from "./attachments";
 import type { ChatItem } from "../../src/data/chat";
@@ -187,7 +188,9 @@ const RowView = memo(function RowView(props: {
     case "strip":
       return (
         <div className={s.strip}>
-          <LiveStrip project={project} onTold={props.onTold} />
+          <Boundary part="the live strip">
+            <LiveStrip project={project} onTold={props.onTold} />
+          </Boundary>
         </div>
       );
     case "message": {
