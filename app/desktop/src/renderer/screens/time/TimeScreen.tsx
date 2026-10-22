@@ -15,7 +15,7 @@ import { LinkedSheet, TranscriptSheet } from "./Sheets";
 import { Timeline } from "./Timeline";
 import { linkedKeeps, useLinked, useNames, useTimeData, useWindow, type Linked } from "./data";
 import { loadFilters, queryOf, saveFilters, type Filters } from "./filters";
-import { ROLE_WORD, fmtDur, isMissingEmpty, missing, missingSentence } from "./format";
+import { ROLE_WORD, agentName, fmtDur, isMissingEmpty, missing, missingSentence } from "./format";
 import { barsFor, buildModel } from "./model";
 import { chatRoute } from "./route";
 import type { Category, Span } from "./types";
@@ -87,7 +87,7 @@ export function TimeScreen(props: TimeScreenProps) {
   const offline =
     connection.view === "live" || (connection.view === "skeleton" && connection.reason === undefined)
       ? undefined
-      : "Not connected to the hub. The figures come back when it reconnects.";
+      : "Offline. The figures come back when the connection does.";
   const names = useNames(order);
   const breakdown = data.breakdown?.ok === true ? data.breakdown.value : undefined;
   const coverage = data.spansCoverage ?? breakdown?.coverage;
@@ -229,7 +229,7 @@ export function TimeScreen(props: TimeScreenProps) {
   const coverageText = shown !== undefined && coverage !== undefined ? missingSentence(shown, coverage) : undefined;
 
   const lane = windowAt?.threadId === undefined ? undefined : names.threads.get(windowAt.threadId);
-  const who = lane === undefined ? (windowAt?.taskId ?? "agent") : `${ROLE_WORD[lane.role]} ${lane.taskId ?? ""}`.trim();
+  const who = lane === undefined ? "An agent" : `${ROLE_WORD[lane.role]}: ${agentName(lane)}`;
   const orderOf = windowAt?.workstreamId ?? order;
 
   return (
@@ -313,25 +313,25 @@ export function TimeScreen(props: TimeScreenProps) {
         <TabPanel value="breakdown" className={cx(s.panel)}>
           {data.breakdown === undefined ? (
             <div className={cx(s.empty)} {...(offline === undefined ? {} : { "data-screen": "time.breakdown.offline" })}>
-              <Text tone="quiet">{offline ?? "Asking the hub where the time went…"}</Text>
+              <Text tone="quiet">{offline ?? "Working out where the time went…"}</Text>
             </div>
           ) : !data.breakdown.ok ? (
             <div className={cx(s.empty)} data-screen="time.breakdown.error">
-              <Text strong>The hub couldn&apos;t answer</Text>
+              <Text strong>Couldn&apos;t load these figures</Text>
               <Text tone="quiet">{data.breakdown.error}</Text>
             </div>
           ) : (
-            <Breakdown data={data.breakdown.value} order={order !== undefined} missing={shown} pathIds={pathIds} onLinked={showLinked} />
+            <Breakdown data={data.breakdown.value} order={order !== undefined} missing={shown} pathIds={pathIds} onLinked={showLinked} names={names} />
           )}
         </TabPanel>
         <TabPanel value="insights" className={cx(s.panel)}>
           {data.insights === undefined ? (
             <div className={cx(s.empty)} {...(offline === undefined ? {} : { "data-screen": "time.insights.offline" })}>
-              <Text tone="quiet">{offline ?? "Running the hub's rules over this period…"}</Text>
+              <Text tone="quiet">{offline ?? "Looking for findings in this period…"}</Text>
             </div>
           ) : !data.insights.ok ? (
             <div className={cx(s.empty)} data-screen="time.insights.error">
-              <Text strong>The hub couldn&apos;t answer</Text>
+              <Text strong>Couldn&apos;t load these figures</Text>
               <Text tone="quiet">{data.insights.error}</Text>
             </div>
           ) : (

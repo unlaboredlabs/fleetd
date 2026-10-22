@@ -4,7 +4,7 @@
 import type { ReactNode } from "react";
 import { Text, Truncate, cx, humanizeKey } from "../../ui";
 import type { Linked } from "./data";
-import { CAT_LABEL, KIND_WORD, SHOWN, delta, fmtBytes, fmtDur, gapText, pct, type Missing, categoryKinds } from "./format";
+import { CAT_LABEL, KIND_WORD, SHOWN, agentName, delta, fmtBytes, fmtDur, gapText, pct, type Missing, type Names, categoryKinds } from "./format";
 import type { Category, CategoryTotal, TimeBreakdownOutput } from "./types";
 import s from "./Time.module.css";
 
@@ -15,7 +15,15 @@ export interface BreakdownProps {
   /** Span ids per category on the critical path, when the order's spans are loaded. */
   readonly pathIds: ReadonlyMap<Category, readonly number[]> | undefined;
   readonly onLinked: (linked: Linked, ids?: readonly number[]) => void;
+  /** Who ran a repeated command: the agent by what it worked on. */
+  readonly names: Names;
 }
+
+const agentOf = (names: Names, threadId: string): string => {
+  if (names.leads.has(threadId)) return "lead";
+  const lane = names.threads.get(threadId);
+  return lane === undefined ? "an agent" : agentName(lane);
+};
 
 /** "Bash 49m (67) · Read 49s (77)": the biggest kinds in a category; first token carries its ≈. */
 export const kindsText = (c: CategoryTotal): string =>
@@ -64,7 +72,7 @@ const Num = ({ children, tone }: { children: string; tone?: "quiet" | "danger" |
   </Text>
 );
 
-export function Breakdown({ data: b, order, missing, pathIds, onLinked }: BreakdownProps) {
+export function Breakdown({ data: b, order, missing, pathIds, onLinked, names }: BreakdownProps) {
   const agent = b.agentMs;
   if (agent === 0) {
     return (
@@ -208,7 +216,7 @@ export function Breakdown({ data: b, order, missing, pathIds, onLinked }: Breakd
         <Section title="Repeated commands" detail="the same command in one session with nothing edited between runs">
           <div className={cx(s.table, s.repTable)} role="table" aria-label="Repeated commands">
             <div className={cx(s.tableHead)} role="row">
-              {["Ran again with no edit between", "in", "runs", "total"].map((h, i) => (
+              {["Ran again with no edit between", "agent", "runs", "total"].map((h, i) => (
                 <Text key={h} size="xs" tone="quiet" className={cx(i > 0 && s.num)}>
                   {h}
                 </Text>
@@ -223,9 +231,9 @@ export function Breakdown({ data: b, order, missing, pathIds, onLinked }: Breakd
                 <Truncate expand="none" mono size="sm">
                   {r.label}
                 </Truncate>
-                <Text size="xs" tone="quiet" className={cx(s.num)}>
-                  {r.taskId ?? "a session"}
-                </Text>
+                <Truncate expand="none" size="xs" tone="quiet" className={cx(s.num)}>
+                  {agentOf(names, r.threadId)}
+                </Truncate>
                 <Num>{`${r.n}×`}</Num>
                 <Num>{fmtDur(r.totalMs)}</Num>
               </RowButton>
@@ -314,7 +322,7 @@ function Notes({ b, missing }: { b: TimeBreakdownOutput; missing: Missing | unde
   if (missing?.detailSince !== undefined) {
     lines.push(`Detail since ${missing.detailSince}: commands, CI checks and findings start there (retention); totals before that come from daily roll-ups.`);
   }
-  if (b.coverage.capped === true) lines.push("Capped: the hub read only the newest spans.");
+  if (b.coverage.capped === true) lines.push("Capped: only the newest spans were read.");
   lines.push(
     "≈ First token includes claude's own work before the request, the network, API queueing and prefill; they can't be told apart. Thinking and output are split as streamed; each message's total is exact.",
     "≤ When several tools ran from one message, each call's own time is an upper bound; the group's time is exact.",

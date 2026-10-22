@@ -3,7 +3,7 @@
 // week of the fleet is made of orders like it. The roll-ups here stand in for the hub's so the numbers on screen
 // agree with the bars; they are fixture data, not the hub's rules. Ported from the GPUI app's time/fixture.rs.
 // Value imports carry ".ts": `pnpm fixtures` runs this file under plain Node (fixtures/time/index.ts).
-import { NO_NAMES, KIND_WORD, SHOWN, categoryKinds, fmtDur, type Names } from "./format.ts";
+import { NO_NAMES, KIND_WORD, SHOWN, categoryKinds, fmtDur, type Lane as NamedLane, type Names } from "./format.ts";
 import {
   KIND_CATEGORY,
   type AgentRole,
@@ -619,8 +619,8 @@ const fleetLane = (d: Data) => {
 export const fixtureNames = (): Names => {
   const specs = week();
   const d = collect(specs, undefined, 1);
-  const threads = new Map<string, { role: AgentRole; taskId?: string; title: string }>();
-  for (const [id, r] of d.roles) threads.set(id, { role: r.role, title: r.title, ...(r.task === undefined ? {} : { taskId: r.task }) });
+  const threads = new Map<string, NamedLane>();
+  for (const [id, r] of d.roles) threads.set(id, { role: r.role, title: r.title, model: "claude-haiku-5-5", ...(r.task === undefined ? {} : { laneId: r.task }) });
   return {
     ...NO_NAMES,
     threads,

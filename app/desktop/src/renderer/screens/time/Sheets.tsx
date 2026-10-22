@@ -2,7 +2,7 @@
 // row links to, one per line as `fleetd time --spans` prints them.
 import { Button, Sheet, Text, Truncate, VirtualList, cx, humanizeKey } from "../../ui";
 import type { Answer } from "./data";
-import { clockMs, inexact, laneName, markedDur, spanTitle, type Names } from "./format";
+import { clockMs, dayMs, inexact, laneName, markedDur, spanTitle, stampMs, type Names } from "./format";
 import type { Span, ThreadWindowOutput } from "./types";
 import s from "./Time.module.css";
 
@@ -98,13 +98,12 @@ export interface LinkedSheetProps {
 export function LinkedSheet({ title, answer, names, nowMs, onClose, onSpan }: LinkedSheetProps) {
   const spans = answer?.ok === true ? answer.value : [];
   // A list over days needs the day beside each time; within one day the clock alone reads faster.
-  const day = (ms: number) => new Date(ms).toISOString().slice(0, 10);
-  const days = spans.length > 0 && day(spans[0]?.startMs ?? 0) !== day(spans.at(-1)?.startMs ?? 0);
-  const when = (ms: number) => (days ? new Date(ms).toISOString().slice(5, 16).replace("T", " ") : clockMs(ms));
+  const days = spans.length > 0 && dayMs(spans[0]?.startMs ?? 0) !== dayMs(spans.at(-1)?.startMs ?? 0);
+  const when = (ms: number) => (days ? stampMs(ms) : clockMs(ms));
   return (
     <Sheet open={title !== undefined} onOpenChange={(o) => !o && onClose()} title={title ?? ""}>
       {answer === undefined ? (
-        <Text tone="quiet">Asking the hub for these spans…</Text>
+        <Text tone="quiet">Loading these spans…</Text>
       ) : !answer.ok ? (
         <Text tone="danger">{answer.error}</Text>
       ) : spans.length === 0 ? (

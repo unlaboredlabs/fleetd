@@ -65,7 +65,8 @@ How to work with the lead: [Chat with the lead](/docs/chat).
 ![Status with one row per project: billing waiting on you at 64%, checkout blocked at 31%, storefront working at 78% with five agents, each with its last merge.](/docs/img/status.png)
 
 Status shows one row per project: a state word (waiting on you, blocked, working or idle), its two-tone progress bar,
-the agents running, and what merged last. Click a row to open that project's chat; hover it for detail.
+the agents running, and when the last pull request merged. Click a row to open that project's chat, or PRs for its
+pull requests; hover it for detail.
 See [Status](/docs/status).
 
 ## Where time went {#time}
@@ -74,13 +75,13 @@ Open Time from the sidebar, the agents strip in a chat, or the command palette. 
 
 | Tab | Shows |
 |---|---|
-| Timeline | One piece of work: a lane per agent, PR and CI check, and the waits on you, with the [critical path](/docs/glossary#critical-path) marked. Hover a bar for the command, its duration and exit code; a transcript's "Open the chat" goes to the project's chat. |
+| Timeline | One piece of work: a lane per agent, PR and CI check, and the waits on you, with the [critical path](/docs/glossary#critical-path) marked. Each agent's lane shows its model and tokens. Hover a bar for the command, its duration and exit code; a transcript's "Open the chat" goes to the project's chat. |
 | Breakdown | Agent time by group, with the slowest commands and CI checks. |
 | Insights | Findings, each with the spans behind it. |
 
 ![Where a piece of work's time went: a lane per agent, PR and CI check, the waits on you, the critical path underlined, and the legend.](/docs/img/time.png)
 
-How to read it: [Where time went](/docs/time-inspector).
+Times are in your own time zone. How to read it: [Where time went](/docs/time-inspector).
 
 ## Settings {#settings}
 

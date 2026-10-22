@@ -130,7 +130,11 @@ describe("buildModel", () => {
     expect(kinds.indexOf("change")).toBeLessThan(kinds.indexOf("check"));
     expect(kinds.lastIndexOf("check")).toBeLessThan(kinds.indexOf("requests"));
     expect(m.rows.filter((r) => r.kind === "check").map((r) => r.name)).toEqual(["lint", "build", "e2e (webkit)"]);
-    expect(m.rows.find((r) => r.kind === "agent")?.taskId).toBe("T21");
+    // An agent goes by what it worked on and its model, never its task number; its tokens are its messages' output.
+    const agent = m.rows.find((r) => r.kind === "agent");
+    expect(agent).toMatchObject({ name: "about page", role: "implementer", model: "claude-haiku-5-5" });
+    expect(agent?.outputTokens).toBeGreaterThan(0);
+    expect(m.rows.some((r) => /\bT\d+\b/u.test(r.name))).toBe(false);
     // Parallel calls are drawn as their group; envelopes and message parents are not drawn.
     for (let i = 0; i < m.itemSpan.length; i += 1) {
       const s = m.spans[m.itemSpan[i] ?? -1];

@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { changesSpans, errorText, linkedKeeps, litSpans, mergeSpans, namesOf, resumeAfter, type NamesInput } from "./data";
 import { fixtureAnswers } from "./fixture";
-import { DEFAULT_FILTERS, decodeFilters, parseWhen, period, queryOf, spansInput } from "./filters";
+import { DEFAULT_FILTERS, decodeFilters, fieldWhen, parseWhen, period, queryOf, spansInput } from "./filters";
+import { clockMs, stampMs } from "./format";
 import type { Span, TimeSpansOutput } from "./types";
 
 const span = (id: number, endMs?: number): Span => ({
@@ -56,7 +57,7 @@ describe("linked spans", () => {
 describe("filters", () => {
   const now = Date.parse("2026-10-18T10:07:12.000Z");
 
-  it("end ranges now, and today starts at UTC midnight", () => {
+  it("end ranges now, and today starts at the viewer's midnight", () => {
     expect(period({ range: "hour" }, now)).toEqual([now - 3_600_000, undefined]);
     expect(period({ range: "today" }, now)[0]).toBe(Date.parse("2026-10-18T00:00:00.000Z"));
     expect(period({ range: "week" }, now)[0]).toBe(Date.parse("2026-10-11T10:07:12.000Z"));
@@ -64,9 +65,19 @@ describe("filters", () => {
     expect(period({ range: "custom", custom }, now)).toEqual([custom.since, now]);
   });
 
-  it("read custom dates as UTC", () => {
-    expect(parseWhen("2026-10-12")).toBe(Date.parse("2026-10-12T00:00:00.000Z"));
-    expect(parseWhen(" 2026-10-12 09:30 ")).toBe(Date.parse("2026-10-12T09:30:00.000Z"));
+  it("read and write custom dates in the viewer's zone, and refuse a day that isn't on the calendar", () => {
+    vi.stubEnv("TZ", "Europe/Berlin");
+    try {
+      expect(period({ range: "today" }, now)[0]).toBe(Date.parse("2026-10-17T22:00:00.000Z"));
+      expect(parseWhen("2026-10-12")).toBe(Date.parse("2026-10-11T22:00:00.000Z"));
+      expect(parseWhen(" 2026-10-12 09:30 ")).toBe(Date.parse("2026-10-12T07:30:00.000Z"));
+      expect(fieldWhen(Date.parse("2026-10-12T07:30:00.000Z"))).toBe("2026-10-12 09:30");
+      expect(stampMs(Date.parse("2026-10-12T07:30:00.000Z"))).toBe("Oct 12, 09:30");
+      expect(clockMs(Date.parse("2026-10-12T07:30:05.000Z"))).toBe("09:30:05");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    expect(parseWhen("2026-02-31")).toBeUndefined();
     expect(parseWhen("last tuesday")).toBeUndefined();
   });
 
@@ -142,7 +153,7 @@ describe("names from the store", () => {
     expect(n.orders.get("W8")).toMatchObject({ title: "Add three short pages", project: "storefront" });
     // Its project, so going back from its timeline opens that project's chat.
     expect(n.orders.get("W8")?.ref).toEqual(expect.objectContaining({ machineId: expect.any(String) as unknown, projectId: expect.any(String) as unknown }));
-    expect(n.threads.get("s-21")).toEqual({ role: "implementer", taskId: "T21", title: "about page" });
+    expect(n.threads.get("s-21")).toEqual({ role: "implementer", title: "about page", laneId: "s-21" });
     expect(n.threads.get("s-25")?.role).toBe("reviewer");
     expect(n.leads.has("lead-storefront")).toBe(true);
     expect(n.changes.get("X7")).toBe(205);

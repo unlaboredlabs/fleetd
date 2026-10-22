@@ -7,7 +7,7 @@ import { isObject, type JsonObject, type JsonValue } from "../kit/json.ts";
 
 /** The transport's longest delay: a status_projects still unanswered when the screenshot is taken (the skeleton). */
 const HOLD_MS = 600_000;
-const at = (hm: string): string => `2026-10-19T${hm}.000Z`;
+const at = (hm: string, day = "2026-10-19"): string => `${day}T${hm}.000Z`;
 
 interface Project {
   readonly machineId: string;
@@ -37,7 +37,7 @@ const estimate = (pct: number, verifiedPct: number, inFlightPct: number): JsonOb
 /** One row per project, cycling through the states the view draws, so every fixture shows them all. */
 const ROWS: readonly ((p: Project) => JsonObject)[] = [
   () => ({ state: "working", progress: estimate(78, 58, 20), agentsRunning: 3, lastMerged: { title: "Totals use integer minor units", prNumber: 208, at: at("09:46:12") } }),
-  () => ({ state: "waiting_on_you", progress: estimate(64, 52, 12), agentsRunning: 0, lastMerged: { title: "Search index warms on deploy", prNumber: 205, at: at("09:12:40") } }),
+  () => ({ state: "waiting_on_you", progress: estimate(64, 52, 12), agentsRunning: 0, lastMerged: { title: "Search index warms on deploy", prNumber: 205, at: at("15:12:40", "2026-10-16") } }),
   () => ({ state: "blocked", blockedReason: "main CI is red: rust (macos)", progress: estimate(31, 31, 0), agentsRunning: 0 }),
   () => ({ state: "idle", agentsRunning: 0 }),
 ];

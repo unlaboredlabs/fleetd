@@ -185,9 +185,9 @@ const longDrafts = (): Array<Draft> => [...migrated(), ...fromLines(longChat(LON
 /** The sidebar and Status mix: projects needing you, running, both and neither, each row state, long names. */
 const PROJECTS: ReadonlyArray<{ title: string; machine: string; needsYou: boolean; working: boolean; row: Parameters<typeof statusRow>[3]; extra: Parameters<typeof statusRow>[4] }> = [
   { title: "storefront", machine: "devbox", needsYou: false, working: true, row: "working", extra: { agents: 4, pct: [45, 30], merged: "Receipt dates use Intl" } },
-  { title: "billing", machine: "buildbox", needsYou: true, working: false, row: "waiting_on_you", extra: { agents: 0, pct: [60, 0], merged: "Nightly export resumes after a crash" } },
+  { title: "billing", machine: "buildbox", needsYou: true, working: false, row: "waiting_on_you", extra: { agents: 0, pct: [60, 0], merged: "Nightly export resumes after a crash", mergedAgoMs: 26 * 3_600_000 } },
   { title: "checkout", machine: "devbox", needsYou: false, working: false, row: "blocked", extra: { blocked: "main CI is red on acme/checkout", pct: [20, 10] } },
-  { title: "docs", machine: "devbox", needsYou: false, working: false, row: "idle", extra: { merged: "Quick start opens a project's chat" } },
+  { title: "docs", machine: "devbox", needsYou: false, working: false, row: "idle", extra: { merged: "Quick start opens a project's chat", mergedAgoMs: 12 * 86_400_000 } },
   { title: "inventory", machine: "buildbox", needsYou: true, working: true, row: "waiting_on_you", extra: { agents: 2, pct: [10, 15], planning: true } },
   { title: "search", machine: "buildbox", needsYou: false, working: false, row: "blocked", extra: { blocked: "buildbox is offline", stale: "buildbox stopped answering" } },
   { title: ofLength(LONG_TITLES[1], 118), machine: "devbox", needsYou: false, working: true, row: "working", extra: { agents: 12, pct: [5, 70] } },

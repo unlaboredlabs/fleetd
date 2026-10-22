@@ -65,7 +65,7 @@ describe("what isn't exact", () => {
   it("says missing data only where it applies", () => {
     const cut: Coverage = { complete: false, gaps: [], detailSince: "2026-09-18T10:00:00.000Z" };
     expect(missing(cut, Date.parse("2026-10-18T08:10:00.000Z"))).toEqual({ gaps: 0, capped: false });
-    expect(missing(cut, Date.parse("2026-09-01T08:00:00.000Z")).detailSince).toBe("2026-09-18");
+    expect(missing(cut, Date.parse("2026-09-01T08:00:00.000Z")).detailSince).toBe("Sep 18");
     expect(missing(cut, undefined).detailSince).toBeUndefined();
     const gaps: Coverage = {
       complete: false,

@@ -19,21 +19,37 @@ const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
 const two = (n: number): string => String(n).padStart(2, "0");
 
-/** A time in the viewer's zone: "14:02" today, "Thu 14:02" within a week, else "Oct 21 14:02". */
+const sameDay = (a: Date, b: Date): boolean => a.toDateString() === b.toDateString();
+
+/**
+ * A time in the viewer's zone, always with its day: "today 14:02", "yesterday 16:40", "Thu 14:02" within the week,
+ * then "Oct 12", and "Oct 12, 2025" from another year. A bare "08:18" can't say which day it was.
+ */
 export const when = (iso: string, nowMs: number): string => {
   const t = new Date(iso);
   if (Number.isNaN(t.getTime())) return "";
   const now = new Date(nowMs);
   const hm = `${two(t.getHours())}:${two(t.getMinutes())}`;
-  if (t.toDateString() === now.toDateString()) return hm;
+  if (sameDay(t, now)) return `today ${hm}`;
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (sameDay(t, yesterday)) return `yesterday ${hm}`;
   if (Math.abs(t.getTime() - nowMs) < 6 * DAY) return `${DAYS[t.getDay()] ?? ""} ${hm}`;
-  return `${MONTHS[t.getMonth()] ?? ""} ${t.getDate()} ${hm}`;
+  const date = `${MONTHS[t.getMonth()] ?? ""} ${t.getDate()}`;
+  return t.getFullYear() === now.getFullYear() ? date : `${date}, ${t.getFullYear()}`;
 };
 
-/** "stale 4m: no heartbeat from buildbox since 09:55". */
+/** The whole stamp for a hover: "Thu Oct 22, 14:02". */
+export const fullWhen = (iso: string): string => {
+  const t = new Date(iso);
+  if (Number.isNaN(t.getTime())) return "";
+  return `${DAYS[t.getDay()] ?? ""} ${MONTHS[t.getMonth()] ?? ""} ${t.getDate()}, ${two(t.getHours())}:${two(t.getMinutes())}`;
+};
+
+/** "Out of date for 11m: no heartbeat from buildbox". */
 export const staleWords = (mark: StaleMark, nowMs: number): string => {
   const at = Date.parse(mark.since);
-  return `${Number.isNaN(at) ? "stale" : `stale ${age(nowMs - at)}`}: ${mark.reason}`;
+  return `${Number.isNaN(at) ? "Out of date" : `Out of date for ${age(nowMs - at)}`}: ${mark.reason}`;
 };
 
 /** Why the figure last fell, newest first, at most three: "↓ 80% → 74%: +3 items: currency export added". */
