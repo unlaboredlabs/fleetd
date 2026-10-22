@@ -43,8 +43,11 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-it("moves its day words and ages on with the clock, with no event and no refetch", async () => {
-  let send: Parameters<HubApi["subscribe"]>[0] = () => undefined;
+type Send = Parameters<HubApi["subscribe"]>[0];
+
+/** Status on a hub that answers once, already showing the row. Returns the hub's sender. */
+const mount = async (): Promise<Send> => {
+  let send: Send = () => undefined;
   const hub: HubApi = {
     call: (tool) => {
       calls.push(tool);
@@ -70,7 +73,13 @@ it("moves its day words and ages on with the clock, with no event and no refetch
     send(snapshot(1));
     await vi.advanceTimersByTimeAsync(0);
   });
-  const label = () => host.querySelector("a[aria-label^='storefront:']")?.getAttribute("aria-label") ?? "";
+  return send;
+};
+
+const label = () => host.querySelector("a[aria-label^='storefront:']")?.getAttribute("aria-label") ?? "";
+
+it("moves its day words and ages on with the clock, with no event and no refetch", async () => {
+  await mount();
   expect(label()).toContain("last merged today 23:50");
   expect(label()).toContain("Out of date for 9m");
   const asked = calls.filter((c) => c === "status_projects").length;
@@ -84,4 +93,15 @@ it("moves its day words and ages on with the clock, with no event and no refetch
   expect(label()).toContain("Out of date for 3h");
   // The words moved on the clock alone: nothing asked the hub again.
   expect(calls.filter((c) => c === "status_projects").length).toBe(asked);
+});
+
+it("reads the day and the age on the hub's clock, not this machine's", async () => {
+  const send = await mount();
+  // The hub's clock runs two minutes ahead: past its midnight, while this machine still reads 23:59.
+  await act(async () => {
+    send({ t: "live", frame: { at: iso(START + 2 * 60_000), full: true, lanes: [] } });
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  expect(label()).toContain("last merged yesterday 23:50");
+  expect(label()).toContain("Out of date for 11m");
 });

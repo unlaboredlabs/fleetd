@@ -9,8 +9,8 @@ import { useMemo } from "react";
 import type { ProjectStatusRow } from "../../../shared/contracts";
 import { useData, useToolQuery } from "../../src/data/react";
 import { useNow } from "../live/clock";
+import { selectSkew } from "../live/strip";
 import { selectProjectList } from "../../src/data/selectors";
-import type { DataState } from "../../src/data/store";
 import { Button, cx, Dot, Text, Tooltip, Truncate } from "../../ui";
 import { asGetOutput } from "./contracts";
 import { barOf, orderRows, STATE_WORDS, type StateWord } from "./rows";
@@ -19,7 +19,6 @@ import s from "./status.module.css";
 
 const ALL = {} as const;
 const MINUTE = 60_000;
-const selectSkew = (st: DataState): number => st.live.skewMs ?? 0;
 
 /** A project's chat (F1's route table). */
 export const projectHref = (ref: ProjectStatusRow["projectRef"]): string =>
