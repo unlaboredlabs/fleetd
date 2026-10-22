@@ -35,8 +35,7 @@ export async function expiredLogin(lab: Lab) {
       machineId: MACHINE,
       projectId,
       prompt: "Reply with the single word OK and nothing else.",
-      model: MECHANICS.model,
-      effort: MECHANICS.effort,
+      profile: MECHANICS,
       title: "fleetd lab expired-login",
       clientRequestId: randomUUID(),
     });

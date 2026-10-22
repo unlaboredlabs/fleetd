@@ -5,12 +5,12 @@
 // PR that conflicts with alpha's and one that adds FAIL. A harness PR without `Source:` is refused at enqueue. Thawed
 // with train_freeze, the train merges alpha and beta in order (the second rebased onto the first's merge), sends the
 // conflict back to its author, who resolves it and gets merged, and sends red CI back to its author, never merging
-// it. Lead, writers and reviewers are on MECHANICS; the harness's `fleetd` calls cost no turns.
+// it. Writers run on medium, the lead and reviewers on high; the harness's `fleetd` calls cost no turns.
 import { execFileSync, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { type Body, openWorkstream, fleetdCommand, LAB, type Lab, MECHANICS, nodeSock, requireGhLogin, scrubbedEnv, sessionText, SLOT, userMessages } from "./harness.ts";
+import { type Body, MODEL, openWorkstream, fleetdCommand, LAB, type Lab, MECHANICS, nodeSock, requireGhLogin, scrubbedEnv, sessionText, SLOT, userMessages } from "./harness.ts";
 
 const MACHINE = "lab-a";
 // One lab repo for every slot; each slot runs the train in parallel in its own branch namespace: its base
@@ -39,9 +39,6 @@ const POLICY = `areas:
   beta: ["${BETA}"]
   gamma: ["${ALPHA}"]
   ci: ["FAIL"]
-defaults:
-  model: ${MECHANICS.model}
-  effort: ${MECHANICS.effort}
 `;
 
 const run = (cmd: string, args: ReadonlyArray<string>, cwd = CLONE) =>
@@ -200,7 +197,7 @@ export async function m7Train(lab: Lab) {
     const change = async (changeId: string) => ((await callTool("changes_list", { projectRef: ref, limit: 100 })).body.changes as Array<Body>).find((c) => c.changeId === changeId)!;
     const task = async (taskId: string) => (await callTool("task_get", { taskId })).body.task as Body;
 
-    const started = await callTool("lead_start", { ...ref, ...MECHANICS });
+    const started = await callTool("lead_start", ref);
     check(!started.isError, `lead_start: ${JSON.stringify(started.body)}`);
     const leadThread = started.body.threadId as string;
     await lab.waitEvent("lead start turn", TURN_MS, { cursor: scenarioStart, machineId: MACHINE, match: (e) => e.threadId === leadThread && ENDED.includes(e.type) });
@@ -254,7 +251,7 @@ export async function m7Train(lab: Lab) {
     gh("pr", "close", String(bareNumber), "-R", REPO, "--delete-branch");
 
     const spawn = (w: string, area: string, serves: string, title: string, prompt: string) => {
-      const out = fleetd("task", "spawn", "--workstream", w, "--title", title, "--areas", area, "--serves", serves, "--model", MECHANICS.model, "--effort", MECHANICS.effort, "--prompt", prompt);
+      const out = fleetd("task", "spawn", "--workstream", w, "--title", title, "--areas", area, "--serves", serves, "--profile", MECHANICS, "--prompt", prompt);
       const taskId = /^Spawned (T\d+)/mu.exec(out.stdout)?.[1];
       check(out.code === 0 && taskId, `task spawn ${title}: ${JSON.stringify(out)}`);
       lab.log(`spawned ${taskId} (${title}, area ${area}, serves ${serves})`);
@@ -414,7 +411,7 @@ export async function m7Train(lab: Lab) {
       if (!page.more) break;
       at = page.cursor;
     }
-    ok(`M7 used ${leadTurns} lead turns + ${taskTurns} task turns (${tasks.map((t) => `${t.taskId} ${t.kind}×${t.attempt}`).join(", ")}) = ${leadTurns + taskTurns} claude turns (${MECHANICS.model}, effort ${MECHANICS.effort})`);
+    ok(`M7 used ${leadTurns} lead turns + ${taskTurns} task turns (${tasks.map((t) => `${t.taskId} ${t.kind}×${t.attempt}`).join(", ")}) = ${leadTurns + taskTurns} claude turns (${MODEL}, tasks on medium)`);
     check(leadTurns + taskTurns <= 20, `M7 stays within 20 claude turns (${leadTurns + taskTurns})`);
   } finally {
     // Only this slot's namespace, never the repo's main: its PRs, branches and main, the lab project and its policy file.

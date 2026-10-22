@@ -297,15 +297,6 @@
       ],
       "type": "string"
     },
-    "Effort": {
-      "enum": [
-        "low",
-        "medium",
-        "high",
-        "max"
-      ],
-      "type": "string"
-    },
     "Estimate": {
       "properties": {
         "gates": {
@@ -431,6 +422,10 @@
         "lead": {
           "$ref": "#/$defs/Lead",
           "description": "Absent until lead_start."
+        },
+        "mediumAllowed": {
+          "description": "Whether the lead may run a task on the medium profile (`project_set`); absent from older hubs, where it is on.",
+          "type": "boolean"
         },
         "next": {
           "description": "Hint for the next call.",
@@ -630,10 +625,6 @@
         "createdAt": {
           "$ref": "#/$defs/Timestamp"
         },
-        "effort": {
-          "$ref": "#/$defs/Effort",
-          "description": "Always explicit; resolved at spawn."
-        },
         "endedAt": {
           "$ref": "#/$defs/Timestamp"
         },
@@ -648,10 +639,6 @@
         "kind": {
           "$ref": "#/$defs/TaskKind"
         },
-        "model": {
-          "minLength": 1,
-          "type": "string"
-        },
         "parked": {
           "$ref": "#/$defs/UsageParked",
           "description": "M4: its thread hit a usage limit; the task is idle until fleetd sends \"continue\" at `resumeAt`."
@@ -659,6 +646,11 @@
         "pr": {
           "description": "The PR a review task reviews. Required at spawn for review; absent on hub-spawned judge tasks and older rows.",
           "type": "string"
+        },
+        "profile": {
+          "$ref": "#/$defs/TaskProfile",
+          "default": "high",
+          "description": "Resolved at spawn. Rows stored with a model and effort read as `high` (the hub migrates its own)."
         },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
@@ -722,8 +714,6 @@
         "kind",
         "prompt",
         "areas",
-        "model",
-        "effort",
         "state",
         "attempt",
         "createdAt"
@@ -784,6 +774,14 @@
         "write",
         "read",
         "review"
+      ],
+      "type": "string"
+    },
+    "TaskProfile": {
+      "description": "What an agent runs on. There are exactly two, both claude-opus-5-5: `high` (effort high) is the default and what\nthe lead, every reviewer and every helper call run; `medium` (effort medium) is for mechanical tasks the lead picks.",
+      "enum": [
+        "high",
+        "medium"
       ],
       "type": "string"
     },

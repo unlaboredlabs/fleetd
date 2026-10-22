@@ -20,7 +20,8 @@ use crate::hub::tasks::ports::{BoxFut, TaskError as LeadError, TaskPorts};
 
 pub const POLICY_TTL_MS: u128 = 60_000;
 
-const EXAMPLE: &str = "areas:\n  docs: [\"docs/**\"]\n  hub: [\"apps/hub/**\", \"packages/contracts/**\"]\ndefaults:          # optional\n  model: claude-opus-5-5\n  effort: high";
+const EXAMPLE: &str =
+    "areas:\n  docs: [\"docs/**\"]\n  hub: [\"apps/hub/**\", \"packages/contracts/**\"]";
 
 fn invalid(problem: &str) -> LeadError {
     let message: String = format!("{POLICY_FILE_PATH} is invalid: {problem}")
@@ -124,34 +125,6 @@ fn check_shape(value: &Value) -> Result<(), String> {
             ));
         }
     }
-    if let Some(defaults) = root.get("defaults") {
-        let Value::Mapping(defaults) = defaults else {
-            return Err(format!("Expected object at {}", key("defaults")));
-        };
-        if let Some(model) = defaults.get("model") {
-            let p = at(&[key("defaults"), key("model")]);
-            match model {
-                Value::String(s) if s.is_empty() => {
-                    return Err(format!(
-                        "Expected a value with a length of at least 1 at {p}"
-                    ));
-                }
-                Value::String(_) => {}
-                _ => return Err(format!("Expected string at {p}")),
-            }
-        }
-        if let Some(effort) = defaults.get("effort") {
-            let ok = matches!(effort.as_str(), Some("low" | "medium" | "high" | "max"));
-            if !ok {
-                let got = serde_json::to_string(&serde_json::to_value(effort).unwrap_or_default())
-                    .unwrap_or_default();
-                return Err(format!(
-                    "Expected \"low\" | \"medium\" | \"high\" | \"max\", got {got} at {}",
-                    at(&[key("defaults"), key("effort")])
-                ));
-            }
-        }
-    }
     if let Some(finish_all) = root.get("finishAll") {
         let Value::Mapping(finish_all) = finish_all else {
             return Err(format!("Expected object at {}", key("finishAll")));
@@ -224,6 +197,11 @@ pub fn parse_policy(text: &str) -> Result<PolicyFile, LeadError> {
 /// Whether the file's text sets `areas` itself; a file that doesn't gets the inferred ones.
 fn sets_areas(text: &str) -> bool {
     serde_yaml_ng::from_str::<Value>(text).is_ok_and(|v| v.get("areas").is_some())
+}
+
+/// Whether the file still has the `defaults` (model, effort) of before task profiles, which fleetd ignores.
+fn sets_defaults(text: &str) -> bool {
+    serde_yaml_ng::from_str::<Value>(text).is_ok_and(|v| v.get("defaults").is_some())
 }
 
 /// Where a project's files come from. The hub's source asks the machine's node (`Executors::read_project_file`, and
@@ -367,11 +345,13 @@ impl PolicySource for NodePolicySource {
     }
 }
 
-/// A project's policy, and whether its areas were inferred from the repo rather than set in the file.
+/// A project's policy, whether its areas were inferred from the repo rather than set in the file, and whether the
+/// file has `defaults` that fleetd ignores.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Resolved {
     pub policy: PolicyFile,
     pub inferred: bool,
+    pub ignored_defaults: bool,
 }
 
 type Cached = (u128, Result<Resolved, LeadError>);
@@ -451,6 +431,7 @@ impl Policies {
         root: &str,
     ) -> Result<(Result<Resolved, LeadError>, bool), LeadError> {
         let text = self.source.read(project_ref, POLICY_FILE_PATH).await?;
+        let ignored_defaults = text.as_deref().is_some_and(sets_defaults);
         let policy = match text.as_deref() {
             None => default_policy(),
             Some(text) => match parse_policy(text) {
@@ -458,6 +439,7 @@ impl Policies {
                     let resolved = Resolved {
                         policy,
                         inferred: false,
+                        ignored_defaults,
                     };
                     return Ok((Ok(resolved), true));
                 }
@@ -474,6 +456,7 @@ impl Policies {
         let resolved = Resolved {
             policy,
             inferred: true,
+            ignored_defaults,
         };
         Ok((Ok(resolved), settled))
     }
@@ -531,13 +514,15 @@ mod tests {
     use crate::hub::store::test_clock::ManualClock;
 
     #[test]
-    fn reads_areas_and_defaults() {
+    fn reads_areas_and_ignores_the_old_defaults() {
         let text = "areas:\n  docs: [\"docs/**\"]\n  hub: [apps/hub/**, packages/contracts/**]\ndefaults:\n  model: claude-sonnet-5-5\n  effort: high\nlead:\n  autoStart: false\nclaude:\n  autoMemory: true\n";
         let policy = parse_policy(text).unwrap();
         assert_eq!(
             serde_json::to_value(policy).unwrap(),
-            json!({ "areas": { "docs": ["docs/**"], "hub": ["apps/hub/**", "packages/contracts/**"] }, "defaults": { "model": "claude-sonnet-5-5", "effort": "high" }, "lead": { "autoStart": false }, "claude": { "autoMemory": true } })
+            json!({ "areas": { "docs": ["docs/**"], "hub": ["apps/hub/**", "packages/contracts/**"] }, "lead": { "autoStart": false }, "claude": { "autoMemory": true } })
         );
+        // Ignored whatever they say: a broken one doesn't break the file.
+        assert!(parse_policy("areas:\n  docs: [docs/**]\ndefaults:\n  effort: medum\n").is_ok());
         // Off unless the file turns it on.
         let bare = parse_policy("areas:\n  docs: [docs/**]\nclaude: {}\n").unwrap();
         assert!(!bare.claude.unwrap().auto_memory);
@@ -566,10 +551,6 @@ mod tests {
             (
                 "areas:\n  docs: [/etc/**]\n",
                 "is invalid: Expected a repo-relative glob, not an absolute path at [\"areas\"][\"docs\"][0]",
-            ),
-            (
-                "areas:\n  docs: [docs/**]\ndefaults:\n  effort: medum\n",
-                "at [\"defaults\"][\"effort\"]",
             ),
             (
                 "areas:\n  docs: [docs/**]\nlead:\n  autoStart: no thanks\n",
@@ -737,14 +718,14 @@ mod tests {
             Some("defaults:\n  effort: high\nbranchPrefix: team/\n".into());
         policies.invalidate(&a);
         let resolved = policies.resolve(&a).await.unwrap();
-        assert!(resolved.inferred);
+        assert!(resolved.inferred && resolved.ignored_defaults);
         assert_eq!(resolved.policy.areas.len(), 4);
         assert_eq!(resolved.policy.branch_prefix.unwrap().as_str(), "team/");
         // Explicit areas win.
         *fake.text.lock().unwrap() = Some("areas:\n  docs: [docs/**]\n".into());
         policies.invalidate(&a);
         let resolved = policies.resolve(&a).await.unwrap();
-        assert!(!resolved.inferred);
+        assert!(!resolved.inferred && !resolved.ignored_defaults);
         assert_eq!(serde_json::to_value(resolved.policy).unwrap(), docs_only());
         // A layout the node can't list leaves the one area, and is asked again on the next read, not in 60 s.
         *fake.text.lock().unwrap() = None;

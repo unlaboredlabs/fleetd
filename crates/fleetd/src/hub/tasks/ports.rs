@@ -3,12 +3,10 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use fleetd_contracts::effort::Effort;
+use fleetd_contracts::effort::TaskProfile;
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, ThreadId, ThreadRef};
 use fleetd_contracts::ledger::{Brief, Workstream, WorkstreamId};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
-
-use super::resolve::ModelEffort;
 
 pub type BoxFut<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
@@ -43,8 +41,7 @@ impl PortError {
 pub struct LaunchRequest {
     pub project_id: ProjectId,
     pub prompt: String,
-    pub model: String,
-    pub effort: Effort,
+    pub profile: TaskProfile,
     pub title: String,
     pub client_request_id: String,
     /// Write tasks: `{ type: "worktree", baseRef, branch }`.
@@ -141,8 +138,8 @@ pub trait TaskPorts: Send + Sync {
     ) -> BoxFut<'a, Option<CmdOutput>>;
     /// LeadRecords.workstreams.get.
     fn workstream(&self, workstream_id: &WorkstreamId) -> Option<Workstream>;
-    /// LeadRecords.settings.get: the project's lead model and effort.
-    fn lead_settings(&self, project_ref: &ProjectRef) -> Option<ModelEffort>;
+    /// Leads.medium_allowed: whether the project's tasks may run on medium; false when it can't be read.
+    fn medium_allowed(&self, project_ref: &ProjectRef) -> bool;
     /// LeadWakes.trigger with the entry's rendered lines.
     fn wake(&self, project_ref: &ProjectRef, kind: WakeKind, text: String);
     /// LeadRecords.leads.list: the project whose lead runs in this thread now (the slot board counts it).

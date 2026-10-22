@@ -46,6 +46,8 @@ pub struct ProjectAreas {
     pub title: String,
     pub areas: Vec<String>,
     pub inferred: bool,
+    /// Its policy file still has `defaults` (model, effort), which fleetd ignores.
+    pub ignored_defaults: bool,
 }
 
 /// The hub services the checks read.

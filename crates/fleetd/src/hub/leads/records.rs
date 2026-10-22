@@ -1,7 +1,6 @@
-//! Leads, lead settings and workstreams as stored (tables `leads`, `lead_settings`, `workstreams`).
+//! Leads, project settings and workstreams as stored (tables `leads`, `project_settings`, `workstreams`).
 use std::sync::Arc;
 
-use fleetd_contracts::effort::Effort;
 use fleetd_contracts::ids::{ProjectRef, Timestamp};
 use fleetd_contracts::ledger::{
     IntakeChannel, PlaybookRef, Workstream, WorkstreamId, WorkstreamParent, WorkstreamSource,
@@ -22,12 +21,6 @@ pub struct StoredLead {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_wake_at: Option<Timestamp>,
     pub session_generation: i64,
-}
-
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct LeadSettings {
-    pub model: Option<String>,
-    pub effort: Option<Effort>,
 }
 
 #[derive(Debug, Clone)]
@@ -155,35 +148,25 @@ impl LeadRecords {
         rows.into_iter().map(decode_lead).collect()
     }
 
-    pub fn settings_get(&self, r: &ProjectRef) -> Result<LeadSettings, StoreError> {
-        let row: Option<(Option<String>, Option<String>)> = self.db.with(|c| {
+    /// Whether the project's lead may run a task on the medium profile: on until `project_set` turns it off.
+    pub fn medium_allowed(&self, r: &ProjectRef) -> Result<bool, StoreError> {
+        let saved: Option<bool> = self.db.with(|c| {
             Ok(c.query_row(
-                "SELECT model, effort FROM lead_settings WHERE machine_id = ? AND project_id = ?",
+                "SELECT medium_allowed FROM project_settings WHERE machine_id = ? AND project_id = ?",
                 params![r.machine_id.as_str(), r.project_id.as_str()],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| row.get(0),
             )
             .optional()?)
         })?;
-        let Some((model, effort)) = row else {
-            return Ok(LeadSettings::default());
-        };
-        let effort = effort
-            .map(|e| serde_json::from_value(serde_json::Value::String(e)))
-            .transpose()?;
-        Ok(LeadSettings { model, effort })
+        Ok(saved.unwrap_or(true))
     }
 
-    /// Absent fields fall back to the hub default.
-    pub fn settings_set(&self, r: &ProjectRef, settings: &LeadSettings) -> Result<(), StoreError> {
-        let effort = settings
-            .effort
-            .as_ref()
-            .map(crate::hub::leads::digest::serde_plain);
+    pub fn medium_allowed_set(&self, r: &ProjectRef, allowed: bool) -> Result<(), StoreError> {
         self.db.with(|c| {
             c.execute(
-                "INSERT INTO lead_settings (machine_id, project_id, model, effort) VALUES (?, ?, ?, ?)
-                 ON CONFLICT (machine_id, project_id) DO UPDATE SET model = excluded.model, effort = excluded.effort",
-                params![r.machine_id.as_str(), r.project_id.as_str(), settings.model, effort],
+                "INSERT INTO project_settings (machine_id, project_id, medium_allowed) VALUES (?, ?, ?)
+                 ON CONFLICT (machine_id, project_id) DO UPDATE SET medium_allowed = excluded.medium_allowed",
+                params![r.machine_id.as_str(), r.project_id.as_str(), allowed],
             )?;
             Ok(())
         })

@@ -1,6 +1,6 @@
 ---
 title: Projects
-description: "Add a project, choose its branch and models, and how its lead plans the work."
+description: "Add a project, choose its branch and task profiles, and how its lead plans the work."
 ---
 
 You'll add a repo as a [project](/docs/glossary#project), send it work, and follow that work to merged pull requests.
@@ -144,26 +144,24 @@ speed. At a cap of 1 it works one piece at a time and says so once.
 
 ## Models and cost {#models}
 
-By default the lead and every task run on `claude-opus-5-5` at high effort.
+Every agent runs on `claude-opus-5-5`, with one of two profiles:
+
+| Profile | Effort | Runs |
+|---|---|---|
+| `high` | high | The default. The lead, every review, every helper call, and every task the lead doesn't mark medium. |
+| `medium` | medium | Mechanical tasks the lead picks: dead-code deletions, renames, test removals, doc fixes, moving files, plain wiring, screenshot recaptures. Never design, concurrency, auth or secrets, approvals or the merge train. |
+
+The lead picks the profile for each task it starts. A medium task whose review finds blockers twice is redone on high.
+Each agent's profile shows on its lane, in `fleetd task status` and in `fleetd status` (`T12 medium`), and the time
+view splits agent time and output tokens by profile, so you can see what medium saves.
 
 | To change | Do |
 |---|---|
-| The lead's model and effort | Call `lead_start {machineId, projectId, model, effort}` from an [MCP client](/docs/mcp-clients) before your first message to the project. They are saved for the project. |
-| The tasks' model and effort | Set `defaults.model` and `defaults.effort` in the project's [policy file](/docs/config-and-files#policy), committed to the default branch. |
+| Whether the lead may use medium | `fleetd project set <machine>/<project> --medium off` runs every new task on high; `--medium on` allows medium again (the default). |
+| When the lead picks medium | Edit the **Task profiles** prompt (`lead.profiles`) like any [prompt](/docs/what-agents-are-told). It takes effect at the lead's next start. |
 
-For example, to run a test project at medium effort:
-
-1. Before your first message to it, call
-   `lead_start {"machineId":"devbox","projectId":"<id>","model":"claude-opus-5-5","effort":"medium"}`. `fleetd project
-   list` shows the ids.
-2. Commit this `.fleetd/policy.yaml` to the default branch. Without `areas`, the project keeps the areas fleetd
-   [infers from the repo](/docs/config-and-files#inferred-areas).
-
-   ```yaml
-   defaults:
-     model: claude-opus-5-5
-     effort: medium
-   ```
+There is no other model or effort: no setting, flag or policy key picks one. An older policy file's `defaults.model`
+and `defaults.effort` are ignored, and `fleetd doctor` says so.
 
 ## How the lead schedules work {#scheduling}
 

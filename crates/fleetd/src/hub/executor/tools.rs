@@ -409,11 +409,12 @@ async fn thread_launch(
         }
     }
     let cursor = hub.events.head();
+    let profile = input.profile.unwrap_or_default();
     let launch = LaunchInput {
         project_id: input.project_id.clone(),
         prompt: input.prompt.as_str().to_owned(),
-        model: input.model.as_str().to_owned(),
-        effort: input.effort,
+        model: profile.model().into(),
+        effort: profile.effort(),
         runtime_mode: input.runtime_mode,
         title: input.title.clone(),
         client_request_id: input.client_request_id.as_str().to_owned(),

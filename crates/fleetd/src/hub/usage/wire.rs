@@ -213,6 +213,7 @@ impl DoctorFleet for OpsPorts {
                         title: p.title,
                         areas: resolved.policy.areas.into_keys().collect(),
                         inferred: resolved.inferred,
+                        ignored_defaults: resolved.ignored_defaults,
                     });
                 }
             }

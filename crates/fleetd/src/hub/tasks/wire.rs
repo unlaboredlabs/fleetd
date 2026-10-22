@@ -18,7 +18,6 @@ use super::hooks::{ResultReceipts, SpawnCheck, UsageGate};
 use super::ports::{
     BoxFut, CmdOutput, LaunchRequest, PortError, TaskError, TaskPorts, ThreadChanges, WakeKind,
 };
-use super::resolve::ModelEffort;
 use super::{SpawnInput, TaskCaller, Tasks};
 use crate::hub::api::Hub;
 use crate::hub::executor::{ExecutorError, Executors, LaunchInput, LaunchOptions};
@@ -79,8 +78,8 @@ impl TaskPorts for HubTaskPorts {
             let input = LaunchInput {
                 project_id: request.project_id,
                 prompt: request.prompt,
-                model: request.model,
-                effort: request.effort,
+                model: request.profile.model().into(),
+                effort: request.profile.effort(),
                 runtime_mode: RuntimeMode::FullAccess,
                 title: Some(request.title),
                 client_request_id: request.client_request_id,
@@ -228,12 +227,16 @@ impl TaskPorts for HubTaskPorts {
         Some(stored.workstream)
     }
 
-    fn lead_settings(&self, project_ref: &ProjectRef) -> Option<ModelEffort> {
-        let settings = self.hub()?.leads.records.settings_get(project_ref).ok()?;
-        Some(ModelEffort {
-            model: settings.model,
-            effort: settings.effort,
-        })
+    fn medium_allowed(&self, project_ref: &ProjectRef) -> bool {
+        let Some(hub) = self.hub() else { return false };
+        hub.leads
+            .leads
+            .medium_allowed(project_ref)
+            .unwrap_or_else(|error| {
+                // Unread, a task runs high: the safe side.
+                tracing::warn!(message = %error.message, "the project's medium switch was not read");
+                false
+            })
     }
 
     fn wake(&self, project_ref: &ProjectRef, kind: WakeKind, text: String) {

@@ -923,7 +923,16 @@ pub fn areas(machine_id: &str, projects: &[super::service::ProjectAreas]) -> Ent
         } else {
             ""
         };
-        format!("{}: {} ({source}{one})", p.title, p.areas.join(", "))
+        let defaults = if p.ignored_defaults {
+            "; its policy file's defaults (model, effort) are ignored: the lead picks high or medium per task"
+        } else {
+            ""
+        };
+        format!(
+            "{}: {} ({source}{one}{defaults})",
+            p.title,
+            p.areas.join(", ")
+        )
     };
     let listed = projects.iter().map(line).collect::<Vec<_>>().join("; ");
     machine_entry(
@@ -996,17 +1005,19 @@ mod tests {
             title: "storefront".into(),
             areas: vec!["all".into(), "docs".into(), "web".into()],
             inferred: true,
+            ignored_defaults: false,
         };
         let one = ProjectAreas {
             title: "billing".into(),
             areas: vec!["all".into()],
             inferred: false,
+            ignored_defaults: true,
         };
         let check = areas("devbox", &[shop, one]).check;
         assert_eq!((check.id.as_str(), check.status), ("devbox/areas", Pass));
         assert_eq!(
             check.message,
-            "Writer areas: storefront: all, docs, web (inferred from the repo); billing: all (from .fleetd/policy.yaml; one area, so writers run one at a time)."
+            "Writer areas: storefront: all, docs, web (inferred from the repo); billing: all (from .fleetd/policy.yaml; one area, so writers run one at a time; its policy file's defaults (model, effort) are ignored: the lead picks high or medium per task)."
         );
     }
 

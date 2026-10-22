@@ -42,14 +42,9 @@ export const fleetdCommand = (args: ReadonlyArray<string>): [string, Array<strin
   const bin = given.includes("/") ? path.resolve(given) : given;
   return /\.[cm]?[jt]s$/u.test(bin) ? [process.execPath, [bin, ...args]] : [bin, [...args]];
 };
-/** Mechanics scenarios run opus-5-5 at medium effort: what they check doesn't depend on how well the model reasons. */
-export const MECHANICS = { model: "claude-opus-5-5", effort: "medium" } as const;
-/**
- * Behaviour scenarios (how the lead talks and acts, what an agent does with its prompt) run on the model fleetd ships
- * as the lead default (`hub/leads/lead.rs` DEFAULT_LEAD_MODEL and DEFAULT_LEAD_EFFORT), since the prompts are written
- * for it.
- */
-export const SHIPPED = { model: "claude-opus-5-5", effort: "high" } as const;
+export const MODEL = "claude-opus-5-5";
+/** Mechanics scenarios' tasks run the medium profile: what they check doesn't depend on how well the model reasons. */
+export const MECHANICS = "medium" as const;
 
 // Texts the binary emits that scenarios match on; each mirrors a constant in crates/fleetd.
 /** `hub/playbooks/finish_all_rules.rs` FINISH_ALL_IDLE. */
@@ -615,14 +610,13 @@ export const openWorkstream = (
   return w!;
 };
 
-/** Launches one tiny mechanics turn ("reply OK") and returns its thread id. */
+/** Launches one tiny turn ("reply OK") and returns its thread id. */
 export const launchTiny = async (lab: Pick<Lab, "callTool" | "check">, machineId: string, projectId: string, title: string) => {
   const launched = await lab.callTool("thread_launch", {
     machineId,
     projectId,
     prompt: "Reply with the single word OK and nothing else.",
-    model: MECHANICS.model,
-    effort: MECHANICS.effort,
+    profile: MECHANICS,
     title,
     clientRequestId: randomUUID(),
   });

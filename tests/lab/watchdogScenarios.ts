@@ -1,6 +1,6 @@
 // M2 lab scenarios 2 (stall, nudge, fail) and 6 (missed completion while the hub is down), against the
 // disposable lab only. Run by the lab harness (`npm run lab -- stall missed`).
-// Costs: scenario 2 two or three tiny mechanics turns, scenario 6 one.
+// Costs: scenario 2 two or three tiny claude-opus-5-5 turns, scenario 6 one.
 import { randomUUID } from "node:crypto";
 import { MECHANICS, NUDGE, sessionText, sleep } from "./harness.ts";
 
@@ -24,6 +24,8 @@ export const STALL_HUB_ENV = {
   FLEETD_STALL_INSIDE_GRACE_SEC: "20",
   FLEETD_WATCHDOG_EVERY_SEC: "2",
 } as const;
+
+const MODEL = "claude-opus-5-5";
 
 const check = (cond: unknown, what: string): void => {
   if (!cond) throw new Error(`check failed: ${what}`);
@@ -71,8 +73,7 @@ const launch = async (ctx: LabContext, machineId: string, projectId: string, tit
     machineId,
     projectId,
     prompt,
-    model: MECHANICS.model,
-    effort: MECHANICS.effort,
+    profile: MECHANICS,
     title,
     clientRequestId: randomUUID(),
   });

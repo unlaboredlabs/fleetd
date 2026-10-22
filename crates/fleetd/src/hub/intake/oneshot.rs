@@ -6,11 +6,11 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 
+use fleetd_contracts::effort::TaskProfile;
 use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 
-pub const DEFAULT_ONE_SHOT_MODEL: &str = "claude-haiku-5-5";
 const RUN_TIMEOUT: Duration = Duration::from_secs(90);
 const MAX_STDOUT: usize = 1 << 20;
 
@@ -33,23 +33,37 @@ pub const ONE_SHOT_FLAGS: [&str; 5] = [
     "--safe-mode",
 ];
 
-/// The one-shot's `--settings`: auto memory off, and claude's own subagents off as in every claude fleetd starts.
+/// The one-shot's `--settings`: auto memory off, claude's own subagents off and its helper calls on the one model, as
+/// in every claude fleetd starts.
 pub fn one_shot_settings() -> String {
+    let mut env = crate::node::runner::claude::subagents_off_settings_env();
+    let (key, model) = crate::node::runner::claude::HELPER_MODEL_ENV;
+    env.insert(key.into(), model.into());
     serde_json::json!({
         "autoMemoryEnabled": false,
-        "env": crate::node::runner::claude::subagents_off_settings_env(),
+        "env": env,
     })
     .to_string()
 }
 
-/// The one-shot's full argv after the binary. It has no tools at all (`--tools ""`); the deny list still names the
-/// agent tools, so a claude that ignored `--tools` would not get them either.
-pub fn one_shot_args(model: &str) -> Vec<String> {
-    let mut args: Vec<String> = ["-p", "--output-format", "json", "--model", model]
-        .iter()
-        .chain(ONE_SHOT_FLAGS.iter())
-        .map(|a| (*a).to_owned())
-        .collect();
+/// The one-shot's full argv after the binary: the high profile, like every helper call. It has no tools at all
+/// (`--tools ""`); the deny list still names the agent tools, so a claude that ignored `--tools` would not get them
+/// either.
+pub fn one_shot_args() -> Vec<String> {
+    let high = TaskProfile::High;
+    let mut args: Vec<String> = [
+        "-p",
+        "--output-format",
+        "json",
+        "--model",
+        high.model(),
+        "--effort",
+        high.as_str(),
+    ]
+    .iter()
+    .chain(ONE_SHOT_FLAGS.iter())
+    .map(|a| (*a).to_owned())
+    .collect();
     args.push("--disallowedTools".into());
     args.extend(crate::node::runner::claude::disallowed_tools([]));
     args.push("--settings".into());
@@ -84,7 +98,13 @@ pub fn one_shot_env(source: &HashMap<String, String>) -> Vec<(String, String)> {
                 .filter(|v| !v.is_empty())
                 .map(|v| (k.to_string(), v.clone()))
         })
-        .chain([(memory_key.to_owned(), memory_off.to_owned())])
+        .chain([
+            (memory_key.to_owned(), memory_off.to_owned()),
+            (
+                crate::node::runner::claude::HELPER_MODEL_ENV.0.to_owned(),
+                crate::node::runner::claude::HELPER_MODEL_ENV.1.to_owned(),
+            ),
+        ])
         .chain(
             crate::node::runner::claude::SUBAGENTS_OFF_ENV
                 .iter()
@@ -153,7 +173,6 @@ pub struct OneShotResult {
 /// The `claude -p --output-format json` runner: the user's own login, the empty
 /// `<home>/claude-router` as cwd (so no project CLAUDE.md applies), the allowlisted environment and `ONE_SHOT_FLAGS`.
 pub struct OneShot {
-    model: String,
     cwd: PathBuf,
     env: Vec<(String, String)>,
     timeout: Duration,
@@ -163,7 +182,6 @@ impl OneShot {
     /// `env` is where the login variables and PATH come from: the hub's own environment in production.
     pub fn new(
         home: &Path,
-        model: Option<String>,
         env: &HashMap<String, String>,
         timeout: Option<Duration>,
     ) -> std::io::Result<Self> {
@@ -174,15 +192,10 @@ impl OneShot {
         std::os::unix::fs::DirBuilderExt::mode(&mut dir, 0o700);
         dir.create(&cwd)?;
         Ok(Self {
-            model: model.unwrap_or_else(|| DEFAULT_ONE_SHOT_MODEL.into()),
             cwd,
             env: one_shot_env(env),
             timeout: timeout.unwrap_or(RUN_TIMEOUT),
         })
-    }
-
-    pub fn model(&self) -> &str {
-        &self.model
     }
 
     pub async fn run(&self, prompt: &str) -> OneShotResult {
@@ -211,7 +224,7 @@ impl OneShot {
         };
         let run = OneShotRun {
             kind: "orchestrator",
-            model: self.model.clone(),
+            model: TaskProfile::High.model().into(),
             duration_ms,
             ok: failed.is_none(),
             input_tokens: envelope.input_tokens,
@@ -231,7 +244,7 @@ impl OneShot {
     /// Runs `claude` once with the prompt on stdin, killed at the timeout.
     async fn spawn(&self, prompt: &str) -> Result<(Option<i32>, String, String), String> {
         let mut child = Command::new("claude")
-            .args(one_shot_args(&self.model))
+            .args(one_shot_args())
             .current_dir(&self.cwd)
             .env_clear()
             .envs(self.env.iter().cloned())
@@ -348,14 +361,8 @@ exit "$(cat "$dir/reply-$n.exit")"
             Fake { root, env }
         }
 
-        fn one_shot(&self, model: Option<&str>) -> OneShot {
-            OneShot::new(
-                &self.root.path().join("hub"),
-                model.map(Into::into),
-                &self.env,
-                None,
-            )
-            .unwrap()
+        fn one_shot(&self) -> OneShot {
+            OneShot::new(&self.root.path().join("hub"), &self.env, None).unwrap()
         }
 
         fn call(&self, n: usize) -> (Vec<String>, String, String) {
@@ -405,7 +412,7 @@ exit "$(cat "$dir/reply-$n.exit")"
     #[tokio::test]
     async fn runs_claude_once_with_the_users_login_and_no_claude_session_variables() {
         let fake = Fake::new(&[(&result(&json!("the answer")), 0)]);
-        let outcome = fake.one_shot(None).run(PROMPT).await;
+        let outcome = fake.one_shot().run(PROMPT).await;
         assert_eq!(outcome.text.as_deref(), Some("the answer"));
         let run = &outcome.run;
         assert_eq!(
@@ -416,24 +423,20 @@ exit "$(cat "$dir/reply-$n.exit")"
                 run.input_tokens,
                 run.output_tokens
             ),
-            (
-                "orchestrator",
-                "claude-haiku-5-5",
-                true,
-                Some(120),
-                Some(30)
-            )
+            ("orchestrator", "claude-opus-5-5", true, Some(120), Some(30))
         );
         assert_eq!(fake.calls(), 1);
         let (args, env, prompt) = fake.call(1);
         assert_eq!(
-            args[..10],
+            args[..12],
             [
                 "-p",
                 "--output-format",
                 "json",
                 "--model",
-                "claude-haiku-5-5",
+                "claude-opus-5-5",
+                "--effort",
+                "high",
                 "--tools",
                 "",
                 "--strict-mcp-config",
@@ -447,6 +450,15 @@ exit "$(cat "$dir/reply-$n.exit")"
         let settings: Value = serde_json::from_str(args.last().unwrap()).unwrap();
         assert_eq!(settings["autoMemoryEnabled"], false);
         assert_eq!(settings["env"]["CLAUDE_CODE_DISABLE_AGENT_VIEW"], "1");
+        // claude's background helper calls run on the one model too, over the user's settings and in the env.
+        assert_eq!(
+            settings["env"]["ANTHROPIC_DEFAULT_HAIKU_MODEL"],
+            "claude-opus-5-5"
+        );
+        assert!(
+            env.lines()
+                .any(|l| l == "ANTHROPIC_DEFAULT_HAIKU_MODEL=claude-opus-5-5")
+        );
         assert!(
             env.lines()
                 .any(|l| l == "ANTHROPIC_BASE_URL=http://proxy.invalid")
@@ -482,7 +494,7 @@ exit "$(cat "$dir/reply-$n.exit")"
             ("not json", 0, "the CLI printed no JSON result"),
         ] {
             let fake = Fake::new(&[(reply, exit)]);
-            let outcome = fake.one_shot(None).run(PROMPT).await;
+            let outcome = fake.one_shot().run(PROMPT).await;
             assert!(outcome.text.is_none() && !outcome.run.ok);
             assert_eq!(outcome.run.error.as_deref(), Some(why));
         }
@@ -492,7 +504,7 @@ exit "$(cat "$dir/reply-$n.exit")"
     async fn reports_a_missing_claude_binary_as_the_reason() {
         let mut fake = Fake::new(&[]);
         fake.env.insert("PATH".into(), "/nonexistent".into());
-        let outcome = fake.one_shot(None).run(PROMPT).await;
+        let outcome = fake.one_shot().run(PROMPT).await;
         assert!(outcome.text.is_none());
         let error = outcome.run.error.unwrap();
         assert!(

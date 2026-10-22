@@ -101,6 +101,8 @@ export type AgentLane = {
   live?: LiveLane;
   model?: string;
   pr?: PrRef;
+  /** What it runs on: a task's own profile; a lead is always high. Absent from older hubs. */
+  profile?: TaskProfile;
   /** Counted from the thread's items when it ended. */
   receipts?: Receipts;
   role: AgentRole;
@@ -125,6 +127,8 @@ export type AgentRow = {
   live?: LiveLane;
   model?: string;
   pr?: PrRef;
+  /** What it runs on: a task's own profile; a lead is always high. Absent from older hubs. */
+  profile?: TaskProfile;
   projectRef: ProjectRef;
   projectTitle: string;
   /** Counted from the thread's items when it ended. */
@@ -1014,6 +1018,7 @@ export type KnownDropReason = "scope_change" | "review_failed" | "ci_failed" | "
 /** KnownDropReason, or a value from a newer hub. */
 export type DropReason = KnownDropReason | (string & {});
 
+/** The `--effort` claude runs at. Only [`TaskProfile`] picks one; nothing takes an effort as input. */
 export type Effort = "low" | "medium" | "high" | "max";
 
 /** Who keeps a safety rule when the prompt no longer says it. */
@@ -1334,6 +1339,7 @@ export type KnownHubEventType =
   | "project.added"
   | "project.clone_progress"
   | "project.add_failed"
+  | "project.settings"
   | "thread.waiting"
   | "thread.stalled"
   | "wake.missed"
@@ -1460,6 +1466,8 @@ export type InProgressRow = {
   eta?: Timestamp;
   gate?: string;
   itemId?: PlanItemId;
+  /** Those of `taskIds` that run on the medium profile; the rest run high. Absent when none does. */
+  mediumTaskIds?: TaskId[];
   /** Retired with the ETA: always absent. */
   overdueMinutes?: number;
   /** Past 1.5× the usual time for its current stage: flagged in Risks, never credited past 90% of the stage. */
@@ -1715,13 +1723,7 @@ export type Lead = {
 };
 
 export type LeadStartInput = {
-  effort?: Effort;
   machineId: MachineId;
-  /**
-   * Saved as the project's lead model and effort for this and later (re)starts; absent keeps the saved or hub
-   * default.
-   */
-  model?: string;
   projectId: ProjectId;
 };
 
@@ -2488,6 +2490,20 @@ export type KnownPrState = "open" | "draft" | "merged" | "closed";
 /** KnownPrState, or a value from a newer hub. */
 export type PrState = KnownPrState | (string & {});
 
+/**
+ * One task profile's part of a scope's agent time and usage, from the spans kept (`coverage.detailSince` on): the
+ * tasks that ran on it, and the lead's spans under high.
+ */
+export type ProfileTotal = {
+  /** Exclusive agent time. */
+  agentMs: number;
+  /** The model's part of it. */
+  modelMs: number;
+  /** What claude reported for its messages. */
+  outputTokens: number;
+  profile: TaskProfile;
+};
+
 /** A figure. `pct` counts verified must items by size only; polish shows beside it. */
 export type Progress = {
   asOf: Timestamp;
@@ -2699,6 +2715,8 @@ export type ProjectOutcome = {
   asOf: Timestamp;
   /** Absent until lead_start. */
   lead?: Lead;
+  /** Whether the lead may run a task on the medium profile (`project_set`); absent from older hubs, where it is on. */
+  mediumAllowed?: boolean;
   /** Hint for the next call. */
   next?: string;
   project: ProjectSummary;
@@ -2756,6 +2774,18 @@ export type ProjectRemoveOutput = {
 export type KnownProjectRowState = "working" | "waiting_on_you" | "blocked" | "idle";
 /** KnownProjectRowState, or a value from a newer hub. */
 export type ProjectRowState = KnownProjectRowState | (string & {});
+
+export type ProjectSetInput = {
+  machineId: MachineId;
+  mediumAllowed: boolean;
+  projectId: ProjectId;
+};
+
+export type ProjectSetOutput = {
+  mediumAllowed: boolean;
+  next?: string;
+  truncated?: boolean;
+};
 
 /** One project on the Status screen: a state word, the two-tone bar, agents running and the last merge. No ETA. */
 export type ProjectStatusRow = {
@@ -3899,18 +3929,17 @@ export type Task = {
   /** `fleetd/<taskId>-<slug>`; write tasks only. */
   branch?: string;
   createdAt: Timestamp;
-  /** Always explicit; resolved at spawn. */
-  effort: Effort;
   endedAt?: Timestamp;
   estimateMinutes?: number;
   /** The plan item it was spawned for (`--item`). */
   itemId?: PlanItemId;
   kind: TaskKind;
-  model: string;
   /** M4: its thread hit a usage limit; the task is idle until fleetd sends "continue" at `resumeAt`. */
   parked?: UsageParked;
   /** The PR a review task reviews. Required at spawn for review; absent on hub-spawned judge tasks and older rows. */
   pr?: string;
+  /** Resolved at spawn. Rows stored with a model and effort read as `high` (the hub migrates its own). */
+  profile?: TaskProfile;
   projectRef: ProjectRef;
   prompt: string;
   /** A review task spawned with `--qa`. */
@@ -3966,6 +3995,12 @@ export type TaskId = string;
 
 /** Only write tasks get a worktree and leases. */
 export type TaskKind = "write" | "read" | "review";
+
+/**
+ * What an agent runs on. There are exactly two, both claude-opus-5-5: `high` (effort high) is the default and what
+ * the lead, every reviewer and every helper call run; `medium` (effort medium) is for mechanical tasks the lead picks.
+ */
+export type TaskProfile = "high" | "medium";
 
 export type TaskResult = {
   at: Timestamp;
@@ -4054,9 +4089,9 @@ export type ThreadInterruptOutput = {
 
 export type ThreadLaunchInput = {
   clientRequestId: string;
-  effort: Effort;
   machineId: MachineId;
-  model: string;
+  /** Absent: high. */
+  profile?: TaskProfile;
   projectId: ProjectId;
   prompt: string;
   runtimeMode?: RuntimeMode;
@@ -4157,6 +4192,8 @@ export type TimeBreakdownInput = {
 export type TimeBreakdownOutput = {
   agentMs: number;
   byCategory: CategoryTotal[];
+  /** High first; absent when no task or lead span is in the period. */
+  byProfile?: ProfileTotal[];
   ciChecks: CiCheckStat[];
   compare?: PeriodBreakdown;
   coverage: Coverage;
@@ -4699,6 +4736,7 @@ export interface ToolMap {
   project_get: { input: ProjectGetInput; output: ProjectOutcome };
   project_inspect: { input: ProjectInspectInput; output: ProjectInspectOutput };
   project_remove: { input: ProjectRemoveInput; output: ProjectRemoveOutput };
+  project_set: { input: ProjectSetInput; output: ProjectSetOutput };
   project_stop: { input: ProjectStopInput; output: ProjectStopOutput };
   projects_list: { input: ProjectsListInput; output: ProjectsListOutput };
   prompt_get: { input: PromptGetInput; output: PromptGetOutput };
