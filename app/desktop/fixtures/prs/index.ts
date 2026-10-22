@@ -1,8 +1,8 @@
 // The PR screens' answers (pr_list, pr_get, pr_files, pr_diff) for the first project, storefront: open PRs in every
 // state on their way to main (in review, checks failed, next in line, a draft, one fleetd doesn't merge), and one
 // merged and one closed lately, with descriptions, checks, agent and people's reviews, files and real-looking diffs.
-// Added to the shared fixtures; the group's own cover no PRs, GitHub out of reach, a PR that fails to load, and a
-// PR of 240 files with a 3,000-line file, paged as the hub pages them.
+// Added to the shared fixtures; the group's own cover no PRs, the reads still on their way, GitHub out of reach, a PR
+// that fails to load, and a PR of 240 files with a 3,000-line file, paged as the hub pages them.
 //
 // The tools' contract is still on its branch (src/renderer/src/data/pr-contract.ts), so their answers skip schema
 // validation until it lands here.
@@ -218,6 +218,19 @@ const SEARCH_TS = `
 +}
 `;
 
+const CHECKOUT_COPY = `
+@@ -12,7 +12,9 @@
+   "checkout.pay": "Pay now",
+-  "checkout.pay.de": "Jetzt zahlen",
++  "checkout.pay.de": "Jetzt bezahlen",
++  "checkout.pay.nl": "Nu betalen",
+   "checkout.back": "Back to cart",
+-  "checkout.back.de": "Zurück",
++  "checkout.back.de": "Zurück zum Warenkorb",
++  "checkout.back.nl": "Terug naar winkelwagen",
+   "checkout.total": "Total"
+`;
+
 interface PrSpec {
   readonly number: number;
   readonly title: string;
@@ -293,7 +306,7 @@ const specs = (f: Fixture): PrSpec[] => [
     reviews: [
       {
         verdict: "changes_requested",
-        agent: reviewer("claude-sonnet-5-5"),
+        agent: reviewer("claude-opus-5-5"),
         blocking: 1,
         nonBlocking: 1,
         text: [
@@ -357,8 +370,8 @@ const specs = (f: Fixture): PrSpec[] => [
     ],
     reviews: [
       { verdict: "approved", agent: reviewer("claude-opus-5-5"), blocking: 0, nonBlocking: 1, text: "Suggestion: `round_half_even` could live with the currency code, so other callers find it.", current: true, at: ago(f, 40) },
-      { verdict: "approved", agent: reviewer("claude-sonnet-5-5", "verifier"), blocking: 0, nonBlocking: 0, text: "Checked 2,000 random carts against the old totals: identical but for the half-cent cases, which now round to even.", current: true, at: ago(f, 44) },
-      { verdict: "approved", agent: reviewer("claude-haiku-5-5", "qa"), blocking: 0, nonBlocking: 0, text: "Checkout, refunds and the receipt email all show the same totals.", current: true, at: ago(f, 47) },
+      { verdict: "approved", agent: reviewer("claude-opus-5-5", "verifier"), blocking: 0, nonBlocking: 0, text: "Checked 2,000 random carts against the old totals: identical but for the half-cent cases, which now round to even.", current: true, at: ago(f, 44) },
+      { verdict: "approved", agent: reviewer("claude-opus-5-5", "qa"), blocking: 0, nonBlocking: 0, text: "Checkout, refunds and the receipt email all show the same totals.", current: true, at: ago(f, 47) },
       {
         verdict: "changes_requested",
         agent: reviewer("claude-opus-5-5"),
@@ -390,14 +403,14 @@ const specs = (f: Fixture): PrSpec[] => [
     queue: { changeId: "C9", state: "ready", position: 0, length: 2, paused: false },
     checks: { state: "passing", passed: 6, failed: 0, pending: 0 },
     review: { state: "approved", done: 2, needed: 2 },
-    author: implementer("Warm the search index on deploy", "claude-sonnet-5-5"),
+    author: implementer("Warm the search index on deploy", "claude-opus-5-5"),
     created: 180,
     updated: 9,
     body: "The first searches after a deploy took seconds while the index loaded. It now loads in the background during the deploy.",
     checkRuns: passing(f, 15),
     reviews: [
       { verdict: "approved", agent: reviewer("claude-opus-5-5"), blocking: 0, nonBlocking: 0, text: "Looks right; the old index serves until the new one answers.", current: true, at: ago(f, 11) },
-      { verdict: "approved", agent: reviewer("claude-sonnet-5-5", "verifier"), blocking: 0, nonBlocking: 0, text: "First search after a staging deploy: 140 ms, was 3.8 s.", current: true, at: ago(f, 10) },
+      { verdict: "approved", agent: reviewer("claude-opus-5-5", "verifier"), blocking: 0, nonBlocking: 0, text: "First search after a staging deploy: 140 ms, was 3.8 s.", current: true, at: ago(f, 10) },
     ],
     history: [
       { at: ago(f, 9), from: "reviewing", to: "ready" },
@@ -420,6 +433,23 @@ const specs = (f: Fixture): PrSpec[] => [
     reviews: [],
     history: [],
     files: [{ path: "package.json", patch: PACKAGE_JSON.replace('-    "moment": "2.30.1",', '-    "@acme/image-cdn": "3.9.2",\n+    "@acme/image-cdn": "4.0.1",') }],
+  },
+  {
+    // A person's PR fleetd doesn't merge, waiting on a review someone asked for on GitHub.
+    number: 14,
+    title: "Checkout buttons in German and Dutch",
+    state: "open",
+    branch: "copy/checkout-de-nl",
+    checks: { state: "passing", passed: 5, failed: 0, pending: 0 },
+    review: { state: "pending", done: 0, needed: 0 },
+    author: { login: "acme-design" },
+    created: 300,
+    updated: 25,
+    body: "The pay and back buttons read naturally in German, and checkout gets its Dutch copy.\n\nAsked the localisation team to review the wording.",
+    checkRuns: passing(f, 30).slice(0, 5),
+    reviews: [],
+    history: [],
+    files: [{ path: "src/i18n/checkout.json", patch: CHECKOUT_COPY }],
   },
   {
     number: 8,
@@ -453,7 +483,7 @@ const specs = (f: Fixture): PrSpec[] => [
     queue: { changeId: "C7", state: "abandoned", length: 0, paused: false, reason: "The lead dropped it: the provider has no refunds API." },
     checks: { state: "passing", passed: 7, failed: 0, pending: 0 },
     review: { state: "pending", done: 0, needed: 2 },
-    author: implementer("Spike a second payment provider", "claude-haiku-5-5"),
+    author: implementer("Spike a second payment provider", "claude-opus-5-5"),
     created: 2900,
     updated: 1700,
     body: "A spike: checkout can pay through a second provider behind a flag.",
@@ -583,6 +613,13 @@ export default defineGroup({
       const f = Fixture.from(base("typical"), "prs-none", "storefront has no PRs open or closed lately.");
       pending(f);
       f.answer("pr_list", { projectRef: firstProject(f) }, { at: f.now, prs: [] });
+      return f;
+    })(),
+    (() => {
+      const f = Fixture.from(base("typical"), "prs-loading", "The PR list and every PR still on their way from the hub.");
+      answerAll(f, specs(f));
+      for (const a of f.answers("pr_list")) f.answer("pr_list", a.input, a.output, 600_000);
+      for (const a of f.answers("pr_get")) f.answer("pr_get", a.input, a.output, 600_000);
       return f;
     })(),
     (() => {

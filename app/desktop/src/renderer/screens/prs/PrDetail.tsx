@@ -1,11 +1,13 @@
 // One PR: its title and where it stands, then Overview (the facts, the description, checks, reviews and their
 // findings, its way to main so far) or Changes (the files and their diff). Open on GitHub stays one click away.
 import { ExternalLink } from "lucide-react";
-import { useState, type ReactNode } from "react";
-import { useToolQuery } from "../../src/data/react";
+import { useMemo, useState, type ReactNode } from "react";
+import { useData, useToolQuery } from "../../src/data/react";
+import { selectLiveAgents } from "../../src/data/selectors";
 import type { PrCheck, PrGetOutput, PrReviewEntry, PrRow } from "../../src/data/pr-contract";
 import { codeRuns, machineCode } from "../chat/format";
 import { Button, InlineCode, Markdown, StatusChip, Tab, TabList, TabPanel, Tabs, Text, Truncate, cx, toast } from "../../ui";
+import { AgentRowLink } from "../agents/AgentsScreen";
 import { DiffPane } from "./DiffPane";
 import {
   authorWords,
@@ -200,6 +202,8 @@ function Overview({ data, now, githubSaid }: { data: PrGetOutput; now: number; g
         </Fact>
       </dl>
 
+      {pr.state === "open" || pr.state === "draft" ? <AtWork repo={pr.repo} number={pr.number} /> : null}
+
       <Section title="Description">
         {data.body.trim() === "" ? (
           <Text size="sm" tone="quiet">
@@ -240,6 +244,25 @@ function Overview({ data, now, githubSaid }: { data: PrGetOutput; now: number; g
         </Section>
       ) : null}
     </div>
+  );
+}
+
+const ALL_AGENTS = {} as const;
+
+/** The agents working on this PR now (its reviewers, a fixer), as the agents view lists them; each opens its work there. */
+function AtWork({ repo, number }: { repo: string; number: number }) {
+  useToolQuery("agents_list", ALL_AGENTS);
+  const agents = useData(selectLiveAgents);
+  const on = useMemo(() => agents?.filter((a) => a.row.pr?.repo === repo && a.row.pr.number === number) ?? [], [agents, repo, number]);
+  if (on.length === 0) return null;
+  return (
+    <Section title="At work on it now">
+      <div className={s.atWork}>
+        {on.map((a) => (
+          <AgentRowLink key={a.id} agent={a} current={false} />
+        ))}
+      </div>
+    </Section>
   );
 }
 

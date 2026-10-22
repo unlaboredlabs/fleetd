@@ -206,6 +206,11 @@
   flex-direction: column;
   gap: 2px;
 }
+.atWork {
+  display: flex;
+  flex-direction: column;
+  margin: 0 calc(-1 * var(--space-2));
+}
 
 .section {
   display: flex;

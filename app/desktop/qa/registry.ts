@@ -80,9 +80,11 @@ export const fixtures = [
   "chat-empty",
   // F5 (A5): a chat with every state of the two inline items (fixtures/inline).
   "inline-items",
-  // UX-1 A3: the PR list and PR view (fixtures/prs): no PRs, GitHub out of reach, a PR that fails to load, and a
+  // UX-1 A3: the PR list and PR view (fixtures/prs): no PRs, the reads on their way, GitHub out of reach, a PR that
+  // fails to load, and a
   // PR of 240 files with a 3,000-line file.
   "prs-none",
+  "prs-loading",
   "prs-no-github",
   "prs-error",
   "prs-heavy",
@@ -142,10 +144,23 @@ const gallerySections = [
 // only in the route, never as text.
 const CHAT = "#/project/devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22";
 
-// storefront's PRs (fixtures/prs): the list alone, and #11 (in review), #10 (checks failed) and #13 (240 files) open.
+// storefront's PRs (fixtures/prs): the list alone, and #11 (in review, its reviewers at work), #10 (checks failed), #8
+// (merged), #14 (a person's, review asked for) and #13 (240 files) open.
 const PRS = `${CHAT}/prs`;
 const PR = (n: number) => `${PRS}/acme/storefront/${String(n)}`;
 const openChanges = (page: Page) => page.getByRole("tab", { name: /^Changes/u }).click();
+/**
+ * The PR reads still on their way (prs-loading never answers them). The gate waits out busy regions before it
+ * shoots, so the entry reaches the screen from a settled one, waits for the placeholder and then lifts its busy flag:
+ * the shot is what you see while the hub answers.
+ */
+const whileLoading = (go: (page: Page) => Promise<void>, text: RegExp) => async (page: Page) => {
+  await go(page);
+  await page.getByText(text).first().waitFor();
+  await page.evaluate(() => {
+    for (const el of document.querySelectorAll("[aria-busy='true']")) el.removeAttribute("aria-busy");
+  });
+};
 
 /** An entry's name in test titles, shot files and the contact sheet. */
 export const label = (s: Pick<Screen, "id" | "variant">) => (s.variant === undefined ? s.id : `${s.id}~${s.variant}`);
@@ -328,10 +343,30 @@ export const screens: readonly Screen[] = [
   // GitHub out of reach; and a link to a project the hub doesn't have.
   { id: "prs", route: PRS, fixtures: ["typical", "long-text", "many-agents", "prs-none", "prs-no-github", "hub-unreachable"] },
   { id: "prs", route: PRS, fixtures: ["empty"], variant: "missing", expect: "error" },
+  {
+    id: "prs",
+    route: CHAT,
+    fixtures: ["prs-loading"],
+    variant: "loading",
+    open: whileLoading((page) => page.getByRole("button", { name: "Pull requests" }).click(), /^Loading the pull requests/u),
+  },
   // One PR beside the list: its facts, description, checks, reviews with their findings, and its way to main so far.
   // #10's checks failed after three approvals and an outdated review; a chat line's link names only the number.
   { id: "prs.detail", route: PR(11), fixtures: ["typical", "long-text", "prs-no-github"] },
   { id: "prs.detail", route: PR(10), fixtures: ["typical"], variant: "failed" },
+  { id: "prs.detail", route: PR(8), fixtures: ["typical"], variant: "merged" },
+  { id: "prs.detail", route: PR(14), fixtures: ["typical"], variant: "review-requested" },
+  {
+    id: "prs.detail",
+    route: CHAT,
+    fixtures: ["prs-loading"],
+    variant: "loading",
+    open: whileLoading(async (page) => {
+      await page.evaluate((r) => {
+        window.location.hash = r;
+      }, PR(11));
+    }, /^Loading #11/u),
+  },
   { id: "prs.detail", route: `${PRS}/11`, fixtures: ["typical"], variant: "by-number", sizes: ["small"] },
   { id: "prs.detail", route: PR(11), fixtures: ["prs-error"], expect: "error" },
   // Its changes: the files beside a diff drawn a screen at a time, one column or side by side, and a PR too big to

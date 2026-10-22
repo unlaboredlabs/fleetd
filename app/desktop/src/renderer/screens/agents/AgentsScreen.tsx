@@ -98,7 +98,7 @@ const Item = ({ item, open }: { item: ListItem; open: string | null }) =>
   );
 
 /** Role, the task, how long; under it what it is doing now. A link, so it opens with the keyboard and keeps history. */
-const AgentRowLink = memo(function AgentRowLink({ agent, current }: { agent: LiveAgent; current: boolean }) {
+export const AgentRowLink = memo(function AgentRowLink({ agent, current }: { agent: LiveAgent; current: boolean }) {
   const { row } = agent;
   const href = toHash({ id: "agents", agent: { machineId: row.projectRef.machineId, projectId: row.projectRef.projectId, laneId: row.laneId } });
   return (

@@ -5,7 +5,8 @@ import { ChevronRight } from "lucide-react";
 import { useId, useSyncExternalStore, type CSSProperties } from "react";
 import { useData, useToolQuery } from "../../src/data/react";
 import { selectBoardData } from "../../src/data/selectors";
-import { Button, RoleTag, Text, Truncate, cx, roleTint, toast } from "../../ui";
+import { Button, RoleTag, Text, Truncate, cx, roleTint } from "../../ui";
+import { navigate } from "../shell/navigation";
 import { useNow } from "./clock";
 import type { AgentLane } from "./contracts";
 import { groupLabel, reviewProgress, writtenIn } from "./fleet";
@@ -14,12 +15,6 @@ import { Check, LaneRow, MiddleCut, Track } from "./parts";
 import { isRunning, stageTone } from "./words";
 import { FOLDED_LINES, type ProjectRef, type StripLine, projectFleet, selectStrip, stripHeadline } from "./strip";
 import s from "./live.module.css";
-
-const openPr = (url: string) => {
-  void window.fleetd.openExternal(url).then((o) => {
-    if (!o.ok) toast({ title: "Couldn't open the PR", description: o.message, tone: "danger" });
-  });
-};
 
 const TONE: Record<StripLine["tone"], string | undefined> = {
   quiet: s.quiet,
@@ -82,7 +77,7 @@ export function LiveStrip({ project, onTold }: LiveStripProps) {
                   <span className={s.words}>{l.words}</span>
                   {l.machine !== undefined ? <MiddleCut text={l.machine} /> : null}
                 </span>
-                {l.pr ? <PrLink pr={l.pr} /> : null}
+                {l.pr ? <PrLink project={project} pr={l.pr} /> : null}
               </li>
             ))}
             {more > 0 ? (
@@ -99,9 +94,10 @@ export function LiveStrip({ project, onTold }: LiveStripProps) {
   );
 }
 
-function PrLink({ pr }: { pr: NonNullable<StripLine["pr"]> }) {
+/** Opens the PR in the project's PR view, which keeps Open on GitHub one click away. */
+function PrLink({ project, pr }: { project: ProjectRef; pr: NonNullable<StripLine["pr"]> }) {
   return (
-    <button type="button" className={s.pr} onClick={() => openPr(pr.url)} aria-label={`Open PR #${pr.number} on GitHub`}>
+    <button type="button" className={s.pr} onClick={() => navigate({ id: "prs", project, pr: { repo: null, number: pr.number } })} aria-label={`Open PR #${pr.number}`}>
       <span className={s.prNumber}>#{pr.number}</span>
       {pr.label !== "" ? <span className={s.prLabel}>{pr.label}</span> : null}
     </button>
