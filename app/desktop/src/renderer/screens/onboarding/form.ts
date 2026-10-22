@@ -1,7 +1,7 @@
 // The connect form's state: what it shows and when it pairs by itself. Pure, so the decisions are tested.
 import type { LinkHandlerStatus } from "../../../shared/app";
 import type { HubState } from "../../../shared/hub";
-import { hubOrigin, LOCAL_HUB, protocolFit, type PairFailure, type PairStart } from "../../../shared/pairing";
+import { hubOrigin, protocolFit, type PairFailure, type PairStart } from "../../../shared/pairing";
 
 export interface Form {
   readonly hub: string;
@@ -18,6 +18,8 @@ export interface Form {
   readonly notice: string | null;
   /** No key saved yet: the only time app-pair.json may pair by itself. */
   readonly firstRun: boolean;
+  /** The person typed the address: nothing found later replaces it. */
+  readonly hubTyped: boolean;
   /** The address came from a fleetd://pair link, which any web page can open. */
   readonly hubFromLink: boolean;
   /** The code a fleetd://pair link brought, while it is still the one in the field. */
@@ -48,7 +50,8 @@ export const initialForm = (
 ): Form => {
   const linked = link.hub !== undefined && link.code !== undefined;
   return {
-    hub: link.hub ?? (state.phase === "unpaired" ? LOCAL_HUB : state.hub),
+    // First run fills the address once it knows whether a hub answers here (`started`).
+    hub: link.hub ?? (state.phase === "unpaired" ? "" : state.hub),
     code: link.code ?? "",
     key: "",
     useKey: link.useKey === true && link.code === undefined,
@@ -62,6 +65,7 @@ export const initialForm = (
     notice: state.phase === "unpaired" ? (state.note ?? null) : null,
     firstRun: state.phase === "unpaired",
     hubFromLink: link.hub !== undefined,
+    hubTyped: false,
     linkCode: linked ? (link.code ?? null) : null,
     linkNote: null,
     autoPending: false,
@@ -75,26 +79,34 @@ export const reduce = (form: Form, action: Action): Form => {
       const { appPair, problem, probe } = action.start;
       // A link or something typed already says what to do.
       if (form.code !== "" || form.busy || form.useKey || form.hubFromLink) return form;
+      // An address the person typed is theirs: a refocus that looks again never replaces it.
+      const fill = (hub: string) => (form.hubTyped ? form.hub : hub);
       // `fleetd init` left a fresh code here for this app: pair with no typing, on first run only.
       if (appPair !== null && !appPair.expired && form.firstRun && !form.autoTried) {
-        return { ...form, hub: appPair.hub, autoPending: true, autoTried: true };
+        return { ...form, hub: fill(appPair.hub), autoPending: true, autoTried: true };
       }
-      const hub = appPair?.hub ?? form.hub;
       const error = form.error ?? problem;
       if (appPair?.expired === true) {
         return {
           ...form,
-          hub,
+          hub: fill(appPair.hub),
           error,
           status: "The code `fleetd init` left on this computer has expired. Run `fleetd pair` on the hub for a new one.",
         };
       }
-      // The probe looked at app-pair.json's hub or this computer; about another address (a refused key's) it says nothing.
+      if (form.firstRun) {
+        // The probe looked at this computer (or app-pair.json's hub). With nothing there the welcome offers setup here,
+        // and the form below it is for a hub elsewhere, so it starts empty rather than on this computer's address.
+        if (!probe.answers) return { ...form, hub: fill(""), error, setupHere: true };
+        const fit = protocolFit(probe.protocol);
+        if (fit !== "ok") return { ...form, hub: fill(probe.hub), setupHere: false, error: mismatchFailure(fit, probe.hub) };
+        return { ...form, hub: fill(probe.hub), error, setupHere: false, status: found(probe.hub) };
+      }
+      // A refused key's form: the probe says nothing about another address than the one in the field.
+      const hub = fill(appPair?.hub ?? form.hub);
       const origin = hubOrigin(hub);
       if (!origin.ok || origin.origin !== probe.hub) return { ...form, hub, error };
       if (!probe.answers) {
-        // The welcome says how to set fleetd up here, and the form below it is for a hub elsewhere.
-        if (form.firstRun) return { ...form, hub, error, setupHere: true };
         return {
           ...form,
           hub,
@@ -104,14 +116,15 @@ export const reduce = (form: Form, action: Action): Form => {
         };
       }
       const fit = protocolFit(probe.protocol);
-      if (fit !== "ok") return { ...form, hub, setupHere: false, error: mismatchFailure(fit, probe.hub) };
-      return { ...form, hub, error, setupHere: false, status: `Found your hub at ${probe.hub}. Enter the code from \`fleetd pair\` to connect.` };
+      if (fit !== "ok") return { ...form, hub, error: mismatchFailure(fit, probe.hub) };
+      return { ...form, hub, error, status: found(probe.hub) };
     }
     case "edit":
       return {
         ...form,
         [action.field]: action.field === "code" ? formatCode(action.value) : action.value,
         hubFromLink: action.field === "hub" ? false : form.hubFromLink,
+        hubTyped: form.hubTyped || action.field === "hub",
         linkCode: action.field === "code" ? null : form.linkCode,
       };
     case "toggleKey": {
@@ -141,6 +154,15 @@ export const formatCode = (input: string): string => {
   const raw = input.replace(/[\s-]/gu, "").toUpperCase();
   return raw.length > 4 ? `${raw.slice(0, 4)}-${raw.slice(4)}` : raw;
 };
+
+/** Where the caret goes after `formatCode`: after the same number of code characters as before it was typed. */
+export const formatCodeAt = (input: string, caret: number): { readonly value: string; readonly caret: number } => {
+  const value = formatCode(input);
+  const before = input.slice(0, caret).replace(/[\s-]/gu, "").length;
+  return { value, caret: Math.min(before > 4 ? before + 1 : before, value.length) };
+};
+
+const found = (hub: string): string => `Found your hub at ${hub}. Enter the code from \`fleetd pair\` to connect.`;
 
 /** A hub this app can't talk to, in words, with the side that needs updating. */
 export const mismatchFailure = (fit: "hub-older" | "app-older", hub: string): PairFailure =>

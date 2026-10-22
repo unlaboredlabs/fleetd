@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PairStart } from "../../../shared/pairing";
-import { formatCode, initialForm, needsOnboarding, reaching, reduce } from "./form";
+import { formatCode, formatCodeAt, initialForm, needsOnboarding, reaching, reduce } from "./form";
 
 const unpaired = { phase: "unpaired" } as const;
 const answering = { answers: true, hub: "http://100.64.0.1:4790", version: "0.5.0", protocol: 1 } as const;
@@ -61,6 +61,34 @@ describe("the connect form", () => {
     const busy = reduce(found_, { type: "submitting" });
     expect(busy.status).toBe(found_.status);
     expect(reduce(busy, { type: "failed", failure: { code: "", message: "Can't reach it." } }).status).toBe(found_.status);
+  });
+
+  it("starts the other-computer form empty, yet still says when a hub answers here", () => {
+    const form = initialForm(unpaired, {});
+    expect(reduce(form, { type: "started", start: noHub })).toMatchObject({ hub: "", setupHere: true });
+    // fleetd init finished while the window was away: the next look finds the hub on this computer.
+    const later = reduce(reduce(form, { type: "started", start: noHub }), { type: "started", start: found(local) });
+    expect(later).toMatchObject({ hub: "http://127.0.0.1:4790", setupHere: false });
+    expect(later.status).toContain("Found your hub at http://127.0.0.1:4790");
+  });
+
+  it("never replaces an address the person typed when the window is refocused", () => {
+    const typed = reduce(initialForm(unpaired, {}), { type: "edit", field: "hub", value: "http://devbox:4790" });
+    const tried = reduce(reduce(typed, { type: "started", start: fresh }), { type: "failed", failure: { code: "", message: "Used." } });
+    expect(tried.hub).toBe("http://devbox:4790");
+    expect(reduce(tried, { type: "started", start: fresh }).hub).toBe("http://devbox:4790");
+    expect(reduce(tried, { type: "started", start: noHub }).hub).toBe("http://devbox:4790");
+    expect(reduce(tried, { type: "started", start: found(local) }).hub).toBe("http://devbox:4790");
+  });
+
+  it("keeps the caret after the same characters when a code is edited in the middle", () => {
+    // "ABCD-2345" with "x" typed after the B: the dash moves, the caret stays after the x.
+    expect(formatCodeAt("ABxCD-2345", 3)).toEqual({ value: "ABXC-D2345", caret: 3 });
+    // Typed at the end: past the dash.
+    expect(formatCodeAt("ABCD2", 5)).toEqual({ value: "ABCD-2", caret: 6 });
+    // A character deleted before the dash.
+    expect(formatCodeAt("ABD-2345", 2)).toEqual({ value: "ABD2-345", caret: 2 });
+    expect(formatCodeAt("wxyz6789", 8)).toEqual({ value: "WXYZ-6789", caret: 9 });
   });
 
   it("shows a code in capitals with its dash, however it is typed", () => {

@@ -134,6 +134,7 @@ export const REQUESTS = {
   [IPC.pairRedeem]: z.tuple([PairRequest]),
   [IPC.pairAuto]: none,
   [IPC.pairStore]: none,
+  [IPC.pairSetup]: none,
   [IPC.secretSubmit]: z.tuple([SecretRequest]),
   [IPC.systemHostName]: none,
   [IPC.projectsPickFolder]: none,

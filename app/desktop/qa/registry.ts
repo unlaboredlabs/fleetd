@@ -47,6 +47,8 @@ export const fixtures = [
   // F10: the connect screen's states (fixtures/onboarding).
   "onboarding-first-run",
   "onboarding-code-refused",
+  "onboarding-setup-terminal",
+  "onboarding-first-chat",
   "onboarding-local-hub",
   "onboarding-link",
   "onboarding-app-pair",
@@ -326,6 +328,8 @@ export const screens: readonly Screen[] = [
       await page.getByText("From before this chat").waitFor({ timeout: 10_000 });
     },
   },
+  // UX-1 [10]: just set up, no chat has a message yet: the empty chat shows the checklist on its last step.
+  { id: "chat", route: CHAT, fixtures: ["onboarding-first-chat"], variant: "first-chat" },
   // A link to a project the hub doesn't have (here, a hub with none): says so, rather than loading forever.
   { id: "chat", route: CHAT, fixtures: ["empty"], variant: "missing", expect: "error" },
   // A5 (F5): the two inline items, every state: the masked secret field (and saved, withdrawn), the exact command
@@ -448,6 +452,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["onboarding-code-refused"],
     variant: "refused",
     open: async (page) => {
+      await page.getByRole("textbox", { name: "Hub address" }).fill("http://buildbox:4790");
       const code = page.getByRole("textbox", { name: "Pairing code" });
       await code.fill("wxyz6789");
       await expect(code).toHaveValue("WXYZ-6789");
@@ -456,6 +461,18 @@ export const screens: readonly Screen[] = [
       await code.press("Enter");
       await page.getByRole("alert").getByText("unknown or was already used").waitFor({ timeout: 10_000 });
       expect(await connect.boundingBox()).toEqual(before);
+    },
+  },
+  // UX-1 [10]: "Set up fleetd on this Mac" opens `fleetd init` in a terminal, or, where none opens, shows the command
+  // with Copy. Under a fixture main never runs anything; the fixture says which answer it gives.
+  {
+    id: "onboarding",
+    route: "#/onboarding",
+    fixtures: ["onboarding-setup-terminal", "onboarding-first-run"],
+    variant: "setup",
+    open: async (page) => {
+      await page.getByRole("button", { name: /^Set up fleetd on this/u }).click();
+      await page.getByText(/^Opened Terminal with|^Couldn't open a terminal/u).waitFor({ timeout: 10_000 });
     },
   },
   { id: "onboarding.key", route: "#/onboarding?key", fixtures: ["pairing-failed", "onboarding-file-store"] },
