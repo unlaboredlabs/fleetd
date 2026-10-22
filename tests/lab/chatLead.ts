@@ -207,13 +207,25 @@ const spawnSleepers = (lab: Lab, fleetd: Shell, workstreamId: string, label: str
     return { taskId: spawned(lab, out, `task spawn ${label} ${i + 1}`), stdout: out.stdout };
   });
 
-/** The most tasks of `ids` running at once, replayed from their start and end events in hub order. */
-const maxConcurrent = (events: ReadonlyArray<Body>, ids: ReadonlySet<string>) => {
-  let running = 0;
+/** A session stopping frees its slot (hub/slots STOPPED). */
+const THREAD_STOPS = ["thread.completed", "thread.failed", "thread.interrupted", "thread.waiting", "thread.usage_limited"];
+/** The events maxConcurrent replays. */
+const RUN_EVENTS = ["task.started", ...TASK_ENDS, ...THREAD_STOPS];
+/**
+ * The most agents of `tasks` running at once, replayed in hub order. An agent stops running when its session stops
+ * (its thread's stop event, which frees the slot) or its task ends, whichever comes first: the task.completed that
+ * books the result comes after the hub has read the thread's changes, so the next agent may already hold the slot.
+ */
+const maxConcurrent = (events: ReadonlyArray<Body>, tasks: ReadonlyArray<Body>) => {
+  const ofThread = new Map(tasks.filter((t) => t.threadRef?.threadId).map((t) => [t.threadRef.threadId as string, t.taskId as string]));
+  const ids = new Set(tasks.map((t) => t.taskId as string));
+  const live = new Set<string>();
   let max = 0;
-  for (const e of events.filter((e) => ids.has(e.data?.taskId)).toSorted((a, b) => a.seq - b.seq)) {
-    if (e.type === "task.started") max = Math.max(max, ++running);
-    else if (TASK_ENDS.includes(e.type)) running -= 1;
+  for (const e of events.toSorted((a, b) => a.seq - b.seq)) {
+    const id = (e.data?.taskId as string | undefined) ?? (typeof e.threadId === "string" ? ofThread.get(e.threadId) : undefined);
+    if (id === undefined || !ids.has(id)) continue;
+    if (e.type === "task.started") max = Math.max(max, live.add(id).size);
+    else if (TASK_ENDS.includes(e.type) || THREAD_STOPS.includes(e.type)) live.delete(id);
   }
   return max;
 };
@@ -723,8 +735,8 @@ async function cap1Part(lab: Lab, ref: Ref, fleetd: Shell, need: (t: string) => 
     check(waiterStart === undefined || waiterStart.seq > review.seq, `the gating review (started seq ${review.seq}) went before the agent queued earlier (started seq ${waiterStart?.seq})`);
     const merged = await lab.waitEvent(`${writer}'s PR merges at max agents 1`, CI_MS + TURN_MS * 3, { cursor: from, types: ["pr.merged"], match: (e) => e.data?.repo === REPO });
     await lab.waitEvent(`${waiter!.taskId} ends`, TURN_MS * 2, { cursor: from, types: TASK_ENDS, match: (e) => e.data?.taskId === waiter!.taskId });
-    const sessions = await eventsSince(lab, from, ["task.started", ...TASK_ENDS]);
-    const max = maxConcurrent(sessions, new Set((await tasksOf(lab, ref)).filter((t) => t.workstreamId === w).map((t) => t.taskId as string)));
+    const sessions = await eventsSince(lab, from, RUN_EVENTS);
+    const max = maxConcurrent(sessions, (await tasksOf(lab, ref)).filter((t) => t.workstreamId === w));
     check(max <= 1, `at most one agent ran at once: ${max}`);
     ok(`max agents 1: review ${review.task.taskId} before ${waiter!.taskId}; PR #${merged.event.data.prNumber} merged; no deadlock`);
   } finally {
@@ -932,7 +944,7 @@ async function capPart(lab: Lab, chat: Chat, ref: Ref, need: (t: string) => void
   })();
   await allComplete([...sixIds], from, TURN_MS * 4);
   await sampling;
-  const replayed = maxConcurrent(await eventsSince(lab, from, ["task.started", ...TASK_ENDS]), sixIds);
+  const replayed = maxConcurrent(await eventsSince(lab, from, RUN_EVENTS), (await tasksOf(lab, ref)).filter((t) => sixIds.has(t.taskId)));
   check(replayed <= 2 && sampled <= 2, `at most 2 ran at once (events: ${replayed}, sampled: ${sampled})`);
   ok(`1. max 2: six agents, at most ${replayed} at once (sampled ${sampled}); all six finished; "${six[2]!.stdout.trim().split("\n")[0]}"`);
 
