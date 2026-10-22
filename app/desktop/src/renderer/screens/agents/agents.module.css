@@ -177,5 +177,10 @@
 }
 .machine {
   flex: 1;
+  display: flex;
   min-width: 0;
+  color: var(--quiet);
+}
+.failed {
+  color: var(--danger);
 }

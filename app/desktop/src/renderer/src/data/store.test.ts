@@ -181,6 +181,11 @@ describe("the project list", () => {
     expect(selectProjectRow("devbox/storefront")(idle)?.running).toBe(0);
   });
 
+  it("counts a lane two cards list once", () => {
+    const s = withBoard(run([live(), snapshot(1)]), [card("W1"), card("W2")]);
+    expect(selectProjectRow("devbox/storefront")(s)?.running).toBe(1);
+  });
+
   it("keeps a stable order by title, whatever needs you or works", () => {
     let s = withBoard(run([live(), snapshot(1)]), []);
     const storefront = s.projects["devbox/storefront"];

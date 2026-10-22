@@ -5,7 +5,7 @@ import type { WorkStep } from "../../src/data/agents-contract";
 import { useAgentWork, useData } from "../../src/data/react";
 import { selectLiveAgent, selectLiveAgents } from "../../src/data/selectors";
 import { Button, cx, EmptyState, Markdown, RoleTag, Text, Truncate, VirtualList } from "../../ui";
-import { ActivityLine } from "../live/parts";
+import { ActivityLine, MiddleCut } from "../live/parts";
 import { describe, isRunning } from "../live/words";
 import { navigate } from "../shell/navigation";
 import { Elapsed } from "./AgentsScreen";
@@ -122,10 +122,8 @@ function Step({ item }: { item: FeedItem }) {
           {line.words}
         </Text>
       </span>
-      <span className={s.machine}>
-        <Truncate size="xs" mono tone={line.tone === "danger" ? "danger" : "quiet"} expand="popover">
-          {line.machine}
-        </Truncate>
+      <span className={cx(s.machine, line.tone === "danger" && s.failed)}>
+        <MiddleCut text={line.machine} />
       </span>
       {line.outcome !== undefined ? (
         <Text size="xs" tone="danger">

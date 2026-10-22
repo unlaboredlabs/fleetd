@@ -22,15 +22,19 @@ export const listItems = (agents: readonly LiveAgent[]): readonly ListItem[] => 
   return out;
 };
 
-/** "18 working · 1 waiting on you · 1 queued"; empty for no agents. */
+/**
+ * "18 working · 1 waiting on you · 1 queued", the leads not counted, so it agrees with the sidebar's count; empty
+ * when none of the three.
+ */
 export const headline = (agents: readonly LiveAgent[]): string => {
   let working = 0;
   let waiting = 0;
   let queued = 0;
   for (const { row } of agents) {
-    if (row.status === "waiting") waiting++;
+    if (row.role === "lead") continue;
+    if (row.status === "working" || row.status === "starting") working++;
+    else if (row.status === "waiting") waiting++;
     else if (row.status === "queued") queued++;
-    else working++;
   }
   return [working > 0 ? `${String(working)} working` : "", waiting > 0 ? `${String(waiting)} waiting on you` : "", queued > 0 ? `${String(queued)} queued` : ""]
     .filter((p) => p !== "")

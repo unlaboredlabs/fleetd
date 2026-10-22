@@ -282,8 +282,11 @@ const selectAgentsByProject = memo(
   (fresh, orders, liveLanes, ended): Readonly<Record<ProjectKey, readonly AgentLane[]>> | undefined => {
     if (!fresh || orders === undefined) return undefined;
     const out: Record<ProjectKey, AgentLane[]> = {};
+    // A lane two cards list is one agent, counted once.
+    const seen = new Set<string>();
     for (const card of Object.values(orders)) {
-      const lanes = card.lanes.map((l) => mergeLane(l, liveLanes[l.laneId], ended[l.laneId]));
+      const lanes = card.lanes.filter((l) => !seen.has(l.laneId)).map((l) => mergeLane(l, liveLanes[l.laneId], ended[l.laneId]));
+      for (const l of lanes) seen.add(l.laneId);
       (out[projectKey(card.projectRef)] ??= []).push(...lanes);
     }
     for (const lanes of Object.values(out)) lanes.sort(byActiveFirst);

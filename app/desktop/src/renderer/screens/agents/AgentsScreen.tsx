@@ -84,9 +84,11 @@ export function AgentsScreen({ agent }: { agent: AgentKey | null }) {
 const Item = ({ item, open }: { item: ListItem; open: string | null }) =>
   item.kind === "project" ? (
     <div className={s.group}>
-      <Truncate size="xs" tone="quiet" strong expand="none">
-        {item.title}
-      </Truncate>
+      <span className={s.task}>
+        <Truncate size="xs" tone="quiet" strong expand="none">
+          {item.title}
+        </Truncate>
+      </span>
       <Text size="xs" tone="faint" tabular>
         {String(item.count)}
       </Text>

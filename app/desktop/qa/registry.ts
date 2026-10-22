@@ -16,6 +16,7 @@
 // qa-results/index.html.
 
 import { expect, type Page } from "@playwright/test";
+import { AGENT_ROUTE } from "../fixtures/agents/route.ts";
 import { CHAT_SENDS } from "../fixtures/composer/sends.ts";
 
 /** A 1×1 PNG, for the composer's attach step. */
@@ -78,6 +79,9 @@ export const fixtures = [
   "chat-empty",
   // F5 (A5): a chat with every state of the two inline items (fixtures/inline).
   "inline-items",
+  // UX-1: the sidebar's reasons and a new reply (fixtures/sidebar); one agent's live work (fixtures/agents).
+  "sidebar-reasons",
+  "agents-work",
 ] as const;
 export type FixtureName = (typeof fixtures)[number];
 
@@ -203,7 +207,9 @@ export const screens: readonly Screen[] = [
     fixtures: ["chat-waiting", "live-20", "chat-empty"],
     variant: "chat",
   },
-  { id: "shell", route: "#/status", fixtures: ["status-rows"], variant: "sidebar" },
+  // UX-1 [5]: each row says why it wants you (reply, approve · 2, secret, blocked), and docs' reply that arrives
+  // after the app opened is bold.
+  { id: "shell", route: "#/status", fixtures: ["status-rows", "sidebar-reasons"], variant: "sidebar" },
   // A2/A3 (F3, F4): the conversation and its composer: Markdown, paging through a long history with the migrated
   // orders, a reply streaming in, attachments, the lead waiting on you, a first message, and the link down.
   {
@@ -339,6 +345,16 @@ export const screens: readonly Screen[] = [
       await page.keyboard.press("Enter");
     },
   },
+  // UX-1 A2: every agent across the projects, by project (none, many, long titles and commands, the link down), and
+  // one agent's live work beside the list: told, ran, edited, a failed command, a message streaming in. An agent
+  // that isn't running any more says so.
+  {
+    id: "agents",
+    route: "#/agents",
+    fixtures: ["typical", "many-agents", "long-text", "empty", "hub-unreachable", "live-20", "agents-work"],
+  },
+  { id: "agents.work", route: AGENT_ROUTE, fixtures: ["agents-work"] },
+  { id: "agents.work", route: "#/agents/devbox/storefront/T99", fixtures: ["typical"], variant: "finished" },
   { id: "machines", route: "#/machines", fixtures: ["typical", "empty", "long-text", "many-agents", "hub-unreachable", "projects-machines"] },
   // F11: the command palette (projects first, then go-tos), a typed search, and the shortcuts sheet. status-rows
   // has eight projects, one with a ~120-character name.

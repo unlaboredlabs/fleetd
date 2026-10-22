@@ -21,6 +21,8 @@ describe("the agents list", () => {
       "2 working · 1 waiting on you · 1 queued",
     );
     expect(headline([agent("api", "T1", "waiting")])).toBe("1 waiting on you");
+    const lead: LiveAgent = { ...agent("api", "lead:devbox/api"), row: { ...agent("api", "lead:devbox/api").row, role: "lead" } };
+    expect(headline([lead, agent("api", "T1", "stalled"), agent("api", "T2")])).toBe("1 working");
     expect(headline([])).toBe("");
   });
 });
