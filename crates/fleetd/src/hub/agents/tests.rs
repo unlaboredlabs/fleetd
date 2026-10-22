@@ -336,14 +336,20 @@ mod over_a_hub {
         let (hub, _home) = hub();
         let caller = reader(json!("*"));
         let (rows, _) = super::super::rows(&hub, &caller, None, None, 100);
-        let mut listed: Vec<String> = rows.iter().map(|r| r.lane.lane_id.to_string()).collect();
-        let mut live: Vec<String> = crate::hub::app_ws::live::board_lanes(&hub, &caller)
+        let listed: Vec<String> = rows.iter().map(|r| r.lane.lane_id.to_string()).collect();
+        let live: Vec<String> = crate::hub::app_ws::live::board_lanes(&hub, &caller)
             .into_iter()
             .map(|l| l.lane.lane_id.to_string())
             .collect();
-        listed.sort();
-        live.sort();
-        assert_eq!(live, listed);
+        for lane in &live {
+            assert!(listed.contains(lane), "{lane} is live but not listed");
+        }
+        assert!(
+            listed
+                .iter()
+                .any(|l| l.starts_with("lead:") && !live.contains(l)),
+            "the agents view also lists an idle lead"
+        );
         let one = crate::hub::app_ws::live::agent_lanes(&hub, &caller, "lead:devbox/app");
         assert_eq!(one.len(), 1);
         assert!(

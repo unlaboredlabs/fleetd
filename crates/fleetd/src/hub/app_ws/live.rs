@@ -363,7 +363,8 @@ pub fn focus_lanes(hub: &Hub, caller: &Caller, id: &WorkstreamId) -> Vec<LaneNow
 }
 
 /// Every agent the agents view lists: each queued, running or idle task the key may read, those that ended in the
-/// last few seconds (so the app sees how they settled), and the lead of each readable project that has one.
+/// last few seconds (so the app sees how they settled), and each readable lead that is working. An idle lead has no
+/// lane here; the agents view still lists it.
 pub fn board_lanes(hub: &Hub, caller: &Caller) -> Vec<LaneNow> {
     let mut lanes: Vec<LaneNow> = agents::live_tasks(hub, caller, None)
         .iter()
@@ -376,11 +377,11 @@ pub fn board_lanes(hub: &Hub, caller: &Caller) -> Vec<LaneNow> {
             .map(|t| task_lane(hub, t, false)),
     );
     let readable = agents::readable_projects(hub, caller, None);
-    lanes.extend(lead_lanes(
-        hub,
-        &agents::lead_projects(hub, &readable),
-        false,
-    ));
+    let working: HashSet<_> = agents::lead_projects(hub, &readable)
+        .into_iter()
+        .filter(|r| crate::hub::chat::flow::lead_working(hub, r))
+        .collect();
+    lanes.extend(lead_lanes(hub, &working, false));
     lanes
 }
 
