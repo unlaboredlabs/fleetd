@@ -47,6 +47,7 @@ export const fixtures = [
   // F10: the connect screen's states (fixtures/onboarding).
   "onboarding-first-run",
   "onboarding-code-refused",
+  "onboarding-setup-terminal",
   "onboarding-local-hub",
   "onboarding-link",
   "onboarding-app-pair",
@@ -388,6 +389,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["onboarding-code-refused"],
     variant: "refused",
     open: async (page) => {
+      await page.getByRole("textbox", { name: "Hub address" }).fill("http://buildbox:4790");
       const code = page.getByRole("textbox", { name: "Pairing code" });
       await code.fill("wxyz6789");
       await expect(code).toHaveValue("WXYZ-6789");
@@ -396,6 +398,18 @@ export const screens: readonly Screen[] = [
       await code.press("Enter");
       await page.getByRole("alert").getByText("unknown or was already used").waitFor({ timeout: 10_000 });
       expect(await connect.boundingBox()).toEqual(before);
+    },
+  },
+  // UX-1 [10]: "Set up fleetd on this Mac" opens `fleetd init` in a terminal, or, where none opens, shows the command
+  // with Copy. Under a fixture main never runs anything; the fixture says which answer it gives.
+  {
+    id: "onboarding",
+    route: "#/onboarding",
+    fixtures: ["onboarding-setup-terminal", "onboarding-first-run"],
+    variant: "setup",
+    open: async (page) => {
+      await page.getByRole("button", { name: /^Set up fleetd on this/u }).click();
+      await page.getByText(/^Opened Terminal with|^Couldn't open a terminal/u).waitFor({ timeout: 10_000 });
     },
   },
   { id: "onboarding.key", route: "#/onboarding?key", fixtures: ["pairing-failed", "onboarding-file-store"] },

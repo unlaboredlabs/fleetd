@@ -27,6 +27,7 @@ export default defineGroup({
   },
   fixtures: () => [
     unpaired("first-run", "First launch, no hub on this computer: the form with the no-hub line."),
+    unpaired("setup-terminal", "First launch, no hub here; Set up fleetd opens Terminal (nothing runs under a fixture).", { terminal: "Terminal" }),
     unpaired("code-refused", "First launch, no hub on this computer; a hub elsewhere refuses the typed code.", {
       redeem: refuse(401, "pair_code_invalid", "That pairing code is unknown or was already used.", NEW_CODE),
     }),
