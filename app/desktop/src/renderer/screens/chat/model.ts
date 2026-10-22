@@ -21,8 +21,8 @@ export type Row =
 const GROUP_MS = 5 * 60_000;
 
 /**
- * `iso` in ms, or `nowMs` when it doesn't parse: a reply streaming in ahead of its message has no time yet (chatItems
- * gives it ""), and it is happening now. Intl throws a RangeError on an invalid date, which took the window down.
+ * `iso` in ms, or `nowMs` when it doesn't parse. Intl throws a RangeError on an invalid date, and one row without a
+ * time (a reply streaming ahead of its message once had "") took the whole window down; the newest row is the likeliest.
  */
 const msOf = (iso: string, nowMs: number): number => {
   const ms = Date.parse(iso);

@@ -60,8 +60,8 @@ describe("the chat's rows", () => {
     expect(rowIndexOf(r, "nope")).toBeUndefined();
   });
 
-  it("place a reply that streams in ahead of its message under today, rather than throwing", () => {
-    // chatItems gives such a reply no time yet; Intl throws a RangeError on the invalid date.
+  it("place a row whose time doesn't parse under today, rather than throwing", () => {
+    // Intl throws a RangeError on an invalid date; a reply streaming ahead of its message once had "".
     const r = rows([item("a", "lead", at(18, 9)), item("s", "lead", "", { state: "streaming" })]);
     expect(r.map((x) => (x.kind === "day" ? `day:${x.label}` : x.kind === "message" ? `message:${x.item.id}` : x.kind))).toEqual([
       "top",
