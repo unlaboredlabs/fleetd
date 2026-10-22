@@ -52,6 +52,9 @@ pub struct AttachmentRef {
 pub enum ChatAuthor {
     Human,
     Lead,
+    /// An agent or integration writing with its own key (`fleetd chat` with an agent key): input for the lead, never
+    /// the human. It approves nothing, answers nothing that is the human's, and leaves needs-you as it was.
+    Agent,
     /// fleetd itself: one-line events (a PR merged, an agent started, a past order's state).
     System,
 }
@@ -83,6 +86,17 @@ pub enum ChatHistorySource {
     OrderOutcome,
     /// A question the lead asked with the retired questions tool, and its answer.
     Question,
+}
+
+/// Where a human message was written.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
+pub enum ChatClient {
+    /// The desktop app.
+    App,
+    /// `fleetd chat`.
+    Cli,
 }
 
 /// How a human message reached the lead.
@@ -199,8 +213,11 @@ pub struct ChatMessage {
     pub client_request_id: Option<RequestId>,
     /// A human message: how it reached the lead.
     pub delivery: Option<ChatDelivery>,
-    /// A human message: the key name of the person who wrote it.
+    /// A human message: the key name of the person who wrote it. An agent message: its key's name, or the task that
+    /// sent it.
     pub by: Option<Line<1, 120>>,
+    /// A human message: where it was written.
+    pub client: Option<ChatClient>,
     pub item: Option<ChatItem>,
     /// From before the chat: where this history message came from.
     pub history: Option<ChatHistorySource>,

@@ -20,7 +20,7 @@ const KEY_FILE: &str = "cli.key";
 
 /// The CLI's own key, kept 0600 in the hub home beside the database it was minted from (so it grants nothing that
 /// reading the home doesn't), and minted again only when it is gone or revoked.
-fn cli_key(home: &Path) -> Result<String, String> {
+pub(crate) fn cli_key(home: &Path) -> Result<String, String> {
     let file = home.join(KEY_FILE);
     let hub = open_hub(home)?;
     if let Ok(key) = std::fs::read_to_string(&file)

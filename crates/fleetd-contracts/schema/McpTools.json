@@ -1040,8 +1040,29 @@
           "type": "string"
         },
         {
+          "const": "agent",
+          "description": "An agent or integration writing with its own key (`fleetd chat` with an agent key): input for the lead, never\nthe human. It approves nothing, answers nothing that is the human's, and leaves needs-you as it was.",
+          "type": "string"
+        },
+        {
           "const": "system",
           "description": "fleetd itself: one-line events (a PR merged, an agent started, a past order's state).",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "ChatClient": {
+      "description": "Where a human message was written.",
+      "oneOf": [
+        {
+          "const": "app",
+          "description": "The desktop app.",
+          "type": "string"
+        },
+        {
+          "const": "cli",
+          "description": "`fleetd chat`.",
           "type": "string"
         }
       ],
@@ -1211,11 +1232,15 @@
           "$ref": "#/$defs/ChatAuthor"
         },
         "by": {
-          "description": "A human message: the key name of the person who wrote it.",
+          "description": "A human message: the key name of the person who wrote it. An agent message: its key's name, or the task that\nsent it.",
           "maxLength": 120,
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",
           "type": "string"
+        },
+        "client": {
+          "$ref": "#/$defs/ChatClient",
+          "description": "A human message: where it was written."
         },
         "clientRequestId": {
           "description": "A human message: the `clientRequestId` its `chat_send` carried, for the app's optimistic copy.",
@@ -1306,12 +1331,20 @@
           "type": "array",
           "uniqueItems": true
         },
+        "client": {
+          "$ref": "#/$defs/ChatClient",
+          "description": "A human key: where it is written. Absent means the app."
+        },
         "clientRequestId": {
           "minLength": 1,
           "type": "string"
         },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
+        },
+        "session": {
+          "$ref": "#/$defs/ThreadId",
+          "description": "An agent inside a fleetd session: its FLEETD_THREAD_ID. The project's own lead and tasks are refused (they\nuse their fleetd tools); another project's task is named by its task id."
         },
         "text": {
           "maxLength": 20000,

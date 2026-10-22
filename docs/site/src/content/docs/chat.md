@@ -28,6 +28,8 @@ Type in the box at the bottom of the chat and press Enter. Shift+Enter adds a ne
 
 The lead keeps its own plan and bookkeeping. You never file tasks or orders yourself.
 
+From a terminal, `fleetd chat devbox/storefront "fix the checkout button" --follow` sends the same message and streams the lead's reply, and `fleetd chat history storefront` reads the chat. Each message says who wrote it, "you · app" or "you · cli"; a message sent with an agent's key shows as "agent · <name>", and the lead never takes it as yours.
+
 ## Reply to the lead {#reply}
 
 The lead asks only what it really needs: product calls, money, and irreversible steps. It asks in the chat, as

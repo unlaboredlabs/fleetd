@@ -183,15 +183,15 @@ run the hub (default home `~/.fleetd/hub`, listen 127.0.0.1:4790, writes to an o
 ### fleetd hub key create {#hub-key-create}
 
 ```text
-fleetd hub key create --name <name> --role <read|operate|admin> --machines <'*'|id,id> [--home <dir>]
+fleetd hub key create --name <name> --role <read|operate|admin> --machines <'*'|id,id> [--out <file>] [--home <dir>]
 ```
 
-create an agent key for the MCP endpoint; prints the key once
+create an agent key for the MCP endpoint, or for an agent or integration that writes in a chat (operate); prints the key once, or writes it to a new file (0600) with `--out`
 
 ### fleetd hub key create {#hub-key-create-human}
 
 ```text
-fleetd hub key create --human --name <device> [--role <role>] [--machines <'*'|id,id>] [--home <dir>]
+fleetd hub key create --human --name <device> [--role <role>] [--machines <'*'|id,id>] [--out <file>] [--home <dir>]
 ```
 
 a key for a person's device (the desktop app): what it answers is recorded as the human's; role defaults to operate on every machine
@@ -359,6 +359,22 @@ fleetd steers [W|T] --key-file <human key> [--hub <url> | --home <dir>]
 ```
 
 recent steers and their receipts
+
+### fleetd chat {#chat}
+
+```text
+fleetd chat <machine>/<project> "<text>" [--wait | --follow] [--key-file <key>] [--hub <url> | --home <dir>]
+```
+
+write to a project's lead, as the app does: it starts the lead's next turn, or lands at its next step while it works. `--wait` prints the lead's reply when its turn ends; `--follow` streams it as it is written. Exit 0 it replied, 1 its turn ended without a reply. A human key writes as you; any other key as an agent, by its name. Without `--key-file` it uses the hub on this machine and the CLI's own key there, an agent key
+
+### fleetd chat history {#chat-history}
+
+```text
+fleetd chat history <project> [--page <n>] [--key-file <key>] [--hub <url> | --home <dir>]
+```
+
+the project's chat: who wrote each message, when, and what; the newest page, older ones with `--page`
 
 
 ## Lead-side commands {#lead-side-commands}

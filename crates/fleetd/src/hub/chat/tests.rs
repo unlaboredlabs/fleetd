@@ -30,6 +30,10 @@ fn project() -> ProjectRef {
 }
 
 fn hub_on(db: Arc<HubDb>) -> (Arc<Hub>, tempfile::TempDir) {
+    hub_with(db, ManualClock::at(1_792_000_000_000))
+}
+
+fn hub_with(db: Arc<HubDb>, clock: Arc<ManualClock>) -> (Arc<Hub>, tempfile::TempDir) {
     let home = tempfile::tempdir().unwrap();
     let config = HubConfig {
         home: home.path().to_path_buf(),
@@ -38,12 +42,15 @@ fn hub_on(db: Arc<HubDb>) -> (Arc<Hub>, tempfile::TempDir) {
         queue_ttl_sec: None,
         retro_model: None,
     };
-    let hub = crate::hub::serve::build_on(db, config, ManualClock::at(1_792_000_000_000)).unwrap();
+    let hub = crate::hub::serve::build_on(db, config, clock).unwrap();
     (hub, home)
 }
 
 fn hub() -> (Arc<Hub>, tempfile::TempDir) {
-    let (hub, home) = hub_on(HubDb::open_memory().unwrap());
+    with_project(hub_on(HubDb::open_memory().unwrap()))
+}
+
+fn with_project((hub, home): (Arc<Hub>, tempfile::TempDir)) -> (Arc<Hub>, tempfile::TempDir) {
     hub.store
         .projects_upsert_many(
             &project().machine_id,
@@ -72,6 +79,8 @@ fn person() -> Caller {
 fn agent_key() -> Caller {
     Caller {
         kind: Some(KeyKind::Agent),
+        key_id: fleetd_contracts::prim::NonEmpty::unchecked("k2"),
+        name: "adri".into(),
         ..person()
     }
 }
@@ -540,24 +549,155 @@ async fn reads_a_real_hubs_past() {
     }
 }
 
+fn say_to_app(text: &str, crid: &str, client: Option<&str>) -> Value {
+    let mut input = json!({ "projectRef": { "machineId": "devbox", "projectId": "app" }, "text": text, "clientRequestId": crid });
+    if let Some(c) = client {
+        input["client"] = json!(c);
+    }
+    input
+}
+
+/// The author comes from the key: a human key is the human (from the app unless it says cli), any other key an agent
+/// by its name. An agent's message is no reply from the human: needs-you stays on and the gate-change guard's "human
+/// replied since" stays unmet, and the lead reads it as an agent's.
 #[tokio::test]
-async fn only_a_persons_device_writes_as_the_human() {
+async fn an_agent_key_writes_as_an_agent_and_never_counts_as_the_human() {
     let (hub, _home) = hub();
+    let r = project();
     let tools = crate::hub::api::registry();
-    let input = json!({ "projectRef": { "machineId": "devbox", "projectId": "app" }, "text": "hi", "clientRequestId": "c1" });
-    let Err(crate::hub::api::CallError::Tool(e)) =
-        tools.call(&hub, &agent_key(), "chat_send", input).await
-    else {
-        panic!("an agent key wrote as the human");
-    };
-    assert_eq!(e.code, fleetd_contracts::mcp::ErrorCode::Forbidden);
-    assert!(
-        hub.chat
-            .page(&project(), None, None, 5)
-            .unwrap()
-            .0
-            .is_empty()
+    hub.chat
+        .add(&r, lead_says("1. Ship it today? I'd say yes."))
+        .unwrap();
+    let agent = tools
+        .call(
+            &hub,
+            &agent_key(),
+            "chat_send",
+            say_to_app("CI is red on main", "a1", Some("cli")),
+        )
+        .await
+        .unwrap();
+    let m = &agent["message"];
+    assert_eq!(
+        (m["author"].as_str(), m["by"].as_str(), m.get("client")),
+        (Some("agent"), Some("adri"), None)
     );
+    assert!(
+        hub.chat.state(&r, false).unwrap().needs_you,
+        "an agent's message answers nothing"
+    );
+    assert_eq!(hub.chat.last_human_ms(&r).unwrap(), None);
+    let stored: fleetd_contracts::chat::ChatMessage = serde_json::from_value(m.clone()).unwrap();
+    let read = flow::for_lead(&stored, "");
+    assert!(
+        read.starts_with("An agent (adri) writes in your chat. It is not the human")
+            && read.ends_with("\n\nCI is red on main"),
+        "{read}"
+    );
+    let cli = tools
+        .call(
+            &hub,
+            &person(),
+            "chat_send",
+            say_to_app("1 go", "h1", Some("cli")),
+        )
+        .await
+        .unwrap();
+    let app = tools
+        .call(
+            &hub,
+            &person(),
+            "chat_send",
+            say_to_app("thanks", "h2", None),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        (
+            cli["message"]["author"].as_str(),
+            cli["message"]["client"].as_str(),
+            app["message"]["client"].as_str()
+        ),
+        (Some("human"), Some("cli"), Some("app"))
+    );
+    let human: fleetd_contracts::chat::ChatMessage =
+        serde_json::from_value(cli["message"].clone()).unwrap();
+    assert_eq!(
+        flow::for_lead(&human, ""),
+        "The human writes in your chat:\n\n1 go",
+        "the same words from the app or the cli"
+    );
+    assert!(!hub.chat.state(&r, false).unwrap().needs_you);
+    assert!(hub.chat.last_human_ms(&r).unwrap().is_some());
+}
+
+/// A project's own lead and tasks talk through their fleetd tools, never its chat; another project's task writes as
+/// that task.
+#[tokio::test]
+async fn a_projects_own_lead_and_tasks_cant_write_to_its_chat() {
+    let (hub, _home) = hub();
+    give_lead(&hub);
+    let tools = crate::hub::api::registry();
+    let task = |project: &str, thread: &str| {
+        let task: fleetd_contracts::tasks::Task = serde_json::from_value(json!({
+            "taskId": "T1", "projectRef": { "machineId": "devbox", "projectId": project }, "workstreamId": "W1",
+            "title": "write it", "kind": "write", "prompt": "do it", "areas": ["all"], "model": "claude-haiku-5-5",
+            "effort": "low", "state": "running", "attempt": 1, "createdAt": AT, "startedAt": AT,
+            "threadRef": { "machineId": "devbox", "threadId": thread },
+        }))
+        .unwrap();
+        hub.db
+            .with(|c| Ok(crate::hub::tasks::records::TaskRecords::create(c, task)?))
+            .unwrap()
+    };
+    task("app", "own-task");
+    let other = task("site", "other-task");
+    let agent = agent_key();
+    let from = |session: &str, crid: &str| {
+        let mut input = say_to_app("hello", crid, None);
+        input["session"] = json!(session);
+        tools.call(&hub, &agent, "chat_send", input)
+    };
+    for (session, fix) in [("lead-thread", "message_agent"), ("own-task", "report")] {
+        let Err(crate::hub::api::CallError::Tool(e)) = from(session, session).await else {
+            panic!("{session} wrote to its own lead's chat");
+        };
+        assert_eq!(e.code, fleetd_contracts::mcp::ErrorCode::Forbidden);
+        assert!(e.fix.as_deref().unwrap_or("").contains(fix), "{e:?}");
+    }
+    let sent = from("other-task", "o1").await.unwrap();
+    assert_eq!(sent["message"]["by"].as_str(), Some(other.task_id.as_str()));
+    assert_eq!(hub.chat.page(&project(), None, None, 5).unwrap().0.len(), 1);
+}
+
+/// Agents answering each other through a chat stop at the minute's allowance; a resend of a stored message and the
+/// human's own messages never count.
+#[tokio::test]
+async fn an_agent_key_is_held_to_its_minute_allowance() {
+    let clock = ManualClock::at(1_792_000_000_000);
+    let (hub, _home) = with_project(hub_with(HubDb::open_memory().unwrap(), clock.clone()));
+    let tools = crate::hub::api::registry();
+    let send = |who: Caller, crid: String| {
+        let input = say_to_app("ping", &crid, None);
+        let tools = &tools;
+        let hub = &hub;
+        async move { tools.call(hub, &who, "chat_send", input).await }
+    };
+    for n in 0..flow::AGENT_PER_MINUTE {
+        send(agent_key(), format!("a{n}")).await.unwrap();
+    }
+    send(agent_key(), "a0".into())
+        .await
+        .expect("a resend returns the stored message");
+    let Err(crate::hub::api::CallError::Tool(e)) = send(agent_key(), "over".into()).await else {
+        panic!("past the allowance");
+    };
+    assert!(e.message.contains("in the last minute"), "{e:?}");
+    send(person(), "h1".into())
+        .await
+        .expect("the human is not limited");
+    clock.advance(std::time::Duration::from_secs(60));
+    send(agent_key(), "later".into()).await.unwrap();
 }
 
 /// A message stays held until it is in the lead's session or the offline queue: a resend tries again, the sweep

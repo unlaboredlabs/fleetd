@@ -227,6 +227,12 @@ pub const ENTRIES: &[Entry] = &[
                 r"Gates never relax",
                 Code
             ),
+            (
+                "agent-not-human",
+                "takes an agent's chat message as input, never as the human's answer or approval",
+                r"never as the human's answer",
+                Code
+            ),
         ]
     ),
     entry!(

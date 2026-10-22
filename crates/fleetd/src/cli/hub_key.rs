@@ -14,9 +14,10 @@ use super::pending::auth::{Auth, AuthError};
 use super::pending::store::{HubDb, HubStore};
 use crate::clock::SystemClock;
 
-pub const HUB_KEY_USAGE: &str = r#"  hub key create --name <name> --role <read|operate|admin> --machines <'*'|id,id> [--home <dir>]
-             create an agent key for the MCP endpoint; prints the key once
-  hub key create --human --name <device> [--role <role>] [--machines <'*'|id,id>] [--home <dir>]
+pub const HUB_KEY_USAGE: &str = r#"  hub key create --name <name> --role <read|operate|admin> --machines <'*'|id,id> [--out <file>] [--home <dir>]
+             create an agent key for the MCP endpoint, or for an agent or integration that writes
+             in a chat (operate); prints the key once, or writes it to a new file (0600) with --out
+  hub key create --human --name <device> [--role <role>] [--machines <'*'|id,id>] [--out <file>] [--home <dir>]
              a key for a person's device (the desktop app): what it answers is recorded as the
              human's; role defaults to operate on every machine
   hub key list [--home <dir>]
@@ -146,6 +147,7 @@ pub fn hub_key(argv: &[String]) -> CliResult {
         ("role", Kind::Str),
         ("machines", Kind::Str),
         ("human", Kind::Bool),
+        ("out", Kind::Str),
     ];
     let v = match args::parse(
         rest,
@@ -175,6 +177,13 @@ pub fn hub_key(argv: &[String]) -> CliResult {
                 Ok(grant) => grant,
                 Err(message) => return key_usage(&message),
             };
+            let out = v.str("out").filter(|o| !o.is_empty()).map(Path::new);
+            if let Some(file) = out.filter(|f| f.exists()) {
+                return fail(
+                    1,
+                    &format!("{} exists; --out writes a new file", file.display()),
+                );
+            }
             with_hub(v.str("home"), |hub| {
                 match hub.auth.create_key(
                     name,
@@ -185,17 +194,33 @@ pub fn hub_key(argv: &[String]) -> CliResult {
                         KeyKind::Agent
                     },
                 ) {
-                    Ok(created) => CliResult {
-                        code: 0,
-                        stdout: format!("{}\n", created.key),
-                        stderr: format!(
-                            "created {} ({}, {}{}). The key above is shown only once.\n",
+                    Ok(created) => {
+                        let what = format!(
+                            "created {} ({}, {}{})",
                             created.info.key_id,
                             created.info.prefix,
                             describe_grants(&created.info.grants),
                             if human { ", human" } else { "" }
-                        ),
-                    },
+                        );
+                        match out {
+                            None => CliResult {
+                                code: 0,
+                                stdout: format!("{}\n", created.key),
+                                stderr: format!("{what}. The key above is shown only once.\n"),
+                            },
+                            Some(file) => match super::setup::write_private(
+                                file,
+                                &format!("{}\n", created.key),
+                            ) {
+                                Ok(()) => CliResult {
+                                    code: 0,
+                                    stdout: String::new(),
+                                    stderr: format!("{what}. The key is in {}.\n", file.display()),
+                                },
+                                Err(error) => fail(1, &error),
+                            },
+                        }
+                    }
                     Err(error) => fail(1, &error.to_string()),
                 }
             })
