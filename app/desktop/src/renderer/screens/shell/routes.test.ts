@@ -13,6 +13,8 @@ describe("routes", () => {
       { id: "prs", project: storefront, pr: { repo: null, number: 11 } },
       { id: "prs", project: storefront, pr: { repo: "acme/storefront", number: 11 } },
       { id: "status" },
+      { id: "agents", agent: null },
+      { id: "agents", agent: { ...storefront, laneId: "lead:devbox/storefront" } },
       { id: "machines" },
       { id: "time", orderId: null },
       { id: "time", orderId: "W14" },
@@ -32,6 +34,8 @@ describe("routes", () => {
     expect(toHash({ id: "settings", tab: "general" })).toBe("#/settings/general");
     expect(toHash({ id: "prs", project: storefront, pr: null })).toBe("#/project/devbox/storefront/prs");
     expect(toHash({ id: "prs", project: storefront, pr: { repo: "acme/storefront", number: 11 } })).toBe("#/project/devbox/storefront/prs/acme/storefront/11");
+    expect(toHash({ id: "agents", agent: { ...storefront, laneId: "T1" } })).toBe("#/agents/devbox/storefront/T1");
+    expect(parseHash("#/agents/devbox")).toEqual({ id: "agents", agent: null });
   });
 
   it("sends the removed surfaces, unknown and malformed hashes home", () => {

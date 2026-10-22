@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, type ReactNode } from "react";
 import { useStore } from "zustand";
 import type { ToolInput, ToolName, ToolOutput } from "../../../shared/contracts";
 import type { DataLayer } from "./queries";
+import { selectLiveText, type LiveAgent } from "./selectors";
 import type { DataState } from "./store";
 
 const DataContext = createContext<DataLayer | undefined>(undefined);
@@ -74,4 +75,25 @@ export const useToolQueries = <T extends ToolName>(tool: T, inputs: readonly Too
   const layer = useDataLayer();
   const fresh = useStore(layer.store, (s) => s.fresh);
   return useQueries({ queries: inputs.map((input) => ({ ...layer.toolQuery(tool, input), enabled: fresh })) });
+};
+
+const NO_THREAD = { machineId: "", threadId: "", limit: 40 } as const;
+
+/**
+ * One agent's work, read-only: its newest steps (agent_work, read again on its thread's events) and the message it
+ * is writing now, which the live feed streams while this is mounted. Undefined steps while the first read is out.
+ */
+export const useAgentWork = (agent: LiveAgent | undefined) => {
+  const layer = useDataLayer();
+  const thread = agent?.row.threadRef;
+  const input = thread === undefined ? NO_THREAD : { machineId: thread.machineId, threadId: thread.threadId, limit: 40 };
+  const query = useToolQuery("agent_work", input, { enabled: thread !== undefined });
+  const workstreamId = agent?.row.workstreamId;
+  useEffect(() => {
+    if (workstreamId === undefined) return;
+    layer.setLive({ board: true, focus: workstreamId });
+    return () => layer.setLive({ board: true });
+  }, [layer, workstreamId]);
+  const streaming = useData(selectLiveText(agent?.row.laneId ?? ""));
+  return { steps: query.data?.steps, running: query.data?.running, streaming, error: query.error, hasThread: thread !== undefined };
 };

@@ -6,7 +6,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { Fixture } from "./kit/fixture.ts";
 import { type FixtureGroup, SHARED, type SharedName } from "./kit/group.ts";
-import { syncAgents } from "./kit/agents.ts";
+import { syncAgents, syncAgentsList } from "./kit/agents.ts";
 import { findLeaks } from "./kit/leaks.ts";
 import { validateFixture } from "./kit/schema.ts";
 import { loadFixture } from "../src/main/hub/fixture.ts";
@@ -47,7 +47,12 @@ for (const [group, { fixtures }] of groups) {
 }
 
 // Last, after every group: one count of agents per project, whatever shows it (kit/agents.ts).
-for (const f of all) syncAgents(f);
+for (const f of all) {
+  syncAgents(f);
+  syncAgentsList(f);
+  // The sidebar words why a lead waits on you from the hub's open requests: a hub always answers requests_list.
+  if (f.snapshot !== undefined && f.answers("requests_list").length === 0) f.answer("requests_list", { limit: 100 }, { requests: [] });
+}
 
 const names = new Set<string>();
 const problems: Array<string> = [];

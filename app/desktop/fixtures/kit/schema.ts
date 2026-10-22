@@ -103,7 +103,7 @@ const payloads = (f: Fixture, problems: Array<string>): Array<Payload> => {
   }
   for (const c of f.calls) {
     if (tools.properties[`${c.tool}.output`] === undefined) {
-      // A tool whose contract is still on its branch has no schema here yet; its answers are checked once it lands.
+      // A tool agreed with its hub slice but not in the contracts yet is listed in pendingContracts, with why.
       if (!f.pendingContracts.has(c.tool)) problems.push(`${f.name}: ${c.tool} is not a hub tool`);
       continue;
     }

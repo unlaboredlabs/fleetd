@@ -6,7 +6,7 @@ import { Button, Field, Separator, Text, Textarea } from "../../ui";
 import { INSTRUCTIONS, type PromptDetail, type PromptScope } from "./contracts";
 import { parseScope, projectRefOf, scopeKey, shownDraft, type Draft, type Scope } from "./editor";
 import { errorText, useHubCall, useLive, useRead, useRefetch } from "./hub";
-import { ConfirmDiscard, ScopeSelect, scopeName, useProjects } from "./parts";
+import { ConfirmDiscard, PageHead, ScopeSelect, scopeName, useProjects } from "./parts";
 import { replaceRoute, type SettingsRoute } from "./route";
 import s from "./settings.module.css";
 
@@ -82,9 +82,11 @@ export function Instructions({ route }: { route: SettingsRoute }) {
 
   if (!live) {
     return (
-      <div className={s.empty} data-screen="settings.instructions">
-        <Text strong>Not connected</Text>
-        <Text tone="quiet">Connect to a hub to add instructions for its agents.</Text>
+      <div className={s.scroll} data-screen="settings.instructions">
+        <div className={s.column}>
+          <PageHead title="Instructions" />
+          <Text tone="quiet">Not connected. Connect to a hub to add instructions for its agents.</Text>
+        </div>
       </div>
     );
   }
@@ -94,11 +96,11 @@ export function Instructions({ route }: { route: SettingsRoute }) {
   return (
     <div className={s.scroll} data-screen="settings.instructions">
       <div className={s.column}>
-        <Text tone="quiet">
+        <PageHead title="Instructions">
           Added to the first message of every lead and task, workers, reviewers and judges included, under "Custom instructions from the human":
           these first, then the project's own. A running session keeps the instructions it started with; a lead gets new ones at its next
           restart.
-        </Text>
+        </PageHead>
         {load.state === "failed" ? (
           <div className={s.inline}>
             <Text tone="danger">{load.message}</Text>

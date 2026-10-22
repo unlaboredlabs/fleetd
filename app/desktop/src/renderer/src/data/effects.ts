@@ -1,6 +1,7 @@
 // Which call results an event makes stale. Events say what changed, rarely enough to redraw it, so each one names
 // the reads to refetch; the query layer batches them. Pure, so the mapping is tested on its own.
 import { dataField, type HubEvent, type ToolName } from "../../../shared/contracts";
+import "./agents-contract";
 
 /** Refetch `tool`'s queries, or only those whose input has these top-level values. */
 export interface Invalidation {
@@ -36,6 +37,9 @@ export const ordersNamed = (event: HubEvent): readonly string[] => {
   const ids = Array.isArray(many) ? many.filter((w): w is string => typeof w === "string") : [];
   return [...new Set(one === undefined ? ids : [one, ...ids])];
 };
+
+const AGENT_PREFIXES = ["task.", "lead.", "change."];
+const AGENT_TYPES = new Set(["pr.merged", "project.added", "project.removed"]);
 
 const startsWithAny = (type: string, prefixes: readonly string[]): boolean => prefixes.some((p) => type.startsWith(p));
 
@@ -75,8 +79,10 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
     }
   }
   if (type.startsWith("thread.") && event.threadId !== undefined) {
-    out.push({ tool: "thread_tail", where: { threadId: event.threadId } });
+    out.push({ tool: "thread_tail", where: { threadId: event.threadId } }, { tool: "agent_work", where: { threadId: event.threadId } });
   }
+  // The agents view's list: who runs, and what for. Their live status and activity come with the live feed instead.
+  if (startsWithAny(type, AGENT_PREFIXES) || AGENT_TYPES.has(type)) out.push({ tool: "agents_list" });
   const projectScoped = startsWithAny(type, ["workstream.", "lead.", "thread."]);
   if (projectScoped && event.machineId !== undefined && event.projectId !== undefined) {
     out.push({ tool: "project_get", where: { machineId: event.machineId, projectId: event.projectId } });

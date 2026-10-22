@@ -18,7 +18,9 @@ export const sendsOn = (e: KeyLike): boolean => e.key === "Enter" && !e.shiftKey
 export const placeholder = (working: boolean | undefined): string =>
   working === true ? "Message the lead. It reads this at its next step." : "Message the lead";
 
-export const KEY_HINT = "Enter send · ⇧Enter new line";
+/** ↑ with nothing in the box (no words, no files) brings back your last message, as in a shell. */
+export const recallsOn = (e: KeyLike & { readonly metaKey: boolean; readonly ctrlKey: boolean }, box: { readonly text: string; readonly attached: readonly unknown[] }): boolean =>
+  e.key === "ArrowUp" && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey && !e.isComposing && box.text === "" && box.attached.length === 0;
 
 /** chat_send's limit on a message's text (ChatSendInput.text, JSON string length); more goes in as a file. */
 export const MAX_CHARS = 20_000;
@@ -82,5 +84,20 @@ export function receiptFor(m: Sendable, latest: boolean): Receipt | undefined {
         default:
           return { kind: "quiet", line: "sent" };
       }
+  }
+}
+
+/** Why Stop didn't stop the lead, in one plain sentence; never the hub's own words. */
+export function stopFailed(code: string): string {
+  switch (code) {
+    case "forbidden":
+      return "This computer’s key can’t stop the lead.";
+    case "offline":
+    case "disconnected":
+      return "Not connected to the hub, so the lead wasn’t stopped.";
+    case "timeout":
+      return "The hub didn’t answer, so the lead may still be working. Try Stop again.";
+    default:
+      return "Couldn’t stop the lead. Try Stop again.";
   }
 }

@@ -12,7 +12,12 @@ use Ctrl.
 
 ## Pair it with the hub {#pair}
 
-On the hub machine, the app pairs by itself when it opens. On another computer:
+The first time it opens, the app says what fleetd is and shows three steps that tick themselves as you go: connect to
+your hub, add a project, say hi to its lead.
+
+With no hub on this computer yet, it shows the one command that installs fleetd and sets it up here. Paste it in a
+terminal; when setup finishes, come back to the app and it pairs by itself. On the hub machine, the app pairs by itself
+when it opens. On another computer:
 
 1. On the hub, print a pairing code:
 
@@ -26,9 +31,10 @@ On the hub machine, the app pairs by itself when it opens. On another computer:
    app and enter the code and hub address above, or open the link there.
    ```
 
-2. In the app, on "Connect to your fleetd hub", enter the hub address and the code. Or open the `fleetd://pair` link.
+2. In the app, under "Or connect to a hub on another computer", enter the hub address and the code. Or open the
+   `fleetd://pair` link.
 
-The code works once, for 15 minutes. To connect with a key instead, click "Use a key instead".
+The code works once, for 15 minutes. Capitals and the dash are optional: `abcd2345` works as `ABCD-2345`. To connect with a key instead, click "Use a key instead".
 
 To change hubs, open Settings (⌘,) → General → Hub.
 
@@ -36,10 +42,10 @@ To change hubs, open Settings (⌘,) → General → Hub.
 
 | Part | Shows |
 |---|---|
-| Sidebar | Your projects. A dot means the lead is waiting for your reply; a count means agents are at work. Below them: Status, Time, Machines and Settings. |
+| Sidebar | Your projects, each saying why it wants you: "reply", "approve", "secret" or "blocked". Otherwise it says how many agents are working. A project in bold has a new message from its lead. Below them: Agents, Status, Time, Machines and Settings. |
 | The chat | The selected project's conversation with its lead. |
 
-Click a project to open its chat. To add a project, click "Add" next to Projects, then paste a GitHub URL or
+Click a project to open its chat. ⌥⌘A jumps to the next project that wants you. To add a project, click "Add" next to Projects, then paste a GitHub URL or
 `owner/repo`. You can also drop a folder or a GitHub link anywhere on the window, a chat included. Other files dropped
 on a chat attach to your message. See [Add a project](/docs/projects#add-a-project).
 
@@ -50,15 +56,23 @@ on a chat attach to your message. See [Add a project](/docs/projects#add-a-proje
 | Part | Does |
 |---|---|
 | Messages | The conversation, with Markdown, attachments and pasted images. Older history loads as you scroll up, including work from before the chat existed. |
-| The box at the bottom | Your message ("Message the lead"). Enter sends; Shift+Enter adds a line; ⌘⇧A attaches a file. While the lead works, a message steers it: the box says it reads this at its next step. |
+| The box at the bottom | Your message ("Message the lead"), ready to type as soon as a chat opens. Enter sends; Shift+Enter adds a line; ↑ in an empty box brings back your last message; the clip or ⌘⇧A attaches a file. While the lead works, a message steers it, and Stop beside Send ends its turn now. Unsent words stay, even after you quit. |
+| The line above the box | While the lead waits on you, what for ("2 questions, asked at 09:02", "1 command to approve"). Show scrolls to it. |
+| An empty chat | Asks what the lead should do, with a few starters that fill the box for you to edit. |
 | The agents strip | Under the lead's message: how many agents are working, one line each. Expand it for lanes and time, and "What T88 was told" for each agent. |
 | One-line events | Pull requests opened, merged or sent back. Click one to read it in the app; see [Read a pull request](/docs/chat#prs). |
 | Secret and approval items | A masked field with "Save secret", or a command (or a tool's permission request) with Approve and Deny. See [Secrets & approvals](/docs/approvals-and-secrets). |
 | The header | The project, its state word (as in [Status](#status)), and its [Max agents](/docs/projects#max-agents) control ("agents 6 / 12"). |
 
-![The storefront project's chat: you asked to round the cart totals once, the lead replied that writers are splitting the change into three PRs, and under its message the strip shows three agents working. In the sidebar, billing has the needs-you dot.](/docs/img/chat.png)
+![The storefront project's chat: you asked to round the cart totals once, the lead replied that writers are splitting the change into three PRs, and under its message the strip shows three agents working. In the sidebar, billing says reply and checkout says blocked.](/docs/img/chat.png)
 
 How to work with the lead: [Chat with the lead](/docs/chat).
+
+## Agents {#agents}
+
+Agents lists every agent working now, across all your projects: its role, its task, what it's doing and for how long.
+Click one to watch its work as it happens: what it was told, the commands it ran, the files it edited and what it's
+writing. Watching doesn't interrupt it. To change what it does, tell its lead in the chat.
 
 ## Status {#status}
 
@@ -84,18 +98,21 @@ How to read it: [Where time went](/docs/time-inspector).
 
 ## Settings {#settings}
 
-Open Settings with ⌘,.
+Open Settings with ⌘,. It takes the sidebar's place; Back returns to where you were. Type in "Search settings" to find
+an option or a prompt by name, and press Enter to open the first match.
 
 | Section | Has |
 |---|---|
 | General | Appearance (light, dark, match system), motion, the hub connection, whether `fleetd://` pairing links open in this app, Claude auto memory, and how long time data is kept. |
-| Prompts | The prompts fleetd sends agents, to read and edit, and any of your edits that no longer apply. See [What agents are told](/docs/what-agents-are-told). |
-| Agents | [Max agents](/docs/projects#max-agents) for each project, and the cap for the whole fleet. |
+| Agents | [Max agents](/docs/projects#max-agents) for each project, and the cap for the whole fleet. Each slider applies when you let go, with Undo. |
 | Instructions | Your own text, added to every agent's first message. |
+| Prompts | The prompts fleetd sends agents, listed under Prompts in the sidebar, to read and edit, and any of your edits that no longer apply. See [What agents are told](/docs/what-agents-are-told). |
 
 ## Shortcuts {#shortcuts}
 
 ⌘/ shows every shortcut in the app, and ⌘K finds any command by name. ⌘ is Ctrl on Linux.
+
+The command palette (⌘K) opens on the project you're in. Type a setting's own name ("max agents", "dark") to find it. What you open most rises to the top. Press ⌘K again to see the other actions for the selected item, such as a project's instructions.
 
 | Keys | Does |
 |---|---|
@@ -105,8 +122,10 @@ Open Settings with ⌘,.
 | ⌘B | Toggle the sidebar |
 | ⌘1 to ⌘9 | Open that project in the sidebar |
 | ⌘[ / ⌘] | Previous / next project |
+| ⌥⌘A | Next project that wants you |
 | ⌘. | Status |
 | ⌘, | Settings |
 | ⌘⇧A | Attach a file |
 | Enter / Shift+Enter | Send the message / new line |
+| ↑ (empty box) | Bring back your last message |
 | Esc | Close the menu, panel or sheet |

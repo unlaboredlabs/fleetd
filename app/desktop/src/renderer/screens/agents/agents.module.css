@@ -1,0 +1,186 @@
+/* Agents: the list of every agent beside the opened one's work. Dense like the sidebar, nothing animates. */
+
+.screen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: var(--bar);
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--hairline);
+  flex: none;
+}
+.title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.liveness {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* The list keeps its width; the work takes the rest. */
+.split {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  min-height: 0;
+}
+.list {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--hairline);
+  padding: var(--space-2) var(--space-2) 0;
+}
+.work {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* A project's line above its agents. */
+.group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-3) var(--space-2) var(--space-1);
+}
+
+/* One agent: role, task and clock; under it what it is doing now. */
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: var(--space-1-5) var(--space-2);
+  border-radius: var(--radius-sm);
+  color: inherit;
+  text-decoration: none;
+}
+.row:hover {
+  background: var(--hover);
+}
+.current,
+.current:hover {
+  background: var(--selected);
+}
+.line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.task {
+  flex: 1;
+  min-width: 0;
+}
+.doing {
+  display: flex;
+  min-width: 0;
+  padding-left: calc(88px + var(--space-2));
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+}
+
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-right: 1px solid var(--hairline);
+}
+.skeleton > span {
+  height: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--selected);
+}
+.skeleton > span:nth-child(2) {
+  width: 70%;
+}
+.skeleton > span:nth-child(3) {
+  width: 55%;
+}
+
+/* The opened agent. */
+.workBody {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.workHead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--hairline);
+  flex: none;
+  overflow-wrap: anywhere;
+}
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  min-width: 0;
+}
+.metaEnd {
+  margin-left: auto;
+}
+.feed {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: var(--space-2) var(--space-4) 0;
+}
+.message {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-width: var(--measure);
+  padding: var(--space-2) 0;
+  overflow-wrap: anywhere;
+}
+.told {
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--hairline);
+}
+.action {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+  max-width: var(--measure);
+  padding: 2px 0;
+}
+.verb {
+  flex: none;
+}
+.machine {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+  color: var(--quiet);
+}
+.failed {
+  color: var(--danger);
+}
