@@ -325,7 +325,7 @@ async fn pausing_the_extras_parks_the_newest_and_continues_them_in_their_thread(
     );
     assert_eq!(
         outcome.next,
-        "Max agents 40 → 1: 2 agents push their work and wait; 1 keep running."
+        "Max agents 40 → 1: 2 agents push their work and wait; 1 keeps running."
     );
 
     let t3 = super::TaskId::unchecked("T3");
@@ -441,5 +441,23 @@ fn a_raise_with_nothing_queued_says_only_the_new_cap() {
     assert_eq!(
         raised_line(3, 12, 3, 6),
         "Max agents 3 → 12: 3 queued agents start now, 6 slots free."
+    );
+}
+
+/// Dogfood: "1 agent push their work and wait; 1 keep running".
+#[test]
+fn a_pause_line_counts_in_good_grammar() {
+    use super::cap::paused_line;
+    assert_eq!(
+        paused_line(40, 1, 1, 1),
+        "Max agents 40 → 1: 1 agent pushes its work and waits; 1 keeps running."
+    );
+    assert_eq!(
+        paused_line(40, 2, 3, 2),
+        "Max agents 40 → 2: 3 agents push their work and wait; 2 keep running."
+    );
+    assert_eq!(
+        paused_line(2, 0, 2, 0),
+        "Max agents 2 → 0: 2 agents push their work and wait; 0 keep running."
     );
 }

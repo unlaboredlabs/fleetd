@@ -434,7 +434,7 @@ async fn stop_lead(hub: &Hub, r: &ProjectRef) -> Result<bool, ToolError> {
     Ok(true)
 }
 
-fn agents(n: usize) -> String {
+fn agents(n: i64) -> String {
     if n == 1 {
         "1 agent".into()
     } else {
@@ -442,17 +442,118 @@ fn agents(n: usize) -> String {
     }
 }
 
-/// What still runs after a stop, as the end of its line.
-fn still_working(n: usize) -> String {
-    match n {
-        0 => String::new(),
-        1 => " 1 agent is still working; Stop all to halt it.".into(),
-        n => format!(" {n} agents are still working; Stop all to halt them."),
-    }
+/// What one stop did: orders stopped, agents cancelled, and its chat line.
+struct Stopped {
+    orders: i64,
+    agents: i64,
+    /// The lead's turn or an agent stopped.
+    any: bool,
+    text: String,
 }
 
-/// `chat_stop`: the lead's current turn is interrupted now; the project's agents keep running, and the line says how
-/// many. The same clientRequestId returns the line it wrote.
+/// The one stop behind the chat's Stop and `project_stop`: the lead's turn is interrupted, every open order of the
+/// project stops (its agents cancelled, what waits on a person withdrawn), any other agent of the project is
+/// cancelled, and the line says what stopped and what still runs.
+async fn stop_all(
+    hub: &Arc<Hub>,
+    caller: &Caller,
+    r: &ProjectRef,
+    reason: Option<fleetd_contracts::prim::Text<1, 200>>,
+) -> Result<Stopped, ToolError> {
+    // The lead first, so it starts no new agents while they stop. None: its machine didn't answer.
+    let lead = match stop_lead(hub, r).await {
+        Ok(stopped) => Some(stopped),
+        Err(e) => {
+            tracing::warn!(error = %e.message, "stop: lead not interrupted");
+            None
+        }
+    };
+    let open = hub
+        .leads
+        .records
+        .workstreams_list(&WorkstreamFilter {
+            project_ref: Some(r.clone()),
+            open: true,
+            limit: 200,
+            ..Default::default()
+        })
+        .map_err(store_error)?;
+    let (mut orders, mut cancelled) = (0, 0);
+    for w in open.iter().filter(|w| {
+        !matches!(
+            w.state,
+            WorkstreamState::Stopped | WorkstreamState::Done | WorkstreamState::Failed
+        )
+    }) {
+        let one = OrderStopInput {
+            workstream_id: w.workstream_id.clone(),
+            reason: reason.clone(),
+        };
+        match crate::hub::orders::notes::stop(hub, caller, one).await {
+            Ok(out) => {
+                orders += 1;
+                cancelled += out.cancelled.get();
+            }
+            Err(e) => {
+                tracing::warn!(workstream = %w.workstream_id, error = %e.message, "stop: order not stopped")
+            }
+        }
+    }
+    // Agents of orders that already ended.
+    let by = crate::hub::tasks::TaskCaller {
+        project_ref: r.clone(),
+        by: caller.key_id.to_string(),
+    };
+    for (task_id, _) in hub.tasks.live(Some(r)) {
+        match hub
+            .tasks
+            .cancel(
+                &by,
+                &task_id,
+                Some("Cancelled: the human stopped all work."),
+            )
+            .await
+        {
+            Ok(_) => cancelled += 1,
+            Err(e) => {
+                tracing::warn!(task = %task_id, error = %e.message, "stop: agent not stopped")
+            }
+        }
+    }
+    let left = hub.tasks.live(Some(r)).len();
+    let what = match (lead == Some(true), cancelled) {
+        (true, 0) => Some("the lead".to_owned()),
+        (true, n) => Some(format!("the lead and {}", agents(n))),
+        (false, 0) => None,
+        (false, n) => Some(agents(n)),
+    };
+    let any = what.is_some();
+    let mut text = match what {
+        Some(what) => format!("Stopped {what}."),
+        // Only when it is true: the lead answered idle and no agent runs.
+        None if left == 0 && lead.is_some() => "Nothing was running.".to_owned(),
+        None => "Nothing stopped.".to_owned(),
+    };
+    if lead.is_none() {
+        text.push_str(" The lead's turn could not be stopped: its machine didn't answer.");
+    }
+    match left {
+        0 => {}
+        1 => text.push_str(" 1 agent could not be stopped and is still working."),
+        n => text.push_str(&format!(
+            " {n} agents could not be stopped and are still working."
+        )),
+    }
+    Ok(Stopped {
+        orders,
+        agents: cancelled,
+        any,
+        text,
+    })
+}
+
+/// `chat_stop`: the chat's Stop, the same stop as `project_stop`. The same clientRequestId returns the line it wrote
+/// and stops nothing again.
 pub async fn chat_stop(
     hub: &Arc<Hub>,
     caller: &Caller,
@@ -469,21 +570,15 @@ pub async fn chat_stop(
             truncated: None,
         });
     }
+    let done = stop_all(hub, caller, &r, None).await?;
     ensure(hub, &r).await.map_err(store_error)?;
-    let stopped = stop_lead(hub, &r).await?;
-    let working = hub.tasks.live(Some(&r)).len();
-    let text = match (stopped, working) {
-        (true, n) => format!("Stopped the lead.{}", still_working(n)),
-        (false, 0) => "The lead wasn't working; nothing to stop.".to_owned(),
-        (false, n) => format!("The lead wasn't working.{}", still_working(n)),
-    };
     let (message, _) = hub
         .chat
         .add(
             &r,
             NewMessage {
                 author: Some(ChatAuthor::System),
-                text,
+                text: done.text,
                 source: Some(source),
                 ..Default::default()
             },
@@ -491,16 +586,14 @@ pub async fn chat_stop(
         .map_err(store_error)?;
     state(hub, &r).map_err(store_error)?;
     Ok(ChatStopOutput {
-        stopped,
+        stopped: done.any,
         message,
         next: None,
         truncated: None,
     })
 }
 
-/// `project_stop`: the lead's turn is interrupted, every open order of the project stops (its agents cancelled, what
-/// waits on a person withdrawn), any other agent of the project is cancelled, and one line in the chat says what
-/// stopped and what still runs. The lead hears it. The lead and the chat stay.
+/// `project_stop`: [`stop_all`], with counts. The lead hears it; the lead and the chat stay.
 pub async fn project_stop(
     hub: &Arc<Hub>,
     caller: &Caller,
@@ -508,96 +601,13 @@ pub async fn project_stop(
 ) -> Result<ProjectStopOutput, ToolError> {
     let r = input.project_ref.clone();
     stop_caller(caller, "project_stop", &r)?;
-    // The lead first, so it starts no new agents while they stop.
-    let lead = match stop_lead(hub, &r).await {
-        Ok(stopped) => Some(stopped),
-        Err(e) => {
-            tracing::warn!(error = %e.message, "project_stop: lead not interrupted");
-            None
-        }
-    };
-    let open = hub
-        .leads
-        .records
-        .workstreams_list(&WorkstreamFilter {
-            project_ref: Some(r.clone()),
-            open: true,
-            limit: 200,
-            ..Default::default()
-        })
-        .map_err(store_error)?;
-    let (mut stopped, mut cancelled) = (0, 0);
-    for w in open.iter().filter(|w| {
-        !matches!(
-            w.state,
-            WorkstreamState::Stopped | WorkstreamState::Done | WorkstreamState::Failed
-        )
-    }) {
-        let one = OrderStopInput {
-            workstream_id: w.workstream_id.clone(),
-            reason: input.reason.clone(),
-        };
-        match crate::hub::orders::notes::stop(hub, caller, one).await {
-            Ok(out) => {
-                stopped += 1;
-                cancelled += out.cancelled.get();
-            }
-            Err(e) => {
-                tracing::warn!(workstream = %w.workstream_id, error = %e.message, "project_stop: order not stopped")
-            }
-        }
-    }
-    // Agents of orders that already ended.
-    let by = crate::hub::tasks::TaskCaller {
-        project_ref: r.clone(),
-        by: caller.key_id.to_string(),
-    };
-    for (task_id, _) in hub.tasks.live(Some(&r)) {
-        match hub
-            .tasks
-            .cancel(
-                &by,
-                &task_id,
-                Some("Cancelled: the human stopped all work."),
-            )
-            .await
-        {
-            Ok(_) => cancelled += 1,
-            Err(e) => {
-                tracing::warn!(task = %task_id, error = %e.message, "project_stop: agent not stopped")
-            }
-        }
-    }
-    let left = hub.tasks.live(Some(&r)).len();
-    let what = match (lead == Some(true), cancelled) {
-        (true, 0) => Some("the lead".to_owned()),
-        (true, n) => Some(format!("the lead and {}", agents(n as usize))),
-        (false, 0) => None,
-        (false, n) => Some(agents(n as usize)),
-    };
-    let mut text = match what {
-        Some(what) => format!("Stopped {what}."),
-        None if left == 0 && lead.is_some() => {
-            "Nothing was running: the lead was idle and no agents were working.".to_owned()
-        }
-        None => "Nothing stopped.".to_owned(),
-    };
-    if lead.is_none() {
-        text.push_str(" The lead's turn could not be stopped: its machine didn't answer.");
-    }
-    match left {
-        0 => {}
-        1 => text.push_str(" 1 agent could not be stopped and is still working."),
-        n => text.push_str(&format!(
-            " {n} agents could not be stopped and are still working."
-        )),
-    }
+    let done = stop_all(hub, caller, &r, input.reason).await?;
     ensure(hub, &r).await.map_err(store_error)?;
-    let message = hub.chat.system_line(&r, &text).map_err(store_error)?;
+    let message = hub.chat.system_line(&r, &done.text).map_err(store_error)?;
     state(hub, &r).map_err(store_error)?;
     Ok(ProjectStopOutput {
-        stopped: Count::unchecked(stopped),
-        cancelled: Count::unchecked(cancelled),
+        stopped: Count::unchecked(done.orders),
+        cancelled: Count::unchecked(done.agents),
         message,
         next: Some("Tell the lead in the chat what to do next.".into()),
         truncated: None,

@@ -141,7 +141,7 @@ fleetd project list [--machine <id>] [--home <dir>] [--hub <url>]
 fleetd project stop <machine>/<project> [--yes] [--home <dir>] [--hub <url>]
 ```
 
-stop everything running in it, as you (the machine's owner): the lead's turn and its agents stop, the lead and its chat stay, and the chat says what stopped and what still runs
+stop its lead's turn and its agents, as you (this machine's owner); the lead and its chat stay, and the chat says what stopped
 
 ### fleetd project remove {#project-remove}
 

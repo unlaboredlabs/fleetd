@@ -238,7 +238,7 @@ pub fn new_lines(steer: &Value, printed: &mut Vec<String>) -> Vec<String> {
 
 // ---- talking to the hub ----
 
-fn client_request_id() -> String {
+pub(super) fn client_request_id() -> String {
     use rand::Rng;
     let mut rng = rand::thread_rng();
     (0..16)

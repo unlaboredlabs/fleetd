@@ -14,7 +14,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "chat_stop",
-        "Stop the lead's current turn now; the project's agents keep running (project_stop halts them). One line in the chat says what stopped and how many agents still work. stopped is false when the lead wasn't working. Idempotent per clientRequestId. A person's device (a human key) only.",
+        "The chat's Stop, the same stop as project_stop: the lead's turn and the project's agents stop, and one line in the chat says what stopped. stopped is false when nothing was running. Idempotent per clientRequestId. A person's device (a human key) only.",
     ),
     (
         "attachment_get",

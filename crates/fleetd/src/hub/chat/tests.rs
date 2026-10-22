@@ -434,10 +434,7 @@ async fn the_tools_the_chat_replaced_say_where_they_went() {
         (stop["stopped"].as_i64(), stop["message"]["author"].as_str()),
         (Some(0), Some("system"))
     );
-    assert_eq!(
-        stop["message"]["text"],
-        "Nothing was running: the lead was idle and no agents were working."
-    );
+    assert_eq!(stop["message"]["text"], "Nothing was running.");
 }
 
 #[tokio::test]
@@ -1010,7 +1007,7 @@ fn lead_and_two_agents(hub: &Hub) {
         let task: fleetd_contracts::tasks::Task = serde_json::from_value(json!({
             "taskId": format!("T{n}"), "projectRef": { "machineId": "devbox", "projectId": "app" },
             "workstreamId": "W9", "title": "write it", "kind": "write", "prompt": "do it", "areas": ["api"],
-            "model": "claude-haiku-5-5", "effort": "low", "state": "running", "attempt": 1, "createdAt": AT,
+            "model": "claude-opus-5-5", "effort": "high", "state": "running", "attempt": 1, "createdAt": AT,
             "startedAt": AT, "threadRef": { "machineId": "devbox", "threadId": format!("task-{n}") },
         }))
         .unwrap();
@@ -1106,8 +1103,10 @@ async fn stop_all_says_what_it_could_not_stop() {
     assert_eq!(live_agents(&hub), 2);
 }
 
+/// Dogfood: Stop in the chat said "nothing was running" while two agents ran, and they kept running. The chat's Stop
+/// stops the lead's turn and the project's agents, and its line says so; a retry stops nothing again.
 #[tokio::test]
-async fn stop_stops_the_lead_and_leaves_its_agents_working() {
+async fn the_chats_stop_stops_the_lead_and_its_agents() {
     let (hub, _home) = hub();
     lead_and_two_agents(&hub);
     let calls = obliging_node(&hub).await;
@@ -1123,13 +1122,9 @@ async fn stop_stops_the_lead_and_leaves_its_agents_working() {
             stop["message"]["author"].as_str(),
             stop["message"]["text"].as_str()
         ),
-        (
-            Some("system"),
-            Some("Stopped the lead. 2 agents are still working; Stop all to halt them.")
-        )
+        (Some("system"), Some("Stopped the lead and 2 agents."))
     );
-    assert_eq!(live_agents(&hub), 2);
-    // A retry returns the same line and stops nothing again.
+    assert_eq!(live_agents(&hub), 0);
     let again = tools
         .call(&hub, &person(), "chat_stop", input)
         .await
@@ -1143,7 +1138,14 @@ async fn stop_stops_the_lead_and_leaves_its_agents_working() {
             .count()
     };
     assert_eq!(interrupts(&calls.lock().unwrap()), 1);
-    // An idle lead: nothing to stop, and the line still says what runs.
+}
+
+/// The agents run while the lead is idle (the dogfood case): Stop stops them, and says only what it stopped.
+#[tokio::test]
+async fn stop_with_an_idle_lead_stops_its_agents() {
+    let (hub, _home) = hub();
+    lead_and_two_agents(&hub);
+    let _calls = obliging_node(&hub).await;
     let mut thread = hub
         .store
         .thread_get(&fleetd_contracts::ids::ThreadRef {
@@ -1154,20 +1156,70 @@ async fn stop_stops_the_lead_and_leaves_its_agents_working() {
         .unwrap();
     thread.thread.status = fleetd_contracts::model::ThreadStatus::Idle;
     hub.store.thread_upsert(&thread).unwrap();
+    let tools = crate::hub::api::registry();
+    let input = |id: &str| json!({ "projectRef": { "machineId": "devbox", "projectId": "app" }, "clientRequestId": id });
+    let stop = tools
+        .call(&hub, &person(), "chat_stop", input("s1"))
+        .await
+        .unwrap();
+    assert_eq!(stop["stopped"], true);
+    assert_eq!(stop["message"]["text"], "Stopped 2 agents.");
+    assert_eq!(live_agents(&hub), 0);
+    // Now nothing runs, and only now does it say so.
     let idle = tools
-        .call(&hub, &person(), "chat_stop", json!({ "projectRef": { "machineId": "devbox", "projectId": "app" }, "clientRequestId": "s2" }))
+        .call(&hub, &person(), "chat_stop", input("s2"))
         .await
         .unwrap();
     assert_eq!(idle["stopped"], false);
+    assert_eq!(idle["message"]["text"], "Nothing was running.");
+}
+
+/// Dogfood: chat events read "You in the chat of 320d8829-…". They name the project by its title.
+#[tokio::test]
+async fn chat_events_name_the_project_by_its_title() {
+    let (hub, _home) = hub();
+    hub.store
+        .projects_upsert_many(
+            &project().machine_id,
+            &[serde_json::from_value(json!({
+                "machineId": "devbox", "projectId": "app", "title": "storefront", "workspaceRoot": "/work/app",
+                "threads": { "running": 0, "waiting": 0, "idle": 0, "failed": 0 }, "lastActivityAt": AT,
+            }))
+            .unwrap()],
+        )
+        .unwrap();
+    hub.chat.system_line(&project(), "Hello.").unwrap();
+    let unknown = ProjectRef {
+        machine_id: MachineId::unchecked("devbox"),
+        project_id: ProjectId::unchecked("320d8829-1aba-4d1d-2ce8-4aaeb96aa43f"),
+    };
+    hub.chat.system_line(&unknown, "Hello.").unwrap();
+    let page = futures_util::FutureExt::now_or_never(hub.events.wait(WaitInput {
+        cursor: Some(0),
+        types: Some(vec![HubEventType::ChatMessage]),
+        machine_id: None,
+        timeout_sec: 0,
+    }))
+    .unwrap()
+    .unwrap();
+    let summaries: Vec<String> = page
+        .events
+        .into_iter()
+        .map(|e| e.summary.as_str().to_owned())
+        .collect();
     assert_eq!(
-        idle["message"]["text"],
-        "The lead wasn't working. 2 agents are still working; Stop all to halt them."
+        summaries,
+        [
+            "fleetd in the chat of storefront",
+            "fleetd in a project's chat"
+        ]
     );
 }
 
-/// Agents never carry the person's authority: an agent key, admin on every machine like the CLI's own, can't stop.
+/// Agents never carry the person's authority: an agent key, admin on every machine like the CLI's own, can't stop or
+/// steer.
 #[tokio::test]
-async fn only_a_persons_key_stops() {
+async fn only_a_persons_key_stops_or_steers() {
     let (hub, _home) = hub();
     lead_and_two_agents(&hub);
     let admin_agent = Caller {
@@ -1182,11 +1234,15 @@ async fn only_a_persons_key_stops() {
             json!({ "projectRef": r, "clientRequestId": "s1" }),
         ),
         ("project_stop", json!({ "projectRef": r })),
+        (
+            "steer_send",
+            json!({ "target": { "taskId": "T1" }, "text": "stop", "mode": "now", "clientRequestId": "s1" }),
+        ),
     ] {
         let Err(crate::hub::api::CallError::Tool(e)) =
             tools.call(&hub, &admin_agent, tool, input).await
         else {
-            panic!("{tool} let an agent key stop");
+            panic!("{tool} let an agent key act as the person");
         };
         assert_eq!(
             e.code,

@@ -539,7 +539,7 @@ export type ChatStopOutput = {
   /** The system line it wrote into the chat. */
   message: ChatMessage;
   next?: string;
-  /** The lead was working and its turn was interrupted. */
+  /** Something was running and stopped: the lead's turn or an agent. */
   stopped: boolean;
   truncated?: boolean;
 };

@@ -1373,7 +1373,7 @@
           "type": "string"
         },
         "stopped": {
-          "description": "The lead was working and its turn was interrupted.",
+          "description": "Something was running and stopped: the lead's turn or an agent.",
           "type": "boolean"
         },
         "truncated": {

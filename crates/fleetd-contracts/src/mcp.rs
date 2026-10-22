@@ -530,14 +530,14 @@ output!(ProjectStopOutput {
     message: crate::chat::ChatMessage,
 });
 
-// chat_stop: the chat's Stop. Interrupts the lead's current turn now; the project's agents keep running (project_stop
-// halts them). One line in the chat says what stopped and what still runs. The same clientRequestId returns that line.
+// chat_stop: the chat's Stop, the same stop as project_stop: the lead's turn and the project's agents stop, and one
+// line in the chat says what stopped ("Stopped the lead and 2 agents."). The same clientRequestId returns that line.
 input!(ChatStopInput {
     project_ref: ProjectRef,
     client_request_id: RequestId,
 });
 output!(ChatStopOutput {
-    /// The lead was working and its turn was interrupted.
+    /// Something was running and stopped: the lead's turn or an agent.
     stopped: bool,
     /// The system line it wrote into the chat.
     message: crate::chat::ChatMessage,

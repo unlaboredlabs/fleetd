@@ -19,7 +19,7 @@ What fleetd trusts and why. fleetd is built for one person or a small team runni
 | Key | How it is protected |
 |---|---|
 | [Agent key](/docs/glossary#agent-key) (`fld_…`) | Shown once. The hub stores only its hash and prefix. A revoked key stops on its next request. |
-| [Human key](/docs/glossary#human-key) | Held by a person's device. The desktop app encrypts it with the OS keychain or keyring; without one, it is a file only you can read (`0600`). On the hub machine, the CLI keeps yours in `~/.fleetd/hub/owner.key` (`0600`) and refuses it inside an agent's session, as the process tree tells. |
+| [Human key](/docs/glossary#human-key) | Held by a person's device. The desktop app encrypts it with the OS keychain or keyring; without one, it is a file only you can read (`0600`). |
 | Node key | `~/.fleetd/node/node-key.pem` on each worker. |
 
 Each key has `read`, `operate` or `admin` rights, on every machine or a named list. Only human keys enter secrets

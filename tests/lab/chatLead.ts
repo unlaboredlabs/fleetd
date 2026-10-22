@@ -21,9 +21,9 @@
 // - areas:   bug (c): areas are inferred from the workspace, and two writers in them run at the same time.
 // - cap:     max agents 2 with six agents never runs more than 2 and all finish; 12 → 3 mid-run kills nothing and new
 //            spawns wait; 3 → 12 starts the queue at once, says so in one chat line, and tells the lead.
-// - stop:    Stop interrupts the lead mid-turn and leaves its 2 agents running, saying so; an agent key can't stop;
-//            the hub machine's owner steers and stops all from a terminal without a key file, and never from inside
-//            a session; Stop all's line names the 2 agents it stopped (dogfood: "nothing was running").
+// - stop:    an agent key can't stop; the hub machine's owner steers from a terminal without a key file, never from
+//            inside a session; Stop interrupts the lead mid-turn and stops its 2 agents, and says so (dogfood: "nothing
+//            was running"); the owner's `fleetd project stop` then says nothing was running.
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -1020,7 +1020,7 @@ async function capPart(lab: Lab, chat: Chat, ref: Ref, need: (t: string) => void
   ok(`${changes.length} cap changes, ${lines.length} chat lines, one each`);
 }
 
-// ---- stop: Stop leaves the agents; only the person stops; the owner from the hub machine's terminal ----
+// ---- stop: Stop stops the lead and its agents; only the person stops; the owner from the hub machine's terminal ----
 async function stopPart(lab: Lab, chat: Chat, ref: Ref, need: (tool: string) => void) {
   const { check, ok } = lab;
   need("chat_stop");
@@ -1030,7 +1030,6 @@ async function stopPart(lab: Lab, chat: Chat, ref: Ref, need: (tool: string) => 
     lab.until(what, ms, async () => (await probe()) ?? (await new Promise((r) => setTimeout(r, 500)), undefined));
   const two = spawnSleepers(lab, fleetd, openWorkstream(check, fleetd, "Stop."), "stop", 2, 600).map((s) => s.taskId);
   await poll("two agents running", TURN_MS, async () => ((await running(two)) === 2 ? true : undefined));
-  // A haiku lead, its first turn over.
   const from = await lab.cursor();
   const started = await lab.callTool("lead_start", { ...ref, model: MODEL, effort: "low" });
   check(!started.isError, `lead_start: ${JSON.stringify(started.body)}`);
@@ -1043,28 +1042,8 @@ async function stopPart(lab: Lab, chat: Chat, ref: Ref, need: (tool: string) => 
     const refused = await lab.callTool(tool, args);
     check(refused.isError && refused.body.code === "forbidden", `${tool} with an agent key is refused: ${JSON.stringify(refused.body)}`);
   }
+  check((await running(two)) === 2, "both agents still run after an agent key tried to stop");
   ok("an agent key can't stop (chat_stop, project_stop: forbidden)");
-
-  const line = "Stopped the lead. 2 agents are still working; Stop all to halt them.";
-  /** Stop, then the lead's turn ends as interrupted, the chat stops saying it works, and both agents still run. */
-  const stopNow = async (what: string) => {
-    const cursor = await lab.cursor();
-    const stop = await lab.humanCall("chat_stop", { projectRef: ref, clientRequestId: randomUUID() });
-    check(!stop.isError && stop.body.stopped === true && stop.body.message?.text === line, `chat_stop (${what}): ${JSON.stringify(stop.body)}`);
-    const ended = await leadEnds(cursor, `the lead's turn ends after Stop (${what})`, 30_000);
-    check(ended.event.type === "thread.interrupted", `the lead's turn was interrupted (${what}), not ${ended.event.type}`);
-    await poll(`the chat says the lead stopped working (${what})`, 30_000, async () => ((await chat.state()).leadWorking !== true ? true : undefined));
-    check((await running(two)) === 2, `both agents still run after Stop (${what})`);
-    ok(`Stop ${what}: "${line}"; the lead's turn was interrupted; both agents still run`);
-  };
-  // Mid-command, as when the app looks stuck: the lead is inside a long shell command.
-  await chat.send("Run the shell command `sleep 120` once, then reply with the single word OK.");
-  await poll("the lead runs sleep 120", TURN_MS, async () => (/"command":\s*"sleep 120"/u.test(sessionText(ref.machineId, leadThread)) ? true : undefined));
-  await stopNow("mid-command");
-  // At once after a message, as the turn starts.
-  await chat.send("Run the shell command `sleep 90` once, then reply with the single word OK.");
-  await poll("the lead is working", TURN_MS, async () => ((await chat.state()).leadWorking === true ? true : undefined));
-  await stopNow("as the turn starts");
 
   const owner = (env: Record<string, string>, ...args: Array<string>) =>
     spawnSync(...fleetdCommand([...args, "--hub", lab.hubUrl, "--home", lab.hubHome]), { encoding: "utf8", env: { ...scrubbedEnv(), ...env } });
@@ -1074,8 +1053,27 @@ async function stopPart(lab: Lab, chat: Chat, ref: Ref, need: (tool: string) => 
   check(steer.status === 0, `fleetd steer as the owner: ${JSON.stringify(steer)}`);
   ok(`the owner steers ${two[0]} with no key file ("${steer.stdout.trim().split("\n")[0]}"); inside a session it is refused`);
 
-  const all = owner({}, "project", "stop", `${ref.machineId}/${ref.projectId}`, "--yes");
-  check(all.status === 0 && /Stopped 2 agents\./u.test(all.stdout + all.stderr), `fleetd project stop as the owner: ${JSON.stringify(all)}`);
-  check((await running(two)) === 0, "no agent runs after Stop all");
-  ok(`Stop all from the terminal: "${(all.stdout + all.stderr).trim()}"`);
+  /** Stop, then the lead's turn ends as interrupted, the chat stops saying it works, and no agent runs. */
+  const stopNow = async (what: string, line: string) => {
+    const cursor = await lab.cursor();
+    const stop = await lab.humanCall("chat_stop", { projectRef: ref, clientRequestId: randomUUID() });
+    check(!stop.isError && stop.body.stopped === true && stop.body.message?.text === line, `chat_stop (${what}): ${JSON.stringify(stop.body)}`);
+    const ended = await leadEnds(cursor, `the lead's turn ends after Stop (${what})`, 30_000);
+    check(ended.event.type === "thread.interrupted", `the lead's turn was interrupted (${what}), not ${ended.event.type}`);
+    await poll(`the chat says the lead stopped working (${what})`, 30_000, async () => ((await chat.state()).leadWorking !== true ? true : undefined));
+    check((await running(two)) === 0, `no agent runs after Stop (${what})`);
+    ok(`Stop ${what}: "${line}"; the lead's turn was interrupted; no agent runs`);
+  };
+  // Mid-command, as when the app looks stuck: the lead is inside a long shell command and two agents run.
+  await chat.send("Run the shell command `sleep 120` once, then reply with the single word OK.");
+  await poll("the lead runs sleep 120", TURN_MS, async () => (/"command":\s*"sleep 120"/u.test(sessionText(ref.machineId, leadThread)) ? true : undefined));
+  await stopNow("mid-command", "Stopped the lead and 2 agents.");
+  // At once after a message, as the turn starts.
+  await chat.send("Run the shell command `sleep 90` once, then reply with the single word OK.");
+  await poll("the lead is working", TURN_MS, async () => ((await chat.state()).leadWorking === true ? true : undefined));
+  await stopNow("as the turn starts", "Stopped the lead.");
+
+  const idle = owner({}, "project", "stop", `${ref.machineId}/${ref.projectId}`, "--yes");
+  check(idle.status === 0 && /Nothing was running\./u.test(idle.stdout + idle.stderr), `fleetd project stop as the owner: ${JSON.stringify(idle)}`);
+  ok(`Stop from the terminal with nothing running: "${(idle.stdout + idle.stderr).trim()}"`);
 }
