@@ -124,27 +124,3 @@ export const STAGE_WORD: Record<ChangeState, string> = {
 
 export const stageTone = (s: ChangeState): Tone =>
   s === "needs_rebase" ? "warning" : s === "ci_failed" || s === "refused" ? "danger" : s === "merged" ? "success" : "quiet";
-
-/**
- * How full each of the track's three segments is, 0..1: review (checks done of needed), CI (half while it runs,
- * full once it passed), merged. Undefined for states off the main line, which say so in words instead.
- */
-export const trackFill = (state: ChangeState, review: number): readonly [number, number, number] | undefined => {
-  const r = Math.min(1, Math.max(0, review));
-  switch (state) {
-    case "queued":
-    case "reviewing":
-      return [r, 0, 0];
-    case "ready":
-      return [1, 0, 0];
-    case "rebasing":
-    case "ci":
-      return [1, 0.5, 0];
-    case "merging":
-      return [1, 1, 0];
-    case "merged":
-      return [1, 1, 1];
-    default:
-      return undefined;
-  }
-};
