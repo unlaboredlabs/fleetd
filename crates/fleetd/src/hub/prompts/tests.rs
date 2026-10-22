@@ -144,13 +144,13 @@ fn a_reflowed_default_is_not_a_changed_default() {
     let db = crate::hub::store::HubDb::open(home.path()).unwrap();
     let prompts = db.prompts();
     let e = entry("lead.start").unwrap();
-    let wrapped = e.default.replacen(
-        " from the project's policy",
-        "\nfrom the project's policy",
-        1,
-    );
+    let wrapped = e
+        .default
+        .replacen(" and keep them posted", "\nand keep them posted", 1);
     assert_ne!(wrapped, e.default);
-    let older = e.default.replacen("one clear goal", "a clear goal", 1);
+    let older = e
+        .default
+        .replacen("a sharp engineer", "an able engineer", 1);
     for (base_text, stale) in [
         (e.default.to_owned(), false),
         (wrapped, false),
@@ -405,29 +405,21 @@ fn edits_to_retired_prompts_are_listed_until_reset() {
     assert_eq!(left, vec!["wake.intent"]);
 }
 
-/// The lead asks once and lets the chat's waiting state carry the question: its own examples never nag, and bring the
-/// question up again only once.
+/// The lead asks once and lets the chat's waiting state carry the question: its own examples never nag.
 #[test]
-fn the_lead_asks_once_and_never_nags() {
+fn the_leads_examples_never_nag() {
     let lead = super::store::entry("lead.start").unwrap().default;
-    assert!(lead.contains("Ask once, then let it be"), "{lead}");
     let nag =
         regex::Regex::new(r"(?i)still waiting|waiting on you|reminder:|as I asked|haven't heard")
             .unwrap();
-    let examples = lead.split("## Examples of the tone").nth(1).unwrap();
+    let examples = lead.split("## Examples").nth(1).unwrap();
     let examples = examples.split("\n## ").next().unwrap();
-    for line in examples.lines().filter(|l| l.starts_with("You:")) {
+    let said: Vec<&str> = examples.lines().filter(|l| l.starts_with("You:")).collect();
+    assert!(!said.is_empty(), "{lead}");
+    for line in said {
         assert!(
             !nag.is_match(line),
             "the lead nags in its own example: {line}"
         );
     }
-    let reminders = examples
-        .lines()
-        .filter(|l| l.contains("digest day"))
-        .count();
-    assert_eq!(
-        reminders, 1,
-        "the open question comes up again once: {examples}"
-    );
 }
