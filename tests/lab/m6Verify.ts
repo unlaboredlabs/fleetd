@@ -101,7 +101,7 @@ export async function m6Verify(lab: Lab) {
   const unserved = fleetd("task", "spawn", "--workstream", w, "--title", "x", "--areas", "docs", "--prompt", "y");
   // The CLI refuses it before the hub would (exit 2, usage); the hub's own refusal is unit-tested in LeadTaskCalls.test.ts.
   const refusal = unserved.stderr.split("\n")[0]!;
-  check(unserved.code === 2 && refusal === "fleetd: a write task needs --serves: say what this serves: --serves done:<n> | issue:<ref> | defect:<text> | ask:<id>", `spawn without --serves: ${JSON.stringify(unserved)}`);
+  check(unserved.code === 2 && refusal === "fleetd: a write task needs --serves: say what this serves: --serves done:<n> | issue:<ref> | defect:<text> | decision:<key>", `spawn without --serves: ${JSON.stringify(unserved)}`);
   ok(`3. task spawn (kind write) without --serves refused (exit ${unserved.code}): ${refusal}`);
 
   // The fix: a lead given the failing evidence spawns a `--serves done:0` writer itself; if it did not, the harness does.

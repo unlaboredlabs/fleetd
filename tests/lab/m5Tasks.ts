@@ -198,11 +198,12 @@ export async function m5Tasks(lab: Lab) {
     const afterWake = await leadTurnDone(wake.event.seq, "T1 result wake");
     // Results that land within the debounce window share one wake, which can outgrow thread_tail's 2,000 characters,
     // so read the wakes as Claude received them, in its own session file.
-    const head = "- T1 completed: add file (branch fleetd/T1-add-file)";
+    // The fixed event line (hub/leads/events.rs AgentEnded): "- T1 finished: add file (branch …[, PR …])", then "  > " lines.
+    const head = "- T1 finished: add file (branch fleetd/T1-add-file";
     const delivered = userMessages(MACHINE, leadThread).filter((m) => m.includes(head));
     const parts = delivered[0]?.split(head) ?? [];
     check(
-      delivered.length === 1 && parts.length === 2 && /^(\n {2}receipts: [^\n]*)?\n {2}result:\n {2}> \S/u.test(parts[1]!),
+      delivered.length === 1 && parts.length === 2 && /^(, PR [^)\n]*)?\)(\n {2}receipts: [^\n]*)?\n {2}> \S/u.test(parts[1]!),
       `exactly one wake carries T1's result inline: ${JSON.stringify(delivered.map((m) => m.slice(m.indexOf(head), m.indexOf(head) + 400)))}`,
     );
     ok(`1. one wake carried "${head.slice(2)}" with the result tail inline (triggers: ${JSON.stringify(wake.event.data?.triggers)})`);
