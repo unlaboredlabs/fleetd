@@ -1,7 +1,11 @@
 // Before anything else: a release build refuses debugging switches before Chromium can act on them.
 import "./debug-guard";
-import { isAbsolute, join } from "node:path";
-import { app, BrowserWindow, nativeTheme, powerMonitor, session } from "electron";
+import { existsSync } from "node:fs";
+import { homedir, release } from "node:os";
+import { dirname, isAbsolute, join } from "node:path";
+import { app, BrowserWindow, clipboard, crashReporter, dialog, nativeTheme, powerMonitor, session, shell } from "electron";
+import { asError } from "../shared/scrub";
+import { AppLog, diagnostics } from "./applog";
 import { RELEASE_BUILD } from "./build";
 import { fixtureRequest, loadFixture } from "./hub/fixture";
 import { fromEnv } from "./hub/credentials";
@@ -18,7 +22,8 @@ import { Notifier } from "./notify";
 import { claimOnFirstRun } from "./linkHandlerMain";
 import { listenForLinks } from "./links";
 import { Opener } from "./opener";
-import { harden, lockSession, pageUrl } from "./security";
+import { FAILURES_IN_A_ROW, guardWindow } from "./recovery";
+import { harden, isOwnPage, lockSession, pageUrl } from "./security";
 import { updates } from "./updater";
 import { restorePlacement, trackPlacement } from "./windowState";
 
@@ -36,6 +41,50 @@ const fleetdHome = process.env["FLEETD_HOME"];
 const FLEETD_DIR = fleetdHome !== undefined && isAbsolute(fleetdHome) ? fleetdHome : join(app.getPath("appData"), "fleetd");
 // Chromium's own state (caches, local storage) stays in a subdirectory, unless the caller chose one.
 if (!app.commandLine.hasSwitch("user-data-dir")) app.setPath("userData", join(FLEETD_DIR, "desktop"));
+
+// The app log and crash dumps: the OS log directory (macOS ~/Library/Logs/fleetd; Linux $XDG_STATE_HOME/fleetd, by
+// default ~/.local/state/fleetd), or FLEETD_HOME/logs, so a test run never writes to the real one.
+const xdgState = process.env["XDG_STATE_HOME"];
+app.setAppLogsPath(
+  fleetdHome !== undefined && isAbsolute(fleetdHome)
+    ? join(fleetdHome, "logs")
+    : process.platform === "linux"
+      ? join(xdgState !== undefined && isAbsolute(xdgState) ? xdgState : join(homedir(), ".local", "state"), "fleetd")
+      : undefined,
+);
+const appLog = new AppLog(join(app.getPath("logs"), "app.log"), { version: app.getVersion(), home: homedir() });
+// A crash leaves a minidump beside the log; nothing is uploaded.
+app.setPath("crashDumps", join(app.getPath("logs"), "crashes"));
+crashReporter.start({ uploadToServer: false });
+process.on("uncaughtException", (error) => {
+  appLog.write({ source: "main", what: "Uncaught exception in main", error: asError(error) });
+  console.error(error);
+});
+process.on("unhandledRejection", (reason) => {
+  appLog.write({ source: "main", what: "Unhandled rejection in main", error: asError(reason) });
+  console.error(reason);
+});
+let quitting = false;
+app.on("before-quit", () => {
+  quitting = true;
+});
+/** Set once the hub service exists, for Copy Diagnostics. */
+let hubService: HubService | null = null;
+const diagnosticsText = (): string =>
+  diagnostics({
+    version: app.getVersion(),
+    versions: { electron: process.versions.electron, chrome: process.versions.chrome },
+    os: `${process.platform} ${release()} ${process.arch}`,
+    hub: hubService?.state() ?? { phase: "unpaired" },
+    log: appLog,
+  });
+const help = {
+  revealLogs: () => {
+    if (existsSync(appLog.file)) shell.showItemInFolder(appLog.file);
+    else void shell.openPath(dirname(appLog.file));
+  },
+  copyDiagnostics: () => void clipboard.writeText(diagnosticsText()),
+};
 
 // Idle memory (perf/budgets.ts): the network service runs in this process, not a utility process of its own. Pages
 // load only app:// and the hub socket is Node's, so it carries next to nothing.
@@ -89,8 +138,9 @@ const createWindow = (mode: HubMode): BrowserWindow => {
       nodeIntegration: false,
       webSecurity: true,
       spellcheck: false,
-      // The page shows a "sample data" banner for as long as a fixture stands in for the hub.
-      additionalArguments: mode.kind === "fixture" ? [`--fleetd-fixture=${mode.fixture.name}`] : [],
+      // The page shows a "sample data" banner for as long as a fixture stands in for the hub, and the version in an
+      // error card's Copy details.
+      additionalArguments: [`--fleetd-version=${app.getVersion()}`, ...(mode.kind === "fixture" ? [`--fleetd-fixture=${mode.fixture.name}`] : [])],
     },
   });
   win.once("ready-to-show", () => {
@@ -99,6 +149,26 @@ const createWindow = (mode: HubMode): BrowserWindow => {
     win.show();
   });
   trackPlacement(win);
+  guardWindow(win, {
+    log: appLog,
+    load: (url) => void win.loadURL(url ?? pageUrl()),
+    ask: () =>
+      dialog
+        .showMessageBox(win, {
+          type: "error",
+          message: "fleetd’s window keeps failing",
+          detail: `It failed ${String(FAILURES_IN_A_ROW)} times in a row. Reload to try again, or copy the diagnostics for a bug report.`,
+          buttons: ["Reload", "Copy Diagnostics", "Quit"],
+          defaultId: 0,
+          cancelId: 0,
+          noLink: true,
+        })
+        .then((r) => r.response),
+    copyDiagnostics: help.copyDiagnostics,
+    quit: () => app.quit(),
+    quitting: () => quitting,
+    isOwnPage,
+  });
   opener.attach(win);
   instrument(win);
   void win.loadURL(pageUrl());
@@ -118,6 +188,7 @@ void app.whenReady().then(() => {
     mode = chosen.mode;
     const service = new HubService(mode);
     hub = service;
+    hubService = service;
     const connect = (url: string, key: string) => service.connect({ url, key });
     const firstRun = () => service.state().phase === "unpaired";
     pairing = new PairingService(
@@ -126,13 +197,14 @@ void app.whenReady().then(() => {
         : fixturePairingDeps(chosen.fixtureFile, connect, firstRun),
     );
   } catch (error) {
+    appLog.write({ source: "main", what: "fleetd couldn't start", error: asError(error) });
     console.error(error instanceof Error ? error.message : error);
     app.exit(2);
     return;
   }
-  registerIpc(hub, { opener, notifier: new Notifier(opener) }, pairing);
+  registerIpc(hub, { opener, notifier: new Notifier(opener), log: appLog }, pairing);
   const updater = updates();
-  installMenu(opener, updater?.checkNow ?? null);
+  installMenu(opener, updater?.checkNow ?? null, help);
   claimOnFirstRun();
   app.on("browser-window-focus", () => hub.windowFocused());
   powerMonitor.on("resume", () => hub.systemResumed());

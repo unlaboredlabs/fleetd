@@ -13,7 +13,7 @@ mod tools;
 mod tests;
 
 pub use decisions::Decisions;
-pub use repo::{DecisionFilter, RecordInput, decision_n, fts_query};
+pub use repo::{DecisionFilter, RecordInput};
 pub use tools::{WorkstreamLookup, lead_call, register};
 
 use std::sync::Arc;

@@ -26,7 +26,7 @@ pub use self::hooks::LeadHooks;
 pub use self::lead::{Leads, LeadsOptions};
 pub use self::ports::LeadPorts;
 pub use self::records::LeadRecords;
-pub use self::wakes::{LeadWakes, Trigger};
+pub use self::wakes::LeadWakes;
 pub use self::workstreams::Workstreams;
 use crate::clock::Clock;
 use crate::hub::intake::Intake;

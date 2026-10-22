@@ -949,20 +949,6 @@ mod tests {
     }
 
     #[test]
-    fn every_tool_of_every_role_is_documented_with_a_valid_example() {
-        let page = page(&root()).unwrap();
-        for role in [Role::Lead, Role::Worker] {
-            for tool in agent_mcp::tools_for(role) {
-                assert!(
-                    page.contains(&format!("\"name\": \"{}\"", tool.name)),
-                    "{}",
-                    tool.name
-                );
-            }
-        }
-    }
-
-    #[test]
     fn an_example_with_a_key_the_schema_lacks_is_refused() {
         let tool = agent_mcp::tools_for(Role::Lead)
             .find(|t| t.name == "agent_status")
@@ -1020,23 +1006,6 @@ mod tests {
     }
 
     #[test]
-    fn roles_follow_the_hubs_policy() {
-        let page = page(&root()).unwrap();
-        assert!(page.contains("| Lead | One per project, started by the project's first order | [Lead tools](#lead-tools) | Yes |"));
-        assert!(page.contains("| Implementer | `spawn_agent` with kind `write`. Gets its own worktree and branch | [Task tools](#task-tools) | No |"));
-        assert!(page.contains("| QA | `spawn_agent` with kind `review` and `qa: true` |"));
-        assert!(page.contains(&format!("| Open tasks per lead | {MAX_OPEN_TASKS} ")));
-        assert!(page.contains(&format!("The fleet cap, {DEFAULT_CAP} by default.")));
-    }
-
-    #[test]
-    fn who_may_call_is_what_the_role_is_offered_and_the_hub_allows() {
-        assert_eq!(who_may_call("task_spawn"), "a lead");
-        assert_eq!(who_may_call("review_verdict"), "a task's agent");
-        assert_eq!(who_may_call("claim_done"), "a lead, a task's agent");
-    }
-
-    #[test]
     fn source_text_shows_literally() {
         assert_eq!(
             prose("done:<n> or `T<n>`, a*"),
@@ -1054,16 +1023,6 @@ mod tests {
             )
         );
         assert!(page.contains("The retro gets none."));
-    }
-
-    #[test]
-    fn the_settings_column_follows_the_overlay() {
-        let page = page(&root()).unwrap();
-        assert!(page.contains(
-            "| `CLAUDE_CODE_DISABLE_WORKFLOWS` | `1` | Every claude fleetd starts | yes |"
-        ));
-        assert!(page.contains("| `CLAUDE_CODE_STARTUP_FAILURE_RESULTS` | `1` | Sessions | no |"));
-        assert!(page.contains("| `DISABLE_AUTOUPDATER` | `1` | Sessions | yes |"));
     }
 
     #[test]

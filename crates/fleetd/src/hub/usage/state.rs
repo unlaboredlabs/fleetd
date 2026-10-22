@@ -1,8 +1,9 @@
 //! The usage layer's state as a pure fold over the event log: parked threads, recent limit hits per machine and the
 //! breaker. The service (`service.rs`) feeds it events and acts on what it returns.
 use super::classify::{UsageClass, UsageParked, limit_of_event, parked_of};
-use super::ports::{HubEvent, NewEvent, ThreadRef};
+use super::ports::{NewEvent, ThreadRef};
 use super::time::{parse_ms, plural};
+use fleetd_contracts::events::{HubEvent, HubEventType};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -232,22 +233,23 @@ impl UsageState {
     /// Folds one event into the state, for the replay at start and for live events alike. `owner` is whose thread a
     /// thread.usage_limited event is about; other threads count for the breaker but are not parked.
     pub fn apply(&mut self, event: &HubEvent, owner: Option<Owner>) {
-        let Some(machine_id) = event.machine_id.clone() else {
+        let Some(machine_id) = event.machine_id.as_ref().map(ToString::to_string) else {
             return;
         };
         let data = event.data.clone().unwrap_or(Value::Null);
-        match event.kind.as_str() {
-            "thread.usage_limited" => {
-                let (Some(limit), Some(thread_id)) =
-                    (limit_of_event(event), event.thread_id.clone())
-                else {
+        match event.r#type {
+            HubEventType::ThreadUsageLimited => {
+                let (Some(limit), Some(thread_id)) = (
+                    limit_of_event(event),
+                    event.thread_id.as_ref().map(ToString::to_string),
+                ) else {
                     return;
                 };
                 let thread = ThreadRef {
                     machine_id: machine_id.clone(),
                     thread_id: thread_id.clone(),
                 };
-                let at_ms = parse_ms(&event.at).unwrap_or(0);
+                let at_ms = parse_ms(event.at.as_str()).unwrap_or(0);
                 let m = self.machine(&machine_id);
                 Self::remember(m, event);
                 m.recent
@@ -273,12 +275,12 @@ impl UsageState {
                     }
                 }
             }
-            "thread.started" => {
+            HubEventType::ThreadStarted => {
                 if let Some(t) = &event.thread_id {
                     self.unpark(&format!("{machine_id}/{t}"));
                 }
             }
-            "usage.breaker" => {
+            HubEventType::UsageBreaker => {
                 let m = self.machine(&machine_id);
                 Self::remember(m, event);
                 m.breaker = Some(Breaker {
@@ -286,13 +288,13 @@ impl UsageState {
                         .get("class")
                         .and_then(|v| serde_json::from_value(v.clone()).ok())
                         .unwrap_or(UsageClass::UsageLimit),
-                    since: event.at.clone(),
-                    message: event.summary.clone(),
+                    since: event.at.to_string(),
+                    message: event.summary.to_string(),
                     until: str_field(&data, "until"),
                     model: str_field(&data, "model"),
                 });
             }
-            "usage.resumed" => {
+            HubEventType::UsageResumed => {
                 let m = self.machine(&machine_id);
                 Self::remember(m, event);
                 if data.get("breakerCleared") == Some(&Value::Bool(true)) {
@@ -515,31 +517,19 @@ mod tests {
         for (k, v) in crate::hub::usage::classify::limit_data(&limit) {
             data[k] = v;
         }
-        HubEvent {
-            seq,
-            at: iso(at_ms),
-            kind: "thread.usage_limited".into(),
-            machine_id: Some("lab-a".into()),
-            project_id: None,
-            thread_id: Some(thread.into()),
-            summary: format!("{thread} hit a usage limit"),
-            data: Some(data),
-            attention: None,
-        }
+        serde_json::from_value(json!({
+            "seq": seq, "at": iso(at_ms), "type": "thread.usage_limited", "machineId": "lab-a", "threadId": thread,
+            "summary": format!("{thread} hit a usage limit"), "data": data,
+        }))
+        .unwrap()
     }
 
     fn appended(seq: u64, e: NewEvent) -> HubEvent {
-        HubEvent {
-            seq,
-            at: e.at,
-            kind: e.kind,
-            machine_id: e.machine_id,
-            project_id: e.project_id,
-            thread_id: e.thread_id,
-            summary: e.summary,
-            data: e.data,
-            attention: e.attention,
-        }
+        serde_json::from_value(json!({
+            "seq": seq, "at": e.at, "type": e.kind, "machineId": e.machine_id, "projectId": e.project_id,
+            "threadId": e.thread_id, "summary": e.summary, "data": e.data, "attention": e.attention,
+        }))
+        .unwrap()
     }
 
     fn owner(kind: ParkedKind, task: Option<&str>) -> Option<Owner> {

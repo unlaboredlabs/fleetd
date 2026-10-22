@@ -659,8 +659,6 @@ fn plan_call(
             project_id: fleetd_contracts::ids::ProjectId::unchecked("p1"),
         },
         by: "lead:lab-a/p1".into(),
-        cwd: "/work/project".into(),
-        thread: None,
         agent: crate::hub::link::lead_calls::CallerAgent::Lead,
     };
     futures_util::FutureExt::now_or_never(handler.handle(caller, call)).unwrap()
@@ -902,8 +900,6 @@ async fn a_tasks_agent_is_a_worker_its_question_wakes_the_lead_and_it_cannot_spa
         let caller = crate::hub::link::LeadCaller {
             project_ref: task.project_ref.clone(),
             by: "lead:lab-a/p1".into(),
-            cwd: "/work/project".into(),
-            thread: Some(thread("task-thread")),
             agent,
         };
         let handler = lab.hub.lead_calls.handler("ask_lead").unwrap();

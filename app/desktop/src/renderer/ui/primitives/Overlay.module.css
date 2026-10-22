@@ -81,12 +81,6 @@
   margin: var(--space-1) calc(-1 * var(--space-1));
   background: var(--hairline);
 }
-.groupLabel {
-  padding: var(--space-1) var(--space-2) 2px;
-  font-size: var(--text-xs);
-  line-height: var(--leading-xs);
-  color: var(--quiet);
-}
 
 .tooltip {
   -webkit-app-region: no-drag;

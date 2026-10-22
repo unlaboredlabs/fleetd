@@ -348,10 +348,6 @@ impl Auth {
         rows.iter().map(KeyRow::info).collect()
     }
 
-    pub fn allows(&self, info: &AgentKeyInfo, role: Role, machine_id: Option<&MachineId>) -> bool {
-        allows(info, role, machine_id)
-    }
-
     /// One-time, valid for 15 minutes.
     pub fn create_enroll_token(&self, machine_id: &MachineId) -> Result<EnrollToken, StoreError> {
         let expires = self.now() + ENROLL_TTL_MS;

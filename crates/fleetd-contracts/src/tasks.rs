@@ -218,6 +218,8 @@ pub struct SlotState {
 pub struct TaskEventData {
     pub task_id: TaskId,
     pub workstream_id: Option<WorkstreamId>,
+    /// When the task was spawned: a `task.started` for a task spawned before a turn is not that turn's start.
+    pub created_at: Option<Timestamp>,
     pub queued_reason: Option<String>,
     pub branch: Option<String>,
     /// task.out_of_area: the first 20 paths outside the leased globs.

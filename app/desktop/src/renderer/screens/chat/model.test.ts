@@ -57,7 +57,29 @@ describe("the chat's rows", () => {
     expect(r.map((x) => x.kind)).toEqual(["top", "day", "message", "message", "message", "strip", "event", "inline"]);
     expect(rows([item("a", "human", at(19, 9))], { strip: true }).at(-1)?.kind).toBe("strip");
     expect(rowIndexOf(r, "d")).toBe(6);
+    // The lead's activity goes after the newest item: under its reply, ahead of the strip there.
+    const lead = [item("a", "human", at(19, 9)), item("b", "lead", at(19, 9, 1))];
+    expect(rows(lead, { strip: true, activity: true }).slice(-3).map((x) => x.kind)).toEqual(["message", "activity", "strip"]);
+    // Asked again: under the person's message, the strip staying under the lead's reply.
+    const asked = [...lead, item("c", "human", at(19, 9, 2))];
+    expect(rows(asked, { strip: true, activity: true }).slice(-4).map((x) => x.kind)).toEqual(["message", "strip", "message", "activity"]);
+    expect(rows([], { activity: true }).map((x) => x.kind)).toEqual(["top", "activity"]);
+    expect(rows(lead, { activity: true, hasNewer: true }).some((x) => x.kind === "activity")).toBe(false);
+    const streaming = [item("a", "human", at(19, 9)), item("b", "lead", at(19, 9, 1), { state: "streaming" })];
+    expect(rows(streaming, { activity: true }).some((x) => x.kind === "activity")).toBe(false);
     expect(rowIndexOf(r, "nope")).toBeUndefined();
+  });
+
+  it("place a row whose time doesn't parse under today, rather than throwing", () => {
+    // Intl throws a RangeError on an invalid date; a reply streaming ahead of its message once had "".
+    const r = rows([item("a", "lead", at(18, 9)), item("s", "lead", "", { state: "streaming" })]);
+    expect(r.map((x) => (x.kind === "day" ? `day:${x.label}` : x.kind === "message" ? `message:${x.item.id}` : x.kind))).toEqual([
+      "top",
+      "day:Yesterday",
+      "message:a",
+      "day:Today",
+      "message:s",
+    ]);
   });
 
   it("show history from before the chat as the conversation it was, under one divider, and a way back down", () => {

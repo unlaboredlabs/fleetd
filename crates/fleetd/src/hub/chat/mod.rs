@@ -462,6 +462,31 @@ impl Chat {
         })
     }
 
+    /// The project's messages still streaming whose source starts with `prefix`.
+    pub fn streaming_from(
+        &self,
+        r: &ProjectRef,
+        prefix: &str,
+    ) -> Result<Vec<ChatMessage>, StoreError> {
+        self.db.with(|c| {
+            let rows: Vec<String> = c
+                .prepare_cached(
+                    "SELECT data FROM chat_messages WHERE machine_id = ?1 AND project_id = ?2
+                     AND substr(source, 1, length(?3)) = ?3 AND json_extract(data, '$.state') = 'streaming'
+                     ORDER BY seq",
+                )?
+                .query_map(
+                    params![r.machine_id.as_str(), r.project_id.as_str(), prefix],
+                    |row| row.get(0),
+                )?
+                .collect::<rusqlite::Result<_>>()?;
+            Ok(rows
+                .into_iter()
+                .filter_map(|d| serde_json::from_str(&d).ok())
+                .collect())
+        })
+    }
+
     pub fn put(&self, message: &ChatMessage) -> Result<(), StoreError> {
         let n: i64 = message.message_id.as_str()[1..].parse().unwrap_or(0);
         self.db.with(|c| {

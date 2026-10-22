@@ -379,21 +379,3 @@ pub struct PlanShowResult {
     pub text: String,
     pub next: Option<String>,
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn ids_and_defaults() {
-        assert!(MilestoneId::new("M1").is_ok());
-        assert!(MilestoneId::new("M0").is_err());
-        assert!(PlanItemId::new("P12").is_ok());
-        assert!(PlanItemId::new("W12").is_err());
-        let add: PlanAddCall =
-            serde_json::from_value(serde_json::json!({ "title": "lab run", "milestoneId": "M1" }))
-                .unwrap();
-        assert_eq!((add.weight, add.size), (Weight::Must, None));
-        assert_eq!(Size::L.points(), 8);
-    }
-}

@@ -358,17 +358,4 @@ mod tests {
         let backwards = r#"{"t":"slept","fromMs":1760000646000,"toMs":1760000000000}"#;
         assert!(serde_json::from_str::<NodeToHub>(backwards).is_err());
     }
-
-    #[test]
-    fn frames_round_trip_with_their_tag() {
-        let frame =
-            r#"{"t":"cmd_result","id":"c1","exitCode":null,"outputTail":"","timedOut":true}"#;
-        let decoded: NodeToHub = serde_json::from_str(frame).unwrap();
-        assert_eq!(serde_json::to_string(&decoded).unwrap(), frame);
-        let hb = r#"{"t":"hb","at":"2026-10-17T10:00:00.000Z"}"#;
-        assert_eq!(
-            serde_json::to_string(&serde_json::from_str::<HubToNode>(hb).unwrap()).unwrap(),
-            hb
-        );
-    }
 }

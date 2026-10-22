@@ -615,15 +615,20 @@ pub async fn project_stop(
 }
 
 /// Lands the lead's replies of its session as chat messages: new ones added, streamed ones finished with their
-/// complete text. Messages from before the chat read in as history.
-async fn mirror(hub: &Hub, r: &ProjectRef, thread: &ThreadRef) {
+/// complete text. Messages from before the chat read in as history. Once the lead's run is over, a reply it never
+/// stored complete (the run was stopped, interrupted or crashed mid-text) is finished with the text it streamed.
+pub(super) async fn mirror(hub: &Hub, r: &ProjectRef, thread: &ThreadRef) {
     if let Err(error) = ensure(hub, r).await {
         return tracing::warn!(%error, "chat: history not read");
     }
-    let messages = match hub.executors.messages(thread).await {
-        Ok(m) => m,
-        Err(error) => return tracing::debug!(%error, "chat: lead messages not read"),
-    };
+    let messages = hub
+        .executors
+        .messages(thread)
+        .await
+        .unwrap_or_else(|error| {
+            tracing::debug!(%error, "chat: lead messages not read");
+            Vec::new()
+        });
     let since = hub.chat.history_ms(r).ok().flatten().unwrap_or(0);
     for m in history::lead_messages(thread.thread_id.as_str(), &messages) {
         let source = m.source.clone().unwrap_or_default();
@@ -648,14 +653,48 @@ async fn mirror(hub: &Hub, r: &ProjectRef, thread: &ThreadRef) {
             Err(error) => tracing::warn!(%error, "chat: lead message not read"),
         }
     }
+    if run_over(hub, thread) {
+        let prefix = history::lead_source(thread.thread_id.as_str(), "");
+        for mut cut in hub.chat.streaming_from(r, &prefix).unwrap_or_default() {
+            let text = cut.text.as_str().trim().to_owned();
+            if let Err(error) = hub.chat.finish(&mut cut, &text) {
+                tracing::warn!(%error, "chat: cut-off reply not finished");
+            }
+        }
+    }
     if let Err(error) = state(hub, r) {
         tracing::warn!(%error, "chat: state not told");
     }
 }
 
+/// The thread's run ended: not running, and not paused on a request it resumes from.
+fn run_over(hub: &Hub, thread: &ThreadRef) -> bool {
+    hub.store
+        .thread_get(thread)
+        .ok()
+        .flatten()
+        .is_some_and(|t| {
+            !matches!(
+                t.thread.status,
+                ThreadStatus::Running | ThreadStatus::Waiting
+            )
+        })
+}
+
 /// Folds each working lead's streamed text into its chat: the first text of a reply starts a streaming message,
-/// later text appends to it.
+/// later text appends to it, and once the reply is complete it lands whole and final, even when a delta never came.
 fn stream_pass(hub: &Hub, sent: &mut HashMap<String, u64>) {
+    stream_pass_with(hub, sent, |thread| hub.executors.live(thread));
+}
+
+/// `sent` for a reply that landed whole: nothing more streams into it.
+const LANDED: u64 = u64::MAX;
+
+pub(super) fn stream_pass_with(
+    hub: &Hub,
+    sent: &mut HashMap<String, u64>,
+    live_parts: impl Fn(&ThreadRef) -> Option<crate::hub::executor::LiveParts>,
+) {
     let Ok(leads) = hub.leads.records.leads_list() else {
         return;
     };
@@ -666,15 +705,23 @@ fn stream_pass(hub: &Hub, sent: &mut HashMap<String, u64>) {
             machine_id: r.machine_id.clone(),
             thread_id: lead.thread_id,
         };
-        let Some(parts) = hub.executors.live(&thread) else {
-            continue;
-        };
-        let Some(text) = parts.text.filter(|_| parts.run_active) else {
+        let Some(parts) = live_parts(&thread).filter(|p| p.run_active) else {
             continue;
         };
         if !hub.chat.history_read(&r).unwrap_or(false) {
             continue;
         }
+        // The complete replies first: they were said before the one streaming now.
+        for done in &parts.done {
+            let source = history::lead_source(thread.thread_id.as_str(), &done.message_id);
+            live.insert(source.clone());
+            if sent.get(&source) != Some(&LANDED) && land(hub, &r, &source, done.text.trim()) {
+                sent.insert(source, LANDED);
+            }
+        }
+        let Some(text) = parts.text else {
+            continue;
+        };
         let source = history::lead_source(thread.thread_id.as_str(), &text.message_id);
         live.insert(source.clone());
         let done = sent.get(&source).copied().unwrap_or(0);
@@ -712,6 +759,34 @@ fn stream_pass(hub: &Hub, sent: &mut HashMap<String, u64>) {
         sent.insert(source, text.total);
     }
     sent.retain(|source, _| live.contains(source));
+}
+
+/// A complete reply in the chat: its streaming message finished, or a final one added when none streamed. False
+/// when the store failed, to try again on the next tick.
+fn land(hub: &Hub, r: &ProjectRef, source: &str, text: &str) -> bool {
+    let result = match hub.chat.by_source(r, source) {
+        Ok(Some(mut m)) if m.state == fleetd_contracts::chat::ChatMessageState::Streaming => {
+            hub.chat.finish(&mut m, text)
+        }
+        Ok(Some(_)) => Ok(()),
+        Ok(None) => hub
+            .chat
+            .add(
+                r,
+                NewMessage {
+                    author: Some(ChatAuthor::Lead),
+                    text: text.to_owned(),
+                    source: Some(source.to_owned()),
+                    ..Default::default()
+                },
+            )
+            .map(|_| ()),
+        Err(error) => Err(error),
+    };
+    if let Err(error) = &result {
+        tracing::warn!(%error, "chat: complete reply not landed");
+    }
+    result.is_ok()
 }
 
 /// The project whose lead runs in `thread`.

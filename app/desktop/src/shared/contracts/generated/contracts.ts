@@ -3678,6 +3678,8 @@ export type TaskCounts = {
 /** Fields `HubEvent.data` carries on `task.*` events. */
 export type TaskEventData = {
   branch?: string;
+  /** When the task was spawned: a `task.started` for a task spawned before a turn is not that turn's start. */
+  createdAt?: Timestamp;
   /** task.out_of_area: the first 20 paths outside the leased globs. */
   paths?: string[];
   queuedReason?: string;
