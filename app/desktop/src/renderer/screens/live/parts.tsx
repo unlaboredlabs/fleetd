@@ -66,6 +66,30 @@ export function MiddleCut({ text }: { text: string }) {
   );
 }
 
+/**
+ * What an agent is doing now: words in the UI voice, then machine text in mono cut in the middle to the room it has.
+ * The strip's rows and the agents view share it.
+ */
+export function ActivityLine({ line, stale }: { line: { readonly words: string; readonly machine?: string | undefined; readonly tone: Tone }; stale?: boolean | undefined }) {
+  return (
+    <span className={cx(s.activity, TONE_CLASS[line.tone] ?? s.quietText, stale && s.stale)}>
+      {line.machine !== undefined ? (
+        <>
+          <span className={s.words}>{line.words}</span>
+          <MiddleCut text={line.machine} />
+        </>
+      ) : (
+        // Words alone can be long (a queued or usage-limit reason): they take the room and end in an ellipsis.
+        <span className={s.wordsFill}>
+          <Truncate expand="none" size="xs" tone="inherit">
+            {line.words}
+          </Truncate>
+        </span>
+      )}
+    </span>
+  );
+}
+
 export interface AgentLineProps {
   readonly row: AgentRow;
   /** Hub time, ms. */
@@ -108,21 +132,7 @@ export function AgentLine({ row, now, stale, onOpen }: AgentLineProps) {
       <RoleTag role={role} width={84}>
         {row.roleWord}
       </RoleTag>
-      <span className={cx(s.activity, TONE_CLASS[row.tone] ?? s.quietText, stale && s.stale)}>
-        {row.machine !== undefined ? (
-          <>
-            <span className={s.words}>{row.words}</span>
-            <MiddleCut text={row.machine} />
-          </>
-        ) : (
-          // Words alone can be long (a queued or usage-limit reason): they take the room and end in an ellipsis.
-          <span className={s.wordsFill}>
-            <Truncate expand="none" size="xs" tone="inherit">
-              {row.words}
-            </Truncate>
-          </span>
-        )}
-      </span>
+      <ActivityLine line={row} stale={stale} />
       <span className={cx(s.clock, isWorking(status) ? s.loud : s.quietText)} aria-label={clock === "" ? undefined : `for ${clock}`}>
         {clock}
       </span>

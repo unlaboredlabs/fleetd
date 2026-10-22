@@ -113,7 +113,7 @@ const AgentRowLink = memo(function AgentRowLink({ agent, current }: { agent: Liv
         <Elapsed startedAt={row.startedAt} running={isRunning(row.status)} />
       </span>
       <span className={s.doing}>
-        <ActivityLine line={describe(row)} working={row.status === "working" || row.status === "starting"} />
+        <ActivityLine line={describe(row)} />
       </span>
     </a>
   );
