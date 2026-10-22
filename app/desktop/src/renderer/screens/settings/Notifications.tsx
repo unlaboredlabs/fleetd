@@ -1,10 +1,9 @@
 // Settings → Notifications: which kinds alert you, with a sound or not, the Dock badge, and a test. The shell reads
 // these when it posts (shell/effects.ts); nothing here talks to the fleet.
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Button, Separator, Switch, Text } from "../../ui";
 import { setNotificationPrefs, useNotificationPrefs, type NotificationPrefs } from "../shell/notificationPrefs";
 import type { NotifyKind } from "../shell/notifier";
-import { Setting } from "./General";
 import s from "./settings.module.css";
 
 const mac = window.fleetd.platform === "darwin";
@@ -17,6 +16,21 @@ const KINDS: ReadonlyArray<{ kind: NotifyKind; label: string }> = [
 ];
 
 type Test = "idle" | "sent" | "unsupported";
+
+/** One option: its name and a line of help, then its controls. The same layout as General's options. */
+function Setting(props: { label: string; help: string; children: ReactNode }) {
+  return (
+    <section className={s.setting} aria-label={props.label}>
+      <div className={s.settingLabel}>
+        <Text strong>{props.label}</Text>
+        <Text size="xs" tone="quiet">
+          {props.help}
+        </Text>
+      </div>
+      <div className={s.stack}>{props.children}</div>
+    </section>
+  );
+}
 
 export function Notifications() {
   const prefs = useNotificationPrefs();

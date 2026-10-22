@@ -11,7 +11,7 @@ import s from "./settings.module.css";
 
 const NAV: ReadonlyArray<{ tab: Tab; label: string; help: string }> = [
   { tab: "general", label: "General", help: "Appearance, motion, the hub, data" },
-  { tab: "notifications", label: "Notifications", help: "What alerts you, sound, the Dock badge" },
+  { tab: "notifications", label: "Notifications", help: "What alerts you, sound, the badge" },
   { tab: "agents", label: "Agents", help: "How many run at once, per project and in all" },
   { tab: "prompts", label: "Prompts", help: "Everything fleetd tells its agents" },
   { tab: "instructions", label: "Instructions", help: "Your own, added to every agent's first message" },

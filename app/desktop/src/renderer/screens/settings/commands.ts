@@ -23,7 +23,7 @@ const pages: Command[] = [
   {
     id: "go:settings.notifications",
     title: "Notifications",
-    detail: "What alerts you, sound, the Dock badge",
+    detail: "What alerts you, sound, the badge",
     group: "settings",
     keywords: ["alerts", "sound", "badge", "dock", "mute"],
     run: () => go(tabHref("notifications")),
