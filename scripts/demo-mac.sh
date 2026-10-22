@@ -27,7 +27,7 @@
 #   token (one browser approval, pasted once, kept 0600 in the sandbox for the next run). Your /login itself sits in
 #   the macOS Keychain, which a sandbox can't borrow without writing to it when claude refreshes it.
 #
-# Needs git, gh (logged in), claude and curl (and cargo and pnpm to build). Costs about 20 haiku turns and 15 minutes.
+# Needs git, gh (logged in), claude and curl (and cargo and pnpm to build). Costs about 20 opus-5-5 medium turns and 15 minutes.
 # Ctrl-C stops everything it started; then run it again. Environment:
 #   FLEETD_DEMO_DIR          the sandbox (default ~/fleetd-demo)
 #   FLEETD_DEMO_BUILD=1      build from source instead of using the nightly
@@ -272,7 +272,7 @@ fi
 
 # One tiny turn, so a bad login stops here and not ten minutes in.
 reply="$(cd "$SANDBOX" && env -i HOME="$H" PATH="$PATH" USER="$user" LANG="${LANG:-en_US.UTF-8}" CLAUDE_CONFIG_DIR="$H/.claude" \
-  claude -p "Reply with the single word OK and nothing else." --model claude-haiku-5-5 2>&1 || true)"
+  claude -p "Reply with the single word OK and nothing else." --model claude-opus-5-5 --effort medium 2>&1 || true)"
 case "$reply" in *OK*) say "Claude answers" ;; *) die "claude in the sandbox did not answer: $reply" ;; esac
 
 [ -d "$slot/lab-repo/.git" ] || HOME="$H" git clone -q "https://github.com/$LAB_REPO" "$slot/lab-repo"
