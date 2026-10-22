@@ -333,6 +333,13 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY=false pnpm exec electron-builder --mac --dir --arm64 --publish never -c.directories.output=dist-test \
             -c.mac.identity=- -c.mac.hardenedRuntime=false -c.extraMetadata.version="$FLEETD_VERSION"
           node scripts/packaged-smoke.ts dist-test/mac-arm64/fleetd.app/Contents/MacOS/fleetd
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: packaged-smoke-macos
+          path: app/desktop/smoke-results/
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Stage
         run: |
           rm -rf dist/fleetd.app
@@ -414,6 +421,13 @@ jobs:
           pnpm exec electron-builder --linux --dir --publish never -c.directories.output=dist-test -c.extraMetadata.version="$FLEETD_VERSION"
           node scripts/debug-guard-check.ts --packaged dist/linux-unpacked/fleetd-desktop --test-packaged dist-test/linux-unpacked/fleetd-desktop
           node scripts/packaged-smoke.ts dist-test/linux-unpacked/fleetd-desktop --no-sandbox --ozone-platform=headless
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: packaged-smoke-linux
+          path: app/desktop/smoke-results/
+          if-no-files-found: ignore
+          retention-days: 14
       - uses: actions/upload-artifact@v7
         with:
           name: desktop-linux
