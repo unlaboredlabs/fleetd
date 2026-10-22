@@ -13,6 +13,7 @@ use fleetd_contracts::ledger::{LeadState, WorkstreamState};
 use fleetd_contracts::mcp::{
     ChatSendInput, ChatSendOutput, ErrorCode, OrderStopInput, ProjectStopInput, ProjectStopOutput,
 };
+use fleetd_contracts::model::ThreadStatus;
 use fleetd_contracts::prim::Count;
 
 use super::{NewMessage, history};
@@ -466,15 +467,20 @@ pub async fn project_stop(
 }
 
 /// Lands the lead's replies of its session as chat messages: new ones added, streamed ones finished with their
-/// complete text. Messages from before the chat read in as history.
-async fn mirror(hub: &Hub, r: &ProjectRef, thread: &ThreadRef) {
+/// complete text. Messages from before the chat read in as history. Once the lead's run is over, a reply it never
+/// stored complete (the run was stopped, interrupted or crashed mid-text) is finished with the text it streamed.
+pub(super) async fn mirror(hub: &Hub, r: &ProjectRef, thread: &ThreadRef) {
     if let Err(error) = ensure(hub, r).await {
         return tracing::warn!(%error, "chat: history not read");
     }
-    let messages = match hub.executors.messages(thread).await {
-        Ok(m) => m,
-        Err(error) => return tracing::debug!(%error, "chat: lead messages not read"),
-    };
+    let messages = hub
+        .executors
+        .messages(thread)
+        .await
+        .unwrap_or_else(|error| {
+            tracing::debug!(%error, "chat: lead messages not read");
+            Vec::new()
+        });
     let since = hub.chat.history_ms(r).ok().flatten().unwrap_or(0);
     for m in history::lead_messages(thread.thread_id.as_str(), &messages) {
         let source = m.source.clone().unwrap_or_default();
@@ -499,9 +505,32 @@ async fn mirror(hub: &Hub, r: &ProjectRef, thread: &ThreadRef) {
             Err(error) => tracing::warn!(%error, "chat: lead message not read"),
         }
     }
+    if run_over(hub, thread) {
+        let prefix = history::lead_source(thread.thread_id.as_str(), "");
+        for mut cut in hub.chat.streaming_from(r, &prefix).unwrap_or_default() {
+            let text = cut.text.as_str().trim().to_owned();
+            if let Err(error) = hub.chat.finish(&mut cut, &text) {
+                tracing::warn!(%error, "chat: cut-off reply not finished");
+            }
+        }
+    }
     if let Err(error) = state(hub, r) {
         tracing::warn!(%error, "chat: state not told");
     }
+}
+
+/// The thread's run ended: not running, and not paused on a request it resumes from.
+fn run_over(hub: &Hub, thread: &ThreadRef) -> bool {
+    hub.store
+        .thread_get(thread)
+        .ok()
+        .flatten()
+        .is_some_and(|t| {
+            !matches!(
+                t.thread.status,
+                ThreadStatus::Running | ThreadStatus::Waiting
+            )
+        })
 }
 
 /// Folds each working lead's streamed text into its chat: the first text of a reply starts a streaming message,

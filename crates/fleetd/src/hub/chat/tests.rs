@@ -1041,6 +1041,64 @@ async fn a_reply_lands_whole_and_final_even_when_its_last_delta_never_came() {
     );
 }
 
+/// A reply cut off mid-text (the run stopped, interrupted or crashed before the session stored it complete) is
+/// finished with what streamed once the run is over, so it never says it is still writing. Not while the run goes on.
+#[tokio::test]
+async fn a_reply_cut_off_mid_text_lands_final_once_its_run_is_over() {
+    let (hub, _home) = hub();
+    give_lead(&hub);
+    let r = project();
+    hub.chat
+        .read_history(&r, || async { Vec::new() })
+        .await
+        .unwrap();
+    let thread_ref = fleetd_contracts::ids::ThreadRef {
+        machine_id: r.machine_id.clone(),
+        thread_id: fleetd_contracts::ids::ThreadId::unchecked("lead-thread"),
+    };
+    let thread = |status: &str| {
+        crate::hub::store::StoredThread {
+        thread: serde_json::from_value(json!({
+            "machineId": "devbox", "threadId": "lead-thread", "projectId": "app", "title": "lead", "status": status,
+            "headline": "", "latestMessageTail": "", "lastProgressAt": AT, "stale": false, "asOf": AT,
+        }))
+        .unwrap(),
+        last_sequence: None,
+        last_run_id: None,
+        last_run_status: None,
+    }
+    };
+    let mut sent = HashMap::new();
+    let parts = lead_parts(Some(("m1", "Reading the proposal and ")), &[]);
+    flow::stream_pass_with(&hub, &mut sent, |_| Some(parts.clone()));
+    let latest = || hub.chat.page(&r, None, None, 10).unwrap().0;
+    assert_eq!(latest()[0].state, ChatMessageState::Streaming);
+
+    // Paused on a request, the run resumes: the reply may still go on.
+    for status in ["running", "waiting"] {
+        hub.store.thread_upsert(&thread(status)).unwrap();
+        flow::mirror(&hub, &r, &thread_ref).await;
+        assert_eq!(latest()[0].state, ChatMessageState::Streaming, "{status}");
+    }
+
+    // Stopped mid-text: no complete message ever comes.
+    hub.store.thread_upsert(&thread("interrupted")).unwrap();
+    flow::mirror(&hub, &r, &thread_ref).await;
+    let m = &latest()[0];
+    assert_eq!(
+        (m.text.as_str(), m.state),
+        ("Reading the proposal and", ChatMessageState::Final)
+    );
+    let last = events_of(&hub, HubEventType::ChatMessage).pop().unwrap();
+    assert_eq!(
+        (last["state"].as_str(), last["message"]["text"].as_str()),
+        (Some("final"), Some("Reading the proposal and"))
+    );
+    let announced = events_of(&hub, HubEventType::ChatMessage).len();
+    flow::mirror(&hub, &r, &thread_ref).await;
+    assert_eq!(events_of(&hub, HubEventType::ChatMessage).len(), announced);
+}
+
 /// The chat says what a working lead is doing from its lane, so the board scope carries a working lead's lane before
 /// its turn opens any order, and not an idle one's.
 #[test]
