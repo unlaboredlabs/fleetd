@@ -77,8 +77,9 @@ export const fixtures = [
   "chat-gated",
   "chat-waiting",
   "chat-empty",
-  // F5 (A5): a chat with every state of the two inline items (fixtures/inline).
+  // F5 (A5): a chat with every state of the two inline items (fixtures/inline), and with every answer failing.
   "inline-items",
+  "inline-failures",
 ] as const;
 export type FixtureName = (typeof fixtures)[number];
 
@@ -234,9 +235,49 @@ export const screens: readonly Screen[] = [
   },
   // A link to a project the hub doesn't have (here, a hub with none): says so, rather than loading forever.
   { id: "chat", route: CHAT, fixtures: ["empty"], variant: "missing", expect: "error" },
-  // A5 (F5): the two inline items, every state: the masked secret field (and saved, withdrawn), the exact command
-  // with Approve / Deny (and ran, failed, open again after the node was offline, a denied tool permission, running).
+  // A5 (F5): the two inline items, every state: the masked secret field, the exact command with Approve / Deny, open
+  // again after the node was offline; answered ones folded to one line (saved, not needed, ran, ran with an error,
+  // not run, denied, running).
   { id: "chat", route: CHAT, fixtures: ["inline-items"], variant: "inline" },
+  // Approve on a command that can't be undone asks once more, in the card.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["inline-items"],
+    variant: "inline-confirm",
+    open: async (page) => {
+      const card = page.getByRole("region", { name: "Command to approve" }).filter({ hasText: "database migration" });
+      await card.getByRole("button", { name: "Approve", exact: true }).click();
+      await card.getByText("It can't be undone.").waitFor();
+    },
+  },
+  // A folded answer opened back up to its whole card.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["inline-items"],
+    variant: "inline-opened",
+    open: async (page) => {
+      const fold = page.getByRole("button", { name: /^Approved, ran in 12s/u });
+      await fold.click();
+      await page.getByText("purged 412 objects").waitFor();
+    },
+  },
+  // Every answer fails: one plain line with Retry, and the typed secret stays in its field.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["inline-failures"],
+    variant: "inline-failed",
+    open: async (page) => {
+      await page.getByRole("textbox", { name: "Secret value" }).fill("sk_test_51Hx");
+      await page.getByRole("button", { name: "Save secret" }).click();
+      await page.getByText("Not saved: no answer in time.").waitFor();
+      const card = page.getByRole("region", { name: "Command to approve" }).filter({ hasText: "reviewers 1" });
+      await card.getByRole("button", { name: "Approve", exact: true }).click();
+      await page.getByText("Not approved: something went wrong.").waitFor();
+    },
+  },
   // ...and E3b's own chat fixtures with an item in a longer conversation.
   {
     id: "chat",

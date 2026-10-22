@@ -1,6 +1,8 @@
 // What the two inline chat items say, as pure functions: where a secret lands and whether it can be sealed now, the
 // exact command an approval runs, and the one result line under it.
 import type { ChatItem, CommandApprovalItem, GatedClass, GatedRunSpec, HumanRequest, Machine, SecretRequestItem } from "../../../shared/contracts";
+import type { HubError } from "../../../shared/hub";
+import { shortElapsed } from "../chat/format";
 
 /**
  * The item as the hub's request says it is now. A request's changes arrive as request.updated events (and a fresh
@@ -24,6 +26,8 @@ export const withRequest = (item: ChatItem, request: HumanRequest | undefined): 
     ...note,
     ...(request.exitCode === undefined ? {} : { exitCode: request.exitCode }),
     ...(request.outputTail === undefined ? {} : { outputTail: request.outputTail }),
+    ...(request.answeredAt === undefined ? {} : { answeredAt: request.answeredAt }),
+    ...(request.finishedAt === undefined ? {} : { finishedAt: request.finishedAt }),
   };
 };
 
@@ -42,7 +46,7 @@ export const secretTarget = (machines: Readonly<Record<string, Machine>>, item: 
   }
   const machine = machines[machineId];
   if (machine === undefined) {
-    return { ok: false, message: `The hub doesn't know the machine ${machineId}.`, fix: "Add that machine first, or tell the lead in the chat." };
+    return { ok: false, message: `fleetd doesn't know the machine ${machineId}.`, fix: "Add that machine first, or tell the lead in the chat." };
   }
   if (machine.boxPubKey === undefined) {
     return { ok: false, message: `${machine.name} takes no secrets yet: its node has no box key.`, fix: `Update fleetd on ${machine.name}, then save it.` };
@@ -70,32 +74,43 @@ export const classWords = (c: GatedClass): string =>
 export type Outcome = { readonly tone: "quiet" | "success" | "danger" | "warning"; readonly text: string };
 
 /** A state from a newer hub: no raw word, just what to do. */
-const NEWER: Outcome = { tone: "quiet", text: "Changed on the hub. Update the app to see how." };
+const NEWER: Outcome = { tone: "quiet", text: "Changed in a newer fleetd. Update the app to see it." };
 
-/** The result line under an approval, or undefined while it waits for Approve / Deny. */
+/** From the approval to the result, when the hub recorded both. */
+const took = (item: CommandApprovalItem): string | undefined => {
+  const from = item.answeredAt === undefined ? Number.NaN : Date.parse(item.answeredAt);
+  const to = item.finishedAt === undefined ? Number.NaN : Date.parse(item.finishedAt);
+  return Number.isNaN(from) || Number.isNaN(to) || to < from ? undefined : shortElapsed(to - from);
+};
+
+/** The one line an answered approval folds to, or undefined while it waits for Approve / Deny. */
 export const approvalOutcome = (item: CommandApprovalItem): Outcome | undefined => {
-  const exit = item.exitCode === undefined ? "" : ` · exit ${String(item.exitCode)}`;
+  const time = took(item);
   switch (item.state) {
     case "open":
       return undefined;
     case "approved":
-      return { tone: "quiet", text: "Approved. Running…" };
-    case "ran":
-      return { tone: "success", text: `Ran${exit}` };
+      return { tone: "quiet", text: "Approved, running…" };
+    case "ran": {
+      // No exit code: a signal or the timeout ended it.
+      if (item.exitCode === undefined) return { tone: "warning", text: time === undefined ? "Approved, stopped before it finished" : `Approved, stopped after ${time}` };
+      const ran = time === undefined ? "Approved and ran" : `Approved, ran in ${time}`;
+      return item.exitCode === 0 ? { tone: "success", text: ran } : { tone: "danger", text: `${ran} · exit ${String(item.exitCode)}` };
+    }
     case "failed":
-      return { tone: "danger", text: `Failed${exit}` };
+      return { tone: "danger", text: "Approved, didn't run" };
     case "denied":
-      return { tone: "quiet", text: "Denied. Nothing ran." };
+      return { tone: "quiet", text: "Denied, nothing ran" };
     default:
       return NEWER;
   }
 };
 
-/** The line under a secret once it is answered, or undefined while it waits. */
+/** The one line an answered secret folds to, or undefined while it waits. */
 export const secretOutcome = (item: SecretRequestItem): Outcome | undefined => {
   // The fingerprint stays in the data: a raw hash is never UI text.
   if (item.state === "stored") return { tone: "success", text: "Secret saved" };
-  if (item.state === "withdrawn") return { tone: "quiet", text: "The lead doesn't need it any more." };
+  if (item.state === "withdrawn") return { tone: "quiet", text: "Not needed any more" };
   if (item.state === "open") return undefined;
   return NEWER;
 };
@@ -103,3 +118,44 @@ export const secretOutcome = (item: SecretRequestItem): Outcome | undefined => {
 /** What an approval approves: a gated command, a session's tool prompt, or a retro change that relaxes a playbook. */
 export const approvalKind = (item: CommandApprovalItem): "command" | "permission" | "playbook" =>
   item.playbook !== undefined ? "playbook" : item.gated !== undefined ? "command" : "permission";
+
+/** Only a command that can't be undone asks once more before it runs. */
+export const needsConfirm = (item: CommandApprovalItem): boolean => item.gated?.class === "irreversible";
+
+/** The lead's line without its code marks, for a folded row's plain text. */
+const plain = (text: string): string => text.replace(/`/gu, "");
+
+/** What an answered approval was about, as one plain line for its folded row. */
+export const approvalTitle = (item: CommandApprovalItem): string =>
+  plain(item.playbook?.summary ?? item.gated?.reason ?? (item.permission === undefined ? "An agent's request" : `An agent wanted to use ${item.permission.toolName}`));
+
+/** What an answered secret was for, in the lead's words: its key is a slug, never row text. */
+export const secretTitle = (item: SecretRequestItem): string => plain(item.text);
+
+export type Action = "approve" | "deny" | "save";
+export type Failure = { readonly text: string; readonly retry: boolean };
+
+/**
+ * A failed answer as one plain sentence, by the error's code. The hub's own message never shows: it names request
+ * ids and tools, and a fixture's or a newer hub's can be anything. Retry only where trying again can help.
+ */
+export const failureLine = (action: Action, error: Pick<HubError, "code">, machine: string): Failure => {
+  const not = action === "save" ? "Not saved" : action === "approve" ? "Not approved" : "Not denied";
+  switch (error.code) {
+    case "offline":
+    case "disconnected":
+      return { text: `${not}: you're offline.`, retry: true };
+    case "timeout":
+      return { text: `${not}: no answer in time.`, retry: true };
+    case "machine_offline":
+      return { text: `${not}: ${machine} is offline.`, retry: true };
+    case "forbidden":
+      return { text: `${not}: this computer can't answer for ${machine}.`, retry: false };
+    case "not_found":
+      return { text: `${not}: it's no longer open.`, retry: false };
+    case "invalid":
+      return action === "save" ? { text: "Not saved: check the value and try again.", retry: true } : { text: `${not}: it was already answered.`, retry: false };
+    default:
+      return { text: `${not}: something went wrong.`, retry: true };
+  }
+};

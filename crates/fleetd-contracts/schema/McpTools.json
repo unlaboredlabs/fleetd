@@ -1815,6 +1815,10 @@
           "format": "int64",
           "type": "integer"
         },
+        "finishedAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "Once it ran or failed: when the result came back."
+        },
         "gated": {
           "$ref": "#/$defs/GatedRunSpec",
           "description": "A gated command: exactly what runs once approved."
@@ -3743,6 +3747,10 @@
           "description": "An approval that ran: its exit code (absent when a signal or the timeout ended it) and the end of its output,\nwith every injected secret value scrubbed.",
           "format": "int64",
           "type": "integer"
+        },
+        "finishedAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "An approved command: when its result came back (ran or failed), so a client can say how long it took."
         },
         "gated": {
           "$ref": "#/$defs/GatedRunSpec",

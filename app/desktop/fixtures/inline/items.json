@@ -70,7 +70,8 @@
       "state": "ran",
       "exitCode": 0,
       "outputTail": "purged 412 objects\ndone in 3.1s",
-      "answeredAt": "2026-10-19T10:25:30.000Z"
+      "answeredAt": "2026-10-19T10:25:30.000Z",
+      "finishedAt": "2026-10-19T10:25:42.000Z"
     },
     {
       "kind": "command_approval",
@@ -85,9 +86,29 @@
         "reason": "Rotate the staging database password; the old one leaked into a log",
         "timeoutSec": 300
       },
-      "state": "failed",
+      "state": "ran",
       "exitCode": 1,
-      "outputTail": "error: the staging database refused the connection"
+      "outputTail": "error: the staging database refused the connection",
+      "answeredAt": "2026-10-19T10:27:10.000Z",
+      "finishedAt": "2026-10-19T10:27:14.000Z"
+    },
+    {
+      "kind": "command_approval",
+      "requestId": "Q11",
+      "machineId": "devbox",
+      "gated": {
+        "argv": [
+          "./scripts/seed-demo.sh",
+          "staging"
+        ],
+        "class": "irreversible",
+        "reason": "Reset the staging demo data to the seed set",
+        "timeoutSec": 300
+      },
+      "state": "failed",
+      "note": "Not run on devbox: the project has no workspace on record.",
+      "answeredAt": "2026-10-19T10:29:00.000Z",
+      "finishedAt": "2026-10-19T10:29:01.000Z"
     },
     {
       "kind": "command_approval",
