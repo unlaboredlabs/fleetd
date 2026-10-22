@@ -4,36 +4,39 @@ areas:
   contracts: ["crates/fleetd-contracts/**"]
   hub: ["crates/fleetd/src/hub/**", "crates/fleetd/tests/**", "crates/fleetd/assets/**"]
   cli: ["crates/fleetd/src/cli/**", "crates/fleetd/src/node/**", "crates/fleetd/src/*.rs", "crates/fleetd/examples/**", "crates/fleetd/Cargo.toml"]
-  # The five screens below get their own areas so app PRs on different screens run side by side; `app` lists
-  # everything else under app/ one directory at a time, since a glob can't exclude the screens.
-  app-status: ["app/desktop/src/renderer/screens/status/**"]
-  app-order: ["app/desktop/src/renderer/screens/order/**"]
-  app-projects: ["app/desktop/src/renderer/screens/projects/**"]
-  app-inbox: ["app/desktop/src/renderer/screens/inbox/**"]
-  app-settings: ["app/desktop/src/renderer/screens/settings/**"]
+  # Each screen, and the app's main process, ui kit and qa, gets its own area so app PRs on different parts run
+  # side by side; `app` lists everything else under app/ one directory at a time, since a glob can't exclude them.
+  # agents, prs and updates are screens still to come.
+  app-chat: ["app/desktop/src/renderer/screens/chat/**", "app/desktop/fixtures/composer/**"]
+  app-live: ["app/desktop/src/renderer/screens/live/**", "app/desktop/fixtures/live/**"]
+  app-inline: ["app/desktop/src/renderer/screens/inline/**", "app/desktop/fixtures/inline/**"]
+  app-status: ["app/desktop/src/renderer/screens/status/**", "app/desktop/fixtures/status/**"]
+  app-projects: ["app/desktop/src/renderer/screens/projects/**", "app/desktop/fixtures/projects/**"]
+  app-settings: ["app/desktop/src/renderer/screens/settings/**", "app/desktop/fixtures/settings/**"]
+  app-time: ["app/desktop/src/renderer/screens/time/**", "app/desktop/fixtures/time/**"]
+  app-onboarding: ["app/desktop/src/renderer/screens/onboarding/**", "app/desktop/fixtures/onboarding/**"]
+  app-palette: ["app/desktop/src/renderer/screens/palette/**"]
+  app-shell: ["app/desktop/src/renderer/screens/shell/**", "app/desktop/src/renderer/screens/*"]
+  app-agents: ["app/desktop/src/renderer/screens/agents/**", "app/desktop/fixtures/agents/**"]
+  app-prs: ["app/desktop/src/renderer/screens/prs/**", "app/desktop/fixtures/prs/**"]
+  app-updates: ["app/desktop/src/renderer/screens/updates/**", "app/desktop/fixtures/updates/**"]
+  app-main: ["app/desktop/src/main/**", "app/desktop/src/preload/**", "app/desktop/src/shared/**"]
+  app-ui: ["app/desktop/src/renderer/ui/**"]
+  app-qa: ["app/desktop/qa/**"]
   app:
     - "app/*"
     - "app/desktop/*"
     - "app/desktop/build/**"
-    - "app/desktop/fixtures/**"
+    - "app/desktop/fixtures/*"
+    - "app/desktop/fixtures/kit/**"
+    - "app/desktop/fixtures/recorded/**"
     - "app/desktop/perf/**"
-    - "app/desktop/qa/**"
     - "app/desktop/scripts/**"
     - "app/desktop/src/*"
-    - "app/desktop/src/main/**"
-    - "app/desktop/src/preload/**"
-    - "app/desktop/src/shared/**"
     - "app/desktop/src/renderer/*"
     - "app/desktop/src/renderer/demo/**"
     - "app/desktop/src/renderer/perf/**"
     - "app/desktop/src/renderer/src/**"
-    - "app/desktop/src/renderer/ui/**"
-    - "app/desktop/src/renderer/screens/*"
-    - "app/desktop/src/renderer/screens/board/**"
-    - "app/desktop/src/renderer/screens/onboarding/**"
-    - "app/desktop/src/renderer/screens/palette/**"
-    - "app/desktop/src/renderer/screens/shell/**"
-    - "app/desktop/src/renderer/screens/time/**"
   site: ["site/**", "docs/**", "crates/docsgen/**"]
   ci: [".github/**"]
   lab: ["tests/**"]
