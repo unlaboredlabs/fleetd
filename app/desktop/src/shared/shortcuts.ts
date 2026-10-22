@@ -26,6 +26,7 @@ export const SHORTCUTS = {
   ...jump,
   "project.previous": { keys: "Mod+[", title: "Previous Project", section: "Projects" },
   "project.next": { keys: "Mod+]", title: "Next Project", section: "Projects" },
+  "project.nextNeedsYou": { keys: "Mod+Alt+A", title: "Next project that needs you", section: "Projects" },
   "status.toggle": { keys: "Mod+.", title: "Status", section: "Go to" },
   "settings.open": { keys: "Mod+,", title: "Settings…", section: "Go to" },
   "composer.attach": { keys: "Mod+Shift+A", title: "Attach a File", section: "Composer" },

@@ -93,10 +93,12 @@ export interface SidebarItemProps extends Omit<ComponentProps<"button">, "childr
   current?: boolean;
   /** Nested under the row above (a project's orders). */
   indent?: boolean;
+  /** Something new since you last looked: the label in full weight. */
+  emphasis?: boolean;
 }
 
 /** One sidebar row, 28 px tall: icon, a label that truncates with a tooltip, and trailing detail. */
-export function SidebarItem({ label, icon, trailing, current, indent, className, ...rest }: SidebarItemProps) {
+export function SidebarItem({ label, icon, trailing, current, indent, emphasis, className, ...rest }: SidebarItemProps) {
   return (
     <button
       type="button"
@@ -106,7 +108,7 @@ export function SidebarItem({ label, icon, trailing, current, indent, className,
     >
       {icon}
       <span className={s.sidebarLabel}>
-        <Truncate expand="none" tone="inherit">
+        <Truncate expand="none" tone="inherit" strong={emphasis === true}>
           {label}
         </Truncate>
       </span>

@@ -10,6 +10,8 @@ describe("routes", () => {
       { id: "project", project: storefront, message: null },
       { id: "project", project: storefront, message: "m-42" },
       { id: "status" },
+      { id: "agents", agent: null },
+      { id: "agents", agent: { ...storefront, laneId: "lead:devbox/storefront" } },
       { id: "machines" },
       { id: "time", orderId: null },
       { id: "time", orderId: "W14" },
@@ -27,6 +29,8 @@ describe("routes", () => {
     expect(toHash({ id: "project", project: storefront, message: "m-42" })).toBe("#/project/devbox/storefront?message=m-42");
     expect(toHash({ id: "project", project: { machineId: "dev box", projectId: "a/b" }, message: null })).toBe("#/project/dev%20box/a%2Fb");
     expect(toHash({ id: "settings", tab: "general" })).toBe("#/settings/general");
+    expect(toHash({ id: "agents", agent: { ...storefront, laneId: "T1" } })).toBe("#/agents/devbox/storefront/T1");
+    expect(parseHash("#/agents/devbox")).toEqual({ id: "agents", agent: null });
   });
 
   it("sends the removed surfaces, unknown and malformed hashes home", () => {

@@ -1,0 +1,137 @@
+// One agent's live work, read-only: what it is on, what it is doing now, and its newest steps (what it wrote, what it
+// ran and edited), with the message it is writing streaming in at the end. To change what it does, you tell the lead.
+import { useMemo } from "react";
+import type { WorkStep } from "../../src/data/agents-contract";
+import { useAgentWork, useData } from "../../src/data/react";
+import { selectLiveAgent, selectLiveAgents } from "../../src/data/selectors";
+import { Button, cx, EmptyState, Markdown, RoleTag, Text, Truncate, VirtualList } from "../../ui";
+import { ActivityLine } from "../live/parts";
+import { describe, isRunning } from "../live/words";
+import { navigate } from "../shell/navigation";
+import { Elapsed } from "./AgentsScreen";
+import { actionLine } from "./model";
+import s from "./agents.module.css";
+
+type FeedItem = WorkStep | { readonly kind: "writing"; readonly id: string; readonly text: string };
+
+export function AgentWork({ id }: { id: string }) {
+  const agent = useData(selectLiveAgent(id));
+  const listed = useData((st) => selectLiveAgents(st) !== undefined);
+  const work = useAgentWork(agent);
+  const row = agent?.row;
+  // The message being written shows only while the agent writes; once it ends, its thread's event reads it in.
+  const writing = row?.live?.activity?.activity.kind === "writing" ? work.streaming : undefined;
+  const feed = useMemo((): readonly FeedItem[] | undefined => {
+    if (work.steps === undefined) return undefined;
+    return writing === undefined || writing.text === "" ? work.steps : [...work.steps, { kind: "writing", id: `w:${writing.messageId}`, text: writing.text }];
+  }, [work.steps, writing]);
+
+  if (!listed) return <div className={s.workBody} aria-busy="true" />;
+  if (agent === undefined || row === undefined) {
+    return (
+      <EmptyState title="This agent isn’t running now" actions={<Button onClick={() => navigate({ id: "agents", agent: null })}>All agents</Button>}>
+        It finished, or its lead stopped it. Its project’s chat says how it went.
+      </EmptyState>
+    );
+  }
+  const chat = { id: "project", project: { machineId: row.projectRef.machineId, projectId: row.projectRef.projectId }, message: null } as const;
+
+  return (
+    <section className={s.workBody} aria-label={`What ${row.title} is doing`}>
+      <div className={s.workHead}>
+        <Text as="h2" strong>
+          {row.title}
+        </Text>
+        <span className={s.meta}>
+          <RoleTag role={row.role} />
+          <Text size="xs" tone="quiet">
+            {row.projectTitle}
+          </Text>
+          {row.pr !== undefined ? (
+            <Text size="xs" tone="quiet" tabular>
+              {`PR #${String(row.pr.number)}`}
+            </Text>
+          ) : null}
+          <Elapsed startedAt={row.startedAt} running={isRunning(row.status)} />
+          <span className={s.metaEnd}>
+            <Button variant="quiet" size="sm" onClick={() => navigate(chat)}>
+              Open the lead’s chat
+            </Button>
+          </span>
+        </span>
+        <ActivityLine line={describe(row)} working={row.status === "working" || row.status === "starting"} />
+      </div>
+      <div className={s.feed}>
+        {!work.hasThread ? (
+          <Text size="sm" tone="quiet">
+            It hasn’t started yet.
+          </Text>
+        ) : work.error !== null && feed === undefined ? (
+          <p role="alert">
+            <Text size="sm" tone="danger">
+              Couldn’t read its work. The agent keeps going; this reads again at its next step.
+            </Text>
+          </p>
+        ) : feed === undefined ? (
+          <div aria-busy="true" aria-label="Loading its work" />
+        ) : feed.length === 0 ? (
+          <Text size="sm" tone="quiet">
+            Nothing yet.
+          </Text>
+        ) : (
+          <VirtualList items={feed} getKey={(item) => item.id} renderItem={(item) => <Step item={item} />} estimateSize={28} followOutput startAtEnd aria-label="Its work" />
+        )}
+      </div>
+    </section>
+  );
+}
+
+function Step({ item }: { item: FeedItem }) {
+  if (item.kind === "writing") {
+    return (
+      <div className={s.message}>
+        <Markdown source={item.text} />
+      </div>
+    );
+  }
+  if (item.kind === "message") {
+    if (item.role === "assistant") {
+      return (
+        <div className={s.message}>
+          <Markdown source={item.text} />
+        </div>
+      );
+    }
+    // What it was told (its brief, a steer), folded to a few lines: the agent's own words are the point here.
+    return (
+      <div className={cx(s.message, s.told)}>
+        <Text size="xs" tone="quiet">
+          {item.role === "user" ? "Told" : "Note"}
+        </Text>
+        <Truncate size="sm" tone="quiet" lines={3} expand="inline">
+          {item.text}
+        </Truncate>
+      </div>
+    );
+  }
+  const line = actionLine(item);
+  return (
+    <div className={s.action}>
+      <span className={s.verb}>
+        <Text size="xs" tone="quiet">
+          {line.words}
+        </Text>
+      </span>
+      <span className={s.machine}>
+        <Truncate size="xs" mono tone={line.tone === "danger" ? "danger" : "quiet"} expand="popover">
+          {line.machine}
+        </Truncate>
+      </span>
+      {line.outcome !== undefined ? (
+        <Text size="xs" tone="danger">
+          {line.outcome}
+        </Text>
+      ) : null}
+    </div>
+  );
+}
