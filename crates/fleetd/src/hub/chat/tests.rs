@@ -126,8 +126,8 @@ fn the_lead_waits_on_you_when_its_last_word_asks_and_no_turn_runs() {
         .unwrap();
     assert!(hub.chat.state(&r, false).unwrap().needs_you);
     assert!(
-        !hub.chat.state(&r, true).unwrap().needs_you,
-        "not while it works"
+        hub.chat.state(&r, true).unwrap().needs_you,
+        "still asked while it works"
     );
     // fleetd's own lines don't answer it; the human does.
     hub.chat.system_line(&r, "PR #12 merged.").unwrap();
@@ -900,4 +900,69 @@ async fn a_request_reopened_while_the_follower_starts_shows_open() {
     assert_eq!(state_of(), CommandApprovalState::Open);
     assert!(hub.chat.state(&r, false).unwrap().needs_you);
     assert_eq!(items(&hub).len(), 1, "the same item, in place");
+}
+
+/// A question stays open through the lead's later status lines (the lab saw "1. Which day…?" followed by "The
+/// unsubscribe link is merged." clear the dot); only the human's reply clears it, and an open item keeps it.
+#[test]
+fn a_question_stays_open_until_the_human_replies() {
+    let (hub, _home) = hub();
+    let r = project();
+    let human = |text: &str| NewMessage {
+        author: Some(ChatAuthor::Human),
+        text: text.into(),
+        ..Default::default()
+    };
+    hub.chat.add(&r, human("set up the newsletter")).unwrap();
+    hub.chat
+        .add(
+            &r,
+            lead_says("Two things:\n1. Which day should it go out? I'd pick Monday."),
+        )
+        .unwrap();
+    for status in [
+        "The unsubscribe link is merged.",
+        "The template PR is up and in review.",
+    ] {
+        hub.chat.add(&r, lead_says(status)).unwrap();
+        hub.chat.system_line(&r, "Max agents 40 → 1.").unwrap();
+        assert!(
+            hub.chat.state(&r, false).unwrap().needs_you,
+            "lost after: {status}"
+        );
+    }
+    // A status line streaming in doesn't ask, and doesn't answer.
+    hub.chat
+        .add(
+            &r,
+            NewMessage {
+                streaming: true,
+                source: Some("lead:t:s".into()),
+                ..lead_says("Should I")
+            },
+        )
+        .unwrap();
+    assert!(hub.chat.state(&r, false).unwrap().needs_you);
+    hub.chat.add(&r, human("monday")).unwrap();
+    assert!(
+        !hub.chat.state(&r, false).unwrap().needs_you,
+        "the human replied"
+    );
+    hub.chat
+        .add(&r, lead_says("Monday it is. Shipping it now."))
+        .unwrap();
+    assert!(!hub.chat.state(&r, false).unwrap().needs_you);
+    // Many status lines after a new question: still asked, past any page of recent messages.
+    hub.chat
+        .add(
+            &r,
+            lead_says("1. Send a test issue to you first? I'd say yes."),
+        )
+        .unwrap();
+    for i in 0..60 {
+        hub.chat
+            .add(&r, lead_says(&format!("Agent {i} finished.")))
+            .unwrap();
+    }
+    assert!(hub.chat.state(&r, false).unwrap().needs_you);
 }
