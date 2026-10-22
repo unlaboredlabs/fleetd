@@ -425,14 +425,17 @@ async function tersePart(lab: Lab, chat: Chat, ref: Ref) {
     `Next, add ${file}: one line saying which day the weekly usage digest email goes out. I haven't picked the day and it's my call, so ask me before you build it.`,
   );
   // The person answers whatever the checks below find, so no part after this one inherits an open question.
-  let answered: Awaited<ReturnType<typeof chat.send>> | undefined;
-  const answer = async () => (answered ??= await chat.send("1 go"));
+  // The answer's checks run even when the asking ones failed, so one run reports both halves.
+  let asked: unknown;
+  await askedPart(lab, chat, ref, sent).catch((error: unknown) => (asked = error));
+  const answered = await chat.send("1 go");
   try {
-    await askedPart(lab, chat, ref, sent);
-  } finally {
-    await answer();
+    await answeredPart(lab, chat, ref, answered, file);
+  } catch (error) {
+    if (asked === undefined) throw error;
+    throw new Error(`${String(asked instanceof Error ? asked.message : asked)}; and after "1 go": ${error instanceof Error ? error.message : String(error)}`);
   }
-  await answeredPart(lab, chat, ref, answered!, file);
+  if (asked !== undefined) throw asked;
 }
 
 async function askedPart(lab: Lab, chat: Chat, ref: Ref, sent: { cursor: number; seq: number }) {

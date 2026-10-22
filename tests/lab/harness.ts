@@ -47,7 +47,7 @@ export const MODEL = "claude-haiku-5-5";
 // Texts the binary emits that scenarios match on; each mirrors a constant in crates/fleetd.
 /** `hub/playbooks/finish_all_rules.rs` FINISH_ALL_IDLE. */
 export const FINISH_ALL_IDLE = "finish-all: nothing left with a value source";
-/** `hub/watchdog/ladder.rs` NUDGE. */
+/** `hub/watchdog/ladder.rs` NUDGE (`assets/fixed/watchdog.nudge.md`, less its trailing newline). */
 export const NUDGE = "You seem stalled; continue the task from where you stopped.";
 
 /** Receiver-side Standard Webhooks check: a `v1` HMAC-SHA256 over `id.timestamp.body`, timestamp within 5 min. */
