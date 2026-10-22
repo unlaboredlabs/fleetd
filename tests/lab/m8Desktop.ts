@@ -117,7 +117,7 @@ export async function m8Desktop(lab: Lab) {
     fs.writeFileSync(sinkPath, "OTHER=1\n");
     const secretAsk = /\bQ\d+\b/u.exec(fleetd("request", "secret", "--key", "stripe.test_key", "--sink", `env:${MACHINE}:${sinkPath}`, "--text", "Need the Stripe test key"))?.[0];
     check(secretAsk, "fleetd request secret filed a request");
-    const asked = await itemOf(secretAsk!);
+    const asked = await itemIn(secretAsk!, "open");
     check(asked?.kind === "secret_request" && asked.state === "open" && asked.name === "stripe.test_key", `${secretAsk} is an open secret item in the chat: ${JSON.stringify(asked)}`);
     const machine = ((await app.call("fleetd_status")).machines as Array<Body>).find((m) => m.machineId === MACHINE);
     check(typeof machine?.boxPubKey === "string", `${MACHINE} has a box key`);
@@ -156,7 +156,7 @@ export async function m8Desktop(lab: Lab) {
     // It runs an irreversible command: urgent, so the app notifies even in quiet hours.
     const opened = await lab.waitEvent(`${gatedAsk} opened`, 30_000, { cursor, types: ["request.opened"], match: (e) => e.data?.requestId === gatedAsk });
     check(opened.event.attention === "urgent", `${gatedAsk}'s request.opened carries attention "urgent": ${JSON.stringify(opened.event.attention)}`);
-    const approve = await itemOf(gatedAsk!);
+    const approve = await itemIn(gatedAsk!, "open");
     check(
       approve?.kind === "command_approval" && approve.state === "open" && JSON.stringify(approve.gated?.argv) === JSON.stringify(argv) && approve.gated?.cwd === root,
       `${gatedAsk} shows the exact argv and the workspace as cwd: ${JSON.stringify(approve)}`,
