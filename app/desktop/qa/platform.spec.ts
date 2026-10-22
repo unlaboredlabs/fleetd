@@ -12,8 +12,7 @@ test.describe.configure({ mode: "parallel" });
 
 const GENERIC_FAMILIES = new Set(["serif", "sans-serif", "monospace", "system-ui", "ui-monospace", "ui-sans-serif"]);
 
-// On macOS the sans face is the system's own (tokens.css), named by the generic system-ui.
-test("every text face is a font the app bundles or the system face, never a fallback", async () => {
+test("every text face is a font the app bundles, never a system fallback", async () => {
   const { page, close } = await launch("typical");
   try {
     await show(page, "shell", "#/");

@@ -17,11 +17,14 @@ for (const screen of screens) {
       try {
         const reserved = await reservedRegions(app);
         const shots: Shot[] = [];
-        // Shown once, then resized: a screen opened by an interaction stays open, as it would for a user.
+        const shotSizes = screen.sizes ?? defaultSizes;
+        // Shown once, at the first size it is shot at (the sidebar hides itself in a narrow window), then resized: a
+        // screen opened by an interaction stays open, as it would for a user.
         await settled();
+        await setView(app, page, shotSizes[0] ?? "small", themes[0]);
         await show(page, screen.id, screen.route, screen.open);
         await assertExpectedState(page, screen);
-        for (const size of screen.sizes ?? defaultSizes) {
+        for (const size of shotSizes) {
           for (const theme of themes) {
             await setView(app, page, size, theme);
             await settle(page);

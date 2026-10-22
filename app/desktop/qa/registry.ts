@@ -297,10 +297,6 @@ export const screens: readonly Screen[] = [
     variant: "narrow-open",
     sizes: ["narrow"],
     open: async (page) => {
-      // The toggle shows it for the width it is pressed at, so narrow the page first (the size the suite sets next).
-      const session = await page.context().newCDPSession(page);
-      const deviceScaleFactor = await page.evaluate(() => window.devicePixelRatio);
-      await session.send("Emulation.setDeviceMetricsOverride", { ...sizes.narrow, deviceScaleFactor, mobile: false });
       await page.getByRole("button", { name: "Show the sidebar" }).click();
       await page.getByRole("navigation", { name: "Sidebar" }).waitFor();
     },
