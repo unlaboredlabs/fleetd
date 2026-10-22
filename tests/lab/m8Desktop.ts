@@ -4,13 +4,13 @@
 // the hub's files, logs or events; a gated irreversible command is urgent, refused to an agent key, and runs after a
 // person's Approve, waking the lead with its exit code. The requests are filed from the project's shell as a lead
 // would, so they cost no turns; a lead is started only if none exists, just before the approval, so a run alone costs
-// two haiku turns (lead start, the approval's wake).
+// two mechanics turns (lead start, the approval's wake).
 import { spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import sodium from "libsodium-wrappers";
-import { type Body, cli, fleetdCommand, HUB_PORT, type Lab, MACHINES, MODEL, nodeHome, nodeSock, RUN, scrubbedEnv, userMessages } from "./harness.ts";
+import { type Body, cli, fleetdCommand, HUB_PORT, type Lab, MACHINES, MECHANICS, nodeHome, nodeSock, RUN, scrubbedEnv, userMessages } from "./harness.ts";
 import { CLONE } from "./m7Train.ts";
 
 const MACHINE = "lab-a";
@@ -141,12 +141,12 @@ export async function m8Desktop(lab: Lab) {
     let turns = 0;
     if (leadThread === undefined) {
       const from = await lab.cursor();
-      const started = await callTool("lead_start", { ...ref, model: MODEL, effort: "low" });
+      const started = await callTool("lead_start", { ...ref, ...MECHANICS });
       check(!started.isError, `lead_start: ${JSON.stringify(started.body)}`);
       leadThread = started.body.threadId as string;
       await lab.waitEvent("lead start turn", TURN_MS, { cursor: from, machineId: MACHINE, match: (e) => e.threadId === leadThread && ENDED.includes(e.type) });
       turns++;
-      ok(`lead ${leadThread} started (${MODEL})`);
+      ok(`lead ${leadThread} started (${MECHANICS.model})`);
     }
     const gatedFile = path.join(lab.dir, "fleetd-gated-test");
     const argv = ["sh", "-c", `echo deployed > ${gatedFile}`];

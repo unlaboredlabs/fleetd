@@ -1,5 +1,5 @@
 // M2 lab scenario 1, "wake on time": wake_set "at now+60 s" on an idle lab-b thread. The thread receives the
-// message within 5 s of the time and wake.fired is emitted. One tiny haiku turn (the woken thread's reply).
+// message within 5 s of the time and wake.fired is emitted. One tiny mechanics turn (the woken thread's reply).
 import { randomUUID } from "node:crypto";
 import type { Body, Lab } from "./harness.ts";
 

@@ -8,7 +8,7 @@
 // 3. GitHub is cut: source.stale for github:<lab repo> within 30 + 10 + 5 s, the CI entry is marked and the headline
 //    says "Not live"; once it is back, source.fresh and a clean doc within 10 + 5 s.
 // The doc is read through status_wait, which blocks until it changes. No claude turns are asserted; the headline's
-// one-shots (haiku) may run.
+// one-shots may run.
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";

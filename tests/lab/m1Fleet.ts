@@ -1,6 +1,6 @@
 // M1 "done when": launch on lab-b through MCP, wait for completion with events_wait, read the reply back.
-// One tiny haiku turn. Also: the doctor holds both lab machines' claude to the supported version range.
-import { type Body, type Lab, launchTiny, MODEL } from "./harness.ts";
+// One tiny mechanics turn. Also: the doctor holds both lab machines' claude to the supported version range.
+import { type Body, type Lab, launchTiny, MECHANICS } from "./harness.ts";
 
 export async function m1Fleet(lab: Lab) {
   const { callTool, check, ok } = lab;
@@ -17,7 +17,7 @@ export async function m1Fleet(lab: Lab) {
   }
 
   const threadId = await launchTiny(lab, "lab-b", projectB.projectId, "fleetd test:lab");
-  ok(`thread_launch lab-b/${projectB.projectId} ${MODEL} effort=low -> ${threadId}`);
+  ok(`thread_launch lab-b/${projectB.projectId} ${MECHANICS.model} effort=${MECHANICS.effort} -> ${threadId}`);
 
   const { event: done } = await lab.waitEvent("thread.completed for the launched thread", 240_000, {
     cursor,
