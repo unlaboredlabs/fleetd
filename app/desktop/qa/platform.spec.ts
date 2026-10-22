@@ -121,8 +121,11 @@ test("the macOS window, traffic lights included, for the contact sheet", async (
 
 test("a window whose page dies reloads at its route and logs why; crash dumps go beside the log", async () => {
   const { app, page, close } = await launch("typical");
+  const step = (what: string) => console.log(`${new Date().toISOString()} ${what}`);
+  app.process().stderr?.on("data", (d: Buffer) => console.log(`main stderr: ${d.toString().trim()}`));
   try {
     await show(page, "status.fleet", "#/status");
+    step("shown");
     const { logs, dumps } = await app.evaluate(({ app: a }) => ({ logs: a.getPath("logs"), dumps: a.getPath("crashDumps") }));
     // Playwright's page stays on the dead renderer, so the reloaded one is read through main. A MutationObserver,
     // not requestAnimationFrame, which a window in the background may never run.
@@ -132,6 +135,7 @@ test("a window whose page dies reloads at its route and logs why; crash dumps go
       const within = <T,>(what: string, p: Promise<T>) =>
         Promise.race([p, new Promise<never>((_, fail) => setTimeout(() => fail(new Error(`no ${what} within 20 s`)), 20_000))]);
       const reloaded = new Promise((done) => page.once("did-finish-load", () => done(null)));
+      console.log("crashing the renderer");
       page.forcefullyCrashRenderer();
       await within("reload", reloaded);
       return within(
@@ -141,6 +145,7 @@ test("a window whose page dies reloads at its route and logs why; crash dumps go
         ) as Promise<string>,
       );
     });
+    step(`reloaded: ${screen}`);
     expect(screen).toBe("status.fleet");
     expect(readFileSync(path.join(logs, "app.log"), "utf8")).toMatch(/main v\S+ #\/status: The window's page died \((?:crashed|killed), exit code -?\d+\); reloading it/u);
     // crashReporter is on, with its database beside the log (a killed renderer, as macOS reports this one, leaves no dump).
