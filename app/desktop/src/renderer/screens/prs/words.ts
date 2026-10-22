@@ -136,26 +136,26 @@ export const reviewsWord = (r: PrRow["review"]): { readonly text: string; readon
 };
 
 const ROLE: Readonly<Partial<Record<string, string>>> = {
-  lead: "the lead",
-  implementer: "an implementer",
-  reader: "a reader",
-  reviewer: "a reviewer",
-  verifier: "a verifier",
-  qa: "a QA agent",
+  lead: "The lead",
+  implementer: "An implementer",
+  reader: "A reader",
+  reviewer: "A reviewer",
+  verifier: "A verifier",
+  qa: "A QA agent",
 } satisfies Record<AgentRole, string>;
 
 const agentWords = (a: PrAuthor): string | undefined => {
   if (a.role === undefined) return undefined;
-  const who = ROLE[a.role] ?? "an agent";
+  const who = ROLE[a.role] ?? "An agent";
   return a.model === undefined ? who : `${who} (${shortModel(a.model)})`;
 };
 
-/** "an implementer (opus)", "sam on GitHub"; undefined when the hub knows neither. */
+/** To start a line: "An implementer (opus)", or a login as GitHub spells it, "sam on GitHub"; undefined when the hub knows neither. */
 export const authorWords = (a: PrAuthor): string | undefined => agentWords(a) ?? (a.login === undefined ? undefined : `${a.login} on GitHub`);
 
-/** "a reviewer (opus)", "sam on GitHub", "someone on GitHub". */
+/** To start a line: "A reviewer (opus)", "sam on GitHub", "Someone on GitHub". */
 export const reviewerWords = (r: PrReviewEntry): string =>
-  (r.agent === undefined ? undefined : agentWords(r.agent)) ?? (r.login === undefined ? "someone on GitHub" : `${r.login} on GitHub`);
+  (r.agent === undefined ? undefined : agentWords(r.agent)) ?? (r.login === undefined ? "Someone on GitHub" : `${r.login} on GitHub`);
 
 export const VERDICT_WORD: Readonly<Record<string, { readonly text: string; readonly tone: Tone }>> = {
   approved: { text: "approved", tone: "done" },
@@ -174,8 +174,6 @@ export const findingsWord = (r: PrReviewEntry): string => {
   return [blocking > 0 ? `${blocking} blocking` : "", other > 0 ? `${other} ${other === 1 ? "suggestion" : "suggestions"}` : ""].filter(Boolean).join(", ");
 };
 
-/** "an implementer" → "An implementer", to start a line. */
-export const capital = (text: string): string => `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
 
 /** "1h 05m", "14m", "40s". */
 export const duration = (ms: number): string => {

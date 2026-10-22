@@ -11,7 +11,6 @@ import { AgentRowLink } from "../agents/AgentsScreen";
 import { DiffPane } from "./DiffPane";
 import {
   authorWords,
-  capital,
   checkTook,
   checkWord,
   checksDetail,
@@ -186,7 +185,7 @@ function Overview({ data, now, githubSaid }: { data: PrGetOutput; now: number; g
         </Fact>
         <Fact label="Written by">
           <Text size="sm" tone={author === undefined ? "quiet" : "default"}>
-            {author === undefined ? "Not known." : capital(author)}
+            {author ?? "Not known."}
           </Text>
           {pr.author.title !== undefined && pr.author.title !== "" ? (
             <Text size="xs" tone="quiet">
@@ -365,7 +364,7 @@ function Review({ review, now }: { review: PrReviewEntry; now: number }) {
     <li className={cx(s.review, !review.current && s.outdated)}>
       <div className={s.reviewHead}>
         <Text size="sm" strong>
-          {capital(reviewerWords(review))}
+          {reviewerWords(review)}
         </Text>
         <StatusChip tone={verdict.tone}>{verdict.text}</StatusChip>
         {findings !== "" ? (

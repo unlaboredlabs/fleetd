@@ -624,7 +624,8 @@ export default defineGroup({
       answerAll(f, specs(f));
       for (const a of f.answers("pr_list")) f.answer("pr_list", a.input, a.output, 600_000);
       for (const a of f.answers("pr_get")) f.answer("pr_get", a.input, a.output, 600_000);
-      return f;
+      // The answers never come in a shot: shoot without waiting for them.
+      return f.settleAt(0);
     })(),
     (() => {
       const f = Fixture.from(base("typical"), "prs-no-github", "GitHub can't be reached: the PRs fleetd made, without checks or descriptions.");

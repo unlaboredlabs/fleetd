@@ -94,6 +94,8 @@ function Row({ row, project, current, nowMs }: { row: PrRow; project: ProjectRef
   const checksSaid = row.queue?.state === "ci_failed" || row.queue?.state === "ci";
   const checks = row.checks === undefined || checksSaid || !isOpen(row) ? undefined : checksWord(row.checks);
   const reviews = isOpen(row) ? reviewsWord(row.review) : undefined;
+  // One hint: checks that failed or still run, else what the reviews say, else that the checks passed.
+  const hint = checks !== undefined && checks.tone !== "done" ? checks : (reviews ?? checks);
   const at = row.mergedAt ?? row.updatedAt;
   return (
     <a className={cx(s.row, current && s.rowCurrent)} href={prHref(project, row)} data-pr={row.number} aria-current={current ? "page" : undefined}>
@@ -116,13 +118,9 @@ function Row({ row, project, current, nowMs }: { row: PrRow; project: ProjectRef
         <StatusChip tone={state.tone} inRow>
           {state.word}
         </StatusChip>
-        {checks !== undefined ? (
-          <Text size="xs" tone={checks.tone === "failed" ? "danger" : "quiet"}>
-            {checks.text}
-          </Text>
-        ) : reviews !== undefined ? (
-          <Text size="xs" tone={reviews.tone === "failed" ? "danger" : "quiet"}>
-            {reviews.text}
+        {hint !== undefined ? (
+          <Text size="xs" tone={hint.tone === "failed" ? "danger" : "quiet"}>
+            {hint.text}
           </Text>
         ) : null}
       </span>

@@ -156,7 +156,7 @@ const openChanges = (page: Page) => page.getByRole("tab", { name: /^Changes/u })
  */
 const whileLoading = (go: (page: Page) => Promise<void>, text: RegExp) => async (page: Page) => {
   await go(page);
-  await page.getByText(text).first().waitFor();
+  await page.getByText(text).first().waitFor({ timeout: 10_000 });
   await page.evaluate(() => {
     for (const el of document.querySelectorAll("[aria-busy='true']")) el.removeAttribute("aria-busy");
   });
@@ -363,7 +363,7 @@ export const screens: readonly Screen[] = [
     route: CHAT,
     fixtures: ["prs-loading"],
     variant: "loading",
-    open: whileLoading((page) => page.getByRole("button", { name: "Pull requests" }).click(), /^Loading the pull requests/u),
+    open: whileLoading((page) => page.getByRole("button", { name: "Pull requests" }).click({ timeout: 10_000 }), /^Loading the pull requests/u),
   },
   // One PR beside the list: its facts, description, checks, reviews with their findings, and its way to main so far.
   // #10's checks failed after three approvals and an outdated review; a chat line's link names only the number.
