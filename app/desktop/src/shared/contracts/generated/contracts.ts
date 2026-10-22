@@ -106,7 +106,7 @@ export type AgentLane = {
   role: AgentRole;
   startedAt?: Timestamp;
   status: LaneStatus;
-  /** Queued, parked or failed: why, e.g. "slots: 40/40 in use", "usage limit: resumes 14:05". */
+  /** Queued, parked or failed: why, e.g. "fleet cap: 40 of 40 running", "usage limit: resumes 14:05". */
   statusReason?: string;
   taskId?: TaskId;
   threadRef?: ThreadRef;
@@ -3650,7 +3650,7 @@ export type Task = {
   prompt: string;
   /** A review task spawned with `--qa`. */
   qa?: boolean;
-  /** Why it is queued, e.g. "lease: docs held by T1" or "slots: 40/40 in use". */
+  /** Why it is queued, e.g. "lease: docs held by T1" or "fleet cap: 40 of 40 running". */
   queuedReason?: string;
   result?: TaskResult;
   /** Required at spawn for write tasks; optional here for tasks stored before M6. */

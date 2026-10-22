@@ -157,7 +157,7 @@ pub struct Task {
     #[serde(default)]
     pub item_id: Option<crate::plan::PlanItemId>,
     pub state: TaskState,
-    /// Why it is queued, e.g. "lease: docs held by T1" or "slots: 40/40 in use".
+    /// Why it is queued, e.g. "lease: docs held by T1" or "fleet cap: 40 of 40 running".
     pub queued_reason: Option<Text<1, 200>>,
     pub thread_ref: Option<ThreadRef>,
     /// `fleetd/<taskId>-<slug>`; write tasks only.

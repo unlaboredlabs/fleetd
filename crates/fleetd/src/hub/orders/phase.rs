@@ -217,7 +217,7 @@ mod tests {
         let busy = [
             (Implementer, Working, None),
             (Reviewer, Working, None),
-            (Verifier, Queued, Some("slots: 40/40 in use")),
+            (Verifier, Queued, Some("fleet cap: 40 of 40 running")),
         ];
         let pr = [PrState {
             state: ChangeState::Ci,

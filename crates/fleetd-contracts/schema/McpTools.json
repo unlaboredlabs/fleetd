@@ -312,7 +312,7 @@
           "$ref": "#/$defs/LaneStatus"
         },
         "statusReason": {
-          "description": "Queued, parked or failed: why, e.g. \"slots: 40/40 in use\", \"usage limit: resumes 14:05\".",
+          "description": "Queued, parked or failed: why, e.g. \"fleet cap: 40 of 40 running\", \"usage limit: resumes 14:05\".",
           "maxLength": 160,
           "type": "string"
         },
@@ -11084,7 +11084,7 @@
           "type": "boolean"
         },
         "queuedReason": {
-          "description": "Why it is queued, e.g. \"lease: docs held by T1\" or \"slots: 40/40 in use\".",
+          "description": "Why it is queued, e.g. \"lease: docs held by T1\" or \"fleet cap: 40 of 40 running\".",
           "maxLength": 200,
           "minLength": 1,
           "type": "string"
