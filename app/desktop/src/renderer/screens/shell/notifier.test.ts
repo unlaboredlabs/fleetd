@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { attentionEvent, FALLBACK_POLICY, Notifier, policyFrom, policyStale, quietAt, Requests, type AttentionEvent, type Policy } from "./notifier";
+import { attentionEvent, FALLBACK_POLICY, kindOf, Notifier, policyFrom, policyStale, quietAt, Requests, type AttentionEvent, type Policy } from "./notifier";
 
 const MIN = 60_000;
 const T0 = Date.parse("2026-10-17T10:00:00.000Z");
@@ -140,6 +140,19 @@ describe("policy", () => {
     expect(attentionEvent({ seq: 2, type: "thread.failed", summary: "x" })).toBeNull();
     expect(attentionEvent({ seq: 6, type: "chat.waiting", summary: "The lead is working", data: { projectRef: storefront, needsYou: false } })).toBeNull();
     expect(attentionEvent({ seq: 3, type: "usage.breaker", summary: "x", attention: "loud" })?.project).toBeNull();
+  });
+});
+
+describe("kindOf", () => {
+  it("files each event under the Settings switch that names it", () => {
+    expect(kindOf("chat.waiting")).toBe("reply");
+    expect(kindOf("request.opened")).toBe("approval");
+    // A session's tool prompt waits for you like a command does; the thread's other news isn't a request.
+    expect(kindOf("thread.waiting")).toBe("approval");
+    expect(kindOf("thread.failed")).toBe("other");
+    expect(kindOf("chat.finished")).toBe("done");
+    expect(kindOf("usage.breaker")).toBe("machine");
+    expect(kindOf("prompt.default_changed")).toBe("other");
   });
 });
 

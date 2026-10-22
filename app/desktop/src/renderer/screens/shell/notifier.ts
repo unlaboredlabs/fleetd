@@ -69,7 +69,7 @@ export const kindOf = (type: string): NotifyKind =>
     ? "reply"
     : type === FINISHED
       ? "done"
-      : type.startsWith("request.") || type.startsWith("thread.")
+      : type.startsWith("request.") || type === "thread.waiting"
         ? "approval"
         : MACHINE_TYPES.some((p) => type.startsWith(p))
           ? "machine"
