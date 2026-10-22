@@ -345,6 +345,56 @@ describe("a request the hub reopens", () => {
     expect(button("Approve again").disabled).toBe(false);
   });
 
+  it("shows it open again after a link drop, when the reopen in the gap says what it said before", async () => {
+    vi.useFakeTimers();
+    seq = 1;
+    const hub = await render("Q7");
+    hub.requests.current = [request("Q7", "open", OFFLINE)];
+    act(() => {
+      hub.send(updated("Q7", "open"));
+    });
+    await refetched();
+    await click(button("Approve again"));
+    await click(button("Yes, run it"));
+    await settle();
+    expect(host.textContent).toContain("Approved, running…");
+
+    // The link drops; the hub approves and reopens it in the gap, saying the same, and its events are never sent.
+    // The fresh snapshot's reread is the only news.
+    act(() => {
+      hub.send({ t: "state", state: { phase: "retrying", hub: `devbox-${String(hubs)}:4710`, reason: "The hub stopped answering", retryAt: 0 } });
+    });
+    act(() => {
+      hub.send({ t: "state", state: { phase: "live", hub: `devbox-${String(hubs)}:4710`, protocol: 1 } });
+      hub.send({ ...snapshot, snapshot: { ...snapshot.snapshot, cursor: 50 } });
+    });
+    await refetched();
+    expect(host.textContent).not.toContain("Approved, running…");
+    expect(button("Approve again").disabled).toBe(false);
+  });
+
+  it("still asks before a command that can't be undone runs, after the hub's events start again from 1", async () => {
+    vi.useFakeTimers();
+    const hub = await render("Q4");
+    hub.requests.current = [request("Q4", "open")];
+    // Events from before the hub was reset, with numbers far above its new ones.
+    seq = 899;
+    act(() => {
+      hub.send(updated("Q4", "open"));
+    });
+    await refetched();
+    act(() => {
+      hub.send({ ...snapshot, snapshot: { ...snapshot.snapshot, cursor: 5 } });
+    });
+    await refetched();
+    await click(button("Approve"));
+    expect(host.textContent).toContain("Run this on devbox? It can't be undone.");
+    await click(button("Yes, run it"));
+    await settle();
+    expect(host.textContent).toContain("Approved, running…");
+    expect(has("Approve")).toBe(false);
+  });
+
   it("drops a failed answer's line once the hub's view moves on", async () => {
     vi.useFakeTimers();
     seq = 1;

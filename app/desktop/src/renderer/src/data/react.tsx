@@ -1,9 +1,9 @@
 // The data layer in React: one layer per window, read through selectors.
-import { QueryClientProvider, useQuery } from "@tanstack/react-query";
-import { createContext, useContext, useEffect, type ReactNode } from "react";
+import { hashKey, QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { createContext, useCallback, useContext, useEffect, useSyncExternalStore, type ReactNode } from "react";
 import { useStore } from "zustand";
 import type { ToolInput, ToolName } from "../../../shared/contracts";
-import type { DataLayer } from "./queries";
+import { callKey, type DataLayer } from "./queries";
 import type { DataState } from "./store";
 
 const DataContext = createContext<DataLayer | undefined>(undefined);
@@ -45,4 +45,22 @@ export const useToolQuery = <T extends ToolName>(tool: T, input: ToolInput<T>, o
   const layer = useDataLayer();
   const fresh = useStore(layer.store, (s) => s.fresh);
   return useQuery({ ...layer.toolQuery(tool, input), enabled: fresh && (options?.enabled ?? true) });
+};
+
+/**
+ * The number of the read whose answer the cache holds for `tool(input)` (DataLayer.readOf), or undefined while it
+ * holds none. It changes on every answer, even one that says the same, which a query's own result doesn't signal.
+ */
+export const useReadOf = <T extends ToolName>(tool: T, input: ToolInput<T>): number | undefined => {
+  const { queryClient, readOf } = useDataLayer();
+  const key = callKey(tool, input);
+  const hash = hashKey(key);
+  const subscribe = useCallback(
+    (onChange: () => void) =>
+      queryClient.getQueryCache().subscribe((e) => {
+        if (e.type === "updated" && e.query.queryHash === hash) onChange();
+      }),
+    [queryClient, hash],
+  );
+  return useSyncExternalStore(subscribe, () => (queryClient.getQueryData(key) === undefined ? undefined : readOf(tool, input)));
 };
