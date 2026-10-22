@@ -78,8 +78,9 @@ export function chatRows(i: RowsInput): Row[] {
     if (item.author === "lead" && item.kind === "message") leadLast = n;
   });
   let inHistory = false;
-  // Not on a window paged above the latest: the turn happens below it.
-  const activity = i.activity === true && i.hasNewer !== true;
+  // Not on a window paged above the latest (the turn happens below it), nor under a reply still streaming, which
+  // says "Still writing" itself.
+  const activity = i.activity === true && i.hasNewer !== true && i.items.at(-1)?.state !== "streaming";
   i.items.forEach((item, n) => {
     const history = isHistory(item);
     if (history && !inHistory) out.push({ kind: "history", key: `history:${item.id}` });

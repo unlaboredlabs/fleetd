@@ -160,9 +160,7 @@ function LeadActivity({ project }: { project: ProjectRef }) {
   if (shown === undefined) return null;
   return (
     <div className={s.quietRow} data-entry="activity" role="status">
-      <Text size="xs" tone="quiet">
-        {shown}
-      </Text>
+      <InlineText size="xs" tone="quiet" text={shown} />
     </div>
   );
 }

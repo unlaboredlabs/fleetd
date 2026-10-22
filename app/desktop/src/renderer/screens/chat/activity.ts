@@ -23,9 +23,10 @@ const FLEETD_WORDS: readonly (readonly [string, string])[] = [
   ["slice_ready", "moving a PR along"],
 ];
 
-const fileName = (path: string): string => path.split("/").filter(Boolean).at(-1) ?? path;
+/** A file's name, in backticks: the line sets it as code, the voice of machine text. */
+const fileName = (path: string): string => `\`${path.split("/").filter(Boolean).at(-1) ?? path}\``;
 
-/** One activity in the lead's words: what it does, never a raw tool name or command. */
+/** One activity in the lead's words: what it does, never a raw tool name or command; a file's name as code. */
 export const doingWords = (a: Activity): string => {
   switch (a.kind) {
     case "read":

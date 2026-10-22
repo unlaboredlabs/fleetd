@@ -46,7 +46,7 @@ describe("the lead's activity line", () => {
   });
 
   it("speaks in plain words, never a raw tool name or command", () => {
-    expect(doingWords({ kind: "read", path: "app/desktop/src/renderer/screens/chat/ChatList.tsx" })).toBe("reading ChatList.tsx");
+    expect(doingWords({ kind: "read", path: "app/desktop/src/renderer/screens/chat/ChatList.tsx" })).toBe("reading `ChatList.tsx`");
     expect(doingWords({ kind: "read", pattern: "chat_delta" })).toBe("searching the code");
     expect(doingWords({ kind: "command", text: "cargo test -p fleetd" })).toBe("running a command");
     expect(doingWords({ kind: "tool", name: "mcp__fleetd__workstream_spawn" })).toBe("starting agents");
