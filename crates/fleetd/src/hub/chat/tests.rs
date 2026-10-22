@@ -1082,7 +1082,7 @@ async fn stop_all_stops_the_lead_and_its_agents_and_says_so() {
     assert_eq!(live_agents(&hub), 0);
     let calls = calls.lock().unwrap();
     assert!(calls.iter().any(|c| matches!(c,
-        fleetd_contracts::sessions::SessionCall::Interrupt { session_id, .. } if session_id.as_str() == "lead-thread")));
+        fleetd_contracts::sessions::SessionCall::Interrupt { session_id, run_id: None, .. } if session_id.as_str() == "lead-thread")));
 }
 
 /// With the machine away nothing can be stopped, and the line says what still runs instead of "nothing was running".
@@ -1195,9 +1195,18 @@ async fn only_a_persons_key_stops() {
         );
     }
     assert_eq!(live_agents(&hub), 2);
-    // The app's probe: an empty input is invalid before anything happens.
-    assert!(matches!(
-        tools.call(&hub, &person(), "chat_stop", json!({})).await,
-        Err(crate::hub::api::CallError::Invalid(_))
-    ));
+    // The app's probe with an empty input: forbidden for a key that may not stop, invalid for one that may.
+    let probe = async |caller: &Caller| match tools.call(&hub, caller, "chat_stop", json!({})).await
+    {
+        Err(crate::hub::api::CallError::Tool(e)) => e.code,
+        _ => panic!("an empty chat_stop ran"),
+    };
+    assert_eq!(
+        probe(&admin_agent).await,
+        fleetd_contracts::mcp::ErrorCode::Forbidden
+    );
+    assert_eq!(
+        probe(&person()).await,
+        fleetd_contracts::mcp::ErrorCode::Invalid
+    );
 }

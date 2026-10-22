@@ -21,6 +21,9 @@
 // - areas:   bug (c): areas are inferred from the workspace, and two writers in them run at the same time.
 // - cap:     max agents 2 with six agents never runs more than 2 and all finish; 12 → 3 mid-run kills nothing and new
 //            spawns wait; 3 → 12 starts the queue at once, says so in one chat line, and tells the lead.
+// - stop:    Stop interrupts the lead mid-turn and leaves its 2 agents running, saying so; an agent key can't stop;
+//            the hub machine's owner steers and stops all from a terminal without a key file, and never from inside
+//            a session; Stop all's line names the 2 agents it stopped (dogfood: "nothing was running").
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -47,17 +50,19 @@ const LAB_REPO_POLICY = `areas:\n  all: ["**"]\n${DEFAULTS}`;
 const LOCAL_REPO = path.join(LAB, "repo-chat");
 /** The cap part's repo: its own project, with its one area named, so the cap is all it tests. */
 const CAP_REPO = path.join(LAB, "repo-cap");
+const STOP_REPO = path.join(LAB, "repo-stop");
 /** The history part's own hub; 4782 differs mod 20 from the other lab ports (harness.ts SLOT). */
 const HISTORY_PORT = slotPort(4782);
 /** For a lead the harness keeps out of the way. */
 const QUIET = "Lab run: the harness does everything for this order. Reply to each wake about it with one short line; run no commands and start no agents for it.";
-const PARTS = ["work", "terse", "secret", "gated", "build", "fixes", "cap1", "tools", "plain", "history", "areas", "cap"] as const;
+const PARTS = ["work", "terse", "secret", "gated", "build", "fixes", "cap1", "tools", "plain", "history", "areas", "cap", "stop"] as const;
 type Part = (typeof PARTS)[number];
 const LAB_REPO_PARTS: ReadonlyArray<Part> = ["work", "terse", "secret", "gated", "build", "fixes", "cap1", "tools", "plain"];
 
 /** The hub tools the chat model brings, with the slice that brings each. */
 const TOOL_FROM: Readonly<Record<string, string>> = {
   chat_send: "H1, EFF-A",
+  chat_stop: "UX-1 stop",
   chat_history: "H1, EFF-A",
   approval_answer: "H2, NS",
   secret_submit: "H2, NS",
@@ -407,6 +412,12 @@ export async function chatLead(lab: Lab) {
       const projectId = await lab.addProject(WORK_MACHINE, CAP_REPO, "repo-cap");
       const ref = { machineId: WORK_MACHINE, projectId };
       await part("cap", () => capPart(lab, chatOf(lab, lab.humanCall, ref, need), ref, need));
+    }
+    if (on("stop")) {
+      seedLocalRepo(STOP_REPO, LAB_REPO_POLICY);
+      const projectId = await lab.addProject(WORK_MACHINE, STOP_REPO, "repo-stop");
+      const ref = { machineId: WORK_MACHINE, projectId };
+      await part("stop", () => stopPart(lab, chatOf(lab, lab.humanCall, ref, need), ref, need));
     }
     check(failures.length === 0, `${failures.length} chat part(s) failed:\n  ${failures.join("\n  ")}`);
   } finally {
@@ -1007,4 +1018,64 @@ async function capPart(lab: Lab, chat: Chat, ref: Ref, need: (t: string) => void
   const lines = history.filter((m) => m.author === "system" && /^Max agents\b/u.test(m.text)).map((m) => m.text);
   check(changes.length === 4 && JSON.stringify(lines) === JSON.stringify(changes), `one chat line per cap change, in order: events ${JSON.stringify(changes)}, chat ${JSON.stringify(lines)}`);
   ok(`${changes.length} cap changes, ${lines.length} chat lines, one each`);
+}
+
+// ---- stop: Stop leaves the agents; only the person stops; the owner from the hub machine's terminal ----
+async function stopPart(lab: Lab, chat: Chat, ref: Ref, need: (tool: string) => void) {
+  const { check, ok } = lab;
+  need("chat_stop");
+  const fleetd = shellIn(ref.machineId, STOP_REPO);
+  const running = async (ids: ReadonlyArray<string>) => (await tasksOf(lab, ref)).filter((t) => ids.includes(t.taskId) && t.state === "running").length;
+  const poll = <T>(what: string, ms: number, probe: () => Promise<T | undefined>) =>
+    lab.until(what, ms, async () => (await probe()) ?? (await new Promise((r) => setTimeout(r, 500)), undefined));
+  const two = spawnSleepers(lab, fleetd, openWorkstream(check, fleetd, "Stop."), "stop", 2, 600).map((s) => s.taskId);
+  await poll("two agents running", TURN_MS, async () => ((await running(two)) === 2 ? true : undefined));
+  // A haiku lead, its first turn over.
+  const from = await lab.cursor();
+  const started = await lab.callTool("lead_start", { ...ref, model: MODEL, effort: "low" });
+  check(!started.isError, `lead_start: ${JSON.stringify(started.body)}`);
+  const leadThread = started.body.threadId as string;
+  const leadEnds = (cursor: number, what: string, ms = TURN_MS) =>
+    lab.waitEvent(what, ms, { cursor, types: ENDED, match: (e) => e.threadId === leadThread });
+  await leadEnds(from, "the lead's first turn ends");
+
+  for (const [tool, args] of [["chat_stop", { projectRef: ref, clientRequestId: randomUUID() }], ["project_stop", { projectRef: ref }]] as const) {
+    const refused = await lab.callTool(tool, args);
+    check(refused.isError && refused.body.code === "forbidden", `${tool} with an agent key is refused: ${JSON.stringify(refused.body)}`);
+  }
+  ok("an agent key can't stop (chat_stop, project_stop: forbidden)");
+
+  const line = "Stopped the lead. 2 agents are still working; Stop all to halt them.";
+  /** Stop, then the lead's turn ends as interrupted, the chat stops saying it works, and both agents still run. */
+  const stopNow = async (what: string) => {
+    const cursor = await lab.cursor();
+    const stop = await lab.humanCall("chat_stop", { projectRef: ref, clientRequestId: randomUUID() });
+    check(!stop.isError && stop.body.stopped === true && stop.body.message?.text === line, `chat_stop (${what}): ${JSON.stringify(stop.body)}`);
+    const ended = await leadEnds(cursor, `the lead's turn ends after Stop (${what})`, 30_000);
+    check(ended.event.type === "thread.interrupted", `the lead's turn was interrupted (${what}), not ${ended.event.type}`);
+    await poll(`the chat says the lead stopped working (${what})`, 30_000, async () => ((await chat.state()).leadWorking !== true ? true : undefined));
+    check((await running(two)) === 2, `both agents still run after Stop (${what})`);
+    ok(`Stop ${what}: "${line}"; the lead's turn was interrupted; both agents still run`);
+  };
+  // Mid-command, as when the app looks stuck: the lead is inside a long shell command.
+  await chat.send("Run the shell command `sleep 120` once, then reply with the single word OK.");
+  await poll("the lead runs sleep 120", TURN_MS, async () => (/"command":\s*"sleep 120"/u.test(sessionText(ref.machineId, leadThread)) ? true : undefined));
+  await stopNow("mid-command");
+  // At once after a message, as the turn starts.
+  await chat.send("Run the shell command `sleep 90` once, then reply with the single word OK.");
+  await poll("the lead is working", TURN_MS, async () => ((await chat.state()).leadWorking === true ? true : undefined));
+  await stopNow("as the turn starts");
+
+  const owner = (env: Record<string, string>, ...args: Array<string>) =>
+    spawnSync(...fleetdCommand([...args, "--hub", lab.hubUrl, "--home", lab.hubHome]), { encoding: "utf8", env: { ...scrubbedEnv(), ...env } });
+  const inside = owner({ FLEETD_THREAD_ID: leadThread }, "steer", two[0]!, "carry on");
+  check(inside.status === 3 && /agents never act as you/u.test(inside.stderr), `the owner's key is refused in a session: ${JSON.stringify(inside)}`);
+  const steer = owner({}, "steer", two[0]!, "carry on");
+  check(steer.status === 0, `fleetd steer as the owner: ${JSON.stringify(steer)}`);
+  ok(`the owner steers ${two[0]} with no key file ("${steer.stdout.trim().split("\n")[0]}"); inside a session it is refused`);
+
+  const all = owner({}, "project", "stop", `${ref.machineId}/${ref.projectId}`, "--yes");
+  check(all.status === 0 && /Stopped 2 agents\./u.test(all.stdout + all.stderr), `fleetd project stop as the owner: ${JSON.stringify(all)}`);
+  check((await running(two)) === 0, "no agent runs after Stop all");
+  ok(`Stop all from the terminal: "${(all.stdout + all.stderr).trim()}"`);
 }

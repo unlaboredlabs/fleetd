@@ -410,7 +410,7 @@ fn stop_caller(caller: &Caller, tool: &str, r: &ProjectRef) -> Result<(), ToolEr
 }
 
 /// Interrupts the lead's turn now, also one held on a permission prompt. True when it had one.
-async fn stop_lead(hub: &Hub, r: &ProjectRef, client_request_id: &str) -> Result<bool, ToolError> {
+async fn stop_lead(hub: &Hub, r: &ProjectRef) -> Result<bool, ToolError> {
     let Some(thread) = lead_thread(hub, r) else {
         return Ok(false);
     };
@@ -428,7 +428,7 @@ async fn stop_lead(hub: &Hub, r: &ProjectRef, client_request_id: &str) -> Result
         return Ok(false);
     }
     hub.executors
-        .interrupt(&thread, client_request_id)
+        .interrupt_now(&thread)
         .await
         .map_err(crate::hub::executor::tools::from_executor)?;
     Ok(true)
@@ -470,7 +470,7 @@ pub async fn chat_stop(
         });
     }
     ensure(hub, &r).await.map_err(store_error)?;
-    let stopped = stop_lead(hub, &r, input.client_request_id.as_str()).await?;
+    let stopped = stop_lead(hub, &r).await?;
     let working = hub.tasks.live(Some(&r)).len();
     let text = match (stopped, working) {
         (true, n) => format!("Stopped the lead.{}", still_working(n)),
@@ -509,7 +509,7 @@ pub async fn project_stop(
     let r = input.project_ref.clone();
     stop_caller(caller, "project_stop", &r)?;
     // The lead first, so it starts no new agents while they stop.
-    let lead = match stop_lead(hub, &r, "project_stop").await {
+    let lead = match stop_lead(hub, &r).await {
         Ok(stopped) => Some(stopped),
         Err(e) => {
             tracing::warn!(error = %e.message, "project_stop: lead not interrupted");
