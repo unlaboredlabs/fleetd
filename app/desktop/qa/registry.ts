@@ -45,6 +45,7 @@ export const fixtures = [
   "projects-cloning",
   // F10: the connect screen's states (fixtures/onboarding).
   "onboarding-first-run",
+  "onboarding-code-refused",
   "onboarding-local-hub",
   "onboarding-link",
   "onboarding-app-pair",
@@ -331,6 +332,24 @@ export const screens: readonly Screen[] = [
       "onboarding-unreadable-key",
       "onboarding-file-store",
     ],
+  },
+  // UX-1 [22]: a code typed in lower case with no dash shows as ABCD-2345, and pressing Connect moves nothing above
+  // the hub's answer: the field and the button stay where they were.
+  {
+    id: "onboarding",
+    route: "#/onboarding",
+    fixtures: ["onboarding-code-refused"],
+    variant: "refused",
+    open: async (page) => {
+      const code = page.getByRole("textbox", { name: "Pairing code" });
+      await code.fill("wxyz6789");
+      await expect(code).toHaveValue("WXYZ-6789");
+      const connect = page.getByRole("button", { name: "Connect", exact: true });
+      const before = await connect.boundingBox();
+      await code.press("Enter");
+      await page.getByRole("alert").getByText("unknown or was already used").waitFor({ timeout: 10_000 });
+      expect(await connect.boundingBox()).toEqual(before);
+    },
   },
   { id: "onboarding.key", route: "#/onboarding?key", fixtures: ["pairing-failed", "onboarding-file-store"] },
   {

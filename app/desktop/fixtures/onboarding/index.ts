@@ -27,6 +27,9 @@ export default defineGroup({
   },
   fixtures: () => [
     unpaired("first-run", "First launch, no hub on this computer: the form with the no-hub line."),
+    unpaired("code-refused", "First launch, no hub on this computer; a hub elsewhere refuses the typed code.", {
+      redeem: refuse(401, "pair_code_invalid", "That pairing code is unknown or was already used.", NEW_CODE),
+    }),
     unpaired("local-hub", "First launch with a hub on this computer: the found-your-hub line.", { healthz: healthz() }),
     unpaired("link", "Opened from a fleetd://pair link (the route carries hub and code): filled in, not sent.", { healthz: healthz() }),
     unpaired("app-pair", "fleetd init left a code, the hub says it was already used: auto-pair fails with the hub's fix.", {
