@@ -285,9 +285,13 @@ async fn a_launch_runs_its_turn_streams_it_and_later_sends_continue_the_session(
     assert_eq!(overlay["autoMemoryEnabled"], false);
     assert_eq!(overlay["env"]["CLAUDE_CODE_DISABLE_AUTO_MEMORY"], "1");
     assert_eq!(last("CLAUDE_CODE_DISABLE_AUTO_MEMORY"), Some("1"));
-    // The 1-hour prompt cache and tool search, by default.
+    // Tool search by default, and a task's agent on the 5-minute prompt cache, in its settings too.
     for (key, value) in crate::node::runner::claude::DEFAULT_ENV {
         assert_eq!(last(key), Some(*value), "{key}");
+    }
+    for key in crate::node::runner::claude::PROMPT_CACHE_TTL_VARS {
+        assert_eq!(last(key), Some("5m"), "{key}");
+        assert_eq!(overlay["env"][key], "5m", "{key}");
     }
 
     // A retried launch returns the same session without a second process.
@@ -1045,28 +1049,68 @@ async fn removing_a_project_stops_its_claude_processes_first() {
 }
 
 #[test]
-fn the_cache_and_tool_search_defaults_yield_to_the_nodes_env_and_claude_env() {
+fn tool_search_by_default_yields_to_the_nodes_env_and_claude_env() {
     let dir = tempfile::tempdir().unwrap();
-    fn get<'a>(env: &'a [(String, String)], key: &str) -> Vec<&'a str> {
-        env.iter()
-            .filter(|(k, _)| k == key)
-            .map(|(_, v)| v.as_str())
-            .collect()
-    }
     let own = config(dir.path());
-    let env = own.runner_env();
-    for (key, value) in crate::node::runner::claude::DEFAULT_ENV {
-        assert_eq!(get(&env, key), [*value], "{key}");
-    }
-
+    let get = |env: &[(String, String)]| -> Vec<String> {
+        env.iter()
+            .filter(|(k, _)| k == "ENABLE_TOOL_SEARCH")
+            .map(|(_, v)| v.clone())
+            .collect()
+    };
+    assert_eq!(get(&own.runner_env()), ["true"]);
     std::fs::write(dir.path().join("claude.env"), "ENABLE_TOOL_SEARCH=false\n").unwrap();
-    let mut base = own;
-    base.base_env
-        .push(("CLAUDE_CODE_PROMPT_CACHE_TTL".into(), "5m".into()));
-    let env = base.runner_env();
-    assert_eq!(get(&env, "CLAUDE_CODE_PROMPT_CACHE_TTL"), ["5m"]);
-    assert_eq!(get(&env, "ENABLE_TOOL_SEARCH"), ["false"]);
-    assert_eq!(get(&env, "CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL"), ["1h"]);
+    assert_eq!(get(&own.runner_env()), ["false"]);
+}
+
+#[test]
+fn the_prompt_cache_ttl_follows_the_role_then_the_env_then_node_json() {
+    use crate::node::runner::claude::PROMPT_CACHE_TTL_VARS;
+    use fleetd_contracts::sessions::SessionRole::{Lead, Plain, Worker};
+    let dir = tempfile::tempdir().unwrap();
+    let mut own = config(dir.path());
+    let ttls = |config: &SessionConfig, role| -> Vec<String> {
+        let env = config.runner_env();
+        let cache = config.prompt_cache_env(role, &env);
+        assert_eq!(
+            cache.iter().map(|(k, _)| k.as_str()).collect::<Vec<_>>(),
+            PROMPT_CACHE_TTL_VARS
+        );
+        cache.into_iter().map(|(_, v)| v).collect()
+    };
+    // The lead idles between wakes, a person's thread between replies: the hour. A task's agent: 5 minutes.
+    assert_eq!(ttls(&own, Lead), ["1h", "1h"]);
+    assert_eq!(ttls(&own, Plain), ["1h", "1h"]);
+    assert_eq!(ttls(&own, Worker), ["5m", "5m"]);
+
+    // The node's environment or claude.env outrank the role's default, one variable at a time.
+    own.base_env
+        .push(("CLAUDE_CODE_PROMPT_CACHE_TTL".into(), "1h".into()));
+    std::fs::write(
+        dir.path().join("claude.env"),
+        "CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL=5m\n",
+    )
+    .unwrap();
+    assert_eq!(ttls(&own, Worker), ["1h", "5m"]);
+    assert_eq!(ttls(&own, Lead), ["1h", "5m"]);
+
+    // node.json's setting for a role outranks both; the roles it leaves out keep theirs.
+    let node = crate::node::config::NodeConfig {
+        hub: "http://hub".into(),
+        machine_id: "m1".into(),
+        name: "m1".into(),
+        tags: Vec::new(),
+        cmd_roots: None,
+        claude_config_dir: None,
+        min_free_gb: None,
+        prompt_cache_ttl: [(Worker, crate::node::runner::claude::CacheTtl::FiveMinutes)].into(),
+        enrolled: true,
+    };
+    crate::node::config::write_config(&own.home, &node).unwrap();
+    let written = std::fs::read_to_string(own.home.join("node.json")).unwrap();
+    assert!(written.contains(r#""promptCacheTtl": {"#) && written.contains(r#""worker": "5m""#));
+    assert_eq!(ttls(&own, Worker), ["5m", "5m"]);
+    assert_eq!(ttls(&own, Lead), ["1h", "5m"]);
 }
 
 #[test]

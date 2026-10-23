@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 use fleetd_contracts::effort::{Effort, MODEL};
 use fleetd_contracts::model::RuntimeMode;
-use fleetd_contracts::sessions::RunnerInfo;
+use fleetd_contracts::sessions::{RunnerInfo, SessionRole};
 
 use super::{
     BoxFut, Runner, RunnerError, SessionHandle, SessionSpec, claude_setup, conformance, failure,
@@ -168,13 +168,59 @@ explained! {
     /// Defaults for every claude fleetd starts, unlike the forced lists: the node's own environment or `claude.env`
     /// sets any of them otherwise (`SessionConfig::runner_env`).
     DEFAULT_ENV, DEFAULT_ENV_WHY: (&str, &str) = [
-        ("CLAUDE_CODE_PROMPT_CACHE_TTL", "1h") =>
-            "An agent idle more than 5 minutes otherwise rewrites its whole context to the prompt cache.",
-        ("CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL", "1h") =>
-            "An agent idle more than 5 minutes otherwise rewrites its whole context to the prompt cache.",
         ("ENABLE_TOOL_SEARCH", "true") =>
             "Tool schemas load when a tool is used, not on every request. fleetd's own tools always load at start.",
     ]
+}
+
+/// claude's prompt cache TTL variables: a session's own turns, then the helper requests beside them. On 2.1.302 either
+/// outranks the `promptCacheTtl` settings and claude's automatic choice (1 hour on a subscription within its limits,
+/// else 5 minutes); only `FORCE_PROMPT_CACHING_5M` outranks them. `5m` sends no `ttl`, which the API reads as 5 minutes.
+pub const PROMPT_CACHE_TTL_VARS: [&str; 2] = [
+    "CLAUDE_CODE_PROMPT_CACHE_TTL",
+    "CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL",
+];
+
+/// A prompt cache TTL claude accepts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum CacheTtl {
+    #[serde(rename = "5m")]
+    FiveMinutes,
+    #[serde(rename = "1h")]
+    OneHour,
+}
+
+impl CacheTtl {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::FiveMinutes => "5m",
+            Self::OneHour => "1h",
+        }
+    }
+}
+
+explained! {
+    /// A session's prompt cache TTL by role, unless `promptCacheTtl` in node.json names the role or the node's
+    /// environment or `claude.env` sets [`PROMPT_CACHE_TTL_VARS`] (`SessionConfig::prompt_cache_env`). A 1-hour cache
+    /// write costs 2x the input price, a 5-minute one 1.25x; reads cost the same.
+    PROMPT_CACHE_TTL, PROMPT_CACHE_TTL_WHY: (SessionRole, CacheTtl) = [
+        (SessionRole::Lead, CacheTtl::OneHour) =>
+            "A lead idles between wakes, often more than 5 minutes while reviews and CI run, and would otherwise \
+             rewrite its whole context to the prompt cache on those wakes.",
+        (SessionRole::Plain, CacheTtl::OneHour) =>
+            "A person's thread idles while they read and reply.",
+        (SessionRole::Worker, CacheTtl::FiveMinutes) =>
+            "A task's agent (writer, reader, reviewer, CI fix) works in one burst and ends, so a 1-hour write pays for \
+             an hour it never uses.",
+    ]
+}
+
+/// [`PROMPT_CACHE_TTL`] for `role`.
+pub fn default_cache_ttl(role: SessionRole) -> CacheTtl {
+    PROMPT_CACHE_TTL
+        .iter()
+        .find(|(r, _)| *r == role)
+        .map_or(CacheTtl::OneHour, |(_, ttl)| *ttl)
 }
 
 const WHY_NESTING: &str = "claude sets it for its own children and treats a process that has it as nested inside \

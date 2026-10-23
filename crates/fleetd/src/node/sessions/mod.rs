@@ -39,8 +39,8 @@ use tokio::sync::{mpsc, oneshot, watch};
 use tokio::time::Instant;
 
 use super::runner::claude::{
-    ALWAYS_DISALLOWED, AUTO_MEMORY_OFF_ENV, DEFAULT_ENV, HELPER_MODEL_ENV, SESSION_ENV,
-    subagents_off_settings_env,
+    ALWAYS_DISALLOWED, AUTO_MEMORY_OFF_ENV, DEFAULT_ENV, HELPER_MODEL_ENV, PROMPT_CACHE_TTL_VARS,
+    SESSION_ENV, default_cache_ttl, subagents_off_settings_env,
 };
 use super::runner::{
     ExitInfo, RunOutcome, Runner, RunnerError, RunnerEvent, SessionCommand, SessionSpec,
@@ -188,6 +188,32 @@ impl SessionConfig {
         );
         env
     }
+
+    /// Each of [`PROMPT_CACHE_TTL_VARS`] for a session of `role`: `promptCacheTtl` in node.json for the role, else
+    /// what `env` ([`Self::runner_env`]) sets, else the role's default. The settings overlay carries it too, since an
+    /// `env` in the user's own settings outranks the process environment.
+    pub fn prompt_cache_env(
+        &self,
+        role: SessionRole,
+        env: &[(String, String)],
+    ) -> Vec<(String, String)> {
+        let configured = super::config::read_config(&self.home)
+            .ok()
+            .flatten()
+            .and_then(|c| c.prompt_cache_ttl.get(&role).copied());
+        PROMPT_CACHE_TTL_VARS
+            .iter()
+            .map(|var| {
+                let set = env.iter().rev().find(|(k, _)| k == var);
+                let ttl = match (configured, set) {
+                    (Some(ttl), _) => ttl.as_str().to_owned(),
+                    (None, Some((_, value))) => value.clone(),
+                    (None, None) => default_cache_ttl(role).as_str().to_owned(),
+                };
+                ((*var).to_owned(), ttl)
+            })
+            .collect()
+    }
 }
 
 /// One compile cache for every session on the machine, when sccache is installed and the environment names no
@@ -273,9 +299,15 @@ fn mcp_config(role: SessionRole, sock: &Path, session_id: &str) -> String {
 
 /// fleetd's settings overlay (`--settings`). claude ranks it above the user's own settings, so a user's `env` or
 /// allow rule can't undo what sessions depend on: the pinned claude (no autoupdate), helper calls on the one model,
-/// the subagent cap, the tools fleetd never gives an agent, and auto memory off ([`AUTO_MEMORY_OFF_ENV`]).
-pub fn settings_overlay() -> String {
+/// the subagent cap, the tools fleetd never gives an agent, auto memory off ([`AUTO_MEMORY_OFF_ENV`]), and `extra_env`
+/// (the session's prompt cache TTL).
+pub fn settings_overlay(extra_env: &[(String, String)]) -> String {
     let mut env = subagents_off_settings_env();
+    env.extend(
+        extra_env
+            .iter()
+            .map(|(k, v)| (k.clone(), v.as_str().into())),
+    );
     env.insert("DISABLE_AUTOUPDATER".into(), "1".into());
     let (key, model) = HELPER_MODEL_ENV;
     env.insert(key.into(), model.into());
@@ -1389,13 +1421,16 @@ impl SessionService {
         let mcp = dir.join("mcp.json");
         let sock = super::lead::lead_socket_path(&config.home);
         std::fs::write(&mcp, mcp_config(row.local.role, &sock, id))?;
-        let settings = dir.join("settings.json");
-        std::fs::write(&settings, settings_overlay())?;
         let transcripts = config.home.join("transcripts");
         super::config::mkdir_private(&transcripts)?;
         let transcript = transcripts.join(format!("{id}.jsonl"));
 
         let mut env = config.runner_env();
+        let cache = config.prompt_cache_env(row.local.role, &env);
+        env.retain(|(k, _)| !cache.iter().any(|(c, _)| c == k));
+        env.extend(cache.iter().cloned());
+        let settings = dir.join("settings.json");
+        std::fs::write(&settings, settings_overlay(&cache))?;
         env.extend([
             (
                 "FLEETD_NODE_SOCK".to_owned(),

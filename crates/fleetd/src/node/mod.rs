@@ -110,6 +110,7 @@ pub async fn join(args: JoinArgs) -> Result<(), NodeError> {
         cmd_roots: None,
         claude_config_dir: args.claude_config_dir,
         min_free_gb: None,
+        prompt_cache_ttl: Default::default(),
         enrolled: false,
     };
     write_config(&home, &config).map_err(|_| {

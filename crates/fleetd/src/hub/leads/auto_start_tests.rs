@@ -14,7 +14,7 @@ use crate::hub::executor::LaunchInput;
 use crate::hub::leads::hooks::BoxFuture;
 use crate::hub::leads::lead::AutoStart;
 use crate::hub::leads::ports::LeadPorts;
-use crate::hub::leads::wakes::WAKE_DEBOUNCE;
+use crate::hub::leads::wakes::{LineKind, Trigger, WAKE_DEBOUNCE};
 use crate::hub::leads::workstreams::IntakeInput;
 use crate::hub::leads::{Area, Ctx, LeadError};
 use crate::hub::store::test_clock::ManualClock;
@@ -245,4 +245,84 @@ async fn an_unusable_runner_holds_the_order_with_its_reason_until_the_machine_is
     settle().await;
     assert_eq!(hub.launched_prompts().len(), 1);
     waiting_loop.abort();
+}
+
+/// The lead's thread as the shell stream last reported it.
+fn lead_thread(hub: &Hub, status: &str) {
+    let at = iso_ms(T0_MS as i64);
+    hub.area
+        .ctx
+        .store
+        .thread_upsert(&crate::hub::store::StoredThread {
+            thread: serde_json::from_value(serde_json::json!({
+                "machineId": MACHINE, "threadId": "lead-1", "projectId": "p-a", "title": "lead", "status": status,
+                "headline": "", "latestMessageTail": "", "lastProgressAt": at, "stale": false, "asOf": at,
+            }))
+            .unwrap(),
+            last_sequence: None,
+            last_run_id: None,
+            last_run_status: None,
+        })
+        .unwrap();
+}
+
+fn line(kind: LineKind, text: &str) -> Trigger {
+    Trigger::Line {
+        kind,
+        text: text.into(),
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_merge_or_a_result_wakes_an_idle_lead_at_once_and_a_busy_one_after_the_window() {
+    let hub = hub(true);
+    hub.order("fix the five bugs").await;
+    hub.after_debounce().await;
+    let sends = || hub.node.sends.lock().unwrap().len();
+    let wakes = &hub.area.wakes;
+    let start = sends();
+
+    // Busy: a finished agent waits out the quiet window, with what comes after it.
+    lead_thread(&hub, "running");
+    wakes.trigger(&hub.project, line(LineKind::TaskResult, "T1 done"));
+    settle().await;
+    hub.clock.advance(Duration::from_secs(3));
+    wakes.trigger(&hub.project, line(LineKind::TaskResult, "T2 done"));
+    settle().await;
+    hub.clock.advance(WAKE_DEBOUNCE - Duration::from_secs(1));
+    settle().await;
+    assert_eq!(sends(), start);
+    hub.clock.advance(Duration::from_secs(1));
+    settle().await;
+    assert_eq!(sends(), start + 1, "one wake for the burst");
+
+    // Idle, and the last wake one window ago: a merge goes now, without the clock moving.
+    lead_thread(&hub, "idle");
+    hub.clock.advance(WAKE_DEBOUNCE);
+    wakes.trigger(&hub.project, line(LineKind::Train, "#353 merged"));
+    settle().await;
+    assert_eq!(sends(), start + 2);
+    assert!(hub.node.sends.lock().unwrap()[start + 1].contains("#353 merged"));
+
+    // Right behind it, before the lead's status says it took the wake: no second wake at once. It comes after the
+    // window, once.
+    wakes.trigger(
+        &hub.project,
+        line(LineKind::TaskResult, "T3 review: approved"),
+    );
+    settle().await;
+    assert_eq!(sends(), start + 2);
+    hub.after_debounce().await;
+    assert_eq!(sends(), start + 3);
+    hub.after_debounce().await;
+    assert_eq!(sends(), start + 3);
+
+    // A person's words or a waiting agent still coalesce, idle lead or not.
+    hub.clock.advance(WAKE_DEBOUNCE);
+    wakes.trigger(&hub.project, line(LineKind::Human, "also the docs"));
+    wakes.trigger(&hub.project, line(LineKind::TaskWaiting, "T4 asks"));
+    settle().await;
+    assert_eq!(sends(), start + 3);
+    hub.after_debounce().await;
+    assert_eq!(sends(), start + 4);
 }
