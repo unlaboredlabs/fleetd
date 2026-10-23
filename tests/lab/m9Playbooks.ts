@@ -1,13 +1,12 @@
 // M9 "done when" on lab-a and the public lab repo: (a) a workstream opened with the bugfix playbook pins it; (b) a
 // bugfix brief
 // without a repro check is refused; (c) a research workstream's claim spawns the hub's judge, whose verdict the
-// harness reports from the shell with baseline and candidate, and the hub computes STOP from the frozen rule; (d) a
-// finish-all workstream on the lab repo (no open issues) goes idle once its lead, or the harness,
-// calls `inventory`. The harness's `fleetd` calls run in the project's workspace and cost no turns.
+// harness reports from the shell with baseline and candidate, and the hub computes STOP from the frozen rule. The
+// harness's `fleetd` calls run in the project's workspace and cost no turns.
 import { spawn, spawnSync } from "node:child_process";
 import path from "node:path";
-import { type Body, chatOrder, FINISH_ALL_IDLE, MODEL, openWorkstream, fleetdCommand, LAB, type Lab, MECHANICS, nodeSock, requireGhLogin, scrubbedEnv } from "./harness.ts";
-import { CLONE, REPO, removeLabRepoProject } from "./m7Train.ts";
+import { type Body, MODEL, openWorkstream, fleetdCommand, type Lab, nodeSock, requireGhLogin, scrubbedEnv } from "./harness.ts";
+import { CLONE } from "./m7Train.ts";
 
 const MACHINE = "lab-a";
 const TURN_MS = 240_000;
@@ -108,40 +107,6 @@ export async function m9Playbooks(lab: Lab) {
   const verdictEvent = await lab.waitEvent("research.verdict", 10_000, { cursor, types: ["research.verdict"], match: (e) => e.data?.workstreamId === wr });
   ok(`(c) judge ${judge.taskId} (spawned by the hub, ${judge.model}) reported baseline 60 / candidate 58 through the CLI; ${verdictEvent.event.summary}; ${wr} done, outcome ${wrNow.outcome}`);
 
-  // (d) Finish-all on the lab repo, which has no open issues.
-  const open = JSON.parse(spawnSync("gh", ["issue", "list", "-R", REPO, "--state", "open", "--json", "number"], { cwd: LAB, encoding: "utf8", env: scrubbedEnv() }).stdout) as Array<Body>;
-  check(open.length === 0, `${REPO} has no open issues: ${JSON.stringify(open)}`);
-  let wf: string | undefined;
-  let tbRef: { machineId: string; projectId: string } | undefined;
-  try {
-    const tb = await lab.addProject(MACHINE, CLONE, "fleetd-lab");
-    tbRef = { machineId: MACHINE, projectId: tb };
-    // Started first, so the order doesn't start it with the default model; the order then reaches it as a wake.
-    cursor = await lab.cursor();
-    const started = await callTool("lead_start", { ...tbRef, profile: MECHANICS });
-    check(!started.isError, `lead_start on the lab repo: ${JSON.stringify(started.body)}`);
-    leads.push(started.body.threadId);
-    cursor = (await leadTurnEnds(started.body.threadId, cursor)).cursor;
-    const f = await chatOrder(lab, tbRef, "finish: everything still open. Open it with workstream_open, template finish-all.");
-    wf = f.workstreamId;
-    const pinnedF = (await callTool("workstream_get", { workstreamId: wf })).body.workstream.playbook as string;
-    check(/^finish-all@[0-9a-f]{40}$/u.test(pinnedF), `${wf} pins finish-all: ${pinnedF}`);
-    await leadTurnEnds(started.body.threadId, f.cursor);
-    let state = (await callTool("workstream_get", { workstreamId: wf })).body.workstream.state as string;
-    if (state === "idle") {
-      ok(`(d) the lab repo lead called inventory itself when the order woke it; ${wf} is idle`);
-    } else {
-      const before = state;
-      const inventory = shell(CLONE).run("inventory");
-      check(inventory.code === 0 && inventory.stdout.includes(FINISH_ALL_IDLE), `fleetd inventory on the lab repo: ${JSON.stringify(inventory)}`);
-      state = (await callTool("workstream_get", { workstreamId: wf })).body.workstream.state as string;
-      ok(`(d) the lead left ${wf} ${before}; the harness ran fleetd inventory: ${inventory.stdout.trim().replace(/\n/gu, " | ")}`);
-    }
-    check(state === "idle", `${wf} is idle: ${state}`);
-  } finally {
-    await removeLabRepoProject(lab).catch((error: unknown) => lab.log(`could not remove the lab repo project: ${String(error)}`));
-  }
-
   // Let the last lead wakes on lab-a run out, then count every claude turn this scenario cost.
   for (let after = await lab.cursor(); ; ) {
     const wake = await lab.waitEvent("a late lead wake", 30_000, { cursor: after, machineId: MACHINE, types: ["lead.woken"], match: (e) => e.threadId === leadThread }).catch(() => undefined);
@@ -155,11 +120,8 @@ export async function m9Playbooks(lab: Lab) {
     if (!page.more) break;
     at = page.cursor;
   }
-  const ours = [wa, wr, wf];
-  const tasks: Array<Body> = [];
-  for (const projectRef of tbRef === undefined ? [ref] : [ref, tbRef]) {
-    tasks.push(...((await callTool("tasks_list", { projectRef, limit: 100 })).body.tasks as Array<Body>).filter((t) => ours.includes(t.workstreamId)));
-  }
+  const ours = [wa, wr];
+  const tasks = ((await callTool("tasks_list", { projectRef: ref, limit: 100 })).body.tasks as Array<Body>).filter((t) => ours.includes(t.workstreamId));
   const taskTurns = tasks.reduce((n, t) => n + (t.attempt as number), 0);
   const total = leadTurns + taskTurns;
   ok(`M9 used ${leadTurns} lead turns + ${taskTurns} task turns (${tasks.map((t) => `${t.taskId} ${t.kind}×${t.attempt}`).join(", ")}) = ${total} claude turns (${MODEL})`);

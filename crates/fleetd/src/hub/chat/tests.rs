@@ -301,7 +301,6 @@ async fn a_projects_past_reads_in_once_in_time_order_without_ids() {
             at: "2026-10-19T08:00:00.000Z".into(),
             client_request_id: None,
             playbook: None,
-            parent: None,
         })
         .unwrap();
     hub.db
@@ -794,7 +793,6 @@ async fn a_stopped_order_tells_its_lead_to_do_no_more_work_on_it() {
             at: AT.into(),
             client_request_id: None,
             playbook: None,
-            parent: None,
         })
         .unwrap();
     crate::hub::api::registry()

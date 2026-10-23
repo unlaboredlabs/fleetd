@@ -9,7 +9,7 @@ use fleetd_contracts::usage::UsageParked;
 
 use crate::hub::api::Hub;
 use crate::hub::leads::error::LeadError;
-use crate::hub::leads::hooks::{BoxFuture, GitHubHook, TrainHook, UsageHook};
+use crate::hub::leads::hooks::{BoxFuture, TrainHook, UsageHook};
 use crate::hub::link::lead_calls::LeadCallFuture;
 use crate::hub::link::{LeadCallHandler, LeadCaller};
 use crate::hub::usage::wire::convert;
@@ -24,11 +24,6 @@ pub fn wire(hub: &Arc<Hub>) {
     let _ = hooks
         .train
         .set(Arc::new(TrainForLeads(Arc::downgrade(hub))));
-    let _ = hooks
-        .github
-        .set(Arc::new(GitHubForLeads(crate::hub::checks::GitHub::new(
-            Arc::new(crate::hub::checks::GhCli),
-        ))));
 }
 
 /// The ledger's lead calls: `decide`, `decisions_search`.
@@ -153,20 +148,6 @@ impl TrainHook for TrainForLeads {
             &facts,
             since.map(|s| s.0.as_str()),
         ))
-    }
-}
-
-struct GitHubForLeads(crate::hub::checks::GitHub);
-
-impl GitHubHook for GitHubForLeads {
-    fn api(&self, path: &str) -> BoxFuture<Result<serde_json::Value, String>> {
-        let (runner, path) = (Arc::clone(self.0.runner()), path.to_owned());
-        Box::pin(async move {
-            crate::hub::checks::GitHub::new(runner)
-                .api(&path)
-                .await
-                .map_err(|e| e.message)
-        })
     }
 }
 

@@ -1,19 +1,16 @@
-//! MCP tools this area serves: lead_start, lead_restart, project_set, workstream_list, workstream_get,
-//! workstream_spawn, inventory. Same grant checks, limits and `next` texts as older hubs.
+//! MCP tools this area serves: lead_start, lead_restart, project_set, workstream_list, workstream_get. Same grant checks, limits and `next` texts as older hubs.
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::ids::ProjectRef;
-use fleetd_contracts::ledger::{IntakeChannel, WorkstreamState};
+use fleetd_contracts::ledger::WorkstreamState;
 use fleetd_contracts::mcp::*;
-use fleetd_contracts::prim::{Count, List};
+use fleetd_contracts::prim::List;
 
 use super::Area;
 use super::error::LeadError;
 use super::records::WorkstreamFilter;
 use crate::hub::api::{Caller, Hub, Registry, ToolError, allows, require, unknown_project};
-
-use crate::hub::playbooks::finish_all::Caller as FinishAllCaller;
 
 const WORKSTREAM_ASKS: usize = 50;
 const WORKSTREAM_CLAIMS: usize = 20;
@@ -37,12 +34,6 @@ pub fn register(tools: &mut Registry) {
         "workstream_get",
         |hub: Arc<Hub>, caller, input| async move { hub.leads.workstream_get(&caller, input) },
     );
-    tools.add::<WorkstreamSpawnInput, WorkstreamSpawnOutput, _, _>("workstream_spawn", |hub: Arc<Hub>, caller, input| async move {
-        hub.leads.workstream_spawn(&caller, input).await
-    });
-    tools.add::<InventoryInput, InventoryOutput, _, _>("inventory", |hub: Arc<Hub>, caller, input| async move {
-        hub.leads.inventory_tool(&caller, input).await
-    });
 }
 
 fn unknown_workstream(id: &str) -> ToolError {
@@ -215,85 +206,6 @@ impl Area {
             claims: claims.map(List::unchecked),
             next: Some(next),
             truncated: truncated.then_some(true),
-        })
-    }
-
-    /// The finish-all lead's own calls, for an outside orchestrator: same service, same limits, recorded as this key.
-    pub(crate) async fn workstream_spawn(
-        &self,
-        caller: &Caller,
-        input: WorkstreamSpawnInput,
-    ) -> Result<WorkstreamSpawnOutput, ToolError> {
-        require(caller, Role::Operate, Some(&input.machine_id))?;
-        let r = ProjectRef {
-            machine_id: input.machine_id,
-            project_id: input.project_id,
-        };
-        if self.ctx.store.project_get(&r).map_err(refusal)?.is_none() {
-            return Err(unknown_project(&r));
-        }
-        let finish_caller = FinishAllCaller {
-            project_ref: r,
-            by: caller.key_id.to_string(),
-            channel: Some(IntakeChannel::Mcp),
-        };
-        let spawned = self
-            .finish_all
-            .spawn(
-                &finish_caller,
-                input.text.as_str(),
-                input.serves.as_str(),
-                input.template,
-            )
-            .await
-            .map_err(refusal)?;
-        Ok(WorkstreamSpawnOutput {
-            next: Some(format!(
-                "{} is a draft child of {}; its lead writes the brief. Watch it with workstream_get or events_wait (workstream.running, workstream.done).",
-                spawned.workstream_id, spawned.parent
-            )),
-            workstream_id: spawned.workstream_id,
-            parent: spawned.parent,
-            playbook: spawned.playbook,
-            truncated: None,
-        })
-    }
-
-    pub(crate) async fn inventory_tool(
-        &self,
-        caller: &Caller,
-        input: InventoryInput,
-    ) -> Result<InventoryOutput, ToolError> {
-        require(caller, Role::Read, Some(&input.machine_id))?;
-        let r = ProjectRef {
-            machine_id: input.machine_id,
-            project_id: input.project_id,
-        };
-        if self.ctx.store.project_get(&r).map_err(refusal)?.is_none() {
-            return Err(unknown_project(&r));
-        }
-        let listed = self
-            .finish_all
-            .inventory(&FinishAllCaller {
-                project_ref: r,
-                by: caller.key_id.to_string(),
-                channel: None,
-            })
-            .await
-            .map_err(refusal)?;
-        let next = if listed.idle {
-            "Nothing is left with a value source: the finish-all workstream is idle."
-        } else if listed.spawnable > 0 {
-            "Start a child for an unserved item with workstream_spawn, passing its serves value; that needs the project's open finish-all workstream (the lead opens one with workstream_open, template finish-all)."
-        } else {
-            "Every item with a value source is in progress; wait for workstream.done with events_wait."
-        };
-        Ok(InventoryOutput {
-            text: listed.text,
-            spawnable: Count::unchecked(listed.spawnable as i64),
-            idle: listed.idle,
-            next: Some(next.into()),
-            truncated: None,
         })
     }
 }

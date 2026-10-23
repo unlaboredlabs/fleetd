@@ -1,4 +1,4 @@
-//! The leads area's links into areas already on main: its ports over the executor, the write queue, node commands, the
+//! The leads area's links into areas already on main: its ports over the executor, the write queue, the
 //! ledger and the requests; the ledger's WorkstreamLookup; and its lead calls.
 use std::sync::Arc;
 
@@ -11,15 +11,14 @@ use fleetd_contracts::verification::Claim;
 use super::Area;
 use super::error::LeadError;
 use super::hooks::{BoxFuture, ClaimsHook};
-use super::ports::{CmdOutcome, LeadPorts};
+use super::ports::LeadPorts;
 use super::records::{LeadRecords, WorkstreamFilter};
 use crate::hub::approvals::store::{RequestFilter, Requests};
 use crate::hub::checks::{ClaimFilter, Claims};
 use crate::hub::executor::{ExecutorError, Executors, LaunchInput, LaunchOptions};
 use crate::hub::ledger::{self, Chain, DecisionFilter, Decisions, LedgerCode, LedgerError};
-use crate::hub::link::commands::CommandInput;
 use crate::hub::link::lead_calls::LeadCallFuture;
-use crate::hub::link::{LeadCallHandler, LeadCaller, LeadCalls, NodeCommands};
+use crate::hub::link::{LeadCallHandler, LeadCaller, LeadCalls};
 use crate::hub::queue::WriteQueue;
 
 impl From<LedgerError> for LeadError {
@@ -57,7 +56,6 @@ fn from_executor(error: ExecutorError) -> LeadError {
 pub struct HubPorts {
     pub executors: Arc<Executors>,
     pub queue: Arc<WriteQueue>,
-    pub commands: Arc<NodeCommands>,
     pub requests: Arc<Requests>,
     pub decisions: Arc<Decisions>,
 }
@@ -111,37 +109,6 @@ impl LeadPorts for HubPorts {
                     },
                     other => LeadError::failed(other.to_string()),
                 })
-        })
-    }
-
-    fn run_command(
-        &self,
-        machine_id: &MachineId,
-        cwd: String,
-        argv: Vec<String>,
-        timeout_sec: u32,
-    ) -> BoxFuture<Result<CmdOutcome, String>> {
-        let commands = Arc::clone(&self.commands);
-        let machine_id = machine_id.clone();
-        Box::pin(async move {
-            let result = commands
-                .run(
-                    &machine_id,
-                    CommandInput {
-                        cwd,
-                        argv,
-                        timeout_sec: Some(timeout_sec),
-                    },
-                )
-                .await
-                .map_err(|e| e.message)?;
-            Ok(CmdOutcome {
-                exit_code: result
-                    .exit_code
-                    .and_then(|c| serde_json::to_value(c).ok())
-                    .and_then(|v| v.as_i64()),
-                output_tail: result.output_tail.to_string(),
-            })
         })
     }
 
@@ -229,7 +196,7 @@ impl LeadCallHandler for Calls {
     fn handle(&self, caller: LeadCaller, call: LeadCall) -> LeadCallFuture {
         let area = Arc::clone(&self.0);
         Box::pin(async move {
-            area.lead_call(&caller.project_ref, &caller.by, call)
+            area.lead_call(&caller.project_ref, call)
                 .await
                 .map_err(McpToolError::from)
                 .map(|r: LeadCallResult| r)
@@ -240,7 +207,6 @@ impl LeadCallHandler for Calls {
 pub struct Links<'a> {
     pub executors: &'a Arc<Executors>,
     pub queue: &'a Arc<WriteQueue>,
-    pub commands: &'a Arc<NodeCommands>,
     pub requests: &'a Arc<Requests>,
     pub decisions: &'a Arc<Decisions>,
     pub lead_calls: &'a LeadCalls,
@@ -294,7 +260,6 @@ pub fn wire_area(area: &Arc<Area>, links: Links<'_>) {
     area.ctx.set_ports(Arc::new(HubPorts {
         executors: Arc::clone(links.executors),
         queue: Arc::clone(links.queue),
-        commands: Arc::clone(links.commands),
         requests: Arc::clone(links.requests),
         decisions: Arc::clone(links.decisions),
     }));

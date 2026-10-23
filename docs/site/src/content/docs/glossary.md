@@ -98,7 +98,7 @@ items.
 
 ## Playbook {#playbook}
 
-The instructions a lead follows for a kind of work: a feature, a fix, research, or finishing open work.
+The instructions a lead follows for a kind of work: a feature, a fix or research.
 
 ## Policy file {#policy-file}
 

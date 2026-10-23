@@ -9,9 +9,9 @@ use std::time::Duration;
 
 use fleetd_contracts::lead_calls::{
     AskLeadCall, BriefCreateCall, ChangeEnqueueCall, ChangeStatusCall, ClaimDoneCall, DecideCall,
-    DecisionsSearchCall, GatedRunCall, InventoryCall, LeadCall, RequestSecretCall,
-    RequestWithdrawCall, SliceReadyCall, StatusSetCall, TaskCancelCall, TaskListCall,
-    TaskMessageCall, TaskSpawnCall, TaskStatusCall, WorkstreamOpenCall, WorkstreamSpawnCall,
+    DecisionsSearchCall, GatedRunCall, LeadCall, RequestSecretCall, RequestWithdrawCall,
+    SliceReadyCall, StatusSetCall, TaskCancelCall, TaskListCall, TaskMessageCall, TaskSpawnCall,
+    TaskStatusCall, WorkstreamOpenCall,
 };
 use fleetd_contracts::plan::{
     PlanAddCall, PlanDropCall, PlanEditCall, PlanMilestoneCall, PlanShowCall,
@@ -219,20 +219,8 @@ static TOOLS: &[Tool] = &[
         "workstream_open",
         "workstream_open",
         "Open a workstream for work you took from the chat: a draft you then brief. template picks the \
-         playbook (feature, bugfix, research, finish-all).",
+         playbook (feature, bugfix, research).",
         inline_schema::<WorkstreamOpenCall>,
-    ),
-    lead(
-        "workstream_spawn",
-        "workstream_spawn",
-        "A finish-all lead starts a child workstream for one item with a value source.",
-        inline_schema::<WorkstreamSpawnCall>,
-    ),
-    lead(
-        "inventory",
-        "inventory",
-        "The project's open work, ranked.",
-        inline_schema::<InventoryCall>,
     ),
     Tool {
         name: "report",

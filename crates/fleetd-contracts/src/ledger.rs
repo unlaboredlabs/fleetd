@@ -157,36 +157,6 @@ impl CheckType {
     }
 }
 
-/// What a finish-all child serves, as `workstream spawn --serves` takes it.
-pub const SERVES_FIX: &str =
-    "say what this serves: serves done:<n> | issue:<ref> | defect:<text> | decision:<key>";
-
-static SERVES_DONE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(?:0|[1-9][0-9]*)$").unwrap());
-static SERVES_ISSUE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^#[1-9][0-9]*$").unwrap());
-
-pub fn is_serves(serves: &str) -> bool {
-    let Some((kind, reference)) = serves.split_once(':') else {
-        return false;
-    };
-    match kind {
-        "done" => SERVES_DONE.is_match(reference),
-        "issue" => SERVES_ISSUE.is_match(reference) || is_http_url(reference),
-        "defect" => {
-            js_len(reference) <= 200
-                && !reference.trim().is_empty()
-                && !reference.contains(['\r', '\n'])
-        }
-        "decision" => js_len(reference) <= 80 && DECISION_KEY.is_match(reference),
-        _ => false,
-    }
-}
-
-brand!(
-    /// The item a finish-all child works on: `done:<n>` (0-based index into the brief's doneWhen, same as
-    /// CheckResult.checkIndex), `issue:<url|#n>`, `defect:<one line, at most 200>` or `decision:<key>`.
-    Serves, name = "Serves", check = is_serves, expected = SERVES_FIX
-);
-
 /// How big a research spend is, relative like plan sizes.
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
@@ -293,22 +263,20 @@ checked!(ResearchVerdict, |verdict| {
 
 // Playbooks (M9): versioned templates a workstream pins at creation.
 
-/// The prefixes `bug:`/`fix:`, `research:` and `finish:` pick bugfix, research and finish-all.
+/// The prefixes `bug:`/`fix:` and `research:` pick bugfix and research.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum PlaybookName {
     Bugfix,
     Feature,
     Research,
-    FinishAll,
 }
 
 impl PlaybookName {
-    pub const ALL: [PlaybookName; 4] = [
+    pub const ALL: [PlaybookName; 3] = [
         PlaybookName::Bugfix,
         PlaybookName::Feature,
         PlaybookName::Research,
-        PlaybookName::FinishAll,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -316,7 +284,6 @@ impl PlaybookName {
             PlaybookName::Bugfix => "bugfix",
             PlaybookName::Feature => "feature",
             PlaybookName::Research => "research",
-            PlaybookName::FinishAll => "finish-all",
         }
     }
 }
@@ -325,7 +292,7 @@ brand!(
     /// `<name>@<sha>`: the git blob SHA of the playbook file (`git hash-object <file>`).
     PlaybookRef,
     name = "PlaybookRef",
-    pattern = r"^(?:bugfix|feature|research|finish-all)@(?:[0-9a-f]{40}|[0-9a-f]{64})$",
+    pattern = r"^(?:bugfix|feature|research)@(?:[0-9a-f]{40}|[0-9a-f]{64})$",
     description = "<playbook name>@<full lowercase hex git blob SHA>"
 );
 
@@ -368,7 +335,6 @@ pub enum WorkstreamState {
     Converging,
     Verifying,
     Done,
-    Idle,
     Stopped,
     Failed,
 }
@@ -396,13 +362,6 @@ pub struct WorkstreamSource {
     pub at: Timestamp,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkstreamParent {
-    pub workstream_id: WorkstreamId,
-    pub serves: Serves,
-}
-
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(remote = "Self", rename_all = "camelCase")]
@@ -418,8 +377,6 @@ pub struct Workstream {
     pub headline_at: Option<Timestamp>,
     /// Pinned at creation; the brief validates against this version. Absent on workstreams from before M9.
     pub playbook: Option<PlaybookRef>,
-    /// M9 finish-all: the finish-all workstream that spawned this one, and the value source it was spawned for.
-    pub parent: Option<WorkstreamParent>,
     /// Research workstreams, once the verdict is computed; set together with `verdict`. A STOP is done, not failed.
     pub outcome: Option<ResearchOutcome>,
     pub verdict: Option<ResearchVerdict>,
@@ -813,36 +770,6 @@ mod tests {
         for id in ["W0", "W01", "w1", "A1", "W", "W1x"] {
             assert!(WorkstreamId::new(id).is_err(), "{id}");
         }
-    }
-
-    #[test]
-    fn serves_formats() {
-        for ok in [
-            "done:0",
-            "done:12",
-            "issue:#3",
-            "issue:https://github.com/o/r/issues/3",
-            "defect:login 500s",
-            "decision:share.link",
-        ] {
-            assert!(is_serves(ok), "{ok}");
-        }
-        for bad in [
-            "done:01",
-            "done:-1",
-            "issue:#0",
-            "issue:3",
-            "defect:",
-            "defect:   ",
-            "defect:a\nb",
-            "ask:A1",
-            "decision:Not A Key",
-            "nope:1",
-            "done",
-        ] {
-            assert!(!is_serves(bad), "{bad}");
-        }
-        assert!(!is_serves(&format!("defect:{}", "x".repeat(201))));
     }
 
     #[test]

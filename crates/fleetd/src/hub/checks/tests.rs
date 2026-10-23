@@ -10,9 +10,7 @@ use crate::hub::orders::open_work::{Item, OpenWork};
 use crate::hub::store::{EventLog, HubDb, WaitInput};
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef};
-use fleetd_contracts::ledger::{
-    MetricValues, PlaybookRef, Workstream, WorkstreamId, WorkstreamState,
-};
+use fleetd_contracts::ledger::{MetricValues, Workstream, WorkstreamId, WorkstreamState};
 use fleetd_contracts::mcp::ErrorCode;
 use fleetd_contracts::model::ActionItem;
 use fleetd_contracts::tasks::{Task, TaskId};
@@ -460,16 +458,9 @@ async fn asks_no_one_once_an_automatic_check_failed() {
 
 #[tokio::test]
 async fn refuses_drafts_other_projects_and_unknown_workstreams() {
-    let mut finish_all = workstream("W3", Some(vec![doc_check()]));
-    finish_all.state = WorkstreamState::Idle;
-    finish_all.playbook = Some(PlaybookRef::unchecked(format!(
-        "finish-all@{}",
-        "a".repeat(40)
-    )));
     let k = kit(vec![
         workstream("W1", Some(vec![doc_check()])),
         workstream("W2", None),
-        finish_all,
     ]);
     let draft = k
         .claims
@@ -500,15 +491,6 @@ async fn refuses_drafts_other_projects_and_unknown_workstreams() {
             .unwrap_err()
             .code,
         ErrorCode::NotFound
-    );
-    let idle = k
-        .claims
-        .claim_done(&WorkstreamId::unchecked("W3"), LEAD_BY, None, None)
-        .await
-        .unwrap_err();
-    assert_eq!(
-        idle.message,
-        "W3 is idle: finish-all: nothing left with a value source. A finish-all run ends idle, not done."
     );
     assert!(k.commands.lock().unwrap().is_empty());
 }

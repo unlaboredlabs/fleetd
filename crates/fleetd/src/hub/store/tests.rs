@@ -604,3 +604,52 @@ fn tiers_and_review_waivers_go_on_an_older_hub() {
     assert_eq!(one("SELECT data FROM tasks"), r#"{"taskId":"T1"}"#);
     assert_eq!(one("SELECT data FROM changes"), r#"{"changeId":"X1"}"#);
 }
+
+/// A hub from before finish-all went: its idle parent is done and unpinned, and its child forgets the parent.
+#[test]
+fn finish_all_workstreams_from_an_older_hub_read_back_plain() {
+    use super::migrations::MIGRATIONS;
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    let no_finish_all = MIGRATIONS
+        .iter()
+        .position(|m| m.contains("json_remove(data, '$.parent')"))
+        .expect("the finish-all migration");
+    for m in &MIGRATIONS[..no_finish_all] {
+        conn.execute_batch(m).unwrap();
+    }
+    let pin = format!("finish-all@{}", "a".repeat(40));
+    conn.execute_batch(&format!(
+        r#"INSERT INTO workstreams (machine_id, project_id, state, data)
+          VALUES ('m', 'p', 'idle', '{{"workstreamId":"W1","state":"idle","playbook":"{pin}"}}');
+        INSERT INTO workstreams (machine_id, project_id, state, data)
+          VALUES ('m', 'p', 'running', '{{"workstreamId":"W2","state":"running","parent":{{"workstreamId":"W1","serves":"issue:#3"}}}}');
+        INSERT INTO playbook_versions (ref, text) VALUES ('{pin}', 'x');"#
+    ))
+    .unwrap();
+    conn.execute_batch(MIGRATIONS[no_finish_all]).unwrap();
+
+    let rows: Vec<(String, String)> = conn
+        .prepare("SELECT state, data FROM workstreams ORDER BY n")
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(
+        rows,
+        [
+            (
+                "done".to_owned(),
+                r#"{"workstreamId":"W1","state":"done"}"#.to_owned()
+            ),
+            (
+                "running".to_owned(),
+                r#"{"workstreamId":"W2","state":"running"}"#.to_owned()
+            ),
+        ]
+    );
+    let pins: i64 = conn
+        .query_row("SELECT count(*) FROM playbook_versions", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(pins, 0);
+}

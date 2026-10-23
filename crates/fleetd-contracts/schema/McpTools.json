@@ -4562,51 +4562,6 @@
       ],
       "type": "object"
     },
-    "InventoryInput": {
-      "properties": {
-        "machineId": {
-          "$ref": "#/$defs/MachineId"
-        },
-        "projectId": {
-          "$ref": "#/$defs/ProjectId"
-        }
-      },
-      "required": [
-        "machineId",
-        "projectId"
-      ],
-      "type": "object"
-    },
-    "InventoryOutput": {
-      "properties": {
-        "idle": {
-          "description": "The project's finish-all workstream went (or stayed) idle: nothing left with a value source.",
-          "type": "boolean"
-        },
-        "next": {
-          "type": "string"
-        },
-        "spawnable": {
-          "description": "Items with a value source that no open child serves yet.",
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "text": {
-          "description": "The ranked list, one item per line.",
-          "type": "string"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "text",
-        "spawnable",
-        "idle"
-      ],
-      "type": "object"
-    },
     "ItemStage": {
       "description": "The observable stages an item passes on its way to verified, in order. Each is credited only once fleetd saw it.",
       "oneOf": [
@@ -5144,12 +5099,6 @@
         "intake_submit.output": {
           "$ref": "#/$defs/IntakeSubmitOutput"
         },
-        "inventory.input": {
-          "$ref": "#/$defs/InventoryInput"
-        },
-        "inventory.output": {
-          "$ref": "#/$defs/InventoryOutput"
-        },
         "lead_restart.input": {
           "$ref": "#/$defs/LeadStartInput"
         },
@@ -5443,12 +5392,6 @@
         },
         "workstream_list.output": {
           "$ref": "#/$defs/WorkstreamListOutput"
-        },
-        "workstream_spawn.input": {
-          "$ref": "#/$defs/WorkstreamSpawnInput"
-        },
-        "workstream_spawn.output": {
-          "$ref": "#/$defs/WorkstreamSpawnOutput"
         }
       },
       "required": [
@@ -5498,8 +5441,6 @@
         "intake_preview.output",
         "intake_submit.input",
         "intake_submit.output",
-        "inventory.input",
-        "inventory.output",
         "lead_restart.input",
         "lead_restart.output",
         "lead_start.input",
@@ -5597,9 +5538,7 @@
         "workstream_get.input",
         "workstream_get.output",
         "workstream_list.input",
-        "workstream_list.output",
-        "workstream_spawn.input",
-        "workstream_spawn.output"
+        "workstream_list.output"
       ],
       "type": "object"
     },
@@ -6675,18 +6614,17 @@
       "type": "object"
     },
     "PlaybookName": {
-      "description": "The prefixes `bug:`/`fix:`, `research:` and `finish:` pick bugfix, research and finish-all.",
+      "description": "The prefixes `bug:`/`fix:` and `research:` pick bugfix and research.",
       "enum": [
         "bugfix",
         "feature",
-        "research",
-        "finish-all"
+        "research"
       ],
       "type": "string"
     },
     "PlaybookRef": {
       "description": "<playbook name>@<full lowercase hex git blob SHA>",
-      "pattern": "^(?:bugfix|feature|research|finish-all)@(?:[0-9a-f]{40}|[0-9a-f]{64})$",
+      "pattern": "^(?:bugfix|feature|research)@(?:[0-9a-f]{40}|[0-9a-f]{64})$",
       "type": "string"
     },
     "PrAuthor": {
@@ -9294,9 +9232,6 @@
         "fingerprint"
       ],
       "type": "object"
-    },
-    "Serves": {
-      "type": "string"
     },
     "SessionPrompt": {
       "description": "`session_prompt_get`: exactly what a session was told at its start.",
@@ -12568,10 +12503,6 @@
           "$ref": "#/$defs/ResearchOutcome",
           "description": "Research workstreams, once the verdict is computed; set together with `verdict`. A STOP is done, not failed."
         },
-        "parent": {
-          "$ref": "#/$defs/WorkstreamParent",
-          "description": "M9 finish-all: the finish-all workstream that spawned this one, and the value source it was spawned for."
-        },
         "playbook": {
           "$ref": "#/$defs/PlaybookRef",
           "description": "Pinned at creation; the brief validates against this version. Absent on workstreams from before M9."
@@ -12710,21 +12641,6 @@
       ],
       "type": "object"
     },
-    "WorkstreamParent": {
-      "properties": {
-        "serves": {
-          "$ref": "#/$defs/Serves"
-        },
-        "workstreamId": {
-          "$ref": "#/$defs/WorkstreamId"
-        }
-      },
-      "required": [
-        "workstreamId",
-        "serves"
-      ],
-      "type": "object"
-    },
     "WorkstreamSource": {
       "properties": {
         "at": {
@@ -12751,59 +12667,6 @@
       ],
       "type": "object"
     },
-    "WorkstreamSpawnInput": {
-      "properties": {
-        "machineId": {
-          "$ref": "#/$defs/MachineId"
-        },
-        "projectId": {
-          "$ref": "#/$defs/ProjectId"
-        },
-        "serves": {
-          "$ref": "#/$defs/Serves"
-        },
-        "template": {
-          "$ref": "#/$defs/PlaybookName"
-        },
-        "text": {
-          "maxLength": 4000,
-          "minLength": 1,
-          "type": "string"
-        }
-      },
-      "required": [
-        "machineId",
-        "projectId",
-        "text",
-        "serves"
-      ],
-      "type": "object"
-    },
-    "WorkstreamSpawnOutput": {
-      "properties": {
-        "next": {
-          "type": "string"
-        },
-        "parent": {
-          "$ref": "#/$defs/WorkstreamId",
-          "description": "The project's open finish-all workstream it is a child of."
-        },
-        "playbook": {
-          "$ref": "#/$defs/PlaybookRef"
-        },
-        "truncated": {
-          "type": "boolean"
-        },
-        "workstreamId": {
-          "$ref": "#/$defs/WorkstreamId"
-        }
-      },
-      "required": [
-        "workstreamId",
-        "parent"
-      ],
-      "type": "object"
-    },
     "WorkstreamState": {
       "enum": [
         "draft",
@@ -12811,7 +12674,6 @@
         "converging",
         "verifying",
         "done",
-        "idle",
         "stopped",
         "failed"
       ],

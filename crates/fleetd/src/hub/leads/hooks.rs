@@ -71,5 +71,4 @@ pub struct LeadHooks {
     pub tasks: OnceLock<Arc<dyn TasksHook>>,
     pub claims: OnceLock<Arc<dyn ClaimsHook>>,
     pub train: OnceLock<Arc<dyn TrainHook>>,
-    pub github: OnceLock<Arc<dyn GitHubHook>>,
 }

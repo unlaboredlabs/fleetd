@@ -27,8 +27,6 @@ use tokio::task::{AbortHandle, JoinHandle};
 /// Under the node's 30 s answer timeout for lead calls; slower claims report through a wake.
 pub const INLINE_WAIT: Duration = Duration::from_secs(20);
 pub const FALSE_CLAIM_AT: usize = 3;
-/// Same text as `playbooks::finish_all_rules::FINISH_ALL_IDLE`.
-const FINISH_ALL_IDLE: &str = "finish-all: nothing left with a value source";
 
 /// `claim_done`'s answer; the lead-call result is this with `op: "claim_done"`.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -415,18 +413,6 @@ impl Claims {
                 return Err(invalid(
                     format!("{workstream_id} is already done."),
                     Some("Open a new intent if there is more to do."),
-                ));
-            }
-            WorkstreamState::Idle
-                if w.playbook
-                    .as_ref()
-                    .is_some_and(|p| p.as_str().starts_with("finish-all@")) =>
-            {
-                return Err(invalid(
-                    format!(
-                        "{workstream_id} is idle: {FINISH_ALL_IDLE}. A finish-all run ends idle, not done."
-                    ),
-                    Some("Nothing to claim. Call `inventory` again when new work comes in."),
                 ));
             }
             WorkstreamState::Stopped | WorkstreamState::Failed => {

@@ -68,14 +68,8 @@ pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>
              Changing scope after a milestone's first 10 minutes needs --why, and the status
              view shows it as a marker. --steer S<n> says the human's steer asked for it: it
              stands in for --why and acknowledges the steer
-  inventory  the project's open work ranked: failing checks, open issues (gh), open requests and
-             TODO/FIXME markers; with nothing left that has a value source and no open child, the
-             project's finish-all workstream goes idle
-  workstream open --text "<intent>" [--template bugfix|feature|research|finish-all]
+  workstream open --text "<intent>" [--template bugfix|feature|research]
              open a workstream for work taken from the chat: a draft to brief
-  workstream spawn --text "<intent>" --serves issue:<#n|url>|defect:<text>|done:<n>
-      [--template bugfix|feature|research]
-             a finish-all lead starts a child workstream for one item with a value source
              lead-side commands reach the hub through the local node (FLEETD_NODE_SOCK, default
              ~/.fleetd/node/node.sock); exit 0 ok, 1 checks failed, 2 usage, 3 refused, 4 hub unreachable
 "#;
@@ -92,7 +86,6 @@ const LEAD_COMMANDS: &[&str] = &[
     "change",
     "gated",
     "workstream",
-    "inventory",
     "plan",
 ];
 
@@ -123,7 +116,6 @@ const OPTIONS: &[(&str, Kind)] = &[
     ("title", Kind::Str),
     ("prompt", Kind::Str),
     ("profile", Kind::Str),
-    ("serves", Kind::Str),
     ("pr", Kind::Str),
     ("qa", Kind::Bool),
     ("now", Kind::Bool),
@@ -587,20 +579,7 @@ pub fn parse_lead_args(
             ])
         }
         Some("workstream") => {
-            if sub != Some("spawn") || !rest.is_empty() {
-                return Err(
-                    r#"expected fleetd workstream open --text "<intent>", or workstream spawn --text "<intent>" --serves <value source>"#
-                        .into(),
-                );
-            }
-            only(&["text", "serves", "template"])?;
-            required(&["text", "serves"])?;
-            defined(vec![
-                ("op", s(Some("workstream_spawn"))),
-                ("text", s(v.str("text"))),
-                ("serves", s(v.str("serves"))),
-                ("template", s(v.str("template"))),
-            ])
+            return Err(r#"expected fleetd workstream open --text "<intent>""#.into());
         }
         Some("plan") => {
             let weight = || -> Result<Option<Value>, String> {
@@ -770,13 +749,6 @@ pub fn parse_lead_args(
                 }
                 _ => return Err("expected fleetd plan milestone|add|edit|drop|show".into()),
             }
-        }
-        Some("inventory") => {
-            if sub.is_some() {
-                return Err("expected fleetd inventory".into());
-            }
-            only(&[])?;
-            json!({ "op": "inventory" })
         }
         other => return Err(format!("unknown command '{}'", other.unwrap_or(""))),
     };
@@ -1304,31 +1276,6 @@ pub fn format_result(result: &Value) -> String {
                 st(result, "workstreamId")
             );
         }
-        "workstream_spawn" => {
-            let playbook = opt(result, "playbook")
-                .and_then(Value::as_str)
-                .map(|p| format!(" on {}", p.split('@').next().unwrap_or(p)))
-                .unwrap_or_default();
-            lines.push(format!(
-                "Spawned {}, a child of {}{playbook}.",
-                st(result, "workstreamId"),
-                st(result, "parent")
-            ));
-            next = format!(
-                "register its brief with fleetd brief create --workstream {} when its intent wake arrives.",
-                st(result, "workstreamId")
-            );
-        }
-        "inventory" => {
-            lines.push(st(result, "text").to_owned());
-            next = if result.get("idle") == Some(&Value::Bool(true)) {
-                "stop: nothing is left with a value source.".into()
-            } else if result.get("spawnable").and_then(Value::as_f64) == Some(0.0) {
-                "nothing new to spawn; wait for the open children.".into()
-            } else {
-                "fleetd workstream spawn --text \"<intent>\" --serves <the item's value source>, highest first.".into()
-            };
-        }
         "change_enqueue" | "change_status" => {
             lines.extend(change_lines(&result["change"]));
             next = "don't merge it yourself; the train merges and the outcome arrives in a wake."
@@ -1422,7 +1369,7 @@ pub struct LeadDeps<'a> {
     pub read_file: &'a dyn Fn(&str) -> std::io::Result<String>,
 }
 
-/// `fleetd brief|request|decide|status|decisions|task|claim|review|change|gated|workstream|inventory …`.
+/// `fleetd brief|request|decide|status|decisions|task|claim|review|change|gated|workstream|plan …`.
 pub fn lead_command(argv: &[String], deps: &LeadDeps) -> CliResult {
     let call = match parse_lead_args(argv, deps.read_file) {
         Ok(call) => call,
@@ -1725,10 +1672,6 @@ mod tests {
                     "NOEQUALS",
                 ],
                 "--secret-env is NAME=<secret key>, got 'NOEQUALS'",
-            ),
-            (
-                &["inventory", "--text", "x"],
-                "--text does not apply to fleetd inventory",
             ),
         ];
         for (args, expected) in cases {
