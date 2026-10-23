@@ -140,15 +140,6 @@ steers it. See [Steering](/docs/steering).
 
 One job a lead hands to a session: write code, review a PR, or research.
 
-## Tier {#tier}
-
-The size of a change, `S`, `M` or `L`. It sets how many reviews a pull request needs. See
-[Concepts](/docs/concepts#merge-train).
-
-## Verifier {#verifier}
-
-A session that checks that a large (`L`) change works, in addition to its two reviews.
-
 ## Wake {#wake}
 
 A message that restarts a lead's work: your chat message, a task result, a merged PR.

@@ -200,7 +200,7 @@ pub fn lead_needs(i: &ProjectInspect, gh_ok: bool, unread: &[String]) -> String 
         );
     }
     if i.ci.workflows.is_empty() && i.ci.required_checks.is_empty() {
-        return "no CI found: the merge train will only use local checks".into();
+        return "no CI found: the merge train holds its PRs until the repo has CI".into();
     }
     if i.ci.required_checks.is_empty() {
         let n = i.ci.workflows.len();
@@ -507,7 +507,7 @@ mod tests {
         };
         assert_eq!(
             bare(none).lead_needs.as_str(),
-            "no CI found: the merge train will only use local checks"
+            "no CI found: the merge train holds its PRs until the repo has CI"
         );
 
         let no_squash = GitHubAnswers {

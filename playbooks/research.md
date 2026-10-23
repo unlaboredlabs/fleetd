@@ -4,11 +4,6 @@ version: 2
 requiredChecks:
   - anyOf: [judge]
     label: a judge check that reports the metric for baseline and candidate
-tierDefault: M
-reviewRules:
-  S: { reviewers: 0, verifier: false }
-  M: { reviewers: 1, verifier: false }
-  L: { reviewers: 2, verifier: true }
 ---
 
 # Research

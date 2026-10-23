@@ -1,5 +1,5 @@
 // The agent time inspector on one real order, on lab-a against the public lab repo unlaboredlabs/fleetd-lab in this
-// slot's namespace (the M7 setup and its `ci` check). A tier-S order with one writer goes through the merge train while the lead's gated run
+// slot's namespace (the M7 setup and its `ci` check). An order with one writer goes through the merge train while the lead's gated run
 // waits 15 s for a human key's Approve. Then the order's timeline must add up: the critical path covers the order's
 // wall time exactly and the wall matches submit-to-done, every run is tiled by its spans, the `ci` check span is
 // GitHub's own interval inside `change.ci`, the approval wait is a `wait.request` span of the right length, coverage is
@@ -96,7 +96,6 @@ export async function timeInspector(lab: Lab) {
       pointers: [],
       constraints: [],
       doneWhen: [{ type: "cmd", machineId: MACHINE, argv: ["gh", "api", onBase(FILE), "--silent"], expectExit: 0 }],
-      tier: "S",
     };
     const frozen = fleetd("brief", "create", "--workstream", w, "--json", JSON.stringify(brief));
     check(frozen.code === 0, `brief create ${w}: ${JSON.stringify(frozen)}`);
@@ -110,7 +109,7 @@ export async function timeInspector(lab: Lab) {
     );
     const taskId = /^Spawned (T\d+)/mu.exec(spawned.stdout)?.[1];
     check(spawned.code === 0 && taskId, `task spawn: ${JSON.stringify(spawned)}`);
-    ok(`${w} (tier S) with writer ${taskId}`);
+    ok(`${w} with writer ${taskId}`);
 
     // Mid-order, the lead's gated run waits on a person: refused to the agent key, approved by a human key 15 s later.
     const humanKey = /fld_[a-z2-7]{20,}/u.exec(cli("hub", "key", "create", "--home", lab.hubHome, "--human", "--name", "lab-time"))?.[0];
@@ -141,7 +140,7 @@ export async function timeInspector(lab: Lab) {
     check(ran?.state === "ran" && ran.exitCode === 0, `${askId} ran: ${JSON.stringify(ran)}`);
     ok(`${askId} approved by the human key after ${((answeredAt - filedAt) / 1000).toFixed(1)} s; it ran`);
 
-    // The writer's PR, through review (none for tier S), the train and CI, to main.
+    // The writer's PR, through its review, the train and CI, to main.
     const end = await lab.waitEvent(`${taskId} ends`, TURN_MS, { cursor, types: ["task.completed", "task.failed"], match: (e) => e.data?.taskId === taskId });
     check(end.event.type === "task.completed", `${taskId} completed: ${end.event.summary}`);
     prUrl = ((await callTool("task_get", { taskId })).body.task as Body).result?.prUrl as string | undefined;

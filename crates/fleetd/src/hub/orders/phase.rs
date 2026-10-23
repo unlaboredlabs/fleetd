@@ -7,8 +7,6 @@ use fleetd_contracts::live::{AgentRole, LaneStatus, OrderCard, OrderPhase};
 use fleetd_contracts::tasks::{Task, TaskKind, TaskState};
 use fleetd_contracts::train::ChangeState;
 
-use crate::hub::reviews::rules::ReviewRole;
-
 /// One PR of the order, as the phase reads it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PrState {
@@ -168,13 +166,12 @@ pub fn lead_lane_status(state: LeadState, parked: bool, thread_status: Option<&s
     }
 }
 
-/// A task's role: write tasks implement, read tasks read; review tasks verify when the review gate spawned them as
-/// the verifier, are QA runs when spawned with `--qa`, and otherwise review.
-pub fn role(kind: TaskKind, qa: bool, review_role: Option<ReviewRole>) -> AgentRole {
+/// A task's role: write tasks implement, read tasks read; review tasks are QA runs when spawned with `--qa`, and
+/// otherwise review.
+pub fn role(kind: TaskKind, qa: bool) -> AgentRole {
     match kind {
         TaskKind::Write => AgentRole::Implementer,
         TaskKind::Read => AgentRole::Reader,
-        TaskKind::Review if review_role == Some(ReviewRole::Verifier) => AgentRole::Verifier,
         TaskKind::Review if qa => AgentRole::Qa,
         TaskKind::Review => AgentRole::Reviewer,
     }
@@ -217,7 +214,7 @@ mod tests {
         let busy = [
             (Implementer, Working, None),
             (Reviewer, Working, None),
-            (Verifier, Queued, Some("fleet cap: 40 of 40 running")),
+            (Reviewer, Queued, Some("fleet cap: 40 of 40 running")),
         ];
         let pr = [PrState {
             state: ChangeState::Ci,
@@ -308,20 +305,11 @@ mod tests {
     }
 
     #[test]
-    fn review_tasks_take_their_role_from_the_review_gate() {
-        assert_eq!(role(TaskKind::Write, false, None), AgentRole::Implementer);
-        assert_eq!(role(TaskKind::Read, false, None), AgentRole::Reader);
-        assert_eq!(role(TaskKind::Review, false, None), AgentRole::Reviewer);
-        assert_eq!(
-            role(TaskKind::Review, false, Some(ReviewRole::Reviewer)),
-            AgentRole::Reviewer
-        );
-        assert_eq!(role(TaskKind::Review, true, None), AgentRole::Qa);
-        // The gate's verifier wins over a QA flag.
-        assert_eq!(
-            role(TaskKind::Review, true, Some(ReviewRole::Verifier)),
-            AgentRole::Verifier
-        );
+    fn review_tasks_review_unless_they_are_qa_runs() {
+        assert_eq!(role(TaskKind::Write, false), AgentRole::Implementer);
+        assert_eq!(role(TaskKind::Read, false), AgentRole::Reader);
+        assert_eq!(role(TaskKind::Review, false), AgentRole::Reviewer);
+        assert_eq!(role(TaskKind::Review, true), AgentRole::Qa);
     }
 
     #[test]

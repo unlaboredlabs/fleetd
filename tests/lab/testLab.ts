@@ -56,7 +56,6 @@ import { m6Verify } from "./m6Verify.ts";
 import { m7Train } from "./m7Train.ts";
 import { m8Desktop } from "./m8Desktop.ts";
 import { m9Playbooks } from "./m9Playbooks.ts";
-import { noCiTrain } from "./noCiTrain.ts";
 import { noSubagents } from "./noSubagents.ts";
 import { trainBatch } from "./trainBatch.ts";
 import { offlineQueue } from "./offlineQueue.ts";
@@ -98,11 +97,9 @@ const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab)
   // A freed slot offers the next approved item; a slice gets its reviewer before the next slice. Restarts lab-a's lead
   // and adds the lab repo project for its run, so only when named.
   { name: "eff", run: efficiency, only: true },
-  // One PR through the train into a base CI never runs for. Only when named, with FLEETD_LAB_NAMESPACE=noci/<n>.
-  { name: "noci", run: noCiTrain, only: true },
   // Batches on the lab repo: a batch of three in one CI run, a red batch bisected. Only when named.
   { name: "batch", run: trainBatch, only: true },
-  // The app demo: one order fanned out to writers, reviewers and verifiers on the lab repo. Only when named.
+  // The app demo: one order fanned out to writers and reviewers on the lab repo. Only when named.
   { name: "demo", run: demoFanout, only: true },
   { name: "desktop", run: desktopShell, only: true },
   // The per-project lead chat end to end (and the max agents cap): on the lab repo in this slot's namespace and a

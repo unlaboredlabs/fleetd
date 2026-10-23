@@ -61,6 +61,10 @@ pub trait DoctorFleet: Send + Sync {
     fn guard(&self, _machine_id: &str) -> (Option<NodeDisk>, Option<String>) {
         (None, None)
     }
+    /// The repos whose ready PRs the merge train holds for want of CI.
+    fn repos_without_ci(&self) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 pub struct DoctorDeps {
@@ -202,6 +206,7 @@ impl Doctor {
                 self.deps.listen_port,
                 https.as_ref(),
             ),
+            checks::repo_ci(&self.deps.fleet.repos_without_ci()),
         ]
     }
 

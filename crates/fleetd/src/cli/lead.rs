@@ -34,7 +34,7 @@ pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>
   status set "<one line>" [--workstream <W>]
   decisions search "<query>"
   task spawn --workstream <W> --title <t> --prompt <p> [--kind write|read|review]
-      [--profile high|medium] [--tier S|M|L] [--pr <url>] [--qa] [--item P<n>]
+      [--profile high|medium] [--pr <url>] [--qa] [--item P<n>]
              delegate work to a subagent; writers get their own branch; a review task needs --pr, and --qa marks it a QA run; --item links it to
              that plan item
   task list [--state <s>] [--workstream <W>]
@@ -50,7 +50,7 @@ pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>
       [--baseline <n> --candidate <n>]
              the last step of a review task; a research judge also reports its metric for the
              baseline and the candidate, and fleetd computes GO, STOP or INCONCLUSIVE
-  change enqueue --pr <url> [--task <T>] [--workstream <W>] [--tier S|M|L] [--item P<n>]
+  change enqueue --pr <url> [--task <T>] [--workstream <W>] [--item P<n>]
              put a PR on its repo's merge train (a write task's PR goes on by itself). Only the
              train merges. --item links the PR to that plan item
   change status <X>
@@ -123,7 +123,6 @@ const OPTIONS: &[(&str, Kind)] = &[
     ("title", Kind::Str),
     ("prompt", Kind::Str),
     ("profile", Kind::Str),
-    ("tier", Kind::Str),
     ("serves", Kind::Str),
     ("pr", Kind::Str),
     ("qa", Kind::Bool),
@@ -368,7 +367,6 @@ pub fn parse_lead_args(
                     "prompt",
                     "kind",
                     "profile",
-                    "tier",
                     "pr",
                     "qa",
                     "item",
@@ -381,7 +379,6 @@ pub fn parse_lead_args(
                     ("prompt", s(v.str("prompt"))),
                     ("kind", s(v.str("kind"))),
                     ("profile", s(v.str("profile"))),
-                    ("tier", s(v.str("tier"))),
                     ("pr", s(v.str("pr"))),
                     ("qa", v.flag("qa").then_some(Value::Bool(true))),
                     ("item", s(v.str("item"))),
@@ -501,7 +498,7 @@ pub fn parse_lead_args(
         }
         Some("change") => match sub {
             Some("enqueue") => {
-                only(&["pr", "task", "workstream", "tier", "item"])?;
+                only(&["pr", "task", "workstream", "item"])?;
                 if rest.len() > 1 || (rest.len() == 1 && v.str("pr").is_some()) {
                     return Err("expected fleetd change enqueue --pr <url>".into());
                 }
@@ -513,7 +510,6 @@ pub fn parse_lead_args(
                     ("prUrl", s(Some(pr_url))),
                     ("taskId", s(v.str("task"))),
                     ("workstreamId", s(v.str("workstream"))),
-                    ("tier", s(v.str("tier"))),
                     ("item", s(v.str("item"))),
                 ])
             }
@@ -1082,15 +1078,14 @@ fn change_lines(change: &Value) -> Vec<String> {
     };
     let mut lines = vec![
         format!(
-            "{} {}#{} {}{} (tier {}{})",
+            "{} {}#{} {}{}{}",
             st(change, "changeId"),
             st(change, "repo"),
             js(opt(change, "prNumber")),
             st(change, "state"),
             where_,
-            st(change, "tier"),
             opt(change, "taskId")
-                .map(|t| format!(", by {}", js(Some(t))))
+                .map(|t| format!(" (by {})", js(Some(t))))
                 .unwrap_or_default()
         ),
         format!(

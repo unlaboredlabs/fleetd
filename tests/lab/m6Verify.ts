@@ -64,7 +64,6 @@ export async function m6Verify(lab: Lab) {
     pointers: [],
     constraints: [],
     doneWhen: [{ type: "cmd", machineId: MACHINE, argv: ["test", "-f", FILE], expectExit: 0 }],
-    tier: "S",
   };
   const frozen = fleetd("brief", "create", "--workstream", w, "--json", JSON.stringify(brief));
   check(frozen.code === 0, `brief create: exit ${frozen.code} ${frozen.stdout}${frozen.stderr}`);

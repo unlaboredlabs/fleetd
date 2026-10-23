@@ -333,7 +333,7 @@ mod tests {
 
     fn brief(goal: &str) -> Option<Brief> {
         serde_json::from_value(serde_json::json!({
-            "goal": goal, "why": "w", "pointers": [], "constraints": [], "tier": "S",
+            "goal": goal, "why": "w", "pointers": [], "constraints": [],
             "doneWhen": [{ "type": "human", "question": "good?" }],
         }))
         .unwrap()

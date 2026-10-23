@@ -393,10 +393,6 @@ pub fn render(doc: &StatusDoc, zone: Tz) -> String {
         doc.title,
         c.at_s(&doc.now)
     ));
-    let tier = doc
-        .virtual_tier
-        .map(|t| format!(", no plan: counts as one {t:?} item"))
-        .unwrap_or_default();
     if let Some(e) = &p.estimate {
         out.push(format!(
             "  {} {}% verified + {}% in flight",
@@ -406,7 +402,7 @@ pub fn render(doc: &StatusDoc, zone: Tz) -> String {
         ));
     }
     out.push(format!(
-        "  {} of {} required {} verified{tier}{}",
+        "  {} of {} required {} verified{}",
         p.done.get(),
         p.total.get(),
         noun(p.total.get(), "item", "items"),

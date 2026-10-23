@@ -32,8 +32,8 @@ pub struct RiskFacts {
     pub usage: Vec<(String, f64, bool, String)>,
     /// (queued for ms, queued, cap)
     pub slots_queued: Option<(i64, i64, i64)>,
-    /// (order, tier letter, running for ms)
-    pub no_plan: Vec<(String, String, i64)>,
+    /// (order, running for ms)
+    pub no_plan: Vec<(String, i64)>,
     /// (steer, who it went to, sent at clock text) of steers unacknowledged, or delivered past [`STEER_ACK_MS`].
     pub steers_unacked: Vec<(String, String, String)>,
     /// (item, where it is, measured time there) of items past 1.5× their stage's usual time, slowest first.
@@ -164,12 +164,12 @@ pub fn risks(f: &RiskFacts) -> Vec<Risk> {
             format!("slots full {}, {queued} queued (cap {cap})", age(for_ms)),
         ));
     }
-    for (ws, tier, running_ms) in &f.no_plan {
+    for (ws, running_ms) in &f.no_plan {
         if *running_ms >= NO_PLAN_MS {
             out.push(risk(
                 RiskRule::NoPlan,
                 Warning,
-                format!("{ws} has no plan; it counts as one {tier} item"),
+                format!("{ws} has no plan; it counts as one small item"),
             ));
         }
     }
@@ -231,7 +231,7 @@ mod tests {
                 ("wk".into(), 0.93, false, "Thu".into()),
             ],
             slots_queued: Some((SLOTS_FULL_MS, 1, 40)),
-            no_plan: vec![("W42".into(), "M".into(), NO_PLAN_MS)],
+            no_plan: vec![("W42".into(), NO_PLAN_MS)],
             steers_unacked: vec![("S12".into(), "the lead".into(), "14:02".into())],
             open_must: vec![
                 ("P3".into(), "runner".into(), 'm', 1),

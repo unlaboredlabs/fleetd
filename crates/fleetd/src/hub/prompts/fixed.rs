@@ -13,7 +13,7 @@ macro_rules! fixed {
 pub const TASK_BRIEF_READ: &str = fixed!("task.brief.read");
 /// A review task's first message (one the lead spawns, not the train's reviewer).
 pub const TASK_BRIEF_REVIEW: &str = fixed!("task.brief.review");
-/// Appended to a reviewer's or verifier's prompt when it reviewed an earlier head of the PR.
+/// Appended to a reviewer's prompt when an earlier round reviewed another head of the PR.
 pub const REVIEW_DELTA: &str = fixed!("review.delta");
 /// The lead's tool result when a plan item is too big or unsized.
 pub const PLAN_GRANULARITY: &str = fixed!("plan.granularity");

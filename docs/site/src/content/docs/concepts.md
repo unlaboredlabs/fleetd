@@ -42,7 +42,7 @@ This page shows how fleetd's parts fit together and what happens to a piece of w
 <rect x="465" y="300" width="80" height="34" rx="4" stroke-dasharray="4 3"/>
 <text x="505" y="322" text-anchor="middle" fill="currentColor" stroke="none" font-size="12">writer</text>
 <rect x="554" y="300" width="80" height="34" rx="4" stroke-dasharray="4 3"/>
-<text x="594" y="322" text-anchor="middle" fill="currentColor" stroke="none" font-size="12">verifier</text>
+<text x="594" y="322" text-anchor="middle" fill="currentColor" stroke="none" font-size="12">reviewer</text>
 <text x="505" y="366" text-anchor="middle" fill="currentColor" stroke="none" font-size="12">claude sessions</text>
 </svg>
 </figure>
@@ -126,15 +126,8 @@ Only fleetd merges. Each repo has one train, a queue that rebases each ready pul
 commit, and squash-merges it. Ready PRs that touch different files merge together in one CI run. See
 [Merge train](/docs/merge-train).
 
-A pull request's **tier** sets its reviews:
-
-| Tier | Reviews needed before merge |
-|---|---|
-| S | none |
-| M | one clean review |
-| L | two clean reviews and a verifier |
-
-A PR with no CI merges on fleetd's own checks, and the merge says so.
+Every pull request merges on one clean review of its current commit plus green CI. A repo with no CI holds its PRs
+until it has some.
 
 ### Done, checked {#done}
 

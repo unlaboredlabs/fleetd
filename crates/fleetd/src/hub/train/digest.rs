@@ -1,6 +1,3 @@
-//! The merge train in the lead digest: each train's state, PRs merged since the lead's last wake, PRs sent back to
-//! their authors, and review waivers (the polish-loop rule's notes on a Change). The renderer is pure; `train_facts`
-//! gathers its input.
 use std::collections::HashMap;
 
 use super::contract::{Change, ChangeState, ProjectRef, TrainState, state_str};
@@ -11,8 +8,6 @@ pub struct TrainFacts {
     pub trains: Vec<TrainState>,
     /// Newest first.
     pub changes: Vec<Change>,
-    /// Why review was waived for a Change's patch, by change id.
-    pub waivers: HashMap<String, String>,
 }
 
 const PARKED: [ChangeState; 2] = [ChangeState::NeedsRebase, ChangeState::CiFailed];
@@ -84,14 +79,6 @@ fn merged(changes: &[Change], since_ms: Option<i64>) -> impl Iterator<Item = &Ch
         .filter(move |c| c.state == ChangeState::Merged && updated_after(c, since_ms))
 }
 
-/// Waived Changes still on the train, or merged since `since_ms`.
-fn waived(facts: &TrainFacts, since_ms: Option<i64>) -> impl Iterator<Item = (&Change, &String)> {
-    facts.changes.iter().filter_map(move |c| {
-        let reason = facts.waivers.get(c.change_id.as_str())?;
-        (c.state != ChangeState::Merged || updated_after(c, since_ms)).then_some((c, reason))
-    })
-}
-
 /// The lead digest's "Merge train" lines. `since` is the lead's last wake.
 pub fn lead_train_lines(facts: &TrainFacts, since: Option<&str>) -> Vec<String> {
     // Date.parse of an unreadable `since` is NaN: nothing is "after" it.
@@ -134,15 +121,6 @@ pub fn lead_train_lines(facts: &TrainFacts, since: Option<&str>) -> Vec<String> 
                 )
             }),
     );
-    lines.extend(waived(facts, since_ms).map(|(c, reason)| {
-        format!(
-            "- {} {} ({}): review waived, {}",
-            c.change_id,
-            pr(c),
-            state_str(c.state),
-            one_line(reason, 200)
-        )
-    }));
     lines
 }
 
@@ -162,13 +140,6 @@ pub fn train_facts(records: &ChangeRecords, shown: impl Fn(&ProjectRef) -> bool)
         .filter(|c| shown(&c.project_ref))
         .take(50)
         .collect();
-    let ids: std::collections::HashSet<&str> =
-        changes.iter().map(|c| c.change_id.as_str()).collect();
-    let waivers = records
-        .waivers()
-        .into_iter()
-        .filter(|(id, _)| ids.contains(id.as_str()))
-        .collect();
     TrainFacts {
         trains: trains
             .iter()
@@ -176,6 +147,5 @@ pub fn train_facts(records: &ChangeRecords, shown: impl Fn(&ProjectRef) -> bool)
             .map(|t| records.train_state(&t.repo))
             .collect(),
         changes,
-        waivers,
     }
 }

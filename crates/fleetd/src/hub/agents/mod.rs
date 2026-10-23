@@ -171,7 +171,7 @@ pub fn rows(
             .or_insert_with(|| orders::project_changes(hub, &task.project_ref));
         let prs: Vec<_> = project_changes
             .iter()
-            .map(|c| (c, orders::pr_ref(c, hub.reviews.reviews_needed(c))))
+            .map(|c| (c, orders::pr_ref(c)))
             .collect();
         let lane = orders::task_lane(task, &prs, hub);
         let title = projects.get(&task.project_ref).map_or("", String::as_str);

@@ -183,9 +183,9 @@ const nextTask = async (lab: Lab, ref: Ref, cursor: number, what: string, ms: nu
 };
 
 /** A workstream for an order the harness drives, its brief frozen from the shell as a lead would. */
-const quietOrder = async (lab: Lab, ref: Ref, fleetd: Shell, title: string, doneWhen: ReadonlyArray<Body>, tier: "S" | "M" = "S") => {
+const quietOrder = async (lab: Lab, ref: Ref, fleetd: Shell, title: string, doneWhen: ReadonlyArray<Body>) => {
   const w = openWorkstream(lab.check, fleetd, title);
-  const brief = { goal: title, why: "the chat lab scenario", pointers: [], constraints: [], tier, doneWhen };
+  const brief = { goal: title, why: "the chat lab scenario", pointers: [], constraints: [], doneWhen };
   const frozen = fleetd("brief", "create", "--workstream", w, "--json", JSON.stringify(brief));
   lab.check(frozen.code === 0, `brief create ${w}: ${JSON.stringify(frozen)}`);
   return w;
@@ -711,9 +711,9 @@ async function cap1Part(lab: Lab, ref: Ref, fleetd: Shell, need: (t: string) => 
     check(!set.isError, `cap_set ${n}: ${JSON.stringify(set.body)}`);
   };
   const file = `${DIR}/cap1.md`;
-  // Tier M: its PR needs a review before the train merges it, so the review is what gates the merge.
+  // Its PR needs a review before the train merges it, so the review is what gates the merge.
   const onMain = { type: "cmd", machineId: ref.machineId, argv: ["gh", "api", onBase(file), "--silent"], expectExit: 0 };
-  const w = await quietOrder(lab, ref, fleetd, `chat lab: add ${file} at max agents 1`, [onMain], "M");
+  const w = await quietOrder(lab, ref, fleetd, `chat lab: add ${file} at max agents 1`, [onMain]);
   // Earlier parts' agents (the lead's own work) finish first, so nothing but this part's agents holds a slot.
   await lab.until("the project's earlier agents finish", TURN_MS * 3, async () =>
     (await tasksOf(lab, ref)).some((t) => ["queued", "running"].includes(t.state)) ? (await new Promise((r) => setTimeout(r, 2_000)), undefined) : true,

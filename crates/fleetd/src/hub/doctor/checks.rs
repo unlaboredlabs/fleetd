@@ -193,6 +193,28 @@ pub fn gh_auth(outcome: &CmdOutcome) -> Entry {
     }
 }
 
+/// Repos whose ready PRs wait because they have no CI: fleetd merges only on green CI, so they wait until it exists.
+pub fn repo_ci(without_ci: &[String]) -> Entry {
+    if without_ci.is_empty() {
+        return hub_entry(
+            "repo_ci",
+            Pass,
+            "Every repo with a PR ready to merge has CI.",
+            None,
+        );
+    }
+    let repos = without_ci.join(", ");
+    hub_entry(
+        "repo_ci",
+        Fail,
+        &format!("No CI on {repos}: fleetd merges only on green CI, so their ready PRs wait."),
+        Some(manual(
+            &format!("Add a GitHub Actions workflow that runs on pull requests to {repos}"),
+            None,
+        )),
+    )
+}
+
 /// Why plain HTTP to `url` is safe, if it is: loopback never leaves the machine, and a tailnet address (100.64.0.0/10,
 /// fd7a:115c:a1e0::/48 or a *.ts.net name) travels inside Tailscale's WireGuard tunnel.
 pub fn sealed_http(url: &str) -> Option<&'static str> {
@@ -697,6 +719,17 @@ pub fn disk_space(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_repo_with_no_ci_fails_with_the_add_ci_fix() {
+        assert_eq!(repo_ci(&[]).check.status, Pass);
+        let held = repo_ci(&["acme/app".into()]).check;
+        assert_eq!((held.id.as_str(), held.status), ("hub/repo_ci", Fail));
+        assert_eq!(
+            held.fix.map(|f| f.label),
+            Some("Add a GitHub Actions workflow that runs on pull requests to acme/app".into())
+        );
+    }
 
     #[test]
     fn a_project_outside_cmd_roots_fails_with_the_fix() {

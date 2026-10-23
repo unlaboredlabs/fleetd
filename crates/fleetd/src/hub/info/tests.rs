@@ -185,7 +185,7 @@ fn a_merge_counts_only_while_the_hub_rebases_or_merges_it() {
         serde_json::from_value(json!({
             "changeId": "X1", "projectRef": { "machineId": "devbox", "projectId": "p1" }, "repo": "acme/shop",
             "prNumber": 251, "prUrl": "https://github.com/acme/shop/pull/251", "branch": "fleetd/T1-checkout",
-            "workstreamId": "W1", "serves": "done:0", "tier": "M",
+            "workstreamId": "W1", "serves": "done:0",
             "headSha": "0123456789abcdef0123456789abcdef01234567", "state": state, "reviews": [],
             "createdAt": AT, "updatedAt": AT,
         }))

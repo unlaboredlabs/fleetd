@@ -7,7 +7,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_with::skip_serializing_none;
 
 use crate::ids::ProjectRef;
-use crate::ledger::{Brief, CheckType, PlaybookName, Tier};
+use crate::ledger::{Brief, CheckType, PlaybookName};
 use crate::prim::{Int, Line, List, MAX_SAFE_INT, UniqueList};
 
 /// The brief's doneWhen needs at least one check whose type is in `any_of`.
@@ -21,45 +21,15 @@ pub struct RequiredCheck {
     pub label: Option<Line<1, 100>>,
 }
 
-/// How a change of one tier is reviewed before the train merges it.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ReviewRule {
-    pub reviewers: Int<0, 4>,
-    pub verifier: bool,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct PlaybookReviewRules {
-    #[serde(rename = "S")]
-    pub s: ReviewRule,
-    #[serde(rename = "M")]
-    pub m: ReviewRule,
-    #[serde(rename = "L")]
-    pub l: ReviewRule,
-}
-
-impl PlaybookReviewRules {
-    pub fn for_tier(&self, tier: Tier) -> &ReviewRule {
-        match tier {
-            Tier::S => &self.s,
-            Tier::M => &self.m,
-            Tier::L => &self.l,
-        }
-    }
-}
-
 /// The YAML frontmatter of `playbooks/<name>.md`, or of its override in `~/.fleetd/hub/playbooks/`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Playbook {
     pub name: PlaybookName,
-    /// Bumped by hand on changes to gates, checks or tiers; the pin itself is the file's SHA.
+    /// Bumped by hand on changes to gates or checks; the pin itself is the file's SHA.
     pub version: Int<1, MAX_SAFE_INT>,
     /// Every entry must be met.
     pub required_checks: List<RequiredCheck, 0, 10>,
-    pub tier_default: Tier,
-    pub review_rules: PlaybookReviewRules,
 }
 
 /// What the research playbook adds to the floor, as refusal text.
@@ -138,17 +108,11 @@ mod tests {
     use super::*;
     use serde_json::{Value, json};
 
-    fn review(reviewers: i64) -> Value {
-        json!({ "reviewers": reviewers, "verifier": false })
-    }
-
     fn bugfix() -> Value {
         json!({
             "name": "bugfix",
             "version": 1,
             "requiredChecks": [{ "anyOf": ["test", "cmd"], "label": "a failing repro check" }],
-            "tierDefault": "S",
-            "reviewRules": { "S": review(0), "M": review(1), "L": review(2) },
         })
     }
 
@@ -172,11 +136,6 @@ mod tests {
             "requiredChecks",
             json!([{ "anyOf": [] }])
         )));
-        assert!(!accepts(with(
-            bugfix(),
-            "reviewRules",
-            json!({ "S": review(0), "M": review(1) })
-        )));
     }
 
     #[test]
@@ -184,7 +143,6 @@ mod tests {
         let brief = json!({
             "goal": "g", "why": "w", "pointers": [], "constraints": [],
             "doneWhen": [{ "type": "judge", "criteria": "the judge reports both numbers" }],
-            "tier": "M",
         });
         let mut research = brief.clone();
         research["baseline"] = json!("main at its current head");

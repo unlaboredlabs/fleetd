@@ -1,7 +1,7 @@
 //! The contract types this area uses, from `fleetd-contracts`, plus the string forms the hub prints them in.
 pub use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, Timestamp};
 pub use fleetd_contracts::lead_calls::ChangeEnqueueCall;
-pub use fleetd_contracts::ledger::{Tier, WorkstreamId};
+pub use fleetd_contracts::ledger::WorkstreamId;
 pub use fleetd_contracts::prim::{Count, NonEmpty, Positive, Text};
 pub use fleetd_contracts::tasks::TaskId;
 pub use fleetd_contracts::train::{
@@ -9,14 +9,6 @@ pub use fleetd_contracts::train::{
     parse_pr_url,
 };
 pub use fleetd_contracts::verification::CommitSha;
-
-pub fn tier_str(tier: Tier) -> &'static str {
-    match tier {
-        Tier::S => "S",
-        Tier::M => "M",
-        Tier::L => "L",
-    }
-}
 
 pub fn state_str(state: ChangeState) -> &'static str {
     match state {
@@ -37,8 +29,6 @@ pub fn state_str(state: ChangeState) -> &'static str {
 pub fn parse_state(s: &str) -> Option<ChangeState> {
     serde_json::from_value(serde_json::Value::String(s.into())).ok()
 }
-
-pub use fleetd_contracts::playbooks::ReviewRule;
 
 /// `lastError` as stored: at most 2000 characters, as error_text and note cut it.
 pub fn last_error(text: impl Into<String>) -> Text<0, 2000> {

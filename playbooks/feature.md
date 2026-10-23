@@ -2,11 +2,6 @@
 name: feature
 version: 2
 requiredChecks: []
-tierDefault: M
-reviewRules:
-  S: { reviewers: 0, verifier: false }
-  M: { reviewers: 1, verifier: false }
-  L: { reviewers: 2, verifier: true }
 ---
 
 # Feature

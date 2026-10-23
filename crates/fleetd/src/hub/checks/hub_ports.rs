@@ -189,7 +189,6 @@ impl Ports for HubPorts {
                 kind: TaskKind::Review,
                 prompt: Text::unchecked(spawn.prompt),
                 profile: None,
-                tier: None,
                 pr: None,
                 qa: None,
                 item: None,

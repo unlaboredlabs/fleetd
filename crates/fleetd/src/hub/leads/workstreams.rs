@@ -5,8 +5,8 @@ use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::lead_calls::{BriefCreateResult, StatusSetResult};
 use fleetd_contracts::ledger::{
-    BriefDraft, IntakeChannel, PlaybookName, PlaybookRef, Workstream, WorkstreamId,
-    WorkstreamParent, WorkstreamState,
+    Brief, IntakeChannel, PlaybookName, PlaybookRef, Workstream, WorkstreamId, WorkstreamParent,
+    WorkstreamState,
 };
 use fleetd_contracts::mcp::ErrorCode;
 
@@ -181,7 +181,7 @@ impl Workstreams {
         &self,
         caller: &ProjectRef,
         workstream_id: &WorkstreamId,
-        draft: BriefDraft,
+        brief: Brief,
     ) -> Result<BriefCreateResult, LeadError> {
         let w = &self.own(caller, workstream_id)?;
         let id = &w.workstream_id;
@@ -193,14 +193,6 @@ impl Workstreams {
             .transpose()?
             .flatten()
             .map(|p| p.playbook);
-        let tier = draft.tier.or(playbook.as_ref().map(|p| p.tier_default));
-        let Some(tier) = tier else {
-            return Err(LeadError::invalid(
-                "Invalid brief: tier is missing",
-                "A brief needs goal, why, pointers, constraints, at least one doneWhen check and a tier (S, M or L).",
-            ));
-        };
-        let brief = draft.into_brief(tier);
         if let Some(short) = playbook.as_ref().and_then(|p| floor_refusal(p, &brief)) {
             return Err(LeadError::invalid(
                 short,

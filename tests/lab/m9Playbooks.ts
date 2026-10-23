@@ -79,7 +79,6 @@ export async function m9Playbooks(lab: Lab) {
     goal: "find out whether a shorter README reads faster",
     why: "M9 lab",
     doneWhen: [{ type: "judge", criteria: "Lab run: the harness reports both numbers itself. Do not measure or run anything; reply with the single word OK." }],
-    tier: "S",
     baseline: "the README as it is",
     metric: "seconds to read the README",
     decisionRule: { better: "lower", goAtLeast: 5, stopBelow: 5 },

@@ -61,10 +61,6 @@
           "$ref": "#/$defs/TaskId",
           "description": "The write task that opened it; absent when the lead enqueued a PR no task wrote."
         },
-        "tier": {
-          "$ref": "#/$defs/Tier",
-          "description": "From the workstream's brief; may be raised, never lowered."
-        },
         "updatedAt": {
           "$ref": "#/$defs/Timestamp"
         },
@@ -80,7 +76,6 @@
         "prUrl",
         "branch",
         "workstreamId",
-        "tier",
         "headSha",
         "state",
         "reviews",
@@ -186,14 +181,6 @@
     },
     "TaskId": {
       "pattern": "^T[1-9][0-9]*$",
-      "type": "string"
-    },
-    "Tier": {
-      "enum": [
-        "S",
-        "M",
-        "L"
-      ],
       "type": "string"
     },
     "Timestamp": {

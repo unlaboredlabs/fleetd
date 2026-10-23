@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::brand;
 use crate::effort::TaskProfile;
 use crate::ids::{ProjectRef, ThreadRef, Timestamp};
-use crate::ledger::{Tier, WorkstreamId};
+use crate::ledger::WorkstreamId;
 use crate::prim::{Count, Line, List, NonEmpty, Positive, Text, is_http_url, js_len};
 use crate::usage::UsageParked;
 
@@ -108,7 +108,6 @@ pub struct Task {
     /// Resolved at spawn. Rows stored with a model and effort read as `high` (the hub migrates its own).
     #[serde(default)]
     pub profile: TaskProfile,
-    pub tier: Option<Tier>,
     /// A review task spawned with `--qa`.
     pub qa: Option<bool>,
     /// The PR a review task reviews. Required at spawn for review; absent on hub-spawned judge tasks and older rows.
