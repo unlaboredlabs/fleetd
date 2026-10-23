@@ -6,12 +6,11 @@
 // 3. the app quits and relaunches with the hub still down: the chat and the queued message come back from the cache;
 // 4. the hub starts: the app resyncs, and the queued message reaches the hub exactly once;
 // 5. a hub restart with the chat open never leaves it blank.
-// One haiku turn: the lead answering the queued message (the first message is a secret request, which costs none).
-import { spawnSync } from "node:child_process";
+// One medium turn: the lead answering the queued message (the first message is a secret request, which costs none).
 import fs from "node:fs";
 import path from "node:path";
 import { launch } from "./desktopShell.ts";
-import { type Body, cli, fleetdCommand, LAB, type Lab, MODEL, nodeSock, scrubbedEnv, seedRepo, slotPort } from "./harness.ts";
+import { type Body, cli, LAB, type Lab, leadIn, MODEL, nodeSock, scrubbedEnv, seedRepo, slotPort } from "./harness.ts";
 
 const MACHINE = "lab-a";
 const REPO = path.join(LAB, "repo-offline");
@@ -25,19 +24,19 @@ export async function desktopOffline(lab: Lab) {
   fs.mkdirSync(lab.dir, { recursive: true });
   await lab.waitLive(MACHINE);
 
-  // A project of its own, its lead on haiku.
+  // A project of its own, its lead on medium.
   fs.rmSync(REPO, { recursive: true, force: true });
   fs.mkdirSync(path.join(REPO, ".fleetd"), { recursive: true });
-  fs.writeFileSync(path.join(REPO, ".fleetd/policy.yaml"), `defaults:\n  model: ${MODEL}\n  effort: low\n`);
+  fs.writeFileSync(path.join(REPO, ".fleetd/policy.yaml"), `defaults:\n  model: ${MODEL}\n  effort: medium\n`);
   seedRepo(REPO, "offline");
   const projectId = await lab.addProject(MACHINE, REPO, "repo-offline");
   const ref = { machineId: MACHINE, projectId };
-  const out = spawnSync(...fleetdCommand(["request", "secret", "--key", "staging.token", "--sink", `env:${MACHINE}:${path.join(lab.dir, ".env")}`, "--text", ASK]), {
-    cwd: REPO,
-    encoding: "utf8",
-    env: { ...scrubbedEnv(), PWD: REPO, FLEETD_NODE_SOCK: nodeSock(MACHINE) },
+  const out = leadIn(REPO, { ...scrubbedEnv(), FLEETD_NODE_SOCK: nodeSock(MACHINE) })("request_secret", {
+    key: "staging.token",
+    sink: `env:${MACHINE}:${path.join(lab.dir, ".env")}`,
+    text: ASK,
   });
-  check(out.status === 0, `fleetd request secret: ${out.stdout}${out.stderr}`);
+  check(out.code === 0, `request_secret: ${out.text}`);
 
   // The app pairs a person's key; chat_send is theirs.
   const key = /fld_[a-z2-7]{20,}/u.exec(cli("hub", "key", "create", "--home", lab.hubHome, "--human", "--name", "lab-offline"))?.[0];

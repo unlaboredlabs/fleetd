@@ -89,7 +89,7 @@ fn hub_event_data_document_for(side: Side) -> Value {
         data!(TaskEventData: TaskQueued, TaskStarted, TaskCompleted, TaskFailed, TaskCancelled);
         data!(AgentsCapData: AgentsCap);
         data!(TrainEventData: ChangeQueued, ChangeReady, ChangeNeedsRebase, ChangeCiFailed, ChangeRefused, PrMerged,
-            PrMergedOutside, TrainBlocked);
+            PrMergedOutside);
         data!(ChangeStateData: ChangeState);
         data!(CiMainData: CiMain);
         data!(SourceStaleData: SourceStale);

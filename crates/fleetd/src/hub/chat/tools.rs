@@ -1,21 +1,16 @@
-//! MCP tools of the lead chat (chat_send, chat_history, chat_stop, project_stop) and the lead's `workstream_open` call.
-use std::sync::{Arc, Weak};
+//! MCP tools of the lead chat (chat_send, chat_history, chat_stop, project_stop) and the chat state in `fleetd_status`.
+use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
-use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult, WorkstreamOpenResult};
-use fleetd_contracts::ledger::IntakeChannel;
 use fleetd_contracts::mcp::{
     ChatHistoryInput, ChatHistoryOutput, ChatSendInput, ChatSendOutput, ChatStopInput, ErrorCode,
-    McpToolError, ProjectStopInput, ProjectStopOutput,
+    ProjectStopInput, ProjectStopOutput,
 };
 use fleetd_contracts::prim::List;
 use serde_json::Value;
 
 use super::flow;
 use crate::hub::api::{Caller, Hub, Registry, ToolError, require};
-use crate::hub::leads::workstreams::IntakeInput;
-use crate::hub::link::lead_calls::LeadCallFuture;
-use crate::hub::link::{LeadCaller, LeadCalls};
 
 pub fn register(tools: &mut Registry) {
     tools.add("chat_send", chat_send);
@@ -85,48 +80,7 @@ async fn chat_stop(hub: Arc<Hub>, caller: Caller, input: Value) -> Result<Value,
         .map_err(|e| ToolError::from(crate::hub::store::StoreError::from(e)))
 }
 
-/// Registers `workstream_open`: a lead opens its own workstream for work it took from the chat, as a draft it then
-/// freezes with `brief`. No intent wake: the lead that opens it already knows.
-pub fn register_lead_calls(hub: &Arc<Hub>) {
-    let weak: Weak<Hub> = Arc::downgrade(hub);
-    let handler = Arc::new(
-        move |caller: LeadCaller, call: LeadCall| -> LeadCallFuture {
-            let hub = weak.upgrade();
-            Box::pin(async move {
-                let hub = hub.ok_or_else(|| {
-                    McpToolError::new(ErrorCode::Failed, "The hub is shutting down.")
-                })?;
-                let LeadCall::WorkstreamOpen(open) = call else {
-                    return Err(McpToolError::new(
-                        ErrorCode::Invalid,
-                        "Not a workstream_open call.",
-                    ));
-                };
-                let outcome = hub
-                    .leads
-                    .workstreams
-                    .open(IntakeInput {
-                        project_ref: caller.project_ref.clone(),
-                        text: open.text.to_string(),
-                        client_request_id: request_id(),
-                        channel: IntakeChannel::Lead,
-                        by: caller.by.clone(),
-                        template: open.template,
-                    })
-                    .map_err(McpToolError::from)?;
-                Ok(LeadCallResult::WorkstreamOpen(WorkstreamOpenResult {
-                    next: Some(format!(
-                        "{} is a draft: freeze its brief with `brief`, then spawn its agents.",
-                        outcome.workstream_id
-                    )),
-                    workstream_id: outcome.workstream_id,
-                    playbook: outcome.playbook,
-                }))
-            })
-        },
-    );
-    let calls: &LeadCalls = &hub.lead_calls;
-    calls.register("workstream_open", handler);
+pub fn extend_status(hub: &Arc<Hub>) {
     // fleetd_status (and so the app's snapshot) carries each readable project's chat state.
     hub.executors.hooks.extend_status(Arc::new(|hub, caller| {
         Box::pin(async move {
@@ -144,10 +98,4 @@ pub fn register_lead_calls(hub: &Arc<Hub>) {
             Ok(out)
         })
     }));
-}
-
-/// Each call opens a new workstream: a fresh key, never deduped.
-fn request_id() -> String {
-    let bytes: [u8; 16] = rand::random();
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }

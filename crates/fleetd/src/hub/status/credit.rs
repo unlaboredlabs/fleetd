@@ -89,11 +89,10 @@ pub fn change_stage(state: ChangeState) -> Option<Stage> {
     })
 }
 
-/// A unit the bar credits: a plan item, or an order with no plan items (its tasks and PRs are its stages).
+/// A unit the bar credits: a plan item.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum UnitKey {
     Item(i64),
-    Order(String),
 }
 
 /// Something fleetd observed about a unit.
@@ -105,7 +104,7 @@ pub enum What {
         change: String,
         state: ChangeState,
     },
-    /// fleetd verified it (`plan.verified`, or a placeholder's order done).
+    /// fleetd verified it (`plan.verified`).
     Verified,
 }
 
@@ -257,7 +256,7 @@ pub fn figure(units: &[(f64, f64, bool)]) -> (i64, i64) {
     (credit.max(verified), verified)
 }
 
-/// An order the bars read: open, done in the last day, or holding a placeholder.
+/// An order the bars read: open, or done in the last day.
 pub struct Order {
     pub w: Workstream,
     pub pkey: String,
@@ -296,8 +295,6 @@ pub struct Data {
     /// Milestone → when its first item came.
     pub first_item_ms: HashMap<i64, i64>,
     pub orders: Vec<Order>,
-    /// Orders with no plan, by id: (placeholder size in points, done).
-    pub placeholders: HashMap<String, (i64, bool)>,
     /// Changes of `orders`.
     pub changes: Vec<Change>,
     /// The last day's events the bars read, oldest first: (type, stored JSON).
@@ -329,8 +326,7 @@ impl Data {
             .prepare_cached(
                 "SELECT machine_id, project_id, data FROM workstreams
                  WHERE state IN ('running', 'converging', 'verifying', 'idle')
-                    OR (state = 'done' AND (json_extract(data, '$.updatedAt') >= ?
-                        OR 'W' || n IN (SELECT workstream_id FROM plan_placeholders WHERE state != 'left')))",
+                    OR (state = 'done' AND json_extract(data, '$.updatedAt') >= ?)",
             )?
             .query_map([&since_iso], |r| {
                 Ok((
@@ -348,17 +344,6 @@ impl Data {
                 });
             }
         }
-        let placeholders = c
-            .prepare_cached(
-                "SELECT workstream_id, size, state FROM plan_placeholders WHERE state != 'left'",
-            )?
-            .query_map([], |r| {
-                Ok((
-                    r.get::<_, String>(0)?,
-                    (r.get::<_, i64>(1)?, r.get::<_, String>(2)? == "done"),
-                ))
-            })?
-            .collect::<rusqlite::Result<_>>()?;
         let milestones = plan::store::milestones_all(c)?;
         let ids = serde_json::to_string(&orders.iter().map(Order::id).collect::<Vec<_>>())
             .unwrap_or_else(|_| "[]".into());
@@ -461,7 +446,6 @@ impl Data {
                 .filter_map(|m| Some((m.n, m.first_item_ms?)))
                 .collect(),
             orders,
-            placeholders,
             changes,
             recent,
             live_tasks,
@@ -481,16 +465,8 @@ pub struct Bar {
     pub causes: Vec<Cause>,
 }
 
-fn size_of(points: i64) -> Size {
-    match points {
-        1 => Size::S,
-        8 => Size::L,
-        _ => Size::M,
-    }
-}
-
 /// The project's bar, or None when it has nothing to count. The units are the live items of its open milestones
-/// (must items, or polish when it has none) and its orders with no plan items.
+/// (must items, or polish when it has none).
 pub fn bar(d: &Data, pkey: &str) -> Option<Bar> {
     let now = d.now;
     let live: Vec<&ItemRow> = d
@@ -502,25 +478,12 @@ pub fn bar(d: &Data, pkey: &str) -> Option<Bar> {
                 && d.open_milestones.contains(&i.milestone)
         })
         .collect();
-    let with_placeholder: Vec<&Order> = d
-        .orders
-        .iter()
-        .filter(|o| o.pkey == pkey && d.placeholders.contains_key(o.id()))
-        .collect();
-    let has_must = live.iter().any(|i| i.weight == Weight::Must) || !with_placeholder.is_empty();
+    let has_must = live.iter().any(|i| i.weight == Weight::Must);
     let counted: Vec<&ItemRow> = live
         .into_iter()
         .filter(|i| (i.weight == Weight::Must) == has_must)
         .collect();
-    let orders: Vec<&Order> = with_placeholder
-        .into_iter()
-        .filter(|o| {
-            !counted
-                .iter()
-                .any(|i| i.workstream_id.as_deref() == Some(o.id()))
-        })
-        .collect();
-    if counted.is_empty() && orders.is_empty() {
+    if counted.is_empty() {
         return None;
     }
 
@@ -556,31 +519,6 @@ pub fn bar(d: &Data, pkey: &str) -> Option<Bar> {
             {
                 change_units.push((key.clone(), ch));
             }
-        }
-    }
-    for o in &orders {
-        let key = UnitKey::Order(o.id().to_owned());
-        if let Some(at) = parse_ms(o.w.created_at.as_str()) {
-            obs.push(Obs {
-                at_ms: at,
-                unit: key.clone(),
-                what: What::Created,
-            });
-        }
-        if d.placeholders.get(o.id()).is_some_and(|p| p.1) {
-            // Done is what the placeholder says; its order's update time only dates it, never after now.
-            obs.push(Obs {
-                at_ms: parse_ms(o.w.updated_at.as_str()).map_or(now, |at| at.min(now)),
-                unit: key.clone(),
-                what: What::Verified,
-            });
-        }
-        for ch in d
-            .changes
-            .iter()
-            .filter(|c| c.workstream_id.as_str() == o.id())
-        {
-            change_units.push((key.clone(), ch));
         }
     }
     // Each Change's moves in the last day, from `change.state` events.
@@ -731,11 +669,6 @@ pub fn bar(d: &Data, pkey: &str) -> Option<Bar> {
             unit_tasks.push((UnitKey::Item(i.n), t.as_str()));
         }
     }
-    for o in &orders {
-        for (t, _) in d.live_tasks.iter().filter(|(_, l)| l.order == o.id()) {
-            unit_tasks.push((UnitKey::Order(o.id().to_owned()), t));
-        }
-    }
     // The project's latest pause, shown while nothing else in it runs.
     let mut paused: Option<(i64, &str)> = None;
     for (key, t) in unit_tasks {
@@ -760,25 +693,17 @@ pub fn bar(d: &Data, pkey: &str) -> Option<Bar> {
     let units: Vec<(UnitKey, i64)> = counted
         .iter()
         .map(|i| (UnitKey::Item(i.n), i.size.points()))
-        .chain(orders.iter().map(|o| {
-            (
-                UnitKey::Order(o.id().to_owned()),
-                d.placeholders.get(o.id()).map_or(3, |p| p.0),
-            )
-        }))
         .collect();
     let credited: Vec<(f64, f64, bool)> = units
         .into_iter()
         .map(|(key, points)| {
             let f = facts.get(&key).cloned().unwrap_or_default();
             let sp = spans.get(&key).map_or(&[][..], Vec::as_slice);
-            let size = match &key {
-                UnitKey::Item(n) => counted
-                    .iter()
-                    .find(|i| i.n == *n)
-                    .map_or(Size::M, |i| i.size),
-                UnitKey::Order(_) => size_of(points),
-            };
+            let UnitKey::Item(n) = &key;
+            let size = counted
+                .iter()
+                .find(|i| i.n == *n)
+                .map_or(Size::M, |i| i.size);
             let (credit, verified) = unit_credit(&f, now, size, sp);
             (points as f64, credit, verified)
         })

@@ -689,6 +689,72 @@ fn incidents_go_on_an_older_hub() {
     assert_eq!(types, ["pr.merged_outside"]);
 }
 
+/// A hub from before the train's worktree went: its `train.blocked` events go, so every stored event still decodes.
+#[test]
+fn train_blocked_events_go_on_an_older_hub() {
+    use super::migrations::MIGRATIONS;
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    let gone = MIGRATIONS
+        .iter()
+        .position(|m| m.contains("'train.blocked'"))
+        .expect("the train.blocked migration");
+    for m in &MIGRATIONS[..gone] {
+        conn.execute_batch(m).unwrap();
+    }
+    conn.execute_batch(
+        r#"INSERT INTO events (created_ms, type, data) VALUES (0, 'train.blocked', '{"error":"x"}'),
+          (0, 'pr.merged', '{"repo":"o/r","prNumber":8}');"#,
+    )
+    .unwrap();
+    for m in &MIGRATIONS[gone..] {
+        conn.execute_batch(m).unwrap();
+    }
+    let types: Vec<String> = conn
+        .prepare("SELECT type FROM events")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(types, ["pr.merged"]);
+}
+
+/// A hub from before playbooks went: its pinned texts go, and a pinned workstream reads back unpinned.
+#[test]
+fn playbook_pins_go_on_an_older_hub() {
+    use super::migrations::MIGRATIONS;
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    let gone = MIGRATIONS
+        .iter()
+        .position(|m| m.contains("DROP TABLE playbook_versions"))
+        .expect("the playbooks migration");
+    for m in &MIGRATIONS[..gone] {
+        conn.execute_batch(m).unwrap();
+    }
+    let pin = format!("bugfix@{}", "a".repeat(40));
+    conn.execute_batch(&format!(
+        r#"INSERT INTO workstreams (machine_id, project_id, state, data)
+          VALUES ('m', 'p', 'running', '{{"workstreamId":"W1","state":"running","playbook":"{pin}"}}');
+        INSERT INTO playbook_versions (ref, text) VALUES ('{pin}', 'x');"#
+    ))
+    .unwrap();
+    for m in &MIGRATIONS[gone..] {
+        conn.execute_batch(m).unwrap();
+    }
+    let data: String = conn
+        .query_row("SELECT data FROM workstreams", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(data, r#"{"workstreamId":"W1","state":"running"}"#);
+    let tables: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM sqlite_master WHERE name = 'playbook_versions'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(tables, 0);
+}
+
 #[test]
 fn timestamps_keep_their_stored_form() {
     // Every stored timestamp reads back to the same instant and prints back to the same text.

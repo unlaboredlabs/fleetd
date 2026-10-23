@@ -286,10 +286,9 @@ impl LeadCallHandler for Calls {
     }
 }
 
-pub const LEAD_CALL_OPS: [&str; 6] = [
+pub const LEAD_CALL_OPS: [&str; 5] = [
     "task_spawn",
     "task_list",
-    "task_status",
     "task_message",
     "task_cancel",
     "ask_lead",

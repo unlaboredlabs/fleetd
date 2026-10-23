@@ -1,5 +1,5 @@
-// `npm run lab -- [scenario…]` (in tests/lab): the M1-M9 "done when" scenarios, end to end, against the disposable lab
-// (never in CI); M7 and M9 also use the GitHub lab repo unlaboredlabs/fleetd-lab, in the slot's branch namespace. One hub and two nodes (lab-a,
+// `npm run lab -- [scenario…]` (in tests/lab): the M1-M8 "done when" scenarios, end to end, against the disposable lab
+// (never in CI); M7 also uses the GitHub lab repo unlaboredlabs/fleetd-lab, in the slot's branch namespace. One hub and two nodes (lab-a,
 // lab-b), each node running the real `claude` itself under its own HOME, driven only through a real MCP client.
 // Each scenario is a file exporting one function over the shared `Lab`; name some to run only those (setup always
 // runs). Costs a handful of tiny claude-opus-5-5 turns. Every process this starts is stopped by its spawn PID.
@@ -55,7 +55,6 @@ import { m1Fleet } from "./m1Fleet.ts";
 import { m5Tasks } from "./m5Tasks.ts";
 import { m7Train } from "./m7Train.ts";
 import { m8Desktop } from "./m8Desktop.ts";
-import { m9Playbooks } from "./m9Playbooks.ts";
 import { noSubagents } from "./noSubagents.ts";
 import { trainBatch } from "./trainBatch.ts";
 import { offlineQueue } from "./offlineQueue.ts";
@@ -85,10 +84,7 @@ const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab)
   { name: "status", run: statusFresh },
   // It reuses the lead when there is one, and waits for the wake it causes to end.
   { name: "m8", run: m8Desktop },
-  // After m7, which leaves no lab repo project: its router must choose among the lab projects only.
-  { name: "m9", run: m9Playbooks },
-  // One order on the lab repo through the train, with a human-approved gated run: its timeline must add up. After m9,
-  // whose router must not see the lab repo project.
+  // One order on the lab repo through the train, with a human-approved gated run: its timeline must add up.
   { name: "time", run: timeInspector },
   // Claude's own subagents are refused and an MCP spawn is a fleetd task with its lane. Restarts lab-a's lead, so only
   // when named.
@@ -96,13 +92,13 @@ const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab)
   // A freed slot offers the next approved item; a slice gets its reviewer before the next slice. Restarts lab-a's lead
   // and adds the lab repo project for its run, so only when named.
   { name: "eff", run: efficiency, only: true },
-  // Batches on the lab repo: a batch of three in one CI run, a red batch bisected. Only when named.
+  // Batches on the lab repo: a batch of three in one CI run, a red batch's members alone. Only when named.
   { name: "batch", run: trainBatch, only: true },
   // The app demo: one order fanned out to writers and reviewers on the lab repo. Only when named.
   { name: "demo", run: demoFanout, only: true },
   { name: "desktop", run: desktopShell, only: true },
   // The app offline: a chat kept through a hub stop, a quit and a restart; a message queued offline sent once. One
-  // haiku turn. Only when named.
+  // medium turn. Only when named.
   { name: "desktop-offline", run: desktopOffline, only: true },
   // The per-project lead chat end to end (and the max agents cap): on the lab repo in this slot's namespace and a
   // local repo on lab-b. Only when named, so it gets a hub of its own; FLEETD_LAB_CHAT_PARTS picks parts.

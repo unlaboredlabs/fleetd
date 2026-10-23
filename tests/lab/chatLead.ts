@@ -32,7 +32,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import sodium from "libsodium-wrappers";
 import { DatabaseSync } from "node:sqlite";
-import { type Body, callToolWith, cli, fleetdCommand, machineHome, MECHANICS, openWorkstream, RUN, LAB, type Lab, nodeHome, nodeSock, requireGhLogin, scrubbedEnv, sessionText, slotPort, userMessages } from "./harness.ts";
+import { type Body, callToolWith, cli, fleetdCommand, type Lead, type LeadOut, leadIn, machineHome, MECHANICS, openWorkstream, RUN, LAB, type Lab, nodeHome, nodeSock, requireGhLogin, scrubbedEnv, sessionText, slotPort, userMessages } from "./harness.ts";
 import { BASE, checkClone, CLONE, NAMESPACE, onBase, prepareCheckout, REPO, removeLabRepoProject, resetNamespace } from "./m7Train.ts";
 
 const LEAD_MACHINE = "lab-a";
@@ -95,11 +95,8 @@ const mcpWith = async (hubUrl: string, key: string) => {
 };
 
 /** `fleetd …` from a project's workspace through a machine's node socket, as a lead's shell runs it. */
-const shellIn = (machineId: string, root: string) => (...args: Array<string>) => {
-  const out = spawnSync(...fleetdCommand(args), { cwd: root, encoding: "utf8", env: { ...scrubbedEnv(), PWD: root, FLEETD_NODE_SOCK: nodeSock(machineId) } });
-  return { code: out.status, stdout: out.stdout, stderr: out.stderr };
-};
-type Shell = ReturnType<typeof shellIn>;
+const shellIn = (machineId: string, root: string) => leadIn(root, { ...scrubbedEnv(), FLEETD_NODE_SOCK: nodeSock(machineId) });
+type Shell = Lead;
 
 const git = (cwd: string, ...args: Array<string>) =>
   execFileSync("git", args, {
@@ -170,29 +167,28 @@ const nextTask = async (lab: Lab, ref: Ref, cursor: number, what: string, ms: nu
   }
 };
 
-/** A workstream for an order the harness drives, its brief frozen from the shell as a lead would. */
+/** A workstream for an order the harness drives, its brief frozen with the lead's tools. */
 const quietOrder = async (lab: Lab, ref: Ref, fleetd: Shell, title: string, doneWhen: ReadonlyArray<string>) => {
-  const w = openWorkstream(lab.check, fleetd, title);
-  const brief = { goal: title, why: "the chat lab scenario", pointers: [], constraints: [], doneWhen };
-  const frozen = fleetd("brief", "create", "--workstream", w, "--json", JSON.stringify(brief));
-  lab.check(frozen.code === 0, `brief create ${w}: ${JSON.stringify(frozen)}`);
-  return w;
+  return openWorkstream(lab.check, fleetd, title, { why: "the chat lab scenario", doneWhen });
 };
 
-const spawned = (lab: Lab, out: { code: number | null; stdout: string; stderr: string }, what: string) => {
-  const taskId = /^Spawned (T\d+)/mu.exec(out.stdout)?.[1];
+const spawned = (lab: Lab, out: LeadOut, what: string) => {
+  const taskId = out.result?.task?.taskId as string | undefined;
   lab.check(out.code === 0 && taskId, `${what}: ${JSON.stringify(out)}`);
   return taskId!;
 };
 
-/** Read agents that hold a slot for `sec` seconds, spawned from the shell (one tiny turn each). */
+/** Read agents that hold a slot for `sec` seconds, spawned with the lead's tool (one tiny turn each). */
 const spawnSleepers = (lab: Lab, fleetd: Shell, workstreamId: string, label: string, n: number, sec: number) =>
   Array.from({ length: n }, (_, i) => {
-    const out = fleetd(
-      "task", "spawn", "--workstream", workstreamId, "--title", `${label} ${i + 1}`, "--kind", "read", "--profile", MECHANICS,
-      "--prompt", `Run the shell command \`sleep ${sec}\` once, then reply with the single word OK.`,
-    );
-    return { taskId: spawned(lab, out, `task spawn ${label} ${i + 1}`), stdout: out.stdout };
+    const out = fleetd("spawn_agent", {
+      workstreamId,
+      title: `${label} ${i + 1}`,
+      kind: "read",
+      profile: MECHANICS,
+      prompt: `Run the shell command \`sleep ${sec}\` once, then reply with the single word OK.`,
+    });
+    return { taskId: spawned(lab, out, `spawn_agent ${label} ${i + 1}`), task: out.result?.task as Body | undefined };
   });
 
 /** A session stopping frees its slot (hub/slots STOPPED). */
@@ -599,7 +595,7 @@ async function buildPart(lab: Lab, chat: Chat, ref: Ref) {
   const writer = await nextTask(lab, ref, answered.cursor, `a writer starts for ${file} after "build it"`, TURN_MS * 2, (t) => t.kind === "write");
   await chat.reply(answered, "the build answer");
   // The answer was not swallowed: the order the build runs in (the research one with its brief edited, or a new one) closes only
-  // after the build's writer started. The research order may close on its own verdict before the offer.
+  // after the build's writer started. The research order may close on its own before the offer.
   const buildOrder = writer.task.workstreamId as string;
   const early = (await eventsSince(lab, answered.cursor, ["workstream.done"])).filter((e) => e.data?.workstreamId === buildOrder && e.seq < writer.seq);
   check(early.length === 0, `${buildOrder} closed before its build started: ${JSON.stringify(early.map((e) => e.summary))}`);
@@ -614,13 +610,16 @@ async function fixesPart(lab: Lab, ref: Ref, fleetd: Shell) {
   const from = await lab.cursor();
   const fix = spawned(
     lab,
-    fleetd(
-      "task", "spawn", "--workstream", w, "--title", "share link goes stale", "--kind", "write", "--profile", MECHANICS,
-      "--prompt", "Your first tool call must be your Bash tool running exactly `sleep 90`; wait the full 90 seconds for it to finish. Then reply with the single word OK. Change no files.",
-    ),
+    fleetd("spawn_agent", {
+      workstreamId: w,
+      title: "share link goes stale",
+      kind: "write",
+      profile: MECHANICS,
+      prompt: "Your first tool call must be your Bash tool running exactly `sleep 90`; wait the full 90 seconds for it to finish. Then reply with the single word OK. Change no files.",
+    }),
     "spawn the fix",
   );
-  const closed = fleetd("close", "--workstream", w, "--why", "lab: closed with the fix still running");
+  const closed = fleetd("close", { workstreamId: w, why: "lab: closed with the fix still running" });
   check(closed.code === 0, `close: ${JSON.stringify(closed)}`);
   const done = await lab.waitEvent(`${w} done`, 30_000, { cursor: from, types: ["workstream.done"], match: (e) => e.data?.workstreamId === w });
   check(done.event.data.reason === "lab: closed with the fix still running", `workstream.done records why: ${JSON.stringify(done.event.data)}`);
@@ -628,7 +627,7 @@ async function fixesPart(lab: Lab, ref: Ref, fleetd: Shell) {
   check((await taskGet(lab, fix)).state !== "cancelled", `${fix} keeps going`);
   ok(`${w} closed with why; ${fix} kept going`);
   // Stopping what is no longer needed is the lead's own, visible call.
-  check(fleetd("task", "cancel", fix).code === 0, `a visible, intentional stop of ${fix}`);
+  check(fleetd("stop_agent", { taskId: fix }).code === 0, `a visible, intentional stop of ${fix}`);
 }
 
 // ---- cap1: at max agents 1, the review that gates a merge goes first ----
@@ -651,13 +650,15 @@ async function cap1Part(lab: Lab, ref: Ref, fleetd: Shell, need: (t: string) => 
     const from = await lab.cursor();
     const writer = spawned(
       lab,
-      fleetd(
-        "task", "spawn", "--workstream", w, "--title", "add cap1.md", "--profile", MECHANICS,
-        "--prompt",
-        `Do these steps in order. 1. Create the file ${file} (from the repo root) containing exactly one line: cap one. Commit it with the message "add ${file}". ` +
+      fleetd("spawn_agent", {
+        workstreamId: w,
+        title: "add cap1.md",
+        profile: MECHANICS,
+        prompt:
+          `Do these steps in order. 1. Create the file ${file} (from the repo root) containing exactly one line: cap one. Commit it with the message "add ${file}". ` +
           `2. Push your branch and open the pull request as your rules say, with the title "add ${file}" and the body exactly "Adds the file.". ` +
           `3. Run \`sleep 90\` with your Bash tool and wait for it. 4. Reply with the PR URL.`,
-      ),
+      }),
       "spawn the writer",
     );
     // Queued while the writer runs and before the review exists: plain order would start it first when the slot frees.
@@ -830,8 +831,8 @@ async function capPart(lab: Lab, chat: Chat, ref: Ref, need: (t: string) => void
   let from = await lab.cursor();
   const six = spawnSleepers(lab, fleetd, w, "six-way", 6, 15);
   const sixIds = new Set(six.map((s) => s.taskId));
-  const overCap = six.slice(2).filter((s) => !/queued: Max agents: 2 of 2 running/iu.test(s.stdout));
-  check(overCap.length === 0, `a spawn beyond the cap says "queued: Max agents: 2 of 2 running…": ${JSON.stringify(overCap.map((s) => s.stdout.trim()))}`);
+  const overCap = six.slice(2).filter((s) => !(s.task?.state === "queued" && /^Max agents: 2 of 2 running/iu.test(String(s.task.queuedReason))));
+  check(overCap.length === 0, `a spawn beyond the cap is queued: "Max agents: 2 of 2 running…": ${JSON.stringify(overCap.map((s) => s.task))}`);
   const reasons = await Promise.all(six.slice(2).map(async (s) => (await taskGet(lab, s.taskId)).queuedReason as string | undefined));
   check(reasons.every((r) => r === "Max agents: 2 of 2 running" || r === undefined), `queued for the cap: ${JSON.stringify(reasons)}`);
   let sampled = 0;
@@ -848,7 +849,7 @@ async function capPart(lab: Lab, chat: Chat, ref: Ref, need: (t: string) => void
   await sampling;
   const replayed = maxConcurrent(await eventsSince(lab, from, RUN_EVENTS), (await tasksOf(lab, ref)).filter((t) => sixIds.has(t.taskId)));
   check(replayed <= 2 && sampled <= 2, `at most 2 ran at once (events: ${replayed}, sampled: ${sampled})`);
-  ok(`1. max 2: six agents, at most ${replayed} at once (sampled ${sampled}); all six finished; "${six[2]!.stdout.trim().split("\n")[0]}"`);
+  ok(`1. max 2: six agents, at most ${replayed} at once (sampled ${sampled}); all six finished; ${six[2]!.taskId} queued: "${six[2]!.task?.queuedReason}"`);
 
   // 2. 12 → 3 mid-run: the four running keep running; a new spawn waits until fewer than 3 run.
   await setMax(12);

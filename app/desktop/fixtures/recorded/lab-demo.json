@@ -6928,7 +6928,7 @@
     "output": {
      "doneLanes": [
       {
-       "effort": "low",
+       "effort": "medium",
        "endedAt": "2026-10-19T09:02:51.304Z",
        "laneId": "T8",
        "live": {
@@ -6976,7 +6976,7 @@
          "output": 1527
         }
        },
-       "model": "claude-haiku-5-5",
+       "model": "claude-opus-5-5",
        "pr": {
         "changeId": "X2",
         "number": 10,
@@ -6999,7 +6999,7 @@
        "title": "review #10"
       },
       {
-       "effort": "low",
+       "effort": "medium",
        "endedAt": "2026-10-19T09:02:50.482Z",
        "laneId": "T4",
        "live": {
@@ -7047,7 +7047,7 @@
          "output": 1124
         }
        },
-       "model": "claude-haiku-5-5",
+       "model": "claude-opus-5-5",
        "pr": {
         "changeId": "X1",
         "number": 9,
@@ -7071,7 +7071,7 @@
       },
       {
        "branch": "fleetd/T3-write-gamma-md",
-       "effort": "low",
+       "effort": "medium",
        "endedAt": "2026-10-19T09:02:40.485Z",
        "laneId": "T3",
        "live": {
@@ -7119,7 +7119,7 @@
          "output": 1396
         }
        },
-       "model": "claude-haiku-5-5",
+       "model": "claude-opus-5-5",
        "pr": {
         "changeId": "X3",
         "number": 11,
@@ -7143,7 +7143,7 @@
       },
       {
        "branch": "fleetd/T2-write-beta-md",
-       "effort": "low",
+       "effort": "medium",
        "endedAt": "2026-10-19T09:02:36.858Z",
        "laneId": "T2",
        "live": {
@@ -7191,7 +7191,7 @@
          "output": 1034
         }
        },
-       "model": "claude-haiku-5-5",
+       "model": "claude-opus-5-5",
        "pr": {
         "changeId": "X2",
         "number": 10,
@@ -7215,7 +7215,7 @@
       },
       {
        "branch": "fleetd/T1-write-alpha-md",
-       "effort": "low",
+       "effort": "medium",
        "endedAt": "2026-10-19T09:02:36.523Z",
        "laneId": "T1",
        "live": {
@@ -7263,7 +7263,7 @@
          "output": 941
         }
        },
-       "model": "claude-haiku-5-5",
+       "model": "claude-opus-5-5",
        "pr": {
         "changeId": "X1",
         "number": 9,
@@ -7287,7 +7287,7 @@
       }
      ],
      "lead": {
-      "effort": "low",
+      "effort": "medium",
       "laneId": "lead:devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
       "live": {
        "laneId": "lead:devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
@@ -7334,7 +7334,7 @@
         "output": 4207
        }
       },
-      "model": "claude-haiku-5-5",
+      "model": "claude-opus-5-5",
       "role": "lead",
       "startedAt": "2026-10-19T09:01:41.091Z",
       "status": "idle",
@@ -7349,7 +7349,7 @@
       "createdAt": "2026-10-19T09:01:47.567Z",
       "lanes": [
        {
-        "effort": "low",
+        "effort": "medium",
         "laneId": "T11",
         "live": {
          "activity": {
@@ -7402,7 +7402,7 @@
           "output": 792
          }
         },
-        "model": "claude-haiku-5-5",
+        "model": "claude-opus-5-5",
         "pr": {
          "changeId": "X3",
          "number": 11,
@@ -7425,7 +7425,7 @@
         "title": "review #11"
        },
        {
-        "effort": "low",
+        "effort": "medium",
         "laneId": "T5",
         "live": {
          "activity": {
@@ -7478,7 +7478,7 @@
           "output": 944
          }
         },
-        "model": "claude-haiku-5-5",
+        "model": "claude-opus-5-5",
         "pr": {
          "changeId": "X1",
          "number": 9,
@@ -7546,7 +7546,6 @@
       ],
       "settled": 7,
       "state": "running",
-      "template": "feature",
       "title": "Add three short pages under lab/20261019090134/: alpha.md…",
       "total": 12,
       "updatedAt": "2026-10-19T09:02:17.552Z",
@@ -7613,7 +7612,7 @@
        "createdAt": "2026-10-19T09:01:47.567Z",
        "lanes": [
         {
-         "effort": "low",
+         "effort": "medium",
          "laneId": "T11",
          "live": {
           "activity": {
@@ -7666,7 +7665,7 @@
            "output": 792
           }
          },
-         "model": "claude-haiku-5-5",
+         "model": "claude-opus-5-5",
          "pr": {
           "changeId": "X3",
           "number": 11,
@@ -7689,7 +7688,7 @@
          "title": "review #11"
         },
         {
-         "effort": "low",
+         "effort": "medium",
          "laneId": "T5",
          "live": {
           "activity": {
@@ -7742,7 +7741,7 @@
            "output": 944
           }
          },
-         "model": "claude-haiku-5-5",
+         "model": "claude-opus-5-5",
          "pr": {
           "changeId": "X1",
           "number": 9,
@@ -7810,7 +7809,6 @@
        ],
        "settled": 7,
        "state": "running",
-       "template": "feature",
        "title": "Add three short pages under lab/20261019090134/: alpha.md…",
        "total": 12,
        "updatedAt": "2026-10-19T09:02:17.552Z",
@@ -7865,7 +7863,7 @@
        "createdAt": "2026-10-19T09:01:47.567Z",
        "lanes": [
         {
-         "effort": "low",
+         "effort": "medium",
          "laneId": "T11",
          "live": {
           "activity": {
@@ -7918,7 +7916,7 @@
            "output": 792
           }
          },
-         "model": "claude-haiku-5-5",
+         "model": "claude-opus-5-5",
          "pr": {
           "changeId": "X3",
           "number": 11,
@@ -7941,7 +7939,7 @@
          "title": "review #11"
         },
         {
-         "effort": "low",
+         "effort": "medium",
          "laneId": "T5",
          "live": {
           "activity": {
@@ -7994,7 +7992,7 @@
            "output": 944
           }
          },
-         "model": "claude-haiku-5-5",
+         "model": "claude-opus-5-5",
          "pr": {
           "changeId": "X1",
           "number": 9,
@@ -8062,7 +8060,6 @@
        ],
        "settled": 7,
        "state": "running",
-       "template": "feature",
        "title": "Add three short pages under lab/20261019090134/: alpha.md…",
        "total": 12,
        "updatedAt": "2026-10-19T09:02:17.552Z",
@@ -11260,7 +11257,7 @@
         "exitCode": 0,
         "failed": false,
         "kind": "command",
-        "outputTail": "Spawned T1: running.\nT1 running [write, alpha, claude-haiku-5-5/low] write alpha.md on fleetd/T1-write-alpha-md\nNext: don't poll it. T1's result arrives inline in a later wake; end your turn when you have nothing else to do.\nSpawned T2: running.\nT2 running [write, beta, claude-haiku-5-5/low] write beta.md on fleetd/T2-write-beta-md\nNext: don't poll it. T2's result arrives inline in a later wake; end your turn when you have nothing else to do.\nSpawned T3: running.\nT3 running [write, gamma, claude-haiku-5-5/low] write gamma.md on fleetd/T3-write-gamma-md\nNext: don't poll it. T3's result arrives inline in a later wake; end your turn when you have nothing else to do.\nStatus set for W1.\nNext: Status recorded. Carry on.",
+        "outputTail": "Spawned T1: running.\nT1 running [write, alpha, claude-opus-5-5/medium] write alpha.md on fleetd/T1-write-alpha-md\nNext: don't poll it. T1's result arrives inline in a later wake; end your turn when you have nothing else to do.\nSpawned T2: running.\nT2 running [write, beta, claude-opus-5-5/medium] write beta.md on fleetd/T2-write-beta-md\nNext: don't poll it. T2's result arrives inline in a later wake; end your turn when you have nothing else to do.\nSpawned T3: running.\nT3 running [write, gamma, claude-opus-5-5/medium] write gamma.md on fleetd/T3-write-gamma-md\nNext: don't poll it. T3's result arrives inline in a later wake; end your turn when you have nothing else to do.\nStatus set for W1.\nNext: Status recorded. Carry on.",
         "status": "completed",
         "summary": "fleetd task spawn --workstream W1 --title \"write alpha.md\" --areas alpha --serves done:0 --item P1 --kind write --prompt \"Create lab/20261019090134/alpha.md: exactly one paragraph describing what flee"
        },
@@ -11388,12 +11385,12 @@
      ],
      "thread": {
       "asOf": "2026-10-19T09:02:21.294Z",
-      "effort": "low",
+      "effort": "medium",
       "headline": "S: W1 is running. I registered the brief, planned it, and spawned one writer per page.",
       "lastProgressAt": "2026-10-19T09:02:21.293Z",
       "latestMessageTail": "S: W1 is running. I registered the brief, planned it, and spawned one writer per page.\n\n- **Brief:** frozen for W1 (hash 1bfab384f0bf). Tier L. Each page has its own `judge` done-when check: `doneWhen[0]` is alpha, `doneWhen[1]` is beta, `doneWhen[2]` is gamma.\n- **Plan:** milestone M1 \"Merge train explainer pages\", with items P1 (alpha), P2 (beta) and P3 (gamma), all must, size s. Each is linked to its check as `--check 0`, `1` and `2`.\n- **Writers:** T1 (alpha), T2 (beta) and T3 (gamma), each linked to its item and serving its own `done:` check. Each writer owns its own area (`alpha`, `beta`, `gamma` from `.fleetd/policy.yaml`), so they don't share one.\n\nChoices I made:\n- The `judge` criteria are my own wording. A `pr_merged` check needs a repo name, and the digest doesn't give one.\n- I didn't run `claude done` or `fleetd claim done`. That waits until the PRs merge through the train.\n- I didn't add a review task. The feature playbook calls for two reviewers and a verifier per PR at tier L, so I expect fleetd to spawn those when the PRs reach the train.\n\nNext: I'll wait for T1, T2 and T3 to report. Each PR goes to the train by itself, and I'll judge the results when they arrive.",
       "machineId": "devbox",
-      "model": "claude-haiku-5-5",
+      "model": "claude-opus-5-5",
       "projectId": "dcffccea-c5a7-40a6-940d-7f70239ffa22",
       "stale": false,
       "status": "completed",
@@ -11481,12 +11478,12 @@
      ],
      "thread": {
       "asOf": "2026-10-19T09:02:36.475Z",
-      "effort": "low",
+      "effort": "medium",
       "headline": "I created `lab/20261019090134/alpha.md` as a single paragraph on what fleetd's merge train does, committed it to `fleetd/T1-write-alpha-md`, and pushed the branch. The PR is open against `main` with the line `Source: done:0` in its body: https://github.com/acme/search",
       "lastProgressAt": "2026-10-19T09:02:36.474Z",
       "latestMessageTail": "I created `lab/20261019090134/alpha.md` as a single paragraph on what fleetd's merge train does, committed it to `fleetd/T1-write-alpha-md`, and pushed the branch. The PR is open against `main` with the line `Source: done:0` in its body: https://github.com/acme/storefront/pull/9. I did not merge it or post a commit status. Nothing else in the repo was touched. The commit message and PR body end with the attribution lines from the reminder. Nothing is left for this task, and I have no decisions for the lead.",
       "machineId": "devbox",
-      "model": "claude-haiku-5-5",
+      "model": "claude-opus-5-5",
       "projectId": "dcffccea-c5a7-40a6-940d-7f70239ffa22",
       "stale": false,
       "status": "completed",
@@ -11573,12 +11570,12 @@
      ],
      "thread": {
       "asOf": "2026-10-19T09:02:36.812Z",
-      "effort": "low",
+      "effort": "medium",
       "headline": "I wrote `lab/20261019090134/beta.md` as a single paragraph on fleetd's merge train, committed it to `fleetd/T2-write-beta-md`, and pushed the branch. The PR is open against `main` at https://github.com/acme/storefront/pull/10, and its body contains the line `Source",
       "lastProgressAt": "2026-10-19T09:02:36.812Z",
       "latestMessageTail": "I wrote `lab/20261019090134/beta.md` as a single paragraph on fleetd's merge train, committed it to `fleetd/T2-write-beta-md`, and pushed the branch. The PR is open against `main` at https://github.com/acme/storefront/pull/10, and its body contains the line `Source: done:1`. I did not merge it or post any `fleetd/train` status. Only the one file was touched. The directory didn't exist before, so I created it. Nothing is left on this task. The lead has no decisions to make, though alpha.md and gamma.md belong to other tasks in this workstream and I did not touch them.",
       "machineId": "devbox",
-      "model": "claude-haiku-5-5",
+      "model": "claude-opus-5-5",
       "projectId": "dcffccea-c5a7-40a6-940d-7f70239ffa22",
       "stale": false,
       "status": "completed",
@@ -11690,12 +11687,12 @@
      ],
      "thread": {
       "asOf": "2026-10-19T09:02:40.440Z",
-      "effort": "low",
+      "effort": "medium",
       "headline": "I wrote `lab/20261019090134/gamma.md` as one paragraph on what fleetd's merge train does, committed it to `fleetd/T3-write-gamma-md`, pushed the branch, and opened the PR: https://github.com/acme/storefront/pull/11. The body includes `Source: done:2`. I did not mer",
       "lastProgressAt": "2026-10-19T09:02:40.439Z",
       "latestMessageTail": "I wrote `lab/20261019090134/gamma.md` as one paragraph on what fleetd's merge train does, committed it to `fleetd/T3-write-gamma-md`, pushed the branch, and opened the PR: https://github.com/acme/storefront/pull/11. The body includes `Source: done:2`. I did not merge it and did not post a `fleetd/train` status. The `lab/20261019090134/` directory did not exist before, so I created it; no other files were touched. Nothing is left for this task. The lead should confirm the paragraph's wording matches the merge train's actual behavior, since I wrote it from the task description rather than from the train's code.",
       "machineId": "devbox",
-      "model": "claude-haiku-5-5",
+      "model": "claude-opus-5-5",
       "projectId": "dcffccea-c5a7-40a6-940d-7f70239ffa22",
       "stale": false,
       "status": "completed",
@@ -11794,12 +11791,12 @@
      ],
      "thread": {
       "asOf": "2026-10-19T09:02:50.474Z",
-      "effort": "low",
+      "effort": "medium",
       "headline": "I reviewed PR #9 at head afa93620f967ec3a614f28ea7fef275a3b30163b and recorded a verdict of 0 blocking and 0 non-blocking findings. The PR adds one file, `lab/20261019090134/alpha.md`, which is a single paragraph describing fleetd's merge train: task PRs are queued, rebased onto ",
       "lastProgressAt": "2026-10-19T09:02:50.474Z",
       "latestMessageTail": "I reviewed PR #9 at head afa93620f967ec3a614f28ea7fef275a3b30163b and recorded a verdict of 0 blocking and 0 non-blocking findings. The PR adds one file, `lab/20261019090134/alpha.md`, which is a single paragraph describing fleetd's merge train: task PRs are queued, rebased onto main, gated on CI, and merged in order by the train. That meets done:0. I did not check the paragraph's claims against fleetd's source, since that was not in the diff I was given. I changed, committed and pushed nothing. `beta.md` and `gamma.md` are not in this PR and are other work. There is nothing left for this task, and the lead has no decision to make.",
       "machineId": "devbox",
-      "model": "claude-haiku-5-5",
+      "model": "claude-opus-5-5",
       "projectId": "dcffccea-c5a7-40a6-940d-7f70239ffa22",
       "stale": false,
       "status": "completed",
@@ -11893,12 +11890,12 @@
      ],
      "thread": {
       "asOf": "2026-10-19T09:02:49.821Z",
-      "effort": "low",
+      "effort": "medium",
       "headline": "",
       "lastProgressAt": "2026-10-19T09:02:49.783Z",
       "latestMessageTail": "",
       "machineId": "devbox",
-      "model": "claude-haiku-5-5",
+      "model": "claude-opus-5-5",
       "projectId": "dcffccea-c5a7-40a6-940d-7f70239ffa22",
       "stale": false,
       "status": "running",
@@ -11963,7 +11960,7 @@
         "exitCode": 0,
         "failed": false,
         "kind": "command",
-        "outputTail": "diff --git a/lab/20261019090134/beta.md b/lab/20261019090134/beta.md\nnew file mode 100644\nindex 0000000..7417014\n--- /dev/null\n+++ b/lab/20261019090134/beta.md\n@@ -0,0 +1 @@\n+fleetd's merge train is the only path by which task pull requests reach the default branch. Each task's PR is placed in a queue, reviewed, rebased onto the current main branch, and held until its CI checks pass; the train then merges it in order. Writers never merge their own pull requests, and they never post a fleetd/train commit status, so the train alone decides when a change lands.\n----\nFrom https://github.com/acme/storefront\n * branch            refs/pull/10/head -> FETCH_HEAD\ncommit 4f45e2c75f43bf9ca3223647e30654e2f97d1235\nAuthor: dev <dev@example.com>\nDate:   Mon Oct 19 09:02:23 2026 +0000\n\n    add lab/20261019090134/beta.md\n    \n    Co-Authored-By: Claude Haiku 5.5 <dev@example.com>\n\n lab/20261019090134/beta.md | 1 +\n 1 file changed, 1 insertion(+)",
+        "outputTail": "diff --git a/lab/20261019090134/beta.md b/lab/20261019090134/beta.md\nnew file mode 100644\nindex 0000000..7417014\n--- /dev/null\n+++ b/lab/20261019090134/beta.md\n@@ -0,0 +1 @@\n+fleetd's merge train is the only path by which task pull requests reach the default branch. Each task's PR is placed in a queue, reviewed, rebased onto the current main branch, and held until its CI checks pass; the train then merges it in order. Writers never merge their own pull requests, and they never post a fleetd/train commit status, so the train alone decides when a change lands.\n----\nFrom https://github.com/acme/storefront\n * branch            refs/pull/10/head -> FETCH_HEAD\ncommit 4f45e2c75f43bf9ca3223647e30654e2f97d1235\nAuthor: dev <dev@example.com>\nDate:   Mon Oct 19 09:02:23 2026 +0000\n\n    add lab/20261019090134/beta.md\n    \n    Co-Authored-By: Claude Opus 5.5 <dev@example.com>\n\n lab/20261019090134/beta.md | 1 +\n 1 file changed, 1 insertion(+)",
         "status": "completed",
         "summary": "gh pr diff 10 --repo acme/storefront && echo ---- && git fetch origin pull/10/head 2>&1 | tail -2; git show 4f45e2c75f43bf9ca3223647e30654e2f97d1235 --stat | head -30"
        },
@@ -11979,12 +11976,12 @@
      ],
      "thread": {
       "asOf": "2026-10-19T09:02:50.087Z",
-      "effort": "low",
+      "effort": "medium",
       "headline": "I reviewed PR acme/storefront#10 at head 4f45e2c75f43bf9ca3223647e30654e2f97d1235 (task T7, done:1). The diff adds one file, `lab/20261019090134/beta.md`, containing a single paragraph that describes what fleetd's merge train does. That satisfies done:1, so I recor",
       "lastProgressAt": "2026-10-19T09:02:50.087Z",
       "latestMessageTail": "I reviewed PR acme/storefront#10 at head 4f45e2c75f43bf9ca3223647e30654e2f97d1235 (task T7, done:1). The diff adds one file, `lab/20261019090134/beta.md`, containing a single paragraph that describes what fleetd's merge train does. That satisfies done:1, so I recorded a verdict of 0 blocking and 0 non-blocking findings. I did not change, commit or push anything. I did not check the paragraph's specific claims (for example, that writers never post a `fleetd/train` status) against the repo's docs, since the done-when only asks for an existing one-paragraph description. Nothing is left for me to do, and the lead has no decision to make from this review.",
       "machineId": "devbox",
-      "model": "claude-haiku-5-5",
+      "model": "claude-opus-5-5",
       "projectId": "dcffccea-c5a7-40a6-940d-7f70239ffa22",
       "stale": false,
       "status": "completed",
@@ -12103,12 +12100,12 @@
      ],
      "thread": {
       "asOf": "2026-10-19T09:02:51.449Z",
-      "effort": "low",
+      "effort": "medium",
       "headline": "I verified PR #9 at head afa93620f967ec3a614f28ea7fef275a3b30163b and recorded the verdict as 0 blocking, 0 non-blocking. The repo's only test is the CI check in `.github/workflows/ci.yml`, `test ! -e FAIL`. I ran it in a detached worktree at that commit and it exited 0, so there",
       "lastProgressAt": "2026-10-19T09:02:51.449Z",
       "latestMessageTail": "I verified PR #9 at head afa93620f967ec3a614f28ea7fef275a3b30163b and recorded the verdict as 0 blocking, 0 non-blocking. The repo's only test is the CI check in `.github/workflows/ci.yml`, `test ! -e FAIL`. I ran it in a detached worktree at that commit and it exited 0, so there is no FAIL file at the root. No install step was needed. I removed the worktree with `git worktree remove --force` and did not touch the project checkout or change anything. I did not read the PR description or comments. Nothing is left for this task, and the lead has no decision to make on it.",
       "machineId": "devbox",
-      "model": "claude-haiku-5-5",
+      "model": "claude-opus-5-5",
       "projectId": "dcffccea-c5a7-40a6-940d-7f70239ffa22",
       "stale": false,
       "status": "completed",
@@ -12190,12 +12187,12 @@
      ],
      "thread": {
       "asOf": "2026-10-19T09:02:51.117Z",
-      "effort": "low",
+      "effort": "medium",
       "headline": "",
       "lastProgressAt": "2026-10-19T09:02:51.117Z",
       "latestMessageTail": "",
       "machineId": "devbox",
-      "model": "claude-haiku-5-5",
+      "model": "claude-opus-5-5",
       "projectId": "dcffccea-c5a7-40a6-940d-7f70239ffa22",
       "stale": false,
       "status": "running",
@@ -12264,12 +12261,12 @@
      ],
      "thread": {
       "asOf": "2026-10-19T09:02:46.333Z",
-      "effort": "low",
+      "effort": "medium",
       "headline": "",
       "lastProgressAt": "2026-10-19T09:02:46.333Z",
       "latestMessageTail": "",
       "machineId": "devbox",
-      "model": "claude-haiku-5-5",
+      "model": "claude-opus-5-5",
       "projectId": "dcffccea-c5a7-40a6-940d-7f70239ffa22",
       "stale": false,
       "status": "running",
@@ -12357,12 +12354,12 @@
      ],
      "thread": {
       "asOf": "2026-10-19T09:02:49.240Z",
-      "effort": "low",
+      "effort": "medium",
       "headline": "The repo's only test is the CI check, `test ! -e FAIL`, so I'll run that on the worktree, then remove it.",
       "lastProgressAt": "2026-10-19T09:02:49.239Z",
       "latestMessageTail": "The repo's only test is the CI check, `test ! -e FAIL`, so I'll run that on the worktree, then remove it.",
       "machineId": "devbox",
-      "model": "claude-haiku-5-5",
+      "model": "claude-opus-5-5",
       "projectId": "dcffccea-c5a7-40a6-940d-7f70239ffa22",
       "stale": false,
       "status": "running",
@@ -12487,12 +12484,12 @@
      ],
      "thread": {
       "asOf": "2026-10-19T09:02:51.302Z",
-      "effort": "low",
+      "effort": "medium",
       "headline": "I reviewed PR #10 at head 4f45e2c75f43bf9ca3223647e30654e2f97d1235 and recorded the verdict as 0 blocking, 0 non-blocking. The diff adds one file, `lab/20261019090134/beta.md`, which is a single 69-word paragraph describing what fleetd's merge train does: it queues and reviews ta",
       "lastProgressAt": "2026-10-19T09:02:51.301Z",
       "latestMessageTail": "I reviewed PR #10 at head 4f45e2c75f43bf9ca3223647e30654e2f97d1235 and recorded the verdict as 0 blocking, 0 non-blocking. The diff adds one file, `lab/20261019090134/beta.md`, which is a single 69-word paragraph describing what fleetd's merge train does: it queues and reviews task PRs, rebases them onto main, holds them until CI passes, and merges them in order. That meets done:1. I did not change, commit or push anything, and I did not read the PR description or comments. One caveat: I could not check the train's specific claims against fleetd's source from this repo. My verdict summary notes that, but the recorded count is 0 non-blocking because the tool takes counts and I kept the caveat in the summary text. Nothing is left for me to do on this task, and the lead has no decision to make from this review.",
       "machineId": "devbox",
-      "model": "claude-haiku-5-5",
+      "model": "claude-opus-5-5",
       "projectId": "dcffccea-c5a7-40a6-940d-7f70239ffa22",
       "stale": false,
       "status": "completed",
@@ -12618,12 +12615,12 @@
      ],
      "thread": {
       "asOf": "2026-10-19T09:02:51.202Z",
-      "effort": "low",
+      "effort": "medium",
       "headline": "The only test defined is the CI check (`test ! -e FAIL`). No AGENTS.md, package.json, or Makefile exists. Running it on the pinned commit.",
       "lastProgressAt": "2026-10-19T09:02:51.201Z",
       "latestMessageTail": "The only test defined is the CI check (`test ! -e FAIL`). No AGENTS.md, package.json, or Makefile exists. Running it on the pinned commit.",
       "machineId": "devbox",
-      "model": "claude-haiku-5-5",
+      "model": "claude-opus-5-5",
       "projectId": "dcffccea-c5a7-40a6-940d-7f70239ffa22",
       "stale": false,
       "status": "running",

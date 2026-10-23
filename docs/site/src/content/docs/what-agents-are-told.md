@@ -90,7 +90,7 @@ Leads and tasks reach fleetd through MCP tools from a `fleetd` server in their s
 
 | Agent | Gets |
 |---|---|
-| Lead | `spawn_agent`, `message_agent`, `agent_status`, `list_agents`, `stop_agent`, plus `workstream_open`, `brief`, `decide`, `close`, `plan_*`, `request_secret`, `gated_run` and more. |
+| Lead | `spawn_agent`, `message_agent`, `agents`, `stop_agent`, plus `brief`, `decide`, `close`, `plan_*`, `request_secret`, `gated_run` and more. |
 | Task | `report` (a review verdict; fleetd fills in the task and the head reviewed) and `ask_lead`. A writer's ready PR goes on the train by itself. |
 
 - Results come back in the lead's next wake, never by polling.
@@ -182,9 +182,6 @@ never moves it for you.
 From an MCP client, `prompt_get` without an `id` returns these under `orphans`, and `prompt_set` with the old id and
 `reset: true` deletes one.
 
-An edited playbook file is listed the same way. Its review and check rules still apply, but its instructions no longer
-reach the lead: the lead prompt has a section for each kind of work.
-
 ## What a running agent keeps {#pinning}
 
 Each session keeps the exact prompt versions it started with. An edit reaches new sessions at once: a task at its next
@@ -216,7 +213,7 @@ wake.
 agents: 3 running of 6, 1 queued
 
 ## Work
-- W2 running (bugfix): flaky login test
+- W2 running: flaky login test
   done when: done:0 test login_flaky passes in acme/app
 
 ## Events
@@ -225,7 +222,6 @@ agents: 3 running of 6, 1 queued
   > Ported; 2 blockers left for review.
 - T7 waiting for an answer: docs
   > Which branch should the docs go to?
-- W4 research verdict STOP: candidate 1.2 vs baseline 1.1 (higher is better): improvement 0.1 (go line 5, stop line 2)
 ```
 
 Each event is `- <subject> <what>: <detail>`, sometimes followed by `  > ` lines quoting an agent. The ids (W2, T5,
@@ -253,7 +249,6 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 | `lead.wake` | each time fleetd brings the lead up to date: the project's state, then one line per event since the last time |  |
 | `chat.human` | with each chat message the human sends the lead |  |
 | `chat.agent` | with each chat message an agent or integration with its own key sends the lead | takes it as input, never as the human's answer or approval |
-| `plan.granularity` | with plan\_add's or plan\_edit's result, for an item with no size or size l |  |
 
 ### Tasks
 
@@ -279,6 +274,5 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 | `task.pause` | to each running agent above a lowered max agents, when a person pauses the extras |  |
 | `task.resume` | to a paused agent once a slot frees for it |  |
 | `usage.continue` | to a lead or agent a usage limit parked, once the limit resets |  |
-| `tool.denied` | as the result of a tool call a policy rule or a person denied |  |
 
 <!-- /prompt-table -->

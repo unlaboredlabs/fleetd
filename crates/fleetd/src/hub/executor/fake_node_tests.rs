@@ -5,10 +5,7 @@ use std::sync::Arc;
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectId, ThreadId, ThreadRef};
 use fleetd_contracts::node_link::{HubToNode, NodeToHub};
-use fleetd_contracts::prim::Text;
-use fleetd_contracts::sessions::{
-    PermissionDecision, SessionCall, SessionWorkspace, ThreadEventFrame,
-};
+use fleetd_contracts::sessions::{SessionCall, SessionWorkspace, ThreadEventFrame};
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
 
@@ -317,7 +314,7 @@ async fn launch_send_interrupt_and_a_permission_answer_go_out_as_session_calls()
         }
     );
 
-    // A permission prompt: thread.waiting with what it asks, the pending question, and the answer as a call.
+    // A permission prompt: thread.waiting with what it asks, and the pending question.
     node.push(json!({ "type": "session_updated", "status": "waiting", "activeRunId": run_id,
         "latestRun": { "id": run_id, "status": "waiting", "ordinal": 1 },
         "pendingPermission": { "requestId": "q1", "toolName": "Bash", "summary": "touch notes.txt" },
@@ -333,43 +330,6 @@ async fn launch_send_interrupt_and_a_permission_answer_go_out_as_session_calls()
             .as_deref(),
         Some("approve Bash: touch notes.txt")
     );
-    let executors = node.executors.clone();
-    let target = r.clone();
-    let answered = tokio::spawn(async move {
-        executors
-            .answer(
-                &target,
-                "q1",
-                PermissionDecision::Deny {
-                    message: Text::unchecked("not in this repo"),
-                },
-                None,
-            )
-            .await
-    });
-    let (id, call) = node.call_after_follows().await;
-    assert_eq!(
-        call,
-        SessionCall::Answer {
-            session_id: ThreadId::unchecked(session_id.as_str()),
-            request_id: NonEmpty::unchecked("q1"),
-            decision: PermissionDecision::Deny {
-                message: Text::unchecked("not in this repo")
-            },
-            by: None,
-        }
-    );
-    // The prompt is gone by the time the answer arrives: the node's words reach the caller, not "unknown thread".
-    node.reply(
-        &id,
-        json!({ "err": { "code": "not_found", "message": "no open prompt q1: the run ended" } }),
-    );
-    match answered.await.unwrap() {
-        Err(ExecutorError::NodeRequestFailed { message, .. }) => {
-            assert_eq!(message, "no open prompt q1: the run ended")
-        }
-        other => panic!("{other:?}"),
-    }
 
     // Interrupt names the active run.
     let executors = node.executors.clone();

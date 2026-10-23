@@ -5,12 +5,11 @@
 // person's Approve, waking the lead with its exit code. The requests are filed from the project's shell as a lead
 // would, so they cost no turns; a lead is started only if none exists, just before the approval, so a run alone costs
 // two turns (lead start, the approval's wake).
-import { spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import sodium from "libsodium-wrappers";
-import { type Body, cli, fleetdCommand, HUB_PORT, type Lab, MACHINES, MODEL, nodeHome, nodeSock, RUN, scrubbedEnv, userMessages } from "./harness.ts";
+import { type Body, cli, HUB_PORT, type Lab, leadIn, MACHINES, MODEL, nodeHome, nodeSock, RUN, scrubbedEnv, userMessages } from "./harness.ts";
 import { CLONE } from "./m7Train.ts";
 
 const MACHINE = "lab-a";
@@ -69,14 +68,11 @@ export async function m8Desktop(lab: Lab) {
   // A fresh value per run, so a hit can only come from this run.
   const VALUE = `sk_test_lab_${crypto.randomBytes(12).toString("hex")}`;
 
-  const fleetd = (...args: Array<string>) => {
-    const out = spawnSync(...fleetdCommand(args), {
-      cwd: root,
-      encoding: "utf8",
-      env: { ...scrubbedEnv(), PWD: root, FLEETD_NODE_SOCK: nodeSock(MACHINE) },
-    });
-    check(out.status === 0, `fleetd ${args.slice(0, 3).join(" ")}: exit ${out.status} ${out.stdout}${out.stderr}`);
-    return out.stdout;
+  const callLead = leadIn(root, { ...scrubbedEnv(), FLEETD_NODE_SOCK: nodeSock(MACHINE) });
+  const requestOf = (name: string, args: Record<string, unknown>) => {
+    const out = callLead(name, args);
+    check(out.code === 0, `${name}: ${out.text}`);
+    return out.result?.requestId as string | undefined;
   };
   /** Every event after `cursor` that matches, page by page. */
   const allEvents = async (cursor: number, filter: Record<string, unknown> = {}) => {
@@ -115,8 +111,8 @@ export async function m8Desktop(lab: Lab) {
     fs.mkdirSync(sinkDir, { recursive: true });
     const sinkPath = path.join(sinkDir, ".env");
     fs.writeFileSync(sinkPath, "OTHER=1\n");
-    const secretAsk = /\bQ\d+\b/u.exec(fleetd("request", "secret", "--key", "stripe.test_key", "--sink", `env:${MACHINE}:${sinkPath}`, "--text", "Need the Stripe test key"))?.[0];
-    check(secretAsk, "fleetd request secret filed a request");
+    const secretAsk = requestOf("request_secret", { key: "stripe.test_key", sink: `env:${MACHINE}:${sinkPath}`, text: "Need the Stripe test key" });
+    check(secretAsk, "request_secret filed a request");
     const asked = await itemIn(secretAsk!, "open");
     check(asked?.kind === "secret_request" && asked.state === "open" && asked.name === "stripe.test_key", `${secretAsk} is an open secret item in the chat: ${JSON.stringify(asked)}`);
     const machine = ((await app.call("fleetd_status")).machines as Array<Body>).find((m) => m.machineId === MACHINE);
@@ -151,8 +147,8 @@ export async function m8Desktop(lab: Lab) {
     const gatedFile = path.join(lab.dir, "fleetd-gated-test");
     const argv = ["sh", "-c", `echo deployed > ${gatedFile}`];
     let cursor = await lab.cursor();
-    const gatedAsk = /\bQ\d+\b/u.exec(fleetd("gated", "run", "--class", "irreversible", "--argv", JSON.stringify(argv), "--reason", "prod deploy test"))?.[0];
-    check(gatedAsk, "fleetd gated run filed a request");
+    const gatedAsk = requestOf("gated_run", { class: "irreversible", argv, reason: "prod deploy test" });
+    check(gatedAsk, "gated_run filed a request");
     // It runs an irreversible command: urgent, so the app notifies even in quiet hours.
     const opened = await lab.waitEvent(`${gatedAsk} opened`, 30_000, { cursor, types: ["request.opened"], match: (e) => e.data?.requestId === gatedAsk });
     check(opened.event.attention === "urgent", `${gatedAsk}'s request.opened carries attention "urgent": ${JSON.stringify(opened.event.attention)}`);

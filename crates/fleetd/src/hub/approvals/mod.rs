@@ -3,11 +3,9 @@
 //!   ciphertext to that node without storing it and keeps only the fingerprint the node reports.
 //! - approval of a command (`gated_run`): the exact command is stored; once a person approves it, the project's node
 //!   runs those bytes and the exit code and output tail go to the lead.
-//! - approval of a tool prompt: a session's permission prompt, answered on its node (permissions.rs).
 //!
 //! Every change is announced as `request.opened` / `request.updated`; the chat shows each request as its item
 //! ([`chat_item`]).
-pub mod permissions;
 pub mod store;
 pub mod tools;
 
@@ -26,8 +24,6 @@ use fleetd_contracts::lead_calls::RequestSecretCall;
 use fleetd_contracts::ledger::{
     GatedRunSpec, HumanRequest, RequestKind, RequestState, SecretRequest,
 };
-use fleetd_contracts::sessions::{PendingPermission, PermissionDecision};
-pub use permissions::ToolRules;
 use regex::Regex;
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -160,23 +156,8 @@ pub trait ApprovalNodes: Send + Sync {
         machine_id: &str,
         input: Value,
     ) -> BoxFut<'_, Result<GatedOutcome, NodeCommandError>>;
-    /// `session_call answer`: the decision for the prompt `request_id` the thread's run waits on.
-    fn answer_permission(
-        &self,
-        machine_id: &str,
-        thread_id: &str,
-        request_id: &str,
-        decision: PermissionDecision,
-        by: Option<fleetd_contracts::time::DecidedBy>,
-    ) -> BoxFut<'_, Result<(), NodeCommandError>>;
     /// The machine's node is linked and its session stream subscribed.
     fn is_linked(&self, machine_id: &str) -> BoxFut<'_, bool>;
-    /// The prompt the thread's run waits on now, from the machine stream.
-    fn pending_permission(
-        &self,
-        machine_id: &str,
-        thread_id: &str,
-    ) -> BoxFut<'_, Option<PendingPermission>>;
 }
 
 /// The rest of the hub approvals reads or wakes.
@@ -187,10 +168,6 @@ pub trait ApprovalHub: Send + Sync {
     fn workspace_root(&self, project: &ProjectRef) -> BoxFut<'_, Option<String>>;
     /// Wakes the project's lead with a request's outcome (an event line).
     fn wake_request(&self, request: &HumanRequest) -> BoxFut<'_, ()>;
-    /// The project policy's `tools` rules (empty without a policy file); the error says why it could not be read.
-    fn tool_rules(&self, project: &ProjectRef) -> BoxFut<'_, Result<ToolRules, String>>;
-    /// The texts a message to this thread renders from.
-    fn prompts(&self, machine_id: &str, thread_id: &str) -> crate::hub::prompts::PromptSet;
 }
 
 pub struct ApprovalsDeps {
@@ -318,31 +295,21 @@ pub fn chat_item(r: &HumanRequest) -> ChatItem {
 
 pub struct Approvals {
     deps: ApprovalsDeps,
-    /// Tool prompts still waiting on an answer, whatever became of their requests.
-    prompts: permissions::Prompts,
 }
 
 impl Approvals {
     pub fn new(deps: ApprovalsDeps) -> Arc<Self> {
-        Arc::new(Approvals {
-            deps,
-            prompts: Default::default(),
-        })
+        Arc::new(Approvals { deps })
     }
 
     /// Runs until the hub stops: first the approved commands a stopped hub never finished go back to the person, then
-    /// the threads' follower, the removed-projects follower and the prompt reminders.
+    /// the removed-projects follower.
     pub async fn serve(self: Arc<Self>) {
         self.reopen_unfinished().await;
-        tokio::join!(
-            self.clone().follow_threads(),
-            self.clone().follow_removals(),
-            self.watch_prompts(),
-        );
+        self.follow_removals().await;
     }
 
-    /// Approved commands the hub never saw finish go back to the person: never run late, never silently lost. A tool
-    /// prompt's answer is delivered or put back by the prompt sweep instead.
+    /// Approved commands the hub never saw finish go back to the person: never run late, never silently lost.
     async fn reopen_unfinished(&self) {
         let approved = self.deps.requests.list(&RequestFilter {
             states: Some(vec![RequestState::Approved]),
@@ -734,19 +701,15 @@ impl Approvals {
                 } else {
                     RequestState::Denied
                 };
-                // A command's denial reason goes to the lead with it. A tool prompt's goes to the run itself (below);
-                // its evidence stays empty until the answer reached the node.
+                // A denial reason goes to the lead with it.
                 r.evidence = reason
                     .clone()
-                    .filter(|_| r.gated.is_some())
                     .map(|m| fleetd_contracts::prim::Text::unchecked(clip(&m, EVIDENCE_MAX)));
                 r.answered_at = Some(fleetd_contracts::ids::Timestamp(at));
                 r.answered_by = Some(by);
             })
             .await?;
-        if answered.permission.is_some() {
-            self.answer_prompt(&answered, reason.as_deref()).await;
-        } else if approve {
+        if approve {
             let me = self.clone();
             let running = answered.clone();
             tokio::spawn(async move { me.run_approved(&running).await });
@@ -757,7 +720,7 @@ impl Approvals {
     }
 
     /// `request_withdraw`: the lead takes back an open request of its own project (the person said in chat it is not
-    /// needed). A secret is withdrawn; an approval is denied, and a waiting tool prompt hears so.
+    /// needed). A secret is withdrawn; an approval is denied.
     pub async fn withdraw(
         &self,
         project: &ProjectRef,
@@ -786,24 +749,18 @@ impl Approvals {
                     RequestKind::Secret => RequestState::Withdrawn,
                     RequestKind::Approval => RequestState::Denied,
                 };
-                // A tool prompt's evidence is written once its deny reached the node: until then the sweep redelivers.
-                if r.permission.is_none() {
-                    r.evidence = Some(fleetd_contracts::prim::Text::unchecked(
-                        "withdrawn by the lead".to_string(),
-                    ));
-                }
+                r.evidence = Some(fleetd_contracts::prim::Text::unchecked(
+                    "withdrawn by the lead".to_string(),
+                ));
                 r.answered_at = Some(fleetd_contracts::ids::Timestamp(at));
                 r.answered_by = Some(by);
             })
             .await?;
-        if done.permission.is_some() {
-            self.answer_prompt(&done, None).await;
-        }
         Ok(done)
     }
 
     /// Closes every open request of a project (or of one of its orders) nobody needs any more: secrets withdrawn,
-    /// approvals denied, and a waiting tool prompt hears so. `why` is the evidence.
+    /// approvals denied. `why` is the evidence.
     pub async fn close_open(&self, project: &ProjectRef, workstream: Option<&str>, why: &str) {
         let open = self.deps.requests.list(&RequestFilter {
             project_ref: Some(contract_project(project)),
@@ -817,24 +774,17 @@ impl Approvals {
             }
             let at = self.now();
             let why = why.to_string();
-            let closed = self
+            let _ = self
                 .change_from(&r.request_id, RequestState::Open, |r| {
                     r.state = match r.kind {
                         RequestKind::Secret => RequestState::Withdrawn,
                         RequestKind::Approval => RequestState::Denied,
                     };
-                    if r.permission.is_none() {
-                        r.evidence = Some(fleetd_contracts::prim::Text::unchecked(why));
-                    }
+                    r.evidence = Some(fleetd_contracts::prim::Text::unchecked(why));
                     r.answered_at = Some(fleetd_contracts::ids::Timestamp(at));
                     r.answered_by = Some("hub".into());
                 })
                 .await;
-            if let Ok(closed) = closed
-                && closed.permission.is_some()
-            {
-                self.answer_prompt(&closed, None).await;
-            }
         }
     }
 

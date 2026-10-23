@@ -35,9 +35,9 @@ use fleetd_contracts::model::RuntimeMode;
 use fleetd_contracts::node_link::{HubToNode, NodeToHub};
 use fleetd_contracts::prim::NonEmpty;
 use fleetd_contracts::sessions::{
-    MachineEvent, MachineEventFrame, PermissionDecision, RunnerInfo, SessionCall, SessionCallFrame,
-    SessionError, SessionErrorCode, SessionLaunch, SessionOutput, SessionResult, SessionStatus,
-    SessionSummary, SessionWorkspace, ThreadEvent, ThreadEventFrame,
+    MachineEvent, MachineEventFrame, RunnerInfo, SessionCall, SessionCallFrame, SessionError,
+    SessionErrorCode, SessionLaunch, SessionOutput, SessionResult, SessionStatus, SessionSummary,
+    SessionWorkspace, ThreadEvent, ThreadEventFrame,
 };
 use fleetd_contracts::steer::{SteerReceipt, SteerTag};
 use futures_util::StreamExt;
@@ -76,7 +76,6 @@ pub enum NodeOperation {
     Send,
     Interrupt,
     Stop,
-    Answer,
     Read,
     Project,
 }
@@ -88,7 +87,6 @@ impl NodeOperation {
             Self::Send => "send",
             Self::Interrupt => "interrupt",
             Self::Stop => "stop",
-            Self::Answer => "answer",
             Self::Read => "read",
             Self::Project => "project",
         }
@@ -408,9 +406,7 @@ fn from_session_error(
     error: SessionError,
 ) -> ExecutorError {
     match (error.code, session) {
-        (SessionErrorCode::NotFound, Some(thread_id))
-            if operation != NodeOperation::Answer && operation != NodeOperation::Launch =>
-        {
+        (SessionErrorCode::NotFound, Some(thread_id)) if operation != NodeOperation::Launch => {
             ExecutorError::ThreadNotFound {
                 machine_id: machine_id.clone(),
                 thread_id: thread_id.clone(),
@@ -1431,25 +1427,6 @@ impl Executors {
         Ok(())
     }
 
-    /// Answers the permission prompt the thread's run waits on.
-    pub async fn answer(
-        &self,
-        r: &ThreadRef,
-        request_id: &str,
-        decision: PermissionDecision,
-        by: Option<fleetd_contracts::time::DecidedBy>,
-    ) -> Result<(), ExecutorError> {
-        let op = NodeOperation::Answer;
-        let call = SessionCall::Answer {
-            session_id: r.thread_id.clone(),
-            request_id: non_empty(&r.machine_id, op, "request id", request_id)?,
-            decision,
-            by,
-        };
-        self.call(&r.machine_id, op, call, READ_TIMEOUT).await?;
-        Ok(())
-    }
-
     /// The items and messages around `item_id`, oldest first, read from the node's own log, and the index of the
     /// item among them.
     pub async fn window(
@@ -1980,13 +1957,5 @@ impl Executors {
             .tracked(r)
             .and_then(|t| t.pending)
             .map(|p| thread_view::pending_question_text(&p)))
-    }
-
-    /// The prompt the thread's run waits on: (request id, tool, summary).
-    pub fn pending_permission(
-        &self,
-        r: &ThreadRef,
-    ) -> Option<fleetd_contracts::sessions::PendingPermission> {
-        self.tracked(r)?.pending
     }
 }

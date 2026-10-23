@@ -32,7 +32,7 @@ fn workstream() -> Workstream {
     serde_json::from_value(json!({
         "workstreamId": "W14", "projectRef": { "machineId": "lab-a", "projectId": "p1" }, "title": "Three pages",
         "source": { "text": "Three pages", "channel": "app", "by": "human", "at": AT },
-        "state": "running", "headline": "waiting on reviews", "playbook": format!("feature@{}", "a".repeat(40)),
+        "state": "running", "headline": "waiting on reviews",
         "createdAt": AT, "updatedAt": AT,
     }))
     .unwrap()
@@ -118,7 +118,6 @@ fn an_order_joins_its_agents_prs_and_asks() {
     assert_eq!(c.phase, OrderPhase::WaitingOnYou);
     assert_eq!(c.phase_detail.as_deref(), Some("1 approval"));
     assert_eq!((c.settled.get(), c.total.get()), (1, 5));
-    assert_eq!(c.template, Some(PlaybookName::Feature));
     assert_eq!(c.next.as_deref(), Some("waiting on reviews"));
     let lanes: Vec<_> = c
         .lanes

@@ -19,27 +19,6 @@ const SCRUBBED: &str = "[secret]";
 /// there.
 pub const REFUSED: &str = "fleetd node refused to run this: ";
 
-/// Why the node refused a command it never ran, from its `cmd_result`.
-pub fn not_run_why(exit_code_is_none: bool, output_tail: &str) -> Option<&str> {
-    output_tail
-        .strip_prefix(REFUSED)
-        .filter(|_| exit_code_is_none)
-}
-
-/// [`not_run_why`] when the cwd is outside cmdRoots (older nodes say "outside the directories this node runs
-/// commands in"); a cwd that doesn't exist is not this.
-pub fn refusal(exit_code_is_none: bool, output_tail: &str) -> Option<&str> {
-    not_run_why(exit_code_is_none, output_tail).filter(|why| why.contains(" is outside "))
-}
-
-/// What a person does about a checkout outside `cmdRoots` on `machine`.
-pub fn outside_roots_fix(machine: &str) -> String {
-    format!(
-        "Move the checkout into your home directory, or add its directory to \"cmdRoots\" in node.json on {machine} \
-         (in ~/.fleetd/node by default) and restart its node"
-    )
-}
-
 /// The real directory `cwd` names, when it lies under one of `roots` after following symlinks on both sides.
 pub fn confine(cwd: &str, roots: &[String]) -> Result<PathBuf, String> {
     let Ok(dir) = std::fs::canonicalize(cwd) else {
@@ -344,9 +323,8 @@ mod tests {
                 "{}",
                 refused.output_tail
             );
-            let why = refusal(refused.exit_code.is_none(), refused.output_tail.as_str());
             assert!(
-                why.is_some_and(|w| w.contains("is outside cmdRoots")),
+                refused.output_tail.contains("is outside cmdRoots"),
                 "{}",
                 refused.output_tail
             );

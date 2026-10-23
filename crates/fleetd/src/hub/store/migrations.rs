@@ -603,4 +603,26 @@ pub(crate) const MIGRATIONS: &[&str] = &[
   DELETE FROM time_spans WHERE kind = 18;
   DELETE FROM time_rollups WHERE kind = 18;
   "#,
+    // Research has no pre-registered rule, computed verdict or turn budget: the lead closes it with the answer.
+    r#"
+  UPDATE workstreams SET data = json_remove(data, '$.outcome', '$.verdict', '$.brief.budget', '$.brief.baseline',
+    '$.brief.metric', '$.brief.decisionRule') WHERE json_valid(data);
+  DELETE FROM events WHERE type = 'research.verdict';
+  "#,
+    // The train runs no git of its own any more, so nothing can block its worktree: its event goes, as no reader decodes
+    // it.
+    r#"
+  DELETE FROM events WHERE type = 'train.blocked';
+  "#,
+    // One `plan` call sets a workstream's items: the placeholders that stood in for an order with no items, and
+    // their markers, go.
+    r#"
+  DROP TABLE plan_placeholders;
+  DELETE FROM plan_changes WHERE milestone = 0;
+  "#,
+    // Playbooks went: a workstream pins none, and the pinned texts go.
+    r#"
+  DROP TABLE playbook_versions;
+  UPDATE workstreams SET data = json_remove(data, '$.playbook') WHERE json_valid(data);
+  "#,
 ];

@@ -19,14 +19,13 @@ Where fleetd keeps everything, and the settings you can change. The [hub](/docs/
     hub.log              the hub service's log
     cli.key              the admin key the CLI on this machine uses (an agent key)
     keys/<name>.key      agent keys made with fleetd hub key create --agent
-    playbooks/<name>.md  your version of a playbook; delete it to use fleetd's
     prompts/<id>.md      your version of a prompt, hub-wide
     prompts/projects/<key>/<id>.md   the same for one project
   node/                  the node's home (every worker)
     node.json            the node's settings (below)
     node-key.pem         proves the node to the hub
     node-box-key.pem     opens secrets sealed to this machine
-    node.sock            the socket lead-side commands use to reach the hub
+    node.sock            the socket agents' fleetd tools use to reach the hub
     sessions.sqlite      the node's sessions, and timings not yet sent to the hub
     worktrees/           one git worktree per writer session
   claude.env             optional extra environment for every claude fleetd starts
@@ -52,7 +51,7 @@ after you change it.
 | `hub` | The hub's address. |
 | `machineId`, `name`, `tags` | How the hub knows this machine. |
 | `enrolled` | `true` once the hub accepted the node's key. |
-| `cmdRoots` | Folders the node may run commands in, and below. Absent: your home directory. A project's checkout must be inside one: `fleetd project add` refuses one outside, and `fleetd doctor` flags an existing one. |
+| `cmdRoots` | Folders the node may run commands in, and below. Absent: your home directory. |
 | `claudeConfigDir` | A dedicated claude profile for this machine's sessions. See [below](#claude-profile). |
 | `minFreeGb` | New agents wait while the disk holding the worktrees has less than this many GB free. Absent: 10% of the disk or 20 GB, whichever is larger. `0` turns it off. Read with every heartbeat, no restart needed. See [Disk and load](/docs/machines#guard). |
 
@@ -231,9 +230,3 @@ Each node holds timings it hasn't sent yet in `sessions.sqlite`. While the hub i
 | Its hub address and key | `desktop-hub.bin` in the same folder, encrypted with the OS keychain or keyring. Without one (no keyring on Linux, or an unsigned or ad-hoc signed Mac build): `desktop-hub.json`, mode `0600`. |
 | Its own browser state | `desktop/` in the same folder. |
 | Its log | `~/Library/Logs/fleetd/app.log` on macOS, `~/.local/state/fleetd/app.log` on Linux (`$XDG_STATE_HOME/fleetd`), or `$FLEETD_HOME/logs`. Errors only, without keys or message text; crash dumps go in `crashes/` beside it. Help → Reveal Logs opens it. |
-
-## Hub environment {#env}
-
-| Variable | Default | Does |
-|---|---|---|
-| `FLEETD_TRAIN_BATCH_MAX` | `4` | The most ready PRs the [merge train](/docs/merge-train#batches) merges in one CI run. `1` takes each alone. |

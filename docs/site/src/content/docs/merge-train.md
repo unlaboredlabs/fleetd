@@ -1,6 +1,6 @@
 ---
 title: Merge train
-description: "How fleetd merges pull requests: one train per repo, batches of disjoint PRs in one CI run."
+description: "How fleetd merges pull requests: one train per repo, batches of ready PRs in one CI run."
 ---
 
 How fleetd merges pull requests. Only fleetd merges: each writer's PR goes on its repo's
@@ -9,11 +9,11 @@ How fleetd merges pull requests. Only fleetd merges: each writer's PR goes on it
 ## What the train does {#steps}
 
 1. Takes the next ready PR. A PR is ready once its review passes (see [Review](#review)).
-2. Rebases it onto its base branch.
+2. Has GitHub rebase it onto its base branch, as **Update branch** with rebase does.
 3. Waits for CI on that exact commit.
 4. Posts the `fleetd/train` status and squash-merges it, pinned to that commit.
 
-A conflict or red CI goes back to the agent that wrote the PR, with the paths or failing checks.
+A conflict or red CI goes back to the agent that wrote the PR; for red CI, with the failing checks.
 
 fleetd merges only on green CI. A ready PR on a repo with no CI (no GitHub Actions workflow, and no required check but
 `fleetd/train`) waits, and its queue entry and `fleetd doctor` say to add one. It goes on by itself once a workflow
@@ -39,17 +39,11 @@ changed. Blocking findings go to the agent that wrote the PR, and the PR waits f
 
 ## Batches {#batches}
 
-When several PRs are ready at once, the train merges them together in one CI run. It takes the first PR in line and
-adds the ones after it that:
+When several PRs are ready at once, the train merges them together in one CI run. It takes up to 8 ready PRs in
+line that go into the same base branch and are green on their own commit. Then:
 
-- go into the same base branch;
-- change none of the same files (lockfiles such as `Cargo.lock` or `package-lock.json` aside);
-- are green on their own commit.
-
-Then:
-
-1. It squashes them onto the base, in order, on its own branch: `train/batch` under the project's branch prefix
-   (`fleetd/train/batch` by default).
+1. It makes its own branch from the base on GitHub, `train/batch` under the project's branch prefix
+   (`fleetd/train/batch` by default), and merges each PR into it in order.
 2. It opens one PR for them, whose CI runs once.
 3. When that PR is green, it posts `fleetd/train` and merges it as one squash.
 4. It closes each member PR with a comment linking the batch.
@@ -58,12 +52,9 @@ A member counts as merged only while its head is still the one the batch was bui
 
 | If | The train |
 |---|---|
-| The batch is red | Drops the last member and tries again. The dropped PR later goes alone, so its CI result blames only it. |
-| A member gets a new push, the `hold` label, or is closed during CI | Leaves it out before the merge, so untested code never lands. |
-| GitHub refuses to merge a batch PR (for example, every PR needs an approving review) | Stops batching that repo until the hub restarts. |
-
-A batch holds at most 4 PRs. Change it with `FLEETD_TRAIN_BATCH_MAX` in the hub's environment; `1` turns batches off.
-See [Hub environment](/docs/config-and-files#env).
+| A PR conflicts with the base or the PRs ahead of it | Leaves it out and sends it back to the agent that wrote it. |
+| The batch is red, or GitHub refuses to merge its PR | Takes each member alone, so each CI result blames only that PR. |
+| A member gets a new push, the `hold` label, or is closed during CI | Drops the batch before the merge, so untested code never lands, and builds a new one without it. |
 
 ## Hold a PR {#hold}
 

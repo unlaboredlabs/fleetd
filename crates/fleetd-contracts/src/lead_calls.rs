@@ -13,14 +13,11 @@ use crate::effort::TaskProfile;
 use crate::ids::ThreadId;
 use crate::ledger::{
     Brief, Decision, DecisionKey, DecisionValue, DecisionWhy, EnvName, GATED_MAX_TIMEOUT_SEC,
-    GatedArgv, GatedClass, GatedCwd, GatedTimeoutSec, IntakeText, PlaybookName, PlaybookRef,
-    RequestState, SecretEnv, WorkstreamId, WorkstreamState,
+    GatedArgv, GatedClass, GatedCwd, GatedTimeoutSec, IntakeText, RequestState, SecretEnv,
+    WorkstreamId, WorkstreamState,
 };
 use crate::mcp::McpToolError;
-use crate::plan::{
-    PlanAddCall, PlanDropCall, PlanEditCall, PlanItemId, PlanItemResult, PlanMilestoneCall,
-    PlanMilestoneResult, PlanShowCall, PlanShowResult,
-};
+use crate::plan::{PlanCall, PlanItemId, PlanResult};
 use crate::prim::{List, NonEmpty, Text};
 use crate::secrets::SecretSink;
 use crate::steer::SteerId;
@@ -33,14 +30,26 @@ use crate::verification::ReviewVerdict;
 /// Under the node user's home directory; mode 0600.
 pub const NODE_SOCKET_PATH: &str = ".fleetd/node/node.sock";
 
-/// `fleetd brief create --workstream W12 --json '<Brief>'`. Sets or edits the brief; a draft moves to running.
+/// `fleetd brief create (--workstream W12 | --text "<intent>") --json '<Brief>'`. Without a workstream it
+/// opens one for the work the lead took from the chat; then it sets or edits the brief, and a draft moves to running.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
+#[serde(remote = "Self", rename_all = "camelCase")]
 pub struct BriefCreateCall {
-    pub workstream_id: WorkstreamId,
+    pub workstream_id: Option<WorkstreamId>,
+    /// The order in the human's words, when this opens the workstream.
+    pub text: Option<IntakeText>,
     pub brief: Brief,
 }
+checked!(BriefCreateCall, |call| {
+    match (&call.workstream_id, &call.text) {
+        (None, None) => {
+            Err("give workstreamId to brief an open workstream, or text to open one".into())
+        }
+        (Some(_), Some(_)) => Err("text opens a workstream; leave it out with workstreamId".into()),
+        _ => Ok(()),
+    }
+});
 
 /// `request_secret`: the human enters a secret in a masked field in the app; it is sealed to the sink's machine and
 /// written there (0600). The lead only ever sees its fingerprint, in a later wake.
@@ -149,20 +158,15 @@ checked!(TaskSpawnCall, |call| task_spawn_rule(
     call.pr.is_some()
 ));
 
-/// `fleetd task list [--state s] [--workstream W1]`, within the calling project.
+/// `fleetd task list [--task T1] [--state s] [--workstream W1]`, within the calling project.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskListCall {
+    /// Just this task.
+    pub task_id: Option<TaskId>,
     pub state: Option<TaskState>,
     pub workstream_id: Option<WorkstreamId>,
-}
-
-/// `fleetd task status T1`.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct TaskStatusCall {
-    pub task_id: TaskId,
 }
 
 /// `fleetd task message T1 "<text>" [--now]`. A steer from the lead: a running task takes it in at its next tool
@@ -208,25 +212,6 @@ pub struct ChangeEnqueueCall {
     pub item: Option<PlanItemId>,
 }
 
-/// A lead opens its own workstream for work it took from the chat (`workstream_open`): a draft it then briefs with
-/// `brief`. `template` picks the playbook (feature, bugfix, research).
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkstreamOpenCall {
-    pub text: IntakeText,
-    pub template: Option<PlaybookName>,
-}
-
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkstreamOpenResult {
-    pub workstream_id: WorkstreamId,
-    pub playbook: Option<PlaybookRef>,
-    pub next: Option<String>,
-}
-
 /// A worker's question for its lead (the `ask_lead` MCP tool). The lead is woken with it and answers with
 /// `message_agent`, which reaches the worker as a steer; the worker carries on meanwhile.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -244,7 +229,6 @@ pub enum LeadCall {
     DecisionsSearch(DecisionsSearchCall),
     TaskSpawn(TaskSpawnCall),
     TaskList(TaskListCall),
-    TaskStatus(TaskStatusCall),
     TaskMessage(TaskMessageCall),
     TaskCancel(TaskCancelCall),
     Close(CloseCall),
@@ -253,13 +237,8 @@ pub enum LeadCall {
     ReviewVerdict(ReviewVerdict),
     ChangeEnqueue(ChangeEnqueueCall),
     GatedRun(GatedRunCall),
-    PlanMilestone(PlanMilestoneCall),
-    PlanAdd(PlanAddCall),
-    PlanEdit(PlanEditCall),
-    PlanDrop(PlanDropCall),
-    PlanShow(PlanShowCall),
+    Plan(PlanCall),
     AskLead(AskLeadCall),
-    WorkstreamOpen(WorkstreamOpenCall),
 }
 
 #[skip_serializing_none]
@@ -296,7 +275,7 @@ pub struct DecisionsSearchResult {
     pub next: Option<String>,
 }
 
-/// The task as stored: queued with `queued_reason`, or running. Also the answer to task status, message and cancel.
+/// The task as stored: queued with `queued_reason`, or running. Also the answer to task spawn, message and cancel.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct TaskResultFrame {
@@ -358,20 +337,14 @@ pub enum LeadCallResult {
     DecisionsSearch(DecisionsSearchResult),
     TaskSpawn(TaskResultFrame),
     TaskList(TaskListResult),
-    TaskStatus(TaskResultFrame),
     TaskMessage(TaskResultFrame),
     TaskCancel(TaskResultFrame),
     Close(CloseResult),
     ReviewVerdict(ReviewVerdictResult),
     ChangeEnqueue(ChangeResult),
     GatedRun(RequestResult),
-    PlanMilestone(PlanMilestoneResult),
-    PlanAdd(PlanItemResult),
-    PlanEdit(PlanItemResult),
-    PlanDrop(PlanItemResult),
-    PlanShow(PlanShowResult),
+    Plan(PlanResult),
     AskLead(AskLeadResult),
-    WorkstreamOpen(WorkstreamOpenResult),
 }
 
 /// CLI -> node on the local socket, and node -> hub on the link.

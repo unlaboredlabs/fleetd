@@ -4,7 +4,6 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::brand;
-use crate::ledger::MetricValues;
 use crate::prim::{Count, Text};
 use crate::tasks::TaskId;
 
@@ -29,8 +28,6 @@ pub struct ReviewVerdict {
     pub blocking: Count,
     pub non_blocking: Count,
     pub summary: Text<1, 1000>,
-    /// M9: a research workstream's judge reports its metric for the baseline and the candidate; the hub computes the verdict.
-    pub metric_values: Option<MetricValues>,
 }
 
 #[cfg(test)]

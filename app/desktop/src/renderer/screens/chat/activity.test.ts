@@ -34,7 +34,7 @@ describe("the lead's activity line", () => {
       ev(7, "task.started", started("T2")),
     ];
     const lanes = {
-      [leadLaneId(ref)]: { laneId: leadLaneId(ref), status: "working" as const, activity: { activity: { kind: "tool" as const, name: "mcp__fleetd__plan_add" }, since: AT } },
+      [leadLaneId(ref)]: { laneId: leadLaneId(ref), status: "working" as const, activity: { activity: { kind: "tool" as const, name: "mcp__fleetd__plan" }, since: AT } },
     };
     const s = state({ chatStates: { [KEY]: working(true) }, events, live: { ...createDataStore().getState().live, lanes } });
     // Only this project's events since it started working: the task before the turn and the other project's don't count.
@@ -81,7 +81,7 @@ describe("the lead's activity line", () => {
     expect(doingWords({ kind: "read", path: "app/desktop/src/renderer/screens/chat/ChatList.tsx" })).toBe("reading `ChatList.tsx`");
     expect(doingWords({ kind: "read", pattern: "chat_delta" })).toBe("searching the code");
     expect(doingWords({ kind: "command", text: "cargo test -p fleetd" })).toBe("running a command");
-    expect(doingWords({ kind: "tool", name: "mcp__fleetd__workstream_open" })).toBe("opening an order");
+    expect(doingWords({ kind: "tool", name: "mcp__fleetd__brief" })).toBe("writing the brief");
     expect(doingWords({ kind: "tool", name: "mcp__fleetd__something_new" })).toBe("asking fleetd");
     expect(doingWords({ kind: "tool", name: "mcp__other__x" })).toBe("working");
   });

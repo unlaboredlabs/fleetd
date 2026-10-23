@@ -7,7 +7,7 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { type Body, MODEL, openWorkstream, cli, fleetdCommand, HUB_PORT, type Lab, MECHANICS, nodeSock, requireGhLogin, scrubbedEnv } from "./harness.ts";
+import { type Body, MODEL, openWorkstream, cli, fleetdCommand, HUB_PORT, type Lab, leadIn, MECHANICS, nodeSock, requireGhLogin, scrubbedEnv } from "./harness.ts";
 import { BASE, checkClone, CLONE, NAMESPACE, prepareCheckout, REPO, removeLabRepoProject, resetNamespace } from "./m7Train.ts";
 
 const MACHINE = "lab-a";
@@ -73,41 +73,30 @@ export async function timeInspector(lab: Lab) {
   try {
     const projectId = await lab.addProject(MACHINE, CLONE, "fleetd-lab");
     const ref = { machineId: MACHINE, projectId };
-    const fleetd = (...args: Array<string>) => {
-      const out = spawnSync(...fleetdCommand(args), {
-        cwd: CLONE,
-        encoding: "utf8",
-        env: { ...scrubbedEnv(), PWD: CLONE, FLEETD_NODE_SOCK: nodeSock(MACHINE) },
-      });
-      return { code: out.status, stdout: out.stdout, stderr: out.stderr };
-    };
+    const lead = leadIn(CLONE, { ...scrubbedEnv(), FLEETD_NODE_SOCK: nodeSock(MACHINE) });
 
     const started = await callTool("lead_start", ref);
     check(!started.isError, `lead_start: ${JSON.stringify(started.body)}`);
     const leadThread = started.body.threadId as string;
     await lab.waitEvent("lead start turn", TURN_MS, { cursor: scenarioStart, machineId: MACHINE, match: (e) => e.threadId === leadThread && ENDED.includes(e.type) });
 
-    // The order, opened and its brief registered from the shell as the lead would, so the lead has nothing to plan.
+    // The order, opened and its brief registered with the lead's tools, so the lead has nothing to plan.
     const submitAt = Date.now();
-    const w = openWorkstream(check, fleetd, `Add ${FILE}. The harness spawns the task and closes it.`);
-    const brief = {
+    const w = openWorkstream(check, lead, `Add ${FILE}. The harness spawns the task and closes it.`, {
       goal: `add ${FILE}`,
       why: "the time inspector lab scenario",
-      pointers: [],
-      constraints: [],
       doneWhen: [`${FILE} is on ${BASE}`],
-    };
-    const frozen = fleetd("brief", "create", "--workstream", w, "--json", JSON.stringify(brief));
-    check(frozen.code === 0, `brief create ${w}: ${JSON.stringify(frozen)}`);
+    });
 
     // One writer: its PR goes on the train by itself.
     let cursor = await lab.cursor();
-    const spawned = fleetd(
-      "task", "spawn", "--workstream", w, "--title", "add time.md", "--profile", MECHANICS,
-      "--prompt",
-      `Create the file ${FILE} (from the repo root) containing exactly one line: time. Commit it with the message "add ${FILE}". Then push your branch and open the pull request as your rules say, with the title "add ${FILE}" and the body exactly "Adds the file.". Reply with the PR URL.`,
-    );
-    const taskId = /^Spawned (T\d+)/mu.exec(spawned.stdout)?.[1];
+    const spawned = lead("spawn_agent", {
+      workstreamId: w,
+      title: "add time.md",
+      profile: MECHANICS,
+      prompt: `Create the file ${FILE} (from the repo root) containing exactly one line: time. Commit it with the message "add ${FILE}". Then push your branch and open the pull request as your rules say, with the title "add ${FILE}" and the body exactly "Adds the file.". Reply with the PR URL.`,
+    });
+    const taskId = spawned.result?.task?.taskId as string | undefined;
     check(spawned.code === 0 && taskId, `task spawn: ${JSON.stringify(spawned)}`);
     ok(`${w} with writer ${taskId}`);
 
@@ -115,9 +104,9 @@ export async function timeInspector(lab: Lab) {
     const humanKey = /fld_[a-z2-7]{20,}/u.exec(cli("hub", "key", "create", "--home", lab.hubHome, "--human", "--name", "lab-time"))?.[0];
     check(humanKey, "hub key create --human printed a key");
     app = await appSession(humanKey!);
-    const gatedOut = fleetd("gated", "run", "--class", "irreversible", "--argv", JSON.stringify(["true"]), "--reason", "time lab approval", "--workstream", w);
+    const gatedOut = lead("gated_run", { class: "irreversible", argv: ["true"], reason: "time lab approval", workstreamId: w });
     // The command is a request (Q<n>), shown in the project's chat with Approve / Deny.
-    const askId = /\bQ\d+\b/u.exec(gatedOut.stdout)?.[0];
+    const askId = gatedOut.result?.requestId as string | undefined;
     check(gatedOut.code === 0 && askId, `gated run: ${JSON.stringify(gatedOut)}`);
     const itemOf = async () =>
       ((await app!.call("chat_history", { projectRef: ref, limit: 100 })).messages as Array<Body>).find((m) => m.item?.requestId === askId)?.item as Body | undefined;
@@ -155,7 +144,7 @@ export async function timeInspector(lab: Lab) {
     const change = ((await callTool("changes_list", { projectRef: ref, limit: 100 })).body.changes as Array<Body>).find((c) => c.changeId === changeId)!;
     ok(`${changeId} (${prUrl}) merged as ${String(merged.event.data.mergedSha).slice(0, 12)}`);
 
-    const closed = fleetd("close", "--workstream", w, "--why", "the harness merged it");
+    const closed = lead("close", { workstreamId: w, why: "the harness merged it" });
     check(closed.code === 0, `close: ${JSON.stringify(closed)}`);
     const done = await lab.waitEvent("workstream.done", 60_000, { cursor: scenarioStart, types: ["workstream.done"], match: (e) => e.data?.workstreamId === w });
     const doneAt = Date.parse(done.event.at as string);

@@ -2,14 +2,15 @@
 // enqueues itself (no writer agents; the lead only answers wakes). Each PR opens with the `hold` label, so the train
 // waits until the part's PRs are reviewed (one hub reviewer each) and green on their own heads; then the harness takes
 // the labels off:
-// 1. three PRs with disjoint files merge as one batch: one batch PR, one CI run on its head, one squash, and
+// 1. three ready PRs merge as one batch, built on GitHub: one batch PR, one CI run on its head, one squash, and
 //    each member closed with a link;
-// 2. a red batch bisects: a, b and c are green alone, but c's ci.yml (a PR runs its own workflow) also fails on the
-//    file b adds, so together they are red; the train drops c, merges a and b, and c alone is red and never merges.
+// 2. a red batch sends each member alone: a, b and c are green alone, but c's ci.yml (a PR runs its own workflow)
+//    also fails on the file b adds, so together they are red; a and b then merge alone, and c alone is red and never
+//    merges.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { type Body, openWorkstream, fleetdCommand, type Lab, nodeSock, requireGhLogin, scrubbedEnv } from "./harness.ts";
+import { type Body, openWorkstream, type Lab, leadIn, nodeSock, requireGhLogin, scrubbedEnv } from "./harness.ts";
 import { BASE, BRANCH_PREFIX, checkClone, CLONE, git, NAMESPACE, prepareCheckout, REPO, removeLabRepoProject, resetNamespace } from "./m7Train.ts";
 
 const MACHINE = "lab-a";
@@ -81,28 +82,16 @@ export async function trainBatch(lab: Lab) {
   try {
     const projectId = await lab.addProject(MACHINE, CLONE, "fleetd-lab");
     const ref = { machineId: MACHINE, projectId };
-    const fleetd = (...args: Array<string>) => {
-      const out = spawnSync(...fleetdCommand(args), {
-        cwd: CLONE,
-        encoding: "utf8",
-        env: { ...scrubbedEnv(), PWD: CLONE, FLEETD_NODE_SOCK: nodeSock(MACHINE) },
-      });
-      return { code: out.status, stdout: out.stdout, stderr: out.stderr };
-    };
+    const lead = leadIn(CLONE, { ...scrubbedEnv(), FLEETD_NODE_SOCK: nodeSock(MACHINE) });
     const started = await callTool("lead_start", ref);
     check(!started.isError, `lead_start: ${JSON.stringify(started.body)}`);
     const leadThread = started.body.threadId as string;
     await lab.waitEvent("lead start turn", TURN_MS, { cursor: scenarioStart, machineId: MACHINE, match: (e) => e.threadId === leadThread && ENDED.includes(e.type) });
-    const w = openWorkstream(check, fleetd, "PRs through the train's batches. The harness pushes and enqueues every PR itself.");
-    const brief = {
+    const w = openWorkstream(check, lead, "PRs through the train's batches. The harness pushes and enqueues every PR itself.", {
       goal: "PRs through the train's batches",
       why: "the train batch lab scenario",
-      pointers: [],
-      constraints: [],
       doneWhen: ["every batched PR is merged"],
-    };
-    const briefed = fleetd("brief", "create", "--workstream", w, "--json", JSON.stringify(brief));
-    check(briefed.code === 0, `brief create ${w}: ${JSON.stringify(briefed)}`);
+    });
 
     gh("label", "create", "hold", "-R", REPO, "--force", "--description", "fleetd's train holds this PR");
     const release = (prs: ReadonlyArray<Pr>) => {
@@ -111,7 +100,7 @@ export async function trainBatch(lab: Lab) {
     const changeOf = async (pr: Pr) =>
       ((await callTool("changes_list", { projectRef: ref, limit: 100 })).body.changes as Array<Body>).find((c) => c.prNumber === pr.number);
     const enqueue = async (pr: Pr) => {
-      const out = fleetd("change", "enqueue", "--pr", pr.url, "--workstream", w);
+      const out = lead("change_enqueue", { prUrl: pr.url, workstreamId: w });
       check(out.code === 0, `change enqueue ${pr.url}: ${JSON.stringify(out)}`);
       const change = await changeOf(pr);
       check(change !== undefined, `#${pr.number} is on the train`);
@@ -151,7 +140,7 @@ export async function trainBatch(lab: Lab) {
     const batchPrs = () =>
       ghJson<Array<Body>>("pr", "list", "-R", REPO, "--state", "all", "--head", `${BRANCH_PREFIX}train/batch`, "--json", "number,state,body,headRefOid,mergeCommit");
 
-    // 1. Three disjoint PRs, one batch, one CI run.
+    // 1. Three ready PRs, one batch, one CI run.
     const one = ["a", "b", "c"].map((n) => pushPr(`one-${n}`, { [`${DIR}/one-${n}.md`]: `${n}\n` }));
     const oneIds: Array<string> = [];
     for (const pr of one) oneIds.push(await enqueue(pr));
@@ -174,7 +163,7 @@ export async function trainBatch(lab: Lab) {
     }
     ok(`1. #${one.map((p) => p.number).join(", #")} merged as batch #${batch1!.number} (${[...shas][0]!.slice(0, 12)}) after one CI run; each closed with a link`);
 
-    // 2. A red batch bisects.
+    // 2. A red batch: each member goes alone.
     const a = pushPr("two-a", { [`${DIR}/two-a.md`]: "a\n" });
     const b = pushPr("two-b", { [PAIR]: "b\n" });
     const c = pushPr("two-c", { ".github/workflows/ci.yml": STRICT_CI });
@@ -184,12 +173,12 @@ export async function trainBatch(lab: Lab) {
     cursor = await lab.cursor();
     release([a, b, c]);
     const [aMerged, bMerged] = [await merged(cursor, aId!), await merged(cursor, bId!)];
-    check(aMerged.event.data.mergedSha === bMerged.event.data.mergedSha, `a and b merged together: ${JSON.stringify([aMerged.event.data, bMerged.event.data])}`);
+    check(aMerged.event.data.mergedSha !== bMerged.event.data.mergedSha, `a and b merged alone: ${JSON.stringify([aMerged.event.data, bMerged.event.data])}`);
     const failed = await lab.waitEvent(`change.ci_failed ${cId}`, CI_MS * 2, { cursor, types: ["change.ci_failed"], match: (e) => e.data?.changeId === cId });
     const cMoves = (await eventsSince(cursor, ["change.state"])).filter((e) => e.data?.changeId === cId).map((e) => `${e.data.from}>${e.data.to}`);
     check(cMoves.includes("ci>ready") && cMoves.at(-1) === "ci>ci_failed", `c left the red batch (ci>ready), then failed alone: ${cMoves.join(" ")}`);
     check(ghJson<Body>("pr", "view", c.url, "--json", "state").state === "OPEN", `#${c.number} never merged`);
-    ok(`2. a red batch of #${a.number}, #${b.number}, #${c.number} dropped #${c.number}; #${a.number} and #${b.number} merged together, #${c.number} alone failed: ${failed.event.summary}`);
+    ok(`2. a red batch of #${a.number}, #${b.number}, #${c.number}: #${a.number} and #${b.number} merged alone, #${c.number} alone failed: ${failed.event.summary}`);
   } finally {
     resetNamespace();
     await removeLabRepoProject(lab).catch((error: unknown) => lab.log(`could not remove the lab repo project: ${String(error)}`));

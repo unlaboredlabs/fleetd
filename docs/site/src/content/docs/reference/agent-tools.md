@@ -44,23 +44,17 @@ Every lead gets these.
 |---|---|---|
 | [`spawn_agent`](#spawn_agent) | Start a fleetd agent (a task) with its own session, slot and lane. | No |
 | [`message_agent`](#message_agent) | Steer a task: a running one takes the message at its next tool boundary (now: true stops its current step first), a waiting one gets it as its answer, and an ended one continues in its own thread. | No |
-| [`agent_status`](#agent_status) | One task as stored: state, queued reason, thread, result. | No |
-| [`list_agents`](#list_agents) | The project's tasks, newest first, optionally by state or workstream. | No |
+| [`agents`](#agents) | The project's tasks as stored (state, queued reason, thread, result), newest first: one by taskId, or filtered by state or workstream. | No |
 | [`stop_agent`](#stop_agent) | Stop a task: interrupts its thread and releases its slot. | No |
-| [`brief`](#brief) | Set a draft workstream's brief (goal, why, pointers, constraints, doneWhen lines) and start it, or edit it later. | No |
+| [`brief`](#brief) | Set a workstream's brief (goal, why, pointers, constraints, doneWhen lines) and start it, or edit it later. | No |
 | [`request_secret`](#request_secret) | Ask the human for a secret (a key, a token, a password). | The human enters the value in chat; you see only its fingerprint. |
 | [`request_withdraw`](#request_withdraw) | Take back a secret request or a command approval you no longer need (the human said so in chat). | No |
 | [`decide`](#decide) | Log a decision: one you made yourself, or the human's answer to a question you asked in chat (so you never ask it twice). | No |
 | [`close`](#close) | The workstream is done: say why in one line. | No |
 | [`gated_run`](#gated_run) | A prod write, spend, delete or credential use: the chat shows the human exactly this argv with Approve / Deny, and the node runs it only once approved; secrets come from the node's own sinks. | A human approves the exact command in chat before the node runs it. |
-| [`plan_milestone`](#plan_milestone) | Add a milestone to the project's plan. | No |
-| [`plan_add`](#plan_add) | Add a plan item (must or polish, size s\|m\|l, after other items). | No |
-| [`plan_edit`](#plan_edit) | Change a plan item. | No |
-| [`plan_drop`](#plan_drop) | Drop a plan item, with why or steer. | No |
-| [`plan_show`](#plan_show) | The project's plan. | No |
+| [`plan`](#plan) | Set a workstream's plan items, in order (must or polish, size s\|m\|l, after other items, an optional milestone title), and get the plan back. | No |
 | [`decisions_search`](#decisions_search) | Search the decision log. | No |
 | [`change_enqueue`](#change_enqueue) | Put a PR no task's result put there on its repo's merge train; only the train merges. | No |
-| [`workstream_open`](#workstream_open) | Open a workstream for work you took from the chat: a draft you then brief. | No |
 
 ### spawn_agent
 
@@ -113,39 +107,21 @@ Steer a task: a running one takes the message at its next tool boundary (now: tr
 }
 ```
 
-### agent_status
+### agents
 
-One task as stored: state, queued reason, thread, result.
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `taskId` | string | yes | `T<n>`, e.g. `T1`. |
-
-**Who may call:** a lead, checked by the hub. **Needs a human:** no.
-
-```json
-{
-  "name": "agent_status",
-  "arguments": {
-    "taskId": "T7"
-  }
-}
-```
-
-### list_agents
-
-The project's tasks, newest first, optionally by state or workstream.
+The project's tasks as stored (state, queued reason, thread, result), newest first: one by taskId, or filtered by state or workstream.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `state` | string | no | One of `queued`, `running`, `idle`, `done`, `failed`, `cancelled`. |
+| `taskId` | string | no | Just this task. |
 | `workstreamId` | string | no | `W<n>`, e.g. `W1`. |
 
 **Who may call:** a lead, checked by the hub. **Needs a human:** no.
 
 ```json
 {
-  "name": "list_agents",
+  "name": "agents",
   "arguments": {
     "state": "running"
   }
@@ -175,26 +151,18 @@ Stop a task: interrupts its thread and releases its slot.
 
 ### brief
 
-Set a draft workstream's brief (goal, why, pointers, constraints, doneWhen lines) and start it, or edit it later.
+Set a workstream's brief (goal, why, pointers, constraints, doneWhen lines) and start it, or edit it later. Without workstreamId it opens one for work you took from the chat: text is the order in the human's words.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `brief` | object | yes |  |
-| `brief.baseline` | string | no | Research: what the candidate is compared against, and how both are measured. At most 1000 characters. |
-| `brief.budget` | object | no |  |
-| `brief.budget.agentHours` | number | no | Older briefs only; a lead now gives `size`. |
-| `brief.budget.size` | string | no | How big a research spend the lead allows, relative like plan sizes; never a time guess. One of `S`, `M`, `L`. |
 | `brief.constraints` | string[] | yes | At most 20 items. |
-| `brief.decisionRule` | object | no | Research: the rule the verdict is computed from. |
-| `brief.decisionRule.better` | string | yes | One of `higher`, `lower`. |
-| `brief.decisionRule.goAtLeast` | number | yes |  |
-| `brief.decisionRule.stopBelow` | number | yes |  |
 | `brief.doneWhen` | string[] | yes | At least one. At most 20 items. |
 | `brief.goal` | string | yes | At most 1000 characters. |
-| `brief.metric` | string | no | Research: the one number the judge reports for baseline and candidate, e.g. "p50 cold start in ms". At most 200 characters. |
 | `brief.pointers` | string[] | yes | At most 20 items. |
 | `brief.why` | string | yes | At most 2000 characters. |
-| `workstreamId` | string | yes | `W<n>`, e.g. `W1`. |
+| `text` | string | no | The order in the human's words, when this opens the workstream. At most 4000 characters. |
+| `workstreamId` | string | no | `W<n>`, e.g. `W1`. |
 
 **Who may call:** a lead, checked by the hub. **Needs a human:** no.
 
@@ -215,7 +183,7 @@ Set a draft workstream's brief (goal, why, pointers, constraints, doneWhen lines
       ],
       "why": "One client's retry loop took the upload service down."
     },
-    "workstreamId": "W3"
+    "text": "Rate-limit the upload API"
   }
 }
 ```
@@ -346,124 +314,47 @@ A prod write, spend, delete or credential use: the chat shows the human exactly 
 }
 ```
 
-### plan_milestone
+### plan
 
-Add a milestone to the project's plan.
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `position` | integer | no |  |
-| `title` | string | yes | One line. At most 120 characters. |
-
-**Who may call:** a lead, checked by the hub. **Needs a human:** no.
-
-```json
-{
-  "name": "plan_milestone",
-  "arguments": {
-    "title": "Public beta"
-  }
-}
-```
-
-### plan_add
-
-Add a plan item (must or polish, size s|m|l, after other items). After a milestone's first 10 minutes a change needs why, or steer when the human's steer asked for it.
+Set a workstream's plan items, in order (must or polish, size s|m|l, after other items, an optional milestone title), and get the plan back. Its open items you leave out are dropped. Without items: the plan.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `after` | string[] | no | At most 20 items. |
-| `milestoneId` | string | yes | `M<n>`, e.g. `M1`. |
-| `pr` | string | no | Like `https://github.com/<owner>/<name>/pull/<n>`. |
-| `size` | string | no | Absent: `m`, with a warning to size it. One of `s`, `m`, `l`. |
-| `steer` | string | no | The change carries out a steer; it stands in for `--why` and acknowledges the steer. |
-| `title` | string | yes | One line. At most 120 characters. |
-| `weight` | string | no | One of `must` (Counts toward the headline number), `polish` (Shown beside the number, never in it). Default `"must"`. |
-| `why` | string | no | One line. At most 200 characters. |
+| `items` | object[] | no | At most 100 items. |
+| `items[].after` | string[] | no | Items that must be done first. At most 20 items. |
+| `items[].id` | string | no | `P<n>`, e.g. `P1`. |
+| `items[].milestone` | string | no | The milestone's title, created when new. Absent: the workstream's title. At most 120 characters. |
+| `items[].size` | string | no | One of `s`, `m`, `l`. Default `"m"`. |
+| `items[].title` | string | yes | One line. At most 120 characters. |
+| `items[].weight` | string | no | One of `must` (Counts toward the headline number), `polish` (Shown beside the number, never in it). Default `"must"`. |
+| `steer` | string | no | The change carries out steer S12, which counts as acknowledged. |
+| `why` | string | no | A note for the change's marker. At most 200 characters. |
 | `workstreamId` | string | no | `W<n>`, e.g. `W1`. |
 
 **Who may call:** a lead, checked by the hub. **Needs a human:** no.
 
 ```json
 {
-  "name": "plan_add",
+  "name": "plan",
   "arguments": {
-    "milestoneId": "M1",
-    "size": "s",
-    "title": "Rate-limit uploads",
-    "weight": "must"
+    "items": [
+      {
+        "id": "P4",
+        "size": "m",
+        "title": "Rate-limit uploads"
+      },
+      {
+        "after": [
+          "P4"
+        ],
+        "milestone": "Public beta",
+        "size": "s",
+        "title": "Docs for the limit"
+      }
+    ],
+    "why": "The limiter needs a shared store.",
+    "workstreamId": "W3"
   }
-}
-```
-
-### plan_edit
-
-Change a plan item.
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `after` | string[] | no | Replaces the list. At most 20 items. |
-| `itemId` | string | yes | `P<n>`, e.g. `P1`. |
-| `milestoneId` | string | no | `M<n>`, e.g. `M1`. |
-| `position` | integer | no |  |
-| `prAdd` | string[] | no | At most 20 items. |
-| `prRemove` | string[] | no | At most 20 items. |
-| `size` | string | no | One of `s`, `m`, `l`. |
-| `steer` | string | no | `--steer S12`, as on `plan add`. |
-| `title` | string | no | One line. At most 120 characters. |
-| `weight` | string | no | One of `must` (Counts toward the headline number), `polish` (Shown beside the number, never in it). |
-| `why` | string | no | One line. At most 200 characters. |
-| `workstreamId` | string | no | `W<n>`, e.g. `W1`. |
-
-**Who may call:** a lead, checked by the hub. **Needs a human:** no.
-
-```json
-{
-  "name": "plan_edit",
-  "arguments": {
-    "itemId": "P4",
-    "size": "m",
-    "why": "The limiter needs a shared store."
-  }
-}
-```
-
-### plan_drop
-
-Drop a plan item, with why or steer.
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `itemId` | string | yes | `P<n>`, e.g. `P1`. |
-| `steer` | string | no | `--steer S12`, as on `plan add`. |
-| `why` | string | no | One line. At most 200 characters. |
-
-**Who may call:** a lead, checked by the hub. **Needs a human:** no.
-
-```json
-{
-  "name": "plan_drop",
-  "arguments": {
-    "itemId": "P6",
-    "why": "The client already throttles."
-  }
-}
-```
-
-### plan_show
-
-The project's plan.
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `workstreamId` | string | no | `W<n>`, e.g. `W1`. |
-
-**Who may call:** a lead, checked by the hub. **Needs a human:** no.
-
-```json
-{
-  "name": "plan_show",
-  "arguments": {}
 }
 ```
 
@@ -509,27 +400,6 @@ Put a PR no task's result put there on its repo's merge train; only the train me
 }
 ```
 
-### workstream_open
-
-Open a workstream for work you took from the chat: a draft you then brief. template picks the playbook (feature, bugfix, research).
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `template` | string | no | The prefixes `bug:`/`fix:` and `research:` pick bugfix and research. One of `bugfix`, `feature`, `research`. |
-| `text` | string | yes | At most 4000 characters. |
-
-**Who may call:** a lead, checked by the hub. **Needs a human:** no.
-
-```json
-{
-  "name": "workstream_open",
-  "arguments": {
-    "template": "feature",
-    "text": "Build the schedules page"
-  }
-}
-```
-
 ## Task tools
 
 Every task's agent gets these: implementers, readers, reviewers and QA.
@@ -546,9 +416,6 @@ Record your review verdict once, before your final message: the number of blocki
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `blocking` | integer | yes |  |
-| `metricValues` | object | no | A research workstream's judge reports its metric for the baseline and the candidate; the hub computes the verdict. |
-| `metricValues.baseline` | number | yes |  |
-| `metricValues.candidate` | number | yes |  |
 | `nonBlocking` | integer | yes |  |
 | `summary` | string | yes | At most 1000 characters. |
 

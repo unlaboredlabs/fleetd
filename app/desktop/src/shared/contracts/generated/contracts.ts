@@ -310,30 +310,13 @@ export type BoxPublicKey = string;
 export type BreakerState = "closed" | "open";
 
 export type Brief = {
-  /** Research: what the candidate is compared against, and how both are measured. */
-  baseline?: string;
-  budget?: BriefBudget;
   constraints: string[];
-  /** Research: the rule the verdict is computed from. */
-  decisionRule?: DecisionRule;
   /** At least one. */
   doneWhen: string[];
   goal: string;
-  /** Research: the one number the judge reports for baseline and candidate, e.g. "p50 cold start in ms". */
-  metric?: string;
   pointers: string[];
   why: string;
 };
-
-export type BriefBudget = {
-  /** Older briefs only; a lead now gives `size`. */
-  agentHours?: number;
-  /** How big a research spend the lead allows, relative like plan sizes; never a time guess. */
-  size?: BudgetSize;
-};
-
-/** How big a research spend is, relative like plan sizes. */
-export type BudgetSize = "S" | "M" | "L";
 
 export type CapSetInput = {
   /** The fleet cap: agents running at once across every project. Needs an admin key. */
@@ -770,18 +753,6 @@ export type DecisionId = string;
 /** Lowercase dotted slug, [a-z0-9]+(.[a-z0-9_-]+)*, at most 80 */
 export type DecisionKey = string;
 
-/**
- * Applied to the improvement: candidate − baseline, negated when lower is better. GO when it is at least
- * `goAtLeast`, STOP when it is below `stopBelow`, INCONCLUSIVE in between.
- */
-export type DecisionRule = {
-  better: DecisionRuleBetter;
-  goAtLeast: number;
-  stopBelow: number;
-};
-
-export type DecisionRuleBetter = "higher" | "lower";
-
 export type DecisionScope = {
   kind: "global";
 } | {
@@ -1109,9 +1080,7 @@ export type KnownHubEventType =
   | "change.ci_failed"
   | "pr.merged"
   | "pr.merged_outside"
-  | "train.blocked"
   | "change.refused"
-  | "research.verdict"
   | "usage.breaker"
   | "usage.resumed"
   | "doctor.changed"
@@ -1450,12 +1419,6 @@ export type MergeRules = {
   strict?: boolean;
 };
 
-/** The judge's reported numbers for the brief's metric. */
-export type MetricValues = {
-  baseline: number;
-  candidate: number;
-};
-
 export type MilestoneId = string;
 
 export type MilestoneState = "open" | "done";
@@ -1464,7 +1427,7 @@ export type MilestoneState = "open" | "done";
 export type MilestoneView = {
   createdAt: Timestamp;
   doneAt?: Timestamp;
-  /** The first item's time; scope changes within 10 minutes of it carry no marker. */
+  /** The first item's time. */
   firstItemAt?: Timestamp;
   milestoneId: MilestoneId;
   position: number;
@@ -1534,7 +1497,6 @@ export type OrderCard = {
   /** Agents done, failed or cancelled, of `total`. */
   settled: number;
   state: WorkstreamState;
-  template?: PlaybookName;
   title: string;
   total: number;
   updatedAt: Timestamp;
@@ -1744,12 +1706,6 @@ export type PlaybookGateChange = {
    */
   summary: string;
 };
-
-/** The prefixes `bug:`/`fix:` and `research:` pick bugfix and research. */
-export type PlaybookName = "bugfix" | "feature" | "research";
-
-/** <playbook name>@<full lowercase hex git blob SHA> */
-export type PlaybookRef = string;
 
 /** Who wrote the PR: fleetd's agent when one did, and the GitHub account it was opened from. */
 export type PrAuthor = {
@@ -2485,18 +2441,6 @@ export type RequestsListOutput = {
   next?: string;
   requests: HumanRequest[];
   truncated?: boolean;
-};
-
-/** STOP is a success: the question was answered. */
-export type ResearchOutcome = "go" | "stop" | "inconclusive";
-
-/** Computed by the hub, never reported by an agent; `outcome` always follows from `rule` and `metricValues`. */
-export type ResearchVerdict = {
-  computedAt: Timestamp;
-  metricValues: MetricValues;
-  outcome: ResearchOutcome;
-  /** The brief's rule. */
-  rule: DecisionRule;
 };
 
 /**
@@ -3328,7 +3272,7 @@ export type ToolPermission = {
 
 /**
  * The merge train's events: `change.queued`, `change.ready`, `change.needs_rebase`, `change.ci_failed`,
- * `change.refused`, `pr.merged`, `pr.merged_outside`, `train.blocked`. Which fields each carries is in
+ * `change.refused`, `pr.merged`, `pr.merged_outside`. Which fields each carries is in
  * `HubEventType`'s docs.
  */
 export type TrainEventData = {
@@ -3337,13 +3281,9 @@ export type TrainEventData = {
   checks?: string[];
   /** pr.merged on a repo with no CI: what fleetd checked instead. */
   ci?: string;
-  /** train.blocked: what a person has to move. */
-  error?: string;
   fix?: string;
   logUrl?: string;
   mergedSha?: string;
-  /** change.needs_rebase: the conflicting paths. */
-  paths?: string[];
   prNumber?: number;
   prUrl?: string;
   reason?: string;
@@ -3563,16 +3503,11 @@ export type Workstream = {
   createdAt: Timestamp;
   headline?: string;
   headlineAt?: Timestamp;
-  /** Research workstreams, once the verdict is computed; set together with `verdict`. A STOP is done, not failed. */
-  outcome?: ResearchOutcome;
-  /** Pinned at creation; the brief validates against this version. Absent on workstreams from before M9. */
-  playbook?: PlaybookRef;
   projectRef: ProjectRef;
   source: WorkstreamSource;
   state: WorkstreamState;
   title: string;
   updatedAt: Timestamp;
-  verdict?: ResearchVerdict;
   workstreamId: WorkstreamId;
 };
 
@@ -3716,7 +3651,6 @@ export interface HubEventDataMap {
   "thread.started": ThreadEventData;
   "thread.usage_limited": UsageEventData;
   "thread.waiting": ThreadEventData;
-  "train.blocked": TrainEventData;
   "usage.breaker": UsageEventData;
   "usage.resumed": UsageEventData;
   "workstream.created": WorkstreamEventData;

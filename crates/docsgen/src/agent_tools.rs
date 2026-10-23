@@ -595,11 +595,10 @@ fn example(role: Role, tool: &str) -> Option<Value> {
             "taskId": "T7",
             "message": "Keep the old endpoint working until the mobile client ships.",
         }),
-        (Role::Lead, "agent_status") => json!({ "taskId": "T7" }),
-        (Role::Lead, "list_agents") => json!({ "state": "running" }),
+        (Role::Lead, "agents") => json!({ "state": "running" }),
         (Role::Lead, "stop_agent") => json!({ "taskId": "T7", "reason": "T9 covers this now." }),
         (Role::Lead, "brief") => json!({
-            "workstreamId": "W3",
+            "text": "Rate-limit the upload API",
             "brief": {
                 "goal": "Uploads are rate-limited per API key.",
                 "why": "One client's retry loop took the upload service down.",
@@ -630,30 +629,18 @@ fn example(role: Role, tool: &str) -> Option<Value> {
             "reason": "Ship the upload rate limit to production.",
             "workstreamId": "W3",
         }),
-        (Role::Lead, "plan_milestone") => json!({ "title": "Public beta" }),
-        (Role::Lead, "plan_add") => json!({
-            "milestoneId": "M1",
-            "title": "Rate-limit uploads",
-            "size": "s",
-            "weight": "must",
-        }),
-        (Role::Lead, "plan_edit") => json!({
-            "itemId": "P4",
-            "size": "m",
+        (Role::Lead, "plan") => json!({
+            "workstreamId": "W3",
+            "items": [
+                { "id": "P4", "title": "Rate-limit uploads", "size": "m" },
+                { "title": "Docs for the limit", "size": "s", "after": ["P4"], "milestone": "Public beta" },
+            ],
             "why": "The limiter needs a shared store.",
         }),
-        (Role::Lead, "plan_drop") => {
-            json!({ "itemId": "P6", "why": "The client already throttles." })
-        }
-        (Role::Lead, "plan_show") => json!({}),
         (Role::Lead, "decisions_search") => json!({ "query": "pagination" }),
         (Role::Lead, "change_enqueue") => json!({
             "prUrl": "https://github.com/acme/shop/pull/42",
             "workstreamId": "W3",
-        }),
-        (Role::Lead, "workstream_open") => json!({
-            "text": "Build the schedules page",
-            "template": "feature",
         }),
         (Role::Worker, "report") => json!({
             "blocking": 0,
@@ -854,7 +841,7 @@ mod tests {
     #[test]
     fn an_example_with_a_key_the_schema_lacks_is_refused() {
         let tool = agent_mcp::tools_for(Role::Lead)
-            .find(|t| t.name == "agent_status")
+            .find(|t| t.name == "agents")
             .unwrap();
         let bad = json!({ "taskId": "T1", "taskID": "T1" });
         let error = check_example(Role::Lead, tool, &bad).unwrap_err();

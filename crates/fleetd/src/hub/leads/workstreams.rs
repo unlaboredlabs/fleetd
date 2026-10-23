@@ -4,9 +4,7 @@ use std::sync::Arc;
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::lead_calls::{BriefCreateResult, CloseResult};
-use fleetd_contracts::ledger::{
-    Brief, IntakeChannel, PlaybookName, PlaybookRef, Workstream, WorkstreamId, WorkstreamState,
-};
+use fleetd_contracts::ledger::{Brief, IntakeChannel, Workstream, WorkstreamId, WorkstreamState};
 use fleetd_contracts::mcp::ErrorCode;
 
 use super::digest::{clip, state_text};
@@ -14,8 +12,6 @@ use super::error::LeadError;
 use super::records::{LeadRecords, NewWorkstream, WorkstreamFilter, is_closed};
 use super::wakes::{LeadWakes, Trigger};
 use super::{Ctx, now_iso};
-use crate::hub::playbooks::Playbooks;
-use crate::hub::playbooks::floor::floor_refusal;
 use crate::hub::store::NewEvent;
 
 pub struct IntakeInput {
@@ -25,14 +21,11 @@ pub struct IntakeInput {
     pub channel: IntakeChannel,
     /// An agent keyId, "human" or "lead:<machineId>/<projectId>".
     pub by: String,
-    /// M9: the playbook to pin; None leaves the workstream unpinned, as before M9.
-    pub template: Option<PlaybookName>,
 }
 
 #[derive(Debug, Clone)]
 pub struct IntakeOutcome {
     pub workstream_id: WorkstreamId,
-    pub playbook: Option<PlaybookRef>,
     pub next: String,
 }
 
@@ -49,21 +42,14 @@ pub struct Workstreams {
     ctx: Arc<Ctx>,
     records: Arc<LeadRecords>,
     wakes: Arc<LeadWakes>,
-    playbooks: Arc<Playbooks>,
 }
 
 impl Workstreams {
-    pub fn new(
-        ctx: Arc<Ctx>,
-        records: Arc<LeadRecords>,
-        wakes: Arc<LeadWakes>,
-        playbooks: Arc<Playbooks>,
-    ) -> Arc<Self> {
+    pub fn new(ctx: Arc<Ctx>, records: Arc<LeadRecords>, wakes: Arc<LeadWakes>) -> Arc<Self> {
         Arc::new(Self {
             ctx,
             records,
             wakes,
-            playbooks,
         })
     }
 
@@ -119,7 +105,7 @@ impl Workstreams {
         self.create(input, true)
     }
 
-    /// The lead's own `workstream_open`: the same draft, with no intent wake, since the lead that opens it knows.
+    /// A `brief` without a workstream opens one: the same draft, with no intent wake, since the lead that opens it knows.
     pub fn open(&self, input: IntakeInput) -> Result<IntakeOutcome, LeadError> {
         self.create(input, false)
     }
@@ -128,7 +114,6 @@ impl Workstreams {
         if self.ctx.store.project_get(&input.project_ref)?.is_none() {
             return Err(LeadError::no_project(&input.project_ref));
         }
-        let pinned = input.template.map(|t| self.playbooks.pin(t)).transpose()?;
         let (workstream, created) = self.records.workstream_create(NewWorkstream {
             project_ref: input.project_ref.clone(),
             title: title_of(&input.text),
@@ -137,7 +122,6 @@ impl Workstreams {
             by: input.by,
             at: now_iso(&self.ctx).into(),
             client_request_id: Some(input.client_request_id),
-            playbook: pinned.as_ref().map(|p| p.r#ref.clone()),
         })?;
         let id = workstream.workstream_id.clone();
         if created {
@@ -166,7 +150,6 @@ impl Workstreams {
         };
         Ok(IntakeOutcome {
             workstream_id: id,
-            playbook: workstream.playbook,
             next,
         })
     }
@@ -181,20 +164,6 @@ impl Workstreams {
     ) -> Result<BriefCreateResult, LeadError> {
         let w = &self.own(caller, workstream_id)?;
         let id = &w.workstream_id;
-        // M9: checked against the version pinned at intake, whatever the playbook file says now.
-        let playbook = w
-            .playbook
-            .as_ref()
-            .map(|r| self.playbooks.by_ref(r))
-            .transpose()?
-            .flatten()
-            .map(|p| p.playbook);
-        if let Some(short) = playbook.as_ref().and_then(|p| floor_refusal(p, &brief)) {
-            return Err(LeadError::invalid(
-                short,
-                format!("Add what is missing to the brief and call `brief` for {id} again."),
-            ));
-        }
         if is_closed(w.state) {
             return Err(LeadError::bare(
                 ErrorCode::Invalid,

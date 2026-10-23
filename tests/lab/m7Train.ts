@@ -5,12 +5,12 @@
 // PR that conflicts with alpha's and one that adds FAIL. Every PR gets one reviewer. Once the
 // harness takes the labels off, the train merges alpha and beta in order (the second rebased onto the first's merge), sends the
 // conflict back to its author, who resolves it and gets merged, and sends red CI back to its author, never merging
-// it. Writers run on medium, the lead and reviewers on high; the harness's `fleetd` calls cost no turns.
+// it. Writers run on medium, the lead and reviewers on high; the harness's own tool calls cost no turns.
 import { execFileSync, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { type Body, MODEL, openWorkstream, fleetdCommand, LAB, type Lab, MECHANICS, nodeSock, requireGhLogin, scrubbedEnv, sessionText, SLOT, userMessages } from "./harness.ts";
+import { type Body, MODEL, openWorkstream, LAB, type Lab, leadIn, MECHANICS, nodeSock, requireGhLogin, scrubbedEnv, sessionText, SLOT, userMessages } from "./harness.ts";
 
 const MACHINE = "lab-a";
 // One lab repo for every slot; each slot runs the train in parallel in its own branch namespace: its base
@@ -180,14 +180,7 @@ export async function m7Train(lab: Lab) {
     const ref = { machineId: MACHINE, projectId };
     ok(`project_add: ${projectId} on ${MACHINE} at ${CLONE}`);
 
-    const fleetd = (...args: Array<string>) => {
-      const out = spawnSync(...fleetdCommand(args), {
-        cwd: CLONE,
-        encoding: "utf8",
-        env: { ...scrubbedEnv(), PWD: CLONE, FLEETD_NODE_SOCK: nodeSock(MACHINE) },
-      });
-      return { code: out.status, stdout: out.stdout, stderr: out.stderr };
-    };
+    const lead = leadIn(CLONE, { ...scrubbedEnv(), FLEETD_NODE_SOCK: nodeSock(MACHINE) });
     const change = async (changeId: string) => ((await callTool("changes_list", { projectRef: ref, limit: 100 })).body.changes as Array<Body>).find((c) => c.changeId === changeId)!;
     const task = async (taskId: string) => (await callTool("task_get", { taskId })).body.task as Body;
 
@@ -197,13 +190,8 @@ export async function m7Train(lab: Lab) {
     await lab.waitEvent("lead start turn", TURN_MS, { cursor: scenarioStart, machineId: MACHINE, match: (e) => e.threadId === leadThread && ENDED.includes(e.type) });
     ok(`lead ${leadThread} started`);
 
-    // Two workstreams, opened and their briefs registered from the shell as the lead would.
-    const workstream = async (text: string, brief: Body) => {
-      const w = openWorkstream(check, fleetd, text);
-      const frozen = fleetd("brief", "create", "--workstream", w, "--json", JSON.stringify({ pointers: [], constraints: [], ...brief }));
-      check(frozen.code === 0, `brief create ${w}: ${JSON.stringify(frozen)}`);
-      return w;
-    };
+    // Two workstreams, opened and their briefs registered with the lead's tools.
+    const workstream = async (text: string, brief: Body) => openWorkstream(check, lead, text, brief);
     // One done-when line per PR, so each reviewer judges its PR against its own line.
     const wm = await workstream("Add alpha.md and beta.md in two PRs.", {
       goal: `two independent PRs: one adds ${ALPHA}, the other adds ${BETA}`,
@@ -222,8 +210,8 @@ export async function m7Train(lab: Lab) {
     ok(`5. the label hold exists on ${REPO}`);
 
     const spawn = (w: string, title: string, prompt: string) => {
-      const out = fleetd("task", "spawn", "--workstream", w, "--title", title, "--profile", MECHANICS, "--prompt", prompt);
-      const taskId = /^Spawned (T\d+)/mu.exec(out.stdout)?.[1];
+      const out = lead("spawn_agent", { workstreamId: w, title, profile: MECHANICS, prompt });
+      const taskId = out.result?.task?.taskId as string | undefined;
       check(out.code === 0 && taskId, `task spawn ${title}: ${JSON.stringify(out)}`);
       lab.log(`spawned ${taskId} (${title})`);
       return taskId!;
@@ -311,9 +299,9 @@ export async function m7Train(lab: Lab) {
     }
     ok(`1. pr.merged ${first!.changeId} (#${m1.data.prNumber} as ${m1.data.mergedSha.slice(0, 12)}) then ${second!.changeId} (#${m2.data.prNumber}); ${batched ? "merged together as one batch" : `${second!.changeId} rebased to ${merged2.headSha.slice(0, 12)} on top of ${m1.data.mergedSha.slice(0, 12)}`}`);
 
-    // 2. The conflict goes back to its author with the paths; the train moves on.
+    // 2. The conflict goes back to its author; the train moves on.
     const conflict = await lab.waitEvent(`change.needs_rebase for ${cc.changeId}`, CI_MS, { cursor, types: ["change.needs_rebase"], match: (e) => e.data?.changeId === cc.changeId });
-    check((conflict.event.data.paths as Array<string>).includes(ALPHA), `needs_rebase names ${ALPHA}: ${JSON.stringify(conflict.event)}`);
+    check(String(conflict.event.summary).includes(`conflicts with ${BASE}`), `needs_rebase says it conflicts with ${BASE}: ${JSON.stringify(conflict.event)}`);
     ok(`2. ${conflict.event.type}: ${conflict.event.summary}`);
     // 3. Red CI goes back to its author with the check name; never merged.
     const red = await lab.waitEvent(`change.ci_failed for ${cd.changeId}`, CI_MS, { cursor, types: ["change.ci_failed"], match: (e) => e.data?.changeId === cd.changeId });
@@ -329,8 +317,8 @@ export async function m7Train(lab: Lab) {
       });
     };
     // The one "fix your PR" message (the pr.fix prompt), with the reason and what to do.
-    await told(c, ["Fix your PR", "the merge train could not rebase it", ALPHA, "rebase onto the latest base"]);
-    ok(`2. ${c} got the task message naming ${ALPHA}`);
+    await told(c, ["Fix your PR", "the merge train could not rebase it", `conflicts with ${BASE}`, "rebase onto the latest base"]);
+    ok(`2. ${c} got the task message: it conflicts with ${BASE}`);
     await told(d, ["Fix your PR", "the merge train did not merge it", "ci (failure)"]);
     ok(`3. ${d} was woken with the failing check name: ci (failure)`);
 

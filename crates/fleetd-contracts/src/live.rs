@@ -9,7 +9,7 @@ use serde_with::skip_serializing_none;
 
 use crate::effort::{Effort, TaskProfile};
 use crate::ids::{MachineId, ProjectRef, ThreadRef, Timestamp};
-use crate::ledger::{Headline, PlaybookName, WorkstreamId, WorkstreamState};
+use crate::ledger::{Headline, WorkstreamId, WorkstreamState};
 use crate::model::MachineStatus;
 use crate::node_link::NodeLoad;
 use crate::prim::{Count, List, NonEmpty, Positive, Text};
@@ -271,7 +271,6 @@ pub struct OrderCard {
     pub project_ref: ProjectRef,
     pub title: Text<0, 200>,
     pub state: WorkstreamState,
-    pub template: Option<PlaybookName>,
     pub phase: OrderPhase,
     /// "3 working", "#212 in CI", "1 question".
     pub phase_detail: Option<Text<0, 120>>,

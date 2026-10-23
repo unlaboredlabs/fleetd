@@ -46,12 +46,6 @@ You'll add a repo as a [project](/docs/glossary#project), send it work, and foll
 | `--dest <dir>` | Clone into that folder. |
 | `--use-existing` | Add the folder's checkout when it already holds the same repo. Without a terminal, this is how you accept it. |
 
-:::caution[Checkouts must be under your home directory]
-A node runs commands only under its `cmdRoots`, which default to your home directory. `fleetd project add` refuses a
-checkout elsewhere, such as in `/tmp`, and says how to fix it: list its folder in `cmdRoots` in
-[`node.json`](/docs/config-and-files#node-json) and restart the node. A new `--dest` folder counts where it will be.
-:::
-
 fleetd reads GitHub through `gh` on the hub machine. A private repo clones on any worker where `gh auth login` was run.
 When something is in the way, such as an offline worker or a folder that exists, it prints the command that fixes it.
 
@@ -153,7 +147,7 @@ Every agent runs on `claude-opus-5-5`, with one of two profiles:
 | `medium` | medium | Mechanical tasks the lead picks: dead-code deletions, renames, test removals, doc fixes, moving files, plain wiring, screenshot recaptures. Never design, concurrency, auth or secrets, approvals or the merge train. |
 
 The lead picks the profile for each task it starts. A medium task whose review finds blockers twice is redone on high.
-Each agent's profile shows on its lane and in `fleetd task status` (`T12 medium`), and the time
+Each agent's profile shows on its lane (`T12 medium`), and the time
 view splits agent time and output tokens by profile, so you can see what medium saves.
 
 | To change | Do |

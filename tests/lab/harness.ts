@@ -1,7 +1,7 @@
 // Shared plumbing for the lab scenarios (`npm run lab`): process control by captured PID, a real MCP client, the
 // lab machines (each a `fleetd node` with its own HOME, so its own ~/.fleetd and Claude config dir), and helpers that
 // wait on hub events instead of sleeping. Never used in CI.
-import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { execFileSync, spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -119,7 +119,7 @@ export interface MachineHomeOptions {
  * Lays out a machine's HOME before its node starts. `login: true` gives its ~/.claude the user's login material, read
  * from the real ~/.claude and copied (0600, inside the run dir, removed by `cleanupMachineHomes`): a settings.json with
  * only the login variables and `apiKeyHelper` of theirs, and their `.credentials.json` if they have one. `login:
- * false` leaves ~/.claude empty, a machine nobody has logged in on. Agents push to GitHub (m7, m9) with the user's
+ * false` leaves ~/.claude empty, a machine nobody has logged in on. Agents push to GitHub with the user's
  * `gh` login, copied in (never linked: nothing flows back) along with a .gitconfig that uses it.
  */
 export const prepareMachineHome = (id: string, opts: MachineHomeOptions = {}) => {
@@ -156,7 +156,7 @@ export const prepareMachineHome = (id: string, opts: MachineHomeOptions = {}) =>
   );
 };
 
-/** m7 and m9 push to GitHub as the user: their agents need the user's `gh` login, copied into each machine's HOME. */
+/** Scenarios that push to GitHub as the user: their agents need the user's `gh` login, copied into each machine's HOME. */
 export const requireGhLogin = () => {
   if (!fs.existsSync(path.join(os.homedir(), ".config/gh/hosts.yml"))) {
     throw new Error("this scenario pushes to the GitHub lab repo with your gh login, and ~/.config/gh/hosts.yml is missing: run gh auth login");
@@ -568,7 +568,7 @@ export const waitEventWith =
 
 /**
  * An order as a person gives one: a chat message to the project's lead (chat_send, a person's key), which opens the
- * order's workstream with workstream_open. Resolves with that workstream, the chat_send result, and the event cursor
+ * order's workstream with its brief tool. Resolves with that workstream, the chat_send result, and the event cursor
  * from before the message.
  */
 export const chatOrder = async (
@@ -591,19 +591,33 @@ export const chatOrder = async (
 };
 
 /**
- * A workstream opened from the project's shell as its lead would (`fleetd workstream open`), for an order whose brief
- * and agents the harness sets up itself. No lead turn: the opener already knows.
+ * A workstream opened with its brief as its lead would (`brief` with `text`), for an order whose agents the harness sets
+ * up itself. No lead turn: the opener already knows.
  */
-export const openWorkstream = (
-  check: Lab["check"],
-  fleetd: (...args: Array<string>) => { readonly code: number | null; readonly stdout: string; readonly stderr: string },
-  text: string,
-  template?: string,
-) => {
-  const out = fleetd("workstream", "open", "--text", text, ...(template === undefined ? [] : ["--template", template]));
-  const w = /\bOpened (W\d+)/u.exec(out.stdout)?.[1];
-  check(out.code === 0 && w, `fleetd workstream open: ${JSON.stringify(out)}`);
-  return w!;
+export const openWorkstream = (check: Lab["check"], lead: Lead, text: string, brief: Body = {}) => {
+  const full = { goal: text, why: "the lab scenario", pointers: [], constraints: [], doneWhen: ["the harness closes it"], ...brief };
+  const out = lead("brief", { text, brief: full });
+  const w = out.result?.workstreamId;
+  check(out.code === 0 && typeof w === "string", `brief with text: ${JSON.stringify(out)}`);
+  return w as string;
+};
+
+/** A lead tool's answer: code 0 ok, 2 invalid arguments, 3 refused by the hub, 4 the node or hub unreachable. */
+export type LeadOut = { readonly code: number; readonly text: string; readonly result?: Record<string, any> };
+export type Lead = (name: string, args: Record<string, unknown>) => LeadOut;
+
+/**
+ * Calls fleetd's tools as a lead in `cwd` does: one `tools/call` to `fleetd agent-mcp --role lead`, which sends it
+ * through the node's socket (`env` names it with FLEETD_NODE_SOCK; FLEETD_THREAD_ID names the calling session).
+ */
+export const leadIn = (cwd: string, env: NodeJS.ProcessEnv): Lead => (name, args) => {
+  const call = { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } };
+  const out = spawnSync(...fleetdCommand(["agent-mcp", "--role", "lead"]), { cwd, encoding: "utf8", env: { ...env, PWD: cwd }, input: `${JSON.stringify(call)}\n` });
+  const line = out.stdout.split("\n")[0] ?? "";
+  const answer = line === "" ? undefined : JSON.parse(line).result;
+  const text: string = answer?.content?.[0]?.text ?? `${out.stdout}${out.stderr}`;
+  if (answer !== undefined && !answer.isError) return { code: 0, text, result: JSON.parse(text) };
+  return { code: text.startsWith("Refused: ") ? 3 : text.startsWith("Invalid arguments") ? 2 : 4, text };
 };
 
 /**

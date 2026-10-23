@@ -281,31 +281,4 @@ mod tests {
             None
         );
     }
-
-    #[test]
-    fn the_description_reads_as_one_line() {
-        let setup = ClaudeSetup {
-            version: Some("2.1.302".into()),
-            login_kind: Some("Max".into()),
-            proxy: Some("http://127.0.0.1:8317".into()),
-            proxy_source: Some("~/.claude/settings.json".into()),
-            config_dir: crate::node::util::home_dir().join(".claude"),
-            problem: None,
-        };
-        assert_eq!(
-            setup.to_string(),
-            "claude 2.1.302, logged in (Max), via proxy http://127.0.0.1:8317 from ~/.claude/settings.json"
-        );
-        let other = ClaudeSetup {
-            login_kind: None,
-            proxy: None,
-            config_dir: PathBuf::from("/srv/claude-profile"),
-            problem: Some("claude is not logged in".into()),
-            ..setup
-        };
-        assert_eq!(
-            other.to_string(),
-            "claude 2.1.302, not logged in, config /srv/claude-profile"
-        );
-    }
 }

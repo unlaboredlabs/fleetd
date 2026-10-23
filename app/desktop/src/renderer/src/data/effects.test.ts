@@ -40,7 +40,7 @@ describe("event effects", () => {
   });
 
   it("what moves a PR refetches the PR reads; only a new head its files and diff", () => {
-    for (const type of ["change.state", "pr.merged", "review.verdict", "train.blocked", "task.completed"]) {
+    for (const type of ["change.state", "pr.merged", "review.verdict", "task.completed"]) {
       expect(tools(e(type))).toEqual(expect.arrayContaining(["pr_list", "pr_get"]));
     }
     expect(tools(e("change.state"))).toEqual(expect.arrayContaining(["pr_files", "pr_diff"]));

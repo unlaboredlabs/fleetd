@@ -1,5 +1,5 @@
-//! The merge train: only fleetd merges. One serial train per repo takes the oldest ready Change, rebases it onto the
-//! latest base in a hub-owned worktree on the project's machine, waits for CI on that exact head, posts
+//! The merge train: only fleetd merges. One serial train per repo takes the oldest ready Change, has GitHub rebase it
+//! onto the latest base (`gh pr update-branch --rebase`), waits for CI on that exact head, posts
 //! `fleetd/train=success` and squash-merges pinned to the head. Conflicts and red CI go back to the task that wrote
 //! the code; a merge goes to the lead inline. A PR merged into a guarded base without the train is reported once
 //! (`pr.merged_outside`) and told to the lead. The `hold` label holds one PR.
@@ -12,10 +12,9 @@ use tokio::sync::Notify;
 
 use super::contract::{
     Change, ChangeEnqueueCall, ChangeId, ChangeReview, ChangeState, CommitSha, Count, GitHubPrUrl,
-    GitHubRepo, NonEmpty, Positive, ProjectRef, Timestamp, TrainState, last_error, parse_pr_url,
-    state_str,
+    GitHubRepo, NonEmpty, PatchId, Positive, ProjectRef, Timestamp, TrainState, last_error,
+    parse_pr_url, state_str,
 };
-use super::git::{BLOCKED, GitError, REFUSED_HERE, Rebase, TrainGit, default_worktree};
 use super::github::{CheckRun, GhError, GhRunner, MergeOutcome, Pull, TRAIN_CONTEXT, TrainGitHub};
 use super::host::{BoxFut, TrainHost};
 use super::main_ci::{GithubSync, MainCi, ci_state};
@@ -67,8 +66,6 @@ pub trait ReviewGate: Send + Sync + 'static {
     fn review(&self, change: Change) -> BoxFut<'_, Verdict>;
 }
 
-pub type WorktreeFor = Arc<dyn Fn(&str) -> String + Send + Sync>;
-
 #[derive(Clone)]
 pub struct TrainOptions {
     /// Between CI polls and between idle passes.
@@ -81,13 +78,8 @@ pub struct TrainOptions {
     pub ready_every: Duration,
     /// Merges GitHub refuses (405/409) before the train gives up on a Change.
     pub merge_attempts: u32,
-    /// Most ready Changes merged as one batch (one CI run, one squash); 1 takes each alone
-    /// (`FLEETD_TRAIN_BATCH_MAX`, default 4).
-    pub batch_max: usize,
     /// Run each repo's loop in the background; tests drive `step` themselves.
     pub auto_run: bool,
-    /// Where a project's train worktree lives, from its checkout.
-    pub worktree_for: WorktreeFor,
     /// The status view's freshness registry: every GitHub answer and every pass keeps a repo's sources live.
     pub fresh: Arc<Fresh>,
 }
@@ -100,13 +92,7 @@ impl Default for TrainOptions {
             bypass_every: Duration::from_secs(60),
             ready_every: Duration::from_secs(60),
             merge_attempts: 3,
-            batch_max: std::env::var("FLEETD_TRAIN_BATCH_MAX")
-                .ok()
-                .and_then(|v| v.parse::<usize>().ok())
-                .filter(|n| *n > 0)
-                .unwrap_or(4),
             auto_run: true,
-            worktree_for: Arc::new(default_worktree),
             fresh: Arc::default(),
         }
     }
@@ -120,7 +106,7 @@ const CI_CONFIG_TTL_MS: i64 = 10 * 60_000;
 
 const GREEN: [&str; 3] = ["success", "neutral", "skipped"];
 
-pub(super) fn is_red(run: &CheckRun) -> bool {
+fn is_red(run: &CheckRun) -> bool {
     run.status == "completed" && !GREEN.contains(&run.conclusion.as_deref().unwrap_or(""))
 }
 
@@ -172,23 +158,6 @@ pub(super) enum CiOutcome {
     Timeout,
 }
 
-enum TakeError {
-    Gh(GhError),
-    Git(GitError),
-}
-
-impl From<GhError> for TakeError {
-    fn from(e: GhError) -> Self {
-        TakeError::Gh(e)
-    }
-}
-
-impl From<GitError> for TakeError {
-    fn from(e: GitError) -> Self {
-        TakeError::Git(e)
-    }
-}
-
 type RepoLocks = Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>;
 
 pub struct Train {
@@ -201,8 +170,6 @@ pub struct Train {
     pub(super) options: TrainOptions,
     /// Row updates re-read the Change under this lock, so a slow pass never overwrites a newer state.
     rows: Mutex<()>,
-    /// One user of a repo's train worktree at a time: the loop's rebase, an enqueue's patch id.
-    git_locks: RepoLocks,
     /// One pass of a repo's loop at a time.
     step_locks: RepoLocks,
     /// One enqueue of a PR at a time, from its open check to its row, so callers racing on one PR (a writer's
@@ -225,8 +192,6 @@ pub struct Train {
     pub(super) sync: GithubSync,
     /// The follower and every repo loop, aborted by `stop`.
     tasks: Mutex<Vec<tokio::task::JoinHandle<()>>>,
-    /// Batches: suspects, repos batching is off for, rewritten heads.
-    pub(super) lanes: Mutex<super::batch::Lanes>,
 }
 
 pub(super) fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -256,7 +221,6 @@ impl Train {
             records: ChangeRecords::new(db),
             options,
             rows: Mutex::new(()),
-            git_locks: Mutex::default(),
             step_locks: Mutex::default(),
             enqueue_locks: Mutex::default(),
             kicks: Mutex::default(),
@@ -271,7 +235,6 @@ impl Train {
             ci_configs: Mutex::default(),
             sync: GithubSync::default(),
             tasks: Mutex::default(),
-            lanes: Mutex::default(),
         })
     }
 
@@ -474,26 +437,6 @@ impl Train {
         }
     }
 
-    pub(super) fn git_for(
-        &self,
-        change: &Change,
-    ) -> Result<(TrainGit<'_>, Arc<tokio::sync::Mutex<()>>), GitError> {
-        let project_ref = self.train_project(&change.repo, &change.project_ref);
-        let root = self.host.project_root(&project_ref).ok_or_else(|| {
-            GitError(format!(
-                "no project {} on {} to run git in",
-                project_ref.project_id, project_ref.machine_id
-            ))
-        })?;
-        let git = TrainGit {
-            host: self.host.as_ref(),
-            machine_id: project_ref.machine_id.clone(),
-            worktree: (self.options.worktree_for)(&root),
-            root,
-        };
-        Ok((git, repo_lock(&self.git_locks, &change.repo)))
-    }
-
     fn kick(&self, repo: &str) {
         if let Some(waiting) = lock(&self.kicks).get(repo) {
             waiting.notify_one();
@@ -567,18 +510,24 @@ impl Train {
         }
     }
 
+    /// The PR's head and its patch id, from GitHub.
+    async fn seen(&self, change: &Change, pull: &Pull) -> Result<(CommitSha, PatchId), GhError> {
+        let head = pull.head.sha.to_lowercase();
+        let patch_id = self
+            .github
+            .patch_id(&change.repo, &pull.base.ref_, &head)
+            .await?;
+        Ok((CommitSha::unchecked(head), PatchId::unchecked(patch_id)))
+    }
+
     /// Reads the PR branch's head and patch id. A new Change goes to the gate. A parked one (needs_rebase, ci_failed)
     /// whose patch is unchanged keeps its reviews and goes back on the queue; a new patch is reviewed again.
-    async fn admit(&self, change: &Change, pull: &Pull) -> Result<(), GitError> {
-        let (git, git_lock) = self.git_for(change)?;
-        let seen = {
-            let _held = git_lock.lock().await;
-            git.inspect(&pull.base.ref_, &change.branch).await?
-        };
-        let same_patch = change.patch_id.as_deref() == Some(seen.patch_id.as_str());
+    async fn admit(&self, change: &Change, pull: &Pull) -> Result<(), GhError> {
+        let (head_sha, patch_id) = self.seen(change, pull).await?;
+        let same_patch = change.patch_id.as_ref() == Some(&patch_id);
         if same_patch && change.state != ChangeState::Queued {
             let moved = self.update(&change.change_id, Some(&[change.state]), |mut c| {
-                c.head_sha = seen.head_sha.clone();
+                c.head_sha = head_sha.clone();
                 c
             });
             if let Some(moved) = moved
@@ -591,8 +540,8 @@ impl Train {
         }
         let reviewing = self.update(&change.change_id, Some(&[change.state]), |mut c| {
             c.last_error = None;
-            c.head_sha = seen.head_sha;
-            c.patch_id = Some(seen.patch_id);
+            c.head_sha = head_sha;
+            c.patch_id = Some(patch_id);
             c.state = ChangeState::Reviewing;
             c
         });
@@ -678,7 +627,6 @@ impl Train {
             return;
         };
         lock(&self.merge_refusals).remove(&change.change_id);
-        lock(&self.lanes).suspects.remove(&change.change_id);
         let as_sha = sha
             .as_deref()
             .map(|s| format!(" as {}", short(s)))
@@ -712,24 +660,14 @@ impl Train {
         self.wake_lead(&merged.project_ref, line).await;
     }
 
-    pub(super) async fn needs_rebase(
-        &self,
-        change: &Change,
-        base: &str,
-        paths: &[String],
-        output: &str,
-    ) {
-        let why = if paths.is_empty() {
-            format!("does not rebase onto origin/{base}: {output}")
-        } else {
-            format!("conflicts with origin/{base} in {}", paths.join(", "))
-        };
+    /// `why` completes "it ...".
+    pub(super) async fn needs_rebase(&self, change: &Change, why: &str) {
         let Some(parked) = self.update(
             &change.change_id,
             Some(&[ChangeState::Rebasing]),
             |mut c| {
                 c.state = ChangeState::NeedsRebase;
-                c.last_error = Some(error_text(&why));
+                c.last_error = Some(error_text(why));
                 c
             },
         ) else {
@@ -739,7 +677,7 @@ impl Train {
             &change.project_ref,
             "change.needs_rebase",
             format!("{} needs a rebase: {why}", change.change_id),
-            json!({ "changeId": change.change_id, "workstreamId": change.workstream_id, "paths": paths.iter().take(50).collect::<Vec<_>>() }),
+            json!({ "changeId": change.change_id, "workstreamId": change.workstream_id }),
         );
         self.tell_author(
             &parked,
@@ -944,24 +882,6 @@ impl Train {
         }
     }
 
-    /// A git failure goes on the Change as its last error and the loop retries it. A blocked worktree or a checkout
-    /// the node won't run commands in needs a person, so it is also an event, once per Change and error rather than
-    /// every pass.
-    pub(super) fn git_failed(&self, change: &Change, error: &str) -> Text<0, 2000> {
-        let text = error_text(&format!("git: {error}"));
-        if (error.starts_with(BLOCKED) || error.starts_with(REFUSED_HERE))
-            && change.last_error.as_ref() != Some(&text)
-        {
-            self.emit(
-                &change.project_ref,
-                "train.blocked",
-                format!("train {}: {error}", change.repo),
-                json!({ "changeId": change.change_id, "repo": change.repo, "error": error }),
-            );
-        }
-        text
-    }
-
     /// A pass that could not finish: the Change goes back first in line with the reason, and the loop retries later.
     pub(super) fn put_back(&self, change: &Change, why: &str) {
         tracing::warn!(change_id = %change.change_id, why, "train: pass failed");
@@ -982,22 +902,18 @@ impl Train {
     }
 
     /// The head of a ready Change moved: the same patch stays ready, a new one goes back to review.
-    pub(super) async fn ready_moved(&self, change: &Change, pull: &Pull) -> Result<(), GitError> {
-        let (git, git_lock) = self.git_for(change)?;
-        let seen = {
-            let _held = git_lock.lock().await;
-            git.inspect(&pull.base.ref_, &change.branch).await?
-        };
-        if change.patch_id.as_deref() == Some(seen.patch_id.as_str()) {
+    pub(super) async fn ready_moved(&self, change: &Change, pull: &Pull) -> Result<(), GhError> {
+        let (head_sha, patch_id) = self.seen(change, pull).await?;
+        if change.patch_id.as_ref() == Some(&patch_id) {
             self.update(&change.change_id, Some(&[ChangeState::Ready]), |mut c| {
-                c.head_sha = seen.head_sha;
+                c.head_sha = head_sha;
                 c
             });
             return Ok(());
         }
         let reviewing = self.update(&change.change_id, Some(&[ChangeState::Ready]), |mut c| {
-            c.head_sha = seen.head_sha;
-            c.patch_id = Some(seen.patch_id);
+            c.head_sha = head_sha;
+            c.patch_id = Some(patch_id);
             c.state = ChangeState::Reviewing;
             c
         });
@@ -1007,21 +923,14 @@ impl Train {
         Ok(())
     }
 
-    /// Rebase, push, CI, status, pinned merge: one ready Change.
+    /// Rebase on GitHub, CI, status, pinned merge: one ready Change.
     pub(super) async fn take(&self, change: &Change) {
-        // Taken alone, it is no longer suspected of having turned a batch red.
-        lock(&self.lanes).suspects.remove(&change.change_id);
-        match self.take_inner(change).await {
-            Ok(()) => {}
-            Err(TakeError::Gh(e)) => self.put_back(change, &format!("GitHub: {}", e.message)),
-            Err(TakeError::Git(e)) => {
-                let why = self.git_failed(change, &e.0);
-                self.put_back(change, why.as_str())
-            }
+        if let Err(e) = self.take_inner(change).await {
+            self.put_back(change, &format!("GitHub: {}", e.message));
         }
     }
 
-    async fn take_inner(&self, change: &Change) -> Result<(), TakeError> {
+    async fn take_inner(&self, change: &Change) -> Result<(), GhError> {
         let repo = &change.repo;
         let pull = self.github.pull(repo, change.pr_number.get()).await?;
         self.guard_base(repo, &pull.base.ref_);
@@ -1034,7 +943,7 @@ impl Train {
             return Ok(());
         }
         if pull.head.sha.to_lowercase() != change.head_sha.as_str() {
-            return Ok(self.ready_moved(change, &pull).await?);
+            return self.ready_moved(change, &pull).await;
         }
         let Some(rebasing) =
             self.update(&change.change_id, Some(&[ChangeState::Ready]), |mut c| {
@@ -1045,66 +954,37 @@ impl Train {
             return Ok(());
         };
         let base = pull.base.ref_.as_str();
-
-        enum Outcome {
-            Rebase(Rebase),
-            PushRejected(String),
+        if !self
+            .github
+            .update_branch(repo, change.pr_number.get())
+            .await?
+        {
+            self.needs_rebase(&rebasing, &format!("conflicts with {base}"))
+                .await;
+            return Ok(());
         }
-        let (git, git_lock) = self.git_for(change)?;
-        let outcome = {
-            let _held = git_lock.lock().await;
-            match git.rebase(base, &change.branch).await? {
-                Rebase::Rebased {
-                    remote_head,
-                    head_sha,
-                    patch_id,
-                } if head_sha.as_str() != remote_head => {
-                    let pushed = git.push(&change.branch, &remote_head).await?;
-                    if pushed.is_ok() {
-                        lock(&self.pushed).insert(
-                            change.change_id.clone(),
-                            (head_sha.to_string(), self.now_ms()),
-                        );
-                    }
-                    match pushed {
-                        Ok(()) => Outcome::Rebase(Rebase::Rebased {
-                            remote_head,
-                            head_sha,
-                            patch_id,
-                        }),
-                        Err(output) => Outcome::PushRejected(output),
-                    }
-                }
-                other => Outcome::Rebase(other),
-            }
+        let rebased = self.github.pull(repo, change.pr_number.get()).await?;
+        let (head_sha, patch_id) = if rebased.head.sha.to_lowercase() == change.head_sha.as_str() {
+            (change.head_sha.clone(), change.patch_id.clone())
+        } else {
+            let (head_sha, patch_id) = self.seen(change, &rebased).await?;
+            lock(&self.pushed).insert(
+                change.change_id.clone(),
+                (head_sha.to_string(), self.now_ms()),
+            );
+            (head_sha, Some(patch_id))
         };
-        let (head_sha, patch_id) = match outcome {
-            Outcome::Rebase(Rebase::Conflict { paths, output, .. }) => {
-                self.needs_rebase(&rebasing, base, &paths, &output).await;
-                return Ok(());
-            }
-            Outcome::PushRejected(output) => {
-                self.put_back(
-                    &rebasing,
-                    &format!("push refused, the branch moved: {output}"),
-                );
-                return Ok(());
-            }
-            Outcome::Rebase(Rebase::Rebased {
-                head_sha, patch_id, ..
-            }) => (head_sha, patch_id),
-        };
-        if Some(patch_id.as_str()) != rebasing.patch_id.as_deref() {
+        if patch_id != rebasing.patch_id {
             // Reviews are bound to the patch id; a rebase that changed it needs them again.
             let reviewing = self.update(
                 &change.change_id,
                 Some(&[ChangeState::Rebasing]),
                 |mut c| {
                     c.head_sha = head_sha.clone();
-                    c.patch_id = Some(patch_id.clone());
+                    c.patch_id = patch_id.clone();
                     c.state = ChangeState::Reviewing;
                     c.last_error = Some(last_error(format!(
-                        "the rebase onto origin/{base} changed the patch id; it needs review again"
+                        "the rebase onto {base} changed the patch id; it needs review again"
                     )));
                     c
                 },
@@ -1222,9 +1102,9 @@ impl Train {
                 self.abandon(&change, "was closed").await;
             } else if (change.state == ChangeState::Queued
                 || pull.head.sha.to_lowercase() != change.head_sha.as_str())
-                && let Err(GitError(e)) = self.admit(&change, &pull).await
+                && let Err(e) = self.admit(&change, &pull).await
             {
-                let why = self.git_failed(&change, &e);
+                let why = error_text(&format!("GitHub: {}", e.message));
                 self.update(&change.change_id, Some(&[change.state]), |mut c| {
                     c.last_error = Some(why);
                     c
@@ -1606,7 +1486,7 @@ impl Train {
             return Err(TrainError::new(
                 "not_found",
                 format!("No task {task_id} in this project."),
-                Some("Call `list_agents`."),
+                Some("Call `agents`."),
             ));
         }
         let enqueue_lock = repo_lock(&self.enqueue_locks, &format!("{repo}#{pr_number}"));
@@ -1749,9 +1629,9 @@ impl Train {
             ),
             json!({ "changeId": change.change_id, "workstreamId": change.workstream_id, "repo": repo, "prNumber": change.pr_number }),
         );
-        // Reading the patch id needs the machine; if that fails, the loop retries it from `queued`.
-        if let Err(GitError(e)) = self.admit(&change, &pull).await {
-            let why = self.git_failed(&change, &e);
+        // If reading the patch id fails, the loop retries it from `queued`.
+        if let Err(e) = self.admit(&change, &pull).await {
+            let why = error_text(&format!("GitHub: {}", e.message));
             self.update(&change.change_id, Some(&[ChangeState::Queued]), |mut c| {
                 c.last_error = Some(why);
                 c

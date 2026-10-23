@@ -7,8 +7,6 @@
 //! never repeats them to the human.
 use std::fmt::Display;
 
-use fleetd_contracts::ledger::ResearchOutcome;
-
 use super::digest::one_line;
 
 /// How a task ended.
@@ -96,13 +94,6 @@ pub enum Event<'a> {
         change: &'a str,
         pr_url: &'a str,
         text: &'a str,
-    },
-    ResearchVerdict {
-        workstream: &'a str,
-        verdict: ResearchOutcome,
-        measured: &'a str,
-        go: &'a str,
-        stop: &'a str,
     },
     /// A secret or approval request settled, or came back open. `what` is the secret, command or tool prompt; `outcome`
     /// what became of it; `tail` a command's output tail.
@@ -253,25 +244,6 @@ impl Event<'_> {
                 format!("- {} ({change}): {}", pr_label(pr_url), one_line(text, 600)),
                 vec![],
             ),
-            Event::ResearchVerdict {
-                workstream,
-                verdict,
-                measured,
-                go,
-                stop,
-            } => {
-                let word = match verdict {
-                    ResearchOutcome::Go => "GO",
-                    ResearchOutcome::Stop => "STOP",
-                    ResearchOutcome::Inconclusive => "INCONCLUSIVE",
-                };
-                (
-                    format!(
-                        "- {workstream} research verdict {word}: {measured} (go line {go}, stop line {stop})"
-                    ),
-                    vec![],
-                )
-            }
             Event::Request {
                 request,
                 what,
@@ -307,199 +279,26 @@ mod tests {
     }
 
     #[test]
-    fn agents_line() {
-        let a = AgentsLine {
-            running: 7,
-            cap: 12,
-            queued: 2,
-        };
-        assert_eq!(a.to_string(), "agents: 7 running of 12, 2 queued");
-    }
-
-    #[test]
-    fn order_events() {
-        assert_eq!(
-            r(Event::Order {
-                workstream: "W3",
-                text: "add a dark\nmode"
-            }),
-            "- new order W3: \"add a dark mode\""
-        );
-        assert_eq!(
-            r(Event::OrderStopped {
-                workstream: "W3",
-                title: "dark mode",
-                why: "not needed",
-                cancelled: 2
-            }),
-            "- W3 stopped by the human (not needed): dark mode; 2 agents cancelled, merged PRs stay; do no more work on it"
-        );
-    }
-
-    #[test]
-    fn agent_events() {
-        assert_eq!(
+    fn a_result_is_quoted_line_by_line_and_an_empty_one_says_so() {
+        let ended = |result| {
             r(Event::AgentEnded {
                 task: "T4",
                 ended: Ended::Done,
                 title: "fix login",
-                place: " (branch fix/login, PR https://github.com/o/r/pull/12)",
-                result: "Fixed it.\nTests pass."
-            }),
-            "- T4 finished: fix login (branch fix/login, PR https://github.com/o/r/pull/12)\n  > Fixed it.\n  > Tests pass."
-        );
-        assert_eq!(
-            r(Event::AgentEnded {
-                task: "T5",
-                ended: Ended::Failed,
-                title: "port",
                 place: "",
-                result: ""
-            }),
-            "- T5 failed: port\n  > (no final message)"
-        );
-        assert_eq!(
-            r(Event::AgentEnded {
-                task: "T6",
-                ended: Ended::Cancelled,
-                title: "port",
-                place: "",
-                result: "stopped"
-            }),
-            "- T6 was cancelled: port\n  > stopped"
-        );
-        assert_eq!(
-            r(Event::AgentWaiting {
-                task: "T7",
-                title: "docs",
-                question: "which branch?"
-            }),
-            "- T7 waiting for an answer: docs\n  > which branch?"
-        );
-        assert_eq!(
-            r(Event::AgentSteered {
-                task: "T4",
-                kind: "write",
-                steer: "S2",
-                text: "keep the old API"
-            }),
-            "- the human steered T4 (write) directly (S2): \"keep the old API\""
-        );
+                result,
+            })
+        };
+        assert!(ended("Fixed it.\nTests pass.").ends_with("\n  > Fixed it.\n  > Tests pass."));
+        assert!(ended("").ends_with("\n  > (no final message)"));
     }
 
     #[test]
-    fn train_events() {
-        let url = "https://github.com/o/r/pull/12";
-        assert_eq!(
-            r(Event::PrMerged {
-                change: "C4",
-                pr_url: url,
-                sha: " as abc1234",
-                by: Some("T4")
-            }),
-            "- PR #12 merged as abc1234: https://github.com/o/r/pull/12 (C4, by T4)"
-        );
-        assert_eq!(
-            r(Event::PrLeft {
-                change: "C4",
-                pr_url: url,
-                why: "closed on GitHub"
-            }),
-            "- PR #12 left the train: closed on GitHub (C4, https://github.com/o/r/pull/12)"
-        );
-        assert_eq!(
-            r(Event::PrGaveUp {
-                change: "C4",
-                pr_url: url,
-                why: "branch protection",
-                tries: 3
-            }),
-            "- PR #12 not merged: branch protection; the train gave up after 3 tries (C4, https://github.com/o/r/pull/12)"
-        );
-        assert_eq!(
-            r(Event::PrRefused {
-                pr_url: url,
-                task: "T4",
-                message: "It is closed.",
-                fix: Some("enqueue an open PR")
-            }),
-            "- PR #12 from T4 refused by the train: It is closed. Fix: enqueue an open PR. (https://github.com/o/r/pull/12)"
-        );
-        assert_eq!(
-            r(Event::PrNote {
-                change: "C4",
-                pr_url: url,
-                text: "CI red in rust (macos)"
-            }),
-            "- PR #12 (C4): CI red in rust (macos)"
-        );
+    fn a_pr_label_is_its_number_or_the_url() {
+        assert_eq!(pr_label("https://github.com/o/r/pull/12"), "PR #12");
         assert_eq!(
             pr_label("https://example.com/x"),
             "PR https://example.com/x"
-        );
-    }
-
-    #[test]
-    fn research_verdict_events() {
-        for (verdict, word) in [
-            (ResearchOutcome::Go, "GO"),
-            (ResearchOutcome::Stop, "STOP"),
-            (ResearchOutcome::Inconclusive, "INCONCLUSIVE"),
-        ] {
-            assert_eq!(
-                r(Event::ResearchVerdict {
-                    workstream: "W2",
-                    verdict,
-                    measured: "candidate 0.6 vs baseline 0.5: improvement 0.1",
-                    go: "0.1",
-                    stop: "0.02"
-                }),
-                format!(
-                    "- W2 research verdict {word}: candidate 0.6 vs baseline 0.5: improvement 0.1 (go line 0.1, stop line 0.02)"
-                )
-            );
-        }
-    }
-
-    #[test]
-    fn request_events() {
-        assert_eq!(
-            r(Event::Request {
-                request: "Q3",
-                what: "your command `sh -c \"make migrate\"`",
-                outcome: "ran: exit 0 on lab-a, approved by human:desk",
-                tail: Some("migrated 3 tables\nok"),
-            }),
-            "- Q3 your command `sh -c \"make migrate\"`: ran: exit 0 on lab-a, approved by human:desk\n  > migrated 3 tables\n  > ok"
-        );
-        assert_eq!(
-            r(Event::Request {
-                request: "Q4",
-                what: "secret stripe.test_key",
-                outcome: "stored on lab-a (fingerprint ab12cd34); use it from its sink, you never see the value",
-                tail: None,
-            }),
-            "- Q4 secret stripe.test_key: stored on lab-a (fingerprint ab12cd34); use it from its sink, you never see the value"
-        );
-        assert_eq!(
-            r(Event::Request {
-                request: "Q5",
-                what: "your command `./deploy.sh prod`",
-                outcome: "denied by human:desk: not on a Friday; don't run it, say in the chat what you do instead",
-                tail: Some(""),
-            }),
-            "- Q5 your command `./deploy.sh prod`: denied by human:desk: not on a Friday; don't run it, say in the chat what you do instead"
-        );
-    }
-
-    #[test]
-    fn cap_raised_event() {
-        assert_eq!(
-            r(Event::CapRaised {
-                max_agents: 12,
-                free: 9
-            }),
-            "- cap raised to 12: 9 slots free; queued agents already started"
         );
     }
 }

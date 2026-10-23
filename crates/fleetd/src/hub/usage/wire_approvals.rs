@@ -3,34 +3,13 @@
 use super::ports::{self, BoxFut};
 use super::wire::{OpsPorts, convert};
 use crate::hub::approvals::{
-    ApprovalHub, ApprovalNodes, GatedOutcome, NodeCommandError, SecretOutcome, ToolRules,
-    shown_argv,
+    ApprovalHub, ApprovalNodes, GatedOutcome, NodeCommandError, SecretOutcome, shown_argv,
 };
-use crate::hub::executor::ExecutorError;
 use crate::hub::link::commands::NodeCommandErrorReason;
 use crate::hub::usage::time::clip;
-use fleetd_contracts::ids::ThreadRef;
 use fleetd_contracts::ledger::{HumanRequest, RequestState};
-use fleetd_contracts::sessions::{PendingPermission, PermissionDecision};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
-
-fn thread_ref(m: &str, t: &str) -> Option<ThreadRef> {
-    convert(&serde_json::json!({ "machineId": m, "threadId": t }))
-}
-
-fn executor_error(e: ExecutorError) -> NodeCommandError {
-    let (reason, fix) = match &e {
-        ExecutorError::MachineNotConnected { .. } => ("offline", None),
-        ExecutorError::ThreadNotFound { .. } => ("not_found", None),
-        ExecutorError::NodeRequestFailed { fix, .. } => ("failed", fix.clone()),
-    };
-    NodeCommandError {
-        reason: reason.into(),
-        message: e.to_string(),
-        fix,
-    }
-}
 
 fn node_error(e: crate::hub::link::commands::NodeCommandError) -> NodeCommandError {
     NodeCommandError {
@@ -112,37 +91,9 @@ impl ApprovalNodes for OpsPorts {
         })
     }
 
-    fn answer_permission(
-        &self,
-        m: &str,
-        t: &str,
-        request_id: &str,
-        decision: PermissionDecision,
-        by: Option<fleetd_contracts::time::DecidedBy>,
-    ) -> BoxFut<'_, Result<(), NodeCommandError>> {
-        let (r, request_id) = (thread_ref(m, t), request_id.to_owned());
-        Box::pin(async move {
-            let r = r.ok_or_else(|| NodeCommandError {
-                reason: "invalid".into(),
-                message: "not a machine and thread id".into(),
-                fix: None,
-            })?;
-            self.hub()
-                .executors
-                .answer(&r, &request_id, decision, by)
-                .await
-                .map_err(executor_error)
-        })
-    }
-
     fn is_linked(&self, m: &str) -> BoxFut<'_, bool> {
         let m: Option<fleetd_contracts::ids::MachineId> = convert(&m);
         Box::pin(async move { m.is_some_and(|m| self.hub().executors.is_connected(&m)) })
-    }
-
-    fn pending_permission(&self, m: &str, t: &str) -> BoxFut<'_, Option<PendingPermission>> {
-        let r = thread_ref(m, t);
-        Box::pin(async move { self.hub().executors.pending_permission(&r?) })
     }
 }
 
@@ -181,29 +132,6 @@ impl ApprovalHub for OpsPorts {
                 },
             );
         })
-    }
-
-    fn tool_rules(&self, project: &ports::ProjectRef) -> BoxFut<'_, Result<ToolRules, String>> {
-        let r: Option<fleetd_contracts::ids::ProjectRef> = convert(project);
-        Box::pin(async move {
-            let r = r.ok_or("not a project ref")?;
-            let policy = self.hub().policies.get(&r).await.map_err(|e| e.message)?;
-            let tools = policy.tools.unwrap_or_default();
-            let strings = |rules: &[fleetd_contracts::prim::Text<1, 200>]| {
-                rules.iter().map(|r| r.to_string()).collect()
-            };
-            Ok(ToolRules {
-                allow: strings(&tools.allow),
-                deny: strings(&tools.deny),
-            })
-        })
-    }
-
-    fn prompts(&self, m: &str, t: &str) -> crate::hub::prompts::PromptSet {
-        self.hub()
-            .db
-            .prompts()
-            .for_thread(&fleetd_contracts::ids::MachineId::unchecked(m), t)
     }
 }
 

@@ -570,7 +570,7 @@
         },
         {
           "const": "workstream.done",
-          "description": "The lead closed it, or its research verdict came in. `data.workstreamId`, and `data.reason` (why) and\n`data.by` when the lead closed it.",
+          "description": "The lead closed it. `data.workstreamId`, `data.reason` (why) and `data.by`.",
           "type": "string"
         },
         {
@@ -590,7 +590,7 @@
         },
         {
           "const": "change.needs_rebase",
-          "description": "The rebase conflicted; `data.changeId`, `data.paths`.",
+          "description": "The PR conflicts with its base, or with the PRs ahead of it in a batch; `data.changeId`.",
           "type": "string"
         },
         {
@@ -609,18 +609,8 @@
           "type": "string"
         },
         {
-          "const": "train.blocked",
-          "description": "Something that is not the train's sits where its worktree goes, and a person has to move it; `data.changeId`,\n`data.repo`, `data.error` (what to move).",
-          "type": "string"
-        },
-        {
           "const": "change.refused",
           "description": "Refused at enqueue; `data.prUrl`, `data.fix`.",
-          "type": "string"
-        },
-        {
-          "const": "research.verdict",
-          "description": "A research workstream's computed verdict; `data.workstreamId`, `data.outcome`, `data.metricValues`.",
           "type": "string"
         },
         {

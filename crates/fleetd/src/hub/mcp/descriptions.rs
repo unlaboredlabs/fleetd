@@ -86,7 +86,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "approval_answer",
-        "Human keys with an operate grant only. Approve or deny an open approval request (requestId, Q<n>): a gated command the lead asked to run, or a tool prompt a run waits on. approve runs the command exactly as stored on the project's node (its exit code and output tail reach the lead) or allows the tool; deny never runs it, and message, when given, goes to the lead or the run with the denial. Returns the request.",
+        "Human keys with an operate grant only. Approve or deny an open approval request (requestId, Q<n>): a gated command the lead asked to run. approve runs the command exactly as stored on the project's node (its exit code and output tail reach the lead); deny never runs it, and message, when given, goes to the lead with the denial. Returns the request.",
     ),
     (
         "requests_list",
@@ -158,7 +158,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "prompt_get",
-        "Without an id: every prompt and message fleetd sends a model (lead, tasks, reviewers, playbooks, custom instructions): id, kind, when it is sent, which text is in effect (default, global or project override) and whether a release changed the default of one you edited, plus your edits to prompts a release retired (orphans). projectRef: the texts in effect for that project. With an id, that prompt: its shipped default, the global and project overrides with their refs, the text in effect, its placeholders, its safety rules (and whether the text still says each), warnings, and, when fleetd changed the default you edited, the old default, the new one, yours and a 3-way merge.",
+        "Without an id: every prompt and message fleetd sends a model (lead, tasks, reviewers, custom instructions): id, kind, when it is sent, which text is in effect (default, global or project override) and whether a release changed the default of one you edited, plus your edits to prompts a release retired (orphans). projectRef: the texts in effect for that project. With an id, that prompt: its shipped default, the global and project overrides with their refs, the text in effect, its placeholders, its safety rules (and whether the text still says each), warnings, and, when fleetd changed the default you edited, the old default, the new one, yours and a 3-way merge.",
     ),
     (
         "prompt_set",

@@ -17,17 +17,18 @@ pub struct Retired {
 const STATE: &str = "the state block at the top of the lead's messages is fixed text now";
 const EVENTS: &str = "wakes are a fixed event format now, one line per event";
 const CHAT: &str = "the lead hears the human in its chat now";
-const DENIED: &str = "one Tool call denied prompt, with the reason filled in, replaces it";
+const DENIED: &str = "sessions run with full access, so no tool call waits on a person; a risky command goes through gated_run";
 const FIX_PR: &str = "one Fix your PR prompt replaces it";
 const LATE: &str = "a late or held wake is your own wake text, with how late it is in front";
 const STALL: &str =
     "a stalled run fails and its lead decides whether to continue it; nothing nudges it";
 const ROUTER: &str = "one lead per project: an order goes to its project's lead, no router";
 const HEADLINE: &str = "the status view has no generated headline";
-const RETRO: &str = "fleetd no longer runs a retro; edit the lead prompt or a playbook yourself";
+const RETRO: &str = "fleetd no longer runs a retro; edit the lead prompt yourself";
 const CLOSE: &str = "fleetd no longer checks a claim of done; the lead closes work and says why";
-const PLAYBOOK: &str = "the playbooks are sections of the lead prompt now; this file's rules still apply, its instructions don't";
 const ONE_REVIEW: &str = "every PR gets one fresh reviewer now, and nothing verifies it apart";
+const PLAN: &str =
+    "the lead sets a workstream's items with one plan call; nothing nags it about item sizes";
 const FINISH_ALL: &str =
     "finish-all went: a lead lists the open work and opens an order per item itself";
 
@@ -286,59 +287,42 @@ pub const RETIRED: &[Retired] = &[
     ),
     r("watchdog.nudge", "Stall nudge", STALL, None),
     r(
+        "plan.granularity",
+        "Plan item too big or unsized",
+        PLAN,
+        None,
+    ),
+    r(
         "permission.denied.policy",
         "Tool denied by policy",
         DENIED,
-        Some("tool.denied"),
+        None,
     ),
     r(
         "permission.denied.withdrawn",
         "Tool ask withdrawn",
         DENIED,
-        Some("tool.denied"),
+        None,
     ),
     r(
         "permission.denied.human",
         "Tool denied by the human",
         DENIED,
-        Some("tool.denied"),
+        None,
     ),
     r(
         "permission.denied.answer",
         "Tool denied with thread_answer",
         DENIED,
-        Some("tool.denied"),
+        None,
     ),
+    r("tool.denied", "Tool call denied", DENIED, None),
     r("router", "Order router", ROUTER, None),
     r("status.headline", "Status headline", HEADLINE, None),
     r("router.retry", "Order router, second try", ROUTER, None),
     r("retro", "Retro / triage", RETRO, None),
     r("judge", "Judge", CLOSE, None),
     r("judge.research", "Research judge", CLOSE, None),
-    r(
-        "playbook.bugfix",
-        "Playbook: bugfix",
-        PLAYBOOK,
-        Some("lead.start"),
-    ),
-    r(
-        "playbook.feature",
-        "Playbook: feature",
-        PLAYBOOK,
-        Some("lead.start"),
-    ),
-    r(
-        "playbook.research",
-        "Playbook: research",
-        PLAYBOOK,
-        Some("lead.start"),
-    ),
-    r(
-        "playbook.finish-all",
-        "Playbook: finish-all",
-        FINISH_ALL,
-        Some("lead.start"),
-    ),
     r(
         "review.verifier",
         "Verifier",
@@ -349,13 +333,6 @@ pub const RETIRED: &[Retired] = &[
 
 pub fn get(id: &str) -> Option<&'static Retired> {
     RETIRED.iter().find(|r| r.id == id)
-}
-
-impl Retired {
-    /// A playbook's override is its file under `<hub home>/playbooks`, hub-wide only.
-    pub fn playbook(&self) -> Option<&'static str> {
-        self.id.strip_prefix("playbook.")
-    }
 }
 
 #[cfg(test)]
@@ -373,8 +350,9 @@ mod tests {
         }
         assert_eq!(
             ENTRIES.len() + RETIRED.len(),
-            77,
-            "the 69 prompts of an earlier release, lead.profiles, and seven fixed texts made prompts"
+            73,
+            "the 69 prompts of an earlier release, lead.profiles, and eight fixed texts made prompts, less the four \
+             playbooks"
         );
     }
 }

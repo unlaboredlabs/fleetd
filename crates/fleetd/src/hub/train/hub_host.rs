@@ -9,11 +9,10 @@ use fleetd_contracts::ids::Timestamp;
 use fleetd_contracts::tasks::Task;
 use serde_json::{Value, json};
 
-use super::contract::{MachineId, ProjectRef, TaskId, WorkstreamId};
-use super::host::{BoxFut, CmdOut, EventView, ReviewSpawn, TaskView, TrainHost, WorkstreamView};
+use super::contract::{ProjectRef, TaskId, WorkstreamId};
+use super::host::{BoxFut, EventView, ReviewSpawn, TaskView, TrainHost, WorkstreamView};
 use crate::clock::Clock;
 use crate::hub::api::Hub;
-use crate::hub::link::commands::CommandInput;
 use crate::hub::store::{EventLog, HubStore, NewEvent, WaitInput, iso_ms, now_ms};
 use crate::hub::tasks::TaskCaller;
 
@@ -273,36 +272,5 @@ impl TrainHost for HubHost {
                 .trigger(project_ref, crate::hub::leads::wakes::Trigger::train(&line));
         }
         Box::pin(async {})
-    }
-
-    fn run_command<'a>(
-        &'a self,
-        machine_id: &'a MachineId,
-        cwd: &'a str,
-        argv: Vec<String>,
-        timeout_sec: u64,
-    ) -> BoxFut<'a, Result<CmdOut, String>> {
-        Box::pin(async move {
-            let hub = self.hub().ok_or_else(not_bound)?;
-            let input = CommandInput {
-                cwd: cwd.to_string(),
-                argv,
-                timeout_sec: Some(u32::try_from(timeout_sec).unwrap_or(u32::MAX)),
-            };
-            let result = hub
-                .node_commands
-                .run(machine_id, input)
-                .await
-                .map_err(|e| e.message)?;
-            Ok(CmdOut {
-                exit_code: result
-                    .exit_code
-                    .and_then(|c| serde_json::to_value(c).ok())
-                    .and_then(|v| v.as_i64())
-                    .and_then(|c| i32::try_from(c).ok()),
-                output_tail: result.output_tail.to_string(),
-                timed_out: result.timed_out,
-            })
-        })
     }
 }

@@ -1,12 +1,9 @@
-//! Usage-limit classification from what the node reports about a failed run: its failure class and reset time, plus
-//! the error text the `claude` CLI or a proxy in front of it produced. Pure; the executor uses it to tell a limit from
-//! a failure, and the usage layer to park and pace. fleetd never asks a usage API.
-//! The text rules are the node's (`node::runner::failure::classify_text`); this module puts the node's own class
-//! first and adds what the usage layer reads off the event log.
+//! Usage limits from what the node reports about a failed run: its failure class and reset time. The node decides
+//! the class (`node::runner::failure`); this module only maps it, for the executor to tell a limit from a failure
+//! and the usage layer to park and pace. Pure. fleetd never asks a usage API.
 use crate::hub::store::{iso_ms, parse_ms};
-use crate::node::runner::failure::classify_text;
+use crate::node::runner::failure::gateway_model;
 use fleetd_contracts::events::{HubEvent, HubEventType};
-use fleetd_contracts::sessions::FailureClass;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
@@ -50,46 +47,29 @@ pub struct Limit {
     pub model: Option<String>,
 }
 
-/// The limit behind a failure, or None when it is an ordinary failure. A gateway's text names its pool first, then
-/// the node's class (pool or rate limit) decides, then the text rules (where `usage_limit` counts as the usage hint).
+/// The limit behind a failure, or None when the node classed it an ordinary failure. A reset that isn't after the
+/// failure falls back to the class's default.
 pub fn classify_limit(input: &LimitInput) -> Option<Limit> {
-    let at_ms = parse_ms(input.at).unwrap_or(0);
     let model = input.model.filter(|m| !m.is_empty()).map(str::to_owned);
-    let found = classify_text(
-        input.message,
-        input.error_class == Some("usage_limit"),
-        input.reset_at.and_then(parse_ms),
-        at_ms,
-    );
-    let pool = |found_model: Option<String>| Limit {
-        class: UsageClass::PoolExhausted,
-        resume_at: None,
-        model: found_model.or(model.clone()),
-    };
-    match (input.error_class, found) {
-        (_, Some(f)) if f.class == FailureClass::PoolExhausted => Some(pool(f.model)),
-        (Some("pool_exhausted"), _) => Some(pool(None)),
-        (Some("rate_limit"), found) => {
-            let reset = found
-                .and_then(|f| f.reset_ms)
-                .or_else(|| input.reset_at.and_then(parse_ms).filter(|ms| *ms > at_ms));
-            Some(Limit {
-                class: UsageClass::RateLimit,
-                resume_at: Some(iso_ms(reset.unwrap_or(at_ms + FALLBACK_RATE_LIMIT_MS))),
-                model,
-            })
+    let (class, fallback_ms) = match input.error_class? {
+        "pool_exhausted" => {
+            return Some(Limit {
+                class: UsageClass::PoolExhausted,
+                resume_at: None,
+                model: gateway_model(input.message).or(model),
+            });
         }
-        (_, Some(f)) => Some(Limit {
-            class: if f.class == FailureClass::RateLimit {
-                UsageClass::RateLimit
-            } else {
-                UsageClass::UsageLimit
-            },
-            resume_at: f.reset_ms.map(iso_ms),
-            model,
-        }),
-        (_, None) => None,
-    }
+        "usage_limit" => (UsageClass::UsageLimit, FALLBACK_USAGE_LIMIT_MS),
+        "rate_limit" => (UsageClass::RateLimit, FALLBACK_RATE_LIMIT_MS),
+        _ => return None,
+    };
+    let at_ms = parse_ms(input.at).unwrap_or(0);
+    let reset = input.reset_at.and_then(parse_ms).filter(|ms| *ms > at_ms);
+    Some(Limit {
+        class,
+        resume_at: Some(iso_ms(reset.unwrap_or(at_ms + fallback_ms))),
+        model,
+    })
 }
 
 /// The event data fields the executor adds to thread.usage_limited.
@@ -103,10 +83,6 @@ pub fn limit_data(limit: &Limit) -> Map<String, Value> {
         data.insert("model".into(), json!(m));
     }
     data
-}
-
-fn plus(at: &str, ms: i64) -> String {
-    iso_ms(parse_ms(at).unwrap_or(0) + ms)
 }
 
 fn str_at<'a>(data: &'a Value, path: &[&str]) -> Option<&'a str> {
@@ -133,20 +109,12 @@ pub fn limit_of_event(event: &HubEvent) -> Option<Limit> {
             model: str_at(&data, &["model"]).map(str::to_string),
         });
     }
-    // Events from before M4 carry only a class and reset, and were all marked usage_limit.
+    // Events from before M4 carry no usageClass, and were all usage limits.
     classify_limit(&LimitInput {
-        error_class: Some(str_at(&data, &["error", "class"]).unwrap_or("usage_limit")),
-        message: str_at(&data, &["error", "message"]).unwrap_or(""),
+        error_class: Some("usage_limit"),
         reset_at: str_at(&data, &["usageLimitResetAt"]),
         at: event.at.as_str(),
-        model: None,
-    })
-    .or_else(|| {
-        Some(Limit {
-            class: UsageClass::UsageLimit,
-            resume_at: Some(plus(event.at.as_str(), FALLBACK_USAGE_LIMIT_MS)),
-            model: None,
-        })
+        ..Default::default()
     })
 }
 
@@ -175,7 +143,7 @@ mod tests {
 
     const AT: &str = "2026-10-17T10:00:00.000Z";
     fn at(ms: i64) -> String {
-        plus(AT, ms)
+        iso_ms(parse_ms(AT).unwrap() + ms)
     }
     fn input(class: &'static str, message: &'static str) -> LimitInput<'static> {
         LimitInput {
@@ -193,9 +161,8 @@ mod tests {
         })
     }
 
-    // The text rules themselves are tested in node::runner::failure; these are what this module adds on top.
     #[test]
-    fn the_nodes_reset_and_the_runs_model_fill_in_what_the_text_lacks() {
+    fn the_nodes_class_and_reset_decide_and_a_pool_names_the_gateways_model() {
         let usage = LimitInput {
             reset_at: Some("2026-10-20T09:00:00.000Z"),
             ..input(
@@ -214,7 +181,7 @@ mod tests {
         let pool = LimitInput {
             model: Some("claude-opus-5-5"),
             ..input(
-                "provider_error",
+                "pool_exhausted",
                 r#"API Error: 503 {"error":{"message":"no auth available","code":"auth_unavailable"}}"#,
             )
         };
@@ -222,6 +189,19 @@ mod tests {
             classify_limit(&pool),
             limit(UsageClass::PoolExhausted, None, Some("claude-opus-5-5"))
         );
+        let named = LimitInput {
+            model: Some("opus"),
+            ..input(
+                "pool_exhausted",
+                "API Error: 400 unknown provider for model claude-opus-5-5",
+            )
+        };
+        assert_eq!(
+            classify_limit(&named),
+            limit(UsageClass::PoolExhausted, None, Some("claude-opus-5-5"))
+        );
+        // A rate limit's text in a failure the node classed otherwise is the node's call, not a limit.
+        assert_eq!(classify_limit(&input("auth", "rate limit")), None);
     }
 
     #[test]

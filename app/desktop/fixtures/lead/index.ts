@@ -95,7 +95,7 @@ export default defineGroup({
   fixtures: (base) => [
     leadAtWork(
       Fixture.from(base("typical"), "lead-planning", "storefront's lead mid-turn: planning, after opening an order and starting 3 agents."),
-      { activity: { kind: "tool", name: "mcp__fleetd__plan_add" }, orders: 1, agents: 3 },
+      { activity: { kind: "tool", name: "mcp__fleetd__plan" }, orders: 1, agents: 3 },
     ),
     leadAtWork(
       Fixture.from(base("typical"), "lead-long", "storefront's lead mid-turn reading a file with a very long name, after 2 orders and 12 agents."),

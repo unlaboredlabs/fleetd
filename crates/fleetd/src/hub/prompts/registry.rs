@@ -233,16 +233,6 @@ pub const ENTRIES: &[Entry] = &[
         )]
     ),
     entry!(
-        "plan.granularity",
-        Msg,
-        Lead,
-        Lead,
-        "Plan item too big or unsized",
-        "with plan_add's or plan_edit's result, for an item with no size or size l",
-        "item!=the plan item, P<n>; reason!=has no size, or is size l",
-        &[]
-    ),
-    entry!(
         "steer.message",
         Msg,
         Messages,
@@ -359,16 +349,6 @@ pub const ENTRIES: &[Entry] = &[
         "Continue after a usage limit",
         "to a lead or agent a usage limit parked, once the limit resets",
         "",
-        &[]
-    ),
-    entry!(
-        "tool.denied",
-        Msg,
-        Messages,
-        Any,
-        "Tool call denied",
-        "as the result of a tool call a policy rule or a person denied",
-        "reason!=who or what denied it, and what they said",
         &[]
     ),
     Entry {

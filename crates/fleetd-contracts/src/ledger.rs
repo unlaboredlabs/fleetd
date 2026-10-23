@@ -9,7 +9,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_with::skip_serializing_none;
 
 use crate::ids::{ProjectRef, ThreadId, Timestamp};
-use crate::prim::{Count, Finite, Int, Line, List, NonEmpty, PositiveNumber, Text, js_len};
+use crate::prim::{Count, Int, Line, List, NonEmpty, Text, js_len};
 use crate::secrets::{SecretFingerprint, SecretSink};
 use crate::usage::UsageParked;
 use crate::{brand, checked};
@@ -73,155 +73,6 @@ pub struct Lead {
 /// workstream with why.
 pub type DoneWhen = Text<1, 2000>;
 
-/// How big a research spend is, relative like plan sizes.
-#[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
-)]
-pub enum BudgetSize {
-    S,
-    M,
-    L,
-}
-
-// Research briefs (M9): a pre-registered baseline and a decision rule the hub applies to the judge's numbers.
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum DecisionRuleBetter {
-    Higher,
-    Lower,
-}
-
-/// Applied to the improvement: candidate − baseline, negated when lower is better. GO when it is at least
-/// `goAtLeast`, STOP when it is below `stopBelow`, INCONCLUSIVE in between.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(remote = "Self", rename_all = "camelCase")]
-pub struct DecisionRule {
-    pub better: DecisionRuleBetter,
-    pub go_at_least: Finite,
-    pub stop_below: Finite,
-}
-checked!(DecisionRule, |rule| {
-    if rule.stop_below.get() <= rule.go_at_least.get() {
-        Ok(())
-    } else {
-        Err("stopBelow must not be above goAtLeast".into())
-    }
-});
-
-/// The judge's reported numbers for the brief's metric.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct MetricValues {
-    pub baseline: Finite,
-    pub candidate: Finite,
-}
-
-/// STOP is a success: the question was answered.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum ResearchOutcome {
-    Go,
-    Stop,
-    Inconclusive,
-}
-
-impl ResearchOutcome {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            ResearchOutcome::Go => "go",
-            ResearchOutcome::Stop => "stop",
-            ResearchOutcome::Inconclusive => "inconclusive",
-        }
-    }
-}
-
-pub fn research_outcome(rule: &DecisionRule, values: &MetricValues) -> ResearchOutcome {
-    let (baseline, candidate) = (values.baseline.get(), values.candidate.get());
-    // Float subtraction lands just short of the line (0.6 − 0.5 is 0.0999…), so values on a line count as on it.
-    let tolerance = 1e-9 * 1f64.max(baseline.abs()).max(candidate.abs());
-    let sign = if rule.better == DecisionRuleBetter::Lower {
-        -1.0
-    } else {
-        1.0
-    };
-    let improvement = (candidate - baseline) * sign + tolerance;
-    if improvement >= rule.go_at_least.get() {
-        ResearchOutcome::Go
-    } else if improvement < rule.stop_below.get() {
-        ResearchOutcome::Stop
-    } else {
-        ResearchOutcome::Inconclusive
-    }
-}
-
-/// Computed by the hub, never reported by an agent; `outcome` always follows from `rule` and `metricValues`.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(remote = "Self", rename_all = "camelCase")]
-pub struct ResearchVerdict {
-    pub outcome: ResearchOutcome,
-    pub metric_values: MetricValues,
-    /// The brief's rule.
-    pub rule: DecisionRule,
-    pub computed_at: Timestamp,
-}
-checked!(ResearchVerdict, |verdict| {
-    let expected = research_outcome(&verdict.rule, &verdict.metric_values);
-    if verdict.outcome == expected {
-        Ok(())
-    } else {
-        Err(format!(
-            "the rule gives {} for these values",
-            expected.as_str()
-        ))
-    }
-});
-
-// Playbooks (M9): versioned templates a workstream pins at creation.
-
-/// The prefixes `bug:`/`fix:` and `research:` pick bugfix and research.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "kebab-case")]
-pub enum PlaybookName {
-    Bugfix,
-    Feature,
-    Research,
-}
-
-impl PlaybookName {
-    pub const ALL: [PlaybookName; 3] = [
-        PlaybookName::Bugfix,
-        PlaybookName::Feature,
-        PlaybookName::Research,
-    ];
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            PlaybookName::Bugfix => "bugfix",
-            PlaybookName::Feature => "feature",
-            PlaybookName::Research => "research",
-        }
-    }
-}
-
-brand!(
-    /// `<name>@<sha>`: the git blob SHA of the playbook file (`git hash-object <file>`).
-    PlaybookRef,
-    name = "PlaybookRef",
-    pattern = r"^(?:bugfix|feature|research)@(?:[0-9a-f]{40}|[0-9a-f]{64})$",
-    description = "<playbook name>@<full lowercase hex git blob SHA>"
-);
-
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct BriefBudget {
-    /// How big a research spend the lead allows, relative like plan sizes; never a time guess.
-    pub size: Option<BudgetSize>,
-    /// Older briefs only; a lead now gives `size`.
-    pub agent_hours: Option<PositiveNumber>,
-}
-
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -232,13 +83,6 @@ pub struct Brief {
     pub constraints: List<Text<1, 500>, 0, 20>,
     /// At least one.
     pub done_when: List<DoneWhen, 1, 20>,
-    pub budget: Option<BriefBudget>,
-    /// Research: what the candidate is compared against, and how both are measured.
-    pub baseline: Option<Text<1, 1000>>,
-    /// Research: the one number the judge reports for baseline and candidate, e.g. "p50 cold start in ms".
-    pub metric: Option<Line<1, 200>>,
-    /// Research: the rule the verdict is computed from.
-    pub decision_rule: Option<DecisionRule>,
 }
 
 // Workstreams
@@ -281,7 +125,7 @@ pub struct WorkstreamSource {
 
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(remote = "Self", rename_all = "camelCase")]
+#[serde(rename_all = "camelCase")]
 pub struct Workstream {
     pub workstream_id: WorkstreamId,
     pub project_ref: ProjectRef,
@@ -292,21 +136,9 @@ pub struct Workstream {
     pub state: WorkstreamState,
     pub headline: Option<Headline>,
     pub headline_at: Option<Timestamp>,
-    /// Pinned at creation; the brief validates against this version. Absent on workstreams from before M9.
-    pub playbook: Option<PlaybookRef>,
-    /// Research workstreams, once the verdict is computed; set together with `verdict`. A STOP is done, not failed.
-    pub outcome: Option<ResearchOutcome>,
-    pub verdict: Option<ResearchVerdict>,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
 }
-checked!(Workstream, |w| {
-    if w.outcome == w.verdict.as_ref().map(|v| v.outcome) {
-        Ok(())
-    } else {
-        Err("outcome and verdict come together and agree".into())
-    }
-});
 
 // Decisions
 
@@ -689,59 +521,6 @@ mod tests {
         for id in ["W0", "W01", "w1", "A1", "W", "W1x"] {
             assert!(WorkstreamId::new(id).is_err(), "{id}");
         }
-    }
-
-    #[test]
-    fn research_outcome_counts_values_on_the_line() {
-        let rule = |better: DecisionRuleBetter, go: f64, stop: f64| DecisionRule {
-            better,
-            go_at_least: Finite::unchecked(go),
-            stop_below: Finite::unchecked(stop),
-        };
-        let values = |baseline: f64, candidate: f64| MetricValues {
-            baseline: Finite::unchecked(baseline),
-            candidate: Finite::unchecked(candidate),
-        };
-        // 0.6 − 0.5 is 0.0999… in floats.
-        assert_eq!(
-            research_outcome(
-                &rule(DecisionRuleBetter::Higher, 0.1, 0.1),
-                &values(0.5, 0.6)
-            ),
-            ResearchOutcome::Go
-        );
-        assert_eq!(
-            research_outcome(
-                &rule(DecisionRuleBetter::Higher, 0.1, 0.1),
-                &values(0.5, 0.55)
-            ),
-            ResearchOutcome::Stop
-        );
-        assert_eq!(
-            research_outcome(
-                &rule(DecisionRuleBetter::Higher, 0.2, 0.0),
-                &values(0.5, 0.6)
-            ),
-            ResearchOutcome::Inconclusive
-        );
-        // Lower is better: 100 ms down to 80 ms is an improvement of 20.
-        assert_eq!(
-            research_outcome(
-                &rule(DecisionRuleBetter::Lower, 20.0, 0.0),
-                &values(100.0, 80.0)
-            ),
-            ResearchOutcome::Go
-        );
-        assert_eq!(
-            research_outcome(
-                &rule(DecisionRuleBetter::Lower, 20.0, 0.0),
-                &values(100.0, 120.0)
-            ),
-            ResearchOutcome::Stop
-        );
-        assert!(!accepts::<DecisionRule>(
-            json!({ "better": "higher", "goAtLeast": 0.1, "stopBelow": 0.2 })
-        ));
     }
 
     fn with(mut value: Value, patch: Value) -> Value {

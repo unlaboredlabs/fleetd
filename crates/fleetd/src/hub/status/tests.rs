@@ -5,13 +5,13 @@ use std::time::Duration;
 
 use fleetd_contracts::auth::KeyKind;
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef};
+use fleetd_contracts::ledger::WorkstreamId;
 use fleetd_contracts::mcp::ErrorCode;
-use fleetd_contracts::plan::{
-    PlanAddCall, PlanChangeKind, PlanDropCall, PlanItemState, PlanMilestoneCall,
-};
+use fleetd_contracts::plan::{PlanChange, PlanChangeKind, PlanItemId, PlanItemSpec, PlanItemState};
 use fleetd_contracts::status::{
     DropReason, ProgressDrop, ProgressPoint, ProjectRowState, ProjectStatusRow,
 };
+use fleetd_contracts::train::GitHubPrUrl;
 use rusqlite::params;
 use serde_json::json;
 
@@ -103,12 +103,31 @@ fn bar_after(hub: &Hub, clock: &ManualClock, secs: u64) -> (i64, Option<Progress
     )
 }
 
-fn add(title: &str, extra: serde_json::Value) -> PlanAddCall {
-    let mut v = json!({ "title": title, "milestoneId": "M1" });
-    v.as_object_mut()
-        .unwrap()
-        .extend(extra.as_object().unwrap().clone());
-    serde_json::from_value(v).unwrap()
+/// W1's `plan` call: `items` is the whole list, in order.
+fn plan(
+    hub: &Hub,
+    items: serde_json::Value,
+    why: Option<&str>,
+) -> Result<Vec<PlanChange>, crate::hub::plan::PlanError> {
+    let items: Vec<PlanItemSpec> = serde_json::from_value(items).unwrap();
+    hub.plans.set(
+        &project(),
+        "lead:devbox/storefront",
+        &WorkstreamId::unchecked("W1"),
+        &items,
+        why,
+    )
+}
+
+fn link_pr(hub: &Hub, item: &str, pr: i64) {
+    hub.plans
+        .link_pr(
+            &project(),
+            &PlanItemId::unchecked(item),
+            &WorkstreamId::unchecked("W1"),
+            &GitHubPrUrl::unchecked(format!("https://github.com/acme/storefront/pull/{pr}")),
+        )
+        .unwrap();
 }
 
 fn merged_change(hub: &Hub, pr: i64) {
@@ -132,83 +151,63 @@ fn merged_change(hub: &Hub, pr: i64) {
 }
 
 #[tokio::test]
-async fn a_scope_change_after_the_planning_window_needs_a_reason_and_writes_a_marker() {
+async fn a_plan_call_that_moves_a_filled_milestone_writes_a_marker() {
     let clock = ManualClock::at(T0);
     let (hub, _home) = hub(clock.clone());
-    let (r, by) = (project(), "lead:devbox/storefront");
-    let plans = &hub.plans;
-    plans
-        .milestone(
-            &r,
-            serde_json::from_value::<PlanMilestoneCall>(json!({ "title": "Checkout" })).unwrap(),
-        )
-        .unwrap();
-    let p1 = plans
-        .add(&r, by, add("cart page", json!({ "size": "l" })))
-        .unwrap();
-    assert!(p1.change.is_none(), "inside the planning window");
-    plans.add(&r, by, add("payment page", json!({}))).unwrap();
-    clock.advance(Duration::from_secs(11 * 60));
-    let refused = plans.add(&r, by, add("receipts", json!({}))).unwrap_err();
-    assert_eq!(refused.0.code, ErrorCode::Invalid);
-    let added = plans
-        .add(
-            &r,
-            by,
-            add("receipts", json!({ "why": "receipts were missed" })),
-        )
-        .unwrap();
-    let marker = added.change.unwrap();
-    assert_eq!(marker.kind, PlanChangeKind::Scope);
-    assert_eq!(marker.note.as_str(), "+1 item: receipts were missed");
-    assert_eq!((marker.delta_items.get(), marker.delta_size.get()), (1, 3));
-    let dropped = plans
-        .drop_item(
-            &r,
-            by,
-            serde_json::from_value::<PlanDropCall>(
-                json!({ "itemId": "P2", "why": "folded into P1" }),
-            )
-            .unwrap(),
-        )
-        .unwrap();
-    assert_eq!(dropped.item.state, PlanItemState::Dropped);
+    let cart = json!({ "id": "P1", "title": "cart page", "size": "l", "milestone": "Checkout" });
+    let first = plan(
+        &hub,
+        json!([
+            { "title": "cart page", "size": "l", "milestone": "Checkout" },
+            { "title": "payment page", "milestone": "Checkout" },
+        ]),
+        None,
+    )
+    .unwrap();
+    assert!(first.is_empty(), "filling a milestone is no scope change");
+    let added = plan(
+        &hub,
+        json!([cart, { "id": "P2", "title": "payment page", "milestone": "Checkout" },
+            { "title": "receipts", "milestone": "Checkout" }]),
+        Some("receipts were missed"),
+    )
+    .unwrap();
+    assert_eq!(added[0].kind, PlanChangeKind::Scope);
+    assert_eq!(added[0].note.as_str(), "+1 item: receipts were missed");
     assert_eq!(
-        dropped.change.unwrap().note.as_str(),
-        "−1 item: folded into P1"
+        (added[0].delta_items.get(), added[0].delta_size.get()),
+        (1, 3)
     );
-    let view = plans.view(&r, None).unwrap();
+    let dropped = plan(
+        &hub,
+        json!([cart, { "id": "P3", "title": "receipts", "milestone": "Checkout" }]),
+        Some("folded into P1"),
+    )
+    .unwrap();
+    assert_eq!(dropped[0].note.as_str(), "−1 item: folded into P1");
+    let view = hub.plans.view(&project(), None).unwrap();
+    assert_eq!(view.items[1].state, PlanItemState::Dropped);
     assert_eq!(
         (view.progress.done.get(), view.progress.total.get()),
         (0, 2)
     );
     assert_eq!(view.markers.len(), 2);
+    let refused = plan(&hub, json!([cart, cart]), None).unwrap_err();
+    assert_eq!(refused.0.code, ErrorCode::Invalid, "an item listed twice");
 }
 
 #[tokio::test]
 async fn an_item_is_done_only_from_a_train_merge_and_the_row_shows_it() {
     let clock = ManualClock::at(T0);
     let (hub, _home) = hub(clock.clone());
-    let (r, by) = (project(), "lead:devbox/storefront");
-    hub.plans
-        .milestone(
-            &r,
-            serde_json::from_value::<PlanMilestoneCall>(json!({ "title": "Checkout" })).unwrap(),
-        )
-        .unwrap();
-    hub.plans
-        .add(&r, by, add("cart page", json!({ "workstreamId": "W1", "pr": "https://github.com/acme/storefront/pull/212" })))
-        .unwrap();
-    hub.plans
-        .add(
-            &r,
-            by,
-            add(
-                "unlinked polish",
-                json!({ "workstreamId": "W1", "weight": "polish" }),
-            ),
-        )
-        .unwrap();
+    let r = project();
+    plan(
+        &hub,
+        json!([{ "title": "cart page" }, { "title": "unlinked polish", "weight": "polish" }]),
+        None,
+    )
+    .unwrap();
+    link_pr(&hub, "P1", 212);
     assert!(!hub.plans.verify("W1"), "no merge yet");
     merged_change(&hub, 212);
     assert!(hub.plans.verify("W1"));
@@ -248,93 +247,6 @@ async fn an_item_is_done_only_from_a_train_merge_and_the_row_shows_it() {
     );
 }
 
-fn set_order_state(hub: &Hub, state: &str) {
-    hub.db
-        .with(|c| {
-            c.execute(
-                "UPDATE workstreams SET state = ?1, data = json_set(data, '$.state', ?1) WHERE n = 1",
-                [state],
-            )?;
-            Ok(())
-        })
-        .unwrap();
-}
-
-fn markers(hub: &Hub) -> Vec<String> {
-    hub.db
-        .with(|c| {
-            Ok(c.prepare("SELECT note FROM plan_changes ORDER BY n")?
-                .query_map([], |r| r.get(0))?
-                .collect::<rusqlite::Result<Vec<String>>>()?)
-        })
-        .unwrap()
-}
-
-#[tokio::test]
-async fn an_unplanned_order_enters_and_leaves_the_figure_only_with_markers() {
-    let clock = ManualClock::at(T0);
-    let (hub, _home) = hub(clock.clone());
-    assert!(hub.plans.placeholder_enter("W1", false));
-    assert!(!hub.plans.placeholder_enter("W1", false), "once");
-    assert_eq!(
-        markers(&hub),
-        vec!["+1 item: W1 Checkout redesign (no plan yet)"]
-    );
-    assert_eq!(bar_after(&hub, &clock, 0).0, 0, "it counts, unstarted");
-
-    set_order_state(&hub, "done");
-    hub.plans
-        .placeholder_order_ended("W1", fleetd_contracts::ledger::WorkstreamState::Done);
-    assert_eq!(
-        bar_after(&hub, &clock, 1).0,
-        100,
-        "done stays in the figure"
-    );
-    assert_eq!(markers(&hub).len(), 1, "done changes no denominator");
-
-    clock.advance(Duration::from_secs(12 * 3600));
-    assert!(
-        hub.plans.placeholder_roll_off().is_some(),
-        "the roll-off is a deadline"
-    );
-    assert_eq!(markers(&hub).len(), 1, "not yet due");
-    clock.advance(Duration::from_secs(12 * 3600));
-    assert_eq!(hub.plans.placeholder_roll_off(), None);
-    assert_eq!(markers(&hub)[1], "W1 done a day ago, leaves the figure");
-    assert_eq!(
-        row_after(&hub, &clock, 1).0.progress,
-        None,
-        "nothing left to count"
-    );
-}
-
-#[tokio::test]
-async fn a_planned_or_stopped_order_s_placeholder_leaves_with_a_marker() {
-    let clock = ManualClock::at(T0);
-    let (hub, _home) = hub(clock.clone());
-    let (r, by) = (project(), "lead:devbox/storefront");
-    hub.plans.placeholder_enter("W1", false);
-    hub.plans
-        .milestone(
-            &r,
-            serde_json::from_value::<PlanMilestoneCall>(json!({ "title": "Checkout" })).unwrap(),
-        )
-        .unwrap();
-    hub.plans
-        .add(&r, by, add("cart page", json!({ "workstreamId": "W1" })))
-        .unwrap();
-    assert_eq!(
-        markers(&hub)[1],
-        "−1 item: W1's placeholder gives way to its plan"
-    );
-    let clock2 = ManualClock::at(T0);
-    let (hub2, _home2) = self::hub(clock2);
-    hub2.plans.placeholder_enter("W1", false);
-    hub2.plans
-        .placeholder_order_ended("W1", fleetd_contracts::ledger::WorkstreamState::Stopped);
-    assert_eq!(markers(&hub2)[1], "−1: W1 stopped");
-}
-
 /// A plan re-check per event is index lookups and stays within milliseconds, and a read of the rows within 200 ms
 /// (timed in release builds), however much history the project has.
 #[tokio::test]
@@ -342,11 +254,17 @@ async fn recompute_stays_bounded_with_two_thousand_items_and_changes() {
     let clock = ManualClock::at(T0);
     let (hub, _home) = hub(clock.clone());
     let r = project();
-    hub.plans
-        .milestone(
-            &r,
-            serde_json::from_value::<PlanMilestoneCall>(json!({ "title": "Big" })).unwrap(),
-        )
+    hub.db
+        .with(|c| {
+            crate::hub::plan::store::milestone_insert(
+                c,
+                &crate::hub::plan::store::pkey(&r),
+                "Big",
+                None,
+                0,
+            )?;
+            Ok(())
+        })
         .unwrap();
     hub.db
         .with(|c| {
@@ -410,41 +328,6 @@ async fn recompute_stays_bounded_with_two_thousand_items_and_changes() {
     );
 }
 
-#[tokio::test]
-async fn an_item_with_no_order_is_verified_by_its_own_prs() {
-    let clock = ManualClock::at(T0);
-    let (hub, _home) = hub(clock.clone());
-    let (r, by) = (project(), "lead:devbox/storefront");
-    hub.plans
-        .milestone(
-            &r,
-            serde_json::from_value::<PlanMilestoneCall>(json!({ "title": "Checkout" })).unwrap(),
-        )
-        .unwrap();
-    hub.plans
-        .add(
-            &r,
-            by,
-            add(
-                "own PR, no order",
-                json!({ "pr": "https://github.com/acme/storefront/pull/212" }),
-            ),
-        )
-        .unwrap();
-    merged_change(&hub, 212);
-    hub.plans.verify("W1");
-    let view = hub.plans.view(&r, None).unwrap();
-    assert_eq!(
-        view.items[0].state,
-        PlanItemState::Done,
-        "its own PR merged by the train"
-    );
-    assert_eq!(
-        view.items[0].evidence.as_ref().unwrap().as_str(),
-        "#212 merged by the train"
-    );
-}
-
 fn set_change(hub: &Hub, state: &str, from: Option<&str>) {
     let now = crate::hub::store::now_ms(hub.clock.as_ref());
     let at = crate::hub::store::iso_ms(now);
@@ -492,23 +375,8 @@ fn iso_ms_of(ms: i64) -> String {
 async fn the_bar_rises_with_observed_stages_and_falls_only_with_an_explained_marker() {
     let clock = ManualClock::at(T0);
     let (hub, _home) = hub(clock.clone());
-    let (r, by) = (project(), "lead:devbox/storefront");
-    hub.plans
-        .milestone(
-            &r,
-            serde_json::from_value::<PlanMilestoneCall>(json!({ "title": "Checkout" })).unwrap(),
-        )
-        .unwrap();
-    hub.plans
-        .add(
-            &r,
-            by,
-            add(
-                "cart page",
-                json!({ "workstreamId": "W1", "pr": "https://github.com/acme/storefront/pull/212", "size": "m" }),
-            ),
-        )
-        .unwrap();
+    plan(&hub, json!([{ "title": "cart page" }]), None).unwrap();
+    link_pr(&hub, "P1", 212);
     assert_eq!(
         bar_after(&hub, &clock, 1),
         (0, None),
@@ -588,32 +456,16 @@ async fn nothing_status_serves_is_a_time_estimate() {
 async fn a_finished_milestone_lowers_the_bar_only_with_a_marker() {
     let clock = ManualClock::at(T0);
     let (hub, _home) = hub(clock.clone());
-    let (r, by) = (project(), "lead:devbox/storefront");
-    for title in ["Checkout", "Search"] {
-        hub.plans
-            .milestone(
-                &r,
-                serde_json::from_value::<PlanMilestoneCall>(json!({ "title": title })).unwrap(),
-            )
-            .unwrap();
-    }
-    hub.plans
-        .add(
-            &r,
-            by,
-            add(
-                "cart page",
-                json!({ "workstreamId": "W1", "pr": "https://github.com/acme/storefront/pull/212", "size": "m" }),
-            ),
-        )
-        .unwrap();
-    hub.plans
-        .add(
-            &r,
-            by,
-            add("search box", json!({ "milestoneId": "M2", "size": "m" })),
-        )
-        .unwrap();
+    plan(
+        &hub,
+        json!([
+            { "title": "cart page", "milestone": "Checkout" },
+            { "title": "search box", "milestone": "Search" },
+        ]),
+        None,
+    )
+    .unwrap();
+    link_pr(&hub, "P1", 212);
     bar_after(&hub, &clock, 1);
     set_change(&hub, "merged", None);
     assert_eq!(bar_after(&hub, &clock, 1).0, 45, "a merged m of two");
@@ -786,20 +638,7 @@ fn one_item(clock: &Arc<ManualClock>) -> (Arc<Hub>, tempfile::TempDir) {
 
 fn one_item_on(db: Arc<HubDb>, clock: &Arc<ManualClock>) -> (Arc<Hub>, tempfile::TempDir) {
     let (hub, home) = hub_on(db, clock.clone());
-    let (r, by) = (project(), "lead:devbox/storefront");
-    hub.plans
-        .milestone(
-            &r,
-            serde_json::from_value::<PlanMilestoneCall>(json!({ "title": "Checkout" })).unwrap(),
-        )
-        .unwrap();
-    hub.plans
-        .add(
-            &r,
-            by,
-            add("cart page", json!({ "workstreamId": "W1", "size": "m" })),
-        )
-        .unwrap();
+    plan(&hub, json!([{ "title": "cart page" }]), None).unwrap();
     (hub, home)
 }
 
