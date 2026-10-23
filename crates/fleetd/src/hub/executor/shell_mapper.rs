@@ -340,7 +340,7 @@ pub fn to_thread_summary(
     with_assistant_text(&base, s.latest_assistant_tail.as_deref())
 }
 
-/// M4: a failure the node classed as a usage, rate or pool limit (or whose text says so) is a usage limit.
+/// M4: a failure the node classed as a usage, rate or pool limit is a usage limit.
 pub fn phase(s: &Summary) -> String {
     if limit_of_summary(s).is_some() {
         "usage_limited".to_owned()

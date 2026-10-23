@@ -367,10 +367,7 @@ fn edits_to_retired_prompts_are_listed_until_reset() {
             "No: {{said}}"
         )
     );
-    assert_eq!(
-        mine.suggested_target.as_ref().map(|t| t.as_str()),
-        Some("tool.denied")
-    );
+    assert_eq!(mine.suggested_target, None);
     assert_eq!(prompts.all_orphans().len(), 3);
     // Nothing retired reaches a session: the live prompts are untouched.
     assert_eq!(

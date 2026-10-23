@@ -102,7 +102,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "approval_answer",
-        "Human keys with an operate grant only. Approve or deny an open approval request (requestId, Q<n>): a gated command the lead asked to run, or a tool prompt a run waits on. approve runs the command exactly as stored on the project's node (its exit code and output tail reach the lead) or allows the tool; deny never runs it, and message, when given, goes to the lead or the run with the denial. Returns the request.",
+        "Human keys with an operate grant only. Approve or deny an open approval request (requestId, Q<n>): a gated command the lead asked to run. approve runs the command exactly as stored on the project's node (its exit code and output tail reach the lead); deny never runs it, and message, when given, goes to the lead with the denial. Returns the request.",
     ),
     (
         "requests_list",

@@ -278,6 +278,5 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 | `task.pause` | to each running agent above a lowered max agents, when a person pauses the extras |  |
 | `task.resume` | to a paused agent once a slot frees for it |  |
 | `usage.continue` | to a lead or agent a usage limit parked, once the limit resets |  |
-| `tool.denied` | as the result of a tool call a policy rule or a person denied |  |
 
 <!-- /prompt-table -->
