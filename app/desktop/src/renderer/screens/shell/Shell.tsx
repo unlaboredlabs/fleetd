@@ -42,12 +42,7 @@ const readLast = (): string | null => {
 
 export function Shell() {
   const route = useRoute();
-  // The live feed: the board's lanes, which the chat's agent strip reads. The layer is the only caller of hub.live
-  // and sends only changes.
   const layer = useDataLayer();
-  useEffect(() => {
-    layer.setLive({ board: true });
-  }, [layer]);
   const hub = useHubState();
   // The route's project, not the resolved home: `#/` becomes a project's own route at once.
   const projects = useSidebarProjects(route.id === "project" ? route.project : null);

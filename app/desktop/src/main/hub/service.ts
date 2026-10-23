@@ -1,7 +1,7 @@
 import type { WebContents } from "electron";
 import { IPC } from "../../shared/channels";
 import type { CallOutcome, ConnectOutcome, HubFrame, HubState } from "../../shared/hub";
-import type { CallRequest, ChatScope, ConnectRequest, LiveScope } from "../../shared/ipc";
+import type { CallRequest, ChatScope, ConnectRequest, OrderFocus } from "../../shared/ipc";
 import type { HubCacheFile } from "./cache";
 import { HubClient } from "./client";
 import { clearCredentials, fromEnv, loadCredentials, saveCredentials, type CredentialEnv } from "./credentials";
@@ -31,10 +31,9 @@ export class HubService {
   /** Set from FLEETD_HUB_URL + FLEETD_AGENT_KEY: used for this run, never stored. */
   readonly #ephemeral: boolean;
   #unpaired: HubState = { phase: "unpaired" };
-  /** The renderer's live scope, kept here so a client made later (a first pairing, a re-pair) starts with it. */
-  #live: LiveScope | null = null;
-  /** The chat on screen, kept like #live so a client made later starts with it. */
+  /** The chat on screen, kept here so a client made later (a first pairing, a re-pair) starts with it. */
   #chat: ChatScope | null = null;
+  #focus: OrderFocus | null = null;
 
   constructor(mode: HubMode) {
     this.#mode = mode;
@@ -75,14 +74,14 @@ export class HubService {
     return this.#source?.call(request) ?? Promise.resolve({ ok: false, error: { code: "offline", message: "Not paired with a hub." } });
   }
 
-  live(scope: LiveScope | null): void {
-    this.#live = scope;
-    this.#source?.live(scope);
-  }
-
   chat(project: ChatScope | null): void {
     this.#chat = project;
     this.#source?.chat(project);
+  }
+
+  focus(workstreamId: OrderFocus | null): void {
+    this.#focus = workstreamId;
+    this.#source?.focus(workstreamId);
   }
 
   resync(): void {
@@ -156,8 +155,8 @@ export class HubService {
     this.#source?.stop();
     const client = new HubClient({ hub, key, transport: this.#mode.transport, emit: (frame) => this.#broadcast(frame) });
     this.#source = client;
-    client.live(this.#live);
     client.chat(this.#chat);
+    client.focus(this.#focus);
     client.start();
   }
 

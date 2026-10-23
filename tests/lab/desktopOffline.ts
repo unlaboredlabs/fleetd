@@ -115,7 +115,7 @@ export async function desktopOffline(lab: Lab) {
   await sample();
   await lab.startHub();
   await until("the chat live again after the restart", 60_000, async () =>
-    (await app.eval<string>("window.fleetd.hub.state().then((s) => s.phase)")) === "live" && (await text('[data-banner="reconnecting"]')) === null ? true : undefined,
+    (await app.eval<string | undefined>(`window.__frames.findLast((f) => f.t === "state")?.state.phase`)) === "live" && (await text('[data-banner="reconnecting"]')) === null ? true : undefined,
   );
   check((await text('[data-screen="chat"]'))?.includes(QUEUED) === true, "the chat still shows the conversation");
   check((await blanks()).length === 0, `the chat never went blank through the restart: ${JSON.stringify(await blanks())}`);

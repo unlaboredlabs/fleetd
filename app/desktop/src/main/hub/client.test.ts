@@ -74,7 +74,7 @@ describe("HubClient", () => {
     hub.open();
     expect(hub.sent).toEqual([{ t: "auth", key: "k1" }]);
     hub.frame({ t: "ready", protocol: 1 });
-    expect(hub.sent.at(-1)).toEqual({ t: "snapshot" });
+    expect(hub.sent.slice(1)).toEqual([{ t: "snapshot" }, { t: "live", board: true }]);
     hub.frame({ t: "snapshot", cursor: 41, machines: [] });
     expect(hub.sent.at(-1)).toEqual({ t: "events", cursor: 41 });
     hub.frame({ t: "event", seq: 42, type: "task.started" });
@@ -161,7 +161,7 @@ describe("HubClient", () => {
     vi.advanceTimersByTime(1000);
     hub.open();
     hub.frame({ t: "ready", protocol: 1 });
-    expect(hub.sent).toEqual([{ t: "auth", key: "k1" }, { t: "snapshot" }]);
+    expect(hub.sent).toEqual([{ t: "auth", key: "k1" }, { t: "snapshot" }, { t: "live", board: true }]);
     expect(states()).toEqual(["connecting", "retrying", "connecting", "retrying", "connecting", "live"]);
   });
 
@@ -242,18 +242,17 @@ describe("HubClient", () => {
     expect(hub.urls).toHaveLength(1);
   });
 
-  it("keeps the live subscription across reconnects and re-sends it on focus", () => {
+  it("subscribes to live on every ready, keeps the focus across reconnects and re-sends it on window focus", () => {
     const { hub, client } = setup();
     client.start();
-    client.live({ board: true, focus: "ws-1" });
+    client.focus("ws-1");
     hub.ready();
     expect(hub.sent).toContainEqual({ t: "live", board: true, focus: "ws-1" });
     hub.sent = [];
     client.refreshLive();
     expect(hub.sent).toEqual([{ t: "live", board: true, focus: "ws-1" }]);
-    client.live(null);
-    expect(hub.sent.at(-1)).toEqual({ t: "live", board: false });
-    client.live({ board: true });
+    client.focus(null);
+    expect(hub.sent.at(-1)).toEqual({ t: "live", board: true });
     hub.close(1006);
     vi.advanceTimersByTime(500);
     hub.open();
@@ -275,7 +274,7 @@ describe("HubClient", () => {
     vi.advanceTimersByTime(500);
     hub.open();
     hub.frame({ t: "ready", protocol: 1 });
-    expect(hub.sent).toEqual([{ t: "auth", key: "k1" }, { t: "snapshot" }, { t: "chat", project }]);
+    expect(hub.sent).toEqual([{ t: "auth", key: "k1" }, { t: "snapshot" }, { t: "live", board: true }, { t: "chat", project }]);
     client.chat(null);
     expect(hub.sent.at(-1)).toEqual({ t: "chat" });
   });

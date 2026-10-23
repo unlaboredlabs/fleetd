@@ -128,7 +128,7 @@ describe("the layer and the cache", () => {
       call: (tool, input) => new Promise((resolve) => calls.push({ tool, input: input as Record<string, unknown>, answer: resolve })),
       subscribe: (l) => ((listener = l), () => undefined),
       resync: () => Promise.resolve(),
-      live: () => Promise.resolve(),
+      focus: () => Promise.resolve(),
       chat: () => Promise.resolve(),
       cache: {
         read: () => Promise.resolve(JSON.stringify(cache({ sends: { [KEY]: [send("c1", { t: "queued" })] } }))),
@@ -162,7 +162,7 @@ describe("the layer and the cache", () => {
       call: (tool, input) => new Promise((resolve) => calls.push({ tool, input: input as Record<string, unknown>, answer: resolve })),
       subscribe: (l) => ((listener = l), () => undefined),
       resync: () => Promise.resolve(),
-      live: () => Promise.resolve(),
+      focus: () => Promise.resolve(),
       chat: () => Promise.resolve(),
       cache: {
         read: () => Promise.resolve(JSON.stringify(cache({ sends: { [KEY]: [send("c1", { t: "queued" })] }, openRequests: [{ projectRef: ref, kind: "approval", state: "open" }] }))),
@@ -205,7 +205,7 @@ describe("the layer and the cache", () => {
 
   it("pairing another hub without Forget drops the old hub's held data too", () => {
     let listener: (frame: HubFrame) => void = () => undefined;
-    const fake: HubApi = { call: () => new Promise(() => undefined), subscribe: (l) => ((listener = l), () => undefined), resync: () => Promise.resolve(), live: () => Promise.resolve(), chat: () => Promise.resolve() };
+    const fake: HubApi = { call: () => new Promise(() => undefined), subscribe: (l) => ((listener = l), () => undefined), resync: () => Promise.resolve(), focus: () => Promise.resolve(), chat: () => Promise.resolve() };
     const second = createDataLayer(fake);
     second.start();
     listener({ t: "state", state: { phase: "retrying", hub: HUB, reason: "closed", retryAt: 1 } });
