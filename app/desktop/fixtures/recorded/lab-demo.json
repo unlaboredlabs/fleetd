@@ -7294,7 +7294,7 @@
       },
       "title": "storefront lead"
      },
-     "next": "Add to it with order_note; stop it with order_stop.",
+     "next": "Talk to its lead with chat_send; stop the project's work with project_stop.",
      "order": {
       "createdAt": "2026-10-19T09:01:47.567Z",
       "lanes": [
@@ -8335,7 +8335,7 @@
       }
      ],
      "scope": "default",
-     "sentWhen": "per steer (steer_send, order_note, task message), straight to the agent, at its next tool boundary or now",
+     "sentWhen": "per steer (steer_send, task message), straight to the agent, at its next tool boundary or now",
      "title": "A steer: the human's (or the lead's) words mid-run",
      "warnings": []
     }
@@ -8894,7 +8894,7 @@
        "id": "steer.message",
        "kind": "msg",
        "scope": "default",
-       "sentWhen": "per steer (steer_send, order_note, task message), straight to the agent, at its next tool boundary or now",
+       "sentWhen": "per steer (steer_send, task message), straight to the agent, at its next tool boundary or now",
        "stale": false,
        "title": "A steer: the human's (or the lead's) words mid-run"
       },
@@ -9002,7 +9002,7 @@
        "id": "steer.message",
        "kind": "msg",
        "scope": "default",
-       "sentWhen": "per steer (steer_send, order_note, task message), straight to the agent, at its next tool boundary or now",
+       "sentWhen": "per steer (steer_send, task message), straight to the agent, at its next tool boundary or now",
        "stale": false,
        "title": "A steer: the human's (or the lead's) words mid-run"
       },
@@ -9110,7 +9110,7 @@
        "id": "steer.message",
        "kind": "msg",
        "scope": "default",
-       "sentWhen": "per steer (steer_send, order_note, task message), straight to the agent, at its next tool boundary or now",
+       "sentWhen": "per steer (steer_send, task message), straight to the agent, at its next tool boundary or now",
        "stale": false,
        "title": "A steer: the human's (or the lead's) words mid-run"
       },
@@ -9213,7 +9213,7 @@
        "id": "steer.message",
        "kind": "msg",
        "scope": "default",
-       "sentWhen": "per steer (steer_send, order_note, task message), straight to the agent, at its next tool boundary or now",
+       "sentWhen": "per steer (steer_send, task message), straight to the agent, at its next tool boundary or now",
        "stale": false,
        "title": "A steer: the human's (or the lead's) words mid-run"
       },

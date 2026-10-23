@@ -6,7 +6,6 @@ use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_with::skip_serializing_none;
 
-use crate::ids::ProjectRef;
 use crate::ledger::{Brief, CheckType, PlaybookName};
 use crate::prim::{Int, Line, List, MAX_SAFE_INT, UniqueList};
 
@@ -90,17 +89,6 @@ impl JsonSchema for ResearchBrief {
     fn json_schema(generator: &mut SchemaGenerator) -> Schema {
         Brief::json_schema(generator)
     }
-}
-
-/// Where an intent went and why: the caller's project, `@<project>`, or the only project.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct IntakeEcho {
-    pub project_ref: ProjectRef,
-    /// The playbook the caller gave; absent means the project's lead decides how to run it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub template: Option<PlaybookName>,
-    pub reason: Line<1, 200>,
 }
 
 #[cfg(test)]

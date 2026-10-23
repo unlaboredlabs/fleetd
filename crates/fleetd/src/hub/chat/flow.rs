@@ -13,8 +13,8 @@ use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{ProjectRef, ThreadRef};
 use fleetd_contracts::ledger::{LeadState, WorkstreamState};
 use fleetd_contracts::mcp::{
-    ChatSendInput, ChatSendOutput, ChatStopInput, ChatStopOutput, ErrorCode, OrderStopInput,
-    ProjectStopInput, ProjectStopOutput,
+    ChatSendInput, ChatSendOutput, ChatStopInput, ChatStopOutput, ErrorCode, ProjectStopInput,
+    ProjectStopOutput,
 };
 use fleetd_contracts::model::ThreadStatus;
 use fleetd_contracts::prim::Count;
@@ -556,14 +556,11 @@ async fn stop_all(
             WorkstreamState::Stopped | WorkstreamState::Done | WorkstreamState::Failed
         )
     }) {
-        let one = OrderStopInput {
-            workstream_id: w.workstream_id.clone(),
-            reason: reason.clone(),
-        };
-        match crate::hub::orders::notes::stop(hub, caller, one).await {
-            Ok(out) => {
+        let why = reason.as_ref().map(|r| r.as_str());
+        match crate::hub::orders::notes::stop(hub, caller, w.workstream_id.as_str(), why).await {
+            Ok(n) => {
                 orders += 1;
-                cancelled += out.cancelled.get();
+                cancelled += n;
             }
             Err(e) => {
                 tracing::warn!(workstream = %w.workstream_id, error = %e.message, "stop: order not stopped")

@@ -134,9 +134,6 @@ as stopping a project, answering an approval or entering a secret, need one.
 `projectRef` is `{"machineId": "devbox", "projectId": "<id>"}`; `fleetd project list` prints both, as
 `<machineId>/<projectId>`.
 
-`intake_submit` and the `order_*` tools are gone; for one release they answer with an error that points to
-`chat_send`.
-
 `clientRequestId` is any unique string you choose per request. Sending the same one again returns the same message
 instead of a second one. `events_wait` waits for changes, so a client doesn't need to poll: a new message is a
 `chat.message` event.

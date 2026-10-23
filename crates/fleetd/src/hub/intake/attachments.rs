@@ -151,7 +151,7 @@ pub async fn put(
         attachment_id: AttachmentId::unchecked(format!("F{n}")),
         bytes: Count::unchecked(len as i64),
         sha256: Text::unchecked(sha),
-        next: Some("Pass attachmentId in intake_submit or order_note attachments.".into()),
+        next: Some("Pass attachmentId in chat_send or steer_send attachments.".into()),
         truncated: None,
     })
 }

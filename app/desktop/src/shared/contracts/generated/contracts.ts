@@ -1443,25 +1443,6 @@ export type InsightRule = KnownInsightRule | (string & {});
 
 export type IntakeChannel = "app" | "mcp" | "lead";
 
-/** Where an intent went and why: the caller's project, `@<project>`, or the only project. */
-export type IntakeEcho = {
-  projectRef: ProjectRef;
-  reason: string;
-  /** The playbook the caller gave; absent means the project's lead decides how to run it. */
-  template?: PlaybookName;
-};
-
-export type IntakePreviewInput = {
-  text: string;
-};
-
-export type IntakePreviewOutput = {
-  /** Absent: the text names no project and there is more than one (intake_submit would refuse it). */
-  echo?: IntakeEcho;
-  next?: string;
-  truncated?: boolean;
-};
-
 /**
  * Something an order or note points at: a file of the project, another order, or a PR. The hub renders these into
  * the lead's wake as a "References:" block.
@@ -1475,28 +1456,6 @@ export type IntakeRef = {
 } | {
   kind: "pr";
   url: GitHubPrUrl;
-};
-
-export type IntakeSubmitInput = {
-  /** From attachment_put; delivered to the project under `.fleetd/attachments/<W>/` when the order is placed. */
-  attachments?: AttachmentId[];
-  clientRequestId: string;
-  /** With projectId, or neither: then a leading `@<project>` picks the project, else the only one the caller may use. */
-  machineId?: MachineId;
-  projectId?: ProjectId;
-  refs?: IntakeRef[];
-  /** The playbook the order's workstream pins; none when absent. */
-  template?: PlaybookName;
-  text: string;
-};
-
-export type IntakeSubmitOutput = {
-  echo?: IntakeEcho;
-  /** Why no lead has the order yet, with the fix; absent when the project's lead has it or is starting. */
-  leadWaiting?: string;
-  next?: string;
-  truncated?: boolean;
-  workstreamId: WorkstreamId;
 };
 
 /** The observable stages an item passes on its way to verified, in order. Each is credited only once fleetd saw it. */
@@ -1844,26 +1803,6 @@ export type OrderGetOutput = {
   truncated?: boolean;
 };
 
-export type OrderNoteInput = {
-  attachments?: AttachmentId[];
-  clientRequestId: string;
-  refs?: IntakeRef[];
-  text: string;
-  urgent?: boolean;
-  workstreamId: WorkstreamId;
-};
-
-export type OrderNoteOutput = {
-  next?: string;
-  /** "N" plus a number. */
-  noteId: string;
-  /** The steer the note was sent as; its receipts arrive as `steer.*` events. */
-  steerId?: SteerId;
-  truncated?: boolean;
-  /** The lead's wake that will carry it: now for urgent notes, else after the wake debounce. */
-  wakesAt: Timestamp;
-};
-
 /** An order's phase: the first match in this order wins, and the board sorts by it. */
 export type OrderPhase =
   | "failed"
@@ -1877,19 +1816,6 @@ export type OrderPhase =
   | "queued"
   | "planning"
   | "idle";
-
-export type OrderStopInput = {
-  reason?: string;
-  workstreamId: WorkstreamId;
-};
-
-export type OrderStopOutput = {
-  /** Tasks this call cancelled (0 when it was already stopped). */
-  cancelled: number;
-  next?: string;
-  state: WorkstreamState;
-  truncated?: boolean;
-};
 
 export type OrdersBoardInput = {
   includeDoneSince?: Timestamp;
@@ -4183,13 +4109,9 @@ export interface ToolMap {
   events_wait: { input: EventsWaitInput; output: EventsWaitOutput };
   fleetd_status: { input: FleetdStatusInput; output: FleetdStatusOutput };
   hub_info: { input: HubInfoInput; output: HubInfoOutput };
-  intake_preview: { input: IntakePreviewInput; output: IntakePreviewOutput };
-  intake_submit: { input: IntakeSubmitInput; output: IntakeSubmitOutput };
   lead_restart: { input: LeadStartInput; output: LeadStartOutput };
   lead_start: { input: LeadStartInput; output: LeadStartOutput };
   order_get: { input: OrderGetInput; output: OrderGetOutput };
-  order_note: { input: OrderNoteInput; output: OrderNoteOutput };
-  order_stop: { input: OrderStopInput; output: OrderStopOutput };
   orders_board: { input: OrdersBoardInput; output: OrdersBoardOutput };
   plan_get: { input: PlanGetInput; output: PlanGetOutput };
   pr_diff: { input: PrDiffInput; output: PrDiffOutput };
