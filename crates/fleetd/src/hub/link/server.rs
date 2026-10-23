@@ -71,6 +71,8 @@ struct State {
     next_link_id: u64,
     /// The latest load each node reported with its heartbeat; dropped when the machine goes offline.
     loads: HashMap<MachineId, NodeLoad>,
+    /// Machines the guard pauses new agents on, with the line that says why; dropped when the machine goes offline.
+    paused: HashMap<MachineId, String>,
     /// What each live link's node said it understands in its hello.
     capabilities: HashMap<MachineId, Vec<String>>,
 }
@@ -79,6 +81,51 @@ impl NodeLinkServer {
     /// The load the machine's node last reported; None from older nodes, offline machines or a failed read.
     pub fn load(&self, machine_id: &MachineId) -> Option<NodeLoad> {
         self.state.lock().unwrap().loads.get(machine_id).cloned()
+    }
+
+    /// Why new agents wait on the machine, e.g. "Paused new agents: 14 GB free on builder-1"; None while they start.
+    pub fn paused(&self, machine_id: &MachineId) -> Option<String> {
+        self.state.lock().unwrap().paused.get(machine_id).cloned()
+    }
+
+    /// Keeps a heartbeat's load and runs the guard over it. `machine.guard` marks each pause and resume, which
+    /// starts waiting agents again and refreshes the project rows; the line's figure updates with every heartbeat.
+    pub fn observe_load(&self, machine_id: &MachineId, load: Option<NodeLoad>) {
+        let (was, why) = {
+            let mut state = self.state.lock().unwrap();
+            let was = state.paused.contains_key(machine_id);
+            let why = load.as_ref().and_then(|l| super::guard::why(l, was));
+            match load {
+                Some(load) => state.loads.insert(machine_id.clone(), load),
+                None => state.loads.remove(machine_id),
+            };
+            (was, why)
+        };
+        if why.is_none() && !was {
+            return;
+        }
+        let name = match self.deps.store.machine_get(machine_id) {
+            Ok(Some(m)) => m.name,
+            _ => machine_id.to_string(),
+        };
+        let text = why.map(|why| super::guard::paused_text(&why, &name));
+        {
+            let mut state = self.state.lock().unwrap();
+            match &text {
+                Some(text) => state.paused.insert(machine_id.clone(), text.clone()),
+                None => state.paused.remove(machine_id),
+            };
+        }
+        if was != text.is_some() {
+            let summary = text.unwrap_or_else(|| format!("New agents start again on {name}"));
+            self.append(event(
+                &self.now_iso(),
+                "machine.guard",
+                machine_id,
+                summary,
+                Some(json!({ "paused": !was })),
+            ));
+        }
     }
 
     /// Whether the machine's live node listed `capability` in its hello.
@@ -337,6 +384,7 @@ impl NodeLinkServer {
             state.announced.remove(machine_id);
             state.watchdogs.remove(machine_id);
             state.loads.remove(machine_id);
+            state.paused.remove(machine_id);
             state.links.remove(machine_id)
         };
         let at = self.now_iso();
@@ -698,12 +746,9 @@ impl NodeLinkServer {
                     self.deps
                         .time
                         .heartbeat(machine_id.as_str(), beat.at.as_str());
+                    self.observe_load(&machine_id, beat.load);
                     let status = {
-                        let mut state = self.state.lock().unwrap();
-                        match beat.load {
-                            Some(load) => state.loads.insert(machine_id.clone(), load),
-                            None => state.loads.remove(&machine_id),
-                        };
+                        let state = self.state.lock().unwrap();
                         match state.announced.get(&machine_id) {
                             Some(Announced::Degraded) => MachineStatus::Degraded,
                             _ => MachineStatus::Online,

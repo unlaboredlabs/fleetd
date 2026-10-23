@@ -695,6 +695,9 @@ impl Train {
         if let Some(sha) = &sha {
             data["mergedSha"] = json!(sha);
         }
+        if let Some(task_id) = &merged.task_id {
+            data["taskId"] = json!(task_id);
+        }
         let mut note = ci_note.map(|n| format!(" ({n})")).unwrap_or_default();
         if let Some(n) = ci_note {
             data["ci"] = json!(n);

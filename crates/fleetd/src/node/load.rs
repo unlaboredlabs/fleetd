@@ -1,7 +1,10 @@
-//! What the node reports about its machine with each heartbeat: CPUs, the 1-minute load, memory in use, and the
-//! claude.ai usage windows its sessions last saw. Absent when the figures cannot be read.
-use fleetd_contracts::node_link::{LoginLimit, NodeLoad};
-use fleetd_contracts::prim::{Int, List, NonNegative};
+//! What the node reports about its machine with each heartbeat: CPUs, the 1-minute load, memory in use, free disk
+//! where its worktrees live, and the claude.ai usage windows its sessions last saw. Absent when the figures cannot be
+//! read. The hub pauses new agents on a machine whose disk or load is past its limit.
+use std::path::Path;
+
+use fleetd_contracts::node_link::{LoginLimit, NodeDisk, NodeLoad};
+use fleetd_contracts::prim::{Count, Int, List, NonNegative};
 
 /// `/proc/loadavg`'s first field.
 pub fn parse_loadavg(text: &str) -> Option<f64> {
@@ -54,8 +57,35 @@ fn mem_used_pct() -> Option<i64> {
     }
 }
 
-/// Reads the machine now. Blocking (a file read, or `sysctl` on macOS): run it off the async threads.
-pub fn read(limits: Vec<LoginLimit>) -> Option<NodeLoad> {
+/// The default free-space floor: 10% of the volume or 20 GB, whichever is larger.
+pub fn min_free_bytes(total: u64, min_free_gb: Option<u64>) -> u64 {
+    min_free_gb.map_or((total / 10).max(20_000_000_000), |gb| {
+        gb.saturating_mul(1_000_000_000)
+    })
+}
+
+/// The volume holding `home` (the node home: worktrees and transcripts), with node.json's `minFreeGb`.
+// The statvfs field types differ by platform.
+#[allow(clippy::unnecessary_cast)]
+fn disk(home: &Path) -> Option<NodeDisk> {
+    let s = nix::sys::statvfs::statvfs(home).ok()?;
+    let block = s.fragment_size() as u64;
+    let total = (s.blocks() as u64).saturating_mul(block);
+    let free = (s.blocks_available() as u64).saturating_mul(block);
+    let min_free_gb = super::config::read_config(home)
+        .ok()
+        .flatten()
+        .and_then(|c| c.min_free_gb);
+    let count = |n: u64| Count::new(i64::try_from(n).ok()?).ok();
+    Some(NodeDisk {
+        free_bytes: count(free)?,
+        total_bytes: count(total)?,
+        min_free_bytes: count(min_free_bytes(total, min_free_gb))?,
+    })
+}
+
+/// Reads the machine now. Blocking (file reads, or `sysctl` on macOS): run it off the async threads.
+pub fn read(limits: Vec<LoginLimit>, home: &Path) -> Option<NodeLoad> {
     let cpus = std::thread::available_parallelism().ok()?.get() as i64;
     let load1 = NonNegative::new(load1()?).ok()?;
     Some(NodeLoad {
@@ -63,6 +93,7 @@ pub fn read(limits: Vec<LoginLimit>) -> Option<NodeLoad> {
         load1,
         mem_used_pct: mem_used_pct().and_then(|p| Int::new(p).ok()),
         limits: List::unchecked(limits.into_iter().take(4).collect()),
+        disk: disk(home),
     })
 }
 
@@ -78,5 +109,13 @@ mod tests {
         assert_eq!(parse_meminfo(meminfo), Some(41));
         assert_eq!(parse_meminfo("MemTotal: 0 kB\nMemAvailable: 0 kB\n"), None);
         assert_eq!(parse_sysctl_loadavg("{ 1.23 1.10 0.98 }\n"), Some(1.23));
+    }
+
+    #[test]
+    fn the_disk_floor_is_a_tenth_or_20_gb_unless_node_json_sets_it() {
+        assert_eq!(min_free_bytes(1_800_000_000_000, None), 180_000_000_000);
+        assert_eq!(min_free_bytes(100_000_000_000, None), 20_000_000_000);
+        assert_eq!(min_free_bytes(1_800_000_000_000, Some(5)), 5_000_000_000);
+        assert_eq!(min_free_bytes(1_800_000_000_000, Some(0)), 0);
     }
 }

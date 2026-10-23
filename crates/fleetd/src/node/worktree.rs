@@ -94,10 +94,36 @@ pub fn ensure(root: &Path, path: &Path, branch: &str, base_ref: &str) -> Result<
     Ok(())
 }
 
-/// Removes the worktree (uncommitted work included) and deletes its branch only when `base_ref` already contains
-/// it, so unmerged work stays reachable. Returns whether the branch was deleted.
+/// Removes the worktree, build output included, and deletes its branch only when `base_ref` already contains it, so
+/// unmerged work stays reachable. Refuses, keeping it, while it holds work that exists nowhere else: uncommitted
+/// changes (gitignored files don't count) or commits on neither a remote branch nor `base_ref`. Returns whether the
+/// branch was deleted.
 pub fn remove(root: &Path, path: &Path, branch: &str, base_ref: &str) -> Result<bool, GitError> {
     if worktree_branch(root, path)?.is_some() {
+        if !git(path, &["status", "--porcelain"])?.trim().is_empty() {
+            return Err(GitError(format!(
+                "kept {}: it has uncommitted changes",
+                path.display()
+            )));
+        }
+        let unpushed = git(
+            path,
+            &[
+                "rev-list",
+                "--count",
+                "HEAD",
+                "--not",
+                "--remotes",
+                base_ref,
+            ],
+        )?;
+        if unpushed.trim() != "0" {
+            return Err(GitError(format!(
+                "kept {}: {} commit(s) not pushed",
+                path.display(),
+                unpushed.trim()
+            )));
+        }
         git(
             root,
             &["worktree", "remove", "--force", &path.to_string_lossy()],
@@ -212,7 +238,8 @@ pub(crate) mod tests {
         std::fs::write(path.join("b.txt"), "b\n").unwrap();
         run(&path, &["add", "."]);
         run(&path, &["commit", "-q", "-m", "b"]);
-        // Removed with unmerged work: the branch stays, and a resume checks it out again at the same path.
+        pushed(&path, "fleetd/s1");
+        // Removed with pushed, unmerged work: the branch stays, and a resume checks it out again at the same path.
         assert!(!remove(&root, &path, "fleetd/s1", "main").unwrap());
         assert!(!path.exists());
         ensure(&root, &path, "fleetd/s1", "main").unwrap();
@@ -222,6 +249,56 @@ pub(crate) mod tests {
         let squatter = dir.path().join("wt/p1/s2");
         std::fs::create_dir_all(&squatter).unwrap();
         assert!(ensure(&root, &squatter, "fleetd/s2", "main").is_err());
+    }
+
+    /// What a push leaves behind: the remote-tracking ref.
+    fn pushed(path: &Path, branch: &str) {
+        run(
+            path,
+            &[
+                "update-ref",
+                &format!("refs/remotes/origin/{branch}"),
+                "HEAD",
+            ],
+        );
+    }
+
+    #[test]
+    fn remove_keeps_a_worktree_with_uncommitted_or_unpushed_work() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = repo(dir.path());
+        let path = dir.path().join("wt/p1/s1");
+        ensure(&root, &path, "fleetd/s1", "main").unwrap();
+        std::fs::write(root.join(".gitignore"), "target/\n").unwrap();
+        std::fs::write(path.join(".gitignore"), "target/\n").unwrap();
+        run(&path, &["add", "."]);
+        run(&path, &["commit", "-q", "-m", "ignore"]);
+        pushed(&path, "fleetd/s1");
+
+        std::fs::write(path.join("draft.txt"), "d\n").unwrap();
+        assert!(remove(&root, &path, "fleetd/s1", "main").is_err());
+        assert!(
+            path.join("draft.txt").exists(),
+            "an untracked file keeps it"
+        );
+
+        run(&path, &["add", "."]);
+        run(&path, &["commit", "-q", "-m", "draft"]);
+        assert!(remove(&root, &path, "fleetd/s1", "main").is_err());
+        assert!(
+            path.join("draft.txt").exists(),
+            "an unpushed commit keeps it"
+        );
+
+        pushed(&path, "fleetd/s1");
+        std::fs::create_dir_all(path.join("target/debug")).unwrap();
+        std::fs::write(path.join("target/debug/build-output"), "x").unwrap();
+        assert!(!remove(&root, &path, "fleetd/s1", "main").unwrap());
+        assert!(
+            !path.exists(),
+            "pushed work goes, gitignored build output with it"
+        );
+        assert!(branch_exists(&root, "fleetd/s1"));
     }
 
     #[test]
@@ -235,6 +312,7 @@ pub(crate) mod tests {
         run(&path, &["commit", "-q", "-m", "b"]);
         run(&root, &["merge", "-q", "--ff-only", "fleetd/s1"]);
         assert!(remove(&root, &path, "fleetd/s1", "main").unwrap());
+        assert!(!path.exists());
         assert!(!branch_exists(&root, "fleetd/s1"));
     }
 

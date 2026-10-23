@@ -7,6 +7,7 @@ use crate::clock::Clock;
 use crate::hub::usage::ports::{BoxFut, EventLog, NewEvent};
 use crate::hub::usage::service::UsageStatus;
 use crate::hub::usage::time::{clip, iso, system_ms};
+use fleetd_contracts::node_link::NodeDisk;
 use fleetd_contracts::sessions::RunnerInfo;
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -63,6 +64,11 @@ pub trait DoctorFleet: Send + Sync {
     fn runner_info(&self, machine_id: &str) -> BoxFut<'_, Option<RunnerInfo>>;
     /// The machine's projects whose checkout its node refuses to run commands in: `(path, why)`.
     fn refused_projects(&self, machine_id: &str) -> BoxFut<'_, Vec<(String, String)>>;
+    /// Free space where the machine's worktrees live, as its node's heartbeat last reported it, and why the guard
+    /// holds new agents there, if it does.
+    fn guard(&self, _machine_id: &str) -> (Option<NodeDisk>, Option<String>) {
+        (None, None)
+    }
     /// Each of the machine's projects whose policy reads: its title, area names, and whether they were inferred.
     fn project_areas(&self, _machine_id: &str) -> BoxFut<'_, Vec<ProjectAreas>> {
         Box::pin(async { Vec::new() })
@@ -275,9 +281,12 @@ impl Doctor {
             probe.as_ref().map_err(String::as_str),
             &config,
         ));
+        let (disk, paused) = fleet.guard(id);
         out.push(checks::disk_space(
             id,
-            probe.as_ref().map_err(String::as_str),
+            !online,
+            disk.as_ref(),
+            paused.as_deref(),
         ));
         out.push(checks::idle_sleep(
             id,

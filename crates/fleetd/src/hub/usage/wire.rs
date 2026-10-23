@@ -180,6 +180,19 @@ impl DoctorFleet for OpsPorts {
             }
         })
     }
+    fn guard(
+        &self,
+        machine_id: &str,
+    ) -> (
+        Option<fleetd_contracts::node_link::NodeDisk>,
+        Option<String>,
+    ) {
+        let Some(m) = machine(machine_id) else {
+            return (None, None);
+        };
+        let link = &self.hub().link;
+        (link.load(&m).and_then(|l| l.disk), link.paused(&m))
+    }
     fn project_areas(
         &self,
         machine_id: &str,

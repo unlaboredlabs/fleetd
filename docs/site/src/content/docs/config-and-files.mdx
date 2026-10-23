@@ -54,6 +54,7 @@ after you change it.
 | `enrolled` | `true` once the hub accepted the node's key. |
 | `cmdRoots` | Folders the node may run commands in, and below. Absent: your home directory. A project's checkout must be inside one: `fleetd project add` refuses one outside, and `fleetd doctor` flags an existing one. |
 | `claudeConfigDir` | A dedicated claude profile for this machine's sessions. See [below](#claude-profile). |
+| `minFreeGb` | New agents wait while the disk holding the worktrees has less than this many GB free. Absent: 10% of the disk or 20 GB, whichever is larger. `0` turns it off. Read with every heartbeat, no restart needed. See [Disk and load](/docs/machines#guard). |
 
 ## The Claude login {#claude}
 

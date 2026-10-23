@@ -1315,6 +1315,7 @@ export type KnownHubEventType =
   | "claim.passed"
   | "steer.withdrawn"
   | "machine.slept"
+  | "machine.guard"
   | "project.removed"
   | "project.added"
   | "project.clone_progress"
@@ -1807,6 +1808,12 @@ export type Machine = {
   tags: string[];
 };
 
+/** `machine.guard`. */
+export type MachineGuardData = {
+  /** true: new agents wait; false: they start again. */
+  paused: boolean;
+};
+
 /** Machine slug, [a-z0-9-]{1,32} */
 export type MachineId = string;
 
@@ -1920,10 +1927,24 @@ export type NextRow = {
   workstreamId?: WorkstreamId;
 };
 
+/** Space on the volume holding a node's worktrees and build cache. */
+export type NodeDisk = {
+  /** Free for the node's user. */
+  freeBytes: number;
+  /**
+   * Below this the hub starts no new agents there: node.json's `minFreeGb`, else 10% of the volume or 20 GB,
+   * whichever is larger.
+   */
+  minFreeBytes: number;
+  totalBytes: number;
+};
+
 /** What a machine reports about itself with each heartbeat. */
 export type NodeLoad = {
   /** Logical CPUs. */
   cpus: number;
+  /** The volume holding the node's worktrees and build cache; absent from older nodes and when it can't be read. */
+  disk?: NodeDisk;
   /**
    * The latest claude.ai subscription limit of each type claude reported. Empty behind API keys and gateways,
    * which send none.
@@ -4251,6 +4272,8 @@ export type TrainEventData = {
   prUrl?: string;
   reason?: string;
   repo?: GitHubRepo;
+  /** pr.merged: the writer task whose PR it was, when a task wrote it. */
+  taskId?: TaskId;
   workstreamId?: WorkstreamId;
 };
 
@@ -4713,6 +4736,7 @@ export interface HubEventDataMap {
   "claim.failed": ClaimEventData;
   "claim.passed": ClaimEventData;
   "github.drift": GithubDriftData;
+  "machine.guard": MachineGuardData;
   "machine.slept": MachineSleptData;
   "plan.changed": PlanChangedData;
   "plan.verified": PlanVerifiedData;

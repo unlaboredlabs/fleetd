@@ -551,7 +551,8 @@ pub enum ProjectRowState {
     Working,
     /// The lead is waiting for your reply.
     WaitingOnYou,
-    /// Something outside the work stops it: its machine is offline or at its usage limit, or main CI is red.
+    /// Something outside the work stops it: its machine is offline, at its usage limit or short of disk or CPU for new
+    /// agents, or main CI is red.
     Blocked,
     /// Nothing running and nothing waiting.
     Idle,

@@ -16,7 +16,10 @@ use fleetd_contracts::steer::{DeliveredHow, SteerId, SteerReceipt, SteerStage, S
 use tokio::sync::mpsc;
 
 use super::fake::FakeRunner;
-use super::{Attached, CONTINUE_PROMPT, SessionConfig, SessionService, mcp_config, parse_env_file};
+use super::{
+    Attached, CONTINUE_PROMPT, SessionConfig, SessionService, compile_cache_env, mcp_config,
+    parse_env_file,
+};
 use crate::node::runner::SessionCommand;
 use crate::node::runner::claude::ALWAYS_DISALLOWED;
 use crate::node::store::NodeStore;
@@ -165,6 +168,27 @@ fn claude_env_lines_parse_like_a_shell_would_read_them() {
             ),
             ("ANTHROPIC_AUTH_TOKEN".to_owned(), "a=b".to_owned()),
         ]
+    );
+}
+
+#[test]
+fn sessions_share_one_compile_cache_when_sccache_is_installed() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = |p: &std::path::Path| ("PATH".to_owned(), p.to_string_lossy().into_owned());
+    assert!(compile_cache_env(&[path(dir.path())]).is_empty());
+    std::fs::write(dir.path().join("sccache"), "").unwrap();
+    let env = compile_cache_env(&[path(dir.path())]);
+    assert_eq!(
+        env[0],
+        (
+            "RUSTC_WRAPPER".to_owned(),
+            dir.path().join("sccache").to_string_lossy().into_owned()
+        )
+    );
+    let own = ("RUSTC_WRAPPER".to_owned(), "/opt/wrap".to_owned());
+    assert!(
+        compile_cache_env(&[path(dir.path()), own]).is_empty(),
+        "a wrapper from claude.env wins"
     );
 }
 
@@ -862,6 +886,12 @@ async fn a_removed_worktree_comes_back_at_the_same_path_when_the_session_resumes
         .await;
     assert!(matches!(changes, SessionOutput::Changes(c) if c.paths == ["draft.txt", "work.txt"]));
 
+    // Removal waits until nothing exists only here: no draft, and the work pushed.
+    std::fs::remove_file(path.join("draft.txt")).unwrap();
+    git(
+        &path,
+        &["update-ref", "refs/remotes/origin/fleetd/s1", "HEAD"],
+    );
     hub.ok(SessionCall::Stop {
         session_id: ThreadId::unchecked("s1"),
         remove_worktree: true,
