@@ -180,7 +180,7 @@ pub const ENTRIES: &[Entry] = &[
         Lead,
         Lead,
         "Task profiles",
-        "after lead.start while the project allows medium (project_set)",
+        "after the lead prompt, while the project allows medium (project_set)",
         "",
         &[
             (

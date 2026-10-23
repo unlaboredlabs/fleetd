@@ -83,7 +83,7 @@
    "kind": "start",
    "group": "lead",
    "title": "Task profiles",
-   "sentWhen": "after lead.start while the project allows medium (project_set)",
+   "sentWhen": "after the lead prompt, while the project allows medium (project_set)",
    "placeholders": [],
    "rules": [
     {
