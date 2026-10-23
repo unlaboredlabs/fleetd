@@ -32,6 +32,6 @@ export const middleEllipsis = (s: string, max: number): string => {
   return `${chars.slice(0, head).join("")}…${chars.slice(chars.length - (keep - head)).join("")}`;
 };
 
-/** "claude-haiku-5-5" → "haiku"; anything unfamiliar is shown whole. */
+/** "claude-opus-5-5" → "opus"; anything unfamiliar is shown whole. */
 export const shortModel = (model: string): string =>
   ["haiku", "sonnet", "opus", "fable"].find((f) => model.split(/[-_.]/u).includes(f)) ?? model;
