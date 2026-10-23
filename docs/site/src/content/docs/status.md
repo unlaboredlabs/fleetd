@@ -133,8 +133,6 @@ that includes the fix. If it doesn't move, see [Work is stuck](/docs/troubleshoo
 An item that has spent over 1.5 times the usual time in its current stage is marked `SLOWER THAN USUAL` and listed
 under risks. "Usual" is measured from this project's own history.
 
-`--json` also shows how much of the slot cap was held over the last hour (`health.slots.utilization`), as measured.
-
 ## Since you last looked {#since}
 
 Counts what happened in this scope since you last looked: merged PRs, verified items, started work, failures and

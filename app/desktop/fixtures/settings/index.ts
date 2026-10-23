@@ -66,9 +66,9 @@ function agents(from: Fixture): Fixture {
   const ref = (p: JsonObject): JsonObject => ({ machineId: asText(p["machineId"]), projectId: asText(p["projectId"]) });
   const rows: JsonObject[] = [];
   const [first, second] = projects;
-  if (first) rows.push({ projectRef: ref(first), maxAgents: 12, running: 6, queued: 0, used: 7 });
-  if (second) rows.push({ projectRef: ref(second), maxAgents: 3, running: 3, queued: 2, used: 3 });
-  const slots: JsonObject = { cap: 16, used: 9, queued: 2, reservedBand: 2, perProject: rows };
+  if (first) rows.push({ projectRef: ref(first), maxAgents: 12, running: 6, queued: 0 });
+  if (second) rows.push({ projectRef: ref(second), maxAgents: 3, running: 3, queued: 2 });
+  const slots: JsonObject = { cap: 16, used: 9, queued: 2, perProject: rows };
   if (f.snapshot) f.snapshot["slots"] = clone(slots);
   for (const frame of f.live) if (frame["slots"] !== undefined) frame["slots"] = clone(slots);
   // A change answers with the slot state it asked for, as the hub does: every max each project can take (and the
@@ -78,7 +78,7 @@ function agents(from: Fixture): Fixture {
     const row = rows.find((r) => r["projectRef"] && asText((r["projectRef"] as JsonObject)["projectId"]) === projectRef["projectId"]);
     const running = typeof row?.["running"] === "number" ? row["running"] : 0;
     for (let n = 1; n <= 16; n++) {
-      const own = { projectRef: clone(projectRef), maxAgents: n, running, queued: row?.["queued"] ?? 0, used: row?.["used"] ?? 0 };
+      const own = { projectRef: clone(projectRef), maxAgents: n, running, queued: row?.["queued"] ?? 0 };
       const perProject = [...rows.filter((r) => r !== row).map(clone), own];
       const out = { slots: { ...clone(slots), perProject } };
       f.answer("cap_set", { project: { projectRef: clone(projectRef), maxAgents: n } }, out);

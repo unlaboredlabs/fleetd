@@ -185,7 +185,7 @@ async fn max_agents_stays_within_the_fleet_cap() {
     let fleet = &cap_events(&hub)[0];
     assert_eq!(
         fleet.0,
-        "Fleet cap 40 → 60: queued turns start as slots allow."
+        "Fleet cap 40 → 60: queued agents start as slots allow."
     );
     assert!(fleet.1.project_ref.is_none());
 }
@@ -207,11 +207,11 @@ async fn every_digest_says_how_many_agents_run_of_the_max_and_wait() {
         .unwrap()
         .unwrap();
     queued.state = TaskState::Queued;
-    queued.queued_reason = Some(super::queued_reason("agents: 2/2 running"));
+    queued.queued_reason = Some(super::queued_reason("Max agents: 2 of 2 running"));
     assert_eq!(
         hub.tasks.queued_next(&queued).as_deref(),
         Some(
-            "queued: 2/2 running, starts when a slot frees, position 1. fleetd starts it by itself; don't spawn it again."
+            "queued: Max agents: 2 of 2 running, starts when a slot frees, position 1. fleetd starts it by itself; don't spawn it again."
         )
     );
 }

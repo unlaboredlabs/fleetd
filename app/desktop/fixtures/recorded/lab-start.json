@@ -41,7 +41,6 @@
      "cap": 40,
      "perProject": [],
      "queued": 0,
-     "reservedBand": 4,
      "used": 0
     }
    }
@@ -72,7 +71,6 @@
      "cap": 40,
      "perProject": [],
      "queued": 0,
-     "reservedBand": 4,
      "used": 0
     },
     "text": []

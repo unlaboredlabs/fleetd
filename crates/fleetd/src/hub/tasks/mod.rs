@@ -1335,17 +1335,14 @@ impl Tasks {
         }
     }
 
-    /// A task waiting for a slot, as its spawn answers: "queued: 12/12 running, starts when a slot frees, position 3".
+    /// A task waiting for a slot, as its spawn answers: "queued: Max agents: 12 of 12 running, starts when a slot
+    /// frees, position 3".
     pub fn queued_next(&self, task: &Task) -> Option<String> {
         if task.state != TaskState::Queued {
             return None;
         }
         let position = self.d.slots.position(task.task_id.as_str())?;
-        let reason = task.queued_reason.as_ref()?.as_str();
-        let why = reason
-            .strip_prefix("agents: ")
-            .or_else(|| reason.strip_prefix("slots: "))
-            .unwrap_or(reason);
+        let why = task.queued_reason.as_ref()?.as_str();
         Some(format!(
             "queued: {why}, starts when a slot frees, position {position}. fleetd starts it by itself; don't spawn it again."
         ))
@@ -1453,7 +1450,6 @@ mod tests {
 
     use super::*;
     use crate::hub::policy::PolicySource;
-    use crate::hub::slots::SlotsOptions;
     use crate::hub::store::test_clock::ManualClock;
     use crate::hub::tasks::ports::{BoxFut, CmdOutput, ThreadChanges};
 
@@ -1546,9 +1542,6 @@ mod tests {
             true
         }
         fn wake(&self, _: &ProjectRef, _: WakeKind, _: String) {}
-        fn lead_of(&self, _: &MachineId, _: &ThreadId) -> Option<ProjectRef> {
-            None
-        }
         fn done_when_text(&self, _: &Brief) -> String {
             String::new()
         }
@@ -1580,14 +1573,7 @@ mod tests {
             .unwrap();
         let node = Arc::new(Node::default());
         let ports: Arc<dyn TaskPorts> = node.clone();
-        let slots = Slots::new(
-            db.clone(),
-            &store,
-            &events,
-            Arc::new(|_, _| None),
-            SlotsOptions::default(),
-        )
-        .unwrap();
+        let slots = Slots::new(db.clone(), &store, &events).unwrap();
         let policies = Policies::new(Arc::new(NoPolicy), clock.clone());
         let tasks = Tasks::new(TaskDeps {
             db,

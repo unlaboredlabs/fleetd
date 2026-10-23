@@ -51,7 +51,7 @@ describe("a machine's line", () => {
   it("formats durations, ages and slots", () => {
     expect([durationText(46_000), durationText(646_000), durationText(7_500_000)]).toEqual(["46s", "10m46s", "2h05m"]);
     expect([agoText(10_000), agoText(3 * 3600_000), agoText(86_400_000)]).toEqual(["just now", "3 h ago", "1 day ago"]);
-    expect(slotsText({ cap: 40, used: 8, queued: 1, reservedBand: 2, perProject: [] })).toBe("agents 8 / 40 · 1 queued");
-    expect(slotsText({ cap: 40, used: 8, queued: 0, reservedBand: 2, perProject: [] })).toBe("agents 8 / 40");
+    expect(slotsText({ cap: 40, used: 8, queued: 1, perProject: [] })).toBe("agents 8 / 40 · 1 queued");
+    expect(slotsText({ cap: 40, used: 8, queued: 0, perProject: [] })).toBe("agents 8 / 40");
   });
 });

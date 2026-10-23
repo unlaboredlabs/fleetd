@@ -284,14 +284,7 @@ pub fn build_on(
     let hub_task_ports =
         crate::hub::tasks::wire::HubTaskPorts::new(executors.clone(), node_commands.clone());
     let task_ports: Arc<dyn crate::hub::tasks::ports::TaskPorts> = hub_task_ports.clone();
-    let lead_ports = task_ports.clone();
-    let slots = crate::hub::slots::Slots::new(
-        db.clone(),
-        &store,
-        &events,
-        Arc::new(move |m, t| lead_ports.lead_of(m, t)),
-        crate::hub::slots::SlotsOptions::default(),
-    )?;
+    let slots = crate::hub::slots::Slots::new(db.clone(), &store, &events)?;
     let source = crate::hub::policy::NodePolicySource {
         executors: executors.clone(),
     };

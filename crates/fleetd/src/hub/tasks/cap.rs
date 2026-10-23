@@ -115,9 +115,9 @@ impl Tasks {
         if cap != cap_before {
             let after = slots.state();
             let line = if cap > cap_before {
-                format!("Fleet cap {cap_before} → {cap}: queued turns start as slots allow.")
+                format!("Fleet cap {cap_before} → {cap}: queued agents start as slots allow.")
             } else {
-                format!("Fleet cap {cap_before} → {cap}: running turns finish; new ones wait.")
+                format!("Fleet cap {cap_before} → {cap}: running agents finish; new ones wait.")
             };
             self.cap_event(
                 None,

@@ -1,8 +1,7 @@
-//! The slot board: a fleet cap on running turns, each project's max agents, and a FIFO queue within priority.
-//! A slot is held while a lead's or task's thread is running, read from the executor's thread events, and
-//! from a grant until that thread first runs. Threads that belong to no lead or task are not counted.
-pub mod board;
-pub mod usage;
+//! The slot board: one queue under two caps, the fleet's and each project's max agents; reviews go first, then
+//! the oldest. A slot is held while a task's thread is running, read from the executor's thread events, and from a
+//! grant until that thread first runs. A lead is not an agent and holds none.
+mod board;
 
 use std::sync::{Arc, Mutex};
 
@@ -13,9 +12,8 @@ use fleetd_contracts::prim::{Int, List};
 use fleetd_contracts::tasks::{SlotState, SlotStatePerProject, TaskKind};
 use rusqlite::{OptionalExtension, params};
 
-pub use board::{
-    Board, BoardState, Claim, ClaimState, Grant, Op, SlotPriority, blocker, reserved_band,
-};
+use board::{Board, BoardState, Claim, ClaimState, Op};
+pub use board::{Grant, SlotPriority};
 
 use crate::hub::api::Shutdown;
 use crate::hub::store::{EventLog, HubDb, HubStore, StoreError, WaitInput};
@@ -39,24 +37,10 @@ pub fn priority_of(kind: TaskKind) -> SlotPriority {
     }
 }
 
-/// The slot holder for a project's lead turns. Tasks hold under their TaskId.
-pub fn lead_holder(r: &ProjectRef) -> String {
-    format!("lead:{}/{}", r.machine_id.as_str(), r.project_id.as_str())
-}
-
-/// The project whose lead currently runs in thread (`machine_id`, `thread_id`), from the leads area's records.
-pub type LeadOf = Arc<dyn Fn(&MachineId, &ThreadId) -> Option<ProjectRef> + Send + Sync>;
-
-/// Called after a slot frees (a release, or a lead's or task's thread stopping) or the cap or a share changes,
+/// Called after a slot frees (a release, or a task's thread stopping) or a cap changes,
 /// once the queue has been re-evaluated. Called outside the board's lock, but it must not block: the tasks area
 /// spawns its queue retry from it.
 pub type ReleaseListener = Arc<dyn Fn() + Send + Sync>;
-
-#[derive(Clone, Debug, Default)]
-pub struct SlotsOptions {
-    /// The cap until `cap_set` stores one.
-    pub default_cap: Option<i64>,
-}
 
 #[derive(Clone, Debug, Default)]
 pub struct CapInput {
@@ -75,7 +59,7 @@ pub struct Agents {
 }
 
 pub struct SlotRequest<'a> {
-    /// A TaskId, or `lead_holder(project_ref)`.
+    /// The TaskId.
     pub holder: &'a str,
     pub project_ref: &'a ProjectRef,
     pub priority: SlotPriority,
@@ -85,10 +69,8 @@ pub struct Slots {
     db: Arc<HubDb>,
     board: Mutex<Board>,
     listeners: Mutex<Vec<ReleaseListener>>,
-    lead_of: LeadOf,
     /// The event log's head when the board was loaded; `run` follows from here.
     cursor: i64,
-    usage: Mutex<usage::Usage>,
 }
 
 fn project_ref(m: String, p: String) -> ProjectRef {
@@ -173,7 +155,6 @@ fn slot_state(s: BoardState) -> SlotState {
         cap: count(s.cap),
         used: count(s.used),
         queued: count(s.queued),
-        reserved_band: count(s.reserved_band),
         per_project: List::unchecked(
             s.per_project
                 .into_iter()
@@ -182,7 +163,6 @@ fn slot_state(s: BoardState) -> SlotState {
                     max_agents: count(row.max_agents),
                     running: count(row.running),
                     queued: count(row.queued),
-                    used: count(row.used),
                 })
                 .collect(),
         ),
@@ -190,17 +170,15 @@ fn slot_state(s: BoardState) -> SlotState {
 }
 
 impl Slots {
-    /// Loads the board, rebuilds held claims from each bound thread's stored status and counts running lead
-    /// threads; `run` then follows thread events from the log's head as of now. The queue is re-evaluated when the
-    /// first listener registers, so it hears about slots that came free while the hub was down.
+    /// Loads the board and rebuilds held claims from each bound thread's stored status; `run` then follows thread
+    /// events from the log's head as of now. The queue is re-evaluated when the first listener registers, so it
+    /// hears about slots that came free while the hub was down.
     pub fn new(
         db: Arc<HubDb>,
         store: &HubStore,
         events: &EventLog,
-        lead_of: LeadOf,
-        options: SlotsOptions,
     ) -> Result<Arc<Self>, StoreError> {
-        let mut board = load(&db, options.default_cap.unwrap_or(DEFAULT_CAP))?;
+        let mut board = load(&db, DEFAULT_CAP)?;
         let head = events.head();
         let bound: Vec<(String, ThreadRef)> = board
             .claims()
@@ -225,29 +203,15 @@ impl Slots {
             board.restore(&holder, running);
         }
         persist(&db, board.take_ops())?;
-        let at = board.state();
-        let usage = usage::Usage::new(crate::hub::time::wall_ms(), at.used, at.cap);
-        let slots = Arc::new(Self {
+        Ok(Arc::new(Self {
             db,
             board: Mutex::new(board),
             listeners: Mutex::new(Vec::new()),
-            lead_of,
             cursor: head,
-            usage: Mutex::new(usage),
-        });
-        for t in store.threads_running()? {
-            if slots
-                .board()
-                .find_by_thread(t.machine_id.as_str(), t.thread_id.as_str())
-                .is_none()
-            {
-                slots.observe(&t.machine_id, &t.thread_id, true)?;
-            }
-        }
-        Ok(slots)
+        }))
     }
 
-    /// Follows thread events until the hub stops: a lead's or task's thread running holds its slot, stopping frees it.
+    /// Follows thread events until the hub stops: a task's thread running holds its slot, stopping frees it.
     pub async fn run(self: Arc<Self>, events: Arc<EventLog>, shutdown: Shutdown) {
         let types: Vec<HubEventType> = RUNNING.iter().chain(STOPPED.iter()).copied().collect();
         let mut cursor = self.cursor;
@@ -295,25 +259,12 @@ impl Slots {
                 board.evaluate();
             }
             persist(&self.db, board.take_ops())?;
-            self.track(&board.state());
             (result, freed)
         };
         if freed {
             self.notify();
         }
         Ok(result)
-    }
-
-    fn track(&self, s: &BoardState) {
-        self.usage
-            .lock()
-            .unwrap()
-            .set(crate::hub::time::wall_ms(), s.used, s.cap);
-    }
-
-    /// How much of the cap the board held over the last hour.
-    pub fn utilization(&self) -> usage::Utilization {
-        self.usage.lock().unwrap().read(crate::hub::time::wall_ms())
     }
 
     fn notify(&self) {
@@ -330,24 +281,10 @@ impl Slots {
         thread_id: &ThreadId,
         running: bool,
     ) -> Result<(), StoreError> {
-        let unclaimed = self
-            .board()
-            .find_by_thread(machine_id.as_str(), thread_id.as_str())
-            .is_none();
-        let lead = if unclaimed && running {
-            (self.lead_of)(machine_id, thread_id)
-        } else {
-            None
-        };
-        self.locked(|b| {
-            (
-                (),
-                b.observe(machine_id.as_str(), thread_id, running, lead.as_ref()),
-            )
-        })
+        self.locked(|b| ((), b.observe(machine_id.as_str(), thread_id, running)))
     }
 
-    /// Takes a slot now, or queues the request (FIFO within priority) and says why. Asking again for a holder that
+    /// Takes a slot now, or queues the request (reviews first, then the oldest) and says why. Asking again for a holder that
     /// already has a slot returns granted; for one already queued, its current reason.
     pub fn acquire(&self, request: SlotRequest<'_>) -> Result<Grant, StoreError> {
         self.locked(|b| {
@@ -376,7 +313,6 @@ impl Slots {
             let mut board = self.board();
             board.evaluate();
             persist(&self.db, board.take_ops())?;
-            self.track(&board.state());
         }
         listener();
         Ok(())
@@ -435,20 +371,42 @@ mod tests {
     use super::*;
     use crate::hub::store::test_clock::ManualClock;
 
+    /// A hub from when leads held slots: their claims go, a task's stays.
+    #[test]
+    fn stored_lead_claims_go_on_an_older_hub() {
+        use crate::hub::store::migrations::MIGRATIONS;
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        // Found by content, not as the last migration, so later migrations don't break this test.
+        let at = MIGRATIONS
+            .iter()
+            .position(|m| m.contains("DELETE FROM slot_claims WHERE priority = 'lead'"))
+            .unwrap();
+        for m in &MIGRATIONS[..at] {
+            conn.execute_batch(m).unwrap();
+        }
+        conn.execute_batch(
+            "INSERT INTO slot_claims VALUES ('lead:lab-a/p1', 'lab-a', 'p1', 'lead', 'l1', 'held', 1),
+               ('T1', 'lab-a', 'p1', 'work', 't1', 'held', 2);",
+        )
+        .unwrap();
+        conn.execute_batch(MIGRATIONS[at]).unwrap();
+        let holders: Vec<String> = conn
+            .prepare("SELECT holder FROM slot_claims")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(holders, ["T1"]);
+    }
+
     /// Spawns racing from many lead calls at once take the board's lock one at a time: never past max agents.
     #[test]
     fn concurrent_spawns_never_overshoot_max_agents() {
         let db = HubDb::open_memory().unwrap();
         let store = HubStore::new(db.clone());
         let events = EventLog::new(db.clone(), ManualClock::at(1_792_000_000_000)).unwrap();
-        let slots = Slots::new(
-            db,
-            &store,
-            &events,
-            Arc::new(|_, _| None),
-            SlotsOptions::default(),
-        )
-        .unwrap();
+        let slots = Slots::new(db, &store, &events).unwrap();
         let r = ProjectRef {
             machine_id: MachineId::unchecked("lab-a"),
             project_id: ProjectId::unchecked("p1"),

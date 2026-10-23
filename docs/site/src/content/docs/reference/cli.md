@@ -162,7 +162,7 @@ fleetd project set <machine>/<project> --max-agents <n> [--pause-extras] [--home
 fleetd project set --fleet-cap <n> [--home <dir>] [--hub <url>]
 ```
 
-the most agents the project runs at once (its lead not counted), or the fleet's cap on running turns (admin key); more wait queued and start as slots free. Lowering stops nothing; `--pause-extras` has the newest agents above the new max push their work and wait
+the most agents the project runs at once (its lead not counted), or the fleet's cap on running agents (admin key); more wait queued and start as slots free. Lowering stops nothing; `--pause-extras` has the newest agents above the new max push their work and wait
 
 ### fleetd project set {#project-set-medium}
 

@@ -137,26 +137,22 @@ pub struct Task {
 #[serde(rename_all = "camelCase")]
 pub struct SlotStatePerProject {
     pub project_ref: ProjectRef,
-    /// The most of the project's agents (its tasks: writers, readers, reviewers) that run at once; its lead's own
-    /// turns don't count. The fleet `cap` until set.
+    /// The most of the project's agents (its tasks: writers, readers, reviewers) that run at once; its lead is not
+    /// one. The fleet `cap` until set.
     pub max_agents: Count,
     /// Its agents running now. Above `maxAgents` right after the cap was lowered: nothing is stopped for it.
     pub running: Count,
     /// Its agents waiting for a slot, paused ones included.
     pub queued: Count,
-    /// Every slot it holds, its lead's turns included.
-    pub used: Count,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SlotState {
-    /// Global cap on running turns.
+    /// The fleet cap: agents running at once across every project.
     pub cap: Count,
     pub used: Count,
     pub queued: Count,
-    /// Slots of the cap only lead turns may take.
-    pub reserved_band: Count,
     pub per_project: List<SlotStatePerProject, 0, 50>,
 }
 

@@ -454,7 +454,6 @@ pub struct HealthUsage {
 }
 
 /// "8 running · slots 8/40 · 1 queued". Hub-local, never stale.
-#[skip_serializing_none]
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct HealthSlots {
@@ -462,21 +461,6 @@ pub struct HealthSlots {
     pub used: Count,
     pub cap: Count,
     pub queued: Count,
-    /// How much of the cap was held recently.
-    pub utilization: Option<SlotUtilization>,
-}
-
-/// Slot use the board measured over the last hour (or since the hub started, when that is later): held slot time,
-/// never a projection. Serial waits behind free slots are `time_insights` findings.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct SlotUtilization {
-    /// The window measured, at most an hour.
-    pub window_ms: Count,
-    /// floor(100 · slot time held / slot time the cap offered) over the window.
-    pub pct: Int<0, 100>,
-    /// The most slots held at once in the window.
-    pub peak: Count,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]

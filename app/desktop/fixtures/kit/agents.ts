@@ -72,13 +72,13 @@ export const syncAgents = (f: Fixture): void => {
     // A recording's max (the lab runs 40) reads as no setting at all: only a fixture about the slot state keeps its own.
     const kept = f.agentsFromSlots && typeof row?.["maxAgents"] === "number" && row["maxAgents"] >= running ? row["maxAgents"] : plausibleMax(running);
     const waiting = f.agentsFromSlots && typeof row?.["queued"] === "number" ? row["queued"] : queued;
-    return { projectRef: ref, maxAgents: kept, running, queued: waiting, used: running };
+    return { projectRef: ref, maxAgents: kept, running, queued: waiting };
   });
   const used = perProject.reduce((n, r) => n + (r["running"] as number), 0);
   const queued = perProject.reduce((n, r) => n + (r["queued"] as number), 0);
   const largest = Math.max(0, ...perProject.map((r) => r["maxAgents"] as number));
   const cap = f.agentsFromSlots && typeof set["cap"] === "number" ? set["cap"] : Math.max(12, largest, Math.ceil(used / 6) * 6);
-  const slots: JsonObject = { cap, used, queued, reservedBand: typeof set["reservedBand"] === "number" ? set["reservedBand"] : 0, perProject };
+  const slots: JsonObject = { cap, used, queued, perProject };
   f.snapshot["slots"] = slots;
   for (const frame of f.live) if (frame["slots"] !== undefined || frame["full"] === true) frame["slots"] = structuredClone(slots);
 

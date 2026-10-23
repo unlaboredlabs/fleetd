@@ -8,10 +8,9 @@ const slots: SlotState = {
   cap: 12,
   used: 8,
   queued: 1,
-  reservedBand: 2,
   perProject: [
-    { projectRef: storefront, maxAgents: 6, running: 6, queued: 2, used: 7 },
-    { projectRef: billing, maxAgents: 12, running: 2, queued: 0, used: 3 },
+    { projectRef: storefront, maxAgents: 6, running: 6, queued: 2 },
+    { projectRef: billing, maxAgents: 12, running: 2, queued: 0 },
   ],
 };
 
