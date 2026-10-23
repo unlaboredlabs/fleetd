@@ -29,9 +29,7 @@ export type Row =
    * What the lead is doing while its turn runs (under the newest item), and once it is over how long it worked
    * (under the reply it ended with).
    */
-  | { readonly kind: "activity"; readonly key: "activity" }
-  /** Paged above the newest messages: more below, and the way back to the latest. */
-  | { readonly kind: "bottom"; readonly key: "bottom"; readonly state: "more" | "loading" };
+  | { readonly kind: "activity"; readonly key: "activity" };
 
 export type TopState = "more" | "loading" | "start" | "held" | "reread";
 
@@ -87,8 +85,6 @@ export interface RowsInput {
   readonly items: readonly ChatItem[];
   readonly hasOlder: boolean;
   readonly loadingOlder: boolean;
-  readonly hasNewer?: boolean;
-  readonly loadingNewer?: boolean;
   /** The chat is held from before this connection (ChatView.held). */
   readonly held?: boolean;
   /** No fresh connection (ChatView.offline). */
@@ -113,18 +109,16 @@ const isHistory = (item: ChatItem): boolean => item.message?.history !== undefin
 
 /**
  * The steers to show with these items: the ones within the loaded pages (none above a page with older ones before
- * it, nor below one with newer after), apart from those the chat already holds as history from before it existed.
+ * it), apart from those the chat already holds as history from before it existed.
  */
 const steersShown = (i: RowsInput): readonly Steer[] => {
   const steers = i.steers ?? [];
   if (steers.length === 0) return steers;
   const from = i.hasOlder && i.items[0] !== undefined ? msOf(i.items[0].at, i.nowMs) : -Infinity;
-  const last = i.items.at(-1);
-  const to = i.hasNewer === true && last !== undefined ? msOf(last.at, i.nowMs) : Infinity;
   const copied = new Set(i.items.filter((item) => item.message?.history === "steer").map((item) => `${String(msOf(item.at, i.nowMs))} ${item.text}`));
   return steers.filter((st) => {
     const at = msOf(st.queuedAt, i.nowMs);
-    return at >= from && at <= to && !copied.has(`${String(at)} ${st.text.trim()}`);
+    return at >= from && !copied.has(`${String(at)} ${st.text.trim()}`);
   });
 };
 
@@ -147,15 +141,13 @@ export function chatRows(i: RowsInput): Row[] {
     else if (kind !== "event") break;
   }
   let inHistory = false;
-  // Not on a window paged above the latest (the turn happens below it), nor under a reply still streaming, which
-  // says "Still writing" itself.
-  const activity = i.activity === true && i.hasNewer !== true && i.items.at(-1)?.state !== "streaming";
+  // Not under a reply still streaming, which says "Still writing" itself.
+  const activity = i.activity === true && i.items.at(-1)?.state !== "streaming";
   const reply = i.items.findLastIndex((item) => item.author === "lead" && item.kind === "message");
   const replyAt = i.items[reply];
   const worked =
     i.activity !== true &&
     i.workedSince !== undefined &&
-    i.hasNewer !== true &&
     replyAt !== undefined &&
     replyAt.state !== "streaming" &&
     Date.parse(replyAt.at) >= i.workedSince;
@@ -207,21 +199,19 @@ export function chatRows(i: RowsInput): Row[] {
   steersUntil(Infinity);
   if (activity && (i.items.length === 0 || steersAfter > 0)) out.push({ kind: "activity", key: "activity" });
   if (i.strip && leadLast === -1) out.push({ kind: "strip", key: "strip" });
-  if (i.hasNewer === true) out.push({ kind: "bottom", key: "bottom", state: i.loadingNewer === true ? "loading" : "more" });
   return out;
 }
 
 const ENDED = new Set<Workstream["state"]>(["done", "stopped", "failed"]);
 
 /**
- * The project's orders that can hold a steer within the loaded pages (`from`..`to`, open-ended without older or
- * newer pages): every open one (the board's), and each listed one that began before `to` and was open after `from`.
+ * The project's orders that can hold a steer from `from` on (all of them without older pages): every open one
+ * (the board's), and each listed one that was open after `from`.
  * Sorted, so the reads keep their order.
  */
-export function ordersInView(open: readonly string[], listed: readonly Workstream[] | undefined, from: string | undefined, to: string | undefined): readonly string[] {
+export function ordersInView(open: readonly string[], listed: readonly Workstream[] | undefined, from: string | undefined): readonly string[] {
   const ids = new Set(open);
   for (const w of listed ?? []) {
-    if (to !== undefined && Date.parse(w.createdAt) > Date.parse(to)) continue;
     if (from !== undefined && ENDED.has(w.state) && Date.parse(w.updatedAt) < Date.parse(from)) continue;
     ids.add(w.workstreamId);
   }

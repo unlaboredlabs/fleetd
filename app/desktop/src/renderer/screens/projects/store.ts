@@ -64,9 +64,7 @@ const dispatch = (msg: AddMsg) => {
 const run = (c: Call) => {
   const data = layer;
   if (data === undefined) return;
-  const options = { timeoutMs: CALL_MS };
-  const answer = c.tool === "project_add" ? data.call("project_add", c.input, options) : data.call("events_wait", c.input, options);
-  void answer.then((outcome) => dispatch({ t: "answer", call: c, outcome }));
+  void data.call("project_add", c.input, { timeoutMs: CALL_MS }).then((outcome) => dispatch({ t: "answer", call: c, outcome }));
 };
 
 /** The sheet is hidden while an add ends: say so in a toast that brings it back. */
@@ -79,7 +77,7 @@ const announce = () => {
   }
 };
 
-const view = (d: DataState): HubView => ({ live: d.hub.phase === "live", fresh: d.fresh, cursor: d.cursor, events: d.events });
+const view = (d: DataState): HubView => ({ live: d.hub.phase === "live", fresh: d.fresh, projects: d.projects, events: d.events });
 
 /** Starts feeding the add flow from the layer's store; once per layer. */
 const connect = (next: DataLayer): void => {

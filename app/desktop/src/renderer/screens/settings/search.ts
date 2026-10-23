@@ -33,7 +33,6 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "general.appearance", label: "Appearance", tab: "general", keywords: ["theme", "dark", "light", "mode", "match system"] },
   { key: "general.motion", label: "Motion", tab: "general", keywords: ["animation", "reduce motion"] },
   { key: "general.hub", label: "Hub", tab: "general", keywords: ["pair", "connection", "disconnect", "key", "server"] },
-  { key: "general.links", label: "Pairing links", tab: "general", keywords: ["fleetd://", "link handler", "open links"] },
   { key: "general.retention", label: "Time data", tab: "general", keywords: ["retention", "keep", "storage", "disk", "spans"] },
   { key: "general.memory", label: "Claude auto memory", tab: "general", keywords: ["memory", "notes"] },
   page("notifications", ["alerts", "mute"]),

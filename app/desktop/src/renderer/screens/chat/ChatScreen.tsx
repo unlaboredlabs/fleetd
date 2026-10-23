@@ -56,8 +56,6 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
             items: view.items,
             hasOlder: view.hasOlder,
             loadingOlder: view.loadingOlder,
-            hasNewer: view.hasNewer,
-            loadingNewer: view.loadingNewer,
             held: view.held,
             offline: view.offline,
             strip,
@@ -80,12 +78,9 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   const recall = useMemo(() => items?.findLast((i) => i.author === "human" && i.text.trim() !== "")?.text, [items]);
   const target = shown?.id ?? message;
   const openAt = target === undefined || rows === undefined ? undefined : rowIndexOf(rows, target);
-  const empty = view !== undefined && view.items.length === 0 && !view.hasOlder && !view.hasNewer && steers.length === 0;
+  const empty = view !== undefined && view.items.length === 0 && !view.hasOlder && steers.length === 0;
   const state = data.state;
   const title = data.title ?? "";
-  const { loadOlder, loadNewer, jumpToLatest } = data;
-  const onLoadOlder = useCallback(() => loadOlder(), [loadOlder]);
-  const onLoadNewer = useCallback(() => loadNewer(), [loadNewer]);
   const onSent = useCallback(() => {
     // Back to following the newest message.
     setShown(undefined);
@@ -156,9 +151,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
         <ChatList
           rows={rows}
           project={project}
-          onLoadOlder={onLoadOlder}
-          onLoadNewer={onLoadNewer}
-          onJumpToLatest={jumpToLatest}
+          onLoadOlder={data.loadOlder}
           onTold={onTold}
           onWithdraw={steerSends.withdraw}
           openAt={openAt}

@@ -155,7 +155,7 @@ describe("a link whose code failed", () => {
     const no = { packaged: true, handler: false };
     expect(reduce(linked, { type: "linkChecked", before: no, after: yes }).linkNote).toContain("another app had them");
     expect(reduce(linked, { type: "linkChecked", before: yes, after: yes }).linkNote).toBeNull();
-    expect(reduce(linked, { type: "linkChecked", before: no, after: no }).linkNote).toContain("Settings → General");
+    expect(reduce(linked, { type: "linkChecked", before: no, after: no }).linkNote).toContain("fleetd pair");
     const dev = { packaged: false, handler: false };
     expect(reduce(linked, { type: "linkChecked", before: dev, after: dev }).linkNote).toContain("Type the code");
   });

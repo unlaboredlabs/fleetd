@@ -52,7 +52,6 @@ const pages: Command[] = [
       ["Appearance", "Light, dark or match system", "general", ["theme", "dark mode", "light mode"]],
       ["Motion", "Keep motion or reduce it", "general", ["animation", "reduce motion"]],
       ["Hub", "The connection, and this app's key", "general", ["connection", "disconnect", "key"]],
-      ["Pairing links", "Open fleetd:// links in this app", "general", ["links", "default app"]],
       ["Time data", "How long the time inspector keeps history", "general", ["retention", "history", "days"]],
       ["Claude auto memory", "Off for every agent unless a project turns it on", "general", ["memory"]],
       ["Notify me when", "Which kinds of notification show", "notifications", ["notifications", "alerts", "mute"]],
