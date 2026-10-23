@@ -1,12 +1,31 @@
-// Launches the built app (`pnpm build:test`) for a measurement: its own temporary state,
-// a scrubbed environment, its stderr as lines, and stop/RSS by the PID it spawned.
+// Launches the built app (`pnpm build:test`) for a measurement: on the chat-long fixture (`pnpm fixtures`), with its
+// own temporary state, a scrubbed environment, its stderr as lines, and stop/RSS by the PID it spawned.
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import type { Page } from "@playwright/test";
 import { account, parsePs, parseTopMem, tree } from "./memory.ts";
-import { desktopDir } from "./targets.ts";
+
+const desktopDir = path.resolve(import.meta.dirname, "..");
+
+/** The fixture every launch stands on: 520+ messages in the first project's chat, paged 50 at a time. */
+const FIXTURE = "chat-long";
+/** That project's chat, as qa/registry.ts opens it. */
+const CHAT = "#/project/devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22";
+
+/** Opens the fixture's chat on `page`, the app window, and returns its conversation log and its composer's input. */
+export const openChat = async (page: Page) => {
+  await page.evaluate((hash) => {
+    window.location.hash = hash;
+  }, CHAT);
+  const log = page.getByLabel("Conversation with the lead");
+  const composer = page.getByLabel("Message the lead");
+  await log.waitFor({ state: "visible", timeout: 30_000 });
+  await composer.waitFor({ state: "visible", timeout: 30_000 });
+  return { log, composer };
+};
 
 /** The Electron binary; requiring the package downloads it on first use (pnpm runs no postinstall). */
 const electronBinary = (): string => createRequire(import.meta.url)("electron") as string;
@@ -35,6 +54,8 @@ export const launch = (options: LaunchOptions = {}): Launched => {
   const env: Record<string, string> = {
     FLEETD_HOME: path.join(dir, "fleetd"),
     FLEETD_PERF: "1",
+    FLEETD_FIXTURE: FIXTURE,
+    FLEETD_FIXTURE_DIR: path.join(desktopDir, "fixtures"),
     LANG: "en_US.UTF-8",
     ...options.env,
   };
@@ -43,8 +64,6 @@ export const launch = (options: LaunchOptions = {}): Launched => {
     const value = process.env[key];
     if (value !== undefined && env[key] === undefined) env[key] = value;
   }
-  const fixture = process.env["FLEETD_PERF_FIXTURE"];
-  if (fixture !== undefined && fixture !== "") Object.assign(env, { FLEETD_FIXTURE: fixture, FLEETD_FIXTURE_DIR: path.join(desktopDir, "fixtures") });
   const args = [`--user-data-dir=${path.join(dir, "chromium")}`];
   if (options.debug === true) args.push("--remote-debugging-port=0");
   if (process.platform === "linux") {

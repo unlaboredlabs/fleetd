@@ -35,7 +35,6 @@ areas:
     - "app/desktop/src/*"
     - "app/desktop/src/renderer/*"
     - "app/desktop/src/renderer/demo/**"
-    - "app/desktop/src/renderer/perf/**"
     - "app/desktop/src/renderer/src/**"
   site: ["site/**", "docs/**", "crates/docsgen/**"]
   ci: [".github/**"]
