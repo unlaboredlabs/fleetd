@@ -203,10 +203,7 @@ pub fn live_lane(lane_id: &str, status: LaneStatus, parts: Option<&LiveParts>) -
 
 fn reason_of(task: &Task, status: LaneStatus) -> Option<String> {
     match status {
-        LaneStatus::Queued => task
-            .queued_reason
-            .as_ref()
-            .map(|r| r.as_str().to_owned()),
+        LaneStatus::Queued => task.queued_reason.as_ref().map(|r| r.as_str().to_owned()),
         LaneStatus::Parked => Some(
             match task.parked.as_ref().and_then(|p| p.resume_at.as_ref()) {
                 Some(at) => format!("usage limit: resumes {}", hhmm(at.as_str())),

@@ -1450,7 +1450,6 @@ mod tests {
 
     use super::*;
     use crate::hub::policy::PolicySource;
-    use crate::hub::slots::SlotsOptions;
     use crate::hub::store::test_clock::ManualClock;
     use crate::hub::tasks::ports::{BoxFut, CmdOutput, ThreadChanges};
 
@@ -1543,9 +1542,6 @@ mod tests {
             true
         }
         fn wake(&self, _: &ProjectRef, _: WakeKind, _: String) {}
-        fn lead_of(&self, _: &MachineId, _: &ThreadId) -> Option<ProjectRef> {
-            None
-        }
         fn done_when_text(&self, _: &Brief) -> String {
             String::new()
         }
@@ -1577,14 +1573,7 @@ mod tests {
             .unwrap();
         let node = Arc::new(Node::default());
         let ports: Arc<dyn TaskPorts> = node.clone();
-        let slots = Slots::new(
-            db.clone(),
-            &store,
-            &events,
-            Arc::new(|_, _| None),
-            SlotsOptions::default(),
-        )
-        .unwrap();
+        let slots = Slots::new(db.clone(), &store, &events).unwrap();
         let policies = Policies::new(Arc::new(NoPolicy), clock.clone());
         let tasks = Tasks::new(TaskDeps {
             db,
