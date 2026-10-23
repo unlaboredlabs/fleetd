@@ -1,10 +1,13 @@
 // One agent's live work, read-only: what it is on, what it is doing now, and its newest steps (what it wrote, what it
-// ran and edited), with the message it is writing streaming in at the end. Under it, a box steers it directly.
-import { useMemo } from "react";
+// ran and edited), with the message it is writing streaming in at the end. Under it, a box steers it directly. Its
+// head opens what it was told at its start: its first message and the prompts it pinned.
+import { useMemo, useState } from "react";
 import type { WorkStep } from "../../../shared/contracts";
 import { useAgentWork, useData } from "../../src/data/react";
 import { selectLiveAgent, selectLiveAgents } from "../../src/data/selectors";
-import { Button, cx, EmptyState, Markdown, PROFILE_LINE, RoleTag, Text, Truncate, VirtualList } from "../../ui";
+import { Button, cx, EmptyState, Markdown, PROFILE_LINE, ROLE_WORD, RoleTag, Text, Truncate, VirtualList } from "../../ui";
+import { roleWords } from "../chat/told";
+import { ToldPanel } from "../chat/ToldPanel";
 import { ActivityLine, MiddleCut } from "../live/parts";
 import { SteerBox } from "../live/Steer";
 import { describe, isRunning } from "../live/words";
@@ -19,7 +22,9 @@ type FeedItem = WorkStep | { readonly kind: "writing"; readonly id: string; read
 export function AgentWork({ id }: { id: string }) {
   const agent = useData(selectLiveAgent(id));
   const listed = useData((st) => selectLiveAgents(st) !== undefined);
+  const fresh = useData((st) => st.fresh);
   const work = useAgentWork(agent);
+  const [told, setTold] = useState(false);
   const row = agent?.row;
   // The message being written shows only while the agent writes; once it ends, its thread's event reads it in.
   const writing = row?.live?.activity?.activity.kind === "writing" ? work.streaming : undefined;
@@ -28,7 +33,16 @@ export function AgentWork({ id }: { id: string }) {
     return writing === undefined || writing.text === "" ? work.steps : [...work.steps, { kind: "writing", id: `w:${writing.messageId}`, text: writing.text }];
   }, [work.steps, writing]);
 
-  if (!listed) return <div className={s.workBody} aria-busy="true" />;
+  if (!listed) {
+    // Nothing held and no hub to ask: a blank pane would read as loading that never ends.
+    return fresh ? (
+      <div className={s.workBody} aria-busy="true" />
+    ) : (
+      <div className={cx(s.workBody, s.note)} data-screen="agents.work.offline">
+        <Text tone="quiet">This agent shows once you’re connected.</Text>
+      </div>
+    );
+  }
   if (agent === undefined || row === undefined) {
     return (
       <div className={s.workBody} data-screen="agents.work">
@@ -37,6 +51,7 @@ export function AgentWork({ id }: { id: string }) {
     );
   }
   const pr = row.pr;
+  const thread = row.threadRef;
 
   return (
     <section className={s.workBody} aria-label={`What ${row.title} is doing`} data-screen="agents.work">
@@ -56,6 +71,11 @@ export function AgentWork({ id }: { id: string }) {
               {`PR #${String(pr.number)}`}
             </Button>
           ) : null}
+          {thread !== undefined ? (
+            <Button variant="quiet" size="sm" onClick={() => setTold(true)}>
+              What it was told
+            </Button>
+          ) : null}
           <Elapsed startedAt={row.startedAt} running={isRunning(row.status)} />
         </span>
         <ActivityLine line={describe(row)} />
@@ -71,6 +91,10 @@ export function AgentWork({ id }: { id: string }) {
               Couldn’t read its work. The agent keeps going; this reads again at its next step.
             </Text>
           </p>
+        ) : feed === undefined && !fresh ? (
+          <Text size="sm" tone="quiet">
+            Its work shows once you’re connected.
+          </Text>
         ) : feed === undefined ? (
           <div aria-busy="true" aria-label="Loading its work" />
         ) : feed.length === 0 ? (
@@ -82,6 +106,11 @@ export function AgentWork({ id }: { id: string }) {
         )}
       </div>
       {row.taskId !== undefined && row.workstreamId !== undefined && work.hasThread ? <SteerBox key={row.taskId} workstreamId={row.workstreamId} taskId={row.taskId} /> : null}
+      <ToldPanel
+        open={told && thread !== undefined ? { thread, name: roleWords(row.role), who: { project: row.projectTitle, role: ROLE_WORD[row.role] } } : undefined}
+        projectRef={row.projectRef}
+        onClose={() => setTold(false)}
+      />
     </section>
   );
 }

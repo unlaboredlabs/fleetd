@@ -23,9 +23,9 @@ The lead reads your message at its [next step](#next-step). Nothing it is doing 
 the same message starts its next turn instead.
 
 To stop the running step and deliver at once, press ⌘Enter (Ctrl+Enter on Linux and Windows) instead. The box shows
-"⌘↩ stops its step and sends now" while that works: the lead is at work on a task you gave it. Otherwise ⌘Enter sends
-as Enter does. The steer stays in the chat at the time you sent it, with its [receipt](#receipts) under your words.
-So does a steer you send the lead from a terminal.
+"⌘↩ stops its step and sends now" whenever the lead works. When it's idle, ⌘Enter sends as Enter does. Either way your
+words are a chat message like any other; one sent with ⌘Enter says under it that the lead stopped its step to read it.
+From a terminal, `fleetd chat <project> "…" --now` does the same.
 
 ### What "next step" means {#next-step}
 
@@ -39,8 +39,9 @@ do next.
 
 ## Receipts {#receipts}
 
-Each steer gets a receipt. In the app it shows beside your words; from a terminal it carries the steer's id, such as
-`S12`:
+Each steer to an agent (and each `fleetd steer` to an order's lead) gets a receipt. In the app it shows under the
+agent's box; from a terminal it carries the steer's id, such as `S12`. A message to the lead in its chat has its
+own line instead (see [Chat](/docs/chat#steer)).
 
 | Receipt | Means |
 |---|---|
@@ -99,7 +100,8 @@ That also counts as acknowledging the steer.
    (umask 077; fleetd hub key create --human --name terminal > ~/.fleetd/human.key)
    ```
 
-2. Steer the lead working on `W41`, or one agent (`T88`):
+2. Steer one agent (`T88`), or the lead working on `W41`. To reach the lead in its chat, use
+   `fleetd chat <project> "…" --now` instead: that is the same message ⌘Enter sends.
 
    ```sh
    fleetd steer W41 "skip the docs page; ship the API first" --key-file ~/.fleetd/human.key
@@ -125,4 +127,5 @@ A lead steers its own agents the same way through its own task message call, and
 
 From an MCP client: `steer_send {target: {workstreamId} | {taskId}, text, mode: "queue" | "now", clientRequestId}`
 (operate, human key), `steer_withdraw {steerId}`; `order_get {workstreamId}` lists the order's newest steers. `clientRequestId` is any
-unique string; sending the same one again doesn't send the steer twice.
+unique string; sending the same one again doesn't send the steer twice. To the lead in its chat, ⌘Enter is
+`chat_send {projectRef, text, now: true, clientRequestId}` (human key).

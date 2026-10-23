@@ -73,6 +73,17 @@ describe("receipts", () => {
     expect(receiptFor(m({ delivery: "queued" }), true)?.line).toMatch(/when it’s free/);
   });
 
+  it("say where one was written when it isn't this app", () => {
+    expect(receiptFor(m({ client: "cli" }), false)).toEqual({ kind: "quiet", line: "from cli" });
+    expect(receiptFor(m({ client: "cli", delivery: "turn" }), true)).toEqual({ kind: "quiet", line: "delivered · from cli" });
+    expect(receiptFor(m({ client: "app" }), false)).toBeUndefined();
+  });
+
+  it("keep saying, quietly, that a ⌘Enter message stopped the lead's step", () => {
+    expect(receiptFor(m({ delivery: "now" }), false)).toEqual({ kind: "quiet", line: "delivered; the lead stopped its step to read this" });
+    expect(receiptFor(m({ delivery: "now" }), true)).toEqual(receiptFor(m({ delivery: "now" }), false));
+  });
+
   it("say when the lead can't take it yet, and why", () => {
     expect(receiptFor(m({ leadWaiting: "devbox is offline; start it" }), true)).toMatchObject({ kind: "warn", line: expect.stringContaining("devbox is offline") as unknown });
   });

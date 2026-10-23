@@ -32,7 +32,6 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   page("general", ["preferences"]),
   { key: "general.appearance", label: "Appearance", tab: "general", keywords: ["theme", "dark", "light", "mode", "match system"] },
   { key: "general.hub", label: "Hub", tab: "general", keywords: ["pair", "connection", "disconnect", "key", "server"] },
-  { key: "general.links", label: "Pairing links", tab: "general", keywords: ["fleetd://", "link handler", "open links"] },
   page("notifications", ["alerts", "mute"]),
   { key: "notifications.kinds", label: "Notify me when", tab: "notifications", keywords: ["notifications", "alerts", "mute", "finished", "done"] },
   { key: "notifications.sound", label: "Sound", tab: "notifications", keywords: ["notifications", "mute", "silent"] },

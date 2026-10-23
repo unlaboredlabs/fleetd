@@ -190,7 +190,7 @@ attempt, a lead at its next start. To give a running lead your edit now, start a
 
 ## See exactly what an agent was told {#told}
 
-In a project's chat, open "What the lead was told", or open an agent from the agents strip. It shows the exact first
+Open an agent in the Agents tab beside a project's chat (⌥⌘B), then **What it was told**. It shows the exact first
 message, which version of each prompt it used, and the tools it never gets.
 
 On the hub machine:

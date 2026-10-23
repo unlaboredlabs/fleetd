@@ -15,7 +15,10 @@
 import type { HubError } from "../../../shared/hub";
 import type { AttachmentRef, ChatDelta, ChatHistoryOutput, ChatMessage, KnownChatAuthor } from "./chat-contract";
 
-/** How many messages a chat keeps in memory; older ones are paged back in from history. */
+/**
+ * How many messages a chat keeps as live ones arrive; older ones are paged back in from history. Paging back only
+ * adds: the newest messages are never evicted, so there is one direction to page and live messages always land.
+ */
 export const CHAT_KEEP = 2000;
 export const CHAT_PAGE = 50;
 
@@ -34,13 +37,7 @@ export interface Chat {
   readonly leadWaiting: Readonly<Record<string, string>>;
   readonly hasOlder: boolean;
   readonly loadingOlder: boolean;
-  /**
-   * Paging back past CHAT_KEEP evicted the newest messages: the window is above the latest, live messages aren't
-   * added to it, and loadNewer pages back down.
-   */
-  readonly hasNewer: boolean;
-  readonly loadingNewer: boolean;
-  /** Live messages that arrived while the window was above the latest: folded in when it gets back there. */
+  /** A cached chat's live messages, kept aside for the latest page that starts it over (mergeLive). */
   readonly held: readonly ChatMessage[];
   /** The latest page landed this generation. */
   readonly loaded: boolean;
@@ -59,8 +56,6 @@ export const emptyChat: Chat = {
   leadWaiting: {},
   hasOlder: false,
   loadingOlder: false,
-  hasNewer: false,
-  loadingNewer: false,
   held: [],
   loaded: false,
   missing: [],
@@ -72,7 +67,7 @@ export const emptyChat: Chat = {
  */
 export const heldChat = (chat: Chat): Chat | undefined =>
   chat.loaded || chat.cached === true
-    ? { ...chat, loaded: false, cached: true, loadingOlder: false, loadingNewer: false, error: undefined, gap: false, missing: [] }
+    ? { ...chat, loaded: false, cached: true, loadingOlder: false, error: undefined, gap: false, missing: [] }
     : undefined;
 
 const streaming = (m: ChatMessage): boolean => m.state === "streaming";
@@ -90,10 +85,10 @@ const without = <T>(map: Readonly<Record<string, T>>, key: string): Readonly<Rec
   key in map ? Object.fromEntries(Object.entries(map).filter(([k]) => k !== key)) : map;
 
 /**
- * Messages folded into a chat. A final message ends its stream. The chat keeps CHAT_KEEP messages, evicting from the
- * end away from where it is paging: the oldest normally, the newest while paging back.
+ * Messages folded into a chat. A final message ends its stream. Past CHAT_KEEP (or what paging back has grown it to)
+ * the oldest go; an older page is kept whole.
  */
-export const mergeMessages = (chat: Chat, incoming: readonly ChatMessage[], evict: "oldest" | "newest" = "oldest"): Chat => {
+export const mergeMessages = (chat: Chat, incoming: readonly ChatMessage[], older = false): Chat => {
   if (incoming.length === 0) return chat;
   const byId = new Map(chat.messages.map((m) => [m.messageId, m]));
   let streams = chat.streams;
@@ -108,32 +103,27 @@ export const mergeMessages = (chat: Chat, incoming: readonly ChatMessage[], evic
     }
   }
   const sorted = [...byId.values()].sort((a, b) => a.seq - b.seq);
-  const trimmed = sorted.length > CHAT_KEEP;
+  const keep = older ? Infinity : Math.max(CHAT_KEEP, chat.messages.length);
+  const trimmed = sorted.length > keep;
   const got = new Set(incoming.map((m) => m.seq));
   return {
     ...chat,
     missing: chat.missing.some((seq) => got.has(seq)) ? chat.missing.filter((seq) => !got.has(seq)) : chat.missing,
-    messages: !trimmed ? sorted : evict === "oldest" ? sorted.slice(sorted.length - CHAT_KEEP) : sorted.slice(0, CHAT_KEEP),
+    messages: trimmed ? sorted.slice(sorted.length - keep) : sorted,
     streams,
-    hasOlder: chat.hasOlder || (trimmed && evict === "oldest"),
-    hasNewer: chat.hasNewer || (trimmed && evict === "newest"),
+    hasOlder: chat.hasOlder || trimmed,
   };
 };
 
-/** How many live messages a window above the latest holds back; past that, the oldest of them are read again. */
-const HELD_MAX = 500;
-
 /**
- * A live message: folded in, or, while the window is paged above the latest and doesn't hold it, kept aside until
- * the window gets back there (a history page read before it happened won't have it). A held chat (kept past its
- * connection, or from the disk cache) keeps every live message aside: the latest page starts it over, and they join
- * that page, newer copy winning, so a reply finished while the page was out isn't lost to the page's older copy.
+ * A live message, folded in. A cached chat (kept past its connection, or from the disk cache) keeps it aside: the
+ * latest page starts the chat over, and they join that page, newer copy winning, so a reply finished while the page
+ * was out isn't lost to the page's older copy.
  */
-export const mergeLive = (chat: Chat, message: ChatMessage): Chat => {
-  if (chat.cached !== true && (!chat.hasNewer || chat.messages.some((m) => m.messageId === message.messageId))) return mergeMessages(chat, [message]);
-  const held = [...chat.held.filter((m) => m.messageId !== message.messageId || !newer(message, m)), message];
-  return { ...chat, held: held.length > HELD_MAX ? held.slice(held.length - HELD_MAX) : held };
-};
+export const mergeLive = (chat: Chat, message: ChatMessage): Chat =>
+  chat.cached !== true
+    ? mergeMessages(chat, [message])
+    : { ...chat, held: [...chat.held.filter((m) => m.messageId !== message.messageId || !newer(message, m)), message] };
 
 /**
  * The person's own line (a send, a Stop): a held chat shows it at once, so their words never vanish into a chat that
@@ -142,33 +132,25 @@ export const mergeLive = (chat: Chat, message: ChatMessage): Chat => {
 export const mergeOwn = (chat: Chat, message: ChatMessage): Chat =>
   chat.cached === true ? mergeMessages(mergeLive(chat, message), [message]) : mergeLive(chat, message);
 
-/** Back at the latest: the held live messages go in. */
-const foldHeld = (chat: Chat): Chat =>
-  chat.hasNewer || chat.held.length === 0 ? chat : { ...mergeMessages(chat, chat.held), held: [] };
-
 /**
- * A history page: the latest one, one before the oldest message held, or one after the newest. The latest page on
- * a window paged above it starts the window over there, so the chat never holds two runs with a hole between.
+ * A history page: the latest one, or one before the oldest message held. The latest page starts a cached chat over:
+ * the page is the truth now, and what it showed may not join up with it. Its live messages kept aside then go in.
  */
-export const applyHistory = (chat: Chat, page: ChatHistoryOutput, direction: "latest" | "older" | "newer"): Chat => {
-  // A cached chat starts over too: the page is the truth now, and what it held may not join up with it.
-  const base =
-    direction === "latest" && (chat.hasNewer || chat.cached === true)
-      ? { ...chat, messages: [], streams: {}, hasNewer: false, hasOlder: false, cached: false }
-      : chat;
-  const merged = mergeMessages(base, page.messages, direction === "older" ? "newest" : "oldest");
-  const fresh = !chat.loaded || base !== chat;
-  return foldHeld({
+export const applyHistory = (chat: Chat, page: ChatHistoryOutput, direction: "latest" | "older"): Chat => {
+  const restart = direction === "latest" && chat.cached === true;
+  const base = restart ? { ...chat, messages: [], streams: {}, hasOlder: false, cached: false } : chat;
+  const merged = mergeMessages(base, page.messages, direction === "older");
+  const fresh = !chat.loaded || restart;
+  const next = {
     ...merged,
     // The latest page says nothing about what's older than messages already held from an earlier page.
     hasOlder: direction === "older" ? page.moreBefore : fresh ? page.moreBefore || merged.hasOlder : merged.hasOlder,
-    hasNewer: direction === "newer" ? page.moreAfter : merged.hasNewer,
     loadingOlder: direction === "older" ? false : chat.loadingOlder,
-    loadingNewer: direction === "newer" ? false : chat.loadingNewer,
     loaded: true,
     error: undefined,
     gap: false,
-  });
+  };
+  return next.held.length === 0 ? next : { ...mergeMessages(next, next.held), held: [] };
 };
 
 /**
@@ -207,6 +189,8 @@ export interface ChatSend {
   readonly attachments: readonly AttachmentRef[];
   readonly at: string;
   readonly state: SendState;
+  /** Sent with ⌘Enter: chat_send's `now`, kept for every resend. */
+  readonly now?: boolean;
   /** An earlier call was cut off: the hub may hold it, so it is never called "not sent". */
   readonly reached?: boolean;
 }

@@ -345,10 +345,10 @@ an order's (or one agent's) recent steers and their receipts
 ### fleetd chat {#chat}
 
 ```text
-fleetd chat <machine>/<project> "<text>" [--wait | --follow] --key-file <key> [--hub <url> | --home <dir>]
+fleetd chat <machine>/<project> "<text>" [--now] [--wait | --follow] --key-file <key> [--hub <url> | --home <dir>]
 ```
 
-write to a project's lead, as the app does: it starts the lead's next turn, or lands at its next step while it works. `--wait` prints the lead's reply when its turn ends; `--follow` streams it as it is written. Exit 0 it replied, 1 its turn ended without a reply. A human key writes as you; an agent key as that agent, by its name
+write to a project's lead, as the app does: it starts the lead's next turn, or lands at its next step while it works; `--now` (a human key) stops that step and delivers at once. `--wait` prints the lead's reply when its turn ends; `--follow` streams it as it is written. Exit 0 it replied, 1 its turn ended without a reply. A human key writes as you; an agent key as that agent, by its name
 
 ### fleetd chat history {#chat-history}
 

@@ -2,7 +2,7 @@
 // the snapshot's projects marked as added), the add/inspect/remove answers the sheet's states need, and the hub's own
 // problem wording; the group adds a fixture per sheet state and one for the machine states.
 
-import { Fixture } from "../kit/fixture.ts";
+import { Fixture, HUB, PROTOCOL } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import { at } from "../kit/ids.ts";
 import { asText, isObject, type JsonObject, type JsonValue } from "../kit/json.ts";
@@ -240,6 +240,17 @@ export default defineGroup({
       f.later(6_000, "event", progress(1, "starting", null, null));
       f.later(6_300, "event", progress(2, "receiving", 12, "1.20 MiB | 2.31 MiB/s"));
       f.later(6_600, "event", progress(3, "receiving", 42, "4.10 MiB | 2.31 MiB/s"));
+      f.settleAt(0);
+      return f;
+    })(),
+    (() => {
+      // The link drops before project_add answers, then comes back with a snapshot that doesn't list the project yet.
+      // Timed past the QA step's Enter, as projects-cloning's progress is.
+      const f = Fixture.from(base("typical"), "projects-dropped", "Add project: the link drops mid-add and the hub doesn't list it yet");
+      f.fail("project_add", { url: "acme/checkout-v2" }, { code: "disconnected", message: "The connection to the hub closed." });
+      f.later(6_000, "state", { phase: "connecting", hub: HUB, attempt: 1 });
+      f.later(6_300, "state", { phase: "live", hub: HUB, protocol: PROTOCOL });
+      if (f.snapshot !== undefined) f.later(6_600, "snapshot", f.snapshot);
       f.settleAt(0);
       return f;
     })(),

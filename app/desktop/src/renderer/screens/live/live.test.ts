@@ -54,11 +54,11 @@ describe("the live strip", () => {
   it("draws nothing until the board loaded, and nothing when no agent is at work", () => {
     expect(selectStrip(project)(state(undefined))).toBeUndefined();
     const idle = selectStrip(project)(state([card("W1", [lane("T1", "done"), lane("L", "working", { role: "lead" })])]));
-    expect(idle?.rows).toEqual([]);
+    expect(idle?.agents).toBe(0);
     expect(idle && stripHeadline(idle)).toBe("");
   });
 
-  it("counts agents at work, waiting on you, on hold and queued apart, and says what each is doing", () => {
+  it("counts agents at work, waiting on you, on hold and queued apart", () => {
     const s = stripOf([
       lane("T1", "working", { live: { laneId: "T1", status: "working", activity: { activity: { kind: "edit", path: "src/a.ts" }, since: T0 } } }),
       lane("T2", "waiting", { role: "reviewer", statusReason: "approve npm install" }),
@@ -66,12 +66,7 @@ describe("the live strip", () => {
       lane("T3", "queued", { role: "qa" }),
     ]);
     expect(stripHeadline(s)).toBe("1 agent working · 1 needs you · 1 on hold · 1 queued");
-    expect(s.rows.map((r) => (r.kind === "agent" ? [r.roleWord, r.words, r.machine] : r.kind))).toEqual([
-      ["writer", "editing", "src/a.ts"],
-      ["reviewer", "waiting on you: approve npm install", undefined],
-      ["writer", "usage limit until 14:00", undefined],
-      ["QA", "queued", undefined],
-    ]);
+    expect(s.agents).toBe(4);
   });
 
   // The lab saw the strip say one more agent than max agents allows for a moment: a finished agent's session stops
@@ -90,7 +85,7 @@ describe("the live strip", () => {
     );
     const s = selectStrip(project)(next);
     expect(s && stripHeadline(s)).toBe("1 agent working");
-    expect(s?.rows.map((r) => r.key)).toEqual(["T2"]);
+    expect(s?.agents).toBe(1);
     expect(s?.working).toBe(selectProjectRow(projectKey(project))(next)?.running);
   });
 
@@ -107,44 +102,40 @@ describe("the live strip", () => {
     expect(sel(next)).toBe(first);
   });
 
-  it("names the PRs folded: a few in full, then how many more", () => {
-    expect(stripPrs([])).toBe("");
-    expect(stripPrs([221])).toBe("on #221");
-    expect(stripPrs([9, 10, 11])).toBe("on #9, #10 and #11");
-    expect(stripPrs([9, 10, 11, 12])).toBe("on #9, #10, #11 and #12");
-    expect(stripPrs([9, 10, 11, 12, 13])).toBe("on #9, #10, #11 and 2 more");
+  it("names the PRs: a few in full, then how many more", () => {
+    const words = (prs: number[]) => stripPrs(prs).map((p) => (typeof p === "number" ? `#${p}` : p)).join("");
+    expect(words([])).toBe("");
+    expect(words([221])).toBe("on #221");
+    expect(words([9, 10, 11])).toBe("on #9, #10 and #11");
+    expect(words([9, 10, 11, 12])).toBe("on #9, #10, #11 and #12");
+    expect(words([9, 10, 11, 12, 13])).toBe("on #9, #10, #11 and 2 more");
+    // The numbers are apart from the words, so each one is a link.
+    expect(stripPrs([9, 10])).toEqual(["on ", 9, " and ", 10]);
   });
 });
 
-describe("the opened strip (#232 blocker: one count per PR)", () => {
-  const pr = (n: number, done: number) => ({
+describe("the PRs the strip names", () => {
+  const pr = (n: number, taskId?: string) => ({
     changeId: `X${n}`,
     repo: "acme/storefront",
     number: n,
     url: `https://github.com/acme/storefront/pull/${n}`,
     state: "reviewing" as const,
-    reviewsDone: done,
+    reviewsDone: 0,
     reviewsNeeded: 1,
+    ...(taskId === undefined ? {} : { taskId }),
   });
-  const on = (id: string, role: AgentLane["role"], n: number, status: LaneStatus = "working") => lane(id, status, { role, pr: pr(n, 1) });
 
-  it("draws one line per PR with the agents on it, the PR's needed reviews, done counted from the hub and the finished reviewers", () => {
-    const lanes = [lane("W", "working"), on("R1", "reviewer", 221), on("Q1", "qa", 221), on("I2", "implementer", 222), on("R3", "reviewer", 222)];
-    const order = { ...card("W1", lanes), prs: [pr(221, 1), pr(222, 0)] };
-    let s = state([order]);
-    // #222's review already finished (a new push asked for another): only the order's detail still lists it.
-    s = ingest(s, { tool: "order_get", input: { workstreamId: "W1" }, output: { order, doneLanes: [on("R0", "reviewer", 222, "done")], requests: [] } });
-    const strip = selectStrip(project)(s);
-    expect(strip?.rows.map((r) => (r.kind === "pr" ? `#${r.number} ${r.label}` : `${r.indent ? "  " : ""}${r.key}`))).toEqual([
-      "W",
-      "#221 review 1/1",
-      "  R1",
-      "  Q1",
-      "#222 review 1/1",
-      "  I2",
-      "  R3",
-    ]);
-    expect(strip?.prs).toEqual([221, 222]);
-    expect(strip?.orders).toEqual(["W1"]);
+  it("are those an agent at work is on: checking it, or the writer whose task opened it; lowest first", () => {
+    const lanes = [
+      lane("W", "working"),
+      lane("R1", "working", { role: "reviewer", pr: pr(222) }),
+      // The writer of #221, its PR known only from the task that opened it.
+      lane("T7", "working", { taskId: "T7" }),
+      // A reviewer whose task id happens to match: a checker is on a PR only by its PR.
+      lane("R9", "working", { role: "reviewer", taskId: "T9" }),
+    ];
+    const order = { ...card("W1", lanes), prs: [pr(222), pr(221, "T7"), pr(223, "T9"), pr(224)] };
+    expect(selectStrip(project)(state([order]))?.prs).toEqual([221, 222]);
   });
 });

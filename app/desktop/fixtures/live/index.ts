@@ -1,6 +1,6 @@
 // The live strip's fixtures: the typical lab hub with one order in its first project, and 0, 3 or 20 agents at work
-// on it (writers, then one reviewer per PR and QA on two PRs), with their live activity. Twenty fill more than a third
-// of the window, so the opened strip scrolls.
+// on it (writers, then one reviewer per PR and QA on two PRs), with their live activity. The chat above the strip
+// names a PR the way the lead and the hub do: an event line, then "#10" (live-3) or its GitHub URL (live-20).
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import type { JsonObject, JsonValue } from "../kit/json.ts";
@@ -132,7 +132,13 @@ const fromBase = (base: Fixture, agents: number): Fixture => {
       ? [message(1, "human", "Round the cart totals once, in one place.", 900_000), message(2, "lead", "Done: all three PRs merged. Nothing is running.", 60_000)]
       : [
           message(1, "human", "Round the cart totals once, in one place.", 600_000),
-          message(2, "lead", "On it. Writers are splitting the change into three PRs; reviews start as each one opens.", 540_000),
+          message(2, "system", "PR #10 is in review: Cart totals use integer minor units", 570_000),
+          message(
+            3,
+            "lead",
+            `On it. This builds on ${agents > 3 ? "https://github.com/acme/storefront/pull/10" : "#10"}, so the writers start from its branch and split the change into three PRs; reviews start as each one opens.`,
+            540_000,
+          ),
         ];
   f.answer("chat_history", { projectRef }, {
     messages,

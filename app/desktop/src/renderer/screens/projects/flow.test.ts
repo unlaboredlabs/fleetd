@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { HubEvent } from "./contracts";
+import type { HubEvent, ProjectSummary } from "./contracts";
 import type { Request } from "./discovery";
 import { hubMessages, initialAdd, step, type AddMsg, type AddState, type Call } from "./flow";
 
@@ -18,13 +18,14 @@ const run = (s: AddState, ...msgs: Array<AddMsg>): [AddState, Array<Call>] => {
   return [state, calls];
 };
 
-const only = (calls: Array<Call>, tool: string): Call => {
-  const found = calls.filter((c) => c.tool === tool);
-  expect(found, `one ${tool} call`).toHaveLength(1);
+const only = (calls: Array<Call>, purpose: Call["purpose"]): Call => {
+  const found = calls.filter((c) => c.purpose === purpose);
+  expect(found, `one ${purpose} call`).toHaveLength(1);
   return found[0] as Call;
 };
 
-const live = (): AddState => run(initialAdd, { t: "snapshot", cursor: 10 })[0];
+const live = (): AddState => run(initialAdd, { t: "snapshot", projects: [] })[0];
+const project = (path: string) => ({ machineId: "devbox", projectId: "p7", title: "ledger", workspaceRoot: path, lastActivityAt: AT, threads: {} }) as ProjectSummary;
 
 const event = (seq: number, type: string, data: Record<string, unknown>): AddMsg => {
   const e: HubEvent = { seq, at: AT, type, machineId: "devbox", summary: "", data, ...(type === "project.added" ? { projectId: "p7" } : {}) };
@@ -48,7 +49,7 @@ describe("the add flow", () => {
   it("holds a failure that comes before the answer, then ends the add with it", () => {
     const [started, calls] = run(live(), start());
     let s = started;
-    const add = only(calls, "project_add");
+    const add = only(calls, "add");
     expect(add.input).toEqual({ machineId: "devbox", url: "acme/ledger" });
     [s] = run(s, event(11, "project.add_failed", { addId: "a1", repo: "acme/ledger", path: "/p", code: "clone_failed", message: "git: remote hung up", fix: "Try again." }));
     expect(s.phase.kind).toBe("working");
@@ -60,7 +61,7 @@ describe("the add flow", () => {
   it("ignores someone else's add and matches its own by addId", () => {
     const [started, calls] = run(live(), start());
     let s = started;
-    const add = only(calls, "project_add");
+    const add = only(calls, "add");
     [s] = run(s, event(12, "project.added", added("other")), ok(add, { machineId: "devbox", path: "/p", created: true, addId: "a2" }));
     expect(s.phase.kind).toBe("working");
     [s] = run(s, event(13, "project.clone_progress", { addId: "a2", path: "/p", phase: "receiving", percent: 50, detail: "4.10 MiB | 2.00 MiB/s" }));
@@ -69,53 +70,24 @@ describe("the add flow", () => {
     expect(s.phase).toMatchObject({ kind: "ready", ready: { project: { machineId: "devbox", projectId: "p7" }, machine: "devbox-name" } });
   });
 
-  it("after a reconnect, looks the add up from where it started and never shows old progress as live", () => {
+  it("after a reconnect, the snapshot says added or not listed yet, never failed, and never shows old progress as live", () => {
     let [s, calls] = run(live(), start());
-    [s] = run(s, ok(only(calls, "project_add"), { machineId: "devbox", path: "/p", created: true, addId: "a1" }));
+    [s] = run(s, ok(only(calls, "add"), { machineId: "devbox", path: "/p", created: true, addId: "a1" }));
     [s] = run(s, event(11, "project.clone_progress", { addId: "a1", path: "/p", phase: "receiving", percent: 42 }), { t: "live", live: false });
     expect(s.phase).toMatchObject({ kind: "working", job: { detail: expect.stringContaining("Lost the connection") as unknown } });
     expect(s.phase.kind === "working" ? s.phase.job.fraction : "not working").toBeUndefined();
-    [s, calls] = run(s, { t: "live", live: true }, { t: "snapshot", cursor: 20 });
-    const look = only(calls, "events_wait");
-    expect(look.input).toMatchObject({ cursor: 10, timeoutSec: 0, machineId: "devbox" });
-    [s] = run(
-      s,
-      ok(look, {
-        events: [
-          { seq: 15, at: AT, type: "project.clone_progress", machineId: "devbox", summary: "", data: { addId: "a1", path: "/p", phase: "inspecting" } },
-          { seq: 16, at: AT, type: "project.added", machineId: "devbox", projectId: "p7", summary: "", data: added("a1") },
-        ],
-        cursor: 16,
-        more: false,
-      }),
-    );
-    expect(s.phase.kind).toBe("ready");
-    // No lookup without an add.
-    [, calls] = run(s, { t: "live", live: false }, { t: "snapshot", cursor: 21 });
+    [s, calls] = run(s, { t: "live", live: true }, { t: "snapshot", projects: [project("/elsewhere"), project("/p")] });
     expect(calls).toEqual([]);
-  });
+    expect(s.phase).toMatchObject({ kind: "ready", ready: { project: { machineId: "devbox", projectId: "p7" }, machine: "devbox-name" } });
 
-  it("finds an add whose answer was lost by its repo, or offers to send it again", () => {
-    let [s, calls] = run(live(), start());
-    [s] = run(s, err(only(calls, "project_add"), "disconnected", "the connection closed"));
+    // The answer was lost and the hub doesn't list it: not on the hub yet (a clone may still run), with the request kept for a retry.
+    [s, calls] = run(s, start());
+    [s] = run(s, err(only(calls, "add"), "disconnected", "the connection closed"));
     expect(s.phase.kind).toBe("working");
-    [s, calls] = run(s, { t: "snapshot", cursor: 20 });
-    [s] = run(
-      s,
-      ok(only(calls, "events_wait"), {
-        events: [{ seq: 12, at: AT, type: "project.clone_progress", machineId: "devbox", summary: "", data: { addId: "a9", repo: "acme/ledger", path: "/p", phase: "receiving", percent: 30 } }],
-        cursor: 20,
-        more: false,
-      }),
-    );
-    expect(s.addId).toBe("a9");
-    [s] = run(s, event(21, "project.added", added("a9")));
-    expect(s.phase.kind).toBe("ready");
-
-    [s] = run(s, start(), { t: "live", live: false });
-    [s, calls] = run(s, { t: "snapshot", cursor: 30 });
-    [s] = run(s, ok(only(calls, "events_wait"), { events: [], cursor: 30, more: false }));
-    expect(s.phase).toMatchObject({ kind: "failed", failure: { action: { kind: "retry", request: cloneReq } } });
+    [s, calls] = run(s, { t: "snapshot", projects: [] });
+    expect(calls).toEqual([]);
+    expect(s.phase).toEqual({ kind: "unlisted", what: "acme/ledger", path: "/p", request: cloneReq });
+    expect(run(s, { t: "back" })[0].phase.kind).toBe("pick");
   });
 
   it("offers the existing folder only when a dry run says it is the same repo", () => {
@@ -133,8 +105,8 @@ describe("the add flow", () => {
     ];
     for (const c of cases) {
       let [s, calls] = run(live(), start());
-      [s, calls] = run(s, err(only(calls, "project_add"), "invalid", "devbox already has a checkout at /p"));
-      const inspect = only(calls, "project_add");
+      [s, calls] = run(s, err(only(calls, "add"), "invalid", "devbox already has a checkout at /p"));
+      const inspect = only(calls, "inspect");
       expect(inspect).toMatchObject({ purpose: "inspect", input: { machineId: "devbox", url: "acme/ledger", dryRun: true } });
       expect(s.phase.kind).toBe("working");
       [s] = run(s, ok(inspect, target(c.same, c.project)));
@@ -145,12 +117,12 @@ describe("the add flow", () => {
     }
     // A clone that fails with dest_exists after it was accepted also asks.
     let [s, calls] = run(live(), start());
-    [s] = run(s, ok(only(calls, "project_add"), { machineId: "devbox", path: "/p", created: true, addId: "a1" }));
+    [s] = run(s, ok(only(calls, "add"), { machineId: "devbox", path: "/p", created: true, addId: "a1" }));
     [, calls] = run(s, event(11, "project.add_failed", { addId: "a1", path: "/p", code: "dest_exists", message: "exists" }));
-    expect(only(calls, "project_add").purpose).toBe("inspect");
+    only(calls, "inspect");
     // A folder add that fails needs no inspect.
     [s, calls] = run(live(), start({ kind: "folder", machineId: "devbox", path: "/srv/x" }));
-    [s, calls] = run(s, err(only(calls, "project_add"), "invalid", "not a git repo"));
+    [s, calls] = run(s, err(only(calls, "add"), "invalid", "not a git repo"));
     expect(calls).toEqual([]);
     expect(s.phase).toMatchObject({ kind: "failed", what: "x" });
   });
@@ -158,7 +130,7 @@ describe("the add flow", () => {
   it("ignores an answer to an earlier add", () => {
     const [started, calls] = run(live(), start());
     let s = started;
-    const first = only(calls, "project_add");
+    const first = only(calls, "add");
     [s] = run(s, err(first, "invalid", "nope"), { t: "back" });
     [s] = run(s, start({ kind: "folder", machineId: "devbox", path: "/srv/x" }));
     [s] = run(s, ok(first, { machineId: "devbox", path: "/p", created: true, addId: "stale" }));
@@ -167,23 +139,23 @@ describe("the add flow", () => {
   });
 
   it("joins a connection that was live before it listened (the palette or Machines opened first)", () => {
-    const fresh = { live: true, fresh: true, cursor: 40, events: [{ seq: 39, at: AT, type: "project.added", summary: "" }] };
+    const fresh = { live: true, fresh: true, projects: {}, events: [{ seq: 39, at: AT, type: "project.added", summary: "" }] };
     const first = hubMessages(undefined, fresh, 40);
     expect(first).toEqual([
       { t: "live", live: true },
-      { t: "snapshot", cursor: 40 },
+      { t: "snapshot", projects: [] },
     ]);
     const [s] = run(initialAdd, ...first);
     const [, adding] = run(s, start());
-    expect(only(adding, "project_add").input).toEqual({ machineId: "devbox", url: "acme/ledger" });
+    expect(only(adding, "add").input).toEqual({ machineId: "devbox", url: "acme/ledger" });
     // Later, only events past the last one seen are news; a drop and a fresh snapshot are passed on.
-    const next = { ...fresh, cursor: 41, events: [...fresh.events, { seq: 41, at: AT, type: "project.clone_progress", summary: "" }] };
+    const next = { ...fresh, events: [...fresh.events, { seq: 41, at: AT, type: "project.clone_progress", summary: "" }] };
     expect(hubMessages(fresh, next, 40).map((m) => m.t)).toEqual(["event"]);
     const down = { ...next, live: false, fresh: false };
     expect(hubMessages(next, down, 41)).toEqual([{ t: "live", live: false }]);
-    expect(hubMessages(down, { ...next, cursor: 50 }, 41)).toEqual([
+    expect(hubMessages(down, { ...next, projects: { "devbox/p7": project("/p") } }, 41)).toEqual([
       { t: "live", live: true },
-      { t: "snapshot", cursor: 50 },
+      { t: "snapshot", projects: [project("/p")] },
     ]);
   });
 });

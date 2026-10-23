@@ -52,10 +52,9 @@ export const fixtures = [
   "live-0",
   "live-3",
   "live-20",
-  // F4: the chat composer's sends (fixtures/composer), and your steers to the lead in the chat.
+  // F4: the chat composer's sends (fixtures/composer).
   "composer-sends",
   "composer-waiting",
-  "composer-steers",
   // The lead mid-turn: the quiet line under its reply counts up and says what it does now and what the turn did; and
   // once it's over, how long it worked (fixtures/lead).
   "lead-planning",
@@ -64,6 +63,7 @@ export const fixtures = [
   "lead-worked",
   // Group fixtures (fixtures/<group>/index.ts), named <group>-<what>.
   "projects-cloning",
+  "projects-dropped",
   // F10: the connect screen's states (fixtures/onboarding).
   "onboarding-first-run",
   "onboarding-code-refused",
@@ -100,6 +100,8 @@ export const fixtures = [
   "chat-gated",
   "chat-waiting",
   "chat-empty",
+  // The long chat with three lead replies arriving once you've read back a page (fixtures/transcript).
+  "transcript-new",
   // UX-1 [23]: a long lead reply streaming in, in small deltas (fixtures/stream).
   "stream-long",
   // F5 (A5): a chat with every state of the two inline items (fixtures/inline), with every answer failing, and with
@@ -294,7 +296,7 @@ export const screens: readonly Screen[] = [
       await expect(page.getByText("Stopping the lead and its agents…")).toBeVisible();
     },
   },
-  // ⌘Enter while the lead works on an order: the steer shows in the chat, its receipt saying it stops the step.
+  // ⌘Enter while the lead works: a chat message like any other, its receipt saying it stopped the lead's step.
   {
     id: "chat.composer",
     route: CHAT,
@@ -304,24 +306,11 @@ export const screens: readonly Screen[] = [
       await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
       const box = page.getByRole("textbox", { name: "Message the lead" });
       await expect(page.getByText(/stops its step and sends now/)).toBeVisible();
-      await box.fill(STEER_WORDS.leadNow);
+      await box.fill(CHAT_SENDS.now);
       await box.press("ControlOrMeta+Enter");
       await expect(box).toHaveValue("");
-      await expect(page.locator('[data-entry="steer"]').getByText(STEER_WORDS.leadNow)).toBeVisible();
-      await expect(page.locator('[data-steer="queued"]')).toHaveCount(1);
-    },
-  },
-  // Your steers to the lead stay in the chat at their times, each with where it is; one to an agent stays under its
-  // work, and the lead's own to its agent isn't yours.
-  {
-    id: "chat",
-    route: CHAT,
-    fixtures: ["composer-steers"],
-    variant: "steers",
-    open: async (page) => {
-      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
-      // The newest, so on screen at every size; the list renders only what is in view.
-      for (const stage of ["failed", "queued"]) await expect(page.locator(`[data-steer="${stage}"]`)).toHaveCount(1);
+      const mine = page.locator('[data-entry="message"]').filter({ hasText: CHAT_SENDS.now });
+      await expect(mine.getByText("delivered; the lead stopped its step to read this")).toBeVisible();
     },
   },
   // ↑ in the empty box brings back your last message.
@@ -352,6 +341,17 @@ export const screens: readonly Screen[] = [
       await expect(page.getByText("1 command to approve")).toBeVisible();
       await page.locator("[data-attention]").getByRole("button", { name: "Show" }).click();
       await expect(page.getByRole("button", { name: "Approve", exact: true })).toBeInViewport();
+    },
+  },
+  // A blocked project: the line above the box says why, in the hub's words (checkout's main CI is red).
+  {
+    id: "chat",
+    route: "#/project/devbox/6e8e753c-fe9a-4b79-aec3-5812d498c197",
+    fixtures: ["sidebar-reasons"],
+    variant: "blocked",
+    open: async (page) => {
+      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      await expect(page.locator('[data-attention="blocked"]')).toHaveText("Blocked: main CI is red on acme/checkout");
     },
   },
   // An empty chat's starter fills the box (never sends) and gives it the cursor.
@@ -425,32 +425,34 @@ export const screens: readonly Screen[] = [
       await expect(page.locator("header").getByText(/^Last known, as of/u)).toBeVisible();
     },
   },
-  // The agents strip, opened to its rows.
+  // The strip's headline opens the panel's agents, where each one's work is (the chat doesn't list them itself): the
+  // panel is closed first, so the shot shows the headline opening it.
   {
     id: "chat",
     route: CHAT,
-    // The expand control is the strip's header button, named by its headline ("17 agents working · 1 needs you ·
-    // 1 on hold · 1 queued"); scoped to the strip, since the sidebar's project button also says "3 agents working". long-text has
-    // no agent at work in this project, so it has no strip; live-20 carries the long commands and paths.
     fixtures: ["live-3", "live-20"],
-    open: (page) =>
-      page.getByRole("region", { name: /agents? working/u }).getByRole("button", { name: /agents? working/u, expanded: false }).click(),
-    variant: "strip-open",
+    variant: "strip-to-panel",
+    open: async (page) => {
+      const panel = page.getByRole("complementary", { name: "Agents and pull requests" });
+      await page.getByRole("button", { name: "Hide agents and PRs" }).click();
+      await panel.waitFor({ state: "detached" });
+      // Scoped to the strip: the sidebar's project button also says "3 agents working".
+      await page.getByRole("region", { name: /agents? working/u }).getByRole("button", { name: /agents? working/u }).click();
+      await expect(panel.getByRole("list", { name: "Agents" })).toBeVisible();
+    },
   },
-  // ...and scrolled to its last agent: twenty fill more than the third of the window the opened strip may take, so
-  // its box scrolls and draws only the rows in view.
+  // A PR the chat names (in an event line, as "#10" in live-3 and as its GitHub URL in live-20) opens in the panel.
   {
     id: "chat",
     route: CHAT,
-    fixtures: ["live-20"],
+    fixtures: ["live-3", "live-20"],
+    variant: "pr-link",
     open: async (page) => {
-      const strip = page.getByRole("region", { name: /agents? working/u });
-      await strip.getByRole("button", { name: /agents? working/u, expanded: false }).click();
-      const list = strip.getByRole("list", { name: "Agents" });
-      await list.evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
-      await expect(strip.getByText(/^queued · waiting for a free slot/u)).toBeVisible();
+      const chat = page.getByRole("list", { name: "Conversation with the lead" });
+      await chat.getByRole("link", { name: /^#10$|\/pull\/10$/u }).click();
+      await page.getByRole("complementary", { name: "Agents and pull requests" }).locator('[data-screen^="prs.detail"]').waitFor();
+      await expect(page).toHaveURL(/\/prs\/(acme\/storefront\/)?10$/u);
     },
-    variant: "strip-scrolled",
   },
   // The lead chat (lead-chat-spec.md).
   // UX-1 [5]: each row says why it wants you (reply, approve · 2, secret, blocked), and docs' reply that arrives
@@ -538,6 +540,46 @@ export const screens: readonly Screen[] = [
         await page.getByText("Loading earlier messages…").waitFor({ state: "hidden", timeout: 5_000 });
       }
       await page.getByText("From before this chat").waitFor({ timeout: 10_000 });
+    },
+  },
+  // Back after a while: the chat opens at a "New" divider above what you hadn't seen (forty messages back from the
+  // newest), and the button to the newest shows, since that's further down.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["chat-long"],
+    variant: "new",
+    open: async (page) => {
+      // What the app has seen is read once per launch, so mark storefront as seen forty back, then load again.
+      await page.evaluate(() => {
+        const key = "fleetd.seenChats";
+        const seen = JSON.parse(localStorage.getItem(key) ?? "{}") as Record<string, number>;
+        const [project, seq] = Object.entries(seen).find(([k]) => k.endsWith("/dcffccea-c5a7-40a6-940d-7f70239ffa22")) ?? [];
+        if (project === undefined || seq === undefined) throw new Error("storefront's chat was never marked seen");
+        localStorage.setItem(key, JSON.stringify({ ...seen, [project]: seq - 40 }));
+      });
+      await page.reload();
+      await page.getByRole("separator").filter({ hasText: /^New$/ }).waitFor({ timeout: 10_000 });
+      await page.getByRole("button", { name: "Latest" }).waitFor({ timeout: 10_000 });
+    },
+  },
+  // Scrolled back through two pages while the lead writes: three replies land below, and the button to the newest
+  // counts them.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["transcript-new"],
+    variant: "new-below",
+    open: async (page) => {
+      const log = page.getByLabel("Conversation with the lead");
+      // The page before the newest may load as the chat opens; the replies come once the one before that is read.
+      for (let i = 0; i < 2; i++) {
+        await log.hover();
+        await page.mouse.wheel(0, -50_000);
+        await log.evaluate((el) => el.scrollTo({ top: 0 }));
+        await page.getByText("Loading earlier messages…").waitFor({ state: "hidden", timeout: 5_000 });
+      }
+      await page.getByRole("button", { name: "3 new" }).waitFor({ timeout: 10_000 });
     },
   },
   // UX-1 [23]: a long reply streams in with the chat open, block by block; checked after its last delta.
@@ -755,6 +797,14 @@ export const screens: readonly Screen[] = [
   // out of reach; and a link to a project the hub doesn't have. The narrow window has hidden the panel; the link
   // shows it there.
   { id: "prs", route: PRS, fixtures: ["typical", "long-text", "many-agents", "prs-none", "prs-no-github", "prs-rate-limited", "hub-unreachable"] },
+  // Offline with nothing held: the list says it shows once you're connected, never loading bars.
+  {
+    id: "prs",
+    route: PRS,
+    fixtures: ["offline-held"],
+    variant: "offline",
+    open: (page) => expect(page.getByText("Pull requests show once you’re connected.")).toBeVisible(),
+  },
   { id: "prs", route: PRS, fixtures: ["typical"], variant: "narrow", sizes: ["narrow"] },
   { id: "prs", route: PRS, fixtures: ["empty"], variant: "missing", expect: "error" },
   {
@@ -770,6 +820,14 @@ export const screens: readonly Screen[] = [
   // One PR in the list's place: its facts, description, checks, reviews with their findings, and its way to main so far.
   // #10's checks failed after its approval and an outdated review; a chat line's link names only the number.
   { id: "prs.detail", route: PR(11), fixtures: ["typical", "long-text", "prs-no-github", "prs-rate-limited"] },
+  // ...and offline with nothing held: it says it shows once you're connected, never "Loading".
+  {
+    id: "prs.detail",
+    route: PR(11),
+    fixtures: ["offline-held"],
+    variant: "offline",
+    open: (page) => expect(page.getByText("#11 shows once you’re connected.")).toBeVisible(),
+  },
   { id: "prs.detail", route: PR(10), fixtures: ["typical"], variant: "failed" },
   { id: "prs.detail", route: PR(8), fixtures: ["typical"], variant: "merged" },
   { id: "prs.detail", route: PR(14), fixtures: ["typical"], variant: "review-requested" },
@@ -919,6 +977,19 @@ export const screens: readonly Screen[] = [
       await page.locator('[role="progressbar"][aria-valuenow="42"]').waitFor();
     },
   },
+  // The link drops before project_add answers and the resync doesn't list the project: not on the hub yet, never
+  // "failed", since a clone may still be running.
+  {
+    id: "projects.add.unlisted",
+    route: "#/projects/add",
+    fixtures: ["projects-dropped"],
+    open: async (page) => {
+      await page.getByRole("listbox", { name: "Repos" }).waitFor();
+      await page.getByRole("textbox", { name: "GitHub URL, folder path, or filter" }).fill("acme/checkout-v2");
+      await page.keyboard.press("Enter");
+      await page.locator('[data-screen="projects.add.unlisted"]').waitFor();
+    },
+  },
   {
     id: "projects.add.ready",
     route: "#/projects/add",
@@ -949,8 +1020,24 @@ export const screens: readonly Screen[] = [
     route: `${CHAT}/agents`,
     fixtures: ["typical", "many-agents", "long-text", "hub-unreachable", "live-20", "agents-work"],
   },
+  // ...and offline with nothing held: it says they show once you're connected, never loading bars.
+  {
+    id: "agents",
+    route: `${CHAT}/agents`,
+    fixtures: ["offline-held"],
+    variant: "offline",
+    open: (page) => expect(page.getByText("Agents show once you’re connected.")).toBeVisible(),
+  },
   // Under its work, your steers to it with their receipts, in every stage, and the box that steers it directly.
   { id: "agents.work", route: AGENT_ROUTE, fixtures: ["agents-work", "agents-steers"] },
+  // ...and offline with nothing held: it says it shows once you're connected, never a blank loading pane.
+  {
+    id: "agents.work",
+    route: AGENT_ROUTE,
+    fixtures: ["offline-held"],
+    variant: "offline",
+    open: (page) => expect(page.getByText("This agent shows once you’re connected.")).toBeVisible(),
+  },
   {
     id: "agents.work",
     route: AGENT_ROUTE,
@@ -962,6 +1049,17 @@ export const screens: readonly Screen[] = [
       await box.press("Enter");
       await expect(box).toHaveValue("");
       await expect(page.locator('[data-steer="queued"]')).toHaveCount(2);
+    },
+  },
+  // What it was told at its start, opened from its head.
+  {
+    id: "agents.work",
+    route: AGENT_ROUTE,
+    fixtures: ["agents-work"],
+    variant: "told",
+    open: async (page) => {
+      await page.getByRole("button", { name: "What it was told" }).click();
+      await expect(page.getByRole("dialog", { name: "What the writer was told" }).getByText("First message", { exact: true })).toBeVisible();
     },
   },
   { id: "agents.work", route: AGENT_ROUTE, fixtures: ["agents-work"], variant: "narrow", sizes: ["narrow"] },

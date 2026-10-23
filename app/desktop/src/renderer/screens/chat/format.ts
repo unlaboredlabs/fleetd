@@ -1,4 +1,5 @@
 // Small formatters the chat shares. Times are shown in the viewer's zone; tests pin the zone.
+import type { PrKey } from "../shell/routes";
 
 /** "40s", "1m12s", "1h05m". */
 export function shortElapsed(ms: number): string {
@@ -10,14 +11,14 @@ export function shortElapsed(ms: number): string {
 
 export const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? "" : "s"}`;
 
-/** A line split into text and `code` runs; an unclosed backtick stays text. */
-export function codeRuns(line: string): Array<{ readonly code: boolean; readonly text: string }> {
-  const out: Array<{ code: boolean; text: string }> = [];
-  const re = /`([^`]+)`/g;
+/** A line split into text, `code` and app links (as prLinks writes them); an unclosed backtick stays text. */
+export function codeRuns(line: string): Array<{ readonly code: boolean; readonly text: string; readonly href?: string }> {
+  const out: Array<{ code: boolean; text: string; href?: string }> = [];
+  const re = /`([^`]+)`|\[([^\]\n]+)\]\((#\/[^)\s]*)\)/g;
   let last = 0;
   for (const m of line.matchAll(re)) {
     if (m.index > last) out.push({ code: false, text: line.slice(last, m.index) });
-    out.push({ code: true, text: m[1] ?? "" });
+    out.push(m[3] === undefined ? { code: true, text: m[1] ?? "" } : { code: false, text: m[2] ?? "", href: m[3] });
     last = m.index + m[0].length;
   }
   if (last < line.length) out.push({ code: false, text: line.slice(last) });
@@ -57,6 +58,48 @@ export function machineCode(md: string): string {
     last = m.index + m[0].length;
   }
   return out + wrap(md.slice(last));
+}
+
+// PR mentions: "#9" and "PR #9" (the project's), and a GitHub pull URL (its repo's). Not "issue#9", "&#9;" or "#0".
+const PR_REF = /(?<![\w/&#])(?:PR )?#([1-9]\d{0,5})\b/g;
+const PR_URL = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/([1-9]\d{0,5})(?:[/?#][^\s)]*)?$/;
+// machineCode's spans plus whole markdown links, so a link already written is never linked again.
+const PR_PROTECT = new RegExp(`\\[[^\\]\\n]*\\]\\([^)\\n]*\\)|${PROTECT.source}`, "g");
+
+/**
+ * Markdown with its PR mentions as links to `href` (the PR in the panel). Code is left alone; a written link or URL to
+ * a GitHub PR keeps its words and goes to the panel instead of the browser, where the PR's view has Open on GitHub.
+ */
+export function prLinks(md: string, href: (pr: PrKey) => string): string {
+  const pull = (url: string): string | undefined => {
+    const m = PR_URL.exec(url);
+    return m === null ? undefined : href({ repo: m[1] ?? "", number: Number(m[2]) });
+  };
+  const kept = (span: string): string => {
+    const link = /^\[([^\]\n]*)\]\(([^)\n]*)\)$/.exec(span);
+    if (link !== null) {
+      const to = pull(link[2] ?? "");
+      return to === undefined ? span : `[${link[1] ?? ""}](${to})`;
+    }
+    const auto = /^<(https:[^>]*)>$/.exec(span)?.[1];
+    if (auto !== undefined) {
+      const to = pull(auto);
+      return to === undefined ? span : `[${auto}](${to})`;
+    }
+    if (!span.startsWith("http")) return span;
+    // A bare URL's sentence ends after it: "see …/pull/9." keeps its full stop outside the link.
+    const url = span.replace(/[.,;:!?]+$/, "");
+    const to = pull(url);
+    return to === undefined ? span : `[${url}](${to})${span.slice(url.length)}`;
+  };
+  const refs = (text: string) => text.replace(PR_REF, (t, n: string) => `[${t}](${href({ repo: null, number: Number(n) })})`);
+  let out = "";
+  let last = 0;
+  for (const m of md.matchAll(PR_PROTECT)) {
+    out += refs(md.slice(last, m.index)) + kept(m[0]);
+    last = m.index + m[0].length;
+  }
+  return out + refs(md.slice(last));
 }
 
 const shortClocks = new Map<string, Intl.DateTimeFormat>();

@@ -2,7 +2,7 @@
 pub const DESCRIPTIONS: &[(&str, &str)] = &[
     (
         "chat_send",
-        "Write to a project's lead in its chat. A human key writes as the human; any other key as an agent, by its name: input for the lead, never the human's answer or approval. It goes in at once: a new turn when the lead is idle, joined to its turn when it works, held while it starts (leadWaiting says why and what to do). attachments from attachment_put. The lead's replies arrive as chat.message events. Idempotent per clientRequestId.",
+        "Write to a project's lead in its chat. A human key writes as the human; any other key as an agent, by its name: input for the lead, never the human's answer or approval. It goes in at once: a new turn when the lead is idle, joined to its turn when it works, held while it starts (leadWaiting says why and what to do). now (a human key only) stops a working lead's running step and delivers at once, as steer_send's now does. attachments from attachment_put. The lead's replies arrive as chat.message events. Idempotent per clientRequestId.",
     ),
     (
         "chat_history",

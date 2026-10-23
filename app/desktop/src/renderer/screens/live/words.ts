@@ -1,8 +1,7 @@
-// The lanes' vocabulary: one word per status, role and PR stage, and the lines built from them. Amber is "needs
-// you", danger only on failure words, and everything that is just working stays quiet.
-import type { AgentLane, AgentRole, ChangeState, LaneStatus } from "./contracts";
+// The lanes' vocabulary: what an agent is doing, in words. Amber is "needs you", danger only on failure words, and
+// everything that is just working stays quiet.
+import type { AgentLane, AgentRole, LaneStatus } from "./contracts";
 import { fmtElapsed, parseMs } from "./format";
-import { ROLE_WORD } from "../../ui";
 
 export type Tone = "quiet" | "loud" | "warning" | "danger" | "success";
 
@@ -15,8 +14,6 @@ export const isRunning = (s: LaneStatus): boolean =>
 export const isWorking = (s: LaneStatus): boolean => s === "starting" || s === "working";
 
 export const isChecker = (role: AgentRole): boolean => role === "reviewer" || role === "verifier" || role === "qa";
-
-export { ROLE_WORD };
 
 /**
  * One activity line: words in the UI voice, then machine text (a command, path or pattern) in mono. `thinking`
@@ -84,20 +81,3 @@ export const describe = (lane: AgentLane): Line => {
     }
   }
 };
-
-export const STAGE_WORD: Record<ChangeState, string> = {
-  queued: "queued",
-  reviewing: "review",
-  ready: "ready",
-  rebasing: "rebasing",
-  ci: "CI",
-  merging: "merging",
-  merged: "merged",
-  needs_rebase: "needs rebase",
-  ci_failed: "CI failed",
-  refused: "refused",
-  abandoned: "abandoned",
-};
-
-export const stageTone = (s: ChangeState): Tone =>
-  s === "needs_rebase" ? "warning" : s === "ci_failed" || s === "refused" ? "danger" : s === "merged" ? "success" : "quiet";

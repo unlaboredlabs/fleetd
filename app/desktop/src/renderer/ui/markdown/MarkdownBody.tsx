@@ -49,7 +49,8 @@ const COMPONENTS: Components = {
     return fence ? <Code code={fence.code} lang={fence.lang} /> : <pre>{children}</pre>;
   },
   code: ({ children }) => <InlineCode>{children}</InlineCode>,
-  a: ({ href, children }) => <ExternalLink href={href}>{children}</ExternalLink>,
+  // An app route (a PR in the panel, chat/format prLinks) stays in the app: the hash router follows it.
+  a: ({ href, children }) => (href?.startsWith("#/") ? <a href={href}>{children}</a> : <ExternalLink href={href}>{children}</ExternalLink>),
   // No remote content: an image becomes its alt text as a link.
   img: ({ src, alt }) => <ExternalLink href={typeof src === "string" ? src : undefined}>{alt || "image"}</ExternalLink>,
   table: ({ children }) => (

@@ -62,9 +62,14 @@ export function PrsPane({ project, pr, tab, onTab }: { project: ProjectRef; pr: 
         <div data-screen="prs.detail.missing" className={s.detailEmpty}>
           <EmptyState title={`#${pr?.number ?? ""} isn’t in this project`}>It may be in another project, or closed more than a week ago.</EmptyState>
         </div>
+      ) : rows === undefined && !fresh ? (
+        // Nothing held and no hub to ask: "Loading" and bars would never finish.
+        <div className={s.paneNote}>
+          <Text tone="quiet">{pr === null ? "Pull requests show once you’re connected." : `#${pr.number} shows once you’re connected.`}</Text>
+        </div>
       ) : pr !== null ? (
         // The number alone waits for the list to know its repo.
-        <div className={s.paneNote} data-screen="prs.detail.loading" aria-busy={fresh && !list.isError}>
+        <div className={s.paneNote} data-screen="prs.detail.loading" aria-busy={!list.isError}>
           <Text tone="quiet">Loading #{pr.number}…</Text>
         </div>
       ) : rows !== undefined ? (
@@ -75,7 +80,7 @@ export function PrsPane({ project, pr, tab, onTab }: { project: ProjectRef; pr: 
           <Button onClick={() => void list.refetch()}>Retry</Button>
         </div>
       ) : (
-        <Skeleton busy={fresh} />
+        <Skeleton />
       )}
     </div>
   );
@@ -100,10 +105,10 @@ function GitHubBanner({ list, onRetry }: { list: PrListOutput; onRetry: () => vo
   );
 }
 
-/** Row outlines, no shimmer, as the agents load. Busy only while an answer is on its way. */
-function Skeleton({ busy }: { busy: boolean }) {
+/** Row outlines, no shimmer, as the list loads. */
+function Skeleton() {
   return (
-    <div className={s.skeleton} aria-busy={busy} aria-label="Loading the pull requests">
+    <div className={s.skeleton} aria-busy="true" aria-label="Loading the pull requests">
       <span />
       <span />
       <span />

@@ -2,7 +2,6 @@
 export type {
   CloneProgressData,
   CloneTarget,
-  EventsWaitOutput,
   HubEvent,
   LoginLimit,
   Machine,

@@ -37,17 +37,16 @@ export interface ChatActions {
   close(): void;
   /** The page before the oldest message held; nothing while one is loading or when there is none. */
   loadOlder(key: ProjectKey): void;
-  /** After paging back past what a chat keeps: the page after the newest message held, back toward the latest. */
-  loadNewer(key: ProjectKey): void;
-  /** Straight back to the latest page (the window starts over there when it was paged above it). */
-  jumpToLatest(key: ProjectKey): void;
   /**
    * Sends the person's message. `clientRequestId` is the composed message's own (one per message, reused on every
    * retry); minted when absent. Its row shows at once and settles on the hub's echo. With no link it is queued, and
    * goes under the same id when the link is back.
    */
-  /** `attachments`: what attachment_put stored, so the pending row shows them before the hub's copy. */
-  send(key: ProjectKey, input: { text: string; attachments?: readonly AttachmentRef[] }, clientRequestId?: string): Promise<SendOutcome>;
+  /**
+   * `attachments`: what attachment_put stored, so the pending row shows them before the hub's copy. `now` (⌘Enter):
+   * a working lead stops its running step for it.
+   */
+  send(key: ProjectKey, input: { text: string; attachments?: readonly AttachmentRef[]; now?: boolean }, clientRequestId?: string): Promise<SendOutcome>;
   /** Sends a row again under its own id. */
   retry(key: ProjectKey, clientRequestId: string): Promise<SendOutcome | undefined>;
   discard(key: ProjectKey, clientRequestId: string): void;
@@ -78,7 +77,7 @@ export const createChatActions = (
   const loading = new Map<ProjectKey, number>();
   let focused: ProjectKey | null = null;
 
-  const fold = (key: ProjectKey, out: ChatHistoryOutput, direction: "latest" | "older" | "newer") =>
+  const fold = (key: ProjectKey, out: ChatHistoryOutput, direction: "latest" | "older") =>
     update((s) => {
       const sends = s.chatSends[key];
       return {
@@ -154,24 +153,6 @@ export const createChatActions = (
     });
   };
 
-  const loadNewer: ChatActions["loadNewer"] = (key) => {
-    const s = store.getState();
-    const chat = chatOf(s, key);
-    const newest = chat.messages.at(-1);
-    if (!s.fresh || !chat.loaded || !chat.hasNewer || chat.loadingNewer || newest === undefined) return;
-    update((st) => ({ chats: { ...st.chats, [key]: { ...chatOf(st, key), loadingNewer: true } } }));
-    const generation = s.generation;
-    void call("chat_history", { projectRef: refOf(key), after: newest.seq, limit: CHAT_PAGE }).then((r) => {
-      if (store.getState().generation !== generation) return;
-      if (r.ok) fold(key, r.output, "newer");
-      else update((st) => ({ chats: { ...st.chats, [key]: { ...chatOf(st, key), loadingNewer: false, error: r.error } } }));
-    });
-  };
-
-  const jumpToLatest: ChatActions["jumpToLatest"] = (key) => {
-    if (store.getState().fresh) void readLatest(key);
-  };
-
   const rowOf = (key: ProjectKey, id: string) => store.getState().chatSends[key]?.find((r) => r.clientRequestId === id);
   const putRow = (key: ProjectKey, row: ChatSend) =>
     update((s) => ({ chatSends: { ...s.chatSends, [key]: upsertSend(s.chatSends[key] ?? [], row) } }));
@@ -192,6 +173,7 @@ export const createChatActions = (
       text: row.text,
       clientRequestId: row.clientRequestId,
       ...(row.attachments.length === 0 ? {} : { attachments: row.attachments.map((a) => a.attachmentId) }),
+      ...(row.now === true ? { now: true } : {}),
     };
     for (let attempt = 0; ; attempt++) {
       const r = await call("chat_send", input);
@@ -239,9 +221,8 @@ export const createChatActions = (
       attachments: input.attachments ?? [],
       at: new Date(now()).toISOString(),
       state: { t: "sending" },
+      ...(input.now === true ? { now: true } : {}),
     };
-    // Sending from a window paged above the latest: go back down, where the message will be.
-    if (chatOf(store.getState(), key).hasNewer) jumpToLatest(key);
     return sendRow(key, row);
   };
 
@@ -317,7 +298,7 @@ export const createChatActions = (
     return { t: "failed", error: r.error };
   };
 
-  const actions: ChatActions = { open, close, loadOlder, loadNewer, jumpToLatest, send, retry, discard: dropRow, probeStop, stop };
+  const actions: ChatActions = { open, close, loadOlder, send, retry, discard: dropRow, probeStop, stop };
   /** The chat on screen, which the disk cache keeps first. */
   const focus = (): ProjectKey | null => focused;
   return { actions, onState, focus };

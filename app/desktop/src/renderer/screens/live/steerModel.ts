@@ -1,8 +1,8 @@
-// Steering one agent (or the lead) mid-run, pure: which key sends which way, where a lead steer goes, and what a
-// steer's receipt says. The hub decides every stage from the agent's own frames (steer_send, order_get, steer.*);
-// these only word them. A steer speaks for the person, so it goes with the app's own key, as chat does.
+// Steering one agent mid-run, pure: which key sends which way, and what a steer's receipt says. The hub decides every
+// stage from the agent's own frames (steer_send, order_get, steer.*); these only word them. A steer speaks for the
+// person, so it goes with the app's own key, as chat does. The lead's are chat messages (chat_send's `now`).
 
-import type { OrderCard, Steer, SteerMode } from "../../../shared/contracts";
+import type { Steer, SteerMode } from "../../../shared/contracts";
 import { sendsOn, type KeyLike } from "../chat/composerModel";
 
 export type SteerKey = KeyLike & { readonly metaKey: boolean; readonly ctrlKey: boolean };
@@ -13,24 +13,11 @@ export const steerModeOn = (e: SteerKey): SteerMode | undefined => {
   return e.metaKey || e.ctrlKey ? "now" : "queue";
 };
 
-/** The lead composer: ⌘Enter while the lead works on an order steers it now; every other send is a chat message. */
-export const composerSendOn = (e: SteerKey, leadSteerable: boolean): "now" | "chat" | undefined => {
+/** The lead composer: ⌘Enter while the lead works sends now (it stops its step); every other send is a plain message. */
+export const composerSendOn = (e: SteerKey, leadWorking: boolean): "now" | "chat" | undefined => {
   const mode = steerModeOn(e);
   if (mode === undefined) return undefined;
-  return mode === "now" && leadSteerable ? "now" : "chat";
-};
-
-/**
- * The open order a lead steer names (steer_send's lead target is an order): the project's most recently active one.
- * None when the lead works on no order, and then the composer sends a plain message.
- */
-export const leadOrder = (orders: Readonly<Record<string, OrderCard>> | undefined, project: { readonly machineId: string; readonly projectId: string }): string | undefined => {
-  let best: OrderCard | undefined;
-  for (const o of Object.values(orders ?? {})) {
-    if (o.projectRef.machineId !== project.machineId || o.projectRef.projectId !== project.projectId) continue;
-    if (best === undefined || o.updatedAt > best.updatedAt) best = o;
-  }
-  return best?.workstreamId;
+  return mode === "now" && leadWorking ? "now" : "chat";
 };
 
 /** steer_send's limit on a steer's text (IntakeText). */
@@ -58,16 +45,6 @@ export function receiptsToShow(listed: readonly Steer[] | undefined, sent: reado
   return [...byId.values()].toSorted((a, b) => nOf(b.id) - nOf(a.id)).slice(0, max);
 }
 
-/**
- * The person's steers to the lead (never one to an agent, which shows under its work), from its orders' order_get
- * lists and what this window sent until a list has it. Oldest first, as the chat reads.
- */
-export function leadSteers(listed: readonly Steer[], sent: readonly Steer[]): readonly Steer[] {
-  const byId = new Map<string, Steer>();
-  for (const s of [...sent, ...listed]) if (s.by.kind === "human" && "workstreamId" in s.target) byId.set(s.id, s);
-  return [...byId.values()].toSorted((a, b) => Date.parse(a.queuedAt) - Date.parse(b.queuedAt) || nOf(a.id) - nOf(b.id));
-}
-
 export interface SteerReceipt {
   readonly tone: "quiet" | "warn" | "bad";
   readonly line: string;
@@ -79,7 +56,7 @@ export interface SteerReceipt {
   readonly withdraw: boolean;
 }
 
-/** One steer's receipt, state first. "It" is the agent (or the lead) it went to. */
+/** One steer's receipt, state first. "It" is the agent it went to. */
 export function steerReceipt(s: Steer): SteerReceipt {
   const quiet = (line: string, more: Partial<SteerReceipt> = {}): SteerReceipt => ({ tone: "quiet", line, withdraw: false, ...more });
   switch (s.stage) {

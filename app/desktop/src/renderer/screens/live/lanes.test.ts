@@ -3,7 +3,6 @@ import type { FleetStatus, OrderCard } from "../../../shared/contracts";
 import { selectProjectWork } from "../../src/data/selectors";
 import { applyFrame as frameIn, ingest, initialState } from "../../src/data/store";
 import type { AgentLane, LaneStatus, LiveFrame, LiveLane, PrRef } from "./contracts";
-import { fleet, groupLabel } from "./fleet";
 import { fmtElapsed, fmtTokens, middleEllipsis } from "./format";
 import { describe } from "./words";
 
@@ -83,36 +82,6 @@ group("the activity line", () => {
     expect(describe(lane("T1", "waiting")).tone).toBe("warning");
     const text = "npm test -- cart --reporter=dot --run src/cart/total.test.ts src/cart/discounts.test.ts";
     expect(describe(lane("T1", "working", { live: live("T1", "working", { activity: { activity: { kind: "command", text }, since: T0 } }) })).machine).toBe(text);
-  });
-});
-
-group("agents grouped by PR", () => {
-  const writer = (id: string, n: number, status: LaneStatus = "done") =>
-    lane(id, status, { taskId: id, startedAt: at(0), ...(status === "done" ? { endedAt: at(15) } : {}), pr: pr(n, "reviewing") });
-  const checker = (id: string, n: number, status: LaneStatus, role: AgentLane["role"] = "reviewer") =>
-    lane(id, status, { role, pr: pr(n, "reviewing"), startedAt: at(16), ...(status === "done" ? { endedAt: at(24) } : {}) });
-
-  it("groups by PR; reviews are the PR's, done counted from finished reviewers", () => {
-    const seen = [writer("T1", 221), writer("T2", 222, "working"), checker("R1", 221, "done"), checker("R2", 221, "working"), checker("Q1", 221, "working", "qa")];
-    const rows = seen.filter((l) => l.status !== "done");
-    const f = fleet(rows, seen, [pr(222, "reviewing", { taskId: "T2" }), pr(221, "reviewing", { taskId: "T1" })]);
-    expect(f.groups.map((g) => g.pr.number)).toEqual([221, 222]);
-    const g221 = f.groups[0];
-    // The one review it needs is in; QA is not a review.
-    expect(g221 && groupLabel(g221)).toBe("review 1/1");
-    // The finished writer still names the PR.
-    expect(g221?.writer?.laneId).toBe("T1");
-    expect([f.writers, f.others]).toEqual([[], []]);
-  });
-
-  it("takes the hub's count when it is ahead of the lanes seen", () => {
-    const g = fleet([], [], [pr(9, "reviewing", { reviewsDone: 1 })]).groups[0];
-    expect(g && groupLabel(g)).toBe("review 1/1");
-  });
-
-  it("a ready PR with every review in reads reviewed", () => {
-    const g = fleet([], [checker("R1", 117, "done")], [pr(117, "ready", { reviewsDone: 1 })]).groups[0];
-    expect(g && groupLabel(g)).toBe("reviewed");
   });
 });
 

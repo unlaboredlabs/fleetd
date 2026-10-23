@@ -297,22 +297,18 @@ describe("sending", () => {
     expect(fake.of("chat_send").map((c) => c.input["clientRequestId"])).toEqual(["c1", "c1", "c1"]);
   });
 
-  it("sending from a window paged above the latest keeps the person's message, even when the jump's page lacks it", async () => {
+  it("⌘Enter's now goes with every try of its message, which then stays in the chat like any other", async () => {
     const { fake, layer } = await connected();
-    layer.store.setState((s) => {
-      const chat = s.chats[KEY];
-      return chat === undefined ? s : { ...s, chats: { ...s.chats, [KEY]: { ...chat, hasNewer: true } } };
-    });
-    const out = layer.chat.send(KEY, { text: "do it" }, "c1");
-    // The jump's read went out before chat_send, so its page doesn't have the message.
-    const jump = fake.of("chat_history").at(-1);
-    expect(jump?.input).toMatchObject({ limit: 50 });
-    const mine = msg(3, { author: "human", text: "do it", clientRequestId: "c1" });
-    fake.send(messageEvent(2, mine));
-    fake.of("chat_send")[0]?.answer({ ok: true, output: { message: mine } });
+    const out = layer.chat.send(KEY, { text: "ship the card first", now: true }, "c1");
+    fake.of("chat_send")[0]?.answer(err("timeout"));
+    await vi.waitFor(() => expect(fake.of("chat_send")).toHaveLength(2));
+    expect(fake.of("chat_send").map((c) => c.input["now"])).toEqual([true, true]);
+    const mine = msg(3, { author: "human", text: "ship the card first", clientRequestId: "c1", delivery: "now" });
+    fake.of("chat_send")[1]?.answer({ ok: true, output: { message: mine } });
     expect(await out).toBe("sent");
-    jump?.answer(page([msg(1), msg(2)]));
-    await vi.waitFor(() => expect(items(layer)).toEqual([["m1", "sent"], ["m2", "sent"], ["m3", "sent"]]));
+    expect(selectChat(KEY)(layer.store.getState())?.items.at(-1)).toMatchObject({ id: "m3", state: "sent", delivery: "now" });
+    void layer.chat.send(KEY, { text: "and the docs" }, "c2");
+    expect(fake.of("chat_send")[2]?.input).not.toHaveProperty("now");
   });
 
   it("a cut-off waits as reconnecting; a snapshot while the link stayed up resends nothing", async () => {

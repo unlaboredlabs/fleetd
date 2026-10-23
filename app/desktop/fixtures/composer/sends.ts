@@ -6,4 +6,6 @@ export const CHAT_SENDS = {
   waiting: "1 go, 2 rec",
   sending: "Stop after the headline change and wait for me.",
   offline: "Hold the release until the headline PR merges.",
+  /** ⌘Enter while the lead works: chat_send with now. */
+  now: "Stop the public link work; ship the card first.",
 } as const;

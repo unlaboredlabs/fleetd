@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { Steer, Workstream } from "../../../shared/contracts";
 import type { ChatItem } from "../../src/data/chat";
-import { leadSteers, steerReceipt } from "../live/steerModel";
-import { authorLabel, chatRows, dayLabel, heldLabel, ordersInView, rowIndexOf, systemHeadline, type Row } from "./model";
+import { authorLabel, chatRows, dayLabel, heldLabel, latestLabel, newestKey, rowIndexOf, type Row } from "./model";
 
 const at = (d: number, h: number, m = 0) => new Date(Date.UTC(2026, 9, d, h, m)).toISOString();
 const NOW = Date.parse(at(19, 18));
@@ -20,12 +18,12 @@ const rows = (items: ChatItem[], over: Partial<Parameters<typeof chatRows>[0]> =
   chatRows({ items, hasOlder: false, loadingOlder: false, strip: false, nowMs: NOW, timeZone: "UTC", ...over });
 
 describe("the chat's rows", () => {
-  it("divide days, show an author once per run and fold fleetd's own messages", () => {
+  it("divide days, show an author once per run and fleetd's own messages as one-liners", () => {
     const r = rows([
-      item("a", "human", at(18, 9)),
+      item("a", "lead", at(18, 9)),
       item("b", "lead", at(19, 9)),
       item("c", "lead", at(19, 9, 3)),
-      item("d", "system", at(19, 9, 4), { text: "## Why you are woken\n- The human sent a message." }),
+      item("d", "system", at(19, 9, 4), { kind: "event", text: "Woken: the human sent a message." }),
       item("e", "lead", at(19, 9, 5)),
       item("f", "lead", at(19, 9, 30)),
     ]);
@@ -36,7 +34,7 @@ describe("the chat's rows", () => {
       "day:Today",
       "message:b:head",
       "message:c:-",
-      "system",
+      "event",
       "message:e:head",
       "message:f:head",
     ]);
@@ -64,8 +62,47 @@ describe("the chat's rows", () => {
       item("d", "agent", at(19, 9, 3), { message: hub("agent", { by: "scout" }) }),
       item("e", "agent", at(19, 9, 4), { message: hub("agent", { by: "scout" }) }),
     ]);
-    const shown = r.flatMap((x) => (x.kind === "message" ? [`${x.item.id}:${x.head ? authorLabel(x.item) : "-"}`] : []));
-    expect(shown).toEqual(["a:You · app", "b:You · cli", "c:Agent · nightly-ci", "d:Agent · scout", "e:-"]);
+    const shown = r.flatMap((x) => (x.kind === "message" ? [`${x.item.id}:${x.head ? authorLabel(x.item) : "-"}:${x.run ? "run" : "-"}`] : []));
+    // Yours have no header (where you wrote shows on the receipt), but still start a run apart from the lead's.
+    expect(shown).toEqual(["a:-:run", "b:-:-", "c:Agent · nightly-ci:run", "d:Agent · scout:run", "e:-:-"]);
+  });
+
+  it("mark where you stopped reading, at the first message from someone else since", () => {
+    const seq = (id: string, author: ChatItem["author"], n: number, m = n, over: Partial<ChatItem> = {}) =>
+      item(id, author, at(19, 9, m), { ...over, message: { seq: n } as ChatItem["message"] });
+    const items = [seq("a", "lead", 1), seq("b", "human", 2), seq("c", "human", 3), seq("d", "system", 4, 4, { kind: "event" }), seq("e", "lead", 5)];
+    const kinds = (r: readonly Row[]) => r.flatMap((x) => (x.kind === "new" ? ["new"] : "item" in x ? [x.item.id] : []));
+    // Your own messages since aren't news; the event after them is.
+    expect(kinds(rows(items, { seenSeq: 1 }))).toEqual(["a", "b", "c", "new", "d", "e"]);
+    expect(kinds(rows(items, { seenSeq: 4 }))).toEqual(["a", "b", "c", "d", "new", "e"]);
+    // The first new message shows who wrote it, even in a run.
+    const run = [seq("x", "lead", 1), seq("y", "lead", 2)];
+    expect(rows(run, { seenSeq: 1 }).find((x) => x.kind === "message" && x.item.id === "y")).toMatchObject({ head: true });
+    expect(rows(run).find((x) => x.kind === "message" && x.item.id === "y")).toMatchObject({ head: false });
+    expect(kinds(rows(items, {})).includes("new")).toBe(false);
+    // The pages loaded don't reach back to what you saw: no divider until they do.
+    expect(kinds(rows(items.slice(2), { seenSeq: 1, hasOlder: true })).includes("new")).toBe(false);
+    expect(kinds(rows(items.slice(1), { seenSeq: 1, hasOlder: false }))).toEqual(["b", "c", "new", "d", "e"]);
+  });
+
+  it("offer the way back to the newest message only while scrolled up, counting what arrived below", () => {
+    const before = rows([item("a", "human", at(19, 9)), item("b", "lead", at(19, 9, 1))], { activity: true });
+    const from = newestKey(before);
+    expect(from).toBe("b");
+    expect(latestLabel(before, undefined)).toBeUndefined();
+    expect(latestLabel(before, from)).toBe("Latest");
+    // Two from the lead and an event arrive, and yours, which you know about; an older page loads above.
+    const after = rows([
+      item("o", "lead", at(19, 8)),
+      item("a", "human", at(19, 9)),
+      item("b", "lead", at(19, 9, 1)),
+      item("c", "lead", at(19, 9, 2)),
+      item("d", "human", at(19, 9, 3)),
+      item("e", "system", at(19, 9, 4), { kind: "event" }),
+      item("f", "lead", at(19, 9, 5), { state: "streaming" }),
+    ]);
+    expect(latestLabel(after, from)).toBe("3 new");
+    expect(latestLabel(rows([]), newestKey(rows([])))).toBe("Latest");
   });
 
   it("put the live strip under the lead's newest message and after the field that answers it, never between them", () => {
@@ -95,7 +132,6 @@ describe("the chat's rows", () => {
     const asked = [...lead, item("c", "human", at(19, 9, 2))];
     expect(rows(asked, { strip: true, activity: true }).slice(-4).map((x) => x.kind)).toEqual(["message", "strip", "message", "activity"]);
     expect(rows([], { activity: true }).map((x) => x.kind)).toEqual(["top", "activity"]);
-    expect(rows(lead, { activity: true, hasNewer: true }).some((x) => x.kind === "activity")).toBe(false);
     const streaming = [item("a", "human", at(19, 9)), item("b", "lead", at(19, 9, 1), { state: "streaming" })];
     expect(rows(streaming, { activity: true }).some((x) => x.kind === "activity")).toBe(false);
     expect(rowIndexOf(r, "nope")).toBeUndefined();
@@ -110,7 +146,6 @@ describe("the chat's rows", () => {
     expect(kinds(rows([...lead, item("d", "human", at(19, 9, 5))], { workedSince: turn })).slice(3)).toEqual(["message:b", "activity", "event", "message:d"]);
     // The lead's newest reply is older than the turn: it didn't write in it, so no line claims it.
     expect(rows(lead, { workedSince: turn + 600_000 }).some((x) => x.kind === "activity")).toBe(false);
-    expect(rows(lead, { workedSince: turn, hasNewer: true }).some((x) => x.kind === "activity")).toBe(false);
   });
 
   it("place a row whose time doesn't parse under today, rather than throwing", () => {
@@ -125,10 +160,10 @@ describe("the chat's rows", () => {
     ]);
   });
 
-  it("show history from before the chat as the conversation it was, under one divider, and a way back down", () => {
+  it("show history from before the chat as the conversation it was, under one divider", () => {
     const old = (id: string, author: ChatItem["author"], time: string): ChatItem =>
       item(id, author, time, { kind: "event", message: { history: "order" } as ChatItem["message"] });
-    const r = rows([old("h1", "human", at(19, 8)), old("h2", "lead", at(19, 8, 1)), item("n1", "human", at(19, 9))], { hasNewer: true });
+    const r = rows([old("h1", "human", at(19, 8)), old("h2", "lead", at(19, 8, 1)), item("n1", "human", at(19, 9))]);
     expect(r.map((x) => (x.kind === "message" ? `${x.item.id}:${x.history ? "history" : "now"}` : x.kind))).toEqual([
       "top",
       "history",
@@ -136,9 +171,7 @@ describe("the chat's rows", () => {
       "h1:history",
       "h2:history",
       "n1:now",
-      "bottom",
     ]);
-    expect(rows([], { hasNewer: true, loadingNewer: true }).at(-1)).toEqual({ kind: "bottom", key: "bottom", state: "loading" });
   });
 
   it("word days plainly", () => {
@@ -146,70 +179,5 @@ describe("the chat's rows", () => {
     expect(dayLabel(at(18, 1), NOW, "UTC")).toBe("Yesterday");
     expect(dayLabel(at(12, 1), NOW, "UTC")).toBe("Mon 12 Oct");
     expect(dayLabel(new Date(Date.UTC(2025, 2, 3)).toISOString(), NOW, "UTC")).toBe("Mon 3 Mar 2025");
-  });
-
-  it("say why fleetd woke the lead in one line", () => {
-    expect(systemHeadline("# digest\n\n## Why you are woken\n- T3 finished: the receipt dates. Judge it.\n- A PR merged")).toBe("Woken: T3 finished: the receipt dates (+1 more)");
-    expect(systemHeadline("# project storefront (devbox/storefront), 09:12\n\n## Events\n- PR #214 merged")).toBe("Woken: PR #214 merged");
-    expect(systemHeadline("# project storefront (devbox/storefront), 09:12\n\nNothing new.")).toBe("fleetd's digest of the project");
-    expect(systemHeadline("You seem stalled; continue the task.")).toBe("You seem stalled; continue the task.");
-  });
-});
-
-describe("your steers to the lead", () => {
-  const steer = (n: number, time: string, stage: Steer["stage"], over: Partial<Steer> = {}): Steer => ({
-    id: `S${String(n)}`,
-    target: { workstreamId: "W1" },
-    workstreamId: "W1",
-    thread: { machineId: "devbox", threadId: "lead" },
-    runId: `r${String(n)}`,
-    by: { kind: "human", keyName: "laptop" },
-    mode: "now",
-    text: `steer ${String(n)}`,
-    stage,
-    queuedAt: time,
-    ...over,
-  });
-  const shown = (r: readonly Row[]) =>
-    r.flatMap((x) =>
-      x.kind === "steer" ? [`steer:${x.steer.id}:${steerReceipt(x.steer).line}`] : x.kind === "message" ? [`message:${x.item.id}`] : x.kind === "activity" ? ["activity"] : [],
-    );
-
-  it("show in the chat at their time with their receipt; a steer to one of its agents, or the lead's own, never", () => {
-    // order_get lists them newest first, across the project's orders; this window's send waits for the list.
-    const listed = [
-      steer(4, at(19, 9, 20), "withdrawn"),
-      steer(3, at(19, 9, 15), "queued", { target: { taskId: "T1" } }),
-      steer(2, at(19, 9, 10), "acknowledged", { ackExcerpt: "Shipping the card first." }),
-      steer(1, at(19, 9, 12), "delivered", { by: { kind: "lead" } }),
-    ];
-    const sent = [steer(5, at(19, 9, 40), "queued")];
-    const items = [item("a", "human", at(19, 9)), item("b", "lead", at(19, 9, 5)), item("c", "lead", at(19, 9, 30))];
-    expect(shown(rows(items, { steers: leadSteers(listed, sent), activity: true }))).toEqual([
-      "message:a",
-      "message:b",
-      "steer:S2:Acknowledged",
-      "steer:S4:Withdrawn: it never saw this",
-      "message:c",
-      "steer:S5:Stopping its current step…",
-      "activity",
-    ]);
-    // The hub's answer replaces what the window kept from its send.
-    expect(leadSteers([steer(5, at(19, 9, 40), "delivered", { how: "stopped" })], sent).map((x) => x.stage)).toEqual(["delivered"]);
-  });
-
-  it("wait for their page, and aren't shown twice beside the chat's history from before it existed", () => {
-    const items = [item("b", "lead", at(19, 9, 5)), item("c", "lead", at(19, 9, 30))];
-    const steers = [steer(1, at(19, 9), "acknowledged"), steer(2, at(19, 9, 10), "delivered"), steer(3, at(19, 9, 40), "delivered")];
-    expect(shown(rows(items, { steers, hasOlder: true, hasNewer: true }))).toEqual(["message:b", "steer:S2:Delivered", "message:c"]);
-    const copy = item("h", "human", at(19, 9, 10), { kind: "event", text: "steer 2", message: { messageId: "h", projectRef: { machineId: "devbox", projectId: "app" }, seq: 1, author: "human", text: "steer 2", createdAt: at(19, 9, 10), state: "final", history: "steer" } });
-    expect(shown(rows([copy, ...items], { steers: [steers[1] as Steer] })).filter((x) => x.startsWith("steer"))).toEqual([]);
-  });
-
-  it("are read from the open orders, and from those that ended within the pages", () => {
-    const w = (id: string, created: string, updated: string, state: Workstream["state"]) => ({ workstreamId: id, createdAt: created, updatedAt: updated, state }) as Workstream;
-    const listed = [w("W4", at(19, 12), at(19, 13), "done"), w("W3", at(19, 8), at(19, 10), "done"), w("W2", at(18, 8), at(18, 9), "stopped"), w("W1", at(17, 8), at(17, 9), "open")];
-    expect(ordersInView(["W9"], listed, undefined, undefined)).toEqual(["W1", "W2", "W3", "W4", "W9"]);
-    expect(ordersInView(["W9"], listed, at(19, 9), at(19, 11))).toEqual(["W1", "W3", "W9"]);
   });
 });

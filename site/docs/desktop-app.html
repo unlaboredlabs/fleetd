@@ -141,7 +141,7 @@ on a chat attach to your message. See <a href="/docs/projects#add-a-project">Add
 <tbody>
 <tr>
 <td>Messages</td>
-<td>The conversation, with Markdown, attachments and pasted images. Older history loads as you scroll up, including work from before the chat existed.</td>
+<td>The conversation, with Markdown, attachments and pasted images. Older history loads as you scroll up, including work from before the chat existed. A chat opens where you stopped reading, under a “New” line. Scrolled up, a button takes you back to the newest message and counts what arrived meanwhile.</td>
 </tr>
 <tr>
 <td>The box at the bottom</td>
@@ -157,11 +157,11 @@ on a chat attach to your message. See <a href="/docs/projects#add-a-project">Add
 </tr>
 <tr>
 <td>The agents strip</td>
-<td>Under the lead’s message, after any approval or secret it asks for: how many agents are working, and on which PRs. Expand it to see each agent, and click one to read what it was told. “Where the time went” opens <a href="#time">Time</a>, with each agent’s model, tokens and activity.</td>
+<td>Under the lead’s message, after any approval or secret it asks for: how many agents are working, and on which PRs. Click it to open <a href="#agents">Agents</a>; click a PR number to open <a href="/docs/chat#prs">the PR</a>.</td>
 </tr>
 <tr>
 <td>One-line events</td>
-<td>Pull requests opened, merged or sent back.</td>
+<td>Pull requests opened, merged or sent back. A PR’s number or GitHub link here or in a message opens <a href="/docs/chat#prs">the PR</a> in the panel.</td>
 </tr>
 <tr>
 <td>Secret and approval items</td>
@@ -186,7 +186,8 @@ Retry. “Disconnect and forget key” in Settings clears what the app kept for 
 <p>The Agents tab of the panel beside a chat (⌥⌘B) lists the project’s agents at work, those waiting on you first: each
 one’s role, its task, what it’s doing and for how long. Click one to watch its work as it happens: what it was told,
 the commands it ran, the files it edited and what it’s writing. Watching doesn’t interrupt it. To change what it does,
-tell the lead in the chat. Its PR number opens <a href="/docs/chat#prs">the PR</a>; <strong>All agents</strong> or Esc goes back to the list.</p>
+tell the lead in the chat. Its PR number opens <a href="/docs/chat#prs">the PR</a>, and <strong>What it was told</strong> shows the exact
+first message and prompts it started with; <strong>All agents</strong> or Esc goes back to the list.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="status">Status</h2><a class="sl-anchor-link" href="#status"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Status”</span></a></div>
 <p><img src="/docs/img/status.png" alt="Status with one row per project: billing waiting on you at 64%, checkout blocked at 31%, storefront working at 78% with five agents, each with its last merge."></p>
 <p>Status shows one row per project: a state word (waiting on you, blocked, working or idle), its two-tone progress bar,
@@ -232,7 +233,7 @@ an option or a prompt by name, and press Enter to open the first match.</p>
 <tbody>
 <tr>
 <td>General</td>
-<td>Appearance (light, dark, match system), the hub connection, and whether <code dir="auto">fleetd://</code> pairing links open in this app.</td>
+<td>Appearance (light, dark, match system) and the hub connection.</td>
 </tr>
 <tr>
 <td>Notifications</td>

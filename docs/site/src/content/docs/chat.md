@@ -82,7 +82,8 @@ The lead logs each answer as a [decision](/docs/glossary#decision), so it never 
 sidebar, a project says "reply" while the lead's last message waits for your answer, "secret" or "approve" while an
 item is open, and "blocked" when something outside the work holds it up. ⌥⌘A jumps to the next one. In the chat, a
 line above the box says what it waits on, such as "2 questions, asked at 09:02" or "1 command to approve". Click Show
-to scroll to it.
+to scroll to it. When nothing waits on you but the project is blocked, the line says why, such as "Blocked: main CI is
+red".
 
 ## Steer while it works {#steer}
 
@@ -91,7 +92,7 @@ A message reaches the lead at once. How depends on what the lead is doing:
 | The lead is | Your message |
 |---|---|
 | Idle | Starts its next turn. |
-| Working | Is a steer: it reads it at its next step, after the tool it is running. The box says so while you type. |
+| Working | Is a steer: it reads it at its next step, after the tool it is running. The box says so while you type. With ⌘Enter (Ctrl+Enter on Linux and Windows) it stops that step and reads it now. |
 | Starting, or its machine is away | Is held, and goes in as soon as it can. The chat says why it waits. |
 
 To stop the work, click Stop beside Send (or "Stop the lead and its agents" in the command palette). The lead's turn
@@ -100,7 +101,8 @@ instead.
 
 A message is never lost: if it can't be delivered, it stays held, the chat says why, and fleetd keeps trying.
 
-A small receipt under your message shows when it was taken in. See [Steering](/docs/steering).
+A small receipt under your newest message shows how it went in. A message sent with ⌘Enter keeps a quiet line saying
+the lead stopped its step to read it. See [Steering](/docs/steering).
 
 ## Follow the work {#follow}
 
@@ -108,7 +110,7 @@ Everything shows up in the chat, quietly:
 
 | In the chat | Shows |
 |---|---|
-| The agents strip, under the lead's message | One line: how many agents are working, and on which PRs. Expand it to see each agent's role, what it's doing and for how long. Click an agent waiting on you to jump to what it needs. |
+| The agents strip, under the lead's message | One line: how many agents are working, and on which PRs. Click it to see each agent in the panel's [Agents](/docs/desktop-app#agents) tab. |
 | A quiet line under the lead's reply | While the lead works: how long it has been working, what it's doing now, and the orders and agents it started. When it's done: how long it worked, such as "Worked for 3m 40s". |
 | One-line events | A pull request opened, merged, or sent back. |
 
@@ -118,8 +120,8 @@ For a project's progress at a glance, see [Status](/docs/status). For where the 
 ## Read a pull request {#prs}
 
 The Pull requests tab of the panel beside the chat (⌥⌘B) lists the project's PRs: open ones first, then those merged
-or closed in the last week, each with its checks, its reviews and the agent that wrote it. A PR's number in the agents
-strip or in [Agents](/docs/desktop-app#agents) opens it there too. For another project's, open the command palette
+or closed in the last week, each with its checks, its reviews and the agent that wrote it. A PR named in the chat
+("#221", "PR #221" or its GitHub link), in the agents strip or in [Agents](/docs/desktop-app#agents) opens it there too. For another project's, open the command palette
 (⌘K), select the project, press ⌘K again and choose **Pull requests in this project**.
 
 Click a PR to read it in the list's place; **All pull requests** or Esc goes back.

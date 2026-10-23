@@ -311,9 +311,6 @@ export interface ChatView {
   readonly items: readonly ChatItem[];
   readonly hasOlder: boolean;
   readonly loadingOlder: boolean;
-  /** Paged above the latest (past what a chat keeps): loadNewer pages back down; live messages wait for it. */
-  readonly hasNewer: boolean;
-  readonly loadingNewer: boolean;
   readonly error?: HubError | undefined;
   /**
    * Shown from before this connection (a drop, a reconnect not yet read back, the disk cache): nothing pages, and it
@@ -342,8 +339,6 @@ export const selectChat = perKey((key) =>
         items: chatItems(chat, sends),
         hasOlder: chat.hasOlder,
         loadingOlder: chat.loadingOlder,
-        hasNewer: chat.hasNewer,
-        loadingNewer: chat.loadingNewer,
         error: chat.error,
         held,
         offline: !fresh,

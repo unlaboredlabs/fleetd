@@ -18,6 +18,7 @@ use fleetd_contracts::mcp::{
 };
 use fleetd_contracts::model::ThreadStatus;
 use fleetd_contracts::prim::Count;
+use fleetd_contracts::sessions::SendMode;
 
 use super::{NewMessage, history};
 use crate::hub::api::{Caller, Hub, ToolError, require};
@@ -219,6 +220,13 @@ pub async fn send(
         .with_fix("Pick a project from fleetd_status."));
     }
     let writer = writer(hub, caller, &input)?;
+    let now = input.now == Some(true);
+    if now && writer.author != ChatAuthor::Human {
+        return Err(refused(
+            "Only a person can stop the lead's step.",
+            "Send it without now: the lead reads it at its next step.",
+        ));
+    }
     let ids: Vec<_> = input
         .attachments
         .as_ref()
@@ -263,7 +271,7 @@ pub async fn send(
         }
     };
     let (message, lead_waiting) = if hub.chat.is_held(&message).map_err(store_error)? {
-        go(hub, &r, message).await
+        go(hub, &r, message, now).await
     } else {
         (message, None)
     };
@@ -280,11 +288,13 @@ pub async fn send(
 }
 
 /// Sends a held message to the project's lead, starting it if it has none: released once its session or the
-/// offline queue took it, with how it went in; still held, with why, when it couldn't go.
+/// offline queue took it, with how it went in; still held, with why, when it couldn't go. `now` stops a working
+/// lead's running step for it; an idle or starting lead takes it as any message.
 async fn go(
     hub: &Arc<Hub>,
     r: &ProjectRef,
     mut message: fleetd_contracts::chat::ChatMessage,
+    now: bool,
 ) -> (fleetd_contracts::chat::ChatMessage, Option<String>) {
     let lead = match hub.leads.leads.auto_start(r).await {
         AutoStart::Running(lead) | AutoStart::Started(lead) => lead,
@@ -294,10 +304,12 @@ async fn go(
         machine_id: r.machine_id.clone(),
         thread_id: lead.thread_id.clone(),
     };
-    match deliver(hub, r, &thread, &message).await {
+    let now = now && lead.state == LeadState::Working;
+    match deliver(hub, r, &thread, &message, now).await {
         Ok(queued) => {
             message.delivery = Some(match lead.state {
                 _ if queued => ChatDelivery::Queued,
+                LeadState::Working if now => ChatDelivery::Now,
                 LeadState::Working => ChatDelivery::Steer,
                 LeadState::Starting => ChatDelivery::Queued,
                 _ => ChatDelivery::Turn,
@@ -345,13 +357,15 @@ pub fn for_lead(
     }
 }
 
-/// Into the lead's session, with its files: a plain send, which starts a turn or joins the running one. True when it
-/// waits for the machine in the offline queue.
+/// Into the lead's session, with its files: a plain send, which starts a turn or joins the running one, or with `now`
+/// steer_send's own interrupt (SendMode::Now), which stops the running step first. True when it waits for the
+/// machine in the offline queue.
 async fn deliver(
     hub: &Arc<Hub>,
     r: &ProjectRef,
     thread: &ThreadRef,
     message: &fleetd_contracts::chat::ChatMessage,
+    now: bool,
 ) -> Result<bool, ToolError> {
     let ids: Vec<_> = message
         .attachments
@@ -374,9 +388,13 @@ async fn deliver(
         .for_thread(&thread.machine_id, thread.thread_id.as_str());
     let text = for_lead(&set, message, &files);
     let crid = format!("chat:{}", message.message_id);
+    let opts = SendOpts {
+        mode: if now { SendMode::Now } else { SendMode::Plain },
+        ..SendOpts::default()
+    };
     let sent = hub
         .queue
-        .send_with(thread, &text, &crid, None, SendOpts::default())
+        .send_with(thread, &text, &crid, None, opts)
         .await
         .map_err(|e| ToolError::new(ErrorCode::Failed, e.to_string()))?;
     Ok(sent.queued)
@@ -389,7 +407,8 @@ pub(super) async fn send_held(hub: &Arc<Hub>, r: &ProjectRef) {
         Err(error) => return tracing::warn!(%error, "chat: held messages not read"),
     };
     for message in held {
-        let (_, waiting) = go(hub, r, message).await;
+        // Held means the lead couldn't take it then: it goes in as any message, never as an interrupt later.
+        let (_, waiting) = go(hub, r, message, false).await;
         if let Some(why) = waiting {
             tracing::info!(project = %r.project_id, %why, "chat: held message waits");
             break;

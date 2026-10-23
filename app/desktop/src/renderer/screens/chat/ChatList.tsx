@@ -1,11 +1,11 @@
 // The lead chat as a virtualized list: only the rows on screen render, each measured to its wrapped height. It
 // opens at the newest message and stays there as rows measure and new ones stream in, until the reader scrolls
 // (the follow rule is T3 Code's: apps/web MessagesTimeline.logic.ts). Scrolling to the top loads older pages; the
-// list keeps its place while they arrive above.
+// list keeps its place while they arrive above. Scrolled up, a button counts what arrived below and goes back to it.
 import type { Virtualizer } from "@tanstack/react-virtual";
 import { Paperclip } from "lucide-react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import type { AgentLane, AttachmentRef } from "../../../shared/contracts";
+import type { AttachmentRef } from "../../../shared/contracts";
 import { Button, cx, Text, Truncate, VirtualList } from "../../ui";
 import { useData, useToolQuery } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
@@ -14,14 +14,14 @@ import { fmtBytes } from "./attachments";
 import type { ChatItem } from "../../src/data/chat";
 
 import { shortClock } from "./format";
-import { authorLabel, systemHeadline, type Row, type TopState } from "./model";
-import { MessageReceipt, SteerLine } from "./Composer";
+import { authorLabel, latestLabel, newestKey, type Row, type TopState } from "./model";
+import { MessageReceipt } from "./Composer";
 import { LiveStrip, useNow, useOnScreen } from "../live";
 import { Boundary } from "../../src/Boundary";
 import type { ChatItem as InlineItem } from "../../../shared/contracts";
 import { InlineChatItem } from "../inline";
 import type { ProjectRef } from "./slots";
-import { Disclosure, InlineText, Message } from "./text";
+import { InlineText, Message } from "./text";
 import s from "./view.module.css";
 
 /**
@@ -96,42 +96,6 @@ function Top({ state, onLoadOlder }: { state: TopState; onLoadOlder: () => void 
   );
 }
 
-function Bottom({ state, onLoadNewer, onJumpToLatest }: { state: "more" | "loading"; onLoadNewer: () => void; onJumpToLatest: () => void }) {
-  // Reaching the bottom of what is loaded asks for the page after it.
-  useEffect(() => {
-    if (state === "more") onLoadNewer();
-  }, [state, onLoadNewer]);
-  return (
-    <div className={s.top}>
-      {state === "loading" ? (
-        <Text size="xs" tone="quiet">
-          Loading later messages…
-        </Text>
-      ) : (
-        <Button variant="secondary" onClick={onJumpToLatest}>
-          Jump to latest
-        </Button>
-      )}
-    </div>
-  );
-}
-
-function SystemLine({ item }: { item: ChatItem }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className={s.quietRow}>
-      <Disclosure open={open} onToggle={() => setOpen((o) => !o)}>
-        {systemHeadline(item.text)}
-      </Disclosure>
-      {open ? (
-        <div className={s.systemText}>
-          <Message text={item.text} />
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 /**
  * A secret field or a gated command (F5). The hub's message carries the item; E1's stub contract doesn't type it
  * yet, so it is read from the message here until E1 moves to H1's generated contract.
@@ -195,17 +159,11 @@ const RowView = memo(function RowView(props: {
   /** This is the person's newest message: its receipt shows even once sent. */
   mineLatest: boolean;
   onLoadOlder: () => void;
-  onLoadNewer: () => void;
-  onJumpToLatest: () => void;
-  onTold: (lane: AgentLane) => void;
-  onWithdraw: (steerId: string) => Promise<boolean>;
 }) {
   const { row: r, project } = props;
   switch (r.kind) {
     case "top":
       return <Top state={r.state} onLoadOlder={props.onLoadOlder} />;
-    case "bottom":
-      return <Bottom state={r.state} onLoadNewer={props.onLoadNewer} onJumpToLatest={props.onJumpToLatest} />;
     case "history":
       return (
         <div className={s.day} role="separator">
@@ -222,12 +180,18 @@ const RowView = memo(function RowView(props: {
           </Text>
         </div>
       );
-    case "system":
-      return <SystemLine item={r.item} />;
+    case "new":
+      return (
+        <div className={s.day} role="separator">
+          <Text size="xs" tone="accent">
+            New
+          </Text>
+        </div>
+      );
     case "event":
       return (
         <div className={cx(s.quietRow, s.event)} data-entry="event">
-          <InlineText size="xs" tone="quiet" text={r.item.text} />
+          <InlineText size="xs" tone="quiet" text={r.item.text} project={project} />
           <span className={s.eventTime}>{shortClock(r.item.at)}</span>
         </div>
       );
@@ -243,38 +207,22 @@ const RowView = memo(function RowView(props: {
       return (
         <div className={s.strip}>
           <Boundary part="the live strip">
-            <LiveStrip project={project} onTold={props.onTold} />
+            <LiveStrip project={project} />
           </Boundary>
-        </div>
-      );
-    case "steer":
-      return (
-        <div className={cx(s.message, r.head && s.messageHead)} data-entry="steer" data-author="human">
-          {r.head ? (
-            <div className={s.head}>
-              <Text size="xs" strong tone="accent">
-                You · steer
-              </Text>
-              <Text size="xs" tone="quiet" tabular>
-                {shortClock(r.steer.queuedAt)}
-              </Text>
-            </div>
-          ) : null}
-          <Message text={r.steer.text} />
-          <SteerLine steer={r.steer} onWithdraw={props.onWithdraw} />
         </div>
       );
     case "message": {
       const i = r.item;
       return (
         <div
-          className={cx(s.message, r.head && s.messageHead, (r.history || i.author === "agent") && s.quietMessage)}
+          className={cx(s.message, r.run && s.messageHead, (r.history || i.author === "agent") && s.quietMessage, i.author === "human" && s.mine)}
           data-entry="message"
           data-author={i.author}
+          title={i.author === "human" ? shortClock(i.at) : undefined}
         >
           {r.head ? (
             <div className={s.head}>
-              <Text size="xs" strong tone={i.author === "human" ? "accent" : "default"}>
+              <Text size="xs" strong>
                 {authorLabel(i)}
               </Text>
               <Text size="xs" tone="quiet" tabular>
@@ -282,7 +230,7 @@ const RowView = memo(function RowView(props: {
               </Text>
             </div>
           ) : null}
-          {i.text.trim() !== "" ? <Message text={i.text} /> : null}
+          {i.text.trim() !== "" ? <Message text={i.text} project={project} /> : null}
           {i.attachments.length > 0 ? (
             <div className={s.attachments}>
               {i.attachments.map((a) => (
@@ -308,11 +256,6 @@ export function ChatList(props: {
   rows: readonly Row[];
   project: ProjectRef;
   onLoadOlder: () => void;
-  onLoadNewer: () => void;
-  onJumpToLatest: () => void;
-  onTold: (lane: AgentLane) => void;
-  /** Takes back one of your steers while it waits. */
-  onWithdraw: (steerId: string) => Promise<boolean>;
   /** A message to open at (a notification's link): scrolled to once it is loaded. */
   openAt?: number | undefined;
   /** Bumped to scroll to `openAt` again (Show, pressed twice). */
@@ -330,9 +273,13 @@ export function ChatList(props: {
   // so older pages loading above it don't pin it again.
   const openKey = openAt === undefined ? undefined : rows[openAt]?.key;
   const openIndex = useRef(openAt);
+  const rowsNow = useRef(rows);
   useEffect(() => {
     openIndex.current = openAt;
+    rowsNow.current = rows;
   });
+  /** Lets go of the pin: the reader scrolled, or asked for the newest message. */
+  const unpin = useRef<() => void>(undefined);
   useEffect(() => {
     const v = virtualizer.current;
     const el = v?.scrollElement;
@@ -342,11 +289,13 @@ export function ChatList(props: {
     const release = () => {
       pinned = false;
     };
+    unpin.current = release;
     const pin = () => {
       if (!pinned) return;
       const at = openIndex.current;
       if (openKey === undefined || at === undefined) el.scrollTop = el.scrollHeight;
-      else v.scrollToIndex(at, { align: "center" });
+      // Where you stopped reading goes at the top, with what's new under it.
+      else v.scrollToIndex(at, { align: openKey === "new" ? "start" : "center" });
     };
     if (openKey !== undefined) pin();
     el.addEventListener("wheel", release, { passive: true });
@@ -362,6 +311,24 @@ export function ChatList(props: {
       el.removeEventListener("keydown", release);
     };
   }, [openKey, openSeq]);
+
+  // Scrolled up past the follow threshold (followOptions'), the newest message's key then; undefined at the end.
+  const [awayFrom, setAwayFrom] = useState<string>();
+  useEffect(() => {
+    const el = virtualizer.current?.scrollElement;
+    if (!el) return;
+    const onScroll = () => {
+      const away = el.scrollHeight - el.scrollTop - el.clientHeight > 24;
+      setAwayFrom((from) => (away ? (from ?? newestKey(rowsNow.current)) : undefined));
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
+  const latest = latestLabel(rows, awayFrom);
+  const toLatest = () => {
+    unpin.current?.();
+    virtualizer.current?.scrollToIndex(rows.length - 1, { align: "end" });
+  };
 
   useEffect(() => {
     const v = virtualizer.current;
@@ -388,13 +355,17 @@ export function ChatList(props: {
             project={props.project}
             mineLatest={r.key === mineLatest}
             onLoadOlder={props.onLoadOlder}
-            onLoadNewer={props.onLoadNewer}
-            onJumpToLatest={props.onJumpToLatest}
-            onTold={props.onTold}
-            onWithdraw={props.onWithdraw}
           />
         )}
       />
+      {latest !== undefined ? (
+        <div className={s.latest}>
+          {/* A press keeps the cursor in the box: it would otherwise go to the button, which then goes. */}
+          <Button variant="secondary" onMouseDown={(e) => e.preventDefault()} onClick={toLatest}>
+            {latest} <span aria-hidden>↓</span>
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }
