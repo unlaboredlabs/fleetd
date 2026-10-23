@@ -65,18 +65,6 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "Wait for hub events after cursor instead of polling. Returns at once if any exist, otherwise long-polls up to timeoutSec (default and max 50). No cursor means from now. Filter by types and machineId.",
     ),
     (
-        "thread_launch",
-        "Start a new thread in a project on Opus 5.5 with the high profile, or medium when profile says so. runtimeMode defaults to full-access. Refused with machine_offline when the machine is offline.",
-    ),
-    (
-        "thread_send",
-        "Send a message to a thread, waking it if idle. When the machine is offline the hub queues it (queued: true, queuedUntil; default 24 h) and delivers it in order when the machine is back: watch for write.delivered or write.expired.",
-    ),
-    (
-        "thread_interrupt",
-        "Interrupt a thread's running turn. Refused with machine_offline when the machine is offline.",
-    ),
-    (
         "wake_set",
         "Have the hub send a message to a thread later: at an ISO time (no offset means wall-clock time in tz), every N seconds (>= 60), or on a 5-field cron in an IANA tz. once defaults to true. A run missed while the hub was down fires once, marked late, unless catchUp is skip. Offline machines get it queued. Emits wake.fired.",
     ),

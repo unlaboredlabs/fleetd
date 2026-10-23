@@ -198,26 +198,6 @@ impl ApprovalHub for OpsPorts {
             })
         })
     }
-
-    fn lead_thread(&self, project: &ports::ProjectRef) -> BoxFut<'_, Option<String>> {
-        let r: Option<fleetd_contracts::ids::ProjectRef> = convert(project);
-        Box::pin(async move {
-            let lead = self.hub().leads.records.lead_get(&r?).ok()??;
-            Some(lead.thread_id.to_string())
-        })
-    }
-
-    fn thread_project(&self, m: &str, t: &str) -> BoxFut<'_, Option<ports::ProjectRef>> {
-        let r = thread_ref(m, t);
-        Box::pin(async move {
-            let r = r?;
-            let stored = self.hub().store.thread_get(&r).ok()??;
-            Some(ports::ProjectRef {
-                machine_id: r.machine_id.to_string(),
-                project_id: stored.thread.project_id.to_string(),
-            })
-        })
-    }
 }
 
 /// What a request was and what became of it, in the lead's words for its wake.

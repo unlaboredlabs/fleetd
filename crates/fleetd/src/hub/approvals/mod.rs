@@ -26,7 +26,7 @@ use fleetd_contracts::ledger::{
     GatedRunSpec, HumanRequest, RequestKind, RequestState, SecretRequest,
 };
 use fleetd_contracts::sessions::{PendingPermission, PermissionDecision};
-pub use permissions::{ThreadAnswer, ToolRules};
+pub use permissions::ToolRules;
 use regex::Regex;
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -188,9 +188,6 @@ pub trait ApprovalHub: Send + Sync {
     fn wake_request(&self, request: &HumanRequest) -> BoxFut<'_, ()>;
     /// The project policy's `tools` rules (empty without a policy file); the error says why it could not be read.
     fn tool_rules(&self, project: &ProjectRef) -> BoxFut<'_, Result<ToolRules, String>>;
-    /// The project's current lead thread.
-    fn lead_thread(&self, project: &ProjectRef) -> BoxFut<'_, Option<String>>;
-    fn thread_project(&self, machine_id: &str, thread_id: &str) -> BoxFut<'_, Option<ProjectRef>>;
 }
 
 pub struct ApprovalsDeps {

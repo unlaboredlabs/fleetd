@@ -155,6 +155,10 @@ turns off Claude Code’s own subagents in every <code dir="auto">claude</code> 
 <td>general-purpose, statusline-setup, and your agents in <code dir="auto">~/.claude/agents</code></td>
 <td>Still listed by claude, but nothing can start them.</td>
 </tr>
+<tr>
+<td><code dir="auto">claude</code> from an agent’s shell, by name, by path, through a package runner or a <code dir="auto">sh -c</code></td>
+<td>Denied, so no nested claude runs past the cap or on another model.</td>
+</tr>
 </tbody>
 </table>
 <p>If a session ever offers one anyway, fleetd stops it before it can start an agent, and every later session on that

@@ -4,8 +4,8 @@
 // (FLEETD_NODE_RETRY_SCHEDULE_MS, shortened here), and the thread must complete with every retry, claude's and the
 // node's, in actions_list so a lead sees why the run was slow.
 import path from "node:path";
-import type { Body, Lab } from "../harness.ts";
-import { installShim, launch, MACHINE, projectOf, runEnd, withNode } from "./kit.ts";
+import { type Body, type Lab, leadRun } from "../harness.ts";
+import { installShim, MACHINE, projectOf, runEnd, withNode } from "./kit.ts";
 
 /** In the fixture, claude retried twice per request (CLAUDE_CODE_MAX_RETRIES=2 against the local stub). */
 const CLAUDE_RETRIES_PER_REPLAY = 2;
@@ -23,7 +23,8 @@ export async function overloaded(lab: Lab) {
   await withNode(lab, MACHINE, { pathPrefix: [shim.dir], env: { FLEETD_NODE_RETRY_SCHEDULE_MS: SCHEDULE_MS.join(",") } }, async () => {
     const projectId = await projectOf(lab, MACHINE);
     const from = await lab.cursor();
-    const threadId = await launch(lab, MACHINE, projectId, "fleetd lab overloaded", "Reply with the single word OK and nothing else.");
+    // The shim answers the lead's first turn (lead.start), the first user message its session gets.
+    const { threadId } = await leadRun(lab, MACHINE, projectId, "Reply with the single word OK and nothing else.");
 
     // The node's retries stay inside the run; a thread.failed here means it gave up or never retried.
     const { event } = await runEnd(lab, MACHINE, threadId, from, 240_000, ["thread.completed", "thread.failed", "thread.usage_limited"]);

@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { type Body, descendants, type Lab, MECHANICS, type NodeOptions, type ProcInfo, REPO, realClaude, sleep, stillRuns } from "../harness.ts";
+import { type Body, descendants, type Lab, type NodeOptions, type ProcInfo, REPO, realClaude, sleep, stillRuns } from "../harness.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const FIXTURES = path.join(REPO, "crates/fleetd/src/node/runner/fixtures");
@@ -68,17 +68,10 @@ export const killSurvivors = (procs: ReadonlyArray<ProcInfo>) => {
   return live;
 };
 
-/** Launches a thread with `prompt` on the tiny model and returns its id. */
-export const launch = async (lab: Pick<Lab, "callTool" | "check">, machineId: string, projectId: string, title: string, prompt: string) => {
-  const launched = await lab.callTool("thread_launch", { machineId, projectId, prompt, profile: MECHANICS, title, clientRequestId: randomUUID() });
-  lab.check(!launched.isError, `thread_launch on ${machineId}: ${JSON.stringify(launched.body)}`);
-  return launched.body.threadId as string;
-};
-
-export const send = async (lab: Pick<Lab, "callTool" | "check">, machineId: string, threadId: string, message: string) => {
-  const sent = await lab.callTool("thread_send", { machineId, threadId, message, clientRequestId: randomUUID() });
-  // queued: true here means claude queued it behind a run already going, which is fine.
-  lab.check(!sent.isError && sent.body.queuedUntil === undefined, `thread_send to ${threadId}: ${JSON.stringify(sent.body)}`);
+/** A person's chat message to the project's lead. */
+export const send = async (lab: Pick<Lab, "humanCall" | "check">, machineId: string, projectId: string, text: string) => {
+  const sent = await lab.humanCall("chat_send", { projectRef: { machineId, projectId }, text, clientRequestId: randomUUID() });
+  lab.check(!sent.isError && sent.body.leadWaiting === undefined, `chat_send on ${machineId}: ${JSON.stringify(sent.body)}`);
 };
 
 /** The first run-ending event for the thread after `cursor` (thread.started and node retries' interim states skipped). */

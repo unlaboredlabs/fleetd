@@ -1,4 +1,4 @@
-//! The offline write queue. Additive writes (thread_send, wake firings) to a machine without a live node link
+//! The offline write queue. Additive writes (lead messages, wake firings) to a machine without a live node link
 //! wait here, in order, and go out when it comes back; each ends as one write.delivered or write.expired event.
 //! Interrupts and launches are not additive, so they never come through here and still fail when offline.
 pub mod ports;
@@ -147,7 +147,7 @@ impl WriteQueue {
         })
     }
 
-    /// The hub's queue over the executor: `--queue-ttl` sets the TTL, and `thread_send` goes through it.
+    /// The hub's queue over the executor: `--queue-ttl` sets the TTL.
     pub fn from_config(
         config: &HubConfig,
         db: &Arc<HubDb>,
@@ -158,15 +158,13 @@ impl WriteQueue {
         let ttl = config
             .queue_ttl_sec
             .map_or(DEFAULT_TTL, Duration::from_secs);
-        let queue = Self::new(
+        Self::new(
             db.clone(),
             executors.clone(),
             events.clone(),
             clock.clone(),
             ttl,
-        );
-        executors.set_offline_writer(Arc::new(ports::QueueWriter(queue.clone())));
-        queue
+        )
     }
 
     pub fn is_connected(&self, machine_id: &MachineId) -> bool {
@@ -758,14 +756,13 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn a_refusal_reaches_thread_send_in_the_nodes_own_words() {
-        use crate::hub::executor::{ExecutorError as Executor, OfflineWriter};
+    async fn a_refusal_reaches_the_sender_in_the_nodes_own_words() {
         let kit = Kit::new();
         kit.writer.go_live("lab-a");
         kit.writer.refuse("r1");
         let q = kit.queue(DEFAULT_TTL);
-        match ports::QueueWriter(q).send(&t1(), "hi", "r1").await {
-            Err(Executor::NodeRequestFailed { message, fix, .. }) => {
+        match q.send(&t1(), "hi", "r1", None).await {
+            Err(ExecutorError::NodeRequestFailed { message, fix, .. }) => {
                 assert_eq!(
                     message,
                     "claude is not logged in for fleetd on this machine"
@@ -801,35 +798,15 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn a_send_behind_the_active_run_reads_as_queued_without_an_expiry() {
-        use crate::hub::executor::{OfflineWriter, WriteOutcome};
+    async fn a_send_behind_the_active_run_is_the_nodes_not_the_queues() {
         let kit = Kit::new();
         kit.writer.go_live("lab-a");
         kit.writer.behind_run("r1");
         let q = kit.queue(DEFAULT_TTL);
-        assert_eq!(
-            ports::QueueWriter(q.clone())
-                .send(&t1(), "next", "r1")
-                .await
-                .unwrap(),
-            WriteOutcome {
-                run_id: Some("run-1".into()),
-                queued: true,
-                queued_until: None,
-            }
-        );
-        // Not in the offline queue: the node has it.
-        assert_eq!(
-            ports::QueueWriter(q)
-                .send(&t1(), "after", "r2")
-                .await
-                .unwrap(),
-            WriteOutcome {
-                run_id: Some("run-2".into()),
-                queued: false,
-                queued_until: None,
-            }
-        );
+        let behind = q.send(&t1(), "next", "r1", None).await.unwrap();
+        assert!(behind.behind_run && !behind.queued && behind.queued_until.is_none());
+        let after = q.send(&t1(), "after", "r2", None).await.unwrap();
+        assert!(!after.behind_run && !after.queued);
         assert_eq!(kit.writer.messages(), vec!["next", "after"]);
     }
 

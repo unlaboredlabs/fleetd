@@ -43,10 +43,18 @@ const WHY_SCHEDULE: &str = "fleetd schedules work (tasks, wakes), never inside o
                             restart.";
 const WHY_WORKTREE: &str = "fleetd owns worktrees, one per writer. A session that moves its own folder can't be \
                             resumed.";
+const WHY_NESTED: &str = "A claude started inside a session runs outside fleetd's slots, with its own subagents and \
+                          any model. Agents start agents with spawn_agent.";
 
 explained! {
     /// Tools no fleetd session gets (names from claude 2.1.302's `system/init` tool list). Any further agent tool a
     /// session's init still offers ([`conformance::agent_like`]) stops that session and is denied from then on.
+    ///
+    /// Then the Bash rules against a nested claude. claude itself matches `Bash(claude *)` in every part of a compound
+    /// command, in subshells and `$(…)`, past any leading `VAR=…`, and past the wrappers it strips (`timeout`,
+    /// `nice`, `nohup`, `command`, bare `xargs`, …). It matches no other spelling of the program, so the rest name
+    /// the obvious ones: a path to the binary, a package runner, a `-c` shell, `env`, `exec`, `xargs` with flags. A
+    /// script that hides the name still gets through: these keep agents honest, they are not a sandbox.
     ALWAYS_DISALLOWED, DISALLOWED_WHY: &str = [
         "Task" => WHY_TASK,
         "Agent" => WHY_TASK,
@@ -66,6 +74,18 @@ explained! {
         "ScheduleWakeup" => WHY_SCHEDULE,
         "EnterWorktree" => WHY_WORKTREE,
         "ExitWorktree" => WHY_WORKTREE,
+        "Bash(claude *)" => WHY_NESTED,
+        "Bash(*bin/claude)" => WHY_NESTED,
+        "Bash(*bin/claude *)" => WHY_NESTED,
+        "Bash(*/claude -*)" => WHY_NESTED,
+        "Bash(*claude/versions/*)" => WHY_NESTED,
+        "Bash(npx *claude*)" => WHY_NESTED,
+        "Bash(bunx *claude*)" => WHY_NESTED,
+        "Bash(*@anthropic-ai/claude-code*)" => WHY_NESTED,
+        "Bash(*sh -*c *claude*)" => WHY_NESTED,
+        "Bash(env *claude*)" => WHY_NESTED,
+        "Bash(exec *claude*)" => WHY_NESTED,
+        "Bash(xargs *claude*)" => WHY_NESTED,
     ]
 }
 
@@ -391,7 +411,10 @@ mod tests {
              --allowedTools Bash(npm test:*) Bash(git commit -m \"a, b\") \
              --disallowedTools Task Agent Workflow ListAgents SendMessage TaskStop TaskOutput TeamCreate TeamDelete \
              AskUserQuestion EnterPlanMode ExitPlanMode CronCreate CronDelete \
-             CronList ScheduleWakeup EnterWorktree ExitWorktree WebFetch \
+             CronList ScheduleWakeup EnterWorktree ExitWorktree Bash(claude *) Bash(*bin/claude) \
+             Bash(*bin/claude *) Bash(*/claude -*) Bash(*claude/versions/*) Bash(npx *claude*) Bash(bunx *claude*) \
+             Bash(*@anthropic-ai/claude-code*) Bash(*sh -*c *claude*) Bash(env *claude*) Bash(exec *claude*) \
+             Bash(xargs *claude*) WebFetch \
              --setting-sources user,project,local --add-dir /work/root"
         );
 
@@ -409,6 +432,68 @@ mod tests {
         // fleetd's servers and settings are added to the user's own, never in place of them.
         assert!(args.contains("--mcp-config /n/mcp.json --settings /n/settings.json "));
         assert!(!args.contains("--strict-mcp-config"));
+    }
+
+    /// A Bash deny rule as claude matches it against one part of a command, after it split off the other parts and
+    /// stripped leading assignments and its wrappers: `*` is any text, and a trailing ` *` that is the only `*` also
+    /// matches the bare command.
+    fn denies(rule: &str, command: &str) -> bool {
+        fn glob(p: &[u8], s: &[u8]) -> bool {
+            match p.split_first() {
+                None => s.is_empty(),
+                Some((b'*', rest)) => (0..=s.len()).any(|i| glob(rest, &s[i..])),
+                Some((c, rest)) => s.first() == Some(c) && glob(rest, &s[1..]),
+            }
+        }
+        let Some(p) = rule.strip_prefix("Bash(").and_then(|r| r.strip_suffix(')')) else {
+            return false;
+        };
+        let bare = p.strip_suffix(" *").filter(|b| !b.contains('*'));
+        glob(p.as_bytes(), command.as_bytes()) || bare == Some(command)
+    }
+
+    #[test]
+    fn no_spelling_of_claude_runs_in_an_agents_bash() {
+        let denied = |c: &str| ALWAYS_DISALLOWED.iter().any(|r| denies(r, c));
+        for nested in [
+            "claude",
+            "claude -p hi",
+            // A helper call on another model.
+            "claude -p --model claude-haiku-4-5 'sum this up'",
+            "/usr/local/bin/claude -p hi",
+            "~/.local/bin/claude --print hi",
+            "./node_modules/.bin/claude -p hi",
+            "/opt/claude -p hi",
+            "~/.local/share/claude/versions/2.1.302 -p hi",
+            "npx claude -p hi",
+            "npx -y @anthropic-ai/claude-code -p hi",
+            "bunx @anthropic-ai/claude-code -p hi",
+            "pnpm dlx @anthropic-ai/claude-code -p hi",
+            "npm exec -- @anthropic-ai/claude-code@latest -p hi",
+            "sh -c 'claude -p hi'",
+            "bash -lc \"claude -p hi\"",
+            "/bin/zsh -c 'cd /w && claude -p hi'",
+            "env -u CLAUDECODE claude -p hi",
+            "env CLAUDECODE= /usr/bin/claude -p hi",
+            "exec claude -p hi",
+            "xargs -0 claude -p",
+        ] {
+            assert!(denied(nested), "{nested}");
+        }
+        // Everyday work on fleetd itself, whose runner lives in a folder named claude.
+        for work in [
+            "cargo test -p fleetd --lib node::runner::claude",
+            "cat crates/fleetd/src/node/runner/claude/mod.rs",
+            "git log --oneline -- crates/fleetd/src/node/runner/claude/",
+            "rg -n claude crates docs",
+            "ls ~/.claude",
+            "git commit -m 'fix(node): the claude runner resumes'",
+            "npx vitest run",
+            "env",
+            "claudette --help",
+        ] {
+            assert!(!denied(work), "{work}");
+        }
     }
 
     #[test]

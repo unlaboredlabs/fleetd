@@ -812,8 +812,7 @@ fn builtins(root: &Path) -> Result<String, String> {
     let mut md = format!(
         "## Claude Code tools\n\nThe same for every session. Listed for Claude Code \
          {TESTED}, the version fleetd is tested with.\n\n**Allowed:** {}.\n\nA project's policy file can deny more \
-         with `tools.deny`. In a run started approval-required, Claude Code asks before it uses a tool and the \
-         question comes to you; `tools.allow` answers it ahead of time.\n\n**Blocked**, in `--disallowedTools` and in the \
+         with `tools.deny`.\n\n**Blocked**, in `--disallowedTools` and in the \
          `permissions.deny` of fleetd's settings, so your own settings can't turn them back on:\n\n| Tool | Why \
          |\n|---|---|\n",
         code_list(allowed.iter().map(String::as_str))

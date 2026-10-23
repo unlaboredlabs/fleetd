@@ -1,12 +1,9 @@
 //! Tool prompts as approvals. A session's permission prompt reaches the hub as a `thread.waiting` event carrying
 //! `data.permission`. A project tool rule that matches answers it at once. Otherwise it becomes an approval request
-//! a person answers in the project's chat, and the answer goes to the node as `session_call answer`.
-//! `thread_answer` answers it directly. A prompt that stays open is raised again as attention, so an
-//! approval-required run never waits silently.
+//! a person answers in the project's chat, and the answer goes to the node as `session_call answer`. A prompt
+//! that stays open is raised again as attention, so an approval-required run never waits silently.
 use super::store::{NewRequest, RequestFilter};
-use super::{
-    ApprovalRefused, Approvals, Caller, NodeCommandError, contract_project, project_of, refuse,
-};
+use super::{Approvals, contract_project, project_of};
 use crate::hub::prompts::fixed::{DenyReason, denied};
 use crate::hub::usage::ports::{NewEvent, ProjectRef, WaitInput};
 use crate::hub::usage::time::{clip, iso, parse_ms, system_ms};
@@ -298,38 +295,6 @@ impl Tracked {
     }
 }
 
-/// `thread_answer`'s call, decoded.
-#[derive(Clone, Debug)]
-pub struct ThreadAnswer {
-    pub machine_id: String,
-    pub thread_id: String,
-    pub request_id: Option<String>,
-    pub allow: bool,
-    pub message: Option<String>,
-}
-
-fn refused_by_node(e: NodeCommandError, machine_id: &str) -> ApprovalRefused {
-    let (code, fix) = match e.reason.as_str() {
-        "offline" => (
-            "machine_offline",
-            format!("Try again when {machine_id} is online."),
-        ),
-        "not_found" => (
-            "not_found",
-            "Read the thread with thread_tail: the prompt may be answered or its run ended.".into(),
-        ),
-        _ => (
-            "failed",
-            "Retry; if it keeps failing, check the machine with fleetd_status.".into(),
-        ),
-    };
-    ApprovalRefused {
-        code: code.into(),
-        message: e.message,
-        fix: Some(e.fix.unwrap_or(fix)),
-    }
-}
-
 /// Who decided, for the time inspector: `human:<name>` is a person, anyone else the lead agent.
 fn decided_by(by: &str) -> Option<fleetd_contracts::time::DecidedBy> {
     use fleetd_contracts::time::DecidedBy;
@@ -338,11 +303,6 @@ fn decided_by(by: &str) -> Option<fleetd_contracts::time::DecidedBy> {
     } else {
         DecidedBy::Lead
     })
-}
-
-fn answered_by(caller: &Caller<'_>) -> String {
-    let kind = if caller.human { "human" } else { "agent" };
-    format!("{kind}:{}", caller.name)
 }
 
 impl Approvals {
@@ -546,7 +506,7 @@ impl Approvals {
                 "approvals: tool prompt request not opened"
             );
             let summary = format!(
-                "{machine}/{thread_id} waits for permission to run {tool} {summary}, and the hub could not open its request ({}): answer it with thread_answer",
+                "{machine}/{thread_id} waits for permission to run {tool} {summary}, and the hub could not open its request ({}): stop the run if it should not wait",
                 e.message
             );
             self.attention(project, thread_id, prompt, None, summary, 0)
@@ -641,10 +601,10 @@ impl Approvals {
             let ask_part =
                 t.id.as_ref()
                     .map_or_else(|| "no request".to_string(), ChatRequestId::to_string);
-            let how = if state == Some(RequestState::Open) {
-                "approve or deny it in the project's chat"
-            } else {
-                "answer it with thread_answer"
+            let how = match state {
+                Some(RequestState::Open) => "approve or deny it in the project's chat",
+                Some(_) => "its answer has not reached the machine yet",
+                None => "it has no request to answer: stop the run if it should not wait",
             };
             let summary = format!(
                 "{ask_part}: {}/{} has waited {minutes} min for permission to run {} {}; {how}",
@@ -773,115 +733,5 @@ impl Approvals {
             self.deps.hub.wake_request(&done).await;
         }
         true
-    }
-
-    /// `thread_answer`: answers the prompt a thread's run waits on, and closes its request if one is open.
-    pub async fn answer_thread(
-        &self,
-        caller: &Caller<'_>,
-        input: ThreadAnswer,
-    ) -> Result<Value, ApprovalRefused> {
-        let (m, t) = (input.machine_id.as_str(), input.thread_id.as_str());
-        if !(caller.allows_operate)(m) {
-            return Err(refuse(
-                "forbidden",
-                format!("This key has no operate grant on machine {m}."),
-                Some("Use a key with an operate grant there."),
-            ));
-        }
-        let Some(project) = self.deps.hub.thread_project(m, t).await else {
-            return Err(refuse(
-                "not_found",
-                format!("No thread {t} on {m}."),
-                Some("Use the machineId and threadId from the thread.waiting event."),
-            ));
-        };
-        if !caller.human && self.deps.hub.lead_thread(&project).await.as_deref() == Some(t) {
-            return Err(refuse(
-                "forbidden",
-                "A lead's own permission prompt goes to a person: a lead never approves itself.",
-                Some("A person approves or denies it in the project's chat in the fleetd app."),
-            ));
-        }
-        let Some(pending) = self.deps.nodes.pending_permission(m, t).await else {
-            return Err(refuse(
-                "not_found",
-                format!("{t} on {m} waits on no permission prompt."),
-                Some("Read it with thread_tail: the prompt may be answered or its run ended."),
-            ));
-        };
-        if let Some(asked) = &input.request_id
-            && asked != pending.request_id.as_str()
-        {
-            return Err(refuse(
-                "not_found",
-                format!(
-                    "Prompt {asked} on {t} is no longer open; it waits on {} ({} {}) now.",
-                    pending.request_id.as_str(),
-                    pending.tool_name.as_str(),
-                    clip(pending.summary.as_str(), 300)
-                ),
-                Some("Answer that one, or leave out requestId."),
-            ));
-        }
-        let by = answered_by(caller);
-        let decision = if input.allow {
-            PermissionDecision::Allow {
-                updated_input: None,
-            }
-        } else {
-            let message = input
-                .message
-                .unwrap_or_else(|| denied(&DenyReason::Answer { by: &by }));
-            PermissionDecision::Deny {
-                message: fleetd_contracts::prim::Text::unchecked(clip(&message, 2000)),
-            }
-        };
-        let request_id = pending.request_id.as_str().to_string();
-        self.deps
-            .nodes
-            .answer_permission(m, t, &request_id, decision, decided_by(&by))
-            .await
-            .map_err(|e| refused_by_node(e, m))?;
-        self.prompts.forget(m, t, &request_id);
-        let verb = if input.allow { "allowed" } else { "denied" };
-        let request = self
-            .open_prompts()
-            .await
-            .into_iter()
-            .find(|o| o.is_on(m, t) && o.request_id == request_id)
-            .map(|o| o.id);
-        if let Some(id) = &request {
-            let at = self.now();
-            let (by, evidence) = (
-                by.clone(),
-                format!("{verb} on {m} with thread_answer by {by}"),
-            );
-            let allow = input.allow;
-            if let Err(e) = self
-                .change_from(id, RequestState::Open, |r| {
-                    r.state = if allow {
-                        RequestState::Approved
-                    } else {
-                        RequestState::Denied
-                    };
-                    r.evidence = Some(fleetd_contracts::prim::Text::unchecked(evidence));
-                    r.answered_at = Some(fleetd_contracts::ids::Timestamp(at));
-                    r.answered_by = Some(by);
-                })
-                .await
-            {
-                tracing::warn!(request = %id, error = e.message, "approvals: answered prompt's request not closed");
-            }
-        }
-        let mut out = json!({
-            "requestId": request_id,
-            "decision": if input.allow { "allow" } else { "deny" },
-            "next": format!("The run goes on; follow it with thread_tail on {m}/{t}."),
-        });
-        if let Some(id) = request {
-            out["humanRequestId"] = json!(id);
-        }
-        Ok(out)
     }
 }

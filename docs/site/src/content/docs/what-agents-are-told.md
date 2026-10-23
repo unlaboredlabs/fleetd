@@ -79,6 +79,7 @@ turns off Claude Code's own subagents in every `claude` it starts. Your `~/.clau
 | Claude's agent, team and background-task tools (Agent/Task, Workflow, ListAgents, SendMessage, TaskStop) | Denied, including any a newer claude adds. |
 | Built-in Explore, Plan and `claude` agents, background shell commands | Switched off. |
 | general-purpose, statusline-setup, and your agents in `~/.claude/agents` | Still listed by claude, but nothing can start them. |
+| `claude` from an agent's shell, by name, by path, through a package runner or a `sh -c` | Denied, so no nested claude runs past the cap or on another model. |
 
 If a session ever offers one anyway, fleetd stops it before it can start an agent, and every later session on that
 machine denies the tool: see [Claude](/docs/troubleshooting#claude).

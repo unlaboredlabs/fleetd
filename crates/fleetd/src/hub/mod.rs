@@ -30,7 +30,6 @@ pub mod receipts;
 pub mod redact;
 pub mod reviews;
 pub mod serve;
-pub mod sessions_tools;
 pub mod slots;
 pub mod status;
 pub mod steer;

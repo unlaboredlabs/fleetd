@@ -18,7 +18,7 @@ struct TestHub {
     hub: Arc<Hub>,
     url: String,
     served: tokio::task::JoinHandle<std::io::Result<()>>,
-    interrupts: Arc<AtomicUsize>,
+    operate_calls: Arc<AtomicUsize>,
     // Each test gets its own home: the webhook key file is created there, and a shared one races between tests.
     _home: tempfile::TempDir,
 }
@@ -34,9 +34,9 @@ async fn start() -> TestHub {
     };
     let hub = build_on(HubDb::open_memory().unwrap(), config, Arc::new(SystemClock)).unwrap();
     let mut tools: Registry = api::registry();
-    let interrupts = Arc::new(AtomicUsize::new(0));
-    let counter = interrupts.clone();
-    tools.add_raw("thread_interrupt", move |_, _, _| {
+    let operate_calls = Arc::new(AtomicUsize::new(0));
+    let counter = operate_calls.clone();
+    tools.add_raw("project_add", move |_, _, _| {
         let counter = counter.clone();
         async move {
             counter.fetch_add(1, Ordering::SeqCst);
@@ -51,7 +51,7 @@ async fn start() -> TestHub {
         hub,
         url,
         served,
-        interrupts,
+        operate_calls,
         _home: home,
     }
 }
@@ -236,10 +236,7 @@ async fn tools_check_the_role_then_the_machine_grant_and_filter_fleet_wide_reads
     .await;
 
     let (is_error, body) = reader
-        .call(
-            "thread_interrupt",
-            json!({ "machineId": "lab-a", "threadId": "t1" }),
-        )
+        .call("project_add", json!({ "machineId": "lab-a", "path": "/w" }))
         .await;
     assert!(is_error);
     assert_eq!(
@@ -247,9 +244,9 @@ async fn tools_check_the_role_then_the_machine_grant_and_filter_fleet_wide_reads
         json!({ "code": "forbidden", "message": "This key lacks the operate role.",
         "fix": "Ask the hub admin for a key with that grant (fleetd hub key create --role … --machines …)." })
     );
-    assert_eq!(t.interrupts.load(Ordering::SeqCst), 0);
-    assert!(!a_only.call("thread_interrupt", json!({})).await.0);
-    assert_eq!(t.interrupts.load(Ordering::SeqCst), 1);
+    assert_eq!(t.operate_calls.load(Ordering::SeqCst), 0);
+    assert!(!a_only.call("project_add", json!({})).await.0);
+    assert_eq!(t.operate_calls.load(Ordering::SeqCst), 1);
 
     let (_, body) = a_only
         .call(
@@ -362,7 +359,7 @@ async fn app_socket_closes_on_a_refused_key_and_calls_through_the_same_checks() 
     for frame in [
         json!({ "t": "call", "id": "c0", "tool": "events_wait", "input": {} }),
         json!({ "t": "auth", "key": reader }),
-        json!({ "t": "call", "id": "c1", "tool": "thread_interrupt", "input": {} }),
+        json!({ "t": "call", "id": "c1", "tool": "project_add", "input": {} }),
         json!({ "t": "call", "id": "c2", "tool": "nope", "input": {} }),
     ] {
         app.send(Message::text(frame.to_string())).await.unwrap();

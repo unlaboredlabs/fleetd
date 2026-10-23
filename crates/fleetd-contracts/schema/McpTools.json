@@ -5445,30 +5445,6 @@
         "tasks_list.output": {
           "$ref": "#/$defs/TasksListOutput"
         },
-        "thread_answer.input": {
-          "$ref": "#/$defs/ThreadAnswerInput"
-        },
-        "thread_answer.output": {
-          "$ref": "#/$defs/ThreadAnswerOutput"
-        },
-        "thread_interrupt.input": {
-          "$ref": "#/$defs/ThreadInterruptInput"
-        },
-        "thread_interrupt.output": {
-          "$ref": "#/$defs/ThreadInterruptOutput"
-        },
-        "thread_launch.input": {
-          "$ref": "#/$defs/ThreadLaunchInput"
-        },
-        "thread_launch.output": {
-          "$ref": "#/$defs/ThreadLaunchOutput"
-        },
-        "thread_send.input": {
-          "$ref": "#/$defs/ThreadSendInput"
-        },
-        "thread_send.output": {
-          "$ref": "#/$defs/ThreadSendOutput"
-        },
         "thread_tail.input": {
           "$ref": "#/$defs/ThreadTailInput"
         },
@@ -5689,14 +5665,6 @@
         "task_get.output",
         "tasks_list.input",
         "tasks_list.output",
-        "thread_answer.input",
-        "thread_answer.output",
-        "thread_interrupt.input",
-        "thread_interrupt.output",
-        "thread_launch.input",
-        "thread_launch.output",
-        "thread_send.input",
-        "thread_send.output",
         "thread_tail.input",
         "thread_tail.output",
         "thread_window.input",
@@ -6417,13 +6385,6 @@
         "byCategory"
       ],
       "type": "object"
-    },
-    "PermissionAnswer": {
-      "enum": [
-        "allow",
-        "deny"
-      ],
-      "type": "string"
     },
     "Placeholder": {
       "description": "A `{{name}}` the code fills in. A required one missing from an edit gets a warning.",
@@ -9246,13 +9207,6 @@
       ],
       "x-open": true
     },
-    "RuntimeMode": {
-      "enum": [
-        "full-access",
-        "approval-required"
-      ],
-      "type": "string"
-    },
     "SafetyRule": {
       "description": "A rule the default text carries, found in a text by `needle` (a case-insensitive regex).",
       "properties": {
@@ -11454,62 +11408,6 @@
       ],
       "type": "object"
     },
-    "ThreadAnswerInput": {
-      "properties": {
-        "decision": {
-          "$ref": "#/$defs/PermissionAnswer"
-        },
-        "machineId": {
-          "$ref": "#/$defs/MachineId"
-        },
-        "message": {
-          "description": "Deny only: what claude is told instead of running the tool.",
-          "maxLength": 2000,
-          "minLength": 1,
-          "type": "string"
-        },
-        "requestId": {
-          "description": "The prompt answered, from the thread.waiting event; absent means the one open now.",
-          "minLength": 1,
-          "type": "string"
-        },
-        "threadId": {
-          "$ref": "#/$defs/ThreadId"
-        }
-      },
-      "required": [
-        "machineId",
-        "threadId",
-        "decision"
-      ],
-      "type": "object"
-    },
-    "ThreadAnswerOutput": {
-      "properties": {
-        "decision": {
-          "$ref": "#/$defs/PermissionAnswer"
-        },
-        "humanRequestId": {
-          "$ref": "#/$defs/ChatRequestId",
-          "description": "The approval request this answer closed, if one was open."
-        },
-        "next": {
-          "type": "string"
-        },
-        "requestId": {
-          "minLength": 1,
-          "type": "string"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "requestId",
-        "decision"
-      ],
-      "type": "object"
-    },
     "ThreadCounts": {
       "properties": {
         "failed": {
@@ -11559,99 +11457,6 @@
     "ThreadId": {
       "type": "string"
     },
-    "ThreadInterruptInput": {
-      "properties": {
-        "clientRequestId": {
-          "minLength": 1,
-          "type": "string"
-        },
-        "machineId": {
-          "$ref": "#/$defs/MachineId"
-        },
-        "threadId": {
-          "$ref": "#/$defs/ThreadId"
-        }
-      },
-      "required": [
-        "machineId",
-        "threadId",
-        "clientRequestId"
-      ],
-      "type": "object"
-    },
-    "ThreadInterruptOutput": {
-      "properties": {
-        "next": {
-          "type": "string"
-        },
-        "ok": {
-          "enum": [
-            true
-          ],
-          "type": "boolean"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "ok"
-      ],
-      "type": "object"
-    },
-    "ThreadLaunchInput": {
-      "properties": {
-        "clientRequestId": {
-          "minLength": 1,
-          "type": "string"
-        },
-        "machineId": {
-          "$ref": "#/$defs/MachineId"
-        },
-        "profile": {
-          "$ref": "#/$defs/TaskProfile",
-          "description": "Absent: high."
-        },
-        "projectId": {
-          "$ref": "#/$defs/ProjectId"
-        },
-        "prompt": {
-          "minLength": 1,
-          "type": "string"
-        },
-        "runtimeMode": {
-          "$ref": "#/$defs/RuntimeMode",
-          "default": "full-access"
-        },
-        "title": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "machineId",
-        "projectId",
-        "prompt",
-        "clientRequestId"
-      ],
-      "type": "object"
-    },
-    "ThreadLaunchOutput": {
-      "properties": {
-        "next": {
-          "type": "string"
-        },
-        "threadId": {
-          "$ref": "#/$defs/ThreadId"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "threadId"
-      ],
-      "type": "object"
-    },
     "ThreadRef": {
       "properties": {
         "machineId": {
@@ -11664,56 +11469,6 @@
       "required": [
         "machineId",
         "threadId"
-      ],
-      "type": "object"
-    },
-    "ThreadSendInput": {
-      "properties": {
-        "clientRequestId": {
-          "minLength": 1,
-          "type": "string"
-        },
-        "machineId": {
-          "$ref": "#/$defs/MachineId"
-        },
-        "message": {
-          "minLength": 1,
-          "type": "string"
-        },
-        "threadId": {
-          "$ref": "#/$defs/ThreadId"
-        }
-      },
-      "required": [
-        "machineId",
-        "threadId",
-        "message",
-        "clientRequestId"
-      ],
-      "type": "object"
-    },
-    "ThreadSendOutput": {
-      "properties": {
-        "next": {
-          "type": "string"
-        },
-        "queued": {
-          "description": "True when the machine is offline and the message waits in the hub's queue.",
-          "type": "boolean"
-        },
-        "queuedUntil": {
-          "$ref": "#/$defs/Timestamp",
-          "description": "When a queued message expires undelivered."
-        },
-        "runId": {
-          "type": "string"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "queued"
       ],
       "type": "object"
     },
