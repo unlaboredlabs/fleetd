@@ -95,7 +95,7 @@ impl LeadCalls {
 
     /// The project a call from `machine_id` acts on: the one whose workspace holds `cwd`, else the calling session's
     /// own. A writer works in a worktree under the node's home, outside every workspace, so its calls (`report`,
-    /// `ask_lead`, `claim_done`) are known by the session the node attributed them to. Without a session, a cwd
+    /// `ask_lead`) are known by the session the node attributed them to. Without a session, a cwd
     /// outside every workspace is refused as before.
     pub fn call_project(
         &self,

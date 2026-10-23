@@ -53,7 +53,6 @@ import {
 } from "./harness.ts";
 import { m1Fleet } from "./m1Fleet.ts";
 import { m5Tasks } from "./m5Tasks.ts";
-import { m6Verify } from "./m6Verify.ts";
 import { m7Train } from "./m7Train.ts";
 import { m8Desktop } from "./m8Desktop.ts";
 import { m9Playbooks } from "./m9Playbooks.ts";
@@ -80,7 +79,6 @@ const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab)
   // After steer: it reuses its lead and workstream when they exist.
   { name: "m5", run: m5Tasks },
   // After m5: it reuses the lead when there is one.
-  { name: "m6", run: m6Verify },
   // It adds the lab repo as a second project on lab-a for its run, and removes it.
   { name: "m7", run: m7Train },
   // After m7, whose train row it reads: kills lab-b's node and cuts GitHub, then restarts the hub as it was.

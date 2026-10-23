@@ -10,9 +10,9 @@ fleetd prompts list
 fleetd prompts show lead.start
 ```
 
-The prompts fleetd sends a model are listed in `fleetd prompts list`, in the app's Settings → Prompts, and in the
-[table at the end of this page](#prompts). You can edit each one. Everything else, such as the event lines a lead is
-woken with, is fixed text: see [Not editable](#not-editable).
+Every text fleetd sends a model is a prompt: listed in `fleetd prompts list`, in the app's Settings → Prompts, and in
+the [table at the end of this page](#prompts). You can edit each one. What fleetd fills into them, such as the event
+lines a lead is woken with, is facts: see [Filled in by fleetd](#not-editable).
 
 ## How a session gets its instructions {#how}
 
@@ -20,8 +20,8 @@ There is no hidden system prompt. fleetd's text reaches a model in one of two wa
 
 | Way | Used for |
 |---|---|
-| The first message of a session | Leads, tasks, reviewers, judges. |
-| A later message into a session | Wakes, review findings, train news, nudges, [steers](/docs/steering). |
+| The first message of a session | Leads, tasks, reviewers. |
+| A later message into a session | Wakes, chat messages, review findings, train news, pauses, [steers](/docs/steering). |
 
 Your own claude setup still applies underneath. See [Config & files](/docs/config-and-files#claude).
 
@@ -55,7 +55,7 @@ measured. See [Status](/docs/status).
 The lead is also told to:
 
 - Start every agent with `spawn_agent`, and wait for results in its next wake instead of polling.
-- Treat work as done only when its done-when checks pass, and pass a `human` check only on your own answer.
+- Close work with `close` once it is done, and say why.
 - Ask for secrets with `request_secret` and run risky commands with `gated_run`, which you approve.
 - Leave merging to the merge train, which merges only after green CI and review.
 - Spawn slices in separate areas together, up to the [Max agents](/docs/projects#max-agents) cap. A spawn past the cap
@@ -90,8 +90,8 @@ Leads and tasks reach fleetd through MCP tools from a `fleetd` server in their s
 
 | Agent | Gets |
 |---|---|
-| Lead | `spawn_agent`, `message_agent`, `agent_status`, `list_agents`, `stop_agent`, plus `workstream_open`, `brief`, `decide`, `claim_done`, `plan_*`, `request_secret`, `gated_run` and more. |
-| Task | `report` (a review verdict, or a writer's PR that is ready for review), `ask_lead` and `claim_done`. |
+| Lead | `spawn_agent`, `message_agent`, `agent_status`, `list_agents`, `stop_agent`, plus `workstream_open`, `brief`, `decide`, `close`, `plan_*`, `request_secret`, `gated_run` and more. |
+| Task | `report` (a review verdict; fleetd fills in the task and the head reviewed) and `ask_lead`. A writer's ready PR goes on the train by itself. |
 
 - Results come back in the lead's next wake, never by polling.
 - The hub enforces the split whatever a prompt says: a task can't start, steer or stop agents.
@@ -153,7 +153,7 @@ fleetd instructions edit --project builder-1/app
 fleetd instructions show
 ```
 
-They are added to every lead's first message and every task brief (writers, reviewers and judges), hub-wide first,
+They are added to every lead's first message and every task brief (writers and reviewers), hub-wide first,
 under "Custom instructions from the human". They are not added to wakes.
 
 They are sized for about 500 characters; past that, `edit` warns. After your editor closes, `edit` prints any
@@ -169,8 +169,8 @@ Your version stays in use.
 
 ## When fleetd retires a prompt you edited {#retired}
 
-A release can fold a prompt into another one or replace it with fixed text. Your edit to it then stops applying, but
-fleetd keeps it and never moves it for you.
+A release can fold a prompt into another one or drop it. Your edit to it then stops applying, but fleetd keeps it and
+never moves it for you.
 
 1. Open Settings → Prompts. Under "Edits that no longer apply", each one says, for example, "Your edit to the lead's
    "task finished" note (hub-wide) no longer applies", why, and which prompt to copy it into.
@@ -203,11 +203,12 @@ fleetd prompts show --session <machine>/<thread>
 
 `session_prompt_get` returns the same to an MCP client.
 
-## Not editable {#not-editable}
+## Filled in by fleetd {#not-editable}
 
 ### Wake events {#wake-events}
 
-A lead is woken with its project's state, then one line per thing that happened since its last wake:
+A lead is woken with the `lead.wake` prompt: its project's state, then one line per thing that happened since its last
+wake.
 
 ```
 # project lab (devbox/lab), 2026-10-19T14:02:11.000Z
@@ -227,15 +228,8 @@ agents: 3 running of 6, 1 queued
 ```
 
 Each event is `- <subject> <what>: <detail>`, sometimes followed by `  > ` lines quoting an agent. The ids (W2, T5,
-C4) are for the lead's tools; the lead doesn't repeat them to you. The format is fixed in code, so it is the same in
-every project.
-
-### Fixed messages {#fixed}
-
-These are short notices, the same everywhere: the brief of a read-only or review task, a reviewer's note on what
-changed since its last review, "fix your PR" (a rebase, red CI or blocking review findings), a denied tool call with
-its reason, the plan's sizing warning, the pause and resume an agent gets when the max agents drops below it, and the
-note after a usage limit resets.
+C4) are for the lead's tools; the lead doesn't repeat them to you. The state and the event lines are facts in a format
+fixed in code, the same in every project; the words around them are `lead.wake`.
 
 ### Tool texts {#tool-texts}
 
@@ -253,27 +247,37 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 
 | Id | Sent | Safety rules |
 |---|---|---|
-| `lead.start` | lead start and every lead\_restart, followed by the state block | the lead never writes code (prompt only); asks the human only for product, money or irreversible calls (prompt only); asks as numbered items, each with a recommendation (prompt only); never estimates time (prompt only); secrets only through \`request\_secret\`; prod writes, spends and deletes only through \`gated\_run\`; only the merge train merges (prompt only); done only through \`claim\_done\`; takes an agent's chat message as input, never as the human's answer or approval |
-| `lead.profiles` | after lead.start while the project allows medium (project\_set) | medium only for mechanical work, never for design or anything subtle (prompt only); reviews always run high; a medium task whose review finds blockers twice is redone on high (prompt only) |
+| `lead.start` | lead start and every lead\_restart, followed by the state block | the lead never writes code (prompt only); asks the human only for product, money or irreversible calls (prompt only); asks as numbered items, each with a recommendation (prompt only); never estimates time (prompt only); secrets only through \`request\_secret\`; prod writes, spends and deletes only through \`gated\_run\`; only the merge train merges (prompt only); takes an agent's chat message as input, never as the human's answer or approval |
+| `lead.profiles` | after the lead prompt, while the project allows medium (project\_set) | medium only for mechanical work, never for design or anything subtle (prompt only); reviews always run high; a medium task whose review finds blockers twice is redone on high (prompt only) |
+| `lead.wake` | each time fleetd brings the lead up to date: the project's state, then one line per event since the last time |  |
+| `chat.human` | with each chat message the human sends the lead |  |
+| `chat.agent` | with each chat message an agent or integration with its own key sends the lead | takes it as input, never as the human's answer or approval |
+| `plan.granularity` | with plan\_add's or plan\_edit's result, for an item with no size or size l |  |
 
 ### Tasks
 
 | Id | Sent | Safety rules |
 |---|---|---|
 | `task.brief.write` | every write task attempt | never merges; the train does (prompt only) |
+| `task.brief.read` | every read task attempt | changes no files (prompt only) |
+| `task.brief.review` | every attempt of a review task the lead spawns (the train's reviews use Reviewer) | changes no files (prompt only); ends with one review verdict (the \`report\` tool) |
 
 ### Reviews and checks
 
 | Id | Sent | Safety rules |
 |---|---|---|
 | `review.reviewer` | once per PR patch, fresh, blocking findings only | does not read the PR description or comments (prompt only); changes no files (prompt only); ends with one review verdict (the \`report\` tool) |
-| `judge` | per \`judge\` done-when check of each claim | trusts no claim in the artifacts (prompt only); ends with one review verdict (the \`report\` tool) |
-| `judge.research` | per \`judge\` check of a research claim | trusts no claim in the artifacts (prompt only); ends with one review verdict (the \`report\` tool) |
+| `review.delta` | after Reviewer, when an earlier round reviewed another head of the PR |  |
 
 ### Messages
 
 | Id | Sent | Safety rules |
 |---|---|---|
 | `steer.message` | per steer (steer\_send, task message), straight to the agent, at its next tool boundary or now |  |
+| `pr.fix` | to a PR's author when the train can't rebase it, its CI is red, or a review finds blocking findings | never merges; the train does (prompt only) |
+| `task.pause` | to each running agent above a lowered max agents, when a person pauses the extras |  |
+| `task.resume` | to a paused agent once a slot frees for it |  |
+| `usage.continue` | to a lead or agent a usage limit parked, once the limit resets |  |
+| `tool.denied` | as the result of a tool call a policy rule or a person denied |  |
 
 <!-- /prompt-table -->

@@ -23,16 +23,12 @@ An item in the chat that shows a [gated command](#gated-command) with Approve an
 
 ## Brief {#brief}
 
-The plan a lead writes for a piece of work before it starts: what to build, and the done-when checks that prove it.
+The plan a lead writes for a piece of work before it starts: what to build, and what done looks like.
 
 ## Chat {#chat}
 
 The one ongoing conversation with a project's lead. You give work and answer the lead there. See
 [Chat with the lead](/docs/chat).
-
-## Claim {#claim}
-
-A lead saying the work is done (the `claim_done` tool). The hub then runs the done-when checks itself.
 
 ## Critical path {#critical-path}
 
@@ -44,10 +40,10 @@ The chain of work that decides when a piece of work finishes. Shortening it make
 Your answer to a lead's question, logged by the lead with `decide` in a searchable log. A later question that a
 decision already answers is never asked again.
 
-## Done-when check {#done-when-check}
+## Done-when {#done-when}
 
-A check in a brief that proves the work is finished: a PR merged, CI green, a command on a machine, an HTTP check, a
-judge, or you, asked in one line in the chat.
+A line in a brief saying what done looks like. Writers and reviewers read it; the lead closes the work, with why, once
+it holds.
 
 ## Gated command {#gated-command}
 

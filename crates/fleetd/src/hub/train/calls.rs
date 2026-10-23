@@ -1,17 +1,17 @@
-//! The lead's `change_enqueue` and `change_status`, and a writer's `report` of a ready slice (`slice_ready`). The
-//! caller is already attributed to a project by its cwd; each acts only within that project.
-//! All are registered in link's `LeadCalls` by [`register_lead_calls`].
-use super::contract::{Change, ChangeEnqueueCall, ChangeId, ChangeState, ProjectRef};
+//! The lead's `change_enqueue`, and a writer's ready PR the train takes on its own (a slice). The caller is already
+//! attributed to a project by its cwd; it acts only within that project. Registered in link's `LeadCalls` by
+//! [`register_lead_calls`].
+use super::contract::{Change, ChangeEnqueueCall, ChangeState, GitHubPrUrl, ProjectRef};
 use super::service::{Train, TrainError};
 use crate::hub::api::Hub;
-use crate::hub::link::lead_calls::{CallerAgent, LeadCallFuture};
+use crate::hub::link::lead_calls::LeadCallFuture;
 use crate::hub::link::{LeadCaller, LeadCalls};
-use fleetd_contracts::lead_calls::{ChangeResult, LeadCall, LeadCallResult, SliceReadyCall};
+use fleetd_contracts::lead_calls::{ChangeResult, LeadCall, LeadCallResult};
 use fleetd_contracts::tasks::TaskId;
 use std::sync::{Arc, Weak};
 
-/// Registers `change_enqueue` and `change_status` in the hub's `LeadCalls`. The handler holds the hub weakly, since
-/// the hub holds the registry.
+/// Registers `change_enqueue` in the hub's `LeadCalls`. The handler holds the hub weakly, since the hub holds the
+/// registry.
 pub fn register_lead_calls(hub: &Arc<Hub>) {
     let weak: Weak<Hub> = Arc::downgrade(hub);
     let handler = Arc::new(
@@ -51,19 +51,6 @@ pub fn register_lead_calls(hub: &Arc<Hub>) {
                             LeadCallResult::ChangeEnqueue(result((change, next)))
                         })
                     }
-                    LeadCall::ChangeStatus(c) => change_status(&hub.train, r, &c.change_id)
-                        .map(|c| LeadCallResult::ChangeStatus(result(c))),
-                    LeadCall::SliceReady(c) => match &caller.agent {
-                        CallerAgent::Task(task_id) => slice_ready(&hub.train, r, task_id, c)
-                            .await
-                            .map(|c| LeadCallResult::SliceReady(result(c))),
-                        _ => Err(TrainError {
-                            code: "invalid",
-                            message: "A ready slice is reported by the writer that pushed it."
-                                .into(),
-                            fix: Some("Put a PR on the train with change_enqueue.".into()),
-                        }),
-                    },
                     other => Err(TrainError {
                         code: "invalid",
                         message: format!(
@@ -78,20 +65,18 @@ pub fn register_lead_calls(hub: &Arc<Hub>) {
         },
     );
     let calls: &LeadCalls = &hub.lead_calls;
-    calls.register("change_enqueue", handler.clone());
-    calls.register("change_status", handler.clone());
-    calls.register("slice_ready", handler);
+    calls.register("change_enqueue", handler);
 }
 
-/// A writer's `report` with `kind: "slice_ready"`: the PR goes on the train now, as its task's, so the review gate
-/// starts the order's reviewers on it at once. Every check of `change_enqueue` applies (Source line, open PR in
-/// the project's repo); the same PR again is the same Change, so a slice is reviewed once per head.
+/// A writer's ready PR (a slice): it goes on the train now, as its task's, so the review gate starts the order's
+/// reviewers on it at once. Every check of `change_enqueue` applies (open PR in the project's repo); the same PR again
+/// is the same Change, so a slice is reviewed once per head.
 pub async fn slice_ready(
     train: &Train,
     project_ref: &ProjectRef,
     task_id: &TaskId,
-    call: SliceReadyCall,
-) -> Result<(Change, String), TrainError> {
+    pr_url: GitHubPrUrl,
+) -> Result<Change, TrainError> {
     let writer = train
         .host()
         .task(task_id)
@@ -100,23 +85,16 @@ pub async fn slice_ready(
         return Err(TrainError {
             code: "invalid",
             message: format!("{task_id} is not a write task, and only a writer's PR is a slice."),
-            fix: Some("A reviewer reports its verdict with report and no kind.".into()),
+            fix: None,
         });
     }
     let input = ChangeEnqueueCall {
         task_id: Some(task_id.clone()),
-        pr_url: call.pr_url,
+        pr_url,
         workstream_id: None,
         item: None,
     };
-    let change = train.enqueue(project_ref, input).await?;
-    let next = match change.state {
-        ChangeState::Refused | ChangeState::Abandoned => change_next(&change),
-        _ => "go on with your next slice: its review has started, and blocking findings arrive as a message. \
-              Push fixes to the same branch; a new head is reviewed again."
-            .into(),
-    };
-    Ok((change, next))
+    train.enqueue(project_ref, input).await
 }
 
 /// What the lead does next about a Change: almost always nothing, since the train and reviews move it on.
@@ -141,26 +119,4 @@ pub async fn change_enqueue(
     let change = train.enqueue(project_ref, call).await?;
     let next = change_next(&change);
     Ok((change, next))
-}
-
-/// `change_status`: a Change of the caller's own project.
-pub fn change_status(
-    train: &Train,
-    project_ref: &ProjectRef,
-    change_id: &ChangeId,
-) -> Result<(Change, String), TrainError> {
-    match train
-        .get(change_id)
-        .filter(|c| c.project_ref == *project_ref)
-    {
-        Some(change) => {
-            let next = change_next(&change);
-            Ok((change, next))
-        }
-        None => Err(TrainError {
-            code: "not_found",
-            message: format!("There is no change {change_id} in your project."),
-            fix: Some("Use a change id (X<n>) from your digest.".into()),
-        }),
-    }
 }

@@ -8,7 +8,7 @@ use fleetd_contracts::sessions::{MessageRole, ThreadMessage};
 use serde_json::Value;
 
 use super::NewMessage;
-use crate::hub::plan::parse_ms;
+use crate::hub::store::parse_ms;
 
 fn entry(
     author: ChatAuthor,

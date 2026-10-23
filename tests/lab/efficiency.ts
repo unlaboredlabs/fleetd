@@ -1,13 +1,13 @@
 // Max efficiency without compromising (`npm run lab eff`), end to end on lab-a.
-// A pushed slice gets a reviewer before the next slice: a writer in this slot's namespace of the lab repo opens two PRs and
-// reports each with `report` (kind slice_ready); the first PR's reviewer starts before the second PR reaches the train,
-// while the writer still runs. Gates hold: neither PR is ready without its review.
+// A pushed slice gets a reviewer before the next slice: a writer in this slot's namespace of the lab repo opens two ready
+// PRs on branches named after its own, and the train takes each on its own pass; the first PR's reviewer starts before
+// the second PR reaches the train, while the writer still runs. Gates hold: neither PR is ready without its review.
 // Costs a few lead turns, one writer and its reviewers.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { type Body, MECHANICS, openWorkstream, fleetdCommand, type Lab, nodeSock, requireGhLogin, scrubbedEnv } from "./harness.ts";
-import { BASE, BRANCH_PREFIX, CLONE, checkClone, NAMESPACE, onBase, prepareCheckout, REPO, removeLabRepoProject, resetNamespace } from "./m7Train.ts";
+import { BASE, BRANCH_PREFIX, CLONE, checkClone, gh, git, NAMESPACE, prepareCheckout, REPO, removeLabRepoProject, resetNamespace } from "./m7Train.ts";
 
 const MACHINE = "lab-a";
 const TURN_MS = 240_000;
@@ -57,14 +57,25 @@ async function sliceReviews(lab: Lab) {
     await lab.waitEvent("lead start turn", TURN_MS, { cursor, machineId: MACHINE, match: (e) => e.threadId === leadThread && ENDED.includes(e.type) });
 
     const w = openWorkstream(check, fleetd, "Two docs slices.");
-    const onMain = (file: string) => ({ type: "cmd", machineId: MACHINE, argv: ["gh", "api", onBase(file), "--silent"], expectExit: 0 });
+    const onMain = (file: string) => `${file} is on ${BASE}`;
     const brief = { goal: `two slices: ${dir}/one.md and ${dir}/two.md`, why: "the eff lab scenario", pointers: [], constraints: [], doneWhen: [onMain(`${dir}/one.md`), onMain(`${dir}/two.md`)] };
     const frozen = fleetd("brief", "create", "--workstream", w, "--json", JSON.stringify(brief));
     check(frozen.code === 0, `brief create ${w}: ${JSON.stringify(frozen)}`);
 
-    // One writer, two slices, each reported as soon as its PR is open.
+    // The train reads a repo's open PRs once one of them has been on it: a seed PR, closed at once, starts this one's.
+    const seedBranch = `${BRANCH_PREFIX}eff-seed`;
+    git("checkout", "-q", "-B", seedBranch, `origin/${BASE}`);
+    git("commit", "-q", "--allow-empty", "-m", "eff seed");
+    git("push", "-q", "-f", "origin", seedBranch);
+    git("checkout", "-q", "--force", BASE);
+    const seed = gh("pr", "create", "-R", REPO, "--base", BASE, "--head", seedBranch, "--title", "eff seed", "--body", "eff seed");
+    const seeded = fleetd("change", "enqueue", "--pr", seed, "--workstream", w);
+    gh("pr", "close", seed, "-R", REPO, "--delete-branch");
+    check(seeded.code === 0, `the seed PR started the train: ${JSON.stringify(seeded)}`);
+
+    // One writer, two slices, each a ready PR on a branch named after the writer's own.
     const slice = (n: string, line: string) =>
-      `On a new branch ${BRANCH_PREFIX}eff-${n} from origin/${BASE} (git fetch origin; git checkout -b ${BRANCH_PREFIX}eff-${n} origin/${BASE}), create ${dir}/${n}.md containing exactly the line ${line}, commit it, push the branch, and open a PR with gh pr create --base ${BASE} --head ${BRANCH_PREFIX}eff-${n} --title "eff ${n}" --body "eff ${n}". Then call the report tool with kind "slice_ready" and prUrl set to that PR's URL.`;
+      `On a new branch named after yours with -${n} appended, from origin/${BASE} (git fetch origin; git checkout -b <your branch>-${n} origin/${BASE}), create ${dir}/${n}.md containing exactly the line ${line}, commit it, push the branch, and open a ready PR with gh pr create --base ${BASE} --title "eff ${n}" --body "eff ${n}".`;
     cursor = await lab.cursor();
     const spawned = fleetd(
       "task", "spawn", "--workstream", w, "--title", "two slices", "--profile", MECHANICS,

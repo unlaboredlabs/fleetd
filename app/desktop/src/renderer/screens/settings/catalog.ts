@@ -1,4 +1,4 @@
-// How the Prompts list presents the hub's editable prompts (7; event lines are a fixed format, not prompts):
+// How the Prompts list presents the hub's editable prompts (event lines are facts the hub fills in, not prompts):
 // a few groups by what a person is looking for, a plain name, and one line on what it is for. The hub's own title
 // and `sentWhen` stay the fallback, so a prompt a newer hub adds still shows up, in "Other", with the hub's words.
 import type { PromptSummary } from "./contracts";
@@ -12,7 +12,7 @@ export interface CatalogGroup {
 export const GROUPS = [
   { key: "lead", title: "The lead", blurb: "Each project's lead: its role, its rules, and how it runs each kind of work." },
   { key: "tasks", title: "Task agents", blurb: "The first message of the agents that write the code." },
-  { key: "reviews", title: "Reviews and checks", blurb: "The reviewer, and the judges of done-when checks." },
+  { key: "reviews", title: "Reviews and checks", blurb: "The reviewer of each pull request." },
   { key: "messages", title: "Messages", blurb: "What reaches an agent while it runs." },
   { key: "other", title: "Other", blurb: "Prompts this version of the app has no description for yet." },
 ] as const satisfies ReadonlyArray<CatalogGroup>;
@@ -33,8 +33,6 @@ export const ENTRIES: Readonly<Record<string, Entry>> = {
   "lead.profiles": e("lead", "Task profiles", "When the lead may put a task on medium; added to its first message while medium is allowed."),
   "task.brief.write": e("tasks", "Writer task", "First message of a task that changes code and opens a pull request."),
   "review.reviewer": e("reviews", "Reviewer", "Reviews a pull request each round, by the project's review rules."),
-  judge: e("reviews", "Judge", "Decides whether a done-when check of a claim passed."),
-  "judge.research": e("reviews", "Research judge", "Decides whether a research claim's check passed."),
   "steer.message": e("messages", "Your steer, mid-run", "Your words (or the lead's) delivered straight to a running agent."),
 };
 

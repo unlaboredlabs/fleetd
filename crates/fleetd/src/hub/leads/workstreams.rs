@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::ProjectRef;
-use fleetd_contracts::lead_calls::{BriefCreateResult, StatusSetResult};
+use fleetd_contracts::lead_calls::{BriefCreateResult, CloseResult};
 use fleetd_contracts::ledger::{
     Brief, IntakeChannel, PlaybookName, PlaybookRef, Workstream, WorkstreamId, WorkstreamState,
 };
@@ -204,7 +204,7 @@ impl Workstreams {
                 ),
             ));
         }
-        let running = format!("Plan the work and report progress with `status_set` for {id}.");
+        let running = format!("Spawn its agents with `spawn_agent` for {id}.");
         let result = |state: WorkstreamState, next: String| BriefCreateResult {
             workstream_id: id.clone(),
             state,
@@ -213,11 +213,9 @@ impl Workstreams {
         if w.brief.as_ref() == Some(&brief) {
             return Ok(result(w.state, format!("Unchanged. {running}")));
         }
-        // A draft starts running. A new brief while verifying reopens the work, and the claim made on the old one no
-        // longer counts.
+        // A draft starts running.
         let starts = w.brief.is_none();
-        let verifying = w.state == WorkstreamState::Verifying;
-        let state = if starts || verifying {
+        let state = if starts {
             WorkstreamState::Running
         } else {
             w.state
@@ -244,70 +242,46 @@ impl Workstreams {
             format!("{id} brief edited"),
             Some(serde_json::json!({ "workstreamId": id, "state": state, "briefEdited": true })),
         )?;
-        if verifying && let Some(claims) = self.ctx.hooks.claims.get() {
-            claims.void(id);
-            return Ok(result(
-                state,
-                format!(
-                    "Brief edited. The claim you made before no longer counts; claim again once the new done-when checks hold. {running}"
-                ),
-            ));
-        }
         Ok(result(state, format!("Brief edited. {running}")))
     }
 
-    /// `fleetd status set`. Without a workstream it needs exactly one open workstream in the project.
-    pub fn status_set(
+    /// `close` from the lead of `caller`: the workstream is done, with why. It stops nothing; what still runs keeps
+    /// running, and the status shows it.
+    pub fn close(
         &self,
         caller: &ProjectRef,
-        text: &str,
-        workstream_id: Option<&WorkstreamId>,
-    ) -> Result<StatusSetResult, LeadError> {
-        let stored = match workstream_id {
-            Some(id) => self.own(caller, id)?,
-            None => {
-                let open = self.records.workstreams_list(&WorkstreamFilter {
-                    project_ref: Some(caller.clone()),
-                    open: true,
-                    limit: 2,
-                    ..Default::default()
-                })?;
-                if open.len() != 1 {
-                    return Err(LeadError::invalid(
-                        if open.is_empty() {
-                            "Your project has no open workstream."
-                        } else {
-                            "Your project has several open workstreams."
-                        },
-                        "Pass workstreamId W<n> with an id from your digest.",
-                    ));
-                }
-                self.own(caller, &open[0].workstream_id)?
-            }
+        workstream_id: &WorkstreamId,
+        why: &str,
+        by: &str,
+    ) -> Result<CloseResult, LeadError> {
+        let w = self.own(caller, workstream_id)?;
+        let id = &w.workstream_id;
+        if is_closed(w.state) {
+            return Err(LeadError::invalid(
+                format!("{id} is already {}.", state_text(w.state)),
+                "Open a new workstream if there is more to do.",
+            ));
+        }
+        let done = Workstream {
+            state: WorkstreamState::Done,
+            updated_at: now_iso(&self.ctx).into(),
+            ..w.clone()
         };
-        let at = now_iso(&self.ctx);
-        let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
-        let headline: String = {
-            // `.slice(0, 280)` in UTF-16 units, without the ellipsis.
-            let mut used = 0;
-            flat.chars()
-                .take_while(|c| {
-                    used += c.len_utf16();
-                    used <= 280
-                })
-                .collect()
-        };
-        let workstream = Workstream {
-            headline: Some(fleetd_contracts::ledger::Headline::unchecked(headline)),
-            headline_at: Some(at.clone().into()),
-            updated_at: at.into(),
-            ..stored.clone()
-        };
-        let id = workstream.workstream_id.clone();
-        self.records.workstream_put(&workstream)?;
-        Ok(StatusSetResult {
-            workstream_id: id,
-            next: Some("Status recorded. Carry on.".into()),
+        self.records.workstream_put(&done)?;
+        self.event(
+            &done,
+            HubEventType::WorkstreamDone,
+            format!("{id} is done: {why}"),
+            Some(serde_json::json!({ "workstreamId": id, "reason": why, "by": by })),
+        )?;
+        Ok(CloseResult {
+            workstream_id: id.clone(),
+            state: WorkstreamState::Done,
+            next: Some(
+                "Closed. Nothing was stopped: stop any agent of it you no longer need with stop_agent, and tell the \
+                 human in a line."
+                    .into(),
+            ),
         })
     }
 }

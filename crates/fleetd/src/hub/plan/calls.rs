@@ -70,14 +70,19 @@ fn acknowledge(
 }
 
 /// The granularity warning: an item with no size, or bigger than m.
-fn granularity(item: &fleetd_contracts::plan::PlanItem, unsized_item: bool) -> Option<String> {
+fn granularity(
+    hub: &Hub,
+    r: &fleetd_contracts::ids::ProjectRef,
+    item: &fleetd_contracts::plan::PlanItem,
+    unsized_item: bool,
+) -> Option<String> {
     let reason = match (unsized_item, item.size) {
         (true, _) => "has no size (counted as m)",
         (false, fleetd_contracts::plan::Size::L) => "is size l",
         _ => return None,
     };
-    Some(crate::hub::prompts::fixed::render(
-        crate::hub::prompts::fixed::PLAN_GRANULARITY,
+    Some(hub.db.prompts().for_lead(r).render(
+        "plan.granularity",
         &[("item", &item.item_id), ("reason", &reason)],
     ))
 }
@@ -105,7 +110,7 @@ fn answer(
             let steer = steered(hub, r, c.steer.as_ref(), &mut c.why)?;
             let unsized_item = c.size.is_none();
             let mut out = plans.add(r, by, c)?;
-            out.warning = granularity(&out.item, unsized_item);
+            out.warning = granularity(hub, r, &out.item, unsized_item);
             LeadCallResult::PlanAdd(acknowledge(hub, r, steer, out))
         }
         LeadCall::PlanEdit(mut c) => {
@@ -113,7 +118,7 @@ fn answer(
             let resized = c.size.is_some();
             let mut out = plans.edit(r, by, c)?;
             if resized {
-                out.warning = granularity(&out.item, false);
+                out.warning = granularity(hub, r, &out.item, false);
             }
             LeadCallResult::PlanEdit(acknowledge(hub, r, steer, out))
         }

@@ -156,12 +156,9 @@ fleetd status storefront
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| A pull request stays queued on the [merge train](/docs/glossary#merge-train) | The train can't work in the checkout, or CI or a review is pending. | Run `fleetd change status X<n>` in the project's checkout on its worker: it shows the train's error. The change id `X<n>` is listed by the `train_get` tool. |
+| A pull request stays queued on the [merge train](/docs/glossary#merge-train) | The train can't work in the checkout, or CI or a review is pending. | The `train_get` tool shows each PR on the train with its state and last error. |
 | The train's error says "#212 can't merge: its checkout on laptop is outside the node's cmdRoots" | The checkout is outside the node's `cmdRoots` (default: your home directory). | Add its folder to `cmdRoots` in [`node.json`](/docs/config-and-files#node-json) and restart the node. |
 | An agent's activity says "node retry 1/3 in 57 s: overloaded" | Claude's API was overloaded or the network failed, after claude's own retries. | Nothing. The node continues the same run after about 1, 4 and 15 minutes, then fails it with claude's words. |
 | Your message waits and the chat says why | The lead can't start: `claude` logged out, out of range, or the worker offline. | See [Claude](#claude) and [Machines](#machines). |
-
-`fleetd change status` is a lead-side command: run it inside the project's checkout on the worker. If that node uses
-a non-default home, set `FLEETD_HOME` as it has, or `FLEETD_NODE_SOCK=<node home>/node.sock`.
 
 Then check the logs (above) for the hub and the project's worker.

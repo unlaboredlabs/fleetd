@@ -62,11 +62,10 @@ The hub keeps its data in one SQLite file, `~/.fleetd/hub/hub.sqlite`. See [Conf
 
 1. You open a **project** (a git repo on a worker) and write to its **lead** in the chat, such as
    `fix the typo in the README`.
-2. The lead plans the work: what to build, and the done-when checks that prove it is finished.
+2. The lead plans the work: what to build, and what done looks like.
 3. The lead starts **tasks**. Each writer gets its own git worktree and branch, and opens a pull request.
 4. Reviewers check each pull request. The **merge train** merges it once CI passes on the exact commit.
-5. The lead claims the work is done (`claim_done`). The hub runs the done-when checks itself, and only all of them
-   passing makes it done.
+5. When the work is done, the lead closes it (`close`) and says why.
 6. The lead tells you in the chat.
 
 When the lead needs a decision, it asks you in the chat. Typing while it works **steers** it.
@@ -129,16 +128,16 @@ commit, and squash-merges it. Ready PRs that touch different files merge togethe
 Every pull request merges on one clean review of its current commit plus green CI. A repo with no CI holds its PRs
 until it has some.
 
-### Done, checked {#done}
+### Done {#done}
 
-A lead can't just say "done". It calls `claim_done`, and the hub runs the brief's done-when checks itself: a PR
-merged, CI green, a command on a machine, an HTTP check, a judge, or a person. Each claim keeps its evidence and exit
-codes.
+The lead closes work with `close` and one line on why. The reason is recorded, and closing stops nothing: an agent
+still running keeps going until the lead stops it, and the status shows it. What counts as shipped is decided
+elsewhere: only the merge train merges, after green CI and review.
 
 ## What agents can call
 
 Leads and tasks act through fleetd's MCP tools, never Claude's own subagents. A lead starts agents with
-`spawn_agent`; a task reports back with `report`, `ask_lead` and `claim_done`.
+`spawn_agent`; a task reports back with `report` and `ask_lead`.
 
 - [Agent tools](/docs/reference/agent-tools): every tool an agent can call, generated from the code.
 - [What agents are told](/docs/what-agents-are-told): every prompt fleetd sends a model.

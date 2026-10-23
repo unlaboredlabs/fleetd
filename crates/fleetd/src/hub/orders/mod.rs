@@ -1,8 +1,6 @@
 //! The orders board: open workstreams joined with their agents (tasks and the project's lead), PRs, open requests and the
 //! trains of their repos, for the app's board and order view. Reads the existing stores; owns no table.
-pub mod idle;
 pub mod notes;
-pub mod open_work;
 pub mod phase;
 pub mod tools;
 
@@ -246,7 +244,6 @@ pub fn task_lane(task: &Task, prs: &[(&Change, PrRef)], look: &dyn Lookups) -> A
         ended_at: task.ended_at.clone(),
         branch: task.branch.clone(),
         pr,
-        receipts: task.result.as_ref().and_then(|r| r.receipts.clone()),
         live: parts
             .as_ref()
             .map(|p| live_lane(task.task_id.as_str(), status, Some(p))),
@@ -313,7 +310,6 @@ pub fn lead_lane(lead: &Lead, project_title: &str, look: &dyn Lookups) -> AgentL
         ended_at: None,
         branch: None,
         pr: None,
-        receipts: None,
     }
 }
 

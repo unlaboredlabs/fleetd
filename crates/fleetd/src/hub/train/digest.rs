@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use super::contract::{Change, ChangeState, ProjectRef, TrainState, state_str};
 use super::records::{ChangeRecords, ListFilter};
-use super::time::parse_iso;
+use crate::hub::store::parse_ms;
 
 pub struct TrainFacts {
     pub trains: Vec<TrainState>,
@@ -39,7 +39,7 @@ fn by(c: &Change) -> String {
 
 fn updated_after(c: &Change, since_ms: Option<i64>) -> bool {
     // Date.parse(updatedAt) > since; an unreadable time compares false.
-    since_ms.is_none_or(|since| parse_iso(c.updated_at.as_str()).is_some_and(|at| at > since))
+    since_ms.is_none_or(|since| parse_ms(c.updated_at.as_str()).is_some_and(|at| at > since))
 }
 
 fn state_of(changes: &[Change], train: &TrainState) -> String {
@@ -82,7 +82,7 @@ fn merged(changes: &[Change], since_ms: Option<i64>) -> impl Iterator<Item = &Ch
 /// The lead digest's "Merge train" lines. `since` is the lead's last wake.
 pub fn lead_train_lines(facts: &TrainFacts, since: Option<&str>) -> Vec<String> {
     // Date.parse of an unreadable `since` is NaN: nothing is "after" it.
-    let since_ms = since.map(|s| parse_iso(s).unwrap_or(i64::MAX));
+    let since_ms = since.map(|s| parse_ms(s).unwrap_or(i64::MAX));
     let mut lines: Vec<String> = facts
         .trains
         .iter()

@@ -27,7 +27,9 @@
         "doneWhen": {
           "description": "At least one.",
           "items": {
-            "$ref": "#/$defs/CheckSpec"
+            "maxLength": 2000,
+            "minLength": 1,
+            "type": "string"
           },
           "maxItems": 20,
           "minItems": 1,
@@ -95,173 +97,6 @@
     "ChangeId": {
       "pattern": "^X[1-9][0-9]*$",
       "type": "string"
-    },
-    "CheckSpec": {
-      "oneOf": [
-        {
-          "properties": {
-            "pr": {
-              "maximum": 9007199254740991,
-              "minimum": 1,
-              "type": "integer"
-            },
-            "repo": {
-              "maxLength": 200,
-              "minLength": 1,
-              "type": "string"
-            },
-            "type": {
-              "const": "pr_merged",
-              "type": "string"
-            }
-          },
-          "required": [
-            "type",
-            "repo"
-          ],
-          "type": "object"
-        },
-        {
-          "properties": {
-            "ref": {
-              "maxLength": 200,
-              "minLength": 1,
-              "type": "string"
-            },
-            "repo": {
-              "maxLength": 200,
-              "minLength": 1,
-              "type": "string"
-            },
-            "type": {
-              "const": "ci_green",
-              "type": "string"
-            }
-          },
-          "required": [
-            "type",
-            "repo"
-          ],
-          "type": "object"
-        },
-        {
-          "properties": {
-            "contains": {
-              "maxLength": 500,
-              "minLength": 1,
-              "type": "string"
-            },
-            "status": {
-              "maximum": 599,
-              "minimum": 100,
-              "type": "integer"
-            },
-            "type": {
-              "const": "http",
-              "type": "string"
-            },
-            "url": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "type",
-            "url",
-            "status"
-          ],
-          "type": "object"
-        },
-        {
-          "properties": {
-            "argv": {
-              "items": {
-                "type": "string"
-              },
-              "maxItems": 64,
-              "minItems": 1,
-              "type": "array"
-            },
-            "expectExit": {
-              "format": "int64",
-              "type": "integer"
-            },
-            "machineId": {
-              "$ref": "#/$defs/MachineId"
-            },
-            "type": {
-              "const": "cmd",
-              "type": "string"
-            }
-          },
-          "required": [
-            "type",
-            "machineId",
-            "argv",
-            "expectExit"
-          ],
-          "type": "object"
-        },
-        {
-          "properties": {
-            "repo": {
-              "maxLength": 200,
-              "minLength": 1,
-              "type": "string"
-            },
-            "testId": {
-              "maxLength": 500,
-              "minLength": 1,
-              "type": "string"
-            },
-            "type": {
-              "const": "test",
-              "type": "string"
-            }
-          },
-          "required": [
-            "type",
-            "repo",
-            "testId"
-          ],
-          "type": "object"
-        },
-        {
-          "properties": {
-            "criteria": {
-              "maxLength": 2000,
-              "minLength": 1,
-              "type": "string"
-            },
-            "type": {
-              "const": "judge",
-              "type": "string"
-            }
-          },
-          "required": [
-            "type",
-            "criteria"
-          ],
-          "type": "object"
-        },
-        {
-          "properties": {
-            "question": {
-              "maxLength": 500,
-              "minLength": 1,
-              "type": "string"
-            },
-            "type": {
-              "const": "human",
-              "type": "string"
-            }
-          },
-          "required": [
-            "type",
-            "question"
-          ],
-          "type": "object"
-        }
-      ]
     },
     "DecisionRule": {
       "description": "Applied to the improvement: candidate − baseline, negated when lower is better. GO when it is at least\n`goAtLeast`, STOP when it is below `stopBelow`, INCONCLUSIVE in between.",
@@ -503,38 +338,6 @@
       ],
       "type": "object"
     },
-    "Receipts": {
-      "description": "Counted by the hub from the task's thread items, never from its prose.",
-      "properties": {
-        "commands": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "commandsFailed": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "filesChanged": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "toolCalls": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "commands",
-        "commandsFailed",
-        "filesChanged",
-        "toolCalls"
-      ],
-      "type": "object"
-    },
     "ResearchOutcome": {
       "description": "STOP is a success: the question was answered.",
       "enum": [
@@ -600,7 +403,7 @@
           "description": "M4: its thread hit a usage limit; the task is idle until fleetd sends \"continue\" at `resumeAt`."
         },
         "pr": {
-          "description": "The PR a review task reviews. Required at spawn for review; absent on hub-spawned judge tasks and older rows.",
+          "description": "The PR a review task reviews. Required at spawn for review; absent on older rows (hub-spawned judges).",
           "type": "string"
         },
         "profile": {
@@ -742,16 +545,8 @@
           "minLength": 1,
           "type": "string"
         },
-        "claimsUnverified": {
-          "description": "The tail claims success (\"tests pass\", \"fixed\", ...) while `receipts.commands` is 0. Absent before M6.",
-          "type": "boolean"
-        },
         "prUrl": {
           "type": "string"
-        },
-        "receipts": {
-          "$ref": "#/$defs/Receipts",
-          "description": "Absent on results stored before M6."
         },
         "status": {
           "$ref": "#/$defs/TaskResultStatus"
@@ -1075,16 +870,24 @@
       "type": "object"
     },
     "WorkstreamState": {
-      "enum": [
-        "draft",
-        "running",
-        "converging",
-        "verifying",
-        "done",
-        "stopped",
-        "failed"
-      ],
-      "type": "string"
+      "oneOf": [
+        {
+          "enum": [
+            "draft",
+            "running",
+            "converging",
+            "done",
+            "stopped",
+            "failed"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "verifying",
+          "description": "Never set now that a lead closes its work; old records were moved back to running.",
+          "type": "string"
+        }
+      ]
     }
   },
   "$ref": "#/$defs/ProjectOutcome",

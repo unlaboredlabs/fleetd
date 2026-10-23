@@ -21,11 +21,11 @@ use super::host::{BoxFut, TrainHost};
 use super::main_ci::{GithubSync, MainCi, ci_state};
 use super::records::{ChangeRecords, Db, HEAD_STATES, ListFilter, QUEUED_STATES};
 use super::rules::Refusal;
-use super::time::{iso, millis, parse_iso};
 use crate::clock::Clock;
 use crate::hub::leads::events::Event;
-use crate::hub::prompts::fixed::{FixPr, fix_your_pr};
+use crate::hub::prompts::PromptSet;
 use crate::hub::status::fresh::{self, Fresh};
+use crate::hub::store::{iso_ms, parse_ms, system_ms};
 use fleetd_contracts::ledger::WorkstreamId;
 use fleetd_contracts::prim::Text;
 use fleetd_contracts::projects::CiInfo;
@@ -77,7 +77,7 @@ pub struct TrainOptions {
     pub ci_timeout: Duration,
     /// How often merged PRs are checked for merges outside the train.
     pub bypass_every: Duration,
-    /// How often a repo's open PRs are read for a running writer's draft marked ready.
+    /// How often a repo's open PRs are read for a writer's ready PR (a slice).
     pub ready_every: Duration,
     /// Merges GitHub refuses (405/409) before the train gives up on a Change.
     pub merge_attempts: u32,
@@ -215,8 +215,7 @@ pub struct Train {
     /// Per repo, the bases its Changes' PRs target: a PR merged into another branch is not the train's to judge.
     bases: Mutex<HashMap<String, HashSet<String>>>,
     last_ready_check: Mutex<HashMap<String, i64>>,
-    /// Each watched PR's draft flag as last read, and the heads already sent to review as a ready slice.
-    drafts: Mutex<HashMap<(String, i64), bool>>,
+    /// The heads of writers' PRs already sent to review as a ready slice.
     ready_heads: Mutex<HashSet<(String, i64, String)>>,
     merge_refusals: Mutex<HashMap<ChangeId, u32>>,
     /// The train's last push per change: the head it pushed and when, for `ci.queue` spans.
@@ -266,7 +265,6 @@ impl Train {
             last_bypass_check: Mutex::default(),
             bases: Mutex::default(),
             last_ready_check: Mutex::default(),
-            drafts: Mutex::default(),
             ready_heads: Mutex::default(),
             merge_refusals: Mutex::default(),
             pushed: Mutex::default(),
@@ -322,11 +320,11 @@ impl Train {
     }
 
     pub(super) fn now_ms(&self) -> i64 {
-        millis(self.clock.now())
+        system_ms(self.clock.now())
     }
 
     fn now_iso(&self) -> Timestamp {
-        Timestamp(iso(self.clock.now()))
+        Timestamp(iso_ms(system_ms(self.clock.now())))
     }
 
     pub(super) fn emit(
@@ -503,7 +501,14 @@ impl Train {
     }
 
     /// The author task gets it as a task message; without one, or if that fails, the lead gets it.
-    pub(super) async fn tell_author(&self, change: &Change, text: String) {
+    /// The `pr.fix` prompt with `problem` to the task that wrote the PR, else to the lead as an event line.
+    pub(super) async fn tell_author(&self, change: &Change, problem: &str) {
+        let prompts = self.records.db().prompts();
+        let set = match &change.task_id {
+            Some(task_id) => prompts.for_task(&change.project_ref, task_id.as_str()),
+            None => prompts.current(Some(&change.project_ref)),
+        };
+        let text = fix_your_pr(&set, change, problem, "");
         if let Some(task_id) = &change.task_id {
             match self
                 .host
@@ -736,13 +741,11 @@ impl Train {
             format!("{} needs a rebase: {why}", change.change_id),
             json!({ "changeId": change.change_id, "workstreamId": change.workstream_id, "paths": paths.iter().take(50).collect::<Vec<_>>() }),
         );
-        let text = fix_your_pr(
-            change.pr_url.as_str(),
-            Some(change.change_id.as_str()),
-            change.branch.as_str(),
-            &FixPr::Rebase { why: &why, base },
-        );
-        self.tell_author(&parked, text).await;
+        self.tell_author(
+            &parked,
+            &format!("the merge train could not rebase it: it {why}"),
+        )
+        .await;
     }
 
     /// `timed_out` carries the GitHub read error that kept the train from deciding, when there was one.
@@ -792,13 +795,8 @@ impl Train {
             format!("{} {why}", change.change_id),
             data,
         );
-        let text = fix_your_pr(
-            change.pr_url.as_str(),
-            Some(change.change_id.as_str()),
-            change.branch.as_str(),
-            &FixPr::Ci { why: &why },
-        );
-        self.tell_author(&parked, text).await;
+        self.tell_author(&parked, &format!("the merge train did not merge it: {why}"))
+            .await;
     }
 
     /// Polls the check runs of `sha` until all are done, one is red, or the timeout passes. A head with no checks is
@@ -893,13 +891,17 @@ impl Train {
             .filter(|(s, _)| s == sha)
             .map(|(_, at)| at);
         for r in runs {
-            let Some(start) = r.started_at.as_deref().and_then(crate::hub::time::parse_ms) else {
+            let Some(start) = r
+                .started_at
+                .as_deref()
+                .and_then(crate::hub::store::parse_ms)
+            else {
                 continue;
             };
             let end = r
                 .completed_at
                 .as_deref()
-                .and_then(crate::hub::time::parse_ms);
+                .and_then(crate::hub::store::parse_ms);
             let status = match (end, r.conclusion.as_deref()) {
                 (None, _) => SpanStatus::Incomplete,
                 (Some(_), Some("success" | "neutral" | "skipped")) => SpanStatus::Ok,
@@ -1231,10 +1233,10 @@ impl Train {
         }
     }
 
-    /// A running writer's PR seen as a draft and now marked ready is a ready slice: it goes on the train at once, as
-    /// that writer's, so its review starts while the writer works on (the same path as its `report` with kind
-    /// slice_ready). Once per head. Read from the repo's open PRs on the train's own polling, so it needs no
-    /// webhook; a PR opened ready goes on the train with the writer's result as before.
+    /// A writer's ready PR is a slice: any open PR that is not a draft, from the writer's branch or one named after
+    /// it (`<branch>-<n>`), goes on the train at once as that writer's, so its review starts while the writer works
+    /// on. Once per head, and not while the train already has it. Read from the repo's open PRs on the train's own
+    /// polling, so it needs no webhook and nothing from the writer.
     async fn ready_pass(&self, repo: &str, project_ref: &ProjectRef) {
         let now = self.now_ms();
         let due = lock(&self.last_ready_check)
@@ -1243,7 +1245,7 @@ impl Train {
         if !due {
             return;
         }
-        let writers = self.host.running_writers(project_ref);
+        let writers = self.host.writers(project_ref);
         if writers.is_empty() {
             return;
         }
@@ -1255,13 +1257,17 @@ impl Train {
                 return;
             }
         };
-        for pull in pulls {
-            let Some((task_id, _)) = writers.iter().find(|(_, b)| *b == pull.head.ref_) else {
+        for pull in pulls.into_iter().filter(|p| !p.draft) {
+            let head_ref = pull.head.ref_.as_str();
+            let Some((task_id, _)) = writers.iter().find(|(_, b)| {
+                head_ref == b
+                    || head_ref
+                        .strip_prefix(b.as_str())
+                        .is_some_and(|r| r.starts_with('-'))
+            }) else {
                 continue;
             };
-            let key = (repo.to_string(), pull.number);
-            let was_draft = lock(&self.drafts).insert(key, pull.draft);
-            if pull.draft || was_draft != Some(true) {
+            if self.records.open_for(repo, pull.number).is_some() {
                 continue;
             }
             let head = (repo.to_string(), pull.number, pull.head.sha.to_lowercase());
@@ -1269,12 +1275,10 @@ impl Train {
                 continue;
             }
             let pr_url = format!("https://github.com/{repo}/pull/{}", pull.number);
-            let call = fleetd_contracts::lead_calls::SliceReadyCall {
-                pr_url: GitHubPrUrl::unchecked(pr_url.clone()),
-            };
-            match super::calls::slice_ready(self, project_ref, task_id, call).await {
-                Ok((change, _)) => {
-                    tracing::info!(change_id = %change.change_id, %pr_url, "train: a draft marked ready is a slice")
+            let pr = GitHubPrUrl::unchecked(pr_url.clone());
+            match super::calls::slice_ready(self, project_ref, task_id, pr).await {
+                Ok(change) => {
+                    tracing::info!(change_id = %change.change_id, %pr_url, "train: a writer's ready PR is a slice")
                 }
                 Err(e) => {
                     let line = Event::PrRefused {
@@ -1369,7 +1373,7 @@ impl Train {
             if pr.base != default && !guarded.contains(&pr.base) || pr.head.starts_with(&scratch) {
                 continue;
             }
-            let Some(at) = parse_iso(&pr.merged_at).filter(|at| *at > watch_since_ms) else {
+            let Some(at) = parse_ms(&pr.merged_at).filter(|at| *at > watch_since_ms) else {
                 continue;
             };
             let change = self.records.latest_for(repo, pr.number);
@@ -1895,4 +1899,21 @@ fn change_ids(change: &Change) -> crate::hub::time::Ids {
         task_id: change.task_id.as_ref().map(|t| t.to_string()),
         ..Default::default()
     }
+}
+
+/// The one message that sends a PR back to its author: what is wrong (`problem`), a review's `findings` if any.
+pub fn fix_your_pr(set: &PromptSet, change: &Change, problem: &str, findings: &str) -> String {
+    let findings = match findings.trim() {
+        "" => String::new(),
+        f => format!("\n\n{f}\n"),
+    };
+    set.render(
+        "pr.fix",
+        &[
+            ("pr", &format!("{} ({})", change.pr_url, change.change_id)),
+            ("problem", &problem),
+            ("findings", &findings),
+            ("branch", &change.branch),
+        ],
+    )
 }

@@ -14,8 +14,8 @@ use serde_json::Value;
 use super::credit;
 use super::fresh::{self, Fresh};
 use crate::hub::api::Hub;
-use crate::hub::plan::{self, clip, parse_ms};
-use crate::hub::store::iso_ms;
+use crate::hub::plan::{self, clip};
+use crate::hub::store::{iso_ms, parse_ms};
 
 /// Event types that can change a row or its series: `fleetd status --watch` reads the rows again after one.
 pub const CHANGES_A_ROW: &[HubEventType] = &[

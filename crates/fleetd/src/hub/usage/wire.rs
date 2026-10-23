@@ -103,11 +103,17 @@ impl ports::EventLog for OpsPorts {
 }
 
 impl UsageQueue for OpsPorts {
-    fn send(&self, thread: &ThreadRef, message: &str, id: &str) -> BoxFut<'_, Result<(), String>> {
+    fn send_continue(&self, thread: &ThreadRef, id: &str) -> BoxFut<'_, Result<(), String>> {
         let target: Option<fleetd_contracts::ids::ThreadRef> = convert(thread);
-        let (message, id) = (message.to_owned(), id.to_owned());
+        let id = id.to_owned();
         Box::pin(async move {
             let target = target.ok_or("not a thread ref")?;
+            let message = self
+                .hub()
+                .db
+                .prompts()
+                .for_thread(&target.machine_id, target.thread_id.as_str())
+                .render("usage.continue", &[]);
             self.hub()
                 .queue
                 .send(&target, &message, &id, None)

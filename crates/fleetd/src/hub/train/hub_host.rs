@@ -104,24 +104,31 @@ impl TrainHost for HubHost {
         }
     }
 
-    fn running_writers(&self, project_ref: &ProjectRef) -> Vec<(TaskId, String)> {
+    fn writers(&self, project_ref: &ProjectRef) -> Vec<(TaskId, String)> {
+        use fleetd_contracts::tasks::{TaskKind, TaskState};
         let Some(hub) = self.hub() else {
             return Vec::new();
         };
         let filter = crate::hub::tasks::TaskFilter {
             project_ref: Some(project_ref.clone()),
-            state: Some(fleetd_contracts::tasks::TaskState::Running),
+            state: None,
             workstream_id: None,
             limit: 100,
         };
         match hub.tasks.list(&filter) {
             Ok(tasks) => tasks
                 .into_iter()
-                .filter(|t| t.kind == fleetd_contracts::tasks::TaskKind::Write)
+                .filter(|t| t.kind == TaskKind::Write)
+                .filter(|t| {
+                    matches!(
+                        t.state,
+                        TaskState::Running | TaskState::Idle | TaskState::Done
+                    )
+                })
                 .filter_map(|t| Some((t.task_id, t.branch?.to_string())))
                 .collect(),
             Err(error) => {
-                tracing::warn!(%error, "train: running writers not read");
+                tracing::warn!(%error, "train: writers not read");
                 Vec::new()
             }
         }

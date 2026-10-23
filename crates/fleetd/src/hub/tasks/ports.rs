@@ -142,7 +142,7 @@ pub trait TaskPorts: Send + Sync {
     fn medium_allowed(&self, project_ref: &ProjectRef) -> bool;
     /// LeadWakes.trigger with the entry's rendered lines.
     fn wake(&self, project_ref: &ProjectRef, kind: WakeKind, text: String);
-    /// `leads::digest::done_when_text` of the brief's checks, none marked passed, at most 200 units, for the task
-    /// prompt's "Done when:".
+    /// `leads::digest::done_when_text` of the brief's lines, at most 200 units each, for the task prompt's "Done
+    /// when:".
     fn done_when_text(&self, brief: &Brief) -> String;
 }

@@ -31,7 +31,7 @@ The hub checks these on every fleetd call a session makes, through its MCP tools
 | Open tasks per lead | 32 (queued, running or idle). |
 | Agents running at once, per project | The project's max agents, which a person sets (`cap_set`, the chat's Max agents); unset, the fleet cap. A spawn over it queues and starts by itself; a review goes ahead of queued writers. The lead is not an agent and doesn't count. |
 | Agents running at once, fleet-wide | The fleet cap, 40 by default. |
-| Calls a task's agent may make | `report`, `ask_lead`, `claim_done`. Every other call is refused. |
+| Calls a task's agent may make | `report`, `ask_lead`. Every other call is refused. |
 | Gated commands (`gated_run`) | Classes `irreversible`, `money`, `credential`. Run only after a human approves; at most 1800 s. |
 
 These limits cover calls to fleetd, not what the agent's own shell can do. A task runs with full Bash, so `gated_run` is not the only way it could run a command. A process that leaves its session's process tree (for example with `setsid`) and scrubs its environment counts as you, with no limits: see "Known limit" on the Security page. Run agents you don't trust as a different OS user.
@@ -47,21 +47,19 @@ Every lead gets these.
 | [`agent_status`](#agent_status) | One task as stored: state, queued reason, thread, result. | No |
 | [`list_agents`](#list_agents) | The project's tasks, newest first, optionally by state or workstream. | No |
 | [`stop_agent`](#stop_agent) | Stop a task: interrupts its thread and releases its slot. | No |
-| [`brief`](#brief) | Set a draft workstream's brief (goal, why, pointers, constraints, doneWhen checks) and start it, or edit it later. | No |
+| [`brief`](#brief) | Set a draft workstream's brief (goal, why, pointers, constraints, doneWhen lines) and start it, or edit it later. | No |
 | [`request_secret`](#request_secret) | Ask the human for a secret (a key, a token, a password). | The human enters the value in chat; you see only its fingerprint. |
 | [`request_withdraw`](#request_withdraw) | Take back a secret request or a command approval you no longer need (the human said so in chat). | No |
 | [`decide`](#decide) | Log a decision: one you made yourself, or the human's answer to a question you asked in chat (so you never ask it twice). | No |
-| [`claim_done`](#claim_done) | Claim a workstream done: fleetd runs its frozen done-when checks itself, and only all of them passing makes it done. | No |
+| [`close`](#close) | The workstream is done: say why in one line. | No |
 | [`gated_run`](#gated_run) | A prod write, spend, delete or credential use: the chat shows the human exactly this argv with Approve / Deny, and the node runs it only once approved; secrets come from the node's own sinks. | A human approves the exact command in chat before the node runs it. |
 | [`plan_milestone`](#plan_milestone) | Add a milestone to the project's plan. | No |
 | [`plan_add`](#plan_add) | Add a plan item (must or polish, size s\|m\|l, after other items). | No |
 | [`plan_edit`](#plan_edit) | Change a plan item. | No |
 | [`plan_drop`](#plan_drop) | Drop a plan item, with why or steer. | No |
 | [`plan_show`](#plan_show) | The project's plan. | No |
-| [`status_set`](#status_set) | Your one-line status for a workstream; it shows as "lead says". | No |
 | [`decisions_search`](#decisions_search) | Search the decision log. | No |
 | [`change_enqueue`](#change_enqueue) | Put a PR no task's result put there on its repo's merge train; only the train merges. | No |
-| [`change_status`](#change_status) | A merge-train change as stored. | No |
 | [`workstream_open`](#workstream_open) | Open a workstream for work you took from the chat: a draft you then brief. | No |
 
 ### spawn_agent
@@ -177,7 +175,7 @@ Stop a task: interrupts its thread and releases its slot.
 
 ### brief
 
-Set a draft workstream's brief (goal, why, pointers, constraints, doneWhen checks) and start it, or edit it later.
+Set a draft workstream's brief (goal, why, pointers, constraints, doneWhen lines) and start it, or edit it later.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -191,7 +189,7 @@ Set a draft workstream's brief (goal, why, pointers, constraints, doneWhen check
 | `brief.decisionRule.better` | string | yes | One of `higher`, `lower`. |
 | `brief.decisionRule.goAtLeast` | number | yes |  |
 | `brief.decisionRule.stopBelow` | number | yes |  |
-| `brief.doneWhen` | object[] | yes | At least one. At most 20 items. |
+| `brief.doneWhen` | string[] | yes | At least one. At most 20 items. |
 | `brief.goal` | string | yes | At most 1000 characters. |
 | `brief.metric` | string | no | Research: the one number the judge reports for baseline and candidate, e.g. "p50 cold start in ms". At most 200 characters. |
 | `brief.pointers` | string[] | yes | At most 20 items. |
@@ -209,10 +207,7 @@ Set a draft workstream's brief (goal, why, pointers, constraints, doneWhen check
         "No new service; use the existing Redis."
       ],
       "doneWhen": [
-        {
-          "repo": "acme/shop",
-          "type": "pr_merged"
-        }
+        "A client past its limit gets 429 with Retry-After."
       ],
       "goal": "Uploads are rate-limited per API key.",
       "pointers": [
@@ -295,21 +290,22 @@ Log a decision: one you made yourself, or the human's answer to a question you a
 }
 ```
 
-### claim_done
+### close
 
-Claim a workstream done: fleetd runs its frozen done-when checks itself, and only all of them passing makes it done. A failed claim says what failed.
+The workstream is done: say why in one line. It stops nothing; stop any agent of it you no longer need.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `closeOver` | string | no | At most 300 characters. |
+| `why` | string | yes | One line on why it is done, as the human would read it. At most 500 characters. |
 | `workstreamId` | string | yes | `W<n>`, e.g. `W1`. |
 
-**Who may call:** a lead, a task's agent, checked by the hub. **Needs a human:** no.
+**Who may call:** a lead, checked by the hub. **Needs a human:** no.
 
 ```json
 {
-  "name": "claim_done",
+  "name": "close",
   "arguments": {
+    "why": "The rate limit is merged and live.",
     "workstreamId": "W3"
   }
 }
@@ -377,7 +373,6 @@ Add a plan item (must or polish, size s|m|l, after other items). After a milesto
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `after` | string[] | no | At most 20 items. |
-| `check` | integer | no | 0 to 19. |
 | `milestoneId` | string | yes | `M<n>`, e.g. `M1`. |
 | `pr` | string | no | Like `https://github.com/<owner>/<name>/pull/<n>`. |
 | `size` | string | no | Absent: `m`, with a warning to size it. One of `s`, `m`, `l`. |
@@ -408,8 +403,6 @@ Change a plan item.
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `after` | string[] | no | Replaces the list. At most 20 items. |
-| `checkAdd` | integer[] | no | At most 20 items. |
-| `checkRemove` | integer[] | no | At most 20 items. |
 | `itemId` | string | yes | `P<n>`, e.g. `P1`. |
 | `milestoneId` | string | no | `M<n>`, e.g. `M1`. |
 | `position` | integer | no |  |
@@ -474,27 +467,6 @@ The project's plan.
 }
 ```
 
-### status_set
-
-Your one-line status for a workstream; it shows as "lead says".
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `text` | string | yes | One line. At most 280 characters. |
-| `workstreamId` | string | no | `W<n>`, e.g. `W1`. |
-
-**Who may call:** a lead, checked by the hub. **Needs a human:** no.
-
-```json
-{
-  "name": "status_set",
-  "arguments": {
-    "text": "Limiter merged; checking the 429 path.",
-    "workstreamId": "W3"
-  }
-}
-```
-
 ### decisions_search
 
 Search the decision log.
@@ -537,25 +509,6 @@ Put a PR no task's result put there on its repo's merge train; only the train me
 }
 ```
 
-### change_status
-
-A merge-train change as stored.
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `changeId` | string | yes | `X<n>`, e.g. `X1`. |
-
-**Who may call:** a lead, checked by the hub. **Needs a human:** no.
-
-```json
-{
-  "name": "change_status",
-  "arguments": {
-    "changeId": "X12"
-  }
-}
-```
-
 ### workstream_open
 
 Open a workstream for work you took from the chat: a draft you then brief. template picks the playbook (feature, bugfix, research).
@@ -583,26 +536,21 @@ Every task's agent gets these: implementers, readers, reviewers and QA.
 
 | Tool | What it does | Needs a human |
 |---|---|---|
-| [`report`](#report) | A reviewer records its verdict once, before its final message: the full SHA it reviewed, the number of blocking and non-blocking findings and a one-paragraph summary. | No |
+| [`report`](#report) | Record your review verdict once, before your final message: the number of blocking and non-blocking findings and a one-paragraph summary. | No |
 | [`ask_lead`](#ask_lead) | Ask your lead a question. | No |
-| [`claim_done`](#claim_done-task) | Claim your workstream done: fleetd runs its done-when checks itself. | No |
 
 ### report
 
-A reviewer records its verdict once, before its final message: the full SHA it reviewed, the number of blocking and non-blocking findings and a one-paragraph summary. A writer reports each slice whose PR is complete with kind slice_ready and its prUrl: its review starts at once while you go on with the next slice.
+Record your review verdict once, before your final message: the number of blocking and non-blocking findings and a one-paragraph summary. fleetd fills in your task and the head you reviewed.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `blocking` | integer | no |  |
-| `kind` | string | no | Verdict (the default) for a review, slice_ready for a writer's PR that is ready. One of `verdict`, `slice_ready`. |
+| `blocking` | integer | yes |  |
 | `metricValues` | object | no | A research workstream's judge reports its metric for the baseline and the candidate; the hub computes the verdict. |
 | `metricValues.baseline` | number | yes |  |
 | `metricValues.candidate` | number | yes |  |
-| `nonBlocking` | integer | no |  |
-| `prHeadSha` | string | no | Full lowercase hex commit SHA, 40 or 64 characters. |
-| `prUrl` | string | no | Like `https://github.com/<owner>/<name>/pull/<n>`. |
-| `summary` | string | no | At most 1000 characters. |
-| `taskId` | string | no | `T<n>`, e.g. `T1`. |
+| `nonBlocking` | integer | yes |  |
+| `summary` | string | yes | At most 1000 characters. |
 
 **Who may call:** a task's agent, checked by the hub. **Needs a human:** no.
 
@@ -612,9 +560,7 @@ A reviewer records its verdict once, before its final message: the full SHA it r
   "arguments": {
     "blocking": 0,
     "nonBlocking": 2,
-    "prHeadSha": "3f2a9c0d41b7e85a6c2f19d0e4b3a7c8d5e6f102",
-    "summary": "The limiter is correct. Two nits: a magic number and a missing test for the reset.",
-    "taskId": "T8"
+    "summary": "The limiter is correct. Two nits: a magic number and a missing test for the reset."
   }
 }
 ```
@@ -634,26 +580,6 @@ Ask your lead a question. Carry on with what you can; the answer arrives as a me
   "name": "ask_lead",
   "arguments": {
     "question": "Should the limit apply to admin keys too?"
-  }
-}
-```
-
-### claim_done (task)
-
-Claim your workstream done: fleetd runs its done-when checks itself.
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `closeOver` | string | no | At most 300 characters. |
-| `workstreamId` | string | yes | `W<n>`, e.g. `W1`. |
-
-**Who may call:** a lead, a task's agent, checked by the hub. **Needs a human:** no.
-
-```json
-{
-  "name": "claim_done",
-  "arguments": {
-    "workstreamId": "W3"
   }
 }
 ```

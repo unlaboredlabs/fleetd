@@ -54,7 +54,7 @@ Then:
 3. When that PR is green, it posts `fleetd/train` and merges it as one squash.
 4. It closes each member PR with a comment linking the batch.
 
-A member counts as merged for done-when checks only while its head is still the one the batch was built from.
+A member counts as merged only while its head is still the one the batch was built from.
 
 | If | The train |
 |---|---|
