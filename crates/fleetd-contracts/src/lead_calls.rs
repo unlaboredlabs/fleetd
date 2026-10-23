@@ -236,7 +236,6 @@ pub struct AskLeadCall {
     pub question: Text<1, 4000>,
 }
 
-
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum LeadCall {
