@@ -24,10 +24,9 @@ export function ConnectionBanner() {
   // Waiting out a retry: an attempt that is running has nothing to hurry.
   const waiting = reach !== null && reach.reason !== null && reach.retryAt !== null;
   useCommands([{ id: "hub.retry", title: "Reconnect now", group: "actions", enabled: () => waiting, run: () => layer.retryNow() }], []);
-  const live = state?.phase === "live" ? state.hub : null;
+  const live = state.phase === "live" ? state.hub : null;
   const probe = useHubProbe(live);
   const behind = probe?.answers === true ? olderNodes(machines, probe.version) : [];
-  if (state === null) return null;
   if (reach !== null) return <Reconnecting reach={reach} onRetry={() => layer.retryNow()} />;
   if (behind.length === 0) return null;
   const one = behind.length === 1;

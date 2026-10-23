@@ -1,34 +1,26 @@
 import { describe, expect, it } from "vitest";
+import type { ProjectRow } from "../../src/data/selectors";
 import { connLine, homeProject, nextWanting, stepProject, toSidebar, type MarksIn, type SidebarProject } from "./model";
 
-const row = (projectId: string, marks: Partial<{ needsYou: boolean; working: boolean; running: number; lastSeq: number }> = {}) => ({
-  project: { machineId: "devbox", projectId, title: projectId },
-  needsYou: false,
-  working: false,
-  running: 0,
-  ...marks,
-});
+// Rows as the data layer hands them over: by title.
+const row = (projectId: string, marks: Partial<Pick<ProjectRow, "needsYou" | "working" | "running" | "lastSeq">> = {}): ProjectRow =>
+  ({
+    key: `devbox/${projectId}`,
+    project: { machineId: "devbox", projectId, title: projectId },
+    needsYou: false,
+    working: false,
+    running: 0,
+    state: "idle",
+    ...marks,
+  }) as ProjectRow;
 const sidebar = (ids: Array<string>): ReadonlyArray<SidebarProject> => toSidebar(ids.map((id) => row(id))) ?? [];
 
 describe("sidebar projects", () => {
   it("keeps each project's marks, and says nothing until the projects loaded", () => {
     expect(toSidebar(undefined)).toBeUndefined();
     expect(toSidebar([row("api", { needsYou: true, working: true, running: 3 })])).toEqual([
-      {
-        key: { machineId: "devbox", projectId: "api" },
-        title: "api",
-        want: { word: undefined, count: 1, label: "The lead is waiting on you" },
-        unread: false,
-        working: true,
-        running: 3,
-      },
+      { ...row("api", { needsYou: true, working: true, running: 3 }), want: { word: undefined, count: 1, label: "The lead is waiting on you" }, unread: false },
     ]);
-  });
-
-  it("lists projects alphabetically, so none moves as its state changes", () => {
-    // The layer puts needs-you and working first; the sidebar doesn't follow.
-    const listed = toSidebar([row("storefront", { needsYou: true }), row("billing", { working: true, running: 2 }), row("api")]);
-    expect(listed?.map((p) => p.title)).toEqual(["api", "billing", "storefront"]);
   });
 
   it("says why each project wants you: a secret or approval first, then a reply, then blocked", () => {
@@ -47,7 +39,7 @@ describe("sidebar projects", () => {
       ]),
     };
     const rows = [row("api", { needsYou: true }), row("billing", { needsYou: true }), row("cart", { needsYou: true }), row("docs"), row("search")];
-    const wants = toSidebar(rows, marks)?.map((p) => [p.title, p.want?.word, p.want?.count, p.want?.label]);
+    const wants = toSidebar(rows, marks)?.map((p) => [p.project.title, p.want?.word, p.want?.count, p.want?.label]);
     expect(wants).toEqual([
       ["api", "approve", 2, "2 commands to approve"],
       ["billing", "secret", 1, "The lead needs 1 secret from you"],
@@ -60,7 +52,7 @@ describe("sidebar projects", () => {
   it("marks a chat with a message newer than the one last seen, never the open one or one never seen", () => {
     const rows = [row("api", { lastSeq: 9 }), row("billing", { lastSeq: 4 }), row("cart", { lastSeq: 9 }), row("docs", { lastSeq: 2 })];
     const seen = { "devbox/api": 7, "devbox/billing": 4, "devbox/cart": 3 };
-    const unread = toSidebar(rows, { seen, open: { machineId: "devbox", projectId: "cart" } })?.map((p) => [p.title, p.unread]);
+    const unread = toSidebar(rows, { seen, open: { machineId: "devbox", projectId: "cart" } })?.map((p) => [p.project.title, p.unread]);
     expect(unread).toEqual([["api", true], ["billing", false], ["cart", false], ["docs", false]]);
   });
 
@@ -77,8 +69,7 @@ describe("sidebar projects", () => {
   });
 
   it("steps forward and back, wrapping, from the open project or the ends", () => {
-    // Listed as api, billing, storefront.
-    const projects = sidebar(["storefront", "api", "billing"]);
+    const projects = sidebar(["api", "billing", "storefront"]);
     const key = (projectId: string) => ({ machineId: "devbox", projectId });
     expect(stepProject(projects, key("api"), 1)).toEqual(key("billing"));
     expect(stepProject(projects, key("storefront"), 1)).toEqual(key("api"));
@@ -89,7 +80,7 @@ describe("sidebar projects", () => {
   });
 
   it("opens to the last project while it exists, else the first, else nothing", () => {
-    const projects = sidebar(["storefront", "api"]);
+    const projects = sidebar(["api", "storefront"]);
     expect(homeProject(projects, "devbox/api")).toEqual({ machineId: "devbox", projectId: "api" });
     expect(homeProject(projects, "devbox/gone")).toEqual({ machineId: "devbox", projectId: "api" });
     expect(homeProject(projects, null)).toEqual({ machineId: "devbox", projectId: "api" });
@@ -104,7 +95,6 @@ describe("connLine", () => {
     expect(connLine(down, false, "as of 09:02")).toEqual({ label: "Offline, as of 09:02", tone: "warning" });
     expect(connLine(down).label).toBe("Offline");
     expect(connLine({ phase: "refused", hub: "http://hub:4790", message: "bad key" }).tone).toBe("danger");
-    expect(connLine(null).label).toBe("Starting…");
   });
 
   it("never says a fixture is connected", () => {
