@@ -282,7 +282,7 @@ pub fn research_outcome(rule: &DecisionRule, values: &MetricValues) -> ResearchO
 pub struct ResearchVerdict {
     pub outcome: ResearchOutcome,
     pub metric_values: MetricValues,
-    /// The brief's frozen rule.
+    /// The brief's rule.
     pub rule: DecisionRule,
     pub computed_at: Timestamp,
 }
@@ -354,7 +354,7 @@ pub struct Brief {
     pub why: Text<1, 2000>,
     pub pointers: List<Text<1, 500>, 0, 20>,
     pub constraints: List<Text<1, 500>, 0, 20>,
-    /// At least one; frozen with the brief.
+    /// At least one.
     pub done_when: List<CheckSpec, 1, 20>,
     pub tier: Tier,
     pub budget: Option<BriefBudget>,
@@ -363,7 +363,7 @@ pub struct Brief {
     pub baseline: Option<Text<1, 1000>>,
     /// Research: the one number the judge reports for baseline and candidate, e.g. "p50 cold start in ms".
     pub metric: Option<Line<1, 200>>,
-    /// Research: frozen with the brief, so the verdict can't move the goalposts.
+    /// Research: the rule the verdict is computed from.
     pub decision_rule: Option<DecisionRule>,
 }
 
@@ -402,11 +402,6 @@ impl BriefDraft {
         }
     }
 }
-
-brand!(
-    /// sha256 of the brief's canonical JSON, lowercase hex.
-    BriefHash, name = "BriefHash", pattern = r"^[0-9a-f]{64}$"
-);
 
 // Workstreams
 
@@ -473,13 +468,12 @@ pub struct Workstream {
     pub source: WorkstreamSource,
     /// Absent while draft.
     pub brief: Option<Brief>,
-    pub brief_hash: Option<BriefHash>,
     pub state: WorkstreamState,
     pub headline: Option<Headline>,
     pub headline_at: Option<Timestamp>,
     /// Hub-filled, outside the frozen brief. Set when it starts running with a raw estimate.
     pub estimate_actual: Option<WorkstreamEstimateActual>,
-    /// Pinned at creation; the brief freeze validates against this version. Absent on workstreams from before M9.
+    /// Pinned at creation; the brief validates against this version. Absent on workstreams from before M9.
     pub playbook: Option<PlaybookRef>,
     /// M9 finish-all: the finish-all workstream that spawned this one, and the value source it was spawned for.
     pub parent: Option<WorkstreamParent>,

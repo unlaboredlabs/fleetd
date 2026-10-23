@@ -14,7 +14,7 @@ use crate::hub::store::{EventLog, NewEvent, StoreError};
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::ids::Timestamp;
-use fleetd_contracts::ledger::{BriefHash, CheckSpec, Workstream, WorkstreamId, WorkstreamState};
+use fleetd_contracts::ledger::{Brief, CheckSpec, Workstream, WorkstreamId, WorkstreamState};
 use fleetd_contracts::prim::{Count, List, Text};
 use fleetd_contracts::verification::{
     CheckOutcome, CheckResult, Claim, ClaimId, ClaimOutcome, IncidentClass,
@@ -187,16 +187,16 @@ impl Claims {
     fn conclude(
         &self,
         claim: &Claim,
-        checked: Option<&BriefHash>,
+        checked: Option<&Brief>,
         close_over: Option<&CloseOver>,
     ) -> Result<(), StoreError> {
         let Some(w) = self.ports.workstream(&claim.workstream_id) else {
             return self.records.finish(claim);
         };
-        // The brief changed while the checks ran (W4: the human asked for a build and the lead amended the brief, then
+        // The brief changed while the checks ran (W4: the human asked for a build and the lead edited the brief, then
         // confirmed the old answer-only check). The claim checked done-when that no longer exist, so it never counts;
-        // the amend voided it and said so.
-        if w.brief_hash.as_ref() != checked {
+        // the edit voided it and said so.
+        if w.brief.as_ref() != checked {
             return Ok(());
         }
         // A research judge's numbers already made it done, with its verdict.
@@ -227,7 +227,7 @@ impl Claims {
                 updated_at: now_ts(self.clock.as_ref()),
                 ..w.clone()
             };
-            // Only over the workstream as read: an amend landing since then wins, and this claim never counts.
+            // Only over the workstream as read: a brief edited since then wins, and this claim never counts.
             if !self.ports.put_workstream_if(&done, &w) {
                 return self.lost_to(&w, claim, checked);
             }
@@ -304,19 +304,19 @@ impl Claims {
     }
 
     /// Every check passed while write work has not landed: back to running, recorded with why, and the lead is told.
-    /// The workstream changed between the claim's read and its write. An amend means the claim never counts; anything
-    /// else (it was stopped) leaves the claim recorded as it ran.
+    /// The workstream changed between the claim's read and its write. A brief edit means the claim never counts;
+    /// anything else (it was stopped) leaves the claim recorded as it ran.
     fn lost_to(
         &self,
         w: &Workstream,
         claim: &Claim,
-        checked: Option<&BriefHash>,
+        checked: Option<&Brief>,
     ) -> Result<(), StoreError> {
-        let amended = self
+        let edited = self
             .ports
             .workstream(&w.workstream_id)
-            .is_some_and(|now| now.brief_hash.as_ref() != checked);
-        if amended {
+            .is_some_and(|now| now.brief.as_ref() != checked);
+        if edited {
             Ok(())
         } else {
             self.records.finish(claim)
@@ -327,7 +327,7 @@ impl Claims {
         &self,
         w: &Workstream,
         claim: &Claim,
-        checked: Option<&BriefHash>,
+        checked: Option<&Brief>,
         work: Vec<OpenWork>,
     ) -> Result<(), StoreError> {
         let running = Workstream {
@@ -389,7 +389,7 @@ impl Claims {
         };
         // Waiting for the lock stays abortable, so a superseded claim gives way; once it holds it, it finishes.
         let _held = self.lock.lock().await;
-        if let Err(error) = self.conclude(&claim, w.brief_hash.as_ref(), close_over.as_ref()) {
+        if let Err(error) = self.conclude(&claim, w.brief.as_ref(), close_over.as_ref()) {
             tracing::warn!(claim_id = %claim.claim_id, %error, "claim not concluded");
         }
         claim
@@ -460,9 +460,7 @@ impl Claims {
         }
         if w.brief.is_none() {
             return Err(invalid(
-                format!(
-                    "{workstream_id} has no frozen brief, so it has no done-when checks to run."
-                ),
+                format!("{workstream_id} has no brief, so it has no done-when checks to run."),
                 Some(&format!(
                     "Register its brief with `brief` for {workstream_id} first."
                 )),
@@ -479,7 +477,7 @@ impl Claims {
             ..w.clone()
         };
         if w.state != WorkstreamState::Verifying {
-            // Only over the workstream as read: an amend landing meanwhile must not be reverted to the old brief.
+            // Only over the workstream as read: a brief edited meanwhile must not be reverted to the old one.
             if !self.ports.put_workstream_if(&verifying, &w) {
                 return Err(invalid(
                     format!("{workstream_id} changed while you claimed it."),

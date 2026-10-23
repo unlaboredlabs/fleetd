@@ -625,12 +625,12 @@ async function buildPart(lab: Lab, chat: Chat, ref: Ref) {
   const answered = await chat.send("build it");
   const writer = await nextTask(lab, ref, answered.cursor, `a writer starts for ${file} after "build it"`, TURN_MS * 2, (t) => t.kind === "write");
   await chat.reply(answered, "the build answer");
-  // The answer was not swallowed: the order the build runs in (the research one amended, or a new one) closes only
+  // The answer was not swallowed: the order the build runs in (the research one with its brief edited, or a new one) closes only
   // after the build's writer started. The research order may close on its own verdict before the offer.
   const buildOrder = writer.task.workstreamId as string;
   const early = (await eventsSince(lab, answered.cursor, ["workstream.done"])).filter((e) => e.data?.workstreamId === buildOrder && e.seq < writer.seq);
   check(early.length === 0, `${buildOrder} closed before its build started: ${JSON.stringify(early.map((e) => e.summary))}`);
-  const how = buildOrder === workstreamId ? "on the research order (brief amended)" : "as a new order";
+  const how = buildOrder === workstreamId ? "on the research order (brief edited)" : "as a new order";
   ok(`research agent → offer → "build it" → writer "${writer.task.title}" ${how}, which stays open until the build ran`);
 }
 

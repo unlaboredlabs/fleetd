@@ -112,7 +112,7 @@ pub fn line(offers: &[Offer], total: usize, room: i64) -> String {
     .render()
 }
 
-/// The orders whose items are approved work: running on a frozen brief, so the human asked for them.
+/// The orders whose items are approved work: running on a brief, so the human asked for them.
 fn approved(hub: &Hub, r: &ProjectRef) -> HashSet<String> {
     hub.leads
         .records
@@ -347,14 +347,14 @@ mod hub_tests {
                 .workstream_get(&w.workstream_id)
                 .unwrap()
                 .unwrap();
-            stored.workstream.brief = Some(
+            stored.brief = Some(
                 serde_json::from_value(json!({
                     "goal": title, "why": "asked", "pointers": [], "constraints": [], "tier": "M",
                     "doneWhen": [{ "type": "ci_green", "repo": "acme/app" }],
                 }))
                 .unwrap(),
             );
-            stored.workstream.state = WorkstreamState::Running;
+            stored.state = WorkstreamState::Running;
             hub.leads.records.workstream_put(&stored).unwrap();
         }
         w.workstream_id.to_string()

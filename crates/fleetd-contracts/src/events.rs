@@ -4,7 +4,7 @@ use serde_with::skip_serializing_none;
 
 use crate::chat::ChatRequestId;
 use crate::ids::{EventSeq, MachineId, ProjectId, ProjectRef, ThreadId, Timestamp};
-use crate::ledger::{BriefHash, RequestKind, RequestState, WorkstreamId, WorkstreamState};
+use crate::ledger::{RequestKind, RequestState, WorkstreamId, WorkstreamState};
 use crate::prim::{Count, Text};
 use crate::prompts::PromptScope;
 use crate::train::{ChangeId, GitHubRepo};
@@ -74,7 +74,7 @@ pub enum HubEventType {
     WriteExpired,
     #[serde(rename = "workstream.created")]
     WorkstreamCreated,
-    /// The brief was frozen; `data.briefHash`.
+    /// The brief was set and the work started.
     #[serde(rename = "workstream.running")]
     WorkstreamRunning,
     #[serde(rename = "workstream.state")]
@@ -372,8 +372,8 @@ pub struct WorkstreamEventData {
     pub workstream_id: WorkstreamId,
     /// workstream.state: the new state.
     pub state: Option<WorkstreamState>,
-    /// workstream.running: the frozen brief.
-    pub brief_hash: Option<BriefHash>,
+    /// workstream.state: the brief was set or edited.
+    pub brief_edited: Option<bool>,
     /// workstream.state (verifying) and workstream.done: the claim that moved it.
     pub claim_id: Option<ClaimId>,
     /// workstream.state (stopped): why, and who.

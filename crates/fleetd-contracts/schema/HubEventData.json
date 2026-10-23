@@ -89,10 +89,6 @@
       ],
       "type": "object"
     },
-    "BriefHash": {
-      "pattern": "^[0-9a-f]{64}$",
-      "type": "string"
-    },
     "ChangeId": {
       "pattern": "^X[1-9][0-9]*$",
       "type": "string"
@@ -2031,9 +2027,9 @@
     "WorkstreamEventData": {
       "description": "`workstream.created`, `workstream.running`, `workstream.state`, `workstream.done`.",
       "properties": {
-        "briefHash": {
-          "$ref": "#/$defs/BriefHash",
-          "description": "workstream.running: the frozen brief."
+        "briefEdited": {
+          "description": "workstream.state: the brief was set or edited.",
+          "type": "boolean"
         },
         "by": {
           "type": "string"

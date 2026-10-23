@@ -343,7 +343,7 @@ pub fn focus_lanes(hub: &Hub, caller: &Caller, id: &WorkstreamId) -> Vec<LaneNow
     let Some(w) = hub.leads.records.workstream_get(id).ok().flatten() else {
         return Vec::new();
     };
-    let project = w.workstream.project_ref;
+    let project = w.project_ref;
     if !allows(caller, Role::Read, Some(&project.machine_id)) {
         return Vec::new();
     }

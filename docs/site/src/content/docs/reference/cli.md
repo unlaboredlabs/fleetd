@@ -350,10 +350,10 @@ A lead uses its fleetd tools; these are for you, inside a project workspace.
 ### fleetd brief create {#brief-create}
 
 ```text
-fleetd brief create --workstream <W> (--json '<Brief>' | --file <path>) [--amend <decision key>]
+fleetd brief create --workstream <W> (--json '<Brief>' | --file <path>)
 ```
 
-freeze the brief of a draft workstream and start it; `--amend` changes a frozen brief once the human said yes in chat and you logged it with decide
+set the brief of a draft workstream and start it, or edit it
 
 ### fleetd request secret {#request-secret}
 

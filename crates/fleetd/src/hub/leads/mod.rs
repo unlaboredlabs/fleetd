@@ -2,7 +2,6 @@
 //!
 //! `Area` owns every service of leads and playbooks. `hub/serve` builds it with `Area::new`, sets the hooks of
 //! later areas as they come up (`ctx.hooks`), registers tools and lead calls, and spawns `Area::run`.
-pub mod brief;
 pub mod calls;
 pub mod digest;
 pub mod error;

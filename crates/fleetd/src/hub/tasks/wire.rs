@@ -224,7 +224,7 @@ impl TaskPorts for HubTaskPorts {
     fn workstream(&self, workstream_id: &WorkstreamId) -> Option<Workstream> {
         let hub = self.hub()?;
         let stored = hub.leads.records.workstream_get(workstream_id).ok()??;
-        Some(stored.workstream)
+        Some(stored)
     }
 
     fn medium_allowed(&self, project_ref: &ProjectRef) -> bool {

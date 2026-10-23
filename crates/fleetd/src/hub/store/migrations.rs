@@ -496,4 +496,9 @@ pub(crate) const MIGRATIONS: &[&str] = &[
   DROP TABLE status_headlines;
   DELETE FROM events WHERE type IN ('intake.routed', 'workstream.note');
   "#,
+    // A brief is a plain record: no freeze hash, no amends.
+    r#"
+  ALTER TABLE workstreams DROP COLUMN amends;
+  UPDATE workstreams SET data = json_remove(data, '$.briefHash') WHERE json_valid(data);
+  "#,
 ];

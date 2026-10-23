@@ -17,9 +17,8 @@ pub const NODE_SOCKET_PATH: &str = "node/node.sock";
 const SERVES_FIX: &str =
     "say what this serves: --serves done:<n> | issue:<ref> | defect:<text> | decision:<key>";
 
-pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>' | --file <path>) [--amend <decision key>]
-             freeze the brief of a draft workstream and start it; --amend changes a frozen brief once the
-             human said yes in chat and you logged it with decide
+pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>' | --file <path>)
+             set the brief of a draft workstream and start it, or edit it
   request secret --key <k> --sink env:<machine>:<path>|file:<machine>:<path> [--env-name <N>]
       --text <t> [--workstream <W>]
              the human enters it in a masked field in the project's chat, sealed to that machine; an env:
@@ -120,7 +119,6 @@ const OPTIONS: &[(&str, Kind)] = &[
     ("workstream", Kind::Str),
     ("json", Kind::Str),
     ("file", Kind::Str),
-    ("amend", Kind::Str),
     ("kind", Kind::Str),
     ("key", Kind::Str),
     ("class", Kind::Str),
@@ -272,7 +270,7 @@ pub fn parse_lead_args(
                     "expected fleetd brief create --workstream <W> --json '<Brief>'".into(),
                 );
             }
-            only(&["workstream", "json", "file", "amend"])?;
+            only(&["workstream", "json", "file"])?;
             required(&["workstream"])?;
             if v.str("json").is_none() == v.str("file").is_none() {
                 return Err("give the brief with exactly one of --json and --file".into());
@@ -296,7 +294,6 @@ pub fn parse_lead_args(
                 ("op", s(Some("brief_create"))),
                 ("workstreamId", s(v.str("workstream"))),
                 ("brief", Some(brief)),
-                ("amend", s(v.str("amend"))),
             ])
         }
         Some("request") => match sub {
@@ -1167,12 +1164,11 @@ pub fn format_result(result: &Value) -> String {
     match st(result, "op") {
         "brief_create" => {
             lines.push(format!(
-                "Brief for {} frozen (hash {}); the workstream is {}.",
+                "Brief for {} saved; the workstream is {}.",
                 st(result, "workstreamId"),
-                short(st(result, "briefHash")),
                 st(result, "state")
             ));
-            next = "carry on with the workstream. Changing this brief later needs the human's yes in chat, logged with decide, and --amend <its key>.".into();
+            next = "carry on with the workstream.".into();
         }
         "request_secret" => {
             lines.push(format!(
@@ -1343,7 +1339,7 @@ pub fn format_result(result: &Value) -> String {
         "workstream_open" => {
             lines.push(format!("Opened {}.", st(result, "workstreamId")));
             next = format!(
-                "freeze its brief with fleetd brief create --workstream {}.",
+                "brief it with fleetd brief create --workstream {}.",
                 st(result, "workstreamId")
             );
         }

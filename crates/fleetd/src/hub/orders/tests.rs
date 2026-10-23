@@ -218,7 +218,7 @@ fn cards_get_a_short_title() {
     );
     w.title = Text::unchecked("@storefront fix: rounding of cart totals");
     assert_eq!(short_title(&w), "rounding of cart totals");
-    // Once the brief is frozen its goal names the order.
+    // Once the brief is set its goal names the order.
     w.brief = Some(
         serde_json::from_value(json!({ "goal": "Three pages on the merge train. One per writer.", "why": "demo", "pointers": [], "constraints": [],
             "doneWhen": [{ "type": "pr_merged", "repo": "o/testbed" }], "tier": "L" }))

@@ -44,7 +44,7 @@ export async function m6Verify(lab: Lab) {
   const task = async (taskId: string) => (await callTool("task_get", { taskId })).body.task as Body;
   const scenarioStart = await lab.cursor();
 
-  // The lead: m3's or m5's when they ran first, else a fresh one.
+  // The lead: m5's when it ran first, else a fresh one.
   let leadThread: string;
   if (outcome.lead === undefined) {
     const started = await callTool("lead_start", ref);

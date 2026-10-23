@@ -51,35 +51,19 @@ fn not_linked(machine: &MachineId) -> String {
 impl Ports for HubPorts {
     fn workstream(&self, id: &WorkstreamId) -> Option<Workstream> {
         let stored = self.hub()?.leads.records.workstream_get(id);
-        logged(stored, "reading a workstream")
-            .flatten()
-            .map(|s| s.workstream)
+        logged(stored, "reading a workstream").flatten()
     }
     fn put_workstream(&self, workstream: &Workstream) {
         let Some(hub) = self.hub() else { return };
-        let records = &hub.leads.records;
-        // The stored amends stay; only the workstream itself is replaced.
-        let Some(Some(mut stored)) = logged(
-            records.workstream_get(&workstream.workstream_id),
-            "reading a workstream",
-        ) else {
-            return;
-        };
-        stored.workstream = workstream.clone();
-        logged(records.workstream_put(&stored), "storing a workstream");
+        logged(
+            hub.leads.records.workstream_put(workstream),
+            "storing a workstream",
+        );
     }
     fn put_workstream_if(&self, workstream: &Workstream, expect: &Workstream) -> bool {
         let Some(hub) = self.hub() else { return false };
-        let records = &hub.leads.records;
-        let Some(Some(mut stored)) = logged(
-            records.workstream_get(&workstream.workstream_id),
-            "reading a workstream",
-        ) else {
-            return false;
-        };
-        stored.workstream = workstream.clone();
         logged(
-            records.workstream_put_if(&stored, expect),
+            hub.leads.records.workstream_put_if(workstream, expect),
             "storing a workstream",
         )
         .unwrap_or(false)
@@ -248,19 +232,20 @@ impl Ports for HubPorts {
             at_ms: crate::hub::usage::time::parse_ms(decision.at.as_str()).unwrap_or(0),
         })
     }
-    fn brief_frozen_ms(&self, workstream: &WorkstreamId) -> Option<i64> {
+    fn brief_set_ms(&self, workstream: &WorkstreamId) -> Option<i64> {
         let hub = self.hub()?;
         let at = hub.db.with(|c| {
             Ok(c.query_row(
                 "SELECT max(created_ms) FROM events
                  WHERE (type = 'workstream.running'
-                        OR (type = 'workstream.state' AND json_extract(data, '$.data.amend') IS NOT NULL))
+                        OR (type = 'workstream.state' AND (json_extract(data, '$.data.briefEdited')
+                            OR json_extract(data, '$.data.amend') IS NOT NULL)))
                    AND json_valid(data) AND json_extract(data, '$.data.workstreamId') = ?1",
                 [workstream.as_str()],
                 |r| r.get::<_, Option<i64>>(0),
             )?)
         });
-        logged(at, "reading when a brief was frozen").flatten()
+        logged(at, "reading when a brief was set").flatten()
     }
     fn thread_actions<'a>(
         &'a self,

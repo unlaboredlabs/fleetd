@@ -91,9 +91,9 @@ pub fn internal(error: crate::hub::store::StoreError) -> Refusal {
 pub trait Ports: Send + Sync + 'static {
     // leads: LeadRecords.workstreams
     fn workstream(&self, id: &WorkstreamId) -> Option<Workstream>;
-    /// Replaces the stored workstream, keeping its amends.
+    /// Replaces the stored workstream.
     fn put_workstream(&self, workstream: &Workstream);
-    /// `put_workstream` only while the stored one still has `expect`'s state and brief hash; false when it changed.
+    /// `put_workstream` only while the stored one still has `expect`'s state and brief; false when it changed.
     fn put_workstream_if(&self, workstream: &Workstream, expect: &Workstream) -> bool;
     // leads: LeadWakes.trigger
     fn wake(&self, project: &ProjectRef, wake: ClaimWake);
@@ -121,12 +121,12 @@ pub trait Ports: Send + Sync + 'static {
     /// Its write work that has not landed (`orders::open_work`): a workstream never closes over it by accident.
     fn open_work(&self, workstream: &Workstream) -> Vec<crate::hub::orders::open_work::OpenWork>;
     fn spawn_judge(&self, spawn: JudgeSpawn) -> BoxFuture<'_, Result<Task, Refusal>>;
-    // ledger: the decision a `human` check reads, and when the brief it checks was last frozen
+    // ledger: the decision a `human` check reads, and when the brief it checks was last set
     fn human_confirmation(&self, workstream: &WorkstreamId, key: &str)
     -> Option<HumanConfirmation>;
-    /// When the workstream's brief was last frozen or amended (its latest `workstream.running`, or a
-    /// `workstream.state` that amended it).
-    fn brief_frozen_ms(&self, workstream: &WorkstreamId) -> Option<i64>;
+    /// When the workstream's brief was last set or edited (its latest `workstream.running`, or a `workstream.state`
+    /// that edited it).
+    fn brief_set_ms(&self, workstream: &WorkstreamId) -> Option<i64>;
     // executor
     fn thread_actions<'a>(
         &'a self,
