@@ -6,8 +6,9 @@ use super::service::{Train, TrainError};
 use crate::hub::api::Hub;
 use crate::hub::link::lead_calls::LeadCallFuture;
 use crate::hub::link::{LeadCaller, LeadCalls};
+use crate::hub::tasks::records::TaskRecords;
 use fleetd_contracts::lead_calls::{ChangeResult, LeadCall, LeadCallResult};
-use fleetd_contracts::tasks::TaskId;
+use fleetd_contracts::tasks::{TaskId, TaskKind};
 use std::sync::{Arc, Weak};
 
 /// Registers `change_enqueue` in the hub's `LeadCalls`. The handler holds the hub weakly, since the hub holds the
@@ -66,6 +67,22 @@ pub fn register_lead_calls(hub: &Arc<Hub>) {
     );
     let calls: &LeadCalls = &hub.lead_calls;
     calls.register("change_enqueue", handler);
+}
+
+/// A writer's `gh pr create` (any command of a write task that prints a PR URL) starts the train's ready pass at
+/// once, so the slice is queued and reviewed while the writer works on; the pass still picks only the writer's PRs.
+pub fn watch_writer_prs(hub: &Arc<Hub>) {
+    let weak = Arc::downgrade(hub);
+    hub.executors.set_pr_sink(Arc::new(move |thread| {
+        let Some(hub) = weak.upgrade() else { return };
+        match hub.db.with(|c| Ok(TaskRecords::by_thread(c, thread)?)) {
+            Ok(Some(stored)) if stored.task.kind == TaskKind::Write => {
+                hub.train.writer_opened_pr(&stored.task.project_ref)
+            }
+            Ok(_) => {}
+            Err(error) => tracing::warn!(%error, "train: a thread's task not read"),
+        }
+    }));
 }
 
 /// A writer's ready PR (a slice): it goes on the train now, as its task's, so the review gate starts the order's

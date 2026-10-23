@@ -2331,6 +2331,77 @@ async fn a_writers_ready_pr_is_reviewed_on_the_trains_pass_once_per_head() {
     );
 }
 
+/// A kit whose ready sweep never comes due on its own, with writer T1 on `fleetd/T1` and a held PR keeping the repo's
+/// train alive; its first pass has read the open PRs, before the writer opened any.
+async fn swept_kit() -> Kit {
+    let kit = Kit::with(FakeCi::Actions, |o| {
+        o.ready_every = Duration::from_secs(3600)
+    });
+    kit.running_task("T1", "write");
+    kit.host
+        .branches
+        .lock()
+        .unwrap()
+        .insert("T1".into(), "fleetd/T1".into());
+    kit.enqueue_held(kit.open_pr(3, "other", &[add("o.txt", "o\n")]))
+        .await;
+    kit.train.step(REPO).await;
+    kit
+}
+
+fn writers_changes(kit: &Kit) -> Vec<(i64, Option<String>)> {
+    let mut out: Vec<_> = kit
+        .train
+        .list(&ListFilter {
+            limit: 10,
+            ..Default::default()
+        })
+        .into_iter()
+        .filter(|c| c.pr_number.get() != 3)
+        .map(|c| (c.pr_number.get(), c.task_id.map(|t| t.to_string())))
+        .collect();
+    out.sort();
+    out
+}
+
+/// A writer's PR, once the hub sees it opened, is queued on the next pass, not at the next sweep.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_writers_opened_pr_is_queued_on_the_next_pass_not_the_next_sweep() {
+    let kit = swept_kit().await;
+    kit.gate.held.lock().unwrap().insert(7);
+    kit.open_pr(7, "fleetd/T1-one", &[add("a1.txt", "a\n")]);
+    kit.train.step(REPO).await;
+    assert_eq!(writers_changes(&kit), [], "the sweep is not due");
+
+    kit.train.writer_opened_pr(&project());
+    kit.train.step(REPO).await;
+    assert_eq!(writers_changes(&kit), [(7, Some("T1".into()))]);
+}
+
+/// A writer that opened two PRs and ended, its result naming only the last: both are queued as its own.
+#[tokio::test(flavor = "multi_thread")]
+async fn every_pr_a_writer_opened_is_queued_when_it_ends() {
+    let kit = swept_kit().await;
+    kit.gate.held.lock().unwrap().extend([7, 8]);
+    kit.open_pr(7, "fleetd/T1-one", &[add("a1.txt", "a\n")]);
+    let last = kit.open_pr(8, "fleetd/T1-two", &[add("a2.txt", "b\n")]);
+    {
+        let mut tasks = kit.host.tasks.lock().unwrap();
+        let writer = tasks.get_mut("T1").unwrap();
+        writer.state = "done".into();
+        writer.pr_url = Some(last);
+    }
+    let cursor = kit.host.events_head();
+    kit.host
+        .push_event("task.completed", json!({ "taskId": "T1" }));
+    kit.host.next_event(cursor, "change.queued").await;
+    kit.train.step(REPO).await;
+    assert_eq!(
+        writers_changes(&kit),
+        [(7, Some("T1".into())), (8, Some("T1".into()))]
+    );
+}
+
 /// The ready pass and a writer's result may enqueue one PR at once: one Change, one review round.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn racing_enqueues_of_one_pr_make_one_change_and_one_review_round() {

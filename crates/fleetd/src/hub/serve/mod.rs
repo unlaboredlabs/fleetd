@@ -362,6 +362,7 @@ pub fn build_on(
     checks.ports.bind(&hub);
     train_host.bind(&hub);
     crate::hub::train::calls::register_lead_calls(&hub);
+    crate::hub::train::calls::watch_writer_prs(&hub);
     crate::hub::tasks::wire::wire(&hub, &hub_task_ports);
     wire::wire(&hub);
     crate::hub::approvals::tools::register_lead_calls(&hub);
