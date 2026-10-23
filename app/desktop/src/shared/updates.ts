@@ -122,6 +122,17 @@ export const localHub = (hubUrl: string): boolean => URL.canParse(hubUrl) && LOO
 
 const withoutBuild = (version: string): string => version.trim().replace(/^v/u, "").split("+", 1)[0] ?? "";
 
+/**
+ * The About panel's version fields. Without them macOS shows Info.plist's, which carry only the numeric 0.0.0 Apple
+ * accepts there (build-release.yml), so a nightly read "0.0.0 (0.0.0)". macOS puts `version` in parentheses, so the
+ * build commit goes there; Linux has only `applicationVersion` and gets the whole string.
+ */
+export const aboutVersions = (version: string, mac: boolean): { applicationVersion: string; version?: string } => {
+  if (!mac) return { applicationVersion: version };
+  const bare = withoutBuild(version);
+  return { applicationVersion: bare, version: buildCommit(version) ?? bare };
+};
+
 const NIGHTLY = /^(\d+\.\d+\.\d+)-nightly\.(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})$/u;
 
 /**
