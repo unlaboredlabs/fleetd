@@ -3936,11 +3936,6 @@
           "type": "string"
         },
         {
-          "const": "intake.routed",
-          "description": "Where an intent went; `data.workstreamId`, `data.template`, `data.reason`, `data.playbook`.",
-          "type": "string"
-        },
-        {
           "const": "research.verdict",
           "description": "A research workstream's computed verdict; `data.workstreamId`, `data.outcome`, `data.metricValues`.",
           "type": "string"

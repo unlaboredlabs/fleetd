@@ -5,7 +5,7 @@ use fleetd_contracts::prompts::{PromptScope, PromptWarningCode};
 use super::PromptSet;
 use super::render::ref_of;
 use super::store::entry;
-use crate::hub::intake::auto_start_tests::hub;
+use crate::hub::leads::auto_start_tests::hub;
 
 #[tokio::test(flavor = "current_thread")]
 async fn a_running_lead_keeps_its_texts_and_an_edit_reaches_the_next_session() {
@@ -52,7 +52,7 @@ async fn a_running_lead_keeps_its_texts_and_an_edit_reaches_the_next_session() {
         .unwrap();
 
     // 3. A new order wakes the running lead (an event line, no prompt), and what it was told is unchanged.
-    let (w2, _, _) = hub.order("add a /ready endpoint").await;
+    let (w2, _) = hub.order("add a /ready endpoint").await;
     hub.after_debounce().await;
     let sends = hub.node.sends.lock().unwrap().clone();
     assert_eq!(sends.len(), 1);

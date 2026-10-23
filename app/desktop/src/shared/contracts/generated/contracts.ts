@@ -1346,7 +1346,6 @@ export type KnownHubEventType =
   | "train.resumed"
   | "train.blocked"
   | "change.refused"
-  | "intake.routed"
   | "research.verdict"
   | "usage.breaker"
   | "usage.resumed"

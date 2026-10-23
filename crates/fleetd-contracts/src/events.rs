@@ -156,9 +156,6 @@ pub enum HubEventType {
     /// Refused at enqueue; `data.prUrl`, `data.fix`.
     #[serde(rename = "change.refused")]
     ChangeRefused,
-    /// Where an intent went; `data.workstreamId`, `data.template`, `data.reason`, `data.playbook`.
-    #[serde(rename = "intake.routed")]
-    IntakeRouted,
     /// A research workstream's computed verdict; `data.workstreamId`, `data.outcome`, `data.metricValues`.
     #[serde(rename = "research.verdict")]
     ResearchVerdict,
@@ -304,7 +301,6 @@ impl HubEventType {
             Self::TrainResumed => "train.resumed",
             Self::TrainBlocked => "train.blocked",
             Self::ChangeRefused => "change.refused",
-            Self::IntakeRouted => "intake.routed",
             Self::ResearchVerdict => "research.verdict",
             Self::UsageBreaker => "usage.breaker",
             Self::UsageResumed => "usage.resumed",

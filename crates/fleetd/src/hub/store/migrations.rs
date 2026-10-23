@@ -452,4 +452,8 @@ pub(crate) const MIGRATIONS: &[&str] = &[
     r#"
   DELETE FROM status_series;
   "#,
+    // The order router went: nothing emits intake.routed, and a stored one would no longer decode.
+    r#"
+  DELETE FROM events WHERE type = 'intake.routed';
+  "#,
 ];
