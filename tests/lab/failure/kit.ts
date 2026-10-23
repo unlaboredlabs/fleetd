@@ -77,7 +77,7 @@ export const launch = async (lab: Pick<Lab, "callTool" | "check">, machineId: st
 
 export const send = async (lab: Pick<Lab, "callTool" | "check">, machineId: string, threadId: string, message: string) => {
   const sent = await lab.callTool("thread_send", { machineId, threadId, message, clientRequestId: randomUUID() });
-  // queued: true here means claude queued it behind a run already going (a watchdog continue), which is fine.
+  // queued: true here means claude queued it behind a run already going, which is fine.
   lab.check(!sent.isError && sent.body.queuedUntil === undefined, `thread_send to ${threadId}: ${JSON.stringify(sent.body)}`);
 };
 
@@ -92,8 +92,8 @@ export const runEnd = (lab: Lab, machineId: string, threadId: string, cursor: nu
   });
 
 /**
- * Waits for a completed run whose newest reply passes `test`. Earlier completions (a watchdog continue that got in
- * first) are skipped; a failed run ends the wait.
+ * Waits for a completed run whose newest reply passes `test`. Earlier completions are skipped; a failed run ends the
+ * wait.
  */
 export const replyAfter = async (lab: Lab, machineId: string, threadId: string, cursor: number, ms: number, test: (reply: string) => boolean) => {
   const deadline = Date.now() + ms;

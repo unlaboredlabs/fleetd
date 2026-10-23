@@ -78,7 +78,7 @@ fn hub_event_data_document_for(side: Side) -> Value {
         macro_rules! data {
             ($ty:ty: $($event:ident),+ $(,)?) => { add(&[$(E::$event),+], generator.subschema_for::<$ty>()) };
         }
-        data!(ThreadEventData: ThreadStarted, ThreadCompleted, ThreadFailed, ThreadInterrupted, ThreadWaiting, ThreadStalled);
+        data!(ThreadEventData: ThreadStarted, ThreadCompleted, ThreadFailed, ThreadInterrupted, ThreadWaiting);
         data!(UsageEventData: ThreadUsageLimited, UsageBreaker, UsageResumed);
         data!(MachineSleptData: MachineSlept);
         data!(MachineGuardData: MachineGuard);

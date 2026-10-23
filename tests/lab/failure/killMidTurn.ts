@@ -52,7 +52,6 @@ export async function killMidTurn(lab: Lab) {
   // A send resumes the session (`--resume`): the cut tool call is gone, the first message is not.
   const beforeSend = await lab.cursor();
   await send(lab, MACHINE, threadId, "Do not run any command. How many seconds was the sleep I asked you to run? Reply with just the number.");
-  // A watchdog continue may run first (and sleep again), hence the generous wait.
   const reply = await replyAfter(lab, MACHINE, threadId, beforeSend, 240_000 + seconds * 1000, (r) => r.includes(String(seconds)));
   ok(`send resumed the session; reply "${reply}"`);
 }

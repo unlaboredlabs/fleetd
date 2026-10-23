@@ -17,8 +17,6 @@ pub const TASK_BRIEF_REVIEW: &str = fixed!("task.brief.review");
 pub const REVIEW_DELTA: &str = fixed!("review.delta");
 /// The lead's tool result when a plan item is too big or unsized.
 pub const PLAN_GRANULARITY: &str = fixed!("plan.granularity");
-/// The watchdog's message to a thread that seems stalled.
-pub const WATCHDOG_NUDGE: &str = fixed!("watchdog.nudge");
 /// The message to a thread a usage limit parked, once the limit resets.
 pub const USAGE_CONTINUE: &str = fixed!("usage.continue");
 
@@ -28,12 +26,11 @@ pub const TASK_PAUSE: &str = fixed!("task.pause");
 pub const TASK_RESUME: &str = fixed!("task.resume");
 
 /// Every fixed text by name, for "What agents are told".
-pub const ALL: [(&str, &str); 8] = [
+pub const ALL: [(&str, &str); 7] = [
     ("task.brief.read", TASK_BRIEF_READ),
     ("task.brief.review", TASK_BRIEF_REVIEW),
     ("review.delta", REVIEW_DELTA),
     ("plan.granularity", PLAN_GRANULARITY),
-    ("watchdog.nudge", WATCHDOG_NUDGE),
     ("usage.continue", USAGE_CONTINUE),
     ("task.pause", TASK_PAUSE),
     ("task.resume", TASK_RESUME),

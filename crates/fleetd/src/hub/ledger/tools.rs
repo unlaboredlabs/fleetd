@@ -1,16 +1,15 @@
-//! The ledger's MCP tools (decisions_search, decisions_record, digest_get) and lead calls (decide, decisions_search).
+//! The ledger's MCP tools (decisions_search, decisions_record) and lead calls (decide, decisions_search).
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
-use fleetd_contracts::ids::Timestamp;
-use fleetd_contracts::ids::{MachineId, ProjectRef};
+use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::lead_calls::{
     DecideResult, DecideScope, DecisionsSearchResult, LeadCall, LeadCallResult,
 };
 use fleetd_contracts::ledger::{Decision, DecisionScope, DecisionSource, WorkstreamId};
 use fleetd_contracts::mcp::{
     DecisionsRecordInput, DecisionsRecordOutput, DecisionsSearchInput, DecisionsSearchOutput,
-    DigestGetInput, DigestGetOutput, ErrorCode,
+    ErrorCode,
 };
 use fleetd_contracts::prim::List;
 
@@ -169,17 +168,6 @@ pub fn register(tools: &mut Registry) {
             decision.decision_id
         );
         Ok::<_, ToolError>(DecisionsRecordOutput { decision, next: Some(next), truncated: None })
-    });
-
-    tools.add("digest_get", |hub: Arc<Hub>, caller: Caller, _input: DigestGetInput| async move {
-        let visible = |m: &MachineId| allows(&caller, Role::Read, Some(m));
-        let digest = hub.digests.render(Some(&visible)).map_err(refusal)?;
-        Ok::<_, ToolError>(DigestGetOutput {
-            text: digest.text,
-            at: Timestamp(digest.at),
-            next: Some("The hub emits digest.ready at 09:00 and 18:00 (policy.tz) as the cue to call this again.".into()),
-            truncated: None,
-        })
     });
 }
 

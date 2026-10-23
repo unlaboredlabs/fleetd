@@ -187,7 +187,6 @@ export const KIND_WORD: Record<SpanKind, string> = {
   "run.queued": "behind a run",
   "wake.debounce": "lead start delay",
   "park.usage": "paused at usage limit",
-  "slots.full": "at the agent limit",
   "wait.permission": "approvals",
   "wait.request": "requests",
   "change.review": "review",

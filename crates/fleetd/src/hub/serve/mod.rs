@@ -3,7 +3,6 @@
 use crate::clock::{Clock, SystemClock};
 use crate::hub::api::{self, Hub, HubConfig, Listen, Registry, Shutdown};
 use crate::hub::auth::Auth;
-use crate::hub::digests::HumanDigests;
 use crate::hub::http;
 use crate::hub::ledger::Decisions;
 use crate::hub::store::{EventLog, HubDb, HubStore, resolve_hub_home};
@@ -224,13 +223,6 @@ pub fn build_on(
     let auth = Arc::new(Auth::new(db.clone(), clock.clone()));
     let decisions = Arc::new(Decisions::new(db.clone(), events.clone(), clock.clone()));
     let requests = crate::hub::approvals::store::Requests::new(db.clone());
-    let digests = Arc::new(HumanDigests::new(
-        requests.clone(),
-        decisions.clone(),
-        store.clone(),
-        events.clone(),
-        clock.clone(),
-    ));
     let time = crate::hub::time::Time::new(db.clone(), clock.clone());
     let executors =
         crate::hub::executor::Executors::new(store.clone(), events.clone(), clock.clone());
@@ -249,7 +241,7 @@ pub fn build_on(
     });
     executors.set_time(time.clone());
     let watchdog = crate::hub::watchdog::Watchdog::new(
-        crate::hub::watchdog::config_from_env(|k| std::env::var(k).ok()),
+        crate::hub::watchdog::stall_ms_from_env(),
         executors.clone(),
         store.clone(),
         events.clone(),
@@ -327,9 +319,7 @@ pub fn build_on(
             requests: &requests,
             decisions: &decisions,
             lead_calls: &lead_calls,
-            digests: &digests,
             claims: &checks.claims,
-            estimates: &checks.estimates,
         },
     );
     // Before the hub takes calls: no clone the previous process started is reported as running.
@@ -351,7 +341,6 @@ pub fn build_on(
         events,
         auth,
         decisions,
-        digests,
         executors,
         node_commands,
         lead_calls,
@@ -361,7 +350,6 @@ pub fn build_on(
         queue,
         wakes,
         incidents: checks.incidents,
-        estimates: checks.estimates,
         receipts: checks.receipts,
         verdicts: checks.verdicts,
         checks: checks.checks,
@@ -387,7 +375,6 @@ pub fn build_on(
     checks.ports.bind(&hub);
     train_host.bind(&hub);
     hub.checks.set_time(hub.time.sink());
-    hub.slots.set_time(hub.time.sink());
     crate::hub::train::calls::register_lead_calls(&hub);
     crate::hub::tasks::wire::wire(&hub, &hub_task_ports);
     wire::wire(&hub);
@@ -403,17 +390,10 @@ pub fn build_on(
 pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>> {
     let _tools = tools;
     let mut loops = Vec::new();
-    let shutdown = hub.shutdown.clone();
-    loops.push(tokio::spawn(
-        hub.digests
-            .clone()
-            .run(async move { shutdown.wait().await }),
-    ));
     hub.link.start();
     loops.push(hub.watchdog.start());
     loops.push(tokio::spawn(crate::hub::orders::idle::run(hub.clone())));
     loops.push(tokio::spawn(crate::hub::chat::flow::run(hub.clone())));
-    loops.push(tokio::spawn(crate::hub::orders::filler::run(hub.clone())));
     loops.push(tokio::spawn(crate::hub::steer::run_sweep(hub.clone())));
     loops.push(hub.sweep.start(crate::hub::sweep::SWEEP_EVERY_MS));
     loops.push(crate::hub::queue::start_loops(hub));

@@ -141,10 +141,6 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "Record a decision (key = lowercase dotted slug) at global, project or workstream scope; it supersedes the active one with the same key and scope, so leads never ask it again. A project's lead is woken with it. Global decisions need an operate grant on all machines.",
     ),
     (
-        "digest_get",
-        "The human digest now, as plain text: what needs you (secrets to enter and commands to approve, in their project's chat), what is running and done, and what leads decided without you. Limited to this key's machines. The hub emits digest.ready at 09:00 and 18:00 in policy.tz as the cue to call this; the event itself carries no project content.",
-    ),
-    (
         "tasks_list",
         "Tasks (the agents leads start with spawn_agent), newest first, optionally for one projectRef and state (queued, running, idle, done, failed, cancelled). Queued tasks say why; ended ones carry their result.",
     ),
@@ -270,7 +266,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "time_insights",
-        "Deterministic findings over a scope's time since a time (no model): repeated full test suites, failing repeats, slow commands, CI checks on the critical path, full slots, waits on your answers, approval prompts a rule would answer, usage parks, retries, review share, train line, rebase loops, slow first tokens and starts, offline waits, missing data, and serial waits behind free capacity (queue waits, shared-resource contention, idle leads with ready plan items, ready items left side by side), each with its fix. Each carries its numbers and span ids; compare gives both periods.",
+        "Deterministic findings over a scope's time since a time (no model): repeated full test suites, commands rerun with nothing edited between, and the slowest commands. Each carries its numbers and span ids; compare gives both periods.",
     ),
     (
         "time_retention_set",

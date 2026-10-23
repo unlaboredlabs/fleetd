@@ -506,4 +506,23 @@ pub(crate) const MIGRATIONS: &[&str] = &[
   UPDATE tasks SET data = json_remove(data, '$.serves') WHERE json_valid(data);
   UPDATE changes SET data = json_remove(data, '$.serves') WHERE json_valid(data);
   "#,
+    // fleetd makes no time estimates: the estimate samples go, and so do the retired estimate_miss incidents, whose
+    // class no longer exists.
+    r#"
+  DROP TABLE estimates;
+  DELETE FROM incidents WHERE class = 'estimate_miss';
+  "#,
+    // A stall is one thread.failed{reason:"stalled"} now; the event that announced a nudge went with the nudge.
+    r#"
+  DELETE FROM events WHERE type = 'thread.stalled';
+  "#,
+    // The human digest went; leads get theirs with every wake.
+    r#"
+  DELETE FROM events WHERE type = 'digest.ready';
+  "#,
+    // The slots' saturation spans went with the serial-wait findings that read them.
+    r#"
+  DELETE FROM time_spans WHERE kind = 37;
+  DELETE FROM time_rollups WHERE kind = 37;
+  "#,
 ];
