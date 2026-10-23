@@ -46,6 +46,7 @@ export const LOCAL_KEYS: readonly { readonly where: string; readonly keys: reado
   { where: "Command palette", keys: ["Enter"], title: "Run it" },
   { where: "Command palette", keys: ["Mod+K"], title: "Show its other actions" },
   { where: "Command palette", keys: ["Esc", "Backspace"], title: "Back from the actions" },
+  { where: "Composer", keys: ["Mod+↩"], title: "Stop the agent’s current step and send now" },
   { where: "Anywhere", keys: ["Esc"], title: "Close the menu, panel or sheet" },
 ];
 

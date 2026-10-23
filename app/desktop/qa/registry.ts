@@ -17,6 +17,7 @@
 
 import { type ElectronApplication, expect, type Locator, type Page } from "@playwright/test";
 import { AGENT_ROUTE } from "../fixtures/agents/route.ts";
+import { STEER_WORDS } from "../fixtures/agents/steers.ts";
 import { CHAT_SENDS } from "../fixtures/composer/sends.ts";
 import { OFFLINE_SENDS } from "../fixtures/offline/sends.ts";
 
@@ -116,6 +117,8 @@ export const fixtures = [
   // UX-1: the sidebar's reasons and a new reply (fixtures/sidebar); one agent's live work (fixtures/agents).
   "sidebar-reasons",
   "agents-work",
+  // ...with its steers that ended otherwise: never replied to, withdrawn, failed (fixtures/agents).
+  "agents-steers",
   // UX [7]: no hub, and the last launch's disk cache on screen with a message queued; back online with that chat not
   // read again yet, and with that read failed (fixtures/offline).
   "offline-held",
@@ -288,6 +291,22 @@ export const screens: readonly Screen[] = [
       await page.getByRole("button", { name: "Stop the lead and its agents" }).click();
       await expect(page.getByRole("button", { name: "Stopping the lead and its agents" })).toBeDisabled();
       await expect(page.getByText("Stopping the lead and its agents…")).toBeVisible();
+    },
+  },
+  // ⌘Enter while the lead works on an order: the steer stops its step, and its receipt says so above the box.
+  {
+    id: "chat.composer",
+    route: CHAT,
+    fixtures: ["composer-sends"],
+    variant: "steer-now",
+    open: async (page) => {
+      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      const box = page.getByRole("textbox", { name: "Message the lead" });
+      await expect(page.getByText(/stops its step and sends now/)).toBeVisible();
+      await box.fill(STEER_WORDS.leadNow);
+      await box.press("ControlOrMeta+Enter");
+      await expect(box).toHaveValue("");
+      await expect(page.locator('[data-steer="delivered"]')).toHaveCount(1);
     },
   },
   // ↑ in the empty box brings back your last message.
@@ -915,7 +934,21 @@ export const screens: readonly Screen[] = [
     route: `${CHAT}/agents`,
     fixtures: ["typical", "many-agents", "long-text", "hub-unreachable", "live-20", "agents-work"],
   },
-  { id: "agents.work", route: AGENT_ROUTE, fixtures: ["agents-work"] },
+  // Under its work, your steers to it with their receipts, in every stage, and the box that steers it directly.
+  { id: "agents.work", route: AGENT_ROUTE, fixtures: ["agents-work", "agents-steers"] },
+  {
+    id: "agents.work",
+    route: AGENT_ROUTE,
+    fixtures: ["agents-work"],
+    variant: "steered",
+    open: async (page) => {
+      const box = page.getByRole("textbox", { name: "Steer this agent" });
+      await box.fill(STEER_WORDS.agent);
+      await box.press("Enter");
+      await expect(box).toHaveValue("");
+      await expect(page.locator('[data-steer="queued"]')).toHaveCount(2);
+    },
+  },
   { id: "agents.work", route: AGENT_ROUTE, fixtures: ["agents-work"], variant: "narrow", sizes: ["narrow"] },
   { id: "agents.work", route: `${CHAT}/agents/T99`, fixtures: ["typical"], variant: "finished" },
   { id: "machines", route: "#/machines", fixtures: ["typical", "empty", "long-text", "many-agents", "hub-unreachable", "projects-machines"] },

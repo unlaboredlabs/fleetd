@@ -22,7 +22,9 @@ A steer goes straight to the agent. It doesn't wait for the lead's next wake, an
 The lead reads your message at its [next step](#next-step). Nothing it is doing is cut short. When the lead is idle,
 the same message starts its next turn instead.
 
-To stop the running step and deliver at once, use `fleetd steer … --now` from a terminal ([below](#cli)).
+To stop the running step and deliver at once, press ⌘Enter (Ctrl+Enter on Linux and Windows) instead. The box shows
+"⌘↩ stops its step and sends now" while that works: the lead is at work on a task you gave it. Otherwise ⌘Enter sends
+as Enter does. The steer's [receipt](#receipts) shows above the box.
 
 ### What "next step" means {#next-step}
 
@@ -31,12 +33,13 @@ do next.
 
 - **A steer** waits for the running tool to finish, then reaches the agent before it decides anything else. A test
   suite or a build runs to the end first.
-- **`--now`** stops the running tool (a long command is killed) and delivers your steer. Nothing else the agent had
+- **⌘Enter** (or `--now`) stops the running tool (a long command is killed) and delivers your steer. Nothing else the agent had
   queued is dropped.
 
 ## Receipts {#receipts}
 
-Each steer gets an id, such as `S12`, and its receipt shows under your message:
+Each steer gets a receipt. In the app it shows beside your words; from a terminal it carries the steer's id, such as
+`S12`:
 
 | Receipt | Means |
 |---|---|
@@ -50,7 +53,7 @@ Each steer gets an id, such as `S12`, and its receipt shows under your message:
 
 :::tip[Not acknowledged?]
 The agent took the message in but ended its turn without replying. If it is still doing the wrong thing, send it
-again, or use `fleetd steer … --now` to stop its current step.
+again with ⌘Enter (or `fleetd steer … --now`) to stop its current step.
 :::
 
 If the agent's machine is offline, the steer waits ("waiting for lab-b (until 14:30)") and goes when the machine is
@@ -58,19 +61,23 @@ back. Past that time it is **expired**.
 
 ## Steer one agent {#agents}
 
-From a terminal, `fleetd steer T88 "…"` steers one agent instead of the lead. The agent's id is in the agents strip
-when you expand it. Its lead is told at its next wake: what you said, to whom, and that the agent now works to it. The
-lead is never interrupted for this.
+Open an agent from **Agents** (or the agents strip in its project's chat) and type in the box under its work. Enter
+sends at its next step; ⌘Enter stops its current step. Your recent steers to it show above the box with their
+receipts. From a terminal, `fleetd steer T88 "…"` does the same.
+
+Its lead is told at its next wake: what you said, to whom, and that the agent now works to it. The lead is never
+interrupted for this.
 
 | The agent | Your steer |
 |---|---|
-| is working | Arrives at its next step, or at once with `--now`. |
+| is working | Arrives at its next step, or at once with ⌘Enter (`--now`). |
 | has finished | Continues its conversation. |
 | hasn't started yet | Is refused: "T88 has not started yet." Wait for it to start, or cancel it and spawn it with the new prompt. |
 
 ## Take a steer back {#withdraw}
 
-While a steer is still queued, run `fleetd steer withdraw S12`. The agent never sees it.
+While a steer is still queued, click **Withdraw** on its receipt, or run `fleetd steer withdraw S12`. The agent never
+sees it.
 
 Once delivered, a steer can't be taken back. Send another one that says what changed.
 

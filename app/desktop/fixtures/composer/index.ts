@@ -2,12 +2,14 @@
 // message refused, cut off by the link, unanswered, sent to a lead that can't take it yet, still sending, or unsent
 // for want of a hub. QA types each (qa/registry.ts, CHAT_SENDS). The hub can stop the lead and its agents (chat_stop).
 // The chat has a reply written from `fleetd chat` and a message from an agent's own key, so both labels are shot.
+// The lead works on W1, so ⌘Enter stops its step: QA's steer lands, and its receipt says it stopped the step.
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import { at } from "../kit/ids.ts";
 import { arr, obj } from "../kit/stress.ts";
 import { asText, type JsonObject } from "../kit/json.ts";
 import { CHAT_SENDS } from "./sends.ts";
+import { STEER_WORDS, steer, withSteers } from "../agents/steers.ts";
 
 const STOREFRONT = { machineId: "devbox", projectId: "dcffccea-c5a7-40a6-940d-7f70239ffa22" } as const;
 
@@ -57,6 +59,9 @@ function composerSends(f: Fixture): void {
   // when the shot is taken, so Stop shows pressed.
   f.fail("chat_stop", undefined, { code: "invalid", message: "chat_stop: missing field `projectRef`." });
   f.answer("chat_stop", { projectRef: STOREFRONT }, { stopped: true, message: msg(8, "lead", "Stopped the lead and 2 agents.", 0, { author: "system" }) }, 600_000);
+  const lead = { workstreamId: "W1" };
+  f.answer("steer_send", { target: lead, mode: "now" }, steer(f.now, 21, lead, "queued", STEER_WORDS.leadNow, 0, { mode: "now" }));
+  withSteers(f, [steer(f.now, 21, lead, "delivered", STEER_WORDS.leadNow, 0, { mode: "now", deliveredAt: f.now, how: "stopped", stoppedTool: "pnpm test" })]);
   f.settleAt(f.settleMs ?? 0);
 }
 

@@ -1,11 +1,12 @@
 // One agent's live work, read-only: what it is on, what it is doing now, and its newest steps (what it wrote, what it
-// ran and edited), with the message it is writing streaming in at the end. To change what it does, you tell the lead.
+// ran and edited), with the message it is writing streaming in at the end. Under it, a box steers it directly.
 import { useMemo } from "react";
 import type { WorkStep } from "../../../shared/contracts";
 import { useAgentWork, useData } from "../../src/data/react";
 import { selectLiveAgent, selectLiveAgents } from "../../src/data/selectors";
 import { Button, cx, EmptyState, Markdown, PROFILE_LINE, RoleTag, Text, Truncate, VirtualList } from "../../ui";
 import { ActivityLine, MiddleCut } from "../live/parts";
+import { SteerBox } from "../live/Steer";
 import { describe, isRunning } from "../live/words";
 import { navigate } from "../shell/navigation";
 import { panelRoute } from "../shell/routes";
@@ -80,6 +81,7 @@ export function AgentWork({ id }: { id: string }) {
           <VirtualList items={feed} getKey={(item) => item.id} renderItem={(item) => <Step item={item} />} estimateSize={28} followOutput startAtEnd aria-label="Its work" />
         )}
       </div>
+      {row.taskId !== undefined && row.workstreamId !== undefined && work.hasThread ? <SteerBox key={row.taskId} workstreamId={row.workstreamId} taskId={row.taskId} /> : null}
     </section>
   );
 }
