@@ -22,6 +22,16 @@ export type Row =
 /** Messages from one author this close together read as one turn: the name and time show once. */
 const GROUP_MS = 5 * 60_000;
 
+/** Who a message's header names, from the key that wrote it: you and where you wrote, an agent by its name. */
+export const authorLabel = (item: ChatItem): string =>
+  item.author === "human"
+    ? `You · ${item.message?.client ?? "app"}`
+    : item.author === "agent"
+      ? `Agent · ${item.message?.by ?? "unnamed"}`
+      : item.author === "lead"
+        ? "Lead"
+        : "fleetd";
+
 /**
  * `iso` in ms, or `nowMs` when it doesn't parse. Intl throws a RangeError on an invalid date, and one row without a
  * time (a reply streaming ahead of its message once had "") took the whole window down; the newest row is the likeliest.
@@ -92,14 +102,14 @@ export function chatRows(i: RowsInput): Row[] {
       prev = undefined;
     }
     if (history && item.author !== "system") {
-      const head = prev === undefined || prev.author !== item.author || Date.parse(item.at) - Date.parse(prev.at) > GROUP_MS;
+      const head = prev === undefined || authorLabel(prev) !== authorLabel(item) || Date.parse(item.at) - Date.parse(prev.at) > GROUP_MS;
       out.push({ kind: "message", key: item.id, item, head, history: true });
     } else if (item.kind === "event") out.push({ kind: "event", key: item.id, item });
     else if (item.kind === "secret" || item.kind === "gated") out.push({ kind: "inline", key: item.id, item });
     else if (item.author === "system") out.push({ kind: "system", key: item.id, item });
     else {
       const head =
-        prev === undefined || prev.kind !== "message" || prev.author !== item.author || Date.parse(item.at) - Date.parse(prev.at) > GROUP_MS;
+        prev === undefined || prev.kind !== "message" || authorLabel(prev) !== authorLabel(item) || Date.parse(item.at) - Date.parse(prev.at) > GROUP_MS;
       out.push({ kind: "message", key: item.id, item, head, history: false });
     }
     prev = item;

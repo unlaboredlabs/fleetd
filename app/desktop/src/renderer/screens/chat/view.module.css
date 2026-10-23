@@ -117,8 +117,9 @@
 .strip:empty {
   display: none;
 }
-/* A message from before the chat existed (an old order's conversation): the same message, a step quieter. */
-.historyMessage {
+/* A message from before the chat existed (an old order's conversation), or from an agent's key: the same message, a
+   step quieter. */
+.quietMessage {
   color: var(--quiet);
 }
 .attachments {

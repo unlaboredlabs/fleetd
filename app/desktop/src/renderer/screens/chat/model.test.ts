@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChatItem } from "../../src/data/chat";
-import { chatRows, dayLabel, rowIndexOf, systemHeadline } from "./model";
+import { authorLabel, chatRows, dayLabel, rowIndexOf, systemHeadline } from "./model";
 
 const at = (d: number, h: number, m = 0) => new Date(Date.UTC(2026, 9, d, h, m)).toISOString();
 const NOW = Date.parse(at(19, 18));
@@ -41,6 +41,20 @@ describe("the chat's rows", () => {
     expect(rows([])[0]).toEqual({ kind: "top", key: "top", state: "start" });
     expect(rows([], { hasOlder: true })[0]).toMatchObject({ state: "more" });
     expect(rows([], { hasOlder: true, loadingOlder: true })[0]).toMatchObject({ state: "loading" });
+  });
+
+  it("name who wrote each message from its key, and start a new run when that changes", () => {
+    const hub = (author: "human" | "agent", over: Record<string, string>) =>
+      ({ messageId: "m", projectRef: { machineId: "devbox", projectId: "app" }, seq: 1, author, text: "", createdAt: at(19, 9), state: "final", ...over }) as const;
+    const r = rows([
+      item("a", "human", at(19, 9)),
+      item("b", "human", at(19, 9, 1), { message: hub("human", { client: "cli" }) }),
+      item("c", "agent", at(19, 9, 2), { message: hub("agent", { by: "nightly-ci" }) }),
+      item("d", "agent", at(19, 9, 3), { message: hub("agent", { by: "scout" }) }),
+      item("e", "agent", at(19, 9, 4), { message: hub("agent", { by: "scout" }) }),
+    ]);
+    const shown = r.flatMap((x) => (x.kind === "message" ? [`${x.item.id}:${x.head ? authorLabel(x.item) : "-"}`] : []));
+    expect(shown).toEqual(["a:You · app", "b:You · cli", "c:Agent · nightly-ci", "d:Agent · scout", "e:-"]);
   });
 
   it("put the live strip under the lead's newest message, and events and inline items in their place", () => {

@@ -95,6 +95,16 @@ impl TaskRecords {
             .optional()
     }
 
+    /// The task whose session is `thread_id` on any machine: what a session's FLEETD_THREAD_ID names without its
+    /// machine.
+    pub fn by_thread_id(db: &Connection, thread_id: &str) -> rusqlite::Result<Option<StoredTask>> {
+        db.prepare_cached(
+            "SELECT data, pending_message FROM tasks WHERE thread_id = ? ORDER BY n DESC LIMIT 1",
+        )?
+        .query_row([thread_id], stored_of)
+        .optional()
+    }
+
     /// Oldest first, every project.
     pub fn queued(db: &Connection) -> rusqlite::Result<Vec<StoredTask>> {
         db.prepare_cached(

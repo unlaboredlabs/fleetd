@@ -365,6 +365,41 @@ pub(crate) fn reap_adopted() {
     known.retain(|key| children.iter().any(|p| (p.pid, p.start) == *key));
 }
 
+/// The thread id of the fleetd session this process runs in: its own `FLEETD_THREAD_ID` or, on Linux, the nearest
+/// ancestor's as it was started (`/proc/<pid>/environ`), so a command in a session's shell still says so after the
+/// shell drops the variable. It catches honest mistakes, such as a lead writing to its own chat; it is no boundary,
+/// since a process can leave its session's tree. The key decides what a caller may do.
+pub fn session_thread_id() -> Option<String> {
+    const VAR: &[u8] = b"FLEETD_THREAD_ID=";
+    let of = |env: &[u8]| {
+        env.split(|b| *b == 0)
+            .find_map(|var| var.strip_prefix(VAR))
+            .filter(|id| !id.is_empty())
+            .map(|id| String::from_utf8_lossy(id).into_owned())
+    };
+    if let Some(id) = std::env::var("FLEETD_THREAD_ID")
+        .ok()
+        .filter(|id| !id.is_empty())
+    {
+        return Some(id);
+    }
+    let mut at = getpid().as_raw();
+    let mut seen = HashSet::new();
+    while cfg!(target_os = "linux") && at > 1 && seen.insert(at) {
+        if let Some(id) = std::fs::read(format!("/proc/{at}/environ"))
+            .ok()
+            .and_then(|env| of(&env))
+        {
+            return Some(id);
+        }
+        at = std::fs::read_to_string(format!("/proc/{at}/stat"))
+            .ok()
+            .and_then(|stat| parse_stat(at, &stat))?
+            .ppid;
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
