@@ -7,6 +7,8 @@
 //   scripts/bench-vs --task tinyhttp-six --contender claude-p
 //   scripts/bench-vs --task tinyhttp-six --contender fleetd [--slot 9] [--max-agents 40]
 //   scripts/bench-vs --task tinyhttp-six --contender t3             # prepares a clone, prints the task, exits
+//   scripts/bench-vs --arm <run-dir>                                # right before the T3 thread gets the task
+//   scripts/bench-vs --arm <run-dir>                                # right before the T3 thread gets the task: load, hide
 //   scripts/bench-vs --finish <run-dir> --start <iso> --end <iso> [--logs <dir>]...   # imports the T3 Code run
 //   scripts/bench-vs --task tinyhttp-six --contender reference      # the known-good solution: tests the harness
 //   scripts/bench-vs --table [--since <iso>]                        # the results table, also <bench>/results/TABLE.md
@@ -564,6 +566,7 @@ const writeTable = (since?: string) => {
 const usage = `usage:
   bench-vs --suite [--tasks a,b] [--contenders claude-p,fleetd] [--repeat N] [--slot N] [--max-agents N]
   bench-vs --task <task> --contender <${CONTENDERS.join("|")}> [--timeout-min N] [--note text]
+  bench-vs --arm <run-dir>   # right before a T3 Code thread gets the task
   bench-vs --finish <run-dir> --start <iso> --end <iso> [--logs <dir>]... [--tree <dir>] [--note text]
   bench-vs --table [--since <iso>] | --list | --publish | --unhide`;
 
@@ -603,6 +606,7 @@ async function main() {
       contenders: { type: "string" },
       repeat: { type: "string" },
       finish: { type: "string" },
+      arm: { type: "string" },
       start: { type: "string" },
       end: { type: "string" },
       "wall-sec": { type: "string" },
@@ -630,6 +634,15 @@ async function main() {
     return log("every base is on the lab repo at its frozen sha");
   }
   if (args.suite) return suite(args);
+  if (args.arm !== undefined) {
+    // Just before a T3 Code thread gets its task: the load at its real start, and the checks hidden again (an
+    // earlier --finish or run unhid them).
+    const info = JSON.parse(fs.readFileSync(path.join(args.arm, "run.json"), "utf8")) as RunInfo;
+    info.loadStart = loadSnapshot();
+    writeInfo(info);
+    hideHidden();
+    return log(`armed ${info.runId}: load ${info.loadStart.loadavg1} on ${info.loadStart.cpus} cpus, ${info.loadStart.claudeProcesses ?? "?"} claude processes; checks hidden`);
+  }
   const opts = { review: !args["no-review"], keep: args.keep, agents: args.agents === undefined ? undefined : Number(args.agents), note: args.note };
 
   if (args.finish !== undefined) {
@@ -685,7 +698,7 @@ async function main() {
     const info = { ...prepareLocal(task, contender, runDir), loadStart };
     writeInfo(info);
     hideHidden();
-    console.log(`\nWorking directory:\n  ${info.work}\n\nTask text (send it as the first message of one new T3 Code thread in that directory, claude ${MODEL} at effort ${EFFORT}):\n-----\n${task.text}\n-----\n`);
+    console.log(`\nRight before sending the task: scripts/bench-vs --arm ${runDir}\n\nWorking directory:\n  ${info.work}\n\nTask text (send it as the first message of one new T3 Code thread in that directory, claude ${MODEL} at effort ${EFFORT}):\n-----\n${task.text}\n-----\n`);
     console.log(
       `Hidden checks are unreadable until --finish. When the thread says it is finished, import it with:\n  scripts/bench-vs --finish ${runDir} --start <when the task was sent, ISO> --end <when the thread finished, ISO> [--logs <its claude session dir>]\n`,
     );
