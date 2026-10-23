@@ -34,17 +34,10 @@ fn every_live_fixture_round_trips() {
     round_trip::<OrdersBoardOutput>("orders_board.output.json");
     round_trip::<OrderGetInput>("order_get.input.json");
     round_trip::<OrderGetOutput>("order_get.output.json");
-    round_trip::<OrderNoteInput>("order_note.input.json");
-    round_trip::<OrderNoteOutput>("order_note.output.json");
-    round_trip::<OrderStopInput>("order_stop.input.json");
-    round_trip::<OrderStopOutput>("order_stop.output.json");
-    round_trip::<IntakePreviewInput>("intake_preview.input.json");
-    round_trip::<IntakePreviewOutput>("intake_preview.output.json");
     round_trip::<AttachmentPutInput>("attachment_put.input.json");
     round_trip::<AttachmentPutOutput>("attachment_put.output.json");
     round_trip::<ProjectFilesInput>("project_files.input.json");
     round_trip::<ProjectFilesOutput>("project_files.output.json");
-    round_trip::<IntakeSubmitInput>("intake_submit.input.json");
     round_trip::<NodeToHub>("node_heartbeat.json");
     round_trip::<ThreadEventFrame>("thread_event_usage.json");
     round_trip::<SessionCallFrame>("session_call_list_files.json");

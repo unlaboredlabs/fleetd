@@ -89,10 +89,6 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "Turn a project's medium profile on or off (mediumAllowed, on by default). On: its lead may run mechanical tasks on medium (Opus 5.5, effort medium). Off: every new task runs high. The lead, reviewers and helper calls always run high.",
     ),
     (
-        "intake_submit",
-        "Moved to the project chat: write to the project's lead with chat_send. Kept for one release; it answers with that fix.",
-    ),
-    (
         "workstream_list",
         "Workstreams newest first, filtered by machineId, projectId and state (limit defaults to 50).",
     ),
@@ -169,10 +165,6 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "One order as orders_board shows it, plus its project's lead, its finished agents with their receipts, its open requests and its claims.",
     ),
     (
-        "order_note",
-        "Moved to the project chat: write to the project's lead with chat_send. Kept for one release; it answers with that fix.",
-    ),
-    (
         "steer_send",
         "Steer an order's lead (target {workstreamId}) or one task (target {taskId}) mid-run. mode queue (default) lands at the agent's next tool boundary as its own turn; now stops its current step and delivers at once. Returns the steer S<n> with its receipt stage; steer.delivered and steer.acknowledged (the agent's reply names S<n>) or steer.unacknowledged follow as events. A person's device (a human key) only.",
     ),
@@ -183,14 +175,6 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     (
         "steers_list",
         "Steers with their receipts (queued, delivered and how, acknowledged with the reply's first words, unacknowledged, withdrawn, failed), newest first. Filter by workstreamId or taskId; afterN pages.",
-    ),
-    (
-        "order_stop",
-        "Moved: stop everything in a project with project_stop, or tell its lead in chat_send. Kept for one release; it answers with that fix.",
-    ),
-    (
-        "intake_preview",
-        "Moved to the project chat: pick the project and write to its lead with chat_send. Kept for one release; it answers with that fix.",
     ),
     (
         "attachment_put",

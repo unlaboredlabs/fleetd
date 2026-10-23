@@ -13,12 +13,11 @@ use crate::hello::ProtocolVersion;
 use crate::ids::{EventSeq, MachineId, ProjectId, ProjectRef, ThreadId, Timestamp};
 use crate::ledger::{
     Decision, DecisionKey, DecisionScope, DecisionValue, DecisionWhy, HumanRequest, IntakeText,
-    Lead, PlaybookName, RequestState, Workstream, WorkstreamId, WorkstreamState,
+    Lead, RequestState, Workstream, WorkstreamId, WorkstreamState,
 };
 use crate::live::{AgentLane, OrderCard, TrainLive};
 use crate::model::{ActionItem, Machine, ProjectOutcome, ProjectSummary, ThreadSummary};
 use crate::plan::PlanView;
-use crate::playbooks::IntakeEcho;
 use crate::prim::{
     Count, Int, IntOr, Line, List, MAX_SAFE_INT, NonEmpty, Positive, Text, True, UniqueList,
 };
@@ -284,44 +283,7 @@ pub enum IntakeRef {
 
 pub type IntakeRefs = List<IntakeRef, 0, 20>;
 
-// intake_submit
-input!(
-    #[serde(remote = "Self")]
-    IntakeSubmitInput {
-        /// With projectId, or neither: then a leading `@<project>` picks the project, else the only one the caller may use.
-        machine_id: Option<MachineId>,
-        project_id: Option<ProjectId>,
-        text: IntakeText,
-        /// The playbook the order's workstream pins; none when absent.
-        template: Option<PlaybookName>,
-        /// From attachment_put; delivered to the project under `.fleetd/attachments/<W>/` when the order is placed.
-        attachments: Option<Attachments>,
-        refs: Option<IntakeRefs>,
-        client_request_id: RequestId,
-    }
-);
-checked!(IntakeSubmitInput, |input| {
-    if input.machine_id.is_none() != input.project_id.is_none() {
-        return Err("give machineId and projectId together, or neither".into());
-    }
-    Ok(())
-});
-output!(IntakeSubmitOutput {
-    workstream_id: WorkstreamId,
-    echo: Option<IntakeEcho>,
-    /// Why no lead has the order yet, with the fix; absent when the project's lead has it or is starting.
-    lead_waiting: Option<String>,
-});
-
-// intake_preview: where intake_submit would send this text (a leading `@project`, or the only project), without
-// creating anything.
-input!(IntakePreviewInput { text: IntakeText });
-output!(IntakePreviewOutput {
-    /// Absent: the text names no project and there is more than one (intake_submit would refuse it).
-    echo: Option<IntakeEcho>,
-});
-
-// attachment_put: upload one file for a later intake_submit or order_note. Unreferenced uploads are deleted after 24 h.
+// attachment_put: upload one file for a later chat_send or steer_send. Unreferenced uploads are deleted after 24 h.
 input!(AttachmentPutInput {
     name: Line<1, 120>,
     mime: AttachmentMime,
@@ -389,25 +351,6 @@ output!(OrderGetOutput {
     claims: Option<List<Claim, 0, 20>>,
 });
 
-// order_note: a person adds to an order. The lead reads it at its next wake, or now when `urgent`.
-input!(OrderNoteInput {
-    workstream_id: WorkstreamId,
-    text: IntakeText,
-    attachments: Option<Attachments>,
-    refs: Option<IntakeRefs>,
-    #[serde(default)]
-    urgent: bool,
-    client_request_id: RequestId,
-});
-output!(OrderNoteOutput {
-    /// "N" plus a number.
-    note_id: Text<1, 40>,
-    /// The lead's wake that will carry it: now for urgent notes, else after the wake debounce.
-    wakes_at: Timestamp,
-    /// The steer the note was sent as; its receipts arrive as `steer.*` events.
-    steer_id: Option<SteerId>,
-});
-
 // steer_send: a person steers an order's lead or one task. `queue` (Enter) lands at the agent's next tool boundary;
 // `now` (⌘Enter) stops its current step. No wake debounce, no digest.
 input!(SteerSendInput {
@@ -442,14 +385,6 @@ input!(SteersListInput {
 });
 output!(SteersListOutput {
     steers: List<Steer, 0, 100>,
-});
-
-// order_stop: cancels the order's queued and running agents and stops it. Merged PRs stay. Idempotent.
-input!(OrderStopInput { workstream_id: WorkstreamId, reason: Option<Text<1, 200>> });
-output!(OrderStopOutput {
-    state: WorkstreamState,
-    /// Tasks this call cancelled (0 when it was already stopped).
-    cancelled: Count,
 });
 
 // project_stop: the safety valve. Interrupts the lead's turn, stops every running and queued agent of the project and
@@ -1256,7 +1191,6 @@ tools! {
     lead_start => LeadStart, Operate, LeadStartInput, LeadStartOutput;
     lead_restart => LeadRestart, Operate, LeadRestartInput, LeadRestartOutput;
     project_set => ProjectSet, Operate, ProjectSetInput, ProjectSetOutput;
-    intake_submit => IntakeSubmit, Operate, IntakeSubmitInput, IntakeSubmitOutput;
     workstream_list => WorkstreamList, Read, WorkstreamListInput, WorkstreamListOutput;
     workstream_get => WorkstreamGet, Read, WorkstreamGetInput, WorkstreamGetOutput;
     requests_list => RequestsList, Read, RequestsListInput, RequestsListOutput;
@@ -1276,14 +1210,11 @@ tools! {
     attention_policy => AttentionPolicy, Read, AttentionPolicyInput, AttentionPolicyOutput;
     // Admin keys, or a person's paired device (a human key) with operate on the machine; the handler checks which.
     doctor_fix => DoctorFix, Operate, DoctorFixInput, DoctorFixOutput;
-    intake_preview => IntakePreview, Operate, IntakePreviewInput, IntakePreviewOutput;
     attachment_put => AttachmentPut, Operate, AttachmentPutInput, AttachmentPutOutput;
     attachment_get => AttachmentGet, Read, AttachmentGetInput, AttachmentGetOutput;
     project_files => ProjectFiles, Read, ProjectFilesInput, ProjectFilesOutput;
     orders_board => OrdersBoard, Read, OrdersBoardInput, OrdersBoardOutput;
     order_get => OrderGet, Read, OrderGetInput, OrderGetOutput;
-    order_note => OrderNote, Operate, OrderNoteInput, OrderNoteOutput;
-    order_stop => OrderStop, Operate, OrderStopInput, OrderStopOutput;
     prompts_list => PromptsList, Read, PromptsListInput, PromptsListOutput;
     prompt_get => PromptGet, Read, PromptGetInput, PromptGetOutput;
     // Global: admin on every machine; project: admin on its machine; or a person's device (a human key)
@@ -1407,22 +1338,6 @@ mod tests {
         assert!(decode::<CapSetInput>(json!({})).is_err());
         assert!(decode::<CapSetInput>(json!({ "cap": 1001 })).is_err());
         assert!(decode::<CapSetInput>(json!({ "cap": 40 })).is_ok());
-    }
-
-    #[test]
-    fn intake_takes_machine_and_project_together_or_neither() {
-        let base = json!({ "text": "fix the login bug", "clientRequestId": "r1" });
-        assert!(decode::<IntakeSubmitInput>(base.clone()).is_ok());
-        let mut both = base.clone();
-        both["machineId"] = "devbox".into();
-        both["projectId"] = "p1".into();
-        assert!(decode::<IntakeSubmitInput>(both).is_ok());
-        let mut one = base.clone();
-        one["machineId"] = "devbox".into();
-        assert!(decode::<IntakeSubmitInput>(one).is_err());
-        let mut chore = base;
-        chore["template"] = "chore".into();
-        assert!(decode::<IntakeSubmitInput>(chore).is_err());
     }
 
     #[test]
