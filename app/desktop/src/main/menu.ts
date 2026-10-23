@@ -3,6 +3,7 @@ import type { MenuCommand } from "../shared/menu";
 import { RELEASE_BUILD } from "./build";
 import type { Opener } from "./opener";
 import { accelerator, isShortcutId } from "../shared/shortcuts";
+import { aboutVersions } from "../shared/updates";
 
 const REPO_URL = "https://github.com/unlaboredlabs/fleetd";
 const DOCS_URL = "https://fleetd.sh/docs";
@@ -31,6 +32,7 @@ const item = (opener: Opener, id: MenuCommand, label: string): MenuItemConstruct
  */
 export const installMenu = (opener: Opener, help: { readonly revealLogs: () => void; readonly copyDiagnostics: () => void }): void => {
   const mac = process.platform === "darwin";
+  app.setAboutPanelOptions(aboutVersions(app.getVersion(), mac));
   const separator = { type: "separator" } as const;
   // The page's update sheet answers it (screens/updates), so a click never stacks a second dialog.
   const updates = item(opener, "app.checkForUpdates", "Check for Updates…");

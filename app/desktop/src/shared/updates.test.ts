@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCommit, knownVersion, localHub, MAX_NOTES, notesSince, subjectLines, versionLabel, type Change } from "./updates";
+import { aboutVersions, buildCommit, knownVersion, localHub, MAX_NOTES, notesSince, subjectLines, versionLabel, type Change } from "./updates";
 
 const change = (commit: string, subject: string, areas: string[] = ["app"]): Change => ({ commit, date: "2026-10-22T10:30:00Z", subject, areas });
 
@@ -59,6 +59,13 @@ describe("versions", () => {
     expect(versionLabel("0.6.0-nightly.202610221030+abc1234", "UTC")).toBe("0.6.0 nightly (Oct 22, 10:30)");
     expect(versionLabel("v0.6.0")).toBe("0.6.0");
     expect(versionLabel("0.6.0-rc.1+abc1234")).toBe("0.6.0-rc.1");
+  });
+
+  it("gives the About panel the whole build: the commit in macOS's parentheses, the full string on Linux", () => {
+    const nightly = "0.0.0-nightly.202610231259+bdd3566";
+    expect(aboutVersions(nightly, true)).toEqual({ applicationVersion: "0.0.0-nightly.202610231259", version: "bdd3566" });
+    expect(aboutVersions(nightly, false)).toEqual({ applicationVersion: nightly });
+    expect(aboutVersions("0.6.0", true)).toEqual({ applicationVersion: "0.6.0", version: "0.6.0" });
   });
 });
 
