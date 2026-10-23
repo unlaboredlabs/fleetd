@@ -25,8 +25,7 @@ Keep fleetd up to date, or remove it.
    fleetd update
    ```
 
-   It replaces the CLI, and the desktop app when the installer put it in its usual place. Every file is checked
-   against the release's `SHA256SUMS`. Then it restarts the hub and node services that run this binary, but only when
+   It replaces the CLI, checked against the release's `SHA256SUMS`. Then it restarts the hub and node services that run this binary, but only when
    nothing runs on them.
 
    While a lead or agents are working, or a merge the hub is doing, an approved command or a clone is under way, it
