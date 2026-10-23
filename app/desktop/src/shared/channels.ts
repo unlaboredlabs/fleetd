@@ -52,8 +52,15 @@ export const IPC = {
   hubFrame: "hub:frame",
   /** invoke() → void. The page can take commands and targets now; main sends what it held for it. */
   appReady: "app:ready",
-  /** invoke(NotifyRequest) → void. Posts a system notification; clicking it sends `appOpen` with its target. */
+  /**
+   * invoke(NotifyRequest) → boolean. Posts a system notification; clicking it sends `appOpen` with its target. False
+   * when this system shows none.
+   */
   appNotify: "app:notify",
+  /** invoke(count) → void. The Dock (or launcher) badge: how many projects need you; 0 clears it. */
+  appBadge: "app:badge",
+  /** invoke(ThemeMode) → void. The app's light/dark choice, so the window's own material (vibrancy) matches it. */
+  appTheme: "app:theme",
   /** invoke(LinkHandlerClaim | null) → LinkHandlerStatus. Null only reads; a reason claims fleetd:// if it should. */
   appLinkHandler: "app:linkHandler",
   /** invoke(MenuCommand[]) → void. The menu commands enabled now; main greys out the rest. */

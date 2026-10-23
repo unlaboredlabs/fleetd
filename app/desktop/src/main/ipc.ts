@@ -1,4 +1,4 @@
-import { BrowserWindow, clipboard, ipcMain, Menu, shell, type IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, clipboard, ipcMain, Menu, nativeTheme, shell, type IpcMainInvokeEvent } from "electron";
 import { IPC, type InvokeChannel } from "../shared/channels";
 import type { AppLog } from "./applog";
 import { parseRequest, type RequestArgs } from "../shared/ipc";
@@ -75,6 +75,11 @@ export const registerIpc = (
   });
   handle(IPC.appReady, () => frame.opener.ready());
   handle(IPC.appNotify, (_event, request) => frame.notifier.show(request));
+  // macOS shows it on the Dock icon; Linux only where the launcher supports badges (Unity), and ignores it elsewhere.
+  handle(IPC.appBadge, (_event, count) => void app.setBadgeCount(count));
+  handle(IPC.appTheme, (_event, mode) => {
+    nativeTheme.themeSource = mode;
+  });
   handle(IPC.appLinkHandler, (_event, claim) => (claim === null ? linkHandlerStatus() : claimLinkHandler(claim)));
   handle(IPC.appMenuState, (_event, enabled) => applyMenuState(Menu.getApplicationMenu(), enabled));
   handle(IPC.appLog, (_event, { what, route, ...error }) => {

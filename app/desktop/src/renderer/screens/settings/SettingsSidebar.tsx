@@ -1,6 +1,6 @@
 // Settings in the sidebar's place: Back to where you were, a search field that narrows to an option by name, the
 // pages, and (on Prompts) the prompts themselves, so the editor has the rest of the window.
-import { ArrowLeft, MessageSquareText, ScrollText, SlidersHorizontal, Users } from "lucide-react";
+import { ArrowLeft, Bell, MessageSquareText, ScrollText, SlidersHorizontal, Users } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Input, Sidebar, SidebarItem, SidebarSection, Text } from "../../ui";
 import { sections } from "./catalog";
@@ -13,6 +13,7 @@ import s from "./settings.module.css";
 
 const PAGES: ReadonlyArray<{ tab: Tab; icon: ReactNode }> = [
   { tab: "general", icon: <SlidersHorizontal /> },
+  { tab: "notifications", icon: <Bell /> },
   { tab: "agents", icon: <Users /> },
   { tab: "instructions", icon: <ScrollText /> },
   { tab: "prompts", icon: <MessageSquareText /> },

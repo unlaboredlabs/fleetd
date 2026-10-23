@@ -330,6 +330,15 @@ export async function settle(page: Page) {
   });
 }
 
+// On macOS the sidebar is the window's own vibrancy under a clear page (main/index.ts), which a page screenshot
+// can't see: it would come out empty, or Chromium's dark canvas in the dark theme. Page shots drop the page's
+// data-vibrancy, so the sidebar paints its --sidebar tone: how it looks with Reduce transparency and on Linux. The
+// native window shot (platform.spec.ts) never comes through here, so it shows the real material.
+async function opaqueSidebar(page: Page) {
+  if (process.platform !== "darwin") return;
+  await page.evaluate(() => delete document.documentElement.dataset["vibrancy"]);
+}
+
 // Fails when the window is blank (React rendered nothing) or an error card is up (src/renderer/src/Boundary.tsx), unless
 // the entry is there to show the card. A card means a part threw; the page's errors say what.
 export async function assertAlive(page: Page, screen: Pick<Screen, "id" | "expect">, errors: readonly string[]) {
@@ -405,6 +414,7 @@ export async function shoot(
   mkdirSync(path.join(resultsDir, "png"), { recursive: true });
   mkdirSync(path.join(resultsDir, "shots"), { recursive: true });
   await holdView(page);
+  await opaqueSidebar(page);
   const findings = await check(page, reserved);
   const png = path.join("png", `${name}.png`);
   await capture(page, png, []);

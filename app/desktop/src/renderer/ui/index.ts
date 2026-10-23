@@ -1,6 +1,6 @@
 // The design system's public surface. Screens import from "../ui" (or "@/ui"), never from the files inside.
 export { UiProvider } from "./UiProvider";
-export { applyTheme, resolveTheme, isThemeMode, useTheme, THEME_MODES, type ThemeMode, type ResolvedTheme } from "./theme";
+export { applyTheme, resolveTheme, isThemeMode, storedMode, useTheme, THEME_MODES, type ThemeMode, type ResolvedTheme } from "./theme";
 export { cx } from "./lib/cx";
 export { copyText } from "./lib/clipboard";
 
@@ -39,6 +39,7 @@ export { VirtualList, type VirtualListProps } from "./list/VirtualList";
 export {
   AppFrame,
   TopBar,
+  FrameTitle,
   Breadcrumb,
   Sidebar,
   SidebarSection,

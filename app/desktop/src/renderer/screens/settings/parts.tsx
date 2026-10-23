@@ -4,6 +4,7 @@ import { selectProjects } from "../../src/data/selectors";
 import { useData } from "../../src/data/react";
 import type { ProjectSummary } from "./contracts";
 import { HUB, scopeKey, type Scope } from "./editor";
+import { useReveal } from "./search";
 import s from "./settings.module.css";
 
 /** The hub's projects, for the pickers: the snapshot's, kept current by the data layer. Undefined until the
@@ -90,5 +91,21 @@ export function PageHead(props: { title: string; children?: ReactNode; aside?: R
       </div>
       {props.aside}
     </header>
+  );
+}
+
+/** One option: its name and a line of help, then its controls. A settings search for `reveal` lands on it. */
+export function Setting(props: { reveal: string; label: string; help: string; children: ReactNode }) {
+  const ref = useReveal<HTMLElement>(props.reveal);
+  return (
+    <section ref={ref} className={s.setting} aria-label={props.label} tabIndex={-1}>
+      <div className={s.settingLabel}>
+        <Text strong>{props.label}</Text>
+        <Text size="xs" tone="quiet">
+          {props.help}
+        </Text>
+      </div>
+      <div className={s.stack}>{props.children}</div>
+    </section>
   );
 }

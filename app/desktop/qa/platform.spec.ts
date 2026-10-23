@@ -56,9 +56,9 @@ test("the macOS window, traffic lights included, for the contact sheet", async (
     const dir = path.join(resultsDir, "png");
     mkdirSync(dir, { recursive: true });
     mkdirSync(path.join(resultsDir, "shots"), { recursive: true });
-    // The largest QA size every runner's screen holds (the smallest is 1024×768), shown as the real window lays it
-    // out: no viewport override, which would lay out a wider page than the window and crop it.
-    const size = "small";
+    // A size every runner's screen holds (the smallest is 1024×768), shown as the real window lays it out: no
+    // viewport override, which would lay out a wider page than the window and crop it.
+    const size = "window";
     for (const theme of themes) {
       await setNativeView(app, page, size, theme);
       await settle(page);

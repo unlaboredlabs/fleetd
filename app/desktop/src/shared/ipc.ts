@@ -159,6 +159,8 @@ export const REQUESTS = {
   [IPC.copy]: z.tuple([z.string().max(1_000_000)]),
   [IPC.appReady]: none,
   [IPC.appNotify]: z.tuple([NotifyRequest]),
+  [IPC.appBadge]: z.tuple([z.number().int().min(0).max(9999)]),
+  [IPC.appTheme]: z.tuple([z.enum(["system", "light", "dark"])]),
   [IPC.appMenuState]: z.tuple([MenuState]),
   [IPC.appLinkHandler]: z.tuple([LinkHandlerClaim.nullable()]),
   [IPC.appLog]: z.tuple([ErrorReport]),

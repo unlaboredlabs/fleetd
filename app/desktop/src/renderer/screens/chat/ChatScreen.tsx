@@ -5,7 +5,7 @@
 // "What the writer was told" opens from the strip's rows.
 import { useCallback, useMemo, useState } from "react";
 import type { AgentLane, ThreadRef } from "../../../shared/contracts";
-import { Button, IdChip, ROLE_WORD, StatusChip, Text, Truncate, type StatusTone } from "../../ui";
+import { Button, FrameTitle, IdChip, ROLE_WORD, StatusChip, Text, Truncate, type StatusTone } from "../../ui";
 import { STATE_WORDS } from "../status/rows";
 import type { ProjectStateWord } from "../../src/data/selectors";
 import { useData } from "../../src/data/react";
@@ -101,7 +101,8 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
         data.missing ? "chat.missing" : view !== undefined ? "chat" : data.loadError !== undefined ? "chat.error" : offline ? "chat.offline" : "chat.loading"
       }
     >
-      <header className={s.header}>
+      {/* In the window's top row: one header, not two. */}
+      <FrameTitle>
         <span className={s.title}>{title ? <Truncate strong>{title}</Truncate> : null}</span>
         {view?.held === true ? (
           // A held chat is as it was then, connected or not, until this connection's newest page lands; what the
@@ -115,7 +116,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
           </span>
         ) : null}
         {data.missing ? null : <AgentsCapControl projectRef={project} />}
-      </header>
+      </FrameTitle>
       {view?.held === true && !view.offline && data.loadError !== undefined ? (
         // Connected, but this chat's newest page couldn't be read: it stays marked as last known, with why.
         <div className={s.notice} role="alert">

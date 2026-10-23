@@ -17,10 +17,14 @@ export interface SettingsOption {
 
 export const PAGE_LABEL: Readonly<Record<Tab, string>> = {
   general: "General",
+  notifications: "Notifications",
   agents: "Agents",
   prompts: "Prompts",
   instructions: "Instructions",
 };
+
+/** "Dock" is the Mac's word for it. (No window in the unit tests.) */
+export const BADGE = typeof window !== "undefined" && window.fleetd.platform === "darwin" ? "Dock badge" : "App icon badge";
 
 const page = (tab: Tab, keywords: ReadonlyArray<string>): SettingsOption => ({ key: tab, label: PAGE_LABEL[tab], tab, keywords });
 
@@ -32,6 +36,11 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "general.links", label: "Pairing links", tab: "general", keywords: ["fleetd://", "link handler", "open links"] },
   { key: "general.retention", label: "Time data", tab: "general", keywords: ["retention", "keep", "storage", "disk", "spans"] },
   { key: "general.memory", label: "Claude auto memory", tab: "general", keywords: ["memory", "notes"] },
+  page("notifications", ["alerts", "mute"]),
+  { key: "notifications.kinds", label: "Notify me when", tab: "notifications", keywords: ["notifications", "alerts", "mute", "finished", "done"] },
+  { key: "notifications.sound", label: "Sound", tab: "notifications", keywords: ["notifications", "mute", "silent"] },
+  { key: "notifications.badge", label: BADGE, tab: "notifications", keywords: ["badge", "dock", "count", "app icon"] },
+  { key: "notifications.test", label: "Test notification", tab: "notifications", keywords: ["notifications", "alerts", "try"] },
   page("agents", ["limit", "at once", "parallel"]),
   { key: "agents.project", label: "Max agents per project", tab: "agents", keywords: ["limit", "at once", "parallel", "concurrency"] },
   { key: "agents.fleet", label: "Whole fleet", tab: "agents", keywords: ["max agents", "fleet limit", "fleet cap", "admin"] },

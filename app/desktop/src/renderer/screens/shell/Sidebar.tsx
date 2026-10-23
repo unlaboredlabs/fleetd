@@ -91,7 +91,20 @@ export function Sidebar({ projects, agentsWorking, prsProject, machinesDown, scr
   const open = screen.id === "project" ? screen.project : null;
 
   return (
-    <Frame aria-label="Sidebar">
+    <Frame
+      aria-label="Sidebar"
+      footer={
+        <div className={s.footer}>
+          <UpdatesLine />
+          <button type="button" className={s.conn} onClick={() => go({ id: "settings", tab: "general" })}>
+            <Dot color={TONE[conn.tone]} />
+            <Truncate size="xs" tone="quiet" expand="none">
+              {conn.label}
+            </Truncate>
+          </button>
+        </div>
+      }
+    >
       <SidebarSection
         title={asOf === undefined ? "Projects" : `Projects, ${asOf}`}
         action={
@@ -154,16 +167,6 @@ export function Sidebar({ projects, agentsWorking, prsProject, machinesDown, scr
           onClick={() => go({ id: "settings", tab: "general" })}
         />
       </SidebarSection>
-
-      <div className={s.footer}>
-        <UpdatesLine />
-        <button type="button" className={s.conn} onClick={() => go({ id: "settings", tab: "general" })}>
-          <Dot color={TONE[conn.tone]} />
-          <Truncate size="xs" tone="quiet" expand="none">
-            {conn.label}
-          </Truncate>
-        </button>
-      </div>
     </Frame>
   );
 }

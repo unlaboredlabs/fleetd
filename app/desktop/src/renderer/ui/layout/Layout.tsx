@@ -1,33 +1,67 @@
 import { ChevronRight } from "lucide-react";
-import { Fragment, type ComponentProps, type ReactNode } from "react";
+import { createContext, Fragment, useContext, useState, type ComponentProps, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { cx } from "../lib/cx";
 import { Text } from "../text/Text";
 import { Truncate } from "../text/Truncate";
 import s from "./layout.module.css";
 
-/** The window: a top bar across, an optional sidebar, and the main area (which owns its own scrolling). */
-export function AppFrame(props: { topBar: ReactNode; sidebar?: ReactNode; children: ReactNode; className?: string }) {
+// The top row's middle, where the screen on show puts its title (FrameTitle): one header row, not two.
+const TitleSlot = createContext<HTMLElement | null>(null);
+const SetTitleSlot = createContext<(el: HTMLElement | null) => void>(() => undefined);
+
+/**
+ * The window: a sidebar down the left, from the very top (the macOS traffic lights sit in it), and beside it the
+ * top row over the main area (which owns its own scrolling). `sidebarTop` is the sidebar's first row, beside the
+ * traffic lights; without a sidebar the top row runs the full width and starts after them.
+ */
+export function AppFrame(props: {
+  topBar: ReactNode;
+  sidebar?: ReactNode;
+  sidebarTop?: ReactNode;
+  /** The window's own frame: its sidebar shows the window's translucent material where there is one (macOS). */
+  translucent?: boolean;
+  children: ReactNode;
+  className?: string;
+}) {
+  const [slot, setSlot] = useState<HTMLElement | null>(null);
   return (
-    <div className={cx(s.frame, !props.sidebar && s.noSidebar, props.className)}>
-      {props.topBar}
-      {props.sidebar}
-      <main className={s.main}>{props.children}</main>
-    </div>
+    <SetTitleSlot.Provider value={setSlot}>
+      <TitleSlot.Provider value={slot}>
+        <div className={cx(s.frame, !props.sidebar && s.noSidebar, props.translucent && s.translucent, props.className)}>
+          {props.sidebar ? (
+            <div className={s.side}>
+              <div className={s.sideTop}>{props.sidebarTop}</div>
+              {props.sidebar}
+            </div>
+          ) : null}
+          {props.topBar}
+          <main className={s.main}>{props.children}</main>
+        </div>
+      </TitleSlot.Provider>
+    </SetTitleSlot.Provider>
   );
 }
 
 /**
- * The window's top bar and drag region. On macOS it starts after the traffic lights (--traffic-lights-inset);
+ * The top row over the main area, and the window's drag region. Its middle holds the current screen's FrameTitle;
  * buttons and fields inside stay clickable.
  */
-export function TopBar(props: { leading?: ReactNode; children?: ReactNode; trailing?: ReactNode; className?: string }) {
+export function TopBar(props: { leading?: ReactNode; trailing?: ReactNode; className?: string }) {
+  const setSlot = useContext(SetTitleSlot);
   return (
     <header className={cx(s.topBar, props.className)}>
       {props.leading ? <div className={s.topLeading}>{props.leading}</div> : null}
-      <div className={s.topCenter}>{props.children}</div>
+      <div ref={setSlot} className={s.topCenter} />
       {props.trailing ? <div className={s.topTrailing}>{props.trailing}</div> : null}
     </header>
   );
+}
+
+/** A screen's title and its controls, shown in the frame's top row rather than in a header bar of the screen's own. */
+export function FrameTitle({ children }: { children: ReactNode }) {
+  const slot = useContext(TitleSlot);
+  return slot === null ? null : createPortal(children, slot);
 }
 
 export interface Crumb {
@@ -61,10 +95,22 @@ export function Breadcrumb({ items, className }: { items: ReadonlyArray<Crumb>; 
   );
 }
 
-export function Sidebar({ children, className, "aria-label": label }: { children: ReactNode; className?: string | undefined; "aria-label"?: string }) {
+/** The sidebar's rows, which scroll; `footer` stays at the bottom, outside the scroll. */
+export function Sidebar({
+  children,
+  footer,
+  className,
+  "aria-label": label,
+}: {
+  children: ReactNode;
+  footer?: ReactNode;
+  className?: string | undefined;
+  "aria-label"?: string;
+}) {
   return (
     <nav className={cx(s.sidebar, className)} aria-label={label ?? "Sidebar"}>
-      {children}
+      <div className={s.sidebarBody}>{children}</div>
+      {footer}
     </nav>
   );
 }

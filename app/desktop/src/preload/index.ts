@@ -30,9 +30,11 @@ ipcRenderer.on(IPC.updatesChanged, (_event: IpcRendererEvent, state: UpdatesStat
 
 const arg = (name: string): string | null => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? null;
 const fixture = arg("fleetd-fixture");
+const vibrancy = process.argv.includes("--fleetd-vibrancy");
 
 const api: FleetdApi = {
   fixture,
+  vibrancy,
   version: arg("fleetd-version") ?? "unknown",
   platform: process.platform === "darwin" || process.platform === "linux" || process.platform === "win32" ? process.platform : "other",
   copy: (text) => ipcRenderer.invoke(IPC.copy, text) as Promise<void>,
@@ -108,7 +110,9 @@ const api: FleetdApi = {
       }
       return () => openListeners.delete(listener);
     },
-    notify: (request) => ipcRenderer.invoke(IPC.appNotify, request) as Promise<void>,
+    notify: (request) => ipcRenderer.invoke(IPC.appNotify, request) as Promise<boolean>,
+    setBadge: (count) => ipcRenderer.invoke(IPC.appBadge, count) as Promise<void>,
+    setTheme: (mode) => ipcRenderer.invoke(IPC.appTheme, mode) as Promise<void>,
     linkHandler: (claim) => ipcRenderer.invoke(IPC.appLinkHandler, claim) as Promise<LinkHandlerStatus>,
     setMenuState: (enabled) => ipcRenderer.invoke(IPC.appMenuState, enabled) as Promise<void>,
     logError: (report) => (ipcRenderer.invoke(IPC.appLog, report) as Promise<void>).catch(() => undefined),

@@ -24,7 +24,8 @@ for (const shot of siteShots.filter((s) => only === undefined || only.includes(s
     const { app, page, settled, close } = await launch(shot.fixture as FixtureName);
     try {
       await setView(app, page, "medium", "light");
-      await show(page, entry.id, entry.route, entry.open);
+      const { open } = entry;
+      await show(page, entry.id, entry.route, open && ((p) => open(p, app)));
       await settled();
       // The fixture chrome (the banner, and the sidebar's "Sample data, no hub" line) keeps sample data from passing
       // for a live hub inside the app; on the site the caption says what the picture is. Hidden by a stylesheet rule on

@@ -18,7 +18,7 @@ export interface AgentKey extends ProjectKey {
   readonly laneId: string;
 }
 
-export const SETTINGS_TABS = ["general", "agents", "prompts", "instructions"] as const;
+export const SETTINGS_TABS = ["general", "notifications", "agents", "prompts", "instructions"] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
 
 export type Screen =
