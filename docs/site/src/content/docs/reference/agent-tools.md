@@ -151,7 +151,7 @@ Stop a task: interrupts its thread and releases its slot.
 
 ### brief
 
-Set a workstream's brief (goal, why, pointers, constraints, doneWhen lines) and start it, or edit it later. Without workstreamId it opens one for work you took from the chat: text is the order in the human's words, template picks the playbook (feature, bugfix, research).
+Set a workstream's brief (goal, why, pointers, constraints, doneWhen lines) and start it, or edit it later. Without workstreamId it opens one for work you took from the chat: text is the order in the human's words.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -161,7 +161,6 @@ Set a workstream's brief (goal, why, pointers, constraints, doneWhen lines) and 
 | `brief.goal` | string | yes | At most 1000 characters. |
 | `brief.pointers` | string[] | yes | At most 20 items. |
 | `brief.why` | string | yes | At most 2000 characters. |
-| `template` | string | no | Picks the playbook (feature, bugfix, research) of a workstream this opens. One of `bugfix`, `feature`, `research`. |
 | `text` | string | no | The order in the human's words, when this opens the workstream. At most 4000 characters. |
 | `workstreamId` | string | no | `W<n>`, e.g. `W1`. |
 
@@ -184,7 +183,6 @@ Set a workstream's brief (goal, why, pointers, constraints, doneWhen lines) and 
       ],
       "why": "One client's retry loop took the upload service down."
     },
-    "template": "feature",
     "text": "Rate-limit the upload API"
   }
 }
