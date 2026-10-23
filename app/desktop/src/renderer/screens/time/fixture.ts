@@ -286,7 +286,7 @@ const buildOrder = (spec: OrderSpec, dense: number, shape: Shape = {}): Built =>
   g.work(lead, m(52), m(54), 99, "about");
   g.work(lead, m(71), m(72.5), 99, "about");
 
-  const reason = (s: Draft) => (s.extra = { reason: "slots: 40/40 in use" });
+  const reason = (s: Draft) => (s.extra = { reason: "fleet cap: 40 of 40 running" });
   g.work(w0, m(3), m(52), spec.suiteEvery, PAGES[0]);
   g.span(w1, "queue.slot", m(3), m(9), reason);
   g.work(w1, m(9), m(48), spec.suiteEvery + 2, PAGES[1]);

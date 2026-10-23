@@ -26,7 +26,7 @@
     "SlotState": {
       "properties": {
         "cap": {
-          "description": "Global cap on running turns.",
+          "description": "The fleet cap: agents running at once across every project.",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
@@ -43,12 +43,6 @@
           "minimum": 0,
           "type": "integer"
         },
-        "reservedBand": {
-          "description": "Slots of the cap only lead turns may take.",
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
         "used": {
           "maximum": 9007199254740991,
           "minimum": 0,
@@ -59,7 +53,6 @@
         "cap",
         "used",
         "queued",
-        "reservedBand",
         "perProject"
       ],
       "type": "object"
@@ -67,7 +60,7 @@
     "SlotStatePerProject": {
       "properties": {
         "maxAgents": {
-          "description": "The most of the project's agents (its tasks: writers, readers, reviewers) that run at once; its lead's own\nturns don't count. The fleet `cap` until set.",
+          "description": "The most of the project's agents (its tasks: writers, readers, reviewers) that run at once; its lead is not\none. The fleet `cap` until set.",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
@@ -86,20 +79,13 @@
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
-        },
-        "used": {
-          "description": "Every slot it holds, its lead's turns included.",
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
         }
       },
       "required": [
         "projectRef",
         "maxAgents",
         "running",
-        "queued",
-        "used"
+        "queued"
       ],
       "type": "object"
     }

@@ -539,4 +539,8 @@ pub(crate) const MIGRATIONS: &[&str] = &[
   UPDATE trains SET watch_since_ms = max(watch_since_ms, CAST(strftime('%s', 'now') AS INTEGER) * 1000);
   DELETE FROM events WHERE type IN ('train.frozen', 'train.resumed', 'github.drift');
   "#,
+    // A lead holds no slot: it is not an agent.
+    r#"
+  DELETE FROM slot_claims WHERE priority = 'lead';
+  "#,
 ];

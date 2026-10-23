@@ -85,12 +85,10 @@
        },
        "maxAgents": 40,
        "running": 4,
-       "queued": 0,
-       "used": 5
+       "queued": 0
       }
      ],
      "queued": 0,
-     "reservedBand": 4,
      "used": 5
     }
    }
@@ -1195,12 +1193,10 @@
        },
        "maxAgents": 40,
        "running": 4,
-       "queued": 0,
-       "used": 5
+       "queued": 0
       }
      ],
      "queued": 0,
-     "reservedBand": 4,
      "used": 5
     },
     "text": [
@@ -2073,12 +2069,10 @@
        },
        "maxAgents": 40,
        "running": 3,
-       "queued": 0,
-       "used": 4
+       "queued": 0
       }
      ],
      "queued": 0,
-     "reservedBand": 4,
      "used": 4
     },
     "text": [
@@ -2930,12 +2924,10 @@
        },
        "maxAgents": 40,
        "running": 1,
-       "queued": 0,
-       "used": 2
+       "queued": 0
       }
      ],
      "queued": 0,
-     "reservedBand": 4,
      "used": 2
     },
     "text": [
@@ -3662,12 +3654,10 @@
        },
        "maxAgents": 40,
        "running": 0,
-       "queued": 0,
-       "used": 1
+       "queued": 0
       }
      ],
      "queued": 0,
-     "reservedBand": 4,
      "used": 1
     },
     "text": [
@@ -4322,7 +4312,6 @@
      "cap": 40,
      "perProject": [],
      "queued": 0,
-     "reservedBand": 4,
      "used": 0
     },
     "text": []

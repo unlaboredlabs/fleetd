@@ -202,7 +202,6 @@
     "cap": 40,
     "used": 8,
     "queued": 1,
-    "reservedBand": 2,
     "perProject": [
       {
         "projectRef": {
@@ -211,8 +210,7 @@
         },
         "maxAgents": 20,
         "running": 3,
-        "queued": 1,
-        "used": 4
+        "queued": 1
       }
     ]
   }

@@ -101,8 +101,8 @@ both; the lead plans to them.
 
 | Cap | Counts | Default | Set it |
 |---|---|---|---|
-| Per project: Max agents | The project's agents: writers, readers, reviewers, verifiers. Not the lead's own turns. | The fleet cap | Click "agents 6 / 12" in the project's chat header, or use Settings → Agents. From 1 up to the fleet cap. |
-| Fleet-wide | Every running turn, leads included. | | Settings → Agents → Whole fleet. Needs an admin key. |
+| Per project: Max agents | The project's agents: writers, readers, reviewers, verifiers. Not the lead. | The fleet cap | Click "agents 6 / 12" in the project's chat header, or use Settings → Agents. From 1 up to the fleet cap. |
+| Fleet-wide | Every project's agents together. Not the leads. | | Settings → Agents → Whole fleet. Needs an admin key. |
 
 The header shows "· 2 waiting" when agents are queued. Before you save, the slider says what the change will do.
 

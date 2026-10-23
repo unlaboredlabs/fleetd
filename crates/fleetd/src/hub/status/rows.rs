@@ -322,14 +322,13 @@ mod tests {
         rows(hub, &world, &changes).remove(0)
     }
 
-    /// The chat header's count: task agents holding a slot, never the lead's own turn.
+    /// The chat header's count: task agents holding a slot.
     #[test]
-    fn agents_running_counts_task_agents_not_the_lead_s_turn() {
-        use crate::hub::slots::{SlotPriority, SlotRequest, lead_holder};
+    fn agents_running_counts_task_agents() {
+        use crate::hub::slots::{SlotPriority, SlotRequest};
 
         let (hub, _home, r) = test_hub();
         for (holder, priority) in [
-            (lead_holder(&r), SlotPriority::Lead),
             ("T1".to_owned(), SlotPriority::Work),
             ("T2".to_owned(), SlotPriority::Review),
         ] {

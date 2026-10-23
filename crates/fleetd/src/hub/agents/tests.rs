@@ -8,7 +8,6 @@ use serde_json::json;
 use super::sort_rows;
 use super::tools::{cursor_of, fit_page, parse_cursor, step_of};
 use crate::hub::executor::thread_view::{ThreadView, apply_thread_event, work_page};
-use crate::hub::orders::plain_reason;
 
 fn agent(lane: &str, status: &str, started: &str, ended: Option<&str>) -> AgentRow {
     let mut row = json!({
@@ -59,23 +58,6 @@ fn an_agents_row_is_its_lane_flattened_with_its_project() {
         "the lane's fields sit at the top level"
     );
     assert_eq!(serde_json::from_value::<AgentRow>(value).unwrap(), row);
-}
-
-#[test]
-fn queued_reasons_read_as_plain_words() {
-    assert_eq!(plain_reason("slots: 40/40 in use"), "40 of 40 agents busy");
-    assert_eq!(
-        plain_reason("slots: 38/40 in use (2 reserved for lead turns)"),
-        "38 of 40 agents busy"
-    );
-    assert_eq!(
-        plain_reason("agents: 3/3 running"),
-        "at this project's max of 3 agents"
-    );
-    assert_eq!(
-        plain_reason("usage limit: resumes 14:05"),
-        "usage limit: resumes 14:05"
-    );
 }
 
 /// A session with `n` messages and `n` commands, one second apart; the last command shares its message's instant.
@@ -262,7 +244,7 @@ mod over_a_hub {
                     )
                 };
                 task(1, "devbox", "app", "running", json!({}))?;
-                task(2, "devbox", "app", "queued", json!({ "queuedReason": "slots: 4/4 in use" }))?;
+                task(2, "devbox", "app", "queued", json!({ "queuedReason": "fleet cap: 4 of 4 running" }))?;
                 task(3, "devbox", "app", "done", json!({ "endedAt": "2026-10-22T10:30:00.000Z" }))?;
                 task(4, "laptop", "web", "running", json!({}))?;
                 c.execute(
@@ -299,7 +281,7 @@ mod over_a_hub {
         assert_eq!(rows[2].lane.status, LaneStatus::Queued);
         assert_eq!(
             rows[2].lane.status_reason.as_deref(),
-            Some("4 of 4 agents busy")
+            Some("fleet cap: 4 of 4 running")
         );
         assert_eq!(
             rows[0].workstream_id.as_ref().map(|w| w.as_str()),

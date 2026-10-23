@@ -251,14 +251,6 @@ impl TaskPorts for HubTaskPorts {
             .trigger(project_ref, Trigger::Line { kind, text });
     }
 
-    fn lead_of(&self, machine_id: &MachineId, thread_id: &ThreadId) -> Option<ProjectRef> {
-        let leads = self.hub()?.leads.records.leads_list().ok()?;
-        leads
-            .into_iter()
-            .find(|l| &l.project_ref.machine_id == machine_id && &l.thread_id == thread_id)
-            .map(|l| l.project_ref)
-    }
-
     fn done_when_text(&self, brief: &Brief) -> String {
         crate::hub::leads::digest::done_when_text(&brief.done_when, None, 200)
     }

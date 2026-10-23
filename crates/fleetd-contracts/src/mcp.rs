@@ -672,7 +672,7 @@ input!(CapSetProject {
 input!(
     #[serde(remote = "Self")]
     CapSetInput {
-        /// The fleet cap on running turns, leads' included. Needs an admin key.
+        /// The fleet cap: agents running at once across every project. Needs an admin key.
         cap: Option<Int<1, 1000>>,
         project: Option<CapSetProject>,
     }
