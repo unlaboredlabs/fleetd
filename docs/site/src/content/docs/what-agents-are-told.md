@@ -257,7 +257,7 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 
 | Id | Sent | Safety rules |
 |---|---|---|
-| `task.brief.write` | every write task attempt | changes only its areas; never merges; the train does (prompt only) |
+| `task.brief.write` | every write task attempt | never merges; the train does (prompt only) |
 | `task.brief.read` | every read task attempt | changes no files (prompt only) |
 | `task.brief.review` | every attempt of a review task the lead spawns (the train's reviews use Reviewer) | changes no files (prompt only); ends with one review verdict (the \`report\` tool) |
 

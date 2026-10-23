@@ -270,7 +270,7 @@ pub const ENTRIES: &[Entry] = &[
         Task,
         "Writer brief",
         "every write task attempt",
-        "taskId!=T<n>; kind=write; workstreamId=W<n>; project=the project's title; title=the task's title; task!=the lead's task text; workstream=the order's goal and done-when, or nothing; branch!=the task's branch; baseBranch=the default branch; serves!=what the task serves",
+        "taskId!=T<n>; kind=write; workstreamId=W<n>; project=the project's title; title=the task's title; task!=the lead's task text; workstream=the order's goal and done-when, or nothing; branch!=the task's branch; baseBranch=the default branch",
         &[(
             "train-only-merges",
             "never merges; the train does",

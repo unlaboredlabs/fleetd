@@ -37,6 +37,8 @@ pub struct FailureEvidence {
 
 /// How many times the node itself re-runs an Overloaded or Network failure before it fails loudly.
 pub const MAX_RUN_RETRIES: u32 = 3;
+/// What a node retry sends, with `--resume`, so claude picks the turn back up.
+pub const RETRY_MESSAGE: &str = "Continue where you left off.";
 /// When nothing says when a plan limit resets.
 pub const FALLBACK_USAGE_LIMIT_MS: i64 = 60 * 60_000;
 /// When nothing says when a request-rate limit resets.
