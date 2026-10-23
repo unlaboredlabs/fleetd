@@ -22,7 +22,7 @@ use crate::plan::{
     PlanAddCall, PlanDropCall, PlanEditCall, PlanItemId, PlanItemResult, PlanMilestoneCall,
     PlanMilestoneResult, PlanShowCall, PlanShowResult,
 };
-use crate::prim::{Count, Line, List, NonEmpty, NonNegative, Text};
+use crate::prim::{Count, Line, List, NonEmpty, Text};
 use crate::secrets::SecretSink;
 use crate::steer::SteerId;
 use crate::tasks::{
@@ -157,8 +157,6 @@ pub struct TaskSpawnCall {
     pub model: Option<NonEmpty>,
     pub effort: Option<Effort>,
     pub tier: Option<Tier>,
-    /// Older leads only: fleetd no longer asks for time estimates and the CLI no longer sends one.
-    pub estimate_minutes: Option<NonNegative>,
     pub serves: Option<Serves>,
     pub pr: Option<PrUrl>,
     pub qa: Option<bool>,

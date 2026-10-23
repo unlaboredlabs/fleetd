@@ -1138,14 +1138,12 @@ mod tests {
             "title": "storefront", "version": 7, "seq": 120, "now": "2026-10-18T14:02:07Z",
             "progress": { "pct": 61, "done": 11, "total": 18, "polishDone": 2, "polishTotal": 5, "asOf": "2026-10-18T14:02:07Z" },
             "markers": [{ "at": "2026-10-18T14:00:00Z", "text": "+3 items: time inspector added", "pctBefore": 69, "pctAfter": 61, "deltaItems": 3 }],
-            "eta": { "current": "2026-10-22T14:00:00Z", "original": "2026-10-21T18:00:00Z", "slip": { "scopeMinutes": 360, "speedMinutes": 840 },
-                     "rate": 4.1, "samples": 18, "basis": "order" },
             "gates": [{ "kind": "plan", "label": "P12 full lab run", "serial": true }, { "kind": "live", "label": "CI on #212", "serial": false }],
             "headline": { "text": "Not live: lab-b silent 4m. Switching to the new runner.", "source": "generated", "at": "2026-10-18T14:02:00Z" },
             "since": { "seenAt": "2026-10-18T09:12:00Z", "merged": 7, "verified": 3, "started": 0, "failed": 1, "scopeItems": 3 },
             "parts": [],
             "done": [{ "itemId": "P9", "title": "node outbox", "doneAt": "2026-10-18T13:12:00Z", "evidence": "#208 merged by the train 13:12" }],
-            "inProgress": [{ "itemId": "P12", "workstreamId": "W41", "title": "full lab run", "taskIds": ["T88"], "changeIds": [], "eta": "2026-10-18T14:40:00Z" }],
+            "inProgress": [{ "itemId": "P12", "workstreamId": "W41", "title": "full lab run", "taskIds": ["T88"], "changeIds": [] }],
             "next": [{ "itemId": "P14", "title": "switch default runner", "after": ["P12"] }],
             "needsYou": { "count": 0, "requestIds": [] },
             "risks": [{ "rule": "machine_offline", "level": "warning", "message": "lab-b offline (2 tasks waiting)" }],
@@ -1190,10 +1188,6 @@ mod tests {
             assert!(text.contains(want), "missing {want:?} in\n{text}");
         }
         assert!(!text.contains("needs"), "zero asks print nothing");
-        assert!(
-            !text.contains("eta") && !text.contains("Thu 14:00"),
-            "no time estimate is ever printed"
-        );
     }
 
     /// One of each counts in the singular, and the headline prints without the hub's own source tag.

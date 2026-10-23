@@ -26,7 +26,7 @@ pub fn utf16_len(text: &str) -> usize {
     text.chars().map(char::len_utf16).sum()
 }
 
-/// What backs a workstream's status beyond the lead's word: the checks its latest claim passed and its ETA.
+/// What backs a workstream's status beyond the lead's word: the checks its latest claim passed.
 #[derive(Debug, Clone, Default)]
 pub struct WorkstreamFacts {
     /// Check indexes the latest finished claim passed.

@@ -60,7 +60,7 @@ export async function areasParallel(lab: Lab) {
     });
     check(!intake.isError, `intake_submit: ${JSON.stringify(intake.body)}`);
     const w = intake.body.workstreamId as string;
-    const brief = { goal: "two writers in two areas at once", why: "the default areas lab scenario", pointers: [], constraints: [], doneWhen: [{ type: "cmd", machineId: MACHINE, argv: ["true"], expectExit: 0 }], tier: "S", estimate: { rawMinutes: 5, gates: [] } };
+    const brief = { goal: "two writers in two areas at once", why: "the default areas lab scenario", pointers: [], constraints: [], doneWhen: [{ type: "cmd", machineId: MACHINE, argv: ["true"], expectExit: 0 }], tier: "S" };
     const frozen = fleetd("brief", "create", "--workstream", w, "--json", JSON.stringify(brief));
     check(frozen.code === 0, `brief create ${w}: ${JSON.stringify(frozen)}`);
 

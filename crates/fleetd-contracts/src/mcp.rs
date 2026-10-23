@@ -43,7 +43,7 @@ use crate::time::{
 };
 use crate::train::{Change, ChangeState, GitHubPrUrl, GitHubRepo, TrainState};
 use crate::usage::UsageStatus;
-use crate::verification::{Claim, ClaimOutcome, Eta, Incident, IncidentClass};
+use crate::verification::{Claim, ClaimOutcome, Incident, IncidentClass};
 use crate::wakes::{Wake, WakeCatchUp, WakeMessage, WakeSchedule, WakeState, WakeTarget};
 use crate::{brand, checked};
 
@@ -602,8 +602,6 @@ output!(WorkstreamGetOutput {
     requests: List<HumanRequest, 0, 50>,
     /// Active decisions scoped to it.
     decisions: List<Decision, 0, 50>,
-    /// Absent without a raw estimate in the brief.
-    eta: Option<Eta>,
     /// Its claims, newest first.
     claims: Option<List<Claim, 0, 20>>,
 });

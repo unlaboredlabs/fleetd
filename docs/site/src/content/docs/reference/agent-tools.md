@@ -54,7 +54,7 @@ Every lead gets these, the finish-all lead included.
 | [`agent_status`](#agent_status) | One task as stored: state, queued reason, thread, result. | No |
 | [`list_agents`](#list_agents) | The project's tasks, newest first, optionally by state or workstream. | No |
 | [`stop_agent`](#stop_agent) | Stop a task: interrupts its thread and releases its slot and leases. | No |
-| [`brief`](#brief) | Freeze a draft workstream's brief (goal, why, pointers, constraints, doneWhen checks, tier, estimate) and start it. | Changing a frozen brief (amend) needs the human's yes in chat, logged with decide. |
+| [`brief`](#brief) | Freeze a draft workstream's brief (goal, why, pointers, constraints, doneWhen checks, tier) and start it. | Changing a frozen brief (amend) needs the human's yes in chat, logged with decide. |
 | [`request_secret`](#request_secret) | Ask the human for a secret (a key, a token, a password). | The human enters the value in chat; you see only its fingerprint. |
 | [`request_withdraw`](#request_withdraw) | Take back a secret request or a command approval you no longer need (the human said so in chat). | No |
 | [`decide`](#decide) | Log a decision: one you made yourself, or the human's answer to a question you asked in chat (so you never ask it twice). | No |
@@ -81,7 +81,6 @@ Start a fleetd agent (a task) with its own session, slot and lane. kind write|re
 |---|---|---|---|
 | `areas` | string[] | no | At most 20 items. |
 | `effort` | string | no | One of `low`, `medium`, `high`, `max`. |
-| `estimateMinutes` | number | no | Older leads only: fleetd no longer asks for time estimates and the CLI no longer sends one. |
 | `item` | string | no | The plan item this task works on; refused when it belongs to another order. |
 | `kind` | string | no | Only write tasks get a worktree and leases. One of `write`, `read`, `review`. Default `"write"`. |
 | `model` | string | no |  |
@@ -195,7 +194,7 @@ Stop a task: interrupts its thread and releases its slot and leases.
 
 ### brief
 
-Freeze a draft workstream's brief (goal, why, pointers, constraints, doneWhen checks, tier, estimate) and start it. A frozen brief changes only with amend: the key of the decision you logged after the human approved the change in chat.
+Freeze a draft workstream's brief (goal, why, pointers, constraints, doneWhen checks, tier) and start it. A frozen brief changes only with amend: the key of the decision you logged after the human approved the change in chat.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -211,9 +210,6 @@ Freeze a draft workstream's brief (goal, why, pointers, constraints, doneWhen ch
 | `brief.decisionRule.goAtLeast` | number | yes |  |
 | `brief.decisionRule.stopBelow` | number | yes |  |
 | `brief.doneWhen` | object[] | yes | At most 20 items. |
-| `brief.estimate` | object | no |  |
-| `brief.estimate.gates` | string[] | yes | At most 20 items. |
-| `brief.estimate.rawMinutes` | number | yes |  |
 | `brief.goal` | string | yes | At most 1000 characters. |
 | `brief.metric` | string | no | One line. At most 200 characters. |
 | `brief.pointers` | string[] | yes | At most 20 items. |

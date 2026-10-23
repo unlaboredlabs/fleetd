@@ -57,11 +57,6 @@
           "type": "string"
         },
         {
-          "const": "estimate_miss",
-          "description": "Retired: fleetd no longer scores time estimates. Kept so older incidents still read.",
-          "type": "string"
-        },
-        {
           "const": "misfiled_ask",
           "description": "Retired with the questions tool. Kept so older incidents still read.",
           "type": "string"

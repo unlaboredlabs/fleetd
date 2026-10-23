@@ -151,7 +151,6 @@ impl Ports for HubPorts {
         let p = logged(loaded, "reading a playbook")??.playbook;
         Some(PlaybookLimits {
             max_review_rounds: p.value_bar.max_review_rounds.get() as u32,
-            estimate_prior: p.estimate_prior.get(),
         })
     }
     fn research_verdict<'a>(
@@ -217,7 +216,6 @@ impl Ports for HubPorts {
                 model: None,
                 effort: None,
                 tier: None,
-                estimate_minutes: None,
                 serves: None,
                 pr: None,
                 qa: None,

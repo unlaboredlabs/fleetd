@@ -1,4 +1,4 @@
-//! M6 objects: claims and their check results, review verdicts, calibrated ETAs and incidents.
+//! M6 objects: claims and their check results, review verdicts, and incidents.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::brand;
 use crate::ids::{ProjectRef, Timestamp};
 use crate::ledger::{CheckSpec, MetricValues, WorkstreamId};
-use crate::prim::{Count, List, NonNegative, PositiveNumber, Text};
+use crate::prim::{Count, List, Text};
 use crate::tasks::TaskId;
 
 brand!(ClaimId, name = "ClaimId", pattern = r"^C[1-9][0-9]*$");
@@ -88,20 +88,6 @@ pub struct ReviewVerdict {
     pub metric_values: Option<MetricValues>,
 }
 
-/// The brief's raw estimate corrected by the tier's measured actual/raw ratio.
-#[serde_with::skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct Eta {
-    pub raw_minutes: NonNegative,
-    pub calibrated_minutes: NonNegative,
-    /// Median actual/raw over the tier's last 20 done workstreams; the 5.0 prior below 5 samples.
-    pub ratio: PositiveNumber,
-    pub samples: Count,
-    /// From 10 samples on.
-    pub p80_minutes: Option<NonNegative>,
-}
-
 /// `policy_bypass`: a PR on a watched repo was merged by something other than the train. M12: `override`, a human
 /// replaced a lead's Decision with another value; `playbook_reverted`, a retro wording change missed its metric and was
 /// rolled back.
@@ -109,8 +95,6 @@ pub struct Eta {
 #[serde(rename_all = "snake_case")]
 pub enum IncidentClass {
     FalseClaim,
-    /// Retired: fleetd no longer scores time estimates. Kept so older incidents still read.
-    EstimateMiss,
     PolishLoop,
     /// Retired with the questions tool. Kept so older incidents still read.
     MisfiledAsk,

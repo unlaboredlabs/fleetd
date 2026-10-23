@@ -1,5 +1,5 @@
 //! Feeds the progress model from one read of the hub: each unit's observations (plan items, and orders with no plan
-//! items), each order's planning, the scope's estimate, ETA range and slow items, and the scope's series.
+//! items), each order's planning, the scope's estimate and slow items, and the scope's series.
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -31,6 +31,8 @@ pub struct ModelData {
     pub drafts: Vec<Order>,
     /// Changes of the orders in view.
     pub changes: Vec<Change>,
+    /// Order → when its brief froze (its first `workstream.running`).
+    pub frozen: HashMap<String, i64>,
     /// Order → its first write task's start.
     pub first_write: HashMap<String, i64>,
     /// Task → its first push; order → its first push.
@@ -94,6 +96,14 @@ impl ModelData {
             .query_map([&ids], |r| r.get::<_, String>(0))?
             .filter_map(|d| serde_json::from_str::<Change>(&d.ok()?).ok())
             .collect();
+        let frozen = c
+            .prepare_cached(
+                "SELECT json_extract(data, '$.data.workstreamId') AS ws, MIN(created_ms) FROM events
+                 WHERE type = 'workstream.running' AND ws IN (SELECT value FROM json_each(?))
+                 GROUP BY ws",
+            )?
+            .query_map([&ids], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?
+            .collect::<rusqlite::Result<_>>()?;
         let first_write = c
             .prepare_cached(
                 "SELECT workstream_id, MIN(json_extract(data, '$.startedAt')) FROM tasks
@@ -170,6 +180,7 @@ impl ModelData {
             calibration,
             drafts,
             changes,
+            frozen,
             first_write,
             task_push,
             order_push,
@@ -394,12 +405,7 @@ pub fn compute(w: &World, scope: &StatusScope, s: &Scope<'_>) -> ModelOut {
         .copied()
         .filter(|i| (i.weight == Weight::Must) == has_must)
         .collect();
-    let frozen = |ws: &str| {
-        w.estimates
-            .iter()
-            .find(|e| e.ws == ws)
-            .map(|e| e.started_ms)
-    };
+    let frozen = |ws: &str| md.frozen.get(ws).copied();
     let first_item_ms = |m: i64| {
         w.milestones
             .iter()

@@ -107,10 +107,6 @@
         "endedAt": {
           "$ref": "#/$defs/Timestamp"
         },
-        "estimateMinutes": {
-          "minimum": 0,
-          "type": "number"
-        },
         "itemId": {
           "$ref": "#/$defs/PlanItemId",
           "description": "The plan item it was spawned for (`--item`)."

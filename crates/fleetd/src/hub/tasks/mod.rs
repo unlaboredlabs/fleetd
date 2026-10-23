@@ -1171,7 +1171,6 @@ impl Tasks {
             model: NonEmpty::unchecked(model),
             effort,
             tier: input.tier,
-            estimate_minutes: input.estimate_minutes,
             serves: input.serves.clone(),
             qa: input.qa,
             pr: input.pr.clone(),

@@ -1,4 +1,4 @@
-//! What the checks, receipts, value bar, estimates and incidents areas need from other hub areas, as one trait.
+//! What the checks, receipts, value bar and incidents areas need from other hub areas, as one trait.
 //! The hub's implementation (`HubPorts`, wired once those areas land) forwards to their services; tests use fakes.
 //! Keeping it to this one seam means the claim flow and the value bar run their real logic under test.
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef};
@@ -32,11 +32,10 @@ pub enum ClaimWake {
     },
 }
 
-/// The pinned playbook's numbers the value bar and estimates read.
+/// The pinned playbook's numbers the value bar reads.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PlaybookLimits {
     pub max_review_rounds: u32,
-    pub estimate_prior: f64,
 }
 
 /// The human's answer to a `human` check, as the lead logged it after asking in chat: the active `done.<n>`

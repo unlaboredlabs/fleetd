@@ -118,7 +118,7 @@ static TOOLS: &[Tool] = &[
     lead(
         "brief",
         "brief_create",
-        "Freeze a draft workstream's brief (goal, why, pointers, constraints, doneWhen checks, tier, estimate) and \
+        "Freeze a draft workstream's brief (goal, why, pointers, constraints, doneWhen checks, tier) and \
          start it. A frozen brief changes only with amend: the key of the decision you logged after the human approved the \
          change in chat.",
         inline_schema::<BriefCreateCall>,

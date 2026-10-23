@@ -5,7 +5,6 @@ use super::ports::{
 use super::render::claim_failed_lines;
 use super::*;
 use crate::clock::{Clock, SystemClock};
-use crate::hub::estimates::Estimates;
 use crate::hub::incidents::{IncidentFilter, Incidents};
 use crate::hub::orders::open_work::{Item, OpenWork};
 use crate::hub::store::{EventLog, HubDb, WaitInput};
@@ -185,7 +184,6 @@ fn kit(workstreams: Vec<Workstream>) -> Kit {
     }
     let dyn_ports: Arc<dyn Ports> = ports.clone();
     let incidents = Arc::new(Incidents::new(db.clone(), events.clone(), clock.clone()));
-    let estimates = Arc::new(Estimates::new(db.clone(), dyn_ports.clone(), clock.clone()));
     let verdicts = Arc::new(JudgeVerdicts::default());
     let judges = Arc::new(Judges::new(dyn_ports.clone(), events.clone(), verdicts));
     let runner = Arc::new(CheckRunner::new(
@@ -199,7 +197,6 @@ fn kit(workstreams: Vec<Workstream>) -> Kit {
         runner,
         dyn_ports,
         events.clone(),
-        estimates,
         incidents.clone(),
         clock,
         INLINE_WAIT,

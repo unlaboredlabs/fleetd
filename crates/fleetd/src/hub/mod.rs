@@ -9,7 +9,6 @@ pub mod chat;
 pub mod checks;
 pub mod digests;
 pub mod doctor;
-pub mod estimates;
 pub mod executor;
 pub mod http;
 pub mod incidents;

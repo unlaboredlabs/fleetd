@@ -101,7 +101,6 @@ export async function timeInspector(lab: Lab) {
       constraints: [],
       doneWhen: [{ type: "cmd", machineId: MACHINE, argv: ["gh", "api", onBase(FILE), "--silent"], expectExit: 0 }],
       tier: "S",
-      estimate: { rawMinutes: 5, gates: [] },
     };
     const frozen = fleetd("brief", "create", "--workstream", w, "--json", JSON.stringify(brief));
     check(frozen.code === 0, `brief create ${w}: ${JSON.stringify(frozen)}`);

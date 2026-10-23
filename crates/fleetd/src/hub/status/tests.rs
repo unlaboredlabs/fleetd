@@ -705,14 +705,8 @@ async fn the_estimate_rises_with_observed_stages_and_falls_only_with_an_explaine
         steps,
         ["review of #212", "CI on #212", "merge", "done-when checks"]
     );
-    assert!(
-        d.eta.current.is_none() && d.eta.basis == fleetd_contracts::status::EtaBasis::None,
-        "no time estimates; the retired ETA still decodes in older apps"
-    );
     let text = serde_json::to_string(&d).unwrap();
-    assert!(
-        !text.contains("p50") && !text.contains("overdueMinutes") && !text.contains("\"current\"")
-    );
+    assert!(!text.contains("p50") && !text.contains("\"eta"));
 }
 
 /// Needs you counts open requests; every event that opens or settles one must mark the status doc dirty, or a live
@@ -1098,13 +1092,11 @@ async fn an_update_releases_a_figure_the_old_rule_left_stuck() {
         45,
         "held: nothing since that point explains a fall"
     );
-    let version = db.user_version().unwrap();
-    db.with(|c| {
-        c.pragma_update(None, "user_version", version - 1)?;
-        Ok(())
-    })
-    .unwrap();
-    let updated = HubDb::open(home.path()).unwrap();
-    assert_eq!(updated.user_version().unwrap(), version);
+    // The update's migration, found by its text so later migrations don't move it.
+    let reset = crate::hub::store::MIGRATIONS
+        .iter()
+        .find(|m| m.trim() == "DELETE FROM status_series;")
+        .unwrap();
+    db.with(|c| Ok(c.execute_batch(reset)?)).unwrap();
     assert_eq!(estimate_after(&hub, &clock, 1).0, 14);
 }

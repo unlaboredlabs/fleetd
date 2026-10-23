@@ -9,7 +9,7 @@ use crate::effort::Effort;
 use crate::ids::{ProjectRef, ThreadRef, Timestamp};
 use crate::ledger::{SERVES_FIX, Serves, Tier, WorkstreamId};
 use crate::prim::{
-    Count, Int, Line, List, NonEmpty, NonNegative, Positive, Text, UniqueList, is_http_url, js_len,
+    Count, Int, Line, List, NonEmpty, Positive, Text, UniqueList, is_http_url, js_len,
 };
 use crate::usage::UsageParked;
 use crate::{brand, checked};
@@ -145,7 +145,6 @@ pub struct Task {
     /// Always explicit; resolved at spawn.
     pub effort: Effort,
     pub tier: Option<Tier>,
-    pub estimate_minutes: Option<NonNegative>,
     /// Required at spawn for write tasks; optional here for tasks stored before M6.
     pub serves: Option<Serves>,
     /// A review task spawned with `--qa`.

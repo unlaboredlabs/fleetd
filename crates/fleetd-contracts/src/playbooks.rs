@@ -8,7 +8,7 @@ use serde_with::skip_serializing_none;
 
 use crate::ids::ProjectRef;
 use crate::ledger::{Brief, CheckType, PlaybookName, Tier};
-use crate::prim::{Int, Line, List, MAX_SAFE_INT, PositiveNumber, Text, UniqueList};
+use crate::prim::{Int, Line, List, MAX_SAFE_INT, UniqueList};
 
 /// The brief's doneWhen needs at least one check whose type is in `any_of`.
 #[skip_serializing_none]
@@ -27,9 +27,6 @@ pub struct RequiredCheck {
 pub struct ReviewRule {
     pub reviewers: Int<0, 4>,
     pub verifier: bool,
-    /// The plan is written into the brief before it is frozen, and the writers start from that frozen plan. Not a
-    /// separate review step: nothing waits on one.
-    pub plan_first: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -72,10 +69,6 @@ pub struct Playbook {
     pub tier_default: Tier,
     pub review_rules: PlaybookReviewRules,
     pub value_bar: PlaybookValueBar,
-    /// Estimate multiplier until the tier has calibration samples.
-    pub estimate_prior: PositiveNumber,
-    /// Injected into the lead's intake wake and digest for workstreams on this playbook.
-    pub lead_instructions: Text<1, 600>,
 }
 
 /// What the research playbook adds to the floor, as refusal text.
@@ -155,7 +148,7 @@ mod tests {
     use serde_json::{Value, json};
 
     fn review(reviewers: i64) -> Value {
-        json!({ "reviewers": reviewers, "verifier": false, "planFirst": false })
+        json!({ "reviewers": reviewers, "verifier": false })
     }
 
     fn bugfix() -> Value {
@@ -166,8 +159,6 @@ mod tests {
             "tierDefault": "S",
             "reviewRules": { "S": review(0), "M": review(1), "L": review(2) },
             "valueBar": { "maxReviewRounds": 2, "requireSource": true },
-            "estimatePrior": 5,
-            "leadInstructions": "Reproduce first.",
         })
     }
 
@@ -190,16 +181,6 @@ mod tests {
             bugfix(),
             "requiredChecks",
             json!([{ "anyOf": [] }])
-        )));
-        assert!(accepts(with(
-            bugfix(),
-            "leadInstructions",
-            json!("x".repeat(600))
-        )));
-        assert!(!accepts(with(
-            bugfix(),
-            "leadInstructions",
-            json!("x".repeat(601))
         )));
         assert!(!accepts(with(
             bugfix(),

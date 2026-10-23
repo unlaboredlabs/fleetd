@@ -38,9 +38,6 @@
           "minItems": 1,
           "type": "array"
         },
-        "estimate": {
-          "$ref": "#/$defs/Estimate"
-        },
         "goal": {
           "maxLength": 1000,
           "minLength": 1,
@@ -305,28 +302,6 @@
         "max"
       ],
       "type": "string"
-    },
-    "Estimate": {
-      "properties": {
-        "gates": {
-          "items": {
-            "maxLength": 200,
-            "minLength": 1,
-            "type": "string"
-          },
-          "maxItems": 20,
-          "type": "array"
-        },
-        "rawMinutes": {
-          "minimum": 0,
-          "type": "number"
-        }
-      },
-      "required": [
-        "rawMinutes",
-        "gates"
-      ],
-      "type": "object"
     },
     "GitHubRepo": {
       "description": "GitHub repository as owner/name",
@@ -636,10 +611,6 @@
         },
         "endedAt": {
           "$ref": "#/$defs/Timestamp"
-        },
-        "estimateMinutes": {
-          "minimum": 0,
-          "type": "number"
         },
         "itemId": {
           "$ref": "#/$defs/PlanItemId",
@@ -1064,10 +1035,6 @@
         "createdAt": {
           "$ref": "#/$defs/Timestamp"
         },
-        "estimateActual": {
-          "$ref": "#/$defs/WorkstreamEstimateActual",
-          "description": "Hub-filled, outside the frozen brief. Set when it starts running with a raw estimate."
-        },
         "headline": {
           "maxLength": 280,
           "pattern": "^[^\\r\\n]*$",
@@ -1119,24 +1086,6 @@
         "state",
         "createdAt",
         "updatedAt"
-      ],
-      "type": "object"
-    },
-    "WorkstreamEstimateActual": {
-      "properties": {
-        "actualMinutes": {
-          "description": "Wall-clock minutes from running to done; set on done.",
-          "minimum": 0,
-          "type": "number"
-        },
-        "ratioAtStart": {
-          "description": "The tier's calibration ratio when it started running.",
-          "exclusiveMinimum": 0,
-          "type": "number"
-        }
-      },
-      "required": [
-        "ratioAtStart"
       ],
       "type": "object"
     },

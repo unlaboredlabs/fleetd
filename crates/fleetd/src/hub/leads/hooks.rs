@@ -1,14 +1,14 @@
-//! What leads read from areas that merge after them (tasks, checks, estimates, train, leases, usage). Each area sets
+//! What leads read from areas that merge after them (tasks, checks, train, leases, usage). Each area sets
 //! its hook once in `hub/serve`; an unset hook reads as "nothing to show".
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, OnceLock};
 
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef, Timestamp};
-use fleetd_contracts::ledger::{Workstream, WorkstreamId};
+use fleetd_contracts::ledger::WorkstreamId;
 use fleetd_contracts::tasks::TaskId;
 use fleetd_contracts::usage::UsageParked;
-use fleetd_contracts::verification::{Claim, Eta};
+use fleetd_contracts::verification::Claim;
 
 pub type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send>>;
 
@@ -50,12 +50,6 @@ pub trait ClaimsHook: Send + Sync {
     fn void(&self, workstream_id: &WorkstreamId);
 }
 
-/// Estimates: ETAs and recording a done workstream.
-pub trait EstimatesHook: Send + Sync {
-    fn eta(&self, workstream: &Workstream) -> Option<Eta>;
-    fn record_done(&self, workstream_id: &WorkstreamId);
-}
-
 /// The merge train.
 pub trait TrainHook: Send + Sync {
     /// None when the project has no train and no change: the digest leaves the section out.
@@ -94,7 +88,6 @@ pub struct LeadHooks {
     pub usage: OnceLock<Arc<dyn UsageHook>>,
     pub tasks: OnceLock<Arc<dyn TasksHook>>,
     pub claims: OnceLock<Arc<dyn ClaimsHook>>,
-    pub estimates: OnceLock<Arc<dyn EstimatesHook>>,
     pub train: OnceLock<Arc<dyn TrainHook>>,
     pub policy: OnceLock<Arc<dyn PolicyHook>>,
     pub github: OnceLock<Arc<dyn GitHubHook>>,

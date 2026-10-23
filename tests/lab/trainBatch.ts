@@ -107,7 +107,6 @@ export async function trainBatch(lab: Lab) {
       // Never passes: a lead that claims the order done would close the PRs still on the train as leftovers.
       doneWhen: [{ type: "cmd", machineId: MACHINE, argv: ["false"], expectExit: 0 }],
       tier: "S",
-      estimate: { rawMinutes: 5, gates: [] },
     };
     const briefed = fleetd("brief", "create", "--workstream", w, "--json", JSON.stringify(brief));
     check(briefed.code === 0, `brief create ${w}: ${JSON.stringify(briefed)}`);
