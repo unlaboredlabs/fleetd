@@ -196,7 +196,7 @@ async function main() {
       check(!added.isError && typeof added.body.projectId === "string", `project_add ${machineId} ${dir}: ${JSON.stringify(added.body)}`);
       const projectId = added.body.projectId as string;
       await until(`${machineId} lists project ${projectId}`, 60_000, async () => {
-        const listed = ((await callTool("projects_list", { machineId })).body.projects as Array<Body>).some((p) => p.projectId === projectId);
+        const listed = ((await callTool("project_get", { machineId })).body.projects as Array<Body>).some((p) => p.projectId === projectId);
         if (!listed) await callTool("events_wait", { cursor: await cursor(), timeoutSec: 3 });
         return listed ? true : undefined;
       });

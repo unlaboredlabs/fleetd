@@ -1,9 +1,11 @@
 // The lead chat's composer (A3): one box. Typing while the lead works is a steer, otherwise a new message; the hub
-// decides (chat_send) and the box only says which to expect. Enter sends, Shift+Enter is a new line, ↑ in an empty
-// box brings back your last message. Files attach by the box's clip, drop or paste (images included); a long paste
-// becomes a file. While the lead works, Stop beside Send ends its turn now. The words, the files and an unsent
-// message's error stay per project across navigation, and the words across quitting (drafts.ts). Sent with no hub,
-// a message is queued and goes when the link is back.
+// decides (chat_send) and the box only says which to expect. Enter sends, Shift+Enter is a new line, and while the
+// lead works on an order ⌘Enter stops its current step and delivers at once (steer_send, now); the steer shows in
+// the chat at its time, with its receipt (ChatList.tsx). ↑ in an empty box brings back your last message. Files
+// attach by the box's clip, drop or paste (images included); a long paste becomes a file. While the lead works,
+// Stop beside Send ends its turn now. The words, the files and an unsent message's error stay per project across
+// navigation, and the words across quitting (drafts.ts). Sent with no hub, a message is queued and goes when the
+// link is back.
 
 interface ProjectRef {
   readonly machineId: string;
@@ -12,15 +14,17 @@ interface ProjectRef {
 
 import { ArrowUp, Paperclip, Square, X } from "lucide-react";
 import { useEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent } from "react";
-import type { AttachmentRef } from "../../../shared/contracts";
+import type { AttachmentRef, Steer } from "../../../shared/contracts";
 import type { ChatItem } from "../../src/data/chat";
 import { useData, useDataLayer } from "../../src/data/react";
 import { projectKey as keyOf } from "../../src/data/store";
 import { selectCanStop, selectHeldLeadWorking, selectLeadWorking } from "../../src/data/selectors";
 import { Button, cx, IdChip, Text, Tooltip, Truncate } from "../../ui";
 import { useCommands } from "../palette";
+import { nowKeys, type SteerSends } from "../live/Steer";
+import { composerSendOn, leadOrder, steerReceipt, steerTooLong } from "../live/steerModel";
 import { fmtBytes, PASTE_AS_FILE, pastedName } from "./attachments";
-import { ACT_LABEL, checkMessage, placeholder, receiptFor, recallsOn, sendsOn, stopFailed, type Act } from "./composerModel";
+import { ACT_LABEL, checkMessage, placeholder, receiptFor, recallsOn, stopFailed, type Act } from "./composerModel";
 import { useDraft, useDrafts } from "./drafts";
 import c from "./composer.module.css";
 
@@ -37,9 +41,11 @@ export interface ChatComposerProps {
   autoFocus?: boolean;
   /** Your newest message's words, which ↑ brings back into an empty box. */
   recall?: string | undefined;
+  /** Where ⌘Enter's steers go, shared with the list that shows them. */
+  steers: SteerSends;
 }
 
-export function ChatComposer({ project, onSent, autoFocus, recall }: ChatComposerProps) {
+export function ChatComposer({ project, onSent, autoFocus, recall, steers }: ChatComposerProps) {
   const projectKey = keyOf(project);
   const [draft, setDraft, drafts] = useDraft(projectKey);
   const working = useData(selectLeadWorking(projectKey));
@@ -54,6 +60,10 @@ export function ChatComposer({ project, onSent, autoFocus, recall }: ChatCompose
   // Offline, a lead last known to be working keeps its Stop, disabled, with why under the box.
   const stopOffline = useData(selectHeldLeadWorking(projectKey));
   const showStop = (working === true && canStop) || stopOffline;
+  // A lead steer names an order; with none open the lead is on a chat turn, and ⌘Enter sends as Enter does.
+  const order = useData((s) => (s.fresh ? leadOrder(s.orders, project) : undefined));
+  const canSteerNow = working === true && order !== undefined;
+  const [steering, setSteering] = useState(false);
 
   // The turn ended: a new one starts with Stop unpressed.
   const [wasWorking, setWasWorking] = useState(working);
@@ -111,6 +121,30 @@ export function ChatComposer({ project, onSent, autoFocus, recall }: ChatCompose
     void chat.send(projectKey, { text: checked.text, ...(files.length > 0 ? { attachments: files } : {}) });
   };
 
+  // The words stay in the box until the hub has the steer, so a refused one is never lost.
+  const steerNow = (workstreamId: string) => {
+    if (steering) return;
+    if (!checked.ok) {
+      if (checked.reason !== "") setDraft((d) => ({ ...d, error: checked.reason }));
+      return;
+    }
+    const tooLong = steerTooLong(checked.text);
+    if (tooLong !== undefined) return setDraft((d) => ({ ...d, error: `${tooLong} Press Enter to send it as a message.` }));
+    const files: string[] = [];
+    for (const a of draft.attached) {
+      if (a.upload?.ok !== true) return setDraft((d) => ({ ...d, error: `${a.name} ${a.upload ? "didn’t upload. Remove it to send." : "is still uploading."}` }));
+      files.push(a.upload.ref.attachmentId);
+    }
+    setSteering(true);
+    const words = checked.text;
+    void steers.send({ workstreamId }, words, "now", files).then((failed) => {
+      setSteering(false);
+      if (failed !== undefined) return setDraft((d) => ({ ...d, error: failed }));
+      setDraft((d) => (d.text.trim() === words ? { text: "", attached: [] } : d));
+      onSent?.();
+    });
+  };
+
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     const key = { ...e, isComposing: e.nativeEvent.isComposing };
     if (recall !== undefined && recallsOn(key, draft)) {
@@ -118,9 +152,11 @@ export function ChatComposer({ project, onSent, autoFocus, recall }: ChatCompose
       setDraft((d) => ({ ...d, text: recall }));
       return;
     }
-    if (!sendsOn(key)) return;
+    const how = composerSendOn(key, canSteerNow);
+    if (how === undefined) return;
     e.preventDefault();
-    send();
+    if (how === "now" && order !== undefined) steerNow(order);
+    else send();
   };
 
   const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
@@ -234,6 +270,11 @@ export function ChatComposer({ project, onSent, autoFocus, recall }: ChatCompose
               e.target.value = "";
             }}
           />
+          {canSteerNow ? (
+            <Text size="xs" tone="faint">
+              {`${nowKeys()} stops its step and sends now`}
+            </Text>
+          ) : null}
           <span className={c.spacer} />
           {showStop ? (
             <Tooltip content={stopping ? "Stopping the lead and its agents…" : "Stop the lead and its agents"}>
@@ -304,6 +345,40 @@ export function MessageReceipt({ project, item, latest = false }: { project: Pro
             </button>
           ))
         : null}
+    </div>
+  );
+}
+
+/**
+ * The quiet line under one of your steers to the lead: where it is, with Withdraw while it waits. The lead's reply to
+ * it is in the chat, so its excerpt isn't repeated here.
+ */
+export function SteerLine({ steer, onWithdraw }: { steer: Steer; onWithdraw: (steerId: string) => Promise<boolean> }) {
+  const r = steerReceipt(steer);
+  const [refused, setRefused] = useState(false);
+  return (
+    <div className={cx(c.receipt, c[`tone-${r.tone}`])} data-steer={steer.stage}>
+      <Text size="xs" tone="inherit">
+        {r.line}
+      </Text>
+      {r.detail !== undefined ? <IdChip label="Details" id={r.detail} kind="error" size="xs" tone="quiet" /> : null}
+      {r.withdraw ? (
+        <button
+          type="button"
+          className={c.linkButton}
+          onClick={() => {
+            setRefused(false);
+            void onWithdraw(steer.id).then((ok) => setRefused(!ok));
+          }}
+        >
+          Withdraw
+        </button>
+      ) : null}
+      {refused && r.withdraw ? (
+        <Text size="xs" tone="danger">
+          Couldn’t take it back; it may be delivered already.
+        </Text>
+      ) : null}
     </div>
   );
 }

@@ -431,7 +431,7 @@ async fn stops_within_a_second_while_an_app_stream_and_an_events_wait_long_poll_
 /// The Status screen's rows over the app socket: every project the key reads, idle with nothing to count, and
 /// none from a machine it can't read.
 #[tokio::test]
-async fn status_projects_lists_one_row_per_readable_project() {
+async fn status_get_lists_one_row_per_readable_project() {
     let t = start().await;
     for (m, p, title) in [("devbox", "p1", "storefront"), ("other", "p2", "billing")] {
         t.hub
@@ -462,7 +462,7 @@ async fn status_projects_lists_one_row_per_readable_project() {
         };
         assert_eq!(read().await["t"], "ready");
         app.send(Message::text(
-            json!({ "t": "call", "id": "p", "tool": "status_projects", "input": {} }).to_string(),
+            json!({ "t": "call", "id": "p", "tool": "status_get", "input": {} }).to_string(),
         ))
         .await
         .unwrap();

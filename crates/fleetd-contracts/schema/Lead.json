@@ -13,7 +13,7 @@
           "$ref": "#/$defs/ProjectRef"
         },
         "sessionGeneration": {
-          "description": "Bumped by each lead_restart.",
+          "description": "Bumped by each `lead_start {fresh}`.",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"

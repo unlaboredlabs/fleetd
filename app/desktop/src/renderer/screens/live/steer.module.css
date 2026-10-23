@@ -1,0 +1,99 @@
+/* The steer box under an agent's live work, and the receipts above it. Static. */
+.steer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-2) var(--space-4) var(--space-3);
+  border-top: 1px solid var(--hairline);
+  flex: none;
+}
+/* The rule spans the pane; what is in it keeps the feed's measure. */
+.steer > * {
+  max-width: var(--measure);
+}
+
+.box {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-1-5);
+  min-width: 0;
+  padding: var(--space-1) var(--space-1) var(--space-1) 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--raised);
+}
+.box:has(> .input:focus-visible) {
+  border-color: var(--accent);
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+.input {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  field-sizing: content;
+  min-height: 28px;
+  max-height: calc(6 * var(--leading-sm) + 8px);
+  padding: var(--space-1) var(--space-2);
+  resize: none;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  overflow-wrap: anywhere;
+}
+.input:focus-visible {
+  outline: none;
+}
+.input::placeholder {
+  color: var(--faint);
+}
+
+.note {
+  min-width: 0;
+  padding: 0 var(--space-1);
+}
+.note:empty {
+  display: none;
+}
+
+/* One line per steer: your words, then where they are. */
+.receipts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+.receipt {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding-left: var(--space-2);
+  border-left: 2px solid var(--hairline);
+}
+.words {
+  display: flex;
+  min-width: 0;
+}
+.stage {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--space-2);
+  min-width: 0;
+}
+.tone-quiet {
+  color: var(--quiet);
+}
+.tone-warn {
+  color: var(--warning);
+}
+.tone-bad {
+  color: var(--danger);
+}

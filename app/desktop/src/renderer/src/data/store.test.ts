@@ -62,6 +62,9 @@ describe("a project's work", () => {
       output: { at: "2026-10-19T10:00:00.000Z", orders: [card("W8", { state: "done" })], trains: [] },
     });
     expect(Object.keys(s.orders ?? {})).toEqual(["W1"]);
+    // A finished order's own read (Time's, the chat's for your steers) refreshes no card onto the board.
+    s = ingest(s, { tool: "order_get", input: { workstreamId: "W8" }, output: { order: card("W8", { state: "done" }), requests: [], doneLanes: [lane("T8", "done")] } });
+    expect(Object.keys(s.orders ?? {})).toEqual(["W1"]);
   });
 });
 
@@ -144,7 +147,7 @@ describe("live frames", () => {
 });
 
 describe("one state word per project", () => {
-  // The typical fixture's billing project: the Status row (status_projects) said "idle" while its lead was
+  // The typical fixture's billing project: the Status row (status_get) said "idle" while its lead was
   // waiting on a reply. The hub's chat state is the one source, so the dot, the header and the row agree.
   it("takes needs-you from the hub's chat state only, whatever the Status row says", () => {
     let s = withBoard(run([live(), snapshot(1)]), []);

@@ -8,4 +8,4 @@ export type { ProgressPoint, StaleMark } from "../../../shared/contracts";
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
 
 export const asGetOutput = (v: unknown): StatusGetOutput | undefined =>
-  isRecord(v) && isRecord(v.row) && Array.isArray(v.series) ? (v as unknown as StatusGetOutput) : undefined;
+  isRecord(v) && isRecord(v.row) && Array.isArray(v.series) ? v : undefined;

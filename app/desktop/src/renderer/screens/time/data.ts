@@ -269,11 +269,13 @@ const DAY_MS = 86_400_000;
 
 /** The names, kept stable until the store's orders, details, projects or machines change. */
 export const useNames = (order: string | undefined): Names => {
-  // An order's finished lanes and its lead come with order_get, which also folds them into the store.
-  useToolQuery("order_get", { workstreamId: order ?? "" }, { enabled: order !== undefined });
+  // An order's finished lanes and its lead come with order_get, which also folds them into the store; its card names
+  // it here when it is off the board (finished before the last day).
+  const opened = useToolQuery("order_get", { workstreamId: order ?? "" }, { enabled: order !== undefined }).data?.order;
   // The board holds open orders only; the picker also lists the last day's finished work.
   const [doneSince] = useState(() => new Date(Date.now() - DAY_MS).toISOString());
-  const done = useToolQuery("orders_board", { includeDoneSince: doneSince }).data?.orders;
+  const lastDay = useToolQuery("orders_board", { includeDoneSince: doneSince }).data?.orders;
+  const done = useMemo(() => (opened === undefined ? lastDay : [...(lastDay ?? []), opened]), [lastDay, opened]);
   const fresh = useData((s) => s.fresh);
   const orders = useData((s) => s.orders);
   const details = useData((s) => s.details);

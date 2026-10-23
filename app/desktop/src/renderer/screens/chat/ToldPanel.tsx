@@ -106,7 +106,7 @@ function Loader(props: { thread: ThreadRef; who: ToldWho; projectRef: { machineI
   const { machineId, threadId } = props.thread;
   const prompt = useToolQuery("session_prompt_get", { machineId, threadId });
   // The registry's titles; without them the ids still read as words.
-  const registry = useToolQuery("prompts_list", props.projectRef ? { projectRef: props.projectRef } : {});
+  const registry = useToolQuery("prompt_get", props.projectRef ? { projectRef: props.projectRef } : {});
   if (prompt.error instanceof CallError)
     return (
       <div className={s.errorRow}>

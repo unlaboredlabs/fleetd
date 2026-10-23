@@ -23,6 +23,7 @@ export const SHORTCUTS = {
   "shortcuts.show": { keys: "Mod+/", title: "Keyboard Shortcuts", section: "General" },
   "composer.focus": { keys: "Mod+L", title: "Focus Composer", section: "General" },
   "sidebar.toggle": { keys: "Mod+B", title: "Toggle Sidebar", section: "General" },
+  "panel.toggle": { keys: "Mod+Alt+B", title: "Toggle Agents and PRs", section: "General" },
   ...jump,
   "project.previous": { keys: "Mod+[", title: "Previous Project", section: "Projects" },
   "project.next": { keys: "Mod+]", title: "Next Project", section: "Projects" },
@@ -45,6 +46,7 @@ export const LOCAL_KEYS: readonly { readonly where: string; readonly keys: reado
   { where: "Command palette", keys: ["Enter"], title: "Run it" },
   { where: "Command palette", keys: ["Mod+K"], title: "Show its other actions" },
   { where: "Command palette", keys: ["Esc", "Backspace"], title: "Back from the actions" },
+  { where: "Composer", keys: ["Mod+↩"], title: "Stop the agent’s current step and send now" },
   { where: "Anywhere", keys: ["Esc"], title: "Close the menu, panel or sheet" },
 ];
 

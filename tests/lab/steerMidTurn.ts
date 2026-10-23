@@ -160,7 +160,7 @@ export async function steerMidTurn(lab: Lab) {
     const delivered = (await steerEvent(`${steer.id} delivered`, c, steer.id, "steer.delivered", 30_000)).event;
     check(delivered.type === "steer.delivered", `${steer.id} delivered, not ${delivered.type}: ${JSON.stringify(delivered.data)}`);
     const deliveredMs = Date.parse(delivered.at) - t0;
-    const listed = ((await humanCall("steers_list", { workstreamId })).body.steers as Array<Body>).find((s) => s.id === steer.id);
+    const listed = ((await humanCall("order_get", { workstreamId })).body.steers as Array<Body>).find((s) => s.id === steer.id);
     check(listed?.how === "stopped" && /slow-done|seq 25|sleep/u.test(listed.stoppedTool ?? ""), `${steer.id} delivered by stopping the loop: ${JSON.stringify(listed)}`);
     check(deliveredMs <= 3000, `${steer.id} delivered ${deliveredMs} ms after the send (≤ 3 s)`);
     const firstTool = await tail.waitFor("the lead's first tool call after the steer", t0, (s) => toolUses(s).length > 0, 60_000);
@@ -214,7 +214,7 @@ export async function steerMidTurn(lab: Lab) {
     const begun = await tail.waitFor(`${steer.id} started`, toolUse.at, (s) => s.msg.type === "command_lifecycle" && s.msg.command_uuid === steer.runId && s.msg.state === "started", 10_000);
     const deliveredMs = Date.parse(delivered.at) - t0;
     const afterResultMs = begun.ms - result.ms;
-    const listed = ((await humanCall("steers_list", { workstreamId })).body.steers as Array<Body>).find((s) => s.id === steer.id);
+    const listed = ((await humanCall("order_get", { workstreamId })).body.steers as Array<Body>).find((s) => s.id === steer.id);
     check(listed?.how === "boundary", `${steer.id} delivered at the boundary: ${JSON.stringify(listed)}`);
     check(afterResultMs <= 2000, `${steer.id} delivered ${afterResultMs} ms after the loop returned (≤ 2 s)`);
     const acked = (await steerEvent(`${steer.id} acknowledged`, c, steer.id, "steer.acknowledged", 60_000)).event;

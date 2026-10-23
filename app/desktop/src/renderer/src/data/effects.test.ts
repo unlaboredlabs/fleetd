@@ -29,6 +29,11 @@ describe("event effects", () => {
     expect(fx.resync).toBe(false);
   });
 
+  it("a new order lists the project's orders again, for the chat's steers in those that ended", () => {
+    expect(tools(e("workstream.created", { workstreamId: "W2" }))).toContain("workstream_list");
+    expect(tools(e("workstream.state", { workstreamId: "W2", state: "done" }))).not.toContain("workstream_list");
+  });
+
   it("a thread event refetches its project", () => {
     const thread = effectsOf(e("thread.completed", undefined, { threadId: "t1", machineId: "devbox", projectId: "storefront" }));
     expect(thread.invalidate).toContainEqual({ tool: "project_get", where: { machineId: "devbox", projectId: "storefront" } });
@@ -61,11 +66,11 @@ describe("event effects", () => {
     expect(effectsOf(e("machine.offline", undefined, { machineId: "devbox" }), { devbox: {} }).resync).toBe(false);
     expect(effectsOf(e("machine.online", undefined, { machineId: "buildbox" }), { devbox: {} }).resync).toBe(true);
     expect(effectsOf(e("rocket.launched"))).toEqual({ invalidate: [], resync: false });
-    expect(tools(e("prompt.changed"))).toContain("prompts_list");
+    expect(tools(e("prompt.changed"))).toContain("prompt_get");
     // Status's health strip: a machine going quiet or sleeping, a usage reading.
     expect(tools(e("machine.slept", undefined, { machineId: "devbox" }))).toContain("status_get");
-    expect(tools(e("pr.merged", { workstreamId: "W1" }))).toContain("status_projects");
-    expect(tools(e("machine.offline", undefined, { machineId: "devbox" }))).toContain("status_projects");
+    expect(tools(e("pr.merged", { workstreamId: "W1" }))).toContain("status_get");
+    expect(tools(e("machine.offline", undefined, { machineId: "devbox" }))).toContain("status_get");
     expect(tools(e("usage.updated"))).toContain("status_get");
   });
 

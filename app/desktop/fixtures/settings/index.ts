@@ -42,7 +42,7 @@ function projectSettings(f: Fixture, off: ReadonlySet<string> = new Set()) {
 /** What Settings calls besides the prompt reads. */
 function basics(f: Fixture) {
   projectSettings(f);
-  if (f.answers("projects_list").length === 0) f.answer("projects_list", undefined, { projects: PROJECTS.map(projectSummary) });
+  if (f.output("project_get") === undefined) f.answer("project_get", undefined, { projects: PROJECTS.map(projectSummary) });
   f.answer("time_retention_set", undefined, { retentionDays: 30 });
   // Settings reads the retention and stored size from a breakdown of the fleet's last hour, at whatever time it is.
   const fleet = f.answers("time_breakdown").find((a) => isObject(a.input?.["scope"]) && a.input["scope"]["kind"] === "fleet");
@@ -111,15 +111,14 @@ export default defineGroup({
       "settings-prompts",
       "Every prompt of this fleetd with its real text, edits hub-wide and for acme/storefront, one default changed under an edit",
     );
-    f.drop("prompts_list");
     f.drop("prompt_get");
-    f.drop("projects_list");
+    f.drop("project_get");
     basics(f);
     // Hub-wide, and acme/storefront (which has its own edits); the picker's other projects read as hub-wide.
     for (const projectRef of [undefined, { machineId: "devbox", projectId: "storefront" }]) {
       const scope = projectRef ? { projectRef } : {};
-      const list = hub.answer("prompts_list", scope);
-      if (list.ok) f.answer("prompts_list", projectRef ? scope : undefined, json(list.output));
+      const list = hub.answer("prompt_get", scope);
+      if (list.ok) f.answer("prompt_get", projectRef ? scope : undefined, json(list.output));
       for (const { id } of hub.prompts) {
         const got = hub.answer("prompt_get", { id, ...scope });
         if (got.ok) f.answer("prompt_get", { id, ...scope }, json(got.output));

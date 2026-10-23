@@ -7,7 +7,7 @@
 import type { NotifyTarget } from "../../../shared/app";
 import type { ProjectKey } from "./routes";
 
-/** When the hub's attention_policy can't be read (an older hub): the hub's own defaults, minus quiet hours. */
+/** When the hub's notify policy can't be read (an older hub): the hub's own defaults, minus quiet hours. */
 const FALLBACK_COALESCE_MS = 20 * 60_000;
 
 export interface Policy {
@@ -21,7 +21,7 @@ export const FALLBACK_POLICY: Policy = { coalesceMs: FALLBACK_COALESCE_MS, quiet
 const record = (value: unknown): Readonly<Record<string, unknown>> | null =>
   typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 
-/** attention_policy's output (`{coalesceSec, quiet: [{from, to}]}`), or null when it isn't one. */
+/** fleetd_status.notify (`{coalesceSec, quiet: [{from, to}]}`), or null when it isn't one. */
 export const policyFrom = (output: unknown): Policy | null => {
   const out = record(output);
   const coalesceSec = out?.["coalesceSec"];

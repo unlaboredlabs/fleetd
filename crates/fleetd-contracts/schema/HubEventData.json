@@ -1213,7 +1213,7 @@
         },
         "inspect": {
           "$ref": "#/$defs/ProjectInspect",
-          "description": "Long lists are cut so the event fits the log's 2 KB of data; `project_inspect` returns them whole."
+          "description": "Long lists are cut so the event fits the log's 2 KB of data; `project_add` with `dryRun` returns them whole."
         },
         "path": {
           "type": "string"
@@ -1266,7 +1266,7 @@
       "type": "string"
     },
     "ProjectInspect": {
-      "description": "What `project_inspect` found: the default branch, CI and merge rules, and one line on what the lead will need.",
+      "description": "What a project's checkout or repository says: the default branch, CI and merge rules, and one line on what the lead will need.",
       "properties": {
         "ci": {
           "$ref": "#/$defs/CiInfo"

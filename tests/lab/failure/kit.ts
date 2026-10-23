@@ -12,7 +12,7 @@ export const FIXTURES = path.join(REPO, "crates/fleetd/src/node/runner/fixtures"
 export const MACHINE = "lab-b";
 
 export const projectOf = async (lab: Pick<Lab, "callTool" | "check">, machineId: string): Promise<string> => {
-  const projects = (await lab.callTool("projects_list", { machineId })).body.projects as Array<Body>;
+  const projects = (await lab.callTool("project_get", { machineId })).body.projects as Array<Body>;
   const projectId = projects[0]?.projectId as string | undefined;
   lab.check(projectId, `${machineId} has a project: ${JSON.stringify(projects)}`);
   return projectId!;

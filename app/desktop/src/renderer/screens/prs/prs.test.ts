@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { DiffLine, PrFile, PrReviewEntry, PrRow } from "../../../shared/contracts";
 import { DIFF_PAGE, diffRows, fileRowIndex, toPairs, type Page } from "./diffModel";
-import { listItems } from "./PrList";
-import { resolvePr } from "./PrsScreen";
+import { byLine, listItems } from "./PrList";
+import { resolvePr } from "./PrsPane";
 import { checksWord, findingsWord, githubLine, movedWords, openCount, reviewsWord, sortChecks, stat, stateLine, when } from "./words";
 
 const row = (over: Partial<PrRow> = {}): PrRow => ({
@@ -106,6 +106,14 @@ describe("the list", () => {
   it("says so last when the hub sent only the most recent", () => {
     const items = listItems([row({ number: 11 }), row({ number: 8, state: "merged" })], true);
     expect(items.at(-1)).toEqual({ kind: "cut", count: 2 });
+  });
+
+  it("names the agent that wrote a row, and its task only when the title doesn't already say it", () => {
+    expect(byLine(row())).toBe("A writer (opus)");
+    expect(byLine(row({ author: { role: "implementer", model: "claude-opus-5-5", title: "Round the cart totals once" } }))).toBe("A writer (opus) · Round the cart totals once");
+    expect(byLine(row({ title: "Round the cart totals once", author: { role: "implementer", title: "Round the cart totals once" } }))).toBe("A writer");
+    expect(byLine(row({ author: { login: "sam" } }))).toBe("sam on GitHub");
+    expect(byLine(row({ author: {} }))).toBeUndefined();
   });
 
   it("finds a PR a link names by number alone in the project's list", () => {

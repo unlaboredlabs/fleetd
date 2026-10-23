@@ -171,7 +171,7 @@ const quiesceAndRemove = async (lab: Lab) => {
   const deadline = Date.now() + 120_000;
   let stopped = false;
   for (;;) {
-    const listed = (await lab.callTool("projects_list", { machineId: MACHINE })).body.projects as Array<Body>;
+    const listed = (await lab.callTool("project_get", { machineId: MACHINE })).body.projects as Array<Body>;
     const project = listed.find((p) => p.workspaceRoot === CLONE);
     if (project === undefined) return;
     if (!stopped) {

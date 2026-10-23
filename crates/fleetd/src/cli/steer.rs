@@ -1,5 +1,5 @@
 //! `fleetd steer`: a person redirects an order's lead or one of its agents mid-run, over the hub's MCP endpoint
-//! (steer_send, steer_withdraw, steers_list). A steer speaks for the human, so it needs a human key the person made
+//! (steer_send, steer_withdraw, and order_get for an order's steers). A steer speaks for the human, so it needs a human key the person made
 //! ([`human_key_required`]). `--wait` follows the receipt the hub records from claude's own frames, through events_wait.
 
 use std::time::Duration;
@@ -17,8 +17,8 @@ pub const STEER_USAGE: &str = r#"  steer <W|T> "<text>" [--now] [--wait] --key-f
              acknowledged, withdrawn or failed. Without --hub it uses the hub on this machine
   steer withdraw S<n> --key-file <human key> [--hub <url> | --home <dir>]
              take back a steer the agent has not taken in yet
-  steers [W|T] --key-file <human key> [--hub <url> | --home <dir>]
-             recent steers and their receipts
+  steers <W|T> --key-file <human key> [--hub <url> | --home <dir>]
+             an order's (or one agent's) recent steers and their receipts
 "#;
 
 const CALL_TIMEOUT: Duration = Duration::from_secs(30);
@@ -46,7 +46,7 @@ pub enum SteerCommand {
         steer_id: String,
     },
     List {
-        target: Option<Value>,
+        target: Value,
     },
 }
 
@@ -111,11 +111,10 @@ pub fn parse_steer_args(argv: &[String], list: bool) -> Result<SteerArgs, String
     let command = if list {
         no_send_flags("listing")?;
         match p.as_slice() {
-            [] => SteerCommand::List { target: None },
             [id] => SteerCommand::List {
-                target: Some(target_of(id)?),
+                target: target_of(id)?,
             },
-            _ => return Err("expected fleetd steers [W|T]".into()),
+            _ => return Err("expected fleetd steers <W|T>".into()),
         }
     } else if p.first().map(String::as_str) == Some("withdraw") {
         no_send_flags("withdraw")?;
@@ -316,17 +315,46 @@ pub(super) async fn call(
     Ok(result.body)
 }
 
+/// The newest steers of an order (`{workstreamId}`), or of one task (`{taskId}`), from its order's order_get.
+async fn steers_of(client: &mut McpClient, target: &Value) -> Result<Vec<Value>, Failure> {
+    let task = st(target, "taskId");
+    let workstream = match (st(target, "workstreamId"), task) {
+        (Some(w), _) => w.to_owned(),
+        (None, Some(t)) => {
+            let got = call(client, "task_get", json!({ "taskId": t }), CALL_TIMEOUT).await?;
+            got.pointer("/task/workstreamId")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned()
+        }
+        (None, None) => String::new(),
+    };
+    let order = call(
+        client,
+        "order_get",
+        json!({ "workstreamId": workstream }),
+        CALL_TIMEOUT,
+    )
+    .await?;
+    let all = order
+        .get("steers")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    Ok(all
+        .into_iter()
+        .filter(|s| task.is_none() || s.get("target").and_then(|t| st(t, "taskId")) == task)
+        .collect())
+}
+
 /// The steer as the hub has it now.
 async fn read_steer(client: &mut McpClient, steer: &Value) -> Result<Value, Failure> {
     let id = st(steer, "id").unwrap_or_default();
-    let mut input = steer.get("target").cloned().unwrap_or_else(|| json!({}));
-    input["limit"] = json!(100);
-    let listed = call(client, "steers_list", input, CALL_TIMEOUT).await?;
-    Ok(listed
-        .get("steers")
-        .and_then(Value::as_array)
-        .and_then(|all| all.iter().find(|s| st(s, "id") == Some(id)))
-        .cloned()
+    let order = json!({ "workstreamId": st(steer, "workstreamId").unwrap_or_default() });
+    Ok(steers_of(client, &order)
+        .await?
+        .into_iter()
+        .find(|s| st(s, "id") == Some(id))
         .unwrap_or_else(|| steer.clone()))
 }
 
@@ -436,14 +464,7 @@ async fn run(args: SteerArgs) -> Result<u8, Failure> {
             Ok(0)
         }
         SteerCommand::List { target } => {
-            let mut input = target.unwrap_or_else(|| json!({}));
-            input["limit"] = json!(20);
-            let listed = call(&mut client, "steers_list", input, CALL_TIMEOUT).await?;
-            let steers = listed
-                .get("steers")
-                .and_then(Value::as_array)
-                .cloned()
-                .unwrap_or_default();
+            let steers = steers_of(&mut client, &target).await?;
             if steers.is_empty() {
                 println!("no steers yet");
             }

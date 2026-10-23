@@ -157,7 +157,7 @@ export const onBase = (file: string) => `repos/${REPO}/contents/${file}?ref=${en
 
 /** Removes lab-a's lab repo project if one is registered, so scenarios that take lab-a's project find repo-a. */
 export const removeLabRepoProject = async (lab: Pick<Lab, "callTool">) => {
-  const listed = (await lab.callTool("projects_list", { machineId: MACHINE })).body.projects as Array<Body>;
+  const listed = (await lab.callTool("project_get", { machineId: MACHINE })).body.projects as Array<Body>;
   for (const p of listed.filter((p) => p.workspaceRoot === CLONE)) {
     const removed = await lab.callTool("project_remove", { machineId: MACHINE, projectId: p.projectId });
     if (removed.isError) throw new Error(`project_remove ${p.projectId}: ${JSON.stringify(removed.body)}`);

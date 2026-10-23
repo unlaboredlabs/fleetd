@@ -337,10 +337,10 @@ take back a steer the agent has not taken in yet
 ### fleetd steers {#steers}
 
 ```text
-fleetd steers [W|T] --key-file <human key> [--hub <url> | --home <dir>]
+fleetd steers <W|T> --key-file <human key> [--hub <url> | --home <dir>]
 ```
 
-recent steers and their receipts
+an order's (or one agent's) recent steers and their receipts
 
 ### fleetd chat {#chat}
 

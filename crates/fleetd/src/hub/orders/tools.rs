@@ -15,6 +15,8 @@ use crate::hub::api::{Caller, Hub, Registry, ToolError, allows, require};
 use crate::hub::store::{iso_ms, now_ms};
 
 const ORDER_ASKS: usize = 20;
+const ORDER_DECISIONS: usize = 50;
+const ORDER_STEERS: usize = 20;
 /// The hub trims lanes, then PRs, so a board answer stays under this.
 const BOARD_MAX_BYTES: usize = 64 * 1024;
 
@@ -114,11 +116,23 @@ async fn order_get(
     if joined.done.len() >= super::DONE_LANES {
         truncated = true;
     }
+    let mut decisions = ports
+        .decisions_of_workstream(id, ORDER_DECISIONS + 1)
+        .unwrap_or_default();
+    truncated |= decisions.len() > ORDER_DECISIONS;
+    decisions.truncate(ORDER_DECISIONS);
+    let steers: Vec<_> = crate::hub::steer::store::list(&hub.db, id.as_str(), ORDER_STEERS)?
+        .into_iter()
+        .filter(|s| allows(&caller, Role::Read, Some(&s.thread.machine_id)))
+        .collect();
     Ok(OrderGetOutput {
         order: joined.card,
+        workstream: Some(w),
         lead,
         done_lanes: List::unchecked(joined.done),
         requests: List::unchecked(requests),
+        decisions: Some(List::unchecked(decisions)),
+        steers: Some(List::unchecked(steers)),
         next: Some(
             "Talk to its lead with chat_send; stop the project's work with project_stop.".into(),
         ),

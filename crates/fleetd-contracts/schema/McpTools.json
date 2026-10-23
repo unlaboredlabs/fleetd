@@ -725,38 +725,6 @@
       ],
       "type": "string"
     },
-    "AttentionPolicyInput": {
-      "type": "object"
-    },
-    "AttentionPolicyOutput": {
-      "properties": {
-        "coalesceSec": {
-          "description": "At most one notification per this many seconds; what arrives meanwhile is folded into the next.",
-          "maximum": 9007199254740991,
-          "minimum": 1,
-          "type": "integer"
-        },
-        "next": {
-          "type": "string"
-        },
-        "quiet": {
-          "description": "Only \"urgent\" events notify inside these; empty when quiet hours are off. Ask again after the last one ends.",
-          "items": {
-            "$ref": "#/$defs/QuietWindow"
-          },
-          "maxItems": 2,
-          "type": "array"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "coalesceSec",
-        "quiet"
-      ],
-      "type": "object"
-    },
     "BoxPublicKey": {
       "type": "string"
     },
@@ -2614,6 +2582,10 @@
         "next": {
           "type": "string"
         },
+        "notify": {
+          "$ref": "#/$defs/NotifyPolicy",
+          "description": "When to notify the human; absent from older hubs."
+        },
         "projects": {
           "items": {
             "$ref": "#/$defs/ProjectSummary"
@@ -3622,7 +3594,7 @@
           "$ref": "#/$defs/ProjectRef"
         },
         "sessionGeneration": {
-          "description": "Bumped by each lead_restart.",
+          "description": "Bumped by each `lead_start {fresh}`.",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
@@ -3649,6 +3621,10 @@
     },
     "LeadStartInput": {
       "properties": {
+        "fresh": {
+          "description": "Start a fresh lead thread from the current digest (sessionGeneration goes up); the old one stays as history.",
+          "type": "boolean"
+        },
         "machineId": {
           "$ref": "#/$defs/MachineId"
         },
@@ -3678,7 +3654,7 @@
           "$ref": "#/$defs/ProjectRef"
         },
         "sessionGeneration": {
-          "description": "Bumped by each lead_restart.",
+          "description": "Bumped by each `lead_start {fresh}`.",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
@@ -3943,12 +3919,6 @@
         "attachment_put.output": {
           "$ref": "#/$defs/AttachmentPutOutput"
         },
-        "attention_policy.input": {
-          "$ref": "#/$defs/AttentionPolicyInput"
-        },
-        "attention_policy.output": {
-          "$ref": "#/$defs/AttentionPolicyOutput"
-        },
         "cap_set.input": {
           "$ref": "#/$defs/CapSetInput"
         },
@@ -4021,12 +3991,6 @@
         "hub_info.output": {
           "$ref": "#/$defs/HubInfoOutput"
         },
-        "lead_restart.input": {
-          "$ref": "#/$defs/LeadStartInput"
-        },
-        "lead_restart.output": {
-          "$ref": "#/$defs/LeadStartOutput"
-        },
         "lead_start.input": {
           "$ref": "#/$defs/LeadStartInput"
         },
@@ -4097,13 +4061,7 @@
           "$ref": "#/$defs/ProjectGetInput"
         },
         "project_get.output": {
-          "$ref": "#/$defs/ProjectOutcome"
-        },
-        "project_inspect.input": {
-          "$ref": "#/$defs/ProjectInspectInput"
-        },
-        "project_inspect.output": {
-          "$ref": "#/$defs/ProjectInspectOutput"
+          "$ref": "#/$defs/ProjectGetOutput"
         },
         "project_remove.input": {
           "$ref": "#/$defs/ProjectRemoveInput"
@@ -4123,35 +4081,17 @@
         "project_stop.output": {
           "$ref": "#/$defs/ProjectStopOutput"
         },
-        "projects_list.input": {
-          "$ref": "#/$defs/ProjectsListInput"
-        },
-        "projects_list.output": {
-          "$ref": "#/$defs/ProjectsListOutput"
-        },
         "prompt_get.input": {
           "$ref": "#/$defs/PromptGetInput"
         },
         "prompt_get.output": {
           "$ref": "#/$defs/PromptGetOutput"
         },
-        "prompt_reset.input": {
-          "$ref": "#/$defs/PromptResetInput"
-        },
-        "prompt_reset.output": {
-          "$ref": "#/$defs/PromptResetOutput"
-        },
         "prompt_set.input": {
           "$ref": "#/$defs/PromptSetInput"
         },
         "prompt_set.output": {
           "$ref": "#/$defs/PromptSetOutput"
-        },
-        "prompts_list.input": {
-          "$ref": "#/$defs/PromptsListInput"
-        },
-        "prompts_list.output": {
-          "$ref": "#/$defs/PromptsListOutput"
         },
         "requests_list.input": {
           "$ref": "#/$defs/RequestsListInput"
@@ -4177,12 +4117,6 @@
         "status_get.output": {
           "$ref": "#/$defs/StatusGetOutput"
         },
-        "status_projects.input": {
-          "$ref": "#/$defs/StatusProjectsInput"
-        },
-        "status_projects.output": {
-          "$ref": "#/$defs/StatusProjectsOutput"
-        },
         "steer_send.input": {
           "$ref": "#/$defs/SteerSendInput"
         },
@@ -4194,12 +4128,6 @@
         },
         "steer_withdraw.output": {
           "$ref": "#/$defs/SteerWithdrawOutput"
-        },
-        "steers_list.input": {
-          "$ref": "#/$defs/SteersListInput"
-        },
-        "steers_list.output": {
-          "$ref": "#/$defs/SteersListOutput"
         },
         "task_get.input": {
           "$ref": "#/$defs/TaskGetInput"
@@ -4279,12 +4207,6 @@
         "wake_set.output": {
           "$ref": "#/$defs/WakeSetOutput"
         },
-        "workstream_get.input": {
-          "$ref": "#/$defs/WorkstreamGetInput"
-        },
-        "workstream_get.output": {
-          "$ref": "#/$defs/WorkstreamGetOutput"
-        },
         "workstream_list.input": {
           "$ref": "#/$defs/WorkstreamListInput"
         },
@@ -4305,8 +4227,6 @@
         "attachment_get.output",
         "attachment_put.input",
         "attachment_put.output",
-        "attention_policy.input",
-        "attention_policy.output",
         "cap_set.input",
         "cap_set.output",
         "changes_list.input",
@@ -4331,8 +4251,6 @@
         "fleetd_status.output",
         "hub_info.input",
         "hub_info.output",
-        "lead_restart.input",
-        "lead_restart.output",
         "lead_start.input",
         "lead_start.output",
         "order_get.input",
@@ -4357,24 +4275,16 @@
         "project_files.output",
         "project_get.input",
         "project_get.output",
-        "project_inspect.input",
-        "project_inspect.output",
         "project_remove.input",
         "project_remove.output",
         "project_set.input",
         "project_set.output",
         "project_stop.input",
         "project_stop.output",
-        "projects_list.input",
-        "projects_list.output",
         "prompt_get.input",
         "prompt_get.output",
-        "prompt_reset.input",
-        "prompt_reset.output",
         "prompt_set.input",
         "prompt_set.output",
-        "prompts_list.input",
-        "prompts_list.output",
         "requests_list.input",
         "requests_list.output",
         "secret_submit.input",
@@ -4383,14 +4293,10 @@
         "session_prompt_get.output",
         "status_get.input",
         "status_get.output",
-        "status_projects.input",
-        "status_projects.output",
         "steer_send.input",
         "steer_send.output",
         "steer_withdraw.input",
         "steer_withdraw.output",
-        "steers_list.input",
-        "steers_list.output",
         "task_get.input",
         "task_get.output",
         "tasks_list.input",
@@ -4417,8 +4323,6 @@
         "wake_list.output",
         "wake_set.input",
         "wake_set.output",
-        "workstream_get.input",
-        "workstream_get.output",
         "workstream_list.input",
         "workstream_list.output"
       ],
@@ -4542,6 +4446,30 @@
       ],
       "type": "object"
     },
+    "NotifyPolicy": {
+      "description": "When a client may interrupt the human with an event marked `attention`. Quiet windows are absolute times the\nhub computes from `policy.quiet_hours` in `policy.tz`: the one under way (if any) and the next.",
+      "properties": {
+        "coalesceSec": {
+          "description": "At most one notification per this many seconds; what arrives meanwhile is folded into the next.",
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "quiet": {
+          "description": "Only \"urgent\" events notify inside these; empty when quiet hours are off. Ask again after the last one ends\nor on decision.recorded.",
+          "items": {
+            "$ref": "#/$defs/QuietWindow"
+          },
+          "maxItems": 2,
+          "type": "array"
+        }
+      },
+      "required": [
+        "coalesceSec",
+        "quiet"
+      ],
+      "type": "object"
+    },
     "OrderCard": {
       "description": "One order (workstream) as the board shows it.",
       "properties": {
@@ -4643,6 +4571,14 @@
     },
     "OrderGetOutput": {
       "properties": {
+        "decisions": {
+          "description": "Active decisions scoped to it. Absent from older hubs.",
+          "items": {
+            "$ref": "#/$defs/Decision"
+          },
+          "maxItems": 50,
+          "type": "array"
+        },
         "doneLanes": {
           "description": "Newest first.",
           "items": {
@@ -4669,8 +4605,20 @@
           "maxItems": 20,
           "type": "array"
         },
+        "steers": {
+          "description": "Its steers (to the lead or one of its tasks) with their receipts, newest first. Absent from older hubs.",
+          "items": {
+            "$ref": "#/$defs/Steer"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
         "truncated": {
           "type": "boolean"
+        },
+        "workstream": {
+          "$ref": "#/$defs/Workstream",
+          "description": "Its record: the brief and its done-when. Absent from older hubs."
         }
       },
       "required": [
@@ -6143,6 +6091,9 @@
           "pattern": "^/.",
           "type": "string"
         },
+        "dryRun": {
+          "type": "boolean"
+        },
         "machineId": {
           "$ref": "#/$defs/MachineId",
           "description": "Absent: the best worker (see `project_discover.best`)."
@@ -6178,13 +6129,17 @@
           "minLength": 1,
           "type": "string"
         },
+        "clone": {
+          "$ref": "#/$defs/CloneTarget",
+          "description": "A dry run with url: where it would clone, and whether that folder already holds a checkout."
+        },
         "created": {
-          "description": "False when the directory was already a project (it is renamed when a title is given).",
+          "description": "False when the directory was already a project (it is renamed when a title is given), and in a dry run.",
           "type": "boolean"
         },
         "inspect": {
           "$ref": "#/$defs/ProjectInspect",
-          "description": "For a path, at once; for a clone, on `project.added`."
+          "description": "For a path, at once; for a clone, on `project.added`; for a dry run, the repository's facts."
         },
         "machineId": {
           "$ref": "#/$defs/MachineId"
@@ -6341,123 +6296,16 @@
         },
         "projectId": {
           "$ref": "#/$defs/ProjectId"
-        }
-      },
-      "required": [
-        "machineId",
-        "projectId"
-      ],
-      "type": "object"
-    },
-    "ProjectId": {
-      "type": "string"
-    },
-    "ProjectInspect": {
-      "description": "What `project_inspect` found: the default branch, CI and merge rules, and one line on what the lead will need.",
-      "properties": {
-        "ci": {
-          "$ref": "#/$defs/CiInfo"
         },
-        "defaultBranch": {
-          "type": "string"
-        },
-        "leadNeeds": {
-          "description": "One line for a person, e.g. \"no CI found: the merge train holds its PRs until the repo has CI\".",
-          "maxLength": 300,
-          "minLength": 1,
-          "type": "string"
-        },
-        "merge": {
-          "$ref": "#/$defs/MergeRules"
-        },
-        "notes": {
-          "description": "What could not be read, e.g. \"branch rules need admin access on acme/storefront\".",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "repo": {
-          "$ref": "#/$defs/GitHubRepo",
-          "description": "Absent for a checkout without a GitHub remote."
-        }
-      },
-      "required": [
-        "ci",
-        "merge",
-        "leadNeeds",
-        "notes"
-      ],
-      "type": "object"
-    },
-    "ProjectInspectInput": {
-      "properties": {
-        "machineId": {
-          "$ref": "#/$defs/MachineId"
-        },
-        "path": {
-          "pattern": "^/.",
-          "type": "string"
-        },
-        "url": {
-          "description": "A GitHub URL, `git@github.com:o/r.git`, or `owner/repo`.",
-          "maxLength": 300,
-          "minLength": 1,
+        "query": {
+          "description": "Without projectId: only projects whose title or path contains it.",
           "type": "string"
         }
       },
       "type": "object"
     },
-    "ProjectInspectOutput": {
-      "description": "What `project_inspect` found: the default branch, CI and merge rules, and one line on what the lead will need.",
-      "properties": {
-        "ci": {
-          "$ref": "#/$defs/CiInfo"
-        },
-        "clone": {
-          "$ref": "#/$defs/CloneTarget",
-          "description": "With `url` and a machine (given, or the best one): where `project_add` would clone it."
-        },
-        "defaultBranch": {
-          "type": "string"
-        },
-        "leadNeeds": {
-          "description": "One line for a person, e.g. \"no CI found: the merge train holds its PRs until the repo has CI\".",
-          "maxLength": 300,
-          "minLength": 1,
-          "type": "string"
-        },
-        "merge": {
-          "$ref": "#/$defs/MergeRules"
-        },
-        "next": {
-          "type": "string"
-        },
-        "notes": {
-          "description": "What could not be read, e.g. \"branch rules need admin access on acme/storefront\".",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "repo": {
-          "$ref": "#/$defs/GitHubRepo",
-          "description": "Absent for a checkout without a GitHub remote."
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "ci",
-        "merge",
-        "leadNeeds",
-        "notes"
-      ],
-      "type": "object"
-    },
-    "ProjectOutcome": {
-      "description": "The one-call project outcome, returned as-is by project_get.",
+    "ProjectGetOutput": {
+      "description": "The projects, or one project's outcome (its fields at the top level).",
       "properties": {
         "asOf": {
           "$ref": "#/$defs/Timestamp"
@@ -6476,6 +6324,13 @@
         },
         "project": {
           "$ref": "#/$defs/ProjectSummary"
+        },
+        "projects": {
+          "description": "Without projectId: the projects.",
+          "items": {
+            "$ref": "#/$defs/ProjectSummary"
+          },
+          "type": "array"
         },
         "stale": {
           "type": "boolean"
@@ -6521,11 +6376,46 @@
           "type": "array"
         }
       },
+      "type": "object"
+    },
+    "ProjectId": {
+      "type": "string"
+    },
+    "ProjectInspect": {
+      "description": "What a project's checkout or repository says: the default branch, CI and merge rules, and one line on what the lead will need.",
+      "properties": {
+        "ci": {
+          "$ref": "#/$defs/CiInfo"
+        },
+        "defaultBranch": {
+          "type": "string"
+        },
+        "leadNeeds": {
+          "description": "One line for a person, e.g. \"no CI found: the merge train holds its PRs until the repo has CI\".",
+          "maxLength": 300,
+          "minLength": 1,
+          "type": "string"
+        },
+        "merge": {
+          "$ref": "#/$defs/MergeRules"
+        },
+        "notes": {
+          "description": "What could not be read, e.g. \"branch rules need admin access on acme/storefront\".",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "repo": {
+          "$ref": "#/$defs/GitHubRepo",
+          "description": "Absent for a checkout without a GitHub remote."
+        }
+      },
       "required": [
-        "project",
-        "threads",
-        "stale",
-        "asOf"
+        "ci",
+        "merge",
+        "leadNeeds",
+        "notes"
       ],
       "type": "object"
     },
@@ -6846,52 +6736,7 @@
       ],
       "type": "object"
     },
-    "ProjectsListInput": {
-      "properties": {
-        "machineId": {
-          "$ref": "#/$defs/MachineId"
-        },
-        "query": {
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "ProjectsListOutput": {
-      "properties": {
-        "next": {
-          "type": "string"
-        },
-        "projects": {
-          "items": {
-            "$ref": "#/$defs/ProjectSummary"
-          },
-          "type": "array"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "projects"
-      ],
-      "type": "object"
-    },
-    "PromptGetInput": {
-      "properties": {
-        "id": {
-          "$ref": "#/$defs/PromptId"
-        },
-        "projectRef": {
-          "$ref": "#/$defs/ProjectRef"
-        }
-      },
-      "required": [
-        "id"
-      ],
-      "type": "object"
-    },
-    "PromptGetOutput": {
+    "PromptDetail": {
       "description": "`prompt_get`: every level of one prompt for the asked project (or hub-wide).",
       "properties": {
         "default": {
@@ -6911,9 +6756,6 @@
         },
         "kind": {
           "$ref": "#/$defs/PromptKind"
-        },
-        "next": {
-          "type": "string"
         },
         "perProject": {
           "description": "False for a one-shot: it has the hub-wide level only.",
@@ -6948,9 +6790,6 @@
         "title": {
           "type": "string"
         },
-        "truncated": {
-          "type": "boolean"
-        },
         "warnings": {
           "items": {
             "$ref": "#/$defs/PromptWarning"
@@ -6972,6 +6811,48 @@
         "safetyRules",
         "warnings"
       ],
+      "type": "object"
+    },
+    "PromptGetInput": {
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/PromptId",
+          "description": "Absent: list every prompt."
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "The texts in effect for this project; absent: hub-wide."
+        }
+      },
+      "type": "object"
+    },
+    "PromptGetOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "orphans": {
+          "description": "Without an id: your edits to prompts a release retired, hub-wide ones and the asked project's.",
+          "items": {
+            "$ref": "#/$defs/RetiredPromptOverride"
+          },
+          "type": "array"
+        },
+        "prompt": {
+          "$ref": "#/$defs/PromptDetail",
+          "description": "With an id: that prompt."
+        },
+        "prompts": {
+          "description": "Without an id: every prompt.",
+          "items": {
+            "$ref": "#/$defs/PromptSummary"
+          },
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
       "type": "object"
     },
     "PromptGroup": {
@@ -7040,45 +6921,6 @@
       "pattern": "^[a-z][a-z0-9_-]*(?:\\.[a-z0-9_-]+)*@[0-9a-f]{10}$",
       "type": "string"
     },
-    "PromptResetInput": {
-      "properties": {
-        "id": {
-          "$ref": "#/$defs/PromptId"
-        },
-        "projectRef": {
-          "$ref": "#/$defs/ProjectRef"
-        },
-        "scope": {
-          "$ref": "#/$defs/PromptScope"
-        }
-      },
-      "required": [
-        "id",
-        "scope"
-      ],
-      "type": "object"
-    },
-    "PromptResetOutput": {
-      "properties": {
-        "effective": {
-          "$ref": "#/$defs/PromptVersion"
-        },
-        "next": {
-          "type": "string"
-        },
-        "scope": {
-          "$ref": "#/$defs/PromptScope"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "effective",
-        "scope"
-      ],
-      "type": "object"
-    },
     "PromptScope": {
       "description": "Which text is meant: the one shipped in the binary, the hub-wide override, or one project's override.",
       "enum": [
@@ -7095,7 +6937,7 @@
           "description": "The default ref the text was edited from (`prompt_get` default.ref); absent: the one shipped now."
         },
         "dryRun": {
-          "description": "Return the warnings without saving.",
+          "description": "Return the warnings without saving; with reset, the ref that would be in effect, without resetting.",
           "type": "boolean"
         },
         "id": {
@@ -7105,18 +6947,21 @@
           "$ref": "#/$defs/ProjectRef",
           "description": "Required with scope project."
         },
+        "reset": {
+          "description": "True deletes your text at this scope (or your edit to a prompt fleetd retired), so the next level applies.\nOnly an explicit reset does that: a missing text is an error, never a reset.",
+          "type": "boolean"
+        },
         "scope": {
           "$ref": "#/$defs/PromptScope"
         },
         "text": {
-          "description": "May be empty only for `instructions`.",
+          "description": "The text to save. May be empty only for `instructions`. Required unless `reset` is true.",
           "type": "string"
         }
       },
       "required": [
         "id",
-        "scope",
-        "text"
+        "scope"
       ],
       "type": "object"
     },
@@ -7146,7 +6991,7 @@
       "type": "object"
     },
     "PromptSummary": {
-      "description": "A row of `prompts_list`.",
+      "description": "A row of `prompt_get`'s list.",
       "properties": {
         "defaultRef": {
           "$ref": "#/$defs/PromptRef"
@@ -7241,43 +7086,6 @@
         "too_long"
       ],
       "type": "string"
-    },
-    "PromptsListInput": {
-      "properties": {
-        "projectRef": {
-          "$ref": "#/$defs/ProjectRef",
-          "description": "The texts in effect for this project; absent: hub-wide."
-        }
-      },
-      "type": "object"
-    },
-    "PromptsListOutput": {
-      "properties": {
-        "next": {
-          "type": "string"
-        },
-        "orphans": {
-          "description": "Your edits to prompts a release retired: hub-wide ones, and the asked project's.",
-          "items": {
-            "$ref": "#/$defs/RetiredPromptOverride"
-          },
-          "type": "array"
-        },
-        "prompts": {
-          "items": {
-            "$ref": "#/$defs/PromptSummary"
-          },
-          "type": "array"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "prompts",
-        "orphans"
-      ],
-      "type": "object"
     },
     "QuietWindow": {
       "properties": {
@@ -7421,7 +7229,7 @@
       "type": "object"
     },
     "RetiredPromptOverride": {
-      "description": "An override of a prompt a release retired (merged into another, or replaced by fixed text), kept so the human can\ncarry what they wrote into a prompt that still exists. Its file stays until `prompt_reset` on its id.",
+      "description": "An override of a prompt a release retired (merged into another, or replaced by fixed text), kept so the human can\ncarry what they wrote into a prompt that still exists. Its file stays until `prompt_set` with `reset: true` on its id.",
       "properties": {
         "id": {
           "$ref": "#/$defs/PromptId",
@@ -8339,9 +8147,6 @@
           "$ref": "#/$defs/ProjectRef"
         }
       },
-      "required": [
-        "projectRef"
-      ],
       "type": "object"
     },
     "StatusGetOutput": {
@@ -8350,10 +8155,19 @@
           "type": "string"
         },
         "row": {
-          "$ref": "#/$defs/ProjectStatusRow"
+          "$ref": "#/$defs/ProjectStatusRow",
+          "description": "With projectRef."
+        },
+        "rows": {
+          "description": "Without projectRef: by title.",
+          "items": {
+            "$ref": "#/$defs/ProjectStatusRow"
+          },
+          "maxItems": 200,
+          "type": "array"
         },
         "series": {
-          "description": "The bar over time, oldest first: why it fell (`drop`) and when it held on paused work (`paused`).",
+          "description": "With projectRef: the bar over time, oldest first: why it fell (`drop`) and when it held on paused work\n(`paused`).",
           "items": {
             "$ref": "#/$defs/ProgressPoint"
           },
@@ -8364,35 +8178,6 @@
           "type": "boolean"
         }
       },
-      "required": [
-        "row",
-        "series"
-      ],
-      "type": "object"
-    },
-    "StatusProjectsInput": {
-      "type": "object"
-    },
-    "StatusProjectsOutput": {
-      "properties": {
-        "next": {
-          "type": "string"
-        },
-        "rows": {
-          "description": "By title.",
-          "items": {
-            "$ref": "#/$defs/ProjectStatusRow"
-          },
-          "maxItems": 200,
-          "type": "array"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "rows"
-      ],
       "type": "object"
     },
     "Steer": {
@@ -8835,50 +8620,6 @@
         "text",
         "stage",
         "queuedAt"
-      ],
-      "type": "object"
-    },
-    "SteersListInput": {
-      "properties": {
-        "afterN": {
-          "description": "Only steers after this number (the n of `S<n>`).",
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "limit": {
-          "default": 50,
-          "maximum": 100,
-          "minimum": 1,
-          "type": "integer"
-        },
-        "taskId": {
-          "$ref": "#/$defs/TaskId"
-        },
-        "workstreamId": {
-          "$ref": "#/$defs/WorkstreamId"
-        }
-      },
-      "type": "object"
-    },
-    "SteersListOutput": {
-      "properties": {
-        "next": {
-          "type": "string"
-        },
-        "steers": {
-          "items": {
-            "$ref": "#/$defs/Steer"
-          },
-          "maxItems": 100,
-          "type": "array"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "steers"
       ],
       "type": "object"
     },
@@ -10595,52 +10336,6 @@
         "state",
         "createdAt",
         "updatedAt"
-      ],
-      "type": "object"
-    },
-    "WorkstreamGetInput": {
-      "properties": {
-        "workstreamId": {
-          "$ref": "#/$defs/WorkstreamId"
-        }
-      },
-      "required": [
-        "workstreamId"
-      ],
-      "type": "object"
-    },
-    "WorkstreamGetOutput": {
-      "properties": {
-        "decisions": {
-          "description": "Active decisions scoped to it.",
-          "items": {
-            "$ref": "#/$defs/Decision"
-          },
-          "maxItems": 50,
-          "type": "array"
-        },
-        "next": {
-          "type": "string"
-        },
-        "requests": {
-          "description": "Its open secret and approval requests.",
-          "items": {
-            "$ref": "#/$defs/HumanRequest"
-          },
-          "maxItems": 50,
-          "type": "array"
-        },
-        "truncated": {
-          "type": "boolean"
-        },
-        "workstream": {
-          "$ref": "#/$defs/Workstream"
-        }
-      },
-      "required": [
-        "workstream",
-        "requests",
-        "decisions"
       ],
       "type": "object"
     },

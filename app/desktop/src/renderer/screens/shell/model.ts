@@ -35,7 +35,7 @@ export interface RequestIn {
 export interface MarksIn {
   /** The hub's requests; undefined until read. Only open ones count. */
   readonly requests?: ReadonlyArray<RequestIn> | undefined;
-  /** Status's blocked projects (status_projects), by "machineId/projectId", with why. */
+  /** Status's blocked projects (status_get rows), by "machineId/projectId", with why. */
   readonly blocked?: ReadonlyMap<string, string | undefined> | undefined;
   /** The chat seq last seen per "machineId/projectId" (data/seen.ts). */
   readonly seen?: Readonly<Record<string, number>> | undefined;

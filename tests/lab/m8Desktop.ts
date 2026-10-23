@@ -94,9 +94,9 @@ export async function m8Desktop(lab: Lab) {
   check(key, "hub key create --human printed a key");
   const app = await appSession(key!);
   try {
-    const policy = await app.call("attention_policy");
-    check(policy.coalesceSec === 1200 && Array.isArray(policy.quiet), `attention_policy: ${JSON.stringify(policy)}`);
-    ok(`0. connected on /app with a --human key; attention_policy coalesces ${policy.coalesceSec} s, ${policy.quiet.length} quiet window(s) ahead`);
+    const policy = (await app.call("fleetd_status")).notify;
+    check(policy?.coalesceSec === 1200 && Array.isArray(policy.quiet), `fleetd_status notify: ${JSON.stringify(policy)}`);
+    ok(`0. connected on /app with a --human key; notify coalesces ${policy.coalesceSec} s, ${policy.quiet.length} quiet window(s) ahead`);
 
     /** The project's chat item for request `id`, as the app reads it. */
     const itemOf = async (id: string) =>

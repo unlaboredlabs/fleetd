@@ -362,7 +362,7 @@ async fn project_ref(socket: &mut Socket, given: &str) -> Result<Value, Failure>
     if let Some((machine_id, project_id)) = given.split_once('/') {
         return Ok(json!({ "machineId": machine_id, "projectId": project_id }));
     }
-    let listed = socket.call("projects_list", json!({})).await?;
+    let listed = socket.call("project_get", json!({})).await?;
     let matches: Vec<&Value> = listed["projects"]
         .as_array()
         .map(|all| {

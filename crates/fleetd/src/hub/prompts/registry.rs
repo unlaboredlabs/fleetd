@@ -115,7 +115,7 @@ pub const ENTRIES: &[Entry] = &[
         Lead,
         Lead,
         "Lead",
-        "lead start and every lead_restart, followed by the state block",
+        "lead start and every fresh lead start, followed by the state block",
         "project!=the project's title; projectRef!=<machineId>/<projectId>",
         &[
             (

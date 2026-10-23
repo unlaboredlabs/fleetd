@@ -1,10 +1,10 @@
-//! project_discover, project_inspect, project_add and project_remove: thin over the projects service.
+//! project_discover, project_add and project_remove: thin over the projects service.
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::mcp::{
     ProjectAddInput, ProjectAddOutput, ProjectDiscoverInput, ProjectDiscoverOutput,
-    ProjectInspectInput, ProjectInspectOutput, ProjectRemoveInput,
+    ProjectRemoveInput,
 };
 use serde_json::{Value, json};
 
@@ -13,7 +13,6 @@ use crate::hub::executor::tools::from_executor;
 
 pub fn register(tools: &mut Registry) {
     tools.add("project_discover", discover);
-    tools.add("project_inspect", inspect);
     tools.add("project_add", add);
     tools.add("project_remove", remove);
 }
@@ -24,14 +23,6 @@ async fn discover(
     input: ProjectDiscoverInput,
 ) -> Result<ProjectDiscoverOutput, ToolError> {
     super::discover(&hub, &caller, input).await
-}
-
-async fn inspect(
-    hub: Arc<Hub>,
-    caller: Caller,
-    input: ProjectInspectInput,
-) -> Result<ProjectInspectOutput, ToolError> {
-    super::inspect(&hub, &caller, input).await
 }
 
 async fn add(

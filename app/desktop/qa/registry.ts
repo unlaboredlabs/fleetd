@@ -17,6 +17,7 @@
 
 import { type ElectronApplication, expect, type Locator, type Page } from "@playwright/test";
 import { AGENT_ROUTE } from "../fixtures/agents/route.ts";
+import { STEER_WORDS } from "../fixtures/agents/steers.ts";
 import { CHAT_SENDS } from "../fixtures/composer/sends.ts";
 import { OFFLINE_SENDS } from "../fixtures/offline/sends.ts";
 
@@ -51,9 +52,10 @@ export const fixtures = [
   "live-0",
   "live-3",
   "live-20",
-  // F4: the chat composer's sends (fixtures/composer).
+  // F4: the chat composer's sends (fixtures/composer), and your steers to the lead in the chat.
   "composer-sends",
   "composer-waiting",
+  "composer-steers",
   // The lead mid-turn: the quiet line under its reply counts up and says what it does now and what the turn did; and
   // once it's over, how long it worked (fixtures/lead).
   "lead-planning",
@@ -116,6 +118,8 @@ export const fixtures = [
   // UX-1: the sidebar's reasons and a new reply (fixtures/sidebar); one agent's live work (fixtures/agents).
   "sidebar-reasons",
   "agents-work",
+  // ...with its steers that ended otherwise: never replied to, withdrawn, failed (fixtures/agents).
+  "agents-steers",
   // UX [7]: no hub, and the last launch's disk cache on screen with a message queued; back online with that chat not
   // read again yet, and with that read failed (fixtures/offline).
   "offline-held",
@@ -210,9 +214,9 @@ const openUpdates = async (page: Page) => {
   await page.keyboard.press("Enter");
 };
 
-// storefront's PRs (fixtures/prs): the list alone, and #11 (in review, its reviewers at work), #10 (checks failed), #8
-// (merged), #14 (a person's, review asked for) and #13 (240 files) open.
-const PRS = CHAT.replace("#/project/", "#/prs/");
+// storefront's PRs in the panel beside its chat (fixtures/prs): the list, and #11 (in review, its reviewers at work),
+// #10 (checks failed), #8 (merged), #14 (a person's, review asked for) and #13 (240 files) open.
+const PRS = `${CHAT}/prs`;
 const PR = (n: number) => `${PRS}/acme/storefront/${String(n)}`;
 const openChanges = (page: Page) => page.getByRole("tab", { name: /^Changes/u }).click();
 /**
@@ -288,6 +292,36 @@ export const screens: readonly Screen[] = [
       await page.getByRole("button", { name: "Stop the lead and its agents" }).click();
       await expect(page.getByRole("button", { name: "Stopping the lead and its agents" })).toBeDisabled();
       await expect(page.getByText("Stopping the lead and its agents…")).toBeVisible();
+    },
+  },
+  // ⌘Enter while the lead works on an order: the steer shows in the chat, its receipt saying it stops the step.
+  {
+    id: "chat.composer",
+    route: CHAT,
+    fixtures: ["composer-sends"],
+    variant: "steer-now",
+    open: async (page) => {
+      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      const box = page.getByRole("textbox", { name: "Message the lead" });
+      await expect(page.getByText(/stops its step and sends now/)).toBeVisible();
+      await box.fill(STEER_WORDS.leadNow);
+      await box.press("ControlOrMeta+Enter");
+      await expect(box).toHaveValue("");
+      await expect(page.locator('[data-entry="steer"]').getByText(STEER_WORDS.leadNow)).toBeVisible();
+      await expect(page.locator('[data-steer="queued"]')).toHaveCount(1);
+    },
+  },
+  // Your steers to the lead stay in the chat at their times, each with where it is; one to an agent stays under its
+  // work, and the lead's own to its agent isn't yours.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["composer-steers"],
+    variant: "steers",
+    open: async (page) => {
+      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      // The newest, so on screen at every size; the list renders only what is in view.
+      for (const stage of ["failed", "queued"]) await expect(page.locator(`[data-steer="${stage}"]`)).toHaveCount(1);
     },
   },
   // ↑ in the empty box brings back your last message.
@@ -387,7 +421,7 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
       await expect(page.getByText("Couldn’t load the newest messages.")).toBeVisible();
-      await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+      await expect(page.locator('[data-screen="chat"]').getByRole("button", { name: "Retry", exact: true })).toBeVisible();
       await expect(page.locator("header").getByText(/^Last known, as of/u)).toBeVisible();
     },
   },
@@ -431,6 +465,38 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       await page.getByRole("button", { name: "Hide the sidebar" }).click();
       await page.getByRole("navigation", { name: "Sidebar" }).waitFor({ state: "detached" });
+    },
+  },
+  // The panel beside the chat, open on a first launch on its Agents tab, and closed with its toggle.
+  {
+    id: "shell",
+    route: "#/",
+    fixtures: ["chat-waiting", "agents-work"],
+    variant: "panel",
+    open: async (page) => {
+      await page.getByRole("complementary", { name: "Agents and pull requests" }).waitFor();
+    },
+  },
+  {
+    id: "shell",
+    route: "#/",
+    fixtures: ["chat-waiting"],
+    variant: "panel-closed",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Hide agents and PRs" }).click();
+      await page.getByRole("complementary", { name: "Agents and pull requests" }).waitFor({ state: "detached" });
+    },
+  },
+  // ...and in the smallest window, where it had hidden itself, shown with its toggle beside the chat.
+  {
+    id: "shell",
+    route: "#/",
+    fixtures: ["chat-waiting"],
+    variant: "panel-narrow",
+    sizes: ["narrow"],
+    open: async (page) => {
+      await page.getByRole("button", { name: "Show agents and PRs" }).click();
+      await page.getByRole("complementary", { name: "Agents and pull requests" }).waitFor();
     },
   },
   // The smallest window: the sidebar has hidden itself, its toggle and the chat's title share the top row.
@@ -685,9 +751,11 @@ export const screens: readonly Screen[] = [
       await page.getByRole("alert").waitFor();
     },
   },
-  // UX-1 A3: a project's PRs. The list (open first, then merged or closed lately), with nothing picked; none at all;
-  // GitHub out of reach; and a link to a project the hub doesn't have.
+  // UX-1 A3: a project's PRs in the panel. The list (open first, then merged or closed lately); none at all; GitHub
+  // out of reach; and a link to a project the hub doesn't have. The narrow window has hidden the panel; the link
+  // shows it there.
   { id: "prs", route: PRS, fixtures: ["typical", "long-text", "many-agents", "prs-none", "prs-no-github", "prs-rate-limited", "hub-unreachable"] },
+  { id: "prs", route: PRS, fixtures: ["typical"], variant: "narrow", sizes: ["narrow"] },
   { id: "prs", route: PRS, fixtures: ["empty"], variant: "missing", expect: "error" },
   {
     id: "prs",
@@ -695,11 +763,11 @@ export const screens: readonly Screen[] = [
     fixtures: ["prs-loading"],
     variant: "loading",
     open: whileLoading(
-      (page) => page.getByRole("button", { name: "Pull requests" }).click({ timeout: 10_000 }),
+      (page) => page.getByRole("tab", { name: /^Pull requests/u }).click({ timeout: 10_000 }),
       (page) => page.getByLabel("Loading the pull requests"),
     ),
   },
-  // One PR beside the list: its facts, description, checks, reviews with their findings, and its way to main so far.
+  // One PR in the list's place: its facts, description, checks, reviews with their findings, and its way to main so far.
   // #10's checks failed after its approval and an outdated review; a chat line's link names only the number.
   { id: "prs.detail", route: PR(11), fixtures: ["typical", "long-text", "prs-no-github", "prs-rate-limited"] },
   { id: "prs.detail", route: PR(10), fixtures: ["typical"], variant: "failed" },
@@ -873,16 +941,31 @@ export const screens: readonly Screen[] = [
       await page.keyboard.press("Enter");
     },
   },
-  // UX-1 A2: every agent across the projects, by project (none, many, long titles and commands, the link down), and
-  // one agent's live work beside the list: told, ran, edited, a failed command, a message streaming in. An agent
-  // that isn't running any more says so.
+  // UX-1 A2: the project's agents in the panel, those waiting on you first (none, many, long titles and commands, the
+  // link down), and one agent's live work in the list's place: told, ran, edited, a failed command, a message
+  // streaming in. An agent that isn't running any more says so.
   {
     id: "agents",
-    route: "#/agents",
-    fixtures: ["typical", "many-agents", "long-text", "empty", "hub-unreachable", "live-20", "agents-work"],
+    route: `${CHAT}/agents`,
+    fixtures: ["typical", "many-agents", "long-text", "hub-unreachable", "live-20", "agents-work"],
   },
-  { id: "agents.work", route: AGENT_ROUTE, fixtures: ["agents-work"] },
-  { id: "agents.work", route: "#/agents/devbox/storefront/T99", fixtures: ["typical"], variant: "finished" },
+  // Under its work, your steers to it with their receipts, in every stage, and the box that steers it directly.
+  { id: "agents.work", route: AGENT_ROUTE, fixtures: ["agents-work", "agents-steers"] },
+  {
+    id: "agents.work",
+    route: AGENT_ROUTE,
+    fixtures: ["agents-work"],
+    variant: "steered",
+    open: async (page) => {
+      const box = page.getByRole("textbox", { name: "Steer this agent" });
+      await box.fill(STEER_WORDS.agent);
+      await box.press("Enter");
+      await expect(box).toHaveValue("");
+      await expect(page.locator('[data-steer="queued"]')).toHaveCount(2);
+    },
+  },
+  { id: "agents.work", route: AGENT_ROUTE, fixtures: ["agents-work"], variant: "narrow", sizes: ["narrow"] },
+  { id: "agents.work", route: `${CHAT}/agents/T99`, fixtures: ["typical"], variant: "finished" },
   { id: "machines", route: "#/machines", fixtures: ["typical", "empty", "long-text", "many-agents", "hub-unreachable", "projects-machines"] },
   // F11: the command palette (opening on the project on screen, then go-tos), a typed search, and the shortcuts
   // sheet. status-rows has eight projects, one with a ~120-character name.

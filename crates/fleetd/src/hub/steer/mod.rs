@@ -342,7 +342,7 @@ fn tell_lead(hub: &Hub, steer: &Steer, task: &Task) {
 
 /// The lead digest's line under an order: the human's latest direct steers to its tasks, and how each landed.
 pub fn digest_line(db: &crate::hub::store::HubDb, workstream_id: &WorkstreamId) -> Option<String> {
-    let steers = store::list(db, Some(workstream_id.as_str()), None, 0, 20).ok()?;
+    let steers = store::list(db, workstream_id.as_str(), 20).ok()?;
     let parts: Vec<String> = steers
         .iter()
         .filter(|s| matches!(s.by, SteerBy::Human { .. }))

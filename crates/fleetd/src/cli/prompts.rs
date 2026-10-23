@@ -321,7 +321,7 @@ fn edit(
         json!({ "ref": saved, "warnings": codes }),
     )?;
     Ok(format!(
-        "Saved {saved}. New sessions get it now; a running lead gets it at its next restart (lead_restart), a task at its next attempt."
+        "Saved {saved}. New sessions get it now; a running lead gets it at its next fresh start (lead_start with fresh), a task at its next attempt."
     ))
 }
 

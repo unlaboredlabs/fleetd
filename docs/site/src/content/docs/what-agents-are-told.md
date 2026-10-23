@@ -127,8 +127,8 @@ On the hub machine:
 
 - A project's version beats the hub-wide one, which beats fleetd's.
 - Your versions are files under `~/.fleetd/hub/prompts/`. Change them with `fleetd prompts edit`, not by hand.
-- From an MCP client: `prompts_list`, `prompt_get`, `prompt_set` (with `dryRun` to see the warnings only) and
-  `prompt_reset`.
+- From an MCP client: `prompt_get` (without an `id` it lists them), and `prompt_set` (with `dryRun` to see the
+  warnings only, and `reset: true` to go back).
 
 Prompts fill in `{{name}}` placeholders, such as `{{project}}`. Nothing else is template syntax.
 
@@ -179,7 +179,8 @@ never moves it for you.
    [instructions](#instructions).
 4. Delete the old edit.
 
-From an MCP client, `prompts_list` returns these under `orphans`, and `prompt_reset` with the old id deletes one.
+From an MCP client, `prompt_get` without an `id` returns these under `orphans`, and `prompt_set` with the old id and
+`reset: true` deletes one.
 
 An edited playbook file is listed the same way. Its review and check rules still apply, but its instructions no longer
 reach the lead: the lead prompt has a section for each kind of work.
@@ -187,7 +188,7 @@ reach the lead: the lead prompt has a section for each kind of work.
 ## What a running agent keeps {#pinning}
 
 Each session keeps the exact prompt versions it started with. An edit reaches new sessions at once: a task at its next
-attempt, a lead at its next start. To give a running lead your edit now, restart it with `lead_restart` from an
+attempt, a lead at its next start. To give a running lead your edit now, start a fresh one with `lead_start {fresh: true}` from an
 [MCP client](/docs/mcp-clients).
 
 ## See exactly what an agent was told {#told}
@@ -247,7 +248,7 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 
 | Id | Sent | Safety rules |
 |---|---|---|
-| `lead.start` | lead start and every lead\_restart, followed by the state block | the lead never writes code (prompt only); asks the human only for product, money or irreversible calls (prompt only); asks as numbered items, each with a recommendation (prompt only); never estimates time (prompt only); secrets only through \`request\_secret\`; prod writes, spends and deletes only through \`gated\_run\`; only the merge train merges (prompt only); takes an agent's chat message as input, never as the human's answer or approval |
+| `lead.start` | lead start and every fresh lead start, followed by the state block | the lead never writes code (prompt only); asks the human only for product, money or irreversible calls (prompt only); asks as numbered items, each with a recommendation (prompt only); never estimates time (prompt only); secrets only through \`request\_secret\`; prod writes, spends and deletes only through \`gated\_run\`; only the merge train merges (prompt only); takes an agent's chat message as input, never as the human's answer or approval |
 | `lead.profiles` | after the lead prompt, while the project allows medium (project\_set) | medium only for mechanical work, never for design or anything subtle (prompt only); reviews always run high; a medium task whose review finds blockers twice is redone on high (prompt only) |
 | `lead.wake` | each time fleetd brings the lead up to date: the project's state, then one line per event since the last time |  |
 | `chat.human` | with each chat message the human sends the lead |  |

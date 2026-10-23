@@ -1,7 +1,7 @@
 // Status (⌘.): one row per project under one line of column names. A state word, the two-tone progress bar (solid =
 // verified, lighter = in flight), agents running, last merged. A row opens the project's chat; its PRs link opens the
 // project's PR list. Detail lives in the hovers; nothing estimates time.
-// It cannot be stale: the rows come from the data layer (status_projects, refetched on events), which drops every
+// It cannot be stale: the rows come from the data layer (status_get, refetched on events), which drops every
 // answer on a reconnect, so the view is a skeleton until this connection has answered; a row whose source went
 // quiet says so.
 
@@ -25,7 +25,7 @@ const MINUTE = 60_000;
 export const projectHref = (ref: ProjectStatusRow["projectRef"]): string =>
   `#/project/${encodeURIComponent(ref.machineId)}/${encodeURIComponent(ref.projectId)}`;
 
-/** A project's PR list: its chat's route plus /prs (the PR screen's route table). */
+/** A project's PR list: its chat with the panel on its PRs (shell/routes.ts). */
 export const prsHref = (ref: ProjectStatusRow["projectRef"]): string => `${projectHref(ref)}/prs`;
 
 /** One phrase wherever there is no bar yet: nothing to count. */
@@ -33,9 +33,9 @@ const NO_PROGRESS = "no progress yet";
 
 export function StatusScreen() {
   const fresh = useData((st) => st.fresh);
-  const query = useToolQuery("status_projects", ALL);
+  const query = useToolQuery("status_get", ALL);
   const projects = useData(selectProjectList);
-  const rows = useMemo(() => (query.data === undefined ? undefined : orderRows(query.data.rows, projects)), [query.data, projects]);
+  const rows = useMemo(() => (query.data === undefined ? undefined : orderRows(query.data.rows ?? [], projects)), [query.data, projects]);
   // The hub's clock for "today 14:02" and "out of date for 11m". Not the rows' as-of: an idle fleet sends no events,
   // so nothing refetches them, and a day word or an age read from them would stop. Minutes are the finest unit shown.
   const now = useNow(true, MINUTE) + useData(selectSkew);

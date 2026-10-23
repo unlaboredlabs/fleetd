@@ -135,6 +135,9 @@
   /* The window's top bar; the shell (E0) sizes the macOS traffic lights to sit centred in it. */
   --top-bar-height: 44px;
   --sidebar-w: 240px;
+  /* The panel beside the chat (agents and PRs); reading a PR's changes widens it, so a diff has room. */
+  --panel-w: clamp(320px, 30vw, 520px);
+  --panel-wide-w: clamp(480px, 55vw, 1040px);
   --measure: 680px;
   /* The QA gate's minimum gap between content and the window edge. */
   --edge-inset: 8px;

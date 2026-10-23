@@ -102,8 +102,8 @@ export async function noSubagents(lab: Lab) {
   let cursor = await lab.cursor();
   let outcome = (await callTool("project_get", ref)).body;
   if (outcome.lead !== undefined) {
-    const restarted = await callTool("lead_restart", ref);
-    check(!restarted.isError, `lead_restart: ${JSON.stringify(restarted.body)}`);
+    const restarted = await callTool("lead_start", { ...ref, fresh: true });
+    check(!restarted.isError, `lead_start fresh: ${JSON.stringify(restarted.body)}`);
     leadThread = restarted.body.threadId;
   } else {
     const started = await callTool("lead_start", ref);

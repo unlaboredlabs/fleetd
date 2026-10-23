@@ -38,7 +38,7 @@ export async function statusFresh(lab: Lab) {
   const keyFile = path.join(lab.dir, "key");
   fs.writeFileSync(keyFile, `${lab.key}\n`, { mode: 0o600 });
 
-  const rows = async () => (await callTool("status_projects", {})).body.rows as Array<Body>;
+  const rows = async () => (await callTool("status_get", {})).body.rows as Array<Body>;
   let cursor = 0;
   /** The first rows for which `holds` gives a value, read again after each event, within `ms`. */
   const rowsUntil = <A>(what: string, ms: number, holds: (rows: Array<Body>) => A | undefined) =>

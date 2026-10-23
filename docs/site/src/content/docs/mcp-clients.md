@@ -70,7 +70,7 @@ post -H "Mcp-Session-Id: $SID" -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"to
 Then call a tool:
 
 ```sh
-FLEETD_HUB=http://hub.your-tailnet.ts.net:4790 FLEETD_KEY_FILE=~/.fleetd/agent.key sh mcp.sh status_projects '{}'
+FLEETD_HUB=http://hub.your-tailnet.ts.net:4790 FLEETD_KEY_FILE=~/.fleetd/agent.key sh mcp.sh status_get '{}'
 ```
 
 On a new hub with no projects yet, the output starts like this:
@@ -90,7 +90,7 @@ To make a human key file on the hub:
 
 ```sh
 (umask 077; fleetd hub key create --human --name terminal > ~/.fleetd/human.key)
-fleetd steers --key-file ~/.fleetd/human.key
+fleetd steers W41 --key-file ~/.fleetd/human.key
 ```
 
 ## Roles
@@ -124,12 +124,12 @@ as stopping a project, answering an approval or entering a secret, need one.
 | `attachment_put {name, mime, dataB64}` | Upload a file (image, text or PDF, at most 5 MiB) for a message. | operate |
 | `attachment_get {projectRef, attachmentId}` | Read a file attached to a project's chat. | read |
 | `project_files {machineId, projectId, query}` | A project's files, for `@`-mentions. | read |
-| `status_projects` | One row per project: its state word, verified and in-flight progress, agents running and the last merge. | read |
+| `status_get` | One row per project: its state word, verified and in-flight progress, agents running and the last merge. | read |
 | `agents_list {projectRef?, endedSince?}` | Every agent of your projects: its role, task, what it's doing now, when it started and its PR. | read |
 | `agent_work {machineId, threadId, before?, limit?}` | A page of one agent's recent messages, commands and edits, oldest first. Secrets show as `[secret]`. | read |
 | `pr_list {projectRef, closedSince?}`, `pr_get {repo, number}` | A project's PRs, and one in detail: description, checks, reviews with their findings, its place in the merge queue and the agent that wrote it. | read |
 | `pr_files {repo, number, offset?}`, `pr_diff {repo, number, path, offset?}` | A PR's changed files, and one file's diff a page at a time. | read |
-| `workstream_list`, `workstream_get`, `thread_tail`, `fleetd_status` | Lower-level views of the lead's work. | read |
+| `workstream_list`, `order_get`, `thread_tail`, `fleetd_status` | Lower-level views of the lead's work. | read |
 
 `projectRef` is `{"machineId": "devbox", "projectId": "<id>"}`; `fleetd project list` prints both, as
 `<machineId>/<projectId>`.
@@ -138,7 +138,8 @@ as stopping a project, answering an approval or entering a secret, need one.
 instead of a second one. `events_wait` waits for changes, so a client doesn't need to poll: a new message is a
 `chat.message` event.
 
-Tools for projects: `project_discover`, `project_inspect`, `project_add {path | url}` and `project_remove`. A clone
-answers with an `addId`, then sends `project.clone_progress` events, then `project.added` or `project.add_failed`.
+Tools for projects: `project_discover`, `project_add {path | url}` (with `dryRun` to see its CI and merge rules, and
+where a clone would go, without adding it) and `project_remove`. A clone answers with an `addId`, then sends
+`project.clone_progress` events, then `project.added` or `project.add_failed`.
 
 Every tool, generated from the code: [Agent tools](/docs/reference/agent-tools).

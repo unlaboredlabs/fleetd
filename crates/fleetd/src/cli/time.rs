@@ -127,7 +127,7 @@ pub fn parse_time_args(argv: &[String], now: DateTime<Utc>, zone: Tz) -> Result<
     })
 }
 
-/// The project a name means, from `projects_list`: its id, its title or its folder's name, optionally after
+/// The project a name means, from `project_get`: its id, its title or its folder's name, optionally after
 /// `<machine>/`. Several machines with the same name need the machine.
 pub fn resolve_project(name: &str, projects: &[Value]) -> Result<Value, String> {
     let (machine, rest) = match name.split_once('/') {
@@ -505,7 +505,7 @@ async fn run(hub: &mut Hub, args: &TimeArgs) -> Result<(), u8> {
     } else if args.is_order() {
         json!({ "kind": "order", "workstreamId": args.target })
     } else {
-        let listed = hub.call("projects_list", json!({})).await?;
+        let listed = hub.call("project_get", json!({})).await?;
         let projects = listed["projects"].as_array().cloned().unwrap_or_default();
         match resolve_project(&args.target, &projects) {
             Ok(project_ref) => json!({ "kind": "project", "projectRef": project_ref }),

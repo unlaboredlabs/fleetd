@@ -1,5 +1,5 @@
 // The lead chat on the wire (crates/fleetd-contracts/src/chat.rs): chat_history pages, the snapshot's per-project
-// chat state, the inline secret and command items, the live strip under the lead's message, and status_projects
+// chat state, the inline secret and command items, the live strip under the lead's message, and status_get
 // rows. What the messages say lives in chatText.ts.
 import type { Fixture } from "./fixture.ts";
 import { at, sha, uuid } from "./ids.ts";
@@ -249,7 +249,7 @@ export const statusRow = (f: Fixture, ref: Ref, title: string, state: RowState, 
 });
 
 export const answerRows = (f: Fixture, rows: ReadonlyArray<JsonObject>): Fixture =>
-  f.answer("status_projects", {}, { rows: [...rows].sort((a, b) => asText(a["title"]).localeCompare(asText(b["title"]))) });
+  f.answer("status_get", {}, { rows: [...rows].sort((a, b) => asText(a["title"]).localeCompare(asText(b["title"]))) });
 
 /**
  * The chat's last message, a lead reply in state "streaming", grows by `appends` over the live chat feed: one

@@ -31,7 +31,7 @@ export async function degradedMachine(lab: Lab) {
 
   // A lead (re)start is a launch: the first lab run may have no lead on lab-b yet.
   const ref = { machineId: MACHINE, projectId };
-  let launch = await callTool("lead_restart", ref);
+  let launch = await callTool("lead_start", { ...ref, fresh: true });
   if (launch.isError && launch.body.code === "not_found") launch = await callTool("lead_start", ref);
   check(launch.isError, `a launch on the degraded machine is refused: ${JSON.stringify(launch.body)}`);
   ok(`lead launch on ${MACHINE} refused: ${launch.body.code} "${launch.body.message}"`);

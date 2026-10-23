@@ -1,52 +1,30 @@
-/* Agents: the list of every agent beside the opened one's work. Dense like the sidebar, nothing animates. */
+/* The panel's agents: the project's agents, or one's work in their place. Dense like the sidebar, nothing animates. */
 
-.screen {
+.pane {
   flex: 1;
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  height: 100%;
 }
 
-
-/* Whether the page is live, at the end of its header (FrameTitle). */
+/* What works and what waits, or that the list isn't live, above the rows. */
 .liveness {
+  flex: none;
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  min-height: var(--row);
+  padding: var(--space-1) var(--space-4) 0;
 }
 
-/* The list keeps its width; the work takes the rest. */
-.split {
-  flex: 1;
-  display: grid;
-  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
-  min-height: 0;
-}
 .list {
+  flex: 1;
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  border-right: 1px solid var(--hairline);
-  padding: var(--space-2) var(--space-2) 0;
-}
-.work {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-}
-
-/* A project's line above its agents. */
-.group {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  min-width: 0;
-  padding: var(--space-3) var(--space-2) var(--space-1);
+  padding: var(--space-1) var(--space-2) 0;
 }
 
 /* One agent: role, task and clock; under it what it is doing now. */
@@ -62,10 +40,6 @@
 }
 .row:hover {
   background: var(--hover);
-}
-.current,
-.current:hover {
-  background: var(--selected);
 }
 .line {
   display: flex;
@@ -90,7 +64,6 @@
   flex-direction: column;
   gap: var(--space-3);
   padding: var(--space-4);
-  border-right: 1px solid var(--hairline);
 }
 .skeleton > span {
   height: var(--space-3);
@@ -127,9 +100,6 @@
   align-items: center;
   gap: var(--space-1) var(--space-3);
   min-width: 0;
-}
-.metaEnd {
-  margin-left: auto;
 }
 .feed {
   flex: 1;
