@@ -429,10 +429,11 @@ pub fn acknowledged_by_plan(
     hub: &Hub,
     r: &fleetd_contracts::ids::ProjectRef,
     mut steer: Steer,
-    out: &fleetd_contracts::plan::PlanItemResult,
+    changes: &[fleetd_contracts::plan::PlanChange],
 ) {
-    let what = out.change.as_ref().map_or_else(
-        || format!("{} edited", out.item.item_id),
+    let change = changes.first();
+    let what = change.map_or_else(
+        || "plan updated".to_owned(),
         |c| {
             c.note
                 .as_str()
@@ -442,7 +443,7 @@ pub fn acknowledged_by_plan(
         },
     );
     // The change this call wrote, not the project's newest: same project, time and deltas.
-    if let Some(change) = &out.change {
+    if let Some(change) = change {
         let pk = crate::hub::plan::store::pkey(r);
         let change_at = crate::hub::store::parse_ms(change.at.as_str());
         let tagged = hub.db.with(|c| {

@@ -21,7 +21,6 @@ use crate::hub::store::{NewEvent, iso_ms, now_ms};
 
 /// Events after which an order's plan items are checked against the done rule again.
 const VERIFY_ON: &[HubEventType] = &[
-    HubEventType::WorkstreamRunning,
     HubEventType::PrMerged,
     HubEventType::ChangeState,
     HubEventType::TaskStarted,
@@ -145,10 +144,6 @@ impl Status {
                     .flatten()
             });
         let Some(ws) = ws else { return };
-        if event.r#type == HubEventType::WorkstreamRunning {
-            hub.plans.placeholder_enter(&ws, false);
-            return;
-        }
         hub.plans.verify(&ws);
         let state = match event.r#type {
             HubEventType::WorkstreamDone => Some(WorkstreamState::Done),
@@ -162,12 +157,11 @@ impl Status {
         };
         if let Some(state) = state {
             hub.plans.close_order(&ws, state);
-            hub.plans.placeholder_order_ended(&ws, state);
         }
     }
 
-    /// The follower: freshness flips and deadlines, the done rule after the events that can change it, and the
-    /// placeholders' roll-off. Runs until shutdown.
+    /// The follower: freshness flips and deadlines, and the done rule after the events that can change it. Runs until
+    /// shutdown.
     pub async fn run(self: Arc<Self>, hub: Arc<Hub>) {
         let mut head = hub.events.subscribe();
         let mut cursor = *head.borrow_and_update();
@@ -184,7 +178,6 @@ impl Status {
         for ws in orders {
             hub.plans.verify(&ws);
         }
-        hub.plans.placeholder_backfill();
         loop {
             let now = now_ms(hub.clock.as_ref());
             for flip in self.fresh.check(now) {
@@ -206,11 +199,7 @@ impl Status {
                     break;
                 }
             }
-            let deadline = [self.fresh.next_deadline(), hub.plans.placeholder_roll_off()]
-                .into_iter()
-                .flatten()
-                .min();
-            let sleep_ms = deadline.map_or(3_600_000, |d| {
+            let sleep_ms = self.fresh.next_deadline().map_or(3_600_000, |d| {
                 (d - now_ms(hub.clock.as_ref())).clamp(0, 3_600_000)
             });
             tokio::select! {

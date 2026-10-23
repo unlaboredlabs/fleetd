@@ -9,7 +9,7 @@ const FLEETD = "mcp__fleetd__";
 
 /** The lead's fleetd calls, by name or prefix, in plain words. */
 const FLEETD_WORDS: readonly (readonly [string, string])[] = [
-  ["plan_", "planning"],
+  ["plan", "planning"],
   ["brief_create", "writing the brief"],
   ["workstream_open", "opening an order"],
   ["decisions_record", "noting a decision"],

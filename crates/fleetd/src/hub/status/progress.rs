@@ -101,13 +101,6 @@ pub fn verified(linked: bool, changes: &[LinkedChange]) -> Option<String> {
     )
 }
 
-/// Edits within this long of a milestone's first item shape the plan and carry no marker.
-pub const PLANNING_WINDOW_MS: i64 = 10 * 60_000;
-
-pub fn in_planning_window(first_item_ms: Option<i64>, now_ms: i64) -> bool {
-    first_item_ms.is_none_or(|f| now_ms - f <= PLANNING_WINDOW_MS)
-}
-
 /// "+3 items", "−1 item", "+5 points".
 pub fn delta_text(delta_items: i64, delta_size: i64) -> String {
     let sign = |n: i64| if n < 0 { "−" } else { "+" };
@@ -200,10 +193,7 @@ mod tests {
     }
 
     #[test]
-    fn markers_and_the_window() {
-        assert!(in_planning_window(None, 0));
-        assert!(in_planning_window(Some(0), PLANNING_WINDOW_MS));
-        assert!(!in_planning_window(Some(0), PLANNING_WINDOW_MS + 1));
+    fn marker_deltas() {
         assert_eq!(delta_text(3, 9), "+3 items");
         assert_eq!(delta_text(-1, -3), "−1 item");
         assert_eq!(delta_text(0, 5), "+5 points");

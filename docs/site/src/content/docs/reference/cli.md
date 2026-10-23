@@ -471,40 +471,13 @@ fleetd change enqueue --pr <url> [--task <T>] [--workstream <W>] [--item P<n>]
 
 put a PR on its repo's merge train (a write task's PR goes on by itself). Only the train merges. `--item` links the PR to that plan item
 
-### fleetd plan milestone {#plan-milestone}
+### fleetd plan {#plan}
 
 ```text
-fleetd plan milestone "<title>" [--position <n>]
+fleetd plan [--workstream <W> --items '<json>'] [--why "<note>"] [--steer S<n>]
 ```
 
-### fleetd plan add {#plan-add}
-
-```text
-fleetd plan add "<title>" --milestone M<n> [--workstream <W>] [--must|--polish] [--size s|m|l]
-    [--after P1,P2] [--pr <url>] [--why "<note>"] [--steer S<n>]
-```
-
-### fleetd plan edit {#plan-edit}
-
-```text
-fleetd plan edit P<n> [--title <t>] [--size s|m|l] [--must|--polish] [--milestone M<n>]
-    [--workstream <W>] [--after P1,P2] [--pr +<url>|--pr=-<url>] [--position <n>]
-    [--why "<note>"] [--steer S<n>]
-```
-
-### fleetd plan drop {#plan-drop}
-
-```text
-fleetd plan drop P<n> (--why "<reason>" | --steer S<n>)
-```
-
-### fleetd plan show {#plan-show}
-
-```text
-fleetd plan show [--workstream <W>]
-```
-
-keep the project's plan: milestones of must or polish items sized s, m or l (relative size, never hours). Link work with `--item`; only fleetd marks an item done, once its PRs merged through the train. Changing scope after a milestone's first 10 minutes needs `--why`, and the status view shows it as a marker. `--steer` S\<n\> says the human's steer asked for it: it stands in for `--why` and acknowledges the steer
+set a workstream's plan items, in order: \[\{id?, title, weight?, size?, after?, milestone?\}\], must or polish, sized s, m or l (relative size, never hours); its open items left out are dropped. Without `--items`: the plan. Link work with `--item`; only fleetd marks an item done, once its PR merged through the train. `--steer` S\<n\> says the human's steer asked for it and acknowledges the steer
 
 ### fleetd workstream open {#workstream-open}
 

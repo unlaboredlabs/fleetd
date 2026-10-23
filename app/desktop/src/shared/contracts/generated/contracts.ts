@@ -1469,7 +1469,7 @@ export type MilestoneState = "open" | "done";
 export type MilestoneView = {
   createdAt: Timestamp;
   doneAt?: Timestamp;
-  /** The first item's time; scope changes within 10 minutes of it carry no marker. */
+  /** The first item's time. */
   firstItemAt?: Timestamp;
   milestoneId: MilestoneId;
   position: number;

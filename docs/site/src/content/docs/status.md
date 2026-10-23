@@ -82,15 +82,13 @@ Items are **must** or **polish**. Polish counts only when a project has no must 
 | `m` | 3 |
 | `l` | 8 |
 
-Work with no plan counts as one item until it gets one.
-
 ## Plans and markers {#plans}
 
-A project's plan is milestones of [plan items](/docs/glossary#plan-item). The lead keeps it with `fleetd plan` and
-links work to items with `--item P12`.
+A project's plan is milestones of [plan items](/docs/glossary#plan-item). The lead sets each workstream's items with
+one `plan` call and links work to items with `--item P12`. An item is done when its linked PR merged.
 
-Scope can change, but never silently. After a milestone's first 10 minutes, adding, dropping or resizing an item needs
-a reason (`--why`), and when the bar falls for it, the drop says so:
+Scope can change, but never silently. Once a milestone has items, a change that moves its total writes a marker, and
+when the bar falls for it, the drop says so:
 
 ```text
   ↓ 80% → 72% 14:00:00: +3 items: time inspector added

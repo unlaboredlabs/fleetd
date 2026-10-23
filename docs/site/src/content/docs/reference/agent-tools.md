@@ -53,11 +53,7 @@ Every lead gets these.
 | [`decide`](#decide) | Log a decision: one you made yourself, or the human's answer to a question you asked in chat (so you never ask it twice). | No |
 | [`close`](#close) | The workstream is done: say why in one line. | No |
 | [`gated_run`](#gated_run) | A prod write, spend, delete or credential use: the chat shows the human exactly this argv with Approve / Deny, and the node runs it only once approved; secrets come from the node's own sinks. | A human approves the exact command in chat before the node runs it. |
-| [`plan_milestone`](#plan_milestone) | Add a milestone to the project's plan. | No |
-| [`plan_add`](#plan_add) | Add a plan item (must or polish, size s\|m\|l, after other items). | No |
-| [`plan_edit`](#plan_edit) | Change a plan item. | No |
-| [`plan_drop`](#plan_drop) | Drop a plan item, with why or steer. | No |
-| [`plan_show`](#plan_show) | The project's plan. | No |
+| [`plan`](#plan) | Set a workstream's plan items, in order (must or polish, size s\|m\|l, after other items, an optional milestone title), and get the plan back. | No |
 | [`decisions_search`](#decisions_search) | Search the decision log. | No |
 | [`change_enqueue`](#change_enqueue) | Put a PR no task's result put there on its repo's merge train; only the train merges. | No |
 | [`workstream_open`](#workstream_open) | Open a workstream for work you took from the chat: a draft you then brief. | No |
@@ -346,124 +342,47 @@ A prod write, spend, delete or credential use: the chat shows the human exactly 
 }
 ```
 
-### plan_milestone
+### plan
 
-Add a milestone to the project's plan.
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `position` | integer | no |  |
-| `title` | string | yes | One line. At most 120 characters. |
-
-**Who may call:** a lead, checked by the hub. **Needs a human:** no.
-
-```json
-{
-  "name": "plan_milestone",
-  "arguments": {
-    "title": "Public beta"
-  }
-}
-```
-
-### plan_add
-
-Add a plan item (must or polish, size s|m|l, after other items). After a milestone's first 10 minutes a change needs why, or steer when the human's steer asked for it.
+Set a workstream's plan items, in order (must or polish, size s|m|l, after other items, an optional milestone title), and get the plan back. Its open items you leave out are dropped. Without items: the plan.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `after` | string[] | no | At most 20 items. |
-| `milestoneId` | string | yes | `M<n>`, e.g. `M1`. |
-| `pr` | string | no | Like `https://github.com/<owner>/<name>/pull/<n>`. |
-| `size` | string | no | Absent: `m`, with a warning to size it. One of `s`, `m`, `l`. |
-| `steer` | string | no | The change carries out a steer; it stands in for `--why` and acknowledges the steer. |
-| `title` | string | yes | One line. At most 120 characters. |
-| `weight` | string | no | One of `must` (Counts toward the headline number), `polish` (Shown beside the number, never in it). Default `"must"`. |
-| `why` | string | no | One line. At most 200 characters. |
+| `items` | object[] | no | At most 100 items. |
+| `items[].after` | string[] | no | Items that must be done first. At most 20 items. |
+| `items[].id` | string | no | `P<n>`, e.g. `P1`. |
+| `items[].milestone` | string | no | The milestone's title, created when new. Absent: the workstream's title. At most 120 characters. |
+| `items[].size` | string | no | One of `s`, `m`, `l`. Default `"m"`. |
+| `items[].title` | string | yes | One line. At most 120 characters. |
+| `items[].weight` | string | no | One of `must` (Counts toward the headline number), `polish` (Shown beside the number, never in it). Default `"must"`. |
+| `steer` | string | no | The change carries out steer S12, which counts as acknowledged. |
+| `why` | string | no | A note for the change's marker. At most 200 characters. |
 | `workstreamId` | string | no | `W<n>`, e.g. `W1`. |
 
 **Who may call:** a lead, checked by the hub. **Needs a human:** no.
 
 ```json
 {
-  "name": "plan_add",
+  "name": "plan",
   "arguments": {
-    "milestoneId": "M1",
-    "size": "s",
-    "title": "Rate-limit uploads",
-    "weight": "must"
+    "items": [
+      {
+        "id": "P4",
+        "size": "m",
+        "title": "Rate-limit uploads"
+      },
+      {
+        "after": [
+          "P4"
+        ],
+        "milestone": "Public beta",
+        "size": "s",
+        "title": "Docs for the limit"
+      }
+    ],
+    "why": "The limiter needs a shared store.",
+    "workstreamId": "W3"
   }
-}
-```
-
-### plan_edit
-
-Change a plan item.
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `after` | string[] | no | Replaces the list. At most 20 items. |
-| `itemId` | string | yes | `P<n>`, e.g. `P1`. |
-| `milestoneId` | string | no | `M<n>`, e.g. `M1`. |
-| `position` | integer | no |  |
-| `prAdd` | string[] | no | At most 20 items. |
-| `prRemove` | string[] | no | At most 20 items. |
-| `size` | string | no | One of `s`, `m`, `l`. |
-| `steer` | string | no | `--steer S12`, as on `plan add`. |
-| `title` | string | no | One line. At most 120 characters. |
-| `weight` | string | no | One of `must` (Counts toward the headline number), `polish` (Shown beside the number, never in it). |
-| `why` | string | no | One line. At most 200 characters. |
-| `workstreamId` | string | no | `W<n>`, e.g. `W1`. |
-
-**Who may call:** a lead, checked by the hub. **Needs a human:** no.
-
-```json
-{
-  "name": "plan_edit",
-  "arguments": {
-    "itemId": "P4",
-    "size": "m",
-    "why": "The limiter needs a shared store."
-  }
-}
-```
-
-### plan_drop
-
-Drop a plan item, with why or steer.
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `itemId` | string | yes | `P<n>`, e.g. `P1`. |
-| `steer` | string | no | `--steer S12`, as on `plan add`. |
-| `why` | string | no | One line. At most 200 characters. |
-
-**Who may call:** a lead, checked by the hub. **Needs a human:** no.
-
-```json
-{
-  "name": "plan_drop",
-  "arguments": {
-    "itemId": "P6",
-    "why": "The client already throttles."
-  }
-}
-```
-
-### plan_show
-
-The project's plan.
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `workstreamId` | string | no | `W<n>`, e.g. `W1`. |
-
-**Who may call:** a lead, checked by the hub. **Needs a human:** no.
-
-```json
-{
-  "name": "plan_show",
-  "arguments": {}
 }
 ```
 

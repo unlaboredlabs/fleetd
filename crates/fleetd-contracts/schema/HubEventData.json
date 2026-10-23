@@ -1015,7 +1015,7 @@
       "oneOf": [
         {
           "const": "scope",
-          "description": "A lead's add, edit or drop that moved an open milestone's total after its planning window.",
+          "description": "A lead's `plan` call that moved a milestone's total after it had items.",
           "type": "string"
         },
         {

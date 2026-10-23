@@ -670,8 +670,8 @@ async fn a_plan_change_naming_a_delivered_steer_acknowledges_it() {
     )
     .await
     .unwrap();
-    plan_call(&lab, json!({ "op": "plan_milestone", "title": "API" })).unwrap();
-    let add = json!({ "op": "plan_add", "title": "docs page", "milestoneId": "M1", "steer": "S1" });
+    let docs = json!({ "title": "docs page", "milestone": "API" });
+    let add = json!({ "op": "plan", "workstreamId": "W1", "items": [docs], "steer": "S1" });
     // Not delivered yet: refused.
     let refused = plan_call(&lab, add.clone()).unwrap_err();
     assert_eq!(refused.code, ErrorCode::Invalid);
@@ -687,15 +687,13 @@ async fn a_plan_change_naming_a_delivered_steer_acknowledges_it() {
     );
     plan_call(
         &lab,
-        json!({ "op": "plan_add", "title": "docs page", "milestoneId": "M1" }),
+        json!({ "op": "plan", "workstreamId": "W1", "items": [docs] }),
     )
     .unwrap();
-    // A drop needs --why or --steer; the steer stands in for --why and is acknowledged by the change.
-    let bare = plan_call(&lab, json!({ "op": "plan_drop", "itemId": "P1" })).unwrap_err();
-    assert_eq!(bare.code, ErrorCode::Invalid);
+    // The change the steer asked for acknowledges it.
     plan_call(
         &lab,
-        json!({ "op": "plan_drop", "itemId": "P1", "steer": "S1" }),
+        json!({ "op": "plan", "workstreamId": "W1", "items": [], "steer": "S1" }),
     )
     .unwrap();
     let (now, _) = store::get(&lab.hub.db, &steer.id).unwrap().unwrap();
@@ -709,7 +707,7 @@ async fn a_plan_change_naming_a_delivered_steer_acknowledges_it() {
     // A steer of another project is refused like an unknown one.
     let unknown = plan_call(
         &lab,
-        json!({ "op": "plan_drop", "itemId": "P1", "steer": "S9" }),
+        json!({ "op": "plan", "workstreamId": "W1", "items": [], "steer": "S9" }),
     )
     .unwrap_err();
     assert!(unknown.message.contains("not a delivered steer"));
@@ -790,30 +788,27 @@ async fn the_plan_change_a_steer_made_is_the_one_tagged_with_it() {
         &MachineId::unchecked("lab-a"),
         &receipt(&steer, SteerStage::Delivered),
     );
-    plan_call(&lab, json!({ "op": "plan_milestone", "title": "API" })).unwrap();
+    let api = json!({ "id": "P2", "title": "api page", "milestone": "API" });
     plan_call(
         &lab,
-        json!({ "op": "plan_add", "title": "docs page", "milestoneId": "M1" }),
+        json!({ "op": "plan", "workstreamId": "W1", "items": [
+            { "title": "docs page", "milestone": "API" },
+            { "title": "api page", "milestone": "API" },
+        ] }),
     )
     .unwrap();
-    plan_call(
+    // Once the milestone has items, a scope change writes a marker.
+    let fleetd_contracts::lead_calls::LeadCallResult::Plan(out) = plan_call(
         &lab,
-        json!({ "op": "plan_add", "title": "api page", "milestoneId": "M1" }),
-    )
-    .unwrap();
-    // Past the planning window, a scope change writes a marker.
-    lab.clock.advance(Duration::from_secs(3 * 24 * 3600));
-    let fleetd_contracts::lead_calls::LeadCallResult::PlanDrop(out) = plan_call(
-        &lab,
-        json!({ "op": "plan_drop", "itemId": "P1", "steer": "S1" }),
+        json!({ "op": "plan", "workstreamId": "W1", "items": [api], "steer": "S1" }),
     )
     .unwrap() else {
-        panic!("not a drop")
+        panic!("not a plan")
     };
-    let change = out.change.expect("a marker");
+    let change = out.plan.markers.first().cloned().expect("a marker");
     plan_call(
         &lab,
-        json!({ "op": "plan_drop", "itemId": "P2", "why": "not needed" }),
+        json!({ "op": "plan", "workstreamId": "W1", "items": [], "why": "not needed" }),
     )
     .unwrap();
     let tagged: Vec<(String, Option<String>)> = lab

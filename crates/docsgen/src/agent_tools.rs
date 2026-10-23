@@ -630,22 +630,14 @@ fn example(role: Role, tool: &str) -> Option<Value> {
             "reason": "Ship the upload rate limit to production.",
             "workstreamId": "W3",
         }),
-        (Role::Lead, "plan_milestone") => json!({ "title": "Public beta" }),
-        (Role::Lead, "plan_add") => json!({
-            "milestoneId": "M1",
-            "title": "Rate-limit uploads",
-            "size": "s",
-            "weight": "must",
-        }),
-        (Role::Lead, "plan_edit") => json!({
-            "itemId": "P4",
-            "size": "m",
+        (Role::Lead, "plan") => json!({
+            "workstreamId": "W3",
+            "items": [
+                { "id": "P4", "title": "Rate-limit uploads", "size": "m" },
+                { "title": "Docs for the limit", "size": "s", "after": ["P4"], "milestone": "Public beta" },
+            ],
             "why": "The limiter needs a shared store.",
         }),
-        (Role::Lead, "plan_drop") => {
-            json!({ "itemId": "P6", "why": "The client already throttles." })
-        }
-        (Role::Lead, "plan_show") => json!({}),
         (Role::Lead, "decisions_search") => json!({ "query": "pagination" }),
         (Role::Lead, "change_enqueue") => json!({
             "prUrl": "https://github.com/acme/shop/pull/42",

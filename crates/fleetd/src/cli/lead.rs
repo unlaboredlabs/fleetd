@@ -51,20 +51,12 @@ pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>
   change enqueue --pr <url> [--task <T>] [--workstream <W>] [--item P<n>]
              put a PR on its repo's merge train (a write task's PR goes on by itself). Only the
              train merges. --item links the PR to that plan item
-  plan milestone "<title>" [--position <n>]
-  plan add "<title>" --milestone M<n> [--workstream <W>] [--must|--polish] [--size s|m|l]
-      [--after P1,P2] [--pr <url>] [--why "<note>"] [--steer S<n>]
-  plan edit P<n> [--title <t>] [--size s|m|l] [--must|--polish] [--milestone M<n>]
-      [--workstream <W>] [--after P1,P2] [--pr +<url>|--pr=-<url>] [--position <n>]
-      [--why "<note>"] [--steer S<n>]
-  plan drop P<n> (--why "<reason>" | --steer S<n>)
-  plan show [--workstream <W>]
-             keep the project's plan: milestones of must or polish items sized s, m or l
-             (relative size, never hours). Link work with --item; only fleetd marks an item
-             done, once its PRs merged through the train.
-             Changing scope after a milestone's first 10 minutes needs --why, and the status
-             view shows it as a marker. --steer S<n> says the human's steer asked for it: it
-             stands in for --why and acknowledges the steer
+  plan [--workstream <W> --items '<json>'] [--why "<note>"] [--steer S<n>]
+             set a workstream's plan items, in order: [{id?, title, weight?, size?, after?,
+             milestone?}], must or polish, sized s, m or l (relative size, never hours); its
+             open items left out are dropped. Without --items: the plan. Link work with --item;
+             only fleetd marks an item done, once its PR merged through the train. --steer S<n>
+             says the human's steer asked for it and acknowledges the steer
   workstream open --text "<intent>" [--template bugfix|feature|research]
              open a workstream for work taken from the chat: a draft to brief
              lead-side commands reach the hub through the local node (FLEETD_NODE_SOCK, default
@@ -128,12 +120,7 @@ const OPTIONS: &[(&str, Kind)] = &[
     ("candidate", Kind::Str),
     ("template", Kind::Str),
     ("item", Kind::Str),
-    ("milestone", Kind::Str),
-    ("must", Kind::Bool),
-    ("polish", Kind::Bool),
-    ("size", Kind::Str),
-    ("after", Kind::Str),
-    ("position", Kind::Str),
+    ("items", Kind::Str),
     ("steer", Kind::Str),
 ];
 
@@ -146,15 +133,6 @@ fn is_steer_id(id: &str) -> bool {
 
 fn parse_json(flag: &str, text: &str) -> Result<Value, String> {
     serde_json::from_str(text).map_err(|error| format!("{flag} is not valid JSON ({error})"))
-}
-
-fn split_list(value: &str) -> Vec<Value> {
-    value
-        .split(',')
-        .map(str::trim)
-        .filter(|item| !item.is_empty())
-        .map(|item| Value::String(item.to_owned()))
-        .collect()
 }
 
 /// Builds an object from the fields that are present, in order, as `definedOnly` did.
@@ -549,152 +527,35 @@ pub fn parse_lead_args(
             return Err(r#"expected fleetd workstream open --text "<intent>""#.into());
         }
         Some("plan") => {
-            let weight = || -> Result<Option<Value>, String> {
-                match (v.flag("must"), v.flag("polish")) {
-                    (true, true) => Err("give one of --must and --polish".into()),
-                    (true, false) => Ok(s(Some("must"))),
-                    (false, true) => Ok(s(Some("polish"))),
-                    (false, false) => Ok(None),
-                }
+            if sub.is_some() || !rest.is_empty() {
+                return Err(r#"expected fleetd plan [--workstream <W> --items '<json>'] [--why "<note>"] [--steer S<n>]"#.into());
+            }
+            only(&["workstream", "items", "why", "steer"])?;
+            if v.str("items").is_some() {
+                required(&["workstream"])?;
+            }
+            let items = match v.str("items") {
+                None => None,
+                Some(json) => Some(
+                    serde_json::from_str::<Value>(json)
+                        .ok()
+                        .filter(Value::is_array)
+                        .ok_or("--items is a JSON array of {id?, title, weight?, size?, after?, milestone?}")?,
+                ),
             };
-            let size = || -> Result<Option<Value>, String> {
-                match v.str("size").map(str::to_lowercase).as_deref() {
-                    None => Ok(None),
-                    Some(size @ ("s" | "m" | "l")) => Ok(s(Some(size))),
-                    Some(_) => Err(format!(
-                        "--size is s, m or l, got '{}'",
-                        v.str("size").unwrap_or("")
-                    )),
-                }
-            };
-            let whole = |flag: &str| -> Result<Option<Value>, String> {
-                match v.str(flag) {
-                    None => Ok(None),
-                    Some(n) if all_digits(n) => Ok(Some(number(n))),
-                    Some(n) => Err(format!("--{flag} is a whole number, got '{n}'")),
-                }
-            };
-            let after = v.str("after").map(|a| Value::Array(split_list(a)));
-            let title = rest.join(" ");
-            // `--steer S12`: the change answers that steer, which also acknowledges it, and stands in for --why.
+            // `--steer S12`: the change answers that steer, which also acknowledges it.
             let steer = match v.str("steer") {
                 None => None,
                 Some(id) if is_steer_id(id) => s(Some(id)),
                 Some(id) => return Err(format!("--steer is a steer id like S12, got '{id}'")),
             };
-            match sub {
-                Some("milestone") => {
-                    only(&["position"])?;
-                    if title.is_empty() {
-                        return Err(r#"expected fleetd plan milestone "<title>""#.into());
-                    }
-                    defined(vec![
-                        ("op", s(Some("plan_milestone"))),
-                        ("title", Some(Value::String(title))),
-                        ("position", whole("position")?),
-                    ])
-                }
-                Some("add") => {
-                    only(&[
-                        "milestone",
-                        "workstream",
-                        "must",
-                        "polish",
-                        "size",
-                        "after",
-                        "pr",
-                        "why",
-                        "steer",
-                    ])?;
-                    if title.is_empty() {
-                        return Err(r#"expected fleetd plan add "<title>" --milestone M<n>"#.into());
-                    }
-                    required(&["milestone"])?;
-                    defined(vec![
-                        ("op", s(Some("plan_add"))),
-                        ("title", Some(Value::String(title))),
-                        ("milestoneId", s(v.str("milestone"))),
-                        ("workstreamId", s(v.str("workstream"))),
-                        ("weight", weight()?),
-                        ("size", size()?),
-                        ("after", after),
-                        ("pr", s(v.str("pr"))),
-                        ("why", s(v.str("why"))),
-                        ("steer", steer),
-                    ])
-                }
-                Some("edit") => {
-                    only(&[
-                        "title",
-                        "size",
-                        "must",
-                        "polish",
-                        "milestone",
-                        "workstream",
-                        "after",
-                        "pr",
-                        "position",
-                        "why",
-                        "steer",
-                    ])?;
-                    let [item] = rest.as_slice() else {
-                        return Err("expected fleetd plan edit P<n> [--title <t>] …".into());
-                    };
-                    // `+x` adds, `-x` removes, a bare value adds.
-                    let signed = |flag: &str| match v.str(flag) {
-                        None => (None, false),
-                        Some(given) => match given.strip_prefix('-') {
-                            Some(value) => (Some(value), true),
-                            None => (Some(given.strip_prefix('+').unwrap_or(given)), false),
-                        },
-                    };
-                    let (pr, pr_remove) = signed("pr");
-                    let one = |value: Option<Value>| value.map(|v| Value::Array(vec![v]));
-                    let pr = pr.map(|url| Value::String(url.to_owned()));
-                    defined(vec![
-                        ("op", s(Some("plan_edit"))),
-                        ("itemId", s(Some(item))),
-                        ("title", s(v.str("title"))),
-                        ("size", size()?),
-                        ("weight", weight()?),
-                        ("milestoneId", s(v.str("milestone"))),
-                        ("workstreamId", s(v.str("workstream"))),
-                        ("after", after),
-                        (if pr_remove { "prRemove" } else { "prAdd" }, one(pr)),
-                        ("position", whole("position")?),
-                        ("why", s(v.str("why"))),
-                        ("steer", steer),
-                    ])
-                }
-                Some("drop") => {
-                    only(&["why", "steer"])?;
-                    let [item] = rest.as_slice() else {
-                        return Err(r#"expected fleetd plan drop P<n> --why "<reason>""#.into());
-                    };
-                    if steer.is_none() {
-                        required(&["why"])?;
-                    }
-                    defined(vec![
-                        ("op", s(Some("plan_drop"))),
-                        ("itemId", s(Some(item))),
-                        ("why", s(v.str("why"))),
-                        ("steer", steer),
-                    ])
-                }
-                Some("show") => {
-                    only(&["workstream"])?;
-                    if let Some(first) = rest.first() {
-                        return Err(format!(
-                            "unexpected '{first}': fleetd plan show [--workstream <W>]"
-                        ));
-                    }
-                    defined(vec![
-                        ("op", s(Some("plan_show"))),
-                        ("workstreamId", s(v.str("workstream"))),
-                    ])
-                }
-                _ => return Err("expected fleetd plan milestone|add|edit|drop|show".into()),
-            }
+            defined(vec![
+                ("op", s(Some("plan"))),
+                ("workstreamId", s(v.str("workstream"))),
+                ("items", items),
+                ("why", s(v.str("why"))),
+                ("steer", steer),
+            ])
         }
         other => return Err(format!("unknown command '{}'", other.unwrap_or(""))),
     };
@@ -1160,61 +1021,9 @@ pub fn format_result(result: &Value) -> String {
             next = "don't merge it yourself; the train merges and the outcome arrives in a wake."
                 .into();
         }
-        "plan_milestone" => {
-            let m = &result["milestone"];
-            lines.push(format!(
-                "Added {} {}.",
-                st(m, "milestoneId"),
-                st(m, "title")
-            ));
-            next = format!(
-                "add its items: fleetd plan add \"<title>\" --milestone {} --size s|m|l",
-                st(m, "milestoneId")
-            );
-        }
-        "plan_add" | "plan_edit" | "plan_drop" => {
-            let item = &result["item"];
-            let verb = match st(result, "op") {
-                "plan_add" => "Added",
-                "plan_edit" => "Edited",
-                _ => "Dropped",
-            };
-            lines.push(format!(
-                "{verb} {} in {}: {} ({}, {}){}.",
-                st(item, "itemId"),
-                st(item, "milestoneId"),
-                st(item, "title"),
-                st(item, "weight"),
-                st(item, "size"),
-                opt(item, "workstreamId")
-                    .map(|w| format!(", order {}", js(Some(w))))
-                    .unwrap_or_default()
-            ));
-            if let Some(change) = opt(result, "change") {
-                let pct = match (opt(change, "pctBefore"), opt(change, "pctAfter")) {
-                    (Some(before), Some(after)) => {
-                        format!(" ({}% → {}%)", js(Some(before)), js(Some(after)))
-                    }
-                    _ => String::new(),
-                };
-                lines.push(format!(
-                    "Scope change recorded: {}{pct}; the status view shows it as a marker.",
-                    st(change, "note")
-                ));
-            }
-            next = if st(result, "op") == "plan_drop" {
-                "carry on.".into()
-            } else {
-                format!(
-                    "link work to it with --item {} on fleetd task spawn; fleetd marks it done once its PRs merged through the train.",
-                    st(item, "itemId")
-                )
-            };
-        }
-        "plan_show" => {
+        "plan" => {
             lines.push(st(result, "text").trim_end().to_owned());
-            next = "link work with --item; only fleetd marks items done. Scope changes need --why."
-                .into();
+            next = "link work with --item; only fleetd marks items done.".into();
         }
         "gated_run" => {
             lines.push(format!(
@@ -1364,37 +1173,45 @@ mod tests {
     }
 
     #[test]
-    fn plan_steer_takes_a_steer_id_and_stands_in_for_why() {
-        assert!(
-            parse(&["plan", "drop", "P3"])
-                .unwrap_err()
-                .contains("--why is required")
-        );
-        assert!(
-            parse(&["plan", "drop", "P3", "--steer", "12"])
-                .unwrap_err()
-                .contains("like S12")
-        );
-        assert!(
-            parse(&["plan", "drop", "P3", "--steer", "S0"])
-                .unwrap_err()
-                .contains("like S12")
-        );
-        // The steer's own words become the note, on the hub.
-        let dropped = parse(&["plan", "drop", "P3", "--steer", "S12"]).unwrap();
-        assert_eq!(dropped.get("why"), None);
-        assert_eq!(dropped["steer"], json!("S12"));
-        let added = parse(&[
+    fn plan_takes_a_json_item_list_and_a_steer_id() {
+        let set = parse(&[
             "plan",
-            "add",
-            "API first",
-            "--milestone",
-            "M1",
+            "--workstream",
+            "W1",
+            "--items",
+            r#"[{"id":"P1","title":"api"},{"title":"docs","size":"s","after":["P1"]}]"#,
             "--steer",
             "S12",
         ])
         .unwrap();
-        assert_eq!(added["steer"], json!("S12"));
+        assert_eq!(set["items"][1]["after"], json!(["P1"]));
+        assert_eq!(set["steer"], json!("S12"));
+        assert_eq!(parse(&["plan"]).unwrap(), json!({ "op": "plan" }));
+        assert_eq!(
+            parse(&["plan", "--items", "[]"]).unwrap_err(),
+            "--workstream is required"
+        );
+        assert!(
+            parse(&["plan", "--workstream", "W1", "--items", "{}"])
+                .unwrap_err()
+                .starts_with("--items is a JSON array")
+        );
+        assert!(
+            parse(&["plan", "--steer", "12"])
+                .unwrap_err()
+                .contains("like S12")
+        );
+        assert!(
+            parse(&[
+                "plan",
+                "--workstream",
+                "W1",
+                "--items",
+                r#"[{"title":"x","size":"xl"}]"#
+            ])
+            .unwrap_err()
+            .starts_with("invalid input")
+        );
     }
 
     fn decision() -> Value {
@@ -1572,44 +1389,7 @@ mod tests {
     }
 
     #[test]
-    fn plan_calls_fill_defaults_and_split_signed_links() {
-        let add = parse(&[
-            "plan",
-            "add",
-            "full",
-            "lab",
-            "run",
-            "--milestone",
-            "M1",
-            "--polish",
-            "--size",
-            "L",
-            "--after",
-            "P1, P2",
-        ])
-        .unwrap();
-        assert_eq!(add["title"], "full lab run");
-        assert_eq!(
-            (&add["weight"], &add["size"]),
-            (&json!("polish"), &json!("l"))
-        );
-        assert_eq!(add["after"], json!(["P1", "P2"]));
-        assert_eq!(
-            parse(&["plan", "add", "x", "--milestone", "M1"]).unwrap()["size"],
-            Value::Null,
-            "no size goes as none: the hub counts it as m and warns"
-        );
-        let edit = parse(&[
-            "plan",
-            "edit",
-            "P3",
-            "--pr=-https://github.com/acme/storefront/pull/9",
-        ])
-        .unwrap();
-        assert_eq!(
-            edit["prRemove"],
-            json!(["https://github.com/acme/storefront/pull/9"])
-        );
+    fn task_spawn_links_a_plan_item() {
         assert_eq!(
             parse(&[
                 "task",
@@ -1627,33 +1407,6 @@ mod tests {
             ])
             .unwrap()["item"],
             "P3"
-        );
-        for (args, error) in [
-            (&["plan", "add", "x"][..], "--milestone is required"),
-            (
-                &[
-                    "plan",
-                    "add",
-                    "x",
-                    "--milestone",
-                    "M1",
-                    "--must",
-                    "--polish",
-                ],
-                "give one of --must and --polish",
-            ),
-            (&["plan", "drop", "P3"], "--why is required"),
-            (
-                &["plan", "add", "x", "--milestone", "M1", "--size", "xl"],
-                "--size is s, m or l, got 'xl'",
-            ),
-        ] {
-            assert_eq!(parse(args).unwrap_err(), error, "{args:?}");
-        }
-        assert!(
-            parse(&["plan", "edit", "W3", "--size", "s"])
-                .unwrap_err()
-                .starts_with("invalid input")
         );
     }
 
