@@ -470,9 +470,14 @@ export type ChangesListOutput = {
   truncated?: boolean;
 };
 
-export type KnownChatAuthor = "human" | "lead" | "system";
+export type KnownChatAuthor = "human" | "lead" | "agent" | "system";
 /** KnownChatAuthor, or a value from a newer hub. */
 export type ChatAuthor = KnownChatAuthor | (string & {});
+
+/** Where a human message was written. */
+export type KnownChatClient = "app" | "cli";
+/** KnownChatClient, or a value from a newer hub. */
+export type ChatClient = KnownChatClient | (string & {});
 
 /** How a human message reached the lead. */
 export type KnownChatDelivery = "turn" | "steer" | "queued";
@@ -529,8 +534,10 @@ export type ChatItem = SecretRequestItem & {
 export type ChatMessage = {
   attachments?: AttachmentRef[];
   author: ChatAuthor;
-  /** A human message: the key name of the person who wrote it. */
+  /** The name of the key that wrote it: a person's device for a human message, the agent for an agent's. */
   by?: string;
+  /** A human message: where it was written. */
+  client?: ChatClient;
   /** A human message: the `clientRequestId` its `chat_send` carried, for the app's optimistic copy. */
   clientRequestId?: string;
   createdAt: Timestamp;
@@ -574,8 +581,16 @@ export type ChatRequestId = string;
 export type ChatSendInput = {
   /** From attachment_put. */
   attachments?: AttachmentId[];
+  /** A human key: where it is written. Absent means the app. */
+  client?: ChatClient;
   clientRequestId: string;
   projectRef: ProjectRef;
+  /**
+   * Sent from inside a fleetd session: its thread id (FLEETD_THREAD_ID), as the caller reports it. The project's own
+   * lead and tasks are refused (they use their fleetd tools), and so is a human key. It catches mistakes; the key,
+   * not this field, carries authority.
+   */
+  session?: ThreadId;
   text: string;
 };
 

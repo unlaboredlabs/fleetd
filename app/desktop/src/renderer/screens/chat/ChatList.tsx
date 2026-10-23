@@ -14,7 +14,7 @@ import { fmtBytes } from "./attachments";
 import type { ChatItem } from "../../src/data/chat";
 
 import { shortClock } from "./format";
-import { systemHeadline, type Row, type TopState } from "./model";
+import { authorLabel, systemHeadline, type Row, type TopState } from "./model";
 import { MessageReceipt } from "./Composer";
 import { LiveStrip, useNow, useOnScreen } from "../live";
 import { Boundary } from "../../src/Boundary";
@@ -189,8 +189,6 @@ function LeadActivity({ project }: { project: ProjectRef }) {
   );
 }
 
-const AUTHOR = { human: "You", lead: "Lead", system: "fleetd" } as const;
-
 const RowView = memo(function RowView(props: {
   row: Row;
   project: ProjectRef;
@@ -251,11 +249,15 @@ const RowView = memo(function RowView(props: {
     case "message": {
       const i = r.item;
       return (
-        <div className={cx(s.message, r.head && s.messageHead, r.history && s.historyMessage)} data-entry="message" data-author={i.author}>
+        <div
+          className={cx(s.message, r.head && s.messageHead, (r.history || i.author === "agent") && s.quietMessage)}
+          data-entry="message"
+          data-author={i.author}
+        >
           {r.head ? (
             <div className={s.head}>
               <Text size="xs" strong tone={i.author === "human" ? "accent" : "default"}>
-                {AUTHOR[i.author]}
+                {authorLabel(i)}
               </Text>
               <Text size="xs" tone="quiet" tabular>
                 {shortClock(i.at)}

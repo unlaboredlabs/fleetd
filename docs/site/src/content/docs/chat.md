@@ -32,6 +32,32 @@ Words you haven't sent stay in each project's box, even after you quit the app.
 
 The lead keeps its own plan and bookkeeping. You never file tasks or orders yourself.
 
+## From a terminal {#terminal}
+
+`fleetd chat` sends the same message as the box, and `fleetd chat history` reads the chat:
+
+```sh
+fleetd chat devbox/storefront "fix the checkout button" --follow --key-file ~/.fleetd/human.key
+fleetd chat history storefront --key-file ~/.fleetd/human.key
+```
+
+`--wait` prints the lead's reply when its turn ends; `--follow` streams it as it is written. The key says who writes:
+with your [human key](/docs/glossary#human-key) it writes as you. Make one once with
+`fleetd hub key create --human --name terminal --out ~/.fleetd/human.key`. Each message says where you wrote it:
+"You · app" or "You · cli".
+
+An agent or script can write too, with a key of its own:
+
+```sh
+fleetd hub key create --agent nightly-ci
+fleetd chat devbox/storefront "the nightly build is red" --key-file ~/.fleetd/hub/keys/nightly-ci.key
+```
+
+The first command writes the key to a new file only you can read and prints the file's path, never the key. The
+agent's messages show as "Agent · nightly-ci", and the lead takes them as input, never as yours: an agent can't
+approve a command, enter a secret, steer or stop, and the chat keeps waiting on you. Each agent key sends at most 10
+messages a minute. A project's own lead and agents talk to each other through their fleetd tools, not its chat.
+
 ## Reply to the lead {#reply}
 
 The lead asks only what it really needs: product calls, money, and irreversible steps. It asks in the chat, as
