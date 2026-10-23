@@ -8,7 +8,8 @@ Every fleetd term, A to Z. Each one links to the page that uses it most.
 ## Agent key {#agent-key}
 
 A key that lets an MCP client or script call the hub, with a role (`read`, `operate` or `admin`). It starts with
-`fld_` and is shown once. See [MCP clients](/docs/mcp-clients).
+`fld_` and is shown once, or written to a file only you can read. What it writes in a chat shows as that agent's,
+never yours. See [MCP clients](/docs/mcp-clients).
 
 ## Agents strip {#agents-strip}
 
@@ -65,8 +66,8 @@ The coordinator of a fleet. It runs on one always-on machine and stores all stat
 
 ## Human key {#human-key}
 
-A key that belongs to a person's device, such as the desktop app. Only a human key can write to a lead, approve
-commands, enter secrets or steer: what it sends counts as yours.
+A key that belongs to a person's device, such as the desktop app. Only a human key writes to a lead as you, approves
+commands, enters secrets or steers: what it sends counts as yours.
 
 ## Lead {#lead}
 
@@ -156,7 +157,7 @@ A session that checks that a large (`L`) change works, in addition to its two re
 
 ## Wake {#wake}
 
-A message that restarts a lead's work: your chat message, a task result, a free slot.
+A message that restarts a lead's work: your chat message, a task result, a merged PR.
 
 ## Worker {#worker}
 

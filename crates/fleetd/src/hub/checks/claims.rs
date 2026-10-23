@@ -7,7 +7,6 @@ use super::records::{ClaimFilter, ClaimRecords};
 use super::render::failed_claim_evidence;
 use super::runner::{CheckContext, CheckRunner, ran_by_of};
 use crate::clock::Clock;
-use crate::hub::estimates::Estimates;
 use crate::hub::incidents::{IncidentInput, Incidents};
 use crate::hub::orders::open_work::{CLOSED_ON_PURPOSE, Item, OpenWork, ids, listed};
 use crate::hub::store::{EventLog, NewEvent, StoreError};
@@ -70,7 +69,6 @@ pub struct Claims {
     runner: Arc<CheckRunner>,
     ports: Arc<dyn Ports>,
     events: Arc<EventLog>,
-    estimates: Arc<Estimates>,
     incidents: Arc<Incidents>,
     clock: Arc<dyn Clock>,
     inline_wait: Duration,
@@ -87,7 +85,6 @@ impl Claims {
         runner: Arc<CheckRunner>,
         ports: Arc<dyn Ports>,
         events: Arc<EventLog>,
-        estimates: Arc<Estimates>,
         incidents: Arc<Incidents>,
         clock: Arc<dyn Clock>,
         inline_wait: Duration,
@@ -97,7 +94,6 @@ impl Claims {
             runner,
             ports,
             events,
-            estimates,
             incidents,
             clock,
             inline_wait,
@@ -249,8 +245,7 @@ impl Claims {
                 summary = format!("{} is done, {reason}", w.workstream_id);
                 data["reason"] = serde_json::json!(reason);
             }
-            self.emit(&w, HubEventType::WorkstreamDone, summary, data)?;
-            return self.estimates.record_done(&w.workstream_id);
+            return self.emit(&w, HubEventType::WorkstreamDone, summary, data);
         }
         self.records.finish(claim)?;
         let failures: Vec<CheckResult> = claim

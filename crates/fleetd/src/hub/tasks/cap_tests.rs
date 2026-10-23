@@ -527,3 +527,24 @@ async fn the_medium_switch_is_on_by_default_and_a_spawn_reads_it() {
         .unwrap();
     assert!(hub.tasks.d.ports.medium_allowed(&r));
 }
+
+/// The watchdog's stall fails the task, and the lead's line says why: the thread row does not hold it yet.
+#[tokio::test]
+async fn a_stalled_run_fails_its_task_and_says_why() {
+    let (hub, _home) = hub();
+    let task = running(&hub, 1);
+    let stalled: fleetd_contracts::events::HubEvent = serde_json::from_value(json!({
+        "seq": 1_000_000, "at": AT, "type": "thread.failed", "machineId": "lab-a", "threadId": "t1",
+        "summary": "\"slice 1\" on lab-a stalled",
+        "data": { "reason": "stalled", "runId": "r1",
+            "error": { "class": "stalled", "message": "no progress for 10 min outside a tool, so fleetd interrupted it" } },
+    }))
+    .unwrap();
+    hub.tasks.on_thread_event(&stalled).await.unwrap();
+    let failed = hub.tasks.get(&task.task_id).unwrap().unwrap();
+    assert_eq!(failed.state, TaskState::Failed);
+    assert_eq!(
+        failed.result.unwrap().tail.as_str(),
+        "[stalled] no progress for 10 min outside a tool, so fleetd interrupted it"
+    );
+}

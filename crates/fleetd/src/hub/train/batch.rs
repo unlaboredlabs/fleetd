@@ -117,12 +117,6 @@ fn batch_body(base: &str, members: &[Candidate]) -> String {
 }
 
 impl Train {
-    /// How the train batches now, for the time inspector: the most PRs one CI run takes, and the repos batching is
-    /// off for and why.
-    pub fn batching(&self) -> (usize, HashMap<String, String>) {
-        (self.options.batch_max, lock(&self.lanes).off.clone())
-    }
-
     /// `<prefix>train/<name>`: a scratch branch in the namespace of the project that owns the repo's train; None
     /// while its policy can't be read, since guessing could write outside its namespace.
     pub(super) async fn scratch_branch(&self, change: &Change, name: &str) -> Option<String> {

@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    // The QA and perf harnesses and the fixture builder run in Node straight from .ts; their page callbacks (and QA's
+    // dom/checks.ts) run in the renderer. The stand-in app's main.js is checked too.
+    "lib": ["ES2024", "ESNext.Array", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "allowJs": true,
+    "checkJs": true,
+    "allowImportingTsExtensions": true,
+    "tsBuildInfoFile": "./node_modules/.cache/tsconfig.tools.tsbuildinfo"
+  },
+  "include": ["qa/**/*", "perf/**/*", "fixtures/**/*.ts", "src/shared/**/*", "src/main/hub/fixture.ts", "src/main/hub/source.ts",
+    "src/main/hub/explain.ts", "src/renderer/screens/time/fixture.ts", "src/renderer/screens/time/format.ts",
+    "src/renderer/screens/time/types.ts", "src/renderer/ui/primitives/roles.ts"]
+}

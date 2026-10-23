@@ -10,7 +10,7 @@ use fleetd_contracts::ledger::{
 };
 use fleetd_contracts::mcp::ErrorCode;
 
-use super::digest::{clip_utf16, state_text};
+use super::digest::{clip, state_text};
 use super::error::LeadError;
 use super::records::{LeadRecords, NewWorkstream, WorkstreamFilter, is_closed};
 use super::wakes::{LeadWakes, Trigger};
@@ -45,7 +45,7 @@ fn same_project(a: &ProjectRef, b: &ProjectRef) -> bool {
 
 fn title_of(text: &str) -> String {
     let line = text.trim().split('\n').next().unwrap_or("").trim();
-    clip_utf16(line, 200)
+    clip(line, 200)
 }
 
 pub struct Workstreams {

@@ -687,4 +687,37 @@ mod tests {
             "cd <wt> && cargo test"
         );
     }
+
+    /// A hub from before the slots' saturation spans went: its stored `slots.full` spans and their roll-ups go, so
+    /// none reads back as another kind.
+    #[test]
+    fn stored_slots_full_spans_go_on_an_older_hub() {
+        use crate::hub::store::migrations::MIGRATIONS;
+        let conn = Connection::open_in_memory().unwrap();
+        // Found by content, not as the last migration, so later migrations don't break this test.
+        let at = MIGRATIONS
+            .iter()
+            .position(|m| m.contains("DELETE FROM time_spans WHERE kind = 37"))
+            .unwrap();
+        for m in &MIGRATIONS[..at] {
+            conn.execute_batch(m).unwrap();
+        }
+        conn.execute_batch(
+            "INSERT INTO time_spans (src, src_key, kind, cat, start_ms, lane, status)
+               VALUES ('h', 'slots/1', 37, 3, 1, 'fleet', 0), ('h', 'bash', 10, 1, 1, 'x', 0);
+             INSERT INTO time_rollups VALUES (1, 'fleet', '', 3, 37, 5, 1), (1, 'fleet', '', 1, 10, 5, 1);",
+        )
+        .unwrap();
+        conn.execute_batch(MIGRATIONS[at]).unwrap();
+        let kinds = |table: &str| -> Vec<i64> {
+            conn.prepare(&format!("SELECT kind FROM {table}"))
+                .unwrap()
+                .query_map([], |r| r.get(0))
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap()
+        };
+        assert_eq!(kinds("time_spans"), [10]);
+        assert_eq!(kinds("time_rollups"), [10]);
+    }
 }

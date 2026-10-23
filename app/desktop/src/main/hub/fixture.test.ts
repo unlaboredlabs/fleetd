@@ -8,9 +8,7 @@ describe("fixtureRequest", () => {
     expect(fixtureRequest({ FLEETD_FIXTURE: "" }, true)).toEqual({ kind: "none" });
   });
 
-  it("ignores a stray FLEETD_FIXTURE in a release build unless FLEETD_DEV_FIXTURES=1 is set too", () => {
+  it("ignores FLEETD_FIXTURE in a release build", () => {
     expect(fixtureRequest({ FLEETD_FIXTURE: "board-busy" }, true).kind).toBe("ignored");
-    expect(fixtureRequest({ FLEETD_FIXTURE: "board-busy", FLEETD_DEV_FIXTURES: "yes" }, true).kind).toBe("ignored");
-    expect(fixtureRequest({ FLEETD_FIXTURE: "board-busy", FLEETD_DEV_FIXTURES: "1" }, true)).toEqual({ kind: "fixture", name: "board-busy" });
   });
 });

@@ -35,7 +35,7 @@ chat kept on screen, a message queued offline and sent once.
 `FLEETD_HUB_URL` + `FLEETD_AGENT_KEY` connect for one run without saving anything; `FLEETD_HOME` moves every file the
 app keeps (the saved key, the migration marker) and keeps it off the OS keychain; `FLEETD_FIXTURE=<name>` replaces the
 hub with `fixtures/<name>.json` (or an absolute path; `FLEETD_FIXTURE_DIR` moves the directory) and shows a
-"Sample data" banner; a release build ignores it unless `FLEETD_DEV_FIXTURES=1` is set too.
+"Sample data" banner; a release build ignores it.
 
 `pnpm build` makes the release build, which refuses to start with `--remote-debugging-*` or `--inspect*`.
 `pnpm build:test` (and `pnpm qa:build`) set `MAIN_VITE_FLEETD_TEST_BUILD=1`, which is inlined at build time, for

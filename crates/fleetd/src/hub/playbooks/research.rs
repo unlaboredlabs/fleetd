@@ -136,9 +136,6 @@ impl Research {
                 ),
                 serde_json::json!({ "workstreamId": workstream_id }),
             ))?;
-            if let Some(estimates) = self.ctx.hooks.estimates.get() {
-                estimates.record_done(workstream_id);
-            }
         }
         self.wakes.trigger(
             &w.project_ref,

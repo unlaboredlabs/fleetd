@@ -79,7 +79,7 @@ jobs:
         # Build output of app/desktop/fixtures, validated against the contracts' JSON Schemas.
         run: pnpm fixtures
       - if: steps.scope.outputs.run == 'true'
-        # The app with the design-system gallery bundled, which release builds leave out.
+        # The app with the QA error probe bundled, which release builds leave out.
         run: pnpm qa:build
       - if: steps.scope.outputs.run == 'true'
         name: Self-test of the DOM checks

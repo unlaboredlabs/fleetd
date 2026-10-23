@@ -1,4 +1,4 @@
-//! The status view: a verified progress figure, ETA, gates, headline, since-you-looked, risks and health for the
+//! The status view: a verified progress figure, gates, headline, since-you-looked, risks and health for the
 //! fleet, a project or an order. One task follows the event log and the freshness deadlines; it re-renders only the
 //! scopes someone viewed in the last 10 minutes, at most every 250 ms, and bumps a doc's version only when its
 //! content changes. `status_wait` blocks on that version. Nothing polls.

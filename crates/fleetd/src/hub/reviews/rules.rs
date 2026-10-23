@@ -41,21 +41,16 @@ pub struct PlannedReview {
     pub provider: ReviewProvider,
 }
 
-fn rule(reviewers: i64, verifier: bool, plan_first: bool) -> ReviewRule {
+fn rule(reviewers: i64, verifier: bool) -> ReviewRule {
     ReviewRule {
         reviewers: fleetd_contracts::prim::Int::unchecked(reviewers),
         verifier,
-        plan_first,
     }
 }
 
 /// Without a pinned playbook. S: none. M: one reviewer. L: two reviewers plus a verifier.
 pub fn coded_rules() -> [ReviewRule; 3] {
-    [
-        rule(0, false, false),
-        rule(1, false, false),
-        rule(2, true, true),
-    ]
+    [rule(0, false), rule(1, false), rule(2, true)]
 }
 
 fn tier_index(tier: Tier) -> usize {
@@ -452,11 +447,7 @@ mod tests {
     #[test]
     fn takes_the_pinned_playbooks_rule_and_gates_on_it() {
         let strict = PlaybookView {
-            review_rules: [
-                rule(1, false, false),
-                rule(2, true, false),
-                rule(3, true, true),
-            ],
+            review_rules: [rule(1, false), rule(2, true), rule(3, true)],
         };
         assert_eq!(rule_for(Tier::M, Some(&strict)), strict.review_rules[1]);
         assert_eq!(rule_for(Tier::M, None), *M);
@@ -508,7 +499,7 @@ mod tests {
         );
         // And one that waives M review lets it through with none.
         assert_eq!(
-            gate(Tier::M, &rule(0, false, false), None, &[], None),
+            gate(Tier::M, &rule(0, false), None, &[], None),
             ready("tier M needs no review".into())
         );
     }

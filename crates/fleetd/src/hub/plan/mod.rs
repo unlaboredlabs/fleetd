@@ -306,56 +306,6 @@ pub fn change_contract(ch: &ChangeRow) -> PlanChange {
     }
 }
 
-/// A plan item a free slot could start.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Runnable {
-    pub item_id: String,
-    pub title: String,
-    pub workstream_id: String,
-    pub size: fleetd_contracts::plan::Size,
-}
-
-/// The items a free slot could start, in plan order: open, in an order of `approved` (one running on a frozen brief:
-/// work the human asked for), no task or PR linked yet, and none of its `after` items still open. Anything else
-/// waits on something, or isn't fleetd's to offer.
-pub fn runnable_items(
-    milestones: &[MilestoneRow],
-    items: &[ItemRow],
-    approved: &HashSet<String>,
-) -> Vec<Runnable> {
-    let open: HashSet<i64> = items
-        .iter()
-        .filter(|i| i.state == PlanItemState::Open)
-        .map(|i| i.n)
-        .collect();
-    let rank = |m: i64| {
-        milestones
-            .iter()
-            .find(|row| row.n == m)
-            .map_or((i64::MAX, m), |row| (row.position, m))
-    };
-    let mut ready: Vec<&ItemRow> = items
-        .iter()
-        .filter(|i| i.state == PlanItemState::Open && !i.has_work_links())
-        .filter(|i| {
-            i.workstream_id
-                .as_ref()
-                .is_some_and(|w| approved.contains(w))
-        })
-        .filter(|i| !i.data.after.iter().any(|a| open.contains(a)))
-        .collect();
-    ready.sort_by_key(|i| (rank(i.milestone), i.position, i.n));
-    ready
-        .into_iter()
-        .map(|i| Runnable {
-            item_id: format!("P{}", i.n),
-            title: clip(&i.data.title, 80),
-            workstream_id: i.workstream_id.clone().unwrap_or_default(),
-            size: i.size,
-        })
-        .collect()
-}
-
 pub struct Plans {
     db: Arc<HubDb>,
     events: Arc<EventLog>,
@@ -931,22 +881,6 @@ impl Plans {
         Ok(())
     }
 
-    /// [`runnable_items`] of the project.
-    pub fn runnable(
-        &self,
-        r: &ProjectRef,
-        approved: &HashSet<String>,
-    ) -> Result<Vec<Runnable>, StoreError> {
-        let pk = pkey(r);
-        self.db.with(|c| {
-            Ok(runnable_items(
-                &store::milestones_of(c, &pk)?,
-                &store::items_of_project(c, &pk)?,
-                approved,
-            ))
-        })
-    }
-
     /// Links a task spawned with `--item` (refused when the item belongs to another order); an item with no order
     /// takes the task's. Called inside the task's spawn, before the row is written.
     pub fn check_spawn_item(
@@ -1270,7 +1204,6 @@ impl Plans {
                     views.push(MilestoneView {
                         milestone: milestone_contract(m, &mine),
                         progress: progress_of(&f, now, marker),
-                        eta: None,
                     });
                 }
                 let markers: Vec<PlanChange> = changes
@@ -1282,7 +1215,6 @@ impl Plans {
                     project_ref: r.clone(),
                     workstream_id: ws.cloned(),
                     progress: progress_of(&total, now, changes.first().map(marker_of)),
-                    eta: None,
                     milestones: List::try_from(views.into_iter().take(50).collect::<Vec<_>>())
                         .unwrap_or_default(),
                     items: List::try_from(

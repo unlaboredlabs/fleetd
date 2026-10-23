@@ -10,7 +10,7 @@ use crate::brand;
 use crate::ids::{ProjectRef, Timestamp};
 use crate::ledger::WorkstreamId;
 use crate::prim::{AnyInt, Count, Int, Line, List, UniqueList};
-use crate::status::{Progress, StatusEta};
+use crate::status::Progress;
 use crate::tasks::TaskId;
 use crate::train::GitHubPrUrl;
 
@@ -251,8 +251,6 @@ pub struct MilestoneView {
     #[serde(flatten)]
     pub milestone: Milestone,
     pub progress: Progress,
-    /// Retired with the ETA: always absent.
-    pub eta: Option<StatusEta>,
 }
 
 /// A plan as `plan show` and `plan_get` return it: derived state, figures and markers.
@@ -264,8 +262,6 @@ pub struct PlanView {
     /// Set when the view is one order's items.
     pub workstream_id: Option<WorkstreamId>,
     pub progress: Progress,
-    /// Retired with the ETA: always absent.
-    pub eta: Option<StatusEta>,
     pub milestones: List<MilestoneView, 0, 50>,
     pub items: List<PlanItem, 0, 500>,
     /// Newest first.

@@ -504,7 +504,7 @@ const breakdownOf = (d: Data): TimeBreakdownOutput => {
 
 type Finding = { rule: Insight["rule"]; message: string; numbers: InsightNumber[]; spanIds: number[] };
 
-const findingsOf = (d: Data, fleet: boolean): Finding[] => {
+const findingsOf = (d: Data): Finding[] => {
   const out: Finding[] = [];
   const suite = d.spans.filter(isSuite).sort((a, b) => a.startMs - b.startMs);
   const total = suite.reduce((n, s) => n + dur(s), 0);
@@ -524,39 +524,6 @@ const findingsOf = (d: Data, fleet: boolean): Finding[] => {
       spanIds: suite.map((s) => s.id),
     });
   }
-  const e2e = d.spans.filter((s) => s.extra?.check === "e2e (webkit)");
-  const orders = new Set(e2e.map((s) => s.workstreamId));
-  const excess = breakdownOf(d).ciChecks.find((c) => c.name === "e2e (webkit)")?.criticalExcessMs ?? 0;
-  if (fleet && orders.size >= 2 && excess >= 3 * MIN) {
-    out.push({
-      rule: "ci_check_critical",
-      message: `CI check \`e2e (webkit)\` adds ${fmtDur(excess)} on the critical path of ${orders.size} pieces of work (median ${fmtDur(median(e2e.map(dur)))} per run)`,
-      numbers: [{ name: "excessMs", value: excess }, { name: "orders", value: orders.size }],
-      spanIds: e2e.map((s) => s.id),
-    });
-  }
-  const waits = d.spans.filter((s) => s.kind === "wait.request");
-  const waitTotal = waits.reduce((n, s) => n + dur(s), 0);
-  const longest = waits.reduce<Span | undefined>((b, s) => (b === undefined || dur(s) > dur(b) ? s : b), undefined);
-  if (waitTotal >= 10 * MIN && longest !== undefined) {
-    out.push({
-      rule: "human_wait",
-      message: `waited ${fmtDur(waitTotal)} on you (${waits.length} request${waits.length === 1 ? "" : "s"}); longest: \`${longest.extra?.key ?? "an approval"}\` ${fmtDur(dur(longest))}`,
-      numbers: [{ name: "totalMs", value: waitTotal }, { name: "requests", value: waits.length }],
-      spanIds: waits.map((s) => s.id),
-    });
-  }
-  const full = d.spans.filter((s) => s.kind === "slots.full");
-  if (full.length > 0) {
-    const ft = full.reduce((n, s) => n + dur(s), 0);
-    const peak = Math.max(...full.map((s) => s.extra?.peakQueued ?? 0));
-    out.push({
-      rule: "slots_full",
-      message: `slots were full for ${fmtDur(ft)} while ${peak} tasks queued (cap 40)`,
-      numbers: [{ name: "totalMs", value: ft }, { name: "peakQueued", value: peak }],
-      spanIds: [...full, ...d.spans.filter((s) => s.kind === "queue.slot")].map((s) => s.id).slice(0, 200),
-    });
-  }
   const top = breakdownOf(d).topCommands[0];
   if (top !== undefined) {
     out.push({
@@ -566,27 +533,14 @@ const findingsOf = (d: Data, fleet: boolean): Finding[] => {
       spanIds: d.spans.filter((s) => isCmd(s) && s.label === top.label).map((s) => s.id).slice(0, 200),
     });
   }
-  const startups = d.spans.filter((s) => s.kind === "run.startup");
-  const p50 = median(startups.map(dur));
-  if (p50 >= 5_000) {
-    out.push({
-      rule: "startup",
-      message: `starting claude took ${fmtDur(p50)} per run (${startups.length} runs)`,
-      numbers: [{ name: "p50Ms", value: p50 }, { name: "runs", value: startups.length }],
-      spanIds: startups.map((s) => s.id).slice(0, 200),
-    });
-  }
-  if (d.gaps.length > 0) {
-    out.push({ rule: "coverage", message: "timeline incomplete for 1 session (buildbox runs a fleetd older than the hub)", numbers: [{ name: "sessions", value: 1 }], spanIds: [] });
-  }
   return out;
 };
 
 const zeroed = (n: readonly InsightNumber[]) => n.map((x) => ({ name: x.name, value: 0 }));
 
-const insightsOf = (now: Data, prev: Data | undefined, fleet: boolean): Insight[] => {
-  const cur = findingsOf(now, fleet);
-  const old = prev === undefined ? undefined : findingsOf(prev, fleet);
+const insightsOf = (now: Data, prev: Data | undefined): Insight[] => {
+  const cur = findingsOf(now);
+  const old = prev === undefined ? undefined : findingsOf(prev);
   const list: Insight[] = cur.map((f) => {
     const p = old?.find((o) => o.rule === f.rule);
     const base = { ...f, spanIds: f.spanIds.slice(0, 200) };
@@ -637,13 +591,6 @@ const collect = (specs: OrderSpec[], only: string | undefined, dense: number, sh
   return d;
 };
 
-const fleetLane = (d: Data) => {
-  [["2026-10-13T09:40:00.000Z", 18], ["2026-10-16T16:25:00.000Z", 12], ["2026-10-18T08:12:00.000Z", 10]].forEach(([a, mins], n) => {
-    const start = Date.parse(String(a));
-    d.spans.push({ id: 9_000_000 + n, kind: "slots.full", cat: "queue", lane: "fleet", startMs: start, endMs: start + Number(mins) * MIN, status: "ok", extra: { peakQueued: 3 - Math.min(n, 1), cap: 40 } });
-  });
-};
-
 /** The names the live store would give W8's lanes, PR and the week's orders. */
 export const fixtureNames = (): Names => {
   const specs = week();
@@ -686,7 +633,6 @@ export const fixtureAnswers = (opts: FixtureOptions = {}): ((tool: string, input
     if (scope.kind === "machine") specs = specs.filter((s) => s.machine === scope.machineId);
     const d = collect(specs, order, dense, shape);
     if (order === undefined && !compare) {
-      fleetLane(d);
       if (scope.kind === "fleet") d.gaps.push({ why: "node_older", machineId: "buildbox", fromMs: Date.parse("2026-10-16T16:20:00.000Z"), toMs: Date.parse("2026-10-16T18:02:00.000Z") });
     }
     if (order !== undefined && opts.gaps === true) {
@@ -726,13 +672,13 @@ export const fixtureAnswers = (opts: FixtureOptions = {}): ((tool: string, input
         const order = scopeOrder(i);
         const d = data(order, false, i.scope);
         const prev = i.compare !== undefined && order === undefined ? data(undefined, true, i.scope) : undefined;
-        return { insights: insightsOf(d, prev, order === undefined) };
+        return { insights: insightsOf(d, prev) };
       }
       case "time_spans": {
         const i = input as TimeSpansInput;
         const order = scopeOrder(i);
         const d = data(order, false, i.scope);
-        const ins = i.rule === undefined ? undefined : insightsOf(d, undefined, order === undefined).find((x) => x.rule === i.rule);
+        const ins = i.rule === undefined ? undefined : insightsOf(d, undefined).find((x) => x.rule === i.rule);
         const keep = (s: Span) =>
           (i.kinds === undefined || i.kinds.includes(s.kind)) && (ins === undefined || ins.spanIds.includes(s.id)) && s.id > (i.afterId ?? -1);
         const limit = i.limit ?? 200;
@@ -805,7 +751,7 @@ export interface FixtureCall {
   readonly outcome: { readonly ok: true; readonly output: unknown };
 }
 
-const RULES: readonly InsightRule[] = ["full_suite_repeat", "ci_check_critical", "human_wait", "slots_full", "slow_commands", "startup", "coverage"];
+const RULES: readonly InsightRule[] = ["full_suite_repeat", "slow_commands"];
 
 /**
  * The time inspector's answers for a hub fixture (E3b's kit puts them in a fixture's `calls`): W8's timeline (paged,

@@ -94,9 +94,9 @@
 <code dir="auto">fleetd_status</code>.</p>
 </li>
 </ol>
-<aside aria-label="Writing to a lead" class="starlight-aside starlight-aside--note"><p class="starlight-aside__title" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" class="starlight-aside__icon"><path d="M12 11a1 1 0 0 0-1 1v4a1 1 0 0 0 2 0v-4a1 1 0 0 0-1-1Zm.38-3.92a1 1 0 0 0-.76 0 1 1 0 0 0-.33.21 1.15 1.15 0 0 0-.21.33 1 1 0 0 0 .21 1.09c.097.088.209.16.33.21A1 1 0 0 0 13 8a1.05 1.05 0 0 0-.29-.71 1 1 0 0 0-.33-.21ZM12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 18a8 8 0 1 1 0-16.001A8 8 0 0 1 12 20Z"/></svg>Writing to a lead</p><div class="starlight-aside__content"><p><code dir="auto">chat_send</code> takes only a <a href="/docs/glossary#human-key">human key</a>, because the lead reads the message as yours. To let
-Claude Code write to leads for you, create the key with <code dir="auto">--human</code> in step 1:
-<code dir="auto">fleetd hub key create --human --name laptop</code>.</p></div></aside>
+<aside aria-label="Writing to a lead" class="starlight-aside starlight-aside--note"><p class="starlight-aside__title" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" class="starlight-aside__icon"><path d="M12 11a1 1 0 0 0-1 1v4a1 1 0 0 0 2 0v-4a1 1 0 0 0-1-1Zm.38-3.92a1 1 0 0 0-.76 0 1 1 0 0 0-.33.21 1.15 1.15 0 0 0-.21.33 1 1 0 0 0 .21 1.09c.097.088.209.16.33.21A1 1 0 0 0 13 8a1.05 1.05 0 0 0-.29-.71 1 1 0 0 0-.33-.21ZM12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 18a8 8 0 1 1 0-16.001A8 8 0 0 1 12 20Z"/></svg>Writing to a lead</p><div class="starlight-aside__content"><p>With a <a href="/docs/glossary#human-key">human key</a>, <code dir="auto">chat_send</code> writes as you. Any other key writes as an agent, by the
+key’s name: the lead takes it as input, never as your answer or approval. To let Claude Code write to leads as you,
+create the key with <code dir="auto">--human</code> in step 1: <code dir="auto">fleetd hub key create --human --name laptop</code>.</p></div></aside>
 <p><code dir="auto">claude mcp add</code> writes to your Claude config. <code dir="auto">--scope</code> picks where:</p>
 <table>
 <thead>
@@ -209,8 +209,8 @@ as stopping a project, answering an approval or entering a secret, need one.</p>
 <tbody>
 <tr>
 <td><code dir="auto">chat_send {projectRef, text, attachments?, clientRequestId}</code></td>
-<td>Write to a project’s lead. It starts a turn when the lead is idle, steers it when it works, or waits while it starts. The lead reads it as your words.</td>
-<td>operate, human key</td>
+<td>Write to a project’s lead. It starts a turn when the lead is idle, steers it when it works, or waits while it starts. The lead reads it as your words with a human key, as an agent’s with any other.</td>
+<td>operate</td>
 </tr>
 <tr>
 <td><code dir="auto">chat_history {projectRef, before?, after?, limit?}</code></td>

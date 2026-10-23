@@ -22,7 +22,6 @@ describe("routes", () => {
       { id: "settings", tab: "prompts" },
       { id: "onboarding", hub: "http://100.64.0.1:4790", code: "ABCD-2345" },
       { id: "onboarding", hub: null, code: null },
-      { id: "gallery" },
     ];
     for (const screen of screens) expect(parseHash(toHash(screen))).toEqual(screen);
   });

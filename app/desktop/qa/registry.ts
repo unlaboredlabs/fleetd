@@ -195,21 +195,6 @@ export interface Screen {
   realClock?: true;
 }
 
-const gallerySections = [
-  "tokens",
-  "text",
-  "buttons",
-  "fields",
-  "choices",
-  "overlays",
-  "tabs",
-  "status",
-  "markdown",
-  "code",
-  "list",
-  "layout",
-] as const;
-
 // The fixtures' storefront project, a real hub project from the sanitized recording, so its id is a UUID; it shows
 // only in the route, never as text.
 const CHAT = "#/project/devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22";
@@ -435,18 +420,9 @@ export const screens: readonly Screen[] = [
     variant: "strip-scrolled",
   },
   // The lead chat (lead-chat-spec.md).
-  // A1 (F1): the sidebar's needs-you dot and running indicator around the remembered project's chat, and on Status
-  // with status-rows (eight projects mixing both marks, neither, and a ~120-character name; only some have chats, so
-  // it is shot beside Status rather than a chat).
-  {
-    id: "shell",
-    route: "#/",
-    fixtures: ["chat-waiting", "live-20", "chat-empty"],
-    variant: "chat",
-  },
   // UX-1 [5]: each row says why it wants you (reply, approve · 2, secret, blocked), and docs' reply that arrives
   // after the app opened is bold.
-  { id: "shell", route: "#/status", fixtures: ["status-rows", "sidebar-reasons"], variant: "sidebar" },
+  { id: "shell", route: "#/status", fixtures: ["sidebar-reasons"], variant: "sidebar" },
   // Hidden with its toggle in a wide window: the top row runs the full width, after the traffic lights.
   {
     id: "shell",
@@ -852,9 +828,6 @@ export const screens: readonly Screen[] = [
   { id: "onboarding.connecting", route: "#/onboarding", fixtures: ["hub-unreachable", "onboarding-not-found"] },
   // A hub on another protocol, either way round.
   { id: "onboarding.mismatch", route: "#/onboarding", fixtures: ["onboarding-app-too-old", "onboarding-hub-too-old"] },
-  // E2: every design-system primitive with short, long and empty content, one section per entry, so the primitives
-  // pass before any screen uses them. Needs a build with the gallery in it: `pnpm qa:build`.
-  ...gallerySections.map((s) => ({ id: `gallery.${s}`, route: `#/gallery?section=${s}`, fixtures: ["long-text"] as const })),
   // F8: Add project (the pick list, its empty and loading states, gh and machine problems) and Machines.
   { id: "projects.add", route: "#/projects/add", fixtures: ["typical", "empty", "long-text", "node-too-old", "hub-unreachable"] },
   // Opened from Machines, which subscribed first: the sheet must still find the live connection and list repos.

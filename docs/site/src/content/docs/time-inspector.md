@@ -12,28 +12,27 @@ W41 Add three short pages  done
 wall 1h42m  critical path 1h42m  agent time 3h25m  parallelism 2.0x  coverage complete
 
 critical path  1h42m
-  you            34m  33%  deploy.region 34m
-  ci             22m  22%  rust (macos) 14m, rust (linux) 8m
+  you            34m  33%
+  ci             22m  22%
   model          18m  18%
-  tools          15m  15%  cargo test --workspace 9m, src/pages.rs 6m
+  tools          15m  15%
   review          9m   9%
   queue           4m   4%
 
 agent time  3h25m
-  model     1h11m  35%  output 37m  thinking 22m  first token 12m
-  tools       52m  25%  Bash 41m (212)  Read 6m  Edit 3m  MCP 2m
+  model     1h11m  35%
+  tools       52m  25%
   you         34m  17%
-  pipeline    31m  15%  CI 22m  review 9m
+  pipeline    31m  15%
   queue        9m   4%
-  machine      8m   4%  retries 5m  startup 3m
+  machine      8m   4%
 
 slowest commands           n  total  median  failed
-  cargo test --workspace  22    51m   2m10s  3
-  npm run build           14    19m   1m20s  0
+  cargo test --workspace  22    51m   2m10s       3
+  npm run build           14    19m   1m20s       0
 
 findings
-  1. agents ran the full test suite `cargo test --workspace` 22× (51 min); 14 runs followed no edit
-     fleetd time W41 --spans full_suite_repeat
+  1. agents ran the full test suite `cargo test --workspace` 22× (51m); 14 runs followed no edit since the previous run
 ```
 
 These are measured durations of work that already happened, not estimates. fleetd records them from the `claude`
@@ -51,8 +50,7 @@ stream on each machine and the hub's own events, with no extra model calls.
 | Option | Does |
 |---|---|
 | `--since <range>` | How far back: `24h`, `30d`, or a date. Default: 7 days. |
-| `--spans <rule>` | List the spans behind a finding. Each finding prints its own command. |
-| `--json` | Print JSON. |
+| `--json` | Print what the hub sent, as JSON. |
 
 See the [CLI reference](/docs/reference/cli#time).
 
@@ -95,31 +93,21 @@ nothing.
 
 In the example above:
 
-- The 34 minutes waiting for your answer about `deploy.region` are on the path. Replying sooner would have finished
-  it sooner.
-- `cargo test --workspace` took 51 minutes in total, but only 9 of them held the work up.
+- The 34 minutes waiting for your answer are on the path. Replying sooner would have finished it sooner.
+- `cargo test --workspace` took 51 minutes in total, but only part of that held the work up: the app shows which
+  runs were on the path.
 
 "Nothing running" on the path points at missing data, not idle time. The coverage line says so.
 
-## Waits behind free capacity {#serial-waits}
+## Findings {#findings}
 
-Some findings point at work that waited while the fleet had room for more. Each one ends with what to change:
+Three findings point at commands worth fixing:
 
-| Finding | Means | Fix |
-|---|---|---|
-| `queue_wait` | A task waited for a slot while the fleet had free ones (its project's max agents, or the slots kept for lead turns). Or a ready PR waited out a CI run it couldn't join, because the [batch](/docs/merge-train#batches) was full or batching was off. | Raise the project's max agents or the fleet cap (`fleetd project set`). Raise `FLEETD_TRAIN_BATCH_MAX`, or fix why batching turned off for the repo. |
-| `contention` | Tasks waited one after another for one area lease, or for one machine's claude usage. | Define narrower areas in `.fleetd/policy.yaml` (without them, every write task takes the one area `all`). For usage: a larger plan, or another machine. |
-| `idle_lead` | A [lead](/docs/glossary#lead) sat idle while one of its plan items was ready to start and slots were free. | The lead should start ready items before its turn ends. |
-| `slots_underused` | Two or more ready plan items waited at the same time while slots were free. | Start ready items together. |
-
-A plan item counts as ready while its work runs (not stopped, failed, idle or being verified) and every item it comes
-after is done, until its lead starts a task for it. A question to you that blocks the work pauses it. None of these count:
-
-- time with no free slot;
-- time when the machine is parked on its usage limit or offline;
-- short gaps while fleetd wakes a lead.
-
-A finding appears once its wait adds up to 5 minutes in the range.
+| Finding | Means |
+|---|---|
+| `full_suite_repeat` | Agents ran the whole test suite 5 or more times, for 10 minutes or more. Ask for targeted tests. |
+| `repeat_no_change` | One command ran 3 or more times in a row in one session with nothing edited between runs. |
+| `slow_commands` | The commands that took the most time, 2 minutes or more in total. |
 
 ## What is not exact {#limits}
 

@@ -1,9 +1,9 @@
-//! The merge train in both digests: each train's state, PRs merged since the reader last looked, PRs sent back to
-//! their authors, and review waivers (the polish-loop rule's notes on a Change). The renderers are pure;
-//! `train_facts` gathers their input.
+//! The merge train in the lead digest: each train's state, PRs merged since the lead's last wake, PRs sent back to
+//! their authors, and review waivers (the polish-loop rule's notes on a Change). The renderer is pure; `train_facts`
+//! gathers its input.
 use std::collections::HashMap;
 
-use super::contract::{Change, ChangeState, ProjectRef, TrainState, state_str, tier_str};
+use super::contract::{Change, ChangeState, ProjectRef, TrainState, state_str};
 use super::records::{ChangeRecords, ListFilter};
 use super::time::parse_iso;
 
@@ -145,52 +145,6 @@ pub fn lead_train_lines(facts: &TrainFacts, since: Option<&str>) -> Vec<String> 
             pr(c),
             state_str(c.state),
             one_line(reason, 200)
-        )
-    }));
-    lines
-}
-
-/// The human digest's train lines: merges since the last digest, busy or frozen trains, PRs back with their authors, waivers.
-pub fn human_train_lines(facts: &TrainFacts, since_ms: i64) -> Vec<String> {
-    let mut lines: Vec<String> = merged(&facts.changes, Some(since_ms))
-        .map(|c| {
-            format!(
-                "Merged: {} ({}, {}, tier {})",
-                pr(c),
-                c.change_id,
-                c.workstream_id,
-                tier_str(c.tier)
-            )
-        })
-        .collect();
-    // An idle train says nothing the reader needs.
-    lines.extend(
-        facts
-            .trains
-            .iter()
-            .filter(|t| t.frozen || t.head.is_some() || !t.queue.is_empty())
-            .map(|t| format!("Train {}: {}", t.repo, state_of(&facts.changes, t))),
-    );
-    lines.extend(
-        facts
-            .changes
-            .iter()
-            .filter(|c| PARKED.contains(&c.state))
-            .map(|c| {
-                format!(
-                    "Back with its author: {} ({}) {}",
-                    pr(c),
-                    c.change_id,
-                    state_str(c.state)
-                )
-            }),
-    );
-    lines.extend(waived(facts, Some(since_ms)).map(|(c, reason)| {
-        format!(
-            "Waived: {} ({}) {}",
-            pr(c),
-            c.change_id,
-            one_line(reason, 100)
         )
     }));
     lines

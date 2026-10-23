@@ -9,6 +9,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { areasParallel } from "./areasParallel.ts";
+import { chatCli } from "./chatCli.ts";
 import { chatLead } from "./chatLead.ts";
 import { degradedMachine } from "./degradedMachine.ts";
 import { demoFanout } from "./demoFanout.ts";
@@ -66,13 +67,13 @@ import { statusFresh } from "./statusFresh.ts";
 import { steerMidTurn } from "./steerMidTurn.ts";
 import { timeInspector } from "./timeInspector.ts";
 import { wakeOnTime } from "./wakeOnTime.ts";
-import { missedCompletion, stallNudgeFail } from "./watchdogScenarios.ts";
+import { missedCompletion, stallFails } from "./watchdogScenarios.ts";
 
 /** In run order. Later ones may stop or restart nodes, so they come after the ones that need both machines up. */
 const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab) => Promise<void>; readonly only?: boolean }> = [
   { name: "m1", run: m1Fleet },
   { name: "wake", run: wakeOnTime },
-  { name: "stall", run: (lab) => stallNudgeFail(lab) },
+  { name: "stall", run: (lab) => stallFails(lab) },
   { name: "missed", run: (lab) => missedCompletion(lab) },
   { name: "degraded", run: degradedMachine },
   { name: "queue", run: offlineQueue },
@@ -116,6 +117,8 @@ const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab)
   // The per-project lead chat end to end (and the max agents cap): on the lab repo in this slot's namespace and a
   // local repo on lab-b. Only when named, so it gets a hub of its own; FLEETD_LAB_CHAT_PARTS picks parts.
   { name: "chat", run: chatLead, only: true },
+  // `fleetd chat` from a person's and an agent's key: labels, needs-you, --wait and --follow. Only when named.
+  { name: "chatcli", run: chatCli, only: true },
   // The native runner's failure scenarios (tests/lab/failure): they restart lab-b and add a machine, so they go last.
   ...FAILURE_SCENARIOS,
 ];

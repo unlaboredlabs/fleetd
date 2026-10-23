@@ -12036,10 +12036,6 @@
     "output": {
      "doc": {
       "done": [],
-      "eta": {
-       "basis": "none",
-       "samples": 0
-      },
       "gates": [],
       "headline": {
        "at": "2026-10-19T09:01:58.926Z",
@@ -12130,10 +12126,6 @@
     "output": {
      "doc": {
       "done": [],
-      "eta": {
-       "basis": "none",
-       "samples": 0
-      },
       "gates": [],
       "headline": {
        "at": "2026-10-19T09:02:01.594Z",
@@ -12224,10 +12216,6 @@
     "output": {
      "doc": {
       "done": [],
-      "eta": {
-       "basis": "none",
-       "samples": 0
-      },
       "gates": [
        {
         "kind": "phase",
@@ -12403,10 +12391,6 @@
     "output": {
      "doc": {
       "done": [],
-      "eta": {
-       "basis": "none",
-       "samples": 0
-      },
       "gates": [
        {
         "kind": "phase",
@@ -12578,10 +12562,6 @@
     "output": {
      "doc": {
       "done": [],
-      "eta": {
-       "basis": "none",
-       "samples": 0
-      },
       "gates": [
        {
         "kind": "phase",

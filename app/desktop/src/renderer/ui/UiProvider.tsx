@@ -6,9 +6,9 @@ import "./tokens.css";
 import "./base.css";
 
 /** The design system's root: tokens and fonts, light/dark, the tooltip delay group and the toast viewport. */
-export function UiProvider(props: { children: ReactNode; initialMode?: ThemeMode; onModeChange?: (mode: ThemeMode) => void }) {
+export function UiProvider(props: { children: ReactNode; onModeChange?: (mode: ThemeMode) => void }) {
   return (
-    <ThemeProvider {...(props.initialMode ? { initialMode: props.initialMode } : {})} {...(props.onModeChange ? { onModeChange: props.onModeChange } : {})}>
+    <ThemeProvider {...(props.onModeChange ? { onModeChange: props.onModeChange } : {})}>
       <TooltipProvider>
         <Toaster>{props.children}</Toaster>
       </TooltipProvider>

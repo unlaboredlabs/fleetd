@@ -53,4 +53,3 @@ export {
   type Crumb,
   type SidebarItemProps,
 } from "./layout/Layout";
-export { GalleryScreen } from "./gallery";
