@@ -82,7 +82,8 @@ The lead logs each answer as a [decision](/docs/glossary#decision), so it never 
 sidebar, a project says "reply" while the lead's last message waits for your answer, "secret" or "approve" while an
 item is open, and "blocked" when something outside the work holds it up. ⌥⌘A jumps to the next one. In the chat, a
 line above the box says what it waits on, such as "2 questions, asked at 09:02" or "1 command to approve". Click Show
-to scroll to it.
+to scroll to it. When nothing waits on you but the project is blocked, the line says why, such as "Blocked: main CI is
+red".
 
 ## Steer while it works {#steer}
 
