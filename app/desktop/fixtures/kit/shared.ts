@@ -68,7 +68,7 @@ const PROJECTS: ReadonlyArray<{ title: string; machine: string; needsYou: boolea
   { title: "billing", machine: "buildbox", needsYou: true, working: false, row: "waiting_on_you", extra: { agents: 0, pct: [60, 0], merged: "Nightly export resumes after a crash", mergedAgoMs: 26 * 3_600_000 } },
   { title: "checkout", machine: "devbox", needsYou: false, working: false, row: "blocked", extra: { blocked: "main CI is red on acme/checkout", pct: [20, 10] } },
   { title: "docs", machine: "devbox", needsYou: false, working: false, row: "idle", extra: { merged: "Quick start opens a project's chat", mergedAgoMs: 12 * 86_400_000 } },
-  { title: "inventory", machine: "buildbox", needsYou: true, working: true, row: "waiting_on_you", extra: { agents: 2, pct: [10, 15], planning: true } },
+  { title: "inventory", machine: "buildbox", needsYou: true, working: true, row: "waiting_on_you", extra: { agents: 2, pct: [10, 15] } },
   { title: "search", machine: "buildbox", needsYou: false, working: false, row: "blocked", extra: { blocked: "buildbox is offline", stale: "buildbox stopped answering" } },
   { title: ofLength(LONG_TITLES[1], 118), machine: "devbox", needsYou: false, working: true, row: "working", extra: { agents: 12, pct: [5, 70] } },
   { title: "mobile", machine: "devbox", needsYou: false, working: false, row: "idle", extra: {} },
@@ -157,7 +157,7 @@ const chatFixtures = (copy: (name: SharedName, note: string) => Fixture): Array<
     ),
     strip(withChat(copy("chat-waiting", "The lead asked its numbered question and waits on you: the needs-you dot, no agents running."), fromLines(QUESTION).slice(0, 1), { needsYou: true }), 0),
     strip(withChat(copy("chat-empty", "A project whose chat has no messages yet, and no agents at work."), []), 0),
-    withProjectsMix(copy("status-rows", "Eight projects: rows in all four states (one planning, one stale, one with a ~120-character name), and the sidebar's needs-you and running mix.")),
+    withProjectsMix(copy("status-rows", "Eight projects: rows in all four states (one stale, one with a ~120-character name), and the sidebar's needs-you and running mix.")),
   ];
 };
 

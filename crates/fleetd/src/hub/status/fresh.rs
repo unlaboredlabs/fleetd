@@ -7,18 +7,10 @@ use std::sync::Mutex;
 
 use tokio::sync::Notify;
 
-/// GitHub answers for a repo, from any `gh api` call (`FLEETD_STATUS_GITHUB_STALE_SEC`).
+/// GitHub answers for a repo, from any `gh api` call.
 pub const GITHUB_STALE_MS: i64 = 180_000;
 /// The end of a train pass for a repo.
 pub const TRAIN_STALE_MS: i64 = 120_000;
-
-pub fn github_stale_ms() -> i64 {
-    std::env::var("FLEETD_STATUS_GITHUB_STALE_SEC")
-        .ok()
-        .and_then(|v| v.parse::<i64>().ok())
-        .filter(|s| *s > 0)
-        .map_or(GITHUB_STALE_MS, |s| s * 1000)
-}
 
 pub fn github(repo: &str) -> String {
     format!("github:{repo}")
@@ -194,20 +186,6 @@ impl Fresh {
             as_of_ms: s.as_of_ms,
             stale,
         })
-    }
-
-    /// Every stale source, with its reason, oldest first.
-    pub fn stale_sources(&self, now_ms: i64) -> Vec<(String, Stale)> {
-        let names: Vec<String> = self.sources.lock().unwrap().keys().cloned().collect();
-        let mut out: Vec<(String, Stale)> = names
-            .into_iter()
-            .filter_map(|n| {
-                let stale = self.view(&n, now_ms)?.stale?;
-                Some((n, stale))
-            })
-            .collect();
-        out.sort_by_key(|(_, s)| s.since_ms);
-        out
     }
 }
 

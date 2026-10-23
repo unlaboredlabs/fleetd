@@ -359,9 +359,9 @@ missing or logged out runs no sessions until it is fixed. fleetd turns claude’
 </tbody>
 </table>
 <div class="sl-heading-wrapper level-h2"><h2 id="stuck">Work is stuck</h2><a class="sl-anchor-link" href="#stuck"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Work is stuck”</span></a></div>
-<p>Ask the lead in the chat what it is waiting on. For the full view, run <code dir="auto">fleetd status</code> with the project or the
-work’s id:</p>
-<div class="expressive-code"><figure class="frame is-terminal not-content"><figcaption class="header"><span class="title"></span><span class="sr-only">Terminal window</span></figcaption><pre data-language="sh"><code><div class="ec-line"><div class="code"><span style="--0:#B392F0;--1:#6F42C1">fleetd</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">status</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">W41</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="fleetd status W41"><div></div></button></div></figure></div>
+<p>Ask the lead in the chat what it is waiting on. <code dir="auto">fleetd status</code> with the project shows its state, why it is blocked
+and why its bar last fell:</p>
+<div class="expressive-code"><figure class="frame is-terminal not-content"><figcaption class="header"><span class="title"></span><span class="sr-only">Terminal window</span></figcaption><pre data-language="sh"><code><div class="ec-line"><div class="code"><span style="--0:#B392F0;--1:#6F42C1">fleetd</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">status</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">storefront</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="fleetd status storefront"><div></div></button></div></figure></div>
 <table>
 <thead>
 <tr>
@@ -372,17 +372,12 @@ work’s id:</p>
 </thead>
 <tbody>
 <tr>
-<td>“W41 is a draft: waiting for the lead’s brief”</td>
-<td>The lead hasn’t written the work’s <a href="/docs/glossary#brief">brief</a> yet.</td>
-<td><code dir="auto">fleetd status W41 --watch</code> shows it once the brief exists. If the lead never starts, see <a href="/docs/projects#its-lead">Its lead</a>.</td>
-</tr>
-<tr>
 <td>A pull request stays queued on the <a href="/docs/glossary#merge-train">merge train</a></td>
 <td>The train can’t work in the checkout, or CI or a review is pending.</td>
-<td><code dir="auto">fleetd status</code> lists a PR the train can’t move under risks, with the train’s error. For more, run <code dir="auto">fleetd change status X&lt;n&gt;</code> in the project’s checkout on its worker. The change id <code dir="auto">X&lt;n&gt;</code> is listed by the <code dir="auto">train_get</code> tool.</td>
+<td>Run <code dir="auto">fleetd change status X&lt;n&gt;</code> in the project’s checkout on its worker: it shows the train’s error. The change id <code dir="auto">X&lt;n&gt;</code> is listed by the <code dir="auto">train_get</code> tool.</td>
 </tr>
 <tr>
-<td>A risk says “#212 can’t merge: its checkout on laptop is outside the node’s cmdRoots”</td>
+<td>The train’s error says “#212 can’t merge: its checkout on laptop is outside the node’s cmdRoots”</td>
 <td>The checkout is outside the node’s <code dir="auto">cmdRoots</code> (default: your home directory).</td>
 <td>Add its folder to <code dir="auto">cmdRoots</code> in <a href="/docs/config-and-files#node-json"><code dir="auto">node.json</code></a> and restart the node.</td>
 </tr>
@@ -398,7 +393,6 @@ work’s id:</p>
 </tr>
 </tbody>
 </table>
-<p>“Waiting on” lists the stages left for the item in fleetd’s pipeline, in order. See <a href="/docs/status#waits">What it waits on</a>.</p>
 <p><code dir="auto">fleetd change status</code> is a lead-side command: run it inside the project’s checkout on the worker. If that node uses
 a non-default home, set <code dir="auto">FLEETD_HOME</code> as it has, or <code dir="auto">FLEETD_NODE_SOCK=&lt;node home&gt;/node.sock</code>.</p>
 <p>Then check the logs (above) for the hub and the project’s worker.</p></div><footer class="sl-flex astro-ddtxxk7k"><div class="meta sl-flex astro-ddtxxk7k"><a href="https://github.com/unlaboredlabs/fleetd/edit/main/docs/site/src/content/docs/troubleshooting.mdx" class="sl-flex print:hidden astro-qlekgd3o"><svg aria-hidden="true" class="astro-qlekgd3o astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.2em;"><path d="M22 7.24a1 1 0 0 0-.29-.71l-4.24-4.24a1 1 0 0 0-1.1-.22 1 1 0 0 0-.32.22l-2.83 2.83L2.29 16.05a1 1 0 0 0-.29.71V21a1 1 0 0 0 1 1h4.24a1 1 0 0 0 .76-.29l10.87-10.93L21.71 8c.1-.1.17-.2.22-.33a1 1 0 0 0 0-.24v-.14l.07-.05ZM6.83 20H4v-2.83l9.93-9.93 2.83 2.83L6.83 20ZM18.17 8.66l-2.83-2.83 1.42-1.41 2.82 2.82-1.41 1.42Z"/></svg>Edit page</a></div><div class="pagination-links print:hidden astro-b5raizh3" dir="ltr"><a href="/docs/glossary.html" rel="prev" class="astro-b5raizh3"><svg aria-hidden="true" class="astro-b5raizh3 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.5rem;"><path d="M17 11H9.41l3.3-3.29a1.004 1.004 0 1 0-1.42-1.42l-5 5a1 1 0 0 0-.21.33 1 1 0 0 0 0 .76 1 1 0 0 0 .21.33l5 5a1.002 1.002 0 0 0 1.639-.325 1 1 0 0 0-.219-1.095L9.41 13H17a1 1 0 0 0 0-2Z"/></svg><span class="astro-b5raizh3">Previous<br class="astro-b5raizh3"><span class="link-title astro-b5raizh3">Glossary</span></span></a><a href="/docs/updating-and-uninstall.html" rel="next" class="astro-b5raizh3"><svg aria-hidden="true" class="astro-b5raizh3 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.5rem;"><path d="M17.92 11.62a1.001 1.001 0 0 0-.21-.33l-5-5a1.003 1.003 0 1 0-1.42 1.42l3.3 3.29H7a1 1 0 0 0 0 2h7.59l-3.3 3.29a1.002 1.002 0 0 0 .325 1.639 1 1 0 0 0 1.095-.219l5-5a1 1 0 0 0 .21-.33 1 1 0 0 0 0-.76Z"/></svg><span class="astro-b5raizh3">Next<br class="astro-b5raizh3"><span class="link-title astro-b5raizh3">Updating &amp; uninstall</span></span></a></div></footer></div></div></main></div></div></div></div></body></html>

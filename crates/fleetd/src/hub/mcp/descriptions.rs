@@ -214,7 +214,11 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "status_projects",
-        "One row per project you can read, by title: a state word (working, waiting_on_you, blocked with a one-line reason, idle), the two-tone progress (verified and in flight, no ETA), agents running now and the last merge. status_get with a project scope gives the detail.",
+        "One row per project you can read, by title: a state word (working, waiting_on_you, blocked with a one-line reason, idle), the two-tone progress (verified and in flight, no ETA), agents running now and the last merge. Marked stale when its machine, GitHub or its merge train went quiet.",
+    ),
+    (
+        "status_get",
+        "One project's Status row (status_projects) and the series behind its bar, oldest first: each point's verified and in-flight figure, why it fell (a scope change, a failed review or CI, work that stopped, a reopened item) and when it held on paused work. Never an ETA.",
     ),
     (
         "time_insights",

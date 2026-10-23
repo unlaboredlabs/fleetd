@@ -80,11 +80,10 @@ export const fixtures = [
   "onboarding-hub-too-old",
   "projects-errors",
   "projects-machines",
-  // F6: the Status view's own states (fixtures/status), and E3b's eight-project mix (all four words, planning,
-  // stale, a ~120-character name).
+  // F6: the Status view's own states (fixtures/status), and E3b's eight-project mix (all four words, stale, a
+  // ~120-character name).
   "status-rows",
   "status-stale",
-  "status-planning",
   "status-skeleton",
   // The bar's hover on a figure that holds while its work is paused (fixtures/status).
   "status-paused",
@@ -1041,12 +1040,12 @@ export const screens: readonly Screen[] = [
   },
   { id: "settings.prompts.update", route: "#/settings/prompts?prompt=lead.start&view=update", fixtures: ["settings-prompts"] },
   { id: "settings.instructions", route: "#/settings/instructions?for=devbox/storefront", fixtures: ["settings-prompts", "typical", "empty"] },
-  // F6: Status, one row per project: every state word, long titles, no projects, quiet sources, every lead
-  // planning, the skeleton before the first answer, and the link down.
+  // F6: Status, one row per project: every state word, long titles, no projects, quiet sources, the skeleton before
+  // the first answer, and the link down.
   {
     id: "status.fleet",
     route: "#/status",
-    fixtures: ["typical", "status-rows", "long-text", "empty", "many-agents", "hub-unreachable", "status-stale", "status-planning", "status-skeleton"],
+    fixtures: ["typical", "status-rows", "long-text", "empty", "many-agents", "hub-unreachable", "status-stale", "status-skeleton"],
   },
   // A held figure: the bar's hover marks it, with why, above the drop that came before it. Nothing moves.
   {

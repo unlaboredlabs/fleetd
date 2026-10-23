@@ -85,8 +85,7 @@ If your steer changes what the work delivers, the lead updates the plan in the s
 fleetd plan drop P3 --steer S12
 ```
 
-That also counts as acknowledging the steer. `fleetd status` shows it on the work: "↳ you steered S12 14:02 ·
-acknowledged · −1 item".
+That also counts as acknowledging the steer.
 
 ## From the command line {#cli}
 

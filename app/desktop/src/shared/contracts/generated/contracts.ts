@@ -1000,16 +1000,6 @@ export type DoctorScope = "hub" | "machine";
 /** `unknown`: the hub could not look (machine offline, nothing to read). */
 export type DoctorStatus = "ok" | "warn" | "fail" | "unknown";
 
-export type DoneRow = {
-  doneAt: Timestamp;
-  /** "#208 merged by the train 13:12 · check 2 passed C7". */
-  evidence: string;
-  /** Absent for an order with no plan items, which counts as one item. */
-  itemId?: PlanItemId;
-  title: string;
-  workstreamId?: WorkstreamId;
-};
-
 export type KnownDropReason = "scope_change" | "review_failed" | "ci_failed" | "reopened" | "work_stopped";
 /** KnownDropReason, or a value from a newer hub. */
 export type DropReason = KnownDropReason | (string & {});
@@ -1097,22 +1087,6 @@ export type Gap = {
 
 export type GapWhy = "node_older" | "node_dropped" | "hub_dropped" | "no_node_spans" | "nothing_running";
 
-/** What the scope is waiting on. */
-export type Gate = {
-  itemId?: PlanItemId;
-  kind: GateKind;
-  /** "P12 full lab run", "CI on #212", "your answer on `api.path`". */
-  label: string;
-  /** It blocks every in-progress item of its order. */
-  serial: boolean;
-  since?: Timestamp;
-  workstreamId?: WorkstreamId;
-};
-
-export type KnownGateKind = "plan" | "live" | "phase";
-/** KnownGateKind, or a value from a newer hub. */
-export type GateKind = KnownGateKind | (string & {});
-
 export type GatedClass = "irreversible" | "money" | "credential";
 
 /** Stored with the approval and never changed: the human approves exactly these bytes. */
@@ -1150,73 +1124,6 @@ export type GitHubRepos = {
   owners: string[];
   problem?: ProjectProblem;
   repos: GitHubCandidate[];
-};
-
-export type Headline = {
-  at: Timestamp;
-  /** The prompt version that wrote a generated line, from older hubs. */
-  promptRef?: PromptRef;
-  /** Why the template shows, from older hubs that also generated lines. */
-  reason?: string;
-  source: HeadlineSource;
-  /** Starts with "Not live: …" when a source the scope depends on is stale; the hub writes that clause. */
-  text: string;
-};
-
-export type KnownHeadlineSource = "generated" | "template";
-/** KnownHeadlineSource, or a value from a newer hub. */
-export type HeadlineSource = KnownHeadlineSource | (string & {});
-
-export type Health = {
-  ci: HealthCi[];
-  machines: HealthMachine[];
-  slots: HealthSlots;
-  usage: HealthUsage[];
-};
-
-/** Main-branch CI of one repo. */
-export type HealthCi = {
-  /** The last GitHub answer for the repo. */
-  asOf?: Timestamp;
-  failing: string[];
-  repo: GitHubRepo;
-  sha?: string;
-  /** When the state last changed. */
-  since?: Timestamp;
-  stale?: StaleMark;
-  state: CiState;
-};
-
-export type HealthMachine = {
-  /** Times it went offline or slept in the last 24 h. */
-  dropsToday: number;
-  lastSeenAt?: Timestamp;
-  machineId: MachineId;
-  /** Its latest sleep, for 24 h after it woke. */
-  slept?: SleptAt;
-  stale?: StaleMark;
-  status: MachineStatus;
-};
-
-/** "8 running · slots 8/40 · 1 queued". Hub-local, never stale. */
-export type HealthSlots = {
-  cap: number;
-  queued: number;
-  running: number;
-  used: number;
-};
-
-/** One claude usage window: the highest utilization of that type across machines. */
-export type HealthUsage = {
-  /** claude's name, e.g. "five_hour", "seven_day". */
-  limitType: string;
-  machineId: MachineId;
-  observedAt?: Timestamp;
-  resetsAt?: Timestamp;
-  stale?: StaleMark;
-  status: string;
-  /** 0 to 1. */
-  utilization?: number;
 };
 
 /** One thing in flight on the hub. */
@@ -1386,36 +1293,6 @@ export type HumanWait = {
   totalMs: number;
 };
 
-export type InProgressRow = {
-  /** Open items that wait on it. */
-  blocking?: PlanItemId[];
-  changeIds: ChangeId[];
-  /** Share of the item's size credited to the estimate. */
-  creditPct?: number;
-  /** It is the scope's critical path: the most unfinished work (its own and what waits on it) runs through it. */
-  critical?: boolean;
-  gate?: string;
-  itemId?: PlanItemId;
-  /** Those of `taskIds` that run on the medium profile; the rest run high. Absent when none does. */
-  mediumTaskIds?: TaskId[];
-  /** Past 1.5× the usual time for its current stage: flagged in Risks, never credited past 90% of the stage. */
-  slowerThanUsual?: boolean;
-  /** The furthest stage fleetd observed for the item. */
-  stage?: ItemStage;
-  stale?: StaleMark;
-  /** The order's latest steers, newest first, on its first in-progress row only. */
-  steers?: StatusSteer[];
-  /** Join to the live feed's lanes for what each agent is doing now. */
-  taskIds: TaskId[];
-  title: string;
-  /**
-   * What it still waits on, in order: open items it is `after`, then its remaining stages, e.g.
-   * ["review of #12", "CI on #12", "merge", "done-when checks"].
-   */
-  waitingOn?: string[];
-  workstreamId: WorkstreamId;
-};
-
 export type Insight = {
   /**
    * The same numbers for the compare period. Present on every insight when a compare period was asked for,
@@ -1457,20 +1334,6 @@ export type IntakeRef = {
   kind: "pr";
   url: GitHubPrUrl;
 };
-
-/** The observable stages an item passes on its way to verified, in order. Each is credited only once fleetd saw it. */
-export type KnownItemStage =
-  | "planned"
-  | "brief_frozen"
-  | "task_started"
-  | "first_push"
-  | "pr_open"
-  | "review_passed"
-  | "ci_green"
-  | "merged"
-  | "verified";
-/** KnownItemStage, or a value from a newer hub. */
-export type ItemStage = KnownItemStage | (string & {});
 
 export type KindTotal = {
   kind: SpanKind;
@@ -1706,30 +1569,6 @@ export type MilestoneView = {
   projectRef: ProjectRef;
   state: MilestoneState;
   title: string;
-};
-
-/** How many rows each capped list left out. */
-export type MoreCounts = {
-  done: number;
-  inProgress: number;
-  next: number;
-  parts: number;
-  risks: number;
-  stale: number;
-};
-
-export type NeedsYou = {
-  count: number;
-  /** Open secret and approval requests, shown inline in the project's chat. */
-  requestIds: ChatRequestId[];
-};
-
-export type NextRow = {
-  /** Open items it waits on. */
-  after: PlanItemId[];
-  itemId: PlanItemId;
-  title: string;
-  workstreamId?: WorkstreamId;
 };
 
 /** Space on the volume holding a node's worktrees and build cache. */
@@ -1968,17 +1807,6 @@ export type PlanVerifiedData = {
   itemId: PlanItemId;
   milestoneId: MilestoneId;
   workstreamId?: WorkstreamId;
-};
-
-/** Planning counts: while the lead plans (no plan items yet) it has its own small bar, not 0%. */
-export type PlanningState = {
-  /** The lead is still planning: the order has no plan items yet. */
-  active: boolean;
-  /** The planning bar: elapsed over the usual planning time, at most 90 while active, 100 once the plan exists. */
-  pct: number;
-  /** Planning's share of the order's work, fixed when the plan appears. */
-  sharePct: number;
-  since: Timestamp;
 };
 
 /**
@@ -2244,8 +2072,6 @@ export type Progress = {
   asOf: Timestamp;
   /** Must items done and in the figure. */
   done: number;
-  /** The estimate the headline shows: verified work plus credit for the observed stages of work in flight. */
-  estimate?: ProgressEstimate;
   /** The latest scope change, e.g. "↓ from 80% · +3 items: time inspector added". */
   marker?: Marker;
   /** floor(100 · must points done / must points open or done); the polish figure when there are no must items. */
@@ -2254,11 +2080,10 @@ export type Progress = {
   polishDone: number;
   polishPct?: number;
   polishTotal: number;
-  stale?: StaleMark;
   total: number;
 };
 
-/** Why the estimate fell, shown as a marker on the sparkline. */
+/** Why the figure fell. */
 export type ProgressDrop = {
   fromPct: number;
   reason: DropReason;
@@ -2267,31 +2092,25 @@ export type ProgressDrop = {
 };
 
 /**
- * The headline estimate and its two-tone bar: solid is what fleetd verified, lighter is in-flight credit. Every
- * stage it credits is one fleetd observed (an event, a PR or a CI state), never an agent's word.
+ * A project's two-tone bar: solid is what fleetd verified, lighter is credit for work in flight. Every stage it
+ * credits is one fleetd observed (an event, a PR or a CI state), never an agent's word, and nothing in it is a time.
  */
 export type ProgressEstimate = {
-  /** The lighter part: credit for open items' reached stages, smoothed within the current stage. */
+  /** The lighter part: credit for open units' reached stages, plus in-stage credit for the time work on them ran. */
   inFlightPct: number;
   /** verified + in flight, floored; 100 only when everything is verified. */
   pct: number;
-  /** Present for an order while its lead plans, and after (with its fixed share). */
-  planning?: PlanningState;
-  /** The doc's own scope only: the estimate over time, oldest first. A drop carries its reason. */
-  series?: ProgressPoint[];
-  /** The solid part: must points verified over must points (planning share included once fixed). */
+  /** The solid part: points verified over points counted. */
   verifiedPct: number;
-  /** Where the stage weights came from. */
-  weights: WeightsBasis;
 };
 
-/** One point of the progress series. */
+/** One point of a project's series: its bar over time, oldest first. */
 export type ProgressPoint = {
   at: Timestamp;
-  /** Set when the estimate fell at this point; it never falls without one. */
+  /** Set when the figure fell at this point; it never falls without one. */
   drop?: ProgressDrop;
   /**
-   * Set while the estimate holds because the work in flight paused, waiting for an answer or for a usage limit to
+   * Set while the figure holds because the work in flight paused, waiting for an answer or for a usage limit to
    * reset ("paused: an agent hit a usage limit"). A marker, not a drop: what was earned stays.
    */
   paused?: string;
@@ -2516,19 +2335,16 @@ export type ProjectSetOutput = {
 
 /** One project on the Status screen: a state word, the two-tone bar, agents running and the last merge. */
 export type ProjectStatusRow = {
-  /** Its lead and task sessions holding a slot now. */
+  /** Its task agents holding a slot now (the lead's own turn is not one). */
   agentsRunning: number;
   asOf: Timestamp;
   /** Blocked only: why, in one line, for the expanded row. */
   blockedReason?: string;
   lastMerged?: LastMerged;
-  /**
-   * The project's progress estimate (verified, in flight, planning), without its series. Absent when the project
-   * has nothing to count.
-   */
+  /** The project's bar, under the drop rule of its series (status_get). Absent when it has nothing to count. */
   progress?: ProgressEstimate;
   projectRef: ProjectRef;
-  /** Set when a source the row reads (its machine, its repo on GitHub) went quiet. */
+  /** Set when a source the row reads (its machine, its repos on GitHub, their merge train) went quiet. */
   stale?: StaleMark;
   state: ProjectRowState;
   title: string;
@@ -2820,32 +2636,6 @@ export type KnownReviewVerdictKind = "approved" | "changes_requested" | "comment
 /** KnownReviewVerdictKind, or a value from a newer hub. */
 export type ReviewVerdictKind = KnownReviewVerdictKind | (string & {});
 
-export type Risk = {
-  level: RiskLevel;
-  message: string;
-  rule: RiskRule;
-};
-
-export type KnownRiskLevel = "danger" | "warning";
-/** KnownRiskLevel, or a value from a newer hub. */
-export type RiskLevel = KnownRiskLevel | (string & {});
-
-export type KnownRiskRule =
-  | "ci_red_main"
-  | "machine_offline"
-  | "blocked_on_you"
-  | "riskiest_item"
-  | "ci_red_repeat"
-  | "machine_flaky"
-  | "usage_high"
-  | "slots_full"
-  | "no_plan"
-  | "steer_unacknowledged"
-  | "slower_than_usual"
-  | "train_stuck";
-/** KnownRiskRule, or a value from a newer hub. */
-export type RiskRule = KnownRiskRule | (string & {});
-
 /** A rule the default text carries, found in a text by `needle` (a case-insensitive regex). */
 export type SafetyRule = {
   enforced: Enforcement;
@@ -2855,15 +2645,6 @@ export type SafetyRule = {
   needle: string;
   /** In `PromptDetail`: whether the effective text still matches `needle`. */
   present?: boolean;
-};
-
-/** A child figure: the fleet's projects, a project's milestones, an order's milestones. */
-export type ScopePart = {
-  milestoneId?: MilestoneId;
-  progress: Progress;
-  /** Open it as its own scope (projects and orders). */
-  scope?: StatusScope;
-  title: string;
 };
 
 export type SealedSecret = string;
@@ -2962,28 +2743,7 @@ export type SessionPromptRef = {
   scope: PromptScope;
 };
 
-/** Counts since the reading key last looked at this scope. Zero counts are hidden by clients. */
-export type Since = {
-  failed: number;
-  merged: number;
-  /** The mark is older than the event log keeps ("since more than 30 days"). */
-  pruned?: boolean;
-  /** Net items added (negative: dropped) by scope changes. */
-  scopeItems: number;
-  /** Absent: never looked (or not a human key). */
-  seenAt?: Timestamp;
-  seenSeq?: EventSeq;
-  started: number;
-  verified: number;
-};
-
 export type Size = "s" | "m" | "l";
-
-/** A sleep a machine's node reported on waking, epoch milliseconds (the same fields as `machine.slept`). */
-export type SleptAt = {
-  fromMs: number;
-  toMs: number;
-};
 
 /** A span a machine spent asleep, epoch milliseconds; `machine.slept` carries the same fields as its data. */
 export type SleptSpan = {
@@ -3173,52 +2933,15 @@ export type StalePrompt = {
   yours: PromptVersion;
 };
 
-/**
- * A source that is stale now, `since` its last good signal. `source` is `machine:<m>`, `usage:<m>`, `ci:<repo>`,
- * `github:<repo>` or `train:<repo>`.
- */
-export type StaleSource = {
-  reason: string;
-  since: Timestamp;
-  source: string;
-};
-
-export type StatusDoc = {
-  done: DoneRow[];
-  gates: Gate[];
-  headline: Headline;
-  health: Health;
-  inProgress: InProgressRow[];
-  /** Newest first. */
-  markers: Marker[];
-  more: MoreCounts;
-  needsYou: NeedsYou;
-  next: NextRow[];
-  /** The hub clock when the doc was rendered. */
-  now: Timestamp;
-  parts: ScopePart[];
-  progress: Progress;
-  risks: Risk[];
-  scope: StatusScope;
-  /** The event log's head the doc reflects; `status_seen` records it. */
-  seq: EventSeq;
-  since: Since;
-  stale: StaleSource[];
-  /** "Fleet", the project's title or the order's. */
-  title: string;
-  /** Bumps whenever the doc's content changes; `status_wait` waits past it. */
-  version: number;
-};
-
 export type StatusGetInput = {
-  scope: StatusScope;
-  /** Count "since" from this seq instead of the key's status_seen mark (a client that keeps its own mark). */
-  sinceSeq?: EventSeq;
+  projectRef: ProjectRef;
 };
 
 export type StatusGetOutput = {
-  doc: StatusDoc;
   next?: string;
+  row: ProjectStatusRow;
+  /** The bar over time, oldest first: why it fell (`drop`) and when it held on paused work (`paused`). */
+  series: ProgressPoint[];
   truncated?: boolean;
 };
 
@@ -3229,56 +2952,6 @@ export type StatusProjectsOutput = {
   /** By title. */
   rows: ProjectStatusRow[];
   truncated?: boolean;
-};
-
-/** What a status doc covers. `key()` is the form stored per human key ("fleet", "project:devbox/p1", "order:W41"). */
-export type StatusScope = {
-  kind: "fleet";
-} | {
-  kind: "project";
-  projectRef: ProjectRef;
-} | {
-  kind: "order";
-  workstreamId: WorkstreamId;
-};
-
-export type StatusSeenInput = {
-  scope: StatusScope;
-  seq: EventSeq;
-};
-
-export type StatusSeenOutput = {
-  next?: string;
-  /** False for agent keys: only a person's look moves the mark. */
-  recorded: boolean;
-  truncated?: boolean;
-};
-
-/** A steer as the status doc shows it: "↳ you steered S12 14:02 · acknowledged · −1 item". */
-export type StatusSteer = {
-  at: Timestamp;
-  id: SteerId;
-  /** The plan change it made, e.g. "−1 item". */
-  planChange?: string;
-  stage: SteerStage;
-  text: string;
-};
-
-export type StatusWaitInput = {
-  /** The version the caller has; absent waits for none (answers at once). */
-  after?: number;
-  scope: StatusScope;
-  /** As in status_get. */
-  sinceSeq?: EventSeq;
-  timeoutSec?: number;
-};
-
-export type StatusWaitOutput = {
-  doc?: StatusDoc;
-  next?: string;
-  truncated?: boolean;
-  unchanged?: boolean;
-  version: number;
 };
 
 /** One steer and its receipt. */
@@ -3985,10 +3658,6 @@ export type WakeTarget = {
 
 export type Weight = "must" | "polish";
 
-export type KnownWeightsBasis = "project" | "fleet" | "default";
-/** KnownWeightsBasis, or a value from a newer hub. */
-export type WeightsBasis = KnownWeightsBasis | (string & {});
-
 /** A command, file edit or tool call. Secrets in its summary and output are replaced by `[secret]`. */
 export type WorkAction = {
   action: ActionItem;
@@ -4136,8 +3805,6 @@ export interface ToolMap {
   session_prompt_get: { input: SessionPromptGetInput; output: SessionPromptGetOutput };
   status_get: { input: StatusGetInput; output: StatusGetOutput };
   status_projects: { input: StatusProjectsInput; output: StatusProjectsOutput };
-  status_seen: { input: StatusSeenInput; output: StatusSeenOutput };
-  status_wait: { input: StatusWaitInput; output: StatusWaitOutput };
   steer_send: { input: SteerSendInput; output: SteerSendOutput };
   steer_withdraw: { input: SteerWithdrawInput; output: SteerWithdrawOutput };
   steers_list: { input: SteersListInput; output: SteersListOutput };

@@ -71,12 +71,12 @@ describe("data layer", () => {
     layer.start();
     fake.send(live());
     fake.send(snapshot(1));
-    const query = layer.queryClient.query(layer.toolQuery("status_get", { scope: { kind: "fleet" } }));
+    const query = layer.queryClient.query(layer.toolQuery("status_get", { projectRef: { machineId: "devbox", projectId: "p1" } }));
     fake.answers[0]?.({ doc: {} });
     await query;
-    expect(layer.queryClient.getQueryData(["call", "status_get", { scope: { kind: "fleet" } }])).toBeDefined();
+    expect(layer.queryClient.getQueryData(["call", "status_get", { projectRef: { machineId: "devbox", projectId: "p1" } }])).toBeDefined();
     fake.send({ t: "state", state: { phase: "retrying", hub: "devbox:4710", reason: "closed", retryAt: 1 } });
-    expect(layer.queryClient.getQueryData(["call", "status_get", { scope: { kind: "fleet" } }])).toBeUndefined();
+    expect(layer.queryClient.getQueryData(["call", "status_get", { projectRef: { machineId: "devbox", projectId: "p1" } }])).toBeUndefined();
   });
 
   it("coalesces a burst of events into one refetch, and refetches nothing for a repeat", async () => {

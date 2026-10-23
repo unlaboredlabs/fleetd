@@ -313,10 +313,10 @@ keep 1-365 days of timelines (admin key); daily totals are kept 400 days
 ### fleetd status {#status}
 
 ```text
-fleetd status [<order>|<project>] [--watch] [--json] [--hub <url> --key-file <path> | --home <dir>]
+fleetd status [<project>] [--watch] [--json] [--hub <url> --key-file <path> | --home <dir>]
 ```
 
-progress (verified plus work in flight), why it fell, the critical path it waits on, what is slower than usual, what changed since you last looked, health and risks; for an order (W41), a project by id or title (\<machine\>/\<project\> when two machines have one), or the whole fleet. `--watch` prints each new version as the hub sends it; stale parts say so. On the hub machine it needs no `--hub` or `--key-file`
+one row per project, as the app's Status screen shows it: what it is doing (working, waiting on you, blocked and why, idle), its bar (verified plus work in flight), agents running, the last merge and why the bar last fell; one project by id or title (\<machine\>/\<project\> when two machines have one). `--watch` prints the rows again after each change; a stale row says so. On the hub machine it needs no `--hub` or `--key-file`
 
 ### fleetd steer {#steer}
 

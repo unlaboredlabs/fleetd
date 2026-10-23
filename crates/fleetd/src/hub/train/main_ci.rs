@@ -1,5 +1,5 @@
-//! What the status view needs from GitHub beyond the train's own reads: main-branch CI per train repo, read in the
-//! train's pass at most once a minute.
+//! What Status needs from GitHub beyond the train's own reads: main-branch CI per train repo, read in the train's
+//! pass at most once a minute.
 use std::collections::HashMap;
 use std::sync::Mutex;
 
@@ -8,14 +8,6 @@ use fleetd_contracts::status::CiState;
 use super::github::CheckRun;
 
 pub const MAIN_CI_EVERY_MS: i64 = 60_000;
-
-pub fn main_ci_every_ms() -> i64 {
-    std::env::var("FLEETD_MAIN_CI_EVERY_SEC")
-        .ok()
-        .and_then(|v| v.parse::<i64>().ok())
-        .filter(|s| *s > 0)
-        .map_or(MAIN_CI_EVERY_MS, |s| s * 1000)
-}
 
 /// Main-branch CI of one repo as last read.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -68,7 +60,7 @@ impl GithubSync {
         let entry = ci.entry(repo.to_owned()).or_default();
         let due = entry
             .last_try_ms
-            .is_none_or(|t| now_ms - t >= main_ci_every_ms());
+            .is_none_or(|t| now_ms - t >= MAIN_CI_EVERY_MS);
         if due {
             entry.last_try_ms = Some(now_ms);
         }

@@ -1469,7 +1469,7 @@ impl Train {
     /// The repo's status sources: GitHub answers and train passes.
     fn expect_sources(&self, repo: &str) {
         let (fresh, now) = (&self.options.fresh, self.now_ms());
-        fresh.expect(&fresh::github(repo), fresh::github_stale_ms(), now);
+        fresh.expect(&fresh::github(repo), fresh::GITHUB_STALE_MS, now);
         fresh.expect(&fresh::train(repo), fresh::TRAIN_STALE_MS, now);
     }
 

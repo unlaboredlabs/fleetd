@@ -228,7 +228,7 @@ export const agentsAt = (f: Fixture, projects: ReadonlyArray<{ ref: Ref; n: numb
 
 export type RowState = "working" | "waiting_on_you" | "blocked" | "idle";
 
-export const statusRow = (f: Fixture, ref: Ref, title: string, state: RowState, extra: { agents?: number; pct?: [number, number]; blocked?: string; merged?: string; mergedAgoMs?: number; planning?: boolean; stale?: string } = {}): JsonObject => ({
+export const statusRow = (f: Fixture, ref: Ref, title: string, state: RowState, extra: { agents?: number; pct?: [number, number]; blocked?: string; merged?: string; mergedAgoMs?: number; stale?: string } = {}): JsonObject => ({
   projectRef: { ...ref },
   title,
   state,
@@ -240,8 +240,6 @@ export const statusRow = (f: Fixture, ref: Ref, title: string, state: RowState, 
           pct: extra.pct[0] + extra.pct[1],
           verifiedPct: extra.pct[0],
           inFlightPct: extra.pct[1],
-          weights: "project",
-          ...(extra.planning === true ? { planning: { active: true, pct: 40, sharePct: 10, since: at(f.now, -600_000) } } : {}),
         },
       }),
   agentsRunning: extra.agents ?? 0,

@@ -1,50 +1,15 @@
-//! The status view: one doc per scope (fleet, project, order), derived by the hub from its event log and plan. Every
-//! part carries an as-of time; only the hub decides a source is stale, and a stale part says why and since when.
+//! Status: one row per project, derived by the hub from its event log and plan, and the series behind a row's bar.
+//! Every row carries an as-of time; only the hub decides a source is stale, and a stale row says why and since when.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
 
-use crate::chat::ChatRequestId;
-use crate::ids::{EventSeq, MachineId, ProjectRef, Timestamp};
+use crate::ids::{ProjectRef, Timestamp};
 use crate::ledger::WorkstreamId;
-use crate::model::MachineStatus;
-use crate::plan::{ItemStage, MilestoneId, PlanItemId};
-use crate::prim::{AnyInt, Count, Int, Line, List, NonNegative, Text};
-use crate::prompts::PromptRef;
-use crate::steer::{SteerId, SteerStage};
-use crate::tasks::TaskId;
+use crate::plan::{MilestoneId, PlanItemId};
+use crate::prim::{AnyInt, Count, Int, Line, List, Text};
 use crate::train::{ChangeId, ChangeState, GitHubRepo};
-
-/// What a status doc covers. `key()` is the form stored per human key ("fleet", "project:devbox/p1", "order:W41").
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum StatusScope {
-    Fleet,
-    Project {
-        #[serde(rename = "projectRef")]
-        project_ref: ProjectRef,
-    },
-    Order {
-        #[serde(rename = "workstreamId")]
-        workstream_id: WorkstreamId,
-    },
-}
-
-impl StatusScope {
-    pub fn key(&self) -> String {
-        match self {
-            Self::Fleet => "fleet".into(),
-            Self::Project { project_ref } => {
-                format!(
-                    "project:{}/{}",
-                    project_ref.machine_id, project_ref.project_id
-                )
-            }
-            Self::Order { workstream_id } => format!("order:{workstream_id}"),
-        }
-    }
-}
 
 /// Why a part is not live: its source went quiet past its cadence.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -53,16 +18,6 @@ pub struct StaleMark {
     /// The source's last good signal (a heartbeat, a GitHub answer, a train pass).
     pub since: Timestamp,
     /// "no heartbeat from devbox for 4m", "GitHub not reached for 4m: …".
-    pub reason: Line<1, 200>,
-}
-
-/// A source that is stale now, `since` its last good signal. `source` is `machine:<m>`, `usage:<m>`, `ci:<repo>`,
-/// `github:<repo>` or `train:<repo>`.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct StaleSource {
-    pub source: Line<1, 160>,
-    pub since: Timestamp,
     pub reason: Line<1, 200>,
 }
 
@@ -83,61 +38,22 @@ pub struct Progress {
     pub as_of: Timestamp,
     /// The latest scope change, e.g. "↓ from 80% · +3 items: time inspector added".
     pub marker: Option<Marker>,
-    pub stale: Option<StaleMark>,
-    /// The estimate the headline shows: verified work plus credit for the observed stages of work in flight.
-    pub estimate: Option<ProgressEstimate>,
 }
 
-/// The headline estimate and its two-tone bar: solid is what fleetd verified, lighter is in-flight credit. Every
-/// stage it credits is one fleetd observed (an event, a PR or a CI state), never an agent's word.
-#[skip_serializing_none]
+/// A project's two-tone bar: solid is what fleetd verified, lighter is credit for work in flight. Every stage it
+/// credits is one fleetd observed (an event, a PR or a CI state), never an agent's word, and nothing in it is a time.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ProgressEstimate {
     /// verified + in flight, floored; 100 only when everything is verified.
     pub pct: Int<0, 100>,
-    /// The solid part: must points verified over must points (planning share included once fixed).
+    /// The solid part: points verified over points counted.
     pub verified_pct: Int<0, 100>,
-    /// The lighter part: credit for open items' reached stages, smoothed within the current stage.
+    /// The lighter part: credit for open units' reached stages, plus in-stage credit for the time work on them ran.
     pub in_flight_pct: Int<0, 100>,
-    /// Present for an order while its lead plans, and after (with its fixed share).
-    pub planning: Option<PlanningState>,
-    /// Where the stage weights came from.
-    pub weights: WeightsBasis,
-    /// The doc's own scope only: the estimate over time, oldest first. A drop carries its reason.
-    pub series: Option<List<ProgressPoint, 0, 96>>,
 }
 
-/// Planning counts: while the lead plans (no plan items yet) it has its own small bar, not 0%.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct PlanningState {
-    /// The lead is still planning: the order has no plan items yet.
-    pub active: bool,
-    /// The planning bar: elapsed over the usual planning time, at most 90 while active, 100 once the plan exists.
-    pub pct: Int<0, 100>,
-    /// Planning's share of the order's work, fixed when the plan appears.
-    pub share_pct: Int<0, 100>,
-    pub since: Timestamp,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-#[schemars(extend("x-open" = true))]
-pub enum WeightsBasis {
-    /// Measured on this project's finished items.
-    Project,
-    /// Too few in the project: measured across the fleet.
-    Fleet,
-    /// Too few anywhere: the built-in weights.
-    Default,
-    /// A basis this build doesn't know (a newer hub). Never sent.
-    #[serde(other)]
-    #[schemars(skip)]
-    Unknown,
-}
-
-/// One point of the progress series.
+/// One point of a project's series: its bar over time, oldest first.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -145,9 +61,9 @@ pub struct ProgressPoint {
     pub at: Timestamp,
     pub pct: Int<0, 100>,
     pub verified_pct: Int<0, 100>,
-    /// Set when the estimate fell at this point; it never falls without one.
+    /// Set when the figure fell at this point; it never falls without one.
     pub drop: Option<ProgressDrop>,
-    /// Set while the estimate holds because the work in flight paused, waiting for an answer or for a usage limit to
+    /// Set while the figure holds because the work in flight paused, waiting for an answer or for a usage limit to
     /// reset ("paused: an agent hit a usage limit"). A marker, not a drop: what was earned stays.
     pub paused: Option<Line<1, 200>>,
 }
@@ -172,7 +88,7 @@ pub enum DropReason {
     Unknown,
 }
 
-/// Why the estimate fell, shown as a marker on the sparkline.
+/// Why the figure fell.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ProgressDrop {
@@ -198,198 +114,6 @@ pub struct Marker {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 #[schemars(extend("x-open" = true))]
-pub enum GateKind {
-    /// An in-progress item with open items `after` it.
-    Plan,
-    /// An open time span on the scope's tasks or changes.
-    Live,
-    /// The order's phase, when no span says more. Also what a kind this build doesn't know decodes as.
-    #[serde(other)]
-    Phase,
-}
-
-/// What the scope is waiting on.
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct Gate {
-    pub kind: GateKind,
-    /// "P12 full lab run", "CI on #212", "your answer on `api.path`".
-    pub label: Line<1, 160>,
-    /// It blocks every in-progress item of its order.
-    pub serial: bool,
-    pub since: Option<Timestamp>,
-    pub item_id: Option<PlanItemId>,
-    pub workstream_id: Option<WorkstreamId>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-#[schemars(extend("x-open" = true))]
-pub enum HeadlineSource {
-    /// Phrased by a model from the facts. Only older hubs wrote these.
-    Generated,
-    /// The deterministic template, the only source this hub writes. Also what a source this build doesn't know decodes
-    /// as.
-    #[serde(other)]
-    Template,
-}
-
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct Headline {
-    /// Starts with "Not live: …" when a source the scope depends on is stale; the hub writes that clause.
-    pub text: Line<1, 400>,
-    pub source: HeadlineSource,
-    /// Why the template shows, from older hubs that also generated lines.
-    pub reason: Option<Line<1, 200>>,
-    /// The prompt version that wrote a generated line, from older hubs.
-    pub prompt_ref: Option<PromptRef>,
-    pub at: Timestamp,
-}
-
-/// Counts since the reading key last looked at this scope. Zero counts are hidden by clients.
-#[skip_serializing_none]
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct Since {
-    /// Absent: never looked (or not a human key).
-    pub seen_at: Option<Timestamp>,
-    pub seen_seq: Option<EventSeq>,
-    /// The mark is older than the event log keeps ("since more than 30 days").
-    pub pruned: Option<bool>,
-    pub merged: Count,
-    pub verified: Count,
-    pub started: Count,
-    pub failed: Count,
-    /// Net items added (negative: dropped) by scope changes.
-    pub scope_items: AnyInt,
-}
-
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct DoneRow {
-    /// Absent for an order with no plan items, which counts as one item.
-    pub item_id: Option<PlanItemId>,
-    pub workstream_id: Option<WorkstreamId>,
-    pub title: Line<1, 120>,
-    pub done_at: Timestamp,
-    /// "#208 merged by the train 13:12 · check 2 passed C7".
-    pub evidence: Line<1, 200>,
-}
-
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct InProgressRow {
-    pub item_id: Option<PlanItemId>,
-    pub workstream_id: WorkstreamId,
-    pub title: Line<1, 120>,
-    /// Join to the live feed's lanes for what each agent is doing now.
-    pub task_ids: List<TaskId, 0, 10>,
-    /// Those of `taskIds` that run on the medium profile; the rest run high. Absent when none does.
-    pub medium_task_ids: Option<List<TaskId, 0, 10>>,
-    pub change_ids: List<ChangeId, 0, 10>,
-    pub gate: Option<Line<1, 160>>,
-    pub stale: Option<StaleMark>,
-    /// The order's latest steers, newest first, on its first in-progress row only.
-    pub steers: Option<List<StatusSteer, 0, 3>>,
-    /// The furthest stage fleetd observed for the item.
-    pub stage: Option<ItemStage>,
-    /// Share of the item's size credited to the estimate.
-    pub credit_pct: Option<Int<0, 100>>,
-    /// Past 1.5× the usual time for its current stage: flagged in Risks, never credited past 90% of the stage.
-    pub slower_than_usual: Option<bool>,
-    /// What it still waits on, in order: open items it is `after`, then its remaining stages, e.g.
-    /// ["review of #12", "CI on #12", "merge", "done-when checks"].
-    pub waiting_on: Option<List<Line<1, 80>, 0, 8>>,
-    /// Open items that wait on it.
-    pub blocking: Option<List<PlanItemId, 0, 10>>,
-    /// It is the scope's critical path: the most unfinished work (its own and what waits on it) runs through it.
-    pub critical: Option<bool>,
-}
-
-/// A steer as the status doc shows it: "↳ you steered S12 14:02 · acknowledged · −1 item".
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct StatusSteer {
-    pub id: SteerId,
-    pub text: Line<1, 120>,
-    pub stage: SteerStage,
-    pub at: Timestamp,
-    /// The plan change it made, e.g. "−1 item".
-    pub plan_change: Option<Line<1, 200>>,
-}
-
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct NextRow {
-    pub item_id: PlanItemId,
-    pub workstream_id: Option<WorkstreamId>,
-    pub title: Line<1, 120>,
-    /// Open items it waits on.
-    pub after: List<PlanItemId, 0, 5>,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct NeedsYou {
-    pub count: Count,
-    /// Open secret and approval requests, shown inline in the project's chat.
-    pub request_ids: List<ChatRequestId, 0, 10>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-#[schemars(extend("x-open" = true))]
-pub enum RiskRule {
-    CiRedMain,
-    MachineOffline,
-    BlockedOnYou,
-    RiskiestItem,
-    CiRedRepeat,
-    MachineFlaky,
-    UsageHigh,
-    SlotsFull,
-    NoPlan,
-    /// A steer was not acknowledged, or has gone 10 minutes delivered without it.
-    SteerUnacknowledged,
-    /// An item has spent over 1.5× the usual time in its current stage.
-    SlowerThanUsual,
-    /// A PR waiting for the merge train is held by the train's last error (a checkout the node won't run git in, a
-    /// blocked worktree, a refused merge).
-    TrainStuck,
-    /// A rule this build doesn't know (a newer hub): shown as a plain risk line. Never sent.
-    #[serde(other)]
-    #[schemars(skip)]
-    Unknown,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-#[schemars(extend("x-open" = true))]
-pub enum RiskLevel {
-    Danger,
-    /// Also what a level this build doesn't know decodes as.
-    #[serde(other)]
-    Warning,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct Risk {
-    pub rule: RiskRule,
-    pub level: RiskLevel,
-    pub message: Line<1, 200>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-#[schemars(extend("x-open" = true))]
 pub enum CiState {
     Green,
     Red,
@@ -397,79 +121,6 @@ pub enum CiState {
     /// Not fetched since the hub started. Also what a state this build doesn't know decodes as.
     #[serde(other)]
     Unknown,
-}
-
-/// Main-branch CI of one repo.
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct HealthCi {
-    pub repo: GitHubRepo,
-    pub state: CiState,
-    pub sha: Option<Line<1, 64>>,
-    pub failing: List<Text<1, 120>, 0, 10>,
-    /// When the state last changed.
-    pub since: Option<Timestamp>,
-    /// The last GitHub answer for the repo.
-    pub as_of: Option<Timestamp>,
-    pub stale: Option<StaleMark>,
-}
-
-/// A sleep a machine's node reported on waking, epoch milliseconds (the same fields as `machine.slept`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct SleptAt {
-    pub from_ms: Count,
-    pub to_ms: Count,
-}
-
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct HealthMachine {
-    pub machine_id: MachineId,
-    pub status: MachineStatus,
-    pub last_seen_at: Option<Timestamp>,
-    /// Its latest sleep, for 24 h after it woke.
-    pub slept: Option<SleptAt>,
-    /// Times it went offline or slept in the last 24 h.
-    pub drops_today: Count,
-    pub stale: Option<StaleMark>,
-}
-
-/// One claude usage window: the highest utilization of that type across machines.
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct HealthUsage {
-    /// claude's name, e.g. "five_hour", "seven_day".
-    pub limit_type: Text<1, 40>,
-    pub machine_id: MachineId,
-    /// 0 to 1.
-    pub utilization: Option<NonNegative>,
-    pub resets_at: Option<Timestamp>,
-    pub status: Text<1, 40>,
-    pub observed_at: Option<Timestamp>,
-    pub stale: Option<StaleMark>,
-}
-
-/// "8 running · slots 8/40 · 1 queued". Hub-local, never stale.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct HealthSlots {
-    pub running: Count,
-    pub used: Count,
-    pub cap: Count,
-    pub queued: Count,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct Health {
-    pub ci: List<HealthCi, 0, 10>,
-    pub machines: List<HealthMachine, 0, 20>,
-    pub usage: List<HealthUsage, 0, 4>,
-    pub slots: HealthSlots,
 }
 
 /// What a project is doing, in one word.
@@ -515,88 +166,14 @@ pub struct ProjectStatusRow {
     pub state: ProjectRowState,
     /// Blocked only: why, in one line, for the expanded row.
     pub blocked_reason: Option<Line<1, 160>>,
-    /// The project's progress estimate (verified, in flight, planning), without its series. Absent when the project
-    /// has nothing to count.
+    /// The project's bar, under the drop rule of its series (status_get). Absent when it has nothing to count.
     pub progress: Option<ProgressEstimate>,
-    /// Its lead and task sessions holding a slot now.
+    /// Its task agents holding a slot now (the lead's own turn is not one).
     pub agents_running: Count,
     pub last_merged: Option<LastMerged>,
     pub as_of: Timestamp,
-    /// Set when a source the row reads (its machine, its repo on GitHub) went quiet.
+    /// Set when a source the row reads (its machine, its repos on GitHub, their merge train) went quiet.
     pub stale: Option<StaleMark>,
-}
-
-/// A child figure: the fleet's projects, a project's milestones, an order's milestones.
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ScopePart {
-    pub title: Line<1, 120>,
-    /// Open it as its own scope (projects and orders).
-    pub scope: Option<StatusScope>,
-    pub milestone_id: Option<MilestoneId>,
-    pub progress: Progress,
-}
-
-/// How many rows each capped list left out.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct MoreCounts {
-    pub done: Count,
-    pub in_progress: Count,
-    pub next: Count,
-    pub risks: Count,
-    pub parts: Count,
-    pub stale: Count,
-}
-
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct StatusDoc {
-    pub scope: StatusScope,
-    /// "Fleet", the project's title or the order's.
-    pub title: Line<1, 120>,
-    /// Bumps whenever the doc's content changes; `status_wait` waits past it.
-    pub version: Count,
-    /// The event log's head the doc reflects; `status_seen` records it.
-    pub seq: EventSeq,
-    /// The hub clock when the doc was rendered.
-    pub now: Timestamp,
-    pub progress: Progress,
-    /// Newest first.
-    pub markers: List<Marker, 0, 3>,
-    pub gates: List<Gate, 0, 3>,
-    pub headline: Headline,
-    pub since: Since,
-    pub parts: List<ScopePart, 0, 20>,
-    pub done: List<DoneRow, 0, 10>,
-    pub in_progress: List<InProgressRow, 0, 20>,
-    pub next: List<NextRow, 0, 10>,
-    pub needs_you: NeedsYou,
-    pub risks: List<Risk, 0, 5>,
-    pub health: Health,
-    pub stale: List<StaleSource, 0, 10>,
-    pub more: MoreCounts,
-}
-
-/// What the headline prompt is given: code builds it, the model only phrases it. Canonical JSON, at most 2 KB. It
-/// carries no time estimates, and a generated line with a time phrase is rejected.
-#[skip_serializing_none]
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct HeadlineFacts {
-    pub scope: String,
-    pub pct: i64,
-    pub was: Option<i64>,
-    pub scope_change: Option<String>,
-    /// At most 3 in-progress titles, plan order.
-    pub doing: Vec<String>,
-    /// At most 2 gate labels, serial first.
-    pub waiting_on: Vec<String>,
-    pub needs_you: i64,
-    /// At most 2 risk messages.
-    pub risks: Vec<String>,
 }
 
 // Event data the status view adds to the log.
@@ -666,17 +243,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn unknown_variants_degrade_instead_of_failing_the_doc() {
+    fn unknown_variants_degrade_instead_of_failing_the_row() {
         let from = |v: &str| serde_json::Value::String(v.into());
-        let rule: RiskRule = serde_json::from_value(from("brand_new_rule")).unwrap();
-        assert_eq!(rule, RiskRule::Unknown);
-        let level: RiskLevel = serde_json::from_value(from("catastrophic")).unwrap();
-        assert_eq!(level, RiskLevel::Warning);
         let ci: CiState = serde_json::from_value(from("flaky")).unwrap();
         assert_eq!(ci, CiState::Unknown);
         let reason: DropReason = serde_json::from_value(from("brand_new")).unwrap();
         assert_eq!(reason, DropReason::Unknown);
-        let stage: ItemStage = serde_json::from_value(from("deployed")).unwrap();
-        assert_eq!(stage, ItemStage::Unknown);
+        let state: ProjectRowState = serde_json::from_value(from("asleep")).unwrap();
+        assert_eq!(state, ProjectRowState::Unknown);
     }
 }
