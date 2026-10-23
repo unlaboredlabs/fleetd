@@ -5,9 +5,13 @@
 #
 # It runs the lab's demo order (tests/lab/demoFanout.ts: one tier-L order, three writers, reviewers and a verifier,
 # the public lab repo unlaboredlabs/fleetd-lab through the merge train, in branch namespace slot/9) on a hub and
-# node of its own, with the desktop app (app/desktop, Electron) recording its own window and prints the MP4's path. The app records its page
+# node of its own, with the desktop app (app/desktop, Electron) recording its own window. The app records its page
 # through Chromium's own capture (FLEETD_RECORD), so there is no Screen Recording permission and no ffmpeg, and
 # paints the traffic lights the window server draws back into each frame.
+#
+# The clip lands at a fixed path, FLEETD_DEMO_DIR/clip.mp4 (default ~/fleetd-demo/clip.mp4), overwritten by every run
+# (cleared when a run starts, so it never holds an older one), and its path is the last line printed. The run's own copy,
+# the whole capture, the milestones and the stills stay in FLEETD_DEMO_DIR/recordings/<date-time>/.
 #
 # The fleetd it runs is the nightly release: the CLI and the desktop app (fleetd-desktop-macos-universal.zip) from
 # https://github.com/unlaboredlabs/fleetd/releases/download/nightly/, each checked against the release's SHA256SUMS
@@ -29,7 +33,7 @@
 #
 # Needs git, gh (logged in), claude and curl (and cargo and pnpm to build). Costs about 20 turns and 15 minutes.
 # Ctrl-C stops everything it started; then run it again. Environment:
-#   FLEETD_DEMO_DIR          the sandbox (default ~/fleetd-demo)
+#   FLEETD_DEMO_DIR          the sandbox, and clip.mp4 in it (default ~/fleetd-demo)
 #   FLEETD_DEMO_BUILD=1      build from source instead of using the nightly
 #   FLEETD_DEMO_REF          with FLEETD_DEMO_BUILD=1 and no checkout: the branch or tag to build (default main)
 #
@@ -258,6 +262,9 @@ case "$reply" in *OK*) say "Claude answers" ;; *) die "claude in the sandbox did
 [ -d "$slot/lab-repo/.git" ] || HOME="$H" git clone -q "https://github.com/$LAB_REPO" "$slot/lab-repo"
 
 rec="$SANDBOX/recordings/$(date +%Y%m%d-%H%M%S)"
+# The fixed path holds only this run's clip, so an older one is never taken for it.
+clip="$SANDBOX/clip.mp4"
+rm -f "$clip" "$clip.tmp"
 say "Running the demo order; the app opens and records itself. Leave the Mac awake."
 # In the background, so a signal reaches the trap at once and the trap hands it on to the driver.
 (cd "$repo/tests/lab" && exec env -i HOME="$H" PATH="$PATH" USER="$user" LANG="${LANG:-en_US.UTF-8}" \
@@ -270,9 +277,14 @@ lab_pid=""
 mp4="$rec/clip.mp4"
 [ -f "$run/demo/timeline.jsonl" ] && cp "$run/demo/timeline.jsonl" "$rec/"
 if [ -s "$mp4" ]; then
-  say "Recording: $mp4"
-  echo "From just before the order is typed to 3 s after the last merge. The whole capture: $rec/fleetd.mp4;"
-  echo "milestones (wall clock): $rec/timeline.jsonl; stills every 2 s: $rec/frames/"
+  # Through a temporary name, so the fixed path never holds half a clip.
+  cp "$mp4" "$clip.tmp" && mv -f "$clip.tmp" "$clip"
+  echo "From just before the order is typed to 3 s after the last merge. This run: $rec/ (the whole capture"
+  echo "fleetd.mp4, milestones (wall clock) timeline.jsonl, stills every 2 s in frames/)"
 fi
-[ "$status" -eq 0 ] || die "the demo run failed (exit $status); its logs are in $run/logs"
+if [ "$status" -ne 0 ]; then
+  [ -s "$mp4" ] && echo "This run's clip is at $clip, though a check after it failed."
+  die "the demo run failed (exit $status); its logs are in $run/logs"
+fi
 [ -s "$mp4" ] || die "no recording at $mp4; see $run/demo/app.log"
+say "Recording: $clip"
