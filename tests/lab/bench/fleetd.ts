@@ -127,6 +127,10 @@ export async function runFleetd(opts: FleetdRun) {
     // The node runs cmd checks only under its roots: the run dir, where the checkout is.
     await h.stopCli(`node-${MACHINE}`);
     h.setCmdRoots(MACHINE, [runDir]);
+    // The worktrees live under /tmp, often a small tmpfs: the default floor (20 GB or 10% free) would pause every
+    // new agent of a run there and the run would sit until its timeout. claude-p runs on the same /tmp with no floor.
+    const nodeJson = path.join(h.nodeHome(MACHINE), "node.json");
+    fs.writeFileSync(nodeJson, `${JSON.stringify({ ...JSON.parse(fs.readFileSync(nodeJson, "utf8")), minFreeGb: 2 }, null, 2)}\n`);
     h.startCli(`node-${MACHINE}`, ["node", "run", "--home", h.nodeHome(MACHINE)], {}, h.nodeEnv(MACHINE, nodeOpts));
     await online();
     const projectId = await h.until("project_add", 120_000, async () => {
