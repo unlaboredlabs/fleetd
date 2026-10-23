@@ -221,9 +221,6 @@ pub enum RunnerError {
     },
     #[error("could not start {binary}: {message}")]
     Spawn { binary: String, message: String },
-    /// claude refused before running (e.g. "Session ID … is already in use."), with its stderr.
-    #[error("{0}")]
-    Refused(String),
 }
 
 /// One agent runtime. Claude now; Codex later as its own adapter.

@@ -32,7 +32,7 @@ pub struct FakeRunner {
     pub timed: bool,
     /// False: an interrupt is ignored, as by a claude stuck in a tool.
     pub honour_interrupt: bool,
-    /// The next spawn fails with this refusal.
+    /// The next process refuses as claude does at startup: its first send fails, then it exits with these words.
     pub refuse_next: Mutex<Option<String>>,
     pub spawns: Mutex<Vec<SessionSpec>>,
     /// Every command any process received, with the spawn index.
@@ -118,9 +118,6 @@ impl Runner for FakeRunner {
     }
 
     fn spawn(&self, spec: SessionSpec) -> Result<SessionHandle, RunnerError> {
-        if let Some(refusal) = self.refuse_next.lock().unwrap().take() {
-            return Err(RunnerError::Refused(refusal));
-        }
         let index = {
             let mut spawns = self.spawns.lock().unwrap();
             spawns.push(spec);
@@ -129,6 +126,7 @@ impl Runner for FakeRunner {
         let (cmd_tx, cmd_rx) = mpsc::channel(16);
         let (ev_tx, ev_rx) = mpsc::channel(256);
         let process = Process {
+            refusal: self.refuse_next.lock().unwrap().take(),
             index,
             turns: self.turns.clone(),
             next_turn: self.next_turn.clone(),
@@ -149,6 +147,7 @@ impl Runner for FakeRunner {
 }
 
 struct Process {
+    refusal: Option<String>,
     index: usize,
     turns: Vec<Turn>,
     next_turn: Arc<AtomicUsize>,
@@ -198,6 +197,9 @@ impl Process {
                     Some(_) => continue,
                 },
             };
+            if let Some(stderr) = self.refusal.take() {
+                break self.refuse(run_id, stderr).await;
+            }
             match self.play(&run_id).await {
                 Stop::TurnOver => {}
                 Stop::Exit(exit) => break exit,
@@ -271,6 +273,29 @@ impl Process {
             })),
             _ => None,
         }
+    }
+
+    /// The send's run fails as the real classifier reads claude's exit.
+    async fn refuse(&self, run_id: String, stderr: String) -> ExitInfo {
+        let exit = ExitInfo {
+            code: Some(1),
+            signal: None,
+            stderr_tail: stderr,
+        };
+        let evidence = crate::node::runner::failure::FailureEvidence {
+            exit: Some(exit.clone()),
+            ..Default::default()
+        };
+        let failure = crate::node::runner::failure::classify(&evidence).unwrap();
+        let _ = self
+            .tx
+            .send(RunnerEvent::RunEnded {
+                run_id,
+                outcome: RunOutcome::Failed(failure),
+                usage: None,
+            })
+            .await;
+        exit
     }
 
     async fn play(&mut self, run_id: &str) -> Stop {

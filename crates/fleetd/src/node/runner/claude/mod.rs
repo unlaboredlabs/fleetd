@@ -17,8 +17,8 @@ use fleetd_contracts::model::RuntimeMode;
 use fleetd_contracts::sessions::RunnerInfo;
 
 use super::{
-    BoxFut, ExitInfo, Runner, RunnerError, SessionHandle, SessionSpec, claude_setup, conformance,
-    failure, process,
+    BoxFut, Runner, RunnerError, SessionHandle, SessionSpec, claude_setup, conformance, failure,
+    process,
 };
 use mapper::{Classify, StreamMapper};
 
@@ -361,10 +361,10 @@ pub fn session_file(config_dir: &Path, cwd: &Path, id: &str) -> Option<PathBuf> 
     })
 }
 
-/// claude refused to start because the session id is taken (a first start of a session that already exists, when
-/// [`session_file`] could not tell). The caller retries once with `resume`.
-pub fn session_in_use(exit: &ExitInfo) -> bool {
-    exit.stderr_tail.contains("is already in use")
+/// claude's words (stderr, so also the failed run's message) for a first start of a session it already has, when
+/// [`session_file`] could not tell. The session service sends the run again to a resumed process.
+pub fn session_in_use(text: &str) -> bool {
+    text.contains("is already in use")
 }
 
 #[cfg(test)]

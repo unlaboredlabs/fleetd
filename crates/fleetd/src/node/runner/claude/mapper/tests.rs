@@ -730,8 +730,13 @@ fn a_refused_start_ends_the_run_with_claudes_words() {
         exit.stderr_tail,
         "Error: Session ID 289edad3-c10d-43bc-9a66-699588cecfc8 is already in use."
     );
-    assert!(crate::node::runner::claude::session_in_use(exit));
     assert_eq!(replay.evidence[0].exit.as_ref(), Some(exit));
+    // What the session service reads to send the run again to a resumed process.
+    let failure = crate::node::runner::failure::classify(&replay.evidence[0]).unwrap();
+    assert_eq!(failure.class, FailureClass::ProcessExited);
+    assert!(crate::node::runner::claude::session_in_use(
+        failure.message.as_str()
+    ));
 }
 
 fn line(json: Value) -> Line {

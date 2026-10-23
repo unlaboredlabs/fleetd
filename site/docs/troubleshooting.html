@@ -397,6 +397,11 @@ work’s id:</p>
 <td>Add its folder to <code dir="auto">cmdRoots</code> in <a href="/docs/config-and-files#node-json"><code dir="auto">node.json</code></a> and restart the node.</td>
 </tr>
 <tr>
+<td>An agent’s activity says “node retry 1/3 in 57 s: overloaded”</td>
+<td>Claude’s API was overloaded or the network failed, after claude’s own retries.</td>
+<td>Nothing. The node continues the same run after about 1, 4 and 15 minutes, then fails it with claude’s words.</td>
+</tr>
+<tr>
 <td>Your message waits and the chat says why</td>
 <td>The lead can’t start: <code dir="auto">claude</code> logged out, out of range, or the worker offline.</td>
 <td>See <a href="#claude">Claude</a> and <a href="#machines">Machines</a>.</td>
