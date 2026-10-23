@@ -205,12 +205,7 @@ pub fn receipt_line(steer: &Value) -> String {
             format!("{id} delivered{}{how}{detail}", at("deliveredAt"))
         }
         "acknowledged" => format!("{id} acknowledged{}{}", at("ackedAt"), quote("ackExcerpt")),
-        "unacknowledged" => format!(
-            "{id} not acknowledged: its reply did not name {id}{}",
-            st(steer, "ackExcerpt")
-                .map(|e| format!("; it said \"{}\"", e.replace('\n', " ")))
-                .unwrap_or_default()
-        ),
+        "unacknowledged" => format!("{id} not acknowledged: no reply after it was delivered"),
         other => format!("{id} {other}{detail}"),
     }
 }
@@ -550,7 +545,7 @@ mod tests {
         let steer = json!({
             "id": "S12", "stage": "acknowledged", "how": "stopped", "stoppedTool": "cargo test --workspace",
             "queuedAt": "2026-10-18T14:02:07.120Z", "deliveredAt": "2026-10-18T14:02:07.143Z",
-            "ackedAt": "2026-10-18T14:02:08.910Z", "ackExcerpt": "S12: dropping the docs page",
+            "ackedAt": "2026-10-18T14:02:08.910Z", "ackExcerpt": "Dropping the docs page",
         });
         // The names read here are the contract's: a real Steer round-trips through them.
         let mut full = steer.clone();
@@ -572,20 +567,13 @@ mod tests {
         );
         assert!(
             lines[1].starts_with("S12 acknowledged ")
-                && lines[1].ends_with("\"S12: dropping the docs page\"")
+                && lines[1].ends_with("\"Dropping the docs page\"")
         );
         assert!(new_lines(&steer, &mut printed).is_empty());
     }
 
     #[test]
-    fn not_acknowledged_quotes_the_reply_it_got() {
-        let line = receipt_line(
-            &json!({ "id": "S3", "stage": "unacknowledged", "ackExcerpt": "Running the tests\nnow" }),
-        );
-        assert_eq!(
-            line,
-            "S3 not acknowledged: its reply did not name S3; it said \"Running the tests now\""
-        );
+    fn a_waiting_steer_says_what_it_waits_for() {
         let waiting = receipt_line(
             &json!({ "id": "S4", "stage": "queued", "detail": "waiting for lab-b (until 14:30)" }),
         );

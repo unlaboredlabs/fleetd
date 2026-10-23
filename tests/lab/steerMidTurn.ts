@@ -167,7 +167,7 @@ export async function steerMidTurn(lab: Lab) {
     const calls = toolUses(firstTool).map((b) => ({ tool: b.name, input: b.input }));
     check(json(calls).includes(marker), `the lead's next tool call is the redirect: ${json(calls).slice(0, 600)}`);
     const acked = (await steerEvent(`${steer.id} acknowledged`, c, steer.id, "steer.acknowledged", 30_000 - (Date.now() - t0))).event;
-    check(acked.type === "steer.acknowledged" && /^S[1-9][0-9]*:/u.test(acked.data?.excerpt ?? ""), `${steer.id} acknowledged with "S<n>:": ${JSON.stringify(acked.data)}`);
+    check(acked.type === "steer.acknowledged" && Date.parse(acked.at) >= Date.parse(delivered.at) && (acked.data?.excerpt ?? "").trim() !== "", `${steer.id} acknowledged by a reply after delivery: ${JSON.stringify(acked.data)}`);
     const ackMs = Date.parse(acked.at) - t0;
     const done = await turnDone(threadId, c, "redirect");
     // The run the steer cut short is superseded: not an interruption, so no thread.interrupted for it.

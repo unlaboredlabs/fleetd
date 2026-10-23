@@ -166,7 +166,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "steer_send",
-        "Steer an order's lead (target {workstreamId}) or one task (target {taskId}) mid-run. mode queue (default) lands at the agent's next tool boundary as its own turn; now stops its current step and delivers at once. Returns the steer S<n> with its receipt stage; steer.delivered and steer.acknowledged (the agent's reply names S<n>) or steer.unacknowledged follow as events. A person's device (a human key) only.",
+        "Steer an order's lead (target {workstreamId}) or one task (target {taskId}) mid-run. mode queue (default) lands at the agent's next tool boundary as its own turn; now stops its current step and delivers at once. Returns the steer S<n> with its receipt stage; steer.delivered and steer.acknowledged (the agent's next reply) or steer.unacknowledged follow as events. A person's device (a human key) only.",
     ),
     (
         "steer_withdraw",

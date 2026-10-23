@@ -1,6 +1,6 @@
 //! Steering: a person (or a lead, for its own tasks) redirects a running agent mid-run. A steer is one short user
 //! message sent straight to the agent's thread, never through the wake debounce. Its receipt follows claude's own
-//! frames: queued at the hub, delivered when claude's context takes it in, acknowledged when the agent names its id.
+//! frames: queued at the hub, delivered when claude's context takes it in, acknowledged by the agent's next reply.
 //! See docs/build/steering-spec.md.
 
 use schemars::JsonSchema;
@@ -56,9 +56,9 @@ pub enum SteerStage {
     Queued,
     /// claude's context took it in (`command_lifecycle started`).
     Delivered,
-    /// The agent's reply named its id, or a lead call did (`--steer S12`).
+    /// The agent replied after taking it in, or a lead call named it (`--steer S12`).
     Acknowledged,
-    /// Its run ended with no reply naming it.
+    /// Its run ended with no reply after it was delivered.
     Unacknowledged,
     /// Dropped while still queued.
     Withdrawn,
@@ -142,7 +142,7 @@ pub struct Steer {
     /// The first model request that carried it.
     pub seen_at: Option<Timestamp>,
     pub acked_at: Option<Timestamp>,
-    /// Acknowledged: the reply naming it; unacknowledged: the first reply. First 200 characters.
+    /// Acknowledged: the agent's reply, first 200 characters.
     pub ack_excerpt: Option<Text<0, 200>>,
     /// A plan change the steer made, e.g. "−1 item".
     pub plan_change: Option<Text<0, 200>>,
@@ -200,20 +200,6 @@ pub struct SteerEventData {
     pub reason: Option<String>,
 }
 
-/// The token an agent's text must contain to acknowledge `id`: the id as a whole word ("S12", not "S120").
-pub fn names_steer(text: &str, id: &SteerId) -> bool {
-    let id = id.as_str();
-    text.match_indices(id).any(|(at, _)| {
-        let word = |c: char| c.is_alphanumeric() || c == '_';
-        let before = text[..at].chars().next_back().is_none_or(|c| !word(c));
-        let after = text[at + id.len()..]
-            .chars()
-            .next()
-            .is_none_or(|c| !word(c));
-        before && after
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -234,15 +220,5 @@ mod tests {
         );
         assert!(serde_json::from_value::<SteerId>(json!("S0")).is_err());
         assert_eq!(SteerId::from_n(12).n(), Some(12));
-    }
-
-    #[test]
-    fn the_ack_token_is_the_id_as_a_whole_word() {
-        let id = SteerId::from_n(12);
-        assert!(names_steer("S12: dropping the docs page", &id));
-        assert!(names_steer("Got it (S12).", &id));
-        assert!(!names_steer("S120: something else", &id));
-        assert!(!names_steer("XS12 is a size", &id));
-        assert!(!names_steer("no token here", &id));
     }
 }

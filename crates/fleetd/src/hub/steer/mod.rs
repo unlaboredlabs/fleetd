@@ -540,11 +540,10 @@ pub fn on_receipt(hub: &Hub, machine_id: &MachineId, r: &SteerReceipt) {
             steer.ack_excerpt = r.excerpt.clone();
             acked = at_ms;
         }
-        SteerStage::Unacknowledged => steer.ack_excerpt = r.excerpt.clone(),
         SteerStage::Failed | SteerStage::Expired => {
             steer.detail = r.reason.as_ref().map(|t| Text::unchecked(js_take(t, 400)));
         }
-        SteerStage::Withdrawn | SteerStage::Queued => {}
+        SteerStage::Unacknowledged | SteerStage::Withdrawn | SteerStage::Queued => {}
     }
     // An acknowledgement that skipped `delivered` (it came first in a replay) still says when. A steer withdrawn,
     // failed or expired was never delivered.
@@ -830,7 +829,7 @@ impl crate::hub::link::lead_calls::LeadCallHandler for TaskMessage {
                 fleetd_contracts::lead_calls::TaskResultFrame {
                     task,
                     next: Some(format!(
-                        "{} {}: its reply names it when taken in.",
+                        "{} {}: its next reply acknowledges it.",
                         steer.id,
                         steer.detail.as_deref().unwrap_or("sent")
                     )),

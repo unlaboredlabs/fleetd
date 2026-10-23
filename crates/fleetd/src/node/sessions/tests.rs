@@ -1087,12 +1087,13 @@ const STEER_TURNS: &str = r#"{"dir":"in","ms":0,"msg":{"type":"user","uuid":"s1"
 {"dir":"out","ms":30010,"msg":{"type":"result","subtype":"success","is_error":false,"result":"slept"}}
 {"dir":"in","ms":0,"msg":{"type":"user","uuid":"s2"}}
 {"dir":"out","ms":1,"msg":{"type":"command_lifecycle","command_uuid":"s2","state":"started"}}
-{"dir":"out","ms":5,"msg":{"type":"assistant","message":{"id":"m2","content":[{"type":"text","text":"S1: dropping the docs page"}]}}}
-{"dir":"out","ms":6,"msg":{"type":"result","subtype":"success","is_error":false,"result":"S1: dropping the docs page"}}
+{"dir":"out","ms":5,"msg":{"type":"assistant","message":{"id":"m2","content":[{"type":"text","text":"Dropping the docs page"}]}}}
+{"dir":"out","ms":6,"msg":{"type":"result","subtype":"success","is_error":false,"result":"Dropping the docs page"}}
 {"dir":"in","ms":0,"msg":{"type":"user","uuid":"s3"}}
 {"dir":"out","ms":1,"msg":{"type":"command_lifecycle","command_uuid":"s3","state":"started"}}
-{"dir":"out","ms":5,"msg":{"type":"assistant","message":{"id":"m3","content":[{"type":"text","text":"OK"}]}}}
-{"dir":"out","ms":6,"msg":{"type":"result","subtype":"success","is_error":false,"result":"OK"}}
+{"dir":"out","ms":5,"msg":{"type":"assistant","message":{"id":"m3","content":[{"type":"tool_use","id":"tu3","name":"Bash","input":{"command":"true"}}]}}}
+{"dir":"out","ms":6,"msg":{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"tu3","content":"","is_error":false}]}}}
+{"dir":"out","ms":7,"msg":{"type":"result","subtype":"success","is_error":false,"result":""}}
 "#;
 
 fn steer(id: &str, run_id: &str, mode: SendMode, tag: Option<&str>) -> SessionCall {
@@ -1162,14 +1163,14 @@ async fn a_steer_mid_turn_supersedes_the_run_and_its_receipts_follow_claudes_fra
     );
     assert_eq!(
         receipts[1].excerpt.as_deref(),
-        Some("S1: dropping the docs page")
+        Some("Dropping the docs page")
     );
     hub.settled("r2").await;
     let runs = hub.service.store().runs("s1").unwrap();
     assert_eq!(runs[0].status, RunStatus::Interrupted);
     assert_eq!(runs[0].superseded_by.as_deref(), Some("r2"));
 
-    // A steer whose reply does not name it is unacknowledged, with that reply.
+    // A steer whose run ends without a reply is unacknowledged.
     hub.ok(steer("s1", "r3", SendMode::Boundary, Some("S2")))
         .await;
     let receipts = hub.receipts_until_final().await;
@@ -1181,7 +1182,7 @@ async fn a_steer_mid_turn_supersedes_the_run_and_its_receipts_follow_claudes_fra
             (SteerStage::Unacknowledged, None),
         ]
     );
-    assert_eq!(receipts[1].excerpt.as_deref(), Some("OK"));
+    assert_eq!(receipts[1].excerpt, None);
 }
 
 #[tokio::test(start_paused = true)]
@@ -1278,7 +1279,7 @@ async fn each_steer_a_run_carries_gets_its_own_receipts() {
     .await;
     hub.summary(|s| s.active_run_id.as_deref() == Some("r1"))
         .await;
-    // One message carrying S2 and, held before it, S1; the reply names only S1.
+    // One message carrying S2 and, held before it, S1; its one reply acknowledges both.
     let SessionCall::Send {
         session_id,
         run_id,
@@ -1317,7 +1318,7 @@ async fn each_steer_a_run_carries_gets_its_own_receipts() {
         }
     }
     assert_eq!(finals["S1"], SteerStage::Acknowledged);
-    assert_eq!(finals["S2"], SteerStage::Unacknowledged);
+    assert_eq!(finals["S2"], SteerStage::Acknowledged);
 }
 
 #[test]
