@@ -1097,16 +1097,18 @@ async fn an_update_releases_a_figure_the_old_rule_left_stuck() {
         45,
         "held: nothing since that point explains a fall"
     );
-    // Back to before the series restart, which the paused column came after.
-    let version = db.user_version().unwrap();
+    // Run the in-flight migration itself: re-opening at an older version would re-run the later ones too, which
+    // can't run twice.
+    use crate::hub::store::migrations::MIGRATIONS;
+    let release = MIGRATIONS
+        .iter()
+        .position(|m| m.contains("DELETE FROM status_series"))
+        .expect("the in-flight migration");
     db.with(|c| {
-        c.execute_batch("ALTER TABLE status_series DROP COLUMN paused")?;
-        c.pragma_update(None, "user_version", version - 2)?;
+        c.execute_batch(MIGRATIONS[release])?;
         Ok(())
     })
     .unwrap();
-    let updated = HubDb::open(home.path()).unwrap();
-    assert_eq!(updated.user_version().unwrap(), version);
     assert_eq!(estimate_after(&hub, &clock, 1).0, 14);
 }
 
