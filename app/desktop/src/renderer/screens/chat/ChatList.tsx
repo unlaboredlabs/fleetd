@@ -96,26 +96,6 @@ function Top({ state, onLoadOlder }: { state: TopState; onLoadOlder: () => void 
   );
 }
 
-function Bottom({ state, onLoadNewer, onJumpToLatest }: { state: "more" | "loading"; onLoadNewer: () => void; onJumpToLatest: () => void }) {
-  // Reaching the bottom of what is loaded asks for the page after it.
-  useEffect(() => {
-    if (state === "more") onLoadNewer();
-  }, [state, onLoadNewer]);
-  return (
-    <div className={s.top}>
-      {state === "loading" ? (
-        <Text size="xs" tone="quiet">
-          Loading later messages…
-        </Text>
-      ) : (
-        <Button variant="secondary" onClick={onJumpToLatest}>
-          Jump to latest
-        </Button>
-      )}
-    </div>
-  );
-}
-
 function SystemLine({ item }: { item: ChatItem }) {
   const [open, setOpen] = useState(false);
   return (
@@ -195,8 +175,6 @@ const RowView = memo(function RowView(props: {
   /** This is the person's newest message: its receipt shows even once sent. */
   mineLatest: boolean;
   onLoadOlder: () => void;
-  onLoadNewer: () => void;
-  onJumpToLatest: () => void;
   onTold: (lane: AgentLane) => void;
   onWithdraw: (steerId: string) => Promise<boolean>;
 }) {
@@ -204,8 +182,6 @@ const RowView = memo(function RowView(props: {
   switch (r.kind) {
     case "top":
       return <Top state={r.state} onLoadOlder={props.onLoadOlder} />;
-    case "bottom":
-      return <Bottom state={r.state} onLoadNewer={props.onLoadNewer} onJumpToLatest={props.onJumpToLatest} />;
     case "history":
       return (
         <div className={s.day} role="separator">
@@ -308,8 +284,6 @@ export function ChatList(props: {
   rows: readonly Row[];
   project: ProjectRef;
   onLoadOlder: () => void;
-  onLoadNewer: () => void;
-  onJumpToLatest: () => void;
   onTold: (lane: AgentLane) => void;
   /** Takes back one of your steers while it waits. */
   onWithdraw: (steerId: string) => Promise<boolean>;
@@ -388,8 +362,6 @@ export function ChatList(props: {
             project={props.project}
             mineLatest={r.key === mineLatest}
             onLoadOlder={props.onLoadOlder}
-            onLoadNewer={props.onLoadNewer}
-            onJumpToLatest={props.onJumpToLatest}
             onTold={props.onTold}
             onWithdraw={props.onWithdraw}
           />

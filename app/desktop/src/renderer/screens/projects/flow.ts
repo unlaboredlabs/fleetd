@@ -1,19 +1,20 @@
 // The add in flight, as a pure reducer: messages in (the user, call answers, hub events, the connection), state and
 // the calls to make out. The hub answers `project_add` and streams the clone's events separately, so an event can
 // come before the answer that names its addId: those wait in `early`. A dropped connection loses the answer and any
-// events sent meanwhile, so after the next snapshot the add is looked up again from where it started (`since`).
+// events sent meanwhile, so the next snapshot settles it: its project list has the project (added), or it doesn't
+// yet (unlisted: a clone may still be running, so it is never called failed).
 
 import type { ToolInput } from "../../../shared/contracts";
 import type { HubError } from "../../../shared/hub";
 import {
   ADD_EVENTS,
   type CloneProgressData,
-  type EventsWaitOutput,
   type HubEvent,
   type ProjectAddFailedData,
   type ProjectAddInput,
   type ProjectAddOutput,
   type ProjectAddedData,
+  type ProjectSummary,
 } from "./contracts";
 import { progress, ready, existingFolderAction, type Failure, type ProjectKey, type Ready, type Request, type Step } from "./discovery";
 import { baseName, omit } from "./source";
@@ -33,7 +34,9 @@ export type Phase =
   | { readonly kind: "pick" }
   | { readonly kind: "working"; readonly job: Job }
   | { readonly kind: "ready"; readonly ready: Ready }
-  | { readonly kind: "failed"; readonly what: string; readonly failure: Failure };
+  | { readonly kind: "failed"; readonly what: string; readonly failure: Failure }
+  /** After a drop, the hub doesn't list the project yet: a clone may still be running, or it failed (Machines says). */
+  | { readonly kind: "unlisted"; readonly what: string; readonly path: string; readonly request: Request };
 
 export interface AddState {
   readonly phase: Phase;
@@ -42,10 +45,7 @@ export interface AddState {
   /** The project_add call is out. */
   readonly awaiting: boolean;
   readonly early: ReadonlyArray<HubEvent>;
-  /** The last event seq this app has seen, and its value when the add started. */
-  readonly seen?: number;
-  readonly since?: number;
-  /** The connection dropped while the add ran; look it up once the snapshot is back. */
+  /** The connection dropped while the add ran; the next snapshot settles it. */
   readonly lost: boolean;
   /** A clone's failure, held while a dry run says whether its folder can be added instead. */
   readonly held?: Failure;
@@ -56,13 +56,12 @@ export interface AddState {
 
 export const initialAdd: AddState = { phase: { kind: "pick" }, awaiting: false, early: [], lost: false, gen: 0, live: false };
 
-export type Purpose = "add" | "inspect" | "recover";
-
-/** A step's call, typed against the contracts so it goes through the data layer's typed `call`. */
-export type Call = { readonly purpose: Purpose; readonly gen: number } & (
-  | { readonly tool: "project_add"; readonly input: ToolInput<"project_add"> }
-  | { readonly tool: "events_wait"; readonly input: ToolInput<"events_wait"> }
-);
+/** A step's project_add: the add itself, or the dry run that inspects a clone's existing folder. */
+export interface Call {
+  readonly purpose: "add" | "inspect";
+  readonly gen: number;
+  readonly input: ToolInput<"project_add">;
+}
 
 export type Outcome = { readonly ok: true; readonly output: unknown } | { readonly ok: false; readonly error: HubError };
 
@@ -71,8 +70,8 @@ export type AddMsg =
   | { readonly t: "answer"; readonly call: Call; readonly outcome: Outcome }
   | { readonly t: "event"; readonly event: HubEvent }
   | { readonly t: "live"; readonly live: boolean }
-  /** A snapshot arrived (the first, or the resync after a reconnect). */
-  | { readonly t: "snapshot"; readonly cursor: number }
+  /** A snapshot arrived (the first, or the resync after a reconnect), with the hub's projects. */
+  | { readonly t: "snapshot"; readonly projects: ReadonlyArray<ProjectSummary> }
   | { readonly t: "back" }
   | { readonly t: "reset" };
 
@@ -84,7 +83,7 @@ export type Step_ = readonly [AddState, ReadonlyArray<Call>];
 /** Codes the shell itself reports when a call never got its answer (shared/hub.ts HubError). */
 const CONNECTION = new Set(["disconnected", "offline", "timeout"]);
 const EARLY_MAX = 64;
-const LOST = "Lost the connection to the hub. Once it's back, this looks up where the add got to.";
+const LOST = "Lost the connection to the hub. Once it's back, this checks whether the project was added.";
 
 const isAddEvent = (type: string): boolean => (ADD_EVENTS as ReadonlyArray<string>).includes(type);
 
@@ -117,15 +116,6 @@ export const requestWhat = (r: Request): string => (r.kind === "clone" ? r.repo 
 
 const failure = (message: string, fix: string | undefined): Failure => (fix?.trim() ? { message, fix } : { message });
 
-/** The add's own events: by addId once known, else (looking it up after a reconnect) by repo or path and machine. */
-const owns = (s: AddState, e: HubEvent): boolean => {
-  if (!isAddEvent(e.type)) return false;
-  if (s.addId !== undefined) return str(e.data, "addId") === s.addId;
-  const r = s.request;
-  if (r === undefined || e.machineId !== r.machineId) return false;
-  return r.kind === "clone" ? str(e.data, "repo") === r.repo : e.type === "project.added" && str(e.data, "path") === r.path;
-};
-
 
 const addInput = (r: Request): ProjectAddInput =>
   r.kind === "clone" ? { machineId: r.machineId, url: r.repo, ...(r.useExisting ? { useExisting: true } : {}) } : { machineId: r.machineId, path: r.path };
@@ -135,7 +125,7 @@ const holdAndInspect = (s: AddState, f: Failure): Step_ => {
   const r = s.request;
   if (r?.kind === "clone" && !r.useExisting && s.live) {
     const held = { ...s, held: f };
-    return [held, [{ purpose: "inspect", gen: held.gen, tool: "project_add", input: { machineId: r.machineId, url: r.repo, dryRun: true } }]];
+    return [held, [{ purpose: "inspect", gen: held.gen, input: { machineId: r.machineId, url: r.repo, dryRun: true } }]];
   }
   return [fail(s, f), []];
 };
@@ -146,7 +136,7 @@ const onEvent = (s: AddState, e: HubEvent, names: Names): Step_ => {
     // The answer naming the add isn't here yet: keep the event for it.
     return s.awaiting && s.early.length < EARLY_MAX ? [{ ...s, early: [...s.early, e] }, []] : [s, []];
   }
-  if (!owns(s, e)) return [s, []];
+  if (str(e.data, "addId") !== s.addId) return [s, []];
   if (e.type === "project.clone_progress") {
     const p = progress(e.data as CloneProgressData);
     return [
@@ -172,12 +162,16 @@ const onEvent = (s: AddState, e: HubEvent, names: Names): Step_ => {
   return [fail(s, f), []];
 };
 
-/** After the snapshot that follows a reconnect: the add's events since it started. */
-const recover = (s: AddState): Step_ => {
-  if (!s.lost || s.request === undefined) return [s, []];
-  const next = waiting({ ...s, lost: false }, "Reconnected; looking up where the add got to.");
-  const input = { ...(s.since === undefined ? {} : { cursor: s.since }), types: [...ADD_EVENTS], machineId: s.request.machineId, timeoutSec: 0 };
-  return [next, [{ purpose: "recover", gen: next.gen, tool: "events_wait", input }]];
+/** The snapshot after a drop settles the add: the project is in its list (added while the link was down), or not yet. */
+const settle = (s: AddState, projects: ReadonlyArray<ProjectSummary>, names: Names): Step_ => {
+  if (!s.lost || s.request === undefined || s.phase.kind !== "working") return [s, []];
+  const { machineId, path } = s.phase.job;
+  const p = projects.find((x) => x.machineId === machineId && (x.workspaceRoot === path || (path.startsWith("~/") && x.workspaceRoot.endsWith(path.slice(1)))));
+  if (p !== undefined) {
+    const ready: Ready = { project: { machineId, projectId: p.projectId }, title: p.title, machine: names(machineId), path: p.workspaceRoot, facts: [], leadLine: "Added while the connection was down.", leadOk: true, notes: [] };
+    return [{ ...finish(s), phase: { kind: "ready", ready } }, []];
+  }
+  return [{ ...finish(s), phase: { kind: "unlisted", what: s.phase.job.what, path, request: s.request } }, []];
 };
 
 export const active = (s: AddState): boolean => s.request !== undefined && (s.awaiting || s.addId !== undefined || s.held !== undefined || s.lost);
@@ -189,10 +183,8 @@ export const step = (s: AddState, msg: AddMsg, names: Names): Step_ => {
       if (!active(s) || s.lost) return [{ ...s, live: false }, []];
       return [waiting({ ...s, live: false, lost: true, awaiting: false, early: [] }, LOST), []];
     }
-    case "snapshot": {
-      const seen = s.seen === undefined || s.seen < msg.cursor ? msg.cursor : s.seen;
-      return recover({ ...s, seen, live: true });
-    }
+    case "snapshot":
+      return settle({ ...s, live: true }, msg.projects, names);
     case "start": {
       const r = msg.request;
       const job: Job =
@@ -214,18 +206,14 @@ export const step = (s: AddState, msg: AddMsg, names: Names): Step_ => {
         lost: false,
         gen: s.gen + 1,
         live: s.live,
-        ...(s.seen === undefined ? {} : { seen: s.seen, since: s.seen }),
       };
       if (!s.live) return [waiting({ ...base, awaiting: false, lost: true }, LOST), []];
-      return [base, [{ purpose: "add", gen: base.gen, tool: "project_add", input: addInput(r) }]];
+      return [base, [{ purpose: "add", gen: base.gen, input: addInput(r) }]];
     }
-    case "event": {
-      const seq = msg.event.seq;
-      const seen = s.seen === undefined || s.seen < seq ? seq : s.seen;
-      return onEvent({ ...s, seen }, msg.event, names);
-    }
+    case "event":
+      return onEvent(s, msg.event, names);
     case "back":
-      return s.phase.kind === "failed" ? [{ ...s, phase: { kind: "pick" } }, []] : [s, []];
+      return s.phase.kind === "failed" || s.phase.kind === "unlisted" ? [{ ...s, phase: { kind: "pick" } }, []] : [s, []];
     case "reset":
       return active(s) ? [s, []] : [{ ...finish(s), phase: { kind: "pick" } }, []];
     case "answer":
@@ -269,53 +257,17 @@ const answer = (s: AddState, c: Call, outcome: Outcome, names: Names): Step_ => 
       const action = target ? existingFolderAction(target, s.request) : undefined;
       return [fail(rest, action ? { ...held, action } : held), []];
     }
-    case "recover": {
-      if (!outcome.ok) {
-        if (CONNECTION.has(outcome.error.code)) return [waiting({ ...s, lost: true }, LOST), []];
-        return [
-          fail(s, {
-            message: `Lost track of the add after reconnecting: ${outcome.error.message}`,
-            fix: "Look for it in the sidebar; if it isn't there, add it again.",
-          }),
-          [],
-        ];
-      }
-      const page = outcome.output as EventsWaitOutput;
-      let next = s;
-      const calls: Array<Call> = [];
-      for (const e of page.events) {
-        if (next.request === undefined) break;
-        if (next.addId === undefined && owns(next, e)) {
-          const id = str(e.data, "addId");
-          if (id !== undefined) next = { ...next, addId: id };
-        }
-        const [after, more] = onEvent(next, e, names);
-        next = after;
-        calls.push(...more);
-      }
-      if (next.request === undefined || calls.length > 0) return [next, calls];
-      if (page.more) return recover({ ...next, since: page.cursor, lost: true });
-      if (next.addId !== undefined) return [waiting(next, "Reconnected. The clone is still running; its next progress shows here."), []];
-      return [
-        fail(next, {
-          message: "The connection dropped before the hub answered, and it has no record of this add.",
-          fix: "Send it again.",
-          action: { kind: "retry", request: next.request },
-        }),
-        [],
-      ];
-    }
   }
 };
 
 export type { ProjectKey };
 
-/** What the add flow reads of the data layer's store (E1): the connection, freshness, the cursor and recent events. */
+/** What the add flow reads of the data layer's store (E1): the connection, freshness, the projects and recent events. */
 export interface HubView {
   readonly live: boolean;
   /** A snapshot arrived since the link last went down. */
   readonly fresh: boolean;
-  readonly cursor?: number | undefined;
+  readonly projects: Readonly<Record<string, ProjectSummary>>;
   /** Oldest first. */
   readonly events: ReadonlyArray<HubEvent>;
 }
@@ -327,7 +279,7 @@ export interface HubView {
 export const hubMessages = (prev: HubView | undefined, next: HubView, lastSeq: number | undefined): ReadonlyArray<AddMsg> => {
   const out: Array<AddMsg> = [];
   if (prev === undefined || prev.live !== next.live) out.push({ t: "live", live: next.live });
-  if (next.fresh && (prev === undefined || !prev.fresh) && next.cursor !== undefined) out.push({ t: "snapshot", cursor: next.cursor });
+  if (next.fresh && (prev === undefined || !prev.fresh)) out.push({ t: "snapshot", projects: Object.values(next.projects) });
   if (prev !== undefined) for (const event of next.events) if (lastSeq === undefined || event.seq > lastSeq) out.push({ t: "event", event });
   return out;
 };

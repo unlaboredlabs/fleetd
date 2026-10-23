@@ -54,47 +54,18 @@ describe("chat messages", () => {
     expect(chat.hasOlder).toBe(true);
   });
 
-  it("pages back past CHAT_KEEP to the very first message, evicting the newest, and back down to the latest", () => {
+  it("pages back past CHAT_KEEP to the very first message, never evicting the newest; live messages still land", () => {
     const run = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => msg(from + i));
-    // 2,000 held (seq 1001–3000), the latest window.
     let chat = applyHistory(emptyChat, page(run(1001, 3000), true), "latest");
-    const seen = new Set<number>();
     while (chat.hasOlder) {
       const oldest = chat.messages[0]?.seq ?? 0;
-      expect(seen.has(oldest)).toBe(false);
-      seen.add(oldest);
       const from = Math.max(1, oldest - 50);
       chat = applyHistory(chat, page(run(from, oldest - 1), from > 1), "older");
-      expect(chat.messages).toHaveLength(Math.min(CHAT_KEEP, 3000 - from + 1));
     }
-    expect([chat.messages[0]?.seq, chat.hasNewer]).toEqual([1, true]);
-    // A live message isn't added to a window above the latest; one it holds is still updated.
-    const live = mergeLive(chat, msg(3001));
-    expect([live.messages, live.held.map((m) => m.seq)]).toEqual([chat.messages, [3001]]);
-    expect(mergeLive(chat, msg(5, { text: "edited", updatedAt: "2026-10-20T00:00:00.000Z" })).messages[4]?.text).toBe("edited");
-    while (chat.hasNewer) {
-      const newest = chat.messages.at(-1)?.seq ?? 0;
-      const to = Math.min(3001, newest + 50);
-      chat = { ...applyHistory(chat, { ...page(run(newest + 1, to)), moreAfter: to < 3001 }, "newer") };
-    }
-    expect([chat.messages.at(-1)?.seq, chat.hasOlder, chat.messages.length]).toEqual([3001, true, CHAT_KEEP]);
-  });
-
-  it("a live message that arrives above the latest is held and folded in once the window is back down", () => {
-    let chat = { ...applyHistory(emptyChat, page([msg(10), msg(11)], true), "latest"), hasNewer: true };
-    chat = mergeLive(chat, msg(600, { text: "the lead, meanwhile" }));
-    expect(chat.messages.map((m) => m.seq)).toEqual([10, 11]);
-    // The last page down was read before the message happened.
-    chat = applyHistory(chat, { ...page([msg(12)]), moreAfter: false }, "newer");
-    expect(chat.messages.map((m) => m.seq)).toEqual([10, 11, 12, 600]);
-    expect(chat.held).toEqual([]);
-  });
-
-  it("the latest page on a window paged above it starts the window over", () => {
-    let chat = applyHistory(emptyChat, page([msg(10), msg(11)], true), "latest");
-    chat = { ...chat, hasNewer: true };
-    chat = applyHistory(chat, page([msg(500), msg(501)], true), "latest");
-    expect([chat.messages.map((m) => m.seq), chat.hasNewer, chat.hasOlder]).toEqual([[500, 501], false, true]);
+    expect([chat.messages[0]?.seq, chat.messages.at(-1)?.seq, chat.messages.length]).toEqual([1, 3000, 3000]);
+    // The window paged back to is kept; a live message lands at the end, the oldest giving way.
+    chat = mergeLive(chat, msg(3001));
+    expect([chat.messages[0]?.seq, chat.messages.at(-1)?.seq, chat.messages.length, chat.hasOlder]).toEqual([2, 3001, 3000, true]);
   });
 
   it("streams by offset: a repeat or overlap adds only what's new, a jump past the end is a gap, the final ends it", () => {

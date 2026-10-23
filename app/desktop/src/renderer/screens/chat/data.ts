@@ -38,8 +38,6 @@ export interface ChatData {
   /** The hub has no such project (a stale link, or one removed): nothing will load. */
   readonly missing: boolean;
   readonly loadOlder: () => void;
-  readonly loadNewer: () => void;
-  readonly jumpToLatest: () => void;
 }
 
 export function useChatData(project: ProjectRef): ChatData {
@@ -56,11 +54,9 @@ export function useChatData(project: ProjectRef): ChatData {
   const row = status.data?.rows?.find((r) => r.projectRef.machineId === project.machineId && r.projectRef.projectId === project.projectId);
   const state = projectRow === undefined ? undefined : projectStateWord(projectRow.needsYou, projectRow.working, row?.state);
   const loadOlder = useCallback(() => layer.chat.loadOlder(key), [layer, key]);
-  const loadNewer = useCallback(() => layer.chat.loadNewer(key), [layer, key]);
-  const jumpToLatest = useCallback(() => layer.chat.jumpToLatest(key), [layer, key]);
   // open() reads the newest page again while none has landed.
   const retry = useCallback(() => layer.chat.open(key), [layer, key]);
-  return { view, state, leadWorking, loadError, retry, strip, title, missing, loadOlder, loadNewer, jumpToLatest };
+  return { view, state, leadWorking, loadError, retry, strip, title, missing, loadOlder };
 }
 
 const noSteers: readonly Steer[] = [];
@@ -89,8 +85,7 @@ export function useLeadSteers(project: ProjectRef, view: ChatView | undefined, s
   );
   const listed = useToolQuery("workstream_list", { machineId: project.machineId, projectId: project.projectId }, { enabled: view !== undefined }).data?.workstreams;
   const from = view?.hasOlder === true ? view.items[0]?.at : undefined;
-  const to = view?.hasNewer === true ? view.items.at(-1)?.at : undefined;
-  const orders = useMemo(() => ordersInView(open === "" ? [] : open.split(" "), listed, from, to), [open, listed, from, to]);
+  const orders = useMemo(() => ordersInView(open === "" ? [] : open.split(" "), listed, from), [open, listed, from]);
   const steers = useQueries({
     queries: orders.map((workstreamId) => ({ ...layer.toolQuery("order_get", { workstreamId }), enabled: fresh })),
     combine: listedSteers,

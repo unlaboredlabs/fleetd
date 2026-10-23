@@ -104,7 +104,7 @@ export interface FleetdApi {
     /** Mirrors the app's light/dark choice to the window, so its translucent sidebar matches. */
     setTheme(mode: "system" | "light" | "dark"): Promise<void>;
     /**
-     * Whether this app opens fleetd:// links. With a claim ("user" from Settings, "pair-failed" from onboarding),
+     * Whether this app opens fleetd:// links. With a claim ("pair-failed" from onboarding),
      * main makes it the handler first when it should; a dev build never does.
      */
     linkHandler(claim: LinkHandlerClaim | null): Promise<LinkHandlerStatus>;

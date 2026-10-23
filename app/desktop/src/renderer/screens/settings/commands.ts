@@ -51,7 +51,6 @@ const pages: Command[] = [
       ["Max agents", "How many agents run at once, per project and in all", "agents", ["agents", "limit", "at once", "whole fleet", "cap", "concurrency"]],
       ["Appearance", "Light, dark or match system", "general", ["theme", "dark mode", "light mode"]],
       ["Hub", "The connection, and this app's key", "general", ["connection", "disconnect", "key"]],
-      ["Pairing links", "Open fleetd:// links in this app", "general", ["links", "default app"]],
       ["Notify me when", "Which kinds of notification show", "notifications", ["notifications", "alerts", "mute"]],
       ["Sound", "Notifications play a sound or not", "notifications", ["notifications", "mute", "silent"]],
       [BADGE, "How many projects need you, on the app icon", "notifications", ["badge", "dock", "count", "app icon"]],

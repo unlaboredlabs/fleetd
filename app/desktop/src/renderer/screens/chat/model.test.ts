@@ -95,7 +95,6 @@ describe("the chat's rows", () => {
     const asked = [...lead, item("c", "human", at(19, 9, 2))];
     expect(rows(asked, { strip: true, activity: true }).slice(-4).map((x) => x.kind)).toEqual(["message", "strip", "message", "activity"]);
     expect(rows([], { activity: true }).map((x) => x.kind)).toEqual(["top", "activity"]);
-    expect(rows(lead, { activity: true, hasNewer: true }).some((x) => x.kind === "activity")).toBe(false);
     const streaming = [item("a", "human", at(19, 9)), item("b", "lead", at(19, 9, 1), { state: "streaming" })];
     expect(rows(streaming, { activity: true }).some((x) => x.kind === "activity")).toBe(false);
     expect(rowIndexOf(r, "nope")).toBeUndefined();
@@ -110,7 +109,6 @@ describe("the chat's rows", () => {
     expect(kinds(rows([...lead, item("d", "human", at(19, 9, 5))], { workedSince: turn })).slice(3)).toEqual(["message:b", "activity", "event", "message:d"]);
     // The lead's newest reply is older than the turn: it didn't write in it, so no line claims it.
     expect(rows(lead, { workedSince: turn + 600_000 }).some((x) => x.kind === "activity")).toBe(false);
-    expect(rows(lead, { workedSince: turn, hasNewer: true }).some((x) => x.kind === "activity")).toBe(false);
   });
 
   it("place a row whose time doesn't parse under today, rather than throwing", () => {
@@ -125,10 +123,10 @@ describe("the chat's rows", () => {
     ]);
   });
 
-  it("show history from before the chat as the conversation it was, under one divider, and a way back down", () => {
+  it("show history from before the chat as the conversation it was, under one divider", () => {
     const old = (id: string, author: ChatItem["author"], time: string): ChatItem =>
       item(id, author, time, { kind: "event", message: { history: "order" } as ChatItem["message"] });
-    const r = rows([old("h1", "human", at(19, 8)), old("h2", "lead", at(19, 8, 1)), item("n1", "human", at(19, 9))], { hasNewer: true });
+    const r = rows([old("h1", "human", at(19, 8)), old("h2", "lead", at(19, 8, 1)), item("n1", "human", at(19, 9))]);
     expect(r.map((x) => (x.kind === "message" ? `${x.item.id}:${x.history ? "history" : "now"}` : x.kind))).toEqual([
       "top",
       "history",
@@ -136,9 +134,7 @@ describe("the chat's rows", () => {
       "h1:history",
       "h2:history",
       "n1:now",
-      "bottom",
     ]);
-    expect(rows([], { hasNewer: true, loadingNewer: true }).at(-1)).toEqual({ kind: "bottom", key: "bottom", state: "loading" });
   });
 
   it("word days plainly", () => {
@@ -201,7 +197,7 @@ describe("your steers to the lead", () => {
   it("wait for their page, and aren't shown twice beside the chat's history from before it existed", () => {
     const items = [item("b", "lead", at(19, 9, 5)), item("c", "lead", at(19, 9, 30))];
     const steers = [steer(1, at(19, 9), "acknowledged"), steer(2, at(19, 9, 10), "delivered"), steer(3, at(19, 9, 40), "delivered")];
-    expect(shown(rows(items, { steers, hasOlder: true, hasNewer: true }))).toEqual(["message:b", "steer:S2:Delivered", "message:c"]);
+    expect(shown(rows(items, { steers, hasOlder: true }))).toEqual(["message:b", "steer:S2:Delivered", "message:c", "steer:S3:Delivered"]);
     const copy = item("h", "human", at(19, 9, 10), { kind: "event", text: "steer 2", message: { messageId: "h", projectRef: { machineId: "devbox", projectId: "app" }, seq: 1, author: "human", text: "steer 2", createdAt: at(19, 9, 10), state: "final", history: "steer" } });
     expect(shown(rows([copy, ...items], { steers: [steers[1] as Steer] })).filter((x) => x.startsWith("steer"))).toEqual([]);
   });
@@ -209,7 +205,7 @@ describe("your steers to the lead", () => {
   it("are read from the open orders, and from those that ended within the pages", () => {
     const w = (id: string, created: string, updated: string, state: Workstream["state"]) => ({ workstreamId: id, createdAt: created, updatedAt: updated, state }) as Workstream;
     const listed = [w("W4", at(19, 12), at(19, 13), "done"), w("W3", at(19, 8), at(19, 10), "done"), w("W2", at(18, 8), at(18, 9), "stopped"), w("W1", at(17, 8), at(17, 9), "open")];
-    expect(ordersInView(["W9"], listed, undefined, undefined)).toEqual(["W1", "W2", "W3", "W4", "W9"]);
-    expect(ordersInView(["W9"], listed, at(19, 9), at(19, 11))).toEqual(["W1", "W3", "W9"]);
+    expect(ordersInView(["W9"], listed, undefined)).toEqual(["W1", "W2", "W3", "W4", "W9"]);
+    expect(ordersInView(["W9"], listed, at(19, 9))).toEqual(["W1", "W3", "W4", "W9"]);
   });
 });

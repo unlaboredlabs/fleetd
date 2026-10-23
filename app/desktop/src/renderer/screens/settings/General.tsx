@@ -1,9 +1,7 @@
-import { useEffect, useState } from "react";
-import { Button, Dialog, Dot, Radio, RadioGroup, Separator, Text, THEME_MODES, Truncate, useTheme } from "../../ui";
-import type { LinkHandlerStatus } from "../../../shared/app";
+import { useState } from "react";
+import { Button, Dialog, Dot, Radio, RadioGroup, Separator, THEME_MODES, Truncate, useTheme } from "../../ui";
 import type { HubState } from "../../../shared/hub";
 import { useData } from "../../src/data/react";
-import { errorText } from "./hub";
 import { PageHead, Setting } from "./parts";
 import s from "./settings.module.css";
 import { keyStoreLine } from "../../../shared/pairing";
@@ -29,7 +27,6 @@ export function General() {
         </Setting>
         <Separator />
         <HubSetting />
-        <LinkHandlerSetting />
       </div>
     </div>
   );
@@ -106,79 +103,6 @@ function HubSetting() {
           </>
         }
       />
-    </Setting>
-  );
-}
-
-/** Whether fleetd:// links (the pairing links `fleetd pair` prints) open this app, and the one action to make them. */
-function LinkHandlerSetting() {
-  const [status, setStatus] = useState<LinkHandlerStatus | null>(null);
-  const [claiming, setClaiming] = useState(false);
-  const [refused, setRefused] = useState(false);
-  /** A failed check or claim, in words, with the action Try again repeats. */
-  const [failed, setFailed] = useState<{ text: string; retry: "check" | "claim" } | null>(null);
-  const [checks, setChecks] = useState(0);
-  useEffect(() => {
-    let live = true;
-    window.fleetd.app.linkHandler(null).then(
-      (st) => live && setStatus(st),
-      (e: unknown) => live && setFailed({ text: `Couldn't find out which app opens fleetd:// links: ${sentence(errorText(e))}`, retry: "check" }),
-    );
-    return () => {
-      live = false;
-    };
-  }, [checks]);
-  const check = () => {
-    setFailed(null);
-    setChecks((n) => n + 1);
-  };
-  const claim = () => {
-    setFailed(null);
-    setClaiming(true);
-    window.fleetd.app.linkHandler("user").then(
-      (st) => {
-        setClaiming(false);
-        setStatus(st);
-        setRefused(!st.handler);
-      },
-      (e: unknown) => {
-        setClaiming(false);
-        setFailed({ text: `Couldn't ask the system to make fleetd the handler: ${sentence(errorText(e))}`, retry: "claim" });
-      },
-    );
-  };
-  return (
-    <Setting reveal="general.links" label="Pairing links" help="Open pairing links in this app.">
-      {failed ? (
-        <div className={s.stack}>
-          <Text tone="danger">{failed.text}</Text>
-          <div>
-            <Button onClick={failed.retry === "check" ? check : claim}>Try again</Button>
-          </div>
-        </div>
-      ) : status === null ? (
-        <Text tone="quiet">Checking…</Text>
-      ) : status.handler ? (
-        <div className={s.hubLine}>
-          <Dot color="var(--success)" />
-          <Text tone="quiet">fleetd opens them.</Text>
-        </div>
-      ) : (
-        <>
-          <div className={s.inline}>
-            <Button disabled={!status.packaged || claiming} onClick={claim}>
-              {claiming ? "Asking the system…" : "Make fleetd the handler"}
-            </Button>
-          </div>
-          <Text size="xs" tone="quiet">
-            {refused
-              ? "The system left fleetd:// links with another app. Try again, or pair by typing the code from fleetd pair (Pair with another hub, above)."
-              : status.packaged
-                ? "fleetd doesn't open fleetd:// links now: another app does, or none."
-                : "Dev builds don't register for fleetd:// links; an installed fleetd does."}
-          </Text>
-        </>
-      )}
     </Setting>
   );
 }

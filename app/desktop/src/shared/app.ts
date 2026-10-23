@@ -46,8 +46,8 @@ export interface LinkHandlerStatus {
   readonly handler: boolean;
 }
 
-/** What may ask main to claim the scheme: the Settings action, or onboarding after a pairing link failed. */
-export const LinkHandlerClaim = z.enum(["user", "pair-failed"]);
+/** What may ask main to claim the scheme: onboarding after a pairing link failed. */
+export const LinkHandlerClaim = z.enum(["pair-failed"]);
 export type LinkHandlerClaim = z.infer<typeof LinkHandlerClaim>;
 
 export const NotifyRequest = z.strictObject({

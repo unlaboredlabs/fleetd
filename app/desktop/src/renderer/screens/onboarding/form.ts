@@ -214,6 +214,6 @@ export const sentence = (text: string): string => (/[.?!…]$/u.test(text.trim()
  */
 export const linkNote = (before: LinkHandlerStatus, after: LinkHandlerStatus): string | null => {
   if (!after.packaged) return "This development build doesn't open fleetd:// links. Type the code from `fleetd pair` instead.";
-  if (!after.handler) return "Another app opens fleetd:// links. To have them open this one, use Pairing links in Settings → General.";
+  if (!after.handler) return "Another app opens fleetd:// links. Type the code from `fleetd pair` instead.";
   return before.handler ? null : "fleetd:// links open this app now; another app had them. Open a new link from `fleetd pair` on the hub.";
 };

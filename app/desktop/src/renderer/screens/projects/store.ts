@@ -64,9 +64,7 @@ const dispatch = (msg: AddMsg) => {
 const run = (c: Call) => {
   const data = layer;
   if (data === undefined) return;
-  const options = { timeoutMs: CALL_MS };
-  const answer = c.tool === "project_add" ? data.call("project_add", c.input, options) : data.call("events_wait", c.input, options);
-  void answer.then((outcome) => dispatch({ t: "answer", call: c, outcome }));
+  void data.call("project_add", c.input, { timeoutMs: CALL_MS }).then((outcome) => dispatch({ t: "answer", call: c, outcome }));
 };
 
 /** The sheet is hidden while an add ends: say so in a toast that brings it back. */
@@ -74,12 +72,14 @@ const announce = () => {
   const p = ui.add.phase;
   if (p.kind === "ready") {
     toast({ title: `${p.ready.title} is ready on ${p.ready.machine}`, tone: "success", action: { label: "Show", onClick: () => openAddProject() } });
+  } else if (p.kind === "unlisted") {
+    toast({ title: `${p.what} isn't on the hub yet`, description: "If the clone was still running, it appears when it finishes; Machines shows any error.", action: { label: "Show", onClick: () => openAddProject() } });
   } else if (p.kind === "failed") {
     toast({ title: `Couldn't add ${p.what}`, description: p.failure.message, tone: "danger", action: { label: "Show", onClick: () => openAddProject() } });
   }
 };
 
-const view = (d: DataState): HubView => ({ live: d.hub.phase === "live", fresh: d.fresh, cursor: d.cursor, events: d.events });
+const view = (d: DataState): HubView => ({ live: d.hub.phase === "live", fresh: d.fresh, projects: d.projects, events: d.events });
 
 /** Starts feeding the add flow from the layer's store; once per layer. */
 const connect = (next: DataLayer): void => {
