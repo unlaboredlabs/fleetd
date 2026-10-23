@@ -366,10 +366,11 @@ A lead uses its fleetd tools; these are for you, inside a project workspace.
 ### fleetd brief create {#brief-create}
 
 ```text
-fleetd brief create --workstream <W> (--json '<Brief>' | --file <path>)
+fleetd brief create (--workstream <W> | --text "<intent>" [--template bugfix|feature|research])
+    (--json '<Brief>' | --file <path>)
 ```
 
-set the brief of a draft workstream and start it, or edit it
+set the brief of a workstream and start it, or edit it; `--text` opens a workstream for work taken from the chat
 
 ### fleetd request secret {#request-secret}
 
@@ -423,13 +424,7 @@ delegate work to a subagent; writers get their own branch; a review task needs `
 ### fleetd task list {#task-list}
 
 ```text
-fleetd task list [--state <s>] [--workstream <W>]
-```
-
-### fleetd task status {#task-status}
-
-```text
-fleetd task status <T>
+fleetd task list [--task <T>] [--state <s>] [--workstream <W>]
 ```
 
 ### fleetd task message {#task-message}
@@ -505,14 +500,6 @@ fleetd plan show [--workstream <W>]
 ```
 
 keep the project's plan: milestones of must or polish items sized s, m or l (relative size, never hours). Link work with `--item`; only fleetd marks an item done, once its PRs merged through the train. Changing scope after a milestone's first 10 minutes needs `--why`, and the status view shows it as a marker. `--steer` S\<n\> says the human's steer asked for it: it stands in for `--why` and acknowledges the steer
-
-### fleetd workstream open {#workstream-open}
-
-```text
-fleetd workstream open --text "<intent>" [--template bugfix|feature|research]
-```
-
-open a workstream for work taken from the chat: a draft to brief
 
 :::note
 lead-side commands reach the hub through the local node (FLEETD\_NODE\_SOCK, default `~/.fleetd/node/node.sock`); exit 0 ok, 2 usage, 3 refused, 4 hub unreachable

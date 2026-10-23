@@ -46,18 +46,14 @@ export async function m9Playbooks(lab: Lab) {
   const leads = [leadThread];
 
   // (a) A fix opened with the bugfix playbook, from the shell as the lead would.
-  const wa = openWorkstream(check, fleetd, "fix: the repo-a README has a typo.", "bugfix");
+  const wa = openWorkstream(check, fleetd, "fix: the repo-a README has a typo.", {}, "bugfix");
   const pinnedA = (await callTool("workstream_get", { workstreamId: wa })).body.workstream.playbook as string;
   check(/^bugfix@[0-9a-f]{40}$/u.test(pinnedA), `${wa} pins bugfix: ${pinnedA}`);
   ok(`(a) ${wa} in ${MACHINE}/${projectId}; playbook ${pinnedA.slice(0, 19)}…`);
 
   // (b) A research workstream: the brief pre-registers baseline, metric and rule.
-  const briefBase = { pointers: [], constraints: [] };
-  const wr = openWorkstream(check, fleetd, "research: would a shorter README read faster?", "research");
-  const pinnedR = (await callTool("workstream_get", { workstreamId: wr })).body.workstream.playbook as string;
-  check(/^research@[0-9a-f]{40}$/u.test(pinnedR), `${wr} pins research: ${pinnedR}`);
+  const text = "research: would a shorter README read faster?";
   const research = {
-    ...briefBase,
     goal: "find out whether a shorter README reads faster",
     why: "M9 lab",
     doneWhen: ["both numbers are measured"],
@@ -67,10 +63,11 @@ export async function m9Playbooks(lab: Lab) {
     budget: { size: "S" },
   };
   const { baseline: _b, decisionRule: _r, ...unregistered } = research;
-  const missing = fleetd("brief", "create", "--workstream", wr, "--json", JSON.stringify(unregistered));
+  const missing = fleetd("brief", "create", "--text", text, "--template", "research", "--json", JSON.stringify({ pointers: [], constraints: [], ...unregistered }));
   check(missing.code === 3 && missing.stderr.includes("missing baseline, decisionRule"), `research brief without baseline and rule: ${JSON.stringify(missing)}`);
-  const frozen = fleetd("brief", "create", "--workstream", wr, "--json", JSON.stringify(research));
-  check(frozen.code === 0, `research brief: ${JSON.stringify(frozen)}`);
+  const wr = openWorkstream(check, fleetd, text, research, "research");
+  const pinnedR = (await callTool("workstream_get", { workstreamId: wr })).body.workstream.playbook as string;
+  check(/^research@[0-9a-f]{40}$/u.test(pinnedR), `${wr} pins research: ${pinnedR}`);
   ok(`(b) ${wr} research: a brief without baseline and decisionRule refused (${missing.stderr.trim().split("\n")[0]}); then frozen with rule lower-is-better, GO at 5 s`);
 
   // Let the last lead wakes on lab-a run out, then count every claude turn this scenario cost.

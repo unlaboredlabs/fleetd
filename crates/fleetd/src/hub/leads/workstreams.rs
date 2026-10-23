@@ -119,7 +119,7 @@ impl Workstreams {
         self.create(input, true)
     }
 
-    /// The lead's own `workstream_open`: the same draft, with no intent wake, since the lead that opens it knows.
+    /// A `brief` without a workstream opens one: the same draft, with no intent wake, since the lead that opens it knows.
     pub fn open(&self, input: IntakeInput) -> Result<IntakeOutcome, LeadError> {
         self.create(input, false)
     }

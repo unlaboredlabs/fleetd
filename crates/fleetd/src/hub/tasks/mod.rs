@@ -930,7 +930,7 @@ impl Tasks {
             _ => Err(lead_error(
                 ErrorCode::NotFound,
                 format!("No task {} in this project.", task_id.as_str()),
-                Some("Call `list_agents`."),
+                Some("Call `agents`."),
             )),
         }
     }

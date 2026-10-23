@@ -365,7 +365,7 @@ pub fn build_on(
     crate::hub::approvals::tools::register_lead_calls(&hub);
     crate::hub::plan::calls::register_lead_calls(&hub);
     crate::hub::steer::wire(&hub);
-    crate::hub::chat::tools::register_lead_calls(&hub);
+    crate::hub::chat::tools::extend_status(&hub);
     Ok(hub)
 }
 

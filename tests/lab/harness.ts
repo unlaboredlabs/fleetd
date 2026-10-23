@@ -568,7 +568,7 @@ export const waitEventWith =
 
 /**
  * An order as a person gives one: a chat message to the project's lead (chat_send, a person's key), which opens the
- * order's workstream with workstream_open. Resolves with that workstream, the chat_send result, and the event cursor
+ * order's workstream with its brief tool. Resolves with that workstream, the chat_send result, and the event cursor
  * from before the message.
  */
 export const chatOrder = async (
@@ -591,18 +591,20 @@ export const chatOrder = async (
 };
 
 /**
- * A workstream opened from the project's shell as its lead would (`fleetd workstream open`), for an order whose brief
- * and agents the harness sets up itself. No lead turn: the opener already knows.
+ * A workstream opened with its brief from the project's shell as its lead would (`fleetd brief create --text`), for an
+ * order whose agents the harness sets up itself. No lead turn: the opener already knows.
  */
 export const openWorkstream = (
   check: Lab["check"],
   fleetd: (...args: Array<string>) => { readonly code: number | null; readonly stdout: string; readonly stderr: string },
   text: string,
+  brief: Body = {},
   template?: string,
 ) => {
-  const out = fleetd("workstream", "open", "--text", text, ...(template === undefined ? [] : ["--template", template]));
-  const w = /\bOpened (W\d+)/u.exec(out.stdout)?.[1];
-  check(out.code === 0 && w, `fleetd workstream open: ${JSON.stringify(out)}`);
+  const full = { goal: text, why: "the lab scenario", pointers: [], constraints: [], doneWhen: ["the harness closes it"], ...brief };
+  const out = fleetd("brief", "create", "--text", text, ...(template === undefined ? [] : ["--template", template]), "--json", JSON.stringify(full));
+  const w = /\bBrief for (W\d+) saved/u.exec(out.stdout)?.[1];
+  check(out.code === 0 && w, `fleetd brief create --text: ${JSON.stringify(out)}`);
   return w!;
 };
 

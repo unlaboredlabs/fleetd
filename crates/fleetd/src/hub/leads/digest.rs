@@ -286,7 +286,7 @@ pub fn render_lead_digest(input: &DigestInput) -> String {
             "Agents",
             input.tasks.clone().unwrap_or_default(),
             20,
-            "`list_agents`",
+            "`agents`",
             "\n",
         ),
         Section::new(

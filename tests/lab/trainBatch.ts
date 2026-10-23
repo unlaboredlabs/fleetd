@@ -93,16 +93,11 @@ export async function trainBatch(lab: Lab) {
     check(!started.isError, `lead_start: ${JSON.stringify(started.body)}`);
     const leadThread = started.body.threadId as string;
     await lab.waitEvent("lead start turn", TURN_MS, { cursor: scenarioStart, machineId: MACHINE, match: (e) => e.threadId === leadThread && ENDED.includes(e.type) });
-    const w = openWorkstream(check, fleetd, "PRs through the train's batches. The harness pushes and enqueues every PR itself.");
-    const brief = {
+    const w = openWorkstream(check, fleetd, "PRs through the train's batches. The harness pushes and enqueues every PR itself.", {
       goal: "PRs through the train's batches",
       why: "the train batch lab scenario",
-      pointers: [],
-      constraints: [],
       doneWhen: ["every batched PR is merged"],
-    };
-    const briefed = fleetd("brief", "create", "--workstream", w, "--json", JSON.stringify(brief));
-    check(briefed.code === 0, `brief create ${w}: ${JSON.stringify(briefed)}`);
+    });
 
     gh("label", "create", "hold", "-R", REPO, "--force", "--description", "fleetd's train holds this PR");
     const release = (prs: ReadonlyArray<Pr>) => {

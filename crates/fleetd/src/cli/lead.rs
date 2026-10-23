@@ -15,8 +15,10 @@ use super::args::{self, Kind, Spec};
 /// Under the fleetd dir.
 pub const NODE_SOCKET_PATH: &str = "node/node.sock";
 
-pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>' | --file <path>)
-             set the brief of a draft workstream and start it, or edit it
+pub const LEAD_USAGE: &str = r#"  brief create (--workstream <W> | --text "<intent>" [--template bugfix|feature|research])
+      (--json '<Brief>' | --file <path>)
+             set the brief of a workstream and start it, or edit it; --text opens a workstream for work
+             taken from the chat
   request secret --key <k> --sink env:<machine>:<path>|file:<machine>:<path> [--env-name <N>]
       --text <t> [--workstream <W>]
              the human enters it in a masked field in the project's chat, sealed to that machine; an env:
@@ -36,8 +38,7 @@ pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>
       [--profile high|medium] [--pr <url>] [--qa] [--item P<n>]
              delegate work to a subagent; writers get their own branch; a review task needs --pr, and --qa marks it a QA run; --item links it to
              that plan item
-  task list [--state <s>] [--workstream <W>]
-  task status <T>
+  task list [--task <T>] [--state <s>] [--workstream <W>]
   task message <T> "<text>" [--now]
              steer a running task (at its next step; --now stops its current step), answer a
              waiting one, or continue an ended one
@@ -65,8 +66,6 @@ pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>
              Changing scope after a milestone's first 10 minutes needs --why, and the status
              view shows it as a marker. --steer S<n> says the human's steer asked for it: it
              stands in for --why and acknowledges the steer
-  workstream open --text "<intent>" [--template bugfix|feature|research]
-             open a workstream for work taken from the chat: a draft to brief
              lead-side commands reach the hub through the local node (FLEETD_NODE_SOCK, default
              ~/.fleetd/node/node.sock); exit 0 ok, 2 usage, 3 refused, 4 hub unreachable
 "#;
@@ -81,7 +80,6 @@ const LEAD_COMMANDS: &[&str] = &[
     "review",
     "change",
     "gated",
-    "workstream",
     "plan",
 ];
 
@@ -244,8 +242,10 @@ pub fn parse_lead_args(
                     "expected fleetd brief create --workstream <W> --json '<Brief>'".into(),
                 );
             }
-            only(&["workstream", "json", "file"])?;
-            required(&["workstream"])?;
+            only(&["workstream", "text", "template", "json", "file"])?;
+            if v.str("workstream").is_none() == v.str("text").is_none() {
+                return Err("give exactly one of --workstream and --text".into());
+            }
             if v.str("json").is_none() == v.str("file").is_none() {
                 return Err("give the brief with exactly one of --json and --file".into());
             }
@@ -267,6 +267,8 @@ pub fn parse_lead_args(
             defined(vec![
                 ("op", s(Some("brief_create"))),
                 ("workstreamId", s(v.str("workstream"))),
+                ("text", s(v.str("text"))),
+                ("template", s(v.str("template"))),
                 ("brief", Some(brief)),
             ])
         }
@@ -353,24 +355,18 @@ pub fn parse_lead_args(
                 ])
             }
             Some("list") => {
-                only(&["state", "workstream"])?;
+                only(&["task", "state", "workstream"])?;
                 if let Some(first) = rest.first() {
                     return Err(format!(
-                        "unexpected '{first}': filter with --state or --workstream"
+                        "unexpected '{first}': filter with --task, --state or --workstream"
                     ));
                 }
                 defined(vec![
                     ("op", s(Some("task_list"))),
+                    ("taskId", s(v.str("task"))),
                     ("state", s(v.str("state"))),
                     ("workstreamId", s(v.str("workstream"))),
                 ])
-            }
-            Some("status") => {
-                only(&[])?;
-                if rest.len() != 1 {
-                    return Err("expected fleetd task status <T>".into());
-                }
-                json!({ "op": "task_status", "taskId": rest[0] })
             }
             Some("message") => {
                 only(&["now"])?;
@@ -535,18 +531,6 @@ pub fn parse_lead_args(
                 ("timeoutSec", v.str("timeout").map(number)),
                 ("workstreamId", s(v.str("workstream"))),
             ])
-        }
-        Some("workstream") if sub == Some("open") && rest.is_empty() => {
-            only(&["text", "template"])?;
-            required(&["text"])?;
-            defined(vec![
-                ("op", s(Some("workstream_open"))),
-                ("text", s(v.str("text"))),
-                ("template", s(v.str("template"))),
-            ])
-        }
-        Some("workstream") => {
-            return Err(r#"expected fleetd workstream open --text "<intent>""#.into());
         }
         Some("plan") => {
             let weight = || -> Result<Option<Value>, String> {
@@ -1063,10 +1047,6 @@ pub fn format_result(result: &Value) -> String {
                 next = task_next(task);
             }
         }
-        "task_status" => {
-            lines.extend(task_detail(&result["task"]));
-            next = task_next(&result["task"]);
-        }
         "task_message" => {
             let task = &result["task"];
             let queued = st(task, "state") == "queued";
@@ -1106,19 +1086,23 @@ pub fn format_result(result: &Value) -> String {
         }
         "task_list" => {
             let tasks = arr(result, "tasks");
-            if tasks.is_empty() {
-                lines.push("No tasks.".into())
-            } else {
-                lines.extend(tasks.iter().map(task_line))
-            }
+            next = match tasks {
+                [] => {
+                    lines.push("No tasks.".into());
+                    "spawn work with fleetd task spawn.".into()
+                }
+                [task] => {
+                    lines.extend(task_detail(task));
+                    task_next(task)
+                }
+                _ => {
+                    lines.extend(tasks.iter().map(task_line));
+                    "fleetd task list --task <T> shows one task's result.".into()
+                }
+            };
             if result.get("truncated") == Some(&Value::Bool(true)) {
                 lines.push("(older tasks not shown; filter with --state or --workstream)".into());
             }
-            next = if tasks.is_empty() {
-                "spawn work with fleetd task spawn.".into()
-            } else {
-                "fleetd task status <T> shows one task's result.".into()
-            };
         }
         "close" => {
             lines.push(format!(
@@ -1147,13 +1131,6 @@ pub fn format_result(result: &Value) -> String {
                 js(opt(v, "nonBlocking"))
             ));
             next = "end with your one-paragraph result and stop.".into();
-        }
-        "workstream_open" => {
-            lines.push(format!("Opened {}.", st(result, "workstreamId")));
-            next = format!(
-                "brief it with fleetd brief create --workstream {}.",
-                st(result, "workstreamId")
-            );
         }
         "change_enqueue" => {
             lines.extend(change_lines(&result["change"]));
@@ -1343,27 +1320,6 @@ mod tests {
     }
 
     #[test]
-    fn workstream_open_takes_the_intent_and_an_optional_template() {
-        assert_eq!(
-            parse(&[
-                "workstream",
-                "open",
-                "--text",
-                "build schedules",
-                "--template",
-                "feature"
-            ])
-            .unwrap(),
-            json!({ "op": "workstream_open", "text": "build schedules", "template": "feature" })
-        );
-        assert!(
-            parse(&["workstream", "open"])
-                .unwrap_err()
-                .contains("--text")
-        );
-    }
-
-    #[test]
     fn plan_steer_takes_a_steer_id_and_stands_in_for_why() {
         assert!(
             parse(&["plan", "drop", "P3"])
@@ -1484,6 +1440,10 @@ mod tests {
             (
                 &["brief", "create", "--workstream", "W1"],
                 "give the brief with exactly one of --json and --file",
+            ),
+            (
+                &["brief", "create", "--json", "{}"],
+                "give exactly one of --workstream and --text",
             ),
             (
                 &[
