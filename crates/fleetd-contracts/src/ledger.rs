@@ -73,41 +73,6 @@ pub struct Lead {
 /// workstream with why.
 pub type DoneWhen = Text<1, 2000>;
 
-// Playbooks (M9): versioned templates a workstream pins at creation.
-
-/// The prefixes `bug:`/`fix:` and `research:` pick bugfix and research.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "kebab-case")]
-pub enum PlaybookName {
-    Bugfix,
-    Feature,
-    Research,
-}
-
-impl PlaybookName {
-    pub const ALL: [PlaybookName; 3] = [
-        PlaybookName::Bugfix,
-        PlaybookName::Feature,
-        PlaybookName::Research,
-    ];
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            PlaybookName::Bugfix => "bugfix",
-            PlaybookName::Feature => "feature",
-            PlaybookName::Research => "research",
-        }
-    }
-}
-
-brand!(
-    /// `<name>@<sha>`: the git blob SHA of the playbook file (`git hash-object <file>`).
-    PlaybookRef,
-    name = "PlaybookRef",
-    pattern = r"^(?:bugfix|feature|research)@(?:[0-9a-f]{40}|[0-9a-f]{64})$",
-    description = "<playbook name>@<full lowercase hex git blob SHA>"
-);
-
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -171,8 +136,6 @@ pub struct Workstream {
     pub state: WorkstreamState,
     pub headline: Option<Headline>,
     pub headline_at: Option<Timestamp>,
-    /// Pinned at creation. Absent on workstreams from before M9.
-    pub playbook: Option<PlaybookRef>,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
 }

@@ -599,7 +599,6 @@ fn example(role: Role, tool: &str) -> Option<Value> {
         (Role::Lead, "stop_agent") => json!({ "taskId": "T7", "reason": "T9 covers this now." }),
         (Role::Lead, "brief") => json!({
             "text": "Rate-limit the upload API",
-            "template": "feature",
             "brief": {
                 "goal": "Uploads are rate-limited per API key.",
                 "why": "One client's retry loop took the upload service down.",

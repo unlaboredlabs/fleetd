@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use fleetd_contracts::ids::{ProjectRef, Timestamp};
 use fleetd_contracts::ledger::{
-    IntakeChannel, PlaybookRef, Workstream, WorkstreamId, WorkstreamSource, WorkstreamState,
+    IntakeChannel, Workstream, WorkstreamId, WorkstreamSource, WorkstreamState,
 };
 use rusqlite::{OptionalExtension, named_params, params};
 use serde::{Deserialize, Serialize};
@@ -40,7 +40,6 @@ pub struct NewWorkstream {
     pub by: String,
     pub at: Timestamp,
     pub client_request_id: Option<String>,
-    pub playbook: Option<PlaybookRef>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -197,7 +196,6 @@ impl LeadRecords {
                     at: input.at.clone(),
                 },
                 "state": "draft",
-                "playbook": input.playbook,
                 "createdAt": input.at,
                 "updatedAt": input.at,
             }))?;

@@ -1,6 +1,6 @@
-//! Leads, workstreams, briefs, lead wakes and digest, lead calls; with playbooks, one area.
+//! Leads, workstreams, briefs, lead wakes and digest, lead calls: one area.
 //!
-//! `Area` owns every service of leads and playbooks. `hub/serve` builds it with `Area::new`, sets the hooks of
+//! `Area` owns every service of leads. `hub/serve` builds it with `Area::new`, sets the hooks of
 //! later areas as they come up (`ctx.hooks`), registers tools and lead calls, and spawns `Area::run`.
 pub mod calls;
 pub mod digest;
@@ -20,7 +20,6 @@ pub mod workstreams;
 #[cfg(test)]
 pub(crate) mod auto_start_tests;
 
-use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
 pub use self::error::LeadError;
@@ -31,7 +30,6 @@ pub use self::records::LeadRecords;
 pub use self::wakes::LeadWakes;
 pub use self::workstreams::Workstreams;
 use crate::clock::Clock;
-use crate::hub::playbooks::{PlaybookError, Playbooks};
 use crate::hub::store::{EventLog, HubDb, HubStore, iso_ms, now_ms};
 
 /// What every service of this area reads from the rest of the hub.
@@ -81,21 +79,9 @@ pub fn now_iso(ctx: &Ctx) -> String {
     iso_ms(now_ms(ctx.clock.as_ref()))
 }
 
-pub struct AreaOptions<'a> {
-    /// The hub home: `<home>/playbooks` holds overrides.
-    pub home: &'a Path,
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum AreaError {
-    #[error(transparent)]
-    Playbook(#[from] PlaybookError),
-}
-
 pub struct Area {
     pub ctx: Arc<Ctx>,
     pub records: Arc<LeadRecords>,
-    pub playbooks: Arc<Playbooks>,
     pub wakes: Arc<LeadWakes>,
     pub leads: Arc<Leads>,
     pub workstreams: Arc<Workstreams>,
@@ -103,29 +89,22 @@ pub struct Area {
 }
 
 impl Area {
-    /// Fails when a playbook file is invalid, naming the file and the problem.
-    pub fn new(ctx: Ctx, options: AreaOptions<'_>) -> Result<Arc<Self>, AreaError> {
+    pub fn new(ctx: Ctx) -> Arc<Self> {
         let ctx = Arc::new(ctx);
         let records = LeadRecords::new(Arc::clone(&ctx.db));
-        let playbooks = Playbooks::new(Arc::clone(&ctx.db), Some(options.home.join("playbooks")))?;
         let wakes = LeadWakes::new(Arc::clone(&ctx), Arc::clone(&records));
         let leads = Leads::new(Arc::clone(&ctx), Arc::clone(&records), Arc::clone(&wakes));
-        let workstreams = Workstreams::new(
-            Arc::clone(&ctx),
-            Arc::clone(&records),
-            Arc::clone(&wakes),
-            Arc::clone(&playbooks),
-        );
+        let workstreams =
+            Workstreams::new(Arc::clone(&ctx), Arc::clone(&records), Arc::clone(&wakes));
         let removals = removals::ProjectRemovals::new(Arc::clone(&ctx), Arc::clone(&records));
-        Ok(Arc::new(Self {
+        Arc::new(Self {
             ctx,
             records,
-            playbooks,
             wakes,
             leads,
             workstreams,
             removals,
-        }))
+        })
     }
 
     /// The area's loops: project removals (with their catch-up), and the leads of orders that wait

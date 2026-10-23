@@ -620,4 +620,9 @@ pub(crate) const MIGRATIONS: &[&str] = &[
   DROP TABLE plan_placeholders;
   DELETE FROM plan_changes WHERE milestone = 0;
   "#,
+    // Playbooks went: a workstream pins none, and the pinned texts go.
+    r#"
+  DROP TABLE playbook_versions;
+  UPDATE workstreams SET data = json_remove(data, '$.playbook') WHERE json_valid(data);
+  "#,
 ];

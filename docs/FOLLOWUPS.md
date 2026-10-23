@@ -25,5 +25,3 @@ Things a daily user will notice that the design pass left for later. Remove a li
 - **`fleetd init --help` exit code** (in progress, wizard). It prints the usage but exits 2 instead of 0.
 - **`fleetd init` lists failures twice** (in progress, wizard). The closing "step(s) need you" list repeats the ✗ lines
   above it.
-- **Playbooks get no "default changed" notice** (prompts, #128). A playbook override has no `base:` (its file is the
-  playbook itself), so a release that changes a shipped playbook you overrode does not raise `prompt.default_changed`.

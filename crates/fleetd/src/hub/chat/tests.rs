@@ -300,7 +300,6 @@ async fn a_projects_past_reads_in_once_in_time_order_without_ids() {
             by: "human".into(),
             at: "2026-10-19T08:00:00.000Z".into(),
             client_request_id: None,
-            playbook: None,
         })
         .unwrap();
     hub.db
@@ -445,7 +444,7 @@ async fn a_brief_without_a_workstream_opens_one_with_no_intent_wake() {
     let handler = hub.lead_calls.handler("brief_create").unwrap();
     let brief = json!({ "goal": "schedules", "why": "asked", "pointers": [], "constraints": [], "doneWhen": ["schedules ship"] });
     let call: LeadCall = serde_json::from_value(
-        json!({ "op": "brief_create", "text": "build schedules", "template": "feature", "brief": brief }),
+        json!({ "op": "brief_create", "text": "build schedules", "brief": brief }),
     )
     .unwrap();
     let caller = crate::hub::link::LeadCaller {
@@ -469,10 +468,6 @@ async fn a_brief_without_a_workstream_opens_one_with_no_intent_wake() {
             "build schedules",
             WorkstreamState::Running
         )
-    );
-    assert!(
-        w.playbook
-            .is_some_and(|p| p.as_ref().starts_with("feature@"))
     );
     assert!(
         !hub.leads.wakes.pending(&r),
@@ -780,7 +775,6 @@ async fn a_stopped_order_tells_its_lead_to_do_no_more_work_on_it() {
             by: "human".into(),
             at: AT.into(),
             client_request_id: None,
-            playbook: None,
         })
         .unwrap();
     crate::hub::api::registry()

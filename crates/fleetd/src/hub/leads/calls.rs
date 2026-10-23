@@ -31,7 +31,6 @@ impl Area {
                                 client_request_id: request_id(),
                                 channel: IntakeChannel::Lead,
                                 by: by.to_owned(),
-                                template: c.template,
                             })?
                             .workstream_id
                     }

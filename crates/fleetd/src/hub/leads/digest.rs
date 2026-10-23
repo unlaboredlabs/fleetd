@@ -110,14 +110,8 @@ pub fn done_when_text(lines: &[DoneWhen], max: usize) -> String {
 }
 
 fn workstream_lines(w: &Workstream, facts: Option<&WorkstreamFacts>) -> String {
-    let playbook = w.playbook.as_ref().map(|p| {
-        p.as_str()
-            .split_once('@')
-            .map_or(p.as_str(), |(name, _)| name)
-    });
-    let tag = playbook.map(|p| format!(" ({p})")).unwrap_or_default();
     let head = format!(
-        "- {} {}{tag}: {}",
+        "- {} {}: {}",
         w.workstream_id,
         state_text(w.state),
         one_line(&w.title, 120)

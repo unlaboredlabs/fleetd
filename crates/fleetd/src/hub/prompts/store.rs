@@ -18,9 +18,8 @@ use rusqlite::{OptionalExtension, params};
 use sha2::{Digest, Sha256};
 
 use super::registry::{self, Audience, ENTRIES, Entry, INSTRUCTIONS};
-use super::render::{self, merge, ref_of, rule_present, same_words, warnings};
+use super::render::{self, git_blob_sha, merge, ref_of, rule_present, same_words, warnings};
 use super::retired::{self, Retired};
-use crate::hub::playbooks::load::git_blob_sha;
 use crate::hub::store::{HubDb, StoreError};
 
 /// One resolved text.
@@ -689,20 +688,6 @@ impl Prompts<'_> {
         levels
     }
 
-    fn retired_file(&self, r: &Retired, project: Option<&ProjectRef>) -> Option<PathBuf> {
-        match (r.playbook(), project) {
-            (Some(name), None) => Some(
-                self.db
-                    .prompts_dir()?
-                    .parent()?
-                    .join("playbooks")
-                    .join(format!("{name}.md")),
-            ),
-            (Some(_), Some(_)) => None,
-            (None, _) => self.file_of(r.id, project),
-        }
-    }
-
     /// Edits to retired prompts: hub-wide ones, and `project`'s when given.
     pub fn orphans(&self, project: Option<&ProjectRef>) -> Vec<RetiredPromptOverride> {
         let mut levels = vec![None];
@@ -711,7 +696,7 @@ impl Prompts<'_> {
         for level in levels {
             for r in retired::RETIRED {
                 let Some(raw) = self
-                    .retired_file(r, level.as_ref())
+                    .file_of(r.id, level.as_ref())
                     .and_then(|f| std::fs::read_to_string(f).ok())
                 else {
                     continue;
@@ -725,11 +710,7 @@ impl Prompts<'_> {
                         PromptScope::Global
                     },
                     project_ref: level.clone(),
-                    text: if r.playbook().is_some() {
-                        raw
-                    } else {
-                        parse_file(&raw).text
-                    },
+                    text: parse_file(&raw).text,
                     suggested_target: r.target.map(PromptId::unchecked),
                     why: r.why.into(),
                 });
@@ -751,7 +732,7 @@ impl Prompts<'_> {
         out
     }
 
-    /// Deletes an edit to a retired prompt. A playbook's file goes too, so its bundled rules apply again.
+    /// Deletes an edit to a retired prompt.
     pub fn reset_retired(
         &self,
         r: &Retired,
@@ -770,7 +751,7 @@ impl Prompts<'_> {
                 PromptError::Invalid("A project override needs projectRef.".into())
             })?),
         };
-        if let Some(file) = self.retired_file(r, level) {
+        if let Some(file) = self.file_of(r.id, level) {
             match std::fs::remove_file(file) {
                 Err(err) if err.kind() != std::io::ErrorKind::NotFound => return Err(err.into()),
                 _ => {}

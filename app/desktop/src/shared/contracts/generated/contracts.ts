@@ -1497,7 +1497,6 @@ export type OrderCard = {
   /** Agents done, failed or cancelled, of `total`. */
   settled: number;
   state: WorkstreamState;
-  template?: PlaybookName;
   title: string;
   total: number;
   updatedAt: Timestamp;
@@ -1707,12 +1706,6 @@ export type PlaybookGateChange = {
    */
   summary: string;
 };
-
-/** The prefixes `bug:`/`fix:` and `research:` pick bugfix and research. */
-export type PlaybookName = "bugfix" | "feature" | "research";
-
-/** <playbook name>@<full lowercase hex git blob SHA> */
-export type PlaybookRef = string;
 
 /** Who wrote the PR: fleetd's agent when one did, and the GitHub account it was opened from. */
 export type PrAuthor = {
@@ -3510,8 +3503,6 @@ export type Workstream = {
   createdAt: Timestamp;
   headline?: string;
   headlineAt?: Timestamp;
-  /** Pinned at creation. Absent on workstreams from before M9. */
-  playbook?: PlaybookRef;
   projectRef: ProjectRef;
   source: WorkstreamSource;
   state: WorkstreamState;

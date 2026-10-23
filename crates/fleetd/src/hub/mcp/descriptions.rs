@@ -158,7 +158,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "prompt_get",
-        "Without an id: every prompt and message fleetd sends a model (lead, tasks, reviewers, playbooks, custom instructions): id, kind, when it is sent, which text is in effect (default, global or project override) and whether a release changed the default of one you edited, plus your edits to prompts a release retired (orphans). projectRef: the texts in effect for that project. With an id, that prompt: its shipped default, the global and project overrides with their refs, the text in effect, its placeholders, its safety rules (and whether the text still says each), warnings, and, when fleetd changed the default you edited, the old default, the new one, yours and a 3-way merge.",
+        "Without an id: every prompt and message fleetd sends a model (lead, tasks, reviewers, custom instructions): id, kind, when it is sent, which text is in effect (default, global or project override) and whether a release changed the default of one you edited, plus your edits to prompts a release retired (orphans). projectRef: the texts in effect for that project. With an id, that prompt: its shipped default, the global and project overrides with their refs, the text in effect, its placeholders, its safety rules (and whether the text still says each), warnings, and, when fleetd changed the default you edited, the old default, the new one, yours and a 3-way merge.",
     ),
     (
         "prompt_set",

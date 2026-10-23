@@ -16,7 +16,7 @@ use crate::hub::leads::lead::AutoStart;
 use crate::hub::leads::ports::LeadPorts;
 use crate::hub::leads::wakes::WAKE_DEBOUNCE;
 use crate::hub::leads::workstreams::IntakeInput;
-use crate::hub::leads::{Area, AreaOptions, Ctx, LeadError};
+use crate::hub::leads::{Area, Ctx, LeadError};
 use crate::hub::store::test_clock::ManualClock;
 use crate::hub::store::{EventLog, HubDb, HubStore, NewEvent, iso_ms};
 
@@ -103,11 +103,7 @@ pub(crate) fn hub(runner_usable: bool) -> Hub {
             }],
         )
         .unwrap();
-    let area = Area::new(
-        Ctx::new(db, store, events.clone(), clock.clone()),
-        AreaOptions { home: home.path() },
-    )
-    .unwrap();
+    let area = Area::new(Ctx::new(db, store, events.clone(), clock.clone()));
     let node = Arc::new(Node {
         runner_usable: AtomicBool::new(runner_usable),
         ..Default::default()
@@ -135,7 +131,6 @@ impl Hub {
                 client_request_id: text.into(),
                 channel: IntakeChannel::Mcp,
                 by: "human".into(),
-                template: None,
             })
             .unwrap();
         let lead = self.area.leads.auto_start(&self.project).await;

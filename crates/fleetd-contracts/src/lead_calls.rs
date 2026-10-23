@@ -13,8 +13,8 @@ use crate::effort::TaskProfile;
 use crate::ids::ThreadId;
 use crate::ledger::{
     Brief, Decision, DecisionKey, DecisionValue, DecisionWhy, EnvName, GATED_MAX_TIMEOUT_SEC,
-    GatedArgv, GatedClass, GatedCwd, GatedTimeoutSec, IntakeText, PlaybookName, RequestState,
-    SecretEnv, WorkstreamId, WorkstreamState,
+    GatedArgv, GatedClass, GatedCwd, GatedTimeoutSec, IntakeText, RequestState, SecretEnv,
+    WorkstreamId, WorkstreamState,
 };
 use crate::mcp::McpToolError;
 use crate::plan::{PlanCall, PlanItemId, PlanResult};
@@ -30,7 +30,7 @@ use crate::verification::ReviewVerdict;
 /// Under the node user's home directory; mode 0600.
 pub const NODE_SOCKET_PATH: &str = ".fleetd/node/node.sock";
 
-/// `fleetd brief create (--workstream W12 | --text "<intent>" [--template t]) --json '<Brief>'`. Without a workstream it
+/// `fleetd brief create (--workstream W12 | --text "<intent>") --json '<Brief>'`. Without a workstream it
 /// opens one for the work the lead took from the chat; then it sets or edits the brief, and a draft moves to running.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -39,17 +39,15 @@ pub struct BriefCreateCall {
     pub workstream_id: Option<WorkstreamId>,
     /// The order in the human's words, when this opens the workstream.
     pub text: Option<IntakeText>,
-    /// Picks the playbook (feature, bugfix, research) of a workstream this opens.
-    pub template: Option<PlaybookName>,
     pub brief: Brief,
 }
 checked!(BriefCreateCall, |call| {
-    match (&call.workstream_id, &call.text, &call.template) {
-        (None, None, _) => {
+    match (&call.workstream_id, &call.text) {
+        (None, None) => {
             Err("give workstreamId to brief an open workstream, or text to open one".into())
         }
-        (Some(_), Some(_), _) | (Some(_), _, Some(_)) => {
-            Err("text and template open a workstream; leave them out with workstreamId".into())
+        (Some(_), Some(_)) => {
+            Err("text opens a workstream; leave it out with workstreamId".into())
         }
         _ => Ok(()),
     }

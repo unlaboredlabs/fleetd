@@ -102,7 +102,7 @@ static TOOLS: &[Tool] = &[
         "brief_create",
         "Set a workstream's brief (goal, why, pointers, constraints, doneWhen lines) and start it, or edit it \
          later. Without workstreamId it opens one for work you took from the chat: text is the order in the human's \
-         words, template picks the playbook (feature, bugfix, research).",
+         words.",
         inline_schema::<BriefCreateCall>,
     ),
     lead(

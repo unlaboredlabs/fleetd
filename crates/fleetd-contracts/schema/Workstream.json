@@ -64,11 +64,6 @@
       "pattern": "^[a-z0-9-]{1,32}$",
       "type": "string"
     },
-    "PlaybookRef": {
-      "description": "<playbook name>@<full lowercase hex git blob SHA>",
-      "pattern": "^(?:bugfix|feature|research)@(?:[0-9a-f]{40}|[0-9a-f]{64})$",
-      "type": "string"
-    },
     "ProjectId": {
       "type": "string"
     },
@@ -107,10 +102,6 @@
         },
         "headlineAt": {
           "$ref": "#/$defs/Timestamp"
-        },
-        "playbook": {
-          "$ref": "#/$defs/PlaybookRef",
-          "description": "Pinned at creation. Absent on workstreams from before M9."
         },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"

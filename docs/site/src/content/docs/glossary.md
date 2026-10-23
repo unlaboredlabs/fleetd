@@ -92,10 +92,6 @@ A one-time code, such as `K4QW-7RNP`, that connects the desktop app or a new wor
 One piece of a project's plan, such as `P12`, sized `s`, `m` or `l`. [Status](/docs/status) counts progress in plan
 items.
 
-## Playbook {#playbook}
-
-The instructions a lead follows for a kind of work: a feature, a fix or research.
-
 ## Policy file {#policy-file}
 
 `.fleetd/policy.yaml` in a project's repo. It sets the tasks' model, tool rules and the branch prefix. See

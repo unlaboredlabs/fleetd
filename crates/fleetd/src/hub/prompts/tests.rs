@@ -210,11 +210,7 @@ fn a_reflowed_default_is_not_a_changed_default() {
 /// A long line that stops mid-sentence and goes on in the next line is a hard wrap.
 #[test]
 fn shipped_texts_are_not_hard_wrapped() {
-    let texts = super::registry::ENTRIES.iter().map(|e| (e.id, e.default));
-    let playbooks = crate::hub::playbooks::load::BUNDLED
-        .iter()
-        .map(|(n, t)| (n.as_str(), *t));
-    for (id, text) in texts.chain(playbooks) {
+    for (id, text) in super::registry::ENTRIES.iter().map(|e| (e.id, e.default)) {
         for pair in text.lines().collect::<Vec<_>>().windows(2) {
             let (line, next) = (pair[0], pair[1].trim_start());
             let block = ["- ", "* ", "#", "```", "|", ">", "{{"]
@@ -304,16 +300,13 @@ fn edits_to_retired_prompts_are_listed_until_reset() {
         machine_id: fleetd_contracts::ids::MachineId::new("lab-a").unwrap(),
         project_id: fleetd_contracts::ids::ProjectId::unchecked("p-a"),
     };
-    // Written by an older release: frontmatter for prompts, a bare file for a playbook.
+    // Written by an older release.
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(
         dir.join("wake.intent.md"),
         "---\nbase: wake.intent@0123456789\n---\nNew order {{workstreamId}}, mine",
     )
     .unwrap();
-    let playbooks = dir.parent().unwrap().join("playbooks");
-    std::fs::create_dir_all(&playbooks).unwrap();
-    std::fs::write(playbooks.join("bugfix.md"), "my bugfix playbook").unwrap();
     prompts
         .save(
             entry("lead.start").unwrap(),
@@ -344,23 +337,17 @@ fn edits_to_retired_prompts_are_listed_until_reset() {
             )
         })
         .collect();
-    assert_eq!(
-        ids,
-        vec![
-            ("wake.intent", Some("lead.start")),
-            ("playbook.bugfix", Some("lead.start"))
-        ]
-    );
+    assert_eq!(ids, vec![("wake.intent", Some("lead.start"))]);
     assert!(hub_wide.iter().all(|o| o.scope == PromptScope::Global));
 
     let with_project = prompts.orphans(Some(&p));
-    let mine = &with_project[2];
+    let mine = &with_project[1];
     assert_eq!(
         (with_project.len(), mine.id.as_str(), mine.scope),
-        (3, "permission.denied.human", PromptScope::Project)
+        (2, "permission.denied.human", PromptScope::Project)
     );
     assert_eq!(mine.suggested_target, None);
-    assert_eq!(prompts.all_orphans().len(), 3);
+    assert_eq!(prompts.all_orphans().len(), 2);
     // Nothing retired reaches a session: the live prompts are untouched.
     assert_eq!(
         prompts.current(Some(&p)).get("lead.start").text.as_ref(),
@@ -371,14 +358,7 @@ fn edits_to_retired_prompts_are_listed_until_reset() {
     prompts
         .reset_retired(retired, PromptScope::Project, Some(&p))
         .unwrap();
-    prompts
-        .reset_retired(
-            super::retired::get("playbook.bugfix").unwrap(),
-            PromptScope::Global,
-            None,
-        )
-        .unwrap();
-    assert!(!project_file.exists() && !playbooks.join("bugfix.md").exists());
+    assert!(!project_file.exists());
     let left: Vec<String> = prompts
         .all_orphans()
         .into_iter()

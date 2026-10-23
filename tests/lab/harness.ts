@@ -119,7 +119,7 @@ export interface MachineHomeOptions {
  * Lays out a machine's HOME before its node starts. `login: true` gives its ~/.claude the user's login material, read
  * from the real ~/.claude and copied (0600, inside the run dir, removed by `cleanupMachineHomes`): a settings.json with
  * only the login variables and `apiKeyHelper` of theirs, and their `.credentials.json` if they have one. `login:
- * false` leaves ~/.claude empty, a machine nobody has logged in on. Agents push to GitHub (m7, m9) with the user's
+ * false` leaves ~/.claude empty, a machine nobody has logged in on. Agents push to GitHub with the user's
  * `gh` login, copied in (never linked: nothing flows back) along with a .gitconfig that uses it.
  */
 export const prepareMachineHome = (id: string, opts: MachineHomeOptions = {}) => {
@@ -156,7 +156,7 @@ export const prepareMachineHome = (id: string, opts: MachineHomeOptions = {}) =>
   );
 };
 
-/** m7 and m9 push to GitHub as the user: their agents need the user's `gh` login, copied into each machine's HOME. */
+/** Scenarios that push to GitHub as the user: their agents need the user's `gh` login, copied into each machine's HOME. */
 export const requireGhLogin = () => {
   if (!fs.existsSync(path.join(os.homedir(), ".config/gh/hosts.yml"))) {
     throw new Error("this scenario pushes to the GitHub lab repo with your gh login, and ~/.config/gh/hosts.yml is missing: run gh auth login");
@@ -594,9 +594,9 @@ export const chatOrder = async (
  * A workstream opened with its brief as its lead would (`brief` with `text`), for an order whose agents the harness sets
  * up itself. No lead turn: the opener already knows.
  */
-export const openWorkstream = (check: Lab["check"], lead: Lead, text: string, brief: Body = {}, template?: string) => {
+export const openWorkstream = (check: Lab["check"], lead: Lead, text: string, brief: Body = {}) => {
   const full = { goal: text, why: "the lab scenario", pointers: [], constraints: [], doneWhen: ["the harness closes it"], ...brief };
-  const out = lead("brief", { text, ...(template === undefined ? {} : { template }), brief: full });
+  const out = lead("brief", { text, brief: full });
   const w = out.result?.workstreamId;
   check(out.code === 0 && typeof w === "string", `brief with text: ${JSON.stringify(out)}`);
   return w as string;

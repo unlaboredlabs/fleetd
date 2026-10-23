@@ -179,7 +179,6 @@ async fn order_get_carries_the_order_s_record_and_steers() {
             by: "human".into(),
             at: AT.into(),
             client_request_id: None,
-            playbook: None,
         })
         .unwrap();
     let id = w.workstream_id.as_str();

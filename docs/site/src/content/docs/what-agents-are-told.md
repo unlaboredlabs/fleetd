@@ -182,9 +182,6 @@ never moves it for you.
 From an MCP client, `prompt_get` without an `id` returns these under `orphans`, and `prompt_set` with the old id and
 `reset: true` deletes one.
 
-An edited playbook file is listed the same way. Its review and check rules still apply, but its instructions no longer
-reach the lead: the lead prompt has a section for each kind of work.
-
 ## What a running agent keeps {#pinning}
 
 Each session keeps the exact prompt versions it started with. An edit reaches new sessions at once: a task at its next
@@ -216,7 +213,7 @@ wake.
 agents: 3 running of 6, 1 queued
 
 ## Work
-- W2 running (bugfix): flaky login test
+- W2 running: flaky login test
   done when: done:0 test login_flaky passes in acme/app
 
 ## Events
