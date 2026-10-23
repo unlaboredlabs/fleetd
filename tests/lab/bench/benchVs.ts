@@ -25,6 +25,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { type Efficiency, efficiencyOfArchive, PRICE, type Tokens, totalOf } from "./accounting.ts";
 import { activeSetup, busy, claudeVersion, cliVersion, copyClaudeSetup, EFFORT, type LoadSnapshot, loadSnapshot, MODEL, sampleLoad, upstreamUrl } from "./env.ts";
 import { readProxyLog, startProxy } from "./proxy.ts";
 import { filesIn, jsonlFiles, type Pinning, pinningOf, type Usage, usageOf, type Window } from "./usage.ts";
@@ -405,6 +406,8 @@ export interface Result {
   checks: ReturnType<typeof hiddenChecks>;
   review: Omit<Awaited<ReturnType<typeof review>>, "patch" | "text"> | null;
   usage: Usage | null;
+  /** Usage by token type, agent role and request (accounting.ts); the table recomputes it from the run's archive. */
+  efficiency?: Efficiency | null;
   /** Every request and session message on MODEL at EFFORT from the same claude CLI; `valid: false` does not count. */
   pinning: Pinning | null;
   /** False when the pinning check failed or found nothing to check: the run is reported but does not count. */
@@ -471,6 +474,7 @@ const finish = async (task: TaskDef, info: RunInfo, outcome: Outcome, opts: Fini
   for (const f of ["run.json", "claude-p.stream.jsonl", "review.json", "chat.json", "requests.jsonl", "review-requests.jsonl", "shim.log"]) {
     if (fs.existsSync(path.join(info.runDir, f))) fs.copyFileSync(path.join(info.runDir, f), path.join(archive, f));
   }
+  const efficiency = info.contender === "reference" ? null : efficiencyOfArchive(archive, opts.window);
   const result: Result = {
     schema: 2,
     runId: info.runId,
@@ -485,6 +489,7 @@ const finish = async (task: TaskDef, info: RunInfo, outcome: Outcome, opts: Fini
     checks,
     review: rev === null ? null : (({ patch: _patch, text: _text, ...kept }) => kept)(rev),
     usage,
+    efficiency,
     pinning,
     valid: pinning !== null && pinning.valid && (rev === null || rev.pinned),
     env: { claudeVersion: claudeVersion(), setup: activeSetup(), loadStart: opts.loadStart, loadEnd, load: opts.load, busy: machineBusy },
@@ -498,7 +503,7 @@ const finish = async (task: TaskDef, info: RunInfo, outcome: Outcome, opts: Fini
   fs.mkdirSync(path.join(BENCH, "results"), { recursive: true });
   const file = path.join(BENCH, "results", `${info.runId}.json`);
   fs.writeFileSync(file, `${JSON.stringify(result, null, 2)}\n`);
-  log(`${pass ? "PASS" : "FAIL"}${result.valid ? "" : " (INVALID)"}${machineBusy ? " (busy machine)" : ""} ${task.name} ${info.contender}: wall ${(outcome.wallMs / 60_000).toFixed(1)} min, ${usage === null ? "usage n/a" : `$${usage.usd.toFixed(2)}`}, agents ${result.agents ?? "n/a"}`);
+  log(`${pass ? "PASS" : "FAIL"}${result.valid ? "" : " (INVALID)"}${machineBusy ? " (busy machine)" : ""} ${task.name} ${info.contender}: wall ${(outcome.wallMs / 60_000).toFixed(1)} min, ${efficiency == null ? "usage n/a" : `$${efficiency.total.usd.toFixed(2)} (${efficiency.source})`}, agents ${result.agents ?? "n/a"}`);
   log(`result: ${file}`);
   if (!opts.keep) fs.rmSync(info.runDir, { recursive: true, force: true });
   return result;
@@ -513,6 +518,7 @@ const median = (xs: ReadonlyArray<number>) => {
   return s.length === 0 ? null : s.length % 2 === 1 ? s[(s.length - 1) / 2]! : (s[s.length / 2 - 1]! + s[s.length / 2]!) / 2;
 };
 const minutes = (ms: number | null) => (ms === null ? "n/a" : (ms / 60_000).toFixed(1));
+const tok = (t: number | null) => (t === null ? "n/a" : t < 1000 ? String(Math.round(t)) : t < 1e6 ? `${(t / 1e3).toFixed(1)}k` : `${(t / 1e6).toFixed(2)}M`);
 
 /** Every result this harness wrote, oldest first. */
 export const readResults = (since?: string) =>
@@ -525,6 +531,18 @@ export const readResults = (since?: string) =>
         .sort((a, b) => (a.startedAt ?? "").localeCompare(b.startedAt ?? ""))
     : [];
 
+/** An imported run's span: its session files may hold other work too. */
+const windowOf = (r: Result): Window | undefined =>
+  r.contender !== "t3" || r.startedAt === undefined ? undefined : { from: Date.parse(r.startedAt) - WINDOW_SLACK_MS, to: Date.parse(r.startedAt) + r.wallMs + WINDOW_SLACK_MS };
+
+/** The results with their efficiency recomputed from each run's archive, so runs from every round count alike. */
+export const withEfficiency = (results: ReadonlyArray<Result>): Array<Result> =>
+  results.map((r) => {
+    if (r.contender === "reference") return r;
+    const fresh = efficiencyOfArchive(path.join(BENCH, "runs", r.runId), windowOf(r));
+    return fresh === null ? r : { ...r, efficiency: fresh };
+  });
+
 /**
  * What the table calls each contender. `claude-p` and `t3` land their work as local commits with no PR, review or CI;
  * `claude-p+gate` and `fleetd` land it through a PR, one fresh review per head, green CI and a merge.
@@ -536,20 +554,56 @@ const LABEL: Record<Contender, string> = {
   t3: "t3 (ungated)",
   reference: "reference",
 };
-/** The contenders the per-task summary compares, fleetd last. */
-const SUMMARY: ReadonlyArray<Contender> = ["claude-p", "claude-p+gate", "t3", "fleetd"];
+/** The contenders the per-task summary lists: the bar fleetd is held to first, fleetd last. */
+const SUMMARY: ReadonlyArray<Contender> = ["claude-p+gate", "claude-p", "t3", "fleetd"];
+/** Within this wall-time ratio of the bar, fleetd counts as the same speed. */
+const PARITY = 0.15;
+
+const TOKEN_KEYS = ["input", "cacheRead", "cacheWrite5m", "cacheWrite1h", "output"] as const satisfies ReadonlyArray<keyof Tokens>;
 
 /**
- * The results as markdown: one row per run, then per task the median wall time of the valid passing runs of each
- * contender (n runs) and how many times faster fleetd was. Reference and smoke runs are listed but never summarized.
+ * The plain verdict for one task: fleetd's median wall time and API $ per finished task against the bar's, both over
+ * valid runs that passed the hidden checks and the blind review.
+ */
+export const verdict = (fleetd: { wallMs: number; usd: number }, bar: { wallMs: number; usd: number }, barName: string) => {
+  const speed = fleetd.wallMs / bar.wallMs;
+  const usage = fleetd.usd / bar.usd;
+  const pace = speed < 1 - PARITY ? `faster (${speed.toFixed(2)}x the wall time)` : speed <= 1 + PARITY ? `similar speed (${speed.toFixed(2)}x the wall time)` : `slower (${speed.toFixed(2)}x the wall time)`;
+  const spend = usage < 1 ? `${Math.round((1 - usage) * 100)}% less usage` : usage < 2 ? `${Math.round((usage - 1) * 100)}% more usage` : `${usage.toFixed(1)}x the usage`;
+  return `fleetd vs ${barName}: ${pace}, ${spend} ($${fleetd.usd.toFixed(2)} vs $${bar.usd.toFixed(2)} per finished task)`;
+};
+
+const usdOfResult = (r: Result) => r.efficiency?.total.usd ?? r.usage?.usd ?? null;
+
+/** One run's usage diagnostics: tokens by type, $ by agent role, first-request size, tool schema, idle rewrites. */
+const usageRow = (r: Result, e: Efficiency) => {
+  const t = e.total;
+  const roles = Object.entries(e.byRole).sort(([, a], [, b]) => b.usd - a.usd);
+  const byRole = roles.map(([name, u]) => `${name}${u.agents > 1 ? ` ×${u.agents}` : ""} $${u.usd.toFixed(2)} (${Math.round((u.usd / Math.max(t.usd, 1e-9)) * 100)}%)`).join("; ");
+  const start = roles.filter(([, u]) => u.startContext.length > 0).map(([name, u]) => `${name} ${tok(median(u.startContext))}`).join("; ");
+  const tools = roles.filter(([, u]) => u.toolsBytes !== null).map(([name, u]) => `${name} ${(u.toolsBytes! / 1024).toFixed(1)}`).join("; ");
+  const idle = e.idle.gapsOverIdle === 0 ? "0" : `${e.idle.rewrites} of ${e.idle.gapsOverIdle} gaps (${tok(e.idle.rewriteTokens)}, +$${e.idle.rewriteExtraUsd.toFixed(2)})`;
+  const c = e.crossCheck;
+  const check =
+    e.source === "proxy"
+      ? `proxy; sessions ${c.sessionMessages} msgs, ${c.proxyOnly} proxy-only, ${c.sessionOnly} session-only, Δ ${tok(c.delta === null ? 0 : totalOf(c.delta))} tok`
+      : `sessions; proxy ${c.proxyRequests === null ? "n/a" : `${c.proxyRequests} req`} vs ${c.sessionMessages} msgs`;
+  return `| ${r.task} | ${LABEL[r.contender] ?? r.contender} | ${(r.startedAt ?? "").slice(0, 16).replace("T", " ")} | ${t.requests} | ${tok(t.input)} | ${tok(t.cacheRead)} | ${tok(t.cacheWrite5m)} | ${tok(t.cacheWrite1h)} | ${tok(t.output)} | ${t.usd.toFixed(2)} | ${byRole} | ${start} | ${tools} | ${idle} | ${check} |`;
+};
+
+/**
+ * The results as markdown: one row per run; per run its usage by token type and agent role with the cache and prompt
+ * diagnostics; then per task the medians of each contender's valid passing runs, their ratio to claude-p+gate, and
+ * one verdict line. Reference and smoke runs are listed but never summarized.
  */
 export const renderTable = (results: ReadonlyArray<Result>) => {
   const rows = results.map((r) => {
     const checks = `${r.checks.checks.filter((c) => c.pass).length}/${r.checks.checks.length}`;
     const rev = r.review === null ? "-" : r.review.blockers === null ? "no verdict" : `${r.review.blockers.length}`;
-    const tokens = r.usage === null ? "n/a" : (r.usage.totalTokens / 1e6).toFixed(1);
-    const output = r.usage === null ? "n/a" : `${Math.round(Object.values(r.usage.byModel).reduce((n, m) => n + m.output, 0) / 1000)}k`;
-    const usd = r.usage === null ? "n/a" : r.usage.usd.toFixed(2);
+    const e = r.efficiency;
+    const tokens = e != null ? (totalOf(e.total) / 1e6).toFixed(1) : r.usage === null ? "n/a" : (r.usage.totalTokens / 1e6).toFixed(1);
+    const output = e != null ? `${Math.round(e.total.output / 1000)}k` : r.usage === null ? "n/a" : `${Math.round(Object.values(r.usage.byModel).reduce((n, m) => n + m.output, 0) / 1000)}k`;
+    const usd = usdOfResult(r)?.toFixed(2) ?? "n/a";
     const valid = r.contender === "reference" ? "n/a" : r.valid ? "yes" : `NO: ${r.pinning?.violations[0] ?? "review not pinned"}`;
     const cli = r.pinning === null ? r.env.claudeVersion.split(" ")[0] : Object.keys(r.pinning.cliVersions).join(",") || "?";
     const peak = r.env.load === null ? "" : `, peak ${r.env.load.maxLoadavg1}`;
@@ -562,27 +616,65 @@ export const renderTable = (results: ReadonlyArray<Result>) => {
     "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ...rows,
     "",
-    "Per task, the median wall time of valid passing runs (n runs), and fleetd's speedup over each other contender",
-    "(above 1x: fleetd is faster). Ungated contenders commit locally: no PR, no review, no CI.",
+    `API $: API-equivalent dollars at claude-opus-5-5 list prices per million tokens: uncached input $${PRICE.input}, cache read $${PRICE.cacheRead.toFixed(2)},`,
+    `5 min cache write $${PRICE.cacheWrite5m}, 1 h cache write $${PRICE.cacheWrite1h}, output $${PRICE.output}. Counted from the proxy's logged API responses where the run has them,`,
+    "else from the claude session files (rounds 1 and 2), recomputed from each run's archive. The blind review is the bench's, not the contender's.",
     "",
-    `| Task | ${SUMMARY.map((c) => LABEL[c]).join(" | ")} | ${SUMMARY.filter((c) => c !== "fleetd").map((c) => `fleetd vs ${LABEL[c]}`).join(" | ")} |`,
-    `|---|${SUMMARY.map(() => "---|").join("")}${SUMMARY.filter((c) => c !== "fleetd").map(() => "---|").join("")}`,
+    "### Usage per run",
+    "",
+    "Tokens by type; $ by agent role (fix: the work after a `Fix your PR` message); each role's median first-request prompt;",
+    "the tool schema per request (KB, by role); cache rewrites after a gap over 5 min on the same session; where the count came from.",
+    "",
+    "| Task | Contender | Started (UTC) | Requests | Uncached in | Cache read | Write 5m | Write 1h | Output | API $ | $ by role | First request | Tools KB/req | Idle rewrites | Source |",
+    "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+    ...results.flatMap((r) => (r.efficiency == null ? [] : [usageRow(r, r.efficiency)])),
+    "",
+    "### Per task",
+    "",
+    "Medians over valid runs that passed the hidden checks and the blind review (equal quality). The bar is claude-p+gate:",
+    `speed parity is within ${Math.round(PARITY * 100)}% of its wall time; usage is API $ per finished task.`,
+    "",
+    "| Task | Contender | Passed/valid | Wall (min) | Wall vs gate | Requests | Uncached in | Cache read | Write 5m | Write 1h | Output | API $ | $ vs gate |",
+    "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
   ];
+  const verdicts: Array<string> = [];
   for (const task of [...new Set(results.map((r) => r.task))].filter((t) => t !== "smoke").sort()) {
-    const of = (c: Contender) => results.filter((r) => r.task === task && r.contender === c && r.valid && r.pass).map((r) => r.wallMs);
-    const cell = (c: Contender) => `${minutes(median(of(c)))} (n=${of(c).length})`;
-    const fleetd = median(of("fleetd"));
-    const speedup = (c: Contender) => {
-      const other = median(of(c));
-      return fleetd === null || other === null ? "n/a" : `${(other / fleetd).toFixed(2)}x`;
+    const valid = (c: Contender) => results.filter((r) => r.task === task && r.contender === c && r.valid);
+    const passed = (c: Contender) => valid(c).filter((r) => r.pass && usdOfResult(r) !== null);
+    const med = (c: Contender) => {
+      const runs = passed(c);
+      if (runs.length === 0) return null;
+      const of = (k: keyof Tokens) => median(runs.map((r) => r.efficiency?.total[k] ?? Number.NaN).filter(Number.isFinite));
+      return { wallMs: median(runs.map((r) => r.wallMs))!, usd: median(runs.map((r) => usdOfResult(r)!))!, requests: of("requests"), ...Object.fromEntries(TOKEN_KEYS.map((k) => [k, of(k)])) };
     };
-    lines.push(`| ${task} | ${SUMMARY.map(cell).join(" | ")} | ${SUMMARY.filter((c) => c !== "fleetd").map(speedup).join(" | ")} |`);
+    const gate = med("claude-p+gate");
+    for (const c of SUMMARY) {
+      const m = med(c);
+      if (valid(c).length === 0) continue;
+      const ratio = (a: number | undefined, b: number | undefined) => (a === undefined || b === undefined ? "n/a" : `${(a / b).toFixed(2)}x`);
+      const t = m as (Record<string, number | null> & { wallMs: number; usd: number }) | null;
+      lines.push(
+        `| ${task} | ${LABEL[c]} | ${passed(c).length}/${valid(c).length} | ${minutes(m?.wallMs ?? null)} | ${ratio(m?.wallMs, gate?.wallMs)} | ${tok(t?.requests ?? null)} | ${TOKEN_KEYS.map((k) => tok(t?.[k] ?? null)).join(" | ")} | ${m?.usd.toFixed(2) ?? "n/a"} | ${ratio(m?.usd, gate?.usd)} |`,
+      );
+    }
+    const fleetd = med("fleetd");
+    const ungated = med("claude-p");
+    verdicts.push(
+      `- ${task}: ${
+        fleetd !== null && gate !== null
+          ? verdict(fleetd, gate, "claude-p+gate")
+          : fleetd !== null && ungated !== null
+            ? `no passing claude-p+gate run yet; ${verdict(fleetd, ungated, "claude-p (ungated)")}`
+            : `no verdict: needs a passing run of fleetd (${passed("fleetd").length}) and of claude-p+gate (${passed("claude-p+gate").length})`
+      }.`,
+    );
   }
+  lines.push("", ...verdicts);
   return `${lines.join("\n")}\n`;
 };
 
 const writeTable = (since?: string) => {
-  const table = renderTable(readResults(since));
+  const table = renderTable(withEfficiency(readResults(since)));
   fs.mkdirSync(path.join(BENCH, "results"), { recursive: true });
   fs.writeFileSync(path.join(BENCH, "results", "TABLE.md"), table);
   process.stdout.write(table);
