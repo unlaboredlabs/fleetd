@@ -4,32 +4,18 @@ use std::borrow::Cow;
 
 use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use serde_with::skip_serializing_none;
 
 use crate::ids::ProjectRef;
-use crate::ledger::{Brief, CheckType, PlaybookName};
-use crate::prim::{Int, Line, List, MAX_SAFE_INT, UniqueList};
-
-/// The brief's doneWhen needs at least one check whose type is in `any_of`.
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct RequiredCheck {
-    pub any_of: UniqueList<CheckType, 1, { usize::MAX }>,
-    /// Names it in the refusal, e.g. "a failing repro check" gives "bugfix needs a failing repro check (type test or
-    /// cmd)".
-    pub label: Option<Line<1, 100>>,
-}
+use crate::ledger::{Brief, PlaybookName};
+use crate::prim::{Int, Line, MAX_SAFE_INT};
 
 /// The YAML frontmatter of `playbooks/<name>.md`, or of its override in `~/.fleetd/hub/playbooks/`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Playbook {
     pub name: PlaybookName,
-    /// Bumped by hand on changes to gates or checks; the pin itself is the file's SHA.
+    /// Bumped by hand on changes to gates; the pin itself is the file's SHA.
     pub version: Int<1, MAX_SAFE_INT>,
-    /// Every entry must be met.
-    pub required_checks: List<RequiredCheck, 0, 10>,
 }
 
 /// What the research playbook adds to the floor, as refusal text.
@@ -112,7 +98,6 @@ mod tests {
         json!({
             "name": "bugfix",
             "version": 1,
-            "requiredChecks": [{ "anyOf": ["test", "cmd"], "label": "a failing repro check" }],
         })
     }
 
@@ -126,23 +111,13 @@ mod tests {
         let accepts = |v: Value| serde_json::from_value::<Playbook>(v).is_ok();
         assert!(accepts(bugfix()));
         assert!(!accepts(with(bugfix(), "name", json!("chore"))));
-        assert!(!accepts(with(
-            bugfix(),
-            "requiredChecks",
-            json!([{ "anyOf": ["repro"] }])
-        )));
-        assert!(!accepts(with(
-            bugfix(),
-            "requiredChecks",
-            json!([{ "anyOf": [] }])
-        )));
     }
 
     #[test]
     fn research_brief_names_every_missing_field() {
         let brief = json!({
             "goal": "g", "why": "w", "pointers": [], "constraints": [],
-            "doneWhen": [{ "type": "judge", "criteria": "the judge reports both numbers" }],
+            "doneWhen": ["both numbers are measured"],
         });
         let mut research = brief.clone();
         research["baseline"] = json!("main at its current head");

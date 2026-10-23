@@ -52,7 +52,7 @@ pub fn rank(kind: SpanKind) -> u8 {
         WaitPermission => 9,
         WaitRetryApi | Compaction => 8,
         ToolsParallel => 7,
-        ToolBash | ToolRead | ToolEdit | ToolWeb | ToolMcp | ToolOther | Git | CheckClaim => 6,
+        ToolBash | ToolRead | ToolEdit | ToolWeb | ToolMcp | ToolOther | Git => 6,
         ModelFirstToken | ModelThinking | ModelOutput => 4,
         // Waits that may overlap a session's runs (a wake or send arriving mid-turn, a park, a queued write) yield to
         // whatever the node measured in the run.

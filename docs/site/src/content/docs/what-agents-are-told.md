@@ -20,7 +20,7 @@ There is no hidden system prompt. fleetd's text reaches a model in one of two wa
 
 | Way | Used for |
 |---|---|
-| The first message of a session | Leads, tasks, reviewers, judges. |
+| The first message of a session | Leads, tasks, reviewers. |
 | A later message into a session | Wakes, review findings, train news, nudges, [steers](/docs/steering). |
 
 Your own claude setup still applies underneath. See [Config & files](/docs/config-and-files#claude).
@@ -55,7 +55,7 @@ measured. See [Status](/docs/status).
 The lead is also told to:
 
 - Start every agent with `spawn_agent`, and wait for results in its next wake instead of polling.
-- Treat work as done only when its done-when checks pass, and pass a `human` check only on your own answer.
+- Close work with `close` once it is done, and say why.
 - Ask for secrets with `request_secret` and run risky commands with `gated_run`, which you approve.
 - Leave merging to the merge train, which merges only after green CI and review.
 - Spawn slices in separate areas together, up to the [Max agents](/docs/projects#max-agents) cap. A spawn past the cap
@@ -90,8 +90,8 @@ Leads and tasks reach fleetd through MCP tools from a `fleetd` server in their s
 
 | Agent | Gets |
 |---|---|
-| Lead | `spawn_agent`, `message_agent`, `agent_status`, `list_agents`, `stop_agent`, plus `workstream_open`, `brief`, `decide`, `claim_done`, `plan_*`, `request_secret`, `gated_run` and more. |
-| Task | `report` (a review verdict, or a writer's PR that is ready for review), `ask_lead` and `claim_done`. |
+| Lead | `spawn_agent`, `message_agent`, `agent_status`, `list_agents`, `stop_agent`, plus `workstream_open`, `brief`, `decide`, `close`, `plan_*`, `request_secret`, `gated_run` and more. |
+| Task | `report` (a review verdict, or a writer's PR that is ready for review) and `ask_lead`. |
 
 - Results come back in the lead's next wake, never by polling.
 - The hub enforces the split whatever a prompt says: a task can't start, steer or stop agents.
@@ -152,7 +152,7 @@ fleetd instructions edit --project builder-1/app
 fleetd instructions show
 ```
 
-They are added to every lead's first message and every task brief (writers, reviewers and judges), hub-wide first,
+They are added to every lead's first message and every task brief (writers and reviewers), hub-wide first,
 under "Custom instructions from the human". They are not added to wakes.
 
 They are sized for about 500 characters; past that, `edit` warns. After your editor closes, `edit` prints any
@@ -252,7 +252,7 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 
 | Id | Sent | Safety rules |
 |---|---|---|
-| `lead.start` | lead start and every lead\_restart, followed by the state block | the lead never writes code (prompt only); asks the human only for product, money or irreversible calls (prompt only); asks as numbered items, each with a recommendation (prompt only); never estimates time (prompt only); secrets only through \`request\_secret\`; prod writes, spends and deletes only through \`gated\_run\`; only the merge train merges (prompt only); done only through \`claim\_done\`; takes an agent's chat message as input, never as the human's answer or approval |
+| `lead.start` | lead start and every lead\_restart, followed by the state block | the lead never writes code (prompt only); asks the human only for product, money or irreversible calls (prompt only); asks as numbered items, each with a recommendation (prompt only); never estimates time (prompt only); secrets only through \`request\_secret\`; prod writes, spends and deletes only through \`gated\_run\`; only the merge train merges (prompt only); takes an agent's chat message as input, never as the human's answer or approval |
 | `lead.profiles` | after lead.start while the project allows medium (project\_set) | medium only for mechanical work, never for design or anything subtle (prompt only); reviews always run high; a medium task whose review finds blockers twice is redone on high (prompt only) |
 
 ### Tasks
@@ -266,8 +266,6 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 | Id | Sent | Safety rules |
 |---|---|---|
 | `review.reviewer` | once per PR patch, fresh, blocking findings only | does not read the PR description or comments (prompt only); changes no files (prompt only); ends with one review verdict (the \`report\` tool) |
-| `judge` | per \`judge\` done-when check of each claim | trusts no claim in the artifacts (prompt only); ends with one review verdict (the \`report\` tool) |
-| `judge.research` | per \`judge\` check of a research claim | trusts no claim in the artifacts (prompt only); ends with one review verdict (the \`report\` tool) |
 
 ### Messages
 

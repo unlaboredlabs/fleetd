@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::ProjectRef;
-use fleetd_contracts::lead_calls::{BriefCreateResult, StatusSetResult};
+use fleetd_contracts::lead_calls::{BriefCreateResult, CloseResult, StatusSetResult};
 use fleetd_contracts::ledger::{
     Brief, IntakeChannel, PlaybookName, PlaybookRef, Workstream, WorkstreamId, WorkstreamState,
 };
@@ -213,11 +213,9 @@ impl Workstreams {
         if w.brief.as_ref() == Some(&brief) {
             return Ok(result(w.state, format!("Unchanged. {running}")));
         }
-        // A draft starts running. A new brief while verifying reopens the work, and the claim made on the old one no
-        // longer counts.
+        // A draft starts running.
         let starts = w.brief.is_none();
-        let verifying = w.state == WorkstreamState::Verifying;
-        let state = if starts || verifying {
+        let state = if starts {
             WorkstreamState::Running
         } else {
             w.state
@@ -244,16 +242,47 @@ impl Workstreams {
             format!("{id} brief edited"),
             Some(serde_json::json!({ "workstreamId": id, "state": state, "briefEdited": true })),
         )?;
-        if verifying && let Some(claims) = self.ctx.hooks.claims.get() {
-            claims.void(id);
-            return Ok(result(
-                state,
-                format!(
-                    "Brief edited. The claim you made before no longer counts; claim again once the new done-when checks hold. {running}"
-                ),
+        Ok(result(state, format!("Brief edited. {running}")))
+    }
+
+    /// `close` from the lead of `caller`: the workstream is done, with why. It stops nothing; what still runs keeps
+    /// running, and the status shows it.
+    pub fn close(
+        &self,
+        caller: &ProjectRef,
+        workstream_id: &WorkstreamId,
+        why: &str,
+        by: &str,
+    ) -> Result<CloseResult, LeadError> {
+        let w = self.own(caller, workstream_id)?;
+        let id = &w.workstream_id;
+        if is_closed(w.state) {
+            return Err(LeadError::invalid(
+                format!("{id} is already {}.", state_text(w.state)),
+                "Open a new workstream if there is more to do.",
             ));
         }
-        Ok(result(state, format!("Brief edited. {running}")))
+        let done = Workstream {
+            state: WorkstreamState::Done,
+            updated_at: now_iso(&self.ctx).into(),
+            ..w.clone()
+        };
+        self.records.workstream_put(&done)?;
+        self.event(
+            &done,
+            HubEventType::WorkstreamDone,
+            format!("{id} is done: {why}"),
+            Some(serde_json::json!({ "workstreamId": id, "reason": why, "by": by })),
+        )?;
+        Ok(CloseResult {
+            workstream_id: id.clone(),
+            state: WorkstreamState::Done,
+            next: Some(
+                "Closed. Nothing was stopped: stop any agent of it you no longer need with stop_agent, and tell the \
+                 human in a line."
+                    .into(),
+            ),
+        })
     }
 
     /// `fleetd status set`. Without a workstream it needs exactly one open workstream in the project.

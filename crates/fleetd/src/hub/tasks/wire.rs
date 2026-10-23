@@ -252,7 +252,7 @@ impl TaskPorts for HubTaskPorts {
     }
 
     fn done_when_text(&self, brief: &Brief) -> String {
-        crate::hub::leads::digest::done_when_text(&brief.done_when, None, 200)
+        crate::hub::leads::digest::done_when_text(&brief.done_when, 200)
     }
 }
 

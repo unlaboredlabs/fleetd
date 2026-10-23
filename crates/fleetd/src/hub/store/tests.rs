@@ -688,3 +688,99 @@ fn incidents_go_on_an_older_hub() {
         .unwrap();
     assert_eq!(types, ["pr.merged_outside"]);
 }
+
+/// A hub from before `close`: each done-when check becomes a plain line, a workstream left verifying runs again, and
+/// the claims and plan items' check links go.
+#[test]
+fn stored_done_when_checks_become_plain_lines() {
+    use super::migrations::MIGRATIONS;
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    // Found by content, not as the last migration, so later migrations don't break this test.
+    let at = MIGRATIONS
+        .iter()
+        .position(|m| m.contains("DROP TABLE claims"))
+        .expect("the close migration");
+    for m in &MIGRATIONS[..at] {
+        conn.execute_batch(m).unwrap();
+    }
+    let ts = "2026-10-18T10:00:00.000Z";
+    let workstream = serde_json::json!({
+        "workstreamId": "W1", "projectRef": { "machineId": "devbox", "projectId": "storefront" },
+        "title": "Health page",
+        "source": { "text": "Health page", "channel": "app", "by": "human", "at": ts },
+        "state": "verifying", "createdAt": ts, "updatedAt": ts,
+        "brief": {
+            "goal": "g", "why": "w", "pointers": [], "constraints": [],
+            "doneWhen": [
+                { "type": "pr_merged", "repo": "acme/storefront", "pr": 12 },
+                { "type": "ci_green", "repo": "acme/storefront" },
+                { "type": "http", "url": "https://storefront.example/healthz", "status": 200, "contains": "ok" },
+                { "type": "cmd", "machineId": "devbox", "argv": ["test", "-f", "docs/x.md"], "expectExit": 0 },
+                { "type": "test", "repo": "acme/storefront", "testId": "health::answers" },
+                { "type": "judge", "criteria": "the page reads well" },
+                { "type": "human", "question": "good?" },
+            ],
+        },
+    });
+    conn.execute(
+        "INSERT INTO workstreams (machine_id, project_id, state, data) VALUES ('devbox', 'storefront', 'verifying', ?)",
+        [workstream.to_string()],
+    )
+    .unwrap();
+    conn.execute_batch(
+        r#"INSERT INTO plan_items (project_ref, milestone, workstream_id, state, weight, size, position, data)
+             VALUES ('devbox/storefront', 1, 'W1', 'open', 'must', 2, 0, '{"title":"t","links":{"tasks":["T1"],"checks":[2]}}');
+           INSERT INTO claims (workstream_id, machine_id, project_id) VALUES ('W1', 'devbox', 'storefront');"#,
+    )
+    .unwrap();
+    conn.execute_batch(MIGRATIONS[at]).unwrap();
+    let (state, data): (String, String) = conn
+        .query_row("SELECT state, data FROM workstreams", [], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
+        .unwrap();
+    let w: fleetd_contracts::ledger::Workstream = serde_json::from_str(&data).unwrap();
+    assert_eq!(
+        (state.as_str(), w.state),
+        (
+            "running",
+            fleetd_contracts::ledger::WorkstreamState::Running
+        )
+    );
+    let lines: Vec<&str> = w
+        .brief
+        .as_ref()
+        .unwrap()
+        .done_when
+        .iter()
+        .map(|l| l.as_str())
+        .collect();
+    assert_eq!(
+        lines,
+        [
+            "PR #12 merged in acme/storefront",
+            "CI green on acme/storefront",
+            "GET https://storefront.example/healthz answers 200 containing \"ok\"",
+            "on devbox: `test -f docs/x.md` exits 0",
+            "test health::answers passes in acme/storefront",
+            "the page reads well",
+            "good?",
+        ]
+    );
+    let links: String = conn
+        .query_row(
+            "SELECT json_extract(data, '$.links') FROM plan_items",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(links, r#"{"tasks":["T1"]}"#);
+    let claims: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM sqlite_master WHERE name = 'claims'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(claims, 0);
+}

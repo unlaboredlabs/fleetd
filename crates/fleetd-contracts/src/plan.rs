@@ -1,5 +1,5 @@
 //! A project's plan: milestones `M<n>` holding items `P<n>`, each must or polish with a size. Only the hub marks an
-//! item done, from verification (a train merge and passed done-when checks); leads add, edit and drop.
+//! item done, from verification (a train merge of its linked work); leads add, edit and drop.
 
 use crate::steer::SteerId;
 use schemars::JsonSchema;
@@ -26,8 +26,6 @@ brand!(
 pub type PlanTitle = Line<1, 120>;
 /// `--why`: the reason for a scope change or a drop.
 pub type PlanWhy = Line<1, 200>;
-/// A done-when index of the item's order (`Brief.done_when`, 0-based like `serves done:<n>`).
-pub type CheckIndex = Int<0, 19>;
 
 #[derive(
     Clone,
@@ -151,9 +149,6 @@ pub struct PlanLinks {
     /// PRs listed on the item (`--pr`, or `change enqueue --item`).
     #[serde(default)]
     pub prs: UniqueList<GitHubPrUrl, 0, 20>,
-    /// Done-when indices of the item's order that must pass in its latest claim.
-    #[serde(default)]
-    pub checks: UniqueList<CheckIndex, 0, 20>,
 }
 
 #[skip_serializing_none]
@@ -192,7 +187,7 @@ pub struct PlanItem {
     /// The first linked `task.started`.
     pub started_at: Option<Timestamp>,
     pub done_at: Option<Timestamp>,
-    /// What verified it, e.g. "#212 merged by the train · check 2 passed C9".
+    /// What verified it, e.g. "#212 merged by the train".
     pub evidence: Option<Line<1, 200>>,
     /// Why it was dropped.
     pub drop_reason: Option<Line<1, 200>>,
@@ -203,7 +198,7 @@ pub struct PlanItem {
 pub enum PlanChangeKind {
     /// A lead's add, edit or drop that moved an open milestone's total after its planning window.
     Scope,
-    /// A later claim failed a check a done item listed.
+    /// Older markers only: a later claim failed a check a done item listed.
     Reopened,
     /// Items dropped by the hub when their order finished, stopped or failed.
     Closed,
@@ -270,7 +265,7 @@ pub struct PlanMilestoneCall {
 }
 
 /// `fleetd plan add "<title>" --milestone M1 [--workstream W] [--must|--polish] [--size s|m|l] [--after P1,P2]
-/// [--pr <url>] [--check <n>] [--why "<note>"]`. `--why` is required when it changes scope after the planning window.
+/// [--pr <url>] [--why "<note>"]`. `--why` is required when it changes scope after the planning window.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -286,14 +281,13 @@ pub struct PlanAddCall {
     #[serde(default)]
     pub after: UniqueList<PlanItemId, 0, 20>,
     pub pr: Option<GitHubPrUrl>,
-    pub check: Option<CheckIndex>,
     pub why: Option<PlanWhy>,
     /// `--steer S12`: the change carries out a steer; it stands in for `--why` and acknowledges the steer.
     pub steer: Option<SteerId>,
 }
 
 /// `fleetd plan edit P1 [--title] [--size] [--must|--polish] [--milestone] [--workstream] [--after] [--pr +url|-url]
-/// [--check +n|-n] [--position n] [--why]`. There is no state field: only the hub marks done.
+/// [--position n] [--why]`. There is no state field: only the hub marks done.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -310,10 +304,6 @@ pub struct PlanEditCall {
     pub pr_add: UniqueList<GitHubPrUrl, 0, 20>,
     #[serde(default)]
     pub pr_remove: UniqueList<GitHubPrUrl, 0, 20>,
-    #[serde(default)]
-    pub check_add: UniqueList<CheckIndex, 0, 20>,
-    #[serde(default)]
-    pub check_remove: UniqueList<CheckIndex, 0, 20>,
     pub position: Option<Count>,
     pub why: Option<PlanWhy>,
     /// `--steer S12`, as on `plan add`.

@@ -217,7 +217,7 @@ fn shipped_texts_are_not_hard_wrapped() {
 #[test]
 fn agent_facing_texts_name_tools_not_fleetd_commands() {
     let command = regex::Regex::new(
-        r"fleetd (task (spawn|list|status|message|cancel)|request (secret|withdraw)|decide\b|brief create|claim done|plan (add|edit|drop|show|milestone)|gated run|status set|change (enqueue|status)|review verdict|decisions search)",
+        r"fleetd (task (spawn|list|status|message|cancel)|request (secret|withdraw)|decide\b|brief create|close --workstream|plan (add|edit|drop|show|milestone)|gated run|status set|change (enqueue|status)|review verdict|decisions search)",
     )
     .unwrap();
     let flag = regex::Regex::new(r#""[^"]*--(workstream|proceeded|item|steer|milestone|rec|why|context|option|sink|env-name|class|scope|task)\b"#).unwrap();

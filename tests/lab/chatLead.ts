@@ -11,8 +11,7 @@
 // - gated:   a gated command is an inline chat item; nothing runs, and its state stays open, until a human Approve.
 // - build:   bug (a): a research result that offers a build, then "build it", starts a writer; the research order does
 //            not just close.
-// - fixes:   bug (b), W1/T4: claim_done is refused while a fix hasn't landed, and a claim that passes while a fix is
-//            open keeps the workstream open; only a deliberate close-over (which names what it drops) cancels a fix.
+// - fixes:   bug (b), W1/T4: closing a workstream records why and cancels nothing: a fix still running keeps going.
 // - cap1:    at max agents 1, the review that gates a merge gets the slot before a queued agent; the train merges.
 // - tools:   no session (lead, writer, reviewer, reader) has an ask tool, and the hub has no inbox tools.
 // - plain:   the lead's chat messages carry no internal ids.
@@ -24,7 +23,7 @@
 // - stop:    an agent key can't stop; a terminal steers only with a human key file (`hub key create --human --out`),
 //            never without one; Stop interrupts the lead mid-turn and stops its 2 agents, and says so (dogfood:
 //            "nothing was running"); `fleetd project stop --key-file` then says nothing was running.
-import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -69,7 +68,7 @@ const TOOL_FROM: Readonly<Record<string, string>> = {
 const GONE_HUB_TOOLS = ["asks_list", "inbox_reply", "inbox_undo", "digest_get"];
 /** An ask tool in a session's init list: fleetd's own (lead) or Claude's. The worker's ask_lead (to its lead) stays. */
 const ASK_TOOL = /^(mcp__fleetd__ask|mcp__fleetd__ask_withdraw|AskUserQuestion)$/u;
-/** Internal ids a lead message must not carry: workstream, task, plan, milestone, claim, request, decision and other hub ids. */
+/** Internal ids a lead message must not carry: workstream, task, plan, milestone, request, decision and other hub ids. */
 const INTERNAL_ID = /\b[WTPMCRHXQD]\d+\b/u;
 /** A recommendation in a numbered question, in the lead's words. */
 const RECOMMENDS = /\b(rec(ommend\w*)?|suggest\w*|i'd (go with|pick|choose|lean)|my pick)\b/iu;
@@ -101,17 +100,6 @@ const shellIn = (machineId: string, root: string) => (...args: Array<string>) =>
   return { code: out.status, stdout: out.stdout, stderr: out.stderr };
 };
 type Shell = ReturnType<typeof shellIn>;
-
-/** The same, without blocking: for a call that waits on the hub (a claim's checks) while the harness acts. */
-const shellAsync = (machineId: string, root: string, ...args: Array<string>) =>
-  new Promise<{ code: number | null; text: string }>((resolve) => {
-    const [bin, argv] = fleetdCommand(args);
-    const child = spawn(bin, argv, { cwd: root, env: { ...scrubbedEnv(), PWD: root, FLEETD_NODE_SOCK: nodeSock(machineId) } });
-    let text = "";
-    child.stdout.on("data", (d) => (text += String(d)));
-    child.stderr.on("data", (d) => (text += String(d)));
-    child.on("close", (code) => resolve({ code, text }));
-  });
 
 const git = (cwd: string, ...args: Array<string>) =>
   execFileSync("git", args, {
@@ -183,7 +171,7 @@ const nextTask = async (lab: Lab, ref: Ref, cursor: number, what: string, ms: nu
 };
 
 /** A workstream for an order the harness drives, its brief frozen from the shell as a lead would. */
-const quietOrder = async (lab: Lab, ref: Ref, fleetd: Shell, title: string, doneWhen: ReadonlyArray<Body>) => {
+const quietOrder = async (lab: Lab, ref: Ref, fleetd: Shell, title: string, doneWhen: ReadonlyArray<string>) => {
   const w = openWorkstream(lab.check, fleetd, title);
   const brief = { goal: title, why: "the chat lab scenario", pointers: [], constraints: [], doneWhen };
   const frozen = fleetd("brief", "create", "--workstream", w, "--json", JSON.stringify(brief));
@@ -372,7 +360,7 @@ export async function chatLead(lab: Lab) {
       await part("secret", () => secretPart(lab, chat, ref, lab.humanCall, need));
       await part("gated", () => gatedPart(lab, chat, ref, lab.humanCall, need));
       await part("build", () => buildPart(lab, chat, ref));
-      await part("fixes", () => fixesPart(lab, chat, ref, fleetd));
+      await part("fixes", () => fixesPart(lab, ref, fleetd));
       await part("cap1", () => cap1Part(lab, ref, fleetd, need));
       await part("tools", async () => {
         // Run alone, no part has talked to the lead yet: start it, so its session's tools can be read.
@@ -619,87 +607,28 @@ async function buildPart(lab: Lab, chat: Chat, ref: Ref) {
   ok(`research agent → offer → "build it" → writer "${writer.task.title}" ${how}, which stays open until the build ran`);
 }
 
-// ---- fixes: bug (b), W1/T4: review fixes survive a workstream closing ----
-async function fixesPart(lab: Lab, chat: Chat, ref: Ref, fleetd: Shell) {
+// ---- fixes: bug (b), W1/T4: a fix survives its workstream closing ----
+async function fixesPart(lab: Lab, ref: Ref, fleetd: Shell) {
   const { check, ok } = lab;
-  // A done-when that takes a while, so a fix can be filed while the claim runs (W1's timing).
-  const slow = [{ type: "cmd", machineId: ref.machineId, argv: ["sleep", "20"], expectExit: 0 }];
-  const spawnFix = (w: string, title: string) =>
-    spawned(
-      lab,
-      fleetd(
-        "task", "spawn", "--workstream", w, "--title", title, "--kind", "write", "--profile", MECHANICS,
-        "--prompt", "Your first tool call must be your Bash tool running exactly `sleep 90`; wait the full 90 seconds for it to finish. Then reply with the single word OK. Change no files.",
-      ),
-      `spawn the fix "${title}"`,
-    );
-  const workstreamState = async (w: string) => (await lab.callTool("workstream_get", { workstreamId: w })).body.workstream?.state as string | undefined;
-
-  // A. A claim while a fix is open is refused, and the fix keeps running. Its done-when passes at once, so the
-  // close-over below concludes while the fix still runs.
-  const wa = await quietOrder(lab, ref, fleetd, "chat lab: a claim with a fix open", [{ type: "cmd", machineId: ref.machineId, argv: ["true"], expectExit: 0 }]);
-  let from = await lab.cursor();
-  const ta = spawnFix(wa, "share link goes stale");
-  const refused = fleetd("claim", "done", "--workstream", wa);
-  const said = `${refused.stdout}${refused.stderr}`;
-  check(
-    refused.code !== 0 &&
-      said.includes(`${wa} has write work that hasn't landed: "share link goes stale"`) &&
-      said.includes(`(ids, for tools only: ${ta})`) &&
-      said.includes("It is done only once that lands."),
-    `claim_done refused while ${ta} is open: ${JSON.stringify(refused)}`,
+  const w = await quietOrder(lab, ref, fleetd, "chat lab: close with a fix open", ["the share link stays fresh"]);
+  const from = await lab.cursor();
+  const fix = spawned(
+    lab,
+    fleetd(
+      "task", "spawn", "--workstream", w, "--title", "share link goes stale", "--kind", "write", "--profile", MECHANICS,
+      "--prompt", "Your first tool call must be your Bash tool running exactly `sleep 90`; wait the full 90 seconds for it to finish. Then reply with the single word OK. Change no files.",
+    ),
+    "spawn the fix",
   );
-  check((await workstreamState(wa)) === "running", `the workstream stays running: ${await workstreamState(wa)}`);
-  check((await eventsSince(lab, from, ["task.cancelled"])).every((e) => e.data?.taskId !== ta), `${ta} is not cancelled by the refusal`);
-  ok(`A. claim_done refused: ${said.trim().split("\n")[0]}`);
-  // The one deliberate way out: closing over the fix, which says what it drops.
-  from = await lab.cursor();
-  const over = await shellAsync(ref.machineId, CLONE, "claim", "done", "--workstream", wa, "--close-over", "lab: the fix is not needed");
-  check(over.code === 0, `claim done --close-over: exit ${over.code}: ${over.text.trim().split("\n")[0]}`);
-  const closed = await lab.waitEvent(`${wa} closed on purpose`, 60_000, { cursor: from, types: ["workstream.done"], match: (e) => e.data?.workstreamId === wa });
-  check(String(closed.event.data.reason).startsWith("closed on purpose: lab: the fix is not needed") && String(closed.event.data.reason).includes('"share link goes stale"'), `the close names what it drops: ${JSON.stringify(closed.event.data)}`);
-  const dropped = await lab.waitEvent(`${ta} cancelled by the close`, 30_000, { cursor: from, types: ["task.cancelled"], match: (e) => e.data?.taskId === ta });
-  const why = String((await taskGet(lab, ta)).result?.tail ?? "");
-  check(dropped.event.seq > closed.event.seq && /^Cancelled: .* was closed on purpose/u.test(why), `the cancel came with the close and says why: ${why}`);
-  ok(`A. closed on purpose (${over.text.trim().split("\n")[0]}); ${ta} cancelled with the reason`);
-
-  // B. The claim is already verifying when the fix is filed: it passes, but the workstream stays open.
-  const wb = await quietOrder(lab, ref, fleetd, "chat lab: a fix filed during the claim", slow);
-  from = await lab.cursor();
-  const claiming = shellAsync(ref.machineId, CLONE, "claim", "done", "--workstream", wb);
-  // The check sleeps 20 s; the fix is filed while it runs.
-  await lab.until(`${wb} verifying its claim`, 15_000, async () =>
-    (await workstreamState(wb)) === "verifying" ? true : (await new Promise((r) => setTimeout(r, 250)), undefined),
-  );
-  const tb = spawnFix(wb, "flag unpriced tokens");
-  const stays = await lab.waitEvent(`${wb} stays open with ${tb} open`, 120_000, {
-    cursor: from,
-    types: ["workstream.state"],
-    match: (e) => e.data?.workstreamId === wb && e.data?.state === "running" && /work that hasn't landed is still open/u.test(String(e.data?.reason)),
-  });
-  await claiming;
-  check(String(stays.event.data.reason).includes('"flag unpriced tokens"') && String(stays.event.summary).startsWith(`${wb} stays open:`), `the hold names the fix: ${JSON.stringify(stays.event)}`);
-  const between = await eventsSince(lab, from, ["workstream.done", "claim.passed", "task.cancelled"]);
-  const swallowed = between.filter((e) => (e.data?.workstreamId === wb && e.type !== "task.cancelled") || e.data?.taskId === tb);
-  check(swallowed.length === 0, `no workstream.done, claim.passed or cancel of ${tb}: ${JSON.stringify(swallowed.map((e) => e.summary))}`);
-  check((await taskGet(lab, tb)).state !== "cancelled", `${tb} is not cancelled`);
-  ok(`B. ${stays.event.summary}`);
-  // The lead hears it and should say so in chat: its own words, so only logged.
-  try {
-    const told = await chat.reply({ cursor: stays.cursor, seq: (await chat.state()).lastSeq as number }, "the lead on the open fix", 60_000);
-    lab.log(`${told.some((m) => /fix/iu.test(m.text)) ? "the lead said" : "note: the lead did not mention the fix"}: ${told.map((m) => m.text).join(" ").slice(0, 200)}`);
-  } catch (error) {
-    lab.log(`note: no lead chat line on the open fix: ${error instanceof Error ? error.message.slice(0, 200) : String(error)}`);
-  }
-
-  // Then the fix is dropped on purpose, and the next claim closes the workstream.
-  // Dropped on purpose if it still runs; one that finished has landed nothing to drop.
-  if (["queued", "running", "idle"].includes((await taskGet(lab, tb)).state)) check(fleetd("task", "cancel", tb).code === 0, `a visible, intentional drop of ${tb}`);
-  from = await lab.cursor();
-  const again = await shellAsync(ref.machineId, CLONE, "claim", "done", "--workstream", wb);
-  lab.log(`claim again: ${again.text.trim().split("\n")[0]}`);
-  await lab.waitEvent(`${wb} done once no fix is open`, 120_000, { cursor: from, types: ["workstream.done"], match: (e) => e.data?.workstreamId === wb });
-  ok(`${wb} done once its fix was dropped on purpose`);
+  const closed = fleetd("close", "--workstream", w, "--why", "lab: closed with the fix still running");
+  check(closed.code === 0, `close: ${JSON.stringify(closed)}`);
+  const done = await lab.waitEvent(`${w} done`, 30_000, { cursor: from, types: ["workstream.done"], match: (e) => e.data?.workstreamId === w });
+  check(done.event.data.reason === "lab: closed with the fix still running", `workstream.done records why: ${JSON.stringify(done.event.data)}`);
+  check((await eventsSince(lab, from, ["task.cancelled"])).every((e) => e.data?.taskId !== fix), `${fix} is not cancelled by the close`);
+  check((await taskGet(lab, fix)).state !== "cancelled", `${fix} keeps going`);
+  ok(`${w} closed with why; ${fix} kept going`);
+  // Stopping what is no longer needed is the lead's own, visible call.
+  check(fleetd("task", "cancel", fix).code === 0, `a visible, intentional stop of ${fix}`);
 }
 
 // ---- cap1: at max agents 1, the review that gates a merge goes first ----
@@ -712,8 +641,7 @@ async function cap1Part(lab: Lab, ref: Ref, fleetd: Shell, need: (t: string) => 
   };
   const file = `${DIR}/cap1.md`;
   // Its PR needs a review before the train merges it, so the review is what gates the merge.
-  const onMain = { type: "cmd", machineId: ref.machineId, argv: ["gh", "api", onBase(file), "--silent"], expectExit: 0 };
-  const w = await quietOrder(lab, ref, fleetd, `chat lab: add ${file} at max agents 1`, [onMain]);
+  const w = await quietOrder(lab, ref, fleetd, `chat lab: add ${file} at max agents 1`, [`${file} is on ${BASE}`]);
   // Earlier parts' agents (the lead's own work) finish first, so nothing but this part's agents holds a slot.
   await lab.until("the project's earlier agents finish", TURN_MS * 3, async () =>
     (await tasksOf(lab, ref)).some((t) => ["queued", "running"].includes(t.state)) ? (await new Promise((r) => setTimeout(r, 2_000)), undefined) : true,

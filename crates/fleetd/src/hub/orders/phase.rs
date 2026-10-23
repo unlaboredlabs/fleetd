@@ -101,9 +101,6 @@ pub fn phase(i: &PhaseInput<'_>) -> (OrderPhase, Option<String>) {
         };
         return (OrderPhase::Merging, Some(detail));
     }
-    if i.state == WorkstreamState::Verifying {
-        return (OrderPhase::Verifying, Some("checking done-when".into()));
-    }
     let live: Vec<_> = i
         .lanes
         .iter()
@@ -246,11 +243,6 @@ mod tests {
         assert_eq!(
             phase(&input(W, &done, &pr)),
             (OrderPhase::Merging, Some("#208 in CI".into()))
-        );
-        // Then the workstream's own state.
-        assert_eq!(
-            phase(&input(WorkstreamState::Verifying, &done, &[])).0,
-            OrderPhase::Verifying
         );
         // Only queued lanes left: say why.
         let queued = [

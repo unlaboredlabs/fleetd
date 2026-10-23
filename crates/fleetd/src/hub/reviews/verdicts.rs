@@ -1,8 +1,7 @@
 //! Review verdicts: `fleetd review verdict` records one per review task and head SHA, keyed by its PR too. The train's
-//! review gate reads them by task and head, the PR view by PR. A judge of a research workstream reports the metric too, and its numbers become the workstream's
-//! computed verdict.
+//! review gate reads them by task and head, the PR view by PR. A judge of a research workstream reports the metric
+//! too, and its numbers become the workstream's computed verdict.
 use crate::clock::Clock;
-use crate::hub::checks::JudgeVerdicts;
 use crate::hub::checks::ports::{Ports, Refusal, internal, invalid, not_found};
 use crate::hub::store::{EventLog, HubDb, NewEvent, iso_ms, now_ms};
 use fleetd_contracts::events::HubEventType;
@@ -37,7 +36,6 @@ pub struct Verdicts {
     db: Arc<HubDb>,
     events: Arc<EventLog>,
     ports: Arc<dyn Ports>,
-    judges: Arc<JudgeVerdicts>,
     clock: Arc<dyn Clock>,
 }
 
@@ -46,20 +44,18 @@ impl Verdicts {
         db: Arc<HubDb>,
         events: Arc<EventLog>,
         ports: Arc<dyn Ports>,
-        judges: Arc<JudgeVerdicts>,
         clock: Arc<dyn Clock>,
     ) -> Self {
         Self {
             db,
             events,
             ports,
-            judges,
             clock,
         }
     }
 
-    /// Stores the verdict against its task and head, emits `review.verdict` and completes a waiting judge check. The
-    /// judge of a research workstream must report `metricValues`, and gets the computed verdict back as text.
+    /// Stores the verdict against its task and head and emits `review.verdict`. The judge of a research workstream
+    /// must report `metricValues`, and gets the computed verdict back as text.
     pub async fn record(
         &self,
         caller: &Caller,
@@ -166,7 +162,6 @@ impl Verdicts {
                 attention: None,
             })
             .map_err(internal)?;
-        // Before the judge check resolves, so the claim that follows finds the workstream already done with its outcome.
         let research = match (is_research, verdict.metric_values.clone()) {
             (true, Some(values)) => Some(
                 self.ports
@@ -175,7 +170,6 @@ impl Verdicts {
             ),
             _ => None,
         };
-        self.judges.complete(&verdict).await;
         Ok(RecordedVerdict { verdict, research })
     }
 }

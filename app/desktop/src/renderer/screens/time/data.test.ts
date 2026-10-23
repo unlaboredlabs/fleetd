@@ -134,7 +134,7 @@ describe("names from the store", () => {
         prs: [{ changeId: "X7", number: 205 }],
       },
     },
-    details: { W8: { lead: lane("lead", undefined, "lead", "lead-storefront"), doneLanes: [lane("reviewer", "T25", "review #205", "s-25")], claims: [] } },
+    details: { W8: { lead: lane("lead", undefined, "lead", "lead-storefront"), doneLanes: [lane("reviewer", "T25", "review #205", "s-25")] } },
   } as unknown as NamesInput;
 
   it("names lanes, the lead, PRs and orders from the board and order_get", () => {

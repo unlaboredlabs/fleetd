@@ -6,15 +6,13 @@ use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadId, ThreadRef};
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult};
 use fleetd_contracts::ledger::{Decision, DecisionScope, HumanRequest, RequestState, WorkstreamId};
 use fleetd_contracts::mcp::McpToolError;
-use fleetd_contracts::verification::Claim;
 
 use super::Area;
 use super::error::LeadError;
-use super::hooks::{BoxFuture, ClaimsHook};
+use super::hooks::BoxFuture;
 use super::ports::LeadPorts;
 use super::records::{LeadRecords, WorkstreamFilter};
 use crate::hub::approvals::store::{RequestFilter, Requests};
-use crate::hub::checks::{ClaimFilter, Claims};
 use crate::hub::executor::{ExecutorError, Executors, LaunchInput, LaunchOptions};
 use crate::hub::ledger::{self, Chain, DecisionFilter, Decisions, LedgerCode, LedgerError};
 use crate::hub::link::lead_calls::LeadCallFuture;
@@ -168,35 +166,13 @@ impl ledger::WorkstreamLookup for Lookup {
     }
 }
 
-struct ClaimsFromChecks(Arc<Claims>);
-
-impl ClaimsHook for ClaimsFromChecks {
-    fn latest(&self, workstream_id: &WorkstreamId) -> Option<Claim> {
-        self.list(workstream_id, 1).into_iter().next()
-    }
-    fn list(&self, workstream_id: &WorkstreamId, limit: usize) -> Vec<Claim> {
-        self.0
-            .list(&ClaimFilter {
-                workstream_id: Some(workstream_id.clone()),
-                limit,
-                ..Default::default()
-            })
-            .unwrap_or_default()
-    }
-    fn void(&self, workstream_id: &WorkstreamId) {
-        if let Err(error) = self.0.void(workstream_id) {
-            tracing::warn!(%error, "claim not voided");
-        }
-    }
-}
-
 struct Calls(Arc<Area>);
 
 impl LeadCallHandler for Calls {
     fn handle(&self, caller: LeadCaller, call: LeadCall) -> LeadCallFuture {
         let area = Arc::clone(&self.0);
         Box::pin(async move {
-            area.lead_call(&caller.project_ref, call)
+            area.lead_call(&caller.project_ref, &caller.by, call)
                 .await
                 .map_err(McpToolError::from)
                 .map(|r: LeadCallResult| r)
@@ -210,7 +186,6 @@ pub struct Links<'a> {
     pub requests: &'a Arc<Requests>,
     pub decisions: &'a Arc<Decisions>,
     pub lead_calls: &'a LeadCalls,
-    pub claims: &'a Arc<Claims>,
 }
 
 const OUTCOME_WORKSTREAMS: usize = 20;
@@ -263,11 +238,6 @@ pub fn wire_area(area: &Arc<Area>, links: Links<'_>) {
         requests: Arc::clone(links.requests),
         decisions: Arc::clone(links.decisions),
     }));
-    let _ = area
-        .ctx
-        .hooks
-        .claims
-        .set(Arc::new(ClaimsFromChecks(Arc::clone(links.claims))));
     links
         .decisions
         .set_workstreams(Arc::new(Lookup(Arc::clone(&area.records))));

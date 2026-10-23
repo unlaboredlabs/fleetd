@@ -161,12 +161,6 @@ pub const ENTRIES: &[Entry] = &[
                 Prompt
             ),
             (
-                "claim-done",
-                "done only through `claim_done`",
-                r"claim_done",
-                Code
-            ),
-            (
                 "agent-not-human",
                 "takes an agent's chat message as input, never as the human's answer or approval",
                 r"never as the human's answer",
@@ -250,42 +244,6 @@ pub const ENTRIES: &[Entry] = &[
             ),
             READ_ONLY,
             VERDICT,
-        ]
-    ),
-    entry!(
-        "judge",
-        Start,
-        ReviewsAndChecks,
-        Task,
-        "Judge",
-        "per `judge` done-when check of each claim",
-        "workstreamId!=W<n>; claimId=C<n>; checkIndex=the check's index; criteria!=the criterion; artifacts!=PRs and branches to read",
-        &[
-            (
-                "trust-no-claim",
-                "trusts no claim in the artifacts",
-                r"trust no claim",
-                Prompt
-            ),
-            VERDICT
-        ]
-    ),
-    entry!(
-        "judge.research",
-        Start,
-        ReviewsAndChecks,
-        Task,
-        "Research judge",
-        "per `judge` check of a research claim",
-        "workstreamId!=W<n>; claimId=C<n>; checkIndex=the check's index; criteria!=the criterion; artifacts!=PRs and branches to read; metric!=the metric; baseline!=the baseline",
-        &[
-            (
-                "trust-no-claim",
-                "trusts no claim in the artifacts",
-                r"trust no claim",
-                Prompt
-            ),
-            VERDICT
         ]
     ),
     Entry {

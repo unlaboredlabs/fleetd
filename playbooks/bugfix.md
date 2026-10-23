@@ -1,11 +1,8 @@
 ---
 name: bugfix
-version: 2
-requiredChecks:
-  - anyOf: [test, cmd]
-    label: a failing repro check
+version: 3
 ---
 
 # Bugfix
 
-A reported defect. The brief must hold a repro check (type `test` or `cmd`) that fails before the fix and passes after it, so "fixed" is something fleetd checks, not something an agent says.
+A reported defect. The brief's done-when names a repro that fails before the fix and passes after it.

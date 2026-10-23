@@ -56,16 +56,16 @@ const LONG: Record<string, (i: number) => string> = {
 /** Free text gets long only where it is prose (asks, messages, steers), never where it is a key or a command. */
 const isProse = (o: JsonObject) => typeof o["messageId"] === "string" || o["role"] === "assistant" || o["role"] === "user" || typeof o["stage"] === "string";
 
-/** Long titles, criteria, branches and prose everywhere they appear; a judge done-when on every brief. */
+/** Long titles, criteria, branches and prose everywhere they appear; a long done-when line on every brief. */
 export const longText = (f: Fixture): Fixture => {
   let i = 0;
   for (const p of payloads(f)) {
     walk(p, (o) => {
       for (const [key, make] of Object.entries(LONG)) if (typeof o[key] === "string" && o[key] !== "") o[key] = make(i++);
       if (typeof o["text"] === "string" && isProse(o)) o["text"] = ofLength(`${o["text"]} ${LONG_PARAGRAPH}`, 480);
-      // A brief: its prose and a judge check (other objects' `why` is an enum).
+      // A brief: its prose and a long done-when line (other objects' `why` is an enum).
       if (Array.isArray(o["doneWhen"])) {
-        if (!o["doneWhen"].some((c) => isObject(c) && c["type"] === "judge")) o["doneWhen"].push({ type: "judge", criteria: LONG_CRITERION });
+        if (!o["doneWhen"].includes(LONG_CRITERION)) o["doneWhen"].push(LONG_CRITERION);
         o["goal"] = ofLength(LONG_PARAGRAPH, 600);
         o["why"] = ofLength(LONG_PARAGRAPH, 900);
       }

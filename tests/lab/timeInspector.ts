@@ -8,7 +8,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { type Body, MODEL, openWorkstream, cli, fleetdCommand, HUB_PORT, type Lab, MECHANICS, nodeSock, requireGhLogin, scrubbedEnv } from "./harness.ts";
-import { BASE, checkClone, CLONE, NAMESPACE, onBase, prepareCheckout, REPO, removeLabRepoProject, resetNamespace } from "./m7Train.ts";
+import { BASE, checkClone, CLONE, NAMESPACE, prepareCheckout, REPO, removeLabRepoProject, resetNamespace } from "./m7Train.ts";
 
 const MACHINE = "lab-a";
 const TURN_MS = 240_000;
@@ -89,13 +89,13 @@ export async function timeInspector(lab: Lab) {
 
     // The order, opened and its brief registered from the shell as the lead would, so the lead has nothing to plan.
     const submitAt = Date.now();
-    const w = openWorkstream(check, fleetd, `Add ${FILE}. The harness spawns the task and claims done.`);
+    const w = openWorkstream(check, fleetd, `Add ${FILE}. The harness spawns the task and closes it.`);
     const brief = {
       goal: `add ${FILE}`,
       why: "the time inspector lab scenario",
       pointers: [],
       constraints: [],
-      doneWhen: [{ type: "cmd", machineId: MACHINE, argv: ["gh", "api", onBase(FILE), "--silent"], expectExit: 0 }],
+      doneWhen: [`${FILE} is on ${BASE}`],
     };
     const frozen = fleetd("brief", "create", "--workstream", w, "--json", JSON.stringify(brief));
     check(frozen.code === 0, `brief create ${w}: ${JSON.stringify(frozen)}`);
@@ -155,8 +155,8 @@ export async function timeInspector(lab: Lab) {
     const change = ((await callTool("changes_list", { projectRef: ref, limit: 100 })).body.changes as Array<Body>).find((c) => c.changeId === changeId)!;
     ok(`${changeId} (${prUrl}) merged as ${String(merged.event.data.mergedSha).slice(0, 12)}`);
 
-    const claim = fleetd("claim", "done", "--workstream", w);
-    check(claim.code === 0, `claim done: ${JSON.stringify(claim)}`);
+    const closed = fleetd("close", "--workstream", w, "--why", "the harness merged it");
+    check(closed.code === 0, `close: ${JSON.stringify(closed)}`);
     const done = await lab.waitEvent("workstream.done", 60_000, { cursor: scenarioStart, types: ["workstream.done"], match: (e) => e.data?.workstreamId === w });
     const doneAt = Date.parse(done.event.at as string);
     // Let the lead's last wakes run out, so the order's lanes are closed when they are read.

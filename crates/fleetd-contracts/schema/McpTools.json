@@ -802,7 +802,9 @@
         "doneWhen": {
           "description": "At least one.",
           "items": {
-            "$ref": "#/$defs/CheckSpec"
+            "maxLength": 2000,
+            "minLength": 1,
+            "type": "string"
           },
           "maxItems": 20,
           "minItems": 1,
@@ -1585,232 +1587,6 @@
       ],
       "type": "object"
     },
-    "CheckOutcome": {
-      "description": "`error` (the check could not run) counts as not passing.",
-      "enum": [
-        "pass",
-        "fail",
-        "error"
-      ],
-      "type": "string"
-    },
-    "CheckResult": {
-      "properties": {
-        "at": {
-          "$ref": "#/$defs/Timestamp"
-        },
-        "checkIndex": {
-          "description": "0-based index into the brief's doneWhen.",
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "evidence": {
-          "description": "Output tail, HTTP status and body excerpt, verdict summary, or the fix when `error`.",
-          "maxLength": 2000,
-          "type": "string"
-        },
-        "exitCode": {
-          "description": "Only for `cmd` checks, which the node runs.",
-          "format": "int64",
-          "type": "integer"
-        },
-        "ranBy": {
-          "$ref": "#/$defs/CheckResultRanBy"
-        },
-        "result": {
-          "$ref": "#/$defs/CheckOutcome"
-        },
-        "spec": {
-          "$ref": "#/$defs/CheckSpec"
-        }
-      },
-      "required": [
-        "checkIndex",
-        "spec",
-        "result",
-        "evidence",
-        "ranBy",
-        "at"
-      ],
-      "type": "object"
-    },
-    "CheckResultRanBy": {
-      "enum": [
-        "hub",
-        "node",
-        "judge",
-        "human"
-      ],
-      "type": "string"
-    },
-    "CheckSpec": {
-      "oneOf": [
-        {
-          "properties": {
-            "pr": {
-              "maximum": 9007199254740991,
-              "minimum": 1,
-              "type": "integer"
-            },
-            "repo": {
-              "maxLength": 200,
-              "minLength": 1,
-              "type": "string"
-            },
-            "type": {
-              "const": "pr_merged",
-              "type": "string"
-            }
-          },
-          "required": [
-            "type",
-            "repo"
-          ],
-          "type": "object"
-        },
-        {
-          "properties": {
-            "ref": {
-              "maxLength": 200,
-              "minLength": 1,
-              "type": "string"
-            },
-            "repo": {
-              "maxLength": 200,
-              "minLength": 1,
-              "type": "string"
-            },
-            "type": {
-              "const": "ci_green",
-              "type": "string"
-            }
-          },
-          "required": [
-            "type",
-            "repo"
-          ],
-          "type": "object"
-        },
-        {
-          "properties": {
-            "contains": {
-              "maxLength": 500,
-              "minLength": 1,
-              "type": "string"
-            },
-            "status": {
-              "maximum": 599,
-              "minimum": 100,
-              "type": "integer"
-            },
-            "type": {
-              "const": "http",
-              "type": "string"
-            },
-            "url": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "type",
-            "url",
-            "status"
-          ],
-          "type": "object"
-        },
-        {
-          "properties": {
-            "argv": {
-              "items": {
-                "type": "string"
-              },
-              "maxItems": 64,
-              "minItems": 1,
-              "type": "array"
-            },
-            "expectExit": {
-              "format": "int64",
-              "type": "integer"
-            },
-            "machineId": {
-              "$ref": "#/$defs/MachineId"
-            },
-            "type": {
-              "const": "cmd",
-              "type": "string"
-            }
-          },
-          "required": [
-            "type",
-            "machineId",
-            "argv",
-            "expectExit"
-          ],
-          "type": "object"
-        },
-        {
-          "properties": {
-            "repo": {
-              "maxLength": 200,
-              "minLength": 1,
-              "type": "string"
-            },
-            "testId": {
-              "maxLength": 500,
-              "minLength": 1,
-              "type": "string"
-            },
-            "type": {
-              "const": "test",
-              "type": "string"
-            }
-          },
-          "required": [
-            "type",
-            "repo",
-            "testId"
-          ],
-          "type": "object"
-        },
-        {
-          "properties": {
-            "criteria": {
-              "maxLength": 2000,
-              "minLength": 1,
-              "type": "string"
-            },
-            "type": {
-              "const": "judge",
-              "type": "string"
-            }
-          },
-          "required": [
-            "type",
-            "criteria"
-          ],
-          "type": "object"
-        },
-        {
-          "properties": {
-            "question": {
-              "maxLength": 500,
-              "minLength": 1,
-              "type": "string"
-            },
-            "type": {
-              "const": "human",
-              "type": "string"
-            }
-          },
-          "required": [
-            "type",
-            "question"
-          ],
-          "type": "object"
-        }
-      ]
-    },
     "Checkout": {
       "properties": {
         "machineId": {
@@ -1962,97 +1738,6 @@
         }
       ],
       "x-open": true
-    },
-    "Claim": {
-      "properties": {
-        "at": {
-          "$ref": "#/$defs/Timestamp"
-        },
-        "by": {
-          "description": "\"lead:<machineId>/<projectId>\", an agent keyId or \"human\".",
-          "type": "string"
-        },
-        "claimId": {
-          "$ref": "#/$defs/ClaimId"
-        },
-        "outcome": {
-          "$ref": "#/$defs/ClaimOutcome",
-          "description": "`pass` only when every check passed."
-        },
-        "results": {
-          "description": "In check index order.",
-          "items": {
-            "$ref": "#/$defs/CheckResult"
-          },
-          "maxItems": 20,
-          "type": "array"
-        },
-        "workstreamId": {
-          "$ref": "#/$defs/WorkstreamId"
-        }
-      },
-      "required": [
-        "claimId",
-        "workstreamId",
-        "by",
-        "at",
-        "results",
-        "outcome"
-      ],
-      "type": "object"
-    },
-    "ClaimId": {
-      "pattern": "^C[1-9][0-9]*$",
-      "type": "string"
-    },
-    "ClaimOutcome": {
-      "enum": [
-        "pass",
-        "fail"
-      ],
-      "type": "string"
-    },
-    "ClaimsListInput": {
-      "properties": {
-        "limit": {
-          "default": 20,
-          "maximum": 100,
-          "minimum": 1,
-          "type": "integer"
-        },
-        "outcome": {
-          "$ref": "#/$defs/ClaimOutcome"
-        },
-        "projectRef": {
-          "$ref": "#/$defs/ProjectRef"
-        },
-        "workstreamId": {
-          "$ref": "#/$defs/WorkstreamId"
-        }
-      },
-      "type": "object"
-    },
-    "ClaimsListOutput": {
-      "properties": {
-        "claims": {
-          "description": "Newest first.",
-          "items": {
-            "$ref": "#/$defs/Claim"
-          },
-          "maxItems": 100,
-          "type": "array"
-        },
-        "next": {
-          "type": "string"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "claims"
-      ],
-      "type": "object"
     },
     "CloneTarget": {
       "description": "Where a clone would go on a machine, and what is there now.",
@@ -3649,7 +3334,6 @@
             "task.completed",
             "task.failed",
             "task.cancelled",
-            "claim.passed",
             "steer.withdrawn"
           ],
           "type": "string"
@@ -3735,13 +3419,8 @@
           "type": "string"
         },
         {
-          "const": "claim.failed",
-          "description": "A claim had a failing check; the workstream stays verifying. `data.claimId`, `data.workstreamId`.",
-          "type": "string"
-        },
-        {
           "const": "workstream.done",
-          "description": "Every done-when check passed. `data.workstreamId`.",
+          "description": "The lead closed it, or its research verdict came in. `data.workstreamId`, and `data.reason` (why) and\n`data.by` when the lead closed it.",
           "type": "string"
         },
         {
@@ -4116,7 +3795,7 @@
           "type": "string"
         },
         "waitingOn": {
-          "description": "What it still waits on, in order: open items it is `after`, then its remaining stages, e.g.\n[\"review of #12\", \"CI on #12\", \"merge\", \"done-when checks\"].",
+          "description": "What it still waits on, in order: open items it is `after`, then its remaining stages, e.g.\n[\"review of #12\", \"CI on #12\", \"merge\", \"marked done\"].",
           "items": {
             "maxLength": 80,
             "minLength": 1,
@@ -4875,12 +4554,6 @@
         "chat_stop.output": {
           "$ref": "#/$defs/ChatStopOutput"
         },
-        "claims_list.input": {
-          "$ref": "#/$defs/ClaimsListInput"
-        },
-        "claims_list.output": {
-          "$ref": "#/$defs/ClaimsListOutput"
-        },
         "decisions_record.input": {
           "$ref": "#/$defs/DecisionsRecordInput"
         },
@@ -5255,8 +4928,6 @@
         "chat_send.output",
         "chat_stop.input",
         "chat_stop.output",
-        "claims_list.input",
-        "claims_list.output",
         "decisions_record.input",
         "decisions_record.output",
         "decisions_search.input",
@@ -5691,14 +5362,6 @@
     },
     "OrderGetOutput": {
       "properties": {
-        "claims": {
-          "description": "Newest first.",
-          "items": {
-            "$ref": "#/$defs/Claim"
-          },
-          "maxItems": 20,
-          "type": "array"
-        },
         "doneLanes": {
           "description": "Newest first.",
           "items": {
@@ -5839,7 +5502,7 @@
         },
         {
           "const": "verifying",
-          "description": "The workstream checks its done-when.",
+          "description": "Never produced now that a lead closes its work; stays until the app stops naming it.",
           "type": "string"
         },
         {
@@ -6153,7 +5816,7 @@
         },
         {
           "const": "reopened",
-          "description": "A later claim failed a check a done item listed.",
+          "description": "Older markers only: a later claim failed a check a done item listed.",
           "type": "string"
         },
         {
@@ -6258,7 +5921,7 @@
           "type": "string"
         },
         "evidence": {
-          "description": "What verified it, e.g. \"#212 merged by the train · check 2 passed C9\".",
+          "description": "What verified it, e.g. \"#212 merged by the train\".",
           "maxLength": 200,
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",
@@ -6270,7 +5933,6 @@
         "links": {
           "$ref": "#/$defs/PlanLinks",
           "default": {
-            "checks": [],
             "prs": [],
             "tasks": []
           }
@@ -6344,18 +6006,6 @@
     "PlanLinks": {
       "description": "What ties work to an item. An item with no links never counts done.",
       "properties": {
-        "checks": {
-          "default": [],
-          "description": "Done-when indices of the item's order that must pass in its latest claim.",
-          "items": {
-            "maximum": 19,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "maxItems": 20,
-          "type": "array",
-          "uniqueItems": true
-        },
         "prs": {
           "default": [],
           "description": "PRs listed on the item (`--pr`, or `change enqueue --item`).",
@@ -9559,7 +9209,6 @@
             "tool.web",
             "tool.mcp",
             "tool.other",
-            "check.claim",
             "wait.retry.api",
             "wait.retry.node",
             "run.startup",
@@ -10742,7 +10391,7 @@
           "description": "M4: its thread hit a usage limit; the task is idle until fleetd sends \"continue\" at `resumeAt`."
         },
         "pr": {
-          "description": "The PR a review task reviews. Required at spawn for review; absent on hub-spawned judge tasks and older rows.",
+          "description": "The PR a review task reviews. Required at spawn for review; absent on older rows (hub-spawned judges).",
           "type": "string"
         },
         "profile": {
@@ -12388,14 +12037,6 @@
     },
     "WorkstreamGetOutput": {
       "properties": {
-        "claims": {
-          "description": "Its claims, newest first.",
-          "items": {
-            "$ref": "#/$defs/Claim"
-          },
-          "maxItems": 20,
-          "type": "array"
-        },
         "decisions": {
           "description": "Active decisions scoped to it.",
           "items": {
@@ -12502,16 +12143,24 @@
       "type": "object"
     },
     "WorkstreamState": {
-      "enum": [
-        "draft",
-        "running",
-        "converging",
-        "verifying",
-        "done",
-        "stopped",
-        "failed"
-      ],
-      "type": "string"
+      "oneOf": [
+        {
+          "enum": [
+            "draft",
+            "running",
+            "converging",
+            "done",
+            "stopped",
+            "failed"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "verifying",
+          "description": "Never set now that a lead closes its work; old records were moved back to running.",
+          "type": "string"
+        }
+      ]
     }
   },
   "$ref": "#/$defs/McpTools",

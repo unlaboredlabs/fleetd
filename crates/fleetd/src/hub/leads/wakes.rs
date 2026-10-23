@@ -26,8 +26,6 @@ pub const WAKE_MAX_WAIT: Duration = Duration::from_secs(60);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LineKind {
     TaskResult,
-    ClaimFailed,
-    ClaimPassed,
     TaskWaiting,
     Train,
     ResearchVerdict,
@@ -49,7 +47,7 @@ pub enum Trigger {
         workstream_id: WorkstreamId,
         text: String,
     },
-    /// A task ended, a claim failed or passed late, a task waits on input, a train event, a research verdict: the area
+    /// A task ended, a task waits on input, a train event, a research verdict: the area
     /// that raises it renders its own "why" line(s).
     Line { kind: LineKind, text: String },
 }
@@ -76,8 +74,6 @@ impl Trigger {
             Trigger::Intent { .. } => "intent",
             Trigger::Line { kind, .. } => match kind {
                 LineKind::TaskResult => "task_result",
-                LineKind::ClaimFailed => "claim_failed",
-                LineKind::ClaimPassed => "claim_passed",
                 LineKind::TaskWaiting => "task_waiting",
                 LineKind::Train => "train",
                 LineKind::ResearchVerdict => "research_verdict",
@@ -304,27 +300,13 @@ impl LeadWakes {
         }))
     }
 
-    /// Per workstream with a brief: the checks its latest finished claim passed.
+    /// Per workstream with a brief: its steers and plan figure.
     pub fn workstream_facts(
         &self,
         workstreams: &[fleetd_contracts::ledger::Workstream],
     ) -> HashMap<WorkstreamId, WorkstreamFacts> {
-        let hooks = &self.ctx.hooks;
         let mut facts = HashMap::new();
         for w in workstreams.iter().filter(|w| w.brief.is_some()) {
-            let passed = hooks
-                .claims
-                .get()
-                .and_then(|c| c.latest(&w.workstream_id))
-                .map(|claim| {
-                    claim
-                        .results
-                        .iter()
-                        .filter(|r| r.result == fleetd_contracts::verification::CheckOutcome::Pass)
-                        .map(|r| r.check_index.get() as usize)
-                        .collect()
-                })
-                .unwrap_or_default();
             let steers = crate::hub::steer::digest_line(&self.ctx.db, &w.workstream_id);
             let plan = self
                 .ctx
@@ -341,14 +323,7 @@ impl LeadWakes {
                     let f = crate::hub::plan::figure_of(&items);
                     format!("plan: {}/{} items, {}%", f.must_done, f.must_total, f.pct())
                 });
-            facts.insert(
-                w.workstream_id.clone(),
-                WorkstreamFacts {
-                    passed,
-                    plan,
-                    steers,
-                },
-            );
+            facts.insert(w.workstream_id.clone(), WorkstreamFacts { plan, steers });
         }
         facts
     }

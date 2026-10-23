@@ -204,21 +204,16 @@ export async function m7Train(lab: Lab) {
       check(frozen.code === 0, `brief create ${w}: ${JSON.stringify(frozen)}`);
       return w;
     };
-    // One check per PR, so each reviewer judges its PR against its own check. Node-run checks: a claim costs no turns.
-    const onMain = (file: string) => ["gh", "api", onBase(file), "--silent"];
-    const cmd = (argv: Array<string>) => ({ type: "cmd", machineId: MACHINE, argv, expectExit: 0 });
+    // One done-when line per PR, so each reviewer judges its PR against its own line.
     const wm = await workstream("Add alpha.md and beta.md in two PRs.", {
       goal: `two independent PRs: one adds ${ALPHA}, the other adds ${BETA}`,
       why: "the M7 lab scenario",
-      doneWhen: [cmd(onMain(ALPHA)), cmd(onMain(BETA))],
+      doneWhen: [`${ALPHA} is on ${BASE}`, `${BETA} is on ${BASE}`],
     });
     const ws = await workstream("Train edge cases.", {
       goal: `one PR that adds the line gamma to ${ALPHA}, and one that adds FAIL and so must never merge`,
       why: "the M7 lab scenario",
-      doneWhen: [
-        cmd(["sh", "-c", `gh api '${onBase(ALPHA)}' -H 'Accept: application/vnd.github.raw' | grep -qx gamma`]),
-        cmd(["sh", "-c", `! gh api '${onBase("FAIL")}' --silent`]),
-      ],
+      doneWhen: [`${ALPHA} on ${BASE} holds the line gamma`, `no FAIL file ever reaches ${BASE}`],
     });
     ok(`${wm} and ${ws} running with their briefs`);
 

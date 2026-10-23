@@ -303,7 +303,7 @@ pub struct InProgressRow {
     /// Past 1.5× the usual time for its current stage: flagged in Risks, never credited past 90% of the stage.
     pub slower_than_usual: Option<bool>,
     /// What it still waits on, in order: open items it is `after`, then its remaining stages, e.g.
-    /// ["review of #12", "CI on #12", "merge", "done-when checks"].
+    /// ["review of #12", "CI on #12", "merge", "marked done"].
     pub waiting_on: Option<List<Line<1, 80>, 0, 8>>,
     /// Open items that wait on it.
     pub blocking: Option<List<PlanItemId, 0, 10>>,

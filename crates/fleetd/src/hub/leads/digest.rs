@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::ledger::{
-    CheckSpec, Decision, DecisionScope, HumanRequest, Workstream, WorkstreamId, WorkstreamState,
+    Decision, DecisionScope, DoneWhen, HumanRequest, Workstream, WorkstreamId, WorkstreamState,
 };
 use fleetd_contracts::prim::js_len;
 
@@ -16,11 +16,9 @@ pub const DIGEST_MAX_CHARS: usize = 4500;
 /// Decisions listed by full value; the rest only appear by key under "do not re-ask".
 pub const DIGEST_DECISIONS: usize = 10;
 
-/// What backs a workstream's status beyond the lead's word: the checks its latest claim passed.
+/// What backs a workstream's status beyond the lead's word.
 #[derive(Debug, Clone, Default)]
 pub struct WorkstreamFacts {
-    /// Check indexes the latest finished claim passed.
-    pub passed: HashSet<usize>,
     /// The human's latest direct steers to its tasks and whether each was acknowledged.
     pub steers: Option<String>,
     /// "plan: 5/8 items, 62%" when the order has plan items.
@@ -68,44 +66,6 @@ pub fn clip(text: &str, max: usize) -> String {
     out
 }
 
-pub fn describe_check(check: &CheckSpec) -> String {
-    match check {
-        CheckSpec::PrMerged { repo, pr } => {
-            format!(
-                "PR {}merged in {repo}",
-                pr.map(|p| format!("#{p} ")).unwrap_or_default()
-            )
-        }
-        CheckSpec::CiGreen { repo, r#ref } => {
-            format!(
-                "CI green on {repo}{}",
-                r#ref.as_ref().map(|r| format!("@{r}")).unwrap_or_default()
-            )
-        }
-        CheckSpec::Http {
-            url,
-            status,
-            contains,
-        } => format!(
-            "GET {url} → {status}{}",
-            contains
-                .as_ref()
-                .map(|c| format!(" containing \"{c}\""))
-                .unwrap_or_default()
-        ),
-        CheckSpec::Cmd {
-            machine_id,
-            argv,
-            expect_exit,
-        } => {
-            format!("on {machine_id}: `{}` exits {expect_exit}", argv.join(" "))
-        }
-        CheckSpec::Test { repo, test_id } => format!("test {test_id} passes in {repo}"),
-        CheckSpec::Judge { criteria } => format!("judge: {criteria}"),
-        CheckSpec::Human { question } => format!("human confirms: {question}"),
-    }
-}
-
 fn scope_label(d: &Decision) -> String {
     match &d.scope {
         DecisionScope::Workstream { workstream_id } => workstream_id.to_string(),
@@ -139,19 +99,12 @@ pub fn rank_decisions<'a>(
     ranked
 }
 
-/// The done-when list as `done:<n>`, the index claims use; ✓ only where fleetd's own check passed.
-pub fn done_when_text(checks: &[CheckSpec], passed: Option<&HashSet<usize>>, max: usize) -> String {
-    checks
+/// The done-when lines as `done:<n> <line>`.
+pub fn done_when_text(lines: &[DoneWhen], max: usize) -> String {
+    lines
         .iter()
         .enumerate()
-        .map(|(i, c)| {
-            let tick = if passed.is_some_and(|p| p.contains(&i)) {
-                " ✓"
-            } else {
-                ""
-            };
-            format!("done:{i}{tick} {}", one_line(&describe_check(c), max))
-        })
+        .map(|(i, line)| format!("done:{i} {}", one_line(line.as_ref(), max)))
         .collect::<Vec<_>>()
         .join("; ")
 }
@@ -190,7 +143,7 @@ fn workstream_lines(w: &Workstream, facts: Option<&WorkstreamFacts>) -> String {
         .unwrap_or_default();
     format!(
         "{head}{status}\n  done when: {}{plan}{steers}",
-        done_when_text(&brief.done_when, facts.map(|f| &f.passed), 120)
+        done_when_text(&brief.done_when, 120)
     )
 }
 

@@ -63,9 +63,6 @@ impl ItemRow {
     pub fn has_work_links(&self) -> bool {
         !self.data.links.tasks.is_empty() || !self.data.links.prs.is_empty()
     }
-    pub fn has_links(&self) -> bool {
-        self.has_work_links() || !self.data.links.checks.is_empty()
-    }
 }
 
 #[derive(Clone, Debug, PartialEq)]

@@ -604,7 +604,7 @@ fn example(role: Role, tool: &str) -> Option<Value> {
                 "why": "One client's retry loop took the upload service down.",
                 "pointers": ["api/src/upload.rs"],
                 "constraints": ["No new service; use the existing Redis."],
-                "doneWhen": [{ "type": "pr_merged", "repo": "acme/shop" }],
+                "doneWhen": ["A client past its limit gets 429 with Retry-After."],
             },
         }),
         (Role::Lead, "request_secret") => json!({
@@ -619,9 +619,10 @@ fn example(role: Role, tool: &str) -> Option<Value> {
             "value": "cursor",
             "why": "Stable when rows are inserted mid-scroll.",
         }),
-        (Role::Lead, "claim_done") | (Role::Worker, "claim_done") => {
-            json!({ "workstreamId": "W3" })
-        }
+        (Role::Lead, "close") => json!({
+            "workstreamId": "W3",
+            "why": "The rate limit is merged and live.",
+        }),
         (Role::Lead, "gated_run") => json!({
             "argv": ["fly", "deploy", "--app", "shop-prod"],
             "class": "irreversible",

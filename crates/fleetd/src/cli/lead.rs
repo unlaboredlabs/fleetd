@@ -43,9 +43,8 @@ pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>
              steer a running task (at its next step; --now stops its current step), answer a
              waiting one, or continue an ended one
   task cancel <T> [--reason <r>]
-  claim done --workstream <W> [--close-over "<why>"]
-             fleetd runs the workstream's done-when checks itself; only all of them passing makes
-             it done (exit 1 when a check did not pass)
+  close --workstream <W> --why "<why>"
+             the workstream is done, and why; it stops nothing
   review verdict --task <T> --sha <full head SHA> --blocking <n> --non-blocking <n> --summary "<s>"
       [--baseline <n> --candidate <n>]
              the last step of a review task; a research judge also reports its metric for the
@@ -56,22 +55,22 @@ pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>
   change status <X>
   plan milestone "<title>" [--position <n>]
   plan add "<title>" --milestone M<n> [--workstream <W>] [--must|--polish] [--size s|m|l]
-      [--after P1,P2] [--pr <url>] [--check <n>] [--why "<note>"] [--steer S<n>]
+      [--after P1,P2] [--pr <url>] [--why "<note>"] [--steer S<n>]
   plan edit P<n> [--title <t>] [--size s|m|l] [--must|--polish] [--milestone M<n>]
-      [--workstream <W>] [--after P1,P2] [--pr +<url>|--pr=-<url>] [--check +<n>|--check=-<n>]
-      [--position <n>] [--why "<note>"] [--steer S<n>]
+      [--workstream <W>] [--after P1,P2] [--pr +<url>|--pr=-<url>] [--position <n>]
+      [--why "<note>"] [--steer S<n>]
   plan drop P<n> (--why "<reason>" | --steer S<n>)
   plan show [--workstream <W>]
              keep the project's plan: milestones of must or polish items sized s, m or l
              (relative size, never hours). Link work with --item; only fleetd marks an item
-             done, once its PRs merged through the train and its done-when checks passed.
+             done, once its PRs merged through the train.
              Changing scope after a milestone's first 10 minutes needs --why, and the status
              view shows it as a marker. --steer S<n> says the human's steer asked for it: it
              stands in for --why and acknowledges the steer
   workstream open --text "<intent>" [--template bugfix|feature|research]
              open a workstream for work taken from the chat: a draft to brief
              lead-side commands reach the hub through the local node (FLEETD_NODE_SOCK, default
-             ~/.fleetd/node/node.sock); exit 0 ok, 1 checks failed, 2 usage, 3 refused, 4 hub unreachable
+             ~/.fleetd/node/node.sock); exit 0 ok, 2 usage, 3 refused, 4 hub unreachable
 "#;
 
 const LEAD_COMMANDS: &[&str] = &[
@@ -81,7 +80,7 @@ const LEAD_COMMANDS: &[&str] = &[
     "status",
     "decisions",
     "task",
-    "claim",
+    "close",
     "review",
     "change",
     "gated",
@@ -121,7 +120,6 @@ const OPTIONS: &[(&str, Kind)] = &[
     ("now", Kind::Bool),
     ("state", Kind::Str),
     ("reason", Kind::Str),
-    ("close-over", Kind::Str),
     ("task", Kind::Str),
     ("sha", Kind::Str),
     ("blocking", Kind::Str),
@@ -142,7 +140,6 @@ const OPTIONS: &[(&str, Kind)] = &[
     ("polish", Kind::Bool),
     ("size", Kind::Str),
     ("after", Kind::Str),
-    ("check", Kind::Str),
     ("position", Kind::Str),
     ("steer", Kind::Str),
 ];
@@ -421,18 +418,16 @@ pub fn parse_lead_args(
             }
             _ => return Err("expected fleetd task spawn|list|status|message|cancel".into()),
         },
-        Some("claim") => {
-            if sub != Some("done") || !rest.is_empty() {
-                return Err(
-                    "expected fleetd claim done --workstream <W> [--close-over \"<why>\"]".into(),
-                );
+        Some("close") => {
+            if sub.is_some() || !rest.is_empty() {
+                return Err(r#"expected fleetd close --workstream <W> --why "<why>""#.into());
             }
-            only(&["workstream", "close-over"])?;
-            required(&["workstream"])?;
+            only(&["workstream", "why"])?;
+            required(&["workstream", "why"])?;
             defined(vec![
-                ("op", s(Some("claim_done"))),
+                ("op", s(Some("close"))),
                 ("workstreamId", s(v.str("workstream"))),
-                ("closeOver", s(v.str("close-over"))),
+                ("why", s(v.str("why"))),
             ])
         }
         Some("review") => {
@@ -636,7 +631,6 @@ pub fn parse_lead_args(
                         "size",
                         "after",
                         "pr",
-                        "check",
                         "why",
                         "steer",
                     ])?;
@@ -653,7 +647,6 @@ pub fn parse_lead_args(
                         ("size", size()?),
                         ("after", after),
                         ("pr", s(v.str("pr"))),
-                        ("check", whole("check")?),
                         ("why", s(v.str("why"))),
                         ("steer", steer),
                     ])
@@ -668,7 +661,6 @@ pub fn parse_lead_args(
                         "workstream",
                         "after",
                         "pr",
-                        "check",
                         "position",
                         "why",
                         "steer",
@@ -685,16 +677,6 @@ pub fn parse_lead_args(
                         },
                     };
                     let (pr, pr_remove) = signed("pr");
-                    let (check, check_remove) = signed("check");
-                    let check = match check {
-                        Some(n) if !all_digits(n) => {
-                            return Err(format!(
-                                "--check is +<n> or -<n>, a done-when index, got '{}'",
-                                v.str("check").unwrap_or("")
-                            ));
-                        }
-                        other => other.map(number),
-                    };
                     let one = |value: Option<Value>| value.map(|v| Value::Array(vec![v]));
                     let pr = pr.map(|url| Value::String(url.to_owned()));
                     defined(vec![
@@ -707,14 +689,6 @@ pub fn parse_lead_args(
                         ("workstreamId", s(v.str("workstream"))),
                         ("after", after),
                         (if pr_remove { "prRemove" } else { "prAdd" }, one(pr)),
-                        (
-                            if check_remove {
-                                "checkRemove"
-                            } else {
-                                "checkAdd"
-                            },
-                            one(check),
-                        ),
                         ("position", whole("position")?),
                         ("why", s(v.str("why"))),
                         ("steer", steer),
@@ -943,34 +917,6 @@ fn quoted(text: &str) -> Vec<String> {
     text.trim()
         .split('\n')
         .map(|line| format!("  > {line}").trim_end().to_owned())
-        .collect()
-}
-
-/// One line per check fleetd ran, ✓ only for a pass, with the evidence of any that did not pass.
-fn claim_lines(claim: &Value) -> Vec<String> {
-    arr(claim, "results")
-        .iter()
-        .flat_map(|r| {
-            let pass = st(r, "result") == "pass";
-            let head = format!(
-                "{} done:{} {}: {}{}",
-                if pass { "✓" } else { "✗" },
-                js(opt(r, "checkIndex")),
-                st(&r["spec"], "type"),
-                st(r, "result"),
-                opt(r, "exitCode")
-                    .map(|code| format!(", exit {}", js(Some(code))))
-                    .unwrap_or_default()
-            );
-            let evidence = st(r, "evidence");
-            if pass || evidence.trim().is_empty() {
-                vec![head]
-            } else {
-                std::iter::once(head)
-                    .chain(quoted(evidence).into_iter().map(|line| format!("  {line}")))
-                    .collect()
-            }
-        })
         .collect()
 }
 
@@ -1216,38 +1162,13 @@ pub fn format_result(result: &Value) -> String {
                 "fleetd task status <T> shows one task's result.".into()
             };
         }
-        "claim_done" => {
-            let (claim_id, ws, state) = (
-                st(result, "claimId"),
+        "close" => {
+            lines.push(format!(
+                "{} is {}.",
                 st(result, "workstreamId"),
-                st(result, "state"),
-            );
-            match opt(result, "claim") {
-                None => {
-                    lines.push(format!(
-                        "{claim_id} on {ws} is still running its checks; {ws} is {state}."
-                    ));
-                    next = "carry on with other work; the outcome arrives in a wake.".into();
-                }
-                Some(claim) if st(claim, "outcome") == "pass" => {
-                    lines.push(format!(
-                        "{claim_id} on {ws} passed: fleetd ran all {} done-when checks and each passed. {ws} is {state}.",
-                        arr(claim, "results").len()
-                    ));
-                    lines.extend(claim_lines(claim));
-                    next = format!("spawn nothing more for {ws}.");
-                }
-                Some(claim) => {
-                    let results = arr(claim, "results");
-                    let failing = results.iter().filter(|r| st(r, "result") != "pass").count();
-                    lines.push(format!(
-                        "{claim_id} on {ws} failed: {failing} of {} checks did not pass. {ws} is {state}, not done.",
-                        results.len()
-                    ));
-                    lines.extend(claim_lines(claim));
-                    next = "fix what failed, then claim again.".into();
-                }
-            }
+                st(result, "state")
+            ));
+            next = "tell the human in a line.".into();
         }
         "review_verdict" => {
             let v = &result["verdict"];
@@ -1327,7 +1248,7 @@ pub fn format_result(result: &Value) -> String {
                 "carry on.".into()
             } else {
                 format!(
-                    "link work to it with --item {} on fleetd task spawn; fleetd marks it done once its PRs merged through the train and its checks passed.",
+                    "link work to it with --item {} on fleetd task spawn; fleetd marks it done once its PRs merged through the train.",
                     st(item, "itemId")
                 )
             };
@@ -1369,7 +1290,7 @@ pub struct LeadDeps<'a> {
     pub read_file: &'a dyn Fn(&str) -> std::io::Result<String>,
 }
 
-/// `fleetd brief|request|decide|status|decisions|task|claim|review|change|gated|workstream|plan …`.
+/// `fleetd brief|request|decide|status|decisions|task|close|review|change|gated|workstream|plan …`.
 pub fn lead_command(argv: &[String], deps: &LeadDeps) -> CliResult {
     let call = match parse_lead_args(argv, deps.read_file) {
         Ok(call) => call,
@@ -1380,11 +1301,8 @@ pub fn lead_command(argv: &[String], deps: &LeadDeps) -> CliResult {
         Err(unreachable) => return CliResult::err(4, format!("fleetd: {unreachable}\n")),
     };
     if let Some(result) = opt(&answer, "result") {
-        // A claim that ran and failed is an answer, not a refusal, but it must not read as success to a script.
-        let failed = st(result, "op") == "claim_done"
-            && opt(result, "claim").is_some_and(|claim| st(claim, "outcome") == "fail");
         return CliResult {
-            code: if failed { 1 } else { 0 },
+            code: 0,
             stdout: format_result(result),
             stderr: String::new(),
         };
@@ -1527,29 +1445,21 @@ mod tests {
     }
 
     #[test]
-    fn claim_done_takes_a_close_over_why() {
-        let plain = parse(&["claim", "done", "--workstream", "W1"]).unwrap();
-        assert_eq!(plain, json!({ "op": "claim_done", "workstreamId": "W1" }));
-        let on_purpose = parse(&[
-            "claim",
-            "done",
-            "--workstream",
-            "W1",
-            "--close-over",
-            "redone in the next order",
-        ])
-        .unwrap();
+    fn close_needs_a_why() {
+        let close = parse(&["close", "--workstream", "W1", "--why", "the page is live"]).unwrap();
         assert_eq!(
-            on_purpose,
-            json!({ "op": "claim_done", "workstreamId": "W1", "closeOver": "redone in the next order" })
+            close,
+            json!({ "op": "close", "workstreamId": "W1", "why": "the page is live" })
         );
-        let call: fleetd_contracts::lead_calls::LeadCall =
-            serde_json::from_value(on_purpose).unwrap();
+        let call: fleetd_contracts::lead_calls::LeadCall = serde_json::from_value(close).unwrap();
         assert!(matches!(
             call,
-            fleetd_contracts::lead_calls::LeadCall::ClaimDone(c)
-                if c.close_over.as_ref().map(|w| w.as_str()) == Some("redone in the next order")
+            fleetd_contracts::lead_calls::LeadCall::Close(c) if c.why.as_str() == "the page is live"
         ));
+        assert_eq!(
+            parse(&["close", "--workstream", "W1"]).unwrap_err(),
+            "--why is required"
+        );
     }
 
     #[test]
@@ -1641,8 +1551,8 @@ mod tests {
                 "expected fleetd task spawn|list|status|message|cancel",
             ),
             (
-                &["claim", "W1"],
-                "expected fleetd claim done --workstream <W> [--close-over \"<why>\"]",
+                &["close", "W1"],
+                r#"expected fleetd close --workstream <W> --why "<why>""#,
             ),
             (&["change", "enqueue"], "--pr is required"),
             (
@@ -1722,8 +1632,6 @@ mod tests {
             "L",
             "--after",
             "P1, P2",
-            "--check",
-            "2",
         ])
         .unwrap();
         assert_eq!(add["title"], "full lab run");
@@ -1731,10 +1639,7 @@ mod tests {
             (&add["weight"], &add["size"]),
             (&json!("polish"), &json!("l"))
         );
-        assert_eq!(
-            (&add["after"], &add["check"]),
-            (&json!(["P1", "P2"]), &json!(2))
-        );
+        assert_eq!(add["after"], json!(["P1", "P2"]));
         assert_eq!(
             parse(&["plan", "add", "x", "--milestone", "M1"]).unwrap()["size"],
             Value::Null,
@@ -1745,15 +1650,12 @@ mod tests {
             "edit",
             "P3",
             "--pr=-https://github.com/acme/storefront/pull/9",
-            "--check",
-            "+1",
         ])
         .unwrap();
         assert_eq!(
             edit["prRemove"],
             json!(["https://github.com/acme/storefront/pull/9"])
         );
-        assert_eq!(edit["checkAdd"], json!([1]));
         assert_eq!(
             parse(&[
                 "task",
@@ -1910,21 +1812,6 @@ mod tests {
             usage
                 .stderr
                 .starts_with("fleetd: --value is required\n\nusage:\n")
-        );
-        let claim = json!({ "op": "claim_done", "claimId": "C1", "workstreamId": "W1", "state": "verifying", "claim": {
-            "outcome": "fail", "results": [
-                { "checkIndex": 0, "spec": { "type": "http" }, "result": "pass", "evidence": "GET → 200" },
-                { "checkIndex": 1, "spec": { "type": "cmd" }, "result": "fail", "evidence": "`test -f docs/x.md` in /w exited 1 (expected 0)", "exitCode": 1 },
-            ] } });
-        let failed = command(
-            &["claim", "done", "--workstream", "W1"],
-            Ok(json!({ "result": claim })),
-        )
-        .0;
-        assert_eq!(failed.code, 1);
-        assert_eq!(
-            failed.stdout,
-            "C1 on W1 failed: 1 of 2 checks did not pass. W1 is verifying, not done.\n✓ done:0 http: pass\n✗ done:1 cmd: fail, exit 1\n    > `test -f docs/x.md` in /w exited 1 (expected 0)\nNext: fix what failed, then claim again.\n"
         );
     }
 

@@ -1,5 +1,5 @@
 //! Plans: a project's milestones and items. Leads add, edit and drop through `fleetd plan …`; only [`Plans::verify`]
-//! marks an item done, from train merges and claim results. Every change to an open milestone's total after its
+//! marks an item done, from train merges. Every change to an open milestone's total after its
 //! planning window needs a reason and writes a marker, so a figure never jumps silently.
 pub mod calls;
 pub mod store;
@@ -24,7 +24,7 @@ use fleetd_contracts::train::GitHubPrUrl;
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::clock::Clock;
-use crate::hub::status::progress::{self, CheckPass, Figure, LinkedChange};
+use crate::hub::status::progress::{self, Figure, LinkedChange};
 use crate::hub::store::{EventLog, HubDb, NewEvent, StoreError, iso_ms, now_ms};
 use store::{ChangeRow, ItemData, ItemRow, MilestoneRow, pkey};
 
@@ -108,27 +108,6 @@ pub fn parse_ms(iso: &str) -> Option<i64> {
     chrono::DateTime::parse_from_rfc3339(iso)
         .ok()
         .map(|d| d.timestamp_millis())
-}
-
-/// The latest result of each check index across an order's claims (newest claim that ran it wins).
-pub fn latest_checks(c: &Connection, ws: &str) -> rusqlite::Result<HashMap<i64, CheckPass>> {
-    let mut stmt = c.prepare_cached(
-        "SELECT data FROM claims WHERE workstream_id = ? AND data IS NOT NULL ORDER BY n DESC LIMIT 20",
-    )?;
-    let mut out = HashMap::new();
-    for data in stmt.query_map([ws], |r| r.get::<_, String>(0))? {
-        let Ok(claim) = serde_json::from_str::<fleetd_contracts::verification::Claim>(&data?)
-        else {
-            continue;
-        };
-        for r in claim.results.iter() {
-            out.entry(r.check_index.get()).or_insert_with(|| CheckPass {
-                pass: r.result == fleetd_contracts::verification::CheckOutcome::Pass,
-                claim_id: claim.claim_id.to_string(),
-            });
-        }
-    }
-    Ok(out)
 }
 
 /// Changes linked to an item: by its tasks (`Change.task_id`, the `changes_by_task` index) or its PR URLs
@@ -602,9 +581,6 @@ impl Plans {
             if let Some(pr) = &call.pr {
                 links.prs = UniqueList::try_from(vec![pr.clone()]).unwrap_or_default();
             }
-            if let Some(check) = call.check {
-                links.checks = UniqueList::try_from(vec![check]).unwrap_or_default();
-            }
             let mut item = ItemRow {
                 n: 0,
                 pkey: pk.clone(),
@@ -645,7 +621,7 @@ impl Plans {
                 item: item_contract(&item),
                 change: change.as_ref().map(change_contract),
                 next: Some(format!(
-                    "link work with item P{} on `spawn_agent`; fleetd marks it done when its PR merges through the train and its checks pass.",
+                    "link work with item P{} on `spawn_agent`; fleetd marks it done when its PR merges through the train.",
                     item.n
                 )),
                 warning: None,
@@ -706,22 +682,8 @@ impl Plans {
                     .filter(|p| !links.prs.contains(p))
                     .cloned(),
             );
-            let mut checks: Vec<_> = links
-                .checks
-                .iter()
-                .filter(|p| !call.check_remove.contains(p))
-                .copied()
-                .collect();
-            checks.extend(
-                call.check_add
-                    .iter()
-                    .filter(|p| !links.checks.contains(p))
-                    .copied(),
-            );
             links.prs = UniqueList::try_from(prs)
                 .map_err(|e| invalid(format!("Too many PRs: {e}"), "Keep at most 20."))?;
-            links.checks = UniqueList::try_from(checks)
-                .map_err(|e| invalid(format!("Too many checks: {e}"), "Keep at most 20."))?;
             if let Some(p) = call.position {
                 item.position = p.get();
             }
@@ -974,59 +936,43 @@ impl Plans {
         })
     }
 
-    /// Re-runs the done rule for an order's items: marks verified items done, reopens done items whose check failed
-    /// in a later claim, and stamps `started_ms` from linked tasks. Returns whether anything changed.
+    /// Re-runs the done rule for an order's items: marks verified items done and stamps `started_ms` from linked
+    /// tasks. Returns whether anything changed.
     pub fn verify(&self, ws: &str) -> bool {
         let now = self.now();
         let mut pending = Pending {
             changes: vec![],
             verified: vec![],
         };
-        let changed = self.tx(|c| {
-            let mut items = store::items_of_workstream(c, ws)?;
-            // Items that list PRs but no order are checked with any order of their project.
-            if let Some(order) = order_info(c, ws)? {
-                items.extend(
-                    store::items_of_project(c, &order.pkey)?
-                        .into_iter()
-                        .filter(|i| {
+        let changed =
+            self.tx(|c| {
+                let mut items = store::items_of_workstream(c, ws)?;
+                // Items that list PRs but no order are checked with any order of their project.
+                if let Some(order) = order_info(c, ws)? {
+                    items.extend(store::items_of_project(c, &order.pkey)?.into_iter().filter(
+                        |i| {
                             i.workstream_id.is_none()
                                 && i.has_work_links()
                                 && i.state != PlanItemState::Dropped
-                        }),
-                );
-            }
-            if items.is_empty() {
-                return Ok(false);
-            }
-            let order_latest = latest_checks(c, ws)?;
-            // An item with no order is verified by its own PR links only: an order's done-when checks never mark it
-            // done or reopen it, and the checks it lists can't be read until it has an order.
-            let no_checks = HashMap::new();
-            let mut changed = false;
-            let mut touched = HashSet::new();
-            for mut item in items {
-                let mut dirty = false;
-                if item.started_ms.is_none()
-                    && let Some(t) = first_task_start(c, &item)?
-                {
-                    item.started_ms = Some(t);
-                    dirty = true;
+                        },
+                    ));
                 }
-                let own_order = item.workstream_id.as_deref() == Some(ws);
-                let latest = if own_order { &order_latest } else { &no_checks };
-                let unreadable = !own_order && !item.data.links.checks.is_empty();
-                let checks: Vec<i64> = item.data.links.checks.iter().map(|i| i.get()).collect();
-                match if unreadable {
-                    PlanItemState::Dropped
-                } else {
-                    item.state
-                } {
-                    PlanItemState::Open => {
+                if items.is_empty() {
+                    return Ok(false);
+                }
+                let mut changed = false;
+                let mut touched = HashSet::new();
+                for mut item in items {
+                    let mut dirty = false;
+                    if item.started_ms.is_none()
+                        && let Some(t) = first_task_start(c, &item)?
+                    {
+                        item.started_ms = Some(t);
+                        dirty = true;
+                    }
+                    if item.state == PlanItemState::Open {
                         let linked = linked_changes(c, &item)?;
-                        if let Some(evidence) =
-                            progress::verified(item.has_work_links(), &linked, &checks, latest)
-                        {
+                        if let Some(evidence) = progress::verified(item.has_work_links(), &linked) {
                             item.state = PlanItemState::Done;
                             item.done_ms = Some(now);
                             item.data.evidence = Some(evidence.clone());
@@ -1035,50 +981,16 @@ impl Plans {
                             dirty = true;
                         }
                     }
-                    PlanItemState::Done => {
-                        if let Some(i) = progress::reopened(&checks, latest) {
-                            let before = figure_of(&store::items_of_milestone(c, item.milestone)?);
-                            item.state = PlanItemState::Open;
-                            item.done_ms = None;
-                            item.data.evidence = None;
-                            store::item_set(c, &item)?;
-                            let after = figure_of(&store::items_of_milestone(c, item.milestone)?);
-                            let row = ChangeRow {
-                                n: 0,
-                                pkey: item.pkey.clone(),
-                                milestone: item.milestone,
-                                workstream_id: Some(ws.to_owned()),
-                                at_ms: now,
-                                by: "hub".into(),
-                                kind: PlanChangeKind::Reopened,
-                                delta_items: 0,
-                                delta_size: 0,
-                                pct_before: Some(before.pct()),
-                                pct_after: Some(after.pct()),
-                                note: format!(
-                                    "P{} reopened: check {i} failed in a later claim",
-                                    item.n
-                                ),
-                            };
-                            store::change_insert(c, &row)?;
-                            pending.changes.push(row);
-                            touched.insert(item.milestone);
-                            changed = true;
-                            continue;
-                        }
+                    if dirty {
+                        store::item_set(c, &item)?;
+                        changed = true;
                     }
-                    PlanItemState::Dropped => {}
                 }
-                if dirty {
-                    store::item_set(c, &item)?;
-                    changed = true;
+                for m in touched {
+                    Self::settle_milestone(c, m, now, &mut pending)?;
                 }
-            }
-            for m in touched {
-                Self::settle_milestone(c, m, now, &mut pending)?;
-            }
-            Ok(changed)
-        });
+                Ok(changed)
+            });
         self.emit(pending);
         changed.unwrap_or_else(|e| {
             tracing::error!(error = %e, ws, "plan verify");
@@ -1099,7 +1011,7 @@ impl Plans {
             let mut by_milestone: HashMap<i64, (Figure, i64, i64)> = HashMap::new();
             for mut item in items.into_iter().filter(|i| i.state == PlanItemState::Open) {
                 let drop = match state {
-                    WorkstreamState::Done => !item.has_links(),
+                    WorkstreamState::Done => !item.has_work_links(),
                     WorkstreamState::Stopped | WorkstreamState::Failed => true,
                     _ => false,
                 };

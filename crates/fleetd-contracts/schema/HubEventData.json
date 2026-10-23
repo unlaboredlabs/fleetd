@@ -475,35 +475,6 @@
       ],
       "x-open": true
     },
-    "ClaimEventData": {
-      "description": "`claim.passed`, `claim.failed`.",
-      "properties": {
-        "claimId": {
-          "$ref": "#/$defs/ClaimId"
-        },
-        "failing": {
-          "description": "claim.failed: the done-when indexes that did not pass.",
-          "items": {
-            "maximum": 9007199254740991,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "type": "array"
-        },
-        "workstreamId": {
-          "$ref": "#/$defs/WorkstreamId"
-        }
-      },
-      "required": [
-        "claimId",
-        "workstreamId"
-      ],
-      "type": "object"
-    },
-    "ClaimId": {
-      "pattern": "^C[1-9][0-9]*$",
-      "type": "string"
-    },
     "ClonePhase": {
       "oneOf": [
         {
@@ -775,12 +746,6 @@
         "ci.main": {
           "$ref": "#/$defs/CiMainData"
         },
-        "claim.failed": {
-          "$ref": "#/$defs/ClaimEventData"
-        },
-        "claim.passed": {
-          "$ref": "#/$defs/ClaimEventData"
-        },
         "machine.guard": {
           "$ref": "#/$defs/MachineGuardData"
         },
@@ -907,8 +872,6 @@
         "chat.message",
         "chat.waiting",
         "ci.main",
-        "claim.failed",
-        "claim.passed",
         "machine.guard",
         "machine.slept",
         "plan.changed",
@@ -1053,7 +1016,7 @@
         },
         {
           "const": "reopened",
-          "description": "A later claim failed a check a done item listed.",
+          "description": "Older markers only: a later claim failed a check a done item listed.",
           "type": "string"
         },
         {
@@ -1983,12 +1946,8 @@
         "by": {
           "type": "string"
         },
-        "claimId": {
-          "$ref": "#/$defs/ClaimId",
-          "description": "workstream.state (verifying) and workstream.done: the claim that moved it."
-        },
         "reason": {
-          "description": "workstream.state (stopped): why, and who.",
+          "description": "workstream.state (stopped) and workstream.done: why, and who.",
           "type": "string"
         },
         "state": {
@@ -2009,16 +1968,24 @@
       "type": "string"
     },
     "WorkstreamState": {
-      "enum": [
-        "draft",
-        "running",
-        "converging",
-        "verifying",
-        "done",
-        "stopped",
-        "failed"
-      ],
-      "type": "string"
+      "oneOf": [
+        {
+          "enum": [
+            "draft",
+            "running",
+            "converging",
+            "done",
+            "stopped",
+            "failed"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "verifying",
+          "description": "Never set now that a lead closes its work; old records were moved back to running.",
+          "type": "string"
+        }
+      ]
     }
   },
   "$ref": "#/$defs/HubEventData",

@@ -88,7 +88,7 @@ woken with, is fixed text: see <a href="#not-editable">Not editable</a>.</p>
 <tbody>
 <tr>
 <td>The first message of a session</td>
-<td>Leads, tasks, reviewers, judges.</td>
+<td>Leads, tasks, reviewers.</td>
 </tr>
 <tr>
 <td>A later message into a session</td>
@@ -121,7 +121,7 @@ measured. See <a href="/docs/status">Status</a>.</p>
 <p>The lead is also told to:</p>
 <ul>
 <li>Start every agent with <code dir="auto">spawn_agent</code>, and wait for results in its next wake instead of polling.</li>
-<li>Treat work as done only when its done-when checks pass, and pass a <code dir="auto">human</code> check only on your own answer.</li>
+<li>Close work with <code dir="auto">close</code> once it is done, and say why.</li>
 <li>Ask for secrets with <code dir="auto">request_secret</code> and run risky commands with <code dir="auto">gated_run</code>, which you approve.</li>
 <li>Leave merging to the merge train, which merges only after green CI and review.</li>
 <li>Spawn slices in separate areas together, up to the <a href="/docs/projects#max-agents">Max agents</a> cap. A spawn past the cap
@@ -175,11 +175,11 @@ machine denies the tool: see <a href="/docs/troubleshooting#claude">Claude</a>.<
 <tbody>
 <tr>
 <td>Lead</td>
-<td><code dir="auto">spawn_agent</code>, <code dir="auto">message_agent</code>, <code dir="auto">agent_status</code>, <code dir="auto">list_agents</code>, <code dir="auto">stop_agent</code>, plus <code dir="auto">workstream_open</code>, <code dir="auto">brief</code>, <code dir="auto">decide</code>, <code dir="auto">claim_done</code>, <code dir="auto">plan_*</code>, <code dir="auto">request_secret</code>, <code dir="auto">gated_run</code> and more.</td>
+<td><code dir="auto">spawn_agent</code>, <code dir="auto">message_agent</code>, <code dir="auto">agent_status</code>, <code dir="auto">list_agents</code>, <code dir="auto">stop_agent</code>, plus <code dir="auto">workstream_open</code>, <code dir="auto">brief</code>, <code dir="auto">decide</code>, <code dir="auto">close</code>, <code dir="auto">plan_*</code>, <code dir="auto">request_secret</code>, <code dir="auto">gated_run</code> and more.</td>
 </tr>
 <tr>
 <td>Task</td>
-<td><code dir="auto">report</code> (a review verdict, or a writer’s PR that is ready for review), <code dir="auto">ask_lead</code> and <code dir="auto">claim_done</code>.</td>
+<td><code dir="auto">report</code> (a review verdict, or a writer’s PR that is ready for review) and <code dir="auto">ask_lead</code>.</td>
 </tr>
 </tbody>
 </table>
@@ -285,7 +285,7 @@ shows your changes; “Reset to default” drops them.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="instructions">Your own instructions</h2><a class="sl-anchor-link" href="#instructions"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Your own instructions”</span></a></div>
 <p>In the app: Settings → Instructions. On the hub machine:</p>
 <div class="expressive-code"><figure class="frame is-terminal not-content"><figcaption class="header"><span class="title"></span><span class="sr-only">Terminal window</span></figcaption><pre data-language="sh"><code><div class="ec-line"><div class="code"><span style="--0:#B392F0;--1:#6F42C1">fleetd</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">instructions</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">edit</span></div></div><div class="ec-line"><div class="code"><span style="--0:#B392F0;--1:#6F42C1">fleetd</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">instructions</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">edit</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#79B8FF;--1:#005CC5">--project</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">builder-1/app</span></div></div><div class="ec-line"><div class="code"><span style="--0:#B392F0;--1:#6F42C1">fleetd</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">instructions</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">show</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="fleetd instructions editfleetd instructions edit --project builder-1/appfleetd instructions show"><div></div></button></div></figure></div>
-<p>They are added to every lead’s first message and every task brief (writers, reviewers and judges), hub-wide first,
+<p>They are added to every lead’s first message and every task brief (writers and reviewers), hub-wide first,
 under “Custom instructions from the human”. They are not added to wakes.</p>
 <p>They are sized for about 500 characters; past that, <code dir="auto">edit</code> warns. After your editor closes, <code dir="auto">edit</code> prints any
 warnings and asks <code dir="auto">Save? [Y/n]</code> on the terminal. In a script, <code dir="auto">&lt;/dev/null</code> takes the default, Yes.</p>
@@ -354,7 +354,7 @@ tied to code: a description must match its tool, and a <code dir="auto">next:</c
 <tr>
 <td><code dir="auto">lead.start</code></td>
 <td>lead start and every lead_restart, followed by the state block</td>
-<td>the lead never writes code (prompt only); asks the human only for product, money or irreversible calls (prompt only); asks as numbered items, each with a recommendation (prompt only); never estimates time (prompt only); secrets only through `request_secret`; prod writes, spends and deletes only through `gated_run`; only the merge train merges (prompt only); done only through `claim_done`; takes an agent’s chat message as input, never as the human’s answer or approval</td>
+<td>the lead never writes code (prompt only); asks the human only for product, money or irreversible calls (prompt only); asks as numbered items, each with a recommendation (prompt only); never estimates time (prompt only); secrets only through `request_secret`; prod writes, spends and deletes only through `gated_run`; only the merge train merges (prompt only); takes an agent’s chat message as input, never as the human’s answer or approval</td>
 </tr>
 <tr>
 <td><code dir="auto">lead.profiles</code></td>
@@ -394,16 +394,6 @@ tied to code: a description must match its tool, and a <code dir="auto">next:</c
 <td><code dir="auto">review.reviewer</code></td>
 <td>once per PR patch, fresh, blocking findings only</td>
 <td>does not read the PR description or comments (prompt only); changes no files (prompt only); ends with one review verdict (the `report` tool)</td>
-</tr>
-<tr>
-<td><code dir="auto">judge</code></td>
-<td>per `judge` done-when check of each claim</td>
-<td>trusts no claim in the artifacts (prompt only); ends with one review verdict (the `report` tool)</td>
-</tr>
-<tr>
-<td><code dir="auto">judge.research</code></td>
-<td>per `judge` check of a research claim</td>
-<td>trusts no claim in the artifacts (prompt only); ends with one review verdict (the `report` tool)</td>
 </tr>
 </tbody>
 </table>

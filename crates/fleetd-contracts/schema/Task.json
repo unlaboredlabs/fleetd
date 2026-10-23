@@ -90,7 +90,7 @@
           "description": "M4: its thread hit a usage limit; the task is idle until fleetd sends \"continue\" at `resumeAt`."
         },
         "pr": {
-          "description": "The PR a review task reviews. Required at spawn for review; absent on hub-spawned judge tasks and older rows.",
+          "description": "The PR a review task reviews. Required at spawn for review; absent on older rows (hub-spawned judges).",
           "type": "string"
         },
         "profile": {

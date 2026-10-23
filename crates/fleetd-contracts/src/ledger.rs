@@ -8,10 +8,8 @@ use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_with::skip_serializing_none;
 
-use crate::ids::{MachineId, ProjectRef, ThreadId, Timestamp};
-use crate::prim::{
-    Count, Finite, Int, Line, List, NonEmpty, Positive, PositiveNumber, Text, is_http_url, js_len,
-};
+use crate::ids::{ProjectRef, ThreadId, Timestamp};
+use crate::prim::{Count, Finite, Int, Line, List, NonEmpty, PositiveNumber, Text, js_len};
 use crate::secrets::{SecretFingerprint, SecretSink};
 use crate::usage::UsageParked;
 use crate::{brand, checked};
@@ -69,93 +67,11 @@ pub struct Lead {
     pub parked: Option<UsageParked>,
 }
 
-// Briefs and their done-when checks
+// Briefs
 
-pub type Repo = Text<1, 200>;
-
-brand!(
-    /// An absolute http:// or https:// URL.
-    HttpUrl, check = |s| is_http_url(s), expected = "an absolute http:// or https:// URL"
-);
-
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(
-    tag = "type",
-    rename_all = "snake_case",
-    rename_all_fields = "camelCase"
-)]
-pub enum CheckSpec {
-    PrMerged {
-        repo: Repo,
-        pr: Option<Positive>,
-    },
-    CiGreen {
-        repo: Repo,
-        r#ref: Option<Text<1, 200>>,
-    },
-    Http {
-        url: HttpUrl,
-        status: Int<100, 599>,
-        contains: Option<Text<1, 500>>,
-    },
-    Cmd {
-        machine_id: MachineId,
-        argv: List<String, 1, 64>,
-        expect_exit: i64,
-    },
-    Test {
-        repo: Repo,
-        test_id: Text<1, 500>,
-    },
-    Judge {
-        criteria: Text<1, 2000>,
-    },
-    Human {
-        question: Text<1, 500>,
-    },
-}
-
-impl CheckSpec {
-    pub fn check_type(&self) -> CheckType {
-        match self {
-            CheckSpec::PrMerged { .. } => CheckType::PrMerged,
-            CheckSpec::CiGreen { .. } => CheckType::CiGreen,
-            CheckSpec::Http { .. } => CheckType::Http,
-            CheckSpec::Cmd { .. } => CheckType::Cmd,
-            CheckSpec::Test { .. } => CheckType::Test,
-            CheckSpec::Judge { .. } => CheckType::Judge,
-            CheckSpec::Human { .. } => CheckType::Human,
-        }
-    }
-}
-
-/// The `type` of a CheckSpec, as playbooks name them in `requiredChecks`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum CheckType {
-    PrMerged,
-    CiGreen,
-    Http,
-    Cmd,
-    Test,
-    Judge,
-    Human,
-}
-
-impl CheckType {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            CheckType::PrMerged => "pr_merged",
-            CheckType::CiGreen => "ci_green",
-            CheckType::Http => "http",
-            CheckType::Cmd => "cmd",
-            CheckType::Test => "test",
-            CheckType::Judge => "judge",
-            CheckType::Human => "human",
-        }
-    }
-}
+/// One line of what done looks like. Writers and reviewers read it; fleetd runs none of it, and the lead closes the
+/// workstream with why.
+pub type DoneWhen = Text<1, 2000>;
 
 /// How big a research spend is, relative like plan sizes.
 #[derive(
@@ -315,7 +231,7 @@ pub struct Brief {
     pub pointers: List<Text<1, 500>, 0, 20>,
     pub constraints: List<Text<1, 500>, 0, 20>,
     /// At least one.
-    pub done_when: List<CheckSpec, 1, 20>,
+    pub done_when: List<DoneWhen, 1, 20>,
     pub budget: Option<BriefBudget>,
     /// Research: what the candidate is compared against, and how both are measured.
     pub baseline: Option<Text<1, 1000>>,
@@ -333,6 +249,7 @@ pub enum WorkstreamState {
     Draft,
     Running,
     Converging,
+    /// Never set now that a lead closes its work; old records were moved back to running.
     Verifying,
     Done,
     Stopped,
@@ -876,28 +793,17 @@ mod tests {
     }
 
     #[test]
-    fn briefs_need_a_done_when_check() {
+    fn briefs_need_a_done_when_line() {
         let brief = json!({
             "goal": "g", "why": "w", "pointers": [], "constraints": [],
-            "doneWhen": [{ "type": "http", "url": "http://127.0.0.1:4790/health", "status": 200 }],
+            "doneWhen": ["the health page answers 200"],
         });
         assert!(accepts::<Brief>(brief.clone()));
         assert!(!accepts::<Brief>(with(
             brief.clone(),
             json!({ "doneWhen": [] })
         )));
-        assert!(!accepts::<Brief>(with(
-            brief.clone(),
-            json!({ "doneWhen": [{ "type": "cmd", "machineId": "devbox", "argv": [], "expectExit": 0 }] })
-        )));
-        assert!(!accepts::<Brief>(with(
-            brief.clone(),
-            json!({ "doneWhen": [{ "type": "http", "url": "file:///etc/passwd", "status": 200 }] })
-        )));
-        assert!(!accepts::<Brief>(with(
-            brief,
-            json!({ "doneWhen": [{ "type": "nope" }] })
-        )));
+        assert!(!accepts::<Brief>(with(brief, json!({ "doneWhen": [""] }))));
     }
 
     #[test]

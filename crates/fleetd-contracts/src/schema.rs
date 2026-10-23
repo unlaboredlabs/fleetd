@@ -10,7 +10,7 @@ use serde_json::{Map, Value};
 use crate::app::{AppClientMessage, AppServerMessage};
 use crate::chat::{ChatMessage, ProjectChatState};
 use crate::events::{
-    ClaimEventData, HubEvent, HubEventType, MachineGuardData, MachineSleptData, PromptChangedData,
+    HubEvent, HubEventType, MachineGuardData, MachineSleptData, PromptChangedData,
     RequestEventData, ThreadEventData, TrainEventData, WorkstreamEventData,
 };
 use crate::ledger::{Decision, HumanRequest, Lead, Workstream};
@@ -26,7 +26,6 @@ use crate::tasks::{AgentsCapData, TaskEventData};
 use crate::tasks::{SlotState, Task};
 use crate::train::{Change, TrainState};
 use crate::usage::UsageEventData;
-use crate::verification::Claim;
 
 pub const META_SCHEMA: &str = "https://json-schema.org/draft/2020-12/schema";
 
@@ -89,7 +88,6 @@ fn hub_event_data_document_for(side: Side) -> Value {
         data!(RequestEventData: RequestOpened, RequestUpdated);
         data!(TaskEventData: TaskQueued, TaskStarted, TaskCompleted, TaskFailed, TaskCancelled);
         data!(AgentsCapData: AgentsCap);
-        data!(ClaimEventData: ClaimPassed, ClaimFailed);
         data!(TrainEventData: ChangeQueued, ChangeReady, ChangeNeedsRebase, ChangeCiFailed, ChangeRefused, PrMerged,
             PrMergedOutside, TrainBlocked);
         data!(ChangeStateData: ChangeState);
@@ -236,7 +234,6 @@ fn json_schemas_for(side: Side) -> BTreeMap<&'static str, Value> {
         Decision,
         Task,
         SlotState,
-        Claim,
         Change,
         TrainState,
         ChatMessage,

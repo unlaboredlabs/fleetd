@@ -8,7 +8,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use fleetd_contracts::lead_calls::{
-    AskLeadCall, BriefCreateCall, ChangeEnqueueCall, ChangeStatusCall, ClaimDoneCall, DecideCall,
+    AskLeadCall, BriefCreateCall, ChangeEnqueueCall, ChangeStatusCall, CloseCall, DecideCall,
     DecisionsSearchCall, GatedRunCall, LeadCall, RequestSecretCall, RequestWithdrawCall,
     SliceReadyCall, StatusSetCall, TaskCancelCall, TaskListCall, TaskMessageCall, TaskSpawnCall,
     TaskStatusCall, WorkstreamOpenCall,
@@ -118,7 +118,7 @@ static TOOLS: &[Tool] = &[
     lead(
         "brief",
         "brief_create",
-        "Set a draft workstream's brief (goal, why, pointers, constraints, doneWhen checks) and \
+        "Set a draft workstream's brief (goal, why, pointers, constraints, doneWhen lines) and \
          start it, or edit it later.",
         inline_schema::<BriefCreateCall>,
     ),
@@ -145,11 +145,10 @@ static TOOLS: &[Tool] = &[
         inline_schema::<DecideCall>,
     ),
     lead(
-        "claim_done",
-        "claim_done",
-        "Claim a workstream done: fleetd runs its frozen done-when checks itself, and only all of them passing makes \
-         it done. A failed claim says what failed.",
-        inline_schema::<ClaimDoneCall>,
+        "close",
+        "close",
+        "The workstream is done: say why in one line. It stops nothing; stop any agent of it you no longer need.",
+        inline_schema::<CloseCall>,
     ),
     lead(
         "gated_run",
@@ -242,15 +241,6 @@ static TOOLS: &[Tool] = &[
         description: "Ask your lead a question. Carry on with what you can; the answer arrives as a message. If you \
                       can't go on without it, end your turn: the answer continues this thread.",
         schema: inline_schema::<AskLeadCall>,
-        human: None,
-    },
-    Tool {
-        name: "claim_done",
-        op: "claim_done",
-        worker: true,
-        lead: false,
-        description: "Claim your workstream done: fleetd runs its done-when checks itself.",
-        schema: inline_schema::<ClaimDoneCall>,
         human: None,
     },
 ];
@@ -433,8 +423,8 @@ mod tests {
     }
 
     #[test]
-    fn a_worker_sees_only_report_ask_lead_and_claim_done() {
-        assert_eq!(names(Role::Worker), ["report", "ask_lead", "claim_done"]);
+    fn a_worker_sees_only_report_and_ask_lead() {
+        assert_eq!(names(Role::Worker), ["report", "ask_lead"]);
         let lead = names(Role::Lead);
         for tool in [
             "spawn_agent",
@@ -445,7 +435,7 @@ mod tests {
             "request_secret",
             "decide",
             "brief",
-            "claim_done",
+            "close",
             "gated_run",
             "plan_add",
             "plan_show",

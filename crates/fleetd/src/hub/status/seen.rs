@@ -39,12 +39,11 @@ pub fn in_scope(scope: &StatusScope, event: &Value) -> bool {
     }
 }
 
-const COUNTED: [&str; 7] = [
+const COUNTED: [&str; 6] = [
     "pr.merged",
     "plan.verified",
     "workstream.running",
     "task.failed",
-    "claim.failed",
     "change.ci_failed",
     "plan.changed",
 ];

@@ -102,7 +102,6 @@ export const KIND_WORD: Record<SpanKind, string> = {
   "tool.other": "other tools",
   "tools.parallel": "parallel tools",
   git: "git",
-  "check.claim": "done-when checks",
   "wait.retry.api": "API retries",
   "wait.retry.node": "node retries",
   "run.startup": "startup",

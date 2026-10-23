@@ -179,8 +179,7 @@ risks.</p>
 </tbody>
 </table>
 <ul>
-<li><strong>Verified</strong> means the item’s PRs were merged by the merge train, and its done-when checks passed. A PR merged by
-hand doesn’t count. A lead saying “done” moves nothing.</li>
+<li><strong>Verified</strong> means the item’s PRs were merged by the merge train. A PR merged by hand doesn’t count. A lead saying “done” moves nothing.</li>
 <li><strong>In flight</strong> credit comes from stages fleetd observed itself: task started, PR open, review passed, CI green,
 merged. Time spent inside a stage adds a little more, but only while an agent or the merge train is working on it.
 While an agent waits for an answer or for a usage limit to reset, the number holds what it earned, with a
@@ -225,7 +224,7 @@ a reason (<code dir="auto">--why</code>), and status shows it next to the number
 <p>“Waiting on” follows the <a href="/docs/glossary#critical-path">critical path</a>:</p>
 <ol>
 <li>The item in progress that the most unfinished work runs through.</li>
-<li>What it still waits on, in order: earlier items, then review, CI, merge and done-when checks.</li>
+<li>What it still waits on, in order: earlier items, then review, CI and merge.</li>
 <li>The items it holds up.</li>
 </ol>
 <p>The stages, in pipeline order. “Waiting on” lists the ones left after the item’s current stage:</p>
@@ -266,8 +265,8 @@ a reason (<code dir="auto">--why</code>), and status shows it next to the number
 <td>The merge train to rebase, check and merge it.</td>
 </tr>
 <tr>
-<td>done-when checks</td>
-<td>The hub to run the work’s <a href="/docs/glossary#done-when-check">done-when checks</a>.</td>
+<td>marked done</td>
+<td>The hub to mark the item done once its PRs merged.</td>
 </tr>
 </tbody>
 </table>

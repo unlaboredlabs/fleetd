@@ -70,8 +70,7 @@ The number is **verified** work plus credit for work **in flight**, as a share o
 | ▒ shaded | In flight: partial credit for stages fleetd saw happen. |
 | ░ empty | Not started. |
 
-- **Verified** means the item's PRs were merged by the merge train, and its done-when checks passed. A PR merged by
-  hand doesn't count. A lead saying "done" moves nothing.
+- **Verified** means the item's PRs were merged by the merge train. A PR merged by hand doesn't count. A lead saying "done" moves nothing.
 - **In flight** credit comes from stages fleetd observed itself: task started, PR open, review passed, CI green,
   merged. Time spent inside a stage adds a little more, but only while an agent or the merge train is working on it.
   While an agent waits for an answer or for a usage limit to reset, the number holds what it earned, with a
@@ -110,7 +109,7 @@ Items the hub closes itself also get a marker, such as "−2 items: closed with 
 "Waiting on" follows the [critical path](/docs/glossary#critical-path):
 
 1. The item in progress that the most unfinished work runs through.
-2. What it still waits on, in order: earlier items, then review, CI, merge and done-when checks.
+2. What it still waits on, in order: earlier items, then review, CI and merge.
 3. The items it holds up.
 
 The stages, in pipeline order. "Waiting on" lists the ones left after the item's current stage:
@@ -124,7 +123,7 @@ The stages, in pipeline order. "Waiting on" lists the ones left after the item's
 | review of #212 | The review of that PR's current commit. |
 | CI on #212 | CI on the PR's current commit. |
 | merge | The merge train to rebase, check and merge it. |
-| done-when checks | The hub to run the work's [done-when checks](/docs/glossary#done-when-check). |
+| marked done | The hub to mark the item done once its PRs merged. |
 
 If the merge train can't move a PR, risks list it with the train's error. For a checkout outside the node's `cmdRoots`
 that includes the fix. If it doesn't move, see [Work is stuck](/docs/troubleshooting#stuck).

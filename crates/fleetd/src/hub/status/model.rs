@@ -36,7 +36,7 @@ pub struct StageWeights {
 
 impl Default for StageWeights {
     /// Where an item's time goes when nothing is measured yet: most of it writing (task started to first push), then
-    /// review, CI, the train and the done-when checks.
+    /// review, CI and the train.
     fn default() -> Self {
         Self::from_shares([0.0, 0.03, 0.06, 0.45, 0.52, 0.68, 0.78, 0.84, 1.0])
     }

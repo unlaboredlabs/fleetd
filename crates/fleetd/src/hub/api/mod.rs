@@ -124,8 +124,6 @@ pub struct Hub {
     pub wakes: Arc<crate::hub::wakes::Wakes>,
     pub receipts: Arc<crate::hub::receipts::Receipts>,
     pub verdicts: Arc<crate::hub::reviews::verdicts::Verdicts>,
-    pub checks: Arc<crate::hub::checks::CheckRunner>,
-    pub claims: Arc<crate::hub::checks::Claims>,
     pub ops: Arc<crate::hub::usage::wire::OpsPorts>,
     pub usage: Arc<crate::hub::usage::Usage>,
     pub doctor: Arc<crate::hub::doctor::Doctor>,
@@ -151,7 +149,6 @@ pub fn registry() -> Registry {
     crate::hub::ledger::register(&mut tools);
     crate::hub::executor::register(&mut tools);
     crate::hub::wakes::tools::register(&mut tools);
-    crate::hub::checks::tools::register(&mut tools);
     crate::hub::usage::tools::register(&mut tools);
     crate::hub::doctor::tools::register(&mut tools);
     crate::hub::approvals::tools::register(&mut tools);

@@ -206,7 +206,7 @@ pub enum OrderPhase {
     Reviewing,
     /// A Change ready, rebasing, in CI or merging.
     Merging,
-    /// The workstream checks its done-when.
+    /// Never produced now that a lead closes its work; stays until the app stops naming it.
     Verifying,
     /// Only queued lanes.
     Queued,

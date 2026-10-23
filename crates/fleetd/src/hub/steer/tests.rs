@@ -842,8 +842,8 @@ async fn the_plan_change_a_steer_made_is_the_one_tagged_with_it() {
     );
 }
 
-/// The hub tells a task's agent from the lead by the session a call names, and a task's agent may only report, ask
-/// its lead and claim done: `ask_lead` wakes the lead, and a spawn is refused with the reason.
+/// The hub tells a task's agent from the lead by the session a call names, and a task's agent may only report and
+/// ask its lead: `ask_lead` wakes the lead, and a spawn is refused with the reason.
 #[tokio::test]
 async fn a_tasks_agent_is_a_worker_its_question_wakes_the_lead_and_it_cannot_spawn() {
     use crate::hub::link::lead_calls::CallerAgent;
@@ -915,6 +915,75 @@ async fn a_tasks_agent_is_a_worker_its_question_wakes_the_lead_and_it_cannot_spa
     assert_eq!(
         ask(CallerAgent::Lead).unwrap_err().code,
         fleetd_contracts::mcp::ErrorCode::Invalid
+    );
+}
+
+/// `close` records the lead's why with `workstream.done` and stops nothing: the order's running task keeps running.
+/// Closing it again is refused, and a task's agent may not close.
+#[tokio::test]
+async fn a_lead_closes_its_work_with_why_and_nothing_is_stopped() {
+    use crate::hub::link::lead_calls::CallerAgent;
+    use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult};
+    use fleetd_contracts::ledger::WorkstreamState;
+    let lab = lab();
+    let task = running_task(&lab.hub, "p1");
+    let close = || {
+        let call: LeadCall = serde_json::from_value(
+            json!({ "op": "close", "workstreamId": "W1", "why": "the API is merged and live" }),
+        )
+        .unwrap();
+        let caller = crate::hub::link::LeadCaller {
+            project_ref: task.project_ref.clone(),
+            by: "lead:lab-a/p1".into(),
+            agent: CallerAgent::Lead,
+        };
+        let handler = lab.hub.lead_calls.handler("close").unwrap();
+        futures_util::FutureExt::now_or_never(handler.handle(caller, call)).unwrap()
+    };
+    let Ok(LeadCallResult::Close(closed)) = close() else {
+        panic!("close was not answered")
+    };
+    assert_eq!(closed.state, WorkstreamState::Done);
+    let w1 = fleetd_contracts::ledger::WorkstreamId::unchecked("W1");
+    let stored = lab.hub.leads.records.workstream_get(&w1).unwrap().unwrap();
+    assert_eq!(stored.state, WorkstreamState::Done);
+    let done: Vec<serde_json::Value> = lab
+        .hub
+        .db
+        .with(|c| {
+            let mut stmt = c.prepare(
+                "SELECT json_extract(data, '$.data') FROM events WHERE type = 'workstream.done'",
+            )?;
+            let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+            Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+        })
+        .unwrap()
+        .iter()
+        .map(|d| serde_json::from_str(d).unwrap())
+        .collect();
+    assert_eq!(
+        done,
+        [
+            json!({ "workstreamId": "W1", "reason": "the API is merged and live", "by": "lead:lab-a/p1" })
+        ]
+    );
+    let still = lab.hub.tasks.get(&task.task_id).unwrap().unwrap();
+    assert_eq!(
+        still.state,
+        fleetd_contracts::tasks::TaskState::Running,
+        "close cancels nothing"
+    );
+    assert_eq!(
+        close().unwrap_err().code,
+        fleetd_contracts::mcp::ErrorCode::Invalid,
+        "already done"
+    );
+    let worker = CallerAgent::Task(task.task_id.clone());
+    assert_eq!(
+        crate::hub::tasks::policy::check(&worker, "close")
+            .unwrap_err()
+            .code,
+        fleetd_contracts::mcp::ErrorCode::Forbidden
     );
 }
 

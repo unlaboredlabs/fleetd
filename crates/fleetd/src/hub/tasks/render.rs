@@ -125,7 +125,7 @@ pub struct PromptInput<'a> {
     pub project_title: &'a str,
     /// Absent while the workstream is a draft.
     pub brief: Option<&'a Brief>,
-    /// The brief's done-when checks as text (leads' doneWhenText with max 200).
+    /// The brief's done-when lines as text (leads' `done_when_text` with max 200).
     pub done_when: Option<String>,
     /// Write tasks: their branch and the branch it starts from.
     pub branch: Option<&'a str>,

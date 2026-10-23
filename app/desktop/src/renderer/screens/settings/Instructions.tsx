@@ -1,5 +1,5 @@
-// Settings → Instructions: your own text, appended to every lead's and task's first message (workers, reviewers
-// and judges too) under "Custom instructions from the human": the hub-wide text, then the project's. Saved with
+// Settings → Instructions: your own text, appended to every lead's and task's first message (workers and reviewers
+// too) under "Custom instructions from the human": the hub-wide text, then the project's. Saved with
 // prompt_set on the registry id `instructions`, and pinned per session like every prompt.
 import { useEffect, useState } from "react";
 import { Button, Field, Separator, Text, Textarea } from "../../ui";
@@ -95,7 +95,7 @@ export function Instructions({ route }: { route: SettingsRoute }) {
     <div className={s.scroll} data-screen="settings.instructions">
       <div className={s.column}>
         <Text tone="quiet">
-          Added to the first message of every lead and task, workers, reviewers and judges included, under "Custom instructions from the human":
+          Added to the first message of every lead and task, workers and reviewers included, under "Custom instructions from the human":
           these first, then the project's own. A running session keeps the instructions it started with; a lead gets new ones at its next
           restart.
         </Text>

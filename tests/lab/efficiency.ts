@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { type Body, MECHANICS, openWorkstream, fleetdCommand, type Lab, nodeSock, requireGhLogin, scrubbedEnv } from "./harness.ts";
-import { BASE, BRANCH_PREFIX, CLONE, checkClone, NAMESPACE, onBase, prepareCheckout, REPO, removeLabRepoProject, resetNamespace } from "./m7Train.ts";
+import { BASE, BRANCH_PREFIX, CLONE, checkClone, NAMESPACE, prepareCheckout, REPO, removeLabRepoProject, resetNamespace } from "./m7Train.ts";
 
 const MACHINE = "lab-a";
 const TURN_MS = 240_000;
@@ -57,7 +57,7 @@ async function sliceReviews(lab: Lab) {
     await lab.waitEvent("lead start turn", TURN_MS, { cursor, machineId: MACHINE, match: (e) => e.threadId === leadThread && ENDED.includes(e.type) });
 
     const w = openWorkstream(check, fleetd, "Two docs slices.");
-    const onMain = (file: string) => ({ type: "cmd", machineId: MACHINE, argv: ["gh", "api", onBase(file), "--silent"], expectExit: 0 });
+    const onMain = (file: string) => `${file} is on ${BASE}`;
     const brief = { goal: `two slices: ${dir}/one.md and ${dir}/two.md`, why: "the eff lab scenario", pointers: [], constraints: [], doneWhen: [onMain(`${dir}/one.md`), onMain(`${dir}/two.md`)] };
     const frozen = fleetd("brief", "create", "--workstream", w, "--json", JSON.stringify(brief));
     check(frozen.code === 0, `brief create ${w}: ${JSON.stringify(frozen)}`);

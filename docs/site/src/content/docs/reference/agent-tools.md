@@ -31,7 +31,7 @@ The hub checks these on every fleetd call a session makes, through its MCP tools
 | Open tasks per lead | 32 (queued, running or idle). |
 | Agents running at once, per project | The project's max agents, which a person sets (`cap_set`, the chat's Max agents); unset, the fleet cap. A spawn over it queues and starts by itself; a review goes ahead of queued writers. The lead is not an agent and doesn't count. |
 | Agents running at once, fleet-wide | The fleet cap, 40 by default. |
-| Calls a task's agent may make | `report`, `ask_lead`, `claim_done`. Every other call is refused. |
+| Calls a task's agent may make | `report`, `ask_lead`. Every other call is refused. |
 | Gated commands (`gated_run`) | Classes `irreversible`, `money`, `credential`. Run only after a human approves; at most 1800 s. |
 
 These limits cover calls to fleetd, not what the agent's own shell can do. A task runs with full Bash, so `gated_run` is not the only way it could run a command. A process that leaves its session's process tree (for example with `setsid`) and scrubs its environment counts as you, with no limits: see "Known limit" on the Security page. Run agents you don't trust as a different OS user.
@@ -47,11 +47,11 @@ Every lead gets these.
 | [`agent_status`](#agent_status) | One task as stored: state, queued reason, thread, result. | No |
 | [`list_agents`](#list_agents) | The project's tasks, newest first, optionally by state or workstream. | No |
 | [`stop_agent`](#stop_agent) | Stop a task: interrupts its thread and releases its slot. | No |
-| [`brief`](#brief) | Set a draft workstream's brief (goal, why, pointers, constraints, doneWhen checks) and start it, or edit it later. | No |
+| [`brief`](#brief) | Set a draft workstream's brief (goal, why, pointers, constraints, doneWhen lines) and start it, or edit it later. | No |
 | [`request_secret`](#request_secret) | Ask the human for a secret (a key, a token, a password). | The human enters the value in chat; you see only its fingerprint. |
 | [`request_withdraw`](#request_withdraw) | Take back a secret request or a command approval you no longer need (the human said so in chat). | No |
 | [`decide`](#decide) | Log a decision: one you made yourself, or the human's answer to a question you asked in chat (so you never ask it twice). | No |
-| [`claim_done`](#claim_done) | Claim a workstream done: fleetd runs its frozen done-when checks itself, and only all of them passing makes it done. | No |
+| [`close`](#close) | The workstream is done: say why in one line. | No |
 | [`gated_run`](#gated_run) | A prod write, spend, delete or credential use: the chat shows the human exactly this argv with Approve / Deny, and the node runs it only once approved; secrets come from the node's own sinks. | A human approves the exact command in chat before the node runs it. |
 | [`plan_milestone`](#plan_milestone) | Add a milestone to the project's plan. | No |
 | [`plan_add`](#plan_add) | Add a plan item (must or polish, size s\|m\|l, after other items). | No |
@@ -177,7 +177,7 @@ Stop a task: interrupts its thread and releases its slot.
 
 ### brief
 
-Set a draft workstream's brief (goal, why, pointers, constraints, doneWhen checks) and start it, or edit it later.
+Set a draft workstream's brief (goal, why, pointers, constraints, doneWhen lines) and start it, or edit it later.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -191,7 +191,7 @@ Set a draft workstream's brief (goal, why, pointers, constraints, doneWhen check
 | `brief.decisionRule.better` | string | yes | One of `higher`, `lower`. |
 | `brief.decisionRule.goAtLeast` | number | yes |  |
 | `brief.decisionRule.stopBelow` | number | yes |  |
-| `brief.doneWhen` | object[] | yes | At least one. At most 20 items. |
+| `brief.doneWhen` | string[] | yes | At least one. At most 20 items. |
 | `brief.goal` | string | yes | At most 1000 characters. |
 | `brief.metric` | string | no | Research: the one number the judge reports for baseline and candidate, e.g. "p50 cold start in ms". At most 200 characters. |
 | `brief.pointers` | string[] | yes | At most 20 items. |
@@ -209,10 +209,7 @@ Set a draft workstream's brief (goal, why, pointers, constraints, doneWhen check
         "No new service; use the existing Redis."
       ],
       "doneWhen": [
-        {
-          "repo": "acme/shop",
-          "type": "pr_merged"
-        }
+        "A client past its limit gets 429 with Retry-After."
       ],
       "goal": "Uploads are rate-limited per API key.",
       "pointers": [
@@ -295,21 +292,22 @@ Log a decision: one you made yourself, or the human's answer to a question you a
 }
 ```
 
-### claim_done
+### close
 
-Claim a workstream done: fleetd runs its frozen done-when checks itself, and only all of them passing makes it done. A failed claim says what failed.
+The workstream is done: say why in one line. It stops nothing; stop any agent of it you no longer need.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `closeOver` | string | no | At most 300 characters. |
+| `why` | string | yes | One line on why it is done, as the human would read it. At most 500 characters. |
 | `workstreamId` | string | yes | `W<n>`, e.g. `W1`. |
 
-**Who may call:** a lead, a task's agent, checked by the hub. **Needs a human:** no.
+**Who may call:** a lead, checked by the hub. **Needs a human:** no.
 
 ```json
 {
-  "name": "claim_done",
+  "name": "close",
   "arguments": {
+    "why": "The rate limit is merged and live.",
     "workstreamId": "W3"
   }
 }
@@ -377,7 +375,6 @@ Add a plan item (must or polish, size s|m|l, after other items). After a milesto
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `after` | string[] | no | At most 20 items. |
-| `check` | integer | no | 0 to 19. |
 | `milestoneId` | string | yes | `M<n>`, e.g. `M1`. |
 | `pr` | string | no | Like `https://github.com/<owner>/<name>/pull/<n>`. |
 | `size` | string | no | Absent: `m`, with a warning to size it. One of `s`, `m`, `l`. |
@@ -408,8 +405,6 @@ Change a plan item.
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `after` | string[] | no | Replaces the list. At most 20 items. |
-| `checkAdd` | integer[] | no | At most 20 items. |
-| `checkRemove` | integer[] | no | At most 20 items. |
 | `itemId` | string | yes | `P<n>`, e.g. `P1`. |
 | `milestoneId` | string | no | `M<n>`, e.g. `M1`. |
 | `position` | integer | no |  |
@@ -585,7 +580,6 @@ Every task's agent gets these: implementers, readers, reviewers and QA.
 |---|---|---|
 | [`report`](#report) | A reviewer records its verdict once, before its final message: the full SHA it reviewed, the number of blocking and non-blocking findings and a one-paragraph summary. | No |
 | [`ask_lead`](#ask_lead) | Ask your lead a question. | No |
-| [`claim_done`](#claim_done-task) | Claim your workstream done: fleetd runs its done-when checks itself. | No |
 
 ### report
 
@@ -634,26 +628,6 @@ Ask your lead a question. Carry on with what you can; the answer arrives as a me
   "name": "ask_lead",
   "arguments": {
     "question": "Should the limit apply to admin keys too?"
-  }
-}
-```
-
-### claim_done (task)
-
-Claim your workstream done: fleetd runs its done-when checks itself.
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `closeOver` | string | no | At most 300 characters. |
-| `workstreamId` | string | yes | `W<n>`, e.g. `W1`. |
-
-**Who may call:** a lead, a task's agent, checked by the hub. **Needs a human:** no.
-
-```json
-{
-  "name": "claim_done",
-  "arguments": {
-    "workstreamId": "W3"
   }
 }
 ```

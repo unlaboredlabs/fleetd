@@ -9,7 +9,6 @@ import {
   eventData,
   type HubEventOf,
   type AgentLane,
-  type Claim,
   type HubEvent,
   type LiveFrame,
   type LiveLane,
@@ -39,7 +38,6 @@ export interface OrderDetail {
   readonly lead?: AgentLane | undefined;
   /** Newest first. */
   readonly doneLanes: readonly AgentLane[];
-  readonly claims: readonly Claim[];
 }
 
 export interface LiveState {
@@ -391,12 +389,12 @@ export const ingest = (s: DataState, call: Ingest): DataState => {
       return { ...s, orders: byId([...kept, ...call.output.orders], (o) => o.workstreamId), trains };
     }
     case "order_get": {
-      const { order, lead, doneLanes, claims } = call.output;
+      const { order, lead, doneLanes } = call.output;
       const id = order.workstreamId;
       return {
         ...s,
         orders: s.orders === undefined ? undefined : { ...s.orders, [id]: order },
-        details: { ...s.details, [id]: { lead, doneLanes, claims: claims ?? [] } },
+        details: { ...s.details, [id]: { lead, doneLanes } },
       };
     }
     default:

@@ -110,7 +110,7 @@ pub struct Task {
     pub profile: TaskProfile,
     /// A review task spawned with `--qa`.
     pub qa: Option<bool>,
-    /// The PR a review task reviews. Required at spawn for review; absent on hub-spawned judge tasks and older rows.
+    /// The PR a review task reviews. Required at spawn for review; absent on older rows (hub-spawned judges).
     pub pr: Option<PrUrl>,
     /// The plan item it was spawned for (`--item`).
     #[serde(default)]

@@ -332,7 +332,7 @@ export type Brief = {
   /** Research: the rule the verdict is computed from. */
   decisionRule?: DecisionRule;
   /** At least one. */
-  doneWhen: CheckSpec[];
+  doneWhen: string[];
   goal: string;
   /** Research: the one number the judge reports for baseline and candidate, e.g. "p50 cold start in ms". */
   metric?: string;
@@ -612,54 +612,6 @@ export type ChatStopOutput = {
   truncated?: boolean;
 };
 
-/** `error` (the check could not run) counts as not passing. */
-export type CheckOutcome = "pass" | "fail" | "error";
-
-export type CheckResult = {
-  at: Timestamp;
-  /** 0-based index into the brief's doneWhen. */
-  checkIndex: number;
-  /** Output tail, HTTP status and body excerpt, verdict summary, or the fix when `error`. */
-  evidence: string;
-  /** Only for `cmd` checks, which the node runs. */
-  exitCode?: number;
-  ranBy: CheckResultRanBy;
-  result: CheckOutcome;
-  spec: CheckSpec;
-};
-
-export type CheckResultRanBy = "hub" | "node" | "judge" | "human";
-
-export type CheckSpec = {
-  pr?: number;
-  repo: string;
-  type: "pr_merged";
-} | {
-  ref?: string;
-  repo: string;
-  type: "ci_green";
-} | {
-  contains?: string;
-  status: number;
-  type: "http";
-  url: string;
-} | {
-  argv: string[];
-  expectExit: number;
-  machineId: MachineId;
-  type: "cmd";
-} | {
-  repo: string;
-  testId: string;
-  type: "test";
-} | {
-  criteria: string;
-  type: "judge";
-} | {
-  question: string;
-  type: "human";
-};
-
 export type Checkout = {
   machineId: MachineId;
   path: string;
@@ -707,44 +659,6 @@ export type CiMainData = {
 export type KnownCiState = "green" | "red" | "pending" | "unknown";
 /** KnownCiState, or a value from a newer hub. */
 export type CiState = KnownCiState | (string & {});
-
-export type Claim = {
-  at: Timestamp;
-  /** "lead:<machineId>/<projectId>", an agent keyId or "human". */
-  by: string;
-  claimId: ClaimId;
-  /** `pass` only when every check passed. */
-  outcome: ClaimOutcome;
-  /** In check index order. */
-  results: CheckResult[];
-  workstreamId: WorkstreamId;
-};
-
-/** `claim.passed`, `claim.failed`. */
-export type ClaimEventData = {
-  claimId: ClaimId;
-  /** claim.failed: the done-when indexes that did not pass. */
-  failing?: number[];
-  workstreamId: WorkstreamId;
-};
-
-export type ClaimId = string;
-
-export type ClaimOutcome = "pass" | "fail";
-
-export type ClaimsListInput = {
-  limit?: number;
-  outcome?: ClaimOutcome;
-  projectRef?: ProjectRef;
-  workstreamId?: WorkstreamId;
-};
-
-export type ClaimsListOutput = {
-  /** Newest first. */
-  claims: Claim[];
-  next?: string;
-  truncated?: boolean;
-};
 
 export type ClonePhase = "starting" | "receiving" | "resolving" | "checking_out" | "inspecting";
 
@@ -1272,7 +1186,6 @@ export type KnownHubEventType =
   | "task.completed"
   | "task.failed"
   | "task.cancelled"
-  | "claim.passed"
   | "steer.withdrawn"
   | "machine.slept"
   | "machine.guard"
@@ -1290,7 +1203,6 @@ export type KnownHubEventType =
   | "request.updated"
   | "task.queued"
   | "agents.cap"
-  | "claim.failed"
   | "workstream.done"
   | "review.verdict"
   | "change.queued"
@@ -1406,7 +1318,7 @@ export type InProgressRow = {
   title: string;
   /**
    * What it still waits on, in order: open items it is `after`, then its remaining stages, e.g.
-   * ["review of #12", "CI on #12", "merge", "done-when checks"].
+   * ["review of #12", "CI on #12", "merge", "marked done"].
    */
   waitingOn?: string[];
   workstreamId: WorkstreamId;
@@ -1828,8 +1740,6 @@ export type OrderGetInput = {
 
 export type OrderGetOutput = {
   /** Newest first. */
-  claims?: Claim[];
-  /** Newest first. */
   doneLanes: AgentLane[];
   /** Its project's lead (shared by every order of the project); absent when the project has none. */
   lead?: AgentLane;
@@ -2002,7 +1912,7 @@ export type PlanItem = {
   doneAt?: Timestamp;
   /** Why it was dropped. */
   dropReason?: string;
-  /** What verified it, e.g. "#212 merged by the train · check 2 passed C9". */
+  /** What verified it, e.g. "#212 merged by the train". */
   evidence?: string;
   itemId: PlanItemId;
   links?: PlanLinks;
@@ -2024,8 +1934,6 @@ export type PlanItemState = "open" | "dropped" | "done";
 
 /** What ties work to an item. An item with no links never counts done. */
 export type PlanLinks = {
-  /** Done-when indices of the item's order that must pass in its latest claim. */
-  checks?: number[];
   /** PRs listed on the item (`--pr`, or `change enqueue --item`). */
   prs?: GitHubPrUrl[];
   /** Tasks spawned with `--item`; their Changes count through `Change.task_id`. */
@@ -3173,7 +3081,6 @@ export type SpanKind =
   | "tool.web"
   | "tool.mcp"
   | "tool.other"
-  | "check.claim"
   | "wait.retry.api"
   | "wait.retry.node"
   | "run.startup"
@@ -3549,7 +3456,7 @@ export type Task = {
   kind: TaskKind;
   /** M4: its thread hit a usage limit; the task is idle until fleetd sends "continue" at `resumeAt`. */
   parked?: UsageParked;
-  /** The PR a review task reviews. Required at spawn for review; absent on hub-spawned judge tasks and older rows. */
+  /** The PR a review task reviews. Required at spawn for review; absent on older rows (hub-spawned judges). */
   pr?: string;
   /** Resolved at spawn. Rows stored with a model and effort read as `high` (the hub migrates its own). */
   profile?: TaskProfile;
@@ -4106,9 +4013,7 @@ export type WorkstreamEventData = {
   /** workstream.state: the brief was set or edited. */
   briefEdited?: boolean;
   by?: string;
-  /** workstream.state (verifying) and workstream.done: the claim that moved it. */
-  claimId?: ClaimId;
-  /** workstream.state (stopped): why, and who. */
+  /** workstream.state (stopped) and workstream.done: why, and who. */
   reason?: string;
   /** workstream.state: the new state. */
   state?: WorkstreamState;
@@ -4120,8 +4025,6 @@ export type WorkstreamGetInput = {
 };
 
 export type WorkstreamGetOutput = {
-  /** Its claims, newest first. */
-  claims?: Claim[];
   /** Active decisions scoped to it. */
   decisions: Decision[];
   next?: string;
@@ -4155,7 +4058,7 @@ export type WorkstreamSource = {
   text: string;
 };
 
-export type WorkstreamState = "draft" | "running" | "converging" | "verifying" | "done" | "stopped" | "failed";
+export type WorkstreamState = "draft" | "running" | "converging" | "done" | "stopped" | "failed" | "verifying";
 
 /** Every tool the app can `call`: its input and its output. */
 export interface ToolMap {
@@ -4171,7 +4074,6 @@ export interface ToolMap {
   chat_history: { input: ChatHistoryInput; output: ChatHistoryOutput };
   chat_send: { input: ChatSendInput; output: ChatSendOutput };
   chat_stop: { input: ChatStopInput; output: ChatStopOutput };
-  claims_list: { input: ClaimsListInput; output: ClaimsListOutput };
   decisions_record: { input: DecisionsRecordInput; output: DecisionsRecordOutput };
   decisions_search: { input: DecisionsSearchInput; output: DecisionsSearchOutput };
   doctor_fix: { input: DoctorFixInput; output: DoctorFixOutput };
@@ -4244,8 +4146,6 @@ export interface HubEventDataMap {
   "chat.message": ChatMessageEventData;
   "chat.waiting": ProjectChatState;
   "ci.main": CiMainData;
-  "claim.failed": ClaimEventData;
-  "claim.passed": ClaimEventData;
   "machine.guard": MachineGuardData;
   "machine.slept": MachineSleptData;
   "plan.changed": PlanChangedData;

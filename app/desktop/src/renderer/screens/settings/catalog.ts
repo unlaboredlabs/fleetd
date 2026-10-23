@@ -12,7 +12,7 @@ export interface CatalogGroup {
 export const GROUPS = [
   { key: "lead", title: "The lead", blurb: "Each project's lead: its role, its rules, and how it runs each kind of work." },
   { key: "tasks", title: "Task agents", blurb: "The first message of the agents that write the code." },
-  { key: "reviews", title: "Reviews and checks", blurb: "Reviewers, verifiers and the research judge." },
+  { key: "reviews", title: "Reviews and checks", blurb: "Reviewers and verifiers." },
   { key: "messages", title: "Messages", blurb: "What reaches an agent while it runs." },
   { key: "one-shots", title: "Learning from incidents", blurb: "The question fleetd asks a model, without tools, about what went wrong." },
   { key: "other", title: "Other", blurb: "Prompts this version of the app has no description for yet." },
@@ -34,8 +34,6 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   "task.brief.write": e("tasks", "Writer task", "First message of a task that changes code and opens a pull request."),
   "review.reviewer": e("reviews", "Reviewer", "Reviews a pull request each round, by the project's review rules."),
   "review.verifier": e("reviews", "Verifier", "Checks a large pull request actually does what it claims."),
-  judge: e("reviews", "Judge", "Decides whether a done-when check of a claim passed."),
-  "judge.research": e("reviews", "Research judge", "Decides whether a research claim's check passed."),
   "steer.message": e("messages", "Your steer, mid-run", "Your words (or the lead's) delivered straight to a running agent."),
 };
 

@@ -121,7 +121,6 @@ span_kinds! {
     ToolsParallel = 16, "tools.parallel", Tools;
     /// Train git, and agent Bash whose program is `git` or `gh`.
     Git = 17, "git", Tools;
-    CheckClaim = 18, "check.claim", Tools;
     WaitRetryApi = 20, "wait.retry.api", Machine;
     WaitRetryNode = 21, "wait.retry.node", Machine;
     RunStartup = 22, "run.startup", Machine;

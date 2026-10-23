@@ -1,5 +1,5 @@
-//! The status view over a real in-memory hub: plan calls and their markers, the done rule from train merges and
-//! claim results, and the docs the tools serve.
+//! The status view over a real in-memory hub: plan calls and their markers, the done rule from train merges, and the
+//! docs the tools serve.
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -100,29 +100,6 @@ fn merged_change(hub: &Hub, pr: i64) {
         .unwrap();
 }
 
-fn claim(hub: &Hub, check: i64, pass: bool) {
-    hub.db
-        .with(|c| {
-            let n: i64 = c.query_row(
-                "INSERT INTO claims (workstream_id, machine_id, project_id) VALUES ('W1', 'devbox', 'storefront') RETURNING n",
-                [],
-                |r| r.get(0),
-            )?;
-            let result = if pass { "pass" } else { "fail" };
-            let claim = json!({
-                "claimId": format!("C{n}"), "workstreamId": "W1", "by": "lead:devbox/storefront", "at": AT,
-                "outcome": result,
-                "results": [{
-                    "checkIndex": check, "spec": { "type": "ci_green", "repo": "acme/storefront" }, "result": result,
-                    "evidence": "", "ranBy": "hub", "at": AT,
-                }],
-            });
-            c.execute("UPDATE claims SET outcome = ?, data = ? WHERE n = ?", params![result, claim.to_string(), n])?;
-            Ok(())
-        })
-        .unwrap();
-}
-
 #[tokio::test]
 async fn a_scope_change_after_the_planning_window_needs_a_reason_and_writes_a_marker() {
     let clock = ManualClock::at(T0);
@@ -178,7 +155,7 @@ async fn a_scope_change_after_the_planning_window_needs_a_reason_and_writes_a_ma
 }
 
 #[tokio::test]
-async fn an_item_is_done_only_from_a_train_merge_and_its_latest_check_and_the_doc_shows_it() {
+async fn an_item_is_done_only_from_a_train_merge_and_the_doc_shows_it() {
     let clock = ManualClock::at(T0);
     let (hub, _home) = hub(clock.clone());
     let (r, by) = (project(), "lead:devbox/storefront");
@@ -189,7 +166,7 @@ async fn an_item_is_done_only_from_a_train_merge_and_its_latest_check_and_the_do
         )
         .unwrap();
     hub.plans
-        .add(&r, by, add("cart page", json!({ "workstreamId": "W1", "pr": "https://github.com/acme/storefront/pull/212", "check": 2 })))
+        .add(&r, by, add("cart page", json!({ "workstreamId": "W1", "pr": "https://github.com/acme/storefront/pull/212" })))
         .unwrap();
     hub.plans
         .add(
@@ -201,17 +178,15 @@ async fn an_item_is_done_only_from_a_train_merge_and_its_latest_check_and_the_do
             ),
         )
         .unwrap();
-    assert!(!hub.plans.verify("W1"), "no merge and no claim yet");
+    assert!(!hub.plans.verify("W1"), "no merge yet");
     merged_change(&hub, 212);
-    assert!(!hub.plans.verify("W1"), "merged, but check 2 never ran");
-    claim(&hub, 2, true);
     assert!(hub.plans.verify("W1"));
     let view = hub.plans.view(&r, None).unwrap();
     let p1 = &view.items[0];
     assert_eq!(p1.state, PlanItemState::Done);
     assert_eq!(
         p1.evidence.as_ref().unwrap().as_str(),
-        "#212 merged by the train · check 2 passed C1"
+        "#212 merged by the train"
     );
     assert_eq!(
         view.progress.pct.get(),
@@ -224,10 +199,7 @@ async fn an_item_is_done_only_from_a_train_merge_and_its_latest_check_and_the_do
     };
     let doc = hub.status.get(&hub, &person(), &scope, None).unwrap();
     assert_eq!(doc.progress.pct.get(), 100);
-    assert_eq!(
-        doc.done[0].evidence.as_str(),
-        "#212 merged by the train · check 2 passed C1"
-    );
+    assert_eq!(doc.done[0].evidence.as_str(), "#212 merged by the train");
     assert_eq!(
         doc.headline.source,
         HeadlineSource::Template,
@@ -245,23 +217,6 @@ async fn an_item_is_done_only_from_a_train_merge_and_its_latest_check_and_the_do
         "a re-render with the same content keeps the version"
     );
 
-    claim(&hub, 2, false);
-    assert!(hub.plans.verify("W1"));
-    let view = hub.plans.view(&r, None).unwrap();
-    assert_eq!(
-        view.items[0].state,
-        PlanItemState::Open,
-        "a later failing claim reopens it"
-    );
-    assert!(
-        view.markers
-            .iter()
-            .any(|m| m.kind == PlanChangeKind::Reopened)
-    );
-    let doc = hub.status.get(&hub, &person(), &scope, None).unwrap();
-    assert_eq!(doc.progress.pct.get(), 0);
-    assert!(doc.version.get() > version);
-
     hub.plans
         .close_order("W1", fleetd_contracts::ledger::WorkstreamState::Done);
     let view = hub.plans.view(&r, None).unwrap();
@@ -272,8 +227,8 @@ async fn an_item_is_done_only_from_a_train_merge_and_its_latest_check_and_the_do
     );
     assert_eq!(
         view.items[0].state,
-        PlanItemState::Open,
-        "linked items stay to be verified"
+        PlanItemState::Done,
+        "a verified item stays done"
     );
 
     let fleet = hub
@@ -469,7 +424,7 @@ async fn recompute_stays_bounded_with_two_thousand_items_and_changes() {
 }
 
 #[tokio::test]
-async fn an_item_with_no_order_is_verified_by_its_own_prs_only() {
+async fn an_item_with_no_order_is_verified_by_its_own_prs() {
     let clock = ManualClock::at(T0);
     let (hub, _home) = hub(clock.clone());
     let (r, by) = (project(), "lead:devbox/storefront");
@@ -478,9 +433,6 @@ async fn an_item_with_no_order_is_verified_by_its_own_prs_only() {
             &r,
             serde_json::from_value::<PlanMilestoneCall>(json!({ "title": "Checkout" })).unwrap(),
         )
-        .unwrap();
-    hub.plans
-        .add(&r, by, add("listed check, no order", json!({ "check": 2 })))
         .unwrap();
     hub.plans
         .add(
@@ -492,31 +444,17 @@ async fn an_item_with_no_order_is_verified_by_its_own_prs_only() {
             ),
         )
         .unwrap();
-    claim(&hub, 2, true);
     merged_change(&hub, 212);
     hub.plans.verify("W1");
     let view = hub.plans.view(&r, None).unwrap();
     assert_eq!(
         view.items[0].state,
-        PlanItemState::Open,
-        "W1's check 2 is not this item's check"
-    );
-    assert_eq!(
-        view.items[1].state,
         PlanItemState::Done,
         "its own PR merged by the train"
     );
     assert_eq!(
-        view.items[1].evidence.as_ref().unwrap().as_str(),
+        view.items[0].evidence.as_ref().unwrap().as_str(),
         "#212 merged by the train"
-    );
-    claim(&hub, 2, false);
-    hub.plans.verify("W1");
-    let view = hub.plans.view(&r, None).unwrap();
-    assert_eq!(
-        view.items[1].state,
-        PlanItemState::Done,
-        "an order's failing claim never reopens it"
     );
 }
 
@@ -702,7 +640,7 @@ async fn the_estimate_rises_with_observed_stages_and_falls_only_with_an_explaine
         .collect();
     assert_eq!(
         steps,
-        ["review of #212", "CI on #212", "merge", "done-when checks"]
+        ["review of #212", "CI on #212", "merge", "marked done"]
     );
     let text = serde_json::to_string(&d).unwrap();
     assert!(!text.contains("p50") && !text.contains("\"eta"));
@@ -863,7 +801,7 @@ async fn a_pr_held_by_the_train_shows_the_real_wait_and_the_fix() {
         .collect();
     assert_eq!(
         steps,
-        ["review of #212", "CI on #212", "merge", "done-when checks"]
+        ["review of #212", "CI on #212", "merge", "marked done"]
     );
     let stuck: Vec<_> = d
         .risks

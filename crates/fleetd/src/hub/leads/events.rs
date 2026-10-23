@@ -40,10 +40,7 @@ impl Display for AgentsLine {
 #[derive(Debug, Clone)]
 pub enum Event<'a> {
     /// A new order from the human.
-    Order {
-        workstream: &'a str,
-        text: &'a str,
-    },
+    Order { workstream: &'a str, text: &'a str },
     OrderStopped {
         workstream: &'a str,
         title: &'a str,
@@ -70,29 +67,6 @@ pub enum Event<'a> {
         kind: &'a str,
         steer: &'a str,
         text: &'a str,
-    },
-    /// `failures` are the failed checks' lines, already indented.
-    ClaimFailed {
-        claim: &'a str,
-        workstream: &'a str,
-        failures: &'a [String],
-    },
-    ClaimPassed {
-        claim: &'a str,
-        workstream: &'a str,
-    },
-    /// The checks passed, but write work of the order has not landed, so it stays open. `ids` are for tools only.
-    ClaimHeld {
-        claim: &'a str,
-        workstream: &'a str,
-        work: &'a str,
-        ids: &'a str,
-    },
-    /// The order became done some other way while write work of it had not landed; that work keeps going.
-    OrderDoneWorkKept {
-        workstream: &'a str,
-        work: &'a str,
-        ids: &'a str,
     },
     PrMerged {
         change: &'a str,
@@ -140,10 +114,7 @@ pub enum Event<'a> {
         tail: Option<&'a str>,
     },
     /// A person raised the project's max agents; queued agents have already started.
-    CapRaised {
-        max_agents: i64,
-        free: i64,
-    },
+    CapRaised { max_agents: i64, free: i64 },
 }
 
 fn quote(text: &str) -> String {
@@ -227,39 +198,6 @@ impl Event<'_> {
                 format!(
                     "- the human steered {task} ({kind}) directly ({steer}): {}",
                     quote(text)
-                ),
-                vec![],
-            ),
-            Event::ClaimFailed {
-                claim,
-                workstream,
-                failures,
-            } => (
-                format!("- claim {claim} on {workstream} failed: {workstream} stays verifying"),
-                failures.to_vec(),
-            ),
-            Event::ClaimPassed { claim, workstream } => (
-                format!("- claim {claim} on {workstream} passed: {workstream} is done"),
-                vec![],
-            ),
-            Event::ClaimHeld {
-                claim,
-                workstream,
-                work,
-                ids,
-            } => (
-                format!(
-                    "- claim {claim} on {workstream} passed, but write work that hasn't landed is still open: {work} (ids: {ids}); {workstream} stays open"
-                ),
-                vec![],
-            ),
-            Event::OrderDoneWorkKept {
-                workstream,
-                work,
-                ids,
-            } => (
-                format!(
-                    "- {workstream} is done; its write work that hadn't landed keeps going: {work} (ids: {ids})"
                 ),
                 vec![],
             ),
@@ -459,46 +397,6 @@ mod tests {
                 text: "keep the old API"
             }),
             "- the human steered T4 (write) directly (S2): \"keep the old API\""
-        );
-    }
-
-    #[test]
-    fn claim_events() {
-        let failures = vec![
-            "  done:1 (CI green on o/r): fail".to_owned(),
-            "    > red".to_owned(),
-        ];
-        assert_eq!(
-            r(Event::ClaimFailed {
-                claim: "C2",
-                workstream: "W3",
-                failures: &failures
-            }),
-            "- claim C2 on W3 failed: W3 stays verifying\n  done:1 (CI green on o/r): fail\n    > red"
-        );
-        assert_eq!(
-            r(Event::ClaimPassed {
-                claim: "C2",
-                workstream: "W3"
-            }),
-            "- claim C2 on W3 passed: W3 is done"
-        );
-        assert_eq!(
-            r(Event::ClaimHeld {
-                claim: "C2",
-                workstream: "W3",
-                work: "the review's fixes",
-                ids: "T7"
-            }),
-            "- claim C2 on W3 passed, but write work that hasn't landed is still open: the review's fixes (ids: T7); W3 stays open"
-        );
-        assert_eq!(
-            r(Event::OrderDoneWorkKept {
-                workstream: "W3",
-                work: "the review's fixes",
-                ids: "T7"
-            }),
-            "- W3 is done; its write work that hadn't landed keeps going: the review's fixes (ids: T7)"
         );
     }
 

@@ -68,7 +68,7 @@ pub struct World {
     pub repos: Vec<(String, String)>,
     /// Repos of each project's Changes, lowercased.
     pub change_repos: HashMap<String, HashSet<String>>,
-    /// Item → failed attempts (linked task failures, CI failures, failed claims of its order when it lists checks).
+    /// Item → failed attempts (linked task failures, CI failures).
     pub failures: HashMap<i64, i64>,
     /// When something first queued for a slot and is still queued.
     pub slots_queued_since: Option<i64>,
@@ -113,12 +113,11 @@ fn order_rows(c: &Connection, since_iso: &str) -> rusqlite::Result<Vec<Order>> {
     Ok(out)
 }
 
-const RECENT_TYPES: [&str; 11] = [
+const RECENT_TYPES: [&str; 10] = [
     "machine.offline",
     "machine.slept",
     "change.ci_failed",
     "task.failed",
-    "claim.failed",
     // The progress model: stage moves and the causes that may lower a figure.
     "change.state",
     "plan.changed",
@@ -304,13 +303,6 @@ fn item_failures(
                     {
                         n += 1;
                     }
-                }
-                "claim.failed"
-                    if !i.data.links.checks.is_empty()
-                        && e.pointer("/data/workstreamId").and_then(Value::as_str)
-                            == i.workstream_id.as_deref() =>
-                {
-                    n += 1;
                 }
                 _ => {}
             }
@@ -1081,7 +1073,7 @@ pub fn render(
                     workstream_id: Some(o.w.workstream_id.clone()),
                     title: line(&title),
                     done_at: ts(at),
-                    evidence: line("every done-when check passed"),
+                    evidence: line("its lead closed it"),
                 },
             ));
         } else {

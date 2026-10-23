@@ -28,7 +28,7 @@ use crate::tasks::{
     AbsolutePath, PrUrl, Task, TaskId, TaskKind, TaskPrompt, TaskState, TaskTitle, task_spawn_rule,
 };
 use crate::train::{Change, ChangeId, GitHubPrUrl};
-use crate::verification::{Claim, ClaimId, ReviewVerdict};
+use crate::verification::ReviewVerdict;
 
 /// Under the node user's home directory; mode 0600.
 pub const NODE_SOCKET_PATH: &str = ".fleetd/node/node.sock";
@@ -195,16 +195,14 @@ pub struct TaskCancelCall {
     pub reason: Option<Text<1, 200>>,
 }
 
-/// `fleetd claim done --workstream W1 [--close-over "<why>"]`. Moves the workstream to verifying and runs its
-/// done-when checks. It is refused, or the workstream stays open, while write work of it has not landed, unless
-/// `close_over` says why closing over that work is meant; that work is then dropped with this why.
-#[skip_serializing_none]
+/// `close`: the lead says a workstream is done, and why. fleetd records it and stops nothing: what still runs keeps
+/// running until the lead stops it.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct ClaimDoneCall {
+pub struct CloseCall {
     pub workstream_id: WorkstreamId,
-    #[serde(default)]
-    pub close_over: Option<Text<1, 300>>,
+    /// One line on why it is done, as the human would read it.
+    pub why: Text<1, 500>,
 }
 
 /// `fleetd change enqueue <PR URL> [--task T1] [--workstream W1]`. The workstream defaults to the task's.
@@ -274,7 +272,7 @@ pub enum LeadCall {
     TaskStatus(TaskStatusCall),
     TaskMessage(TaskMessageCall),
     TaskCancel(TaskCancelCall),
-    ClaimDone(ClaimDoneCall),
+    Close(CloseCall),
     /// `fleetd review verdict --task T4 --sha <head> --blocking 0 --non-blocking 2 --summary s`, the last step of a
     /// review task.
     ReviewVerdict(ReviewVerdict),
@@ -352,15 +350,12 @@ pub struct TaskListResult {
     pub next: Option<String>,
 }
 
-/// `claim` is present when every check finished within the call; otherwise the outcome arrives in a wake.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct ClaimDoneResult {
-    pub claim_id: ClaimId,
+pub struct CloseResult {
     pub workstream_id: WorkstreamId,
     pub state: WorkstreamState,
-    pub claim: Option<Claim>,
     pub next: Option<String>,
 }
 
@@ -402,7 +397,7 @@ pub enum LeadCallResult {
     TaskStatus(TaskResultFrame),
     TaskMessage(TaskResultFrame),
     TaskCancel(TaskResultFrame),
-    ClaimDone(ClaimDoneResult),
+    Close(CloseResult),
     ReviewVerdict(ReviewVerdictResult),
     ChangeEnqueue(ChangeResult),
     ChangeStatus(ChangeResult),

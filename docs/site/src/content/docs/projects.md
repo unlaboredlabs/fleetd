@@ -173,6 +173,6 @@ Slices are reviewed as they land: a writer reports each finished PR (`report`, k
 PR ready on GitHub. fleetd puts it on the train and starts its reviewers right away, while the writer goes on. A new
 commit is reviewed again from what changed.
 
-No gate relaxes. Every PR still gets its review and green CI and goes through the train, done is still decided
-by the done-when checks, and anything that needs your approval still waits for it. The reviewers fleetd starts count
-against the slots and the lead's limit of 32 open tasks like any task.
+No gate relaxes. Every PR still gets its review and green CI and goes through the train, and anything that needs
+your approval still waits for it. The reviewers fleetd starts count against the slots and the lead's limit of 32 open
+tasks like any task.

@@ -414,7 +414,7 @@ pub fn steps(stage: ItemStage, pr: Option<i64>, after: &[String]) -> Vec<String>
         on("review"),
         ci,
         "merge".into(),
-        "done-when checks".into(),
+        "marked done".into(),
     ];
     let k = stage.index().min(rest.len());
     if stage != ItemStage::Verified {
@@ -1047,7 +1047,7 @@ pub fn stage_phrase(stage: ItemStage) -> &'static str {
         ItemStage::PrOpen => "in review",
         ItemStage::ReviewPassed => "in CI and the train",
         ItemStage::CiGreen => "merging",
-        ItemStage::Merged => "in its done-when checks",
+        ItemStage::Merged => "being marked done",
         ItemStage::Verified | ItemStage::Unknown => "",
     }
 }

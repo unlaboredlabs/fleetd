@@ -311,7 +311,6 @@ pub fn build_on(
             requests: &requests,
             decisions: &decisions,
             lead_calls: &lead_calls,
-            claims: &checks.claims,
         },
     );
     // Before the hub takes calls: no clone the previous process started is reported as running.
@@ -343,8 +342,6 @@ pub fn build_on(
         wakes,
         receipts: checks.receipts,
         verdicts: checks.verdicts,
-        checks: checks.checks,
-        claims: checks.claims,
         ops: ops.ports,
         usage: ops.usage,
         doctor: ops.doctor,
@@ -363,7 +360,6 @@ pub fn build_on(
     });
     checks.ports.bind(&hub);
     train_host.bind(&hub);
-    hub.checks.set_time(hub.time.sink());
     crate::hub::train::calls::register_lead_calls(&hub);
     crate::hub::tasks::wire::wire(&hub, &hub_task_ports);
     wire::wire(&hub);
@@ -381,7 +377,6 @@ pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>>
     let mut loops = Vec::new();
     hub.link.start();
     loops.push(hub.watchdog.start());
-    loops.push(tokio::spawn(crate::hub::orders::idle::run(hub.clone())));
     loops.push(tokio::spawn(crate::hub::chat::flow::run(hub.clone())));
     loops.push(tokio::spawn(crate::hub::steer::run_sweep(hub.clone())));
     loops.push(hub.sweep.start(crate::hub::sweep::SWEEP_EVERY_MS));
