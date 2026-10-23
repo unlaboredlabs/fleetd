@@ -223,8 +223,6 @@ pub struct Train {
     pub(super) pushed: Mutex<HashMap<ChangeId, (String, i64)>>,
     /// Each repo and base branch's CI config and when it was read.
     ci_configs: Mutex<HashMap<(String, String), CiConfig>>,
-    /// Repos whose ready PRs wait for CI to exist, for the doctor.
-    no_ci: Mutex<HashSet<String>>,
     pub(super) sync: GithubSync,
     /// The follower and every repo loop, aborted by `stop`.
     tasks: Mutex<Vec<tokio::task::JoinHandle<()>>>,
@@ -273,7 +271,6 @@ impl Train {
             merge_refusals: Mutex::default(),
             pushed: Mutex::default(),
             ci_configs: Mutex::default(),
-            no_ci: Mutex::default(),
             sync: GithubSync::default(),
             tasks: Mutex::default(),
             lanes: Mutex::default(),
@@ -848,18 +845,20 @@ impl Train {
 
     /// Whether PRs into `base` get CI: the repo has a workflow, or `base` requires a check other than the train's own.
     /// Read as adding a project reads it, cached per repo and base; a failed read is an error, not "no CI".
-    pub(super) fn no_ci(&self, repo: &str, waits: bool) {
-        let mut repos = lock(&self.no_ci);
-        if waits {
-            repos.insert(repo.to_string());
-        } else {
-            repos.remove(repo);
-        }
-    }
-
-    /// The repos whose ready PRs wait because they have no CI, sorted.
+    /// The repos whose ready PRs wait because they have no CI, sorted, from the Changes held for it.
     pub fn repos_without_ci(&self) -> Vec<String> {
-        let mut repos: Vec<String> = lock(&self.no_ci).iter().cloned().collect();
+        let mut repos: Vec<String> = self
+            .records
+            .trains()
+            .into_iter()
+            .map(|t| t.repo)
+            .filter(|repo| {
+                self.records
+                    .in_train(repo, &[ChangeState::Ready])
+                    .iter()
+                    .any(|c| c.last_error.as_deref() == Some(super::batch::NO_CI))
+            })
+            .collect();
         repos.sort();
         repos
     }

@@ -213,9 +213,7 @@ impl Train {
                 Some(HELD)
             } else {
                 // A read that failed is not "no CI": the head's checks decide, as for any repo.
-                let no_ci = matches!(self.has_ci(repo, &pull.base.ref_).await, Ok(false));
-                self.no_ci(repo, no_ci);
-                no_ci.then_some(NO_CI)
+                matches!(self.has_ci(repo, &pull.base.ref_).await, Ok(false)).then_some(NO_CI)
             };
             let shown = change.last_error.as_deref();
             if hold != shown && (hold.is_some() || shown == Some(HELD) || shown == Some(NO_CI)) {
