@@ -976,7 +976,7 @@ pub fn disk_space(
     if free < min {
         let fix = manual(
             &format!(
-                "Free disk space on {machine_id}: a task's worktree goes once its PR merges or it is stopped"
+                "Free disk space on {machine_id}: a writer's worktree goes once its PR merges"
             ),
             None,
         );

@@ -2067,8 +2067,9 @@ impl SessionService {
             && let (Some(base_ref), Some(branch)) = (row.local.base_ref, row.local.branch)
         {
             let (root, path) = (row.local.workspace_root, row.local.cwd);
-            let deleted =
-                blocking(move || worktree::remove(&root, &path, &branch, &base_ref)).await?;
+            let deleted = blocking(move || worktree::remove(&root, &path, &branch, &base_ref))
+                .await
+                .inspect_err(|e| tracing::warn!(session_id = id, "worktree not removed: {e:?}"))?;
             self.update(id, |c| {
                 c.row.summary.worktree_path = None;
                 if deleted {

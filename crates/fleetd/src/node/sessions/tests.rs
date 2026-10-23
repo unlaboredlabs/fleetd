@@ -886,6 +886,12 @@ async fn a_removed_worktree_comes_back_at_the_same_path_when_the_session_resumes
         .await;
     assert!(matches!(changes, SessionOutput::Changes(c) if c.paths == ["draft.txt", "work.txt"]));
 
+    // Removal waits until nothing exists only here: no draft, and the work pushed.
+    std::fs::remove_file(path.join("draft.txt")).unwrap();
+    git(
+        &path,
+        &["update-ref", "refs/remotes/origin/fleetd/s1", "HEAD"],
+    );
     hub.ok(SessionCall::Stop {
         session_id: ThreadId::unchecked("s1"),
         remove_worktree: true,

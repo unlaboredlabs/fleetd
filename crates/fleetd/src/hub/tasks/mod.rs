@@ -1396,7 +1396,6 @@ impl Tasks {
             )
         })();
         done.map_err(store_error)?;
-        self.remove_worktree(&next);
         self.retry_queue().await;
         Ok(next)
     }
@@ -1421,7 +1420,7 @@ impl Tasks {
     }
 
     /// Has the node delete a writer's worktree, and the build output in it, off the lock. A node that can't (offline,
-    /// a git error) leaves it, logged.
+    /// a git error, or work that exists only there) leaves it, logged.
     fn remove_worktree(self: &Arc<Self>, task: &Task) {
         let (TaskKind::Write, Some(thread)) = (task.kind, task.thread_ref.clone()) else {
             return;
