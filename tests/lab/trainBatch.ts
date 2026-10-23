@@ -94,8 +94,13 @@ export async function trainBatch(lab: Lab) {
     });
 
     gh("label", "create", "hold", "-R", REPO, "--force", "--description", "fleetd's train holds this PR");
+    // One GraphQL request for every PR: removed one `gh pr edit` at a time, a train pass between two of them batches
+    // only the PRs released so far.
+    const holdLabel = ghJson<Body>("api", `repos/${REPO}/labels/hold`).node_id as string;
     const release = (prs: ReadonlyArray<Pr>) => {
-      for (const pr of prs) gh("pr", "edit", pr.url, "--remove-label", "hold");
+      const ids = prs.map((pr) => ghJson<Body>("api", `repos/${REPO}/pulls/${pr.number}`).node_id as string);
+      const removals = ids.map((id, i) => `r${i}: removeLabelsFromLabelable(input: {labelableId: "${id}", labelIds: ["${holdLabel}"]}) { clientMutationId }`);
+      gh("api", "graphql", "-f", `query=mutation { ${removals.join(" ")} }`);
     };
     const changeOf = async (pr: Pr) =>
       ((await callTool("changes_list", { projectRef: ref, limit: 100 })).body.changes as Array<Body>).find((c) => c.prNumber === pr.number);

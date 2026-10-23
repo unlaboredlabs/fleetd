@@ -70,7 +70,7 @@ export async function desktopOffline(lab: Lab) {
     return t?.startsWith("Offline, as of") === true ? t : undefined;
   });
   check(banner.includes("Retry now"), `the banner has Retry now: ${banner}`);
-  const header = (await text('[data-screen="chat"] header')) ?? "";
+  const header = (await text('header')) ?? "";
   check(header.includes("Offline, as of"), `the chat header says offline: ${header}`);
   check((await text('[data-screen="chat"]'))?.includes(ASK) === true, "the chat stays on screen");
   await app.eval(`(() => {
@@ -92,7 +92,7 @@ export async function desktopOffline(lab: Lab) {
   app = await launch(lab, "app", port, hub, false);
   await openChat();
   check((await app.eval<number>(`document.querySelectorAll('[data-receipt="queued"]').length`)) === 1, "the queued message came back from the cache");
-  await until("the relaunched app's offline mark", 60_000, async () => ((await text('[data-screen="chat"] header'))?.includes("Offline, as of") ? true : undefined));
+  await until("the relaunched app's offline mark", 60_000, async () => ((await text('header'))?.includes("Offline, as of") ? true : undefined));
   ok("3. relaunched with no hub: the chat and the queued message came back from the disk cache, marked offline");
 
   // 4.
@@ -104,7 +104,7 @@ export async function desktopOffline(lab: Lab) {
   check(mine.length === 1 && typeof mine[0]?.clientRequestId === "string", `the hub holds the queued message once: ${JSON.stringify(mine)}`);
   // Connected, the chat stays marked "Last known" until it is read again, never shown as current before that.
   await until("the chat read again", 60_000, async () => {
-    const header = await text('[data-screen="chat"] header');
+    const header = await text('header');
     return header !== null && !header.includes("Offline") && !header.includes("Last known") ? true : undefined;
   });
   check((await blanks()).length === 0, `the chat never went blank through the reconnect: ${JSON.stringify(await blanks())}`);

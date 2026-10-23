@@ -187,9 +187,10 @@ export async function desktopShell(lab: Lab) {
   const pairPort = slotPort(DEVTOOLS[1]);
   let pairing = await launch(lab, "pairing", pairPort, null);
   // Every subscriber starts from the current state, and main pushes each change.
-  const lastState = async () => (await pairing.eval<Array<Body>>("window.__frames")).findLast((f) => f.t === "state")?.state as Body;
-  const phase = async () => (await lastState()).phase as string;
-  check((await phase()) === "unpaired", "a fresh home starts unpaired");
+  const lastState = async () => (await pairing.eval<Array<Body>>("window.__frames")).findLast((f) => f.t === "state")?.state as Body | undefined;
+  const phase = async () => (await lastState())?.phase as string | undefined;
+  // The subscribe is an IPC round trip, so the first state frame lands just after `launch` returns.
+  await until("a fresh home starts unpaired", 10_000, async () => ((await phase()) === "unpaired" ? true : undefined));
   const unpairedCall = await pairing.eval<Body>(`window.fleetd.hub.call("fleetd_status", {})`);
   check(unpairedCall.ok === false && unpairedCall.error.code === "offline", `a call while unpaired: ${JSON.stringify(unpairedCall)}`);
   const badUrl = await pairing.eval<Body>(`window.fleetd.hub.connect("ftp://hub", "k")`);
@@ -197,7 +198,7 @@ export async function desktopShell(lab: Lab) {
   await pairing.eval(`window.fleetd.hub.connect(${JSON.stringify(lab.hubUrl)}, "fld_${"a".repeat(26)}")`);
   const refused = await until("the refused state", 30_000, async () => {
     const state = await lastState();
-    return state.phase === "refused" ? state : undefined;
+    return state?.phase === "refused" ? state : undefined;
   });
   ok(`refused key: "${refused.message}"`);
   await pairing.eval(`window.fleetd.hub.connect(${JSON.stringify(lab.hubUrl)}, ${JSON.stringify(lab.key)})`);
