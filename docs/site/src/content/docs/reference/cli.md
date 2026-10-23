@@ -404,12 +404,12 @@ fleetd decisions search "<query>"
 ### fleetd task spawn {#task-spawn}
 
 ```text
-fleetd task spawn --workstream <W> --title <t> --prompt <p> [--kind write|read|review] [--areas a,b]
+fleetd task spawn --workstream <W> --title <t> --prompt <p> [--kind write|read|review]
     [--model <m>] [--effort low|medium|high|max] [--tier S|M|L]
     [--serves done:<n>|issue:<ref>|defect:<text>|decision:<key>] [--pr <url>] [--qa] [--item P<n>]
 ```
 
-delegate work to a subagent; writers need `--areas` and `--serves` and get their own branch; a review task needs `--pr`, and `--qa` marks it a QA run; `--item` links it to that plan item
+delegate work to a subagent; writers need `--serves` and get their own branch; a review task needs `--pr`, and `--qa` marks it a QA run; `--item` links it to that plan item
 
 ### fleetd task list {#task-list}
 

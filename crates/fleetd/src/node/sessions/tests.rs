@@ -83,7 +83,6 @@ fn launch(id: &str, mode: RuntimeMode, workspace: SessionWorkspace) -> SessionCa
         run_id: NonEmpty::unchecked("r1"),
         allowed_tools: vec!["Bash(npm test:*)".into()],
         disallowed_tools: vec!["WebFetch".into()],
-        auto_memory: false,
         role: fleetd_contracts::sessions::SessionRole::Worker,
     })
 }
@@ -190,54 +189,6 @@ fn sessions_share_one_compile_cache_when_sccache_is_installed() {
         compile_cache_env(&[path(dir.path()), own]).is_empty(),
         "a wrapper from claude.env wins"
     );
-}
-
-#[tokio::test]
-async fn a_project_that_opts_into_auto_memory_gets_neither_knob() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().join("project");
-    std::fs::create_dir_all(&root).unwrap();
-    std::fs::write(
-        dir.path().join("claude.env"),
-        "CLAUDE_CODE_DISABLE_AUTO_MEMORY=0\n",
-    )
-    .unwrap();
-    let mut hub = hub(
-        dir.path(),
-        NodeStore::open_memory(10_000).unwrap(),
-        FakeRunner::fixture("init-partial-two-turns"),
-    )
-    .await;
-    hub.project(&root).await;
-    let SessionCall::Launch(mut opted_in) =
-        launch("s1", RuntimeMode::FullAccess, SessionWorkspace::Root)
-    else {
-        unreachable!()
-    };
-    opted_in.auto_memory = true;
-    hub.ok(SessionCall::Launch(opted_in)).await;
-    hub.settled("r1").await;
-    let spec = &hub.runner.spawned()[0];
-    let overlay: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(spec.settings.as_ref().unwrap()).unwrap())
-            .unwrap();
-    assert_eq!(overlay.get("autoMemoryEnabled"), None);
-    assert_eq!(overlay["env"].get("CLAUDE_CODE_DISABLE_AUTO_MEMORY"), None);
-    // The user's own value passes through untouched.
-    let ours: Vec<_> = spec
-        .env
-        .iter()
-        .filter(|(k, _)| k == "CLAUDE_CODE_DISABLE_AUTO_MEMORY")
-        .collect();
-    assert_eq!(
-        ours,
-        [&("CLAUDE_CODE_DISABLE_AUTO_MEMORY".to_owned(), "0".to_owned())]
-    );
-    // Its memory dir is the project's choice, not a broken knob.
-    let SessionOutput::RunnerInfo(info) = hub.ok(SessionCall::RunnerInfo).await else {
-        panic!("no runner info")
-    };
-    assert_eq!(info.auto_memory, None);
 }
 
 #[tokio::test]

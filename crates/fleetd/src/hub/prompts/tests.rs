@@ -9,7 +9,7 @@ use crate::hub::intake::auto_start_tests::hub;
 
 #[tokio::test(flavor = "current_thread")]
 async fn a_running_lead_keeps_its_texts_and_an_edit_reaches_the_next_session() {
-    let hub = hub(true, true);
+    let hub = hub(true);
     let db = hub.area.ctx.db.clone();
     let prompts = db.prompts();
     let defaults = PromptSet::defaults();

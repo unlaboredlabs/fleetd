@@ -909,32 +909,6 @@ pub fn cmd_roots(machine_id: &str, refused: &[(String, String)]) -> Entry {
     )
 }
 
-/// Each project's writer areas, for reading: writers in different areas run at once, so a project with one area
-/// runs its writers one at a time, which the line says. Never a warning: one area suits a small repo.
-pub fn areas(machine_id: &str, projects: &[super::service::ProjectAreas]) -> Entry {
-    let line = |p: &super::service::ProjectAreas| {
-        let source = if p.inferred {
-            "inferred from the repo"
-        } else {
-            "from .fleetd/policy.yaml"
-        };
-        let one = if p.areas.len() <= 1 {
-            "; one area, so writers run one at a time"
-        } else {
-            ""
-        };
-        format!("{}: {} ({source}{one})", p.title, p.areas.join(", "))
-    };
-    let listed = projects.iter().map(line).collect::<Vec<_>>().join("; ");
-    machine_entry(
-        machine_id,
-        "areas",
-        Pass,
-        &format!("Writer areas: {listed}."),
-        None,
-    )
-}
-
 /// Free space where the node's worktrees live, from its heartbeat, and whether the guard holds new agents there.
 pub fn disk_space(
     machine_id: &str,
@@ -988,27 +962,6 @@ pub fn disk_space(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn areas_list_each_project_and_say_when_one_area_serializes_its_writers() {
-        use super::super::service::ProjectAreas;
-        let shop = ProjectAreas {
-            title: "storefront".into(),
-            areas: vec!["all".into(), "docs".into(), "web".into()],
-            inferred: true,
-        };
-        let one = ProjectAreas {
-            title: "billing".into(),
-            areas: vec!["all".into()],
-            inferred: false,
-        };
-        let check = areas("devbox", &[shop, one]).check;
-        assert_eq!((check.id.as_str(), check.status), ("devbox/areas", Pass));
-        assert_eq!(
-            check.message,
-            "Writer areas: storefront: all, docs, web (inferred from the repo); billing: all (from .fleetd/policy.yaml; one area, so writers run one at a time)."
-        );
-    }
 
     #[test]
     fn a_project_outside_cmd_roots_fails_with_the_fix() {

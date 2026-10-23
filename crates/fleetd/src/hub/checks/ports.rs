@@ -48,7 +48,7 @@ pub struct HumanConfirmation {
     pub at_ms: i64,
 }
 
-/// A review task the hub spawns for a `judge` check (by = "hub:judge", areas none).
+/// A review task the hub spawns for a `judge` check (by = "hub:judge").
 #[derive(Debug, Clone, PartialEq)]
 pub struct JudgeSpawn {
     pub project_ref: ProjectRef,

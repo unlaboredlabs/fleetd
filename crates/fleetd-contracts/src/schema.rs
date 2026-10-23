@@ -93,7 +93,7 @@ fn hub_event_data_document_for(side: Side) -> Value {
         data!(WorkstreamEventData: WorkstreamCreated, WorkstreamRunning, WorkstreamState, WorkstreamDone);
         data!(WorkstreamNoteData: WorkstreamNote);
         data!(RequestEventData: RequestOpened, RequestUpdated);
-        data!(TaskEventData: TaskQueued, TaskStarted, TaskCompleted, TaskFailed, TaskCancelled, TaskOutOfArea);
+        data!(TaskEventData: TaskQueued, TaskStarted, TaskCompleted, TaskFailed, TaskCancelled);
         data!(AgentsCapData: AgentsCap);
         data!(ClaimEventData: ClaimPassed, ClaimFailed);
         data!(TrainEventData: ChangeQueued, ChangeReady, ChangeNeedsRebase, ChangeCiFailed, ChangeRefused, PrMerged,

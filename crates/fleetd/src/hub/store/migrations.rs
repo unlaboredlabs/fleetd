@@ -452,4 +452,9 @@ pub(crate) const MIGRATIONS: &[&str] = &[
     r#"
   DELETE FROM status_series;
   "#,
+    // Area leases went: writers share a repo. Their events go too, as no reader decodes them.
+    r#"
+  DROP TABLE IF EXISTS leases;
+  DELETE FROM events WHERE type IN ('lease.stale', 'task.out_of_area');
+  "#,
 ];

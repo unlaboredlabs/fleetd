@@ -919,7 +919,7 @@ fn set_writer(hub: &Hub, task: &str, state: &str) {
     let at = iso_ms_of(now);
     let row = json!({
         "taskId": task, "projectRef": { "machineId": "devbox", "projectId": "storefront" }, "workstreamId": "W1",
-        "title": "cart page", "kind": "write", "prompt": "Build the cart page.", "areas": ["web"],
+        "title": "cart page", "kind": "write", "prompt": "Build the cart page.",
         "model": "claude-opus-5-5", "effort": "high", "itemId": "P1", "state": state, "attempt": 1,
         "createdAt": iso_ms_of(T0 as i64), "startedAt": iso_ms_of(T0 as i64),
     });
@@ -1099,8 +1099,13 @@ async fn an_update_releases_a_figure_the_old_rule_left_stuck() {
         "held: nothing since that point explains a fall"
     );
     let version = db.user_version().unwrap();
+    // Back to just before the migration that restarts the series; the later ones run again too.
+    let before = crate::hub::store::migrations::MIGRATIONS
+        .iter()
+        .position(|m| m.contains("DELETE FROM status_series;"))
+        .unwrap();
     db.with(|c| {
-        c.pragma_update(None, "user_version", version - 1)?;
+        c.pragma_update(None, "user_version", before as i64)?;
         Ok(())
     })
     .unwrap();

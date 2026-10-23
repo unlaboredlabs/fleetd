@@ -131,6 +131,7 @@ span_kinds! {
     /// A write waiting in the hub's queue for an offline machine.
     WaitOffline = 25, "wait.offline", Machine;
     QueueSlot = 30, "queue.slot", Queue;
+    /// Older hubs only: a writer waiting for an area lease. Kept so their spans still read.
     QueueLease = 31, "queue.lease", Queue;
     QueueUsage = 32, "queue.usage", Queue;
     QueueOffline = 33, "queue.offline", Queue;
@@ -539,7 +540,7 @@ pub enum InsightRule {
     /// Serial waits: work that waited while capacity existed. A task queued for a slot while the fleet had free
     /// ones (a project's max agents, the lead band), or a PR that waited out another PR's train cycle.
     QueueWait,
-    /// Tasks serialized on one shared resource: an area lease, or one machine's usage limit.
+    /// Tasks serialized on one machine's usage limit.
     Contention,
     /// A lead was idle while its running order had a plan item ready to start and slots were free.
     IdleLead,

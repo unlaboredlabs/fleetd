@@ -262,18 +262,16 @@ fn mcp_config(role: SessionRole, sock: &Path, session_id: &str) -> String {
     format!("{}\n", serde_json::json!({ "mcpServers": servers }))
 }
 
-pub fn settings_overlay(auto_memory: bool) -> String {
+pub fn settings_overlay() -> String {
     let mut env = subagents_off_settings_env();
     env.insert("DISABLE_AUTOUPDATER".into(), "1".into());
-    let mut overlay = serde_json::json!({
+    let (key, value) = AUTO_MEMORY_OFF_ENV;
+    env.insert(key.into(), value.into());
+    let overlay = serde_json::json!({
         "env": env,
         "permissions": { "deny": ALWAYS_DISALLOWED },
+        "autoMemoryEnabled": false,
     });
-    if !auto_memory {
-        let (key, value) = AUTO_MEMORY_OFF_ENV;
-        overlay["env"][key] = value.into();
-        overlay["autoMemoryEnabled"] = false.into();
-    }
     format!("{overlay}\n")
 }
 
@@ -1153,7 +1151,6 @@ impl SessionService {
                 pid_start: None,
                 allowed_tools: launch.allowed_tools.clone(),
                 disallowed_tools: launch.disallowed_tools.clone(),
-                auto_memory: launch.auto_memory,
                 role: launch.role,
             },
         };
@@ -1385,7 +1382,7 @@ impl SessionService {
         let sock = super::lead::lead_socket_path(&config.home);
         std::fs::write(&mcp, mcp_config(row.local.role, &sock, id))?;
         let settings = dir.join("settings.json");
-        std::fs::write(&settings, settings_overlay(row.local.auto_memory))?;
+        std::fs::write(&settings, settings_overlay())?;
         let transcripts = config.home.join("transcripts");
         super::config::mkdir_private(&transcripts)?;
         let transcript = transcripts.join(format!("{id}.jsonl"));
@@ -1403,11 +1400,9 @@ impl SessionService {
                 row.summary.project_id.to_string(),
             ),
         ]);
-        if !row.local.auto_memory {
-            let (key, value) = AUTO_MEMORY_OFF_ENV;
-            env.retain(|(k, _)| k != key);
-            env.push((key.to_owned(), value.to_owned()));
-        }
+        let (key, value) = AUTO_MEMORY_OFF_ENV;
+        env.retain(|(k, _)| k != key);
+        env.push((key.to_owned(), value.to_owned()));
         env.extend(compile_cache_env(&env));
         Ok(SessionSpec {
             session_id: id.to_owned(),
@@ -1642,16 +1637,13 @@ impl SessionService {
                         );
                     }
                     self.health_changed(|h| h.subagents_seen(subagent_leaks));
-                    // A project that opted back in proves nothing about fleetd's knobs.
-                    if !self.session(&id).is_ok_and(|row| row.local.auto_memory) {
-                        if auto_memory {
-                            tracing::warn!(
-                                session = %id,
-                                "claude kept its auto memory on despite CLAUDE_CODE_DISABLE_AUTO_MEMORY and autoMemoryEnabled"
-                            );
-                        }
-                        self.health_changed(|h| h.auto_memory_seen(auto_memory));
+                    if auto_memory {
+                        tracing::warn!(
+                            session = %id,
+                            "claude kept its auto memory on despite CLAUDE_CODE_DISABLE_AUTO_MEMORY and autoMemoryEnabled"
+                        );
                     }
+                    self.health_changed(|h| h.auto_memory_seen(auto_memory));
                 }
             }
         }

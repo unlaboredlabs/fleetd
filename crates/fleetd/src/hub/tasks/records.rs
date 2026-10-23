@@ -11,7 +11,7 @@ use super::TaskFilter;
 #[derive(Clone, Debug)]
 pub struct StoredTask {
     pub task: Task,
-    /// A `task message` that waits for a slot or lease before it goes out.
+    /// A `task message` that waits for a slot before it goes out.
     pub pending_message: Option<String>,
 }
 

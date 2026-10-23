@@ -73,10 +73,6 @@ fn queued_reasons_read_as_plain_words() {
         "at this project's max of 3 agents"
     );
     assert_eq!(
-        plain_reason("lease: docs held by T1, hub held by T2"),
-        "waiting for another agent working in docs, hub"
-    );
-    assert_eq!(
         plain_reason("usage limit: resumes 14:05"),
         "usage limit: resumes 14:05"
     );
@@ -255,7 +251,7 @@ mod over_a_hub {
                     let mut data = json!({
                         "taskId": format!("T{n}"), "projectRef": { "machineId": machine, "projectId": id },
                         "workstreamId": "W1", "title": format!("Task {n}"), "kind": "write", "prompt": "do it",
-                        "areas": ["app"], "model": "claude-haiku-5-5", "effort": "low", "state": state,
+                        "model": "claude-haiku-5-5", "effort": "low", "state": state,
                         "attempt": 1, "createdAt": AT, "startedAt": format!("2026-10-22T10:0{n}:00.000Z"),
                     });
                     if let (serde_json::Value::Object(d), serde_json::Value::Object(e)) = (&mut data, extra) {

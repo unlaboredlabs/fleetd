@@ -20,12 +20,6 @@ lanes and time.
 An item in the chat that shows a [gated command](#gated-command) with Approve and Deny. See
 [Secrets & approvals](/docs/approvals-and-secrets#approve).
 
-## Area {#area}
-
-A named set of paths in a project, such as `docs: ["docs/**"]`. A writer task may only touch the areas it leases, and
-writers in different areas run at the same time. fleetd [infers them from the repo](/docs/config-and-files#inferred-areas)
-unless the [policy file](/docs/config-and-files#policy) sets them.
-
 ## Brief {#brief}
 
 The plan a lead writes for a piece of work before it starts: what to build, and the done-when checks that prove it.
@@ -107,7 +101,7 @@ The instructions a lead follows for a kind of work: a feature, a fix, research, 
 
 ## Policy file {#policy-file}
 
-`.fleetd/policy.yaml` in a project's repo. It sets areas, tool rules and lead options. See
+`.fleetd/policy.yaml` in a project's repo. It sets the tasks' model, tool rules and the branch prefix. See
 [Config & files](/docs/config-and-files#policy).
 
 ## Project {#project}

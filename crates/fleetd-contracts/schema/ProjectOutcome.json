@@ -1,10 +1,5 @@
 {
   "$defs": {
-    "AreaName": {
-      "description": "Lowercase slug, [a-z0-9][a-z0-9_-]*, at most 40",
-      "pattern": "^[a-z0-9][a-z0-9_-]*$",
-      "type": "string"
-    },
     "Brief": {
       "properties": {
         "baseline": {
@@ -608,14 +603,6 @@
     },
     "Task": {
       "properties": {
-        "areas": {
-          "items": {
-            "$ref": "#/$defs/AreaName"
-          },
-          "maxItems": 20,
-          "type": "array",
-          "uniqueItems": true
-        },
         "attempt": {
           "description": "1 for the first launch.",
           "maximum": 9007199254740991,
@@ -673,7 +660,7 @@
           "type": "boolean"
         },
         "queuedReason": {
-          "description": "Why it is queued, e.g. \"lease: docs held by T1\" or \"slots: 40/40 in use\".",
+          "description": "Why it is queued, e.g. \"slots: 40/40 in use\".",
           "maxLength": 200,
           "minLength": 1,
           "type": "string"
@@ -721,7 +708,6 @@
         "title",
         "kind",
         "prompt",
-        "areas",
         "model",
         "effort",
         "state",
@@ -779,7 +765,7 @@
       "type": "string"
     },
     "TaskKind": {
-      "description": "Only write tasks get a worktree and leases.",
+      "description": "Only write tasks get a worktree.",
       "enum": [
         "write",
         "read",

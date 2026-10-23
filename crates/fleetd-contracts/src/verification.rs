@@ -114,6 +114,7 @@ pub enum IncidentClass {
     PolishLoop,
     /// Retired with the questions tool. Kept so older incidents still read.
     MisfiledAsk,
+    /// Retired with area leases. Kept so older incidents still read.
     OutOfArea,
     Stall,
     PolicyBypass,

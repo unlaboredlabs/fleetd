@@ -215,13 +215,6 @@ fn describe(inspect: &Value) -> String {
         .map(|r| format!(", rulesets: {r}"))
         .unwrap_or_default();
     lines.push(format!("Merge: {protected}, {squash}{rulesets}"));
-    if let Some(areas) = list("/areas") {
-        let source = match inspect.get("areasInferred").and_then(Value::as_bool) {
-            Some(true) => " (inferred from the repo)",
-            _ => " (from .fleetd/policy.yaml)",
-        };
-        lines.push(format!("Areas{source}: {areas}"));
-    }
     for note in inspect
         .get("notes")
         .and_then(Value::as_array)
@@ -768,20 +761,6 @@ fn finish(out: &Out) -> Result<(), Stop> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn describe_names_the_areas_and_where_they_come_from() {
-        let inspect = serde_json::json!({
-            "leadNeeds": "ready",
-            "areas": ["all", "docs", "hub"],
-            "areasInferred": true,
-        });
-        assert!(describe(&inspect).ends_with("\nAreas (inferred from the repo): all, docs, hub"));
-        let set =
-            serde_json::json!({ "leadNeeds": "ready", "areas": ["docs"], "areasInferred": false });
-        assert!(describe(&set).ends_with("\nAreas (from .fleetd/policy.yaml): docs"));
-        assert!(!describe(&serde_json::json!({ "leadNeeds": "ready" })).contains("Areas"));
-    }
 
     #[test]
     fn paths_resolve_like_a_shell() {

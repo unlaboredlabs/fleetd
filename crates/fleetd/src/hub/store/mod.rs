@@ -5,7 +5,7 @@
 mod db;
 mod event_log;
 mod hub_store;
-mod migrations;
+pub(crate) mod migrations;
 
 #[cfg(test)]
 pub(crate) mod test_clock;

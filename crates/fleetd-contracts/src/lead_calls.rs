@@ -26,8 +26,7 @@ use crate::prim::{Count, Line, List, NonEmpty, NonNegative, Text};
 use crate::secrets::SecretSink;
 use crate::steer::SteerId;
 use crate::tasks::{
-    AbsolutePath, PrUrl, Task, TaskAreas, TaskId, TaskKind, TaskPrompt, TaskState, TaskTitle,
-    task_areas_rule, task_spawn_rule,
+    AbsolutePath, PrUrl, Task, TaskId, TaskKind, TaskPrompt, TaskState, TaskTitle, task_spawn_rule,
 };
 use crate::train::{Change, ChangeId, GitHubPrUrl};
 use crate::verification::{Claim, ClaimId, ReviewVerdict};
@@ -139,7 +138,7 @@ fn default_task_kind() -> TaskKind {
     TaskKind::Write
 }
 
-/// `fleetd task spawn --workstream W1 --title t --prompt p [--kind write|read|review] [--areas a,b] [--model m]
+/// `fleetd task spawn --workstream W1 --title t --prompt p [--kind write|read|review] [--model m]
 /// [--effort e] [--tier S|M|L] [--serves s] [--pr <url>] [--qa]`. Absent model and effort resolve
 /// from the policy file, then the project, then claude-opus-5-5/high. A write task needs `--serves`, a review task
 /// `--pr`; `--qa` marks a review task as a QA run.
@@ -152,8 +151,6 @@ pub struct TaskSpawnCall {
     #[serde(default = "default_task_kind")]
     pub kind: TaskKind,
     pub prompt: TaskPrompt,
-    #[serde(default)]
-    pub areas: TaskAreas,
     pub model: Option<NonEmpty>,
     pub effort: Option<Effort>,
     pub tier: Option<Tier>,
@@ -165,10 +162,12 @@ pub struct TaskSpawnCall {
     /// `--item P<n>`: the plan item this task works on; refused when it belongs to another order.
     pub item: Option<PlanItemId>,
 }
-checked!(TaskSpawnCall, |call| {
-    task_areas_rule(call.kind, call.areas.len())?;
-    task_spawn_rule(call.kind, call.serves.is_some(), call.qa, call.pr.is_some())
-});
+checked!(TaskSpawnCall, |call| task_spawn_rule(
+    call.kind,
+    call.serves.is_some(),
+    call.qa,
+    call.pr.is_some()
+));
 
 /// `fleetd task list [--state s] [--workstream W1]`, within the calling project.
 #[skip_serializing_none]
@@ -198,7 +197,7 @@ pub struct TaskMessageCall {
     pub now: bool,
 }
 
-/// `fleetd task cancel T1 [--reason r]`. Interrupts the thread and releases its slot and leases.
+/// `fleetd task cancel T1 [--reason r]`. Interrupts the thread and releases its slot.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -554,14 +553,11 @@ mod tests {
 
     #[test]
     fn task_spawn_defaults_to_write_and_runs_its_rules() {
-        let spawn = serde_json::json!({ "op": "task_spawn", "workstreamId": "W1", "title": "t", "prompt": "p", "areas": ["docs"], "serves": "done:0" });
+        let spawn = serde_json::json!({ "op": "task_spawn", "workstreamId": "W1", "title": "t", "prompt": "p", "serves": "done:0" });
         let LeadCall::TaskSpawn(task) = call(spawn.clone()).unwrap() else {
             panic!("not a spawn")
         };
         assert_eq!(task.kind, TaskKind::Write);
-        let mut no_areas = spawn.clone();
-        no_areas.as_object_mut().unwrap().remove("areas");
-        assert!(call(no_areas).is_err(), "a write task needs an area");
         let mut qa = spawn;
         qa["qa"] = true.into();
         assert!(call(qa).is_err(), "--qa applies only to review");

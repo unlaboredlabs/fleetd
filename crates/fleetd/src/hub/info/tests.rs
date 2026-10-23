@@ -132,7 +132,7 @@ async fn a_working_lead_running_agents_and_a_clone_are_busy() {
     put_thread(&hub, "lead-thread", "running");
     let task: Task = serde_json::from_value(json!({
         "taskId": "T1", "projectRef": { "machineId": "devbox", "projectId": "p1" }, "workstreamId": "W1",
-        "title": "the checkout page", "kind": "read", "prompt": "do it", "areas": [],
+        "title": "the checkout page", "kind": "read", "prompt": "do it",
         "model": "claude-opus-5-5", "effort": "high", "state": "running", "attempt": 1, "createdAt": AT,
         "startedAt": AT, "threadRef": { "machineId": "devbox", "threadId": "t1" },
     }))

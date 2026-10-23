@@ -112,54 +112,26 @@ The `env` in your `~/.claude/settings.json` outranks it, as it does for your own
 
 ## .fleetd/policy.yaml {#policy}
 
-An optional file in a project's repo. Commit it to the default branch; changes apply within a minute. Without
-`areas`, fleetd infers them from the repo (see below).
+An optional file in a project's repo. Commit it to the default branch; changes apply within a minute.
 
 ```yaml
-areas:
-  docs: ["docs/**"]
-  app: ["src/**", "package.json"]
 defaults:
   model: claude-opus-5-5
   effort: high
-finishAll:
-  maxChildren: 10
 tools:
   allow: ["Bash(npm test:*)"]
   deny: ["Bash(git push:*)"]
-lead:
-  autoStart: false
-claude:
-  autoMemory: true
 branchPrefix: team-a/
 ```
 
 | Key | Default | Does |
 |---|---|---|
-| `areas` | inferred | What a writer task may touch. A task leases one or more areas, and writers in different areas run at the same time. Names are lowercase slugs. |
 | `defaults.model` | `claude-opus-5-5` | The project's task model. |
 | `defaults.effort` | `high` | `low`, `medium`, `high` or `max`. |
-| `finishAll.maxChildren` | `5` | The most pieces of work one finish-all run starts at once, 1 to 50. |
 | `tools.allow`, `tools.deny` | none | Claude permission rules for every session. Deny wins. |
-| `lead.autoStart` | `true` | `false`: your messages wait for `lead_start` instead of starting the lead. |
-| `claude.autoMemory` | `false` | `true`: sessions keep claude's own auto memory. |
 | `branchPrefix` | `fleetd/` | What writer and train branches start with. Must end in `/`. |
 
-### Inferred areas {#inferred-areas}
-
-Without `areas`, each workspace member is an area, named after its directory:
-
-| Found in the repo | Becomes |
-|---|---|
-| Cargo `[workspace] members`, package.json `workspaces`, pnpm-workspace.yaml `packages` | One area per member. |
-| Each directory under a top-level `apps/`, `crates/`, `packages/` or `services/` | One area per directory. |
-| A top-level `docs/` | The area `docs`. |
-| Always | `all`, the whole repo, for work that spans members. A task on `all` waits for every other area, and they for it. |
-
-Areas never nest: a folder that holds a member is left out, so its members run side by side. `fleetd project add` and
-`fleetd doctor` show a project's areas. Set `areas` to choose your own; then only those count.
-
-A broken file is refused with the exact problem, never ignored, so a typo can't widen what a writer may touch.
+A broken file is refused with the exact problem, never ignored, so a typo can't drop a deny rule.
 
 ## Services {#services}
 

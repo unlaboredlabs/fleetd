@@ -136,12 +136,11 @@ pub fn disallowed_tools<'a>(extra: impl IntoIterator<Item = &'a String>) -> Vec<
 /// Claude's auto memory is off in every claude fleetd starts, whatever the user's settings say: fleetd owns an
 /// agent's context (briefs, decisions, instructions), and a memory claude keeps per cwd would carry stale, unreviewed
 /// notes from one agent's worktree to the next. Both knobs, since either alone has been ignored by some claude
-/// versions. A project opts back in with `claude.autoMemory: true` in its policy file (sessions only).
+/// versions.
 pub const AUTO_MEMORY_OFF_ENV: (&str, &str) = ("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "1");
 pub const AUTO_MEMORY_OFF_WHY: &str = "fleetd owns an agent's context (briefs, decisions, instructions). Notes claude \
                                        keeps per folder would carry stale, unreviewed text from one agent's worktree \
-                                       to the next. A project opts back in with claude.autoMemory: true in its policy \
-                                       file.";
+                                       to the next.";
 /// The same as a `--settings` value, for the one-shot claude runs that take no overlay file.
 pub const AUTO_MEMORY_OFF_SETTINGS: &str = r#"{"autoMemoryEnabled":false}"#;
 

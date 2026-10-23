@@ -69,7 +69,7 @@ Time falls into seven groups, with the same names and colors everywhere:
 | model | Claude writing: the wait for its first token, thinking, and output. |
 | tools | Tool calls: Bash commands, reads, edits, web, MCP, and fleetd's "done" checks. |
 | machine | Starting `claude`, API retries, compaction, and `claude`'s own work between steps. |
-| queue | Waiting for fleetd: a free slot, an area lease, a usage limit, an offline machine, a lead's wake. |
+| queue | Waiting for fleetd: a free slot, a usage limit, an offline machine, a lead's wake. |
 | you | Waiting on you: your reply, a secret, an approval. |
 | pipeline | CI, review and the merge train. |
 | idle | A session alive with nothing to do. Never counted against the work. |
@@ -107,7 +107,7 @@ Some findings point at work that waited while the fleet had room for more. Each 
 | Finding | Means | Fix |
 |---|---|---|
 | `queue_wait` | A task waited for a slot while the fleet had free ones (its project's max agents, or the slots kept for lead turns). Or a ready PR waited out a CI run it couldn't join, because the [batch](/docs/merge-train#batches) was full or batching was off. | Raise the project's max agents or the fleet cap (`fleetd project set`). Raise `FLEETD_TRAIN_BATCH_MAX`, or fix why batching turned off for the repo. |
-| `contention` | Tasks waited one after another for one area lease, or for one machine's claude usage. | Define narrower areas in `.fleetd/policy.yaml` (without them, every write task takes the one area `all`). For usage: a larger plan, or another machine. |
+| `contention` | Tasks waited one after another for one machine's claude usage. | A larger plan, or another machine. |
 | `idle_lead` | A [lead](/docs/glossary#lead) sat idle while one of its plan items was ready to start and slots were free. | The lead should start ready items before its turn ends. |
 | `slots_underused` | Two or more ready plan items waited at the same time while slots were free. | Start ready items together. |
 

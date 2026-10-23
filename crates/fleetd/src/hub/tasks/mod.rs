@@ -1,13 +1,11 @@
-//! fleetd-owned tasks: every subagent a lead runs. Spawn resolves model and effort, takes leases (writers) and a
-//! slot or queues with the reason, and launches a thread (writers in a new worktree on `<branchPrefix><taskId>-<slug>`,
+//! fleetd-owned tasks: every subagent a lead runs. Spawn resolves model and effort, takes a slot or queues with the
+//! reason, and launches a thread (writers in a new worktree on `<branchPrefix><taskId>-<slug>`,
 //! `fleetd/` by default).
 //! The thread's status transitions, read off the event log, end the task: the result goes into the record and,
-//! inline, into one lead wake; the slot and leases are released and the queue is tried again.
-pub mod branch_diff;
+//! inline, into one lead wake; the slot is released and the queue is tried again.
 pub mod cap;
 #[cfg(test)]
 mod cap_tests;
-pub mod glob;
 #[cfg(test)]
 mod guard_tests;
 pub mod hooks;
@@ -29,17 +27,18 @@ use fleetd_contracts::ledger::WorkstreamId;
 use fleetd_contracts::prim::NonEmpty;
 use fleetd_contracts::prim::{Int, Text};
 use fleetd_contracts::tasks::{
-    AreaName, PolicyFile, PrUrl, Task, TaskId, TaskKind, TaskResult, TaskResultStatus, TaskState,
+    PrUrl, Task, TaskId, TaskKind, TaskResult, TaskResultStatus, TaskState,
 };
 use serde_json::{Map, Value, json};
 
 use crate::clock::Clock;
 use crate::hub::api::Shutdown;
-use crate::hub::leases::{Leases, Policies, parse_iso_ms};
+use crate::hub::policy::Policies;
 use crate::hub::slots::{SlotRequest, Slots, priority_of};
 use crate::hub::store::{
     EventLog, HubDb, HubStore, NewEvent, StoreError, WaitInput, iso_ms, now_ms,
 };
+use crate::hub::time::parse_ms as parse_iso_ms;
 use fleetd_contracts::mcp::ErrorCode;
 use hooks::{ResultReceipts, SpawnCheck, UsageGate};
 use ports::{LaunchRequest, PortError, TaskError, TaskPorts, WakeKind, Worktree};
@@ -75,7 +74,6 @@ pub struct TaskDeps {
     /// The executor, node link and leads (see `ports`).
     pub ports: Arc<dyn TaskPorts>,
     pub slots: Arc<Slots>,
-    pub leases: Arc<Leases>,
     pub policies: Arc<Policies>,
 }
 
@@ -94,7 +92,6 @@ const THREAD_EVENTS: [HubEventType; 9] = [
     HubEventType::PrMerged,
 ];
 
-const OUT_OF_AREA_MAX: usize = 20;
 const CLOSED_STATES: [&str; 3] = ["done", "stopped", "failed"];
 
 fn same_project(a: &ProjectRef, b: &ProjectRef) -> bool {
@@ -191,24 +188,6 @@ fn state_name<T: serde::Serialize>(value: &T) -> String {
         .ok()
         .and_then(|v| v.as_str().map(str::to_owned))
         .unwrap_or_default()
-}
-
-fn area_globs(policy: &PolicyFile, areas: &[String]) -> Vec<(String, Vec<String>)> {
-    areas
-        .iter()
-        .map(|a| {
-            let globs = policy
-                .areas
-                .get(a)
-                .map(|g| g.iter().map(|x| x.as_str().to_owned()).collect())
-                .unwrap_or_default();
-            (a.clone(), globs)
-        })
-        .collect()
-}
-
-fn area_names(task: &Task) -> Vec<String> {
-    task.areas.iter().map(|a| a.as_str().to_owned()).collect()
 }
 
 fn queued_reason(reason: &str) -> Text<1, 200> {
@@ -318,7 +297,6 @@ impl Tasks {
     fn release_all(&self, task: &Task) -> Result<(), StoreError> {
         self.asking.lock().unwrap().remove(&task.task_id);
         self.d.slots.release(task.task_id.as_str())?;
-        self.d.leases.release(&task.task_id)?;
         Ok(())
     }
 
@@ -357,7 +335,7 @@ impl Tasks {
         }
     }
 
-    /// `kind` says what it waits for (`lease`, `offline`, `usage`, `slot`) for the time inspector's queue spans.
+    /// `kind` says what it waits for (`offline`, `usage`, `slot`) for the time inspector's queue spans.
     fn queue(&self, stored: &StoredTask, kind: &str, reason: &str) -> Result<Task, StoreError> {
         let task = &stored.task;
         if task.state == TaskState::Queued
@@ -413,7 +391,6 @@ impl Tasks {
                 task.title.as_str(),
             )
         });
-        let globs = area_globs(&policy, &area_names(task));
         let set = self.d.db.prompts().current(Some(r));
         let prompt = render_task_prompt(
             &set,
@@ -422,7 +399,6 @@ impl Tasks {
                 project_title: &project.title,
                 brief: brief.as_ref(),
                 done_when: brief.as_ref().map(|b| self.d.ports.done_when_text(b)),
-                area_globs: &globs,
                 branch: branch.as_deref(),
                 base_branch: base_branch.as_deref(),
             },
@@ -567,7 +543,7 @@ impl Tasks {
         self.applied.store(seq, Ordering::SeqCst);
     }
 
-    /// Leases, then a slot, then the launch or the pending message. Queues with the first reason it cannot go.
+    /// A slot, then the launch or the pending message. Queues with the first reason it cannot go.
     /// Never fails: a store failure is logged and the task returned as it was. Call with the lock held.
     async fn try_start(self: &Arc<Self>, stored: StoredTask, from_queue: bool) -> Task {
         match self.try_start_inner(&stored, from_queue).await {
@@ -579,23 +555,6 @@ impl Tasks {
         }
     }
 
-    /// The project's areas whose globs cover the whole repo (`all`); just `all` when the policy can't be read.
-    async fn whole_areas(&self, r: &ProjectRef) -> Vec<AreaName> {
-        match self.d.policies.get(r).await {
-            Ok(policy) => policy
-                .areas
-                .iter()
-                .filter(|(_, globs)| {
-                    globs.iter().any(|g| {
-                        matches!(glob::GlobMatcher::new(g.as_str()), glob::GlobMatcher::All)
-                    })
-                })
-                .map(|(name, _)| AreaName::unchecked(name.as_str()))
-                .collect(),
-            Err(_) => vec![AreaName::unchecked("all")],
-        }
-    }
-
     async fn try_start_inner(
         self: &Arc<Self>,
         stored: &StoredTask,
@@ -603,14 +562,6 @@ impl Tasks {
     ) -> Result<Task, StoreError> {
         let task = &stored.task;
         let r = &task.project_ref;
-        if task.kind == TaskKind::Write
-            && let crate::hub::slots::Grant::Queued(reason) =
-                self.d
-                    .leases
-                    .acquire(r, &task.task_id, &task.areas, &self.whole_areas(r).await)?
-        {
-            return self.queue(stored, "lease", &reason);
-        }
         // Checked before the slot: taking and releasing one would run the queue again at once.
         let offline = format!("machine {} is offline", r.machine_id.as_str());
         if !self.d.ports.is_connected(&r.machine_id) {
@@ -736,29 +687,6 @@ impl Tasks {
         }
     }
 
-    /// The files `branch` changes against the project's base branch, read by the node; `None` if it can't say.
-    async fn branch_paths(&self, r: &ProjectRef, branch: &str) -> Option<Vec<String>> {
-        let project = self.d.store.project_get(r).ok()??;
-        let base = self
-            .d
-            .ports
-            .default_branch(&r.machine_id, &project.workspace_root)
-            .await
-            .ok()?;
-        let argv = branch_diff::branch_diff_argv(&base, branch)?;
-        let out = self
-            .d
-            .ports
-            .run_command(
-                &r.machine_id,
-                &project.workspace_root,
-                argv,
-                branch_diff::TIMEOUT_SEC as u32,
-            )
-            .await?;
-        branch_diff::parse_branch_diff(out.exit_code.unwrap_or(-1), &out.output_tail)
-    }
-
     async fn finish(
         self: &Arc<Self>,
         stored: &StoredTask,
@@ -845,51 +773,9 @@ impl Tasks {
             pending_message: None,
         })?;
 
-        // The PR's diff when the node can read it; the thread's changed paths (which include whatever a rebase
-        // brought in) only when it can't.
-        let pr_paths = match (&branch, write) {
-            (Some(branch), true) => self.branch_paths(&task.project_ref, branch).await,
-            _ => None,
-        };
-        if pr_paths.is_none() && write {
-            tracing::warn!(
-                task_id = task.task_id.as_str(),
-                "task: branch diff not read; areas checked on the thread's changed paths"
-            );
-        }
-        if let Some(paths) = pr_paths.or_else(|| changes.as_ref().map(|c| c.paths.clone()))
-            && let Ok(policy) = self.d.policies.get(&task.project_ref).await
-        {
-            let globs: Vec<String> = area_globs(&policy, &area_names(task))
-                .into_iter()
-                .flat_map(|(_, g)| g)
-                .collect();
-            let outside = glob::outside_globs(&paths, &globs);
-            if !outside.is_empty() {
-                let n = outside.len();
-                let first: Vec<&str> = outside.iter().take(5).map(|s| s.as_str()).collect();
-                let mut extra = Map::new();
-                extra.insert(
-                    "paths".into(),
-                    json!(outside.iter().take(OUT_OF_AREA_MAX).collect::<Vec<_>>()),
-                );
-                self.emit(
-                    &next,
-                    HubEventType::TaskOutOfArea,
-                    format!(
-                        "{} changed {n} file{} outside {}: {}",
-                        task.task_id.as_str(),
-                        if n == 1 { "" } else { "s" },
-                        area_names(task).join(", "),
-                        first.join(", ")
-                    ),
-                    extra,
-                )?;
-            }
-        }
         self.release_all(task)?;
         self.wake_result(&next, &result);
-        // Last, so whoever waits on it sees the slot, the leases and the wake already settled.
+        // Last, so whoever waits on it sees the slot and the wake already settled.
         let (r#type, verb) = if status == TaskResultStatus::Done {
             (HubEventType::TaskCompleted, "completed")
         } else {
@@ -935,12 +821,6 @@ impl Tasks {
                 ) {
                     return Ok(());
                 }
-                if task.kind == TaskKind::Write {
-                    let whole = self.whole_areas(&task.project_ref).await;
-                    self.d
-                        .leases
-                        .acquire(&task.project_ref, &task.task_id, &task.areas, &whole)?;
-                }
                 let request = SlotRequest {
                     holder: task.task_id.as_str(),
                     project_ref: &task.project_ref,
@@ -958,7 +838,7 @@ impl Tasks {
                 })?;
             }
             HubEventType::ThreadWaiting => {
-                // The board frees the slot itself and takes it again if the run resumes; the leases stay.
+                // The board frees the slot itself and takes it again if the run resumes.
                 if task.state != TaskState::Running {
                     return Ok(());
                 }
@@ -997,7 +877,7 @@ impl Tasks {
                 self.finish(&stored, TaskResultStatus::Done).await?
             }
             HubEventType::ThreadUsageLimited => {
-                // M4 usage: parked, not failed. The board freed the slot, the leases stay, and the usage layer sends
+                // M4 usage: parked, not failed. The board freed the slot, and the usage layer sends
                 // "continue" at the reset, which comes back here as thread.started.
                 if let Some(parked) = self
                     .hooks
@@ -1129,27 +1009,6 @@ impl Tasks {
             }
         }
         let policy = self.d.policies.get(r).await?;
-        let unknown: Vec<&str> = input
-            .areas
-            .iter()
-            .map(|a| a.as_str())
-            .filter(|a| !policy.areas.contains_key(*a))
-            .collect();
-        if !unknown.is_empty() {
-            let known: Vec<&str> = policy.areas.keys().map(String::as_str).collect();
-            return Err(lead_error(
-                ErrorCode::Invalid,
-                format!(
-                    "Unknown area{} {}.",
-                    if unknown.len() == 1 { "" } else { "s" },
-                    unknown.join(", ")
-                ),
-                Some(&format!(
-                    "Use the project's areas (.fleetd/policy.yaml, else inferred from the repo): {}.",
-                    known.join(", ")
-                )),
-            ));
-        }
         let flag = ModelEffort {
             model: input.model.as_ref().map(|m| m.as_str().to_owned()),
             effort: input.effort,
@@ -1167,7 +1026,6 @@ impl Tasks {
             title: input.title.clone(),
             kind: input.kind,
             prompt: input.prompt.clone(),
-            areas: input.areas.clone(),
             model: NonEmpty::unchecked(model),
             effort,
             tier: input.tier,
@@ -1213,7 +1071,7 @@ impl Tasks {
             .await)
     }
 
-    /// Steers a running task; continues an ended one in the same thread, which re-takes its slot and leases.
+    /// Steers a running task; continues an ended one in the same thread, which re-takes its slot.
     pub async fn message(
         self: &Arc<Self>,
         caller: &TaskCaller,
@@ -1320,7 +1178,7 @@ impl Tasks {
         Ok(true)
     }
 
-    /// Interrupts a running task and releases its slot and leases.
+    /// Interrupts a running task and releases its slot.
     pub async fn cancel(
         self: &Arc<Self>,
         caller: &TaskCaller,
@@ -1344,8 +1202,8 @@ impl Tasks {
             }
             _ => {}
         }
-        // The slot and leases go only once the agent's claude has exited: a cancel the node could not carry out
-        // leaves the task as it was, still holding them, and says so. Under the lock, so the thread's own end
+        // The slot goes only once the agent's claude has exited: a cancel the node could not carry out
+        // leaves the task as it was, still holding it, and says so. Under the lock, so the thread's own end
         // (interrupted) finds the task cancelled rather than failing it.
         if matches!(task.state, TaskState::Running | TaskState::Idle)
             && let Some(thread) = &task.thread_ref
@@ -1360,9 +1218,7 @@ impl Tasks {
             };
             return Err(lead_error(
                 ErrorCode::Failed,
-                format!(
-                    "{id} could not be stopped ({why}); it keeps running and keeps its slot and leases."
-                ),
+                format!("{id} could not be stopped ({why}); it keeps running and keeps its slot."),
                 Some("Call stop_agent again shortly."),
             ));
         }
@@ -1468,6 +1324,8 @@ impl Tasks {
     }
 }
 
+const ALSO_WRITING_MAX: usize = 10;
+const ALSO_WRITING_PATHS: usize = 5;
 const LIVE_TASKS: [TaskState; 3] = [TaskState::Queued, TaskState::Running, TaskState::Idle];
 const SCAN_LIMIT: usize = 10_000;
 
@@ -1505,6 +1363,56 @@ impl Tasks {
         Some(format!(
             "queued: {why}, starts when a slot frees, position {position}. fleetd starts it by itself; don't spawn it again."
         ))
+    }
+
+    /// The project's other writers that have started, with the first files each changed so far, for a writer's
+    /// spawn result: the lead plans slices that don't overlap, and this lets it check. Writers share the repo; a
+    /// real overlap costs one of them a rebase, which the train sends back to it.
+    pub async fn also_writing(&self, task: &Task) -> Option<String> {
+        if task.kind != TaskKind::Write {
+            return None;
+        }
+        let others: Vec<Task> = [TaskState::Running, TaskState::Idle]
+            .into_iter()
+            .flat_map(|state| {
+                self.list(&TaskFilter {
+                    project_ref: Some(task.project_ref.clone()),
+                    state: Some(state),
+                    workstream_id: None,
+                    limit: ALSO_WRITING_MAX,
+                })
+                .unwrap_or_default()
+            })
+            .filter(|t| t.kind == TaskKind::Write && t.task_id != task.task_id)
+            .take(ALSO_WRITING_MAX)
+            .collect();
+        if others.is_empty() {
+            return None;
+        }
+        let changes = futures_util::future::join_all(others.iter().map(|t| async {
+            match &t.thread_ref {
+                Some(thread) => self.d.ports.changes(thread).await.map(|c| c.paths),
+                None => None,
+            }
+        }))
+        .await;
+        let lines: Vec<String> = others
+            .iter()
+            .zip(changes)
+            .map(|(t, paths)| {
+                let paths = match paths.filter(|p| !p.is_empty()) {
+                    None => "no changes yet".to_owned(),
+                    Some(p) if p.len() > ALSO_WRITING_PATHS => format!(
+                        "{}, +{} more",
+                        p[..ALSO_WRITING_PATHS].join(", "),
+                        p.len() - ALSO_WRITING_PATHS
+                    ),
+                    Some(p) => p.join(", "),
+                };
+                format!("{} {} ({paths})", t.task_id.as_str(), t.title.as_str())
+            })
+            .collect();
+        Some(format!("also writing: {}", lines.join("; ")))
     }
 
     /// The project's agents against its max agents, from the slot board: the lead's own turns are not agents.
@@ -1545,5 +1453,223 @@ impl Tasks {
             by: "hub".to_owned(),
         };
         let _ = self.cancel(&caller, task_id, Some(reason)).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Mutex;
+
+    use fleetd_contracts::ids::{MachineId, ProjectId, ThreadId};
+    use fleetd_contracts::lead_calls::TaskSpawnCall;
+    use fleetd_contracts::ledger::{Brief, Workstream};
+    use serde_json::json;
+
+    use super::*;
+    use crate::hub::policy::PolicySource;
+    use crate::hub::slots::SlotsOptions;
+    use crate::hub::store::test_clock::ManualClock;
+    use crate::hub::tasks::ports::{BoxFut, CmdOutput, ThreadChanges};
+    use crate::hub::tasks::resolve::ModelEffort;
+
+    const AT: &str = "2026-10-19T10:00:00.000Z";
+
+    /// A linked node that launches every thread and reports `docs/<thread>.md` as each one's change so far.
+    #[derive(Default)]
+    struct Node {
+        launched: Mutex<Vec<Option<String>>>,
+    }
+
+    impl TaskPorts for Node {
+        fn is_connected(&self, _: &MachineId) -> bool {
+            true
+        }
+        fn await_live<'a>(&'a self, _: &'a MachineId) -> BoxFut<'a, ()> {
+            Box::pin(async {})
+        }
+        fn launch<'a>(
+            &'a self,
+            _: &'a MachineId,
+            request: LaunchRequest,
+        ) -> BoxFut<'a, Result<ThreadId, PortError>> {
+            let mut launched = self.launched.lock().unwrap();
+            launched.push(request.worktree.map(|w| w.branch));
+            let id = ThreadId::unchecked(format!("t{}", launched.len()));
+            Box::pin(async move { Ok(id) })
+        }
+        fn send<'a>(
+            &'a self,
+            _: &'a ThreadRef,
+            _: &'a str,
+            _: &'a str,
+        ) -> BoxFut<'a, Result<(), PortError>> {
+            Box::pin(async { Ok(()) })
+        }
+        fn stop<'a>(&'a self, _: &'a ThreadRef) -> BoxFut<'a, Result<(), PortError>> {
+            Box::pin(async { Ok(()) })
+        }
+        fn remove_worktree<'a>(&'a self, _: &'a ThreadRef) -> BoxFut<'a, Result<(), PortError>> {
+            Box::pin(async { Ok(()) })
+        }
+        fn paused(&self, _: &MachineId) -> Option<String> {
+            None
+        }
+        fn action_texts<'a>(
+            &'a self,
+            _: &'a ThreadRef,
+            _: usize,
+        ) -> BoxFut<'a, Vec<(String, Option<String>)>> {
+            Box::pin(async { Vec::new() })
+        }
+        fn default_branch<'a>(
+            &'a self,
+            _: &'a MachineId,
+            _: &'a str,
+        ) -> BoxFut<'a, Result<String, PortError>> {
+            Box::pin(async { Ok("main".to_owned()) })
+        }
+        fn changes<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Option<ThreadChanges>> {
+            let paths = vec![format!("docs/{}.md", thread.thread_id.as_str())];
+            Box::pin(async move {
+                Some(ThreadChanges {
+                    paths,
+                    ..Default::default()
+                })
+            })
+        }
+        fn pending_question<'a>(&'a self, _: &'a ThreadRef) -> BoxFut<'a, Option<String>> {
+            Box::pin(async { None })
+        }
+        fn run_command<'a>(
+            &'a self,
+            _: &'a MachineId,
+            _: &'a str,
+            _: Vec<String>,
+            _: u32,
+        ) -> BoxFut<'a, Option<CmdOutput>> {
+            Box::pin(async { None })
+        }
+        fn workstream(&self, id: &WorkstreamId) -> Option<Workstream> {
+            serde_json::from_value(json!({
+                "workstreamId": id, "projectRef": { "machineId": "lab-a", "projectId": "p1" }, "title": "docs",
+                "source": { "text": "write docs", "channel": "app", "by": "human", "at": AT },
+                "state": "running", "createdAt": AT, "updatedAt": AT,
+            }))
+            .ok()
+        }
+        fn lead_settings(&self, _: &ProjectRef) -> Option<ModelEffort> {
+            None
+        }
+        fn wake(&self, _: &ProjectRef, _: WakeKind, _: String) {}
+        fn lead_of(&self, _: &MachineId, _: &ThreadId) -> Option<ProjectRef> {
+            None
+        }
+        fn done_when_text(&self, _: &Brief) -> String {
+            String::new()
+        }
+    }
+
+    /// The project has no policy file.
+    struct NoPolicy;
+
+    impl PolicySource for NoPolicy {
+        fn read<'a>(&'a self, _: &'a ProjectRef) -> BoxFut<'a, Result<Option<String>, TaskError>> {
+            Box::pin(async { Ok(None) })
+        }
+    }
+
+    fn tasks() -> (Arc<Tasks>, Arc<Node>) {
+        let db = HubDb::open_memory().unwrap();
+        let clock = ManualClock::at(1_792_000_000_000);
+        let store = Arc::new(HubStore::new(db.clone()));
+        let events = Arc::new(EventLog::new(db.clone(), clock.clone()).unwrap());
+        store
+            .projects_upsert_many(
+                &MachineId::unchecked("lab-a"),
+                &[serde_json::from_value(json!({
+                    "machineId": "lab-a", "projectId": "p1", "title": "storefront", "workspaceRoot": "/work/p1",
+                    "threads": { "running": 0, "waiting": 0, "idle": 0, "failed": 0 }, "lastActivityAt": AT,
+                }))
+                .unwrap()],
+            )
+            .unwrap();
+        let node = Arc::new(Node::default());
+        let ports: Arc<dyn TaskPorts> = node.clone();
+        let slots = Slots::new(
+            db.clone(),
+            &store,
+            &events,
+            Arc::new(|_, _| None),
+            SlotsOptions::default(),
+        )
+        .unwrap();
+        let policies = Policies::new(Arc::new(NoPolicy), clock.clone());
+        let tasks = Tasks::new(TaskDeps {
+            db,
+            store,
+            events,
+            clock,
+            ports,
+            slots,
+            policies,
+        });
+        (tasks, node)
+    }
+
+    fn writer(title: &str) -> TaskSpawnCall {
+        serde_json::from_value(json!({
+            "workstreamId": "W1", "title": title, "kind": "write", "prompt": "do it", "serves": "done:0",
+        }))
+        .unwrap()
+    }
+
+    /// No lease or area serializes writers: two in one repo run at once, each on its own branch, and the second
+    /// spawn's result names the first and what it has changed, so the lead can see an overlap coming.
+    #[tokio::test]
+    async fn writers_in_one_repo_run_side_by_side() {
+        let (tasks, node) = tasks();
+        let caller = TaskCaller {
+            project_ref: ProjectRef {
+                machine_id: MachineId::unchecked("lab-a"),
+                project_id: ProjectId::unchecked("p1"),
+            },
+            by: "lead".into(),
+        };
+        let first = tasks
+            .spawn(&caller, writer("add the docs page"))
+            .await
+            .unwrap();
+        assert_eq!(
+            tasks.also_writing(&first).await,
+            None,
+            "nobody else writes yet"
+        );
+        let second = tasks.spawn(&caller, writer("fix the api")).await.unwrap();
+        assert_eq!(
+            (first.state, second.state),
+            (TaskState::Running, TaskState::Running)
+        );
+        assert_eq!(
+            *node.launched.lock().unwrap(),
+            [
+                Some("fleetd/T1-add-the-docs-page".to_owned()),
+                Some("fleetd/T2-fix-the-api".to_owned())
+            ]
+        );
+        assert_eq!(
+            tasks.also_writing(&second).await.as_deref(),
+            Some("also writing: T1 add the docs page (docs/t1.md)")
+        );
+
+        let reader: TaskSpawnCall = serde_json::from_value(json!({
+            "workstreamId": "W1", "title": "read the logs", "kind": "read", "prompt": "do it",
+        }))
+        .unwrap();
+        let reader = tasks.spawn(&caller, reader).await.unwrap();
+        assert_eq!(
+            tasks.also_writing(&reader).await,
+            None,
+            "only writers hear of writers"
+        );
     }
 }

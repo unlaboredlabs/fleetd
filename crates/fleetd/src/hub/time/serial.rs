@@ -22,9 +22,6 @@ pub const IDLE_LEAD_MIN: i64 = 5 * MIN;
 pub const IDLE_STRETCH_MIN: i64 = MIN;
 pub const UNDERUSED_MIN: i64 = 5 * MIN;
 
-/// The default policy's one area, which every write task takes.
-const DEFAULT_AREA: &str = "all";
-
 type Iv = (i64, i64);
 
 /// Sorted, non-overlapping, non-empty. Touching intervals join.
@@ -335,83 +332,8 @@ pub(super) fn queue_wait(input: &RuleInput, out: &mut Vec<Candidate>) {
     train_waits(input, out);
 }
 
-/// "lease: docs held by T1, hub held by T2" -> [("docs", "T1"), ("hub", "T2")].
-fn lease_conflicts(reason: &str) -> Vec<(&str, &str)> {
-    let Some(rest) = reason.strip_prefix("lease: ") else {
-        return Vec::new();
-    };
-    rest.trim_end_matches('…')
-        .split(", ")
-        .filter_map(|part| {
-            let (area, by) = part.split_once(" held by ")?;
-            Some((area.trim(), by.trim()))
-        })
-        .collect()
-}
-
-#[derive(Default)]
-struct Held<'a> {
-    waits: Vec<&'a Row>,
-    by: BTreeSet<&'a str>,
-}
-
-/// Tasks that waited, one after another, for one shared resource: an area lease of a project, or one machine's
-/// claude usage. Offline machines are the `offline` rule's.
+/// Tasks that waited, one after another, for one machine's claude usage. Offline machines are the `offline` rule's.
 pub(super) fn contention(input: &RuleInput, out: &mut Vec<Candidate>) {
-    // (project, area) -> the waits, and the tasks that held it.
-    let mut areas: BTreeMap<(String, String), Held> = BTreeMap::new();
-    for r in input.rows.iter().filter(|r| r.kind == SpanKind::QueueLease) {
-        for (area, by) in lease_conflicts(reason(r)) {
-            let e = areas.entry((project_of(r), area.to_owned())).or_default();
-            e.waits.push(r);
-            e.by.insert(by);
-        }
-    }
-    for (
-        (project, area),
-        Held {
-            waits: rows,
-            by: holders,
-        },
-    ) in areas
-    {
-        let sum = total(rows.iter().copied());
-        let tasks: BTreeSet<&str> = rows.iter().filter_map(|r| r.task_id.as_deref()).collect();
-        let fix = if area == DEFAULT_AREA {
-            "define areas in .fleetd/policy.yaml so tasks that write different paths run side by side".to_owned()
-        } else {
-            format!(
-                "narrow or split area `{}` in .fleetd/policy.yaml so tasks that touch different paths run side by side",
-                short(&area)
-            )
-        };
-        out.push(Candidate {
-            rule: InsightRule::Contention,
-            key: format!("area:{project}/{area}"),
-            fired: sum >= CONTENTION_MIN,
-            message: format!(
-                "{} in {} waited {} for area `{}`, held by {}: {fix}",
-                plural(tasks.len().max(1), "task", "tasks"),
-                short(title(input, &project)),
-                fmt_dur(sum),
-                short(&area),
-                holders
-                    .iter()
-                    .take(3)
-                    .copied()
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
-            numbers: vec![
-                ("tasks", tasks.len() as i64),
-                ("holders", holders.len() as i64),
-                ("total_ms", sum),
-            ],
-            spans: spans(rows.iter().copied()),
-            weight: sum,
-        });
-    }
-
     let mut machines: BTreeMap<&str, Vec<&Row>> = BTreeMap::new();
     for r in input.rows.iter().filter(|r| r.kind == SpanKind::QueueUsage) {
         machines
@@ -1187,33 +1109,7 @@ mod tests {
     }
 
     #[test]
-    fn tasks_serialized_on_one_area_name_the_policy_fix() {
-        let why = "lease: all held by T4";
-        let short_wait = vec![queued(1, SpanKind::QueueLease, "T5", 0, 72_000, why)];
-        assert!(
-            fired(
-                &input(short_wait, Serial::default()),
-                InsightRule::Contention
-            )
-            .is_empty()
-        );
-        let rows = vec![
-            queued(1, SpanKind::QueueLease, "T5", 0, 3 * MIN, why),
-            queued(
-                2,
-                SpanKind::QueueLease,
-                "T6",
-                3 * MIN,
-                6 * MIN,
-                "lease: all held by T5, lab held by T2",
-            ),
-        ];
-        let found = fired(&input(rows, Serial::default()), InsightRule::Contention);
-        assert_eq!(found.len(), 1, "lab waited 3m only");
-        assert_eq!(
-            found[0].message.as_str(),
-            "2 tasks in storefront waited 6m for area `all`, held by T4, T5: define areas in .fleetd/policy.yaml so tasks that write different paths run side by side"
-        );
+    fn tasks_serialized_on_one_machines_usage_are_contention() {
         let usage = vec![
             queued(
                 1,

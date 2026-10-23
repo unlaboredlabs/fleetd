@@ -177,21 +177,18 @@ pub struct SessionRules {
     /// `tools.allow` and `tools.deny`, in claude's syntax.
     pub allow: Vec<String>,
     pub deny: Vec<String>,
-    /// `claude.autoMemory`.
-    pub auto_memory: bool,
 }
 
 pub type ToolRulesFuture<'a> =
     Pin<Box<dyn Future<Output = Result<SessionRules, McpToolError>> + Send + 'a>>;
 
-/// A project's session rules (`tools.allow`, `tools.deny`, `claude.autoMemory` in its policy file), read at every
-/// launch. The leases area's cached policy reader implements it; a file that does not decode refuses the launch
-/// rather than drop its denies.
+/// A project's session rules (`tools.allow`, `tools.deny` in its policy file), read at every launch. The cached
+/// policy reader implements it; a file that does not decode refuses the launch rather than drop its denies.
 pub trait ToolPolicy: Send + Sync + 'static {
     fn tools<'a>(&'a self, project: &'a ProjectRef) -> ToolRulesFuture<'a>;
 }
 
-impl ToolPolicy for crate::hub::leases::Policies {
+impl ToolPolicy for crate::hub::policy::Policies {
     fn tools<'a>(&'a self, project: &'a ProjectRef) -> ToolRulesFuture<'a> {
         Box::pin(async move {
             let policy = self.get(project).await?;
@@ -202,7 +199,6 @@ impl ToolPolicy for crate::hub::leases::Policies {
             Ok(SessionRules {
                 allow: rules(&tools.allow),
                 deny: rules(&tools.deny),
-                auto_memory: policy.claude.is_some_and(|c| c.auto_memory),
             })
         })
     }
@@ -1347,7 +1343,6 @@ impl Executors {
             run_id: NonEmpty::unchecked(uuid_from(&format!("run\n{seed}"))),
             allowed_tools: rules.allow,
             disallowed_tools: rules.deny,
-            auto_memory: rules.auto_memory,
             role: options.role,
         };
         self.call(machine_id, op, SessionCall::Launch(launch), LAUNCH_TIMEOUT)

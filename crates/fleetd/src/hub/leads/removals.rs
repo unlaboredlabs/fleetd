@@ -1,6 +1,6 @@
 //! When a project is removed from its node, the executor drops it from the hub's cache and emits project.removed. Nothing can run
 //! there any more, so the project's live work ends: open secret and approval requests are closed, live tasks are
-//! cancelled (their slots and leases go back), and open workstreams stop. Its lead reads as stopped (`lead_state`).
+//! cancelled (their slots go back), and open workstreams stop. Its lead reads as stopped (`lead_state`).
 //!
 //! The reaction is keyed on the cache, not the event: live work whose project the cache no longer has is ended. That
 //! makes it idempotent, so the hub runs it once at start for every such project, and a stop between the event and the

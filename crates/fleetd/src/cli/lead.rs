@@ -36,10 +36,10 @@ pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>
              log a decision you made yourself
   status set "<one line>" [--workstream <W>]
   decisions search "<query>"
-  task spawn --workstream <W> --title <t> --prompt <p> [--kind write|read|review] [--areas a,b]
+  task spawn --workstream <W> --title <t> --prompt <p> [--kind write|read|review]
       [--model <m>] [--effort low|medium|high|max] [--tier S|M|L]
       [--serves done:<n>|issue:<ref>|defect:<text>|decision:<key>] [--pr <url>] [--qa] [--item P<n>]
-             delegate work to a subagent; writers need --areas and --serves and get their own
+             delegate work to a subagent; writers need --serves and get their own
              branch; a review task needs --pr, and --qa marks it a QA run; --item links it to
              that plan item
   task list [--state <s>] [--workstream <W>]
@@ -130,7 +130,6 @@ const OPTIONS: &[(&str, Kind)] = &[
     ("scope", Kind::Str),
     ("title", Kind::Str),
     ("prompt", Kind::Str),
-    ("areas", Kind::Str),
     ("model", Kind::Str),
     ("effort", Kind::Str),
     ("tier", Kind::Str),
@@ -378,7 +377,6 @@ pub fn parse_lead_args(
                     "title",
                     "prompt",
                     "kind",
-                    "areas",
                     "model",
                     "effort",
                     "tier",
@@ -398,7 +396,6 @@ pub fn parse_lead_args(
                     ("title", s(v.str("title"))),
                     ("prompt", s(v.str("prompt"))),
                     ("kind", s(v.str("kind"))),
-                    ("areas", v.str("areas").map(|a| Value::Array(split_list(a)))),
                     ("model", s(v.str("model"))),
                     ("effort", s(v.str("effort"))),
                     ("tier", s(v.str("tier"))),
@@ -976,29 +973,16 @@ fn decision_line(decision: &Value) -> String {
 }
 
 fn task_line(task: &Value) -> String {
-    let where_ = if st(task, "kind") == "write" {
-        format!(
-            ", {}",
-            arr(task, "areas")
-                .iter()
-                .filter_map(Value::as_str)
-                .collect::<Vec<_>>()
-                .join(",")
-        )
-    } else {
-        String::new()
-    };
     let why = match opt(task, "queuedReason") {
         Some(reason) if st(task, "state") == "queued" => format!(" ({})", js(Some(reason))),
         _ => String::new(),
     };
     format!(
-        "{} {}{} [{}{}, {}/{}] {}{}",
+        "{} {}{} [{}, {}/{}] {}{}",
         st(task, "taskId"),
         st(task, "state"),
         why,
         st(task, "kind"),
-        where_,
         st(task, "model"),
         st(task, "effort"),
         st(task, "title"),
@@ -1270,7 +1254,7 @@ pub fn format_result(result: &Value) -> String {
         }
         "task_cancel" => {
             lines.push(format!(
-                "{} cancelled; its slot and areas are free.",
+                "{} cancelled; its slot is free.",
                 st(&result["task"], "taskId")
             ));
             next = task_next(&result["task"]);
@@ -1744,8 +1728,6 @@ mod tests {
                     "W1",
                     "--title",
                     "x",
-                    "--areas",
-                    "docs",
                     "--prompt",
                     "y",
                 ],

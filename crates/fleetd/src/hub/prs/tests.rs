@@ -26,7 +26,7 @@ fn repo() -> GitHubRepo {
 fn task(id: &str, branch: &str) -> Task {
     serde_json::from_value(json!({
         "taskId": id, "projectRef": { "machineId": "devbox", "projectId": "web" }, "workstreamId": "W3",
-        "title": "Add the pricing page", "kind": "write", "prompt": "do it", "areas": ["app"],
+        "title": "Add the pricing page", "kind": "write", "prompt": "do it",
         "model": "claude-opus-5-5", "effort": "high", "state": "done", "attempt": 1, "createdAt": AT,
         "branch": branch, "threadRef": { "machineId": "devbox", "threadId": format!("s-{id}") },
     }))

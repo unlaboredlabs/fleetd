@@ -68,10 +68,6 @@ pub struct SessionLaunch {
     /// `--disallowedTools` rules from the project's policy (`tools.deny`), on top of the tools fleetd always denies.
     #[serde(default)]
     pub disallowed_tools: Vec<String>,
-    /// The project's policy turns claude's auto memory back on (`claude.autoMemory: true`); otherwise fleetd keeps it
-    /// off in the session.
-    #[serde(default)]
-    pub auto_memory: bool,
     /// Which fleetd management tools the session's MCP server offers.
     #[serde(default)]
     pub role: SessionRole,

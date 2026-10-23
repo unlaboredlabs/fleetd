@@ -59,8 +59,8 @@ The lead is also told to:
 - Treat work as done only when its done-when checks pass, and pass a `human` check only on your own answer.
 - Ask for secrets with `request_secret` and run risky commands with `gated_run`, which you approve.
 - Leave merging to the merge train, which merges only after green CI and review.
-- Spawn slices in separate areas together, up to the [Max agents](/docs/projects#max-agents) cap. A spawn past the cap
-  queues and starts by itself.
+- Spawn slices that touch separate files together, up to the [Max agents](/docs/projects#max-agents) cap. Writers share
+  the repo; a spawn past the cap queues and starts by itself.
 - Never relax a review, CI, approval or check to go faster. Idle is fine.
 
 Most of this is also enforced by the hub, which refuses a call that breaks it and says why. See [Safety rules](#safety).
@@ -70,8 +70,7 @@ Most of this is also enforced by the hub, which refuses a call that breaks it an
 Claude Code can keep its own notes per folder ("auto memory"). fleetd turns that off in every `claude` it starts, so
 what an agent knows comes from its brief, the decisions and your instructions, all of which you can read here.
 
-`fleetd doctor` shows "claude auto memory off" for each machine. To turn it back on for one project, set
-`claude: { autoMemory: true }` in its [policy file](/docs/config-and-files#policy).
+`fleetd doctor` shows "claude auto memory off" for each machine.
 
 ### Claude's own subagents are off {#no-subagents}
 
@@ -262,7 +261,7 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 
 | Id | Sent | Safety rules |
 |---|---|---|
-| `task.brief.write` | every write task attempt | changes only its areas; never merges; the train does (prompt only) |
+| `task.brief.write` | every write task attempt | never merges; the train does (prompt only) |
 
 ### Reviews and checks
 

@@ -190,13 +190,6 @@ impl Intake {
                 ),
                 None,
             ),
-            AutoStart::Off => {
-                let why = "the project's .fleetd/policy.yaml sets lead.autoStart: false, so its lead starts only with lead_start";
-                (
-                    format!("{id} is a draft, waiting for its lead: {why}."),
-                    Some(why.to_string()),
-                )
-            }
             AutoStart::Held(e) => {
                 let why = match &e.fix {
                     Some(fix) => format!("{} {fix}", e.message),

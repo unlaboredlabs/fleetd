@@ -144,7 +144,10 @@ pub async fn lead_call(
     match call {
         LeadCall::TaskSpawn(input) => {
             let task = tasks.spawn(caller, input).await?;
-            let next = tasks.queued_next(&task);
+            let next = match (tasks.queued_next(&task), tasks.also_writing(&task).await) {
+                (Some(queued), Some(also)) => Some(format!("{queued} {also}")),
+                (queued, also) => queued.or(also),
+            };
             Ok(LeadCallResult::TaskSpawn(TaskResultFrame {
                 next,
                 ..frame(task)

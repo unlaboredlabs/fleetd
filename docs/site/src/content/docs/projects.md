@@ -94,9 +94,6 @@ If the lead can't start, your message waits and the chat says why. Common causes
 
 Once the worker is back with a working `claude`, the lead starts and reads every waiting message.
 
-To keep a lead from starting by itself, set `lead.autoStart: false` in the project's
-[policy file](/docs/config-and-files#policy). Messages then wait for `lead_start`.
-
 ## Max agents {#max-agents}
 
 Each project has a cap on how many agents run at once, and the fleet has one across all projects. The hub enforces
@@ -108,6 +105,9 @@ both; the lead plans to them.
 | Fleet-wide | Every running turn, leads included. | | Settings → Agents → Whole fleet. Needs an admin key. |
 
 The header shows "· 2 waiting" when agents are queued. Before you save, the slider says what the change will do.
+
+Writers in a project run side by side, each in its own worktree and branch. The lead gives them slices that touch
+separate files; if two PRs still conflict, the [merge train](/docs/merge-train) sends the later one back to its writer.
 
 ![The Max agents control open in storefront's chat header: a slider set to 12, from 1 up to 16 (the fleet's limit), with "6 agents running now" and Save.](/docs/img/max-agents.png)
 
@@ -156,8 +156,7 @@ For example, to run a test project at medium effort:
 1. Before your first message to it, call
    `lead_start {"machineId":"devbox","projectId":"<id>","model":"claude-opus-5-5","effort":"medium"}`. `fleetd project
    list` shows the ids.
-2. Commit this `.fleetd/policy.yaml` to the default branch. Without `areas`, the project keeps the areas fleetd
-   [infers from the repo](/docs/config-and-files#inferred-areas).
+2. Commit this `.fleetd/policy.yaml` to the default branch.
 
    ```yaml
    defaults:

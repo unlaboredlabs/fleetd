@@ -39,7 +39,7 @@ fn project() -> ProjectRef {
 pub(super) fn running(hub: &Hub, n: u32) -> Task {
     let task: Task = serde_json::from_value(json!({
         "taskId": format!("T{n}"), "projectRef": { "machineId": "lab-a", "projectId": "p1" }, "workstreamId": "W1",
-        "title": format!("slice {n}"), "kind": "read", "prompt": "do it", "areas": [],
+        "title": format!("slice {n}"), "kind": "read", "prompt": "do it",
         "model": "claude-haiku-5-5", "effort": "low", "state": "running", "attempt": 1, "createdAt": AT,
         "startedAt": AT, "threadRef": { "machineId": "lab-a", "threadId": format!("t{n}") },
     }))

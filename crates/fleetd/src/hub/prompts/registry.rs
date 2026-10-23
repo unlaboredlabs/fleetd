@@ -190,21 +190,13 @@ pub const ENTRIES: &[Entry] = &[
         Task,
         "Writer brief",
         "every write task attempt",
-        "taskId!=T<n>; kind=write; workstreamId=W<n>; project=the project's title; title=the task's title; task!=the lead's task text; workstream=the order's goal, done-when and what this serves, or nothing; areas!=the leased areas and their globs; branch!=the task's branch; baseBranch=the default branch; serves!=what the task serves",
-        &[
-            (
-                "areas",
-                "changes only its areas",
-                r"only change files in these areas",
-                Code
-            ),
-            (
-                "train-only-merges",
-                "never merges; the train does",
-                r"never merge",
-                Prompt
-            ),
-        ]
+        "taskId!=T<n>; kind=write; workstreamId=W<n>; project=the project's title; title=the task's title; task!=the lead's task text; workstream=the order's goal, done-when and what this serves, or nothing; branch!=the task's branch; baseBranch=the default branch; serves!=what the task serves",
+        &[(
+            "train-only-merges",
+            "never merges; the train does",
+            r"never merge",
+            Prompt
+        ),]
     ),
     entry!(
         "review.reviewer",

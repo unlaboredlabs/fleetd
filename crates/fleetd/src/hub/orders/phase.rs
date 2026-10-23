@@ -257,15 +257,12 @@ mod tests {
         );
         // Only queued lanes left: say why.
         let queued = [
-            (Implementer, Queued, Some("lease: docs held by T1")),
+            (Implementer, Queued, Some("slots: 4/4 in use")),
             (Reader, Done, None),
         ];
         assert_eq!(
             phase(&input(W, &queued, &[])),
-            (
-                OrderPhase::Queued,
-                Some("queued: lease: docs held by T1".into())
-            )
+            (OrderPhase::Queued, Some("queued: slots: 4/4 in use".into()))
         );
         // No tasks yet while the lead works: planning; a draft always is.
         let mut planning = input(W, &[], &[]);

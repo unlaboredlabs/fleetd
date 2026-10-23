@@ -48,7 +48,7 @@ fn workstream() -> Workstream {
 fn task(id: &str, kind: &str, state: &str, extra: Value) -> Task {
     let mut t = json!({
         "taskId": id, "projectRef": { "machineId": "lab-a", "projectId": "p1" }, "workstreamId": "W14",
-        "title": format!("{id} work"), "kind": kind, "prompt": "do it", "areas": if kind == "write" { json!(["alpha"]) } else { json!([]) },
+        "title": format!("{id} work"), "kind": kind, "prompt": "do it",
         "model": "claude-haiku-5-5", "effort": "low", "state": state, "attempt": 1, "createdAt": AT,
         "startedAt": format!("2026-10-18T10:0{}:00.000Z", &id[1..2]),
         "threadRef": { "machineId": "lab-a", "threadId": format!("s-{id}") },

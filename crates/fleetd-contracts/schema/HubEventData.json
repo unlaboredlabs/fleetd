@@ -870,9 +870,6 @@
         "task.failed": {
           "$ref": "#/$defs/TaskEventData"
         },
-        "task.out_of_area": {
-          "$ref": "#/$defs/TaskEventData"
-        },
         "task.queued": {
           "$ref": "#/$defs/TaskEventData"
         },
@@ -967,7 +964,6 @@
         "task.cancelled",
         "task.completed",
         "task.failed",
-        "task.out_of_area",
         "task.queued",
         "task.started",
         "thread.completed",
@@ -1341,17 +1337,6 @@
     "ProjectInspect": {
       "description": "What `project_inspect` found: the default branch, CI and merge rules, and one line on what the lead will need.",
       "properties": {
-        "areas": {
-          "description": "The areas writers lease: the policy file's, else inferred from the repo's layout. Empty when unknown.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "areasInferred": {
-          "description": "true: `areas` were inferred from the repo, not set in .fleetd/policy.yaml.",
-          "type": "boolean"
-        },
         "ci": {
           "$ref": "#/$defs/CiInfo"
         },
@@ -1824,14 +1809,6 @@
         "createdAt": {
           "$ref": "#/$defs/Timestamp",
           "description": "When the task was spawned: a `task.started` for a task spawned before a turn is not that turn's start."
-        },
-        "paths": {
-          "description": "task.out_of_area: the first 20 paths outside the leased globs.",
-          "items": {
-            "type": "string"
-          },
-          "maxItems": 20,
-          "type": "array"
         },
         "queuedReason": {
           "type": "string"

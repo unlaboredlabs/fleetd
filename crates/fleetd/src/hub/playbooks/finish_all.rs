@@ -1,5 +1,5 @@
 //! Finish-all: the project's finish-all lead inventories open work (`fleetd inventory`) and starts a child workstream
-//! per item with a value source (`fleetd workstream spawn`), at most the policy's `finishAll.maxChildren` open at once.
+//! per item with a value source (`fleetd workstream spawn`), at most `DEFAULT_MAX_CHILDREN` open at once.
 //! When it has no open child and nothing it could start, its workstream goes idle: that is the finish line.
 use std::sync::Arc;
 
@@ -84,16 +84,6 @@ impl FinishAll {
         })?)
     }
 
-    async fn max_children(&self, r: &ProjectRef) -> Result<u32, LeadError> {
-        Ok(match self.ctx.hooks.policy.get() {
-            Some(policy) => policy
-                .max_children(r)
-                .await?
-                .unwrap_or(DEFAULT_MAX_CHILDREN),
-            None => DEFAULT_MAX_CHILDREN,
-        })
-    }
-
     fn set_state(
         &self,
         w: &Workstream,
@@ -169,8 +159,7 @@ impl FinishAll {
                     .is_some_and(|p| p.workstream_id == parent.workstream_id)
             })
             .collect();
-        if let Some(refusal) = spawn_refusal(serves, parent, &children, self.max_children(r).await?)
-        {
+        if let Some(refusal) = spawn_refusal(serves, parent, &children, DEFAULT_MAX_CHILDREN) {
             return Err(LeadError::invalid(refusal.message, refusal.fix));
         }
         let template = template.unwrap_or(if serves.starts_with("defect:") {
@@ -309,7 +298,7 @@ impl FinishAll {
                     .is_some_and(|p| p.workstream_id == parent.workstream_id)
             })
             .count();
-        let max = self.max_children(r).await?;
+        let max = DEFAULT_MAX_CHILDREN;
         Ok((children < max as usize).then(|| (parent.workstream_id.clone(), children, max)))
     }
 
@@ -461,14 +450,11 @@ impl FinishAll {
 
         let input = InventoryInput {
             project: format!("{} ({}/{})", project.title, r.machine_id, r.project_id),
-            parent: match &parent {
-                Some(p) => Some(InventoryParent {
-                    workstream_id: p.workstream_id.clone(),
-                    open_children: children.len(),
-                    max_children: self.max_children(r).await?,
-                }),
-                None => None,
-            },
+            parent: parent.as_ref().map(|p| InventoryParent {
+                workstream_id: p.workstream_id.clone(),
+                open_children: children.len(),
+                max_children: DEFAULT_MAX_CHILDREN,
+            }),
             items,
             unread,
         };
