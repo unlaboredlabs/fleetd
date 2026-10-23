@@ -232,6 +232,10 @@ jobs:
           pnpm fixtures
           pnpm exec electron-builder --linux --dir --publish never -c.directories.output=dist-test
           node scripts/packaged-smoke.ts dist-test/linux-unpacked/fleetd-desktop --no-sandbox --ozone-platform=headless
+      - name: Packaged recording (Linux)
+        # FLEETD_RECORD in the packed app, which loads the recorder page from the asar; Demo recording below runs out/.
+        if: steps.scope.outputs.run == 'true'
+        run: node scripts/packaged-smoke.ts --record dist-test/linux-unpacked/fleetd-desktop --no-sandbox --ozone-platform=headless
       - if: failure() && steps.scope.outputs.run == 'true'
         uses: actions/upload-artifact@v7
         with:
@@ -292,6 +296,11 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY=false pnpm exec electron-builder --mac --dir --arm64 --publish never -c.directories.output=dist-test \
             -c.mac.identity=- -c.mac.hardenedRuntime=false
           node scripts/packaged-smoke.ts dist-test/mac-arm64/fleetd.app/Contents/MacOS/fleetd
+      - name: Packaged recording (macOS)
+        # FLEETD_RECORD in the packed app (scripts/demo-mac.sh records the nightly this way): the recorder page loads
+        # from the asar, which the unpackaged Demo recording run can't catch.
+        if: steps.scope.outputs.run == 'true'
+        run: node scripts/packaged-smoke.ts --record dist-test/mac-arm64/fleetd.app/Contents/MacOS/fleetd
       - if: failure() && steps.scope.outputs.run == 'true'
         uses: actions/upload-artifact@v7
         with:
