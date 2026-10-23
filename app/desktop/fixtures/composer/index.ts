@@ -9,7 +9,7 @@ import { at } from "../kit/ids.ts";
 import { arr, obj } from "../kit/stress.ts";
 import { asText, type JsonObject } from "../kit/json.ts";
 import { CHAT_SENDS } from "./sends.ts";
-import { STEER_WORDS, steer } from "../agents/steers.ts";
+import { STEER_WORDS, steer, withSteers } from "../agents/steers.ts";
 
 const STOREFRONT = { machineId: "devbox", projectId: "dcffccea-c5a7-40a6-940d-7f70239ffa22" } as const;
 
@@ -61,9 +61,7 @@ function composerSends(f: Fixture): void {
   f.answer("chat_stop", { projectRef: STOREFRONT }, { stopped: true, message: msg(8, "lead", "Stopped the lead and 2 agents.", 0, { author: "system" }) }, 600_000);
   const lead = { workstreamId: "W1" };
   f.answer("steer_send", { target: lead, mode: "now" }, steer(f.now, 21, lead, "queued", STEER_WORDS.leadNow, 0, { mode: "now" }));
-  f.answer("steers_list", lead, {
-    steers: [steer(f.now, 21, lead, "delivered", STEER_WORDS.leadNow, 0, { mode: "now", deliveredAt: f.now, how: "stopped", stoppedTool: "pnpm test" })],
-  });
+  withSteers(f, [steer(f.now, 21, lead, "delivered", STEER_WORDS.leadNow, 0, { mode: "now", deliveredAt: f.now, how: "stopped", stoppedTool: "pnpm test" })]);
   f.settleAt(f.settleMs ?? 0);
 }
 

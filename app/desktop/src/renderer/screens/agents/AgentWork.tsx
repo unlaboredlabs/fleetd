@@ -89,7 +89,7 @@ export function AgentWork({ id }: { id: string }) {
           <VirtualList items={feed} getKey={(item) => item.id} renderItem={(item) => <Step item={item} />} estimateSize={28} followOutput startAtEnd aria-label="Its work" />
         )}
       </div>
-      {row.taskId !== undefined && work.hasThread ? <SteerBox key={row.taskId} taskId={row.taskId} /> : null}
+      {row.taskId !== undefined && row.workstreamId !== undefined && work.hasThread ? <SteerBox key={row.taskId} workstreamId={row.workstreamId} taskId={row.taskId} /> : null}
     </section>
   );
 }

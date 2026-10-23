@@ -1,5 +1,5 @@
 // Steering one agent (or the lead) mid-run, pure: which key sends which way, where a lead steer goes, and what a
-// steer's receipt says. The hub decides every stage from the agent's own frames (steer_send, steers_list, steer.*);
+// steer's receipt says. The hub decides every stage from the agent's own frames (steer_send, order_get, steer.*);
 // these only word them. A steer speaks for the person, so it goes with the app's own key, as chat does.
 
 import type { OrderCard, Steer, SteerMode } from "../../../shared/contracts";
@@ -42,6 +42,10 @@ export const steerTooLong = (text: string): string | undefined =>
 
 /** `S12` → 12, for newest first. */
 const nOf = (id: string): number => Number(id.slice(1)) || 0;
+
+/** An order's steers (order_get) that went to one of its tasks; all of them for its lead's (`taskId` undefined). */
+export const steersFor = (steers: readonly Steer[] | undefined, taskId: string | undefined): readonly Steer[] | undefined =>
+  taskId === undefined ? steers : steers?.filter((s) => "taskId" in s.target && s.target.taskId === taskId);
 
 /**
  * The receipts to show: what this window sent (its own answer until the list has it), then, unless `onlySent`, the

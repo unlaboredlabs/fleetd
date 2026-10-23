@@ -1,6 +1,8 @@
-// Steers and their receipts, as steers_list and steer_send answer them: the agents-work agent's (one receipt per
+// Steers and their receipts, as order_get (its `steers`) and steer_send answer them: the agents-work agent's (one receipt per
 // stage across agents-work and agents-steers) and the lead composer's ⌘Enter (fixtures/composer). QA types the words.
+import type { Fixture } from "../kit/fixture.ts";
 import { at } from "../kit/ids.ts";
+import { obj } from "../kit/stress.ts";
 import type { JsonObject } from "../kit/json.ts";
 import { AGENT } from "./route.ts";
 
@@ -25,7 +27,12 @@ export const steer = (now: string, n: number, target: JsonObject, stage: string,
 
 const T1 = { taskId: AGENT.laneId };
 
-/** Newest first, as steers_list answers: a steer still queued (Withdraw), one delivered, one acknowledged. */
+/** W1's order_get lists these as its steers, newest first. */
+export const withSteers = (f: Fixture, steers: JsonObject[]): void => {
+  f.update("order_get", (out, input) => (obj(input)["workstreamId"] === "W1" ? { ...obj(out), steers } : out));
+};
+
+/** Newest first, as order_get lists them: a steer still queued (Withdraw), one delivered, one acknowledged. */
 export const agentSteers = (now: string): JsonObject[] => [
   steer(now, 6, T1, "queued", "When the tests pass, open the PR as a draft.", 20),
   steer(now, 5, T1, "delivered", "Use the store’s zone from the order, not the browser’s.", 300, { mode: "now", deliveredAt: at(now, -299_000), how: "stopped", stoppedTool: "pnpm test" }),

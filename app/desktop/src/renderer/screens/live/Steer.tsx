@@ -1,18 +1,19 @@
 // Steering mid-run from the app: the box under an agent's live work, and the receipts any steer shows (that box's,
 // and the lead composer's ⌘Enter). Sent with the app's paired key, as chat is: the hub takes it as the person's
-// (steer_send refuses an agent key). Receipts are steers_list, read again on every steer.* event (effects.ts).
+// (steer_send refuses an agent key). Receipts are the order's steers in order_get, the read the live strip shares,
+// which every steer.* event naming the order reads again (effects.ts).
 import { ArrowUp } from "lucide-react";
 import { useState, type KeyboardEvent } from "react";
 import type { AttachmentId, Steer, SteerMode, SteerTarget } from "../../../shared/contracts";
 import { useDataLayer, useToolQuery } from "../../src/data/react";
 import { Button, cx, IdChip, Text, Tooltip, Truncate } from "../../ui";
-import { receiptsToShow, steerFailed, steerModeOn, steerReceipt, steerTooLong } from "./steerModel";
+import { receiptsToShow, steerFailed, steerModeOn, steerReceipt, steersFor, steerTooLong } from "./steerModel";
 import s from "./steer.module.css";
 
 /** ⌘Enter, as this platform writes it. */
 export const NOW_KEYS = window.fleetd.platform === "darwin" ? "⌘↩" : "Ctrl+↩";
 
-/** The steers this view sent, kept as the hub answered until steers_list lists them. */
+/** The steers this view sent, kept as the hub answered until its order lists them. */
 export function useSteerSends() {
   const { call } = useDataLayer();
   const [sent, setSent] = useState<readonly Steer[]>([]);
@@ -31,12 +32,14 @@ export function useSteerSends() {
   return { sent, send, withdraw };
 }
 
-/** `onlySent`: only what this view sent (the lead composer's); else the person's recent steers to `target` too. */
-export function SteerReceipts({ target, steers, onlySent = false }: { target: SteerTarget; steers: ReturnType<typeof useSteerSends>; onlySent?: boolean }) {
-  const enabled = !onlySent || steers.sent.length > 0;
-  const listed = useToolQuery("steers_list", { ...target, limit: 20 }, { enabled });
+/**
+ * The steers of order `workstreamId`, or of its task `taskId`. `onlySent`: only what this view sent (the lead
+ * composer's); else the person's recent steers to it too.
+ */
+export function SteerReceipts({ workstreamId, taskId, steers, onlySent = false }: { workstreamId: string; taskId?: string; steers: ReturnType<typeof useSteerSends>; onlySent?: boolean }) {
+  const order = useToolQuery("order_get", { workstreamId }, { enabled: !onlySent || steers.sent.length > 0 });
   const [unwithdrawn, setUnwithdrawn] = useState<string>();
-  const shown = receiptsToShow(listed.data?.steers, steers.sent, onlySent);
+  const shown = receiptsToShow(steersFor(order.data?.steers, taskId), steers.sent, onlySent);
   if (shown.length === 0) return null;
   return (
     <ul className={s.receipts} aria-label="Your steers">
@@ -89,7 +92,7 @@ export function SteerReceipts({ target, steers, onlySent = false }: { target: St
 }
 
 /** The box under one agent's live work: Enter at its next step, ⌘Enter stops its step. Its lead is told. */
-export function SteerBox({ taskId }: { taskId: string }) {
+export function SteerBox({ workstreamId, taskId }: { workstreamId: string; taskId: string }) {
   const target = { taskId };
   const steers = useSteerSends();
   const [text, setText] = useState("");
@@ -120,7 +123,7 @@ export function SteerBox({ taskId }: { taskId: string }) {
 
   return (
     <div className={s.steer} data-steer-box>
-      <SteerReceipts target={target} steers={steers} />
+      <SteerReceipts workstreamId={workstreamId} taskId={taskId} steers={steers} />
       <div className={s.box}>
         <textarea
           className={s.input}

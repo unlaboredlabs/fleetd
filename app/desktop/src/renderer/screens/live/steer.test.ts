@@ -4,7 +4,7 @@ import type { Steer } from "../../../shared/contracts";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { card, event, live, snapshot } from "../../src/data/fixtures.test-util";
 import type { HubFrame } from "../../../shared/hub";
-import { composerSendOn, leadOrder, receiptsToShow, steerModeOn, steerReceipt, steerTooLong } from "./steerModel";
+import { composerSendOn, leadOrder, receiptsToShow, steerModeOn, steersFor, steerReceipt, steerTooLong } from "./steerModel";
 
 const key = (k: Partial<Parameters<typeof steerModeOn>[0]> = {}) => ({ key: "Enter", shiftKey: false, altKey: false, metaKey: false, ctrlKey: false, isComposing: false, ...k });
 
@@ -80,6 +80,12 @@ describe("steer receipts", () => {
     expect(receiptsToShow(listed, sent, true).map((x) => `${x.id} ${x.stage}`)).toEqual(["S7 delivered"]);
     expect(receiptsToShow(listed, sent, false).map((x) => `${x.id} ${x.stage}`)).toEqual(["S7 delivered", "S6 acknowledged"]);
   });
+
+  it("shows an agent only its own steers from its order's, and the lead all of them", () => {
+    const order = [steer(3, "queued", { target: { workstreamId: "W1" } }), steer(2, "queued", { target: { taskId: "T2" } }), steer(1, "queued")];
+    expect(steersFor(order, "T1")?.map((x) => x.id)).toEqual(["S1"]);
+    expect(steersFor(order, undefined)?.map((x) => x.id)).toEqual(["S3", "S2", "S1"]);
+  });
 });
 
 describe("the steer calls", () => {
@@ -108,9 +114,11 @@ describe("the steer calls", () => {
     fake.send(live());
     fake.send(snapshot(1));
     const target = { taskId: "T1" };
-    const stop = new QueryObserver(layer.queryClient, layer.toolQuery("steers_list", { ...target, limit: 20 })).subscribe(() => undefined);
+    const read = { workstreamId: "W1" };
+    const answer = (stage: Steer["stage"]) => ({ order: card("W1"), doneLanes: [], requests: [], steers: [steer(7, stage)] });
+    const stop = new QueryObserver(layer.queryClient, layer.toolQuery("order_get", read)).subscribe(() => undefined);
     await vi.advanceTimersByTimeAsync(0);
-    fake.answers.shift()?.({ steers: [] });
+    fake.answers.shift()?.({ order: card("W1"), doneLanes: [], requests: [], steers: [] });
 
     const sending = layer.call("steer_send", { target, text: "use the store's zone", mode: "now", clientRequestId: "c1" });
     expect(fake.calls.at(-1)).toEqual({ tool: "steer_send", input: { target: { taskId: "T1" }, text: "use the store's zone", mode: "now", clientRequestId: "c1" } });
@@ -124,11 +132,12 @@ describe("the steer calls", () => {
       const before = fake.calls.length;
       fake.send(event(seq, type, { steerId: "S7", workstreamId: "W1", taskId: "T1", stage: type.slice(6) }));
       await vi.advanceTimersByTimeAsync(150);
-      expect(fake.calls.slice(before).filter((c) => c.tool === "steers_list")).toEqual([{ tool: "steers_list", input: { taskId: "T1", limit: 20 } }]);
-      fake.answers.splice(0).forEach((answer, i) => answer(fake.calls[before + i]?.tool === "steers_list" ? { steers: [steer(7, "acknowledged")] } : {}));
+      expect(fake.calls.slice(before).filter((c) => c.tool === "order_get")).toEqual([{ tool: "order_get", input: read }]);
+      const stage = type === "steer.delivered" ? "delivered" : "acknowledged";
+      fake.answers.splice(0).forEach((reply, i) => reply(fake.calls[before + i]?.tool === "order_get" ? answer(stage) : {}));
       await vi.advanceTimersByTimeAsync(0);
+      expect(steersFor(layer.queryClient.getQueryData<{ steers: Steer[] }>(["call", "order_get", read])?.steers, "T1")?.[0]?.stage).toBe(stage);
     }
-    expect(layer.queryClient.getQueryData<{ steers: Steer[] }>(["call", "steers_list", { taskId: "T1", limit: 20 }])?.steers[0]?.stage).toBe("acknowledged");
     stop();
   });
 });

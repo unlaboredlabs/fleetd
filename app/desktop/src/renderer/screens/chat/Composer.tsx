@@ -214,7 +214,7 @@ export function ChatComposer({ project, onSent, autoFocus, recall }: ChatCompose
   const said = note ?? stopError;
   return (
     <div className={c.composer} data-composer data-screen="chat.composer">
-      {steers.sent[0] !== undefined ? <SteerReceipts target={{ workstreamId: steers.sent[0].workstreamId }} steers={steers} onlySent /> : null}
+      {steers.sent[0] !== undefined ? <SteerReceipts workstreamId={steers.sent[0].workstreamId} steers={steers} onlySent /> : null}
       <div className={c.box}>
         <textarea
           ref={box}
