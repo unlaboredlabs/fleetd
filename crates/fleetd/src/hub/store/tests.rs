@@ -527,3 +527,40 @@ fn unused_tables_and_events_go_on_an_older_hub() {
         .unwrap();
     assert_eq!(types, ["workstream.running"]);
 }
+
+/// A hub from before the value bar went: stored tasks and changes drop what they served.
+#[test]
+fn tasks_and_changes_from_an_older_hub_drop_what_they_served() {
+    use super::migrations::MIGRATIONS;
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    let no_value_bar = MIGRATIONS
+        .iter()
+        .position(|m| m.contains("json_remove(data, '$.serves')"))
+        .expect("the value bar migration");
+    for m in &MIGRATIONS[..no_value_bar] {
+        conn.execute_batch(m).unwrap();
+    }
+    conn.execute_batch(
+        r#"INSERT INTO tasks (machine_id, project_id, workstream_id, state, data)
+          VALUES ('m', 'p', 'W1', 'done', '{"taskId":"T1","serves":"done:0"}');
+        INSERT INTO changes (repo, pr_number, state, machine_id, project_id, train_order, data)
+          VALUES ('o/r', 1, 'merged', 'm', 'p', 0, '{"changeId":"X1","serves":"done:0"}');"#,
+    )
+    .unwrap();
+    conn.execute_batch(MIGRATIONS[no_value_bar]).unwrap();
+
+    let data: (String, String) = conn
+        .query_row(
+            "SELECT (SELECT data FROM tasks), (SELECT data FROM changes)",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        data,
+        (
+            r#"{"taskId":"T1"}"#.to_string(),
+            r#"{"changeId":"X1"}"#.to_string()
+        )
+    );
+}

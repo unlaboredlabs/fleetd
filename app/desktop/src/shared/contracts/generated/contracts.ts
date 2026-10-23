@@ -413,7 +413,6 @@ export type Change = {
   projectRef: ProjectRef;
   repo: GitHubRepo;
   reviews: ChangeReview[];
-  serves: Serves;
   state: ChangeState;
   /** The write task that opened it; absent when the lead enqueued a PR no task wrote. */
   taskId?: TaskId;
@@ -3793,8 +3792,6 @@ export type Task = {
   /** Why it is queued, e.g. "lease: docs held by T1" or "fleet cap: 40 of 40 running". */
   queuedReason?: string;
   result?: TaskResult;
-  /** Required at spawn for write tasks; optional here for tasks stored before M6. */
-  serves?: Serves;
   startedAt?: Timestamp;
   state: TaskState;
   taskId: TaskId;

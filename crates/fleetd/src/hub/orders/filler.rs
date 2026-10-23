@@ -47,7 +47,7 @@ pub fn item_offer(item: &Runnable) -> Offer {
     }
 }
 
-/// A finish-all order with room: the lead takes its next item from `inventory`, which keeps the value bar.
+/// A finish-all order with room: the lead takes its next item from `inventory`.
 pub fn finish_all_offer(workstream_id: &str, open_children: usize, max_children: u32) -> Offer {
     let room = (max_children as usize).saturating_sub(open_children);
     Offer {

@@ -7,13 +7,13 @@ use std::time::Duration;
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::Timestamp;
 use fleetd_contracts::ledger::DecisionScope;
-use fleetd_contracts::tasks::{Task, TaskKind};
+use fleetd_contracts::tasks::Task;
 use serde_json::{Value, json};
 
 use super::contract::{MachineId, ProjectRef, TaskId, WorkstreamId};
 use super::host::{
-    BoxFut, BriefView, CmdOut, DecisionView, EventView, IncidentInput, PlaybookView, PrVerdict,
-    ProviderView, ReviewRefusal, ReviewSpawn, TaskView, TrainHost, WorkstreamView,
+    BoxFut, BriefView, CmdOut, DecisionView, EventView, IncidentInput, PlaybookView, ProviderView,
+    ReviewSpawn, TaskView, TrainHost, WorkstreamView,
 };
 use crate::clock::Clock;
 use crate::hub::api::Hub;
@@ -78,7 +78,6 @@ fn task_view(task: Task) -> TaskView {
         workstream_id: task.workstream_id.clone(),
         kind: wire_str(task.kind),
         state: wire_str(task.state),
-        serves: task.serves.as_ref().map(wire_str),
         tier: task.tier,
         pr_url: result.and_then(|r| r.pr_url.as_ref()).map(wire_str),
         receipt_commands: result
@@ -173,7 +172,6 @@ impl TrainHost for HubHost {
                 "kind": "review",
                 "prompt": spawn.prompt,
                 "areas": [],
-                "serves": spawn.serves,
                 "pr": spawn.pr,
                 "tier": spawn.tier,
             });
@@ -202,10 +200,7 @@ impl TrainHost for HubHost {
         Some(WorkstreamView {
             workstream_id: w.workstream_id.clone(),
             project_ref: w.project_ref.clone(),
-            brief: w.brief.as_ref().map(|b| BriefView {
-                tier: b.tier,
-                done_when: b.done_when.len(),
-            }),
+            brief: w.brief.as_ref().map(|b| BriefView { tier: b.tier }),
             playbook: w.playbook.as_ref().map(wire_str),
         })
     }
@@ -222,7 +217,6 @@ impl TrainHost for HubHost {
         let p = loaded.playbook;
         let rules = &p.review_rules;
         Some(PlaybookView {
-            require_source: p.value_bar.require_source,
             review_rules: [rules.s.clone(), rules.m.clone(), rules.l.clone()],
         })
     }
@@ -429,34 +423,6 @@ impl TrainHost for HubHost {
                 .provider_instances(machine_id)
                 .await
                 .map_err(|e| e.to_string())
-        })
-    }
-
-    fn review_refusal(
-        &self,
-        workstream_id: &WorkstreamId,
-        pr: &str,
-        head_sha: &str,
-        verdicts: &[PrVerdict],
-    ) -> Option<ReviewRefusal> {
-        use crate::hub::valuebar::rules::{SpawnRequest, review_refusal};
-        let request = SpawnRequest {
-            workstream_id: workstream_id.clone(),
-            kind: TaskKind::Review,
-            serves: None,
-            pr: Some(pr.to_string()),
-            qa: false,
-        };
-        review_refusal(
-            &request,
-            crate::hub::reviews::REVIEWS_BY,
-            Some(head_sha),
-            verdicts,
-            None,
-        )
-        .map(|r| ReviewRefusal {
-            message: r.message,
-            polish_loop: r.polish_loop.is_some(),
         })
     }
 }

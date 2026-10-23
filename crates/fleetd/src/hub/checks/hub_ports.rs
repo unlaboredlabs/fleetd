@@ -134,7 +134,6 @@ impl Ports for HubPorts {
         let loaded = self.hub()?.leads.playbooks.by_ref(playbook);
         let p = logged(loaded, "reading a playbook")??.playbook;
         Some(PlaybookLimits {
-            max_review_rounds: p.value_bar.max_review_rounds.get() as u32,
             estimate_prior: p.estimate_prior.get(),
         })
     }
@@ -201,7 +200,6 @@ impl Ports for HubPorts {
                 profile: None,
                 tier: None,
                 estimate_minutes: None,
-                serves: None,
                 pr: None,
                 qa: None,
                 item: None,

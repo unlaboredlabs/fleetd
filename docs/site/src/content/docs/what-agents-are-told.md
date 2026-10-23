@@ -219,7 +219,7 @@ agents: 3 running of 6, 1 queued
   done when: done:0 test login_flaky passes in acme/app
 
 ## Events
-- PR #12 merged as 4f1c2a9e0b7d: https://github.com/acme/app/pull/12 (C4, tier S, serves done:0, by T4)
+- PR #12 merged as 4f1c2a9e0b7d: https://github.com/acme/app/pull/12 (C4, tier S, by T4)
 - T5 finished: port the parser (branch fleetd/T5-port, PR https://github.com/acme/app/pull/13)
   > Ported; 2 blockers left for review.
 - T7 waiting for an answer: docs

@@ -14,11 +14,11 @@ use fleetd_contracts::sessions::SessionWorkspace;
 use fleetd_contracts::tasks::{TaskId, TaskResult};
 use fleetd_contracts::usage::UsageParked;
 
-use super::hooks::{ResultReceipts, SpawnCheck, UsageGate};
+use super::hooks::{ResultReceipts, UsageGate};
 use super::ports::{
-    BoxFut, CmdOutput, LaunchRequest, PortError, TaskError, TaskPorts, ThreadChanges, WakeKind,
+    BoxFut, CmdOutput, LaunchRequest, PortError, TaskPorts, ThreadChanges, WakeKind,
 };
-use super::{SpawnInput, TaskCaller, Tasks};
+use super::{TaskCaller, Tasks};
 use crate::hub::api::Hub;
 use crate::hub::executor::{ExecutorError, Executors, LaunchInput, LaunchOptions};
 use crate::hub::leads::hooks::{BoxFuture, PolicyHook, TasksHook};
@@ -379,32 +379,6 @@ impl UsageGate for UsageFromArea {
     }
 }
 
-struct ValueBarCheck(Arc<crate::hub::valuebar::ValueBar>);
-
-impl SpawnCheck for ValueBarCheck {
-    fn check_spawn<'a>(
-        &'a self,
-        caller: &'a TaskCaller,
-        input: &'a SpawnInput,
-        workstream: &'a Workstream,
-    ) -> BoxFut<'a, Result<(), TaskError>> {
-        Box::pin(async move {
-            let caller = crate::hub::valuebar::Caller {
-                project_ref: caller.project_ref.clone(),
-                by: caller.by.clone(),
-            };
-            let request = crate::hub::valuebar::rules::SpawnRequest {
-                workstream_id: input.workstream_id.clone(),
-                kind: input.kind,
-                serves: input.serves.as_ref().map(|s| s.to_string()),
-                pr: input.pr.as_ref().map(|p| p.to_string()),
-                qa: input.qa.unwrap_or(false),
-            };
-            self.0.check_spawn(&caller, &request, workstream).await
-        })
-    }
-}
-
 struct ReceiptsFromArea(Arc<crate::hub::receipts::Receipts>);
 
 impl ResultReceipts for ReceiptsFromArea {
@@ -500,7 +474,7 @@ impl PolicyHook for PolicyFromLeases {
 }
 
 /// Everything tasks, slots and leases hook into once the `Hub` exists: the ports' leads half, the lead calls, the
-/// stale-lease sweep check, the usage/value bar/receipts hooks on tasks, and the tasks/policy hooks on leads.
+/// stale-lease sweep check, the usage/receipts hooks on tasks, and the tasks/policy hooks on leads.
 pub fn wire(hub: &Arc<Hub>, ports: &HubTaskPorts) {
     ports.bind(hub);
     register_lead_calls(hub);
@@ -516,9 +490,6 @@ pub fn wire(hub: &Arc<Hub>, ports: &HubTaskPorts) {
     let _ = hooks
         .usage
         .set(Arc::new(UsageFromArea(Arc::clone(&hub.usage))));
-    let _ = hooks
-        .spawn_check
-        .set(Arc::new(ValueBarCheck(Arc::clone(&hub.value_bar))));
     let _ = hooks
         .receipts
         .set(Arc::new(ReceiptsFromArea(Arc::clone(&hub.receipts))));

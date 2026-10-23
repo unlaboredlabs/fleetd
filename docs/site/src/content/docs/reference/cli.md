@@ -405,11 +405,10 @@ fleetd decisions search "<query>"
 
 ```text
 fleetd task spawn --workstream <W> --title <t> --prompt <p> [--kind write|read|review] [--areas a,b]
-    [--profile high|medium] [--tier S|M|L]
-    [--serves done:<n>|issue:<ref>|defect:<text>|decision:<key>] [--pr <url>] [--qa] [--item P<n>]
+    [--profile high|medium] [--tier S|M|L] [--pr <url>] [--qa] [--item P<n>]
 ```
 
-delegate work to a subagent; writers need `--areas` and `--serves` and get their own branch; a review task needs `--pr`, and `--qa` marks it a QA run; `--item` links it to that plan item
+delegate work to a subagent; writers need `--areas` and get their own branch; a review task needs `--pr`, and `--qa` marks it a QA run; `--item` links it to that plan item
 
 ### fleetd task list {#task-list}
 
@@ -457,11 +456,10 @@ the last step of a review task; a research judge also reports its metric for the
 ### fleetd change enqueue {#change-enqueue}
 
 ```text
-fleetd change enqueue --pr <url> [--task <T>] [--workstream <W>] [--serves <s>] [--tier S|M|L]
-    [--item P<n>]
+fleetd change enqueue --pr <url> [--task <T>] [--workstream <W>] [--tier S|M|L] [--item P<n>]
 ```
 
-put a PR on its repo's merge train (a write task's PR goes on by itself); its body needs a 'Source: \<serves\>' line. Only the train merges. `--item` links the PR to that plan item
+put a PR on its repo's merge train (a write task's PR goes on by itself). Only the train merges. `--item` links the PR to that plan item
 
 ### fleetd change status {#change-status}
 
@@ -515,7 +513,7 @@ the project's open work ranked: failing checks, open issues (gh), open requests 
 ### fleetd workstream open {#workstream-open}
 
 ```text
-fleetd workstream open --text "<intent>" [--template bugfix|feature|research|finish-all] [--serves <s>]
+fleetd workstream open --text "<intent>" [--template bugfix|feature|research|finish-all]
 ```
 
 open a workstream for work taken from the chat: a draft to brief

@@ -630,7 +630,6 @@ fn example(role: Role, tool: &str) -> Option<Value> {
             "title": "Rate-limit the upload API",
             "prompt": "Limit uploads to 10 a minute per API key. Over the limit, answer 429 with Retry-After.",
             "areas": ["api"],
-            "serves": "done:0",
         }),
         (Role::Lead, "message_agent") => json!({
             "taskId": "T7",

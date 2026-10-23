@@ -99,7 +99,6 @@ pub enum Event<'a> {
         pr_url: &'a str,
         sha: &'a str,
         tier: &'a str,
-        serves: &'a str,
         by: Option<&'a str>,
     },
     /// The train dropped a PR (closed, or a newer change replaced it).
@@ -280,11 +279,10 @@ impl Event<'_> {
                 pr_url,
                 sha,
                 tier,
-                serves,
                 by,
             } => (
                 format!(
-                    "- {} merged{sha}: {pr_url} ({change}, tier {tier}, serves {serves}{})",
+                    "- {} merged{sha}: {pr_url} ({change}, tier {tier}{})",
                     pr_label(pr_url),
                     by.map(|b| format!(", by {b}")).unwrap_or_default()
                 ),
@@ -539,10 +537,9 @@ mod tests {
                 pr_url: url,
                 sha: " as abc1234",
                 tier: "S",
-                serves: "done:0",
                 by: Some("T4")
             }),
-            "- PR #12 merged as abc1234: https://github.com/o/r/pull/12 (C4, tier S, serves done:0, by T4)"
+            "- PR #12 merged as abc1234: https://github.com/o/r/pull/12 (C4, tier S, by T4)"
         );
         assert_eq!(
             r(Event::PrLeft {
@@ -565,10 +562,10 @@ mod tests {
             r(Event::PrRefused {
                 pr_url: url,
                 task: "T4",
-                message: "no serves",
-                fix: Some("add Source: done:0")
+                message: "It is closed.",
+                fix: Some("enqueue an open PR")
             }),
-            "- PR #12 from T4 refused by the train: no serves Fix: add Source: done:0. (https://github.com/o/r/pull/12)"
+            "- PR #12 from T4 refused by the train: It is closed. Fix: enqueue an open PR. (https://github.com/o/r/pull/12)"
         );
         assert_eq!(
             r(Event::PrNote {
