@@ -64,7 +64,7 @@ export function PrsPane({ project, pr, tab, onTab }: { project: ProjectRef; pr: 
         </div>
       ) : pr !== null ? (
         // The number alone waits for the list to know its repo.
-        <div className={s.paneNote} data-screen="prs.detail.loading" aria-busy={fresh}>
+        <div className={s.paneNote} data-screen="prs.detail.loading" aria-busy={fresh && !list.isError}>
           <Text tone="quiet">Loading #{pr.number}…</Text>
         </div>
       ) : rows !== undefined ? (

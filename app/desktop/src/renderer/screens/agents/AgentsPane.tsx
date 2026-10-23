@@ -55,7 +55,8 @@ function AgentList({ project }: { project: string }) {
         </span>
       ) : null}
       {agents === undefined ? (
-        <Skeleton busy={fresh} />
+        // A failed read says so above; the skeleton then waits for Retry, it doesn't claim to be loading.
+        <Skeleton busy={fresh && !query.isError} />
       ) : agents.length === 0 ? (
         <EmptyState title="No agents are working">When the lead starts agents, they show here, with what each is doing.</EmptyState>
       ) : (

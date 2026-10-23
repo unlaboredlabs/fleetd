@@ -406,7 +406,7 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
       await expect(page.getByText("Couldn’t load the newest messages.")).toBeVisible();
-      await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+      await expect(page.locator('[data-screen="chat"]').getByRole("button", { name: "Retry", exact: true })).toBeVisible();
       await expect(page.locator("header").getByText(/^Last known, as of/u)).toBeVisible();
     },
   },
