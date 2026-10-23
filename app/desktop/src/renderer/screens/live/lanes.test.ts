@@ -65,7 +65,7 @@ group("formatters", () => {
     expect(fmtElapsed(-5)).toBe("0:00");
     expect(fmtElapsed(3_900_000)).toBe("1h 05m");
     expect([840, 3_100, 9_960, 48_200, 999_499, 999_500, 12_400_000].map(fmtTokens)).toEqual(["840", "3.1k", "10k", "48k", "999k", "1.0M", "12M"]);
-    expect(shortModel("claude-haiku-5-5")).toBe("haiku");
+    expect(shortModel("claude-opus-5-5")).toBe("opus");
     expect(shortModel("gpt-x")).toBe("gpt-x");
   });
 

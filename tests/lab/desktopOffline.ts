@@ -6,7 +6,7 @@
 // 3. the app quits and relaunches with the hub still down: the chat and the queued message come back from the cache;
 // 4. the hub starts: the app resyncs, and the queued message reaches the hub exactly once;
 // 5. a hub restart with the chat open never leaves it blank.
-// One haiku turn: the lead answering the queued message (the first message is a secret request, which costs none).
+// One medium turn: the lead answering the queued message (the first message is a secret request, which costs none).
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -25,10 +25,10 @@ export async function desktopOffline(lab: Lab) {
   fs.mkdirSync(lab.dir, { recursive: true });
   await lab.waitLive(MACHINE);
 
-  // A project of its own, its lead on haiku.
+  // A project of its own, its lead on medium.
   fs.rmSync(REPO, { recursive: true, force: true });
   fs.mkdirSync(path.join(REPO, ".fleetd"), { recursive: true });
-  fs.writeFileSync(path.join(REPO, ".fleetd/policy.yaml"), `defaults:\n  model: ${MODEL}\n  effort: low\n`);
+  fs.writeFileSync(path.join(REPO, ".fleetd/policy.yaml"), `defaults:\n  model: ${MODEL}\n  effort: medium\n`);
   seedRepo(REPO, "offline");
   const projectId = await lab.addProject(MACHINE, REPO, "repo-offline");
   const ref = { machineId: MACHINE, projectId };

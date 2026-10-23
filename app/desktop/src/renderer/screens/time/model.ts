@@ -17,7 +17,7 @@ export interface Row {
   readonly key: string;
   readonly name: string;
   readonly role?: AgentRole;
-  /** The agent's model ("claude-sonnet-…") and the lane id its live frames carry, when the store knows the lane. */
+  /** The agent's model ("claude-opus-5-5") and the lane id its live frames carry, when the store knows the lane. */
   readonly model?: string;
   readonly profile?: TaskProfile;
   readonly laneId?: string;
