@@ -286,8 +286,6 @@ as stopping a project, answering an approval or entering a secret, need one.</p>
 </table>
 <p><code dir="auto">projectRef</code> is <code dir="auto">{"machineId": "devbox", "projectId": "&lt;id&gt;"}</code>; <code dir="auto">fleetd project list</code> prints both, as
 <code dir="auto">&lt;machineId&gt;/&lt;projectId&gt;</code>.</p>
-<p><code dir="auto">intake_submit</code> and the <code dir="auto">order_*</code> tools are gone; for one release they answer with an error that points to
-<code dir="auto">chat_send</code>.</p>
 <p><code dir="auto">clientRequestId</code> is any unique string you choose per request. Sending the same one again returns the same message
 instead of a second one. <code dir="auto">events_wait</code> waits for changes, so a client doesn’t need to poll: a new message is a
 <code dir="auto">chat.message</code> event.</p>

@@ -409,26 +409,9 @@ async fn a_message_to_a_project_without_a_lead_is_kept_once_and_says_why_it_wait
 }
 
 #[tokio::test]
-async fn the_tools_the_chat_replaced_say_where_they_went() {
+async fn project_stop_with_nothing_running_says_so() {
     let (hub, _home) = hub();
     let tools = crate::hub::api::registry();
-    for (name, _) in super::tools::MOVED {
-        let Err(crate::hub::api::CallError::Tool(e)) =
-            tools.call(&hub, &person(), name, json!({})).await
-        else {
-            panic!("{name} still answers");
-        };
-        assert!(
-            e.message.contains("moved to the project chat"),
-            "{name}: {}",
-            e.message
-        );
-        assert!(
-            e.fix
-                .as_deref()
-                .is_some_and(|f| f.contains("chat_send") || f.contains("project_stop"))
-        );
-    }
     let stop = tools
         .call(
             &hub,

@@ -1,5 +1,4 @@
-//! MCP tools of the lead chat (chat_send, chat_history, chat_stop, project_stop), the tools it replaces (each answers where it
-//! moved, for one release), and the lead's `workstream_open` call.
+//! MCP tools of the lead chat (chat_send, chat_history, chat_stop, project_stop) and the lead's `workstream_open` call.
 use std::sync::{Arc, Weak};
 
 use fleetd_contracts::auth::Role;
@@ -18,41 +17,11 @@ use crate::hub::leads::workstreams::IntakeInput;
 use crate::hub::link::lead_calls::LeadCallFuture;
 use crate::hub::link::{LeadCaller, LeadCalls};
 
-/// The tools the chat replaced, with where each went.
-pub const MOVED: &[(&str, &str)] = &[
-    (
-        "intake_submit",
-        "Write to the project's lead with chat_send; the lead turns it into work.",
-    ),
-    (
-        "intake_preview",
-        "Pick the project and write to its lead with chat_send.",
-    ),
-    (
-        "order_note",
-        "Write to the project's lead with chat_send; it reads you at once.",
-    ),
-    (
-        "order_stop",
-        "Stop everything in the project with project_stop, or tell the lead in chat_send.",
-    ),
-];
-
 pub fn register(tools: &mut Registry) {
     tools.add("chat_send", chat_send);
     tools.add("chat_history", chat_history);
     tools.add("project_stop", project_stop);
     tools.add_raw("chat_stop", chat_stop);
-    for (name, fix) in MOVED {
-        let fix = *fix;
-        tools.add::<Value, Value, _, _>(name, move |_hub: Arc<Hub>, _caller, _input| async move {
-            Err(ToolError::new(
-                ErrorCode::Invalid,
-                format!("{name} moved to the project chat."),
-            )
-            .with_fix(fix))
-        });
-    }
 }
 
 async fn chat_send(

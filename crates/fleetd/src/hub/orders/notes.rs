@@ -3,8 +3,7 @@
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ledger::{Headline, Workstream, WorkstreamState};
-use fleetd_contracts::mcp::{ErrorCode, IntakeRef, OrderStopInput, OrderStopOutput};
-use fleetd_contracts::prim::Count;
+use fleetd_contracts::mcp::{ErrorCode, IntakeRef};
 use fleetd_contracts::tasks::TaskState;
 use serde_json::json;
 
@@ -100,25 +99,20 @@ fn serde_plain<T: serde::Serialize>(v: &T) -> String {
         .unwrap_or_default()
 }
 
+/// Stops one order and returns how many of its agents it cancelled. Its one caller is the stop behind `chat_stop` and
+/// `project_stop`, which take only a person's device (a human key).
 pub async fn stop(
     hub: &Hub,
     caller: &Caller,
-    input: OrderStopInput,
-) -> Result<OrderStopOutput, ToolError> {
-    require_human(caller, "order_stop")?;
-    let mut stored = readable_order(hub, caller, input.workstream_id.as_str())?;
+    workstream_id: &str,
+    reason: Option<&str>,
+) -> Result<i64, ToolError> {
+    let mut stored = readable_order(hub, caller, workstream_id)?;
     let r = stored.project_ref.clone();
     require(caller, Role::Operate, Some(&r.machine_id))?;
     let id = stored.workstream_id.clone();
     match stored.state {
-        WorkstreamState::Stopped => {
-            return Ok(OrderStopOutput {
-                state: WorkstreamState::Stopped,
-                cancelled: Count::default(),
-                next: Some(format!("{id} was already stopped.")),
-                truncated: None,
-            });
-        }
+        WorkstreamState::Stopped => return Ok(0),
         WorkstreamState::Done | WorkstreamState::Failed => {
             return Err(ToolError::new(
                 ErrorCode::Invalid,
@@ -131,8 +125,7 @@ pub async fn stop(
         _ => {}
     }
     let by = caller.key_id.to_string();
-    let reason = input.reason.as_ref().map(|r| r.to_string());
-    let why = reason.as_deref().unwrap_or("stopped by the human");
+    let why = reason.unwrap_or("stopped by the human");
     let task_caller = TaskCaller {
         project_ref: r.clone(),
         by: by.clone(),
@@ -155,7 +148,7 @@ pub async fn stop(
             .await
         {
             Ok(_) => cancelled += 1,
-            Err(error) => tracing::warn!(task = %task.task_id, ?error, "order_stop: cancel failed"),
+            Err(error) => tracing::warn!(task = %task.task_id, ?error, "stop: cancel failed"),
         }
     }
     let project = crate::hub::usage::ports::ProjectRef {
@@ -194,12 +187,7 @@ pub async fn stop(
             .render(),
         },
     );
-    Ok(OrderStopOutput {
-        state: WorkstreamState::Stopped,
-        cancelled: Count::unchecked(cancelled),
-        next: Some("Tell the lead in the chat what to do instead (chat_send).".into()),
-        truncated: None,
-    })
+    Ok(cancelled)
 }
 
 #[cfg(test)]
@@ -219,10 +207,10 @@ mod tests {
 
     #[test]
     fn only_a_person_s_device_speaks_for_the_human() {
-        assert!(require_human(&caller(Some(KeyKind::Human)), "order_stop").is_ok());
+        assert!(require_human(&caller(Some(KeyKind::Human)), "project_stop").is_ok());
         // An operate agent key on every machine is still not the human.
-        let refused = require_human(&caller(None), "order_note").unwrap_err();
+        let refused = require_human(&caller(None), "steer_send").unwrap_err();
         assert_eq!(refused.code, ErrorCode::Forbidden);
-        assert!(require_human(&caller(Some(KeyKind::Agent)), "order_stop").is_err());
+        assert!(require_human(&caller(Some(KeyKind::Agent)), "chat_stop").is_err());
     }
 }

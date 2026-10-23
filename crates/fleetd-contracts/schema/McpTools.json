@@ -4228,57 +4228,6 @@
       ],
       "type": "string"
     },
-    "IntakeEcho": {
-      "description": "Where an intent went and why: the caller's project, `@<project>`, or the only project.",
-      "properties": {
-        "projectRef": {
-          "$ref": "#/$defs/ProjectRef"
-        },
-        "reason": {
-          "maxLength": 200,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        },
-        "template": {
-          "$ref": "#/$defs/PlaybookName",
-          "description": "The playbook the caller gave; absent means the project's lead decides how to run it."
-        }
-      },
-      "required": [
-        "projectRef",
-        "reason"
-      ],
-      "type": "object"
-    },
-    "IntakePreviewInput": {
-      "properties": {
-        "text": {
-          "maxLength": 4000,
-          "minLength": 1,
-          "type": "string"
-        }
-      },
-      "required": [
-        "text"
-      ],
-      "type": "object"
-    },
-    "IntakePreviewOutput": {
-      "properties": {
-        "echo": {
-          "$ref": "#/$defs/IntakeEcho",
-          "description": "Absent: the text names no project and there is more than one (intake_submit would refuse it)."
-        },
-        "next": {
-          "type": "string"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "type": "object"
-    },
     "IntakeRef": {
       "description": "Something an order or note points at: a file of the project, another order, or a PR. The hub renders these into\nthe lead's wake as a \"References:\" block.",
       "oneOf": [
@@ -4334,75 +4283,6 @@
           "type": "object"
         }
       ]
-    },
-    "IntakeSubmitInput": {
-      "properties": {
-        "attachments": {
-          "description": "From attachment_put; delivered to the project under `.fleetd/attachments/<W>/` when the order is placed.",
-          "items": {
-            "$ref": "#/$defs/AttachmentId"
-          },
-          "maxItems": 8,
-          "type": "array",
-          "uniqueItems": true
-        },
-        "clientRequestId": {
-          "minLength": 1,
-          "type": "string"
-        },
-        "machineId": {
-          "$ref": "#/$defs/MachineId",
-          "description": "With projectId, or neither: then a leading `@<project>` picks the project, else the only one the caller may use."
-        },
-        "projectId": {
-          "$ref": "#/$defs/ProjectId"
-        },
-        "refs": {
-          "items": {
-            "$ref": "#/$defs/IntakeRef"
-          },
-          "maxItems": 20,
-          "type": "array"
-        },
-        "template": {
-          "$ref": "#/$defs/PlaybookName",
-          "description": "The playbook the order's workstream pins; none when absent."
-        },
-        "text": {
-          "maxLength": 4000,
-          "minLength": 1,
-          "type": "string"
-        }
-      },
-      "required": [
-        "text",
-        "clientRequestId"
-      ],
-      "type": "object"
-    },
-    "IntakeSubmitOutput": {
-      "properties": {
-        "echo": {
-          "$ref": "#/$defs/IntakeEcho"
-        },
-        "leadWaiting": {
-          "description": "Why no lead has the order yet, with the fix; absent when the project's lead has it or is starting.",
-          "type": "string"
-        },
-        "next": {
-          "type": "string"
-        },
-        "truncated": {
-          "type": "boolean"
-        },
-        "workstreamId": {
-          "$ref": "#/$defs/WorkstreamId"
-        }
-      },
-      "required": [
-        "workstreamId"
-      ],
-      "type": "object"
     },
     "ItemStage": {
       "description": "The observable stages an item passes on its way to verified, in order. Each is credited only once fleetd saw it.",
@@ -4923,18 +4803,6 @@
         "hub_info.output": {
           "$ref": "#/$defs/HubInfoOutput"
         },
-        "intake_preview.input": {
-          "$ref": "#/$defs/IntakePreviewInput"
-        },
-        "intake_preview.output": {
-          "$ref": "#/$defs/IntakePreviewOutput"
-        },
-        "intake_submit.input": {
-          "$ref": "#/$defs/IntakeSubmitInput"
-        },
-        "intake_submit.output": {
-          "$ref": "#/$defs/IntakeSubmitOutput"
-        },
         "lead_restart.input": {
           "$ref": "#/$defs/LeadStartInput"
         },
@@ -4952,18 +4820,6 @@
         },
         "order_get.output": {
           "$ref": "#/$defs/OrderGetOutput"
-        },
-        "order_note.input": {
-          "$ref": "#/$defs/OrderNoteInput"
-        },
-        "order_note.output": {
-          "$ref": "#/$defs/OrderNoteOutput"
-        },
-        "order_stop.input": {
-          "$ref": "#/$defs/OrderStopInput"
-        },
-        "order_stop.output": {
-          "$ref": "#/$defs/OrderStopOutput"
         },
         "orders_board.input": {
           "$ref": "#/$defs/OrdersBoardInput"
@@ -5271,20 +5127,12 @@
         "fleetd_status.output",
         "hub_info.input",
         "hub_info.output",
-        "intake_preview.input",
-        "intake_preview.output",
-        "intake_submit.input",
-        "intake_submit.output",
         "lead_restart.input",
         "lead_restart.output",
         "lead_start.input",
         "lead_start.output",
         "order_get.input",
         "order_get.output",
-        "order_note.input",
-        "order_note.output",
-        "order_stop.input",
-        "order_stop.output",
         "orders_board.input",
         "orders_board.output",
         "plan_get.input",
@@ -5736,76 +5584,6 @@
       ],
       "type": "object"
     },
-    "OrderNoteInput": {
-      "properties": {
-        "attachments": {
-          "items": {
-            "$ref": "#/$defs/AttachmentId"
-          },
-          "maxItems": 8,
-          "type": "array",
-          "uniqueItems": true
-        },
-        "clientRequestId": {
-          "minLength": 1,
-          "type": "string"
-        },
-        "refs": {
-          "items": {
-            "$ref": "#/$defs/IntakeRef"
-          },
-          "maxItems": 20,
-          "type": "array"
-        },
-        "text": {
-          "maxLength": 4000,
-          "minLength": 1,
-          "type": "string"
-        },
-        "urgent": {
-          "default": false,
-          "type": "boolean"
-        },
-        "workstreamId": {
-          "$ref": "#/$defs/WorkstreamId"
-        }
-      },
-      "required": [
-        "workstreamId",
-        "text",
-        "clientRequestId"
-      ],
-      "type": "object"
-    },
-    "OrderNoteOutput": {
-      "properties": {
-        "next": {
-          "type": "string"
-        },
-        "noteId": {
-          "description": "\"N\" plus a number.",
-          "maxLength": 40,
-          "minLength": 1,
-          "type": "string"
-        },
-        "steerId": {
-          "$ref": "#/$defs/SteerId",
-          "description": "The steer the note was sent as; its receipts arrive as `steer.*` events."
-        },
-        "truncated": {
-          "type": "boolean"
-        },
-        "wakesAt": {
-          "$ref": "#/$defs/Timestamp",
-          "description": "The lead's wake that will carry it: now for urgent notes, else after the wake debounce."
-        }
-      },
-      "required": [
-        "noteId",
-        "wakesAt"
-      ],
-      "type": "object"
-    },
     "OrderPhase": {
       "description": "An order's phase: the first match in this order wins, and the board sorts by it.",
       "oneOf": [
@@ -5858,46 +5636,6 @@
           "type": "string"
         }
       ]
-    },
-    "OrderStopInput": {
-      "properties": {
-        "reason": {
-          "maxLength": 200,
-          "minLength": 1,
-          "type": "string"
-        },
-        "workstreamId": {
-          "$ref": "#/$defs/WorkstreamId"
-        }
-      },
-      "required": [
-        "workstreamId"
-      ],
-      "type": "object"
-    },
-    "OrderStopOutput": {
-      "properties": {
-        "cancelled": {
-          "description": "Tasks this call cancelled (0 when it was already stopped).",
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "next": {
-          "type": "string"
-        },
-        "state": {
-          "$ref": "#/$defs/WorkstreamState"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "state",
-        "cancelled"
-      ],
-      "type": "object"
     },
     "OrdersBoardInput": {
       "properties": {
