@@ -4,9 +4,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use fleetd_contracts::auth::{AgentKeyInfo, Grant, GrantMachines, KeyKind, Role};
+use fleetd_contracts::auth::{AgentKeyInfo, Grant, GrantMachines, KeyKind, Role, Star};
 use fleetd_contracts::ids::MachineId;
-use fleetd_contracts::subscriptions::Star;
 
 use super::CliResult;
 use super::args::{self, Kind, Spec};

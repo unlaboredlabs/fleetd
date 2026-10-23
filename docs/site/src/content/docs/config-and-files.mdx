@@ -18,7 +18,7 @@ Where fleetd keeps everything, and the settings you can change. The [hub](/docs/
     setup.json           what fleetd init and machine add set up: address, commit identity, machines
     hub.log              the hub service's log
     cli.key              the admin key the CLI on this machine uses
-    webhook.key          seals webhook secrets
+    webhook.key          seals the GitHub webhook secret
     playbooks/<name>.md  your version of a playbook; delete it to use fleetd's
     prompts/<id>.md      your version of a prompt, hub-wide
     prompts/projects/<key>/<id>.md   the same for one project
@@ -233,7 +233,7 @@ Stop the hub and node with Ctrl+C. Delete `$FLEETD_HOME` to remove the test flee
 | The node's home: `node join`, `node run` | `$FLEETD_HOME/node` |
 | The app's hand-off from `init` and `pair` | `$FLEETD_HOME/app-pair.json`. Start the desktop app with the same `FLEETD_HOME` to pair with it. |
 | Lead-side commands (`claim`, `change`, `plan`, …) | `FLEETD_NODE_SOCK`, else `$FLEETD_HOME/node/node.sock`. Sessions get it set. |
-| `listen`, `retro` | No home: they always take `--hub` and `--key-file`. |
+| `retro` | No home: it always takes `--hub` and `--key-file`. |
 
 `--home <dir>` names one hub's or node's folder. Without `FLEETD_HOME`, that command keeps everything else in the
 folder above it, so `--home $T/hub` works like `FLEETD_HOME=$T`. `FLEETD_HOME` wins when both are given.

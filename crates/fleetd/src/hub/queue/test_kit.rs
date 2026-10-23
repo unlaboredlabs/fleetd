@@ -1,4 +1,4 @@
-//! Test kit for the queue, wakes and webhooks: one in-memory database with these areas' tables, a fake event log,
+//! Test kit for the queue and wakes: one in-memory database with these areas' tables, a fake event log,
 //! fake executors and a clock on tokio's paused time. Advancing by sleeping lets tokio auto-advance timer by timer,
 //! so each woken loop sees the time its timer was for, as Effect's TestClock.adjust does.
 use std::collections::{HashMap, HashSet};

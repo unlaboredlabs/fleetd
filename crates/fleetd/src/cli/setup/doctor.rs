@@ -4,8 +4,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use fleetd_contracts::auth::{Grant, GrantMachines, KeyKind, Role};
-use fleetd_contracts::subscriptions::Star;
+use fleetd_contracts::auth::{Grant, GrantMachines, KeyKind, Role, Star};
 use serde_json::json;
 
 use super::super::args::{self, Kind, Spec};

@@ -1,4 +1,4 @@
-//! What the wakes, queue and webhooks areas take from other areas, as narrow traits: the executor's writes and
+//! What the wakes and queue areas take from other areas, as narrow traits: the executor's writes and
 //! usage's holds (implemented for `Usage` in `usage::wire`).
 use std::future::Future;
 use std::pin::Pin;

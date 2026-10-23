@@ -9,9 +9,8 @@ use crate::effort::Effort;
 use crate::ids::{ProjectRef, ThreadRef, Timestamp};
 use crate::ledger::{SERVES_FIX, Serves, Tier, WorkstreamId};
 use crate::prim::{
-    Count, Int, Line, List, NonEmpty, NonNegative, Positive, Text, UniqueList, js_len,
+    Count, Int, Line, List, NonEmpty, NonNegative, Positive, Text, UniqueList, is_http_url, js_len,
 };
-use crate::subscriptions::is_http_url;
 use crate::usage::UsageParked;
 use crate::{brand, checked};
 

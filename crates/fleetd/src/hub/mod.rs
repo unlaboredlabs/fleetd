@@ -42,4 +42,3 @@ pub mod usage;
 pub mod valuebar;
 pub mod wakes;
 pub mod watchdog;
-pub mod webhooks;

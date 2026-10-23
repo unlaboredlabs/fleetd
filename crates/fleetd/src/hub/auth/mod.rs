@@ -7,11 +7,12 @@ mod tests;
 
 use crate::clock::Clock;
 use crate::hub::store::{HubDb, StoreError, iso_ms, now_ms};
-use fleetd_contracts::auth::{AgentKeyInfo, AgentKeyPrefix, Grant, GrantMachines, KeyKind, Role};
+use fleetd_contracts::auth::{
+    AgentKeyInfo, AgentKeyPrefix, Grant, GrantMachines, KeyKind, Role, Star,
+};
 use fleetd_contracts::ids::MachineId;
 use fleetd_contracts::mcp::ErrorCode;
 use fleetd_contracts::prim::Text;
-use fleetd_contracts::subscriptions::Star;
 use rusqlite::{OptionalExtension, named_params, params};
 use serde::Serialize;
 use sha2::{Digest, Sha256};

@@ -53,8 +53,6 @@ different OS user.
   sealed box). The hub relays it without storing it and keeps only its fingerprint.
 - **Notifications** carry a one-line summary, never a secret.
 - **An approved command runs exactly as stored**, and only after a person approves it.
-- **Webhooks are signed** with a Standard Webhooks signature. Each subscription's secret is shown once and stored
-  encrypted.
 
 ## Software {#software}
 

@@ -1,6 +1,6 @@
-//! Webhook secrets at rest: AES-256-GCM under a key that lives in its own 0600 file in the hub home, so a copy of
-//! hub.sqlite alone does not reveal them. Sealed form: base64(iv 12 || tag 16 || ciphertext), as older hubs wrote it,
-//! so their subscriptions keep working.
+//! The GitHub webhook secret at rest: AES-256-GCM under a key that lives in its own 0600 file in the hub home
+//! (`webhook.key`), so a copy of the hub's files without it does not reveal the secret. Sealed form:
+//! base64(iv 12 || tag 16 || ciphertext), as older hubs wrote it.
 use std::io::Write;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::Path;
@@ -58,6 +58,11 @@ impl SecretBox {
         }
         std::fs::set_permissions(file, std::fs::Permissions::from_mode(0o600))?;
         Self::from_key(&std::fs::read(file)?)
+    }
+
+    /// The box for the hub in `home`: `<home>/webhook.key`, created 0600 on first use.
+    pub fn for_home(home: &Path) -> Result<Self, SecretBoxError> {
+        Self::from_key_file(&home.join("webhook.key"))
     }
 
     pub fn seal(&self, plain: &str) -> String {

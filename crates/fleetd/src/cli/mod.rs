@@ -1,12 +1,10 @@
 //! The `fleetd` command line: the same subcommands, arguments, output and exit codes as older releases.
-//! Exit codes: 0 ok, 1 failed (a claim that did not pass), 2 usage, 3 refused, 4 hub or node unreachable,
-//! 78 (`listen`) the hub refused the key.
+//! Exit codes: 0 ok, 1 failed (a claim that did not pass), 2 usage, 3 refused, 4 hub or node unreachable.
 
 pub mod agent_mcp;
 pub mod args;
 pub mod hub_key;
 pub mod lead;
-pub mod listen;
 pub mod mcp_client;
 pub mod node;
 pub mod pair;
@@ -67,7 +65,7 @@ setting up (on the hub machine):
 projects:
 {}
 running by hand:
-{}{}{}{}{}{}{}{}{}{}{}
+{}{}{}{}{}{}{}{}{}{}
 lead-side commands (a lead uses its fleetd tools; these are for you, inside a project workspace):
 {}",
         UPDATE_USAGE,
@@ -80,7 +78,6 @@ lead-side commands (a lead uses its fleetd tools; these are for you, inside a pr
         hub_key::HUB_TOKEN_USAGE,
         status::GITHUB_WEBHOOK_USAGE,
         node::NODE_USAGE,
-        listen::LISTEN_USAGE,
         retro::RETRO_USAGE,
         prompts::PROMPTS_USAGE,
         time::TIME_USAGE,
@@ -123,7 +120,6 @@ pub fn help_for(argv: &[String]) -> Option<String> {
             ),
         },
         "node" => node::NODE_USAGE.to_owned(),
-        "listen" => listen::LISTEN_USAGE.to_owned(),
         "retro" => retro::RETRO_USAGE.to_owned(),
         "prompts" | "instructions" => prompts::PROMPTS_USAGE.to_owned(),
         "time" => time::TIME_USAGE.to_owned(),
@@ -176,13 +172,13 @@ pub fn run(argv: &[String]) -> CliResult {
     }
 }
 
-/// Commands that keep running (`node …`, `listen`, `status --watch`, `steer --wait`) or wait on other processes or
+/// Commands that keep running (`node …`, `status --watch`, `steer --wait`) or wait on other processes or
 /// the hub (setup, `retro run`, `update`, `status`, `steer`, `hub github-webhook`). `status set` is a lead call.
 fn is_long_running(argv: &[String]) -> bool {
     match argv.first().map(String::as_str) {
         Some(
-            "init" | "doctor" | "uninstall" | "machine" | "project" | "projects" | "node"
-            | "listen" | "retro" | "time" | "update" | "steer" | "steers",
+            "init" | "doctor" | "uninstall" | "machine" | "project" | "projects" | "node" | "retro"
+            | "time" | "update" | "steer" | "steers",
         ) => true,
         Some("status") => !lead::is_lead_command(argv),
         Some("hub") => argv.get(1).map(String::as_str) == Some("github-webhook"),
@@ -197,7 +193,6 @@ async fn run_long_running(argv: &[String]) -> u8 {
         "machine" => setup::machine::machine_command(rest).await,
         "project" | "projects" => project::project_command(rest).await,
         "node" => node::node_command(rest).await,
-        "listen" => listen::listen_command(rest).await,
         "retro" => retro::retro_command(rest).await,
         "time" => time::time_command(rest).await,
         "status" => status::status_command(rest).await,
