@@ -438,6 +438,12 @@ pub fn render(doc: &StatusDoc, zone: Tz) -> String {
         // The drops are on the estimate's scale, like the number; a marker's pctBefore is the verified figure, so
         // with an estimate a marker shows only its text, and not at all when a drop already says it.
         Some(e) => {
+            // The figure holds on paused work: shown while it lasts, before why it last fell.
+            if let Some(last) = e.series.iter().flatten().last()
+                && let Some(paused) = &last.paused
+            {
+                out.push(format!("  {paused} ({})", c.at(&last.at)));
+            }
             let drops: Vec<_> = e
                 .series
                 .iter()
@@ -1271,7 +1277,8 @@ mod tests {
                   "drop": { "reason": "ci_failed", "fromPct": 66, "text": "CI failed on #212" } },
                 { "at": "2026-10-18T14:00:00Z", "pct": 61, "verifiedPct": 58,
                   "drop": { "reason": "scope_change", "fromPct": 69, "text": "+3 items: time inspector added" } },
-                { "at": "2026-10-18T14:02:00Z", "pct": 70, "verifiedPct": 61 }
+                { "at": "2026-10-18T14:02:00Z", "pct": 70, "verifiedPct": 61,
+                  "paused": "paused: an agent hit a usage limit" }
             ] }
         }))
         .unwrap();
@@ -1287,7 +1294,7 @@ mod tests {
         assert!(text.starts_with("storefront  70%  polish 2/5"), "{text}");
         for want in [
             "  [████████████▒▒░░░░░░] 61% verified + 9% in flight\n  11 of 18 required items verified",
-            "  ↓ from 69% · +3 items: time inspector added (14:00)\n  ↓ from 66% · CI failed on #212 (13:20)",
+            "  paused: an agent hit a usage limit (14:02)\n  ↓ from 69% · +3 items: time inspector added (14:00)\n  ↓ from 66% · CI failed on #212 (13:20)",
             "  waiting on: P12 full lab run: review of #212 → CI on #212 → merge   holds up P14, P16",
             "        P12 full lab run   T88   critical path   waiting on review of #212 → CI on #212 → merge   holds up P14, P16   SLOWER THAN USUAL",
         ] {

@@ -91,7 +91,7 @@ impl Order<'_> {
                     &u.facts_at(t),
                     t,
                     &cal.resolve(&u.pkey, u.kind, u.size),
-                    Some(u.start_ms),
+                    &[(u.start_ms, t)],
                 )
             })
             .collect();

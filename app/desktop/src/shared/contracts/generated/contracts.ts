@@ -2525,6 +2525,11 @@ export type ProgressPoint = {
   at: Timestamp;
   /** Set when the estimate fell at this point; it never falls without one. */
   drop?: ProgressDrop;
+  /**
+   * Set while the estimate holds because the work in flight paused, waiting for an answer or for a usage limit to
+   * reset ("paused: an agent hit a usage limit"). A marker, not a drop: what was earned stays.
+   */
+  paused?: string;
   pct: number;
   verifiedPct: number;
 };

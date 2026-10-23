@@ -121,7 +121,7 @@ fn a_few_seconds_of_ci_never_makes_normal_ci_slower_than_usual() {
         let f = model::ItemFacts {
             reached: vec![(ItemStage::ReviewPassed, 0)],
         };
-        model::item_progress(&f, minutes * MIN, &r, Some(0)).slower
+        model::item_progress(&f, minutes * MIN, &r, &[(0, i64::MAX)]).slower
     };
     assert!(!in_ci(4), "a normal few minutes of CI");
     assert!(!in_ci(9), "under ten minutes is never slower than usual");
@@ -131,7 +131,7 @@ fn a_few_seconds_of_ci_never_makes_normal_ci_slower_than_usual() {
         reached: vec![(ItemStage::ReviewPassed, 0)],
     };
     assert!(
-        !model::item_progress(&f, 60 * MIN, &few, Some(0)).slower,
+        !model::item_progress(&f, 60 * MIN, &few, &[(0, i64::MAX)]).slower,
         "4 units are too few to call anything slow"
     );
 }
