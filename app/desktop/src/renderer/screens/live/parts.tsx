@@ -1,6 +1,6 @@
 // The strip's small pieces: an agent's row, its machine text cut in the middle, and the status mark.
 import { useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
-import { RoleTag, Tooltip, Truncate, cx, roleTint } from "../../ui";
+import { PROFILE_WORD, RoleTag, Tooltip, Truncate, cx, roleTint } from "../../ui";
 import { fmtElapsed, middleEllipsis, parseMs } from "./format";
 import type { AgentRow } from "./strip";
 import { type Tone, isWorking } from "./words";
@@ -133,6 +133,7 @@ export function AgentLine({ row, now, stale, onOpen }: AgentLineProps) {
         {row.roleWord}
       </RoleTag>
       <ActivityLine line={row} stale={stale} />
+      {row.lane.profile === undefined ? null : <span className={cx(s.profile, s.quietText)}>{PROFILE_WORD[row.lane.profile]}</span>}
       <span className={cx(s.clock, isWorking(status) ? s.loud : s.quietText)} aria-label={clock === "" ? undefined : `for ${clock}`}>
         {clock}
       </span>

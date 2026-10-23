@@ -157,8 +157,9 @@ export const agentLane = (f: Fixture, i: number, finished: boolean, machineId: s
     role,
     status,
     title: `${verb} ${area.replaceAll("-", " ")} (${taskId})`,
-    model: i % 4 === 0 ? "claude-sonnet-5-5" : "claude-haiku-5-5",
-    effort: (["low", "medium", "high"] as const)[i % 3] ?? "low",
+    // Mechanical writers run on medium now and then; everything else on high.
+    model: "claude-opus-5-5",
+    ...(role === "implementer" && i % 3 === 0 ? { profile: "medium", effort: "medium" } : { profile: "high", effort: "high" }),
     startedAt,
     ...(finished ? { endedAt: at(startedAt, 9 * 60_000) } : {}),
     branch: `fleetd/${taskId}-${area}`,

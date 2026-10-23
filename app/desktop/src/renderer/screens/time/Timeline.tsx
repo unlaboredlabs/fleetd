@@ -5,9 +5,9 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, use
 import { Button, RoleTag, Text, Truncate, cx } from "../../ui";
 import { barCard, laneCard, pathCard, type Card } from "./cards";
 import { CAT_LABEL, SHOWN, clockMs, fmtDur, tickLabel, type Names } from "./format";
-import { hit, padded, rowRange, ticks, type Bar, type Model, type Row } from "./model";
+import { hit, padded, ranOn, rowRange, ticks, type Bar, type Model, type Row } from "./model";
 import { useData } from "../../src/data/react";
-import { fmtTokens, shortModel } from "../live/format";
+import { fmtTokens } from "../live/format";
 import { ROW_H, documentTheme, paintPath, paintRows, paletteCache, readPalette, watchDocumentTheme } from "./paint";
 import type { Span } from "./types";
 import s from "./Time.module.css";
@@ -24,10 +24,10 @@ const useLaneTokens = (row: Row | undefined): number => {
   return live ?? row?.outputTokens ?? 0;
 };
 
-/** "haiku · 41k out": the lane's model and output tokens, beside its name. */
+/** "medium · 41k out": what the lane ran on and its output tokens, beside its name. */
 function LaneMeta({ row }: { row: Row }) {
   const tokens = useLaneTokens(row);
-  const parts = [row.model === undefined ? undefined : shortModel(row.model), tokens > 0 ? `${fmtTokens(tokens)} out` : undefined].filter((x) => x !== undefined);
+  const parts = [ranOn(row), tokens > 0 ? `${fmtTokens(tokens)} out` : undefined].filter((x) => x !== undefined);
   if (parts.length === 0) return null;
   return (
     <Text size="xs" tone="quiet" tabular className={cx(s.laneMeta)}>

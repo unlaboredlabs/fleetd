@@ -5,8 +5,8 @@
 import { Slider } from "radix-ui";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ProjectRef, SlotState } from "../../../shared/contracts";
-import { useData } from "../../src/data/react";
-import { Button, Popover, PopoverContent, PopoverTrigger, Separator, Text, textClass } from "../../ui";
+import { useData, useToolQuery } from "../../src/data/react";
+import { Button, PROFILE_LINE, Popover, PopoverContent, PopoverTrigger, Separator, Switch, Text, textClass } from "../../ui";
 import {
   agentsLabel,
   appliedLine,
@@ -20,9 +20,10 @@ import {
   projectAgents,
   serialNote,
 } from "./agentsModel";
-import { errorText, useHubCall, useLive } from "./hub";
+import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { useFocusProjectSlider } from "./focusProject";
 import { PageHead, scopeName, useProjects } from "./parts";
+import { promptHref } from "./route";
 import { useReveal } from "./search";
 import s from "./settings.module.css";
 
@@ -275,6 +276,8 @@ export function AgentsSettings() {
           <>
             <FleetCap slots={slots} />
             <Separator />
+            <TaskProfiles />
+            <Separator />
             <section ref={perProject} className={s.agentsList} aria-labelledby="agents-per-project" tabIndex={-1}>
               <Text strong id="agents-per-project">
                 Max agents per project
@@ -289,6 +292,7 @@ export function AgentsSettings() {
                   return (
                     <section key={`${p.machineId}/${p.projectId}`} className={s.agentsRow} aria-label={p.title}>
                       <AgentsPanel projectRef={ref} slots={slots} title={scopeName({ kind: "project", ref }, projects)} />
+                      <MediumSwitch projectRef={ref} />
                     </section>
                   );
                 })
@@ -297,6 +301,71 @@ export function AgentsSettings() {
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+/** The two task profiles every agent runs on, as fixed as the prompts: shown, never typed in. */
+function TaskProfiles() {
+  const ref = useReveal<HTMLElement>("agents.profiles");
+  return (
+    <section ref={ref} className={s.agentsPanel} aria-labelledby="agents-profiles" tabIndex={-1}>
+      <Text strong id="agents-profiles">
+        Task profiles
+      </Text>
+      <Text size="xs" tone="quiet">
+        The lead picks one for each task. The lead itself and every review run high.
+      </Text>
+      <ul className={s.profiles}>
+        <li>
+          <Text size="sm">{PROFILE_LINE.high}</Text>
+        </li>
+        <li>
+          <Text size="sm">{PROFILE_LINE.medium}</Text>
+        </li>
+      </ul>
+      <span>
+        <Button variant="quiet" size="sm" onClick={() => (window.location.hash = promptHref("lead.profiles"))}>
+          Edit the Task profiles prompt
+        </Button>
+      </span>
+    </section>
+  );
+}
+
+/** A project's "medium allowed" switch (project_set): off, every one of its tasks runs high. */
+function MediumSwitch({ projectRef }: { projectRef: ProjectRef }) {
+  const live = useLive();
+  const call = useHubCall();
+  const refetch = useRefetch();
+  const project = useToolQuery("project_get", { machineId: projectRef.machineId, projectId: projectRef.projectId });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | undefined>(undefined);
+  if (project.data === undefined) return null;
+  // A hub from before the switch has it on.
+  const allowed = project.data.mediumAllowed ?? true;
+  const set = (on: boolean) => {
+    setBusy(true);
+    setError(undefined);
+    call("project_set", { machineId: projectRef.machineId, projectId: projectRef.projectId, mediumAllowed: on })
+      .then(() => refetch(["project_get"]))
+      .catch((e: unknown) => setError(errorText(e)))
+      .finally(() => setBusy(false));
+  };
+  return (
+    <div className={s.stack}>
+      <Switch
+        label="Medium allowed"
+        description={allowed ? "Mechanical tasks may run on medium." : "Every task runs on high."}
+        checked={allowed}
+        disabled={!live || busy}
+        onCheckedChange={set}
+      />
+      {error === undefined ? null : (
+        <p role="alert" className={s.alertLine}>
+          <Text size="xs" tone="danger">{`Not changed: ${error}`}</Text>
+        </p>
+      )}
     </div>
   );
 }

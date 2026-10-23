@@ -82,7 +82,7 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   }
   // The agents view's list: who runs, and what for. Their live status and activity come with the live feed instead.
   if (startsWithAny(type, AGENT_PREFIXES) || AGENT_TYPES.has(type)) out.push({ tool: "agents_list" });
-  const projectScoped = startsWithAny(type, ["workstream.", "lead.", "thread."]);
+  const projectScoped = startsWithAny(type, ["workstream.", "lead.", "thread."]) || type === "project.settings";
   if (projectScoped && event.machineId !== undefined && event.projectId !== undefined) {
     out.push({ tool: "project_get", where: { machineId: event.machineId, projectId: event.projectId } });
   }

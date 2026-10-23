@@ -103,6 +103,18 @@ export const syncAgents = (f: Fixture): void => {
  * with its project, and each project's lead, working when its chat says so. The hub's contract for it is still on its
  * branch, so its answers are marked pending until the generated schema has it.
  */
+/** Every lane on the boards says its task profile, as a hub with profiles does: high unless a fixture chose. */
+export const syncProfiles = (f: Fixture): void => {
+  const mark = (out: JsonValue): JsonValue => {
+    for (const card of [...arr(obj(out)["orders"]), obj(out)["order"]].filter(isObject)) {
+      for (const lane of arr(card["lanes"]).filter(isObject)) if (lane["profile"] === undefined) lane["profile"] = "high";
+    }
+    return out;
+  };
+  f.update("orders_board", mark);
+  f.update("order_get", mark);
+};
+
 export const syncAgentsList = (f: Fixture): void => {
   if (f.snapshot === undefined) return;
   const titles = new Map(arr(f.snapshot["projects"]).filter(isObject).map((p) => [keyOf(p), asText(p["title"])]));

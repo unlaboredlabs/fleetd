@@ -22,6 +22,7 @@ const work = (base: Fixture): Fixture => {
       taskId: "T40",
       threadRef: { machineId: "devbox", threadId: "s-T40" },
       title: "Move the card form to the payment element, keeping saved cards",
+      profile: "high",
       status: "working",
       startedAt: iso(1_260_000),
     },
@@ -31,9 +32,21 @@ const work = (base: Fixture): Fixture => {
       taskId: "T41",
       threadRef: { machineId: "devbox", threadId: "s-T41" },
       title: "Review the payment element change",
+      profile: "high",
       status: "waiting",
       statusReason: "approve npm install",
       startedAt: iso(300_000),
+    },
+    // Mechanical work the lead put on medium.
+    {
+      laneId: "T42",
+      role: "implementer",
+      taskId: "T42",
+      threadRef: { machineId: "devbox", threadId: "s-T42" },
+      title: "Rename the old card form's test helpers",
+      profile: "medium",
+      status: "working",
+      startedAt: iso(180_000),
     },
   ];
   // The fleet's board and checkout's own; another project's board doesn't list them.
@@ -70,6 +83,7 @@ const work = (base: Fixture): Fixture => {
     lanes: [
       { laneId: "T40", status: "working", activity: { activity: { kind: "command", text: "pnpm --filter checkout-web test -- --run src/payment/PaymentElement.test.tsx src/payment/savedCards.test.ts" }, since: iso(9_000) } },
       { laneId: "T41", status: "waiting" },
+      { laneId: "T42", status: "working", activity: { activity: { kind: "edit", path: "src/payment/__tests__/helpers.ts" }, since: iso(5_000) } },
     ],
     text: [{ laneId: AGENT.laneId, messageId: "m-writing", append: "Dates now read in the store's time zone. I'm checking the last two locales before I open the PR:\n\n- `en-GB` prints 19/10/2026\n- `de-DE` prints 19.10.2026" }],
   });

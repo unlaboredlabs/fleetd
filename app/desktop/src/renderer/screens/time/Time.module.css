@@ -371,6 +371,13 @@
 .cmdTable {
   grid-template-columns: minmax(0, 1fr) repeat(5, 72px);
 }
+.profileTable {
+  grid-template-columns: minmax(96px, 160px) repeat(4, 96px);
+}
+/* A row to read, not to open: a table row's height, with no hover. */
+.profileRow {
+  min-height: var(--row);
+}
 .repTable {
   grid-template-columns: minmax(0, 1fr) 160px 64px 72px;
 }

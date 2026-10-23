@@ -26,8 +26,22 @@ const projectSummary = (p: (typeof PROJECTS)[number]): JsonObject => ({
   lastActivityAt: "2026-10-19T10:21:00.000Z",
 });
 
+/**
+ * Each project's "medium allowed" switch as project_get reads it (on, unless named in `off`), and project_set's
+ * answer either way.
+ */
+function projectSettings(f: Fixture, off: ReadonlySet<string> = new Set()) {
+  const projects = isObject(f.snapshot) && Array.isArray(f.snapshot["projects"]) ? f.snapshot["projects"].filter(isObject) : [];
+  for (const p of projects) {
+    const ref = { machineId: asText(p["machineId"]), projectId: asText(p["projectId"]) };
+    f.answer("project_get", ref, { asOf: f.now, project: clone(p), stale: false, threads: [], mediumAllowed: !off.has(ref.projectId) });
+    for (const on of [true, false]) f.answer("project_set", { ...ref, mediumAllowed: on }, { mediumAllowed: on });
+  }
+}
+
 /** What Settings calls besides the prompt reads. */
 function basics(f: Fixture) {
+  projectSettings(f);
   if (f.answers("projects_list").length === 0) f.answer("projects_list", undefined, { projects: PROJECTS.map(projectSummary) });
   f.answer("time_retention_set", undefined, { retentionDays: 30 });
   // Settings reads the retention and stored size from a breakdown of the fleet's last hour, at whatever time it is.
@@ -111,6 +125,11 @@ export default defineGroup({
         if (got.ok) f.answer("prompt_get", { id, ...scope }, json(got.output));
       }
     }
-    return [f, agents(base("typical"))];
+    const withAgents = agents(base("typical"));
+    // storefront's medium switch off: every one of its tasks runs high.
+    const off = Fixture.from(withAgents, "settings-medium-off", "Max agents as in settings-agents, with storefront's medium switch off");
+    const storefront = isObject(off.snapshot) && Array.isArray(off.snapshot["projects"]) ? off.snapshot["projects"].filter(isObject)[0] : undefined;
+    projectSettings(off, new Set(storefront === undefined ? [] : [asText(storefront["projectId"])]));
+    return [f, withAgents, off];
   },
 });

@@ -45,6 +45,8 @@ export const fixtures = [
   // F9: the whole real prompt registry, with edits, a project's own texts and a default changed under an edit.
   "settings-prompts",
   "settings-agents",
+  // ...with storefront's medium switch off (fixtures/settings).
+  "settings-medium-off",
   // F2: the lead chat's live strip with 0, 3 and 20 agents at work (fixtures/live).
   "live-0",
   "live-3",
@@ -938,6 +940,19 @@ export const screens: readonly Screen[] = [
   // keys and titles; settings-prompts is the real registry with edits. Compare and Update are deep links.
   // Max agents: the fleet cap and each project's slider.
   { id: "settings.agents", route: "#/settings/agents", fixtures: ["settings-agents", "long-text", "empty", "hub-unreachable"] },
+  // The two task profiles, and each project's medium switch: storefront's off in settings-medium-off.
+  {
+    id: "settings.agents",
+    route: "#/settings/agents",
+    fixtures: ["settings-agents", "settings-medium-off"],
+    variant: "profiles",
+    open: async (page) => {
+      const profiles = page.getByRole("region", { name: "Task profiles" });
+      await profiles.scrollIntoViewIfNeeded();
+      await profiles.getByText("Medium: Opus 5.5, medium effort, for mechanical work").waitFor();
+      await page.getByRole("region", { name: "storefront" }).getByRole("switch", { name: /Medium allowed/u }).waitFor();
+    },
+  },
   // The palette's "Max agents for this project": that project's slider scrolled to and focused.
   {
     id: "settings.agents",
