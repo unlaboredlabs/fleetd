@@ -136,6 +136,19 @@ async fn prompt_set_resets_only_on_an_explicit_reset() {
     assert_eq!(kept["prompt"]["scope"], "global");
     assert_eq!(kept["prompt"]["effective"]["ref"], edited);
 
+    // A dry run of the reset answers what would be in effect and writes nothing.
+    let dry = call(
+        &hub,
+        "prompt_set",
+        json!({ "id": "lead.start", "scope": "global", "reset": true, "dryRun": true }),
+    )
+    .await;
+    assert_eq!(dry["ref"], shipped);
+    assert_eq!(dry["next"], "Not reset: dryRun.");
+    let kept = call(&hub, "prompt_get", id.clone()).await;
+    assert_eq!(kept["prompt"]["scope"], "global");
+    assert_eq!(kept["prompt"]["effective"]["ref"], edited);
+
     let reset = call(
         &hub,
         "prompt_set",

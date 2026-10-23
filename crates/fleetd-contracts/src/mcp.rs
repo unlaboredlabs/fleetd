@@ -792,7 +792,7 @@ input!(PromptSetInput {
     reset: Option<bool>,
     /// The default ref the text was edited from (`prompt_get` default.ref); absent: the one shipped now.
     base: Option<PromptRef>,
-    /// Return the warnings without saving.
+    /// Return the warnings without saving; with reset, the ref that would be in effect, without resetting.
     dry_run: Option<bool>,
 });
 output!(PromptSetOutput {

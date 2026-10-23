@@ -2378,7 +2378,7 @@ export type PromptScope = "default" | "global" | "project";
 export type PromptSetInput = {
   /** The default ref the text was edited from (`prompt_get` default.ref); absent: the one shipped now. */
   base?: PromptRef;
-  /** Return the warnings without saving. */
+  /** Return the warnings without saving; with reset, the ref that would be in effect, without resetting. */
   dryRun?: boolean;
   id: PromptId;
   /** Required with scope project. */

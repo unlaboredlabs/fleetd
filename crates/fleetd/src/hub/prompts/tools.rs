@@ -199,6 +199,11 @@ async fn reset(
     if let Some(old) = retired::get(input.id.as_str()) {
         may_edit(caller, input.scope, r)?;
         readable_project(hub, caller, r)?;
+        // A retired prompt sends nothing: what is in effect is no text at all.
+        let none = PromptRef::unchecked(ref_of(old.id, ""));
+        if input.dry_run == Some(true) {
+            return Ok(not_reset(none));
+        }
         hub.db.prompts().reset_retired(old, input.scope, r)?;
         super::changed(
             &hub.events,
@@ -208,9 +213,8 @@ async fn reset(
             r,
             json!({ "retired": true }),
         )?;
-        // A retired prompt sends nothing: what is in effect is no text at all.
         return Ok(PromptSetOutput {
-            r#ref: PromptRef::unchecked(ref_of(old.id, "")),
+            r#ref: none,
             warnings: Vec::new(),
             next: Some(format!(
                 "Your edit to {} is deleted; fleetd retired that prompt.",
@@ -222,6 +226,15 @@ async fn reset(
     let e = entry(input.id.as_str())?;
     may_edit(caller, input.scope, r)?;
     readable_project(hub, caller, r)?;
+    if input.dry_run == Some(true) {
+        // What the reset would leave in effect: the next level down from this scope.
+        let d = hub.db.prompts().detail(e, r);
+        let next = match input.scope {
+            PromptScope::Project => d.global.map(|g| g.r#ref),
+            _ => d.project.map(|p| p.r#ref),
+        };
+        return Ok(not_reset(next.unwrap_or(d.default.r#ref)));
+    }
     hub.db.prompts().reset(e, input.scope, r)?;
     super::changed(
         &hub.events,
@@ -237,6 +250,15 @@ async fn reset(
         next: Some("Reset: the next level's text is in effect.".into()),
         truncated: None,
     })
+}
+
+fn not_reset(r#ref: PromptRef) -> PromptSetOutput {
+    PromptSetOutput {
+        r#ref,
+        warnings: Vec::new(),
+        next: Some("Not reset: dryRun.".into()),
+        truncated: None,
+    }
 }
 
 async fn session_prompt_get(
