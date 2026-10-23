@@ -1213,9 +1213,12 @@ async fn obliging_node(
     let (seen, executors) = (calls.clone(), hub.executors.clone());
     tokio::spawn(async move {
         while let Some(HubToNode::SessionCall(f)) = rx.recv().await {
-            let result = match f.call {
+            let result = match &f.call {
                 SessionCall::Follow { .. } => {
                     json!({ "err": { "code": "not_found", "message": "-" } })
+                }
+                SessionCall::Send { run_id, .. } => {
+                    json!({ "ok": { "kind": "sent", "runId": run_id.as_str(), "queued": false } })
                 }
                 _ => json!({ "ok": { "kind": "done" } }),
             };
@@ -1512,6 +1515,10 @@ async fn only_a_persons_key_stops_or_steers() {
             "steer_send",
             json!({ "target": { "taskId": "T1" }, "text": "stop", "mode": "now", "clientRequestId": "s1" }),
         ),
+        (
+            "chat_send",
+            json!({ "projectRef": r, "text": "stop", "now": true, "clientRequestId": "s1" }),
+        ),
     ] {
         let Err(crate::hub::api::CallError::Tool(e)) =
             tools.call(&hub, &admin_agent, tool, input).await
@@ -1539,6 +1546,73 @@ async fn only_a_persons_key_stops_or_steers() {
         probe(&person()).await,
         fleetd_contracts::mcp::ErrorCode::Invalid
     );
+}
+
+/// ⌘Enter is chat_send with now: a working lead's running step stops for it through steer_send's own interrupt
+/// (SendMode::Now to the node), and it stays an ordinary chat message that says so. An idle lead takes it as any
+/// message, a plain new turn.
+#[tokio::test]
+async fn now_stops_a_working_leads_step_and_stays_a_chat_message() {
+    use fleetd_contracts::sessions::{SendMode, SessionCall};
+    let (hub, _home) = hub();
+    lead_and_two_agents(&hub);
+    let calls = obliging_node(&hub).await;
+    hub.executors.set_runner_ready(&project().machine_id, true);
+    hub.executors.await_ready(&project().machine_id).await;
+    let tools = crate::hub::api::registry();
+    let mut input = say_to_app("stop, the schema changed", "n1", None);
+    input["now"] = json!(true);
+    let sent = tools
+        .call(&hub, &person(), "chat_send", input)
+        .await
+        .unwrap();
+    assert_eq!(sent["message"]["delivery"], "now");
+    let modes = || {
+        calls
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(|c| match c {
+                SessionCall::Send { mode, steer, .. } => Some((*mode, steer.is_some())),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(modes(), [(SendMode::Now, false)]);
+    let (page, _, _) = hub.chat.page(&project(), None, None, 10).unwrap();
+    assert_eq!(
+        page.iter()
+            .map(|m| (m.text.as_str(), m.delivery))
+            .collect::<Vec<_>>(),
+        [("stop, the schema changed", Some(ChatDelivery::Now))],
+        "in the chat like any message, and the only record of it"
+    );
+    assert_eq!(steers_stored(&hub), 0);
+    // The lead's turn ended: now changes nothing, it starts the next turn.
+    let mut thread = hub
+        .store
+        .thread_get(&fleetd_contracts::ids::ThreadRef {
+            machine_id: project().machine_id,
+            thread_id: fleetd_contracts::ids::ThreadId::unchecked("lead-thread"),
+        })
+        .unwrap()
+        .unwrap();
+    thread.thread.status = fleetd_contracts::model::ThreadStatus::Idle;
+    hub.store.thread_upsert(&thread).unwrap();
+    let mut idle = say_to_app("and then the docs", "n2", None);
+    idle["now"] = json!(true);
+    let idle = tools
+        .call(&hub, &person(), "chat_send", idle)
+        .await
+        .unwrap();
+    assert_eq!(idle["message"]["delivery"], "turn");
+    assert_eq!(modes()[1..], [(SendMode::Plain, false)]);
+}
+
+fn steers_stored(hub: &Hub) -> i64 {
+    hub.db
+        .with(|c| Ok(c.query_row("SELECT COUNT(*) FROM steers", [], |r| r.get(0))?))
+        .unwrap()
 }
 
 /// A reply cut off mid-text (the run stopped, interrupted or crashed before the session stored it complete) is

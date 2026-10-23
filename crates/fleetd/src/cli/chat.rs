@@ -15,11 +15,12 @@ use tokio_tungstenite::tungstenite::Message;
 use super::args::{self, Kind, Spec};
 use super::steer::{Failure, hub_url};
 
-pub const CHAT_USAGE: &str = r#"  chat <machine>/<project> "<text>" [--wait | --follow] --key-file <key> [--hub <url> | --home <dir>]
+pub const CHAT_USAGE: &str = r#"  chat <machine>/<project> "<text>" [--now] [--wait | --follow] --key-file <key> [--hub <url> | --home <dir>]
              write to a project's lead, as the app does: it starts the lead's next turn, or lands at
-             its next step while it works. --wait prints the lead's reply when its turn ends; --follow
-             streams it as it is written. Exit 0 it replied, 1 its turn ended without a reply. A
-             human key writes as you; an agent key as that agent, by its name
+             its next step while it works; --now (a human key) stops that step and delivers at once.
+             --wait prints the lead's reply when its turn ends; --follow streams it as it is written.
+             Exit 0 it replied, 1 its turn ended without a reply. A human key writes as you; an agent
+             key as that agent, by its name
   chat history <project> [--page <n>] --key-file <key> [--hub <url> | --home <dir>]
              the project's chat: who wrote each message, when, and what; the newest page, older
              ones with --page
@@ -34,6 +35,7 @@ pub enum ChatCommand {
     Send {
         project: String,
         text: String,
+        now: bool,
         wait: bool,
         follow: bool,
     },
@@ -58,6 +60,7 @@ pub fn parse_chat_args(argv: &[String]) -> Result<ChatArgs, String> {
         ("home", Kind::Str),
         ("wait", Kind::Bool),
         ("follow", Kind::Bool),
+        ("now", Kind::Bool),
         ("page", Kind::Str),
     ];
     let v = args::parse(
@@ -69,8 +72,8 @@ pub fn parse_chat_args(argv: &[String]) -> Result<ChatArgs, String> {
     )?;
     let p = &v.positionals;
     let command = if p.first().map(String::as_str) == Some("history") {
-        if v.flag("wait") || v.flag("follow") {
-            return Err("--wait and --follow are for sending, not history".into());
+        if v.flag("wait") || v.flag("follow") || v.flag("now") {
+            return Err("--now, --wait and --follow are for sending, not history".into());
         }
         let [_, project] = p.as_slice() else {
             return Err("expected fleetd chat history <project>".into());
@@ -101,6 +104,7 @@ pub fn parse_chat_args(argv: &[String]) -> Result<ChatArgs, String> {
         ChatCommand::Send {
             project: project.clone(),
             text,
+            now: v.flag("now"),
             wait: v.flag("wait"),
             follow: v.flag("follow"),
         }
@@ -202,6 +206,7 @@ pub fn sent_line(sent: &Value) -> String {
     let how = match st(&sent["message"], "delivery") {
         Some("turn") => "it starts the lead's next turn",
         Some("steer") => "the lead is working and reads it at its next step",
+        Some("now") => "the lead stopped its step to read it",
         _ => "it goes in as soon as the lead is ready",
     };
     format!("sent as {who}: {how}")
@@ -400,6 +405,7 @@ async fn send(
     socket: &mut Socket,
     project: Value,
     text: String,
+    now: bool,
     wait: bool,
     follow: bool,
     given: &str,
@@ -420,6 +426,9 @@ async fn send(
     let mut input = json!({
         "projectRef": project, "text": text, "clientRequestId": client_request_id(), "client": "cli",
     });
+    if now {
+        input["now"] = json!(true);
+    }
     // From inside a fleetd session the hub writes it as an agent's at most, and refuses the project's own lead and
     // tasks: a guard against mistakes, not a boundary (session_thread_id).
     if let Some(session) = crate::node::runner::process::session_thread_id() {
@@ -583,11 +592,12 @@ async fn run(args: ChatArgs) -> Result<u8, Failure> {
         ChatCommand::Send {
             project,
             text,
+            now,
             wait,
             follow,
         } => {
             let r = project_ref(&mut socket, &project).await?;
-            send(&mut socket, r, text, wait, follow, &project).await
+            send(&mut socket, r, text, now, wait, follow, &project).await
         }
         ChatCommand::History { project, page } => {
             let r = project_ref(&mut socket, &project).await?;
@@ -633,6 +643,7 @@ mod tests {
             ChatCommand::Send {
                 project: "devbox/app".into(),
                 text: "ship it".into(),
+                now: false,
                 wait: false,
                 follow: true
             }
@@ -652,6 +663,10 @@ mod tests {
         assert!(err(&["history", "app"]).contains("--key-file is required"));
         assert!(err(&["devbox/app"]).starts_with("expected"));
         assert!(err(&["history", "app", "--wait"]).contains("not history"));
+        assert!(err(&["history", "app", "--now"]).contains("not history"));
+        let now =
+            parse_chat_args(&argv(&["devbox/app", "stop", "--now", "--key-file", "k"])).unwrap();
+        assert!(matches!(now.command, ChatCommand::Send { now: true, .. }));
         assert!(err(&["history", "app", "--page", "0"]).contains("page number"));
         assert!(err(&["devbox/app", "hi", "--page", "2"]).contains("for history"));
     }
@@ -694,6 +709,7 @@ mod tests {
             "sent as you · cli: it starts the lead's next turn"
         );
         assert!(sent_line(&msg("steer")).contains("reads it at its next step"));
+        assert!(sent_line(&msg("now")).contains("stopped its step"));
         let held = json!({ "message": { "author": "agent", "by": "scout" }, "leadWaiting": "The lead's machine is away." });
         assert_eq!(
             sent_line(&held),

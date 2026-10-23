@@ -1,5 +1,6 @@
 // The chat composer's words and rules, pure. One box: the hub decides whether a message starts the lead's turn or
-// reaches it mid-turn as a steer (chat_send), so the composer only says which to expect.
+// reaches it mid-turn as a steer (chat_send, or with ⌘Enter `now`, which stops its step), so the composer only says
+// which to expect.
 
 import type { ChatDelivery } from "../../../shared/contracts";
 import type { HubError } from "../../../shared/hub";
@@ -47,7 +48,10 @@ export const ACT_LABEL: Readonly<Record<Act, string>> = { resend: "Resend", edit
 export interface Sendable {
   readonly state: "sent" | "streaming" | "pending" | "queued" | "reconnecting" | "unanswered" | "failed";
   readonly error?: HubError | undefined;
-  /** How it reached the lead (ChatMessage.delivery): it started a turn, joined the running one, or waits for one. */
+  /**
+   * How it reached the lead (ChatMessage.delivery): it started a turn, joined the running one, stopped the running
+   * step (`now`), or waits for one.
+   */
   readonly delivery?: ChatDelivery | undefined;
   /** chat_send's word on why the lead doesn't have it yet, with the fix. */
   readonly leadWaiting?: string | undefined;
@@ -55,7 +59,7 @@ export interface Sendable {
 
 /**
  * The receipt under one of your messages. A sent message says nothing unless it is your latest: then how it reached
- * the lead. Trouble, and a lead that can't take it yet, always show.
+ * the lead. Trouble, a lead that can't take it yet, and a message that stopped the lead's step always show.
  */
 export function receiptFor(m: Sendable, latest: boolean): Receipt | undefined {
   switch (m.state) {
@@ -74,6 +78,7 @@ export function receiptFor(m: Sendable, latest: boolean): Receipt | undefined {
     case "sent":
     case "streaming":
       if (m.leadWaiting !== undefined && latest) return { kind: "warn", line: `sent; the lead doesn’t have it yet: ${m.leadWaiting}`, acts: [] };
+      if (m.delivery === "now") return { kind: "quiet", line: "delivered; the lead stopped its step to read this" };
       if (!latest) return undefined;
       switch (m.delivery) {
         case "turn":

@@ -297,6 +297,20 @@ describe("sending", () => {
     expect(fake.of("chat_send").map((c) => c.input["clientRequestId"])).toEqual(["c1", "c1", "c1"]);
   });
 
+  it("⌘Enter's now goes with every try of its message, which then stays in the chat like any other", async () => {
+    const { fake, layer } = await connected();
+    const out = layer.chat.send(KEY, { text: "ship the card first", now: true }, "c1");
+    fake.of("chat_send")[0]?.answer(err("timeout"));
+    await vi.waitFor(() => expect(fake.of("chat_send")).toHaveLength(2));
+    expect(fake.of("chat_send").map((c) => c.input["now"])).toEqual([true, true]);
+    const mine = msg(3, { author: "human", text: "ship the card first", clientRequestId: "c1", delivery: "now" });
+    fake.of("chat_send")[1]?.answer({ ok: true, output: { message: mine } });
+    expect(await out).toBe("sent");
+    expect(selectChat(KEY)(layer.store.getState())?.items.at(-1)).toMatchObject({ id: "m3", state: "sent", delivery: "now" });
+    void layer.chat.send(KEY, { text: "and the docs" }, "c2");
+    expect(fake.of("chat_send")[2]?.input).not.toHaveProperty("now");
+  });
+
   it("sending from a window paged above the latest keeps the person's message, even when the jump's page lacks it", async () => {
     const { fake, layer } = await connected();
     layer.store.setState((s) => {

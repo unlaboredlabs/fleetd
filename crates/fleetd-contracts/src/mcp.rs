@@ -848,6 +848,9 @@ output!(PlanGetOutput {
 input!(ChatSendInput {
     project_ref: ProjectRef,
     text: Text<1, 20000>,
+    /// A human key only: while the lead works, stop its running step and deliver at once (steer_send's `now`). An
+    /// idle lead takes it as any message.
+    now: Option<bool>,
     /// From attachment_put.
     attachments: Option<Attachments>,
     client_request_id: RequestId,

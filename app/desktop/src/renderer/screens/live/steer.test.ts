@@ -4,7 +4,7 @@ import type { Steer } from "../../../shared/contracts";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { card, event, live, snapshot } from "../../src/data/fixtures.test-util";
 import type { HubFrame } from "../../../shared/hub";
-import { composerSendOn, leadOrder, receiptsToShow, steerModeOn, steersFor, steerReceipt, steerTooLong } from "./steerModel";
+import { composerSendOn, receiptsToShow, steerModeOn, steersFor, steerReceipt, steerTooLong } from "./steerModel";
 
 const key = (k: Partial<Parameters<typeof steerModeOn>[0]> = {}) => ({ key: "Enter", shiftKey: false, altKey: false, metaKey: false, ctrlKey: false, isComposing: false, ...k });
 
@@ -34,24 +34,11 @@ describe("steering keys", () => {
     expect(steerModeOn(key({ key: "a", metaKey: true }))).toBeUndefined();
   });
 
-  it("in the lead's box, ⌘Enter steers it now only while it works on an order; Enter is always a chat message", () => {
+  it("in the lead's box, ⌘Enter sends now whenever it works; otherwise, and on Enter, a plain chat message", () => {
     expect(composerSendOn(key({ metaKey: true }), true)).toBe("now");
     expect(composerSendOn(key(), true)).toBe("chat");
     expect(composerSendOn(key({ metaKey: true }), false)).toBe("chat");
     expect(composerSendOn(key({ shiftKey: true }), true)).toBeUndefined();
-  });
-
-  it("steers the lead through its project's most recently active order, and not without one", () => {
-    const project = { machineId: "devbox", projectId: "storefront" };
-    const other = { machineId: "devbox", projectId: "checkout" };
-    const orders = {
-      W1: card("W1", { updatedAt: "2026-10-19T10:00:00.000Z" }),
-      W2: card("W2", { updatedAt: "2026-10-19T10:05:00.000Z" }),
-      W3: card("W3", { projectRef: other, updatedAt: "2026-10-19T11:00:00.000Z" }),
-    };
-    expect(leadOrder(orders, project)).toBe("W2");
-    expect(leadOrder({ W3: orders.W3 }, project)).toBeUndefined();
-    expect(leadOrder(undefined, project)).toBeUndefined();
   });
 
   it("refuses a steer over steer_send's limit before it goes", () => {

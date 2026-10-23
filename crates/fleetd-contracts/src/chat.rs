@@ -108,6 +108,8 @@ pub enum ChatDelivery {
     Turn,
     /// The lead was mid-turn: it takes the message at its next step, as a steer.
     Steer,
+    /// The lead was mid-turn and the human asked for now: its running step stopped for the message.
+    Now,
     /// The lead is starting, or its machine is away: the message waits and goes in as soon as it can.
     Queued,
 }

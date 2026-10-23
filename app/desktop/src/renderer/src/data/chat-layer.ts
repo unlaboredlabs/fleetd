@@ -46,8 +46,11 @@ export interface ChatActions {
    * retry); minted when absent. Its row shows at once and settles on the hub's echo. With no link it is queued, and
    * goes under the same id when the link is back.
    */
-  /** `attachments`: what attachment_put stored, so the pending row shows them before the hub's copy. */
-  send(key: ProjectKey, input: { text: string; attachments?: readonly AttachmentRef[] }, clientRequestId?: string): Promise<SendOutcome>;
+  /**
+   * `attachments`: what attachment_put stored, so the pending row shows them before the hub's copy. `now` (⌘Enter):
+   * a working lead stops its running step for it.
+   */
+  send(key: ProjectKey, input: { text: string; attachments?: readonly AttachmentRef[]; now?: boolean }, clientRequestId?: string): Promise<SendOutcome>;
   /** Sends a row again under its own id. */
   retry(key: ProjectKey, clientRequestId: string): Promise<SendOutcome | undefined>;
   discard(key: ProjectKey, clientRequestId: string): void;
@@ -192,6 +195,7 @@ export const createChatActions = (
       text: row.text,
       clientRequestId: row.clientRequestId,
       ...(row.attachments.length === 0 ? {} : { attachments: row.attachments.map((a) => a.attachmentId) }),
+      ...(row.now === true ? { now: true } : {}),
     };
     for (let attempt = 0; ; attempt++) {
       const r = await call("chat_send", input);
@@ -239,6 +243,7 @@ export const createChatActions = (
       attachments: input.attachments ?? [],
       at: new Date(now()).toISOString(),
       state: { t: "sending" },
+      ...(input.now === true ? { now: true } : {}),
     };
     // Sending from a window paged above the latest: go back down, where the message will be.
     if (chatOf(store.getState(), key).hasNewer) jumpToLatest(key);

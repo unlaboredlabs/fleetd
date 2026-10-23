@@ -461,7 +461,7 @@ export type KnownChatClient = "app" | "cli";
 export type ChatClient = KnownChatClient | (string & {});
 
 /** How a human message reached the lead. */
-export type KnownChatDelivery = "turn" | "steer" | "queued";
+export type KnownChatDelivery = "turn" | "steer" | "now" | "queued";
 /** KnownChatDelivery, or a value from a newer hub. */
 export type ChatDelivery = KnownChatDelivery | (string & {});
 
@@ -565,6 +565,11 @@ export type ChatSendInput = {
   /** A human key: where it is written. Absent means the app. */
   client?: ChatClient;
   clientRequestId: string;
+  /**
+   * A human key only: while the lead works, stop its running step and deliver at once (steer_send's `now`). An
+   * idle lead takes it as any message.
+   */
+  now?: boolean;
   projectRef: ProjectRef;
   /**
    * Sent from inside a fleetd session: its thread id (FLEETD_THREAD_ID), as the caller reports it. The project's own

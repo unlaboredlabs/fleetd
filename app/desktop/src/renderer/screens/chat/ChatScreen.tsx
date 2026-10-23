@@ -1,8 +1,7 @@
 // A project's lead chat, the app's main surface (lead-chat spec §1): the conversation with the project's lead,
 // fleet activity quietly inside it (the live strip under the lead's newest message, PR and merge one-liners), the
 // two inline items chat can't carry (a secret, a gated command), and the composer, which has the cursor as soon as
-// the chat opens. Your steers to the lead show at their time, from its orders. Above the box, a line says what the
-// lead waits on you for; an empty chat asks what to do.
+// the chat opens. Above the box, a line says what the lead waits on you for; an empty chat asks what to do.
 // "What the writer was told" opens from the strip's rows.
 import { useCallback, useMemo, useState } from "react";
 import type { AgentLane, ThreadRef } from "../../../shared/contracts";
@@ -13,12 +12,11 @@ import { useData } from "../../src/data/react";
 import { selectNeedsYou } from "../../src/data/selectors";
 import { projectKey } from "../../src/data/store";
 import { LiveStrip } from "../live";
-import { useSteerSends } from "../live/Steer";
 import { AttentionLine } from "./Attention";
 import { waitingOn } from "./attentionModel";
 import { leadTurnSince, leadTurnUntil } from "./activity";
 import { ChatList } from "./ChatList";
-import { useChatData, useLeadSteers } from "./data";
+import { useChatData } from "./data";
 import { EmptyChat } from "./EmptyChat";
 import { chatRows, heldLabel, rowIndexOf } from "./model";
 import { ChatComposer } from "./Composer";
@@ -46,8 +44,6 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   const turnSince = useData((d) => leadTurnSince(d, projectKey(project)));
   const turnOver = useData((d) => leadTurnUntil(d, projectKey(project)) !== undefined);
   const workedSince = data.leadWorking !== true && turnOver ? turnSince : undefined;
-  const steerSends = useSteerSends();
-  const steers = useLeadSteers(project, view, steerSends.sent);
   const rows = useMemo(
     () =>
       view === undefined
@@ -63,12 +59,11 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
             strip,
             activity: data.leadWorking === true,
             workedSince,
-            steers,
             // "Today" is read against the clock when the chat changes; nothing ticks while it's idle.
             // eslint-disable-next-line react-hooks/purity
             nowMs: Date.now(),
           }),
-    [view, strip, data.leadWorking, workedSince, steers],
+    [view, strip, data.leadWorking, workedSince],
   );
   const items = view?.items;
   const waiting = useMemo(
@@ -80,7 +75,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   const recall = useMemo(() => items?.findLast((i) => i.author === "human" && i.text.trim() !== "")?.text, [items]);
   const target = shown?.id ?? message;
   const openAt = target === undefined || rows === undefined ? undefined : rowIndexOf(rows, target);
-  const empty = view !== undefined && view.items.length === 0 && !view.hasOlder && !view.hasNewer && steers.length === 0;
+  const empty = view !== undefined && view.items.length === 0 && !view.hasOlder && !view.hasNewer;
   const state = data.state;
   const title = data.title ?? "";
   const { loadOlder, loadNewer, jumpToLatest } = data;
@@ -160,7 +155,6 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
           onLoadNewer={onLoadNewer}
           onJumpToLatest={jumpToLatest}
           onTold={onTold}
-          onWithdraw={steerSends.withdraw}
           openAt={openAt}
           openSeq={shown?.n}
           sent={sent}
@@ -175,7 +169,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
               if (id !== undefined) setShown((p) => ({ id, n: (p?.n ?? 0) + 1 }));
             }}
           />
-          <ChatComposer project={project} autoFocus recall={recall} onSent={onSent} steers={steerSends} />
+          <ChatComposer project={project} autoFocus recall={recall} onSent={onSent} />
         </div>
       )}
       <ToldPanel open={told} projectRef={project} onClose={() => setTold(undefined)} />

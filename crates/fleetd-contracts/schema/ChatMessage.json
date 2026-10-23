@@ -96,6 +96,11 @@
           "type": "string"
         },
         {
+          "const": "now",
+          "description": "The lead was mid-turn and the human asked for now: its running step stopped for the message.",
+          "type": "string"
+        },
+        {
           "const": "queued",
           "description": "The lead is starting, or its machine is away: the message waits and goes in as soon as it can.",
           "type": "string"

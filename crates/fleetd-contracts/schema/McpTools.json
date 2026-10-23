@@ -1210,6 +1210,11 @@
           "type": "string"
         },
         {
+          "const": "now",
+          "description": "The lead was mid-turn and the human asked for now: its running step stopped for the message.",
+          "type": "string"
+        },
+        {
           "const": "queued",
           "description": "The lead is starting, or its machine is away: the message waits and goes in as soon as it can.",
           "type": "string"
@@ -1466,6 +1471,10 @@
         "clientRequestId": {
           "minLength": 1,
           "type": "string"
+        },
+        "now": {
+          "description": "A human key only: while the lead works, stop its running step and deliver at once (steer_send's `now`). An\nidle lead takes it as any message.",
+          "type": "boolean"
         },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
