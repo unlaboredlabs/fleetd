@@ -32,6 +32,35 @@ export interface Usage {
   unpriced: Array<string>;
 }
 
+/** A run's time span: session lines stamped outside it belong to other work in the same session directory. */
+export interface Window {
+  readonly from: number;
+  readonly to: number;
+}
+
+/** The parsed lines of claude session files, in order; with a window, only lines stamped inside it. */
+const sessionLines = function* (files: ReadonlyArray<string>, window?: Window) {
+  for (const file of files) {
+    for (const line of fs.readFileSync(file, "utf8").split("\n")) {
+      if (!line.startsWith("{")) continue;
+      let entry: Record<string, any>;
+      try {
+        entry = JSON.parse(line) as Record<string, any>;
+      } catch {
+        continue;
+      }
+      if (window !== undefined) {
+        const at = Date.parse(String(entry.timestamp ?? ""));
+        if (!Number.isFinite(at) || at < window.from || at > window.to) continue;
+      }
+      yield { file, entry };
+    }
+  }
+};
+
+/** The session files with at least one line inside `window`. */
+export const filesIn = (files: ReadonlyArray<string>, window: Window) => [...new Set([...sessionLines(files, window)].map((l) => l.file))];
+
 /** Every .jsonl file under `dir`, recursively. */
 export const jsonlFiles = (dir: string): Array<string> => {
   if (!fs.existsSync(dir)) return [];
@@ -52,25 +81,16 @@ const priced = (model: string, u: Omit<ModelUsage, "usd" | "messages">): number 
 };
 
 /** Sums the usage in `files` (claude session JSONL). Lines that are not assistant messages with usage are skipped. */
-export const usageOf = (files: ReadonlyArray<string>): Usage => {
+export const usageOf = (files: ReadonlyArray<string>, window?: Window): Usage => {
   const messages = new Map<string, { model: string; usage: Record<string, any> }>();
   const sessions = new Set<string>();
-  for (const file of files) {
-    let anonymous = 0;
-    for (const line of fs.readFileSync(file, "utf8").split("\n")) {
-      if (!line.startsWith("{")) continue;
-      let entry: Record<string, any>;
-      try {
-        entry = JSON.parse(line) as Record<string, any>;
-      } catch {
-        continue;
-      }
-      const message = entry.message as Record<string, any> | undefined;
-      if (entry.type !== "assistant" || message?.usage === undefined || typeof message.model !== "string" || message.model === "<synthetic>") continue;
-      sessions.add(`${entry.sessionId ?? file}:${entry.agentId ?? ""}`);
-      const id = typeof message.id === "string" ? message.id : `${file}#${anonymous++}`;
-      messages.set(id, { model: message.model, usage: message.usage });
-    }
+  let anonymous = 0;
+  for (const { file, entry } of sessionLines(files, window)) {
+    const message = entry.message as Record<string, any> | undefined;
+    if (entry.type !== "assistant" || message?.usage === undefined || typeof message.model !== "string" || message.model === "<synthetic>") continue;
+    sessions.add(`${entry.sessionId ?? file}:${entry.agentId ?? ""}`);
+    const id = typeof message.id === "string" ? message.id : `${file}#${anonymous++}`;
+    messages.set(id, { model: message.model, usage: message.usage });
   }
   const byModel: Record<string, ModelUsage> = {};
   for (const { model, usage } of messages.values()) {
@@ -106,16 +126,25 @@ export interface Pinning {
   readonly requests: Record<string, number>;
   /** Assistant messages in the session files, by `model effort` (requested model when it differs). */
   readonly messages: Record<string, number>;
+  /** The claude CLI versions the session files were written by, with their line counts. */
+  readonly cliVersions: Record<string, number>;
   readonly violations: Array<string>;
   /** False when the run had no proxy log (a run recorded with --finish): only the session files were checked. */
   readonly proxyChecked: boolean;
 }
 
 /**
- * Whether a run used only `model` at `effort`: every generation request its proxy saw, and every assistant message
- * in its session files (`effort` and `requestedModel` are recorded per message by claude 2.1+).
+ * Whether a run used only `model` at `effort` on the `cli` version: every generation request its proxy saw, and every
+ * assistant message in its session files (claude 2.1+ records `effort`, `requestedModel` and `version` per line). A
+ * run with no assistant message at all is a violation too: nothing was verified.
  */
-export const pinningOf = (files: ReadonlyArray<string>, requests: ReadonlyArray<{ method: string; path: string; model?: string; effort?: string }> | null, model: string, effort: string): Pinning => {
+export const pinningOf = (
+  files: ReadonlyArray<string>,
+  requests: ReadonlyArray<{ method: string; path: string; model?: string; effort?: string }> | null,
+  pin: { model: string; effort: string; cli: string },
+  window?: Window,
+): Pinning => {
+  const { model, effort } = pin;
   const violations: Array<string> = [];
   const seen: Record<string, number> = {};
   for (const r of requests ?? []) {
@@ -125,27 +154,22 @@ export const pinningOf = (files: ReadonlyArray<string>, requests: ReadonlyArray<
   }
   for (const [key, n] of Object.entries(seen)) if (key !== `${model} ${effort}`) violations.push(`${n} request(s) with ${key}`);
   const messages: Record<string, number> = {};
+  const cliVersions: Record<string, number> = {};
   const ids = new Set<string>();
-  for (const file of files) {
-    for (const line of fs.readFileSync(file, "utf8").split("\n")) {
-      if (!line.startsWith("{")) continue;
-      let entry: Record<string, any>;
-      try {
-        entry = JSON.parse(line) as Record<string, any>;
-      } catch {
-        continue;
-      }
-      const m = entry.message as Record<string, any> | undefined;
-      if (entry.type !== "assistant" || typeof m?.model !== "string" || m.model === "<synthetic>") continue;
-      if (typeof m.id === "string") {
-        if (ids.has(m.id)) continue;
-        ids.add(m.id);
-      }
-      const used = typeof entry.requestedModel === "string" && entry.requestedModel !== m.model ? `${m.model}(asked ${entry.requestedModel})` : m.model;
-      const key = `${used} ${entry.effort ?? "-"}`;
-      messages[key] = (messages[key] ?? 0) + 1;
+  for (const { entry } of sessionLines(files, window)) {
+    if (typeof entry.version === "string") cliVersions[entry.version] = (cliVersions[entry.version] ?? 0) + 1;
+    const m = entry.message as Record<string, any> | undefined;
+    if (entry.type !== "assistant" || typeof m?.model !== "string" || m.model === "<synthetic>") continue;
+    if (typeof m.id === "string") {
+      if (ids.has(m.id)) continue;
+      ids.add(m.id);
     }
+    const used = typeof entry.requestedModel === "string" && entry.requestedModel !== m.model ? `${m.model}(asked ${entry.requestedModel})` : m.model;
+    const key = `${used} ${entry.effort ?? "-"}`;
+    messages[key] = (messages[key] ?? 0) + 1;
   }
   for (const [key, n] of Object.entries(messages)) if (key !== `${model} ${effort}`) violations.push(`${n} message(s) with ${key}`);
-  return { valid: violations.length === 0, requests: seen, messages, violations, proxyChecked: requests !== null };
+  if (Object.keys(messages).length === 0) violations.push("no assistant message in the session files: nothing to verify");
+  for (const [version, n] of Object.entries(cliVersions)) if (version !== pin.cli) violations.push(`${n} session line(s) from claude ${version}, not ${pin.cli}`);
+  return { valid: violations.length === 0, requests: seen, messages, cliVersions, violations, proxyChecked: requests !== null };
 };

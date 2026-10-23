@@ -1,0 +1,8 @@
+{
+  "title": "Debug a routing regression in tinyhttp's mounted middleware",
+  "kind": "one deep bug with related breakage",
+  "codebase": "tinyhttp (MIT), snapshot of 781bfbc with three app fixes reverted",
+  "base": "bench/tinyhttp-mount-bug/base",
+  "baseSha": "ab3fe71b2f25b8ed368734cfdd353288dc029725",
+  "timeoutMin": 120
+}
