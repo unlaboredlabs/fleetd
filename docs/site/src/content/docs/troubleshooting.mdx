@@ -164,6 +164,7 @@ fleetd status W41
 | "W41 is a draft: waiting for the lead's brief" | The lead hasn't written the work's [brief](/docs/glossary#brief) yet. | `fleetd status W41 --watch` shows it once the brief exists. If the lead never starts, see [Its lead](/docs/projects#its-lead). |
 | A pull request stays queued on the [merge train](/docs/glossary#merge-train) | The train can't work in the checkout, or CI or a review is pending. | `fleetd status` lists a PR the train can't move under risks, with the train's error. For more, run `fleetd change status X<n>` in the project's checkout on its worker. The change id `X<n>` is listed by the `train_get` tool. |
 | A risk says "#212 can't merge: its checkout on laptop is outside the node's cmdRoots" | The checkout is outside the node's `cmdRoots` (default: your home directory). | Add its folder to `cmdRoots` in [`node.json`](/docs/config-and-files#node-json) and restart the node. |
+| An agent's activity says "node retry 1/3 in 57 s: overloaded" | Claude's API was overloaded or the network failed, after claude's own retries. | Nothing. The node continues the same run after about 1, 4 and 15 minutes, then fails it with claude's words. |
 | Your message waits and the chat says why | The lead can't start: `claude` logged out, out of range, or the worker offline. | See [Claude](#claude) and [Machines](#machines). |
 
 "Waiting on" lists the stages left for the item in fleetd's pipeline, in order, leaving out review when the PR's tier

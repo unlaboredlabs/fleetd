@@ -17,11 +17,11 @@ use tokio::sync::mpsc;
 
 use super::fake::FakeRunner;
 use super::{
-    Attached, CONTINUE_PROMPT, SessionConfig, SessionService, compile_cache_env, mcp_config,
-    parse_env_file,
+    Attached, SessionConfig, SessionService, compile_cache_env, mcp_config, parse_env_file,
 };
 use crate::node::runner::SessionCommand;
 use crate::node::runner::claude::ALWAYS_DISALLOWED;
+use crate::node::runner::failure::RETRY_MESSAGE;
 use crate::node::store::NodeStore;
 use crate::node::wire::NodeToHub;
 use crate::node::worktree::tests::{repo, run as git};
@@ -651,7 +651,7 @@ async fn a_retryable_failure_continues_the_same_run_then_fails_loudly() {
         .collect();
     assert_eq!(sends.len(), 2);
     assert_ne!(sends[1].0, "r1");
-    assert_eq!(sends[1].1, CONTINUE_PROMPT);
+    assert_eq!(sends[1].1, RETRY_MESSAGE);
     let retry = hub
         .service
         .store()
@@ -706,7 +706,7 @@ async fn an_interrupt_during_a_retry_wait_ends_the_run_for_good() {
         !hub.runner
             .received()
             .iter()
-            .any(|c| matches!(c, SessionCommand::Send { text, .. } if text == CONTINUE_PROMPT))
+            .any(|c| matches!(c, SessionCommand::Send { text, .. } if text == RETRY_MESSAGE))
     );
     let runs = hub.service.store().runs("s1").unwrap();
     assert_eq!(runs[0].status, RunStatus::Interrupted);
@@ -771,7 +771,7 @@ async fn a_run_silent_since_the_machine_woke_is_resumed_as_a_network_retry() {
     assert!(
         received
             .iter()
-            .any(|c| matches!(c, SessionCommand::Send { text, .. } if text == CONTINUE_PROMPT))
+            .any(|c| matches!(c, SessionCommand::Send { text, .. } if text == RETRY_MESSAGE))
     );
     // Honoured, so the process stayed: no stop, no respawn.
     assert!(
@@ -924,10 +924,66 @@ async fn a_first_start_that_claude_already_knows_resumes_instead() {
         SessionWorkspace::Root,
     ))
     .await;
-    hub.settled("r1").await;
+    // claude's refusal fails the first process's send; the run itself completes on a resumed process.
+    let done = hub.settled("r1").await;
+    assert_eq!(done.status, SessionStatus::Idle);
+    assert_eq!(done.latest_run.unwrap().status, RunStatus::Completed);
     let spawned = hub.runner.spawned();
-    assert_eq!(spawned.len(), 1);
-    assert!(spawned[0].resume);
+    assert_eq!(spawned.len(), 2);
+    assert!(!spawned[0].resume);
+    assert!(spawned[1].resume);
+    let prompt = "Reply with the word OK and nothing else.";
+    let sends = sends(&hub.runner);
+    assert_eq!(sends.len(), 2);
+    assert_eq!(sends[0], ("r1".into(), prompt.into()));
+    assert_eq!(sends[1].1, prompt);
+    assert_eq!(hub.service.store().runs("s1").unwrap().len(), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_retry_of_a_message_claude_never_took_in_sends_the_message_again() {
+    // The first turn fails before claude says `started`; the retry's turn completes.
+    let lines = r#"
+{"dir":"in","ms":0,"msg":{"type":"user"}}
+{"dir":"out","ms":0,"msg":{"type":"assistant","error":"overloaded","message":{"id":"m1","content":[]}}}
+{"dir":"out","ms":0,"msg":{"type":"result","is_error":true,"result":"API Error: 529 Overloaded"}}
+{"dir":"in","ms":0,"msg":{"type":"user"}}
+{"dir":"out","ms":0,"msg":{"type":"command_lifecycle","state":"started"}}
+{"dir":"out","ms":0,"msg":{"type":"result","is_error":false,"result":"OK"}}
+"#;
+    let dir = tempfile::tempdir().unwrap();
+    let config = SessionConfig {
+        retry_schedule_ms: vec![1000],
+        ..config(dir.path())
+    };
+    let store = NodeStore::open_memory(10_000).unwrap();
+    let mut hub = hub_with(store, FakeRunner::from_lines(lines), config).await;
+    hub.project(dir.path()).await;
+    hub.ok(launch(
+        "s1",
+        RuntimeMode::FullAccess,
+        SessionWorkspace::Root,
+    ))
+    .await;
+    let done = hub.settled("r1").await;
+    assert_eq!(done.latest_run.unwrap().status, RunStatus::Completed);
+    let prompt = "Reply with the word OK and nothing else.";
+    let sends = sends(&hub.runner);
+    assert_eq!(sends.len(), 2);
+    assert_ne!(sends[1].0, "r1");
+    assert_eq!(sends[1].1, prompt);
+    assert_eq!(hub.service.store().runs("s1").unwrap().len(), 1);
+}
+
+fn sends(runner: &FakeRunner) -> Vec<(String, String)> {
+    runner
+        .received()
+        .into_iter()
+        .filter_map(|c| match c {
+            SessionCommand::Send { run_id, text, .. } => Some((run_id, text)),
+            _ => None,
+        })
+        .collect()
 }
 
 #[tokio::test]

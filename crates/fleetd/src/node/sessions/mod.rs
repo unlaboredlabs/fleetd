@@ -40,10 +40,10 @@ use tokio::time::Instant;
 use super::runner::claude::{
     ALWAYS_DISALLOWED, AUTO_MEMORY_OFF_ENV, SESSION_ENV, subagents_off_settings_env,
 };
-use super::runner::claude_setup;
 use super::runner::{
     ExitInfo, RunOutcome, Runner, RunnerError, RunnerEvent, SessionCommand, SessionSpec,
 };
+use super::runner::{claude, claude_setup, failure};
 use super::store::{NodeStore, SessionLocal, SessionRow, StoreError};
 use super::util::{now_iso, tail_utf16};
 use super::wire::{NodeToHub, head_text, to_json};
@@ -51,8 +51,6 @@ use super::worktree;
 use health::Health;
 use state::EndCause;
 
-/// What the node sends after a retryable failure (Overloaded, Network) to continue the same run.
-pub const CONTINUE_PROMPT: &str = "Continue where you left off.";
 /// fleetd's own MCP servers (none yet: leads and agents call the `fleetd` CLI). The user's own servers load too.
 const SNAPSHOT_WINDOW: usize = 200;
 const TRANSCRIPT_CAP: u64 = 20 * 1024 * 1024;
@@ -126,7 +124,12 @@ impl SessionConfig {
                     .map(|n| n.trim().parse().ok())
                     .collect::<Option<Vec<u64>>>()
             })
-            .unwrap_or_else(|| vec![60_000, 240_000, 900_000]);
+            // Drawn once per node, so machines hit by one outage don't all come back at the same second.
+            .unwrap_or_else(|| {
+                (1..=failure::MAX_RUN_RETRIES)
+                    .filter_map(failure::retry_delay_ms)
+                    .collect()
+            });
         // fleetd's old default, which a node unit written by an older `machine add` still sets in the environment:
         // sessions are back on the user's own setup.
         let from_env = std::env::var("CLAUDE_CONFIG_DIR")
@@ -1328,17 +1331,7 @@ impl SessionService {
                 format!("cannot prepare the session's files: {e}"),
             )
         })?;
-        let handle = match self.inner.runner.spawn(spec.clone()) {
-            // A node that died between spawning claude and recording it: claude already has the session.
-            Err(RunnerError::Refused(why)) if !resume && why.contains("already in use") => {
-                self.inner.runner.spawn(SessionSpec {
-                    resume: true,
-                    ..spec
-                })
-            }
-            other => other,
-        }
-        .map_err(runner_error)?;
+        let handle = self.inner.runner.spawn(spec).map_err(runner_error)?;
         row.local.started = true;
         row.local.pid = Some(handle.pid);
         row.local.pid_start = proc::start_time(handle.pid);
@@ -1809,24 +1802,32 @@ impl SessionService {
             outcome => outcome,
         };
         let mut retries = 0;
-        if let RunOutcome::Failed(failure) = &outcome
-            && matches!(
-                failure.class,
-                FailureClass::Overloaded | FailureClass::Network
-            )
-        {
-            let schedule = &self.inner.config.retry_schedule_ms;
-            let attempt = {
-                let mut st = self.st();
-                let done = st.retries.entry(run_id.to_owned()).or_default();
-                *done += 1;
-                *done
-            };
-            if let Some(&delay) = schedule.get(attempt as usize - 1) {
-                self.schedule_retry(id, run_id, attempt, delay, failure);
+        if let RunOutcome::Failed(failure) = &outcome {
+            // claude never said `started`: it never took the message in, so a retry sends the message itself.
+            let unread = self.store().runs(id).is_ok_and(|runs| {
+                runs.iter()
+                    .any(|r| r.id.as_str() == run_id && r.status == RunStatus::Starting)
+            });
+            if unread
+                && claude::session_in_use(failure.message.as_str())
+                && self.resend_refused(id, run_id)
+            {
                 return;
             }
-            retries = attempt - 1;
+            if failure::retryable(failure.class) {
+                let schedule = &self.inner.config.retry_schedule_ms;
+                let attempt = {
+                    let mut st = self.st();
+                    let done = st.retries.entry(run_id.to_owned()).or_default();
+                    *done += 1;
+                    *done
+                };
+                if let Some(&delay) = schedule.get(attempt as usize - 1) {
+                    self.schedule_retry(id, run_id, attempt, delay, failure, unread);
+                    return;
+                }
+                retries = attempt - 1;
+            }
         }
         self.st().retries.remove(run_id);
         if let Some(live) = self.st().live.get_mut(id) {
@@ -1867,8 +1868,26 @@ impl SessionService {
         }));
     }
 
-    /// The run stays active while the node waits, with a `NodeRetry` item saying why it is slow; then
-    /// [`CONTINUE_PROMPT`] goes to the same session under a fresh uuid that maps back to the run.
+    /// claude refused a first start because it already has the session (the node died between spawning claude and
+    /// recording it, and [`claude::session_file`] could not tell). The message goes again, once, to a respawn, which
+    /// resumes because the session has started.
+    fn resend_refused(&self, id: &str, run_id: &str) -> bool {
+        {
+            let mut st = self.st();
+            if st.retries.contains_key(run_id) {
+                return false;
+            }
+            // Keeps the run active through the refused process's exit.
+            st.retries.insert(run_id.to_owned(), 0);
+            if let Some(live) = st.live.get_mut(id) {
+                live.closing = true;
+            }
+        }
+        self.resend(id, run_id, 0, true);
+        true
+    }
+
+    /// The run stays active while the node waits, with a `NodeRetry` item saying why it is slow.
     fn schedule_retry(
         &self,
         id: &str,
@@ -1876,6 +1895,7 @@ impl SessionService {
         attempt: u32,
         delay: u64,
         failure: &RunFailure,
+        unread: bool,
     ) {
         let max = self.inner.config.retry_schedule_ms.len() as u32;
         let now_ms = crate::node::runner::claude::mapper::Now::system().ms;
@@ -1900,6 +1920,12 @@ impl SessionService {
                 },
             });
         }));
+        self.resend(id, run_id, delay, unread);
+    }
+
+    /// After `delay`, unless the run ended meanwhile, the session gets the run's message again (`unread`: claude never
+    /// took it in) or [`failure::RETRY_MESSAGE`], under a fresh uuid that maps back to the run.
+    fn resend(&self, id: &str, run_id: &str, delay: u64, unread: bool) {
         let service = self.clone();
         let (id, run_id) = (id.to_owned(), run_id.to_owned());
         tokio::spawn(async move {
@@ -1909,19 +1935,40 @@ impl SessionService {
                     .any(|r| r.id.as_str() == run_id && r.status.is_active())
             });
             if !active {
+                if unread {
+                    service.steer_failed(&run_id, "the run ended before claude took it in");
+                }
                 return;
             }
-            let uuid = new_uuid();
-            let command = SessionCommand::Send {
-                run_id: uuid.clone(),
-                text: CONTINUE_PROMPT.to_owned(),
-                mode: SendMode::Plain,
+            let text = if unread {
+                match service.store().message(&id, &run_id) {
+                    Ok(Some(message)) => Ok(message.text),
+                    Ok(None) => Err(not_found(format!("run {run_id} has no message"))),
+                    Err(e) => Err(e.into()),
+                }
+            } else {
+                Ok(failure::RETRY_MESSAGE.to_owned())
             };
-            if let Err(e) = service
-                .dispatch(&id, command, Some((uuid, run_id.clone())))
-                .await
-            {
+            let uuid = new_uuid();
+            let sent = match text {
+                Ok(text) => {
+                    let command = SessionCommand::Send {
+                        run_id: uuid.clone(),
+                        text,
+                        mode: SendMode::Plain,
+                    };
+                    service
+                        .dispatch(&id, command, Some((uuid, run_id.clone())))
+                        .await
+                }
+                Err(e) => Err(e),
+            };
+            if let Err(e) = sent {
+                service.st().retries.remove(&run_id);
                 service.fail_run(&id, &run_id, FailureClass::Other, e.message.as_str());
+                if unread {
+                    service.steer_failed(&run_id, e.message.as_str());
+                }
             }
         });
     }
