@@ -32,7 +32,6 @@ pub struct RiskFacts {
     pub usage: Vec<(String, f64, bool, String)>,
     /// (queued for ms, queued, cap)
     pub slots_queued: Option<(i64, i64, i64)>,
-    pub missed_webhooks_today: i64,
     /// (order, tier letter, running for ms)
     pub no_plan: Vec<(String, String, i64)>,
     /// (steer, who it went to, sent at clock text) of steers unacknowledged, or delivered past [`STEER_ACK_MS`].
@@ -163,21 +162,6 @@ pub fn risks(f: &RiskFacts) -> Vec<Risk> {
             RiskRule::SlotsFull,
             Warning,
             format!("slots full {}, {queued} queued (cap {cap})", age(for_ms)),
-        ));
-    }
-    if f.missed_webhooks_today >= 1 {
-        out.push(risk(
-            RiskRule::GithubDrift,
-            Warning,
-            format!(
-                "webhooks missed {} change{} today; syncing every 60 s",
-                f.missed_webhooks_today,
-                if f.missed_webhooks_today == 1 {
-                    ""
-                } else {
-                    "s"
-                }
-            ),
         ));
     }
     for (ws, tier, running_ms) in &f.no_plan {

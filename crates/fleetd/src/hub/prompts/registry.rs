@@ -107,7 +107,7 @@ const READ_ONLY: (&str, &str, &str, Enforcement) = (
     Prompt,
 );
 
-// `train-only-merges` is a prompt rule: the hub only sees a merge outside the train after the fact (`policy_bypass`).
+// `train-only-merges` is a prompt rule: the hub only sees a merge outside the train after the fact (`pr.merged_outside`).
 pub const ENTRIES: &[Entry] = &[
     entry!(
         "lead.start",
@@ -225,21 +225,13 @@ pub const ENTRIES: &[Entry] = &[
         Task,
         "Writer brief",
         "every write task attempt",
-        "taskId!=T<n>; kind=write; workstreamId=W<n>; project=the project's title; title=the task's title; task!=the lead's task text; workstream=the order's goal and done-when, or nothing; areas!=the leased areas and their globs; branch!=the task's branch; baseBranch=the default branch",
-        &[
-            (
-                "areas",
-                "changes only its areas",
-                r"only change files in these areas",
-                Code
-            ),
-            (
-                "train-only-merges",
-                "never merges; the train does",
-                r"never merge",
-                Prompt
-            ),
-        ]
+        "taskId!=T<n>; kind=write; workstreamId=W<n>; project=the project's title; title=the task's title; task!=the lead's task text; workstream=the order's goal and done-when, or nothing; branch!=the task's branch; baseBranch=the default branch; serves!=what the task serves",
+        &[(
+            "train-only-merges",
+            "never merges; the train does",
+            r"never merge",
+            Prompt
+        ),]
     ),
     entry!(
         "review.reviewer",

@@ -80,17 +80,22 @@ pub fn close_out(runs: &mut [RunInfo], cause: &EndCause, at: &Timestamp) -> Vec<
         };
         run.status = status;
         run.ended_at = Some(at.clone());
-        run.failure = Some(RunFailure {
-            class: FailureClass::ProcessExited,
-            message: Text::new(message.clone())
-                .unwrap_or_else(|_| Text::unchecked(tail_utf16(&message, 4000))),
-            api_status: None,
-            reset_at: None,
-            retries: 0,
-        });
+        run.failure = Some(ended_by(message));
         changed.push(index);
     }
     changed
+}
+
+/// The failure of a run that ended because of `message`: a request, a restart or an exit.
+pub fn ended_by(message: String) -> RunFailure {
+    RunFailure {
+        class: FailureClass::ProcessExited,
+        message: Text::new(message.clone())
+            .unwrap_or_else(|_| Text::unchecked(tail_utf16(&message, 4000))),
+        api_status: None,
+        reset_at: None,
+        retries: 0,
+    }
 }
 
 fn describe_exit(exit: &ExitInfo) -> String {
@@ -196,23 +201,6 @@ pub fn bounded(item: &ThreadItem) -> ThreadItem {
         *omitted = true;
     }
     item
-}
-
-/// Keeps a raw transcript under `cap` bytes by dropping its oldest half, on a line boundary.
-pub fn cap_transcript(path: &Path, cap: u64) -> std::io::Result<()> {
-    let Ok(meta) = std::fs::metadata(path) else {
-        return Ok(());
-    };
-    if meta.len() <= cap {
-        return Ok(());
-    }
-    let bytes = std::fs::read(path)?;
-    let from = (bytes.len() / 2).saturating_sub(1);
-    let start = bytes[from..]
-        .iter()
-        .position(|b| *b == b'\n')
-        .map_or(bytes.len(), |n| from + n + 1);
-    std::fs::write(path, &bytes[start..])
 }
 
 #[cfg(test)]
@@ -338,7 +326,6 @@ mod tests {
             pid_start: None,
             allowed_tools: vec![],
             disallowed_tools: vec![],
-            auto_memory: false,
             role: Default::default(),
         };
         assert_eq!(start_mode(&local, &new, "s1"), Ok(false));
@@ -402,20 +389,5 @@ mod tests {
         };
         assert!(output_omitted);
         assert_eq!(output.unwrap(), "b".repeat(OUTPUT_KEPT - 1));
-    }
-
-    #[test]
-    fn a_transcript_over_its_cap_keeps_its_newest_half_on_line_boundaries() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("t.jsonl");
-        let lines: String = (0..10).map(|n| format!("line-{n}\n")).collect();
-        std::fs::write(&path, &lines).unwrap();
-        cap_transcript(&path, 1000).unwrap();
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), lines);
-        cap_transcript(&path, 40).unwrap();
-        assert_eq!(
-            std::fs::read_to_string(&path).unwrap(),
-            "line-5\nline-6\nline-7\nline-8\nline-9\n"
-        );
     }
 }

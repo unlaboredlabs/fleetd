@@ -60,8 +60,7 @@ fleetd starts sessions with your own Claude Code setup underneath.
 | Your own agents (`~/.claude/agents`) | Listed, but nothing can start them: the Agent tool is blocked. |
 | Env in your settings | Applied, except the switches above, which fleetd sets last. |
 
-A project's policy file can add rules for its sessions: `tools.allow` and `tools.deny` (Claude Code rule syntax), and \
-`claude.autoMemory: true`.
+A project's policy file can add rules for its sessions: `tools.allow` and `tools.deny` (Claude Code rule syntax).
 
 ### See it in a session
 
@@ -330,8 +329,7 @@ fn limits(lead: &[&Tool], task: &[&Tool]) -> Result<String, String> {
         code_list(worker_calls.iter().copied())
     ));
     md.push_str(&format!(
-        "| Finish-all children open at once | {DEFAULT_MAX_CHILDREN} by default; the policy file's \
-         `finishAll.maxChildren` changes it. |\n"
+        "| Finish-all children open at once | {DEFAULT_MAX_CHILDREN}. |\n"
     ));
     md.push_str(&format!(
         "| What a child workstream may serve | {}. Never invented work. |\n",
@@ -629,7 +627,6 @@ fn example(role: Role, tool: &str) -> Option<Value> {
             "kind": "write",
             "title": "Rate-limit the upload API",
             "prompt": "Limit uploads to 10 a minute per API key. Over the limit, answer 429 with Retry-After.",
-            "areas": ["api"],
         }),
         (Role::Lead, "message_agent") => json!({
             "taskId": "T7",
@@ -813,8 +810,7 @@ fn builtins(root: &Path) -> Result<String, String> {
     let mut md = format!(
         "## Claude Code tools\n\nThe same for every session. Listed for Claude Code \
          {TESTED}, the version fleetd is tested with.\n\n**Allowed:** {}.\n\nA project's policy file can deny more \
-         with `tools.deny`. In a run started approval-required, Claude Code asks before it uses a tool and the \
-         question comes to you; `tools.allow` answers it ahead of time.\n\n**Blocked**, in `--disallowedTools` and in the \
+         with `tools.deny`.\n\n**Blocked**, in `--disallowedTools` and in the \
          `permissions.deny` of fleetd's settings, so your own settings can't turn them back on:\n\n| Tool | Why \
          |\n|---|---|\n",
         code_list(allowed.iter().map(String::as_str))
@@ -827,15 +823,15 @@ fn builtins(root: &Path) -> Result<String, String> {
         md.push_str(&format!("| {} | {} |\n", tools.join(", "), cell(why)));
     }
     md.push_str(
-        "\nfleetd also blocks any tool like these that a newer Claude Code adds: it reads the installed claude's tool \
-         list when it checks the machine, and a session that still offers one fails the check.\n\n",
+        "\nfleetd also blocks any tool like these that a newer Claude Code adds: a session whose tool list still offers \
+         one is stopped, and every later session on that machine blocks it.\n\n",
     );
     Ok(md)
 }
 
 fn switches() -> Result<String, String> {
     let all = "Every claude fleetd starts";
-    let overlay: Value = serde_json::from_str(&fleetd::node::sessions::settings_overlay(false))
+    let overlay: Value = serde_json::from_str(&fleetd::node::sessions::settings_overlay())
         .map_err(|e| format!("agent tools: the settings overlay: {e}"))?;
     let mut md = String::from(
         "## Settings fleetd forces\n\nSet in the claude process's environment. \"In settings\" marks the ones also \

@@ -4,10 +4,11 @@
 //! logic builds and tests without them.
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadId, ThreadRef};
 use fleetd_contracts::ledger::{Decision, HumanRequest, WorkstreamId};
-use fleetd_contracts::mcp::{ErrorCode, ThreadLaunchInput};
+use fleetd_contracts::mcp::ErrorCode;
 
 use super::error::LeadError;
 use super::hooks::BoxFuture;
+use crate::hub::executor::LaunchInput;
 
 /// `cmd_result` from the node, as finish-all's inventory reads it.
 #[derive(Debug, Clone)]
@@ -23,7 +24,7 @@ pub trait LeadPorts: Send + Sync {
     fn launch(
         &self,
         machine_id: &MachineId,
-        input: ThreadLaunchInput,
+        input: LaunchInput,
     ) -> BoxFuture<Result<ThreadId, LeadError>>;
     /// `WriteQueue.send(thread, message, clientRequestId)`: through the queue's offline writer, so a wake to an
     /// offline machine waits for it. `Ok(queued)`.
@@ -73,11 +74,7 @@ fn unwired(what: &str) -> LeadError {
 }
 
 impl LeadPorts for Unwired {
-    fn launch(
-        &self,
-        _: &MachineId,
-        _: ThreadLaunchInput,
-    ) -> BoxFuture<Result<ThreadId, LeadError>> {
+    fn launch(&self, _: &MachineId, _: LaunchInput) -> BoxFuture<Result<ThreadId, LeadError>> {
         Box::pin(async { Err(unwired("Launching a lead thread")) })
     }
     fn send(&self, _: ThreadRef, _: String, _: String) -> BoxFuture<Result<bool, LeadError>> {

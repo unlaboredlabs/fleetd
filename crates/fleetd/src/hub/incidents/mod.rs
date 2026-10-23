@@ -291,9 +291,11 @@ mod tests {
     fn an_older_database_with_estimate_misses_opens() {
         let home = tempfile::tempdir().unwrap();
         let db = HubDb::open(home.path()).unwrap();
-        let before = crate::hub::store::MIGRATIONS
+        // Found by content and run by itself: re-opening at an older version would re-run the later migrations too,
+        // which can't run twice.
+        let update = crate::hub::store::MIGRATIONS
             .iter()
-            .position(|m| m.contains("DROP TABLE estimates;"))
+            .find(|m| m.contains("DROP TABLE estimates;"))
             .unwrap();
         db.with(|c| {
             c.execute_batch(
@@ -301,12 +303,10 @@ mod tests {
                  INSERT INTO incidents (class, machine_id, project_id, data)
                    VALUES ('estimate_miss', 'm', 'p', ''), ('stall', 'm', 'p', '');",
             )?;
-            c.pragma_update(None, "user_version", before as i64)?;
+            c.execute_batch(update)?;
             Ok(())
         })
         .unwrap();
-        drop(db);
-        let db = HubDb::open(home.path()).unwrap();
         let estimates: i64 = db
             .with(|c| {
                 Ok(c.query_row(

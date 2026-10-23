@@ -13,8 +13,7 @@ const TURN_MS = 240_000;
 const MERGE_MS = 600_000;
 const ENDED = ["thread.completed", "thread.failed", "thread.interrupted"];
 const FILE = `lab/${new Date().toISOString().slice(0, 19).replace(/\D/gu, "")}/noci.md`;
-const POLICY = `areas:
-  noci: ["${FILE}"]
+const POLICY = `
 `;
 
 const gh = (...args: Array<string>) => {
@@ -63,7 +62,7 @@ export async function noCiTrain(lab: Lab) {
 
     const cursor = await lab.cursor();
     const spawned = fleetd(
-      "task", "spawn", "--workstream", w, "--title", "add noci.md", "--areas", "noci", "--profile", MECHANICS,
+      "task", "spawn", "--workstream", w, "--title", "add noci.md", "--profile", MECHANICS,
       "--prompt",
       `Create the file ${FILE} (from the repo root) containing exactly one line: noci. Commit it with the message "add ${FILE}". Then push your branch and open the pull request as your rules say, with the title "add ${FILE}" and the body exactly "Adds the file.". Reply with the PR URL.`,
     );

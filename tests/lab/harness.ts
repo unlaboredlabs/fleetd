@@ -525,7 +525,7 @@ export interface Lab {
   ) => Promise<{ readonly event: Body; readonly cursor: number }>;
   /** Waits until the machine is online with a live session link (its project reads are not stale). */
   readonly waitLive: (machineId: string) => Promise<void>;
-  /** A thread on the machine whose run has finished, launching one tiny turn if there is none. */
+  /** The project lead's thread on the machine, once its run has finished; starts the lead if there is none. */
   readonly idleThread: (machineId: string) => Promise<{ readonly threadId: string; readonly projectId: string }>;
   /** The hub's current event cursor. */
   readonly cursor: () => Promise<number>;
@@ -608,16 +608,31 @@ export const openWorkstream = (
   return w!;
 };
 
-/** Launches one tiny turn ("reply OK") and returns its thread id. */
-export const launchTiny = async (lab: Pick<Lab, "callTool" | "check">, machineId: string, projectId: string, title: string) => {
-  const launched = await lab.callTool("thread_launch", {
+/**
+ * Runs `prompt` in a fresh session of the project's lead, the way any session starts (there is no raw launch): the lead
+ * (re)starts (a lead always runs high), its first turn (lead.start) ends, then `prompt` goes in as a person's chat message.
+ * Resolves with the lead's thread and the event cursor from just before the message.
+ */
+export const leadRun = async (
+  lab: Pick<Lab, "callTool" | "humanCall" | "check" | "waitEvent" | "cursor">,
+  machineId: string,
+  projectId: string,
+  prompt: string,
+) => {
+  const ref = { machineId, projectId };
+  const from = await lab.cursor();
+  let started = await lab.callTool("lead_restart", ref);
+  if (started.isError && started.body.code === "not_found") started = await lab.callTool("lead_start", ref);
+  lab.check(!started.isError, `lead (re)start on ${machineId}: ${JSON.stringify(started.body)}`);
+  const threadId = started.body.threadId as string;
+  await lab.waitEvent(`the lead's first turn on ${machineId} to end`, 240_000, {
+    cursor: from,
     machineId,
-    projectId,
-    prompt: "Reply with the single word OK and nothing else.",
-    profile: MECHANICS,
-    title,
-    clientRequestId: randomUUID(),
+    types: ["thread.completed", "thread.failed", "thread.interrupted"],
+    match: (e) => e.threadId === threadId,
   });
-  lab.check(!launched.isError, `thread_launch succeeded: ${JSON.stringify(launched.body)}`);
-  return launched.body.threadId as string;
+  const cursor = await lab.cursor();
+  const sent = await lab.humanCall("chat_send", { projectRef: ref, text: prompt, clientRequestId: randomUUID() });
+  lab.check(!sent.isError && sent.body.leadWaiting === undefined, `chat_send on ${machineId}: ${JSON.stringify(sent.body)}`);
+  return { threadId, cursor };
 };

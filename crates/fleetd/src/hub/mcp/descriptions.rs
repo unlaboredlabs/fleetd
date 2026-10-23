@@ -65,18 +65,6 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "Wait for hub events after cursor instead of polling. Returns at once if any exist, otherwise long-polls up to timeoutSec (default and max 50). No cursor means from now. Filter by types and machineId.",
     ),
     (
-        "thread_launch",
-        "Start a new thread in a project on Opus 5.5 with the high profile, or medium when profile says so. runtimeMode defaults to full-access. Refused with machine_offline when the machine is offline.",
-    ),
-    (
-        "thread_send",
-        "Send a message to a thread, waking it if idle. When the machine is offline the hub queues it (queued: true, queuedUntil; default 24 h) and delivers it in order when the machine is back: watch for write.delivered or write.expired.",
-    ),
-    (
-        "thread_interrupt",
-        "Interrupt a thread's running turn. Refused with machine_offline when the machine is offline.",
-    ),
-    (
         "wake_set",
         "Have the hub send a message to a thread later: at an ISO time (no offset means wall-clock time in tz), every N seconds (>= 60), or on a 5-field cron in an IANA tz. once defaults to true. A run missed while the hub was down fires once, marked late, unless catchUp is skip. Offline machines get it queued. Emits wake.fired.",
     ),
@@ -114,7 +102,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "workstream_spawn",
-        "Start one child workstream of the project's open finish-all workstream, for exactly one item with a value source: serves is issue:#<n> (or issue:<url>) for an open issue, defect:<one line> for a failing check or error you saw, or done:<n> for the finish-all's done-when check n. Use a serves value from inventory; never invent work. Refused when the project has no open finish-all workstream, when an open child already serves it, or past the policy's finishAll.maxChildren open children. template (bugfix, feature, research) defaults to bugfix for defect: and feature otherwise. The child starts as a draft and its lead writes the brief.",
+        "Start one child workstream of the project's open finish-all workstream, for exactly one item with a value source: serves is issue:#<n> (or issue:<url>) for an open issue, defect:<one line> for a failing check or error you saw, or done:<n> for the finish-all's done-when check n. Use a serves value from inventory; never invent work. Refused when the project has no open finish-all workstream, when an open child already serves it, or past 5 open children. template (bugfix, feature, research) defaults to bugfix for defect: and feature otherwise. The child starts as a draft and its lead writes the brief.",
     ),
     (
         "inventory",
@@ -146,7 +134,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "task_get",
-        "One task: its profile (high or medium), areas, branch, thread, queued reason or result (status, last 2000 characters of its final message, branch, PR).",
+        "One task: its profile (high or medium), branch, thread, queued reason or result (status, last 2000 characters of its final message, branch, PR).",
     ),
     (
         "cap_set",
@@ -166,19 +154,11 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "incidents_list",
-        "Incidents the hub detected (false_claim, polish_loop, out_of_area, stall, policy_bypass, override), newest first, with evidence lines, plus per-class counts over the last windowDays (default 7). Filter by projectRef, workstreamId or class.",
+        "Incidents the hub detected (false_claim, polish_loop, stall, override), newest first, with evidence lines, plus per-class counts over the last windowDays (default 7). Filter by projectRef, workstreamId or class.",
     ),
     (
         "changes_list",
         "PRs on the merge train (Changes), newest first: state (queued, reviewing, ready, rebasing, ci, merging, merged, needs_rebase, ci_failed, refused, abandoned), tier, reviews bound to the patch id, queue position and why it is parked. Filter by projectRef, repo or state.",
-    ),
-    (
-        "train_get",
-        "One repo's merge train: frozen or not, the Change it is rebasing, checking or merging now, and the queue in order. Only the train merges.",
-    ),
-    (
-        "train_freeze",
-        "Hold (frozen true) or resume (frozen false) a repo's merge train by recording or retiring its policy.freeze.<owner>.<name> decision. The train finishes nothing new while frozen; it emits train.frozen or train.resumed on its next pass.",
     ),
     (
         "doctor_list",
@@ -275,10 +255,6 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     (
         "thread_window",
         "The items and messages around one item of a thread (before and after default 10, max 25), oldest first, from the node's own log: opens a time span's transcript by its itemId.",
-    ),
-    (
-        "github_webhook_set",
-        "Turn opt-in GitHub webhooks on (url: a public URL GitHub can reach that forwards to this hub's /github; fleetd never creates one) or off (no url). Makes a secret and a repo hook on every train repo for check_suite, pull_request and push. Deliveries only make the train sync sooner; without them it reconciles every pass. Admin keys on every machine.",
     ),
     (
         "agents_list",

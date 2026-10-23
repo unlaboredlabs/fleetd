@@ -11,8 +11,6 @@ use tokio::sync::Notify;
 pub const GITHUB_STALE_MS: i64 = 180_000;
 /// The end of a train pass for a repo.
 pub const TRAIN_STALE_MS: i64 = 120_000;
-/// A `missed_webhook` drift keeps the webhook source stale this long.
-pub const WEBHOOK_STALE_MS: i64 = 30 * 60_000;
 
 pub fn github_stale_ms() -> i64 {
     std::env::var("FLEETD_STATUS_GITHUB_STALE_SEC")
@@ -27,9 +25,6 @@ pub fn github(repo: &str) -> String {
 }
 pub fn train(repo: &str) -> String {
     format!("train:{repo}")
-}
-pub fn webhook(repo: &str) -> String {
-    format!("webhook:{repo}")
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -47,8 +42,6 @@ struct Source {
     expected_ms: i64,
     last_error: Option<String>,
     stale: Option<Stale>,
-    /// Held stale until then regardless of touches (webhook drift).
-    held_until_ms: Option<i64>,
 }
 
 /// A source's state as the view shows it.
@@ -101,18 +94,12 @@ impl Fresh {
             expected_ms: now_ms,
             last_error: None,
             stale: None,
-            held_until_ms: None,
         });
         entry.stale_after_ms = stale_after_ms;
         drop(sources);
         if fresh {
             self.notify.notify_one();
         }
-    }
-
-    /// Stops tracking a source (its repo left the train).
-    pub fn forget(&self, source: &str) {
-        self.sources.lock().unwrap().remove(source);
     }
 
     /// A good answer at `at_ms`. A stale source turns fresh at once and the status task is woken.
@@ -134,10 +121,6 @@ impl Fresh {
             self.notify.notify_one();
             return;
         }
-        if s.held_until_ms.is_some_and(|h| at_ms < h) {
-            return;
-        }
-        s.held_until_ms = None;
         if let Some(stale) = s.stale.take() {
             self.pending.lock().unwrap().push(Flip::Fresh {
                 source: source.to_owned(),
@@ -155,39 +138,13 @@ impl Fresh {
         }
     }
 
-    /// Holds a source stale until `until_ms` with `reason` (a missed webhook), touched or not.
-    pub fn hold_stale(&self, source: &str, reason: &str, now_ms: i64, until_ms: i64) {
-        let mut sources = self.sources.lock().unwrap();
-        let Some(s) = sources.get_mut(source) else {
-            return;
-        };
-        s.held_until_ms = Some(until_ms);
-        if s.stale.is_none() {
-            let since_ms = s.as_of_ms.unwrap_or(now_ms);
-            s.stale = Some(Stale {
-                since_ms,
-                reason: reason.to_owned(),
-            });
-            self.pending.lock().unwrap().push(Flip::Stale {
-                source: source.to_owned(),
-                since_ms,
-                reason: reason.to_owned(),
-            });
-        }
-        drop(sources);
-        self.notify.notify_one();
-    }
-
-    /// The earliest moment a source could flip stale (or a hold ends); the status task sleeps until it.
+    /// The earliest moment a source could flip stale; the status task sleeps until it.
     pub fn next_deadline(&self) -> Option<i64> {
         let sources = self.sources.lock().unwrap();
         sources
             .values()
-            .filter_map(|s| match (&s.stale, s.held_until_ms) {
-                (Some(_), Some(held)) => Some(held),
-                (Some(_), None) => None,
-                (None, _) => s.as_of_ms.map(|a| a + s.stale_after_ms),
-            })
+            .filter(|s| s.stale.is_none())
+            .filter_map(|s| s.as_of_ms.map(|a| a + s.stale_after_ms))
             .min()
     }
 
@@ -197,20 +154,6 @@ impl Fresh {
         let mut flips = std::mem::take(&mut *self.pending.lock().unwrap());
         let mut sources = self.sources.lock().unwrap();
         for (name, s) in sources.iter_mut() {
-            if let Some(held) = s.held_until_ms
-                && now_ms >= held
-            {
-                s.held_until_ms = None;
-                if s.as_of_ms.is_some_and(|a| now_ms - a <= s.stale_after_ms)
-                    && let Some(stale) = s.stale.take()
-                {
-                    flips.push(Flip::Fresh {
-                        source: name.clone(),
-                        stale_ms: now_ms - stale.since_ms,
-                    });
-                }
-                continue;
-            }
             let Some(as_of) = s.as_of_ms else { continue };
             if s.stale.is_some() || now_ms - as_of <= s.stale_after_ms {
                 continue;
@@ -237,10 +180,8 @@ impl Fresh {
                 since_ms: stale.since_ms,
                 // The age in the reason grows with time; recompute it so it is never stale itself.
                 reason: match s.as_of_ms {
-                    Some(a) if s.held_until_ms.is_none() => {
-                        reason_for(source, now_ms - a, s.last_error.as_deref())
-                    }
-                    _ => stale.reason.clone(),
+                    Some(a) => reason_for(source, now_ms - a, s.last_error.as_deref()),
+                    None => stale.reason.clone(),
                 },
             }),
             (None, None) => Some(Stale {
@@ -347,24 +288,5 @@ mod tests {
                 .stale
                 .is_none()
         );
-    }
-
-    #[test]
-    fn a_hold_keeps_a_touched_source_stale_until_it_ends() {
-        let f = Fresh::default();
-        f.expect("webhook:acme/storefront", 600_000, 0);
-        f.touch("webhook:acme/storefront", 0);
-        f.check(0);
-        f.hold_stale(
-            "webhook:acme/storefront",
-            "webhooks missed 1 change",
-            10,
-            1_000,
-        );
-        assert!(matches!(f.check(10)[0], Flip::Stale { .. }));
-        f.touch("webhook:acme/storefront", 500);
-        assert!(f.check(500).is_empty());
-        assert_eq!(f.next_deadline(), Some(1_000));
-        assert!(matches!(f.check(1_000)[0], Flip::Fresh { .. }));
     }
 }

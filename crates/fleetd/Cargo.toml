@@ -43,11 +43,8 @@ axum = { workspace = true }
 # attention, wakes
 chrono-tz = { workspace = true, features = ["case-insensitive"] }
 regex = { workspace = true }
-# webhooks
 url = { workspace = true }
-hmac = { workspace = true }
-aes-gcm = { workspace = true }
-# tasks, slots, leases
+# tasks, slots, the policy file
 serde_yaml_ng = { workspace = true }
 unicode-normalization = { workspace = true }
 

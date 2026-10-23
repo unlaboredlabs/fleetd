@@ -132,6 +132,7 @@ span_kinds! {
     /// A write waiting in the hub's queue for an offline machine.
     WaitOffline = 25, "wait.offline", Machine;
     QueueSlot = 30, "queue.slot", Queue;
+    /// Older hubs only: a writer waiting for an area lease. Kept so their spans still read.
     QueueLease = 31, "queue.lease", Queue;
     QueueUsage = 32, "queue.usage", Queue;
     QueueOffline = 33, "queue.offline", Queue;

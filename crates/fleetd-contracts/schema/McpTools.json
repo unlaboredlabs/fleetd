@@ -574,11 +574,6 @@
       ],
       "type": "string"
     },
-    "AreaName": {
-      "description": "Lowercase slug, [a-z0-9][a-z0-9_-]*, at most 40",
-      "pattern": "^[a-z0-9][a-z0-9_-]*$",
-      "type": "string"
-    },
     "AttachmentGetInput": {
       "properties": {
         "attachmentId": {
@@ -3288,54 +3283,6 @@
       ],
       "type": "object"
     },
-    "GithubHook": {
-      "properties": {
-        "hookId": {
-          "maximum": 9007199254740991,
-          "minimum": 1,
-          "type": "integer"
-        },
-        "repo": {
-          "$ref": "#/$defs/GitHubRepo"
-        }
-      },
-      "required": [
-        "repo",
-        "hookId"
-      ],
-      "type": "object"
-    },
-    "GithubWebhookSetInput": {
-      "properties": {
-        "url": {
-          "$ref": "#/$defs/WebhookUrl",
-          "description": "A public URL GitHub can reach, ending in /github; fleetd never creates one."
-        }
-      },
-      "type": "object"
-    },
-    "GithubWebhookSetOutput": {
-      "properties": {
-        "next": {
-          "type": "string"
-        },
-        "repos": {
-          "description": "The hooks now in place; empty when turned off.",
-          "items": {
-            "$ref": "#/$defs/GithubHook"
-          },
-          "maxItems": 100,
-          "type": "array"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "repos"
-      ],
-      "type": "object"
-    },
     "Headline": {
       "properties": {
         "at": {
@@ -3787,18 +3734,8 @@
           "type": "string"
         },
         {
-          "const": "task.out_of_area",
-          "description": "A write task's diff touched files outside its leased areas; `data.paths`.",
-          "type": "string"
-        },
-        {
           "const": "agents.cap",
           "description": "A project's max agents or the fleet cap changed; `data` is `tasks::AgentsCapData`, `summary` the chat's line.",
-          "type": "string"
-        },
-        {
-          "const": "lease.stale",
-          "description": "A lease held for over 4 h; flagged once, never released by the hub. `data.taskId`, `data.area`.",
           "type": "string"
         },
         {
@@ -3847,13 +3784,8 @@
           "type": "string"
         },
         {
-          "const": "train.frozen",
-          "description": "`data.repo`, `data.reason`.",
-          "type": "string"
-        },
-        {
-          "const": "train.resumed",
-          "description": "`data.repo`.",
+          "const": "pr.merged_outside",
+          "description": "A PR was merged into a base the train guards without the train; `data.repo`, `data.prNumber`,\n`data.mergedSha`, and `data.changeId` when it had been enqueued.",
           "type": "string"
         },
         {
@@ -3944,11 +3876,6 @@
         {
           "const": "ci.main",
           "description": "Main-branch CI of a train repo changed state; `data.repo`, `data.sha`, `data.state`, `data.failing`.",
-          "type": "string"
-        },
-        {
-          "const": "github.drift",
-          "description": "Reconciliation found GitHub moved without fleetd; `data.repo`, `data.kind`, `data.what`, `data.lagMs`.",
           "type": "string"
         },
         {
@@ -4268,7 +4195,6 @@
           "enum": [
             "false_claim",
             "polish_loop",
-            "out_of_area",
             "stall",
             "policy_bypass",
             "override"
@@ -4278,6 +4204,11 @@
         {
           "const": "misfiled_ask",
           "description": "Retired with the questions tool. Kept so older incidents still read.",
+          "type": "string"
+        },
+        {
+          "const": "out_of_area",
+          "description": "Retired with area leases. Kept so older incidents still read.",
           "type": "string"
         },
         {
@@ -5193,12 +5124,6 @@
         "fleetd_status.output": {
           "$ref": "#/$defs/FleetdStatusOutput"
         },
-        "github_webhook_set.input": {
-          "$ref": "#/$defs/GithubWebhookSetInput"
-        },
-        "github_webhook_set.output": {
-          "$ref": "#/$defs/GithubWebhookSetOutput"
-        },
         "hub_info.input": {
           "$ref": "#/$defs/HubInfoInput"
         },
@@ -5445,30 +5370,6 @@
         "tasks_list.output": {
           "$ref": "#/$defs/TasksListOutput"
         },
-        "thread_answer.input": {
-          "$ref": "#/$defs/ThreadAnswerInput"
-        },
-        "thread_answer.output": {
-          "$ref": "#/$defs/ThreadAnswerOutput"
-        },
-        "thread_interrupt.input": {
-          "$ref": "#/$defs/ThreadInterruptInput"
-        },
-        "thread_interrupt.output": {
-          "$ref": "#/$defs/ThreadInterruptOutput"
-        },
-        "thread_launch.input": {
-          "$ref": "#/$defs/ThreadLaunchInput"
-        },
-        "thread_launch.output": {
-          "$ref": "#/$defs/ThreadLaunchOutput"
-        },
-        "thread_send.input": {
-          "$ref": "#/$defs/ThreadSendInput"
-        },
-        "thread_send.output": {
-          "$ref": "#/$defs/ThreadSendOutput"
-        },
         "thread_tail.input": {
           "$ref": "#/$defs/ThreadTailInput"
         },
@@ -5504,18 +5405,6 @@
         },
         "time_spans.output": {
           "$ref": "#/$defs/TimeSpansOutput"
-        },
-        "train_freeze.input": {
-          "$ref": "#/$defs/TrainFreezeInput"
-        },
-        "train_freeze.output": {
-          "$ref": "#/$defs/TrainFreezeOutput"
-        },
-        "train_get.input": {
-          "$ref": "#/$defs/TrainGetInput"
-        },
-        "train_get.output": {
-          "$ref": "#/$defs/TrainGetOutput"
         },
         "usage_resume.input": {
           "$ref": "#/$defs/UsageResumeInput"
@@ -5605,8 +5494,6 @@
         "events_wait.output",
         "fleetd_status.input",
         "fleetd_status.output",
-        "github_webhook_set.input",
-        "github_webhook_set.output",
         "hub_info.input",
         "hub_info.output",
         "incidents_list.input",
@@ -5689,14 +5576,6 @@
         "task_get.output",
         "tasks_list.input",
         "tasks_list.output",
-        "thread_answer.input",
-        "thread_answer.output",
-        "thread_interrupt.input",
-        "thread_interrupt.output",
-        "thread_launch.input",
-        "thread_launch.output",
-        "thread_send.input",
-        "thread_send.output",
         "thread_tail.input",
         "thread_tail.output",
         "thread_window.input",
@@ -5709,10 +5588,6 @@
         "time_retention_set.output",
         "time_spans.input",
         "time_spans.output",
-        "train_freeze.input",
-        "train_freeze.output",
-        "train_get.input",
-        "train_get.output",
         "usage_resume.input",
         "usage_resume.output",
         "usage_status.input",
@@ -6417,13 +6292,6 @@
         "byCategory"
       ],
       "type": "object"
-    },
-    "PermissionAnswer": {
-      "enum": [
-        "allow",
-        "deny"
-      ],
-      "type": "string"
     },
     "Placeholder": {
       "description": "A `{{name}}` the code fills in. A required one missing from an edit gets a warning.",
@@ -7311,10 +7179,6 @@
           "minimum": 0,
           "type": "integer"
         },
-        "paused": {
-          "description": "Merging is paused for the repository.",
-          "type": "boolean"
-        },
         "position": {
           "description": "0-based place in the queue; absent when not waiting in it.",
           "maximum": 9007199254740991,
@@ -7333,8 +7197,7 @@
       "required": [
         "changeId",
         "state",
-        "length",
-        "paused"
+        "length"
       ],
       "type": "object"
     },
@@ -7958,17 +7821,6 @@
     "ProjectInspect": {
       "description": "What `project_inspect` found: the default branch, CI and merge rules, and one line on what the lead will need.",
       "properties": {
-        "areas": {
-          "description": "The areas writers lease: the policy file's, else inferred from the repo's layout. Empty when unknown.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "areasInferred": {
-          "description": "true: `areas` were inferred from the repo, not set in .fleetd/policy.yaml.",
-          "type": "boolean"
-        },
         "ci": {
           "$ref": "#/$defs/CiInfo"
         },
@@ -8025,17 +7877,6 @@
     "ProjectInspectOutput": {
       "description": "What `project_inspect` found: the default branch, CI and merge rules, and one line on what the lead will need.",
       "properties": {
-        "areas": {
-          "description": "The areas writers lease: the policy file's, else inferred from the repo's layout. Empty when unknown.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "areasInferred": {
-          "description": "true: `areas` were inferred from the repo, not set in .fleetd/policy.yaml.",
-          "type": "boolean"
-        },
         "ci": {
           "$ref": "#/$defs/CiInfo"
         },
@@ -9223,7 +9064,6 @@
             "machine_flaky",
             "usage_high",
             "slots_full",
-            "github_drift",
             "no_plan"
           ],
           "type": "string"
@@ -9245,13 +9085,6 @@
         }
       ],
       "x-open": true
-    },
-    "RuntimeMode": {
-      "enum": [
-        "full-access",
-        "approval-required"
-      ],
-      "type": "string"
     },
     "SafetyRule": {
       "description": "A rule the default text carries, found in a text by `needle` (a case-insensitive regex).",
@@ -10010,7 +9843,6 @@
             "run.startup",
             "compaction",
             "queue.slot",
-            "queue.lease",
             "queue.usage",
             "queue.offline",
             "wake.debounce",
@@ -10066,6 +9898,11 @@
         {
           "const": "wait.offline",
           "description": "A write waiting in the hub's queue for an offline machine.",
+          "type": "string"
+        },
+        {
+          "const": "queue.lease",
+          "description": "Older hubs only: a writer waiting for an area lease. Kept so their spans still read.",
           "type": "string"
         },
         {
@@ -10210,7 +10047,7 @@
       "type": "object"
     },
     "StaleSource": {
-      "description": "A source that is stale now, `since` its last good signal. `source` is `machine:<m>`, `usage:<m>`, `ci:<repo>`,\n`github:<repo>`, `train:<repo>` or\n`webhook:<repo>`.",
+      "description": "A source that is stale now, `since` its last good signal. `source` is `machine:<m>`, `usage:<m>`, `ci:<repo>`,\n`github:<repo>` or `train:<repo>`.",
       "properties": {
         "reason": {
           "maxLength": 200,
@@ -11158,14 +10995,6 @@
     },
     "Task": {
       "properties": {
-        "areas": {
-          "items": {
-            "$ref": "#/$defs/AreaName"
-          },
-          "maxItems": 20,
-          "type": "array",
-          "uniqueItems": true
-        },
         "attempt": {
           "description": "1 for the first launch.",
           "maximum": 9007199254740991,
@@ -11216,7 +11045,7 @@
           "type": "boolean"
         },
         "queuedReason": {
-          "description": "Why it is queued, e.g. \"lease: docs held by T1\" or \"fleet cap: 40 of 40 running\".",
+          "description": "Why it is queued, e.g. \"fleet cap: 40 of 40 running\".",
           "maxLength": 200,
           "minLength": 1,
           "type": "string"
@@ -11260,7 +11089,6 @@
         "title",
         "kind",
         "prompt",
-        "areas",
         "state",
         "attempt",
         "createdAt"
@@ -11344,7 +11172,7 @@
       "type": "string"
     },
     "TaskKind": {
-      "description": "Only write tasks get a worktree and leases.",
+      "description": "Only write tasks get a worktree.",
       "enum": [
         "write",
         "read",
@@ -11454,62 +11282,6 @@
       ],
       "type": "object"
     },
-    "ThreadAnswerInput": {
-      "properties": {
-        "decision": {
-          "$ref": "#/$defs/PermissionAnswer"
-        },
-        "machineId": {
-          "$ref": "#/$defs/MachineId"
-        },
-        "message": {
-          "description": "Deny only: what claude is told instead of running the tool.",
-          "maxLength": 2000,
-          "minLength": 1,
-          "type": "string"
-        },
-        "requestId": {
-          "description": "The prompt answered, from the thread.waiting event; absent means the one open now.",
-          "minLength": 1,
-          "type": "string"
-        },
-        "threadId": {
-          "$ref": "#/$defs/ThreadId"
-        }
-      },
-      "required": [
-        "machineId",
-        "threadId",
-        "decision"
-      ],
-      "type": "object"
-    },
-    "ThreadAnswerOutput": {
-      "properties": {
-        "decision": {
-          "$ref": "#/$defs/PermissionAnswer"
-        },
-        "humanRequestId": {
-          "$ref": "#/$defs/ChatRequestId",
-          "description": "The approval request this answer closed, if one was open."
-        },
-        "next": {
-          "type": "string"
-        },
-        "requestId": {
-          "minLength": 1,
-          "type": "string"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "requestId",
-        "decision"
-      ],
-      "type": "object"
-    },
     "ThreadCounts": {
       "properties": {
         "failed": {
@@ -11559,99 +11331,6 @@
     "ThreadId": {
       "type": "string"
     },
-    "ThreadInterruptInput": {
-      "properties": {
-        "clientRequestId": {
-          "minLength": 1,
-          "type": "string"
-        },
-        "machineId": {
-          "$ref": "#/$defs/MachineId"
-        },
-        "threadId": {
-          "$ref": "#/$defs/ThreadId"
-        }
-      },
-      "required": [
-        "machineId",
-        "threadId",
-        "clientRequestId"
-      ],
-      "type": "object"
-    },
-    "ThreadInterruptOutput": {
-      "properties": {
-        "next": {
-          "type": "string"
-        },
-        "ok": {
-          "enum": [
-            true
-          ],
-          "type": "boolean"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "ok"
-      ],
-      "type": "object"
-    },
-    "ThreadLaunchInput": {
-      "properties": {
-        "clientRequestId": {
-          "minLength": 1,
-          "type": "string"
-        },
-        "machineId": {
-          "$ref": "#/$defs/MachineId"
-        },
-        "profile": {
-          "$ref": "#/$defs/TaskProfile",
-          "description": "Absent: high."
-        },
-        "projectId": {
-          "$ref": "#/$defs/ProjectId"
-        },
-        "prompt": {
-          "minLength": 1,
-          "type": "string"
-        },
-        "runtimeMode": {
-          "$ref": "#/$defs/RuntimeMode",
-          "default": "full-access"
-        },
-        "title": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "machineId",
-        "projectId",
-        "prompt",
-        "clientRequestId"
-      ],
-      "type": "object"
-    },
-    "ThreadLaunchOutput": {
-      "properties": {
-        "next": {
-          "type": "string"
-        },
-        "threadId": {
-          "$ref": "#/$defs/ThreadId"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "threadId"
-      ],
-      "type": "object"
-    },
     "ThreadRef": {
       "properties": {
         "machineId": {
@@ -11664,56 +11343,6 @@
       "required": [
         "machineId",
         "threadId"
-      ],
-      "type": "object"
-    },
-    "ThreadSendInput": {
-      "properties": {
-        "clientRequestId": {
-          "minLength": 1,
-          "type": "string"
-        },
-        "machineId": {
-          "$ref": "#/$defs/MachineId"
-        },
-        "message": {
-          "minLength": 1,
-          "type": "string"
-        },
-        "threadId": {
-          "$ref": "#/$defs/ThreadId"
-        }
-      },
-      "required": [
-        "machineId",
-        "threadId",
-        "message",
-        "clientRequestId"
-      ],
-      "type": "object"
-    },
-    "ThreadSendOutput": {
-      "properties": {
-        "next": {
-          "type": "string"
-        },
-        "queued": {
-          "description": "True when the machine is offline and the message waits in the hub's queue.",
-          "type": "boolean"
-        },
-        "queuedUntil": {
-          "$ref": "#/$defs/Timestamp",
-          "description": "When a queued message expires undelivered."
-        },
-        "runId": {
-          "type": "string"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "queued"
       ],
       "type": "object"
     },
@@ -12374,71 +12003,6 @@
       ],
       "type": "object"
     },
-    "TrainFreezeInput": {
-      "properties": {
-        "frozen": {
-          "type": "boolean"
-        },
-        "reason": {
-          "maxLength": 200,
-          "minLength": 1,
-          "type": "string"
-        },
-        "repo": {
-          "$ref": "#/$defs/GitHubRepo"
-        }
-      },
-      "required": [
-        "repo",
-        "frozen"
-      ],
-      "type": "object"
-    },
-    "TrainFreezeOutput": {
-      "properties": {
-        "next": {
-          "type": "string"
-        },
-        "train": {
-          "$ref": "#/$defs/TrainState"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "train"
-      ],
-      "type": "object"
-    },
-    "TrainGetInput": {
-      "properties": {
-        "repo": {
-          "$ref": "#/$defs/GitHubRepo"
-        }
-      },
-      "required": [
-        "repo"
-      ],
-      "type": "object"
-    },
-    "TrainGetOutput": {
-      "properties": {
-        "next": {
-          "type": "string"
-        },
-        "train": {
-          "$ref": "#/$defs/TrainState"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "train"
-      ],
-      "type": "object"
-    },
     "TrainLive": {
       "description": "One repo's merge train, resolved for the strip: head first, then the queue in order, then today's merges.",
       "properties": {
@@ -12448,13 +12012,6 @@
           },
           "maxItems": 12,
           "type": "array"
-        },
-        "frozen": {
-          "type": "boolean"
-        },
-        "frozenReason": {
-          "maxLength": 200,
-          "type": "string"
         },
         "mergedToday": {
           "description": "Merged since 00:00 UTC.",
@@ -12468,7 +12025,6 @@
       },
       "required": [
         "repo",
-        "frozen",
         "chips",
         "mergedToday"
       ],
@@ -12477,10 +12033,6 @@
     "TrainState": {
       "description": "One serial train per repo.",
       "properties": {
-        "frozen": {
-          "description": "Held by a `policy.freeze.<repo>` decision.",
-          "type": "boolean"
-        },
         "head": {
           "$ref": "#/$defs/ChangeId",
           "description": "The Change being rebased, checked or merged now."
@@ -12499,7 +12051,6 @@
       },
       "required": [
         "repo",
-        "frozen",
         "queue"
       ],
       "type": "object"
@@ -12944,9 +12495,6 @@
         "threadId"
       ],
       "type": "object"
-    },
-    "WebhookUrl": {
-      "type": "string"
     },
     "Weight": {
       "oneOf": [

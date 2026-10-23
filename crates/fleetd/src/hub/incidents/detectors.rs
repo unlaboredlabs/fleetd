@@ -1,6 +1,5 @@
-//! Incident detectors that read the event log: stalls, writes outside a task's areas, and a human replacing a lead's
-//! decision (override). The
-//! other classes are recorded where the hub sees them happen (claims, the train).
+//! Incident detectors that read the event log: stalls, and a human replacing a lead's decision (override). The other
+//! classes are recorded where the hub sees them happen (claims, the train).
 //! Events from the hub's start on; nothing here reads a model.
 use super::{IncidentInput, Incidents};
 use crate::hub::store::{EventLog, StoreError, WaitInput};
@@ -22,11 +21,7 @@ pub trait DetectorPorts: Send + Sync + 'static {
     fn decisions_active_on_key(&self, key: &DecisionKey, project: &ProjectRef) -> Vec<Decision>;
 }
 
-const TYPES: [HubEventType; 3] = [
-    HubEventType::ThreadFailed,
-    HubEventType::TaskOutOfArea,
-    HubEventType::DecisionRecorded,
-];
+const TYPES: [HubEventType; 2] = [HubEventType::ThreadFailed, HubEventType::DecisionRecorded];
 
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
@@ -34,7 +29,6 @@ struct EventData {
     reason: Option<String>,
     task_id: Option<TaskId>,
     workstream_id: Option<WorkstreamId>,
-    paths: Option<Vec<String>>,
     decision_id: Option<DecisionId>,
     source: Option<String>,
     supersedes: Option<DecisionId>,
@@ -189,17 +183,6 @@ impl Detectors {
         match (event.r#type, r) {
             (HubEventType::ThreadFailed, Some(r)) if data.reason.as_deref() == Some("stalled") => {
                 self.stall(event, r)
-            }
-            (HubEventType::TaskOutOfArea, Some(r)) => {
-                let mut evidence = vec![event.summary.as_str().to_owned()];
-                evidence.extend(data.paths.clone().unwrap_or_default().into_iter().take(10));
-                self.record(
-                    IncidentClass::OutOfArea,
-                    r,
-                    data.workstream_id.clone(),
-                    data.task_id.clone(),
-                    evidence,
-                )
             }
             (HubEventType::DecisionRecorded, _) if data.source.as_deref() == Some("human") => {
                 self.human_decision(event, &data)

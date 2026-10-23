@@ -137,10 +137,13 @@ impl SessionService {
     pub(super) fn steers_exited(&self, id: &str, exit: &ExitInfo) {
         let open: Vec<SteerTrack> = {
             let mut st = self.st();
+            // A steer whose run the node sends again (`resend`) stays open: claude has yet to take it in.
             let ids: Vec<String> = st
                 .steers
                 .iter()
-                .filter(|(_, t)| t.session_id == id)
+                .filter(|(_, t)| {
+                    t.session_id == id && (t.delivered || !st.retries.contains_key(&t.run_id))
+                })
                 .map(|(s, _)| s.clone())
                 .collect();
             ids.iter().filter_map(|s| st.steers.remove(s)).collect()

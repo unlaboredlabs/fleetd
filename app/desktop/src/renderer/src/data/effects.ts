@@ -16,7 +16,7 @@ export interface EventEffects {
 
 const ORDER_PREFIXES = ["workstream.", "task.", "change.", "claim.", "request.", "steer.", "train.", "plan."];
 const ORDER_TYPES = new Set(["pr.merged", "review.verdict", "lead.started", "lead.woken"]);
-const STATUS_TYPES = new Set(["ci.main", "github.drift", "source.stale", "source.fresh"]);
+const STATUS_TYPES = new Set(["ci.main", "source.stale", "source.fresh"]);
 /** Status's health strip shows machines (online, slept, last seen) and claude usage too. */
 const STATUS_PREFIXES = ["machine.", "usage."];
 // What changes an order's time, as the GPUI inspector refetched it. thread.* is left out: it fires constantly, and

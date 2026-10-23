@@ -32,17 +32,13 @@ fn is_lockfile(path: &str) -> bool {
 
 const HELD: &str = "held: the PR has the `hold` label; the train takes it once the label is gone";
 
-/// The train's memory for batches and stacks. Lost on a restart, which only costs a rebuild.
+/// The train's memory for batches. Lost on a restart, which only costs a rebuild.
 #[derive(Default)]
 pub struct Lanes {
     /// Dropped from a red batch: each goes alone next, so no second batch turns red for its sake.
     pub(super) suspects: HashSet<ChangeId>,
     /// Repos GitHub would not merge a batch PR for, and why: they go one at a time until the hub restarts.
     pub(super) off: HashMap<String, String>,
-    /// Each PR stacked on a queued one: its parent, and the parent heads seen, where it may have forked.
-    pub(super) stacked: HashMap<ChangeId, super::stack::Stacked>,
-    /// The speculative build of each stacked PR.
-    pub(super) specs: HashMap<ChangeId, super::stack::Spec>,
     /// Batch members whose PR is known closed, so reconcile reads them no more.
     pub(super) closed: HashSet<ChangeId>,
 }
@@ -151,7 +147,7 @@ impl Train {
     }
 
     /// The ready Changes the train may take now, in order, with their PRs. A PR merged, closed or pushed to since is
-    /// settled here as the one-at-a-time path would; a held PR and one stacked on an open Change wait.
+    /// settled here as the one-at-a-time path would; a held PR waits.
     async fn candidates(&self, repo: &str, ready: Vec<Change>) -> (Vec<Candidate>, bool) {
         let mut out = Vec::new();
         let mut settled = false;
@@ -173,16 +169,11 @@ impl Train {
                 continue;
             }
             if pull.state != "open" {
-                self.closed_outside(&change).await;
+                self.abandon(&change, "was closed").await;
                 settled = true;
                 continue;
             }
             if pull.head.sha.to_lowercase() != change.head_sha.as_str() {
-                self.saw_change(
-                    &change.project_ref,
-                    repo,
-                    &format!("{repo}#{} got a new head", change.pr_number),
-                );
                 if let Err(e) = self.ready_moved(&change, &pull).await {
                     let why = self.git_failed(&change, &e.0);
                     self.update(&change.change_id, Some(&[ChangeState::Ready]), |mut c| {
@@ -200,7 +191,7 @@ impl Train {
                     c
                 });
             }
-            if held || self.waits_on_parent(repo, &change, &pull) {
+            if held {
                 continue;
             }
             out.push(Candidate { change, pull });
@@ -318,6 +309,22 @@ impl Train {
     }
 
     /// Back to ready in place (their queue order never changed), with `why` as their last error when given.
+    /// Deletes the train's scratch branches: no batch is in flight between passes, so any left is a leftover (a
+    /// restart, a failed delete). GitHub closes a PR whose head branch goes.
+    pub(super) async fn sweep_scratch(&self, repo: &str) {
+        let Some(prefix) = self.scratch_prefix(repo).await else {
+            return;
+        };
+        let Ok(branches) = self.github.matching_branches(repo, &prefix).await else {
+            return;
+        };
+        for branch in branches {
+            if let Err(e) = self.github.delete_branch(repo, &branch).await {
+                tracing::warn!(repo, branch, error = %e.message, "train: scratch branch not deleted");
+            }
+        }
+    }
+
     fn release(&self, members: &[Candidate], why: Option<&str>) {
         let from = [ChangeState::Rebasing, ChangeState::Ci, ChangeState::Merging];
         for m in members {
@@ -521,8 +528,6 @@ impl Train {
             self.release(&merging, Some(&format!("GitHub: {}", e.message)));
             return Round::Stop;
         }
-        // The batch PR is the train's own merge, never a bypass.
-        self.records.mark_bypass(repo, pr);
         let commit_title = format!("{title} (#{pr})");
         let commit_body = member_lines(&merging);
         match self

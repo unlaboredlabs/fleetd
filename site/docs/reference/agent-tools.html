@@ -165,7 +165,7 @@
 </tr>
 <tr>
 <td>Finish-all children open at once</td>
-<td>5 by default; the policy file’s <code dir="auto">finishAll.maxChildren</code> changes it.</td>
+<td>5.</td>
 </tr>
 <tr>
 <td>What a child workstream may serve</td>
@@ -211,7 +211,7 @@
 </tr>
 <tr>
 <td><a href="#stop_agent"><code dir="auto">stop_agent</code></a></td>
-<td>Stop a task: interrupts its thread and releases its slot and leases.</td>
+<td>Stop a task: interrupts its thread and releases its slot.</td>
 <td>No</td>
 </tr>
 <tr>
@@ -307,7 +307,7 @@
 </tbody>
 </table>
 <div class="sl-heading-wrapper level-h3"><h3 id="spawn_agent">spawn_agent</h3><a class="sl-anchor-link" href="#spawn_agent"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “spawn_agent”</span></a></div>
-<p>Start a fleetd agent (a task) with its own session, slot and lane. kind write|read|review; a writer needs areas from the project’s policy and gets its own worktree and branch; a review task needs pr. profile is high by default; medium is for mechanical work only, and reviews always run high. A busy area or a full slot board queues it and it starts by itself. Its result arrives in a later wake: end your turn instead of waiting.</p>
+<p>Start a fleetd agent (a task) with its own session, slot and lane. kind write|read|review; a writer gets its own worktree and branch; a review task needs pr. profile is high by default; medium is for mechanical work only, and reviews always run high. A full slot board queues it and it starts by itself. The result names the other writers running in the project. Its result arrives in a later wake: end your turn instead of waiting.</p>
 <table>
 <thead>
 <tr>
@@ -319,12 +319,6 @@
 </thead>
 <tbody>
 <tr>
-<td><code dir="auto">areas</code></td>
-<td>string[]</td>
-<td>no</td>
-<td>At most 20 items.</td>
-</tr>
-<tr>
 <td><code dir="auto">item</code></td>
 <td>string</td>
 <td>no</td>
@@ -334,7 +328,7 @@
 <td><code dir="auto">kind</code></td>
 <td>string</td>
 <td>no</td>
-<td>Only write tasks get a worktree and leases. One of <code dir="auto">write</code>, <code dir="auto">read</code>, <code dir="auto">review</code>. Default <code dir="auto">"write"</code>.</td>
+<td>Only write tasks get a worktree. One of <code dir="auto">write</code>, <code dir="auto">read</code>, <code dir="auto">review</code>. Default <code dir="auto">"write"</code>.</td>
 </tr>
 <tr>
 <td><code dir="auto">pr</code></td>
@@ -381,7 +375,7 @@
 </tbody>
 </table>
 <p><strong>Who may call:</strong> a lead, checked by the hub. <strong>Needs a human:</strong> no.</p>
-<div class="expressive-code"><link rel="stylesheet" href="/docs/_astro/ec.83jdg.css"><script type="module" src="/docs/_astro/ec.0vx5m.js"></script><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="json"><code><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"name"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"spawn_agent"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"arguments"</span><span style="--0:#E1E4E8;--1:#24292E">: {</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"areas"</span><span style="--0:#E1E4E8;--1:#24292E">: [</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#9ECBFF;--1:#032F62">"api"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">    </span></span><span style="--0:#E1E4E8;--1:#24292E">],</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"kind"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"write"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"prompt"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"Limit uploads to 10 a minute per API key. Over the limit, answer 429 with Retry-After."</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"title"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"Rate-limit the upload API"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"workstreamId"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"W3"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">  </span></span><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="{  &quot;name&quot;: &quot;spawn_agent&quot;,  &quot;arguments&quot;: {    &quot;areas&quot;: [      &quot;api&quot;    ],    &quot;kind&quot;: &quot;write&quot;,    &quot;prompt&quot;: &quot;Limit uploads to 10 a minute per API key. Over the limit, answer 429 with Retry-After.&quot;,    &quot;title&quot;: &quot;Rate-limit the upload API&quot;,    &quot;workstreamId&quot;: &quot;W3&quot;  }}"><div></div></button></div></figure></div>
+<div class="expressive-code"><link rel="stylesheet" href="/docs/_astro/ec.83jdg.css"><script type="module" src="/docs/_astro/ec.0vx5m.js"></script><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="json"><code><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"name"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"spawn_agent"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"arguments"</span><span style="--0:#E1E4E8;--1:#24292E">: {</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"kind"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"write"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"prompt"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"Limit uploads to 10 a minute per API key. Over the limit, answer 429 with Retry-After."</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"title"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"Rate-limit the upload API"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"workstreamId"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"W3"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">  </span></span><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="{  &quot;name&quot;: &quot;spawn_agent&quot;,  &quot;arguments&quot;: {    &quot;kind&quot;: &quot;write&quot;,    &quot;prompt&quot;: &quot;Limit uploads to 10 a minute per API key. Over the limit, answer 429 with Retry-After.&quot;,    &quot;title&quot;: &quot;Rate-limit the upload API&quot;,    &quot;workstreamId&quot;: &quot;W3&quot;  }}"><div></div></button></div></figure></div>
 <div class="sl-heading-wrapper level-h3"><h3 id="message_agent">message_agent</h3><a class="sl-anchor-link" href="#message_agent"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “message_agent”</span></a></div>
 <p>Steer a task: a running one takes the message at its next tool boundary (now: true stops its current step first), a waiting one gets it as its answer, and an ended one continues in its own thread.</p>
 <table>
@@ -467,7 +461,7 @@
 <p><strong>Who may call:</strong> a lead, checked by the hub. <strong>Needs a human:</strong> no.</p>
 <div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="json"><code><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"name"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"list_agents"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"arguments"</span><span style="--0:#E1E4E8;--1:#24292E">: {</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"state"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"running"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">  </span></span><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="{  &quot;name&quot;: &quot;list_agents&quot;,  &quot;arguments&quot;: {    &quot;state&quot;: &quot;running&quot;  }}"><div></div></button></div></figure></div>
 <div class="sl-heading-wrapper level-h3"><h3 id="stop_agent">stop_agent</h3><a class="sl-anchor-link" href="#stop_agent"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “stop_agent”</span></a></div>
-<p>Stop a task: interrupts its thread and releases its slot and leases.</p>
+<p>Stop a task: interrupts its thread and releases its slot.</p>
 <table>
 <thead>
 <tr>
@@ -1426,7 +1420,7 @@
 <div class="sl-heading-wrapper level-h2"><h2 id="claude-code-tools">Claude Code tools</h2><a class="sl-anchor-link" href="#claude-code-tools"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Claude Code tools”</span></a></div>
 <p>The same for every session. Listed for Claude Code 2.1.302, the version fleetd is tested with.</p>
 <p><strong>Allowed:</strong> <code dir="auto">Bash</code>, <code dir="auto">DesignSync</code>, <code dir="auto">Edit</code>, <code dir="auto">NotebookEdit</code>, <code dir="auto">Read</code>, <code dir="auto">ReportFindings</code>, <code dir="auto">Skill</code>, <code dir="auto">ToolSearch</code>, <code dir="auto">WebFetch</code>, <code dir="auto">WebSearch</code>, <code dir="auto">Write</code>.</p>
-<p>A project’s policy file can deny more with <code dir="auto">tools.deny</code>. In a run started approval-required, Claude Code asks before it uses a tool and the question comes to you; <code dir="auto">tools.allow</code> answers it ahead of time.</p>
+<p>A project’s policy file can deny more with <code dir="auto">tools.deny</code>.</p>
 <p><strong>Blocked</strong>, in <code dir="auto">--disallowedTools</code> and in the <code dir="auto">permissions.deny</code> of fleetd’s settings, so your own settings can’t turn them back on:</p>
 <table>
 <thead>
@@ -1456,9 +1450,13 @@
 <td><code dir="auto">EnterWorktree</code>, <code dir="auto">ExitWorktree</code></td>
 <td>fleetd owns worktrees, one per writer. A session that moves its own folder can’t be resumed.</td>
 </tr>
+<tr>
+<td><code dir="auto">Bash(claude *)</code>, <code dir="auto">Bash(*bin/claude)</code>, <code dir="auto">Bash(*bin/claude *)</code>, <code dir="auto">Bash(*/claude -*)</code>, <code dir="auto">Bash(*claude/versions/*)</code>, <code dir="auto">Bash(npx *claude*)</code>, <code dir="auto">Bash(bunx *claude*)</code>, <code dir="auto">Bash(*@anthropic-ai/claude-code*)</code>, <code dir="auto">Bash(*sh -*c *claude*)</code>, <code dir="auto">Bash(env *claude*)</code>, <code dir="auto">Bash(exec *claude*)</code>, <code dir="auto">Bash(xargs *claude*)</code></td>
+<td>A claude started inside a session runs outside fleetd’s slots, with its own subagents and any model. Agents start agents with spawn_agent.</td>
+</tr>
 </tbody>
 </table>
-<p>fleetd also blocks any tool like these that a newer Claude Code adds: it reads the installed claude’s tool list when it checks the machine, and a session that still offers one fails the check.</p>
+<p>fleetd also blocks any tool like these that a newer Claude Code adds: a session whose tool list still offers one is stopped, and every later session on that machine blocks it.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="settings-fleetd-forces">Settings fleetd forces</h2><a class="sl-anchor-link" href="#settings-fleetd-forces"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Settings fleetd forces”</span></a></div>
 <p>Set in the claude process’s environment. “In settings” marks the ones also in fleetd’s settings file for a session, which outranks the <code dir="auto">env</code> in your own settings.</p>
 <table>
@@ -1519,7 +1517,7 @@
 <td><code dir="auto">1</code>, and <code dir="auto">autoMemoryEnabled: false</code></td>
 <td>Every claude fleetd starts</td>
 <td>yes</td>
-<td>fleetd owns an agent’s context (briefs, decisions, instructions). Notes claude keeps per folder would carry stale, unreviewed text from one agent’s worktree to the next. A project opts back in with claude.autoMemory: true in its policy file.</td>
+<td>fleetd owns an agent’s context (briefs, decisions, instructions). Notes claude keeps per folder would carry stale, unreviewed text from one agent’s worktree to the next.</td>
 </tr>
 <tr>
 <td><code dir="auto">ANTHROPIC_DEFAULT_HAIKU_MODEL</code></td>
@@ -1583,7 +1581,7 @@
 </tr>
 </tbody>
 </table>
-<p>A project’s policy file can add rules for its sessions: <code dir="auto">tools.allow</code> and <code dir="auto">tools.deny</code> (Claude Code rule syntax), and <code dir="auto">claude.autoMemory: true</code>.</p>
+<p>A project’s policy file can add rules for its sessions: <code dir="auto">tools.allow</code> and <code dir="auto">tools.deny</code> (Claude Code rule syntax).</p>
 <div class="sl-heading-wrapper level-h3"><h3 id="see-it-in-a-session">See it in a session</h3><a class="sl-anchor-link" href="#see-it-in-a-session"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “See it in a session”</span></a></div>
 <table>
 <thead>

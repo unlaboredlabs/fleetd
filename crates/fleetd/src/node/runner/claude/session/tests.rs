@@ -301,3 +301,15 @@ async fn a_crashed_claude_leaves_no_orphan_behind() {
         (Some("out"), Some("init"))
     );
 }
+
+#[test]
+fn a_transcript_over_its_cap_keeps_its_newer_half_on_a_line_boundary() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("t.jsonl");
+    let lines: String = (0..10).map(|n| format!("line-{n}\n")).collect();
+    std::fs::write(&path, &lines).unwrap();
+    let (_, kept) = super::keep_newer_half(&path).unwrap();
+    let left = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(left, "line-6\nline-7\nline-8\nline-9\n");
+    assert_eq!(kept, left.len() as u64);
+}

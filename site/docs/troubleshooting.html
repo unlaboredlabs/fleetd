@@ -80,7 +80,7 @@
 <p>On the hub:</p>
 <div class="expressive-code"><link rel="stylesheet" href="/docs/_astro/ec.83jdg.css"><script type="module" src="/docs/_astro/ec.0vx5m.js"></script><figure class="frame is-terminal not-content"><figcaption class="header"><span class="title"></span><span class="sr-only">Terminal window</span></figcaption><pre data-language="sh"><code><div class="ec-line"><div class="code"><span style="--0:#B392F0;--1:#6F42C1">fleetd</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">doctor</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="fleetd doctor"><div></div></button></div></figure></div>
 <p>Example output, from a new hub with one worker, <code dir="auto">test-1</code>, where nothing is logged in yet:</p>
-<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="text"><code><div class="ec-line"><div class="code"><span style="--0:#e1e4e8;--1:#24292e">✗  doctor hub gh is not logged in on the hub; the merge train and PR checks need it. Fix: gh auth login</span></div></div><div class="ec-line"><div class="code"><span style="--0:#e1e4e8;--1:#24292e">!  doctor test-1 test-1 is degraded: claude is not installed (claude not found). Fix: curl -fsSL https://claude.ai/install.sh | bash</span></div></div><div class="ec-line"><div class="code"><span style="--0:#e1e4e8;--1:#24292e">✗  doctor test-1 claude is not installed on test-1; its sessions can't start. Fix: curl -fsSL https://claude.ai/install.sh | bash</span></div></div><div class="ec-line"><div class="code"><span style="--0:#e1e4e8;--1:#24292e">!  doctor test-1 test-1's node could not tell whether its claude is logged in</span></div></div><div class="ec-line"><div class="code"><span style="--0:#e1e4e8;--1:#24292e">!  doctor test-1 test-1's node has not probed its claude yet</span></div></div><div class="ec-line"><div class="code"><span style="--0:#e1e4e8;--1:#24292e">✗  doctor test-1 No git commit identity is set on test-1. Fix: git config --global user.email '&lt;id&gt;+&lt;user&gt;@users.noreply.github.com'</span></div></div><div class="ec-line"><div class="code"><span style="--0:#e1e4e8;--1:#24292e">!  doctor test-1 test-1 sleeps after 15 min idle on AC power (KDE power management). fleetd keeps it awake while agents run, but it still sleeps between orders, and asleep it is unreachable: queued work and wakes wait until someone wakes it. Fix: System Settings &gt; Power Management &gt; On AC Power &gt; When inactive: Do nothing</span></div></div><div class="ec-line"><div class="code"><span style="--0:#e1e4e8;--1:#24292e">✓  doctor 4 of 11 checks pass</span></div></div><div class="ec-line"><div class="code"><span style="--0:#e1e4e8;--1:#24292e">[exit 1]</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="✗  doctor hub gh is not logged in on the hub; the merge train and PR checks need it. Fix: gh auth login!  doctor test-1 test-1 is degraded: claude is not installed (claude not found). Fix: curl -fsSL https://claude.ai/install.sh | bash✗  doctor test-1 claude is not installed on test-1; its sessions can&#x27;t start. Fix: curl -fsSL https://claude.ai/install.sh | bash!  doctor test-1 test-1&#x27;s node could not tell whether its claude is logged in!  doctor test-1 test-1&#x27;s node has not probed its claude yet✗  doctor test-1 No git commit identity is set on test-1. Fix: git config --global user.email &#x27;<id>+<user>@users.noreply.github.com&#x27;!  doctor test-1 test-1 sleeps after 15 min idle on AC power (KDE power management). fleetd keeps it awake while agents run, but it still sleeps between orders, and asleep it is unreachable: queued work and wakes wait until someone wakes it. Fix: System Settings > Power Management > On AC Power > When inactive: Do nothing✓  doctor 4 of 11 checks pass[exit 1]"><div></div></button></div></figure></div>
+<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="text"><code><div class="ec-line"><div class="code"><span style="--0:#e1e4e8;--1:#24292e">✗  doctor hub gh is not logged in on the hub; the merge train and PR checks need it. Fix: gh auth login</span></div></div><div class="ec-line"><div class="code"><span style="--0:#e1e4e8;--1:#24292e">!  doctor test-1 test-1 is degraded: claude is not installed (claude not found). Fix: curl -fsSL https://claude.ai/install.sh | bash</span></div></div><div class="ec-line"><div class="code"><span style="--0:#e1e4e8;--1:#24292e">✗  doctor test-1 claude is not installed on test-1; its sessions can't start. Fix: curl -fsSL https://claude.ai/install.sh | bash</span></div></div><div class="ec-line"><div class="code"><span style="--0:#e1e4e8;--1:#24292e">!  doctor test-1 test-1's node could not tell whether its claude is logged in</span></div></div><div class="ec-line"><div class="code"><span style="--0:#e1e4e8;--1:#24292e">!  doctor test-1 test-1's node has not probed its claude yet</span></div></div><div class="ec-line"><div class="code"><span style="--0:#e1e4e8;--1:#24292e">✗  doctor test-1 No git commit identity is set on test-1. Fix: git config --global user.email '&lt;id&gt;+&lt;user&gt;@users.noreply.github.com'</span></div></div><div class="ec-line"><div class="code"><span style="--0:#e1e4e8;--1:#24292e">✓  doctor 4 of 10 checks pass</span></div></div><div class="ec-line"><div class="code"><span style="--0:#e1e4e8;--1:#24292e">[exit 1]</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="✗  doctor hub gh is not logged in on the hub; the merge train and PR checks need it. Fix: gh auth login!  doctor test-1 test-1 is degraded: claude is not installed (claude not found). Fix: curl -fsSL https://claude.ai/install.sh | bash✗  doctor test-1 claude is not installed on test-1; its sessions can&#x27;t start. Fix: curl -fsSL https://claude.ai/install.sh | bash!  doctor test-1 test-1&#x27;s node could not tell whether its claude is logged in!  doctor test-1 test-1&#x27;s node has not probed its claude yet✗  doctor test-1 No git commit identity is set on test-1. Fix: git config --global user.email &#x27;<id>+<user>@users.noreply.github.com&#x27;✓  doctor 4 of 10 checks pass[exit 1]"><div></div></button></div></figure></div>
 <p>Each line names where the problem is: <code dir="auto">hub</code>, or a machine. Checks that pass aren’t listed, only counted on the last
 line.</p>
 <table>
@@ -186,14 +186,9 @@ address stops answering, check where it points with <code dir="auto">tailscale s
 <td><code dir="auto">claude update</code></td>
 </tr>
 <tr>
-<td>“claude 2.2.0 is newer than this fleetd supports” <code dir="auto">[claude_version]</code></td>
-<td>A <code dir="auto">claude</code> past fleetd’s supported range. Sessions are refused.</td>
-<td><code dir="auto">claude install 2.1.302</code>, or <code dir="auto">fleetd update</code></td>
-</tr>
-<tr>
-<td>“claude 2.1.303 is newer than 2.1.302, the version this fleetd was tested with” <code dir="auto">[claude_version]</code> !</td>
-<td>Newer, but inside the supported range. Sessions run.</td>
-<td><code dir="auto">claude install 2.1.302</code></td>
+<td>“claude 2.2.0 is newer than fleetd is tested with” <code dir="auto">[claude_version]</code> !</td>
+<td>A <code dir="auto">claude</code> past fleetd’s tested range. Sessions run.</td>
+<td>If they misbehave, <code dir="auto">claude install 2.1.302</code></td>
 </tr>
 <tr>
 <td>“<code dir="auto">claude --version</code> printed …, which fleetd can’t read” <code dir="auto">[claude_version]</code></td>
@@ -216,19 +211,14 @@ address stops answering, check where it points with <code dir="auto">tailscale s
 <td>Nothing: it clears by itself.</td>
 </tr>
 <tr>
-<td>“still offers its own subagents in fleetd sessions” <code dir="auto">[claude_subagents]</code></td>
-<td>This <code dir="auto">claude</code> version exposes subagents fleetd can’t turn off. No new session starts there.</td>
-<td><code dir="auto">claude install 2.1.302</code></td>
-</tr>
-<tr>
-<td>“kept its auto memory on” <code dir="auto">[claude_auto_memory]</code> !</td>
-<td>Your claude settings override fleetd’s.</td>
-<td>Set <code dir="auto">"autoMemoryEnabled": false</code> in <code dir="auto">~/.claude/settings.json</code> on that machine, then <code dir="auto">fleetd update</code>.</td>
+<td>An agent’s activity says “claude offered its own agent tools (…)”</td>
+<td>A newer <code dir="auto">claude</code> has an agent tool fleetd’s deny list didn’t name. fleetd stopped that session, and the next start denies the tool.</td>
+<td>Nothing. If it happens again, <code dir="auto">claude install 2.1.302</code>.</td>
 </tr>
 </tbody>
 </table>
-<p>fleetd is tested with claude <code dir="auto">&gt;=2.1.300, &lt;2.2.0</code>. A machine with a ✗ claude finding runs no sessions until it is
-fixed. fleetd turns claude’s auto-updater off for its own sessions.</p>
+<p>fleetd is tested with claude <code dir="auto">&gt;=2.1.300, &lt;2.2.0</code>; other versions run, with a warning. A machine whose claude is
+missing or logged out runs no sessions until it is fixed. fleetd turns claude’s auto-updater off for its own sessions.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="machines">Machines</h2><a class="sl-anchor-link" href="#machines"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Machines”</span></a></div>
 <table>
 <thead>
@@ -273,11 +263,6 @@ fixed. fleetd turns claude’s auto-updater off for its own sessions.</p>
 <td>“The node on laptop won’t run commands in … (outside its cmdRoots)” <code dir="auto">[cmd-roots]</code></td>
 <td>A project’s checkout is outside the node’s <code dir="auto">cmdRoots</code>, so the merge train can’t merge its PRs.</td>
 <td>Move the checkout into your home directory, or add its folder to <code dir="auto">cmdRoots</code> in <a href="/docs/config-and-files#node-json"><code dir="auto">node.json</code></a> and restart the node.</td>
-</tr>
-<tr>
-<td>“laptop sleeps after 15 min idle on AC power” <code dir="auto">[sleep]</code></td>
-<td>The machine sleeps between jobs and drops off the fleet.</td>
-<td>Turn off sleep on AC power (below).</td>
 </tr>
 <tr>
 <td>“New turns on laptop are paused by the usage breaker” <code dir="auto">[usage_breaker]</code></td>
@@ -395,6 +380,11 @@ work’s id:</p>
 <td>A risk says “#212 can’t merge: its checkout on laptop is outside the node’s cmdRoots”</td>
 <td>The checkout is outside the node’s <code dir="auto">cmdRoots</code> (default: your home directory).</td>
 <td>Add its folder to <code dir="auto">cmdRoots</code> in <a href="/docs/config-and-files#node-json"><code dir="auto">node.json</code></a> and restart the node.</td>
+</tr>
+<tr>
+<td>An agent’s activity says “node retry 1/3 in 57 s: overloaded”</td>
+<td>Claude’s API was overloaded or the network failed, after claude’s own retries.</td>
+<td>Nothing. The node continues the same run after about 1, 4 and 15 minutes, then fails it with claude’s words.</td>
 </tr>
 <tr>
 <td>Your message waits and the chat says why</td>

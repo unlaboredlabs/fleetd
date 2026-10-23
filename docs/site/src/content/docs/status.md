@@ -160,19 +160,7 @@ source". If the app loses the hub, the view greys out with "Not live: reconnecti
 
 To tune when GitHub data counts as stale, see [Hub environment](/docs/config-and-files#env).
 
-## Faster GitHub updates {#github}
+## How the hub follows GitHub {#github}
 
-The hub follows GitHub by itself: each train asks about its open PRs every 15 s, and about main's CI every minute.
+The hub reads GitHub itself: each train asks about its open PRs every 15 s, and about main's CI every minute.
 
-To have GitHub tell the hub about changes as they happen:
-
-1. Set up a public URL that GitHub can reach and that forwards to the hub, such as a reverse proxy. fleetd never
-   creates one.
-2. On the hub, turn on webhooks:
-
-   ```sh
-   fleetd hub github-webhook --url https://hooks.example.com/github
-   ```
-
-This adds a webhook to every repo the train merges into. Turn it off with `fleetd hub github-webhook --off`. A webhook
-only makes the hub look sooner; a lost or forged delivery can't change what it records.

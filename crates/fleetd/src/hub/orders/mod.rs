@@ -201,7 +201,7 @@ pub fn live_lane(lane_id: &str, status: LaneStatus, parts: Option<&LiveParts>) -
     }
 }
 
-/// A queued task's reason in the app's words: the slot board's and the leases' terms stay out of what a person reads.
+/// A queued task's reason in the app's words: the slot board's terms stay out of what a person reads.
 pub fn plain_reason(reason: &str) -> String {
     let counts = |rest: &str| -> Option<(String, String)> {
         let (used, rest) = rest.split_once('/')?;
@@ -217,15 +217,6 @@ pub fn plain_reason(reason: &str) -> String {
         && let Some((_, max)) = counts(rest)
     {
         return format!("at this project's max of {max} agents");
-    }
-    if let Some(rest) = reason.strip_prefix("lease: ") {
-        let areas: Vec<&str> = rest
-            .split(", ")
-            .filter_map(|held| held.split_once(" held by ").map(|(area, _)| area))
-            .collect();
-        if !areas.is_empty() {
-            return format!("waiting for another agent working in {}", areas.join(", "));
-        }
     }
     reason.to_owned()
 }
@@ -455,13 +446,7 @@ pub fn card(p: &OrderParts<'_>, look: &dyn Lookups) -> Joined {
 
 /// The repo's train for the strip: the head (rebasing, in CI or merging), then the queue in order, then today's
 /// merges, newest first.
-pub fn train_live(
-    repo: &GitHubRepo,
-    frozen: bool,
-    frozen_reason: Option<String>,
-    changes: &[Change],
-    today: &str,
-) -> TrainLive {
+pub fn train_live(repo: &GitHubRepo, changes: &[Change], today: &str) -> TrainLive {
     let chip = |c: &Change, position| PrChip {
         change_id: c.change_id.clone(),
         number: c.pr_number,
@@ -510,8 +495,6 @@ pub fn train_live(
         .collect();
     TrainLive {
         repo: repo.clone(),
-        frozen,
-        frozen_reason: frozen_reason.map(|r| text(&r)),
         chips: List::unchecked(chips),
         merged_today: count(merged_today),
     }
@@ -652,9 +635,9 @@ fn trains(hub: &Hub, changes: &[&Change]) -> Vec<TrainLive> {
     let repos: BTreeSet<String> = changes.iter().map(|c| c.repo.to_lowercase()).collect();
     let mut out = Vec::new();
     for repo in repos {
-        let Some(row) = hub.train.records().train(&repo) else {
+        if hub.train.records().train(&repo).is_none() {
             continue;
-        };
+        }
         let of_repo: Vec<Change> = changes
             .iter()
             .filter(|c| c.repo.to_lowercase() == repo)
@@ -663,9 +646,8 @@ fn trains(hub: &Hub, changes: &[&Change]) -> Vec<TrainLive> {
         let Some(name) = of_repo.first().map(|c| c.repo.clone()) else {
             continue;
         };
-        let reason = row.frozen.then(|| freeze_reason(hub, &row)).flatten();
-        let train = train_live(&name, row.frozen, reason, &of_repo, &today);
-        if !train.chips.is_empty() || train.frozen {
+        let train = train_live(&name, &of_repo, &today);
+        if !train.chips.is_empty() {
             out.push(train);
         }
         if out.len() == BOARD_TRAINS {
@@ -673,15 +655,4 @@ fn trains(hub: &Hub, changes: &[&Change]) -> Vec<TrainLive> {
         }
     }
     out
-}
-
-fn freeze_reason(hub: &Hub, row: &crate::hub::train::records::TrainRow) -> Option<String> {
-    let key = crate::hub::train::rules::freeze_key(&row.repo);
-    hub.decisions
-        .active_on_key(&key, &row.project_ref)
-        .ok()?
-        .into_iter()
-        .next_back()
-        .and_then(|d| d.why)
-        .map(|why| why.to_string())
 }

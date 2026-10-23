@@ -1,4 +1,4 @@
-//! Everything tasks, slots and leases call in the executor, node link and leads. `wire::HubTaskPorts` implements it
+//! Everything tasks and slots call in the executor, node link and leads. `wire::HubTaskPorts` implements it
 //! over those areas; tests use a fake. Each method is one cross-area call.
 use std::future::Future;
 use std::pin::Pin;

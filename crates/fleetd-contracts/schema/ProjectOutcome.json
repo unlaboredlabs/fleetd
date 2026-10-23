@@ -1,10 +1,5 @@
 {
   "$defs": {
-    "AreaName": {
-      "description": "Lowercase slug, [a-z0-9][a-z0-9_-]*, at most 40",
-      "pattern": "^[a-z0-9][a-z0-9_-]*$",
-      "type": "string"
-    },
     "Brief": {
       "properties": {
         "baseline": {
@@ -574,14 +569,6 @@
     },
     "Task": {
       "properties": {
-        "areas": {
-          "items": {
-            "$ref": "#/$defs/AreaName"
-          },
-          "maxItems": 20,
-          "type": "array",
-          "uniqueItems": true
-        },
         "attempt": {
           "description": "1 for the first launch.",
           "maximum": 9007199254740991,
@@ -632,7 +619,7 @@
           "type": "boolean"
         },
         "queuedReason": {
-          "description": "Why it is queued, e.g. \"lease: docs held by T1\" or \"fleet cap: 40 of 40 running\".",
+          "description": "Why it is queued, e.g. \"fleet cap: 40 of 40 running\".",
           "maxLength": 200,
           "minLength": 1,
           "type": "string"
@@ -676,7 +663,6 @@
         "title",
         "kind",
         "prompt",
-        "areas",
         "state",
         "attempt",
         "createdAt"
@@ -732,7 +718,7 @@
       "type": "string"
     },
     "TaskKind": {
-      "description": "Only write tasks get a worktree and leases.",
+      "description": "Only write tasks get a worktree.",
       "enum": [
         "write",
         "read",
@@ -957,10 +943,6 @@
     "TrainState": {
       "description": "One serial train per repo.",
       "properties": {
-        "frozen": {
-          "description": "Held by a `policy.freeze.<repo>` decision.",
-          "type": "boolean"
-        },
         "head": {
           "$ref": "#/$defs/ChangeId",
           "description": "The Change being rebased, checked or merged now."
@@ -979,7 +961,6 @@
       },
       "required": [
         "repo",
-        "frozen",
         "queue"
       ],
       "type": "object"

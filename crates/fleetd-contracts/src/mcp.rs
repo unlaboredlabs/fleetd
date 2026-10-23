@@ -8,7 +8,6 @@ use serde_with::skip_serializing_none;
 use crate::auth::Role;
 use crate::chat::ChatRequestId;
 use crate::doctor::{DoctorCheck, DoctorCheckId};
-use crate::effort::TaskProfile;
 use crate::events::{HubEvent, HubEventType};
 use crate::hello::ProtocolVersion;
 use crate::ids::{EventSeq, MachineId, ProjectId, ProjectRef, ThreadId, Timestamp};
@@ -18,14 +17,11 @@ use crate::ledger::{
     WorkstreamState,
 };
 use crate::live::{AgentLane, OrderCard, TrainLive};
-use crate::model::{
-    ActionItem, Machine, ProjectOutcome, ProjectSummary, RuntimeMode, ThreadSummary,
-};
+use crate::model::{ActionItem, Machine, ProjectOutcome, ProjectSummary, ThreadSummary};
 use crate::plan::PlanView;
 use crate::playbooks::IntakeEcho;
 use crate::prim::{
     Count, Int, IntOr, Line, List, MAX_SAFE_INT, NonEmpty, Positive, Text, True, UniqueList,
-    WebhookUrl,
 };
 use crate::projects::{AddId, CloneTarget, GitHubRepos, MachineRepos, ProjectInspect};
 use crate::prompts::{
@@ -41,7 +37,7 @@ use crate::time::{
     InsightRule, Period, PeriodBreakdown, ProfileTotal, RepeatStat, Span, SpanKind, TimeFilters,
     TimeScope,
 };
-use crate::train::{Change, ChangeState, GitHubPrUrl, GitHubRepo, TrainState};
+use crate::train::{Change, ChangeState, GitHubPrUrl, GitHubRepo};
 use crate::usage::UsageStatus;
 use crate::verification::{Claim, ClaimOutcome, Incident, IncidentClass};
 use crate::wakes::{Wake, WakeCatchUp, WakeMessage, WakeSchedule, WakeState, WakeTarget};
@@ -187,45 +183,6 @@ output!(EventsWaitOutput {
     cursor: EventSeq,
     more: bool,
 });
-
-// thread_launch
-input!(ThreadLaunchInput {
-    machine_id: MachineId,
-    project_id: ProjectId,
-    prompt: NonEmpty,
-    /// Absent: high.
-    profile: Option<TaskProfile>,
-    #[serde(default)]
-    runtime_mode: RuntimeMode,
-    title: Option<String>,
-    client_request_id: RequestId,
-});
-output!(ThreadLaunchOutput {
-    thread_id: ThreadId
-});
-
-// thread_send
-input!(ThreadSendInput {
-    machine_id: MachineId,
-    thread_id: ThreadId,
-    message: NonEmpty,
-    client_request_id: RequestId
-});
-output!(ThreadSendOutput {
-    run_id: Option<String>,
-    /// True when the machine is offline and the message waits in the hub's queue.
-    queued: bool,
-    /// When a queued message expires undelivered.
-    queued_until: Option<Timestamp>,
-});
-
-// thread_interrupt
-input!(ThreadInterruptInput {
-    machine_id: MachineId,
-    thread_id: ThreadId,
-    client_request_id: RequestId
-});
-output!(ThreadInterruptOutput { ok: True });
 
 fn default_true() -> bool {
     true
@@ -779,14 +736,6 @@ output!(ChangesListOutput {
     changes: List<Change, 0, 100>,
 });
 
-// train_get
-input!(TrainGetInput { repo: GitHubRepo });
-output!(TrainGetOutput { train: TrainState });
-
-// train_freeze: records or retires the repo's `policy.freeze.<repo>` decision.
-input!(TrainFreezeInput { repo: GitHubRepo, frozen: bool, reason: Option<Text<1, 200>> });
-output!(TrainFreezeOutput { train: TrainState });
-
 // usage_status: per machine, the login kind, breaker, parked counts, the latest limit events and the probe counter.
 input!(UsageStatusInput { machine_id: Option<MachineId> });
 output!(UsageStatusOutput { machines: Vec<UsageStatus> });
@@ -856,40 +805,6 @@ output!(AttentionPolicyOutput {
     coalesce_sec: Int<1, MAX_SAFE_INT>,
     /// Only "urgent" events notify inside these; empty when quiet hours are off. Ask again after the last one ends.
     quiet: List<QuietWindow, 0, 2>,
-});
-
-// thread_answer: answers the tool permission prompt a thread's run waits on. Human keys answer any thread on a machine
-// they may operate; agent keys every thread there except a lead's own (a lead never approves itself).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum PermissionAnswer {
-    Allow,
-    Deny,
-}
-
-input!(
-    #[serde(remote = "Self")]
-    ThreadAnswerInput {
-        machine_id: MachineId,
-        thread_id: ThreadId,
-        /// The prompt answered, from the thread.waiting event; absent means the one open now.
-        request_id: Option<NonEmpty>,
-        decision: PermissionAnswer,
-        /// Deny only: what claude is told instead of running the tool.
-        message: Option<Text<1, 2000>>,
-    }
-);
-checked!(ThreadAnswerInput, |input| {
-    if input.message.is_some() && input.decision == PermissionAnswer::Allow {
-        return Err("message goes with decision deny only".into());
-    }
-    Ok(())
-});
-output!(ThreadAnswerOutput {
-    request_id: NonEmpty,
-    decision: PermissionAnswer,
-    /// The approval request this answer closed, if one was open.
-    human_request_id: Option<ChatRequestId>,
 });
 
 brand!(
@@ -1105,22 +1020,6 @@ checked!(PlanGetInput, |input| {
 output!(PlanGetOutput {
     #[serde(flatten)]
     plan: PlanView,
-});
-
-// github_webhook_set: opt-in GitHub webhooks on every train repo; no url turns them off.
-input!(GithubWebhookSetInput {
-    /// A public URL GitHub can reach, ending in /github; fleetd never creates one.
-    url: Option<WebhookUrl>,
-});
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct GithubHook {
-    pub repo: GitHubRepo,
-    pub hook_id: Positive,
-}
-output!(GithubWebhookSetOutput {
-    /// The hooks now in place; empty when turned off.
-    repos: List<GithubHook, 0, 100>,
 });
 
 // chat_send: writes to a project's lead. Delivered at once: a new turn when the lead is idle, a steer when it is
@@ -1398,10 +1297,6 @@ tools! {
     thread_tail => ThreadTail, Read, ThreadTailInput, ThreadTailOutput;
     actions_list => ActionsList, Read, ActionsListInput, ActionsListOutput;
     events_wait => EventsWait, Read, EventsWaitInput, EventsWaitOutput;
-    thread_launch => ThreadLaunch, Operate, ThreadLaunchInput, ThreadLaunchOutput;
-    thread_send => ThreadSend, Operate, ThreadSendInput, ThreadSendOutput;
-    thread_interrupt => ThreadInterrupt, Operate, ThreadInterruptInput, ThreadInterruptOutput;
-    thread_answer => ThreadAnswer, Operate, ThreadAnswerInput, ThreadAnswerOutput;
     project_discover => ProjectDiscover, Read, ProjectDiscoverInput, ProjectDiscoverOutput;
     project_inspect => ProjectInspect, Read, ProjectInspectInput, ProjectInspectOutput;
     project_add => ProjectAdd, Operate, ProjectAddInput, ProjectAddOutput;
@@ -1428,8 +1323,6 @@ tools! {
     claims_list => ClaimsList, Read, ClaimsListInput, ClaimsListOutput;
     incidents_list => IncidentsList, Read, IncidentsListInput, IncidentsListOutput;
     changes_list => ChangesList, Read, ChangesListInput, ChangesListOutput;
-    train_get => TrainGet, Read, TrainGetInput, TrainGetOutput;
-    train_freeze => TrainFreeze, Operate, TrainFreezeInput, TrainFreezeOutput;
     secret_submit => SecretSubmit, Operate, SecretSubmitInput, SecretSubmitOutput;
     // Human keys only (the handler checks).
     approval_answer => ApprovalAnswer, Operate, ApprovalAnswerInput, ApprovalAnswerOutput;
@@ -1462,7 +1355,6 @@ tools! {
     status_seen => StatusSeen, Read, StatusSeenInput, StatusSeenOutput;
     status_projects => StatusProjects, Read, StatusProjectsInput, StatusProjectsOutput;
     plan_get => PlanGet, Read, PlanGetInput, PlanGetOutput;
-    github_webhook_set => GithubWebhookSet, Admin, GithubWebhookSetInput, GithubWebhookSetOutput;
     // Human keys only (the handler checks); the lead steers its tasks with `fleetd task message`.
     steer_send => SteerSend, Operate, SteerSendInput, SteerSendOutput;
     steer_withdraw => SteerWithdraw, Operate, SteerWithdrawInput, SteerWithdrawOutput;
@@ -1552,11 +1444,6 @@ mod tests {
                 .timeout_sec
                 .get(),
             50
-        );
-        let launch = json!({ "machineId": "devbox", "projectId": "p1", "prompt": "hi", "clientRequestId": "r1" });
-        assert_eq!(
-            decode::<ThreadLaunchInput>(launch).unwrap().runtime_mode,
-            RuntimeMode::FullAccess
         );
         let wake = json!({ "target": { "machineId": "devbox", "threadId": "t1" }, "schedule": { "kind": "at", "at": "2026-10-17T10:00:00.000Z", "tz": "UTC" }, "message": "x", "clientRequestId": "r1" });
         let wake: WakeSetInput = decode(wake).unwrap();

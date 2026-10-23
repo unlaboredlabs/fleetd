@@ -132,8 +132,6 @@ queues and starts by itself.</li>
 <div class="sl-heading-wrapper level-h3"><h3 id="auto-memory">Claude’s auto memory is off</h3><a class="sl-anchor-link" href="#auto-memory"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Claude’s auto memory is off”</span></a></div>
 <p>Claude Code can keep its own notes per folder (“auto memory”). fleetd turns that off in every <code dir="auto">claude</code> it starts, so
 what an agent knows comes from its brief, the decisions and your instructions, all of which you can read here.</p>
-<p><code dir="auto">fleetd doctor</code> shows “claude auto memory off” for each machine. To turn it back on for one project, set
-<code dir="auto">claude: { autoMemory: true }</code> in its <a href="/docs/config-and-files#policy">policy file</a>.</p>
 <div class="sl-heading-wrapper level-h3"><h3 id="no-subagents">Claude’s own subagents are off</h3><a class="sl-anchor-link" href="#no-subagents"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Claude’s own subagents are off”</span></a></div>
 <p>Every agent in fleetd is a fleetd agent, with its own session, slot, worktree, lane, steering and receipts. So fleetd
 turns off Claude Code’s own subagents in every <code dir="auto">claude</code> it starts. Your <code dir="auto">~/.claude</code> is left alone.</p>
@@ -157,10 +155,14 @@ turns off Claude Code’s own subagents in every <code dir="auto">claude</code> 
 <td>general-purpose, statusline-setup, and your agents in <code dir="auto">~/.claude/agents</code></td>
 <td>Still listed by claude, but nothing can start them.</td>
 </tr>
+<tr>
+<td><code dir="auto">claude</code> from an agent’s shell, by name, by path, through a package runner or a <code dir="auto">sh -c</code></td>
+<td>Denied, so no nested claude runs past the cap or on another model.</td>
+</tr>
 </tbody>
 </table>
-<p><code dir="auto">fleetd doctor</code> shows “Claude subagents off (fleetd manages agents)” for each machine. If a session ever offers one
-anyway, that machine starts no new sessions until it is fixed: see <a href="/docs/troubleshooting#claude">Claude</a>.</p>
+<p>If a session ever offers one anyway, fleetd stops it before it can start an agent, and every later session on that
+machine denies the tool: see <a href="/docs/troubleshooting#claude">Claude</a>.</p>
 <div class="sl-heading-wrapper level-h3"><h3 id="agent-tools">Agents use fleetd’s tools</h3><a class="sl-anchor-link" href="#agent-tools"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Agents use fleetd’s tools”</span></a></div>
 <p>Leads and tasks reach fleetd through MCP tools from a <code dir="auto">fleetd</code> server in their session, not through the shell.</p>
 <table>
@@ -374,7 +376,7 @@ tied to code: a description must match its tool, and a <code dir="auto">next:</c
 <tr>
 <td><code dir="auto">task.brief.write</code></td>
 <td>every write task attempt</td>
-<td>changes only its areas; never merges; the train does (prompt only)</td>
+<td>never merges; the train does (prompt only)</td>
 </tr>
 </tbody>
 </table>

@@ -366,15 +366,8 @@ impl TrainGit<'_> {
     }
 
     /// Rebases the fetched PR branch onto `origin/<base>` in the train worktree. On a conflict the rebase is aborted
-    /// and the conflicting paths come back. `forks` are where a stacked PR's parent ended before it landed: the first
-    /// one the branch contains is cut off (`--onto`), so the parent's own commits, already squashed onto the base, are
-    /// not replayed.
-    pub async fn rebase(
-        &self,
-        base: &str,
-        branch: &str,
-        forks: &[String],
-    ) -> Result<Rebase, GitError> {
+    /// and the conflicting paths come back.
+    pub async fn rebase(&self, base: &str, branch: &str) -> Result<Rebase, GitError> {
         self.ensure_worktree().await?;
         self.fetch(base, branch).await?;
         // Whatever an earlier run left behind goes first.
@@ -394,27 +387,9 @@ impl TrainGit<'_> {
         self.ok(&["git", "clean", "-fdq"], None, 120).await?;
         let remote_head = self.rev_parse("HEAD").await?;
         let onto = format!("origin/{base}");
-        let mut fork = None;
-        for f in forks.iter().filter(|f| is_hex_sha(f)) {
-            let contained = self
-                .exec(
-                    &["git", "merge-base", "--is-ancestor", f, "HEAD"],
-                    None,
-                    120,
-                )
-                .await?;
-            if contained.exit_code == Some(0) {
-                fork = Some(f.as_str());
-                break;
-            }
-        }
         let mut argv = vec!["git"];
         argv.extend(IDENTITY);
-        argv.extend(["rebase", "--no-autosquash"]);
-        match fork {
-            Some(fork) => argv.extend(["--onto", &onto, fork]),
-            None => argv.push(&onto),
-        }
+        argv.extend(["rebase", "--no-autosquash", &onto]);
         let rebased = self.exec(&argv, None, 600).await?;
         if rebased.exit_code != Some(0) {
             let unmerged = self
@@ -542,95 +517,6 @@ impl TrainGit<'_> {
             kept,
             dropped,
         })
-    }
-
-    /// The stacked PR at `child_head`: its own commits (those after the first of `forks`, the parent heads it may
-    /// have forked from, that it contains) on top of the parent at `parent_head` rebased onto `trunk`, in the train
-    /// worktree. That is what it will be once the parent lands. Err(why) when that does not apply or no fork is in
-    /// its history.
-    pub async fn build_stack(
-        &self,
-        trunk: &str,
-        (parent, parent_head): (&str, &str),
-        (child, child_head): (&str, &str),
-        forks: &[String],
-    ) -> Result<Result<String, String>, GitError> {
-        self.ensure_worktree().await?;
-        let refspecs: Vec<String> = [trunk, parent, child]
-            .iter()
-            .map(|b| format!("+refs/heads/{b}:refs/remotes/origin/{b}"))
-            .collect();
-        let mut argv = vec!["git", "fetch", "--no-tags", "origin"];
-        argv.extend(refspecs.iter().map(String::as_str));
-        self.ok(&argv, None, 300).await?;
-        for sha in [parent_head, child_head] {
-            let present = self
-                .exec(
-                    &["git", "cat-file", "-e", &format!("{sha}^{{commit}}")],
-                    None,
-                    120,
-                )
-                .await?;
-            if !is_hex_sha(sha) || present.exit_code != Some(0) {
-                return Ok(Err(format!("{sha} is no longer on origin")));
-            }
-        }
-        let child_ref = child_head.to_string();
-        let mut fork = None;
-        for f in forks.iter().filter(|f| is_hex_sha(f)) {
-            let contained = self
-                .exec(
-                    &["git", "merge-base", "--is-ancestor", f, &child_ref],
-                    None,
-                    120,
-                )
-                .await?;
-            if contained.exit_code == Some(0) {
-                fork = Some(f.clone());
-                break;
-            }
-        }
-        let Some(fork) = fork else {
-            return Ok(Err(format!(
-                "none of its parent's heads is in {child}'s history"
-            )));
-        };
-        self.exec(&["git", "rebase", "--abort"], None, 120).await?;
-        self.checkout_clean(parent_head).await?;
-        if !self.rebase_here(&[&format!("origin/{trunk}")]).await? {
-            return Ok(Err(format!("{parent} does not rebase onto origin/{trunk}")));
-        }
-        let parent_head = self.rev_parse("HEAD").await?;
-        self.checkout_clean(&child_ref).await?;
-        if !self.rebase_here(&["--onto", &parent_head, &fork]).await? {
-            return Ok(Err(format!("{child} does not apply on top of {parent}")));
-        }
-        Ok(Ok(self.rev_parse("HEAD").await?))
-    }
-
-    async fn checkout_clean(&self, target: &str) -> Result<(), GitError> {
-        self.ok(
-            &["git", "checkout", "--force", "--detach", target],
-            None,
-            120,
-        )
-        .await?;
-        self.ok(&["git", "clean", "-fdq"], None, 120)
-            .await
-            .map(|_| ())
-    }
-
-    /// `git rebase` of HEAD with `args`; on a failure the rebase is aborted and the answer is false.
-    async fn rebase_here(&self, args: &[&str]) -> Result<bool, GitError> {
-        let mut argv = vec!["git"];
-        argv.extend(IDENTITY);
-        argv.extend(["rebase", "--no-autosquash"]);
-        argv.extend(args);
-        if self.exec(&argv, None, 600).await?.exit_code == Some(0) {
-            return Ok(true);
-        }
-        self.exec(&["git", "rebase", "--abort"], None, 120).await?;
-        Ok(false)
     }
 
     /// Force-pushes HEAD to `branch`, one of the train's own scratch branches, which nobody else writes.

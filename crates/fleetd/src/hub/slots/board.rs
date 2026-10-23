@@ -30,7 +30,7 @@ impl SlotPriority {
     }
 }
 
-/// What slots and leases answer.
+/// What the slot board answers.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Grant {
     Granted,

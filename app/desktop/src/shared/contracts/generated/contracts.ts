@@ -259,9 +259,6 @@ export type ApprovalAnswerOutput = {
 /** The human's answer to a `command_approval`. */
 export type ApprovalDecision = "approve" | "deny";
 
-/** Lowercase slug, [a-z0-9][a-z0-9_-]*, at most 40 */
-export type AreaName = string;
-
 export type AttachmentGetInput = {
   attachmentId: AttachmentId;
   projectRef: ProjectRef;
@@ -1011,8 +1008,6 @@ export type DoneRow = {
   workstreamId?: WorkstreamId;
 };
 
-export type DriftKind = "outside_fleetd" | "missed_webhook";
-
 export type KnownDropReason = "scope_change" | "review_failed" | "ci_failed" | "reopened" | "work_stopped";
 /** KnownDropReason, or a value from a newer hub. */
 export type DropReason = KnownDropReason | (string & {});
@@ -1153,31 +1148,6 @@ export type GitHubRepos = {
   owners: string[];
   problem?: ProjectProblem;
   repos: GitHubCandidate[];
-};
-
-/** `github.drift`. */
-export type GithubDriftData = {
-  kind: DriftKind;
-  lagMs?: number;
-  repo: GitHubRepo;
-  what: string;
-};
-
-export type GithubHook = {
-  hookId: number;
-  repo: GitHubRepo;
-};
-
-export type GithubWebhookSetInput = {
-  /** A public URL GitHub can reach, ending in /github; fleetd never creates one. */
-  url?: WebhookUrl;
-};
-
-export type GithubWebhookSetOutput = {
-  next?: string;
-  /** The hooks now in place; empty when turned off. */
-  repos: GithubHook[];
-  truncated?: boolean;
 };
 
 export type Headline = {
@@ -1321,9 +1291,7 @@ export type KnownHubEventType =
   | "request.opened"
   | "request.updated"
   | "task.queued"
-  | "task.out_of_area"
   | "agents.cap"
-  | "lease.stale"
   | "claim.failed"
   | "workstream.done"
   | "review.verdict"
@@ -1333,8 +1301,7 @@ export type KnownHubEventType =
   | "change.needs_rebase"
   | "change.ci_failed"
   | "pr.merged"
-  | "train.frozen"
-  | "train.resumed"
+  | "pr.merged_outside"
   | "train.blocked"
   | "change.refused"
   | "research.verdict"
@@ -1353,7 +1320,6 @@ export type KnownHubEventType =
   | "plan.verified"
   | "change.state"
   | "ci.main"
-  | "github.drift"
   | "source.stale"
   | "source.fresh"
   | "chat.message"
@@ -1468,11 +1434,11 @@ export type Incident = {
 export type IncidentClass =
   | "false_claim"
   | "polish_loop"
-  | "out_of_area"
   | "stall"
   | "policy_bypass"
   | "override"
   | "misfiled_ask"
+  | "out_of_area"
   | "re_ask";
 
 export type IncidentCount = {
@@ -2042,8 +2008,6 @@ export type PeriodBreakdown = {
   wallMs: number;
 };
 
-export type PermissionAnswer = "allow" | "deny";
-
 /** A `{{name}}` the code fills in. A required one missing from an edit gets a warning. */
 export type Placeholder = {
   description: string;
@@ -2330,8 +2294,6 @@ export type PrQueue = {
   changeId: ChangeId;
   /** PRs waiting in the same queue. */
   length: number;
-  /** Merging is paused for the repository. */
-  paused: boolean;
   /** 0-based place in the queue; absent when not waiting in it. */
   position?: number;
   /** Why it is held or was sent back: a conflict, failing check names, or the refusal's fix. */
@@ -2584,10 +2546,6 @@ export type ProjectId = string;
 
 /** What `project_inspect` found: the default branch, CI and merge rules, and one line on what the lead will need. */
 export type ProjectInspect = {
-  /** The areas writers lease: the policy file's, else inferred from the repo's layout. Empty when unknown. */
-  areas?: string[];
-  /** true: `areas` were inferred from the repo, not set in .fleetd/policy.yaml. */
-  areasInferred?: boolean;
   ci: CiInfo;
   defaultBranch?: string;
   /** One line for a person, e.g. "no CI found: the merge train will only use local checks". */
@@ -2608,10 +2566,6 @@ export type ProjectInspectInput = {
 
 /** What `project_inspect` found: the default branch, CI and merge rules, and one line on what the lead will need. */
 export type ProjectInspectOutput = {
-  /** The areas writers lease: the policy file's, else inferred from the repo's layout. Empty when unknown. */
-  areas?: string[];
-  /** true: `areas` were inferred from the repo, not set in .fleetd/policy.yaml. */
-  areasInferred?: boolean;
   ci: CiInfo;
   /** With `url` and a machine (given, or the best one): where `project_add` would clone it. */
   clone?: CloneTarget;
@@ -3029,15 +2983,12 @@ export type KnownRiskRule =
   | "machine_flaky"
   | "usage_high"
   | "slots_full"
-  | "github_drift"
   | "no_plan"
   | "steer_unacknowledged"
   | "slower_than_usual"
   | "train_stuck";
 /** KnownRiskRule, or a value from a newer hub. */
 export type RiskRule = KnownRiskRule | (string & {});
-
-export type RuntimeMode = "full-access" | "approval-required";
 
 /** A rule the default text carries, found in a text by `needle` (a case-insensitive regex). */
 export type SafetyRule = {
@@ -3321,7 +3272,6 @@ export type SpanKind =
   | "run.startup"
   | "compaction"
   | "queue.slot"
-  | "queue.lease"
   | "queue.usage"
   | "queue.offline"
   | "wake.debounce"
@@ -3340,6 +3290,7 @@ export type SpanKind =
   | "git"
   | "claude.other"
   | "wait.offline"
+  | "queue.lease"
   | "run.queued"
   | "wait.permission"
   | "wait.request"
@@ -3387,8 +3338,7 @@ export type StalePrompt = {
 
 /**
  * A source that is stale now, `since` its last good signal. `source` is `machine:<m>`, `usage:<m>`, `ci:<repo>`,
- * `github:<repo>`, `train:<repo>` or
- * `webhook:<repo>`.
+ * `github:<repo>` or `train:<repo>`.
  */
 export type StaleSource = {
   reason: string;
@@ -3683,7 +3633,6 @@ export type TailMessage = {
 export type TailRole = "user" | "assistant" | "system";
 
 export type Task = {
-  areas: AreaName[];
   /** 1 for the first launch. */
   attempt: number;
   /** `fleetd/<taskId>-<slug>`; write tasks only. */
@@ -3703,7 +3652,7 @@ export type Task = {
   prompt: string;
   /** A review task spawned with `--qa`. */
   qa?: boolean;
-  /** Why it is queued, e.g. "lease: docs held by T1" or "fleet cap: 40 of 40 running". */
+  /** Why it is queued, e.g. "fleet cap: 40 of 40 running". */
   queuedReason?: string;
   result?: TaskResult;
   startedAt?: Timestamp;
@@ -3731,8 +3680,6 @@ export type TaskEventData = {
   branch?: string;
   /** When the task was spawned: a `task.started` for a task spawned before a turn is not that turn's start. */
   createdAt?: Timestamp;
-  /** task.out_of_area: the first 20 paths outside the leased globs. */
-  paths?: string[];
   queuedReason?: string;
   taskId: TaskId;
   workstreamId?: WorkstreamId;
@@ -3750,7 +3697,7 @@ export type TaskGetOutput = {
 
 export type TaskId = string;
 
-/** Only write tasks get a worktree and leases. */
+/** Only write tasks get a worktree. */
 export type TaskKind = "write" | "read" | "review";
 
 /**
@@ -3789,25 +3736,6 @@ export type TasksListOutput = {
   truncated?: boolean;
 };
 
-export type ThreadAnswerInput = {
-  decision: PermissionAnswer;
-  machineId: MachineId;
-  /** Deny only: what claude is told instead of running the tool. */
-  message?: string;
-  /** The prompt answered, from the thread.waiting event; absent means the one open now. */
-  requestId?: string;
-  threadId: ThreadId;
-};
-
-export type ThreadAnswerOutput = {
-  decision: PermissionAnswer;
-  /** The approval request this answer closed, if one was open. */
-  humanRequestId?: ChatRequestId;
-  next?: string;
-  requestId: string;
-  truncated?: boolean;
-};
-
 export type ThreadCounts = {
   failed: number;
   idle: number;
@@ -3832,55 +3760,9 @@ export type ThreadEventReason = "stalled" | "usage_limit" | "interrupted";
 
 export type ThreadId = string;
 
-export type ThreadInterruptInput = {
-  clientRequestId: string;
-  machineId: MachineId;
-  threadId: ThreadId;
-};
-
-export type ThreadInterruptOutput = {
-  next?: string;
-  ok: true;
-  truncated?: boolean;
-};
-
-export type ThreadLaunchInput = {
-  clientRequestId: string;
-  machineId: MachineId;
-  /** Absent: high. */
-  profile?: TaskProfile;
-  projectId: ProjectId;
-  prompt: string;
-  runtimeMode?: RuntimeMode;
-  title?: string;
-};
-
-export type ThreadLaunchOutput = {
-  next?: string;
-  threadId: ThreadId;
-  truncated?: boolean;
-};
-
 export type ThreadRef = {
   machineId: MachineId;
   threadId: ThreadId;
-};
-
-export type ThreadSendInput = {
-  clientRequestId: string;
-  machineId: MachineId;
-  message: string;
-  threadId: ThreadId;
-};
-
-export type ThreadSendOutput = {
-  next?: string;
-  /** True when the machine is offline and the message waits in the hub's queue. */
-  queued: boolean;
-  /** When a queued message expires undelivered. */
-  queuedUntil?: Timestamp;
-  runId?: string;
-  truncated?: boolean;
 };
 
 export type ThreadStatus = "running" | "waiting" | "idle" | "completed" | "failed" | "interrupted" | "cancelled";
@@ -4065,7 +3947,7 @@ export type ToolPermission = {
 
 /**
  * The merge train's events: `change.queued`, `change.ready`, `change.needs_rebase`, `change.ci_failed`,
- * `change.refused`, `pr.merged`, `train.frozen`, `train.resumed`, `train.blocked`. Which fields each carries is in
+ * `change.refused`, `pr.merged`, `pr.merged_outside`, `train.blocked`. Which fields each carries is in
  * `HubEventType`'s docs.
  */
 export type TrainEventData = {
@@ -4090,33 +3972,9 @@ export type TrainEventData = {
   workstreamId?: WorkstreamId;
 };
 
-export type TrainFreezeInput = {
-  frozen: boolean;
-  reason?: string;
-  repo: GitHubRepo;
-};
-
-export type TrainFreezeOutput = {
-  next?: string;
-  train: TrainState;
-  truncated?: boolean;
-};
-
-export type TrainGetInput = {
-  repo: GitHubRepo;
-};
-
-export type TrainGetOutput = {
-  next?: string;
-  train: TrainState;
-  truncated?: boolean;
-};
-
 /** One repo's merge train, resolved for the strip: head first, then the queue in order, then today's merges. */
 export type TrainLive = {
   chips: PrChip[];
-  frozen: boolean;
-  frozenReason?: string;
   /** Merged since 00:00 UTC. */
   mergedToday: number;
   repo: GitHubRepo;
@@ -4124,8 +3982,6 @@ export type TrainLive = {
 
 /** One serial train per repo. */
 export type TrainState = {
-  /** Held by a `policy.freeze.<repo>` decision. */
-  frozen: boolean;
   /** The Change being rebased, checked or merged now. */
   head?: ChangeId;
   /** Waiting Changes in train order. */
@@ -4295,8 +4151,6 @@ export type WakeTarget = {
   threadId: ThreadId;
 };
 
-export type WebhookUrl = string;
-
 export type Weight = "must" | "polish";
 
 export type KnownWeightsBasis = "project" | "fleet" | "default";
@@ -4446,7 +4300,6 @@ export interface ToolMap {
   doctor_list: { input: DoctorListInput; output: DoctorListOutput };
   events_wait: { input: EventsWaitInput; output: EventsWaitOutput };
   fleetd_status: { input: FleetdStatusInput; output: FleetdStatusOutput };
-  github_webhook_set: { input: GithubWebhookSetInput; output: GithubWebhookSetOutput };
   hub_info: { input: HubInfoInput; output: HubInfoOutput };
   incidents_list: { input: IncidentsListInput; output: IncidentsListOutput };
   intake_preview: { input: IntakePreviewInput; output: IntakePreviewOutput };
@@ -4488,18 +4341,12 @@ export interface ToolMap {
   steers_list: { input: SteersListInput; output: SteersListOutput };
   task_get: { input: TaskGetInput; output: TaskGetOutput };
   tasks_list: { input: TasksListInput; output: TasksListOutput };
-  thread_answer: { input: ThreadAnswerInput; output: ThreadAnswerOutput };
-  thread_interrupt: { input: ThreadInterruptInput; output: ThreadInterruptOutput };
-  thread_launch: { input: ThreadLaunchInput; output: ThreadLaunchOutput };
-  thread_send: { input: ThreadSendInput; output: ThreadSendOutput };
   thread_tail: { input: ThreadTailInput; output: ThreadTailOutput };
   thread_window: { input: ThreadWindowInput; output: ThreadWindowOutput };
   time_breakdown: { input: TimeBreakdownInput; output: TimeBreakdownOutput };
   time_insights: { input: TimeInsightsInput; output: TimeInsightsOutput };
   time_retention_set: { input: TimeRetentionSetInput; output: TimeRetentionSetOutput };
   time_spans: { input: TimeSpansInput; output: TimeSpansOutput };
-  train_freeze: { input: TrainFreezeInput; output: TrainFreezeOutput };
-  train_get: { input: TrainGetInput; output: TrainGetOutput };
   usage_resume: { input: UsageResumeInput; output: UsageResumeOutput };
   usage_status: { input: UsageStatusInput; output: UsageStatusOutput };
   wake_cancel: { input: WakeCancelInput; output: WakeCancelOutput };
@@ -4524,12 +4371,12 @@ export interface HubEventDataMap {
   "ci.main": CiMainData;
   "claim.failed": ClaimEventData;
   "claim.passed": ClaimEventData;
-  "github.drift": GithubDriftData;
   "machine.guard": MachineGuardData;
   "machine.slept": MachineSleptData;
   "plan.changed": PlanChangedData;
   "plan.verified": PlanVerifiedData;
   "pr.merged": TrainEventData;
+  "pr.merged_outside": TrainEventData;
   "project.add_failed": ProjectAddFailedData;
   "project.added": ProjectAddedData;
   "project.clone_progress": CloneProgressData;
@@ -4547,7 +4394,6 @@ export interface HubEventDataMap {
   "task.cancelled": TaskEventData;
   "task.completed": TaskEventData;
   "task.failed": TaskEventData;
-  "task.out_of_area": TaskEventData;
   "task.queued": TaskEventData;
   "task.started": TaskEventData;
   "thread.completed": ThreadEventData;
@@ -4557,8 +4403,6 @@ export interface HubEventDataMap {
   "thread.usage_limited": UsageEventData;
   "thread.waiting": ThreadEventData;
   "train.blocked": TrainEventData;
-  "train.frozen": TrainEventData;
-  "train.resumed": TrainEventData;
   "usage.breaker": UsageEventData;
   "usage.resumed": UsageEventData;
   "workstream.created": WorkstreamEventData;

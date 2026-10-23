@@ -127,10 +127,9 @@ pub enum RunnerEvent {
         version: String,
         model: String,
         cwd: String,
-        /// The init named an auto memory dir ([`conformance::auto_memory_on`]).
-        auto_memory: bool,
-        /// Claude's own subagents the init still offered ([`conformance::subagent_leaks`]); empty when off.
-        subagent_leaks: Vec<String>,
+        /// claude's own agent tools the init still offered ([`conformance::agent_like`]): empty when fleetd's deny
+        /// list held, `None` when the init lists no tools, so none could be checked.
+        agent_tools: Option<Vec<String>>,
     },
     /// `command_lifecycle` started.
     RunStarted {
@@ -213,17 +212,8 @@ pub struct SessionHandle {
 pub enum RunnerError {
     #[error("{binary} was not found on PATH")]
     Missing { binary: String },
-    #[error("{binary} {found} is outside the supported range {supported}")]
-    UnsupportedVersion {
-        binary: String,
-        found: String,
-        supported: String,
-    },
     #[error("could not start {binary}: {message}")]
     Spawn { binary: String, message: String },
-    /// claude refused before running (e.g. "Session ID … is already in use."), with its stderr.
-    #[error("{0}")]
-    Refused(String),
 }
 
 /// One agent runtime. Claude now; Codex later as its own adapter.

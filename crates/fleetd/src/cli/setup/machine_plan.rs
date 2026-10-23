@@ -337,13 +337,6 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
     };
     let printed = facts.claude_version.as_deref().unwrap_or("");
     let claude_verdict = version::check(printed);
-    if !claude_verdict.runs() {
-        return Err(format!(
-            "{} Fix: on the machine, run {}",
-            claude_verdict.problem(printed).unwrap_or_default(),
-            claude_verdict.fix().unwrap_or_default()
-        ));
-    }
 
     let l = facts.layout();
     let dirs = Dirs {
@@ -542,10 +535,7 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
         });
     }
 
-    if matches!(
-        claude_verdict,
-        VersionVerdict::UntestedNewer | VersionVerdict::UntestedOlder
-    ) {
+    if claude_verdict != VersionVerdict::Ok {
         notes.push(format!(
             "{} If sessions misbehave, run on the machine: {}",
             claude_verdict.problem(printed).unwrap_or_default(),
@@ -825,7 +815,7 @@ mod tests {
     }
 
     #[test]
-    fn refuses_another_arch_unknown_os_and_a_missing_or_wrong_claude() {
+    fn refuses_another_arch_unknown_os_and_a_missing_claude() {
         let facts = fresh_facts("ada", "arm64");
         assert!(
             plan_machine_add(&facts, &input())
@@ -847,29 +837,24 @@ mod tests {
                 "Fix: on the machine, run curl -fsSL https://claude.ai/install.sh | bash"
             )
         );
-        let newer = Facts {
-            claude_version: Some("2.2.1 (Claude Code)".into()),
-            ..fresh_facts("ada", "x64")
-        };
-        assert!(
-            plan_machine_add(&newer, &input())
-                .err()
-                .unwrap()
-                .ends_with("Fix: on the machine, run claude install 2.1.302, or fleetd update")
-        );
-        // Older than tested: set up anyway, with a note that says so and how to update.
-        let older = Facts {
-            claude_version: Some("2.1.296 (Claude Code)".into()),
-            ..fresh_facts("ada", "x64")
-        };
-        let plan = plan_machine_add(&older, &input()).unwrap();
-        assert!(
-            plan.notes
-                .iter()
-                .any(|n| n.contains("may work") && n.ends_with("claude update")),
-            "{:?}",
-            plan.notes
-        );
+        // Outside the tested range: set up anyway, with a note that says so and how to change it.
+        for (version, fix) in [
+            ("2.2.1", "claude install 2.1.302"),
+            ("2.1.296", "claude update"),
+        ] {
+            let untested = Facts {
+                claude_version: Some(format!("{version} (Claude Code)")),
+                ..fresh_facts("ada", "x64")
+            };
+            let plan = plan_machine_add(&untested, &input()).unwrap();
+            assert!(
+                plan.notes
+                    .iter()
+                    .any(|n| n.contains("sessions run") && n.ends_with(fix)),
+                "{:?}",
+                plan.notes
+            );
+        }
     }
 
     /// The login check sees claude.env and the node's config dir, and nothing of the shell that runs it.

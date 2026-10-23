@@ -287,12 +287,6 @@ async fn go(
 ) -> (fleetd_contracts::chat::ChatMessage, Option<String>) {
     let lead = match hub.leads.leads.auto_start(r).await {
         AutoStart::Running(lead) | AutoStart::Started(lead) => lead,
-        AutoStart::Off => {
-            return (
-                message,
-                Some("This project's lead starts only by hand (lead.autoStart: false in its policy). Start it with lead_start; it then reads this message.".to_owned()),
-            );
-        }
         AutoStart::Held(e) => return (message, Some(waiting_reason(&e))),
     };
     let thread = ThreadRef {

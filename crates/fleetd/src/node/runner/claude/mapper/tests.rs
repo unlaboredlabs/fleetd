@@ -266,20 +266,12 @@ fn two_turns_in_one_process() {
         version: "2.1.302".into(),
         model: "claude-haiku-5-5".into(),
         cwd: "/work/project".into(),
-        // Recorded before fleetd turned auto memory off, and without its deny list.
-        auto_memory: true,
-        subagent_leaks: [
-            "Task",
-            "ListAgents",
-            "SendMessage",
-            "TaskStop",
-            "Workflow",
-            "agent claude",
-            "agent Explore",
-            "agent Plan",
-        ]
-        .map(String::from)
-        .into(),
+        // Recorded without fleetd's deny list.
+        agent_tools: Some(
+            ["Task", "ListAgents", "SendMessage", "TaskStop", "Workflow"]
+                .map(String::from)
+                .into(),
+        ),
     };
     let (r1, m1) = (
         "e8d52832-5cea-4aac-ba3b-f1e6763315a8",
@@ -730,8 +722,13 @@ fn a_refused_start_ends_the_run_with_claudes_words() {
         exit.stderr_tail,
         "Error: Session ID 289edad3-c10d-43bc-9a66-699588cecfc8 is already in use."
     );
-    assert!(crate::node::runner::claude::session_in_use(exit));
     assert_eq!(replay.evidence[0].exit.as_ref(), Some(exit));
+    // What the session service reads to send the run again to a resumed process.
+    let failure = crate::node::runner::failure::classify(&replay.evidence[0]).unwrap();
+    assert_eq!(failure.class, FailureClass::ProcessExited);
+    assert!(crate::node::runner::claude::session_in_use(
+        failure.message.as_str()
+    ));
 }
 
 fn line(json: Value) -> Line {
