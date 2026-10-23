@@ -16,6 +16,11 @@ use crate::hub::store::{HubDb, HubStore};
 pub const HUB_KEY_USAGE: &str = r#"  hub key create --name <name> --role <read|operate|admin> --machines <'*'|id,id> [--out <file>] [--home <dir>]
              create an agent key for the MCP endpoint; prints the key once, or with --out writes it
              to a new file (0600) and prints the file's path
+  hub key create --agent <name> [--machines <'*'|id,id>] [--out <file>] [--home <dir>]
+             a named agent's key, to write in a project's chat (fleetd chat --key-file): its
+             messages show as that agent's, never yours. Operate on every machine unless
+             --machines. Written to a new file (0600), <hub home>/keys/<name>.key unless --out;
+             prints only the file's path
   hub key create --human --name <device> [--role <role>] [--machines <'*'|id,id>] [--out <file>] [--home <dir>]
              a key for a person's device (the desktop app): what it answers is recorded as the
              human's; role defaults to operate on every machine
@@ -52,6 +57,14 @@ fn fail(code: u8, message: &str) -> CliResult {
 
 fn key_usage(message: &str) -> CliResult {
     fail(2, &format!("{message}\n\nusage:\n{HUB_KEY_USAGE}"))
+}
+
+/// A name that is safe as a file name: `[A-Za-z0-9_-]{1,40}`.
+fn is_file_name(name: &str) -> bool {
+    (1..=40).contains(&name.len())
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
 
 /// A new file only its owner can read, created at once with mode 0600 (never an existing one); its directory is made
@@ -169,6 +182,7 @@ pub fn hub_key(argv: &[String]) -> CliResult {
         ("role", Kind::Str),
         ("machines", Kind::Str),
         ("human", Kind::Bool),
+        ("agent", Kind::Str),
         ("out", Kind::Str),
     ];
     let v = match args::parse(
@@ -183,11 +197,20 @@ pub fn hub_key(argv: &[String]) -> CliResult {
     };
     match command {
         Some("create") => {
-            let Some(name) = v.str("name").filter(|n| !n.is_empty()) else {
+            let agent = v.str("agent").filter(|n| !n.is_empty());
+            if agent.is_some() && (v.flag("human") || v.has("name") || v.has("role")) {
+                return key_usage(
+                    "--agent names the key and sets its role; leave out --name, --role and --human",
+                );
+            }
+            let Some(name) = agent.or(v.str("name")).filter(|n| !n.is_empty()) else {
                 return key_usage("--name is required");
             };
+            if agent.is_some() && !is_file_name(name) {
+                return key_usage("--agent is a name of letters, digits, '-' and '_' (at most 40)");
+            }
             let human = v.flag("human");
-            let grant = if human {
+            let grant = if human || agent.is_some() {
                 parse_grant(
                     Some(v.str("role").unwrap_or("operate")),
                     Some(v.str("machines").unwrap_or("*")),
@@ -199,7 +222,14 @@ pub fn hub_key(argv: &[String]) -> CliResult {
                 Ok(grant) => grant,
                 Err(message) => return key_usage(&message),
             };
-            let out = v.str("out").filter(|o| !o.is_empty()).map(PathBuf::from);
+            let out = match (v.str("out").filter(|o| !o.is_empty()), agent) {
+                (Some(file), _) => Some(PathBuf::from(file)),
+                (None, Some(name)) => match resolve_home(v.str("home")) {
+                    Ok(home) => Some(home.join("keys").join(format!("{name}.key"))),
+                    Err(message) => return fail(1, &message),
+                },
+                (None, None) => None,
+            };
             // Made before the key, so the key is never minted for a file that can't take it.
             let file = match out.as_deref().map(new_private_file).transpose() {
                 Ok(file) => file,
@@ -296,6 +326,69 @@ mod tests {
             .map(|s| s.to_string())
             .collect();
         hub_key(&argv)
+    }
+
+    /// `--agent scout` mints an operate key named scout into a new 0600 file and prints only that file's path: the key
+    /// itself never reaches the terminal. It never overwrites a file, and mints nothing when it can't write one.
+    #[test]
+    fn an_agent_key_goes_to_a_private_file_and_only_its_path_is_printed() {
+        let home = tempfile::tempdir().unwrap();
+        let h = home.path().to_str().unwrap();
+        let made = create(&["--agent", "scout", "--home", h]);
+        let file = home.path().join("keys/scout.key");
+        assert_eq!(
+            (made.code, made.stdout.as_str(), made.stderr.as_str()),
+            (0, format!("{}\n", file.display()).as_str(), "")
+        );
+        assert_eq!(
+            std::fs::metadata(&file).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        let key = std::fs::read_to_string(&file).unwrap();
+        let info = open_hub(home.path())
+            .unwrap()
+            .auth
+            .verify(key.trim())
+            .unwrap();
+        assert_eq!((info.name.as_str(), info.kind), ("scout", None));
+        assert_eq!(describe_grants(&info.grants), "operate:*");
+
+        let again = create(&["--agent", "scout", "--home", h]);
+        assert!(
+            again.code == 1 && again.stderr.contains("exists"),
+            "{}",
+            again.stderr
+        );
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            key,
+            "never overwritten"
+        );
+        let keys = || open_hub(home.path()).unwrap().auth.list().unwrap().len();
+        assert_eq!(keys(), 1, "nothing minted for a file it can't write");
+
+        let out = home.path().join("elsewhere/ci.key");
+        let to = create(&[
+            "--agent",
+            "ci-bot",
+            "--machines",
+            "devbox",
+            "--out",
+            out.to_str().unwrap(),
+            "--home",
+            h,
+        ]);
+        assert_eq!(to.stdout, format!("{}\n", out.display()));
+        assert_eq!(keys(), 2);
+
+        for bad in [
+            &["--agent", "scout", "--human", "--home", h][..],
+            &["--agent", "scout", "--role", "admin", "--home", h],
+            &["--agent", "../scout", "--home", h],
+        ] {
+            assert_eq!(create(bad).code, 2, "{bad:?}");
+        }
+        assert_eq!(keys(), 2);
     }
 
     /// The person's own key for `fleetd steer`, `chat` and `project stop`: `--human --out` writes it to a new 0600 file

@@ -10,9 +10,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use fleetd_contracts::chat::{
-    AttachmentRef, ChatAuthor, ChatDelivery, ChatDelta, ChatHistorySource, ChatItem, ChatMessage,
-    ChatMessageEventData, ChatMessageId, ChatMessageState, ChatRequestId, CommandApprovalState,
-    ProjectChatState, SecretRequestState,
+    AttachmentRef, ChatAuthor, ChatClient, ChatDelivery, ChatDelta, ChatHistorySource, ChatItem,
+    ChatMessage, ChatMessageEventData, ChatMessageId, ChatMessageState, ChatRequestId,
+    CommandApprovalState, ProjectChatState, SecretRequestState,
 };
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{ProjectRef, Timestamp};
@@ -39,6 +39,7 @@ pub struct NewMessage {
     pub item: Option<ChatItem>,
     pub history: Option<ChatHistorySource>,
     pub by: Option<String>,
+    pub client: Option<ChatClient>,
     pub delivery: Option<ChatDelivery>,
     /// A human message not yet in the lead's session.
     pub held: bool,
@@ -117,6 +118,8 @@ pub struct Chat {
     said: Mutex<HashMap<String, (bool, bool)>>,
     /// One history read per project at a time.
     reading: tokio::sync::Mutex<()>,
+    /// When each agent key wrote its messages of the last minute.
+    agent_sends: Mutex<HashMap<String, Vec<i64>>>,
 }
 
 impl Chat {
@@ -129,11 +132,28 @@ impl Chat {
             deltas,
             said: Mutex::default(),
             reading: tokio::sync::Mutex::new(()),
+            agent_sends: Mutex::default(),
         })
     }
 
     fn now(&self) -> i64 {
         now_ms(self.clock.as_ref())
+    }
+
+    /// Counts a new message from agent key `key_id` and says whether it is within the minute's allowance.
+    pub fn allow_agent(&self, key_id: &str) -> bool {
+        let now = self.now();
+        let mut sends = self.agent_sends.lock().unwrap();
+        sends.retain(|_, at| {
+            at.retain(|t| now - t < 60_000);
+            !at.is_empty()
+        });
+        let at = sends.entry(key_id.to_owned()).or_default();
+        if at.len() >= flow::AGENT_PER_MINUTE {
+            return false;
+        }
+        at.push(now);
+        true
     }
 
     /// Every streamed append, for the app connections subscribed to a chat.
@@ -258,6 +278,7 @@ impl Chat {
                     .and_then(|r| fleetd_contracts::prim::NonEmpty::new(r).ok()),
                 delivery: new.delivery,
                 by: new.by.as_deref().and_then(line),
+                client: new.client,
                 item: new.item,
                 history: new.history,
             };
@@ -590,6 +611,7 @@ impl Chat {
         let who = match message.author {
             ChatAuthor::Human => "You",
             ChatAuthor::Lead => "The lead",
+            ChatAuthor::Agent => "An agent",
             _ => "fleetd",
         };
         self.events.append(NewEvent {

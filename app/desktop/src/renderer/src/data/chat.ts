@@ -281,7 +281,8 @@ export interface ChatItem {
 
 const noAttachments: readonly AttachmentRef[] = [];
 
-const authorOf = (a: ChatMessage["author"]): KnownChatAuthor => (a === "human" ? "human" : a === "lead" ? "lead" : "system");
+const authorOf = (a: ChatMessage["author"]): KnownChatAuthor =>
+  a === "human" ? "human" : a === "lead" ? "lead" : a === "agent" ? "agent" : "system";
 
 const kindOf = (m: ChatMessage): ChatItemKind => {
   if (m.item?.kind === "secret_request") return "secret";

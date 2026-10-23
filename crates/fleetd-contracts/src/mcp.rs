@@ -1132,14 +1132,21 @@ output!(GithubWebhookSetOutput {
     repos: List<GithubHook, 0, 100>,
 });
 
-// chat_send: the human writes to a project's lead. Delivered at once: a new turn when the lead is idle, a steer when
-// it is mid-turn, or queued while it starts. The same clientRequestId returns the same message.
+// chat_send: writes to a project's lead. Delivered at once: a new turn when the lead is idle, a steer when it is
+// mid-turn, or queued while it starts. The same clientRequestId returns the same message. A human key writes as the
+// human; any other key as an agent, by its name: input for the lead, never the human's answer.
 input!(ChatSendInput {
     project_ref: ProjectRef,
     text: Text<1, 20000>,
     /// From attachment_put.
     attachments: Option<Attachments>,
     client_request_id: RequestId,
+    /// A human key: where it is written. Absent means the app.
+    client: Option<crate::chat::ChatClient>,
+    /// Sent from inside a fleetd session: its thread id (FLEETD_THREAD_ID), as the caller reports it. The project's own
+    /// lead and tasks are refused (they use their fleetd tools), and so is a human key. It catches mistakes; the key,
+    /// not this field, carries authority.
+    session: Option<ThreadId>,
 });
 output!(ChatSendOutput {
     message: crate::chat::ChatMessage,
