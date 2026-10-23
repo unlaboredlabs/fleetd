@@ -1,0 +1,8 @@
+{
+  "title": "TOML 1.1 support in taplo: parser, decoder and formatter",
+  "kind": "big real-world feature (open upstream issue)",
+  "codebase": "taplo (MIT), snapshot of 08f343b; tamasfe/taplo#332 and #331",
+  "base": "bench/taplo-toml11/base",
+  "baseSha": "cdd1764c79e89477ecc1d59e23e7bfdd1ffb4cb0",
+  "timeoutMin": 360
+}
