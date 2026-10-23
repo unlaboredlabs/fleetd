@@ -7,6 +7,7 @@ import { Button, Dot, FrameTitle, Tab, TabList, TabPanel, Tabs, Text, Truncate, 
 import { selectConnection } from "../../src/data/selectors";
 import { useData } from "../../src/data/react";
 import { useCommands } from "../palette";
+import { toHash } from "../shell/routes";
 import { Breakdown } from "./Breakdown";
 import "./commands";
 import { FilterBar } from "./FilterBar";
@@ -17,7 +18,6 @@ import { linkedKeeps, useLinked, useNames, useTimeData, useWindow, type Linked }
 import { loadFilters, queryOf, saveFilters, type Filters } from "./filters";
 import { ROLE_WORD, agentName, fmtDur, isMissingEmpty, missing, missingSentence } from "./format";
 import { barsFor, buildModel } from "./model";
-import { chatRoute } from "./route";
 import type { Category, Span } from "./types";
 import s from "./Time.module.css";
 
@@ -55,7 +55,12 @@ interface Highlight {
 
 export function TimeScreen(props: TimeScreenProps) {
   // Going back from one piece of work goes to its project's chat.
-  const openOrder = props.onOpenOrder ?? ((o: string) => navigateTo(chatRoute(names.orders.get(o)?.ref)));
+  const openOrder =
+    props.onOpenOrder ??
+    ((o: string) => {
+      const project = names.orders.get(o)?.ref;
+      navigateTo(project === undefined ? "#/" : toHash({ id: "project", project, message: null }));
+    });
   const openUrl = props.onOpenUrl ?? copyLink;
   const [order, setOrder] = useState(props.order);
   const [filters, setFilters] = useState<Filters>(() => props.initialFilters ?? loadFilters());

@@ -1,12 +1,10 @@
 // Secret requests: the value is sealed here, in main, to the sink machine's X25519 box key with libsodium's
 // crypto_box_seal (the same construction as the node's crypto_box_seal_open and the old app's seal.rs), so the hub
 // only relays ciphertext and the renderer never gets the plaintext back. It is never logged.
-import type { ToolInput } from "../shared/contracts";
+import { SECRET_MAX_BYTES, type ToolInput } from "../shared/contracts";
 import type { CallOutcome, HubError, SecretOutcome } from "../shared/hub";
 import type { SecretRequest } from "../shared/ipc";
 
-/** fleetd_contracts::secrets::SECRET_MAX_BYTES. */
-export const SECRET_MAX_BYTES = 8192;
 
 const refused = (message: string, fix?: string): { ok: false; error: HubError } => ({
   ok: false,

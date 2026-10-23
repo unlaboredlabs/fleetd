@@ -1,8 +1,7 @@
 // Pairing with a hub: the pure rules shared by main (which talks to the hub) and the renderer (which shows it).
 // The contract is `POST <hub>/pair {code, deviceName}` → `{key, hubUrl, hubName}` or the hub's `{code, message, fix}`.
+import { PROTOCOL_VERSION } from "./contracts";
 
-/** The /app protocol this app speaks (fleetd_contracts::hello::PROTOCOL_VERSION). */
-export const APP_PROTOCOL = 1;
 
 /** Where `fleetd init` puts the hub unless told otherwise. */
 export const LOCAL_HUB = "http://127.0.0.1:4790";
@@ -133,7 +132,7 @@ export type ProtocolFit = "ok" | "hub-older" | "app-older";
 
 /** A hub on another protocol can't serve this app: one of them needs an update. */
 export const protocolFit = (hubProtocol: number): ProtocolFit =>
-  hubProtocol === APP_PROTOCOL ? "ok" : hubProtocol < APP_PROTOCOL ? "hub-older" : "app-older";
+  hubProtocol === PROTOCOL_VERSION ? "ok" : hubProtocol < PROTOCOL_VERSION ? "hub-older" : "app-older";
 
 /**
  * Orders versions as semver does: dotted numbers (`0.10.0` after `0.9.3`), a pre-release before its release, and
