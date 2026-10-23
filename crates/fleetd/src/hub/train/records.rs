@@ -234,18 +234,6 @@ impl ChangeRecords {
         })
     }
 
-    /// Moves it ahead of every other Change of its repo.
-    pub fn to_front(&self, change_id: &ChangeId) {
-        sql(&self.db, |conn| {
-            conn
-            .execute(
-                "UPDATE changes SET train_order = (SELECT MIN(train_order) - 1 FROM changes WHERE repo = (SELECT repo FROM changes WHERE n = ?1)) WHERE n = ?1",
-                [number_of(change_id)],
-            )
-            .expect("to front")
-        });
-    }
-
     /// Newest first.
     pub fn list(&self, filter: &ListFilter) -> Vec<Change> {
         sql(&self.db, |conn| {

@@ -67,7 +67,7 @@ pub struct GhError {
 }
 
 impl GhError {
-    fn failed(message: impl Into<String>) -> Self {
+    pub(super) fn failed(message: impl Into<String>) -> Self {
         Self {
             kind: GhErrorKind::Failed,
             message: message.into(),
@@ -232,6 +232,16 @@ pub enum MergeOutcome {
         status: u16,
         message: String,
     },
+}
+
+/// What `gh pr update-branch --rebase` did to a PR's branch.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BranchUpdate {
+    /// Already on its base: the head is as it was.
+    Current,
+    /// Rebased onto its base: a new head, which GitHub may show only a moment later.
+    Rebased,
+    Conflict,
 }
 
 /// What merging a PR's head into the train's batch branch on GitHub did.
@@ -528,8 +538,8 @@ impl TrainGitHub {
     }
 
     /// Rebases the PR's branch onto its base on GitHub (`gh pr update-branch --rebase`); a branch already on its base
-    /// stays as it is. False when it conflicts.
-    pub async fn update_branch(&self, repo: &str, n: i64) -> Result<bool, GhError> {
+    /// stays as it is.
+    pub async fn update_branch(&self, repo: &str, n: i64) -> Result<BranchUpdate, GhError> {
         let path = format!("repos/{repo}/pulls/{n}");
         let args = [
             "pr",
@@ -555,7 +565,13 @@ impl TrainGitHub {
             )));
         }
         self.reached(&path);
-        Ok(out.exit_code == 0)
+        Ok(if out.exit_code != 0 {
+            BranchUpdate::Conflict
+        } else if out.stdout.contains("PR branch updated") {
+            BranchUpdate::Rebased
+        } else {
+            BranchUpdate::Current
+        })
     }
 
     /// Where `branch` points now.

@@ -123,6 +123,11 @@
           "minimum": 0,
           "type": "integer"
         },
+        "reason": {
+          "description": "Why it moved, when the train says: always set when a pass hands it back to `ready` (a bounce).",
+          "maxLength": 2000,
+          "type": "string"
+        },
         "repo": {
           "$ref": "#/$defs/GitHubRepo"
         },

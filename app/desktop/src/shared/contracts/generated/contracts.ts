@@ -415,6 +415,8 @@ export type ChangeStateData = {
   changeId: ChangeId;
   from: ChangeState;
   prNumber: number;
+  /** Why it moved, when the train says: always set when a pass hands it back to `ready` (a bounce). */
+  reason?: string;
   repo: GitHubRepo;
   to: ChangeState;
   workstreamId?: WorkstreamId;
