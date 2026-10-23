@@ -66,13 +66,13 @@ import { statusFresh } from "./statusFresh.ts";
 import { steerMidTurn } from "./steerMidTurn.ts";
 import { timeInspector } from "./timeInspector.ts";
 import { wakeOnTime } from "./wakeOnTime.ts";
-import { missedCompletion, stallNudgeFail } from "./watchdogScenarios.ts";
+import { missedCompletion, stallFails } from "./watchdogScenarios.ts";
 
 /** In run order. Later ones may stop or restart nodes, so they come after the ones that need both machines up. */
 const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab) => Promise<void>; readonly only?: boolean }> = [
   { name: "m1", run: m1Fleet },
   { name: "wake", run: wakeOnTime },
-  { name: "stall", run: (lab) => stallNudgeFail(lab) },
+  { name: "stall", run: (lab) => stallFails(lab) },
   { name: "missed", run: (lab) => missedCompletion(lab) },
   { name: "degraded", run: degradedMachine },
   { name: "queue", run: offlineQueue },

@@ -756,10 +756,12 @@ impl Tasks {
         branch_diff::parse_branch_diff(out.exit_code.unwrap_or(-1), &out.output_tail)
     }
 
+    /// `why` stands in for the thread's own error: the watchdog's stall, which the thread row does not hold yet.
     async fn finish(
         self: &Arc<Self>,
         stored: &StoredTask,
         status: TaskResultStatus,
+        why: Option<String>,
     ) -> Result<(), StoreError> {
         let task = &stored.task;
         let thread_ref = task.thread_ref.clone().expect("a live task has a thread");
@@ -768,7 +770,7 @@ impl Tasks {
             .as_ref()
             .map_or("", |t| t.thread.latest_message_tail.as_str())
             .to_owned();
-        let error = match (&thread, status) {
+        let error = why.unwrap_or_else(|| match (&thread, status) {
             (Some(t), TaskResultStatus::Failed) => t
                 .thread
                 .last_error
@@ -776,7 +778,7 @@ impl Tasks {
                 .map(|e| format!("[{}] {}", e.class, e.message))
                 .unwrap_or_default(),
             _ => String::new(),
-        };
+        });
         let write = task.kind == TaskKind::Write;
         let changes = if write {
             self.d.ports.changes(&thread_ref).await
@@ -925,7 +927,7 @@ impl Tasks {
         let live = matches!(task.state, TaskState::Running | TaskState::Idle);
         match event.r#type {
             HubEventType::ThreadStarted => {
-                // Continued outside `task message`: the watchdog's nudge, or a human writing to the thread.
+                // Continued outside `task message`: the usage layer's continue, or a human writing to the thread.
                 if !matches!(
                     task.state,
                     TaskState::Done | TaskState::Failed | TaskState::Idle
@@ -991,7 +993,7 @@ impl Tasks {
                     .wake(&task.project_ref, WakeKind::TaskWaiting, text);
             }
             HubEventType::ThreadCompleted if live => {
-                self.finish(&stored, TaskResultStatus::Done).await?
+                self.finish(&stored, TaskResultStatus::Done, None).await?
             }
             HubEventType::ThreadUsageLimited => {
                 // M4 usage: parked, not failed. The board freed the slot, the leases stay, and the usage layer sends
@@ -1014,7 +1016,14 @@ impl Tasks {
             }
             // A cancel interrupts the thread itself and has already ended the task.
             HubEventType::ThreadFailed | HubEventType::ThreadInterrupted if live => {
-                self.finish(&stored, TaskResultStatus::Failed).await?
+                let stalled = event
+                    .data
+                    .as_ref()
+                    .filter(|d| d["reason"] == "stalled")
+                    .and_then(|d| d["error"]["message"].as_str())
+                    .map(|m| format!("[stalled] {m}"));
+                self.finish(&stored, TaskResultStatus::Failed, stalled)
+                    .await?
             }
             _ => {}
         }
@@ -1149,7 +1158,6 @@ impl Tasks {
             areas: input.areas.clone(),
             profile,
             tier: input.tier,
-            estimate_minutes: input.estimate_minutes,
             qa: input.qa,
             pr: input.pr.clone(),
             item_id: input.item.clone(),

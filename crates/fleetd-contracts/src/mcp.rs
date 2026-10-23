@@ -43,7 +43,7 @@ use crate::time::{
 };
 use crate::train::{Change, ChangeState, GitHubPrUrl, GitHubRepo, TrainState};
 use crate::usage::UsageStatus;
-use crate::verification::{Claim, ClaimOutcome, Eta, Incident, IncidentClass};
+use crate::verification::{Claim, ClaimOutcome, Incident, IncidentClass};
 use crate::wakes::{Wake, WakeCatchUp, WakeMessage, WakeSchedule, WakeState, WakeTarget};
 use crate::{brand, checked};
 
@@ -625,8 +625,6 @@ output!(WorkstreamGetOutput {
     requests: List<HumanRequest, 0, 50>,
     /// Active decisions scoped to it.
     decisions: List<Decision, 0, 50>,
-    /// Absent without a raw estimate in the brief.
-    eta: Option<Eta>,
     /// Its claims, newest first.
     claims: Option<List<Claim, 0, 20>>,
 });
@@ -688,13 +686,6 @@ output!(DecisionsSearchOutput {
 // decisions_record: the hub fills the decision's source and by from the caller (human device or agent key).
 input!(DecisionsRecordInput { key: DecisionKey, value: DecisionValue, why: Option<DecisionWhy>, scope: DecisionScope });
 output!(DecisionsRecordOutput { decision: Decision });
-
-// digest_get
-input!(DigestGetInput {});
-output!(DigestGetOutput {
-    text: String,
-    at: Timestamp
-});
 
 // tasks_list
 input!(TasksListInput {
@@ -1429,7 +1420,6 @@ tools! {
     requests_list => RequestsList, Read, RequestsListInput, RequestsListOutput;
     decisions_search => DecisionsSearch, Read, DecisionsSearchInput, DecisionsSearchOutput;
     decisions_record => DecisionsRecord, Operate, DecisionsRecordInput, DecisionsRecordOutput;
-    digest_get => DigestGet, Read, DigestGetInput, DigestGetOutput;
     tasks_list => TasksList, Read, TasksListInput, TasksListOutput;
     task_get => TaskGet, Read, TaskGetInput, TaskGetOutput;
     cap_set => CapSet, Operate, CapSetInput, CapSetOutput;

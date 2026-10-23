@@ -813,9 +813,6 @@
           "minItems": 1,
           "type": "array"
         },
-        "estimate": {
-          "$ref": "#/$defs/Estimate"
-        },
         "goal": {
           "maxLength": 1000,
           "minLength": 1,
@@ -2647,30 +2644,6 @@
       ],
       "x-open": true
     },
-    "DigestGetInput": {
-      "type": "object"
-    },
-    "DigestGetOutput": {
-      "properties": {
-        "at": {
-          "$ref": "#/$defs/Timestamp"
-        },
-        "next": {
-          "type": "string"
-        },
-        "text": {
-          "type": "string"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "text",
-        "at"
-      ],
-      "type": "object"
-    },
     "DoctorCheck": {
       "properties": {
         "fix": {
@@ -2916,109 +2889,6 @@
     "EnvName": {
       "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$",
       "type": "string"
-    },
-    "Estimate": {
-      "properties": {
-        "gates": {
-          "items": {
-            "maxLength": 200,
-            "minLength": 1,
-            "type": "string"
-          },
-          "maxItems": 20,
-          "type": "array"
-        },
-        "rawMinutes": {
-          "minimum": 0,
-          "type": "number"
-        }
-      },
-      "required": [
-        "rawMinutes",
-        "gates"
-      ],
-      "type": "object"
-    },
-    "Eta": {
-      "description": "The brief's raw estimate corrected by the tier's measured actual/raw ratio.",
-      "properties": {
-        "calibratedMinutes": {
-          "minimum": 0,
-          "type": "number"
-        },
-        "p80Minutes": {
-          "description": "From 10 samples on.",
-          "minimum": 0,
-          "type": "number"
-        },
-        "ratio": {
-          "description": "Median actual/raw over the tier's last 20 done workstreams; the 5.0 prior below 5 samples.",
-          "exclusiveMinimum": 0,
-          "type": "number"
-        },
-        "rawMinutes": {
-          "minimum": 0,
-          "type": "number"
-        },
-        "samples": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "rawMinutes",
-        "calibratedMinutes",
-        "ratio",
-        "samples"
-      ],
-      "type": "object"
-    },
-    "EtaBasis": {
-      "oneOf": [
-        {
-          "enum": [
-            "fleet"
-          ],
-          "type": "string"
-        },
-        {
-          "const": "order",
-          "description": "The scope's own measured rate.",
-          "type": "string"
-        },
-        {
-          "const": "project",
-          "description": "Too few samples in the order: the project's rate shared among its running orders.",
-          "type": "string"
-        },
-        {
-          "const": "none",
-          "description": "Too few samples anywhere: no ETA (\"measuring: 2 of 5 verified\"). Also what a basis this build doesn't know\ndecodes as.",
-          "type": "string"
-        }
-      ],
-      "x-open": true
-    },
-    "EtaSlip": {
-      "description": "`current − original`, split into what scope added and what speed lost.",
-      "properties": {
-        "scopeMinutes": {
-          "maximum": 9007199254740991,
-          "minimum": -9007199254740991,
-          "type": "integer"
-        },
-        "speedMinutes": {
-          "maximum": 9007199254740991,
-          "minimum": -9007199254740991,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "scopeMinutes",
-        "speedMinutes"
-      ],
-      "type": "object"
     },
     "EventSeq": {
       "maximum": 9007199254740991,
@@ -3882,11 +3752,6 @@
           "type": "string"
         },
         {
-          "const": "thread.stalled",
-          "description": "No progress past the stall threshold; the hub interrupts and nudges once.",
-          "type": "string"
-        },
-        {
           "const": "wake.missed",
           "description": "A wake missed while the hub was down, with catchUp \"skip\".",
           "type": "string"
@@ -3914,11 +3779,6 @@
         {
           "const": "request.updated",
           "description": "A request changed state (stored, declined, approved, running, done, failed, denied, or open again when it could\nnot run); `data` as request.opened.",
-          "type": "string"
-        },
-        {
-          "const": "digest.ready",
-          "description": "The human digest is ready; no project content, since every key sees it. Read it with digest_get. `data.at`.",
           "type": "string"
         },
         {
@@ -4287,10 +4147,6 @@
           "description": "It is the scope's critical path: the most unfinished work (its own and what waits on it) runs through it.",
           "type": "boolean"
         },
-        "eta": {
-          "$ref": "#/$defs/Timestamp",
-          "description": "Retired with the ETA: always absent."
-        },
         "gate": {
           "maxLength": 160,
           "minLength": 1,
@@ -4307,12 +4163,6 @@
           },
           "maxItems": 10,
           "type": "array"
-        },
-        "overdueMinutes": {
-          "description": "Retired with the ETA: always absent.",
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
         },
         "slowerThanUsual": {
           "description": "Past 1.5× the usual time for its current stage: flagged in Risks, never credited past 90% of the stage.",
@@ -4423,11 +4273,6 @@
             "policy_bypass",
             "override"
           ],
-          "type": "string"
-        },
-        {
-          "const": "estimate_miss",
-          "description": "Retired: fleetd no longer scores time estimates. Kept so older incidents still read.",
           "type": "string"
         },
         {
@@ -4599,43 +4444,8 @@
           "enum": [
             "full_suite_repeat",
             "repeat_no_change",
-            "failing_repeat",
-            "slow_commands",
-            "ci_check_critical",
-            "ci_reaction",
-            "slots_full",
-            "human_wait",
-            "approval_rule",
-            "usage_parks",
-            "retries",
-            "review_share",
-            "train_line",
-            "rebase_loops",
-            "first_token",
-            "startup",
-            "offline",
-            "coverage"
+            "slow_commands"
           ],
-          "type": "string"
-        },
-        {
-          "const": "queue_wait",
-          "description": "Serial waits: work that waited while capacity existed. A task queued for a slot while the fleet had free\nones (a project's max agents, the lead band), or a PR that waited out another PR's train cycle.",
-          "type": "string"
-        },
-        {
-          "const": "contention",
-          "description": "Tasks serialized on one shared resource: an area lease, or one machine's usage limit.",
-          "type": "string"
-        },
-        {
-          "const": "idle_lead",
-          "description": "A lead was idle while its running order had a plan item ready to start and slots were free.",
-          "type": "string"
-        },
-        {
-          "const": "slots_underused",
-          "description": "Two or more ready plan items of a project waited side by side for a start while slots were free.",
           "type": "string"
         }
       ],
@@ -5359,12 +5169,6 @@
         "decisions_search.output": {
           "$ref": "#/$defs/DecisionsSearchOutput"
         },
-        "digest_get.input": {
-          "$ref": "#/$defs/DigestGetInput"
-        },
-        "digest_get.output": {
-          "$ref": "#/$defs/DigestGetOutput"
-        },
         "doctor_fix.input": {
           "$ref": "#/$defs/DoctorFixInput"
         },
@@ -5793,8 +5597,6 @@
         "decisions_record.output",
         "decisions_search.input",
         "decisions_search.output",
-        "digest_get.input",
-        "digest_get.output",
         "doctor_fix.input",
         "doctor_fix.output",
         "doctor_list.input",
@@ -6008,10 +5810,6 @@
         },
         "doneAt": {
           "$ref": "#/$defs/Timestamp"
-        },
-        "eta": {
-          "$ref": "#/$defs/StatusEta",
-          "description": "Retired with the ETA: always absent."
         },
         "firstItemAt": {
           "$ref": "#/$defs/Timestamp",
@@ -6752,10 +6550,6 @@
     "PlanGetOutput": {
       "description": "A plan as `plan show` and `plan_get` return it: derived state, figures and markers.",
       "properties": {
-        "eta": {
-          "$ref": "#/$defs/StatusEta",
-          "description": "Retired with the ETA: always absent."
-        },
         "items": {
           "items": {
             "$ref": "#/$defs/PlanItem"
@@ -8547,7 +8341,7 @@
       "type": "object"
     },
     "ProjectStatusRow": {
-      "description": "One project on the Status screen: a state word, the two-tone bar, agents running and the last merge. No ETA.",
+      "description": "One project on the Status screen: a state word, the two-tone bar, agents running and the last merge.",
       "properties": {
         "agentsRunning": {
           "description": "Its lead and task sessions holding a slot now.",
@@ -9435,16 +9229,6 @@
           "type": "string"
         },
         {
-          "const": "slipping",
-          "description": "Retired with the ETA: no longer raised.",
-          "type": "string"
-        },
-        {
-          "const": "estimate_drift",
-          "description": "Retired with the ETA: no longer raised.",
-          "type": "string"
-        },
-        {
           "const": "steer_unacknowledged",
           "description": "A steer was not acknowledged, or has gone 10 minutes delivered without it.",
           "type": "string"
@@ -9501,10 +9285,6 @@
     "ScopePart": {
       "description": "A child figure: the fleet's projects, a project's milestones, an order's milestones.",
       "properties": {
-        "eta": {
-          "$ref": "#/$defs/Timestamp",
-          "description": "Retired with the ETA: always absent."
-        },
         "milestoneId": {
           "$ref": "#/$defs/MilestoneId"
         },
@@ -10114,11 +9894,6 @@
           "minimum": 0,
           "type": "integer"
         },
-        "cap": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
         "check": {
           "description": "`ci.check`: the check name and its page.",
           "maxLength": 200,
@@ -10170,12 +9945,6 @@
           "type": "integer"
         },
         "outputTokens": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "peakQueued": {
-          "description": "`slots.full`: the peak count of tasks queued for a slot, and the cap.",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
@@ -10302,11 +10071,6 @@
         {
           "const": "run.queued",
           "description": "A send waiting behind the session's active run.",
-          "type": "string"
-        },
-        {
-          "const": "slots.full",
-          "description": "The fleet's slots were all held. On the fleet lane.",
           "type": "string"
         },
         {
@@ -10480,9 +10244,6 @@
           "maxItems": 10,
           "type": "array"
         },
-        "eta": {
-          "$ref": "#/$defs/StatusEta"
-        },
         "gates": {
           "items": {
             "$ref": "#/$defs/Gate"
@@ -10588,7 +10349,6 @@
         "now",
         "progress",
         "markers",
-        "eta",
         "gates",
         "headline",
         "since",
@@ -10601,52 +10361,6 @@
         "health",
         "stale",
         "more"
-      ],
-      "type": "object"
-    },
-    "StatusEta": {
-      "description": "Retired: fleetd shows no time estimates (progress, the critical path and \"slower than usual\" instead). The hub\nsends `{ samples: 0, basis: \"none\" }` so apps from before the change still decode the doc; every other field is\nabsent.",
-      "properties": {
-        "basis": {
-          "$ref": "#/$defs/EtaBasis"
-        },
-        "chain": {
-          "description": "The serial chain that sets `current` when it is later than throughput says, e.g. \"P12 full lab run\".",
-          "maxLength": 160,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        },
-        "current": {
-          "$ref": "#/$defs/Timestamp",
-          "description": "max(throughput ETA, chain ETA)."
-        },
-        "lead": {
-          "$ref": "#/$defs/Timestamp",
-          "description": "The lead's calibrated estimate, present when it differs from `current` by more than max(1 h, 50%)."
-        },
-        "original": {
-          "$ref": "#/$defs/Timestamp",
-          "description": "The first ETA with enough samples, stored once (orders and milestones only)."
-        },
-        "rate": {
-          "description": "Points verified per busy hour.",
-          "minimum": 0,
-          "type": "number"
-        },
-        "samples": {
-          "description": "Items verified in the 7-day window behind `rate`.",
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "slip": {
-          "$ref": "#/$defs/EtaSlip"
-        }
-      },
-      "required": [
-        "samples",
-        "basis"
       ],
       "type": "object"
     },
@@ -11468,10 +11182,6 @@
         },
         "endedAt": {
           "$ref": "#/$defs/Timestamp"
-        },
-        "estimateMinutes": {
-          "minimum": 0,
-          "type": "number"
         },
         "itemId": {
           "$ref": "#/$defs/PlanItemId",
@@ -13360,10 +13070,6 @@
         "createdAt": {
           "$ref": "#/$defs/Timestamp"
         },
-        "estimateActual": {
-          "$ref": "#/$defs/WorkstreamEstimateActual",
-          "description": "Hub-filled, outside the frozen brief. Set when it starts running with a raw estimate."
-        },
         "headline": {
           "maxLength": 280,
           "pattern": "^[^\\r\\n]*$",
@@ -13418,24 +13124,6 @@
       ],
       "type": "object"
     },
-    "WorkstreamEstimateActual": {
-      "properties": {
-        "actualMinutes": {
-          "description": "Wall-clock minutes from running to done; set on done.",
-          "minimum": 0,
-          "type": "number"
-        },
-        "ratioAtStart": {
-          "description": "The tier's calibration ratio when it started running.",
-          "exclusiveMinimum": 0,
-          "type": "number"
-        }
-      },
-      "required": [
-        "ratioAtStart"
-      ],
-      "type": "object"
-    },
     "WorkstreamGetInput": {
       "properties": {
         "workstreamId": {
@@ -13464,10 +13152,6 @@
           },
           "maxItems": 50,
           "type": "array"
-        },
-        "eta": {
-          "$ref": "#/$defs/Eta",
-          "description": "Absent without a raw estimate in the brief."
         },
         "next": {
           "type": "string"

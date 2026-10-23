@@ -10,8 +10,7 @@ use serde_with::skip_serializing_none;
 
 use crate::ids::{MachineId, ProjectRef, ThreadId, Timestamp};
 use crate::prim::{
-    Count, Finite, Int, Line, List, NonEmpty, NonNegative, Positive, PositiveNumber, Text,
-    is_http_url, js_len,
+    Count, Finite, Int, Line, List, NonEmpty, Positive, PositiveNumber, Text, is_http_url, js_len,
 };
 use crate::secrets::{SecretFingerprint, SecretSink};
 use crate::usage::UsageParked;
@@ -197,13 +196,6 @@ pub enum Tier {
     L,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct Estimate {
-    pub raw_minutes: NonNegative,
-    pub gates: List<Text<1, 200>, 0, 20>,
-}
-
 // Research briefs (M9): a pre-registered baseline and a decision rule the hub applies to the judge's numbers.
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
@@ -358,7 +350,6 @@ pub struct Brief {
     pub done_when: List<CheckSpec, 1, 20>,
     pub tier: Tier,
     pub budget: Option<BriefBudget>,
-    pub estimate: Option<Estimate>,
     /// Research: what the candidate is compared against, and how both are measured.
     pub baseline: Option<Text<1, 1000>>,
     /// Research: the one number the judge reports for baseline and candidate, e.g. "p50 cold start in ms".
@@ -379,7 +370,6 @@ pub struct BriefDraft {
     pub done_when: List<CheckSpec, 1, 20>,
     pub tier: Option<Tier>,
     pub budget: Option<BriefBudget>,
-    pub estimate: Option<Estimate>,
     pub baseline: Option<Text<1, 1000>>,
     pub metric: Option<Line<1, 200>>,
     pub decision_rule: Option<DecisionRule>,
@@ -395,7 +385,6 @@ impl BriefDraft {
             done_when: self.done_when,
             tier: self.tier.unwrap_or(tier),
             budget: self.budget,
-            estimate: self.estimate,
             baseline: self.baseline,
             metric: self.metric,
             decision_rule: self.decision_rule,
@@ -441,16 +430,6 @@ pub struct WorkstreamSource {
     pub at: Timestamp,
 }
 
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkstreamEstimateActual {
-    /// Wall-clock minutes from running to done; set on done.
-    pub actual_minutes: Option<NonNegative>,
-    /// The tier's calibration ratio when it started running.
-    pub ratio_at_start: PositiveNumber,
-}
-
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkstreamParent {
@@ -471,8 +450,6 @@ pub struct Workstream {
     pub state: WorkstreamState,
     pub headline: Option<Headline>,
     pub headline_at: Option<Timestamp>,
-    /// Hub-filled, outside the frozen brief. Set when it starts running with a raw estimate.
-    pub estimate_actual: Option<WorkstreamEstimateActual>,
     /// Pinned at creation; the brief validates against this version. Absent on workstreams from before M9.
     pub playbook: Option<PlaybookRef>,
     /// M9 finish-all: the finish-all workstream that spawned this one, and the value source it was spawned for.

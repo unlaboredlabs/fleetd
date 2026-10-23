@@ -704,14 +704,8 @@ async fn the_estimate_rises_with_observed_stages_and_falls_only_with_an_explaine
         steps,
         ["review of #212", "CI on #212", "merge", "done-when checks"]
     );
-    assert!(
-        d.eta.current.is_none() && d.eta.basis == fleetd_contracts::status::EtaBasis::None,
-        "no time estimates; the retired ETA still decodes in older apps"
-    );
     let text = serde_json::to_string(&d).unwrap();
-    assert!(
-        !text.contains("p50") && !text.contains("overdueMinutes") && !text.contains("\"current\"")
-    );
+    assert!(!text.contains("p50") && !text.contains("\"eta"));
 }
 
 /// Needs you counts open requests; every event that opens or settles one must mark the status doc dirty, or a live

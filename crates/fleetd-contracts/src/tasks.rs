@@ -9,7 +9,7 @@ use crate::effort::TaskProfile;
 use crate::ids::{ProjectRef, ThreadRef, Timestamp};
 use crate::ledger::{Tier, WorkstreamId};
 use crate::prim::{
-    Count, Int, Line, List, NonEmpty, NonNegative, Positive, Text, UniqueList, is_http_url, js_len,
+    Count, Int, Line, List, NonEmpty, Positive, Text, UniqueList, is_http_url, js_len,
 };
 use crate::usage::UsageParked;
 use crate::{brand, checked};
@@ -137,7 +137,6 @@ pub struct Task {
     #[serde(default)]
     pub profile: TaskProfile,
     pub tier: Option<Tier>,
-    pub estimate_minutes: Option<NonNegative>,
     /// A review task spawned with `--qa`.
     pub qa: Option<bool>,
     /// The PR a review task reviews. Required at spawn for review; absent on hub-spawned judge tasks and older rows.

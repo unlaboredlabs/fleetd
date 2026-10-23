@@ -1,23 +1,20 @@
 //! The leads area's links into areas already on main: its ports over the executor, the write queue, node commands, the
-//! ledger and the requests; the ledger's WorkstreamLookup; its lead calls; and the human digest's feeds.
-use std::collections::HashMap;
+//! ledger and the requests; the ledger's WorkstreamLookup; and its lead calls.
 use std::sync::Arc;
 
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadId, ThreadRef};
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult};
 use fleetd_contracts::ledger::{Decision, DecisionScope, HumanRequest, RequestState, WorkstreamId};
 use fleetd_contracts::mcp::{McpToolError, ThreadLaunchInput};
-use fleetd_contracts::verification::{Claim, Eta};
+use fleetd_contracts::verification::Claim;
 
 use super::Area;
 use super::error::LeadError;
-use super::hooks::{BoxFuture, ClaimsHook, EstimatesHook};
+use super::hooks::{BoxFuture, ClaimsHook};
 use super::ports::{CmdOutcome, LeadPorts};
 use super::records::{LeadRecords, WorkstreamFilter};
 use crate::hub::approvals::store::{RequestFilter, Requests};
 use crate::hub::checks::{ClaimFilter, Claims};
-use crate::hub::digests::HumanDigests;
-use crate::hub::estimates::Estimates;
 use crate::hub::executor::{ExecutorError, Executors, LaunchInput, LaunchOptions};
 use crate::hub::ledger::{self, Chain, DecisionFilter, Decisions, LedgerCode, LedgerError};
 use crate::hub::link::commands::CommandInput;
@@ -236,19 +233,6 @@ impl ClaimsHook for ClaimsFromChecks {
     }
 }
 
-struct EstimatesFromArea(Arc<Estimates>);
-
-impl EstimatesHook for EstimatesFromArea {
-    fn eta(&self, workstream: &fleetd_contracts::ledger::Workstream) -> Option<Eta> {
-        self.0.eta(workstream).ok().flatten()
-    }
-    fn record_done(&self, workstream_id: &WorkstreamId) {
-        if let Err(error) = self.0.record_done(workstream_id) {
-            tracing::warn!(%error, "estimate not recorded");
-        }
-    }
-}
-
 struct Calls(Arc<Area>);
 
 impl LeadCallHandler for Calls {
@@ -270,9 +254,7 @@ pub struct Links<'a> {
     pub requests: &'a Arc<Requests>,
     pub decisions: &'a Arc<Decisions>,
     pub lead_calls: &'a LeadCalls,
-    pub digests: &'a HumanDigests,
     pub claims: &'a Arc<Claims>,
-    pub estimates: &'a Arc<Estimates>,
 }
 
 const OUTCOME_WORKSTREAMS: usize = 20;
@@ -331,11 +313,6 @@ pub fn wire_area(area: &Arc<Area>, links: Links<'_>) {
         .hooks
         .claims
         .set(Arc::new(ClaimsFromChecks(Arc::clone(links.claims))));
-    let _ = area
-        .ctx
-        .hooks
-        .estimates
-        .set(Arc::new(EstimatesFromArea(Arc::clone(links.estimates))));
     links
         .decisions
         .set_workstreams(Arc::new(Lookup(Arc::clone(&area.records))));
@@ -343,29 +320,4 @@ pub fn wire_area(area: &Arc<Area>, links: Links<'_>) {
     for op in super::calls::OPS {
         links.lead_calls.register(op, Arc::clone(&calls));
     }
-    let (records, wakes) = (Arc::clone(&area.records), Arc::clone(&area.wakes));
-    links.digests.feed(move |f| {
-        f.workstreams = Some(Box::new(move |limit| {
-            records
-                .workstreams_list(&WorkstreamFilter {
-                    limit: limit.max(0) as usize,
-                    ..Default::default()
-                })
-                .unwrap_or_default()
-        }));
-        f.facts = Some(Box::new(move |workstreams| {
-            wakes
-                .workstream_facts(workstreams)
-                .into_iter()
-                .map(|(id, facts)| {
-                    (
-                        id.to_string(),
-                        crate::hub::ledger::digest_text::WorkstreamFacts {
-                            passed: facts.passed.len(),
-                        },
-                    )
-                })
-                .collect::<HashMap<_, _>>()
-        }));
-    });
 }

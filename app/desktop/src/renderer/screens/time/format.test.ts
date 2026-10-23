@@ -99,6 +99,6 @@ describe("insight text", () => {
     ];
     expect(compareLine(now, before)).toBe("runs 22 → 9 · total 51m → 19m");
     expect(compareLine(now.slice(0, 1), [])).toBe("runs 0 → 9");
-    expect(compareLine([{ name: "noEdit", value: 5 }, { name: "peakQueued", value: 3 }], [])).toBe("no edit 0 → 5 · peak queued 0 → 3");
+    expect(compareLine([{ name: "noEdit", value: 5 }, { name: "runs", value: 3 }], [])).toBe("no edit 0 → 5 · runs 0 → 3");
   });
 });

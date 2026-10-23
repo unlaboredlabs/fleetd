@@ -49,8 +49,6 @@ export const MECHANICS = "medium" as const;
 // Texts the binary emits that scenarios match on; each mirrors a constant in crates/fleetd.
 /** `hub/playbooks/finish_all_rules.rs` FINISH_ALL_IDLE. */
 export const FINISH_ALL_IDLE = "finish-all: nothing left with a value source";
-/** `hub/watchdog/ladder.rs` NUDGE (`assets/fixed/watchdog.nudge.md`, less its trailing newline). */
-export const NUDGE = "You seem stalled; continue the task from where you stopped.";
 
 /** The hub's offline-queue TTL in lab runs, short enough for the expiry check to wait it out. */
 export const QUEUE_TTL_SEC = 40;

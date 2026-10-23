@@ -13,10 +13,10 @@ use fleetd_contracts::node_link::NodeLoad;
 use fleetd_contracts::plan::{PlanItemId, PlanItemState, Size, Weight};
 use fleetd_contracts::prim::{Count, Int, Line, List, Text};
 use fleetd_contracts::status::{
-    CiState, DoneRow, EtaBasis, Gate, GateKind, Headline, HeadlineFacts, HeadlineSource, Health,
-    HealthCi, HealthMachine, HealthSlots, HealthUsage, InProgressRow, Marker, MoreCounts, NeedsYou,
-    NextRow, Progress, ScopePart, SleptAt, SlotUtilization, StaleMark, StaleSource, StatusDoc,
-    StatusEta, StatusScope, StatusSteer,
+    CiState, DoneRow, Gate, GateKind, Headline, HeadlineFacts, HeadlineSource, Health, HealthCi,
+    HealthMachine, HealthSlots, HealthUsage, InProgressRow, Marker, MoreCounts, NeedsYou, NextRow,
+    Progress, ScopePart, SleptAt, SlotUtilization, StaleMark, StaleSource, StatusDoc, StatusScope,
+    StatusSteer,
 };
 use fleetd_contracts::tasks::{SlotState, TaskId};
 use fleetd_contracts::train::{ChangeId, ChangeState, GitHubRepo};
@@ -32,7 +32,7 @@ use crate::hub::plan::{self, clip, figure_of, marker_of, parse_ms, progress_of};
 use crate::hub::store::iso_ms;
 
 pub(super) const DAY_MS: i64 = 24 * 3_600_000;
-/// Done plan items and estimate rows are read this far back.
+/// Done plan items are read this far back.
 const WINDOW_MS: i64 = 7 * DAY_MS;
 
 /// An order the view counts: open, or done in the last day.
@@ -51,15 +51,6 @@ impl Order {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct EstRow {
-    pub ws: String,
-    pub pkey: String,
-    pub tier: Size,
-    pub started_ms: i64,
-    pub done_ms: Option<i64>,
-}
-
 /// One read of everything a doc needs, shared by the scopes rendered in one pass.
 pub struct World {
     pub now: i64,
@@ -76,7 +67,6 @@ pub struct World {
     pub slot_use: crate::hub::slots::usage::Utilization,
     /// Open secret and approval requests: what waits on the person.
     pub requests: Vec<HumanRequest>,
-    pub estimates: Vec<EstRow>,
     /// The last day's events of the types risks and health read: (type, stored JSON).
     pub recent: Vec<(String, Value)>,
     pub titles: HashMap<String, String>,
@@ -129,29 +119,6 @@ fn order_rows(c: &Connection, since_iso: &str) -> rusqlite::Result<Vec<Order>> {
     Ok(out)
 }
 
-fn estimate_rows(c: &Connection, from_ms: i64) -> rusqlite::Result<Vec<EstRow>> {
-    let mut stmt = c.prepare_cached(
-        "SELECT e.workstream_id, e.tier, e.started_ms, e.done_ms, w.machine_id || '/' || w.project_id
-         FROM estimates e JOIN workstreams w ON w.n = CAST(substr(e.workstream_id, 2) AS INTEGER)
-         WHERE e.done_ms IS NULL OR e.done_ms >= ?",
-    )?;
-    stmt.query_map([from_ms], |r| {
-        let tier: String = r.get(1)?;
-        Ok(EstRow {
-            ws: r.get(0)?,
-            tier: match tier.as_str() {
-                "S" => Size::S,
-                "L" => Size::L,
-                _ => Size::M,
-            },
-            started_ms: r.get(2)?,
-            done_ms: r.get(3)?,
-            pkey: r.get(4)?,
-        })
-    })?
-    .collect()
-}
-
 const RECENT_TYPES: [&str; 12] = [
     "machine.offline",
     "machine.slept",
@@ -199,7 +166,7 @@ impl World {
         let since_iso = iso_ms(now - DAY_MS);
         // Bounded reads: open and recent plan items, Changes only as repos (plus the few the last day's CI failures
         // name), so a render costs the same after months of history.
-        let (orders, items, milestones, markers, estimates, recent, change_repos, placeholders) =
+        let (orders, items, milestones, markers, recent, change_repos, placeholders) =
             hub.db.with(|c| {
                 let mut change_repos: HashMap<String, HashSet<String>> = HashMap::new();
                 for row in c
@@ -222,7 +189,6 @@ impl World {
                     plan::store::items_live(c, now - WINDOW_MS)?,
                     plan::store::milestones_all(c)?,
                     plan::store::changes_all(c, 200)?,
-                    estimate_rows(c, now - WINDOW_MS)?,
                     recent_events(c, now - DAY_MS)?,
                     change_repos,
                     placeholders,
@@ -314,7 +280,6 @@ impl World {
             slots: hub.slots.state(),
             slot_use: hub.slots.utilization(),
             requests,
-            estimates,
             recent,
             titles,
             repos,
@@ -574,20 +539,6 @@ fn figure(w: &World, s: &Scope<'_>, virtuals: &[&Order]) -> Figure {
     f
 }
 
-/// What a doc sends for the retired ETA: enough for apps from before the change to decode it, nothing else.
-fn retired_eta() -> StatusEta {
-    StatusEta {
-        current: None,
-        original: None,
-        slip: None,
-        lead: None,
-        rate: None,
-        samples: Count::unchecked(0),
-        basis: EtaBasis::None,
-        chain: None,
-    }
-}
-
 pub(super) fn machine_stale(m: &Machine, now: i64, tz: Tz) -> Option<StaleMark> {
     if m.status != MachineStatus::Offline {
         return None;
@@ -695,7 +646,7 @@ pub fn stale_clause(doc: &StatusDoc, tz: Tz) -> String {
 pub struct Rendered {
     pub doc: StatusDoc,
     pub facts: HeadlineFacts,
-    /// The earliest time this doc changes without an event (a usage reset, an item ETA, a risk threshold).
+    /// The earliest time this doc changes without an event (a usage reset, a risk threshold).
     pub wake_at: Option<i64>,
 }
 
@@ -815,8 +766,6 @@ pub fn render(
             medium_task_ids: None,
             change_ids: List::default(),
             gate: None,
-            eta: None,
-            overdue_minutes: None,
             stale: None,
             steers: None,
             stage: p.map(|p| p.stage),
@@ -1126,8 +1075,6 @@ pub fn render(
                         )
                         .0,
                         gate: ws.and_then(gate_of).map(|g| line(&g)),
-                        eta: None,
-                        overdue_minutes: None,
                         stale: ws.and_then(order_stale),
                         steers: None,
                         ..unit_fields(super::model::UnitKey::Item(i.n), &after_titles(i))
@@ -1178,8 +1125,6 @@ pub fn render(
                 change_ids: capped::<_, 10>(changes.into_iter().map(ChangeId::unchecked).collect())
                     .0,
                 gate: gate_of(o.id()).map(|g| line(&g)),
-                eta: None,
-                overdue_minutes: None,
                 stale: order_stale(o.id()),
                 steers: None,
                 ..unit_fields(super::model::UnitKey::Order(o.id().to_owned()), &[])
@@ -1309,8 +1254,8 @@ pub fn render(
         wake.at(t + risks::SLOTS_FULL_MS);
     }
     for o in &virtuals {
-        if let Some(e) = w.estimates.iter().find(|e| e.ws == o.id()) {
-            wake.at(e.started_ms + risks::NO_PLAN_MS);
+        if let Some(created) = parse_ms(o.w.created_at.as_str()) {
+            wake.at(created + risks::NO_PLAN_MS);
         }
     }
     for a in &requests {
@@ -1447,12 +1392,7 @@ pub fn render(
             .iter()
             .filter(|o| o.w.state != WorkstreamState::Done)
             .filter_map(|o| {
-                let started = w
-                    .estimates
-                    .iter()
-                    .find(|e| e.ws == o.id())
-                    .map(|e| e.started_ms)
-                    .or_else(|| parse_ms(o.w.created_at.as_str()))?;
+                let started = parse_ms(o.w.created_at.as_str())?;
                 Some((o.id().to_owned(), format!("{:?}", o.tier()), now - started))
             })
             .collect(),
@@ -1509,7 +1449,6 @@ pub fn render(
                     }),
                     milestone_id: None,
                     progress,
-                    eta: None,
                 });
             }
         }
@@ -1538,7 +1477,6 @@ pub fn render(
                         m.n
                     ))),
                     progress: progress_of(&figure_of(&mine), now, marker),
-                    eta: None,
                 });
             }
         }
@@ -1610,7 +1548,6 @@ pub fn render(
         now: ts(now),
         progress,
         markers: capped::<_, 3>(markers).0,
-        eta: retired_eta(),
         gates: List::try_from(gates).unwrap_or_default(),
         headline: Headline {
             text: line("…"),
@@ -1749,11 +1686,11 @@ mod tests {
         let long = |n: usize| "x".repeat(n);
         let stale = json!({ "since": "2026-10-18T10:00:00.000Z", "reason": long(200) });
         let row = json!({ "itemId": "P1", "workstreamId": "W1", "title": long(120), "taskIds": ["T1", "T2"],
-            "changeIds": ["X1"], "gate": long(160), "eta": "2026-10-18T10:00:00.000Z", "stale": stale });
+            "changeIds": ["X1"], "gate": long(160), "stale": stale });
         let progress = json!({ "pct": 50, "done": 1, "total": 2, "polishDone": 0, "polishTotal": 0, "asOf": "2026-10-18T10:00:00.000Z", "stale": stale });
         let doc = json!({
             "scope": { "kind": "fleet" }, "title": "Fleet", "version": 1, "seq": 1, "now": "2026-10-18T10:00:00.000Z",
-            "progress": progress, "markers": [], "eta": { "samples": 0, "basis": "none" }, "gates": [],
+            "progress": progress, "markers": [], "gates": [],
             "headline": { "text": long(400), "source": "template", "at": "2026-10-18T10:00:00.000Z" },
             "since": { "merged": 0, "verified": 0, "started": 0, "failed": 0, "scopeItems": 0 },
             "parts": vec![json!({ "title": long(120), "progress": progress }); 20],

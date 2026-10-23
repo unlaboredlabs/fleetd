@@ -58,9 +58,6 @@ pub enum HubEventType {
     ThreadWaiting,
     #[serde(rename = "thread.usage_limited")]
     ThreadUsageLimited,
-    /// No progress past the stall threshold; the hub interrupts and nudges once.
-    #[serde(rename = "thread.stalled")]
-    ThreadStalled,
     #[serde(rename = "wake.fired")]
     WakeFired,
     /// A wake missed while the hub was down, with catchUp "skip".
@@ -92,9 +89,6 @@ pub enum HubEventType {
     LeadStarted,
     #[serde(rename = "lead.woken")]
     LeadWoken,
-    /// The human digest is ready; no project content, since every key sees it. Read it with digest_get. `data.at`.
-    #[serde(rename = "digest.ready")]
-    DigestReady,
     /// `data.queuedReason`.
     #[serde(rename = "task.queued")]
     TaskQueued,
@@ -252,7 +246,6 @@ impl HubEventType {
             Self::ThreadInterrupted => "thread.interrupted",
             Self::ThreadWaiting => "thread.waiting",
             Self::ThreadUsageLimited => "thread.usage_limited",
-            Self::ThreadStalled => "thread.stalled",
             Self::WakeFired => "wake.fired",
             Self::WakeMissed => "wake.missed",
             Self::WriteDelivered => "write.delivered",
@@ -265,7 +258,6 @@ impl HubEventType {
             Self::DecisionRecorded => "decision.recorded",
             Self::LeadStarted => "lead.started",
             Self::LeadWoken => "lead.woken",
-            Self::DigestReady => "digest.ready",
             Self::TaskQueued => "task.queued",
             Self::TaskStarted => "task.started",
             Self::TaskCompleted => "task.completed",

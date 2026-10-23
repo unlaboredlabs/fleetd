@@ -2,8 +2,7 @@
 //! `Hub`. Built before the `Hub` exists (the services that hold it go into the `Hub`), so it is bound right after.
 //! Before `bind` (or after the hub is dropped) each answers as if there were nothing.
 use super::ports::{
-    BoxFuture, ClaimWake, CommandRun, HumanConfirmation, JudgeSpawn, PlaybookLimits, Ports,
-    Refusal, invalid,
+    BoxFuture, ClaimWake, CommandRun, HumanConfirmation, JudgeSpawn, Ports, Refusal, invalid,
 };
 use super::{JUDGE_BY, render};
 use crate::hub::api::Hub;
@@ -16,8 +15,8 @@ use crate::hub::tasks::{TaskCaller, TaskFilter};
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef};
 use fleetd_contracts::lead_calls::TaskSpawnCall;
 use fleetd_contracts::ledger::{
-    Decision, DecisionId, DecisionKey, DecisionScope, DecisionState, MetricValues, PlaybookRef,
-    Workstream, WorkstreamId,
+    Decision, DecisionId, DecisionKey, DecisionScope, DecisionState, MetricValues, Workstream,
+    WorkstreamId,
 };
 use fleetd_contracts::model::ActionItem;
 use fleetd_contracts::prim::{Line, Text};
@@ -130,13 +129,6 @@ impl Ports for HubPorts {
         let summary = self.hub()?.store.project_get(project).ok()??;
         Some(summary.workspace_root)
     }
-    fn playbook_limits(&self, playbook: &PlaybookRef) -> Option<PlaybookLimits> {
-        let loaded = self.hub()?.leads.playbooks.by_ref(playbook);
-        let p = logged(loaded, "reading a playbook")??.playbook;
-        Some(PlaybookLimits {
-            estimate_prior: p.estimate_prior.get(),
-        })
-    }
     fn research_verdict<'a>(
         &'a self,
         workstream: &'a WorkstreamId,
@@ -199,7 +191,6 @@ impl Ports for HubPorts {
                 areas: wire(Vec::<String>::new())?,
                 profile: None,
                 tier: None,
-                estimate_minutes: None,
                 pr: None,
                 qa: None,
                 item: None,
