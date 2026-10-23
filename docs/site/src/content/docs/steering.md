@@ -24,7 +24,8 @@ the same message starts its next turn instead.
 
 To stop the running step and deliver at once, press ⌘Enter (Ctrl+Enter on Linux and Windows) instead. The box shows
 "⌘↩ stops its step and sends now" while that works: the lead is at work on a task you gave it. Otherwise ⌘Enter sends
-as Enter does. The steer's [receipt](#receipts) shows above the box.
+as Enter does. The steer stays in the chat at the time you sent it, with its [receipt](#receipts) under your words.
+So does a steer you send the lead from a terminal.
 
 ### What "next step" means {#next-step}
 
@@ -45,7 +46,7 @@ Each steer gets a receipt. In the app it shows beside your words; from a termina
 |---|---|
 | queued | fleetd has it; the agent hasn't taken it in yet. You can still withdraw it. |
 | delivered | The agent took it in. The receipt says how: a new turn, after the running tool, or by stopping that tool. |
-| acknowledged | The agent replied after taking it in, saying what it will do. The receipt quotes it. |
+| acknowledged | The agent replied after taking it in, saying what it will do. Under an agent's box, the receipt quotes it. |
 | not acknowledged | The agent's turn ended without a reply after taking it in. |
 | withdrawn | You took it back before the agent saw it. |
 | failed | It couldn't be delivered. The receipt says why. |
