@@ -26,6 +26,9 @@ export const resized = (s: SidebarState, narrow: boolean): SidebarState => (narr
 
 const narrowQuery = () => window.matchMedia(`(max-width: ${String(NARROW_PX - 1)}px)`);
 
+/** The width as it is now: a resize's change event can arrive after a toggle or a link in the same frame. */
+const now = (s: SidebarState): SidebarState => resized(s, narrowQuery().matches);
+
 /** A media query, not a resize listener: it fires only when the width crosses. */
 function useSideState(hiddenWide: boolean) {
   const [state, setState] = useState<SidebarState>(() => ({ narrow: narrowQuery().matches, hiddenWide, shownNarrow: false }));
@@ -41,7 +44,7 @@ function useSideState(hiddenWide: boolean) {
 /** The sidebar's visibility and its toggle. */
 export function useSidebar(): { hidden: boolean; toggle: () => void } {
   const [state, setState] = useSideState(false);
-  const toggle = useCallback(() => setState(toggled), [setState]);
+  const toggle = useCallback(() => setState((s) => toggled(now(s))), [setState]);
   return { hidden: sidebarHidden(state), toggle };
 }
 
@@ -51,7 +54,6 @@ export interface PanelState {
   readonly tab: PanelTab;
   readonly toggle: () => void;
   readonly show: (tab: PanelTab) => void;
-  readonly hide: () => void;
 }
 
 const PANEL = "fleetd.panel";
@@ -85,14 +87,13 @@ export function usePanel(): PanelState {
       // Without storage it opens closed next launch; nothing else depends on it.
     }
   }, [state.hiddenWide, tab]);
-  const toggle = useCallback(() => setState(toggled), [setState]);
+  const toggle = useCallback(() => setState((s) => toggled(now(s))), [setState]);
   const show = useCallback(
     (next: PanelTab) => {
       setTab(next);
-      setState((s) => withHidden(s, false));
+      setState((s) => withHidden(now(s), false));
     },
     [setState],
   );
-  const hide = useCallback(() => setState((s) => withHidden(s, true)), [setState]);
-  return { hidden: sidebarHidden(state), tab, toggle, show, hide };
+  return { hidden: sidebarHidden(state), tab, toggle, show };
 }
