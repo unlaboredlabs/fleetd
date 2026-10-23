@@ -5,8 +5,9 @@
 fleetd is one Cargo workspace and the desktop app. The shipped `fleetd` is one static binary with no Node in it.
 
 - `crates/fleetd`: the binary. `hub/` holds the MCP endpoint, app socket, leads, merge train, ledger and the rest;
-  `node/` is the per-machine sidecar that runs the agents; `cli/` is setup, `update` and the lead-side commands. The
-  hub's SQLite schema matches the TypeScript fleetd it replaced, so an older hub's database opens unchanged.
+  `node/` is the per-machine sidecar that runs the agents; `cli/` is setup, `update`, the human commands and
+  `agent-mcp`, the agents' tools. The hub's SQLite schema matches the TypeScript fleetd it replaced, so an older hub's
+  database opens unchanged.
 - `crates/fleetd/src/node/runner`: drives the `claude` CLI over stream-json. Claude's stream-json output is not a
   stable public API, so the runner accepts a pinned `claude` version range, and fixture tests
   (`runner/fixtures/claude-<version>-*.jsonl`) hold it to recorded output. Widening the range may mean

@@ -1,15 +1,16 @@
 //! `fleetd agent-mcp --role lead|worker`: the MCP server (stdio, one JSON-RPC message per line) the node puts in every
-//! lead's and task's `--mcp-config`. Each tool is one lead-side call, sent through the node's socket exactly as the
-//! CLI sends it, with the session's `FLEETD_THREAD_ID`; the hub decides who may make it (`hub/tasks/policy.rs`). The
+//! lead's and task's `--mcp-config`. Each tool is one lead-side call, sent through the node's socket with the session's
+//! `FLEETD_THREAD_ID`; the hub decides who may make it (`hub/tasks/policy.rs`). The
 //! role only picks which tools are listed. Results that take time (a task's result, an answer, an approval) arrive
 //! in a later wake, never by polling.
-use std::io::{BufRead, Write};
-use std::path::Path;
-use std::time::Duration;
+use std::io::{BufRead, BufReader, Write};
+use std::os::unix::net::UnixStream;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use fleetd_contracts::lead_calls::{
     AskLeadCall, BriefCreateCall, ChangeEnqueueCall, CloseCall, DecideCall, DecisionsSearchCall,
-    GatedRunCall, LeadCall, RequestSecretCall, RequestWithdrawCall, TaskCancelCall, TaskListCall,
+    GatedRunCall, LeadCall, LeadSocketFrame, RequestSecretCall, RequestWithdrawCall, TaskCancelCall, TaskListCall,
     TaskMessageCall, TaskSpawnCall, TaskStatusCall, WorkstreamOpenCall,
 };
 use fleetd_contracts::plan::{
@@ -18,8 +19,6 @@ use fleetd_contracts::plan::{
 use fleetd_contracts::schema::inline_schema;
 use fleetd_contracts::verification::ReviewVerdict;
 use serde_json::{Value, json};
-
-use super::lead::{LeadDeps, env_deps, send_call, send_to_node};
 
 const PROTOCOL_VERSION: &str = "2025-06-18";
 
@@ -287,6 +286,144 @@ fn error_result(text: &str) -> Value {
     json!({ "content": [{ "type": "text", "text": text }], "isError": true })
 }
 
+/// Under the fleetd dir.
+pub const NODE_SOCKET_PATH: &str = "node/node.sock";
+
+/// `path.normalize` for an absolute path: `.` and `..` resolved lexically, a trailing slash kept.
+fn normalize(path: &str) -> String {
+    let mut parts: Vec<&str> = Vec::new();
+    for part in path.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => {
+                parts.pop();
+            }
+            part => parts.push(part),
+        }
+    }
+    let mut out = format!("/{}", parts.join("/"));
+    if path.ends_with('/') && out != "/" {
+        out.push('/');
+    }
+    out
+}
+
+/// The working directory as the caller's shell names it. The node keeps workspace roots as written, symlinks included,
+/// and starts agents there, so the shell's logical `PWD` matches a root where the kernel's resolved path may not.
+pub fn caller_cwd(pwd: Option<&str>, physical: &Path) -> String {
+    let physical_text = physical.to_string_lossy().into_owned();
+    let Some(logical) = pwd.filter(|p| p.starts_with('/')) else {
+        return physical_text;
+    };
+    match (
+        std::fs::canonicalize(logical),
+        std::fs::canonicalize(physical),
+    ) {
+        (Ok(a), Ok(b)) if a == b => normalize(logical),
+        _ => physical_text,
+    }
+}
+
+pub fn node_socket_path(env_sock: Option<&str>) -> PathBuf {
+    match env_sock.filter(|s| !s.is_empty()) {
+        Some(sock) => PathBuf::from(sock),
+        None => crate::home::fleetd_dir().join(NODE_SOCKET_PATH),
+    }
+}
+
+/// One frame out, one frame back over the node's socket. The node answers within ~35 s; `timeout` is a backstop.
+/// `Err` is why the node could not be asked or did not answer.
+pub fn send_to_node(socket: &Path, frame: &Value, timeout: Duration) -> Result<Value, String> {
+    let shown = socket.display();
+    let mut conn = UnixStream::connect(socket).map_err(|error| match error.kind() {
+        std::io::ErrorKind::NotFound | std::io::ErrorKind::ConnectionRefused => format!(
+            "fleetd hub unreachable: no fleetd node is listening at {shown} (set FLEETD_NODE_SOCK if it is elsewhere) — tell the human the node is down and carry on"
+        ),
+        _ => format!("cannot reach the fleetd node at {shown}: {error}"),
+    })?;
+    let started = Instant::now();
+    let timed_out = || {
+        format!(
+            "the fleetd node did not answer within {} s; the call may or may not have gone through — try again shortly",
+            timeout.as_secs()
+        )
+    };
+    conn.write_all(format!("{frame}\n").as_bytes())
+        .map_err(|error| format!("cannot reach the fleetd node at {shown}: {error}"))?;
+    conn.set_read_timeout(Some(
+        timeout
+            .saturating_sub(started.elapsed())
+            .max(Duration::from_millis(1)),
+    ))
+    .map_err(|error| format!("cannot reach the fleetd node at {shown}: {error}"))?;
+    let mut line = String::new();
+    match BufReader::new(conn).read_line(&mut line) {
+        Ok(_) if line.ends_with('\n') => {}
+        Ok(_) => {
+            return Err(
+                "the fleetd node closed the connection without answering — try again shortly"
+                    .into(),
+            );
+        }
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+            ) =>
+        {
+            return Err(timed_out());
+        }
+        Err(error) => return Err(format!("cannot reach the fleetd node at {shown}: {error}")),
+    }
+    decode_result_frame(line.trim_end_matches('\n'))
+        .ok_or_else(|| "the fleetd node sent an answer this CLI cannot read; check that node and CLI versions match".to_owned())
+}
+
+/// The node's answer, checked against the contract (a `lead_result` with exactly one of result and error).
+fn decode_result_frame(line: &str) -> Option<Value> {
+    match serde_json::from_str::<LeadSocketFrame>(line).ok()? {
+        LeadSocketFrame::LeadResult(_) => serde_json::from_str(line).ok(),
+        LeadSocketFrame::LeadCall(_) => None,
+    }
+}
+
+/// Where the server runs and how it reaches the node; tests swap `send`.
+pub struct LeadDeps<'a> {
+    pub pwd: Option<String>,
+    pub sock: Option<String>,
+    /// `FLEETD_THREAD_ID`: set inside a fleetd session, so the hub knows which agent is calling.
+    pub thread: Option<String>,
+    pub cwd: PathBuf,
+    pub send: &'a dyn Fn(&Path, &Value) -> Result<Value, String>,
+}
+
+/// One lead call (`{"op": …, …}`) to the hub through the node; the answer frame, or why the node could not be asked.
+pub fn send_call(call: Value, deps: &LeadDeps) -> Result<Value, String> {
+    let mut frame = json!({
+        "t": "lead_call",
+        "id": format!("cli-{}", std::process::id()),
+        "cwd": caller_cwd(deps.pwd.as_deref(), &deps.cwd),
+        "call": call,
+    });
+    if let Some(thread) = deps.thread.as_deref().filter(|t| !t.is_empty()) {
+        frame["threadId"] = thread.into();
+    }
+    (deps.send)(&node_socket_path(deps.sock.as_deref()), &frame)
+}
+
+/// The real process's [`LeadDeps`].
+pub fn env_deps<'a>(
+    send: &'a dyn Fn(&Path, &Value) -> Result<Value, String>,
+) -> LeadDeps<'a> {
+    LeadDeps {
+        pwd: std::env::var("PWD").ok(),
+        sock: std::env::var("FLEETD_NODE_SOCK").ok(),
+        thread: std::env::var("FLEETD_THREAD_ID").ok(),
+        cwd: std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/")),
+        send,
+    }
+}
+
 /// One JSON-RPC message in, its answer out (`None` for a notification).
 pub fn handle(role: Role, message: &Value, deps: &LeadDeps) -> Option<Value> {
     let id = message.get("id")?.clone();
@@ -334,8 +471,7 @@ pub fn run(argv: &[String]) -> u8 {
         }
     };
     let send = |socket: &Path, frame: &Value| send_to_node(socket, frame, Duration::from_secs(60));
-    let read_file = |file: &str| std::fs::read_to_string(file);
-    let deps = env_deps(&send, &read_file);
+    let deps = env_deps(&send);
     let stdin = std::io::stdin();
     let mut stdout = std::io::stdout();
     for line in stdin.lock().lines() {
@@ -455,14 +591,12 @@ mod tests {
                 "code": "forbidden", "message": "T3 is a task, and a task's agent can't start agents.",
                 "fix": "Do this work yourself." } }))
         };
-        let read_file = |_: &str| Err(std::io::Error::other("no file"));
         let deps = LeadDeps {
             pwd: None,
             sock: Some("/n.sock".into()),
             thread: Some("s1".into()),
             cwd: "/work/p".into(),
             send: &send,
-            read_file: &read_file,
         };
         let message = json!({ "jsonrpc": "2.0", "id": 7, "method": "tools/call",
             "params": { "name": "ask_lead", "arguments": { "question": "Which DB?" } } });
@@ -482,5 +616,60 @@ mod tests {
             )
             .is_none()
         );
+    }
+
+    #[test]
+    fn talks_to_a_node_socket_and_says_when_none_listens() {
+        let dir = std::env::temp_dir().join(format!("fleetd-cli-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let socket = dir.join("node.sock");
+        let _ = std::fs::remove_file(&socket);
+        let down = send_to_node(&socket, &json!({}), Duration::from_secs(5)).unwrap_err();
+        assert!(down.starts_with(&format!(
+            "fleetd hub unreachable: no fleetd node is listening at {}",
+            socket.display()
+        )));
+
+        let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+        let server = std::thread::spawn(move || {
+            let (conn, _) = listener.accept().unwrap();
+            let mut line = String::new();
+            BufReader::new(&conn).read_line(&mut line).unwrap();
+            let frame: Value = serde_json::from_str(&line).unwrap();
+            let answer = json!({ "t": "lead_result", "id": frame["id"], "result": { "op": "decisions_search", "decisions": [] } });
+            (&conn).write_all(format!("{answer}\n").as_bytes()).unwrap();
+            frame
+        });
+        let frame = json!({ "t": "lead_call", "id": "cli-1", "cwd": "/w", "call": { "op": "decisions_search", "query": "health" } });
+        let answer = send_to_node(&socket, &frame, Duration::from_secs(5)).unwrap();
+        assert_eq!(server.join().unwrap(), frame);
+        assert_eq!(answer["result"]["op"], "decisions_search");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn caller_cwd_keeps_the_shells_logical_path() {
+        let dir = std::env::temp_dir().join(format!("fleetd-cwd-{}", std::process::id()));
+        let real = dir.join("real");
+        let link = dir.join("link");
+        std::fs::create_dir_all(real.join("src")).unwrap();
+        let _ = std::os::unix::fs::symlink(&real, &link);
+        let real_src = std::fs::canonicalize(real.join("src")).unwrap();
+        let link_src = format!("{}/src", link.display());
+        assert_eq!(caller_cwd(Some(&link_src), &real_src), link_src);
+        assert_eq!(
+            caller_cwd(Some(&format!("{}/./src/", link.display())), &real_src),
+            format!("{link_src}/")
+        );
+        assert_eq!(caller_cwd(None, &real_src), real_src.display().to_string());
+        assert_eq!(
+            caller_cwd(Some("link"), &real_src),
+            real_src.display().to_string()
+        );
+        assert_eq!(
+            caller_cwd(Some(&link.display().to_string()), &real_src),
+            real_src.display().to_string()
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

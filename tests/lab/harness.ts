@@ -1,7 +1,7 @@
 // Shared plumbing for the lab scenarios (`npm run lab`): process control by captured PID, a real MCP client, the
 // lab machines (each a `fleetd node` with its own HOME, so its own ~/.fleetd and Claude config dir), and helpers that
 // wait on hub events instead of sleeping. Never used in CI.
-import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { execFileSync, spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -591,19 +591,32 @@ export const chatOrder = async (
 };
 
 /**
- * A workstream opened from the project's shell as its lead would (`fleetd workstream open`), for an order whose brief
+ * A workstream opened as its lead would (`workstream_open`), for an order whose brief
  * and agents the harness sets up itself. No lead turn: the opener already knows.
  */
-export const openWorkstream = (
-  check: Lab["check"],
-  fleetd: (...args: Array<string>) => { readonly code: number | null; readonly stdout: string; readonly stderr: string },
-  text: string,
-  template?: string,
-) => {
-  const out = fleetd("workstream", "open", "--text", text, ...(template === undefined ? [] : ["--template", template]));
-  const w = /\bOpened (W\d+)/u.exec(out.stdout)?.[1];
-  check(out.code === 0 && w, `fleetd workstream open: ${JSON.stringify(out)}`);
-  return w!;
+export const openWorkstream = (check: Lab["check"], lead: Lead, text: string, template?: string) => {
+  const out = lead("workstream_open", { text, ...(template === undefined ? {} : { template }) });
+  const w = out.result?.workstreamId;
+  check(out.code === 0 && typeof w === "string", `workstream_open: ${JSON.stringify(out)}`);
+  return w as string;
+};
+
+/** A lead tool's answer: code 0 ok, 2 invalid arguments, 3 refused by the hub, 4 the node or hub unreachable. */
+export type LeadOut = { readonly code: number; readonly text: string; readonly result?: Record<string, any> };
+export type Lead = (name: string, args: Record<string, unknown>) => LeadOut;
+
+/**
+ * Calls fleetd's tools as a lead in `cwd` does: one `tools/call` to `fleetd agent-mcp --role lead`, which sends it
+ * through the node's socket (`env` names it with FLEETD_NODE_SOCK; FLEETD_THREAD_ID names the calling session).
+ */
+export const leadIn = (cwd: string, env: NodeJS.ProcessEnv): Lead => (name, args) => {
+  const call = { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } };
+  const out = spawnSync(...fleetdCommand(["agent-mcp", "--role", "lead"]), { cwd, encoding: "utf8", env: { ...env, PWD: cwd }, input: `${JSON.stringify(call)}\n` });
+  const line = out.stdout.split("\n")[0] ?? "";
+  const answer = line === "" ? undefined : JSON.parse(line).result;
+  const text: string = answer?.content?.[0]?.text ?? `${out.stdout}${out.stderr}`;
+  if (answer !== undefined && !answer.isError) return { code: 0, text, result: JSON.parse(text) };
+  return { code: text.startsWith("Refused: ") ? 3 : text.startsWith("Invalid arguments") ? 2 : 4, text };
 };
 
 /**

@@ -13,7 +13,7 @@ import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import { type Body, callToolWith, fleetdCommand, type Lab, nodeSock, scrubbedEnv, userMessages } from "./harness.ts";
+import { type Body, callToolWith, fleetdCommand, type Lab, leadIn, nodeSock, scrubbedEnv, userMessages } from "./harness.ts";
 
 const MACHINE = "lab-a";
 /** Opus only (labs included); medium, as this lead only asks a question and counts. */
@@ -154,13 +154,9 @@ export async function chatCli(lab: Lab) {
 
   // 5. The agent can't approve a command; the person can still answer it.
   const root = lab.machines.find((m) => m.id === MACHINE)!.repo;
-  const gated = spawnSync(...fleetdCommand(["gated", "run", "--class", "irreversible", "--argv", '["true"]', "--reason", "chat cli lab"]), {
-    cwd: root,
-    encoding: "utf8",
-    env: { ...env, PWD: root, FLEETD_NODE_SOCK: nodeSock(MACHINE) },
-  });
-  const requestId = /\bQ[1-9]\d*\b/u.exec(`${gated.stdout}${gated.stderr}`)?.[0];
-  check(gated.status === 0 && requestId, `gated run opened an approval: ${gated.stdout}${gated.stderr}`);
+  const gated = leadIn(root, { ...env, FLEETD_NODE_SOCK: nodeSock(MACHINE) })("gated_run", { class: "irreversible", argv: ["true"], reason: "chat cli lab" });
+  const requestId = gated.result?.requestId as string | undefined;
+  check(gated.code === 0 && requestId, `gated run opened an approval: ${gated.text}`);
   const refused = await scoutCall("approval_answer", { requestId, decision: "approve" });
   check(refused.isError && refused.body.code === "forbidden" && /Only a person/u.test(refused.body.message), `scout's approval is refused: ${JSON.stringify(refused.body)}`);
   const denied = await lab.humanCall("approval_answer", { requestId, decision: "deny", message: "lab cleanup" });

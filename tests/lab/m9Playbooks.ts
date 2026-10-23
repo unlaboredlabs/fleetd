@@ -1,22 +1,12 @@
-// M9 playbooks on lab-a: a workstream opened with the bugfix playbook pins it. The harness's `fleetd` calls run in the
+// M9 playbooks on lab-a: a workstream opened with the bugfix playbook pins it. The harness's own tool calls run in the
 // project's workspace and cost no turns.
-import { spawnSync } from "node:child_process";
 import path from "node:path";
-import { type Body, MODEL, openWorkstream, fleetdCommand, type Lab, nodeSock, requireGhLogin, scrubbedEnv } from "./harness.ts";
+import { type Body, MODEL, openWorkstream, type Lab, leadIn, nodeSock, requireGhLogin, scrubbedEnv } from "./harness.ts";
 import { CLONE } from "./m7Train.ts";
 
 const MACHINE = "lab-a";
 const TURN_MS = 240_000;
 const ENDED = ["thread.completed", "thread.failed", "thread.interrupted"];
-
-const shell = (cwd: string) => {
-  const env = { ...scrubbedEnv(), PWD: cwd, FLEETD_NODE_SOCK: nodeSock(MACHINE) };
-  const run = (...args: Array<string>) => {
-    const out = spawnSync(...fleetdCommand(args), { cwd, encoding: "utf8", env });
-    return { code: out.status, stdout: out.stdout, stderr: out.stderr };
-  };
-  return { run };
-};
 
 export async function m9Playbooks(lab: Lab) {
   const { callTool, check, ok } = lab;
@@ -27,7 +17,7 @@ export async function m9Playbooks(lab: Lab) {
   const ref = { machineId: MACHINE, projectId };
   const outcome = (await callTool("project_get", ref)).body;
   const root = outcome.project.workspaceRoot as string;
-  const { run: fleetd } = shell(root);
+  const lead = leadIn(root, { ...scrubbedEnv(), FLEETD_NODE_SOCK: nodeSock(MACHINE) });
   const scenarioStart = await lab.cursor();
   const leadTurnEnds = (thread: string, cursor: number) =>
     lab.waitEvent("a lead turn to end", TURN_MS, { cursor, match: (e) => e.threadId === thread && ENDED.includes(e.type) });
@@ -44,8 +34,8 @@ export async function m9Playbooks(lab: Lab) {
   }
   const leads = [leadThread];
 
-  // A fix opened with the bugfix playbook, from the shell as the lead would.
-  const wa = openWorkstream(check, fleetd, "fix: the repo-a README has a typo.", "bugfix");
+  // A fix opened with the bugfix playbook, with the lead's tool.
+  const wa = openWorkstream(check, lead, "fix: the repo-a README has a typo.", "bugfix");
   const pinnedA = (await callTool("order_get", { workstreamId: wa })).body.workstream.playbook as string;
   check(/^bugfix@[0-9a-f]{40}$/u.test(pinnedA), `${wa} pins bugfix: ${pinnedA}`);
   ok(`${wa} in ${MACHINE}/${projectId}; playbook ${pinnedA.slice(0, 19)}…`);

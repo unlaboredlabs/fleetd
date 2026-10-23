@@ -3,24 +3,14 @@
 // PRs on branches named after its own, and the train takes each on its own pass; the first PR's reviewer starts before
 // the second PR reaches the train, while the writer still runs. Gates hold: neither PR is ready without its review.
 // Costs a few lead turns, one writer and its reviewers.
-import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { type Body, MECHANICS, openWorkstream, fleetdCommand, type Lab, nodeSock, requireGhLogin, scrubbedEnv } from "./harness.ts";
+import { type Body, MECHANICS, openWorkstream, type Lab, leadIn, nodeSock, requireGhLogin, scrubbedEnv } from "./harness.ts";
 import { BASE, BRANCH_PREFIX, CLONE, checkClone, gh, git, NAMESPACE, prepareCheckout, REPO, removeLabRepoProject, resetNamespace } from "./m7Train.ts";
 
 const MACHINE = "lab-a";
 const TURN_MS = 240_000;
 const ENDED = ["thread.completed", "thread.failed", "thread.interrupted"];
-
-const shell = (root: string) => (...args: Array<string>) => {
-  const out = spawnSync(...fleetdCommand(args), {
-    cwd: root,
-    encoding: "utf8",
-    env: { ...scrubbedEnv(), PWD: root, FLEETD_NODE_SOCK: nodeSock(MACHINE) },
-  });
-  return { code: out.status, stdout: out.stdout, stderr: out.stderr };
-};
 
 /** Every event of `types` since `cursor`, in order. */
 const eventsSince = async (lab: Lab, cursor: number, types: ReadonlyArray<string>) => {
@@ -49,17 +39,17 @@ async function sliceReviews(lab: Lab) {
   try {
     const projectId = await lab.addProject(MACHINE, CLONE, "fleetd-lab");
     const ref = { machineId: MACHINE, projectId };
-    const fleetd = shell(CLONE);
+    const lead = leadIn(CLONE, { ...scrubbedEnv(), FLEETD_NODE_SOCK: nodeSock(MACHINE) });
     let cursor = await lab.cursor();
     const started = await callTool("lead_start", ref);
     check(!started.isError, `lead_start: ${JSON.stringify(started.body)}`);
     const leadThread = started.body.threadId as string;
     await lab.waitEvent("lead start turn", TURN_MS, { cursor, machineId: MACHINE, match: (e) => e.threadId === leadThread && ENDED.includes(e.type) });
 
-    const w = openWorkstream(check, fleetd, "Two docs slices.");
+    const w = openWorkstream(check, lead, "Two docs slices.");
     const onMain = (file: string) => `${file} is on ${BASE}`;
     const brief = { goal: `two slices: ${dir}/one.md and ${dir}/two.md`, why: "the eff lab scenario", pointers: [], constraints: [], doneWhen: [onMain(`${dir}/one.md`), onMain(`${dir}/two.md`)] };
-    const frozen = fleetd("brief", "create", "--workstream", w, "--json", JSON.stringify(brief));
+    const frozen = lead("brief", { workstreamId: w, brief });
     check(frozen.code === 0, `brief create ${w}: ${JSON.stringify(frozen)}`);
 
     // The train reads a repo's open PRs once one of them has been on it: a seed PR, closed at once, starts this one's.
@@ -69,7 +59,7 @@ async function sliceReviews(lab: Lab) {
     git("push", "-q", "-f", "origin", seedBranch);
     git("checkout", "-q", "--force", BASE);
     const seed = gh("pr", "create", "-R", REPO, "--base", BASE, "--head", seedBranch, "--title", "eff seed", "--body", "eff seed");
-    const seeded = fleetd("change", "enqueue", "--pr", seed, "--workstream", w);
+    const seeded = lead("change_enqueue", { prUrl: seed, workstreamId: w });
     gh("pr", "close", seed, "-R", REPO, "--delete-branch");
     check(seeded.code === 0, `the seed PR started the train: ${JSON.stringify(seeded)}`);
 
@@ -77,11 +67,13 @@ async function sliceReviews(lab: Lab) {
     const slice = (n: string, line: string) =>
       `On a new branch named after yours with -${n} appended, from origin/${BASE} (git fetch origin; git checkout -b <your branch>-${n} origin/${BASE}), create ${dir}/${n}.md containing exactly the line ${line}, commit it, push the branch, and open a ready PR with gh pr create --base ${BASE} --title "eff ${n}" --body "eff ${n}".`;
     cursor = await lab.cursor();
-    const spawned = fleetd(
-      "task", "spawn", "--workstream", w, "--title", "two slices", "--profile", MECHANICS,
-      "--prompt", `Do these two steps in order. 1. ${slice("one", "one")} 2. ${slice("two", "two")} Reply with both PR URLs.`,
-    );
-    const writer = /^Spawned (T\d+)/mu.exec(spawned.stdout)?.[1];
+    const spawned = lead("spawn_agent", {
+      workstreamId: w,
+      title: "two slices",
+      profile: MECHANICS,
+      prompt: `Do these two steps in order. 1. ${slice("one", "one")} 2. ${slice("two", "two")} Reply with both PR URLs.`,
+    });
+    const writer = spawned.result?.task?.taskId as string | undefined;
     check(spawned.code === 0 && writer, `task spawn: ${JSON.stringify(spawned)}`);
     const ended = await lab.waitEvent(`${writer} ends`, TURN_MS * 2, { cursor, types: ["task.completed", "task.failed"], match: (e) => e.data?.taskId === writer });
 
@@ -104,7 +96,7 @@ async function sliceReviews(lab: Lab) {
     }
     ok("B. no slice got past review without one");
     for (const t of (await callTool("tasks_list", { projectRef: ref, limit: 50 })).body.tasks as Array<Body>) {
-      if (["queued", "running", "idle"].includes(t.state)) fleetd("task", "cancel", t.taskId);
+      if (["queued", "running", "idle"].includes(t.state)) lead("stop_agent", { taskId: t.taskId });
     }
   } finally {
     // Only this slot's namespace, never the repo's main.
