@@ -1,13 +1,11 @@
 //! `claim done`: the lead only claims; the hub moves the workstream to verifying, runs its frozen done-when checks in
 //! index order, and only all of them passing makes it done. A failure wakes the lead with each failing check's
-//! evidence; the third failed claim on a workstream is a false-claim incident.
+//! evidence.
 use super::now_ts;
 use super::ports::{ClaimWake, Ports, Refusal, invalid, not_found};
 use super::records::{ClaimFilter, ClaimRecords};
-use super::render::failed_claim_evidence;
 use super::runner::{CheckContext, CheckRunner, ran_by_of};
 use crate::clock::Clock;
-use crate::hub::incidents::{IncidentInput, Incidents};
 use crate::hub::orders::open_work::{CLOSED_ON_PURPOSE, Item, OpenWork, ids, listed};
 use crate::hub::store::{EventLog, NewEvent, StoreError};
 use fleetd_contracts::events::HubEventType;
@@ -15,9 +13,7 @@ use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::ids::Timestamp;
 use fleetd_contracts::ledger::{Brief, CheckSpec, Workstream, WorkstreamId, WorkstreamState};
 use fleetd_contracts::prim::{Count, List, Text};
-use fleetd_contracts::verification::{
-    CheckOutcome, CheckResult, Claim, ClaimId, ClaimOutcome, IncidentClass,
-};
+use fleetd_contracts::verification::{CheckOutcome, CheckResult, Claim, ClaimId, ClaimOutcome};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -26,7 +22,6 @@ use tokio::task::{AbortHandle, JoinHandle};
 
 /// Under the node's 30 s answer timeout for lead calls; slower claims report through a wake.
 pub const INLINE_WAIT: Duration = Duration::from_secs(20);
-pub const FALSE_CLAIM_AT: usize = 3;
 
 /// `claim_done`'s answer; the lead-call result is this with `op: "claim_done"`.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -67,7 +62,6 @@ pub struct Claims {
     runner: Arc<CheckRunner>,
     ports: Arc<dyn Ports>,
     events: Arc<EventLog>,
-    incidents: Arc<Incidents>,
     clock: Arc<dyn Clock>,
     inline_wait: Duration,
     /// The claim running per workstream; a new claim aborts it.
@@ -77,13 +71,11 @@ pub struct Claims {
 }
 
 impl Claims {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         records: Arc<ClaimRecords>,
         runner: Arc<CheckRunner>,
         ports: Arc<dyn Ports>,
         events: Arc<EventLog>,
-        incidents: Arc<Incidents>,
         clock: Arc<dyn Clock>,
         inline_wait: Duration,
     ) -> Self {
@@ -92,7 +84,6 @@ impl Claims {
             runner,
             ports,
             events,
-            incidents,
             clock,
             inline_wait,
             running: Mutex::default(),
@@ -274,25 +265,6 @@ impl Claims {
                 failures,
             },
         );
-        let failed = self.records.list(&ClaimFilter {
-            workstream_id: Some(w.workstream_id.clone()),
-            outcome: Some(ClaimOutcome::Fail),
-            limit: 20,
-            ..Default::default()
-        })?;
-        if failed.len() == FALSE_CLAIM_AT {
-            self.incidents.record(IncidentInput {
-                class: IncidentClass::FalseClaim,
-                project_ref: w.project_ref.clone(),
-                workstream_id: Some(w.workstream_id.clone()),
-                task_id: None,
-                evidence: failed
-                    .iter()
-                    .rev()
-                    .map(|c| failed_claim_evidence(&c.claim_id, &c.results))
-                    .collect(),
-            })?;
-        }
         Ok(())
     }
 

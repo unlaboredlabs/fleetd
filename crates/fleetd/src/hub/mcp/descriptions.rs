@@ -145,10 +145,6 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "Claims (a lead's `claim_done`), newest first: each done-when check fleetd ran itself, with pass/fail/error, evidence and exit codes. Filter by workstreamId, projectRef or outcome.",
     ),
     (
-        "incidents_list",
-        "Incidents the hub detected (false_claim, polish_loop, stall, override), newest first, with evidence lines, plus per-class counts over the last windowDays (default 7). Filter by projectRef, workstreamId or class.",
-    ),
-    (
         "changes_list",
         "PRs on the merge train (Changes), newest first: state (queued, reviewing, ready, rebasing, ci, merging, merged, needs_rebase, ci_failed, refused, abandoned), reviews bound to the patch id, queue position and why it is parked. Filter by projectRef, repo or state.",
     ),

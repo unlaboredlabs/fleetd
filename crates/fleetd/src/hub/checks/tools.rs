@@ -1,25 +1,20 @@
-//! The MCP tools `claims_list` and `incidents_list`, and the lead calls `claim_done` and `review_verdict`.
+//! The MCP tool `claims_list`, and the lead calls `claim_done` and `review_verdict`.
 use super::ports::Refusal;
 use super::records::ClaimFilter;
 use crate::hub::api::{Caller, Hub, Registry, ToolError, cap, readable, require};
-use crate::hub::incidents::IncidentFilter;
 use crate::hub::reviews::verdicts::Caller as LeadCaller;
 use fleetd_contracts::auth::Role;
-use fleetd_contracts::ids::{MachineId, Timestamp};
+use fleetd_contracts::ids::MachineId;
 use fleetd_contracts::lead_calls::{ClaimDoneResult, ReviewVerdictResult};
 use fleetd_contracts::ledger::WorkstreamId;
-use fleetd_contracts::mcp::{
-    ClaimsListInput, ClaimsListOutput, ErrorCode, IncidentCount, IncidentsListInput,
-    IncidentsListOutput, McpToolError,
-};
-use fleetd_contracts::prim::{Int, List};
+use fleetd_contracts::mcp::{ClaimsListInput, ClaimsListOutput, ErrorCode, McpToolError};
+use fleetd_contracts::prim::List;
 use fleetd_contracts::verification::{Claim, ReviewVerdict};
 use std::collections::HashMap;
 use std::sync::Arc;
 
 pub fn register(tools: &mut Registry) {
     tools.add("claims_list", claims_list);
-    tools.add("incidents_list", incidents_list);
 }
 
 fn unknown_workstream(id: &WorkstreamId) -> ToolError {
@@ -81,46 +76,6 @@ async fn claims_list(
         claims: List::unchecked(shown.items),
         truncated: shown.truncated,
         next: Some(next.into()),
-    })
-}
-
-async fn incidents_list(
-    hub: Arc<Hub>,
-    caller: Caller,
-    input: IncidentsListInput,
-) -> Result<IncidentsListOutput, ToolError> {
-    if let Some(r) = &input.project_ref {
-        require(&caller, Role::Read, Some(&r.machine_id))?;
-    }
-    let filter = IncidentFilter {
-        project_ref: input.project_ref.clone(),
-        workstream_id: input.workstream_id.clone(),
-        class: input.class,
-        since_ms: None,
-        until_ms: None,
-    };
-    let listed = hub.incidents.list_for_tool(
-        filter,
-        input.limit.get() as usize,
-        input.window_days.get() as u32,
-        &|r| readable(&caller, &r.machine_id),
-    )?;
-    let counts = listed
-        .counts
-        .into_iter()
-        .map(|(class, count)| IncidentCount {
-            class,
-            count: Int::unchecked(count as i64),
-        })
-        .collect();
-    Ok(IncidentsListOutput {
-        incidents: List::unchecked(listed.incidents),
-        counts,
-        counts_since: Timestamp(listed.counts_since),
-        truncated: listed.truncated.then_some(true),
-        next: listed
-            .truncated
-            .then(|| "Narrow the list with projectRef, workstreamId or class.".into()),
     })
 }
 

@@ -16,7 +16,7 @@ pub mod tools;
 #[cfg(test)]
 mod tests;
 
-pub use claims::{ClaimDoneOutcome, Claims, FALSE_CLAIM_AT, INLINE_WAIT};
+pub use claims::{ClaimDoneOutcome, Claims, INLINE_WAIT};
 pub use github::{GH_AUTH_FIX, GhCli, GhError, GhErrorKind, GhRunner, GitHub};
 pub use hub_ports::HubPorts;
 pub use judges::{JUDGE_BY, JudgeVerdicts, Judges};
@@ -24,9 +24,6 @@ pub use records::{ClaimFilter, ClaimRecords};
 pub use runner::{CLAIMS_BY, CheckRunner, CheckScope};
 
 use crate::clock::Clock;
-use crate::hub::api::Hub;
-use crate::hub::incidents::Incidents;
-use crate::hub::incidents::detectors::Detectors;
 use crate::hub::receipts::Receipts;
 use crate::hub::reviews::verdicts::Verdicts;
 use crate::hub::store::{EventLog, HubDb};
@@ -35,7 +32,6 @@ use std::sync::Arc;
 /// This slice's services, built before the `Hub` that holds them; `ports` is bound to the `Hub` right after.
 pub struct Built {
     pub ports: Arc<HubPorts>,
-    pub incidents: Arc<Incidents>,
     pub receipts: Arc<Receipts>,
     pub verdicts: Arc<Verdicts>,
     pub checks: Arc<CheckRunner>,
@@ -45,7 +41,6 @@ pub struct Built {
 pub fn build(db: &Arc<HubDb>, events: &Arc<EventLog>, clock: &Arc<dyn Clock>) -> Built {
     let ports = HubPorts::new();
     let dyn_ports: Arc<dyn ports::Ports> = ports.clone();
-    let incidents = Arc::new(Incidents::new(db.clone(), events.clone(), clock.clone()));
     let receipts = Arc::new(Receipts::new(dyn_ports.clone()));
     let gh: Arc<dyn GhRunner> = Arc::new(GhCli);
     let judge_verdicts = Arc::new(JudgeVerdicts::default());
@@ -72,33 +67,16 @@ pub fn build(db: &Arc<HubDb>, events: &Arc<EventLog>, clock: &Arc<dyn Clock>) ->
         checks.clone(),
         dyn_ports,
         events.clone(),
-        incidents.clone(),
         clock.clone(),
         INLINE_WAIT,
     ));
     Built {
         ports,
-        incidents,
         receipts,
         verdicts,
         checks,
         claims,
     }
-}
-
-/// This slice's loop: the incident detectors follow the event log until the hub stops.
-pub fn start_loops(hub: &Arc<Hub>) -> Vec<tokio::task::JoinHandle<()>> {
-    let ports = HubPorts::new();
-    ports.bind(hub);
-    let detectors = Arc::new(Detectors::new(hub.incidents.clone(), ports));
-    let shutdown = hub.shutdown.clone();
-    let events = hub.events.clone();
-    vec![tokio::spawn(async move {
-        tokio::select! {
-            () = detectors.run(events) => {}
-            () = shutdown.wait() => {}
-        }
-    })]
 }
 
 /// Now on `clock`, as the contracts' ISO timestamp.

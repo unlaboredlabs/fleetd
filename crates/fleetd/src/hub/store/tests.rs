@@ -428,8 +428,8 @@ fn routed_intents_go_on_an_older_hub() {
     assert_eq!(types, ["workstream.running"]);
 }
 
-/// A hub from before the retro went: its tables, events and incidents go, and a playbook change still open is denied,
-/// so every stored event, incident and request still decodes.
+/// A hub from before the retro went: its tables, events and incident class go, and a playbook change still open is
+/// denied, so every stored event, incident and request still decodes.
 #[test]
 fn the_retro_goes_on_an_older_hub() {
     use super::migrations::MIGRATIONS;
@@ -464,9 +464,8 @@ fn the_retro_goes_on_an_older_hub() {
           ('stall', 'lab-a', 'p1', '{}');"#,
     )
     .unwrap();
-    for m in &MIGRATIONS[last..] {
-        conn.execute_batch(m).unwrap();
-    }
+    // Only this one: a later migration drops the incidents table.
+    conn.execute_batch(MIGRATIONS[last]).unwrap();
 
     let strings = |sql: &str| -> Vec<String> {
         conn.prepare(sql)
@@ -652,4 +651,40 @@ fn finish_all_workstreams_from_an_older_hub_read_back_plain() {
         .query_row("SELECT count(*) FROM playbook_versions", [], |r| r.get(0))
         .unwrap();
     assert_eq!(pins, 0);
+}
+
+/// A hub from before incidents went: the table and its events go, so every stored event still decodes.
+#[test]
+fn incidents_go_on_an_older_hub() {
+    use super::migrations::MIGRATIONS;
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    let gone = MIGRATIONS
+        .iter()
+        .position(|m| m.contains("DROP TABLE incidents"))
+        .expect("the incidents migration");
+    for m in &MIGRATIONS[..gone] {
+        conn.execute_batch(m).unwrap();
+    }
+    conn.execute_batch(
+        r#"INSERT INTO incidents (class, machine_id, project_id, data) VALUES ('policy_bypass', 'm', 'p', '{}');
+        INSERT INTO events (created_ms, type, data) VALUES (0, 'incident.recorded', '{"incidentId":"I1"}'),
+          (0, 'pr.merged_outside', '{"repo":"o/r","prNumber":8}');"#,
+    )
+    .unwrap();
+    for m in &MIGRATIONS[gone..] {
+        conn.execute_batch(m).unwrap();
+    }
+    let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
+    assert_eq!(
+        count("SELECT count(*) FROM sqlite_master WHERE name LIKE 'incidents%'"),
+        0
+    );
+    let types: Vec<String> = conn
+        .prepare("SELECT type FROM events")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(types, ["pr.merged_outside"]);
 }

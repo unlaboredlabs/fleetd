@@ -1293,7 +1293,6 @@ export type KnownHubEventType =
   | "claim.failed"
   | "workstream.done"
   | "review.verdict"
-  | "incident.recorded"
   | "change.queued"
   | "change.ready"
   | "change.needs_rebase"
@@ -1411,61 +1410,6 @@ export type InProgressRow = {
    */
   waitingOn?: string[];
   workstreamId: WorkstreamId;
-};
-
-/** Recorded by the hub, never by an agent. */
-export type Incident = {
-  at: Timestamp;
-  class: IncidentClass;
-  /** Plain-language lines: claim ids with their failing checks, ratios, SHAs. */
-  evidence: string[];
-  incidentId: IncidentId;
-  projectRef: ProjectRef;
-  taskId?: TaskId;
-  workstreamId?: WorkstreamId;
-};
-
-/**
- * `policy_bypass`: a PR on a watched repo was merged by something other than the train. M12: `override`, a human
- * replaced a lead's Decision with another value.
- */
-export type IncidentClass =
-  | "false_claim"
-  | "polish_loop"
-  | "stall"
-  | "policy_bypass"
-  | "override"
-  | "misfiled_ask"
-  | "out_of_area"
-  | "re_ask";
-
-export type IncidentCount = {
-  class: IncidentClass;
-  count: number;
-};
-
-export type IncidentId = string;
-
-export type IncidentsListInput = {
-  class?: IncidentClass;
-  limit?: number;
-  projectRef?: ProjectRef;
-  /** M12: the span `counts` covers, ending now. */
-  windowDays?: number;
-  workstreamId?: WorkstreamId;
-};
-
-export type IncidentsListOutput = {
-  /**
-   * M12: incidents per class since `counts_since`, under the same filters; classes with none are left out. Most
-   * first.
-   */
-  counts: IncidentCount[];
-  countsSince: Timestamp;
-  /** Newest first. */
-  incidents: Incident[];
-  next?: string;
-  truncated?: boolean;
 };
 
 export type Insight = {
@@ -4235,7 +4179,6 @@ export interface ToolMap {
   events_wait: { input: EventsWaitInput; output: EventsWaitOutput };
   fleetd_status: { input: FleetdStatusInput; output: FleetdStatusOutput };
   hub_info: { input: HubInfoInput; output: HubInfoOutput };
-  incidents_list: { input: IncidentsListInput; output: IncidentsListOutput };
   intake_preview: { input: IntakePreviewInput; output: IntakePreviewOutput };
   intake_submit: { input: IntakeSubmitInput; output: IntakeSubmitOutput };
   lead_restart: { input: LeadStartInput; output: LeadStartOutput };

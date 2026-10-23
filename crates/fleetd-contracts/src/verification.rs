@@ -1,16 +1,15 @@
-//! M6 objects: claims and their check results, review verdicts, and incidents.
+//! M6 objects: claims and their check results, and review verdicts.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::brand;
-use crate::ids::{ProjectRef, Timestamp};
+use crate::ids::Timestamp;
 use crate::ledger::{CheckSpec, MetricValues, WorkstreamId};
 use crate::prim::{Count, List, Text};
 use crate::tasks::TaskId;
 
 brand!(ClaimId, name = "ClaimId", pattern = r"^C[1-9][0-9]*$");
-brand!(IncidentId, name = "IncidentId", pattern = r"^I[1-9][0-9]*$");
 brand!(
     /// A full lowercase commit SHA (SHA-1 or SHA-256), so the same head always compares equal.
     CommitSha,
@@ -86,39 +85,6 @@ pub struct ReviewVerdict {
     pub summary: Text<1, 1000>,
     /// M9: a research workstream's judge reports its metric for the baseline and the candidate; the hub computes the verdict.
     pub metric_values: Option<MetricValues>,
-}
-
-/// `policy_bypass`: a PR on a watched repo was merged by something other than the train. M12: `override`, a human
-/// replaced a lead's Decision with another value.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum IncidentClass {
-    FalseClaim,
-    PolishLoop,
-    /// Retired with the questions tool. Kept so older incidents still read.
-    MisfiledAsk,
-    /// Retired with area leases. Kept so older incidents still read.
-    OutOfArea,
-    Stall,
-    PolicyBypass,
-    /// Retired with the questions tool. Kept so older incidents still read.
-    ReAsk,
-    Override,
-}
-
-/// Recorded by the hub, never by an agent.
-#[serde_with::skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct Incident {
-    pub incident_id: IncidentId,
-    pub class: IncidentClass,
-    pub project_ref: ProjectRef,
-    pub workstream_id: Option<WorkstreamId>,
-    pub task_id: Option<TaskId>,
-    /// Plain-language lines: claim ids with their failing checks, ratios, SHAs.
-    pub evidence: List<Text<1, 2000>, 0, 20>,
-    pub at: Timestamp,
 }
 
 #[cfg(test)]

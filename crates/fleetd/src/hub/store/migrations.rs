@@ -559,4 +559,10 @@ pub(crate) const MIGRATIONS: &[&str] = &[
     WHERE json_valid(data) AND json_extract(data, '$.playbook') LIKE 'finish-all@%';
   DELETE FROM playbook_versions WHERE ref LIKE 'finish-all@%';
   "#,
+    // Incidents went: what they told is in the events they were taken from. Their events go too, as no reader decodes
+    // them.
+    r#"
+  DROP TABLE incidents;
+  DELETE FROM events WHERE type = 'incident.recorded';
+  "#,
 ];
