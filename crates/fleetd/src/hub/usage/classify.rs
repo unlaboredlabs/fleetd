@@ -3,7 +3,7 @@
 //! a failure, and the usage layer to park and pace. fleetd never asks a usage API.
 //! The text rules are the node's (`node::runner::failure::classify_text`); this module puts the node's own class
 //! first and adds what the usage layer reads off the event log.
-use super::time::{iso, parse_ms};
+use crate::hub::store::{iso_ms, parse_ms};
 use crate::node::runner::failure::classify_text;
 use fleetd_contracts::events::{HubEvent, HubEventType};
 use fleetd_contracts::sessions::FailureClass;
@@ -75,7 +75,7 @@ pub fn classify_limit(input: &LimitInput) -> Option<Limit> {
                 .or_else(|| input.reset_at.and_then(parse_ms).filter(|ms| *ms > at_ms));
             Some(Limit {
                 class: UsageClass::RateLimit,
-                resume_at: Some(iso(reset.unwrap_or(at_ms + FALLBACK_RATE_LIMIT_MS))),
+                resume_at: Some(iso_ms(reset.unwrap_or(at_ms + FALLBACK_RATE_LIMIT_MS))),
                 model,
             })
         }
@@ -85,7 +85,7 @@ pub fn classify_limit(input: &LimitInput) -> Option<Limit> {
             } else {
                 UsageClass::UsageLimit
             },
-            resume_at: f.reset_ms.map(iso),
+            resume_at: f.reset_ms.map(iso_ms),
             model,
         }),
         (_, None) => None,
@@ -106,7 +106,7 @@ pub fn limit_data(limit: &Limit) -> Map<String, Value> {
 }
 
 fn plus(at: &str, ms: i64) -> String {
-    iso(parse_ms(at).unwrap_or(0) + ms)
+    iso_ms(parse_ms(at).unwrap_or(0) + ms)
 }
 
 fn str_at<'a>(data: &'a Value, path: &[&str]) -> Option<&'a str> {

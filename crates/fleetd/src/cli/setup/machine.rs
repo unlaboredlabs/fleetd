@@ -95,32 +95,6 @@ fn now_ms() -> i64 {
         .map_or(0, |d| d.as_millis() as i64)
 }
 
-/// Milliseconds since the epoch of an ISO-8601 UTC timestamp as the hub writes it (`YYYY-MM-DDTHH:MM:SS.mmmZ`).
-fn parse_iso_ms(text: &str) -> Option<i64> {
-    let num = |range: std::ops::Range<usize>| text.get(range).and_then(|s| s.parse::<i64>().ok());
-    let (y, mo, d, h, mi, s) = (
-        num(0..4)?,
-        num(5..7)?,
-        num(8..10)?,
-        num(11..13)?,
-        num(14..16)?,
-        num(17..19)?,
-    );
-    let ms = if text.as_bytes().get(19) == Some(&b'.') {
-        num(20..23).unwrap_or(0)
-    } else {
-        0
-    };
-    // Howard Hinnant's days_from_civil.
-    let y = if mo <= 2 { y - 1 } else { y };
-    let era = y.div_euclid(400);
-    let yoe = y - era * 400;
-    let doy = (153 * (if mo > 2 { mo - 3 } else { mo + 9 }) + 2) / 5 + d - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    let days = era * 146_097 + doe - 719_468;
-    Some(((days * 24 + h) * 60 + mi) * 60_000 + s * 1000 + ms)
-}
-
 /// True once the hub has heard from the machine's node at or after `since_ms` (online, or degraded with a reason it
 /// reports). A quick node restart does not flap the status, so there may be no fresh machine.online event to wait
 /// for; the hub writes from its own process, so this re-reads the record every second.
@@ -134,7 +108,8 @@ async fn wait_linked(
     while now_ms() < deadline {
         if let Ok(Some(machine)) = hub.store.machine_get(machine_id)
             && machine.status != MachineStatus::Offline
-            && parse_iso_ms(&machine.last_seen_at.to_string()).is_some_and(|at| at >= since_ms)
+            && crate::hub::store::parse_ms(&machine.last_seen_at.to_string())
+                .is_some_and(|at| at >= since_ms)
         {
             return Some(machine.status);
         }
@@ -940,14 +915,5 @@ mod tests {
         );
         assert_eq!(node_unit_facts("fleetd-hub.service", systemd), None);
         assert_eq!(node_unit_facts("fleetd-node.service", "").unwrap().1, None);
-    }
-
-    #[test]
-    fn reads_hub_timestamps() {
-        assert_eq!(parse_iso_ms("1970-01-01T00:00:01.500Z"), Some(1500));
-        assert_eq!(
-            parse_iso_ms("2026-10-17T10:00:00.000Z"),
-            Some(1_792_231_200_000)
-        );
     }
 }

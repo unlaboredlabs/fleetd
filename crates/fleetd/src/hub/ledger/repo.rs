@@ -4,7 +4,8 @@ use fleetd_contracts::ids::{ProjectRef, Timestamp};
 use fleetd_contracts::ledger::{Decision, DecisionId, DecisionKey, DecisionScope, DecisionState};
 use rusqlite::{Connection, OptionalExtension, named_params, params};
 
-use super::{Actor, Chain, Fail, LedgerError, iso_at, project_key};
+use super::{Actor, Chain, Fail, LedgerError, project_key};
+use crate::hub::store::iso_ms;
 
 fn serial(prefix: char, id: &str) -> Option<i64> {
     let digits = id.strip_prefix(prefix)?;
@@ -171,7 +172,7 @@ pub fn record_decision(
         by: Some(actor.by.clone()),
         supersedes,
         state: DecisionState::Active,
-        at: Timestamp(iso_at(now_ms)),
+        at: Timestamp(iso_ms(now_ms)),
     };
     put_decision(db, n, &decision)?;
     db.execute(

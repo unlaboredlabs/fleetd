@@ -21,13 +21,14 @@ use crate::hub::queue::WriteQueue;
 use crate::hub::queue::js_round;
 use crate::hub::queue::ports::{DbRun, UsageHold, emit, now_ms};
 use crate::hub::store::{EventLog, HubDb, NewEvent};
+use crate::hub::store::{iso_ms, parse_ms};
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ThreadId, ThreadRef};
 use fleetd_contracts::prim::NonEmpty;
 pub use fleetd_contracts::wakes::{
     Wake, WakeAt, WakeCatchUp, WakeMessage, WakeSchedule, WakeState, WakeTarget,
 };
-use schedule::{iso, next_run, parse_iso, validate};
+use schedule::{next_run, validate};
 
 fn state_str(state: WakeState) -> &'static str {
     match state {
@@ -191,7 +192,7 @@ impl Wakes {
             message: input.message,
             once: input.once,
             catch_up: input.catch_up,
-            next_run_at: Some(iso(next).into()),
+            next_run_at: Some(iso_ms(next).into()),
             last_fired_at: None,
             created_by: input.created_by.clone(),
             state: WakeState::Active,
@@ -215,7 +216,7 @@ impl Wakes {
         self.signal();
         Ok(WakeSetResult {
             wake_id: wake.wake_id.into_inner(),
-            next_run_at: iso(next),
+            next_run_at: iso_ms(next),
         })
     }
 
@@ -331,7 +332,7 @@ impl Wakes {
             .next_run_at
             .clone()
             .ok_or("active wake without nextRunAt")?;
-        let scheduled = parse_iso(scheduled_at.as_str()).ok_or("bad nextRunAt")?;
+        let scheduled = parse_ms(scheduled_at.as_str()).ok_or("bad nextRunAt")?;
         let late_ms = now - scheduled;
         let late = !after_hold && late_ms >= LATE_AFTER.as_millis() as i64;
         let late_min = js_round(late_ms as f64 / 60_000.0);
@@ -341,7 +342,7 @@ impl Wakes {
             next_run(&wake.schedule, now, Some(scheduled)).map_err(|e| e.0)?
         };
         let moved = Wake {
-            next_run_at: next.map(|n| iso(n).into()),
+            next_run_at: next.map(|n| iso_ms(n).into()),
             state: if next.is_none() {
                 WakeState::Done
             } else {
@@ -349,9 +350,9 @@ impl Wakes {
             },
             ..wake.clone()
         };
-        let next_note = next.map_or(String::new(), |n| format!("; next at {}", iso(n)));
+        let next_note = next.map_or(String::new(), |n| format!("; next at {}", iso_ms(n)));
         let event = |kind: HubEventType, summary: String, data: serde_json::Value| NewEvent {
-            at: iso(now).into(),
+            at: iso_ms(now).into(),
             r#type: kind,
             machine_id: Some(wake.target.machine_id.clone()),
             project_id: None,
@@ -396,7 +397,7 @@ impl Wakes {
             )
             .await;
         let done = Wake {
-            last_fired_at: Some(iso(now).into()),
+            last_fired_at: Some(iso_ms(now).into()),
             ..moved
         };
         self.advance(&done, next, n);
@@ -554,7 +555,7 @@ mod tests {
         serde_json::from_value(v).unwrap()
     }
     fn in_a_minute() -> WakeSchedule {
-        sched(json!({ "kind": "at", "at": iso(NOW + MIN), "tz": "UTC" }))
+        sched(json!({ "kind": "at", "at": iso_ms(NOW + MIN), "tz": "UTC" }))
     }
     fn hourly() -> WakeSchedule {
         sched(json!({ "kind": "every", "everySec": 3600 }))
@@ -587,7 +588,7 @@ mod tests {
         kit.writer.go_live("lab-a");
         let (_q, wakes) = start(&kit, Arc::new(NoHold));
         let set = wakes.set(wake(in_a_minute())).unwrap();
-        assert_eq!(set.next_run_at, iso(NOW + MIN));
+        assert_eq!(set.next_run_at, iso_ms(NOW + MIN));
         kit.advance(Duration::from_secs(59)).await;
         assert!(kit.writer.sends().is_empty());
         kit.advance(Duration::from_secs(1)).await;
@@ -596,7 +597,7 @@ mod tests {
             vec![(t1(), "check in".into(), format!("wake:{}:1", set.wake_id))]
         );
         let fired = &kit.events.of(HubEventType::WakeFired)[0];
-        assert_eq!(fired.at.as_str(), iso(NOW + MIN));
+        assert_eq!(fired.at.as_str(), iso_ms(NOW + MIN));
         assert_eq!(data(fired)["n"], 1);
         assert_eq!(data(fired)["queued"], false);
         assert_eq!(data(fired)["runId"], "run-1");
@@ -604,7 +605,7 @@ mod tests {
         let after = wakes.get(&set.wake_id).unwrap();
         assert_eq!(
             (after.state, after.last_fired_at, after.next_run_at),
-            (WakeState::Done, Some(iso(NOW + MIN).into()), None)
+            (WakeState::Done, Some(iso_ms(NOW + MIN).into()), None)
         );
     }
 
@@ -631,7 +632,7 @@ mod tests {
         let after = wakes.get(&set.wake_id).unwrap();
         assert_eq!(
             (after.state, after.next_run_at),
-            (WakeState::Active, Some(iso(NOW + 180 * MIN).into()))
+            (WakeState::Active, Some(iso_ms(NOW + 180 * MIN).into()))
         );
     }
 
@@ -665,10 +666,10 @@ mod tests {
             (data(fired)["late"].clone(), data(fired)["lateMin"].clone()),
             (json!(true), json!(140))
         );
-        assert_eq!(data(fired)["scheduledAt"], iso(NOW + 60 * MIN));
+        assert_eq!(data(fired)["scheduledAt"], iso_ms(NOW + 60 * MIN));
         assert_eq!(
             wakes.get(&set.wake_id).unwrap().next_run_at,
-            Some(iso(NOW + 240 * MIN).into())
+            Some(iso_ms(NOW + 240 * MIN).into())
         );
     }
 
@@ -694,7 +695,7 @@ mod tests {
             vec![HubEventType::WakeMissed]
         );
         assert_eq!(all[0].thread_id.as_ref().map(|t| t.as_str()), Some("t1"));
-        assert_eq!(data(&all[0])["scheduledAt"], iso(NOW + MIN));
+        assert_eq!(data(&all[0])["scheduledAt"], iso_ms(NOW + MIN));
         assert_eq!(data(&all[0])["lateMin"], 29);
         assert!(kit.writer.sends().is_empty());
         assert_eq!(wakes.get(&set.wake_id).unwrap().state, WakeState::Done);
@@ -708,7 +709,10 @@ mod tests {
         kit.advance(Duration::from_secs(60)).await;
         let fired = &kit.events.of(HubEventType::WakeFired)[0];
         assert_eq!(data(fired)["queued"], true);
-        assert_eq!(data(fired)["queuedUntil"], iso(NOW + MIN + 24 * 60 * MIN));
+        assert_eq!(
+            data(fired)["queuedUntil"],
+            iso_ms(NOW + MIN + 24 * 60 * MIN)
+        );
         kit.writer.go_live("lab-a");
         settle().await;
         let delivered = &kit.events.of(HubEventType::WriteDelivered)[0];
@@ -740,7 +744,7 @@ mod tests {
         let still = wakes.get(&set.wake_id).unwrap();
         assert_eq!(
             (still.state, still.next_run_at),
-            (WakeState::Active, Some(iso(NOW + MIN).into()))
+            (WakeState::Active, Some(iso_ms(NOW + MIN).into()))
         );
         assert_eq!(wakes.sweep_overdue(Duration::ZERO), 0);
 
@@ -771,7 +775,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn follows_wall_clock_time_across_a_dst_change() {
         // Saturday 2026-10-24 10:00 UTC; London leaves BST on Sunday 10-25.
-        let kit = Kit::at(parse_iso("2026-10-24T10:00:00Z").unwrap());
+        let kit = Kit::at(parse_ms("2026-10-24T10:00:00Z").unwrap());
         kit.writer.go_live("lab-a");
         let (_q, wakes) = start(&kit, Arc::new(NoHold));
         let cron = sched(json!({ "kind": "cron", "cron": "0 9 * * *", "tz": "Europe/London" }));
@@ -826,7 +830,7 @@ mod tests {
         let refused = |s: WakeSchedule| wakes.set(wake(s)).unwrap_err().message;
         assert!(
             refused(sched(
-                json!({ "kind": "at", "at": iso(NOW - MIN), "tz": "UTC" })
+                json!({ "kind": "at", "at": iso_ms(NOW - MIN), "tz": "UTC" })
             ))
             .contains("in the past")
         );

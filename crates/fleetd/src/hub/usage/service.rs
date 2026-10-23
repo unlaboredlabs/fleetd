@@ -7,8 +7,8 @@ use super::classify::{UsageClass, UsageParked, limit_of_event};
 use super::ports::{BoxFut, EventLog, NewEvent, ThreadRef, WaitInput};
 use super::source::{LoginKind, UsageReading};
 use super::state::{Owner, ParkedCounts, ParkedThread, Resumed, UsageState, resumed_event};
-use super::time::{iso, parse_ms, system_ms};
 use crate::clock::Clock;
+use crate::hub::store::{iso_ms, parse_ms, system_ms};
 use fleetd_contracts::events::{HubEvent, HubEventType};
 use serde::Serialize;
 use std::sync::{Arc, Mutex};
@@ -241,9 +241,13 @@ impl Usage {
                 task_id: p.task_id.clone(),
             });
         }
-        if let Some(event) =
-            resumed_event(machine_id, &iso(self.now_ms()), &sent, breaker_cleared, by)
-        {
+        if let Some(event) = resumed_event(
+            machine_id,
+            &iso_ms(self.now_ms()),
+            &sent,
+            breaker_cleared,
+            by,
+        ) {
             self.emit(event).await;
         }
         sent.len()
@@ -263,7 +267,7 @@ impl Usage {
             .state
             .lock()
             .unwrap()
-            .trip(machine_id, &iso(self.now_ms()));
+            .trip(machine_id, &iso_ms(self.now_ms()));
         if let Some((breaker, until)) = trip {
             self.emit(breaker).await;
             if let Some(u) = until {

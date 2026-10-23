@@ -4,9 +4,10 @@
 use super::checks::{self, CmdOutcome, DoctorCheck, Entry, HostProbe, MachineView, Probe};
 use super::config::{HubConfig, MachineSetup, Platform, restart_command};
 use crate::clock::Clock;
+use crate::hub::store::{iso_ms, system_ms};
 use crate::hub::usage::ports::{BoxFut, EventLog, NewEvent};
 use crate::hub::usage::service::UsageStatus;
-use crate::hub::usage::time::{clip, iso, system_ms};
+use crate::hub::usage::time::clip;
 use fleetd_contracts::node_link::NodeDisk;
 use fleetd_contracts::sessions::RunnerInfo;
 use serde::Serialize;
@@ -287,7 +288,7 @@ impl Doctor {
             }
             groups.entry(key).or_default().push(change);
         }
-        let at = iso(self.now_ms());
+        let at = iso_ms(self.now_ms());
         for key in order {
             let changes = &groups[&key];
             let text: Vec<String> = changes
@@ -342,7 +343,7 @@ impl Doctor {
         state.latest = hub;
         self.emit_changes(&before, &fresh, state.checked_at.is_none())
             .await;
-        state.checked_at = Some(iso(self.now_ms()));
+        state.checked_at = Some(iso_ms(self.now_ms()));
     }
 
     async fn run_all(&self, state: &mut State) {
@@ -373,7 +374,7 @@ impl Doctor {
         }
         DoctorResults {
             checks: state.latest.iter().map(|e| e.check.clone()).collect(),
-            checked_at: state.checked_at.clone().unwrap_or_else(|| iso(0)),
+            checked_at: state.checked_at.clone().unwrap_or_else(|| iso_ms(0)),
         }
     }
 

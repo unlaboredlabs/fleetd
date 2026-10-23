@@ -35,10 +35,10 @@ use crate::clock::Clock;
 use crate::hub::api::Shutdown;
 use crate::hub::policy::Policies;
 use crate::hub::slots::{SlotRequest, Slots, priority_of};
+use crate::hub::store::parse_ms;
 use crate::hub::store::{
     EventLog, HubDb, HubStore, NewEvent, StoreError, WaitInput, iso_ms, now_ms,
 };
-use crate::hub::time::parse_ms as parse_iso_ms;
 use fleetd_contracts::mcp::ErrorCode;
 use hooks::{ResultReceipts, UsageGate};
 use ports::{LaunchRequest, PortError, TaskError, TaskPorts, WakeKind, Worktree};
@@ -147,8 +147,8 @@ impl From<StoreError> for StartError {
 /// A request id for one of the task's writes. The node's launch is idempotent on it, so the id carries the task's
 /// creation time: a hub on a fresh database numbers tasks from T1 again and must not get an earlier hub's thread.
 fn request_id(task: &Task, parts: &[&str]) -> String {
-    let created = parse_iso_ms(task.created_at.as_str())
-        .map_or_else(|| "NaN".to_owned(), |ms| ms.to_string());
+    let created =
+        parse_ms(task.created_at.as_str()).map_or_else(|| "NaN".to_owned(), |ms| ms.to_string());
     let mut all = vec![
         "fleetd-task".to_owned(),
         task.task_id.as_str().to_owned(),

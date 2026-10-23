@@ -292,7 +292,7 @@ impl TrainGitHub {
 
     fn reached(&self, path: &str) {
         if let Some(repo) = repo_of(path) {
-            let now = super::time::millis(self.clock.now());
+            let now = crate::hub::store::system_ms(self.clock.now());
             self.fresh.touch(&fresh::github(&repo), now);
         }
     }

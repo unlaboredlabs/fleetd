@@ -207,11 +207,6 @@ pub fn project_key(project_ref: &ProjectRef) -> String {
     format!("{}/{}", project_ref.machine_id, project_ref.project_id)
 }
 
-/// `new Date(ms).toISOString()`.
-pub fn iso_at(ms: i64) -> String {
-    crate::hub::store::iso_ms(ms)
-}
-
 pub fn source_text(source: &DecisionSource) -> &'static str {
     match source {
         DecisionSource::Human => "human",

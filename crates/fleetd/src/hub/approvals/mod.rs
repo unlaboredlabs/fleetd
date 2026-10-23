@@ -15,8 +15,9 @@ pub mod tools;
 mod tests;
 
 use crate::clock::Clock;
+use crate::hub::store::{iso_ms, system_ms};
 use crate::hub::usage::ports::{BoxFut, EventLog, NewEvent, ProjectRef, WaitInput};
-use crate::hub::usage::time::{clip, iso, system_ms};
+use crate::hub::usage::time::clip;
 use fleetd_contracts::chat::{
     ChatItem, ChatRequestId, CommandApprovalItem, CommandApprovalState, SecretRequestItem,
     SecretRequestState,
@@ -357,7 +358,7 @@ impl Approvals {
     }
 
     fn now(&self) -> String {
-        iso(system_ms(self.deps.clock.now()))
+        iso_ms(system_ms(self.deps.clock.now()))
     }
 
     pub fn get(&self, id: &str) -> Option<HumanRequest> {
@@ -501,7 +502,7 @@ impl Approvals {
             }),
             gated: None,
             permission: None,
-            at: fleetd_contracts::ids::Timestamp(iso(now)),
+            at: fleetd_contracts::ids::Timestamp(iso_ms(now)),
             at_ms: now,
         })
         .await
@@ -676,7 +677,7 @@ impl Approvals {
             secret: None,
             gated: Some(gated),
             permission: None,
-            at: fleetd_contracts::ids::Timestamp(iso(now)),
+            at: fleetd_contracts::ids::Timestamp(iso_ms(now)),
             at_ms: now,
         })
         .await

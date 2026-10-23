@@ -27,8 +27,9 @@ use super::progress::Figure;
 use super::risks::{self, RiskFacts};
 use crate::hub::api::Hub;
 use crate::hub::plan::store::{ChangeRow, ItemRow, MilestoneRow};
-use crate::hub::plan::{self, clip, figure_of, marker_of, parse_ms, progress_of};
+use crate::hub::plan::{self, clip, figure_of, marker_of, progress_of};
 use crate::hub::store::iso_ms;
+use crate::hub::store::parse_ms;
 
 pub(super) const DAY_MS: i64 = 24 * 3_600_000;
 /// Done plan items are read this far back.

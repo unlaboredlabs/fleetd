@@ -10,7 +10,7 @@ use serde::Serialize;
 
 use super::OpenTool;
 use super::shell_mapper::{failure_class, js_len, js_take, keep_tail, normalize_iso};
-use crate::hub::usage::time::parse_ms;
+use crate::hub::store::parse_ms;
 
 #[derive(Debug, Clone, Default)]
 pub struct ThreadView {

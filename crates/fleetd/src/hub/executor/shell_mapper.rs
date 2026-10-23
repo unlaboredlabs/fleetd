@@ -10,12 +10,14 @@ use fleetd_contracts::sessions::{
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
+use crate::hub::store::{iso_ms, parse_ms};
 use crate::hub::usage::classify::{Limit, LimitInput, UsageClass, classify_limit, limit_data};
-use crate::hub::usage::time::{iso, parse_ms};
 
 /// A timestamp as fleetd formats it (`Date#toISOString`): UTC with milliseconds; left as is when it doesn't parse.
 pub fn normalize_iso(text: &str) -> String {
-    parse_ms(text).map(iso).unwrap_or_else(|| text.to_owned())
+    parse_ms(text)
+        .map(iso_ms)
+        .unwrap_or_else(|| text.to_owned())
 }
 
 /// A failed thread's limit, read off its summary.

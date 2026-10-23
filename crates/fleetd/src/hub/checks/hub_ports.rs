@@ -213,7 +213,7 @@ impl Ports for HubPorts {
         Some(HumanConfirmation {
             value: decision.value.to_string(),
             decision_id: decision.decision_id.to_string(),
-            at_ms: crate::hub::usage::time::parse_ms(decision.at.as_str()).unwrap_or(0),
+            at_ms: crate::hub::store::parse_ms(decision.at.as_str()).unwrap_or(0),
         })
     }
     fn brief_set_ms(&self, workstream: &WorkstreamId) -> Option<i64> {

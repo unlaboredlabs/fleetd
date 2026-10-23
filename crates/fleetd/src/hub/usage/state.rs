@@ -2,7 +2,8 @@
 //! breaker. The service (`service.rs`) feeds it events and acts on what it returns.
 use super::classify::{UsageClass, UsageParked, limit_of_event, parked_of};
 use super::ports::{NewEvent, ThreadRef};
-use super::time::{parse_ms, plural};
+use super::time::plural;
+use crate::hub::store::parse_ms;
 use fleetd_contracts::events::{HubEvent, HubEventType};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -484,7 +485,7 @@ pub fn resumed_event(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hub::usage::time::iso;
+    use crate::hub::store::iso_ms;
 
     const HOUR: i64 = 3_600_000;
     const USAGE: (&str, &str) = (
@@ -509,8 +510,8 @@ mod tests {
             crate::hub::usage::classify::classify_limit(&crate::hub::usage::classify::LimitInput {
                 error_class: Some(class),
                 message,
-                reset_at: reset.map(iso).as_deref(),
-                at: &iso(at_ms),
+                reset_at: reset.map(iso_ms).as_deref(),
+                at: &iso_ms(at_ms),
                 model: Some("claude-opus-5-5"),
             })
             .unwrap();
@@ -518,7 +519,7 @@ mod tests {
             data[k] = v;
         }
         serde_json::from_value(json!({
-            "seq": seq, "at": iso(at_ms), "type": "thread.usage_limited", "machineId": "lab-a", "threadId": thread,
+            "seq": seq, "at": iso_ms(at_ms), "type": "thread.usage_limited", "machineId": "lab-a", "threadId": thread,
             "summary": format!("{thread} hit a usage limit"), "data": data,
         }))
         .unwrap()
@@ -548,24 +549,24 @@ mod tests {
             &limited(1, 0, "t2", USAGE, Some(reset)),
             owner(ParkedKind::Write, Some("T1")),
         );
-        assert!(s.trip("lab-a", &iso(0)).is_none());
+        assert!(s.trip("lab-a", &iso_ms(0)).is_none());
         assert!(s.gate("lab-a", 0).is_none());
         s.apply(
             &limited(2, 60_000, "t1", USAGE, Some(reset)),
             owner(ParkedKind::Lead, None),
         );
-        let (event, until) = s.trip("lab-a", &iso(60_000)).expect("trips");
+        let (event, until) = s.trip("lab-a", &iso_ms(60_000)).expect("trips");
         assert_eq!(
             event.summary,
             "Claude limit reached on lab-a's login; resets Thu 02:00 UTC; the lead and 1 task parked"
         );
-        assert_eq!(until, Some(iso(reset)));
+        assert_eq!(until, Some(iso_ms(reset)));
         assert_eq!(
             event.data.as_ref().unwrap()["parked"],
             json!({ "leads": 1, "tasks": 1 })
         );
         s.apply(&appended(3, event), None);
-        assert!(s.trip("lab-a", &iso(60_000)).is_none(), "one breaker");
+        assert!(s.trip("lab-a", &iso_ms(60_000)).is_none(), "one breaker");
         s.apply(
             &limited(4, 120_000, "t3", USAGE, Some(reset)),
             owner(ParkedKind::Review, Some("T2")),
@@ -610,7 +611,7 @@ mod tests {
             &limited(2, 11 * 60_000, "t1", USAGE, Some(3 * HOUR)),
             owner(ParkedKind::Lead, None),
         );
-        assert!(s.trip("lab-a", &iso(11 * 60_000)).is_none());
+        assert!(s.trip("lab-a", &iso_ms(11 * 60_000)).is_none());
     }
 
     #[test]
@@ -624,7 +625,7 @@ mod tests {
             &limited(2, 60_000, "t2", USAGE, Some(HOUR)),
             owner(ParkedKind::Write, Some("T1")),
         );
-        assert!(s.trip("lab-a", &iso(60_000)).is_none());
+        assert!(s.trip("lab-a", &iso_ms(60_000)).is_none());
         assert_eq!(s.counts_on("lab-a"), ParkedCounts { leads: 0, tasks: 1 });
     }
 
@@ -635,7 +636,7 @@ mod tests {
             &limited(1, 0, "t2", PROXY_400, None),
             owner(ParkedKind::Write, Some("T1")),
         );
-        let (event, until) = s.trip("lab-a", &iso(0)).expect("trips on one");
+        let (event, until) = s.trip("lab-a", &iso_ms(0)).expect("trips on one");
         assert_eq!(
             event.summary,
             "your proxy has no account available for claude-opus-5-5; fleetd paused work on lab-a — check your proxy, then run usage_resume"
@@ -659,7 +660,7 @@ mod tests {
                 task_id: p.task_id.clone(),
             })
             .collect();
-        let resumed = resumed_event("lab-a", &iso(24 * HOUR), &sent, true, "ada").unwrap();
+        let resumed = resumed_event("lab-a", &iso_ms(24 * HOUR), &sent, true, "ada").unwrap();
         assert_eq!(
             resumed.summary,
             "Usage pause on lab-a lifted (usage_resume by ada); sent \"continue\" to 1 parked thread"
@@ -686,11 +687,11 @@ mod tests {
             kind: "write",
             task_id: Some("T1".into()),
         }];
-        let e = resumed_event("lab-a", &iso(HOUR), &sent, false, "reset").unwrap();
+        let e = resumed_event("lab-a", &iso_ms(HOUR), &sent, false, "reset").unwrap();
         assert_eq!(
             e.summary,
             "Usage limit reset on lab-a; sent \"continue\" to 1 parked thread"
         );
-        assert!(resumed_event("lab-a", &iso(HOUR), &[], false, "reset").is_none());
+        assert!(resumed_event("lab-a", &iso_ms(HOUR), &[], false, "reset").is_none());
     }
 }

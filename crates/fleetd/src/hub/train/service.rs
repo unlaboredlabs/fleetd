@@ -21,11 +21,11 @@ use super::host::{BoxFut, TrainHost};
 use super::main_ci::{GithubSync, MainCi, ci_state};
 use super::records::{ChangeRecords, Db, HEAD_STATES, ListFilter, QUEUED_STATES};
 use super::rules::Refusal;
-use super::time::{iso, millis, parse_iso};
 use crate::clock::Clock;
 use crate::hub::leads::events::Event;
 use crate::hub::prompts::fixed::{FixPr, fix_your_pr};
 use crate::hub::status::fresh::{self, Fresh};
+use crate::hub::store::{iso_ms, parse_ms, system_ms};
 use fleetd_contracts::ledger::WorkstreamId;
 use fleetd_contracts::prim::Text;
 use fleetd_contracts::projects::CiInfo;
@@ -322,11 +322,11 @@ impl Train {
     }
 
     pub(super) fn now_ms(&self) -> i64 {
-        millis(self.clock.now())
+        system_ms(self.clock.now())
     }
 
     fn now_iso(&self) -> Timestamp {
-        Timestamp(iso(self.clock.now()))
+        Timestamp(iso_ms(system_ms(self.clock.now())))
     }
 
     pub(super) fn emit(
@@ -893,13 +893,17 @@ impl Train {
             .filter(|(s, _)| s == sha)
             .map(|(_, at)| at);
         for r in runs {
-            let Some(start) = r.started_at.as_deref().and_then(crate::hub::time::parse_ms) else {
+            let Some(start) = r
+                .started_at
+                .as_deref()
+                .and_then(crate::hub::store::parse_ms)
+            else {
                 continue;
             };
             let end = r
                 .completed_at
                 .as_deref()
-                .and_then(crate::hub::time::parse_ms);
+                .and_then(crate::hub::store::parse_ms);
             let status = match (end, r.conclusion.as_deref()) {
                 (None, _) => SpanStatus::Incomplete,
                 (Some(_), Some("success" | "neutral" | "skipped")) => SpanStatus::Ok,
@@ -1369,7 +1373,7 @@ impl Train {
             if pr.base != default && !guarded.contains(&pr.base) || pr.head.starts_with(&scratch) {
                 continue;
             }
-            let Some(at) = parse_iso(&pr.merged_at).filter(|at| *at > watch_since_ms) else {
+            let Some(at) = parse_ms(&pr.merged_at).filter(|at| *at > watch_since_ms) else {
                 continue;
             };
             let change = self.records.latest_for(repo, pr.number);

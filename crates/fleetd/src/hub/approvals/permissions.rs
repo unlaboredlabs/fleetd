@@ -5,8 +5,9 @@
 use super::store::{NewRequest, RequestFilter};
 use super::{Approvals, contract_project, project_of};
 use crate::hub::prompts::fixed::{DenyReason, denied};
+use crate::hub::store::{iso_ms, parse_ms, system_ms};
 use crate::hub::usage::ports::{NewEvent, ProjectRef, WaitInput};
-use crate::hub::usage::time::{clip, iso, parse_ms, system_ms};
+use crate::hub::usage::time::clip;
 use fleetd_contracts::chat::ChatRequestId;
 use fleetd_contracts::events::{HubEvent, HubEventType};
 use fleetd_contracts::ledger::{HumanRequest, RequestKind, RequestState, ToolPermission};
@@ -484,7 +485,7 @@ impl Approvals {
                     tool_name: prompt.tool_name.clone(),
                     summary: prompt.summary.clone(),
                 }),
-                at: fleetd_contracts::ids::Timestamp(iso(now)),
+                at: fleetd_contracts::ids::Timestamp(iso_ms(now)),
                 at_ms: now,
             })
             .await;

@@ -833,7 +833,7 @@ async fn an_approval_closes_when_its_prompt_is_gone() {
 }
 
 fn now_ms() -> i64 {
-    crate::hub::usage::time::system_ms(std::time::SystemTime::now())
+    crate::hub::store::system_ms(std::time::SystemTime::now())
 }
 
 #[tokio::test]

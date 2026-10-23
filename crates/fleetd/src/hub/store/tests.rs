@@ -688,3 +688,34 @@ fn incidents_go_on_an_older_hub() {
         .unwrap();
     assert_eq!(types, ["pr.merged_outside"]);
 }
+
+#[test]
+fn timestamps_keep_their_stored_form() {
+    // Every stored timestamp reads back to the same instant and prints back to the same text.
+    for stored in [
+        "1970-01-01T00:00:00.000Z",
+        "1969-12-31T23:59:59.999Z",
+        "2024-02-29T23:59:59.500Z",
+        "2026-10-17T10:00:00.000Z",
+    ] {
+        assert_eq!(iso_ms(parse_ms(stored).unwrap()), stored);
+    }
+    assert_eq!(parse_ms("1970-01-01T00:00:01.500Z"), Some(1500));
+    assert_eq!(
+        parse_ms("2026-10-17T10:00:00.000Z"),
+        Some(1_792_231_200_000)
+    );
+    // GitHub's form has no fraction; finer digits are dropped, not rounded.
+    assert_eq!(
+        parse_ms("2026-10-17T12:30:00Z").map(iso_ms).as_deref(),
+        Some("2026-10-17T12:30:00.000Z")
+    );
+    assert_eq!(
+        parse_ms("2026-10-17T12:30:00.123999Z")
+            .map(iso_ms)
+            .as_deref(),
+        Some("2026-10-17T12:30:00.123Z")
+    );
+    assert_eq!(parse_ms("not a time"), None);
+    assert_eq!(system_ms(std::time::UNIX_EPOCH), 0);
+}

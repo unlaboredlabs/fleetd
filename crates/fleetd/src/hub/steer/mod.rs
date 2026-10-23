@@ -444,7 +444,7 @@ pub fn acknowledged_by_plan(
     // The change this call wrote, not the project's newest: same project, time and deltas.
     if let Some(change) = &out.change {
         let pk = crate::hub::plan::store::pkey(r);
-        let change_at = crate::hub::plan::parse_ms(change.at.as_str());
+        let change_at = crate::hub::store::parse_ms(change.at.as_str());
         let tagged = hub.db.with(|c| {
             c.execute(
                 "UPDATE plan_changes SET steer_id = ? WHERE n = (SELECT MAX(n) FROM plan_changes

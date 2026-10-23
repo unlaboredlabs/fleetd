@@ -17,7 +17,7 @@ use fleetd_contracts::sessions::{
 
 use super::shell_mapper::js_take;
 use crate::hub::store::iso_ms;
-use crate::hub::usage::time::parse_ms;
+use crate::hub::store::parse_ms;
 
 /// Streamed text counts as "writing" this long after the last delta.
 pub const WRITING_FOR_MS: i64 = 3000;

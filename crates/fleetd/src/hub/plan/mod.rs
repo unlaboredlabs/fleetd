@@ -25,7 +25,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::clock::Clock;
 use crate::hub::status::progress::{self, CheckPass, Figure, LinkedChange};
-use crate::hub::store::{EventLog, HubDb, NewEvent, StoreError, iso_ms, now_ms};
+use crate::hub::store::{EventLog, HubDb, NewEvent, StoreError, iso_ms, now_ms, parse_ms};
 use store::{ChangeRow, ItemData, ItemRow, MilestoneRow, pkey};
 
 /// A refusal with its fix, or a store failure (logged, answered as `failed`).
@@ -101,13 +101,6 @@ pub(crate) fn order_of(pkey: &str, data: &str) -> Option<OrderInfo> {
         title: w.title.to_string(),
         created_ms: parse_ms(w.created_at.as_str()).unwrap_or(0),
     })
-}
-
-/// ISO 8601 UTC (as the hub writes it) to epoch ms.
-pub fn parse_ms(iso: &str) -> Option<i64> {
-    chrono::DateTime::parse_from_rfc3339(iso)
-        .ok()
-        .map(|d| d.timestamp_millis())
 }
 
 /// The latest result of each check index across an order's claims (newest claim that ran it wins).

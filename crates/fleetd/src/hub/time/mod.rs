@@ -22,7 +22,7 @@ use fleetd_contracts::node_link::SpansFrame;
 use tokio::sync::mpsc;
 
 use crate::clock::Clock;
-use crate::hub::store::{HubDb, now_ms};
+use crate::hub::store::{HubDb, now_ms, parse_ms};
 pub use store::{Ids, NewSpan};
 
 /// Node batches waiting for the writer; past this a batch is not acked and the node resends it on reconnect.
@@ -225,10 +225,4 @@ pub fn wall_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_millis() as i64)
-}
-
-pub fn parse_ms(iso: &str) -> Option<i64> {
-    chrono::DateTime::parse_from_rfc3339(iso)
-        .ok()
-        .map(|d| d.timestamp_millis())
 }

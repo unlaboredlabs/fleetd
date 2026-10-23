@@ -19,9 +19,9 @@ use super::model::{
     What,
 };
 use super::render::{DAY_MS, Order, Scope, World};
-use crate::hub::plan::parse_ms;
 use crate::hub::plan::store::ItemRow;
 use crate::hub::store::iso_ms;
+use crate::hub::store::parse_ms;
 
 /// What the model reads beyond the status world, bounded by the orders in view.
 #[derive(Default)]

@@ -878,20 +878,10 @@ fn arr<'a>(value: &'a Value, key: &str) -> &'a [Value] {
         .unwrap_or(&[])
 }
 
-/// A JS number as `${n}` prints it.
-pub fn js_number(value: &Value) -> String {
-    match value.as_f64() {
-        Some(n) if n.is_finite() && n.fract() == 0.0 && n.abs() < 1e21 => format!("{}", n as i128),
-        Some(n) => format!("{n}"),
-        None => value.to_string(),
-    }
-}
-
 fn js(value: Option<&Value>) -> String {
     match value {
         None => "undefined".into(),
         Some(Value::String(s)) => s.clone(),
-        Some(v @ Value::Number(_)) => js_number(v),
         Some(v) => v.to_string(),
     }
 }
