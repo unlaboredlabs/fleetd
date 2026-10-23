@@ -1229,6 +1229,110 @@ pub struct HubBusyItem {
     pub since: Option<Timestamp>,
 }
 
+// agents_list: every agent of the projects the key may read: running, queued or waiting tasks, and each project's
+// lead. Agents that ended since `endedSince` are added. Working first, then most recently started.
+input!(AgentsListInput {
+    project_ref: Option<ProjectRef>,
+    ended_since: Option<Timestamp>,
+});
+output!(AgentsListOutput {
+    agents: List<crate::agents::AgentRow, 0, { crate::agents::AGENTS_MAX }>,
+    at: Timestamp,
+});
+
+// agent_work: a page of one agent's recent steps and text, oldest first within the page. Without `before`, the newest
+// `limit` steps; `before` pages back. Read from what the hub follows of the session (its newest 200 messages and 200
+// steps), so a long session's oldest steps are not here. Secrets are replaced by `[secret]`.
+input!(AgentWorkInput {
+    machine_id: MachineId,
+    thread_id: ThreadId,
+    before: Option<crate::agents::WorkCursor>,
+    #[serde(default)]
+    limit: IntOr<1, 40, 20>,
+});
+output!(AgentWorkOutput {
+    steps: List<crate::agents::WorkStep, 0, { crate::agents::WORK_PAGE_MAX }>,
+    /// Pass back as `before` for the page before this one; absent when there is nothing older.
+    before: Option<crate::agents::WorkCursor>,
+    /// A run of it is active now.
+    running: bool,
+});
+
+// pr_list: a project's PRs: open ones, and those closed or merged since `closedSince` (default: the last 7 days).
+// Open first, then most recently updated.
+input!(PrListInput {
+    project_ref: ProjectRef,
+    closed_since: Option<Timestamp>,
+});
+output!(PrListOutput {
+    prs: List<crate::prs::PrRow, 0, { crate::prs::PR_LIST_MAX }>,
+    /// GitHub couldn't be reached: the list holds only the PRs fleetd records, without checks. Why, and what to do.
+    github_error: Option<Text<0, 300>>,
+    at: Timestamp,
+});
+
+// pr_get: one PR in detail: its description, checks, reviews with findings, merge-queue state and history, and the
+// agent that wrote it. Files come from pr_files and their diffs from pr_diff.
+input!(PrGetInput {
+    repo: GitHubRepo,
+    number: Positive,
+});
+output!(PrGetOutput {
+    pr: crate::prs::PrRow,
+    /// The PR's description, at most 8000 characters. Secrets are replaced by `[secret]`.
+    body: Text<0, 8000>,
+    base_branch: Option<NonEmpty>,
+    head_sha: Option<crate::verification::CommitSha>,
+    additions: Option<Count>,
+    deletions: Option<Count>,
+    changed_files: Option<Count>,
+    checks: List<crate::prs::PrCheck, 0, 60>,
+    /// Newest first: agent verdicts and people's reviews.
+    reviews: List<crate::prs::PrReviewEntry, 0, 30>,
+    /// Its moves through the merge queue, newest first.
+    history: List<crate::prs::PrQueueStep, 0, 30>,
+    links: crate::prs::PrLinks,
+    github_error: Option<Text<0, 300>>,
+});
+
+// pr_files: a page of a PR's changed files.
+input!(PrFilesInput {
+    repo: GitHubRepo,
+    number: Positive,
+    #[serde(default)]
+    offset: IntOr<0, 3000, 0>,
+});
+output!(PrFilesOutput {
+    files: List<crate::prs::PrFile, 0, { crate::prs::PR_FILES_PAGE }>,
+    /// Changed files in the PR.
+    total: Count,
+    /// Pass back as `offset` for the next page; absent on the last.
+    next_offset: Option<Count>,
+    /// The head these files are of.
+    head_sha: Option<crate::verification::CommitSha>,
+});
+
+// pr_diff: a page of one changed file's diff.
+input!(PrDiffInput {
+    repo: GitHubRepo,
+    number: Positive,
+    path: Text<1, 1000>,
+    #[serde(default)]
+    offset: IntOr<0, 1000000, 0>,
+    #[serde(default)]
+    limit: IntOr<1, 400, 200>,
+});
+output!(PrDiffOutput {
+    lines: List<crate::prs::DiffLine, 0, { crate::prs::PR_DIFF_PAGE_MAX }>,
+    /// Lines in the file's diff.
+    total: Count,
+    /// Pass back as `offset` for the next page; absent on the last.
+    next_offset: Option<Count>,
+    /// GitHub shows no diff for this file (binary, or too large).
+    no_diff: Option<bool>,
+    head_sha: Option<crate::verification::CommitSha>,
+});
+
 /// Declares the static tool table: `McpToolName` with each tool's minimum grant role and its input and output types.
 macro_rules! tools {
     ($($name:ident => $variant:ident, $scope:ident, $input:ty, $output:ty;)*) => {
@@ -1371,6 +1475,12 @@ tools! {
     // Human keys only (the handler checks).
     project_stop => ProjectStop, Operate, ProjectStopInput, ProjectStopOutput;
     hub_info => HubInfo, Read, HubInfoInput, HubInfoOutput;
+    agents_list => AgentsList, Read, AgentsListInput, AgentsListOutput;
+    agent_work => AgentWork, Read, AgentWorkInput, AgentWorkOutput;
+    pr_list => PrList, Read, PrListInput, PrListOutput;
+    pr_get => PrGet, Read, PrGetInput, PrGetOutput;
+    pr_files => PrFiles, Read, PrFilesInput, PrFilesOutput;
+    pr_diff => PrDiff, Read, PrDiffInput, PrDiffOutput;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
