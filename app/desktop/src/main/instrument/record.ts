@@ -12,16 +12,18 @@
 import { mkdirSync } from "node:fs";
 import { open, rm, writeFile, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
 import { app, BrowserWindow, nativeTheme, powerSaveBlocker, screen, session, systemPreferences } from "electron";
 import { type Chunk, type Lights, RECORDER_GLOBAL, type RecorderApi, type RecorderStart, type Take } from "../../shared/recorder";
 import { DEV_BUILD } from "../build";
+import { APP_ORIGIN, APP_SCHEME } from "../origin";
+import { appFile } from "../security";
 import { bitrateFor, type RecordConfig, trafficLights } from "./recordConfig";
 
 const PULL_MS = 500;
 const STILL_MS = 2000;
 const FINISH_MS = 15_000;
 const log = (line: string): void => console.error(`FLEETD_RECORD ${line}`);
+const RENDERER_DIR = join(import.meta.dirname, "../renderer");
 
 type Call = { [K in keyof RecorderApi]: RecorderApi[K] extends (...args: infer A) => infer R ? (...args: A) => Promise<Awaited<R>> : never };
 
@@ -39,23 +41,29 @@ const remote = (win: BrowserWindow): Call => {
   };
 };
 
-/** The recorder page: the dev server's while developing, else the built file. */
+/**
+ * The built recorder page is served over app://, as the app's own page is: a packaged app can't load it from file://,
+ * because with the GrantFileProtocolExtraPrivileges fuse off (electron-builder.yml) file:// can't read the asar.
+ */
+const BUILT_PAGE = `${APP_ORIGIN}/demo/recorder.html`;
+
+/** The recorder page: the dev server's while developing, else the built one. */
 const recorderUrl = (): string => {
   const dev = process.env["ELECTRON_RENDERER_URL"];
-  return dev !== undefined && DEV_BUILD
-    ? new URL("demo/recorder.html", `${dev}/`).toString()
-    : pathToFileURL(join(import.meta.dirname, "../renderer/demo/recorder.html")).toString();
+  return dev !== undefined && DEV_BUILD ? new URL("demo/recorder.html", `${dev}/`).toString() : BUILT_PAGE;
 };
 
 /**
- * The recorder's own in-memory session, apart from the page session (which refuses file:// outright): it may
- * capture, and load nothing but its own page and script.
+ * The recorder's own in-memory session, apart from the page session: it may capture, and load nothing but its own
+ * page and script.
  */
 const recorderSession = (target: BrowserWindow, page: string) => {
   const ses = session.fromPartition("fleetd-recorder");
+  const built = page === BUILT_PAGE;
   const assets = new URL("../assets/", page).toString();
-  const devOrigin = page.startsWith("file:") ? null : new URL(page).origin;
-  const own = (url: string) => (devOrigin === null ? url === page || url.startsWith(assets) : url.startsWith(`${devOrigin}/`));
+  const own = (url: string) => (built ? url === page || url.startsWith(assets) : url.startsWith(`${new URL(page).origin}/`));
+  // protocol.handle in security.ts answers app:// for the page session only; this one serves just the recorder's files.
+  if (built) ses.protocol.handle(APP_SCHEME, (request) => (own(request.url) ? appFile(request.url, RENDERER_DIR) : new Response("Not found", { status: 404 })));
   ses.setPermissionRequestHandler((_contents, permission, callback) => callback(permission === "media" || permission === "display-capture"));
   ses.setPermissionCheckHandler((_contents, permission) => permission === "media" || permission === "display-capture");
   ses.webRequest.onBeforeRequest((details, callback) => callback({ cancel: !own(details.url) }));

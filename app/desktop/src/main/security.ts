@@ -53,14 +53,18 @@ export const harden = (): void => {
   });
 };
 
+/**
+ * The built file under `rendererDir` that an app://fleetd/ request names. Main reads it through a session of its own,
+ * so the page sessions can refuse file:// outright. Run once the app is ready (sessions exist then).
+ */
+export const appFile = (url: string, rendererDir: string): Promise<Response> | Response => {
+  const file = assetPath(url, rendererDir);
+  return file === null ? new Response("Not found", { status: 404 }) : session.fromPartition("fleetd-main-files").fetch(pathToFileURL(file).href);
+};
+
 /** Run once the app is ready (sessions exist then). `rendererDir` holds the built index.html. */
 export const lockSession = (rendererDir: string): void => {
-  // Main reads the built files through a session of its own, so the page session can refuse file:// outright.
-  const files = session.fromPartition("fleetd-main-files");
-  protocol.handle(APP_SCHEME, (request) => {
-    const file = assetPath(request.url, rendererDir);
-    return file === null ? new Response("Not found", { status: 404 }) : files.fetch(pathToFileURL(file).href);
-  });
+  protocol.handle(APP_SCHEME, (request) => appFile(request.url, rendererDir));
   const ses = session.defaultSession;
   // No permission at all, the clipboard included: Electron asks for "clipboard-read" on writeText too, so writes go
   // through window.fleetd.copy instead.
