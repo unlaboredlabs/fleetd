@@ -66,7 +66,7 @@ setting up (on the hub machine):
 projects:
 {}
 running by hand:
-{}{}{}{}{}{}{}{}{}
+{}{}{}{}{}{}{}{}
 lead-side commands (a lead uses its fleetd tools; these are for you, inside a project workspace):
 {}",
         UPDATE_USAGE,
@@ -76,7 +76,6 @@ lead-side commands (a lead uses its fleetd tools; these are for you, inside a pr
         project::PROJECT_USAGE,
         node::HUB_START_USAGE,
         hub_key::HUB_KEY_USAGE,
-        status::GITHUB_WEBHOOK_USAGE,
         node::NODE_USAGE,
         retro::RETRO_USAGE,
         prompts::PROMPTS_USAGE,
@@ -111,13 +110,7 @@ pub fn help_for(argv: &[String]) -> Option<String> {
         "hub" => match rest.first().map(String::as_str) {
             Some("start" | "serve") => node::HUB_START_USAGE.to_owned(),
             Some("key") => hub_key::HUB_KEY_USAGE.to_owned(),
-            Some("github-webhook") => status::GITHUB_WEBHOOK_USAGE.to_owned(),
-            _ => format!(
-                "{}{}{}",
-                node::HUB_START_USAGE,
-                hub_key::HUB_KEY_USAGE,
-                status::GITHUB_WEBHOOK_USAGE
-            ),
+            _ => format!("{}{}", node::HUB_START_USAGE, hub_key::HUB_KEY_USAGE),
         },
         "node" => node::NODE_USAGE.to_owned(),
         "retro" => retro::RETRO_USAGE.to_owned(),
@@ -172,7 +165,7 @@ pub fn run(argv: &[String]) -> CliResult {
 }
 
 /// Commands that keep running (`node …`, `status --watch`, `steer --wait`) or wait on other processes or
-/// the hub (setup, `retro run`, `update`, `status`, `steer`, `hub github-webhook`). `status set` is a lead call.
+/// the hub (setup, `retro run`, `update`, `status`, `steer`). `status set` is a lead call.
 fn is_long_running(argv: &[String]) -> bool {
     match argv.first().map(String::as_str) {
         Some(
@@ -180,7 +173,6 @@ fn is_long_running(argv: &[String]) -> bool {
             | "time" | "update" | "steer" | "steers",
         ) => true,
         Some("status") => !lead::is_lead_command(argv),
-        Some("hub") => argv.get(1).map(String::as_str) == Some("github-webhook"),
         _ => false,
     }
 }
@@ -195,7 +187,6 @@ async fn run_long_running(argv: &[String]) -> u8 {
         "retro" => retro::retro_command(rest).await,
         "time" => time::time_command(rest).await,
         "status" => status::status_command(rest).await,
-        "hub" => status::github_webhook_command(&rest[1..]).await,
         "steer" => steer::steer_command(rest, false).await,
         "steers" => steer::steer_command(rest, true).await,
         _ => update_command(rest).await,

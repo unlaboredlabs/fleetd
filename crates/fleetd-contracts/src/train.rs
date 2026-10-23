@@ -160,8 +160,6 @@ checked!(Change, |change| pr_url_rule(
 #[serde(rename_all = "camelCase")]
 pub struct TrainState {
     pub repo: GitHubRepo,
-    /// Held by a `policy.freeze.<repo>` decision.
-    pub frozen: bool,
     /// The Change being rebased, checked or merged now.
     pub head: Option<ChangeId>,
     /// Waiting Changes in train order.
@@ -300,15 +298,13 @@ mod tests {
     fn train_lists_each_change_once() {
         assert!(
             serde_json::from_value::<TrainState>(
-                json!({ "repo": "o/r", "frozen": false, "head": "X1", "queue": ["X2", "X3"] })
+                json!({ "repo": "o/r", "head": "X1", "queue": ["X2", "X3"] })
             )
             .is_ok()
         );
         assert!(
-            serde_json::from_value::<TrainState>(
-                json!({ "repo": "o/r", "frozen": true, "queue": ["X2", "X2"] })
-            )
-            .is_err()
+            serde_json::from_value::<TrainState>(json!({ "repo": "o/r", "queue": ["X2", "X2"] }))
+                .is_err()
         );
     }
 }

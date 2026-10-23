@@ -205,6 +205,10 @@ async fn stop_signal() {
 /// Every service over the database in `config.home`. Areas add their construction here (see hub::api).
 pub fn build(config: HubConfig, clock: Arc<dyn Clock>) -> anyhow::Result<Arc<Hub>> {
     let db = HubDb::open(&config.home)?;
+    // A sealed GitHub webhook secret and its key, left by a hub from before webhooks went; nothing reads them.
+    for gone in ["github-webhook.secret", "webhook.key"] {
+        let _ = std::fs::remove_file(config.home.join(gone));
+    }
     build_on(db, config, clock)
 }
 
@@ -387,7 +391,6 @@ pub fn build_on(
         chat,
         prs,
     });
-    crate::hub::train::hooks::restore(&hub);
     checks.ports.bind(&hub);
     train_host.bind(&hub);
     hub.checks.set_time(hub.time.sink());

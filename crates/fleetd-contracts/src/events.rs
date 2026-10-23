@@ -143,12 +143,10 @@ pub enum HubEventType {
     /// train merged on fleetd's own checks.
     #[serde(rename = "pr.merged")]
     PrMerged,
-    /// `data.repo`, `data.reason`.
-    #[serde(rename = "train.frozen")]
-    TrainFrozen,
-    /// `data.repo`.
-    #[serde(rename = "train.resumed")]
-    TrainResumed,
+    /// A PR was merged into a base the train guards without the train; `data.repo`, `data.prNumber`,
+    /// `data.mergedSha`, and `data.changeId` when it had been enqueued.
+    #[serde(rename = "pr.merged_outside")]
+    PrMergedOutside,
     /// Something that is not the train's sits where its worktree goes, and a person has to move it; `data.changeId`,
     /// `data.repo`, `data.error` (what to move).
     #[serde(rename = "train.blocked")]
@@ -230,9 +228,6 @@ pub enum HubEventType {
     /// Main-branch CI of a train repo changed state; `data.repo`, `data.sha`, `data.state`, `data.failing`.
     #[serde(rename = "ci.main")]
     CiMain,
-    /// Reconciliation found GitHub moved without fleetd; `data.repo`, `data.kind`, `data.what`, `data.lagMs`.
-    #[serde(rename = "github.drift")]
-    GithubDrift,
     /// A status source went quiet past its cadence; `data.source`, `data.sinceMs`, `data.reason`.
     #[serde(rename = "source.stale")]
     SourceStale,
@@ -300,8 +295,7 @@ impl HubEventType {
             Self::ChangeNeedsRebase => "change.needs_rebase",
             Self::ChangeCiFailed => "change.ci_failed",
             Self::PrMerged => "pr.merged",
-            Self::TrainFrozen => "train.frozen",
-            Self::TrainResumed => "train.resumed",
+            Self::PrMergedOutside => "pr.merged_outside",
             Self::TrainBlocked => "train.blocked",
             Self::ChangeRefused => "change.refused",
             Self::IntakeRouted => "intake.routed",
@@ -327,7 +321,6 @@ impl HubEventType {
             Self::PlanVerified => "plan.verified",
             Self::ChangeState => "change.state",
             Self::CiMain => "ci.main",
-            Self::GithubDrift => "github.drift",
             Self::SourceStale => "source.stale",
             Self::SourceFresh => "source.fresh",
             Self::ChatMessage => "chat.message",
@@ -429,7 +422,7 @@ pub struct ClaimEventData {
 }
 
 /// The merge train's events: `change.queued`, `change.ready`, `change.needs_rebase`, `change.ci_failed`,
-/// `change.refused`, `pr.merged`, `train.frozen`, `train.resumed`, `train.blocked`. Which fields each carries is in
+/// `change.refused`, `pr.merged`, `pr.merged_outside`, `train.blocked`. Which fields each carries is in
 /// `HubEventType`'s docs.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]

@@ -366,8 +366,6 @@ export async function chatLead(lab: Lab) {
       resetNamespace();
       prepareCheckout(LAB_REPO_POLICY);
       ok(`${CLONE} at origin/${BASE}; untracked policy (area all); ${NAMESPACE}/ on ${REPO} reset to the seed`);
-      const thaw = await callTool("train_freeze", { repo: REPO, frozen: false });
-      log(`train_freeze false: ${thaw.isError ? JSON.stringify(thaw.body) : "ok"}`);
       const projectId = await lab.addProject(LEAD_MACHINE, CLONE, "fleetd-lab");
       const ref = { machineId: LEAD_MACHINE, projectId };
       const chat = chatOf(lab, lab.humanCall, ref, need);

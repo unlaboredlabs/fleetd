@@ -209,14 +209,6 @@ fleetd hub key revoke <keyId> [--home <dir>]
 
 takes effect at once, also on a running hub
 
-### fleetd hub github-webhook {#hub-github-webhook}
-
-```text
-fleetd hub github-webhook (--url <public url>/github | --off) [--hub <url> --key-file <path> | --home <dir>]
-```
-
-let GitHub tell the hub about pull requests, checks and pushes on the train's repos as they happen (admin key). It needs a URL GitHub can reach that forwards to this hub, which fleetd never creates; without one the hub syncs with GitHub on its own
-
 ### fleetd node join {#node-join}
 
 ```text

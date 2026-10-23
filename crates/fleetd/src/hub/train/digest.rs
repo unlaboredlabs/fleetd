@@ -57,11 +57,7 @@ fn state_of(changes: &[Change], train: &TrainState) -> String {
             None => id.to_string(),
         })
         .collect();
-    let mut parts = vec![if train.frozen {
-        "frozen".to_string()
-    } else {
-        "running".to_string()
-    }];
+    let mut parts = Vec::new();
     if let Some(head) = &train.head {
         let state = by_id
             .get(head.as_str())
@@ -148,7 +144,7 @@ pub fn lead_train_lines(facts: &TrainFacts, since: Option<&str>) -> Vec<String> 
     lines
 }
 
-/// The human digest's train lines: merges since the last digest, busy or frozen trains, PRs back with their authors, waivers.
+/// The human digest's train lines: merges since the last digest, busy trains, PRs back with their authors, waivers.
 pub fn human_train_lines(facts: &TrainFacts, since_ms: i64) -> Vec<String> {
     let mut lines: Vec<String> = merged(&facts.changes, Some(since_ms))
         .map(|c| {
@@ -166,7 +162,7 @@ pub fn human_train_lines(facts: &TrainFacts, since_ms: i64) -> Vec<String> {
         facts
             .trains
             .iter()
-            .filter(|t| t.frozen || t.head.is_some() || !t.queue.is_empty())
+            .filter(|t| t.head.is_some() || !t.queue.is_empty())
             .map(|t| format!("Train {}: {}", t.repo, state_of(&facts.changes, t))),
     );
     lines.extend(

@@ -1,4 +1,4 @@
-//! Changes, trains and reported bypasses in the hub database. Repos are keyed lowercased.
+//! Changes and trains in the hub database. Repos are keyed lowercased.
 use std::sync::Arc;
 
 use rusqlite::{Connection, OptionalExtension, params};
@@ -44,8 +44,7 @@ pub const TERMINAL_STATES: &[ChangeState] = &[
 pub struct TrainRow {
     pub repo: String,
     pub project_ref: ProjectRef,
-    pub frozen: bool,
-    /// Merges after this are checked for bypasses.
+    /// Merges outside the train after this are reported; it moves past each one reported.
     pub watch_since_ms: i64,
 }
 
@@ -81,7 +80,6 @@ fn to_train(row: &rusqlite::Row<'_>) -> rusqlite::Result<TrainRow> {
             machine_id: MachineId::unchecked(row.get::<_, String>("machine_id")?),
             project_id: ProjectId::unchecked(row.get::<_, String>("project_id")?),
         },
-        frozen: row.get::<_, i64>("frozen")? == 1,
         watch_since_ms: row.get("watch_since_ms")?,
     })
 }
@@ -306,32 +304,21 @@ impl ChangeRecords {
         })
     }
 
-    pub fn set_frozen(&self, repo: &str, frozen: bool) {
+    /// Moves the repo's watch past a merge outside the train, so it is reported once.
+    pub fn watch_past(&self, repo: &str, merged_ms: i64) {
         sql(&self.db, |conn| {
             conn.execute(
-                "UPDATE trains SET frozen = ?1 WHERE repo = ?2",
-                params![frozen as i64, repo.to_lowercase()],
+                "UPDATE trains SET watch_since_ms = max(watch_since_ms, ?1) WHERE repo = ?2",
+                params![merged_ms, repo.to_lowercase()],
             )
-            .expect("set frozen")
+            .expect("move the watch")
         });
     }
 
-    /// True the first time a PR is reported as merged outside the train.
-    pub fn mark_bypass(&self, repo: &str, pr_number: i64) -> bool {
-        sql(&self.db, |conn| {
-            conn.execute(
-                "INSERT OR IGNORE INTO train_bypasses (repo, pr_number) VALUES (?1, ?2)",
-                params![repo.to_lowercase(), pr_number],
-            )
-            .expect("mark bypass")
-        }) == 1
-    }
-
-    /// A repo's train as the API shows it: frozen, the Change at its head, and the queue in train order.
+    /// A repo's train as the API shows it: the Change at its head, and the queue in train order.
     pub fn train_state(&self, repo: &str) -> TrainState {
         let repo = repo.to_lowercase();
         TrainState {
-            frozen: self.train(&repo).is_some_and(|t| t.frozen),
             head: self
                 .in_train(&repo, HEAD_STATES)
                 .into_iter()
@@ -358,5 +345,55 @@ impl ChangeRecords {
                 .map(|r| r.expect("row"))
                 .collect()
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// A hub from before freeze, drift and GitHub webhooks went: their tables, the frozen flag and their events go, and
+    /// the watch starts now, so a merge outside the train reported before is not reported again.
+    #[test]
+    fn freeze_drift_and_webhooks_go_on_an_older_hub() {
+        use crate::hub::store::migrations::MIGRATIONS;
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        // Found by content, not as the last migration, so later migrations don't break this test.
+        let at = MIGRATIONS
+            .iter()
+            .position(|m| m.contains("DROP TABLE train_bypasses"))
+            .unwrap();
+        for m in &MIGRATIONS[..at] {
+            conn.execute_batch(m).unwrap();
+        }
+        conn.execute_batch(
+            r#"INSERT INTO trains (repo, machine_id, project_id, frozen, watch_since_ms)
+                 VALUES ('acme/storefront', 'devbox', 'p1', 1, 5);
+               INSERT INTO train_bypasses VALUES ('acme/storefront', 9);
+               INSERT INTO github_hooks VALUES ('acme/storefront', 1, 'https://hooks.example.com/github');
+               INSERT INTO events (created_ms, type, data) VALUES (0, 'train.frozen', '{}'),
+                 (0, 'train.resumed', '{}'), (0, 'github.drift', '{}'), (0, 'pr.merged', '{}');"#,
+        )
+        .unwrap();
+        conn.execute_batch(MIGRATIONS[at]).unwrap();
+
+        let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
+        assert_eq!(
+            count(
+                "SELECT count(*) FROM sqlite_master WHERE name IN ('train_bypasses', 'github_hooks')"
+            ),
+            0
+        );
+        assert_eq!(
+            count("SELECT count(*) FROM pragma_table_info('trains') WHERE name = 'frozen'"),
+            0
+        );
+        assert!(count("SELECT watch_since_ms FROM trains") > 1_700_000_000_000);
+        let types: Vec<String> = conn
+            .prepare("SELECT type FROM events")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(types, ["pr.merged"]);
     }
 }

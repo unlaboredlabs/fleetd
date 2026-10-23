@@ -162,7 +162,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "incidents_list",
-        "Incidents the hub detected (false_claim, polish_loop, out_of_area, stall, policy_bypass, override, playbook_reverted), newest first, with evidence lines, plus per-class counts over the last windowDays (default 7). Filter by projectRef, workstreamId or class.",
+        "Incidents the hub detected (false_claim, polish_loop, out_of_area, stall, override, playbook_reverted), newest first, with evidence lines, plus per-class counts over the last windowDays (default 7). Filter by projectRef, workstreamId or class.",
     ),
     (
         "retro_proposals",
@@ -175,14 +175,6 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     (
         "changes_list",
         "PRs on the merge train (Changes), newest first: state (queued, reviewing, ready, rebasing, ci, merging, merged, needs_rebase, ci_failed, refused, abandoned), tier, reviews bound to the patch id, queue position and why it is parked. Filter by projectRef, repo or state.",
-    ),
-    (
-        "train_get",
-        "One repo's merge train: frozen or not, the Change it is rebasing, checking or merging now, and the queue in order. Only the train merges.",
-    ),
-    (
-        "train_freeze",
-        "Hold (frozen true) or resume (frozen false) a repo's merge train by recording or retiring its policy.freeze.<owner>.<name> decision. The train finishes nothing new while frozen; it emits train.frozen or train.resumed on its next pass.",
     ),
     (
         "doctor_list",
@@ -279,10 +271,6 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     (
         "thread_window",
         "The items and messages around one item of a thread (before and after default 10, max 25), oldest first, from the node's own log: opens a time span's transcript by its itemId.",
-    ),
-    (
-        "github_webhook_set",
-        "Turn opt-in GitHub webhooks on (url: a public URL GitHub can reach that forwards to this hub's /github; fleetd never creates one) or off (no url). Makes a secret and a repo hook on every train repo for check_suite, pull_request and push. Deliveries only make the train sync sooner; without them it reconciles every pass. Admin keys on every machine.",
     ),
     (
         "agents_list",

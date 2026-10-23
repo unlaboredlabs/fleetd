@@ -6,18 +6,16 @@ use std::time::Duration;
 
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::Timestamp;
-use fleetd_contracts::ledger::DecisionScope;
 use fleetd_contracts::tasks::{Task, TaskKind};
 use serde_json::{Value, json};
 
 use super::contract::{MachineId, ProjectRef, TaskId, WorkstreamId};
 use super::host::{
-    BoxFut, BriefView, CmdOut, DecisionView, EventView, IncidentInput, PlaybookView, PrVerdict,
-    ProviderView, ReviewRefusal, ReviewSpawn, TaskView, TrainHost, WorkstreamView,
+    BoxFut, BriefView, CmdOut, EventView, PlaybookView, PrVerdict, ProviderView, ReviewRefusal,
+    ReviewSpawn, TaskView, TrainHost, WorkstreamView,
 };
 use crate::clock::Clock;
 use crate::hub::api::Hub;
-use crate::hub::ledger::{Actor, Chain, RecordInput};
 use crate::hub::link::commands::CommandInput;
 use crate::hub::store::{EventLog, HubStore, NewEvent, WaitInput, iso_ms, now_ms};
 use crate::hub::tasks::TaskCaller;
@@ -228,86 +226,6 @@ impl TrainHost for HubHost {
             require_source: p.value_bar.require_source,
             review_rules: [rules.s.clone(), rules.m.clone(), rules.l.clone()],
         })
-    }
-
-    fn resolve_decision(&self, key: &str, project_ref: &ProjectRef) -> Option<DecisionView> {
-        let chain = Chain {
-            project_ref: project_ref.clone(),
-            workstream_id: None,
-        };
-        let decision = match self.hub()?.decisions.resolve(key, &chain) {
-            Ok(decision) => decision?,
-            Err(error) => {
-                tracing::warn!(%error, key, "train: decision not resolved");
-                return None;
-            }
-        };
-        Some(DecisionView {
-            decision_id: wire_str(&decision.decision_id),
-            key: wire_str(&decision.key),
-            value: wire_str(&decision.value),
-            why: decision.why.as_ref().map(wire_str),
-            global: decision.scope == DecisionScope::Global,
-        })
-    }
-
-    fn record_decision(
-        &self,
-        key: &str,
-        project_ref: &ProjectRef,
-        value: &str,
-        why: Option<&str>,
-        human: bool,
-        by: &str,
-    ) -> Result<(), String> {
-        let hub = self.hub().ok_or_else(not_bound)?;
-        let key = parse(key).ok_or_else(|| format!("{key} is not a decision key"))?;
-        let mut input = RecordInput::new(
-            key,
-            DecisionScope::Project {
-                project_ref: project_ref.clone(),
-            },
-            value,
-        );
-        input.why = why.map(str::to_string);
-        input.project_ref = Some(project_ref.clone());
-        let actor = Actor {
-            source: if human {
-                fleetd_contracts::ledger::DecisionSource::Human
-            } else {
-                fleetd_contracts::ledger::DecisionSource::Agent
-            },
-            by: by.to_string(),
-        };
-        hub.decisions
-            .record(input, &actor)
-            .map(|_| ())
-            .map_err(|e| e.message)
-    }
-
-    fn retire_decision(&self, decision_id: &str) -> Result<(), String> {
-        let hub = self.hub().ok_or_else(not_bound)?;
-        hub.decisions
-            .retire(decision_id)
-            .map(|_| ())
-            .map_err(|e| e.message)
-    }
-
-    fn record_incident(&self, incident: IncidentInput) {
-        let Some(hub) = self.hub() else { return };
-        let Some(class) = parse(incident.class) else {
-            return tracing::warn!(class = incident.class, "train: unknown incident class");
-        };
-        let input = crate::hub::incidents::IncidentInput {
-            class,
-            project_ref: incident.project_ref,
-            workstream_id: incident.workstream_id,
-            task_id: incident.task_id,
-            evidence: incident.evidence,
-        };
-        if let Err(error) = hub.incidents.record(input) {
-            tracing::warn!(%error, "train: incident not recorded");
-        }
     }
 
     fn append_event(

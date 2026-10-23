@@ -105,8 +105,7 @@ const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab)
   { name: "noci", run: noCiTrain, only: true },
   // Two writers in two inferred areas at once (the seed's packages/alpha and packages/beta). Only when named.
   { name: "areas", run: areasParallel, only: true },
-  // Batches and stacks on the lab repo: a batch of three in one CI run, a red batch bisected, a stacked PR green on
-  // its parent before it lands. Only when named.
+  // Batches on the lab repo: a batch of three in one CI run, a red batch bisected. Only when named.
   { name: "batch", run: trainBatch, only: true },
   // The app demo: one order fanned out to writers, reviewers and verifiers on the lab repo. Only when named.
   { name: "demo", run: demoFanout, only: true },

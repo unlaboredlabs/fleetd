@@ -65,8 +65,6 @@ const FOLLOWED: &[HubEventType] = &[
     HubEventType::ChangeRefused,
     HubEventType::ChangeState,
     HubEventType::PrMerged,
-    HubEventType::TrainFrozen,
-    HubEventType::TrainResumed,
     HubEventType::UsageBreaker,
     HubEventType::UsageResumed,
     // A task's thread waiting on an answer, parked on a usage limit or running again pauses or resumes its item's
@@ -77,7 +75,6 @@ const FOLLOWED: &[HubEventType] = &[
     HubEventType::PlanChanged,
     HubEventType::PlanVerified,
     HubEventType::CiMain,
-    HubEventType::GithubDrift,
     HubEventType::SourceStale,
     HubEventType::SourceFresh,
     HubEventType::SteerQueued,

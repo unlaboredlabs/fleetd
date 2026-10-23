@@ -1,6 +1,6 @@
 //! The train over real git in temp repos (a bare "origin", the project's checkout, an author's clone) run by local
 //! commands, a fake `gh` that answers from that origin like GitHub would (CI red iff the head has a file FAIL, or both
-//! `pair-a` and `pair-b`), and a fake host for tasks, workstreams, decisions, events and wakes.
+//! `pair-a` and `pair-b`), and a fake host for tasks, workstreams, events and wakes.
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -522,13 +522,11 @@ impl GhRunner for FakeGh {
     }
 }
 
-/// The rest of the hub: tasks, workstreams, decisions, incidents, events and wakes in memory; commands run locally.
+/// The rest of the hub: tasks, workstreams, events and wakes in memory; commands run locally.
 struct FakeHost {
     checkout: PathBuf,
     tasks: Mutex<HashMap<String, TaskView>>,
     sends: Mutex<Vec<(String, String)>>,
-    decisions: Mutex<HashMap<String, DecisionView>>,
-    incidents: Mutex<Vec<IncidentInput>>,
     events: Mutex<Vec<EventView>>,
     appended: Notify,
     wakes: Mutex<Vec<String>>,
@@ -651,26 +649,6 @@ impl TrainHost for FakeHost {
     }
     fn playbook(&self, _: &str) -> Option<PlaybookView> {
         None
-    }
-    fn resolve_decision(&self, key: &str, _: &ProjectRef) -> Option<DecisionView> {
-        self.decisions.lock().unwrap().get(key).cloned()
-    }
-    fn record_decision(
-        &self,
-        _: &str,
-        _: &ProjectRef,
-        _: &str,
-        _: Option<&str>,
-        _: bool,
-        _: &str,
-    ) -> Result<(), String> {
-        Err("decisions are set directly in train tests".into())
-    }
-    fn retire_decision(&self, _: &str) -> Result<(), String> {
-        Err("decisions are set directly in train tests".into())
-    }
-    fn record_incident(&self, incident: IncidentInput) {
-        self.incidents.lock().unwrap().push(incident);
     }
     fn append_event(&self, _: &ProjectRef, event_type: &'static str, _: String, data: Value) {
         self.push_event(event_type, data);
@@ -912,8 +890,6 @@ impl Kit {
             checkout,
             tasks: Mutex::default(),
             sends: Mutex::default(),
-            decisions: Mutex::default(),
-            incidents: Mutex::default(),
             events: Mutex::default(),
             appended: Notify::new(),
             wakes: Mutex::default(),
@@ -1258,13 +1234,8 @@ async fn auto_enqueues_a_write_tasks_pr_rebases_it_onto_the_moved_base_and_merge
 
     let state = kit.train.state(REPO);
     assert_eq!(
-        (
-            state.repo.as_str(),
-            state.frozen,
-            state.head,
-            state.queue.into_inner()
-        ),
-        (REPO, false, None, vec![])
+        (state.repo.as_str(), state.head, state.queue.into_inner()),
+        (REPO, None, vec![])
     );
 }
 
@@ -1550,7 +1521,7 @@ fn merged_outside(kit: &Kit, number: i64, base: &str) {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_merge_outside_the_train_is_a_bypass_only_into_a_base_the_train_guards() {
+async fn a_merge_outside_the_train_is_reported_once_and_only_into_a_base_the_train_guards() {
     let kit = Kit::new();
     let pr = kit.open_pr_on(
         "slot/1/main",
@@ -1564,22 +1535,58 @@ async fn a_merge_outside_the_train_is_a_bypass_only_into_a_base_the_train_guards
     merged_outside(&kit, 8, "slot/2/main");
     merged_outside(&kit, 9, "slot/1/main");
     merged_outside(&kit, 10, "main");
+    // The train's own batch PR, from its scratch branch, is its merge.
+    let batch = FakePull {
+        branch: "fleetd/train/batch-1".into(),
+        ..kit.gh.pulls.lock().unwrap().remove(&10).unwrap()
+    };
+    kit.gh.pulls.lock().unwrap().insert(11, batch);
+    merged_outside(&kit, 10, "main");
 
     kit.train.step(REPO).await;
-    let flagged: Vec<String> = kit
+    kit.train.step(REPO).await;
+    let mut reported: Vec<i64> = kit
         .host
-        .incidents
-        .lock()
-        .unwrap()
+        .events_of("pr.merged_outside")
         .iter()
-        .map(|i| i.evidence[0].clone())
+        .map(|e| e["prNumber"].as_i64().unwrap())
         .collect();
-    assert_eq!(flagged.len(), 2, "{flagged:?}");
-    assert!(flagged.iter().any(|e| e.starts_with(&format!("{REPO}#9 "))));
+    reported.sort_unstable();
+    assert_eq!(reported, [9, 10], "each once");
+    let wakes = kit.host.wakes.lock().unwrap().clone();
     assert!(
-        flagged
-            .iter()
-            .any(|e| e.starts_with(&format!("{REPO}#10 ")))
+        wakes.iter().any(|w| w.contains(&format!(
+            "{REPO}#10 was merged into main without the merge train"
+        ))),
+        "{wakes:?}"
+    );
+}
+
+/// The train merges a PR into its own base, so a PR based on another open PR's branch would land in that PR: it is
+/// refused with how to go on once its parent merges.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pr_based_on_another_open_prs_branch_is_refused() {
+    let kit = Kit::new();
+    let parent = kit.open_pr(7, "p", &[add("p.txt", "p\n")], "Source: done:0");
+    kit.enqueue(parent, None).await;
+    let child = kit.stacked_pr(8, "c", "p", &[add("c.txt", "c\n")]);
+    let refused = kit
+        .train
+        .enqueue(&project(), enqueue_call(child, Some("done:0")))
+        .await
+        .unwrap_err();
+    assert!(
+        refused.message.contains("based on #7's branch"),
+        "{}",
+        refused.message
+    );
+    assert!(
+        refused
+            .fix
+            .as_deref()
+            .is_some_and(|f| f.contains("gh pr edit 8 --base")),
+        "{:?}",
+        refused.fix
     );
 }
 
@@ -1727,48 +1734,6 @@ async fn requeues_at_the_front_when_github_refuses_the_pinned_merge_with_409_the
             .collect::<Vec<_>>(),
         [7]
     );
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn holds_while_the_freeze_decision_is_true_and_resumes_when_it_goes() {
-    let kit = Kit::new();
-    let change = kit
-        .enqueue(
-            kit.open_pr(7, "a", &[add("b.txt", "b\n")], "Source: done:0"),
-            None,
-        )
-        .await;
-    let key = "policy.freeze.acme.storefront";
-    let freeze = DecisionView {
-        decision_id: "D1".into(),
-        key: key.into(),
-        value: "true".into(),
-        why: Some("release week".into()),
-        global: false,
-    };
-    kit.host
-        .decisions
-        .lock()
-        .unwrap()
-        .insert(key.into(), freeze);
-
-    assert!(!kit.train.step(REPO).await);
-    assert!(!kit.train.step(REPO).await);
-    assert_eq!(
-        kit.host.events_of("train.frozen"),
-        [json!({ "repo": REPO, "reason": "release week" })]
-    );
-    let held = kit.train.state(REPO);
-    assert!(held.frozen && held.queue.into_inner() == [change.change_id.clone()]);
-    assert!(kit.gh.merges.lock().unwrap().is_empty());
-
-    kit.host.decisions.lock().unwrap().clear();
-    assert!(kit.train.step(REPO).await);
-    assert_eq!(
-        kit.host.events_of("train.resumed"),
-        [json!({ "repo": REPO })]
-    );
-    assert_eq!(kit.get(&change.change_id).state, ChangeState::Merged);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -2339,109 +2304,6 @@ async fn a_member_pushed_to_while_the_batch_is_in_ci_leaves_it_untested_code_nev
     assert_eq!(state_of(&kit, &b), ChangeState::Merged);
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn a_stacked_pr_is_green_on_its_parent_before_it_lands_and_merges_after_it_retargeted() {
-    let kit = Kit::new();
-    // The parent in two commits, the second rewriting the first's line: replaying them onto its own squash conflicts.
-    kit.commit("p", &[add("p.txt", "one\n")], Some("origin/main"));
-    let parent_url = kit.open_pr(7, "p", &[add("p.txt", "two\n")], "Source: done:0");
-    kit.gh.pulls.lock().unwrap().get_mut(&7).unwrap().branch = "p".into();
-    let child_url = kit.stacked_pr(8, "c", "p", &[add("c.txt", "c\n")]);
-    // Frozen: nothing merges, speculative CI still runs.
-    let key = "policy.freeze.acme.storefront";
-    kit.host.decisions.lock().unwrap().insert(
-        key.into(),
-        DecisionView {
-            decision_id: "D1".into(),
-            key: key.into(),
-            value: "true".into(),
-            why: None,
-            global: false,
-        },
-    );
-    let parent = kit.enqueue(parent_url, None).await;
-    let child = kit.enqueue(child_url, None).await;
-    let child_head = kit.head_of("c");
-
-    assert!(!kit.train.step(REPO).await);
-    assert!(!kit.train.step(REPO).await);
-    let spec = kit
-        .gh
-        .pulls
-        .lock()
-        .unwrap()
-        .iter()
-        .find(|(_, p)| p.branch == "fleetd/train/stack-8")
-        .map(|(n, p)| (*n, p.base.clone(), p.draft))
-        .expect("a speculative PR");
-    assert_eq!((spec.1.as_str(), spec.2), ("main", true));
-    let green = format!("status fleetd/stack success {child_head}");
-    assert!(
-        kit.gh.log.lock().unwrap().contains(&green),
-        "{:?}",
-        kit.gh.log.lock().unwrap()
-    );
-    assert!(merged_prs(&kit).is_empty());
-
-    // Thawed, and main moved: the parent is rebased (its branch rewritten), lands alone, then the child is
-    // retargeted, rebased onto the parent's squash without replaying the parent's commits, and lands after CI.
-    kit.host.decisions.lock().unwrap().clear();
-    kit.commit("main", &[add("other.txt", "other\n")], None);
-    assert!(kit.train.step(REPO).await);
-    assert_eq!(state_of(&kit, &parent), ChangeState::Merged);
-    assert_eq!(
-        state_of(&kit, &child),
-        ChangeState::Ready,
-        "it waits for its parent, not in a batch with it"
-    );
-    assert!(kit.train.step(REPO).await);
-    let merged = kit.get(&child.change_id);
-    assert_eq!(merged.state, ChangeState::Merged, "{:?}", merged.last_error);
-    assert_eq!(kit.main_file("p.txt").as_deref(), Some("two"));
-    assert_eq!(kit.main_file("c.txt").as_deref(), Some("c"));
-    let log = kit.gh.log.lock().unwrap().clone();
-    let green_at = log.iter().position(|l| *l == green).unwrap();
-    let parent_merged_at = log.iter().position(|l| *l == "merge #7").unwrap();
-    assert!(green_at < parent_merged_at, "{log:?}");
-    let pulls = kit.gh.pulls.lock().unwrap();
-    assert_eq!(pulls[&8].base, "main");
-    assert_eq!(
-        pulls[&spec.0].state, "closed",
-        "the speculative build is closed once its parent landed"
-    );
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn a_stacked_pr_never_lands_before_its_parent_and_hears_when_it_is_red_on_it() {
-    let kit = Kit::new();
-    let parent_url = kit.open_pr(7, "p", &[add("pair-a", "a\n")], "Source: done:0");
-    let child_url = kit.stacked_pr(8, "c", "p", &[add("pair-b", "b\n")]);
-    // The parent needs a review it never gets; the child is ready at once.
-    let parent = kit.enqueue(parent_url, Some(Tier::M)).await;
-    let (task_id, child_id) = kit.author_task(Some(&child_url)).await;
-
-    for _ in 0..3 {
-        kit.train.step(REPO).await;
-    }
-    assert!(merged_prs(&kit).is_empty());
-    assert_eq!(kit.get(&child_id).state, ChangeState::Ready);
-    assert_eq!(state_of(&kit, &parent), ChangeState::Reviewing);
-    let child_head = kit.head_of("c");
-    assert!(
-        kit.gh
-            .log
-            .lock()
-            .unwrap()
-            .contains(&format!("status fleetd/stack failure {child_head}"))
-    );
-    let (to, text) = kit.host.sends.lock().unwrap().last().cloned().unwrap();
-    assert_eq!(to, task_id.to_string());
-    assert!(
-        text.contains("on top of #7 (not merged yet) failed"),
-        "{text}"
-    );
-}
-
 #[test]
 fn a_cancelled_check_is_red_only_once_nothing_else_runs() {
     use super::github::CheckRun;
@@ -2566,8 +2428,8 @@ async fn a_merge_github_did_but_answered_with_an_error_is_finished_by_the_next_p
 #[tokio::test(flavor = "multi_thread")]
 async fn scratch_branches_and_prs_nothing_uses_are_swept_and_a_merged_batch_leaves_no_branch() {
     let kit = Kit::new();
-    // What a hub that restarted mid-way left: a speculative build and a batch, each with an open PR.
-    for (n, branch) in [(50, "fleetd/train/stack-99"), (51, "fleetd/train/batch")] {
+    // What a hub that restarted mid-way left: batches, each with an open PR.
+    for (n, branch) in [(50, "fleetd/train/batch-99"), (51, "fleetd/train/batch")] {
         kit.commit(branch, &[add("left.txt", "left\n")], Some("origin/main"));
         kit.gh
             .pulls
@@ -2581,24 +2443,19 @@ async fn scratch_branches_and_prs_nothing_uses_are_swept_and_a_merged_batch_leav
         &[add("t3.txt", "t3\n")],
         Some("origin/main"),
     );
-    // Frozen, so the first pass only sweeps.
-    three_ready(&kit).await;
-    let key = "policy.freeze.acme.storefront";
-    let freeze = DecisionView {
-        decision_id: "D1".into(),
-        key: key.into(),
-        value: "true".into(),
-        why: None,
-        global: false,
+    // Held, so the first pass only sweeps.
+    let ready = three_ready(&kit).await;
+    let hold = |on: bool| {
+        let mut pulls = kit.gh.pulls.lock().unwrap();
+        for c in &ready {
+            pulls.get_mut(&c.pr_number.get()).unwrap().labels =
+                if on { vec!["hold".into()] } else { Vec::new() };
+        }
     };
-    kit.host
-        .decisions
-        .lock()
-        .unwrap()
-        .insert(key.into(), freeze);
+    hold(true);
 
     assert!(!kit.train.step(REPO).await);
-    assert!(kit.gh.head_of("fleetd/train/stack-99").is_none());
+    assert!(kit.gh.head_of("fleetd/train/batch-99").is_none());
     assert!(kit.gh.head_of("fleetd/train/batch").is_none());
     assert!(kit.gh.head_of("fleetd/T3-docs").is_some());
     let states = {
@@ -2607,42 +2464,13 @@ async fn scratch_branches_and_prs_nothing_uses_are_swept_and_a_merged_batch_leav
     };
     assert_eq!(states, ("closed".into(), "closed".into()));
 
-    kit.host.decisions.lock().unwrap().clear();
+    hold(false);
     assert!(kit.train.step(REPO).await);
     assert_eq!(merged_prs(&kit).len(), 1);
     assert!(
         kit.gh.head_of("fleetd/train/batch").is_none(),
         "deleted once merged"
     );
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn a_speculative_build_follows_its_parents_new_head_not_the_childs_stale_copy() {
-    let kit = Kit::new();
-    // The parent never gets its review, so it waits; the child is ready.
-    let parent_url = kit.open_pr(7, "p", &[add("p.txt", "p\n")], "Source: done:0");
-    kit.enqueue(parent_url, Some(Tier::M)).await;
-    let child_url = kit.stacked_pr(8, "c", "p", &[add("pair-b", "b\n")]);
-    kit.enqueue(child_url, None).await;
-    let child_head = kit.head_of("c");
-    kit.train.step(REPO).await;
-    kit.train.step(REPO).await;
-    let status = |state: &str| format!("status fleetd/stack {state} {child_head}");
-    assert!(kit.gh.log.lock().unwrap().contains(&status("success")));
-
-    // The parent's author pushes a commit the child doesn't have; together they are now red.
-    kit.commit("p", &[add("pair-a", "a\n")], None);
-    for _ in 0..3 {
-        kit.train.step(REPO).await;
-    }
-    let log = kit.gh.log.lock().unwrap();
-    let green = log.iter().position(|l| *l == status("success")).unwrap();
-    let red = log.iter().rposition(|l| *l == status("failure"));
-    assert!(
-        red.is_some_and(|r| r > green),
-        "rebuilt on the parent's new head: {log:?}"
-    );
-    assert!(merged_prs(&kit).is_empty());
 }
 
 impl Kit {
