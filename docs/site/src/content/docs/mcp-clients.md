@@ -38,9 +38,8 @@ You'll connect an MCP client, such as Claude Code on your laptop, to the hub so 
    `fleetd_status`.
 
 :::note[Writing to a lead]
-`chat_send` takes only a [human key](/docs/glossary#human-key), because the lead reads the message as yours. To let
-Claude Code write to leads for you, create the key with `--human` in step 1:
-`fleetd hub key create --human --name laptop`.
+`chat_send` takes only a [human key](/docs/glossary#human-key), because the lead reads the message as yours. Write to
+leads from the desktop app. Don't give Claude Code a human key: it could then speak and approve as you.
 :::
 
 `claude mcp add` writes to your Claude config. `--scope` picks where:

@@ -114,8 +114,6 @@ pub enum DenyReason<'a> {
     },
     /// The approval was withdrawn before anyone answered it.
     Withdrawn { by: &'a str, request: &'a str },
-    /// Denied with thread_answer, no words.
-    Answer { by: &'a str },
 }
 
 /// The tool result of a denied call.
@@ -129,7 +127,6 @@ pub fn denied(reason: &DenyReason<'_>) -> String {
         DenyReason::Withdrawn { by, request } => format!(
             "{by} withdrew {request} before anyone answered it. Don't retry this call; ask for another way"
         ),
-        DenyReason::Answer { by } => format!("{by} with thread_answer"),
     };
     format!("Denied: {reason}.")
 }
@@ -212,10 +209,6 @@ mod tests {
                 request: "Q3"
             }),
             "Denied: ada-lovelace withdrew Q3 before anyone answered it. Don't retry this call; ask for another way."
-        );
-        assert_eq!(
-            denied(&DenyReason::Answer { by: "ada-lovelace" }),
-            "Denied: ada-lovelace with thread_answer."
         );
     }
 

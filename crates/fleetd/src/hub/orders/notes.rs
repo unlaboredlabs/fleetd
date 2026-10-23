@@ -35,7 +35,7 @@ pub fn require_human(caller: &Caller, tool: &str) -> Result<(), ToolError> {
         ErrorCode::Forbidden,
         format!("{tool} speaks for the human, and this is an agent key."),
     )
-    .with_fix("Send it from the desktop app (a human key from `fleetd pair`); an agent talks to a lead with thread_send."))
+    .with_fix("Send it from the desktop app (a human key from `fleetd pair`)."))
 }
 
 fn readable_order(hub: &Hub, caller: &Caller, id: &str) -> Result<StoredWorkstream, ToolError> {

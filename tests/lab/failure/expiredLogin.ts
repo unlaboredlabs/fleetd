@@ -4,7 +4,6 @@
 // with the plain `claude auth login` the user would run for their own claude. No session may start: no claude session file and no
 // transcript appear on the machine, so no model call was possible.
 import fs from "node:fs";
-import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { type Body, claudeConfigDir, type Lab, MECHANICS, nodeHome, seedRepo } from "../harness.ts";
 
@@ -31,15 +30,8 @@ export async function expiredLogin(lab: Lab) {
     ok(`${MACHINE} degraded: ${JSON.stringify(machine)}`);
     const projectId = await lab.addProject(MACHINE, repo, "nologin");
 
-    const launched = await callTool("thread_launch", {
-      machineId: MACHINE,
-      projectId,
-      prompt: "Reply with the single word OK and nothing else.",
-      model: MECHANICS.model,
-      effort: MECHANICS.effort,
-      title: "fleetd lab expired-login",
-      clientRequestId: randomUUID(),
-    });
+    // A fresh project has no lead, so lead_start launches one.
+    const launched = await callTool("lead_start", { machineId: MACHINE, projectId, ...MECHANICS });
     check(launched.isError, `a launch on the logged-out machine is refused: ${JSON.stringify(launched.body)}`);
     check(/log/iu.test(JSON.stringify(launched.body)), `the refusal names the login: ${JSON.stringify(launched.body)}`);
     ok(`launch refused: ${JSON.stringify(launched.body)}`);

@@ -6,7 +6,7 @@ use std::sync::Arc;
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadId, ThreadRef};
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult};
 use fleetd_contracts::ledger::{Decision, DecisionScope, HumanRequest, RequestState, WorkstreamId};
-use fleetd_contracts::mcp::{McpToolError, ThreadLaunchInput};
+use fleetd_contracts::mcp::McpToolError;
 use fleetd_contracts::verification::{Claim, Eta};
 
 use super::Area;
@@ -69,24 +69,15 @@ impl LeadPorts for HubPorts {
     fn launch(
         &self,
         machine_id: &MachineId,
-        input: ThreadLaunchInput,
+        input: LaunchInput,
     ) -> BoxFuture<Result<ThreadId, LeadError>> {
         let executors = Arc::clone(&self.executors);
         let machine_id = machine_id.clone();
         Box::pin(async move {
-            let launch = LaunchInput {
-                project_id: input.project_id,
-                prompt: input.prompt.to_string(),
-                model: input.model.to_string(),
-                effort: input.effort,
-                runtime_mode: input.runtime_mode,
-                title: input.title,
-                client_request_id: input.client_request_id.to_string(),
-            };
             executors
                 .launch(
                     &machine_id,
-                    &launch,
+                    &input,
                     LaunchOptions {
                         workspace: None,
                         role: fleetd_contracts::sessions::SessionRole::Lead,

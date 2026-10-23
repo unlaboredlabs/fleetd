@@ -60,7 +60,7 @@ pub enum ExecutorError {
     },
 }
 
-/// How a write reaches a running thread: plain (wakes, nudges, thread_send), or as a steer.
+/// How a write reaches a running thread: plain (wakes, nudges), or as a steer.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SendOpts {
     pub mode: SendMode,
@@ -229,31 +229,6 @@ impl ThreadWriter for executor::Executors {
                 .map(|sent| Sent {
                     run_id: sent.run_id,
                     behind_run: sent.queued,
-                })
-                .map_err(Into::into)
-        })
-    }
-}
-
-/// `thread_send` goes through the queue.
-pub struct QueueWriter(pub std::sync::Arc<super::WriteQueue>);
-
-impl executor::OfflineWriter for QueueWriter {
-    fn send<'a>(
-        &'a self,
-        thread_ref: &'a ThreadRef,
-        message: &'a str,
-        client_request_id: &'a str,
-    ) -> BoxFuture<'a, Result<executor::WriteOutcome, executor::ExecutorError>> {
-        Box::pin(async move {
-            self.0
-                .send(thread_ref, message, client_request_id, None)
-                .await
-                .map(|sent| executor::WriteOutcome {
-                    run_id: sent.run_id,
-                    // Behind a run: queued with no expiry, which thread_send tells apart from offline.
-                    queued: sent.queued || sent.behind_run,
-                    queued_until: sent.queued_until,
                 })
                 .map_err(Into::into)
         })

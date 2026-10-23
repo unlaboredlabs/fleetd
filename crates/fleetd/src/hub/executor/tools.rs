@@ -1,7 +1,6 @@
 //! The M1 MCP tools over the executor and the caches it fills: fleetd_status, projects_list, project_get,
-//! thread_tail, actions_list, thread_launch, thread_send and thread_interrupt.
-//! Later areas add to fleetd_status and project_get through `ToolHooks` (slots, lead,
-//! workstreams, tasks, trains), gate launches (usage), and route thread_send through the offline write queue.
+//! thread_tail and actions_list. Later areas add to fleetd_status and project_get through `ToolHooks` (slots, lead,
+//! workstreams, tasks, trains).
 use std::collections::HashSet;
 use std::future::Future;
 use std::pin::Pin;
@@ -12,13 +11,13 @@ use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef};
 use fleetd_contracts::mcp::{
     ActionsListInput, ErrorCode, FleetdStatusInput, ProjectGetInput, ProjectsListInput, TailKind,
-    ThreadInterruptInput, ThreadLaunchInput, ThreadSendInput, ThreadTailInput,
+    ThreadTailInput,
 };
 use fleetd_contracts::model::{Machine, MachineStatus};
 use serde_json::{Map, Value, json};
 
+use super::ExecutorError;
 use super::thread_view::TailRow;
-use super::{ExecutorError, LaunchInput, LaunchOptions, WriteOutcome};
 use crate::hub::api::{
     Caller, Hub, Registry, ToolError, any_truncated, can_read, cap, clip, limits, offline,
     readable, require, unknown_machine, unknown_project, unknown_thread,
@@ -39,18 +38,12 @@ pub struct ProjectExtra {
 
 type ProjectHook = Arc<dyn Fn(Arc<Hub>, ProjectRef) -> HookFuture<ProjectExtra> + Send + Sync>;
 type StatusHook = Arc<dyn Fn(Arc<Hub>, Caller) -> HookFuture<Map<String, Value>> + Send + Sync>;
-type LaunchGate = Arc<
-    dyn Fn(Arc<Hub>, MachineId) -> Pin<Box<dyn Future<Output = Option<String>> + Send>>
-        + Send
-        + Sync,
->;
 
 /// Where later areas plug into the M1 tools.
 #[derive(Default)]
 pub struct ToolHooks {
     project: RwLock<Vec<ProjectHook>>,
     status: RwLock<Vec<StatusHook>>,
-    launch_gates: RwLock<Vec<LaunchGate>>,
 }
 
 impl ToolHooks {
@@ -61,10 +54,6 @@ impl ToolHooks {
     /// Adds fields to fleetd_status (the slot board, filtered to the caller's machines).
     pub fn extend_status(&self, hook: StatusHook) {
         self.status.write().unwrap().push(hook);
-    }
-    /// A launch refused while a gate says why (usage: the login is exhausted). The reason reads "Not launched: <it>."
-    pub fn gate_launch(&self, gate: LaunchGate) {
-        self.launch_gates.write().unwrap().push(gate);
     }
 }
 
@@ -86,9 +75,6 @@ pub fn register(tools: &mut Registry) {
     tools.add("project_get", project_get);
     tools.add("thread_tail", thread_tail);
     tools.add("actions_list", actions_list);
-    tools.add("thread_launch", thread_launch);
-    tools.add("thread_send", thread_send);
-    tools.add("thread_interrupt", thread_interrupt);
 }
 
 fn now(hub: &Hub) -> String {
@@ -374,129 +360,4 @@ async fn actions_list(
     let mut out = json!({ "actions": shown.items });
     with_truncated(&mut out, shown.truncated);
     Ok(out)
-}
-
-fn require_connected(hub: &Hub, machine_id: &MachineId) -> Result<(), ToolError> {
-    if hub.executors.is_connected(machine_id) {
-        Ok(())
-    } else {
-        Err(offline(machine_id))
-    }
-}
-
-async fn thread_launch(
-    hub: Arc<Hub>,
-    caller: Caller,
-    input: ThreadLaunchInput,
-) -> Result<Value, ToolError> {
-    require(&caller, Role::Operate, Some(&input.machine_id))?;
-    require_connected(&hub, &input.machine_id)?;
-    let r = ProjectRef {
-        machine_id: input.machine_id.clone(),
-        project_id: input.project_id.clone(),
-    };
-    if hub.store.project_get(&r)?.is_none() {
-        return Err(unknown_project(&r));
-    }
-    // M4 usage: no new turn goes into a login fleetd knows is exhausted.
-    let gates: Vec<LaunchGate> = hub.executors.hooks.launch_gates.read().unwrap().clone();
-    for gate in gates {
-        if let Some(paused) = gate(hub.clone(), input.machine_id.clone()).await {
-            return Err(ToolError::new(ErrorCode::Invalid, format!("Not launched: {paused}.")).with_fix(format!(
-                "Wait for the reset (usage_status shows it), or run usage_resume with machineId {} once the login has capacity again.",
-                input.machine_id
-            )));
-        }
-    }
-    let cursor = hub.events.head();
-    let launch = LaunchInput {
-        project_id: input.project_id.clone(),
-        prompt: input.prompt.as_str().to_owned(),
-        model: input.model.as_str().to_owned(),
-        effort: input.effort,
-        runtime_mode: input.runtime_mode,
-        title: input.title.clone(),
-        client_request_id: input.client_request_id.as_str().to_owned(),
-    };
-    let thread_id = hub
-        .executors
-        .launch(&input.machine_id, &launch, LaunchOptions::default())
-        .await
-        .map_err(from_executor)?;
-    Ok(json!({
-        "threadId": thread_id,
-        "next": format!("Call events_wait with cursor {cursor} and machineId {} to wait for thread.completed.", input.machine_id),
-    }))
-}
-
-async fn thread_send(
-    hub: Arc<Hub>,
-    caller: Caller,
-    input: ThreadSendInput,
-) -> Result<Value, ToolError> {
-    require(&caller, Role::Operate, Some(&input.machine_id))?;
-    let r = ThreadRef {
-        machine_id: input.machine_id.clone(),
-        thread_id: input.thread_id.clone(),
-    };
-    // A write that may wait in the queue needs a target the hub has seen, since the node can't vouch for it offline.
-    if hub.store.machine_get(&r.machine_id)?.is_none() {
-        return Err(unknown_machine(&r.machine_id));
-    }
-    if hub.store.thread_get(&r)?.is_none() && !hub.executors.is_connected(&r.machine_id) {
-        return Err(unknown_thread(&r));
-    }
-    let message = input.message.as_str();
-    let request_id = input.client_request_id.as_str();
-    let sent = match hub.executors.offline_writer() {
-        Some(writer) => writer.send(&r, message, request_id).await,
-        None => hub
-            .executors
-            .send(&r, message, request_id)
-            .await
-            .map(|s| WriteOutcome {
-                run_id: s.run_id,
-                queued: s.queued,
-                queued_until: None,
-            }),
-    }
-    .map_err(from_executor)?;
-    let next = if sent.queued && sent.queued_until.is_none() {
-        "Taken in at the thread's next tool boundary, or now if it is idle. Call events_wait to wait for it."
-            .to_owned()
-    } else if sent.queued {
-        format!(
-            "{} is offline: the message is queued until {}. Wait for write.delivered or write.expired with events_wait.",
-            input.machine_id,
-            sent.queued_until.as_deref().unwrap_or_default()
-        )
-    } else {
-        "Call events_wait to wait for the thread to finish.".to_owned()
-    };
-    let mut out = json!({ "queued": sent.queued, "next": next });
-    if let Some(run_id) = sent.run_id {
-        out["runId"] = json!(run_id);
-    }
-    if let Some(until) = sent.queued_until {
-        out["queuedUntil"] = json!(until);
-    }
-    Ok(out)
-}
-
-async fn thread_interrupt(
-    hub: Arc<Hub>,
-    caller: Caller,
-    input: ThreadInterruptInput,
-) -> Result<Value, ToolError> {
-    require(&caller, Role::Operate, Some(&input.machine_id))?;
-    require_connected(&hub, &input.machine_id)?;
-    let r = ThreadRef {
-        machine_id: input.machine_id.clone(),
-        thread_id: input.thread_id.clone(),
-    };
-    hub.executors
-        .interrupt(&r, input.client_request_id.as_str())
-        .await
-        .map_err(from_executor)?;
-    Ok(json!({ "ok": true }))
 }

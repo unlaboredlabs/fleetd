@@ -2105,8 +2105,6 @@ export type PeriodBreakdown = {
   wallMs: number;
 };
 
-export type PermissionAnswer = "allow" | "deny";
-
 /** A `{{name}}` the code fills in. A required one missing from an edit gets a warning. */
 export type Placeholder = {
   description: string;
@@ -3199,8 +3197,6 @@ export type KnownRiskRule =
 /** KnownRiskRule, or a value from a newer hub. */
 export type RiskRule = KnownRiskRule | (string & {});
 
-export type RuntimeMode = "full-access" | "approval-required";
-
 /** A rule the default text carries, found in a text by `needle` (a case-insensitive regex). */
 export type SafetyRule = {
   enforced: Enforcement;
@@ -3978,25 +3974,6 @@ export type TasksListOutput = {
   truncated?: boolean;
 };
 
-export type ThreadAnswerInput = {
-  decision: PermissionAnswer;
-  machineId: MachineId;
-  /** Deny only: what claude is told instead of running the tool. */
-  message?: string;
-  /** The prompt answered, from the thread.waiting event; absent means the one open now. */
-  requestId?: string;
-  threadId: ThreadId;
-};
-
-export type ThreadAnswerOutput = {
-  decision: PermissionAnswer;
-  /** The approval request this answer closed, if one was open. */
-  humanRequestId?: ChatRequestId;
-  next?: string;
-  requestId: string;
-  truncated?: boolean;
-};
-
 export type ThreadCounts = {
   failed: number;
   idle: number;
@@ -4021,55 +3998,9 @@ export type ThreadEventReason = "stalled" | "usage_limit" | "interrupted";
 
 export type ThreadId = string;
 
-export type ThreadInterruptInput = {
-  clientRequestId: string;
-  machineId: MachineId;
-  threadId: ThreadId;
-};
-
-export type ThreadInterruptOutput = {
-  next?: string;
-  ok: true;
-  truncated?: boolean;
-};
-
-export type ThreadLaunchInput = {
-  clientRequestId: string;
-  effort: Effort;
-  machineId: MachineId;
-  model: string;
-  projectId: ProjectId;
-  prompt: string;
-  runtimeMode?: RuntimeMode;
-  title?: string;
-};
-
-export type ThreadLaunchOutput = {
-  next?: string;
-  threadId: ThreadId;
-  truncated?: boolean;
-};
-
 export type ThreadRef = {
   machineId: MachineId;
   threadId: ThreadId;
-};
-
-export type ThreadSendInput = {
-  clientRequestId: string;
-  machineId: MachineId;
-  message: string;
-  threadId: ThreadId;
-};
-
-export type ThreadSendOutput = {
-  next?: string;
-  /** True when the machine is offline and the message waits in the hub's queue. */
-  queued: boolean;
-  /** When a queued message expires undelivered. */
-  queuedUntil?: Timestamp;
-  runId?: string;
-  truncated?: boolean;
 };
 
 export type ThreadStatus = "running" | "waiting" | "idle" | "completed" | "failed" | "interrupted" | "cancelled";
@@ -4699,10 +4630,6 @@ export interface ToolMap {
   steers_list: { input: SteersListInput; output: SteersListOutput };
   task_get: { input: TaskGetInput; output: TaskGetOutput };
   tasks_list: { input: TasksListInput; output: TasksListOutput };
-  thread_answer: { input: ThreadAnswerInput; output: ThreadAnswerOutput };
-  thread_interrupt: { input: ThreadInterruptInput; output: ThreadInterruptOutput };
-  thread_launch: { input: ThreadLaunchInput; output: ThreadLaunchOutput };
-  thread_send: { input: ThreadSendInput; output: ThreadSendOutput };
   thread_tail: { input: ThreadTailInput; output: ThreadTailOutput };
   thread_window: { input: ThreadWindowInput; output: ThreadWindowOutput };
   time_breakdown: { input: TimeBreakdownInput; output: TimeBreakdownOutput };

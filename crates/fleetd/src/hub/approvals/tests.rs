@@ -113,7 +113,6 @@ struct Fake {
     pending: Mutex<Option<PendingPermission>>,
     linked: Mutex<bool>,
     rules: Mutex<Result<ToolRules, String>>,
-    lead_thread: Mutex<Option<String>>,
     events: Mutex<Vec<NewEvent>>,
     /// Each lead wake: `<requestId> <state>`.
     woken: Mutex<Vec<String>>,
@@ -134,7 +133,6 @@ impl Default for Fake {
             pending: Mutex::default(),
             linked: Mutex::new(false),
             rules: Mutex::new(Ok(ToolRules::default())),
-            lead_thread: Mutex::default(),
             events: Mutex::default(),
             woken: Mutex::default(),
             woke: tokio::sync::Notify::new(),
@@ -282,17 +280,6 @@ impl ApprovalHub for Fake {
     fn tool_rules(&self, _: &ProjectRef) -> BoxFut<'_, Result<ToolRules, String>> {
         let r = self.rules.lock().unwrap().clone();
         Box::pin(async move { r })
-    }
-    fn lead_thread(&self, _: &ProjectRef) -> BoxFut<'_, Option<String>> {
-        let t = self.lead_thread.lock().unwrap().clone();
-        Box::pin(async move { t })
-    }
-    fn thread_project(&self, m: &str, _: &str) -> BoxFut<'_, Option<ProjectRef>> {
-        let p = ProjectRef {
-            machine_id: m.into(),
-            project_id: "p1".into(),
-        };
-        Box::pin(async move { Some(p) })
     }
 }
 
@@ -847,101 +834,6 @@ async fn an_approval_closes_when_its_prompt_is_gone() {
     reminder.data.as_mut().unwrap()["reminder"] = json!(true);
     a.on_thread_event(&reminder).await;
     assert!(fake.requests.get("Q3").unwrap().is_none());
-}
-
-#[tokio::test]
-async fn a_lead_answers_its_tasks_prompts_but_never_its_own() {
-    let fake = Arc::new(Fake::default());
-    let a = approvals(&fake);
-    a.on_thread_event(&event(
-        "thread.waiting",
-        Some(prompt("q1", "Bash", "rm -rf build")),
-    ))
-    .await;
-    *fake.pending.lock().unwrap() = Some(pending("q1"));
-    let lead = agent();
-    let input = |request_id: Option<&str>, allow: bool| ThreadAnswer {
-        machine_id: "lab-a".into(),
-        thread_id: "t1".into(),
-        request_id: request_id.map(str::to_string),
-        allow,
-        message: None,
-    };
-
-    *fake.lead_thread.lock().unwrap() = Some("t1".into());
-    let refused = a.answer_thread(&lead, input(None, true)).await.unwrap_err();
-    assert_eq!(refused.code, "forbidden", "no self-approval");
-    assert!(
-        a.answer_thread(&person(), input(None, true)).await.is_ok(),
-        "a person may"
-    );
-    fake.answers.lock().unwrap().clear();
-    fake.requests
-        .update(&ChatRequestId::unchecked("Q1"), |r| {
-            r.state = RequestState::Open;
-            r.evidence = None;
-            r.answered_by = None;
-        })
-        .unwrap();
-
-    *fake.lead_thread.lock().unwrap() = Some("lead-thread".into());
-    let stale = a
-        .answer_thread(&lead, input(Some("q0"), true))
-        .await
-        .unwrap_err();
-    assert_eq!(stale.code, "not_found");
-    assert!(
-        stale
-            .message
-            .contains("it waits on q1 (Bash rm -rf build) now"),
-        "{}",
-        stale.message
-    );
-
-    let out = a
-        .answer_thread(&lead, input(Some("q1"), false))
-        .await
-        .unwrap();
-    assert_eq!(
-        (out["decision"].as_str(), out["humanRequestId"].as_str()),
-        (Some("deny"), Some("Q1"))
-    );
-    assert_eq!(
-        fake.answers.lock().unwrap()[0].3,
-        PermissionDecision::Deny {
-            message: fleetd_contracts::prim::Text::unchecked(
-                "Denied: agent:lead-key with thread_answer."
-            )
-        }
-    );
-    let r = fake.request("Q1");
-    assert_eq!(
-        (r.state, r.evidence.unwrap().as_str()),
-        (
-            RequestState::Denied,
-            "denied on lab-a with thread_answer by agent:lead-key"
-        )
-    );
-
-    let ungranted = Caller {
-        allows_operate: NOWHERE,
-        ..person()
-    };
-    assert_eq!(
-        a.answer_thread(&ungranted, input(None, true))
-            .await
-            .unwrap_err()
-            .code,
-        "forbidden"
-    );
-    *fake.pending.lock().unwrap() = None;
-    assert_eq!(
-        a.answer_thread(&person(), input(None, true))
-            .await
-            .unwrap_err()
-            .code,
-        "not_found"
-    );
 }
 
 fn now_ms() -> i64 {

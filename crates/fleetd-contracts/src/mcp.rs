@@ -18,9 +18,7 @@ use crate::ledger::{
     WorkstreamState,
 };
 use crate::live::{AgentLane, OrderCard, TrainLive};
-use crate::model::{
-    ActionItem, Machine, ProjectOutcome, ProjectSummary, RuntimeMode, ThreadSummary,
-};
+use crate::model::{ActionItem, Machine, ProjectOutcome, ProjectSummary, ThreadSummary};
 use crate::plan::PlanView;
 use crate::playbooks::IntakeEcho;
 use crate::prim::{
@@ -187,45 +185,6 @@ output!(EventsWaitOutput {
     cursor: EventSeq,
     more: bool,
 });
-
-// thread_launch
-input!(ThreadLaunchInput {
-    machine_id: MachineId,
-    project_id: ProjectId,
-    prompt: NonEmpty,
-    model: NonEmpty,
-    effort: Effort,
-    #[serde(default)]
-    runtime_mode: RuntimeMode,
-    title: Option<String>,
-    client_request_id: RequestId,
-});
-output!(ThreadLaunchOutput {
-    thread_id: ThreadId
-});
-
-// thread_send
-input!(ThreadSendInput {
-    machine_id: MachineId,
-    thread_id: ThreadId,
-    message: NonEmpty,
-    client_request_id: RequestId
-});
-output!(ThreadSendOutput {
-    run_id: Option<String>,
-    /// True when the machine is offline and the message waits in the hub's queue.
-    queued: bool,
-    /// When a queued message expires undelivered.
-    queued_until: Option<Timestamp>,
-});
-
-// thread_interrupt
-input!(ThreadInterruptInput {
-    machine_id: MachineId,
-    thread_id: ThreadId,
-    client_request_id: RequestId
-});
-output!(ThreadInterruptOutput { ok: True });
 
 fn default_true() -> bool {
     true
@@ -865,40 +824,6 @@ output!(AttentionPolicyOutput {
     quiet: List<QuietWindow, 0, 2>,
 });
 
-// thread_answer: answers the tool permission prompt a thread's run waits on. Human keys answer any thread on a machine
-// they may operate; agent keys every thread there except a lead's own (a lead never approves itself).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum PermissionAnswer {
-    Allow,
-    Deny,
-}
-
-input!(
-    #[serde(remote = "Self")]
-    ThreadAnswerInput {
-        machine_id: MachineId,
-        thread_id: ThreadId,
-        /// The prompt answered, from the thread.waiting event; absent means the one open now.
-        request_id: Option<NonEmpty>,
-        decision: PermissionAnswer,
-        /// Deny only: what claude is told instead of running the tool.
-        message: Option<Text<1, 2000>>,
-    }
-);
-checked!(ThreadAnswerInput, |input| {
-    if input.message.is_some() && input.decision == PermissionAnswer::Allow {
-        return Err("message goes with decision deny only".into());
-    }
-    Ok(())
-});
-output!(ThreadAnswerOutput {
-    request_id: NonEmpty,
-    decision: PermissionAnswer,
-    /// The approval request this answer closed, if one was open.
-    human_request_id: Option<ChatRequestId>,
-});
-
 brand!(
     /// An absolute directory on the machine, without `.`, `..` or empty segments (one trailing `/` is allowed).
     WorkspacePath,
@@ -1398,10 +1323,6 @@ tools! {
     thread_tail => ThreadTail, Read, ThreadTailInput, ThreadTailOutput;
     actions_list => ActionsList, Read, ActionsListInput, ActionsListOutput;
     events_wait => EventsWait, Read, EventsWaitInput, EventsWaitOutput;
-    thread_launch => ThreadLaunch, Operate, ThreadLaunchInput, ThreadLaunchOutput;
-    thread_send => ThreadSend, Operate, ThreadSendInput, ThreadSendOutput;
-    thread_interrupt => ThreadInterrupt, Operate, ThreadInterruptInput, ThreadInterruptOutput;
-    thread_answer => ThreadAnswer, Operate, ThreadAnswerInput, ThreadAnswerOutput;
     project_discover => ProjectDiscover, Read, ProjectDiscoverInput, ProjectDiscoverOutput;
     project_inspect => ProjectInspect, Read, ProjectInspectInput, ProjectInspectOutput;
     project_add => ProjectAdd, Operate, ProjectAddInput, ProjectAddOutput;
@@ -1554,11 +1475,6 @@ mod tests {
                 .timeout_sec
                 .get(),
             50
-        );
-        let launch = json!({ "machineId": "devbox", "projectId": "p1", "prompt": "hi", "model": "claude-haiku-5-5", "effort": "low", "clientRequestId": "r1" });
-        assert_eq!(
-            decode::<ThreadLaunchInput>(launch).unwrap().runtime_mode,
-            RuntimeMode::FullAccess
         );
         let wake = json!({ "target": { "machineId": "devbox", "threadId": "t1" }, "schedule": { "kind": "at", "at": "2026-10-17T10:00:00.000Z", "tz": "UTC" }, "message": "x", "clientRequestId": "r1" });
         let wake: WakeSetInput = decode(wake).unwrap();

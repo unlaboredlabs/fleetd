@@ -2,19 +2,18 @@
 // tool child in another (the sigkill-mid-tool fixture), so both outlive the node. On restart the node must kill
 // them by its recorded pid (descendants included), mark the run interrupted ("node restarted mid-run"), and a later
 // send must resume the session with its context. Orphans are checked by the pids recorded before the kill.
-import { descendants, type Lab, type ProcInfo, stillRuns } from "../harness.ts";
-import { claudeOf, killSurvivors, launch, MACHINE, projectOf, replyAfter, runEnd, send, untilProc } from "./kit.ts";
+import { descendants, type Lab, leadRun, type ProcInfo, stillRuns } from "../harness.ts";
+import { claudeOf, killSurvivors, MACHINE, projectOf, replyAfter, runEnd, send, untilProc } from "./kit.ts";
 
 export async function killMidTurn(lab: Lab) {
   const { check, ok, log } = lab;
   const projectId = await projectOf(lab, MACHINE);
   // Long enough that the orphan check can't pass by the sleep ending on its own; a leak still ends by itself.
   const seconds = 120 + Math.floor(Math.random() * 60);
-  const threadId = await launch(
+  const { threadId } = await leadRun(
     lab,
     MACHINE,
     projectId,
-    "fleetd lab kill-mid-turn",
     `Use the Bash tool to run exactly \`sleep ${seconds}\` in the foreground, then reply with the single word DONE.`,
   );
   const nodePid = lab.nodePid(MACHINE);
@@ -51,7 +50,7 @@ export async function killMidTurn(lab: Lab) {
 
   // A send resumes the session (`--resume`): the cut tool call is gone, the first message is not.
   const beforeSend = await lab.cursor();
-  await send(lab, MACHINE, threadId, "Do not run any command. How many seconds was the sleep I asked you to run? Reply with just the number.");
+  await send(lab, MACHINE, projectId, "Do not run any command. How many seconds was the sleep I asked you to run? Reply with just the number.");
   // A watchdog continue may run first (and sleep again), hence the generous wait.
   const reply = await replyAfter(lab, MACHINE, threadId, beforeSend, 240_000 + seconds * 1000, (r) => r.includes(String(seconds)));
   ok(`send resumed the session; reply "${reply}"`);

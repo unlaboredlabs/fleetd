@@ -143,13 +143,12 @@ export async function m5Tasks(lab: Lab) {
     const spawn1 =
       `fleetd task spawn --workstream ${workstreamId} --title "add file" --areas docs --serves done:0 --model ${MECHANICS.model} --effort ${MECHANICS.effort} ` +
       `--prompt "create docs/x.md with one line 'hi', commit it on your branch"`;
-    const sent = await callTool("thread_send", {
-      ...ref,
-      threadId: leadThread,
+    const sent = await lab.humanCall("chat_send", {
+      projectRef: ref,
       clientRequestId: randomUUID(),
-      message: `Run this command once in your shell, exactly as written, then stop. In later wakes about tasks, run no commands: reply with one short line and stop.\n${spawn1}`,
+      text: `Run this command once in your shell, exactly as written, then stop. In later wakes about tasks, run no commands: reply with one short line and stop.\n${spawn1}`,
     });
-    check(!sent.isError, `thread_send to the lead: ${JSON.stringify(sent.body)}`);
+    check(!sent.isError, `chat_send to the lead: ${JSON.stringify(sent.body)}`);
     const spawnTurn = leadTurnDone(cursor, "spawn T1");
     // Awaited below; a rejection before then must not crash the run before its cleanup.
     spawnTurn.catch(() => undefined);

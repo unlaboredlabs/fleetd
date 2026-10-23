@@ -29,9 +29,9 @@ import {
   joinNode,
   LAB,
   type Lab,
-  launchTiny,
   log,
   MACHINES,
+  MECHANICS,
   nodeEnv,
   nodeHome,
   type MachineHomeOptions,
@@ -262,19 +262,21 @@ async function main() {
         ok(`hub (re)started${Object.keys(env).length > 0 ? ` with ${Object.keys(env).join(", ")}` : ""}`);
       },
       idleThread: async (machineId: string) => {
-        const projectId = (await callTool("fleetd_status")).body.projects.find((p: Body) => p.machineId === machineId)?.projectId;
+        const projectId = (await callTool("fleetd_status")).body.projects.find((p: Body) => p.machineId === machineId)?.projectId as string;
         check(projectId, `${machineId} has a project`);
-        const outcome = (await callTool("project_get", { machineId, projectId })).body;
-        const idle = outcome.threads.find((t: Body) => t.status === "completed");
-        if (idle !== undefined) return { threadId: idle.threadId as string, projectId: projectId as string };
         const from = await cursor();
-        const threadId = await launchTiny({ callTool, check }, machineId, projectId, "fleetd test:lab idle");
-        await waitEvent(`idle thread on ${machineId} to finish`, 240_000, {
-          cursor: from,
-          machineId,
-          match: (e) => e.threadId === threadId && e.type === "thread.completed",
-        });
-        return { threadId, projectId: projectId as string };
+        const lead = await callTool("lead_start", { machineId, projectId, ...MECHANICS });
+        check(!lead.isError, `lead_start on ${machineId}: ${JSON.stringify(lead.body)}`);
+        const threadId = lead.body.threadId as string;
+        if (lead.body.state !== "idle") {
+          await waitEvent(`the lead on ${machineId} to go idle`, 240_000, {
+            cursor: from,
+            machineId,
+            types: ["thread.completed", "thread.failed", "thread.interrupted"],
+            match: (e) => e.threadId === threadId,
+          });
+        }
+        return { threadId, projectId };
       },
     } satisfies Omit<Lab, "dir">;
 

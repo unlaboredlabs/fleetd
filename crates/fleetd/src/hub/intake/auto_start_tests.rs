@@ -7,10 +7,11 @@ use std::time::Duration;
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, ThreadId, ThreadRef, Timestamp};
 use fleetd_contracts::ledger::{Decision, HumanRequest, IntakeChannel, WorkstreamId};
-use fleetd_contracts::mcp::{ErrorCode, ThreadLaunchInput};
+use fleetd_contracts::mcp::ErrorCode;
 use fleetd_contracts::model::{ProjectSummary, ThreadCounts};
 
 use super::SubmitInput;
+use crate::hub::executor::LaunchInput;
 use crate::hub::leads::hooks::{BoxFuture, PolicyHook};
 use crate::hub::leads::ports::{CmdOutcome, LeadPorts};
 use crate::hub::leads::wakes::WAKE_DEBOUNCE;
@@ -27,18 +28,14 @@ const LOGIN_FIX: &str = "On lab-a: CLAUDE_CONFIG_DIR=~/.fleetd/claude claude aut
 #[derive(Default)]
 pub(crate) struct Node {
     runner_usable: AtomicBool,
-    pub(crate) launches: Mutex<Vec<ThreadLaunchInput>>,
+    pub(crate) launches: Mutex<Vec<LaunchInput>>,
     pub(crate) sends: Mutex<Vec<String>>,
 }
 
 struct Ports(Arc<Node>);
 
 impl LeadPorts for Ports {
-    fn launch(
-        &self,
-        _: &MachineId,
-        input: ThreadLaunchInput,
-    ) -> BoxFuture<Result<ThreadId, LeadError>> {
+    fn launch(&self, _: &MachineId, input: LaunchInput) -> BoxFuture<Result<ThreadId, LeadError>> {
         let node = Arc::clone(&self.0);
         Box::pin(async move {
             if !node.runner_usable.load(Ordering::SeqCst) {

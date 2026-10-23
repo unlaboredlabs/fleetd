@@ -370,10 +370,6 @@ pub fn build(
 /// and the doctor's 15-minute run.
 pub fn start(hub: &Arc<Hub>) -> Vec<tokio::task::JoinHandle<()>> {
     hub.ops.bind(hub);
-    // No new turn goes into a login fleetd knows is exhausted.
-    hub.executors.hooks.gate_launch(Arc::new(|hub, machine_id| {
-        Box::pin(async move { hub.usage.gate(machine_id.as_str()) })
-    }));
     let (usage, approvals, retro, doctor, stop) = (
         hub.usage.clone(),
         hub.approvals.clone(),

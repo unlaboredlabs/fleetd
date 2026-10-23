@@ -1,21 +1,17 @@
 // M2 lab scenarios 2 (stall, nudge, fail) and 6 (missed completion while the hub is down), against the
 // disposable lab only. Run by the lab harness (`npm run lab -- stall missed`).
-// Costs: scenario 2 two or three tiny mechanics turns, scenario 6 one.
+// Both run in the project's lead. Costs: scenario 2 two or three mechanics turns (plus the lead's first if it has
+// none), scenario 6 two (the lead's first turn and the message's).
 import { randomUUID } from "node:crypto";
-import { MECHANICS, NUDGE, sessionText, sleep } from "./harness.ts";
+import { type Lab, leadRun, NUDGE, sessionText, sleep } from "./harness.ts";
 
 type Body = Record<string, any>;
 
-/** What a scenario needs from the harness. */
-export interface LabContext {
-  /** Calls a tool on the hub's MCP endpoint with the harness's operate key. */
-  readonly callTool: (name: string, args?: Record<string, unknown>) => Promise<{ readonly isError: boolean; readonly body: Body }>;
-  /** Stops the hub by its PID, leaving the nodes and their sessions running. */
-  readonly stopHub: () => Promise<void>;
-  /** (Re)starts the hub on the same home with `env` added, waits for /healthz and reconnects the MCP client. */
-  readonly startHub: (env?: Readonly<Record<string, string>>) => Promise<void>;
-  readonly log: (line: string) => void;
-}
+/** What a scenario needs from the harness: the MCP calls (operate and person keys), events, and the hub's process. */
+export type LabContext = Pick<
+  Lab,
+  "callTool" | "humanCall" | "check" | "waitEvent" | "cursor" | "idleThread" | "stopHub" | "startHub" | "log"
+>;
 
 /** Short watchdog thresholds for scenario 2: 20 s outside a tool, tool timeout (10 s) + 20 s inside. */
 export const STALL_HUB_ENV = {
@@ -66,41 +62,29 @@ const ready = async (ctx: LabContext, machineId: string) =>
     return undefined;
   });
 
-const launch = async (ctx: LabContext, machineId: string, projectId: string, title: string, prompt: string) => {
-  const launched = await ctx.callTool("thread_launch", {
-    machineId,
-    projectId,
-    prompt,
-    model: MECHANICS.model,
-    effort: MECHANICS.effort,
-    title,
-    clientRequestId: randomUUID(),
-  });
-  check(!launched.isError, `thread_launch succeeded: ${JSON.stringify(launched.body)}`);
-  return launched.body.threadId as string;
-};
-
 /**
  * Scenario 2. A thread runs `sleep 900` inside a tool under short thresholds. The watchdog emits
  * thread.stalled (inside a tool), interrupts, sends one "continue"; the continuation sleeps again and
  * stalls, and the watchdog emits thread.failed{reason:"stalled"} with no second nudge.
  */
 export async function stallNudgeFail(ctx: LabContext, machineId = "lab-a") {
+  // The lead's own turns run under the normal thresholds: only the message's run is the stall under test.
+  const { threadId, projectId } = await ctx.idleThread(machineId);
   await ctx.startHub(STALL_HUB_ENV);
-  const { projectId, cursor } = await ready(ctx, machineId);
+  const { cursor } = await ready(ctx, machineId);
   const events = eventsFrom(ctx, cursor);
-  const threadId = await launch(
-    ctx,
-    machineId,
-    projectId,
-    "fleetd test:lab stall",
+  const sent = await ctx.humanCall("chat_send", {
+    projectRef: { machineId, projectId },
     // Unset, so the watchdog holds the call to FLEETD_STALL_TOOL_TIMEOUT_SEC; a stated timeout (claude likes 600000 for a
     // long sleep) would be honoured, and the stall would take ten minutes.
-    "Use the Bash tool to run exactly `sleep 900` in the foreground (not in the background), leaving the tool's timeout " +
+    text:
+      "Use the Bash tool to run exactly `sleep 900` in the foreground (not in the background), leaving the tool's timeout " +
       "parameter unset, and wait for it. " +
       "If you are interrupted or asked to continue, run `sleep 900` in the foreground again. Do nothing else.",
-  );
-  ctx.log(`ok  thread_launch ${machineId} -> ${threadId} (sleep 900)`);
+    clientRequestId: randomUUID(),
+  });
+  check(!sent.isError && sent.body.leadWaiting === undefined, `chat_send: ${JSON.stringify(sent.body)}`);
+  ctx.log(`ok  lead ${machineId}/${threadId} sent "sleep 900"`);
   const mine = (e: Body) => e.threadId === threadId;
 
   const stalled = await events.next("thread.stalled", 180_000, (e) => mine(e) && e.type === "thread.stalled");
@@ -142,15 +126,14 @@ const waitRunEnded = async (machineId: string, threadId: string, ms: number) => 
  */
 export async function missedCompletion(ctx: LabContext, machineId = "lab-a") {
   await ctx.startHub();
-  const { projectId, cursor } = await ready(ctx, machineId);
-  const events = eventsFrom(ctx, cursor);
-  const threadId = await launch(
+  const { projectId } = await ready(ctx, machineId);
+  const { threadId, cursor } = await leadRun(
     ctx,
     machineId,
     projectId,
-    "fleetd test:lab missed completion",
     "Use the Bash tool to run exactly `sleep 20` in the foreground, then reply with the single word DONE.",
   );
+  const events = eventsFrom(ctx, cursor);
   const started = await events.next("thread.started", 120_000, (e) => e.threadId === threadId && e.type === "thread.started");
   ctx.log(`ok  thread.started seq=${started.seq}; stopping the hub mid-run`);
   await ctx.stopHub();

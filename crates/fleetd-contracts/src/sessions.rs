@@ -289,7 +289,7 @@ pub struct SessionError {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SendMode {
-    /// Today's send (wakes, nudges, `thread_send`): no priority, claude may join it to the running turn.
+    /// Today's send (wakes, nudges): no priority, claude may join it to the running turn.
     #[default]
     Plain,
     /// `priority: "now"`: the running turn ends at its next tool boundary (the tool's result kept) and this message

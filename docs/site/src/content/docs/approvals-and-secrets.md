@@ -59,16 +59,13 @@ take only a human key. `requests_list` lists every secret and approval request w
 
 ## Tool permission rules {#tool-rules}
 
-Leads and tasks run with claude's permission prompts off. A session started with `thread_launch` and
-`runtimeMode: approval-required` sends each prompt to the chat as an approval item instead: the tool it wants to use and
-a summary of its input, with Approve and Deny.
-
-A project can also allow or deny tools for every session, with rules in claude's own syntax in `.fleetd/policy.yaml`:
+Leads and tasks run with claude's permission prompts off. A project can deny tools for every session, with rules in
+claude's own syntax in `.fleetd/policy.yaml`:
 
 ```yaml
 tools:
-  allow: ["Bash(npm test:*)", "Read"]
   deny: ["Bash(git push:*)"]
 ```
 
-A deny rule wins over an allow rule. See [Config & files](/docs/config-and-files#policy).
+fleetd adds its own denials on top: Claude Code's subagents, and `claude` itself in an agent's shell. See
+[Config & files](/docs/config-and-files#policy).
