@@ -1098,13 +1098,202 @@ async fn an_update_releases_a_figure_the_old_rule_left_stuck() {
         45,
         "held: nothing since that point explains a fall"
     );
+    // Back to before the series restart, which the paused column came after.
     let version = db.user_version().unwrap();
     db.with(|c| {
-        c.pragma_update(None, "user_version", version - 1)?;
+        c.execute_batch("ALTER TABLE status_series DROP COLUMN paused")?;
+        c.pragma_update(None, "user_version", version - 2)?;
         Ok(())
     })
     .unwrap();
     let updated = HubDb::open(home.path()).unwrap();
     assert_eq!(updated.user_version().unwrap(), version);
     assert_eq!(estimate_after(&hub, &clock, 1).0, 14);
+}
+
+/// Appends a `thread.*` event for `thread` on the test machine, as the node link does.
+fn thread_event(hub: &Hub, kind: fleetd_contracts::events::HubEventType, thread: &str) {
+    let at = iso_ms_of(crate::hub::store::now_ms(hub.clock.as_ref()));
+    hub.events
+        .append(crate::hub::store::NewEvent {
+            at: fleetd_contracts::ids::Timestamp(at),
+            r#type: kind,
+            machine_id: Some(MachineId::unchecked("devbox")),
+            project_id: Some(ProjectId::unchecked("storefront")),
+            thread_id: Some(fleetd_contracts::ids::ThreadId::unchecked(thread)),
+            summary: format!("\"{thread}\" on devbox moved"),
+            data: Some(json!({ "status": "running" })),
+            attention: None,
+        })
+        .unwrap();
+}
+
+/// Sets `task`'s record as the task area does after its thread's event: `parked` on a usage limit, or running again.
+fn set_record(hub: &Hub, task: &str, state: &str, parked: Option<serde_json::Value>) {
+    hub.db
+        .with(|c| {
+            c.execute(
+                "UPDATE tasks SET state = ?2, thread_id = 'th-1',
+                   data = json_set(data, '$.state', ?2, '$.parked', json(?3))
+                 WHERE json_extract(data, '$.taskId') = ?1",
+                params![task, state, parked.map(|p| p.to_string())],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+}
+
+/// The order's last point `secs` later.
+fn point_after(
+    hub: &Hub,
+    clock: &ManualClock,
+    secs: u64,
+) -> fleetd_contracts::status::ProgressPoint {
+    clock.advance(Duration::from_secs(secs));
+    let scope = StatusScope::Order {
+        workstream_id: WorkstreamId::unchecked("W1"),
+    };
+    let e = hub
+        .status
+        .get(hub, &person(), &scope, None)
+        .unwrap()
+        .progress
+        .estimate
+        .unwrap();
+    e.series.unwrap().last().unwrap().clone()
+}
+
+/// A writer running since now, with nothing else happening: what the same minutes of work earn.
+fn twin() -> (Arc<ManualClock>, Arc<Hub>, tempfile::TempDir) {
+    let clock = ManualClock::at(T0);
+    let (hub, home) = one_item(&clock);
+    set_writer(&hub, "T1", "running");
+    set_record(&hub, "T1", "running", None);
+    (clock, hub, home)
+}
+
+/// The gap #261 left: a task parked on a usage limit (or waiting for an answer) still earned in-stage credit up to
+/// the cap while nobody worked. Parked, it holds what it earned with a marker; resumed, it goes on from there, so
+/// its figure is always what the minutes it worked earn.
+#[tokio::test]
+async fn a_task_parked_on_a_usage_limit_holds_its_figure_and_goes_on_from_it() {
+    use fleetd_contracts::events::HubEventType;
+    let (clock, hub, _home) = twin();
+    let (tclock, twin, _thome) = twin();
+    let (start, _) = estimate_after(&hub, &clock, 0);
+    let (ran, _) = estimate_after(&hub, &clock, 3 * 60);
+    assert!(
+        start == 14 && ran > 14,
+        "it rises while it runs: 14 to {ran}"
+    );
+
+    thread_event(&hub, HubEventType::ThreadUsageLimited, "th-1");
+    // Before the task area parks the record: the event alone pauses it.
+    let at_park = point_after(&hub, &clock, 1);
+    assert_eq!(
+        (
+            at_park.pct.get(),
+            at_park.drop.is_none(),
+            at_park.paused.as_ref().map(|p| p.as_str())
+        ),
+        (ran, true, Some("paused: an agent hit a usage limit")),
+        "it holds what it earned, with a marker and no drop"
+    );
+    let parked = json!({ "class": "usage_limit", "since": iso_ms_of(crate::hub::store::now_ms(hub.clock.as_ref())) });
+    set_record(&hub, "T1", "idle", Some(parked));
+    for _ in 0..4 {
+        assert_eq!(
+            point_after(&hub, &clock, 30 * 60),
+            at_park,
+            "flat while parked: the paused point stays the last"
+        );
+    }
+
+    // The usage layer's "continue" at the reset: the thread runs again, and the record follows it.
+    thread_event(&hub, HubEventType::ThreadStarted, "th-1");
+    let resumed = point_after(&hub, &clock, 0);
+    assert_eq!(
+        (resumed.pct.get(), resumed.drop, resumed.paused),
+        (ran, None, None),
+        "no jump: the two parked hours count for nothing, and the marker goes"
+    );
+    set_record(&hub, "T1", "running", None);
+    let (four_min, _) = estimate_after(&hub, &clock, 60);
+    assert_eq!(
+        (four_min, estimate_after(&twin, &tclock, 4 * 60).0),
+        (four_min, four_min),
+        "it goes on from {ran}: three minutes before and one after earn what four unbroken minutes do"
+    );
+    assert!(four_min > ran);
+}
+
+/// A wait for an answer holds it the same way, and the lead's answer (which continues the task) goes on from there.
+#[tokio::test]
+async fn a_task_waiting_for_an_answer_holds_until_the_answer_continues_it() {
+    use fleetd_contracts::events::HubEventType;
+    let (clock, hub, _home) = twin();
+    let (tclock, twin, _thome) = twin();
+    let (ran, _) = estimate_after(&hub, &clock, 3 * 60);
+    thread_event(&hub, HubEventType::ThreadWaiting, "th-1");
+    set_record(&hub, "T1", "idle", None);
+    let held = point_after(&hub, &clock, 2 * 3600);
+    assert_eq!(
+        (
+            held.pct.get(),
+            held.drop,
+            held.paused.map(|p| p.to_string())
+        ),
+        (
+            ran,
+            None,
+            Some("paused: an agent is waiting for an answer".to_owned())
+        )
+    );
+    // `message_agent` continues it: task.started.
+    set_writer(&hub, "T1", "running");
+    set_record(&hub, "T1", "running", None);
+    assert_eq!(estimate_after(&hub, &clock, 0), (ran, None));
+    assert_eq!(
+        estimate_after(&hub, &clock, 3 * 60).0,
+        estimate_after(&twin, &tclock, 6 * 60).0
+    );
+}
+
+/// The control: the same timeline with the limit hitting another thread (the lead's), a reminder of an open prompt,
+/// and its own thread starting a new turn. None of them pauses it, so it keeps rising with no marker.
+#[tokio::test]
+async fn another_threads_limit_or_a_new_turn_never_pauses_a_running_task() {
+    use fleetd_contracts::events::HubEventType;
+    let (clock, hub, _home) = twin();
+    let (tclock, twin, _thome) = twin();
+    estimate_after(&hub, &clock, 60);
+    thread_event(&hub, HubEventType::ThreadUsageLimited, "lead-th");
+    hub.events
+        .append(crate::hub::store::NewEvent {
+            at: fleetd_contracts::ids::Timestamp(iso_ms_of(crate::hub::store::now_ms(
+                hub.clock.as_ref(),
+            ))),
+            r#type: HubEventType::ThreadWaiting,
+            machine_id: Some(MachineId::unchecked("devbox")),
+            project_id: Some(ProjectId::unchecked("storefront")),
+            thread_id: Some(fleetd_contracts::ids::ThreadId::unchecked("th-1")),
+            summary: "still waiting".into(),
+            data: Some(json!({ "status": "waiting", "reminder": true })),
+            attention: None,
+        })
+        .unwrap();
+    thread_event(&hub, HubEventType::ThreadStarted, "th-1");
+    let p = point_after(&hub, &clock, 2 * 60);
+    assert_eq!(
+        (p.pct.get(), p.drop, p.paused),
+        (estimate_after(&twin, &tclock, 3 * 60).0, None, None),
+        "the same three minutes as with no thread event at all"
+    );
+    let later = point_after(&hub, &clock, 2 * 3600);
+    assert!(
+        later.pct > p.pct && later.paused.is_none(),
+        "the two hours count as work: {} > {}",
+        later.pct.get(),
+        p.pct.get()
+    );
 }

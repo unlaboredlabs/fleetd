@@ -385,16 +385,10 @@ pub struct ItemProgress {
     pub slower: bool,
 }
 
-/// Stage credit plus in-stage smoothing: `cum[k] + weight(k+1) × min(elapsed / usual, 0.9)`. The smoothing stands
-/// for work under way, so `elapsed` counts only from when the unit's current run of in-flight work began
-/// (`in_flight_since`, or the stage's start if later). With nothing in flight the unit holds its stage's credit,
-/// however long it sits there, and time nobody worked never counts when work resumes.
-pub fn item_progress(
-    f: &ItemFacts,
-    now: i64,
-    r: &Resolved,
-    in_flight_since: Option<i64>,
-) -> ItemProgress {
+/// Stage credit plus in-stage smoothing: `cum[k] + weight(k+1) × min(worked / usual, 0.9)`. The smoothing stands
+/// for work under way, so `worked` is only the stage's time covered by `spans`, the unit's spans of work in flight
+/// (an open one ends at `now`). Paused, the unit holds what it earned; time nobody worked never counts.
+pub fn item_progress(f: &ItemFacts, now: i64, r: &Resolved, spans: &[(i64, i64)]) -> ItemProgress {
     let (stage, entered) = f.current();
     let k = stage.index();
     if stage == ItemStage::Verified {
@@ -407,15 +401,32 @@ pub fn item_progress(
     }
     let elapsed = (now - entered).max(0);
     let usual = r.usual_ms(k);
-    let frac = in_flight_since.map_or(0.0, |since| {
-        ((now - entered.max(since)).max(0) as f64 / usual as f64).min(IN_STAGE_CAP)
-    });
+    let frac = (covered(spans, entered, now) as f64 / usual as f64).min(IN_STAGE_CAP);
     ItemProgress {
         stage,
         credit: r.weights.cum[k] + r.weights.weight(k + 1) * frac,
         verified: false,
         slower: r.slow_at(k).is_some_and(|at| elapsed > at),
     }
+}
+
+/// The time in `[from, to]` that `spans` cover; they may overlap.
+pub fn covered(spans: &[(i64, i64)], from: i64, to: i64) -> i64 {
+    let mut clipped: Vec<(i64, i64)> = spans
+        .iter()
+        .map(|&(a, b)| (a.max(from), b.min(to)))
+        .filter(|(a, b)| a < b)
+        .collect();
+    clipped.sort_unstable();
+    let (mut total, mut end) = (0, i64::MIN);
+    for (a, b) in clipped {
+        let a = a.max(end);
+        if b > a {
+            total += b - a;
+            end = b;
+        }
+    }
+    total
 }
 
 impl Resolved {
@@ -546,6 +557,9 @@ pub struct Point {
     pub pct: i64,
     pub verified: i64,
     pub drop: Option<PointDrop>,
+    /// Set while the figure holds because work paused: what paused. A marker, not a drop.
+    #[serde(default)]
+    pub paused: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -649,6 +663,7 @@ pub fn next_point(
             pct: raw_pct.max(raw_verified),
             verified: raw_verified,
             drop: None,
+            paused: None,
         };
     };
     let since: Vec<&Cause> = causes
@@ -683,12 +698,18 @@ pub fn next_point(
         pct: pct.max(verified),
         verified,
         drop,
+        paused: None,
     }
 }
 
 /// Whether `next` adds anything to a series ending in `last`.
 pub fn changes(last: Option<&Point>, next: &Point) -> bool {
-    last.is_none_or(|l| l.pct != next.pct || l.verified != next.verified || next.drop.is_some())
+    last.is_none_or(|l| {
+        l.pct != next.pct
+            || l.verified != next.verified
+            || next.drop.is_some()
+            || l.paused != next.paused
+    })
 }
 
 /// Points kept per scope.
@@ -697,6 +718,9 @@ pub const SERIES_CAP: usize = 96;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// In flight all along.
+    const ALL: &[(i64, i64)] = &[(0, i64::MAX)];
 
     const M: i64 = MIN;
 
@@ -718,14 +742,14 @@ mod tests {
             (ItemStage::BriefFrozen, 0),
             (ItemStage::PrOpen, 10 * M),
         ]);
-        let p = item_progress(&at, 10 * M, &r, Some(0));
+        let p = item_progress(&at, 10 * M, &r, ALL);
         assert_eq!(p.stage, ItemStage::PrOpen);
         assert!(
             (p.credit - r.weights.cum[ItemStage::PrOpen.index()]).abs() < 1e-9,
             "no time in the stage yet"
         );
         let done = facts(&[(ItemStage::PrOpen, 0), (ItemStage::Verified, 5 * M)]);
-        let p = item_progress(&done, 6 * M, &r, Some(0));
+        let p = item_progress(&done, 6 * M, &r, ALL);
         assert!(p.verified && p.credit == 1.0);
     }
 
@@ -735,12 +759,12 @@ mod tests {
         let k = ItemStage::TaskStarted.index();
         let usual = r.durations.p50[k];
         let f = facts(&[(ItemStage::TaskStarted, 0)]);
-        let half = item_progress(&f, usual / 2, &r, Some(0)).credit;
+        let half = item_progress(&f, usual / 2, &r, ALL).credit;
         let expect = r.weights.cum[k] + r.weights.weight(k + 1) * 0.5;
         assert!((half - expect).abs() < 1e-6, "{half} vs {expect}");
         let mut last = 0.0;
         for t in [0, usual / 4, usual / 2, usual, 3 * usual, 100 * usual] {
-            let c = item_progress(&f, t, &r, Some(0)).credit;
+            let c = item_progress(&f, t, &r, ALL).credit;
             assert!(c >= last, "never falls with time");
             assert!(
                 c < r.weights.cum[k + 1],
@@ -751,14 +775,22 @@ mod tests {
         let capped = r.weights.cum[k] + r.weights.weight(k + 1) * IN_STAGE_CAP;
         assert!((last - capped).abs() < 1e-9, "the 0.9 cap");
         assert_eq!(
-            item_progress(&f, 100 * usual, &r, None).credit,
+            item_progress(&f, 100 * usual, &r, &[]).credit,
             r.weights.cum[k],
             "with nothing in flight, time in the stage earns nothing"
         );
-        let resumed = item_progress(&f, 100 * usual + usual / 2, &r, Some(100 * usual)).credit;
+        // A quarter, a pause of 100 usual times, then another quarter: half, as with no pause.
+        let (q, back) = (usual / 4, 100 * usual);
+        let resumed = item_progress(&f, back + q, &r, &[(0, q), (back, i64::MAX)]).credit;
         assert!(
             (resumed - expect).abs() < 1e-6,
-            "work resumed after a gap counts from its own start: {resumed} vs {expect}"
+            "paused time never counts and earned time stays: {resumed} vs {expect}"
+        );
+        assert!(
+            (item_progress(&f, back, &r, &[(0, q)]).credit - item_progress(&f, q, &r, ALL).credit)
+                .abs()
+                < 1e-9,
+            "paused, it holds"
         );
     }
 
@@ -768,17 +800,17 @@ mod tests {
         let f = facts(&[(ItemStage::PrOpen, 0)]);
         let mut r = resolved();
         assert!(
-            !item_progress(&f, 100 * r.usual_ms(k), &r, Some(0)).slower,
+            !item_progress(&f, 100 * r.usual_ms(k), &r, ALL).slower,
             "the built-in times never call anything slow"
         );
         r.durations.p50[k] = 20 * M;
         r.durations.stage_samples[k] = SLOW_MIN_SAMPLES;
-        assert!(!item_progress(&f, 30 * M, &r, Some(0)).slower);
-        let late = item_progress(&f, 30 * M + 1, &r, Some(0));
+        assert!(!item_progress(&f, 30 * M, &r, ALL).slower);
+        let late = item_progress(&f, 30 * M + 1, &r, ALL);
         assert!(late.slower, "past 1.5× a measured 20 minutes");
         assert_eq!(
             late.credit,
-            item_progress(&f, 300 * M, &r, Some(0)).credit,
+            item_progress(&f, 300 * M, &r, ALL).credit,
             "flagged, never inflated"
         );
     }
@@ -854,7 +886,7 @@ mod tests {
         let r = resolved();
         let unit = |stage: ItemStage, pts: f64| Unit {
             points: pts,
-            progress: item_progress(&facts(&[(stage, 0)]), 0, &r, Some(0)),
+            progress: item_progress(&facts(&[(stage, 0)]), 0, &r, ALL),
         };
         let planning_now = planning(0, None, 5 * M, 0.1, 10 * M);
         assert!(planning_now.active && (planning_now.credit - 0.5).abs() < 1e-9);
@@ -986,6 +1018,10 @@ mod tests {
         );
         assert_eq!(c.unwrap().text, "review found 2 blocking issues on #9");
         assert!(cause_of("review.verdict", &json!({ "blocking": 0 }), 5).is_none());
+        assert!(
+            cause_of("thread.usage_limited", &json!({}), 5).is_none(),
+            "a pause holds the figure, it never explains a fall"
+        );
         let c = cause_of(
             "task.failed",
             &json!({ "taskId": "T12", "workstreamId": "W1" }),

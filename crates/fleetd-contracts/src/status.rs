@@ -151,6 +151,9 @@ pub struct ProgressPoint {
     pub verified_pct: Int<0, 100>,
     /// Set when the estimate fell at this point; it never falls without one.
     pub drop: Option<ProgressDrop>,
+    /// Set while the estimate holds because the work in flight paused, waiting for an answer or for a usage limit to
+    /// reset ("paused: an agent hit a usage limit"). A marker, not a drop: what was earned stays.
+    pub paused: Option<Line<1, 200>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]

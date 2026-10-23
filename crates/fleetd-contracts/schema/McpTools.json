@@ -7899,6 +7899,13 @@
           "$ref": "#/$defs/ProgressDrop",
           "description": "Set when the estimate fell at this point; it never falls without one."
         },
+        "paused": {
+          "description": "Set while the estimate holds because the work in flight paused, waiting for an answer or for a usage limit to\nreset (\"paused: an agent hit a usage limit\"). A marker, not a drop: what was earned stays.",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
         "pct": {
           "maximum": 100,
           "minimum": 0,

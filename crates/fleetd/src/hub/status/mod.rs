@@ -69,7 +69,11 @@ const FOLLOWED: &[HubEventType] = &[
     HubEventType::TrainResumed,
     HubEventType::UsageBreaker,
     HubEventType::UsageResumed,
+    // A task's thread waiting on an answer, parked on a usage limit or running again pauses or resumes its item's
+    // in-stage credit.
+    HubEventType::ThreadWaiting,
     HubEventType::ThreadUsageLimited,
+    HubEventType::ThreadStarted,
     HubEventType::PlanChanged,
     HubEventType::PlanVerified,
     HubEventType::CiMain,

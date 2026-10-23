@@ -732,6 +732,7 @@ pub(super) fn project_progress(hub: &Hub, w: &World, pk: &str) -> Option<(String
                 c,
                 &ckey,
                 cmo.estimate,
+                cmo.paused.clone(),
                 &ccauses,
                 w.now,
             )?)
@@ -1540,7 +1541,14 @@ pub fn render(
         .db
         .with(|c| {
             super::estimate::store_planning(c, &mo.fix_planning)?;
-            Ok(super::estimate::series(c, &key, mo.estimate, &causes, now)?)
+            Ok(super::estimate::series(
+                c,
+                &key,
+                mo.estimate,
+                mo.paused.clone(),
+                &causes,
+                now,
+            )?)
         })
         .ok();
     progress.estimate = Some(super::estimate::estimate_of(&mo, series.as_deref()));
