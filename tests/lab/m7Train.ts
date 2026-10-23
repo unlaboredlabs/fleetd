@@ -2,10 +2,10 @@
 // iff a file FAIL exists; slot/<n>/main requires the `ci` check and the `fleetd/train` status). The lab clone becomes a
 // second project on lab-a, with its policy file kept untracked, so nothing but the train ever lands on the base. Every
 // writer opens its PR with the `hold` label: two writers (files under this run's lab/<time>/) open PRs; then two more writers open a
-// PR that conflicts with alpha's and one that adds FAIL. Every PR gets one reviewer. Once the
-// harness takes the labels off, the train merges alpha and beta in order (the second rebased onto the first's merge), sends the
-// conflict back to its author, who resolves it and gets merged, and sends red CI back to its author, never merging
-// it. Writers run on medium, the lead and reviewers on high; the harness's own tool calls cost no turns.
+// PR that conflicts with alpha's and one that adds FAIL. Every PR gets one reviewer; the FAIL PR's may block it, since the
+// brief says it must never merge. Once the harness takes the labels off, the train merges alpha and beta in order (the
+// second rebased onto the first's merge), sends the conflict back to its author, who resolves it and gets merged, and
+// never merges the FAIL PR: its review findings or its red CI, whichever comes first, go back to its author. Writers run on medium, the lead and reviewers on high; the harness's own tool calls cost no turns.
 import { execFileSync, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -244,24 +244,42 @@ export async function m7Train(lab: Lab) {
       "gamma",
       ` If you are later told this PR conflicts: run \`git fetch origin\` and \`git rebase origin/${BASE}\`; make ${ALPHA} exactly two lines, \`alpha\` then \`gamma\`; \`git add ${ALPHA}\`; \`GIT_EDITOR=true git rebase --continue\`; \`git push --force-with-lease\`; then reply with one word: resolved.`,
     ));
-    const d = spawn(ws, "add FAIL", writer("FAIL", "red", " This PR is meant to fail CI. When a later message says CI failed, that is expected: change nothing, push nothing, and reply with exactly one word: acknowledged."));
+    const d = spawn(ws, "add FAIL", writer("FAIL", "red", " This PR is meant never to merge. When a later message says to fix it (review findings or failed CI), that is expected: change nothing, push nothing, and reply with exactly one word: acknowledged."));
     const cc = await queued(c, cursor);
     const cd = await queued(d, cursor);
     ok(`${c} opened ${cc.prUrl} (${cc.changeId}, conflicts with ${ALPHA}) and ${d} opened ${cd.prUrl} (${cd.changeId}, adds FAIL)`);
 
-    // 1. Each PR gets one reviewer that returns blocking: 0; nothing merges while held.
-    for (const m of [ca, cb, cc, cd]) {
+    // 1. Each PR gets one reviewer, spawned by the hub; the three that should merge come back blocking: 0.
+    const reviewersOf = async (prUrl: string) =>
+      ((await callTool("tasks_list", { projectRef: ref, limit: 100 })).body.tasks as Array<Body>).filter((t) => t.kind === "review" && t.pr === prUrl);
+    for (const m of [ca, cb, cc]) {
       await lab.waitEvent(`${m.changeId} ready`, TURN_MS * 2, { cursor: scenarioStart, types: ["change.ready"], match: (e) => e.data?.changeId === m.changeId });
       const ready = await change(m.changeId);
-      const reviewers = ((await callTool("tasks_list", { projectRef: ref, limit: 100 })).body.tasks as Array<Body>).filter((t) => t.kind === "review" && t.pr === m.prUrl);
+      const reviewers = await reviewersOf(m.prUrl);
       check(reviewers.length === 1 && ready.reviews.length === 1 && ready.reviews[0].taskId === reviewers[0]!.taskId && ready.reviews[0].blocking === 0, `${m.changeId} reviews: ${JSON.stringify({ reviews: ready.reviews, reviewers })}`);
       ok(`1. ${m.changeId} ready: reviewer ${reviewers[0]!.taskId} (spawned by the hub) returned blocking 0 at ${ready.reviews[0].prHeadSha.slice(0, 12)}`);
     }
-    const held = await Promise.all([ca, cb, cc, cd].map((x) => change(x.changeId)));
-    check(held.every((c) => c.state === "ready" && String(c.lastError ?? "").startsWith("held:")), `the train holds all four: ${JSON.stringify(held)}`);
+    // 3. The FAIL PR's reviewer may block it (the brief says it must never merge); then its findings go to its author
+    // and it waits for a new head. A clean review leaves it to red CI after the holds come off.
+    const redReviewer = await lab.until(`${cd.changeId}'s reviewer`, TURN_MS, async () => {
+      const found = await reviewersOf(cd.prUrl);
+      if (found.length > 0) return found;
+      await callTool("events_wait", { cursor: await lab.cursor(), timeoutSec: 5 });
+      return undefined;
+    });
+    check(redReviewer.length === 1, `${cd.changeId} has one reviewer: ${JSON.stringify(redReviewer)}`);
+    const redVerdict = await lab.waitEvent(`${cd.changeId}'s review verdict`, TURN_MS * 2, { cursor: scenarioStart, types: ["review.verdict"], match: (e) => e.data?.taskId === redReviewer[0]!.taskId });
+    const reviewBlocked = (redVerdict.event.data.blocking as number) > 0;
+    ok(`3. ${cd.changeId}: reviewer ${redReviewer[0]!.taskId} returned blocking ${redVerdict.event.data.blocking}${reviewBlocked ? ", so it waits for a new head" : ""}`);
+    if (!reviewBlocked) await lab.waitEvent(`${cd.changeId} ready`, TURN_MS, { cursor: scenarioStart, types: ["change.ready"], match: (e) => e.data?.changeId === cd.changeId });
+
+    const held = await Promise.all([ca, cb, cc].map((x) => change(x.changeId)));
+    check(held.every((c) => c.state === "ready" && String(c.lastError ?? "").startsWith("held:")), `the train holds all three: ${JSON.stringify(held)}`);
+    const redHeld = await change(cd.changeId);
+    check(reviewBlocked ? redHeld.state === "reviewing" : redHeld.state === "ready" && String(redHeld.lastError ?? "").startsWith("held:"), `${cd.changeId} is ${reviewBlocked ? "blocked by its review" : "held"}: ${JSON.stringify(redHeld)}`);
     const early = await callTool("events_wait", { cursor: scenarioStart, types: ["pr.merged"], timeoutSec: 0 });
     check(early.body.events.length === 0, `nothing merged while held: ${JSON.stringify(early.body.events)}`);
-    ok(`5. all four ready and held: ${held.map((c) => `${c.changeId} at ${c.position}`).join(", ")}; no pr.merged`);
+    ok(`5. ${held.map((c) => `${c.changeId} at ${c.position}`).join(", ")} ready and held, ${cd.changeId} ${redHeld.state}; no pr.merged`);
     const at = (x: { readonly changeId: string }) => held.find((c) => c.changeId === x.changeId)!.position as number;
     const [first, second] = [ca, cb].sort((x, y) => at(x) - at(y));
     const secondHeadBefore = (await change(second!.changeId)).headSha as string;
@@ -303,10 +321,14 @@ export async function m7Train(lab: Lab) {
     const conflict = await lab.waitEvent(`change.needs_rebase for ${cc.changeId}`, CI_MS, { cursor, types: ["change.needs_rebase"], match: (e) => e.data?.changeId === cc.changeId });
     check(String(conflict.event.summary).includes(`conflicts with ${BASE}`), `needs_rebase says it conflicts with ${BASE}: ${JSON.stringify(conflict.event)}`);
     ok(`2. ${conflict.event.type}: ${conflict.event.summary}`);
-    // 3. Red CI goes back to its author with the check name; never merged.
-    const red = await lab.waitEvent(`change.ci_failed for ${cd.changeId}`, CI_MS, { cursor, types: ["change.ci_failed"], match: (e) => e.data?.changeId === cd.changeId });
-    check((red.event.data.checks as Array<string>).includes("ci"), `ci_failed names the ci check: ${JSON.stringify(red.event)}`);
-    ok(`3. ${red.event.type}: ${red.event.summary}`);
+    // 3. Without blocking findings, red CI goes back to its author with the check name; never merged.
+    let blockedAt = redVerdict.cursor;
+    if (!reviewBlocked) {
+      const red = await lab.waitEvent(`change.ci_failed for ${cd.changeId}`, CI_MS, { cursor, types: ["change.ci_failed"], match: (e) => e.data?.changeId === cd.changeId });
+      check((red.event.data.checks as Array<string>).includes("ci"), `ci_failed names the ci check: ${JSON.stringify(red.event)}`);
+      ok(`3. ${red.event.type}: ${red.event.summary}`);
+      blockedAt = red.cursor;
+    }
 
     const told = async (taskId: string, needles: ReadonlyArray<string>) => {
       const thread = (await task(taskId)).threadRef.threadId as string;
@@ -319,8 +341,13 @@ export async function m7Train(lab: Lab) {
     // The one "fix your PR" message (the pr.fix prompt), with the reason and what to do.
     await told(c, ["Fix your PR", "the merge train could not rebase it", `conflicts with ${BASE}`, "rebase onto the latest base"]);
     ok(`2. ${c} got the task message: it conflicts with ${BASE}`);
-    await told(d, ["Fix your PR", "the merge train did not merge it", "ci (failure)"]);
-    ok(`3. ${d} was woken with the failing check name: ci (failure)`);
+    if (reviewBlocked) {
+      await told(d, ["Fix your PR", `review ${redReviewer[0]!.taskId}`, "blocking finding"]);
+      ok(`3. ${d} was woken with ${redReviewer[0]!.taskId}'s blocking findings`);
+    } else {
+      await told(d, ["Fix your PR", "the merge train did not merge it", "ci (failure)"]);
+      ok(`3. ${d} was woken with the failing check name: ci (failure)`);
+    }
 
     // 2. The author resolved and pushed; the train merges the new head.
     const m3 = await mergedOf(cc, CI_MS + TURN_MS);
@@ -328,7 +355,7 @@ export async function m7Train(lab: Lab) {
     ok(`2. ${c} resolved the conflict; pr.merged ${cc.changeId} (#${m3.data.prNumber}); ${ALPHA} on ${BASE}: ${JSON.stringify(mainAlpha)}`);
 
     // 3. Once the author has acknowledged, the red PR is closed; it was never merged.
-    await lab.waitEvent(`${d} ends its second turn`, TURN_MS, { cursor: red.cursor, types: ["task.completed", "task.failed"], match: (e) => e.data?.taskId === d });
+    await lab.waitEvent(`${d} ends its second turn`, TURN_MS, { cursor: blockedAt, types: ["task.completed", "task.failed"], match: (e) => e.data?.taskId === d });
     gh("pr", "close", cd.prUrl, "--delete-branch");
     const redPr = ghJson("pr", "view", cd.prUrl, "--json", "state,mergedAt");
     check(redPr.state === "CLOSED" && redPr.mergedAt === null, `${cd.prUrl} never merged: ${JSON.stringify(redPr)}`);
