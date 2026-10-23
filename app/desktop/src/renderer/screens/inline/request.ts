@@ -125,7 +125,7 @@ export const secretOutcome = (item: SecretRequestItem): Outcome | undefined => {
   return NEWER;
 };
 
-/** What an approval approves: a gated command, a session's tool prompt, or a retro change that relaxes a playbook. */
+/** What an approval approves: a gated command, a session's tool prompt, or (an older approval) a playbook change. */
 export const approvalKind = (item: CommandApprovalItem): "command" | "permission" | "playbook" =>
   item.playbook !== undefined ? "playbook" : item.gated !== undefined ? "command" : "permission";
 

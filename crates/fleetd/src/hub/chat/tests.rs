@@ -469,8 +469,7 @@ async fn a_lead_opens_its_own_workstream_as_a_draft_with_no_intent_wake() {
         .records
         .workstream_get(&opened.workstream_id)
         .unwrap()
-        .unwrap()
-        .workstream;
+        .unwrap();
     assert_eq!(
         (w.source.channel, w.source.text.as_str()),
         (IntakeChannel::Lead, "build schedules")

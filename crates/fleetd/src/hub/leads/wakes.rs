@@ -41,8 +41,6 @@ pub enum LineKind {
     CapRaised,
     /// A secret or approval request settled, or came back open (`approvals`).
     Request,
-    /// The retro proposes a playbook gate change only a person can apply (`retro`).
-    Retro,
 }
 
 #[derive(Debug, Clone)]
@@ -92,7 +90,6 @@ impl Trigger {
                 LineKind::Runnable => "runnable",
                 LineKind::CapRaised => "cap_raised",
                 LineKind::Request => "request",
-                LineKind::Retro => "retro",
             },
         }
     }
@@ -397,7 +394,7 @@ impl LeadWakes {
                     .workstream_get(workstream_id)
                     .ok()
                     .flatten()
-                    .is_none_or(|w| w.workstream.created_at.as_str() >= lead.started_at.as_str()),
+                    .is_none_or(|w| w.created_at.as_str() >= lead.started_at.as_str()),
                 _ => true,
             })
             .collect();

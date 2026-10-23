@@ -186,9 +186,6 @@ pub trait ApprovalHub: Send + Sync {
     fn workspace_root(&self, project: &ProjectRef) -> BoxFut<'_, Option<String>>;
     /// Wakes the project's lead with a request's outcome (an event line).
     fn wake_request(&self, request: &HumanRequest) -> BoxFut<'_, ()>;
-    /// A person approved or denied a playbook change, already stored on the request: the retro applies or drops it
-    /// later, without holding up the answer.
-    fn gate_answered(&self, request: &HumanRequest) -> BoxFut<'_, ()>;
     /// The project policy's `tools` rules (empty without a policy file); the error says why it could not be read.
     fn tool_rules(&self, project: &ProjectRef) -> BoxFut<'_, Result<ToolRules, String>>;
     /// The project's current lead thread.
@@ -384,11 +381,7 @@ impl Approvals {
             (Some(s), _, _) => format!("secret {}", s.key),
             (_, Some(g), _) => shown_argv(&g.argv.iter().cloned().collect::<Vec<_>>()),
             (_, _, Some(p)) => format!("{} {}", p.tool_name, p.summary),
-            _ => r
-                .playbook
-                .as_ref()
-                .map(|c| format!("{} playbook: {}", c.playbook, c.summary))
-                .unwrap_or_default(),
+            _ => String::new(),
         };
         self.deps
             .events
@@ -512,7 +505,6 @@ impl Approvals {
             }),
             gated: None,
             permission: None,
-            playbook: None,
             at: fleetd_contracts::ids::Timestamp(iso(now)),
             at_ms: now,
         })
@@ -688,36 +680,6 @@ impl Approvals {
             secret: None,
             gated: Some(gated),
             permission: None,
-            playbook: None,
-            at: fleetd_contracts::ids::Timestamp(iso(now)),
-            at_ms: now,
-        })
-        .await
-    }
-
-    /// Opens the approval of a retro playbook change that relaxes a gate, in `project`'s chat. Only a person's approve
-    /// applies it.
-    pub async fn playbook_change(
-        &self,
-        project: &ProjectRef,
-        change: fleetd_contracts::ledger::PlaybookGateChange,
-    ) -> Result<HumanRequest, ApprovalRefused> {
-        let now = system_ms(self.deps.clock.now());
-        self.create(NewRequest {
-            project_ref: contract_project(project),
-            workstream_id: None,
-            kind: RequestKind::Approval,
-            text: clip(
-                &format!(
-                    "{}. This loosens a gate for every project; it applies only if you approve.",
-                    change.summary
-                ),
-                500,
-            ),
-            secret: None,
-            gated: None,
-            permission: None,
-            playbook: Some(change),
             at: fleetd_contracts::ids::Timestamp(iso(now)),
             at_ms: now,
         })
@@ -784,10 +746,6 @@ impl Approvals {
             .await?;
         if answered.permission.is_some() {
             self.answer_prompt(&answered, reason.as_deref()).await;
-        } else if answered.playbook.is_some() {
-            // The retro applies or drops the change once it is free; the lead hears the answer now.
-            self.deps.hub.gate_answered(&answered).await;
-            self.deps.hub.wake_request(&answered).await;
         } else if approve {
             let me = self.clone();
             let running = answered.clone();

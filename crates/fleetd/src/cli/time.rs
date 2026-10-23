@@ -805,8 +805,8 @@ mod tests {
             "cargo test --workspace"
         );
         assert_eq!(
-            one_line("gh pr create --body \"Source: done:0\n\nmore\"", 60),
-            "gh pr create --body \"Source: done:0…"
+            one_line("gh pr create --body \"Adds docs\n\nmore\"", 60),
+            "gh pr create --body \"Adds docs…"
         );
         assert_eq!(one_line(&"x".repeat(80), 10), format!("{}…", "x".repeat(9)));
     }

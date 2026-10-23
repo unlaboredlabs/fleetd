@@ -4,10 +4,9 @@ use serde_with::skip_serializing_none;
 
 use crate::chat::ChatRequestId;
 use crate::ids::{EventSeq, MachineId, ProjectId, ProjectRef, ThreadId, Timestamp};
-use crate::ledger::{BriefHash, RequestKind, RequestState, WorkstreamId, WorkstreamState};
+use crate::ledger::{RequestKind, RequestState, WorkstreamId, WorkstreamState};
 use crate::prim::{Count, Text};
 use crate::prompts::PromptScope;
-use crate::steer::SteerId;
 use crate::train::{ChangeId, GitHubRepo};
 use crate::verification::ClaimId;
 
@@ -75,7 +74,7 @@ pub enum HubEventType {
     WriteExpired,
     #[serde(rename = "workstream.created")]
     WorkstreamCreated,
-    /// The brief was frozen; `data.briefHash`.
+    /// The brief was set and the work started.
     #[serde(rename = "workstream.running")]
     WorkstreamRunning,
     #[serde(rename = "workstream.state")]
@@ -159,9 +158,6 @@ pub enum HubEventType {
     /// Refused at enqueue; `data.prUrl`, `data.fix`.
     #[serde(rename = "change.refused")]
     ChangeRefused,
-    /// Where an intent went; `data.workstreamId`, `data.template`, `data.reason`, `data.playbook`.
-    #[serde(rename = "intake.routed")]
-    IntakeRouted,
     /// A research workstream's computed verdict; `data.workstreamId`, `data.outcome`, `data.metricValues`.
     #[serde(rename = "research.verdict")]
     ResearchVerdict,
@@ -174,25 +170,9 @@ pub enum HubEventType {
     /// M11: doctor checks changed status; `data.changes` lists `{ id, from, to }` (from absent on the first run).
     #[serde(rename = "doctor.changed")]
     DoctorChanged,
-    /// M12: a retro run ended; `data.run`, `data.trigger`, `data.advise`, `data.proposals`, `data.dropped`, `data.usage` (orchestrator runs).
-    #[serde(rename = "retro.ran")]
-    RetroRan,
-    /// M12: a playbook file changed under a retro proposal; `data.proposalId`, `data.playbook`, `data.ref`, `data.previousRef`, `data.kind`, `data.baseline`, `data.dueAt`.
-    #[serde(rename = "playbook.changed")]
-    PlaybookChanged,
-    /// M12: a wording change missed its metric or regressed a guarded one and was rolled back; `data.proposalId`, `data.reason`.
-    #[serde(rename = "playbook.reverted")]
-    PlaybookReverted,
-    /// M12: a wording change met its metric; `data.proposalId`, `data.measured`.
-    #[serde(rename = "playbook.kept")]
-    PlaybookKept,
     /// A device redeemed a pairing code from `fleetd pair` and got a human key; `data.keyId`, `data.deviceName`.
     #[serde(rename = "key.paired")]
     KeyPaired,
-    /// A person added to an order for its lead: `data.workstreamId`, `data.noteId`, `data.urgent`, `data.text` (first
-    /// 200 characters).
-    #[serde(rename = "workstream.note")]
-    WorkstreamNote,
     /// A prompt override was saved or reset: `data.id`, `data.scope`, `data.projectRef`, `data.ref` (absent on reset),
     /// `data.warnings` (their codes). The text is not in the event; prompt_get reads it.
     #[serde(rename = "prompt.changed")]
@@ -308,17 +288,11 @@ impl HubEventType {
             Self::TrainResumed => "train.resumed",
             Self::TrainBlocked => "train.blocked",
             Self::ChangeRefused => "change.refused",
-            Self::IntakeRouted => "intake.routed",
             Self::ResearchVerdict => "research.verdict",
             Self::UsageBreaker => "usage.breaker",
             Self::UsageResumed => "usage.resumed",
             Self::DoctorChanged => "doctor.changed",
-            Self::RetroRan => "retro.ran",
-            Self::PlaybookChanged => "playbook.changed",
-            Self::PlaybookReverted => "playbook.reverted",
-            Self::PlaybookKept => "playbook.kept",
             Self::KeyPaired => "key.paired",
-            Self::WorkstreamNote => "workstream.note",
             Self::PromptChanged => "prompt.changed",
             Self::PromptDefaultChanged => "prompt.default_changed",
             Self::SteerQueued => "steer.queued",
@@ -398,8 +372,8 @@ pub struct WorkstreamEventData {
     pub workstream_id: WorkstreamId,
     /// workstream.state: the new state.
     pub state: Option<WorkstreamState>,
-    /// workstream.running: the frozen brief.
-    pub brief_hash: Option<BriefHash>,
+    /// workstream.state: the brief was set or edited.
+    pub brief_edited: Option<bool>,
     /// workstream.state (verifying) and workstream.done: the claim that moved it.
     pub claim_id: Option<ClaimId>,
     /// workstream.state (stopped): why, and who.
@@ -458,20 +432,6 @@ pub struct TrainEventData {
     pub fix: Option<String>,
     /// train.blocked: what a person has to move.
     pub error: Option<String>,
-}
-
-/// `workstream.note`.
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkstreamNoteData {
-    pub workstream_id: WorkstreamId,
-    pub client_request_id: Option<String>,
-    pub urgent: Option<bool>,
-    /// The first 200 characters.
-    pub text: Option<String>,
-    /// The steer the note became.
-    pub steer_id: Option<SteerId>,
 }
 
 /// `prompt.changed`.

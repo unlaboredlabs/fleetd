@@ -12,7 +12,7 @@ use crate::hub::store::{EventLog, HubDb, WaitInput};
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef};
 use fleetd_contracts::ledger::{
-    BriefHash, MetricValues, PlaybookRef, Workstream, WorkstreamId, WorkstreamState,
+    MetricValues, PlaybookRef, Workstream, WorkstreamId, WorkstreamState,
 };
 use fleetd_contracts::mcp::ErrorCode;
 use fleetd_contracts::model::ActionItem;
@@ -63,10 +63,10 @@ struct Fake {
     commands: Arc<Mutex<Vec<Value>>>,
     /// The `done.<n>` decisions the lead logged from the human's answers in chat, by key.
     confirmations: Mutex<HashMap<String, HumanConfirmation>>,
-    /// When the brief was last frozen or amended.
-    frozen_ms: Mutex<Option<i64>>,
-    /// Stored when a check runs a command: an amend landing while the claim's checks run.
-    amend_on_check: Mutex<Option<Workstream>>,
+    /// When the brief was last set or edited.
+    brief_set_ms: Mutex<Option<i64>>,
+    /// Stored when a check runs a command: a brief edit landing while the claim's checks run.
+    edit_on_check: Mutex<Option<Workstream>>,
     /// Stored just before the next `put_workstream_if` compares: a write that lands between a read and that write.
     lands_first: Mutex<Option<Workstream>>,
     /// The unlanded write work every workstream has.
@@ -91,7 +91,7 @@ impl Ports for Fake {
         }
         let mut all = self.workstreams.lock().unwrap();
         let now = all.get(&w.workstream_id).unwrap();
-        if now.state != expect.state || now.brief_hash != expect.brief_hash {
+        if now.state != expect.state || now.brief != expect.brief {
             return false;
         }
         all.insert(w.workstream_id.clone(), w.clone());
@@ -113,8 +113,8 @@ impl Ports for Fake {
         if let Some(fix) = self.fix_on_check.lock().unwrap().take() {
             self.open_work.lock().unwrap().push(fix);
         }
-        if let Some(amended) = self.amend_on_check.lock().unwrap().take() {
-            self.put_workstream(&amended);
+        if let Some(edited) = self.edit_on_check.lock().unwrap().take() {
+            self.put_workstream(&edited);
         }
         let (code, tail) = self.node.lock().unwrap().clone();
         Box::pin(async move {
@@ -153,8 +153,8 @@ impl Ports for Fake {
     fn human_confirmation(&self, _: &WorkstreamId, key: &str) -> Option<HumanConfirmation> {
         self.confirmations.lock().unwrap().get(key).cloned()
     }
-    fn brief_frozen_ms(&self, _: &WorkstreamId) -> Option<i64> {
-        *self.frozen_ms.lock().unwrap()
+    fn brief_set_ms(&self, _: &WorkstreamId) -> Option<i64> {
+        *self.brief_set_ms.lock().unwrap()
     }
     fn thread_actions<'a>(
         &'a self,
@@ -226,8 +226,8 @@ impl Kit {
             },
         );
     }
-    fn freeze_at(&self, ms: i64) {
-        *self.ports.frozen_ms.lock().unwrap() = Some(ms);
+    fn brief_set_at(&self, ms: i64) {
+        *self.ports.brief_set_ms.lock().unwrap() = Some(ms);
     }
     fn set_node(&self, code: i64, tail: &str) {
         *self.node.lock().unwrap() = (code, tail.into());
@@ -486,7 +486,7 @@ async fn refuses_drafts_other_projects_and_unknown_workstreams() {
         (draft.code, draft.message.as_str()),
         (
             ErrorCode::Invalid,
-            "W2 has no frozen brief, so it has no done-when checks to run."
+            "W2 has no brief, so it has no done-when checks to run."
         )
     );
     let other: ProjectRef =
@@ -519,7 +519,7 @@ async fn refuses_drafts_other_projects_and_unknown_workstreams() {
     assert!(k.commands.lock().unwrap().is_empty());
 }
 
-/// The build brief of W4's amend, as `brief_create` writes it: a verifying workstream is running again. Its check 0 is a
+/// The build brief of W4's edit, as `brief_create` writes it: a verifying workstream is running again. Its check 0 is a
 /// human one too, so the research's `done.0` answer would pass it if an old answer counted.
 fn build_brief(mut w: Workstream) -> Workstream {
     w.brief = Some(
@@ -532,30 +532,26 @@ fn build_brief(mut w: Workstream) -> Workstream {
         )
         .unwrap(),
     );
-    w.brief_hash = Some(BriefHash::unchecked("b".repeat(64)));
     w.state = WorkstreamState::Running;
     w
 }
 
-/// A research workstream with one human check ("did this answer your question?"), under brief hash a…, frozen at 1 s.
+/// A research workstream with one human check ("did this answer your question?"), its brief set at 1 s.
 fn research_kit() -> Kit {
     let research = vec![
         json!({ "type": "human", "question": "Did the answer on scheduled work answer your question?" }),
     ];
     let k = kit(vec![workstream("W1", Some(research))]);
-    let mut w = k.ports.workstream(&w1()).unwrap();
-    w.brief_hash = Some(BriefHash::unchecked("a".repeat(64)));
-    k.ports.put_workstream(&w);
-    k.freeze_at(1_000);
+    k.brief_set_at(1_000);
     k
 }
 
 impl Kit {
-    /// The lead amends W1 to the build at `at_ms`, as `brief_create` does: the new brief, its freeze, the old claim voided.
-    fn amend_to_build(&self, at_ms: i64) {
+    /// The lead edits W1's brief to the build at `at_ms`, as `brief_create` does: the new brief, the old claim voided.
+    fn edit_to_build(&self, at_ms: i64) {
         self.ports
             .put_workstream(&build_brief(self.ports.workstream(&w1()).unwrap()));
-        self.freeze_at(at_ms);
+        self.brief_set_at(at_ms);
         self.claims.void(&w1()).unwrap();
     }
     async fn closed(&self) -> bool {
@@ -567,13 +563,13 @@ impl Kit {
 }
 
 /// W4 on a real hub: a research order's answer-only brief had one human check. The human said it answered the
-/// question and chose to build; the lead logged done.0 = yes and amended the brief to the build. That yes, logged for
-/// the research brief, must never pass the build brief's own check 0: only an answer logged after the amend counts.
+/// question and chose to build; the lead logged done.0 = yes and edited the brief to the build. That yes, logged for
+/// the research brief, must never pass the build brief's own check 0: only an answer logged after the edit counts.
 #[tokio::test]
-async fn w4_a_claim_on_the_old_brief_never_closes_the_amended_build() {
+async fn w4_a_claim_on_the_old_brief_never_closes_the_edited_build() {
     let k = research_kit();
     k.confirm("done.0", "yes", 2_000);
-    k.amend_to_build(3_000);
+    k.edit_to_build(3_000);
     k.set_node(0, "");
     let stale = k
         .claims
@@ -602,15 +598,13 @@ async fn w4_a_claim_on_the_old_brief_never_closes_the_amended_build() {
     assert_eq!(passed.state, WorkstreamState::Done);
 }
 
-/// The amend lands while the old brief's claim runs its checks: that claim never counts, and the build brief stays.
+/// A brief edit lands while the old brief's claim runs its checks: that claim never counts, and the build brief stays.
 #[tokio::test]
-async fn a_claim_finishing_after_the_amend_never_counts() {
+async fn a_claim_finishing_after_a_brief_edit_never_counts() {
     let k = kit(vec![workstream("W1", Some(vec![doc_check()]))]);
-    let mut w = k.ports.workstream(&w1()).unwrap();
-    w.brief_hash = Some(BriefHash::unchecked("a".repeat(64)));
-    k.ports.put_workstream(&w);
+    let w = k.ports.workstream(&w1()).unwrap();
     k.set_node(0, "");
-    *k.ports.amend_on_check.lock().unwrap() = Some(build_brief(w));
+    *k.ports.edit_on_check.lock().unwrap() = Some(build_brief(w));
     k.claims
         .claim_done(&w1(), LEAD_BY, None, None)
         .await
@@ -618,7 +612,7 @@ async fn a_claim_finishing_after_the_amend_never_counts() {
     assert!(!k.closed().await);
     let w = k.ports.workstream(&w1()).unwrap();
     assert_eq!(
-        (w.state, w.brief_hash.unwrap().as_str().starts_with('b')),
+        (w.state, w.brief.unwrap().goal.as_str() == "build schedules"),
         (WorkstreamState::Running, true)
     );
     assert!(
@@ -634,12 +628,12 @@ async fn a_claim_finishing_after_the_amend_never_counts() {
     );
 }
 
-/// An amend lands between the claim's read and its verifying write: the claim is refused, and the build brief stays.
+/// A brief edit lands between the claim's read and its verifying write: the claim is refused, and the build brief stays.
 #[tokio::test]
-async fn an_amend_racing_the_claim_start_wins() {
+async fn a_brief_edit_racing_the_claim_start_wins() {
     let k = research_kit();
-    let amended = build_brief(k.ports.workstream(&w1()).unwrap());
-    *k.ports.lands_first.lock().unwrap() = Some(amended);
+    let edited = build_brief(k.ports.workstream(&w1()).unwrap());
+    *k.ports.lands_first.lock().unwrap() = Some(edited);
     let refused = k
         .claims
         .claim_done(&w1(), LEAD_BY, None, None)
@@ -651,14 +645,14 @@ async fn an_amend_racing_the_claim_start_wins() {
     );
     let w = k.ports.workstream(&w1()).unwrap();
     assert_eq!(
-        (w.state, w.brief_hash.unwrap().as_str().starts_with('b')),
+        (w.state, w.brief.unwrap().goal.as_str() == "build schedules"),
         (WorkstreamState::Running, true)
     );
 }
 
 /// A human check is a question the lead asks in chat; it passes only on a yes logged for the brief as it stands now.
 #[tokio::test]
-async fn a_human_check_passes_on_a_yes_logged_after_the_brief_froze() {
+async fn a_human_check_passes_on_a_yes_logged_after_the_brief_was_set() {
     let k = kit(vec![workstream(
         "W1",
         Some(vec![
@@ -667,7 +661,7 @@ async fn a_human_check_passes_on_a_yes_logged_after_the_brief_froze() {
         ]),
     )]);
     k.set_node(0, "");
-    k.freeze_at(1_000);
+    k.brief_set_at(1_000);
     let result = |c: &fleetd_contracts::verification::Claim| c.results[1].clone();
 
     let missing = k

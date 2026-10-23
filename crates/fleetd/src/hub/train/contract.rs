@@ -1,7 +1,7 @@
 //! The contract types this area uses, from `fleetd-contracts`, plus the string forms the hub prints them in.
 pub use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, Timestamp};
 pub use fleetd_contracts::lead_calls::ChangeEnqueueCall;
-pub use fleetd_contracts::ledger::{Serves, Tier, WorkstreamId, is_serves};
+pub use fleetd_contracts::ledger::{Tier, WorkstreamId};
 pub use fleetd_contracts::prim::{Count, NonEmpty, Positive, Text};
 pub use fleetd_contracts::tasks::TaskId;
 pub use fleetd_contracts::train::{

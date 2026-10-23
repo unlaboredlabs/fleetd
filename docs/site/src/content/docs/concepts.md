@@ -134,8 +134,7 @@ A pull request's **tier** sets its reviews:
 | M | one clean review |
 | L | two clean reviews and a verifier |
 
-A PR with no CI merges on fleetd's own checks, and the merge says so. Each pull request body needs a `Source:` line
-that names what it serves.
+A PR with no CI merges on fleetd's own checks, and the merge says so.
 
 ### Done, checked {#done}
 

@@ -25,7 +25,6 @@ pub mod playbooks;
 pub mod projects;
 pub mod prompts;
 pub mod prs;
-pub mod retro;
 pub mod schema;
 pub mod secrets;
 pub mod sessions;

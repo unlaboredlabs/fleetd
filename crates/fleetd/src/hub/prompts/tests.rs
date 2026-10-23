@@ -5,7 +5,7 @@ use fleetd_contracts::prompts::{PromptScope, PromptWarningCode};
 use super::PromptSet;
 use super::render::ref_of;
 use super::store::entry;
-use crate::hub::intake::auto_start_tests::hub;
+use crate::hub::leads::auto_start_tests::hub;
 
 #[tokio::test(flavor = "current_thread")]
 async fn a_running_lead_keeps_its_texts_and_an_edit_reaches_the_next_session() {
@@ -52,7 +52,7 @@ async fn a_running_lead_keeps_its_texts_and_an_edit_reaches_the_next_session() {
         .unwrap();
 
     // 3. A new order wakes the running lead (an event line, no prompt), and what it was told is unchanged.
-    let (w2, _, _) = hub.order("add a /ready endpoint").await;
+    let (w2, _) = hub.order("add a /ready endpoint").await;
     hub.after_debounce().await;
     let sends = hub.node.sends.lock().unwrap().clone();
     assert_eq!(sends.len(), 1);
@@ -220,7 +220,7 @@ fn agent_facing_texts_name_tools_not_fleetd_commands() {
         r"fleetd (task (spawn|list|status|message|cancel)|request (secret|withdraw)|decide\b|brief create|claim done|plan (add|edit|drop|show|milestone)|gated run|status set|change (enqueue|status)|review verdict|decisions search|inventory|workstream spawn)",
     )
     .unwrap();
-    let flag = regex::Regex::new(r#""[^"]*--(workstream|amend|proceeded|serves|item|steer|milestone|rec|why|context|option|sink|env-name|class|scope|task)\b"#).unwrap();
+    let flag = regex::Regex::new(r#""[^"]*--(workstream|proceeded|serves|item|steer|milestone|rec|why|context|option|sink|env-name|class|scope|task)\b"#).unwrap();
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut found = Vec::new();
     let texts = super::registry::ENTRIES

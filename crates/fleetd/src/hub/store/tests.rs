@@ -397,3 +397,170 @@ fn stored_models_and_efforts_become_the_two_profiles() {
         "medium stays on"
     );
 }
+
+/// A hub from before the order router went: its intake.routed events go, so every stored event still decodes.
+#[test]
+fn routed_intents_go_on_an_older_hub() {
+    use super::migrations::MIGRATIONS;
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    let gone = MIGRATIONS
+        .iter()
+        .position(|m| m.contains("type = 'intake.routed'"))
+        .expect("the router migration");
+    for m in &MIGRATIONS[..gone] {
+        conn.execute_batch(m).unwrap();
+    }
+    conn.execute_batch(
+        r#"INSERT INTO events (created_ms, type, data) VALUES (0, 'intake.routed', '{"workstreamId":"W1"}'),
+          (0, 'workstream.running', '{"workstreamId":"W1"}');"#,
+    )
+    .unwrap();
+    for m in &MIGRATIONS[gone..] {
+        conn.execute_batch(m).unwrap();
+    }
+    let types: Vec<String> = conn
+        .prepare("SELECT type FROM events")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(types, ["workstream.running"]);
+}
+
+/// A hub from before the retro went: its tables, events and incidents go, and a playbook change still open is denied,
+/// so every stored event, incident and request still decodes.
+#[test]
+fn the_retro_goes_on_an_older_hub() {
+    use super::migrations::MIGRATIONS;
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    let last = MIGRATIONS
+        .iter()
+        .position(|m| m.contains("DROP TABLE retro_runs"))
+        .unwrap();
+    for m in &MIGRATIONS[..last] {
+        conn.execute_batch(m).unwrap();
+    }
+    let p = r#""projectRef":{"machineId":"lab-a","projectId":"p1"}"#;
+    let change = r#""playbook":{"proposalId":"R1","playbook":"bugfix","summary":"reviewers 1 → 0","diff":"-a\n+b"}"#;
+    for (state, n) in [("open", 1), ("approved", 2)] {
+        conn.execute(
+            "INSERT INTO requests (n, project_key, kind, state, created_ms, data) VALUES (?1, 'lab-a/p1', 'approval', ?2, 0, ?3)",
+            rusqlite::params![
+                n,
+                state,
+                format!(
+                    r#"{{"requestId":"Q{n}",{p},"kind":"approval","text":"Loosen bugfix","state":"{state}",{change},"createdAt":"2026-10-18T10:00:00.000Z"}}"#
+                )
+            ],
+        )
+        .unwrap();
+    }
+    conn.execute_batch(
+        r#"INSERT INTO retro_runs (at_ms, trigger, data) VALUES (0, 'schedule', '{}');
+        INSERT INTO events (created_ms, type, data) VALUES (0, 'retro.ran', '{}'), (0, 'playbook.kept', '{}'),
+          (0, 'workstream.running', '{"workstreamId":"W1"}');
+        INSERT INTO incidents (class, machine_id, project_id, data) VALUES ('playbook_reverted', 'lab-a', 'p1', '{}'),
+          ('stall', 'lab-a', 'p1', '{}');"#,
+    )
+    .unwrap();
+    for m in &MIGRATIONS[last..] {
+        conn.execute_batch(m).unwrap();
+    }
+
+    let strings = |sql: &str| -> Vec<String> {
+        conn.prepare(sql)
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    };
+    assert!(strings("SELECT name FROM sqlite_master WHERE name LIKE 'retro_%'").is_empty());
+    assert_eq!(strings("SELECT type FROM events"), ["workstream.running"]);
+    assert_eq!(strings("SELECT class FROM incidents"), ["stall"]);
+    assert_eq!(
+        strings("SELECT state FROM requests ORDER BY n"),
+        ["denied", "approved"]
+    );
+    for data in strings("SELECT data FROM requests ORDER BY n") {
+        let request: fleetd_contracts::ledger::HumanRequest = serde_json::from_str(&data).unwrap();
+        assert!(request.playbook.is_some(), "an older approval still reads");
+    }
+}
+
+/// A hub from before the unused tables went: they are dropped, and the events nothing emits any more are deleted so
+/// every stored event still decodes.
+#[test]
+fn unused_tables_and_events_go_on_an_older_hub() {
+    use super::migrations::MIGRATIONS;
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    // Found by content, not as the last migration, so later migrations don't break this test.
+    let drop = MIGRATIONS
+        .iter()
+        .position(|m| m.contains("DROP TABLE status_eta"))
+        .unwrap();
+    for m in &MIGRATIONS[..drop] {
+        conn.execute_batch(m).unwrap();
+    }
+    conn.execute_batch(
+        r#"INSERT INTO intake_routes (client_request_id, data) VALUES ('c1', '{}');
+        INSERT INTO events (created_ms, type, data) VALUES (0, 'intake.routed', '{}'), (0, 'workstream.note', '{}'),
+          (0, 'workstream.running', '{"workstreamId":"W1"}');"#,
+    )
+    .unwrap();
+    conn.execute_batch(MIGRATIONS[drop]).unwrap();
+
+    let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
+    assert_eq!(
+        count(
+            "SELECT count(*) FROM sqlite_master WHERE name IN ('intake_routes', 'status_eta', 'status_headlines')"
+        ),
+        0
+    );
+    let types: Vec<String> = conn
+        .prepare("SELECT type FROM events")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(types, ["workstream.running"]);
+}
+
+/// A hub from before the value bar went: stored tasks and changes drop what they served.
+#[test]
+fn tasks_and_changes_from_an_older_hub_drop_what_they_served() {
+    use super::migrations::MIGRATIONS;
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    let no_value_bar = MIGRATIONS
+        .iter()
+        .position(|m| m.contains("json_remove(data, '$.serves')"))
+        .expect("the value bar migration");
+    for m in &MIGRATIONS[..no_value_bar] {
+        conn.execute_batch(m).unwrap();
+    }
+    conn.execute_batch(
+        r#"INSERT INTO tasks (machine_id, project_id, workstream_id, state, data)
+          VALUES ('m', 'p', 'W1', 'done', '{"taskId":"T1","serves":"done:0"}');
+        INSERT INTO changes (repo, pr_number, state, machine_id, project_id, train_order, data)
+          VALUES ('o/r', 1, 'merged', 'm', 'p', 0, '{"changeId":"X1","serves":"done:0"}');"#,
+    )
+    .unwrap();
+    conn.execute_batch(MIGRATIONS[no_value_bar]).unwrap();
+
+    let data: (String, String) = conn
+        .query_row(
+            "SELECT (SELECT data FROM tasks), (SELECT data FROM changes)",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        data,
+        (
+            r#"{"taskId":"T1"}"#.to_string(),
+            r#"{"changeId":"X1"}"#.to_string()
+        )
+    );
+}

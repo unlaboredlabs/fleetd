@@ -28,7 +28,6 @@ pub struct TaskView {
     pub kind: String,
     /// "done", "failed", "running", ...
     pub state: String,
-    pub serves: Option<String>,
     pub tier: Option<Tier>,
     /// `result.prUrl`.
     pub pr_url: Option<String>,
@@ -43,8 +42,6 @@ pub struct TaskView {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BriefView {
     pub tier: Tier,
-    /// How many done-when checks it has.
-    pub done_when: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -59,8 +56,6 @@ pub struct WorkstreamView {
 /// The parts of a pinned playbook the train and reviews read.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PlaybookView {
-    /// `valueBar.requireSource`.
-    pub require_source: bool,
     /// `reviewRules`, by tier S, M, L.
     pub review_rules: [ReviewRule; 3],
 }
@@ -100,24 +95,12 @@ pub struct ReviewSpawn {
     pub workstream_id: WorkstreamId,
     pub title: String,
     pub prompt: String,
-    pub serves: String,
     pub pr: String,
     pub tier: Tier,
 }
 
 /// One runner on a machine as a provider instance (executor/providers, from the node's `runner_info`).
 pub use crate::hub::executor::providers::ProviderInstance as ProviderView;
-
-/// One entry of a PR's verdict history, newest first, as the value bar's review rules read it.
-pub use crate::hub::valuebar::rules::PrVerdict;
-
-/// The value bar's review refusal (`valuebar::rules::review_refusal`), for a hub-spawned review round.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ReviewRefusal {
-    pub message: String,
-    /// Set when the polish-loop rule fired.
-    pub polish_loop: bool,
-}
 
 pub trait TrainHost: Send + Sync + 'static {
     fn task(&self, task_id: &TaskId) -> Option<TaskView>;
@@ -184,14 +167,6 @@ pub trait TrainHost: Send + Sync + 'static {
         &'a self,
         machine_id: &'a MachineId,
     ) -> BoxFut<'a, Result<Vec<ProviderView>, String>>;
-    /// valuebar `reviewRefusal({ workstreamId, kind: "review", pr }, "hub:reviews", headSha, verdicts)`.
-    fn review_refusal(
-        &self,
-        workstream_id: &WorkstreamId,
-        pr: &str,
-        head_sha: &str,
-        verdicts: &[PrVerdict],
-    ) -> Option<ReviewRefusal>;
     /// The project's branch prefix (its policy's `branchPrefix`, default `fleetd/`); None when the policy can't be
     /// read now. The train's scratch branches (batches, speculative builds of stacked PRs) live under
     /// `<prefix>train/`, so fleets sharing one repo never collide.
