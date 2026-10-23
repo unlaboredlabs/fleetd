@@ -920,15 +920,6 @@ export type KnownDiffLineKind = "context" | "add" | "del" | "hunk";
 /** KnownDiffLineKind, or a value from a newer hub. */
 export type DiffLineKind = KnownDiffLineKind | (string & {});
 
-export type DigestGetInput = { [key: string]: unknown };
-
-export type DigestGetOutput = {
-  at: Timestamp;
-  next?: string;
-  text: string;
-  truncated?: boolean;
-};
-
 export type DoctorCheck = {
   /** Absent when there is nothing to do. */
   fix?: DoctorFix;
@@ -1328,7 +1319,6 @@ export type KnownHubEventType =
   | "workstream.running"
   | "request.opened"
   | "request.updated"
-  | "digest.ready"
   | "task.queued"
   | "task.out_of_area"
   | "agents.cap"
@@ -4651,7 +4641,6 @@ export interface ToolMap {
   claims_list: { input: ClaimsListInput; output: ClaimsListOutput };
   decisions_record: { input: DecisionsRecordInput; output: DecisionsRecordOutput };
   decisions_search: { input: DecisionsSearchInput; output: DecisionsSearchOutput };
-  digest_get: { input: DigestGetInput; output: DigestGetOutput };
   doctor_fix: { input: DoctorFixInput; output: DoctorFixOutput };
   doctor_list: { input: DoctorListInput; output: DoctorListOutput };
   events_wait: { input: EventsWaitInput; output: EventsWaitOutput };

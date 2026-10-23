@@ -2582,30 +2582,6 @@
       ],
       "x-open": true
     },
-    "DigestGetInput": {
-      "type": "object"
-    },
-    "DigestGetOutput": {
-      "properties": {
-        "at": {
-          "$ref": "#/$defs/Timestamp"
-        },
-        "next": {
-          "type": "string"
-        },
-        "text": {
-          "type": "string"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "text",
-        "at"
-      ],
-      "type": "object"
-    },
     "DoctorCheck": {
       "properties": {
         "fix": {
@@ -3843,11 +3819,6 @@
         {
           "const": "request.updated",
           "description": "A request changed state (stored, declined, approved, running, done, failed, denied, or open again when it could\nnot run); `data` as request.opened.",
-          "type": "string"
-        },
-        {
-          "const": "digest.ready",
-          "description": "The human digest is ready; no project content, since every key sees it. Read it with digest_get. `data.at`.",
           "type": "string"
         },
         {
@@ -5313,12 +5284,6 @@
         "decisions_search.output": {
           "$ref": "#/$defs/DecisionsSearchOutput"
         },
-        "digest_get.input": {
-          "$ref": "#/$defs/DigestGetInput"
-        },
-        "digest_get.output": {
-          "$ref": "#/$defs/DigestGetOutput"
-        },
         "doctor_fix.input": {
           "$ref": "#/$defs/DoctorFixInput"
         },
@@ -5751,8 +5716,6 @@
         "decisions_record.output",
         "decisions_search.input",
         "decisions_search.output",
-        "digest_get.input",
-        "digest_get.output",
         "doctor_fix.input",
         "doctor_fix.output",
         "doctor_list.input",

@@ -152,11 +152,6 @@
           "type": "string"
         },
         {
-          "const": "digest.ready",
-          "description": "The human digest is ready; no project content, since every key sees it. Read it with digest_get. `data.at`.",
-          "type": "string"
-        },
-        {
           "const": "task.queued",
           "description": "`data.queuedReason`.",
           "type": "string"

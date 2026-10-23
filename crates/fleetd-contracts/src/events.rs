@@ -90,9 +90,6 @@ pub enum HubEventType {
     LeadStarted,
     #[serde(rename = "lead.woken")]
     LeadWoken,
-    /// The human digest is ready; no project content, since every key sees it. Read it with digest_get. `data.at`.
-    #[serde(rename = "digest.ready")]
-    DigestReady,
     /// `data.queuedReason`.
     #[serde(rename = "task.queued")]
     TaskQueued,
@@ -281,7 +278,6 @@ impl HubEventType {
             Self::DecisionRecorded => "decision.recorded",
             Self::LeadStarted => "lead.started",
             Self::LeadWoken => "lead.woken",
-            Self::DigestReady => "digest.ready",
             Self::TaskQueued => "task.queued",
             Self::TaskStarted => "task.started",
             Self::TaskCompleted => "task.completed",

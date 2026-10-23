@@ -1,6 +1,5 @@
 //! The retro (M12): self-improving playbooks, advise-only until `policy.retro.apply`.
 pub mod diff;
-pub mod digest;
 #[cfg(test)]
 mod gate_tests;
 pub mod metrics;

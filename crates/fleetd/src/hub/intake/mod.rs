@@ -18,7 +18,7 @@ use fleetd_contracts::model::ProjectSummary;
 use fleetd_contracts::playbooks::IntakeEcho;
 
 use self::prefix::{ProjectMatch, match_project, mentioned_project, ref_of, slug_of};
-use crate::hub::leads::digest::clip_utf16;
+use crate::hub::leads::digest::one_line;
 use crate::hub::leads::error::LeadError;
 use crate::hub::leads::lead::{AutoStart, Leads};
 use crate::hub::leads::workstreams::{IntakeInput, Workstreams};
@@ -45,10 +45,6 @@ pub struct Placed {
     pub next: Option<String>,
     /// Why no lead has the order yet, with the fix.
     pub lead_waiting: Option<String>,
-}
-
-fn clip(text: &str, max: usize) -> String {
-    clip_utf16(&text.split_whitespace().collect::<Vec<_>>().join(" "), max)
 }
 
 /// The project an intent without a caller-given project goes to, and why: its `@<project>`, else the only project
@@ -224,7 +220,7 @@ impl Intake {
             .map(|t| format!(" ({})", t.as_str()))
             .unwrap_or_default();
         self.routed(Routed {
-            summary: clip(
+            summary: one_line(
                 &format!("{id} → {project}{template}: {}{waiting}", echo.reason),
                 200,
             ),
@@ -246,7 +242,7 @@ impl Intake {
         template: Option<PlaybookName>,
         reason: String,
     ) -> Result<IntakeEcho, LeadError> {
-        serde_json::from_value(serde_json::json!({ "projectRef": project_ref, "template": template, "reason": clip(&reason, 200) }))
+        serde_json::from_value(serde_json::json!({ "projectRef": project_ref, "template": template, "reason": one_line(&reason, 200) }))
             .map_err(|e| LeadError::bare(fleetd_contracts::mcp::ErrorCode::Invalid, format!("The intake echo is invalid: {e}")))
     }
 

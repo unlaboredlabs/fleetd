@@ -5,7 +5,6 @@
 //! Every write runs in one `BEGIN IMMEDIATE` transaction that a [`LedgerError`] rolls back; events are appended after
 //! the commit.
 mod decisions;
-pub mod digest_text;
 pub mod repo;
 mod tools;
 
@@ -235,15 +234,4 @@ pub(crate) fn project_fields(
         Some(r) => (Some(r.machine_id.clone()), Some(r.project_id.clone())),
         None => (None, None),
     }
-}
-
-/// JavaScript's `text.slice(0, units)`, without splitting a surrogate pair.
-pub(crate) fn js_prefix(text: &str, units: usize) -> String {
-    let mut used = 0;
-    text.chars()
-        .take_while(|c| {
-            used += c.len_utf16();
-            used <= units
-        })
-        .collect()
 }

@@ -1,5 +1,5 @@
 //! The lead digest: the code-rendered project state at the top of a lead's first message and every wake (the event
-//! lines follow it, `events`). It is the lead's real memory, so it must stay small (DIGEST_MAX_TOKENS) and say plainly
+//! lines follow it, `events`). It is the lead's real memory, so it must stay small (DIGEST_MAX_CHARS) and say plainly
 //! what was left out. A fixed format, not a prompt.
 use std::collections::{HashMap, HashSet};
 
@@ -7,24 +7,15 @@ use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::ledger::{
     CheckSpec, Decision, DecisionScope, HumanRequest, Workstream, WorkstreamId, WorkstreamState,
 };
+use fleetd_contracts::prim::js_len;
 
 use super::events::AgentsLine;
 use crate::hub::playbooks::finish_all_rules::is_finish_all;
 
-pub const DIGEST_MAX_TOKENS: usize = 1500;
+/// About 1,500 tokens: ids, keys and paths run near 3 characters a token.
+pub const DIGEST_MAX_CHARS: usize = 4500;
 /// Decisions listed by full value; the rest only appear by key under "do not re-ask".
 pub const DIGEST_DECISIONS: usize = 10;
-
-/// Conservative token estimate: ~3 characters per token. English prose runs nearer 4, but keys, ids and paths
-/// tokenize worse, and overshooting the budget is the failure that matters.
-pub fn estimate_tokens(text: &str) -> usize {
-    utf16_len(text).div_ceil(3)
-}
-
-/// JS string length, which older hubs measured in.
-pub fn utf16_len(text: &str) -> usize {
-    text.chars().map(char::len_utf16).sum()
-}
 
 /// What backs a workstream's status beyond the lead's word: the checks its latest claim passed and its ETA.
 #[derive(Debug, Clone, Default)]
@@ -58,24 +49,22 @@ pub struct DigestInput<'a> {
 
 /// Whitespace runs collapsed, trimmed, and cut to `max` with "…".
 pub fn one_line(text: &str, max: usize) -> String {
-    let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    clip_utf16(&flat, max)
+    clip(&text.split_whitespace().collect::<Vec<_>>().join(" "), max)
 }
 
-/// `flat.length > max ? flat.slice(0, max - 1) + "…" : flat`, in UTF-16 units as older hubs counted.
-pub fn clip_utf16(flat: &str, max: usize) -> String {
-    if utf16_len(flat) <= max {
-        return flat.to_string();
+/// `text` cut to `max` UTF-16 units, the last one "…": the contracts' text limits count in those.
+pub fn clip(text: &str, max: usize) -> String {
+    if js_len(text) <= max {
+        return text.to_string();
     }
-    let mut out = String::new();
     let mut used = 0;
-    for c in flat.chars() {
-        if used + c.len_utf16() > max.saturating_sub(1) {
-            break;
-        }
-        used += c.len_utf16();
-        out.push(c);
-    }
+    let mut out: String = text
+        .chars()
+        .take_while(|c| {
+            used += c.len_utf16();
+            used < max
+        })
+        .collect();
     out.push('…');
     out
 }
@@ -430,7 +419,7 @@ pub fn render_lead_digest(input: &DigestInput) -> String {
     let mut text = render(&sections);
     for pass in [1, 0] {
         for (section, floor) in drop_order {
-            while estimate_tokens(&text) > DIGEST_MAX_TOKENS
+            while text.chars().count() > DIGEST_MAX_CHARS
                 && sections[section].items.len() > floor * pass
             {
                 sections[section].items.pop();
@@ -440,4 +429,52 @@ pub fn render_lead_digest(input: &DigestInput) -> String {
         }
     }
     text
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_long_digest_stays_under_the_cap_and_says_what_it_left_out() {
+        let project_ref: ProjectRef =
+            serde_json::from_value(serde_json::json!({ "machineId": "lab-a", "projectId": "p1" }))
+                .unwrap();
+        let decisions: Vec<Decision> = (1..=300)
+            .map(|n| {
+                serde_json::from_value(serde_json::json!({
+                    "decisionId": format!("D{n}"), "key": format!("style.rule_{n}"),
+                    "scope": { "kind": "global" }, "value": "x".repeat(150), "source": "human",
+                    "state": "active", "at": "2026-10-19T10:00:00.000Z",
+                }))
+                .unwrap()
+            })
+            .collect();
+        let text = render_lead_digest(&DigestInput {
+            project_ref: &project_ref,
+            title: "app",
+            at: "2026-10-19T10:00:00.000Z",
+            workstreams: &[],
+            open_requests: &[],
+            decisions: &decisions,
+            agents: None,
+            tasks: None,
+            train: None,
+            facts: &HashMap::new(),
+        });
+        assert!(text.chars().count() <= DIGEST_MAX_CHARS, "{}", text.len());
+        assert!(text.contains("more: `decisions_search`)"), "{text}");
+        assert!(
+            text.contains("more: check with `decisions_search`)"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn clips_within_the_contracts_utf16_limit() {
+        assert_eq!(clip("short", 10), "short");
+        let clipped = clip(&"🙂".repeat(150), 200);
+        assert_eq!(js_len(&clipped), 199);
+        assert!(clipped.ends_with("🙂…"));
+    }
 }

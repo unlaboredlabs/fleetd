@@ -2,8 +2,7 @@
 // `cargo build --release -p fleetd` (or with FLEETD_BIN set). Creates a fresh hub home under the lab with the fleetd under test, seeds a synthetic
 // incident history straight into its SQLite (the schema both hubs share), starts the hub with the user's own claude
 // login, and runs `fleetd retro run --advise`: one real turn on the lab's mechanics model. Checks the run is recorded as
-// orchestrator usage, every kept proposal is only suggested, no playbook file was written, and the digest and MCP tools
-// show it. The hub is stopped by its spawn PID.
+// orchestrator usage, every kept proposal is only suggested, no playbook file was written, and the MCP tools show it. The hub is stopped by its spawn PID.
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -98,9 +97,6 @@ async function main() {
     check(!fs.existsSync(path.join(HOME, "playbooks")) || fs.readdirSync(path.join(HOME, "playbooks")).length === 0, "no playbook override was written");
     const counts = (await callTool("incidents_list", { windowDays: 14 })).body.counts as Array<Body>;
     check(counts[0]?.class === "false_claim" && counts[0]?.count === 3, `incidents_list counts: ${JSON.stringify(counts)}`);
-    const digest = (await callTool("digest_get")).body.text as string;
-    if (listed.proposals.length > 0) check(digest.includes("Suggested R1:"), `the digest shows the suggestions:\n${digest}`);
-    ok(`digest:\n${digest}`);
   } finally {
     await client.close().catch(() => undefined);
   }

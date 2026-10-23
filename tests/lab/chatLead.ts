@@ -65,8 +65,8 @@ const TOOL_FROM: Readonly<Record<string, string>> = {
   secret_submit: "H2, NS",
   cap_set: "CAP",
 };
-/** H2 removes these from the hub; none may be listed. (digest_get stays: it now lists the chats' open requests.) */
-const GONE_HUB_TOOLS = ["asks_list", "inbox_reply", "inbox_undo"];
+/** Tools gone from the hub; none may be listed. */
+const GONE_HUB_TOOLS = ["asks_list", "inbox_reply", "inbox_undo", "digest_get"];
 /** An ask tool in a session's init list: fleetd's own (lead) or Claude's. The worker's ask_lead (to its lead) stays. */
 const ASK_TOOL = /^(mcp__fleetd__ask|mcp__fleetd__ask_withdraw|AskUserQuestion)$/u;
 /** Internal ids a lead message must not carry: workstream, task, plan, milestone, claim, request, decision and other hub ids. */

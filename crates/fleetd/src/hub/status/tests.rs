@@ -1099,8 +1099,12 @@ async fn an_update_releases_a_figure_the_old_rule_left_stuck() {
         "held: nothing since that point explains a fall"
     );
     let version = db.user_version().unwrap();
+    let reset = crate::hub::store::migrations::MIGRATIONS
+        .iter()
+        .position(|m| m.contains("DELETE FROM status_series"))
+        .expect("the status series migration");
     db.with(|c| {
-        c.pragma_update(None, "user_version", version - 1)?;
+        c.pragma_update(None, "user_version", reset)?;
         Ok(())
     })
     .unwrap();

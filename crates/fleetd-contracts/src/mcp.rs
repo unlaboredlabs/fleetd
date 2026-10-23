@@ -666,13 +666,6 @@ output!(DecisionsSearchOutput {
 input!(DecisionsRecordInput { key: DecisionKey, value: DecisionValue, why: Option<DecisionWhy>, scope: DecisionScope });
 output!(DecisionsRecordOutput { decision: Decision });
 
-// digest_get
-input!(DigestGetInput {});
-output!(DigestGetOutput {
-    text: String,
-    at: Timestamp
-});
-
 // tasks_list
 input!(TasksListInput {
     project_ref: Option<ProjectRef>,
@@ -1419,7 +1412,6 @@ tools! {
     requests_list => RequestsList, Read, RequestsListInput, RequestsListOutput;
     decisions_search => DecisionsSearch, Read, DecisionsSearchInput, DecisionsSearchOutput;
     decisions_record => DecisionsRecord, Operate, DecisionsRecordInput, DecisionsRecordOutput;
-    digest_get => DigestGet, Read, DigestGetInput, DigestGetOutput;
     tasks_list => TasksList, Read, TasksListInput, TasksListOutput;
     task_get => TaskGet, Read, TaskGetInput, TaskGetOutput;
     cap_set => CapSet, Operate, CapSetInput, CapSetOutput;
