@@ -11,7 +11,7 @@ import { ProjectsHost } from "../projects";
 import { useDockBadge, useMainProcess, useMenuState, useModHeld, useNotifications } from "./effects";
 import { useHubState } from "./hubFeed";
 import { useDataLayer } from "../../src/data/react";
-import { homeProject, nextWanting, projectId, stepProject } from "./model";
+import { homeProject, nextWanting, projectId, routeOf, stepProject } from "./model";
 import { useAgentsWorking, useMachinesDown, useSidebarProjects } from "./data";
 import { navigate, useRoute } from "./navigation";
 import { HOME, type Screen } from "./routes";
@@ -53,7 +53,7 @@ export function Shell() {
 
   useMainProcess();
   useMenuState();
-  useNotifications(hub?.phase === "live");
+  useNotifications(hub.phase === "live");
   useDockBadge();
 
   // `#/` is the last project once the projects are known: shown as that project at once, and the URL follows (replace,
@@ -77,7 +77,7 @@ export function Shell() {
   const here = screen.id === "project" || screen.id === "prs" ? screen.project : null;
   // The sidebar's and the palette's Pull requests: the project on screen, else the one `#/` opens.
   const prsProject = here ?? (projects === undefined ? null : homeProject(projects, readLast()));
-  // One chat streams at a time: the one on screen.
+  // The chat on screen is the one open, and the one that streams.
   const openKey = open === null ? null : projectId(open);
   useEffect(() => {
     if (openKey === null) {
@@ -98,7 +98,7 @@ export function Shell() {
 
   // Before pairing, after a refused key, or on a hub of another protocol there is nothing to navigate; the
   // onboarding screen has the window to itself.
-  const blocked = hub !== null && needsOnboarding(hub);
+  const blocked = needsOnboarding(hub);
   const onboarding = blocked || screen.id === "onboarding";
   const shown: Screen = blocked && screen.id !== "onboarding" ? { id: "onboarding", hub: null, code: null } : screen;
   const chrome = !onboarding;
@@ -154,7 +154,7 @@ export function Shell() {
           enabled: () => chrome && projects?.[n - 1] !== undefined,
           run: () => {
             const p = projects?.[n - 1];
-            if (p !== undefined) go({ id: "project", project: p.key, message: null });
+            if (p !== undefined) go({ id: "project", project: routeOf(p), message: null });
           },
         }),
       ),

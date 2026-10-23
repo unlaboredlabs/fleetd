@@ -7,12 +7,12 @@ import { reaching, type Reaching } from "./form";
 export { useHubState } from "../shell/hubFeed";
 
 /** The connection on its way to the hub, holding the last failure's reason across attempts (see `reaching`). */
-export const useReaching = (state: HubState | null): Reaching | null => {
+export const useReaching = (state: HubState): Reaching | null => {
   const [last, setLast] = useState<{ readonly hub: string; readonly reason: string; readonly fix: string | null } | null>(null);
-  if (state?.phase === "retrying" && (last?.hub !== state.hub || last.reason !== state.reason)) {
+  if (state.phase === "retrying" && (last?.hub !== state.hub || last.reason !== state.reason)) {
     setLast({ hub: state.hub, reason: state.reason, fix: state.fix ?? null });
   }
-  if (state === null || (state.phase !== "connecting" && state.phase !== "retrying")) return null;
+  if (state.phase !== "connecting" && state.phase !== "retrying") return null;
   return reaching(state, last);
 };
 

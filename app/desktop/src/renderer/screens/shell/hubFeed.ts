@@ -4,8 +4,8 @@ import { useEffect } from "react";
 import type { HubEvent, HubState } from "../../../shared/hub";
 import { useData, useDataLayer } from "../../src/data/react";
 
-/** The hub connection as main reports it. Kept nullable for callers written before the store landed. */
-export const useHubState = (): HubState | null => useData((s) => s.hub);
+/** The hub connection as main reports it. */
+export const useHubState = (): HubState => useData((s) => s.hub);
 
 /** Calls `listener` with each event that arrives after mounting, once. */
 export const useHubEvents = (listener: (event: HubEvent) => void): void => {

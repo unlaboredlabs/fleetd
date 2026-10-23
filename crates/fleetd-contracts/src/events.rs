@@ -171,10 +171,10 @@ pub enum HubEventType {
     /// claude took the steer in; `data.how`.
     #[serde(rename = "steer.delivered")]
     SteerDelivered,
-    /// The agent named the steer (`data.excerpt`), or a lead call did.
+    /// The agent replied after taking it in (`data.excerpt`), or a lead call named it.
     #[serde(rename = "steer.acknowledged")]
     SteerAcknowledged,
-    /// The steer's run ended with no reply naming it; `data.excerpt` is its first reply.
+    /// The steer's run ended with no reply after it was delivered.
     #[serde(rename = "steer.unacknowledged")]
     SteerUnacknowledged,
     #[serde(rename = "steer.withdrawn")]

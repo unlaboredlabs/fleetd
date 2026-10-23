@@ -1,14 +1,14 @@
 //! Steer receipts on the node. A send the hub tagged as a steer is tracked from dispatch to its end, and each stage is
-//! decided from claude's own frames: delivered on `command_lifecycle started` (how it was taken in), acknowledged when
-//! an assistant text after that names its `S<n>`, unacknowledged when its run ends without one, withdrawn on a
-//! successful `cancel_async_message`, failed when it ended before claude took it in. Only tagged sends are tracked,
+//! decided from claude's own frames: delivered on `command_lifecycle started` (how it was taken in), acknowledged by
+//! the first assistant text after that, unacknowledged when its run ends without one, withdrawn on a successful
+//! `cancel_async_message`, failed when it ended before claude took it in. Only tagged sends are tracked,
 //! so an older hub, which tags nothing, never receives a `MachineEvent::Steer` it cannot decode.
 use std::time::Duration;
 
 use fleetd_contracts::ids::{ThreadId, Timestamp};
 use fleetd_contracts::prim::{NonEmpty, Text};
 use fleetd_contracts::sessions::{RunStatus, SendNow, SessionOutput};
-use fleetd_contracts::steer::{DeliveredHow, SteerId, SteerReceipt, SteerStage, names_steer};
+use fleetd_contracts::steer::{DeliveredHow, SteerId, SteerReceipt, SteerStage};
 use tokio::sync::oneshot;
 
 use super::{Reply, SessionService, now};
@@ -32,8 +32,6 @@ pub(super) struct SteerTrack {
     stopped: Option<Option<String>>,
     delivered: bool,
     seen_at: Option<Timestamp>,
-    /// The first assistant text after delivery, for an unacknowledged receipt.
-    first: Option<(String, String)>,
 }
 
 impl SessionService {
@@ -49,7 +47,6 @@ impl SessionService {
                 stopped: None,
                 delivered: false,
                 seen_at: None,
-                first: None,
             },
         );
     }
@@ -150,12 +147,7 @@ impl SessionService {
         };
         for t in open {
             let r = if t.delivered {
-                let mut r = receipt(&t, SteerStage::Unacknowledged);
-                if let Some((message_id, text)) = &t.first {
-                    r.message_id = NonEmpty::new(message_id.as_str()).ok();
-                    r.excerpt = Some(clip(text));
-                }
-                r
+                receipt(&t, SteerStage::Unacknowledged)
             } else {
                 let mut r = receipt(&t, SteerStage::Failed);
                 let code = exit
@@ -168,28 +160,22 @@ impl SessionService {
         }
     }
 
-    /// An assistant text in session `id`: it acknowledges every delivered steer it names.
+    /// An assistant text in session `id`: claude's reply after taking a steer in acknowledges it.
     pub(super) fn steer_text(&self, id: &str, message_id: &str, text: &str) {
-        let acked: Vec<SteerReceipt> = {
-            let mut st = self.st();
-            let mut acked = Vec::new();
-            st.steers.retain(|_, t| {
-                if t.session_id != id || !t.delivered {
-                    return true;
-                }
-                if names_steer(text, &t.steer_id) {
-                    let mut r = receipt(t, SteerStage::Acknowledged);
-                    r.message_id = NonEmpty::new(message_id).ok();
-                    r.excerpt = Some(clip(text));
-                    acked.push(r);
-                    return false;
-                }
-                t.first
-                    .get_or_insert_with(|| (message_id.to_owned(), text.to_owned()));
-                true
-            });
-            acked
-        };
+        if text.trim().is_empty() {
+            return;
+        }
+        let mut acked = Vec::new();
+        self.st().steers.retain(|_, t| {
+            if t.session_id != id || !t.delivered {
+                return true;
+            }
+            let mut r = receipt(t, SteerStage::Acknowledged);
+            r.message_id = NonEmpty::new(message_id).ok();
+            r.excerpt = Some(clip(text));
+            acked.push(r);
+            false
+        });
         for r in acked {
             self.emit_steer(r);
         }
@@ -199,12 +185,7 @@ impl SessionService {
     pub(super) fn steer_ended(&self, run_id: &str, outcome: &RunOutcome) {
         for t in self.take_run(run_id) {
             let r = if t.delivered {
-                let mut r = receipt(&t, SteerStage::Unacknowledged);
-                if let Some((message_id, text)) = &t.first {
-                    r.message_id = NonEmpty::new(message_id.as_str()).ok();
-                    r.excerpt = Some(clip(text));
-                }
-                r
+                receipt(&t, SteerStage::Unacknowledged)
             } else {
                 let mut r = receipt(&t, SteerStage::Failed);
                 let why = match outcome {

@@ -120,7 +120,7 @@ fn receipt(steer: &Steer, stage: SteerStage) -> SteerReceipt {
         seen_at: None,
         message_id: None,
         excerpt: (stage == SteerStage::Acknowledged)
-            .then(|| Text::unchecked("S1: dropping the docs page")),
+            .then(|| Text::unchecked("Dropping the docs page")),
         reason: None,
     }
 }
@@ -170,7 +170,7 @@ async fn a_resent_steer_with_the_same_key_and_request_id_is_one_steer() {
     .await
     .unwrap();
     assert_eq!(other.id.as_str(), "S2");
-    // The message the lead gets names the steer and asks it to answer to it.
+    // The message the lead gets carries the steer's id, so a plan change can cite it.
     let message: String = lab
         .hub
         .db
@@ -185,7 +185,6 @@ async fn a_resent_steer_with_the_same_key_and_request_id_is_one_steer() {
     assert!(
         message.starts_with("S1 · the human steers you (W1 'Ship the API'): 'skip the docs page'")
     );
-    assert!(message.contains("\"S1:\""));
 }
 
 #[tokio::test]
@@ -217,10 +216,7 @@ async fn receipts_move_a_steer_forward_once_and_replays_change_nothing() {
     assert_eq!(now.stage, SteerStage::Acknowledged);
     assert_eq!(now.how, Some(DeliveredHow::Stopped));
     assert_eq!(now.stopped_tool.as_deref(), Some("cargo test"));
-    assert_eq!(
-        now.ack_excerpt.as_deref(),
-        Some("S1: dropping the docs page")
-    );
+    assert_eq!(now.ack_excerpt.as_deref(), Some("Dropping the docs page"));
     assert_eq!(events_of(&lab.hub, HubEventType::SteerDelivered), 1);
     assert_eq!(events_of(&lab.hub, HubEventType::SteerAcknowledged), 1);
     assert_eq!(events_of(&lab.hub, HubEventType::SteerUnacknowledged), 0);

@@ -3505,12 +3505,12 @@
         },
         {
           "const": "steer.acknowledged",
-          "description": "The agent named the steer (`data.excerpt`), or a lead call did.",
+          "description": "The agent replied after taking it in (`data.excerpt`), or a lead call named it.",
           "type": "string"
         },
         {
           "const": "steer.unacknowledged",
-          "description": "The steer's run ended with no reply naming it; `data.excerpt` is its first reply.",
+          "description": "The steer's run ended with no reply after it was delivered.",
           "type": "string"
         },
         {
@@ -8790,7 +8790,7 @@
       "description": "One steer and its receipt.",
       "properties": {
         "ackExcerpt": {
-          "description": "Acknowledged: the reply naming it; unacknowledged: the first reply. First 200 characters.",
+          "description": "Acknowledged: the agent's reply, first 200 characters.",
           "maxLength": 200,
           "type": "string"
         },
@@ -8969,7 +8969,7 @@
       "description": "One steer and its receipt.",
       "properties": {
         "ackExcerpt": {
-          "description": "Acknowledged: the reply naming it; unacknowledged: the first reply. First 200 characters.",
+          "description": "Acknowledged: the agent's reply, first 200 characters.",
           "maxLength": 200,
           "type": "string"
         },
@@ -9077,12 +9077,12 @@
         },
         {
           "const": "acknowledged",
-          "description": "The agent's reply named its id, or a lead call did (`--steer S12`).",
+          "description": "The agent replied after taking it in, or a lead call named it (`--steer S12`).",
           "type": "string"
         },
         {
           "const": "unacknowledged",
-          "description": "Its run ended with no reply naming it.",
+          "description": "Its run ended with no reply after it was delivered.",
           "type": "string"
         },
         {
@@ -9141,7 +9141,7 @@
       "description": "One steer and its receipt.",
       "properties": {
         "ackExcerpt": {
-          "description": "Acknowledged: the reply naming it; unacknowledged: the first reply. First 200 characters.",
+          "description": "Acknowledged: the agent's reply, first 200 characters.",
           "maxLength": 200,
           "type": "string"
         },

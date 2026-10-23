@@ -2956,7 +2956,7 @@ export type StatusProjectsOutput = {
 
 /** One steer and its receipt. */
 export type Steer = {
-  /** Acknowledged: the reply naming it; unacknowledged: the first reply. First 200 characters. */
+  /** Acknowledged: the agent's reply, first 200 characters. */
   ackExcerpt?: string;
   ackedAt?: Timestamp;
   by: SteerBy;
@@ -3026,7 +3026,7 @@ export type SteerSendInput = {
 
 /** One steer and its receipt. */
 export type SteerSendOutput = {
-  /** Acknowledged: the reply naming it; unacknowledged: the first reply. First 200 characters. */
+  /** Acknowledged: the agent's reply, first 200 characters. */
   ackExcerpt?: string;
   ackedAt?: Timestamp;
   by: SteerBy;
@@ -3073,7 +3073,7 @@ export type SteerWithdrawInput = {
 
 /** One steer and its receipt. */
 export type SteerWithdrawOutput = {
-  /** Acknowledged: the reply naming it; unacknowledged: the first reply. First 200 characters. */
+  /** Acknowledged: the agent's reply, first 200 characters. */
   ackExcerpt?: string;
   ackedAt?: Timestamp;
   by: SteerBy;
