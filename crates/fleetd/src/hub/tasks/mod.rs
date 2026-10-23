@@ -1149,7 +1149,6 @@ impl Tasks {
             areas: input.areas.clone(),
             profile,
             tier: input.tier,
-            estimate_minutes: input.estimate_minutes,
             qa: input.qa,
             pr: input.pr.clone(),
             item_id: input.item.clone(),

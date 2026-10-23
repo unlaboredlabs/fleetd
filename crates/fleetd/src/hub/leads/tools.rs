@@ -194,12 +194,6 @@ impl Area {
         let truncated = requests.len() > WORKSTREAM_ASKS || decisions.len() > WORKSTREAM_ASKS;
         requests.truncate(WORKSTREAM_ASKS);
         decisions.truncate(WORKSTREAM_ASKS);
-        let eta = self
-            .ctx
-            .hooks
-            .estimates
-            .get()
-            .and_then(|e| e.eta(&workstream));
         let claims = self
             .ctx
             .hooks
@@ -218,7 +212,6 @@ impl Area {
             workstream,
             requests: List::unchecked(requests),
             decisions: List::unchecked(decisions),
-            eta,
             claims: claims.map(List::unchecked),
             next: Some(next),
             truncated: truncated.then_some(true),

@@ -813,9 +813,6 @@
           "minItems": 1,
           "type": "array"
         },
-        "estimate": {
-          "$ref": "#/$defs/Estimate"
-        },
         "goal": {
           "maxLength": 1000,
           "minLength": 1,
@@ -2917,109 +2914,6 @@
       "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$",
       "type": "string"
     },
-    "Estimate": {
-      "properties": {
-        "gates": {
-          "items": {
-            "maxLength": 200,
-            "minLength": 1,
-            "type": "string"
-          },
-          "maxItems": 20,
-          "type": "array"
-        },
-        "rawMinutes": {
-          "minimum": 0,
-          "type": "number"
-        }
-      },
-      "required": [
-        "rawMinutes",
-        "gates"
-      ],
-      "type": "object"
-    },
-    "Eta": {
-      "description": "The brief's raw estimate corrected by the tier's measured actual/raw ratio.",
-      "properties": {
-        "calibratedMinutes": {
-          "minimum": 0,
-          "type": "number"
-        },
-        "p80Minutes": {
-          "description": "From 10 samples on.",
-          "minimum": 0,
-          "type": "number"
-        },
-        "ratio": {
-          "description": "Median actual/raw over the tier's last 20 done workstreams; the 5.0 prior below 5 samples.",
-          "exclusiveMinimum": 0,
-          "type": "number"
-        },
-        "rawMinutes": {
-          "minimum": 0,
-          "type": "number"
-        },
-        "samples": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "rawMinutes",
-        "calibratedMinutes",
-        "ratio",
-        "samples"
-      ],
-      "type": "object"
-    },
-    "EtaBasis": {
-      "oneOf": [
-        {
-          "enum": [
-            "fleet"
-          ],
-          "type": "string"
-        },
-        {
-          "const": "order",
-          "description": "The scope's own measured rate.",
-          "type": "string"
-        },
-        {
-          "const": "project",
-          "description": "Too few samples in the order: the project's rate shared among its running orders.",
-          "type": "string"
-        },
-        {
-          "const": "none",
-          "description": "Too few samples anywhere: no ETA (\"measuring: 2 of 5 verified\"). Also what a basis this build doesn't know\ndecodes as.",
-          "type": "string"
-        }
-      ],
-      "x-open": true
-    },
-    "EtaSlip": {
-      "description": "`current − original`, split into what scope added and what speed lost.",
-      "properties": {
-        "scopeMinutes": {
-          "maximum": 9007199254740991,
-          "minimum": -9007199254740991,
-          "type": "integer"
-        },
-        "speedMinutes": {
-          "maximum": 9007199254740991,
-          "minimum": -9007199254740991,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "scopeMinutes",
-        "speedMinutes"
-      ],
-      "type": "object"
-    },
     "EventSeq": {
       "maximum": 9007199254740991,
       "minimum": 0,
@@ -4287,10 +4181,6 @@
           "description": "It is the scope's critical path: the most unfinished work (its own and what waits on it) runs through it.",
           "type": "boolean"
         },
-        "eta": {
-          "$ref": "#/$defs/Timestamp",
-          "description": "Retired with the ETA: always absent."
-        },
         "gate": {
           "maxLength": 160,
           "minLength": 1,
@@ -4307,12 +4197,6 @@
           },
           "maxItems": 10,
           "type": "array"
-        },
-        "overdueMinutes": {
-          "description": "Retired with the ETA: always absent.",
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
         },
         "slowerThanUsual": {
           "description": "Past 1.5× the usual time for its current stage: flagged in Risks, never credited past 90% of the stage.",
@@ -4423,11 +4307,6 @@
             "policy_bypass",
             "override"
           ],
-          "type": "string"
-        },
-        {
-          "const": "estimate_miss",
-          "description": "Retired: fleetd no longer scores time estimates. Kept so older incidents still read.",
           "type": "string"
         },
         {
@@ -6009,10 +5888,6 @@
         "doneAt": {
           "$ref": "#/$defs/Timestamp"
         },
-        "eta": {
-          "$ref": "#/$defs/StatusEta",
-          "description": "Retired with the ETA: always absent."
-        },
         "firstItemAt": {
           "$ref": "#/$defs/Timestamp",
           "description": "The first item's time; scope changes within 10 minutes of it carry no marker."
@@ -6752,10 +6627,6 @@
     "PlanGetOutput": {
       "description": "A plan as `plan show` and `plan_get` return it: derived state, figures and markers.",
       "properties": {
-        "eta": {
-          "$ref": "#/$defs/StatusEta",
-          "description": "Retired with the ETA: always absent."
-        },
         "items": {
           "items": {
             "$ref": "#/$defs/PlanItem"
@@ -8547,7 +8418,7 @@
       "type": "object"
     },
     "ProjectStatusRow": {
-      "description": "One project on the Status screen: a state word, the two-tone bar, agents running and the last merge. No ETA.",
+      "description": "One project on the Status screen: a state word, the two-tone bar, agents running and the last merge.",
       "properties": {
         "agentsRunning": {
           "description": "Its lead and task sessions holding a slot now.",
@@ -9435,16 +9306,6 @@
           "type": "string"
         },
         {
-          "const": "slipping",
-          "description": "Retired with the ETA: no longer raised.",
-          "type": "string"
-        },
-        {
-          "const": "estimate_drift",
-          "description": "Retired with the ETA: no longer raised.",
-          "type": "string"
-        },
-        {
           "const": "steer_unacknowledged",
           "description": "A steer was not acknowledged, or has gone 10 minutes delivered without it.",
           "type": "string"
@@ -9501,10 +9362,6 @@
     "ScopePart": {
       "description": "A child figure: the fleet's projects, a project's milestones, an order's milestones.",
       "properties": {
-        "eta": {
-          "$ref": "#/$defs/Timestamp",
-          "description": "Retired with the ETA: always absent."
-        },
         "milestoneId": {
           "$ref": "#/$defs/MilestoneId"
         },
@@ -10480,9 +10337,6 @@
           "maxItems": 10,
           "type": "array"
         },
-        "eta": {
-          "$ref": "#/$defs/StatusEta"
-        },
         "gates": {
           "items": {
             "$ref": "#/$defs/Gate"
@@ -10588,7 +10442,6 @@
         "now",
         "progress",
         "markers",
-        "eta",
         "gates",
         "headline",
         "since",
@@ -10601,52 +10454,6 @@
         "health",
         "stale",
         "more"
-      ],
-      "type": "object"
-    },
-    "StatusEta": {
-      "description": "Retired: fleetd shows no time estimates (progress, the critical path and \"slower than usual\" instead). The hub\nsends `{ samples: 0, basis: \"none\" }` so apps from before the change still decode the doc; every other field is\nabsent.",
-      "properties": {
-        "basis": {
-          "$ref": "#/$defs/EtaBasis"
-        },
-        "chain": {
-          "description": "The serial chain that sets `current` when it is later than throughput says, e.g. \"P12 full lab run\".",
-          "maxLength": 160,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        },
-        "current": {
-          "$ref": "#/$defs/Timestamp",
-          "description": "max(throughput ETA, chain ETA)."
-        },
-        "lead": {
-          "$ref": "#/$defs/Timestamp",
-          "description": "The lead's calibrated estimate, present when it differs from `current` by more than max(1 h, 50%)."
-        },
-        "original": {
-          "$ref": "#/$defs/Timestamp",
-          "description": "The first ETA with enough samples, stored once (orders and milestones only)."
-        },
-        "rate": {
-          "description": "Points verified per busy hour.",
-          "minimum": 0,
-          "type": "number"
-        },
-        "samples": {
-          "description": "Items verified in the 7-day window behind `rate`.",
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "slip": {
-          "$ref": "#/$defs/EtaSlip"
-        }
-      },
-      "required": [
-        "samples",
-        "basis"
       ],
       "type": "object"
     },
@@ -11468,10 +11275,6 @@
         },
         "endedAt": {
           "$ref": "#/$defs/Timestamp"
-        },
-        "estimateMinutes": {
-          "minimum": 0,
-          "type": "number"
         },
         "itemId": {
           "$ref": "#/$defs/PlanItemId",
@@ -13360,10 +13163,6 @@
         "createdAt": {
           "$ref": "#/$defs/Timestamp"
         },
-        "estimateActual": {
-          "$ref": "#/$defs/WorkstreamEstimateActual",
-          "description": "Hub-filled, outside the frozen brief. Set when it starts running with a raw estimate."
-        },
         "headline": {
           "maxLength": 280,
           "pattern": "^[^\\r\\n]*$",
@@ -13418,24 +13217,6 @@
       ],
       "type": "object"
     },
-    "WorkstreamEstimateActual": {
-      "properties": {
-        "actualMinutes": {
-          "description": "Wall-clock minutes from running to done; set on done.",
-          "minimum": 0,
-          "type": "number"
-        },
-        "ratioAtStart": {
-          "description": "The tier's calibration ratio when it started running.",
-          "exclusiveMinimum": 0,
-          "type": "number"
-        }
-      },
-      "required": [
-        "ratioAtStart"
-      ],
-      "type": "object"
-    },
     "WorkstreamGetInput": {
       "properties": {
         "workstreamId": {
@@ -13464,10 +13245,6 @@
           },
           "maxItems": 50,
           "type": "array"
-        },
-        "eta": {
-          "$ref": "#/$defs/Eta",
-          "description": "Absent without a raw estimate in the brief."
         },
         "next": {
           "type": "string"

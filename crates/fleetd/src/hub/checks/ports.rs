@@ -1,8 +1,8 @@
-//! What the checks, receipts, review verdicts, estimates and incidents areas need from other hub areas, as one trait.
+//! What the checks, receipts, review verdicts and incidents areas need from other hub areas, as one trait.
 //! The hub's implementation (`HubPorts`, wired once those areas land) forwards to their services; tests use fakes.
 //! Keeping it to this one seam means the claim flow and review verdicts run their real logic under test.
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef};
-use fleetd_contracts::ledger::{MetricValues, PlaybookRef, Workstream, WorkstreamId};
+use fleetd_contracts::ledger::{MetricValues, Workstream, WorkstreamId};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 use fleetd_contracts::model::ActionItem;
 use fleetd_contracts::tasks::{Task, TaskId};
@@ -30,12 +30,6 @@ pub enum ClaimWake {
         workstream_id: WorkstreamId,
         work: Vec<crate::hub::orders::open_work::OpenWork>,
     },
-}
-
-/// The pinned playbook's numbers estimates read.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct PlaybookLimits {
-    pub estimate_prior: f64,
 }
 
 /// The human's answer to a `human` check, as the lead logged it after asking in chat: the active `done.<n>`
@@ -105,8 +99,6 @@ pub trait Ports: Send + Sync + 'static {
     ) -> BoxFuture<'_, Result<CommandRun, String>>;
     // store: HubStore.projects
     fn workspace_root(&self, project: &ProjectRef) -> Option<String>;
-    // playbooks
-    fn playbook_limits(&self, playbook: &PlaybookRef) -> Option<PlaybookLimits>;
     /// Research.recordVerdict: stores the computed research verdict and returns its text.
     fn research_verdict<'a>(
         &'a self,

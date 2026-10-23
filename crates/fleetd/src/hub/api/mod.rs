@@ -124,7 +124,6 @@ pub struct Hub {
     pub queue: Arc<crate::hub::queue::WriteQueue>,
     pub wakes: Arc<crate::hub::wakes::Wakes>,
     pub incidents: Arc<crate::hub::incidents::Incidents>,
-    pub estimates: Arc<crate::hub::estimates::Estimates>,
     pub receipts: Arc<crate::hub::receipts::Receipts>,
     pub verdicts: Arc<crate::hub::reviews::verdicts::Verdicts>,
     pub checks: Arc<crate::hub::checks::CheckRunner>,

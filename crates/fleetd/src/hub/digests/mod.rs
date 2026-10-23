@@ -90,7 +90,7 @@ type TrainFeed = Box<dyn Fn(&dyn Fn(&ProjectRef) -> bool, i64) -> Vec<String> + 
 pub struct DigestFeeds {
     /// Leads: the newest workstreams, up to the limit.
     pub workstreams: Option<WorkstreamsFeed>,
-    /// Leads (claims and estimates): checks passed and the ETA, by workstream id.
+    /// Leads (claims): checks passed, by workstream id.
     pub facts: Option<FactsFeed>,
     /// Train: `humanTrainLines(trainFacts(visible project), since_ms)`.
     pub train_lines: Option<TrainFeed>,

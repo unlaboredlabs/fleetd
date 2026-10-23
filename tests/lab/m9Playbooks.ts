@@ -65,7 +65,7 @@ export async function m9Playbooks(lab: Lab) {
   ok(`(a) ${wa} in ${MACHINE}/${projectId}; playbook ${pinnedA.slice(0, 19)}…`);
 
   // (b) A bugfix brief without a test or cmd repro check is refused at freeze.
-  const briefBase = { pointers: [], constraints: [], estimate: { rawMinutes: 5, gates: [] } };
+  const briefBase = { pointers: [], constraints: [] };
   const noRepro = fleetd("brief", "create", "--workstream", wa, "--json", JSON.stringify({ ...briefBase, goal: "fix the README typo", why: "M9 lab", doneWhen: [{ type: "judge", criteria: "the typo is gone" }] }));
   check(noRepro.code === 3 && noRepro.stderr.includes("bugfix needs a failing repro check (type test or cmd)"), `bugfix brief without a repro: ${JSON.stringify(noRepro)}`);
   ok(`(b) brief create ${wa} refused (exit 3): ${noRepro.stderr.trim().split("\n")[0]}`);

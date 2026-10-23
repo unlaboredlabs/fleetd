@@ -16,9 +16,6 @@ use crate::steer::{SteerId, SteerStage};
 use crate::tasks::TaskId;
 use crate::train::{ChangeId, ChangeState, GitHubRepo};
 
-/// Done items an ETA needs before it is shown (as in `hub/estimates`).
-pub const MIN_SAMPLES: i64 = 5;
-
 /// What a status doc covers. `key()` is the form stored per human key ("fleet", "project:devbox/p1", "order:W41").
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -202,52 +199,6 @@ pub struct Marker {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 #[schemars(extend("x-open" = true))]
-pub enum EtaBasis {
-    /// The scope's own measured rate.
-    Order,
-    /// Too few samples in the order: the project's rate shared among its running orders.
-    Project,
-    Fleet,
-    /// Too few samples anywhere: no ETA ("measuring: 2 of 5 verified"). Also what a basis this build doesn't know
-    /// decodes as.
-    #[serde(other)]
-    None,
-}
-
-/// `current − original`, split into what scope added and what speed lost.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct EtaSlip {
-    pub scope_minutes: AnyInt,
-    pub speed_minutes: AnyInt,
-}
-
-/// Retired: fleetd shows no time estimates (progress, the critical path and "slower than usual" instead). The hub
-/// sends `{ samples: 0, basis: "none" }` so apps from before the change still decode the doc; every other field is
-/// absent.
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct StatusEta {
-    /// max(throughput ETA, chain ETA).
-    pub current: Option<Timestamp>,
-    /// The first ETA with enough samples, stored once (orders and milestones only).
-    pub original: Option<Timestamp>,
-    pub slip: Option<EtaSlip>,
-    /// The lead's calibrated estimate, present when it differs from `current` by more than max(1 h, 50%).
-    pub lead: Option<Timestamp>,
-    /// Points verified per busy hour.
-    pub rate: Option<NonNegative>,
-    /// Items verified in the 7-day window behind `rate`.
-    pub samples: Count,
-    pub basis: EtaBasis,
-    /// The serial chain that sets `current` when it is later than throughput says, e.g. "P12 full lab run".
-    pub chain: Option<Line<1, 160>>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-#[schemars(extend("x-open" = true))]
 pub enum GateKind {
     /// An in-progress item with open items `after` it.
     Plan,
@@ -343,10 +294,6 @@ pub struct InProgressRow {
     pub medium_task_ids: Option<List<TaskId, 0, 10>>,
     pub change_ids: List<ChangeId, 0, 10>,
     pub gate: Option<Line<1, 160>>,
-    /// Retired with the ETA: always absent.
-    pub eta: Option<Timestamp>,
-    /// Retired with the ETA: always absent.
-    pub overdue_minutes: Option<Count>,
     pub stale: Option<StaleMark>,
     /// The order's latest steers, newest first, on its first in-progress row only.
     pub steers: Option<List<StatusSteer, 0, 3>>,
@@ -404,10 +351,6 @@ pub enum RiskRule {
     CiRedMain,
     MachineOffline,
     BlockedOnYou,
-    /// Retired with the ETA: no longer raised.
-    Slipping,
-    /// Retired with the ETA: no longer raised.
-    EstimateDrift,
     RiskiestItem,
     CiRedRepeat,
     MachineFlaky,
@@ -580,7 +523,7 @@ pub struct LastMerged {
     pub at: Timestamp,
 }
 
-/// One project on the Status screen: a state word, the two-tone bar, agents running and the last merge. No ETA.
+/// One project on the Status screen: a state word, the two-tone bar, agents running and the last merge.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -611,8 +554,6 @@ pub struct ScopePart {
     pub scope: Option<StatusScope>,
     pub milestone_id: Option<MilestoneId>,
     pub progress: Progress,
-    /// Retired with the ETA: always absent.
-    pub eta: Option<Timestamp>,
 }
 
 /// How many rows each capped list left out.
@@ -643,7 +584,6 @@ pub struct StatusDoc {
     pub progress: Progress,
     /// Newest first.
     pub markers: List<Marker, 0, 3>,
-    pub eta: StatusEta,
     pub gates: List<Gate, 0, 3>,
     pub headline: Headline,
     pub since: Since,
@@ -778,7 +718,5 @@ mod tests {
         assert_eq!(reason, DropReason::Unknown);
         let stage: ItemStage = serde_json::from_value(from("deployed")).unwrap();
         assert_eq!(stage, ItemStage::Unknown);
-        let basis: EtaBasis = serde_json::from_value(from("model")).unwrap();
-        assert_eq!(basis, EtaBasis::None);
     }
 }

@@ -1,7 +1,7 @@
 // M6 "done when" 1-5 on lab-a: done is fleetd's call. A workstream whose only done-when check is a node-run
 // `test -f docs/x.md` fails its first claim, and the lead is woken with the exit code and output. The writer that
 // fixes it (the lead's own, else the harness's) is merged into the project's checkout as it ends, so the next claim,
-// the lead's or the harness's, passes and records actual vs estimate. A tool-less task that says "tests pass" reaches
+// the lead's or the harness's, passes. A tool-less task that says "tests pass" reaches
 // the lead as unverified, and a verdict from a non-review task is refused. The harness's `fleetd` calls run in the
 // project's workspace, as the lead's shell would, so they cost no turns; tasks run on medium.
 import { spawnSync } from "node:child_process";
@@ -65,11 +65,10 @@ export async function m6Verify(lab: Lab) {
     constraints: [],
     doneWhen: [{ type: "cmd", machineId: MACHINE, argv: ["test", "-f", FILE], expectExit: 0 }],
     tier: "S",
-    estimate: { rawMinutes: 1, gates: [] },
   };
   const frozen = fleetd("brief", "create", "--workstream", w, "--json", JSON.stringify(brief));
   check(frozen.code === 0, `brief create: exit ${frozen.code} ${frozen.stdout}${frozen.stderr}`);
-  ok(`${w}: brief frozen with done-when [cmd on ${MACHINE}: test -f ${FILE}], raw estimate 1 min`);
+  ok(`${w}: brief frozen with done-when [cmd on ${MACHINE}: test -f ${FILE}]`);
 
   // 1a. A claim before the file exists: the node runs the check, it fails, the workstream stays verifying.
   const first = fleetd("claim", "done", "--workstream", w);
@@ -91,9 +90,7 @@ export async function m6Verify(lab: Lab) {
     wakeText.includes(`- claim ${firstClaim} on ${w} failed`) && wakeText.includes(`done:0 (on ${MACHINE}: \`test -f ${FILE}\` exits 0): fail, exit 1`) && wakeText.includes(`exited 1 (expected 0)`),
     `the wake carries the failing check's exit code and output: ${wakeText.slice(wakeText.lastIndexOf(`claim ${firstClaim}`), wakeText.lastIndexOf(`claim ${firstClaim}`) + 400)}`,
   );
-  // Agents never see a time estimate (#190): the digest names no ETA.
-  check(!wakeText.includes("(raw 1m × "), "the lead's digest shows no ETA");
-  ok(`1. the lead's wake (triggers ${JSON.stringify(woken.event.data?.triggers)}) carried the evidence inline, and no ETA`);
+  ok(`1. the lead's wake (triggers ${JSON.stringify(woken.event.data?.triggers)}) carried the evidence inline`);
 
   // The fix: a lead given the failing evidence spawns a writer itself; if it did not, the harness does.
   const spawn = (args: Array<string>) => {
@@ -160,21 +157,15 @@ export async function m6Verify(lab: Lab) {
   check(late.code === 3 && late.stderr.includes(`Workstream ${w} is done; tasks run only for open workstreams.`), `write spawn on a done workstream: ${JSON.stringify(late)}`);
   ok(`a write spawn on done ${w} is refused: ${late.stderr.trim().split("\n")[0]}`);
 
-  // 5. Actual vs estimate on done; workstream_get shows the ETA and the claims.
+  // 5. workstream_get shows the claims.
   const got = (await callTool("workstream_get", { workstreamId: w })).body;
-  const actual = got.workstream.estimateActual;
-  check(got.workstream.state === "done" && typeof actual?.actualMinutes === "number" && actual.ratioAtStart === 5, `estimateActual: ${JSON.stringify(got.workstream)}`);
-  check(
-    got.eta?.rawMinutes === 1 && typeof got.eta.calibratedMinutes === "number" && typeof got.eta.ratio === "number" && typeof got.eta.samples === "number",
-    `workstream_get eta: ${JSON.stringify(got.eta)}`,
-  );
+  check(got.workstream.state === "done", `${w} done: ${JSON.stringify(got.workstream)}`);
   const claims = got.claims as Array<Body>;
   check(claims[0]?.outcome === "pass" && claims.at(-1)?.claimId === firstClaim && claims.at(-1)?.outcome === "fail", `workstream_get claims: ${JSON.stringify(claims)}`);
-  ok(`5. ${w} done: actual ${actual.actualMinutes} min vs raw 1 (ratio at start ${actual.ratioAtStart}); workstream_get eta ${JSON.stringify(got.eta)}, claims ${claims.map((c) => `${c.claimId} ${c.outcome}`).join(", ")}`);
+  ok(`5. ${w} done; workstream_get claims ${claims.map((c) => `${c.claimId} ${c.outcome}`).join(", ")}`);
   const listed = (await callTool("claims_list", { workstreamId: w })).body;
   check(listed.claims?.length === claims.length, `claims_list: ${JSON.stringify(listed)}`);
   const incidents = (await callTool("incidents_list", { projectRef: ref, workstreamId: w })).body.incidents as Array<Body>;
-  check(!incidents.some((i) => i.class === "estimate_miss"), `fleetd never scores a time estimate as an incident: ${JSON.stringify(incidents)}`);
   ok(`claims_list: ${listed.claims.length}; incidents_list: ${incidents.map((i) => `${i.incidentId} ${i.class}`).join(", ") || "none"}`);
   const digest = (await callTool("digest_get")).body.text as string;
   check(digest.includes(`Done: ${w} `) && digest.includes("· ✓ 1 of 1 checks"), `the human digest shows the done workstream with its checked ✓: ${digest}`);

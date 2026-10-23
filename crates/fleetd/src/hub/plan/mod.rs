@@ -1270,7 +1270,6 @@ impl Plans {
                     views.push(MilestoneView {
                         milestone: milestone_contract(m, &mine),
                         progress: progress_of(&f, now, marker),
-                        eta: None,
                     });
                 }
                 let markers: Vec<PlanChange> = changes
@@ -1282,7 +1281,6 @@ impl Plans {
                     project_ref: r.clone(),
                     workstream_id: ws.cloned(),
                     progress: progress_of(&total, now, changes.first().map(marker_of)),
-                    eta: None,
                     milestones: List::try_from(views.into_iter().take(50).collect::<Vec<_>>())
                         .unwrap_or_default(),
                     items: List::try_from(

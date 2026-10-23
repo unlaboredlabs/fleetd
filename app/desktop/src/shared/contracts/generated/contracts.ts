@@ -336,7 +336,6 @@ export type Brief = {
   decisionRule?: DecisionRule;
   /** At least one. */
   doneWhen: CheckSpec[];
-  estimate?: Estimate;
   goal: string;
   /** Research: the one number the judge reports for baseline and candidate, e.g. "p50 cold start in ms". */
   metric?: string;
@@ -1037,32 +1036,6 @@ export type EnvName = string;
 
 export type ErrorCode = "machine_offline" | "not_found" | "forbidden" | "invalid" | "failed";
 
-export type Estimate = {
-  gates: string[];
-  rawMinutes: number;
-};
-
-/** The brief's raw estimate corrected by the tier's measured actual/raw ratio. */
-export type Eta = {
-  calibratedMinutes: number;
-  /** From 10 samples on. */
-  p80Minutes?: number;
-  /** Median actual/raw over the tier's last 20 done workstreams; the 5.0 prior below 5 samples. */
-  ratio: number;
-  rawMinutes: number;
-  samples: number;
-};
-
-export type KnownEtaBasis = "fleet" | "order" | "project" | "none";
-/** KnownEtaBasis, or a value from a newer hub. */
-export type EtaBasis = KnownEtaBasis | (string & {});
-
-/** `current − original`, split into what scope added and what speed lost. */
-export type EtaSlip = {
-  scopeMinutes: number;
-  speedMinutes: number;
-};
-
 export type EventSeq = number;
 
 export type EventsWaitInput = {
@@ -1465,14 +1438,10 @@ export type InProgressRow = {
   creditPct?: number;
   /** It is the scope's critical path: the most unfinished work (its own and what waits on it) runs through it. */
   critical?: boolean;
-  /** Retired with the ETA: always absent. */
-  eta?: Timestamp;
   gate?: string;
   itemId?: PlanItemId;
   /** Those of `taskIds` that run on the medium profile; the rest run high. Absent when none does. */
   mediumTaskIds?: TaskId[];
-  /** Retired with the ETA: always absent. */
-  overdueMinutes?: number;
   /** Past 1.5× the usual time for its current stage: flagged in Risks, never credited past 90% of the stage. */
   slowerThanUsual?: boolean;
   /** The furthest stage fleetd observed for the item. */
@@ -1514,7 +1483,6 @@ export type IncidentClass =
   | "stall"
   | "policy_bypass"
   | "override"
-  | "estimate_miss"
   | "misfiled_ask"
   | "re_ask";
 
@@ -1908,8 +1876,6 @@ export type MilestoneState = "open" | "done";
 export type MilestoneView = {
   createdAt: Timestamp;
   doneAt?: Timestamp;
-  /** Retired with the ETA: always absent. */
-  eta?: StatusEta;
   /** The first item's time; scope changes within 10 minutes of it carry no marker. */
   firstItemAt?: Timestamp;
   milestoneId: MilestoneId;
@@ -2161,8 +2127,6 @@ export type PlanGetInput = {
 
 /** A plan as `plan show` and `plan_get` return it: derived state, figures and markers. */
 export type PlanGetOutput = {
-  /** Retired with the ETA: always absent. */
-  eta?: StatusEta;
   items: PlanItem[];
   /** Newest first. */
   markers: PlanChange[];
@@ -2773,7 +2737,7 @@ export type ProjectSetOutput = {
   truncated?: boolean;
 };
 
-/** One project on the Status screen: a state word, the two-tone bar, agents running and the last merge. No ETA. */
+/** One project on the Status screen: a state word, the two-tone bar, agents running and the last merge. */
 export type ProjectStatusRow = {
   /** Its lead and task sessions holding a slot now. */
   agentsRunning: number;
@@ -3100,8 +3064,6 @@ export type KnownRiskRule =
   | "slots_full"
   | "github_drift"
   | "no_plan"
-  | "slipping"
-  | "estimate_drift"
   | "steer_unacknowledged"
   | "slower_than_usual"
   | "train_stuck";
@@ -3123,8 +3085,6 @@ export type SafetyRule = {
 
 /** A child figure: the fleet's projects, a project's milestones, an order's milestones. */
 export type ScopePart = {
-  /** Retired with the ETA: always absent. */
-  eta?: Timestamp;
   milestoneId?: MilestoneId;
   progress: Progress;
   /** Open it as its own scope (projects and orders). */
@@ -3475,7 +3435,6 @@ export type StaleSource = {
 
 export type StatusDoc = {
   done: DoneRow[];
-  eta: StatusEta;
   gates: Gate[];
   headline: Headline;
   health: Health;
@@ -3501,28 +3460,6 @@ export type StatusDoc = {
   version: number;
   /** The order's tier when the scope is an order with no plan items. */
   virtualTier?: Tier;
-};
-
-/**
- * Retired: fleetd shows no time estimates (progress, the critical path and "slower than usual" instead). The hub
- * sends `{ samples: 0, basis: "none" }` so apps from before the change still decode the doc; every other field is
- * absent.
- */
-export type StatusEta = {
-  basis: EtaBasis;
-  /** The serial chain that sets `current` when it is later than throughput says, e.g. "P12 full lab run". */
-  chain?: string;
-  /** max(throughput ETA, chain ETA). */
-  current?: Timestamp;
-  /** The lead's calibrated estimate, present when it differs from `current` by more than max(1 h, 50%). */
-  lead?: Timestamp;
-  /** The first ETA with enough samples, stored once (orders and milestones only). */
-  original?: Timestamp;
-  /** Points verified per busy hour. */
-  rate?: number;
-  /** Items verified in the 7-day window behind `rate`. */
-  samples: number;
-  slip?: EtaSlip;
 };
 
 export type StatusGetInput = {
@@ -3790,7 +3727,6 @@ export type Task = {
   branch?: string;
   createdAt: Timestamp;
   endedAt?: Timestamp;
-  estimateMinutes?: number;
   /** The plan item it was spawned for (`--item`). */
   itemId?: PlanItemId;
   kind: TaskKind;
@@ -4431,8 +4367,6 @@ export type Workstream = {
   /** Absent while draft. */
   brief?: Brief;
   createdAt: Timestamp;
-  /** Hub-filled, outside the frozen brief. Set when it starts running with a raw estimate. */
-  estimateActual?: WorkstreamEstimateActual;
   headline?: string;
   headlineAt?: Timestamp;
   /** Research workstreams, once the verdict is computed; set together with `verdict`. A STOP is done, not failed. */
@@ -4448,13 +4382,6 @@ export type Workstream = {
   updatedAt: Timestamp;
   verdict?: ResearchVerdict;
   workstreamId: WorkstreamId;
-};
-
-export type WorkstreamEstimateActual = {
-  /** Wall-clock minutes from running to done; set on done. */
-  actualMinutes?: number;
-  /** The tier's calibration ratio when it started running. */
-  ratioAtStart: number;
 };
 
 /** `workstream.created`, `workstream.running`, `workstream.state`, `workstream.done`. */
@@ -4480,8 +4407,6 @@ export type WorkstreamGetOutput = {
   claims?: Claim[];
   /** Active decisions scoped to it. */
   decisions: Decision[];
-  /** Absent without a raw estimate in the brief. */
-  eta?: Eta;
   next?: string;
   /** Its open secret and approval requests. */
   requests: HumanRequest[];

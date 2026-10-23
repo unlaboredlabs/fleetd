@@ -1,5 +1,5 @@
-//! Incidents: what went wrong, recorded by the hub from what it observed (a false claim, an estimate miss, a polish
-//! loop, ...), never by an agent. Each one is stored and announced as `incident.recorded`.
+//! Incidents: what went wrong, recorded by the hub from what it observed (a false claim, a polish loop, ...), never by
+//! an agent. Each one is stored and announced as `incident.recorded`.
 use crate::clock::Clock;
 use crate::hub::store::{EventLog, HubDb, NewEvent, StoreError, iso_ms, now_ms};
 use fleetd_contracts::events::HubEventType;
@@ -277,5 +277,52 @@ impl Incidents {
             counts: tally,
             counts_since: iso_ms(since_ms),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::clock::SystemClock;
+
+    /// A database from before time estimates went: estimate samples and an `estimate_miss` incident, a class this
+    /// build can't read. It opens, the samples are gone and the incidents still count.
+    #[test]
+    fn an_older_database_with_estimate_misses_opens() {
+        let home = tempfile::tempdir().unwrap();
+        let db = HubDb::open(home.path()).unwrap();
+        let before = crate::hub::store::MIGRATIONS
+            .iter()
+            .position(|m| m.contains("DROP TABLE estimates;"))
+            .unwrap();
+        db.with(|c| {
+            c.execute_batch(
+                "CREATE TABLE estimates (workstream_id TEXT PRIMARY KEY);
+                 INSERT INTO incidents (class, machine_id, project_id, data)
+                   VALUES ('estimate_miss', 'm', 'p', ''), ('stall', 'm', 'p', '');",
+            )?;
+            c.pragma_update(None, "user_version", before as i64)?;
+            Ok(())
+        })
+        .unwrap();
+        drop(db);
+        let db = HubDb::open(home.path()).unwrap();
+        let estimates: i64 = db
+            .with(|c| {
+                Ok(c.query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE name = 'estimates'",
+                    [],
+                    |r| r.get(0),
+                )?)
+            })
+            .unwrap();
+        assert_eq!(estimates, 0);
+        let clock: Arc<dyn Clock> = Arc::new(SystemClock);
+        let events = Arc::new(EventLog::new(db.clone(), clock.clone()).unwrap());
+        let incidents = Incidents::new(db, events, clock);
+        assert_eq!(
+            incidents.counts(&IncidentFilter::default()).unwrap(),
+            vec![(IncidentClass::Stall, 1)]
+        );
     }
 }

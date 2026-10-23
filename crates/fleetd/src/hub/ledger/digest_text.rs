@@ -33,7 +33,7 @@ pub struct DigestInput {
     pub decided_without_you: Vec<Decision>,
     /// Display names by `machineId/projectId`; the project id is used when missing.
     pub project_names: HashMap<String, String>,
-    /// Checks passed and ETAs, as fleetd measured them; absent ones show none.
+    /// Checks passed, as fleetd measured them; absent ones show none.
     pub facts: HashMap<String, WorkstreamFacts>,
     /// Lines from the train area: merges since the last digest and the state of each train.
     pub train: Vec<String>,

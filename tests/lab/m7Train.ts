@@ -206,7 +206,7 @@ export async function m7Train(lab: Lab) {
     // Two workstreams, opened and their briefs registered from the shell as the lead would.
     const workstream = async (text: string, brief: Body) => {
       const w = openWorkstream(check, fleetd, text);
-      const frozen = fleetd("brief", "create", "--workstream", w, "--json", JSON.stringify({ pointers: [], constraints: [], estimate: { rawMinutes: 5, gates: [] }, ...brief }));
+      const frozen = fleetd("brief", "create", "--workstream", w, "--json", JSON.stringify({ pointers: [], constraints: [], ...brief }));
       check(frozen.code === 0, `brief create ${w}: ${JSON.stringify(frozen)}`);
       return w;
     };

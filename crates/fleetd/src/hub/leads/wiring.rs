@@ -7,17 +7,16 @@ use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadId, ThreadRef};
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult};
 use fleetd_contracts::ledger::{Decision, DecisionScope, HumanRequest, RequestState, WorkstreamId};
 use fleetd_contracts::mcp::{McpToolError, ThreadLaunchInput};
-use fleetd_contracts::verification::{Claim, Eta};
+use fleetd_contracts::verification::Claim;
 
 use super::Area;
 use super::error::LeadError;
-use super::hooks::{BoxFuture, ClaimsHook, EstimatesHook};
+use super::hooks::{BoxFuture, ClaimsHook};
 use super::ports::{CmdOutcome, LeadPorts};
 use super::records::{LeadRecords, WorkstreamFilter};
 use crate::hub::approvals::store::{RequestFilter, Requests};
 use crate::hub::checks::{ClaimFilter, Claims};
 use crate::hub::digests::HumanDigests;
-use crate::hub::estimates::Estimates;
 use crate::hub::executor::{ExecutorError, Executors, LaunchInput, LaunchOptions};
 use crate::hub::ledger::{self, Chain, DecisionFilter, Decisions, LedgerCode, LedgerError};
 use crate::hub::link::commands::CommandInput;
@@ -236,19 +235,6 @@ impl ClaimsHook for ClaimsFromChecks {
     }
 }
 
-struct EstimatesFromArea(Arc<Estimates>);
-
-impl EstimatesHook for EstimatesFromArea {
-    fn eta(&self, workstream: &fleetd_contracts::ledger::Workstream) -> Option<Eta> {
-        self.0.eta(workstream).ok().flatten()
-    }
-    fn record_done(&self, workstream_id: &WorkstreamId) {
-        if let Err(error) = self.0.record_done(workstream_id) {
-            tracing::warn!(%error, "estimate not recorded");
-        }
-    }
-}
-
 struct Calls(Arc<Area>);
 
 impl LeadCallHandler for Calls {
@@ -272,7 +258,6 @@ pub struct Links<'a> {
     pub lead_calls: &'a LeadCalls,
     pub digests: &'a HumanDigests,
     pub claims: &'a Arc<Claims>,
-    pub estimates: &'a Arc<Estimates>,
 }
 
 const OUTCOME_WORKSTREAMS: usize = 20;
@@ -331,11 +316,6 @@ pub fn wire_area(area: &Arc<Area>, links: Links<'_>) {
         .hooks
         .claims
         .set(Arc::new(ClaimsFromChecks(Arc::clone(links.claims))));
-    let _ = area
-        .ctx
-        .hooks
-        .estimates
-        .set(Arc::new(EstimatesFromArea(Arc::clone(links.estimates))));
     links
         .decisions
         .set_workstreams(Arc::new(Lookup(Arc::clone(&area.records))));

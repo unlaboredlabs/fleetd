@@ -310,7 +310,7 @@ impl LeadWakes {
         }))
     }
 
-    /// Per workstream with a brief: the checks its latest finished claim passed, and its ETA.
+    /// Per workstream with a brief: the checks its latest finished claim passed.
     pub fn workstream_facts(
         &self,
         workstreams: &[fleetd_contracts::ledger::Workstream],
