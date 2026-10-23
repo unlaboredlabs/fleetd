@@ -33,13 +33,17 @@ pub enum AppClientMessage {
         tool: NonEmpty,
         input: serde_json::Value,
     },
-    /// Subscribe to `live` frames, replacing any earlier subscription: every open order's lanes when `board`, and
-    /// the focused order's lanes, its project's lead and their streamed text when `focus` is set. Neither: stop.
-    /// Send it again on window activation; the first frame after each one is `full`.
+    /// Subscribe to `live` frames, replacing any earlier subscription: every agent's lane (each running, queued or
+    /// waiting task and each project's lead) when `board`; the focused order's lanes, its project's lead and their
+    /// streamed text when `focus` is set; and one agent's lane and streamed text, at the focus rate, when `agent` is
+    /// set (an `agents_list` row's `laneId`). None of them: stop. Send it again on window activation; the first frame
+    /// after each one is `full`.
     Live {
         board: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         focus: Option<WorkstreamId>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        agent: Option<crate::live::LaneId>,
     },
     /// Subscribe to `chat_delta` frames of one project's chat, replacing any earlier one; without `project`, stop.
     /// Send it again after a reconnect.

@@ -303,6 +303,23 @@ pub fn tail_of(
     (rows, truncated)
 }
 
+/// Every message and action, newest first by `(at, id)`, strictly before `before` when given: the first `limit`,
+/// and whether more remain. A total order, so a page boundary never skips or repeats a step.
+pub fn work_page(
+    view: &ThreadView,
+    before: Option<(&str, &str)>,
+    limit: usize,
+) -> (Vec<(String, TailRow)>, bool) {
+    let (mut rows, _) = tail_of(view, usize::MAX, None);
+    rows.sort_by(|(a_id, a), (b_id, b)| (b.at(), b_id).cmp(&(a.at(), a_id)));
+    if let Some((at, id)) = before {
+        rows.retain(|(row_id, row)| (row.at(), row_id.as_str()) < (at, id));
+    }
+    let more = rows.len() > limit;
+    rows.truncate(limit);
+    (rows, more)
+}
+
 const QUESTION_MAX: usize = 1500;
 
 /// What a thread waiting on a human is asking: the tool and what it would do.

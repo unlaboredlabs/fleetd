@@ -21,12 +21,11 @@ use fleetd_contracts::prim::{Count, List, NonEmpty, Text};
 use fleetd_contracts::tasks::{SlotState, Task, TaskState};
 use tokio::sync::Notify;
 
+use crate::hub::agents;
 use crate::hub::api::{Caller, Hub, allows};
 use crate::hub::executor::activity::StreamText;
-use crate::hub::leads::records::WorkstreamFilter;
 use crate::hub::orders::{self, phase};
 use crate::hub::store::{iso_ms, now_ms};
-use crate::hub::tasks::TaskFilter;
 
 pub const TICK: Duration = Duration::from_millis(250);
 /// Board lanes and slots every 4th tick (1 s), machines every 20th (5 s).
@@ -289,11 +288,13 @@ impl Pump {
     }
 }
 
-/// The subscription's scope: the focused order, and every open order the key may read when `board`.
+/// The subscription's scope: every agent the key may read when `board`, the focused order, and one focused agent.
 pub struct Scope {
     pub caller: Caller,
     pub board: bool,
     pub focus: Option<WorkstreamId>,
+    /// An agents-view row's lane id: that agent at the focus rate, with its streamed text.
+    pub agent: Option<LaneId>,
 }
 
 fn task_lane(hub: &Hub, task: &Task, focus: bool) -> LaneNow {
@@ -361,77 +362,61 @@ pub fn focus_lanes(hub: &Hub, caller: &Caller, id: &WorkstreamId) -> Vec<LaneNow
     lanes
 }
 
-/// Every live task of the open orders the key may read, those that ended in the last few seconds, and those
-/// projects' leads, with every working lead the key may read.
+/// Every agent the agents view lists: each queued, running or idle task the key may read, those that ended in the
+/// last few seconds (so the app sees how they settled), and each readable lead that is working. An idle lead has no
+/// lane here; the agents view still lists it.
 pub fn board_lanes(hub: &Hub, caller: &Caller) -> Vec<LaneNow> {
-    let mut projects = HashSet::new();
-    let open = hub
-        .leads
-        .records
-        .workstreams_list(&WorkstreamFilter {
-            open: true,
-            limit: 500,
-            ..Default::default()
-        })
-        .unwrap_or_default();
-    let open: HashSet<WorkstreamId> = open
-        .into_iter()
-        .filter(|w| allows(caller, Role::Read, Some(&w.project_ref.machine_id)))
-        .map(|w| {
-            projects.insert(w.project_ref.clone());
-            w.workstream_id
-        })
+    let mut lanes: Vec<LaneNow> = agents::live_tasks(hub, caller, None)
+        .iter()
+        .map(|t| task_lane(hub, t, false))
         .collect();
-    let mut lanes = Vec::new();
-    for state in [TaskState::Running, TaskState::Queued, TaskState::Idle] {
-        let tasks = hub
-            .tasks
-            .list(&TaskFilter {
-                project_ref: None,
-                state: Some(state),
-                workstream_id: None,
-                limit: 500,
-            })
-            .unwrap_or_default();
-        lanes.extend(
-            tasks
-                .iter()
-                .filter(|t| open.contains(&t.workstream_id))
-                .map(|t| task_lane(hub, t, false)),
-        );
-    }
     let cutoff = iso_ms(now_ms(hub.clock.as_ref()) - BOARD_ENDED_GRACE_MS);
-    for state in [TaskState::Done, TaskState::Failed, TaskState::Cancelled] {
-        let tasks = hub
-            .tasks
-            .list(&TaskFilter {
-                project_ref: None,
-                state: Some(state),
-                workstream_id: None,
-                limit: BOARD_ENDED_SCAN,
-            })
-            .unwrap_or_default();
-        lanes.extend(
-            tasks
-                .iter()
-                .filter(|t| {
-                    open.contains(&t.workstream_id)
-                        && t.ended_at.as_ref().is_some_and(|e| e.0 >= cutoff)
-                })
-                .map(|t| task_lane(hub, t, false)),
-        );
-    }
-    // A working lead too before its turn opens an order: the chat says what it is doing from its lane.
-    for lead in hub.leads.records.leads_list().unwrap_or_default() {
-        let r = lead.project_ref;
-        if allows(caller, Role::Read, Some(&r.machine_id))
-            && crate::hub::chat::flow::lead_working(hub, &r)
-        {
-            projects.insert(r);
-        }
-    }
-    lanes.extend(lead_lanes(hub, &projects, false));
+    lanes.extend(
+        agents::ended_tasks(hub, caller, None, &cutoff, BOARD_ENDED_SCAN)
+            .iter()
+            .map(|t| task_lane(hub, t, false)),
+    );
+    let readable = agents::readable_projects(hub, caller, None);
+    let working: HashSet<_> = agents::lead_projects(hub, &readable)
+        .into_iter()
+        .filter(|r| crate::hub::chat::flow::lead_working(hub, r))
+        .collect();
+    lanes.extend(lead_lanes(hub, &working, false));
     lanes
+}
+
+/// One agent by its lane id ("T7", or a project's "lead:<machine>/<project>"), with its streamed text, when the key
+/// may read it.
+pub fn agent_lanes(hub: &Hub, caller: &Caller, lane_id: &str) -> Vec<LaneNow> {
+    if let Some(rest) = lane_id.strip_prefix("lead:") {
+        let Some((machine, project)) = rest.split_once('/') else {
+            return Vec::new();
+        };
+        let (Ok(machine_id), Ok(project_id)) = (
+            fleetd_contracts::ids::MachineId::new(machine),
+            fleetd_contracts::ids::ProjectId::new(project),
+        ) else {
+            return Vec::new();
+        };
+        if !allows(caller, Role::Read, Some(&machine_id)) {
+            return Vec::new();
+        }
+        let project = fleetd_contracts::ids::ProjectRef {
+            machine_id,
+            project_id,
+        };
+        return lead_lanes(hub, &HashSet::from([project]), true);
+    }
+    let Ok(task_id) = fleetd_contracts::tasks::TaskId::new(lane_id) else {
+        return Vec::new();
+    };
+    hub.tasks
+        .get(&task_id)
+        .ok()
+        .flatten()
+        .filter(|t| allows(caller, Role::Read, Some(&t.project_ref.machine_id)))
+        .map(|t| vec![task_lane(hub, &t, true)])
+        .unwrap_or_default()
 }
 
 pub fn machines(hub: &Hub, caller: &Caller) -> Vec<MachineLive> {
@@ -476,7 +461,7 @@ pub fn slots(hub: &Hub, caller: &Caller) -> SlotState {
 
 /// Runs one subscription until it is replaced or the connection ends.
 pub async fn run(hub: Arc<Hub>, scope: Scope, slot: Arc<LiveSlot>, budget: Arc<ConnBudget>) {
-    if !scope.board && scope.focus.is_none() {
+    if !scope.board && scope.focus.is_none() && scope.agent.is_none() {
         return;
     }
     let mut pump = Pump::default();
@@ -498,6 +483,14 @@ pub async fn run(hub: Arc<Hub>, scope: Scope, slot: Arc<LiveSlot>, budget: Arc<C
         let mut lanes = Vec::new();
         if let Some(focus) = &scope.focus {
             lanes.extend(focus_lanes(&hub, &scope.caller, focus));
+        }
+        if let Some(agent) = &scope.agent {
+            let seen: HashSet<LaneId> = lanes.iter().map(|l| l.lane.lane_id.clone()).collect();
+            lanes.extend(
+                agent_lanes(&hub, &scope.caller, agent)
+                    .into_iter()
+                    .filter(|l| !seen.contains(&l.lane.lane_id)),
+            );
         }
         if scope.board && board_tick {
             let seen: HashSet<LaneId> = lanes.iter().map(|l| l.lane.lane_id.clone()).collect();
