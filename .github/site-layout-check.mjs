@@ -50,7 +50,8 @@ for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => process.exi
 /** Chrome prints its DevTools endpoint on stderr once it listens. */
 const endpoint = await new Promise((resolve, reject) => {
   let err = "";
-  const timer = setTimeout(() => reject(new Error(`Chrome didn't start in 30 s:\n${err}`)), 30_000);
+  // GitHub runners sometimes take well over 30 s to start Chrome (it waits on a session bus that isn't there).
+  const timer = setTimeout(() => reject(new Error(`Chrome didn't start in 120 s:\n${err}`)), 120_000);
   chrome.stderr.on("data", (d) => {
     err += d;
     const m = err.match(/DevTools listening on (ws:\/\/\S+)/u);

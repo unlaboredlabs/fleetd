@@ -166,7 +166,7 @@
           "taskId": "T34",
           "model": "claude-haiku-5-5",
           "effort": "low",
-          "statusReason": "slots: 40/40 in use"
+          "statusReason": "fleet cap: 40 of 40 running"
         }
       ],
       "prs": [

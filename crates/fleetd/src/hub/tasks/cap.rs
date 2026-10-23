@@ -39,6 +39,22 @@ fn plural(n: i64, one: &str, many: &str) -> String {
     format!("{n} {}", if n == 1 { one } else { many })
 }
 
+/// The chat line for a lowered project cap that paused the extras.
+pub fn paused_line(from: i64, to: i64, paused: i64, running: i64) -> String {
+    let (push, keep) = (
+        if paused == 1 {
+            "pushes its work and waits"
+        } else {
+            "push their work and wait"
+        },
+        if running == 1 { "keeps" } else { "keep" },
+    );
+    format!(
+        "Max agents {from} → {to}: {} {push}; {running} {keep} running.",
+        plural(paused, "agent", "agents")
+    )
+}
+
 /// The chat line for a raised project cap: what started, if anything did.
 pub fn raised_line(from: i64, to: i64, started: i64, free: i64) -> String {
     if started == 0 {
@@ -120,14 +136,20 @@ impl Tasks {
             let line = if to > from {
                 raised_line(from, to, (after.running - before.running).max(0), free)
             } else if to < from && !paused.is_empty() {
-                format!(
-                    "Max agents {from} → {to}: {} push their work and wait; {} keep running.",
-                    plural(paused.len() as i64, "agent", "agents"),
-                    (after.running - paused.len() as i64).max(0)
+                paused_line(
+                    from,
+                    to,
+                    paused.len() as i64,
+                    (after.running - paused.len() as i64).max(0),
                 )
             } else if to < from && after.running > to {
+                let finish = if after.running == 1 {
+                    "finishes its work"
+                } else {
+                    "finish their work"
+                };
                 format!(
-                    "Max agents {from} → {to}: {} running finish their work; new agents wait.",
+                    "Max agents {from} → {to}: {} running {finish}; new agents wait.",
                     after.running
                 )
             } else {
