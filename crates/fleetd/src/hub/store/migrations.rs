@@ -516,4 +516,8 @@ pub(crate) const MIGRATIONS: &[&str] = &[
     r#"
   DELETE FROM events WHERE type = 'thread.stalled';
   "#,
+    // The human digest went; leads get theirs with every wake.
+    r#"
+  DELETE FROM events WHERE type = 'digest.ready';
+  "#,
 ];

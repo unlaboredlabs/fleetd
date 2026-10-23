@@ -167,9 +167,6 @@ export async function m6Verify(lab: Lab) {
   check(listed.claims?.length === claims.length, `claims_list: ${JSON.stringify(listed)}`);
   const incidents = (await callTool("incidents_list", { projectRef: ref, workstreamId: w })).body.incidents as Array<Body>;
   ok(`claims_list: ${listed.claims.length}; incidents_list: ${incidents.map((i) => `${i.incidentId} ${i.class}`).join(", ") || "none"}`);
-  const digest = (await callTool("digest_get")).body.text as string;
-  check(digest.includes(`Done: ${w} `) && digest.includes("· ✓ 1 of 1 checks"), `the human digest shows the done workstream with its checked ✓: ${digest}`);
-  ok(`human digest: ${digest.split("\n").find((l) => l.startsWith(`Done: ${w} `))}`);
 
   // Turns this scenario cost: every lead run that ended since it started, plus its tasks' runs.
   const tasks = ((await callTool("tasks_list", { projectRef: ref, limit: 100 })).body.tasks as Array<Body>).filter((t) => t.workstreamId === w);

@@ -3,7 +3,6 @@
 use crate::clock::{Clock, SystemClock};
 use crate::hub::api::{self, Hub, HubConfig, Listen, Registry, Shutdown};
 use crate::hub::auth::Auth;
-use crate::hub::digests::HumanDigests;
 use crate::hub::http;
 use crate::hub::ledger::Decisions;
 use crate::hub::store::{EventLog, HubDb, HubStore, resolve_hub_home};
@@ -224,13 +223,6 @@ pub fn build_on(
     let auth = Arc::new(Auth::new(db.clone(), clock.clone()));
     let decisions = Arc::new(Decisions::new(db.clone(), events.clone(), clock.clone()));
     let requests = crate::hub::approvals::store::Requests::new(db.clone());
-    let digests = Arc::new(HumanDigests::new(
-        requests.clone(),
-        decisions.clone(),
-        store.clone(),
-        events.clone(),
-        clock.clone(),
-    ));
     let time = crate::hub::time::Time::new(db.clone(), clock.clone());
     let executors =
         crate::hub::executor::Executors::new(store.clone(), events.clone(), clock.clone());
@@ -327,7 +319,6 @@ pub fn build_on(
             requests: &requests,
             decisions: &decisions,
             lead_calls: &lead_calls,
-            digests: &digests,
             claims: &checks.claims,
         },
     );
@@ -350,7 +341,6 @@ pub fn build_on(
         events,
         auth,
         decisions,
-        digests,
         executors,
         node_commands,
         lead_calls,
@@ -401,12 +391,6 @@ pub fn build_on(
 pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>> {
     let _tools = tools;
     let mut loops = Vec::new();
-    let shutdown = hub.shutdown.clone();
-    loops.push(tokio::spawn(
-        hub.digests
-            .clone()
-            .run(async move { shutdown.wait().await }),
-    ));
     hub.link.start();
     loops.push(hub.watchdog.start());
     loops.push(tokio::spawn(crate::hub::orders::idle::run(hub.clone())));

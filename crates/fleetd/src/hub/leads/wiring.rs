@@ -1,6 +1,5 @@
 //! The leads area's links into areas already on main: its ports over the executor, the write queue, node commands, the
-//! ledger and the requests; the ledger's WorkstreamLookup; its lead calls; and the human digest's feeds.
-use std::collections::HashMap;
+//! ledger and the requests; the ledger's WorkstreamLookup; and its lead calls.
 use std::sync::Arc;
 
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadId, ThreadRef};
@@ -16,7 +15,6 @@ use super::ports::{CmdOutcome, LeadPorts};
 use super::records::{LeadRecords, WorkstreamFilter};
 use crate::hub::approvals::store::{RequestFilter, Requests};
 use crate::hub::checks::{ClaimFilter, Claims};
-use crate::hub::digests::HumanDigests;
 use crate::hub::executor::{ExecutorError, Executors, LaunchInput, LaunchOptions};
 use crate::hub::ledger::{self, Chain, DecisionFilter, Decisions, LedgerCode, LedgerError};
 use crate::hub::link::commands::CommandInput;
@@ -256,7 +254,6 @@ pub struct Links<'a> {
     pub requests: &'a Arc<Requests>,
     pub decisions: &'a Arc<Decisions>,
     pub lead_calls: &'a LeadCalls,
-    pub digests: &'a HumanDigests,
     pub claims: &'a Arc<Claims>,
 }
 
@@ -323,29 +320,4 @@ pub fn wire_area(area: &Arc<Area>, links: Links<'_>) {
     for op in super::calls::OPS {
         links.lead_calls.register(op, Arc::clone(&calls));
     }
-    let (records, wakes) = (Arc::clone(&area.records), Arc::clone(&area.wakes));
-    links.digests.feed(move |f| {
-        f.workstreams = Some(Box::new(move |limit| {
-            records
-                .workstreams_list(&WorkstreamFilter {
-                    limit: limit.max(0) as usize,
-                    ..Default::default()
-                })
-                .unwrap_or_default()
-        }));
-        f.facts = Some(Box::new(move |workstreams| {
-            wakes
-                .workstream_facts(workstreams)
-                .into_iter()
-                .map(|(id, facts)| {
-                    (
-                        id.to_string(),
-                        crate::hub::ledger::digest_text::WorkstreamFacts {
-                            passed: facts.passed.len(),
-                        },
-                    )
-                })
-                .collect::<HashMap<_, _>>()
-        }));
-    });
 }

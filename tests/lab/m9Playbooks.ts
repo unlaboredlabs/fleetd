@@ -2,7 +2,7 @@
 // bugfix brief
 // without a repro check is refused; (c) a research workstream's claim spawns the hub's judge, whose verdict the
 // harness reports from the shell with baseline and candidate, and the hub computes STOP from the frozen rule; (d) a
-// finish-all workstream on the lab repo (no open issues) goes idle with the digest line once its lead, or the harness,
+// finish-all workstream on the lab repo (no open issues) goes idle once its lead, or the harness,
 // calls `inventory`. The harness's `fleetd` calls run in the project's workspace and cost no turns.
 import { spawn, spawnSync } from "node:child_process";
 import path from "node:path";
@@ -139,10 +139,6 @@ export async function m9Playbooks(lab: Lab) {
       ok(`(d) the lead left ${wf} ${before}; the harness ran fleetd inventory: ${inventory.stdout.trim().replace(/\n/gu, " | ")}`);
     }
     check(state === "idle", `${wf} is idle: ${state}`);
-    const digest = (await callTool("digest_get")).body.text as string;
-    const line = digest.split("\n").find((l) => l.startsWith(`Idle: ${wf} fleetd-lab: `));
-    check(line?.endsWith(`· ${FINISH_ALL_IDLE}`), `the human digest shows ${wf} idle with "${FINISH_ALL_IDLE}": ${digest}`);
-    ok(`(d) digest: ${line}`);
   } finally {
     await removeLabRepoProject(lab).catch((error: unknown) => lab.log(`could not remove the lab repo project: ${String(error)}`));
   }

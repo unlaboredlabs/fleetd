@@ -1,5 +1,5 @@
-//! Cross-area links that belong to no single area: the ledger's lead calls, the human digest's train
-//! feed, and the leads hooks over usage, the train and GitHub. Run once in `build_on`, after the `Hub` exists.
+//! Cross-area links that belong to no single area: the ledger's lead calls and the leads hooks over usage, the train
+//! and GitHub. Run once in `build_on`, after the `Hub` exists.
 use std::sync::{Arc, Weak};
 
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef, Timestamp};
@@ -16,7 +16,6 @@ use crate::hub::usage::wire::convert;
 
 pub fn wire(hub: &Arc<Hub>) {
     register_ledger_calls(hub);
-    feed_digests(hub);
     extend_tools(hub);
     let hooks = &hub.leads.ctx.hooks;
     let _ = hooks
@@ -106,20 +105,6 @@ fn register_ledger_calls(hub: &Arc<Hub>) {
     for op in ["claim_done", "review_verdict"] {
         hub.lead_calls.register(op, Arc::clone(&checks));
     }
-}
-
-/// The human digest's train lines.
-fn feed_digests(hub: &Arc<Hub>) {
-    let train = Arc::downgrade(&hub.train);
-    hub.digests.feed(move |f| {
-        f.train_lines = Some(Box::new(move |shown, since_ms| {
-            let Some(train) = train.upgrade() else {
-                return Vec::new();
-            };
-            let facts = crate::hub::train::digest::train_facts(train.records(), shown);
-            crate::hub::train::digest::human_train_lines(&facts, since_ms)
-        }));
-    });
 }
 
 struct UsageForLeads(Weak<Hub>);
