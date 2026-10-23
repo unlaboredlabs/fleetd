@@ -52,6 +52,8 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   // The inline secret and approval items read their state from requests_list: H2 announces every change only as
   // request.opened / request.updated, never as a chat.message for the item.
   if (type.startsWith("request.")) out.push({ tool: "requests_list" });
+  // A steer's receipt moves only on its steer.* events.
+  if (type.startsWith("steer.")) out.push({ tool: "steers_list" });
   if (shapesOrders) {
     out.push({ tool: "orders_board" });
     for (const id of orders) out.push({ tool: "order_get", where: { workstreamId: id } });

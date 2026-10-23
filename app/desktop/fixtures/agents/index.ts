@@ -1,11 +1,14 @@
 // The agents view's fixture: the many-agents hub with a second project at work (a long command, an agent waiting on
 // you), and one storefront agent's work opened: what it was told, what it ran and edited (one command failed, one
-// still running), and the message it is writing now. agents_list itself comes from the lanes (kit/agents.ts).
+// still running), and the message it is writing now. agents_list itself comes from the lanes (kit/agents.ts). Under its
+// work, your steers to it with their receipts (queued, delivered, acknowledged; agents-steers: the other endings), and
+// the steer QA sends from its box.
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import type { JsonObject } from "../kit/json.ts";
 import { arr, obj } from "../kit/stress.ts";
 import { AGENT } from "./route.ts";
+import { agentSteers, STEER_WORDS, steer, troubleSteers } from "./steers.ts";
 
 const CHECKOUT = { machineId: "devbox", projectId: "7a9a4d2f-7656-4a38-a750-56ac34e9f090" };
 
@@ -112,9 +115,18 @@ const work = (base: Fixture): Fixture => {
     action("s9", "tool_call", "WebFetch developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Intl/DateTimeFormat", 60_000, { status: "running" }),
   ];
   f.answer("agent_work", { machineId: AGENT.machineId, threadId: AGENT.threadId, limit: 40 }, { steps, running: true });
+  f.answer("steers_list", { taskId: AGENT.laneId }, { steers: agentSteers(f.now) });
+  f.answer("steer_send", { target: { taskId: AGENT.laneId } }, steer(f.now, 10, { taskId: AGENT.laneId }, "queued", STEER_WORDS.agent, 0));
   return f;
 };
 
+const steers = (base: Fixture): Fixture => {
+  const f = work(base);
+  const out = Fixture.from(f, "agents-steers", "Agents: the same agent's work; its steers never replied to, withdrawn and failed.");
+  out.answer("steers_list", { taskId: AGENT.laneId }, { steers: troubleSteers(f.now) });
+  return out;
+};
+
 export default defineGroup({
-  fixtures: (base) => [work(base("many-agents"))],
+  fixtures: (base) => [work(base("many-agents")), steers(base("many-agents"))],
 });
