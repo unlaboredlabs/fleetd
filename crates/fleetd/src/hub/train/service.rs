@@ -1486,7 +1486,7 @@ impl Train {
             return Err(TrainError::new(
                 "not_found",
                 format!("No task {task_id} in this project."),
-                Some("Call `list_agents`."),
+                Some("Call `agents`."),
             ));
         }
         let enqueue_lock = repo_lock(&self.enqueue_locks, &format!("{repo}#{pr_number}"));

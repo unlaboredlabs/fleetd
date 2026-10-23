@@ -113,7 +113,7 @@ export async function noSubagents(lab: Lab) {
   outcome = (await callTool("project_get", ref)).body;
   let workstreamId = (outcome.workstreams as Array<Body> | undefined)?.find((w) => w.state === "running")?.workstreamId as string | undefined;
   if (workstreamId === undefined) {
-    const order = await chatOrder(lab, ref, "add a docs page (lab run: open its workstream with workstream_open and register the brief with your brief tool, then stop; spawn no tasks until told)");
+    const order = await chatOrder(lab, ref, "add a docs page (lab run: open its workstream with your brief tool, then stop; spawn no tasks until told)");
     workstreamId = order.workstreamId;
     await lab.waitEvent(`workstream.running for ${workstreamId}`, TURN_MS, { cursor, machineId: MACHINE, types: ["workstream.running"] });
     cursor = await leadTurnDone(cursor, "the chat turn");
@@ -184,8 +184,8 @@ export async function noSubagents(lab: Lab) {
 
   // A person's own shell (outside every session) makes lead calls as before; claiming a session from it is refused.
   const shell = (env: Record<string, string>) => leadIn(root, { ...scrubbedEnv(), FLEETD_NODE_SOCK: nodeSock(MACHINE), ...env });
-  check(shell({})("list_agents", {}).code === 0, "a person's own list_agents goes through");
-  const claimed = shell({ FLEETD_THREAD_ID: leadThread })("list_agents", {});
+  check(shell({})("agents", {}).code === 0, "a person's own agents read goes through");
+  const claimed = shell({ FLEETD_THREAD_ID: leadThread })("agents", {});
   check(claimed.code === 3 && claimed.text.includes("does not run in it"), `claiming the lead's session from outside it is refused: ${JSON.stringify(claimed)}`);
   ok(`a person's shell: task list ok; claiming the lead's session refused (${claimed.text.trim().split("\n")[0]})`);
 

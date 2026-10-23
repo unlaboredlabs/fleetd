@@ -169,11 +169,7 @@ const nextTask = async (lab: Lab, ref: Ref, cursor: number, what: string, ms: nu
 
 /** A workstream for an order the harness drives, its brief frozen with the lead's tools. */
 const quietOrder = async (lab: Lab, ref: Ref, fleetd: Shell, title: string, doneWhen: ReadonlyArray<string>) => {
-  const w = openWorkstream(lab.check, fleetd, title);
-  const brief = { goal: title, why: "the chat lab scenario", pointers: [], constraints: [], doneWhen };
-  const frozen = fleetd("brief", { workstreamId: w, brief });
-  lab.check(frozen.code === 0, `brief create ${w}: ${JSON.stringify(frozen)}`);
-  return w;
+  return openWorkstream(lab.check, fleetd, title, { why: "the chat lab scenario", doneWhen });
 };
 
 const spawned = (lab: Lab, out: LeadOut, what: string) => {

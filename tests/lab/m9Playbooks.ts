@@ -35,7 +35,7 @@ export async function m9Playbooks(lab: Lab) {
   const leads = [leadThread];
 
   // A fix opened with the bugfix playbook, with the lead's tool.
-  const wa = openWorkstream(check, lead, "fix: the repo-a README has a typo.", "bugfix");
+  const wa = openWorkstream(check, lead, "fix: the repo-a README has a typo.", {}, "bugfix");
   const pinnedA = (await callTool("order_get", { workstreamId: wa })).body.workstream.playbook as string;
   check(/^bugfix@[0-9a-f]{40}$/u.test(pinnedA), `${wa} pins bugfix: ${pinnedA}`);
   ok(`${wa} in ${MACHINE}/${projectId}; playbook ${pinnedA.slice(0, 19)}…`);

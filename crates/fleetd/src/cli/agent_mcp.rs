@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 use fleetd_contracts::lead_calls::{
     AskLeadCall, BriefCreateCall, ChangeEnqueueCall, CloseCall, DecideCall, DecisionsSearchCall,
     GatedRunCall, LeadCall, LeadSocketFrame, RequestSecretCall, RequestWithdrawCall, TaskCancelCall, TaskListCall,
-    TaskMessageCall, TaskSpawnCall, TaskStatusCall, WorkstreamOpenCall,
+    TaskMessageCall, TaskSpawnCall,
 };
 use fleetd_contracts::plan::PlanCall;
 use fleetd_contracts::schema::inline_schema;
@@ -85,15 +85,10 @@ static TOOLS: &[Tool] = &[
         inline_schema::<TaskMessageCall>,
     ),
     lead(
-        "agent_status",
-        "task_status",
-        "One task as stored: state, queued reason, thread, result.",
-        inline_schema::<TaskStatusCall>,
-    ),
-    lead(
-        "list_agents",
+        "agents",
         "task_list",
-        "The project's tasks, newest first, optionally by state or workstream.",
+        "The project's tasks as stored (state, queued reason, thread, result), newest first: one by taskId, or \
+         filtered by state or workstream.",
         inline_schema::<TaskListCall>,
     ),
     lead(
@@ -105,8 +100,9 @@ static TOOLS: &[Tool] = &[
     lead(
         "brief",
         "brief_create",
-        "Set a draft workstream's brief (goal, why, pointers, constraints, doneWhen lines) and \
-         start it, or edit it later.",
+        "Set a workstream's brief (goal, why, pointers, constraints, doneWhen lines) and start it, or edit it \
+         later. Without workstreamId it opens one for work you took from the chat: text is the order in the human's \
+         words, template picks the playbook (feature, bugfix, research).",
         inline_schema::<BriefCreateCall>,
     ),
     lead(
@@ -164,13 +160,6 @@ static TOOLS: &[Tool] = &[
         "change_enqueue",
         "Put a PR no task's result put there on its repo's merge train; only the train merges.",
         inline_schema::<ChangeEnqueueCall>,
-    ),
-    lead(
-        "workstream_open",
-        "workstream_open",
-        "Open a workstream for work you took from the chat: a draft you then brief. template picks the \
-         playbook (feature, bugfix, research).",
-        inline_schema::<WorkstreamOpenCall>,
     ),
     Tool {
         name: "report",
@@ -491,8 +480,7 @@ mod tests {
         for tool in [
             "spawn_agent",
             "message_agent",
-            "agent_status",
-            "list_agents",
+            "agents",
             "stop_agent",
             "request_secret",
             "decide",
@@ -536,6 +524,9 @@ mod tests {
             bad.starts_with("Invalid arguments for spawn_agent"),
             "{bad}"
         );
+        let brief = json!({ "goal": "g", "why": "w", "pointers": [], "constraints": [], "doneWhen": ["d"] });
+        let unopened = call_of(Role::Lead, "brief", json!({ "brief": brief })).unwrap_err();
+        assert!(unopened.contains("or text to open one"), "{unopened}");
         assert_eq!(
             call_of(Role::Worker, "ask_lead", json!({ "question": "Postgres?" })).unwrap(),
             json!({ "op": "ask_lead", "question": "Postgres?" })

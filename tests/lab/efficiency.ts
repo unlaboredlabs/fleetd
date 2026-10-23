@@ -46,11 +46,9 @@ async function sliceReviews(lab: Lab) {
     const leadThread = started.body.threadId as string;
     await lab.waitEvent("lead start turn", TURN_MS, { cursor, machineId: MACHINE, match: (e) => e.threadId === leadThread && ENDED.includes(e.type) });
 
-    const w = openWorkstream(check, lead, "Two docs slices.");
     const onMain = (file: string) => `${file} is on ${BASE}`;
-    const brief = { goal: `two slices: ${dir}/one.md and ${dir}/two.md`, why: "the eff lab scenario", pointers: [], constraints: [], doneWhen: [onMain(`${dir}/one.md`), onMain(`${dir}/two.md`)] };
-    const frozen = lead("brief", { workstreamId: w, brief });
-    check(frozen.code === 0, `brief create ${w}: ${JSON.stringify(frozen)}`);
+    const brief = { goal: `two slices: ${dir}/one.md and ${dir}/two.md`, why: "the eff lab scenario", doneWhen: [onMain(`${dir}/one.md`), onMain(`${dir}/two.md`)] };
+    const w = openWorkstream(check, lead, "Two docs slices.", brief);
 
     // The train reads a repo's open PRs once one of them has been on it: a seed PR, closed at once, starts this one's.
     const seedBranch = `${BRANCH_PREFIX}eff-seed`;

@@ -82,16 +82,11 @@ export async function timeInspector(lab: Lab) {
 
     // The order, opened and its brief registered with the lead's tools, so the lead has nothing to plan.
     const submitAt = Date.now();
-    const w = openWorkstream(check, lead, `Add ${FILE}. The harness spawns the task and closes it.`);
-    const brief = {
+    const w = openWorkstream(check, lead, `Add ${FILE}. The harness spawns the task and closes it.`, {
       goal: `add ${FILE}`,
       why: "the time inspector lab scenario",
-      pointers: [],
-      constraints: [],
       doneWhen: [`${FILE} is on ${BASE}`],
-    };
-    const frozen = lead("brief", { workstreamId: w, brief });
-    check(frozen.code === 0, `brief create ${w}: ${JSON.stringify(frozen)}`);
+    });
 
     // One writer: its PR goes on the train by itself.
     let cursor = await lab.cursor();

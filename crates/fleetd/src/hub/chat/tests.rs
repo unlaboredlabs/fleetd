@@ -1,6 +1,6 @@
 //! The lead chat over a real in-memory hub: messages in order and deduped, paging, streamed text with offsets, the
 //! needs-you rule, inline items, the history read, a human's message reaching a project without a lead, the moved
-//! tools, chat_stop, project_stop and the lead's workstream_open.
+//! tools, chat_stop, project_stop and the lead's brief that opens a workstream.
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -12,7 +12,7 @@ use fleetd_contracts::chat::{
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef};
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult};
-use fleetd_contracts::ledger::IntakeChannel;
+use fleetd_contracts::ledger::{IntakeChannel, WorkstreamState};
 use serde_json::{Value, json};
 
 use super::*;
@@ -429,7 +429,7 @@ async fn project_stop_with_nothing_running_says_so() {
 }
 
 #[tokio::test]
-async fn a_lead_opens_its_own_workstream_as_a_draft_with_no_intent_wake() {
+async fn a_brief_without_a_workstream_opens_one_with_no_intent_wake() {
     let (hub, _home) = hub();
     let r = project();
     hub.leads
@@ -442,9 +442,10 @@ async fn a_lead_opens_its_own_workstream_as_a_draft_with_no_intent_wake() {
             session_generation: 1,
         })
         .unwrap();
-    let handler = hub.lead_calls.handler("workstream_open").unwrap();
+    let handler = hub.lead_calls.handler("brief_create").unwrap();
+    let brief = json!({ "goal": "schedules", "why": "asked", "pointers": [], "constraints": [], "doneWhen": ["schedules ship"] });
     let call: LeadCall = serde_json::from_value(
-        json!({ "op": "workstream_open", "text": "build schedules", "template": "feature" }),
+        json!({ "op": "brief_create", "text": "build schedules", "template": "feature", "brief": brief }),
     )
     .unwrap();
     let caller = crate::hub::link::LeadCaller {
@@ -452,7 +453,7 @@ async fn a_lead_opens_its_own_workstream_as_a_draft_with_no_intent_wake() {
         by: "lead:devbox/app".into(),
         agent: crate::hub::link::lead_calls::CallerAgent::Lead,
     };
-    let Ok(LeadCallResult::WorkstreamOpen(opened)) = handler.handle(caller, call).await else {
+    let Ok(LeadCallResult::BriefCreate(opened)) = handler.handle(caller, call).await else {
         panic!("not opened")
     };
     let w = hub
@@ -462,8 +463,12 @@ async fn a_lead_opens_its_own_workstream_as_a_draft_with_no_intent_wake() {
         .unwrap()
         .unwrap();
     assert_eq!(
-        (w.source.channel, w.source.text.as_str()),
-        (IntakeChannel::Lead, "build schedules")
+        (w.source.channel, w.source.text.as_str(), w.state),
+        (
+            IntakeChannel::Lead,
+            "build schedules",
+            WorkstreamState::Running
+        )
     );
     assert!(
         w.playbook

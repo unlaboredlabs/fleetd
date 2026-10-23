@@ -191,12 +191,7 @@ export async function m7Train(lab: Lab) {
     ok(`lead ${leadThread} started`);
 
     // Two workstreams, opened and their briefs registered with the lead's tools.
-    const workstream = async (text: string, brief: Body) => {
-      const w = openWorkstream(check, lead, text);
-      const frozen = lead("brief", { workstreamId: w, brief: { pointers: [], constraints: [], ...brief } });
-      check(frozen.code === 0, `brief create ${w}: ${JSON.stringify(frozen)}`);
-      return w;
-    };
+    const workstream = async (text: string, brief: Body) => openWorkstream(check, lead, text, brief);
     // One done-when line per PR, so each reviewer judges its PR against its own line.
     const wm = await workstream("Add alpha.md and beta.md in two PRs.", {
       goal: `two independent PRs: one adds ${ALPHA}, the other adds ${BETA}`,

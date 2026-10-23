@@ -1,4 +1,4 @@
-//! MCP tools `tasks_list`, `task_get`, `cap_set` and the lead calls `task_spawn|task_list|task_status|task_message|
+//! MCP tools `tasks_list`, `task_get`, `cap_set` and the lead calls `task_spawn|task_list|task_message|
 //! task_cancel`.
 use std::sync::Arc;
 
@@ -135,7 +135,7 @@ fn internal(error: StoreError) -> TaskError {
 }
 
 /// The task lead calls: `wire::register_lead_calls` routes `task_spawn`, `task_list`,
-/// `task_status`, `task_message` and `task_cancel` here with the caller link attributed.
+/// `task_message` and `task_cancel` here with the caller link attributed.
 pub async fn lead_call(
     tasks: &Arc<Tasks>,
     caller: &TaskCaller,
@@ -167,6 +167,22 @@ pub async fn lead_call(
             }))
         }
         LeadCall::TaskList(c) => {
+            if let Some(id) = &c.task_id {
+                return match tasks.get(id).map_err(internal)? {
+                    Some(task) if task.project_ref == *r => {
+                        Ok(LeadCallResult::TaskList(TaskListResult {
+                            tasks: List::unchecked(vec![task]),
+                            truncated: None,
+                            next: None,
+                        }))
+                    }
+                    _ => Err(TaskError::new(
+                        ErrorCode::NotFound,
+                        format!("There is no task {} in your project.", id.as_str()),
+                    )
+                    .with_fix("Call `agents` without taskId.")),
+                };
+            }
             let filter = TaskFilter {
                 project_ref: Some(r.clone()),
                 state: c.state,
@@ -182,14 +198,6 @@ pub async fn lead_call(
                 next: None,
             }))
         }
-        LeadCall::TaskStatus(c) => match tasks.get(&c.task_id).map_err(internal)? {
-            Some(task) if task.project_ref == *r => Ok(LeadCallResult::TaskStatus(frame(task))),
-            _ => Err(TaskError::new(
-                ErrorCode::NotFound,
-                format!("There is no task {} in your project.", c.task_id.as_str()),
-            )
-            .with_fix("Call `list_agents`.")),
-        },
         LeadCall::TaskMessage(c) => Ok(LeadCallResult::TaskMessage(frame(
             tasks
                 .message(caller, &c.task_id, c.message.as_str())
@@ -202,6 +210,6 @@ pub async fn lead_call(
             )))
         }
         _ => Err(TaskError::new(ErrorCode::Invalid, "Not a task call.")
-            .with_fix("Use spawn_agent, list_agents, agent_status, message_agent or stop_agent.")),
+            .with_fix("Use spawn_agent, agents, message_agent or stop_agent.")),
     }
 }
