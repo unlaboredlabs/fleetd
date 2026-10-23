@@ -9,22 +9,8 @@
   height: 100%;
 }
 
-.header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  min-height: var(--bar);
-  padding: 0 var(--space-4);
-  border-bottom: 1px solid var(--hairline);
-  flex: none;
-}
-.title {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-3);
-  min-width: 0;
-}
+
+/* Whether the page is live, at the end of its header (FrameTitle). */
 .liveness {
   display: flex;
   align-items: center;

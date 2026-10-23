@@ -1,4 +1,4 @@
-//! MCP tools this area serves: lead_start, lead_restart, workstream_list, workstream_get,
+//! MCP tools this area serves: lead_start, lead_restart, project_set, workstream_list, workstream_get,
 //! workstream_spawn, inventory. Same grant checks, limits and `next` texts as older hubs.
 use std::sync::Arc;
 
@@ -10,7 +10,7 @@ use fleetd_contracts::prim::{Count, List};
 
 use super::Area;
 use super::error::LeadError;
-use super::records::{LeadSettings, WorkstreamFilter};
+use super::records::WorkstreamFilter;
 use crate::hub::api::{Caller, Hub, Registry, ToolError, allows, require, unknown_project};
 
 use crate::hub::playbooks::finish_all::Caller as FinishAllCaller;
@@ -25,6 +25,10 @@ pub fn register(tools: &mut Registry) {
     tools.add::<LeadRestartInput, LeadRestartOutput, _, _>("lead_restart", |hub: Arc<Hub>, caller, input| async move {
         hub.leads.lead_start(&caller, input, true).await
     });
+    tools.add::<ProjectSetInput, ProjectSetOutput, _, _>(
+        "project_set",
+        |hub: Arc<Hub>, caller, input| async move { hub.leads.project_set(&caller, input) },
+    );
     tools.add::<WorkstreamListInput, WorkstreamListOutput, _, _>(
         "workstream_list",
         |hub: Arc<Hub>, caller, input| async move { hub.leads.workstream_list(&caller, input) },
@@ -54,7 +58,6 @@ fn refusal(e: impl Into<LeadError>) -> ToolError {
 }
 
 impl Area {
-    /// lead_start and lead_restart save a given model or effort as the project's lead settings first.
     pub(crate) async fn lead_start(
         &self,
         caller: &Caller,
@@ -66,20 +69,6 @@ impl Area {
             machine_id: input.machine_id.clone(),
             project_id: input.project_id.clone(),
         };
-        if input.model.is_some() || input.effort.is_some() {
-            if self.ctx.store.project_get(&r).map_err(refusal)?.is_none() {
-                return Err(unknown_project(&r));
-            }
-            self.leads
-                .configure(
-                    &r,
-                    &LeadSettings {
-                        model: input.model.as_ref().map(|m| m.to_string()),
-                        effort: input.effort,
-                    },
-                )
-                .map_err(refusal)?;
-        }
         let lead = if restart {
             self.leads.restart(&r).await
         } else {
@@ -101,6 +90,34 @@ impl Area {
         Ok(LeadStartOutput {
             lead,
             next: Some(next),
+            truncated: None,
+        })
+    }
+
+    pub(crate) fn project_set(
+        &self,
+        caller: &Caller,
+        input: ProjectSetInput,
+    ) -> Result<ProjectSetOutput, ToolError> {
+        require(caller, Role::Operate, Some(&input.machine_id))?;
+        let r = ProjectRef {
+            machine_id: input.machine_id,
+            project_id: input.project_id,
+        };
+        let Some(project) = self.ctx.store.project_get(&r).map_err(refusal)? else {
+            return Err(unknown_project(&r));
+        };
+        self.leads
+            .set_medium_allowed(&r, &project.title, input.medium_allowed)
+            .map_err(refusal)?;
+        let next = if input.medium_allowed {
+            "Its lead may run mechanical tasks on medium; everything else stays on high."
+        } else {
+            "Every new task of the project runs on high; running tasks keep their profile."
+        };
+        Ok(ProjectSetOutput {
+            medium_allowed: input.medium_allowed,
+            next: Some(next.into()),
             truncated: None,
         })
     }

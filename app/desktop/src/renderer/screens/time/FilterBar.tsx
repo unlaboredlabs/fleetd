@@ -3,8 +3,8 @@
 import { ChevronDown } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Button, Dialog, Field, Input, Menu, MenuContent, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuTrigger, Text } from "../../ui";
-import { ROLE_WORD, type Names } from "./format";
-import { RANGES, RANGE_LABEL, ROLES, parseWhen, period, shortWhen, type Filters, type Range } from "./filters";
+import { ROLE_WORD, stampMs, type Names } from "./format";
+import { RANGES, RANGE_LABEL, ROLES, fieldWhen, parseWhen, period, type Filters, type Range } from "./filters";
 import s from "./Time.module.css";
 
 export interface FilterBarProps {
@@ -128,7 +128,7 @@ export function FilterBar({ filters: f, order, names, nowMs, onFilters, onOrder 
       <span className={s.grow} />
       {order === undefined ? (
         <Text size="xs" tone="quiet" tabular>
-          {shortWhen(since)} to {until === undefined ? "now" : shortWhen(until)} UTC
+          {stampMs(since)} to {until === undefined ? "now" : stampMs(until)}
         </Text>
       ) : null}
       <CustomRange open={custom} onOpenChange={setCustom} filters={f} nowMs={nowMs} onFilters={onFilters} />
@@ -149,8 +149,8 @@ function CustomRange({
   nowMs: number;
   onFilters: (f: Filters) => void;
 }) {
-  const [from, setFrom] = useState(() => shortWhen(f.custom?.since ?? nowMs - 7 * 86_400_000));
-  const [to, setTo] = useState(() => (f.custom?.until === undefined ? "" : shortWhen(f.custom.until)));
+  const [from, setFrom] = useState(() => fieldWhen(f.custom?.since ?? nowMs - 7 * 86_400_000));
+  const [to, setTo] = useState(() => (f.custom?.until === undefined ? "" : fieldWhen(f.custom.until)));
   const [error, setError] = useState<string | undefined>();
   const apply = () => {
     const since = parseWhen(from);
@@ -172,7 +172,7 @@ function CustomRange({
       open={open}
       onOpenChange={onOpenChange}
       title="Custom range"
-      description="Dates in UTC: 2026-10-12, or 2026-10-12 09:30."
+      description="Your local time: 2026-10-12, or 2026-10-12 09:30."
       footer={
         <>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>

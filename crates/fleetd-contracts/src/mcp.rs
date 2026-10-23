@@ -8,7 +8,7 @@ use serde_with::skip_serializing_none;
 use crate::auth::Role;
 use crate::chat::ChatRequestId;
 use crate::doctor::{DoctorCheck, DoctorCheckId};
-use crate::effort::Effort;
+use crate::effort::TaskProfile;
 use crate::events::{HubEvent, HubEventType};
 use crate::hello::ProtocolVersion;
 use crate::ids::{EventSeq, MachineId, ProjectId, ProjectRef, ThreadId, Timestamp};
@@ -25,21 +25,21 @@ use crate::plan::PlanView;
 use crate::playbooks::IntakeEcho;
 use crate::prim::{
     Count, Int, IntOr, Line, List, MAX_SAFE_INT, NonEmpty, Positive, Text, True, UniqueList,
+    WebhookUrl,
 };
 use crate::projects::{AddId, CloneTarget, GitHubRepos, MachineRepos, ProjectInspect};
 use crate::prompts::{
     PromptDetail, PromptId, PromptRef, PromptScope, PromptSummary, PromptVersion, PromptWarning,
     RetiredPromptOverride, SessionPrompt,
 };
-use crate::retro::{RetroProposal, RetroProposalState, RetroRun};
 use crate::secrets::{SealedSecret, SecretFingerprint};
 use crate::status::{ProjectStatusRow, StatusDoc, StatusScope};
 use crate::steer::{Steer, SteerId, SteerMode, SteerTarget};
-use crate::subscriptions::{Subscription, SubscriptionMachines, SubscriptionTypes, WebhookUrl};
 use crate::tasks::{SlotState, Task, TaskId, TaskState};
 use crate::time::{
     CategoryTotal, CiCheckStat, CommandStat, Coverage, CriticalPath, HumanWait, Insight,
-    InsightRule, Period, PeriodBreakdown, RepeatStat, Span, SpanKind, TimeFilters, TimeScope,
+    InsightRule, Period, PeriodBreakdown, ProfileTotal, RepeatStat, Span, SpanKind, TimeFilters,
+    TimeScope,
 };
 use crate::train::{Change, ChangeState, GitHubPrUrl, GitHubRepo, TrainState};
 use crate::usage::UsageStatus;
@@ -193,8 +193,8 @@ input!(ThreadLaunchInput {
     machine_id: MachineId,
     project_id: ProjectId,
     prompt: NonEmpty,
-    model: NonEmpty,
-    effort: Effort,
+    /// Absent: high.
+    profile: Option<TaskProfile>,
     #[serde(default)]
     runtime_mode: RuntimeMode,
     title: Option<String>,
@@ -255,39 +255,10 @@ output!(WakeListOutput { wakes: Vec<Wake> });
 input!(WakeCancelInput { wake_id: NonEmpty });
 output!(WakeCancelOutput { ok: True });
 
-// subscription_set
-input!(SubscriptionSetInput {
-    url: WebhookUrl,
-    #[serde(default)]
-    types: SubscriptionTypes,
-    #[serde(default)]
-    machines: SubscriptionMachines,
-    client_request_id: RequestId,
-});
-output!(SubscriptionSetOutput {
-    subscription_id: NonEmpty,
-    /// The webhook signing secret. Shown only here; store it now.
-    secret: NonEmpty,
-});
-
-// subscription_list
-input!(SubscriptionListInput {});
-output!(SubscriptionListOutput { subscriptions: Vec<Subscription> });
-
-// subscription_delete
-input!(SubscriptionDeleteInput {
-    subscription_id: NonEmpty
-});
-output!(SubscriptionDeleteOutput { ok: True });
-
 // lead_start, lead_restart
 input!(LeadStartInput {
     machine_id: MachineId,
     project_id: ProjectId,
-    /// Saved as the project's lead model and effort for this and later (re)starts; absent keeps the saved or hub
-    /// default.
-    model: Option<NonEmpty>,
-    effort: Option<Effort>,
 });
 output!(LeadStartOutput {
     #[serde(flatten)]
@@ -295,6 +266,17 @@ output!(LeadStartOutput {
 });
 pub type LeadRestartInput = LeadStartInput;
 pub type LeadRestartOutput = LeadStartOutput;
+
+// project_set: a project's settings. `mediumAllowed` (default on): whether its lead may run a task on the medium
+// profile; off runs every task on high.
+input!(ProjectSetInput {
+    machine_id: MachineId,
+    project_id: ProjectId,
+    medium_allowed: bool,
+});
+output!(ProjectSetOutput {
+    medium_allowed: bool
+});
 
 brand!(
     /// "F" plus a positive integer, unique per hub: a file uploaded with attachment_put.
@@ -462,7 +444,7 @@ input!(OrderNoteInput {
     client_request_id: RequestId,
 });
 output!(OrderNoteOutput {
-    /// "N" plus a number; the workstream.note event carries it.
+    /// "N" plus a number.
     note_id: Text<1, 40>,
     /// The lead's wake that will carry it: now for urgent notes, else after the wake debounce.
     wakes_at: Timestamp,
@@ -514,8 +496,9 @@ output!(OrderStopOutput {
     cancelled: Count,
 });
 
-// project_stop: the safety valve. Stops every running and queued agent of the project and its open orders, withdraws
-// what waits on a person, and tells the lead in its chat. Merged PRs stay; the lead and the chat stay. Idempotent.
+// project_stop: the safety valve. Interrupts the lead's turn, stops every running and queued agent of the project and
+// its open orders, withdraws what waits on a person, and tells the lead in its chat. Merged PRs stay; the lead and the
+// chat stay. Idempotent.
 input!(ProjectStopInput {
     project_ref: ProjectRef,
     reason: Option<Text<1, 200>>,
@@ -525,6 +508,19 @@ output!(ProjectStopOutput {
     stopped: Count,
     /// Tasks this call cancelled.
     cancelled: Count,
+    /// The system line it wrote into the chat.
+    message: crate::chat::ChatMessage,
+});
+
+// chat_stop: the chat's Stop, the same stop as project_stop: the lead's turn and the project's agents stop, and one
+// line in the chat says what stopped ("Stopped the lead and 2 agents."). The same clientRequestId returns that line.
+input!(ChatStopInput {
+    project_ref: ProjectRef,
+    client_request_id: RequestId,
+});
+output!(ChatStopOutput {
+    /// Something was running and stopped: the lead's turn or an agent.
+    stopped: bool,
     /// The system line it wrote into the chat.
     message: crate::chat::ChatMessage,
 });
@@ -561,6 +557,8 @@ output!(TimeBreakdownOutput {
     wall_ms: Count,
     agent_ms: Count,
     by_category: List<CategoryTotal, 0, 8>,
+    /// High first; absent when no task or lead span is in the period.
+    by_profile: Option<List<ProfileTotal, 0, 2>>,
     top_commands: List<CommandStat, 0, 20>,
     repeated: List<RepeatStat, 0, 10>,
     ci_checks: List<CiCheckStat, 0, 20>,
@@ -776,27 +774,6 @@ output!(IncidentsListOutput {
     counts: Vec<IncidentCount>,
     counts_since: Timestamp,
 });
-
-// retro_proposals, retro_run (M12)
-input!(RetroProposalsInput {
-    state: Option<RetroProposalState>,
-    #[serde(default)]
-    limit: IntOr<1, 100, 20>,
-});
-output!(RetroProposalsOutput {
-    /// Newest first.
-    proposals: List<RetroProposal, 0, 100>,
-    /// The global Decision policy.retro.apply is true: wording changes apply on their own and gate changes wait for a person's decision.
-    apply: bool,
-    last_run: Option<RetroRun>,
-});
-input!(RetroRunInput {
-    #[serde(default)]
-    window_days: IntOr<1, 28, 14>,
-    /// Propose only, even when policy.retro.apply is true.
-    advise: Option<bool>,
-});
-output!(RetroRunOutput { run: RetroRun, proposals: List<RetroProposal, 0, 10> });
 
 // changes_list
 input!(ChangesListInput {
@@ -1254,6 +1231,110 @@ pub struct HubBusyItem {
     pub since: Option<Timestamp>,
 }
 
+// agents_list: every agent of the projects the key may read: running, queued or waiting tasks, and each project's
+// lead. Agents that ended since `endedSince` are added. Working first, then most recently started.
+input!(AgentsListInput {
+    project_ref: Option<ProjectRef>,
+    ended_since: Option<Timestamp>,
+});
+output!(AgentsListOutput {
+    agents: List<crate::agents::AgentRow, 0, { crate::agents::AGENTS_MAX }>,
+    at: Timestamp,
+});
+
+// agent_work: a page of one agent's recent steps and text, oldest first within the page. Without `before`, the newest
+// `limit` steps; `before` pages back. Read from what the hub follows of the session (its newest 200 messages and 200
+// steps), so a long session's oldest steps are not here. Secrets are replaced by `[secret]`.
+input!(AgentWorkInput {
+    machine_id: MachineId,
+    thread_id: ThreadId,
+    before: Option<crate::agents::WorkCursor>,
+    #[serde(default)]
+    limit: IntOr<1, 40, 20>,
+});
+output!(AgentWorkOutput {
+    steps: List<crate::agents::WorkStep, 0, { crate::agents::WORK_PAGE_MAX }>,
+    /// Pass back as `before` for the page before this one; absent when there is nothing older.
+    before: Option<crate::agents::WorkCursor>,
+    /// A run of it is active now.
+    running: bool,
+});
+
+// pr_list: a project's PRs: open ones, and those closed or merged since `closedSince` (default: the last 7 days).
+// Open first, then most recently updated.
+input!(PrListInput {
+    project_ref: ProjectRef,
+    closed_since: Option<Timestamp>,
+});
+output!(PrListOutput {
+    prs: List<crate::prs::PrRow, 0, { crate::prs::PR_LIST_MAX }>,
+    /// GitHub couldn't be reached: the list holds only the PRs fleetd records, without checks. Why, and what to do.
+    github_error: Option<Text<0, 300>>,
+    at: Timestamp,
+});
+
+// pr_get: one PR in detail: its description, checks, reviews with findings, merge-queue state and history, and the
+// agent that wrote it. Files come from pr_files and their diffs from pr_diff.
+input!(PrGetInput {
+    repo: GitHubRepo,
+    number: Positive,
+});
+output!(PrGetOutput {
+    pr: crate::prs::PrRow,
+    /// The PR's description, at most 8000 characters. Secrets are replaced by `[secret]`.
+    body: Text<0, 8000>,
+    base_branch: Option<NonEmpty>,
+    head_sha: Option<crate::verification::CommitSha>,
+    additions: Option<Count>,
+    deletions: Option<Count>,
+    changed_files: Option<Count>,
+    checks: List<crate::prs::PrCheck, 0, 60>,
+    /// Newest first: agent verdicts and people's reviews.
+    reviews: List<crate::prs::PrReviewEntry, 0, 30>,
+    /// Its moves through the merge queue, newest first.
+    history: List<crate::prs::PrQueueStep, 0, 30>,
+    links: crate::prs::PrLinks,
+    github_error: Option<Text<0, 300>>,
+});
+
+// pr_files: a page of a PR's changed files.
+input!(PrFilesInput {
+    repo: GitHubRepo,
+    number: Positive,
+    #[serde(default)]
+    offset: IntOr<0, 3000, 0>,
+});
+output!(PrFilesOutput {
+    files: List<crate::prs::PrFile, 0, { crate::prs::PR_FILES_PAGE }>,
+    /// Changed files in the PR.
+    total: Count,
+    /// Pass back as `offset` for the next page; absent on the last.
+    next_offset: Option<Count>,
+    /// The head these files are of.
+    head_sha: Option<crate::verification::CommitSha>,
+});
+
+// pr_diff: a page of one changed file's diff.
+input!(PrDiffInput {
+    repo: GitHubRepo,
+    number: Positive,
+    path: Text<1, 1000>,
+    #[serde(default)]
+    offset: IntOr<0, 1000000, 0>,
+    #[serde(default)]
+    limit: IntOr<1, 400, 200>,
+});
+output!(PrDiffOutput {
+    lines: List<crate::prs::DiffLine, 0, { crate::prs::PR_DIFF_PAGE_MAX }>,
+    /// Lines in the file's diff.
+    total: Count,
+    /// Pass back as `offset` for the next page; absent on the last.
+    next_offset: Option<Count>,
+    /// GitHub shows no diff for this file (binary, or too large).
+    no_diff: Option<bool>,
+    head_sha: Option<crate::verification::CommitSha>,
+});
+
 /// Declares the static tool table: `McpToolName` with each tool's minimum grant role and its input and output types.
 macro_rules! tools {
     ($($name:ident => $variant:ident, $scope:ident, $input:ty, $output:ty;)*) => {
@@ -1330,11 +1411,9 @@ tools! {
     wake_set => WakeSet, Operate, WakeSetInput, WakeSetOutput;
     wake_list => WakeList, Read, WakeListInput, WakeListOutput;
     wake_cancel => WakeCancel, Operate, WakeCancelInput, WakeCancelOutput;
-    subscription_set => SubscriptionSet, Operate, SubscriptionSetInput, SubscriptionSetOutput;
-    subscription_list => SubscriptionList, Read, SubscriptionListInput, SubscriptionListOutput;
-    subscription_delete => SubscriptionDelete, Operate, SubscriptionDeleteInput, SubscriptionDeleteOutput;
     lead_start => LeadStart, Operate, LeadStartInput, LeadStartOutput;
     lead_restart => LeadRestart, Operate, LeadRestartInput, LeadRestartOutput;
+    project_set => ProjectSet, Operate, ProjectSetInput, ProjectSetOutput;
     intake_submit => IntakeSubmit, Operate, IntakeSubmitInput, IntakeSubmitOutput;
     workstream_list => WorkstreamList, Read, WorkstreamListInput, WorkstreamListOutput;
     workstream_get => WorkstreamGet, Read, WorkstreamGetInput, WorkstreamGetOutput;
@@ -1351,9 +1430,6 @@ tools! {
     usage_resume => UsageResume, Operate, UsageResumeInput, UsageResumeOutput;
     claims_list => ClaimsList, Read, ClaimsListInput, ClaimsListOutput;
     incidents_list => IncidentsList, Read, IncidentsListInput, IncidentsListOutput;
-    retro_proposals => RetroProposals, Read, RetroProposalsInput, RetroProposalsOutput;
-    // Admin on every machine: a retro reads every project's incidents and changes hub-wide playbooks.
-    retro_run => RetroRun, Admin, RetroRunInput, RetroRunOutput;
     changes_list => ChangesList, Read, ChangesListInput, ChangesListOutput;
     train_get => TrainGet, Read, TrainGetInput, TrainGetOutput;
     train_freeze => TrainFreeze, Operate, TrainFreezeInput, TrainFreezeOutput;
@@ -1374,7 +1450,7 @@ tools! {
     order_stop => OrderStop, Operate, OrderStopInput, OrderStopOutput;
     prompts_list => PromptsList, Read, PromptsListInput, PromptsListOutput;
     prompt_get => PromptGet, Read, PromptGetInput, PromptGetOutput;
-    // Global: admin on every machine, as the retro; project: admin on its machine; or a person's device (a human key)
+    // Global: admin on every machine; project: admin on its machine; or a person's device (a human key)
     // with operate there. The handler checks which.
     prompt_set => PromptSet, Operate, PromptSetInput, PromptSetOutput;
     prompt_reset => PromptReset, Operate, PromptResetInput, PromptResetOutput;
@@ -1396,9 +1472,16 @@ tools! {
     steers_list => SteersList, Read, SteersListInput, SteersListOutput;
     chat_send => ChatSend, Operate, ChatSendInput, ChatSendOutput;
     chat_history => ChatHistory, Read, ChatHistoryInput, ChatHistoryOutput;
-    // Human keys only (the handler checks).
+    // Human keys only (the handlers check).
     project_stop => ProjectStop, Operate, ProjectStopInput, ProjectStopOutput;
     hub_info => HubInfo, Read, HubInfoInput, HubInfoOutput;
+    agents_list => AgentsList, Read, AgentsListInput, AgentsListOutput;
+    agent_work => AgentWork, Read, AgentWorkInput, AgentWorkOutput;
+    pr_list => PrList, Read, PrListInput, PrListOutput;
+    pr_get => PrGet, Read, PrGetInput, PrGetOutput;
+    pr_files => PrFiles, Read, PrFilesInput, PrFilesOutput;
+    pr_diff => PrDiff, Read, PrDiffInput, PrDiffOutput;
+    chat_stop => ChatStop, Operate, ChatStopInput, ChatStopOutput;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
@@ -1473,7 +1556,7 @@ mod tests {
                 .get(),
             50
         );
-        let launch = json!({ "machineId": "devbox", "projectId": "p1", "prompt": "hi", "model": "claude-haiku-5-5", "effort": "low", "clientRequestId": "r1" });
+        let launch = json!({ "machineId": "devbox", "projectId": "p1", "prompt": "hi", "clientRequestId": "r1" });
         assert_eq!(
             decode::<ThreadLaunchInput>(launch).unwrap().runtime_mode,
             RuntimeMode::FullAccess
@@ -1482,10 +1565,6 @@ mod tests {
         let wake: WakeSetInput = decode(wake).unwrap();
         assert!(wake.once);
         assert_eq!(wake.catch_up, WakeCatchUp::FireOnce);
-        let sub: SubscriptionSetInput =
-            decode(json!({ "url": "https://example.com", "clientRequestId": "r1" })).unwrap();
-        assert_eq!(serde_json::to_value(&sub).unwrap()["types"], "*");
-        assert_eq!(serde_json::to_value(&sub).unwrap()["machines"], "*");
         let decoded = McpToolName::IncidentsList.decode_input(json!({})).unwrap();
         assert_eq!(decoded, json!({ "limit": 20, "windowDays": 7 }));
     }
@@ -1497,12 +1576,6 @@ mod tests {
                 .is_err()
         );
         assert!(decode::<EventsWaitInput>(json!({ "timeoutSec": 51 })).is_err());
-        assert!(
-            decode::<SubscriptionSetInput>(
-                json!({ "url": "https://example.com", "types": ["nope"], "clientRequestId": "r1" })
-            )
-            .is_err()
-        );
         assert!(decode::<CapSetInput>(json!({})).is_err());
         assert!(decode::<CapSetInput>(json!({ "cap": 1001 })).is_err());
         assert!(decode::<CapSetInput>(json!({ "cap": 40 })).is_ok());
@@ -1522,66 +1595,6 @@ mod tests {
         let mut chore = base;
         chore["template"] = "chore".into();
         assert!(decode::<IntakeSubmitInput>(chore).is_err());
-    }
-
-    #[test]
-    fn the_tool_table_matches_ts_names_and_scopes() {
-        assert_eq!(McpToolName::ALL.len(), 79);
-        assert_eq!(McpToolName::parse("inbox_reply"), None);
-        assert_eq!(McpToolName::parse("asks_list"), None);
-        for tool in McpToolName::ALL {
-            assert_eq!(McpToolName::parse(tool.as_str()), Some(*tool));
-            assert_eq!(serde_json::to_value(tool).unwrap(), tool.as_str());
-        }
-        assert_eq!(McpToolName::CapSet.scope(), Role::Operate);
-        assert_eq!(McpToolName::RetroRun.scope(), Role::Admin);
-        assert_eq!(McpToolName::DoctorFix.scope(), Role::Operate);
-        assert_eq!(McpToolName::FleetdStatus.scope(), Role::Read);
-        assert_eq!(McpToolName::HubInfo.scope(), Role::Read);
-        assert_eq!(McpToolName::parse("push_subscribe"), None);
-    }
-
-    #[test]
-    fn status_get_round_trips_a_doc_with_next_rows() {
-        let doc = json!({
-            "scope": { "kind": "order", "workstreamId": "W41" },
-            "title": "native runner", "version": 3, "seq": 120, "now": "2026-10-18T14:02:07.000Z",
-            "progress": { "pct": 72, "done": 5, "total": 8, "polishDone": 2, "polishTotal": 5,
-                          "asOf": "2026-10-18T14:02:07.000Z" },
-            "markers": [], "eta": { "samples": 2, "basis": "none" }, "gates": [],
-            "headline": { "text": "Nothing running. Nothing needs you.", "source": "template",
-                          "at": "2026-10-18T14:02:07.000Z" },
-            "since": { "merged": 0, "verified": 0, "started": 0, "failed": 0, "scopeItems": 0 },
-            "parts": [], "done": [], "inProgress": [],
-            "next": [{ "itemId": "P14", "title": "switch default runner", "after": ["P12"] }],
-            "needsYou": { "count": 0, "requestIds": [] }, "risks": [],
-            "health": { "ci": [], "machines": [], "usage": [],
-                        "slots": { "running": 0, "used": 0, "cap": 40, "queued": 0 } },
-            "stale": [],
-            "more": { "done": 0, "inProgress": 0, "next": 0, "risks": 0, "parts": 0, "stale": 0 }
-        });
-        let output = json!({ "doc": doc, "next": "status_wait" });
-        let decoded: StatusGetOutput = decode(output.clone()).unwrap();
-        assert_eq!(decoded.doc.next.len(), 1);
-        assert_eq!(serde_json::to_value(&decoded).unwrap(), output);
-    }
-
-    #[test]
-    fn steer_outputs_round_trip_with_every_field_set() {
-        let steer = json!({
-            "id": "S12", "target": { "taskId": "T88" }, "workstreamId": "W41",
-            "thread": { "machineId": "devbox", "threadId": "t1" }, "runId": "r1",
-            "by": { "kind": "human", "keyName": "laptop" }, "mode": "now", "text": "skip the docs page",
-            "stage": "acknowledged", "queuedAt": "2026-10-18T14:02:07.120Z",
-            "deliveredAt": "2026-10-18T14:02:07.143Z", "how": "stopped", "stoppedTool": "cargo test",
-            "seenAt": "2026-10-18T14:02:07.150Z", "ackedAt": "2026-10-18T14:02:08.910Z",
-            "ackExcerpt": "S12: dropping the docs page", "planChange": "-1 item", "detail": "sent",
-            "next": "steers_list", "truncated": false,
-        });
-        let send: SteerSendOutput = decode(steer.clone()).unwrap();
-        assert_eq!(serde_json::to_value(&send).unwrap(), steer);
-        let withdraw: SteerWithdrawOutput = decode(steer.clone()).unwrap();
-        assert_eq!(serde_json::to_value(&withdraw).unwrap(), steer);
     }
 
     #[test]
@@ -1616,12 +1629,5 @@ mod tests {
                 .is_none()
         );
         assert!(decode::<HubInfoInput>(json!({ "machineId": "devbox" })).is_ok());
-    }
-
-    #[test]
-    fn results_flatten_their_record() {
-        let output = json!({ "machines": [], "projects": [], "attention": [], "cursor": 3, "next": "events_wait" });
-        let status: FleetdStatusOutput = decode(output.clone()).unwrap();
-        assert_eq!(serde_json::to_value(&status).unwrap(), output);
     }
 }

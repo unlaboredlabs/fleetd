@@ -7,6 +7,7 @@ use crate::clock::Clock;
 use crate::hub::usage::ports::{BoxFut, EventLog, NewEvent};
 use crate::hub::usage::service::UsageStatus;
 use crate::hub::usage::time::{clip, iso, system_ms};
+use fleetd_contracts::node_link::NodeDisk;
 use fleetd_contracts::sessions::RunnerInfo;
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -35,7 +36,6 @@ pub struct DoctorResults {
 /// What a node action answered (node-link `NodeActionResult`).
 #[derive(Clone, Debug)]
 pub struct ActionOutcome {
-    pub ok: bool,
     pub message: String,
     pub probe: Option<HostProbe>,
 }
@@ -46,6 +46,8 @@ pub struct ProjectAreas {
     pub title: String,
     pub areas: Vec<String>,
     pub inferred: bool,
+    /// Its policy file still has `defaults` (model, effort), which fleetd ignores.
+    pub ignored_defaults: bool,
 }
 
 /// The hub services the checks read.
@@ -53,7 +55,7 @@ pub trait DoctorFleet: Send + Sync {
     fn machines(&self) -> BoxFut<'_, Vec<MachineView>>;
     /// Usage::status with the machine's UsageSource reading.
     fn usage(&self, machine_id: &str) -> BoxFut<'_, UsageStatus>;
-    /// NodeActions::run: `probe`; `Err` is the link's message.
+    /// NodeCommands::run_action: `probe`; `Err` is the link's message.
     fn node_action(
         &self,
         machine_id: &str,
@@ -64,6 +66,11 @@ pub trait DoctorFleet: Send + Sync {
     fn runner_info(&self, machine_id: &str) -> BoxFut<'_, Option<RunnerInfo>>;
     /// The machine's projects whose checkout its node refuses to run commands in: `(path, why)`.
     fn refused_projects(&self, machine_id: &str) -> BoxFut<'_, Vec<(String, String)>>;
+    /// Free space where the machine's worktrees live, as its node's heartbeat last reported it, and why the guard
+    /// holds new agents there, if it does.
+    fn guard(&self, _machine_id: &str) -> (Option<NodeDisk>, Option<String>) {
+        (None, None)
+    }
     /// Each of the machine's projects whose policy reads: its title, area names, and whether they were inferred.
     fn project_areas(&self, _machine_id: &str) -> BoxFut<'_, Vec<ProjectAreas>> {
         Box::pin(async { Vec::new() })
@@ -115,15 +122,12 @@ pub struct Doctor {
     http: reqwest::Client,
 }
 
-/// `<cmd> <args>` with a 30 s timeout and the given environment (`None`: inherited).
-async fn run_cmd(cmd: &str, args: &[&str], env: Option<HashMap<String, String>>) -> CmdOutcome {
+/// `<cmd> <args>` with a 30 s timeout.
+async fn run_cmd(cmd: &str, args: &[&str]) -> CmdOutcome {
     let mut c = tokio::process::Command::new(cmd);
     c.args(args)
         .stdin(std::process::Stdio::null())
         .kill_on_drop(true);
-    if let Some(env) = env {
-        c.env_clear().envs(env);
-    }
     match tokio::time::timeout(Duration::from_secs(30), c.output()).await {
         Err(_) => CmdOutcome::SpawnError(format!("{cmd} timed out after 30 s")),
         Ok(Err(e)) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -136,15 +140,6 @@ async fn run_cmd(cmd: &str, args: &[&str], env: Option<HashMap<String, String>>)
             stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
         },
     }
-}
-
-/// The hub's one-shot environment allowlist: the hub's own `CLAUDE*` variables never
-/// reach the child, and without `CLAUDE_CONFIG_DIR` claude reads the user's login from `$HOME/.claude`.
-pub fn router_env() -> HashMap<String, String> {
-    let own: HashMap<String, String> = std::env::vars().collect();
-    crate::hub::intake::oneshot::one_shot_env(&own)
-        .into_iter()
-        .collect()
 }
 
 impl Doctor {
@@ -187,12 +182,9 @@ impl Doctor {
             .url
             .clone()
             .filter(|u| u.starts_with("https://") && problem.is_none());
-        let env: Vec<(String, String)> = router_env().into_iter().collect();
-        let (reachable, gh, claude, runner, https) = tokio::join!(
+        let (reachable, gh, https) = tokio::join!(
             self.health(&own),
-            run_cmd("gh", &["auth", "status"], None),
-            run_cmd("claude", &["auth", "status", "--json"], Some(router_env())),
-            crate::node::runner::conformance::probe(std::path::Path::new("claude"), &env),
+            run_cmd("gh", &["auth", "status"]),
             async {
                 match &public {
                     Some(u) => Some(self.health(u.trim_end_matches('/')).await),
@@ -218,8 +210,6 @@ impl Doctor {
                 restart_command("hub", Some(&hub_setup)),
             ),
             checks::gh_auth(&gh),
-            checks::hub_claude_login(&claude, runner.proxy.as_deref()),
-            checks::hub_claude_version(&runner),
             checks::https_reachable(
                 &config,
                 problem.as_deref(),
@@ -276,9 +266,12 @@ impl Doctor {
             probe.as_ref().map_err(String::as_str),
             &config,
         ));
+        let (disk, paused) = fleet.guard(id);
         out.push(checks::disk_space(
             id,
-            probe.as_ref().map_err(String::as_str),
+            !online,
+            disk.as_ref(),
+            paused.as_deref(),
         ));
         out.push(checks::idle_sleep(
             id,

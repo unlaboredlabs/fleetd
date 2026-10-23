@@ -36,6 +36,15 @@ describe("event effects", () => {
     expect(thread.invalidate).toContainEqual({ tool: "project_get", where: { machineId: "devbox", projectId: "storefront" } });
   });
 
+  it("what moves a PR refetches the PR reads; only a new head its files and diff", () => {
+    for (const type of ["change.state", "pr.merged", "review.verdict", "train.frozen", "task.completed"]) {
+      expect(tools(e(type))).toEqual(expect.arrayContaining(["pr_list", "pr_get"]));
+    }
+    expect(tools(e("change.state"))).toEqual(expect.arrayContaining(["pr_files", "pr_diff"]));
+    expect(tools(e("task.completed"))).not.toContain("pr_diff");
+    expect(tools(e("chat.message"))).not.toContain("pr_list");
+  });
+
   it("the agents view: its list on what starts or ends an agent, one agent's work on its thread's events", () => {
     expect(tools(e("task.started", { workstreamId: "W1" }))).toContain("agents_list");
     expect(tools(e("lead.woken"))).toContain("agents_list");

@@ -5,7 +5,6 @@ use crate::hub::usage::service::UsageBreaker;
 use crate::hub::usage::time::clip;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::sync::LazyLock;
 
 use crate::cli::setup::machine_plan::CLAUDE_INSTALL;
@@ -13,7 +12,7 @@ use crate::node::runner::claude_setup::ClaudeSetup;
 use crate::node::runner::failure::login_fix;
 use crate::node::runner::version::{self, TESTED as CLAUDE_TESTED, VersionVerdict};
 use fleetd_contracts::model::{SleptSpan, duration_text};
-use fleetd_contracts::node_link::IdleSleep;
+use fleetd_contracts::node_link::{IdleSleep, NodeDisk};
 use fleetd_contracts::sessions::{LoginStatus, RunnerInfo};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -64,9 +63,6 @@ pub struct DoctorCheck {
 pub struct Entry {
     pub check: DoctorCheck,
 }
-
-/// The disk floor: below this a machine cannot hold more worktrees.
-pub const MIN_FREE_BYTES: f64 = 5e9;
 
 fn manual(label: &str, command: Option<String>) -> DoctorFix {
     DoctorFix {
@@ -195,99 +191,6 @@ pub fn gh_auth(outcome: &CmdOutcome) -> Entry {
             None,
         ),
         None => hub_entry("gh_auth", Pass, "gh is logged in on the hub.", None),
-    }
-}
-
-/// The hub's claude login fix. Behind a proxy the proxy holds the login. Otherwise `claude auth login`, or a gateway's
-/// variables in `claude.env`, which the hub's service loads (the one-shot runner passes only those variables on).
-pub fn claude_login_fix(proxy: Option<&str>) -> DoctorFix {
-    match proxy {
-        Some(proxy) => manual(
-            &format!(
-                "On the hub, {} (its claude goes through {proxy})",
-                login_fix(true)
-            ),
-            None,
-        ),
-        None => manual(
-            "Log claude in as the hub's user (a gateway instead: ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN in \
-             ~/.fleetd/claude.env, then restart the hub)",
-            Some(login_fix(false).into()),
-        ),
-    }
-}
-
-/// `claude auth status --json` as the retro runs it (same environment, so the same login). The retro reaches a model
-/// only through this login; without it, it can't run.
-pub fn claude_login(outcome: &CmdOutcome) -> Entry {
-    hub_claude_login(outcome, None)
-}
-
-/// [`claude_login`] for a hub claude that goes through `proxy`, whose login the proxy holds.
-pub fn hub_claude_login(outcome: &CmdOutcome, proxy: Option<&str>) -> Entry {
-    let (exit_code, stdout) = match outcome {
-        CmdOutcome::SpawnError(e) if e == "ENOENT" => {
-            return hub_entry(
-                "claude_login",
-                Fail,
-                "Claude Code (claude) is not on the hub's PATH; the retro can't run.",
-                Some(manual(
-                    "Install Claude Code on the hub machine, then log in",
-                    Some("claude auth login".into()),
-                )),
-            );
-        }
-        CmdOutcome::SpawnError(e) => {
-            return hub_entry(
-                "claude_login",
-                Unknown,
-                &format!("Could not run claude on the hub: {e}"),
-                None,
-            );
-        }
-        CmdOutcome::Ran {
-            exit_code, stdout, ..
-        } => (*exit_code, stdout),
-    };
-    let Some(status) = serde_json::from_str::<Value>(stdout)
-        .ok()
-        .filter(|v| !v.is_null())
-    else {
-        return hub_entry(
-            "claude_login",
-            Unknown,
-            &format!("claude auth status gave no JSON (exit {exit_code})."),
-            None,
-        );
-    };
-    if status.get("loggedIn") != Some(&Value::Bool(true)) {
-        return hub_entry(
-            "claude_login",
-            Fail,
-            "claude on the hub is not logged in; the retro can't reach a model.",
-            Some(claude_login_fix(proxy)),
-        );
-    }
-    let method = status
-        .get("authMethod")
-        .and_then(Value::as_str)
-        .map_or(String::new(), auth_method_words);
-    hub_entry(
-        "claude_login",
-        Pass,
-        &format!("claude on the hub is logged in{method}; the retro can run."),
-        None,
-    )
-}
-
-/// claude's `authMethod` in words for a person; one this doesn't know stays as claude says it, as code.
-fn auth_method_words(method: &str) -> String {
-    match method {
-        "oauth_token" => " with a long-lived login token".into(),
-        "claude.ai" | "claudeai" => " with a Claude account".into(),
-        "api_key" | "apiKey" => " with an API key".into(),
-        "" => String::new(),
-        other => format!(" (`{other}`)"),
     }
 }
 
@@ -669,24 +572,6 @@ fn version_entry(
     }
 }
 
-/// The hub's own claude (the retro runs it): version and protocol, from the probe.
-pub fn hub_claude_version(info: &RunnerInfo) -> Entry {
-    match &info.version {
-        None => hub_entry(
-            "claude_version",
-            Fail,
-            "Claude Code (claude) is not on the hub's PATH; the retro can't run.",
-            Some(manual(
-                "Install Claude Code on the hub machine, then log in",
-                Some(CLAUDE_INSTALL.into()),
-            )),
-        ),
-        Some(found) => version_entry(found, |status, message, fix| {
-            hub_entry("claude_version", status, message, fix)
-        }),
-    }
-}
-
 pub fn usage_breaker(machine_id: &str, breaker: &UsageBreaker) -> Entry {
     if breaker.state == "closed" {
         return machine_entry(
@@ -726,8 +611,6 @@ pub struct HostProbe {
     /// "env": the node's service environment (GIT_AUTHOR_EMAIL), which setup writes; else git's global config.
     #[serde(default)]
     pub git_email_from: Option<String>,
-    pub disk_path: String,
-    pub disk_free_bytes: f64,
     /// Absent from nodes older than the sleep check.
     #[serde(default)]
     pub idle_sleep: Option<Vec<IdleSleep>>,
@@ -928,7 +811,16 @@ pub fn areas(machine_id: &str, projects: &[super::service::ProjectAreas]) -> Ent
         } else {
             ""
         };
-        format!("{}: {} ({source}{one})", p.title, p.areas.join(", "))
+        let defaults = if p.ignored_defaults {
+            "; its policy file's defaults (model, effort) are ignored: the lead picks high or medium per task"
+        } else {
+            ""
+        };
+        format!(
+            "{}: {} ({source}{one}{defaults})",
+            p.title,
+            p.areas.join(", ")
+        )
     };
     let listed = projects.iter().map(line).collect::<Vec<_>>().join("; ");
     machine_entry(
@@ -940,51 +832,54 @@ pub fn areas(machine_id: &str, projects: &[super::service::ProjectAreas]) -> Ent
     )
 }
 
-pub fn disk_space(machine_id: &str, probe: Result<&HostProbe, &str>) -> Entry {
-    let probe = match probe {
-        Err(why) => return machine_entry(machine_id, "disk", Unknown, why, None),
-        Ok(p) => p,
+/// Free space where the node's worktrees live, from its heartbeat, and whether the guard holds new agents there.
+pub fn disk_space(
+    machine_id: &str,
+    offline: bool,
+    disk: Option<&NodeDisk>,
+    paused: Option<&str>,
+) -> Entry {
+    let Some(d) = disk.filter(|_| !offline) else {
+        let why = if offline {
+            format!("{machine_id} is offline.")
+        } else {
+            format!("{machine_id}'s node hasn't reported its free disk space.")
+        };
+        return machine_entry(machine_id, "disk", Unknown, &why, None);
     };
-    if probe.disk_free_bytes < 0.0 {
+    let (free, min) = (d.free_bytes.get() as f64, d.min_free_bytes.get() as f64);
+    let space = format!(
+        "{} free of {} where {machine_id}'s worktrees live",
+        gb(free),
+        gb(d.total_bytes.get() as f64)
+    );
+    let Some(paused) = paused else {
+        let floor = if min > 0.0 {
+            format!("new agents pause below {}", gb(min))
+        } else {
+            "minFreeGb 0 turns the disk pause off".to_owned()
+        };
         return machine_entry(
             machine_id,
             "disk",
-            Unknown,
+            Pass,
+            &format!("{space}; {floor}."),
+            None,
+        );
+    };
+    let message = format!(
+        "{paused}. {space}. Running agents keep going; new ones start again once it has room."
+    );
+    if free < min {
+        let fix = manual(
             &format!(
-                "Could not read the free space under {} on {machine_id}.",
-                probe.disk_path
+                "Free disk space on {machine_id}: a writer's worktree goes once its PR merges"
             ),
             None,
         );
+        return machine_entry(machine_id, "disk", Fail, &message, Some(fix));
     }
-    if probe.disk_free_bytes < MIN_FREE_BYTES {
-        return machine_entry(
-            machine_id,
-            "disk",
-            Fail,
-            &format!(
-                "{} free under {} on {machine_id}; fleetd needs at least {}.",
-                gb(probe.disk_free_bytes),
-                probe.disk_path,
-                gb(MIN_FREE_BYTES)
-            ),
-            Some(manual(
-                &format!("Free disk space on {machine_id}"),
-                Some(format!("df -h {}", probe.disk_path)),
-            )),
-        );
-    }
-    machine_entry(
-        machine_id,
-        "disk",
-        Pass,
-        &format!(
-            "{} free under {}.",
-            gb(probe.disk_free_bytes),
-            probe.disk_path
-        ),
-        None,
-    )
+    machine_entry(machine_id, "disk", Warn, &message, None)
 }
 
 #[cfg(test)]
@@ -998,17 +893,19 @@ mod tests {
             title: "storefront".into(),
             areas: vec!["all".into(), "docs".into(), "web".into()],
             inferred: true,
+            ignored_defaults: false,
         };
         let one = ProjectAreas {
             title: "billing".into(),
             areas: vec!["all".into()],
             inferred: false,
+            ignored_defaults: true,
         };
         let check = areas("devbox", &[shop, one]).check;
         assert_eq!((check.id.as_str(), check.status), ("devbox/areas", Pass));
         assert_eq!(
             check.message,
-            "Writer areas: storefront: all, docs, web (inferred from the repo); billing: all (from .fleetd/policy.yaml; one area, so writers run one at a time)."
+            "Writer areas: storefront: all, docs, web (inferred from the repo); billing: all (from .fleetd/policy.yaml; one area, so writers run one at a time; its policy file's defaults (model, effort) are ignored: the lead picks high or medium per task)."
         );
     }
 
@@ -1039,30 +936,6 @@ mod tests {
     }
 
     #[test]
-    fn the_hub_login_says_its_method_in_words() {
-        let ran = |method: &str| CmdOutcome::Ran {
-            exit_code: 0,
-            stdout: serde_json::json!({ "loggedIn": true, "authMethod": method }).to_string(),
-            stderr: String::new(),
-        };
-        let message = |method: &str| {
-            hub_claude_login(&ran(method), None)
-                .check
-                .message
-                .to_string()
-        };
-        assert_eq!(
-            message("oauth_token"),
-            "claude on the hub is logged in with a long-lived login token; the retro can run."
-        );
-        assert!(message("claude.ai").contains("logged in with a Claude account;"));
-        assert!(
-            message("something_new").contains("logged in (`something_new`);"),
-            "an unknown method shows as code"
-        );
-    }
-
-    #[test]
     fn plain_http_is_fine_only_on_loopback_and_the_tailnet() {
         for url in [
             "http://127.0.0.1:4790",
@@ -1088,7 +961,7 @@ mod tests {
     fn warns_when_a_machine_sleeps_idle_on_ac() {
         let probe = |idle_sleep: Option<serde_json::Value>| -> HostProbe {
             serde_json::from_value(serde_json::json!({
-                "diskPath": "/home/u", "diskFreeBytes": 1e11, "idleSleep": idle_sleep,
+                "idleSleep": idle_sleep,
             }))
             .unwrap()
         };

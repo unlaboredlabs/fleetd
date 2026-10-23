@@ -1,15 +1,14 @@
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ProjectStatusRow } from "../../../shared/contracts";
 import type { ProjectRow } from "../../src/data/selectors";
 import { barOf, orderRows } from "./rows";
-import { age, dropLines, staleWords, when } from "./view";
+import { age, dropLines, fullWhen, heldLine, staleWords, when } from "./view";
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 const NOW = Date.parse("2026-10-19T10:07:12.000Z");
-
-beforeAll(() => {
-  // `when` reads the viewer's zone; pin it so the expectations hold on every machine.
-  vi.stubEnv("TZ", "UTC");
-});
 
 const row = (title: string, state: string, extra: Partial<ProjectStatusRow> = {}): ProjectStatusRow => ({
   projectRef: { machineId: "devbox", projectId: title },
@@ -68,9 +67,18 @@ describe("status rows", () => {
 describe("words", () => {
   it("are measured times, never estimates", () => {
     expect(age(4 * 60_000 + 5_000)).toBe("4m");
-    expect(when("2026-10-19T14:00:00.000Z", NOW)).toBe("14:00");
-    expect(when("2026-10-22T14:00:00.000Z", NOW)).toBe("Thu 14:00");
-    expect(staleWords({ since: "2026-10-19T09:55:45.000Z", reason: "no heartbeat from buildbox" }, NOW)).toBe("stale 11m: no heartbeat from buildbox");
+    expect(staleWords({ since: "2026-10-19T09:55:45.000Z", reason: "no heartbeat from buildbox" }, NOW)).toBe("Out of date for 11m: no heartbeat from buildbox");
+  });
+
+  it("always say which day a merge was, so an old one never passes for today", () => {
+    // Read in the viewer's zone; pinned so the words below hold on every machine.
+    vi.stubEnv("TZ", "UTC");
+    expect(when("2026-10-19T08:18:00.000Z", NOW)).toBe("today 08:18");
+    expect(when("2026-10-18T16:40:00.000Z", NOW)).toBe("yesterday 16:40");
+    expect(when("2026-10-16T14:00:00.000Z", NOW)).toBe("Fri 14:00");
+    expect(when("2026-10-07T14:00:00.000Z", NOW)).toBe("Oct 7");
+    expect(when("2025-12-30T14:00:00.000Z", NOW)).toBe("Dec 30, 2025");
+    expect(fullWhen("2026-10-16T14:00:00.000Z")).toBe("Fri Oct 16, 14:00");
   });
 
   it("explain the last three drops, newest first", () => {
@@ -81,5 +89,14 @@ describe("words", () => {
       { at, pct: 74, verifiedPct: 50, drop: { reason: "scope_change", fromPct: 80, text: "+3 items: currency export added" } },
     ];
     expect(dropLines(series)).toEqual(["↓ 80% → 74%: +3 items: currency export added", "↓ 61% → 55%: CI failed on #212"]);
+  });
+
+  it("says the figure holds only while the newest point is paused", () => {
+    const at = "2026-10-19T10:00:00.000Z";
+    const held = { at, pct: 64, verifiedPct: 52, paused: "paused: an agent hit a usage limit" };
+    expect(heldLine([{ at, pct: 60, verifiedPct: 52 }, held])).toBe("Held at 64% (paused: an agent hit a usage limit)");
+    // Resumed: the paused point is history, and the figure moves again.
+    expect(heldLine([held, { at, pct: 66, verifiedPct: 52 }])).toBeUndefined();
+    expect(heldLine([])).toBeUndefined();
   });
 });

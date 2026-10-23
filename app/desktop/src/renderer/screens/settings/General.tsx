@@ -1,12 +1,11 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { Button, Dialog, Dot, InlineCode, Radio, RadioGroup, Select, Separator, Text, THEME_MODES, Truncate, textClass, useTheme } from "../../ui";
 import type { LinkHandlerStatus } from "../../../shared/app";
 import type { HubState } from "../../../shared/hub";
 import { useData } from "../../src/data/react";
 import { errorText, useHubCall, useLive, useRead, useRefetch } from "./hub";
 import { MOTION_PREFS, parseMotion, setMotion, useMotion } from "./prefs";
-import { PageHead } from "./parts";
-import { useReveal } from "./search";
+import { PageHead, Setting } from "./parts";
 import s from "./settings.module.css";
 import { keyStoreLine } from "../../../shared/pairing";
 import { useKeyStore } from "../onboarding";
@@ -59,21 +58,6 @@ export function General() {
         </Setting>
       </div>
     </div>
-  );
-}
-
-function Setting(props: { reveal: string; label: string; help: string; children: ReactNode }) {
-  const ref = useReveal<HTMLElement>(props.reveal);
-  return (
-    <section ref={ref} className={s.setting} aria-label={props.label} tabIndex={-1}>
-      <div className={s.settingLabel}>
-        <Text strong>{props.label}</Text>
-        <Text size="xs" tone="quiet">
-          {props.help}
-        </Text>
-      </div>
-      <div className={s.stack}>{props.children}</div>
-    </section>
   );
 }
 

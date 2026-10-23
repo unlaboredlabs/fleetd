@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use chrono_tz::Tz;
 use fleetd_contracts::chat::ChatRequestId;
+use fleetd_contracts::effort::TaskProfile;
 use fleetd_contracts::ids::{MachineId, Timestamp};
 use fleetd_contracts::ledger::{HumanRequest, Tier, Workstream, WorkstreamId, WorkstreamState};
 use fleetd_contracts::live::OrderCard;
@@ -30,7 +31,7 @@ use crate::hub::plan::store::{ChangeRow, ItemRow, MilestoneRow};
 use crate::hub::plan::{self, clip, figure_of, marker_of, parse_ms, progress_of};
 use crate::hub::store::iso_ms;
 
-const DAY_MS: i64 = 24 * 3_600_000;
+pub(super) const DAY_MS: i64 = 24 * 3_600_000;
 /// Done plan items and estimate rows are read this far back.
 const WINDOW_MS: i64 = 7 * DAY_MS;
 
@@ -151,7 +152,7 @@ fn estimate_rows(c: &Connection, from_ms: i64) -> rusqlite::Result<Vec<EstRow>> 
     .collect()
 }
 
-const RECENT_TYPES: [&str; 9] = [
+const RECENT_TYPES: [&str; 12] = [
     "machine.offline",
     "machine.slept",
     "change.ci_failed",
@@ -162,6 +163,10 @@ const RECENT_TYPES: [&str; 9] = [
     "change.state",
     "plan.changed",
     "review.verdict",
+    // Where each live task's current run began (in-stage credit counts from there).
+    "task.started",
+    "task.completed",
+    "task.cancelled",
 ];
 
 fn recent_events(c: &Connection, from_ms: i64) -> rusqlite::Result<Vec<(String, Value)>> {
@@ -728,6 +733,7 @@ pub(super) fn project_progress(hub: &Hub, w: &World, pk: &str) -> Option<(String
                 c,
                 &ckey,
                 cmo.estimate,
+                cmo.paused.clone(),
                 &ccauses,
                 w.now,
             )?)
@@ -806,6 +812,7 @@ pub fn render(
             workstream_id: WorkstreamId::unchecked("W0"),
             title: line("—"),
             task_ids: List::default(),
+            medium_task_ids: None,
             change_ids: List::default(),
             gate: None,
             eta: None,
@@ -1180,6 +1187,23 @@ pub fn render(
         }
     }
     done.sort_by_key(|(t, _)| std::cmp::Reverse(*t));
+    // Which of a row's agents run on medium, from their lanes; the rest run high.
+    let medium: HashSet<&str> = w
+        .cards
+        .values()
+        .flat_map(|card| card.lanes.iter())
+        .filter(|l| l.profile == Some(TaskProfile::Medium))
+        .filter_map(|l| l.task_id.as_ref().map(|t| t.as_str()))
+        .collect();
+    for row in &mut in_progress {
+        let ids: Vec<TaskId> = row
+            .task_ids
+            .iter()
+            .filter(|t| medium.contains(t.as_str()))
+            .cloned()
+            .collect();
+        row.medium_task_ids = (!ids.is_empty()).then(|| List::unchecked(ids));
+    }
     // Each order's latest steers, on its first in-progress row.
     let mut steered: HashSet<String> = HashSet::new();
     for row in &mut in_progress {
@@ -1536,7 +1560,14 @@ pub fn render(
         .db
         .with(|c| {
             super::estimate::store_planning(c, &mo.fix_planning)?;
-            Ok(super::estimate::series(c, &key, mo.estimate, &causes, now)?)
+            Ok(super::estimate::series(
+                c,
+                &key,
+                mo.estimate,
+                mo.paused.clone(),
+                &causes,
+                now,
+            )?)
         })
         .ok();
     progress.estimate = Some(super::estimate::estimate_of(&mo, series.as_deref()));

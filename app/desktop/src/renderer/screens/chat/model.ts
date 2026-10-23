@@ -18,6 +18,11 @@ export type Row =
   | { readonly kind: "event"; readonly key: string; readonly item: ChatItem }
   | { readonly kind: "inline"; readonly key: string; readonly item: ChatItem }
   | { readonly kind: "strip"; readonly key: "strip" }
+  /**
+   * What the lead is doing while its turn runs (under the newest item), and once it is over how long it worked
+   * (under the reply it ended with).
+   */
+  | { readonly kind: "activity"; readonly key: "activity" }
   /** Paged above the newest messages: more below, and the way back to the latest. */
   | { readonly kind: "bottom"; readonly key: "bottom"; readonly state: "more" | "loading" };
 
@@ -32,15 +37,24 @@ export const heldLabel = (offline: boolean, asOf: string | undefined): string =>
 /** Messages from one author this close together read as one turn: the name and time show once. */
 const GROUP_MS = 5 * 60_000;
 
-const dayKey = (iso: string, timeZone?: string): string =>
-  new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit", ...(timeZone ? { timeZone } : {}) }).format(Date.parse(iso));
+/**
+ * `iso` in ms, or `nowMs` when it doesn't parse. Intl throws a RangeError on an invalid date, and one row without a
+ * time (a reply streaming ahead of its message once had "") took the whole window down; the newest row is the likeliest.
+ */
+const msOf = (iso: string, nowMs: number): number => {
+  const ms = Date.parse(iso);
+  return Number.isNaN(ms) ? nowMs : ms;
+};
+
+const dayKey = (iso: string, nowMs: number, timeZone?: string): string =>
+  new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit", ...(timeZone ? { timeZone } : {}) }).format(msOf(iso, nowMs));
 
 /** "Today", "Yesterday", or "Mon 19 Oct" (with the year when it isn't this year's). */
 export function dayLabel(iso: string, nowMs: number, timeZone?: string): string {
-  const day = dayKey(iso, timeZone);
-  if (day === dayKey(new Date(nowMs).toISOString(), timeZone)) return "Today";
-  if (day === dayKey(new Date(nowMs - 86_400_000).toISOString(), timeZone)) return "Yesterday";
-  const sameYear = day.slice(0, 4) === dayKey(new Date(nowMs).toISOString(), timeZone).slice(0, 4);
+  const day = dayKey(iso, nowMs, timeZone);
+  if (day === dayKey(new Date(nowMs).toISOString(), nowMs, timeZone)) return "Today";
+  if (day === dayKey(new Date(nowMs - 86_400_000).toISOString(), nowMs, timeZone)) return "Yesterday";
+  const sameYear = day.slice(0, 4) === dayKey(new Date(nowMs).toISOString(), nowMs, timeZone).slice(0, 4);
   return new Intl.DateTimeFormat("en-GB", {
     weekday: "short",
     day: "numeric",
@@ -48,7 +62,7 @@ export function dayLabel(iso: string, nowMs: number, timeZone?: string): string 
     ...(sameYear ? {} : { year: "numeric" }),
     ...(timeZone ? { timeZone } : {}),
   })
-    .format(Date.parse(iso))
+    .format(msOf(iso, nowMs))
     .replace(",", "");
 }
 
@@ -64,6 +78,13 @@ export interface RowsInput {
   readonly offline?: boolean;
   /** Show the live strip (the project has agents at work, or the strip has something to say). */
   readonly strip: boolean;
+  /** The lead's turn runs: its activity line shows after the newest item. */
+  readonly activity?: boolean;
+  /**
+   * The lead's last turn is over and began at this time (epoch ms): "Worked for" shows after its reply, the lead's
+   * newest message when it was written during that turn.
+   */
+  readonly workedSince?: number | undefined;
   readonly nowMs: number;
   readonly timeZone?: string;
 }
@@ -88,11 +109,23 @@ export function chatRows(i: RowsInput): Row[] {
     else if (kind !== "event") break;
   }
   let inHistory = false;
+  // Not on a window paged above the latest (the turn happens below it), nor under a reply still streaming, which
+  // says "Still writing" itself.
+  const activity = i.activity === true && i.hasNewer !== true && i.items.at(-1)?.state !== "streaming";
+  const reply = i.items.findLastIndex((item) => item.author === "lead" && item.kind === "message");
+  const replyAt = i.items[reply];
+  const worked =
+    i.activity !== true &&
+    i.workedSince !== undefined &&
+    i.hasNewer !== true &&
+    replyAt !== undefined &&
+    replyAt.state !== "streaming" &&
+    Date.parse(replyAt.at) >= i.workedSince;
   i.items.forEach((item, n) => {
     const history = isHistory(item);
     if (history && !inHistory) out.push({ kind: "history", key: `history:${item.id}` });
     inHistory = history;
-    const day = dayKey(item.at, i.timeZone);
+    const day = dayKey(item.at, i.nowMs, i.timeZone);
     if (day !== lastDay) {
       out.push({ kind: "day", key: `day:${day}`, label: dayLabel(item.at, i.nowMs, i.timeZone) });
       lastDay = day;
@@ -110,8 +143,10 @@ export function chatRows(i: RowsInput): Row[] {
       out.push({ kind: "message", key: item.id, item, head, history: false });
     }
     prev = item;
+    if ((activity && n === i.items.length - 1) || (worked && n === reply)) out.push({ kind: "activity", key: "activity" });
     if (i.strip && n === leadLast) out.push({ kind: "strip", key: "strip" });
   });
+  if (activity && i.items.length === 0) out.push({ kind: "activity", key: "activity" });
   if (i.strip && leadLast === -1) out.push({ kind: "strip", key: "strip" });
   if (i.hasNewer === true) out.push({ kind: "bottom", key: "bottom", state: i.loadingNewer === true ? "loading" : "more" });
   return out;

@@ -12,9 +12,9 @@ pub mod spans;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use fleetd_contracts::effort::Effort;
+use fleetd_contracts::effort::{Effort, MODEL};
 use fleetd_contracts::model::RuntimeMode;
-use fleetd_contracts::sessions::{RunnerInfo, RunnerKind};
+use fleetd_contracts::sessions::RunnerInfo;
 
 use super::{
     BoxFut, ExitInfo, Runner, RunnerError, SessionHandle, SessionSpec, claude_setup, conformance,
@@ -157,6 +157,14 @@ explained! {
     ]
 }
 
+/// claude sends its background helper calls (session titles and the like) to whatever the haiku alias names. Every
+/// claude fleetd starts points it at the one model fleetd runs, in its environment and its settings, so no call goes
+/// to another.
+pub const HELPER_MODEL_ENV: (&str, &str) = ("ANTHROPIC_DEFAULT_HAIKU_MODEL", MODEL);
+pub const HELPER_MODEL_WHY: &str = "claude's background helper calls (session titles and the like) run on Opus 5.5 \
+                                    like everything else fleetd starts, not on the haiku model claude picks by \
+                                    default.";
+
 explained! {
     /// Set in every session's environment or settings overlay, besides [`SUBAGENTS_OFF_ENV`] and auto memory.
     SESSION_ENV, SESSION_ENV_WHY: (&str, &str) = [
@@ -254,10 +262,6 @@ impl ClaudeRunner {
 }
 
 impl Runner for ClaudeRunner {
-    fn kind(&self) -> RunnerKind {
-        RunnerKind::Claude
-    }
-
     fn probe<'a>(&'a self, env: &'a [(String, String)]) -> BoxFut<'a, RunnerInfo> {
         Box::pin(async move {
             let info = conformance::probe(&self.binary, env).await;
@@ -299,10 +303,12 @@ impl Runner for ClaudeRunner {
                             && k != process::SESSION_MARKER
                             && k != claude_setup::FLEETD_ENV_SOURCE
                             && !SESSION_ENV.iter().any(|(set, _)| set == k)
+                            && k != HELPER_MODEL_ENV.0
                     })
                     .map(|(k, v)| (k, v)),
             )
             .envs(SUBAGENTS_OFF_ENV.iter().copied())
+            .envs([HELPER_MODEL_ENV])
             .envs(SESSION_ENV.iter().copied())
             .env(process::SESSION_MARKER, &marker)
             .stdin(std::process::Stdio::piped())

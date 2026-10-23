@@ -279,18 +279,6 @@ impl Chat {
     }
 
     /// One author=system line, for fleetd's own events in a project's chat.
-    /// When the human last wrote in the project's chat (not counting history read in from before the chat).
-    pub fn last_human_ms(&self, r: &ProjectRef) -> Result<Option<i64>, StoreError> {
-        self.db.with(|c| {
-            Ok(c.query_row(
-                "SELECT max(created_ms) FROM chat_messages WHERE machine_id = ?1 AND project_id = ?2
-                   AND json_extract(data, '$.author') = 'human' AND json_extract(data, '$.history') IS NULL",
-                rusqlite::params![r.machine_id.as_str(), r.project_id.as_str()],
-                |row| row.get(0),
-            )?)
-        })
-    }
-
     pub fn system_line(&self, r: &ProjectRef, text: &str) -> Result<ChatMessage, StoreError> {
         Ok(self
             .add(
@@ -462,6 +450,31 @@ impl Chat {
         })
     }
 
+    /// The project's messages still streaming whose source starts with `prefix`.
+    pub fn streaming_from(
+        &self,
+        r: &ProjectRef,
+        prefix: &str,
+    ) -> Result<Vec<ChatMessage>, StoreError> {
+        self.db.with(|c| {
+            let rows: Vec<String> = c
+                .prepare_cached(
+                    "SELECT data FROM chat_messages WHERE machine_id = ?1 AND project_id = ?2
+                     AND substr(source, 1, length(?3)) = ?3 AND json_extract(data, '$.state') = 'streaming'
+                     ORDER BY seq",
+                )?
+                .query_map(
+                    params![r.machine_id.as_str(), r.project_id.as_str(), prefix],
+                    |row| row.get(0),
+                )?
+                .collect::<rusqlite::Result<_>>()?;
+            Ok(rows
+                .into_iter()
+                .filter_map(|d| serde_json::from_str(&d).ok())
+                .collect())
+        })
+    }
+
     pub fn put(&self, message: &ChatMessage) -> Result<(), StoreError> {
         let n: i64 = message.message_id.as_str()[1..].parse().unwrap_or(0);
         self.db.with(|c| {
@@ -548,6 +561,21 @@ impl Chat {
         self.announce(message)
     }
 
+    /// The project's title, as everything a person reads names it; never its id.
+    fn title(&self, r: &ProjectRef) -> Result<Option<String>, StoreError> {
+        self.db.with(|c| {
+            Ok(c.prepare_cached(
+                "SELECT json_extract(data, '$.title') FROM projects WHERE machine_id = ?1 AND project_id = ?2",
+            )?
+            .query_row(params![r.machine_id.as_str(), r.project_id.as_str()], |row| {
+                row.get::<_, Option<String>>(0)
+            })
+            .optional()?
+            .flatten()
+            .filter(|t| !t.trim().is_empty()))
+        })
+    }
+
     fn announce(&self, message: &ChatMessage) -> Result<(), StoreError> {
         let r = &message.project_ref;
         let full = serde_json::to_string(message)?;
@@ -570,10 +598,13 @@ impl Chat {
             machine_id: Some(r.machine_id.clone()),
             project_id: Some(r.project_id.clone()),
             thread_id: None,
-            summary: format!(
-                "{who} in the chat of {}",
-                r.project_id.as_str().chars().take(60).collect::<String>()
-            ),
+            summary: match self.title(r)? {
+                Some(title) => format!(
+                    "{who} in the chat of {}",
+                    title.chars().take(60).collect::<String>()
+                ),
+                None => format!("{who} in a project's chat"),
+            },
             data: Some(serde_json::to_value(data)?),
             attention: None,
         })?;

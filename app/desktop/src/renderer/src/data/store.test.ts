@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { applyFrame, applyLive, applyStreams, ingest, initialState, type DataState } from "./store";
 import { projectStateWord, selectBoard, selectConnection, selectLiveAgents, selectNeedsYou, selectOrder, selectProjectList, selectProjectRow } from "./selectors";
-import type { AgentRow } from "./agents-contract";
+import type { AgentRow } from "../../../shared/contracts";
 import { card, event, lane, live, liveLane, project, snapshot } from "./fixtures.test-util";
 import type { HubFrame } from "../../../shared/hub";
 

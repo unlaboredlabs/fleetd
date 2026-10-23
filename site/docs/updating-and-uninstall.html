@@ -83,23 +83,53 @@
 <li>
 <p>Update the hub first:</p>
 <div class="expressive-code"><figure class="frame is-terminal not-content"><figcaption class="header"><span class="title"></span><span class="sr-only">Terminal window</span></figcaption><pre data-language="sh"><code><div class="ec-line"><div class="code"><span style="--0:#B392F0;--1:#6F42C1">fleetd</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">update</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="fleetd update"><div></div></button></div></figure></div>
-<p>It replaces the CLI, and the desktop app when the installer put it in its usual place. Then it restarts the hub and
-node services that run this binary. Every file is checked against the release’s <code dir="auto">SHA256SUMS</code>.</p>
+<p>It replaces the CLI, and the desktop app when the installer put it in its usual place. Every file is checked
+against the release’s <code dir="auto">SHA256SUMS</code>. Then it restarts the hub and node services that run this binary, but only when
+nothing runs on them.</p>
+<p>While a lead or agents are working, or a merge the hub is doing, an approved command or a clone is under way, it
+doesn’t restart. It lists what runs, and the hub and node keep the version they run until their next restart. To
+restart them anyway, or to finish the update later, run:</p>
+<div class="expressive-code"><figure class="frame is-terminal not-content"><figcaption class="header"><span class="title"></span><span class="sr-only">Terminal window</span></figcaption><pre data-language="sh"><code><div class="ec-line"><div class="code"><span style="--0:#B392F0;--1:#6F42C1">fleetd</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">update</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#79B8FF;--1:#005CC5">--restart-now</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="fleetd update --restart-now"><div></div></button></div></figure></div>
+<p>An install from before this check still restarts the hub and node unconditionally when it updates, because its
+own <code dir="auto">fleetd update</code> does the restart. Run that one update while nothing runs.</p>
 </li>
 <li>
 <p>Update each worker. Workers don’t update themselves. Either:</p>
 <ul>
-<li>run <code dir="auto">fleetd update</code> on the worker, or</li>
+<li>run <code dir="auto">fleetd update</code> on the worker, then <code dir="auto">fleetd update --restart-now</code> once its agents are done (a worker can’t
+ask the hub what runs on it), or</li>
 <li>run <code dir="auto">fleetd machine add &lt;ssh-host&gt;</code> on the hub, which copies the hub’s binary over.</li>
 </ul>
 </li>
 </ol>
+<p><code dir="auto">fleetd status</code> and <code dir="auto">fleetd doctor</code> say when the CLI, the hub and the nodes run different versions.</p>
 <div class="sl-heading-wrapper level-h3"><h3 id="app">The desktop app</h3><a class="sl-anchor-link" href="#app"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “The desktop app”</span></a></div>
-<p>The app also updates itself from the same release, and installs the update when you quit it.</p>
+<p>The app checks for updates when it opens and every few hours, and downloads them in the background. When one is
+found, the sidebar says <strong>Update available</strong>: click it to see what’s new, then <strong>Update and restart</strong>. A message you
+were typing is still there after the restart. An update you don’t install now installs the next time you quit.</p>
 <ul>
-<li>An earlier fleetd app is replaced by the current one, which keeps its pairing.</li>
-<li>On macOS 11 the earlier app stays as it is: the current app needs macOS 12.</li>
-<li>On a Mac from before the current app, run <code dir="auto">fleetd update</code> twice: the first updates the CLI, the second the app.</li>
+<li>
+<p><strong>Check for Updates…</strong> is in the fleetd menu on macOS, in Help on Linux, and in the command palette.</p>
+</li>
+<li>
+<p>The same window shows the hub’s version. When the hub is older than the app, the sidebar says <strong>Update the hub</strong>.
+<strong>Update the hub</strong> lists what’s running on the hub and gives you <code dir="auto">fleetd update</code> to run on the hub’s machine, with
+<strong>Copy</strong>; for a hub on this computer, <strong>Run in Terminal</strong> opens it for you and shows its result there. It restarts
+the hub only when nothing is running there; otherwise it says what is, and the hub keeps its old version until you
+run <code dir="auto">fleetd update --restart-now</code> or it next restarts. The app’s own restart never restarts the hub.</p>
+</li>
+<li>
+<p>The <code dir="auto">.deb</code> install can’t update itself: the app offers the download and the <code dir="auto">sudo apt install</code> command.</p>
+</li>
+<li>
+<p>An earlier fleetd app is replaced by the current one, which keeps its pairing.</p>
+</li>
+<li>
+<p>On macOS 11 the earlier app stays as it is: the current app needs macOS 12.</p>
+</li>
+<li>
+<p>On a Mac from before the current app, run <code dir="auto">fleetd update</code> twice: the first updates the CLI, the second the app.</p>
+</li>
 </ul>
 <p>fleetd pins the <code dir="auto">claude</code> version separately. See <a href="/docs/troubleshooting#claude">Claude</a>.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="channels">Channels</h2><a class="sl-anchor-link" href="#channels"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Channels”</span></a></div>

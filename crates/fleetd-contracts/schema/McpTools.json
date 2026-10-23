@@ -298,6 +298,10 @@
         "pr": {
           "$ref": "#/$defs/PrRef"
         },
+        "profile": {
+          "$ref": "#/$defs/TaskProfile",
+          "description": "What it runs on: a task's own profile; a lead is always high. Absent from older hubs."
+        },
         "receipts": {
           "$ref": "#/$defs/Receipts",
           "description": "Counted from the thread's items when it ended."
@@ -312,7 +316,7 @@
           "$ref": "#/$defs/LaneStatus"
         },
         "statusReason": {
-          "description": "Queued, parked or failed: why, e.g. \"slots: 40/40 in use\", \"usage limit: resumes 14:05\".",
+          "description": "Queued, parked or failed: why, e.g. \"fleet cap: 40 of 40 running\", \"usage limit: resumes 14:05\".",
           "maxLength": 160,
           "type": "string"
         },
@@ -345,6 +349,184 @@
         "qa"
       ],
       "type": "string"
+    },
+    "AgentRow": {
+      "description": "One agent: a task, or a project's lead, with its project.",
+      "properties": {
+        "branch": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "effort": {
+          "$ref": "#/$defs/Effort"
+        },
+        "endedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "laneId": {
+          "maxLength": 80,
+          "minLength": 1,
+          "type": "string"
+        },
+        "live": {
+          "$ref": "#/$defs/LiveLane",
+          "description": "Live values at snapshot time."
+        },
+        "model": {
+          "maxLength": 80,
+          "minLength": 1,
+          "type": "string"
+        },
+        "pr": {
+          "$ref": "#/$defs/PrRef"
+        },
+        "profile": {
+          "$ref": "#/$defs/TaskProfile",
+          "description": "What it runs on: a task's own profile; a lead is always high. Absent from older hubs."
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "projectTitle": {
+          "maxLength": 200,
+          "type": "string"
+        },
+        "receipts": {
+          "$ref": "#/$defs/Receipts",
+          "description": "Counted from the thread's items when it ended."
+        },
+        "role": {
+          "$ref": "#/$defs/AgentRole"
+        },
+        "startedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "status": {
+          "$ref": "#/$defs/LaneStatus"
+        },
+        "statusReason": {
+          "description": "Queued, parked or failed: why, e.g. \"fleet cap: 40 of 40 running\", \"usage limit: resumes 14:05\".",
+          "maxLength": 160,
+          "type": "string"
+        },
+        "taskId": {
+          "$ref": "#/$defs/TaskId"
+        },
+        "threadRef": {
+          "$ref": "#/$defs/ThreadRef"
+        },
+        "title": {
+          "maxLength": 80,
+          "type": "string"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId",
+          "description": "The work it belongs to; `live { focus }` with it streams this agent's text too. Absent for a lead."
+        }
+      },
+      "required": [
+        "laneId",
+        "role",
+        "title",
+        "status",
+        "projectRef",
+        "projectTitle"
+      ],
+      "type": "object"
+    },
+    "AgentWorkInput": {
+      "properties": {
+        "before": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "limit": {
+          "default": 20,
+          "maximum": 40,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId"
+        }
+      },
+      "required": [
+        "machineId",
+        "threadId"
+      ],
+      "type": "object"
+    },
+    "AgentWorkOutput": {
+      "properties": {
+        "before": {
+          "description": "Pass back as `before` for the page before this one; absent when there is nothing older.",
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "next": {
+          "type": "string"
+        },
+        "running": {
+          "description": "A run of it is active now.",
+          "type": "boolean"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/WorkStep"
+          },
+          "maxItems": 40,
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "steps",
+        "running"
+      ],
+      "type": "object"
+    },
+    "AgentsListInput": {
+      "properties": {
+        "endedSince": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        }
+      },
+      "type": "object"
+    },
+    "AgentsListOutput": {
+      "properties": {
+        "agents": {
+          "items": {
+            "$ref": "#/$defs/AgentRow"
+          },
+          "maxItems": 100,
+          "type": "array"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "agents",
+        "at"
+      ],
+      "type": "object"
     },
     "ApprovalAnswerInput": {
       "properties": {
@@ -620,10 +802,10 @@
         },
         "decisionRule": {
           "$ref": "#/$defs/DecisionRule",
-          "description": "Research: frozen with the brief, so the verdict can't move the goalposts."
+          "description": "Research: the rule the verdict is computed from."
         },
         "doneWhen": {
-          "description": "At least one; frozen with the brief.",
+          "description": "At least one.",
           "items": {
             "$ref": "#/$defs/CheckSpec"
           },
@@ -687,10 +869,6 @@
         }
       },
       "type": "object"
-    },
-    "BriefHash": {
-      "pattern": "^[0-9a-f]{64}$",
-      "type": "string"
     },
     "CapSetInput": {
       "properties": {
@@ -897,9 +1075,6 @@
           },
           "type": "array"
         },
-        "serves": {
-          "$ref": "#/$defs/Serves"
-        },
         "state": {
           "$ref": "#/$defs/ChangeState"
         },
@@ -926,7 +1101,6 @@
         "prUrl",
         "branch",
         "workstreamId",
-        "serves",
         "tier",
         "headSha",
         "state",
@@ -1347,6 +1521,45 @@
       ],
       "type": "object"
     },
+    "ChatStopInput": {
+      "properties": {
+        "clientRequestId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        }
+      },
+      "required": [
+        "projectRef",
+        "clientRequestId"
+      ],
+      "type": "object"
+    },
+    "ChatStopOutput": {
+      "properties": {
+        "message": {
+          "$ref": "#/$defs/ChatMessage",
+          "description": "The system line it wrote into the chat."
+        },
+        "next": {
+          "type": "string"
+        },
+        "stopped": {
+          "description": "Something was running and stopped: the lead's turn or an agent.",
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "stopped",
+        "message"
+      ],
+      "type": "object"
+    },
     "CheckOutcome": {
       "description": "`error` (the check could not run) counts as not passing.",
       "enum": [
@@ -1588,6 +1801,54 @@
       "required": [
         "machineId",
         "path"
+      ],
+      "type": "object"
+    },
+    "ChecksState": {
+      "description": "The checks on the PR's head, rolled up: any failed is `failing`, else any running is `pending`.",
+      "oneOf": [
+        {
+          "enum": [
+            "pending",
+            "passing",
+            "failing"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "none",
+          "description": "No checks ran on it.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "ChecksSummary": {
+      "properties": {
+        "failed": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "passed": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "pending": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "state": {
+          "$ref": "#/$defs/ChecksState"
+        }
+      },
+      "required": [
+        "state",
+        "passed",
+        "failed",
+        "pending"
       ],
       "type": "object"
     },
@@ -1845,7 +2106,7 @@
         },
         "playbook": {
           "$ref": "#/$defs/PlaybookGateChange",
-          "description": "A retro playbook change that relaxes a gate: what changes, in plain words, and the exact diff."
+          "description": "A retro playbook change (an older approval only): what changes, in plain words, and the exact diff."
         },
         "requestId": {
           "$ref": "#/$defs/ChatRequestId"
@@ -2280,13 +2541,6 @@
       ],
       "type": "object"
     },
-    "Decrease": {
-      "description": "The only metric direction.",
-      "enum": [
-        "decrease"
-      ],
-      "type": "string"
-    },
     "DeliveredHow": {
       "description": "How a delivered steer was taken in.",
       "oneOf": [
@@ -2311,6 +2565,58 @@
           "type": "string"
         }
       ]
+    },
+    "DiffLine": {
+      "description": "One line of a file's diff. Secrets are replaced by `[secret]`.",
+      "properties": {
+        "cut": {
+          "description": "The line was longer than `PR_DIFF_LINE_MAX` and is cut.",
+          "type": "boolean"
+        },
+        "kind": {
+          "$ref": "#/$defs/DiffLineKind"
+        },
+        "new": {
+          "description": "Line number in the new file (context and added lines; a hunk's start).",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "old": {
+          "description": "Line number in the old file (context and deleted lines; a hunk's start).",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text": {
+          "description": "Without the leading \"+\", \"-\" or \" \".",
+          "maxLength": 400,
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "text"
+      ],
+      "type": "object"
+    },
+    "DiffLineKind": {
+      "oneOf": [
+        {
+          "enum": [
+            "context",
+            "add",
+            "del"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "hunk",
+          "description": "A hunk header (\"@@ -12,7 +12,9 @@ fn main\"); `text` is its trailing context.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
     },
     "DigestGetInput": {
       "type": "object"
@@ -2544,11 +2850,17 @@
           "const": "reopened",
           "description": "A done item reopened when a later check failed.",
           "type": "string"
+        },
+        {
+          "const": "work_stopped",
+          "description": "An agent ended with nothing else in flight for its item: the item's in-stage credit is taken back.",
+          "type": "string"
         }
       ],
       "x-open": true
     },
     "Effort": {
+      "description": "The `--effort` claude runs at. Only [`TaskProfile`] picks one; nothing takes an effort as input.",
       "enum": [
         "low",
         "medium",
@@ -3506,6 +3818,11 @@
           "type": "string"
         },
         {
+          "const": "machine.guard",
+          "description": "The machine's disk or load stopped new agents there, or no longer does; `data.paused`, and the summary says\nwhy. Agents already running keep going.",
+          "type": "string"
+        },
+        {
           "const": "project.removed",
           "description": "The node no longer has the project: the hub dropped it from its cache, and its open workstreams stop. `data.title`.",
           "type": "string"
@@ -3523,6 +3840,11 @@
         {
           "const": "project.add_failed",
           "description": "A clone `project_add` accepted failed: `data` is `ProjectAddFailedData`, with the fix.",
+          "type": "string"
+        },
+        {
+          "const": "project.settings",
+          "description": "A project's settings changed (`project_set`): `data.mediumAllowed`.",
           "type": "string"
         },
         {
@@ -3551,13 +3873,8 @@
           "type": "string"
         },
         {
-          "const": "webhook.failing",
-          "description": "A webhook subscription has been failing for over an hour.",
-          "type": "string"
-        },
-        {
           "const": "workstream.running",
-          "description": "The brief was frozen; `data.briefHash`.",
+          "description": "The brief was set and the work started.",
           "type": "string"
         },
         {
@@ -3661,11 +3978,6 @@
           "type": "string"
         },
         {
-          "const": "intake.routed",
-          "description": "Where an intent went; `data.workstreamId`, `data.template`, `data.reason`, `data.playbook`.",
-          "type": "string"
-        },
-        {
           "const": "research.verdict",
           "description": "A research workstream's computed verdict; `data.workstreamId`, `data.outcome`, `data.metricValues`.",
           "type": "string"
@@ -3686,33 +3998,8 @@
           "type": "string"
         },
         {
-          "const": "retro.ran",
-          "description": "M12: a retro run ended; `data.run`, `data.trigger`, `data.advise`, `data.proposals`, `data.dropped`, `data.usage` (orchestrator runs).",
-          "type": "string"
-        },
-        {
-          "const": "playbook.changed",
-          "description": "M12: a playbook file changed under a retro proposal; `data.proposalId`, `data.playbook`, `data.ref`, `data.previousRef`, `data.kind`, `data.baseline`, `data.dueAt`.",
-          "type": "string"
-        },
-        {
-          "const": "playbook.reverted",
-          "description": "M12: a wording change missed its metric or regressed a guarded one and was rolled back; `data.proposalId`, `data.reason`.",
-          "type": "string"
-        },
-        {
-          "const": "playbook.kept",
-          "description": "M12: a wording change met its metric; `data.proposalId`, `data.measured`.",
-          "type": "string"
-        },
-        {
           "const": "key.paired",
           "description": "A device redeemed a pairing code from `fleetd pair` and got a human key; `data.keyId`, `data.deviceName`.",
-          "type": "string"
-        },
-        {
-          "const": "workstream.note",
-          "description": "A person added to an order for its lead: `data.workstreamId`, `data.noteId`, `data.urgent`, `data.text` (first\n200 characters).",
           "type": "string"
         },
         {
@@ -3891,7 +4178,7 @@
         },
         "playbook": {
           "$ref": "#/$defs/PlaybookGateChange",
-          "description": "approval of a retro playbook change that relaxes a gate, instead of a gated run or a tool prompt."
+          "description": "approval of a retro playbook change (an older approval only), instead of a gated run or a tool prompt."
         },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
@@ -3987,6 +4274,14 @@
         },
         "itemId": {
           "$ref": "#/$defs/PlanItemId"
+        },
+        "mediumTaskIds": {
+          "description": "Those of `taskIds` that run on the medium profile; the rest run high. Absent when none does.",
+          "items": {
+            "$ref": "#/$defs/TaskId"
+          },
+          "maxItems": 10,
+          "type": "array"
         },
         "overdueMinutes": {
           "description": "Retired with the ETA: always absent.",
@@ -4092,7 +4387,7 @@
       "type": "object"
     },
     "IncidentClass": {
-      "description": "`policy_bypass`: a PR on a watched repo was merged by something other than the train. M12: `override`, a human\nreplaced a lead's Decision with another value; `playbook_reverted`, a retro wording change missed its metric and was\nrolled back.",
+      "description": "`policy_bypass`: a PR on a watched repo was merged by something other than the train. M12: `override`, a human\nreplaced a lead's Decision with another value.",
       "oneOf": [
         {
           "enum": [
@@ -4101,8 +4396,7 @@
             "out_of_area",
             "stall",
             "policy_bypass",
-            "override",
-            "playbook_reverted"
+            "override"
           ],
           "type": "string"
         },
@@ -4692,16 +4986,8 @@
     },
     "LeadStartInput": {
       "properties": {
-        "effort": {
-          "$ref": "#/$defs/Effort"
-        },
         "machineId": {
           "$ref": "#/$defs/MachineId"
-        },
-        "model": {
-          "description": "Saved as the project's lead model and effort for this and later (re)starts; absent keeps the saved or hub\ndefault.",
-          "minLength": 1,
-          "type": "string"
         },
         "projectId": {
           "$ref": "#/$defs/ProjectId"
@@ -4964,6 +5250,18 @@
         "actions_list.output": {
           "$ref": "#/$defs/ActionsListOutput"
         },
+        "agent_work.input": {
+          "$ref": "#/$defs/AgentWorkInput"
+        },
+        "agent_work.output": {
+          "$ref": "#/$defs/AgentWorkOutput"
+        },
+        "agents_list.input": {
+          "$ref": "#/$defs/AgentsListInput"
+        },
+        "agents_list.output": {
+          "$ref": "#/$defs/AgentsListOutput"
+        },
         "approval_answer.input": {
           "$ref": "#/$defs/ApprovalAnswerInput"
         },
@@ -5011,6 +5309,12 @@
         },
         "chat_send.output": {
           "$ref": "#/$defs/ChatSendOutput"
+        },
+        "chat_stop.input": {
+          "$ref": "#/$defs/ChatStopInput"
+        },
+        "chat_stop.output": {
+          "$ref": "#/$defs/ChatStopOutput"
         },
         "claims_list.input": {
           "$ref": "#/$defs/ClaimsListInput"
@@ -5138,6 +5442,30 @@
         "plan_get.output": {
           "$ref": "#/$defs/PlanGetOutput"
         },
+        "pr_diff.input": {
+          "$ref": "#/$defs/PrDiffInput"
+        },
+        "pr_diff.output": {
+          "$ref": "#/$defs/PrDiffOutput"
+        },
+        "pr_files.input": {
+          "$ref": "#/$defs/PrFilesInput"
+        },
+        "pr_files.output": {
+          "$ref": "#/$defs/PrFilesOutput"
+        },
+        "pr_get.input": {
+          "$ref": "#/$defs/PrGetInput"
+        },
+        "pr_get.output": {
+          "$ref": "#/$defs/PrGetOutput"
+        },
+        "pr_list.input": {
+          "$ref": "#/$defs/PrListInput"
+        },
+        "pr_list.output": {
+          "$ref": "#/$defs/PrListOutput"
+        },
         "project_add.input": {
           "$ref": "#/$defs/ProjectAddInput"
         },
@@ -5173,6 +5501,12 @@
         },
         "project_remove.output": {
           "$ref": "#/$defs/ProjectRemoveOutput"
+        },
+        "project_set.input": {
+          "$ref": "#/$defs/ProjectSetInput"
+        },
+        "project_set.output": {
+          "$ref": "#/$defs/ProjectSetOutput"
         },
         "project_stop.input": {
           "$ref": "#/$defs/ProjectStopInput"
@@ -5215,18 +5549,6 @@
         },
         "requests_list.output": {
           "$ref": "#/$defs/RequestsListOutput"
-        },
-        "retro_proposals.input": {
-          "$ref": "#/$defs/RetroProposalsInput"
-        },
-        "retro_proposals.output": {
-          "$ref": "#/$defs/RetroProposalsOutput"
-        },
-        "retro_run.input": {
-          "$ref": "#/$defs/RetroRunInput"
-        },
-        "retro_run.output": {
-          "$ref": "#/$defs/RetroRunOutput"
         },
         "secret_submit.input": {
           "$ref": "#/$defs/SecretSubmitInput"
@@ -5281,24 +5603,6 @@
         },
         "steers_list.output": {
           "$ref": "#/$defs/SteersListOutput"
-        },
-        "subscription_delete.input": {
-          "$ref": "#/$defs/SubscriptionDeleteInput"
-        },
-        "subscription_delete.output": {
-          "$ref": "#/$defs/SubscriptionDeleteOutput"
-        },
-        "subscription_list.input": {
-          "$ref": "#/$defs/SubscriptionListInput"
-        },
-        "subscription_list.output": {
-          "$ref": "#/$defs/SubscriptionListOutput"
-        },
-        "subscription_set.input": {
-          "$ref": "#/$defs/SubscriptionSetInput"
-        },
-        "subscription_set.output": {
-          "$ref": "#/$defs/SubscriptionSetOutput"
         },
         "task_get.input": {
           "$ref": "#/$defs/TaskGetInput"
@@ -5436,6 +5740,10 @@
       "required": [
         "actions_list.input",
         "actions_list.output",
+        "agent_work.input",
+        "agent_work.output",
+        "agents_list.input",
+        "agents_list.output",
         "approval_answer.input",
         "approval_answer.output",
         "attachment_get.input",
@@ -5452,6 +5760,8 @@
         "chat_history.output",
         "chat_send.input",
         "chat_send.output",
+        "chat_stop.input",
+        "chat_stop.output",
         "claims_list.input",
         "claims_list.output",
         "decisions_record.input",
@@ -5494,6 +5804,14 @@
         "orders_board.output",
         "plan_get.input",
         "plan_get.output",
+        "pr_diff.input",
+        "pr_diff.output",
+        "pr_files.input",
+        "pr_files.output",
+        "pr_get.input",
+        "pr_get.output",
+        "pr_list.input",
+        "pr_list.output",
         "project_add.input",
         "project_add.output",
         "project_discover.input",
@@ -5506,6 +5824,8 @@
         "project_inspect.output",
         "project_remove.input",
         "project_remove.output",
+        "project_set.input",
+        "project_set.output",
         "project_stop.input",
         "project_stop.output",
         "projects_list.input",
@@ -5520,10 +5840,6 @@
         "prompts_list.output",
         "requests_list.input",
         "requests_list.output",
-        "retro_proposals.input",
-        "retro_proposals.output",
-        "retro_run.input",
-        "retro_run.output",
         "secret_submit.input",
         "secret_submit.output",
         "session_prompt_get.input",
@@ -5542,12 +5858,6 @@
         "steer_withdraw.output",
         "steers_list.input",
         "steers_list.output",
-        "subscription_delete.input",
-        "subscription_delete.output",
-        "subscription_list.input",
-        "subscription_list.output",
-        "subscription_set.input",
-        "subscription_set.output",
         "task_get.input",
         "task_get.output",
         "tasks_list.input",
@@ -5813,51 +6123,6 @@
       ],
       "type": "object"
     },
-    "OrchestratorKind": {
-      "enum": [
-        "orchestrator"
-      ],
-      "type": "string"
-    },
-    "OrchestratorRun": {
-      "description": "A `claude -p` one-shot the hub ran for itself, counted as orchestrator usage.",
-      "properties": {
-        "durationMs": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "error": {
-          "type": "string"
-        },
-        "inputTokens": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "kind": {
-          "$ref": "#/$defs/OrchestratorKind"
-        },
-        "model": {
-          "type": "string"
-        },
-        "ok": {
-          "type": "boolean"
-        },
-        "outputTokens": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "kind",
-        "model",
-        "durationMs",
-        "ok"
-      ],
-      "type": "object"
-    },
     "OrderCard": {
       "description": "One order (workstream) as the board shows it.",
       "properties": {
@@ -6051,7 +6316,7 @@
           "type": "string"
         },
         "noteId": {
-          "description": "\"N\" plus a number; the workstream.note event carries it.",
+          "description": "\"N\" plus a number.",
           "maxLength": 40,
           "minLength": 1,
           "type": "string"
@@ -6689,15 +6954,8 @@
       ],
       "type": "object"
     },
-    "PlaybookChangeKind": {
-      "enum": [
-        "wording",
-        "gate"
-      ],
-      "type": "string"
-    },
     "PlaybookGateChange": {
-      "description": "A retro playbook change that relaxes a gate (fewer reviewers, a weaker or removed check, a looser rule): it applies\nonly once a person approves it. Stored with the approval and never changed.",
+      "description": "A retro playbook change that relaxes a gate (fewer reviewers, a weaker or removed check, a looser rule). The retro is\ngone: only an older approval carries one, and the app still shows it.",
       "properties": {
         "diff": {
           "description": "The exact unified diff that applies on approve.",
@@ -6748,6 +7006,82 @@
       "pattern": "^(?:bugfix|feature|research|finish-all)@(?:[0-9a-f]{40}|[0-9a-f]{64})$",
       "type": "string"
     },
+    "PrAuthor": {
+      "description": "Who wrote the PR: fleetd's agent when one did, and the GitHub account it was opened from.",
+      "properties": {
+        "effort": {
+          "$ref": "#/$defs/Effort"
+        },
+        "laneId": {
+          "description": "The writing agent's lane in the agents view.",
+          "maxLength": 80,
+          "minLength": 1,
+          "type": "string"
+        },
+        "login": {
+          "description": "GitHub login; absent when GitHub wasn't reached.",
+          "maxLength": 100,
+          "minLength": 1,
+          "type": "string"
+        },
+        "model": {
+          "maxLength": 80,
+          "minLength": 1,
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/AgentRole"
+        },
+        "taskId": {
+          "$ref": "#/$defs/TaskId"
+        },
+        "threadRef": {
+          "$ref": "#/$defs/ThreadRef",
+          "description": "Its session, for `agent_work`."
+        },
+        "title": {
+          "description": "The agent's task title.",
+          "maxLength": 80,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "PrCheck": {
+      "description": "One check run or commit status on the head. fleetd's own merge statuses are left out: `queue` says the same.",
+      "properties": {
+        "completedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "conclusion": {
+          "description": "GitHub's conclusion as given, lowercased (\"success\", \"failure\", \"skipped\", \"timed_out\"…).",
+          "maxLength": 40,
+          "minLength": 1,
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "startedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "state": {
+          "$ref": "#/$defs/ChecksState"
+        },
+        "url": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "state"
+      ],
+      "type": "object"
+    },
     "PrChip": {
       "description": "One PR on a train strip.",
       "properties": {
@@ -6781,6 +7115,427 @@
         "url",
         "workstreamId",
         "state"
+      ],
+      "type": "object"
+    },
+    "PrDiffInput": {
+      "properties": {
+        "limit": {
+          "default": 200,
+          "maximum": 400,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "number": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "offset": {
+          "default": 0,
+          "maximum": 1000000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "path": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "repo": {
+          "$ref": "#/$defs/GitHubRepo"
+        }
+      },
+      "required": [
+        "repo",
+        "number",
+        "path"
+      ],
+      "type": "object"
+    },
+    "PrDiffOutput": {
+      "properties": {
+        "headSha": {
+          "$ref": "#/$defs/CommitSha"
+        },
+        "lines": {
+          "items": {
+            "$ref": "#/$defs/DiffLine"
+          },
+          "maxItems": 400,
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "nextOffset": {
+          "description": "Pass back as `offset` for the next page; absent on the last.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "noDiff": {
+          "description": "GitHub shows no diff for this file (binary, or too large).",
+          "type": "boolean"
+        },
+        "total": {
+          "description": "Lines in the file's diff.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "lines",
+        "total"
+      ],
+      "type": "object"
+    },
+    "PrFile": {
+      "description": "One changed file.",
+      "properties": {
+        "additions": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "deletions": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "diffLines": {
+          "description": "Lines `pr_diff` pages through; absent when GitHub shows no diff for it (binary, or too large).",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "path": {
+          "description": "Repo-relative; the new path of a rename.",
+          "maxLength": 1000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "previousPath": {
+          "description": "A rename's old path.",
+          "maxLength": 1000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/PrFileStatus"
+        }
+      },
+      "required": [
+        "path",
+        "status",
+        "additions",
+        "deletions"
+      ],
+      "type": "object"
+    },
+    "PrFileStatus": {
+      "enum": [
+        "added",
+        "modified",
+        "removed",
+        "renamed",
+        "copied",
+        "changed",
+        "unchanged"
+      ],
+      "type": "string",
+      "x-open": true
+    },
+    "PrFilesInput": {
+      "properties": {
+        "number": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "offset": {
+          "default": 0,
+          "maximum": 3000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "repo": {
+          "$ref": "#/$defs/GitHubRepo"
+        }
+      },
+      "required": [
+        "repo",
+        "number"
+      ],
+      "type": "object"
+    },
+    "PrFilesOutput": {
+      "properties": {
+        "files": {
+          "items": {
+            "$ref": "#/$defs/PrFile"
+          },
+          "maxItems": 100,
+          "type": "array"
+        },
+        "headSha": {
+          "$ref": "#/$defs/CommitSha",
+          "description": "The head these files are of."
+        },
+        "next": {
+          "type": "string"
+        },
+        "nextOffset": {
+          "description": "Pass back as `offset` for the next page; absent on the last.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "total": {
+          "description": "Changed files in the PR.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "files",
+        "total"
+      ],
+      "type": "object"
+    },
+    "PrGetInput": {
+      "properties": {
+        "number": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "repo": {
+          "$ref": "#/$defs/GitHubRepo"
+        }
+      },
+      "required": [
+        "repo",
+        "number"
+      ],
+      "type": "object"
+    },
+    "PrGetOutput": {
+      "properties": {
+        "additions": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "baseBranch": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "body": {
+          "description": "The PR's description, at most 8000 characters. Secrets are replaced by `[secret]`.",
+          "maxLength": 8000,
+          "type": "string"
+        },
+        "changedFiles": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "checks": {
+          "items": {
+            "$ref": "#/$defs/PrCheck"
+          },
+          "maxItems": 60,
+          "type": "array"
+        },
+        "deletions": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "githubError": {
+          "maxLength": 300,
+          "type": "string"
+        },
+        "headSha": {
+          "$ref": "#/$defs/CommitSha"
+        },
+        "history": {
+          "description": "Its moves through the merge queue, newest first.",
+          "items": {
+            "$ref": "#/$defs/PrQueueStep"
+          },
+          "maxItems": 30,
+          "type": "array"
+        },
+        "links": {
+          "$ref": "#/$defs/PrLinks"
+        },
+        "next": {
+          "type": "string"
+        },
+        "pr": {
+          "$ref": "#/$defs/PrRow"
+        },
+        "reviews": {
+          "description": "Newest first: agent verdicts and people's reviews.",
+          "items": {
+            "$ref": "#/$defs/PrReviewEntry"
+          },
+          "maxItems": 30,
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "pr",
+        "body",
+        "checks",
+        "reviews",
+        "history",
+        "links"
+      ],
+      "type": "object"
+    },
+    "PrLinks": {
+      "properties": {
+        "checks": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "files": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "mergeCommit": {
+          "description": "The squash commit on the base, once merged.",
+          "maxLength": 2000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "pr": {
+          "$ref": "#/$defs/GitHubPrUrl"
+        }
+      },
+      "required": [
+        "pr",
+        "files",
+        "checks"
+      ],
+      "type": "object"
+    },
+    "PrListInput": {
+      "properties": {
+        "closedSince": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        }
+      },
+      "required": [
+        "projectRef"
+      ],
+      "type": "object"
+    },
+    "PrListOutput": {
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "githubError": {
+          "description": "GitHub couldn't be reached: the list holds only the PRs fleetd records, without checks. Why, and what to do.",
+          "maxLength": 300,
+          "type": "string"
+        },
+        "next": {
+          "type": "string"
+        },
+        "prs": {
+          "items": {
+            "$ref": "#/$defs/PrRow"
+          },
+          "maxItems": 60,
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "prs",
+        "at"
+      ],
+      "type": "object"
+    },
+    "PrQueue": {
+      "description": "Where the PR stands in fleetd's merge queue. Absent from a PR fleetd doesn't land.",
+      "properties": {
+        "changeId": {
+          "$ref": "#/$defs/ChangeId"
+        },
+        "length": {
+          "description": "PRs waiting in the same queue.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "paused": {
+          "description": "Merging is paused for the repository.",
+          "type": "boolean"
+        },
+        "position": {
+          "description": "0-based place in the queue; absent when not waiting in it.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reason": {
+          "description": "Why it is held or was sent back: a conflict, failing check names, or the refusal's fix.",
+          "maxLength": 2000,
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/ChangeState"
+        }
+      },
+      "required": [
+        "changeId",
+        "state",
+        "length",
+        "paused"
+      ],
+      "type": "object"
+    },
+    "PrQueueStep": {
+      "description": "One move of the PR through the merge queue.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "from": {
+          "$ref": "#/$defs/ChangeState"
+        },
+        "to": {
+          "$ref": "#/$defs/ChangeState"
+        }
+      },
+      "required": [
+        "at",
+        "from",
+        "to"
       ],
       "type": "object"
     },
@@ -6835,6 +7590,165 @@
         "state",
         "reviewsDone",
         "reviewsNeeded"
+      ],
+      "type": "object"
+    },
+    "PrReviewEntry": {
+      "description": "One review: an agent's verdict with its findings, or a person's review on GitHub.",
+      "properties": {
+        "agent": {
+          "$ref": "#/$defs/PrAuthor",
+          "description": "The reviewing agent (reviewer, verifier or QA); absent for a person's review."
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "blocking": {
+          "description": "Findings that must be fixed before merging; agent reviews only.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "current": {
+          "description": "It reviewed the PR's current change (an agent review stays current across a rebase that changes nothing).",
+          "type": "boolean"
+        },
+        "login": {
+          "description": "GitHub login of a person's review.",
+          "maxLength": 100,
+          "minLength": 1,
+          "type": "string"
+        },
+        "nonBlocking": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text": {
+          "description": "The agent's findings, or the person's review text. Secrets are replaced by `[secret]`.",
+          "maxLength": 2000,
+          "type": "string"
+        },
+        "verdict": {
+          "$ref": "#/$defs/ReviewVerdictKind"
+        }
+      },
+      "required": [
+        "verdict",
+        "text",
+        "current",
+        "at"
+      ],
+      "type": "object"
+    },
+    "PrRow": {
+      "description": "One PR as the list shows it.",
+      "properties": {
+        "author": {
+          "$ref": "#/$defs/PrAuthor"
+        },
+        "branch": {
+          "description": "Its head branch.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "checks": {
+          "$ref": "#/$defs/ChecksSummary",
+          "description": "Absent when GitHub wasn't reached."
+        },
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "mergedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "number": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "queue": {
+          "$ref": "#/$defs/PrQueue"
+        },
+        "repo": {
+          "$ref": "#/$defs/GitHubRepo"
+        },
+        "review": {
+          "$ref": "#/$defs/ReviewSummary"
+        },
+        "state": {
+          "$ref": "#/$defs/PrState"
+        },
+        "title": {
+          "description": "GitHub's title; the writing agent's task title when GitHub wasn't reached.",
+          "maxLength": 300,
+          "type": "string"
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "url": {
+          "$ref": "#/$defs/GitHubPrUrl"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId",
+          "description": "The work it belongs to, when fleetd's agents wrote it."
+        }
+      },
+      "required": [
+        "repo",
+        "number",
+        "url",
+        "title",
+        "state",
+        "review",
+        "author",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "PrState": {
+      "description": "The PR on GitHub.",
+      "enum": [
+        "open",
+        "draft",
+        "merged",
+        "closed"
+      ],
+      "type": "string",
+      "x-open": true
+    },
+    "ProfileTotal": {
+      "description": "One task profile's part of a scope's agent time and usage, from the spans kept (`coverage.detailSince` on): the\ntasks that ran on it, and the lead's spans under high.",
+      "properties": {
+        "agentMs": {
+          "description": "Exclusive agent time.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "modelMs": {
+          "description": "The model's part of it.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "outputTokens": {
+          "description": "What claude reported for its messages.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "profile": {
+          "$ref": "#/$defs/TaskProfile"
+        }
+      },
+      "required": [
+        "profile",
+        "agentMs",
+        "modelMs",
+        "outputTokens"
       ],
       "type": "object"
     },
@@ -6980,6 +7894,13 @@
         "drop": {
           "$ref": "#/$defs/ProgressDrop",
           "description": "Set when the estimate fell at this point; it never falls without one."
+        },
+        "paused": {
+          "description": "Set while the estimate holds because the work in flight paused, waiting for an answer or for a usage limit to\nreset (\"paused: an agent hit a usage limit\"). A marker, not a drop: what was earned stays.",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
         },
         "pct": {
           "maximum": 100,
@@ -7351,6 +8272,10 @@
           "$ref": "#/$defs/Lead",
           "description": "Absent until lead_start."
         },
+        "mediumAllowed": {
+          "description": "Whether the lead may run a task on the medium profile (`project_set`); absent from older hubs, where it is on.",
+          "type": "boolean"
+        },
         "next": {
           "description": "Hint for the next call.",
           "type": "string"
@@ -7549,7 +8474,7 @@
         },
         {
           "const": "blocked",
-          "description": "Something outside the work stops it: its machine is offline or at its usage limit, or main CI is red.",
+          "description": "Something outside the work stops it: its machine is offline, at its usage limit or short of disk or CPU for new\nagents, or main CI is red.",
           "type": "string"
         },
         {
@@ -7559,6 +8484,42 @@
         }
       ],
       "x-open": true
+    },
+    "ProjectSetInput": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "mediumAllowed": {
+          "type": "boolean"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId",
+        "mediumAllowed"
+      ],
+      "type": "object"
+    },
+    "ProjectSetOutput": {
+      "properties": {
+        "mediumAllowed": {
+          "type": "boolean"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "mediumAllowed"
+      ],
+      "type": "object"
     },
     "ProjectStatusRow": {
       "description": "One project on the Status screen: a state word, the two-tone bar, agents running and the last merge. No ETA.",
@@ -7761,7 +8722,7 @@
           "type": "string"
         },
         "perProject": {
-          "description": "False for playbooks, router and retro: they have the hub-wide level only.",
+          "description": "False for a one-shot: it has the hub-wide level only.",
           "type": "boolean"
         },
         "placeholders": {
@@ -7851,7 +8812,7 @@
         },
         {
           "const": "oneshot",
-          "description": "The input of a tool-less one-shot `claude -p` (the retro).",
+          "description": "The input of a tool-less one-shot `claude -p`. None ships now; kept while the app names its group.",
           "type": "string"
         },
         {
@@ -8286,7 +9247,7 @@
         },
         "rule": {
           "$ref": "#/$defs/DecisionRule",
-          "description": "The brief's frozen rule."
+          "description": "The brief's rule."
         }
       },
       "required": [
@@ -8335,397 +9296,63 @@
       ],
       "type": "object"
     },
-    "RetroMetric": {
-      "properties": {
-        "class": {
-          "$ref": "#/$defs/RetroMetricClass"
-        },
-        "op": {
-          "$ref": "#/$defs/Decrease"
-        },
-        "windowDays": {
-          "description": "Measured over this many days after the change, against the same span before it.",
-          "maximum": 28,
-          "minimum": 1,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "class",
-        "op",
-        "windowDays"
-      ],
-      "type": "object"
-    },
-    "RetroMetricClass": {
-      "description": "The fixed metric list, defined in code: incident counts per class, and agent-minutes per done workstream. A\nproposal names one; the retro cannot add or change them.",
+    "ReviewState": {
+      "description": "Its reviews, rolled up.",
       "oneOf": [
         {
           "enum": [
-            "false_claim",
-            "polish_loop",
-            "misfiled_ask",
-            "out_of_area",
-            "stall",
-            "policy_bypass",
-            "re_ask",
-            "override",
-            "agent_minutes_per_done"
+            "approved",
+            "changes_requested"
           ],
           "type": "string"
         },
         {
-          "const": "estimate_miss",
-          "description": "Retired: fleetd no longer scores time estimates. Kept so older proposals still read.",
-          "type": "string"
-        }
-      ]
-    },
-    "RetroProposal": {
-      "properties": {
-        "appliedAt": {
-          "$ref": "#/$defs/Timestamp"
-        },
-        "at": {
-          "$ref": "#/$defs/Timestamp"
-        },
-        "baseline": {
-          "$ref": "#/$defs/RetroSnapshot",
-          "description": "The window before it applied; `measured` is the window after."
-        },
-        "claimedKind": {
-          "$ref": "#/$defs/PlaybookChangeKind",
-          "description": "What the model said it was."
-        },
-        "decisionKey": {
-          "$ref": "#/$defs/DecisionKey",
-          "description": "A gate change: the global decision a person records to settle it, `playbook.<name>.<hash>` = apply | reject."
-        },
-        "diff": {
-          "maxLength": 8000,
-          "minLength": 1,
-          "type": "string"
-        },
-        "dueAt": {
-          "$ref": "#/$defs/Timestamp",
-          "description": "When a wording change's window ends and its metric is computed."
-        },
-        "expected": {
-          "maxLength": 300,
-          "minLength": 1,
-          "type": "string"
-        },
-        "fields": {
-          "description": "Frontmatter fields the diff changes, plus \"body\".",
-          "items": {
-            "type": "string"
-          },
-          "maxItems": 20,
-          "type": "array"
-        },
-        "fixesIncidents": {
-          "items": {
-            "$ref": "#/$defs/IncidentId"
-          },
-          "maxItems": 20,
-          "minItems": 1,
-          "type": "array"
-        },
-        "kind": {
-          "$ref": "#/$defs/PlaybookChangeKind",
-          "description": "Decided by the hub from the fields the diff touches."
-        },
-        "measured": {
-          "$ref": "#/$defs/RetroSnapshot"
-        },
-        "metric": {
-          "$ref": "#/$defs/RetroMetric"
-        },
-        "note": {
-          "maxLength": 500,
-          "minLength": 1,
-          "type": "string"
-        },
-        "playbook": {
-          "$ref": "#/$defs/PlaybookName"
-        },
-        "previousRef": {
-          "$ref": "#/$defs/PlaybookRef"
-        },
-        "proposalId": {
-          "$ref": "#/$defs/RetroProposalId"
-        },
-        "ref": {
-          "$ref": "#/$defs/PlaybookRef",
-          "description": "The version it applied and the one it replaced."
-        },
-        "run": {
-          "description": "The retro run that proposed it.",
-          "maximum": 9007199254740991,
-          "minimum": 1,
-          "type": "integer"
-        },
-        "state": {
-          "$ref": "#/$defs/RetroProposalState"
-        }
-      },
-      "required": [
-        "proposalId",
-        "run",
-        "at",
-        "playbook",
-        "kind",
-        "claimedKind",
-        "diff",
-        "fields",
-        "fixesIncidents",
-        "metric",
-        "expected",
-        "state"
-      ],
-      "type": "object"
-    },
-    "RetroProposalId": {
-      "pattern": "^R[1-9][0-9]*$",
-      "type": "string"
-    },
-    "RetroProposalState": {
-      "description": "suggested: advise-only, nothing applies. pending: a gate change waiting for a person to record its decision.\nmeasuring: a wording change applied, its window running; then kept or reverted. applied: a gate change a person\napproved. rejected: a person said no. stale: the playbook changed under it, so its diff no longer applies.",
-      "oneOf": [
-        {
-          "enum": [
-            "suggested",
-            "measuring",
-            "kept",
-            "reverted",
-            "applied",
-            "rejected",
-            "stale"
-          ],
+          "const": "none",
+          "description": "Nothing asks for a review.",
           "type": "string"
         },
         {
           "const": "pending",
-          "description": "\"asked\": rows from before the questions tool went.",
+          "description": "Reviews are asked for or running.",
           "type": "string"
         }
-      ]
+      ],
+      "x-open": true
     },
-    "RetroProposalsInput": {
+    "ReviewSummary": {
       "properties": {
-        "limit": {
-          "default": 20,
-          "maximum": 100,
-          "minimum": 1,
+        "done": {
+          "description": "Clean agent reviews of the current change.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "needed": {
+          "description": "Agent reviews it needs before it can merge; 0 for a PR fleetd doesn't land.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
           "type": "integer"
         },
         "state": {
-          "$ref": "#/$defs/RetroProposalState"
-        }
-      },
-      "type": "object"
-    },
-    "RetroProposalsOutput": {
-      "properties": {
-        "apply": {
-          "description": "The global Decision policy.retro.apply is true: wording changes apply on their own and gate changes wait for a person's decision.",
-          "type": "boolean"
-        },
-        "lastRun": {
-          "$ref": "#/$defs/RetroRun"
-        },
-        "next": {
-          "type": "string"
-        },
-        "proposals": {
-          "description": "Newest first.",
-          "items": {
-            "$ref": "#/$defs/RetroProposal"
-          },
-          "maxItems": 100,
-          "type": "array"
-        },
-        "truncated": {
-          "type": "boolean"
+          "$ref": "#/$defs/ReviewState"
         }
       },
       "required": [
-        "proposals",
-        "apply"
+        "state",
+        "done",
+        "needed"
       ],
       "type": "object"
     },
-    "RetroRun": {
-      "properties": {
-        "advise": {
-          "description": "Nothing it proposed applies: `--advise`, or `policy.retro.apply` is not true.",
-          "type": "boolean"
-        },
-        "at": {
-          "$ref": "#/$defs/Timestamp"
-        },
-        "dropped": {
-          "items": {
-            "$ref": "#/$defs/RetroRunDropped"
-          },
-          "maxItems": 20,
-          "type": "array"
-        },
-        "incidents": {
-          "description": "Incidents in the window it was given.",
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "proposals": {
-          "items": {
-            "$ref": "#/$defs/RetroProposalId"
-          },
-          "maxItems": 10,
-          "type": "array"
-        },
-        "run": {
-          "maximum": 9007199254740991,
-          "minimum": 1,
-          "type": "integer"
-        },
-        "trigger": {
-          "$ref": "#/$defs/RetroTrigger"
-        },
-        "usage": {
-          "$ref": "#/$defs/OrchestratorRun",
-          "description": "Absent when there was nothing to look at and no turn ran."
-        },
-        "windowDays": {
-          "maximum": 28,
-          "minimum": 1,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "run",
-        "at",
-        "trigger",
-        "advise",
-        "windowDays",
-        "incidents",
-        "proposals",
-        "dropped"
-      ],
-      "type": "object"
-    },
-    "RetroRunDropped": {
-      "description": "A change the hub refused, with why.",
-      "properties": {
-        "index": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "playbook": {
-          "type": "string"
-        },
-        "reason": {
-          "maxLength": 500,
-          "minLength": 1,
-          "type": "string"
-        }
-      },
-      "required": [
-        "index",
-        "reason"
-      ],
-      "type": "object"
-    },
-    "RetroRunInput": {
-      "properties": {
-        "advise": {
-          "description": "Propose only, even when policy.retro.apply is true.",
-          "type": "boolean"
-        },
-        "windowDays": {
-          "default": 14,
-          "maximum": 28,
-          "minimum": 1,
-          "type": "integer"
-        }
-      },
-      "type": "object"
-    },
-    "RetroRunOutput": {
-      "properties": {
-        "next": {
-          "type": "string"
-        },
-        "proposals": {
-          "items": {
-            "$ref": "#/$defs/RetroProposal"
-          },
-          "maxItems": 10,
-          "type": "array"
-        },
-        "run": {
-          "$ref": "#/$defs/RetroRun"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "run",
-        "proposals"
-      ],
-      "type": "object"
-    },
-    "RetroSnapshot": {
-      "description": "A metric's values over one window; agent-minutes is null when no workstream finished in it. Its keys are\nsnake_case on the wire.",
-      "properties": {
-        "agent_minutes_per_done": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "false_claim": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "polish_loop": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "target": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      },
-      "required": [
-        "target",
-        "false_claim",
-        "polish_loop",
-        "agent_minutes_per_done"
-      ],
-      "type": "object"
-    },
-    "RetroTrigger": {
+    "ReviewVerdictKind": {
       "enum": [
-        "weekly",
-        "threshold",
-        "manual"
+        "approved",
+        "changes_requested",
+        "commented",
+        "dismissed"
       ],
-      "type": "string"
+      "type": "string",
+      "x-open": true
     },
     "Risk": {
       "properties": {
@@ -9819,13 +10446,6 @@
       ],
       "type": "object"
     },
-    "Star": {
-      "description": "`\"*\"`: every event type or machine.",
-      "enum": [
-        "*"
-      ],
-      "type": "string"
-    },
     "StatusDoc": {
       "properties": {
         "done": {
@@ -10717,187 +11337,6 @@
       ],
       "type": "object"
     },
-    "Subscription": {
-      "description": "A webhook push target. Its signing secret is shown once by subscription_set and never returned again.",
-      "properties": {
-        "createdBy": {
-          "description": "keyId of the agent key that created it.",
-          "type": "string"
-        },
-        "failingSince": {
-          "$ref": "#/$defs/Timestamp",
-          "description": "When deliveries started failing; absent while healthy."
-        },
-        "kind": {
-          "$ref": "#/$defs/WebhookKind"
-        },
-        "lastDeliveredSeq": {
-          "$ref": "#/$defs/EventSeq"
-        },
-        "machines": {
-          "$ref": "#/$defs/SubscriptionMachines"
-        },
-        "state": {
-          "$ref": "#/$defs/SubscriptionState"
-        },
-        "subscriptionId": {
-          "minLength": 1,
-          "type": "string"
-        },
-        "types": {
-          "$ref": "#/$defs/SubscriptionTypes"
-        },
-        "url": {
-          "$ref": "#/$defs/WebhookUrl"
-        }
-      },
-      "required": [
-        "subscriptionId",
-        "kind",
-        "url",
-        "types",
-        "machines",
-        "createdBy",
-        "state"
-      ],
-      "type": "object"
-    },
-    "SubscriptionDeleteInput": {
-      "properties": {
-        "subscriptionId": {
-          "minLength": 1,
-          "type": "string"
-        }
-      },
-      "required": [
-        "subscriptionId"
-      ],
-      "type": "object"
-    },
-    "SubscriptionDeleteOutput": {
-      "properties": {
-        "next": {
-          "type": "string"
-        },
-        "ok": {
-          "enum": [
-            true
-          ],
-          "type": "boolean"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "ok"
-      ],
-      "type": "object"
-    },
-    "SubscriptionListInput": {
-      "type": "object"
-    },
-    "SubscriptionListOutput": {
-      "properties": {
-        "next": {
-          "type": "string"
-        },
-        "subscriptions": {
-          "items": {
-            "$ref": "#/$defs/Subscription"
-          },
-          "type": "array"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "subscriptions"
-      ],
-      "type": "object"
-    },
-    "SubscriptionMachines": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/Star"
-        },
-        {
-          "items": {
-            "$ref": "#/$defs/MachineId"
-          },
-          "type": "array"
-        }
-      ]
-    },
-    "SubscriptionSetInput": {
-      "properties": {
-        "clientRequestId": {
-          "minLength": 1,
-          "type": "string"
-        },
-        "machines": {
-          "$ref": "#/$defs/SubscriptionMachines",
-          "default": "*"
-        },
-        "types": {
-          "$ref": "#/$defs/SubscriptionTypes",
-          "default": "*"
-        },
-        "url": {
-          "$ref": "#/$defs/WebhookUrl"
-        }
-      },
-      "required": [
-        "url",
-        "clientRequestId"
-      ],
-      "type": "object"
-    },
-    "SubscriptionSetOutput": {
-      "properties": {
-        "next": {
-          "type": "string"
-        },
-        "secret": {
-          "description": "The webhook signing secret. Shown only here; store it now.",
-          "minLength": 1,
-          "type": "string"
-        },
-        "subscriptionId": {
-          "minLength": 1,
-          "type": "string"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "subscriptionId",
-        "secret"
-      ],
-      "type": "object"
-    },
-    "SubscriptionState": {
-      "enum": [
-        "active",
-        "disabled"
-      ],
-      "type": "string"
-    },
-    "SubscriptionTypes": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/Star"
-        },
-        {
-          "items": {
-            "$ref": "#/$defs/HubEventType"
-          },
-          "type": "array"
-        }
-      ]
-    },
     "TailAction": {
       "properties": {
         "action": {
@@ -11002,10 +11441,6 @@
         "createdAt": {
           "$ref": "#/$defs/Timestamp"
         },
-        "effort": {
-          "$ref": "#/$defs/Effort",
-          "description": "Always explicit; resolved at spawn."
-        },
         "endedAt": {
           "$ref": "#/$defs/Timestamp"
         },
@@ -11020,10 +11455,6 @@
         "kind": {
           "$ref": "#/$defs/TaskKind"
         },
-        "model": {
-          "minLength": 1,
-          "type": "string"
-        },
         "parked": {
           "$ref": "#/$defs/UsageParked",
           "description": "M4: its thread hit a usage limit; the task is idle until fleetd sends \"continue\" at `resumeAt`."
@@ -11031,6 +11462,11 @@
         "pr": {
           "description": "The PR a review task reviews. Required at spawn for review; absent on hub-spawned judge tasks and older rows.",
           "type": "string"
+        },
+        "profile": {
+          "$ref": "#/$defs/TaskProfile",
+          "default": "high",
+          "description": "Resolved at spawn. Rows stored with a model and effort read as `high` (the hub migrates its own)."
         },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
@@ -11045,17 +11481,13 @@
           "type": "boolean"
         },
         "queuedReason": {
-          "description": "Why it is queued, e.g. \"lease: docs held by T1\" or \"slots: 40/40 in use\".",
+          "description": "Why it is queued, e.g. \"lease: docs held by T1\" or \"fleet cap: 40 of 40 running\".",
           "maxLength": 200,
           "minLength": 1,
           "type": "string"
         },
         "result": {
           "$ref": "#/$defs/TaskResult"
-        },
-        "serves": {
-          "$ref": "#/$defs/Serves",
-          "description": "Required at spawn for write tasks; optional here for tasks stored before M6."
         },
         "startedAt": {
           "$ref": "#/$defs/Timestamp"
@@ -11094,8 +11526,6 @@
         "kind",
         "prompt",
         "areas",
-        "model",
-        "effort",
         "state",
         "attempt",
         "createdAt"
@@ -11184,6 +11614,14 @@
         "write",
         "read",
         "review"
+      ],
+      "type": "string"
+    },
+    "TaskProfile": {
+      "description": "What an agent runs on. There are exactly two, both claude-opus-5-5: `high` (effort high) is the default and what\nthe lead, every reviewer and every helper call run; `medium` (effort medium) is for mechanical tasks the lead picks.",
+      "enum": [
+        "high",
+        "medium"
       ],
       "type": "string"
     },
@@ -11432,15 +11870,12 @@
           "minLength": 1,
           "type": "string"
         },
-        "effort": {
-          "$ref": "#/$defs/Effort"
-        },
         "machineId": {
           "$ref": "#/$defs/MachineId"
         },
-        "model": {
-          "minLength": 1,
-          "type": "string"
+        "profile": {
+          "$ref": "#/$defs/TaskProfile",
+          "description": "Absent: high."
         },
         "projectId": {
           "$ref": "#/$defs/ProjectId"
@@ -11461,8 +11896,6 @@
         "machineId",
         "projectId",
         "prompt",
-        "model",
-        "effort",
         "clientRequestId"
       ],
       "type": "object"
@@ -11782,6 +12215,14 @@
             "$ref": "#/$defs/CategoryTotal"
           },
           "maxItems": 8,
+          "type": "array"
+        },
+        "byProfile": {
+          "description": "High first; absent when no task or lead span is in the period.",
+          "items": {
+            "$ref": "#/$defs/ProfileTotal"
+          },
+          "maxItems": 2,
           "type": "array"
         },
         "ciChecks": {
@@ -12769,12 +13210,6 @@
       ],
       "type": "object"
     },
-    "WebhookKind": {
-      "enum": [
-        "webhook"
-      ],
-      "type": "string"
-    },
     "WebhookUrl": {
       "type": "string"
     },
@@ -12812,14 +13247,90 @@
       ],
       "x-open": true
     },
+    "WorkAction": {
+      "description": "A command, file edit or tool call. Secrets in its summary and output are replaced by `[secret]`.",
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/ActionItem"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "id": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "action"
+      ],
+      "type": "object"
+    },
+    "WorkMessage": {
+      "description": "A message the agent or its person wrote. Secrets are replaced by `[secret]`.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/TailRole"
+        },
+        "text": {
+          "description": "The last 2000 characters of a longer message.",
+          "maxLength": 2000,
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "role",
+        "text"
+      ],
+      "type": "object"
+    },
+    "WorkStep": {
+      "description": "One step of an agent's work.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/WorkMessage",
+          "properties": {
+            "kind": {
+              "const": "message",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/WorkAction",
+          "properties": {
+            "kind": {
+              "const": "action",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "Workstream": {
       "properties": {
         "brief": {
           "$ref": "#/$defs/Brief",
           "description": "Absent while draft."
-        },
-        "briefHash": {
-          "$ref": "#/$defs/BriefHash"
         },
         "createdAt": {
           "$ref": "#/$defs/Timestamp"
@@ -12846,7 +13357,7 @@
         },
         "playbook": {
           "$ref": "#/$defs/PlaybookRef",
-          "description": "Pinned at creation; the brief freeze validates against this version. Absent on workstreams from before M9."
+          "description": "Pinned at creation; the brief validates against this version. Absent on workstreams from before M9."
         },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"

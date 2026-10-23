@@ -15,10 +15,20 @@
 // Run it locally: `pnpm fixtures && pnpm qa:build && pnpm qa` (QA_SCREENS=<id>,<id> to limit), then open
 // qa-results/index.html.
 
-import { expect, type Page } from "@playwright/test";
+import { type ElectronApplication, expect, type Locator, type Page } from "@playwright/test";
 import { AGENT_ROUTE } from "../fixtures/agents/route.ts";
 import { CHAT_SENDS } from "../fixtures/composer/sends.ts";
 import { OFFLINE_SENDS } from "../fixtures/offline/sends.ts";
+
+/**
+ * What the system answers when the app posts a notification: shown, or not supported. Nothing reaches the screen of
+ * the machine running QA either way.
+ */
+const systemNotifications = (app: ElectronApplication, supported: boolean) =>
+  app.evaluate(({ Notification }, ok) => {
+    Notification.isSupported = () => ok;
+    Notification.prototype.show = () => undefined;
+  }, supported);
 
 /** A 1×1 PNG, for the composer's attach step. */
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=", "base64");
@@ -29,7 +39,6 @@ export const fixtures = [
   "long-text",
   "many-prompts",
   "many-agents",
-  "conversation",
   "hub-unreachable",
   "pairing-failed",
   "node-too-old",
@@ -43,6 +52,12 @@ export const fixtures = [
   // F4: the chat composer's sends (fixtures/composer).
   "composer-sends",
   "composer-waiting",
+  // The lead mid-turn: the quiet line under its reply counts up and says what it does now and what the turn did; and
+  // once it's over, how long it worked (fixtures/lead).
+  "lead-planning",
+  "lead-long",
+  "lead-counting",
+  "lead-worked",
   // Group fixtures (fixtures/<group>/index.ts), named <group>-<what>.
   "projects-cloning",
   // F10: the connect screen's states (fixtures/onboarding).
@@ -69,9 +84,10 @@ export const fixtures = [
   "status-stale",
   "status-planning",
   "status-skeleton",
+  // The bar's hover on a figure that holds while its work is paused (fixtures/status).
+  "status-paused",
   // E3b's shared stress fixture; the time inspector fills it with a ~15k-span order (fixtures/time).
   "time-heavy",
-  "conversation-20k",
   // The lead chat (fixtures/chat, E3b): a long conversation with migrated order history, a reply streaming in,
   // attachments, the two inline items (secret entry, gated command), the lead waiting on you, a first message.
   "chat-long",
@@ -81,11 +97,21 @@ export const fixtures = [
   "chat-gated",
   "chat-waiting",
   "chat-empty",
+  // UX-1 [23]: a long lead reply streaming in, in small deltas (fixtures/stream).
+  "stream-long",
   // F5 (A5): a chat with every state of the two inline items (fixtures/inline), with every answer failing, and with
   // two approvals the hub reopens after Approve.
   "inline-items",
   "inline-failures",
   "inline-reopened",
+  // UX-1 A3: the PR list and PR view (fixtures/prs): no PRs, the reads on their way, GitHub out of reach, GitHub's
+  // rate limit reached, a PR that fails to load, and a PR of 240 files with a 3,000-line file.
+  "prs-none",
+  "prs-loading",
+  "prs-no-github",
+  "prs-rate-limited",
+  "prs-error",
+  "prs-heavy",
   // UX-1: the sidebar's reasons and a new reply (fixtures/sidebar); one agent's live work (fixtures/agents).
   "sidebar-reasons",
   "agents-work",
@@ -96,6 +122,32 @@ export const fixtures = [
   "offline-reread-failed",
   // ...and the inline items' chat from the cache, with no hub (fixtures/inline).
   "inline-offline",
+  // The sequences that blanked the window (fixtures/resilience): a hub restart mid-chat, a burst of plan items with
+  // a new reply streaming, and the link dropping mid-reply.
+  "resilience-burst",
+  "resilience-hub-restart",
+  "resilience-reconnect-streaming",
+  // C1: the app's own update and the hub's (fixtures/updates).
+  "updates-idle",
+  "updates-checking",
+  "updates-unsupported",
+  "updates-current",
+  "updates-available",
+  "updates-downloading",
+  "updates-ready",
+  "updates-deb",
+  "updates-failed",
+  "updates-download-failed",
+  "updates-hub-current",
+  "updates-hub-unknown",
+  "updates-hub-available",
+  "updates-hub-behind",
+  "updates-hub-behind-local",
+  "updates-hub-behind-local-channel",
+  "updates-hub-info-failed",
+  "updates-terminal-not-local",
+  "updates-terminal-not-found",
+  "updates-terminal-no-terminal",
 ] as const;
 export type FixtureName = (typeof fixtures)[number];
 
@@ -103,8 +155,15 @@ export const sizes = {
   small: { width: 1024, height: 700 },
   medium: { width: 1400, height: 900 },
   large: { width: 1920, height: 1200 },
+  // The smallest window (main/index.ts): the sidebar has hidden itself. Shot only where an entry asks for it.
+  narrow: { width: 900, height: 600 },
+  // The macOS window shot: wide enough to keep the sidebar, short enough for the smallest runner's screen once the
+  // menu bar and the Dock are off it (1024×768 leaves 680 px).
+  window: { width: 1024, height: 640 },
 } as const;
 export type SizeName = keyof typeof sizes;
+/** What an entry without `sizes` is shot at. */
+export const defaultSizes: readonly SizeName[] = ["small", "medium", "large"];
 
 export const themes = ["light", "dark"] as const;
 export type Theme = (typeof themes)[number];
@@ -116,16 +175,22 @@ export interface Screen {
   fixtures: readonly FixtureName[];
   // Defaults to every size.
   sizes?: readonly SizeName[];
-  // Brings up a screen that has no route of its own; runs after the route has loaded.
-  open?: (page: Page) => Promise<void>;
-  // Registered ahead of its PR: skipped, with this reason, until the owner deletes the field.
-  pending?: string;
+  // Brings up a screen that has no route of its own; runs after the route has loaded. `app` reaches the main process,
+  // for what only it decides (whether the system shows notifications).
+  open?: (page: Page, app: ElectronApplication) => Promise<void>;
   // Tells apart two entries for one screen on the same fixture (say, a strip folded and opened): it joins the id in
   // the test title and the file names.
   variant?: string;
   // The route is meant to land on an error or not-found state ("<id>.error"). Without this, such a state fails the
-  // test: a route to a missing entity would otherwise check an empty error page and pass.
-  expect?: "error";
+  // test: a route to a missing entity would otherwise check an empty error page and pass. "card": an error card
+  // (src/renderer/src/Boundary.tsx) is the point; every other entry fails while one is up, or the window is blank.
+  expect?: "error" | "card";
+  // Once the screen is up, plays the fixture's timeline again with it open (the app opens on another project), and
+  // checks the screen after the last frame: for sequences such as a hub restart mid-chat (fixtures/resilience).
+  replay?: true;
+  // Runs on the real clock, not the fixture's fixed one. Playwright's fake clock formats an invalid date as now
+  // (Intl.DateTimeFormat#format(NaN)), where the real one throws: a crash that blanked the window hid behind it.
+  realClock?: true;
 }
 
 const gallerySections = [
@@ -146,6 +211,36 @@ const gallerySections = [
 // The fixtures' storefront project, a real hub project from the sanitized recording, so its id is a UUID; it shows
 // only in the route, never as text.
 const CHAT = "#/project/devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22";
+
+/** Makes a part throw while rendering, in the QA build (src/renderer/src/Boundary.tsx), so its error card shows. */
+const crash = (part: string) => async (page: Page) => {
+  await page.evaluate((p) => window.dispatchEvent(new CustomEvent("fleetd:qa-crash", { detail: p })), part);
+};
+
+/** The updates sheet, as the palette's "Check for updates" opens it (the app menu runs the same command). */
+const openUpdates = async (page: Page) => {
+  await page.keyboard.press("ControlOrMeta+K");
+  await page.getByRole("combobox", { name: "Search" }).fill("Check for updates");
+  await page.keyboard.press("Enter");
+};
+
+// storefront's PRs (fixtures/prs): the list alone, and #11 (in review, its reviewers at work), #10 (checks failed), #8
+// (merged), #14 (a person's, review asked for) and #13 (240 files) open.
+const PRS = CHAT.replace("#/project/", "#/prs/");
+const PR = (n: number) => `${PRS}/acme/storefront/${String(n)}`;
+const openChanges = (page: Page) => page.getByRole("tab", { name: /^Changes/u }).click();
+/**
+ * The PR reads still on their way (prs-loading never answers them). The gate waits out busy regions before it
+ * shoots, so the entry reaches the screen from a settled one, waits for the placeholder and then lifts its busy flag:
+ * the shot is what you see while the hub answers.
+ */
+const whileLoading = (go: (page: Page) => Promise<void>, shown: (page: Page) => Locator) => async (page: Page) => {
+  await go(page);
+  await shown(page).first().waitFor({ timeout: 10_000 });
+  await page.evaluate(() => {
+    for (const el of document.querySelectorAll("[aria-busy='true']")) el.removeAttribute("aria-busy");
+  });
+};
 
 /** An entry's name in test titles, shot files and the contact sheet. */
 export const label = (s: Pick<Screen, "id" | "variant">) => (s.variant === undefined ? s.id : `${s.id}~${s.variant}`);
@@ -204,9 +299,9 @@ export const screens: readonly Screen[] = [
     variant: "stopping",
     open: async (page) => {
       await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
-      await page.getByRole("button", { name: "Stop the lead" }).click();
-      await expect(page.getByRole("button", { name: "Stopping the lead" })).toBeDisabled();
-      await expect(page.getByText("Stopping the lead…")).toBeVisible();
+      await page.getByRole("button", { name: "Stop the lead and its agents" }).click();
+      await expect(page.getByRole("button", { name: "Stopping the lead and its agents" })).toBeDisabled();
+      await expect(page.getByText("Stopping the lead and its agents…")).toBeVisible();
     },
   },
   // ↑ in the empty box brings back your last message.
@@ -223,6 +318,9 @@ export const screens: readonly Screen[] = [
       await expect(box).toHaveValue("1 yes, 2 literal");
     },
   },
+  // The lead at work: under its reply, how long it has worked, what it is doing now and what its turn did so far;
+  // lead-long wraps, lead-counting only counts; lead-worked: the turn is over, and the line says how long it took.
+  { id: "chat", route: CHAT, fixtures: ["lead-planning", "lead-long", "lead-counting", "lead-worked"], variant: "activity" },
   // The line above the box says what the lead waits on, and Show brings the open approval into view.
   {
     id: "chat",
@@ -334,8 +432,7 @@ export const screens: readonly Screen[] = [
     },
     variant: "strip-scrolled",
   },
-  // The lead chat (lead-chat-spec.md), registered ahead of its slices, each pending until its writer lands it and
-  // deletes `pending` (check the id, route and open step then).
+  // The lead chat (lead-chat-spec.md).
   // A1 (F1): the sidebar's needs-you dot and running indicator around the remembered project's chat, and on Status
   // with status-rows (eight projects mixing both marks, neither, and a ~120-character name; only some have chats, so
   // it is shot beside Status rather than a chat).
@@ -348,6 +445,31 @@ export const screens: readonly Screen[] = [
   // UX-1 [5]: each row says why it wants you (reply, approve · 2, secret, blocked), and docs' reply that arrives
   // after the app opened is bold.
   { id: "shell", route: "#/status", fixtures: ["status-rows", "sidebar-reasons"], variant: "sidebar" },
+  // Hidden with its toggle in a wide window: the top row runs the full width, after the traffic lights.
+  {
+    id: "shell",
+    route: "#/",
+    fixtures: ["chat-waiting"],
+    variant: "sidebar-hidden",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Hide the sidebar" }).click();
+      await page.getByRole("navigation", { name: "Sidebar" }).waitFor({ state: "detached" });
+    },
+  },
+  // The smallest window: the sidebar has hidden itself, its toggle and the chat's title share the top row.
+  { id: "shell", route: "#/", fixtures: ["chat-waiting", "long-text"], variant: "narrow", sizes: ["narrow"] },
+  // ...and shown again with the toggle at that width, the chat beside it.
+  {
+    id: "shell",
+    route: "#/",
+    fixtures: ["chat-waiting", "long-text"],
+    variant: "narrow-open",
+    sizes: ["narrow"],
+    open: async (page) => {
+      await page.getByRole("button", { name: "Show the sidebar" }).click();
+      await page.getByRole("navigation", { name: "Sidebar" }).waitFor();
+    },
+  },
   // A2/A3 (F3, F4): the conversation and its composer: Markdown, paging through a long history with the migrated
   // orders, a reply streaming in, attachments, the lead waiting on you, a first message, and the link down.
   {
@@ -375,8 +497,39 @@ export const screens: readonly Screen[] = [
       await page.getByText("From before this chat").waitFor({ timeout: 10_000 });
     },
   },
+  // UX-1 [23]: a long reply streams in with the chat open, block by block; checked after its last delta.
+  { id: "chat", route: CHAT, fixtures: ["stream-long"], variant: "stream", replay: true },
   // UX-1 [10]: just set up, no chat has a message yet: the empty chat shows the checklist on its last step.
   { id: "chat", route: CHAT, fixtures: ["onboarding-first-chat"], variant: "first-chat" },
+  // Sequences that once blanked the window, replayed to the end: the chat must still be up, with no error card.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["resilience-burst", "resilience-hub-restart", "resilience-reconnect-streaming"],
+    variant: "resilience",
+    replay: true,
+    realClock: true,
+  },
+  // The error card itself, in place of the chat (the frame around it still works) and of the sidebar (the chat still
+  // works). The QA build's probe makes the part throw.
+  { id: "shell", route: CHAT, fixtures: ["typical", "long-text"], variant: "chat-card", expect: "card", open: crash("the chat") },
+  { id: "chat", route: CHAT, fixtures: ["typical"], variant: "sidebar-card", expect: "card", open: crash("the sidebar") },
+  // `#/` set again while it is turning into the last project's chat (#251), here mid-stream.
+  {
+    id: "chat",
+    route: "#/",
+    fixtures: ["chat-streaming"],
+    variant: "home-reset",
+    realClock: true,
+    open: async (page) => {
+      for (let i = 0; i < 5; i++) {
+        await page.evaluate(() => {
+          window.location.hash = "#/";
+        });
+        await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => done(null))));
+      }
+    },
+  },
   // A link to a project the hub doesn't have (here, a hub with none): says so, rather than loading forever.
   { id: "chat", route: CHAT, fixtures: ["empty"], variant: "missing", expect: "error" },
   // A5 (F5): the two inline items, every state: the masked secret field, the exact command with Approve / Deny, open
@@ -472,6 +625,136 @@ export const screens: readonly Screen[] = [
     open: (page) => page.getByRole("button", { name: /^Max agents: \d+ running of \d+/u }).click(),
     variant: "max-agents",
   },
+  // C1: updates. The sidebar's line above the connection for each state that has one, and the sheet the palette's
+  // "Check for updates" opens, for every state of this app (not checked yet, checking, a build that doesn't update,
+  // up to date, found, downloading to restart, ready, the deb's command, a failed check, a failed download) and of the
+  // hub (up to date, version unknown, a newer build on the channel, older than this app, there or on this computer).
+  {
+    id: "shell",
+    route: "#/",
+    fixtures: ["updates-available", "updates-downloading", "updates-ready", "updates-hub-behind"],
+    variant: "updates",
+  },
+  {
+    id: "updates",
+    route: "#/",
+    fixtures: [
+      "updates-idle",
+      "updates-checking",
+      "updates-unsupported",
+      "updates-current",
+      "updates-available",
+      "updates-downloading",
+      "updates-ready",
+      "updates-deb",
+      "updates-failed",
+      "updates-download-failed",
+      "updates-hub-current",
+      "updates-hub-unknown",
+      "updates-hub-available",
+      "updates-hub-behind",
+      "updates-hub-behind-local",
+    ],
+    open: openUpdates,
+  },
+  // Update the hub on devbox: what runs there (hub_info) and the command, saying when it restarts the hub. And on this
+  // computer when the command needs --channel, which Run in Terminal can't run: Copy only.
+  {
+    id: "updates",
+    route: "#/",
+    fixtures: ["updates-hub-behind", "updates-hub-behind-local-channel"],
+    variant: "update-the-hub",
+    open: async (page) => {
+      await openUpdates(page);
+      await page.getByRole("button", { name: "Update the hub" }).click();
+      await page.getByText("Running on the hub now, so it waits for these:").waitFor();
+    },
+  },
+  // Update the hub on this computer, idle: Run in Terminal opens fleetd update (a fixture opens nothing).
+  {
+    id: "updates",
+    route: "#/",
+    fixtures: ["updates-hub-behind-local"],
+    variant: "run-in-terminal",
+    open: async (page) => {
+      await openUpdates(page);
+      await page.getByRole("button", { name: "Update the hub" }).click();
+      await page.getByRole("button", { name: "Run in Terminal" }).click();
+      await page.getByText("fleetd update is running in Terminal.").waitFor();
+    },
+  },
+  // Update the hub when the hub can't say what runs on it.
+  {
+    id: "updates",
+    route: "#/",
+    fixtures: ["updates-hub-info-failed"],
+    variant: "update-the-hub",
+    open: async (page) => {
+      await openUpdates(page);
+      await page.getByRole("button", { name: "Update the hub" }).click();
+      await page.getByText(/^The hub couldn't say what's running/u).waitFor();
+    },
+  },
+  // Run in Terminal's failures: the hub isn't here, no fleetd command, no terminal; each with the command instead.
+  {
+    id: "updates",
+    route: "#/",
+    fixtures: ["updates-terminal-not-local", "updates-terminal-not-found", "updates-terminal-no-terminal"],
+    variant: "run-in-terminal",
+    open: async (page) => {
+      await openUpdates(page);
+      await page.getByRole("button", { name: "Update the hub" }).click();
+      await page.getByRole("button", { name: "Run in Terminal" }).click();
+      await page.getByRole("alert").waitFor();
+    },
+  },
+  // UX-1 A3: a project's PRs. The list (open first, then merged or closed lately), with nothing picked; none at all;
+  // GitHub out of reach; and a link to a project the hub doesn't have.
+  { id: "prs", route: PRS, fixtures: ["typical", "long-text", "many-agents", "prs-none", "prs-no-github", "prs-rate-limited", "hub-unreachable"] },
+  { id: "prs", route: PRS, fixtures: ["empty"], variant: "missing", expect: "error" },
+  {
+    id: "prs",
+    route: CHAT,
+    fixtures: ["prs-loading"],
+    variant: "loading",
+    open: whileLoading(
+      (page) => page.getByRole("button", { name: "Pull requests" }).click({ timeout: 10_000 }),
+      (page) => page.getByLabel("Loading the pull requests"),
+    ),
+  },
+  // One PR beside the list: its facts, description, checks, reviews with their findings, and its way to main so far.
+  // #10's checks failed after three approvals and an outdated review; a chat line's link names only the number.
+  { id: "prs.detail", route: PR(11), fixtures: ["typical", "long-text", "prs-no-github", "prs-rate-limited"] },
+  { id: "prs.detail", route: PR(10), fixtures: ["typical"], variant: "failed" },
+  { id: "prs.detail", route: PR(8), fixtures: ["typical"], variant: "merged" },
+  { id: "prs.detail", route: PR(14), fixtures: ["typical"], variant: "review-requested" },
+  {
+    id: "prs.detail",
+    route: CHAT,
+    fixtures: ["prs-loading"],
+    variant: "loading",
+    open: whileLoading(async (page) => {
+      await page.evaluate((r) => {
+        window.location.hash = r;
+      }, PR(11));
+    }, (page) => page.getByText(/^Loading #11/u)),
+  },
+  { id: "prs.detail", route: `${PRS}/11`, fixtures: ["typical"], variant: "by-number", sizes: ["small"] },
+  { id: "prs.detail", route: PR(11), fixtures: ["prs-error"], expect: "error" },
+  // Its changes: the files beside a diff drawn a screen at a time, one column or side by side, and a PR too big to
+  // load at once.
+  { id: "prs.detail", route: PR(11), fixtures: ["typical", "long-text", "prs-no-github"], variant: "changes", open: openChanges },
+  {
+    id: "prs.detail",
+    route: PR(11),
+    fixtures: ["typical"],
+    variant: "split",
+    open: async (page) => {
+      await openChanges(page);
+      await page.getByRole("button", { name: "Show side by side" }).click();
+    },
+  },
+  { id: "prs.detail", route: PR(13), fixtures: ["prs-heavy"], variant: "changes", open: openChanges },
   // ...lowered from the header, applied once the keys rest, with Undo.
   {
     id: "chat",
@@ -733,6 +1016,31 @@ export const screens: readonly Screen[] = [
   // Prompts before one is picked.
   { id: "settings.prompts", route: "#/settings/prompts", fixtures: ["settings-prompts"], variant: "none" },
   { id: "settings.general", route: "#/settings/general", fixtures: ["typical", "empty", "hub-unreachable"] },
+  // Notifications: the kinds, sound, the Dock badge, then the test's two answers: sent (with where to allow fleetd
+  // if nothing showed) and a system that shows none.
+  { id: "settings.notifications", route: "#/settings/notifications", fixtures: ["typical"] },
+  {
+    id: "settings.notifications",
+    route: "#/settings/notifications",
+    fixtures: ["typical"],
+    variant: "test-sent",
+    open: async (page, app) => {
+      await systemNotifications(app, true);
+      await page.getByRole("button", { name: "Send a test notification" }).click();
+      await page.getByRole("status").filter({ hasText: /^Sent\./u }).waitFor();
+    },
+  },
+  {
+    id: "settings.notifications",
+    route: "#/settings/notifications",
+    fixtures: ["typical"],
+    variant: "test-unsupported",
+    open: async (page, app) => {
+      await systemNotifications(app, false);
+      await page.getByRole("button", { name: "Send a test notification" }).click();
+      await page.getByRole("status").filter({ hasText: "doesn’t show notifications" }).waitFor();
+    },
+  },
   {
     id: "settings.prompts",
     route: "#/settings/prompts?prompt=lead.start",
@@ -751,6 +1059,18 @@ export const screens: readonly Screen[] = [
     id: "status.fleet",
     route: "#/status",
     fixtures: ["typical", "status-rows", "long-text", "empty", "many-agents", "hub-unreachable", "status-stale", "status-planning", "status-skeleton"],
+  },
+  // A held figure: the bar's hover marks it, with why, above the drop that came before it. Nothing moves.
+  {
+    id: "status.fleet",
+    route: "#/status",
+    fixtures: ["status-paused"],
+    variant: "paused",
+    open: async (page) => {
+      await page.getByRole("img", { name: /^78% done/u }).hover();
+      await page.getByText("Held at 78% (paused: an agent hit a usage limit)").waitFor();
+      await page.getByText("↓ 61% → 55%: CI failed on #212").waitFor();
+    },
   },
   // F7: the time inspector (fixtures/time): an order's timeline, ~15k spans in time-heavy; the fleet's breakdown;
   // its insights. Each tab's root carries its own id, so the three are shot apart.
@@ -774,9 +1094,3 @@ export const screens: readonly Screen[] = [
     open: (page) => page.getByRole("tab", { name: "Insights" }).click(),
   },
 ];
-
-// Platform checks that need a screen writer's work before they can pass; the owner turns theirs on when it lands.
-export const platformChecks: Record<"appMenu", boolean> = {
-  // F1: the macOS app menu, with an Edit menu wired to the text actions.
-  appMenu: true,
-};

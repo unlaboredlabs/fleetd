@@ -2,11 +2,11 @@
 // its native traffic lights (a page screenshot leaves them out).
 
 import { execFileSync } from "node:child_process";
-import { mkdirSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
 import { launch, pngSize, resultsDir, setNativeView, type Shot, settle, show } from "./harness.ts";
-import { platformChecks, sizes, themes } from "./registry.ts";
+import { sizes, themes } from "./registry.ts";
 
 test.describe.configure({ mode: "parallel" });
 
@@ -35,7 +35,7 @@ test("every text face is a font the app bundles, never a system fallback", async
 });
 
 test("the macOS app menu has an Edit menu wired to the text actions", async () => {
-  test.skip(process.platform !== "darwin" || !platformChecks.appMenu, "macOS only, on once F1's menu lands");
+  test.skip(process.platform !== "darwin", "macOS only");
   const { app, close } = await launch("typical");
   try {
     const roles = await app.evaluate(({ Menu }) => {
@@ -56,9 +56,9 @@ test("the macOS window, traffic lights included, for the contact sheet", async (
     const dir = path.join(resultsDir, "png");
     mkdirSync(dir, { recursive: true });
     mkdirSync(path.join(resultsDir, "shots"), { recursive: true });
-    // The largest QA size every runner's screen holds (the smallest is 1024×768), shown as the real window lays it
-    // out: no viewport override, which would lay out a wider page than the window and crop it.
-    const size = "small";
+    // A size every runner's screen holds (the smallest is 1024×768), shown as the real window lays it out: no
+    // viewport override, which would lay out a wider page than the window and crop it.
+    const size = "window";
     for (const theme of themes) {
       await setNativeView(app, page, size, theme);
       await settle(page);
@@ -114,6 +114,47 @@ test("the macOS window, traffic lights included, for the contact sheet", async (
       const shot: Shot = { screen: "window", fixture: "typical", size, theme, scale: real, platform: "darwin", png, scrolled: [], findings: [] };
       writeFileSync(path.join(resultsDir, "shots", `${name}.json`), JSON.stringify(shot, null, 2));
     }
+  } finally {
+    await close();
+  }
+});
+
+test("a window whose page dies reloads at its route and logs why; crash dumps go beside the log", async () => {
+  const { app, page, close } = await launch("typical");
+  try {
+    await show(page, "status.fleet", "#/status");
+    const { logs, dumps } = await app.evaluate(({ app: a }) => ({ logs: a.getPath("logs"), dumps: a.getPath("crashDumps") }));
+    const log = () => (existsSync(path.join(logs, "app.log")) ? readFileSync(path.join(logs, "app.log"), "utf8") : "(no app.log)");
+    // Playwright's page stays on the dead renderer, so the reloaded one is read through main. A MutationObserver,
+    // not requestAnimationFrame, which a window in the background may never run. The renderer is killed rather than
+    // crashed with forcefullyCrashRenderer: on the Linux runners that one logged "Crashing because hung" and then never
+    // went (no render-process-gone), so the reload this checks never had a cause.
+    const screen = await app
+      .evaluate(async ({ BrowserWindow }) => {
+        const page = BrowserWindow.getAllWindows()[0]?.webContents;
+        if (!page) throw new Error("the app opened no window");
+        const within = <T,>(what: string, p: Promise<T>) =>
+          Promise.race([p, new Promise<never>((_, fail) => setTimeout(() => fail(new Error(`no ${what} within 20 s`)), 20_000))]);
+        const gone = new Promise((done) => page.once("render-process-gone", () => done(null)));
+        const reloaded = new Promise((done) => page.once("did-finish-load", () => done(null)));
+        process.kill(page.getOSProcessId(), "SIGKILL");
+        await within("render-process-gone", gone);
+        await within("reload", reloaded);
+        return within(
+          "status screen",
+          page.executeJavaScript(
+            `new Promise((done) => { const found = () => document.querySelector('[data-screen="status.fleet"]'); if (found()) return done("status.fleet"); new MutationObserver((_, o) => { if (found()) { o.disconnect(); done("status.fleet"); } }).observe(document, { subtree: true, childList: true, attributes: true }); })`,
+          ) as Promise<string>,
+        );
+      })
+      .catch((error: unknown) => {
+        throw new Error(`${error instanceof Error ? error.message : String(error)}\napp.log:\n${log()}`);
+      });
+    expect(screen).toBe("status.fleet");
+    expect(log()).toMatch(/main v\S+ #\/status: The window's page died \((?:crashed|killed), exit code -?\d+\); reloading it/u);
+    // crashReporter is on, with its database beside the log (a killed renderer leaves no dump).
+    expect(dumps).toBe(path.join(logs, "crashes"));
+    expect(existsSync(path.join(dumps, "settings.dat"))).toBe(true);
   } finally {
     await close();
   }

@@ -1,18 +1,19 @@
 //! The ops areas' ports over the real hub: one `OpsPorts` per hub, built empty in `serve::build_on` (before the
 //! `Hub` exists) and bound to it in `serve::start_loops`. Every method reads the other areas through `Hub`.
-use super::ports::{self, BoxFut, HubEvent, NewEvent, ThreadRef, WaitInput, WaitPage};
-use super::service::UsageQueue;
+use super::ports::{self, BoxFut, NewEvent, ThreadRef, WaitInput, WaitPage};
+use super::service::{UsageOwners, UsageQueue};
 use super::source::{UsageReading, UsageSource};
+use super::state::{Owner, ParkedKind, ParkedThread};
 use crate::hub::api::Hub;
 use crate::hub::store;
+use crate::hub::tasks::records::{ENDED_STATES, TaskRecords};
+use fleetd_contracts::events::HubEvent;
 use serde_json::Value;
 use std::sync::{Arc, OnceLock, Weak};
 
 #[derive(Default)]
 pub struct OpsPorts {
     hub: OnceLock<Weak<Hub>>,
-    /// The retro's claude runner, built on first use (it needs the hub's home and router model).
-    pub(super) retro_runner: OnceLock<crate::hub::intake::oneshot::OneShot>,
 }
 
 impl OpsPorts {
@@ -51,12 +52,10 @@ impl ports::EventLog for OpsPorts {
             }
             let typed: store::NewEvent =
                 serde_json::from_value(json).expect("ops events use contract event types");
-            let appended = self
-                .hub()
+            self.hub()
                 .events
                 .append(typed)
-                .expect("the event log appends");
-            convert(&appended).expect("a hub event reads back")
+                .expect("the event log appends")
         })
     }
 
@@ -86,7 +85,7 @@ impl ports::EventLog for OpsPorts {
                 .await
             {
                 Ok(page) => WaitPage {
-                    events: page.events.iter().filter_map(convert).collect(),
+                    events: page.events,
                     cursor: page.cursor.max(0) as u64,
                     more: page.more,
                 },
@@ -119,6 +118,64 @@ impl UsageQueue for OpsPorts {
     }
 }
 
+fn logged<T, E: std::fmt::Display>(result: Result<T, E>, what: &str) -> Option<T> {
+    result
+        .map_err(|error| tracing::warn!(%error, "ops: {what} failed"))
+        .ok()
+}
+
+impl OpsPorts {
+    /// The thread is a lead's current one.
+    fn is_lead_thread(&self, machine_id: &str, thread_id: &str) -> bool {
+        logged(self.hub().leads.records.leads_list(), "listing leads")
+            .unwrap_or_default()
+            .iter()
+            .any(|l| {
+                l.project_ref.machine_id.as_str() == machine_id && l.thread_id.as_str() == thread_id
+            })
+    }
+}
+
+impl UsageOwners for OpsPorts {
+    fn owner_of(&self, thread: &ThreadRef) -> BoxFut<'_, Option<Owner>> {
+        let target: Option<fleetd_contracts::ids::ThreadRef> = convert(thread);
+        let (machine_id, thread_id) = (thread.machine_id.clone(), thread.thread_id.clone());
+        Box::pin(async move {
+            let hub = self.hub();
+            if let Some(target) = target {
+                let task = hub.db.with(|c| Ok(TaskRecords::by_thread(c, &target)?));
+                if let Some(stored) = logged(task, "reading a thread's task").flatten() {
+                    return Some(Owner {
+                        kind: convert(&stored.task.kind)?,
+                        task_id: Some(stored.task.task_id.to_string()),
+                    });
+                }
+            }
+            self.is_lead_thread(&machine_id, &thread_id)
+                .then_some(Owner {
+                    kind: ParkedKind::Lead,
+                    task_id: None,
+                })
+        })
+    }
+
+    fn still_parked(&self, parked: &ParkedThread) -> BoxFut<'_, bool> {
+        let parked = parked.clone();
+        Box::pin(async move {
+            if parked.kind == ParkedKind::Lead {
+                return self.is_lead_thread(&parked.thread.machine_id, &parked.thread.thread_id);
+            }
+            let Some(task_id) = parked.task_id.as_ref().and_then(convert) else {
+                return false;
+            };
+            let stored = self.hub().db.with(|c| Ok(TaskRecords::get(c, &task_id)?));
+            logged(stored, "reading a task")
+                .flatten()
+                .is_some_and(|s| !ENDED_STATES.contains(&s.task.state))
+        })
+    }
+}
+
 fn machine(m: &str) -> Option<fleetd_contracts::ids::MachineId> {
     convert(&m)
 }
@@ -144,7 +201,6 @@ impl UsageSource for OpsPorts {
 use crate::hub::doctor::DoctorFleet;
 use crate::hub::doctor::checks::MachineView;
 use crate::hub::doctor::service::ActionOutcome;
-use crate::hub::retro::records::SqlRunner;
 use crate::hub::usage::service::UsageStatus;
 
 impl DoctorFleet for OpsPorts {
@@ -181,6 +237,19 @@ impl DoctorFleet for OpsPorts {
             }
         })
     }
+    fn guard(
+        &self,
+        machine_id: &str,
+    ) -> (
+        Option<fleetd_contracts::node_link::NodeDisk>,
+        Option<String>,
+    ) {
+        let Some(m) = machine(machine_id) else {
+            return (None, None);
+        };
+        let link = &self.hub().link;
+        (link.load(&m).and_then(|l| l.disk), link.paused(&m))
+    }
     fn project_areas(
         &self,
         machine_id: &str,
@@ -201,6 +270,7 @@ impl DoctorFleet for OpsPorts {
                         title: p.title,
                         areas: resolved.policy.areas.into_keys().collect(),
                         inferred: resolved.inferred,
+                        ignored_defaults: resolved.ignored_defaults,
                     });
                 }
             }
@@ -259,23 +329,10 @@ impl DoctorFleet for OpsPorts {
                 .await
                 .map_err(|e| e.message)?;
             Ok(ActionOutcome {
-                ok: result.ok,
                 message: result.message.to_string(),
                 probe: result.probe.as_ref().and_then(convert),
             })
         })
-    }
-}
-
-impl SqlRunner for OpsPorts {
-    fn run(
-        &self,
-        f: &mut dyn FnMut(&rusqlite::Connection) -> rusqlite::Result<()>,
-    ) -> Result<(), String> {
-        self.hub()
-            .db
-            .with(|c| f(c).map_err(store::StoreError::from))
-            .map_err(|e| e.to_string())
     }
 }
 
@@ -301,12 +358,11 @@ impl crate::hub::queue::ports::UsageHold for super::Usage {
     }
 }
 
-/// The four ops services over one set of ports, for `serve::build_on`.
+/// The three ops services over one set of ports, for `serve::build_on`.
 pub struct Ops {
     pub ports: Arc<OpsPorts>,
     pub usage: Arc<super::Usage>,
     pub doctor: Arc<crate::hub::doctor::Doctor>,
-    pub retro: Arc<crate::hub::retro::Retro>,
     pub approvals: Arc<crate::hub::approvals::Approvals>,
 }
 
@@ -330,15 +386,6 @@ pub fn build(
         events: ports.clone(),
         clock: clock.clone(),
     });
-    let retro = crate::hub::retro::Retro::new(crate::hub::retro::RetroDeps {
-        db: ports.clone(),
-        runner: ports.clone(),
-        playbooks: ports.clone(),
-        ledger: ports.clone(),
-        work: ports.clone(),
-        events: ports.clone(),
-        clock: clock.clone(),
-    });
     let approvals = crate::hub::approvals::Approvals::new(crate::hub::approvals::ApprovalsDeps {
         requests,
         nodes: ports.clone(),
@@ -350,23 +397,21 @@ pub fn build(
         ports,
         usage,
         doctor,
-        retro,
         approvals,
     }
 }
 
-/// Binds the ports to the hub and starts the ops loops: usage's follower, approvals' answers, the retro's schedule,
-/// and the doctor's 15-minute run.
+/// Binds the ports to the hub and starts the ops loops: usage's follower, approvals' answers and the
+/// doctor's 15-minute run.
 pub fn start(hub: &Arc<Hub>) -> Vec<tokio::task::JoinHandle<()>> {
     hub.ops.bind(hub);
     // No new turn goes into a login fleetd knows is exhausted.
     hub.executors.hooks.gate_launch(Arc::new(|hub, machine_id| {
         Box::pin(async move { hub.usage.gate(machine_id.as_str()) })
     }));
-    let (usage, approvals, retro, doctor, stop) = (
+    let (usage, approvals, doctor, stop) = (
         hub.usage.clone(),
         hub.approvals.clone(),
-        hub.retro.clone(),
         hub.doctor.clone(),
         hub.shutdown.clone(),
     );
@@ -383,7 +428,6 @@ pub fn start(hub: &Arc<Hub>) -> Vec<tokio::task::JoinHandle<()>> {
     vec![
         until_stop(Box::pin(async move { usage.serve().await })),
         until_stop(Box::pin(async move { approvals.serve().await })),
-        until_stop(Box::pin(async move { retro.serve().await })),
         until_stop(Box::pin(async move {
             loop {
                 doctor.run_if_due().await;

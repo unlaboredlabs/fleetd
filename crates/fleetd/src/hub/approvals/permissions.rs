@@ -8,9 +8,10 @@ use super::{
     ApprovalRefused, Approvals, Caller, NodeCommandError, contract_project, project_of, refuse,
 };
 use crate::hub::prompts::fixed::{DenyReason, denied};
-use crate::hub::usage::ports::{HubEvent, NewEvent, ProjectRef, WaitInput};
+use crate::hub::usage::ports::{NewEvent, ProjectRef, WaitInput};
 use crate::hub::usage::time::{clip, iso, parse_ms, system_ms};
 use fleetd_contracts::chat::ChatRequestId;
+use fleetd_contracts::events::{HubEvent, HubEventType};
 use fleetd_contracts::ledger::{HumanRequest, RequestKind, RequestState, ToolPermission};
 use fleetd_contracts::sessions::{PendingPermission, PermissionDecision};
 use fleetd_contracts::tasks::POLICY_FILE_PATH;
@@ -409,21 +410,23 @@ impl Approvals {
     }
 
     pub(super) async fn on_thread_event(&self, event: &HubEvent) {
-        let (Some(machine_id), Some(thread_id)) = (&event.machine_id, &event.thread_id) else {
+        let (Some(machine_id), Some(thread_id)) =
+            (event.machine_id.as_deref(), event.thread_id.as_deref())
+        else {
             return;
         };
         let data = event.data.clone().unwrap_or(Value::Null);
         if data.get("reminder").and_then(Value::as_bool) == Some(true) {
             return;
         }
-        let waiting = event.kind == "thread.waiting";
+        let waiting = event.r#type == HubEventType::ThreadWaiting;
         let current: Option<PendingPermission> = data
             .get("permission")
             .and_then(|p| serde_json::from_value(p.clone()).ok());
         if waiting && current.is_none() {
             return;
         }
-        let why = if waiting || event.kind == "thread.started" {
+        let why = if waiting || event.r#type == HubEventType::ThreadStarted {
             "closed: the prompt was answered elsewhere"
         } else {
             "expired: the run ended"
@@ -452,8 +455,8 @@ impl Approvals {
             return;
         };
         let project = ProjectRef {
-            machine_id: machine_id.clone(),
-            project_id: project_id.clone(),
+            machine_id: machine_id.to_owned(),
+            project_id: project_id.to_string(),
         };
         self.raise(&project, thread_id, &prompt).await;
     }
@@ -515,7 +518,6 @@ impl Approvals {
                 text: clip(&format!("{machine}/{thread_id}: {tool} {summary}"), 500),
                 secret: None,
                 gated: None,
-                playbook: None,
                 permission: Some(ToolPermission {
                     thread_id: fleetd_contracts::ids::ThreadId::unchecked(thread_id),
                     request_id: prompt.request_id.clone(),

@@ -13,9 +13,10 @@ fleetd is one Cargo workspace and the desktop app. The shipped `fleetd` is one s
   re-recording the fixtures in the same PR.
 - `crates/fleetd-contracts`: serde types for everything that crosses a wire between fleetd components, shared by the
   binary and the app. `cargo run -p fleetd-contracts --bin fleetd-schema` rewrites the committed JSON Schemas in
-  `schema/` and the desktop app's TypeScript in `app/desktop/src/shared/contracts/generated/`; a test and a CI step
-  (`fleetd-schema --check`) fail while either is out of date or hand-edited. A Rust enum a newer hub may extend gets
-  `#[schemars(extend("x-open" = true))]`, so the app's type also admits values it doesn't know yet.
+  `schema/` and the desktop app's TypeScript in `app/desktop/src/shared/contracts/generated/`; a test
+  (`schema::generated_contracts_are_current`) fails while either is out of date or hand-edited. A Rust enum a newer
+  hub may extend gets `#[schemars(extend("x-open" = true))]`, so the app's type also admits values it doesn't know
+  yet.
 - `playbooks/`: the built-in playbooks, embedded in the binary.
 - `app/desktop`: the desktop app, Electron + React (see below). Its own pnpm workspace, outside Cargo.
 - `tests/lab`: the end-to-end lab suite.
@@ -71,8 +72,10 @@ The lab runs the release binary end to end: a hub and two nodes, driven through 
 `fleetd node` with its own HOME under the lab directory, so it has its own `~/.fleetd` and its own `~/.claude`,
 which its sessions use as a real machine's sessions use the user's. The lab copies your `claude` login material into
 it (the login variables and `apiKeyHelper` from `~/.claude/settings.json`, and `.credentials.json` if you have one),
-deletes the copies when the run ends, and never writes under your real `~/.claude` or `~/.fleetd`. It isn't run in CI. It costs a
-handful of small `claude` haiku turns, and needs Node 24 or newer to run its TypeScript. The m7, m9, time, noci and
+deletes the copies when the run ends, and never writes under your real `~/.claude` or `~/.fleetd`. It isn't run in CI. Mechanics
+scenarios run small `claude` turns on `claude-opus-5-5` at medium effort. Behaviour scenarios run the lead (and, in `eff`, the writer)
+on the model fleetd ships, `claude-opus-5-5` at high effort, because the prompts are written for it: the `chat` lead,
+`steer`, and `eff`'s slices. The lab needs Node 24 or newer to run its TypeScript. The m7, m9, time, noci and
 demo scenarios also use your `gh` login and the public lab repository `unlaboredlabs/fleetd-lab`.
 
 ```sh

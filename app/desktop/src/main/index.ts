@@ -1,7 +1,11 @@
 // Before anything else: a release build refuses debugging switches before Chromium can act on them.
 import "./debug-guard";
-import { isAbsolute, join } from "node:path";
-import { app, BrowserWindow, nativeTheme, powerMonitor, session } from "electron";
+import { existsSync } from "node:fs";
+import { homedir, release } from "node:os";
+import { dirname, isAbsolute, join } from "node:path";
+import { app, BrowserWindow, clipboard, crashReporter, dialog, nativeTheme, powerMonitor, session, shell } from "electron";
+import { asError } from "../shared/scrub";
+import { AppLog, diagnostics } from "./applog";
 import { RELEASE_BUILD } from "./build";
 import { fixtureRequest, loadFixture } from "./hub/fixture";
 import { fromEnv } from "./hub/credentials";
@@ -19,7 +23,8 @@ import { Notifier } from "./notify";
 import { claimOnFirstRun } from "./linkHandlerMain";
 import { listenForLinks } from "./links";
 import { Opener } from "./opener";
-import { harden, lockSession, pageUrl } from "./security";
+import { FAILURES_IN_A_ROW, guardWindow } from "./recovery";
+import { harden, isOwnPage, lockSession, pageUrl } from "./security";
 import { updates } from "./updater";
 import { restorePlacement, trackPlacement } from "./windowState";
 
@@ -27,7 +32,9 @@ import { restorePlacement, trackPlacement } from "./windowState";
 const TOP_BAR = 44;
 const TRAFFIC_LIGHT = 16;
 
-const LIMITS = { width: 1400, height: 900, minWidth: 1024, minHeight: 700 };
+// Below 1000 px wide the sidebar hides itself (renderer/screens/shell/Shell.tsx), so a 900 px window still gives the
+// chat its full width.
+const LIMITS = { width: 1400, height: 900, minWidth: 900, minHeight: 600 };
 
 /**
  * The fleetd dir, shared with the CLI (app-pair.json) and the GPUI app (hub.json): `<appData>/fleetd`, i.e.
@@ -37,6 +44,50 @@ const fleetdHome = process.env["FLEETD_HOME"];
 const FLEETD_DIR = fleetdHome !== undefined && isAbsolute(fleetdHome) ? fleetdHome : join(app.getPath("appData"), "fleetd");
 // Chromium's own state (caches, local storage) stays in a subdirectory, unless the caller chose one.
 if (!app.commandLine.hasSwitch("user-data-dir")) app.setPath("userData", join(FLEETD_DIR, "desktop"));
+
+// The app log and crash dumps: the OS log directory (macOS ~/Library/Logs/fleetd; Linux $XDG_STATE_HOME/fleetd, by
+// default ~/.local/state/fleetd), or FLEETD_HOME/logs, so a test run never writes to the real one.
+const xdgState = process.env["XDG_STATE_HOME"];
+app.setAppLogsPath(
+  fleetdHome !== undefined && isAbsolute(fleetdHome)
+    ? join(fleetdHome, "logs")
+    : process.platform === "linux"
+      ? join(xdgState !== undefined && isAbsolute(xdgState) ? xdgState : join(homedir(), ".local", "state"), "fleetd")
+      : undefined,
+);
+const appLog = new AppLog(join(app.getPath("logs"), "app.log"), { version: app.getVersion(), home: homedir() });
+// A crash leaves a minidump beside the log; nothing is uploaded.
+app.setPath("crashDumps", join(app.getPath("logs"), "crashes"));
+crashReporter.start({ uploadToServer: false });
+process.on("uncaughtException", (error) => {
+  appLog.write({ source: "main", what: "Uncaught exception in main", error: asError(error) });
+  console.error(error);
+});
+process.on("unhandledRejection", (reason) => {
+  appLog.write({ source: "main", what: "Unhandled rejection in main", error: asError(reason) });
+  console.error(reason);
+});
+let quitting = false;
+app.on("before-quit", () => {
+  quitting = true;
+});
+/** Set once the hub service exists, for Copy Diagnostics. */
+let hubService: HubService | null = null;
+const diagnosticsText = (): string =>
+  diagnostics({
+    version: app.getVersion(),
+    versions: { electron: process.versions.electron, chrome: process.versions.chrome },
+    os: `${process.platform} ${release()} ${process.arch}`,
+    hub: hubService?.state() ?? { phase: "unpaired" },
+    log: appLog,
+  });
+const help = {
+  revealLogs: () => {
+    if (existsSync(appLog.file)) shell.showItemInFolder(appLog.file);
+    else void shell.openPath(dirname(appLog.file));
+  },
+  copyDiagnostics: () => void clipboard.writeText(diagnosticsText()),
+};
 
 // Idle memory (perf/budgets.ts): the network service runs in this process, not a utility process of its own. Pages
 // load only app:// and the hub socket is Node's, so it carries next to nothing.
@@ -86,9 +137,19 @@ const createWindow = (mode: HubMode): BrowserWindow => {
     minHeight: LIMITS.minHeight,
     show: false,
     title: "fleetd",
-    // Painted before the page is, so a dark system never flashes white.
-    backgroundColor: nativeTheme.shouldUseDarkColors ? "#111214" : "#ffffff",
-    ...(mac ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 16, y: (TOP_BAR - TRAFFIC_LIGHT) / 2 } } : {}),
+    // Painted before the page is, so a dark system never flashes white. On macOS the window's own material shows
+    // instead: the page paints everything but the sidebar, which stays clear over it.
+    backgroundColor: mac ? "#00000000" : nativeTheme.shouldUseDarkColors ? "#111214" : "#ffffff",
+    ...(mac
+      ? {
+          titleBarStyle: "hiddenInset" as const,
+          trafficLightPosition: { x: 16, y: (TOP_BAR - TRAFFIC_LIGHT) / 2 },
+          // The translucent sidebar: an NSVisualEffectView the window server composites behind the page. It is
+          // static (nothing in the page repaints for it) and goes opaque on its own with Reduce transparency.
+          vibrancy: "sidebar" as const,
+          visualEffectState: "followWindow" as const,
+        }
+      : {}),
     webPreferences: {
       preload: join(import.meta.dirname, "../preload/index.cjs"),
       contextIsolation: true,
@@ -96,8 +157,13 @@ const createWindow = (mode: HubMode): BrowserWindow => {
       nodeIntegration: false,
       webSecurity: true,
       spellcheck: false,
-      // The page shows a "sample data" banner for as long as a fixture stands in for the hub.
-      additionalArguments: mode.kind === "fixture" ? [`--fleetd-fixture=${mode.fixture.name}`] : [],
+      additionalArguments: [
+        // The version, for an error card's Copy details.
+        `--fleetd-version=${app.getVersion()}`,
+        // The page shows a "sample data" banner for as long as a fixture stands in for the hub.
+        ...(mode.kind === "fixture" ? [`--fleetd-fixture=${mode.fixture.name}`] : []),
+        ...(mac ? ["--fleetd-vibrancy"] : []),
+      ],
     },
   });
   win.once("ready-to-show", () => {
@@ -105,7 +171,29 @@ const createWindow = (mode: HubMode): BrowserWindow => {
     if (placement.fullScreen) win.setFullScreen(true);
     win.show();
   });
+  // With no window the page can't keep the count current; a stale one would lie.
+  win.once("closed", () => app.setBadgeCount(0));
   trackPlacement(win);
+  guardWindow(win, {
+    log: appLog,
+    load: (url) => void win.loadURL(url ?? pageUrl()),
+    ask: () =>
+      dialog
+        .showMessageBox(win, {
+          type: "error",
+          message: "fleetd’s window keeps failing",
+          detail: `It failed ${String(FAILURES_IN_A_ROW)} times in a row. Reload to try again, or copy the diagnostics for a bug report.`,
+          buttons: ["Reload", "Copy Diagnostics", "Quit"],
+          defaultId: 0,
+          cancelId: 0,
+          noLink: true,
+        })
+        .then((r) => r.response),
+    copyDiagnostics: help.copyDiagnostics,
+    quit: () => app.quit(),
+    quitting: () => quitting,
+    isOwnPage,
+  });
   opener.attach(win);
   instrument(win);
   void win.loadURL(pageUrl());
@@ -120,11 +208,14 @@ void app.whenReady().then(() => {
   let mode: HubMode;
   let pairing: PairingService;
   let hub: HubService;
+  let fixtureFile: string | null;
   try {
     const chosen = hubMode();
+    fixtureFile = chosen.fixtureFile;
     mode = chosen.mode;
     const service = new HubService(mode);
     hub = service;
+    hubService = service;
     const connect = (url: string, key: string) => service.connect({ url, key });
     const firstRun = () => service.state().phase === "unpaired";
     pairing = new PairingService(
@@ -133,13 +224,14 @@ void app.whenReady().then(() => {
         : fixturePairingDeps(chosen.fixtureFile, connect, firstRun),
     );
   } catch (error) {
+    appLog.write({ source: "main", what: "fleetd couldn't start", error: asError(error) });
     console.error(error instanceof Error ? error.message : error);
     app.exit(2);
     return;
   }
-  registerIpc(hub, { opener, notifier: new Notifier(opener) }, pairing);
-  const updater = updates();
-  installMenu(opener, updater?.checkNow ?? null);
+  const updater = updates(fixtureFile);
+  registerIpc(hub, { opener, notifier: new Notifier(opener), log: appLog, updates: updater }, pairing);
+  installMenu(opener, help);
   claimOnFirstRun();
   app.on("browser-window-focus", () => hub.windowFocused());
   powerMonitor.on("resume", () => hub.systemResumed());
@@ -151,7 +243,7 @@ void app.whenReady().then(() => {
     },
   });
   createWindow(mode);
-  updater?.start();
+  updater.start();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow(mode);
   });

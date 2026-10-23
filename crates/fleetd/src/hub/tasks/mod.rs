@@ -1,4 +1,4 @@
-//! fleetd-owned tasks: every subagent a lead runs. Spawn resolves model and effort, takes leases (writers) and a
+//! fleetd-owned tasks: every subagent a lead runs. Spawn resolves the profile, takes leases (writers) and a
 //! slot or queues with the reason, and launches a thread (writers in a new worktree on `<branchPrefix><taskId>-<slug>`,
 //! `fleetd/` by default).
 //! The thread's status transitions, read off the event log, end the task: the result goes into the record and,
@@ -8,6 +8,8 @@ pub mod cap;
 #[cfg(test)]
 mod cap_tests;
 pub mod glob;
+#[cfg(test)]
+mod guard_tests;
 pub mod hooks;
 pub mod policy;
 pub mod ports;
@@ -39,10 +41,10 @@ use crate::hub::store::{
     EventLog, HubDb, HubStore, NewEvent, StoreError, WaitInput, iso_ms, now_ms,
 };
 use fleetd_contracts::mcp::ErrorCode;
-use hooks::{ResultReceipts, SpawnCheck, UsageGate};
+use hooks::{ResultReceipts, UsageGate};
 use ports::{LaunchRequest, PortError, TaskError, TaskPorts, WakeKind, Worktree};
 use render::{branch_for, find_pr_url, render_task_prompt, tail_of};
-use resolve::{ModelEffort, resolve_model_effort};
+use resolve::resolve_profile;
 
 pub use records::{StoredTask, TaskRecords};
 
@@ -77,7 +79,7 @@ pub struct TaskDeps {
     pub policies: Arc<Policies>,
 }
 
-const THREAD_EVENTS: [HubEventType; 7] = [
+const THREAD_EVENTS: [HubEventType; 9] = [
     HubEventType::ThreadStarted,
     HubEventType::ThreadWaiting,
     HubEventType::ThreadCompleted,
@@ -86,6 +88,10 @@ const THREAD_EVENTS: [HubEventType; 7] = [
     HubEventType::ThreadUsageLimited,
     // M4 usage: a lifted pause lets queued tasks start.
     HubEventType::UsageResumed,
+    // The disk and load guard: the same, for a machine with room again.
+    HubEventType::MachineGuard,
+    // A merged writer's worktree goes.
+    HubEventType::PrMerged,
 ];
 
 const OUT_OF_AREA_MAX: usize = 20;
@@ -219,7 +225,7 @@ pub struct Tasks {
     /// task is never paused, and a paused one that asks isn't continued until the answer is in its resume. Not kept
     /// across a hub restart: then the answer still reaches the task, only maybe after its resume.
     asking: Mutex<HashSet<TaskId>>,
-    /// Set once in `hub/serve` (`wire::wire`) to usage, the value bar and receipts; unset passes through.
+    /// Set once in `hub/serve` (`wire::wire`) to usage and receipts; unset passes through.
     pub hooks: TaskHooks,
     cursor: i64,
     /// The last thread event applied, by the follower or by a retry catching up (read and written under `lock`).
@@ -229,7 +235,6 @@ pub struct Tasks {
 #[derive(Default)]
 pub struct TaskHooks {
     pub usage: OnceLock<Arc<dyn UsageGate>>,
-    pub spawn_check: OnceLock<Arc<dyn SpawnCheck>>,
     pub receipts: OnceLock<Arc<dyn ResultReceipts>>,
 }
 
@@ -291,6 +296,7 @@ impl Tasks {
         let mut data = Map::new();
         data.insert("taskId".into(), json!(task.task_id));
         data.insert("workstreamId".into(), json!(task.workstream_id));
+        data.insert("createdAt".into(), json!(task.created_at));
         if let Some(branch) = &task.branch {
             data.insert("branch".into(), json!(branch));
         }
@@ -423,8 +429,7 @@ impl Tasks {
         let request = LaunchRequest {
             project_id: r.project_id.clone(),
             prompt: prompt.clone(),
-            model: task.model.as_str().to_owned(),
-            effort: task.effort,
+            profile: task.profile,
             title: js_prefix(
                 &format!("{}: {}", task.task_id.as_str(), task.title.as_str()),
                 80,
@@ -614,6 +619,12 @@ impl Tasks {
         if let Some(paused) = self.hooks.usage.get().and_then(|u| u.gate(&r.machine_id)) {
             return self.queue(stored, "usage", &paused);
         }
+        let continuing = task.thread_ref.is_some() && stored.pending_message.is_some();
+        // The disk and load guard holds new agents only; machine.guard runs the queue again. One with a thread
+        // continues in the worktree it has.
+        if !continuing && let Some(paused) = self.d.ports.paused(&r.machine_id) {
+            return self.queue(stored, "guard", &paused);
+        }
         let slot = self.d.slots.acquire(SlotRequest {
             holder: task.task_id.as_str(),
             project_ref: r,
@@ -623,7 +634,6 @@ impl Tasks {
             return self.queue(stored, "slot", &reason);
         }
 
-        let continuing = task.thread_ref.is_some() && stored.pending_message.is_some();
         // A paused agent's thread is still pushing its work: it continues once that turn ended, when its stop frees
         // the slot and runs the queue again. One that asked its lead meanwhile continues with the answer.
         if continuing && self.asking.lock().unwrap().contains(&task.task_id) {
@@ -702,10 +712,9 @@ impl Tasks {
             )
         } else {
             format!(
-                "{} started ({}/{}): {}",
+                "{} started ({}): {}",
                 task.task_id.as_str(),
-                task.model.as_str(),
-                render::effort_str(task.effort),
+                task.profile.as_str(),
                 task.title.as_str()
             )
         };
@@ -894,9 +903,13 @@ impl Tasks {
     }
 
     async fn on_thread_event(self: &Arc<Self>, event: &HubEvent) -> Result<(), StoreError> {
-        if event.r#type == HubEventType::UsageResumed {
-            self.retry_queue().await;
-            return Ok(());
+        match event.r#type {
+            HubEventType::UsageResumed | HubEventType::MachineGuard => {
+                self.retry_queue().await;
+                return Ok(());
+            }
+            HubEventType::PrMerged => return self.merged(event),
+            _ => {}
         }
         let (Some(machine_id), Some(thread_id)) = (&event.machine_id, &event.thread_id) else {
             return Ok(());
@@ -1056,15 +1069,6 @@ impl Tasks {
         input: SpawnInput,
     ) -> Result<Task, TaskError> {
         let r = &caller.project_ref;
-        // M6 value bar: serves, done workstreams and review rounds. Outside the lock, since it may ask GitHub for a
-        // PR head, and before the closed-state check, so a done workstream gets its own refusal.
-        if let Some(check) = self.hooks.spawn_check.get()
-            && let Some(ws) = self
-                .workstream(&input.workstream_id)
-                .filter(|w| same_project(&w.project_ref, r))
-        {
-            check.check_spawn(caller, &input, &ws).await?;
-        }
         let _guard = self.lock.lock().await;
         let ws = match self.workstream(&input.workstream_id) {
             Some(ws) if same_project(&ws.project_ref, r) => ws,
@@ -1134,16 +1138,7 @@ impl Tasks {
                 )),
             ));
         }
-        let flag = ModelEffort {
-            model: input.model.as_ref().map(|m| m.as_str().to_owned()),
-            effort: input.effort,
-        };
-        let defaults = policy.defaults.as_ref().map(|d| ModelEffort {
-            model: d.model.as_ref().map(|m| m.as_str().to_owned()),
-            effort: d.effort,
-        });
-        let settings = self.d.ports.lead_settings(r);
-        let (model, effort) = resolve_model_effort(&flag, defaults.as_ref(), settings.as_ref());
+        let profile = resolve_profile(input.profile, input.kind, self.d.ports.medium_allowed(r));
         let task = Task {
             task_id: TaskId::unchecked("T0"),
             project_ref: r.clone(),
@@ -1152,11 +1147,9 @@ impl Tasks {
             kind: input.kind,
             prompt: input.prompt.clone(),
             areas: input.areas.clone(),
-            model: NonEmpty::unchecked(model),
-            effort,
+            profile,
             tier: input.tier,
             estimate_minutes: input.estimate_minutes,
-            serves: input.serves.clone(),
             qa: input.qa,
             pr: input.pr.clone(),
             item_id: input.item.clone(),
@@ -1382,6 +1375,39 @@ impl Tasks {
         done.map_err(store_error)?;
         self.retry_queue().await;
         Ok(next)
+    }
+
+    /// A writer's PR merged: its worktree goes, unless its agent is still at work.
+    fn merged(self: &Arc<Self>, event: &HubEvent) -> Result<(), StoreError> {
+        let Some(task_id) = event
+            .data
+            .as_ref()
+            .and_then(|d| d.get("taskId"))
+            .and_then(Value::as_str)
+            .and_then(|id| TaskId::new(id).ok())
+        else {
+            return Ok(());
+        };
+        if let Some(task) = self.get(&task_id)?
+            && matches!(task.state, TaskState::Done | TaskState::Failed)
+        {
+            self.remove_worktree(&task);
+        }
+        Ok(())
+    }
+
+    /// Has the node delete a writer's worktree, and the build output in it, off the lock. A node that can't (offline,
+    /// a git error, or work that exists only there) leaves it, logged.
+    fn remove_worktree(self: &Arc<Self>, task: &Task) {
+        let (TaskKind::Write, Some(thread)) = (task.kind, task.thread_ref.clone()) else {
+            return;
+        };
+        let (tasks, task_id) = (self.clone(), task.task_id.clone());
+        tokio::spawn(async move {
+            if let Err(error) = tasks.d.ports.remove_worktree(&thread).await {
+                tracing::warn!(task_id = task_id.as_str(), ?error, "worktree not removed");
+            }
+        });
     }
 
     pub fn get(&self, task_id: &TaskId) -> Result<Option<Task>, StoreError> {

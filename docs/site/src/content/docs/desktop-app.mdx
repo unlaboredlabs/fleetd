@@ -7,7 +7,7 @@ You'll pair the desktop app with your [hub](/docs/glossary#hub) and use it to ch
 [lead](/docs/glossary#lead).
 
 The app is installed with fleetd on any machine with a display. To add it on Linux without a display, see
-[Install](/docs/install#options). It updates itself; `fleetd update` updates it too. Shortcuts below use ⌘; on Linux,
+[Install](/docs/install#options). It updates itself ([updating](/docs/updating-and-uninstall#app)); `fleetd update` updates it too. Shortcuts below use ⌘; on Linux,
 use Ctrl.
 
 ## Pair it with the hub {#pair}
@@ -43,8 +43,12 @@ To change hubs, open Settings (⌘,) → General → Hub.
 
 | Part | Shows |
 |---|---|
-| Sidebar | Your projects, each saying why it wants you: "reply", "approve", "secret" or "blocked". Otherwise it says how many agents are working. A project in bold has a new message from its lead. Below them: Agents, Status, Time, Machines and Settings. |
+| Sidebar | Your projects, each saying why it wants you: "reply", "approve", "secret" or "blocked". Otherwise it says how many agents are working. A project in bold has a new message from its lead. Below them: Agents, Pull requests (of the project you're in), Status, Time, Machines and Settings. |
+| The top row | The page's title and its controls, then Commands. In a chat: the project's name, its state word and its [Max agents](/docs/projects#max-agents) control. |
 | The chat | The selected project's conversation with its lead. |
+
+In a window narrower than about 1000 px the sidebar hides itself; ⌘B shows it again. On macOS the Dock icon shows how
+many projects need you.
 
 Click a project to open its chat. ⌥⌘A jumps to the next project that wants you. To add a project, click "Add" next to Projects, then paste a GitHub URL or
 `owner/repo`. You can also drop a folder or a GitHub link anywhere on the window, a chat included. Other files dropped
@@ -63,7 +67,7 @@ on a chat attach to your message. See [Add a project](/docs/projects#add-a-proje
 | The agents strip | Under the lead's message, after any approval or secret it asks for: how many agents are working, and on which PRs. Expand it to see each agent, and click one to read what it was told. "Where the time went" opens [Time](#time), with each agent's model, tokens and activity. |
 | One-line events | Pull requests opened, merged or sent back. |
 | Secret and approval items | A masked field with "Save secret", or a command (or a tool's permission request) with Approve and Deny. See [Secrets & approvals](/docs/approvals-and-secrets). |
-| The header | The project, its state word (as in [Status](#status)), and its [Max agents](/docs/projects#max-agents) control ("agents 6 / 12"). |
+| The top row | The project, its state word (as in [Status](#status)), and its [Max agents](/docs/projects#max-agents) control ("agents 6 / 12"). |
 
 ![The storefront project's chat: you asked to round the cart totals once, the lead replied that writers are splitting the change into three PRs, and under its message the strip shows three agents working. In the sidebar, billing says reply and checkout says blocked.](/docs/img/chat.png)
 
@@ -83,14 +87,16 @@ How to work with the lead: [Chat with the lead](/docs/chat).
 
 Agents lists every agent working now, across all your projects: its role, its task, what it's doing and for how long.
 Click one to watch its work as it happens: what it was told, the commands it ran, the files it edited and what it's
-writing. Watching doesn't interrupt it. To change what it does, tell its lead in the chat.
+writing. Watching doesn't interrupt it. To change what it does, tell its lead in the chat. Its PR number opens
+[the PR](/docs/chat#prs).
 
 ## Status {#status}
 
 ![Status with one row per project: billing waiting on you at 64%, checkout blocked at 31%, storefront working at 78% with five agents, each with its last merge.](/docs/img/status.png)
 
 Status shows one row per project: a state word (waiting on you, blocked, working or idle), its two-tone progress bar,
-the agents running, and what merged last. Click a row to open that project's chat; hover it for detail.
+the agents running, and when the last pull request merged. Click a row to open that project's chat, or PRs for its
+pull requests; hover it for detail.
 See [Status](/docs/status).
 
 ## Where time went {#time}
@@ -99,13 +105,13 @@ Open Time from the sidebar, the agents strip in a chat, or the command palette. 
 
 | Tab | Shows |
 |---|---|
-| Timeline | One piece of work: a lane per agent, PR and CI check, and the waits on you, with the [critical path](/docs/glossary#critical-path) marked. Hover a bar for the command, its duration and exit code; a transcript's "Open the chat" goes to the project's chat. |
+| Timeline | One piece of work: a lane per agent, PR and CI check, and the waits on you, with the [critical path](/docs/glossary#critical-path) marked. Each agent's lane shows its model and output tokens. Hover a bar for the command, its duration and exit code; a transcript's "Open the chat" goes to the project's chat. |
 | Breakdown | Agent time by group, with the slowest commands and CI checks. |
 | Insights | Findings, each with the spans behind it. |
 
 ![Where a piece of work's time went: a lane per agent, PR and CI check, the waits on you, the critical path underlined, and the legend.](/docs/img/time.png)
 
-How to read it: [Where time went](/docs/time-inspector).
+Times are in your own time zone. How to read it: [Where time went](/docs/time-inspector).
 
 ## Settings {#settings}
 
@@ -115,6 +121,7 @@ an option or a prompt by name, and press Enter to open the first match.
 | Section | Has |
 |---|---|
 | General | Appearance (light, dark, match system), motion, the hub connection, whether `fleetd://` pairing links open in this app, Claude auto memory, and how long time data is kept. |
+| Notifications | Which alerts show (the lead asks you something, a command or secret waits, the lead finishes what you asked, a machine problem, anything else), whether they play a sound, the Dock badge, and a test. There is never an alert for the chat in front of you, and in quiet hours only urgent ones show. Clicking one opens what it's about. |
 | Agents | [Max agents](/docs/projects#max-agents) for each project, and the cap for the whole fleet. Each slider applies when you let go, with Undo. |
 | Instructions | Your own text, added to every agent's first message. |
 | Prompts | The prompts fleetd sends agents, listed under Prompts in the sidebar, to read and edit, and any of your edits that no longer apply. See [What agents are told](/docs/what-agents-are-told). |

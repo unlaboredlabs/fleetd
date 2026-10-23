@@ -6,7 +6,7 @@
 import fs from "node:fs";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { type Body, claudeConfigDir, type Lab, MODEL, nodeHome, seedRepo } from "../harness.ts";
+import { type Body, claudeConfigDir, type Lab, MECHANICS, nodeHome, seedRepo } from "../harness.ts";
 
 const MACHINE = "lab-nologin";
 
@@ -35,8 +35,7 @@ export async function expiredLogin(lab: Lab) {
       machineId: MACHINE,
       projectId,
       prompt: "Reply with the single word OK and nothing else.",
-      model: MODEL,
-      effort: "low",
+      profile: MECHANICS,
       title: "fleetd lab expired-login",
       clientRequestId: randomUUID(),
     });

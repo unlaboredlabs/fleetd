@@ -10,7 +10,15 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "project_stop",
-        "Stop everything in a project: every open order stops, its agents are cancelled and what waits on you is withdrawn, one line in the chat says so and the lead hears it. The lead and the chat stay. A person's device (a human key) only.",
+        "Stop everything in a project: the lead's turn is interrupted, every open order stops, its agents are cancelled and what waits on you is withdrawn, one line in the chat says what stopped and what still runs, and the lead hears it. The lead and the chat stay. A person's device (a human key) only.",
+    ),
+    (
+        "chat_stop",
+        "The chat's Stop, the same stop as project_stop: the lead's turn and the project's agents stop, and one line in the chat says what stopped. stopped is false when nothing was running. Idempotent per clientRequestId. A person's device (a human key) only.",
+    ),
+    (
+        "hub_info",
+        "The hub's fleetd version, protocol and release channel, and busy: everything a restart would interrupt now (a lead's turn, running agents, a merge or rebase the hub is doing, an approved command still running, a clone; a change waiting on CI is not), one plain line each. machineId keeps only what runs on that machine (before restarting its node). Empty busy: a restart interrupts nothing.",
     ),
     (
         "attachment_get",
@@ -58,7 +66,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "thread_launch",
-        "Start a new thread in a project with an explicit model and effort. runtimeMode defaults to full-access. Refused with machine_offline when the machine is offline.",
+        "Start a new thread in a project on Opus 5.5 with the high profile, or medium when profile says so. runtimeMode defaults to full-access. Refused with machine_offline when the machine is offline.",
     ),
     (
         "thread_send",
@@ -67,18 +75,6 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     (
         "thread_interrupt",
         "Interrupt a thread's running turn. Refused with machine_offline when the machine is offline.",
-    ),
-    (
-        "subscription_set",
-        "Push hub events to an http(s) URL as signed Standard Webhooks POSTs (body: the HubEvent JSON), in seq order, retried until a 2xx. Filter by types and machines (default all). Returns the signing secret once.",
-    ),
-    (
-        "subscription_list",
-        "This key's webhook subscriptions (all of them for an admin key) with their delivery cursor and failing state. Secrets are never returned.",
-    ),
-    (
-        "subscription_delete",
-        "Delete a webhook subscription; delivery stops at once.",
     ),
     (
         "wake_set",
@@ -94,11 +90,15 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "lead_start",
-        "Start the project's lead: one thread that turns intents into briefs, asks the human in chat only about product, money, credential and irreversible calls, and never writes code. Returns the existing lead if there is one. A project's first order starts its lead by itself; call this to start it earlier or with another model. model and effort, when given, are saved for the project (default claude-opus-5-5, high).",
+        "Start the project's lead: one thread that turns intents into briefs, asks the human in chat only about product, money, credential and irreversible calls, and never writes code. Returns the existing lead if there is one. A project's first order starts its lead by itself; call this to start it earlier. The lead always runs on the high profile (Opus 5.5, effort high).",
     ),
     (
         "lead_restart",
-        "Start a fresh lead thread for the project from the current digest (sessionGeneration goes up); use it when a lead is stuck or its context is full. The old thread stays on the node. Takes model and effort like lead_start.",
+        "Start a fresh lead thread for the project from the current digest (sessionGeneration goes up); use it when a lead is stuck or its context is full. The old thread stays on the node.",
+    ),
+    (
+        "project_set",
+        "Turn a project's medium profile on or off (mediumAllowed, on by default). On: its lead may run mechanical tasks on medium (Opus 5.5, effort medium). Off: every new task runs high. The lead, reviewers and helper calls always run high.",
     ),
     (
         "intake_submit",
@@ -150,7 +150,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "task_get",
-        "One task: its model and effort, areas, branch, thread, queued reason or result (status, last 2000 characters of its final message, branch, PR).",
+        "One task: its profile (high or medium), areas, branch, thread, queued reason or result (status, last 2000 characters of its final message, branch, PR).",
     ),
     (
         "cap_set",
@@ -170,15 +170,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "incidents_list",
-        "Incidents the hub detected (false_claim, polish_loop, out_of_area, stall, policy_bypass, override, playbook_reverted), newest first, with evidence lines, plus per-class counts over the last windowDays (default 7). Filter by projectRef, workstreamId or class.",
-    ),
-    (
-        "retro_proposals",
-        "The retro's playbook change proposals, newest first, with their diff, the incidents each fixes, its metric and state (suggested, pending, measuring, kept, reverted, applied, rejected, stale). apply says whether policy.retro.apply lets them apply; until then they are only suggested.",
-    ),
-    (
-        "retro_run",
-        "Admin on every machine: run the retro now. One claude -p turn reads the incidents of the last windowDays (default 14) and the current playbooks and proposes changes; the hub drops invalid ones and classifies each as wording or gate by the fields it touches. advise: true only suggests. At most 2 runs a day.",
+        "Incidents the hub detected (false_claim, polish_loop, out_of_area, stall, policy_bypass, override), newest first, with evidence lines, plus per-class counts over the last windowDays (default 7). Filter by projectRef, workstreamId or class.",
     ),
     (
         "changes_list",
@@ -246,7 +238,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "prompts_list",
-        "Every prompt and message fleetd sends a model (lead, tasks, reviewers, judges, wakes, router, retro, playbooks, custom instructions): id, kind, when it is sent, which text is in effect (default, global or project override) and whether a release changed the default of one you edited. projectRef: the texts in effect for that project.",
+        "Every prompt and message fleetd sends a model (lead, tasks, reviewers, judges, playbooks, custom instructions): id, kind, when it is sent, which text is in effect (default, global or project override) and whether a release changed the default of one you edited. projectRef: the texts in effect for that project.",
     ),
     (
         "prompt_get",
@@ -291,5 +283,29 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     (
         "github_webhook_set",
         "Turn opt-in GitHub webhooks on (url: a public URL GitHub can reach that forwards to this hub's /github; fleetd never creates one) or off (no url). Makes a secret and a repo hook on every train repo for check_suite, pull_request and push. Deliveries only make the train sync sooner; without them it reconciles every pass. Admin keys on every machine.",
+    ),
+    (
+        "agents_list",
+        "Every agent of the projects you can read: each running, queued or idle task and each project's lead, with its project, role, title, status (and why when queued, parked or failed), model, start time, its PR and what it is doing now. endedSince adds agents that finished since then. Waiting on a person first, then working, then newest. Read-only.",
+    ),
+    (
+        "agent_work",
+        "A page of one agent's recent steps (messages, commands, edits, tool calls), oldest first within the page; before pages back. From the newest 200 messages and 200 steps the hub follows of the session. Secrets are replaced by [secret]. Read-only.",
+    ),
+    (
+        "pr_list",
+        "A project's PRs: open ones on its repos and those closed or merged since closedSince (default 7 days), with title, state, checks, review state, merge-queue state and the agent that wrote it. GitHub data is cached for a minute; githubError says when only fleetd's records could be read. Read-only.",
+    ),
+    (
+        "pr_get",
+        "One PR in detail: its description, checks, agent verdicts with their findings and people's reviews, merge-queue state and moves, the writing agent and links. Read-only.",
+    ),
+    (
+        "pr_files",
+        "A page of a PR's changed files (100 per page) with their additions, deletions and diff length. Read-only.",
+    ),
+    (
+        "pr_diff",
+        "A page of one changed file's diff as numbered lines (hunk, context, add, del; at most 400 per page). Secrets are replaced by [secret]. Read-only.",
     ),
 ];

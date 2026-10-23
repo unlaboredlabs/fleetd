@@ -12,12 +12,13 @@ Status has one row per project:
 | Column | Shows |
 |---|---|
 | State | `waiting on you`, `blocked`, `working` or `idle`. |
-| Progress | The two-tone bar: solid is verified work, lighter is credit for work in flight. No bar when nothing can be counted yet. |
+| Progress | The two-tone bar: solid is verified work, lighter is credit for work in flight. "no progress yet" while the lead plans or nothing can be counted. |
 | Agents | How many agents are running. |
-| Last merged | The latest pull request the train merged. |
+| Last merged | When the latest pull request merged, with its day: "today 09:46", "yesterday 16:40", "Fri 15:12", "Oct 7". |
 
-Rows needing you come first, then blocked, working and idle. Click a row to open that project's chat. Hover it for
-detail: why it is blocked, the verified and in-flight shares, the latest drops, and a source that has gone quiet.
+Rows needing you come first, then blocked, working and idle. Click a row to open that project's chat, or PRs at its
+end for the project's pull requests. Hover it for detail: why it is blocked, the verified and in-flight shares, the
+latest drops, and a source that has gone quiet ("out of date").
 An MCP client reads the same rows with `status_projects`.
 Open Status with ⌘. (Ctrl+. on Linux), or from the sidebar.
 
@@ -73,9 +74,12 @@ The number is **verified** work plus credit for work **in flight**, as a share o
 - **Verified** means the item's PRs were merged by the merge train, and its done-when checks passed. A PR merged by
   hand doesn't count. A lead saying "done" moves nothing.
 - **In flight** credit comes from stages fleetd observed itself: task started, PR open, review passed, CI green,
-  merged.
+  merged. Time spent inside a stage adds a little more, but only while an agent or the merge train is working on it.
+  While an agent waits for an answer or for a usage limit to reset, the number holds what it earned, with a
+  "paused" line, and goes on from there when the agent resumes.
 - **It reaches 100%** only when every required item is verified.
-- **When it falls**, a `↓` line says why: work added, a review blocked, CI failed, or a done item reopened.
+- **When it falls**, a `↓` line says why: work added, a review blocked, CI failed, a done item reopened, or work
+  stopped because an agent finished, failed or was cancelled with nothing else running for its item.
 
 Items are **must** or **polish**. Polish shows beside the number ("polish 2/5") and never holds it back.
 

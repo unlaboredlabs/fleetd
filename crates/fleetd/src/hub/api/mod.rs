@@ -27,7 +27,7 @@ mod m1;
 mod registry;
 
 pub use grants::*;
-pub use registry::{CallError, Caller, Registry, ToolError, ToolFuture};
+pub use registry::{CallError, Caller, Registry, ToolError};
 
 use crate::clock::Clock;
 use crate::hub::auth::Auth;
@@ -69,8 +69,6 @@ pub struct HubConfig {
     pub url: Option<String>,
     /// How long a write to an offline machine waits in the queue; absent means 24 h.
     pub queue_ttl_sec: Option<u64>,
-    /// The retro's one-shot model; absent means claude-haiku-5-5.
-    pub retro_model: Option<String>,
 }
 
 impl HubConfig {
@@ -125,17 +123,15 @@ pub struct Hub {
     pub sweep: Arc<crate::hub::sweep::Sweep>,
     pub queue: Arc<crate::hub::queue::WriteQueue>,
     pub wakes: Arc<crate::hub::wakes::Wakes>,
-    pub webhooks: Arc<crate::hub::webhooks::Webhooks>,
     pub incidents: Arc<crate::hub::incidents::Incidents>,
     pub estimates: Arc<crate::hub::estimates::Estimates>,
     pub receipts: Arc<crate::hub::receipts::Receipts>,
-    pub value_bar: Arc<crate::hub::valuebar::ValueBar>,
+    pub verdicts: Arc<crate::hub::reviews::verdicts::Verdicts>,
     pub checks: Arc<crate::hub::checks::CheckRunner>,
     pub claims: Arc<crate::hub::checks::Claims>,
     pub ops: Arc<crate::hub::usage::wire::OpsPorts>,
     pub usage: Arc<crate::hub::usage::Usage>,
     pub doctor: Arc<crate::hub::doctor::Doctor>,
-    pub retro: Arc<crate::hub::retro::Retro>,
     pub approvals: Arc<crate::hub::approvals::Approvals>,
     pub train: Arc<crate::hub::train::Train>,
     pub reviews: Arc<crate::hub::reviews::Reviews>,
@@ -148,6 +144,7 @@ pub struct Hub {
     pub status: Arc<crate::hub::status::Status>,
     pub plans: Arc<crate::hub::plan::Plans>,
     pub chat: Arc<crate::hub::chat::Chat>,
+    pub prs: Arc<crate::hub::prs::Prs>,
 }
 
 /// Every MCP tool the hub serves, from every area that registers. The one place that lists them.
@@ -158,11 +155,9 @@ pub fn registry() -> Registry {
     crate::hub::ledger::register(&mut tools);
     crate::hub::executor::register(&mut tools);
     crate::hub::wakes::tools::register(&mut tools);
-    crate::hub::webhooks::tools::register(&mut tools);
     crate::hub::checks::tools::register(&mut tools);
     crate::hub::usage::tools::register(&mut tools);
     crate::hub::doctor::tools::register(&mut tools);
-    crate::hub::retro::tools::register(&mut tools);
     crate::hub::approvals::tools::register(&mut tools);
     crate::hub::sessions_tools::register(&mut tools);
     crate::hub::projects::tools::register(&mut tools);
@@ -177,5 +172,8 @@ pub fn registry() -> Registry {
     crate::hub::plan::tools::register(&mut tools);
     crate::hub::status::tools::register(&mut tools);
     crate::hub::chat::tools::register(&mut tools);
+    crate::hub::agents::tools::register(&mut tools);
+    crate::hub::prs::tools::register(&mut tools);
+    crate::hub::info::register(&mut tools);
     tools
 }

@@ -85,8 +85,8 @@ static TOOLS: &[Tool] = &[
         "spawn_agent",
         "task_spawn",
         "Start a fleetd agent (a task) with its own session, slot and lane. kind write|read|review; a writer needs \
-         areas from the project's policy and serves (done:<n>, issue:<ref>, defect:<text> or decision:<key>) and gets its own \
-         worktree and branch; a review task needs pr. model and effort are optional. A busy area or a full slot board \
+         areas from the project's policy and gets its own worktree and branch; a review task needs pr. profile is high \
+         by default; medium is for mechanical work only, and reviews always run high. A busy area or a full slot board \
          queues it and it starts by itself. Its result arrives in a later wake: end your turn instead of waiting.",
         inline_schema::<TaskSpawnCall>,
     ),
@@ -118,12 +118,10 @@ static TOOLS: &[Tool] = &[
     lead(
         "brief",
         "brief_create",
-        "Freeze a draft workstream's brief (goal, why, pointers, constraints, doneWhen checks, tier, estimate) and \
-         start it. A frozen brief changes only with amend: the key of the decision you logged after the human approved the \
-         change in chat.",
+        "Set a draft workstream's brief (goal, why, pointers, constraints, doneWhen checks, tier, estimate) and \
+         start it, or edit it later.",
         inline_schema::<BriefCreateCall>,
-    )
-    .needs("Changing a frozen brief (amend) needs the human's yes in chat, logged with decide."),
+    ),
     lead(
         "request_secret",
         "request_secret",
@@ -220,8 +218,8 @@ static TOOLS: &[Tool] = &[
     lead(
         "workstream_open",
         "workstream_open",
-        "Open a workstream for work you took from the chat: a draft you then freeze with brief. template picks the \
-         playbook (feature, bugfix, research, finish-all); serves is optional.",
+        "Open a workstream for work you took from the chat: a draft you then brief. template picks the \
+         playbook (feature, bugfix, research, finish-all).",
         inline_schema::<WorkstreamOpenCall>,
     ),
     lead(
@@ -367,7 +365,7 @@ pub fn handle(role: Role, message: &Value, deps: &LeadDeps) -> Option<Value> {
         "initialize" => json!({
             "protocolVersion": message["params"]["protocolVersion"].as_str().unwrap_or(PROTOCOL_VERSION),
             "capabilities": { "tools": {} },
-            "serverInfo": { "name": "fleetd", "version": env!("CARGO_PKG_VERSION") },
+            "serverInfo": { "name": "fleetd", "version": crate::version() },
             "instructions": "fleetd's own tools: every agent is a fleetd task, started, steered and stopped here.",
         }),
         "ping" => json!({}),
@@ -490,7 +488,7 @@ mod tests {
         let spawn = call_of(
             Role::Lead,
             "spawn_agent",
-            json!({ "workstreamId": "W1", "title": "t", "prompt": "p", "areas": ["docs"], "serves": "done:0" }),
+            json!({ "workstreamId": "W1", "title": "t", "prompt": "p", "areas": ["docs"] }),
         )
         .unwrap();
         assert_eq!(spawn["op"], "task_spawn");

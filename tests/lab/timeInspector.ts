@@ -3,11 +3,11 @@
 // waits 15 s for a human key's Approve. Then the order's timeline must add up: the critical path covers the order's
 // wall time exactly and the wall matches submit-to-done, every run is tiled by its spans, the `ci` check span is
 // GitHub's own interval inside `change.ci`, the approval wait is a `wait.request` span of the right length, coverage is
-// complete, and `fleetd time <W>` prints it. About 6 haiku turns. It resets only its own namespace, before and after.
+// complete, and `fleetd time <W>` prints it. About 6 turns. It resets only its own namespace, before and after.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { type Body, openWorkstream, cli, fleetdCommand, HUB_PORT, type Lab, MODEL, nodeSock, requireGhLogin, scrubbedEnv } from "./harness.ts";
+import { type Body, MODEL, openWorkstream, cli, fleetdCommand, HUB_PORT, type Lab, MECHANICS, nodeSock, requireGhLogin, scrubbedEnv } from "./harness.ts";
 import { BASE, checkClone, CLONE, NAMESPACE, onBase, prepareCheckout, REPO, removeLabRepoProject, resetNamespace } from "./m7Train.ts";
 
 const MACHINE = "lab-a";
@@ -18,9 +18,6 @@ const APPROVAL_WAIT_MS = 15_000;
 const FILE = `lab/${new Date().toISOString().slice(0, 19).replace(/\D/gu, "")}/time.md`;
 const POLICY = `areas:
   time: ["${FILE}"]
-defaults:
-  model: ${MODEL}
-  effort: low
 `;
 /** The spec's tolerance for a run's spans against its own start and end. */
 const tiles = (sum: number, wall: number) => Math.abs(sum - wall) <= Math.max(250, wall / 100);
@@ -86,7 +83,7 @@ export async function timeInspector(lab: Lab) {
       return { code: out.status, stdout: out.stdout, stderr: out.stderr };
     };
 
-    const started = await callTool("lead_start", { ...ref, model: MODEL, effort: "low" });
+    const started = await callTool("lead_start", ref);
     check(!started.isError, `lead_start: ${JSON.stringify(started.body)}`);
     const leadThread = started.body.threadId as string;
     await lab.waitEvent("lead start turn", TURN_MS, { cursor: scenarioStart, machineId: MACHINE, match: (e) => e.threadId === leadThread && ENDED.includes(e.type) });
@@ -109,9 +106,9 @@ export async function timeInspector(lab: Lab) {
     // One writer: its PR goes on the train by itself.
     let cursor = await lab.cursor();
     const spawned = fleetd(
-      "task", "spawn", "--workstream", w, "--title", "add time.md", "--areas", "time", "--serves", "done:0", "--model", MODEL, "--effort", "low",
+      "task", "spawn", "--workstream", w, "--title", "add time.md", "--areas", "time", "--profile", MECHANICS,
       "--prompt",
-      `Create the file ${FILE} (from the repo root) containing exactly one line: time. Commit it with the message "add ${FILE}". Then push your branch and open the pull request as your rules say, with the title "add ${FILE}" and the body exactly "Source: done:0". Reply with the PR URL.`,
+      `Create the file ${FILE} (from the repo root) containing exactly one line: time. Commit it with the message "add ${FILE}". Then push your branch and open the pull request as your rules say, with the title "add ${FILE}" and the body exactly "Adds the file.". Reply with the PR URL.`,
     );
     const taskId = /^Spawned (T\d+)/mu.exec(spawned.stdout)?.[1];
     check(spawned.code === 0 && taskId, `task spawn: ${JSON.stringify(spawned)}`);
@@ -283,7 +280,7 @@ export async function timeInspector(lab: Lab) {
       at = page.cursor;
     }
     const turns = leadTurns + tasks.reduce((n, t) => n + (t.attempt as number), 0);
-    ok(`time used ${turns} claude turns (${MODEL}, effort low)`);
+    ok(`time used ${turns} claude turns (${MODEL}, tasks on medium)`);
     check(turns <= 10, `time stays within 10 claude turns (${turns})`);
   } finally {
     app?.close();

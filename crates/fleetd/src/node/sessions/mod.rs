@@ -23,6 +23,7 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
+use fleetd_contracts::effort::TaskProfile;
 use fleetd_contracts::ids::{ProjectId, ThreadId, Timestamp};
 use fleetd_contracts::prim::{NonEmpty, Text};
 use fleetd_contracts::sessions::{
@@ -38,7 +39,8 @@ use tokio::sync::{mpsc, oneshot, watch};
 use tokio::time::Instant;
 
 use super::runner::claude::{
-    ALWAYS_DISALLOWED, AUTO_MEMORY_OFF_ENV, SESSION_ENV, subagents_off_settings_env,
+    ALWAYS_DISALLOWED, AUTO_MEMORY_OFF_ENV, HELPER_MODEL_ENV, SESSION_ENV,
+    subagents_off_settings_env,
 };
 use super::runner::claude_setup;
 use super::runner::{
@@ -181,6 +183,31 @@ impl SessionConfig {
     }
 }
 
+/// One compile cache for every session on the machine, when sccache is installed and the environment names no
+/// wrapper: dependencies compile once, not once per worktree. Target dirs stay in each worktree and go with it,
+/// since cargo checks a workspace's own crates by path and mtime: a target shared between worktrees can hand one
+/// worktree another's build.
+pub fn compile_cache_env(env: &[(String, String)]) -> Vec<(String, String)> {
+    let var = |name: &str| env.iter().find(|(k, _)| k == name).map(|(_, v)| v.as_str());
+    if var("RUSTC_WRAPPER").is_some() {
+        return Vec::new();
+    }
+    let Some(sccache) = std::env::split_paths(var("PATH").unwrap_or_default())
+        .map(|dir| dir.join("sccache"))
+        .find(|bin| bin.is_file())
+    else {
+        return Vec::new();
+    };
+    vec![
+        (
+            "RUSTC_WRAPPER".to_owned(),
+            sccache.to_string_lossy().into_owned(),
+        ),
+        // A cache server that fails compiles locally instead of failing the build.
+        ("SCCACHE_IGNORE_SERVER_IO_ERROR".to_owned(), "1".to_owned()),
+    ]
+}
+
 /// `~/x` as `$HOME/x`; other paths as given.
 fn expand_home(dir: &str) -> PathBuf {
     match dir.strip_prefix("~/") {
@@ -211,7 +238,8 @@ pub fn parse_env_file(text: &str) -> Vec<(String, String)> {
 }
 
 /// fleetd's settings overlay (`--settings`). claude ranks it above the user's own settings, so a user's `env` or
-/// allow rule can't undo what sessions depend on: the pinned claude (no autoupdate), the subagent cap, the tools
+/// allow rule can't undo what sessions depend on: the pinned claude (no autoupdate), helper calls on the one model,
+/// the subagent cap, the tools
 /// fleetd never gives an agent, and auto memory off unless the project opted in ([`AUTO_MEMORY_OFF_ENV`]).
 /// The session's `--mcp-config`: fleetd's own agent MCP server (`fleetd agent-mcp`, this binary) for a lead or a
 /// worker, scoped to the role; nothing for a plain thread. The server reaches the hub through this node's socket, as the
@@ -240,6 +268,8 @@ fn mcp_config(role: SessionRole, sock: &Path, session_id: &str) -> String {
 pub fn settings_overlay(auto_memory: bool) -> String {
     let mut env = subagents_off_settings_env();
     env.insert("DISABLE_AUTOUPDATER".into(), "1".into());
+    let (key, model) = HELPER_MODEL_ENV;
+    env.insert(key.into(), model.into());
     let mut overlay = serde_json::json!({
         "env": env,
         "permissions": { "deny": ALWAYS_DISALLOWED },
@@ -850,6 +880,11 @@ impl SessionService {
             .insert(key, (limit, now()));
     }
 
+    /// The node home, where the worktrees live: the heartbeat reports its volume's free space.
+    pub fn home(&self) -> PathBuf {
+        self.inner.config.home.clone()
+    }
+
     /// The claude.ai usage windows sessions last reported, for the heartbeat.
     pub fn login_limits(&self) -> Vec<fleetd_contracts::node_link::LoginLimit> {
         use fleetd_contracts::node_link::LoginLimit;
@@ -1091,14 +1126,16 @@ impl SessionService {
             let first = launch.prompt.lines().next().unwrap_or_default();
             first.chars().take(80).collect()
         });
+        // Only the two profiles run, whatever an older hub asks for.
+        let profile = TaskProfile::of(launch.model.as_str(), launch.effort);
         let row = SessionRow {
             summary: SessionSummary {
                 session_id: launch.session_id.clone(),
                 project_id: launch.project_id.clone(),
                 title,
                 status: SessionStatus::Idle,
-                model: launch.model.to_string(),
-                effort: launch.effort,
+                model: profile.model().into(),
+                effort: profile.effort(),
                 runtime_mode: launch.runtime_mode,
                 latest_run: None,
                 active_run_id: None,
@@ -1378,6 +1415,7 @@ impl SessionService {
             env.retain(|(k, _)| k != key);
             env.push((key.to_owned(), value.to_owned()));
         }
+        env.extend(compile_cache_env(&env));
         Ok(SessionSpec {
             session_id: id.to_owned(),
             resume,
@@ -2036,8 +2074,9 @@ impl SessionService {
             && let (Some(base_ref), Some(branch)) = (row.local.base_ref, row.local.branch)
         {
             let (root, path) = (row.local.workspace_root, row.local.cwd);
-            let deleted =
-                blocking(move || worktree::remove(&root, &path, &branch, &base_ref)).await?;
+            let deleted = blocking(move || worktree::remove(&root, &path, &branch, &base_ref))
+                .await
+                .inspect_err(|e| tracing::warn!(session_id = id, "worktree not removed: {e:?}"))?;
             self.update(id, |c| {
                 c.row.summary.worktree_path = None;
                 if deleted {

@@ -101,12 +101,14 @@ export type AgentLane = {
   live?: LiveLane;
   model?: string;
   pr?: PrRef;
+  /** What it runs on: a task's own profile; a lead is always high. Absent from older hubs. */
+  profile?: TaskProfile;
   /** Counted from the thread's items when it ended. */
   receipts?: Receipts;
   role: AgentRole;
   startedAt?: Timestamp;
   status: LaneStatus;
-  /** Queued, parked or failed: why, e.g. "slots: 40/40 in use", "usage limit: resumes 14:05". */
+  /** Queued, parked or failed: why, e.g. "fleet cap: 40 of 40 running", "usage limit: resumes 14:05". */
   statusReason?: string;
   taskId?: TaskId;
   threadRef?: ThreadRef;
@@ -114,6 +116,51 @@ export type AgentLane = {
 };
 
 export type AgentRole = "lead" | "implementer" | "reader" | "reviewer" | "verifier" | "qa";
+
+/** One agent: a task, or a project's lead, with its project. */
+export type AgentRow = {
+  branch?: string;
+  effort?: Effort;
+  endedAt?: Timestamp;
+  laneId: string;
+  /** Live values at snapshot time. */
+  live?: LiveLane;
+  model?: string;
+  pr?: PrRef;
+  /** What it runs on: a task's own profile; a lead is always high. Absent from older hubs. */
+  profile?: TaskProfile;
+  projectRef: ProjectRef;
+  projectTitle: string;
+  /** Counted from the thread's items when it ended. */
+  receipts?: Receipts;
+  role: AgentRole;
+  startedAt?: Timestamp;
+  status: LaneStatus;
+  /** Queued, parked or failed: why, e.g. "fleet cap: 40 of 40 running", "usage limit: resumes 14:05". */
+  statusReason?: string;
+  taskId?: TaskId;
+  threadRef?: ThreadRef;
+  title: string;
+  /** The work it belongs to; `live { focus }` with it streams this agent's text too. Absent for a lead. */
+  workstreamId?: WorkstreamId;
+};
+
+export type AgentWorkInput = {
+  before?: string;
+  limit?: number;
+  machineId: MachineId;
+  threadId: ThreadId;
+};
+
+export type AgentWorkOutput = {
+  /** Pass back as `before` for the page before this one; absent when there is nothing older. */
+  before?: string;
+  next?: string;
+  /** A run of it is active now. */
+  running: boolean;
+  steps: WorkStep[];
+  truncated?: boolean;
+};
 
 /**
  * `agents.cap` data: a project's max agents or the fleet cap changed. The event's summary is the one quiet line its
@@ -131,6 +178,18 @@ export type AgentsCapData = {
   to: number;
 };
 
+export type AgentsListInput = {
+  endedSince?: Timestamp;
+  projectRef?: ProjectRef;
+};
+
+export type AgentsListOutput = {
+  agents: AgentRow[];
+  at: Timestamp;
+  next?: string;
+  truncated?: boolean;
+};
+
 export type AppClientMessage = {
   key: string;
   t: "auth";
@@ -145,6 +204,7 @@ export type AppClientMessage = {
   t: "call";
   tool: string;
 } | {
+  agent?: string;
   board: boolean;
   focus?: WorkstreamId;
   t: "live";
@@ -272,9 +332,9 @@ export type Brief = {
   baseline?: string;
   budget?: BriefBudget;
   constraints: string[];
-  /** Research: frozen with the brief, so the verdict can't move the goalposts. */
+  /** Research: the rule the verdict is computed from. */
   decisionRule?: DecisionRule;
-  /** At least one; frozen with the brief. */
+  /** At least one. */
   doneWhen: CheckSpec[];
   estimate?: Estimate;
   goal: string;
@@ -291,8 +351,6 @@ export type BriefBudget = {
   /** How big a research spend the lead allows, relative like plan sizes; never a time guess. */
   size?: Tier;
 };
-
-export type BriefHash = string;
 
 export type CapSetInput = {
   /** The fleet cap on running turns, leads' included. Needs an admin key. */
@@ -355,7 +413,6 @@ export type Change = {
   projectRef: ProjectRef;
   repo: GitHubRepo;
   reviews: ChangeReview[];
-  serves: Serves;
   state: ChangeState;
   /** The write task that opened it; absent when the lead enqueued a PR no task wrote. */
   taskId?: TaskId;
@@ -530,6 +587,20 @@ export type ChatSendOutput = {
   truncated?: boolean;
 };
 
+export type ChatStopInput = {
+  clientRequestId: string;
+  projectRef: ProjectRef;
+};
+
+export type ChatStopOutput = {
+  /** The system line it wrote into the chat. */
+  message: ChatMessage;
+  next?: string;
+  /** Something was running and stopped: the lead's turn or an agent. */
+  stopped: boolean;
+  truncated?: boolean;
+};
+
 /** `error` (the check could not run) counts as not passing. */
 export type CheckOutcome = "pass" | "fail" | "error";
 
@@ -582,6 +653,18 @@ export type Checkout = {
   machineId: MachineId;
   path: string;
   projectId?: ProjectId;
+};
+
+/** The checks on the PR's head, rolled up: any failed is `failing`, else any running is `pending`. */
+export type KnownChecksState = "pending" | "passing" | "failing" | "none";
+/** KnownChecksState, or a value from a newer hub. */
+export type ChecksState = KnownChecksState | (string & {});
+
+export type ChecksSummary = {
+  failed: number;
+  passed: number;
+  pending: number;
+  state: ChecksState;
 };
 
 export type CiCheckStat = {
@@ -704,7 +787,7 @@ export type CommandApprovalItem = {
   outputTail?: string;
   /** A session's permission prompt: the tool and what it would do. */
   permission?: ToolPermission;
-  /** A retro playbook change that relaxes a gate: what changes, in plain words, and the exact diff. */
+  /** A retro playbook change (an older approval only): what changes, in plain words, and the exact diff. */
   playbook?: PlaybookGateChange;
   requestId: ChatRequestId;
   state: CommandApprovalState;
@@ -831,11 +914,25 @@ export type DecisionsSearchOutput = {
   truncated?: boolean;
 };
 
-/** The only metric direction. */
-export type Decrease = "decrease";
-
 /** How a delivered steer was taken in. */
 export type DeliveredHow = "turn" | "boundary" | "stopped" | "joined";
+
+/** One line of a file's diff. Secrets are replaced by `[secret]`. */
+export type DiffLine = {
+  /** The line was longer than `PR_DIFF_LINE_MAX` and is cut. */
+  cut?: boolean;
+  kind: DiffLineKind;
+  /** Line number in the new file (context and added lines; a hunk's start). */
+  new?: number;
+  /** Line number in the old file (context and deleted lines; a hunk's start). */
+  old?: number;
+  /** Without the leading "+", "-" or " ". */
+  text: string;
+};
+
+export type KnownDiffLineKind = "context" | "add" | "del" | "hunk";
+/** KnownDiffLineKind, or a value from a newer hub. */
+export type DiffLineKind = KnownDiffLineKind | (string & {});
 
 export type DigestGetInput = { [key: string]: unknown };
 
@@ -913,10 +1010,11 @@ export type DoneRow = {
 
 export type DriftKind = "outside_fleetd" | "missed_webhook";
 
-export type KnownDropReason = "scope_change" | "review_failed" | "ci_failed" | "reopened";
+export type KnownDropReason = "scope_change" | "review_failed" | "ci_failed" | "reopened" | "work_stopped";
 /** KnownDropReason, or a value from a newer hub. */
 export type DropReason = KnownDropReason | (string & {});
 
+/** The `--effort` claude runs at. Only [`TaskProfile`] picks one; nothing takes an effort as input. */
 export type Effort = "low" | "medium" | "high" | "max";
 
 /** Who keeps a safety rule when the prompt no longer says it. */
@@ -1232,16 +1330,17 @@ export type KnownHubEventType =
   | "claim.passed"
   | "steer.withdrawn"
   | "machine.slept"
+  | "machine.guard"
   | "project.removed"
   | "project.added"
   | "project.clone_progress"
   | "project.add_failed"
+  | "project.settings"
   | "thread.waiting"
   | "thread.stalled"
   | "wake.missed"
   | "write.delivered"
   | "write.expired"
-  | "webhook.failing"
   | "workstream.running"
   | "request.opened"
   | "request.updated"
@@ -1263,17 +1362,11 @@ export type KnownHubEventType =
   | "train.resumed"
   | "train.blocked"
   | "change.refused"
-  | "intake.routed"
   | "research.verdict"
   | "usage.breaker"
   | "usage.resumed"
   | "doctor.changed"
-  | "retro.ran"
-  | "playbook.changed"
-  | "playbook.reverted"
-  | "playbook.kept"
   | "key.paired"
-  | "workstream.note"
   | "prompt.changed"
   | "prompt.default_changed"
   | "steer.queued"
@@ -1335,7 +1428,7 @@ export type HumanRequest = {
   outputTail?: string;
   /** approval of a session's tool prompt, instead of a gated run. */
   permission?: ToolPermission;
-  /** approval of a retro playbook change that relaxes a gate, instead of a gated run or a tool prompt. */
+  /** approval of a retro playbook change (an older approval only), instead of a gated run or a tool prompt. */
   playbook?: PlaybookGateChange;
   projectRef: ProjectRef;
   requestId: ChatRequestId;
@@ -1365,6 +1458,8 @@ export type InProgressRow = {
   eta?: Timestamp;
   gate?: string;
   itemId?: PlanItemId;
+  /** Those of `taskIds` that run on the medium profile; the rest run high. Absent when none does. */
+  mediumTaskIds?: TaskId[];
   /** Retired with the ETA: always absent. */
   overdueMinutes?: number;
   /** Past 1.5× the usual time for its current stage: flagged in Risks, never credited past 90% of the stage. */
@@ -1399,8 +1494,7 @@ export type Incident = {
 
 /**
  * `policy_bypass`: a PR on a watched repo was merged by something other than the train. M12: `override`, a human
- * replaced a lead's Decision with another value; `playbook_reverted`, a retro wording change missed its metric and was
- * rolled back.
+ * replaced a lead's Decision with another value.
  */
 export type IncidentClass =
   | "false_claim"
@@ -1409,7 +1503,6 @@ export type IncidentClass =
   | "stall"
   | "policy_bypass"
   | "override"
-  | "playbook_reverted"
   | "estimate_miss"
   | "misfiled_ask"
   | "re_ask";
@@ -1620,13 +1713,7 @@ export type Lead = {
 };
 
 export type LeadStartInput = {
-  effort?: Effort;
   machineId: MachineId;
-  /**
-   * Saved as the project's lead model and effort for this and later (re)starts; absent keeps the saved or hub
-   * default.
-   */
-  model?: string;
   projectId: ProjectId;
 };
 
@@ -1725,6 +1812,12 @@ export type Machine = {
   nodeVersion: string;
   status: MachineStatus;
   tags: string[];
+};
+
+/** `machine.guard`. */
+export type MachineGuardData = {
+  /** true: new agents wait; false: they start again. */
+  paused: boolean;
 };
 
 /** Machine slug, [a-z0-9-]{1,32} */
@@ -1840,10 +1933,24 @@ export type NextRow = {
   workstreamId?: WorkstreamId;
 };
 
+/** Space on the volume holding a node's worktrees and build cache. */
+export type NodeDisk = {
+  /** Free for the node's user. */
+  freeBytes: number;
+  /**
+   * Below this the hub starts no new agents there: node.json's `minFreeGb`, else 10% of the volume or 20 GB,
+   * whichever is larger.
+   */
+  minFreeBytes: number;
+  totalBytes: number;
+};
+
 /** What a machine reports about itself with each heartbeat. */
 export type NodeLoad = {
   /** Logical CPUs. */
   cpus: number;
+  /** The volume holding the node's worktrees and build cache; absent from older nodes and when it can't be read. */
+  disk?: NodeDisk;
   /**
    * The latest claude.ai subscription limit of each type claude reported. Empty behind API keys and gateways,
    * which send none.
@@ -1853,19 +1960,6 @@ export type NodeLoad = {
   load1: number;
   /** Memory in use (total minus available), percent. */
   memUsedPct?: number;
-};
-
-export type OrchestratorKind = "orchestrator";
-
-/** A `claude -p` one-shot the hub ran for itself, counted as orchestrator usage. */
-export type OrchestratorRun = {
-  durationMs: number;
-  error?: string;
-  inputTokens?: number;
-  kind: OrchestratorKind;
-  model: string;
-  ok: boolean;
-  outputTokens?: number;
 };
 
 /** One order (workstream) as the board shows it. */
@@ -1921,7 +2015,7 @@ export type OrderNoteInput = {
 
 export type OrderNoteOutput = {
   next?: string;
-  /** "N" plus a number; the workstream.note event carries it. */
+  /** "N" plus a number. */
   noteId: string;
   /** The steer the note was sent as; its receipts arrive as `steer.*` events. */
   steerId?: SteerId;
@@ -2125,11 +2219,9 @@ export type PlanningState = {
   since: Timestamp;
 };
 
-export type PlaybookChangeKind = "wording" | "gate";
-
 /**
- * A retro playbook change that relaxes a gate (fewer reviewers, a weaker or removed check, a looser rule): it applies
- * only once a person approves it. Stored with the approval and never changed.
+ * A retro playbook change that relaxes a gate (fewer reviewers, a weaker or removed check, a looser rule). The retro is
+ * gone: only an older approval carries one, and the app still shows it.
  */
 export type PlaybookGateChange = {
   /** The exact unified diff that applies on approve. */
@@ -2150,6 +2242,33 @@ export type PlaybookName = "bugfix" | "feature" | "research" | "finish-all";
 /** <playbook name>@<full lowercase hex git blob SHA> */
 export type PlaybookRef = string;
 
+/** Who wrote the PR: fleetd's agent when one did, and the GitHub account it was opened from. */
+export type PrAuthor = {
+  effort?: Effort;
+  /** The writing agent's lane in the agents view. */
+  laneId?: string;
+  /** GitHub login; absent when GitHub wasn't reached. */
+  login?: string;
+  model?: string;
+  role?: AgentRole;
+  taskId?: TaskId;
+  /** Its session, for `agent_work`. */
+  threadRef?: ThreadRef;
+  /** The agent's task title. */
+  title?: string;
+};
+
+/** One check run or commit status on the head. fleetd's own merge statuses are left out: `queue` says the same. */
+export type PrCheck = {
+  completedAt?: Timestamp;
+  /** GitHub's conclusion as given, lowercased ("success", "failure", "skipped", "timed_out"…). */
+  conclusion?: string;
+  name: string;
+  startedAt?: Timestamp;
+  state: ChecksState;
+  url?: string;
+};
+
 /** One PR on a train strip. */
 export type PrChip = {
   changeId: ChangeId;
@@ -2159,6 +2278,130 @@ export type PrChip = {
   state: ChangeState;
   url: GitHubPrUrl;
   workstreamId: WorkstreamId;
+};
+
+export type PrDiffInput = {
+  limit?: number;
+  number: number;
+  offset?: number;
+  path: string;
+  repo: GitHubRepo;
+};
+
+export type PrDiffOutput = {
+  headSha?: CommitSha;
+  lines: DiffLine[];
+  next?: string;
+  /** Pass back as `offset` for the next page; absent on the last. */
+  nextOffset?: number;
+  /** GitHub shows no diff for this file (binary, or too large). */
+  noDiff?: boolean;
+  /** Lines in the file's diff. */
+  total: number;
+  truncated?: boolean;
+};
+
+/** One changed file. */
+export type PrFile = {
+  additions: number;
+  deletions: number;
+  /** Lines `pr_diff` pages through; absent when GitHub shows no diff for it (binary, or too large). */
+  diffLines?: number;
+  /** Repo-relative; the new path of a rename. */
+  path: string;
+  /** A rename's old path. */
+  previousPath?: string;
+  status: PrFileStatus;
+};
+
+export type KnownPrFileStatus = "added" | "modified" | "removed" | "renamed" | "copied" | "changed" | "unchanged";
+/** KnownPrFileStatus, or a value from a newer hub. */
+export type PrFileStatus = KnownPrFileStatus | (string & {});
+
+export type PrFilesInput = {
+  number: number;
+  offset?: number;
+  repo: GitHubRepo;
+};
+
+export type PrFilesOutput = {
+  files: PrFile[];
+  /** The head these files are of. */
+  headSha?: CommitSha;
+  next?: string;
+  /** Pass back as `offset` for the next page; absent on the last. */
+  nextOffset?: number;
+  /** Changed files in the PR. */
+  total: number;
+  truncated?: boolean;
+};
+
+export type PrGetInput = {
+  number: number;
+  repo: GitHubRepo;
+};
+
+export type PrGetOutput = {
+  additions?: number;
+  baseBranch?: string;
+  /** The PR's description, at most 8000 characters. Secrets are replaced by `[secret]`. */
+  body: string;
+  changedFiles?: number;
+  checks: PrCheck[];
+  deletions?: number;
+  githubError?: string;
+  headSha?: CommitSha;
+  /** Its moves through the merge queue, newest first. */
+  history: PrQueueStep[];
+  links: PrLinks;
+  next?: string;
+  pr: PrRow;
+  /** Newest first: agent verdicts and people's reviews. */
+  reviews: PrReviewEntry[];
+  truncated?: boolean;
+};
+
+export type PrLinks = {
+  checks: string;
+  files: string;
+  /** The squash commit on the base, once merged. */
+  mergeCommit?: string;
+  pr: GitHubPrUrl;
+};
+
+export type PrListInput = {
+  closedSince?: Timestamp;
+  projectRef: ProjectRef;
+};
+
+export type PrListOutput = {
+  at: Timestamp;
+  /** GitHub couldn't be reached: the list holds only the PRs fleetd records, without checks. Why, and what to do. */
+  githubError?: string;
+  next?: string;
+  prs: PrRow[];
+  truncated?: boolean;
+};
+
+/** Where the PR stands in fleetd's merge queue. Absent from a PR fleetd doesn't land. */
+export type PrQueue = {
+  changeId: ChangeId;
+  /** PRs waiting in the same queue. */
+  length: number;
+  /** Merging is paused for the repository. */
+  paused: boolean;
+  /** 0-based place in the queue; absent when not waiting in it. */
+  position?: number;
+  /** Why it is held or was sent back: a conflict, failing check names, or the refusal's fix. */
+  reason?: string;
+  state: ChangeState;
+};
+
+/** One move of the PR through the merge queue. */
+export type PrQueueStep = {
+  at: Timestamp;
+  from: ChangeState;
+  to: ChangeState;
 };
 
 /** One PR of an order. */
@@ -2176,6 +2419,64 @@ export type PrRef = {
   /** The task that opened it (its writer), when the hub knows: the board groups the PR's checkers under it. */
   taskId?: TaskId;
   url: GitHubPrUrl;
+};
+
+/** One review: an agent's verdict with its findings, or a person's review on GitHub. */
+export type PrReviewEntry = {
+  /** The reviewing agent (reviewer, verifier or QA); absent for a person's review. */
+  agent?: PrAuthor;
+  at: Timestamp;
+  /** Findings that must be fixed before merging; agent reviews only. */
+  blocking?: number;
+  /** It reviewed the PR's current change (an agent review stays current across a rebase that changes nothing). */
+  current: boolean;
+  /** GitHub login of a person's review. */
+  login?: string;
+  nonBlocking?: number;
+  /** The agent's findings, or the person's review text. Secrets are replaced by `[secret]`. */
+  text: string;
+  verdict: ReviewVerdictKind;
+};
+
+/** One PR as the list shows it. */
+export type PrRow = {
+  author: PrAuthor;
+  /** Its head branch. */
+  branch?: string;
+  /** Absent when GitHub wasn't reached. */
+  checks?: ChecksSummary;
+  createdAt: Timestamp;
+  mergedAt?: Timestamp;
+  number: number;
+  queue?: PrQueue;
+  repo: GitHubRepo;
+  review: ReviewSummary;
+  state: PrState;
+  /** GitHub's title; the writing agent's task title when GitHub wasn't reached. */
+  title: string;
+  updatedAt: Timestamp;
+  url: GitHubPrUrl;
+  /** The work it belongs to, when fleetd's agents wrote it. */
+  workstreamId?: WorkstreamId;
+};
+
+/** The PR on GitHub. */
+export type KnownPrState = "open" | "draft" | "merged" | "closed";
+/** KnownPrState, or a value from a newer hub. */
+export type PrState = KnownPrState | (string & {});
+
+/**
+ * One task profile's part of a scope's agent time and usage, from the spans kept (`coverage.detailSince` on): the
+ * tasks that ran on it, and the lead's spans under high.
+ */
+export type ProfileTotal = {
+  /** Exclusive agent time. */
+  agentMs: number;
+  /** The model's part of it. */
+  modelMs: number;
+  /** What claude reported for its messages. */
+  outputTokens: number;
+  profile: TaskProfile;
 };
 
 /** A figure. `pct` counts verified must items by size only; polish shows beside it. */
@@ -2229,6 +2530,11 @@ export type ProgressPoint = {
   at: Timestamp;
   /** Set when the estimate fell at this point; it never falls without one. */
   drop?: ProgressDrop;
+  /**
+   * Set while the estimate holds because the work in flight paused, waiting for an answer or for a usage limit to
+   * reset ("paused: an agent hit a usage limit"). A marker, not a drop: what was earned stays.
+   */
+  paused?: string;
   pct: number;
   verifiedPct: number;
 };
@@ -2384,6 +2690,8 @@ export type ProjectOutcome = {
   asOf: Timestamp;
   /** Absent until lead_start. */
   lead?: Lead;
+  /** Whether the lead may run a task on the medium profile (`project_set`); absent from older hubs, where it is on. */
+  mediumAllowed?: boolean;
   /** Hint for the next call. */
   next?: string;
   project: ProjectSummary;
@@ -2441,6 +2749,18 @@ export type ProjectRemoveOutput = {
 export type KnownProjectRowState = "working" | "waiting_on_you" | "blocked" | "idle";
 /** KnownProjectRowState, or a value from a newer hub. */
 export type ProjectRowState = KnownProjectRowState | (string & {});
+
+export type ProjectSetInput = {
+  machineId: MachineId;
+  mediumAllowed: boolean;
+  projectId: ProjectId;
+};
+
+export type ProjectSetOutput = {
+  mediumAllowed: boolean;
+  next?: string;
+  truncated?: boolean;
+};
 
 /** One project on the Status screen: a state word, the two-tone bar, agents running and the last merge. No ETA. */
 export type ProjectStatusRow = {
@@ -2523,7 +2843,7 @@ export type PromptGetOutput = {
   id: PromptId;
   kind: PromptKind;
   next?: string;
-  /** False for playbooks, router and retro: they have the hub-wide level only. */
+  /** False for a one-shot: it has the hub-wide level only. */
   perProject: boolean;
   placeholders: Placeholder[];
   project?: PromptOverride;
@@ -2709,7 +3029,7 @@ export type ResearchVerdict = {
   computedAt: Timestamp;
   metricValues: MetricValues;
   outcome: ResearchOutcome;
-  /** The brief's frozen rule. */
+  /** The brief's rule. */
   rule: DecisionRule;
 };
 
@@ -2731,131 +3051,22 @@ export type RetiredPromptOverride = {
   why: string;
 };
 
-export type RetroMetric = {
-  class: RetroMetricClass;
-  op: Decrease;
-  /** Measured over this many days after the change, against the same span before it. */
-  windowDays: number;
+/** Its reviews, rolled up. */
+export type KnownReviewState = "approved" | "changes_requested" | "none" | "pending";
+/** KnownReviewState, or a value from a newer hub. */
+export type ReviewState = KnownReviewState | (string & {});
+
+export type ReviewSummary = {
+  /** Clean agent reviews of the current change. */
+  done: number;
+  /** Agent reviews it needs before it can merge; 0 for a PR fleetd doesn't land. */
+  needed: number;
+  state: ReviewState;
 };
 
-/**
- * The fixed metric list, defined in code: incident counts per class, and agent-minutes per done workstream. A
- * proposal names one; the retro cannot add or change them.
- */
-export type RetroMetricClass =
-  | "false_claim"
-  | "polish_loop"
-  | "misfiled_ask"
-  | "out_of_area"
-  | "stall"
-  | "policy_bypass"
-  | "re_ask"
-  | "override"
-  | "agent_minutes_per_done"
-  | "estimate_miss";
-
-export type RetroProposal = {
-  appliedAt?: Timestamp;
-  at: Timestamp;
-  /** The window before it applied; `measured` is the window after. */
-  baseline?: RetroSnapshot;
-  /** What the model said it was. */
-  claimedKind: PlaybookChangeKind;
-  /** A gate change: the global decision a person records to settle it, `playbook.<name>.<hash>` = apply | reject. */
-  decisionKey?: DecisionKey;
-  diff: string;
-  /** When a wording change's window ends and its metric is computed. */
-  dueAt?: Timestamp;
-  expected: string;
-  /** Frontmatter fields the diff changes, plus "body". */
-  fields: string[];
-  fixesIncidents: IncidentId[];
-  /** Decided by the hub from the fields the diff touches. */
-  kind: PlaybookChangeKind;
-  measured?: RetroSnapshot;
-  metric: RetroMetric;
-  note?: string;
-  playbook: PlaybookName;
-  previousRef?: PlaybookRef;
-  proposalId: RetroProposalId;
-  /** The version it applied and the one it replaced. */
-  ref?: PlaybookRef;
-  /** The retro run that proposed it. */
-  run: number;
-  state: RetroProposalState;
-};
-
-export type RetroProposalId = string;
-
-/**
- * suggested: advise-only, nothing applies. pending: a gate change waiting for a person to record its decision.
- * measuring: a wording change applied, its window running; then kept or reverted. applied: a gate change a person
- * approved. rejected: a person said no. stale: the playbook changed under it, so its diff no longer applies.
- */
-export type RetroProposalState = "suggested" | "measuring" | "kept" | "reverted" | "applied" | "rejected" | "stale" | "pending";
-
-export type RetroProposalsInput = {
-  limit?: number;
-  state?: RetroProposalState;
-};
-
-export type RetroProposalsOutput = {
-  /** The global Decision policy.retro.apply is true: wording changes apply on their own and gate changes wait for a person's decision. */
-  apply: boolean;
-  lastRun?: RetroRun;
-  next?: string;
-  /** Newest first. */
-  proposals: RetroProposal[];
-  truncated?: boolean;
-};
-
-export type RetroRun = {
-  /** Nothing it proposed applies: `--advise`, or `policy.retro.apply` is not true. */
-  advise: boolean;
-  at: Timestamp;
-  dropped: RetroRunDropped[];
-  /** Incidents in the window it was given. */
-  incidents: number;
-  proposals: RetroProposalId[];
-  run: number;
-  trigger: RetroTrigger;
-  /** Absent when there was nothing to look at and no turn ran. */
-  usage?: OrchestratorRun;
-  windowDays: number;
-};
-
-/** A change the hub refused, with why. */
-export type RetroRunDropped = {
-  index: number;
-  playbook?: string;
-  reason: string;
-};
-
-export type RetroRunInput = {
-  /** Propose only, even when policy.retro.apply is true. */
-  advise?: boolean;
-  windowDays?: number;
-};
-
-export type RetroRunOutput = {
-  next?: string;
-  proposals: RetroProposal[];
-  run: RetroRun;
-  truncated?: boolean;
-};
-
-/**
- * A metric's values over one window; agent-minutes is null when no workstream finished in it. Its keys are
- * snake_case on the wire.
- */
-export type RetroSnapshot = {
-  agent_minutes_per_done: number | null;
-  false_claim: number;
-  polish_loop: number;
-  target: number | null;
-};
-
-export type RetroTrigger = "weekly" | "threshold" | "manual";
+export type KnownReviewVerdictKind = "approved" | "changes_requested" | "commented" | "dismissed";
+/** KnownReviewVerdictKind, or a value from a newer hub. */
+export type ReviewVerdictKind = KnownReviewVerdictKind | (string & {});
 
 export type Risk = {
   level: RiskLevel;
@@ -3251,9 +3462,6 @@ export type StaleSource = {
   source: string;
 };
 
-/** `"*"`: every event type or machine. */
-export type Star = "*";
-
 export type StatusDoc = {
   done: DoneRow[];
   eta: StatusEta;
@@ -3542,60 +3750,6 @@ export type SteersListOutput = {
   truncated?: boolean;
 };
 
-/** A webhook push target. Its signing secret is shown once by subscription_set and never returned again. */
-export type Subscription = {
-  /** keyId of the agent key that created it. */
-  createdBy: string;
-  /** When deliveries started failing; absent while healthy. */
-  failingSince?: Timestamp;
-  kind: WebhookKind;
-  lastDeliveredSeq?: EventSeq;
-  machines: SubscriptionMachines;
-  state: SubscriptionState;
-  subscriptionId: string;
-  types: SubscriptionTypes;
-  url: WebhookUrl;
-};
-
-export type SubscriptionDeleteInput = {
-  subscriptionId: string;
-};
-
-export type SubscriptionDeleteOutput = {
-  next?: string;
-  ok: true;
-  truncated?: boolean;
-};
-
-export type SubscriptionListInput = { [key: string]: unknown };
-
-export type SubscriptionListOutput = {
-  next?: string;
-  subscriptions: Subscription[];
-  truncated?: boolean;
-};
-
-export type SubscriptionMachines = Star | MachineId[];
-
-export type SubscriptionSetInput = {
-  clientRequestId: string;
-  machines?: SubscriptionMachines;
-  types?: SubscriptionTypes;
-  url: WebhookUrl;
-};
-
-export type SubscriptionSetOutput = {
-  next?: string;
-  /** The webhook signing secret. Shown only here; store it now. */
-  secret: string;
-  subscriptionId: string;
-  truncated?: boolean;
-};
-
-export type SubscriptionState = "active" | "disabled";
-
-export type SubscriptionTypes = Star | HubEventType[];
-
 export type TailAction = {
   action: ActionItem;
   at: Timestamp;
@@ -3624,27 +3778,24 @@ export type Task = {
   /** `fleetd/<taskId>-<slug>`; write tasks only. */
   branch?: string;
   createdAt: Timestamp;
-  /** Always explicit; resolved at spawn. */
-  effort: Effort;
   endedAt?: Timestamp;
   estimateMinutes?: number;
   /** The plan item it was spawned for (`--item`). */
   itemId?: PlanItemId;
   kind: TaskKind;
-  model: string;
   /** M4: its thread hit a usage limit; the task is idle until fleetd sends "continue" at `resumeAt`. */
   parked?: UsageParked;
   /** The PR a review task reviews. Required at spawn for review; absent on hub-spawned judge tasks and older rows. */
   pr?: string;
+  /** Resolved at spawn. Rows stored with a model and effort read as `high` (the hub migrates its own). */
+  profile?: TaskProfile;
   projectRef: ProjectRef;
   prompt: string;
   /** A review task spawned with `--qa`. */
   qa?: boolean;
-  /** Why it is queued, e.g. "lease: docs held by T1" or "slots: 40/40 in use". */
+  /** Why it is queued, e.g. "lease: docs held by T1" or "fleet cap: 40 of 40 running". */
   queuedReason?: string;
   result?: TaskResult;
-  /** Required at spawn for write tasks; optional here for tasks stored before M6. */
-  serves?: Serves;
   startedAt?: Timestamp;
   state: TaskState;
   taskId: TaskId;
@@ -3668,6 +3819,8 @@ export type TaskCounts = {
 /** Fields `HubEvent.data` carries on `task.*` events. */
 export type TaskEventData = {
   branch?: string;
+  /** When the task was spawned: a `task.started` for a task spawned before a turn is not that turn's start. */
+  createdAt?: Timestamp;
   /** task.out_of_area: the first 20 paths outside the leased globs. */
   paths?: string[];
   queuedReason?: string;
@@ -3689,6 +3842,12 @@ export type TaskId = string;
 
 /** Only write tasks get a worktree and leases. */
 export type TaskKind = "write" | "read" | "review";
+
+/**
+ * What an agent runs on. There are exactly two, both claude-opus-5-5: `high` (effort high) is the default and what
+ * the lead, every reviewer and every helper call run; `medium` (effort medium) is for mechanical tasks the lead picks.
+ */
+export type TaskProfile = "high" | "medium";
 
 export type TaskResult = {
   at: Timestamp;
@@ -3777,9 +3936,9 @@ export type ThreadInterruptOutput = {
 
 export type ThreadLaunchInput = {
   clientRequestId: string;
-  effort: Effort;
   machineId: MachineId;
-  model: string;
+  /** Absent: high. */
+  profile?: TaskProfile;
   projectId: ProjectId;
   prompt: string;
   runtimeMode?: RuntimeMode;
@@ -3880,6 +4039,8 @@ export type TimeBreakdownInput = {
 export type TimeBreakdownOutput = {
   agentMs: number;
   byCategory: CategoryTotal[];
+  /** High first; absent when no task or lead span is in the period. */
+  byProfile?: ProfileTotal[];
   ciChecks: CiCheckStat[];
   compare?: PeriodBreakdown;
   coverage: Coverage;
@@ -4014,6 +4175,8 @@ export type TrainEventData = {
   prUrl?: string;
   reason?: string;
   repo?: GitHubRepo;
+  /** pr.merged: the writer task whose PR it was, when a task wrote it. */
+  taskId?: TaskId;
   workstreamId?: WorkstreamId;
 };
 
@@ -4222,8 +4385,6 @@ export type WakeTarget = {
   threadId: ThreadId;
 };
 
-export type WebhookKind = "webhook";
-
 export type WebhookUrl = string;
 
 export type Weight = "must" | "polish";
@@ -4232,10 +4393,32 @@ export type KnownWeightsBasis = "project" | "fleet" | "default";
 /** KnownWeightsBasis, or a value from a newer hub. */
 export type WeightsBasis = KnownWeightsBasis | (string & {});
 
+/** A command, file edit or tool call. Secrets in its summary and output are replaced by `[secret]`. */
+export type WorkAction = {
+  action: ActionItem;
+  at: Timestamp;
+  id: string;
+};
+
+/** A message the agent or its person wrote. Secrets are replaced by `[secret]`. */
+export type WorkMessage = {
+  at: Timestamp;
+  id: string;
+  role: TailRole;
+  /** The last 2000 characters of a longer message. */
+  text: string;
+};
+
+/** One step of an agent's work. */
+export type WorkStep = WorkMessage & {
+  kind: "message";
+} | WorkAction & {
+  kind: "action";
+};
+
 export type Workstream = {
   /** Absent while draft. */
   brief?: Brief;
-  briefHash?: BriefHash;
   createdAt: Timestamp;
   /** Hub-filled, outside the frozen brief. Set when it starts running with a raw estimate. */
   estimateActual?: WorkstreamEstimateActual;
@@ -4245,7 +4428,7 @@ export type Workstream = {
   outcome?: ResearchOutcome;
   /** M9 finish-all: the finish-all workstream that spawned this one, and the value source it was spawned for. */
   parent?: WorkstreamParent;
-  /** Pinned at creation; the brief freeze validates against this version. Absent on workstreams from before M9. */
+  /** Pinned at creation; the brief validates against this version. Absent on workstreams from before M9. */
   playbook?: PlaybookRef;
   projectRef: ProjectRef;
   source: WorkstreamSource;
@@ -4265,8 +4448,8 @@ export type WorkstreamEstimateActual = {
 
 /** `workstream.created`, `workstream.running`, `workstream.state`, `workstream.done`. */
 export type WorkstreamEventData = {
-  /** workstream.running: the frozen brief. */
-  briefHash?: BriefHash;
+  /** workstream.state: the brief was set or edited. */
+  briefEdited?: boolean;
   by?: string;
   /** workstream.state (verifying) and workstream.done: the claim that moved it. */
   claimId?: ClaimId;
@@ -4311,17 +4494,6 @@ export type WorkstreamListOutput = {
   workstreams: Workstream[];
 };
 
-/** `workstream.note`. */
-export type WorkstreamNoteData = {
-  clientRequestId?: string;
-  /** The steer the note became. */
-  steerId?: SteerId;
-  /** The first 200 characters. */
-  text?: string;
-  urgent?: boolean;
-  workstreamId: WorkstreamId;
-};
-
 export type WorkstreamParent = {
   serves: Serves;
   workstreamId: WorkstreamId;
@@ -4357,6 +4529,8 @@ export type WorkstreamState = "draft" | "running" | "converging" | "verifying" |
 /** Every tool the app can `call`: its input and its output. */
 export interface ToolMap {
   actions_list: { input: ActionsListInput; output: ActionsListOutput };
+  agent_work: { input: AgentWorkInput; output: AgentWorkOutput };
+  agents_list: { input: AgentsListInput; output: AgentsListOutput };
   approval_answer: { input: ApprovalAnswerInput; output: ApprovalAnswerOutput };
   attachment_get: { input: AttachmentGetInput; output: AttachmentGetOutput };
   attachment_put: { input: AttachmentPutInput; output: AttachmentPutOutput };
@@ -4365,6 +4539,7 @@ export interface ToolMap {
   changes_list: { input: ChangesListInput; output: ChangesListOutput };
   chat_history: { input: ChatHistoryInput; output: ChatHistoryOutput };
   chat_send: { input: ChatSendInput; output: ChatSendOutput };
+  chat_stop: { input: ChatStopInput; output: ChatStopOutput };
   claims_list: { input: ClaimsListInput; output: ClaimsListOutput };
   decisions_record: { input: DecisionsRecordInput; output: DecisionsRecordOutput };
   decisions_search: { input: DecisionsSearchInput; output: DecisionsSearchOutput };
@@ -4386,12 +4561,17 @@ export interface ToolMap {
   order_stop: { input: OrderStopInput; output: OrderStopOutput };
   orders_board: { input: OrdersBoardInput; output: OrdersBoardOutput };
   plan_get: { input: PlanGetInput; output: PlanGetOutput };
+  pr_diff: { input: PrDiffInput; output: PrDiffOutput };
+  pr_files: { input: PrFilesInput; output: PrFilesOutput };
+  pr_get: { input: PrGetInput; output: PrGetOutput };
+  pr_list: { input: PrListInput; output: PrListOutput };
   project_add: { input: ProjectAddInput; output: ProjectAddOutput };
   project_discover: { input: ProjectDiscoverInput; output: ProjectDiscoverOutput };
   project_files: { input: ProjectFilesInput; output: ProjectFilesOutput };
   project_get: { input: ProjectGetInput; output: ProjectOutcome };
   project_inspect: { input: ProjectInspectInput; output: ProjectInspectOutput };
   project_remove: { input: ProjectRemoveInput; output: ProjectRemoveOutput };
+  project_set: { input: ProjectSetInput; output: ProjectSetOutput };
   project_stop: { input: ProjectStopInput; output: ProjectStopOutput };
   projects_list: { input: ProjectsListInput; output: ProjectsListOutput };
   prompt_get: { input: PromptGetInput; output: PromptGetOutput };
@@ -4399,8 +4579,6 @@ export interface ToolMap {
   prompt_set: { input: PromptSetInput; output: PromptSetOutput };
   prompts_list: { input: PromptsListInput; output: PromptsListOutput };
   requests_list: { input: RequestsListInput; output: RequestsListOutput };
-  retro_proposals: { input: RetroProposalsInput; output: RetroProposalsOutput };
-  retro_run: { input: RetroRunInput; output: RetroRunOutput };
   secret_submit: { input: SecretSubmitInput; output: SecretSubmitOutput };
   session_prompt_get: { input: SessionPromptGetInput; output: SessionPromptGetOutput };
   status_get: { input: StatusGetInput; output: StatusGetOutput };
@@ -4410,9 +4588,6 @@ export interface ToolMap {
   steer_send: { input: SteerSendInput; output: SteerSendOutput };
   steer_withdraw: { input: SteerWithdrawInput; output: SteerWithdrawOutput };
   steers_list: { input: SteersListInput; output: SteersListOutput };
-  subscription_delete: { input: SubscriptionDeleteInput; output: SubscriptionDeleteOutput };
-  subscription_list: { input: SubscriptionListInput; output: SubscriptionListOutput };
-  subscription_set: { input: SubscriptionSetInput; output: SubscriptionSetOutput };
   task_get: { input: TaskGetInput; output: TaskGetOutput };
   tasks_list: { input: TasksListInput; output: TasksListOutput };
   thread_answer: { input: ThreadAnswerInput; output: ThreadAnswerOutput };
@@ -4452,6 +4627,7 @@ export interface HubEventDataMap {
   "claim.failed": ClaimEventData;
   "claim.passed": ClaimEventData;
   "github.drift": GithubDriftData;
+  "machine.guard": MachineGuardData;
   "machine.slept": MachineSleptData;
   "plan.changed": PlanChangedData;
   "plan.verified": PlanVerifiedData;
@@ -4490,7 +4666,6 @@ export interface HubEventDataMap {
   "usage.resumed": UsageEventData;
   "workstream.created": WorkstreamEventData;
   "workstream.done": WorkstreamEventData;
-  "workstream.note": WorkstreamNoteData;
   "workstream.running": WorkstreamEventData;
   "workstream.state": WorkstreamEventData;
 }

@@ -1,6 +1,7 @@
-//! Prompts a release retired: merged into another, replaced by fixed text, or made obsolete by the lead chat. An
-//! override of one is never applied and never deleted by fleetd: `prompts_list` returns it under `orphans`, so the
-//! human can copy what they wrote into the prompt that holds it now, and `prompt_reset` on its id deletes it.
+//! Prompts a release retired: merged into another, replaced by fixed text, or made obsolete by the lead chat or a
+//! feature that went. An override of one is never applied and never deleted by fleetd: `prompts_list` returns it under
+//! `orphans`, so the human can copy what they wrote into the prompt that holds it now, and `prompt_reset` on its id
+//! deletes it.
 //!
 //! None is migrated by itself: every retired prompt either became fixed text no one edits, or its words now sit in a
 //! larger prompt (the lead's), where pasting them in blind would be wrong more often than right.
@@ -21,6 +22,7 @@ const FIX_PR: &str = "one fixed \"fix your PR\" message replaces it";
 const FIXED: &str = "fixed text now, the same for every project";
 const ROUTER: &str = "one lead per project: an order goes to its project's lead, no router";
 const HEADLINE: &str = "the status view has no generated headline";
+const RETRO: &str = "fleetd no longer runs a retro; edit the lead prompt or a playbook yourself";
 const PLAYBOOK: &str = "the playbooks are sections of the lead prompt now; this file's rules still apply, its instructions don't";
 
 const fn r(
@@ -324,6 +326,7 @@ pub const RETIRED: &[Retired] = &[
     r("router", "Order router", ROUTER, None),
     r("status.headline", "Status headline", HEADLINE, None),
     r("router.retry", "Order router, second try", ROUTER, None),
+    r("retro", "Retro / triage", RETRO, None),
     r(
         "playbook.bugfix",
         "Playbook: bugfix",
@@ -376,8 +379,8 @@ mod tests {
         }
         assert_eq!(
             ENTRIES.len() + RETIRED.len(),
-            69,
-            "the 69 prompts of the last release"
+            70,
+            "the 69 prompts of the last release, and lead.profiles"
         );
     }
 }

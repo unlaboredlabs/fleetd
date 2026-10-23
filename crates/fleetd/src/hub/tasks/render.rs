@@ -134,13 +134,6 @@ pub struct PromptInput<'a> {
     pub base_branch: Option<&'a str>,
 }
 
-pub fn effort_str(effort: fleetd_contracts::effort::Effort) -> String {
-    serde_json::to_value(effort)
-        .ok()
-        .and_then(|v| v.as_str().map(str::to_owned))
-        .unwrap_or_default()
-}
-
 fn kind_str(kind: TaskKind) -> &'static str {
     match kind {
         TaskKind::Write => "write",
@@ -164,7 +157,6 @@ fn state_str(state: TaskState) -> &'static str {
 /// custom instructions.
 pub fn render_task_prompt(set: &PromptSet, input: &PromptInput<'_>) -> String {
     let task = input.task;
-    let serves = task.serves.as_ref().map(|s| s.as_str());
     let mut context = Vec::new();
     if let Some(brief) = input.brief {
         context.push(format!("Goal: {}", one_line(brief.goal.as_str(), 1000)));
@@ -172,9 +164,6 @@ pub fn render_task_prompt(set: &PromptSet, input: &PromptInput<'_>) -> String {
             "Done when: {}",
             input.done_when.as_deref().unwrap_or_default()
         ));
-    }
-    if let Some(serves) = serves {
-        context.push(format!("This task serves: {}", one_line(serves, 200)));
     }
     let workstream = if context.is_empty() {
         String::new()
@@ -209,7 +198,6 @@ pub fn render_task_prompt(set: &PromptSet, input: &PromptInput<'_>) -> String {
             "baseBranch",
             &input.base_branch.unwrap_or("<default branch>"),
         ),
-        ("serves", &serves.unwrap_or("<what this serves>")),
     ];
     let text = match task.kind {
         TaskKind::Write => set.render("task.brief.write", vars),
@@ -268,7 +256,6 @@ pub fn task_waiting_lines(task_id: &str, title: &str, question: &str) -> String 
 /// One digest line per task: running and idle, then queued with reasons, then those that ended since `since`.
 pub fn task_digest_lines(tasks: &[Task], since: Option<&str>) -> Vec<String> {
     let title = |t: &Task| one_line(t.title.as_str(), 80);
-    let model = |t: &Task| format!("{}/{}", t.model.as_str(), effort_str(t.effort));
     let mut out = Vec::new();
     for t in tasks
         .iter()
@@ -287,7 +274,7 @@ pub fn task_digest_lines(tasks: &[Task], since: Option<&str>) -> Vec<String> {
             "- {} {state} ({}, {}): {}{branch}",
             t.task_id,
             kind_str(t.kind),
-            model(t),
+            t.profile.as_str(),
             title(t)
         ));
     }

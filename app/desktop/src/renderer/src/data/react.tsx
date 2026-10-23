@@ -1,8 +1,8 @@
 // The data layer in React: one layer per window, read through selectors.
-import { hashKey, QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { hashKey, QueryClientProvider, useInfiniteQuery, useQueries, useQuery } from "@tanstack/react-query";
 import { createContext, useCallback, useContext, useEffect, useSyncExternalStore, type ReactNode } from "react";
 import { useStore } from "zustand";
-import type { ToolInput, ToolName } from "../../../shared/contracts";
+import type { ToolInput, ToolName, ToolOutput } from "../../../shared/contracts";
 import { callKey, type DataLayer } from "./queries";
 import { selectLiveText, type LiveAgent } from "./selectors";
 import type { DataState } from "./store";
@@ -46,6 +46,35 @@ export const useToolQuery = <T extends ToolName>(tool: T, input: ToolInput<T>, o
   const layer = useDataLayer();
   const fresh = useStore(layer.store, (s) => s.fresh);
   return useQuery({ ...layer.toolQuery(tool, input), enabled: fresh && (options?.enabled ?? true) });
+};
+
+/**
+ * `tool(input)` a page at a time, for reads too long for one answer (a PR's files): `next` gives the input fields
+ * that ask for the page after `page` (its offset or cursor), undefined after the last. Pages load on
+ * `fetchNextPage`, never by themselves.
+ */
+export const useToolPages = <T extends ToolName>(
+  tool: T,
+  input: ToolInput<T>,
+  next: (page: ToolOutput<T>) => Partial<ToolInput<T>> | undefined,
+  options?: { enabled?: boolean },
+) => {
+  const layer = useDataLayer();
+  const fresh = useStore(layer.store, (s) => s.fresh);
+  return useInfiniteQuery({
+    queryKey: layer.toolQuery(tool, input).queryKey,
+    queryFn: ({ pageParam }) => layer.toolQuery(tool, { ...(input as object), ...(pageParam as object) } as ToolInput<T>).queryFn(),
+    initialPageParam: {} as Partial<ToolInput<T>>,
+    getNextPageParam: next,
+    enabled: fresh && (options?.enabled ?? true),
+  });
+};
+
+/** `tool` for each of `inputs`, as one query each: a list whose length changes (the pages of a diff in view). */
+export const useToolQueries = <T extends ToolName>(tool: T, inputs: readonly ToolInput<T>[]) => {
+  const layer = useDataLayer();
+  const fresh = useStore(layer.store, (s) => s.fresh);
+  return useQueries({ queries: inputs.map((input) => ({ ...layer.toolQuery(tool, input), enabled: fresh })) });
 };
 
 const NO_THREAD = { machineId: "", threadId: "", limit: 40 } as const;

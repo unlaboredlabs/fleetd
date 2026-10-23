@@ -625,7 +625,6 @@ impl TrainHost for FakeHost {
                 workstream_id: spawn.workstream_id.clone(),
                 kind: "review".into(),
                 state: "running".into(),
-                serves: Some(spawn.serves.clone()),
                 tier: Some(spawn.tier),
                 pr_url: Some(spawn.pr.clone()),
                 receipt_commands: 0,
@@ -642,10 +641,7 @@ impl TrainHost for FakeHost {
         (*workstream_id == ws()).then(|| WorkstreamView {
             workstream_id: ws(),
             project_ref: project(),
-            brief: Some(BriefView {
-                tier: Tier::S,
-                done_when: 1,
-            }),
+            brief: Some(BriefView { tier: Tier::S }),
             playbook: None,
         })
     }
@@ -772,15 +768,6 @@ impl TrainHost for FakeHost {
         _: &'a MachineId,
     ) -> BoxFut<'a, Result<Vec<ProviderView>, String>> {
         Box::pin(async { Ok(Vec::new()) })
-    }
-    fn review_refusal(
-        &self,
-        _: &WorkstreamId,
-        _: &str,
-        _: &str,
-        _: &[PrVerdict],
-    ) -> Option<ReviewRefusal> {
-        None
     }
 }
 
@@ -1009,15 +996,9 @@ impl Kit {
         self.head_of(branch)
     }
 
-    /// A PR from `branch` (pushed with `files` on top of main) with `body`.
-    fn open_pr(
-        &self,
-        number: i64,
-        branch: &str,
-        files: &[(&str, Option<&str>)],
-        body: &str,
-    ) -> String {
-        self.open_pr_on("main", number, branch, files, body)
+    /// A PR from `branch`, pushed with `files` on top of main.
+    fn open_pr(&self, number: i64, branch: &str, files: &[(&str, Option<&str>)]) -> String {
+        self.open_pr_on("main", number, branch, files)
     }
 
     /// A PR into `base`, which starts at main when the origin lacks it.
@@ -1027,7 +1008,6 @@ impl Kit {
         number: i64,
         branch: &str,
         files: &[(&str, Option<&str>)],
-        body: &str,
     ) -> String {
         if self.gh.head_of(base).is_none() {
             git(&self.gh.origin, &["branch", base, "main"]);
@@ -1037,7 +1017,7 @@ impl Kit {
             .pulls
             .lock()
             .unwrap()
-            .insert(number, FakePull::open(branch, base, body));
+            .insert(number, FakePull::open(branch, base, ""));
         format!("https://github.com/{REPO}/pull/{number}")
     }
 
@@ -1054,14 +1034,14 @@ impl Kit {
             .pulls
             .lock()
             .unwrap()
-            .insert(number, FakePull::open(branch, parent, "Source: done:0"));
+            .insert(number, FakePull::open(branch, parent, ""));
         format!("https://github.com/{REPO}/pull/{number}")
     }
 
     async fn enqueue(&self, pr_url: String, tier: Option<Tier>) -> Change {
         let input = ChangeEnqueueCall {
             tier,
-            ..enqueue_call(pr_url, None)
+            ..enqueue_call(pr_url)
         };
         self.train
             .enqueue(&project(), input)
@@ -1078,7 +1058,6 @@ impl Kit {
             workstream_id: ws(),
             kind: "write".into(),
             state: "done".into(),
-            serves: Some("done:0".into()),
             tier: None,
             pr_url: pr_url.map(String::from),
             receipt_commands: 0,
@@ -1105,12 +1084,11 @@ impl Kit {
     }
 }
 
-fn enqueue_call(pr_url: String, serves: Option<&str>) -> ChangeEnqueueCall {
+fn enqueue_call(pr_url: String) -> ChangeEnqueueCall {
     ChangeEnqueueCall {
         task_id: None,
         pr_url: GitHubPrUrl::unchecked(pr_url),
         workstream_id: Some(ws()),
-        serves: serves.map(Serves::unchecked),
         tier: None,
         item: None,
     }
@@ -1121,67 +1099,10 @@ fn add(file: &'static str, content: &'static str) -> (&'static str, Option<&'sta
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn refuses_a_pr_without_a_valid_source_line_writing_a_refused_row_only_when_the_serves_is_known()
- {
-    let kit = Kit::new();
-    let bare = kit.open_pr(3, "no-source", &[add("b.txt", "b\n")], "Adds b.");
-    let refused = kit
-        .train
-        .enqueue(&project(), enqueue_call(bare, None))
-        .await
-        .unwrap_err();
-    assert_eq!(
-        (refused.code, refused.fix.as_deref()),
-        ("invalid", Some("add 'Source: done:0' to the PR body"))
-    );
-    assert!(
-        kit.train
-            .list(&ListFilter {
-                limit: 10,
-                ..Default::default()
-            })
-            .is_empty()
-    );
-
-    let wrong = kit.open_pr(4, "wrong-source", &[add("c.txt", "c\n")], "Source: done:5");
-    let input = enqueue_call(wrong, Some("done:0"));
-    let mismatch = kit.train.enqueue(&project(), input).await.unwrap_err();
-    assert_eq!(
-        mismatch.fix.as_deref(),
-        Some("change the PR body's line to 'Source: done:0'")
-    );
-    let listed = kit.train.list(&ListFilter {
-        limit: 10,
-        ..Default::default()
-    });
-    assert_eq!(
-        listed
-            .iter()
-            .map(|c| (c.pr_number.get(), c.state, c.serves.as_str()))
-            .collect::<Vec<_>>(),
-        [(4, ChangeState::Refused, "done:0")]
-    );
-
-    let fixes: Vec<Value> = kit
-        .host
-        .events_of("change.refused")
-        .into_iter()
-        .map(|d| d["fix"].clone())
-        .collect();
-    assert_eq!(
-        fixes,
-        [
-            json!("add 'Source: done:0' to the PR body"),
-            json!("change the PR body's line to 'Source: done:0'")
-        ]
-    );
-}
-
-#[tokio::test(flavor = "multi_thread")]
 async fn auto_enqueues_a_write_tasks_pr_rebases_it_onto_the_moved_base_and_merges_pinned_with_fleetd_train()
  {
     let kit = Kit::new();
-    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")], "Source: done:0");
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
     let (task_id, change_id) = kit.author_task(Some(&pr)).await;
     // Ready once its patch id is read, since tier S needs no review.
     let before = kit.get(&change_id);
@@ -1225,7 +1146,7 @@ async fn auto_enqueues_a_write_tasks_pr_rebases_it_onto_the_moved_base_and_merge
     assert_eq!(
         kit.host.events_of("pr.merged"),
         [
-            json!({ "changeId": change_id, "workstreamId": "W1", "repo": REPO, "prNumber": 7, "mergedSha": merged.merged_sha })
+            json!({ "changeId": change_id, "workstreamId": "W1", "taskId": task_id, "repo": REPO, "prNumber": 7, "mergedSha": merged.merged_sha })
         ]
     );
     let moves: Vec<(String, String)> = kit
@@ -1277,7 +1198,7 @@ async fn moves_the_train_to_the_repos_new_project_when_its_first_project_was_rem
         project_id: ProjectId::unchecked(REMOVED),
     };
     kit.train.records().ensure_train(REPO, &removed, 0);
-    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")], "Source: done:0");
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
     let (_, change_id) = kit.author_task(Some(&pr)).await;
 
     assert!(kit.train.step(REPO).await);
@@ -1296,14 +1217,10 @@ async fn sends_a_conflicting_pr_back_to_its_author_with_the_paths_moves_on_and_m
         7,
         "edit-a",
         &[("a.txt", Some(&a_with(&[(5, "author's line 5")])))],
-        "Source: done:0",
     );
     let (_, first) = kit.author_task(Some(&pr)).await;
     let other = kit
-        .enqueue(
-            kit.open_pr(8, "other", &[add("b.txt", "b\n")], "Source: done:0"),
-            None,
-        )
+        .enqueue(kit.open_pr(8, "other", &[add("b.txt", "b\n")]), None)
         .await;
     kit.commit(
         "main",
@@ -1354,7 +1271,7 @@ async fn sends_a_conflicting_pr_back_to_its_author_with_the_paths_moves_on_and_m
 async fn parks_a_pr_whose_ci_is_red_wakes_its_author_with_the_failing_check_and_log_and_never_merges_it()
  {
     let kit = Kit::new();
-    let pr = kit.open_pr(7, "red", &[add("FAIL", "x\n")], "Source: done:0");
+    let pr = kit.open_pr(7, "red", &[add("FAIL", "x\n")]);
     let (_, change_id) = kit.author_task(Some(&pr)).await;
 
     assert!(kit.train.step(REPO).await);
@@ -1396,8 +1313,8 @@ fn one_poll(options: &mut TrainOptions) {
 #[tokio::test(flavor = "multi_thread")]
 async fn merges_on_local_checks_when_the_repo_has_no_ci_and_says_so_on_the_merge() {
     let kit = Kit::with(FakeCi::None, one_poll);
-    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")], "Source: done:0");
-    let (_, change_id) = kit.author_task(Some(&pr)).await;
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
+    let (task_id, change_id) = kit.author_task(Some(&pr)).await;
 
     assert!(kit.train.step(REPO).await);
     let merged = kit.get(&change_id);
@@ -1406,14 +1323,14 @@ async fn merges_on_local_checks_when_the_repo_has_no_ci_and_says_so_on_the_merge
     assert_eq!(
         kit.host.events_of("pr.merged"),
         [
-            json!({ "changeId": change_id, "repo": REPO, "prNumber": 7, "mergedSha": merged.merged_sha, "ci": format!("no CI on {REPO}: used local checks"), "workstreamId": "W1" })
+            json!({ "changeId": change_id, "repo": REPO, "prNumber": 7, "mergedSha": merged.merged_sha, "ci": format!("no CI on {REPO}: used local checks"), "workstreamId": "W1", "taskId": task_id })
         ]
     );
 }
 
 /// Merges `docs.md` alone and returns the `pr.merged` event's `ci` note, if any.
 async fn merge_docs(kit: &Kit) -> Option<Value> {
-    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")], "Source: done:0");
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
     let (_, change_id) = kit.author_task(Some(&pr)).await;
     assert!(kit.train.step(REPO).await);
     assert_eq!(kit.get(&change_id).state, ChangeState::Merged);
@@ -1456,7 +1373,7 @@ async fn a_started_workflow_run_with_no_checks_yet_is_waited_for() {
         green_from: None,
     };
     let kit = Kit::with(workflow, one_poll);
-    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")], "Source: done:0");
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
     let (_, change_id) = kit.author_task(Some(&pr)).await;
 
     assert!(kit.train.step(REPO).await);
@@ -1472,7 +1389,6 @@ async fn merges_into_the_pull_requests_own_base_when_it_is_not_the_default_branc
         8,
         "slot/1/fleetd/T9-other",
         &[add("other.txt", "other\n")],
-        "Source: done:0",
     );
     let first = kit
         .enqueue("https://github.com/acme/storefront/pull/8".into(), None)
@@ -1482,7 +1398,6 @@ async fn merges_into_the_pull_requests_own_base_when_it_is_not_the_default_branc
         7,
         "slot/1/fleetd/T1-docs",
         &[add("docs.md", "docs\n")],
-        "Source: done:0",
     );
     let second = kit.enqueue(pr, None).await;
 
@@ -1517,7 +1432,6 @@ async fn merges_on_local_checks_into_a_base_its_workflows_ignore() {
         7,
         "noci/1/fleetd/T1-docs",
         &[add("docs.md", "docs\n")],
-        "Source: done:0",
     );
     let (_, change_id) = kit.author_task(Some(&pr)).await;
 
@@ -1557,7 +1471,6 @@ async fn a_merge_outside_the_train_is_a_bypass_only_into_a_base_the_train_guards
         7,
         "slot/1/fleetd/T1-docs",
         &[add("docs.md", "docs\n")],
-        "Source: done:0",
     );
     kit.enqueue(pr, None).await;
     assert!(kit.train.step(REPO).await);
@@ -1613,7 +1526,6 @@ async fn the_lab_workflow_is_ci_for_a_slot_base_and_not_for_a_noci_one() {
         7,
         "slot/1/fleetd/T1-docs",
         &[add("docs.md", "docs\n")],
-        "Source: done:0",
     );
     let (_, change_id) = kit.author_task(Some(&pr)).await;
     assert!(kit.train.step(REPO).await);
@@ -1629,7 +1541,7 @@ async fn an_unreadable_workflow_file_is_ci() {
         green_from: None,
     };
     let kit = Kit::with(workflow, one_poll);
-    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")], "Source: done:0");
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
     let (_, change_id) = kit.author_task(Some(&pr)).await;
     assert!(kit.train.step(REPO).await);
     assert_eq!(kit.get(&change_id).state, ChangeState::CiFailed);
@@ -1639,7 +1551,7 @@ async fn an_unreadable_workflow_file_is_ci() {
 #[tokio::test(flavor = "multi_thread")]
 async fn keeps_waiting_for_checks_a_repo_without_check_runs_requires() {
     let kit = Kit::with(FakeCi::Required, one_poll);
-    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")], "Source: done:0");
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
     let (_, change_id) = kit.author_task(Some(&pr)).await;
 
     assert!(kit.train.step(REPO).await);
@@ -1660,7 +1572,7 @@ async fn keeps_waiting_for_checks_a_repo_without_check_runs_requires() {
 #[tokio::test(flavor = "multi_thread")]
 async fn never_takes_a_failed_ci_read_for_no_ci_and_says_what_failed() {
     let kit = Kit::with(FakeCi::Unreadable, one_poll);
-    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")], "Source: done:0");
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
     let (_, change_id) = kit.author_task(Some(&pr)).await;
 
     assert!(kit.train.step(REPO).await);
@@ -1679,16 +1591,10 @@ async fn never_takes_a_failed_ci_read_for_no_ci_and_says_what_failed() {
 async fn requeues_at_the_front_when_github_refuses_the_pinned_merge_with_409_then_merges() {
     let kit = Kit::with(FakeCi::Actions, one_at_a_time);
     let a = kit
-        .enqueue(
-            kit.open_pr(7, "a", &[add("b.txt", "b\n")], "Source: done:0"),
-            None,
-        )
+        .enqueue(kit.open_pr(7, "a", &[add("b.txt", "b\n")]), None)
         .await;
     let b = kit
-        .enqueue(
-            kit.open_pr(8, "b", &[add("c.txt", "c\n")], "Source: done:0"),
-            None,
-        )
+        .enqueue(kit.open_pr(8, "b", &[add("c.txt", "c\n")]), None)
         .await;
     kit.gh.merge_replies.lock().unwrap().push(GhOut {
         exit_code: 1,
@@ -1733,10 +1639,7 @@ async fn requeues_at_the_front_when_github_refuses_the_pinned_merge_with_409_the
 async fn holds_while_the_freeze_decision_is_true_and_resumes_when_it_goes() {
     let kit = Kit::new();
     let change = kit
-        .enqueue(
-            kit.open_pr(7, "a", &[add("b.txt", "b\n")], "Source: done:0"),
-            None,
-        )
+        .enqueue(kit.open_pr(7, "a", &[add("b.txt", "b\n")]), None)
         .await;
     let key = "policy.freeze.acme.storefront";
     let freeze = DecisionView {
@@ -1777,12 +1680,7 @@ async fn sends_a_change_back_to_reviewing_when_a_clean_rebase_changes_its_patch_
     let kit = Kit::new();
     let change = kit
         .enqueue(
-            kit.open_pr(
-                7,
-                "m",
-                &[("a.txt", Some(&a_with(&[(6, "pr line 6")])))],
-                "Source: done:0",
-            ),
+            kit.open_pr(7, "m", &[("a.txt", Some(&a_with(&[(6, "pr line 6")])))]),
             Some(Tier::M),
         )
         .await;
@@ -1885,7 +1783,7 @@ async fn replaces_a_stale_train_worktree_left_by_an_earlier_clone() {
     );
     std::fs::remove_dir_all(&earlier).unwrap();
 
-    let pr = kit.open_pr(5, "stale", &[add("b.txt", "b\n")], "Source: done:0");
+    let pr = kit.open_pr(5, "stale", &[add("b.txt", "b\n")]);
     let change = kit.enqueue(pr, None).await;
     assert_eq!(
         (
@@ -1902,7 +1800,7 @@ async fn replaces_a_stale_train_worktree_left_by_an_earlier_clone() {
 
     // A healthy worktree is kept as it is.
     std::fs::write(worktree.join("kept"), "").unwrap();
-    let next = kit.open_pr(6, "next", &[add("c.txt", "c\n")], "Source: done:0");
+    let next = kit.open_pr(6, "next", &[add("c.txt", "c\n")]);
     assert!(kit.enqueue(next, None).await.last_error.is_none());
     assert!(worktree.join("kept").exists());
     assert!(kit.host.events_of("train.blocked").is_empty());
@@ -1916,7 +1814,7 @@ async fn leaves_what_is_not_the_trains_where_its_worktree_goes_and_says_what_to_
     std::fs::write(worktree.join("notes.txt"), "mine\n").unwrap();
     let path = worktree.display().to_string();
 
-    let pr = kit.open_pr(6, "blocked", &[add("b.txt", "b\n")], "Source: done:0");
+    let pr = kit.open_pr(6, "blocked", &[add("b.txt", "b\n")]);
     let change = kit.enqueue(pr, None).await;
     assert_eq!(change.state, ChangeState::Queued);
     let error = change.last_error.unwrap();
@@ -1966,22 +1864,13 @@ async fn batches_three_disjoint_ready_prs_into_one_ci_run_and_one_squash_and_clo
  {
     let kit = Kit::new();
     let a = kit
-        .enqueue(
-            kit.open_pr(7, "a", &[add("a1.txt", "a\n")], "Source: done:0"),
-            None,
-        )
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]), None)
         .await;
     let b = kit
-        .enqueue(
-            kit.open_pr(8, "b", &[add("b1.txt", "b\n")], "Source: done:0"),
-            None,
-        )
+        .enqueue(kit.open_pr(8, "b", &[add("b1.txt", "b\n")]), None)
         .await;
     let c = kit
-        .enqueue(
-            kit.open_pr(9, "c", &[add("c1.txt", "c\n")], "Source: done:0"),
-            None,
-        )
+        .enqueue(kit.open_pr(9, "c", &[add("c1.txt", "c\n")]), None)
         .await;
     kit.commit("main", &[add("other.txt", "other\n")], None);
 
@@ -2053,22 +1942,13 @@ async fn a_red_batch_drops_its_last_member_merges_the_rest_and_tests_the_dropped
     let kit = Kit::new();
     // Each green alone; pair-a and pair-b together are red.
     let a = kit
-        .enqueue(
-            kit.open_pr(7, "a", &[add("a1.txt", "a\n")], "Source: done:0"),
-            None,
-        )
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]), None)
         .await;
     let b = kit
-        .enqueue(
-            kit.open_pr(8, "b", &[add("pair-a", "a\n")], "Source: done:0"),
-            None,
-        )
+        .enqueue(kit.open_pr(8, "b", &[add("pair-a", "a\n")]), None)
         .await;
     let c = kit
-        .enqueue(
-            kit.open_pr(9, "c", &[add("pair-b", "b\n")], "Source: done:0"),
-            None,
-        )
+        .enqueue(kit.open_pr(9, "c", &[add("pair-b", "b\n")]), None)
         .await;
 
     assert!(kit.train.step(REPO).await);
@@ -2086,11 +1966,8 @@ async fn a_red_batch_drops_its_last_member_merges_the_rest_and_tests_the_dropped
     );
 
     // Alone, on the new main, it is red: its author hears it, and it never merges.
-    kit.enqueue(
-        kit.open_pr(10, "d", &[add("d1.txt", "d\n")], "Source: done:0"),
-        None,
-    )
-    .await;
+    kit.enqueue(kit.open_pr(10, "d", &[add("d1.txt", "d\n")]), None)
+        .await;
     assert!(kit.train.step(REPO).await);
     assert_eq!(state_of(&kit, &c), ChangeState::CiFailed);
     assert!(kit.main_file("pair-b").is_none());
@@ -2100,16 +1977,10 @@ async fn a_red_batch_drops_its_last_member_merges_the_rest_and_tests_the_dropped
 #[tokio::test(flavor = "multi_thread")]
 async fn a_batch_of_one_is_the_old_path_and_overlapping_files_never_batch() {
     let kit = Kit::with(FakeCi::Actions, one_at_a_time);
-    kit.enqueue(
-        kit.open_pr(7, "a", &[add("a1.txt", "a\n")], "Source: done:0"),
-        None,
-    )
-    .await;
+    kit.enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]), None)
+        .await;
     let b = kit
-        .enqueue(
-            kit.open_pr(8, "b", &[add("b1.txt", "b\n")], "Source: done:0"),
-            None,
-        )
+        .enqueue(kit.open_pr(8, "b", &[add("b1.txt", "b\n")]), None)
         .await;
     assert!(kit.train.step(REPO).await);
     assert_eq!(merged_prs(&kit), [7], "the PR itself merges, no batch PR");
@@ -2117,22 +1988,12 @@ async fn a_batch_of_one_is_the_old_path_and_overlapping_files_never_batch() {
 
     let kit = Kit::new();
     kit.enqueue(
-        kit.open_pr(
-            7,
-            "a",
-            &[("a.txt", Some(&a_with(&[(2, "a")])))],
-            "Source: done:0",
-        ),
+        kit.open_pr(7, "a", &[("a.txt", Some(&a_with(&[(2, "a")])))]),
         None,
     )
     .await;
     kit.enqueue(
-        kit.open_pr(
-            8,
-            "b",
-            &[("a.txt", Some(&a_with(&[(9, "b")])))],
-            "Source: done:0",
-        ),
+        kit.open_pr(8, "b", &[("a.txt", Some(&a_with(&[(9, "b")])))]),
         None,
     )
     .await;
@@ -2148,23 +2009,14 @@ async fn a_batch_of_one_is_the_old_path_and_overlapping_files_never_batch() {
 async fn only_reviewed_held_free_and_own_green_prs_join_a_batch() {
     let kit = Kit::new();
     let a = kit
-        .enqueue(
-            kit.open_pr(7, "a", &[add("a1.txt", "a\n")], "Source: done:0"),
-            None,
-        )
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]), None)
         .await;
     // Tier M: reviewing until a review marks it ready.
     let m = kit
-        .enqueue(
-            kit.open_pr(8, "m", &[add("m1.txt", "m\n")], "Source: done:0"),
-            Some(Tier::M),
-        )
+        .enqueue(kit.open_pr(8, "m", &[add("m1.txt", "m\n")]), Some(Tier::M))
         .await;
     let held = kit
-        .enqueue(
-            kit.open_pr(9, "h", &[add("h1.txt", "h\n")], "Source: done:0"),
-            None,
-        )
+        .enqueue(kit.open_pr(9, "h", &[add("h1.txt", "h\n")]), None)
         .await;
     kit.gh
         .pulls
@@ -2175,16 +2027,10 @@ async fn only_reviewed_held_free_and_own_green_prs_join_a_batch() {
         .labels
         .push("hold".into());
     let red = kit
-        .enqueue(
-            kit.open_pr(10, "r", &[add("FAIL", "x\n")], "Source: done:0"),
-            None,
-        )
+        .enqueue(kit.open_pr(10, "r", &[add("FAIL", "x\n")]), None)
         .await;
     let d = kit
-        .enqueue(
-            kit.open_pr(11, "d", &[add("d1.txt", "d\n")], "Source: done:0"),
-            None,
-        )
+        .enqueue(kit.open_pr(11, "d", &[add("d1.txt", "d\n")]), None)
         .await;
 
     assert!(kit.train.step(REPO).await);
@@ -2232,16 +2078,10 @@ async fn required_checks_and_githubs_rules_still_block_a_batch() {
     // Checks the base requires never report: the batch times out, and each alone times out too, never merging.
     let kit = Kit::with(FakeCi::Required, one_poll);
     let a = kit
-        .enqueue(
-            kit.open_pr(7, "a", &[add("a1.txt", "a\n")], "Source: done:0"),
-            None,
-        )
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]), None)
         .await;
     let b = kit
-        .enqueue(
-            kit.open_pr(8, "b", &[add("b1.txt", "b\n")], "Source: done:0"),
-            None,
-        )
+        .enqueue(kit.open_pr(8, "b", &[add("b1.txt", "b\n")]), None)
         .await;
     for _ in 0..3 {
         kit.train.step(REPO).await;
@@ -2254,16 +2094,10 @@ async fn required_checks_and_githubs_rules_still_block_a_batch() {
     // repo and each goes alone, through GitHub's rules again.
     let kit = Kit::new();
     let a = kit
-        .enqueue(
-            kit.open_pr(7, "a", &[add("a1.txt", "a\n")], "Source: done:0"),
-            None,
-        )
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]), None)
         .await;
     let b = kit
-        .enqueue(
-            kit.open_pr(8, "b", &[add("b1.txt", "b\n")], "Source: done:0"),
-            None,
-        )
+        .enqueue(kit.open_pr(8, "b", &[add("b1.txt", "b\n")]), None)
         .await;
     for _ in 0..3 {
         kit.gh.merge_replies.lock().unwrap().push(http_error(
@@ -2303,22 +2137,13 @@ async fn required_checks_and_githubs_rules_still_block_a_batch() {
 async fn a_member_pushed_to_while_the_batch_is_in_ci_leaves_it_untested_code_never_lands() {
     let kit = Kit::new();
     let a = kit
-        .enqueue(
-            kit.open_pr(7, "a", &[add("a1.txt", "a\n")], "Source: done:0"),
-            None,
-        )
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]), None)
         .await;
     let b = kit
-        .enqueue(
-            kit.open_pr(8, "b", &[add("b1.txt", "b\n")], "Source: done:0"),
-            None,
-        )
+        .enqueue(kit.open_pr(8, "b", &[add("b1.txt", "b\n")]), None)
         .await;
     let c = kit
-        .enqueue(
-            kit.open_pr(9, "c", &[add("c1.txt", "c\n")], "Source: done:0"),
-            None,
-        )
+        .enqueue(kit.open_pr(9, "c", &[add("c1.txt", "c\n")]), None)
         .await;
     *kit.gh.push_during_ci.lock().unwrap() = Some("b".into());
 
@@ -2344,7 +2169,7 @@ async fn a_stacked_pr_is_green_on_its_parent_before_it_lands_and_merges_after_it
     let kit = Kit::new();
     // The parent in two commits, the second rewriting the first's line: replaying them onto its own squash conflicts.
     kit.commit("p", &[add("p.txt", "one\n")], Some("origin/main"));
-    let parent_url = kit.open_pr(7, "p", &[add("p.txt", "two\n")], "Source: done:0");
+    let parent_url = kit.open_pr(7, "p", &[add("p.txt", "two\n")]);
     kit.gh.pulls.lock().unwrap().get_mut(&7).unwrap().branch = "p".into();
     let child_url = kit.stacked_pr(8, "c", "p", &[add("c.txt", "c\n")]);
     // Frozen: nothing merges, speculative CI still runs.
@@ -2414,7 +2239,7 @@ async fn a_stacked_pr_is_green_on_its_parent_before_it_lands_and_merges_after_it
 #[tokio::test(flavor = "multi_thread")]
 async fn a_stacked_pr_never_lands_before_its_parent_and_hears_when_it_is_red_on_it() {
     let kit = Kit::new();
-    let parent_url = kit.open_pr(7, "p", &[add("pair-a", "a\n")], "Source: done:0");
+    let parent_url = kit.open_pr(7, "p", &[add("pair-a", "a\n")]);
     let child_url = kit.stacked_pr(8, "c", "p", &[add("pair-b", "b\n")]);
     // The parent needs a review it never gets; the child is ready at once.
     let parent = kit.enqueue(parent_url, Some(Tier::M)).await;
@@ -2479,7 +2304,7 @@ async fn three_ready(kit: &Kit) -> [Change; 3] {
     let mut out = Vec::new();
     for (n, branch) in [(7, "a"), (8, "b"), (9, "c")] {
         let file = format!("{branch}1.txt");
-        let pr = kit.open_pr(n, branch, &[(file.as_str(), Some("x\n"))], "Source: done:0");
+        let pr = kit.open_pr(n, branch, &[(file.as_str(), Some("x\n"))]);
         out.push(kit.enqueue(pr, None).await);
     }
     out.try_into().unwrap_or_else(|_| unreachable!())
@@ -2620,7 +2445,7 @@ async fn scratch_branches_and_prs_nothing_uses_are_swept_and_a_merged_batch_leav
 async fn a_speculative_build_follows_its_parents_new_head_not_the_childs_stale_copy() {
     let kit = Kit::new();
     // The parent never gets its review, so it waits; the child is ready.
-    let parent_url = kit.open_pr(7, "p", &[add("p.txt", "p\n")], "Source: done:0");
+    let parent_url = kit.open_pr(7, "p", &[add("p.txt", "p\n")]);
     kit.enqueue(parent_url, Some(Tier::M)).await;
     let child_url = kit.stacked_pr(8, "c", "p", &[add("pair-b", "b\n")]);
     kit.enqueue(child_url, None).await;
@@ -2653,7 +2478,6 @@ impl Kit {
             workstream_id: ws(),
             kind: kind.into(),
             state: "running".into(),
-            serves: Some("done:0".into()),
             tier: Some(Tier::M),
             pr_url: None,
             receipt_commands: 0,
@@ -2677,7 +2501,7 @@ async fn a_writers_ready_slice_is_reviewed_at_once_once_per_head_and_never_past_
         pr_url: GitHubPrUrl::unchecked(pr),
     };
 
-    let first = kit.open_pr(7, "slice-1", &[add("a1.txt", "a\n")], "Source: done:0");
+    let first = kit.open_pr(7, "slice-1", &[add("a1.txt", "a\n")]);
     let (change, next) = slice_ready(&kit.train, &project(), &writer, slice(&first))
         .await
         .unwrap();
@@ -2701,22 +2525,14 @@ async fn a_writers_ready_slice_is_reviewed_at_once_once_per_head_and_never_past_
     assert_eq!(kit.get(&change.change_id).state, ChangeState::Reviewing);
 
     // The next slice gets its own review while the first still waits on its own.
-    let second = kit.open_pr(8, "slice-2", &[add("a2.txt", "b\n")], "Source: done:0");
+    let second = kit.open_pr(8, "slice-2", &[add("a2.txt", "b\n")]);
     let (other, _) = slice_ready(&kit.train, &project(), &writer, slice(&second))
         .await
         .unwrap();
     assert_ne!(other.change_id, change.change_id);
     assert_eq!(kit.gate.reviewed.lock().unwrap().len(), 2);
 
-    // The train's checks still refuse: no Source line, and a reviewer is no writer.
-    let bare = kit.open_pr(9, "slice-3", &[add("a3.txt", "c\n")], "No source.");
-    let refused = slice_ready(&kit.train, &project(), &writer, slice(&bare))
-        .await
-        .unwrap_err();
-    assert_eq!(
-        refused.fix.as_deref(),
-        Some("add 'Source: done:0' to the PR body")
-    );
+    // The train's checks still refuse: a reviewer is no writer.
     let reviewer = kit.running_task("T2", "review");
     let not_writer = slice_ready(&kit.train, &project(), &reviewer, slice(&second))
         .await
@@ -2741,7 +2557,7 @@ async fn a_ready_slice_gets_the_orders_reviewer_and_a_refused_spawn_never_lets_i
     let slice = |pr: &str| SliceReadyCall {
         pr_url: GitHubPrUrl::unchecked(pr),
     };
-    let first = kit.open_pr(7, "slice-1", &[add("a1.txt", "a\n")], "Source: done:0");
+    let first = kit.open_pr(7, "slice-1", &[add("a1.txt", "a\n")]);
     let (change, _) = slice_ready(&kit.train, &project(), &writer, slice(&first))
         .await
         .unwrap();
@@ -2767,7 +2583,7 @@ async fn a_ready_slice_gets_the_orders_reviewer_and_a_refused_spawn_never_lets_i
     *kit.host.spawn_refusal.lock().unwrap() = Some(
         "This project already has 32 open tasks, the most one lead may have at once (32).".into(),
     );
-    let second = kit.open_pr(8, "slice-2", &[add("a2.txt", "b\n")], "Source: done:0");
+    let second = kit.open_pr(8, "slice-2", &[add("a2.txt", "b\n")]);
     let (held, _) = slice_ready(&kit.train, &project(), &writer, slice(&second))
         .await
         .unwrap();
@@ -2794,14 +2610,9 @@ async fn a_writers_draft_marked_ready_is_reviewed_on_the_trains_pass_once_per_he
         .lock()
         .unwrap()
         .insert("T1".into(), "fleetd/T1-slice".into());
-    let pr = kit.open_pr(
-        7,
-        "fleetd/T1-slice",
-        &[add("a1.txt", "a\n")],
-        "Source: done:0",
-    );
+    let pr = kit.open_pr(7, "fleetd/T1-slice", &[add("a1.txt", "a\n")]);
     // A second train change keeps the repo's train (and its pass) alive.
-    let other = kit.open_pr(3, "other", &[add("o.txt", "o\n")], "Source: done:0");
+    let other = kit.open_pr(3, "other", &[add("o.txt", "o\n")]);
     kit.enqueue(other, None).await;
     kit.gh.pulls.lock().unwrap().get_mut(&7).unwrap().draft = true;
     let reviewed = || {
@@ -2841,12 +2652,7 @@ async fn a_writers_draft_marked_ready_is_reviewed_on_the_trains_pass_once_per_he
         .lock()
         .unwrap()
         .insert("T1".into(), "fleetd/T1-later".into());
-    kit.open_pr(
-        8,
-        "fleetd/T1-later",
-        &[add("a2.txt", "b\n")],
-        "Source: done:0",
-    );
+    kit.open_pr(8, "fleetd/T1-later", &[add("a2.txt", "b\n")]);
     kit.train.step(REPO).await;
     assert!(
         kit.train
@@ -2866,13 +2672,13 @@ async fn racing_enqueues_of_one_pr_make_one_change_and_one_review_round() {
     use fleetd_contracts::lead_calls::SliceReadyCall;
     let kit = Kit::with_reviews();
     let writer = kit.running_task("T1", "write");
-    let pr = kit.open_pr(7, "slice-1", &[add("a1.txt", "a\n")], "Source: done:0");
+    let pr = kit.open_pr(7, "slice-1", &[add("a1.txt", "a\n")]);
     let call = || SliceReadyCall {
         pr_url: GitHubPrUrl::unchecked(pr.clone()),
     };
     let input = || ChangeEnqueueCall {
         task_id: Some(writer.clone()),
-        ..enqueue_call(pr.clone(), None)
+        ..enqueue_call(pr.clone())
     };
     let r = project();
     let (a, b, c, d) = tokio::join!(
@@ -2909,7 +2715,7 @@ async fn a_checkout_outside_the_nodes_cmd_roots_says_so_and_needs_a_person() {
     let elsewhere = tempfile::tempdir().unwrap();
     *kit.host.cmd_roots.lock().unwrap() = Some(vec![elsewhere.path().display().to_string()]);
 
-    let pr = kit.open_pr(7, "outside", &[add("b.txt", "b\n")], "Source: done:0");
+    let pr = kit.open_pr(7, "outside", &[add("b.txt", "b\n")]);
     let change = kit.enqueue(pr, None).await;
     assert_eq!(change.state, ChangeState::Queued);
     let error = change.last_error.unwrap();
@@ -2949,15 +2755,12 @@ async fn a_done_order_closes_its_leftover_prs_but_keeps_the_review_fixes_it_is_t
     // Tier M: both wait for reviews, so both are leftovers when the order is done.
     let leftover = kit
         .enqueue(
-            kit.open_pr(7, "left", &[add("l.txt", "l\n")], "Source: done:0"),
+            kit.open_pr(7, "left", &[add("l.txt", "l\n")]),
             Some(Tier::M),
         )
         .await;
     let fix = kit
-        .enqueue(
-            kit.open_pr(8, "fix", &[add("f.txt", "f\n")], "Source: done:0"),
-            Some(Tier::M),
-        )
+        .enqueue(kit.open_pr(8, "fix", &[add("f.txt", "f\n")]), Some(Tier::M))
         .await;
 
     let closed = kit

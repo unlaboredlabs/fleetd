@@ -19,9 +19,6 @@ pub struct LeadCaller {
     pub project_ref: ProjectRef,
     /// `lead:<machineId>/<projectId>`, recorded as `by` on whatever the call writes.
     pub by: String,
-    pub cwd: String,
-    /// The session the call names (`FLEETD_THREAD_ID`), on the calling machine.
-    pub thread: Option<ThreadRef>,
     pub agent: CallerAgent,
 }
 

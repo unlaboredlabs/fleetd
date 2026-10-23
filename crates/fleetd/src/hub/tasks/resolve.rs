@@ -1,73 +1,44 @@
-//! Model and effort for a spawn.
-use fleetd_contracts::effort::Effort;
+//! The profile a task runs on.
+use fleetd_contracts::effort::TaskProfile;
+use fleetd_contracts::tasks::TaskKind;
 
-pub const DEFAULT_TASK_MODEL: &str = "claude-opus-5-5";
-pub const DEFAULT_TASK_EFFORT: Effort = Effort::High;
-
-#[derive(Clone, Debug, Default)]
-pub struct ModelEffort {
-    pub model: Option<String>,
-    pub effort: Option<Effort>,
-}
-
-/// Each of model and effort independently: the spawn flag, then the policy file's defaults, then the project's
-/// settings, then claude-opus-5-5 / high. Medium only ever comes from one of those saying so.
-pub fn resolve_model_effort(
-    flag: &ModelEffort,
-    policy: Option<&ModelEffort>,
-    project: Option<&ModelEffort>,
-) -> (String, Effort) {
-    let empty = ModelEffort::default();
-    let order = [flag, policy.unwrap_or(&empty), project.unwrap_or(&empty)];
-    let model = order
-        .iter()
-        .find_map(|l| l.model.clone())
-        .unwrap_or_else(|| DEFAULT_TASK_MODEL.to_owned());
-    let effort = order
-        .iter()
-        .find_map(|l| l.effort)
-        .unwrap_or(DEFAULT_TASK_EFFORT);
-    (model, effort)
+/// The spawn's profile, high when it names none. A review task (the train's reviewers, verifiers, QA and judges
+/// included) always runs high, and so does every task of a project with medium off.
+pub fn resolve_profile(
+    spawn: Option<TaskProfile>,
+    kind: TaskKind,
+    medium_allowed: bool,
+) -> TaskProfile {
+    if kind == TaskKind::Review || !medium_allowed {
+        return TaskProfile::High;
+    }
+    spawn.unwrap_or_default()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use TaskProfile::{High, Medium};
 
-    fn me(model: Option<&str>, effort: Option<Effort>) -> ModelEffort {
-        ModelEffort {
-            model: model.map(str::to_owned),
-            effort,
+    #[test]
+    fn the_spawn_then_the_project_switch_then_high() {
+        for kind in [TaskKind::Write, TaskKind::Read] {
+            assert_eq!(resolve_profile(None, kind, true), High);
+            assert_eq!(resolve_profile(Some(Medium), kind, true), Medium);
+            assert_eq!(resolve_profile(Some(High), kind, true), High);
+            // Medium off: the spawn's medium runs high.
+            assert_eq!(resolve_profile(Some(Medium), kind, false), High);
         }
     }
 
     #[test]
-    fn flag_then_policy_then_project_then_opus_high() {
-        let none = me(None, None);
-        assert_eq!(
-            resolve_model_effort(&none, None, None),
-            ("claude-opus-5-5".into(), Effort::High)
-        );
-        let policy = me(Some("claude-sonnet-5-5"), None);
-        let project = me(Some("claude-haiku-5-5"), Some(Effort::Medium));
-        // Each field on its own: the model from the policy, the effort from the project.
-        assert_eq!(
-            resolve_model_effort(&none, Some(&policy), Some(&project)),
-            ("claude-sonnet-5-5".into(), Effort::Medium)
-        );
-        assert_eq!(
-            resolve_model_effort(&none, None, Some(&project)),
-            ("claude-haiku-5-5".into(), Effort::Medium)
-        );
-        let flag = me(Some("claude-haiku-5-5"), Some(Effort::Low));
-        assert_eq!(
-            resolve_model_effort(&flag, Some(&policy), Some(&project)),
-            ("claude-haiku-5-5".into(), Effort::Low)
-        );
-        // Never medium by default.
-        assert_eq!(
-            resolve_model_effort(&none, Some(&policy), None).1,
-            Effort::High
-        );
+    fn reviewers_always_run_high() {
+        for allowed in [true, false] {
+            assert_eq!(
+                resolve_profile(Some(Medium), TaskKind::Review, allowed),
+                High
+            );
+            assert_eq!(resolve_profile(None, TaskKind::Review, allowed), High);
+        }
     }
 }

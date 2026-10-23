@@ -65,6 +65,15 @@
   gap: var(--space-2);
   min-width: 0;
 }
+/* A page's description, and its page-wide control beside it. */
+.pageIntro {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  min-width: 0;
+}
 .scopePick {
   display: flex;
   align-items: center;
@@ -329,21 +338,6 @@
 }
 
 /* ---- Page heads ---- */
-.pageHead {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: var(--space-2) var(--space-4);
-  min-width: 0;
-}
-.pageTitles {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  flex: 1 1 320px;
-  min-width: 0;
-}
 
 /* ---- The settings sidebar ---- */
 .search {

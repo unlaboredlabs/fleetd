@@ -265,6 +265,8 @@ pub struct LiveParts {
     pub tokens: Option<fleetd_contracts::live::Tokens>,
     pub spark: fleetd_contracts::live::Spark,
     pub text: Option<activity::StreamText>,
+    /// The active run's complete text messages: the chat lands these whole, whatever deltas it missed.
+    pub done: Vec<activity::DoneText>,
     pub run_active: bool,
 }
 
@@ -274,6 +276,14 @@ pub struct Tail {
     pub items: Vec<TailRow>,
     pub thread: Summary,
     pub truncated: bool,
+}
+
+/// One page of an agent's steps: `(id, row)` newest first.
+pub struct Work {
+    pub rows: Vec<(String, TailRow)>,
+    /// Older steps remain in the view.
+    pub more: bool,
+    pub running: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1431,11 +1441,25 @@ impl Executors {
         Ok(())
     }
 
+    /// A person's Stop: interrupts whatever run the thread has now. [`Self::interrupt`] names the run it tracks, and
+    /// the node ignores a name that is no longer its active run (a message sent just as a turn started).
+    pub async fn interrupt_now(&self, r: &ThreadRef) -> Result<(), ExecutorError> {
+        let call = SessionCall::Interrupt {
+            session_id: r.thread_id.clone(),
+            run_id: None,
+            reason: Some("stopped by the person".into()),
+        };
+        self.call(&r.machine_id, NodeOperation::Interrupt, call, READ_TIMEOUT)
+            .await?;
+        Ok(())
+    }
+
     /// Ends the thread's claude process; `Ok` only once the node saw it exit (it escalates to SIGKILL).
-    pub async fn stop(&self, r: &ThreadRef) -> Result<(), ExecutorError> {
+    /// `remove_worktree` then deletes its worktree, and its branch once merged.
+    pub async fn stop(&self, r: &ThreadRef, remove_worktree: bool) -> Result<(), ExecutorError> {
         let call = SessionCall::Stop {
             session_id: r.thread_id.clone(),
-            remove_worktree: false,
+            remove_worktree,
         };
         self.call(&r.machine_id, NodeOperation::Stop, call, STOP_TIMEOUT)
             .await?;
@@ -1550,6 +1574,50 @@ impl Executors {
             items,
             thread,
             truncated,
+        })
+    }
+
+    /// A page of the session's steps for the agents view, newest first: those strictly older than `before`
+    /// (`(at, id)`), at most `limit`, with whether older ones remain. Read from the followed view (the node's newest
+    /// window plus live events), with cut outputs of the page's actions filled in.
+    pub async fn work(
+        self: &Arc<Self>,
+        r: &ThreadRef,
+        before: Option<(&str, &str)>,
+        limit: usize,
+    ) -> Result<Work, ExecutorError> {
+        let summary = self.summary_of(r)?;
+        let w = self.view(r).await?;
+        let (rows, more) = {
+            let state = w.state.lock().unwrap();
+            thread_view::work_page(&state.view, before, limit)
+        };
+        let ids: Vec<String> = rows
+            .iter()
+            .filter(|(_, row)| matches!(row, TailRow::Action { .. }))
+            .map(|(id, _)| id.clone())
+            .collect();
+        self.fill_outputs(r, &w, &ids).await?;
+        let state = w.state.lock().unwrap();
+        let rows = rows
+            .into_iter()
+            .map(|(id, row)| match row {
+                TailRow::Action { at, action } => {
+                    let action = state
+                        .view
+                        .items
+                        .get(&id)
+                        .and_then(thread_view::to_action)
+                        .unwrap_or(action);
+                    (id, TailRow::Action { at, action })
+                }
+                message => (id, message),
+            })
+            .collect();
+        Ok(Work {
+            rows,
+            more,
+            running: summary.status == "running",
         })
     }
 
@@ -1737,6 +1805,7 @@ impl Executors {
             tokens: s.activity.tokens(),
             spark: s.activity.spark(now),
             text: s.activity.text().cloned(),
+            done: s.activity.done().to_vec(),
             run_active: s.activity.run_active(),
         })
     }
@@ -1857,18 +1926,6 @@ impl Executors {
                 format!("no project on {machine_id} has its workspace root at {cwd}"),
             )
         })
-    }
-
-    /// None when the file does not exist. `cwd` must be a project's workspace root.
-    pub async fn read_file(
-        &self,
-        machine_id: &MachineId,
-        cwd: &str,
-        relative_path: &str,
-    ) -> Result<Option<String>, ExecutorError> {
-        let project_id = self.project_for_root(machine_id, cwd)?;
-        self.read_project_file(machine_id, &project_id, relative_path)
-            .await
     }
 
     /// A file of the project by its id, which the node knows as soon as `project_upsert` returns. None when the

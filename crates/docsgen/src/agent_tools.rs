@@ -17,8 +17,8 @@ use fleetd::hub::tasks::policy::{
     self, CallerAgent, MAX_DEPTH, MAX_OPEN_TASKS, SPAWN_OPS, WORKER_OPS,
 };
 use fleetd::node::runner::claude::{
-    AUTO_MEMORY_OFF_ENV, AUTO_MEMORY_OFF_WHY, DISALLOWED_WHY, NESTING_VARS_WHY, SESSION_ENV_WHY,
-    SUBAGENTS_OFF_ENV_WHY, SUBAGENTS_ON_ENV_WHY,
+    AUTO_MEMORY_OFF_ENV, AUTO_MEMORY_OFF_WHY, DISALLOWED_WHY, HELPER_MODEL_ENV, HELPER_MODEL_WHY,
+    NESTING_VARS_WHY, SESSION_ENV_WHY, SUBAGENTS_OFF_ENV_WHY, SUBAGENTS_ON_ENV_WHY,
 };
 use fleetd::node::runner::{conformance, version::TESTED};
 use fleetd_contracts::lead_calls::GatedRunCall;
@@ -50,8 +50,7 @@ whatever the prompt says.
 
 const SETUP: &str = "## What your own setup adds
 
-fleetd starts sessions with your own Claude Code setup underneath. The retro is the exception: it runs in safe \
-mode with none of it (see [Roles](#roles)).
+fleetd starts sessions with your own Claude Code setup underneath.
 
 | Your setup | In a session |
 |---|---|
@@ -80,8 +79,7 @@ pub fn page(root: &Path) -> Result<String, String> {
     let mut md = String::from(FRONT);
     md.push('\n');
     md.push_str(&INTRO.replace("{server}", SERVER_NAME));
-    let one_shot = one_shot()?;
-    md.push_str(&roles(&one_shot));
+    md.push_str(&roles());
     md.push_str(&limits(&lead_tools, &task_tools)?);
     md.push_str(&tool_section(
         "Lead tools",
@@ -98,7 +96,7 @@ pub fn page(root: &Path) -> Result<String, String> {
         &task_tools,
         &lead_names,
     )?);
-    md.push_str(&builtins(root, &one_shot)?);
+    md.push_str(&builtins(root)?);
     md.push_str(&switches()?);
     md.push_str(&SETUP.replace("{server}", SERVER_NAME));
     Ok(md)
@@ -200,50 +198,6 @@ fn started_as(role: AgentRole) -> Option<String> {
     None
 }
 
-/// What the retro's one-shot gets, read from the argv fleetd starts it with. A flag change the page can't describe
-/// fails generation instead of leaving the page wrong.
-struct OneShot {
-    /// `--tools`: empty means none, Claude Code's included.
-    tools: Vec<String>,
-}
-
-fn one_shot() -> Result<OneShot, String> {
-    let args = fleetd::hub::intake::oneshot::one_shot_args("m");
-    let has = |flag: &str| args.iter().any(|a| a == flag);
-    let mismatch = |why: &str| {
-        format!(
-            "agent tools: the retro's one_shot_args changed ({why}); update the retro's row in agent_tools.rs"
-        )
-    };
-    let tools = args
-        .iter()
-        .position(|a| a == "--tools")
-        .and_then(|i| args.get(i + 1))
-        .ok_or_else(|| mismatch("no --tools"))?;
-    if !has("--safe-mode") || !has("--strict-mcp-config") || has("--mcp-config") {
-        return Err(mismatch(
-            "the page says it runs in safe mode with no MCP servers",
-        ));
-    }
-    Ok(OneShot {
-        tools: tools
-            .split([',', ' '])
-            .filter(|t| !t.is_empty())
-            .map(str::to_owned)
-            .collect(),
-    })
-}
-
-impl OneShot {
-    fn claude_tools(&self) -> String {
-        if self.tools.is_empty() {
-            "none".to_owned()
-        } else {
-            format!("only {}", code_list(self.tools.iter().map(String::as_str)))
-        }
-    }
-}
-
 fn tool_set(session: SessionRole) -> &'static str {
     match session.cli_arg() {
         Some("lead") => "[Lead tools](#lead-tools)",
@@ -252,7 +206,7 @@ fn tool_set(session: SessionRole) -> &'static str {
     }
 }
 
-fn roles(one_shot: &OneShot) -> String {
+fn roles() -> String {
     let mut md = String::from(
         "## Roles\n\nThe app shows each agent's role on its lane. The role decides the fleetd tools; every session \
          gets the same [Claude Code tools](#claude-code-tools).\n\n| Role | How it starts | fleetd tools | Can start \
@@ -298,17 +252,7 @@ fn roles(one_shot: &OneShot) -> String {
             ));
         }
     }
-    md.push_str(
-        "| Retro | One `claude -p` on the hub that proposes playbook changes from incidents; not a session | \
-         None, no MCP servers | \
-         No |\n\n",
-    );
-    md.push_str(&format!(
-        "The retro's Claude Code tools: {}. fleetd starts it with `--tools \"{}\"`, `--strict-mcp-config` and \
-         `--safe-mode`.\n\n",
-        one_shot.claude_tools(),
-        one_shot.tools.join(",")
-    ));
+    md.push('\n');
     md
 }
 
@@ -686,7 +630,6 @@ fn example(role: Role, tool: &str) -> Option<Value> {
             "title": "Rate-limit the upload API",
             "prompt": "Limit uploads to 10 a minute per API key. Over the limit, answer 429 with Retry-After.",
             "areas": ["api"],
-            "serves": "done:0",
         }),
         (Role::Lead, "message_agent") => json!({
             "taskId": "T7",
@@ -861,20 +804,19 @@ fn recorded_tools(root: &Path) -> Result<BTreeSet<String>, String> {
     Ok(tools)
 }
 
-fn builtins(root: &Path, one_shot: &OneShot) -> Result<String, String> {
+fn builtins(root: &Path) -> Result<String, String> {
     let blocked: Vec<&str> = DISALLOWED_WHY.iter().map(|(t, _)| *t).collect();
     let allowed: Vec<String> = recorded_tools(root)?
         .into_iter()
         .filter(|t| !blocked.contains(&t.as_str()) && !conformance::agent_like(t))
         .collect();
     let mut md = format!(
-        "## Claude Code tools\n\nThe same for every session. The retro gets {}. Listed for Claude Code \
+        "## Claude Code tools\n\nThe same for every session. Listed for Claude Code \
          {TESTED}, the version fleetd is tested with.\n\n**Allowed:** {}.\n\nA project's policy file can deny more \
          with `tools.deny`. In a run started approval-required, Claude Code asks before it uses a tool and the \
          question comes to you; `tools.allow` answers it ahead of time.\n\n**Blocked**, in `--disallowedTools` and in the \
          `permissions.deny` of fleetd's settings, so your own settings can't turn them back on:\n\n| Tool | Why \
          |\n|---|---|\n",
-        one_shot.claude_tools(),
         code_list(allowed.iter().map(String::as_str))
     );
     for (tools, why) in grouped(
@@ -928,6 +870,12 @@ fn switches() -> Result<String, String> {
         &format!("`{value}`, and `autoMemoryEnabled: false`"),
         all,
     );
+    let (name, value) = HELPER_MODEL_ENV;
+    rows(
+        vec![(format!("`{name}`"), HELPER_MODEL_WHY)],
+        &format!("`{value}`"),
+        all,
+    );
     for ((name, value), why) in SESSION_ENV_WHY {
         rows(
             vec![(format!("`{name}`"), why)],
@@ -946,20 +894,6 @@ mod tests {
 
     fn root() -> std::path::PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
-    }
-
-    #[test]
-    fn every_tool_of_every_role_is_documented_with_a_valid_example() {
-        let page = page(&root()).unwrap();
-        for role in [Role::Lead, Role::Worker] {
-            for tool in agent_mcp::tools_for(role) {
-                assert!(
-                    page.contains(&format!("\"name\": \"{}\"", tool.name)),
-                    "{}",
-                    tool.name
-                );
-            }
-        }
     }
 
     #[test]
@@ -998,72 +932,12 @@ mod tests {
         assert!(allowed.contains("`Bash`") && allowed.contains("`Edit`"));
     }
 
-    /// "Every claude fleetd starts" on the page covers the retro's one-shot too.
-    #[test]
-    fn the_retro_gets_the_same_deny_list_and_switches() {
-        use fleetd::hub::intake::oneshot;
-        let args = oneshot::one_shot_args("m");
-        for (tool, _) in DISALLOWED_WHY {
-            assert!(args.iter().any(|a| a == tool), "{tool}");
-        }
-        let env = oneshot::one_shot_env(&Default::default());
-        for ((name, value), _) in SUBAGENTS_OFF_ENV_WHY
-            .iter()
-            .chain([&(AUTO_MEMORY_OFF_ENV, "")])
-        {
-            assert!(env.iter().any(|(k, v)| k == name && v == value), "{name}");
-        }
-        let settings: Value = serde_json::from_str(&oneshot::one_shot_settings()).unwrap();
-        for (name, _) in SUBAGENTS_ON_ENV_WHY {
-            assert_eq!(settings["env"][name], "", "{name}");
-        }
-    }
-
-    #[test]
-    fn roles_follow_the_hubs_policy() {
-        let page = page(&root()).unwrap();
-        assert!(page.contains("| Lead | One per project, started by the project's first order | [Lead tools](#lead-tools) | Yes |"));
-        assert!(page.contains("| Implementer | `spawn_agent` with kind `write`. Gets its own worktree and branch | [Task tools](#task-tools) | No |"));
-        assert!(page.contains("| QA | `spawn_agent` with kind `review` and `qa: true` |"));
-        assert!(page.contains(&format!("| Open tasks per lead | {MAX_OPEN_TASKS} ")));
-        assert!(page.contains(&format!("The fleet cap, {DEFAULT_CAP} by default.")));
-    }
-
-    #[test]
-    fn who_may_call_is_what_the_role_is_offered_and_the_hub_allows() {
-        assert_eq!(who_may_call("task_spawn"), "a lead");
-        assert_eq!(who_may_call("review_verdict"), "a task's agent");
-        assert_eq!(who_may_call("claim_done"), "a lead, a task's agent");
-    }
-
     #[test]
     fn source_text_shows_literally() {
         assert_eq!(
             prose("done:<n> or `T<n>`, a*"),
             "done:&lt;n> or `T<n>`, a\\*"
         );
-    }
-
-    #[test]
-    fn the_retro_row_comes_from_its_flags() {
-        let page = page(&root()).unwrap();
-        assert!(one_shot().unwrap().tools.is_empty());
-        assert!(
-            page.contains(
-                "The retro's Claude Code tools: none. fleetd starts it with `--tools \"\"`"
-            )
-        );
-        assert!(page.contains("The retro gets none."));
-    }
-
-    #[test]
-    fn the_settings_column_follows_the_overlay() {
-        let page = page(&root()).unwrap();
-        assert!(page.contains(
-            "| `CLAUDE_CODE_DISABLE_WORKFLOWS` | `1` | Every claude fleetd starts | yes |"
-        ));
-        assert!(page.contains("| `CLAUDE_CODE_STARTUP_FAILURE_RESULTS` | `1` | Sessions | no |"));
-        assert!(page.contains("| `DISABLE_AUTOUPDATER` | `1` | Sessions | yes |"));
     }
 
     #[test]

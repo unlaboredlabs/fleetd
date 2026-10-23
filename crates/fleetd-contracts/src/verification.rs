@@ -103,8 +103,7 @@ pub struct Eta {
 }
 
 /// `policy_bypass`: a PR on a watched repo was merged by something other than the train. M12: `override`, a human
-/// replaced a lead's Decision with another value; `playbook_reverted`, a retro wording change missed its metric and was
-/// rolled back.
+/// replaced a lead's Decision with another value.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum IncidentClass {
@@ -120,7 +119,6 @@ pub enum IncidentClass {
     /// Retired with the questions tool. Kept so older incidents still read.
     ReAsk,
     Override,
-    PlaybookReverted,
 }
 
 /// Recorded by the hub, never by an agent.

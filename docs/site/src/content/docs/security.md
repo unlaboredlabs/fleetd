@@ -25,6 +25,10 @@ What fleetd trusts and why. fleetd is built for one person or a small team runni
 Each key has `read`, `operate` or `admin` rights, on every machine or a named list. Only human keys enter secrets
 and approve commands, so no agent can approve itself.
 
+Agents run as the same OS user as the hub, so anything that can read the hub home (its keys and its database) an
+agent can reach too. Human key files are no exception: keep yours outside the hub home and your projects, but don't
+count on that to stop an agent that goes looking. Isolating agents from your files is future work.
+
 ### The node socket {#node-socket}
 
 Lead-side calls reach the hub through `~/.fleetd/node/node.sock` (mode `0600`). The node tells who is calling from
@@ -49,8 +53,6 @@ different OS user.
   sealed box). The hub relays it without storing it and keeps only its fingerprint.
 - **Notifications** carry a one-line summary, never a secret.
 - **An approved command runs exactly as stored**, and only after a person approves it.
-- **Webhooks are signed** with a Standard Webhooks signature. Each subscription's secret is shown once and stored
-  encrypted.
 
 ## Software {#software}
 

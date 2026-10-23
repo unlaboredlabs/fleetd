@@ -3,10 +3,11 @@
 // number is the hub's (`time_*` tools); the screen lays them out and says plainly where a figure is a bound, a split
 // or an approximation rather than a measurement (spec §2f).
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, Dot, Tab, TabList, TabPanel, Tabs, Text, Truncate, copyText, cx, toast } from "../../ui";
+import { Button, Dot, FrameTitle, Tab, TabList, TabPanel, Tabs, Text, Truncate, copyText, cx, toast } from "../../ui";
 import { selectConnection } from "../../src/data/selectors";
 import { useData } from "../../src/data/react";
 import { useCommands } from "../palette";
+import { toHash } from "../shell/routes";
 import { Breakdown } from "./Breakdown";
 import "./commands";
 import { FilterBar } from "./FilterBar";
@@ -15,9 +16,8 @@ import { LinkedSheet, TranscriptSheet } from "./Sheets";
 import { Timeline } from "./Timeline";
 import { linkedKeeps, useLinked, useNames, useTimeData, useWindow, type Linked } from "./data";
 import { loadFilters, queryOf, saveFilters, type Filters } from "./filters";
-import { ROLE_WORD, fmtDur, isMissingEmpty, missing, missingSentence } from "./format";
+import { ROLE_WORD, agentName, fmtDur, isMissingEmpty, missing, missingSentence } from "./format";
 import { barsFor, buildModel } from "./model";
-import { chatRoute } from "./route";
 import type { Category, Span } from "./types";
 import s from "./Time.module.css";
 
@@ -55,7 +55,12 @@ interface Highlight {
 
 export function TimeScreen(props: TimeScreenProps) {
   // Going back from one piece of work goes to its project's chat.
-  const openOrder = props.onOpenOrder ?? ((o: string) => navigateTo(chatRoute(names.orders.get(o)?.ref)));
+  const openOrder =
+    props.onOpenOrder ??
+    ((o: string) => {
+      const project = names.orders.get(o)?.ref;
+      navigateTo(project === undefined ? "#/" : toHash({ id: "project", project, message: null }));
+    });
   const openUrl = props.onOpenUrl ?? copyLink;
   const [order, setOrder] = useState(props.order);
   const [filters, setFilters] = useState<Filters>(() => props.initialFilters ?? loadFilters());
@@ -229,29 +234,25 @@ export function TimeScreen(props: TimeScreenProps) {
   const coverageText = shown !== undefined && coverage !== undefined ? missingSentence(shown, coverage) : undefined;
 
   const lane = windowAt?.threadId === undefined ? undefined : names.threads.get(windowAt.threadId);
-  const who = lane === undefined ? (windowAt?.taskId ?? "agent") : `${ROLE_WORD[lane.role]} ${lane.taskId ?? ""}`.trim();
+  const who = lane === undefined ? "An agent" : `${ROLE_WORD[lane.role]}: ${agentName(lane)}`;
   const orderOf = windowAt?.workstreamId ?? order;
 
   return (
     <div className={cx(s.screen)} data-screen="time">
-      <header className={cx(s.head)}>
-        {order !== undefined ? (
-          <Button variant="ghost" onClick={() => openOrder(order)}>
-            ‹ Chat
-          </Button>
-        ) : null}
-        {orderInfo !== undefined ? (
-          <Truncate tone="quiet" className={cx(s.crumb)}>{`${orderInfo.project} ›`}</Truncate>
-        ) : null}
-        {/* The title has the room first: up to two lines, then an ellipsis that opens the whole title. */}
-        <Truncate strong as="h2" lines={2} className={cx(s.title)}>
-          {title}
-        </Truncate>
-        {figures.length > 0 ? (
-          <Truncate size="xs" tone="quiet" tabular className={cx(s.figures)}>
-            {figures.join(" · ")}
-          </Truncate>
-        ) : null}
+      <FrameTitle
+        title={title}
+        detail={figures.length > 0 ? figures.join(" · ") : undefined}
+        lead={
+          <>
+            {order !== undefined ? (
+              <Button variant="ghost" onClick={() => openOrder(order)}>
+                ‹ Chat
+              </Button>
+            ) : null}
+            {orderInfo !== undefined ? <Truncate tone="quiet" className={cx(s.crumb)}>{`${orderInfo.project} ›`}</Truncate> : null}
+          </>
+        }
+      >
         {badge.length > 0 ? (
           <span className={cx(s.badge)}>
             <Dot color="var(--warning)" />
@@ -260,7 +261,7 @@ export function TimeScreen(props: TimeScreenProps) {
             </Truncate>
           </span>
         ) : null}
-      </header>
+      </FrameTitle>
       <FilterBar filters={filters} order={order} names={names} nowMs={nowMs} onFilters={changeFilters} onOrder={changeOrder} />
       <Tabs value={tab} onValueChange={(v) => setTab(v as TabId)} className={cx(s.tabs)}>
         <TabList className={cx(s.tabList)} aria-label="Views">
@@ -321,13 +322,13 @@ export function TimeScreen(props: TimeScreenProps) {
               <Text tone="quiet">{data.breakdown.error}</Text>
             </div>
           ) : (
-            <Breakdown data={data.breakdown.value} order={order !== undefined} missing={shown} pathIds={pathIds} onLinked={showLinked} />
+            <Breakdown data={data.breakdown.value} order={order !== undefined} missing={shown} pathIds={pathIds} onLinked={showLinked} names={names} />
           )}
         </TabPanel>
         <TabPanel value="insights" className={cx(s.panel)}>
           {data.insights === undefined ? (
             <div className={cx(s.empty)} {...(offline === undefined ? {} : { "data-screen": "time.insights.offline" })}>
-              <Text tone="quiet">{offline ?? "Running the hub's rules over this period…"}</Text>
+              <Text tone="quiet">{offline ?? "Asking the hub for findings in this period…"}</Text>
             </div>
           ) : !data.insights.ok ? (
             <div className={cx(s.empty)} data-screen="time.insights.error">

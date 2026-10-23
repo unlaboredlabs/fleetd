@@ -14,7 +14,7 @@ export interface HubErrorJson {
   readonly fix?: string | undefined;
 }
 
-type TimedKind = "event" | "live" | "snapshot" | "chat_delta";
+type TimedKind = "event" | "live" | "snapshot" | "chat_delta" | "state";
 
 /** Rows of `tool`'s answers under `field` matching `where`, e.g. requests_list's requests with requestId Q1. */
 export interface Rows {
@@ -50,6 +50,7 @@ const timedFrame = (kind: TimedKind, payload: JsonObject, afterMs: number): Fixt
   const num = (v: JsonValue | undefined) => (typeof v === "number" ? v : 0);
   if (kind === "snapshot") return { t: "snapshot", snapshot: { ...payload, cursor: num(payload["cursor"]) }, afterMs };
   if (kind === "event") return { t: "event", event: { ...payload, seq: num(payload["seq"]), type: asText(payload["type"]) }, afterMs };
+  if (kind === "state") return { t: "state", state: payload as unknown as HubState, afterMs };
   if (kind === "chat_delta") {
     const delta = { ...payload, messageId: asText(payload["messageId"]), offset: num(payload["offset"]), append: asText(payload["append"]) };
     return { t: "chat_delta", delta, afterMs };
@@ -82,7 +83,7 @@ export class Fixture {
   events: Array<JsonObject> = [];
   live: Array<JsonObject> = [];
   errors: Array<HubErrorJson> = [];
-  /** Tools whose answers follow a contract change still on its branch; skipped by validation until it merges. */
+  /** Tools and event types that follow a contract change still on its branch; skipped by validation until it merges. */
   pendingContracts = new Map<string, string>();
   /** The slot state is this fixture's point: lanes are made to match it, rather than it to the lanes (kit/agents.ts). */
   agentsFromSlots = false;
@@ -96,6 +97,11 @@ export class Fixture {
    * /pair answers, and where the key would be kept. Absent: no file, no hub answers, the OS store.
    */
   pair: JsonObject | undefined;
+  /**
+   * The app's own update instead of the release feed (src/main/updater.ts): `{ current, app, release }`, an UpdatesState.
+   * Absent: up to date.
+   */
+  appUpdate: JsonObject | undefined;
   /**
    * The disk cache an earlier launch left (src/renderer/src/data/cache.ts's HubCache), which main hands the window at
    * start; main never writes a fixture's. Absent: no cache, as on a first launch.
@@ -114,6 +120,7 @@ export class Fixture {
     f.state = { ...base.state };
     f.connect = base.connect;
     f.pair = base.pair === undefined ? undefined : clone(base.pair);
+    f.appUpdate = base.appUpdate === undefined ? undefined : clone(base.appUpdate);
     f.cache = base.cache === undefined ? undefined : clone(base.cache);
     f.snapshot = base.snapshot === undefined ? undefined : clone(base.snapshot);
     f.events = clone(base.events);
@@ -139,10 +146,18 @@ export class Fixture {
     let ms = 0;
     for (const frame of file.frames) {
       ms += frame.afterMs ?? 0;
-      // A streamed chat frame only makes sense on the timeline, after the chat's first page.
-      if ((ms > 0 || frame.t === "chat_delta") && frame.t !== "error") {
+      // A streamed chat frame or a change of connection only makes sense on the timeline, after the first page.
+      if ((ms > 0 || frame.t === "chat_delta" || frame.t === "state") && frame.t !== "error") {
         const payload =
-          frame.t === "snapshot" ? frame.snapshot : frame.t === "event" ? frame.event : frame.t === "chat_delta" ? frame.delta : frame.frame;
+          frame.t === "snapshot"
+            ? frame.snapshot
+            : frame.t === "event"
+              ? frame.event
+              : frame.t === "chat_delta"
+                ? frame.delta
+                : frame.t === "state"
+                  ? frame.state
+                  : frame.frame;
         f.timeline.push({ ms, kind: frame.t, payload: clone(payload as JsonObject) });
       } else if (frame.t === "snapshot") f.snapshot = clone(frame.snapshot as JsonObject);
       else if (frame.t === "event") f.events.push(clone(frame.event as JsonObject));
@@ -222,7 +237,7 @@ export class Fixture {
   }
 
   /** The file main loads. Within a tool, more specific inputs come first, since main takes the first match. */
-  toFile(): FixtureFile & { settleMs?: number; pair?: JsonObject } {
+  toFile(): FixtureFile & { settleMs?: number; pair?: JsonObject; update?: JsonObject } {
     const frames: Array<FixtureFrame> = [];
     const num = (v: JsonValue | undefined) => (typeof v === "number" ? v : 0);
     if (this.snapshot !== undefined) frames.push({ t: "snapshot", snapshot: { ...this.snapshot, cursor: num(this.snapshot["cursor"]) } });
@@ -261,6 +276,7 @@ export class Fixture {
       ...(this.connect === undefined ? {} : { connect: this.connect }),
       ...(settleMs === undefined ? {} : { settleMs }),
       ...(this.pair === undefined ? {} : { pair: this.pair }),
+      ...(this.appUpdate === undefined ? {} : { update: this.appUpdate }),
       ...(this.cache === undefined ? {} : { cache: this.cache }),
     };
   }

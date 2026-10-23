@@ -2,7 +2,7 @@
 // `claude` on its PATH). The hub reports it degraded with the runner's problem and refuses launches there. Restarted
 // with claude back on its PATH, the machine comes back online with a live session link. No claude turns.
 import { randomUUID } from "node:crypto";
-import { type Body, type Lab, MODEL, pathWithoutClaude } from "./harness.ts";
+import { type Body, type Lab, MECHANICS, pathWithoutClaude } from "./harness.ts";
 
 const MACHINE = "lab-b";
 
@@ -34,8 +34,7 @@ export async function degradedMachine(lab: Lab) {
     machineId: MACHINE,
     projectId,
     prompt: "Reply OK.",
-    model: MODEL,
-    effort: "low",
+    profile: MECHANICS,
     clientRequestId: randomUUID(),
   });
   check(launch.isError, `a launch on the degraded machine is refused: ${JSON.stringify(launch.body)}`);

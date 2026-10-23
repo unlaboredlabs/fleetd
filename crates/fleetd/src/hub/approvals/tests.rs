@@ -1,7 +1,8 @@
 use super::permissions::*;
 use super::*;
 use crate::hub::store::HubDb;
-use crate::hub::usage::ports::{HubEvent, WaitPage};
+use crate::hub::usage::ports::WaitPage;
+use fleetd_contracts::events::HubEvent;
 use fleetd_contracts::sessions::{PendingPermission, PermissionDecision};
 use std::sync::Mutex;
 
@@ -187,7 +188,6 @@ impl Fake {
                     serde_json::from_value(json!({ "threadId": thread, "requestId": request, "toolName": "Bash", "summary": "ls" }))
                         .unwrap()
                 }),
-                playbook: None,
                 at: fleetd_contracts::ids::Timestamp("2026-10-18T10:00:00.000Z".into()),
                 at_ms: 0,
             })
@@ -275,9 +275,6 @@ impl ApprovalHub for Fake {
         self.woke.notify_one();
         Box::pin(async {})
     }
-    fn gate_answered(&self, _: &HumanRequest) -> BoxFut<'_, ()> {
-        Box::pin(async {})
-    }
     fn tool_rules(&self, _: &ProjectRef) -> BoxFut<'_, Result<ToolRules, String>> {
         let r = self.rules.lock().unwrap().clone();
         Box::pin(async move { r })
@@ -299,17 +296,11 @@ impl EventLog for Fake {
     fn append(&self, e: NewEvent) -> BoxFut<'_, HubEvent> {
         self.events.lock().unwrap().push(e.clone());
         Box::pin(async move {
-            HubEvent {
-                seq: 1,
-                at: e.at,
-                kind: e.kind,
-                machine_id: e.machine_id,
-                project_id: e.project_id,
-                thread_id: e.thread_id,
-                summary: e.summary,
-                data: e.data,
-                attention: e.attention,
-            }
+            serde_json::from_value(json!({
+                "seq": 1, "at": e.at, "type": e.kind, "machineId": e.machine_id, "projectId": e.project_id,
+                "threadId": e.thread_id, "summary": e.summary, "data": e.data, "attention": e.attention,
+            }))
+            .unwrap()
         })
     }
     fn head(&self) -> BoxFut<'_, u64> {
@@ -339,17 +330,11 @@ fn event(kind: &str, permission: Option<Value>) -> HubEvent {
     if let Some(p) = permission {
         data["permission"] = p;
     }
-    HubEvent {
-        seq: 7,
-        at: "2026-10-18T10:00:00.000Z".into(),
-        kind: kind.into(),
-        machine_id: Some("lab-a".into()),
-        project_id: Some("p1".into()),
-        thread_id: Some("t1".into()),
-        summary: String::new(),
-        data: Some(data),
-        attention: None,
-    }
+    serde_json::from_value(json!({
+        "seq": 7, "at": "2026-10-18T10:00:00.000Z", "type": kind, "machineId": "lab-a", "projectId": "p1",
+        "threadId": "t1", "summary": "", "data": data,
+    }))
+    .unwrap()
 }
 
 fn pending(request_id: &str) -> PendingPermission {

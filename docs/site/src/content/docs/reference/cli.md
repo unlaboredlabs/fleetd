@@ -16,7 +16,6 @@ Every `fleetd` command, from `fleetd help` in the binary this site was built wit
 | 2 | usage error |
 | 3 | refused |
 | 4 | the hub or the node is unreachable |
-| 78 | `listen` only: the hub refused the key |
 
 ## Commands {#commands}
 
@@ -39,10 +38,10 @@ show this message
 ### fleetd update {#update}
 
 ```text
-fleetd update [--check] [--channel <c>]
+fleetd update [--check] [--channel <c>] [--restart-now]
 ```
 
-replace this fleetd with the latest release
+replace this fleetd with the latest release, then restart its hub and node when nothing runs on them; while something does, they keep the running version until their next restart. `--restart-now` restarts them anyway
 
 
 ## Setting up {#setting-up}
@@ -138,10 +137,10 @@ fleetd project list [--machine <id>] [--home <dir>] [--hub <url>]
 ### fleetd project stop {#project-stop}
 
 ```text
-fleetd project stop <machine>/<project> [--yes] [--home <dir>] [--hub <url>]
+fleetd project stop <machine>/<project> --key-file <human key> [--yes] [--home <dir>] [--hub <url>]
 ```
 
-stop everything running in it: its agents are cancelled, the lead and its chat stay, and the chat says so
+stop its lead's turn and its agents, as you; the lead and its chat stay, and the chat says what stopped
 
 ### fleetd project remove {#project-remove}
 
@@ -165,6 +164,14 @@ fleetd project set --fleet-cap <n> [--home <dir>] [--hub <url>]
 
 the most agents the project runs at once (its lead not counted), or the fleet's cap on running turns (admin key); more wait queued and start as slots free. Lowering stops nothing; `--pause-extras` has the newest agents above the new max push their work and wait
 
+### fleetd project set {#project-set-medium}
+
+```text
+fleetd project set <machine>/<project> --medium on|off [--home <dir>] [--hub <url>]
+```
+
+whether the lead may run mechanical tasks on the medium profile (on by default); off runs every task on high
+
 
 ## Running by hand {#running-by-hand}
 
@@ -175,23 +182,23 @@ Run `fleetd init --no-service` before `fleetd hub start`: it writes the setup th
 ### fleetd hub start {#hub-start}
 
 ```text
-fleetd hub start [--home <dir>] [--listen <host:port>] [--queue-ttl <seconds>] [--retro-model <model>]
+fleetd hub start [--home <dir>] [--listen <host:port>] [--queue-ttl <seconds>]
 ```
 
-run the hub (default home `~/.fleetd/hub`, listen 127.0.0.1:4790, writes to an offline machine wait 24 h, intents without a project are routed by the claude CLI with claude-haiku-5-5)
+run the hub (default home `~/.fleetd/hub`, listen 127.0.0.1:4790, writes to an offline machine wait 24 h)
 
 ### fleetd hub key create {#hub-key-create}
 
 ```text
-fleetd hub key create --name <name> --role <read|operate|admin> --machines <'*'|id,id> [--home <dir>]
+fleetd hub key create --name <name> --role <read|operate|admin> --machines <'*'|id,id> [--out <file>] [--home <dir>]
 ```
 
-create an agent key for the MCP endpoint; prints the key once
+create an agent key for the MCP endpoint; prints the key once, or with `--out` writes it to a new file (0600) and prints the file's path
 
 ### fleetd hub key create {#hub-key-create-human}
 
 ```text
-fleetd hub key create --human --name <device> [--role <role>] [--machines <'*'|id,id>] [--home <dir>]
+fleetd hub key create --human --name <device> [--role <role>] [--machines <'*'|id,id>] [--out <file>] [--home <dir>]
 ```
 
 a key for a person's device (the desktop app): what it answers is recorded as the human's; role defaults to operate on every machine
@@ -209,14 +216,6 @@ fleetd hub key revoke <keyId> [--home <dir>]
 ```
 
 takes effect at once, also on a running hub
-
-### fleetd hub token create {#hub-token-create}
-
-```text
-fleetd hub token create --machine <id> [--home <dir>]
-```
-
-print a one-time enrollment token (15 min) for `fleetd node join`
 
 ### fleetd hub github-webhook {#hub-github-webhook}
 
@@ -242,23 +241,6 @@ fleetd node run [--home <dir>]
 ```
 
 keep the link up for a machine that has joined
-
-### fleetd listen {#listen}
-
-```text
-fleetd listen --hub <url> --key-file <path> (--exec '<cmd>' | --post <url>)
-    [--types a,b] [--machines a,b] [--name <name>]
-```
-
-deliver hub events, at least once and in order, to a command (one event's JSON on stdin) or a URL; the cursor lives in `~/.fleetd/listen/<name>.cursor` (name default "default"). Exits 78 when the hub refuses the key.
-
-### fleetd retro run {#retro-run}
-
-```text
-fleetd retro run --hub <url> --key-file <path> [--window 14d] [--advise]
-```
-
-run the retro now: one claude -p turn over the window's incidents (1-28 days) proposes playbook changes; `--advise` only suggests them
 
 ### fleetd prompts list {#prompts-list}
 
@@ -368,10 +350,10 @@ A lead uses its fleetd tools; these are for you, inside a project workspace.
 ### fleetd brief create {#brief-create}
 
 ```text
-fleetd brief create --workstream <W> (--json '<Brief>' | --file <path>) [--amend <decision key>]
+fleetd brief create --workstream <W> (--json '<Brief>' | --file <path>)
 ```
 
-freeze the brief of a draft workstream and start it; `--amend` changes a frozen brief once the human said yes in chat and you logged it with decide
+set the brief of a draft workstream and start it, or edit it
 
 ### fleetd request secret {#request-secret}
 
@@ -423,11 +405,10 @@ fleetd decisions search "<query>"
 
 ```text
 fleetd task spawn --workstream <W> --title <t> --prompt <p> [--kind write|read|review] [--areas a,b]
-    [--model <m>] [--effort low|medium|high|max] [--tier S|M|L]
-    [--serves done:<n>|issue:<ref>|defect:<text>|decision:<key>] [--pr <url>] [--qa] [--item P<n>]
+    [--profile high|medium] [--tier S|M|L] [--pr <url>] [--qa] [--item P<n>]
 ```
 
-delegate work to a subagent; writers need `--areas` and `--serves` and get their own branch; a review task needs `--pr`, and `--qa` marks it a QA run; `--item` links it to that plan item
+delegate work to a subagent; writers need `--areas` and get their own branch; a review task needs `--pr`, and `--qa` marks it a QA run; `--item` links it to that plan item
 
 ### fleetd task list {#task-list}
 
@@ -475,11 +456,10 @@ the last step of a review task; a research judge also reports its metric for the
 ### fleetd change enqueue {#change-enqueue}
 
 ```text
-fleetd change enqueue --pr <url> [--task <T>] [--workstream <W>] [--serves <s>] [--tier S|M|L]
-    [--item P<n>]
+fleetd change enqueue --pr <url> [--task <T>] [--workstream <W>] [--tier S|M|L] [--item P<n>]
 ```
 
-put a PR on its repo's merge train (a write task's PR goes on by itself); its body needs a 'Source: \<serves\>' line. Only the train merges. `--item` links the PR to that plan item
+put a PR on its repo's merge train (a write task's PR goes on by itself). Only the train merges. `--item` links the PR to that plan item
 
 ### fleetd change status {#change-status}
 
@@ -533,7 +513,7 @@ the project's open work ranked: failing checks, open issues (gh), open requests 
 ### fleetd workstream open {#workstream-open}
 
 ```text
-fleetd workstream open --text "<intent>" [--template bugfix|feature|research|finish-all] [--serves <s>]
+fleetd workstream open --text "<intent>" [--template bugfix|feature|research|finish-all]
 ```
 
 open a workstream for work taken from the chat: a draft to brief

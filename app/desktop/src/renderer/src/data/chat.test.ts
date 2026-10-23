@@ -28,6 +28,8 @@ const row = (id: string, patch: Partial<ChatSend> = {}): ChatSend => ({
   ...patch,
 });
 const delta = (messageId: string, offset: number, append: string) => ({ projectRef: ref, messageId, seq: 1, offset, append });
+/** When a delta arrives, on the hub's clock. */
+const NOW = Date.parse("2026-10-19T10:02:00.000Z");
 
 describe("chat messages", () => {
   it("merge by id in seq order, from any source in any order, and an older copy never wins", () => {
@@ -97,28 +99,30 @@ describe("chat messages", () => {
 
   it("streams by offset: a repeat or overlap adds only what's new, a jump past the end is a gap, the final ends it", () => {
     let chat = applyHistory(emptyChat, page([msg(1, { state: "streaming", text: "" })]), "latest");
-    chat = applyDelta(chat, delta("m1", 0, "Hel"));
-    chat = applyDelta(chat, delta("m1", 3, "lo"));
-    chat = applyDelta(chat, delta("m1", 3, "lo"));
-    chat = applyDelta(chat, delta("m1", 4, "o, wo"));
+    chat = applyDelta(chat, delta("m1", 0, "Hel"), NOW);
+    chat = applyDelta(chat, delta("m1", 3, "lo"), NOW);
+    chat = applyDelta(chat, delta("m1", 3, "lo"), NOW);
+    chat = applyDelta(chat, delta("m1", 4, "o, wo"), NOW);
     expect(chatItems(chat, []).map((i) => [i.text, i.state])).toEqual([["Hello, wo", "streaming"]]);
-    expect(applyDelta(chat, delta("m1", 20, "x")).gap).toBe(true);
+    expect(applyDelta(chat, delta("m1", 20, "x"), NOW).gap).toBe(true);
     chat = mergeMessages(chat, [msg(1, { text: "Hello, world", updatedAt: "2026-10-19T10:00:05.000Z" })]);
     expect(chatItems(chat, []).map((i) => [i.text, i.state])).toEqual([["Hello, world", "sent"]]);
-    expect(applyDelta(chat, delta("m1", 12, "!"))).toBe(chat);
+    expect(applyDelta(chat, delta("m1", 12, "!"), NOW)).toBe(chat);
   });
 
   it("a chat joined mid-message goes on from history's text", () => {
     let chat = applyHistory(emptyChat, page([msg(1, { state: "streaming", text: "Halfway th" })]), "latest");
-    chat = applyDelta(chat, delta("m1", 7, " through"));
+    chat = applyDelta(chat, delta("m1", 7, " through"), NOW);
     expect(chatItems(chat, [])[0]?.text).toBe("Halfway through");
   });
 
-  it("a stream that starts before its message is listed shows as the lead's, last", () => {
-    const chat = applyDelta(applyHistory(emptyChat, page([msg(1)]), "latest"), delta("m2", 0, "On it"));
-    expect(chatItems(chat, []).map((i) => [i.id, i.author, i.state])).toEqual([
-      ["m1", "lead", "sent"],
-      ["m2", "lead", "streaming"],
+  it("a stream that starts before its message is listed shows as the lead's, last, at the time it began", () => {
+    let chat = applyDelta(applyHistory(emptyChat, page([msg(1)]), "latest"), delta("m2", 0, "On it"), NOW);
+    chat = applyDelta(chat, delta("m2", 5, "."), NOW + 30_000);
+    expect(chatItems(chat, []).map((i) => [i.id, i.author, i.state, i.at])).toEqual([
+      ["m1", "lead", "sent", "2026-10-19T10:00:01.000Z"],
+      // Never "": the chat's day divider can't place an invalid date (Intl throws), which blanked the window.
+      ["m2", "lead", "streaming", "2026-10-19T10:02:00.000Z"],
     ]);
   });
 

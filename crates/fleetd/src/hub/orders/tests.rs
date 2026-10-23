@@ -49,7 +49,7 @@ fn task(id: &str, kind: &str, state: &str, extra: Value) -> Task {
     let mut t = json!({
         "taskId": id, "projectRef": { "machineId": "lab-a", "projectId": "p1" }, "workstreamId": "W14",
         "title": format!("{id} work"), "kind": kind, "prompt": "do it", "areas": if kind == "write" { json!(["alpha"]) } else { json!([]) },
-        "model": "claude-haiku-5-5", "effort": "low", "state": state, "attempt": 1, "createdAt": AT,
+        "state": state, "attempt": 1, "createdAt": AT,
         "startedAt": format!("2026-10-18T10:0{}:00.000Z", &id[1..2]),
         "threadRef": { "machineId": "lab-a", "threadId": format!("s-{id}") },
     });
@@ -65,7 +65,7 @@ fn change(id: &str, number: i64, task: &str, state: &str) -> Change {
     serde_json::from_value(json!({
         "changeId": id, "projectRef": { "machineId": "lab-a", "projectId": "p1" }, "repo": "o/testbed",
         "prNumber": number, "prUrl": format!("https://github.com/o/testbed/pull/{number}"), "branch": format!("fleetd/{task}"),
-        "taskId": task, "workstreamId": "W14", "serves": "done:0", "tier": "L", "headSha": sha, "patchId": patch,
+        "taskId": task, "workstreamId": "W14", "tier": "L", "headSha": sha, "patchId": patch,
         "state": state, "createdAt": AT, "updatedAt": AT,
         "reviews": [
             { "taskId": "T5", "prHeadSha": sha, "patchId": patch, "blocking": 0, "nonBlocking": 1 },
@@ -92,7 +92,7 @@ fn an_order_joins_its_agents_prs_and_asks() {
             "T4",
             "review",
             "queued",
-            json!({ "pr": "https://github.com/o/testbed/pull/12", "queuedReason": "slots: 40/40 in use", "threadRef": null }),
+            json!({ "pr": "https://github.com/o/testbed/pull/12", "queuedReason": "fleet cap: 40 of 40 running", "threadRef": null }),
         ),
         task(
             "T5",
@@ -144,7 +144,10 @@ fn an_order_joins_its_agents_prs_and_asks() {
         ]
     );
     let t4 = c.lanes.iter().find(|l| l.lane_id == "T4").unwrap();
-    assert_eq!(t4.status_reason.as_deref(), Some("slots: 40/40 in use"));
+    assert_eq!(
+        t4.status_reason.as_deref(),
+        Some("fleet cap: 40 of 40 running")
+    );
     // Review lanes link the PR they review; the writer's finished lane links the PR it opened.
     assert_eq!(t4.pr.as_ref().map(|p| p.number.get()), Some(12));
     // Checkers are named by what they check; a writer keeps its task's title.
@@ -215,7 +218,7 @@ fn cards_get_a_short_title() {
     );
     w.title = Text::unchecked("@storefront fix: rounding of cart totals");
     assert_eq!(short_title(&w), "rounding of cart totals");
-    // Once the brief is frozen its goal names the order.
+    // Once the brief is set its goal names the order.
     w.brief = Some(
         serde_json::from_value(json!({ "goal": "Three pages on the merge train. One per writer.", "why": "demo", "pointers": [], "constraints": [],
             "doneWhen": [{ "type": "pr_merged", "repo": "o/testbed" }], "tier": "L" }))
@@ -225,37 +228,27 @@ fn cards_get_a_short_title() {
 }
 
 #[test]
-fn an_orders_open_work_is_its_unlanded_write_work_whatever_it_serves() {
+fn an_orders_open_work_is_its_unlanded_write_work() {
     use super::open_work::{Item, select};
     let id = fleetd_contracts::ledger::WorkstreamId::new("W14").unwrap();
     let tasks = vec![
-        task(
-            "T1",
-            "write",
-            "done",
-            json!({ "serves": "done:0", "title": "Share card" }),
-        ),
-        // A fix of non-blocking review findings, spawned as serving the brief.
+        task("T1", "write", "done", json!({ "title": "Share card" })),
+        // A fix of non-blocking review findings.
         task(
             "T4",
             "write",
             "running",
-            json!({ "serves": "done:1", "title": "Fresh link after changes" }),
+            json!({ "title": "Fresh link after changes" }),
         ),
         // The original writer, continued by a message.
-        task(
-            "T5",
-            "write",
-            "idle",
-            json!({ "serves": "done:0", "title": "Uncap counts" }),
-        ),
+        task("T5", "write", "idle", json!({ "title": "Uncap counts" })),
         task(
             "T6",
             "write",
             "failed",
-            json!({ "serves": "defect: unpriced tokens", "title": "Flag unpriced tokens" }),
+            json!({ "title": "Flag unpriced tokens" }),
         ),
-        task("T7", "write", "cancelled", json!({ "serves": "done:0" })),
+        task("T7", "write", "cancelled", json!({})),
         task("T8", "review", "running", json!({})),
     ];
     // A review found nothing blocking; it still has not landed.
@@ -304,7 +297,7 @@ fn the_done_sweep_keeps_unlanded_write_work_and_cancels_the_rest_unless_closed_o
     let id = fleetd_contracts::ledger::WorkstreamId::new("W14").unwrap();
     let tasks = vec![
         task("T3", "review", "running", json!({})),
-        task("T4", "write", "running", json!({ "serves": "done:1" })),
+        task("T4", "write", "running", json!({})),
     ];
     let mut open_pr = change("X1", 11, "T4", "reviewing");
     open_pr.reviews.clear();

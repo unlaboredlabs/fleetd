@@ -179,7 +179,7 @@ impl Session {
             return match self.hub.auth.verify(key.as_str()) {
                 Ok(info) => {
                     self.caller = Some((key.as_str().to_owned(), info));
-                    self.send(json!({ "t": "ready", "protocol": PROTOCOL_VERSION }));
+                    self.send(json!({ "t": "ready", "protocol": PROTOCOL_VERSION, "version": crate::version() }));
                     After::Continue
                 }
                 Err(error) => {
@@ -334,7 +334,11 @@ impl Session {
                 );
                 self.stream = Some(tokio::spawn(task));
             }
-            AppClientMessage::Live { board, focus } => {
+            AppClientMessage::Live {
+                board,
+                focus,
+                agent,
+            } => {
                 // A new `live` request replaces the running subscription; its first frame is full.
                 if let Some(old) = self.live.take() {
                     old.abort();
@@ -344,6 +348,7 @@ impl Session {
                     caller: info,
                     board,
                     focus,
+                    agent,
                 };
                 self.live = Some(tokio::spawn(live::run(
                     self.hub.clone(),

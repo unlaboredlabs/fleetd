@@ -54,11 +54,11 @@ describe("the box", () => {
 
 describe("a stop that didn't stop", () => {
   it("says why in one plain sentence, never the hub's words", () => {
-    expect(stopFailed("forbidden")).toBe("This computer’s key can’t stop the lead.");
+    expect(stopFailed("forbidden")).toBe("This computer’s key can’t stop this project’s work.");
     expect(stopFailed("offline")).toMatch(/^Not connected/);
     expect(stopFailed("disconnected")).toBe(stopFailed("offline"));
     expect(stopFailed("timeout")).toMatch(/may still be working/);
-    expect(stopFailed("failed")).toBe("Couldn’t stop the lead. Try Stop again.");
+    expect(stopFailed("failed")).toBe("Couldn’t stop the lead and its agents. Try Stop again.");
   });
 });
 

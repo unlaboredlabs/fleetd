@@ -1,5 +1,5 @@
 // Re-records the runner's stream-json fixtures (crates/fleetd/src/node/runner/fixtures) from the installed `claude`,
-// for a maintainer bumping TESTED in node/runner/version.rs. Never in CI. About 11 tiny haiku turns through the
+// for a maintainer bumping TESTED in node/runner/version.rs. Never in CI. About 11 tiny turns through the
 // user's own claude login; the error scenarios instead point claude at a local stub that answers every request with
 // a fixed error and forwards nothing. The documented usage-limit fixture is built from the Agent SDK's types and is
 // not re-recorded.
@@ -185,8 +185,8 @@ async function main() {
       sessions.set(s.session, sid);
       const args = [
         "-p", "--output-format", "stream-json", "--verbose", "--input-format", "stream-json", "--include-partial-messages",
-        "--thinking", "adaptive", "--thinking-display", "summarized", "--effort", "low", "--strict-mcp-config", "--setting-sources", "",
-        "--model", s.model ?? "claude-haiku-5-5", s.start === "resume" ? "--resume" : "--session-id", sid, ...(s.extra ?? []),
+        "--thinking", "adaptive", "--thinking-display", "summarized", "--effort", "medium", "--strict-mcp-config", "--setting-sources", "",
+        "--model", s.model ?? "claude-opus-5-5", s.start === "resume" ? "--resume" : "--session-id", sid, ...(s.extra ?? []),
       ];
       let env: Record<string, string> = { ...base, ...login, CLAUDE_CONFIG_DIR: config.login };
       if (s.login === "empty") env = { ...base, CLAUDE_CONFIG_DIR: config.empty };

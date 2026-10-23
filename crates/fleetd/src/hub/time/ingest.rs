@@ -3,6 +3,7 @@
 //! their task, order or lead here.
 use std::collections::HashMap;
 
+use fleetd_contracts::effort::TaskProfile;
 use fleetd_contracts::time::{SpanExtra, SpanKind, SpanStatus, SpanWire};
 use rusqlite::{Connection, OptionalExtension, params};
 use tokio::sync::mpsc;
@@ -182,6 +183,7 @@ pub fn who(c: &Connection, machine: &str, thread: &str) -> Result<Who, StoreErro
                 thread_id: Some(thread.to_owned()),
                 run_id: None,
                 role: Some(role.into()),
+                profile: Some(profile_of(&data)),
             },
             lead: false,
         });
@@ -209,10 +211,20 @@ pub fn who(c: &Connection, machine: &str, thread: &str) -> Result<Who, StoreErro
             project_id: project,
             thread_id: Some(thread.to_owned()),
             role: lead.is_some().then(|| "lead".into()),
+            // The lead always runs high.
+            profile: lead.is_some().then(|| TaskProfile::High.as_str().into()),
             ..Ids::default()
         },
         lead: lead.is_some(),
     })
+}
+
+/// A stored task's profile; a row without one is high, as the hub reads it.
+pub fn profile_of(task: &serde_json::Value) -> String {
+    task["profile"]
+        .as_str()
+        .unwrap_or(TaskProfile::High.as_str())
+        .to_owned()
 }
 
 pub fn thread_lane(machine: &str, thread: &str) -> String {
@@ -563,5 +575,28 @@ mod tests {
                 rewind: true
             }
         );
+    }
+
+    /// A task's spans carry its profile (a row from before profiles reads high), a lead's are high, and a thread of
+    /// neither has none.
+    #[test]
+    fn a_session_s_spans_carry_its_profile() {
+        let db = HubDb::open_memory().unwrap();
+        db.transaction(|c| {
+            c.execute_batch(
+                r#"INSERT INTO tasks (n, machine_id, project_id, workstream_id, state, thread_id, data) VALUES
+                     (1, 'devbox', 'p1', 'W1', 'running', 't1', '{"kind":"write","profile":"medium"}'),
+                     (2, 'devbox', 'p1', 'W1', 'running', 't2', '{"kind":"review"}');
+                   INSERT INTO leads (machine_id, project_id, thread_id, started_at, session_generation)
+                     VALUES ('devbox', 'p1', 'lead-1', 't', 1);"#,
+            )?;
+            let profile = |thread: &str| who(c, "devbox", thread).map(|w| w.ids.profile);
+            assert_eq!(profile("t1")?.as_deref(), Some("medium"));
+            assert_eq!(profile("t2")?.as_deref(), Some("high"));
+            assert_eq!(profile("lead-1")?.as_deref(), Some("high"));
+            assert_eq!(profile("other")?, None);
+            Ok(())
+        })
+        .unwrap();
     }
 }

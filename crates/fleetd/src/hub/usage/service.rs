@@ -4,11 +4,12 @@
 //! event, until the reset or usage_resume. The state is rebuilt from the event log at start, so a hub restart keeps
 //! it.
 use super::classify::{UsageClass, UsageParked, limit_of_event};
-use super::ports::{BoxFut, EventLog, HubEvent, NewEvent, ThreadRef, WaitInput};
+use super::ports::{BoxFut, EventLog, NewEvent, ThreadRef, WaitInput};
 use super::source::{LoginKind, UsageReading};
 use super::state::{Owner, ParkedCounts, ParkedThread, Resumed, UsageState, resumed_event};
 use super::time::{iso, parse_ms, system_ms};
 use crate::clock::Clock;
+use fleetd_contracts::events::{HubEvent, HubEventType};
 use serde::Serialize;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -155,14 +156,16 @@ impl Usage {
     }
 
     async fn apply(&self, event: &HubEvent) {
-        let owner = match (event.kind.as_str(), &event.machine_id, &event.thread_id) {
-            ("thread.usage_limited", Some(m), Some(t)) if limit_of_event(event).is_some() => {
+        let owner = match (event.r#type, &event.machine_id, &event.thread_id) {
+            (HubEventType::ThreadUsageLimited, Some(m), Some(t))
+                if limit_of_event(event).is_some() =>
+            {
                 self.inner
                     .deps
                     .owners
                     .owner_of(&ThreadRef {
-                        machine_id: m.clone(),
-                        thread_id: t.clone(),
+                        machine_id: m.to_string(),
+                        thread_id: t.to_string(),
                     })
                     .await
             }
@@ -251,7 +254,7 @@ impl Usage {
         let Some(machine_id) = event
             .machine_id
             .as_deref()
-            .filter(|_| event.kind == "thread.usage_limited")
+            .filter(|_| event.r#type == HubEventType::ThreadUsageLimited)
         else {
             return;
         };

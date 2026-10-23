@@ -85,7 +85,6 @@ On a new hub with no projects yet, the output starts like this:
 |---|---|
 | `fleetd status`, `fleetd time` | Nothing on the hub machine. Elsewhere, `--hub <url> --key-file <file>`. |
 | `fleetd steer`, `fleetd steers` | Always `--key-file` with a [human key](/docs/glossary#human-key). `--hub <url>` off the hub machine. |
-| `fleetd listen`, `fleetd retro` | Always `--hub <url>` and `--key-file <file>`. |
 
 To make a human key file on the hub:
 
@@ -126,6 +125,10 @@ as stopping a project, answering an approval or entering a secret, need one.
 | `attachment_get {projectRef, attachmentId}` | Read a file attached to a project's chat. | read |
 | `project_files {machineId, projectId, query}` | A project's files, for `@`-mentions. | read |
 | `status_projects` | One row per project: its state word, verified and in-flight progress, agents running and the last merge. | read |
+| `agents_list {projectRef?, endedSince?}` | Every agent of your projects: its role, task, what it's doing now, when it started and its PR. | read |
+| `agent_work {machineId, threadId, before?, limit?}` | A page of one agent's recent messages, commands and edits, oldest first. Secrets show as `[secret]`. | read |
+| `pr_list {projectRef, closedSince?}`, `pr_get {repo, number}` | A project's PRs, and one in detail: description, checks, reviews with their findings, its place in the merge queue and the agent that wrote it. | read |
+| `pr_files {repo, number, offset?}`, `pr_diff {repo, number, path, offset?}` | A PR's changed files, and one file's diff a page at a time. | read |
 | `workstream_list`, `workstream_get`, `thread_tail`, `fleetd_status` | Lower-level views of the lead's work. | read |
 
 `projectRef` is `{"machineId": "devbox", "projectId": "<id>"}`; `fleetd project list` prints both, as

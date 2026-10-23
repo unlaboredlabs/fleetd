@@ -68,8 +68,9 @@ A message reaches the lead at once. How depends on what the lead is doing:
 | Working | Is a steer: it reads it at its next step, after the tool it is running. The box says so while you type. |
 | Starting, or its machine is away | Is held, and goes in as soon as it can. The chat says why it waits. |
 
-To stop the lead's current turn, click Stop beside Send (or "Stop the lead" in the command palette). The lead
-stops now rather than at its next step, and its agents keep working. Then tell it what to do instead.
+To stop the work, click Stop beside Send (or "Stop the lead and its agents" in the command palette). The lead's turn
+and every agent of the project stop now, and a line in the chat says what stopped. Then tell the lead what to do
+instead.
 
 A message is never lost: if it can't be delivered, it stays held, the chat says why, and fleetd keeps trying.
 
@@ -82,10 +83,28 @@ Everything shows up in the chat, quietly:
 | In the chat | Shows |
 |---|---|
 | The agents strip, under the lead's message | One line: how many agents are working, and on which PRs. Expand it to see each agent's role, what it's doing and for how long. Click an agent waiting on you to jump to what it needs. |
+| A quiet line under the lead's reply | While the lead works: how long it has been working, what it's doing now, and the orders and agents it started. When it's done: how long it worked, such as "Worked for 3m 40s". |
 | One-line events | A pull request opened, merged, or sent back. |
 
 For a project's progress at a glance, see [Status](/docs/status). For where the time went, see
 [Where time went](/docs/time-inspector).
+
+## Read a pull request {#prs}
+
+Choose **Pull requests** in the sidebar, or click a PR's number in the agents strip or in [Agents](/docs/desktop-app#agents),
+to read the project's PRs in the app: open ones first, then those merged or closed in the last week. The sidebar opens
+the PRs of the project you're in. For another project's, open the command palette (⌘K), select the project, press ⌘K
+again and choose **Pull requests in this project**.
+
+If GitHub can't be reached or its rate limit is reached, the list says so: you see the PRs fleetd made, or GitHub's last
+answer, and **Retry** asks again.
+
+| A PR shows | |
+|---|---|
+| Overview | Where it is on its way to main, its checks, its reviews with their findings, the agent that wrote it, the agents at work on it now, and its description. |
+| Changes | The changed files and their diff, in one column or side by side. Click a file to jump to it. |
+
+**Open on GitHub** is always there, for anything the app doesn't show.
 
 ## Earlier work {#history}
 
@@ -97,14 +116,18 @@ for later." Nothing was moved or deleted. Scroll up to read it.
 
 ## Stop everything {#stop}
 
-To stop all of a project's work at once, say "stop" in the chat, or run:
+To stop all of a project's work at once, press Stop in the chat, or run:
 
 ```sh
-fleetd project stop devbox/storefront
+fleetd project stop devbox/storefront --key-file ~/.fleetd/human.key
 ```
 
-From an MCP client, call `project_stop`. Every running and queued agent is stopped, and the lead says so in the chat. Merged pull requests stay, and so do the lead and the
-chat: write again to start new work.
+A stop speaks for you, so it takes your [human key](/docs/glossary#human-key). Make one once with
+`fleetd hub key create --human --name terminal --out ~/.fleetd/human.key`.
+
+From an MCP client, call `project_stop`. The lead's turn and every running and queued agent stop, and the chat says
+what stopped, such as "Stopped the lead and 2 agents." Merged pull requests stay, and so do the lead and the chat: write
+again to start new work.
 
 ## Secrets and risky commands {#inline}
 

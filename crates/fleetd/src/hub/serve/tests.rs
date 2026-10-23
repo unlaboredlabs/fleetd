@@ -31,7 +31,6 @@ async fn start() -> TestHub {
         listen: Listen::default(),
         url: None,
         queue_ttl_sec: None,
-        retro_model: None,
     };
     let hub = build_on(HubDb::open_memory().unwrap(), config, Arc::new(SystemClock)).unwrap();
     let mut tools: Registry = api::registry();
@@ -376,7 +375,10 @@ async fn app_socket_closes_on_a_refused_key_and_calls_through_the_same_checks() 
         );
     }
     frames.sort_by_key(|f| f["id"].as_str().unwrap_or("").to_owned());
-    assert_eq!(frames[0], json!({ "t": "ready", "protocol": 1 }));
+    assert_eq!(
+        frames[0],
+        json!({ "t": "ready", "protocol": 1, "version": crate::version() })
+    );
     assert_eq!(
         frames[1],
         json!({ "t": "error", "id": "c0", "code": "forbidden", "message": "Not authenticated.", "fix": "Send {t:auth,key} first." })
@@ -462,7 +464,9 @@ async fn github_deliveries_need_webhooks_on_and_a_valid_signature_then_kick_the_
             Ok(())
         })
         .unwrap();
-    let sealed = t.hub.webhooks.secret_box().seal("s3cret");
+    let sealed = crate::hub::train::secret_box::SecretBox::for_home(&t.hub.config.home)
+        .unwrap()
+        .seal("s3cret");
     std::fs::write(t.hub.config.home.join("github-webhook.secret"), sealed).unwrap();
     t.hub.train.set_webhooks(true);
     assert_eq!(deliver(&t.url, "sha256=00", body).await, 401);
@@ -589,4 +593,33 @@ async fn status_projects_lists_one_row_per_readable_project() {
     let one = rows_for(json!([{ "role": "read", "machines": ["devbox"] }])).await;
     assert_eq!(one.len(), 1);
     assert_eq!(one[0]["projectRef"]["machineId"], "devbox");
+}
+
+/// A hub home an earlier fleetd left an owner.key in: once the hub starts, the file is gone and its key no longer works.
+#[tokio::test]
+async fn a_starting_hub_revokes_the_owner_key_and_deletes_its_file() {
+    use fleetd_contracts::auth::{GrantMachines, Role, Star};
+    let home = tempfile::tempdir().unwrap();
+    let file = home.path().join(crate::hub::auth::RETIRED_OWNER_KEY_FILE);
+    let owner =
+        crate::hub::auth::Auth::new(HubDb::open(home.path()).unwrap(), Arc::new(SystemClock))
+            .create_key(
+                "owner",
+                &[Grant {
+                    role: Role::Admin,
+                    machines: GrantMachines::All(Star::Value),
+                }],
+                KeyKind::Human,
+            )
+            .unwrap();
+    std::fs::write(&file, format!("{}\n", owner.key)).unwrap();
+    let config = HubConfig {
+        home: home.path().to_path_buf(),
+        listen: Listen::default(),
+        url: None,
+        queue_ttl_sec: None,
+    };
+    let hub = super::build(config, Arc::new(SystemClock)).unwrap();
+    assert!(!file.exists());
+    assert!(hub.auth.verify(&owner.key).is_err());
 }

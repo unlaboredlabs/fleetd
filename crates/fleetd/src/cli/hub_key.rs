@@ -1,31 +1,27 @@
-//! `fleetd hub key …` and `fleetd hub token create`: they open the hub home's database directly; SQLite WAL makes
+//! `fleetd hub key …`: it opens the hub home's database directly; SQLite WAL makes
 //! that safe while the hub runs.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use fleetd_contracts::auth::{AgentKeyInfo, Grant, GrantMachines, KeyKind, Role};
+use fleetd_contracts::auth::{AgentKeyInfo, Grant, GrantMachines, KeyKind, Role, Star};
 use fleetd_contracts::ids::MachineId;
-use fleetd_contracts::subscriptions::Star;
 
 use super::CliResult;
 use super::args::{self, Kind, Spec};
-use super::pending::auth::{Auth, AuthError};
-use super::pending::store::{HubDb, HubStore};
 use crate::clock::SystemClock;
+use crate::hub::auth::{Auth, AuthError};
+use crate::hub::store::{HubDb, HubStore};
 
-pub const HUB_KEY_USAGE: &str = r#"  hub key create --name <name> --role <read|operate|admin> --machines <'*'|id,id> [--home <dir>]
-             create an agent key for the MCP endpoint; prints the key once
-  hub key create --human --name <device> [--role <role>] [--machines <'*'|id,id>] [--home <dir>]
+pub const HUB_KEY_USAGE: &str = r#"  hub key create --name <name> --role <read|operate|admin> --machines <'*'|id,id> [--out <file>] [--home <dir>]
+             create an agent key for the MCP endpoint; prints the key once, or with --out writes it
+             to a new file (0600) and prints the file's path
+  hub key create --human --name <device> [--role <role>] [--machines <'*'|id,id>] [--out <file>] [--home <dir>]
              a key for a person's device (the desktop app): what it answers is recorded as the
              human's; role defaults to operate on every machine
   hub key list [--home <dir>]
   hub key revoke <keyId> [--home <dir>]
              takes effect at once, also on a running hub
-"#;
-
-pub const HUB_TOKEN_USAGE: &str = r#"  hub token create --machine <id> [--home <dir>]
-             print a one-time enrollment token (15 min) for `fleetd node join`
 "#;
 
 /// The hub home's database, opened beside a running hub.
@@ -36,7 +32,7 @@ pub struct HubAccess {
 
 /// `--home` resolved (default `~/.fleetd/hub`).
 pub fn resolve_home(home: Option<&str>) -> Result<PathBuf, String> {
-    Ok(super::pending::store::resolve_hub_home(
+    Ok(crate::hub::store::resolve_hub_home(
         home,
         &super::home_dir(),
     ))
@@ -56,6 +52,33 @@ fn fail(code: u8, message: &str) -> CliResult {
 
 fn key_usage(message: &str) -> CliResult {
     fail(2, &format!("{message}\n\nusage:\n{HUB_KEY_USAGE}"))
+}
+
+/// A new file only its owner can read, created at once with mode 0600 (never an existing one); its directory is made
+/// 0700 when missing.
+fn new_private_file(path: &Path) -> Result<std::fs::File, String> {
+    use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+    if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(dir)
+            .map_err(|e| format!("cannot make {}: {e}", dir.display()))?;
+    }
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(path)
+        .map_err(|e| match e.kind() {
+            std::io::ErrorKind::AlreadyExists => {
+                format!(
+                    "{} exists; a key is only written to a new file",
+                    path.display()
+                )
+            }
+            _ => format!("cannot write {}: {e}", path.display()),
+        })
 }
 
 fn describe_grants(grants: &[Grant]) -> String {
@@ -146,6 +169,7 @@ pub fn hub_key(argv: &[String]) -> CliResult {
         ("role", Kind::Str),
         ("machines", Kind::Str),
         ("human", Kind::Bool),
+        ("out", Kind::Str),
     ];
     let v = match args::parse(
         rest,
@@ -175,7 +199,13 @@ pub fn hub_key(argv: &[String]) -> CliResult {
                 Ok(grant) => grant,
                 Err(message) => return key_usage(&message),
             };
-            with_hub(v.str("home"), |hub| {
+            let out = v.str("out").filter(|o| !o.is_empty()).map(PathBuf::from);
+            // Made before the key, so the key is never minted for a file that can't take it.
+            let file = match out.as_deref().map(new_private_file).transpose() {
+                Ok(file) => file,
+                Err(message) => return fail(1, &message),
+            };
+            let created = with_hub(v.str("home"), |hub| {
                 match hub.auth.create_key(
                     name,
                     &[grant],
@@ -185,20 +215,41 @@ pub fn hub_key(argv: &[String]) -> CliResult {
                         KeyKind::Agent
                     },
                 ) {
-                    Ok(created) => CliResult {
-                        code: 0,
-                        stdout: format!("{}\n", created.key),
-                        stderr: format!(
-                            "created {} ({}, {}{}). The key above is shown only once.\n",
-                            created.info.key_id,
-                            created.info.prefix,
-                            describe_grants(&created.info.grants),
-                            if human { ", human" } else { "" }
-                        ),
+                    Ok(created) => match (file, out.as_deref()) {
+                        (Some(mut file), Some(path)) => {
+                            use std::io::Write;
+                            match file.write_all(format!("{}\n", created.key).as_bytes()) {
+                                Ok(()) => CliResult {
+                                    code: 0,
+                                    stdout: format!("{}\n", path.display()),
+                                    stderr: String::new(),
+                                },
+                                Err(error) => {
+                                    fail(1, &format!("cannot write {}: {error}", path.display()))
+                                }
+                            }
+                        }
+                        _ => CliResult {
+                            code: 0,
+                            stdout: format!("{}\n", created.key),
+                            stderr: format!(
+                                "created {} ({}, {}{}). The key above is shown only once.\n",
+                                created.info.key_id,
+                                created.info.prefix,
+                                describe_grants(&created.info.grants),
+                                if human { ", human" } else { "" }
+                            ),
+                        },
                     },
                     Err(error) => fail(1, &error.to_string()),
                 }
-            })
+            });
+            if created.code != 0
+                && let Some(path) = &out
+            {
+                let _ = std::fs::remove_file(path);
+            }
+            created
         }
         Some("list") => with_hub(v.str("home"), |hub| match hub.auth.list() {
             Ok(keys) => {
@@ -232,46 +283,61 @@ pub fn hub_key(argv: &[String]) -> CliResult {
     }
 }
 
-/// `fleetd hub token create`.
-pub fn hub_token(argv: &[String]) -> CliResult {
-    let usage = |message: &str| fail(2, &format!("{message}\n\nusage:\n{HUB_TOKEN_USAGE}"));
-    let (command, rest) = argv
-        .split_first()
-        .map_or((None, &[][..]), |(c, r)| (Some(c.as_str()), r));
-    let v = match args::parse(
-        rest,
-        &Spec {
-            options: &[("home", Kind::Str), ("machine", Kind::Str)],
-            positionals: false,
-        },
-    ) {
-        Ok(v) => v,
-        Err(message) => return usage(&message),
-    };
-    match command {
-        Some("create") => {}
-        Some(other) => return usage(&format!("unknown hub token command '{other}'")),
-        None => return usage("missing hub token command"),
+#[cfg(test)]
+mod tests {
+    use std::os::unix::fs::PermissionsExt;
+
+    use super::*;
+
+    fn create(args: &[&str]) -> CliResult {
+        let argv: Vec<String> = ["create"]
+            .iter()
+            .chain(args)
+            .map(|s| s.to_string())
+            .collect();
+        hub_key(&argv)
     }
-    let Some(machine) = v.str("machine").filter(|m| !m.is_empty()) else {
-        return usage("--machine is required");
-    };
-    let Ok(machine_id) = MachineId::new(machine) else {
-        return usage(&format!(
-            "'{machine}' is not a machine id ([a-z0-9-]{{1,32}})"
-        ));
-    };
-    with_hub(v.str("home"), |hub| {
-        match hub.auth.create_enroll_token(&machine_id) {
-            Ok(token) => CliResult {
-                code: 0,
-                stdout: format!("{}\n", token.token),
-                stderr: format!(
-                    "one-time token for {machine}, valid until {}. On {machine}, run:\n  fleetd node join --hub <hub url> --token <token> --machine {machine}\n",
-                    token.expires_at
-                ),
-            },
-            Err(error) => fail(1, &error.to_string()),
-        }
-    })
+
+    /// The person's own key for `fleetd steer`, `chat` and `project stop`: `--human --out` writes it to a new 0600 file
+    /// and prints only the path. It never overwrites a file, and mints nothing when it can't write one.
+    #[test]
+    fn a_human_key_goes_to_a_new_private_file_and_only_its_path_is_printed() {
+        let home = tempfile::tempdir().unwrap();
+        let h = home.path().to_str().unwrap();
+        let file = home.path().join("mine/human.key");
+        let f = file.to_str().unwrap();
+        let made = create(&["--human", "--name", "laptop", "--out", f, "--home", h]);
+        assert_eq!(
+            (made.code, made.stdout.as_str(), made.stderr.as_str()),
+            (0, format!("{f}\n").as_str(), "")
+        );
+        assert_eq!(
+            std::fs::metadata(&file).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        let key = std::fs::read_to_string(&file).unwrap();
+        let keys = || open_hub(home.path()).unwrap().auth.list().unwrap();
+        let info = open_hub(home.path())
+            .unwrap()
+            .auth
+            .verify(key.trim())
+            .unwrap();
+        assert_eq!(
+            (info.name.as_str(), info.kind),
+            ("laptop", Some(KeyKind::Human))
+        );
+
+        let again = create(&["--human", "--name", "laptop", "--out", f, "--home", h]);
+        assert!(
+            again.code == 1 && again.stderr.contains("exists"),
+            "{}",
+            again.stderr
+        );
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            key,
+            "never overwritten"
+        );
+        assert_eq!(keys().len(), 1, "nothing minted for a file it can't write");
+    }
 }

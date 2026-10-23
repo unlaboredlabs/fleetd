@@ -47,7 +47,7 @@ pub fn item_offer(item: &Runnable) -> Offer {
     }
 }
 
-/// A finish-all order with room: the lead takes its next item from `inventory`, which keeps the value bar.
+/// A finish-all order with room: the lead takes its next item from `inventory`.
 pub fn finish_all_offer(workstream_id: &str, open_children: usize, max_children: u32) -> Offer {
     let room = (max_children as usize).saturating_sub(open_children);
     Offer {
@@ -112,7 +112,7 @@ pub fn line(offers: &[Offer], total: usize, room: i64) -> String {
     .render()
 }
 
-/// The orders whose items are approved work: running on a frozen brief, so the human asked for them.
+/// The orders whose items are approved work: running on a brief, so the human asked for them.
 fn approved(hub: &Hub, r: &ProjectRef) -> HashSet<String> {
     hub.leads
         .records
@@ -347,14 +347,14 @@ mod hub_tests {
                 .workstream_get(&w.workstream_id)
                 .unwrap()
                 .unwrap();
-            stored.workstream.brief = Some(
+            stored.brief = Some(
                 serde_json::from_value(json!({
                     "goal": title, "why": "asked", "pointers": [], "constraints": [], "tier": "M",
                     "doneWhen": [{ "type": "ci_green", "repo": "acme/app" }],
                 }))
                 .unwrap(),
             );
-            stored.workstream.state = WorkstreamState::Running;
+            stored.state = WorkstreamState::Running;
             hub.leads.records.workstream_put(&stored).unwrap();
         }
         w.workstream_id.to_string()
@@ -383,7 +383,6 @@ mod hub_tests {
             listen: Listen::default(),
             url: None,
             queue_ttl_sec: None,
-            retro_model: None,
         };
         let hub = crate::hub::serve::build_on(
             HubDb::open_memory().unwrap(),

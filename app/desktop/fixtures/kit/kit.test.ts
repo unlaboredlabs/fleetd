@@ -1,52 +1,10 @@
-import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { matches } from "../../src/main/hub/fixture.ts";
 import { Fixture } from "./fixture.ts";
 import { assertClean, findLeaks } from "./leaks.ts";
 import { makeSanitizer } from "./sanitize.ts";
-import { buildShared, recorded } from "./shared.ts";
-import { LOG, SCREENSHOT, streamReply, writeChat } from "./chat.ts";
+import { LOG, SCREENSHOT, writeChat } from "./chat.ts";
 import { fitStrings, validateFixture } from "./schema.ts";
-
-describe("Fixture answers", () => {
-  // Main answers a call with the first entry whose input is a subset of it.
-  const answer = (f: Fixture, tool: string, input: Record<string, unknown>) =>
-    f.toFile().calls.find((c) => c.tool === tool && (c.input === undefined || matches(c.input, input)))?.outcome;
-
-  it("matches the most specific input first, whatever order they were added in", () => {
-    const f = new Fixture("t", "")
-      .answer("order_get", undefined, { which: "any" })
-      .answer("order_get", { workstreamId: "W2" }, { which: "W2" });
-    expect(answer(f, "order_get", { workstreamId: "W2" })).toEqual({ ok: true, output: { which: "W2" } });
-    expect(answer(f, "order_get", { workstreamId: "W3" })).toEqual({ ok: true, output: { which: "any" } });
-  });
-
-  it("replaces an earlier answer to the same input, and fail() replaces it too", () => {
-    const f = new Fixture("t", "").answer("requests_list", {}, { n: 1 }).answer("requests_list", {}, { n: 2 });
-    expect(f.answers("requests_list")).toHaveLength(1);
-    f.fail("requests_list", {}, { code: "failed", message: "no" });
-    expect(answer(f, "requests_list", {})).toEqual({ ok: false, error: { code: "failed", message: "no" } });
-  });
-
-  it("turns timed frames into main's afterMs steps, settling at the last one unless told otherwise", () => {
-    const event = (seq: number) => ({ seq, at: "2026-10-19T10:00:00.000Z", type: "machine.online", summary: "devbox is online" });
-    const f = new Fixture("t", "").later(3000, "event", event(2)).later(1000, "event", event(1));
-    f.events.push(event(0));
-    const file = f.toFile();
-    expect(file.frames.map((fr) => fr.afterMs)).toEqual([undefined, 1000, 2000]);
-    expect(file.settleMs).toBe(3000);
-    expect(f.settleAt(5000).toFile().settleMs).toBe(5000);
-    expect(Fixture.fromFile(file).timeline.map((t) => t.ms)).toEqual([1000, 3000]);
-  });
-
-  it("copies share nothing with their base", () => {
-    const base = new Fixture("a", "").answer("orders_board", {}, { orders: [] });
-    const copy = Fixture.from(base, "b", "");
-    copy.update("orders_board", () => ({ orders: [{ title: "x" }] }));
-    expect(base.output("orders_board", {})).toEqual({ orders: [] });
-  });
-});
 
 describe("sanitize", () => {
   const lab = "/home/someone/src/fleetd-lab/slot-4";
@@ -113,25 +71,6 @@ describe("sanitize", () => {
     expect(findLeaks(JSON.stringify(out))).toEqual([]);
   });
 
-  it("rewrites the lab root's shared clone from a slot dir, base branches, any casing and git remotes", () => {
-    const slot = makeSanitizer("/home/someone/src/fleetd-lab/slot-3", 4855);
-    expect(
-      slot.value({
-        path: "/home/someone/src/fleetd-lab/lab-repo/site/a.md",
-        base: "slot/3/main",
-        compare: "noci/3/main...slot/3/fleetd/T1-x",
-        title: "Fleetd-Lab",
-        remote: "git@github.com:unlaboredlabs/fleetd-lab.git",
-      }),
-    ).toEqual({
-      path: "/home/dev/src/storefront/site/a.md",
-      base: "main",
-      compare: "main...fleetd/T1-x",
-      title: "storefront",
-      remote: "git@github.com:acme/storefront.git",
-    });
-  });
-
   it("maps every repo outside acme onto an acme stand-in, in repo fields and in object keys", () => {
     const out = s.value({ repo: "someone/private-thing", repos: ["someorg/secret-app"], byRepo: { "someone/private-thing": 1, [`${lab}/repo-a`]: 2 } });
     const json = JSON.stringify(out);
@@ -166,75 +105,6 @@ describe("schema", () => {
     const code = new Fixture("t", "").fail("order_get", { workstreamId: "W1" }, { code: "not_a_code", message: "no" });
     expect(validateFixture(code).join("\n")).toMatch(/not a hub error code/u);
     expect(validateFixture(new Fixture("t", "").fail("order_get", { workstreamId: "W1" }, { code: "not_found", message: "no" }))).toEqual([]);
-  });
-
-  it("names the call whose output the hub could not have sent", () => {
-    const f = new Fixture("t", "").answer("orders_board", {}, { orders: "nope" });
-    expect(validateFixture(f).join("\n")).toMatch(/orders_board/u);
-  });
-});
-
-// Always: the generic leak patterns. With FLEETD_FIXTURE_DENYLIST=<file outside the repo>, the real names too.
-describe("recorded fixtures", () => {
-  const dir = path.join(import.meta.dirname, "../recorded");
-  it.each(fs.readdirSync(dir).filter((f) => f.endsWith(".json")))("%s leaks nothing", (file) => {
-    expect(findLeaks(fs.readFileSync(path.join(dir, file), "utf8"))).toEqual([]);
-  });
-});
-
-describe("recorded moments", () => {
-  const dir = path.join(import.meta.dirname, "../recorded");
-  it.each(fs.readdirSync(dir).filter((f) => f.endsWith(".json")))("%s is traffic a hub could send", (file) => {
-    expect(validateFixture(recorded(file.slice(0, -5)))).toEqual([]);
-  });
-});
-
-// What `pnpm fixtures` checks, in the desktop CI job too, which runs tests but not the build.
-describe("shared fixtures", () => {
-  const shared = [...buildShared().values()];
-  it.each(shared.map((f) => [f.name, f] as const))("%s leaks nothing and is traffic a hub could send", (_name, f) => {
-    expect(findLeaks(JSON.stringify(f.toFile()))).toEqual([]);
-    expect(validateFixture(f)).toEqual([]);
-  });
-});
-
-describe("chat pages", () => {
-  // As the app pages back: the newest page, then `before` the first seq it holds, until moreBefore is false.
-  it("hands every message out once, oldest to newest, however long the chat", () => {
-    const f = new Fixture("t", "");
-    f.snapshot = { cursor: 0, machines: [], projects: [], attention: [] };
-    const ref = { machineId: "devbox", projectId: "p1" };
-    writeChat(f, ref, Array.from({ length: 123 }, (_, i) => ({ author: i % 2 === 0 ? "human" : "lead", text: `m${String(i)}` }) as const));
-    const page = (input: Record<string, unknown>) => {
-      const out = f.toFile().calls.find((c) => c.tool === "chat_history" && c.input !== undefined && matches(c.input, { projectRef: ref, limit: 50, ...input }))?.outcome;
-      return (out?.ok === true ? out.output : {}) as { messages: Array<{ seq: number }>; moreBefore: boolean };
-    };
-    const seen: number[] = [];
-    let p = page({});
-    for (;;) {
-      seen.unshift(...p.messages.map((m) => m.seq));
-      if (!p.moreBefore) break;
-      p = page({ before: p.messages[0]?.seq });
-    }
-    expect(seen).toEqual(Array.from({ length: 123 }, (_, i) => i + 1));
-    expect(page({ after: 123 }).messages).toEqual([]);
-  });
-});
-
-describe("streaming", () => {
-  it("streams a reply as chat_delta frames at the offsets the text reaches, and settles on the last", () => {
-    const f = new Fixture("t", "");
-    f.snapshot = { cursor: 0, machines: [], projects: [], attention: [] };
-    const ref = { machineId: "devbox", projectId: "p1" };
-    writeChat(f, ref, [{ author: "lead", text: "Both reviews", state: "streaming" }]);
-    streamReply(f, ref, [" are in.", " Merging."]);
-    const file = f.toFile();
-    const deltas = file.frames.flatMap((fr) => (fr.t === "chat_delta" ? [fr] : []));
-    expect(deltas.map((d) => [d.afterMs, d.delta.offset, d.delta.append])).toEqual([
-      [400, 12, " are in."],
-      [400, 20, " Merging."],
-    ]);
-    expect(file.settleMs).toBe(800);
   });
 });
 

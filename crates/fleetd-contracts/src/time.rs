@@ -6,6 +6,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
 
+use crate::effort::TaskProfile;
 use crate::ids::{MachineId, ProjectId, ProjectRef, ThreadId, Timestamp};
 use crate::ledger::WorkstreamId;
 use crate::live::AgentRole;
@@ -503,6 +504,20 @@ pub struct CriticalPath {
     pub off_path_ms: Count,
 }
 
+/// One task profile's part of a scope's agent time and usage, from the spans kept (`coverage.detailSince` on): the
+/// tasks that ran on it, and the lead's spans under high.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileTotal {
+    pub profile: TaskProfile,
+    /// Exclusive agent time.
+    pub agent_ms: Count,
+    /// The model's part of it.
+    pub model_ms: Count,
+    /// What claude reported for its messages.
+    pub output_tokens: Count,
+}
+
 /// The numbers of one period, for a comparison.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -606,21 +621,5 @@ mod tests {
         assert_eq!(rule, InsightRule::Unknown);
         let known: InsightRule = serde_json::from_value(serde_json::json!("idle_lead")).unwrap();
         assert_eq!(known, InsightRule::IdleLead);
-    }
-
-    #[test]
-    fn scopes_are_tagged_by_kind() {
-        let scope: TimeScope =
-            serde_json::from_value(serde_json::json!({ "kind": "order", "workstreamId": "W4" }))
-                .unwrap();
-        assert_eq!(
-            scope,
-            TimeScope::Order {
-                workstream_id: WorkstreamId::new("W4").unwrap()
-            }
-        );
-        let fleet: TimeScope =
-            serde_json::from_value(serde_json::json!({ "kind": "fleet" })).unwrap();
-        assert_eq!(fleet, TimeScope::Fleet);
     }
 }

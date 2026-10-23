@@ -2,7 +2,7 @@
 // lab machines (each a `fleetd node` with its own HOME, so its own ~/.fleetd and Claude config dir), and helpers that
 // wait on hub events instead of sleeping. Never used in CI.
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
-import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -15,8 +15,8 @@ const LAB_ROOT = process.env.FLEETD_LAB ?? path.join(os.homedir(), "src/fleetd-l
 /**
  * FLEETD_LAB_SLOT=<n> (0-9, default 0) is an independent lab that can run beside the others. Slot 0 is the lab root
  * itself, slot n lives in <root>/slot-<n> (test repos, run dirs, machine homes, lock), and every lab port is the
- * slot-0 port + 20 * n. The slot-0 ports, 4781 (cmd check), 4782 (chat history), 4795 (hub), 4796
- * (watchdog hub) and 4797 (m12), all differ mod 20, so slots 0-9 never collide and stay within 4781-4977.
+ * slot-0 port + 20 * n. The slot-0 ports, 4781 (cmd check), 4782 (chat history), 4795 (hub) and 4796
+ * (watchdog hub), all differ mod 20, so slots 0-9 never collide and stay within 4781-4976.
  */
 export const SLOT = Number(process.env.FLEETD_LAB_SLOT ?? 0);
 if (!Number.isInteger(SLOT) || SLOT < 0 || SLOT > 9) throw new Error(`FLEETD_LAB_SLOT must be 0-9, got ${process.env.FLEETD_LAB_SLOT}`);
@@ -42,7 +42,9 @@ export const fleetdCommand = (args: ReadonlyArray<string>): [string, Array<strin
   const bin = given.includes("/") ? path.resolve(given) : given;
   return /\.[cm]?[jt]s$/u.test(bin) ? [process.execPath, [bin, ...args]] : [bin, [...args]];
 };
-export const MODEL = "claude-haiku-5-5";
+export const MODEL = "claude-opus-5-5";
+/** Mechanics scenarios' tasks run the medium profile: what they check doesn't depend on how well the model reasons. */
+export const MECHANICS = "medium" as const;
 
 // Texts the binary emits that scenarios match on; each mirrors a constant in crates/fleetd.
 /** `hub/playbooks/finish_all_rules.rs` FINISH_ALL_IDLE. */
@@ -50,14 +52,6 @@ export const FINISH_ALL_IDLE = "finish-all: nothing left with a value source";
 /** `hub/watchdog/ladder.rs` NUDGE (`assets/fixed/watchdog.nudge.md`, less its trailing newline). */
 export const NUDGE = "You seem stalled; continue the task from where you stopped.";
 
-/** Receiver-side Standard Webhooks check: a `v1` HMAC-SHA256 over `id.timestamp.body`, timestamp within 5 min. */
-export const verifySignature = (secret: string, headers: Record<string, string>, body: string, nowSec: number): boolean => {
-  const timestamp = Number(headers["webhook-timestamp"]);
-  if (!Number.isInteger(timestamp) || Math.abs(nowSec - timestamp) > 300) return false;
-  const key = Buffer.from(secret.replace(/^whsec_/u, ""), "base64");
-  const expected = Buffer.from(`v1,${createHmac("sha256", key).update(`${headers["webhook-id"]}.${timestamp}.${body}`).digest("base64")}`);
-  return (headers["webhook-signature"] ?? "").split(" ").some((given) => given.length === expected.length && timingSafeEqual(Buffer.from(given), expected));
-};
 /** The hub's offline-queue TTL in lab runs, short enough for the expiry check to wait it out. */
 export const QUEUE_TTL_SEC = 40;
 /** The two standing lab machines, each with its own test repo (seeded on first use) as its project. */
@@ -616,14 +610,13 @@ export const openWorkstream = (
   return w!;
 };
 
-/** Launches one tiny haiku turn ("reply OK") and returns its thread id. */
+/** Launches one tiny turn ("reply OK") and returns its thread id. */
 export const launchTiny = async (lab: Pick<Lab, "callTool" | "check">, machineId: string, projectId: string, title: string) => {
   const launched = await lab.callTool("thread_launch", {
     machineId,
     projectId,
     prompt: "Reply with the single word OK and nothing else.",
-    model: MODEL,
-    effort: "low",
+    profile: MECHANICS,
     title,
     clientRequestId: randomUUID(),
   });

@@ -4,11 +4,11 @@
 // B. A pushed slice gets a reviewer before the next slice: a writer in this slot's namespace of the lab repo opens two PRs and reports each with
 //    `report` (kind slice_ready); the first PR's reviewer starts before the second PR reaches the train, while the
 //    writer still runs. Gates hold: neither PR is ready without its review.
-// Costs a few haiku/low lead turns, one tiny read task, one writer and its reviewers.
+// Costs a few lead turns, one tiny read task, one writer and its reviewers.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { type Body, openWorkstream, fleetdCommand, type Lab, MODEL, nodeSock, requireGhLogin, scrubbedEnv, userMessages } from "./harness.ts";
+import { type Body, MECHANICS, openWorkstream, fleetdCommand, type Lab, nodeSock, requireGhLogin, scrubbedEnv, userMessages } from "./harness.ts";
 import { prepareRepo } from "./m5Tasks.ts";
 import { BASE, BRANCH_PREFIX, CLONE, checkClone, NAMESPACE, onBase, prepareCheckout, REPO, removeLabRepoProject, resetNamespace } from "./m7Train.ts";
 
@@ -57,8 +57,8 @@ async function slotFiller(lab: Lab) {
   let cursor = await lab.cursor();
   const project = (await callTool("project_get", ref)).body;
   const started = project.lead === undefined
-    ? await callTool("lead_start", { ...ref, model: MODEL, effort: "low" })
-    : await callTool("lead_restart", { ...ref, model: MODEL, effort: "low" });
+    ? await callTool("lead_start", ref)
+    : await callTool("lead_restart", ref);
   check(!started.isError, `lead start: ${JSON.stringify(started.body)}`);
   const leadThread = started.body.threadId as string;
   const leadTurn = async (from: number, what: string) => {
@@ -82,7 +82,7 @@ async function slotFiller(lab: Lab) {
   ok(`${w} running on a frozen brief; ${item} open in ${m}, no task linked; lead ${leadThread} idle`);
 
   // A tiny task takes a slot and frees it. The first lead wake after that names the item.
-  const spawned = fleetd("task", "spawn", "--workstream", w, "--title", "say ok", "--kind", "read", "--model", MODEL, "--effort", "low", "--prompt", "Reply with the single word OK.");
+  const spawned = fleetd("task", "spawn", "--workstream", w, "--title", "say ok", "--kind", "read", "--profile", MECHANICS, "--prompt", "Reply with the single word OK.");
   const taskId = /^Spawned (T\d+)/mu.exec(spawned.stdout)?.[1];
   check(spawned.code === 0 && taskId, `task spawn: ${JSON.stringify(spawned)}`);
   const freed = await lab.waitEvent(`${taskId} ends`, TURN_MS, { cursor, types: ["task.completed", "task.failed"], match: (e) => e.data?.taskId === taskId });
@@ -110,13 +110,13 @@ async function sliceReviews(lab: Lab) {
   checkClone(check);
   resetNamespace();
   const dir = `lab/eff-${new Date().toISOString().slice(0, 19).replace(/\D/gu, "")}`;
-  prepareCheckout(`areas:\n  eff: ["${dir}/**"]\ndefaults:\n  model: ${MODEL}\n  effort: low\n`);
+  prepareCheckout(`areas:\n  eff: ["${dir}/**"]\n`);
   try {
     const projectId = await lab.addProject(MACHINE, CLONE, "fleetd-lab");
     const ref = { machineId: MACHINE, projectId };
     const fleetd = shell(CLONE);
     let cursor = await lab.cursor();
-    const started = await callTool("lead_start", { ...ref, model: MODEL, effort: "low" });
+    const started = await callTool("lead_start", ref);
     check(!started.isError, `lead_start: ${JSON.stringify(started.body)}`);
     const leadThread = started.body.threadId as string;
     await lab.waitEvent("lead start turn", TURN_MS, { cursor, machineId: MACHINE, match: (e) => e.threadId === leadThread && ENDED.includes(e.type) });
@@ -129,10 +129,10 @@ async function sliceReviews(lab: Lab) {
 
     // One writer, two slices, each reported as soon as its PR is open.
     const slice = (n: string, line: string) =>
-      `On a new branch ${BRANCH_PREFIX}eff-${n} from origin/${BASE} (git fetch origin; git checkout -b ${BRANCH_PREFIX}eff-${n} origin/${BASE}), create ${dir}/${n}.md containing exactly the line ${line}, commit it, push the branch, and open a PR with gh pr create --base ${BASE} --head ${BRANCH_PREFIX}eff-${n} --title "eff ${n}" --body "Source: done:0". Then call the report tool with kind "slice_ready" and prUrl set to that PR's URL.`;
+      `On a new branch ${BRANCH_PREFIX}eff-${n} from origin/${BASE} (git fetch origin; git checkout -b ${BRANCH_PREFIX}eff-${n} origin/${BASE}), create ${dir}/${n}.md containing exactly the line ${line}, commit it, push the branch, and open a PR with gh pr create --base ${BASE} --head ${BRANCH_PREFIX}eff-${n} --title "eff ${n}" --body "eff ${n}". Then call the report tool with kind "slice_ready" and prUrl set to that PR's URL.`;
     cursor = await lab.cursor();
     const spawned = fleetd(
-      "task", "spawn", "--workstream", w, "--title", "two slices", "--areas", "eff", "--serves", "done:0", "--model", MODEL, "--effort", "low",
+      "task", "spawn", "--workstream", w, "--title", "two slices", "--areas", "eff", "--profile", MECHANICS,
       "--prompt", `Do these two steps in order. 1. ${slice("one", "one")} 2. ${slice("two", "two")} Reply with both PR URLs.`,
     );
     const writer = /^Spawned (T\d+)/mu.exec(spawned.stdout)?.[1];

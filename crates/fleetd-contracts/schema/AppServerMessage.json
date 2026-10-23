@@ -491,6 +491,11 @@
           "type": "string"
         },
         {
+          "const": "machine.guard",
+          "description": "The machine's disk or load stopped new agents there, or no longer does; `data.paused`, and the summary says\nwhy. Agents already running keep going.",
+          "type": "string"
+        },
+        {
           "const": "project.removed",
           "description": "The node no longer has the project: the hub dropped it from its cache, and its open workstreams stop. `data.title`.",
           "type": "string"
@@ -508,6 +513,11 @@
         {
           "const": "project.add_failed",
           "description": "A clone `project_add` accepted failed: `data` is `ProjectAddFailedData`, with the fix.",
+          "type": "string"
+        },
+        {
+          "const": "project.settings",
+          "description": "A project's settings changed (`project_set`): `data.mediumAllowed`.",
           "type": "string"
         },
         {
@@ -536,13 +546,8 @@
           "type": "string"
         },
         {
-          "const": "webhook.failing",
-          "description": "A webhook subscription has been failing for over an hour.",
-          "type": "string"
-        },
-        {
           "const": "workstream.running",
-          "description": "The brief was frozen; `data.briefHash`.",
+          "description": "The brief was set and the work started.",
           "type": "string"
         },
         {
@@ -646,11 +651,6 @@
           "type": "string"
         },
         {
-          "const": "intake.routed",
-          "description": "Where an intent went; `data.workstreamId`, `data.template`, `data.reason`, `data.playbook`.",
-          "type": "string"
-        },
-        {
           "const": "research.verdict",
           "description": "A research workstream's computed verdict; `data.workstreamId`, `data.outcome`, `data.metricValues`.",
           "type": "string"
@@ -671,33 +671,8 @@
           "type": "string"
         },
         {
-          "const": "retro.ran",
-          "description": "M12: a retro run ended; `data.run`, `data.trigger`, `data.advise`, `data.proposals`, `data.dropped`, `data.usage` (orchestrator runs).",
-          "type": "string"
-        },
-        {
-          "const": "playbook.changed",
-          "description": "M12: a playbook file changed under a retro proposal; `data.proposalId`, `data.playbook`, `data.ref`, `data.previousRef`, `data.kind`, `data.baseline`, `data.dueAt`.",
-          "type": "string"
-        },
-        {
-          "const": "playbook.reverted",
-          "description": "M12: a wording change missed its metric or regressed a guarded one and was rolled back; `data.proposalId`, `data.reason`.",
-          "type": "string"
-        },
-        {
-          "const": "playbook.kept",
-          "description": "M12: a wording change met its metric; `data.proposalId`, `data.measured`.",
-          "type": "string"
-        },
-        {
           "const": "key.paired",
           "description": "A device redeemed a pairing code from `fleetd pair` and got a human key; `data.keyId`, `data.deviceName`.",
-          "type": "string"
-        },
-        {
-          "const": "workstream.note",
-          "description": "A person added to an order for its lead: `data.workstreamId`, `data.noteId`, `data.urgent`, `data.text` (first\n200 characters).",
           "type": "string"
         },
         {
@@ -1043,6 +1018,34 @@
       ],
       "type": "string"
     },
+    "NodeDisk": {
+      "description": "Space on the volume holding a node's worktrees and build cache.",
+      "properties": {
+        "freeBytes": {
+          "description": "Free for the node's user.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "minFreeBytes": {
+          "description": "Below this the hub starts no new agents there: node.json's `minFreeGb`, else 10% of the volume or 20 GB,\nwhichever is larger.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "totalBytes": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "freeBytes",
+        "totalBytes",
+        "minFreeBytes"
+      ],
+      "type": "object"
+    },
     "NodeLoad": {
       "description": "What a machine reports about itself with each heartbeat.",
       "properties": {
@@ -1051,6 +1054,10 @@
           "maximum": 4096,
           "minimum": 1,
           "type": "integer"
+        },
+        "disk": {
+          "$ref": "#/$defs/NodeDisk",
+          "description": "The volume holding the node's worktrees and build cache; absent from older nodes and when it can't be read."
         },
         "limits": {
           "default": [],

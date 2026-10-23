@@ -176,20 +176,23 @@ fn task_ids(c: &Connection, task: &str) -> Result<Ids, StoreError> {
         .strip_prefix('T')
         .and_then(|n| n.parse::<i64>().ok())
         .unwrap_or(-1);
-    let row: Option<(String, String, String, Option<String>)> = c
+    let row: Option<(String, String, String, Option<String>, String)> = c
         .query_row(
-            "SELECT machine_id, project_id, workstream_id, thread_id FROM tasks WHERE n = ?1",
+            "SELECT machine_id, project_id, workstream_id, thread_id, data FROM tasks WHERE n = ?1",
             [n],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
         )
         .optional()?;
     Ok(match row {
-        Some((m, p, w, t)) => Ids {
+        Some((m, p, w, t, data)) => Ids {
             machine_id: Some(m),
             project_id: Some(p),
             workstream_id: Some(w),
             task_id: Some(task.to_owned()),
             thread_id: t,
+            profile: Some(super::ingest::profile_of(
+                &serde_json::from_str(&data).unwrap_or_default(),
+            )),
             ..Ids::default()
         },
         None => Ids {
@@ -275,9 +278,10 @@ fn apply(c: &Connection, e: &HubEvent) -> Result<(), StoreError> {
                 // Node spans that arrived before the task knew its thread.
                 let ids = task_ids(c, task)?;
                 c.execute(
-                    "UPDATE time_spans SET task_id = ?3, workstream_id = ?4, project_id = COALESCE(project_id, ?5)
+                    "UPDATE time_spans SET task_id = ?3, workstream_id = ?4, project_id = COALESCE(project_id, ?5),
+                       profile = COALESCE(profile, ?6)
                      WHERE machine_id = ?1 AND thread_id = ?2 AND task_id IS NULL AND role IS NULL",
-                    params![m, t, task, ids.workstream_id, ids.project_id],
+                    params![m, t, task, ids.workstream_id, ids.project_id, ids.profile],
                 )?;
             }
         }

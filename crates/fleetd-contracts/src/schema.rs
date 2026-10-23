@@ -10,8 +10,8 @@ use serde_json::{Map, Value};
 use crate::app::{AppClientMessage, AppServerMessage};
 use crate::chat::{ChatMessage, ProjectChatState};
 use crate::events::{
-    ClaimEventData, HubEvent, HubEventType, MachineSleptData, PromptChangedData, RequestEventData,
-    ThreadEventData, TrainEventData, WorkstreamEventData, WorkstreamNoteData,
+    ClaimEventData, HubEvent, HubEventType, MachineGuardData, MachineSleptData, PromptChangedData,
+    RequestEventData, ThreadEventData, TrainEventData, WorkstreamEventData,
 };
 use crate::ledger::{Decision, HumanRequest, Lead, Workstream};
 use crate::mcp::McpToolName;
@@ -66,11 +66,6 @@ fn mcp_tools_document_for(side: Side) -> Value {
     })
 }
 
-/// `HubEvent.data` by event type, keyed by the wire name, for the event types whose data has a declared shape.
-pub fn hub_event_data_document() -> Value {
-    hub_event_data_document_for(Side::Deserialize)
-}
-
 fn hub_event_data_document_for(side: Side) -> Value {
     use HubEventType as E;
     document_with("HubEventData", side, |generator| {
@@ -86,11 +81,11 @@ fn hub_event_data_document_for(side: Side) -> Value {
         data!(ThreadEventData: ThreadStarted, ThreadCompleted, ThreadFailed, ThreadInterrupted, ThreadWaiting, ThreadStalled);
         data!(UsageEventData: ThreadUsageLimited, UsageBreaker, UsageResumed);
         data!(MachineSleptData: MachineSlept);
+        data!(MachineGuardData: MachineGuard);
         data!(ProjectAddedData: ProjectAdded);
         data!(CloneProgressData: ProjectCloneProgress);
         data!(ProjectAddFailedData: ProjectAddFailed);
         data!(WorkstreamEventData: WorkstreamCreated, WorkstreamRunning, WorkstreamState, WorkstreamDone);
-        data!(WorkstreamNoteData: WorkstreamNote);
         data!(RequestEventData: RequestOpened, RequestUpdated);
         data!(TaskEventData: TaskQueued, TaskStarted, TaskCompleted, TaskFailed, TaskCancelled, TaskOutOfArea);
         data!(AgentsCapData: AgentsCap);

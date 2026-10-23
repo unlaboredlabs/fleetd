@@ -4,23 +4,18 @@
 // time view, where the model, tokens and activity live. Nothing is drawn when no agent is shown.
 import { ChevronRight } from "lucide-react";
 import type { Virtualizer } from "@tanstack/react-virtual";
-import { useEffect, useId, useRef, useState, useSyncExternalStore, type CSSProperties, type RefObject } from "react";
+import { useEffect, useId, useRef, useSyncExternalStore, type CSSProperties } from "react";
 import { useData, useToolQuery } from "../../src/data/react";
-import { Text, Truncate, VirtualList, cx, toast } from "../../ui";
+import { Text, Truncate, VirtualList, cx } from "../../ui";
+import { navigate } from "../shell/navigation";
 import { runCommand } from "../palette";
-import { useNow } from "./clock";
+import { useNow, useOnScreen } from "./clock";
 import type { AgentLane } from "./contracts";
 import { projectKey } from "./lanes";
 import { AgentLine } from "./parts";
 import { isRunning } from "./words";
 import { type ProjectRef, type Strip, type StripRow, selectSkew, selectStrip, stripHeadline, stripPrs } from "./strip";
 import s from "./live.module.css";
-
-const openPr = (url: string) => {
-  void window.fleetd.openExternal(url).then((o) => {
-    if (!o.ok) toast({ title: "Couldn't open the PR", description: o.message, tone: "danger" });
-  });
-};
 
 const TONE: Partial<Record<StripRow["tone"], string | undefined>> = {
   warning: s.warning,
@@ -81,7 +76,7 @@ export function LiveStrip({ project, onTold }: LiveStripProps) {
           </span>
         ) : null}
       </button>
-      {open ? <Opened id={body} projectKey={key} strip={strip} onTold={onTold} /> : <div id={body} hidden />}
+      {open ? <Opened id={body} project={project} strip={strip} onTold={onTold} /> : <div id={body} hidden />}
     </section>
   );
 }
@@ -98,20 +93,8 @@ function OrderDetail({ workstreamId }: { workstreamId: string }) {
 /** Row heights, px, as lanes.module.css draws them: the box is sized to its rows up to a third of the window. */
 const ROW_PX = { agent: 24, pr: 28 } as const;
 
-/** Whether `ref` is in the viewport: the clocks stop once the strip scrolls out of the chat. */
-const useOnScreen = (ref: RefObject<Element | null>): boolean => {
-  const [on, setOn] = useState(true);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const io = new IntersectionObserver((entries) => setOn(entries.some((e) => e.isIntersecting)));
-    io.observe(el);
-    return () => io.disconnect();
-  }, [ref]);
-  return on;
-};
-
-function Opened({ id, projectKey: key, strip, onTold }: { id: string; projectKey: string; strip: Strip; onTold: LiveStripProps["onTold"] }) {
+function Opened({ id, project, strip, onTold }: { id: string; project: ProjectRef; strip: Strip; onTold: LiveStripProps["onTold"] }) {
+  const key = projectKey(project);
   const box = useRef<HTMLDivElement>(null);
   const list = useRef<Virtualizer<HTMLDivElement, Element> | null>(null);
   // An effect, not a layout effect: the list hands over its virtualizer in its own effect, which runs first.
@@ -140,7 +123,8 @@ function Opened({ id, projectKey: key, strip, onTold }: { id: string; projectKey
     if (r.kind === "pr") {
       return (
         <div className={s.group}>
-          <button type="button" className={s.pr} onClick={() => openPr(r.url)} aria-label={`Open PR #${r.number} on GitHub`}>
+          {/* The PR view keeps Open on GitHub one click away. */}
+          <button type="button" className={s.pr} onClick={() => navigate({ id: "prs", project, pr: { repo: null, number: r.number } })} aria-label={`Open PR #${r.number}`}>
             #{r.number}
           </button>
           <span className={s.groupTitle}>

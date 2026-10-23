@@ -441,4 +441,69 @@ pub(crate) const MIGRATIONS: &[&str] = &[
   -- The ask batching and info spans: nothing records them any more, and their kinds no longer exist.
   DELETE FROM time_spans WHERE kind IN (42, 43);
   "#,
+    // Outbound webhooks went: external clients long-poll events_wait.
+    r#"
+  DROP TABLE subscriptions;
+  DELETE FROM events WHERE type = 'webhook.failing';
+  "#,
+    // In-stage progress counts only while work is in flight. A figure stored under the old rule, which credited every
+    // minute in a stage, can only fall with an observed cause, so it would stay held at the old height: every scope's
+    // series restarts at its next render.
+    r#"
+  DELETE FROM status_series;
+  "#,
+    // A point marks a figure holding on paused work (`paused`, the plain words).
+    r#"
+  ALTER TABLE status_series ADD COLUMN paused TEXT;
+  "#,
+    // Two task profiles, both claude-opus-5-5: high and medium. The lead always runs high, so its saved model and
+    // effort go; a project keeps whether its tasks may run medium. A stored task on opus-5-5 at medium is medium and
+    // every other one high. A task's or a lead's spans carry its profile, so time and usage split by it.
+    r#"
+  DROP TABLE lead_settings;
+  CREATE TABLE project_settings (
+    machine_id TEXT NOT NULL, project_id TEXT NOT NULL, medium_allowed INTEGER NOT NULL,
+    PRIMARY KEY (machine_id, project_id)
+  );
+  UPDATE tasks SET data = json_set(json_remove(data, '$.model', '$.effort'), '$.profile',
+    CASE WHEN json_extract(data, '$.model') = 'claude-opus-5-5' AND json_extract(data, '$.effort') = 'medium'
+      THEN 'medium' ELSE 'high' END)
+    WHERE json_valid(data);
+  ALTER TABLE time_spans ADD COLUMN profile TEXT;
+  UPDATE time_spans SET profile = 'high' WHERE role IS NOT NULL OR task_id IS NOT NULL;
+  UPDATE time_spans SET profile = 'medium'
+    WHERE task_id IN (SELECT 'T' || n FROM tasks WHERE json_extract(data, '$.profile') = 'medium');
+  "#,
+    // The order router went: nothing emits intake.routed, and a stored one would no longer decode.
+    r#"
+  DELETE FROM events WHERE type = 'intake.routed';
+  "#,
+    // The retro went: its runs and proposals, its events and its incident class. A playbook change still waiting on a
+    // person is denied, since nothing would apply it.
+    r#"
+  DROP TABLE retro_runs;
+  DROP TABLE retro_proposals;
+  DELETE FROM events WHERE type IN ('retro.ran', 'playbook.changed', 'playbook.reverted', 'playbook.kept');
+  DELETE FROM incidents WHERE class = 'playbook_reverted';
+  UPDATE requests SET state = 'denied', data = json_set(data, '$.state', 'denied')
+    WHERE state = 'open' AND json_valid(data) AND json_extract(data, '$.playbook') IS NOT NULL;
+  "#,
+    // The router's retry memo, the ETA anchor and the generated headlines: nothing reads or writes them, and nothing
+    // emits these two event types any more.
+    r#"
+  DROP TABLE intake_routes;
+  DROP TABLE status_eta;
+  DROP TABLE status_headlines;
+  DELETE FROM events WHERE type IN ('intake.routed', 'workstream.note');
+  "#,
+    // A brief is a plain record: no freeze hash, no amends.
+    r#"
+  ALTER TABLE workstreams DROP COLUMN amends;
+  UPDATE workstreams SET data = json_remove(data, '$.briefHash') WHERE json_valid(data);
+  "#,
+    // No value bar: tasks and changes no longer say what they serve.
+    r#"
+  UPDATE tasks SET data = json_remove(data, '$.serves') WHERE json_valid(data);
+  UPDATE changes SET data = json_remove(data, '$.serves') WHERE json_valid(data);
+  "#,
 ];

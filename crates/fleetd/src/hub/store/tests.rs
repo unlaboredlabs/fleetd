@@ -1,170 +1,13 @@
+use super::event_log::WaitResult;
 use super::test_clock::ManualClock;
 use super::*;
-use crate::hub::auth::{Auth, AuthError};
-use fleetd_contracts::auth::{KeyKind, Role};
 use fleetd_contracts::events::{HubEvent, HubEventType as T};
-use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, ThreadId, ThreadRef};
-use fleetd_contracts::model::MachineStatus;
-use std::path::{Path, PathBuf};
+use fleetd_contracts::ids::MachineId;
 use std::sync::Arc;
 use std::time::Duration;
 
 fn m(id: &str) -> MachineId {
     MachineId::new(id).unwrap()
-}
-
-/// A fresh directory under the system temp dir, removed on drop.
-struct TempHome(PathBuf);
-
-impl TempHome {
-    fn new(tag: &str) -> Self {
-        let dir = std::env::temp_dir().join(format!(
-            "fleetd-store-{tag}-{}-{}",
-            std::process::id(),
-            rand::random::<u32>()
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
-        Self(dir)
-    }
-}
-
-impl Drop for TempHome {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
-}
-
-fn fixture(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("src/hub/store/fixtures")
-        .join(name)
-}
-
-fn schema(db: &HubDb) -> Vec<(String, String, Option<String>)> {
-    db.with(|conn| {
-        let mut stmt =
-            conn.prepare("SELECT type, name, sql FROM sqlite_master ORDER BY type, name")?;
-        let rows = stmt
-            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
-            .collect::<Result<_, _>>()?;
-        Ok(rows)
-    })
-    .unwrap()
-}
-
-#[tokio::test]
-async fn opens_a_database_written_by_the_ts_hub_unchanged() {
-    // Written by the TypeScript hub that fleetd replaced, with its own store and auth code.
-    let secrets: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(fixture("ts-hub.json")).unwrap()).unwrap();
-    let at = secrets["at"].as_u64().unwrap();
-    let home = TempHome::new("ts");
-    std::fs::copy(fixture("ts-hub.sqlite"), home.0.join("hub.sqlite")).unwrap();
-
-    let db = HubDb::open(&home.0).unwrap();
-    assert_eq!(db.user_version().unwrap(), SCHEMA_VERSION as i64);
-    assert_eq!(
-        schema(&db),
-        schema(&HubDb::open_memory().unwrap()),
-        "same tables, indexes and SQL as a Rust-created hub"
-    );
-    let mode: String = db
-        .with(|c| Ok(c.query_row("PRAGMA journal_mode", [], |r| r.get(0))?))
-        .unwrap();
-    assert_eq!(mode, "wal");
-
-    let store = HubStore::new(db.clone());
-    let machine = store.machine_get(&m("lab-a")).unwrap().unwrap();
-    assert_eq!(machine.status, MachineStatus::Degraded);
-    // Written by the TypeScript hub, from before the native runner.
-    assert_eq!(machine.degraded_reason.as_deref(), Some("T3 is restarting"));
-    assert_eq!(store.machines_list().unwrap().len(), 1);
-    let project = ProjectRef {
-        machine_id: m("lab-a"),
-        project_id: ProjectId::new("p1").unwrap(),
-    };
-    assert_eq!(
-        store.project_get(&project).unwrap().unwrap().title,
-        "Fleetd Hub"
-    );
-    assert_eq!(store.projects_list(None, Some("FLEETD")).unwrap().len(), 1);
-    let thread = store
-        .thread_get(&ThreadRef {
-            machine_id: m("lab-a"),
-            thread_id: ThreadId::new("t1").unwrap(),
-        })
-        .unwrap()
-        .unwrap();
-    assert_eq!(
-        (
-            thread.last_sequence,
-            thread.last_run_id.as_deref(),
-            thread.last_run_status.as_deref()
-        ),
-        (Some(7), Some("run-1"), Some("running"))
-    );
-    assert_eq!(thread.thread.model.as_deref(), Some("claude-haiku-5-5"));
-    assert_eq!(store.threads_running().unwrap().len(), 1);
-    assert_eq!(store.cursor_get(&m("lab-a")).unwrap(), Some(42));
-
-    let clock = ManualClock::at(at + 60_000);
-    let log = EventLog::new(db.clone(), clock.clone()).unwrap();
-    assert_eq!(log.head(), 3);
-    let page = log.page(0, None, None).unwrap();
-    assert_eq!(
-        page.events.iter().map(|e| e.seq.get()).collect::<Vec<_>>(),
-        [1, 2, 3]
-    );
-    assert_eq!(
-        page.events[1].data,
-        Some(serde_json::json!({ "runId": "run-1" }))
-    );
-    assert_eq!(page.events[2].summary.as_str().chars().count(), 200);
-    assert_eq!(
-        page.events[2].data,
-        Some(serde_json::json!({ "truncated": true }))
-    );
-    assert_eq!(
-        log.page(0, Some(&[T::ThreadStarted]), Some(&m("lab-a")))
-            .unwrap()
-            .events
-            .len(),
-        1
-    );
-    assert_eq!(
-        log.append(event(T::ThreadFailed, "lab-a"))
-            .unwrap()
-            .seq
-            .get(),
-        4
-    );
-
-    let auth = Auth::new(db.clone(), clock.clone());
-    let agent = auth.verify(secrets["agentKey"].as_str().unwrap()).unwrap();
-    assert!(auth.allows(&agent, Role::Operate, Some(&m("lab-a"))));
-    assert!(!auth.allows(&agent, Role::Operate, Some(&m("lab-b"))));
-    let human = auth
-        .verify(&format!("Bearer {}", secrets["humanKey"].as_str().unwrap()))
-        .unwrap();
-    assert_eq!(human.kind, Some(KeyKind::Human));
-    assert!(
-        matches!(auth.verify(secrets["revokedKey"].as_str().unwrap()), Err(AuthError::Unauthorized(u)) if u.message.ends_with("was revoked"))
-    );
-    assert_eq!(auth.list().unwrap().len(), 3);
-    assert_eq!(
-        auth.node_pub_key(&m("lab-a")).unwrap().as_deref(),
-        Some("node-pub-a")
-    );
-    auth.consume_enroll_token(
-        secrets["enrollToken"].as_str().unwrap(),
-        &m("lab-b"),
-        "node-pub-b",
-    )
-    .unwrap();
-    assert_eq!(
-        auth.node_pub_key(&m("lab-b")).unwrap().as_deref(),
-        Some("node-pub-b")
-    );
 }
 
 fn event(t: T, machine: &str) -> NewEvent {
@@ -471,157 +314,253 @@ fn drops_events_older_than_30_days_without_reusing_their_seq_even_across_a_resta
     );
 }
 
-/// A hub from before the questions tool went: its open secret and approve asks carry on as open requests under the
-/// same number, an approved command that never ran goes back to the person, every ask is kept in `legacy_asks`, and
-/// the ask events, batches and the retro's asked state are gone.
+/// A hub from before task profiles: a task stored on claude-opus-5-5 at medium runs medium and every other one high,
+/// the lead's saved model and effort go, and agent spans take their session's profile.
 #[test]
-fn asks_on_an_older_hub_become_requests_and_history() {
+fn stored_models_and_efforts_become_the_two_profiles() {
     use super::migrations::MIGRATIONS;
     let conn = rusqlite::Connection::open_in_memory().unwrap();
-    let last = MIGRATIONS.len() - 1;
-    assert!(
-        MIGRATIONS[last].contains("legacy_asks"),
-        "the ask migration is the last one"
-    );
-    for m in &MIGRATIONS[..last] {
+    // Found by content, not as the last migration, so later migrations don't break this test.
+    let profiles_at = MIGRATIONS
+        .iter()
+        .position(|m| m.contains("CREATE TABLE project_settings"))
+        .expect("the profiles migration");
+    for m in &MIGRATIONS[..profiles_at] {
         conn.execute_batch(m).unwrap();
     }
-    let p = r#""projectRef":{"machineId":"lab-a","projectId":"p1"}"#;
-    let asks = [
-        (
-            1,
-            "open",
-            format!(
-                r#"{{{p},"kind":"secret","key":"stripe.test_key","sink":"env:lab-a:/srv/.env","text":"The test key","createdAt":"2026-10-18T10:00:00.000Z"}}"#
-            ),
-        ),
-        (
-            2,
-            "open",
-            format!(
-                r#"{{{p},"kind":"approve","text":"lab-a/t1: Bash ls","permission":{{"threadId":"t1","requestId":"q1","toolName":"Bash","summary":"ls"}},"createdAt":"2026-10-18T10:00:00.000Z"}}"#
-            ),
-        ),
-        (
-            3,
-            "answered",
-            format!(
-                r#"{{{p},"kind":"approve","text":"Run make migrate","gated":{{"argv":["make","migrate"],"cwd":"/w/p1","class":"irreversible","reason":"schema","timeoutSec":600}},"answer":{{"value":"go"}},"createdAt":"2026-10-18T10:00:00.000Z"}}"#
-            ),
-        ),
-        (
-            4,
-            "answered",
-            format!(
-                r#"{{{p},"kind":"approve","text":"Run make seed","gated":{{"argv":["make","seed"],"cwd":"/w/p1","class":"irreversible","reason":"seed","timeoutSec":600}},"answer":{{"value":"go"}},"evidence":"exit 0 on lab-a","createdAt":"2026-10-18T10:00:00.000Z"}}"#
-            ),
-        ),
-        (
-            5,
-            "open",
-            format!(
-                r#"{{{p},"kind":"decide","key":"share.link","text":"What should a link show?","createdAt":"2026-10-18T10:00:00.000Z"}}"#
-            ),
-        ),
-        (6, "open", r#"{"kind":"secret"#.to_string()),
+    let tasks = [
+        (1, "claude-opus-5-5", "medium"),
+        (2, "claude-opus-5-5", "high"),
+        (3, "claude-haiku-5-5", "low"),
+        (4, "claude-opus-5-5", "max"),
+        (5, "claude-sonnet-5-5", "medium"),
     ];
-    for (n, state, data) in &asks {
+    for (n, model, effort) in tasks {
         conn.execute(
-            "INSERT INTO asks (n, project_key, key, state, filed_by, created_ms, data) VALUES (?1, 'lab-a/p1', 'k', ?2, 'lead', 0, ?3)",
-            rusqlite::params![n, state, data],
+            "INSERT INTO tasks (n, machine_id, project_id, workstream_id, state, data) VALUES (?1, 'lab-a', 'p1', 'W1', 'done', ?2)",
+            rusqlite::params![n, format!(r#"{{"taskId":"T{n}","model":"{model}","effort":"{effort}"}}"#)],
         )
         .unwrap();
     }
     conn.execute_batch(
-        r#"INSERT INTO batches (state, created_ms) VALUES ('published', 0);
-        INSERT INTO events (created_ms, type, data) VALUES (0, 'ask.created', '{"askId":"A5"}'), (0, 'batch.ready', '{}'),
-          (0, 'workstream.running', '{"workstreamId":"W1"}');
-        INSERT INTO retro_proposals (run_n, playbook, state, ask_id, machines, data)
-          VALUES (1, 'bugfix', 'asked', 'A9', '[]', '{"proposalId":"R1","state":"asked","askId":"A9"}');"#,
+        "INSERT INTO lead_settings VALUES ('lab-a', 'p1', 'claude-haiku-5-5', 'low');
+         INSERT INTO time_spans (src, src_key, kind, cat, start_ms, task_id, role, lane, status)
+           VALUES ('n', 'a', 2, 0, 0, 'T1', 'implementer', 'x', 0), ('n', 'b', 2, 0, 0, 'T3', 'implementer', 'x', 0),
+                  ('n', 'c', 2, 0, 0, NULL, 'lead', 'x', 0), ('h', 'd', 30, 4, 0, NULL, NULL, 'x', 0);",
     )
     .unwrap();
-    conn.execute_batch(MIGRATIONS[last]).unwrap();
+    conn.execute_batch(MIGRATIONS[profiles_at]).unwrap();
 
-    let ids: Vec<(i64, String)> = conn
-        .prepare("SELECT n, json_extract(data, '$.evidence') FROM requests ORDER BY n")
+    let profiles: Vec<(String, Option<String>, Option<String>)> = conn
+        .prepare("SELECT json_extract(data, '$.profile'), json_extract(data, '$.model'), json_extract(data, '$.effort') FROM tasks ORDER BY n")
         .unwrap()
-        .query_map([], |r| {
-            Ok((
-                r.get(0)?,
-                r.get::<_, Option<String>>(1)?.unwrap_or_default(),
-            ))
-        })
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
         .unwrap()
         .collect::<Result<_, _>>()
         .unwrap();
+    let only = |p: &str| (p.to_owned(), None, None);
     assert_eq!(
-        ids,
+        profiles,
         [
-            (1, String::new()),
-            (2, String::new()),
-            (
-                3,
-                "not run: the hub was updated before it ran; approve again to run it".to_string()
-            ),
-        ],
-        "open secret and approve asks, and the approved command that never ran; no decide, finished or broken ask"
+            only("medium"),
+            only("high"),
+            only("high"),
+            only("high"),
+            only("high")
+        ]
     );
-    let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
-    assert_eq!(
-        count("SELECT count(*) FROM legacy_asks"),
-        6,
-        "every ask is kept for the chat's history"
-    );
-    assert_eq!(
-        count("SELECT count(*) FROM events WHERE type IN ('ask.created', 'batch.ready')"),
-        0
-    );
-    assert_eq!(count("SELECT count(*) FROM events"), 1);
-    assert_eq!(
-        count(
-            "SELECT count(*) FROM sqlite_master WHERE name IN ('batches', 'batch_items', 'ask_incidents', 'asks')"
-        ),
-        0
-    );
-    let retro: (String, String) = conn
-        .query_row("SELECT state, data FROM retro_proposals", [], |r| {
-            Ok((r.get(0)?, r.get(1)?))
-        })
-        .unwrap();
-    assert_eq!(
-        retro,
-        (
-            "pending".into(),
-            r#"{"proposalId":"R1","state":"pending"}"#.into()
-        )
-    );
-
-    // Every carried-over request decodes as the store reads it.
-    let rows: Vec<String> = conn
-        .prepare("SELECT data FROM requests ORDER BY n")
+    let spans: Vec<Option<String>> = conn
+        .prepare("SELECT profile FROM time_spans ORDER BY id")
         .unwrap()
         .query_map([], |r| r.get(0))
         .unwrap()
         .collect::<Result<_, _>>()
         .unwrap();
-    let decoded: Vec<fleetd_contracts::ledger::HumanRequest> = rows
-        .iter()
-        .map(|d| serde_json::from_str(d).unwrap())
-        .collect();
     assert_eq!(
-        decoded
-            .iter()
-            .map(|r| (r.request_id.as_str(), r.state))
-            .collect::<Vec<_>>(),
+        spans,
         [
-            ("Q1", fleetd_contracts::ledger::RequestState::Open),
-            ("Q2", fleetd_contracts::ledger::RequestState::Open),
-            ("Q3", fleetd_contracts::ledger::RequestState::Open),
-        ]
+            Some("medium".into()),
+            Some("high".into()),
+            Some("high".into()),
+            None
+        ],
+        "agent spans take their task's profile, the lead's high; a hub span has none"
     );
-    assert!(
-        decoded[0].secret.is_some()
-            && decoded[1].permission.is_some()
-            && decoded[2].gated.is_some()
+    let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
+    assert_eq!(
+        count("SELECT count(*) FROM sqlite_master WHERE name = 'lead_settings'"),
+        0
+    );
+    assert_eq!(
+        count("SELECT count(*) FROM project_settings"),
+        0,
+        "medium stays on"
+    );
+}
+
+/// A hub from before the order router went: its intake.routed events go, so every stored event still decodes.
+#[test]
+fn routed_intents_go_on_an_older_hub() {
+    use super::migrations::MIGRATIONS;
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    let gone = MIGRATIONS
+        .iter()
+        .position(|m| m.contains("type = 'intake.routed'"))
+        .expect("the router migration");
+    for m in &MIGRATIONS[..gone] {
+        conn.execute_batch(m).unwrap();
+    }
+    conn.execute_batch(
+        r#"INSERT INTO events (created_ms, type, data) VALUES (0, 'intake.routed', '{"workstreamId":"W1"}'),
+          (0, 'workstream.running', '{"workstreamId":"W1"}');"#,
+    )
+    .unwrap();
+    for m in &MIGRATIONS[gone..] {
+        conn.execute_batch(m).unwrap();
+    }
+    let types: Vec<String> = conn
+        .prepare("SELECT type FROM events")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(types, ["workstream.running"]);
+}
+
+/// A hub from before the retro went: its tables, events and incidents go, and a playbook change still open is denied,
+/// so every stored event, incident and request still decodes.
+#[test]
+fn the_retro_goes_on_an_older_hub() {
+    use super::migrations::MIGRATIONS;
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    let last = MIGRATIONS
+        .iter()
+        .position(|m| m.contains("DROP TABLE retro_runs"))
+        .unwrap();
+    for m in &MIGRATIONS[..last] {
+        conn.execute_batch(m).unwrap();
+    }
+    let p = r#""projectRef":{"machineId":"lab-a","projectId":"p1"}"#;
+    let change = r#""playbook":{"proposalId":"R1","playbook":"bugfix","summary":"reviewers 1 → 0","diff":"-a\n+b"}"#;
+    for (state, n) in [("open", 1), ("approved", 2)] {
+        conn.execute(
+            "INSERT INTO requests (n, project_key, kind, state, created_ms, data) VALUES (?1, 'lab-a/p1', 'approval', ?2, 0, ?3)",
+            rusqlite::params![
+                n,
+                state,
+                format!(
+                    r#"{{"requestId":"Q{n}",{p},"kind":"approval","text":"Loosen bugfix","state":"{state}",{change},"createdAt":"2026-10-18T10:00:00.000Z"}}"#
+                )
+            ],
+        )
+        .unwrap();
+    }
+    conn.execute_batch(
+        r#"INSERT INTO retro_runs (at_ms, trigger, data) VALUES (0, 'schedule', '{}');
+        INSERT INTO events (created_ms, type, data) VALUES (0, 'retro.ran', '{}'), (0, 'playbook.kept', '{}'),
+          (0, 'workstream.running', '{"workstreamId":"W1"}');
+        INSERT INTO incidents (class, machine_id, project_id, data) VALUES ('playbook_reverted', 'lab-a', 'p1', '{}'),
+          ('stall', 'lab-a', 'p1', '{}');"#,
+    )
+    .unwrap();
+    for m in &MIGRATIONS[last..] {
+        conn.execute_batch(m).unwrap();
+    }
+
+    let strings = |sql: &str| -> Vec<String> {
+        conn.prepare(sql)
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    };
+    assert!(strings("SELECT name FROM sqlite_master WHERE name LIKE 'retro_%'").is_empty());
+    assert_eq!(strings("SELECT type FROM events"), ["workstream.running"]);
+    assert_eq!(strings("SELECT class FROM incidents"), ["stall"]);
+    assert_eq!(
+        strings("SELECT state FROM requests ORDER BY n"),
+        ["denied", "approved"]
+    );
+    for data in strings("SELECT data FROM requests ORDER BY n") {
+        let request: fleetd_contracts::ledger::HumanRequest = serde_json::from_str(&data).unwrap();
+        assert!(request.playbook.is_some(), "an older approval still reads");
+    }
+}
+
+/// A hub from before the unused tables went: they are dropped, and the events nothing emits any more are deleted so
+/// every stored event still decodes.
+#[test]
+fn unused_tables_and_events_go_on_an_older_hub() {
+    use super::migrations::MIGRATIONS;
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    // Found by content, not as the last migration, so later migrations don't break this test.
+    let drop = MIGRATIONS
+        .iter()
+        .position(|m| m.contains("DROP TABLE status_eta"))
+        .unwrap();
+    for m in &MIGRATIONS[..drop] {
+        conn.execute_batch(m).unwrap();
+    }
+    conn.execute_batch(
+        r#"INSERT INTO intake_routes (client_request_id, data) VALUES ('c1', '{}');
+        INSERT INTO events (created_ms, type, data) VALUES (0, 'intake.routed', '{}'), (0, 'workstream.note', '{}'),
+          (0, 'workstream.running', '{"workstreamId":"W1"}');"#,
+    )
+    .unwrap();
+    conn.execute_batch(MIGRATIONS[drop]).unwrap();
+
+    let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
+    assert_eq!(
+        count(
+            "SELECT count(*) FROM sqlite_master WHERE name IN ('intake_routes', 'status_eta', 'status_headlines')"
+        ),
+        0
+    );
+    let types: Vec<String> = conn
+        .prepare("SELECT type FROM events")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(types, ["workstream.running"]);
+}
+
+/// A hub from before the value bar went: stored tasks and changes drop what they served.
+#[test]
+fn tasks_and_changes_from_an_older_hub_drop_what_they_served() {
+    use super::migrations::MIGRATIONS;
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    let no_value_bar = MIGRATIONS
+        .iter()
+        .position(|m| m.contains("json_remove(data, '$.serves')"))
+        .expect("the value bar migration");
+    for m in &MIGRATIONS[..no_value_bar] {
+        conn.execute_batch(m).unwrap();
+    }
+    conn.execute_batch(
+        r#"INSERT INTO tasks (machine_id, project_id, workstream_id, state, data)
+          VALUES ('m', 'p', 'W1', 'done', '{"taskId":"T1","serves":"done:0"}');
+        INSERT INTO changes (repo, pr_number, state, machine_id, project_id, train_order, data)
+          VALUES ('o/r', 1, 'merged', 'm', 'p', 0, '{"changeId":"X1","serves":"done:0"}');"#,
+    )
+    .unwrap();
+    conn.execute_batch(MIGRATIONS[no_value_bar]).unwrap();
+
+    let data: (String, String) = conn
+        .query_row(
+            "SELECT (SELECT data FROM tasks), (SELECT data FROM changes)",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        data,
+        (
+            r#"{"taskId":"T1"}"#.to_string(),
+            r#"{"changeId":"X1"}"#.to_string()
+        )
     );
 }

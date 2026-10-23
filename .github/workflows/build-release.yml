@@ -417,7 +417,7 @@ jobs:
           .github/release/desktop-update-check.sh dist/fleetd-desktop-linux-x86_64.AppImage \
             "$RUNNER_TEMP/fleetd.AppImage" --appimage-extract-and-run --no-sandbox --ozone-platform=headless
       - name: Launch the deb's app and have it announce the update
-        # The deb can't update itself; it shows a dialog, hence a virtual display.
+        # The deb can't update itself; it offers the update in its window, hence a virtual display.
         run: |
           dpkg-deb -x dist/fleetd-desktop-linux-amd64.deb "$RUNNER_TEMP/deb"
           DONE_MARKER="update notice: fleetd 99.0.0" xvfb-run -a .github/release/desktop-update-check.sh \

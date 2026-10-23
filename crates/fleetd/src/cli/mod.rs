@@ -1,24 +1,21 @@
 //! The `fleetd` command line: the same subcommands, arguments, output and exit codes as older releases.
-//! Exit codes: 0 ok, 1 failed (a claim that did not pass), 2 usage, 3 refused, 4 hub or node unreachable,
-//! 78 (`listen`) the hub refused the key.
+//! Exit codes: 0 ok, 1 failed (a claim that did not pass), 2 usage, 3 refused, 4 hub or node unreachable.
 
 pub mod agent_mcp;
 pub mod args;
 pub mod hub_key;
 pub mod lead;
-pub mod listen;
 pub mod mcp_client;
 pub mod node;
 pub mod pair;
-pub mod pending;
 pub mod project;
 pub mod prompts;
-pub mod retro;
 pub mod setup;
 pub mod status;
 pub mod steer;
 pub mod time;
 pub mod update;
+pub mod versions;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -67,7 +64,7 @@ setting up (on the hub machine):
 projects:
 {}
 running by hand:
-{}{}{}{}{}{}{}{}{}{}{}
+{}{}{}{}{}{}{}{}
 lead-side commands (a lead uses its fleetd tools; these are for you, inside a project workspace):
 {}",
         UPDATE_USAGE,
@@ -77,11 +74,8 @@ lead-side commands (a lead uses its fleetd tools; these are for you, inside a pr
         project::PROJECT_USAGE,
         node::HUB_START_USAGE,
         hub_key::HUB_KEY_USAGE,
-        hub_key::HUB_TOKEN_USAGE,
         status::GITHUB_WEBHOOK_USAGE,
         node::NODE_USAGE,
-        listen::LISTEN_USAGE,
-        retro::RETRO_USAGE,
         prompts::PROMPTS_USAGE,
         time::TIME_USAGE,
         status::STATUS_USAGE,
@@ -90,8 +84,10 @@ lead-side commands (a lead uses its fleetd tools; these are for you, inside a pr
     )
 }
 
-const UPDATE_USAGE: &str = "  update [--check] [--channel <c>]
-             replace this fleetd with the latest release
+const UPDATE_USAGE: &str = "  update [--check] [--channel <c>] [--restart-now]
+             replace this fleetd with the latest release, then restart its hub and node when
+             nothing runs on them; while something does, they keep the running version until
+             their next restart. --restart-now restarts them anyway
 ";
 
 /// `fleetd <command> … --help` (or `-h`): that command's usage, for stdout and exit 0. After `--` they are arguments.
@@ -112,19 +108,15 @@ pub fn help_for(argv: &[String]) -> Option<String> {
         "hub" => match rest.first().map(String::as_str) {
             Some("start" | "serve") => node::HUB_START_USAGE.to_owned(),
             Some("key") => hub_key::HUB_KEY_USAGE.to_owned(),
-            Some("token") => hub_key::HUB_TOKEN_USAGE.to_owned(),
             Some("github-webhook") => status::GITHUB_WEBHOOK_USAGE.to_owned(),
             _ => format!(
-                "{}{}{}{}",
+                "{}{}{}",
                 node::HUB_START_USAGE,
                 hub_key::HUB_KEY_USAGE,
-                hub_key::HUB_TOKEN_USAGE,
                 status::GITHUB_WEBHOOK_USAGE
             ),
         },
         "node" => node::NODE_USAGE.to_owned(),
-        "listen" => listen::LISTEN_USAGE.to_owned(),
-        "retro" => retro::RETRO_USAGE.to_owned(),
         "prompts" | "instructions" => prompts::PROMPTS_USAGE.to_owned(),
         "time" => time::TIME_USAGE.to_owned(),
         "update" => UPDATE_USAGE.to_owned(),
@@ -136,7 +128,7 @@ pub fn help_for(argv: &[String]) -> Option<String> {
     Some(format!("usage:\n{text}"))
 }
 
-/// The short-lived commands that are not lead calls: version, help and `hub key|token`.
+/// The short-lived commands that are not lead calls: version, help and `hub key`.
 pub fn run(argv: &[String]) -> CliResult {
     let command = argv.first().map(String::as_str);
     match command {
@@ -159,7 +151,6 @@ pub fn run(argv: &[String]) -> CliResult {
         Some("instructions") => prompts::instructions_command(&argv[1..]),
         Some("hub") => match argv.get(1).map(String::as_str) {
             Some("key") => hub_key::hub_key(&argv[2..]),
-            Some("token") => hub_key::hub_token(&argv[2..]),
             other => CliResult::err(
                 2,
                 format!(
@@ -176,13 +167,13 @@ pub fn run(argv: &[String]) -> CliResult {
     }
 }
 
-/// Commands that keep running (`node …`, `listen`, `status --watch`, `steer --wait`) or wait on other processes or
-/// the hub (setup, `retro run`, `update`, `status`, `steer`, `hub github-webhook`). `status set` is a lead call.
+/// Commands that keep running (`node …`, `status --watch`, `steer --wait`) or wait on other processes or
+/// the hub (setup, `update`, `status`, `steer`, `hub github-webhook`). `status set` is a lead call.
 fn is_long_running(argv: &[String]) -> bool {
     match argv.first().map(String::as_str) {
         Some(
-            "init" | "doctor" | "uninstall" | "machine" | "project" | "projects" | "node"
-            | "listen" | "retro" | "time" | "update" | "steer" | "steers",
+            "init" | "doctor" | "uninstall" | "machine" | "project" | "projects" | "node" | "time"
+            | "update" | "steer" | "steers",
         ) => true,
         Some("status") => !lead::is_lead_command(argv),
         Some("hub") => argv.get(1).map(String::as_str) == Some("github-webhook"),
@@ -197,8 +188,6 @@ async fn run_long_running(argv: &[String]) -> u8 {
         "machine" => setup::machine::machine_command(rest).await,
         "project" | "projects" => project::project_command(rest).await,
         "node" => node::node_command(rest).await,
-        "listen" => listen::listen_command(rest).await,
-        "retro" => retro::retro_command(rest).await,
         "time" => time::time_command(rest).await,
         "status" => status::status_command(rest).await,
         "hub" => status::github_webhook_command(&rest[1..]).await,
@@ -208,10 +197,14 @@ async fn run_long_running(argv: &[String]) -> u8 {
     }
 }
 
-/// `fleetd update [--check] [--channel <c>]`.
+/// `fleetd update [--check] [--channel <c>] [--restart-now]`.
 async fn update_command(argv: &[String]) -> u8 {
     let spec = args::Spec {
-        options: &[("check", args::Kind::Bool), ("channel", args::Kind::Str)],
+        options: &[
+            ("check", args::Kind::Bool),
+            ("channel", args::Kind::Str),
+            ("restart-now", args::Kind::Bool),
+        ],
         positionals: false,
     };
     let v = match args::parse(argv, &spec) {
@@ -224,6 +217,7 @@ async fn update_command(argv: &[String]) -> u8 {
     match update::run(update::UpdateArgs {
         check: v.flag("check"),
         channel: v.string("channel"),
+        restart_now: v.flag("restart-now"),
     })
     .await
     {
@@ -350,11 +344,7 @@ mod tests {
                 .contains("hub key create")
         );
         assert!(!help(&["hub", "key", "-h"]).unwrap().contains("hub start"));
-        assert!(
-            help(&["hub", "--help"])
-                .unwrap()
-                .contains("hub token create")
-        );
+        assert!(help(&["hub", "--help"]).unwrap().contains("hub key create"));
         assert!(
             help(&["update", "-h"])
                 .unwrap()

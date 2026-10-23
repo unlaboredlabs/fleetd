@@ -3,6 +3,7 @@ import type { LinkHandlerStatus, OpenTarget } from "../shared/app";
 import { IPC } from "../shared/channels";
 import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { KeyStore, PairOutcome, PairStart, Probe, SetupOutcome } from "../shared/pairing";
+import type { UpdatesState } from "../shared/updates";
 import type { FleetdApi } from "./api";
 
 const listeners = new Set<(frame: HubFrame) => void>();
@@ -22,11 +23,19 @@ ipcRenderer.on(IPC.menuCommand, (_event: IpcRendererEvent, id: string) => {
 ipcRenderer.on(IPC.appOpen, (_event: IpcRendererEvent, target: OpenTarget) => {
   for (const listener of openListeners) listener(target);
 });
-const FIXTURE_ARG = "--fleetd-fixture=";
-const fixture = process.argv.find((arg) => arg.startsWith(FIXTURE_ARG))?.slice(FIXTURE_ARG.length) ?? null;
+const updateListeners = new Set<(state: UpdatesState) => void>();
+ipcRenderer.on(IPC.updatesChanged, (_event: IpcRendererEvent, state: UpdatesState) => {
+  for (const listener of updateListeners) listener(state);
+});
+
+const arg = (name: string): string | null => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? null;
+const fixture = arg("fleetd-fixture");
+const vibrancy = process.argv.includes("--fleetd-vibrancy");
 
 const api: FleetdApi = {
   fixture,
+  vibrancy,
+  version: arg("fleetd-version") ?? "unknown",
   platform: process.platform === "darwin" || process.platform === "linux" || process.platform === "win32" ? process.platform : "other",
   copy: (text) => ipcRenderer.invoke(IPC.copy, text) as Promise<void>,
   secret: {
@@ -75,6 +84,17 @@ const api: FleetdApi = {
       return path === "" ? Promise.resolve<DropInfo>({ kind: "other" }) : (ipcRenderer.invoke(IPC.projectsReadDrop, path) as Promise<DropInfo>);
     },
   },
+  updates: {
+    state: () => ipcRenderer.invoke(IPC.updatesState) as Promise<UpdatesState>,
+    subscribe: (listener) => {
+      updateListeners.add(listener);
+      return () => updateListeners.delete(listener);
+    },
+    check: () => ipcRenderer.invoke(IPC.updatesCheck) as Promise<void>,
+    install: () => ipcRenderer.invoke(IPC.updatesInstall) as Promise<void>,
+    keep: () => ipcRenderer.invoke(IPC.updatesKeep) as Promise<void>,
+    hubTerminal: () => ipcRenderer.invoke(IPC.updatesHubTerminal) as Promise<SetupOutcome>,
+  },
   app: {
     onMenuCommand: (listener) => {
       commandListeners.add(listener);
@@ -89,9 +109,12 @@ const api: FleetdApi = {
       }
       return () => openListeners.delete(listener);
     },
-    notify: (request) => ipcRenderer.invoke(IPC.appNotify, request) as Promise<void>,
+    notify: (request) => ipcRenderer.invoke(IPC.appNotify, request) as Promise<boolean>,
+    setBadge: (count) => ipcRenderer.invoke(IPC.appBadge, count) as Promise<void>,
+    setTheme: (mode) => ipcRenderer.invoke(IPC.appTheme, mode) as Promise<void>,
     linkHandler: (claim) => ipcRenderer.invoke(IPC.appLinkHandler, claim) as Promise<LinkHandlerStatus>,
     setMenuState: (enabled) => ipcRenderer.invoke(IPC.appMenuState, enabled) as Promise<void>,
+    logError: (report) => (ipcRenderer.invoke(IPC.appLog, report) as Promise<void>).catch(() => undefined),
   },
 };
 

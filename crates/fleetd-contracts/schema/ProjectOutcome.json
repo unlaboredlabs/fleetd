@@ -27,10 +27,10 @@
         },
         "decisionRule": {
           "$ref": "#/$defs/DecisionRule",
-          "description": "Research: frozen with the brief, so the verdict can't move the goalposts."
+          "description": "Research: the rule the verdict is computed from."
         },
         "doneWhen": {
-          "description": "At least one; frozen with the brief.",
+          "description": "At least one.",
           "items": {
             "$ref": "#/$defs/CheckSpec"
           },
@@ -94,10 +94,6 @@
         }
       },
       "type": "object"
-    },
-    "BriefHash": {
-      "pattern": "^[0-9a-f]{64}$",
-      "type": "string"
     },
     "ChangeId": {
       "pattern": "^X[1-9][0-9]*$",
@@ -297,15 +293,6 @@
       ],
       "type": "string"
     },
-    "Effort": {
-      "enum": [
-        "low",
-        "medium",
-        "high",
-        "max"
-      ],
-      "type": "string"
-    },
     "Estimate": {
       "properties": {
         "gates": {
@@ -431,6 +418,10 @@
         "lead": {
           "$ref": "#/$defs/Lead",
           "description": "Absent until lead_start."
+        },
+        "mediumAllowed": {
+          "description": "Whether the lead may run a task on the medium profile (`project_set`); absent from older hubs, where it is on.",
+          "type": "boolean"
         },
         "next": {
           "description": "Hint for the next call.",
@@ -592,7 +583,7 @@
         },
         "rule": {
           "$ref": "#/$defs/DecisionRule",
-          "description": "The brief's frozen rule."
+          "description": "The brief's rule."
         }
       },
       "required": [
@@ -630,10 +621,6 @@
         "createdAt": {
           "$ref": "#/$defs/Timestamp"
         },
-        "effort": {
-          "$ref": "#/$defs/Effort",
-          "description": "Always explicit; resolved at spawn."
-        },
         "endedAt": {
           "$ref": "#/$defs/Timestamp"
         },
@@ -648,10 +635,6 @@
         "kind": {
           "$ref": "#/$defs/TaskKind"
         },
-        "model": {
-          "minLength": 1,
-          "type": "string"
-        },
         "parked": {
           "$ref": "#/$defs/UsageParked",
           "description": "M4: its thread hit a usage limit; the task is idle until fleetd sends \"continue\" at `resumeAt`."
@@ -659,6 +642,11 @@
         "pr": {
           "description": "The PR a review task reviews. Required at spawn for review; absent on hub-spawned judge tasks and older rows.",
           "type": "string"
+        },
+        "profile": {
+          "$ref": "#/$defs/TaskProfile",
+          "default": "high",
+          "description": "Resolved at spawn. Rows stored with a model and effort read as `high` (the hub migrates its own)."
         },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
@@ -673,17 +661,13 @@
           "type": "boolean"
         },
         "queuedReason": {
-          "description": "Why it is queued, e.g. \"lease: docs held by T1\" or \"slots: 40/40 in use\".",
+          "description": "Why it is queued, e.g. \"lease: docs held by T1\" or \"fleet cap: 40 of 40 running\".",
           "maxLength": 200,
           "minLength": 1,
           "type": "string"
         },
         "result": {
           "$ref": "#/$defs/TaskResult"
-        },
-        "serves": {
-          "$ref": "#/$defs/Serves",
-          "description": "Required at spawn for write tasks; optional here for tasks stored before M6."
         },
         "startedAt": {
           "$ref": "#/$defs/Timestamp"
@@ -722,8 +706,6 @@
         "kind",
         "prompt",
         "areas",
-        "model",
-        "effort",
         "state",
         "attempt",
         "createdAt"
@@ -784,6 +766,14 @@
         "write",
         "read",
         "review"
+      ],
+      "type": "string"
+    },
+    "TaskProfile": {
+      "description": "What an agent runs on. There are exactly two, both claude-opus-5-5: `high` (effort high) is the default and what\nthe lead, every reviewer and every helper call run; `medium` (effort medium) is for mechanical tasks the lead picks.",
+      "enum": [
+        "high",
+        "medium"
       ],
       "type": "string"
     },
@@ -1058,9 +1048,6 @@
           "$ref": "#/$defs/Brief",
           "description": "Absent while draft."
         },
-        "briefHash": {
-          "$ref": "#/$defs/BriefHash"
-        },
         "createdAt": {
           "$ref": "#/$defs/Timestamp"
         },
@@ -1086,7 +1073,7 @@
         },
         "playbook": {
           "$ref": "#/$defs/PlaybookRef",
-          "description": "Pinned at creation; the brief freeze validates against this version. Absent on workstreams from before M9."
+          "description": "Pinned at creation; the brief validates against this version. Absent on workstreams from before M9."
         },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"

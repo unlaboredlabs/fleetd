@@ -6,10 +6,9 @@ use super::args::{self, Kind, Spec};
 
 pub use crate::node::NODE_USAGE;
 
-pub const HUB_START_USAGE: &str = r#"  hub start [--home <dir>] [--listen <host:port>] [--queue-ttl <seconds>] [--retro-model <model>]
+pub const HUB_START_USAGE: &str = r#"  hub start [--home <dir>] [--listen <host:port>] [--queue-ttl <seconds>]
              run the hub (default home ~/.fleetd/hub, listen 127.0.0.1:4790,
-             writes to an offline machine wait 24 h, intents without a project
-             are routed by the claude CLI with claude-haiku-5-5)
+             writes to an offline machine wait 24 h)
 "#;
 
 const OPTIONS: &[(&str, Kind)] = &[
@@ -108,5 +107,5 @@ pub async fn node_command(argv: &[String]) -> u8 {
 /// `fleetd hub start|serve [--home <dir>] [--listen <host:port>] …`: runs the hub in the foreground until a signal.
 /// The hub parses its own flags, prints its own usage and runs its own runtime, so it gets the argv as given.
 pub fn hub_start(argv: &[String]) -> std::process::ExitCode {
-    super::pending::serve::hub_start(argv)
+    crate::hub::serve::hub_start(argv)
 }

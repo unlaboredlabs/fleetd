@@ -2,7 +2,7 @@
 // (never in CI); M7 and M9 also use the GitHub lab repo unlaboredlabs/fleetd-lab, in the slot's branch namespace. One hub and two nodes (lab-a,
 // lab-b), each node running the real `claude` itself under its own HOME, driven only through a real MCP client.
 // Each scenario is a file exporting one function over the shared `Lab`; name some to run only those (setup always
-// runs). Costs a handful of tiny claude-haiku-5-5 turns. Every process this starts is stopped by its spawn PID.
+// runs). Costs a handful of tiny claude-opus-5-5 turns. Every process this starts is stopped by its spawn PID.
 import fs from "node:fs";
 import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -53,7 +53,6 @@ import {
   writeFleetdWrapper,
 } from "./harness.ts";
 import { m1Fleet } from "./m1Fleet.ts";
-import { m3Loop } from "./m3Loop.ts";
 import { m5Tasks } from "./m5Tasks.ts";
 import { m6Verify } from "./m6Verify.ts";
 import { m7Train } from "./m7Train.ts";
@@ -63,7 +62,6 @@ import { noCiTrain } from "./noCiTrain.ts";
 import { noSubagents } from "./noSubagents.ts";
 import { trainBatch } from "./trainBatch.ts";
 import { offlineQueue } from "./offlineQueue.ts";
-import { scenarioPush } from "./scenarioPush.ts";
 import { statusFresh } from "./statusFresh.ts";
 import { steerMidTurn } from "./steerMidTurn.ts";
 import { timeInspector } from "./timeInspector.ts";
@@ -74,16 +72,14 @@ import { missedCompletion, stallNudgeFail } from "./watchdogScenarios.ts";
 const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab) => Promise<void>; readonly only?: boolean }> = [
   { name: "m1", run: m1Fleet },
   { name: "wake", run: wakeOnTime },
-  { name: "push", run: scenarioPush },
   { name: "stall", run: (lab) => stallNudgeFail(lab) },
   { name: "missed", run: (lab) => missedCompletion(lab) },
   { name: "degraded", run: degradedMachine },
   { name: "queue", run: offlineQueue },
-  // Last: its lead thread on lab-a would otherwise be picked as an idle thread by the scenarios above.
-  { name: "m3", run: m3Loop },
-  // After m3: it reuses m3's lead (or starts one) and adds its own order; m5 spawns under either.
+  // Last: its lead thread on lab-a would otherwise be picked as an idle thread by the scenarios above. It starts a lead
+  // and adds its own order; m5 spawns under either.
   { name: "steer", run: steerMidTurn },
-  // After m3: it reuses m3's lead and workstream when they exist.
+  // After steer: it reuses its lead and workstream when they exist.
   { name: "m5", run: m5Tasks },
   // After m5: it reuses the lead when there is one.
   { name: "m6", run: m6Verify },
@@ -125,8 +121,6 @@ const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab)
 ];
 
 const hubHome = path.join(RUN, "hub");
-// The intake router runs `claude -p` on the hub. Like an installed hub, it finds Claude through the user's own login,
-// not variables passed in.
 const startHubProcess = async (env: Readonly<Record<string, string>> = {}) => {
   startCli("hub", ["hub", "start", "--home", hubHome, "--listen", `127.0.0.1:${HUB_PORT}`, "--queue-ttl", String(QUEUE_TTL_SEC)], env);
   await until("hub /healthz", 30_000, async () => {

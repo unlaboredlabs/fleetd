@@ -18,7 +18,7 @@ Where fleetd keeps everything, and the settings you can change. The [hub](/docs/
     setup.json           what fleetd init and machine add set up: address, commit identity, machines
     hub.log              the hub service's log
     cli.key              the admin key the CLI on this machine uses
-    webhook.key          seals webhook secrets
+    webhook.key          seals the GitHub webhook secret
     playbooks/<name>.md  your version of a playbook; delete it to use fleetd's
     prompts/<id>.md      your version of a prompt, hub-wide
     prompts/projects/<key>/<id>.md   the same for one project
@@ -54,6 +54,7 @@ after you change it.
 | `enrolled` | `true` once the hub accepted the node's key. |
 | `cmdRoots` | Folders the node may run commands in, and below. Absent: your home directory. A project's checkout must be inside one: `fleetd project add` refuses one outside, and `fleetd doctor` flags an existing one. |
 | `claudeConfigDir` | A dedicated claude profile for this machine's sessions. See [below](#claude-profile). |
+| `minFreeGb` | New agents wait while the disk holding the worktrees has less than this many GB free. Absent: 10% of the disk or 20 GB, whichever is larger. `0` turns it off. Read with every heartbeat, no restart needed. See [Disk and load](/docs/machines#guard). |
 
 ## The Claude login {#claude}
 
@@ -87,9 +88,6 @@ To give a worker's sessions their own claude profile:
 
 A session resumes only under the config dir it started in.
 
-The hub's own `claude` (the retro) uses your normal login on the hub machine, or the gateway
-variables in `claude.env`.
-
 ## claude.env {#claude-env}
 
 Optional. `KEY=VALUE` lines for every `claude` fleetd runs, for a variable your login needs that the services don't
@@ -102,10 +100,7 @@ ANTHROPIC_BASE_URL=https://gateway.example.com
 ANTHROPIC_AUTH_TOKEN=<token>
 ```
 
-| Reader | Uses |
-|---|---|
-| Nodes | Every line, in each session's environment. Re-read at each session start. |
-| The hub | Only `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_API_KEY` and `CLAUDE_CODE_OAUTH_TOKEN`. Read when the hub starts, so restart it after a change. |
+Nodes put every line in each session's environment, re-read at each session start.
 
 The `env` in your `~/.claude/settings.json` outranks it, as it does for your own `claude`.
 
@@ -118,9 +113,6 @@ An optional file in a project's repo. Commit it to the default branch; changes a
 areas:
   docs: ["docs/**"]
   app: ["src/**", "package.json"]
-defaults:
-  model: claude-opus-5-5
-  effort: high
 finishAll:
   maxChildren: 10
 tools:
@@ -136,8 +128,6 @@ branchPrefix: team-a/
 | Key | Default | Does |
 |---|---|---|
 | `areas` | inferred | What a writer task may touch. A task leases one or more areas, and writers in different areas run at the same time. Names are lowercase slugs. |
-| `defaults.model` | `claude-opus-5-5` | The project's task model. |
-| `defaults.effort` | `high` | `low`, `medium`, `high` or `max`. |
 | `finishAll.maxChildren` | `5` | The most pieces of work one finish-all run starts at once, 1 to 50. |
 | `tools.allow`, `tools.deny` | none | Claude permission rules for every session. Deny wins. |
 | `lead.autoStart` | `true` | `false`: your messages wait for `lead_start` instead of starting the lead. |
@@ -210,8 +200,8 @@ Every command then keeps all its state there and never reads or writes `~/.fleet
 3. In another terminal, add this machine as a worker of the test hub:
 
    ```sh
-   fleetd hub token create --machine test-1
-   fleetd node join --hub http://127.0.0.1:4797 --token <token> --machine test-1
+   fleetd pair --worker test-1    # its output has a one-time --code
+   fleetd node join --hub http://127.0.0.1:4797 --token <code> --machine test-1
    ```
 
 4. Use the test fleet as you would your own:
@@ -233,7 +223,6 @@ Stop the hub and node with Ctrl+C. Delete `$FLEETD_HOME` to remove the test flee
 | The node's home: `node join`, `node run` | `$FLEETD_HOME/node` |
 | The app's hand-off from `init` and `pair` | `$FLEETD_HOME/app-pair.json`. Start the desktop app with the same `FLEETD_HOME` to pair with it. |
 | Lead-side commands (`claim`, `change`, `plan`, …) | `FLEETD_NODE_SOCK`, else `$FLEETD_HOME/node/node.sock`. Sessions get it set. |
-| `listen`, `retro` | No home: they always take `--hub` and `--key-file`. |
 
 `--home <dir>` names one hub's or node's folder. Without `FLEETD_HOME`, that command keeps everything else in the
 folder above it, so `--home $T/hub` works like `FLEETD_HOME=$T`. `FLEETD_HOME` wins when both are given.
@@ -269,6 +258,7 @@ Each node holds timings it hasn't sent yet in `sessions.sqlite`. While the hub i
 | Pairing hand-off from `fleetd init` or `fleetd pair` | `~/.config/fleetd/app-pair.json` (macOS: `~/Library/Application Support/fleetd/app-pair.json`), or `$FLEETD_HOME/app-pair.json` for a [second fleet](#second-fleet) |
 | Its hub address and key | `desktop-hub.bin` in the same folder, encrypted with the OS keychain or keyring. Without one (no keyring on Linux, or an unsigned or ad-hoc signed Mac build): `desktop-hub.json`, mode `0600`. |
 | Its own browser state | `desktop/` in the same folder. |
+| Its log | `~/Library/Logs/fleetd/app.log` on macOS, `~/.local/state/fleetd/app.log` on Linux (`$XDG_STATE_HOME/fleetd`), or `$FLEETD_HOME/logs`. Errors only, without keys or message text; crash dumps go in `crashes/` beside it. Help → Reveal Logs opens it. |
 
 ## Hub environment {#env}
 

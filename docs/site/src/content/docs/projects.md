@@ -1,6 +1,6 @@
 ---
 title: Projects
-description: "Add a project, choose its branch and models, and how its lead plans the work."
+description: "Add a project, choose its branch and task profiles, and how its lead plans the work."
 ---
 
 You'll add a repo as a [project](/docs/glossary#project), send it work, and follow that work to merged pull requests.
@@ -127,6 +127,7 @@ When the cap is reached:
 
 - A new agent **queues**; it doesn't fail. The lead is told its place in line, and the hub starts it the moment a
   slot frees.
+- New agents also wait while their machine is short of disk or CPU ([Disk and load](/docs/machines#guard)).
 - Reviewers and verifiers count toward the cap, but a review that gates a merge goes first, so a low cap never stalls
   the merge train.
 
@@ -144,26 +145,24 @@ speed. At a cap of 1 it works one piece at a time and says so once.
 
 ## Models and cost {#models}
 
-By default the lead and every task run on `claude-opus-5-5` at high effort.
+Every agent runs on `claude-opus-5-5`, with one of two profiles:
+
+| Profile | Effort | Runs |
+|---|---|---|
+| `high` | high | The default. The lead, every review, every helper call, and every task the lead doesn't mark medium. |
+| `medium` | medium | Mechanical tasks the lead picks: dead-code deletions, renames, test removals, doc fixes, moving files, plain wiring, screenshot recaptures. Never design, concurrency, auth or secrets, approvals or the merge train. |
+
+The lead picks the profile for each task it starts. A medium task whose review finds blockers twice is redone on high.
+Each agent's profile shows on its lane, in `fleetd task status` and in `fleetd status` (`T12 medium`), and the time
+view splits agent time and output tokens by profile, so you can see what medium saves.
 
 | To change | Do |
 |---|---|
-| The lead's model and effort | Call `lead_start {machineId, projectId, model, effort}` from an [MCP client](/docs/mcp-clients) before your first message to the project. They are saved for the project. |
-| The tasks' model and effort | Set `defaults.model` and `defaults.effort` in the project's [policy file](/docs/config-and-files#policy), committed to the default branch. |
+| Whether the lead may use medium | `fleetd project set <machine>/<project> --medium off` runs every new task on high; `--medium on` allows medium again (the default). |
+| When the lead picks medium | Edit the **Task profiles** prompt (`lead.profiles`) like any [prompt](/docs/what-agents-are-told). It takes effect at the lead's next start. |
 
-For example, to try fleetd cheaply on a test project:
-
-1. Before your first message to it, call
-   `lead_start {"machineId":"devbox","projectId":"<id>","model":"claude-haiku-5-5","effort":"low"}`. `fleetd project
-   list` shows the ids.
-2. Commit this `.fleetd/policy.yaml` to the default branch. Without `areas`, the project keeps the areas fleetd
-   [infers from the repo](/docs/config-and-files#inferred-areas).
-
-   ```yaml
-   defaults:
-     model: claude-haiku-5-5
-     effort: low
-   ```
+There is no other model or effort: no setting, flag or policy key picks one. An older policy file's `defaults.model`
+and `defaults.effort` are ignored, and `fleetd doctor` says so.
 
 ## How the lead schedules work {#scheduling}
 
@@ -172,7 +171,7 @@ in parallel while slots are free. fleetd keeps that going, but never starts work
 
 | Rule | What happens |
 |---|---|
-| A free slot is offered | When a slot frees and the lead is idle, fleetd wakes it with the plan items that can start: brief frozen, not waiting on an open item, no task or PR yet. Finish-all work with room for another child is offered too. If nothing qualifies, the lead stays idle. |
+| A free slot is offered | When a slot frees and the lead is idle, fleetd wakes it with the plan items that can start: brief set, not waiting on an open item, no task or PR yet. Finish-all work with room for another child is offered too. If nothing qualifies, the lead stays idle. |
 | Once per change | A lead hears about the same runnable work once. It is told again only when that changes: an item is taken, done, added or unblocked. |
 | Slices are reviewed as they land | A writer reports each finished PR (`report`, kind `slice_ready`), or marks its draft PR ready on GitHub. fleetd puts it on the train and starts its reviewers right away, while the writer goes on. A new commit is reviewed again from what changed. |
 

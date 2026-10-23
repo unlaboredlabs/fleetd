@@ -5,13 +5,12 @@ use std::collections::BTreeMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::effort::Effort;
+use crate::effort::TaskProfile;
 use crate::ids::{ProjectRef, ThreadRef, Timestamp};
-use crate::ledger::{SERVES_FIX, Serves, Tier, WorkstreamId};
+use crate::ledger::{Tier, WorkstreamId};
 use crate::prim::{
-    Count, Int, Line, List, NonEmpty, NonNegative, Positive, Text, UniqueList, js_len,
+    Count, Int, Line, List, NonEmpty, NonNegative, Positive, Text, UniqueList, is_http_url, js_len,
 };
-use crate::subscriptions::is_http_url;
 use crate::usage::UsageParked;
 use crate::{brand, checked};
 
@@ -67,16 +66,8 @@ pub fn task_areas_rule(kind: TaskKind, areas_len: usize) -> Result<(), String> {
     Ok(())
 }
 
-/// A write task must say what it serves; a review task names its PR; only review tasks may be QA runs.
-pub fn task_spawn_rule(
-    kind: TaskKind,
-    serves: bool,
-    qa: Option<bool>,
-    pr: bool,
-) -> Result<(), String> {
-    if kind == TaskKind::Write && !serves {
-        return Err(format!("a write task needs --serves: {SERVES_FIX}"));
-    }
+/// A review task names its PR; only review tasks may be QA runs.
+pub fn task_spawn_rule(kind: TaskKind, qa: Option<bool>, pr: bool) -> Result<(), String> {
     if kind == TaskKind::Review && !pr {
         return Err("a review task needs --pr <PR URL>".into());
     }
@@ -142,13 +133,11 @@ pub struct Task {
     pub kind: TaskKind,
     pub prompt: TaskPrompt,
     pub areas: TaskAreas,
-    pub model: NonEmpty,
-    /// Always explicit; resolved at spawn.
-    pub effort: Effort,
+    /// Resolved at spawn. Rows stored with a model and effort read as `high` (the hub migrates its own).
+    #[serde(default)]
+    pub profile: TaskProfile,
     pub tier: Option<Tier>,
     pub estimate_minutes: Option<NonNegative>,
-    /// Required at spawn for write tasks; optional here for tasks stored before M6.
-    pub serves: Option<Serves>,
     /// A review task spawned with `--qa`.
     pub qa: Option<bool>,
     /// The PR a review task reviews. Required at spawn for review; absent on hub-spawned judge tasks and older rows.
@@ -157,7 +146,7 @@ pub struct Task {
     #[serde(default)]
     pub item_id: Option<crate::plan::PlanItemId>,
     pub state: TaskState,
-    /// Why it is queued, e.g. "lease: docs held by T1" or "slots: 40/40 in use".
+    /// Why it is queued, e.g. "lease: docs held by T1" or "fleet cap: 40 of 40 running".
     pub queued_reason: Option<Text<1, 200>>,
     pub thread_ref: Option<ThreadRef>,
     /// `fleetd/<taskId>-<slug>`; write tasks only.
@@ -218,6 +207,8 @@ pub struct SlotState {
 pub struct TaskEventData {
     pub task_id: TaskId,
     pub workstream_id: Option<WorkstreamId>,
+    /// When the task was spawned: a `task.started` for a task spawned before a turn is not that turn's start.
+    pub created_at: Option<Timestamp>,
     pub queued_reason: Option<String>,
     pub branch: Option<String>,
     /// task.out_of_area: the first 20 paths outside the leased globs.
@@ -281,14 +272,6 @@ brand!(
     expected = "a branch prefix ending in /, such as fleetd/ (letters, digits, . _ - between the slashes)"
 );
 
-#[serde_with::skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct PolicyFileDefaults {
-    pub model: Option<NonEmpty>,
-    pub effort: Option<Effort>,
-}
-
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PolicyFileFinishAll {
@@ -331,8 +314,8 @@ pub struct PolicyFileTools {
 #[serde(remote = "Self", rename_all = "camelCase")]
 pub struct PolicyFile {
     // A map keyed by AreaName would silently drop misnamed areas; checking the names refuses them instead.
+    // An older file's `defaults` (model, effort) is ignored: the lead picks a TaskProfile per task.
     pub areas: BTreeMap<String, List<AreaGlob, 1, 50>>,
-    pub defaults: Option<PolicyFileDefaults>,
     pub finish_all: Option<PolicyFileFinishAll>,
     pub tools: Option<PolicyFileTools>,
     pub lead: Option<PolicyFileLead>,
@@ -360,7 +343,6 @@ pub fn default_policy() -> PolicyFile {
             "all".to_owned(),
             List::unchecked(vec![AreaGlob::unchecked("**")]),
         )]),
-        defaults: None,
         finish_all: None,
         tools: None,
         lead: None,
@@ -397,13 +379,10 @@ mod tests {
     fn spawn_rules() {
         assert!(task_areas_rule(TaskKind::Write, 0).is_err());
         assert!(task_areas_rule(TaskKind::Read, 0).is_ok());
-        let err = task_spawn_rule(TaskKind::Write, false, None, false).unwrap_err();
-        assert!(err.contains(
-            "say what this serves: serves done:<n> | issue:<ref> | defect:<text> | decision:<key>"
-        ));
-        assert!(task_spawn_rule(TaskKind::Review, false, Some(true), true).is_ok());
-        assert!(task_spawn_rule(TaskKind::Review, false, None, false).is_err());
-        assert!(task_spawn_rule(TaskKind::Write, true, Some(true), false).is_err());
+        assert!(task_spawn_rule(TaskKind::Write, None, false).is_ok());
+        assert!(task_spawn_rule(TaskKind::Review, Some(true), true).is_ok());
+        assert!(task_spawn_rule(TaskKind::Review, None, false).is_err());
+        assert!(task_spawn_rule(TaskKind::Write, Some(true), false).is_err());
     }
 
     #[test]
@@ -428,8 +407,7 @@ mod tests {
             "kind": "write",
             "prompt": "create docs/x.md",
             "areas": ["docs"],
-            "model": "claude-opus-5-5",
-            "effort": "high",
+            "profile": "medium",
             "state": "done",
             "attempt": 1,
             "result": { "status": "done", "tail": "x".repeat(2000), "branch": "fleetd/T1-add-file", "at": at },
@@ -475,7 +453,8 @@ mod tests {
         assert!(!accepts::<PolicyFile>(
             json!({ "areas": { "docs": ["/etc/**"] } })
         ));
-        assert!(!accepts::<PolicyFile>(
+        // An older file's defaults are ignored, whatever they say.
+        assert!(accepts::<PolicyFile>(
             json!({ "areas": { "docs": ["docs/**"] }, "defaults": { "effort": "medium-ish" } })
         ));
     }

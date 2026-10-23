@@ -87,8 +87,7 @@ fn resolve(hub: &Hub, by: &By, target: &SteerTarget) -> Result<Resolved, ToolErr
                 .leads
                 .records
                 .workstream_get(workstream_id)?
-                .ok_or_else(|| not_found(&format!("order {workstream_id}")))?
-                .workstream;
+                .ok_or_else(|| not_found(&format!("order {workstream_id}")))?;
             let r = &w.project_ref;
             if let By::Human(caller) = by {
                 if !allows(caller, Role::Read, Some(&r.machine_id)) {
@@ -149,7 +148,7 @@ fn resolve(hub: &Hub, by: &By, target: &SteerTarget) -> Result<Resolved, ToolErr
                 .leads
                 .records
                 .workstream_get(&task.workstream_id)?
-                .map(|s| s.workstream.title.to_string())
+                .map(|s| s.title.to_string())
                 .unwrap_or_default();
             Ok(Resolved {
                 workstream_id: task.workstream_id.clone(),
@@ -413,7 +412,7 @@ pub fn for_plan_call(
         .leads
         .records
         .workstream_get(&steer.workstream_id)?
-        .is_some_and(|w| w.workstream.project_ref == *r);
+        .is_some_and(|w| w.project_ref == *r);
     let delivered = matches!(
         steer.stage,
         SteerStage::Delivered | SteerStage::Acknowledged | SteerStage::Unacknowledged

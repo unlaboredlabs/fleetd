@@ -1,11 +1,11 @@
 // The merge train on a base CI never runs for: one tier-S writer on lab-a in a noci/<n> namespace of the lab repo
 // (FLEETD_LAB_NAMESPACE=noci/<n>; the repo's `ci` workflow ignores PRs into noci/**, and noci/*/main requires only the
 // `fleetd/train` status). Its PR gets no workflow run, so once the train's no-CI grace passes it merges on fleetd's own
-// checks into noci/<n>/main, and `pr.merged` says so. About 3 haiku turns.
+// checks into noci/<n>/main, and `pr.merged` says so. About 3 turns.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { type Body, openWorkstream, fleetdCommand, type Lab, MODEL, nodeSock, requireGhLogin, scrubbedEnv, SLOT } from "./harness.ts";
+import { type Body, MECHANICS, openWorkstream, fleetdCommand, type Lab, nodeSock, requireGhLogin, scrubbedEnv, SLOT } from "./harness.ts";
 import { BASE, checkClone, CLONE, NAMESPACE, onBase, prepareCheckout, REPO, removeLabRepoProject, resetNamespace } from "./m7Train.ts";
 
 const MACHINE = "lab-a";
@@ -15,9 +15,6 @@ const ENDED = ["thread.completed", "thread.failed", "thread.interrupted"];
 const FILE = `lab/${new Date().toISOString().slice(0, 19).replace(/\D/gu, "")}/noci.md`;
 const POLICY = `areas:
   noci: ["${FILE}"]
-defaults:
-  model: ${MODEL}
-  effort: low
 `;
 
 const gh = (...args: Array<string>) => {
@@ -47,7 +44,7 @@ export async function noCiTrain(lab: Lab) {
       return { code: out.status, stdout: out.stdout, stderr: out.stderr };
     };
 
-    const started = await callTool("lead_start", { ...ref, model: MODEL, effort: "low" });
+    const started = await callTool("lead_start", ref);
     check(!started.isError, `lead_start: ${JSON.stringify(started.body)}`);
     const leadThread = started.body.threadId as string;
     await lab.waitEvent("lead start turn", TURN_MS, { cursor: scenarioStart, machineId: MACHINE, match: (e) => e.threadId === leadThread && ENDED.includes(e.type) });
@@ -67,9 +64,9 @@ export async function noCiTrain(lab: Lab) {
 
     const cursor = await lab.cursor();
     const spawned = fleetd(
-      "task", "spawn", "--workstream", w, "--title", "add noci.md", "--areas", "noci", "--serves", "done:0", "--model", MODEL, "--effort", "low",
+      "task", "spawn", "--workstream", w, "--title", "add noci.md", "--areas", "noci", "--profile", MECHANICS,
       "--prompt",
-      `Create the file ${FILE} (from the repo root) containing exactly one line: noci. Commit it with the message "add ${FILE}". Then push your branch and open the pull request as your rules say, with the title "add ${FILE}" and the body exactly "Source: done:0". Reply with the PR URL.`,
+      `Create the file ${FILE} (from the repo root) containing exactly one line: noci. Commit it with the message "add ${FILE}". Then push your branch and open the pull request as your rules say, with the title "add ${FILE}" and the body exactly "Adds the file.". Reply with the PR URL.`,
     );
     const taskId = /^Spawned (T\d+)/mu.exec(spawned.stdout)?.[1];
     check(spawned.code === 0 && taskId, `task spawn: ${JSON.stringify(spawned)}`);

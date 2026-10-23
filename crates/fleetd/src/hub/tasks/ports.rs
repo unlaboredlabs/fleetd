@@ -3,12 +3,10 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use fleetd_contracts::effort::Effort;
+use fleetd_contracts::effort::TaskProfile;
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, ThreadId, ThreadRef};
 use fleetd_contracts::ledger::{Brief, Workstream, WorkstreamId};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
-
-use super::resolve::ModelEffort;
 
 pub type BoxFut<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
@@ -43,8 +41,7 @@ impl PortError {
 pub struct LaunchRequest {
     pub project_id: ProjectId,
     pub prompt: String,
-    pub model: String,
-    pub effort: Effort,
+    pub profile: TaskProfile,
     pub title: String,
     pub client_request_id: String,
     /// Write tasks: `{ type: "worktree", baseRef, branch }`.
@@ -109,14 +106,12 @@ pub trait TaskPorts: Send + Sync {
     ) -> BoxFut<'a, Result<(), PortError>> {
         self.send(thread, message, client_request_id)
     }
-    /// Executors.interrupt.
-    fn interrupt<'a>(
-        &'a self,
-        thread: &'a ThreadRef,
-        client_request_id: &'a str,
-    ) -> BoxFut<'a, Result<(), PortError>>;
     /// Executors.stop(ref): ends the thread's claude process; `Ok` only once the node saw it exit.
     fn stop<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Result<(), PortError>>;
+    /// Executors.stop(ref, removeWorktree): the node deletes the thread's worktree and the build output in it.
+    fn remove_worktree<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Result<(), PortError>>;
+    /// NodeLinkServer.paused: why the disk and load guard holds new agents on the machine.
+    fn paused(&self, machine_id: &MachineId) -> Option<String>;
     /// Executors.actions(ref, limit): each action's summary and output tail, newest first; empty when unreadable.
     fn action_texts<'a>(
         &'a self,
@@ -133,13 +128,6 @@ pub trait TaskPorts: Send + Sync {
     fn changes<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Option<ThreadChanges>>;
     /// ThreadWorkspace.pendingQuestion; `None` when there is none or the node could not say.
     fn pending_question<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Option<String>>;
-    /// WorkspaceFiles.read: `None` when the file does not exist.
-    fn read_file<'a>(
-        &'a self,
-        machine_id: &'a MachineId,
-        cwd: &'a str,
-        path: &'a str,
-    ) -> BoxFut<'a, Result<Option<String>, PortError>>;
     /// NodeCommands.run (cmd_check); `None` when the node could not run it.
     fn run_command<'a>(
         &'a self,
@@ -150,8 +138,8 @@ pub trait TaskPorts: Send + Sync {
     ) -> BoxFut<'a, Option<CmdOutput>>;
     /// LeadRecords.workstreams.get.
     fn workstream(&self, workstream_id: &WorkstreamId) -> Option<Workstream>;
-    /// LeadRecords.settings.get: the project's lead model and effort.
-    fn lead_settings(&self, project_ref: &ProjectRef) -> Option<ModelEffort>;
+    /// Leads.medium_allowed: whether the project's tasks may run on medium; false when it can't be read.
+    fn medium_allowed(&self, project_ref: &ProjectRef) -> bool;
     /// LeadWakes.trigger with the entry's rendered lines.
     fn wake(&self, project_ref: &ProjectRef, kind: WakeKind, text: String);
     /// LeadRecords.leads.list: the project whose lead runs in this thread now (the slot board counts it).

@@ -113,14 +113,6 @@ pub fn latest_assistant_text(view: &ThreadView) -> Option<String> {
     best.map(|m| m.text.clone())
 }
 
-pub fn active_run_id(view: &ThreadView) -> Option<String> {
-    view.runs
-        .values()
-        .filter(|r| r.status.is_active())
-        .max_by_key(|r| r.ordinal)
-        .map(|r| r.id.to_string())
-}
-
 fn item_status(s: ItemStatus) -> &'static str {
     match s {
         ItemStatus::Completed => "completed",
@@ -309,6 +301,23 @@ pub fn tail_of(
     newest_first(&mut rows, |(_, r)| r.at());
     rows.truncate(n);
     (rows, truncated)
+}
+
+/// Every message and action, newest first by `(at, id)`, strictly before `before` when given: the first `limit`,
+/// and whether more remain. A total order, so a page boundary never skips or repeats a step.
+pub fn work_page(
+    view: &ThreadView,
+    before: Option<(&str, &str)>,
+    limit: usize,
+) -> (Vec<(String, TailRow)>, bool) {
+    let (mut rows, _) = tail_of(view, usize::MAX, None);
+    rows.sort_by(|(a_id, a), (b_id, b)| (b.at(), b_id).cmp(&(a.at(), a_id)));
+    if let Some((at, id)) = before {
+        rows.retain(|(row_id, row)| (row.at(), row_id.as_str()) < (at, id));
+    }
+    let more = rows.len() > limit;
+    rows.truncate(limit);
+    (rows, more)
 }
 
 const QUESTION_MAX: usize = 1500;

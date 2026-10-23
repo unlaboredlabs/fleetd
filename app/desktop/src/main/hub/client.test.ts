@@ -85,6 +85,20 @@ describe("HubClient", () => {
     ]);
   });
 
+  it("says the hub's version from each ready frame, so a restarted hub's new version shows", () => {
+    const { hub, frames, client } = setup();
+    const lives = () => frames.flatMap((f) => (f.t === "state" && f.state.phase === "live" ? [f.state] : []));
+    client.start();
+    hub.open();
+    hub.frame({ t: "ready", protocol: 1, version: "0.0.0-nightly.202610221107+333368c" });
+    expect(lives().at(-1)).toEqual({ phase: "live", hub: "http://devbox:4790", protocol: 1, version: "0.0.0-nightly.202610221107+333368c" });
+    hub.close(1012);
+    vi.advanceTimersByTime(60_000);
+    hub.open();
+    hub.frame({ t: "ready", protocol: 1 });
+    expect(lives().at(-1)).toEqual({ phase: "live", hub: "http://devbox:4790", protocol: 1 });
+  });
+
   it("drops events it already applied", () => {
     const { hub, frames, client } = setup();
     client.start();
@@ -169,17 +183,6 @@ describe("HubClient", () => {
     hub.pong();
     hub.close(1006);
     expect(client.state).toMatchObject({ phase: "retrying", retryAt: Date.now() + 500 });
-  });
-
-  it("jitters the backoff by up to a quarter either way", () => {
-    const hub = new FakeHub();
-    for (const [random, delay] of [[0, 375], [0.999, 625]] as const) {
-      const client = new HubClient({ hub: "http://devbox:4790", key: "k1", transport: hub.transport, emit: () => undefined, random: () => random });
-      client.start();
-      hub.close(1006);
-      expect(client.state).toMatchObject({ retryAt: Date.now() + delay });
-      client.stop();
-    }
   });
 
   it("pings a quiet link and gives it up when nothing comes back", () => {

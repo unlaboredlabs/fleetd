@@ -11,7 +11,7 @@ use std::sync::LazyLock;
 /// At most one notification per this window; what arrives meanwhile is folded into the next one as "+N more".
 pub const COALESCE_MS: i64 = 20 * 60_000;
 pub const QUIET_HOURS_KEY: &str = "policy.quiet_hours";
-/// The global decision naming the zone that quiet hours, digests and the retro's Monday run in.
+/// The global decision naming the zone that quiet hours and digests run in.
 pub const POLICY_TZ_KEY: &str = "policy.tz";
 /// DESIGN §4: the hours that apply while no `policy.quiet_hours` decision exists.
 pub const DEFAULT_QUIET_HOURS: &str = "23:00-08:00";

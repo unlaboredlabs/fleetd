@@ -14,12 +14,11 @@ use fleetd_contracts::sessions::SessionWorkspace;
 use fleetd_contracts::tasks::{TaskId, TaskResult};
 use fleetd_contracts::usage::UsageParked;
 
-use super::hooks::{ResultReceipts, SpawnCheck, UsageGate};
+use super::hooks::{ResultReceipts, UsageGate};
 use super::ports::{
-    BoxFut, CmdOutput, LaunchRequest, PortError, TaskError, TaskPorts, ThreadChanges, WakeKind,
+    BoxFut, CmdOutput, LaunchRequest, PortError, TaskPorts, ThreadChanges, WakeKind,
 };
-use super::resolve::ModelEffort;
-use super::{SpawnInput, TaskCaller, Tasks};
+use super::{TaskCaller, Tasks};
 use crate::hub::api::Hub;
 use crate::hub::executor::{ExecutorError, Executors, LaunchInput, LaunchOptions};
 use crate::hub::leads::hooks::{BoxFuture, PolicyHook, TasksHook};
@@ -79,8 +78,8 @@ impl TaskPorts for HubTaskPorts {
             let input = LaunchInput {
                 project_id: request.project_id,
                 prompt: request.prompt,
-                model: request.model,
-                effort: request.effort,
+                model: request.profile.model().into(),
+                effort: request.profile.effort(),
                 runtime_mode: RuntimeMode::FullAccess,
                 title: Some(request.title),
                 client_request_id: request.client_request_id,
@@ -141,21 +140,16 @@ impl TaskPorts for HubTaskPorts {
         })
     }
 
-    fn interrupt<'a>(
-        &'a self,
-        thread: &'a ThreadRef,
-        client_request_id: &'a str,
-    ) -> BoxFut<'a, Result<(), PortError>> {
-        Box::pin(async move {
-            self.executors
-                .interrupt(thread, client_request_id)
-                .await
-                .map_err(port_error)
-        })
+    fn stop<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Result<(), PortError>> {
+        Box::pin(async move { self.executors.stop(thread, false).await.map_err(port_error) })
     }
 
-    fn stop<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Result<(), PortError>> {
-        Box::pin(async move { self.executors.stop(thread).await.map_err(port_error) })
+    fn remove_worktree<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Result<(), PortError>> {
+        Box::pin(async move { self.executors.stop(thread, true).await.map_err(port_error) })
+    }
+
+    fn paused(&self, machine_id: &MachineId) -> Option<String> {
+        self.hub()?.link.paused(machine_id)
     }
 
     fn action_texts<'a>(
@@ -206,20 +200,6 @@ impl TaskPorts for HubTaskPorts {
         Box::pin(async move { self.executors.pending_question(thread).await.ok().flatten() })
     }
 
-    fn read_file<'a>(
-        &'a self,
-        machine_id: &'a MachineId,
-        cwd: &'a str,
-        path: &'a str,
-    ) -> BoxFut<'a, Result<Option<String>, PortError>> {
-        Box::pin(async move {
-            self.executors
-                .read_file(machine_id, cwd, path)
-                .await
-                .map_err(port_error)
-        })
-    }
-
     fn run_command<'a>(
         &'a self,
         machine_id: &'a MachineId,
@@ -244,15 +224,19 @@ impl TaskPorts for HubTaskPorts {
     fn workstream(&self, workstream_id: &WorkstreamId) -> Option<Workstream> {
         let hub = self.hub()?;
         let stored = hub.leads.records.workstream_get(workstream_id).ok()??;
-        Some(stored.workstream)
+        Some(stored)
     }
 
-    fn lead_settings(&self, project_ref: &ProjectRef) -> Option<ModelEffort> {
-        let settings = self.hub()?.leads.records.settings_get(project_ref).ok()?;
-        Some(ModelEffort {
-            model: settings.model,
-            effort: settings.effort,
-        })
+    fn medium_allowed(&self, project_ref: &ProjectRef) -> bool {
+        let Some(hub) = self.hub() else { return false };
+        hub.leads
+            .leads
+            .medium_allowed(project_ref)
+            .unwrap_or_else(|error| {
+                // Unread, a task runs high: the safe side.
+                tracing::warn!(message = %error.message, "the project's medium switch was not read");
+                false
+            })
     }
 
     fn wake(&self, project_ref: &ProjectRef, kind: WakeKind, text: String) {
@@ -395,32 +379,6 @@ impl UsageGate for UsageFromArea {
     }
 }
 
-struct ValueBarCheck(Arc<crate::hub::valuebar::ValueBar>);
-
-impl SpawnCheck for ValueBarCheck {
-    fn check_spawn<'a>(
-        &'a self,
-        caller: &'a TaskCaller,
-        input: &'a SpawnInput,
-        workstream: &'a Workstream,
-    ) -> BoxFut<'a, Result<(), TaskError>> {
-        Box::pin(async move {
-            let caller = crate::hub::valuebar::Caller {
-                project_ref: caller.project_ref.clone(),
-                by: caller.by.clone(),
-            };
-            let request = crate::hub::valuebar::rules::SpawnRequest {
-                workstream_id: input.workstream_id.clone(),
-                kind: input.kind,
-                serves: input.serves.as_ref().map(|s| s.to_string()),
-                pr: input.pr.as_ref().map(|p| p.to_string()),
-                qa: input.qa.unwrap_or(false),
-            };
-            self.0.check_spawn(&caller, &request, workstream).await
-        })
-    }
-}
-
 struct ReceiptsFromArea(Arc<crate::hub::receipts::Receipts>);
 
 impl ResultReceipts for ReceiptsFromArea {
@@ -516,7 +474,7 @@ impl PolicyHook for PolicyFromLeases {
 }
 
 /// Everything tasks, slots and leases hook into once the `Hub` exists: the ports' leads half, the lead calls, the
-/// stale-lease sweep check, the usage/value bar/receipts hooks on tasks, and the tasks/policy hooks on leads.
+/// stale-lease sweep check, the usage/receipts hooks on tasks, and the tasks/policy hooks on leads.
 pub fn wire(hub: &Arc<Hub>, ports: &HubTaskPorts) {
     ports.bind(hub);
     register_lead_calls(hub);
@@ -532,9 +490,6 @@ pub fn wire(hub: &Arc<Hub>, ports: &HubTaskPorts) {
     let _ = hooks
         .usage
         .set(Arc::new(UsageFromArea(Arc::clone(&hub.usage))));
-    let _ = hooks
-        .spawn_check
-        .set(Arc::new(ValueBarCheck(Arc::clone(&hub.value_bar))));
     let _ = hooks
         .receipts
         .set(Arc::new(ReceiptsFromArea(Arc::clone(&hub.receipts))));

@@ -1,7 +1,7 @@
 // One agent's live work, read-only: what it is on, what it is doing now, and its newest steps (what it wrote, what it
 // ran and edited), with the message it is writing streaming in at the end. To change what it does, you tell the lead.
 import { useMemo } from "react";
-import type { WorkStep } from "../../src/data/agents-contract";
+import type { WorkStep } from "../../../shared/contracts";
 import { useAgentWork, useData } from "../../src/data/react";
 import { selectLiveAgent, selectLiveAgents } from "../../src/data/selectors";
 import { Button, cx, EmptyState, Markdown, RoleTag, Text, Truncate, VirtualList } from "../../ui";
@@ -35,6 +35,7 @@ export function AgentWork({ id }: { id: string }) {
     );
   }
   const chat = { id: "project", project: { machineId: row.projectRef.machineId, projectId: row.projectRef.projectId }, message: null } as const;
+  const pr = row.pr;
 
   return (
     <section className={s.workBody} aria-label={`What ${row.title} is doing`}>
@@ -47,10 +48,10 @@ export function AgentWork({ id }: { id: string }) {
           <Text size="xs" tone="quiet">
             {row.projectTitle}
           </Text>
-          {row.pr !== undefined ? (
-            <Text size="xs" tone="quiet" tabular>
-              {`PR #${String(row.pr.number)}`}
-            </Text>
+          {pr !== undefined ? (
+            <Button variant="quiet" size="sm" onClick={() => navigate({ id: "prs", project: chat.project, pr: { repo: pr.repo, number: pr.number } })}>
+              {`PR #${String(pr.number)}`}
+            </Button>
           ) : null}
           <Elapsed startedAt={row.startedAt} running={isRunning(row.status)} />
           <span className={s.metaEnd}>

@@ -41,8 +41,6 @@ pub enum LineKind {
     CapRaised,
     /// A secret or approval request settled, or came back open (`approvals`).
     Request,
-    /// The retro proposes a playbook gate change only a person can apply (`retro`).
-    Retro,
 }
 
 #[derive(Debug, Clone)]
@@ -92,7 +90,6 @@ impl Trigger {
                 LineKind::Runnable => "runnable",
                 LineKind::CapRaised => "cap_raised",
                 LineKind::Request => "request",
-                LineKind::Retro => "retro",
             },
         }
     }
@@ -198,22 +195,6 @@ impl<K: Clone + Eq + Hash + Send + 'static, T: Send + 'static> Debouncer<K, T> {
     pub fn has_pending(&self, key: &K) -> bool {
         self.pending.lock().unwrap().contains_key(key)
     }
-
-    /// Flushes `item` now, with whatever else is pending for `key`; that key's running timers then find nothing.
-    pub fn push_now<F>(self: &Arc<Self>, key: K, item: T, flush: F)
-    where
-        F: FnOnce(K, Vec<T>) -> BoxFuture<()> + Send + 'static,
-    {
-        let mut items = self
-            .pending
-            .lock()
-            .unwrap()
-            .remove(&key)
-            .map(|p| p.items)
-            .unwrap_or_default();
-        items.push(item);
-        tokio::spawn(flush(key, items));
-    }
 }
 
 /// The orders a wake serves: an intent's, and any `W<n>` a line names or whose task `T<n>` it
@@ -284,16 +265,6 @@ impl LeadWakes {
     /// Whether a wake for the project's lead is already on its way (triggers waiting out the debounce).
     pub fn pending(&self, r: &ProjectRef) -> bool {
         self.debouncer.has_pending(r)
-    }
-
-    /// Wakes the lead now with this trigger and any pending ones, skipping the debounce (a person steering).
-    pub fn trigger_now(self: &Arc<Self>, r: &ProjectRef, trigger: Trigger) {
-        self.first_trigger(r);
-        let this = Arc::clone(self);
-        self.debouncer
-            .push_now(r.clone(), trigger, move |r, triggers| {
-                Box::pin(async move { this.flush(r, triggers).await })
-            });
     }
 
     /// The lead digest as of now: the state block at the top of its first message and of every wake.
@@ -423,7 +394,7 @@ impl LeadWakes {
                     .workstream_get(workstream_id)
                     .ok()
                     .flatten()
-                    .is_none_or(|w| w.workstream.created_at.as_str() >= lead.started_at.as_str()),
+                    .is_none_or(|w| w.created_at.as_str() >= lead.started_at.as_str()),
                 _ => true,
             })
             .collect();

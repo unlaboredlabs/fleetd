@@ -30,15 +30,18 @@ fn project() -> ProjectRef {
 }
 
 fn hub(clock: Arc<ManualClock>) -> (Arc<Hub>, tempfile::TempDir) {
+    hub_on(HubDb::open_memory().unwrap(), clock)
+}
+
+fn hub_on(db: Arc<HubDb>, clock: Arc<ManualClock>) -> (Arc<Hub>, tempfile::TempDir) {
     let home = tempfile::tempdir().unwrap();
     let config = HubConfig {
         home: home.path().to_path_buf(),
         listen: Listen::default(),
         url: None,
         queue_ttl_sec: None,
-        retro_model: None,
     };
-    let hub = build_on(HubDb::open_memory().unwrap(), config, clock).unwrap();
+    let hub = build_on(db, config, clock).unwrap();
     hub.db
         .with(|c| {
             let w = json!({
@@ -82,7 +85,7 @@ fn merged_change(hub: &Hub, pr: i64) {
     let change = json!({
         "changeId": "X1", "projectRef": { "machineId": "devbox", "projectId": "storefront" }, "repo": "acme/storefront",
         "prNumber": pr, "prUrl": format!("https://github.com/acme/storefront/pull/{pr}"), "branch": "fleetd/T1-x",
-        "workstreamId": "W1", "serves": "done:0", "tier": "M", "headSha": sha, "state": "merged", "reviews": [],
+        "workstreamId": "W1", "tier": "M", "headSha": sha, "state": "merged", "reviews": [],
         "createdAt": AT, "updatedAt": AT,
     });
     hub.db
@@ -411,7 +414,7 @@ async fn recompute_stays_bounded_with_two_thousand_items_and_changes() {
                 let change = json!({
                     "changeId": format!("X{n}"), "projectRef": { "machineId": "devbox", "projectId": "storefront" },
                     "repo": "acme/storefront", "prNumber": n, "prUrl": format!("https://github.com/acme/storefront/pull/{n}"),
-                    "branch": "b", "taskId": format!("T{n}"), "workstreamId": "W1", "serves": "done:0", "tier": "M",
+                    "branch": "b", "taskId": format!("T{n}"), "workstreamId": "W1", "tier": "M",
                     "headSha": sha, "state": "merged", "reviews": [], "createdAt": AT, "updatedAt": AT,
                 });
                 tx.execute(
@@ -523,7 +526,7 @@ fn set_change(hub: &Hub, state: &str, from: Option<&str>) {
     let change = json!({
         "changeId": "X1", "projectRef": { "machineId": "devbox", "projectId": "storefront" }, "repo": "acme/storefront",
         "prNumber": 212, "prUrl": "https://github.com/acme/storefront/pull/212", "branch": "fleetd/T1-x",
-        "workstreamId": "W1", "serves": "done:0", "tier": "M", "headSha": "b".repeat(40), "state": state,
+        "workstreamId": "W1", "tier": "M", "headSha": "b".repeat(40), "state": state,
         "reviews": [], "createdAt": iso_ms_of(T0 as i64), "updatedAt": at,
     });
     hub.db
@@ -839,7 +842,7 @@ async fn a_pr_held_by_the_train_shows_the_real_wait_and_the_fix() {
     let change = json!({
         "changeId": "X1", "projectRef": { "machineId": "devbox", "projectId": "storefront" }, "repo": "acme/storefront",
         "prNumber": 212, "prUrl": "https://github.com/acme/storefront/pull/212", "branch": "fleetd/T1-x",
-        "workstreamId": "W1", "serves": "done:0", "tier": "S", "headSha": "b".repeat(40), "state": "queued",
+        "workstreamId": "W1", "tier": "S", "headSha": "b".repeat(40), "state": "queued",
         "reviews": [], "lastError": error, "createdAt": iso_ms_of(T0 as i64), "updatedAt": iso_ms_of(T0 as i64),
     });
     hub.db
@@ -907,4 +910,385 @@ async fn a_draft_order_is_waiting_for_its_brief() {
         },
     );
     assert!(missing.message.starts_with("Nothing to show"));
+}
+
+/// Puts `task`, a writer linked to the item, in `state`, and appends its `task.*` event as the hub does.
+fn set_writer(hub: &Hub, task: &str, state: &str) {
+    let now = crate::hub::store::now_ms(hub.clock.as_ref());
+    let at = iso_ms_of(now);
+    let row = json!({
+        "taskId": task, "projectRef": { "machineId": "devbox", "projectId": "storefront" }, "workstreamId": "W1",
+        "title": "cart page", "kind": "write", "prompt": "Build the cart page.", "areas": ["web"],
+        "model": "claude-opus-5-5", "effort": "high", "itemId": "P1", "state": state, "attempt": 1,
+        "createdAt": iso_ms_of(T0 as i64), "startedAt": iso_ms_of(T0 as i64),
+    });
+    hub.db
+        .with(|c| {
+            c.execute(
+                "DELETE FROM tasks WHERE json_extract(data, '$.taskId') = ?",
+                [task],
+            )?;
+            c.execute(
+                "INSERT INTO tasks (machine_id, project_id, workstream_id, state, data)
+                 VALUES ('devbox', 'storefront', 'W1', ?, ?)",
+                params![state, row.to_string()],
+            )?;
+            c.execute(
+                "UPDATE plan_items SET started_ms = ?, data = json_set(data, '$.links.tasks',
+                   (SELECT json_group_array(json_extract(data, '$.taskId')) FROM tasks))",
+                [T0 as i64],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    let r#type = match state {
+        "running" => fleetd_contracts::events::HubEventType::TaskStarted,
+        "failed" => fleetd_contracts::events::HubEventType::TaskFailed,
+        "done" => fleetd_contracts::events::HubEventType::TaskCompleted,
+        _ => return,
+    };
+    hub.events
+        .append(crate::hub::store::NewEvent {
+            at: fleetd_contracts::ids::Timestamp(at),
+            r#type,
+            machine_id: Some(MachineId::unchecked("devbox")),
+            project_id: Some(ProjectId::unchecked("storefront")),
+            thread_id: None,
+            summary: format!("{task} {state}: cart page"),
+            data: Some(json!({ "taskId": task, "workstreamId": "W1" })),
+            attention: None,
+        })
+        .unwrap();
+}
+
+/// The order's one m item, "cart page".
+fn one_item(clock: &Arc<ManualClock>) -> (Arc<Hub>, tempfile::TempDir) {
+    one_item_on(HubDb::open_memory().unwrap(), clock)
+}
+
+fn one_item_on(db: Arc<HubDb>, clock: &Arc<ManualClock>) -> (Arc<Hub>, tempfile::TempDir) {
+    let (hub, home) = hub_on(db, clock.clone());
+    let (r, by) = (project(), "lead:devbox/storefront");
+    hub.plans
+        .milestone(
+            &r,
+            serde_json::from_value::<PlanMilestoneCall>(json!({ "title": "Checkout" })).unwrap(),
+        )
+        .unwrap();
+    hub.plans
+        .add(
+            &r,
+            by,
+            add("cart page", json!({ "workstreamId": "W1", "size": "m" })),
+        )
+        .unwrap();
+    (hub, home)
+}
+
+/// The order's estimate `secs` later: (pct, the last point's drop).
+fn estimate_after(
+    hub: &Hub,
+    clock: &ManualClock,
+    secs: u64,
+) -> (i64, Option<fleetd_contracts::status::ProgressDrop>) {
+    clock.advance(Duration::from_secs(secs));
+    let scope = StatusScope::Order {
+        workstream_id: WorkstreamId::unchecked("W1"),
+    };
+    let e = hub
+        .status
+        .get(hub, &person(), &scope, None)
+        .unwrap()
+        .progress
+        .estimate
+        .unwrap();
+    (e.pct.get(), e.series.unwrap().last().unwrap().drop.clone())
+}
+
+/// The bug: an item whose writer had ended still earned in-stage credit for every minute since it started, so the bar
+/// sat near half its share with nothing being built. In-stage credit is for work in flight only.
+#[tokio::test]
+async fn an_item_with_nothing_in_flight_holds_its_stage_credit() {
+    let clock = ManualClock::at(T0);
+    let (hub, _home) = one_item(&clock);
+    // Its writer finished without a PR (a research item, say): nothing else will happen until the lead acts.
+    set_writer(&hub, "T1", "done");
+    let (pct, _) = estimate_after(&hub, &clock, 2 * 3600);
+    assert_eq!(
+        pct, 14,
+        "two hours on: planning plus the \"being written\" stage, no time in it (45 before the fix)"
+    );
+}
+
+#[tokio::test]
+async fn in_stage_credit_moves_while_its_writer_runs_and_is_taken_back_with_a_marker_when_it_stops()
+{
+    use fleetd_contracts::status::DropReason;
+    let clock = ManualClock::at(T0);
+    let (hub, _home) = one_item(&clock);
+    set_writer(&hub, "T1", "running");
+    let (running, _) = estimate_after(&hub, &clock, 1);
+    let (later, _) = estimate_after(&hub, &clock, 30 * 60);
+    assert!(later > running, "in flight: {later} > {running}");
+    set_writer(&hub, "T1", "failed");
+    let (stopped, drop) = estimate_after(&hub, &clock, 1);
+    assert_eq!(stopped, 14, "the in-stage credit is taken back");
+    let drop = drop.expect("never a silent drop");
+    assert_eq!(
+        (drop.reason, drop.from_pct.get(), drop.text.as_str()),
+        (
+            DropReason::WorkStopped,
+            later,
+            "work stopped: an agent failed"
+        )
+    );
+    assert_eq!(
+        estimate_after(&hub, &clock, 3 * 3600).0,
+        stopped,
+        "and it doesn't creep back"
+    );
+}
+
+/// Work resumed after a gap earns in-stage credit from its own start: the hours nobody worked never count.
+#[tokio::test]
+async fn a_new_writer_after_a_gap_earns_from_its_own_start_not_from_the_stage_start() {
+    let clock = ManualClock::at(T0);
+    let (hub, _home) = one_item(&clock);
+    set_writer(&hub, "T1", "running");
+    let (ran, _) = estimate_after(&hub, &clock, 30 * 60);
+    set_writer(&hub, "T1", "failed");
+    assert_eq!(estimate_after(&hub, &clock, 1).0, 14);
+    clock.advance(Duration::from_secs(3 * 3600));
+    // The lead starts a new writer for the same item three hours later.
+    set_writer(&hub, "T2", "running");
+    assert_eq!(
+        estimate_after(&hub, &clock, 1).0,
+        14,
+        "three idle hours earn nothing at its start ({ran} counted from the stage's start)"
+    );
+    let (three_min, _) = estimate_after(&hub, &clock, 3 * 60);
+    assert!(
+        14 < three_min && three_min < ran,
+        "it moves with the new writer's own minutes: 14 < {three_min} < {ran}"
+    );
+    assert_eq!(estimate_after(&hub, &clock, 30 * 60).0, ran);
+}
+
+/// The live bug's leftover: a figure an older hub stored while it credited every minute in a stage. The drop rule
+/// holds a stored figure until an observed event explains a fall, so the update restarts each series.
+#[tokio::test]
+async fn an_update_releases_a_figure_the_old_rule_left_stuck() {
+    let clock = ManualClock::at(T0);
+    let home = tempfile::tempdir().unwrap();
+    let db = HubDb::open(home.path()).unwrap();
+    let (hub, _home) = one_item_on(db.clone(), &clock);
+    set_writer(&hub, "T1", "done");
+    // The old rule kept rising after the writer ended and stored 45 an hour later.
+    db.with(|c| {
+        c.execute(
+            "INSERT INTO status_series (scope, at_ms, pct, verified) VALUES ('order:W1', ?, 45, 0)",
+            [T0 as i64 + 3_600_000],
+        )?;
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(
+        estimate_after(&hub, &clock, 2 * 3600).0,
+        45,
+        "held: nothing since that point explains a fall"
+    );
+    // Found by content, not as the last migration, so a later migration doesn't break this test.
+    let update = crate::hub::store::MIGRATIONS
+        .iter()
+        .find(|m| m.contains("DELETE FROM status_series"))
+        .expect("the series restart");
+    db.with(|c| Ok(c.execute_batch(update)?)).unwrap();
+    assert_eq!(estimate_after(&hub, &clock, 1).0, 14);
+}
+
+/// Appends a `thread.*` event for `thread` on the test machine, as the node link does.
+fn thread_event(hub: &Hub, kind: fleetd_contracts::events::HubEventType, thread: &str) {
+    let at = iso_ms_of(crate::hub::store::now_ms(hub.clock.as_ref()));
+    hub.events
+        .append(crate::hub::store::NewEvent {
+            at: fleetd_contracts::ids::Timestamp(at),
+            r#type: kind,
+            machine_id: Some(MachineId::unchecked("devbox")),
+            project_id: Some(ProjectId::unchecked("storefront")),
+            thread_id: Some(fleetd_contracts::ids::ThreadId::unchecked(thread)),
+            summary: format!("\"{thread}\" on devbox moved"),
+            data: Some(json!({ "status": "running" })),
+            attention: None,
+        })
+        .unwrap();
+}
+
+/// Sets `task`'s record as the task area does after its thread's event: `parked` on a usage limit, or running again.
+fn set_record(hub: &Hub, task: &str, state: &str, parked: Option<serde_json::Value>) {
+    hub.db
+        .with(|c| {
+            c.execute(
+                "UPDATE tasks SET state = ?2, thread_id = 'th-1',
+                   data = json_set(data, '$.state', ?2, '$.parked', json(?3))
+                 WHERE json_extract(data, '$.taskId') = ?1",
+                params![task, state, parked.map(|p| p.to_string())],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+}
+
+/// The order's last point `secs` later.
+fn point_after(
+    hub: &Hub,
+    clock: &ManualClock,
+    secs: u64,
+) -> fleetd_contracts::status::ProgressPoint {
+    clock.advance(Duration::from_secs(secs));
+    let scope = StatusScope::Order {
+        workstream_id: WorkstreamId::unchecked("W1"),
+    };
+    let e = hub
+        .status
+        .get(hub, &person(), &scope, None)
+        .unwrap()
+        .progress
+        .estimate
+        .unwrap();
+    e.series.unwrap().last().unwrap().clone()
+}
+
+/// A writer running since now, with nothing else happening: what the same minutes of work earn.
+fn twin() -> (Arc<ManualClock>, Arc<Hub>, tempfile::TempDir) {
+    let clock = ManualClock::at(T0);
+    let (hub, home) = one_item(&clock);
+    set_writer(&hub, "T1", "running");
+    set_record(&hub, "T1", "running", None);
+    (clock, hub, home)
+}
+
+/// The gap #261 left: a task parked on a usage limit (or waiting for an answer) still earned in-stage credit up to
+/// the cap while nobody worked. Parked, it holds what it earned with a marker; resumed, it goes on from there, so
+/// its figure is always what the minutes it worked earn.
+#[tokio::test]
+async fn a_task_parked_on_a_usage_limit_holds_its_figure_and_goes_on_from_it() {
+    use fleetd_contracts::events::HubEventType;
+    let (clock, hub, _home) = twin();
+    let (tclock, twin, _thome) = twin();
+    let (start, _) = estimate_after(&hub, &clock, 0);
+    let (ran, _) = estimate_after(&hub, &clock, 3 * 60);
+    assert!(
+        start == 14 && ran > 14,
+        "it rises while it runs: 14 to {ran}"
+    );
+
+    thread_event(&hub, HubEventType::ThreadUsageLimited, "th-1");
+    // Before the task area parks the record: the event alone pauses it.
+    let at_park = point_after(&hub, &clock, 1);
+    assert_eq!(
+        (
+            at_park.pct.get(),
+            at_park.drop.is_none(),
+            at_park.paused.as_ref().map(|p| p.as_str())
+        ),
+        (ran, true, Some("paused: an agent hit a usage limit")),
+        "it holds what it earned, with a marker and no drop"
+    );
+    let parked = json!({ "class": "usage_limit", "since": iso_ms_of(crate::hub::store::now_ms(hub.clock.as_ref())) });
+    set_record(&hub, "T1", "idle", Some(parked));
+    for _ in 0..4 {
+        assert_eq!(
+            point_after(&hub, &clock, 30 * 60),
+            at_park,
+            "flat while parked: the paused point stays the last"
+        );
+    }
+
+    // The usage layer's "continue" at the reset: the thread runs again, and the record follows it.
+    thread_event(&hub, HubEventType::ThreadStarted, "th-1");
+    let resumed = point_after(&hub, &clock, 0);
+    assert_eq!(
+        (resumed.pct.get(), resumed.drop, resumed.paused),
+        (ran, None, None),
+        "no jump: the two parked hours count for nothing, and the marker goes"
+    );
+    set_record(&hub, "T1", "running", None);
+    let (four_min, _) = estimate_after(&hub, &clock, 60);
+    assert_eq!(
+        (four_min, estimate_after(&twin, &tclock, 4 * 60).0),
+        (four_min, four_min),
+        "it goes on from {ran}: three minutes before and one after earn what four unbroken minutes do"
+    );
+    assert!(four_min > ran);
+}
+
+/// A wait for an answer holds it the same way, and the lead's answer (which continues the task) goes on from there.
+#[tokio::test]
+async fn a_task_waiting_for_an_answer_holds_until_the_answer_continues_it() {
+    use fleetd_contracts::events::HubEventType;
+    let (clock, hub, _home) = twin();
+    let (tclock, twin, _thome) = twin();
+    let (ran, _) = estimate_after(&hub, &clock, 3 * 60);
+    thread_event(&hub, HubEventType::ThreadWaiting, "th-1");
+    set_record(&hub, "T1", "idle", None);
+    let held = point_after(&hub, &clock, 2 * 3600);
+    assert_eq!(
+        (
+            held.pct.get(),
+            held.drop,
+            held.paused.map(|p| p.to_string())
+        ),
+        (
+            ran,
+            None,
+            Some("paused: an agent is waiting for an answer".to_owned())
+        )
+    );
+    // `message_agent` continues it: task.started.
+    set_writer(&hub, "T1", "running");
+    set_record(&hub, "T1", "running", None);
+    assert_eq!(estimate_after(&hub, &clock, 0), (ran, None));
+    assert_eq!(
+        estimate_after(&hub, &clock, 3 * 60).0,
+        estimate_after(&twin, &tclock, 6 * 60).0
+    );
+}
+
+/// The control: the same timeline with the limit hitting another thread (the lead's), a reminder of an open prompt,
+/// and its own thread starting a new turn. None of them pauses it, so it keeps rising with no marker.
+#[tokio::test]
+async fn another_threads_limit_or_a_new_turn_never_pauses_a_running_task() {
+    use fleetd_contracts::events::HubEventType;
+    let (clock, hub, _home) = twin();
+    let (tclock, twin, _thome) = twin();
+    estimate_after(&hub, &clock, 60);
+    thread_event(&hub, HubEventType::ThreadUsageLimited, "lead-th");
+    hub.events
+        .append(crate::hub::store::NewEvent {
+            at: fleetd_contracts::ids::Timestamp(iso_ms_of(crate::hub::store::now_ms(
+                hub.clock.as_ref(),
+            ))),
+            r#type: HubEventType::ThreadWaiting,
+            machine_id: Some(MachineId::unchecked("devbox")),
+            project_id: Some(ProjectId::unchecked("storefront")),
+            thread_id: Some(fleetd_contracts::ids::ThreadId::unchecked("th-1")),
+            summary: "still waiting".into(),
+            data: Some(json!({ "status": "waiting", "reminder": true })),
+            attention: None,
+        })
+        .unwrap();
+    thread_event(&hub, HubEventType::ThreadStarted, "th-1");
+    let p = point_after(&hub, &clock, 2 * 60);
+    assert_eq!(
+        (p.pct.get(), p.drop, p.paused),
+        (estimate_after(&twin, &tclock, 3 * 60).0, None, None),
+        "the same three minutes as with no thread event at all"
+    );
+    let later = point_after(&hub, &clock, 2 * 3600);
+    assert!(
+        later.pct > p.pct && later.paused.is_none(),
+        "the two hours count as work: {} > {}",
+        later.pct.get(),
+        p.pct.get()
+    );
 }

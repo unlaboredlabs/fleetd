@@ -11,9 +11,9 @@ import { type FixtureName, type Screen, type SizeName, sizes, type Theme } from 
 
 const qaDir = import.meta.dirname;
 export const desktopDir = path.resolve(qaDir, "..");
-export const fixturesDir = process.env.QA_FIXTURE_DIR ?? path.join(desktopDir, "fixtures");
-export const resultsDir = process.env.QA_RESULTS ?? path.join(desktopDir, "qa-results");
-export const appMain = process.env.QA_APP_MAIN ?? path.join(desktopDir, "out", "main", "index.js");
+export const fixturesDir = path.join(desktopDir, "fixtures");
+export const resultsDir = path.join(desktopDir, "qa-results");
+export const appMain = path.join(desktopDir, "out", "main", "index.js");
 export const scale = Number(process.env.QA_SCALE ?? "1");
 export const EDGE_INSET = 8;
 
@@ -37,6 +37,10 @@ export interface Launched {
   page: Page;
   // Resolves once the fixture's timed frames have all arrived and the page is stable.
   settled: () => Promise<void>;
+  // Plays the fixture's timeline again on the screen now up (a reload resubscribes), and waits it out.
+  replay: () => Promise<void>;
+  // What the page threw or logged as an error so far, for a failure's message.
+  errors: string[];
   close: () => Promise<void>;
 }
 
@@ -65,15 +69,20 @@ async function launchElectron(options: Parameters<typeof electron.launch>[0], at
 }
 
 // `fixture` is required for the app; only the self-test's stand-in window runs without one.
-// Without a fixture, `hub` connects the app to a real hub for one run (the site's lab captures); nothing is saved.
-export async function launch(fixture: FixtureName | undefined, main = appMain, hub?: { url: string; key: string }): Promise<Launched> {
+// `realClock` skips the fixture's fixed clock (see Screen.realClock).
+export async function launch(
+  fixture: FixtureName | undefined,
+  main = appMain,
+  { realClock = false } = {},
+): Promise<Launched> {
   if (!existsSync(main)) throw new Error(`${main} is missing: run \`pnpm qa:build\` in app/desktop first.`);
-  const { now, settleMs = 0 } = fixture === undefined ? {} : fixtureMeta(path.join(fixturesDir, `${fixture}.json`));
+  const meta = fixture === undefined ? {} : fixtureMeta(path.join(fixturesDir, `${fixture}.json`));
+  const now = realClock ? undefined : meta.now;
+  const settleMs = meta.settleMs ?? 0;
   const userData = mkdtempSync(path.join(tmpdir(), "fleetd-qa-"));
   // Only what Electron needs: never the user's fleetd home, credentials or the agent's own session variables.
   const env: Record<string, string> = {
     ...(fixture === undefined ? {} : { FLEETD_FIXTURE: fixture, FLEETD_FIXTURE_DIR: fixturesDir }),
-    ...(hub === undefined ? {} : { FLEETD_HUB_URL: hub.url, FLEETD_AGENT_KEY: hub.key }),
     FLEETD_HOME: path.join(userData, "fleetd"),
     HOME: process.env.HOME ?? userData,
     PATH: process.env.PATH ?? "",
@@ -95,6 +104,11 @@ export async function launch(fixture: FixtureName | undefined, main = appMain, h
   }
   const app = await launchElectron({ args, env, cwd: desktopDir, timeout: 30_000 });
   const page = await app.firstWindow();
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(`${e.name}: ${e.message}`));
+  page.on("console", (m) => {
+    if (m.type() === "error") errors.push(m.text().split("\n")[0] ?? "");
+  });
   // Entry animations of the first screen play reduced too.
   await page.emulateMedia({ reducedMotion: "reduce" });
   if (now) {
@@ -111,8 +125,17 @@ export async function launch(fixture: FixtureName | undefined, main = appMain, h
       if (left > 0) await new Promise((done) => setTimeout(done, left));
       await settle(page);
     },
+    replay: async () => {
+      await page.reload();
+      await new Promise((done) => setTimeout(done, settleMs));
+    },
+    errors,
     close: async () => {
-      await app.close();
+      // A window stuck on a dead page can hold app.close() forever, and the test's timeout then hides its own error.
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const stuck = new Promise<boolean>((done) => (timer = setTimeout(() => done(true), 15_000)));
+      if (await Promise.race([app.close().then(() => false, () => false), stuck])) app.process().kill("SIGKILL");
+      clearTimeout(timer);
       rmSync(userData, { recursive: true, force: true });
     },
   };
@@ -304,6 +327,28 @@ export async function settle(page: Page) {
   });
 }
 
+// On macOS the sidebar is the window's own vibrancy under a clear page (main/index.ts), which a page screenshot
+// can't see: it would come out empty, or Chromium's dark canvas in the dark theme. Page shots drop the page's
+// data-vibrancy, so the sidebar paints its --sidebar tone: how it looks with Reduce transparency and on Linux. The
+// native window shot (platform.spec.ts) never comes through here, so it shows the real material.
+async function opaqueSidebar(page: Page) {
+  if (process.platform !== "darwin") return;
+  await page.evaluate(() => delete document.documentElement.dataset["vibrancy"]);
+}
+
+// Fails when the window is blank (React rendered nothing) or an error card is up (src/renderer/src/Boundary.tsx), unless
+// the entry is there to show the card. A card means a part threw; the page's errors say what.
+export async function assertAlive(page: Page, screen: Pick<Screen, "id" | "expect">, errors: readonly string[]) {
+  const { rendered, cards } = await page.evaluate(() => ({
+    rendered: (document.getElementById("root")?.childElementCount ?? 0) > 0,
+    cards: [...document.querySelectorAll("[data-crashed]")].map((e) => e.getAttribute("data-crashed") ?? ""),
+  }));
+  const thrown = errors.length > 0 ? `\nThe page's errors:\n  ${errors.slice(0, 10).join("\n  ")}` : "";
+  if (!rendered) throw new Error(`${screen.id}: the window is blank${thrown}`);
+  if (screen.expect === "card" && cards.length === 0) throw new Error(`${screen.id} expects an error card but shows none`);
+  if (screen.expect !== "card" && cards.length > 0) throw new Error(`${screen.id}: an error card is up in ${cards.join(", ")}${thrown}`);
+}
+
 // macOS draws the traffic lights over the page; nothing of ours may sit under them.
 export async function reservedRegions(app: ElectronApplication): Promise<Box[]> {
   if (process.platform !== "darwin") return [];
@@ -366,6 +411,7 @@ export async function shoot(
   mkdirSync(path.join(resultsDir, "png"), { recursive: true });
   mkdirSync(path.join(resultsDir, "shots"), { recursive: true });
   await holdView(page);
+  await opaqueSidebar(page);
   const findings = await check(page, reserved);
   const png = path.join("png", `${name}.png`);
   await capture(page, png, []);

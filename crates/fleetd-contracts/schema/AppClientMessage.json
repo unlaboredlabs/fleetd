@@ -75,8 +75,13 @@
           "type": "object"
         },
         {
-          "description": "Subscribe to `live` frames, replacing any earlier subscription: every open order's lanes when `board`, and\nthe focused order's lanes, its project's lead and their streamed text when `focus` is set. Neither: stop.\nSend it again on window activation; the first frame after each one is `full`.",
+          "description": "Subscribe to `live` frames, replacing any earlier subscription: every agent's lane (each running, queued or\nwaiting task and each project's lead) when `board`; the focused order's lanes, its project's lead and their\nstreamed text when `focus` is set; and one agent's lane and streamed text, at the focus rate, when `agent` is\nset (an `agents_list` row's `laneId`). None of them: stop. Send it again on window activation; the first frame\nafter each one is `full`.",
           "properties": {
+            "agent": {
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            },
             "board": {
               "type": "boolean"
             },

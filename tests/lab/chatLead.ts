@@ -1,6 +1,7 @@
 // The per-project lead chat, end to end (`npm run lab -- chat`, only when named, so it gets a hub of its own). A person
 // talks to a project's lead in plain chat messages (chat_send with a human key) and the lead does the work: no
-// questions tool, no cards. Haiku/low throughout. Parts, in run order (FLEETD_LAB_CHAT_PARTS=a,b picks some):
+// questions tool, no cards. The lead runs high, as every lead does; agents the harness spawns run the medium
+// profile (MECHANICS). Parts, in run order (FLEETD_LAB_CHAT_PARTS=a,b picks some):
 // On the lab repo (this slot's namespace of unlaboredlabs/fleetd-lab, reset before and after), one lead:
 // - work:    a plain chat message becomes a PR the train merges.
 // - terse:   the lead asks in chat as numbered items with a recommendation each (needs-you on); "1 go" is logged as a
@@ -21,6 +22,9 @@
 // - areas:   bug (c): areas are inferred from the workspace, and two writers in them run at the same time.
 // - cap:     max agents 2 with six agents never runs more than 2 and all finish; 12 → 3 mid-run kills nothing and new
 //            spawns wait; 3 → 12 starts the queue at once, says so in one chat line, and tells the lead.
+// - stop:    an agent key can't stop; a terminal steers only with a human key file (`hub key create --human --out`),
+//            never without one; Stop interrupts the lead mid-turn and stops its 2 agents, and says so (dogfood:
+//            "nothing was running"); `fleetd project stop --key-file` then says nothing was running.
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -30,7 +34,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import sodium from "libsodium-wrappers";
 import { DatabaseSync } from "node:sqlite";
-import { type Body, callToolWith, cli, fleetdCommand, machineHome, openWorkstream, RUN, LAB, type Lab, MODEL, nodeHome, nodeSock, requireGhLogin, scrubbedEnv, sessionText, slotPort, userMessages } from "./harness.ts";
+import { type Body, callToolWith, cli, fleetdCommand, machineHome, MECHANICS, openWorkstream, RUN, LAB, type Lab, nodeHome, nodeSock, requireGhLogin, scrubbedEnv, sessionText, slotPort, userMessages } from "./harness.ts";
 import { BASE, checkClone, CLONE, NAMESPACE, onBase, prepareCheckout, REPO, removeLabRepoProject, resetNamespace } from "./m7Train.ts";
 
 const LEAD_MACHINE = "lab-a";
@@ -41,23 +45,25 @@ const ENDED = ["thread.completed", "thread.failed", "thread.interrupted"];
 const TASK_ENDS = ["task.completed", "task.failed", "task.cancelled"];
 const STAMP = new Date().toISOString().slice(0, 19).replace(/\D/gu, "");
 const DIR = `lab/chat-${STAMP}`;
-const DEFAULTS = `defaults:\n  model: ${MODEL}\n  effort: low\n`;
+const DEFAULTS = ``;
 // The lab repo names its one area, so its parts don't hang on inference; the local repo has no `areas` (bug (c)).
 const LAB_REPO_POLICY = `areas:\n  all: ["**"]\n${DEFAULTS}`;
 const LOCAL_REPO = path.join(LAB, "repo-chat");
 /** The cap part's repo: its own project, with its one area named, so the cap is all it tests. */
 const CAP_REPO = path.join(LAB, "repo-cap");
+const STOP_REPO = path.join(LAB, "repo-stop");
 /** The history part's own hub; 4782 differs mod 20 from the other lab ports (harness.ts SLOT). */
 const HISTORY_PORT = slotPort(4782);
 /** For a lead the harness keeps out of the way. */
 const QUIET = "Lab run: the harness does everything for this order. Reply to each wake about it with one short line; run no commands and start no agents for it.";
-const PARTS = ["work", "terse", "secret", "gated", "build", "fixes", "cap1", "tools", "plain", "history", "areas", "cap"] as const;
+const PARTS = ["work", "terse", "secret", "gated", "build", "fixes", "cap1", "tools", "plain", "history", "areas", "cap", "stop"] as const;
 type Part = (typeof PARTS)[number];
 const LAB_REPO_PARTS: ReadonlyArray<Part> = ["work", "terse", "secret", "gated", "build", "fixes", "cap1", "tools", "plain"];
 
 /** The hub tools the chat model brings, with the slice that brings each. */
 const TOOL_FROM: Readonly<Record<string, string>> = {
   chat_send: "H1, EFF-A",
+  chat_stop: "UX-1 stop",
   chat_history: "H1, EFF-A",
   approval_answer: "H2, NS",
   secret_submit: "H2, NS",
@@ -203,7 +209,7 @@ const spawned = (lab: Lab, out: { code: number | null; stdout: string; stderr: s
 const spawnSleepers = (lab: Lab, fleetd: Shell, workstreamId: string, label: string, n: number, sec: number) =>
   Array.from({ length: n }, (_, i) => {
     const out = fleetd(
-      "task", "spawn", "--workstream", workstreamId, "--title", `${label} ${i + 1}`, "--kind", "read", "--model", MODEL, "--effort", "low",
+      "task", "spawn", "--workstream", workstreamId, "--title", `${label} ${i + 1}`, "--kind", "read", "--profile", MECHANICS,
       "--prompt", `Run the shell command \`sleep ${sec}\` once, then reply with the single word OK.`,
     );
     return { taskId: spawned(lab, out, `task spawn ${label} ${i + 1}`), stdout: out.stdout };
@@ -382,7 +388,7 @@ export async function chatLead(lab: Lab) {
         // Run alone, no part has talked to the lead yet: start it, so its session's tools can be read.
         if ((await chat.leadThread()) === undefined) {
           const from = await lab.cursor();
-          const started = await callTool("lead_start", { ...ref, model: MODEL, effort: "low" });
+          const started = await callTool("lead_start", ref);
           check(!started.isError, `lead_start: ${JSON.stringify(started.body)}`);
           await lab.waitEvent("the lead's start turn", TURN_MS, { cursor: from, machineId: LEAD_MACHINE, match: (e) => e.threadId === started.body.threadId && ENDED.includes(e.type) });
         }
@@ -407,6 +413,12 @@ export async function chatLead(lab: Lab) {
       const projectId = await lab.addProject(WORK_MACHINE, CAP_REPO, "repo-cap");
       const ref = { machineId: WORK_MACHINE, projectId };
       await part("cap", () => capPart(lab, chatOf(lab, lab.humanCall, ref, need), ref, need));
+    }
+    if (on("stop")) {
+      seedLocalRepo(STOP_REPO, LAB_REPO_POLICY);
+      const projectId = await lab.addProject(WORK_MACHINE, STOP_REPO, "repo-stop");
+      const ref = { machineId: WORK_MACHINE, projectId };
+      await part("stop", () => stopPart(lab, chatOf(lab, lab.humanCall, ref, need), ref, need));
     }
     check(failures.length === 0, `${failures.length} chat part(s) failed:\n  ${failures.join("\n  ")}`);
   } finally {
@@ -613,12 +625,12 @@ async function buildPart(lab: Lab, chat: Chat, ref: Ref) {
   const answered = await chat.send("build it");
   const writer = await nextTask(lab, ref, answered.cursor, `a writer starts for ${file} after "build it"`, TURN_MS * 2, (t) => t.kind === "write");
   await chat.reply(answered, "the build answer");
-  // The answer was not swallowed: the order the build runs in (the research one amended, or a new one) closes only
+  // The answer was not swallowed: the order the build runs in (the research one with its brief edited, or a new one) closes only
   // after the build's writer started. The research order may close on its own verdict before the offer.
   const buildOrder = writer.task.workstreamId as string;
   const early = (await eventsSince(lab, answered.cursor, ["workstream.done"])).filter((e) => e.data?.workstreamId === buildOrder && e.seq < writer.seq);
   check(early.length === 0, `${buildOrder} closed before its build started: ${JSON.stringify(early.map((e) => e.summary))}`);
-  const how = buildOrder === workstreamId ? "on the research order (brief amended)" : "as a new order";
+  const how = buildOrder === workstreamId ? "on the research order (brief edited)" : "as a new order";
   ok(`research agent → offer → "build it" → writer "${writer.task.title}" ${how}, which stays open until the build ran`);
 }
 
@@ -631,7 +643,7 @@ async function fixesPart(lab: Lab, chat: Chat, ref: Ref, fleetd: Shell) {
     spawned(
       lab,
       fleetd(
-        "task", "spawn", "--workstream", w, "--title", title, "--kind", "write", "--serves", `defect: ${title}`, "--areas", "all", "--model", MODEL, "--effort", "low",
+        "task", "spawn", "--workstream", w, "--title", title, "--kind", "write", "--areas", "all", "--profile", MECHANICS,
         "--prompt", "Your first tool call must be your Bash tool running exactly `sleep 90`; wait the full 90 seconds for it to finish. Then reply with the single word OK. Change no files.",
       ),
       `spawn the fix "${title}"`,
@@ -727,10 +739,10 @@ async function cap1Part(lab: Lab, ref: Ref, fleetd: Shell, need: (t: string) => 
     const writer = spawned(
       lab,
       fleetd(
-        "task", "spawn", "--workstream", w, "--title", "add cap1.md", "--areas", "all", "--serves", "done:0", "--model", MODEL, "--effort", "low",
+        "task", "spawn", "--workstream", w, "--title", "add cap1.md", "--areas", "all", "--profile", MECHANICS,
         "--prompt",
         `Do these steps in order. 1. Create the file ${file} (from the repo root) containing exactly one line: cap one. Commit it with the message "add ${file}". ` +
-          `2. Push your branch and open the pull request as your rules say, with the title "add ${file}" and the body exactly "Source: done:0". ` +
+          `2. Push your branch and open the pull request as your rules say, with the title "add ${file}" and the body exactly "Adds the file.". ` +
           `3. Call the report tool with kind "slice_ready" and prUrl set to that PR's URL. 4. Run \`sleep 30\` with your Bash tool and wait for it. 5. Reply with the PR URL.`,
       ),
       "spawn the writer",
@@ -889,7 +901,7 @@ async function areasPart(lab: Lab, ref: Ref) {
     spawned(
       lab,
       fleetd(
-        "task", "spawn", "--workstream", w, "--title", `note in ${area}`, "--areas", area, "--serves", `defect: package ${area} has no lab note`, "--model", MODEL, "--effort", "low",
+        "task", "spawn", "--workstream", w, "--title", `note in ${area}`, "--areas", area, "--profile", MECHANICS,
         "--prompt", `Run \`sleep 10\`, then append the line "chat lab" to packages/${area}/README.md and commit it with the message "chat lab: ${area}". Reply with the commit hash.`,
       ),
       `task spawn --areas ${area}`,
@@ -1007,4 +1019,67 @@ async function capPart(lab: Lab, chat: Chat, ref: Ref, need: (t: string) => void
   const lines = history.filter((m) => m.author === "system" && /^Max agents\b/u.test(m.text)).map((m) => m.text);
   check(changes.length === 4 && JSON.stringify(lines) === JSON.stringify(changes), `one chat line per cap change, in order: events ${JSON.stringify(changes)}, chat ${JSON.stringify(lines)}`);
   ok(`${changes.length} cap changes, ${lines.length} chat lines, one each`);
+}
+
+// ---- stop: Stop stops the lead and its agents; only the person stops, from a terminal with their human key file ----
+async function stopPart(lab: Lab, chat: Chat, ref: Ref, need: (tool: string) => void) {
+  const { check, ok } = lab;
+  need("chat_stop");
+  const fleetd = shellIn(ref.machineId, STOP_REPO);
+  const running = async (ids: ReadonlyArray<string>) => (await tasksOf(lab, ref)).filter((t) => ids.includes(t.taskId) && t.state === "running").length;
+  const poll = <T>(what: string, ms: number, probe: () => Promise<T | undefined>) =>
+    lab.until(what, ms, async () => (await probe()) ?? (await new Promise((r) => setTimeout(r, 500)), undefined));
+  const two = spawnSleepers(lab, fleetd, openWorkstream(check, fleetd, "Stop."), "stop", 2, 600).map((s) => s.taskId);
+  await poll("two agents running", TURN_MS, async () => ((await running(two)) === 2 ? true : undefined));
+  const from = await lab.cursor();
+  const started = await lab.callTool("lead_start", ref);
+  check(!started.isError, `lead_start: ${JSON.stringify(started.body)}`);
+  const leadThread = started.body.threadId as string;
+  const leadEnds = (cursor: number, what: string, ms = TURN_MS) =>
+    lab.waitEvent(what, ms, { cursor, types: ENDED, match: (e) => e.threadId === leadThread });
+  await leadEnds(from, "the lead's first turn ends");
+
+  for (const [tool, args] of [["chat_stop", { projectRef: ref, clientRequestId: randomUUID() }], ["project_stop", { projectRef: ref }]] as const) {
+    const refused = await lab.callTool(tool, args);
+    check(refused.isError && refused.body.code === "forbidden", `${tool} with an agent key is refused: ${JSON.stringify(refused.body)}`);
+  }
+  check((await running(two)) === 2, "both agents still run after an agent key tried to stop");
+  ok("an agent key can't stop (chat_stop, project_stop: forbidden)");
+
+  const terminal = (...args: Array<string>) =>
+    spawnSync(...fleetdCommand([...args, "--hub", lab.hubUrl, "--home", lab.hubHome]), { encoding: "utf8", env: scrubbedEnv() });
+  check(!fs.existsSync(path.join(lab.hubHome, "owner.key")), "the hub home holds no owner key");
+  const keyFile = path.join(LAB, `stop-human-${randomUUID()}.key`);
+  const made = spawnSync(...fleetdCommand(["hub", "key", "create", "--home", lab.hubHome, "--human", "--name", "lab-terminal", "--out", keyFile]), { encoding: "utf8", env: scrubbedEnv() });
+  check(made.status === 0 && made.stdout.trim() === keyFile && (fs.statSync(keyFile).mode & 0o777) === 0o600, `hub key create --human --out: ${JSON.stringify(made)}`);
+  const keyless = terminal("steer", two[0]!, "carry on");
+  check(keyless.status === 2 && /--key-file is required/u.test(keyless.stderr), `a steer without a key file is refused: ${JSON.stringify(keyless)}`);
+  const steer = terminal("steer", two[0]!, "carry on", "--key-file", keyFile);
+  check(steer.status === 0, `fleetd steer --key-file: ${JSON.stringify(steer)}`);
+  ok(`a terminal steers ${two[0]} with the person's key file ("${steer.stdout.trim().split("\n")[0]}"); without one it is refused`);
+
+  /** Stop, then the lead's turn ends as interrupted, the chat stops saying it works, and no agent runs. */
+  const stopNow = async (what: string, line: string) => {
+    const cursor = await lab.cursor();
+    const stop = await lab.humanCall("chat_stop", { projectRef: ref, clientRequestId: randomUUID() });
+    check(!stop.isError && stop.body.stopped === true && stop.body.message?.text === line, `chat_stop (${what}): ${JSON.stringify(stop.body)}`);
+    const ended = await leadEnds(cursor, `the lead's turn ends after Stop (${what})`, 30_000);
+    check(ended.event.type === "thread.interrupted", `the lead's turn was interrupted (${what}), not ${ended.event.type}`);
+    await poll(`the chat says the lead stopped working (${what})`, 30_000, async () => ((await chat.state()).leadWorking !== true ? true : undefined));
+    check((await running(two)) === 0, `no agent runs after Stop (${what})`);
+    ok(`Stop ${what}: "${line}"; the lead's turn was interrupted; no agent runs`);
+  };
+  // Mid-command, as when the app looks stuck: the lead is inside a long shell command and two agents run.
+  await chat.send("Run the shell command `sleep 120` once, then reply with the single word OK.");
+  await poll("the lead runs sleep 120", TURN_MS, async () => (/"command":\s*"sleep 120"/u.test(sessionText(ref.machineId, leadThread)) ? true : undefined));
+  await stopNow("mid-command", "Stopped the lead and 2 agents.");
+  // At once after a message, as the turn starts.
+  await chat.send("Run the shell command `sleep 90` once, then reply with the single word OK.");
+  await poll("the lead is working", TURN_MS, async () => ((await chat.state()).leadWorking === true ? true : undefined));
+  await stopNow("as the turn starts", "Stopped the lead.");
+
+  const idle = terminal("project", "stop", `${ref.machineId}/${ref.projectId}`, "--yes", "--key-file", keyFile);
+  fs.rmSync(keyFile, { force: true });
+  check(idle.status === 0 && /Nothing was running\./u.test(idle.stdout + idle.stderr), `fleetd project stop --key-file: ${JSON.stringify(idle)}`);
+  ok(`Stop from the terminal with nothing running: "${(idle.stdout + idle.stderr).trim()}"`);
 }

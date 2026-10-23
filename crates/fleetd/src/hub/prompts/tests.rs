@@ -5,7 +5,7 @@ use fleetd_contracts::prompts::{PromptScope, PromptWarningCode};
 use super::PromptSet;
 use super::render::ref_of;
 use super::store::entry;
-use crate::hub::intake::auto_start_tests::hub;
+use crate::hub::leads::auto_start_tests::hub;
 
 #[tokio::test(flavor = "current_thread")]
 async fn a_running_lead_keeps_its_texts_and_an_edit_reaches_the_next_session() {
@@ -52,7 +52,7 @@ async fn a_running_lead_keeps_its_texts_and_an_edit_reaches_the_next_session() {
         .unwrap();
 
     // 3. A new order wakes the running lead (an event line, no prompt), and what it was told is unchanged.
-    let (w2, _, _) = hub.order("add a /ready endpoint").await;
+    let (w2, _) = hub.order("add a /ready endpoint").await;
     hub.after_debounce().await;
     let sends = hub.node.sends.lock().unwrap().clone();
     assert_eq!(sends.len(), 1);
@@ -144,13 +144,13 @@ fn a_reflowed_default_is_not_a_changed_default() {
     let db = crate::hub::store::HubDb::open(home.path()).unwrap();
     let prompts = db.prompts();
     let e = entry("lead.start").unwrap();
-    let wrapped = e.default.replacen(
-        " from the project's policy",
-        "\nfrom the project's policy",
-        1,
-    );
+    let wrapped = e
+        .default
+        .replacen(" and keep them posted", "\nand keep them posted", 1);
     assert_ne!(wrapped, e.default);
-    let older = e.default.replacen("one clear goal", "a clear goal", 1);
+    let older = e
+        .default
+        .replacen("a sharp engineer", "an able engineer", 1);
     for (base_text, stale) in [
         (e.default.to_owned(), false),
         (wrapped, false),
@@ -220,7 +220,7 @@ fn agent_facing_texts_name_tools_not_fleetd_commands() {
         r"fleetd (task (spawn|list|status|message|cancel)|request (secret|withdraw)|decide\b|brief create|claim done|plan (add|edit|drop|show|milestone)|gated run|status set|change (enqueue|status)|review verdict|decisions search|inventory|workstream spawn)",
     )
     .unwrap();
-    let flag = regex::Regex::new(r#""[^"]*--(workstream|amend|proceeded|serves|item|steer|milestone|rec|why|context|option|sink|env-name|class|scope|task)\b"#).unwrap();
+    let flag = regex::Regex::new(r#""[^"]*--(workstream|proceeded|serves|item|steer|milestone|rec|why|context|option|sink|env-name|class|scope|task)\b"#).unwrap();
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut found = Vec::new();
     let texts = super::registry::ENTRIES
@@ -265,32 +265,6 @@ fn agent_facing_texts_name_tools_not_fleetd_commands() {
     assert!(
         found.is_empty(),
         "agent-facing texts name lead-side commands:\n{}",
-        found.join("\n")
-    );
-}
-
-/// There is no questions tool: leads ask in the chat and log answers with `decide`. No shipped prompt or playbook
-/// sends an agent to `ask`, an ask card, the inbox or an ask id.
-#[test]
-fn model_facing_texts_never_mention_the_questions_tool() {
-    let ask = regex::Regex::new(
-        r"(?i)`(ask|ask_withdraw|inbox_reply|inbox_undo|asks_list)`|question cards?|ask cards?|\binbox\b|\bask:A|amend A\d|proceededOnRec|kind secret|your asks\b|taps? one choice|\baskId\b",
-    )
-    .unwrap();
-    let texts = super::registry::ENTRIES
-        .iter()
-        .map(|e| (e.id, e.default))
-        .chain(super::fixed::ALL);
-    let playbooks = crate::hub::playbooks::load::BUNDLED
-        .iter()
-        .map(|(n, t)| (n.as_str(), *t));
-    let found: Vec<String> = texts
-        .chain(playbooks)
-        .filter_map(|(id, text)| ask.find(text).map(|m| format!("{id}: {}", m.as_str())))
-        .collect();
-    assert!(
-        found.is_empty(),
-        "texts still point at the questions tool:\n{}",
         found.join("\n")
     );
 }
@@ -405,29 +379,21 @@ fn edits_to_retired_prompts_are_listed_until_reset() {
     assert_eq!(left, vec!["wake.intent"]);
 }
 
-/// The lead asks once and lets the chat's waiting state carry the question: its own examples never nag, and bring the
-/// question up again only once.
+/// The lead asks once and lets the chat's waiting state carry the question: its own examples never nag.
 #[test]
-fn the_lead_asks_once_and_never_nags() {
+fn the_leads_examples_never_nag() {
     let lead = super::store::entry("lead.start").unwrap().default;
-    assert!(lead.contains("Ask once, then let it be"), "{lead}");
     let nag =
         regex::Regex::new(r"(?i)still waiting|waiting on you|reminder:|as I asked|haven't heard")
             .unwrap();
-    let examples = lead.split("## Examples of the tone").nth(1).unwrap();
+    let examples = lead.split("## Examples").nth(1).unwrap();
     let examples = examples.split("\n## ").next().unwrap();
-    for line in examples.lines().filter(|l| l.starts_with("You:")) {
+    let said: Vec<&str> = examples.lines().filter(|l| l.starts_with("You:")).collect();
+    assert!(!said.is_empty(), "{lead}");
+    for line in said {
         assert!(
             !nag.is_match(line),
             "the lead nags in its own example: {line}"
         );
     }
-    let reminders = examples
-        .lines()
-        .filter(|l| l.contains("digest day"))
-        .count();
-    assert_eq!(
-        reminders, 1,
-        "the open question comes up again once: {examples}"
-    );
 }

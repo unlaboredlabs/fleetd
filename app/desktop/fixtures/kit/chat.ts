@@ -228,7 +228,7 @@ export const agentsAt = (f: Fixture, projects: ReadonlyArray<{ ref: Ref; n: numb
 
 export type RowState = "working" | "waiting_on_you" | "blocked" | "idle";
 
-export const statusRow = (f: Fixture, ref: Ref, title: string, state: RowState, extra: { agents?: number; pct?: [number, number]; blocked?: string; merged?: string; planning?: boolean; stale?: string } = {}): JsonObject => ({
+export const statusRow = (f: Fixture, ref: Ref, title: string, state: RowState, extra: { agents?: number; pct?: [number, number]; blocked?: string; merged?: string; mergedAgoMs?: number; planning?: boolean; stale?: string } = {}): JsonObject => ({
   projectRef: { ...ref },
   title,
   state,
@@ -245,7 +245,7 @@ export const statusRow = (f: Fixture, ref: Ref, title: string, state: RowState, 
         },
       }),
   agentsRunning: extra.agents ?? 0,
-  ...(extra.merged === undefined ? {} : { lastMerged: { title: extra.merged, prNumber: 214, prUrl: "https://github.com/acme/storefront/pull/214", at: at(f.now, -2_700_000) } }),
+  ...(extra.merged === undefined ? {} : { lastMerged: { title: extra.merged, prNumber: 214, prUrl: "https://github.com/acme/storefront/pull/214", at: at(f.now, -(extra.mergedAgoMs ?? 2_700_000)) } }),
   asOf: f.now,
   ...(extra.stale === undefined ? {} : { stale: { reason: extra.stale, since: at(f.now, -900_000) } }),
 });

@@ -6,7 +6,7 @@
 // calls `inventory`. The harness's `fleetd` calls run in the project's workspace and cost no turns.
 import { spawn, spawnSync } from "node:child_process";
 import path from "node:path";
-import { type Body, chatOrder, FINISH_ALL_IDLE, openWorkstream, fleetdCommand, LAB, type Lab, MODEL, nodeSock, requireGhLogin, scrubbedEnv } from "./harness.ts";
+import { type Body, chatOrder, FINISH_ALL_IDLE, MODEL, openWorkstream, fleetdCommand, LAB, type Lab, MECHANICS, nodeSock, requireGhLogin, scrubbedEnv } from "./harness.ts";
 import { CLONE, REPO, removeLabRepoProject } from "./m7Train.ts";
 
 const MACHINE = "lab-a";
@@ -46,10 +46,10 @@ export async function m9Playbooks(lab: Lab) {
   const leadTurnEnds = (thread: string, cursor: number) =>
     lab.waitEvent("a lead turn to end", TURN_MS, { cursor, match: (e) => e.threadId === thread && ENDED.includes(e.type) });
 
-  // The lead: an earlier scenario's, else a fresh one, which also makes haiku/low the project's task default.
+  // The lead: an earlier scenario's, else a fresh one.
   let leadThread: string;
   if (outcome.lead === undefined) {
-    const started = await callTool("lead_start", { ...ref, model: MODEL, effort: "low" });
+    const started = await callTool("lead_start", ref);
     check(!started.isError, `lead_start: ${JSON.stringify(started.body)}`);
     leadThread = started.body.threadId;
     await leadTurnEnds(leadThread, scenarioStart);
@@ -96,7 +96,7 @@ export async function m9Playbooks(lab: Lab) {
   const claim = fleetdBg("claim", "done", "--workstream", wr);
   const judgeStart = await lab.waitEvent("the judge task starts", 60_000, { cursor, types: ["task.started"], match: (e) => e.data?.workstreamId === wr });
   const judge = (await callTool("task_get", { taskId: judgeStart.event.data.taskId })).body.task as Body;
-  check(judge.kind === "review" && judge.pr === undefined && judge.model === MODEL, `the hub's judge task: ${JSON.stringify(judge)}`);
+  check(judge.kind === "review" && judge.pr === undefined && judge.profile === "high", `the hub's judge task: ${JSON.stringify(judge)}`);
   const head = spawnSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).stdout.trim();
   const reported = fleetd("review", "verdict", "--task", judge.taskId, "--sha", head, "--blocking", "0", "--non-blocking", "0", "--summary", "lab: both READMEs read by the harness", "--baseline", "60", "--candidate", "58");
   check(reported.code === 0 && reported.stdout.includes(`${wr} research verdict STOP`), `review verdict with baseline and candidate: ${JSON.stringify(reported)}`);
@@ -119,7 +119,7 @@ export async function m9Playbooks(lab: Lab) {
     tbRef = { machineId: MACHINE, projectId: tb };
     // Started first, so the order doesn't start it with the default model; the order then reaches it as a wake.
     cursor = await lab.cursor();
-    const started = await callTool("lead_start", { ...tbRef, model: MODEL, effort: "low" });
+    const started = await callTool("lead_start", { ...tbRef, profile: MECHANICS });
     check(!started.isError, `lead_start on the lab repo: ${JSON.stringify(started.body)}`);
     leads.push(started.body.threadId);
     cursor = (await leadTurnEnds(started.body.threadId, cursor)).cursor;

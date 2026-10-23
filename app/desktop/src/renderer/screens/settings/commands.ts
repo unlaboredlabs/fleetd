@@ -6,6 +6,7 @@ import { hashKey } from "@tanstack/react-query";
 import type { DataLayer } from "../../src/data/queries";
 import type { PromptSummary } from "./contracts";
 import { promptHref, tabHref } from "./route";
+import { BADGE } from "./search";
 
 const go = (hash: string) => {
   window.location.hash = hash;
@@ -19,6 +20,14 @@ const pages: Command[] = [
     group: "settings",
     keywords: ["preferences"],
     run: () => go(tabHref("general")),
+  },
+  {
+    id: "go:settings.notifications",
+    title: "Notifications",
+    detail: "What alerts you, sound, the badge",
+    group: "settings",
+    keywords: ["alerts", "sound", "badge", "dock", "mute"],
+    run: () => go(tabHref("notifications")),
   },
   {
     id: "go:settings.prompts",
@@ -46,6 +55,9 @@ const pages: Command[] = [
       ["Pairing links", "Open fleetd:// links in this app", "general", ["links", "default app"]],
       ["Time data", "How long the time inspector keeps history", "general", ["retention", "history", "days"]],
       ["Claude auto memory", "Off for every agent unless a project turns it on", "general", ["memory"]],
+      ["Notify me when", "Which kinds of notification show", "notifications", ["notifications", "alerts", "mute"]],
+      ["Sound", "Notifications play a sound or not", "notifications", ["notifications", "mute", "silent"]],
+      [BADGE, "How many projects need you, on the app icon", "notifications", ["badge", "dock", "count", "app icon"]],
     ] as const
   ).map(
     ([title, detail, tab, keywords]): Command => ({

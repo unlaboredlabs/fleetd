@@ -13,7 +13,7 @@ mod tests;
 use std::collections::{BTreeSet, HashMap};
 
 use fleetd_contracts::auth::Role;
-use fleetd_contracts::effort::Effort;
+use fleetd_contracts::effort::{Effort, TaskProfile};
 use fleetd_contracts::ids::{ProjectRef, ThreadRef, Timestamp};
 use fleetd_contracts::ledger::{
     Lead, LeadState, PlaybookName, Workstream, WorkstreamId, WorkstreamState,
@@ -202,9 +202,41 @@ pub fn live_lane(lane_id: &str, status: LaneStatus, parts: Option<&LiveParts>) -
     }
 }
 
+/// A queued task's reason in the app's words: the slot board's and the leases' terms stay out of what a person reads.
+pub fn plain_reason(reason: &str) -> String {
+    let counts = |rest: &str| -> Option<(String, String)> {
+        let (used, rest) = rest.split_once('/')?;
+        let cap: String = rest.chars().take_while(char::is_ascii_digit).collect();
+        (!cap.is_empty()).then(|| (used.trim().to_owned(), cap))
+    };
+    if let Some(rest) = reason.strip_prefix("slots: ")
+        && let Some((used, cap)) = counts(rest)
+    {
+        return format!("{used} of {cap} agents busy");
+    }
+    if let Some(rest) = reason.strip_prefix("agents: ")
+        && let Some((_, max)) = counts(rest)
+    {
+        return format!("at this project's max of {max} agents");
+    }
+    if let Some(rest) = reason.strip_prefix("lease: ") {
+        let areas: Vec<&str> = rest
+            .split(", ")
+            .filter_map(|held| held.split_once(" held by ").map(|(area, _)| area))
+            .collect();
+        if !areas.is_empty() {
+            return format!("waiting for another agent working in {}", areas.join(", "));
+        }
+    }
+    reason.to_owned()
+}
+
 fn reason_of(task: &Task, status: LaneStatus) -> Option<String> {
     match status {
-        LaneStatus::Queued => task.queued_reason.as_ref().map(|r| r.to_string()),
+        LaneStatus::Queued => task
+            .queued_reason
+            .as_ref()
+            .map(|r| plain_reason(r.as_str())),
         LaneStatus::Parked => Some(
             match task.parked.as_ref().and_then(|p| p.resume_at.as_ref()) {
                 Some(at) => format!("usage limit: resumes {}", hhmm(at.as_str())),
@@ -258,8 +290,9 @@ pub fn task_lane(task: &Task, prs: &[(&Change, PrRef)], look: &dyn Lookups) -> A
             pr.as_ref().map(|p| p.number.get()),
             pr_url,
         )),
-        model: model(&task.model),
-        effort: Some(task.effort),
+        model: model(task.profile.model()),
+        effort: Some(task.profile.effort()),
+        profile: Some(task.profile),
         status,
         status_reason: reason_of(task, status).map(|r| text(&r)),
         started_at: task.started_at.clone(),
@@ -326,6 +359,8 @@ pub fn lead_lane(lead: &Lead, project_title: &str, look: &dyn Lookups) -> AgentL
             .as_ref()
             .and_then(|t| t.effort.as_deref())
             .and_then(effort_of),
+        // The lead always runs high.
+        profile: Some(TaskProfile::High),
         status,
         status_reason: None,
         started_at: Some(lead.started_at.clone()),

@@ -1,22 +1,2 @@
 // The hub shapes the live strip reads: the generated contracts (src/shared/contracts), plus the constants they carry.
-export type {
-  Activity,
-  AgentLane,
-  AgentRole,
-  ChangeState,
-  IntakeRef,
-  LaneStatus,
-  LiveFrame,
-  LiveLane,
-  LoginLimit,
-  MachineLive,
-  OrderCard,
-  OrderPhase,
-  OrdersBoardOutput,
-  PlaybookName,
-  PrChip,
-  PrRef,
-  ProjectRef,
-  SlotState,
-  TrainLive,
-} from "../../../shared/contracts";
+export type { AgentLane, AgentRole, ChangeState, LaneStatus, LiveFrame, LiveLane, PrRef } from "../../../shared/contracts";

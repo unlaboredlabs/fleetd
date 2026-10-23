@@ -1,8 +1,7 @@
 // Pairing with a hub: the pure rules shared by main (which talks to the hub) and the renderer (which shows it).
 // The contract is `POST <hub>/pair {code, deviceName}` → `{key, hubUrl, hubName}` or the hub's `{code, message, fix}`.
+import { PROTOCOL_VERSION } from "./contracts";
 
-/** The /app protocol this app speaks (fleetd_contracts::hello::PROTOCOL_VERSION). */
-export const APP_PROTOCOL = 1;
 
 /** Where `fleetd init` puts the hub unless told otherwise. */
 export const LOCAL_HUB = "http://127.0.0.1:4790";
@@ -43,8 +42,9 @@ export interface PairStart {
 }
 
 /**
- * "Set up fleetd on this Mac": `fleetd init` opened in the system terminal (`terminal` says which, for the line
- * after), or why it couldn't be, with the command to run instead.
+ * A fleetd command opened in the system terminal: `fleetd init` ("Set up fleetd on this Mac") or `fleetd update`
+ * (the hub on this computer). `terminal` says which, for the line after; or why it couldn't be, with the command to
+ * run instead.
  */
 export type SetupOutcome =
   | { readonly ok: true; readonly terminal: string }
@@ -132,14 +132,15 @@ export type ProtocolFit = "ok" | "hub-older" | "app-older";
 
 /** A hub on another protocol can't serve this app: one of them needs an update. */
 export const protocolFit = (hubProtocol: number): ProtocolFit =>
-  hubProtocol === APP_PROTOCOL ? "ok" : hubProtocol < APP_PROTOCOL ? "hub-older" : "app-older";
+  hubProtocol === PROTOCOL_VERSION ? "ok" : hubProtocol < PROTOCOL_VERSION ? "hub-older" : "app-older";
 
 /**
- * Orders dotted versions numerically (`0.10.0` after `0.9.3`); a pre-release suffix sorts before its release.
- * Null when either isn't a version, so nothing is flagged on a guess.
+ * Orders versions as semver does: dotted numbers (`0.10.0` after `0.9.3`), a pre-release before its release, and
+ * pre-releases by their dot-separated parts, numbers numerically, so a later nightly (`-nightly.202610221030`) is
+ * newer. Build metadata (`+abc1234`) doesn't count. Null when either isn't a version, so nothing is flagged on a guess.
  */
 export const compareVersions = (a: string, b: string): number | null => {
-  const parse = (v: string) => /^v?(\d+)\.(\d+)\.(\d+)(-[\w.]+)?/u.exec(v.trim());
+  const parse = (v: string) => /^v?(\d+)\.(\d+)\.(\d+)(?:-([\w.-]+))?(?:\+[\w.-]*)?$/u.exec(v.trim());
   const x = parse(a);
   const y = parse(b);
   if (x === null || y === null) return null;
@@ -147,8 +148,21 @@ export const compareVersions = (a: string, b: string): number | null => {
     const d = Number(x[i]) - Number(y[i]);
     if (d !== 0) return Math.sign(d);
   }
-  if (x[4] === y[4]) return 0;
-  return x[4] === undefined ? 1 : y[4] === undefined ? -1 : 0;
+  const [px, py] = [x[4], y[4]];
+  if (px === py) return 0;
+  if (px === undefined) return 1;
+  if (py === undefined) return -1;
+  const xs = px.split(".");
+  const ys = py.split(".");
+  for (let i = 0; i < Math.max(xs.length, ys.length); i++) {
+    const [p, q] = [xs[i], ys[i]];
+    if (p === undefined) return -1;
+    if (q === undefined) return 1;
+    const [np, nq] = [/^\d+$/u.test(p), /^\d+$/u.test(q)];
+    const d = np && nq ? Math.sign(Number(p) - Number(q)) : np ? -1 : nq ? 1 : p < q ? -1 : p > q ? 1 : 0;
+    if (d !== 0) return d;
+  }
+  return 0;
 };
 
 /** Machines whose node runs an older fleetd than the hub, by name. A node reporting 0.0.0 hasn't said its version. */

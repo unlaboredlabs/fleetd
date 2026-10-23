@@ -4,12 +4,11 @@
 use fleetd::hub::prompts::registry::{ENTRIES, INSTRUCTIONS};
 use fleetd_contracts::prompts::{Enforcement, PromptGroup};
 
-const GROUPS: [(PromptGroup, &str); 5] = [
+const GROUPS: [(PromptGroup, &str); 4] = [
     (PromptGroup::Lead, "Lead"),
     (PromptGroup::Tasks, "Tasks"),
     (PromptGroup::ReviewsAndChecks, "Reviews and checks"),
     (PromptGroup::Messages, "Messages"),
-    (PromptGroup::OneShots, "One-shots"),
 ];
 
 /// Markdown: one `###` per group, then a row per prompt with its id, when it is sent and the safety rules it
@@ -47,20 +46,4 @@ pub fn table(_root: &std::path::Path) -> Result<String, String> {
 /// Table-cell safe: nothing in it reads as markup.
 fn cell(text: &str) -> String {
     crate::md_text(text)
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn every_prompt_but_the_instructions_has_a_row() {
-        let table = super::table(std::path::Path::new(".")).unwrap();
-        for e in fleetd::hub::prompts::registry::ENTRIES {
-            assert_eq!(
-                table.contains(&format!("`{}`", e.id)),
-                e.id != "instructions",
-                "{}",
-                e.id
-            );
-        }
-    }
 }

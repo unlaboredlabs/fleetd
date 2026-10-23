@@ -2,7 +2,7 @@
 // gets its result inline in one wake; with the cap at 1 a second spawn queues until that turn ends; a second writer
 // on the same area queues on the lease; a writer that touches a file outside its area is flagged; and the instance
 // keeps Claude's native Task, Workflow and AskUserQuestion tools from every thread. Further spawns run `fleetd` from the harness in
-// the project's workspace, exactly as a lead's shell would, so they cost no lead turns. Every turn is tiny haiku/low.
+// the project's workspace, exactly as a lead's shell would, so they cost no lead turns. Every task turn runs on medium.
 import { execFileSync, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -10,16 +10,13 @@ import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import { type Body, callToolWith, chatOrder, cli, fleetdCommand, initTools, type Lab, MODEL, nodeSock, scrubbedEnv, userMessages } from "./harness.ts";
+import { type Body, callToolWith, chatOrder, cli, fleetdCommand, initTools, type Lab, MECHANICS, MODEL, nodeSock, scrubbedEnv, userMessages } from "./harness.ts";
 
 const MACHINE = "lab-a";
 const TURN_MS = 240_000;
 const POLICY = `areas:
   docs: ["docs/**"]
   api: ["api/**"]
-defaults:
-  model: ${MODEL}
-  effort: low
 `;
 const ENDED = ["thread.completed", "thread.failed", "thread.interrupted"];
 
@@ -118,11 +115,11 @@ export async function m5Tasks(lab: Lab) {
   };
 
   try {
-    // The lead: m3's when it ran first, else a fresh one. A workstream to spawn under: an open one, else a new intent.
+    // The lead: steer's when it ran first, else a fresh one. A workstream to spawn under: an open one, else a new intent.
     let cursor = await lab.cursor();
     let outcome = (await callTool("project_get", ref)).body;
     if (outcome.lead === undefined) {
-      const started = await callTool("lead_start", { ...ref, model: MODEL, effort: "low" });
+      const started = await callTool("lead_start", ref);
       check(!started.isError, `lead_start: ${JSON.stringify(started.body)}`);
       leadThread = started.body.threadId;
       cursor = await leadTurnDone(cursor, "start");
@@ -139,9 +136,9 @@ export async function m5Tasks(lab: Lab) {
     }
     ok(`lead thread ${leadThread}, workstream ${workstreamId}`);
 
-    // 1. The lead spawns T1 from its shell: a thread in a new worktree on fleetd/T1-add-file, explicit model and effort.
+    // 1. The lead spawns T1 from its shell: a thread in a new worktree on fleetd/T1-add-file, on the medium profile.
     const spawn1 =
-      `fleetd task spawn --workstream ${workstreamId} --title "add file" --areas docs --serves done:0 --model ${MODEL} --effort low ` +
+      `fleetd task spawn --workstream ${workstreamId} --title "add file" --areas docs --profile ${MECHANICS} ` +
       `--prompt "create docs/x.md with one line 'hi', commit it on your branch"`;
     const sent = await callTool("thread_send", {
       ...ref,
@@ -156,14 +153,14 @@ export async function m5Tasks(lab: Lab) {
     const t1Started = await taskEvent("task.started T1", cursor, "task.started", "T1");
     const t1 = await task("T1");
     check(
-      t1.state === "running" && t1.branch === "fleetd/T1-add-file" && t1.model === MODEL && t1.effort === "low" && t1.threadRef?.threadId,
-      `T1 runs on its branch with explicit model and effort: ${JSON.stringify(t1)}`,
+      t1.state === "running" && t1.branch === "fleetd/T1-add-file" && t1.profile === MECHANICS && t1.threadRef?.threadId,
+      `T1 runs on its branch on medium: ${JSON.stringify(t1)}`,
     );
     ok(`1. the lead ran fleetd task spawn: T1 started (${t1Started.event.summary}), thread ${t1.threadRef.threadId} on ${t1.branch}`);
 
     // 3. A second writer on docs queues on the lease (spawned now, while T1 holds it).
     const t2 = spawnTask([
-      "--workstream", workstreamId, "--title", "more docs", "--areas", "docs", "--serves", "done:0",
+      "--workstream", workstreamId, "--title", "more docs", "--areas", "docs",
       "--prompt", "create docs/y.md with one line 'hi', commit it on your branch",
     ]);
     const t2Task = await task(t2.taskId);
@@ -178,7 +175,7 @@ export async function m5Tasks(lab: Lab) {
     check(readerTask.state === "queued" && /^slots: \d+\/1 in use/u.test(readerTask.queuedReason ?? ""), `the read task queued on the cap: ${JSON.stringify(readerTask)}`);
     ok(`2. cap set to 1; ${reader.taskId} queued: ${readerTask.queuedReason}`);
     const t4 = spawnTask([
-      "--workstream", workstreamId, "--title", "add notes", "--areas", "api", "--serves", "done:0",
+      "--workstream", workstreamId, "--title", "add notes", "--areas", "api",
       "--prompt",
       "This task tests fleetd's out-of-area check, so break the area rule this once: create notes.txt at the repository root (not under api/) with one line 'hi', and commit it on your branch.",
     ]);
@@ -262,7 +259,7 @@ export async function m5Tasks(lab: Lab) {
     ok("5. lead and task threads start without Task, Workflow or AskUserQuestion");
 
     const total = await countLeadTurns();
-    ok(`M5 used ${total} lead turns + 4 task turns = ${total + 4} claude turns (${MODEL}, effort low)`);
+    ok(`M5 used ${total} lead turns + 4 task turns = ${total + 4} claude turns (${MODEL}, tasks on medium)`);
   } finally {
     await admin("cap_set", { cap: 40 }).catch(() => undefined);
     await adminClient.close().catch(() => undefined);

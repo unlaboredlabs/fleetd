@@ -4,10 +4,9 @@ use serde_with::skip_serializing_none;
 
 use crate::chat::ChatRequestId;
 use crate::ids::{EventSeq, MachineId, ProjectId, ProjectRef, ThreadId, Timestamp};
-use crate::ledger::{BriefHash, RequestKind, RequestState, WorkstreamId, WorkstreamState};
+use crate::ledger::{RequestKind, RequestState, WorkstreamId, WorkstreamState};
 use crate::prim::{Count, Text};
 use crate::prompts::PromptScope;
-use crate::steer::SteerId;
 use crate::train::{ChangeId, GitHubRepo};
 use crate::verification::ClaimId;
 
@@ -26,6 +25,10 @@ pub enum HubEventType {
     /// The machine's node woke from sleep; `data.fromMs`, `data.toMs` (epoch milliseconds).
     #[serde(rename = "machine.slept")]
     MachineSlept,
+    /// The machine's disk or load stopped new agents there, or no longer does; `data.paused`, and the summary says
+    /// why. Agents already running keep going.
+    #[serde(rename = "machine.guard")]
+    MachineGuard,
     /// The node no longer has the project: the hub dropped it from its cache, and its open workstreams stop. `data.title`.
     #[serde(rename = "project.removed")]
     ProjectRemoved,
@@ -39,6 +42,9 @@ pub enum HubEventType {
     /// A clone `project_add` accepted failed: `data` is `ProjectAddFailedData`, with the fix.
     #[serde(rename = "project.add_failed")]
     ProjectAddFailed,
+    /// A project's settings changed (`project_set`): `data.mediumAllowed`.
+    #[serde(rename = "project.settings")]
+    ProjectSettings,
     #[serde(rename = "thread.started")]
     ThreadStarted,
     #[serde(rename = "thread.completed")]
@@ -66,12 +72,9 @@ pub enum HubEventType {
     /// A queued write outlived its TTL and was dropped.
     #[serde(rename = "write.expired")]
     WriteExpired,
-    /// A webhook subscription has been failing for over an hour.
-    #[serde(rename = "webhook.failing")]
-    WebhookFailing,
     #[serde(rename = "workstream.created")]
     WorkstreamCreated,
-    /// The brief was frozen; `data.briefHash`.
+    /// The brief was set and the work started.
     #[serde(rename = "workstream.running")]
     WorkstreamRunning,
     #[serde(rename = "workstream.state")]
@@ -155,9 +158,6 @@ pub enum HubEventType {
     /// Refused at enqueue; `data.prUrl`, `data.fix`.
     #[serde(rename = "change.refused")]
     ChangeRefused,
-    /// Where an intent went; `data.workstreamId`, `data.template`, `data.reason`, `data.playbook`.
-    #[serde(rename = "intake.routed")]
-    IntakeRouted,
     /// A research workstream's computed verdict; `data.workstreamId`, `data.outcome`, `data.metricValues`.
     #[serde(rename = "research.verdict")]
     ResearchVerdict,
@@ -170,25 +170,9 @@ pub enum HubEventType {
     /// M11: doctor checks changed status; `data.changes` lists `{ id, from, to }` (from absent on the first run).
     #[serde(rename = "doctor.changed")]
     DoctorChanged,
-    /// M12: a retro run ended; `data.run`, `data.trigger`, `data.advise`, `data.proposals`, `data.dropped`, `data.usage` (orchestrator runs).
-    #[serde(rename = "retro.ran")]
-    RetroRan,
-    /// M12: a playbook file changed under a retro proposal; `data.proposalId`, `data.playbook`, `data.ref`, `data.previousRef`, `data.kind`, `data.baseline`, `data.dueAt`.
-    #[serde(rename = "playbook.changed")]
-    PlaybookChanged,
-    /// M12: a wording change missed its metric or regressed a guarded one and was rolled back; `data.proposalId`, `data.reason`.
-    #[serde(rename = "playbook.reverted")]
-    PlaybookReverted,
-    /// M12: a wording change met its metric; `data.proposalId`, `data.measured`.
-    #[serde(rename = "playbook.kept")]
-    PlaybookKept,
     /// A device redeemed a pairing code from `fleetd pair` and got a human key; `data.keyId`, `data.deviceName`.
     #[serde(rename = "key.paired")]
     KeyPaired,
-    /// A person added to an order for its lead: `data.workstreamId`, `data.noteId`, `data.urgent`, `data.text` (first
-    /// 200 characters).
-    #[serde(rename = "workstream.note")]
-    WorkstreamNote,
     /// A prompt override was saved or reset: `data.id`, `data.scope`, `data.projectRef`, `data.ref` (absent on reset),
     /// `data.warnings` (their codes). The text is not in the event; prompt_get reads it.
     #[serde(rename = "prompt.changed")]
@@ -256,10 +240,12 @@ impl HubEventType {
             Self::MachineOffline => "machine.offline",
             Self::MachineDegraded => "machine.degraded",
             Self::MachineSlept => "machine.slept",
+            Self::MachineGuard => "machine.guard",
             Self::ProjectRemoved => "project.removed",
             Self::ProjectAdded => "project.added",
             Self::ProjectCloneProgress => "project.clone_progress",
             Self::ProjectAddFailed => "project.add_failed",
+            Self::ProjectSettings => "project.settings",
             Self::ThreadStarted => "thread.started",
             Self::ThreadCompleted => "thread.completed",
             Self::ThreadFailed => "thread.failed",
@@ -271,7 +257,6 @@ impl HubEventType {
             Self::WakeMissed => "wake.missed",
             Self::WriteDelivered => "write.delivered",
             Self::WriteExpired => "write.expired",
-            Self::WebhookFailing => "webhook.failing",
             Self::WorkstreamCreated => "workstream.created",
             Self::WorkstreamRunning => "workstream.running",
             Self::WorkstreamState => "workstream.state",
@@ -303,17 +288,11 @@ impl HubEventType {
             Self::TrainResumed => "train.resumed",
             Self::TrainBlocked => "train.blocked",
             Self::ChangeRefused => "change.refused",
-            Self::IntakeRouted => "intake.routed",
             Self::ResearchVerdict => "research.verdict",
             Self::UsageBreaker => "usage.breaker",
             Self::UsageResumed => "usage.resumed",
             Self::DoctorChanged => "doctor.changed",
-            Self::RetroRan => "retro.ran",
-            Self::PlaybookChanged => "playbook.changed",
-            Self::PlaybookReverted => "playbook.reverted",
-            Self::PlaybookKept => "playbook.kept",
             Self::KeyPaired => "key.paired",
-            Self::WorkstreamNote => "workstream.note",
             Self::PromptChanged => "prompt.changed",
             Self::PromptDefaultChanged => "prompt.default_changed",
             Self::SteerQueued => "steer.queued",
@@ -393,8 +372,8 @@ pub struct WorkstreamEventData {
     pub workstream_id: WorkstreamId,
     /// workstream.state: the new state.
     pub state: Option<WorkstreamState>,
-    /// workstream.running: the frozen brief.
-    pub brief_hash: Option<BriefHash>,
+    /// workstream.state: the brief was set or edited.
+    pub brief_edited: Option<bool>,
     /// workstream.state (verifying) and workstream.done: the claim that moved it.
     pub claim_id: Option<ClaimId>,
     /// workstream.state (stopped): why, and who.
@@ -436,6 +415,8 @@ pub struct ClaimEventData {
 pub struct TrainEventData {
     pub change_id: Option<ChangeId>,
     pub workstream_id: Option<WorkstreamId>,
+    /// pr.merged: the writer task whose PR it was, when a task wrote it.
+    pub task_id: Option<crate::tasks::TaskId>,
     pub repo: Option<GitHubRepo>,
     pub pr_number: Option<Count>,
     pub pr_url: Option<String>,
@@ -453,20 +434,6 @@ pub struct TrainEventData {
     pub error: Option<String>,
 }
 
-/// `workstream.note`.
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkstreamNoteData {
-    pub workstream_id: WorkstreamId,
-    pub client_request_id: Option<String>,
-    pub urgent: Option<bool>,
-    /// The first 200 characters.
-    pub text: Option<String>,
-    /// The steer the note became.
-    pub steer_id: Option<SteerId>,
-}
-
 /// `prompt.changed`.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -479,6 +446,13 @@ pub struct PromptChangedData {
     pub r#ref: Option<String>,
     /// The warnings' codes.
     pub warnings: Option<Vec<String>>,
+}
+
+/// `machine.guard`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct MachineGuardData {
+    /// true: new agents wait; false: they start again.
+    pub paused: bool,
 }
 
 /// `machine.slept`: epoch milliseconds.

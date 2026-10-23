@@ -7,14 +7,17 @@ import { Paperclip } from "lucide-react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentLane, AttachmentRef } from "../../../shared/contracts";
 import { Button, cx, Text, Truncate, VirtualList } from "../../ui";
-import { useToolQuery } from "../../src/data/react";
+import { useData, useToolQuery } from "../../src/data/react";
+import { projectKey } from "../../src/data/store";
+import { leadActivity, leadTurnSince, leadTurnUntil, turnLine } from "./activity";
 import { fmtBytes } from "./attachments";
 import type { ChatItem } from "../../src/data/chat";
 
 import { shortClock } from "./format";
 import { systemHeadline, type Row, type TopState } from "./model";
 import { MessageReceipt } from "./Composer";
-import { LiveStrip } from "../live";
+import { LiveStrip, useNow, useOnScreen } from "../live";
+import { Boundary } from "../../src/Boundary";
 import type { ChatItem as InlineItem } from "../../../shared/contracts";
 import { InlineChatItem } from "../inline";
 import type { ProjectRef } from "./slots";
@@ -143,6 +146,49 @@ function Inline({ item }: { item: ChatItem }) {
   );
 }
 
+/** The lead's activity changes with its frames; the line takes a new value at most once a second. */
+const ACTIVITY_EVERY_MS = 1000;
+
+/** The quiet line after the lead's reply: how long its turn has run (counting up, once a second) and what it does. */
+function LeadActivity({ project }: { project: ProjectRef }) {
+  const key = projectKey(project);
+  const now = useData((st) => leadActivity(st, key));
+  const since = useData((st) => leadTurnSince(st, key));
+  const until = useData((st) => leadTurnUntil(st, key));
+  const skew = useData((st) => st.live.skewMs ?? 0);
+  const [shown, setShown] = useState(now);
+  const at = useRef(0);
+  useEffect(() => {
+    if (now === shown) return;
+    const timer = setTimeout(
+      () => {
+        at.current = Date.now();
+        setShown(now);
+      },
+      Math.max(0, at.current + ACTIVITY_EVERY_MS - Date.now()),
+    );
+    return () => clearTimeout(timer);
+  }, [now, shown]);
+  const box = useRef<HTMLDivElement>(null);
+  // The count stops while the line is out of view or the window hidden (useNow).
+  const onScreen = useOnScreen(box);
+  const clock = useNow(shown !== undefined && since !== undefined && until === undefined && onScreen) + skew;
+  const line = turnLine({ since, until }, shown, clock);
+  if (line === undefined) return null;
+  return (
+    <div ref={box} className={s.quietRow} data-entry="activity" role="status">
+      {line.count !== undefined ? (
+        <span aria-hidden>
+          <Text size="xs" tone="quiet" tabular>
+            {line.words === undefined ? line.count : `${line.count} · `}
+          </Text>
+        </span>
+      ) : null}
+      {line.words !== undefined ? <InlineText size="xs" tone="quiet" text={line.words} /> : null}
+    </div>
+  );
+}
+
 const AUTHOR = { human: "You", lead: "Lead", system: "fleetd" } as const;
 
 const RowView = memo(function RowView(props: {
@@ -192,10 +238,14 @@ const RowView = memo(function RowView(props: {
           <Inline item={r.item} />
         </div>
       );
+    case "activity":
+      return <LeadActivity project={project} />;
     case "strip":
       return (
         <div className={s.strip}>
-          <LiveStrip project={project} onTold={props.onTold} />
+          <Boundary part="the live strip">
+            <LiveStrip project={project} onTold={props.onTold} />
+          </Boundary>
         </div>
       );
     case "message": {

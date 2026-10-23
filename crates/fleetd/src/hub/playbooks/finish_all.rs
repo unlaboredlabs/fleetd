@@ -103,12 +103,12 @@ impl FinishAll {
         let Some(mut stored) = self.records.workstream_get(&w.workstream_id)? else {
             return Ok(());
         };
-        if stored.workstream.state == state {
+        if stored.state == state {
             return Ok(());
         }
         let at = now_iso(&self.ctx);
-        stored.workstream.state = state;
-        stored.workstream.updated_at = at.clone().into();
+        stored.state = state;
+        stored.updated_at = at.clone().into();
         self.records.workstream_put(&stored)?;
         self.ctx.events.append(NewEvent {
             at: at.into(),
@@ -504,7 +504,7 @@ fn random_uuid() -> String {
     let mut b: [u8; 16] = rand::random();
     b[6] = (b[6] & 0x0f) | 0x40;
     b[8] = (b[8] & 0x3f) | 0x80;
-    let h = crate::hub::leads::brief::hex(&b);
+    let h = super::load::hex(&b);
     format!(
         "{}-{}-{}-{}-{}",
         &h[0..8],

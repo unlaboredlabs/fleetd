@@ -1,5 +1,6 @@
-import { clipboard, ipcMain, Menu, shell, type IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, clipboard, ipcMain, Menu, nativeTheme, shell, type IpcMainInvokeEvent } from "electron";
 import { IPC, type InvokeChannel } from "../shared/channels";
+import type { AppLog } from "./applog";
 import { parseRequest, type RequestArgs } from "../shared/ipc";
 import type { OpenOutcome } from "../shared/hub";
 import { externalUrl } from "./external";
@@ -12,6 +13,9 @@ import type { Notifier } from "./notify";
 import type { Opener } from "./opener";
 import { hostName, pickFolder, readDrop } from "./projects";
 import { isOwnPage } from "./security";
+import type { SetupOutcome } from "../shared/pairing";
+import { localHub } from "../shared/updates";
+import type { Updates } from "./updater";
 
 /** Only our own top-level page may call main: not a subframe, not a local file, not a page navigated elsewhere. */
 const trustedSender = (event: IpcMainInvokeEvent): boolean => {
@@ -31,7 +35,11 @@ const handle = <C extends InvokeChannel>(
   });
 };
 
-export const registerIpc = (hub: HubService, frame: { opener: Opener; notifier: Notifier }, pairing: PairingService): void => {
+export const registerIpc = (
+  hub: HubService,
+  frame: { opener: Opener; notifier: Notifier; log: AppLog; updates: Updates },
+  pairing: PairingService,
+): void => {
   handle(IPC.hubSubscribe, (event) => hub.subscribe(event.sender));
   handle(IPC.hubUnsubscribe, (event) => hub.unsubscribe(event.sender));
   handle(IPC.hubCall, (_event, request) => hub.call(request));
@@ -66,6 +74,29 @@ export const registerIpc = (hub: HubService, frame: { opener: Opener; notifier: 
   });
   handle(IPC.appReady, () => frame.opener.ready());
   handle(IPC.appNotify, (_event, request) => frame.notifier.show(request));
+  // macOS shows it on the Dock icon; Linux only where the launcher supports badges (Unity), and ignores it elsewhere.
+  handle(IPC.appBadge, (_event, count) => void app.setBadgeCount(count));
+  handle(IPC.appTheme, (_event, mode) => {
+    nativeTheme.themeSource = mode;
+  });
   handle(IPC.appLinkHandler, (_event, claim) => (claim === null ? linkHandlerStatus() : claimLinkHandler(claim)));
   handle(IPC.appMenuState, (_event, enabled) => applyMenuState(Menu.getApplicationMenu(), enabled));
+  handle(IPC.appLog, (_event, { what, route, ...error }) => {
+    frame.log.write({ source: "window", what, route, error });
+  });
+  handle(IPC.updatesState, () => frame.updates.state());
+  handle(IPC.updatesCheck, () => frame.updates.check());
+  handle(IPC.updatesInstall, () => frame.updates.install());
+  handle(IPC.updatesKeep, () => frame.updates.keep());
+  handle(IPC.updatesHubTerminal, (): Promise<SetupOutcome> => {
+    const state = hub.state();
+    // Main checks the hub is here: on a hub elsewhere, this computer's fleetd update wouldn't update it.
+    if (state.phase === "unpaired" || !localHub(state.hub)) {
+      return Promise.resolve({ ok: false, message: "The hub isn't on this computer. Run this on the hub's machine:", command: "fleetd update" });
+    }
+    return frame.updates.hubTerminal();
+  });
+  frame.updates.onChange((state) => {
+    for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send(IPC.updatesChanged, state);
+  });
 };

@@ -1,7 +1,6 @@
 //! The research verdict as the lead's event line. Pure. The outcome itself is `ledger::research_outcome` (contracts).
 use fleetd_contracts::ledger::{DecisionRule, DecisionRuleBetter, MetricValues, ResearchOutcome};
 
-use crate::hub::leads::brief::js_f64;
 use crate::hub::leads::events::Event;
 
 fn sign(rule: &DecisionRule) -> f64 {
@@ -15,6 +14,26 @@ fn better_text(rule: &DecisionRule) -> &'static str {
     match rule.better {
         DecisionRuleBetter::Lower => "lower",
         DecisionRuleBetter::Higher => "higher",
+    }
+}
+
+/// `String(n)` in JS: integers without a fraction, exponent form only from 1e21 up and below 1e-6.
+fn js_f64(f: f64) -> String {
+    if !f.is_finite() {
+        return "null".into();
+    }
+    if f == 0.0 {
+        return "0".into();
+    }
+    let abs = f.abs();
+    if (1e-6..1e21).contains(&abs) {
+        // Rust's Display is the shortest round-trip form without an exponent, as JS prints in this range.
+        return format!("{f}");
+    }
+    let s = format!("{f:e}");
+    match s.split_once('e') {
+        Some((mantissa, exp)) if !exp.starts_with('-') => format!("{mantissa}e+{exp}"),
+        _ => s,
     }
 }
 

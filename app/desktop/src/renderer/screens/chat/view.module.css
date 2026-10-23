@@ -10,22 +10,6 @@
   min-height: 0;
   min-width: 0;
 }
-.header {
-  flex: none;
-  min-height: var(--bar);
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-1) var(--pad);
-  border-bottom: 1px solid var(--hairline);
-}
-.title {
-  flex: 1 1 0;
-  min-width: 0;
-}
-.flexNone {
-  flex: none;
-}
 .loading {
   display: flex;
   flex: 1;

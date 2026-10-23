@@ -88,17 +88,17 @@ export function receiptFor(m: Sendable, latest: boolean): Receipt | undefined {
   }
 }
 
-/** Why Stop didn't stop the lead, in one plain sentence; never the hub's own words. */
+/** Why Stop didn't stop the lead and its agents, in one plain sentence; never the hub's own words. */
 export function stopFailed(code: string): string {
   switch (code) {
     case "forbidden":
-      return "This computer’s key can’t stop the lead.";
+      return "This computer’s key can’t stop this project’s work.";
     case "offline":
     case "disconnected":
-      return "Not connected to the hub, so the lead wasn’t stopped.";
+      return "Not connected to the hub, so nothing was stopped.";
     case "timeout":
-      return "The hub didn’t answer, so the lead may still be working. Try Stop again.";
+      return "The hub didn’t answer, so the lead and its agents may still be working. Try Stop again.";
     default:
-      return "Couldn’t stop the lead. Try Stop again.";
+      return "Couldn’t stop the lead and its agents. Try Stop again.";
   }
 }

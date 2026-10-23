@@ -50,17 +50,41 @@ export const IPC = {
   hubFrame: "hub:frame",
   /** invoke() → void. The page can take commands and targets now; main sends what it held for it. */
   appReady: "app:ready",
-  /** invoke(NotifyRequest) → void. Posts a system notification; clicking it sends `appOpen` with its target. */
+  /**
+   * invoke(NotifyRequest) → boolean. Posts a system notification; clicking it sends `appOpen` with its target. False
+   * when this system shows none.
+   */
   appNotify: "app:notify",
+  /** invoke(count) → void. The Dock (or launcher) badge: how many projects need you; 0 clears it. */
+  appBadge: "app:badge",
+  /** invoke(ThemeMode) → void. The app's light/dark choice, so the window's own material (vibrancy) matches it. */
+  appTheme: "app:theme",
   /** invoke(LinkHandlerClaim | null) → LinkHandlerStatus. Null only reads; a reason claims fleetd:// if it should. */
   appLinkHandler: "app:linkHandler",
   /** invoke(MenuCommand[]) → void. The menu commands enabled now; main greys out the rest. */
   appMenuState: "app:menuState",
+  /** invoke(ErrorReport) → void. An error the page caught (an error card, an uncaught error); main logs it, scrubbed. */
+  appLog: "app:log",
+  /** invoke() → UpdatesState. The app's own update (src/main/updater.ts). */
+  updatesState: "updates:state",
+  /** invoke() → void. A check someone asked for; its answer comes as `updatesChanged`. */
+  updatesCheck: "updates:check",
+  /** invoke() → void. "Update and restart": now if downloaded, else once it is; the deb opens its download. */
+  updatesInstall: "updates:install",
+  /** invoke() → void. Takes back "Update and restart" while the download runs. */
+  updatesKeep: "updates:keep",
+  /**
+   * invoke() → SetupOutcome. `fleetd update` in the system terminal, for a hub on this computer only; the one
+   * command, with no arguments. The CLI restarts the hub only when the hub says nothing runs.
+   */
+  updatesHubTerminal: "updates:hubTerminal",
+  /** main → renderer: UpdatesState, on every change. */
+  updatesChanged: "updates:changed",
   /** main → renderer: a command id (shared/shortcuts.ts or the palette registry), from a click in the app menu. */
   menuCommand: "menu:command",
   /** main → renderer: OpenTarget, from a clicked notification or a fleetd:// link. */
   appOpen: "app:open",
 } as const;
 
-type PushChannel = typeof IPC.hubFrame | typeof IPC.menuCommand | typeof IPC.appOpen;
+type PushChannel = typeof IPC.hubFrame | typeof IPC.menuCommand | typeof IPC.appOpen | typeof IPC.updatesChanged;
 export type InvokeChannel = Exclude<(typeof IPC)[keyof typeof IPC], PushChannel>;

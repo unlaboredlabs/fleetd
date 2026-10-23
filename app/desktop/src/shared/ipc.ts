@@ -102,6 +102,17 @@ export const SecretRequest = z.strictObject({
   value: z.string().min(1).max(8192),
 });
 export type SecretRequest = z.infer<typeof SecretRequest>;
+/** An error the page caught, for the app log: what failed, the error's own text and the route. Main scrubs it. */
+export const ErrorReport = z.strictObject({
+  /** The part whose card is up ("the conversation"), or "uncaught error" / "unhandled rejection". */
+  what: z.string().min(1).max(200),
+  name: z.string().max(200).optional(),
+  message: z.string().max(4000),
+  stack: z.string().max(20_000).optional(),
+  route: z.string().max(4096),
+});
+export type ErrorReport = z.infer<typeof ErrorReport>;
+
 /** An absolute path the renderer got from a drop (webUtils.getPathForFile). */
 export const DropPath = z.string().min(2).max(4096).refine((p) => p.startsWith("/") || /^[A-Za-z]:[\\/]/u.test(p), "an absolute path");
 
@@ -145,8 +156,16 @@ export const REQUESTS = {
   [IPC.copy]: z.tuple([z.string().max(1_000_000)]),
   [IPC.appReady]: none,
   [IPC.appNotify]: z.tuple([NotifyRequest]),
+  [IPC.appBadge]: z.tuple([z.number().int().min(0).max(9999)]),
+  [IPC.appTheme]: z.tuple([z.enum(["system", "light", "dark"])]),
   [IPC.appMenuState]: z.tuple([MenuState]),
   [IPC.appLinkHandler]: z.tuple([LinkHandlerClaim.nullable()]),
+  [IPC.appLog]: z.tuple([ErrorReport]),
+  [IPC.updatesState]: none,
+  [IPC.updatesCheck]: none,
+  [IPC.updatesInstall]: none,
+  [IPC.updatesKeep]: none,
+  [IPC.updatesHubTerminal]: none,
   // The URL rules live in main (main/external.ts), which answers with the reason; this only bounds the size.
   [IPC.openExternal]: z.tuple([z.string().max(8192)]),
 } as const satisfies Record<InvokeChannel, z.ZodType>;

@@ -5,15 +5,17 @@
 mod db;
 mod event_log;
 mod hub_store;
-mod migrations;
+pub(crate) mod migrations;
 
+#[cfg(test)]
+pub(crate) use migrations::MIGRATIONS;
 #[cfg(test)]
 pub(crate) mod test_clock;
 #[cfg(test)]
 mod tests;
 
-pub use db::{HubDb, SCHEMA_VERSION, StoreError, expand_home, resolve_hub_home};
-pub use event_log::{EventLog, NewEvent, WaitInput, WaitResult};
+pub use db::{HubDb, StoreError, expand_home, resolve_hub_home};
+pub use event_log::{EventLog, NewEvent, WaitInput};
 pub use hub_store::{HubStore, StoredThread};
 
 use crate::clock::Clock;

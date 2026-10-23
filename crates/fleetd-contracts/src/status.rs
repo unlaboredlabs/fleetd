@@ -151,6 +151,9 @@ pub struct ProgressPoint {
     pub verified_pct: Int<0, 100>,
     /// Set when the estimate fell at this point; it never falls without one.
     pub drop: Option<ProgressDrop>,
+    /// Set while the estimate holds because the work in flight paused, waiting for an answer or for a usage limit to
+    /// reset ("paused: an agent hit a usage limit"). A marker, not a drop: what was earned stays.
+    pub paused: Option<Line<1, 200>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
@@ -165,6 +168,8 @@ pub enum DropReason {
     CiFailed,
     /// A done item reopened when a later check failed.
     Reopened,
+    /// An agent ended with nothing else in flight for its item: the item's in-stage credit is taken back.
+    WorkStopped,
     /// A reason this build doesn't know (a newer hub): show the drop's text. Never sent.
     #[serde(other)]
     #[schemars(skip)]
@@ -334,6 +339,8 @@ pub struct InProgressRow {
     pub title: Line<1, 120>,
     /// Join to the live feed's lanes for what each agent is doing now.
     pub task_ids: List<TaskId, 0, 10>,
+    /// Those of `taskIds` that run on the medium profile; the rest run high. Absent when none does.
+    pub medium_task_ids: Option<List<TaskId, 0, 10>>,
     pub change_ids: List<ChangeId, 0, 10>,
     pub gate: Option<Line<1, 160>>,
     /// Retired with the ETA: always absent.
@@ -549,7 +556,8 @@ pub enum ProjectRowState {
     Working,
     /// The lead is waiting for your reply.
     WaitingOnYou,
-    /// Something outside the work stops it: its machine is offline or at its usage limit, or main CI is red.
+    /// Something outside the work stops it: its machine is offline, at its usage limit or short of disk or CPU for new
+    /// agents, or main CI is red.
     Blocked,
     /// Nothing running and nothing waiting.
     Idle,
@@ -772,22 +780,5 @@ mod tests {
         assert_eq!(stage, ItemStage::Unknown);
         let basis: EtaBasis = serde_json::from_value(from("model")).unwrap();
         assert_eq!(basis, EtaBasis::None);
-    }
-
-    #[test]
-    fn scope_wire_and_key() {
-        let order: StatusScope =
-            serde_json::from_value(serde_json::json!({ "kind": "order", "workstreamId": "W41" }))
-                .unwrap();
-        assert_eq!(order.key(), "order:W41");
-        let project: StatusScope = serde_json::from_value(serde_json::json!({
-            "kind": "project", "projectRef": { "machineId": "devbox", "projectId": "p1" }
-        }))
-        .unwrap();
-        assert_eq!(project.key(), "project:devbox/p1");
-        assert_eq!(
-            serde_json::to_value(StatusScope::Fleet).unwrap(),
-            serde_json::json!({ "kind": "fleet" })
-        );
     }
 }

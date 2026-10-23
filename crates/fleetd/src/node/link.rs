@@ -23,15 +23,15 @@ use super::wire::{
     Timestamp, close, decode_hub_frame, to_json,
 };
 use fleetd_contracts::model::SleptSpan;
+use fleetd_contracts::node_link::{HEARTBEAT_INTERVAL_SECS, HEARTBEAT_TIMEOUT_SECS};
 
-const HEARTBEAT_EVERY: Duration = Duration::from_secs(15);
-const SILENCE_TIMEOUT: Duration = Duration::from_secs(45);
+const HEARTBEAT_EVERY: Duration = Duration::from_secs(HEARTBEAT_INTERVAL_SECS);
+const SILENCE_TIMEOUT: Duration = Duration::from_secs(HEARTBEAT_TIMEOUT_SECS);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// The hub refused this node in a way retrying cannot fix (bad key or token, protocol mismatch).
 #[derive(Debug)]
 pub struct LinkFatal {
-    pub code: u16,
     pub reason: String,
 }
 
@@ -210,7 +210,7 @@ async fn next_frame(
                     } else {
                         reason
                     };
-                    return Err(LinkEnd::Fatal(LinkFatal { code, reason }));
+                    return Err(LinkEnd::Fatal(LinkFatal { reason }));
                 }
                 return Err(LinkEnd::Lost(
                     format!("hub closed the link ({code} {reason})")
@@ -282,7 +282,6 @@ async fn run_link_once(
     let hub_id = match next_frame(&mut stream, HANDSHAKE_TIMEOUT, "welcome").await {
         Ok(HubToNode::Welcome(welcome)) if welcome.protocol.get() != PROTOCOL_VERSION => {
             return LinkEnd::Fatal(LinkFatal {
-                code: close::PROTOCOL_MISMATCH,
                 reason: format!(
                     "hub speaks protocol {}, node speaks {PROTOCOL_VERSION}: install matching fleetd versions",
                     welcome.protocol.get()
@@ -309,8 +308,8 @@ async fn run_link_once(
         tasks.spawn(async move {
             loop {
                 tokio::time::sleep(HEARTBEAT_EVERY).await;
-                let limits = sessions.login_limits();
-                let load = tokio::task::spawn_blocking(move || super::load::read(limits))
+                let (limits, home) = (sessions.login_limits(), sessions.home());
+                let load = tokio::task::spawn_blocking(move || super::load::read(limits, &home))
                     .await
                     .ok()
                     .flatten();

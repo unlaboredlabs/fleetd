@@ -97,7 +97,6 @@ const work = (base: Fixture): Fixture => {
     action("s8", "command", "pnpm test --filter storefront-checkout -- --reporter=dot", 240_000),
     action("s9", "tool_call", "WebFetch developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Intl/DateTimeFormat", 60_000, { status: "running" }),
   ];
-  f.pendingContracts.set("agent_work", "agent_work is on feat/hub-agents-prs");
   f.answer("agent_work", { machineId: AGENT.machineId, threadId: AGENT.threadId, limit: 40 }, { steps, running: true });
   return f;
 };
