@@ -37,8 +37,7 @@ export type Screen =
   | { readonly id: "projects.add" }
   | { readonly id: "settings"; readonly tab: SettingsTab }
   /** A fleetd://pair link prefills the hub and code; the screen still asks before it pairs. */
-  | { readonly id: "onboarding"; readonly hub: string | null; readonly code: string | null }
-  | { readonly id: "gallery" };
+  | { readonly id: "onboarding"; readonly hub: string | null; readonly code: string | null };
 
 export const HOME: Screen = { id: "home" };
 
@@ -83,7 +82,6 @@ const screenOf = (parts: ReadonlyArray<string>, query: URLSearchParams): Screen 
     case "time":
       return { id: "time", orderId: a === "order" && b !== undefined ? b : null };
     case "machines":
-    case "gallery":
       return { id: head };
     case "projects":
       return a === "add" ? { id: "projects.add" } : HOME;
@@ -137,7 +135,6 @@ const path = (screen: Screen): Array<string> => {
     case "status":
     case "machines":
     case "onboarding":
-    case "gallery":
       return [screen.id];
   }
 };

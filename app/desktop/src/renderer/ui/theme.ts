@@ -48,16 +48,15 @@ interface ThemeState {
 const ThemeContext = createContext<ThemeState | null>(null);
 
 /**
- * Owns the light/dark choice. `initialMode` wins over the stored choice (the gallery uses it); `onModeChange`
- * lets the shell mirror the choice to nativeTheme so menus and dialogs match.
+ * Owns the light/dark choice. `onModeChange` lets the shell mirror the choice to nativeTheme so menus and dialogs
+ * match.
  */
 export function ThemeProvider(props: {
   children: ReactNode;
-  initialMode?: ThemeMode;
   onModeChange?: (mode: ThemeMode) => void;
 }) {
   const { onModeChange } = props;
-  const [mode, setModeState] = useState<ThemeMode>(() => props.initialMode ?? storedMode());
+  const [mode, setModeState] = useState<ThemeMode>(storedMode);
   const [systemDark, setSystemDark] = useState(() => darkQuery().matches);
 
   useEffect(() => {
