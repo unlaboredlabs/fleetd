@@ -15,7 +15,9 @@ use super::contract::{
     GitHubRepo, NonEmpty, PatchId, Positive, ProjectRef, Timestamp, TrainState, last_error,
     parse_pr_url, state_str,
 };
-use super::github::{CheckRun, GhError, GhRunner, MergeOutcome, Pull, TRAIN_CONTEXT, TrainGitHub};
+use super::github::{
+    BranchUpdate, CheckRun, GhError, GhRunner, MergeOutcome, Pull, TRAIN_CONTEXT, TrainGitHub,
+};
 use super::host::{BoxFut, TrainHost};
 use super::main_ci::{GithubSync, MainCi, ci_state};
 use super::records::{ChangeRecords, Db, HEAD_STATES, ListFilter, QUEUED_STATES};
@@ -319,11 +321,17 @@ impl Train {
             return None;
         }
         let from = current.state;
+        let shown = current.last_error.clone();
         let mut changed = next(current);
         changed.updated_at = self.now_iso();
         self.records.put(&changed);
         if changed.state != from {
             self.state_span(Some(from), &changed);
+            // The move's reason: the error this update set, or the one a pass that hands it back to ready carries.
+            let bounced = changed.state == ChangeState::Ready && HEAD_STATES.contains(&from);
+            let reason = (bounced || changed.last_error != shown)
+                .then(|| changed.last_error.clone())
+                .flatten();
             let data = ChangeStateData {
                 change_id: changed.change_id.clone(),
                 workstream_id: Some(changed.workstream_id.clone()),
@@ -331,17 +339,19 @@ impl Train {
                 pr_number: Count::unchecked(changed.pr_number.get()),
                 from,
                 to: changed.state,
+                reason: reason.clone(),
             };
             self.emit(
                 &changed.project_ref,
                 "change.state",
                 format!(
-                    "{} {} → {}: {}#{}",
+                    "{} {} → {}: {}#{}{}",
                     changed.change_id,
                     state_str(from),
                     state_str(changed.state),
                     changed.repo,
-                    changed.pr_number
+                    changed.pr_number,
+                    reason.map(|r| format!(" ({r})")).unwrap_or_default()
                 ),
                 serde_json::to_value(data).unwrap_or(Value::Null),
             );
@@ -876,7 +886,8 @@ impl Train {
         }
     }
 
-    /// A pass that could not finish: the Change goes back first in line with the reason, and the loop retries later.
+    /// A pass that could not finish: the Change goes back to ready in its place in line with the reason, and the loop
+    /// retries later.
     pub(super) fn put_back(&self, change: &Change, why: &str) {
         tracing::warn!(change_id = %change.change_id, why, "train: pass failed");
         let from = [
@@ -885,14 +896,11 @@ impl Train {
             ChangeState::Ci,
             ChangeState::Merging,
         ];
-        let back = self.update(&change.change_id, Some(&from), |mut c| {
+        self.update(&change.change_id, Some(&from), |mut c| {
             c.state = ChangeState::Ready;
             c.last_error = Some(error_text(why));
             c
         });
-        if back.is_some() {
-            self.records.to_front(&change.change_id);
-        }
     }
 
     /// The head of a ready Change moved: the same patch stays ready, a new one goes back to review.
@@ -915,6 +923,28 @@ impl Train {
             self.to_gate(reviewing).await;
         }
         Ok(())
+    }
+
+    /// The PR after `update-branch` rebased it. GitHub shows the new head a moment after the rebase returns; until
+    /// then the PR reads as its old head, whose CI and status are not the rebase's, and a merge pinned to it is refused.
+    async fn rebased_pull(&self, change: &Change) -> Result<Pull, GhError> {
+        let start = self.now_ms();
+        loop {
+            let pull = self
+                .github
+                .pull(&change.repo, change.pr_number.get())
+                .await?;
+            if pull.head.sha.to_lowercase() != change.head_sha.as_str() {
+                return Ok(pull);
+            }
+            if self.now_ms() - start >= self.options.ci_timeout.as_millis() as i64 {
+                return Err(GhError::failed(format!(
+                    "it still shows its old head {} after the rebase",
+                    short(change.head_sha.as_str())
+                )));
+            }
+            self.clock.sleep(self.options.poll_interval).await;
+        }
     }
 
     /// Rebase on GitHub, CI, status, pinned merge: one ready Change.
@@ -948,16 +978,19 @@ impl Train {
             return Ok(());
         };
         let base = pull.base.ref_.as_str();
-        if !self
+        let rebased = match self
             .github
             .update_branch(repo, change.pr_number.get())
             .await?
         {
-            self.needs_rebase(&rebasing, &format!("conflicts with {base}"))
-                .await;
-            return Ok(());
-        }
-        let rebased = self.github.pull(repo, change.pr_number.get()).await?;
+            BranchUpdate::Conflict => {
+                self.needs_rebase(&rebasing, &format!("conflicts with {base}"))
+                    .await;
+                return Ok(());
+            }
+            BranchUpdate::Current => pull.clone(),
+            BranchUpdate::Rebased => self.rebased_pull(change).await?,
+        };
         let (head_sha, patch_id) = if rebased.head.sha.to_lowercase() == change.head_sha.as_str() {
             (change.head_sha.clone(), change.patch_id.clone())
         } else {
@@ -1045,13 +1078,12 @@ impl Train {
         };
         let why = format!("GitHub refused the merge (HTTP {status}): {message}");
         if refusals < self.options.merge_attempts {
-            // Usually the base moved between CI and the merge: rebase again, first in line.
+            // Usually the base moved between CI and the merge: rebase again. It never left its place in line.
             self.update(&change.change_id, Some(&[ChangeState::Merging]), |mut c| {
                 c.state = ChangeState::Ready;
                 c.last_error = Some(error_text(&why));
                 c
             });
-            self.records.to_front(&change.change_id);
             return Ok(());
         }
         lock(&self.merge_refusals).remove(&change.change_id);
@@ -1169,7 +1201,8 @@ impl Train {
         }
     }
 
-    /// After a restart: a Change the train was merging is finished if GitHub merged it, else put back first in line.
+    /// After a restart: a Change the train was merging is finished if GitHub merged it, else put back in its place in
+    /// line.
     async fn recover(&self, repo: &str) {
         for change in self.records.in_train(repo, HEAD_STATES) {
             let pull = self.github.pull(repo, change.pr_number.get()).await;

@@ -14,6 +14,8 @@ const BATCH_MAX: usize = 8;
 const HELD: &str = "held: the PR has the `hold` label; the train takes it once the label is gone";
 pub(super) const NO_CI: &str = "held: this repo has no CI, and fleetd merges only on green CI. Add a GitHub Actions \
      workflow that runs on pull requests; it goes on by itself once one exists.";
+/// Why a batch's members went back to ready when one of them was no longer where the batch left it.
+const MEMBER_LEFT: &str = "a PR left the batch while it formed; the next pass forms it again";
 /// The last error of a merged member whose PR the train could not close; the next pass's reconcile closes it.
 const NOT_CLOSED: &str = "landed, but its PR is not closed yet";
 
@@ -227,15 +229,13 @@ impl Train {
         }
     }
 
-    /// Back to ready in place (their queue order never changed), with `why` as their last error when given.
-    fn release(&self, members: &[Candidate], why: Option<&str>) {
+    /// Back to ready in place (their queue order never changed), with `why` as their last error.
+    fn release(&self, members: &[Candidate], why: &str) {
         let from = [ChangeState::Rebasing, ChangeState::Ci, ChangeState::Merging];
         for m in members {
             self.update(&m.change.change_id, Some(&from), |mut c| {
                 c.state = ChangeState::Ready;
-                if let Some(why) = why {
-                    c.last_error = Some(error_text(why));
-                }
+                c.last_error = Some(error_text(why));
                 c
             });
         }
@@ -258,9 +258,10 @@ impl Train {
             .collect()
     }
 
-    /// Each member alone, in order, released to ready first.
-    async fn alone(&self, members: &[Candidate]) {
-        self.release(members, None);
+    /// Each member alone, in order, released to ready first with `why`. One handed back to ready stops the rest: it is
+    /// still first in line, and the next pass takes it before them.
+    async fn alone(&self, members: &[Candidate], why: &str) {
+        self.release(members, why);
         for m in members {
             let ready = self
                 .records
@@ -268,6 +269,13 @@ impl Train {
                 .filter(|c| c.state == ChangeState::Ready);
             if let Some(ready) = ready {
                 self.take(&ready).await;
+                if self
+                    .records
+                    .get(&m.change.change_id)
+                    .is_some_and(|c| c.state == ChangeState::Ready)
+                {
+                    return;
+                }
             }
         }
     }
@@ -299,7 +307,10 @@ impl Train {
                     let why = format!("conflicts with {base} and the PRs ahead of it in the train");
                     self.needs_rebase(&m.change, &why).await;
                 }
-                BranchMerge::Nothing => self.release(std::slice::from_ref(m), None),
+                BranchMerge::Nothing => self.release(
+                    std::slice::from_ref(m),
+                    &format!("left out of the batch: {base} already has its head"),
+                ),
             }
         }
         Ok((head, kept))
@@ -308,17 +319,22 @@ impl Train {
     async fn take_batch(&self, repo: &str, base: &str, members: Vec<Candidate>) {
         let building = self.advance(&members, ChangeState::Ready, ChangeState::Rebasing);
         if building.len() != members.len() {
-            return self.release(&building, None);
+            return self.release(&building, MEMBER_LEFT);
         }
         let Some(branch) = self.scratch_branch(&building[0].change, "batch").await else {
-            return self.release(&building, None);
+            return self.release(&building, "the batch's branch name could not be read");
         };
         let (sha, kept) = match self.build_batch(repo, base, &branch, &building).await {
             Ok(built) => built,
-            Err(e) => return self.release(&building, Some(&format!("GitHub: {}", e.message))),
+            Err(e) => return self.release(&building, &format!("GitHub: {}", e.message)),
         };
         if kept.len() < 2 {
-            return self.alone(&kept).await;
+            return self
+                .alone(
+                    &kept,
+                    "the batch's other PRs conflict or are already in its base",
+                )
+                .await;
         }
         let title = batch_title(&kept);
         let pr = match self
@@ -327,11 +343,11 @@ impl Train {
             .await
         {
             Ok(pr) => pr,
-            Err(e) => return self.release(&kept, Some(&format!("GitHub: {}", e.message))),
+            Err(e) => return self.release(&kept, &format!("GitHub: {}", e.message)),
         };
         let in_ci = self.advance(&kept, ChangeState::Rebasing, ChangeState::Ci);
         if in_ci.len() != kept.len() {
-            return self.release(&kept, None);
+            return self.release(&kept, MEMBER_LEFT);
         }
         let numbers: Vec<i64> = in_ci.iter().map(|m| m.change.pr_number.get()).collect();
         tracing::info!(repo, pr, sha, ?numbers, "train: batch in CI");
@@ -339,12 +355,15 @@ impl Train {
             in_ci[0].change.change_id.clone(),
             (sha.clone(), self.now_ms()),
         );
-        if !matches!(
-            self.wait_ci(&in_ci[0].change, repo, &sha).await,
-            CiOutcome::Green
-        ) {
+        let red = match self.wait_ci(&in_ci[0].change, repo, &sha).await {
+            CiOutcome::Green => None,
+            CiOutcome::Red(_) => Some("red"),
+            CiOutcome::Timeout => Some("timed out"),
+        };
+        if let Some(red) = red {
             tracing::info!(repo, pr, sha, "train: batch red, each member goes alone");
-            return self.alone(&in_ci).await;
+            let why = format!("batch #{pr}'s CI {red}; each of its PRs goes alone");
+            return self.alone(&in_ci, &why).await;
         }
 
         // A member pushed to, held or closed while CI ran is not what was tested: the batch goes, and the next pass
@@ -356,13 +375,19 @@ impl Train {
                         && !p.merged
                         && !p.held()
                         && p.head.sha.to_lowercase() == m.change.head_sha.as_str() => {}
-                Ok(_) => return self.release(&in_ci, None),
-                Err(e) => return self.release(&in_ci, Some(&format!("GitHub: {}", e.message))),
+                Ok(_) => {
+                    let why = format!(
+                        "#{} was pushed to, held or closed while batch #{pr} was in CI",
+                        m.change.pr_number
+                    );
+                    return self.release(&in_ci, &why);
+                }
+                Err(e) => return self.release(&in_ci, &format!("GitHub: {}", e.message)),
             }
         }
         let merging = self.advance(&in_ci, ChangeState::Ci, ChangeState::Merging);
         if merging.len() != in_ci.len() {
-            return self.release(&in_ci, None);
+            return self.release(&in_ci, MEMBER_LEFT);
         }
         let description = format!("batch of {}: merged onto {base}, CI green", merging.len());
         if let Err(e) = self
@@ -370,7 +395,7 @@ impl Train {
             .post_train_status(repo, &sha, &description)
             .await
         {
-            return self.release(&merging, Some(&format!("GitHub: {}", e.message)));
+            return self.release(&merging, &format!("GitHub: {}", e.message));
         }
         let commit_title = format!("{title} (#{pr})");
         let commit_body = member_lines(&merging);
@@ -397,10 +422,13 @@ impl Train {
                     message,
                     "train: batch refused, each member goes alone"
                 );
-                self.alone(&merging).await;
+                let why = format!(
+                    "GitHub refused batch #{pr} (HTTP {status}): {message}; each of its PRs goes alone"
+                );
+                self.alone(&merging, &why).await;
             }
             // GitHub may have merged it all the same: the next pass's reconcile finishes the members if it did.
-            Err(e) => self.release(&merging, Some(&format!("GitHub: {}", e.message))),
+            Err(e) => self.release(&merging, &format!("GitHub: {}", e.message)),
         }
     }
 

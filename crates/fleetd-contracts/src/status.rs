@@ -189,6 +189,8 @@ pub struct ChangeStateData {
     pub pr_number: Count,
     pub from: ChangeState,
     pub to: ChangeState,
+    /// Why it moved, when the train says: always set when a pass hands it back to `ready` (a bounce).
+    pub reason: Option<Text<0, 2000>>,
 }
 
 /// `ci.main`: main-branch CI of a train repo changed state.

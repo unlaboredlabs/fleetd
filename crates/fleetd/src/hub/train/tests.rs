@@ -133,6 +133,10 @@ struct FakeGh {
     fail_close: Mutex<Vec<i64>>,
     /// The next merge goes through, but the answer is an error.
     merge_then_fail: Mutex<bool>,
+    /// How many reads of a PR `update-branch` just rebased still show its old head, as GitHub's can for a moment.
+    stale_reads: Mutex<u32>,
+    /// A rebased PR's old head and the reads left that show it.
+    stale: Mutex<HashMap<i64, (String, u32)>>,
 }
 
 fn ok(body: Value) -> GhOut {
@@ -271,7 +275,11 @@ impl FakeGh {
         };
         let (head, onto) = (self.head_of(&branch).unwrap(), self.head_of(&base).unwrap());
         if git_out(&self.origin, &["merge-base", "--is-ancestor", &onto, &head]).is_some() {
-            return ok(Value::Null);
+            return GhOut {
+                exit_code: 0,
+                stdout: "✓ PR branch already up-to-date\n".into(),
+                stderr: String::new(),
+            };
         }
         let Some(rebased) = self.merged(&onto, &head, &[&onto], &format!("change {branch}")) else {
             return GhOut {
@@ -284,7 +292,15 @@ impl FakeGh {
             &self.origin,
             &["update-ref", &format!("refs/heads/{branch}"), &rebased],
         );
-        ok(Value::Null)
+        let lag = *self.stale_reads.lock().unwrap();
+        if lag > 0 {
+            self.stale.lock().unwrap().insert(n, (head, lag));
+        }
+        GhOut {
+            exit_code: 0,
+            stdout: "✓ PR branch updated\n".into(),
+            stderr: String::new(),
+        }
     }
 
     fn answer(&self, args: &[String]) -> GhOut {
@@ -477,7 +493,16 @@ impl FakeGh {
                 }
             }
             (["pulls", n], "GET") => match self.pulls.lock().unwrap().get(&number(Some(n))) {
-                Some(p) => ok(self.pull_json(number(Some(n)), p)),
+                Some(p) => {
+                    let mut pull = self.pull_json(number(Some(n)), p);
+                    if let Some((old, left)) = self.stale.lock().unwrap().get_mut(&number(Some(n)))
+                        && *left > 0
+                    {
+                        *left -= 1;
+                        pull["head"]["sha"] = json!(old);
+                    }
+                    ok(pull)
+                }
                 None => http_error(404, "Not Found"),
             },
             (["pulls", n, "merge"], "PUT") => {
@@ -868,6 +893,8 @@ impl Kit {
             push_on_merge: Mutex::default(),
             fail_close: Mutex::default(),
             merge_then_fail: Mutex::default(),
+            stale_reads: Mutex::default(),
+            stale: Mutex::default(),
         });
         let host = Arc::new(FakeHost {
             tasks: Mutex::default(),
@@ -1721,6 +1748,119 @@ async fn a_red_batch_sends_each_member_through_alone() {
         kit.host.events_of("change.ci_failed").len(),
         1,
         "nobody is blamed for the red batch itself"
+    );
+}
+
+/// a, b and c, green alone but red together (pair-a, pair-b): their batch is red, so each goes alone, and GitHub refuses
+/// a's merge once.
+async fn red_batch_then_a_refused(kit: &Kit) -> [Change; 3] {
+    let a = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+        .await;
+    let b = kit
+        .enqueue(kit.open_pr(8, "b", &[add("pair-a", "a\n")]))
+        .await;
+    let c = kit
+        .enqueue(kit.open_pr(9, "c", &[add("pair-b", "b\n")]))
+        .await;
+    kit.gh
+        .merge_replies
+        .lock()
+        .unwrap()
+        .push(http_error(405, "Pull Request is not mergeable"));
+    assert!(kit.train.step(REPO).await);
+    [a, b, c]
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_merge_github_refuses_keeps_the_pr_first_in_line_and_says_why() {
+    let kit = Kit::new();
+    let [a, b, c] = red_batch_then_a_refused(&kit).await;
+
+    let why = "GitHub refused the merge (HTTP 405): Pull Request is not mergeable";
+    let back = kit.get(&a.change_id);
+    assert_eq!(
+        (
+            back.state,
+            back.position.map(|p| p.get()),
+            back.last_error.as_deref()
+        ),
+        (ChangeState::Ready, Some(0), Some(why))
+    );
+    let moves = kit.host.events_of("change.state");
+    let of = |change: &Change, from: &str| {
+        moves
+            .iter()
+            .find(|e| e["changeId"] == json!(change.change_id) && e["from"] == from)
+            .unwrap_or_else(|| panic!("no {from} move of {}: {moves:?}", change.change_id))
+    };
+    let bounce = of(&a, "merging");
+    assert_eq!(
+        (&bounce["to"], &bounce["reason"]),
+        (&json!("ready"), &json!(why))
+    );
+    // Nothing behind it went first: they wait, in order, with the red batch as their reason.
+    assert!(merged_prs(&kit).is_empty());
+    assert_eq!(
+        kit.train.state(REPO).queue.into_inner(),
+        [
+            a.change_id.clone(),
+            b.change_id.clone(),
+            c.change_id.clone()
+        ]
+    );
+    for change in [&b, &c] {
+        let left = of(change, "ci");
+        assert_eq!(left["to"], json!("ready"));
+        let reason = left["reason"].as_str().unwrap();
+        assert!(reason.contains("CI red"), "{reason}");
+        assert_eq!(state_of(&kit, change), ChangeState::Ready);
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn ready_prs_merge_in_queue_order_after_a_bounce() {
+    let kit = Kit::new();
+    let [a, b, c] = red_batch_then_a_refused(&kit).await;
+
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(merged_prs(&kit), [7, 8], "a first, then b");
+    assert_eq!(state_of(&kit, &a), ChangeState::Merged);
+    assert_eq!(state_of(&kit, &b), ChangeState::Merged);
+    // Alone on the new main, it is red.
+    assert_eq!(state_of(&kit, &c), ChangeState::CiFailed);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn waits_for_github_to_show_the_rebased_head_and_merges_that_head() {
+    let kit = Kit::with(FakeCi::Actions, |o| {
+        o.poll_interval = Duration::from_millis(10)
+    });
+    let a = kit
+        .enqueue(kit.open_pr(7, "a", &[add("b.txt", "b\n")]))
+        .await;
+    kit.commit("main", &[add("other.txt", "other\n")], None);
+    let old = kit.head_of("a");
+    *kit.gh.stale_reads.lock().unwrap() = 2;
+
+    assert!(kit.train.step(REPO).await);
+    let rebased = kit.head_of("a");
+    assert_ne!(rebased, old);
+    assert_eq!(state_of(&kit, &a), ChangeState::Merged);
+    assert_eq!(*kit.gh.merges.lock().unwrap(), [(7, rebased.clone())]);
+    let train_statuses: Vec<String> = kit
+        .gh
+        .statuses
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(_, ctx, _)| ctx == TRAIN_CONTEXT)
+        .map(|(sha, ..)| sha.clone())
+        .collect();
+    assert_eq!(
+        train_statuses,
+        [rebased],
+        "fleetd/train only on the rebased head"
     );
 }
 
