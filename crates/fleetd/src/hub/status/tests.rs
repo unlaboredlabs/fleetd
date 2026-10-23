@@ -1098,13 +1098,11 @@ async fn an_update_releases_a_figure_the_old_rule_left_stuck() {
         45,
         "held: nothing since that point explains a fall"
     );
-    let version = db.user_version().unwrap();
-    db.with(|c| {
-        c.pragma_update(None, "user_version", version - 1)?;
-        Ok(())
-    })
-    .unwrap();
-    let updated = HubDb::open(home.path()).unwrap();
-    assert_eq!(updated.user_version().unwrap(), version);
+    // Found by content, not as the last migration, so a later migration doesn't break this test.
+    let update = crate::hub::store::MIGRATIONS
+        .iter()
+        .find(|m| m.contains("DELETE FROM status_series"))
+        .expect("the series restart");
+    db.with(|c| Ok(c.execute_batch(update)?)).unwrap();
     assert_eq!(estimate_after(&hub, &clock, 1).0, 14);
 }
