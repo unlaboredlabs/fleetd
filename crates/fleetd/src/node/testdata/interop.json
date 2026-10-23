@@ -2,9 +2,5 @@
   "boxKeyPem": "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VuBCIEIIDXKamMMtbPCwKnxJ0/hZ0Q8/Hrbw2niZeCugMnlIhh\n-----END PRIVATE KEY-----\n",
   "boxPubKey": "M42kv2b+sf2LEsH+jqb0tkIekEvQajFZWTr1hqHYoRU=",
   "value": "fake-secret-abcDEF-secretValue",
-  "sealed": "D73zAXcjRP3MIi+qtkczugficYMM+tugGzljdFy48GN5o76MyPtKB5qMSAZIJ5fHwJDVfQyHXu0sLHdBepXfYOs22hQtVdcrLJIEoGWR",
-  "identityPem": "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIPiFNQn9WcgRsyuk1OlYzzPamk6mA1KxHMWwTMUdvfZ7\n-----END PRIVATE KEY-----\n",
-  "pubKey": "kCXAPsP5lVNvTJDPrBBSl32RIFFtoIprVHfRumvKf0c=",
-  "nonce": "nonce-1",
-  "sig": "2IsfYBJQz0+6e5InPBdXCWRQBOO3OVJ5/Zotjq2X+NGJiaTHu0Ur0zNZOnA/F3G9/vBQN6SW4Kr3OolLjZLtDg=="
+  "sealed": "D73zAXcjRP3MIi+qtkczugficYMM+tugGzljdFy48GN5o76MyPtKB5qMSAZIJ5fHwJDVfQyHXu0sLHdBepXfYOs22hQtVdcrLJIEoGWR"
 }
