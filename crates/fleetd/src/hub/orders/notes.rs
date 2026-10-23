@@ -100,20 +100,21 @@ fn serde_plain<T: serde::Serialize>(v: &T) -> String {
         .unwrap_or_default()
 }
 
-/// Stops one order and returns how many of its agents it cancelled. Its one caller is the stop behind `chat_stop` and
+/// Stops one order and returns how many of its agents it cancelled and the PRs it took off the train (left open on
+/// GitHub). Its one caller is the stop behind `chat_stop` and
 /// `project_stop`, which take only a person's device (a human key).
 pub async fn stop(
     hub: &Hub,
     caller: &Caller,
     workstream_id: &str,
     reason: Option<&str>,
-) -> Result<i64, ToolError> {
+) -> Result<(i64, Vec<i64>), ToolError> {
     let mut stored = readable_order(hub, caller, workstream_id)?;
     let r = stored.project_ref.clone();
     require(caller, Role::Operate, Some(&r.machine_id))?;
     let id = stored.workstream_id.clone();
     match stored.state {
-        WorkstreamState::Stopped => return Ok(0),
+        WorkstreamState::Stopped => return Ok((0, Vec::new())),
         WorkstreamState::Done => {
             return Err(ToolError::new(
                 ErrorCode::Invalid,
@@ -131,11 +132,13 @@ pub async fn stop(
         project_ref: r.clone(),
         by: by.clone(),
     };
-    // Its PRs not already on their way in leave the train and close on GitHub, so none waits in review for a
-    // reviewer the stop cancels.
-    hub.train
-        .close_leftovers(&r, &id, &format!("{id} was stopped: {why}"))
-        .await;
+    // Its PRs not already on their way in leave the train, so none merges or waits for a reviewer the stop cancels.
+    let off_train = hub
+        .train
+        .take_leftovers(&r, &id, &format!("{id} was stopped: {why}"))
+        .iter()
+        .map(|c| c.pr_number.get())
+        .collect();
     let mut cancelled = 0;
     for task in super::order_tasks(hub, &id) {
         if !matches!(
@@ -193,7 +196,7 @@ pub async fn stop(
             .render(),
         },
     );
-    Ok(cancelled)
+    Ok((cancelled, off_train))
 }
 
 #[cfg(test)]

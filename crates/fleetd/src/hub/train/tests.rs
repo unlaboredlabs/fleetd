@@ -2471,7 +2471,7 @@ async fn racing_enqueues_of_one_pr_make_one_change_and_one_review_round() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_stopped_order_closes_its_leftover_prs() {
+async fn a_stopped_order_takes_its_prs_off_the_train_and_leaves_them_open() {
     let kit = Kit::new();
     // Both wait for reviews, so both are leftovers when the order is stopped.
     let first = kit
@@ -2481,19 +2481,20 @@ async fn a_stopped_order_closes_its_leftover_prs() {
         .enqueue_held(kit.open_pr(8, "fix", &[add("f.txt", "f\n")]))
         .await;
 
-    let closed = kit
+    let taken = kit
         .train
-        .close_leftovers(&project(), &ws(), "W1 was stopped")
-        .await;
-    let mut numbers: Vec<_> = closed.iter().map(|c| c.pr_number.get()).collect();
+        .take_leftovers(&project(), &ws(), "W1 was stopped");
+    let mut numbers: Vec<_> = taken.iter().map(|c| c.pr_number.get()).collect();
     numbers.sort();
     assert_eq!(numbers, [7, 8]);
     for change in [&first, &second] {
         assert_eq!(kit.get(&change.change_id).state, ChangeState::Abandoned);
     }
+    let log = kit.gh.log.lock().unwrap();
+    assert!(!log.iter().any(|l| l.starts_with("close")), "{log:?}");
     let pulls = kit.gh.pulls.lock().unwrap();
     assert_eq!(
         (pulls[&7].state.as_str(), pulls[&8].state.as_str()),
-        ("closed", "closed")
+        ("open", "open")
     );
 }
