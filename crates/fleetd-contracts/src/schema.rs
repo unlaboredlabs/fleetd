@@ -26,7 +26,7 @@ use crate::tasks::{AgentsCapData, TaskEventData};
 use crate::tasks::{SlotState, Task};
 use crate::train::{Change, TrainState};
 use crate::usage::UsageEventData;
-use crate::verification::{Claim, Incident};
+use crate::verification::Claim;
 
 pub const META_SCHEMA: &str = "https://json-schema.org/draft/2020-12/schema";
 
@@ -237,7 +237,6 @@ fn json_schemas_for(side: Side) -> BTreeMap<&'static str, Value> {
         Task,
         SlotState,
         Claim,
-        Incident,
         Change,
         TrainState,
         ChatMessage,

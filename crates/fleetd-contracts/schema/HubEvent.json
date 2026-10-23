@@ -177,11 +177,6 @@
           "type": "string"
         },
         {
-          "const": "incident.recorded",
-          "description": "`data.incidentId`, `data.class`.",
-          "type": "string"
-        },
-        {
           "const": "change.queued",
           "description": "`data.changeId`, `data.repo`, `data.prNumber`.",
           "type": "string"

@@ -1,5 +1,5 @@
-//! What the train and the review gate take from other hub areas: tasks, workstreams, decisions, incidents, the event
-//! log, wakes and node commands. One port, so the logic tests run on a fake
+//! What the train and the review gate take from other hub areas: tasks, workstreams, decisions, the event log, wakes
+//! and node commands. One port, so the logic tests run on a fake
 //! and the hub provides it from its services (`HubHost`).
 use std::future::Future;
 use std::pin::Pin;

@@ -1,4 +1,4 @@
-//! What the checks, receipts, review verdicts and incidents areas need from other hub areas, as one trait.
+//! What the checks, receipts and review verdicts areas need from other hub areas, as one trait.
 //! The hub's implementation (`HubPorts`, wired once those areas land) forwards to their services; tests use fakes.
 //! Keeping it to this one seam means the claim flow and review verdicts run their real logic under test.
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef};

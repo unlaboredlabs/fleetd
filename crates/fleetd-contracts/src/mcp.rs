@@ -38,7 +38,7 @@ use crate::time::{
 };
 use crate::train::{Change, ChangeState, GitHubPrUrl, GitHubRepo};
 use crate::usage::UsageStatus;
-use crate::verification::{Claim, ClaimOutcome, Incident, IncidentClass};
+use crate::verification::{Claim, ClaimOutcome};
 use crate::wakes::{Wake, WakeCatchUp, WakeMessage, WakeSchedule, WakeState, WakeTarget};
 use crate::{brand, checked};
 
@@ -672,27 +672,6 @@ output!(ClaimsListOutput {
     claims: List<Claim, 0, 100>,
 });
 
-// incidents_list
-input!(IncidentsListInput {
-    project_ref: Option<ProjectRef>,
-    workstream_id: Option<WorkstreamId>,
-    class: Option<IncidentClass>,
-    #[serde(default)]
-    limit: IntOr<1, 100, 20>,
-    /// M12: the span `counts` covers, ending now.
-    #[serde(default)]
-    window_days: IntOr<1, 30, 7>,
-});
-input!(IncidentCount { class: IncidentClass, count: Int<1, MAX_SAFE_INT> });
-output!(IncidentsListOutput {
-    /// Newest first.
-    incidents: List<Incident, 0, 100>,
-    /// M12: incidents per class since `counts_since`, under the same filters; classes with none are left out. Most
-    /// first.
-    counts: Vec<IncidentCount>,
-    counts_since: Timestamp,
-});
-
 // changes_list
 input!(ChangesListInput {
     project_ref: Option<ProjectRef>,
@@ -1289,7 +1268,6 @@ tools! {
     usage_status => UsageStatus, Read, UsageStatusInput, UsageStatusOutput;
     usage_resume => UsageResume, Operate, UsageResumeInput, UsageResumeOutput;
     claims_list => ClaimsList, Read, ClaimsListInput, ClaimsListOutput;
-    incidents_list => IncidentsList, Read, IncidentsListInput, IncidentsListOutput;
     changes_list => ChangesList, Read, ChangesListInput, ChangesListOutput;
     secret_submit => SecretSubmit, Operate, SecretSubmitInput, SecretSubmitOutput;
     // Human keys only (the handler checks).
@@ -1417,8 +1395,6 @@ mod tests {
         let wake: WakeSetInput = decode(wake).unwrap();
         assert!(wake.once);
         assert_eq!(wake.catch_up, WakeCatchUp::FireOnce);
-        let decoded = McpToolName::IncidentsList.decode_input(json!({})).unwrap();
-        assert_eq!(decoded, json!({ "limit": 20, "windowDays": 7 }));
     }
 
     #[test]

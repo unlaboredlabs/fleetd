@@ -122,7 +122,6 @@ pub struct Hub {
     pub sweep: Arc<crate::hub::sweep::Sweep>,
     pub queue: Arc<crate::hub::queue::WriteQueue>,
     pub wakes: Arc<crate::hub::wakes::Wakes>,
-    pub incidents: Arc<crate::hub::incidents::Incidents>,
     pub receipts: Arc<crate::hub::receipts::Receipts>,
     pub verdicts: Arc<crate::hub::reviews::verdicts::Verdicts>,
     pub checks: Arc<crate::hub::checks::CheckRunner>,

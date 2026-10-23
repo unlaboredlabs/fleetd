@@ -120,24 +120,3 @@ pub fn claim_held_line(
     }
     .render()
 }
-
-/// One evidence line per failed claim, for the false-claim incident.
-pub fn failed_claim_evidence(claim_id: &ClaimId, results: &[CheckResult]) -> String {
-    let parts: Vec<String> = results
-        .iter()
-        .filter(|r| r.result != CheckOutcome::Pass)
-        .map(|r| {
-            let exit = r
-                .exit_code
-                .map(|c| format!(" (exit {c})"))
-                .unwrap_or_default();
-            format!(
-                "done:{} {}{exit}: {}",
-                r.check_index.get(),
-                outcome_name(r.result),
-                one_line(&r.evidence, 200)
-            )
-        })
-        .collect();
-    utf16_prefix(&format!("{claim_id} failed: {}", parts.join("; ")), 2000).to_owned()
-}
