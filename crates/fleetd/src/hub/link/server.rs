@@ -83,7 +83,7 @@ impl NodeLinkServer {
         self.state.lock().unwrap().loads.get(machine_id).cloned()
     }
 
-    /// Why new agents wait on the machine, e.g. "Paused new agents: 14 GB free on forge"; None while they start.
+    /// Why new agents wait on the machine, e.g. "Paused new agents: 14 GB free on builder-1"; None while they start.
     pub fn paused(&self, machine_id: &MachineId) -> Option<String> {
         self.state.lock().unwrap().paused.get(machine_id).cloned()
     }
