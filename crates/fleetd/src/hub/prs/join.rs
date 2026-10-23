@@ -26,8 +26,6 @@ pub struct RowCtx<'a> {
     pub tasks_by_id: HashMap<&'a str, &'a Task>,
     /// Write tasks by their branch, for PRs opened from a task's branch before it was queued.
     pub tasks_by_branch: HashMap<&'a str, &'a Task>,
-    /// Agent reviews each Change needs, by change id.
-    pub reviews_needed: HashMap<String, i64>,
     /// Per repo (lowercase): how many PRs wait in its queue.
     pub queues: HashMap<String, usize>,
 }
@@ -219,7 +217,7 @@ pub fn agent_of(task: &Task, role: fleetd_contracts::live::AgentRole) -> PrAutho
 
 pub fn author(task: Option<&Task>, login: Option<&str>) -> PrAuthor {
     let mut out = match task {
-        Some(t) => agent_of(t, phase::role(t.kind, t.qa == Some(true), None)),
+        Some(t) => agent_of(t, phase::role(t.kind, t.qa == Some(true))),
         None => PrAuthor {
             lane_id: None,
             task_id: None,
@@ -302,10 +300,8 @@ pub fn row(
         .map(str::to_owned)
         .or_else(|| task.map(|t| t.title.to_string()))
         .unwrap_or_else(|| format!("PR #{number}"));
-    let needed = change
-        .and_then(|c| ctx.reviews_needed.get(c.change_id.as_str()))
-        .copied()
-        .unwrap_or(0);
+    // Every PR the train lands needs one clean review of its current patch.
+    let needed = i64::from(change.is_some());
     let length = ctx.queues.get(&repo.to_lowercase()).copied().unwrap_or(0);
     let stamp = |gh: Option<&str>, ours: Option<&Timestamp>| {
         gh.filter(|s| !s.is_empty())

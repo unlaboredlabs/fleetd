@@ -31,6 +31,18 @@ fn is_lockfile(path: &str) -> bool {
 }
 
 const HELD: &str = "held: the PR has the `hold` label; the train takes it once the label is gone";
+pub(super) const NO_CI: &str = "held: this repo has no CI, and fleetd merges only on green CI. Add a GitHub Actions \
+     workflow that runs on pull requests; it goes on by itself once one exists.";
+
+/// A clean review is bound to the Change's current patch: nothing else lets the train take it.
+fn reviewed(change: &Change) -> bool {
+    change.patch_id.as_ref().is_some_and(|patch| {
+        change
+            .reviews
+            .iter()
+            .any(|r| r.blocking.get() == 0 && &r.patch_id == patch)
+    })
+}
 
 /// The train's memory for batches. Lost on a restart, which only costs a rebuild.
 #[derive(Default)]
@@ -147,7 +159,8 @@ impl Train {
     }
 
     /// The ready Changes the train may take now, in order, with their PRs. A PR merged, closed or pushed to since is
-    /// settled here as the one-at-a-time path would; a held PR waits.
+    /// settled here as the one-at-a-time path would, and one with no clean review of its patch goes back to review.
+    /// A held PR and one into a base with no CI wait.
     async fn candidates(&self, repo: &str, ready: Vec<Change>) -> (Vec<Candidate>, bool) {
         let mut out = Vec::new();
         let mut settled = false;
@@ -184,14 +197,32 @@ impl Train {
                 settled = true;
                 continue;
             }
-            let held = pull.held();
-            if held != (change.last_error.as_deref() == Some(HELD)) {
+            if !reviewed(&change) {
+                if let Some(reviewing) =
+                    self.update(&change.change_id, Some(&[ChangeState::Ready]), |mut c| {
+                        c.state = ChangeState::Reviewing;
+                        c
+                    })
+                {
+                    self.to_gate(reviewing).await;
+                }
+                settled = true;
+                continue;
+            }
+            let hold = if pull.held() {
+                Some(HELD)
+            } else {
+                // A read that failed is not "no CI": the head's checks decide, as for any repo.
+                matches!(self.has_ci(repo, &pull.base.ref_).await, Ok(false)).then_some(NO_CI)
+            };
+            let shown = change.last_error.as_deref();
+            if hold != shown && (hold.is_some() || shown == Some(HELD) || shown == Some(NO_CI)) {
                 self.update(&change.change_id, Some(&[ChangeState::Ready]), |mut c| {
-                    c.last_error = held.then(|| error_text(HELD));
+                    c.last_error = hold.map(error_text);
                     c
                 });
             }
-            if held {
+            if hold.is_some() {
                 continue;
             }
             out.push(Candidate { change, pull });
@@ -207,18 +238,10 @@ impl Train {
                 .contains(&candidate.change.change_id)
     }
 
-    /// Green on its own head: every check done and none red, or no CI on the repo at all.
-    async fn own_ci_green(&self, repo: &str, base: &str, change: &Change) -> bool {
-        let sha = change.head_sha.as_str();
-        match self.github.check_runs(repo, sha).await {
-            Ok(runs) => match checks(&runs) {
-                Checks::Green => true,
-                Checks::None => matches!(
-                    self.has_ci(repo, base, change.branch.as_str(), sha).await,
-                    Ok(false)
-                ),
-                Checks::Pending | Checks::Red(_) => false,
-            },
+    /// Green on its own head: every check done and none red.
+    async fn own_ci_green(&self, repo: &str, change: &Change) -> bool {
+        match self.github.check_runs(repo, change.head_sha.as_str()).await {
+            Ok(runs) => matches!(checks(&runs), Checks::Green),
             Err(_) => false,
         }
     }
@@ -236,7 +259,7 @@ impl Train {
             return None;
         }
         let head = &candidates[0];
-        if !self.batchable(base, head) || !self.own_ci_green(repo, base, &head.change).await {
+        if !self.batchable(base, head) || !self.own_ci_green(repo, &head.change).await {
             return None;
         }
         let (git, git_lock) = self.git_for(&head.change).ok()?;
@@ -257,7 +280,7 @@ impl Train {
                 continue;
             };
             let paths = files(paths);
-            if !paths.is_disjoint(&taken) || !self.own_ci_green(repo, base, &c.change).await {
+            if !paths.is_disjoint(&taken) || !self.own_ci_green(repo, &c.change).await {
                 continue;
             }
             taken.extend(paths);
@@ -454,12 +477,8 @@ impl Train {
             in_ci[0].change.change_id.clone(),
             (sha.clone(), self.now_ms()),
         );
-        let ci_note = match self
-            .wait_ci(&in_ci[0].change, repo, base, &branch, &sha)
-            .await
-        {
-            CiOutcome::Green => None,
-            CiOutcome::NoCi(note) => Some(note),
+        match self.wait_ci(&in_ci[0].change, repo, &sha).await {
+            CiOutcome::Green => {}
             CiOutcome::Red(_) => {
                 // Bisect: the last one in goes alone next; the rest try again without it.
                 let last = in_ci[in_ci.len() - 1].change.change_id.clone();
@@ -468,7 +487,7 @@ impl Train {
                 self.release(&in_ci, None);
                 return Round::Again(in_ci[..in_ci.len() - 1].to_vec());
             }
-            CiOutcome::Timeout(_) => {
+            CiOutcome::Timeout => {
                 // A timeout blames no member, and halving would wait it out again per round: each goes alone.
                 tracing::info!(
                     repo,
@@ -515,11 +534,7 @@ impl Train {
             self.release(&still, None);
             return Round::Again(merging);
         }
-        let description = format!(
-            "batch of {}: rebased onto {base}, {}",
-            merging.len(),
-            ci_note.as_deref().unwrap_or("CI green")
-        );
+        let description = format!("batch of {}: rebased onto {base}, CI green", merging.len());
         if let Err(e) = self
             .github
             .post_train_status(repo, &sha, &description)
@@ -542,8 +557,7 @@ impl Train {
                     members: numbers,
                 };
                 for m in &merging {
-                    self.finish_batch_member(&m.change, &landed, ci_note.as_deref())
-                        .await;
+                    self.finish_batch_member(&m.change, &landed).await;
                 }
                 *open_pr = None;
                 if let Err(e) = self.github.delete_branch(repo, &branch).await {
@@ -569,12 +583,7 @@ impl Train {
     /// Merged in `landed`: recorded as merged with the batch's squash, and its own PR closed with a link to it.
     /// Its PR is read first: one pushed to since its head was batched did not land as it is now, so it goes back to
     /// ready for its new head instead (read again later when GitHub can't be read now).
-    pub(super) async fn finish_batch_member(
-        &self,
-        change: &Change,
-        landed: &Landed,
-        ci_note: Option<&str>,
-    ) {
+    pub(super) async fn finish_batch_member(&self, change: &Change, landed: &Landed) {
         let pull = match self.github.pull(&change.repo, change.pr_number.get()).await {
             Ok(pull) => pull,
             Err(e) => {
@@ -601,7 +610,7 @@ impl Train {
             });
             return;
         }
-        self.finish_merged(change, Some(&landed.merged_sha), ci_note, Some(landed))
+        self.finish_merged(change, Some(&landed.merged_sha), Some(landed))
             .await;
         if pull.state == "open" {
             self.close_member(change, landed).await;
@@ -683,9 +692,7 @@ impl Train {
                     ChangeState::Ready
                     | ChangeState::Rebasing
                     | ChangeState::Ci
-                    | ChangeState::Merging => {
-                        self.finish_batch_member(&change, &landed, None).await
-                    }
+                    | ChangeState::Merging => self.finish_batch_member(&change, &landed).await,
                     _ => {}
                 }
             }

@@ -1,4 +1,4 @@
-//! Review tiers and the train's review gate.
+//! The train's review gate: one fresh review per patch.
 pub mod patch_ids;
 pub mod rules;
 pub mod service;

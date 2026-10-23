@@ -829,9 +829,6 @@
           "maxItems": 20,
           "type": "array"
         },
-        "tier": {
-          "$ref": "#/$defs/Tier"
-        },
         "why": {
           "maxLength": 2000,
           "minLength": 1,
@@ -843,8 +840,7 @@
         "why",
         "pointers",
         "constraints",
-        "doneWhen",
-        "tier"
+        "doneWhen"
       ],
       "type": "object"
     },
@@ -856,11 +852,20 @@
           "type": "number"
         },
         "size": {
-          "$ref": "#/$defs/Tier",
+          "$ref": "#/$defs/BudgetSize",
           "description": "How big a research spend the lead allows, relative like plan sizes; never a time guess."
         }
       },
       "type": "object"
+    },
+    "BudgetSize": {
+      "description": "How big a research spend is, relative like plan sizes.",
+      "enum": [
+        "S",
+        "M",
+        "L"
+      ],
+      "type": "string"
     },
     "CapSetInput": {
       "properties": {
@@ -1074,10 +1079,6 @@
           "$ref": "#/$defs/TaskId",
           "description": "The write task that opened it; absent when the lead enqueued a PR no task wrote."
         },
-        "tier": {
-          "$ref": "#/$defs/Tier",
-          "description": "From the workstream's brief; may be raised, never lowered."
-        },
         "updatedAt": {
           "$ref": "#/$defs/Timestamp"
         },
@@ -1093,7 +1094,6 @@
         "prUrl",
         "branch",
         "workstreamId",
-        "tier",
         "headSha",
         "state",
         "reviews",
@@ -3761,7 +3761,7 @@
         },
         {
           "const": "change.ready",
-          "description": "Its tier's reviews are satisfied for the current patch id. `data.changeId`.",
+          "description": "A clean review is bound to its current patch id. `data.changeId`.",
           "type": "string"
         },
         {
@@ -6056,7 +6056,7 @@
         },
         {
           "const": "reviewing",
-          "description": "A Change reviewing, or a reviewer, verifier or qa lane working.",
+          "description": "A Change reviewing, or a reviewer or qa lane working.",
           "type": "string"
         },
         {
@@ -7244,7 +7244,7 @@
           "type": "integer"
         },
         "reviewsNeeded": {
-          "description": "What the tier asks for.",
+          "description": "One for every PR the train lands.",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
@@ -7276,7 +7276,7 @@
       "properties": {
         "agent": {
           "$ref": "#/$defs/PrAuthor",
-          "description": "The reviewing agent (reviewer, verifier or QA); absent for a person's review."
+          "description": "The reviewing agent (reviewer or QA); absent for a person's review."
         },
         "at": {
           "$ref": "#/$defs/Timestamp"
@@ -7824,7 +7824,7 @@
           "type": "string"
         },
         "leadNeeds": {
-          "description": "One line for a person, e.g. \"no CI found: the merge train will only use local checks\".",
+          "description": "One line for a person, e.g. \"no CI found: the merge train holds its PRs until the repo has CI\".",
           "maxLength": 300,
           "minLength": 1,
           "type": "string"
@@ -7884,7 +7884,7 @@
           "type": "string"
         },
         "leadNeeds": {
-          "description": "One line for a person, e.g. \"no CI found: the merge train will only use local checks\".",
+          "description": "One line for a person, e.g. \"no CI found: the merge train holds its PRs until the repo has CI\".",
           "maxLength": 300,
           "minLength": 1,
           "type": "string"
@@ -8984,7 +8984,7 @@
           "type": "integer"
         },
         "needed": {
-          "description": "Agent reviews it needs before it can merge; 0 for a PR fleetd doesn't land.",
+          "description": "Agent reviews it needs before it can merge: 1 for a PR fleetd lands, else 0.",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
@@ -10125,10 +10125,6 @@
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
-        },
-        "virtualTier": {
-          "$ref": "#/$defs/Tier",
-          "description": "The order's tier when the scope is an order with no plan items."
         }
       },
       "required": [
@@ -10717,7 +10713,7 @@
           "type": "object"
         }
       ],
-      "description": "Who a steer is for: an order's lead, or one task (writer, reviewer, verifier, …)."
+      "description": "Who a steer is for: an order's lead, or one task (writer, reviewer, …)."
     },
     "SteerWithdrawInput": {
       "properties": {
@@ -11017,9 +11013,6 @@
         },
         "threadRef": {
           "$ref": "#/$defs/ThreadRef"
-        },
-        "tier": {
-          "$ref": "#/$defs/Tier"
         },
         "title": {
           "maxLength": 80,
@@ -11486,14 +11479,6 @@
         "items"
       ],
       "type": "object"
-    },
-    "Tier": {
-      "enum": [
-        "S",
-        "M",
-        "L"
-      ],
-      "type": "string"
     },
     "TimeBreakdownInput": {
       "properties": {

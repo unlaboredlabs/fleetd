@@ -592,7 +592,7 @@
         },
         {
           "const": "change.ready",
-          "description": "Its tier's reviews are satisfied for the current patch id. `data.changeId`.",
+          "description": "A clean review is bound to its current patch id. `data.changeId`.",
           "type": "string"
         },
         {

@@ -564,3 +564,43 @@ fn tasks_and_changes_from_an_older_hub_drop_what_they_served() {
         )
     );
 }
+
+/// A hub from before every PR got one review: the waivers table goes, and stored briefs, tasks and changes lose their
+/// tier.
+#[test]
+fn tiers_and_review_waivers_go_on_an_older_hub() {
+    use super::migrations::MIGRATIONS;
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    // Found by content, not as the last migration, so later migrations don't break this test.
+    let gone = MIGRATIONS
+        .iter()
+        .position(|m| m.contains("DROP TABLE IF EXISTS review_waivers"))
+        .expect("the one-review migration");
+    for m in &MIGRATIONS[..gone] {
+        conn.execute_batch(m).unwrap();
+    }
+    conn.execute_batch(
+        r#"INSERT INTO review_waivers (change_id, patch_id, reason) VALUES ('X1', 'p', 'polish loop');
+        INSERT INTO workstreams (n, machine_id, project_id, state, data)
+          VALUES (1, 'lab-a', 'p1', 'running', '{"workstreamId":"W1","brief":{"goal":"g","tier":"S"}}');
+        INSERT INTO tasks (n, machine_id, project_id, workstream_id, state, data)
+          VALUES (1, 'lab-a', 'p1', 'W1', 'done', '{"taskId":"T1","tier":"L"}');
+        INSERT INTO changes (repo, pr_number, state, machine_id, project_id, train_order, data)
+          VALUES ('acme/app', 7, 'ready', 'lab-a', 'p1', 1, '{"changeId":"X1","tier":"S"}');"#,
+    )
+    .unwrap();
+    for m in &MIGRATIONS[gone..] {
+        conn.execute_batch(m).unwrap();
+    }
+    let one = |sql: &str| -> String { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
+    assert_eq!(
+        one("SELECT count(*) || '' FROM sqlite_master WHERE name = 'review_waivers'"),
+        "0"
+    );
+    assert_eq!(
+        one("SELECT data FROM workstreams"),
+        r#"{"workstreamId":"W1","brief":{"goal":"g"}}"#
+    );
+    assert_eq!(one("SELECT data FROM tasks"), r#"{"taskId":"T1"}"#);
+    assert_eq!(one("SELECT data FROM changes"), r#"{"changeId":"X1"}"#);
+}

@@ -1016,7 +1016,6 @@ impl Tasks {
             kind: input.kind,
             prompt: input.prompt.clone(),
             profile,
-            tier: input.tier,
             qa: input.qa,
             pr: input.pr.clone(),
             item_id: input.item.clone(),

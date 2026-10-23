@@ -169,7 +169,7 @@ pub struct ProjectInspect {
     pub default_branch: Option<String>,
     pub ci: CiInfo,
     pub merge: MergeRules,
-    /// One line for a person, e.g. "no CI found: the merge train will only use local checks".
+    /// One line for a person, e.g. "no CI found: the merge train holds its PRs until the repo has CI".
     pub lead_needs: Text<1, 300>,
     /// What could not be read, e.g. "branch rules need admin access on acme/storefront".
     pub notes: Vec<String>,

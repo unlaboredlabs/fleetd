@@ -239,27 +239,8 @@ pub const ENTRIES: &[Entry] = &[
         ReviewsAndChecks,
         Task,
         "Reviewer",
-        "per PR head per review round, by the tier's rules; Claude or Codex",
-        "prUrl!=the PR; repo=owner/name; prNumber!=its number; tier=S, M or L; headSha!=the head reviewed",
-        &[
-            (
-                "independent-review",
-                "does not read the PR description or comments",
-                r"do not read the PR description",
-                Prompt
-            ),
-            READ_ONLY,
-            VERDICT,
-        ]
-    ),
-    entry!(
-        "review.verifier",
-        Start,
-        ReviewsAndChecks,
-        Task,
-        "Verifier",
-        "tier L, per PR head",
-        "prUrl!=the PR; repo=owner/name; prNumber!=its number; tier=S, M or L; headSha!=the head verified",
+        "once per PR patch, fresh, blocking findings only",
+        "prUrl!=the PR; repo=owner/name; prNumber!=its number; headSha!=the head reviewed",
         &[
             (
                 "independent-review",

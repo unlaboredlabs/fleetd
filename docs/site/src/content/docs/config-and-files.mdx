@@ -238,5 +238,4 @@ Each node holds timings it hasn't sent yet in `sessions.sqlite`. While the hub i
 |---|---|---|
 | `FLEETD_STATUS_GITHUB_STALE_SEC` | `180` | Seconds without a good GitHub answer before [Status](/docs/status#stale-data) marks a repo stale. |
 | `FLEETD_MAIN_CI_EVERY_SEC` | `60` | How often each merge train checks main's CI. |
-| `FLEETD_TRAIN_NO_CI_GRACE_SEC` | `90` | How long a commit may have no check before the train asks whether its PR has CI at all. |
 | `FLEETD_TRAIN_BATCH_MAX` | `4` | The most ready PRs the [merge train](/docs/merge-train#batches) merges in one CI run. `1` takes each alone. |

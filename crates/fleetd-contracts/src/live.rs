@@ -202,7 +202,7 @@ pub enum OrderPhase {
     Stopped,
     /// An implementer or reader lane starting or working.
     Working,
-    /// A Change reviewing, or a reviewer, verifier or qa lane working.
+    /// A Change reviewing, or a reviewer or qa lane working.
     Reviewing,
     /// A Change ready, rebasing, in CI or merging.
     Merging,
@@ -231,7 +231,7 @@ pub struct PrRef {
     pub position: Option<Count>,
     /// Clean reviews of the current patch.
     pub reviews_done: Count,
-    /// What the tier asks for.
+    /// One for every PR the train lands.
     pub reviews_needed: Count,
     /// The task that opened it (its writer), when the hub knows: the board groups the PR's checkers under it.
     pub task_id: Option<crate::tasks::TaskId>,

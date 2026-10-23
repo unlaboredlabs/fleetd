@@ -59,7 +59,7 @@ async fn pr_list(
     }
     let tasks = super::project_tasks(&hub, project);
     let mut ctx = RowCtx::with_tasks(&tasks);
-    super::fill_ctx(&hub, &mut ctx, &changes, &repos);
+    super::fill_ctx(&hub, &mut ctx, &repos);
     let (prs, truncated) = join::rows(&pulls, &changes, &closed_since, &ctx, PR_LIST_MAX);
     Ok(PrListOutput {
         prs: List::unchecked(prs),
@@ -107,7 +107,7 @@ async fn pr_get(
     let change = changes.first();
     let tasks = super::project_tasks(&hub, &project);
     let mut ctx = RowCtx::with_tasks(&tasks);
-    super::fill_ctx(&hub, &mut ctx, &changes, std::slice::from_ref(repo));
+    super::fill_ctx(&hub, &mut ctx, std::slice::from_ref(repo));
     let pr = join::row(repo, detail.map(|d| &d.pull), change, &ctx).ok_or_else(|| {
         ToolError::new(
             ErrorCode::Failed,
@@ -126,7 +126,6 @@ async fn pr_get(
                 &verdict,
                 at,
                 ctx.tasks_by_id.get(task_id.as_str()).copied(),
-                hub.reviews.role_of(&task_id),
                 current,
             )
         })

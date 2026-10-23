@@ -217,7 +217,7 @@ agents: 3 running of 6, 1 queued
   done when: done:0 test login_flaky passes in acme/app
 
 ## Events
-- PR #12 merged as 4f1c2a9e0b7d: https://github.com/acme/app/pull/12 (C4, tier S, by T4)
+- PR #12 merged as 4f1c2a9e0b7d: https://github.com/acme/app/pull/12 (C4, by T4)
 - T5 finished: port the parser (branch fleetd/T5-port, PR https://github.com/acme/app/pull/13)
   > Ported; 2 blockers left for review.
 - T7 waiting for an answer: docs
@@ -265,8 +265,7 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 
 | Id | Sent | Safety rules |
 |---|---|---|
-| `review.reviewer` | per PR head per review round, by the tier's rules; Claude or Codex | does not read the PR description or comments (prompt only); changes no files (prompt only); ends with one review verdict (the \`report\` tool) |
-| `review.verifier` | tier L, per PR head | does not read the PR description or comments (prompt only); changes no files (prompt only); ends with one review verdict (the \`report\` tool) |
+| `review.reviewer` | once per PR patch, fresh, blocking findings only | does not read the PR description or comments (prompt only); changes no files (prompt only); ends with one review verdict (the \`report\` tool) |
 | `judge` | per \`judge\` done-when check of each claim | trusts no claim in the artifacts (prompt only); ends with one review verdict (the \`report\` tool) |
 | `judge.research` | per \`judge\` check of a research claim | trusts no claim in the artifacts (prompt only); ends with one review verdict (the \`report\` tool) |
 

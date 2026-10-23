@@ -421,7 +421,7 @@ fleetd decisions search "<query>"
 
 ```text
 fleetd task spawn --workstream <W> --title <t> --prompt <p> [--kind write|read|review]
-    [--profile high|medium] [--tier S|M|L] [--pr <url>] [--qa] [--item P<n>]
+    [--profile high|medium] [--pr <url>] [--qa] [--item P<n>]
 ```
 
 delegate work to a subagent; writers get their own branch; a review task needs `--pr`, and `--qa` marks it a QA run; `--item` links it to that plan item
@@ -472,7 +472,7 @@ the last step of a review task; a research judge also reports its metric for the
 ### fleetd change enqueue {#change-enqueue}
 
 ```text
-fleetd change enqueue --pr <url> [--task <T>] [--workstream <W>] [--tier S|M|L] [--item P<n>]
+fleetd change enqueue --pr <url> [--task <T>] [--workstream <W>] [--item P<n>]
 ```
 
 put a PR on its repo's merge train (a write task's PR goes on by itself). Only the train merges. `--item` links the PR to that plan item

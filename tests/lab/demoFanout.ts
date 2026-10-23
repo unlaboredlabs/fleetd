@@ -1,6 +1,6 @@
 // The app demo: one order, a fleet. On lab-a against the public lab repo unlaboredlabs/fleetd-lab (as M7), a person
-// gives one tier-L order through the app's /app protocol with a human key: three short pages, one writer each. The
-// lead (a real turn) freezes the brief and spawns the writers; each PR gets two reviewers and a verifier; the
+// gives one order through the app's /app protocol with a human key: three short pages, one writer each. The
+// lead (a real turn) sets the brief and spawns the writers; each PR gets one reviewer; the
 // train merges them. The harness only observes: it never spawns a task, so everything the recording shows is work the
 // fleet did. It also subscribes to the live feed as the app does and checks what came over it: lanes with literal
 // activity, tokens and sparklines, inside the feed's bounds.
@@ -38,7 +38,7 @@ const PAGES = ["alpha", "beta", "gamma"] as const;
 const APP_HOLD_MS = 6_000;
 const POLICY = `
 `;
-export const ORDER = `Tier L. Add three short pages, ${DIR}/alpha.md, beta.md and gamma.md, each one paragraph on what fleetd's merge train does. One writer per page, all three in parallel. Give each page its own done-when check and its own PR.`;
+export const ORDER = `Add three short pages, ${DIR}/alpha.md, beta.md and gamma.md, each one paragraph on what fleetd's merge train does. One writer per page, all three in parallel. Give each page its own done-when check and its own PR.`;
 
 /** One /app session: auth, calls, and the live frames it receives. */
 const appSession = async (key: string) => {

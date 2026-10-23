@@ -48,7 +48,6 @@ use tokio::task::JoinHandle;
 
 use crate::clock::Clock;
 use crate::hub::store::{EventLog, HubStore, iso_ms, now_ms};
-pub use providers::ProviderInstance;
 use shell_mapper::{
     ApplyContext, ShellState, StoredThread, Summary, TrackedThread, js_len, js_take,
 };
@@ -1815,15 +1814,6 @@ impl Executors {
                 "the node sent no runner info",
             )),
         }
-    }
-
-    pub async fn provider_instances(
-        &self,
-        machine_id: &MachineId,
-    ) -> Result<Vec<ProviderInstance>, ExecutorError> {
-        Ok(vec![providers::to_instance(
-            &self.runner_info(machine_id).await?,
-        )])
     }
 
     /// The project already registered at `workspace_root`, if any.

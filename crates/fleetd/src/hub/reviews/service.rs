@@ -1,8 +1,8 @@
 //! The merge train's review gate. Each time a Change enters `reviewing` the train hands it over with its current patch
-//! id; the gate spawns the tier's review tasks through Tasks and answers Pending, or Ready when that patch needs
-//! nothing more. Every verdict is bound to the patch id of the head it reviewed, and only verdicts bound to the
-//! Change's current patch id count. Blocking findings go back to the author task and the Change waits for a new head,
-//! which the train brings back here with its new patch id.
+//! id; the gate spawns one fresh blocker-only reviewer for that patch through Tasks and answers Pending, or Ready when
+//! a clean verdict is already bound to it. Every verdict is bound to the patch id of the head it reviewed, and only
+//! verdicts bound to the Change's current patch id count. Blocking findings go back to the author task and the Change
+//! waits for a new head, which the train brings back here with its new patch id.
 use std::sync::{Arc, Mutex, Weak};
 
 use rusqlite::{OptionalExtension, params};
@@ -10,13 +10,10 @@ use serde_json::Value;
 
 use super::patch_ids;
 use super::rules::{
-    FindingsVerdict, Gate, ReviewRole, RoleReview, codex_instance, findings_message, gate,
-    has_receipts, missing_reviews, needs_no_review, one_line, other_codex, review_plan,
-    review_prompt, rule_for,
+    BoundReview, FindingsVerdict, Gate, findings_message, gate, one_line, review_prompt,
 };
 use crate::hub::train::contract::{
-    Change, ChangeId, ChangeReview, ChangeState, CommitSha, Count, PatchId, ReviewRule, TaskId,
-    tier_str,
+    Change, ChangeId, ChangeReview, ChangeState, CommitSha, Count, PatchId, TaskId,
 };
 use crate::hub::train::host::{BoxFut, EventView, ReviewSpawn, TrainHost};
 use crate::hub::train::records::{Db, sql};
@@ -37,11 +34,6 @@ pub struct Reviews {
     db: Db,
     train: Weak<Train>,
     lock: tokio::sync::Mutex<()>,
-}
-
-struct ReviewerTask {
-    change_id: ChangeId,
-    role: ReviewRole,
 }
 
 impl Reviews {
@@ -82,38 +74,18 @@ impl Reviews {
         })
     }
 
-    /// The review rule for the Change's tier from its workstream's pinned playbook, else the coded one.
-    fn rule_of(&self, change: &Change) -> ReviewRule {
-        let pinned = self
-            .host
-            .workstream(&change.workstream_id)
-            .and_then(|w| w.playbook);
-        let loaded = pinned.as_deref().and_then(|pin| self.host.playbook(pin));
-        rule_for(change.tier, loaded.as_ref())
+    /// Whether the review gate spawned this task.
+    pub fn is_reviewer(&self, task_id: &str) -> bool {
+        self.change_of(task_id).is_some()
     }
 
-    /// Whether a review task reviews or verifies; None for tasks the review gate did not spawn.
-    pub fn role_of(&self, task_id: &str) -> Option<ReviewRole> {
-        self.reviewer_task(task_id).map(|t| t.role)
-    }
-
-    /// Clean reviews the Change's tier asks for: its reviewers plus the verifier when there is one.
-    pub fn reviews_needed(&self, change: &Change) -> i64 {
-        let rule = self.rule_of(change);
-        rule.reviewers.get() + i64::from(rule.verifier)
-    }
-
-    fn reviewer_task(&self, task_id: &str) -> Option<ReviewerTask> {
+    /// The Change a review task the gate spawned reviews.
+    fn change_of(&self, task_id: &str) -> Option<ChangeId> {
         sql(&self.db, |conn| {
             conn.query_row(
-                "SELECT change_id, role FROM review_tasks WHERE task_id = ?1",
+                "SELECT change_id FROM review_tasks WHERE task_id = ?1",
                 [task_id],
-                |r| {
-                    Ok(ReviewerTask {
-                        change_id: ChangeId::unchecked(r.get::<_, String>(0)?),
-                        role: ReviewRole::parse(&r.get::<_, String>(1)?),
-                    })
-                },
+                |r| Ok(ChangeId::unchecked(r.get::<_, String>(0)?)),
             )
             .optional()
             .expect("review task")
@@ -167,117 +139,57 @@ impl Reviews {
         Ok(patch_id)
     }
 
-    /// The verdicts bound to `patch_id`, with their roles, as the gate and `mark_ready` take them.
-    fn bound_to(&self, change: &Change, patch_id: &str) -> Vec<(ChangeReview, RoleReview)> {
-        let rows: Vec<(String, String, i64, i64, String)> = sql(&self.db, |conn| {
+    /// The verdicts bound to `patch_id`, as the gate and `mark_ready` take them.
+    fn gate_for(&self, change: &Change, patch_id: &str) -> (Gate, Vec<ChangeReview>) {
+        let rows: Vec<(String, String, i64, i64)> = sql(&self.db, |conn| {
             let mut stmt = conn
                 .prepare_cached(
-                    "SELECT b.task_id, b.pr_head_sha, b.blocking, b.non_blocking, t.role
+                    "SELECT b.task_id, b.pr_head_sha, b.blocking, b.non_blocking
                      FROM review_bindings b JOIN review_tasks t ON t.task_id = b.task_id WHERE t.change_id = ?1 AND b.patch_id = ?2",
                 )
                 .expect("prepare");
             stmt.query_map(params![change.change_id.as_str(), patch_id], |r| {
-                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
             })
             .expect("query")
             .map(|r| r.expect("row"))
             .collect()
         });
-        rows.into_iter()
-            .map(|(task_id, sha, blocking, non_blocking, role)| {
-                let role = ReviewRole::parse(&role);
-                let receipts = role == ReviewRole::Verifier
-                    && has_receipts(self.host.task(&TaskId::unchecked(&task_id)).as_ref());
-                let review = ChangeReview {
-                    task_id: TaskId::unchecked(&task_id),
-                    pr_head_sha: CommitSha::unchecked(sha),
-                    patch_id: PatchId::unchecked(patch_id),
-                    blocking: Count::unchecked(blocking),
-                    non_blocking: Count::unchecked(non_blocking),
-                };
-                (
-                    review,
-                    RoleReview {
-                        task_id,
-                        role,
-                        patch_id: patch_id.to_string(),
-                        blocking,
-                        receipts,
-                    },
-                )
+        let bound: Vec<BoundReview> = rows
+            .iter()
+            .map(|(task_id, _, blocking, _)| BoundReview {
+                task_id: task_id.clone(),
+                patch_id: patch_id.to_string(),
+                blocking: *blocking,
             })
-            .collect()
+            .collect();
+        let reviews = rows
+            .into_iter()
+            .map(|(task_id, sha, blocking, non_blocking)| ChangeReview {
+                task_id: TaskId::unchecked(task_id),
+                pr_head_sha: CommitSha::unchecked(sha),
+                patch_id: PatchId::unchecked(patch_id),
+                blocking: Count::unchecked(blocking),
+                non_blocking: Count::unchecked(non_blocking),
+            })
+            .collect();
+        (gate(patch_id, &bound), reviews)
     }
 
-    fn gate_for(&self, change: &Change, patch_id: &str) -> (Gate, Vec<ChangeReview>) {
-        let bound = self.bound_to(change, patch_id);
-        let waived: Option<String> = sql(&self.db, |conn| {
+    /// Spawns this patch's reviewer, once: a reviewer the node refused to start is not counted, so the next pass
+    /// tries again.
+    async fn ensure_reviewer(&self, change: &Change, patch_id: &str) {
+        let spawned = sql(&self.db, |conn| {
             conn.query_row(
-                "SELECT reason FROM review_waivers WHERE change_id = ?1 AND patch_id = ?2",
+                "SELECT 1 FROM review_tasks WHERE change_id = ?1 AND patch_id = ?2 LIMIT 1",
                 params![change.change_id.as_str(), patch_id],
-                |r| r.get(0),
+                |_| Ok(()),
             )
             .optional()
-            .expect("waiver")
+            .expect("review task")
         });
-        let roles: Vec<RoleReview> = bound.iter().map(|(_, r)| r.clone()).collect();
-        let g = gate(
-            change.tier,
-            &self.rule_of(change),
-            Some(patch_id),
-            &roles,
-            waived.as_deref(),
-        );
-        (g, bound.into_iter().map(|(r, _)| r).collect())
-    }
-
-    /// Spawns what the tier still needs for this patch. Idempotent per patch; a waived patch needs nothing.
-    async fn ensure_round(&self, change: &Change, patch_id: &str) {
-        let rule = self.rule_of(change);
-        // Codex takes the second reviewer, so it matters only from two reviewers on.
-        let wants_codex = rule.reviewers.get() >= 2;
-        let instances = if wants_codex {
-            self.host
-                .provider_instances(&change.project_ref.machine_id)
-                .await
-                .unwrap_or_default()
-        } else {
-            Vec::new()
-        };
-        let codex = codex_instance(&instances);
-        let spawned: Vec<ReviewRole> = sql(&self.db, |conn| {
-            let mut stmt = conn
-                .prepare_cached(
-                    "SELECT role FROM review_tasks WHERE change_id = ?1 AND patch_id = ?2",
-                )
-                .expect("prepare");
-            stmt.query_map(params![change.change_id.as_str(), patch_id], |r| {
-                r.get::<_, String>(0)
-            })
-            .expect("query")
-            .map(|r| ReviewRole::parse(&r.expect("row")))
-            .collect()
-        });
-        let missing = missing_reviews(&review_plan(&rule, codex.is_some()), &spawned);
-        if missing.is_empty() {
+        if spawned.is_some() {
             return;
-        }
-
-        if wants_codex && codex.is_none() {
-            let others = other_codex(&instances);
-            let (machine, tier) = (&change.project_ref.machine_id, change.tier);
-            self.note(
-                &change.change_id,
-                &if others.is_empty() {
-                    format!("No usable Codex instance on {machine}, so both {} reviewers run on Claude.", tier_str(tier))
-                } else {
-                    format!(
-                        "Codex {} on {machine} is not fleetd's (ids must start with \"fleetd\"; others could reach the runner's spawn tools), so both {} reviewers run on Claude.",
-                        others.join(", "),
-                        tier_str(tier)
-                    )
-                },
-            );
         }
         // The newest head an earlier round of this Change reviewed: a re-push is reviewed from its delta.
         let reviewed: Option<String> = sql(&self.db, |conn| {
@@ -290,71 +202,57 @@ impl Reviews {
             .optional()
             .expect("reviewed head")
         });
-        for planned in missing {
-            let verb = if planned.role == ReviewRole::Verifier {
-                "Verify"
-            } else {
-                "Review"
-            };
-            let spawn = ReviewSpawn {
-                project_ref: change.project_ref.clone(),
-                by: REVIEWS_BY,
-                workstream_id: change.workstream_id.clone(),
-                title: one_line(
-                    &format!(
-                        "{verb} {}#{} for {}",
-                        change.repo, change.pr_number, change.change_id
-                    ),
-                    80,
+        let spawn = ReviewSpawn {
+            project_ref: change.project_ref.clone(),
+            by: REVIEWS_BY,
+            workstream_id: change.workstream_id.clone(),
+            title: one_line(
+                &format!(
+                    "Review {}#{} for {}",
+                    change.repo, change.pr_number, change.change_id
                 ),
-                prompt: review_prompt(
-                    &self.db.prompts().current(Some(&change.project_ref)),
-                    change,
-                    planned.role,
-                    reviewed.as_deref(),
-                ),
-                pr: change.pr_url.to_string(),
-                tier: change.tier,
-            };
-            let role = planned.role.as_str();
-            let task = match self.host.spawn_review(spawn).await {
-                Ok(task) => task,
-                Err(e) => {
-                    self.note(
-                        &change.change_id,
-                        &format!("could not spawn the {role}: {e}"),
-                    );
-                    continue;
-                }
-            };
-            // A task the node refused to launch is not counted, so the next review of this patch tries that role again.
-            if task.state == "failed" {
+                80,
+            ),
+            prompt: review_prompt(
+                &self.db.prompts().current(Some(&change.project_ref)),
+                change,
+                reviewed.as_deref(),
+            ),
+            pr: change.pr_url.to_string(),
+        };
+        let task = match self.host.spawn_review(spawn).await {
+            Ok(task) => task,
+            Err(e) => {
                 self.note(
                     &change.change_id,
-                    &format!(
-                        "the {role} {} failed to start: {}",
-                        task.task_id,
-                        task.result_tail.unwrap_or_default()
-                    ),
+                    &format!("could not spawn the reviewer: {e}"),
                 );
-                continue;
+                return;
             }
-            sql(&self.db, |conn| {
-                conn
-                .execute(
-                    "INSERT OR IGNORE INTO review_tasks (task_id, change_id, role, patch_id) VALUES (?1, ?2, ?3, ?4)",
-                    params![task.task_id.as_str(), change.change_id.as_str(), role, patch_id],
-                )
-                .expect("put review task")
-            });
+        };
+        if task.state == "failed" {
+            self.note(
+                &change.change_id,
+                &format!(
+                    "the reviewer {} failed to start: {}",
+                    task.task_id,
+                    task.result_tail.unwrap_or_default()
+                ),
+            );
+            return;
         }
+        sql(&self.db, |conn| {
+            conn
+            .execute(
+                "INSERT OR IGNORE INTO review_tasks (task_id, change_id, role, patch_id) VALUES (?1, ?2, 'reviewer', ?3)",
+                params![task.task_id.as_str(), change.change_id.as_str(), patch_id],
+            )
+            .expect("put review task")
+        });
     }
 
     async fn review_inner(&self, change: Change) -> Verdict {
         let _held = self.lock.lock().await;
-        if needs_no_review(&self.rule_of(&change)) {
-            return Verdict::Ready;
-        }
         let patch_id = match &change.patch_id {
             Some(p) => p.to_string(),
             None => match self.patch_for(&change, &change.head_sha).await {
@@ -366,23 +264,19 @@ impl Reviews {
             },
         };
         self.put_patch(&change.change_id, &change.head_sha, &patch_id);
-        let (before, _) = self.gate_for(&change, &patch_id);
+        let (before, reviews) = self.gate_for(&change, &patch_id);
         // Ready on this patch already (a carried-over patch), or held by its blocking findings until the head moves.
         if before.ready {
-            return Verdict::Ready;
+            return Verdict::Ready(reviews);
         }
         if before.waiting_for_head {
             return Verdict::Pending;
         }
-        self.ensure_round(&change, &patch_id).await;
-        if self.gate_for(&change, &patch_id).0.ready {
-            Verdict::Ready
-        } else {
-            Verdict::Pending
-        }
+        self.ensure_reviewer(&change, &patch_id).await;
+        Verdict::Pending
     }
 
-    /// Marks the Change ready once its current patch satisfies the tier.
+    /// Marks the Change ready once its current patch has a clean review.
     fn evaluate(&self, change_id: &ChangeId) {
         let Some(train) = self.train() else { return };
         let Some(change) = train.records().get(change_id) else {
@@ -410,10 +304,10 @@ impl Reviews {
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_string();
-        let Some(row) = self.reviewer_task(&task_id) else {
+        let Some(change_id) = self.change_of(&task_id) else {
             return Ok(());
         };
-        let Some(change) = self.train().and_then(|t| t.records().get(&row.change_id)) else {
+        let Some(change) = self.train().and_then(|t| t.records().get(&change_id)) else {
             return Ok(());
         };
         let sha = data
@@ -450,12 +344,12 @@ impl Reviews {
             );
             let Some(author) = &change.task_id else {
                 self.note(
-                    &row.change_id,
+                    &change_id,
                     &format!("{waiting}; no author task to send them to: {summary}"),
                 );
                 return Ok(());
             };
-            self.note(&row.change_id, &format!("{waiting}; sent to {author}"));
+            self.note(&change_id, &format!("{waiting}; sent to {author}"));
             let text = findings_message(
                 &change,
                 &FindingsVerdict {
@@ -472,24 +366,24 @@ impl Reviews {
                 .await
             {
                 self.note(
-                    &row.change_id,
+                    &change_id,
                     &format!("{waiting}; sending them to {author} failed: {e}"),
                 );
             }
             return Ok(());
         }
-        self.evaluate(&row.change_id);
+        self.evaluate(&change_id);
         Ok(())
     }
 
-    /// A review task ended: a verifier's receipts are now in, or it ended without the verdict it owed.
+    /// A review task ended, perhaps without the verdict it owed.
     fn on_task_ended(&self, event: &EventView) {
         let task_id = event
             .data
             .get("taskId")
             .and_then(Value::as_str)
             .unwrap_or_default();
-        let Some(row) = self.reviewer_task(task_id) else {
+        let Some(change_id) = self.change_of(task_id) else {
             return;
         };
         let bound = sql(&self.db, |conn| {
@@ -507,14 +401,11 @@ impl Reviews {
                 .strip_prefix("task.")
                 .unwrap_or(&event.event_type);
             self.note(
-                &row.change_id,
-                &format!(
-                    "the {} {task_id} ended ({how}) without a review verdict",
-                    row.role.as_str()
-                ),
+                &change_id,
+                &format!("the reviewer {task_id} ended ({how}) without a review verdict"),
             );
         }
-        self.evaluate(&row.change_id);
+        self.evaluate(&change_id);
     }
 
     async fn handle(&self, event: &EventView) {

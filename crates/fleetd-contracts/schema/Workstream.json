@@ -54,9 +54,6 @@
           "maxItems": 20,
           "type": "array"
         },
-        "tier": {
-          "$ref": "#/$defs/Tier"
-        },
         "why": {
           "maxLength": 2000,
           "minLength": 1,
@@ -68,8 +65,7 @@
         "why",
         "pointers",
         "constraints",
-        "doneWhen",
-        "tier"
+        "doneWhen"
       ],
       "type": "object"
     },
@@ -81,11 +77,20 @@
           "type": "number"
         },
         "size": {
-          "$ref": "#/$defs/Tier",
+          "$ref": "#/$defs/BudgetSize",
           "description": "How big a research spend the lead allows, relative like plan sizes; never a time guess."
         }
       },
       "type": "object"
+    },
+    "BudgetSize": {
+      "description": "How big a research spend is, relative like plan sizes.",
+      "enum": [
+        "S",
+        "M",
+        "L"
+      ],
+      "type": "string"
     },
     "CheckSpec": {
       "oneOf": [
@@ -368,14 +373,6 @@
       "type": "object"
     },
     "Serves": {
-      "type": "string"
-    },
-    "Tier": {
-      "enum": [
-        "S",
-        "M",
-        "L"
-      ],
       "type": "string"
     },
     "Timestamp": {

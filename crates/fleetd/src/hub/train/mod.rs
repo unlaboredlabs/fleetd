@@ -15,7 +15,6 @@ pub mod rules;
 pub mod service;
 pub mod time;
 pub mod tools;
-pub mod triggers;
 
 #[cfg(test)]
 mod tests;

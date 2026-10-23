@@ -131,9 +131,6 @@
         "threadRef": {
           "$ref": "#/$defs/ThreadRef"
         },
-        "tier": {
-          "$ref": "#/$defs/Tier"
-        },
         "title": {
           "maxLength": 80,
           "minLength": 1,
@@ -254,14 +251,6 @@
         "threadId"
       ],
       "type": "object"
-    },
-    "Tier": {
-      "enum": [
-        "S",
-        "M",
-        "L"
-      ],
-      "type": "string"
     },
     "Timestamp": {
       "format": "date-time",

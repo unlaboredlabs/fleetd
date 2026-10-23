@@ -480,7 +480,6 @@ async fn a_logged_out_runner_refuses_launches_until_it_logs_back_in() {
     let seen = runner.borrow_and_update().clone().unwrap();
     // What the link server announces: degraded with the node's own words.
     assert_eq!(providers::runner_problem(&seen).as_deref(), Some(problem));
-    assert!(!providers::to_instance(&seen).usable);
     // Refused by the hub before any call goes out, with the fix to run on the machine.
     match node
         .executors
@@ -510,7 +509,6 @@ async fn a_logged_out_runner_refuses_launches_until_it_logs_back_in() {
     runner.changed().await.unwrap();
     let seen = runner.borrow_and_update().clone().unwrap();
     assert_eq!(providers::runner_problem(&seen), None);
-    assert!(providers::to_instance(&seen).usable);
     assert!(
         crate::hub::queue::ports::ThreadWriter::refusal(node.executors.as_ref(), &node.machine)
             .is_none()

@@ -1,12 +1,12 @@
-//! What the train and the review gate take from other hub areas: tasks, workstreams, playbooks, decisions,
-//! incidents, the event log, wakes, node commands and the provider list. One port, so the logic tests run on a fake
+//! What the train and the review gate take from other hub areas: tasks, workstreams, decisions, incidents, the event
+//! log, wakes and node commands. One port, so the logic tests run on a fake
 //! and the hub provides it from its services (`HubHost`).
 use std::future::Future;
 use std::pin::Pin;
 
 use serde_json::Value;
 
-use super::contract::{MachineId, ProjectRef, ReviewRule, TaskId, Tier, WorkstreamId};
+use super::contract::{MachineId, ProjectRef, TaskId, WorkstreamId};
 
 pub type BoxFut<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
@@ -28,36 +28,17 @@ pub struct TaskView {
     pub kind: String,
     /// "done", "failed", "running", ...
     pub state: String,
-    pub tier: Option<Tier>,
     /// `result.prUrl`.
     pub pr_url: Option<String>,
-    /// `result.receipts.commands`, 0 without receipts.
-    pub receipt_commands: i64,
-    /// `result.claimsUnverified === true`.
-    pub claims_unverified: bool,
     /// `result.tail`.
     pub result_tail: Option<String>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct BriefView {
-    pub tier: Tier,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WorkstreamView {
     pub workstream_id: WorkstreamId,
     pub project_ref: ProjectRef,
-    pub brief: Option<BriefView>,
-    /// The pinned playbook ref, when it has one.
-    pub playbook: Option<String>,
-}
-
-/// The parts of a pinned playbook the train and reviews read.
-#[derive(Clone, Debug, PartialEq)]
-pub struct PlaybookView {
-    /// `reviewRules`, by tier S, M, L.
-    pub review_rules: [ReviewRule; 3],
+    pub has_brief: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -76,11 +57,7 @@ pub struct ReviewSpawn {
     pub title: String,
     pub prompt: String,
     pub pr: String,
-    pub tier: Tier,
 }
-
-/// One runner on a machine as a provider instance (executor/providers, from the node's `runner_info`).
-pub use crate::hub::executor::providers::ProviderInstance as ProviderView;
 
 pub trait TrainHost: Send + Sync + 'static {
     fn task(&self, task_id: &TaskId) -> Option<TaskView>;
@@ -97,8 +74,6 @@ pub trait TrainHost: Send + Sync + 'static {
     /// Tasks.spawn of a review task; the error is its message.
     fn spawn_review(&self, spawn: ReviewSpawn) -> BoxFut<'_, Result<TaskView, String>>;
     fn workstream(&self, workstream_id: &WorkstreamId) -> Option<WorkstreamView>;
-    /// Playbooks.byRef.
-    fn playbook(&self, pin: &str) -> Option<PlaybookView>;
     /// EventLog.append at now, on the project.
     fn append_event(
         &self,
@@ -127,11 +102,6 @@ pub trait TrainHost: Send + Sync + 'static {
         argv: Vec<String>,
         timeout_sec: u64,
     ) -> BoxFut<'a, Result<CmdOut, String>>;
-    /// ProviderList.instances.
-    fn provider_instances<'a>(
-        &'a self,
-        machine_id: &'a MachineId,
-    ) -> BoxFut<'a, Result<Vec<ProviderView>, String>>;
     /// The project's branch prefix (its policy's `branchPrefix`, default `fleetd/`); None when the policy can't be
     /// read now. The train's scratch batch branches live under
     /// `<prefix>train/`, so fleets sharing one repo never collide.

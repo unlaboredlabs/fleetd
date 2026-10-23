@@ -118,7 +118,7 @@ static TOOLS: &[Tool] = &[
     lead(
         "brief",
         "brief_create",
-        "Set a draft workstream's brief (goal, why, pointers, constraints, doneWhen checks, tier) and \
+        "Set a draft workstream's brief (goal, why, pointers, constraints, doneWhen checks) and \
          start it, or edit it later.",
         inline_schema::<BriefCreateCall>,
     ),

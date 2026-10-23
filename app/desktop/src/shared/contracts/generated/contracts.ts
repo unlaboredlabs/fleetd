@@ -337,7 +337,6 @@ export type Brief = {
   /** Research: the one number the judge reports for baseline and candidate, e.g. "p50 cold start in ms". */
   metric?: string;
   pointers: string[];
-  tier: Tier;
   why: string;
 };
 
@@ -345,8 +344,11 @@ export type BriefBudget = {
   /** Older briefs only; a lead now gives `size`. */
   agentHours?: number;
   /** How big a research spend the lead allows, relative like plan sizes; never a time guess. */
-  size?: Tier;
+  size?: BudgetSize;
 };
+
+/** How big a research spend is, relative like plan sizes. */
+export type BudgetSize = "S" | "M" | "L";
 
 export type CapSetInput = {
   /** The fleet cap: agents running at once across every project. Needs an admin key. */
@@ -412,8 +414,6 @@ export type Change = {
   state: ChangeState;
   /** The write task that opened it; absent when the lead enqueued a PR no task wrote. */
   taskId?: TaskId;
-  /** From the workstream's brief; may be raised, never lowered. */
-  tier: Tier;
   updatedAt: Timestamp;
   workstreamId: WorkstreamId;
 };
@@ -2315,7 +2315,7 @@ export type PrRef = {
   repo: GitHubRepo;
   /** Clean reviews of the current patch. */
   reviewsDone: number;
-  /** What the tier asks for. */
+  /** One for every PR the train lands. */
   reviewsNeeded: number;
   state: ChangeState;
   /** The task that opened it (its writer), when the hub knows: the board groups the PR's checkers under it. */
@@ -2325,7 +2325,7 @@ export type PrRef = {
 
 /** One review: an agent's verdict with its findings, or a person's review on GitHub. */
 export type PrReviewEntry = {
-  /** The reviewing agent (reviewer, verifier or QA); absent for a person's review. */
+  /** The reviewing agent (reviewer or QA); absent for a person's review. */
   agent?: PrAuthor;
   at: Timestamp;
   /** Findings that must be fixed before merging; agent reviews only. */
@@ -2546,7 +2546,7 @@ export type ProjectId = string;
 export type ProjectInspect = {
   ci: CiInfo;
   defaultBranch?: string;
-  /** One line for a person, e.g. "no CI found: the merge train will only use local checks". */
+  /** One line for a person, e.g. "no CI found: the merge train holds its PRs until the repo has CI". */
   leadNeeds: string;
   merge: MergeRules;
   /** What could not be read, e.g. "branch rules need admin access on acme/storefront". */
@@ -2568,7 +2568,7 @@ export type ProjectInspectOutput = {
   /** With `url` and a machine (given, or the best one): where `project_add` would clone it. */
   clone?: CloneTarget;
   defaultBranch?: string;
-  /** One line for a person, e.g. "no CI found: the merge train will only use local checks". */
+  /** One line for a person, e.g. "no CI found: the merge train holds its PRs until the repo has CI". */
   leadNeeds: string;
   merge: MergeRules;
   next?: string;
@@ -2953,7 +2953,7 @@ export type ReviewState = KnownReviewState | (string & {});
 export type ReviewSummary = {
   /** Clean agent reviews of the current change. */
   done: number;
-  /** Agent reviews it needs before it can merge; 0 for a PR fleetd doesn't land. */
+  /** Agent reviews it needs before it can merge: 1 for a PR fleetd lands, else 0. */
   needed: number;
   state: ReviewState;
 };
@@ -3352,8 +3352,6 @@ export type StatusDoc = {
   title: string;
   /** Bumps whenever the doc's content changes; `status_wait` waits past it. */
   version: number;
-  /** The order's tier when the scope is an order with no plan items. */
-  virtualTier?: Tier;
 };
 
 export type StatusGetInput = {
@@ -3533,7 +3531,7 @@ export type SteerSendOutput = {
 
 export type SteerStage = "failed" | "queued" | "delivered" | "acknowledged" | "unacknowledged" | "withdrawn" | "expired";
 
-/** Who a steer is for: an order's lead, or one task (writer, reviewer, verifier, …). */
+/** Who a steer is for: an order's lead, or one task (writer, reviewer, …). */
 export type SteerTarget = {
   workstreamId: WorkstreamId;
 } | {
@@ -3640,7 +3638,6 @@ export type Task = {
   state: TaskState;
   taskId: TaskId;
   threadRef?: ThreadRef;
-  tier?: Tier;
   title: string;
   workstreamId: WorkstreamId;
   worktreePath?: string;
@@ -3798,8 +3795,6 @@ export type ThreadWindowOutput = {
   next?: string;
   truncated?: boolean;
 };
-
-export type Tier = "S" | "M" | "L";
 
 export type TimeBreakdownInput = {
   compare?: Period;

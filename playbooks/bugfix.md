@@ -4,11 +4,6 @@ version: 2
 requiredChecks:
   - anyOf: [test, cmd]
     label: a failing repro check
-tierDefault: S
-reviewRules:
-  S: { reviewers: 0, verifier: false }
-  M: { reviewers: 1, verifier: false }
-  L: { reviewers: 2, verifier: true }
 ---
 
 # Bugfix

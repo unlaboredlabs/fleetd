@@ -81,7 +81,6 @@ pub struct OrderInfo {
     pub pkey: String,
     pub state: WorkstreamState,
     pub title: String,
-    pub tier: Option<fleetd_contracts::ledger::Tier>,
     pub created_ms: i64,
 }
 
@@ -100,7 +99,6 @@ pub(crate) fn order_of(pkey: &str, data: &str) -> Option<OrderInfo> {
         pkey: pkey.to_owned(),
         state: w.state,
         title: w.title.to_string(),
-        tier: w.brief.as_ref().map(|b| b.tier),
         created_ms: parse_ms(w.created_at.as_str()).unwrap_or(0),
     })
 }
@@ -1267,7 +1265,7 @@ impl Plans {
         Ok(())
     }
 
-    /// An order started running with no plan items: it enters its project's figure as one item of its tier.
+    /// An order started running with no plan items: it enters its project's figure as one item of size s.
     /// `quiet` (the backfill at start) writes no marker, since no figure was shown before it.
     pub fn placeholder_enter(&self, ws: &str, quiet: bool) -> bool {
         let now = self.now();
@@ -1282,7 +1280,7 @@ impl Plans {
             if planned {
                 return Ok(false);
             }
-            let size = fleetd_contracts::plan::Size::from(order.tier.unwrap_or(fleetd_contracts::ledger::Tier::M)).points();
+            let size = fleetd_contracts::plan::Size::S.points();
             let done = order.state == WorkstreamState::Done;
             let n = c.execute(
                 "INSERT OR IGNORE INTO plan_placeholders (workstream_id, project_ref, size, title, state, entered_ms, done_ms)

@@ -116,12 +116,6 @@
 <td>No</td>
 </tr>
 <tr>
-<td>Verifier</td>
-<td>A review task the review gate starts as the verifier</td>
-<td><a href="#task-tools">Task tools</a></td>
-<td>No</td>
-</tr>
-<tr>
 <td>QA</td>
 <td><code dir="auto">spawn_agent</code> with kind <code dir="auto">review</code> and <code dir="auto">qa: true</code></td>
 <td><a href="#task-tools">Task tools</a></td>
@@ -216,7 +210,7 @@
 </tr>
 <tr>
 <td><a href="#brief"><code dir="auto">brief</code></a></td>
-<td>Set a draft workstream’s brief (goal, why, pointers, constraints, doneWhen checks, tier) and start it, or edit it later.</td>
+<td>Set a draft workstream’s brief (goal, why, pointers, constraints, doneWhen checks) and start it, or edit it later.</td>
 <td>No</td>
 </tr>
 <tr>
@@ -355,12 +349,6 @@
 <td></td>
 </tr>
 <tr>
-<td><code dir="auto">tier</code></td>
-<td>string</td>
-<td>no</td>
-<td>One of <code dir="auto">S</code>, <code dir="auto">M</code>, <code dir="auto">L</code>.</td>
-</tr>
-<tr>
 <td><code dir="auto">title</code></td>
 <td>string</td>
 <td>yes</td>
@@ -489,7 +477,7 @@
 <p><strong>Who may call:</strong> a lead, checked by the hub. <strong>Needs a human:</strong> no.</p>
 <div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="json"><code><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"name"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"stop_agent"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"arguments"</span><span style="--0:#E1E4E8;--1:#24292E">: {</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"reason"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"T9 covers this now."</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"taskId"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"T7"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">  </span></span><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="{  &quot;name&quot;: &quot;stop_agent&quot;,  &quot;arguments&quot;: {    &quot;reason&quot;: &quot;T9 covers this now.&quot;,    &quot;taskId&quot;: &quot;T7&quot;  }}"><div></div></button></div></figure></div>
 <div class="sl-heading-wrapper level-h3"><h3 id="brief">brief</h3><a class="sl-anchor-link" href="#brief"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “brief”</span></a></div>
-<p>Set a draft workstream’s brief (goal, why, pointers, constraints, doneWhen checks, tier) and start it, or edit it later.</p>
+<p>Set a draft workstream’s brief (goal, why, pointers, constraints, doneWhen checks) and start it, or edit it later.</p>
 <table>
 <thead>
 <tr>
@@ -504,13 +492,13 @@
 <td><code dir="auto">brief</code></td>
 <td>object</td>
 <td>yes</td>
-<td>A <code dir="auto">Brief</code> whose <code dir="auto">tier</code> may be left out, as <code dir="auto">fleetd brief create</code> takes it; the playbook’s <code dir="auto">tierDefault</code> fills it.</td>
+<td></td>
 </tr>
 <tr>
 <td><code dir="auto">brief.baseline</code></td>
 <td>string</td>
 <td>no</td>
-<td>At most 1000 characters.</td>
+<td>Research: what the candidate is compared against, and how both are measured. At most 1000 characters.</td>
 </tr>
 <tr>
 <td><code dir="auto">brief.budget</code></td>
@@ -540,7 +528,7 @@
 <td><code dir="auto">brief.decisionRule</code></td>
 <td>object</td>
 <td>no</td>
-<td>Applied to the improvement: candidate − baseline, negated when lower is better. GO when it is at least <code dir="auto">goAtLeast</code>, STOP when it is below <code dir="auto">stopBelow</code>, INCONCLUSIVE in between.</td>
+<td>Research: the rule the verdict is computed from.</td>
 </tr>
 <tr>
 <td><code dir="auto">brief.decisionRule.better</code></td>
@@ -564,7 +552,7 @@
 <td><code dir="auto">brief.doneWhen</code></td>
 <td>object[]</td>
 <td>yes</td>
-<td>At most 20 items.</td>
+<td>At least one. At most 20 items.</td>
 </tr>
 <tr>
 <td><code dir="auto">brief.goal</code></td>
@@ -576,19 +564,13 @@
 <td><code dir="auto">brief.metric</code></td>
 <td>string</td>
 <td>no</td>
-<td>One line. At most 200 characters.</td>
+<td>Research: the one number the judge reports for baseline and candidate, e.g. “p50 cold start in ms”. At most 200 characters.</td>
 </tr>
 <tr>
 <td><code dir="auto">brief.pointers</code></td>
 <td>string[]</td>
 <td>yes</td>
 <td>At most 20 items.</td>
-</tr>
-<tr>
-<td><code dir="auto">brief.tier</code></td>
-<td>string</td>
-<td>no</td>
-<td>One of <code dir="auto">S</code>, <code dir="auto">M</code>, <code dir="auto">L</code>.</td>
 </tr>
 <tr>
 <td><code dir="auto">brief.why</code></td>
@@ -605,7 +587,7 @@
 </tbody>
 </table>
 <p><strong>Who may call:</strong> a lead, checked by the hub. <strong>Needs a human:</strong> no.</p>
-<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="json"><code><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"name"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"brief"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"arguments"</span><span style="--0:#E1E4E8;--1:#24292E">: {</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"brief"</span><span style="--0:#E1E4E8;--1:#24292E">: {</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#79B8FF;--1:#005CC5">"constraints"</span><span style="--0:#E1E4E8;--1:#24292E">: [</span></div></div><div class="ec-line"><div class="code"><span class="indent">        </span><span style="--0:#9ECBFF;--1:#032F62">"No new service; use the existing Redis."</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">      </span></span><span style="--0:#E1E4E8;--1:#24292E">],</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#79B8FF;--1:#005CC5">"doneWhen"</span><span style="--0:#E1E4E8;--1:#24292E">: [</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">        </span></span><span style="--0:#E1E4E8;--1:#24292E">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">          </span><span style="--0:#79B8FF;--1:#005CC5">"repo"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"acme/shop"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">          </span><span style="--0:#79B8FF;--1:#005CC5">"type"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"pr_merged"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">        </span></span><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">      </span></span><span style="--0:#E1E4E8;--1:#24292E">],</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#79B8FF;--1:#005CC5">"goal"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"Uploads are rate-limited per API key."</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#79B8FF;--1:#005CC5">"pointers"</span><span style="--0:#E1E4E8;--1:#24292E">: [</span></div></div><div class="ec-line"><div class="code"><span class="indent">        </span><span style="--0:#9ECBFF;--1:#032F62">"api/src/upload.rs"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">      </span></span><span style="--0:#E1E4E8;--1:#24292E">],</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#79B8FF;--1:#005CC5">"tier"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"S"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#79B8FF;--1:#005CC5">"why"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"One client's retry loop took the upload service down."</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">    </span></span><span style="--0:#E1E4E8;--1:#24292E">},</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"workstreamId"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"W3"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">  </span></span><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="{  &quot;name&quot;: &quot;brief&quot;,  &quot;arguments&quot;: {    &quot;brief&quot;: {      &quot;constraints&quot;: [        &quot;No new service; use the existing Redis.&quot;      ],      &quot;doneWhen&quot;: [        {          &quot;repo&quot;: &quot;acme/shop&quot;,          &quot;type&quot;: &quot;pr_merged&quot;        }      ],      &quot;goal&quot;: &quot;Uploads are rate-limited per API key.&quot;,      &quot;pointers&quot;: [        &quot;api/src/upload.rs&quot;      ],      &quot;tier&quot;: &quot;S&quot;,      &quot;why&quot;: &quot;One client&#x27;s retry loop took the upload service down.&quot;    },    &quot;workstreamId&quot;: &quot;W3&quot;  }}"><div></div></button></div></figure></div>
+<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="json"><code><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"name"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"brief"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"arguments"</span><span style="--0:#E1E4E8;--1:#24292E">: {</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"brief"</span><span style="--0:#E1E4E8;--1:#24292E">: {</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#79B8FF;--1:#005CC5">"constraints"</span><span style="--0:#E1E4E8;--1:#24292E">: [</span></div></div><div class="ec-line"><div class="code"><span class="indent">        </span><span style="--0:#9ECBFF;--1:#032F62">"No new service; use the existing Redis."</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">      </span></span><span style="--0:#E1E4E8;--1:#24292E">],</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#79B8FF;--1:#005CC5">"doneWhen"</span><span style="--0:#E1E4E8;--1:#24292E">: [</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">        </span></span><span style="--0:#E1E4E8;--1:#24292E">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">          </span><span style="--0:#79B8FF;--1:#005CC5">"repo"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"acme/shop"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">          </span><span style="--0:#79B8FF;--1:#005CC5">"type"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"pr_merged"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">        </span></span><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">      </span></span><span style="--0:#E1E4E8;--1:#24292E">],</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#79B8FF;--1:#005CC5">"goal"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"Uploads are rate-limited per API key."</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#79B8FF;--1:#005CC5">"pointers"</span><span style="--0:#E1E4E8;--1:#24292E">: [</span></div></div><div class="ec-line"><div class="code"><span class="indent">        </span><span style="--0:#9ECBFF;--1:#032F62">"api/src/upload.rs"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">      </span></span><span style="--0:#E1E4E8;--1:#24292E">],</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#79B8FF;--1:#005CC5">"why"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"One client's retry loop took the upload service down."</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">    </span></span><span style="--0:#E1E4E8;--1:#24292E">},</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#79B8FF;--1:#005CC5">"workstreamId"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"W3"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#E1E4E8;--1:#24292E">  </span></span><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="{  &quot;name&quot;: &quot;brief&quot;,  &quot;arguments&quot;: {    &quot;brief&quot;: {      &quot;constraints&quot;: [        &quot;No new service; use the existing Redis.&quot;      ],      &quot;doneWhen&quot;: [        {          &quot;repo&quot;: &quot;acme/shop&quot;,          &quot;type&quot;: &quot;pr_merged&quot;        }      ],      &quot;goal&quot;: &quot;Uploads are rate-limited per API key.&quot;,      &quot;pointers&quot;: [        &quot;api/src/upload.rs&quot;      ],      &quot;why&quot;: &quot;One client&#x27;s retry loop took the upload service down.&quot;    },    &quot;workstreamId&quot;: &quot;W3&quot;  }}"><div></div></button></div></figure></div>
 <div class="sl-heading-wrapper level-h3"><h3 id="request_secret">request_secret</h3><a class="sl-anchor-link" href="#request_secret"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “request_secret”</span></a></div>
 <p>Ask the human for a secret (a key, a token, a password). The app shows a masked field in the chat; the value is sealed to the sink’s machine and written there, and never enters a transcript. Only its fingerprint arrives, in a later wake.</p>
 <table>
@@ -1159,12 +1141,6 @@
 <td><code dir="auto">T&lt;n&gt;</code>, e.g. <code dir="auto">T1</code>.</td>
 </tr>
 <tr>
-<td><code dir="auto">tier</code></td>
-<td>string</td>
-<td>no</td>
-<td>One of <code dir="auto">S</code>, <code dir="auto">M</code>, <code dir="auto">L</code>.</td>
-</tr>
-<tr>
 <td><code dir="auto">workstreamId</code></td>
 <td>string</td>
 <td>no</td>
@@ -1264,7 +1240,7 @@
 <p><strong>Who may call:</strong> a lead, checked by the hub. <strong>Needs a human:</strong> no.</p>
 <div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="json"><code><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"name"</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">"inventory"</span><span style="--0:#E1E4E8;--1:#24292E">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#79B8FF;--1:#005CC5">"arguments"</span><span style="--0:#E1E4E8;--1:#24292E">: {}</span></div></div><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">}</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="{  &quot;name&quot;: &quot;inventory&quot;,  &quot;arguments&quot;: {}}"><div></div></button></div></figure></div>
 <div class="sl-heading-wrapper level-h2"><h2 id="task-tools">Task tools</h2><a class="sl-anchor-link" href="#task-tools"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Task tools”</span></a></div>
-<p>Every task’s agent gets these: implementers, readers, reviewers, verifiers and QA.</p>
+<p>Every task’s agent gets these: implementers, readers, reviewers and QA.</p>
 <table>
 <thead>
 <tr>

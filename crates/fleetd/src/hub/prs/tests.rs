@@ -37,7 +37,7 @@ fn change(n: i64, number: i64, state: &str, reviews: Value) -> Change {
     serde_json::from_value(json!({
         "changeId": format!("X{n}"), "projectRef": { "machineId": "devbox", "projectId": "web" },
         "repo": "acme/web", "prNumber": number, "prUrl": format!("https://github.com/acme/web/pull/{number}"),
-        "branch": "fleetd/T4-pricing", "taskId": "T4", "workstreamId": "W3", "serves": "done:0", "tier": "M",
+        "branch": "fleetd/T4-pricing", "taskId": "T4", "workstreamId": "W3", "serves": "done:0",
         "headSha": SHA, "patchId": "c".repeat(40), "state": state, "reviews": reviews, "position": 0,
         "lastError": "conflict in src/app.ts; token ghp_abcdefghijklmnopqrstuvwxyz0123456789",
         "createdAt": AT, "updatedAt": AT,
@@ -148,7 +148,6 @@ fn reviews_count_only_verdicts_on_the_current_change() {
 fn the_list_joins_github_with_the_queue_and_names_the_writing_agent() {
     let tasks = vec![task("T4", "fleetd/T4-pricing"), task("T8", "feature-9")];
     let mut ctx = RowCtx::with_tasks(&tasks);
-    ctx.reviews_needed.insert("X1".into(), 2);
     ctx.queues.insert("acme/web".into(), 3);
     let pulls = vec![
         (
@@ -218,7 +217,11 @@ fn the_list_joins_github_with_the_queue_and_names_the_writing_agent() {
         reason.starts_with("conflict in src/app.ts") && !reason.contains("ghp_"),
         "{reason}"
     );
-    assert_eq!(seven.review.needed.get(), 2);
+    assert_eq!(
+        seven.review.needed.get(),
+        1,
+        "every PR the train lands needs one review"
+    );
 
     let five = &rows[0];
     assert!(

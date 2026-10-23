@@ -2,7 +2,7 @@
 //! agent turns, measured from finished research orders of the same size (twice their median, under a hard ceiling).
 //! Spawning or messaging a task past the cap is refused with the reason, so the lead records the verdict with what
 //! it has.
-use fleetd_contracts::ledger::{Tier, Workstream};
+use fleetd_contracts::ledger::{BudgetSize, Workstream};
 use fleetd_contracts::time::SpanKind;
 use rusqlite::{Connection, params};
 
@@ -13,33 +13,33 @@ pub const MIN_SAMPLES: usize = 3;
 const WINDOW_MS: i64 = 30 * 24 * 3_600_000;
 
 /// The cap before any research order of the size has finished.
-pub fn default_turns(size: Tier) -> i64 {
+pub fn default_turns(size: BudgetSize) -> i64 {
     match size {
-        Tier::S => 20,
-        Tier::M => 60,
-        Tier::L => 150,
+        BudgetSize::S => 20,
+        BudgetSize::M => 60,
+        BudgetSize::L => 150,
     }
 }
 
 /// Twice the measured median, or the default; never above the ceiling.
-pub fn limit(size: Tier, measured_median: Option<i64>) -> i64 {
+pub fn limit(size: BudgetSize, measured_median: Option<i64>) -> i64 {
     measured_median
         .map_or_else(|| default_turns(size), |m| 2 * m)
         .clamp(1, CEILING_TURNS)
 }
 
-fn research_size(w: &Workstream) -> Option<Tier> {
+fn research_size(w: &Workstream) -> Option<BudgetSize> {
     w.playbook
         .as_ref()
         .filter(|p| p.as_str().starts_with("research@"))?;
     w.brief.as_ref()?.budget.as_ref()?.size
 }
 
-fn tier_str(t: Tier) -> &'static str {
+fn size_str(t: BudgetSize) -> &'static str {
     match t {
-        Tier::S => "S",
-        Tier::M => "M",
-        Tier::L => "L",
+        BudgetSize::S => "S",
+        BudgetSize::M => "M",
+        BudgetSize::L => "L",
     }
 }
 
@@ -52,7 +52,11 @@ pub fn spent(c: &Connection, workstream_id: &str) -> rusqlite::Result<i64> {
 }
 
 /// The median turns of research orders of `size` done in the last 30 days, with at least [`MIN_SAMPLES`] of them.
-pub fn measured_median(c: &Connection, size: Tier, now_ms: i64) -> rusqlite::Result<Option<i64>> {
+pub fn measured_median(
+    c: &Connection,
+    size: BudgetSize,
+    now_ms: i64,
+) -> rusqlite::Result<Option<i64>> {
     let since = crate::hub::store::iso_ms(now_ms - WINDOW_MS);
     let mut runs: Vec<i64> = c
         .prepare_cached(
@@ -62,7 +66,7 @@ pub fn measured_median(c: &Connection, size: Tier, now_ms: i64) -> rusqlite::Res
              WHERE w.state = 'done' AND json_extract(w.data, '$.playbook') LIKE 'research@%'
                AND json_extract(w.data, '$.brief.budget.size') = ? AND json_extract(w.data, '$.updatedAt') >= ?",
         )?
-        .query_map(params![SpanKind::Run.code(), tier_str(size), since], |r| {
+        .query_map(params![SpanKind::Run.code(), size_str(size), since], |r| {
             r.get(0)
         })?
         .collect::<rusqlite::Result<_>>()?;
@@ -85,7 +89,7 @@ pub fn refusal(c: &Connection, w: &Workstream, now_ms: i64) -> rusqlite::Result<
         format!(
             "{}'s research budget is spent: its tasks ran {used} agent turns, the cap for size {} is {cap}.",
             w.workstream_id,
-            tier_str(size).to_lowercase()
+            size_str(size).to_lowercase()
         )
     }))
 }
@@ -104,7 +108,7 @@ mod tests {
         let w = json!({
             "workstreamId": format!("W{n}"), "projectRef": { "machineId": "devbox", "projectId": "p" },
             "title": "t", "source": { "text": "t", "channel": "app", "by": "human", "at": "2026-10-19T08:00:00.000Z" },
-            "brief": { "goal": "g", "why": "w", "pointers": [], "constraints": [], "tier": "M",
+            "brief": { "goal": "g", "why": "w", "pointers": [], "constraints": [],
                 "doneWhen": [{ "type": "http", "url": "http://localhost:3000/health", "status": 200 }], "budget": { "size": size } },
             "playbook": playbook, "state": state,
             "createdAt": "2026-10-19T08:00:00.000Z", "updatedAt": "2026-10-19T09:00:00.000Z",
@@ -132,18 +136,18 @@ mod tests {
 
     #[test]
     fn the_cap_is_twice_the_measured_median_under_a_ceiling() {
-        assert_eq!(limit(Tier::M, None), 60);
-        assert_eq!(limit(Tier::S, Some(7)), 14);
-        assert_eq!(limit(Tier::L, Some(400)), CEILING_TURNS);
+        assert_eq!(limit(BudgetSize::M, None), 60);
+        assert_eq!(limit(BudgetSize::S, Some(7)), 14);
+        assert_eq!(limit(BudgetSize::L, Some(400)), CEILING_TURNS);
         let db = HubDb::open_memory().unwrap();
         db.with(|c| {
             for (n, turns) in [(1, 5), (2, 9), (3, 30)] {
                 order(c, n, "done", RESEARCH, "S");
                 runs(c, &format!("W{n}"), turns, "implementer");
             }
-            assert_eq!(measured_median(c, Tier::S, NOW)?, Some(9));
+            assert_eq!(measured_median(c, BudgetSize::S, NOW)?, Some(9));
             assert_eq!(
-                measured_median(c, Tier::M, NOW)?,
+                measured_median(c, BudgetSize::M, NOW)?,
                 None,
                 "no finished m research yet"
             );
