@@ -35,9 +35,9 @@ use fleetd_contracts::model::RuntimeMode;
 use fleetd_contracts::node_link::{HubToNode, NodeToHub};
 use fleetd_contracts::prim::NonEmpty;
 use fleetd_contracts::sessions::{
-    MachineEvent, MachineEventFrame, RunnerInfo, SessionCall, SessionCallFrame, SessionError,
-    SessionErrorCode, SessionLaunch, SessionOutput, SessionResult, SessionStatus, SessionSummary,
-    SessionWorkspace, ThreadEvent, ThreadEventFrame,
+    ItemKind, ItemStatus, MachineEvent, MachineEventFrame, RunnerInfo, SessionCall,
+    SessionCallFrame, SessionError, SessionErrorCode, SessionLaunch, SessionOutput, SessionResult,
+    SessionStatus, SessionSummary, SessionWorkspace, ThreadEvent, ThreadEventFrame, ThreadItem,
 };
 use fleetd_contracts::steer::{SteerReceipt, SteerTag};
 use futures_util::StreamExt;
@@ -312,6 +312,9 @@ struct Slot {
     pending: HashMap<String, oneshot::Sender<SessionResult>>,
 }
 
+/// Called with a followed thread that just printed a GitHub PR URL.
+pub type PrSink = Arc<dyn Fn(&ThreadRef) + Send + Sync>;
+
 /// Takes a node's steer receipts, in stream order (replayed after a link drop, so a receipt may come twice).
 pub trait SteerSink: Send + Sync {
     fn receipt(&self, machine_id: &MachineId, receipt: &SteerReceipt);
@@ -334,9 +337,25 @@ pub struct Executors {
     clones: repos::CloneWatchers,
     /// Where a node's steer receipts go (the steer area).
     steer_sink: Mutex<Option<Arc<dyn SteerSink>>>,
+    /// Told of each finished command whose output names a GitHub PR (the train).
+    pr_sink: std::sync::OnceLock<PrSink>,
     /// Where later areas plug into the M1 tools.
     pub hooks: tools::ToolHooks,
     time: std::sync::OnceLock<Arc<crate::hub::time::Time>>,
+}
+
+/// A finished command whose output holds a GitHub pull URL, such as `gh pr create`'s.
+fn names_a_pr(item: &ThreadItem) -> bool {
+    let ItemKind::Command {
+        output: Some(output),
+        ..
+    } = &item.kind
+    else {
+        return false;
+    };
+    item.status == ItemStatus::Completed
+        && output.contains("github.com/")
+        && output.contains("/pull/")
 }
 
 fn thread_ref(machine_id: &MachineId, thread_id: &str) -> ThreadRef {
@@ -455,6 +474,7 @@ impl Executors {
             machines: Mutex::default(),
             live: Mutex::default(),
             steer_sink: Mutex::default(),
+            pr_sink: std::sync::OnceLock::new(),
             runners: Mutex::default(),
             ready: Mutex::default(),
             tool_policy: Mutex::default(),
@@ -466,6 +486,10 @@ impl Executors {
 
     pub fn set_steer_sink(&self, sink: Arc<dyn SteerSink>) {
         *self.steer_sink.lock().unwrap() = Some(sink);
+    }
+
+    pub fn set_pr_sink(&self, sink: PrSink) {
+        let _ = self.pr_sink.set(sink);
     }
 
     /// `hub/serve` sets this once the policy reader exists; until then launches carry no tool rules.
@@ -733,6 +757,12 @@ impl Executors {
         };
         if ready {
             w.settle(Ready::Open);
+        }
+        if let ThreadEvent::Item(item) = &frame.event
+            && names_a_pr(item)
+            && let Some(sink) = self.pr_sink.get()
+        {
+            sink(&thread_ref(machine_id, frame.session_id.as_str()));
         }
     }
 

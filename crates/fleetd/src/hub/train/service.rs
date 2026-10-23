@@ -74,7 +74,7 @@ pub struct TrainOptions {
     pub ci_timeout: Duration,
     /// How often merged PRs are checked for merges outside the train.
     pub bypass_every: Duration,
-    /// How often a repo's open PRs are read for a writer's ready PR (a slice).
+    /// How often a repo's open PRs are read for a writer's ready PR (a slice) when no writer reported one.
     pub ready_every: Duration,
     /// Merges GitHub refuses (405/409) before the train gives up on a Change.
     pub merge_attempts: u32,
@@ -440,6 +440,18 @@ impl Train {
     fn kick(&self, repo: &str) {
         if let Some(waiting) = lock(&self.kicks).get(repo) {
             waiting.notify_one();
+        }
+    }
+
+    /// A writer in the project opened a PR (its command output named one) or ended: the project's trains read their
+    /// open PRs on a pass that starts now, instead of at the next `ready_every` sweep, so a writer's slices are queued
+    /// as it opens them.
+    pub fn writer_opened_pr(&self, project_ref: &ProjectRef) {
+        for train in self.records.trains() {
+            if train.project_ref == *project_ref {
+                lock(&self.last_ready_check).remove(&train.repo);
+                self.kick(&train.repo);
+            }
         }
     }
 
@@ -1115,8 +1127,9 @@ impl Train {
 
     /// A writer's ready PR is a slice: any open PR that is not a draft, from the writer's branch or one named after
     /// it (`<branch>-<n>`), goes on the train at once as that writer's, so its review starts while the writer works
-    /// on. Once per head, and not while the train already has it. Read from the repo's open PRs on the train's own
-    /// polling, so it needs no webhook and nothing from the writer.
+    /// on. Once per head, and not while the train already has it. Read from the repo's open PRs at once when a writer
+    /// prints a PR URL or ends (`writer_opened_pr`), and every `ready_every` as the backstop, so it needs no webhook
+    /// and nothing from the writer.
     async fn ready_pass(&self, repo: &str, project_ref: &ProjectRef) {
         let now = self.now_ms();
         let due = lock(&self.last_ready_check)
@@ -1697,19 +1710,21 @@ impl Train {
     }
 
     // M7 auto-enqueue, hooked onto task completion through the event log: a write task whose result names a PR puts
-    // it on the train. A refusal goes to the lead with its fix.
+    // it on the train. The result names one PR, so the ready pass runs now for any other slices the writer opened. A
+    // refusal goes to the lead with its fix.
     async fn on_task_completed(&self, data: &Value) {
         let Some(task_id) = data.get("taskId").and_then(Value::as_str) else {
             return;
         };
-        let Some(task) = self.host.task(&super::contract::TaskId::unchecked(task_id)) else {
+        let Some(task) = self
+            .host
+            .task(&super::contract::TaskId::unchecked(task_id))
+            .filter(|t| t.kind == "write")
+        else {
             return;
         };
-        let Some(pr_url) = task
-            .pr_url
-            .clone()
-            .filter(|u| task.kind == "write" && parse_pr_url(u).is_some())
-        else {
+        self.writer_opened_pr(&task.project_ref);
+        let Some(pr_url) = task.pr_url.clone().filter(|u| parse_pr_url(u).is_some()) else {
             return;
         };
         let input = ChangeEnqueueCall {
