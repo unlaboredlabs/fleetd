@@ -22,8 +22,7 @@ pub trait DetectorPorts: Send + Sync + 'static {
     fn decisions_active_on_key(&self, key: &DecisionKey, project: &ProjectRef) -> Vec<Decision>;
 }
 
-const TYPES: [HubEventType; 4] = [
-    HubEventType::ThreadStalled,
+const TYPES: [HubEventType; 3] = [
     HubEventType::ThreadFailed,
     HubEventType::TaskOutOfArea,
     HubEventType::DecisionRecorded,
@@ -188,7 +187,6 @@ impl Detectors {
             .unwrap_or_default();
         let r = ref_of(event);
         match (event.r#type, r) {
-            (HubEventType::ThreadStalled, Some(r)) => self.stall(event, r),
             (HubEventType::ThreadFailed, Some(r)) if data.reason.as_deref() == Some("stalled") => {
                 self.stall(event, r)
             }

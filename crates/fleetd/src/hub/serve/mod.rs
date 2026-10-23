@@ -249,7 +249,7 @@ pub fn build_on(
     });
     executors.set_time(time.clone());
     let watchdog = crate::hub::watchdog::Watchdog::new(
-        crate::hub::watchdog::config_from_env(|k| std::env::var(k).ok()),
+        crate::hub::watchdog::stall_ms_from_env(),
         executors.clone(),
         store.clone(),
         events.clone(),

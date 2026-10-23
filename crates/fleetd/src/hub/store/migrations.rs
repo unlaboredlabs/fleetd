@@ -512,4 +512,8 @@ pub(crate) const MIGRATIONS: &[&str] = &[
   DROP TABLE estimates;
   DELETE FROM incidents WHERE class = 'estimate_miss';
   "#,
+    // A stall is one thread.failed{reason:"stalled"} now; the event that announced a nudge went with the nudge.
+    r#"
+  DELETE FROM events WHERE type = 'thread.stalled';
+  "#,
 ];

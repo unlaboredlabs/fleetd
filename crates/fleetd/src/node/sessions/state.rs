@@ -65,8 +65,8 @@ pub enum EndCause {
 }
 
 /// Closes every active run of a process that is gone. A run ended by request or by a node restart is
-/// `Interrupted` (the hub's watchdog decides whether to continue it); an unexplained exit fails the run with the exit
-/// code and claude's stderr. Returns the indexes of the runs it changed.
+/// `Interrupted` (its lead decides whether to continue it); an unexplained exit fails the run with the exit code and
+/// claude's stderr. Returns the indexes of the runs it changed.
 pub fn close_out(runs: &mut [RunInfo], cause: &EndCause, at: &Timestamp) -> Vec<usize> {
     let mut changed = Vec::new();
     for (index, run) in runs.iter_mut().enumerate() {
