@@ -701,7 +701,7 @@ export const screens: readonly Screen[] = [
     ),
   },
   // One PR beside the list: its facts, description, checks, reviews with their findings, and its way to main so far.
-  // #10's checks failed after three approvals and an outdated review; a chat line's link names only the number.
+  // #10's checks failed after its approval and an outdated review; a chat line's link names only the number.
   { id: "prs.detail", route: PR(11), fixtures: ["typical", "long-text", "prs-no-github", "prs-rate-limited"] },
   { id: "prs.detail", route: PR(10), fixtures: ["typical"], variant: "failed" },
   { id: "prs.detail", route: PR(8), fixtures: ["typical"], variant: "merged" },

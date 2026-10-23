@@ -130,7 +130,7 @@ export const manyPrompts = (f: Fixture, total = 72): Fixture => {
 
 // ---- many agents ----
 
-const ROLES = ["implementer", "reviewer", "verifier", "qa", "reader", "implementer", "reviewer"] as const;
+const ROLES = ["implementer", "reviewer", "qa", "reader", "implementer", "reviewer", "reader"] as const;
 const LIVE_STATUSES = ["working", "working", "working", "waiting", "stalled", "starting", "working", "parked", "queued"] as const;
 const AREAS = ["receipt-dates", "pricing-copy", "checkout-summary", "export-resume", "share-route", "locale-tests"] as const;
 const ACTIVITIES: Array<JsonObject> = [
@@ -150,7 +150,7 @@ export const agentLane = (f: Fixture, i: number, finished: boolean, machineId: s
   const area = AREAS[i % AREAS.length] ?? "receipt-dates";
   const status = finished ? (i % 7 === 3 ? "failed" : i % 11 === 5 ? "cancelled" : "done") : (LIVE_STATUSES[i % LIVE_STATUSES.length] ?? "working");
   const startedAt = at(start, i * 70_000);
-  const verb = { implementer: "Write", reviewer: "Review", verifier: "Verify", qa: "Test", reader: "Read" }[role];
+  const verb = { implementer: "Write", reviewer: "Review", qa: "Test", reader: "Read" }[role];
   return {
     laneId: taskId,
     taskId,

@@ -50,9 +50,9 @@ export const fleet = (rows: readonly AgentLane[], seen: readonly AgentLane[], pr
       // A row drawn now is fresher than one remembered.
       const writer = rows.find(wrote) ?? seen.find(wrote);
       const checkers = seen.filter((l) => isChecker(l.role) && prOf(l) === pr.number);
-      // The PR's reviews, one count wherever it shows: what the tier needs (the hub's word), done as the larger of
-      // the hub's clean verdicts and the reviewers seen finishing (the verdict count lags a finished review).
-      // Verifiers and QA are checkers drawn under the PR, not reviews it needs.
+      // The PR's reviews, one count wherever it shows: what it needs (the hub's word, one for a PR fleetd lands),
+      // done as the larger of the hub's clean verdicts and the reviewers seen finishing (the verdict count lags a
+      // finished review). QA (and a verifier from an older hub) are checkers drawn under the PR, not reviews.
       const reviewers = checkers.filter((l) => l.role === "reviewer");
       const done = Math.max(pr.reviewsDone, reviewers.filter((l) => l.status === "done").length);
       const working = reviewers.filter((l) => !isFinal(l.status)).length;

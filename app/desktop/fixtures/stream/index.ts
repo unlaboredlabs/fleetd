@@ -49,9 +49,9 @@ Discounts use the same rounding. Today they round each line first and then add, 
 
 ## 3. Tests
 
-The verifier runs the receipt tests in all three locales, on a phone-sized window and on a wide one, and checks the PDF export against the screen. If any of them fails I'll say which and what it saw.
+QA runs the receipt tests in all three locales, on a phone-sized window and on a wide one, and checks the PDF export against the screen. If any of them fails I'll say which and what it saw.
 
-Once both PRs are green they go in one after the other, dates first. Nothing needs you yet. I'll write again when the first PR is up, and when the verifier has the screenshots for you to look at`;
+Once both PRs are green they go in one after the other, dates first. Nothing needs you yet. I'll write again when the first PR is up, and when QA has the screenshots for you to look at`;
 
 /** The reply in deltas of about the size a model streams: a few words each. */
 const deltas = (text: string, size: number): string[] => {

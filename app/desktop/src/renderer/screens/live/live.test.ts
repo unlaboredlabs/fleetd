@@ -63,14 +63,14 @@ describe("the live strip", () => {
       lane("T1", "working", { live: { laneId: "T1", status: "working", activity: { activity: { kind: "edit", path: "src/a.ts" }, since: T0 } } }),
       lane("T2", "waiting", { role: "reviewer", statusReason: "approve npm install" }),
       lane("T4", "parked", { statusReason: "usage limit until 14:00" }),
-      lane("T3", "queued", { role: "verifier" }),
+      lane("T3", "queued", { role: "qa" }),
     ]);
     expect(stripHeadline(s)).toBe("1 agent working · 1 needs you · 1 on hold · 1 queued");
     expect(s.rows.map((r) => (r.kind === "agent" ? [r.roleWord, r.words, r.machine] : r.kind))).toEqual([
       ["writer", "editing", "src/a.ts"],
       ["reviewer", "waiting on you: approve npm install", undefined],
       ["writer", "usage limit until 14:00", undefined],
-      ["verifier", "queued", undefined],
+      ["QA", "queued", undefined],
     ]);
   });
 
@@ -124,24 +124,23 @@ describe("the opened strip (#232 blocker: one count per PR)", () => {
     url: `https://github.com/acme/storefront/pull/${n}`,
     state: "reviewing" as const,
     reviewsDone: done,
-    reviewsNeeded: 3,
+    reviewsNeeded: 1,
   });
   const on = (id: string, role: AgentLane["role"], n: number, status: LaneStatus = "working") => lane(id, status, { role, pr: pr(n, 1) });
 
   it("draws one line per PR with the agents on it, the PR's needed reviews, done counted from the hub and the finished reviewers", () => {
-    const lanes = [lane("W", "working"), on("R1", "reviewer", 221), on("R2", "reviewer", 221), on("V1", "verifier", 221), on("I2", "implementer", 222), on("R3", "reviewer", 222)];
+    const lanes = [lane("W", "working"), on("R1", "reviewer", 221), on("Q1", "qa", 221), on("I2", "implementer", 222), on("R3", "reviewer", 222)];
     const order = { ...card("W1", lanes), prs: [pr(221, 1), pr(222, 0)] };
     let s = state([order]);
-    // One reviewer of #222 already finished: only the order's detail still lists it.
+    // #222's review already finished (a new push asked for another): only the order's detail still lists it.
     s = ingest(s, { tool: "order_get", input: { workstreamId: "W1" }, output: { order, doneLanes: [on("R0", "reviewer", 222, "done")], requests: [] } });
     const strip = selectStrip(project)(s);
     expect(strip?.rows.map((r) => (r.kind === "pr" ? `#${r.number} ${r.label}` : `${r.indent ? "  " : ""}${r.key}`))).toEqual([
       "W",
-      "#221 review 1/3",
+      "#221 review 1/1",
       "  R1",
-      "  R2",
-      "  V1",
-      "#222 review 1/3",
+      "  Q1",
+      "#222 review 1/1",
       "  I2",
       "  R3",
     ]);

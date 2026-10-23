@@ -27,7 +27,7 @@ const pr = (number: number, state: PrRef["state"], extra: Partial<PrRef> = {}): 
   url: `https://github.com/acme/storefront/pull/${number}`,
   state,
   reviewsDone: 0,
-  reviewsNeeded: 3,
+  reviewsNeeded: 1,
   ...extra,
 });
 const card = (workstreamId: string, lanes: AgentLane[]): OrderCard => ({
@@ -97,21 +97,21 @@ group("agents grouped by PR", () => {
     lane(id, status, { role, pr: pr(n, "reviewing"), startedAt: at(16), ...(status === "done" ? { endedAt: at(24) } : {}) });
 
   it("groups by PR; reviews are the PR's, done counted from finished reviewers", () => {
-    const seen = [writer("T1", 221), writer("T2", 222, "working"), checker("R1", 221, "done"), checker("R2", 221, "working"), checker("V1", 221, "working", "verifier")];
+    const seen = [writer("T1", 221), writer("T2", 222, "working"), checker("R1", 221, "done"), checker("R2", 221, "working"), checker("Q1", 221, "working", "qa")];
     const rows = seen.filter((l) => l.status !== "done");
     const f = fleet(rows, seen, [pr(222, "reviewing", { taskId: "T2" }), pr(221, "reviewing", { taskId: "T1" })]);
     expect(f.groups.map((g) => g.pr.number)).toEqual([221, 222]);
     const g221 = f.groups[0];
-    // One reviewer of the three needed finished; the verifier is not a review.
-    expect(g221 && groupLabel(g221)).toBe("review 1/3");
+    // The one review it needs is in; QA is not a review.
+    expect(g221 && groupLabel(g221)).toBe("review 1/1");
     // The finished writer still names the PR.
     expect(g221?.writer?.laneId).toBe("T1");
     expect([f.writers, f.others]).toEqual([[], []]);
   });
 
   it("takes the hub's count when it is ahead of the lanes seen", () => {
-    const g = fleet([], [], [pr(9, "reviewing", { reviewsDone: 2 })]).groups[0];
-    expect(g && groupLabel(g)).toBe("review 2/3");
+    const g = fleet([], [], [pr(9, "reviewing", { reviewsDone: 1 })]).groups[0];
+    expect(g && groupLabel(g)).toBe("review 1/1");
   });
 
   it("a ready PR with every review in reads reviewed", () => {

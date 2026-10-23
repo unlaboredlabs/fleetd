@@ -1,11 +1,11 @@
 // The live strip's fixtures: the typical lab hub with one order in its first project, and 0, 3 or 20 agents at work
-// on it (writers, then reviewers and verifiers on two PRs), with their live activity. Twenty fill more than a third
+// on it (writers, then one reviewer per PR and QA on two PRs), with their live activity. Twenty fill more than a third
 // of the window, so the opened strip scrolls.
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import type { JsonObject, JsonValue } from "../kit/json.ts";
 
-type Role = "implementer" | "reviewer" | "verifier";
+type Role = "implementer" | "reviewer" | "qa";
 
 const ACTIVITIES: readonly JsonObject[] = [
   { kind: "edit", path: "src/cart/total.ts" },
@@ -31,8 +31,8 @@ const fromBase = (base: Fixture, agents: number): Fixture => {
     number: n,
     url: `https://github.com/acme/storefront/pull/${n}`,
     state,
-    reviewsDone: 1,
-    reviewsNeeded: 3,
+    reviewsDone: 0,
+    reviewsNeeded: 1,
     taskId,
   });
   // Each PR's writer finished before the reviews began: the cards leave them out; the order's detail lists them.
@@ -55,7 +55,9 @@ const fromBase = (base: Fixture, agents: number): Fixture => {
   const live: JsonObject[] = [];
   for (let i = 0; i < agents; i++) {
     const id = `T${i + 1}`;
-    const role: Role = i < Math.ceil(agents / 3) ? "implementer" : i % 2 === 0 ? "reviewer" : "verifier";
+    // One review per PR: the first checker on each of the two PRs reviews it, the rest test it (QA).
+    const writers = Math.ceil(agents / 3);
+    const role: Role = i < writers ? "implementer" : i - writers < 2 ? "reviewer" : "qa";
     const onPr = role === "implementer" ? undefined : prs[i % 2];
     // At 20: one waits on you, one is paused at a usage limit (on hold), and the last waits for a free slot (a long
     // reason, cut with an ellipsis).
@@ -65,7 +67,7 @@ const fromBase = (base: Fixture, agents: number): Fixture => {
       role,
       taskId: id,
       threadRef: { machineId: projectRef.machineId, threadId: `s-${id}` },
-      title: role === "implementer" ? `write part ${i + 1} of the rounding change` : `${role === "reviewer" ? "review" : "verify"} #${i % 2 === 0 ? 221 : 222}`,
+      title: role === "implementer" ? `write part ${i + 1} of the rounding change` : `${role === "reviewer" ? "review" : "test"} #${i % 2 === 0 ? 221 : 222}`,
       model: "claude-opus-5-5",
       // The first writer does the mechanical part on medium; the rest, reviews included, run high.
       profile: i === 0 ? "medium" : "high",
