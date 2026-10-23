@@ -246,7 +246,9 @@ pub fn parse_env_file(text: &str) -> Vec<(String, String)> {
 
 /// The session's `--mcp-config`: fleetd's own agent MCP server (`fleetd agent-mcp`, this binary) for a lead or a
 /// worker, scoped to the role; nothing for a plain thread. The server reaches the hub through this node's socket, as the
-/// CLI does, and names the session so the hub can tell a lead from a task.
+/// CLI does, and names the session so the hub can tell a lead from a task. `alwaysLoad` keeps its tools in the prompt
+/// from the first turn, out of tool search (`ENABLE_TOOL_SEARCH`): every agent calls them, and finding one through a
+/// search costs a model round trip each session. claude 2.1.302 honors it for `--mcp-config` servers.
 fn mcp_config(role: SessionRole, sock: &Path, session_id: &str) -> String {
     let servers = match role.cli_arg() {
         None => serde_json::json!({}),
@@ -258,6 +260,7 @@ fn mcp_config(role: SessionRole, sock: &Path, session_id: &str) -> String {
                 "type": "stdio",
                 "command": exe,
                 "args": ["agent-mcp", "--role", role],
+                "alwaysLoad": true,
                 "env": {
                     "FLEETD_NODE_SOCK": sock.to_string_lossy(),
                     "FLEETD_THREAD_ID": session_id,

@@ -1364,4 +1364,8 @@ fn only_leads_and_workers_get_fleetds_agent_tools() {
         serde_json::json!(["agent-mcp", "--role", "lead"])
     );
     assert_eq!(lead["fleetd"]["env"]["FLEETD_NODE_SOCK"], "/n/node.sock");
+    // Loaded at start, never behind tool search, for every role that has them.
+    for role in [SessionRole::Lead, SessionRole::Worker] {
+        assert_eq!(servers(role)["fleetd"]["alwaysLoad"], true);
+    }
 }

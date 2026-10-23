@@ -172,7 +172,8 @@ explained! {
             "An agent idle more than 5 minutes otherwise rewrites its whole context to the prompt cache.",
         ("CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL", "1h") =>
             "An agent idle more than 5 minutes otherwise rewrites its whole context to the prompt cache.",
-        ("ENABLE_TOOL_SEARCH", "true") => "Tool schemas load when a tool is used, not on every request.",
+        ("ENABLE_TOOL_SEARCH", "true") =>
+            "Tool schemas load when a tool is used, not on every request. fleetd's own tools always load at start.",
     ]
 }
 
