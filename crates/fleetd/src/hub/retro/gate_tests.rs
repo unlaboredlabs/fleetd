@@ -27,8 +27,8 @@ fn project() -> ProjectRef {
     }
 }
 
-const RELAX: &str = "@@ -9,1 +9,1 @@\n-  M: { reviewers: 1, verifier: false, planFirst: false }\n+  M: { reviewers: 0, verifier: false, planFirst: false }\n";
-const TIGHTEN: &str = "@@ -9,1 +9,1 @@\n-  M: { reviewers: 1, verifier: false, planFirst: false }\n+  M: { reviewers: 2, verifier: false, planFirst: false }\n";
+const RELAX: &str = "@@ -9,1 +9,1 @@\n-  M: { reviewers: 1, verifier: false }\n+  M: { reviewers: 0, verifier: false }\n";
+const TIGHTEN: &str = "@@ -9,1 +9,1 @@\n-  M: { reviewers: 1, verifier: false }\n+  M: { reviewers: 2, verifier: false }\n";
 
 /// A hub with one pending gate change to the bugfix playbook, proposed a minute ago; returns its decision key. A
 /// relaxing one has its approval open in the project's chat, as the retro opens it.
