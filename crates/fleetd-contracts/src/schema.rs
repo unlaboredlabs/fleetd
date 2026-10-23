@@ -10,8 +10,8 @@ use serde_json::{Map, Value};
 use crate::app::{AppClientMessage, AppServerMessage};
 use crate::chat::{ChatMessage, ProjectChatState};
 use crate::events::{
-    ClaimEventData, HubEvent, HubEventType, MachineGuardData, MachineSleptData, PromptChangedData, RequestEventData,
-    ThreadEventData, TrainEventData, WorkstreamEventData, WorkstreamNoteData,
+    ClaimEventData, HubEvent, HubEventType, MachineGuardData, MachineSleptData, PromptChangedData,
+    RequestEventData, ThreadEventData, TrainEventData, WorkstreamEventData, WorkstreamNoteData,
 };
 use crate::ledger::{Decision, HumanRequest, Lead, Workstream};
 use crate::mcp::McpToolName;

@@ -57,8 +57,10 @@ fn serve(hub: &Arc<Hub>, mut node: Node) -> mpsc::UnboundedReceiver<SessionCall>
                 _ => json!({ "ok": { "kind": "done" } }),
             };
             let reply = json!({ "t": "session_reply", "id": f.id, "result": result });
-            hub.executors
-                .handle_frame(&lab_a(), serde_json::from_value::<NodeToHub>(reply).unwrap());
+            hub.executors.handle_frame(
+                &lab_a(),
+                serde_json::from_value::<NodeToHub>(reply).unwrap(),
+            );
             let _ = tx.send(f.call);
         }
     });

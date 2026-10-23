@@ -7,9 +7,9 @@ pub mod branch_diff;
 pub mod cap;
 #[cfg(test)]
 mod cap_tests;
+pub mod glob;
 #[cfg(test)]
 mod guard_tests;
-pub mod glob;
 pub mod hooks;
 pub mod policy;
 pub mod ports;

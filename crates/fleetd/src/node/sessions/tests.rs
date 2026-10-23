@@ -17,7 +17,8 @@ use tokio::sync::mpsc;
 
 use super::fake::FakeRunner;
 use super::{
-    Attached, CONTINUE_PROMPT, SessionConfig, SessionService, compile_cache_env, mcp_config, parse_env_file,
+    Attached, CONTINUE_PROMPT, SessionConfig, SessionService, compile_cache_env, mcp_config,
+    parse_env_file,
 };
 use crate::node::runner::SessionCommand;
 use crate::node::runner::claude::ALWAYS_DISALLOWED;

@@ -962,7 +962,13 @@ pub fn disk_space(
         } else {
             "minFreeGb 0 turns the disk pause off".to_owned()
         };
-        return machine_entry(machine_id, "disk", Pass, &format!("{space}; {floor}."), None);
+        return machine_entry(
+            machine_id,
+            "disk",
+            Pass,
+            &format!("{space}; {floor}."),
+            None,
+        );
     };
     let message = format!(
         "{paused}. {space}. Running agents keep going; new ones start again once it has room."
