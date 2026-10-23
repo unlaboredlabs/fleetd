@@ -55,7 +55,10 @@ impl JudgeVerdicts {
     /// Completes the judge check waiting on `verdict.taskId`. False when none is. Every recorded review verdict comes
     /// here; those of ordinary review tasks find no waiter.
     pub async fn complete(&self, verdict: &ReviewVerdict) -> bool {
-        match self.waiting.lock().await.remove(&verdict.task_id) {
+        let Some(task_id) = &verdict.task_id else {
+            return false;
+        };
+        match self.waiting.lock().await.remove(task_id) {
             Some(tx) => {
                 let _ = tx.send(verdict.clone());
                 true
@@ -124,8 +127,12 @@ pub fn verdict_outcome(task_id: &TaskId, verdict: &ReviewVerdict) -> JudgeOutcom
         },
         evidence: utf16_prefix(
             &format!(
-                "judge {task_id} at {}: {} blocking, {} non-blocking. {}",
-                utf16_prefix(&verdict.pr_head_sha, 12),
+                "judge {task_id}{}: {} blocking, {} non-blocking. {}",
+                verdict
+                    .pr_head_sha
+                    .as_ref()
+                    .map(|s| format!(" at {}", utf16_prefix(s, 12)))
+                    .unwrap_or_default(),
                 verdict.blocking,
                 verdict.non_blocking,
                 verdict.summary

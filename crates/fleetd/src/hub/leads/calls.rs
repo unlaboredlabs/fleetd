@@ -1,4 +1,4 @@
-//! Lead-side `fleetd` calls this area answers: `brief create`, `status set`. The caller
+//! Lead-side `fleetd` calls this area answers: `brief create`. The caller
 //! is already attributed to a project by its cwd; every call acts only within that project.
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult};
@@ -6,7 +6,7 @@ use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult};
 use super::Area;
 
 /// Registered in the link area's `LeadCalls` by `wiring::wire_area`.
-pub const OPS: [&str; 2] = ["brief_create", "status_set"];
+pub const OPS: [&str; 1] = ["brief_create"];
 
 impl Area {
     pub async fn lead_call(
@@ -20,11 +20,6 @@ impl Area {
                 self.workstreams
                     .brief_create(r, &c.workstream_id, c.brief)?,
             ),
-            LeadCall::StatusSet(c) => LeadCallResult::StatusSet(self.workstreams.status_set(
-                r,
-                c.text.as_str(),
-                c.workstream_id.as_ref(),
-            )?),
             other => {
                 return Err(super::error::LeadError::bare(
                     fleetd_contracts::mcp::ErrorCode::Invalid,

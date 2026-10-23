@@ -64,6 +64,10 @@ impl LeadCallHandler for CheckCalls {
             let caller = crate::hub::reviews::verdicts::Caller {
                 project_ref: caller.project_ref,
                 by: caller.by,
+                task: match caller.agent {
+                    crate::hub::link::lead_calls::CallerAgent::Task(task) => Some(task),
+                    _ => None,
+                },
             };
             match call {
                 LeadCall::ClaimDone(c) => crate::hub::checks::tools::lead_claim_done(

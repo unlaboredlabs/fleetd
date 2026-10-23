@@ -456,7 +456,7 @@ impl NodeLinkServer {
                     ErrorCode::Forbidden,
                     "this hub does not take lead-side calls yet",
                 )
-                .with_fix("carry on without this call and mention it in your next status line"));
+                .with_fix("carry on without this call and say so in your result"));
             };
             let agent = self
                 .deps

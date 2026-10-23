@@ -73,13 +73,16 @@ pub struct Claim {
     pub outcome: ClaimOutcome,
 }
 
-/// `fleetd review verdict`, the last step of every review task.
+/// A review task's verdict (`report`, `fleetd review verdict`), the last step of every review task.
 #[serde_with::skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ReviewVerdict {
-    pub task_id: TaskId,
-    pub pr_head_sha: CommitSha,
+    /// The review task. From a task's session the hub fills it in: it is the session's own task.
+    pub task_id: Option<TaskId>,
+    /// The head reviewed. The hub fills it in when left out: the head a train review round was given, else the PR's
+    /// head now; none for a judge, which reviews criteria rather than a PR.
+    pub pr_head_sha: Option<CommitSha>,
     pub blocking: Count,
     pub non_blocking: Count,
     pub summary: Text<1, 1000>,

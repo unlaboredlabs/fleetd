@@ -91,7 +91,7 @@ Leads and tasks reach fleetd through MCP tools from a `fleetd` server in their s
 | Agent | Gets |
 |---|---|
 | Lead | `spawn_agent`, `message_agent`, `agent_status`, `list_agents`, `stop_agent`, plus `workstream_open`, `brief`, `decide`, `claim_done`, `plan_*`, `request_secret`, `gated_run` and more. |
-| Task | `report` (a review verdict, or a writer's PR that is ready for review), `ask_lead` and `claim_done`. |
+| Task | `report` (a review verdict; fleetd fills in the task and the head reviewed) and `ask_lead`. A writer's ready PR goes on the train by itself. |
 
 - Results come back in the lead's next wake, never by polling.
 - The hub enforces the split whatever a prompt says: a task can't start, steer or stop agents.

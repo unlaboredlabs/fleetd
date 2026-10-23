@@ -40,7 +40,7 @@ const run = (cmd: string, args: ReadonlyArray<string>, cwd = CLONE) =>
   execFileSync(cmd, args, { cwd, env: scrubbedEnv(), encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 export const git = (...args: Array<string>) => run("git", args);
 // Outside the clone, so `--delete-branch` deletes only the remote branch, never a task's checked-out local one.
-const gh = (...args: Array<string>) => run("gh", args, LAB);
+export const gh = (...args: Array<string>) => run("gh", args, LAB);
 const ghJson = <A = Body>(...args: Array<string>): A => JSON.parse(gh(...args)) as A;
 
 /**

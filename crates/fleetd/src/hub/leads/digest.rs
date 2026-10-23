@@ -175,11 +175,6 @@ fn workstream_lines(w: &Workstream, facts: Option<&WorkstreamFacts>) -> String {
             w.workstream_id
         );
     };
-    let status = w
-        .headline
-        .as_ref()
-        .map(|h| format!("\n  lead says: {}", one_line(h.as_ref(), 200)))
-        .unwrap_or_default();
     let steers = facts
         .and_then(|f| f.steers.as_ref())
         .map(|s| format!("\n  steers: {s}"))
@@ -189,7 +184,7 @@ fn workstream_lines(w: &Workstream, facts: Option<&WorkstreamFacts>) -> String {
         .map(|p| format!("\n  {p}"))
         .unwrap_or_default();
     format!(
-        "{head}{status}\n  done when: {}{plan}{steers}",
+        "{head}\n  done when: {}{plan}{steers}",
         done_when_text(&brief.done_when, facts.map(|f| &f.passed), 120)
     )
 }
@@ -345,7 +340,7 @@ pub fn render_lead_digest(input: &DigestInput) -> String {
             "Merge train",
             input.train.clone().unwrap_or_default(),
             12,
-            "`change_status`",
+            "older ones not shown",
             "\n",
         ),
         Section::new(

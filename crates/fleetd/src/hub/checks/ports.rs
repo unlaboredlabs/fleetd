@@ -6,7 +6,7 @@ use fleetd_contracts::ledger::{MetricValues, Workstream, WorkstreamId};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 use fleetd_contracts::model::ActionItem;
 use fleetd_contracts::tasks::{Task, TaskId};
-use fleetd_contracts::verification::{CheckResult, ClaimId};
+use fleetd_contracts::verification::{CheckResult, ClaimId, CommitSha};
 use std::future::Future;
 use std::pin::Pin;
 
@@ -118,6 +118,11 @@ pub trait Ports: Send + Sync + 'static {
     /// When the workstream's brief was last set or edited (its latest `workstream.running`, or a `workstream.state`
     /// that edited it).
     fn brief_set_ms(&self, workstream: &WorkstreamId) -> Option<i64>;
+    /// The head a review task reviewed when it didn't say: its train round's head, else its PR's head now. None for a
+    /// judge (no PR) or a head the hub can't read.
+    fn reviewed_head<'a>(&'a self, _task: &'a Task) -> BoxFuture<'a, Option<CommitSha>> {
+        Box::pin(async { None })
+    }
     // executor
     fn thread_actions<'a>(
         &'a self,

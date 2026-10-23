@@ -18,6 +18,7 @@ use fleetd_contracts::ledger::{
 use fleetd_contracts::model::ActionItem;
 use fleetd_contracts::prim::{Line, Text};
 use fleetd_contracts::tasks::{Task, TaskId, TaskKind};
+use fleetd_contracts::verification::CommitSha;
 use std::sync::{Arc, OnceLock, Weak};
 
 #[derive(Default)]
@@ -230,6 +231,29 @@ impl Ports for HubPorts {
             )?)
         });
         logged(at, "reading when a brief was set").flatten()
+    }
+    fn reviewed_head<'a>(&'a self, task: &'a Task) -> BoxFuture<'a, Option<CommitSha>> {
+        Box::pin(async move {
+            let hub = self.hub()?;
+            // A train round reviews the head it was spawned for: any head with the round's patch id binds the same.
+            let round: Option<String> = hub
+                .db
+                .with(|c| {
+                    Ok(rusqlite::OptionalExtension::optional(c.query_row(
+                        "SELECT p.head_sha FROM review_tasks t JOIN review_patch_ids p ON p.change_id = t.change_id AND p.patch_id = t.patch_id WHERE t.task_id = ?1 LIMIT 1",
+                        [task.task_id.as_str()],
+                        |r| r.get(0),
+                    ))?)
+                })
+                .ok()
+                .flatten();
+            if let Some(sha) = round {
+                return CommitSha::new(sha).ok();
+            }
+            let pr = fleetd_contracts::train::parse_pr_url(task.pr.as_ref()?.as_str())?;
+            let detail = hub.prs.github.detail(&pr.repo, pr.pr_number).await.value?;
+            CommitSha::new(detail.pull.head_ref_oid.to_lowercase()).ok()
+        })
     }
     fn thread_actions<'a>(
         &'a self,

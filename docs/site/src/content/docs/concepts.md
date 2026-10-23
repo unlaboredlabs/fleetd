@@ -138,7 +138,7 @@ codes.
 ## What agents can call
 
 Leads and tasks act through fleetd's MCP tools, never Claude's own subagents. A lead starts agents with
-`spawn_agent`; a task reports back with `report`, `ask_lead` and `claim_done`.
+`spawn_agent`; a task reports back with `report` and `ask_lead`.
 
 - [Agent tools](/docs/reference/agent-tools): every tool an agent can call, generated from the code.
 - [What agents are told](/docs/what-agents-are-told): every prompt fleetd sends a model.

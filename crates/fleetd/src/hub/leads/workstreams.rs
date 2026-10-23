@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::ProjectRef;
-use fleetd_contracts::lead_calls::{BriefCreateResult, StatusSetResult};
+use fleetd_contracts::lead_calls::BriefCreateResult;
 use fleetd_contracts::ledger::{
     Brief, IntakeChannel, PlaybookName, PlaybookRef, Workstream, WorkstreamId, WorkstreamState,
 };
@@ -204,7 +204,7 @@ impl Workstreams {
                 ),
             ));
         }
-        let running = format!("Plan the work and report progress with `status_set` for {id}.");
+        let running = format!("Spawn its agents with `spawn_agent` for {id}.");
         let result = |state: WorkstreamState, next: String| BriefCreateResult {
             workstream_id: id.clone(),
             state,
@@ -254,60 +254,5 @@ impl Workstreams {
             ));
         }
         Ok(result(state, format!("Brief edited. {running}")))
-    }
-
-    /// `fleetd status set`. Without a workstream it needs exactly one open workstream in the project.
-    pub fn status_set(
-        &self,
-        caller: &ProjectRef,
-        text: &str,
-        workstream_id: Option<&WorkstreamId>,
-    ) -> Result<StatusSetResult, LeadError> {
-        let stored = match workstream_id {
-            Some(id) => self.own(caller, id)?,
-            None => {
-                let open = self.records.workstreams_list(&WorkstreamFilter {
-                    project_ref: Some(caller.clone()),
-                    open: true,
-                    limit: 2,
-                    ..Default::default()
-                })?;
-                if open.len() != 1 {
-                    return Err(LeadError::invalid(
-                        if open.is_empty() {
-                            "Your project has no open workstream."
-                        } else {
-                            "Your project has several open workstreams."
-                        },
-                        "Pass workstreamId W<n> with an id from your digest.",
-                    ));
-                }
-                self.own(caller, &open[0].workstream_id)?
-            }
-        };
-        let at = now_iso(&self.ctx);
-        let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
-        let headline: String = {
-            // `.slice(0, 280)` in UTF-16 units, without the ellipsis.
-            let mut used = 0;
-            flat.chars()
-                .take_while(|c| {
-                    used += c.len_utf16();
-                    used <= 280
-                })
-                .collect()
-        };
-        let workstream = Workstream {
-            headline: Some(fleetd_contracts::ledger::Headline::unchecked(headline)),
-            headline_at: Some(at.clone().into()),
-            updated_at: at.into(),
-            ..stored.clone()
-        };
-        let id = workstream.workstream_id.clone();
-        self.records.workstream_put(&workstream)?;
-        Ok(StatusSetResult {
-            workstream_id: id,
-            next: Some("Status recorded. Carry on.".into()),
-        })
     }
 }

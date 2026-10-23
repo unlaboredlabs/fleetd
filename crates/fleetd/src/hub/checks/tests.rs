@@ -13,7 +13,9 @@ use fleetd_contracts::ledger::{MetricValues, Workstream, WorkstreamId, Workstrea
 use fleetd_contracts::mcp::ErrorCode;
 use fleetd_contracts::model::ActionItem;
 use fleetd_contracts::tasks::{Task, TaskId};
-use fleetd_contracts::verification::{CheckOutcome, CheckResultRanBy, ClaimOutcome};
+use fleetd_contracts::verification::{
+    CheckOutcome, CheckResultRanBy, ClaimOutcome, CommitSha, ReviewVerdict,
+};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -48,6 +50,9 @@ fn workstream(id: &str, done_when: Option<Vec<Value>>) -> Workstream {
 #[derive(Default)]
 struct Fake {
     workstreams: Mutex<HashMap<WorkstreamId, Workstream>>,
+    tasks: Mutex<HashMap<TaskId, Task>>,
+    /// The head `reviewed_head` answers.
+    head: Mutex<Option<CommitSha>>,
     wakes: Mutex<Vec<ClaimWake>>,
     /// What the node answers every command: exit code and output tail.
     node: Arc<Mutex<(i64, String)>>,
@@ -127,8 +132,12 @@ impl Ports for Fake {
     ) -> BoxFuture<'a, Result<String, Refusal>> {
         Box::pin(async { Err(super::ports::invalid("no research here", None)) })
     }
-    fn task(&self, _: &TaskId) -> Option<Task> {
-        None
+    fn task(&self, id: &TaskId) -> Option<Task> {
+        self.tasks.lock().unwrap().get(id).cloned()
+    }
+    fn reviewed_head<'a>(&'a self, _: &'a Task) -> BoxFuture<'a, Option<CommitSha>> {
+        let head = self.head.lock().unwrap().clone();
+        Box::pin(async move { head })
     }
     fn tasks_of(&self, _: &ProjectRef, _: &WorkstreamId, _: usize) -> Vec<Task> {
         vec![]
@@ -808,4 +817,78 @@ async fn closing_over_work_on_purpose_never_drops_work_spawned_after_the_claim()
         .await
         .unwrap();
     assert_eq!(done.state, WorkstreamState::Done);
+}
+
+/// From a task's session a verdict is that task's, with the head the hub knows it reviewed; a task can't record
+/// another's, and a call from no session must name its task.
+#[tokio::test]
+async fn a_review_task_records_its_own_verdict_and_the_hub_fills_its_head() {
+    use crate::hub::reviews::verdicts::{Caller, Verdicts};
+    let clock: Arc<dyn Clock> = Arc::new(SystemClock);
+    let db = HubDb::open_memory().unwrap();
+    let events = Arc::new(EventLog::new(db.clone(), clock.clone()).unwrap());
+    let ports = Arc::new(Fake::default());
+    for (id, kind) in [("T4", "review"), ("T5", "review")] {
+        let task: Task = serde_json::from_value(json!({
+            "taskId": id, "projectRef": { "machineId": "lab-a", "projectId": "p1" }, "workstreamId": "W1",
+            "title": "review", "kind": kind, "prompt": "review it", "areas": [], "state": "running", "attempt": 1,
+            "createdAt": "2026-10-17T10:00:00.000Z", "pr": "https://github.com/o/r/pull/7",
+        }))
+        .unwrap();
+        ports
+            .tasks
+            .lock()
+            .unwrap()
+            .insert(task.task_id.clone(), task);
+    }
+    let head = CommitSha::unchecked("a".repeat(40));
+    *ports.head.lock().unwrap() = Some(head.clone());
+    let dyn_ports: Arc<dyn Ports> = ports.clone();
+    let verdicts = Verdicts::new(
+        db,
+        events,
+        dyn_ports,
+        Arc::new(JudgeVerdicts::default()),
+        clock,
+    );
+    let verdict = |task: Option<&str>| -> ReviewVerdict {
+        serde_json::from_value(
+            json!({ "taskId": task, "blocking": 1, "nonBlocking": 0, "summary": "a.rs:3 leaks" }),
+        )
+        .unwrap()
+    };
+    let from = |task: Option<&str>| Caller {
+        project_ref: project(),
+        by: LEAD_BY.into(),
+        task: task.map(TaskId::unchecked),
+    };
+
+    let recorded = verdicts
+        .record(&from(Some("T4")), verdict(None))
+        .await
+        .unwrap();
+    assert_eq!(
+        (recorded.verdict.task_id, recorded.verdict.pr_head_sha),
+        (Some(TaskId::unchecked("T4")), Some(head))
+    );
+    let other = verdicts
+        .record(&from(Some("T4")), verdict(Some("T5")))
+        .await
+        .unwrap_err();
+    assert!(
+        other.message.contains("only your own verdict"),
+        "{}",
+        other.message
+    );
+    let unnamed = verdicts
+        .record(&from(None), verdict(None))
+        .await
+        .unwrap_err();
+    assert_eq!(unnamed.fix.as_deref(), Some("Pass taskId."));
+    assert!(
+        verdicts
+            .record(&from(None), verdict(Some("T5")))
+            .await
+            .is_ok()
+    );
 }

@@ -21,13 +21,13 @@ use crate::plan::{
     PlanAddCall, PlanDropCall, PlanEditCall, PlanItemId, PlanItemResult, PlanMilestoneCall,
     PlanMilestoneResult, PlanShowCall, PlanShowResult,
 };
-use crate::prim::{Line, List, NonEmpty, Text};
+use crate::prim::{List, NonEmpty, Text};
 use crate::secrets::SecretSink;
 use crate::steer::SteerId;
 use crate::tasks::{
     AbsolutePath, PrUrl, Task, TaskId, TaskKind, TaskPrompt, TaskState, TaskTitle, task_spawn_rule,
 };
-use crate::train::{Change, ChangeId, GitHubPrUrl};
+use crate::train::{Change, GitHubPrUrl};
 use crate::verification::{Claim, ClaimId, ReviewVerdict};
 
 /// Under the node user's home directory; mode 0600.
@@ -111,15 +111,6 @@ pub struct DecideCall {
     pub why: Option<DecisionWhy>,
     #[serde(default)]
     pub scope: DecideScope,
-    pub workstream_id: Option<WorkstreamId>,
-}
-
-/// `fleetd status set "<one line>" [--workstream W12]`.
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct StatusSetCall {
-    pub text: Line<1, 280>,
     pub workstream_id: Option<WorkstreamId>,
 }
 
@@ -219,13 +210,6 @@ pub struct ChangeEnqueueCall {
     pub item: Option<PlanItemId>,
 }
 
-/// `fleetd change status X1`.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ChangeStatusCall {
-    pub change_id: ChangeId,
-}
-
 /// A lead opens its own workstream for work it took from the chat (`workstream_open`): a draft it then briefs with
 /// `brief`. `template` picks the playbook (feature, bugfix, research).
 #[skip_serializing_none]
@@ -252,13 +236,6 @@ pub struct AskLeadCall {
     pub question: Text<1, 4000>,
 }
 
-/// A writer's slice is ready (the `report` MCP tool with `kind: "slice_ready"`): its PR goes on the train now, so the
-/// order's reviewers start on it while the writer works on. The writer is the task the calling session runs.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct SliceReadyCall {
-    pub pr_url: GitHubPrUrl,
-}
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "op", rename_all = "snake_case")]
@@ -267,7 +244,6 @@ pub enum LeadCall {
     RequestSecret(RequestSecretCall),
     RequestWithdraw(RequestWithdrawCall),
     Decide(DecideCall),
-    StatusSet(StatusSetCall),
     DecisionsSearch(DecisionsSearchCall),
     TaskSpawn(TaskSpawnCall),
     TaskList(TaskListCall),
@@ -279,7 +255,6 @@ pub enum LeadCall {
     /// review task.
     ReviewVerdict(ReviewVerdict),
     ChangeEnqueue(ChangeEnqueueCall),
-    ChangeStatus(ChangeStatusCall),
     GatedRun(GatedRunCall),
     PlanMilestone(PlanMilestoneCall),
     PlanAdd(PlanAddCall),
@@ -287,7 +262,6 @@ pub enum LeadCall {
     PlanDrop(PlanDropCall),
     PlanShow(PlanShowCall),
     AskLead(AskLeadCall),
-    SliceReady(SliceReadyCall),
     WorkstreamOpen(WorkstreamOpenCall),
 }
 
@@ -315,14 +289,6 @@ pub struct RequestResult {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DecideResult {
     pub decision: Decision,
-    pub next: Option<String>,
-}
-
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct StatusSetResult {
-    pub workstream_id: WorkstreamId,
     pub next: Option<String>,
 }
 
@@ -395,7 +361,6 @@ pub enum LeadCallResult {
     RequestSecret(RequestResult),
     RequestWithdraw(RequestResult),
     Decide(DecideResult),
-    StatusSet(StatusSetResult),
     DecisionsSearch(DecisionsSearchResult),
     TaskSpawn(TaskResultFrame),
     TaskList(TaskListResult),
@@ -405,7 +370,6 @@ pub enum LeadCallResult {
     ClaimDone(ClaimDoneResult),
     ReviewVerdict(ReviewVerdictResult),
     ChangeEnqueue(ChangeResult),
-    ChangeStatus(ChangeResult),
     GatedRun(RequestResult),
     PlanMilestone(PlanMilestoneResult),
     PlanAdd(PlanItemResult),
@@ -413,7 +377,6 @@ pub enum LeadCallResult {
     PlanDrop(PlanItemResult),
     PlanShow(PlanShowResult),
     AskLead(AskLeadResult),
-    SliceReady(ChangeResult),
     WorkstreamOpen(WorkstreamOpenResult),
 }
 

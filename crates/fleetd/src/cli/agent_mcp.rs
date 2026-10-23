@@ -8,10 +8,10 @@ use std::path::Path;
 use std::time::Duration;
 
 use fleetd_contracts::lead_calls::{
-    AskLeadCall, BriefCreateCall, ChangeEnqueueCall, ChangeStatusCall, ClaimDoneCall, DecideCall,
+    AskLeadCall, BriefCreateCall, ChangeEnqueueCall, ClaimDoneCall, DecideCall,
     DecisionsSearchCall, GatedRunCall, LeadCall, RequestSecretCall, RequestWithdrawCall,
-    SliceReadyCall, StatusSetCall, TaskCancelCall, TaskListCall, TaskMessageCall, TaskSpawnCall,
-    TaskStatusCall, WorkstreamOpenCall,
+    TaskCancelCall, TaskListCall, TaskMessageCall, TaskSpawnCall, TaskStatusCall,
+    WorkstreamOpenCall,
 };
 use fleetd_contracts::plan::{
     PlanAddCall, PlanDropCall, PlanEditCall, PlanMilestoneCall, PlanShowCall,
@@ -44,15 +44,6 @@ pub struct Tool {
     /// What a person must do before the call takes effect; `None` when nothing.
     pub human: Option<&'static str>,
 }
-
-impl Tool {
-    /// Whether calling this tool can make the lead call `op`: its own, or for `report` a writer's ready slice too.
-    pub fn makes(&self, op: &str) -> bool {
-        self.op == op || (self.name == "report" && op == SLICE_READY)
-    }
-}
-
-const SLICE_READY: &str = "slice_ready";
 
 const fn lead(
     name: &'static str,
@@ -192,12 +183,6 @@ static TOOLS: &[Tool] = &[
         inline_schema::<PlanShowCall>,
     ),
     lead(
-        "status_set",
-        "status_set",
-        "Your one-line status for a workstream; it shows as \"lead says\".",
-        inline_schema::<StatusSetCall>,
-    ),
-    lead(
         "decisions_search",
         "decisions_search",
         "Search the decision log.",
@@ -208,12 +193,6 @@ static TOOLS: &[Tool] = &[
         "change_enqueue",
         "Put a PR no task's result put there on its repo's merge train; only the train merges.",
         inline_schema::<ChangeEnqueueCall>,
-    ),
-    lead(
-        "change_status",
-        "change_status",
-        "A merge-train change as stored.",
-        inline_schema::<ChangeStatusCall>,
     ),
     lead(
         "workstream_open",
@@ -227,10 +206,9 @@ static TOOLS: &[Tool] = &[
         op: "review_verdict",
         worker: true,
         lead: false,
-        description: "A reviewer records its verdict once, before its final message: the full SHA it reviewed, the \
-                      number of blocking and non-blocking findings and a one-paragraph summary. A writer reports \
-                      each slice whose PR is complete with kind slice_ready and its prUrl: its review starts at once \
-                      while you go on with the next slice.",
+        description: "Record your review verdict once, before your final message: the number of blocking and \
+                      non-blocking findings and a one-paragraph summary. fleetd fills in your task and the head you \
+                      reviewed.",
         schema: report_schema,
         human: None,
     },
@@ -244,45 +222,16 @@ static TOOLS: &[Tool] = &[
         schema: inline_schema::<AskLeadCall>,
         human: None,
     },
-    Tool {
-        name: "claim_done",
-        op: "claim_done",
-        worker: true,
-        lead: false,
-        description: "Claim your workstream done: fleetd runs its done-when checks itself.",
-        schema: inline_schema::<ClaimDoneCall>,
-        human: None,
-    },
 ];
 
-/// `report`'s two shapes as one object schema (a tool's input must be an object): a verdict, or `kind: "slice_ready"`
-/// with `prUrl`. `call_of` picks the call by `kind`.
+/// A verdict without what the hub fills in from the session: its task and the head it reviewed.
 fn report_schema() -> Value {
     let mut schema = inline_schema::<ReviewVerdict>();
-    let slice = inline_schema::<SliceReadyCall>();
-    if let (Some(props), Some(extra)) = (
-        schema["properties"].as_object_mut(),
-        slice["properties"].as_object(),
-    ) {
-        props.extend(extra.clone());
-        props.insert(
-            "kind".into(),
-            json!({ "type": "string", "enum": ["verdict", "slice_ready"],
-                "description": "verdict (the default) for a review, slice_ready for a writer's PR that is ready" }),
-        );
-    }
-    if let Some(object) = schema.as_object_mut() {
-        object.remove("required");
+    if let Some(props) = schema["properties"].as_object_mut() {
+        props.remove("taskId");
+        props.remove("prHeadSha");
     }
     schema
-}
-
-/// The op a `report` makes: a writer's ready slice, else a verdict.
-fn report_op(call: &mut serde_json::Map<String, Value>) -> &'static str {
-    match call.remove("kind").as_ref().and_then(Value::as_str) {
-        Some(SLICE_READY) => SLICE_READY,
-        _ => "review_verdict",
-    }
 }
 
 pub fn tools_for(role: Role) -> impl Iterator<Item = &'static Tool> {
@@ -310,12 +259,7 @@ pub fn call_of(role: Role, name: &str, arguments: Value) -> Result<Value, String
         Value::Null => serde_json::Map::new(),
         _ => return Err("The arguments must be an object.".into()),
     };
-    let op = if tool.name == "report" {
-        report_op(&mut call)
-    } else {
-        tool.op
-    };
-    call.insert("op".into(), op.into());
+    call.insert("op".into(), tool.op.into());
     let call = Value::Object(call);
     serde_json::from_value::<LeadCall>(call.clone())
         .map_err(|e| format!("Invalid arguments for {name}: {e}."))?;
@@ -433,8 +377,8 @@ mod tests {
     }
 
     #[test]
-    fn a_worker_sees_only_report_ask_lead_and_claim_done() {
-        assert_eq!(names(Role::Worker), ["report", "ask_lead", "claim_done"]);
+    fn a_worker_sees_only_report_and_ask_lead() {
+        assert_eq!(names(Role::Worker), ["report", "ask_lead"]);
         let lead = names(Role::Lead);
         for tool in [
             "spawn_agent",
@@ -492,39 +436,15 @@ mod tests {
     }
 
     #[test]
-    fn report_is_a_verdict_or_a_writers_ready_slice() {
-        let pr = "https://github.com/acme/app/pull/12";
+    fn report_is_a_verdict_the_hub_completes() {
+        let verdict = json!({ "blocking": 0, "nonBlocking": 1, "summary": "ok" });
         assert_eq!(
-            call_of(
-                Role::Worker,
-                "report",
-                json!({ "kind": "slice_ready", "prUrl": pr })
-            )
-            .unwrap(),
-            json!({ "op": "slice_ready", "prUrl": pr })
-        );
-        let sha = "a".repeat(40);
-        let verdict = json!({ "taskId": "T4", "prHeadSha": sha, "blocking": 0, "nonBlocking": 1, "summary": "ok" });
-        assert_eq!(
-            call_of(Role::Worker, "report", verdict.clone()).unwrap()["op"],
-            "review_verdict"
-        );
-        let mut tagged = verdict;
-        tagged["kind"] = json!("verdict");
-        let call = call_of(Role::Worker, "report", tagged).unwrap();
-        assert_eq!(
-            (call["op"].as_str(), call.get("kind")),
-            (Some("review_verdict"), None)
-        );
-        let missing =
-            call_of(Role::Worker, "report", json!({ "kind": "slice_ready" })).unwrap_err();
-        assert!(
-            missing.starts_with("Invalid arguments for report"),
-            "{missing}"
+            call_of(Role::Worker, "report", verdict).unwrap(),
+            json!({ "op": "review_verdict", "blocking": 0, "nonBlocking": 1, "summary": "ok" })
         );
         let schema = report_schema();
-        for field in ["kind", "prUrl", "prHeadSha", "summary"] {
-            assert!(schema["properties"].get(field).is_some(), "{field}");
+        for field in ["taskId", "prHeadSha"] {
+            assert!(schema["properties"].get(field).is_none(), "{field}");
         }
     }
 

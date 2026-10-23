@@ -115,7 +115,7 @@ pub fn help_for(argv: &[String]) -> Option<String> {
         "prompts" | "instructions" => prompts::PROMPTS_USAGE.to_owned(),
         "time" => time::TIME_USAGE.to_owned(),
         "update" => UPDATE_USAGE.to_owned(),
-        "status" if !lead::is_lead_command(argv) => status::STATUS_USAGE.to_owned(),
+        "status" => status::STATUS_USAGE.to_owned(),
         "steer" | "steers" => steer::STEER_USAGE.to_owned(),
         "chat" => chat::CHAT_USAGE.to_owned(),
         _ if lead::is_lead_command(argv) => lead::LEAD_USAGE.to_owned(),
@@ -164,16 +164,15 @@ pub fn run(argv: &[String]) -> CliResult {
 }
 
 /// Commands that keep running (`node …`, `status --watch`, `steer --wait`, `chat --follow`) or wait on other processes
-/// or the hub (setup, `update`, `status`, `steer`, `chat`). `status set` is a lead call.
+/// or the hub (setup, `update`, `status`, `steer`, `chat`).
 fn is_long_running(argv: &[String]) -> bool {
-    match argv.first().map(String::as_str) {
+    matches!(
+        argv.first().map(String::as_str),
         Some(
             "init" | "doctor" | "uninstall" | "machine" | "project" | "projects" | "node" | "time"
-            | "update" | "steer" | "steers" | "chat",
-        ) => true,
-        Some("status") => !lead::is_lead_command(argv),
-        _ => false,
-    }
+                | "update" | "steer" | "steers" | "chat" | "status"
+        )
+    )
 }
 
 async fn run_long_running(argv: &[String]) -> u8 {

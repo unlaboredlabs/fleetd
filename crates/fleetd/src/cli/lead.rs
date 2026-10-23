@@ -31,7 +31,6 @@ pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>
              take back a secret request or a command approval the human said in chat is not needed
   decide --key <k> --value <v> [--why <w>] [--scope project|workstream] [--workstream <W>]
              log a decision you made yourself
-  status set "<one line>" [--workstream <W>]
   decisions search "<query>"
   task spawn --workstream <W> --title <t> --prompt <p> [--kind write|read|review]
       [--profile high|medium] [--pr <url>] [--qa] [--item P<n>]
@@ -53,7 +52,6 @@ pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>
   change enqueue --pr <url> [--task <T>] [--workstream <W>] [--item P<n>]
              put a PR on its repo's merge train (a write task's PR goes on by itself). Only the
              train merges. --item links the PR to that plan item
-  change status <X>
   plan milestone "<title>" [--position <n>]
   plan add "<title>" --milestone M<n> [--workstream <W>] [--must|--polish] [--size s|m|l]
       [--after P1,P2] [--pr <url>] [--check <n>] [--why "<note>"] [--steer S<n>]
@@ -78,7 +76,6 @@ const LEAD_COMMANDS: &[&str] = &[
     "brief",
     "request",
     "decide",
-    "status",
     "decisions",
     "task",
     "claim",
@@ -89,13 +86,9 @@ const LEAD_COMMANDS: &[&str] = &[
     "plan",
 ];
 
-/// `status` is a lead call only as `status set`; any other `fleetd status` is the human's progress view.
 pub fn is_lead_command(argv: &[String]) -> bool {
-    match argv.first().map(String::as_str) {
-        Some("status") => argv.get(1).map(String::as_str) == Some("set"),
-        Some(command) => LEAD_COMMANDS.contains(&command),
-        None => false,
-    }
+    argv.first()
+        .is_some_and(|command| LEAD_COMMANDS.contains(&command.as_str()))
 }
 
 fn usage(message: &str) -> CliResult {
@@ -322,20 +315,6 @@ pub fn parse_lead_args(
                 ("workstreamId", s(v.str("workstream"))),
             ])
         }
-        Some("status") => {
-            if sub != Some("set") {
-                return Err(r#"expected fleetd status set "<one line>""#.into());
-            }
-            only(&["workstream"])?;
-            if rest.is_empty() {
-                return Err(r#"expected fleetd status set "<one line>""#.into());
-            }
-            defined(vec![
-                ("op", s(Some("status_set"))),
-                ("text", Some(Value::String(rest.join(" ")))),
-                ("workstreamId", s(v.str("workstream"))),
-            ])
-        }
         Some("decisions") => {
             if sub != Some("search") {
                 return Err(r#"expected fleetd decisions search "<query>""#.into());
@@ -505,14 +484,7 @@ pub fn parse_lead_args(
                     ("item", s(v.str("item"))),
                 ])
             }
-            Some("status") => {
-                only(&[])?;
-                if rest.len() != 1 {
-                    return Err("expected fleetd change status <X>".into());
-                }
-                json!({ "op": "change_status", "changeId": rest[0] })
-            }
-            _ => return Err("expected fleetd change enqueue|status".into()),
+            _ => return Err("expected fleetd change enqueue".into()),
         },
         Some("gated") => {
             if sub != Some("run") || !rest.is_empty() {
@@ -1123,10 +1095,6 @@ pub fn format_result(result: &Value) -> String {
             lines.push(format!("Logged {}.", decision_line(&result["decision"])));
             next = "carry on. This key will not be asked again in this scope.".into();
         }
-        "status_set" => {
-            lines.push(format!("Status set for {}.", st(result, "workstreamId")));
-            next = "carry on.".into();
-        }
         "decisions_search" => {
             let decisions = arr(result, "decisions");
             if decisions.is_empty() {
@@ -1276,7 +1244,7 @@ pub fn format_result(result: &Value) -> String {
                 st(result, "workstreamId")
             );
         }
-        "change_enqueue" | "change_status" => {
+        "change_enqueue" => {
             lines.extend(change_lines(&result["change"]));
             next = "don't merge it yourself; the train merges and the outcome arrives in a wake."
                 .into();
@@ -1369,7 +1337,7 @@ pub struct LeadDeps<'a> {
     pub read_file: &'a dyn Fn(&str) -> std::io::Result<String>,
 }
 
-/// `fleetd brief|request|decide|status|decisions|task|claim|review|change|gated|workstream|plan …`.
+/// `fleetd brief|request|decide|decisions|task|claim|review|change|gated|workstream|plan …`.
 pub fn lead_command(argv: &[String], deps: &LeadDeps) -> CliResult {
     let call = match parse_lead_args(argv, deps.read_file) {
         Ok(call) => call,
@@ -1627,10 +1595,6 @@ mod tests {
                     "missing.json",
                 ],
                 "cannot read --file missing.json",
-            ),
-            (
-                &["status", "show"],
-                r#"expected fleetd status set "<one line>""#,
             ),
             (
                 &["decisions", "search", "x", "--workstream", "W1"],

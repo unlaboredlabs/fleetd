@@ -405,12 +405,6 @@ fleetd decide --key <k> --value <v> [--why <w>] [--scope project|workstream] [--
 
 log a decision you made yourself
 
-### fleetd status set {#status-set}
-
-```text
-fleetd status set "<one line>" [--workstream <W>]
-```
-
 ### fleetd decisions search {#decisions-search}
 
 ```text
@@ -476,12 +470,6 @@ fleetd change enqueue --pr <url> [--task <T>] [--workstream <W>] [--item P<n>]
 ```
 
 put a PR on its repo's merge train (a write task's PR goes on by itself). Only the train merges. `--item` links the PR to that plan item
-
-### fleetd change status {#change-status}
-
-```text
-fleetd change status <X>
-```
 
 ### fleetd plan milestone {#plan-milestone}
 

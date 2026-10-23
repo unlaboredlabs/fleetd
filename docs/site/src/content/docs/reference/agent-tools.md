@@ -15,9 +15,11 @@ The app shows each agent's role on its lane. The role decides the fleetd tools; 
 | Role | How it starts | fleetd tools | Can start agents |
 |---|---|---|---|
 | Lead | One per project, started by the project's first order | [Lead tools](#lead-tools) | Yes |
+| Finish-all lead | A lead whose workstream runs the finish-all playbook. It also uses `inventory` and `workstream_spawn` | [Lead tools](#lead-tools) | Yes, child workstreams too |
 | Implementer | `spawn_agent` with kind `write`. Gets its own worktree and branch | [Task tools](#task-tools) | No |
 | Reader | `spawn_agent` with kind `read` | [Task tools](#task-tools) | No |
 | Reviewer | `spawn_agent` with kind `review` | [Task tools](#task-tools) | No |
+| Verifier | A review task the review gate starts as the verifier | [Task tools](#task-tools) | No |
 | QA | `spawn_agent` with kind `review` and `qa: true` | [Task tools](#task-tools) | No |
 
 ## Hub limits
@@ -26,19 +28,21 @@ The hub checks these on every fleetd call a session makes, through its MCP tools
 
 | Limit | Value |
 |---|---|
-| Who can start agents | A lead, with `spawn_agent`. A task's agent can't. |
+| Who can start agents | A lead, with `spawn_agent`, `workstream_spawn`. A task's agent can't. |
 | Depth | 1. A lead is depth 0 and its tasks depth 1; nothing goes deeper. |
 | Open tasks per lead | 32 (queued, running or idle). |
-| Agents running at once, per project | The project's max agents, which a person sets (`cap_set`, the chat's Max agents); unset, the fleet cap. A spawn over it queues and starts by itself; a review goes ahead of queued writers. The lead is not an agent and doesn't count. |
-| Agents running at once, fleet-wide | The fleet cap, 40 by default. |
-| Calls a task's agent may make | `report`, `ask_lead`, `claim_done`. Every other call is refused. |
+| Agents running at once, per project | The project's max agents, which a person sets (`cap_set`, the chat's Max agents); unset, the fleet cap. A spawn over it queues and starts by itself. The lead's own turns don't count. |
+| Agents running at once, fleet-wide | The fleet cap, 40 by default. 4 slots of it are kept for lead turns. |
+| Calls a task's agent may make | `report`, `ask_lead`. Every other call is refused. |
+| Finish-all children open at once | 5 by default; the policy file's `finishAll.maxChildren` changes it. |
+| What a child workstream may serve | `issue`, `defect`, `done`. Never invented work. |
 | Gated commands (`gated_run`) | Classes `irreversible`, `money`, `credential`. Run only after a human approves; at most 1800 s. |
 
 These limits cover calls to fleetd, not what the agent's own shell can do. A task runs with full Bash, so `gated_run` is not the only way it could run a command. A process that leaves its session's process tree (for example with `setsid`) and scrubs its environment counts as you, with no limits: see "Known limit" on the Security page. Run agents you don't trust as a different OS user.
 
 ## Lead tools
 
-Every lead gets these.
+Every lead gets these, the finish-all lead included.
 
 | Tool | What it does | Needs a human |
 |---|---|---|
@@ -46,8 +50,8 @@ Every lead gets these.
 | [`message_agent`](#message_agent) | Steer a task: a running one takes the message at its next tool boundary (now: true stops its current step first), a waiting one gets it as its answer, and an ended one continues in its own thread. | No |
 | [`agent_status`](#agent_status) | One task as stored: state, queued reason, thread, result. | No |
 | [`list_agents`](#list_agents) | The project's tasks, newest first, optionally by state or workstream. | No |
-| [`stop_agent`](#stop_agent) | Stop a task: interrupts its thread and releases its slot. | No |
-| [`brief`](#brief) | Set a draft workstream's brief (goal, why, pointers, constraints, doneWhen checks) and start it, or edit it later. | No |
+| [`stop_agent`](#stop_agent) | Stop a task: interrupts its thread and releases its slot and leases. | No |
+| [`brief`](#brief) | Set a draft workstream's brief (goal, why, pointers, constraints, doneWhen checks, tier) and start it, or edit it later. | No |
 | [`request_secret`](#request_secret) | Ask the human for a secret (a key, a token, a password). | The human enters the value in chat; you see only its fingerprint. |
 | [`request_withdraw`](#request_withdraw) | Take back a secret request or a command approval you no longer need (the human said so in chat). | No |
 | [`decide`](#decide) | Log a decision: one you made yourself, or the human's answer to a question you asked in chat (so you never ask it twice). | No |
@@ -58,24 +62,26 @@ Every lead gets these.
 | [`plan_edit`](#plan_edit) | Change a plan item. | No |
 | [`plan_drop`](#plan_drop) | Drop a plan item, with why or steer. | No |
 | [`plan_show`](#plan_show) | The project's plan. | No |
-| [`status_set`](#status_set) | Your one-line status for a workstream; it shows as "lead says". | No |
 | [`decisions_search`](#decisions_search) | Search the decision log. | No |
 | [`change_enqueue`](#change_enqueue) | Put a PR no task's result put there on its repo's merge train; only the train merges. | No |
-| [`change_status`](#change_status) | A merge-train change as stored. | No |
 | [`workstream_open`](#workstream_open) | Open a workstream for work you took from the chat: a draft you then brief. | No |
+| [`workstream_spawn`](#workstream_spawn) | A finish-all lead starts a child workstream for one item with a value source. | No |
+| [`inventory`](#inventory) | The project's open work, ranked. | No |
 
 ### spawn_agent
 
-Start a fleetd agent (a task) with its own session, slot and lane. kind write|read|review; a writer gets its own worktree and branch; a review task needs pr. profile is high by default; medium is for mechanical work only, and reviews always run high. A full slot board queues it and it starts by itself. The result names the other writers running in the project. Its result arrives in a later wake: end your turn instead of waiting.
+Start a fleetd agent (a task) with its own session, slot and lane. kind write|read|review; a writer needs areas from the project's policy and gets its own worktree and branch; a review task needs pr. profile is high by default; medium is for mechanical work only, and reviews always run high. A busy area or a full slot board queues it and it starts by itself. Its result arrives in a later wake: end your turn instead of waiting.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
+| `areas` | string[] | no | At most 20 items. |
 | `item` | string | no | The plan item this task works on; refused when it belongs to another order. |
-| `kind` | string | no | Only write tasks get a worktree. One of `write`, `read`, `review`. Default `"write"`. |
+| `kind` | string | no | Only write tasks get a worktree and leases. One of `write`, `read`, `review`. Default `"write"`. |
 | `pr` | string | no |  |
 | `profile` | string | no | What an agent runs on. There are exactly two, both claude-opus-5-5: `high` (effort high) is the default and what the lead, every reviewer and every helper call run; `medium` (effort medium) is for mechanical tasks the lead picks. One of `high`, `medium`. |
 | `prompt` | string | yes | At most 8000 characters. |
 | `qa` | boolean | no |  |
+| `tier` | string | no | One of `S`, `M`, `L`. |
 | `title` | string | yes | One line. At most 80 characters. |
 | `workstreamId` | string | yes | `W<n>`, e.g. `W1`. |
 
@@ -85,6 +91,9 @@ Start a fleetd agent (a task) with its own session, slot and lane. kind write|re
 {
   "name": "spawn_agent",
   "arguments": {
+    "areas": [
+      "api"
+    ],
     "kind": "write",
     "prompt": "Limit uploads to 10 a minute per API key. Over the limit, answer 429 with Retry-After.",
     "title": "Rate-limit the upload API",
@@ -156,7 +165,7 @@ The project's tasks, newest first, optionally by state or workstream.
 
 ### stop_agent
 
-Stop a task: interrupts its thread and releases its slot.
+Stop a task: interrupts its thread and releases its slot and leases.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -177,24 +186,25 @@ Stop a task: interrupts its thread and releases its slot.
 
 ### brief
 
-Set a draft workstream's brief (goal, why, pointers, constraints, doneWhen checks) and start it, or edit it later.
+Set a draft workstream's brief (goal, why, pointers, constraints, doneWhen checks, tier) and start it, or edit it later.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `brief` | object | yes |  |
-| `brief.baseline` | string | no | Research: what the candidate is compared against, and how both are measured. At most 1000 characters. |
+| `brief` | object | yes | A `Brief` whose `tier` may be left out, as `fleetd brief create` takes it; the playbook's `tierDefault` fills it. |
+| `brief.baseline` | string | no | At most 1000 characters. |
 | `brief.budget` | object | no |  |
 | `brief.budget.agentHours` | number | no | Older briefs only; a lead now gives `size`. |
 | `brief.budget.size` | string | no | How big a research spend the lead allows, relative like plan sizes; never a time guess. One of `S`, `M`, `L`. |
 | `brief.constraints` | string[] | yes | At most 20 items. |
-| `brief.decisionRule` | object | no | Research: the rule the verdict is computed from. |
+| `brief.decisionRule` | object | no | Applied to the improvement: candidate − baseline, negated when lower is better. GO when it is at least `goAtLeast`, STOP when it is below `stopBelow`, INCONCLUSIVE in between. |
 | `brief.decisionRule.better` | string | yes | One of `higher`, `lower`. |
 | `brief.decisionRule.goAtLeast` | number | yes |  |
 | `brief.decisionRule.stopBelow` | number | yes |  |
-| `brief.doneWhen` | object[] | yes | At least one. At most 20 items. |
+| `brief.doneWhen` | object[] | yes | At most 20 items. |
 | `brief.goal` | string | yes | At most 1000 characters. |
-| `brief.metric` | string | no | Research: the one number the judge reports for baseline and candidate, e.g. "p50 cold start in ms". At most 200 characters. |
+| `brief.metric` | string | no | One line. At most 200 characters. |
 | `brief.pointers` | string[] | yes | At most 20 items. |
+| `brief.tier` | string | no | One of `S`, `M`, `L`. |
 | `brief.why` | string | yes | At most 2000 characters. |
 | `workstreamId` | string | yes | `W<n>`, e.g. `W1`. |
 
@@ -218,6 +228,7 @@ Set a draft workstream's brief (goal, why, pointers, constraints, doneWhen check
       "pointers": [
         "api/src/upload.rs"
       ],
+      "tier": "S",
       "why": "One client's retry loop took the upload service down."
     },
     "workstreamId": "W3"
@@ -304,7 +315,7 @@ Claim a workstream done: fleetd runs its frozen done-when checks itself, and onl
 | `closeOver` | string | no | At most 300 characters. |
 | `workstreamId` | string | yes | `W<n>`, e.g. `W1`. |
 
-**Who may call:** a lead, a task's agent, checked by the hub. **Needs a human:** no.
+**Who may call:** a lead, checked by the hub. **Needs a human:** no.
 
 ```json
 {
@@ -474,27 +485,6 @@ The project's plan.
 }
 ```
 
-### status_set
-
-Your one-line status for a workstream; it shows as "lead says".
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `text` | string | yes | One line. At most 280 characters. |
-| `workstreamId` | string | no | `W<n>`, e.g. `W1`. |
-
-**Who may call:** a lead, checked by the hub. **Needs a human:** no.
-
-```json
-{
-  "name": "status_set",
-  "arguments": {
-    "text": "Limiter merged; checking the 429 path.",
-    "workstreamId": "W3"
-  }
-}
-```
-
 ### decisions_search
 
 Search the decision log.
@@ -523,6 +513,7 @@ Put a PR no task's result put there on its repo's merge train; only the train me
 | `item` | string | no | Stores the PR as a link of that plan item (for a PR no task of the item wrote). |
 | `prUrl` | string | yes | Like `https://github.com/<owner>/<name>/pull/<n>`. |
 | `taskId` | string | no | `T<n>`, e.g. `T1`. |
+| `tier` | string | no | One of `S`, `M`, `L`. |
 | `workstreamId` | string | no | `W<n>`, e.g. `W1`. |
 
 **Who may call:** a lead, checked by the hub. **Needs a human:** no.
@@ -537,32 +528,13 @@ Put a PR no task's result put there on its repo's merge train; only the train me
 }
 ```
 
-### change_status
-
-A merge-train change as stored.
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `changeId` | string | yes | `X<n>`, e.g. `X1`. |
-
-**Who may call:** a lead, checked by the hub. **Needs a human:** no.
-
-```json
-{
-  "name": "change_status",
-  "arguments": {
-    "changeId": "X12"
-  }
-}
-```
-
 ### workstream_open
 
-Open a workstream for work you took from the chat: a draft you then brief. template picks the playbook (feature, bugfix, research).
+Open a workstream for work you took from the chat: a draft you then brief. template picks the playbook (feature, bugfix, research, finish-all).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `template` | string | no | The prefixes `bug:`/`fix:` and `research:` pick bugfix and research. One of `bugfix`, `feature`, `research`. |
+| `template` | string | no | The prefixes `bug:`/`fix:`, `research:` and `finish:` pick bugfix, research and finish-all. One of `bugfix`, `feature`, `research`, `finish-all`. |
 | `text` | string | yes | At most 4000 characters. |
 
 **Who may call:** a lead, checked by the hub. **Needs a human:** no.
@@ -577,32 +549,64 @@ Open a workstream for work you took from the chat: a draft you then brief. templ
 }
 ```
 
-## Task tools
+### workstream_spawn
 
-Every task's agent gets these: implementers, readers, reviewers and QA.
-
-| Tool | What it does | Needs a human |
-|---|---|---|
-| [`report`](#report) | A reviewer records its verdict once, before its final message: the full SHA it reviewed, the number of blocking and non-blocking findings and a one-paragraph summary. | No |
-| [`ask_lead`](#ask_lead) | Ask your lead a question. | No |
-| [`claim_done`](#claim_done-task) | Claim your workstream done: fleetd runs its done-when checks itself. | No |
-
-### report
-
-A reviewer records its verdict once, before its final message: the full SHA it reviewed, the number of blocking and non-blocking findings and a one-paragraph summary. A writer reports each slice whose PR is complete with kind slice_ready and its prUrl: its review starts at once while you go on with the next slice.
+A finish-all lead starts a child workstream for one item with a value source.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `blocking` | integer | no |  |
-| `kind` | string | no | Verdict (the default) for a review, slice_ready for a writer's PR that is ready. One of `verdict`, `slice_ready`. |
+| `serves` | string | yes |  |
+| `template` | string | no | The prefixes `bug:`/`fix:`, `research:` and `finish:` pick bugfix, research and finish-all. One of `bugfix`, `feature`, `research`, `finish-all`. |
+| `text` | string | yes | At most 4000 characters. |
+
+**Who may call:** a lead, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "workstream_spawn",
+  "arguments": {
+    "serves": "issue:#88",
+    "text": "Fix the flaky upload test"
+  }
+}
+```
+
+### inventory
+
+The project's open work, ranked.
+
+No parameters.
+
+**Who may call:** a lead, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "inventory",
+  "arguments": {}
+}
+```
+
+## Task tools
+
+Every task's agent gets these: implementers, readers, reviewers, verifiers and QA.
+
+| Tool | What it does | Needs a human |
+|---|---|---|
+| [`report`](#report) | Record your review verdict once, before your final message: the number of blocking and non-blocking findings and a one-paragraph summary. | No |
+| [`ask_lead`](#ask_lead) | Ask your lead a question. | No |
+
+### report
+
+Record your review verdict once, before your final message: the number of blocking and non-blocking findings and a one-paragraph summary. fleetd fills in your task and the head you reviewed.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `blocking` | integer | yes |  |
 | `metricValues` | object | no | A research workstream's judge reports its metric for the baseline and the candidate; the hub computes the verdict. |
 | `metricValues.baseline` | number | yes |  |
 | `metricValues.candidate` | number | yes |  |
-| `nonBlocking` | integer | no |  |
-| `prHeadSha` | string | no | Full lowercase hex commit SHA, 40 or 64 characters. |
-| `prUrl` | string | no | Like `https://github.com/<owner>/<name>/pull/<n>`. |
-| `summary` | string | no | At most 1000 characters. |
-| `taskId` | string | no | `T<n>`, e.g. `T1`. |
+| `nonBlocking` | integer | yes |  |
+| `summary` | string | yes | At most 1000 characters. |
 
 **Who may call:** a task's agent, checked by the hub. **Needs a human:** no.
 
@@ -612,9 +616,7 @@ A reviewer records its verdict once, before its final message: the full SHA it r
   "arguments": {
     "blocking": 0,
     "nonBlocking": 2,
-    "prHeadSha": "3f2a9c0d41b7e85a6c2f19d0e4b3a7c8d5e6f102",
-    "summary": "The limiter is correct. Two nits: a magic number and a missing test for the reset.",
-    "taskId": "T8"
+    "summary": "The limiter is correct. Two nits: a magic number and a missing test for the reset."
   }
 }
 ```
@@ -638,33 +640,13 @@ Ask your lead a question. Carry on with what you can; the answer arrives as a me
 }
 ```
 
-### claim_done (task)
-
-Claim your workstream done: fleetd runs its done-when checks itself.
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `closeOver` | string | no | At most 300 characters. |
-| `workstreamId` | string | yes | `W<n>`, e.g. `W1`. |
-
-**Who may call:** a lead, a task's agent, checked by the hub. **Needs a human:** no.
-
-```json
-{
-  "name": "claim_done",
-  "arguments": {
-    "workstreamId": "W3"
-  }
-}
-```
-
 ## Claude Code tools
 
 The same for every session. Listed for Claude Code 2.1.302, the version fleetd is tested with.
 
 **Allowed:** `Bash`, `DesignSync`, `Edit`, `NotebookEdit`, `Read`, `ReportFindings`, `Skill`, `ToolSearch`, `WebFetch`, `WebSearch`, `Write`.
 
-A project's policy file can deny more with `tools.deny`.
+A project's policy file can deny more with `tools.deny`. In a run started approval-required, Claude Code asks before it uses a tool and the question comes to you; `tools.allow` answers it ahead of time.
 
 **Blocked**, in `--disallowedTools` and in the `permissions.deny` of fleetd's settings, so your own settings can't turn them back on:
 
@@ -675,9 +657,8 @@ A project's policy file can deny more with `tools.deny`.
 | `AskUserQuestion`, `EnterPlanMode`, `ExitPlanMode` | Nobody sits at a terminal to answer it, so the run would stall. Agents use ask or ask_lead. |
 | `CronCreate`, `CronDelete`, `CronList`, `ScheduleWakeup` | fleetd schedules work (tasks, wakes), never inside one claude process the node may restart. |
 | `EnterWorktree`, `ExitWorktree` | fleetd owns worktrees, one per writer. A session that moves its own folder can't be resumed. |
-| `Bash(claude *)`, `Bash(*bin/claude)`, `Bash(*bin/claude *)`, `Bash(*/claude -*)`, `Bash(*claude/versions/*)`, `Bash(npx *claude*)`, `Bash(bunx *claude*)`, `Bash(*@anthropic-ai/claude-code*)`, `Bash(*sh -*c *claude*)`, `Bash(env *claude*)`, `Bash(exec *claude*)`, `Bash(xargs *claude*)` | A claude started inside a session runs outside fleetd's slots, with its own subagents and any model. Agents start agents with spawn_agent. |
 
-fleetd also blocks any tool like these that a newer Claude Code adds: a session whose tool list still offers one is stopped, and every later session on that machine blocks it.
+fleetd also blocks any tool like these that a newer Claude Code adds: it reads the installed claude's tool list when it checks the machine, and a session that still offers one fails the check.
 
 ## Settings fleetd forces
 
@@ -691,7 +672,7 @@ Set in the claude process's environment. "In settings" marks the ones also in fl
 | `CLAUDE_CODE_DISABLE_AGENT_VIEW` | `1` | Every claude fleetd starts | yes | Removes the built-in claude agent: fleetd manages agents. |
 | `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` | removed | Every claude fleetd starts | yes | Agent teams: fleetd manages agents. |
 | `CLAUDE_CODE_COORDINATOR_MODE` | removed | Every claude fleetd starts | yes | Coordinator mode turns a session into one that only delegates (its tools become Task, ListAgents, SendMessage, TaskStop, Workflow). |
-| `CLAUDE_CODE_DISABLE_AUTO_MEMORY` | `1`, and `autoMemoryEnabled: false` | Every claude fleetd starts | yes | fleetd owns an agent's context (briefs, decisions, instructions). Notes claude keeps per folder would carry stale, unreviewed text from one agent's worktree to the next. |
+| `CLAUDE_CODE_DISABLE_AUTO_MEMORY` | `1`, and `autoMemoryEnabled: false` | Every claude fleetd starts | yes | fleetd owns an agent's context (briefs, decisions, instructions). Notes claude keeps per folder would carry stale, unreviewed text from one agent's worktree to the next. A project opts back in with claude.autoMemory: true in its policy file. |
 | `ANTHROPIC_DEFAULT_HAIKU_MODEL` | `claude-opus-5-5` | Every claude fleetd starts | yes | claude's background helper calls (session titles and the like) run on Opus 5.5 like everything else fleetd starts, not on the haiku model claude picks by default. |
 | `DISABLE_AUTOUPDATER` | `1` | Sessions | yes | Keeps the claude fleetd checked. An update mid-run would swap the binary under a live session. |
 | `CLAUDE_CODE_STARTUP_FAILURE_RESULTS` | `1` | Sessions | no | A refusal at startup arrives as a result fleetd can read, not only as stderr. |
@@ -709,7 +690,7 @@ fleetd starts sessions with your own Claude Code setup underneath.
 | Your own agents (`~/.claude/agents`) | Listed, but nothing can start them: the Agent tool is blocked. |
 | Env in your settings | Applied, except the switches above, which fleetd sets last. |
 
-A project's policy file can add rules for its sessions: `tools.allow` and `tools.deny` (Claude Code rule syntax).
+A project's policy file can add rules for its sessions: `tools.allow` and `tools.deny` (Claude Code rule syntax), and `claude.autoMemory: true`.
 
 ### See it in a session
 

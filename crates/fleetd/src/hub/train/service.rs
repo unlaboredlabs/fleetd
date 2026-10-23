@@ -77,7 +77,7 @@ pub struct TrainOptions {
     pub ci_timeout: Duration,
     /// How often merged PRs are checked for merges outside the train.
     pub bypass_every: Duration,
-    /// How often a repo's open PRs are read for a running writer's draft marked ready.
+    /// How often a repo's open PRs are read for a writer's ready PR (a slice).
     pub ready_every: Duration,
     /// Merges GitHub refuses (405/409) before the train gives up on a Change.
     pub merge_attempts: u32,
@@ -215,8 +215,7 @@ pub struct Train {
     /// Per repo, the bases its Changes' PRs target: a PR merged into another branch is not the train's to judge.
     bases: Mutex<HashMap<String, HashSet<String>>>,
     last_ready_check: Mutex<HashMap<String, i64>>,
-    /// Each watched PR's draft flag as last read, and the heads already sent to review as a ready slice.
-    drafts: Mutex<HashMap<(String, i64), bool>>,
+    /// The heads of writers' PRs already sent to review as a ready slice.
     ready_heads: Mutex<HashSet<(String, i64, String)>>,
     merge_refusals: Mutex<HashMap<ChangeId, u32>>,
     /// The train's last push per change: the head it pushed and when, for `ci.queue` spans.
@@ -266,7 +265,6 @@ impl Train {
             last_bypass_check: Mutex::default(),
             bases: Mutex::default(),
             last_ready_check: Mutex::default(),
-            drafts: Mutex::default(),
             ready_heads: Mutex::default(),
             merge_refusals: Mutex::default(),
             pushed: Mutex::default(),
@@ -1231,10 +1229,10 @@ impl Train {
         }
     }
 
-    /// A running writer's PR seen as a draft and now marked ready is a ready slice: it goes on the train at once, as
-    /// that writer's, so its review starts while the writer works on (the same path as its `report` with kind
-    /// slice_ready). Once per head. Read from the repo's open PRs on the train's own polling, so it needs no
-    /// webhook; a PR opened ready goes on the train with the writer's result as before.
+    /// A writer's ready PR is a slice: any open PR that is not a draft, from the writer's branch or one named after
+    /// it (`<branch>-<n>`), goes on the train at once as that writer's, so its review starts while the writer works
+    /// on. Once per head, and not while the train already has it. Read from the repo's open PRs on the train's own
+    /// polling, so it needs no webhook and nothing from the writer.
     async fn ready_pass(&self, repo: &str, project_ref: &ProjectRef) {
         let now = self.now_ms();
         let due = lock(&self.last_ready_check)
@@ -1243,7 +1241,7 @@ impl Train {
         if !due {
             return;
         }
-        let writers = self.host.running_writers(project_ref);
+        let writers = self.host.writers(project_ref);
         if writers.is_empty() {
             return;
         }
@@ -1255,13 +1253,17 @@ impl Train {
                 return;
             }
         };
-        for pull in pulls {
-            let Some((task_id, _)) = writers.iter().find(|(_, b)| *b == pull.head.ref_) else {
+        for pull in pulls.into_iter().filter(|p| !p.draft) {
+            let head_ref = pull.head.ref_.as_str();
+            let Some((task_id, _)) = writers.iter().find(|(_, b)| {
+                head_ref == b
+                    || head_ref
+                        .strip_prefix(b.as_str())
+                        .is_some_and(|r| r.starts_with('-'))
+            }) else {
                 continue;
             };
-            let key = (repo.to_string(), pull.number);
-            let was_draft = lock(&self.drafts).insert(key, pull.draft);
-            if pull.draft || was_draft != Some(true) {
+            if self.records.open_for(repo, pull.number).is_some() {
                 continue;
             }
             let head = (repo.to_string(), pull.number, pull.head.sha.to_lowercase());
@@ -1269,12 +1271,10 @@ impl Train {
                 continue;
             }
             let pr_url = format!("https://github.com/{repo}/pull/{}", pull.number);
-            let call = fleetd_contracts::lead_calls::SliceReadyCall {
-                pr_url: GitHubPrUrl::unchecked(pr_url.clone()),
-            };
-            match super::calls::slice_ready(self, project_ref, task_id, call).await {
-                Ok((change, _)) => {
-                    tracing::info!(change_id = %change.change_id, %pr_url, "train: a draft marked ready is a slice")
+            let pr = GitHubPrUrl::unchecked(pr_url.clone());
+            match super::calls::slice_ready(self, project_ref, task_id, pr).await {
+                Ok(change) => {
+                    tracing::info!(change_id = %change.change_id, %pr_url, "train: a writer's ready PR is a slice")
                 }
                 Err(e) => {
                     let line = Event::PrRefused {

@@ -7,15 +7,17 @@ use crate::hub::checks::ports::{Ports, Refusal, internal, invalid, not_found};
 use crate::hub::store::{EventLog, HubDb, NewEvent, iso_ms, now_ms};
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::ProjectRef;
-use fleetd_contracts::tasks::TaskKind;
+use fleetd_contracts::tasks::{TaskId, TaskKind};
 use fleetd_contracts::verification::ReviewVerdict;
 use std::sync::Arc;
 
-/// Who is recording: the lead's project and its `by` ("lead:<machine>/<project>", "hub:judge", ...).
+/// Who is recording: the lead's project and its `by` ("lead:<machine>/<project>", "hub:judge", ...), and the task when
+/// the call comes from a task's session.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Caller {
     pub project_ref: ProjectRef,
     pub by: String,
+    pub task: Option<TaskId>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -58,22 +60,40 @@ impl Verdicts {
         }
     }
 
-    /// Stores the verdict against its task and head, emits `review.verdict` and completes a waiting judge check. The
-    /// judge of a research workstream must report `metricValues`, and gets the computed verdict back as text.
+    /// Stores the verdict against its task and head, emits `review.verdict` and completes a waiting judge check. A
+    /// task's session records its own verdict, and the head it reviewed is filled in when left out. The judge of a
+    /// research workstream must report `metricValues`, and gets the computed verdict back as text.
     pub async fn record(
         &self,
         caller: &Caller,
-        verdict: ReviewVerdict,
+        mut verdict: ReviewVerdict,
     ) -> Result<RecordedVerdict, Refusal> {
-        let Some(task) = self.ports.task(&verdict.task_id).filter(|t| {
+        let task_id = match (&caller.task, verdict.task_id.take()) {
+            (Some(own), Some(named)) if *own != named => {
+                return Err(invalid(
+                    format!("You are {own}, so you record only your own verdict, not {named}'s."),
+                    Some("Leave out taskId."),
+                ));
+            }
+            (Some(own), _) => own.clone(),
+            (None, Some(named)) => named,
+            (None, None) => {
+                return Err(invalid(
+                    "Name the review task whose verdict this is.",
+                    Some("Pass taskId."),
+                ));
+            }
+        };
+        let Some(task) = self.ports.task(&task_id).filter(|t| {
             t.project_ref.machine_id == caller.project_ref.machine_id
                 && t.project_ref.project_id == caller.project_ref.project_id
         }) else {
             return Err(not_found(
-                format!("No task {} in this project.", verdict.task_id),
-                Some("Pass taskId with your own task id."),
+                format!("No task {task_id} in this project."),
+                Some("Pass taskId with a review task of your project."),
             ));
         };
+        verdict.task_id = Some(task_id);
         if task.kind != TaskKind::Review {
             return Err(invalid(
                 format!(
@@ -119,6 +139,10 @@ impl Verdicts {
                 )),
             ));
         }
+        if verdict.pr_head_sha.is_none() {
+            verdict.pr_head_sha = self.ports.reviewed_head(&task).await;
+        }
+        let sha = verdict.pr_head_sha.as_ref().map_or("", |s| s.as_str());
         let now = now_ms(self.clock.as_ref());
         let data = serde_json::to_string(&verdict).map_err(|e| internal(e.into()))?;
         self.db
@@ -127,7 +151,7 @@ impl Verdicts {
                     .execute(rusqlite::params![
                         task.task_id.as_str(),
                         task.pr.as_deref().map(pr_key),
-                        verdict.pr_head_sha.as_str(),
+                        sha,
                         verdict.blocking.get(),
                         now,
                         data
@@ -153,12 +177,11 @@ impl Verdicts {
                 project_id: Some(task.project_ref.project_id.clone()),
                 thread_id: task.thread_ref.as_ref().map(|t| t.thread_id.clone()),
                 summary: format!(
-                    "{} review verdict at {}: {} blocking, {} non-blocking",
+                    "{} review verdict{}: {} blocking, {} non-blocking",
                     task.task_id,
-                    verdict
-                        .pr_head_sha
-                        .get(..12)
-                        .unwrap_or(&verdict.pr_head_sha),
+                    sha.get(..12)
+                        .map(|s| format!(" at {s}"))
+                        .unwrap_or_default(),
                     verdict.blocking,
                     verdict.non_blocking
                 ),

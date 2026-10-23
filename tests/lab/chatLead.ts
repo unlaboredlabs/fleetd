@@ -728,7 +728,7 @@ async function cap1Part(lab: Lab, ref: Ref, fleetd: Shell, need: (t: string) => 
         "--prompt",
         `Do these steps in order. 1. Create the file ${file} (from the repo root) containing exactly one line: cap one. Commit it with the message "add ${file}". ` +
           `2. Push your branch and open the pull request as your rules say, with the title "add ${file}" and the body exactly "Adds the file.". ` +
-          `3. Call the report tool with kind "slice_ready" and prUrl set to that PR's URL. 4. Run \`sleep 30\` with your Bash tool and wait for it. 5. Reply with the PR URL.`,
+          `3. Run \`sleep 90\` with your Bash tool and wait for it. 4. Reply with the PR URL.`,
       ),
       "spawn the writer",
     );
@@ -742,7 +742,7 @@ async function cap1Part(lab: Lab, ref: Ref, fleetd: Shell, need: (t: string) => 
     const reviewQueued = seen.find((e) => e.type === "task.queued" && e.data?.taskId === review.task.taskId);
     check(
       reviewQueued !== undefined && reviewQueued.seq < writerEnd.event.seq,
-      `the review was waiting when ${writer}'s slot freed (queued at ${reviewQueued?.seq}, ${writer} ended at ${writerEnd.event.seq}); without that, the writer did not report slice_ready and the order isn't tested`,
+      `the review was waiting when ${writer}'s slot freed (queued at ${reviewQueued?.seq}, ${writer} ended at ${writerEnd.event.seq}); without that, the train did not take the writer's ready PR while it ran and the order isn't tested`,
     );
     const waiterStart = seen.find((e) => e.type === "task.started" && e.data?.taskId === waiter!.taskId);
     check(waiterStart === undefined || waiterStart.seq > review.seq, `the gating review (started seq ${review.seq}) went before the agent queued earlier (started seq ${waiterStart?.seq})`);

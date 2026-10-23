@@ -169,9 +169,9 @@ The lead plans each piece of work as small items, sized S, M or L, some waiting 
 in parallel. Spawns past the cap queue and start by themselves as slots free, and the lead is woken whenever an agent
 finishes or a PR merges. fleetd never starts work of its own.
 
-Slices are reviewed as they land: a writer reports each finished PR (`report`, kind `slice_ready`), or marks its draft
-PR ready on GitHub. fleetd puts it on the train and starts its reviewers right away, while the writer goes on. A new
-commit is reviewed again from what changed.
+Slices are reviewed as they land: once a writer's PR is ready (not a draft), on its branch or one named after it,
+fleetd puts it on the train and starts its reviewers, while the writer goes on. On a repo whose PRs have never been on
+the train, that starts with the writer's result. A new commit is reviewed again from what changed.
 
 No gate relaxes. Every PR still gets its review and green CI and goes through the train, done is still decided
 by the done-when checks, and anything that needs your approval still waits for it. The reviewers fleetd starts count
