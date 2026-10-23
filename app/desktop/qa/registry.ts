@@ -301,9 +301,9 @@ export const screens: readonly Screen[] = [
     variant: "stopping",
     open: async (page) => {
       await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
-      await page.getByRole("button", { name: "Stop the lead" }).click();
-      await expect(page.getByRole("button", { name: "Stopping the lead" })).toBeDisabled();
-      await expect(page.getByText("Stopping the lead…")).toBeVisible();
+      await page.getByRole("button", { name: "Stop the lead and its agents" }).click();
+      await expect(page.getByRole("button", { name: "Stopping the lead and its agents" })).toBeDisabled();
+      await expect(page.getByText("Stopping the lead and its agents…")).toBeVisible();
     },
   },
   // ↑ in the empty box brings back your last message.

@@ -413,7 +413,7 @@ describe("stopping the lead", () => {
     const out = layer.chat.stop(KEY);
     const call = fake.of("chat_stop")[0];
     expect(call?.input).toMatchObject({ projectRef: ref, clientRequestId: expect.any(String) as unknown });
-    const line = msg(3, { author: "system", text: "Stopped the lead." });
+    const line = msg(3, { author: "system", text: "Stopped the lead and 2 agents." });
     call?.answer({ ok: true, output: { stopped: true, message: line } });
     expect(await out).toEqual({ t: "stopped" });
     fake.send(messageEvent(2, line));

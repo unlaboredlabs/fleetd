@@ -83,7 +83,7 @@ export function ChatComposer({ project, onSent, autoFocus, recall }: ChatCompose
     [
       { id: "composer.focus", title: "Focus the composer", group: "actions", run: () => box.current?.focus() },
       { id: "composer.attach", title: "Attach a file", group: "actions", run: () => fileInput.current?.click() },
-      { id: "lead.stop", title: "Stop the lead", group: "actions", detail: "Ends its turn now; agents keep working", enabled: () => showStop && !stopOffline && !stopping, run: stop },
+      { id: "lead.stop", title: "Stop the lead and its agents", group: "actions", detail: "Ends the lead’s turn and stops the project’s agents", enabled: () => showStop && !stopOffline && !stopping, run: stop },
     ],
     [],
   );
@@ -236,8 +236,8 @@ export function ChatComposer({ project, onSent, autoFocus, recall }: ChatCompose
           />
           <span className={c.spacer} />
           {showStop ? (
-            <Tooltip content={stopping ? "Stopping the lead…" : "Stop the lead now"}>
-              <Button variant="secondary" size="md" iconOnly round aria-label={stopping ? "Stopping the lead" : "Stop the lead"} disabled={stopping || stopOffline} onClick={stop}>
+            <Tooltip content={stopping ? "Stopping the lead and its agents…" : "Stop the lead and its agents"}>
+              <Button variant="secondary" size="md" iconOnly round aria-label={stopping ? "Stopping the lead and its agents" : "Stop the lead and its agents"} disabled={stopping || stopOffline} onClick={stop}>
                 <Square />
               </Button>
             </Tooltip>
@@ -256,11 +256,11 @@ export function ChatComposer({ project, onSent, autoFocus, recall }: ChatCompose
           </Text>
         ) : stopping ? (
           <Text size="xs" tone="quiet">
-            Stopping the lead…
+            Stopping the lead and its agents…
           </Text>
         ) : stopOffline ? (
           <Text size="xs" tone="quiet">
-            Offline: stop the lead once the hub is back.
+            Offline: stop the lead and its agents once the hub is back.
           </Text>
         ) : null}
       </div>

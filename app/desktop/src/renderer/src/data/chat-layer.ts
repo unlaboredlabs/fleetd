@@ -274,7 +274,7 @@ export const createChatActions = (
     }
   };
 
-  // chat_stop isn't in the generated tool map until its hub slice lands; this is the one place it is called by name.
+  // Untyped by name for the probe's empty input, which the hub refuses as invalid; the stop itself is typed.
   const stopCall = (input: ChatStopInput | Record<string, never>) =>
     (call as unknown as RawCall)("chat_stop", input) as Promise<{ readonly ok: true; readonly output: ChatStopOutput } | { readonly ok: false; readonly error: HubError }>;
 

@@ -68,8 +68,9 @@ A message reaches the lead at once. How depends on what the lead is doing:
 | Working | Is a steer: it reads it at its next step, after the tool it is running. The box says so while you type. |
 | Starting, or its machine is away | Is held, and goes in as soon as it can. The chat says why it waits. |
 
-To stop the lead's current turn, click Stop beside Send (or "Stop the lead" in the command palette). The lead
-stops now rather than at its next step, and its agents keep working. Then tell it what to do instead.
+To stop the work, click Stop beside Send (or "Stop the lead and its agents" in the command palette). The lead's turn
+and every agent of the project stop now, and a line in the chat says what stopped. Then tell the lead what to do
+instead.
 
 A message is never lost: if it can't be delivered, it stays held, the chat says why, and fleetd keeps trying.
 
