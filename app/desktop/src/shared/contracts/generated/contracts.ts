@@ -1202,8 +1202,6 @@ export type HealthSlots = {
   queued: number;
   running: number;
   used: number;
-  /** How much of the cap was held recently. */
-  utilization?: SlotUtilization;
 };
 
 /** One claude usage window: the highest utilization of that type across machines. */
@@ -3138,19 +3136,17 @@ export type SleptSpan = {
 };
 
 export type SlotState = {
-  /** Global cap on running turns. */
+  /** The fleet cap: agents running at once across every project. */
   cap: number;
   perProject: SlotStatePerProject[];
   queued: number;
-  /** Slots of the cap only lead turns may take. */
-  reservedBand: number;
   used: number;
 };
 
 export type SlotStatePerProject = {
   /**
-   * The most of the project's agents (its tasks: writers, readers, reviewers) that run at once; its lead's own
-   * turns don't count. The fleet `cap` until set.
+   * The most of the project's agents (its tasks: writers, readers, reviewers) that run at once; its lead is not
+   * one. The fleet `cap` until set.
    */
   maxAgents: number;
   projectRef: ProjectRef;
@@ -3158,21 +3154,6 @@ export type SlotStatePerProject = {
   queued: number;
   /** Its agents running now. Above `maxAgents` right after the cap was lowered: nothing is stopped for it. */
   running: number;
-  /** Every slot it holds, its lead's turns included. */
-  used: number;
-};
-
-/**
- * Slot use the board measured over the last hour (or since the hub started, when that is later): held slot time,
- * never a projection. Serial waits behind free slots are `time_insights` findings.
- */
-export type SlotUtilization = {
-  /** floor(100 · slot time held / slot time the cap offered) over the window. */
-  pct: number;
-  /** The most slots held at once in the window. */
-  peak: number;
-  /** The window measured, at most an hour. */
-  windowMs: number;
 };
 
 /** `source.fresh`. */

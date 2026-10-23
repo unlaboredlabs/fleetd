@@ -902,10 +902,10 @@ async function capPart(lab: Lab, chat: Chat, ref: Ref, need: (t: string) => void
   let from = await lab.cursor();
   const six = spawnSleepers(lab, fleetd, w, "six-way", 6, 15);
   const sixIds = new Set(six.map((s) => s.taskId));
-  const overCap = six.slice(2).filter((s) => !/queued: 2\/2 running/iu.test(s.stdout));
-  check(overCap.length === 0, `a spawn beyond the cap says "queued: 2/2 running…": ${JSON.stringify(overCap.map((s) => s.stdout.trim()))}`);
+  const overCap = six.slice(2).filter((s) => !/queued: Max agents: 2 of 2 running/iu.test(s.stdout));
+  check(overCap.length === 0, `a spawn beyond the cap says "queued: Max agents: 2 of 2 running…": ${JSON.stringify(overCap.map((s) => s.stdout.trim()))}`);
   const reasons = await Promise.all(six.slice(2).map(async (s) => (await taskGet(lab, s.taskId)).queuedReason as string | undefined));
-  check(reasons.every((r) => r === "agents: 2/2 running" || r === undefined), `queued for the cap: ${JSON.stringify(reasons)}`);
+  check(reasons.every((r) => r === "Max agents: 2 of 2 running" || r === undefined), `queued for the cap: ${JSON.stringify(reasons)}`);
   let sampled = 0;
   const sampling = (async () => {
     for (let done = false; !done; ) {

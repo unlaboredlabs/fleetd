@@ -3464,10 +3464,6 @@
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
-        },
-        "utilization": {
-          "$ref": "#/$defs/SlotUtilization",
-          "description": "How much of the cap was held recently."
         }
       },
       "required": [
@@ -9503,7 +9499,7 @@
     "SlotState": {
       "properties": {
         "cap": {
-          "description": "Global cap on running turns.",
+          "description": "The fleet cap: agents running at once across every project.",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
@@ -9520,12 +9516,6 @@
           "minimum": 0,
           "type": "integer"
         },
-        "reservedBand": {
-          "description": "Slots of the cap only lead turns may take.",
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
         "used": {
           "maximum": 9007199254740991,
           "minimum": 0,
@@ -9536,7 +9526,6 @@
         "cap",
         "used",
         "queued",
-        "reservedBand",
         "perProject"
       ],
       "type": "object"
@@ -9544,7 +9533,7 @@
     "SlotStatePerProject": {
       "properties": {
         "maxAgents": {
-          "description": "The most of the project's agents (its tasks: writers, readers, reviewers) that run at once; its lead's own\nturns don't count. The fleet `cap` until set.",
+          "description": "The most of the project's agents (its tasks: writers, readers, reviewers) that run at once; its lead is not\none. The fleet `cap` until set.",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
@@ -9563,49 +9552,13 @@
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
-        },
-        "used": {
-          "description": "Every slot it holds, its lead's turns included.",
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
         }
       },
       "required": [
         "projectRef",
         "maxAgents",
         "running",
-        "queued",
-        "used"
-      ],
-      "type": "object"
-    },
-    "SlotUtilization": {
-      "description": "Slot use the board measured over the last hour (or since the hub started, when that is later): held slot time,\nnever a projection. Serial waits behind free slots are `time_insights` findings.",
-      "properties": {
-        "pct": {
-          "description": "floor(100 · slot time held / slot time the cap offered) over the window.",
-          "maximum": 100,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "peak": {
-          "description": "The most slots held at once in the window.",
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "windowMs": {
-          "description": "The window measured, at most an hour.",
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "windowMs",
-        "pct",
-        "peak"
+        "queued"
       ],
       "type": "object"
     },

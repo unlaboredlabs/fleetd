@@ -89,7 +89,7 @@ async fn low_disk_holds_new_agents_keeps_running_ones_and_room_again_starts_them
     running(&hub, 1);
     insert(
         &hub,
-        json!({ "taskId": "T2", "title": "next slice", "state": "queued", "queuedReason": "agents: 1/1 running" }),
+        json!({ "taskId": "T2", "title": "next slice", "state": "queued", "queuedReason": "Max agents: 1 of 1 running" }),
     );
 
     hub.link.observe_load(&lab_a(), Some(load(14, 3.0)));
