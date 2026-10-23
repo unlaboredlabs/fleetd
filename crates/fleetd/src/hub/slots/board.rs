@@ -34,7 +34,7 @@ impl SlotPriority {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Grant {
     Granted,
-    /// Queued; `reason` fits `Task.queuedReason`, e.g. "slots: 40/40 in use".
+    /// Queued; `reason` fits `Task.queuedReason`, e.g. "fleet cap: 40 of 40 running".
     Queued(String),
 }
 
@@ -70,17 +70,19 @@ pub fn blocker(board: BoardView, priority: SlotPriority) -> Option<String> {
     } = board;
     let band = reserved_band(cap);
     if priority == SlotPriority::Lead {
-        return (used >= cap).then(|| format!("slots: {used}/{cap} in use"));
+        return (used >= cap).then(|| format!("fleet cap: {used} of {cap} running"));
     }
     if used >= cap - band {
         return Some(if band == 0 {
-            format!("slots: {used}/{cap} in use")
+            format!("fleet cap: {used} of {cap} running")
         } else {
-            format!("slots: {used}/{cap} in use ({band} reserved for lead turns)")
+            format!("fleet cap: {used} of {cap} running, {band} kept for leads")
         });
     }
     if project_running >= max_agents {
-        return Some(format!("agents: {project_running}/{max_agents} running"));
+        return Some(format!(
+            "Max agents: {project_running} of {max_agents} running"
+        ));
     }
     None
 }
@@ -629,12 +631,12 @@ mod tests {
         };
         assert_eq!(
             blocker(board, SlotPriority::Work).as_deref(),
-            Some("slots: 9/10 in use (1 reserved for lead turns)")
+            Some("fleet cap: 9 of 10 running, 1 kept for leads")
         );
         assert_eq!(blocker(board, SlotPriority::Lead), None);
         assert_eq!(
             blocker(BoardView { used: 10, ..board }, SlotPriority::Lead).as_deref(),
-            Some("slots: 10/10 in use")
+            Some("fleet cap: 10 of 10 running")
         );
         let tiny = BoardView {
             cap: 2,
@@ -644,7 +646,7 @@ mod tests {
         };
         assert_eq!(
             blocker(tiny, SlotPriority::Review).as_deref(),
-            Some("slots: 2/2 in use")
+            Some("fleet cap: 2 of 2 running")
         );
         let shared = BoardView {
             cap: 40,
@@ -654,7 +656,7 @@ mod tests {
         };
         assert_eq!(
             blocker(shared, SlotPriority::Work).as_deref(),
-            Some("agents: 3/3 running")
+            Some("Max agents: 3 of 3 running")
         );
         assert_eq!(blocker(shared, SlotPriority::Lead), None);
     }
@@ -678,7 +680,7 @@ mod tests {
         let mut k = Kit::new(2);
         assert_eq!(k.work("T1"), Grant::Granted);
         assert_eq!(k.work("T2"), Grant::Granted);
-        assert_eq!(k.work("T3"), queued("slots: 2/2 in use"));
+        assert_eq!(k.work("T3"), queued("fleet cap: 2 of 2 running"));
         assert_eq!(k.work("T1"), Grant::Granted);
         let s = k.board.state();
         assert_eq!((s.cap, s.used, s.queued, s.reserved_band), (2, 2, 1, 0));
@@ -733,7 +735,7 @@ mod tests {
         }
         assert_eq!(
             k.work("T10"),
-            queued("slots: 9/10 in use (1 reserved for lead turns)")
+            queued("fleet cap: 9 of 10 running, 1 kept for leads")
         );
         assert_eq!(
             k.acquire(&lead_holder(&b), &b, SlotPriority::Lead),
@@ -741,7 +743,7 @@ mod tests {
         );
         assert_eq!(
             k.acquire(&lead_holder(&a), &a, SlotPriority::Lead),
-            queued("slots: 10/10 in use")
+            queued("fleet cap: 10 of 10 running")
         );
     }
 
@@ -753,7 +755,7 @@ mod tests {
         assert_eq!(k.acquire("T1", &a, SlotPriority::Work), Grant::Granted);
         assert_eq!(
             k.acquire("T2", &a, SlotPriority::Work),
-            queued("agents: 1/1 running")
+            queued("Max agents: 1 of 1 running")
         );
         assert_eq!(k.acquire("T3", &b, SlotPriority::Work), Grant::Granted);
         assert_eq!(
@@ -816,7 +818,7 @@ mod tests {
             Grant::Granted,
             "a running lead turn takes none of its agents' room"
         );
-        assert_eq!(k.work("T2"), queued("agents: 1/1 running"));
+        assert_eq!(k.work("T2"), queued("Max agents: 1 of 1 running"));
         let row = &k.board.state().per_project[0];
         assert_eq!(
             (row.max_agents, row.running, row.queued, row.used),
@@ -839,7 +841,7 @@ mod tests {
             (5, 0),
             "every running agent keeps its slot"
         );
-        assert_eq!(k.work("T6"), queued("agents: 5/3 running"));
+        assert_eq!(k.work("T6"), queued("Max agents: 5 of 3 running"));
         // Pausing the extras picks the newest writers and readers; the review is never one.
         assert_eq!(k.board.extras(&a), ["T4", "T3"]);
         k.release("T1");
@@ -863,7 +865,7 @@ mod tests {
         k.work("T3");
         assert_eq!(
             k.acquire("R1", &a, SlotPriority::Review),
-            queued("agents: 1/1 running")
+            queued("Max agents: 1 of 1 running")
         );
         assert_eq!(
             k.board.position("R1"),
@@ -930,7 +932,7 @@ mod tests {
         assert_eq!(k.board.state().used, 1);
         // An idle holder asking again queues behind the others.
         k.work("T3");
-        assert_eq!(k.work("T1"), queued("slots: 1/1 in use"));
+        assert_eq!(k.work("T1"), queued("fleet cap: 1 of 1 running"));
         k.release("T2");
         assert_eq!(k.grants, ["T2", "T3"]);
     }
@@ -945,7 +947,7 @@ mod tests {
         assert_eq!(s.used, 1);
         assert_eq!(s.per_project[0].used, 1);
         k.work("T1");
-        assert_eq!(k.work("T2"), queued("slots: 2/2 in use"));
+        assert_eq!(k.work("T2"), queued("fleet cap: 2 of 2 running"));
         k.thread("lead1", false, None);
         assert_eq!(k.grants, ["T2"]);
         // The lead restarted onto lead2: the claim moves there.

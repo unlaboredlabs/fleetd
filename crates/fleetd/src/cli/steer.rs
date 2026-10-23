@@ -1,6 +1,6 @@
 //! `fleetd steer`: a person redirects an order's lead or one of its agents mid-run, over the hub's MCP endpoint
-//! (steer_send, steer_withdraw, steers_list). A steer speaks for the human, so it needs a human key (`fleetd hub key
-//! create --human`). `--wait` follows the receipt the hub records from claude's own frames, through events_wait.
+//! (steer_send, steer_withdraw, steers_list). A steer speaks for the human, so it needs a human key the person made
+//! ([`human_key_required`]). `--wait` follows the receipt the hub records from claude's own frames, through events_wait.
 
 use std::time::Duration;
 
@@ -24,6 +24,15 @@ pub const STEER_USAGE: &str = r#"  steer <W|T> "<text>" [--now] [--wait] --key-f
 const CALL_TIMEOUT: Duration = Duration::from_secs(30);
 /// The longest events_wait the hub takes.
 const WAIT_SEC: u64 = 50;
+
+/// Why a command that speaks for the person (`what`) refuses to run without `--key-file`, and how to make the key. There
+/// is no implicit key: agents run as the same OS user, so any key the CLI found on its own, an agent could find too.
+pub fn human_key_required(what: &str) -> String {
+    format!(
+        "--key-file is required: {what} speaks for you, so it needs your human key. Make one once: \
+         fleetd hub key create --human --name <device> --out <file>"
+    )
+}
 
 #[derive(Debug, PartialEq)]
 pub enum SteerCommand {
@@ -86,10 +95,7 @@ pub fn parse_steer_args(argv: &[String], list: bool) -> Result<SteerArgs, String
         },
     )?;
     let Some(key_file) = v.string("key-file").filter(|s| !s.is_empty()) else {
-        return Err(
-            "--key-file is required: a steer speaks for you, so it needs a human key (fleetd hub key create --human)"
-                .into(),
-        );
+        return Err(human_key_required("a steer"));
     };
     let hub = v.string("hub").filter(|s| !s.is_empty());
     let p = &v.positionals;
@@ -241,7 +247,7 @@ pub fn new_lines(steer: &Value, printed: &mut Vec<String>) -> Vec<String> {
 
 // ---- talking to the hub ----
 
-fn client_request_id() -> String {
+pub(super) fn client_request_id() -> String {
     use rand::Rng;
     let mut rng = rand::thread_rng();
     (0..16)

@@ -312,7 +312,7 @@
           "$ref": "#/$defs/LaneStatus"
         },
         "statusReason": {
-          "description": "Queued, parked or failed: why, e.g. \"slots: 40/40 in use\", \"usage limit: resumes 14:05\".",
+          "description": "Queued, parked or failed: why, e.g. \"fleet cap: 40 of 40 running\", \"usage limit: resumes 14:05\".",
           "maxLength": 160,
           "type": "string"
         },
@@ -397,7 +397,7 @@
           "$ref": "#/$defs/LaneStatus"
         },
         "statusReason": {
-          "description": "Queued, parked or failed: why, e.g. \"slots: 40/40 in use\", \"usage limit: resumes 14:05\".",
+          "description": "Queued, parked or failed: why, e.g. \"fleet cap: 40 of 40 running\", \"usage limit: resumes 14:05\".",
           "maxLength": 160,
           "type": "string"
         },
@@ -1517,6 +1517,45 @@
         }
       },
       "required": [
+        "message"
+      ],
+      "type": "object"
+    },
+    "ChatStopInput": {
+      "properties": {
+        "clientRequestId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        }
+      },
+      "required": [
+        "projectRef",
+        "clientRequestId"
+      ],
+      "type": "object"
+    },
+    "ChatStopOutput": {
+      "properties": {
+        "message": {
+          "$ref": "#/$defs/ChatMessage",
+          "description": "The system line it wrote into the chat."
+        },
+        "next": {
+          "type": "string"
+        },
+        "stopped": {
+          "description": "Something was running and stopped: the lead's turn or an agent.",
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "stopped",
         "message"
       ],
       "type": "object"
@@ -5295,6 +5334,12 @@
         "chat_send.output": {
           "$ref": "#/$defs/ChatSendOutput"
         },
+        "chat_stop.input": {
+          "$ref": "#/$defs/ChatStopInput"
+        },
+        "chat_stop.output": {
+          "$ref": "#/$defs/ChatStopOutput"
+        },
         "claims_list.input": {
           "$ref": "#/$defs/ClaimsListInput"
         },
@@ -5745,6 +5790,8 @@
         "chat_history.output",
         "chat_send.input",
         "chat_send.output",
+        "chat_stop.input",
+        "chat_stop.output",
         "claims_list.input",
         "claims_list.output",
         "decisions_record.input",
@@ -11840,7 +11887,7 @@
           "type": "boolean"
         },
         "queuedReason": {
-          "description": "Why it is queued, e.g. \"lease: docs held by T1\" or \"slots: 40/40 in use\".",
+          "description": "Why it is queued, e.g. \"lease: docs held by T1\" or \"fleet cap: 40 of 40 running\".",
           "maxLength": 200,
           "minLength": 1,
           "type": "string"

@@ -59,10 +59,24 @@ pub async fn connect_to(
     hub: Option<&str>,
     client: &str,
 ) -> Result<McpClient, Failure> {
-    let again = |message: String| Failure {
+    let key = cli_key(home).map_err(again)?;
+    connect_with(home, hub, client, &key).await
+}
+
+fn again(message: String) -> Failure {
+    Failure {
         message,
         fix: "fleetd init (it starts the hub and repairs its setup)".into(),
-    };
+    }
+}
+
+/// [`connect_to`] with `key` instead of the CLI's own, for what speaks for the person: their human key.
+pub async fn connect_with(
+    home: &Path,
+    hub: Option<&str>,
+    client: &str,
+    key: &str,
+) -> Result<McpClient, Failure> {
     let listen = match hub {
         Some(url) => url.trim_end_matches('/').to_owned(),
         None => {
@@ -73,14 +87,12 @@ pub async fn connect_to(
             format!("http://{}", state.listen)
         }
     };
-    let state_listen = listen.clone();
-    let key = cli_key(home).map_err(again)?;
-    McpClient::connect(&listen, &key, client, Duration::from_secs(15))
+    McpClient::connect(&listen, key, client, Duration::from_secs(15))
         .await
         .map_err(|error| {
             again(format!(
                 "the hub does not answer at {}: {}",
-                state_listen,
+                listen,
                 error.message()
             ))
         })
