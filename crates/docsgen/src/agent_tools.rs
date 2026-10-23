@@ -14,8 +14,9 @@ use fleetd::hub::tasks::policy::{
     self, CallerAgent, MAX_DEPTH, MAX_OPEN_TASKS, SPAWN_OPS, WORKER_OPS,
 };
 use fleetd::node::runner::claude::{
-    AUTO_MEMORY_OFF_ENV, AUTO_MEMORY_OFF_WHY, DISALLOWED_WHY, HELPER_MODEL_ENV, HELPER_MODEL_WHY,
-    NESTING_VARS_WHY, SESSION_ENV_WHY, SUBAGENTS_OFF_ENV_WHY, SUBAGENTS_ON_ENV_WHY,
+    AUTO_MEMORY_OFF_ENV, AUTO_MEMORY_OFF_WHY, DEFAULT_ENV_WHY, DISALLOWED_WHY, HELPER_MODEL_ENV,
+    HELPER_MODEL_WHY, NESTING_VARS_WHY, SESSION_ENV_WHY, SUBAGENTS_OFF_ENV_WHY,
+    SUBAGENTS_ON_ENV_WHY,
 };
 use fleetd::node::runner::{conformance, version::TESTED};
 use fleetd_contracts::lead_calls::GatedRunCall;
@@ -836,6 +837,13 @@ fn switches() -> Result<String, String> {
             "Sessions",
         );
     }
+    for ((name, value), why) in DEFAULT_ENV_WHY {
+        rows(
+            vec![(format!("`{name}`"), why)],
+            &format!("`{value}` unless your environment or `claude.env` sets it"),
+            all,
+        );
+    }
     rows(named(NESTING_VARS_WHY), "removed", "Sessions");
     md.push('\n');
     Ok(md)
@@ -868,7 +876,11 @@ mod tests {
         for (tool, _) in DISALLOWED_WHY {
             assert!(blocked.contains(&format!("`{tool}`")), "{tool}");
         }
-        for ((name, _), _) in SUBAGENTS_OFF_ENV_WHY.iter().chain(SESSION_ENV_WHY) {
+        for ((name, _), _) in SUBAGENTS_OFF_ENV_WHY
+            .iter()
+            .chain(SESSION_ENV_WHY)
+            .chain(DEFAULT_ENV_WHY)
+        {
             assert!(page.contains(&format!("| `{name}` |")), "{name}");
         }
         // Allowed and blocked never overlap.
