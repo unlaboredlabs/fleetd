@@ -224,7 +224,6 @@ agents: 3 running of 6, 1 queued
   > Ported; 2 blockers left for review.
 - T7 waiting for an answer: docs
   > Which branch should the docs go to?
-- W4 research verdict STOP: candidate 1.2 vs baseline 1.1 (higher is better): improvement 0.1 (go line 5, stop line 2)
 ```
 
 Each event is `- <subject> <what>: <detail>`, sometimes followed by `  > ` lines quoting an agent. The ids (W2, T5,

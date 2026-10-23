@@ -31,7 +31,7 @@ pub use self::records::LeadRecords;
 pub use self::wakes::LeadWakes;
 pub use self::workstreams::Workstreams;
 use crate::clock::Clock;
-use crate::hub::playbooks::{PlaybookError, Playbooks, Research};
+use crate::hub::playbooks::{PlaybookError, Playbooks};
 use crate::hub::store::{EventLog, HubDb, HubStore, iso_ms, now_ms};
 
 /// What every service of this area reads from the rest of the hub.
@@ -99,7 +99,6 @@ pub struct Area {
     pub wakes: Arc<LeadWakes>,
     pub leads: Arc<Leads>,
     pub workstreams: Arc<Workstreams>,
-    pub research: Arc<Research>,
     pub removals: Arc<removals::ProjectRemovals>,
 }
 
@@ -117,7 +116,6 @@ impl Area {
             Arc::clone(&wakes),
             Arc::clone(&playbooks),
         );
-        let research = Research::new(Arc::clone(&ctx), Arc::clone(&records), Arc::clone(&wakes));
         let removals = removals::ProjectRemovals::new(Arc::clone(&ctx), Arc::clone(&records));
         Ok(Arc::new(Self {
             ctx,
@@ -126,7 +124,6 @@ impl Area {
             wakes,
             leads,
             workstreams,
-            research,
             removals,
         }))
     }
