@@ -70,7 +70,7 @@ pub trait ReviewGate: Send + Sync + 'static {
 
 #[derive(Clone)]
 pub struct TrainOptions {
-    /// Between CI polls and between idle passes.
+    /// Between idle passes, and the longest wait between reads while the train holds a Change (`busy_wait`).
     pub poll_interval: Duration,
     /// How long CI may take on a rebased head.
     pub ci_timeout: Duration,
@@ -107,6 +107,11 @@ type CiConfig = (i64, CiInfo);
 const CI_CONFIG_TTL_MS: i64 = 10 * 60_000;
 
 const GREEN: [&str; 3] = ["success", "neutral", "skipped"];
+
+/// The first waits between check-run reads of a head in CI: a short CI starts its checks within seconds.
+const CI_FIRST_WAIT: Duration = Duration::from_secs(2);
+/// The first waits between reads of a PR GitHub just rebased: its new head shows within a second or two.
+const REBASE_FIRST_WAIT: Duration = Duration::from_secs(1);
 
 fn is_red(run: &CheckRun) -> bool {
     run.status == "completed" && !GREEN.contains(&run.conclusion.as_deref().unwrap_or(""))
@@ -779,7 +784,7 @@ impl Train {
             if let Some(train) = self.records.train(repo) {
                 self.main_ci_pass(repo, &train.project_ref).await;
             }
-            self.clock.sleep(self.options.poll_interval).await;
+            self.clock.sleep(self.busy_wait(start, CI_FIRST_WAIT)).await;
         }
     }
 
@@ -925,6 +930,15 @@ impl Train {
         Ok(())
     }
 
+    /// The wait before the next read of a Change the train holds (its CI, GitHub showing its rebase), `since_ms` the
+    /// first read: `first` at the start, then an eighth of the time waited so far, at most `poll_interval`. CI is seen
+    /// green within about an eighth of its run (a few seconds for a short one), not up to `poll_interval` later; a long
+    /// one settles at the idle rate, so the extra reads are a handful per Change, all in its first minute or two.
+    fn busy_wait(&self, since_ms: i64, first: Duration) -> Duration {
+        let waited = Duration::from_millis((self.now_ms() - since_ms).max(0) as u64);
+        (waited / 8).max(first).min(self.options.poll_interval)
+    }
+
     /// The PR after `update-branch` rebased it. GitHub shows the new head a moment after the rebase returns; until
     /// then the PR reads as its old head, whose CI and status are not the rebase's, and a merge pinned to it is refused.
     async fn rebased_pull(&self, change: &Change) -> Result<Pull, GhError> {
@@ -943,7 +957,9 @@ impl Train {
                     short(change.head_sha.as_str())
                 )));
             }
-            self.clock.sleep(self.options.poll_interval).await;
+            self.clock
+                .sleep(self.busy_wait(start, REBASE_FIRST_WAIT))
+                .await;
         }
     }
 
