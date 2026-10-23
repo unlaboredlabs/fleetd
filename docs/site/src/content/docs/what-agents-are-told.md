@@ -128,7 +128,7 @@ On the hub machine:
 - A project's version beats the hub-wide one, which beats fleetd's.
 - Your versions are files under `~/.fleetd/hub/prompts/`. Change them with `fleetd prompts edit`, not by hand.
 - From an MCP client: `prompt_get` (without an `id` it lists them), and `prompt_set` (with `dryRun` to see the
-  warnings only, and `text: null` to go back).
+  warnings only, and `reset: true` to go back).
 
 Prompts fill in `{{name}}` placeholders, such as `{{project}}`. Nothing else is template syntax.
 
@@ -180,7 +180,7 @@ never moves it for you.
 4. Delete the old edit.
 
 From an MCP client, `prompt_get` without an `id` returns these under `orphans`, and `prompt_set` with the old id and
-`text: null` deletes one.
+`reset: true` deletes one.
 
 An edited playbook file is listed the same way. Its review and check rules still apply, but its instructions no longer
 reach the lead: the lead prompt has a section for each kind of work.

@@ -1,4 +1,4 @@
-//! The reads that took over others: a list without an id and one item with it, a reset by `text: null`, an order's
+//! The reads that took over others: a list without an id and one item with it, a reset by `reset: true`, an order's
 //! record and steers in `order_get`, and the notify policy in `fleetd_status`.
 use std::sync::Arc;
 
@@ -108,20 +108,38 @@ async fn a_read_lists_without_an_id_and_answers_one_with_it() {
 }
 
 #[tokio::test]
-async fn prompt_set_without_text_puts_the_next_level_back() {
+async fn prompt_set_resets_only_on_an_explicit_reset() {
     let (hub, _home) = hub();
     let id = json!({ "id": "lead.start" });
     let shipped = call(&hub, "prompt_get", id.clone()).await["prompt"]["default"]["ref"].clone();
     let edit = json!({ "id": "lead.start", "scope": "global", "text": "EDITED {{project}}" });
-    call(&hub, "prompt_set", edit).await;
+    let edited = call(&hub, "prompt_set", edit).await["ref"].clone();
     assert_eq!(
         call(&hub, "prompt_get", id.clone()).await["prompt"]["scope"],
         "global"
     );
+    // A forgotten text is refused and leaves the person's edit in place.
+    for forgot in [
+        json!({ "id": "lead.start", "scope": "global" }),
+        json!({ "id": "lead.start", "scope": "global", "text": null }),
+    ] {
+        let refused = registry()
+            .call(&hub, &person(), "prompt_set", forgot)
+            .await
+            .unwrap_err();
+        assert!(
+            format!("{refused:?}").contains("No text to save"),
+            "{refused:?}"
+        );
+    }
+    let kept = call(&hub, "prompt_get", id.clone()).await;
+    assert_eq!(kept["prompt"]["scope"], "global");
+    assert_eq!(kept["prompt"]["effective"]["ref"], edited);
+
     let reset = call(
         &hub,
         "prompt_set",
-        json!({ "id": "lead.start", "scope": "global", "text": null }),
+        json!({ "id": "lead.start", "scope": "global", "reset": true }),
     )
     .await;
     assert_eq!(reset["ref"], shipped);

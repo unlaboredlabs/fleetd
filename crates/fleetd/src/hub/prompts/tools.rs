@@ -102,7 +102,7 @@ async fn prompt_get(
         let next = if orphans.is_empty() {
             "prompt_get with an id shows one prompt's texts, placeholders and safety rules."
         } else {
-            "orphans are your edits to prompts fleetd retired: copy what you need into suggestedTarget, then delete the old one with prompt_set (text null)."
+            "orphans are your edits to prompts fleetd retired: copy what you need into suggestedTarget, then delete the old one with prompt_set (reset true)."
         };
         return Ok(PromptGetOutput {
             prompts: Some(hub.db.prompts().list(r)),
@@ -116,7 +116,7 @@ async fn prompt_get(
     let prompt = hub.db.prompts().detail(e, r);
     let next = prompt.stale.as_ref().map(|s| {
         format!(
-            "fleetd changed this prompt's default; yours is still in effect. Save the merged text (or yours) with base {}, or reset it with text null.",
+            "fleetd changed this prompt's default; yours is still in effect. Save the merged text (or yours) with base {}, or reset it with reset true.",
             s.current.r#ref
         )
     });
@@ -134,8 +134,22 @@ async fn prompt_set(
     caller: Caller,
     input: PromptSetInput,
 ) -> Result<PromptSetOutput, ToolError> {
-    let Some(text) = input.text.as_deref() else {
-        return reset(&hub, &caller, &input).await;
+    // A forgotten text must never wipe a person's edit: only an explicit reset deletes one.
+    let text = match (input.text.as_deref(), input.reset == Some(true)) {
+        (None, true) => return reset(&hub, &caller, &input).await,
+        (Some(text), false) => text,
+        (Some(_), true) => {
+            return Err(ToolError::new(
+                ErrorCode::Invalid,
+                "Give text to save or reset: true to go back, not both.",
+            ));
+        }
+        (None, false) => {
+            return Err(ToolError::new(
+                ErrorCode::Invalid,
+                "No text to save. Give text, or reset: true to go back to the next level.",
+            ));
+        }
     };
     let e = entry(input.id.as_str()).map_err(|e| retired_hint(input.id.as_str(), e))?;
     let r = input.project_ref.as_ref();
@@ -175,7 +189,7 @@ async fn prompt_set(
     })
 }
 
-/// `prompt_set` with `text: null`: back to the next level, or a retired prompt's edit deleted.
+/// `prompt_set` with `reset: true`: back to the next level, or a retired prompt's edit deleted.
 async fn reset(
     hub: &Hub,
     caller: &Caller,

@@ -6947,11 +6947,15 @@
           "$ref": "#/$defs/ProjectRef",
           "description": "Required with scope project."
         },
+        "reset": {
+          "description": "True deletes your text at this scope (or your edit to a prompt fleetd retired), so the next level applies.\nOnly an explicit reset does that: a missing text is an error, never a reset.",
+          "type": "boolean"
+        },
         "scope": {
           "$ref": "#/$defs/PromptScope"
         },
         "text": {
-          "description": "May be empty only for `instructions`. Null (or absent) resets: deletes your text at this scope (or your edit\nto a prompt fleetd retired), so the next level applies.",
+          "description": "The text to save. May be empty only for `instructions`. Required unless `reset` is true.",
           "type": "string"
         }
       },
@@ -7225,7 +7229,7 @@
       "type": "object"
     },
     "RetiredPromptOverride": {
-      "description": "An override of a prompt a release retired (merged into another, or replaced by fixed text), kept so the human can\ncarry what they wrote into a prompt that still exists. Its file stays until `prompt_set` with `text: null` on its id.",
+      "description": "An override of a prompt a release retired (merged into another, or replaced by fixed text), kept so the human can\ncarry what they wrote into a prompt that still exists. Its file stays until `prompt_set` with `reset: true` on its id.",
       "properties": {
         "id": {
           "$ref": "#/$defs/PromptId",

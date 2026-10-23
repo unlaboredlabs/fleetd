@@ -785,9 +785,11 @@ input!(PromptSetInput {
     scope: PromptScope,
     /// Required with scope project.
     project_ref: Option<ProjectRef>,
-    /// May be empty only for `instructions`. Null (or absent) resets: deletes your text at this scope (or your edit
-    /// to a prompt fleetd retired), so the next level applies.
+    /// The text to save. May be empty only for `instructions`. Required unless `reset` is true.
     text: Option<String>,
+    /// True deletes your text at this scope (or your edit to a prompt fleetd retired), so the next level applies.
+    /// Only an explicit reset does that: a missing text is an error, never a reset.
+    reset: Option<bool>,
     /// The default ref the text was edited from (`prompt_get` default.ref); absent: the one shipped now.
     base: Option<PromptRef>,
     /// Return the warnings without saving.

@@ -162,7 +162,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "prompt_set",
-        "Save a prompt override, hub-wide (scope global) or for one project (scope project, with projectRef); id instructions holds the custom instructions appended to every lead and task. Warns (never refuses) when the text drops a placeholder or a safety rule; dryRun returns the warnings only. text null removes the override at that scope, so the next one down (project, global, shipped default) is in effect again, or deletes an edit to a retired prompt. New sessions get it at once; running ones keep the text they started with. Admin keys, or a person's device.",
+        "Save a prompt override, hub-wide (scope global) or for one project (scope project, with projectRef); id instructions holds the custom instructions appended to every lead and task. Warns (never refuses) when the text drops a placeholder or a safety rule; dryRun returns the warnings only. reset true (without text) removes the override at that scope, so the next one down (project, global, shipped default) is in effect again, or deletes an edit to a retired prompt; a call with neither text nor reset is refused. New sessions get it at once; running ones keep the text they started with. Admin keys, or a person's device.",
     ),
     (
         "session_prompt_get",

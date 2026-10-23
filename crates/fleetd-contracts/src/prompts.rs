@@ -221,7 +221,7 @@ pub struct SessionPrompt {
 }
 
 /// An override of a prompt a release retired (merged into another, or replaced by fixed text), kept so the human can
-/// carry what they wrote into a prompt that still exists. Its file stays until `prompt_set` with `text: null` on its id.
+/// carry what they wrote into a prompt that still exists. Its file stays until `prompt_set` with `reset: true` on its id.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]

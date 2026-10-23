@@ -2383,11 +2383,13 @@ export type PromptSetInput = {
   id: PromptId;
   /** Required with scope project. */
   projectRef?: ProjectRef;
-  scope: PromptScope;
   /**
-   * May be empty only for `instructions`. Null (or absent) resets: deletes your text at this scope (or your edit
-   * to a prompt fleetd retired), so the next level applies.
+   * True deletes your text at this scope (or your edit to a prompt fleetd retired), so the next level applies.
+   * Only an explicit reset does that: a missing text is an error, never a reset.
    */
+  reset?: boolean;
+  scope: PromptScope;
+  /** The text to save. May be empty only for `instructions`. Required unless `reset` is true. */
   text?: string;
 };
 
@@ -2499,7 +2501,7 @@ export type ResearchVerdict = {
 
 /**
  * An override of a prompt a release retired (merged into another, or replaced by fixed text), kept so the human can
- * carry what they wrote into a prompt that still exists. Its file stays until `prompt_set` with `text: null` on its id.
+ * carry what they wrote into a prompt that still exists. Its file stays until `prompt_set` with `reset: true` on its id.
  */
 export type RetiredPromptOverride = {
   /** The retired id. */

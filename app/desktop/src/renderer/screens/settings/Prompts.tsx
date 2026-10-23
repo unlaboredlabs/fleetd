@@ -205,11 +205,11 @@ export function Prompts({ route }: { route: SettingsRoute }) {
     const target = which === "update" ? updateTarget(d, scope) : { scope: editScope(d, scope), projectRef };
     setBusy(true);
     setEcho(null);
-    // No text: the hub deletes the text at this scope.
     hubCall("prompt_set", {
       id: d.id,
       scope: target.scope,
       ...(target.scope === "project" && target.projectRef ? { projectRef: target.projectRef } : {}),
+      reset: true,
     }).then(
       () => {
         setBusy(false);
@@ -372,7 +372,7 @@ function Orphans(props: {
   const key = (o: RetiredPromptOverride) => `${o.id}|${o.scope}|${o.projectRef?.machineId ?? ""}/${o.projectRef?.projectId ?? ""}`;
   const remove = (o: RetiredPromptOverride) => {
     setEcho(null);
-    hubCall("prompt_set", { id: o.id, scope: o.scope, ...(o.scope === "project" && o.projectRef ? { projectRef: o.projectRef } : {}) }).then(
+    hubCall("prompt_set", { id: o.id, scope: o.scope, ...(o.scope === "project" && o.projectRef ? { projectRef: o.projectRef } : {}), reset: true }).then(
       () => {
         setEcho({ ok: true, text: `Deleted your edit to ${oldPromptName(o)}.` });
         props.onDeleted();

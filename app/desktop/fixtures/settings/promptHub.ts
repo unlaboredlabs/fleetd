@@ -195,10 +195,14 @@ export class PromptHub {
         return p ? { ok: true, output: { prompt: this.detail(p, key) } } : notFound(input["id"]);
       }
       case "prompt_set": {
-        if (typeof input["text"] !== "string") return this.reset(input, key);
+        const text = input["text"];
+        // As the hub: only an explicit reset deletes an edit; a missing text is refused.
+        if (input["reset"] === true && typeof text !== "string") return this.reset(input, key);
+        if (input["reset"] === true || typeof text !== "string") {
+          return { ok: false, error: { code: "invalid", message: "No text to save. Give text, or reset: true to go back to the next level." } };
+        }
         const p = find();
         if (!p) return notFound(input["id"]);
-        const text = input["text"];
         if (text === "" && p.id !== INSTRUCTIONS) return { ok: false, error: { code: "invalid", message: "A prompt can't be empty." } };
         const warnings = this.warnings(p, text);
         if (input["dryRun"] !== true) {
@@ -220,7 +224,7 @@ export class PromptHub {
     }
   }
 
-  /** prompt_set without text: an orphan deleted, or the override at the scope gone. */
+  /** prompt_set with reset: an orphan deleted, or the override at the scope gone. */
   private reset(input: Record<string, unknown>, key: string | null): Answer {
     const gone = this.orphans.findIndex((o) => o.id === input["id"] && o.scope === input["scope"]);
     if (gone >= 0) {
