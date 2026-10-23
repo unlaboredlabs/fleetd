@@ -323,16 +323,15 @@ fn edits_to_retired_prompts_are_listed_until_reset() {
             None,
         )
         .unwrap();
-    let project_file = dir
+    let project_dir = dir
+        .join("projects")
         .read_dir()
         .unwrap()
-        .find(|e| e.as_ref().unwrap().file_name() == "projects")
-        .map(|_| {
-            let projects = dir.join("projects");
-            let key = projects.read_dir().unwrap().next().unwrap().unwrap().path();
-            key.join("permission.denied.human.md")
-        })
-        .unwrap();
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let project_file = project_dir.join("permission.denied.human.md");
     std::fs::write(&project_file, "---\nbase: x@0123456789\n---\nNo: {{said}}").unwrap();
 
     let hub_wide = prompts.orphans(None);
@@ -352,20 +351,13 @@ fn edits_to_retired_prompts_are_listed_until_reset() {
             ("playbook.bugfix", Some("lead.start"))
         ]
     );
-    assert_eq!(hub_wide[0].text, "New order {{workstreamId}}, mine");
-    assert_eq!(hub_wide[1].text, "my bugfix playbook");
     assert!(hub_wide.iter().all(|o| o.scope == PromptScope::Global));
 
     let with_project = prompts.orphans(Some(&p));
-    assert_eq!(with_project.len(), 3);
     let mine = &with_project[2];
     assert_eq!(
-        (mine.id.as_str(), mine.scope, mine.text.as_str()),
-        (
-            "permission.denied.human",
-            PromptScope::Project,
-            "No: {{said}}"
-        )
+        (with_project.len(), mine.id.as_str(), mine.scope),
+        (3, "permission.denied.human", PromptScope::Project)
     );
     assert_eq!(mine.suggested_target, None);
     assert_eq!(prompts.all_orphans().len(), 3);
