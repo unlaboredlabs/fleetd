@@ -43,11 +43,13 @@ To change hubs, open Settings (⌘,) → General → Hub.
 
 | Part | Shows |
 |---|---|
-| Sidebar | Your projects, each saying why it wants you: "reply", "approve", "secret" or "blocked". Otherwise it says how many agents are working. A project in bold has a new message from its lead. Below them: Agents, Pull requests (of the project you're in), Status, Time, Machines and Settings. |
-| The top row | The page's title and its controls, then Commands. In a chat: the project's name, its state word and its [Max agents](/docs/projects#max-agents) control. |
+| Sidebar | Your projects, each saying why it wants you: "reply", "approve", "secret" or "blocked". Otherwise it says how many agents are working. A project in bold has a new message from its lead. Below them: Status, Time, Machines and Settings. |
+| The top row | The page's title and its controls, then Commands. In a chat: the project's name, its state word and its [Max agents](/docs/projects#max-agents) control, and the agents and PRs toggle. |
 | The chat | The selected project's conversation with its lead. |
+| Agents and PRs | Beside a chat, on the right: the project's [agents](#agents) and its [pull requests](/docs/chat#prs). Open it with the toggle at the top right or ⌥⌘B. |
 
-In a window narrower than about 1000 px the sidebar hides itself; ⌘B shows it again. On macOS the Dock icon shows how
+In a window narrower than about 1000 px the sidebar and the agents and PRs panel hide themselves; ⌘B and ⌥⌘B show them
+again. The app remembers whether you left the panel open. On macOS the Dock icon shows how
 many projects need you.
 
 Click a project to open its chat. ⌥⌘A jumps to the next project that wants you. To add a project, click "Add" next to Projects, then paste a GitHub URL or
@@ -85,10 +87,10 @@ How to work with the lead: [Chat with the lead](/docs/chat).
 
 ## Agents {#agents}
 
-Agents lists every agent working now, across all your projects: its role, its task, what it's doing and for how long.
-Click one to watch its work as it happens: what it was told, the commands it ran, the files it edited and what it's
-writing. Watching doesn't interrupt it. To change what it does, tell its lead in the chat. Its PR number opens
-[the PR](/docs/chat#prs).
+The Agents tab of the panel beside a chat (⌥⌘B) lists the project's agents at work, those waiting on you first: each
+one's role, its task, what it's doing and for how long. Click one to watch its work as it happens: what it was told,
+the commands it ran, the files it edited and what it's writing. Watching doesn't interrupt it. To change what it does,
+tell the lead in the chat. Its PR number opens [the PR](/docs/chat#prs); **All agents** or Esc goes back to the list.
 
 ## Status {#status}
 
@@ -138,6 +140,7 @@ The command palette (⌘K) opens on the project you're in. Type a setting's own 
 | ⌘/ | Keyboard shortcuts |
 | ⌘L | Focus the message box |
 | ⌘B | Toggle the sidebar |
+| ⌥⌘B | Toggle the agents and PRs panel |
 | ⌘1 to ⌘9 | Open that project in the sidebar |
 | ⌘[ / ⌘] | Previous / next project |
 | ⌥⌘A | Next project that wants you |

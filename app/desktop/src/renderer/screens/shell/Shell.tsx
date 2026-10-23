@@ -1,7 +1,7 @@
 // The app frame: the sidebar of projects down the left (the macOS traffic lights sit in its top row, over the window's
 // translucent material), the top row beside it (the window's drag region, where a chat puts its title), and the
-// screen the route names: a project's lead chat, or Status, Time or Settings. Navigation is the hash (routes.ts);
-// `#/` opens the project you last had open.
+// screen the route names: a project's lead chat, with its agents and PRs in the panel on the right (panel.tsx), or
+// Status, Time or Settings. Navigation is the hash (routes.ts); `#/` opens the project you last had open.
 import { PanelLeft, Search } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useRef } from "react";
 import { display } from "../../../shared/shortcuts";
@@ -12,9 +12,10 @@ import { useDockBadge, useMainProcess, useMenuState, useModHeld, useNotification
 import { useHubState } from "./hubFeed";
 import { useDataLayer } from "../../src/data/react";
 import { homeProject, nextWanting, projectId, routeOf, stepProject } from "./model";
-import { useAgentsWorking, useMachinesDown, useSidebarProjects } from "./data";
+import { useMachinesDown, useSidebarProjects } from "./data";
 import { navigate, useRoute } from "./navigation";
-import { HOME, type Screen } from "./routes";
+import { HOME, panelRoute, type Screen } from "./routes";
+import { PanelSlot, PanelToggle, useProjectPanel } from "./panel";
 import { ConnectionBanner, GetStarted, needsOnboarding } from "../onboarding";
 import { UpdatesHost } from "../updates";
 import { Boundary } from "../../src/Boundary";
@@ -46,7 +47,6 @@ export function Shell() {
   const hub = useHubState();
   // The route's project, not the resolved home: `#/` becomes a project's own route at once.
   const projects = useSidebarProjects(route.id === "project" ? route.project : null);
-  const agentsWorking = useAgentsWorking();
   const machinesDown = useMachinesDown();
   const sidebar = useSidebar();
   const modHeld = useModHeld();
@@ -73,10 +73,9 @@ export function Shell() {
   const back = useSettingsBack(screen.id === "settings");
 
   const open = screen.id === "project" ? screen.project : null;
-  // The project on screen, its chat or its PRs.
-  const here = screen.id === "project" || screen.id === "prs" ? screen.project : null;
-  // The sidebar's and the palette's Pull requests: the project on screen, else the one `#/` opens.
-  const prsProject = here ?? (projects === undefined ? null : homeProject(projects, readLast()));
+  // The palette's Agents and Pull requests: the project on screen, else the one `#/` opens.
+  const panelProject = open ?? (projects === undefined ? null : homeProject(projects, readLast()));
+  const panel = useProjectPanel(screen);
   // The chat on screen is the one open, and the one that streams.
   const openKey = open === null ? null : projectId(open);
   useEffect(() => {
@@ -112,6 +111,7 @@ export function Shell() {
   useCommands(
     [
       { id: "sidebar.toggle", title: "Toggle sidebar", group: "actions", enabled: () => chrome, run: sidebar.toggle },
+      { id: "panel.toggle", title: "Toggle agents and PRs", group: "actions", keywords: ["panel", "right"], enabled: () => chrome && open !== null, run: panel.toggle },
       { id: "project.previous", title: "Previous project", group: "projects", searchOnly: true, enabled: () => chrome && (projects?.length ?? 0) > 0, run: () => step(-1) },
       { id: "project.next", title: "Next project", group: "projects", searchOnly: true, enabled: () => chrome && (projects?.length ?? 0) > 0, run: () => step(1) },
       {
@@ -128,21 +128,23 @@ export function Shell() {
       {
         id: "go:agents",
         title: "Agents",
-        detail: "Every agent working now",
+        detail: "This project’s agents at work",
         group: "go-to",
         keywords: ["live", "work", "running"],
-        enabled: () => chrome,
-        run: () => go({ id: "agents", agent: null }),
+        enabled: () => chrome && panelProject !== null,
+        run: () => {
+          if (panelProject !== null) go(panelRoute(panelProject, { tab: "agents", agent: null }));
+        },
       },
       {
         id: "go:prs",
         title: "Pull requests",
-        detail: "A project’s PRs: checks, reviews and changes",
+        detail: "This project’s PRs: checks, reviews and changes",
         group: "go-to",
         keywords: ["pr", "prs", "pull", "diff", "changes", "review"],
-        enabled: () => chrome && prsProject !== null,
+        enabled: () => chrome && panelProject !== null,
         run: () => {
-          if (prsProject !== null) go({ id: "prs", project: prsProject, pr: null });
+          if (panelProject !== null) go(panelRoute(panelProject, { tab: "prs", pr: null }));
         },
       },
       ...JUMPS.map(
@@ -183,9 +185,12 @@ export function Shell() {
       leading={chrome && !showSidebar ? toggle : undefined}
       trailing={
         chrome ? (
-          <Button variant="quiet" icon={<Search />} shortcut={display("palette.toggle", platform)} onClick={() => openPalette()}>
-            Commands
-          </Button>
+          <>
+            <Button variant="quiet" icon={<Search />} shortcut={display("palette.toggle", platform)} onClick={() => openPalette()}>
+              Commands
+            </Button>
+            <PanelToggle panel={panel} />
+          </>
         ) : undefined
       }
     />
@@ -211,10 +216,11 @@ export function Shell() {
             </Boundary>
           ) : showSidebar ? (
             <Boundary key="sidebar" part="the sidebar">
-              <Sidebar projects={projects} agentsWorking={agentsWorking} prsProject={prsProject} machinesDown={machinesDown} screen={screen} hub={hub} jumpHints={modHeld} go={go} />
+              <Sidebar projects={projects} machinesDown={machinesDown} screen={screen} hub={hub} jumpHints={modHeld} go={go} />
             </Boundary>
           ) : undefined
         }
+        aside={chrome && panel.shown ? <PanelSlot panel={panel} /> : undefined}
       >
         <div className={s.column}>
           {/* Fixture data must never pass for a live hub. */}

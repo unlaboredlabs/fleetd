@@ -44,6 +44,10 @@
   font-weight: var(--weight-regular);
   font-size: var(--text-xs);
 }
+/* A count that renders nothing until it is known takes no room. */
+.tabCount:empty {
+  display: none;
+}
 .tabPanel {
   min-width: 0;
   min-height: 0;
