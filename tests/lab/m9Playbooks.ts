@@ -1,23 +1,13 @@
 // M9 playbooks on lab-a: (a) a workstream opened with the bugfix playbook pins it; (b) a research brief without its
-// baseline and decision rule is refused, then set with them. The harness's `fleetd` calls run in the project's
+// baseline and decision rule is refused, then set with them. The harness's own tool calls run in the project's
 // workspace and cost no turns.
-import { spawnSync } from "node:child_process";
 import path from "node:path";
-import { type Body, MODEL, openWorkstream, fleetdCommand, type Lab, nodeSock, requireGhLogin, scrubbedEnv } from "./harness.ts";
+import { type Body, MODEL, openWorkstream, type Lab, leadIn, nodeSock, requireGhLogin, scrubbedEnv } from "./harness.ts";
 import { CLONE } from "./m7Train.ts";
 
 const MACHINE = "lab-a";
 const TURN_MS = 240_000;
 const ENDED = ["thread.completed", "thread.failed", "thread.interrupted"];
-
-const shell = (cwd: string) => {
-  const env = { ...scrubbedEnv(), PWD: cwd, FLEETD_NODE_SOCK: nodeSock(MACHINE) };
-  const run = (...args: Array<string>) => {
-    const out = spawnSync(...fleetdCommand(args), { cwd, encoding: "utf8", env });
-    return { code: out.status, stdout: out.stdout, stderr: out.stderr };
-  };
-  return { run };
-};
 
 export async function m9Playbooks(lab: Lab) {
   const { callTool, check, ok } = lab;
@@ -28,7 +18,7 @@ export async function m9Playbooks(lab: Lab) {
   const ref = { machineId: MACHINE, projectId };
   const outcome = (await callTool("project_get", ref)).body;
   const root = outcome.project.workspaceRoot as string;
-  const { run: fleetd } = shell(root);
+  const lead = leadIn(root, { ...scrubbedEnv(), FLEETD_NODE_SOCK: nodeSock(MACHINE) });
   const scenarioStart = await lab.cursor();
   const leadTurnEnds = (thread: string, cursor: number) =>
     lab.waitEvent("a lead turn to end", TURN_MS, { cursor, match: (e) => e.threadId === thread && ENDED.includes(e.type) });
@@ -45,15 +35,15 @@ export async function m9Playbooks(lab: Lab) {
   }
   const leads = [leadThread];
 
-  // (a) A fix opened with the bugfix playbook, from the shell as the lead would.
-  const wa = openWorkstream(check, fleetd, "fix: the repo-a README has a typo.", "bugfix");
+  // (a) A fix opened with the bugfix playbook, with the lead's tool.
+  const wa = openWorkstream(check, lead, "fix: the repo-a README has a typo.", "bugfix");
   const pinnedA = (await callTool("workstream_get", { workstreamId: wa })).body.workstream.playbook as string;
   check(/^bugfix@[0-9a-f]{40}$/u.test(pinnedA), `${wa} pins bugfix: ${pinnedA}`);
   ok(`(a) ${wa} in ${MACHINE}/${projectId}; playbook ${pinnedA.slice(0, 19)}…`);
 
   // (b) A research workstream: the brief pre-registers baseline, metric and rule.
   const briefBase = { pointers: [], constraints: [] };
-  const wr = openWorkstream(check, fleetd, "research: would a shorter README read faster?", "research");
+  const wr = openWorkstream(check, lead, "research: would a shorter README read faster?", "research");
   const pinnedR = (await callTool("workstream_get", { workstreamId: wr })).body.workstream.playbook as string;
   check(/^research@[0-9a-f]{40}$/u.test(pinnedR), `${wr} pins research: ${pinnedR}`);
   const research = {
@@ -67,11 +57,11 @@ export async function m9Playbooks(lab: Lab) {
     budget: { size: "S" },
   };
   const { baseline: _b, decisionRule: _r, ...unregistered } = research;
-  const missing = fleetd("brief", "create", "--workstream", wr, "--json", JSON.stringify(unregistered));
-  check(missing.code === 3 && missing.stderr.includes("missing baseline, decisionRule"), `research brief without baseline and rule: ${JSON.stringify(missing)}`);
-  const frozen = fleetd("brief", "create", "--workstream", wr, "--json", JSON.stringify(research));
+  const missing = lead("brief", { workstreamId: wr, brief: unregistered });
+  check(missing.code === 3 && missing.text.includes("missing baseline, decisionRule"), `research brief without baseline and rule: ${JSON.stringify(missing)}`);
+  const frozen = lead("brief", { workstreamId: wr, brief: research });
   check(frozen.code === 0, `research brief: ${JSON.stringify(frozen)}`);
-  ok(`(b) ${wr} research: a brief without baseline and decisionRule refused (${missing.stderr.trim().split("\n")[0]}); then frozen with rule lower-is-better, GO at 5 s`);
+  ok(`(b) ${wr} research: a brief without baseline and decisionRule refused (${missing.text.split("\n")[0]}); then frozen with rule lower-is-better, GO at 5 s`);
 
   // Let the last lead wakes on lab-a run out, then count every claude turn this scenario cost.
   for (let after = await lab.cursor(); ; ) {

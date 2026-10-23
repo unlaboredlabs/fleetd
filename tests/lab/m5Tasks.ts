@@ -1,15 +1,15 @@
-// M5 "done when" 1, 2 and 5, end to end on lab-a: the lead spawns a writer with `fleetd task spawn` from its own shell
-// and gets its result inline in one wake; with the cap at 1 a second spawn queues until that turn ends; and the instance
-// keeps Claude's native Task, Workflow and AskUserQuestion tools from every thread. Further spawns run `fleetd` from the harness in
-// the project's workspace, exactly as a lead's shell would, so they cost no lead turns. Every task turn runs on medium.
-import { execFileSync, spawnSync } from "node:child_process";
+// M5 "done when" 1, 2 and 5, end to end on lab-a: the lead spawns a writer with its spawn_agent tool and gets its
+// result inline in one wake; with the cap at 1 a second spawn queues until that turn ends; and the instance keeps
+// Claude's native Task, Workflow and AskUserQuestion tools from every thread. Further spawns call the same tool from the
+// harness in the project's workspace, exactly as a lead would, so they cost no lead turns. Every task turn runs on medium.
+import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import { type Body, callToolWith, chatOrder, cli, fleetdCommand, initTools, type Lab, MECHANICS, MODEL, nodeSock, scrubbedEnv, userMessages } from "./harness.ts";
+import { type Body, callToolWith, chatOrder, cli, initTools, type Lab, leadIn, MECHANICS, MODEL, nodeSock, scrubbedEnv, userMessages } from "./harness.ts";
 
 const MACHINE = "lab-a";
 const TURN_MS = 240_000;
@@ -56,21 +56,13 @@ export async function m5Tasks(lab: Lab) {
   prepareRepo(root);
   ok(`${root}: .fleetd/policy.yaml on main; no fleetd/* branches left`);
 
-  // `fleetd` as the lead's shell runs it: in the project's workspace, through lab-a's node socket.
-  const fleetd = (...args: Array<string>) => {
-    const out = spawnSync(...fleetdCommand(args), {
-      cwd: root,
-      encoding: "utf8",
-      env: { ...scrubbedEnv(), PWD: root, FLEETD_NODE_SOCK: nodeSock(MACHINE) },
-    });
-    return { code: out.status, stdout: out.stdout, stderr: out.stderr };
-  };
-  const spawnTask = (args: Array<string>) => {
-    const out = fleetd("task", "spawn", ...args);
-    check(out.code === 0, `fleetd task spawn ${args.join(" ")}: exit ${out.code} ${out.stderr}`);
-    const taskId = /^Spawned (T\d+)/mu.exec(out.stdout)?.[1];
-    check(taskId, `spawn printed the task: ${out.stdout}`);
-    return { taskId: taskId!, stdout: out.stdout };
+  // fleetd's tools as a lead calls them: in the project's workspace, through lab-a's node socket.
+  const lead = leadIn(root, { ...scrubbedEnv(), FLEETD_NODE_SOCK: nodeSock(MACHINE) });
+  const spawnTask = (args: Record<string, unknown>) => {
+    const out = lead("spawn_agent", args);
+    const taskId = out.result?.task?.taskId;
+    check(out.code === 0 && typeof taskId === "string", `spawn_agent ${JSON.stringify(args)}: ${out.text}`);
+    return { taskId: taskId as string };
   };
   const task = async (taskId: string) => (await callTool("task_get", { taskId })).body.task as Body;
 
@@ -133,14 +125,17 @@ export async function m5Tasks(lab: Lab) {
     }
     ok(`lead thread ${leadThread}, workstream ${workstreamId}`);
 
-    // 1. The lead spawns T1 from its shell: a thread in a new worktree on fleetd/T1-add-file, on the medium profile.
-    const spawn1 =
-      `fleetd task spawn --workstream ${workstreamId} --title "add file" --profile ${MECHANICS} ` +
-      `--prompt "create docs/x.md with one line 'hi', commit it on your branch"`;
+    // 1. The lead spawns T1 with its tool: a thread in a new worktree on fleetd/T1-add-file, on the medium profile.
+    const spawn1 = JSON.stringify({
+      workstreamId,
+      title: "add file",
+      profile: MECHANICS,
+      prompt: "create docs/x.md with one line 'hi', commit it on your branch",
+    });
     const sent = await lab.humanCall("chat_send", {
       projectRef: ref,
       clientRequestId: randomUUID(),
-      text: `Run this command once in your shell, exactly as written, then stop. In later wakes about tasks, run no commands: reply with one short line and stop.\n${spawn1}`,
+      text: `Call your spawn_agent tool once with exactly these arguments, then stop. In later wakes about tasks, call no tools: reply with one short line and stop.\n${spawn1}`,
     });
     check(!sent.isError, `chat_send to the lead: ${JSON.stringify(sent.body)}`);
     const spawnTurn = leadTurnDone(cursor, "spawn T1");
@@ -152,12 +147,12 @@ export async function m5Tasks(lab: Lab) {
       t1.state === "running" && t1.branch === "fleetd/T1-add-file" && t1.profile === MECHANICS && t1.threadRef?.threadId,
       `T1 runs on its branch on medium: ${JSON.stringify(t1)}`,
     );
-    ok(`1. the lead ran fleetd task spawn: T1 started (${t1Started.event.summary}), thread ${t1.threadRef.threadId} on ${t1.branch}`);
+    ok(`1. the lead called spawn_agent: T1 started (${t1Started.event.summary}), thread ${t1.threadRef.threadId} on ${t1.branch}`);
 
     // 2. Cap 1: a read task queues on the slot board.
     const capped = (await admin("cap_set", { cap: 1 })).body;
     check(capped.slots?.cap === 1, `cap_set 1: ${JSON.stringify(capped)}`);
-    const reader = spawnTask(["--workstream", workstreamId, "--title", "say ok", "--kind", "read", "--prompt", "Reply with the single word OK."]);
+    const reader = spawnTask({ workstreamId, title: "say ok", kind: "read", prompt: "Reply with the single word OK." });
     const readerTask = await task(reader.taskId);
     check(readerTask.state === "queued" && /^slots: \d+\/1 in use/u.test(readerTask.queuedReason ?? ""), `the read task queued on the cap: ${JSON.stringify(readerTask)}`);
     ok(`2. cap set to 1; ${reader.taskId} queued: ${readerTask.queuedReason}`);

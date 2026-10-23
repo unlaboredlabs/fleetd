@@ -4,11 +4,10 @@
 // `spawn_agent` starts a fleetd task that shows as a lane on the order and ran through the slot board. A task's agent
 // gets only report/ask_lead, and its own shell can't spawn either, with FLEETD_THREAD_ID unset or forged as
 // the lead's. A few tiny lead turns, two task turns.
-import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { type Body, chatOrder, fleetdCommand, type Lab, MECHANICS, MODEL, nodeHome, nodeSock, scrubbedEnv } from "./harness.ts";
+import { type Body, chatOrder, fleetdCommand, type Lab, leadIn, MECHANICS, MODEL, nodeHome, nodeSock, scrubbedEnv } from "./harness.ts";
 import { prepareRepo } from "./m5Tasks.ts";
 
 const MACHINE = "lab-a";
@@ -184,31 +183,28 @@ export async function noSubagents(lab: Lab) {
   ok(`${taskId}'s init: ${fleetdTools.join(", ")}; no agent tool; no subagent started`);
 
   // A person's own shell (outside every session) makes lead calls as before; claiming a session from it is refused.
-  const shell = (env: Record<string, string>, ...args: Array<string>) => {
-    const out = spawnSync(...fleetdCommand(args), {
-      cwd: root,
-      encoding: "utf8",
-      env: { ...scrubbedEnv(), PWD: root, FLEETD_NODE_SOCK: nodeSock(MACHINE), ...env },
-    });
-    return { code: out.status, text: `${out.stdout}${out.stderr}` };
-  };
-  check(shell({}, "task", "list").code === 0, "a person's own `fleetd task list` goes through");
-  const claimed = shell({ FLEETD_THREAD_ID: leadThread }, "task", "list");
+  const shell = (env: Record<string, string>) => leadIn(root, { ...scrubbedEnv(), FLEETD_NODE_SOCK: nodeSock(MACHINE), ...env });
+  check(shell({})("list_agents", {}).code === 0, "a person's own list_agents goes through");
+  const claimed = shell({ FLEETD_THREAD_ID: leadThread })("list_agents", {});
   check(claimed.code === 3 && claimed.text.includes("does not run in it"), `claiming the lead's session from outside it is refused: ${JSON.stringify(claimed)}`);
   ok(`a person's shell: task list ok; claiming the lead's session refused (${claimed.text.trim().split("\n")[0]})`);
 
   // From inside a task: its own shell spawns with FLEETD_THREAD_ID unset and with the lead's id forged. The node names
   // the session from the process tree, so both are refused. The harness starts this task as a person would.
   const bin = fleetdCommand([])[0];
-  const nested = (title: string) => `${bin} task spawn --workstream ${workstreamId} --title ${title} --kind read --prompt hi`;
-  const commands = [`env -u FLEETD_THREAD_ID ${nested("nested-unset")}`, `env FLEETD_THREAD_ID=${leadThread} ${nested("nested-forged")}`];
-  const bypass = shell(
-    {},
-    "task", "spawn", "--workstream", workstreamId, "--title", "try nested spawns", "--kind", "read", "--profile", MECHANICS,
-    "--prompt",
-    `This is a lab test of fleetd's refusals. Run these two shell commands exactly as written, one at a time, then reply with one line per command: its exit code and first line of output.\n1. ${commands[0]}\n2. ${commands[1]}`,
-  );
-  const bypassId = /^Spawned (T\d+)/mu.exec(bypass.text)?.[1];
+  const nested = (title: string, env: string) => {
+    const call = { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "spawn_agent", arguments: { workstreamId, title, kind: "read", prompt: "hi" } } };
+    return `echo '${JSON.stringify(call)}' | ${env} ${bin} agent-mcp --role lead`;
+  };
+  const commands = [nested("nested-unset", "env -u FLEETD_THREAD_ID"), nested("nested-forged", `env FLEETD_THREAD_ID=${leadThread}`)];
+  const bypass = shell({})("spawn_agent", {
+    workstreamId,
+    title: "try nested spawns",
+    kind: "read",
+    profile: MECHANICS,
+    prompt: `This is a lab test of fleetd's refusals. Run these two shell commands exactly as written, one at a time, then reply with one line per command: its exit code and first line of output.\n1. ${commands[0]}\n2. ${commands[1]}`,
+  });
+  const bypassId = bypass.result?.task?.taskId as string | undefined;
   check(bypass.code === 0 && bypassId, `the harness spawns the bypass task: ${JSON.stringify(bypass)}`);
   const bypassEnd = await lab.waitEvent(`${bypassId} ends`, TURN_MS, {
     cursor: started.cursor,
@@ -226,7 +222,7 @@ export async function noSubagents(lab: Lab) {
   const runs = msgs
     .filter((m) => m.type === "assistant")
     .flatMap((m) => (m.message?.content as Array<Body> | undefined) ?? [])
-    .filter((c) => c.type === "tool_use" && c.name === "Bash" && String(c.input?.command).includes("task spawn"))
+    .filter((c) => c.type === "tool_use" && c.name === "Bash" && String(c.input?.command).includes("agent-mcp"))
     .map((c) => ({ command: String(c.input.command), said: results.get(c.id) ?? "" }));
   const unset = runs.find((r) => r.command.includes("env -u FLEETD_THREAD_ID"));
   const forged = runs.find((r) => r.command.includes(`FLEETD_THREAD_ID=${leadThread}`));

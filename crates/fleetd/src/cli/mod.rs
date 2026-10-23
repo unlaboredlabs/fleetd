@@ -5,7 +5,6 @@ pub mod agent_mcp;
 pub mod args;
 pub mod chat;
 pub mod hub_key;
-pub mod lead;
 pub mod mcp_client;
 pub mod node;
 pub mod pair;
@@ -65,9 +64,7 @@ setting up (on the hub machine):
 projects:
 {}
 running by hand:
-{}{}{}{}{}{}{}{}
-lead-side commands (a lead uses its fleetd tools; these are for you, inside a project workspace):
-{}",
+{}{}{}{}{}{}{}{}",
         UPDATE_USAGE,
         setup::SETUP_USAGE,
         setup::machine::machine_usage(),
@@ -80,8 +77,7 @@ lead-side commands (a lead uses its fleetd tools; these are for you, inside a pr
         time::TIME_USAGE,
         status::STATUS_USAGE,
         steer::STEER_USAGE,
-        chat::CHAT_USAGE,
-        lead::LEAD_USAGE
+        chat::CHAT_USAGE
     )
 }
 
@@ -118,13 +114,12 @@ pub fn help_for(argv: &[String]) -> Option<String> {
         "status" => status::STATUS_USAGE.to_owned(),
         "steer" | "steers" => steer::STEER_USAGE.to_owned(),
         "chat" => chat::CHAT_USAGE.to_owned(),
-        _ if lead::is_lead_command(argv) => lead::LEAD_USAGE.to_owned(),
         _ => return None,
     };
     Some(format!("usage:\n{text}"))
 }
 
-/// The short-lived commands that are not lead calls: version, help and `hub key`.
+/// The short-lived commands: version, help and `hub key`.
 pub fn run(argv: &[String]) -> CliResult {
     let command = argv.first().map(String::as_str);
     match command {
@@ -256,11 +251,7 @@ pub fn main() -> ExitCode {
             .expect("a tokio runtime starts");
         return ExitCode::from(runtime.block_on(run_long_running(&argv)));
     }
-    let result = if lead::is_lead_command(&argv) {
-        lead::run(&argv)
-    } else {
-        run(&argv)
-    };
+    let result = run(&argv);
     use std::io::Write;
     let _ = std::io::stdout().write_all(result.stdout.as_bytes());
     let _ = std::io::stderr().write_all(result.stderr.as_bytes());

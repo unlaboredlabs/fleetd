@@ -5,12 +5,12 @@
 // PR that conflicts with alpha's and one that adds FAIL. Every PR gets one reviewer. Once the
 // harness takes the labels off, the train merges alpha and beta in order (the second rebased onto the first's merge), sends the
 // conflict back to its author, who resolves it and gets merged, and sends red CI back to its author, never merging
-// it. Writers run on medium, the lead and reviewers on high; the harness's `fleetd` calls cost no turns.
+// it. Writers run on medium, the lead and reviewers on high; the harness's own tool calls cost no turns.
 import { execFileSync, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { type Body, MODEL, openWorkstream, fleetdCommand, LAB, type Lab, MECHANICS, nodeSock, requireGhLogin, scrubbedEnv, sessionText, SLOT, userMessages } from "./harness.ts";
+import { type Body, MODEL, openWorkstream, LAB, type Lab, leadIn, MECHANICS, nodeSock, requireGhLogin, scrubbedEnv, sessionText, SLOT, userMessages } from "./harness.ts";
 
 const MACHINE = "lab-a";
 // One lab repo for every slot; each slot runs the train in parallel in its own branch namespace: its base
@@ -180,14 +180,7 @@ export async function m7Train(lab: Lab) {
     const ref = { machineId: MACHINE, projectId };
     ok(`project_add: ${projectId} on ${MACHINE} at ${CLONE}`);
 
-    const fleetd = (...args: Array<string>) => {
-      const out = spawnSync(...fleetdCommand(args), {
-        cwd: CLONE,
-        encoding: "utf8",
-        env: { ...scrubbedEnv(), PWD: CLONE, FLEETD_NODE_SOCK: nodeSock(MACHINE) },
-      });
-      return { code: out.status, stdout: out.stdout, stderr: out.stderr };
-    };
+    const lead = leadIn(CLONE, { ...scrubbedEnv(), FLEETD_NODE_SOCK: nodeSock(MACHINE) });
     const change = async (changeId: string) => ((await callTool("changes_list", { projectRef: ref, limit: 100 })).body.changes as Array<Body>).find((c) => c.changeId === changeId)!;
     const task = async (taskId: string) => (await callTool("task_get", { taskId })).body.task as Body;
 
@@ -197,10 +190,10 @@ export async function m7Train(lab: Lab) {
     await lab.waitEvent("lead start turn", TURN_MS, { cursor: scenarioStart, machineId: MACHINE, match: (e) => e.threadId === leadThread && ENDED.includes(e.type) });
     ok(`lead ${leadThread} started`);
 
-    // Two workstreams, opened and their briefs registered from the shell as the lead would.
+    // Two workstreams, opened and their briefs registered with the lead's tools.
     const workstream = async (text: string, brief: Body) => {
-      const w = openWorkstream(check, fleetd, text);
-      const frozen = fleetd("brief", "create", "--workstream", w, "--json", JSON.stringify({ pointers: [], constraints: [], ...brief }));
+      const w = openWorkstream(check, lead, text);
+      const frozen = lead("brief", { workstreamId: w, brief: { pointers: [], constraints: [], ...brief } });
       check(frozen.code === 0, `brief create ${w}: ${JSON.stringify(frozen)}`);
       return w;
     };
@@ -222,8 +215,8 @@ export async function m7Train(lab: Lab) {
     ok(`5. the label hold exists on ${REPO}`);
 
     const spawn = (w: string, title: string, prompt: string) => {
-      const out = fleetd("task", "spawn", "--workstream", w, "--title", title, "--profile", MECHANICS, "--prompt", prompt);
-      const taskId = /^Spawned (T\d+)/mu.exec(out.stdout)?.[1];
+      const out = lead("spawn_agent", { workstreamId: w, title, profile: MECHANICS, prompt });
+      const taskId = out.result?.task?.taskId as string | undefined;
       check(out.code === 0 && taskId, `task spawn ${title}: ${JSON.stringify(out)}`);
       lab.log(`spawned ${taskId} (${title})`);
       return taskId!;

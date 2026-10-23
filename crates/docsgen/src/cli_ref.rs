@@ -7,8 +7,6 @@ pub struct Group {
     pub title: String,
     pub id: String,
     pub entries: Vec<Entry>,
-    /// Lines after the last entry that talk about the whole group, not that entry.
-    pub note: Vec<String>,
 }
 
 pub struct Entry {
@@ -22,7 +20,6 @@ pub struct Entry {
 /// after two spaces), synopsis continuations indented less than 13, descriptions at 13.
 pub fn parse(help: &str) -> Result<Vec<Group>, String> {
     let mut groups: Vec<Group> = Vec::new();
-    let mut in_note = false;
     for line in help.lines() {
         let body = line.trim_start();
         if body.is_empty() || line.starts_with("usage:") {
@@ -38,9 +35,7 @@ pub fn parse(help: &str) -> Result<Vec<Group>, String> {
                 title: title.to_owned(),
                 id: crate::slugify(short),
                 entries: Vec::new(),
-                note: Vec::new(),
             });
-            in_note = false;
             continue;
         }
         let Some(group) = groups.last_mut() else {
@@ -67,13 +62,7 @@ pub fn parse(help: &str) -> Result<Vec<Group>, String> {
             return Err(format!("fleetd help: {line:?} before any command"));
         };
         if indent >= 13 {
-            let short = group.title.split(" (").next().unwrap_or(&group.title);
-            in_note |= body.starts_with(short);
-            if in_note {
-                group.note.push(body.to_owned());
-            } else {
-                entry.desc.push(body.to_owned());
-            }
+            entry.desc.push(body.to_owned());
         } else {
             entry.synopsis.push(body.to_owned());
         }
@@ -97,7 +86,7 @@ fn command_words(synopsis: &str) -> Vec<&str> {
 }
 
 /// The command words joined by `-`; a repeated command adds its first option and that option's literal value:
-/// `request-secret`, `pair-worker`, `hub-key-create-human`.
+/// `machine-add`, `pair-worker`, `hub-key-create-human`.
 fn assign_ids(groups: &mut [Group]) {
     let mut seen = std::collections::HashSet::new();
     for entry in groups.iter_mut().flat_map(|g| g.entries.iter_mut()) {
@@ -161,7 +150,7 @@ Every `fleetd` command, from `fleetd help` in the binary this site was built wit
     );
     let mut seen = std::collections::HashSet::new();
     for group in &groups {
-        // "lead-side commands (run by a lead …)" -> "Lead-side commands", and the parenthesis as its first line.
+        // "setting up (on the hub machine)" -> "Setting up", and the parenthesis as its first line.
         let (short, aside) = match group.title.split_once(" (") {
             Some((s, a)) => (s, Some(a.trim_end_matches(')'))),
             None => (group.title.as_str(), None),
@@ -210,12 +199,6 @@ Every `fleetd` command, from `fleetd help` in the binary this site was built wit
             if !entry.desc.is_empty() {
                 md.push_str(&format!("{}\n\n", prose(&entry.desc.join(" "), &commands)));
             }
-        }
-        if !group.note.is_empty() {
-            md.push_str(&format!(
-                ":::note\n{}\n:::\n",
-                prose(&group.note.join(" "), &commands)
-            ));
         }
     }
     Ok(md.trim_end().to_owned() + "\n")
@@ -304,19 +287,9 @@ mod tests {
             "machine-add",
             "pair-worker",
             "hub-key-create-human",
-            "request-secret",
-            "request-withdraw",
-            "change-enqueue",
         ] {
             assert!(ids.contains(&id), "{id} in {ids:?}");
         }
-        let lead = groups
-            .iter()
-            .find(|g| g.id == "lead-side-commands")
-            .unwrap();
-        assert!(lead.note.join(" ").contains("FLEETD_NODE_SOCK"));
-        let last = lead.entries.last().unwrap();
-        assert!(!last.desc.join(" ").contains("FLEETD_NODE_SOCK"));
     }
 
     #[test]

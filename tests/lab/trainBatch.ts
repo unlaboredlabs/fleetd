@@ -9,7 +9,7 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { type Body, openWorkstream, fleetdCommand, type Lab, nodeSock, requireGhLogin, scrubbedEnv } from "./harness.ts";
+import { type Body, openWorkstream, type Lab, leadIn, nodeSock, requireGhLogin, scrubbedEnv } from "./harness.ts";
 import { BASE, BRANCH_PREFIX, checkClone, CLONE, git, NAMESPACE, prepareCheckout, REPO, removeLabRepoProject, resetNamespace } from "./m7Train.ts";
 
 const MACHINE = "lab-a";
@@ -81,19 +81,12 @@ export async function trainBatch(lab: Lab) {
   try {
     const projectId = await lab.addProject(MACHINE, CLONE, "fleetd-lab");
     const ref = { machineId: MACHINE, projectId };
-    const fleetd = (...args: Array<string>) => {
-      const out = spawnSync(...fleetdCommand(args), {
-        cwd: CLONE,
-        encoding: "utf8",
-        env: { ...scrubbedEnv(), PWD: CLONE, FLEETD_NODE_SOCK: nodeSock(MACHINE) },
-      });
-      return { code: out.status, stdout: out.stdout, stderr: out.stderr };
-    };
+    const lead = leadIn(CLONE, { ...scrubbedEnv(), FLEETD_NODE_SOCK: nodeSock(MACHINE) });
     const started = await callTool("lead_start", ref);
     check(!started.isError, `lead_start: ${JSON.stringify(started.body)}`);
     const leadThread = started.body.threadId as string;
     await lab.waitEvent("lead start turn", TURN_MS, { cursor: scenarioStart, machineId: MACHINE, match: (e) => e.threadId === leadThread && ENDED.includes(e.type) });
-    const w = openWorkstream(check, fleetd, "PRs through the train's batches. The harness pushes and enqueues every PR itself.");
+    const w = openWorkstream(check, lead, "PRs through the train's batches. The harness pushes and enqueues every PR itself.");
     const brief = {
       goal: "PRs through the train's batches",
       why: "the train batch lab scenario",
@@ -101,7 +94,7 @@ export async function trainBatch(lab: Lab) {
       constraints: [],
       doneWhen: ["every batched PR is merged"],
     };
-    const briefed = fleetd("brief", "create", "--workstream", w, "--json", JSON.stringify(brief));
+    const briefed = lead("brief", { workstreamId: w, brief });
     check(briefed.code === 0, `brief create ${w}: ${JSON.stringify(briefed)}`);
 
     gh("label", "create", "hold", "-R", REPO, "--force", "--description", "fleetd's train holds this PR");
@@ -111,7 +104,7 @@ export async function trainBatch(lab: Lab) {
     const changeOf = async (pr: Pr) =>
       ((await callTool("changes_list", { projectRef: ref, limit: 100 })).body.changes as Array<Body>).find((c) => c.prNumber === pr.number);
     const enqueue = async (pr: Pr) => {
-      const out = fleetd("change", "enqueue", "--pr", pr.url, "--workstream", w);
+      const out = lead("change_enqueue", { prUrl: pr.url, workstreamId: w });
       check(out.code === 0, `change enqueue ${pr.url}: ${JSON.stringify(out)}`);
       const change = await changeOf(pr);
       check(change !== undefined, `#${pr.number} is on the train`);
