@@ -21,9 +21,6 @@ The app shows each agent's role on its lane. The role decides the fleetd tools; 
 | Reviewer | `spawn_agent` with kind `review` | [Task tools](#task-tools) | No |
 | Verifier | A review task the review gate starts as the verifier | [Task tools](#task-tools) | No |
 | QA | `spawn_agent` with kind `review` and `qa: true` | [Task tools](#task-tools) | No |
-| Retro | One `claude -p` on the hub that proposes playbook changes from incidents; not a session | None, no MCP servers | No |
-
-The retro's Claude Code tools: none. fleetd starts it with `--tools ""`, `--strict-mcp-config` and `--safe-mode`.
 
 ## Hub limits
 
@@ -54,7 +51,7 @@ Every lead gets these, the finish-all lead included.
 | [`agent_status`](#agent_status) | One task as stored: state, queued reason, thread, result. | No |
 | [`list_agents`](#list_agents) | The project's tasks, newest first, optionally by state or workstream. | No |
 | [`stop_agent`](#stop_agent) | Stop a task: interrupts its thread and releases its slot and leases. | No |
-| [`brief`](#brief) | Freeze a draft workstream's brief (goal, why, pointers, constraints, doneWhen checks, tier, estimate) and start it. | Changing a frozen brief (amend) needs the human's yes in chat, logged with decide. |
+| [`brief`](#brief) | Set a draft workstream's brief (goal, why, pointers, constraints, doneWhen checks, tier, estimate) and start it, or edit it later. | No |
 | [`request_secret`](#request_secret) | Ask the human for a secret (a key, a token, a password). | The human enters the value in chat; you see only its fingerprint. |
 | [`request_withdraw`](#request_withdraw) | Take back a secret request or a command approval you no longer need (the human said so in chat). | No |
 | [`decide`](#decide) | Log a decision: one you made yourself, or the human's answer to a question you asked in chat (so you never ask it twice). | No |
@@ -69,13 +66,13 @@ Every lead gets these, the finish-all lead included.
 | [`decisions_search`](#decisions_search) | Search the decision log. | No |
 | [`change_enqueue`](#change_enqueue) | Put a PR no task's result put there on its repo's merge train; only the train merges. | No |
 | [`change_status`](#change_status) | A merge-train change as stored. | No |
-| [`workstream_open`](#workstream_open) | Open a workstream for work you took from the chat: a draft you then freeze with brief. | No |
+| [`workstream_open`](#workstream_open) | Open a workstream for work you took from the chat: a draft you then brief. | No |
 | [`workstream_spawn`](#workstream_spawn) | A finish-all lead starts a child workstream for one item with a value source. | No |
 | [`inventory`](#inventory) | The project's open work, ranked. | No |
 
 ### spawn_agent
 
-Start a fleetd agent (a task) with its own session, slot and lane. kind write|read|review; a writer needs areas from the project's policy and serves (done:&lt;n>, issue:&lt;ref>, defect:&lt;text> or decision:&lt;key>) and gets its own worktree and branch; a review task needs pr. profile is high by default; medium is for mechanical work only, and reviews always run high. A busy area or a full slot board queues it and it starts by itself. Its result arrives in a later wake: end your turn instead of waiting.
+Start a fleetd agent (a task) with its own session, slot and lane. kind write|read|review; a writer needs areas from the project's policy and gets its own worktree and branch; a review task needs pr. profile is high by default; medium is for mechanical work only, and reviews always run high. A busy area or a full slot board queues it and it starts by itself. Its result arrives in a later wake: end your turn instead of waiting.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -87,7 +84,6 @@ Start a fleetd agent (a task) with its own session, slot and lane. kind write|re
 | `profile` | string | no | What an agent runs on. There are exactly two, both claude-opus-5-5: `high` (effort high) is the default and what the lead, every reviewer and every helper call run; `medium` (effort medium) is for mechanical tasks the lead picks. One of `high`, `medium`. |
 | `prompt` | string | yes | At most 8000 characters. |
 | `qa` | boolean | no |  |
-| `serves` | string | no |  |
 | `tier` | string | no | One of `S`, `M`, `L`. |
 | `title` | string | yes | One line. At most 80 characters. |
 | `workstreamId` | string | yes | `W<n>`, e.g. `W1`. |
@@ -103,7 +99,6 @@ Start a fleetd agent (a task) with its own session, slot and lane. kind write|re
     ],
     "kind": "write",
     "prompt": "Limit uploads to 10 a minute per API key. Over the limit, answer 429 with Retry-After.",
-    "serves": "done:0",
     "title": "Rate-limit the upload API",
     "workstreamId": "W3"
   }
@@ -194,11 +189,10 @@ Stop a task: interrupts its thread and releases its slot and leases.
 
 ### brief
 
-Freeze a draft workstream's brief (goal, why, pointers, constraints, doneWhen checks, tier, estimate) and start it. A frozen brief changes only with amend: the key of the decision you logged after the human approved the change in chat.
+Set a draft workstream's brief (goal, why, pointers, constraints, doneWhen checks, tier, estimate) and start it, or edit it later.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `amend` | string | no | The key of the decision the lead logged after the human approved changing an already frozen brief in chat. |
 | `brief` | object | yes | A `Brief` whose `tier` may be left out, as `fleetd brief create` takes it; the playbook's `tierDefault` fills it. |
 | `brief.baseline` | string | no | At most 1000 characters. |
 | `brief.budget` | object | no |  |
@@ -220,7 +214,7 @@ Freeze a draft workstream's brief (goal, why, pointers, constraints, doneWhen ch
 | `brief.why` | string | yes | At most 2000 characters. |
 | `workstreamId` | string | yes | `W<n>`, e.g. `W1`. |
 
-**Who may call:** a lead, checked by the hub. **Needs a human:** Changing a frozen brief (amend) needs the human's yes in chat, logged with decide.
+**Who may call:** a lead, checked by the hub. **Needs a human:** no.
 
 ```json
 {
@@ -545,7 +539,6 @@ Put a PR no task's result put there on its repo's merge train; only the train me
 |---|---|---|---|
 | `item` | string | no | Stores the PR as a link of that plan item (for a PR no task of the item wrote). |
 | `prUrl` | string | yes | Like `https://github.com/<owner>/<name>/pull/<n>`. |
-| `serves` | string | no |  |
 | `taskId` | string | no | `T<n>`, e.g. `T1`. |
 | `tier` | string | no | One of `S`, `M`, `L`. |
 | `workstreamId` | string | no | `W<n>`, e.g. `W1`. |
@@ -583,11 +576,10 @@ A merge-train change as stored.
 
 ### workstream_open
 
-Open a workstream for work you took from the chat: a draft you then freeze with brief. template picks the playbook (feature, bugfix, research, finish-all); serves is optional.
+Open a workstream for work you took from the chat: a draft you then brief. template picks the playbook (feature, bugfix, research, finish-all).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `serves` | string | no |  |
 | `template` | string | no | The prefixes `bug:`/`fix:`, `research:` and `finish:` pick bugfix, research and finish-all. One of `bugfix`, `feature`, `research`, `finish-all`. |
 | `text` | string | yes | At most 4000 characters. |
 
@@ -723,7 +715,7 @@ Claim your workstream done: fleetd runs its done-when checks itself.
 
 ## Claude Code tools
 
-The same for every session. The retro gets none. Listed for Claude Code 2.1.302, the version fleetd is tested with.
+The same for every session. Listed for Claude Code 2.1.302, the version fleetd is tested with.
 
 **Allowed:** `Bash`, `DesignSync`, `Edit`, `NotebookEdit`, `Read`, `ReportFindings`, `Skill`, `ToolSearch`, `WebFetch`, `WebSearch`, `Write`.
 
@@ -761,7 +753,7 @@ Set in the claude process's environment. "In settings" marks the ones also in fl
 
 ## What your own setup adds
 
-fleetd starts sessions with your own Claude Code setup underneath. The retro is the exception: it runs in safe mode with none of it (see [Roles](#roles)).
+fleetd starts sessions with your own Claude Code setup underneath.
 
 | Your setup | In a session |
 |---|---|

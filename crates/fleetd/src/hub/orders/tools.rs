@@ -87,15 +87,7 @@ async fn order_get(
 ) -> Result<OrderGetOutput, ToolError> {
     let id = &input.workstream_id;
     let w = match hub.leads.records.workstream_get(id)? {
-        Some(s)
-            if allows(
-                &caller,
-                Role::Read,
-                Some(&s.workstream.project_ref.machine_id),
-            ) =>
-        {
-            s.workstream
-        }
+        Some(w) if allows(&caller, Role::Read, Some(&w.project_ref.machine_id)) => w,
         _ => return Err(unknown_order(id.as_str())),
     };
     let ports = hub.leads.ctx.ports();

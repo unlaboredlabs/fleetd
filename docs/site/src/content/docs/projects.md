@@ -170,7 +170,7 @@ in parallel while slots are free. fleetd keeps that going, but never starts work
 
 | Rule | What happens |
 |---|---|
-| A free slot is offered | When a slot frees and the lead is idle, fleetd wakes it with the plan items that can start: brief frozen, not waiting on an open item, no task or PR yet. Finish-all work with room for another child is offered too. If nothing qualifies, the lead stays idle. |
+| A free slot is offered | When a slot frees and the lead is idle, fleetd wakes it with the plan items that can start: brief set, not waiting on an open item, no task or PR yet. Finish-all work with room for another child is offered too. If nothing qualifies, the lead stays idle. |
 | Once per change | A lead hears about the same runnable work once. It is told again only when that changes: an item is taken, done, added or unblocked. |
 | Slices are reviewed as they land | A writer reports each finished PR (`report`, kind `slice_ready`), or marks its draft PR ready on GitHub. fleetd puts it on the train and starts its reviewers right away, while the writer goes on. A new commit is reviewed again from what changed. |
 

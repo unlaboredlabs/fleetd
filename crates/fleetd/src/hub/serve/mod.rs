@@ -363,13 +363,12 @@ pub fn build_on(
         incidents: checks.incidents,
         estimates: checks.estimates,
         receipts: checks.receipts,
-        value_bar: checks.value_bar,
+        verdicts: checks.verdicts,
         checks: checks.checks,
         claims: checks.claims,
         ops: ops.ports,
         usage: ops.usage,
         doctor: ops.doctor,
-        retro: ops.retro,
         approvals: ops.approvals,
         train,
         reviews,
@@ -389,7 +388,6 @@ pub fn build_on(
     train_host.bind(&hub);
     hub.checks.set_time(hub.time.sink());
     hub.slots.set_time(hub.time.sink());
-    hub.leads.intake.set_time(hub.time.sink());
     crate::hub::train::calls::register_lead_calls(&hub);
     crate::hub::tasks::wire::wire(&hub, &hub_task_ports);
     wire::wire(&hub);

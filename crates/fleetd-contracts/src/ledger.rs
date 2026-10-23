@@ -158,7 +158,7 @@ impl CheckType {
     }
 }
 
-/// What a write task must serve, as `--serves` takes it.
+/// What a finish-all child serves, as `workstream spawn --serves` takes it.
 pub const SERVES_FIX: &str =
     "say what this serves: serves done:<n> | issue:<ref> | defect:<text> | decision:<key>";
 
@@ -183,8 +183,8 @@ pub fn is_serves(serves: &str) -> bool {
 }
 
 brand!(
-    /// What a task works towards: `done:<n>` (0-based index into the brief's doneWhen, same as
-    /// CheckResult.checkIndex), `issue:<url|#n>`, `defect:<one line, at most 200>` or `decision:<key>` (a decision the lead logged after the human said so in chat).
+    /// The item a finish-all child works on: `done:<n>` (0-based index into the brief's doneWhen, same as
+    /// CheckResult.checkIndex), `issue:<url|#n>`, `defect:<one line, at most 200>` or `decision:<key>`.
     Serves, name = "Serves", check = is_serves, expected = SERVES_FIX
 );
 
@@ -282,7 +282,7 @@ pub fn research_outcome(rule: &DecisionRule, values: &MetricValues) -> ResearchO
 pub struct ResearchVerdict {
     pub outcome: ResearchOutcome,
     pub metric_values: MetricValues,
-    /// The brief's frozen rule.
+    /// The brief's rule.
     pub rule: DecisionRule,
     pub computed_at: Timestamp,
 }
@@ -354,7 +354,7 @@ pub struct Brief {
     pub why: Text<1, 2000>,
     pub pointers: List<Text<1, 500>, 0, 20>,
     pub constraints: List<Text<1, 500>, 0, 20>,
-    /// At least one; frozen with the brief.
+    /// At least one.
     pub done_when: List<CheckSpec, 1, 20>,
     pub tier: Tier,
     pub budget: Option<BriefBudget>,
@@ -363,7 +363,7 @@ pub struct Brief {
     pub baseline: Option<Text<1, 1000>>,
     /// Research: the one number the judge reports for baseline and candidate, e.g. "p50 cold start in ms".
     pub metric: Option<Line<1, 200>>,
-    /// Research: frozen with the brief, so the verdict can't move the goalposts.
+    /// Research: the rule the verdict is computed from.
     pub decision_rule: Option<DecisionRule>,
 }
 
@@ -402,11 +402,6 @@ impl BriefDraft {
         }
     }
 }
-
-brand!(
-    /// sha256 of the brief's canonical JSON, lowercase hex.
-    BriefHash, name = "BriefHash", pattern = r"^[0-9a-f]{64}$"
-);
 
 // Workstreams
 
@@ -473,13 +468,12 @@ pub struct Workstream {
     pub source: WorkstreamSource,
     /// Absent while draft.
     pub brief: Option<Brief>,
-    pub brief_hash: Option<BriefHash>,
     pub state: WorkstreamState,
     pub headline: Option<Headline>,
     pub headline_at: Option<Timestamp>,
     /// Hub-filled, outside the frozen brief. Set when it starts running with a raw estimate.
     pub estimate_actual: Option<WorkstreamEstimateActual>,
-    /// Pinned at creation; the brief freeze validates against this version. Absent on workstreams from before M9.
+    /// Pinned at creation; the brief validates against this version. Absent on workstreams from before M9.
     pub playbook: Option<PlaybookRef>,
     /// M9 finish-all: the finish-all workstream that spawned this one, and the value source it was spawned for.
     pub parent: Option<WorkstreamParent>,
@@ -646,8 +640,8 @@ brand!(
     pattern = r"^/"
 );
 
-/// A retro playbook change that relaxes a gate (fewer reviewers, a weaker or removed check, a looser rule): it applies
-/// only once a person approves it. Stored with the approval and never changed.
+/// A retro playbook change that relaxes a gate (fewer reviewers, a weaker or removed check, a looser rule). The retro is
+/// gone: only an older approval carries one, and the app still shows it.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PlaybookGateChange {
@@ -763,7 +757,7 @@ pub struct HumanRequest {
     pub gated: Option<GatedRunSpec>,
     /// approval of a session's tool prompt, instead of a gated run.
     pub permission: Option<ToolPermission>,
-    /// approval of a retro playbook change that relaxes a gate, instead of a gated run or a tool prompt.
+    /// approval of a retro playbook change (an older approval only), instead of a gated run or a tool prompt.
     pub playbook: Option<PlaybookGateChange>,
     /// What happened, in one line: "fingerprint ab12cd34", "exit 0 on devbox, approved by human:desk", or why it did
     /// not run (and so is open again).

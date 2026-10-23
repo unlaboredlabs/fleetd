@@ -518,7 +518,6 @@ impl Approvals {
                 text: clip(&format!("{machine}/{thread_id}: {tool} {summary}"), 500),
                 secret: None,
                 gated: None,
-                playbook: None,
                 permission: Some(ToolPermission {
                     thread_id: fleetd_contracts::ids::ThreadId::unchecked(thread_id),
                     request_id: prompt.request_id.clone(),

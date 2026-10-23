@@ -32,7 +32,7 @@ pub enum PromptKind {
     Start,
     /// A later message into a running session.
     Msg,
-    /// The input of a tool-less one-shot `claude -p` (the retro).
+    /// The input of a tool-less one-shot `claude -p`. None ships now; kept while the app names its group.
     Oneshot,
     /// The human's custom instructions, appended to every lead and task first message.
     Instructions,
@@ -177,7 +177,7 @@ pub struct PromptDetail {
     pub kind: PromptKind,
     pub group: PromptGroup,
     pub sent_when: String,
-    /// False for playbooks, router and retro: they have the hub-wide level only.
+    /// False for a one-shot: it has the hub-wide level only.
     pub per_project: bool,
     pub default: PromptVersion,
     pub global: Option<PromptOverride>,

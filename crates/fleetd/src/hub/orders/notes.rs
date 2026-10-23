@@ -2,7 +2,7 @@
 //! withdrawn, and one wake line for the lead. References are rendered here for the steers that carry them.
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::events::HubEventType;
-use fleetd_contracts::ledger::{Headline, WorkstreamState};
+use fleetd_contracts::ledger::{Headline, Workstream, WorkstreamState};
 use fleetd_contracts::mcp::{ErrorCode, IntakeRef, OrderStopInput, OrderStopOutput};
 use fleetd_contracts::prim::Count;
 use fleetd_contracts::tasks::TaskState;
@@ -12,7 +12,6 @@ use super::tools::unknown_order;
 use crate::hub::api::{Caller, Hub, ToolError, allows, is_human, require};
 use crate::hub::executor::shell_mapper::js_take;
 use crate::hub::leads::events::Event;
-use crate::hub::leads::records::StoredWorkstream;
 use crate::hub::leads::wakes::{LineKind, Trigger};
 use crate::hub::store::{NewEvent, iso_ms, now_ms};
 use crate::hub::tasks::TaskCaller;
@@ -38,18 +37,10 @@ pub fn require_human(caller: &Caller, tool: &str) -> Result<(), ToolError> {
     .with_fix("Send it from the desktop app (a human key from `fleetd pair`); an agent talks to a lead with thread_send."))
 }
 
-fn readable_order(hub: &Hub, caller: &Caller, id: &str) -> Result<StoredWorkstream, ToolError> {
+fn readable_order(hub: &Hub, caller: &Caller, id: &str) -> Result<Workstream, ToolError> {
     let id = fleetd_contracts::ledger::WorkstreamId::new(id).map_err(|_| unknown_order(id))?;
     match hub.leads.records.workstream_get(&id)? {
-        Some(s)
-            if allows(
-                caller,
-                Role::Read,
-                Some(&s.workstream.project_ref.machine_id),
-            ) =>
-        {
-            Ok(s)
-        }
+        Some(s) if allows(caller, Role::Read, Some(&s.project_ref.machine_id)) => Ok(s),
         _ => Err(unknown_order(id.as_str())),
     }
 }
@@ -66,7 +57,7 @@ pub fn render_refs(
         lines.push(match r {
             IntakeRef::File { path } => format!("  - `{path}`"),
             IntakeRef::Order { workstream_id } => {
-                let w = readable_order(hub, caller, workstream_id.as_str())?.workstream;
+                let w = readable_order(hub, caller, workstream_id.as_str())?;
                 let state = serde_json::to_value(w.state)
                     .ok()
                     .and_then(|v| v.as_str().map(str::to_owned))
@@ -116,10 +107,10 @@ pub async fn stop(
 ) -> Result<OrderStopOutput, ToolError> {
     require_human(caller, "order_stop")?;
     let mut stored = readable_order(hub, caller, input.workstream_id.as_str())?;
-    let r = stored.workstream.project_ref.clone();
+    let r = stored.project_ref.clone();
     require(caller, Role::Operate, Some(&r.machine_id))?;
-    let id = stored.workstream.workstream_id.clone();
-    match stored.workstream.state {
+    let id = stored.workstream_id.clone();
+    match stored.state {
         WorkstreamState::Stopped => {
             return Ok(OrderStopOutput {
                 state: WorkstreamState::Stopped,
@@ -133,7 +124,7 @@ pub async fn stop(
                 ErrorCode::Invalid,
                 format!(
                     "{id} already ended ({}); there is nothing to stop.",
-                    serde_plain(&stored.workstream.state)
+                    serde_plain(&stored.state)
                 ),
             ));
         }
@@ -168,17 +159,17 @@ pub async fn stop(
         }
     }
     let project = crate::hub::usage::ports::ProjectRef {
-        machine_id: stored.workstream.project_ref.machine_id.to_string(),
-        project_id: stored.workstream.project_ref.project_id.to_string(),
+        machine_id: stored.project_ref.machine_id.to_string(),
+        project_id: stored.project_ref.project_id.to_string(),
     };
     hub.approvals
         .close_open(&project, Some(id.as_str()), &format!("{id} was stopped"))
         .await;
     let at = iso_ms(now_ms(hub.clock.as_ref()));
-    stored.workstream.state = WorkstreamState::Stopped;
-    stored.workstream.headline = Some(Headline::unchecked("Stopped by you"));
-    stored.workstream.headline_at = Some(at.clone().into());
-    stored.workstream.updated_at = at.clone().into();
+    stored.state = WorkstreamState::Stopped;
+    stored.headline = Some(Headline::unchecked("Stopped by you"));
+    stored.headline_at = Some(at.clone().into());
+    stored.updated_at = at.clone().into();
     hub.leads.records.workstream_put(&stored)?;
     hub.events.append(NewEvent {
         at: at.into(),
@@ -196,7 +187,7 @@ pub async fn stop(
             kind: LineKind::Human,
             text: Event::OrderStopped {
                 workstream: id.as_str(),
-                title: &stored.workstream.title,
+                title: &stored.title,
                 why,
                 cancelled,
             }

@@ -89,10 +89,6 @@
       ],
       "type": "object"
     },
-    "BriefHash": {
-      "pattern": "^[0-9a-f]{64}$",
-      "type": "string"
-    },
     "ChangeId": {
       "pattern": "^X[1-9][0-9]*$",
       "type": "string"
@@ -592,7 +588,7 @@
         },
         "playbook": {
           "$ref": "#/$defs/PlaybookGateChange",
-          "description": "A retro playbook change that relaxes a gate: what changes, in plain words, and the exact diff."
+          "description": "A retro playbook change (an older approval only): what changes, in plain words, and the exact diff."
         },
         "requestId": {
           "$ref": "#/$defs/ChatRequestId"
@@ -921,9 +917,6 @@
         "workstream.done": {
           "$ref": "#/$defs/WorkstreamEventData"
         },
-        "workstream.note": {
-          "$ref": "#/$defs/WorkstreamNoteData"
-        },
         "workstream.running": {
           "$ref": "#/$defs/WorkstreamEventData"
         },
@@ -984,7 +977,6 @@
         "usage.resumed",
         "workstream.created",
         "workstream.done",
-        "workstream.note",
         "workstream.running",
         "workstream.state"
       ],
@@ -1203,7 +1195,7 @@
       "type": "object"
     },
     "PlaybookGateChange": {
-      "description": "A retro playbook change that relaxes a gate (fewer reviewers, a weaker or removed check, a looser rule): it applies\nonly once a person approves it. Stored with the approval and never changed.",
+      "description": "A retro playbook change that relaxes a gate (fewer reviewers, a weaker or removed check, a looser rule). The retro is\ngone: only an older approval carries one, and the app still shows it.",
       "properties": {
         "diff": {
           "description": "The exact unified diff that applies on approve.",
@@ -2035,9 +2027,9 @@
     "WorkstreamEventData": {
       "description": "`workstream.created`, `workstream.running`, `workstream.state`, `workstream.done`.",
       "properties": {
-        "briefHash": {
-          "$ref": "#/$defs/BriefHash",
-          "description": "workstream.running: the frozen brief."
+        "briefEdited": {
+          "description": "workstream.state: the brief was set or edited.",
+          "type": "boolean"
         },
         "by": {
           "type": "string"
@@ -2066,32 +2058,6 @@
     "WorkstreamId": {
       "pattern": "^W[1-9][0-9]*$",
       "type": "string"
-    },
-    "WorkstreamNoteData": {
-      "description": "`workstream.note`.",
-      "properties": {
-        "clientRequestId": {
-          "type": "string"
-        },
-        "steerId": {
-          "$ref": "#/$defs/SteerId",
-          "description": "The steer the note became."
-        },
-        "text": {
-          "description": "The first 200 characters.",
-          "type": "string"
-        },
-        "urgent": {
-          "type": "boolean"
-        },
-        "workstreamId": {
-          "$ref": "#/$defs/WorkstreamId"
-        }
-      },
-      "required": [
-        "workstreamId"
-      ],
-      "type": "object"
     },
     "WorkstreamState": {
       "enum": [

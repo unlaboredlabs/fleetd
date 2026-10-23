@@ -242,18 +242,13 @@ pub fn review_prompt(
             ("prNumber", &change.pr_number),
             ("tier", &tier_str(change.tier)),
             ("headSha", &change.head_sha),
-            ("serves", &change.serves),
         ],
     );
     match reviewed.filter(|sha| *sha != change.head_sha.as_str()) {
         Some(sha) => {
             let delta = fixed::render(
                 fixed::REVIEW_DELTA,
-                &[
-                    ("reviewedSha", &sha),
-                    ("headSha", &change.head_sha),
-                    ("serves", &change.serves),
-                ],
+                &[("reviewedSha", &sha), ("headSha", &change.head_sha)],
             );
             format!("{text}\n\n{delta}")
         }
@@ -457,7 +452,6 @@ mod tests {
     #[test]
     fn takes_the_pinned_playbooks_rule_and_gates_on_it() {
         let strict = PlaybookView {
-            require_source: true,
             review_rules: [
                 rule(1, false, false),
                 rule(2, true, false),
@@ -557,7 +551,7 @@ mod delta_tests {
         serde_json::from_value(serde_json::json!({
             "changeId": "X1", "projectRef": { "machineId": "m", "projectId": "p" }, "repo": "acme/app",
             "prNumber": 7, "prUrl": "https://github.com/acme/app/pull/7", "branch": "fleetd/T1",
-            "workstreamId": "W1", "serves": "done:0", "tier": "M", "headSha": head, "state": "reviewing",
+            "workstreamId": "W1", "tier": "M", "headSha": head, "state": "reviewing",
             "reviews": [], "createdAt": "2026-10-19T10:00:00.000Z", "updatedAt": "2026-10-19T10:00:00.000Z",
         }))
         .unwrap()
@@ -575,7 +569,11 @@ mod delta_tests {
             again.contains(&format!("git range-diff {old}...{new}")),
             "{again}"
         );
-        assert!(again.contains("blocking only for what is wrong, unsafe or fails done:0"));
+        assert!(
+            again.contains(
+                "blocking only for what is wrong, unsafe or fails what it sets out to do"
+            )
+        );
         // The same head reviewed again is no delta.
         assert_eq!(
             review_prompt(set, &change(&new), ReviewRole::Reviewer, Some(&new)),

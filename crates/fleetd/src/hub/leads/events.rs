@@ -44,11 +44,6 @@ pub enum Event<'a> {
         workstream: &'a str,
         text: &'a str,
     },
-    /// References and attachments that came with an order.
-    OrderRefs {
-        workstream: &'a str,
-        references: &'a str,
-    },
     OrderStopped {
         workstream: &'a str,
         title: &'a str,
@@ -104,7 +99,6 @@ pub enum Event<'a> {
         pr_url: &'a str,
         sha: &'a str,
         tier: &'a str,
-        serves: &'a str,
         by: Option<&'a str>,
     },
     /// The train dropped a PR (closed, or a newer change replaced it).
@@ -151,13 +145,6 @@ pub enum Event<'a> {
         outcome: &'a str,
         tail: Option<&'a str>,
     },
-    /// The retro proposes a change to a playbook's gates; only the human's yes applies it.
-    GateChange {
-        proposal: &'a str,
-        playbook: &'a str,
-        expected: &'a str,
-        key: &'a str,
-    },
     /// The lead ended a turn with an approved order and nothing under way: nothing else would wake it for it.
     OrderIdle {
         workstream: &'a str,
@@ -201,10 +188,6 @@ impl Event<'_> {
             Event::Order { workstream, text } => {
                 (format!("- new order {workstream}: {}", quote(text)), vec![])
             }
-            Event::OrderRefs {
-                workstream,
-                references,
-            } => (format!("- {workstream} came with:{references}"), vec![]),
             Event::OrderStopped {
                 workstream,
                 title,
@@ -296,11 +279,10 @@ impl Event<'_> {
                 pr_url,
                 sha,
                 tier,
-                serves,
                 by,
             } => (
                 format!(
-                    "- {} merged{sha}: {pr_url} ({change}, tier {tier}, serves {serves}{})",
+                    "- {} merged{sha}: {pr_url} ({change}, tier {tier}{})",
                     pr_label(pr_url),
                     by.map(|b| format!(", by {b}")).unwrap_or_default()
                 ),
@@ -380,18 +362,6 @@ impl Event<'_> {
                     .map(body)
                     .unwrap_or_default(),
             ),
-            Event::GateChange {
-                proposal,
-                playbook,
-                expected,
-                key,
-            } => (
-                format!(
-                    "- retro {proposal} proposes a change to the {playbook} playbook's gates: {}. Ask the human in the chat, as a numbered item with your recommendation; log their answer with `decide` {{key: \"{key}\", value: \"apply\" or \"reject\", scope: \"project\"}}",
-                    one_line(expected, 200)
-                ),
-                vec![],
-            ),
             Event::OrderIdle { workstream, title } => (
                 format!(
                     "- {workstream} idle: {}; no agent running, nothing asked, and nothing else will wake you for it",
@@ -452,13 +422,6 @@ mod tests {
                 text: "add a dark\nmode"
             }),
             "- new order W3: \"add a dark mode\""
-        );
-        assert_eq!(
-            r(Event::OrderRefs {
-                workstream: "W3",
-                references: "\n  - https://example.com/spec"
-            }),
-            "- W3 came with:\n  - https://example.com/spec"
         );
         assert_eq!(
             r(Event::OrderStopped {
@@ -574,10 +537,9 @@ mod tests {
                 pr_url: url,
                 sha: " as abc1234",
                 tier: "S",
-                serves: "done:0",
                 by: Some("T4")
             }),
-            "- PR #12 merged as abc1234: https://github.com/o/r/pull/12 (C4, tier S, serves done:0, by T4)"
+            "- PR #12 merged as abc1234: https://github.com/o/r/pull/12 (C4, tier S, by T4)"
         );
         assert_eq!(
             r(Event::PrLeft {
@@ -600,10 +562,10 @@ mod tests {
             r(Event::PrRefused {
                 pr_url: url,
                 task: "T4",
-                message: "no serves",
-                fix: Some("add Source: done:0")
+                message: "It is closed.",
+                fix: Some("enqueue an open PR")
             }),
-            "- PR #12 from T4 refused by the train: no serves Fix: add Source: done:0. (https://github.com/o/r/pull/12)"
+            "- PR #12 from T4 refused by the train: It is closed. Fix: enqueue an open PR. (https://github.com/o/r/pull/12)"
         );
         assert_eq!(
             r(Event::PrNote {
@@ -680,19 +642,6 @@ mod tests {
                 tail: Some(""),
             }),
             "- Q5 your command `./deploy.sh prod`: denied by human:desk: not on a Friday; don't run it, say in the chat what you do instead"
-        );
-    }
-
-    #[test]
-    fn gate_change_event() {
-        assert_eq!(
-            r(Event::GateChange {
-                proposal: "R4",
-                playbook: "bugfix",
-                expected: "fewer false claims on flaky tests",
-                key: "playbook.bugfix.ab12cd34ef",
-            }),
-            "- retro R4 proposes a change to the bugfix playbook's gates: fewer false claims on flaky tests. Ask the human in the chat, as a numbered item with your recommendation; log their answer with `decide` {key: \"playbook.bugfix.ab12cd34ef\", value: \"apply\" or \"reject\", scope: \"project\"}"
         );
     }
 

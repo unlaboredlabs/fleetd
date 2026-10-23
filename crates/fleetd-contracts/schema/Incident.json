@@ -42,7 +42,7 @@
       "type": "object"
     },
     "IncidentClass": {
-      "description": "`policy_bypass`: a PR on a watched repo was merged by something other than the train. M12: `override`, a human\nreplaced a lead's Decision with another value; `playbook_reverted`, a retro wording change missed its metric and was\nrolled back.",
+      "description": "`policy_bypass`: a PR on a watched repo was merged by something other than the train. M12: `override`, a human\nreplaced a lead's Decision with another value.",
       "oneOf": [
         {
           "enum": [
@@ -51,8 +51,7 @@
             "out_of_area",
             "stall",
             "policy_bypass",
-            "override",
-            "playbook_reverted"
+            "override"
           ],
           "type": "string"
         },

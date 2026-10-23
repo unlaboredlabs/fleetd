@@ -130,7 +130,7 @@ pub fn default_closed_since(now_ms: i64) -> String {
 
 /// Agent verdicts on the PR, newest first: `(task id, head sha, at, verdict)`.
 pub fn verdicts(hub: &Hub, pr_url: &str) -> Vec<(String, String, String, ReviewVerdict)> {
-    let key = crate::hub::valuebar::rules::pr_key(pr_url);
+    let key = crate::hub::reviews::verdicts::pr_key(pr_url);
     let read = hub.db.with(|conn| {
         let mut stmt = conn.prepare_cached(
             "SELECT task_id, sha, at_ms, data FROM review_verdicts WHERE pr_key = ?1 ORDER BY n DESC LIMIT ?2",

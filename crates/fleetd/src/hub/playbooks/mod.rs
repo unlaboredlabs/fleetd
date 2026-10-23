@@ -1,7 +1,6 @@
-//! The playbooks a workstream can follow: fleetd's bundled ones with the user's overrides in `<hub home>/playbooks/`,
-//! read at start and again when the retro writes an override. A workstream pins `name@sha` at creation and the pinned
-//! text is kept (table `playbook_versions`), so a later edit of the file never changes the rules of a workstream
-//! already under way.
+//! The playbooks a workstream can follow: fleetd's bundled ones with the user's overrides in `<hub home>/playbooks/`.
+//! A workstream pins `name@sha` at creation and the pinned text is kept (table `playbook_versions`), so a later edit of
+//! the file never changes the rules of a workstream already under way.
 pub mod budget;
 pub mod finish_all;
 pub mod finish_all_rules;
@@ -97,66 +96,5 @@ impl Playbooks {
                 Ok(None)
             }
         }
-    }
-
-    fn override_file(&self, name: PlaybookName) -> Option<PathBuf> {
-        self.overrides_dir
-            .as_ref()
-            .map(|d| d.join(format!("{}.md", name.as_str())))
-    }
-
-    /// The text of `<overrides>/<name>.md`; None when the bundled playbook is in use.
-    pub fn override_text(&self, name: PlaybookName) -> std::io::Result<Option<String>> {
-        let Some(file) = self.override_file(name) else {
-            return Ok(None);
-        };
-        match std::fs::read_to_string(file) {
-            Ok(text) => Ok(Some(text)),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(e) => Err(e),
-        }
-    }
-
-    /// M12: writes `<overrides>/<name>.md` (None removes it, back to the bundled one) and makes the result current.
-    /// A text that does not parse is refused before anything is written.
-    pub fn set_override(
-        &self,
-        name: PlaybookName,
-        text: Option<&str>,
-    ) -> Result<LoadedPlaybook, PlaybookError> {
-        let Some(file) = self.override_file(name) else {
-            return Err(PlaybookError {
-                message: "this hub has no playbook overrides directory".into(),
-            });
-        };
-        let io = |e: std::io::Error| PlaybookError {
-            message: format!("cannot write {}: {e}", file.display()),
-        };
-        match text {
-            None => match std::fs::remove_file(&file) {
-                Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(io(e)),
-                _ => {}
-            },
-            Some(text) => {
-                load::parse_playbook(text, &file.display().to_string(), Some(name))?;
-                let dir = file.parent().expect("an override file has a directory");
-                let mut builder = std::fs::DirBuilder::new();
-                builder.recursive(true);
-                #[cfg(unix)]
-                std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
-                builder.create(dir).map_err(io)?;
-                let tmp = file.with_extension("md.tmp");
-                std::fs::write(&tmp, text).map_err(io)?;
-                std::fs::rename(&tmp, &file).map_err(io)?;
-            }
-        }
-        let all = load::load_all(self.overrides_dir.as_deref())?;
-        let loaded = all[name.as_str()].clone();
-        *self.current.lock().unwrap() = all;
-        self.cache
-            .lock()
-            .unwrap()
-            .insert(loaded.r#ref.clone(), loaded.clone());
-        Ok(loaded)
     }
 }
