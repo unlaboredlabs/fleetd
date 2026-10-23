@@ -858,7 +858,8 @@ async fn a_review_task_records_its_own_verdict_and_the_hub_fills_its_head() {
         .unwrap()
     };
     let from = |task: Option<&str>| Caller {
-        project_ref: project(),
+        project_ref: serde_json::from_value(json!({ "machineId": "lab-a", "projectId": "p1" }))
+            .unwrap(),
         by: LEAD_BY.into(),
         task: task.map(TaskId::unchecked),
     };
