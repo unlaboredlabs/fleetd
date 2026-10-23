@@ -1,6 +1,6 @@
 // What the screens read. Everything that can go stale is derived here from the entities the store holds now: an
-// order's phase comes from its lanes' live statuses and a project's needs-you from the hub's chat state, never from a count the board
-// cached when it was fetched.
+// agent's status comes from the live feed and a project's needs-you from the hub's chat state, never from a count the
+// board cached when it was fetched.
 //
 // Every selector of hub data is undefined while the connection is not fresh (a skeleton, never the last connection's
 // data shown as live) and until the reads it depends on loaded. The exceptions are the sidebar's projects and the
@@ -8,12 +8,11 @@
 //
 // Selectors are memoized on the slices they read, so a component re-renders only when its inputs changed, and
 // useSyncExternalStore sees a stable value between changes.
-import type { AgentLane, LiveLane, Machine, MachineLive, OrderCard, ProjectSummary, TrainLive } from "../../../shared/contracts";
+import type { AgentLane, LiveLane, Machine, MachineLive, PrRef, ProjectSummary } from "../../../shared/contracts";
 import type { AgentRow } from "../../../shared/contracts";
 import type { HubError } from "../../../shared/hub";
 import { chatItems, type ChatItem, type ChatSend } from "./chat";
-import { orderPhase, PHASE_RANK, settled, type Phase } from "./phase";
-import { projectKey, type DataState, type OrderDetail, type ProjectKey } from "./store";
+import { projectKey, settled, type DataState, type ProjectKey } from "./store";
 
 /** Recomputes only when one of `inputs(state)` changed (by identity). */
 const memo = <const I extends unknown[], R>(inputs: (s: DataState) => I, compute: (...args: NoInfer<I>) => R) => {
@@ -27,7 +26,7 @@ const memo = <const I extends unknown[], R>(inputs: (s: DataState) => I, compute
   };
 };
 
-/** One selector per key (an order id, a lane id), each memoized on its own. */
+/** One selector per key (a project, an order id, a lane id), each memoized on its own. */
 const perKey = <R>(make: (key: string) => (s: DataState) => R) => {
   const cache = new Map<string, (s: DataState) => R>();
   return (key: string): ((s: DataState) => R) => {
@@ -74,7 +73,7 @@ export const selectConnection = memo(
   },
 );
 
-// Lanes and orders.
+// Lanes and the projects' work.
 
 /** The lane id of a project's lead, as the hub cuts it (80 UTF-16 units, whole characters). */
 export const leadLaneId = (r: { readonly machineId: string; readonly projectId: string }): string => {
@@ -94,90 +93,52 @@ export const mergeLane = <L extends AgentLane>(lane: L, live: LiveLane | undefin
   return { ...lane, status: live.status, ...ended, live: spark === undefined ? live : { ...live, spark } };
 };
 
-export interface OrderView {
-  readonly card: OrderCard;
-  readonly phase: Phase;
-  /** The card's lanes (active ones), live. */
+/** One project's work from the board: what the sidebar counts and the chat's live strip draws. */
+export interface ProjectWork {
+  /** Its orders' agents, live-merged, in the board's order; a lane two cards list is one agent. */
   readonly lanes: readonly AgentLane[];
+  readonly prs: readonly PrRef[];
+  /** Its orders' workstream ids. */
+  readonly orders: readonly string[];
+  /** The finished agents its orders' details list (order_get), which no card does. */
+  readonly doneLanes: readonly AgentLane[];
 }
 
-const orderView = (
-  card: OrderCard,
-  liveLanes: Readonly<Record<string, LiveLane>>,
-  detail: OrderDetail | undefined,
-  ended: Readonly<Record<string, string>> = {},
-): OrderView => {
-  const lanes = card.lanes.map((l) => mergeLane(l, liveLanes[l.laneId], ended[l.laneId]));
-  const lead = liveLanes[leadLaneId(card.projectRef)];
-  // Without a live lead lane, trust the hub's word that the lead is planning.
-  const leadWorking =
-    lead === undefined ? card.phase === "planning" : lead.status === "working" || lead.status === "starting";
-  const phase = orderPhase({
-    state: card.state,
-    headline: card.next,
-    // The hub's count of what waits on you for this order (its requests), refetched on every order event.
-    openAsks: card.needsYou,
-    lanes: [...lanes, ...(detail?.doneLanes ?? [])],
-    hasTasks: card.total > 0,
-    prs: card.prs,
-    leadWorking,
-  });
-  return { card, phase, lanes };
-};
+const noWork: ProjectWork = { lanes: [], prs: [], orders: [], doneLanes: [] };
 
-
-/** The board: every order with its live phase, by phase then most recently updated; undefined until loaded. */
-export const selectBoard = memo(
-  (s) => [s.fresh, s.orders, s.live.lanes, s.details, s.live.ended],
-  (fresh, orders, liveLanes, details, ended): readonly OrderView[] | undefined => {
+/** Every project's work; undefined until the board loaded. */
+const selectWorkByProject = memo(
+  (s) => [s.fresh, s.orders, s.live.lanes, s.live.ended, s.details],
+  (fresh, orders, liveLanes, ended, details): Readonly<Record<ProjectKey, ProjectWork>> | undefined => {
     if (!fresh || orders === undefined) return undefined;
-    return Object.values(orders)
-      .map((card) =>
-        orderView(card, liveLanes, details[card.workstreamId], ended),
-      )
-      .sort(
-        (a, b) =>
-          PHASE_RANK[a.phase.phase] - PHASE_RANK[b.phase.phase] ||
-          b.card.updatedAt.localeCompare(a.card.updatedAt) ||
-          a.card.workstreamId.localeCompare(b.card.workstreamId),
-      );
+    const out: Record<ProjectKey, { lanes: AgentLane[]; prs: PrRef[]; orders: string[]; doneLanes: AgentLane[] }> = {};
+    const seen = new Set<string>();
+    for (const card of Object.values(orders)) {
+      const work = (out[projectKey(card.projectRef)] ??= { lanes: [], prs: [], orders: [], doneLanes: [] });
+      for (const l of card.lanes) {
+        if (seen.has(l.laneId)) continue;
+        seen.add(l.laneId);
+        work.lanes.push(mergeLane(l, liveLanes[l.laneId], ended[l.laneId]));
+      }
+      work.prs.push(...card.prs);
+      work.orders.push(card.workstreamId);
+      work.doneLanes.push(...(details[card.workstreamId]?.doneLanes ?? []));
+    }
+    return out;
   },
 );
 
-export interface OrderPage extends OrderView {
-  /** Undefined until order_get answered for this connection. */
-  readonly detail?: OrderDetail | undefined;
-  /** The project's lead, live. */
-  readonly lead?: AgentLane | undefined;
-}
-
-/** One order for its own view: undefined until the board or its order_get loaded it. */
-export const selectOrder = perKey((workstreamId) =>
+/** One project's work; undefined until the board loaded. */
+export const selectProjectWork = perKey((key) =>
   memo(
-    (s) =>
-      [
-        s.fresh ? s.orders?.[workstreamId] : undefined,
-        s.live.lanes,
-        s.details[workstreamId],
-      ],
-    (card, liveLanes, detail): OrderPage | undefined => {
-      if (card === undefined) return undefined;
-      const lead = detail?.lead === undefined ? undefined : mergeLane(detail.lead, liveLanes[detail.lead.laneId]);
-      return { ...orderView(card, liveLanes, detail), detail, lead };
-    },
+    (s) => [selectWorkByProject(s)],
+    (byProject): ProjectWork | undefined => (byProject === undefined ? undefined : (byProject[key] ?? noWork)),
   ),
 );
 
 /** An order's latest events, oldest first. */
 export const selectOrderEvents = perKey((workstreamId) => (s: DataState) => s.orderEvents[workstreamId] ?? noEvents);
 const noEvents: DataState["events"] = [];
-
-/** A lane's live values as the feed last sent them (a project lead's included, which no card lists). */
-export const selectLiveLane = perKey((laneId) => (s: DataState) => s.live.lanes[laneId]);
-
-/** A project lead's recent messages in full, as streamed, oldest first. */
-export const selectLeadStream = perKey((laneId) => (s: DataState) => s.live.streams?.[laneId] ?? noStream);
-const noStream: NonNullable<DataState["live"]["streams"]>[string] = [];
 
 /** The message a lane is writing, as streamed so far. */
 export const selectLiveText = perKey((laneId) => (s: DataState) => s.live.text[laneId]);
@@ -204,12 +165,6 @@ export const selectMachines = memo(
       .sort((a, b) => a.machine.name.localeCompare(b.machine.name)),
 );
 
-export const selectTrains = memo(
-  (s) => [s.fresh && s.orders !== undefined, s.trains],
-  (loaded, trains): readonly TrainLive[] | undefined =>
-    loaded ? Object.values(trains).sort((a, b) => a.repo.localeCompare(b.repo)) : undefined,
-);
-
 export const selectProjects = memo(
   (s) => [s.fresh, s.projects],
   (fresh, projects) => (fresh ? Object.values(projects).sort((a, b) => a.title.localeCompare(b.title)) : undefined),
@@ -218,90 +173,9 @@ export const selectProjects = memo(
 /** The hub's clock now, from the live feed's skew. */
 export const hubNow = (s: DataState, localNowMs: number): number => localNowMs + (s.live.skewMs ?? 0);
 
-// The board (F2).
-export interface BoardData {
-  readonly connection: ConnectionView;
-  /** Every order with its live phase and lanes; undefined until loaded. */
-  readonly orders: readonly OrderView[] | undefined;
-  /** order_get's details, for the agents a card leaves out (finished ones, with their end times). */
-  readonly details: DataState["details"];
-  /** Every lane's live values, the project leads' included (no card lists a lead). */
-  readonly liveLanes: DataState["live"]["lanes"];
-  readonly projects: ReturnType<typeof selectProjects>;
-  readonly machines: readonly MachineView[] | undefined;
-  readonly trains: readonly TrainLive[] | undefined;
-  readonly slots: DataState["slots"];
-  readonly skewMs: number;
-  /** The live feed dropped: values stay, greyed, until the next frame. */
-  readonly stale: boolean;
-}
-
-const noDetails: DataState["details"] = {};
-const noLanes: DataState["live"]["lanes"] = {};
-
-/** Everything the board and its strips draw, from one place. */
-export const selectBoardData = memo(
-  (s) =>
-    [
-      selectConnection(s),
-      selectBoard(s),
-      // Gated like every hub-data selector: nothing from a connection that isn't fresh.
-      s.fresh ? s.details : noDetails,
-      s.fresh ? s.live.lanes : noLanes,
-      selectProjects(s),
-      selectMachines(s),
-      selectTrains(s),
-      s.fresh ? (s.live.slots ?? s.slots) : undefined,
-      s.live.skewMs ?? 0,
-      s.live.stale,
-    ],
-  (connection, orders, details, liveLanes, projects, machines, trains, slots, skewMs, stale): BoardData => ({
-    connection,
-    orders,
-    details,
-    liveLanes,
-    projects,
-    machines,
-    trains,
-    slots,
-    skewMs,
-    stale,
-  }),
-);
-
 // The lead chats (A7).
 
 const active = (status: AgentLane["status"]): boolean => status === "working" || status === "starting";
-const noProjectLanes: readonly AgentLane[] = [];
-
-const byActiveFirst = (a: AgentLane, b: AgentLane): number =>
-  Number(active(b.status)) - Number(active(a.status)) || (b.startedAt ?? "").localeCompare(a.startedAt ?? "");
-
-/** Every project's agents, live-merged, active first; undefined until the board loaded. */
-const selectAgentsByProject = memo(
-  (s) => [s.fresh, s.orders, s.live.lanes, s.live.ended],
-  (fresh, orders, liveLanes, ended): Readonly<Record<ProjectKey, readonly AgentLane[]>> | undefined => {
-    if (!fresh || orders === undefined) return undefined;
-    const out: Record<ProjectKey, AgentLane[]> = {};
-    // A lane two cards list is one agent, counted once.
-    const seen = new Set<string>();
-    for (const card of Object.values(orders)) {
-      const lanes = card.lanes.filter((l) => !seen.has(l.laneId)).map((l) => mergeLane(l, liveLanes[l.laneId], ended[l.laneId]));
-      for (const l of lanes) seen.add(l.laneId);
-      (out[projectKey(card.projectRef)] ??= []).push(...lanes);
-    }
-    for (const lanes of Object.values(out)) lanes.sort(byActiveFirst);
-    return out;
-  },
-);
-
-/** One project's agents for the chat's live strip: live-merged, active first. */
-export const selectProjectAgents = perKey((key) =>
-  memo(
-    (s) => [selectAgentsByProject(s)],
-    (byProject): readonly AgentLane[] | undefined => (byProject === undefined ? undefined : (byProject[key] ?? noProjectLanes)),
-  ),
-);
 
 /** A project's state word: the sidebar dot, the chat header and the Status row all show this one. */
 export type ProjectStateWord = "waiting_on_you" | "blocked" | "working" | "idle";
@@ -350,13 +224,13 @@ let lastRows: readonly ProjectRow[] | undefined;
 let lastLive: ReadonlyMap<ProjectKey, ProjectRow> = new Map();
 
 export const selectProjectList = memo(
-  (s) => [s.fresh, s.projects, s.chatStates, selectAgentsByProject(s), s.live.lanes],
-  (fresh, projects, chats, agents, liveLanes): readonly ProjectRow[] | undefined => {
-    if (!fresh || agents === undefined) return (lastRows = undefined);
+  (s) => [s.fresh, s.projects, s.chatStates, selectWorkByProject(s), s.live.lanes],
+  (fresh, projects, chats, work, liveLanes): readonly ProjectRow[] | undefined => {
+    if (!fresh || work === undefined) return (lastRows = undefined);
     const before = new Map((lastRows ?? []).map((r) => [r.key, r]));
     const rows = Object.entries(projects)
       .map(([key, project]): ProjectRow => {
-        const running = (agents[key] ?? noProjectLanes).filter((l) => l.role !== "lead" && active(l.status)).length;
+        const running = (work[key] ?? noWork).lanes.filter((l) => l.role !== "lead" && active(l.status)).length;
         const chat = chats[key];
         const leadWorking = chat?.leadWorking ?? leadActive(liveLanes, key);
         const needsYou = chat?.needsYou === true;
@@ -490,8 +364,6 @@ export interface LiveAgent {
   readonly row: AgentRow;
 }
 
-const FINAL: ReadonlySet<AgentLane["status"]> = new Set(["done", "failed", "cancelled"]);
-
 /** The fields an agent's row shows; a frame that changes none of them keeps the row's object. */
 const sameAgent = (a: AgentRow, b: AgentRow): boolean =>
   a.projectTitle === b.projectTitle &&
@@ -520,7 +392,7 @@ export const selectLiveAgents = memo(
     const out: LiveAgent[] = [];
     for (const r of agents) {
       const row = mergeLane(r, liveLanes[r.laneId], ended[r.laneId]);
-      if (FINAL.has(row.status) || (row.role === "lead" && row.status === "idle")) continue;
+      if (settled(row.status) || (row.role === "lead" && row.status === "idle")) continue;
       const project = projectKey(row.projectRef);
       const id = `${project}/${row.laneId}`;
       const prior = before.get(id);

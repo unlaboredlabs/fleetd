@@ -40,7 +40,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   const needsYou = useData(selectNeedsYou(projectKey(project)));
   const view = data.view;
   const asOf = useAsOfWords(view?.asOf);
-  const strip = (data.agents?.length ?? 0) > 0;
+  const strip = data.strip;
   const turnSince = useData((d) => leadTurnSince(d, projectKey(project)));
   const turnOver = useData((d) => leadTurnUntil(d, projectKey(project)) !== undefined);
   const workedSince = data.leadWorking !== true && turnOver ? turnSince : undefined;

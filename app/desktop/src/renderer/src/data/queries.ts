@@ -4,7 +4,6 @@ import { hashKey, QueryClient, type Query, type QueryKey } from "@tanstack/react
 import {
   typedCall,
   type Call,
-  type OrderCard,
   type RawCall,
   type ToolInput,
   type ToolName,
@@ -44,29 +43,6 @@ export interface HubApi {
 
 /** How long events coalesce before their refetches go out: a burst (a merge, a batch) costs one round. */
 const INVALIDATE_EVERY_MS = 100;
-
-/** A finished order stays on the board this long after it finished (the GPUI board's hold). */
-export const DONE_HOLD_MS = 10 * 60_000;
-/** The refetch goes out this long after a hold ends, so the hub's `updatedAt >= since` has surely dropped it. */
-const HOLD_MARGIN_MS = 1_000;
-
-/**
- * When the board must be refetched so a finished order whose hold ran out leaves it: the earliest hold that ends
- * after `hubNowMs`, in hub time. Undefined when no finished order is held.
- */
-export const boardRefreshAt = (
-  orders: Readonly<Record<string, OrderCard>> | undefined,
-  hubNowMs: number,
-): number | undefined => {
-  let next: number | undefined;
-  for (const o of Object.values(orders ?? {})) {
-    if (o.state !== "done") continue;
-    const ends = Date.parse(o.updatedAt) + DONE_HOLD_MS;
-    if (Number.isNaN(ends) || ends <= hubNowMs) continue;
-    if (next === undefined || ends < next) next = ends;
-  }
-  return next;
-};
 
 export interface DataLayer {
   readonly store: DataStore;
@@ -111,17 +87,6 @@ export const createDataLayer = (hub: HubApi, now: () => number = Date.now): Data
     },
   });
 
-  const hubNowMs = () => now() + (store.getState().live.skewMs ?? 0);
-
-  // A board read without its own includeDoneSince holds finished orders for DONE_HOLD_MS. The window is taken when
-  // the call goes out, not baked into the key, so every refetch (an event's, the hold timer's) uses the current one.
-  const withDoneHold = <T extends ToolName>(tool: T, input: ToolInput<T>): ToolInput<T> => {
-    if (tool !== "orders_board") return input;
-    const board = input as ToolInput<"orders_board">;
-    if (board.includeDoneSince !== undefined) return input;
-    return { ...board, includeDoneSince: new Date(hubNowMs() - DONE_HOLD_MS).toISOString() };
-  };
-
   let reads = 0;
   /** By query hash: the newest read that answered. A read a reset made moot can land after; it never wins. */
   const answeredBy = new Map<string, number>();
@@ -131,7 +96,7 @@ export const createDataLayer = (hub: HubApi, now: () => number = Date.now): Data
       queryKey,
       queryFn: async (): Promise<ToolOutput<T>> => {
         const read = ++reads;
-        const outcome = await call(tool, withDoneHold(tool, input));
+        const outcome = await call(tool, input);
         if (!outcome.ok) throw new CallError(outcome.error);
         const hash = hashKey(queryKey);
         answeredBy.set(hash, Math.max(answeredBy.get(hash) ?? 0, read));
@@ -236,33 +201,11 @@ export const createDataLayer = (hub: HubApi, now: () => number = Date.now): Data
       const stopKeep = hub.cache === undefined ? () => undefined : keepCache(store, hub.cache, chat.focus, now);
       const stopCache = queryClient.getQueryCache().subscribe(onCache);
       const stop = hub.subscribe(onFrame);
-      // One timer, for the next hold to end: no polling, and none at all while nothing finished is held.
-      let hold: { at: number; timer: ReturnType<typeof setTimeout> } | undefined;
-      const scheduleHold = () => {
-        const at = boardRefreshAt(store.getState().orders, hubNowMs());
-        if (at === hold?.at) return;
-        if (hold !== undefined) clearTimeout(hold.timer);
-        hold =
-          at === undefined
-            ? undefined
-            : {
-                at,
-                timer: setTimeout(() => {
-                  hold = undefined;
-                  void queryClient.invalidateQueries({ queryKey: ["call", "orders_board"] });
-                }, at - hubNowMs() + HOLD_MARGIN_MS),
-              };
-      };
-      const stopHold = store.subscribe((s, prev) => {
-        if (s.orders !== prev.orders) scheduleHold();
-      });
       return () => {
         stopChat();
         stopKeep();
         stop();
         stopCache();
-        stopHold();
-        if (hold !== undefined) clearTimeout(hold.timer);
         if (timer !== undefined) clearTimeout(timer);
       };
     },

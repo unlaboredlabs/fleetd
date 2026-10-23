@@ -1,6 +1,6 @@
 import { describe as group, expect, it } from "vitest";
 import type { FleetStatus, OrderCard } from "../../../shared/contracts";
-import { selectBoardData } from "../../src/data/selectors";
+import { selectProjectWork } from "../../src/data/selectors";
 import { applyFrame as frameIn, ingest, initialState } from "../../src/data/store";
 import type { AgentLane, LaneStatus, LiveFrame, LiveLane, PrRef } from "./contracts";
 import { fleet, groupLabel } from "./fleet";
@@ -121,21 +121,23 @@ group("agents grouped by PR", () => {
 });
 
 group("live lanes in the data layer", () => {
+  const work = selectProjectWork("devbox/storefront");
+
   it("a lane the feed finished has an end time before the hub's own", () => {
     let s = loaded([card("W1", [lane("T1", "working", { startedAt: T0 })])]);
     [s] = frameIn(s, { t: "live", frame: frame(1, true, [live("T1", "working")]) }, ms(1));
     [s] = frameIn(s, { t: "live", frame: frame(5, false, [live("T1", "done")]) }, ms(5));
-    const t1 = selectBoardData(s).orders?.[0]?.lanes[0];
+    const t1 = work(s)?.lanes[0];
     expect([t1?.status, t1?.endedAt]).toEqual(["done", at(5)]);
   });
 
   it("a frame that names no lane (streamed text) keeps the lanes, so nothing that reads them redraws", () => {
     let s1 = loaded([card("W1", [lane("T1", "working")])]);
     [s1] = frameIn(s1, { t: "live", frame: frame(1, true, [live("T1", "working")]) }, ms(1));
-    const before = selectBoardData(s1);
+    const before = work(s1);
     const [s2] = frameIn(s1, { t: "live", frame: frame(2, false, [], { text: [{ laneId: "T1", messageId: "m1", append: "hi" }] }) }, ms(2));
     expect(s2.live.lanes).toBe(s1.live.lanes);
     expect(s2.live.ended).toBe(s1.live.ended);
-    expect(selectBoardData(s2)).toBe(before);
+    expect(work(s2)).toBe(before);
   });
 });

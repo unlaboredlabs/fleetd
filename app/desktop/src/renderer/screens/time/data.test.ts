@@ -161,6 +161,13 @@ describe("names from the store", () => {
     expect(n.machines).toEqual(["devbox"]);
   });
 
+  it("names finished work Time read itself, which the board leaves out", () => {
+    const w2 = { workstreamId: "W2", title: "Fix the cart", projectRef: { machineId: "devbox", projectId: "storefront" }, lanes: [lane("implementer", "T3", "cart", "s-3")], prs: [] };
+    const n = namesOf({ ...state, done: [w2] } as unknown as NamesInput);
+    expect(n.orders.get("W2")?.title).toBe("Fix the cart");
+    expect(n.threads.get("s-3")?.title).toBe("cart");
+  });
+
   it("names nothing from a store that isn't fresh", () => {
     expect(namesOf({ ...state, fresh: false }).orders.size).toBe(0);
   });

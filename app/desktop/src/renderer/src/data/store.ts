@@ -13,6 +13,7 @@ import {
   type AgentLane,
   type Claim,
   type HubEvent,
+  type LaneStatus,
   type LiveFrame,
   type LiveLane,
   type Machine,
@@ -25,19 +26,19 @@ import {
   type ToolInput,
   type ToolName,
   type ToolOutput,
-  type TrainLive,
 } from "../../../shared/contracts";
-import type { HubError, HubFrame, HubState } from "../../../shared/hub";
+import type { HubFrame, HubState } from "../../../shared/hub";
 import { applyDelta, emptyChat, heldChat, mergeLive, settleSends, type Chat, type ChatSend } from "./chat";
 import type { AgentRow } from "../../../shared/contracts";
 import { CHAT_EVENTS, type ChatDelta, type ProjectChatState } from "./chat-contract";
 import { ordersNamed } from "./effects";
-import { settled } from "./phase";
 
 /** "machineId/projectId". */
 export type ProjectKey = string;
 export const projectKey = (r: { readonly machineId: string; readonly projectId: string }): ProjectKey =>
   `${r.machineId}/${r.projectId}`;
+
+export const settled = (status: LaneStatus): boolean => status === "done" || status === "failed" || status === "cancelled";
 
 /** An order's detail from order_get. */
 export interface OrderDetail {
@@ -55,13 +56,8 @@ export interface LiveState {
    * check can hold for a moment before it leaves.
    */
   readonly ended: Readonly<Record<string, string>>;
-  /** The tail of the message each lane is writing. */
+  /** The tail of the message each lane is writing (the agents view's open agent). */
   readonly text: Readonly<Record<string, { readonly messageId: string; readonly text: string }>>;
-  /**
-   * A project lead's recent messages in full, oldest first (the order view's conversation): `text` keeps a tail, and
-   * a lead can stream far more than that before its log has the message. Bounded per lead by STREAM_CHARS.
-   */
-  readonly streams?: Readonly<Record<string, readonly { readonly messageId: string; readonly text: string }[]>> | undefined;
   readonly machines: Readonly<Record<string, MachineLive>>;
   readonly slots?: SlotState | undefined;
   /** Hub clock minus local clock, in ms; see `applyLive`. */
@@ -81,22 +77,19 @@ export interface DataState {
    * the disk cache's time. Meaningless while fresh.
    */
   readonly asOf?: number | undefined;
-  readonly sessionError?: HubError | undefined;
   /** The last event applied; older or repeated ones are ignored. */
   readonly cursor?: number | undefined;
   readonly machines: Readonly<Record<string, Machine>>;
   readonly projects: Readonly<Record<ProjectKey, ProjectSummary>>;
-  readonly attention: readonly HubEvent[];
   readonly slots?: SlotState | undefined;
-  /** Every order the board lists, by workstreamId; undefined until this generation's board landed. */
+  /** Every open order the board lists, by workstreamId; undefined until this generation's board landed. */
   readonly orders?: Readonly<Record<string, OrderCard>> | undefined;
   readonly details: Readonly<Record<string, OrderDetail>>;
   /** Every agent across the projects (agents_list), as last read; undefined until this generation's read landed. */
   readonly agents?: readonly AgentRow[] | undefined;
-  readonly trains: Readonly<Record<string, TrainLive>>;
   /** The latest events, oldest first. */
   readonly events: readonly HubEvent[];
-  /** The latest events naming each order, oldest first: the order view's merged event lines. */
+  /** The latest events naming each order, oldest first: the time view's. */
   readonly orderEvents: Readonly<Record<string, readonly HubEvent[]>>;
   readonly live: LiveState;
   /** Each opened project's lead chat; a snapshot keeps what it showed (`cached`) until it is reread. */
@@ -125,35 +118,6 @@ const ORDER_EVENTS = 100;
 /** Orders whose event lines are kept; the least recently active goes first. */
 const ORDERS_WITH_EVENTS = 100;
 const TEXT_TAIL = 2000;
-const STREAM_CHARS = 1_500_000;
-const isLeadLane = (laneId: string) => laneId.startsWith("lead:");
-
-type Stream = readonly { readonly messageId: string; readonly text: string }[];
-/** Appends to a lead's stream, dropping its oldest messages past the cap (the newest is cut to its tail). */
-const appendStream = (stream: Stream, messageId: string, append: string): Stream => {
-  const last = stream.at(-1);
-  let next = last?.messageId === messageId ? [...stream.slice(0, -1), { messageId, text: last.text + append }] : [...stream, { messageId, text: append }];
-  let size = next.reduce((n, m) => n + m.text.length, 0);
-  while (size > STREAM_CHARS && next.length > 1) {
-    size -= next[0]?.text.length ?? 0;
-    next = next.slice(1);
-  }
-  const only = next[0];
-  if (size > STREAM_CHARS && only !== undefined) next = [{ messageId: only.messageId, text: only.text.slice(-STREAM_CHARS) }];
-  return next;
-};
-
-/**
- * The leads' streams after a live frame. A frame with no lead text keeps them, identity included; a full frame
- * starts them over, as it does `text`.
- */
-export const applyStreams = (streams: LiveState["streams"], frame: LiveFrame): LiveState["streams"] => {
-  const lead = (frame.text ?? []).filter((t) => isLeadLane(t.laneId));
-  if (lead.length === 0) return frame.full ? {} : streams;
-  const next: Record<string, Stream> = frame.full ? {} : { ...streams };
-  for (const t of lead) next[t.laneId] = appendStream(next[t.laneId] ?? [], t.messageId, t.append);
-  return next;
-};
 
 const emptyLive: LiveState = { lanes: {}, ended: {}, text: {}, machines: {}, stale: true };
 
@@ -163,9 +127,7 @@ export const initialState = (): DataState => ({
   generation: 0,
   machines: {},
   projects: {},
-  attention: [],
   details: {},
-  trains: {},
   events: [],
   orderEvents: {},
   live: emptyLive,
@@ -219,16 +181,13 @@ export const applyFrame = (s: DataState, frame: HubFrame, nowMs: number): [DataS
           ...s,
           fresh: true,
           generation: s.generation + 1,
-          sessionError: undefined,
           cursor: snap.cursor,
           machines: byId(snap.machines, (m) => m.machineId),
           projects: byId(snap.projects, projectKey),
-          attention: snap.attention,
           slots: snap.slots,
           orders: undefined,
           agents: undefined,
           details: {},
-          trains: {},
           chats: heldChats(s.chats),
           chatStates: byId(snap.chats ?? [], (c) => projectKey(c.projectRef)),
           chatStop: undefined,
@@ -241,9 +200,9 @@ export const applyFrame = (s: DataState, frame: HubFrame, nowMs: number): [DataS
     case "chat_delta":
       return [applyChatDelta(s, frame.delta, nowMs + (s.live.skewMs ?? 0)), {}];
     case "live":
-      return [{ ...s, live: { ...applyLive(s.live, frame.frame, nowMs), streams: applyStreams(s.live.streams, frame.frame) } }, {}];
+      return [{ ...s, live: applyLive(s.live, frame.frame, nowMs) }, {}];
     case "error":
-      return [{ ...s, sessionError: frame.error }, {}];
+      return [s, {}];
   }
 };
 
@@ -440,12 +399,13 @@ export const applySlots = (s: DataState, slots: SlotState): DataState => ({
 export const ingest = (s: DataState, call: Ingest): DataState => {
   switch (call.tool) {
     case "orders_board": {
+      // The open orders only: a read that adds finished ones (Time's) keeps its own answer.
+      if (call.input.includeDoneSince !== undefined) return s;
       const scope = call.input.projectRef;
       const kept = Object.values(s.orders ?? {}).filter(
         (o) => scope !== undefined && projectKey(o.projectRef) !== projectKey(scope),
       );
-      const trains = { ...s.trains, ...byId(call.output.trains, (t) => t.repo) };
-      return { ...s, orders: byId([...kept, ...call.output.orders], (o) => o.workstreamId), trains };
+      return { ...s, orders: byId([...kept, ...call.output.orders], (o) => o.workstreamId) };
     }
     case "order_get": {
       const { order, lead, doneLanes, claims } = call.output;

@@ -1,8 +1,7 @@
 // The live strip's model, pure: which of a project's agents to show, the header that counts them, and the opened rows
 // (one line per PR, then the agents on it). It reads only the data layer (src/data). `selectStrip` keeps the same
 // object until a word changes, so a lane's every token doesn't redraw the chat.
-import type { BoardData } from "../../src/data/selectors";
-import { selectBoardData } from "../../src/data/selectors";
+import { selectProjectWork, type ProjectWork } from "../../src/data/selectors";
 import type { DataState } from "../../src/data/store";
 import type { AgentLane } from "./contracts";
 import { projectKey } from "./lanes";
@@ -15,29 +14,17 @@ export interface ProjectRef {
 }
 
 /**
- * The project's agents the strip shows: every lane of its orders, not the lead, not finished, and not idle; at work
- * first, then queued. An idle lane's session has stopped (its task books the result a moment later), so it neither
- * holds a slot nor has anything to show.
+ * The agents the strip shows, grouped under their PRs: every agent of the project's orders, not the lead, not
+ * finished, and not idle; at work first, then queued. An idle lane's session has stopped (its task books the result a
+ * moment later), so it neither holds a slot nor has anything to show. The finished agents the orders' details list
+ * count toward a PR's reviews done.
  */
-export const projectAgents = (d: BoardData, project: ProjectRef): AgentLane[] => {
-  const key = projectKey(project);
-  const lanes = (d.orders ?? []).filter((o) => projectKey(o.card.projectRef) === key).flatMap((o) => o.lanes);
-  const shown = lanes.filter((l) => l.role !== "lead" && !isFinal(l.status) && l.status !== "idle");
-  return [...shown.filter((l) => l.status !== "queued"), ...shown.filter((l) => l.status === "queued")];
-};
-
-/**
- * The project's agents grouped under its PRs: the one place the header and the opened rows take a PR from, so the
- * PRs named folded are the groups drawn opened. The finished agents its orders' details list (order_get) count toward
- * the reviews done.
- */
-export const projectFleet = (d: BoardData, project: ProjectRef): { readonly lanes: AgentLane[]; readonly fleet: Fleet } => {
-  const key = projectKey(project);
-  const orders = (d.orders ?? []).filter((o) => projectKey(o.card.projectRef) === key);
-  const lanes = projectAgents(d, project);
+const projectFleet = (w: ProjectWork): { readonly lanes: AgentLane[]; readonly fleet: Fleet } => {
+  const shown = w.lanes.filter((l) => l.role !== "lead" && !isFinal(l.status) && l.status !== "idle");
+  const lanes = [...shown.filter((l) => l.status !== "queued"), ...shown.filter((l) => l.status === "queued")];
   const ids = new Set(lanes.map((l) => l.laneId));
-  const finished = orders.flatMap((o) => d.details[o.card.workstreamId]?.doneLanes ?? []).filter((l) => !ids.has(l.laneId));
-  return { lanes, fleet: fleet(lanes, [...lanes, ...finished], orders.flatMap((o) => o.card.prs)) };
+  const finished = w.doneLanes.filter((l) => !ids.has(l.laneId));
+  return { lanes, fleet: fleet(lanes, [...lanes, ...finished], w.prs) };
 };
 
 /** One agent, opened: its role, what it is doing, and since when. */
@@ -188,12 +175,12 @@ export const selectStrip = (project: ProjectRef): ((s: DataState) => Strip | und
   let selector = selectors.get(key);
   if (selector !== undefined) return selector;
   let last: Strip | undefined;
+  const work = selectProjectWork(key);
   selector = (s: DataState) => {
-    const d = selectBoardData(s);
-    if (d.orders === undefined) return undefined;
-    const { lanes, fleet: f } = projectFleet(d, project);
-    const orders = d.orders.filter((o) => projectKey(o.card.projectRef) === key).map((o) => o.card.workstreamId);
-    const next = stripOf(lanes, f, { orders, stale: d.stale });
+    const w = work(s);
+    if (w === undefined) return undefined;
+    const { lanes, fleet: f } = projectFleet(w);
+    const next = stripOf(lanes, f, { orders: w.orders, stale: s.live.stale });
     if (last !== undefined && sameStrip(last, next)) return last;
     last = next;
     return next;
