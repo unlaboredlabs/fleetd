@@ -226,10 +226,10 @@ export function trainLines(): { lines: Array<TrainLine>; from: string } | undefi
 }
 
 const LIFECYCLE = ["change.queued", "review.verdict", "change.ready", "fleetd/train", "pr.merged"];
-const SETBACKS = ["change.refused", "train.frozen", "change.ci_failed", "change.needs_rebase"];
+const SETBACKS = ["change.refused", "change.ci_failed", "change.needs_rebase"];
 
 /** What the page shows of a run, in time order: the whole path of the first two Changes that merged, and the first
- * of each way the train turns a change away or holds it (a freeze with the resume that ends it). At most 16 lines. */
+ * of each way the train turns a change away. At most 16 lines. */
 export function pickTrain(lines: ReadonlyArray<TrainLine>) {
   const merged = new Set(lines.filter((l) => l.type === "pr.merged").map((l) => l.change));
   const followed = lines.filter((l) => l.type === "change.queued" && merged.has(l.change)).map((l) => l.change).slice(0, 2);
@@ -238,9 +238,6 @@ export function pickTrain(lines: ReadonlyArray<TrainLine>) {
     const first = lines.find((l) => l.type === type);
     if (first !== undefined) picked.add(first);
   }
-  const frozen = lines.find((l) => l.type === "train.frozen");
-  const resumed = frozen && lines.find((l) => l.type === "train.resumed" && l.ms >= frozen.ms);
-  if (resumed) picked.add(resumed);
   const shown = lines.filter((l) => picked.has(l));
   check(shown.length <= 16, `the train rule picked ${shown.length} lines, more than the page's 16`);
   return shown;

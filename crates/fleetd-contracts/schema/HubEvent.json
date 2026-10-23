@@ -207,13 +207,8 @@
           "type": "string"
         },
         {
-          "const": "train.frozen",
-          "description": "`data.repo`, `data.reason`.",
-          "type": "string"
-        },
-        {
-          "const": "train.resumed",
-          "description": "`data.repo`.",
+          "const": "pr.merged_outside",
+          "description": "A PR was merged into a base the train guards without the train; `data.repo`, `data.prNumber`,\n`data.mergedSha`, and `data.changeId` when it had been enqueued.",
           "type": "string"
         },
         {
@@ -304,11 +299,6 @@
         {
           "const": "ci.main",
           "description": "Main-branch CI of a train repo changed state; `data.repo`, `data.sha`, `data.state`, `data.failing`.",
-          "type": "string"
-        },
-        {
-          "const": "github.drift",
-          "description": "Reconciliation found GitHub moved without fleetd; `data.repo`, `data.kind`, `data.what`, `data.lagMs`.",
           "type": "string"
         },
         {

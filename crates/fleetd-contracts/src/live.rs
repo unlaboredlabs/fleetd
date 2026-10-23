@@ -311,8 +311,6 @@ pub struct PrChip {
 #[serde(rename_all = "camelCase")]
 pub struct TrainLive {
     pub repo: GitHubRepo,
-    pub frozen: bool,
-    pub frozen_reason: Option<Text<0, 200>>,
     pub chips: List<PrChip, 0, 12>,
     /// Merged since 00:00 UTC.
     pub merged_today: Count,

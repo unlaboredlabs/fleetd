@@ -111,8 +111,6 @@ pub struct PrQueue {
     pub position: Option<Count>,
     /// PRs waiting in the same queue.
     pub length: Count,
-    /// Merging is paused for the repository.
-    pub paused: bool,
     /// Why it is held or was sent back: a conflict, failing check names, or the refusal's fix.
     pub reason: Option<Text<0, 2000>>,
 }

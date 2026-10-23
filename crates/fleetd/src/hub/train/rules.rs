@@ -1,4 +1,4 @@
-//! Enqueue rules, pure: the tier and the freeze decision key.
+//! Enqueue rules, pure: the tier.
 use super::contract::{Tier, tier_str};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -48,21 +48,6 @@ pub fn check_tier(
         .fold(brief, |a, b| if rank(b) > rank(a) { b } else { a }))
 }
 
-/// `policy.freeze.<owner>.<name>`, lowercased; its value "true" holds the repo's train.
-pub fn freeze_key(repo: &str) -> String {
-    format!(
-        "policy.freeze.{}",
-        repo.to_lowercase().replacen('/', ".", 1)
-    )
-}
-
-pub fn is_frozen_value(value: &str) -> bool {
-    matches!(
-        value.trim().to_lowercase().as_str(),
-        "true" | "yes" | "on" | "1"
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -79,14 +64,5 @@ mod tests {
             check_tier(Tier::M, Some(Tier::S), None).unwrap_err().fix,
             "omit --tier, or pass --tier M or higher"
         );
-    }
-
-    #[test]
-    fn keys_the_freeze_on_the_lowercased_repo() {
-        assert_eq!(
-            freeze_key("Acme/Storefront"),
-            "policy.freeze.acme.storefront"
-        );
-        assert!(is_frozen_value(" Yes ") && !is_frozen_value("false"));
     }
 }

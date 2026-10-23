@@ -943,10 +943,6 @@
     "TrainState": {
       "description": "One serial train per repo.",
       "properties": {
-        "frozen": {
-          "description": "Held by a `policy.freeze.<repo>` decision.",
-          "type": "boolean"
-        },
         "head": {
           "$ref": "#/$defs/ChangeId",
           "description": "The Change being rebased, checked or merged now."
@@ -965,7 +961,6 @@
       },
       "required": [
         "repo",
-        "frozen",
         "queue"
       ],
       "type": "object"

@@ -100,8 +100,7 @@ const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab)
   { name: "eff", run: efficiency, only: true },
   // One PR through the train into a base CI never runs for. Only when named, with FLEETD_LAB_NAMESPACE=noci/<n>.
   { name: "noci", run: noCiTrain, only: true },
-  // Batches and stacks on the lab repo: a batch of three in one CI run, a red batch bisected, a stacked PR green on
-  // its parent before it lands. Only when named.
+  // Batches on the lab repo: a batch of three in one CI run, a red batch bisected. Only when named.
   { name: "batch", run: trainBatch, only: true },
   // The app demo: one order fanned out to writers, reviewers and verifiers on the lab repo. Only when named.
   { name: "demo", run: demoFanout, only: true },

@@ -3283,54 +3283,6 @@
       ],
       "type": "object"
     },
-    "GithubHook": {
-      "properties": {
-        "hookId": {
-          "maximum": 9007199254740991,
-          "minimum": 1,
-          "type": "integer"
-        },
-        "repo": {
-          "$ref": "#/$defs/GitHubRepo"
-        }
-      },
-      "required": [
-        "repo",
-        "hookId"
-      ],
-      "type": "object"
-    },
-    "GithubWebhookSetInput": {
-      "properties": {
-        "url": {
-          "$ref": "#/$defs/WebhookUrl",
-          "description": "A public URL GitHub can reach, ending in /github; fleetd never creates one."
-        }
-      },
-      "type": "object"
-    },
-    "GithubWebhookSetOutput": {
-      "properties": {
-        "next": {
-          "type": "string"
-        },
-        "repos": {
-          "description": "The hooks now in place; empty when turned off.",
-          "items": {
-            "$ref": "#/$defs/GithubHook"
-          },
-          "maxItems": 100,
-          "type": "array"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "repos"
-      ],
-      "type": "object"
-    },
     "Headline": {
       "properties": {
         "at": {
@@ -3832,13 +3784,8 @@
           "type": "string"
         },
         {
-          "const": "train.frozen",
-          "description": "`data.repo`, `data.reason`.",
-          "type": "string"
-        },
-        {
-          "const": "train.resumed",
-          "description": "`data.repo`.",
+          "const": "pr.merged_outside",
+          "description": "A PR was merged into a base the train guards without the train; `data.repo`, `data.prNumber`,\n`data.mergedSha`, and `data.changeId` when it had been enqueued.",
           "type": "string"
         },
         {
@@ -3929,11 +3876,6 @@
         {
           "const": "ci.main",
           "description": "Main-branch CI of a train repo changed state; `data.repo`, `data.sha`, `data.state`, `data.failing`.",
-          "type": "string"
-        },
-        {
-          "const": "github.drift",
-          "description": "Reconciliation found GitHub moved without fleetd; `data.repo`, `data.kind`, `data.what`, `data.lagMs`.",
           "type": "string"
         },
         {
@@ -5182,12 +5124,6 @@
         "fleetd_status.output": {
           "$ref": "#/$defs/FleetdStatusOutput"
         },
-        "github_webhook_set.input": {
-          "$ref": "#/$defs/GithubWebhookSetInput"
-        },
-        "github_webhook_set.output": {
-          "$ref": "#/$defs/GithubWebhookSetOutput"
-        },
         "hub_info.input": {
           "$ref": "#/$defs/HubInfoInput"
         },
@@ -5470,18 +5406,6 @@
         "time_spans.output": {
           "$ref": "#/$defs/TimeSpansOutput"
         },
-        "train_freeze.input": {
-          "$ref": "#/$defs/TrainFreezeInput"
-        },
-        "train_freeze.output": {
-          "$ref": "#/$defs/TrainFreezeOutput"
-        },
-        "train_get.input": {
-          "$ref": "#/$defs/TrainGetInput"
-        },
-        "train_get.output": {
-          "$ref": "#/$defs/TrainGetOutput"
-        },
         "usage_resume.input": {
           "$ref": "#/$defs/UsageResumeInput"
         },
@@ -5570,8 +5494,6 @@
         "events_wait.output",
         "fleetd_status.input",
         "fleetd_status.output",
-        "github_webhook_set.input",
-        "github_webhook_set.output",
         "hub_info.input",
         "hub_info.output",
         "incidents_list.input",
@@ -5666,10 +5588,6 @@
         "time_retention_set.output",
         "time_spans.input",
         "time_spans.output",
-        "train_freeze.input",
-        "train_freeze.output",
-        "train_get.input",
-        "train_get.output",
         "usage_resume.input",
         "usage_resume.output",
         "usage_status.input",
@@ -7261,10 +7179,6 @@
           "minimum": 0,
           "type": "integer"
         },
-        "paused": {
-          "description": "Merging is paused for the repository.",
-          "type": "boolean"
-        },
         "position": {
           "description": "0-based place in the queue; absent when not waiting in it.",
           "maximum": 9007199254740991,
@@ -7283,8 +7197,7 @@
       "required": [
         "changeId",
         "state",
-        "length",
-        "paused"
+        "length"
       ],
       "type": "object"
     },
@@ -9151,7 +9064,6 @@
             "machine_flaky",
             "usage_high",
             "slots_full",
-            "github_drift",
             "no_plan"
           ],
           "type": "string"
@@ -10135,7 +10047,7 @@
       "type": "object"
     },
     "StaleSource": {
-      "description": "A source that is stale now, `since` its last good signal. `source` is `machine:<m>`, `usage:<m>`, `ci:<repo>`,\n`github:<repo>`, `train:<repo>` or\n`webhook:<repo>`.",
+      "description": "A source that is stale now, `since` its last good signal. `source` is `machine:<m>`, `usage:<m>`, `ci:<repo>`,\n`github:<repo>` or `train:<repo>`.",
       "properties": {
         "reason": {
           "maxLength": 200,
@@ -12091,71 +12003,6 @@
       ],
       "type": "object"
     },
-    "TrainFreezeInput": {
-      "properties": {
-        "frozen": {
-          "type": "boolean"
-        },
-        "reason": {
-          "maxLength": 200,
-          "minLength": 1,
-          "type": "string"
-        },
-        "repo": {
-          "$ref": "#/$defs/GitHubRepo"
-        }
-      },
-      "required": [
-        "repo",
-        "frozen"
-      ],
-      "type": "object"
-    },
-    "TrainFreezeOutput": {
-      "properties": {
-        "next": {
-          "type": "string"
-        },
-        "train": {
-          "$ref": "#/$defs/TrainState"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "train"
-      ],
-      "type": "object"
-    },
-    "TrainGetInput": {
-      "properties": {
-        "repo": {
-          "$ref": "#/$defs/GitHubRepo"
-        }
-      },
-      "required": [
-        "repo"
-      ],
-      "type": "object"
-    },
-    "TrainGetOutput": {
-      "properties": {
-        "next": {
-          "type": "string"
-        },
-        "train": {
-          "$ref": "#/$defs/TrainState"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "train"
-      ],
-      "type": "object"
-    },
     "TrainLive": {
       "description": "One repo's merge train, resolved for the strip: head first, then the queue in order, then today's merges.",
       "properties": {
@@ -12165,13 +12012,6 @@
           },
           "maxItems": 12,
           "type": "array"
-        },
-        "frozen": {
-          "type": "boolean"
-        },
-        "frozenReason": {
-          "maxLength": 200,
-          "type": "string"
         },
         "mergedToday": {
           "description": "Merged since 00:00 UTC.",
@@ -12185,7 +12025,6 @@
       },
       "required": [
         "repo",
-        "frozen",
         "chips",
         "mergedToday"
       ],
@@ -12194,10 +12033,6 @@
     "TrainState": {
       "description": "One serial train per repo.",
       "properties": {
-        "frozen": {
-          "description": "Held by a `policy.freeze.<repo>` decision.",
-          "type": "boolean"
-        },
         "head": {
           "$ref": "#/$defs/ChangeId",
           "description": "The Change being rebased, checked or merged now."
@@ -12216,7 +12051,6 @@
       },
       "required": [
         "repo",
-        "frozen",
         "queue"
       ],
       "type": "object"
@@ -12661,9 +12495,6 @@
         "threadId"
       ],
       "type": "object"
-    },
-    "WebhookUrl": {
-      "type": "string"
     },
     "Weight": {
       "oneOf": [

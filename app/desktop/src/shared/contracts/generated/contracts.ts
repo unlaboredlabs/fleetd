@@ -1008,8 +1008,6 @@ export type DoneRow = {
   workstreamId?: WorkstreamId;
 };
 
-export type DriftKind = "outside_fleetd" | "missed_webhook";
-
 export type KnownDropReason = "scope_change" | "review_failed" | "ci_failed" | "reopened" | "work_stopped";
 /** KnownDropReason, or a value from a newer hub. */
 export type DropReason = KnownDropReason | (string & {});
@@ -1150,31 +1148,6 @@ export type GitHubRepos = {
   owners: string[];
   problem?: ProjectProblem;
   repos: GitHubCandidate[];
-};
-
-/** `github.drift`. */
-export type GithubDriftData = {
-  kind: DriftKind;
-  lagMs?: number;
-  repo: GitHubRepo;
-  what: string;
-};
-
-export type GithubHook = {
-  hookId: number;
-  repo: GitHubRepo;
-};
-
-export type GithubWebhookSetInput = {
-  /** A public URL GitHub can reach, ending in /github; fleetd never creates one. */
-  url?: WebhookUrl;
-};
-
-export type GithubWebhookSetOutput = {
-  next?: string;
-  /** The hooks now in place; empty when turned off. */
-  repos: GithubHook[];
-  truncated?: boolean;
 };
 
 export type Headline = {
@@ -1328,8 +1301,7 @@ export type KnownHubEventType =
   | "change.needs_rebase"
   | "change.ci_failed"
   | "pr.merged"
-  | "train.frozen"
-  | "train.resumed"
+  | "pr.merged_outside"
   | "train.blocked"
   | "change.refused"
   | "research.verdict"
@@ -1348,7 +1320,6 @@ export type KnownHubEventType =
   | "plan.verified"
   | "change.state"
   | "ci.main"
-  | "github.drift"
   | "source.stale"
   | "source.fresh"
   | "chat.message"
@@ -2323,8 +2294,6 @@ export type PrQueue = {
   changeId: ChangeId;
   /** PRs waiting in the same queue. */
   length: number;
-  /** Merging is paused for the repository. */
-  paused: boolean;
   /** 0-based place in the queue; absent when not waiting in it. */
   position?: number;
   /** Why it is held or was sent back: a conflict, failing check names, or the refusal's fix. */
@@ -3014,7 +2983,6 @@ export type KnownRiskRule =
   | "machine_flaky"
   | "usage_high"
   | "slots_full"
-  | "github_drift"
   | "no_plan"
   | "steer_unacknowledged"
   | "slower_than_usual"
@@ -3370,8 +3338,7 @@ export type StalePrompt = {
 
 /**
  * A source that is stale now, `since` its last good signal. `source` is `machine:<m>`, `usage:<m>`, `ci:<repo>`,
- * `github:<repo>`, `train:<repo>` or
- * `webhook:<repo>`.
+ * `github:<repo>` or `train:<repo>`.
  */
 export type StaleSource = {
   reason: string;
@@ -3980,7 +3947,7 @@ export type ToolPermission = {
 
 /**
  * The merge train's events: `change.queued`, `change.ready`, `change.needs_rebase`, `change.ci_failed`,
- * `change.refused`, `pr.merged`, `train.frozen`, `train.resumed`, `train.blocked`. Which fields each carries is in
+ * `change.refused`, `pr.merged`, `pr.merged_outside`, `train.blocked`. Which fields each carries is in
  * `HubEventType`'s docs.
  */
 export type TrainEventData = {
@@ -4005,33 +3972,9 @@ export type TrainEventData = {
   workstreamId?: WorkstreamId;
 };
 
-export type TrainFreezeInput = {
-  frozen: boolean;
-  reason?: string;
-  repo: GitHubRepo;
-};
-
-export type TrainFreezeOutput = {
-  next?: string;
-  train: TrainState;
-  truncated?: boolean;
-};
-
-export type TrainGetInput = {
-  repo: GitHubRepo;
-};
-
-export type TrainGetOutput = {
-  next?: string;
-  train: TrainState;
-  truncated?: boolean;
-};
-
 /** One repo's merge train, resolved for the strip: head first, then the queue in order, then today's merges. */
 export type TrainLive = {
   chips: PrChip[];
-  frozen: boolean;
-  frozenReason?: string;
   /** Merged since 00:00 UTC. */
   mergedToday: number;
   repo: GitHubRepo;
@@ -4039,8 +3982,6 @@ export type TrainLive = {
 
 /** One serial train per repo. */
 export type TrainState = {
-  /** Held by a `policy.freeze.<repo>` decision. */
-  frozen: boolean;
   /** The Change being rebased, checked or merged now. */
   head?: ChangeId;
   /** Waiting Changes in train order. */
@@ -4210,8 +4151,6 @@ export type WakeTarget = {
   threadId: ThreadId;
 };
 
-export type WebhookUrl = string;
-
 export type Weight = "must" | "polish";
 
 export type KnownWeightsBasis = "project" | "fleet" | "default";
@@ -4361,7 +4300,6 @@ export interface ToolMap {
   doctor_list: { input: DoctorListInput; output: DoctorListOutput };
   events_wait: { input: EventsWaitInput; output: EventsWaitOutput };
   fleetd_status: { input: FleetdStatusInput; output: FleetdStatusOutput };
-  github_webhook_set: { input: GithubWebhookSetInput; output: GithubWebhookSetOutput };
   hub_info: { input: HubInfoInput; output: HubInfoOutput };
   incidents_list: { input: IncidentsListInput; output: IncidentsListOutput };
   intake_preview: { input: IntakePreviewInput; output: IntakePreviewOutput };
@@ -4409,8 +4347,6 @@ export interface ToolMap {
   time_insights: { input: TimeInsightsInput; output: TimeInsightsOutput };
   time_retention_set: { input: TimeRetentionSetInput; output: TimeRetentionSetOutput };
   time_spans: { input: TimeSpansInput; output: TimeSpansOutput };
-  train_freeze: { input: TrainFreezeInput; output: TrainFreezeOutput };
-  train_get: { input: TrainGetInput; output: TrainGetOutput };
   usage_resume: { input: UsageResumeInput; output: UsageResumeOutput };
   usage_status: { input: UsageStatusInput; output: UsageStatusOutput };
   wake_cancel: { input: WakeCancelInput; output: WakeCancelOutput };
@@ -4435,12 +4371,12 @@ export interface HubEventDataMap {
   "ci.main": CiMainData;
   "claim.failed": ClaimEventData;
   "claim.passed": ClaimEventData;
-  "github.drift": GithubDriftData;
   "machine.guard": MachineGuardData;
   "machine.slept": MachineSleptData;
   "plan.changed": PlanChangedData;
   "plan.verified": PlanVerifiedData;
   "pr.merged": TrainEventData;
+  "pr.merged_outside": TrainEventData;
   "project.add_failed": ProjectAddFailedData;
   "project.added": ProjectAddedData;
   "project.clone_progress": CloneProgressData;
@@ -4467,8 +4403,6 @@ export interface HubEventDataMap {
   "thread.usage_limited": UsageEventData;
   "thread.waiting": ThreadEventData;
   "train.blocked": TrainEventData;
-  "train.frozen": TrainEventData;
-  "train.resumed": TrainEventData;
   "usage.breaker": UsageEventData;
   "usage.resumed": UsageEventData;
   "workstream.created": WorkstreamEventData;

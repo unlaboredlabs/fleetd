@@ -219,10 +219,6 @@ export async function demoFanout(lab: Lab) {
   try {
     const projectId = await lab.addProject(MACHINE, CLONE, "fleetd-lab");
     const ref = { machineId: MACHINE, projectId };
-    // The train must be thawed: an earlier M7 run may have left the freeze decision behind.
-    const thaw = await callTool("train_freeze", { repo: REPO, frozen: false });
-    lab.log(`train_freeze false: ${thaw.isError ? JSON.stringify(thaw.body) : "ok"}`);
-
     const started = await callTool("lead_start", ref);
     check(!started.isError, `lead_start: ${JSON.stringify(started.body)}`);
     const leadThread = started.body.threadId as string;

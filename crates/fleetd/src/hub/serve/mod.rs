@@ -204,6 +204,10 @@ pub fn build(config: HubConfig, clock: Arc<dyn Clock>) -> anyhow::Result<Arc<Hub
     if retired > 0 {
         tracing::info!("revoked {retired} owner key(s) an earlier fleetd kept in the hub home");
     }
+    // A sealed GitHub webhook secret and its key, left by a hub from before webhooks went; nothing reads them.
+    for gone in ["github-webhook.secret", "webhook.key"] {
+        let _ = std::fs::remove_file(config.home.join(gone));
+    }
     build_on(db, config, clock)
 }
 
@@ -366,7 +370,6 @@ pub fn build_on(
         chat,
         prs,
     });
-    crate::hub::train::hooks::restore(&hub);
     checks.ports.bind(&hub);
     train_host.bind(&hub);
     hub.checks.set_time(hub.time.sink());

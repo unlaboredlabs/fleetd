@@ -1,7 +1,8 @@
 //! The merge train: only fleetd merges. One serial train per repo takes the oldest ready Change, rebases it onto the
 //! latest base in a hub-owned worktree on the project's machine, waits for CI on that exact head, posts
 //! `fleetd/train=success` and squash-merges pinned to the head. Conflicts and red CI go back to the task that wrote
-//! the code; a merge goes to the lead inline. A freeze decision holds the train; merges it did not do are incidents.
+//! the code; a merge goes to the lead inline. A PR merged into a guarded base without the train is reported once
+//! (`pr.merged_outside`) and told to the lead. The `hold` label holds one PR.
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
@@ -16,10 +17,10 @@ use super::contract::{
 };
 use super::git::{BLOCKED, GitError, REFUSED_HERE, Rebase, TrainGit, default_worktree};
 use super::github::{CheckRun, GhError, GhRunner, MergeOutcome, Pull, TRAIN_CONTEXT, TrainGitHub};
-use super::host::{BoxFut, IncidentInput, TrainHost};
-use super::main_ci::{DriftCounts, GithubSync, MainCi, ci_state};
+use super::host::{BoxFut, TrainHost};
+use super::main_ci::{GithubSync, MainCi, ci_state};
 use super::records::{ChangeRecords, Db, HEAD_STATES, ListFilter, QUEUED_STATES};
-use super::rules::{Refusal, check_tier, freeze_key, is_frozen_value};
+use super::rules::{Refusal, check_tier};
 use super::time::{iso, millis, parse_iso};
 use super::triggers;
 use crate::clock::Clock;
@@ -29,7 +30,7 @@ use crate::hub::status::fresh::{self, Fresh};
 use fleetd_contracts::ledger::WorkstreamId;
 use fleetd_contracts::prim::Text;
 use fleetd_contracts::projects::CiInfo;
-use fleetd_contracts::status::{ChangeStateData, CiMainData, CiState, DriftKind, GithubDriftData};
+use fleetd_contracts::status::{ChangeStateData, CiMainData, CiState};
 
 /// Recorded as the sender of the train's task messages.
 pub const TRAIN_BY: &str = "hub:train";
@@ -77,7 +78,7 @@ pub struct TrainOptions {
     /// How long a head may have no checks at all before the train asks GitHub whether its PR has CI; the answer comes
     /// from the workflows' triggers, not this wait (`FLEETD_TRAIN_NO_CI_GRACE_SEC`, default 90).
     pub no_ci_grace: Duration,
-    /// How often merged PRs are checked for bypasses.
+    /// How often merged PRs are checked for merges outside the train.
     pub bypass_every: Duration,
     /// How often a repo's open PRs are read for a running writer's draft marked ready.
     pub ready_every: Duration,
@@ -238,7 +239,7 @@ pub struct Train {
     pub(super) sync: GithubSync,
     /// The follower and every repo loop, aborted by `stop`.
     tasks: Mutex<Vec<tokio::task::JoinHandle<()>>>,
-    /// Batches and stacks: suspects, repos batching is off for, rewritten heads, speculative builds.
+    /// Batches: suspects, repos batching is off for, rewritten heads.
     pub(super) lanes: Mutex<super::batch::Lanes>,
 }
 
@@ -684,9 +685,6 @@ impl Train {
         };
         lock(&self.merge_refusals).remove(&change.change_id);
         lock(&self.lanes).suspects.remove(&change.change_id);
-        if let Some(sha) = &sha {
-            self.sync.train_merged(&merged.repo, sha);
-        }
         let as_sha = sha
             .as_deref()
             .map(|s| format!(" as {}", short(s)))
@@ -1103,15 +1101,10 @@ impl Train {
             return Ok(());
         }
         if pull.state != "open" {
-            self.closed_outside(change).await;
+            self.abandon(change, "was closed").await;
             return Ok(());
         }
         if pull.head.sha.to_lowercase() != change.head_sha.as_str() {
-            self.saw_change(
-                &change.project_ref,
-                repo,
-                &format!("{repo}#{} got a new head", change.pr_number),
-            );
             return Ok(self.ready_moved(change, &pull).await?);
         }
         let Some(rebasing) =
@@ -1129,10 +1122,9 @@ impl Train {
             PushRejected(String),
         }
         let (git, git_lock) = self.git_for(change)?;
-        let forks = self.forks_of(change);
         let outcome = {
             let _held = git_lock.lock().await;
-            match git.rebase(base, &change.branch, &forks).await? {
+            match git.rebase(base, &change.branch).await? {
                 Rebase::Rebased {
                     remote_head,
                     head_sha,
@@ -1305,26 +1297,11 @@ impl Train {
             };
             self.guard_base(repo, &pull.base.ref_);
             if pull.merged {
-                self.saw_change(
-                    &change.project_ref,
-                    repo,
-                    &format!("{repo}#{} merged", change.pr_number),
-                );
                 self.abandon(&change, "was merged outside the train").await;
             } else if pull.state != "open" {
-                self.closed_outside(&change).await;
+                self.abandon(&change, "was closed").await;
             } else if (change.state == ChangeState::Queued
                 || pull.head.sha.to_lowercase() != change.head_sha.as_str())
-                && {
-                    if change.state != ChangeState::Queued {
-                        self.saw_change(
-                            &change.project_ref,
-                            repo,
-                            &format!("{repo}#{} got a new head", change.pr_number),
-                        );
-                    }
-                    true
-                }
                 && let Err(GitError(e)) = self.admit(&change, &pull).await
             {
                 let why = self.git_failed(&change, &e);
@@ -1428,9 +1405,15 @@ impl Train {
             .insert(base.to_owned());
     }
 
-    /// PRs merged without the train into the repo's default branch or a base its Changes target. Others share the
-    /// repo, not the train: another fleet's namespace, or a branch fleetd never merges into.
-    async fn check_bypasses(&self, repo: &str, watch_since_ms: i64, project_ref: &ProjectRef) {
+    /// PRs merged without the train into the repo's default branch or a base its Changes target: each one is reported
+    /// once, as `pr.merged_outside` and a line to the lead. Others share the repo, not the train: another fleet's
+    /// namespace, or a branch fleetd never merges into. The train's own batch PRs (its scratch branches) are its merges.
+    async fn check_merged_outside(
+        &self,
+        repo: &str,
+        watch_since_ms: i64,
+        project_ref: &ProjectRef,
+    ) {
         let now = self.now_ms();
         {
             let mut last = lock(&self.last_bypass_check);
@@ -1442,9 +1425,11 @@ impl Train {
             }
             last.insert(repo.to_string(), now);
         }
+        let failed =
+            |e: GhError| tracing::warn!(repo, error = %e.message, "train: merged PRs not read");
         let merged = match self.github.merged_pulls(repo).await {
             Ok(merged) => merged,
-            Err(e) => return tracing::warn!(repo, error = %e.message, "train: bypass check failed"),
+            Err(e) => return failed(e),
         };
         let default = match self.sync.base(repo) {
             Some(base) => base,
@@ -1453,20 +1438,22 @@ impl Train {
                     self.sync.set_base(repo, base.clone());
                     base
                 }
-                Err(e) => {
-                    return tracing::warn!(repo, error = %e.message, "train: bypass check failed");
-                }
+                Err(e) => return failed(e),
             },
         };
+        // Unknown while the owner's policy can't be read: the scan waits rather than report a batch of the train's.
+        let Some(scratch) = self.scratch_prefix(repo).await else {
+            return;
+        };
         let guarded = lock(&self.bases).get(repo).cloned().unwrap_or_default();
+        let mut newest = watch_since_ms;
         for pr in merged {
-            if pr.base != default && !guarded.contains(&pr.base) {
+            if pr.base != default && !guarded.contains(&pr.base) || pr.head.starts_with(&scratch) {
                 continue;
             }
-            // Date.parse of an unreadable time is NaN, which is never before the watch start.
-            if parse_iso(&pr.merged_at).is_some_and(|at| at < watch_since_ms) {
+            let Some(at) = parse_iso(&pr.merged_at).filter(|at| *at > watch_since_ms) else {
                 continue;
-            }
+            };
             let change = self.records.latest_for(repo, pr.number);
             if change
                 .as_ref()
@@ -1474,76 +1461,28 @@ impl Train {
             {
                 continue;
             }
-            if !self.records.mark_bypass(repo, pr.number) {
-                continue;
+            newest = newest.max(at);
+            let project_ref = change.as_ref().map_or(project_ref, |c| &c.project_ref);
+            let mut data = json!({ "repo": repo, "prNumber": pr.number });
+            if let Some(sha) = &pr.merge_sha {
+                data["mergedSha"] = json!(sha.to_lowercase());
             }
-            self.drift(
-                change.as_ref().map_or(project_ref, |c| &c.project_ref),
-                repo,
-                DriftKind::OutsideFleetd,
-                format!("{repo}#{} was merged outside the train", pr.number),
-                None,
+            if let Some(c) = &change {
+                data["changeId"] = json!(c.change_id);
+            }
+            let line = format!(
+                "{repo}#{} was merged into {} without the merge train.",
+                pr.number, pr.base
             );
-            let sha = pr
-                .merge_sha
-                .as_deref()
-                .map(|s| format!(" ({})", short(s)))
-                .unwrap_or_default();
-            self.host.record_incident(IncidentInput {
-                class: "policy_bypass",
-                project_ref: change
-                    .as_ref()
-                    .map(|c| c.project_ref.clone())
-                    .unwrap_or_else(|| project_ref.clone()),
-                workstream_id: change.as_ref().map(|c| c.workstream_id.clone()),
-                task_id: change.as_ref().and_then(|c| c.task_id.clone()),
-                evidence: vec![
-                    format!(
-                        "{repo}#{} was merged at {} without the merge train{sha}.",
-                        pr.number, pr.merged_at
-                    ),
-                    match &change {
-                        None => "No Change was ever enqueued for it.".to_string(),
-                        Some(c) => {
-                            format!("Its Change {} was {}.", c.change_id, state_str(c.state))
-                        }
-                    },
-                ],
-            });
+            self.emit(project_ref, "pr.merged_outside", line.clone(), data);
+            self.wake_lead(project_ref, line).await;
+        }
+        if newest > watch_since_ms {
+            self.records.watch_past(repo, newest);
         }
     }
 
-    /// Holds the train while `policy.freeze.<owner>.<name>` is true; announces each change of that.
-    fn frozen(&self, repo: &str, was_frozen: bool, project_ref: &ProjectRef) -> bool {
-        let decision = self.host.resolve_decision(&freeze_key(repo), project_ref);
-        let now = decision.as_ref().is_some_and(|d| is_frozen_value(&d.value));
-        if now != was_frozen {
-            self.records.set_frozen(repo, now);
-            match decision.filter(|_| now) {
-                Some(d) => {
-                    let reason = d
-                        .why
-                        .clone()
-                        .unwrap_or_else(|| format!("{} {} = {}", d.decision_id, d.key, d.value));
-                    self.emit(
-                        project_ref,
-                        "train.frozen",
-                        format!("Train for {repo} frozen: {reason}"),
-                        json!({ "repo": repo, "reason": reason }),
-                    );
-                }
-                None => self.emit(
-                    project_ref,
-                    "train.resumed",
-                    format!("Train for {repo} resumed"),
-                    json!({ "repo": repo }),
-                ),
-            }
-        }
-        now
-    }
-
-    /// One pass of the repo's loop: refresh waiting Changes, check bypasses and the freeze, then take one ready
+    /// One pass of the repo's loop: refresh waiting Changes, report merges outside the train, then take one ready
     /// Change through to merged or parked. True when it took one.
     pub async fn step(&self, raw_repo: &str) -> bool {
         let repo = raw_repo.to_lowercase();
@@ -1567,14 +1506,10 @@ impl Train {
         self.refresh(&repo).await;
         self.ready_pass(&repo, &train.project_ref).await;
         self.main_ci_pass(&repo, &train.project_ref).await;
-        self.check_bypasses(&repo, train.watch_since_ms, &train.project_ref)
+        self.check_merged_outside(&repo, train.watch_since_ms, &train.project_ref)
             .await;
-        // Bookkeeping of merges already done, and speculative CI, which never merges: both run while frozen too.
         self.reconcile_batches(&repo).await;
-        self.stack_pass(&repo).await;
-        if self.frozen(&repo, train.frozen, &train.project_ref) {
-            return false;
-        }
+        self.sweep_scratch(&repo).await;
         self.next(&repo).await
     }
 
@@ -1613,19 +1548,14 @@ impl Train {
         lock(&self.tasks).push(task);
     }
 
-    /// The repo's status sources: GitHub answers, train passes, and deliveries while webhooks are on.
+    /// The repo's status sources: GitHub answers and train passes.
     fn expect_sources(&self, repo: &str) {
         let (fresh, now) = (&self.options.fresh, self.now_ms());
         fresh.expect(&fresh::github(repo), fresh::github_stale_ms(), now);
         fresh.expect(&fresh::train(repo), fresh::TRAIN_STALE_MS, now);
-        if self.sync.webhooks_on() {
-            // Deliveries come only when something happens, so silence is no sign; only a missed one is.
-            fresh.expect(&fresh::webhook(repo), i64::MAX / 4, now);
-            fresh.touch(&fresh::webhook(repo), now);
-        }
     }
 
-    /// Reads main-branch CI when due: `ci.main` on a state change, and drift when the base moved without the train.
+    /// Reads main-branch CI when due: `ci.main` on a state change.
     async fn main_ci_pass(&self, repo: &str, project_ref: &ProjectRef) {
         if !self.sync.take_due(repo, self.now_ms()) {
             return;
@@ -1652,22 +1582,10 @@ impl Train {
             .find_map(|r| r.head_sha.clone())
             .unwrap_or_default()
             .to_lowercase();
-        let read = self
+        if self
             .sync
-            .record(repo, sha.clone(), state, failing.clone(), self.now_ms());
-        if read.sha_changed && !sha.is_empty() && !self.sync.is_train_merge(repo, &sha) {
-            self.drift(
-                project_ref,
-                repo,
-                DriftKind::OutsideFleetd,
-                format!("{base} moved to {} outside the train", short(&sha)),
-                None,
-            );
-        }
-        if read.previous.is_some() && (read.state_changed || read.sha_changed) {
-            self.saw_change(project_ref, repo, &format!("main CI on {repo} changed"));
-        }
-        if read.state_changed {
+            .record(repo, sha.clone(), state, failing.clone(), self.now_ms())
+        {
             let word = match state {
                 CiState::Green => "green",
                 CiState::Red => "red",
@@ -1699,88 +1617,9 @@ impl Train {
         }
     }
 
-    fn drift(
-        &self,
-        project_ref: &ProjectRef,
-        repo: &str,
-        kind: DriftKind,
-        what: String,
-        lag_ms: Option<i64>,
-    ) {
-        self.sync.note_drift(repo, kind, self.now_ms());
-        let summary = match kind {
-            DriftKind::OutsideFleetd => format!("GitHub drift on {repo}: {what}"),
-            DriftKind::MissedWebhook => format!("Missed webhook on {repo}: {what}"),
-        };
-        let data = GithubDriftData {
-            repo: GitHubRepo::unchecked(repo),
-            kind,
-            what: Text::unchecked(what.chars().take(200).collect::<String>()),
-            lag_ms: lag_ms.and_then(|l| Count::new(l).ok()),
-        };
-        self.emit(
-            project_ref,
-            "github.drift",
-            summary,
-            serde_json::to_value(data).unwrap_or(Value::Null),
-        );
-    }
-
-    /// Reconciliation saw `what` change. With webhooks on and no delivery just before, that is a missed webhook:
-    /// main CI drops back to every minute and the webhook source shows stale for a while.
-    pub(super) fn saw_change(&self, project_ref: &ProjectRef, repo: &str, what: &str) {
-        let now = self.now_ms();
-        if !self.sync.missed(repo, now) {
-            return;
-        }
-        self.drift(
-            project_ref,
-            repo,
-            DriftKind::MissedWebhook,
-            what.to_string(),
-            None,
-        );
-        let n = self
-            .sync
-            .drift_counts(repo, now - super::main_ci::FALLBACK_MS)
-            .missed_webhook;
-        let plural = if n == 1 { "" } else { "s" };
-        self.options.fresh.hold_stale(
-            &fresh::webhook(repo),
-            &format!("webhooks missed {n} change{plural}; syncing every 60 s"),
-            now,
-            now + super::main_ci::FALLBACK_MS,
-        );
-    }
-
-    /// A PR closed (not merged) outside the train.
-    pub(super) async fn closed_outside(&self, change: &Change) {
-        self.drift(
-            &change.project_ref,
-            &change.repo,
-            DriftKind::OutsideFleetd,
-            format!(
-                "{}#{} was closed outside the train",
-                change.repo, change.pr_number
-            ),
-            None,
-        );
-        self.saw_change(
-            &change.project_ref,
-            &change.repo,
-            &format!("{}#{} closed", change.repo, change.pr_number),
-        );
-        self.abandon(change, "was closed").await;
-    }
-
     /// Main-branch CI as last read, for the status view.
     pub fn main_ci(&self, repo: &str) -> Option<MainCi> {
         self.sync.main_ci(&repo.to_lowercase())
-    }
-
-    /// How often main CI of `repo` is read now (slower with webhooks on, faster after a missed one).
-    pub fn main_ci_every_ms(&self, repo: &str, now_ms: i64) -> i64 {
-        self.sync.every_ms(&repo.to_lowercase(), now_ms)
     }
 
     /// Every repo with a train, and the project it belongs to.
@@ -1790,40 +1629,6 @@ impl Train {
             .into_iter()
             .map(|t| (t.repo, t.project_ref))
             .collect()
-    }
-
-    /// Drift recorded for `repo` since `since_ms` (kept for 24 h, in memory).
-    pub fn drift_counts(&self, repo: &str, since_ms: i64) -> DriftCounts {
-        self.sync.drift_counts(&repo.to_lowercase(), since_ms)
-    }
-
-    pub fn webhooks_on(&self) -> bool {
-        self.sync.webhooks_on()
-    }
-
-    /// The last verified delivery for `repo`, epoch ms.
-    pub fn last_delivery(&self, repo: &str) -> Option<i64> {
-        self.sync.last_delivery(&repo.to_lowercase())
-    }
-
-    /// Turns webhook bookkeeping on or off for every train repo.
-    pub fn set_webhooks(&self, on: bool) {
-        self.sync.set_webhooks(on);
-        for train in self.records.trains() {
-            if on {
-                self.expect_sources(&train.repo);
-            } else {
-                self.options.fresh.forget(&fresh::webhook(&train.repo));
-            }
-        }
-    }
-
-    /// A verified delivery for `repo`: a latency hint only. It kicks the repo's pass, which reconciles from GitHub.
-    pub fn webhook_delivered(&self, repo: &str, event: &str) {
-        let (repo, now) = (repo.to_lowercase(), self.now_ms());
-        self.sync.delivered(&repo, event, now);
-        self.options.fresh.touch(&fresh::webhook(&repo), now);
-        self.kick(&repo);
     }
 
     async fn refuse(
@@ -1974,6 +1779,31 @@ impl Train {
             let refusal = Refusal::new(
                 "Its branch lives in another repository.",
                 format!("push the branch to {repo} and open the PR from there"),
+            );
+            return Err(self.refuse(project_ref, &pr_url, refusal, Some(row)).await);
+        }
+        // The train merges each PR into its own base, so one based on another open PR's branch would land in that PR.
+        let open = [
+            QUEUED_STATES,
+            HEAD_STATES,
+            &[ChangeState::NeedsRebase, ChangeState::CiFailed],
+        ]
+        .concat();
+        if let Some(parent) = self
+            .records
+            .in_train(&repo, &open)
+            .into_iter()
+            .find(|c| c.branch.as_str() == pull.base.ref_)
+        {
+            let refusal = Refusal::new(
+                format!(
+                    "It is based on #{}'s branch, not on a branch the train merges into.",
+                    parent.pr_number
+                ),
+                format!(
+                    "once #{} merges, point it at that PR's base (`gh pr edit {pr_number} --base <base>`) and enqueue it again",
+                    parent.pr_number
+                ),
             );
             return Err(self.refuse(project_ref, &pr_url, refusal, Some(row)).await);
         }

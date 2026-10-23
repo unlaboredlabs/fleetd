@@ -118,8 +118,7 @@ pub fn fill_ctx(hub: &Hub, ctx: &mut RowCtx<'_>, changes: &[Change], repos: &[Gi
     }
     for repo in repos {
         let state = hub.train.records().train_state(repo);
-        ctx.queues
-            .insert(repo.to_lowercase(), (state.frozen, state.queue.len()));
+        ctx.queues.insert(repo.to_lowercase(), state.queue.len());
     }
 }
 

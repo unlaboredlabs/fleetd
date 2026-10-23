@@ -18,8 +18,8 @@ use crate::mcp::McpToolName;
 use crate::model::{Machine, ProjectOutcome, ProjectSummary, ThreadSummary};
 use crate::projects::{CloneProgressData, ProjectAddFailedData, ProjectAddedData};
 use crate::status::{
-    ChangeStateData, CiMainData, GithubDriftData, PlanChangedData, PlanVerifiedData,
-    SourceFreshData, SourceStaleData,
+    ChangeStateData, CiMainData, PlanChangedData, PlanVerifiedData, SourceFreshData,
+    SourceStaleData,
 };
 use crate::steer::SteerEventData;
 use crate::tasks::{AgentsCapData, TaskEventData};
@@ -91,10 +91,9 @@ fn hub_event_data_document_for(side: Side) -> Value {
         data!(AgentsCapData: AgentsCap);
         data!(ClaimEventData: ClaimPassed, ClaimFailed);
         data!(TrainEventData: ChangeQueued, ChangeReady, ChangeNeedsRebase, ChangeCiFailed, ChangeRefused, PrMerged,
-            TrainFrozen, TrainResumed, TrainBlocked);
+            PrMergedOutside, TrainBlocked);
         data!(ChangeStateData: ChangeState);
         data!(CiMainData: CiMain);
-        data!(GithubDriftData: GithubDrift);
         data!(SourceStaleData: SourceStale);
         data!(SourceFreshData: SourceFresh);
         data!(PlanChangedData: PlanChanged);

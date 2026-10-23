@@ -107,7 +107,7 @@ const READ_ONLY: (&str, &str, &str, Enforcement) = (
     Prompt,
 );
 
-// `train-only-merges` is a prompt rule: the hub only sees a merge outside the train after the fact (`policy_bypass`).
+// `train-only-merges` is a prompt rule: the hub only sees a merge outside the train after the fact (`pr.merged_outside`).
 pub const ENTRIES: &[Entry] = &[
     entry!(
         "lead.start",

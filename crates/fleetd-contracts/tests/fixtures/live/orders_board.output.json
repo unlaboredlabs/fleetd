@@ -225,7 +225,6 @@
   "trains": [
     {
       "repo": "acme/storefront",
-      "frozen": false,
       "chips": [
         {
           "changeId": "X8",

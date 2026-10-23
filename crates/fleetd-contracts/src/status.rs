@@ -57,8 +57,7 @@ pub struct StaleMark {
 }
 
 /// A source that is stale now, `since` its last good signal. `source` is `machine:<m>`, `usage:<m>`, `ci:<repo>`,
-/// `github:<repo>`, `train:<repo>` or
-/// `webhook:<repo>`.
+/// `github:<repo>` or `train:<repo>`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct StaleSource {
@@ -356,7 +355,6 @@ pub enum RiskRule {
     MachineFlaky,
     UsageHigh,
     SlotsFull,
-    GithubDrift,
     NoPlan,
     /// A steer was not acknowledged, or has gone 10 minutes delivered without it.
     SteerUnacknowledged,
@@ -642,26 +640,6 @@ pub struct CiMainData {
     pub sha: String,
     pub state: CiState,
     pub failing: List<Text<1, 120>, 0, 10>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum DriftKind {
-    /// A PR merged or closed outside the train, or the base moved by a non-train push.
-    OutsideFleetd,
-    /// Webhooks are on and reconciliation saw a change no delivery announced.
-    MissedWebhook,
-}
-
-/// `github.drift`.
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct GithubDriftData {
-    pub repo: GitHubRepo,
-    pub kind: DriftKind,
-    pub what: Text<1, 200>,
-    pub lag_ms: Option<Count>,
 }
 
 /// `source.stale`.

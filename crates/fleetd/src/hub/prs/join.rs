@@ -17,11 +17,8 @@ use crate::hub::executor::shell_mapper::{js_take, normalize_iso};
 use crate::hub::orders::phase;
 use crate::hub::redact::redact;
 
-/// Contexts fleetd posts itself; the queue state says the same in words.
-const OWN_CONTEXTS: [&str; 2] = [
-    crate::hub::train::github::TRAIN_CONTEXT,
-    crate::hub::train::github::STACK_CONTEXT,
-];
+/// The context fleetd posts itself; the queue state says the same in words.
+const OWN_CONTEXT: &str = crate::hub::train::github::TRAIN_CONTEXT;
 
 /// What the rows need from the hub's records, read once per answer.
 #[derive(Default)]
@@ -31,8 +28,8 @@ pub struct RowCtx<'a> {
     pub tasks_by_branch: HashMap<&'a str, &'a Task>,
     /// Agent reviews each Change needs, by change id.
     pub reviews_needed: HashMap<String, i64>,
-    /// Per repo (lowercase): merging paused, and how many PRs wait in its queue.
-    pub queues: HashMap<String, (bool, usize)>,
+    /// Per repo (lowercase): how many PRs wait in its queue.
+    pub queues: HashMap<String, usize>,
 }
 
 impl<'a> RowCtx<'a> {
@@ -60,7 +57,7 @@ pub fn check_state(c: &GhCheck) -> Option<(String, ChecksState)> {
         .or(c.context.as_deref())
         .unwrap_or("")
         .trim();
-    if name.is_empty() || OWN_CONTEXTS.contains(&name) {
+    if name.is_empty() || name == OWN_CONTEXT {
         return None;
     }
     let state = if c.typename == "StatusContext" || c.state.is_some() && c.status.is_none() {
@@ -238,7 +235,7 @@ pub fn author(task: Option<&Task>, login: Option<&str>) -> PrAuthor {
     out
 }
 
-pub fn queue(change: &Change, paused: bool, length: usize) -> PrQueue {
+pub fn queue(change: &Change, length: usize) -> PrQueue {
     let held = matches!(
         change.state,
         ChangeState::NeedsRebase | ChangeState::CiFailed | ChangeState::Refused
@@ -248,7 +245,6 @@ pub fn queue(change: &Change, paused: bool, length: usize) -> PrQueue {
         state: change.state,
         position: change.position,
         length: Count::unchecked(length as i64),
-        paused,
         reason: change
             .last_error
             .as_ref()
@@ -310,11 +306,7 @@ pub fn row(
         .and_then(|c| ctx.reviews_needed.get(c.change_id.as_str()))
         .copied()
         .unwrap_or(0);
-    let (paused, length) = ctx
-        .queues
-        .get(&repo.to_lowercase())
-        .copied()
-        .unwrap_or((false, 0));
+    let length = ctx.queues.get(&repo.to_lowercase()).copied().unwrap_or(0);
     let stamp = |gh: Option<&str>, ours: Option<&Timestamp>| {
         gh.filter(|s| !s.is_empty())
             .map(iso)
@@ -333,7 +325,7 @@ pub fn row(
             needed,
             pull.and_then(|p| p.review_decision.as_deref()),
         ),
-        queue: change.map(|c| queue(c, paused, length)),
+        queue: change.map(|c| queue(c, length)),
         author: author(
             task,
             pull.and_then(|p| p.author.as_ref())

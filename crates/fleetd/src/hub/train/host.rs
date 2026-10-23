@@ -60,25 +60,6 @@ pub struct PlaybookView {
     pub review_rules: [ReviewRule; 3],
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct DecisionView {
-    pub decision_id: String,
-    pub key: String,
-    pub value: String,
-    pub why: Option<String>,
-    /// Global scope (else project or workstream).
-    pub global: bool,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct IncidentInput {
-    pub class: &'static str,
-    pub project_ref: ProjectRef,
-    pub workstream_id: Option<WorkstreamId>,
-    pub task_id: Option<TaskId>,
-    pub evidence: Vec<String>,
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct EventView {
     pub seq: i64,
@@ -118,21 +99,6 @@ pub trait TrainHost: Send + Sync + 'static {
     fn workstream(&self, workstream_id: &WorkstreamId) -> Option<WorkstreamView>;
     /// Playbooks.byRef.
     fn playbook(&self, pin: &str) -> Option<PlaybookView>;
-    /// Decisions.resolve along the project's chain.
-    fn resolve_decision(&self, key: &str, project_ref: &ProjectRef) -> Option<DecisionView>;
-    /// Decisions.record of `key = value` at the project's scope, by `by` (`human:<name>` or an agent key's name).
-    fn record_decision(
-        &self,
-        key: &str,
-        project_ref: &ProjectRef,
-        value: &str,
-        why: Option<&str>,
-        human: bool,
-        by: &str,
-    ) -> Result<(), String>;
-    /// Decisions.retire.
-    fn retire_decision(&self, decision_id: &str) -> Result<(), String>;
-    fn record_incident(&self, incident: IncidentInput);
     /// EventLog.append at now, on the project.
     fn append_event(
         &self,
@@ -167,7 +133,7 @@ pub trait TrainHost: Send + Sync + 'static {
         machine_id: &'a MachineId,
     ) -> BoxFut<'a, Result<Vec<ProviderView>, String>>;
     /// The project's branch prefix (its policy's `branchPrefix`, default `fleetd/`); None when the policy can't be
-    /// read now. The train's scratch branches (batches, speculative builds of stacked PRs) live under
+    /// read now. The train's scratch batch branches live under
     /// `<prefix>train/`, so fleets sharing one repo never collide.
     fn branch_prefix<'a>(&'a self, _project_ref: &'a ProjectRef) -> BoxFut<'a, Option<String>> {
         Box::pin(async { Some(fleetd_contracts::tasks::DEFAULT_BRANCH_PREFIX.to_string()) })

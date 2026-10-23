@@ -176,8 +176,6 @@ fn trains_list_head_then_queue_then_todays_merges() {
     let repo = ci.repo.clone();
     let train = train_live(
         &repo,
-        false,
-        None,
         &[second, merged, ci, old, first],
         "2026-10-18T00:00:00.000Z",
     );

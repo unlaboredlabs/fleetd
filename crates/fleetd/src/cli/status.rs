@@ -2,7 +2,7 @@
 //! with `--watch`, kept current by status_wait, which blocks on the hub until the doc changes. It lays out only what
 //! the hub decided: the number (verified plus in flight), why it fell, what it waits on, and which parts are stale.
 //! It never shows a time estimate. Every time printed is absolute, so a block left on screen never reads as fresher
-//! than it is. Also `fleetd hub github-webhook`, which wraps github_webhook_set.
+//! than it is.
 
 use std::io::{IsTerminal, Write};
 use std::path::PathBuf;
@@ -22,7 +22,6 @@ use fleetd_contracts::status::{
 use serde_json::{Value, json};
 
 use super::args::{self, Kind, Spec};
-use super::lead::js_number;
 use super::mcp_client::{McpClient, McpError};
 use super::time::resolve_project;
 
@@ -33,12 +32,6 @@ pub const STATUS_USAGE: &str = r#"  status [<order>|<project>] [--watch] [--json
              have one), or the whole fleet. --watch prints
              each new version as the hub sends it; stale parts say so. On the hub machine it
              needs no --hub or --key-file
-"#;
-
-pub const GITHUB_WEBHOOK_USAGE: &str = r#"  hub github-webhook (--url <public url>/github | --off) [--hub <url> --key-file <path> | --home <dir>]
-             let GitHub tell the hub about pull requests, checks and pushes on the train's repos
-             as they happen (admin key). It needs a URL GitHub can reach that forwards to this hub,
-             which fleetd never creates; without one the hub syncs with GitHub on its own
 "#;
 
 /// The longest status_wait the hub takes; the CLI asks again right after an unchanged answer.
@@ -101,10 +94,6 @@ pub fn parse_status_args(argv: &[String]) -> Result<StatusArgs, String> {
 }
 
 // ---- reading the doc ----
-
-fn st<'a>(value: &'a Value, key: &str) -> &'a str {
-    value.get(key).and_then(Value::as_str).unwrap_or("")
-}
 
 fn arr<'a>(value: &'a Value, key: &str) -> &'a [Value] {
     value
@@ -1038,88 +1027,6 @@ pub async fn status_command(argv: &[String]) -> u8 {
     }
     mark.save(&doc);
     0
-}
-
-/// `fleetd hub github-webhook --url <url> | --off`.
-pub async fn github_webhook_command(argv: &[String]) -> u8 {
-    const OPTIONS: &[(&str, Kind)] = &[
-        ("hub", Kind::Str),
-        ("key-file", Kind::Str),
-        ("home", Kind::Str),
-        ("url", Kind::Str),
-        ("off", Kind::Bool),
-    ];
-    let parsed = args::parse(
-        argv,
-        &Spec {
-            options: OPTIONS,
-            positionals: false,
-        },
-    )
-    .and_then(|v| {
-        let hub = hub_flags(&v)?;
-        let home = v.string("home").filter(|s| !s.is_empty());
-        match (v.string("url").filter(|u| !u.is_empty()), v.flag("off")) {
-            (Some(url), false) if url.starts_with("https://") || url.starts_with("http://") => {
-                Ok((hub, home, Some(url)))
-            }
-            (Some(url), false) => Err(format!("--url must be an http(s) URL, got '{url}'")),
-            (None, true) => Ok((hub, home, None)),
-            _ => Err("give exactly one of --url <public url>/github and --off".into()),
-        }
-    });
-    let (hub, home, url) = match parsed {
-        Ok(parsed) => parsed,
-        Err(error) => {
-            eprint!("fleetd: {error}\n\nusage:\n{GITHUB_WEBHOOK_USAGE}");
-            return 2;
-        }
-    };
-    let target = match Target::from_args(&hub, home.as_deref(), "hub github-webhook") {
-        Ok(target) => target,
-        Err(code) => return code,
-    };
-    let mut client = match target.connect("fleetd-github-webhook").await {
-        Ok(client) => client,
-        Err((code, message)) => {
-            eprintln!("fleetd hub github-webhook: {message}");
-            return code;
-        }
-    };
-    let input = match &url {
-        Some(url) => json!({ "url": url }),
-        None => json!({}),
-    };
-    match call(
-        &mut client,
-        "github_webhook_set",
-        input,
-        Duration::from_secs(120),
-    )
-    .await
-    {
-        Err(error) => fail("hub github-webhook", error),
-        Ok(body) => {
-            let repos = arr(&body, "repos");
-            match url {
-                Some(url) => {
-                    println!(
-                        "GitHub webhooks on: {} repo{} send to {url}",
-                        repos.len(),
-                        if repos.len() == 1 { "" } else { "s" }
-                    );
-                    for r in repos {
-                        println!("  {} hook {}", st(r, "repo"), js_number(&r["hookId"]));
-                    }
-                    println!(
-                        "The hub keeps syncing on its own too; a missed delivery only makes it sync more often for a while."
-                    );
-                }
-                None => println!("GitHub webhooks off; the hub syncs with GitHub on its own."),
-            }
-            0
-        }
-    }
 }
 
 /// `one` for 1 and −1, `many` otherwise.
