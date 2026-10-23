@@ -12,8 +12,7 @@ for (const screen of screens) {
   if (only && !only.includes(screen.id)) continue;
   for (const fixture of screen.fixtures) {
     test(`${label(screen)} · ${fixture}`, async () => {
-      test.fixme(screen.pending !== undefined, screen.pending);
-      const { app, page, settled, replay, errors, close } = await launch(fixture, undefined, undefined, { realClock: screen.realClock === true });
+      const { app, page, settled, replay, errors, close } = await launch(fixture, undefined, { realClock: screen.realClock === true });
       try {
         const reserved = await reservedRegions(app);
         const shots: Shot[] = [];
