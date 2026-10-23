@@ -16,7 +16,7 @@ use super::github::{GhOut, GhRunner, TRAIN_CONTEXT, batch_heads};
 use super::host::*;
 use super::records::{Db, ListFilter};
 use super::service::{ReviewGate, Train, TrainOptions, Verdict};
-use crate::clock::SystemClock;
+use crate::clock::{Clock, SystemClock};
 
 const REPO: &str = "acme/storefront";
 /// A project id the fake host no longer has, as after `project_remove`.
@@ -836,15 +836,25 @@ impl Kit {
     }
 
     fn with(ci: FakeCi, tweak: impl FnOnce(&mut TrainOptions)) -> Kit {
-        Kit::build(ci, tweak, false)
+        Kit::build(ci, tweak, false, Arc::new(SystemClock))
     }
 
     /// With the hub's own review gate in place of the fake one.
     fn with_reviews() -> Kit {
-        Kit::build(FakeCi::Actions, |_| {}, true)
+        Kit::build(FakeCi::Actions, |_| {}, true, Arc::new(SystemClock))
     }
 
-    fn build(ci: FakeCi, tweak: impl FnOnce(&mut TrainOptions), real_reviews: bool) -> Kit {
+    /// On `clock`, with the default options but the sweeps due on every pass and no loop.
+    fn on_clock(ci: FakeCi, clock: Arc<dyn Clock>) -> Kit {
+        Kit::build(ci, |_| {}, false, clock)
+    }
+
+    fn build(
+        ci: FakeCi,
+        tweak: impl FnOnce(&mut TrainOptions),
+        real_reviews: bool,
+        clock: Arc<dyn Clock>,
+    ) -> Kit {
         static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
         let dir = std::env::temp_dir().join(format!(
             "fleetd-train-{}-{}",
@@ -919,7 +929,7 @@ impl Kit {
         let (train, reviews) = if real_reviews {
             let (train, reviews) = crate::hub::reviews::service::build(
                 host.clone(),
-                Arc::new(SystemClock),
+                clock.clone(),
                 db,
                 gh.clone(),
                 options,
@@ -927,14 +937,9 @@ impl Kit {
             reviews.start();
             (train, Some(reviews))
         } else {
-            let train = Train::new(
-                host.clone(),
-                Arc::new(SystemClock),
-                db,
-                gh.clone(),
-                options,
-                |_| gate_for_train,
-            );
+            let train = Train::new(host.clone(), clock.clone(), db, gh.clone(), options, |_| {
+                gate_for_train
+            });
             (train, None)
         };
         train.start();
@@ -1829,6 +1834,112 @@ async fn ready_prs_merge_in_queue_order_after_a_bounce() {
     assert_eq!(state_of(&kit, &b), ChangeState::Merged);
     // Alone on the new main, it is red.
     assert_eq!(state_of(&kit, &c), ChangeState::CiFailed);
+}
+
+/// Time that moves only by the train's own sleeps, each over at once and kept: the train's waits without waiting.
+#[derive(Default)]
+struct Sleeps(Mutex<Vec<Duration>>);
+
+impl Sleeps {
+    fn taken(&self) -> Vec<Duration> {
+        self.0.lock().unwrap().clone()
+    }
+}
+
+impl Clock for Sleeps {
+    fn now(&self) -> std::time::SystemTime {
+        std::time::UNIX_EPOCH
+            + Duration::from_secs(1_800_000_000)
+            + self.0.lock().unwrap().iter().sum::<Duration>()
+    }
+    fn sleep(
+        &self,
+        duration: Duration,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
+        self.0.lock().unwrap().push(duration);
+        Box::pin(std::future::ready(()))
+    }
+}
+
+fn clean_review(change: &Change) -> ChangeReview {
+    ChangeReview {
+        task_id: TaskId::unchecked("T9"),
+        pr_head_sha: change.head_sha.clone(),
+        patch_id: change.patch_id.clone().unwrap(),
+        blocking: Count::unchecked(0),
+        non_blocking: Count::unchecked(0),
+    }
+}
+
+/// A head in CI is read every 2 s at first, then less often as the run goes on, and never less often than an idle
+/// pass: a short CI is seen green within seconds, a long one settles at the idle rate.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_head_in_ci_is_read_soon_then_at_the_idle_rate() {
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::on_clock(FakeCi::Workflow { green_from: 40 }, clock.clone());
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
+    let (_, change_id) = kit.author_task(Some(&pr)).await;
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(kit.get(&change_id).state, ChangeState::Merged);
+
+    let waits = clock.taken();
+    let idle = TrainOptions::default().poll_interval;
+    assert_eq!(waits[..8], [Duration::from_secs(2); 8], "{waits:?}");
+    assert!(waits.windows(2).all(|w| w[0] <= w[1]), "{waits:?}");
+    assert_eq!(waits.iter().max(), Some(&idle), "{waits:?}");
+    let first_minute = waits
+        .iter()
+        .scan(Duration::ZERO, |at, w| {
+            *at += *w;
+            Some(*at)
+        })
+        .take_while(|at| *at <= Duration::from_secs(60))
+        .count();
+    assert!(
+        first_minute <= 24,
+        "{first_minute} reads in CI's first minute"
+    );
+}
+
+/// GitHub shows a rebased head within a second or two: the train reads the PR again after 1 s, not after an idle pass.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_rebased_pr_is_read_again_within_a_second() {
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::on_clock(FakeCi::Actions, clock.clone());
+    let a = kit
+        .enqueue(kit.open_pr(7, "a", &[add("b.txt", "b\n")]))
+        .await;
+    kit.commit("main", &[add("other.txt", "other\n")], None);
+    *kit.gh.stale_reads.lock().unwrap() = 2;
+
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(state_of(&kit, &a), ChangeState::Merged);
+    assert_eq!(clock.taken(), [Duration::from_secs(1); 2]);
+}
+
+/// The running train, its idle pass an hour away: each review verdict moves it at once, and the second Change,
+/// rebased onto the first's merge while GitHub still shows its old head, merges within seconds too.
+#[tokio::test(flavor = "multi_thread")]
+async fn verdicts_move_the_running_train_at_once() {
+    let kit = Kit::with(FakeCi::Actions, |o| {
+        o.auto_run = true;
+        o.poll_interval = Duration::from_secs(3600);
+    });
+    let a = kit
+        .enqueue_held(kit.open_pr(7, "a", &[add("b.txt", "b\n")]))
+        .await;
+    let b = kit
+        .enqueue_held(kit.open_pr(8, "b", &[add("c.txt", "c\n")]))
+        .await;
+    *kit.gh.stale_reads.lock().unwrap() = 1;
+    for change in [&a, &b] {
+        let cursor = kit.host.events_head();
+        kit.train
+            .mark_ready(&change.change_id, vec![clean_review(change)])
+            .unwrap();
+        kit.host.next_event(cursor, "pr.merged").await;
+        assert_eq!(state_of(&kit, change), ChangeState::Merged);
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]

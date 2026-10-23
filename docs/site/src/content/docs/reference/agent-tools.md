@@ -490,7 +490,7 @@ Set in the claude process's environment. "In settings" marks the ones also in fl
 | `CLAUDE_CODE_STARTUP_FAILURE_RESULTS` | `1` | Sessions | no | A refusal at startup arrives as a result fleetd can read, not only as stderr. |
 | `CLAUDE_CODE_PROMPT_CACHE_TTL` | `1h` unless your environment or `claude.env` sets it | Every claude fleetd starts | no | An agent idle more than 5 minutes otherwise rewrites its whole context to the prompt cache. |
 | `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL` | `1h` unless your environment or `claude.env` sets it | Every claude fleetd starts | no | An agent idle more than 5 minutes otherwise rewrites its whole context to the prompt cache. |
-| `ENABLE_TOOL_SEARCH` | `true` unless your environment or `claude.env` sets it | Every claude fleetd starts | no | Tool schemas load when a tool is used, not on every request. |
+| `ENABLE_TOOL_SEARCH` | `true` unless your environment or `claude.env` sets it | Every claude fleetd starts | no | Tool schemas load when a tool is used, not on every request. fleetd's own tools always load at start. |
 | `CLAUDECODE`, `CLAUDE_CODE_ENTRYPOINT`, `CLAUDE_CODE_SSE_PORT` | removed | Sessions | no | claude sets it for its own children and treats a process that has it as nested inside another session. |
 
 ## What your own setup adds
