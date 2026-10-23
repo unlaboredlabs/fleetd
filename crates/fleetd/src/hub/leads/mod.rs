@@ -1,8 +1,7 @@
-//! Leads, workstreams, briefs, lead wakes and digest, lead calls; with intake and playbooks, one area.
+//! Leads, workstreams, briefs, lead wakes and digest, lead calls; with playbooks, one area.
 //!
-//! `Area` owns every service of leads, intake and playbooks. `hub/serve` builds it with `Area::new`, sets the hooks of
+//! `Area` owns every service of leads and playbooks. `hub/serve` builds it with `Area::new`, sets the hooks of
 //! later areas as they come up (`ctx.hooks`), registers tools and lead calls, and spawns `Area::run`.
-pub mod brief;
 pub mod calls;
 pub mod digest;
 pub mod error;
@@ -18,6 +17,9 @@ pub mod wakes;
 pub mod wiring;
 pub mod workstreams;
 
+#[cfg(test)]
+pub(crate) mod auto_start_tests;
+
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
@@ -29,7 +31,6 @@ pub use self::records::LeadRecords;
 pub use self::wakes::LeadWakes;
 pub use self::workstreams::Workstreams;
 use crate::clock::Clock;
-use crate::hub::intake::Intake;
 use crate::hub::playbooks::{FinishAll, PlaybookError, Playbooks, Research};
 use crate::hub::store::{EventLog, HubDb, HubStore, iso_ms, now_ms};
 
@@ -100,7 +101,6 @@ pub struct Area {
     pub workstreams: Arc<Workstreams>,
     pub research: Arc<Research>,
     pub finish_all: Arc<FinishAll>,
-    pub intake: Arc<Intake>,
     pub removals: Arc<removals::ProjectRemovals>,
 }
 
@@ -124,11 +124,6 @@ impl Area {
             Arc::clone(&records),
             Arc::clone(&workstreams),
         );
-        let intake = Intake::new(
-            Arc::clone(&ctx),
-            Arc::clone(&workstreams),
-            Arc::clone(&leads),
-        );
         let removals = removals::ProjectRemovals::new(Arc::clone(&ctx), Arc::clone(&records));
         Ok(Arc::new(Self {
             ctx,
@@ -139,7 +134,6 @@ impl Area {
             workstreams,
             research,
             finish_all,
-            intake,
             removals,
         }))
     }

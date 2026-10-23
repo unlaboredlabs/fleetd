@@ -1,6 +1,6 @@
-//! What the checks, receipts, value bar, estimates and incidents areas need from other hub areas, as one trait.
+//! What the checks, receipts, review verdicts, estimates and incidents areas need from other hub areas, as one trait.
 //! The hub's implementation (`HubPorts`, wired once those areas land) forwards to their services; tests use fakes.
-//! Keeping it to this one seam means the claim flow and the value bar run their real logic under test.
+//! Keeping it to this one seam means the claim flow and review verdicts run their real logic under test.
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef};
 use fleetd_contracts::ledger::{MetricValues, PlaybookRef, Workstream, WorkstreamId};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
@@ -32,10 +32,9 @@ pub enum ClaimWake {
     },
 }
 
-/// The pinned playbook's numbers the value bar and estimates read.
+/// The pinned playbook's numbers estimates read.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PlaybookLimits {
-    pub max_review_rounds: u32,
     pub estimate_prior: f64,
 }
 
@@ -91,9 +90,9 @@ pub fn internal(error: crate::hub::store::StoreError) -> Refusal {
 pub trait Ports: Send + Sync + 'static {
     // leads: LeadRecords.workstreams
     fn workstream(&self, id: &WorkstreamId) -> Option<Workstream>;
-    /// Replaces the stored workstream, keeping its amends.
+    /// Replaces the stored workstream.
     fn put_workstream(&self, workstream: &Workstream);
-    /// `put_workstream` only while the stored one still has `expect`'s state and brief hash; false when it changed.
+    /// `put_workstream` only while the stored one still has `expect`'s state and brief; false when it changed.
     fn put_workstream_if(&self, workstream: &Workstream, expect: &Workstream) -> bool;
     // leads: LeadWakes.trigger
     fn wake(&self, project: &ProjectRef, wake: ClaimWake);
@@ -121,12 +120,12 @@ pub trait Ports: Send + Sync + 'static {
     /// Its write work that has not landed (`orders::open_work`): a workstream never closes over it by accident.
     fn open_work(&self, workstream: &Workstream) -> Vec<crate::hub::orders::open_work::OpenWork>;
     fn spawn_judge(&self, spawn: JudgeSpawn) -> BoxFuture<'_, Result<Task, Refusal>>;
-    // ledger: the decision a `human` check reads, and when the brief it checks was last frozen
+    // ledger: the decision a `human` check reads, and when the brief it checks was last set
     fn human_confirmation(&self, workstream: &WorkstreamId, key: &str)
     -> Option<HumanConfirmation>;
-    /// When the workstream's brief was last frozen or amended (its latest `workstream.running`, or a
-    /// `workstream.state` that amended it).
-    fn brief_frozen_ms(&self, workstream: &WorkstreamId) -> Option<i64>;
+    /// When the workstream's brief was last set or edited (its latest `workstream.running`, or a `workstream.state`
+    /// that edited it).
+    fn brief_set_ms(&self, workstream: &WorkstreamId) -> Option<i64>;
     // executor
     fn thread_actions<'a>(
         &'a self,

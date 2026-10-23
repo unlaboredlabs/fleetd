@@ -5,7 +5,6 @@ use crate::hub::usage::service::UsageBreaker;
 use crate::hub::usage::time::clip;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::sync::LazyLock;
 
 use crate::cli::setup::machine_plan::CLAUDE_INSTALL;
@@ -192,99 +191,6 @@ pub fn gh_auth(outcome: &CmdOutcome) -> Entry {
             None,
         ),
         None => hub_entry("gh_auth", Pass, "gh is logged in on the hub.", None),
-    }
-}
-
-/// The hub's claude login fix. Behind a proxy the proxy holds the login. Otherwise `claude auth login`, or a gateway's
-/// variables in `claude.env`, which the hub's service loads (the one-shot runner passes only those variables on).
-pub fn claude_login_fix(proxy: Option<&str>) -> DoctorFix {
-    match proxy {
-        Some(proxy) => manual(
-            &format!(
-                "On the hub, {} (its claude goes through {proxy})",
-                login_fix(true)
-            ),
-            None,
-        ),
-        None => manual(
-            "Log claude in as the hub's user (a gateway instead: ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN in \
-             ~/.fleetd/claude.env, then restart the hub)",
-            Some(login_fix(false).into()),
-        ),
-    }
-}
-
-/// `claude auth status --json` as the retro runs it (same environment, so the same login). The retro reaches a model
-/// only through this login; without it, it can't run.
-pub fn claude_login(outcome: &CmdOutcome) -> Entry {
-    hub_claude_login(outcome, None)
-}
-
-/// [`claude_login`] for a hub claude that goes through `proxy`, whose login the proxy holds.
-pub fn hub_claude_login(outcome: &CmdOutcome, proxy: Option<&str>) -> Entry {
-    let (exit_code, stdout) = match outcome {
-        CmdOutcome::SpawnError(e) if e == "ENOENT" => {
-            return hub_entry(
-                "claude_login",
-                Fail,
-                "Claude Code (claude) is not on the hub's PATH; the retro can't run.",
-                Some(manual(
-                    "Install Claude Code on the hub machine, then log in",
-                    Some("claude auth login".into()),
-                )),
-            );
-        }
-        CmdOutcome::SpawnError(e) => {
-            return hub_entry(
-                "claude_login",
-                Unknown,
-                &format!("Could not run claude on the hub: {e}"),
-                None,
-            );
-        }
-        CmdOutcome::Ran {
-            exit_code, stdout, ..
-        } => (*exit_code, stdout),
-    };
-    let Some(status) = serde_json::from_str::<Value>(stdout)
-        .ok()
-        .filter(|v| !v.is_null())
-    else {
-        return hub_entry(
-            "claude_login",
-            Unknown,
-            &format!("claude auth status gave no JSON (exit {exit_code})."),
-            None,
-        );
-    };
-    if status.get("loggedIn") != Some(&Value::Bool(true)) {
-        return hub_entry(
-            "claude_login",
-            Fail,
-            "claude on the hub is not logged in; the retro can't reach a model.",
-            Some(claude_login_fix(proxy)),
-        );
-    }
-    let method = status
-        .get("authMethod")
-        .and_then(Value::as_str)
-        .map_or(String::new(), auth_method_words);
-    hub_entry(
-        "claude_login",
-        Pass,
-        &format!("claude on the hub is logged in{method}; the retro can run."),
-        None,
-    )
-}
-
-/// claude's `authMethod` in words for a person; one this doesn't know stays as claude says it, as code.
-fn auth_method_words(method: &str) -> String {
-    match method {
-        "oauth_token" => " with a long-lived login token".into(),
-        "claude.ai" | "claudeai" => " with a Claude account".into(),
-        "api_key" | "apiKey" => " with an API key".into(),
-        "" => String::new(),
-        other => format!(" (`{other}`)"),
     }
 }
 
@@ -666,24 +572,6 @@ fn version_entry(
     }
 }
 
-/// The hub's own claude (the retro runs it): version and protocol, from the probe.
-pub fn hub_claude_version(info: &RunnerInfo) -> Entry {
-    match &info.version {
-        None => hub_entry(
-            "claude_version",
-            Fail,
-            "Claude Code (claude) is not on the hub's PATH; the retro can't run.",
-            Some(manual(
-                "Install Claude Code on the hub machine, then log in",
-                Some(CLAUDE_INSTALL.into()),
-            )),
-        ),
-        Some(found) => version_entry(found, |status, message, fix| {
-            hub_entry("claude_version", status, message, fix)
-        }),
-    }
-}
-
 pub fn usage_breaker(machine_id: &str, breaker: &UsageBreaker) -> Entry {
     if breaker.state == "closed" {
         return machine_entry(
@@ -1044,30 +932,6 @@ mod tests {
             fix.label.contains("\"cmdRoots\" in node.json on fe7"),
             "{}",
             fix.label
-        );
-    }
-
-    #[test]
-    fn the_hub_login_says_its_method_in_words() {
-        let ran = |method: &str| CmdOutcome::Ran {
-            exit_code: 0,
-            stdout: serde_json::json!({ "loggedIn": true, "authMethod": method }).to_string(),
-            stderr: String::new(),
-        };
-        let message = |method: &str| {
-            hub_claude_login(&ran(method), None)
-                .check
-                .message
-                .to_string()
-        };
-        assert_eq!(
-            message("oauth_token"),
-            "claude on the hub is logged in with a long-lived login token; the retro can run."
-        );
-        assert!(message("claude.ai").contains("logged in with a Claude account;"));
-        assert!(
-            message("something_new").contains("logged in (`something_new`);"),
-            "an unknown method shows as code"
         );
     }
 

@@ -2,7 +2,7 @@
 //! id; the gate spawns the tier's review tasks through Tasks and answers Pending, or Ready when that patch needs
 //! nothing more. Every verdict is bound to the patch id of the head it reviewed, and only verdicts bound to the
 //! Change's current patch id count. Blocking findings go back to the author task and the Change waits for a new head,
-//! which the train brings back here with its new patch id; M6's polish-loop rule caps those rounds.
+//! which the train brings back here with its new patch id.
 use std::sync::{Arc, Mutex, Weak};
 
 use rusqlite::{OptionalExtension, params};
@@ -18,7 +18,7 @@ use crate::hub::train::contract::{
     Change, ChangeId, ChangeReview, ChangeState, CommitSha, Count, PatchId, ReviewRule, TaskId,
     tier_str,
 };
-use crate::hub::train::host::{BoxFut, EventView, PrVerdict, ReviewSpawn, TrainHost};
+use crate::hub::train::host::{BoxFut, EventView, ReviewSpawn, TrainHost};
 use crate::hub::train::records::{Db, sql};
 use crate::hub::train::service::{ReviewGate, Train, Verdict};
 
@@ -31,9 +31,6 @@ const FOLLOWED: [&str; 4] = [
     "task.failed",
     "task.cancelled",
 ];
-
-/// One key per PR however its URL is written; the value bar keys its verdict history the same way.
-pub use crate::hub::valuebar::rules::pr_key;
 
 pub struct Reviews {
     host: Arc<dyn TrainHost>,
@@ -266,49 +263,6 @@ impl Reviews {
             return;
         }
 
-        // The hub's rounds are held to M6's review rules like anyone's. When the polish-loop rule says review is over
-        // for this PR, this patch rides on the earlier clean rounds instead of getting a third.
-        let verdicts: Vec<PrVerdict> = sql(&self.db, |conn| {
-            let mut stmt = conn.prepare_cached("SELECT task_id, sha, blocking FROM review_verdicts WHERE pr_key = ?1 ORDER BY n DESC LIMIT 200").expect("prepare");
-            stmt.query_map([pr_key(&change.pr_url)], |r| {
-                Ok(PrVerdict {
-                    task_id: r.get(0)?,
-                    sha: r.get(1)?,
-                    blocking: r.get(2)?,
-                })
-            })
-            .expect("query")
-            .map(|r| r.expect("row"))
-            .collect()
-        });
-        if let Some(refusal) = self.host.review_refusal(
-            &change.workstream_id,
-            &change.pr_url,
-            &change.head_sha,
-            &verdicts,
-        ) {
-            if refusal.polish_loop {
-                let reason = format!("review waived by the polish-loop rule: {}", refusal.message);
-                sql(&self.db, |conn| {
-                    conn
-                    .execute(
-                        "INSERT OR IGNORE INTO review_waivers (change_id, patch_id, reason) VALUES (?1, ?2, ?3)",
-                        params![change.change_id.as_str(), patch_id, reason],
-                    )
-                    .expect("put waiver")
-                });
-                return self.note(&change.change_id, &reason);
-            }
-            return self.note(
-                &change.change_id,
-                &format!(
-                    "no review round for patch {}: {}",
-                    &patch_id[..patch_id.len().min(12)],
-                    refusal.message
-                ),
-            );
-        }
-
         if wants_codex && codex.is_none() {
             let others = other_codex(&instances);
             let (machine, tier) = (&change.project_ref.machine_id, change.tier);
@@ -359,7 +313,6 @@ impl Reviews {
                     planned.role,
                     reviewed.as_deref(),
                 ),
-                serves: change.serves.to_string(),
                 pr: change.pr_url.to_string(),
                 tier: change.tier,
             };

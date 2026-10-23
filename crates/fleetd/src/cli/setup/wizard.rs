@@ -151,12 +151,21 @@ fn which(bin: &str) -> Option<PathBuf> {
     })
 }
 
-/// Runs a command with only the environment the hub service has, as the doctor does.
+/// Runs a command with only the environment the hub service has.
 async fn hub_env_run(program: &str, args: &[&str]) -> CmdOutcome {
     let output = tokio::process::Command::new(program)
         .args(args)
         .env_clear()
-        .envs(crate::hub::doctor::service::router_env())
+        .envs(
+            ["HOME", "PATH", "USER", "LANG"]
+                .into_iter()
+                .filter_map(|k| {
+                    std::env::var(k)
+                        .ok()
+                        .filter(|v| !v.is_empty())
+                        .map(|v| (k, v))
+                }),
+        )
         .stdin(std::process::Stdio::null())
         .output()
         .await;
@@ -1137,14 +1146,7 @@ async fn worker_claude(
             None,
         )
         .await;
-        logged_in = checks::claude_login(&CmdOutcome::Ran {
-            exit_code: out.code,
-            stdout: out.stdout,
-            stderr: out.stderr,
-        })
-        .check
-        .status
-            == DoctorStatus::Ok;
+        logged_in = super::machine::logged_in(&out.stdout);
     }
 }
 

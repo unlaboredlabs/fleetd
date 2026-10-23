@@ -1,5 +1,5 @@
 //! The brief's floor under a pinned playbook: its required check types, and for research the pre-registered fields.
-//! Pure; `Workstreams::brief_create` applies it at freeze and on every amend.
+//! Pure; `Workstreams::brief_create` applies it on every brief.
 use fleetd_contracts::ledger::{Brief, CheckType, PlaybookName};
 use fleetd_contracts::playbooks::RESEARCH_FIELDS_FIX;
 

@@ -11,7 +11,7 @@ pub enum Audience {
     Task,
     /// Any thread: leads, tasks, and threads an outside agent launched.
     Any,
-    /// Resolved at each call (the retro).
+    /// Pinned by no session: the custom instructions, appended to the others.
     None,
 }
 
@@ -225,7 +225,7 @@ pub const ENTRIES: &[Entry] = &[
         Task,
         "Writer brief",
         "every write task attempt",
-        "taskId!=T<n>; kind=write; workstreamId=W<n>; project=the project's title; title=the task's title; task!=the lead's task text; workstream=the order's goal, done-when and what this serves, or nothing; areas!=the leased areas and their globs; branch!=the task's branch; baseBranch=the default branch; serves!=what the task serves",
+        "taskId!=T<n>; kind=write; workstreamId=W<n>; project=the project's title; title=the task's title; task!=the lead's task text; workstream=the order's goal and done-when, or nothing; areas!=the leased areas and their globs; branch!=the task's branch; baseBranch=the default branch",
         &[
             (
                 "areas",
@@ -248,7 +248,7 @@ pub const ENTRIES: &[Entry] = &[
         Task,
         "Reviewer",
         "per PR head per review round, by the tier's rules; Claude or Codex",
-        "prUrl!=the PR; repo=owner/name; prNumber!=its number; tier=S, M or L; headSha!=the head reviewed; serves=what the PR serves",
+        "prUrl!=the PR; repo=owner/name; prNumber!=its number; tier=S, M or L; headSha!=the head reviewed",
         &[
             (
                 "independent-review",
@@ -313,19 +313,6 @@ pub const ENTRIES: &[Entry] = &[
                 Prompt
             ),
             VERDICT
-        ]
-    ),
-    entry!(
-        "retro",
-        Oneshot,
-        OneShots,
-        Audience::None,
-        "Retro / triage",
-        "each retro run (at most 2 a day)",
-        "windowDays!=the window; metrics!=the metric classes; incidents!=the incidents; playbooks!=the playbook files",
-        &[
-            ("no-tools", "uses no tools", r"do not use tools", Code),
-            ("at-most-3", "at most 3 changes", r"at most 3 changes", Code),
         ]
     ),
     Entry {

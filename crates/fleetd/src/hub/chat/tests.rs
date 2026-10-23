@@ -478,8 +478,7 @@ async fn a_lead_opens_its_own_workstream_as_a_draft_with_no_intent_wake() {
         .records
         .workstream_get(&opened.workstream_id)
         .unwrap()
-        .unwrap()
-        .workstream;
+        .unwrap();
     assert_eq!(
         (w.source.channel, w.source.text.as_str()),
         (IntakeChannel::Lead, "build schedules")
@@ -506,8 +505,7 @@ fn say_to_app(text: &str, crid: &str, client: Option<&str>) -> Value {
 }
 
 /// The author comes from the key: a human key is the human (from the app unless it says cli), any other key an agent
-/// by its name. An agent's message is no reply from the human: needs-you stays on and the gate-change guard's "human
-/// replied since" stays unmet, and the lead reads it as an agent's.
+/// by its name. An agent's message is no reply from the human: needs-you stays on, and the lead reads it as an agent's.
 #[tokio::test]
 async fn an_agent_key_writes_as_an_agent_and_never_counts_as_the_human() {
     let (hub, _home) = hub();
@@ -534,7 +532,6 @@ async fn an_agent_key_writes_as_an_agent_and_never_counts_as_the_human() {
         hub.chat.state(&r, false).unwrap().needs_you,
         "an agent's message answers nothing"
     );
-    assert_eq!(hub.chat.last_human_ms(&r).unwrap(), None);
     let stored: fleetd_contracts::chat::ChatMessage = serde_json::from_value(m.clone()).unwrap();
     let read = flow::for_lead(&stored, "");
     assert!(
@@ -576,7 +573,6 @@ async fn an_agent_key_writes_as_an_agent_and_never_counts_as_the_human() {
         "the same words from the app or the cli"
     );
     assert!(!hub.chat.state(&r, false).unwrap().needs_you);
-    assert!(hub.chat.last_human_ms(&r).unwrap().is_some());
 }
 
 /// A project's own lead and tasks talk through their fleetd tools, never its chat. Another project's task may write,
@@ -962,7 +958,6 @@ async fn an_agent_key_approves_nothing_and_never_speaks_for_the_person() {
     };
     assert!(still_open() && items(&hub).len() == 2);
     assert!(hub.chat.state(&r, false).unwrap().needs_you);
-    assert_eq!(hub.chat.last_human_ms(&r).unwrap(), None);
     for (tool, input) in [
         (
             "approval_answer",

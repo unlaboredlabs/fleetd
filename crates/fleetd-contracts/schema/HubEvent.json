@@ -143,7 +143,7 @@
         },
         {
           "const": "workstream.running",
-          "description": "The brief was frozen; `data.briefHash`.",
+          "description": "The brief was set and the work started.",
           "type": "string"
         },
         {
@@ -247,11 +247,6 @@
           "type": "string"
         },
         {
-          "const": "intake.routed",
-          "description": "Where an intent went; `data.workstreamId`, `data.template`, `data.reason`, `data.playbook`.",
-          "type": "string"
-        },
-        {
           "const": "research.verdict",
           "description": "A research workstream's computed verdict; `data.workstreamId`, `data.outcome`, `data.metricValues`.",
           "type": "string"
@@ -272,33 +267,8 @@
           "type": "string"
         },
         {
-          "const": "retro.ran",
-          "description": "M12: a retro run ended; `data.run`, `data.trigger`, `data.advise`, `data.proposals`, `data.dropped`, `data.usage` (orchestrator runs).",
-          "type": "string"
-        },
-        {
-          "const": "playbook.changed",
-          "description": "M12: a playbook file changed under a retro proposal; `data.proposalId`, `data.playbook`, `data.ref`, `data.previousRef`, `data.kind`, `data.baseline`, `data.dueAt`.",
-          "type": "string"
-        },
-        {
-          "const": "playbook.reverted",
-          "description": "M12: a wording change missed its metric or regressed a guarded one and was rolled back; `data.proposalId`, `data.reason`.",
-          "type": "string"
-        },
-        {
-          "const": "playbook.kept",
-          "description": "M12: a wording change met its metric; `data.proposalId`, `data.measured`.",
-          "type": "string"
-        },
-        {
           "const": "key.paired",
           "description": "A device redeemed a pairing code from `fleetd pair` and got a human key; `data.keyId`, `data.deviceName`.",
-          "type": "string"
-        },
-        {
-          "const": "workstream.note",
-          "description": "A person added to an order for its lead: `data.workstreamId`, `data.noteId`, `data.urgent`, `data.text` (first\n200 characters).",
           "type": "string"
         },
         {

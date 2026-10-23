@@ -115,7 +115,7 @@ export async function m5Tasks(lab: Lab) {
   };
 
   try {
-    // The lead: m3's when it ran first, else a fresh one. A workstream to spawn under: an open one, else a new intent.
+    // The lead: steer's when it ran first, else a fresh one. A workstream to spawn under: an open one, else a new intent.
     let cursor = await lab.cursor();
     let outcome = (await callTool("project_get", ref)).body;
     if (outcome.lead === undefined) {
@@ -138,7 +138,7 @@ export async function m5Tasks(lab: Lab) {
 
     // 1. The lead spawns T1 from its shell: a thread in a new worktree on fleetd/T1-add-file, on the medium profile.
     const spawn1 =
-      `fleetd task spawn --workstream ${workstreamId} --title "add file" --areas docs --serves done:0 --profile ${MECHANICS} ` +
+      `fleetd task spawn --workstream ${workstreamId} --title "add file" --areas docs --profile ${MECHANICS} ` +
       `--prompt "create docs/x.md with one line 'hi', commit it on your branch"`;
     const sent = await callTool("thread_send", {
       ...ref,
@@ -160,7 +160,7 @@ export async function m5Tasks(lab: Lab) {
 
     // 3. A second writer on docs queues on the lease (spawned now, while T1 holds it).
     const t2 = spawnTask([
-      "--workstream", workstreamId, "--title", "more docs", "--areas", "docs", "--serves", "done:0",
+      "--workstream", workstreamId, "--title", "more docs", "--areas", "docs",
       "--prompt", "create docs/y.md with one line 'hi', commit it on your branch",
     ]);
     const t2Task = await task(t2.taskId);
@@ -175,7 +175,7 @@ export async function m5Tasks(lab: Lab) {
     check(readerTask.state === "queued" && /^slots: \d+\/1 in use/u.test(readerTask.queuedReason ?? ""), `the read task queued on the cap: ${JSON.stringify(readerTask)}`);
     ok(`2. cap set to 1; ${reader.taskId} queued: ${readerTask.queuedReason}`);
     const t4 = spawnTask([
-      "--workstream", workstreamId, "--title", "add notes", "--areas", "api", "--serves", "done:0",
+      "--workstream", workstreamId, "--title", "add notes", "--areas", "api",
       "--prompt",
       "This task tests fleetd's out-of-area check, so break the area rule this once: create notes.txt at the repository root (not under api/) with one line 'hi', and commit it on your branch.",
     ]);

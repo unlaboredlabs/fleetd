@@ -23,9 +23,10 @@ use super::wire::{
     Timestamp, close, decode_hub_frame, to_json,
 };
 use fleetd_contracts::model::SleptSpan;
+use fleetd_contracts::node_link::{HEARTBEAT_INTERVAL_SECS, HEARTBEAT_TIMEOUT_SECS};
 
-const HEARTBEAT_EVERY: Duration = Duration::from_secs(15);
-const SILENCE_TIMEOUT: Duration = Duration::from_secs(45);
+const HEARTBEAT_EVERY: Duration = Duration::from_secs(HEARTBEAT_INTERVAL_SECS);
+const SILENCE_TIMEOUT: Duration = Duration::from_secs(HEARTBEAT_TIMEOUT_SECS);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// The hub refused this node in a way retrying cannot fix (bad key or token, protocol mismatch).

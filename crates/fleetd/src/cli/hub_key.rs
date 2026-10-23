@@ -9,9 +9,9 @@ use fleetd_contracts::ids::MachineId;
 
 use super::CliResult;
 use super::args::{self, Kind, Spec};
-use super::pending::auth::{Auth, AuthError};
-use super::pending::store::{HubDb, HubStore};
 use crate::clock::SystemClock;
+use crate::hub::auth::{Auth, AuthError};
+use crate::hub::store::{HubDb, HubStore};
 
 pub const HUB_KEY_USAGE: &str = r#"  hub key create --name <name> --role <read|operate|admin> --machines <'*'|id,id> [--out <file>] [--home <dir>]
              create an agent key for the MCP endpoint; prints the key once, or with --out writes it
@@ -37,7 +37,7 @@ pub struct HubAccess {
 
 /// `--home` resolved (default `~/.fleetd/hub`).
 pub fn resolve_home(home: Option<&str>) -> Result<PathBuf, String> {
-    Ok(super::pending::store::resolve_hub_home(
+    Ok(crate::hub::store::resolve_hub_home(
         home,
         &super::home_dir(),
     ))

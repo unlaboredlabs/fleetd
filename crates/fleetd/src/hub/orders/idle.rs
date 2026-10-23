@@ -223,7 +223,7 @@ async fn on_done(hub: &Hub, event: &fleetd_contracts::events::HubEvent) {
     let Some(w) = hub.leads.records.workstream_get(&id).ok().flatten() else {
         return;
     };
-    let r = w.workstream.project_ref;
+    let r = w.project_ref;
     let on_purpose = data
         .and_then(|d| d.get("reason"))
         .and_then(|v| v.as_str())

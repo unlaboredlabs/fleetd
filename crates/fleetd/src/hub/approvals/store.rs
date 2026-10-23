@@ -19,7 +19,6 @@ pub struct NewRequest {
     pub secret: Option<fleetd_contracts::ledger::SecretRequest>,
     pub gated: Option<fleetd_contracts::ledger::GatedRunSpec>,
     pub permission: Option<fleetd_contracts::ledger::ToolPermission>,
-    pub playbook: Option<fleetd_contracts::ledger::PlaybookGateChange>,
     pub at: Timestamp,
     pub at_ms: i64,
 }
@@ -79,7 +78,6 @@ impl Requests {
                 "secret": new.secret,
                 "gated": new.gated,
                 "permission": new.permission,
-                "playbook": new.playbook,
                 "createdAt": new.at,
             }))
         };
