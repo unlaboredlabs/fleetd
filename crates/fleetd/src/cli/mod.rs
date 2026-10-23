@@ -169,8 +169,19 @@ fn is_long_running(argv: &[String]) -> bool {
     matches!(
         argv.first().map(String::as_str),
         Some(
-            "init" | "doctor" | "uninstall" | "machine" | "project" | "projects" | "node" | "time"
-                | "update" | "steer" | "steers" | "chat" | "status"
+            "init"
+                | "doctor"
+                | "uninstall"
+                | "machine"
+                | "project"
+                | "projects"
+                | "node"
+                | "time"
+                | "update"
+                | "steer"
+                | "steers"
+                | "chat"
+                | "status"
         )
     )
 }
