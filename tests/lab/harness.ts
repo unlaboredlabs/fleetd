@@ -619,7 +619,7 @@ export const leadRun = async (
 ) => {
   const ref = { machineId, projectId };
   const from = await lab.cursor();
-  let started = await lab.callTool("lead_restart", ref);
+  let started = await lab.callTool("lead_start", { ...ref, fresh: true });
   if (started.isError && started.body.code === "not_found") started = await lab.callTool("lead_start", ref);
   lab.check(!started.isError, `lead (re)start on ${machineId}: ${JSON.stringify(started.body)}`);
   const threadId = started.body.threadId as string;

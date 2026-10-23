@@ -91,7 +91,7 @@ const keyOf = (r: ProjectRef | undefined) => (r ? `${r.machineId}/${r.projectId}
 
 export type Answer = { ok: true; output: unknown } | { ok: false; error: { code: string; message: string; fix?: string } };
 
-/** prompts_list's `orphans` entry (PT's RetiredPromptOverride). */
+/** prompt_get's `orphans` entry (PT's RetiredPromptOverride). */
 export interface Orphan {
   id: string;
   title: string;
@@ -110,7 +110,7 @@ export class PromptHub {
   offline = false;
 
   /** `edits: false` is a hub nobody has edited a prompt on. */
-  /** Edits of prompts this hub no longer has (prompt trim): listed under prompts_list's `orphans`, deleted by reset. */
+  /** Edits of prompts this hub no longer has (prompt trim): listed under prompt_get's `orphans`, deleted by reset. */
   orphans: Orphan[] = [];
 
   constructor(registry: ReadonlyArray<RegistryEntry>, { edits = true } = {}) {
@@ -184,20 +184,21 @@ export class PromptHub {
     const key = keyOf(project);
     const find = (): Prompt | null => this.prompts.find((p) => p.id === input["id"]) ?? null;
     switch (tool) {
-      case "projects_list":
+      case "project_get":
         return { ok: true, output: { projects: PROJECTS } };
-      case "prompts_list": {
-        const orphans = this.orphans.filter((o) => o.scope !== "project" || (o.projectRef !== undefined && keyOf(o.projectRef) === key));
-        return { ok: true, output: { prompts: this.prompts.map((p) => this.summary(p, key)), orphans } };
-      }
       case "prompt_get": {
+        if (input["id"] === undefined) {
+          const orphans = this.orphans.filter((o) => o.scope !== "project" || (o.projectRef !== undefined && keyOf(o.projectRef) === key));
+          return { ok: true, output: { prompts: this.prompts.map((p) => this.summary(p, key)), orphans } };
+        }
         const p = find();
-        return p ? { ok: true, output: this.detail(p, key) } : notFound(input["id"]);
+        return p ? { ok: true, output: { prompt: this.detail(p, key) } } : notFound(input["id"]);
       }
       case "prompt_set": {
+        if (typeof input["text"] !== "string") return this.reset(input, key);
         const p = find();
         if (!p) return notFound(input["id"]);
-        const text = typeof input["text"] === "string" ? input["text"] : "";
+        const text = input["text"];
         if (text === "" && p.id !== INSTRUCTIONS) return { ok: false, error: { code: "invalid", message: "A prompt can't be empty." } };
         const warnings = this.warnings(p, text);
         if (input["dryRun"] !== true) {
@@ -209,19 +210,6 @@ export class PromptHub {
         }
         return { ok: true, output: { ref: refOf(p.id, text), warnings } };
       }
-      case "prompt_reset": {
-        const gone = this.orphans.findIndex((o) => o.id === input["id"] && o.scope === input["scope"]);
-        if (gone >= 0) {
-          this.orphans.splice(gone, 1);
-          return { ok: true, output: { effective: { ref: `${String(input["id"])}@0000000000`, text: "" }, scope: "default" } };
-        }
-        const p = find();
-        if (!p) return notFound(input["id"]);
-        if (input["scope"] === "project" && key) p.projects.delete(key);
-        else p.global = null;
-        const [text, scope] = this.effective(p, key);
-        return { ok: true, output: { effective: this.version(p, text), scope } };
-      }
       case "time_breakdown":
         return { ok: true, output: { retentionDays: this.retentionDays, storedBytes: this.storedBytes } };
       case "time_retention_set":
@@ -230,6 +218,20 @@ export class PromptHub {
       default:
         return { ok: false, error: { code: "not_found", message: `The fixture hub has no ${tool}.` } };
     }
+  }
+
+  /** prompt_set without text: an orphan deleted, or the override at the scope gone. */
+  private reset(input: Record<string, unknown>, key: string | null): Answer {
+    const gone = this.orphans.findIndex((o) => o.id === input["id"] && o.scope === input["scope"]);
+    if (gone >= 0) {
+      this.orphans.splice(gone, 1);
+      return { ok: true, output: { ref: `${String(input["id"])}@0000000000`, warnings: [] } };
+    }
+    const p = this.prompts.find((x) => x.id === input["id"]);
+    if (!p) return notFound(input["id"]);
+    if (input["scope"] === "project" && key) p.projects.delete(key);
+    else p.global = null;
+    return { ok: true, output: { ref: this.version(p, this.effective(p, key)[0]).ref, warnings: [] } };
   }
 
   /** The text of one of the prompt's versions this hub knows, by ref; null for a ref it never shipped. */

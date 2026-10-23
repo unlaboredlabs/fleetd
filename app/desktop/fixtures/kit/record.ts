@@ -60,17 +60,17 @@ const collect = (v: JsonValue): void => {
 const sweepCalls = (since: string): Array<readonly [string, JsonObject]> => {
   const calls: Array<readonly [string, JsonObject]> = [
     ["orders_board", {}],
-    ["status_projects", {}],
-    ["prompts_list", {}],
+    ["status_get", {}],
+    ["prompt_get", {}],
     ["doctor_list", {}],
-    ["attention_policy", {}],
+    ["fleetd_status", {}],
   ];
   for (const { machineId, projectId } of seen.projects.values()) {
     const projectRef = { machineId, projectId };
     calls.push(
       ["chat_history", { projectRef }],
       ["orders_board", { projectRef, includeDoneSince: since }],
-      ["prompts_list", { projectRef }],
+      ["prompt_get", { projectRef }],
       ["status_get", { projectRef }],
     );
   }
@@ -144,9 +144,9 @@ const main = async () => {
           }
           if (output !== undefined) {
             collect(output);
-            if (pending.tool === "prompt_get") seen.promptsFetched.add(asText(pending.input["id"]));
+            if (pending.tool === "prompt_get" && pending.input["id"] !== undefined) seen.promptsFetched.add(asText(pending.input["id"]));
             const prompts = isObject(output) ? output["prompts"] : undefined;
-            if (pending.tool === "prompts_list" && Array.isArray(prompts)) {
+            if (pending.tool === "prompt_get" && Array.isArray(prompts)) {
               for (const p of prompts) if (isObject(p) && typeof p["id"] === "string") seen.prompts.add(p["id"]);
             }
           }

@@ -182,7 +182,7 @@ export type ProjectStateWord = "waiting_on_you" | "blocked" | "working" | "idle"
 
 /**
  * The state word. Whether the lead waits on you comes only from the hub's chat state (ProjectChatState.needsYou),
- * so no two places can disagree on it. `rowState` is the Status row's own word (status_projects): it adds
+ * so no two places can disagree on it. `rowState` is the Status row's own word (status_get): it adds
  * "blocked" (a cause outside the work) and a "working" the agents count can't see (PRs in review, CI or the
  * train), and its "waiting on you" never counts on its own.
  */

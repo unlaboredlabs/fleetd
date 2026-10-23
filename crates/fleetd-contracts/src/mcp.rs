@@ -23,7 +23,7 @@ use crate::prim::{
 };
 use crate::projects::{AddId, CloneTarget, GitHubRepos, MachineRepos, ProjectInspect};
 use crate::prompts::{
-    PromptDetail, PromptId, PromptRef, PromptScope, PromptSummary, PromptVersion, PromptWarning,
+    PromptDetail, PromptId, PromptRef, PromptScope, PromptSummary, PromptWarning,
     RetiredPromptOverride, SessionPrompt,
 };
 use crate::secrets::{SealedSecret, SecretFingerprint};
@@ -55,6 +55,8 @@ pub struct FleetStatus {
     pub slots: Option<SlotState>,
     /// Each project's chat: whether its lead waits on you, whether it works. Absent from hubs without chat.
     pub chats: Option<List<crate::chat::ProjectChatState, 0, 50>>,
+    /// When to notify the human; absent from older hubs.
+    pub notify: Option<NotifyPolicy>,
 }
 
 /// Declares an output struct with the fields every tool result carries: `next`, a hint for the next call, and
@@ -93,16 +95,33 @@ output!(FleetdStatusOutput {
     status: FleetStatus,
 });
 
-// projects_list
-input!(ProjectsListInput { machine_id: Option<MachineId>, query: Option<String> });
-output!(ProjectsListOutput { projects: Vec<ProjectSummary> });
-
-// project_get
-input!(ProjectGetInput {
-    machine_id: MachineId,
-    project_id: ProjectId
+// project_get: with machineId and projectId, that project's outcome; without projectId, the projects (on machineId,
+// matching query).
+input!(
+    #[serde(remote = "Self")]
+    ProjectGetInput {
+        machine_id: Option<MachineId>,
+        project_id: Option<ProjectId>,
+        /// Without projectId: only projects whose title or path contains it.
+        query: Option<String>,
+    }
+);
+checked!(ProjectGetInput, |input| {
+    if input.project_id.is_some() && input.machine_id.is_none() {
+        return Err("projectId goes with its machineId".into());
+    }
+    Ok(())
 });
-pub type ProjectGetOutput = ProjectOutcome;
+/// The projects, or one project's outcome (its fields at the top level).
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectGetOutput {
+    /// Without projectId: the projects.
+    pub projects: Option<Vec<ProjectSummary>>,
+    #[serde(flatten)]
+    pub outcome: Option<ProjectOutcome>,
+}
 
 // thread_tail
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
@@ -209,17 +228,17 @@ output!(WakeListOutput { wakes: Vec<Wake> });
 input!(WakeCancelInput { wake_id: NonEmpty });
 output!(WakeCancelOutput { ok: True });
 
-// lead_start, lead_restart
+// lead_start
 input!(LeadStartInput {
     machine_id: MachineId,
     project_id: ProjectId,
+    /// Start a fresh lead thread from the current digest (sessionGeneration goes up); the old one stays as history.
+    fresh: Option<bool>,
 });
 output!(LeadStartOutput {
     #[serde(flatten)]
     lead: Lead,
 });
-pub type LeadRestartInput = LeadStartInput;
-pub type LeadRestartOutput = LeadStartOutput;
 
 // project_set: a project's settings. `mediumAllowed` (default on): whether its lead may run a task on the medium
 // profile; off runs every task on high.
@@ -334,18 +353,24 @@ output!(OrdersBoardOutput {
     at: Timestamp,
 });
 
-// order_get: one order with its finished agents and open requests.
+// order_get: one order with its record, finished agents, open requests, decisions and steers.
 input!(OrderGetInput {
     workstream_id: WorkstreamId
 });
 output!(OrderGetOutput {
     order: OrderCard,
+    /// Its record: the brief and its done-when. Absent from older hubs.
+    workstream: Option<Workstream>,
     /// Its project's lead (shared by every order of the project); absent when the project has none.
     lead: Option<AgentLane>,
     /// Newest first.
     done_lanes: List<AgentLane, 0, 30>,
     /// Its open secret and approval requests.
     requests: List<HumanRequest, 0, 20>,
+    /// Active decisions scoped to it. Absent from older hubs.
+    decisions: Option<List<Decision, 0, 50>>,
+    /// Its steers (to the lead or one of its tasks) with their receipts, newest first. Absent from older hubs.
+    steers: Option<List<Steer, 0, 20>>,
 });
 
 // steer_send: a person steers an order's lead or one task. `queue` (Enter) lands at the agent's next tool boundary;
@@ -369,19 +394,6 @@ input!(SteerWithdrawInput { steer_id: SteerId });
 output!(SteerWithdrawOutput {
     #[serde(flatten)]
     steer: Steer,
-});
-
-// steers_list: steers with their receipts, newest first.
-input!(SteersListInput {
-    workstream_id: Option<WorkstreamId>,
-    task_id: Option<TaskId>,
-    /// Only steers after this number (the n of `S<n>`).
-    after_n: Option<Count>,
-    #[serde(default)]
-    limit: IntOr<1, 100, 50>,
-});
-output!(SteersListOutput {
-    steers: List<Steer, 0, 100>,
 });
 
 // project_stop: the safety valve. Interrupts the lead's turn, stops every running and queued agent of the project and
@@ -501,18 +513,6 @@ input!(WorkstreamListInput {
 output!(WorkstreamListOutput {
     /// Newest first.
     workstreams: List<Workstream, 0, 100>,
-});
-
-// workstream_get
-input!(WorkstreamGetInput {
-    workstream_id: WorkstreamId
-});
-output!(WorkstreamGetOutput {
-    workstream: Workstream,
-    /// Its open secret and approval requests.
-    requests: List<HumanRequest, 0, 50>,
-    /// Active decisions scoped to it.
-    decisions: List<Decision, 0, 50>,
 });
 
 // requests_list: secret and approval requests, newest first.
@@ -659,17 +659,18 @@ output!(DoctorFixOutput {
     check: DoctorCheck,
 });
 
-// attention_policy: when a client may interrupt the human with an event marked `attention`. Quiet windows are
-// absolute times the hub computes from `policy.quiet_hours` in `policy.tz`: the one under way (if any) and the next.
-input!(AttentionPolicyInput {});
 input!(QuietWindow {
     from: Timestamp,
     to: Timestamp
 });
-output!(AttentionPolicyOutput {
+input!(
+    /// When a client may interrupt the human with an event marked `attention`. Quiet windows are absolute times the
+    /// hub computes from `policy.quiet_hours` in `policy.tz`: the one under way (if any) and the next.
+    NotifyPolicy {
     /// At most one notification per this many seconds; what arrives meanwhile is folded into the next.
     coalesce_sec: Int<1, MAX_SAFE_INT>,
-    /// Only "urgent" events notify inside these; empty when quiet hours are off. Ask again after the last one ends.
+    /// Only "urgent" events notify inside these; empty when quiet hours are off. Ask again after the last one ends
+    /// or on decision.recorded.
     quiet: List<QuietWindow, 0, 2>,
 });
 
@@ -706,35 +707,10 @@ output!(ProjectDiscoverOutput {
     best: Option<MachineId>,
 });
 
-// project_inspect: a repository's default branch, CI and merge rules, and what the lead will need. Either `url` (a
-// GitHub repository, before cloning; with `machineId`, also where the clone would go) or `machineId` and `path` (a
-// checkout on that machine).
-input!(
-    #[serde(remote = "Self")]
-    ProjectInspectInput {
-    machine_id: Option<MachineId>,
-    path: Option<WorkspacePath>,
-    /// A GitHub URL, `git@github.com:o/r.git`, or `owner/repo`.
-    url: Option<Text<1, 300>>,
-});
-checked!(
-    ProjectInspectInput,
-    |input| match (&input.url, &input.path, &input.machine_id) {
-        (Some(_), None, _) | (None, Some(_), Some(_)) => Ok(()),
-        (Some(_), Some(_), _) => Err("give url or path, not both".into()),
-        _ => Err("give url, or machineId and path".into()),
-    }
-);
-output!(ProjectInspectOutput {
-    #[serde(flatten)]
-    inspect: ProjectInspect,
-    /// With `url` and a machine (given, or the best one): where `project_add` would clone it.
-    clone: Option<CloneTarget>,
-});
-
 // project_add: adds a project from a directory on a machine (`path`), or by cloning a GitHub repository onto one
 // (`url`). A path is added at once; a clone answers with `addId` and streams `project.clone_progress`, then
-// `project.added` or `project.add_failed`. The same directory again returns its project.
+// `project.added` or `project.add_failed`. The same directory again returns its project. `dryRun` adds nothing: it
+// answers the facts (default branch, CI and merge rules, what the lead will need) and, for a url, where it would clone.
 input!(
     #[serde(remote = "Self")]
     ProjectAddInput {
@@ -749,6 +725,7 @@ input!(
     use_existing: Option<bool>,
     /// Absent means the directory's name.
     title: Option<Text<1, 200>>,
+    dry_run: Option<bool>,
 });
 checked!(ProjectAddInput, |input| {
     match (&input.path, &input.url) {
@@ -771,12 +748,14 @@ output!(ProjectAddOutput {
     path: String,
     /// Absent while a clone runs: `project.added` carries it.
     project_id: Option<ProjectId>,
-    /// False when the directory was already a project (it is renamed when a title is given).
+    /// False when the directory was already a project (it is renamed when a title is given), and in a dry run.
     created: bool,
     /// A clone was started: its `project.clone_progress`, `project.added` and `project.add_failed` events carry it.
     add_id: Option<AddId>,
-    /// For a path, at once; for a clone, on `project.added`.
+    /// For a path, at once; for a clone, on `project.added`; for a dry run, the repository's facts.
     inspect: Option<ProjectInspect>,
+    /// A dry run with url: where it would clone, and whether that folder already holds a checkout.
+    clone: Option<CloneTarget>,
 });
 
 // project_remove: stops the project's claude processes and forgets it. Its files, branches and worktrees stay.
@@ -786,28 +765,29 @@ input!(ProjectRemoveInput {
 });
 output!(ProjectRemoveOutput { ok: True });
 
-// prompts_list, prompt_get, prompt_set, prompt_reset, session_prompt_get: every prompt fleetd sends a model.
-input!(PromptsListInput {
+// prompt_get, prompt_set, session_prompt_get: every prompt fleetd sends a model.
+input!(PromptGetInput {
+    /// Absent: list every prompt.
+    id: Option<PromptId>,
     /// The texts in effect for this project; absent: hub-wide.
     project_ref: Option<ProjectRef>,
 });
-output!(PromptsListOutput {
-    prompts: Vec<PromptSummary>,
-    /// Your edits to prompts a release retired: hub-wide ones, and the asked project's.
-    orphans: Vec<RetiredPromptOverride>
-});
-input!(PromptGetInput { id: PromptId, project_ref: Option<ProjectRef> });
 output!(PromptGetOutput {
-    #[serde(flatten)]
-    prompt: PromptDetail,
+    /// Without an id: every prompt.
+    prompts: Option<Vec<PromptSummary>>,
+    /// Without an id: your edits to prompts a release retired, hub-wide ones and the asked project's.
+    orphans: Option<Vec<RetiredPromptOverride>>,
+    /// With an id: that prompt.
+    prompt: Option<PromptDetail>,
 });
 input!(PromptSetInput {
     id: PromptId,
     scope: PromptScope,
     /// Required with scope project.
     project_ref: Option<ProjectRef>,
-    /// May be empty only for `instructions`.
-    text: String,
+    /// May be empty only for `instructions`. Null (or absent) resets: deletes your text at this scope (or your edit
+    /// to a prompt fleetd retired), so the next level applies.
+    text: Option<String>,
     /// The default ref the text was edited from (`prompt_get` default.ref); absent: the one shipped now.
     base: Option<PromptRef>,
     /// Return the warnings without saving.
@@ -818,11 +798,6 @@ output!(PromptSetOutput {
     /// What the edit may break; it is saved anyway.
     warnings: Vec<PromptWarning>,
 });
-input!(PromptResetInput { id: PromptId, scope: PromptScope, project_ref: Option<ProjectRef> });
-output!(PromptResetOutput {
-    effective: PromptVersion,
-    scope: PromptScope
-});
 input!(SessionPromptGetInput {
     machine_id: MachineId,
     thread_id: ThreadId
@@ -831,20 +806,19 @@ output!(SessionPromptGetOutput {
     session: SessionPrompt
 });
 
-// status_projects: one row per project the key reads, for the Status screen.
-input!(StatusProjectsInput {});
-output!(StatusProjectsOutput {
-    /// By title.
-    rows: List<ProjectStatusRow, 0, 200>,
-});
-// status_get: one project's row and the series behind its bar.
+// status_get: without projectRef, one row per project the key reads, for the Status screen; with it, that project's
+// row and the series behind its bar.
 input!(StatusGetInput {
-    project_ref: ProjectRef
+    project_ref: Option<ProjectRef>
 });
 output!(StatusGetOutput {
-    row: ProjectStatusRow,
-    /// The bar over time, oldest first: why it fell (`drop`) and when it held on paused work (`paused`).
-    series: List<ProgressPoint, 0, 48>,
+    /// Without projectRef: by title.
+    rows: Option<List<ProjectStatusRow, 0, 200>>,
+    /// With projectRef.
+    row: Option<ProjectStatusRow>,
+    /// With projectRef: the bar over time, oldest first: why it fell (`drop`) and when it held on paused work
+    /// (`paused`).
+    series: Option<List<ProgressPoint, 0, 48>>,
 });
 
 // plan_get: one project's plan, or one order's items.
@@ -1136,23 +1110,19 @@ macro_rules! tools {
 
 tools! {
     fleetd_status => FleetdStatus, Read, FleetdStatusInput, FleetdStatusOutput;
-    projects_list => ProjectsList, Read, ProjectsListInput, ProjectsListOutput;
     project_get => ProjectGet, Read, ProjectGetInput, ProjectGetOutput;
     thread_tail => ThreadTail, Read, ThreadTailInput, ThreadTailOutput;
     actions_list => ActionsList, Read, ActionsListInput, ActionsListOutput;
     events_wait => EventsWait, Read, EventsWaitInput, EventsWaitOutput;
     project_discover => ProjectDiscover, Read, ProjectDiscoverInput, ProjectDiscoverOutput;
-    project_inspect => ProjectInspect, Read, ProjectInspectInput, ProjectInspectOutput;
     project_add => ProjectAdd, Operate, ProjectAddInput, ProjectAddOutput;
     project_remove => ProjectRemove, Operate, ProjectRemoveInput, ProjectRemoveOutput;
     wake_set => WakeSet, Operate, WakeSetInput, WakeSetOutput;
     wake_list => WakeList, Read, WakeListInput, WakeListOutput;
     wake_cancel => WakeCancel, Operate, WakeCancelInput, WakeCancelOutput;
     lead_start => LeadStart, Operate, LeadStartInput, LeadStartOutput;
-    lead_restart => LeadRestart, Operate, LeadRestartInput, LeadRestartOutput;
     project_set => ProjectSet, Operate, ProjectSetInput, ProjectSetOutput;
     workstream_list => WorkstreamList, Read, WorkstreamListInput, WorkstreamListOutput;
-    workstream_get => WorkstreamGet, Read, WorkstreamGetInput, WorkstreamGetOutput;
     requests_list => RequestsList, Read, RequestsListInput, RequestsListOutput;
     decisions_search => DecisionsSearch, Read, DecisionsSearchInput, DecisionsSearchOutput;
     decisions_record => DecisionsRecord, Operate, DecisionsRecordInput, DecisionsRecordOutput;
@@ -1166,7 +1136,6 @@ tools! {
     // Human keys only (the handler checks).
     approval_answer => ApprovalAnswer, Operate, ApprovalAnswerInput, ApprovalAnswerOutput;
     doctor_list => DoctorList, Read, DoctorListInput, DoctorListOutput;
-    attention_policy => AttentionPolicy, Read, AttentionPolicyInput, AttentionPolicyOutput;
     // Admin keys, or a person's paired device (a human key) with operate on the machine; the handler checks which.
     doctor_fix => DoctorFix, Operate, DoctorFixInput, DoctorFixOutput;
     attachment_put => AttachmentPut, Operate, AttachmentPutInput, AttachmentPutOutput;
@@ -1174,12 +1143,10 @@ tools! {
     project_files => ProjectFiles, Read, ProjectFilesInput, ProjectFilesOutput;
     orders_board => OrdersBoard, Read, OrdersBoardInput, OrdersBoardOutput;
     order_get => OrderGet, Read, OrderGetInput, OrderGetOutput;
-    prompts_list => PromptsList, Read, PromptsListInput, PromptsListOutput;
     prompt_get => PromptGet, Read, PromptGetInput, PromptGetOutput;
     // Global: admin on every machine; project: admin on its machine; or a person's device (a human key)
     // with operate there. The handler checks which.
     prompt_set => PromptSet, Operate, PromptSetInput, PromptSetOutput;
-    prompt_reset => PromptReset, Operate, PromptResetInput, PromptResetOutput;
     session_prompt_get => SessionPromptGet, Read, SessionPromptGetInput, SessionPromptGetOutput;
     time_spans => TimeSpans, Read, TimeSpansInput, TimeSpansOutput;
     time_breakdown => TimeBreakdown, Read, TimeBreakdownInput, TimeBreakdownOutput;
@@ -1187,12 +1154,10 @@ tools! {
     time_retention_set => TimeRetentionSet, Admin, TimeRetentionSetInput, TimeRetentionSetOutput;
     thread_window => ThreadWindow, Read, ThreadWindowInput, ThreadWindowOutput;
     status_get => StatusGet, Read, StatusGetInput, StatusGetOutput;
-    status_projects => StatusProjects, Read, StatusProjectsInput, StatusProjectsOutput;
     plan_get => PlanGet, Read, PlanGetInput, PlanGetOutput;
     // Human keys only (the handler checks); the lead steers its tasks with `fleetd task message`.
     steer_send => SteerSend, Operate, SteerSendInput, SteerSendOutput;
     steer_withdraw => SteerWithdraw, Operate, SteerWithdrawInput, SteerWithdrawOutput;
-    steers_list => SteersList, Read, SteersListInput, SteersListOutput;
     chat_send => ChatSend, Operate, ChatSendInput, ChatSendOutput;
     chat_history => ChatHistory, Read, ChatHistoryInput, ChatHistoryOutput;
     // Human keys only (the handlers check).

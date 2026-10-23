@@ -1,14 +1,13 @@
-//! prompts_list, prompt_get, prompt_set, prompt_reset and session_prompt_get.
+//! prompt_get, prompt_set and session_prompt_get.
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::mcp::{
-    ErrorCode, PromptGetInput, PromptGetOutput, PromptResetInput, PromptResetOutput,
-    PromptSetInput, PromptSetOutput, PromptsListInput, PromptsListOutput, SessionPromptGetInput,
-    SessionPromptGetOutput,
+    ErrorCode, PromptGetInput, PromptGetOutput, PromptSetInput, PromptSetOutput,
+    SessionPromptGetInput, SessionPromptGetOutput,
 };
-use fleetd_contracts::prompts::{PromptRef, PromptScope, PromptVersion};
+use fleetd_contracts::prompts::{PromptRef, PromptScope};
 use serde_json::json;
 
 use super::render::{ref_of, warnings};
@@ -20,10 +19,8 @@ use crate::hub::api::{
 use crate::hub::store::{iso_ms, now_ms};
 
 pub fn register(tools: &mut Registry) {
-    tools.add("prompts_list", prompts_list);
     tools.add("prompt_get", prompt_get);
     tools.add("prompt_set", prompt_set);
-    tools.add("prompt_reset", prompt_reset);
     tools.add("session_prompt_get", session_prompt_get);
 }
 
@@ -32,7 +29,7 @@ impl From<PromptError> for ToolError {
         match e {
             PromptError::Invalid(m) => ToolError::new(ErrorCode::Invalid, m),
             PromptError::NotFound(m) => ToolError::new(ErrorCode::NotFound, m)
-                .with_fix("prompts_list lists every prompt id."),
+                .with_fix("prompt_get without an id lists every prompt."),
             PromptError::Store(e) => e.into(),
             PromptError::Io(e) => ToolError::new(ErrorCode::Failed, e.to_string()),
         }
@@ -48,9 +45,9 @@ fn retired_hint(id: &str, e: PromptError) -> ToolError {
         )
         .with_fix(match r.target {
             Some(t) => format!(
-                "Edit {t} instead; prompts_list shows any edit you made to {id} under orphans."
+                "Edit {t} instead; prompt_get without an id shows any edit you made to {id} under orphans."
             ),
-            None => format!("prompts_list shows any edit you made to {id} under orphans."),
+            None => format!("prompt_get without an id shows any edit you made to {id} under orphans."),
         }),
         None => e.into(),
     }
@@ -64,7 +61,7 @@ fn readable_project(hub: &Hub, caller: &Caller, r: Option<&ProjectRef>) -> Resul
             ErrorCode::NotFound,
             format!("No project {} on {}.", r.project_id, r.machine_id),
         )
-        .with_fix("projects_list lists them."));
+        .with_fix("project_get without a projectId lists them."));
     }
     Ok(())
 }
@@ -93,42 +90,40 @@ fn may_edit(caller: &Caller, scope: PromptScope, r: Option<&ProjectRef>) -> Resu
     }
 }
 
-async fn prompts_list(
-    hub: Arc<Hub>,
-    caller: Caller,
-    input: PromptsListInput,
-) -> Result<PromptsListOutput, ToolError> {
-    readable_project(&hub, &caller, input.project_ref.as_ref())?;
-    let orphans = hub.db.prompts().orphans(input.project_ref.as_ref());
-    let next = if orphans.is_empty() {
-        "prompt_get shows one prompt's texts, placeholders and safety rules."
-    } else {
-        "orphans are your edits to prompts fleetd retired: copy what you need into suggestedTarget, then prompt_reset the old id."
-    };
-    Ok(PromptsListOutput {
-        prompts: hub.db.prompts().list(input.project_ref.as_ref()),
-        orphans,
-        next: Some(next.into()),
-        truncated: None,
-    })
-}
-
 async fn prompt_get(
     hub: Arc<Hub>,
     caller: Caller,
     input: PromptGetInput,
 ) -> Result<PromptGetOutput, ToolError> {
-    readable_project(&hub, &caller, input.project_ref.as_ref())?;
-    let e = entry(input.id.as_str()).map_err(|e| retired_hint(input.id.as_str(), e))?;
-    let prompt = hub.db.prompts().detail(e, input.project_ref.as_ref());
+    let r = input.project_ref.as_ref();
+    readable_project(&hub, &caller, r)?;
+    let Some(id) = input.id else {
+        let orphans = hub.db.prompts().orphans(r);
+        let next = if orphans.is_empty() {
+            "prompt_get with an id shows one prompt's texts, placeholders and safety rules."
+        } else {
+            "orphans are your edits to prompts fleetd retired: copy what you need into suggestedTarget, then delete the old one with prompt_set (text null)."
+        };
+        return Ok(PromptGetOutput {
+            prompts: Some(hub.db.prompts().list(r)),
+            orphans: Some(orphans),
+            prompt: None,
+            next: Some(next.into()),
+            truncated: None,
+        });
+    };
+    let e = entry(id.as_str()).map_err(|e| retired_hint(id.as_str(), e))?;
+    let prompt = hub.db.prompts().detail(e, r);
     let next = prompt.stale.as_ref().map(|s| {
         format!(
-            "fleetd changed this prompt's default; yours is still in effect. Save the merged text (or yours) with base {}, or prompt_reset.",
+            "fleetd changed this prompt's default; yours is still in effect. Save the merged text (or yours) with base {}, or reset it with text null.",
             s.current.r#ref
         )
     });
     Ok(PromptGetOutput {
-        prompt,
+        prompts: None,
+        orphans: None,
+        prompt: Some(prompt),
         next,
         truncated: None,
     })
@@ -139,14 +134,17 @@ async fn prompt_set(
     caller: Caller,
     input: PromptSetInput,
 ) -> Result<PromptSetOutput, ToolError> {
+    let Some(text) = input.text.as_deref() else {
+        return reset(&hub, &caller, &input).await;
+    };
     let e = entry(input.id.as_str()).map_err(|e| retired_hint(input.id.as_str(), e))?;
     let r = input.project_ref.as_ref();
     may_edit(&caller, input.scope, r)?;
     readable_project(&hub, &caller, r)?;
     if input.dry_run == Some(true) {
         return Ok(PromptSetOutput {
-            r#ref: PromptRef::unchecked(ref_of(e.id, &input.text)),
-            warnings: warnings(e, &input.text),
+            r#ref: PromptRef::unchecked(ref_of(e.id, text)),
+            warnings: warnings(e, text),
             next: Some("Not saved: dryRun.".into()),
             truncated: None,
         });
@@ -155,7 +153,7 @@ async fn prompt_set(
         e,
         input.scope,
         r,
-        &input.text,
+        text,
         input.base.as_ref().map(|b| b.as_str()),
     )?;
     let codes: Vec<_> = found.iter().map(|w| w.code).collect();
@@ -171,21 +169,22 @@ async fn prompt_set(
         r#ref: PromptRef::unchecked(saved),
         warnings: found,
         next: Some(
-            "New sessions get it now; a running lead gets it at lead_restart, a task at its next attempt.".into(),
+            "New sessions get it now; a running lead gets it at its next fresh lead_start, a task at its next attempt.".into(),
         ),
         truncated: None,
     })
 }
 
-async fn prompt_reset(
-    hub: Arc<Hub>,
-    caller: Caller,
-    input: PromptResetInput,
-) -> Result<PromptResetOutput, ToolError> {
+/// `prompt_set` with `text: null`: back to the next level, or a retired prompt's edit deleted.
+async fn reset(
+    hub: &Hub,
+    caller: &Caller,
+    input: &PromptSetInput,
+) -> Result<PromptSetOutput, ToolError> {
     let r = input.project_ref.as_ref();
     if let Some(old) = retired::get(input.id.as_str()) {
-        may_edit(&caller, input.scope, r)?;
-        readable_project(&hub, &caller, r)?;
+        may_edit(caller, input.scope, r)?;
+        readable_project(hub, caller, r)?;
         hub.db.prompts().reset_retired(old, input.scope, r)?;
         super::changed(
             &hub.events,
@@ -196,12 +195,9 @@ async fn prompt_reset(
             json!({ "retired": true }),
         )?;
         // A retired prompt sends nothing: what is in effect is no text at all.
-        return Ok(PromptResetOutput {
-            effective: PromptVersion {
-                r#ref: PromptRef::unchecked(ref_of(old.id, "")),
-                text: String::new(),
-            },
-            scope: PromptScope::Default,
+        return Ok(PromptSetOutput {
+            r#ref: PromptRef::unchecked(ref_of(old.id, "")),
+            warnings: Vec::new(),
             next: Some(format!(
                 "Your edit to {} is deleted; fleetd retired that prompt.",
                 old.id
@@ -210,8 +206,8 @@ async fn prompt_reset(
         });
     }
     let e = entry(input.id.as_str())?;
-    may_edit(&caller, input.scope, r)?;
-    readable_project(&hub, &caller, r)?;
+    may_edit(caller, input.scope, r)?;
+    readable_project(hub, caller, r)?;
     hub.db.prompts().reset(e, input.scope, r)?;
     super::changed(
         &hub.events,
@@ -221,11 +217,10 @@ async fn prompt_reset(
         r,
         json!({}),
     )?;
-    let detail = hub.db.prompts().detail(e, r);
-    Ok(PromptResetOutput {
-        effective: detail.effective,
-        scope: detail.scope,
-        next: None,
+    Ok(PromptSetOutput {
+        r#ref: hub.db.prompts().detail(e, r).effective.r#ref,
+        warnings: Vec::new(),
+        next: Some("Reset: the next level's text is in effect.".into()),
         truncated: None,
     })
 }

@@ -63,8 +63,8 @@ export function groupOf(summary: PromptSummary): GroupKey {
 }
 
 /**
- * "per new order" → "Sent per new order.", with the hub's tool names read as words ("every lead_restart" → "every
- * lead restart"), since this line is for people.
+ * "per new order" → "Sent per new order.", with the hub's tool names read as words ("every project_stop" → "every
+ * project stop"), since this line is for people.
  */
 function sentence(sentWhen: string): string {
   const s = sentWhen

@@ -76,11 +76,11 @@ const groupTitle = (p: PromptSummary) => GROUPS.find((g) => g.key === groupOf(p)
 
 /**
  * Registers the Settings pages and a `prompts` source with the palette, for the life of the app. The prompts come
- * from the data layer's hub-wide prompts_list, the same read the Prompts page makes, fetched the first time the
+ * from the data layer's hub-wide prompt_get list, the same read the Prompts page makes, fetched the first time the
  * palette asks while the connection is fresh (names don't change with edits). Returns the unregister.
  */
 export function registerSettingsCommands(layer: DataLayer): () => void {
-  const read = layer.toolQuery("prompts_list", {});
+  const read = layer.toolQuery("prompt_get", {});
   const prompts = (): ReadonlyArray<PromptSummary> => layer.queryClient.getQueryData<{ prompts: PromptSummary[] }>(read.queryKey)?.prompts ?? [];
   const offPages = registerCommands(pages, "default");
   const offSource = registerSource({

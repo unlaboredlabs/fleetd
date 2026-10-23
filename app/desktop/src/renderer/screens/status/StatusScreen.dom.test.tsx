@@ -51,7 +51,7 @@ const mount = async (): Promise<Send> => {
   const hub: HubApi = {
     call: (tool) => {
       calls.push(tool);
-      return Promise.resolve({ ok: true, output: tool === "status_projects" ? { rows: [row] } : { at: iso(START), orders: [], trains: [] } });
+      return Promise.resolve({ ok: true, output: tool === "status_get" ? { rows: [row] } : { at: iso(START), orders: [], trains: [] } });
     },
     subscribe: (l) => ((send = l), () => undefined),
     resync: () => Promise.resolve(),
@@ -82,7 +82,7 @@ it("moves its day words and ages on with the clock, with no event and no refetch
   await mount();
   expect(label()).toContain("last merged today 23:50");
   expect(label()).toContain("Out of date for 9m");
-  const asked = calls.filter((c) => c === "status_projects").length;
+  const asked = calls.filter((c) => c === "status_get").length;
 
   // The clock ticks just after each second turns.
   await act(() => vi.advanceTimersByTimeAsync(60_000 + 10));
@@ -92,7 +92,7 @@ it("moves its day words and ages on with the clock, with no event and no refetch
   await act(() => vi.advanceTimersByTimeAsync(3 * 3_600_000));
   expect(label()).toContain("Out of date for 3h");
   // The words moved on the clock alone: nothing asked the hub again.
-  expect(calls.filter((c) => c === "status_projects").length).toBe(asked);
+  expect(calls.filter((c) => c === "status_get").length).toBe(asked);
 });
 
 it("reads the day and the age on the hub's clock, not this machine's", async () => {

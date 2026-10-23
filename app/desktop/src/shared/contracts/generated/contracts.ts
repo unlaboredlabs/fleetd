@@ -305,17 +305,6 @@ export type AttachmentRef = {
  */
 export type Attention = "loud" | "urgent";
 
-export type AttentionPolicyInput = { [key: string]: unknown };
-
-export type AttentionPolicyOutput = {
-  /** At most one notification per this many seconds; what arrives meanwhile is folded into the next. */
-  coalesceSec: number;
-  next?: string;
-  /** Only "urgent" events notify inside these; empty when quiet hours are off. Ask again after the last one ends. */
-  quiet: QuietWindow[];
-  truncated?: boolean;
-};
-
 export type BoxPublicKey = string;
 
 export type BreakerState = "closed" | "open";
@@ -951,6 +940,8 @@ export type FleetStatus = {
   chats?: ProjectChatState[];
   cursor: EventSeq;
   machines: Machine[];
+  /** When to notify the human; absent from older hubs. */
+  notify?: NotifyPolicy;
   projects: ProjectSummary[];
   /** Absent until the hub runs the slot board (M5). */
   slots?: SlotState;
@@ -966,6 +957,8 @@ export type FleetdStatusOutput = {
   cursor: EventSeq;
   machines: Machine[];
   next?: string;
+  /** When to notify the human; absent from older hubs. */
+  notify?: NotifyPolicy;
   projects: ProjectSummary[];
   /** Absent until the hub runs the slot board (M5). */
   slots?: SlotState;
@@ -1276,7 +1269,7 @@ export type Lead = {
   /** M4: the lead thread hit a usage limit; derived from the usage layer when read. */
   parked?: UsageParked;
   projectRef: ProjectRef;
-  /** Bumped by each lead_restart. */
+  /** Bumped by each `lead_start {fresh}`. */
   sessionGeneration: number;
   startedAt: Timestamp;
   state: LeadState;
@@ -1285,6 +1278,8 @@ export type Lead = {
 };
 
 export type LeadStartInput = {
+  /** Start a fresh lead thread from the current digest (sessionGeneration goes up); the old one stays as history. */
+  fresh?: boolean;
   machineId: MachineId;
   projectId: ProjectId;
 };
@@ -1295,7 +1290,7 @@ export type LeadStartOutput = {
   /** M4: the lead thread hit a usage limit; derived from the usage layer when read. */
   parked?: UsageParked;
   projectRef: ProjectRef;
-  /** Bumped by each lead_restart. */
+  /** Bumped by each `lead_start {fresh}`. */
   sessionGeneration: number;
   startedAt: Timestamp;
   state: LeadState;
@@ -1508,6 +1503,20 @@ export type NodeLoad = {
   memUsedPct?: number;
 };
 
+/**
+ * When a client may interrupt the human with an event marked `attention`. Quiet windows are absolute times the
+ * hub computes from `policy.quiet_hours` in `policy.tz`: the one under way (if any) and the next.
+ */
+export type NotifyPolicy = {
+  /** At most one notification per this many seconds; what arrives meanwhile is folded into the next. */
+  coalesceSec: number;
+  /**
+   * Only "urgent" events notify inside these; empty when quiet hours are off. Ask again after the last one ends
+   * or on decision.recorded.
+   */
+  quiet: QuietWindow[];
+};
+
 /** One order (workstream) as the board shows it. */
 export type OrderCard = {
   createdAt: Timestamp;
@@ -1537,6 +1546,8 @@ export type OrderGetInput = {
 };
 
 export type OrderGetOutput = {
+  /** Active decisions scoped to it. Absent from older hubs. */
+  decisions?: Decision[];
   /** Newest first. */
   doneLanes: AgentLane[];
   /** Its project's lead (shared by every order of the project); absent when the project has none. */
@@ -1545,7 +1556,11 @@ export type OrderGetOutput = {
   order: OrderCard;
   /** Its open secret and approval requests. */
   requests: HumanRequest[];
+  /** Its steers (to the lead or one of its tasks) with their receipts, newest first. Absent from older hubs. */
+  steers?: Steer[];
   truncated?: boolean;
+  /** Its record: the brief and its done-when. Absent from older hubs. */
+  workstream?: Workstream;
 };
 
 /** An order's phase: the first match in this order wins, and the board sorts by it. */
@@ -2035,6 +2050,7 @@ export type ProjectAddFailedData = {
 export type ProjectAddInput = {
   /** With `url`: clone here instead of `<cloneRoot>/<name>`. */
   dest?: string;
+  dryRun?: boolean;
   /** Absent: the best worker (see `project_discover.best`). */
   machineId?: MachineId;
   path?: string;
@@ -2049,9 +2065,11 @@ export type ProjectAddInput = {
 export type ProjectAddOutput = {
   /** A clone was started: its `project.clone_progress`, `project.added` and `project.add_failed` events carry it. */
   addId?: string;
-  /** False when the directory was already a project (it is renamed when a title is given). */
+  /** A dry run with url: where it would clone, and whether that folder already holds a checkout. */
+  clone?: CloneTarget;
+  /** False when the directory was already a project (it is renamed when a title is given), and in a dry run. */
   created: boolean;
-  /** For a path, at once; for a clone, on `project.added`. */
+  /** For a path, at once; for a clone, on `project.added`; for a dry run, the repository's facts. */
   inspect?: ProjectInspect;
   machineId: MachineId;
   next?: string;
@@ -2068,7 +2086,7 @@ export type ProjectAddedData = {
   addId?: string;
   /** False when the directory was already a project. */
   created: boolean;
-  /** Long lists are cut so the event fits the log's 2 KB of data; `project_inspect` returns them whole. */
+  /** Long lists are cut so the event fits the log's 2 KB of data; `project_add` with `dryRun` returns them whole. */
   inspect: ProjectInspect;
   path: string;
   title: string;
@@ -2117,13 +2135,42 @@ export type ProjectFilesOutput = {
 };
 
 export type ProjectGetInput = {
-  machineId: MachineId;
-  projectId: ProjectId;
+  machineId?: MachineId;
+  projectId?: ProjectId;
+  /** Without projectId: only projects whose title or path contains it. */
+  query?: string;
+};
+
+/** The projects, or one project's outcome (its fields at the top level). */
+export type ProjectGetOutput = {
+  asOf?: Timestamp;
+  /** Absent until lead_start. */
+  lead?: Lead;
+  /** Whether the lead may run a task on the medium profile (`project_set`); absent from older hubs, where it is on. */
+  mediumAllowed?: boolean;
+  /** Hint for the next call. */
+  next?: string;
+  project?: ProjectSummary;
+  /** Without projectId: the projects. */
+  projects?: ProjectSummary[];
+  stale?: boolean;
+  /** Absent until the project has a task. */
+  taskCounts?: TaskCounts;
+  /** Newest first. */
+  tasks?: Task[];
+  /** Newest activity first. Task threads are left out; they show under `tasks`. */
+  threads?: ThreadSummary[];
+  /** The merge trains of the project's repos; absent until one of its PRs was enqueued. */
+  trains?: TrainState[];
+  /** True when `threads`, `workstreams` or `tasks` was trimmed to its limit. */
+  truncated?: boolean;
+  /** Open workstreams (not done, stopped or failed), newest first. */
+  workstreams?: Workstream[];
 };
 
 export type ProjectId = string;
 
-/** What `project_inspect` found: the default branch, CI and merge rules, and one line on what the lead will need. */
+/** What a project's checkout or repository says: the default branch, CI and merge rules, and one line on what the lead will need. */
 export type ProjectInspect = {
   ci: CiInfo;
   defaultBranch?: string;
@@ -2134,30 +2181,6 @@ export type ProjectInspect = {
   notes: string[];
   /** Absent for a checkout without a GitHub remote. */
   repo?: GitHubRepo;
-};
-
-export type ProjectInspectInput = {
-  machineId?: MachineId;
-  path?: string;
-  /** A GitHub URL, `git@github.com:o/r.git`, or `owner/repo`. */
-  url?: string;
-};
-
-/** What `project_inspect` found: the default branch, CI and merge rules, and one line on what the lead will need. */
-export type ProjectInspectOutput = {
-  ci: CiInfo;
-  /** With `url` and a machine (given, or the best one): where `project_add` would clone it. */
-  clone?: CloneTarget;
-  defaultBranch?: string;
-  /** One line for a person, e.g. "no CI found: the merge train holds its PRs until the repo has CI". */
-  leadNeeds: string;
-  merge: MergeRules;
-  next?: string;
-  /** What could not be read, e.g. "branch rules need admin access on acme/storefront". */
-  notes: string[];
-  /** Absent for a checkout without a GitHub remote. */
-  repo?: GitHubRepo;
-  truncated?: boolean;
 };
 
 /** The one-call project outcome, returned as-is by project_get. */
@@ -2279,17 +2302,6 @@ export type ProjectSummary = {
   workspaceRoot: string;
 };
 
-export type ProjectsListInput = {
-  machineId?: MachineId;
-  query?: string;
-};
-
-export type ProjectsListOutput = {
-  next?: string;
-  projects: ProjectSummary[];
-  truncated?: boolean;
-};
-
 /** `prompt.changed`. */
 export type PromptChangedData = {
   id: string;
@@ -2301,20 +2313,14 @@ export type PromptChangedData = {
   warnings?: string[];
 };
 
-export type PromptGetInput = {
-  id: PromptId;
-  projectRef?: ProjectRef;
-};
-
 /** `prompt_get`: every level of one prompt for the asked project (or hub-wide). */
-export type PromptGetOutput = {
+export type PromptDetail = {
   default: PromptVersion;
   effective: PromptVersion;
   global?: PromptOverride;
   group: PromptGroup;
   id: PromptId;
   kind: PromptKind;
-  next?: string;
   /** False for a one-shot: it has the hub-wide level only. */
   perProject: boolean;
   placeholders: Placeholder[];
@@ -2326,8 +2332,25 @@ export type PromptGetOutput = {
   sentWhen: string;
   stale?: StalePrompt;
   title: string;
-  truncated?: boolean;
   warnings: PromptWarning[];
+};
+
+export type PromptGetInput = {
+  /** Absent: list every prompt. */
+  id?: PromptId;
+  /** The texts in effect for this project; absent: hub-wide. */
+  projectRef?: ProjectRef;
+};
+
+export type PromptGetOutput = {
+  next?: string;
+  /** Without an id: your edits to prompts a release retired, hub-wide ones and the asked project's. */
+  orphans?: RetiredPromptOverride[];
+  /** With an id: that prompt. */
+  prompt?: PromptDetail;
+  /** Without an id: every prompt. */
+  prompts?: PromptSummary[];
+  truncated?: boolean;
 };
 
 /** Where the app lists it. */
@@ -2349,19 +2372,6 @@ export type PromptOverride = {
 /** <prompt id>@<10 lowercase hex of the text's git blob SHA> */
 export type PromptRef = string;
 
-export type PromptResetInput = {
-  id: PromptId;
-  projectRef?: ProjectRef;
-  scope: PromptScope;
-};
-
-export type PromptResetOutput = {
-  effective: PromptVersion;
-  next?: string;
-  scope: PromptScope;
-  truncated?: boolean;
-};
-
 /** Which text is meant: the one shipped in the binary, the hub-wide override, or one project's override. */
 export type PromptScope = "default" | "global" | "project";
 
@@ -2374,8 +2384,11 @@ export type PromptSetInput = {
   /** Required with scope project. */
   projectRef?: ProjectRef;
   scope: PromptScope;
-  /** May be empty only for `instructions`. */
-  text: string;
+  /**
+   * May be empty only for `instructions`. Null (or absent) resets: deletes your text at this scope (or your edit
+   * to a prompt fleetd retired), so the next level applies.
+   */
+  text?: string;
 };
 
 export type PromptSetOutput = {
@@ -2386,7 +2399,7 @@ export type PromptSetOutput = {
   warnings: PromptWarning[];
 };
 
-/** A row of `prompts_list`. */
+/** A row of `prompt_get`'s list. */
 export type PromptSummary = {
   defaultRef: PromptRef;
   group: PromptGroup;
@@ -2419,19 +2432,6 @@ export type PromptWarning = {
 };
 
 export type PromptWarningCode = "placeholder_missing" | "placeholder_unknown" | "safety_rule_missing" | "too_long";
-
-export type PromptsListInput = {
-  /** The texts in effect for this project; absent: hub-wide. */
-  projectRef?: ProjectRef;
-};
-
-export type PromptsListOutput = {
-  next?: string;
-  /** Your edits to prompts a release retired: hub-wide ones, and the asked project's. */
-  orphans: RetiredPromptOverride[];
-  prompts: PromptSummary[];
-  truncated?: boolean;
-};
 
 export type QuietWindow = {
   from: Timestamp;
@@ -2499,7 +2499,7 @@ export type ResearchVerdict = {
 
 /**
  * An override of a prompt a release retired (merged into another, or replaced by fixed text), kept so the human can
- * carry what they wrote into a prompt that still exists. Its file stays until `prompt_reset` on its id.
+ * carry what they wrote into a prompt that still exists. Its file stays until `prompt_set` with `text: null` on its id.
  */
 export type RetiredPromptOverride = {
   /** The retired id. */
@@ -2829,23 +2829,20 @@ export type StalePrompt = {
 };
 
 export type StatusGetInput = {
-  projectRef: ProjectRef;
+  projectRef?: ProjectRef;
 };
 
 export type StatusGetOutput = {
   next?: string;
-  row: ProjectStatusRow;
-  /** The bar over time, oldest first: why it fell (`drop`) and when it held on paused work (`paused`). */
-  series: ProgressPoint[];
-  truncated?: boolean;
-};
-
-export type StatusProjectsInput = { [key: string]: unknown };
-
-export type StatusProjectsOutput = {
-  next?: string;
-  /** By title. */
-  rows: ProjectStatusRow[];
+  /** With projectRef. */
+  row?: ProjectStatusRow;
+  /** Without projectRef: by title. */
+  rows?: ProjectStatusRow[];
+  /**
+   * With projectRef: the bar over time, oldest first: why it fell (`drop`) and when it held on paused work
+   * (`paused`).
+   */
+  series?: ProgressPoint[];
   truncated?: boolean;
 };
 
@@ -2998,20 +2995,6 @@ export type SteerWithdrawOutput = {
   truncated?: boolean;
   /** The order it belongs to (a task's own order for a task steer). */
   workstreamId: WorkstreamId;
-};
-
-export type SteersListInput = {
-  /** Only steers after this number (the n of `S<n>`). */
-  afterN?: number;
-  limit?: number;
-  taskId?: TaskId;
-  workstreamId?: WorkstreamId;
-};
-
-export type SteersListOutput = {
-  next?: string;
-  steers: Steer[];
-  truncated?: boolean;
 };
 
 export type TailAction = {
@@ -3603,20 +3586,6 @@ export type WorkstreamEventData = {
   workstreamId: WorkstreamId;
 };
 
-export type WorkstreamGetInput = {
-  workstreamId: WorkstreamId;
-};
-
-export type WorkstreamGetOutput = {
-  /** Active decisions scoped to it. */
-  decisions: Decision[];
-  next?: string;
-  /** Its open secret and approval requests. */
-  requests: HumanRequest[];
-  truncated?: boolean;
-  workstream: Workstream;
-};
-
 export type WorkstreamId = string;
 
 export type WorkstreamListInput = {
@@ -3651,7 +3620,6 @@ export interface ToolMap {
   approval_answer: { input: ApprovalAnswerInput; output: ApprovalAnswerOutput };
   attachment_get: { input: AttachmentGetInput; output: AttachmentGetOutput };
   attachment_put: { input: AttachmentPutInput; output: AttachmentPutOutput };
-  attention_policy: { input: AttentionPolicyInput; output: AttentionPolicyOutput };
   cap_set: { input: CapSetInput; output: CapSetOutput };
   changes_list: { input: ChangesListInput; output: ChangesListOutput };
   chat_history: { input: ChatHistoryInput; output: ChatHistoryOutput };
@@ -3664,7 +3632,6 @@ export interface ToolMap {
   events_wait: { input: EventsWaitInput; output: EventsWaitOutput };
   fleetd_status: { input: FleetdStatusInput; output: FleetdStatusOutput };
   hub_info: { input: HubInfoInput; output: HubInfoOutput };
-  lead_restart: { input: LeadStartInput; output: LeadStartOutput };
   lead_start: { input: LeadStartInput; output: LeadStartOutput };
   order_get: { input: OrderGetInput; output: OrderGetOutput };
   orders_board: { input: OrdersBoardInput; output: OrdersBoardOutput };
@@ -3676,24 +3643,18 @@ export interface ToolMap {
   project_add: { input: ProjectAddInput; output: ProjectAddOutput };
   project_discover: { input: ProjectDiscoverInput; output: ProjectDiscoverOutput };
   project_files: { input: ProjectFilesInput; output: ProjectFilesOutput };
-  project_get: { input: ProjectGetInput; output: ProjectOutcome };
-  project_inspect: { input: ProjectInspectInput; output: ProjectInspectOutput };
+  project_get: { input: ProjectGetInput; output: ProjectGetOutput };
   project_remove: { input: ProjectRemoveInput; output: ProjectRemoveOutput };
   project_set: { input: ProjectSetInput; output: ProjectSetOutput };
   project_stop: { input: ProjectStopInput; output: ProjectStopOutput };
-  projects_list: { input: ProjectsListInput; output: ProjectsListOutput };
   prompt_get: { input: PromptGetInput; output: PromptGetOutput };
-  prompt_reset: { input: PromptResetInput; output: PromptResetOutput };
   prompt_set: { input: PromptSetInput; output: PromptSetOutput };
-  prompts_list: { input: PromptsListInput; output: PromptsListOutput };
   requests_list: { input: RequestsListInput; output: RequestsListOutput };
   secret_submit: { input: SecretSubmitInput; output: SecretSubmitOutput };
   session_prompt_get: { input: SessionPromptGetInput; output: SessionPromptGetOutput };
   status_get: { input: StatusGetInput; output: StatusGetOutput };
-  status_projects: { input: StatusProjectsInput; output: StatusProjectsOutput };
   steer_send: { input: SteerSendInput; output: SteerSendOutput };
   steer_withdraw: { input: SteerWithdrawInput; output: SteerWithdrawOutput };
-  steers_list: { input: SteersListInput; output: SteersListOutput };
   task_get: { input: TaskGetInput; output: TaskGetOutput };
   tasks_list: { input: TasksListInput; output: TasksListOutput };
   thread_tail: { input: ThreadTailInput; output: ThreadTailOutput };
@@ -3707,7 +3668,6 @@ export interface ToolMap {
   wake_cancel: { input: WakeCancelInput; output: WakeCancelOutput };
   wake_list: { input: WakeListInput; output: WakeListOutput };
   wake_set: { input: WakeSetInput; output: WakeSetOutput };
-  workstream_get: { input: WorkstreamGetInput; output: WorkstreamGetOutput };
   workstream_list: { input: WorkstreamListInput; output: WorkstreamListOutput };
 }
 

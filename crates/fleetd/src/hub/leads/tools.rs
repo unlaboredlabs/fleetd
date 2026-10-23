@@ -1,9 +1,8 @@
-//! MCP tools this area serves: lead_start, lead_restart, project_set, workstream_list, workstream_get. Same grant checks, limits and `next` texts as older hubs.
+//! MCP tools this area serves: lead_start, project_set, workstream_list. Same grant checks, limits and `next` texts as older hubs.
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::ids::ProjectRef;
-use fleetd_contracts::ledger::WorkstreamState;
 use fleetd_contracts::mcp::*;
 use fleetd_contracts::prim::List;
 
@@ -12,15 +11,11 @@ use super::error::LeadError;
 use super::records::WorkstreamFilter;
 use crate::hub::api::{Caller, Hub, Registry, ToolError, allows, require, unknown_project};
 
-const WORKSTREAM_ASKS: usize = 50;
-
 pub fn register(tools: &mut Registry) {
-    tools.add::<LeadStartInput, LeadStartOutput, _, _>("lead_start", |hub: Arc<Hub>, caller, input| async move {
-        hub.leads.lead_start(&caller, input, false).await
-    });
-    tools.add::<LeadRestartInput, LeadRestartOutput, _, _>("lead_restart", |hub: Arc<Hub>, caller, input| async move {
-        hub.leads.lead_start(&caller, input, true).await
-    });
+    tools.add::<LeadStartInput, LeadStartOutput, _, _>(
+        "lead_start",
+        |hub: Arc<Hub>, caller, input| async move { hub.leads.lead_start(&caller, input).await },
+    );
     tools.add::<ProjectSetInput, ProjectSetOutput, _, _>(
         "project_set",
         |hub: Arc<Hub>, caller, input| async move { hub.leads.project_set(&caller, input) },
@@ -29,18 +24,6 @@ pub fn register(tools: &mut Registry) {
         "workstream_list",
         |hub: Arc<Hub>, caller, input| async move { hub.leads.workstream_list(&caller, input) },
     );
-    tools.add::<WorkstreamGetInput, WorkstreamGetOutput, _, _>(
-        "workstream_get",
-        |hub: Arc<Hub>, caller, input| async move { hub.leads.workstream_get(&caller, input) },
-    );
-}
-
-fn unknown_workstream(id: &str) -> ToolError {
-    ToolError {
-        code: ErrorCode::NotFound,
-        message: format!("No workstream {id}."),
-        fix: Some("Call workstream_list to see workstreams.".into()),
-    }
 }
 
 fn refusal(e: impl Into<LeadError>) -> ToolError {
@@ -52,8 +35,8 @@ impl Area {
         &self,
         caller: &Caller,
         input: LeadStartInput,
-        restart: bool,
     ) -> Result<LeadStartOutput, ToolError> {
+        let restart = input.fresh == Some(true);
         require(caller, Role::Operate, Some(&input.machine_id))?;
         let r = ProjectRef {
             machine_id: input.machine_id.clone(),
@@ -154,48 +137,6 @@ impl Area {
         Ok(WorkstreamListOutput {
             workstreams: List::unchecked(all.into_iter().take(limit).collect()),
             next: truncated.then(|| "Narrow the list with machineId, projectId or state.".into()),
-            truncated: truncated.then_some(true),
-        })
-    }
-
-    pub(crate) fn workstream_get(
-        &self,
-        caller: &Caller,
-        input: WorkstreamGetInput,
-    ) -> Result<WorkstreamGetOutput, ToolError> {
-        let id = &input.workstream_id;
-        let workstream = match self.workstreams.get(id).map_err(refusal)? {
-            Some(w) if allows(caller, Role::Read, Some(&w.project_ref.machine_id)) => w,
-            _ => return Err(unknown_workstream(id.as_str())),
-        };
-        let mut requests: Vec<_> = self
-            .ctx
-            .ports()
-            .open_requests(Some(&workstream.project_ref), 200)
-            .map_err(refusal)?
-            .into_iter()
-            .filter(|r| r.workstream_id.as_ref() == Some(id))
-            .collect();
-        let mut decisions = self
-            .ctx
-            .ports()
-            .decisions_of_workstream(id, WORKSTREAM_ASKS + 1)
-            .map_err(refusal)?;
-        let truncated = requests.len() > WORKSTREAM_ASKS || decisions.len() > WORKSTREAM_ASKS;
-        requests.truncate(WORKSTREAM_ASKS);
-        decisions.truncate(WORKSTREAM_ASKS);
-        let next = match workstream.state {
-            WorkstreamState::Draft => "The lead has not registered its brief yet; wait for workstream.running with events_wait.".to_string(),
-            WorkstreamState::Done => {
-                "Done: its lead closed it; workstream.done says why.".into()
-            }
-            _ => "Its open requests (a secret to enter, a command to approve) are answered in the project's chat.".into(),
-        };
-        Ok(WorkstreamGetOutput {
-            workstream,
-            requests: List::unchecked(requests),
-            decisions: List::unchecked(decisions),
-            next: Some(next),
             truncated: truncated.then_some(true),
         })
     }

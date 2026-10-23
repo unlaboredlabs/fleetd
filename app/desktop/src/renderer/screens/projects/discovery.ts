@@ -225,7 +225,7 @@ export const ready = (project: ProjectKey, title: string, machine: string, path:
 };
 
 export type FailAction =
-  /** The clone's folder already holds this repo (project_inspect said so): add it as it is. */
+  /** The clone's folder already holds this repo (a dry-run project_add said so): add it as it is. */
   | { readonly kind: "use_existing"; readonly request: Request }
   /** The hub's answer was lost with the connection and it has no record of the add: send it again. */
   | { readonly kind: "retry"; readonly request: Request }

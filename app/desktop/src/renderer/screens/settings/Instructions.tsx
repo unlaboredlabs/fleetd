@@ -33,7 +33,7 @@ export function Instructions({ route }: { route: SettingsRoute }) {
   const [busy, setBusy] = useState<PromptScope | null>(null);
   const [echo, setEcho] = useState<Echo | null>(null);
 
-  const d = load.state === "ready" ? load.value : null;
+  const d = load.state === "ready" ? (load.value.prompt ?? null) : null;
   if (d && d !== synced) {
     setSynced(d);
     setGlobal(fill(global, d.global?.text ?? ""));

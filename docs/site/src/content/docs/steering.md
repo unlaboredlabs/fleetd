@@ -120,5 +120,5 @@ A lead steers its own agents the same way with `fleetd task message T88 "<text>"
 agent's current step.
 
 From an MCP client: `steer_send {target: {workstreamId} | {taskId}, text, mode: "queue" | "now", clientRequestId}`
-(operate, human key), `steer_withdraw {steerId}` and `steers_list {workstreamId?, taskId?}`. `clientRequestId` is any
+(operate, human key), `steer_withdraw {steerId}`; `order_get {workstreamId}` lists the order's newest steers. `clientRequestId` is any
 unique string; sending the same one again doesn't send the steer twice.

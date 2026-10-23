@@ -144,7 +144,7 @@ describe("live frames", () => {
 });
 
 describe("one state word per project", () => {
-  // The typical fixture's billing project: the Status row (status_projects) said "idle" while its lead was
+  // The typical fixture's billing project: the Status row (status_get) said "idle" while its lead was
   // waiting on a reply. The hub's chat state is the one source, so the dot, the header and the row agree.
   it("takes needs-you from the hub's chat state only, whatever the Status row says", () => {
     let s = withBoard(run([live(), snapshot(1)]), []);

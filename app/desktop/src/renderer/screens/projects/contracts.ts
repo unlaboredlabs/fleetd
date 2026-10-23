@@ -13,7 +13,6 @@ export type {
   ProjectAddedData,
   ProjectDiscoverOutput,
   ProjectInspect,
-  ProjectInspectOutput,
   ProjectProblem,
   ProjectSummary,
   SleptSpan,

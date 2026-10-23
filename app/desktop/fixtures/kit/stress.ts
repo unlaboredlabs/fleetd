@@ -81,9 +81,9 @@ const promptRef = (id: string, seed: string) => `${id}@${sha(seed).slice(0, 10)}
 
 /** `total` prompts: the real ones plus long dotted ids, every other one overridden for the project; each answers prompt_get. */
 export const manyPrompts = (f: Fixture, total = 72): Fixture => {
-  const prompts = arr(obj(f.output("prompts_list", {}))["prompts"]).filter(isObject);
-  const template = obj(f.answers("prompt_get")[0]?.output);
-  if (prompts.length === 0 || Object.keys(template).length === 0) throw new Error("manyPrompts needs a recorded prompts_list {} and a prompt_get");
+  const prompts = arr(obj(f.output("prompt_get", {}))["prompts"]).filter(isObject);
+  const template = obj(obj(f.answers("prompt_get").find((a) => a.input?.["id"] !== undefined)?.output)["prompt"]);
+  if (prompts.length === 0 || Object.keys(template).length === 0) throw new Error("manyPrompts needs a recorded prompt_get {} and a prompt_get {id}");
   const groups = ["lead", "tasks", "reviews_and_checks", "messages", "one_shots", "instructions"];
   for (let n = 0; prompts.length < total; n++) {
     const group = groups[n % groups.length] ?? "lead";
@@ -101,7 +101,7 @@ export const manyPrompts = (f: Fixture, total = 72): Fixture => {
     }
     p["stale"] = n % 9 === 4;
   });
-  f.update("prompts_list", (out) => ({ ...obj(out), prompts: clone(prompts) }));
+  f.update("prompt_get", (out, input) => (input?.["id"] === undefined ? { ...obj(out), prompts: clone(prompts) } : out));
   for (const p of prompts) {
     const id = asText(p["id"]);
     const defaultText = `# ${asText(p["title"])}\n\nYou are the lead of {project}. ${LONG_PARAGRAPH}\n\n- Keep each step small.\n- Ask before anything irreversible.`;
@@ -123,7 +123,7 @@ export const manyPrompts = (f: Fixture, total = 72): Fixture => {
       out["project"] = { ref: asText(p["overrideRef"]), base: asText(p["defaultRef"]), text };
       out["effective"] = { ref: asText(p["overrideRef"]), text };
     }
-    f.answer("prompt_get", { id }, out);
+    f.answer("prompt_get", { id }, { prompt: out });
   }
   return f;
 };

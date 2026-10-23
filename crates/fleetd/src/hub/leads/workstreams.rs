@@ -162,7 +162,7 @@ impl Workstreams {
                 "{id} is a draft. The project has no lead yet; call lead_start and it will pick this up."
             )
         } else {
-            format!("{id} is a draft; the lead registers its brief. Watch it with workstream_get.")
+            format!("{id} is a draft; the lead registers its brief. Watch it with order_get.")
         };
         Ok(IntakeOutcome {
             workstream_id: id,

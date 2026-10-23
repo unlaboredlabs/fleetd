@@ -1,4 +1,4 @@
-// Status is one row per project, from the hub's `status_projects` (H6): a state word, the two-tone progress bar,
+// Status is one row per project, from the hub's `status_get` (H6): a state word, the two-tone progress bar,
 // agents running, last merged. The state word is the one the sidebar dot and the chat header show
 // (projectStateWord over the data layer's project row): "waiting on you" comes only from the hub's chat state, and
 // this row adds only "blocked" and a working its agents can't show. An unknown state reads as idle.

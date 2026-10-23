@@ -6,7 +6,7 @@
    "kind": "start",
    "group": "lead",
    "title": "Lead",
-   "sentWhen": "lead start and every lead_restart, followed by the state block",
+   "sentWhen": "lead start and every fresh lead start, followed by the state block",
    "placeholders": [
     {
      "name": "project",

@@ -103,8 +103,11 @@ const addAnswers = (f: Fixture) => {
     message: "/home/dev/src/ledger-ui already exists on devbox",
     fix: "Add the existing checkout at /home/dev/src/ledger-ui on devbox instead, or clone into another folder",
   });
-  f.answer("project_inspect", { url: "acme/ledger-ui" }, {
-    ...inspect("acme/ledger-ui", true),
+  f.answer("project_add", { url: "acme/ledger-ui", dryRun: true }, {
+    machineId: "devbox",
+    path: "/home/dev/src/ledger-ui",
+    created: false,
+    inspect: inspect("acme/ledger-ui", true),
     clone: { machineId: "devbox", path: "/home/dev/src/ledger-ui", exists: true, sameRemote: true },
   });
   f.answer("project_add", { url: "acme/ledger-ui", useExisting: true }, {

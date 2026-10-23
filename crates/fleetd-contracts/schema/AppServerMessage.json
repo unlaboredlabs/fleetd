@@ -397,6 +397,10 @@
           },
           "type": "array"
         },
+        "notify": {
+          "$ref": "#/$defs/NotifyPolicy",
+          "description": "When to notify the human; absent from older hubs."
+        },
         "projects": {
           "items": {
             "$ref": "#/$defs/ProjectSummary"
@@ -1045,6 +1049,30 @@
       ],
       "type": "object"
     },
+    "NotifyPolicy": {
+      "description": "When a client may interrupt the human with an event marked `attention`. Quiet windows are absolute times the\nhub computes from `policy.quiet_hours` in `policy.tz`: the one under way (if any) and the next.",
+      "properties": {
+        "coalesceSec": {
+          "description": "At most one notification per this many seconds; what arrives meanwhile is folded into the next.",
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "quiet": {
+          "description": "Only \"urgent\" events notify inside these; empty when quiet hours are off. Ask again after the last one ends\nor on decision.recorded.",
+          "items": {
+            "$ref": "#/$defs/QuietWindow"
+          },
+          "maxItems": 2,
+          "type": "array"
+        }
+      },
+      "required": [
+        "coalesceSec",
+        "quiet"
+      ],
+      "type": "object"
+    },
     "ProjectChatState": {
       "description": "One chat's state, for the sidebar and the status row.",
       "properties": {
@@ -1123,6 +1151,21 @@
         "workspaceRoot",
         "threads",
         "lastActivityAt"
+      ],
+      "type": "object"
+    },
+    "QuietWindow": {
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "to": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "from",
+        "to"
       ],
       "type": "object"
     },
