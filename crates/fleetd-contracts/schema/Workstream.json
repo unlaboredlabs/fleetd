@@ -317,7 +317,7 @@
     },
     "PlaybookRef": {
       "description": "<playbook name>@<full lowercase hex git blob SHA>",
-      "pattern": "^(?:bugfix|feature|research|finish-all)@(?:[0-9a-f]{40}|[0-9a-f]{64})$",
+      "pattern": "^(?:bugfix|feature|research)@(?:[0-9a-f]{40}|[0-9a-f]{64})$",
       "type": "string"
     },
     "ProjectId": {
@@ -372,9 +372,6 @@
       ],
       "type": "object"
     },
-    "Serves": {
-      "type": "string"
-    },
     "Timestamp": {
       "format": "date-time",
       "type": "string"
@@ -399,10 +396,6 @@
         "outcome": {
           "$ref": "#/$defs/ResearchOutcome",
           "description": "Research workstreams, once the verdict is computed; set together with `verdict`. A STOP is done, not failed."
-        },
-        "parent": {
-          "$ref": "#/$defs/WorkstreamParent",
-          "description": "M9 finish-all: the finish-all workstream that spawned this one, and the value source it was spawned for."
         },
         "playbook": {
           "$ref": "#/$defs/PlaybookRef",
@@ -446,21 +439,6 @@
       "pattern": "^W[1-9][0-9]*$",
       "type": "string"
     },
-    "WorkstreamParent": {
-      "properties": {
-        "serves": {
-          "$ref": "#/$defs/Serves"
-        },
-        "workstreamId": {
-          "$ref": "#/$defs/WorkstreamId"
-        }
-      },
-      "required": [
-        "workstreamId",
-        "serves"
-      ],
-      "type": "object"
-    },
     "WorkstreamSource": {
       "properties": {
         "at": {
@@ -494,7 +472,6 @@
         "converging",
         "verifying",
         "done",
-        "idle",
         "stopped",
         "failed"
       ],

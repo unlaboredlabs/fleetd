@@ -13,8 +13,7 @@ use crate::hello::ProtocolVersion;
 use crate::ids::{EventSeq, MachineId, ProjectId, ProjectRef, ThreadId, Timestamp};
 use crate::ledger::{
     Decision, DecisionKey, DecisionScope, DecisionValue, DecisionWhy, HumanRequest, IntakeText,
-    Lead, PlaybookName, PlaybookRef, RequestState, Serves, Workstream, WorkstreamId,
-    WorkstreamState,
+    Lead, PlaybookName, RequestState, Workstream, WorkstreamId, WorkstreamState,
 };
 use crate::live::{AgentLane, OrderCard, TrainLive};
 use crate::model::{ActionItem, Machine, ProjectOutcome, ProjectSummary, ThreadSummary};
@@ -584,35 +583,6 @@ output!(WorkstreamGetOutput {
     decisions: List<Decision, 0, 50>,
     /// Its claims, newest first.
     claims: Option<List<Claim, 0, 20>>,
-});
-
-// workstream_spawn: what a finish-all lead's `fleetd workstream spawn` does, for an outside orchestrator.
-input!(WorkstreamSpawnInput {
-    machine_id: MachineId,
-    project_id: ProjectId,
-    text: IntakeText,
-    serves: Serves,
-    template: Option<PlaybookName>,
-});
-output!(WorkstreamSpawnOutput {
-    workstream_id: WorkstreamId,
-    /// The project's open finish-all workstream it is a child of.
-    parent: WorkstreamId,
-    playbook: Option<PlaybookRef>,
-});
-
-// inventory: what a finish-all lead's `fleetd inventory` returns.
-input!(InventoryInput {
-    machine_id: MachineId,
-    project_id: ProjectId
-});
-output!(InventoryOutput {
-    /// The ranked list, one item per line.
-    text: String,
-    /// Items with a value source that no open child serves yet.
-    spawnable: Count,
-    /// The project's finish-all workstream went (or stayed) idle: nothing left with a value source.
-    idle: bool,
 });
 
 // requests_list: secret and approval requests, newest first.
@@ -1310,8 +1280,6 @@ tools! {
     intake_submit => IntakeSubmit, Operate, IntakeSubmitInput, IntakeSubmitOutput;
     workstream_list => WorkstreamList, Read, WorkstreamListInput, WorkstreamListOutput;
     workstream_get => WorkstreamGet, Read, WorkstreamGetInput, WorkstreamGetOutput;
-    workstream_spawn => WorkstreamSpawn, Operate, WorkstreamSpawnInput, WorkstreamSpawnOutput;
-    inventory => Inventory, Read, InventoryInput, InventoryOutput;
     requests_list => RequestsList, Read, RequestsListInput, RequestsListOutput;
     decisions_search => DecisionsSearch, Read, DecisionsSearchInput, DecisionsSearchOutput;
     decisions_record => DecisionsRecord, Operate, DecisionsRecordInput, DecisionsRecordOutput;

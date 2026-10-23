@@ -9,7 +9,6 @@ use std::path::Path;
 
 use fleetd::cli::agent_mcp::{self, Role, SERVER_NAME, Tool};
 use fleetd::hub::orders::phase;
-use fleetd::hub::playbooks::finish_all_rules::{CHILD_SOURCES, DEFAULT_MAX_CHILDREN};
 use fleetd::hub::slots::DEFAULT_CAP;
 use fleetd::hub::tasks::policy::{
     self, CallerAgent, MAX_DEPTH, MAX_OPEN_TASKS, SPAWN_OPS, WORKER_OPS,
@@ -80,7 +79,7 @@ pub fn page(root: &Path) -> Result<String, String> {
     md.push_str(&limits(&lead_tools, &task_tools)?);
     md.push_str(&tool_section(
         "Lead tools",
-        "Every lead gets these, the finish-all lead included.",
+        "Every lead gets these.",
         Role::Lead,
         &lead_tools,
         &[],
@@ -235,13 +234,6 @@ fn roles() -> String {
             tool_set(session),
             can_spawn(&caller)
         ));
-        if role == AgentRole::Lead {
-            md.push_str(&format!(
-                "| Finish-all lead | A lead whose workstream runs the finish-all playbook. It also uses \
-                 `inventory` and `workstream_spawn` | {} | Yes, child workstreams too |\n",
-                tool_set(SessionRole::Lead)
-            ));
-        }
     }
     md.push('\n');
     md
@@ -304,13 +296,6 @@ fn limits(lead: &[&Tool], task: &[&Tool]) -> Result<String, String> {
     md.push_str(&format!(
         "| Calls a task's agent may make | {}. Every other call is refused. |\n",
         code_list(worker_calls.iter().copied())
-    ));
-    md.push_str(&format!(
-        "| Finish-all children open at once | {DEFAULT_MAX_CHILDREN}. |\n"
-    ));
-    md.push_str(&format!(
-        "| What a child workstream may serve | {}. Never invented work. |\n",
-        code_list(CHILD_SOURCES.iter().map(|s| s.trim_end_matches(':')))
     ));
     md.push_str(&format!(
         "| Gated commands (`gated_run`) | Classes {}. Run only after a human approves; at most {timeout} s. |\n",
@@ -658,7 +643,7 @@ fn example(role: Role, tool: &str) -> Option<Value> {
         (Role::Lead, "plan_drop") => {
             json!({ "itemId": "P6", "why": "The client already throttles." })
         }
-        (Role::Lead, "plan_show") | (Role::Lead, "inventory") => json!({}),
+        (Role::Lead, "plan_show") => json!({}),
         (Role::Lead, "status_set") => json!({
             "workstreamId": "W3",
             "text": "Limiter merged; checking the 429 path.",
@@ -672,10 +657,6 @@ fn example(role: Role, tool: &str) -> Option<Value> {
         (Role::Lead, "workstream_open") => json!({
             "text": "Build the schedules page",
             "template": "feature",
-        }),
-        (Role::Lead, "workstream_spawn") => json!({
-            "text": "Fix the flaky upload test",
-            "serves": "issue:#88",
         }),
         (Role::Worker, "report") => json!({
             "taskId": "T8",

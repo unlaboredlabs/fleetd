@@ -518,30 +518,13 @@ fleetd plan show [--workstream <W>]
 
 keep the project's plan: milestones of must or polish items sized s, m or l (relative size, never hours). Link work with `--item`; only fleetd marks an item done, once its PRs merged through the train and its done-when checks passed. Changing scope after a milestone's first 10 minutes needs `--why`, and the status view shows it as a marker. `--steer` S\<n\> says the human's steer asked for it: it stands in for `--why` and acknowledges the steer
 
-### fleetd inventory {#inventory}
-
-```text
-fleetd inventory
-```
-
-the project's open work ranked: failing checks, open issues (gh), open requests and TODO/FIXME markers; with nothing left that has a value source and no open child, the project's finish-all workstream goes idle
-
 ### fleetd workstream open {#workstream-open}
 
 ```text
-fleetd workstream open --text "<intent>" [--template bugfix|feature|research|finish-all]
+fleetd workstream open --text "<intent>" [--template bugfix|feature|research]
 ```
 
 open a workstream for work taken from the chat: a draft to brief
-
-### fleetd workstream spawn {#workstream-spawn}
-
-```text
-fleetd workstream spawn --text "<intent>" --serves issue:<#n|url>|defect:<text>|done:<n>
-    [--template bugfix|feature|research]
-```
-
-a finish-all lead starts a child workstream for one item with a value source
 
 :::note
 lead-side commands reach the hub through the local node (FLEETD\_NODE\_SOCK, default `~/.fleetd/node/node.sock`); exit 0 ok, 1 checks failed, 2 usage, 3 refused, 4 hub unreachable

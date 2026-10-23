@@ -35,7 +35,6 @@ Name one as `template` on `workstream_open`.
 - bugfix: a done-when `test` or `cmd` check that fails on main today. Fix only that bug.
 - feature: the smallest thing that meets the done-when.
 - research: freeze a baseline, one metric and a decision rule first; a judge measures both and fleetd says GO, STOP or INCONCLUSIVE. Never move the rule. A plain question is one read agent and an answer in the chat.
-- finish-all: open work only for `inventory` items with a value source, highest first; stop when none are left.
 
 ## Examples
 Human: can we add dark mode?

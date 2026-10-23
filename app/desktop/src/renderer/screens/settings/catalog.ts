@@ -30,7 +30,7 @@ const e = (group: GroupKey, name: string, description: string): Entry => ({ grou
 
 /** Keyed by registry id: the editable prompts (the instructions have their own page). Order within a group follows this table. */
 const ENTRIES: Readonly<Record<string, Entry>> = {
-  "lead.start": e("lead", "Lead's role, rules and playbooks", "What the lead does, what it must never do, and how it runs a bug fix, a feature, research or finish-all."),
+  "lead.start": e("lead", "Lead's role, rules and playbooks", "What the lead does, what it must never do, and how it runs a bug fix, a feature or research."),
   "task.brief.write": e("tasks", "Writer task", "First message of a task that changes code and opens a pull request."),
   "review.reviewer": e("reviews", "Reviewer", "Reviews a pull request each round, by the project's review rules."),
   "review.verifier": e("reviews", "Verifier", "Checks a large pull request actually does what it claims."),

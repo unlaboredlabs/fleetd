@@ -101,14 +101,6 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "One workstream with its frozen brief and headline (the lead's own words), its open secret and approval requests, the decisions scoped to it, and its last 20 claims with each check's result. Only a claim whose checks all passed makes it done.",
     ),
     (
-        "workstream_spawn",
-        "Start one child workstream of the project's open finish-all workstream, for exactly one item with a value source: serves is issue:#<n> (or issue:<url>) for an open issue, defect:<one line> for a failing check or error you saw, or done:<n> for the finish-all's done-when check n. Use a serves value from inventory; never invent work. Refused when the project has no open finish-all workstream, when an open child already serves it, or past 5 open children. template (bugfix, feature, research) defaults to bugfix for defect: and feature otherwise. The child starts as a draft and its lead writes the brief.",
-    ),
-    (
-        "inventory",
-        "A project's open work, ranked as plain text: failing done-when checks first, then open GitHub issues (oldest first), then open secret and approval requests and TODO/FIXME counts, which never become children. Each item with a value source shows its serves value and the child already working on it, if any. spawnable counts the unserved ones. When the finish-all workstream has no open child and nothing left to start, it goes idle (idle: true) and this says so.",
-    ),
-    (
         "secret_submit",
         "Human keys only. Enter the value of an open secret request (requestId, Q<n>) sealed on the client (the desktop app) with libsodium's crypto_box_seal to the sink machine's boxPubKey (fleetd_status machines). The hub relays it to that node, which writes the sink (0600) and returns the sha256 fingerprint prefix; the request is stored with it and its lead hears the fingerprint, never the value. Refused with machine_offline when the node is down: nothing is queued.",
     ),

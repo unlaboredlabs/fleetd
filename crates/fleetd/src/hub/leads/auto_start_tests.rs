@@ -13,7 +13,7 @@ use fleetd_contracts::model::{ProjectSummary, ThreadCounts};
 use crate::hub::executor::LaunchInput;
 use crate::hub::leads::hooks::BoxFuture;
 use crate::hub::leads::lead::AutoStart;
-use crate::hub::leads::ports::{CmdOutcome, LeadPorts};
+use crate::hub::leads::ports::LeadPorts;
 use crate::hub::leads::wakes::WAKE_DEBOUNCE;
 use crate::hub::leads::workstreams::IntakeInput;
 use crate::hub::leads::{Area, AreaOptions, Ctx, LeadError};
@@ -50,15 +50,6 @@ impl LeadPorts for Ports {
     fn send(&self, _: ThreadRef, message: String, _: String) -> BoxFuture<Result<bool, LeadError>> {
         self.0.sends.lock().unwrap().push(message);
         Box::pin(async { Ok(false) })
-    }
-    fn run_command(
-        &self,
-        _: &MachineId,
-        _: String,
-        _: Vec<String>,
-        _: u32,
-    ) -> BoxFuture<Result<CmdOutcome, String>> {
-        Box::pin(async { Err("no commands here".to_string()) })
     }
     fn open_requests(
         &self,
@@ -145,7 +136,6 @@ impl Hub {
                 channel: IntakeChannel::Mcp,
                 by: "human".into(),
                 template: None,
-                parent: None,
             })
             .unwrap();
         let lead = self.area.leads.auto_start(&self.project).await;
