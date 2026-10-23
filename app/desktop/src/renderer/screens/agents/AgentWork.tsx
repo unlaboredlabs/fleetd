@@ -1,10 +1,13 @@
 // One agent's live work, read-only: what it is on, what it is doing now, and its newest steps (what it wrote, what it
-// ran and edited), with the message it is writing streaming in at the end. Under it, a box steers it directly.
-import { useMemo } from "react";
+// ran and edited), with the message it is writing streaming in at the end. Under it, a box steers it directly. Its
+// head opens what it was told at its start: its first message and the prompts it pinned.
+import { useMemo, useState } from "react";
 import type { WorkStep } from "../../../shared/contracts";
 import { useAgentWork, useData } from "../../src/data/react";
 import { selectLiveAgent, selectLiveAgents } from "../../src/data/selectors";
-import { Button, cx, EmptyState, Markdown, PROFILE_LINE, RoleTag, Text, Truncate, VirtualList } from "../../ui";
+import { Button, cx, EmptyState, Markdown, PROFILE_LINE, ROLE_WORD, RoleTag, Text, Truncate, VirtualList } from "../../ui";
+import { roleWords } from "../chat/told";
+import { ToldPanel } from "../chat/ToldPanel";
 import { ActivityLine, MiddleCut } from "../live/parts";
 import { SteerBox } from "../live/Steer";
 import { describe, isRunning } from "../live/words";
@@ -20,6 +23,7 @@ export function AgentWork({ id }: { id: string }) {
   const agent = useData(selectLiveAgent(id));
   const listed = useData((st) => selectLiveAgents(st) !== undefined);
   const work = useAgentWork(agent);
+  const [told, setTold] = useState(false);
   const row = agent?.row;
   // The message being written shows only while the agent writes; once it ends, its thread's event reads it in.
   const writing = row?.live?.activity?.activity.kind === "writing" ? work.streaming : undefined;
@@ -37,6 +41,7 @@ export function AgentWork({ id }: { id: string }) {
     );
   }
   const pr = row.pr;
+  const thread = row.threadRef;
 
   return (
     <section className={s.workBody} aria-label={`What ${row.title} is doing`} data-screen="agents.work">
@@ -54,6 +59,11 @@ export function AgentWork({ id }: { id: string }) {
           {pr !== undefined ? (
             <Button variant="quiet" size="sm" onClick={() => navigate(panelRoute(row.projectRef, { tab: "prs", pr: { repo: pr.repo, number: pr.number } }))}>
               {`PR #${String(pr.number)}`}
+            </Button>
+          ) : null}
+          {thread !== undefined ? (
+            <Button variant="quiet" size="sm" onClick={() => setTold(true)}>
+              What it was told
             </Button>
           ) : null}
           <Elapsed startedAt={row.startedAt} running={isRunning(row.status)} />
@@ -82,6 +92,11 @@ export function AgentWork({ id }: { id: string }) {
         )}
       </div>
       {row.taskId !== undefined && row.workstreamId !== undefined && work.hasThread ? <SteerBox key={row.taskId} workstreamId={row.workstreamId} taskId={row.taskId} /> : null}
+      <ToldPanel
+        open={told && thread !== undefined ? { thread, name: roleWords(row.role), who: { project: row.projectTitle, role: ROLE_WORD[row.role] } } : undefined}
+        projectRef={row.projectRef}
+        onClose={() => setTold(false)}
+      />
     </section>
   );
 }

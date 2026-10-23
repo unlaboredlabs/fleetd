@@ -48,7 +48,7 @@ export function useChatData(project: ProjectRef): ChatData {
   const view = useData(selectChat(key));
   const projectRow = useData(selectProjectRow(key));
   const leadWorking = useData(selectLeadWorking(key));
-  const strip = useData((s) => (selectStrip(project)(s)?.rows.length ?? 0) > 0);
+  const strip = useData((s) => (selectStrip(project)(s)?.agents ?? 0) > 0);
   const title = useData((s) => s.projects[key]?.title);
   const missing = useData((s) => s.fresh && !(key in s.projects));
   const loadError = useData((s) => (s.chats[key]?.loaded === true ? undefined : s.chats[key]?.error));
@@ -73,8 +73,8 @@ const listedSteers = (reads: readonly UseQueryResult<OrderGetOutput>[]): readonl
 
 /**
  * Your steers to the lead within the chat's loaded pages, and `sent` (this window's, until a read lists them). The hub
- * keeps steers apart from the chat, so they are read per order with order_get (the read the live strip and the
- * agent's box share, which every steer.* event naming the order reads again): the project's open orders from the
+ * keeps steers apart from the chat, so they are read per order with order_get (the read the agent's box shares too,
+ * which every steer.* event naming the order reads again): the project's open orders from the
  * board, and those that ended within the pages from workstream_list, read again when an order is created.
  */
 export function useLeadSteers(project: ProjectRef, view: ChatView | undefined, sent: readonly Steer[]): readonly Steer[] {

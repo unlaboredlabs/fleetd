@@ -3,10 +3,8 @@
 // two inline items chat can't carry (a secret, a gated command), and the composer, which has the cursor as soon as
 // the chat opens. Your steers to the lead show at their time, from its orders. Above the box, a line says what the
 // lead waits on you for; an empty chat asks what to do.
-// "What the writer was told" opens from the strip's rows.
 import { useCallback, useMemo, useState } from "react";
-import type { AgentLane, ThreadRef } from "../../../shared/contracts";
-import { Button, FrameTitle, IdChip, ROLE_WORD, StatusChip, Text, type StatusTone } from "../../ui";
+import { Button, FrameTitle, IdChip, StatusChip, Text, type StatusTone } from "../../ui";
 import { STATE_WORDS } from "../status/rows";
 import type { ProjectStateWord } from "../../src/data/selectors";
 import { useData } from "../../src/data/react";
@@ -24,9 +22,7 @@ import { chatRows, heldLabel, rowIndexOf } from "./model";
 import { ChatComposer } from "./Composer";
 import { AgentsCapControl } from "../settings";
 import type { ProjectRef } from "./slots";
-import { roleWords, type ToldWho } from "./told";
 import { useAsOfWords } from "../shell/offline";
-import { ToldPanel } from "./ToldPanel";
 import s from "./view.module.css";
 
 const TONE: Readonly<Record<ProjectStateWord, StatusTone>> = { waiting_on_you: "needs-you", blocked: "failed", working: "working", idle: "idle" };
@@ -36,7 +32,6 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   // Out of reach, between attempts or during one after a failure (not the first connect, which is loading).
   const offline = useData((d) => d.hub.phase === "retrying" || (d.hub.phase === "connecting" && d.hub.attempt > 0));
   const [sent, setSent] = useState(0);
-  const [told, setTold] = useState<{ thread: ThreadRef; who: ToldWho; name: string }>();
   /** Show: the item the lead waits on, brought into view (again on each press). */
   const [shown, setShown] = useState<{ id: string; n: number }>();
   const needsYou = useData(selectNeedsYou(projectKey(project)));
@@ -91,13 +86,6 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
     setShown(undefined);
     setSent((n) => n + 1);
   }, []);
-  const onTold = useCallback(
-    (lane: AgentLane) => {
-      if (!lane.threadRef) return;
-      setTold({ thread: lane.threadRef, name: roleWords(lane.role), who: { project: title, role: ROLE_WORD[lane.role] } });
-    },
-    [title],
-  );
 
   return (
     <div
@@ -150,7 +138,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
         </div>
       ) : empty ? (
         <EmptyChat project={project} title={title}>
-          {strip ? <LiveStrip project={project} onTold={onTold} /> : null}
+          {strip ? <LiveStrip project={project} /> : null}
         </EmptyChat>
       ) : (
         <ChatList
@@ -159,7 +147,6 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
           onLoadOlder={onLoadOlder}
           onLoadNewer={onLoadNewer}
           onJumpToLatest={jumpToLatest}
-          onTold={onTold}
           onWithdraw={steerSends.withdraw}
           openAt={openAt}
           openSeq={shown?.n}
@@ -178,7 +165,6 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
           <ChatComposer project={project} autoFocus recall={recall} onSent={onSent} steers={steerSends} />
         </div>
       )}
-      <ToldPanel open={told} projectRef={project} onClose={() => setTold(undefined)} />
     </div>
   );
 }

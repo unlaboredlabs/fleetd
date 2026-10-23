@@ -1,5 +1,5 @@
 // The agents view's fixture: the many-agents hub with a second project at work (a long command, an agent waiting on
-// you), and one storefront agent's work opened: what it was told, what it ran and edited (one command failed, one
+// you), and one storefront agent's work opened: what it was told (its steps, and its first message and prompts), what it ran and edited (one command failed, one
 // still running), and the message it is writing now. agents_list itself comes from the lanes (kit/agents.ts). Under its
 // work, your steers to it with their receipts (queued, delivered, acknowledged; agents-steers: the other endings), and
 // the steer QA sends from its box.
@@ -91,6 +91,8 @@ const work = (base: Fixture): Fixture => {
     text: [{ laneId: AGENT.laneId, messageId: "m-writing", append: "Dates now read in the store's time zone. I'm checking the last two locales before I open the PR:\n\n- `en-GB` prints 19/10/2026\n- `de-DE` prints 19.10.2026" }],
   });
 
+  const BRIEF =
+    "Receipts print the order date in the server's time zone. Print it in the store's time zone instead, in each locale's own format, and cover en-US, en-GB and de-DE with tests. Keep the change inside src/checkout/receipt.";
   const message = (id: string, role: string, text: string, ago: number): JsonObject => ({ kind: "message", id, at: iso(ago), role, text });
   const action = (id: string, kind: string, summary: string, ago: number, more: JsonObject = {}): JsonObject => ({
     kind: "action",
@@ -99,12 +101,7 @@ const work = (base: Fixture): Fixture => {
     action: { at: iso(ago), kind, summary, status: "completed", failed: false, ...more },
   });
   const steps: JsonObject[] = [
-    message(
-      "s1",
-      "user",
-      "Receipts print the order date in the server's time zone. Print it in the store's time zone instead, in each locale's own format, and cover en-US, en-GB and de-DE with tests. Keep the change inside src/checkout/receipt.",
-      840_000,
-    ),
+    message("s1", "user", BRIEF, 840_000),
     message("s2", "assistant", "I'll find where the receipt formats its date, then move it to the store's zone.", 830_000),
     action("s3", "command", "rg -n \"formatDate\" src/checkout/receipt", 820_000),
     action("s4", "file_change", "src/checkout/receipt/formatReceiptDate.ts", 700_000),
@@ -115,6 +112,23 @@ const work = (base: Fixture): Fixture => {
     action("s9", "tool_call", "WebFetch developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Intl/DateTimeFormat", 60_000, { status: "running" }),
   ];
   f.answer("agent_work", { machineId: AGENT.machineId, threadId: AGENT.threadId, limit: 40 }, { steps, running: true });
+  // What it was told at its start, opened from its head: its brief, and the prompts it pinned (one edited for the project).
+  f.answer("session_prompt_get", { machineId: AGENT.machineId, threadId: AGENT.threadId }, {
+    session: {
+      machineId: AGENT.machineId,
+      threadId: AGENT.threadId,
+      projectRef: { machineId: AGENT.machineId, projectId: AGENT.projectId },
+      startedAt: iso(845_000),
+      text: `${BRIEF}\n\nWhen it's done, open a PR and say what changed in one paragraph.`,
+      textSha: "4be1d0c2a9f3e8b7d6c5a4f3e2d1c0b9a8f7e6d5",
+      refs: [
+        { id: "task.brief.write", ref: "task.brief.write@1f2e3d4c5b", scope: "project" },
+        { id: "steer.message", ref: "steer.message@6a7b8c9d0e", scope: "default" },
+        { id: "instructions", ref: "instructions@0e9d8c7b6a", scope: "default" },
+      ],
+      disallowedTools: ["Task", "Workflow", "AskUserQuestion", "EnterPlanMode", "ExitPlanMode", "EnterWorktree", "ExitWorktree"],
+    },
+  });
   withSteers(f, agentSteers(f.now));
   f.answer("steer_send", { target: { taskId: AGENT.laneId } }, steer(f.now, 10, { taskId: AGENT.laneId }, "queued", STEER_WORDS.agent, 0));
   return f;

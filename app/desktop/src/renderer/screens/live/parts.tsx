@@ -1,9 +1,8 @@
-// The strip's small pieces: an agent's row, its machine text cut in the middle, and the status mark.
-import { useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
-import { PROFILE_WORD, RoleTag, Tooltip, Truncate, cx, roleTint } from "../../ui";
-import { fmtElapsed, middleEllipsis, parseMs } from "./format";
-import type { AgentRow } from "./strip";
-import { type Tone, isWorking } from "./words";
+// What an agent is doing, as the agents view draws it: words, then its machine text cut in the middle.
+import { useLayoutEffect, useRef, useState } from "react";
+import { Tooltip, Truncate, cx } from "../../ui";
+import { middleEllipsis } from "./format";
+import type { Tone } from "./words";
 import s from "./lanes.module.css";
 
 const TONE_CLASS: Partial<Record<Tone, string | undefined>> = {
@@ -12,17 +11,6 @@ const TONE_CLASS: Partial<Record<Tone, string | undefined>> = {
   danger: s.danger,
   success: s.success,
 };
-
-/** Nothing while it works (its solid edge says so); amber while it needs you or is stuck; faint while it waits its turn. */
-function Mark({ status }: { status: AgentRow["lane"]["status"] }) {
-  if (isWorking(status)) return <span className={s.mark} />;
-  const tone = status === "waiting" || status === "stalled" ? s.warning : s.faintDot;
-  return (
-    <span className={s.mark}>
-      <span className={cx(s.dot, tone)} />
-    </span>
-  );
-}
 
 let measure: CanvasRenderingContext2D | null | undefined;
 /** The width of one character of `el`'s (monospaced) font. */
@@ -68,11 +56,10 @@ export function MiddleCut({ text }: { text: string }) {
 
 /**
  * What an agent is doing now: words in the UI voice, then machine text in mono cut in the middle to the room it has.
- * The strip's rows and the agents view share it.
  */
-export function ActivityLine({ line, stale }: { line: { readonly words: string; readonly machine?: string | undefined; readonly tone: Tone }; stale?: boolean | undefined }) {
+export function ActivityLine({ line }: { line: { readonly words: string; readonly machine?: string | undefined; readonly tone: Tone } }) {
   return (
-    <span className={cx(s.activity, TONE_CLASS[line.tone] ?? s.quietText, stale && s.stale)}>
+    <span className={cx(s.activity, TONE_CLASS[line.tone] ?? s.quietText)}>
       {line.machine !== undefined ? (
         <>
           <span className={s.words}>{line.words}</span>
@@ -87,56 +74,5 @@ export function ActivityLine({ line, stale }: { line: { readonly words: string; 
         </span>
       )}
     </span>
-  );
-}
-
-export interface AgentLineProps {
-  readonly row: AgentRow;
-  /** Hub time, ms. */
-  readonly now: number;
-  readonly stale?: boolean | undefined;
-  readonly onOpen?: (() => void) | undefined;
-}
-
-/**
- * One agent: its role's tint on the edge (solid while it works), the role, what it is doing now, and how long it
- * has run. One line at one height, so nothing jumps.
- */
-export function AgentLine({ row, now, stale, onOpen }: AgentLineProps) {
-  const { status, role } = row.lane;
-  const started = parseMs(row.startedAt);
-  const clock = started === undefined ? "" : fmtElapsed(now - started);
-  const solid = isWorking(status) || status === "waiting";
-  return (
-    <div
-      className={cx(s.lane, row.indent && s.indent, onOpen && s.clickable)}
-      style={{ "--tint": roleTint(role) } as CSSProperties}
-      data-lane={row.lane.laneId}
-      data-status={status}
-      {...(onOpen
-        ? {
-            role: "button",
-            tabIndex: 0,
-            onClick: onOpen,
-            onKeyDown: (e: KeyboardEvent) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                onOpen();
-              }
-            },
-          }
-        : {})}
-    >
-      <span className={cx(s.edge, solid && s.edgeSolid)} />
-      <Mark status={status} />
-      <RoleTag role={role} width={84}>
-        {row.roleWord}
-      </RoleTag>
-      <ActivityLine line={row} stale={stale} />
-      {row.lane.profile === undefined ? null : <span className={cx(s.profile, s.quietText)}>{PROFILE_WORD[row.lane.profile]}</span>}
-      <span className={cx(s.clock, isWorking(status) ? s.loud : s.quietText)} aria-label={clock === "" ? undefined : `for ${clock}`}>
-        {clock}
-      </span>
-    </div>
   );
 }
