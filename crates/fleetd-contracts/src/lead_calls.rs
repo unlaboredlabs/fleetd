@@ -46,9 +46,7 @@ checked!(BriefCreateCall, |call| {
         (None, None) => {
             Err("give workstreamId to brief an open workstream, or text to open one".into())
         }
-        (Some(_), Some(_)) => {
-            Err("text opens a workstream; leave it out with workstreamId".into())
-        }
+        (Some(_), Some(_)) => Err("text opens a workstream; leave it out with workstreamId".into()),
         _ => Ok(()),
     }
 });

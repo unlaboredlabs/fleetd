@@ -545,23 +545,6 @@
    "rules": [],
    "text": "Continue where you left off; the usage limit has reset.\n",
    "perProject": true
-  },
-  {
-   "id": "tool.denied",
-   "kind": "msg",
-   "group": "messages",
-   "title": "Tool call denied",
-   "sentWhen": "as the result of a tool call a policy rule or a person denied",
-   "placeholders": [
-    {
-     "name": "reason",
-     "required": true,
-     "description": "who or what denied it, and what they said"
-    }
-   ],
-   "rules": [],
-   "text": "Denied: {{reason}}. Don't retry this call; ask for another way.\n",
-   "perProject": true
   }
  ]
 }

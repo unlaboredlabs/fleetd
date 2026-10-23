@@ -10,8 +10,8 @@ use std::time::{Duration, Instant};
 
 use fleetd_contracts::lead_calls::{
     AskLeadCall, BriefCreateCall, ChangeEnqueueCall, CloseCall, DecideCall, DecisionsSearchCall,
-    GatedRunCall, LeadCall, LeadSocketFrame, RequestSecretCall, RequestWithdrawCall, TaskCancelCall, TaskListCall,
-    TaskMessageCall, TaskSpawnCall,
+    GatedRunCall, LeadCall, LeadSocketFrame, RequestSecretCall, RequestWithdrawCall,
+    TaskCancelCall, TaskListCall, TaskMessageCall, TaskSpawnCall,
 };
 use fleetd_contracts::plan::PlanCall;
 use fleetd_contracts::schema::inline_schema;
@@ -375,9 +375,7 @@ pub fn send_call(call: Value, deps: &LeadDeps) -> Result<Value, String> {
 }
 
 /// The real process's [`LeadDeps`].
-pub fn env_deps<'a>(
-    send: &'a dyn Fn(&Path, &Value) -> Result<Value, String>,
-) -> LeadDeps<'a> {
+pub fn env_deps<'a>(send: &'a dyn Fn(&Path, &Value) -> Result<Value, String>) -> LeadDeps<'a> {
     LeadDeps {
         pwd: std::env::var("PWD").ok(),
         sock: std::env::var("FLEETD_NODE_SOCK").ok(),
