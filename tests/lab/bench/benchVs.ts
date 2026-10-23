@@ -728,9 +728,12 @@ async function main() {
 }
 
 if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main().catch((error: unknown) => {
-    unhideHidden();
-    log(`FAIL ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
-    process.exitCode = 1;
-  });
+  main()
+    .catch((error: unknown) => {
+      unhideHidden();
+      log(`FAIL ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
+      process.exitCode = 1;
+    })
+    // A socket a contender left open (an upstream stream, a client) must not hold the suite's next run.
+    .finally(() => process.exit());
 }
