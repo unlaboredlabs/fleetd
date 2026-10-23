@@ -1,0 +1,8 @@
+{
+  "title": "Eight HTTP utility packages on the tinyhttp monorepo",
+  "kind": "spec of N independent parts (large)",
+  "codebase": "tinyhttp (MIT), snapshot of 781bfbc",
+  "base": "bench/tinyhttp-libs/base",
+  "baseSha": "6a7a9d63806deb1bba54c67018a771e14e64a288",
+  "timeoutMin": 150
+}

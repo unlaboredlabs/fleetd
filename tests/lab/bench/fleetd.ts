@@ -2,7 +2,9 @@
 // `lease/slot/<n>`), every home under the run dir in /tmp, the task's base copied to a run branch in the lab repo, that
 // branch's clone added as the project, the project's max agents set, and the task text sent once as the person's chat
 // message. Done is the lead saying the work is complete with its PRs merged into the run branch, and nothing running.
-// No other human input: a run that stops to wait for a person ends as "stalled".
+// No other human input: a run that stops to wait for a person ends as "stalled". The done condition is polled, but the
+// wall time ends at the event that made it true (the last merge, the order closing, the lead's last message), read
+// from GitHub's and the hub's own timestamps, so the poll interval never adds to fleetd's time.
 import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -15,7 +17,7 @@ import { EFFORT, MODEL, pinnedSettings, writeClaudeShim } from "./env.ts";
 
 type Body = Record<string, any>;
 const MACHINE = "bench";
-/** How often the done condition is evaluated; events wake the loop sooner. */
+/** How often the done condition is evaluated. It decides when the run ends, never its wall time (see `doneAt`). */
 const EVAL_MS = 30_000;
 /** Done must hold this long (a last lead wake may still open work). */
 const SETTLE_MS = 90_000;
@@ -144,7 +146,11 @@ export async function runFleetd(opts: FleetdRun) {
     log(`project ${projectId} on ${MACHINE}; max agents ${opts.maxAgents}; hub ${h.HUB_URL}`);
 
     const info: RunInfo = { runId, task: task.name, contender: "fleetd", runDir, work, baseSha, usageDirs: [] };
-    const chatState = async () => ((await ok("chat_history", { projectRef, limit: 1 }, human)).state ?? {}) as Body;
+    /** The chat's state and its newest message. */
+    const chatNow = async () => {
+      const page = await ok("chat_history", { projectRef, limit: 1 }, human);
+      return { state: (page.state ?? {}) as Body, last: ((page.messages ?? []) as Array<Body>).at(-1) };
+    };
 
     // The person's one message: the task. The clock starts here.
     let at = await cursor();
@@ -155,6 +161,8 @@ export async function runFleetd(opts: FleetdRun) {
     log("task sent to the lead");
 
     let doneSince: number | undefined;
+    /** When the event that made done true happened; `doneSince` is when a poll first saw it. */
+    let doneAt: number | undefined;
     let quietSince: number | undefined;
     let doneBy: "finished" | "timeout" | "stalled" = "timeout";
     let wallMs = opts.timeoutMs;
@@ -169,9 +177,9 @@ export async function runFleetd(opts: FleetdRun) {
       lastEval = Date.now();
       const workstreams = (await ok("workstream_list", { machineId: MACHINE, projectId, limit: 100 })).workstreams as Array<Body>;
       const tasks = (await ok("tasks_list", { projectRef, limit: 100 })).tasks as Array<Body>;
-      const prs = JSON.parse(gh("pr", "list", "-R", LAB_REPO, "--base", runBranch, "--state", "all", "--limit", "100", "--json", "number,state")) as Array<Body>;
+      const prs = JSON.parse(gh("pr", "list", "-R", LAB_REPO, "--base", runBranch, "--state", "all", "--limit", "100", "--json", "number,state,mergedAt")) as Array<Body>;
       const requests = ((await ok("requests_list", { projectRef, limit: 100 })).requests as Array<Body>).filter((r) => r.state === "open");
-      const chat = await chatState();
+      const { state: chat, last: lastMessage } = await chatNow();
       const open = prs.filter((p) => p.state === "OPEN").length;
       const merged = prs.filter((p) => p.state === "MERGED").length;
       const active = tasks.filter((t) => TASK_ACTIVE.has(t.state)).length;
@@ -182,14 +190,18 @@ export async function runFleetd(opts: FleetdRun) {
       if (line !== lastLine) log(line);
       lastLine = line;
       if (done) {
-        doneSince ??= Date.now();
+        if (doneSince === undefined) {
+          doneSince = Date.now();
+          doneAt = Math.min(doneSince, doneEventAt(prs, workstreams, tasks, lastMessage) ?? doneSince);
+        }
         if (Date.now() - doneSince >= SETTLE_MS) {
           doneBy = "finished";
-          wallMs = doneSince - started;
+          wallMs = doneAt! - started;
           break;
         }
       } else {
         doneSince = undefined;
+        doneAt = undefined;
       }
       const quiet = !done && !leadWorking && active === 0 && open === 0;
       if (quiet) {
@@ -248,6 +260,8 @@ export async function runFleetd(opts: FleetdRun) {
         extra: {
           runBranch,
           maxAgents: opts.maxAgents,
+          // How late the poll saw done after it happened: no longer in the wall time.
+          donePollLagMs: doneBy === "finished" && doneSince !== undefined && doneAt !== undefined ? doneSince - doneAt : null,
           tasks: { total: tasks.length, byKind, models: [...new Set(tasks.map((t) => `${t.model} ${t.effort ?? ""}`.trim()))] },
           workstreams: workstreams.map((w) => ({ id: w.workstreamId, state: w.state })),
           prs,
@@ -268,6 +282,19 @@ export async function runFleetd(opts: FleetdRun) {
     lease.release();
   }
 }
+
+/**
+ * When done became true, from the events' own timestamps: the latest of the last PR merge (GitHub), the orders' last
+ * change (closing one is its last), the last agent's end, and the end of the chat's newest message (the lead's turn
+ * ends with it). Undefined when none carries a time.
+ */
+const doneEventAt = (prs: ReadonlyArray<Body>, workstreams: ReadonlyArray<Body>, tasks: ReadonlyArray<Body>, lastMessage: Body | undefined) => {
+  const times = [...prs.map((p) => p.mergedAt), ...workstreams.map((w) => w.updatedAt), ...tasks.map((t) => t.endedAt), lastMessage?.updatedAt ?? lastMessage?.createdAt]
+    .filter((t): t is string => typeof t === "string")
+    .map(Date.parse)
+    .filter(Number.isFinite);
+  return times.length === 0 ? undefined : Math.max(...times);
+};
 
 /** The time inspector's breakdown, cut to what a reader compares: wall, agent time, categories, critical path. */
 const summarizeTime = (b: Body) => {

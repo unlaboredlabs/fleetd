@@ -3,11 +3,11 @@
 // runs one contender with the task text and no human input until it says it is finished (or the timeout), applies the
 // task's hidden checks, runs a blind blocker-only review, and writes the metrics as JSON to <bench>/results/<run>.json.
 //
-//   scripts/bench-vs --suite [--tasks a,b] [--contenders claude-p,fleetd] [--repeat N]   # runs in sequence, then --table
+//   scripts/bench-vs --suite [--tasks a,b] [--contenders claude-p,claude-p+gate,fleetd] [--repeat N]   # in sequence, then --table
 //   scripts/bench-vs --task tinyhttp-six --contender claude-p
+//   scripts/bench-vs --task tinyhttp-six --contender claude-p+gate  # claude -p, then PR, fleetd's review, CI, merge
 //   scripts/bench-vs --task tinyhttp-six --contender fleetd [--slot 9] [--max-agents 40]
 //   scripts/bench-vs --task tinyhttp-six --contender t3             # prepares a clone, prints the task, exits
-//   scripts/bench-vs --arm <run-dir>                                # right before the T3 thread gets the task
 //   scripts/bench-vs --arm <run-dir>                                # right before the T3 thread gets the task: load, hide
 //   scripts/bench-vs --finish <run-dir> --start <iso> --end <iso> [--logs <dir>]...   # imports the T3 Code run
 //   scripts/bench-vs --task tinyhttp-six --contender reference      # the known-good solution: tests the harness
@@ -38,7 +38,7 @@ export const LAB_REPO = process.env.FLEETD_BENCH_REPO ?? "unlaboredlabs/fleetd-l
 const SNAPSHOT = path.join(BENCH, "src/snap-tinyhttp");
 /** What a contender must not read while it runs: the hidden checks and the known-good solutions. */
 const HIDDEN = [path.join(BENCH, "checks"), path.join(BENCH, "ref")];
-const CONTENDERS = ["claude-p", "fleetd", "t3", "reference"] as const;
+const CONTENDERS = ["claude-p", "claude-p+gate", "fleetd", "t3", "reference"] as const;
 type Contender = (typeof CONTENDERS)[number];
 /** Session lines this close outside an imported run's start and end still count as the run's. */
 const WINDOW_SLACK_MS = 60_000;
@@ -194,7 +194,7 @@ export const runGroup = (cmd: string, args: ReadonlyArray<string>, opts: { cwd: 
 
 // ---- contenders ----
 
-interface Outcome {
+export interface Outcome {
   wallMs: number;
   doneBy: "finished" | "timeout" | "stalled" | "error";
   humanFree: boolean;
@@ -203,7 +203,7 @@ interface Outcome {
   extra?: Record<string, unknown>;
 }
 
-const prepareLocal = (task: TaskDef, contender: Contender, runDir: string): RunInfo => {
+export const prepareLocal = (task: TaskDef, contender: Contender, runDir: string): RunInfo => {
   const work = path.join(runDir, "work");
   cloneBranch(task.base, work);
   const head = git(work, "rev-parse", "HEAD");
@@ -213,38 +213,48 @@ const prepareLocal = (task: TaskDef, contender: Contender, runDir: string): RunI
   return { runId: path.basename(runDir), task: task.name, contender, runDir, work, baseSha: head, usageDirs: [] };
 };
 
+/**
+ * One pinned `claude -p` in `cwd` with `prompt` on stdin, its stream appended to `stream`; `resume` continues that
+ * session. Resolves when the process exits, with its result event and session id.
+ */
+export const claudeSession = async (opts: { home: string; cwd: string; prompt: string; stream: string; timeoutMs: number; resume?: string }) => {
+  const from = fs.existsSync(opts.stream) ? fs.statSync(opts.stream).size : 0;
+  const { code, timedOut } = await runGroup(
+    "claude",
+    ["-p", "--model", MODEL, "--effort", EFFORT, "--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose", ...(opts.resume === undefined ? [] : ["--resume", opts.resume])],
+    { cwd: opts.cwd, env: baseEnv(opts.home), out: opts.stream, timeoutMs: opts.timeoutMs, stdin: opts.prompt },
+  );
+  const events = fs
+    .readFileSync(opts.stream, "utf8")
+    .slice(from)
+    .split("\n")
+    .flatMap((l) => {
+      try {
+        return l.startsWith("{") ? [JSON.parse(l) as Record<string, any>] : [];
+      } catch {
+        return [];
+      }
+    });
+  const result = events.findLast((e) => e.type === "result");
+  const finished = !timedOut && code === 0 && result?.subtype === "success";
+  return { code, timedOut, finished, result, sessionId: (result?.session_id ?? events.find((e) => e.session_id !== undefined)?.session_id) as string | undefined };
+};
+
 const claudeP = async (task: TaskDef, info: RunInfo, timeoutMs: number, proxyUrl: string): Promise<Outcome> => {
   const home = path.join(info.runDir, "home");
   prepareClaudeHome(home, proxyUrl);
   info.usageDirs.push(path.join(home, ".claude/projects"));
-  const stream = path.join(info.runDir, "claude-p.stream.jsonl");
   const started = Date.now();
   info.startedAt = new Date(started).toISOString();
   try {
-    const { code, timedOut } = await runGroup(
-      "claude",
-      ["-p", "--model", MODEL, "--effort", EFFORT, "--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose"],
-      { cwd: info.work, env: baseEnv(home), out: stream, timeoutMs, stdin: task.text },
-    );
-    const wallMs = Date.now() - started;
-    const events = fs
-      .readFileSync(stream, "utf8")
-      .split("\n")
-      .flatMap((l) => {
-        try {
-          return l.startsWith("{") ? [JSON.parse(l) as Record<string, any>] : [];
-        } catch {
-          return [];
-        }
-      });
-    const result = events.findLast((e) => e.type === "result");
-    const finished = !timedOut && code === 0 && result?.subtype === "success";
+    const s = await claudeSession({ home, cwd: info.work, prompt: task.text, stream: path.join(info.runDir, "claude-p.stream.jsonl"), timeoutMs });
     return {
-      wallMs,
-      doneBy: timedOut ? "timeout" : finished ? "finished" : "error",
-      humanFree: finished,
+      // The process exit is claude-p's own done event.
+      wallMs: Date.now() - started,
+      doneBy: s.timedOut ? "timeout" : s.finished ? "finished" : "error",
+      humanFree: s.finished,
       resultTree: info.work,
-      extra: { exitCode: code, cliCostUsd: result?.total_cost_usd, numTurns: result?.num_turns, finalText: String(result?.result ?? "").slice(-2000) },
+      extra: { exitCode: s.code, cliCostUsd: s.result?.total_cost_usd, numTurns: s.result?.num_turns, finalText: String(s.result?.result ?? "").slice(-2000) },
     };
   } finally {
     scrubHome(home);
@@ -455,6 +465,9 @@ const finish = async (task: TaskDef, info: RunInfo, outcome: Outcome, opts: Fini
     fs.writeFileSync(path.join(archive, "result.patch"), rev.patch);
     fs.writeFileSync(path.join(archive, "review.txt"), rev.text);
   }
+  for (const f of fs.existsSync(info.runDir) ? fs.readdirSync(info.runDir).filter((f) => /^reviewer-\d+\.stream\.jsonl$/u.test(f)) : []) {
+    fs.copyFileSync(path.join(info.runDir, f), path.join(archive, f));
+  }
   for (const f of ["run.json", "claude-p.stream.jsonl", "review.json", "chat.json", "requests.jsonl", "review-requests.jsonl", "shim.log"]) {
     if (fs.existsSync(path.join(info.runDir, f))) fs.copyFileSync(path.join(info.runDir, f), path.join(archive, f));
   }
@@ -513,8 +526,22 @@ export const readResults = (since?: string) =>
     : [];
 
 /**
+ * What the table calls each contender. `claude-p` and `t3` land their work as local commits with no PR, review or CI;
+ * `claude-p+gate` and `fleetd` land it through a PR, one fresh review per head, green CI and a merge.
+ */
+const LABEL: Record<Contender, string> = {
+  "claude-p": "claude-p (ungated)",
+  "claude-p+gate": "claude-p+gate",
+  fleetd: "fleetd",
+  t3: "t3 (ungated)",
+  reference: "reference",
+};
+/** The contenders the per-task summary compares, fleetd last. */
+const SUMMARY: ReadonlyArray<Contender> = ["claude-p", "claude-p+gate", "t3", "fleetd"];
+
+/**
  * The results as markdown: one row per run, then per task the median wall time of the valid passing runs of each
- * contender and how many times faster fleetd was. Reference and smoke runs are listed but never summarized.
+ * contender (n runs) and how many times faster fleetd was. Reference and smoke runs are listed but never summarized.
  */
 export const renderTable = (results: ReadonlyArray<Result>) => {
   const rows = results.map((r) => {
@@ -528,17 +555,18 @@ export const renderTable = (results: ReadonlyArray<Result>) => {
     const peak = r.env.load === null ? "" : `, peak ${r.env.load.maxLoadavg1}`;
     const load = `${r.env.loadStart.loadavg1}→${r.env.loadEnd.loadavg1}${peak} /${r.env.loadStart.cpus}${r.env.busy ? " BUSY" : ""}`;
     const notes = [r.doneBy === "finished" ? "" : r.doneBy, r.notes ?? ""].filter(Boolean).join("; ");
-    return `| ${r.task} | ${r.contender} | ${(r.startedAt ?? "").slice(0, 16).replace("T", " ")} | ${minutes(r.wallMs)} | ${r.pass ? "PASS" : "FAIL"} | ${checks} | ${rev} | ${r.humanFree ? "yes" : "no"} | ${r.agents ?? "n/a"} | ${tokens} | ${output} | ${usd} | ${valid} | ${cli} | ${load} | ${notes} |`;
+    return `| ${r.task} | ${LABEL[r.contender] ?? r.contender} | ${(r.startedAt ?? "").slice(0, 16).replace("T", " ")} | ${minutes(r.wallMs)} | ${r.pass ? "PASS" : "FAIL"} | ${checks} | ${rev} | ${r.humanFree ? "yes" : "no"} | ${r.agents ?? "n/a"} | ${tokens} | ${output} | ${usd} | ${valid} | ${cli} | ${load} | ${notes} |`;
   });
   const lines = [
     "| Task | Contender | Started (UTC) | Wall (min) | Pass | Checks | Blockers | Human-free | Agents | Tokens (M) | Output | API $ | Valid | CLI | Load start→end, peak /cpus | Notes |",
     "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ...rows,
     "",
-    "Per task, the median wall time of valid passing runs (n runs), and fleetd's speedup over each other contender:",
+    "Per task, the median wall time of valid passing runs (n runs), and fleetd's speedup over each other contender",
+    "(above 1x: fleetd is faster). Ungated contenders commit locally: no PR, no review, no CI.",
     "",
-    "| Task | claude-p | t3 | fleetd | fleetd vs claude-p | fleetd vs t3 |",
-    "|---|---|---|---|---|---|",
+    `| Task | ${SUMMARY.map((c) => LABEL[c]).join(" | ")} | ${SUMMARY.filter((c) => c !== "fleetd").map((c) => `fleetd vs ${LABEL[c]}`).join(" | ")} |`,
+    `|---|${SUMMARY.map(() => "---|").join("")}${SUMMARY.filter((c) => c !== "fleetd").map(() => "---|").join("")}`,
   ];
   for (const task of [...new Set(results.map((r) => r.task))].filter((t) => t !== "smoke").sort()) {
     const of = (c: Contender) => results.filter((r) => r.task === task && r.contender === c && r.valid && r.pass).map((r) => r.wallMs);
@@ -548,7 +576,7 @@ export const renderTable = (results: ReadonlyArray<Result>) => {
       const other = median(of(c));
       return fleetd === null || other === null ? "n/a" : `${(other / fleetd).toFixed(2)}x`;
     };
-    lines.push(`| ${task} | ${cell("claude-p")} | ${cell("t3")} | ${cell("fleetd")} | ${speedup("claude-p")} | ${speedup("t3")} |`);
+    lines.push(`| ${task} | ${SUMMARY.map(cell).join(" | ")} | ${SUMMARY.filter((c) => c !== "fleetd").map(speedup).join(" | ")} |`);
   }
   return `${lines.join("\n")}\n`;
 };
@@ -718,6 +746,13 @@ async function main() {
     }
     const info = prepareLocal(task, contender, runDir);
     writeInfo(info);
+    if (contender === "claude-p+gate") {
+      const { runGated } = await import("./gate.ts");
+      const { agents, ...outcome } = await runGated({ task, info, timeoutMs, proxyUrl: proxy.url });
+      await proxy.close();
+      await finish(task, info, outcome, { ...opts, agents: opts.agents ?? agents, loadStart, load: load.stop(), proxyLog });
+      return;
+    }
     const outcome = await claudeP(task, info, timeoutMs, proxy.url);
     await proxy.close();
     await finish(task, info, outcome, { ...opts, loadStart, load: load.stop(), proxyLog });
