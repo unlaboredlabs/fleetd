@@ -1803,11 +1803,13 @@ impl SessionService {
         };
         let mut retries = 0;
         if let RunOutcome::Failed(failure) = &outcome {
-            // claude never said `started`: it never took the message in, so a retry sends the message itself.
-            let unread = self.store().runs(id).is_ok_and(|runs| {
-                runs.iter()
-                    .any(|r| r.id.as_str() == run_id && r.status == RunStatus::Starting)
-            });
+            // claude never said `started` and no API call answered: it never took the message in, so a retry sends
+            // the message itself.
+            let unread = failure.api_status.is_none()
+                && self.store().runs(id).is_ok_and(|runs| {
+                    runs.iter()
+                        .any(|r| r.id.as_str() == run_id && r.status == RunStatus::Starting)
+                });
             if unread
                 && claude::session_in_use(failure.message.as_str())
                 && self.resend_refused(id, run_id)
