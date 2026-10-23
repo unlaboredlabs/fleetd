@@ -458,10 +458,9 @@ the workstream is done, and why; it stops nothing
 
 ```text
 fleetd review verdict --task <T> --sha <full head SHA> --blocking <n> --non-blocking <n> --summary "<s>"
-    [--baseline <n> --candidate <n>]
 ```
 
-the last step of a review task; a research judge also reports its metric for the baseline and the candidate, and fleetd computes GO, STOP or INCONCLUSIVE
+the last step of a review task
 
 ### fleetd change enqueue {#change-enqueue}
 

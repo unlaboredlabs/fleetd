@@ -1,6 +1,5 @@
 //! What the review verdicts area needs from other hub areas, as one trait. The hub's implementation (`HubPorts`)
 //! forwards to their services; tests use fakes.
-use fleetd_contracts::ledger::{MetricValues, Workstream, WorkstreamId};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 use fleetd_contracts::tasks::{Task, TaskId};
 use fleetd_contracts::verification::CommitSha;
@@ -33,15 +32,6 @@ pub fn internal(error: crate::hub::store::StoreError) -> Refusal {
 }
 
 pub trait Ports: Send + Sync + 'static {
-    // leads: LeadRecords.workstreams
-    fn workstream(&self, id: &WorkstreamId) -> Option<Workstream>;
-    /// Research.recordVerdict: stores the computed research verdict and returns its text.
-    fn research_verdict<'a>(
-        &'a self,
-        workstream: &'a WorkstreamId,
-        values: MetricValues,
-    ) -> BoxFuture<'a, Result<String, Refusal>>;
-    // tasks
     fn task(&self, id: &TaskId) -> Option<Task>;
     /// The head a review task reviewed when it didn't say: its train round's head, else its PR's head now. None for a
     /// task with no PR or a head the hub can't read.

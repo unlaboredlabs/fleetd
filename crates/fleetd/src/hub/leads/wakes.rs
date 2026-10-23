@@ -29,7 +29,6 @@ pub enum LineKind {
     TaskResult,
     TaskWaiting,
     Train,
-    ResearchVerdict,
     /// A person's words for the lead about an order (a steer, a stop).
     Human,
     /// A person raised the project's max agents (`tasks::cap`).
@@ -48,7 +47,7 @@ pub enum Trigger {
         workstream_id: WorkstreamId,
         text: String,
     },
-    /// A task ended, a task waits on input, a train event, a research verdict: the area
+    /// A task ended, a task waits on input, a train event: the area
     /// that raises it renders its own "why" line(s).
     Line { kind: LineKind, text: String },
 }
@@ -62,14 +61,6 @@ impl Trigger {
         }
     }
 
-    /// M9: a research workstream's computed verdict, as its event line.
-    pub fn research_verdict(line: &str) -> Self {
-        Trigger::Line {
-            kind: LineKind::ResearchVerdict,
-            text: line.to_owned(),
-        }
-    }
-
     pub fn kind(&self) -> &'static str {
         match self {
             Trigger::Intent { .. } => "intent",
@@ -77,7 +68,6 @@ impl Trigger {
                 LineKind::TaskResult => "task_result",
                 LineKind::TaskWaiting => "task_waiting",
                 LineKind::Train => "train",
-                LineKind::ResearchVerdict => "research_verdict",
                 LineKind::Human => "human",
                 LineKind::CapRaised => "cap_raised",
                 LineKind::Request => "request",

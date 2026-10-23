@@ -1,11 +1,7 @@
 //! The playbooks a workstream can follow: fleetd's bundled ones with the user's overrides in `<hub home>/playbooks/`.
 //! A workstream pins `name@sha` at creation and the pinned text is kept (table `playbook_versions`), so a later edit of
 //! the file never changes the rules of a workstream already under way.
-pub mod budget;
-pub mod floor;
 pub mod load;
-pub mod research;
-pub mod verdict;
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
@@ -14,7 +10,6 @@ use std::sync::{Arc, Mutex};
 use fleetd_contracts::ledger::{PlaybookName, PlaybookRef};
 pub use fleetd_contracts::playbooks::Playbook;
 pub use load::{LoadedPlaybook, PlaybookError};
-pub use research::Research;
 use rusqlite::{OptionalExtension, params};
 
 use crate::hub::store::{HubDb, StoreError};

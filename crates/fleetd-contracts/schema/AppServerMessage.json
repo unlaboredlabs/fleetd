@@ -570,7 +570,7 @@
         },
         {
           "const": "workstream.done",
-          "description": "The lead closed it, or its research verdict came in. `data.workstreamId`, and `data.reason` (why) and\n`data.by` when the lead closed it.",
+          "description": "The lead closed it. `data.workstreamId`, `data.reason` (why) and `data.by`.",
           "type": "string"
         },
         {
@@ -616,11 +616,6 @@
         {
           "const": "change.refused",
           "description": "Refused at enqueue; `data.prUrl`, `data.fix`.",
-          "type": "string"
-        },
-        {
-          "const": "research.verdict",
-          "description": "A research workstream's computed verdict; `data.workstreamId`, `data.outcome`, `data.metricValues`.",
           "type": "string"
         },
         {

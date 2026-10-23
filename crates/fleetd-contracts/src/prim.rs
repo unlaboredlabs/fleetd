@@ -436,16 +436,8 @@ macro_rules! float_wrapper {
 }
 
 float_wrapper!(
-    /// Effect's `Schema.Finite`.
-    Finite, |_| true, "expected a finite number", { "type": "number" }
-);
-float_wrapper!(
     /// `Schema.Finite.check(isGreaterThanOrEqualTo(0))`, e.g. minutes.
     NonNegative, |v| v >= 0.0, "expected a number of at least 0", { "type": "number", "minimum": 0 }
-);
-float_wrapper!(
-    /// `Schema.Finite.check(isGreaterThan(0))`, e.g. a ratio.
-    PositiveNumber, |v| v > 0.0, "expected a number greater than 0", { "type": "number", "exclusiveMinimum": 0 }
 );
 
 /// Writes integral floats as integers, like `JSON.stringify` (`3`, not `3.0`).

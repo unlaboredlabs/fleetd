@@ -7,8 +7,6 @@
 //! never repeats them to the human.
 use std::fmt::Display;
 
-use fleetd_contracts::ledger::ResearchOutcome;
-
 use super::digest::one_line;
 
 /// How a task ended.
@@ -96,13 +94,6 @@ pub enum Event<'a> {
         change: &'a str,
         pr_url: &'a str,
         text: &'a str,
-    },
-    ResearchVerdict {
-        workstream: &'a str,
-        verdict: ResearchOutcome,
-        measured: &'a str,
-        go: &'a str,
-        stop: &'a str,
     },
     /// A secret or approval request settled, or came back open. `what` is the secret, command or tool prompt; `outcome`
     /// what became of it; `tail` a command's output tail.
@@ -253,25 +244,6 @@ impl Event<'_> {
                 format!("- {} ({change}): {}", pr_label(pr_url), one_line(text, 600)),
                 vec![],
             ),
-            Event::ResearchVerdict {
-                workstream,
-                verdict,
-                measured,
-                go,
-                stop,
-            } => {
-                let word = match verdict {
-                    ResearchOutcome::Go => "GO",
-                    ResearchOutcome::Stop => "STOP",
-                    ResearchOutcome::Inconclusive => "INCONCLUSIVE",
-                };
-                (
-                    format!(
-                        "- {workstream} research verdict {word}: {measured} (go line {go}, stop line {stop})"
-                    ),
-                    vec![],
-                )
-            }
             Event::Request {
                 request,
                 what,
@@ -437,28 +409,6 @@ mod tests {
             pr_label("https://example.com/x"),
             "PR https://example.com/x"
         );
-    }
-
-    #[test]
-    fn research_verdict_events() {
-        for (verdict, word) in [
-            (ResearchOutcome::Go, "GO"),
-            (ResearchOutcome::Stop, "STOP"),
-            (ResearchOutcome::Inconclusive, "INCONCLUSIVE"),
-        ] {
-            assert_eq!(
-                r(Event::ResearchVerdict {
-                    workstream: "W2",
-                    verdict,
-                    measured: "candidate 0.6 vs baseline 0.5: improvement 0.1",
-                    go: "0.1",
-                    stop: "0.02"
-                }),
-                format!(
-                    "- W2 research verdict {word}: candidate 0.6 vs baseline 0.5: improvement 0.1 (go line 0.1, stop line 0.02)"
-                )
-            );
-        }
     }
 
     #[test]
