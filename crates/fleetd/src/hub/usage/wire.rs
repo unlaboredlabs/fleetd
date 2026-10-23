@@ -259,39 +259,6 @@ impl DoctorFleet for OpsPorts {
     fn repos_without_ci(&self) -> Vec<String> {
         self.hub().train.repos_without_ci()
     }
-    /// One `true` in each project's checkout: the node answers a refusal without running anything.
-    fn refused_projects(&self, machine_id: &str) -> BoxFut<'_, Vec<(String, String)>> {
-        let m = machine(machine_id);
-        Box::pin(async move {
-            let Some(m) = m else { return Vec::new() };
-            let hub = self.hub();
-            let roots: Vec<String> = hub
-                .store
-                .projects_list(Some(&m), None)
-                .unwrap_or_default()
-                .into_iter()
-                .map(|p| p.workspace_root)
-                .collect();
-            let answers = futures_util::future::join_all(roots.into_iter().map(|root| {
-                let (hub, m) = (hub.clone(), m.clone());
-                async move {
-                    let input = crate::hub::link::commands::CommandInput {
-                        cwd: root.clone(),
-                        argv: vec!["true".into()],
-                        timeout_sec: Some(30),
-                    };
-                    let result = hub.node_commands.run(&m, input).await.ok()?;
-                    let why = crate::node::cmd::refusal(
-                        result.exit_code.is_none(),
-                        result.output_tail.as_str(),
-                    )?;
-                    Some((root, why.to_owned()))
-                }
-            }))
-            .await;
-            answers.into_iter().flatten().collect()
-        })
-    }
     fn node_action(
         &self,
         machine_id: &str,

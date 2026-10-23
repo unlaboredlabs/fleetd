@@ -14,7 +14,7 @@ export interface EventEffects {
   readonly resync: boolean;
 }
 
-const ORDER_PREFIXES = ["workstream.", "task.", "change.", "request.", "steer.", "train.", "plan."];
+const ORDER_PREFIXES = ["workstream.", "task.", "change.", "request.", "steer.", "plan."];
 const ORDER_TYPES = new Set(["pr.merged", "review.verdict", "lead.started", "lead.woken"]);
 const STATUS_TYPES = new Set(["ci.main", "source.stale", "source.fresh"]);
 /** Status's health strip shows machines (online, slept, last seen) and claude usage too. */
@@ -25,7 +25,7 @@ const TIME_PREFIXES = ["task.", "change.", "request.", "workstream."];
 const TIME_TYPES = new Set(["lead.woken", "pr.merged"]);
 // What moves a PR as the PR screens show it (the hub's list in crates/fleetd-contracts/src/prs.rs): its merge-queue
 // state, a review, a merge, its writer's task. Only a new head changes its files and diff, and only the queue sees one.
-const PR_PREFIXES = ["change.", "pr.", "review.", "train.", "task."];
+const PR_PREFIXES = ["change.", "pr.", "review.", "task."];
 const PR_DIFF_PREFIXES = ["change.", "pr."];
 
 /** The orders an event is about: `data.workstreamId`, plus `data.workstreamIds` (a lead woken for several). */

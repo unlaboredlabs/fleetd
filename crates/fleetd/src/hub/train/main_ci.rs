@@ -6,6 +6,7 @@ use std::sync::Mutex;
 use fleetd_contracts::status::CiState;
 
 use super::github::CheckRun;
+use super::service::{Checks, checks};
 
 pub const MAIN_CI_EVERY_MS: i64 = 60_000;
 
@@ -22,23 +23,16 @@ pub struct MainCi {
     pub as_of_ms: i64,
 }
 
-/// The train's rule for a head, applied to the base: red when a completed run did not pass, green when every run
-/// completed, pending otherwise (including no runs yet).
+/// The train's rule for a head, applied to the base: no runs yet is pending.
 pub fn ci_state(runs: &[CheckRun]) -> (CiState, Vec<String>) {
-    let failing: Vec<String> = runs
-        .iter()
-        .filter(|r| super::service::is_red(r))
-        .map(|r| r.name.clone())
-        .take(10)
-        .collect();
-    let state = if !failing.is_empty() {
-        CiState::Red
-    } else if !runs.is_empty() && runs.iter().all(|r| r.status == "completed") {
-        CiState::Green
-    } else {
-        CiState::Pending
-    };
-    (state, failing)
+    match checks(runs) {
+        Checks::Red(red) => (
+            CiState::Red,
+            red.into_iter().map(|r| r.name).take(10).collect(),
+        ),
+        Checks::Green => (CiState::Green, Vec::new()),
+        Checks::None | Checks::Pending => (CiState::Pending, Vec::new()),
+    }
 }
 
 #[derive(Default)]

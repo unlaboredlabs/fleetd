@@ -71,8 +71,8 @@ The cap on how many agents run at once, per project and across the fleet. Agents
 
 ## Merge train {#merge-train}
 
-The queue that merges a repo's pull requests after CI passes on the exact commit, in batches when they touch
-different files. Only the train merges. See [Merge train](/docs/merge-train).
+The queue that merges a repo's pull requests after CI passes on the exact commit, in batches when several are ready.
+Only the train merges. See [Merge train](/docs/merge-train).
 
 ## Needs-you dot {#needs-you}
 

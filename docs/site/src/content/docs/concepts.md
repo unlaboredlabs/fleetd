@@ -122,7 +122,7 @@ and the lead plans its work to the cap. See [Max agents](/docs/projects#max-agen
 ### Merge train {#merge-train}
 
 Only fleetd merges. Each repo has one train, a queue that rebases each ready pull request, waits for CI on that exact
-commit, and squash-merges it. Ready PRs that touch different files merge together in one CI run. See
+commit, and squash-merges it. Several ready PRs merge together in one CI run. See
 [Merge train](/docs/merge-train).
 
 Every pull request merges on one clean review of its current commit plus green CI. A repo with no CI holds its PRs
